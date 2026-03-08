@@ -3,192 +3,158 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Order Progress Board</title>
+<title>Order Status</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;600;700&family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
 <style>
   :root {
-    --green:    #006241;
-    --green2:   #00a86b;
-    --gold:     #CBA135;
-    --cream:    #FAF7F2;
-    --white:    #ffffff;
-    --text:     #1E293B;
-    --text2:    #64748B;
-    --border:   #E2E8F0;
-    --surface:  #ffffff;
-    --waiting-bg:     #FFF7ED;
-    --waiting-border: #FED7AA;
-    --waiting-accent: #EA580C;
-    --progress-bg:    #EFF6FF;
-    --progress-border:#BFDBFE;
-    --progress-accent:#2563EB;
-    --ready-bg:       #F0FDF4;
-    --ready-border:   #BBF7D0;
-    --ready-accent:   #16A34A;
-    --radius: 12px;
+    --bg:        #1A5C4A;
+    --white:     #ffffff;
+    --divider:   rgba(255,255,255,0.25);
+    --name-size: 42px;
+    --header-size: 18px;
   }
   * { margin: 0; padding: 0; box-sizing: border-box; }
-  html, body { height: 100%; overflow: hidden; background: var(--cream); }
+  html, body {
+    height: 100%;
+    overflow: hidden;
+    background: var(--bg);
+  }
   body {
     font-family: 'Inter', sans-serif;
     display: flex;
     flex-direction: column;
     height: 100vh;
+    color: var(--white);
   }
 
-  /* ── HEADER ─────────────────────────── */
+  /* ── HEADER ─────────────────────────────────────────────── */
   .board-header {
-    background: var(--green);
-    color: var(--white);
-    padding: 0 32px;
-    height: 64px;
+    flex-shrink: 0;
     display: flex;
     align-items: center;
-    justify-content: space-between;
+    justify-content: center;
+    gap: 28px;
+    padding: 24px 40px 18px;
+    position: relative;
+  }
+  .brand-logo {
+    width: 80px;
+    height: 80px;
+    object-fit: contain;
+    border-radius: 50%;
     flex-shrink: 0;
+    display: none; /* shown when logo loads */
   }
   .board-title {
     font-family: 'Oswald', sans-serif;
-    font-size: 22px;
+    font-size: clamp(32px, 4.5vw, 60px);
     font-weight: 700;
-    letter-spacing: 0.5px;
-  }
-  .board-store {
-    font-size: 13px;
-    opacity: 0.75;
-    font-weight: 600;
-    letter-spacing: 0.3px;
+    letter-spacing: 4px;
+    text-transform: uppercase;
+    text-align: center;
+    white-space: nowrap;
   }
   .board-clock {
+    position: absolute;
+    top: 10px;
+    right: 20px;
     font-family: 'Oswald', sans-serif;
-    font-size: 20px;
+    font-size: 16px;
     font-weight: 400;
-    opacity: 0.9;
+    opacity: 0.6;
+  }
+  .board-store {
+    position: absolute;
+    bottom: 4px;
+    right: 20px;
+    font-size: 11px;
+    opacity: 0.45;
+    letter-spacing: 0.3px;
   }
 
-  /* ── COLUMNS ────────────────────────── */
+  /* ── COLUMNS ────────────────────────────────────────────── */
   .board-body {
     flex: 1;
     display: grid;
     grid-template-columns: 1fr 1fr 1fr;
-    gap: 20px;
-    padding: 20px 24px;
     overflow: hidden;
+    min-height: 0;
   }
   .col {
     display: flex;
     flex-direction: column;
-    background: var(--surface);
-    border-radius: var(--radius);
-    border: 1px solid var(--border);
     overflow: hidden;
+    border-right: 1px solid var(--divider);
   }
+  .col:last-child { border-right: none; }
+
   .col-header {
-    padding: 14px 18px;
-    display: flex;
-    align-items: center;
-    gap: 10px;
     flex-shrink: 0;
-    border-bottom: 1px solid var(--border);
-  }
-  .col-header.waiting   { background: var(--waiting-bg);  border-bottom-color: var(--waiting-border); }
-  .col-header.progress  { background: var(--progress-bg); border-bottom-color: var(--progress-border); }
-  .col-header.ready     { background: var(--ready-bg);    border-bottom-color: var(--ready-border); }
-
-  .col-icon { font-size: 20px; }
-  .col-title {
-    font-family: 'Oswald', sans-serif;
-    font-size: 16px;
-    font-weight: 700;
-    letter-spacing: 0.4px;
-    flex: 1;
-  }
-  .col-title.waiting  { color: var(--waiting-accent); }
-  .col-title.progress { color: var(--progress-accent); }
-  .col-title.ready    { color: var(--ready-accent); }
-  .col-count {
-    font-size: 12px;
-    font-weight: 700;
-    padding: 2px 9px;
-    border-radius: 20px;
-    min-width: 24px;
-    text-align: center;
-  }
-  .col-count.waiting  { background: var(--waiting-accent);  color: var(--white); }
-  .col-count.progress { background: var(--progress-accent); color: var(--white); }
-  .col-count.ready    { background: var(--ready-accent);    color: var(--white); }
-
-  .col-cards {
-    flex: 1;
-    overflow-y: auto;
-    padding: 12px;
     display: flex;
     flex-direction: column;
-    gap: 8px;
-  }
-  .col-cards:empty::after {
-    content: 'No orders';
-    display: block;
-    text-align: center;
-    color: var(--text2);
-    font-size: 13px;
-    padding: 24px 0;
-  }
-
-  /* ── ORDER CARD ──────────────────────── */
-  .order-card {
-    border-radius: 10px;
-    border: 1.5px solid;
-    padding: 12px 14px;
-    display: flex;
     align-items: center;
-    gap: 10px;
-    animation: slideIn .3s ease;
+    gap: 6px;
+    padding: 14px 16px 12px;
+    border-bottom: 1px solid var(--divider);
   }
-  @keyframes slideIn {
-    from { opacity: 0; transform: translateY(-8px); }
-    to   { opacity: 1; transform: translateY(0); }
+  .col-icon {
+    font-size: calc(var(--header-size) * 1.5);
+    line-height: 1;
   }
-  .order-card.waiting  { background: var(--waiting-bg);  border-color: var(--waiting-border); }
-  .order-card.progress { background: var(--progress-bg); border-color: var(--progress-border); }
-  .order-card.ready    { background: var(--ready-bg);    border-color: var(--ready-border); }
-  .order-card.ready    { animation: pulse 2s ease-in-out infinite; }
-  @keyframes pulse {
-    0%, 100% { border-color: var(--ready-border); }
-    50%      { border-color: var(--ready-accent); }
-  }
-
-  .card-number {
+  .col-title {
     font-family: 'Oswald', sans-serif;
-    font-size: 22px;
+    font-size: var(--header-size);
     font-weight: 700;
-    flex-shrink: 0;
-    min-width: 56px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    opacity: 0.9;
   }
-  .card-number.waiting  { color: var(--waiting-accent); }
-  .card-number.progress { color: var(--progress-accent); }
-  .card-number.ready    { color: var(--ready-accent); }
 
-  .card-info { flex: 1; min-width: 0; }
-  .card-name {
-    font-size: 14px;
-    font-weight: 600;
-    color: var(--text);
+  /* ── NAMES LIST ─────────────────────────────────────────── */
+  .col-names {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-start;
+    padding: 16px 12px;
+    gap: 4px;
+    overflow: hidden;
+    min-height: 0;
+  }
+  .name-row {
+    font-family: 'Oswald', sans-serif;
+    font-size: var(--name-size);
+    font-weight: 400;
+    text-align: center;
     white-space: nowrap;
+    opacity: 0.95;
+    animation: fadeSlide 0.35s ease;
+    line-height: 1.15;
+    max-width: 100%;
     overflow: hidden;
     text-overflow: ellipsis;
   }
-  .card-items {
-    font-size: 11px;
-    color: var(--text2);
-    margin-top: 2px;
+  @keyframes fadeSlide {
+    from { opacity: 0; transform: translateY(-6px); }
+    to   { opacity: 0.95; transform: translateY(0); }
   }
 
-  /* ── NO-STORE OVERLAY ────────────────── */
+  /* ── FOOTER ─────────────────────────────────────────────── */
+  .board-footer {
+    flex-shrink: 0;
+    padding: 6px 20px;
+    text-align: center;
+    font-size: 10px;
+    opacity: 0.3;
+    letter-spacing: 0.2px;
+  }
+
+  /* ── NO-STORE OVERLAY ───────────────────────────────────── */
   .no-store {
     position: fixed; inset: 0;
-    background: var(--green);
+    background: var(--bg);
     display: flex; flex-direction: column;
     align-items: center; justify-content: center;
     gap: 12px;
@@ -202,44 +168,43 @@
 <body>
 
 <div class="board-header">
-  <div>
-    <div class="board-title">&#x1F4CB; Order Progress</div>
-    <div class="board-store" id="boardStore"></div>
-  </div>
+  <img class="brand-logo" id="logoLeft"  alt="">
+  <div class="board-title">Order Status</div>
+  <img class="brand-logo" id="logoRight" alt="">
   <div class="board-clock" id="boardClock"></div>
+  <div class="board-store" id="boardStore"></div>
 </div>
 
 <div class="board-body">
-  <!-- Waiting -->
+  <!-- Received -->
   <div class="col">
-    <div class="col-header waiting">
-      <span class="col-icon">&#x23F3;</span>
-      <span class="col-title waiting">Waiting</span>
-      <span class="col-count waiting" id="countWaiting">0</span>
+    <div class="col-header">
+      <span class="col-icon">📨</span>
+      <span class="col-title">Received</span>
     </div>
-    <div class="col-cards" id="colWaiting"></div>
+    <div class="col-names" id="colWaiting"></div>
   </div>
 
   <!-- In Progress -->
   <div class="col">
-    <div class="col-header progress">
-      <span class="col-icon">&#x1F373;</span>
-      <span class="col-title progress">In Progress</span>
-      <span class="col-count progress" id="countProgress">0</span>
+    <div class="col-header">
+      <span class="col-icon">🏃</span>
+      <span class="col-title">In Progress</span>
     </div>
-    <div class="col-cards" id="colProgress"></div>
+    <div class="col-names" id="colProgress"></div>
   </div>
 
   <!-- Ready -->
   <div class="col">
-    <div class="col-header ready">
-      <span class="col-icon">&#x1F6D2;</span>
-      <span class="col-title ready">Ready for Collection</span>
-      <span class="col-count ready" id="countReady">0</span>
+    <div class="col-header">
+      <span class="col-icon">🛍️</span>
+      <span class="col-title">Ready</span>
     </div>
-    <div class="col-cards" id="colReady"></div>
+    <div class="col-names" id="colReady"></div>
   </div>
 </div>
+
+<div class="board-footer" id="boardFooter"></div>
 
 <script type="module">
 import { initializeApp }                                from "https://www.gstatic.com/firebasejs/12.9.0/firebase-app.js";
@@ -260,7 +225,7 @@ const db  = getFirestore(app);
 const urlParams  = new URLSearchParams(window.location.search);
 const STORE_CODE = (urlParams.get('store') || '').trim().toUpperCase();
 
-// ── CLOCK ─────────────────────────────────────────────────────────────────
+// ── CLOCK ──────────────────────────────────────────────────────────────────
 function updateClock() {
   document.getElementById('boardClock').textContent =
     new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -268,27 +233,39 @@ function updateClock() {
 updateClock();
 setInterval(updateClock, 1000);
 
-// ── STORE LABEL ───────────────────────────────────────────────────────────
+// ── STORE LABEL ────────────────────────────────────────────────────────────
 if (STORE_CODE) {
   document.getElementById('boardStore').textContent = 'Store: ' + STORE_CODE;
 } else {
   document.body.innerHTML = `
     <div class="no-store">
-      <h1>&#x1F4CB; Queue Board</h1>
+      <h1>Order Status</h1>
       <p>Add <code>?store=YOUR_CODE</code> to the URL to get started</p>
     </div>`;
 }
 
-// ── DATA ──────────────────────────────────────────────────────────────────
-let _orders = {};  // { [docId]: { orderNumber, customerName, queueStatus, queueEnteredAt, items } }
+// ── BRAND LOGOS ────────────────────────────────────────────────────────────
+onSnapshot(doc(db, 'menuboard', 'brands'), snap => {
+  const brands = snap.exists() ? (snap.data().data || []) : [];
+  const logo = brands[0]?.logo || '';
+  ['logoLeft', 'logoRight'].forEach(id => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    if (logo) { el.src = logo; el.style.display = 'block'; }
+    else       { el.style.display = 'none'; }
+  });
+});
+
+// ── DATA ───────────────────────────────────────────────────────────────────
+let _orders = {};
 
 const TRANSITION_MS = {
-  'waiting':     30 * 1000,   // → in-progress after 30 s
-  'in-progress': 120 * 1000,  // → ready after 2 min (T+150 s total)
+  'waiting':     10 * 1000,   // → in-progress after 10 s
+  'in-progress': 30 * 1000,   // → ready after 30 s more (T+40 s total)
 };
-const CLEAR_AFTER_MS = 150 * 1000;  // remove from board 2.5 min after ready
+const CLEAR_AFTER_MS = 80 * 1000;  // remove from board 80 s after ready (T+2 min total)
 
-// ── AUTO-ADVANCE TIMER ────────────────────────────────────────────────────
+// ── AUTO-ADVANCE TIMER ─────────────────────────────────────────────────────
 setInterval(() => {
   const now = Date.now();
   Object.entries(_orders).forEach(([id, order]) => {
@@ -313,47 +290,62 @@ setInterval(() => {
   renderBoard();
 }, 2000);
 
-// ── RENDER ────────────────────────────────────────────────────────────────
+// ── RENDER ─────────────────────────────────────────────────────────────────
 function renderBoard() {
   const cols = { waiting: [], 'in-progress': [], ready: [] };
   Object.values(_orders).forEach(o => {
     if (o.queueStatus && cols[o.queueStatus]) cols[o.queueStatus].push(o);
   });
-  // Sort each column by entry time (oldest first)
   Object.values(cols).forEach(arr =>
     arr.sort((a, b) => (a.queueEnteredAt || '').localeCompare(b.queueEnteredAt || '')));
 
-  renderCol('waiting',     cols['waiting'],     'colWaiting',  'countWaiting');
-  renderCol('in-progress', cols['in-progress'], 'colProgress', 'countProgress');
-  renderCol('ready',       cols['ready'],        'colReady',    'countReady');
+  renderCol(cols['waiting'],     'colWaiting');
+  renderCol(cols['in-progress'], 'colProgress');
+  renderCol(cols['ready'],       'colReady');
+  adjustFontSize();
 }
 
-function renderCol(status, orders, colId, countId) {
-  document.getElementById(countId).textContent = orders.length;
+function renderCol(orders, colId) {
   const el = document.getElementById(colId);
   el.innerHTML = orders.map(o => {
-    const cls = status === 'in-progress' ? 'progress' : status;
-    const name = o.customerName ? escHtml(o.customerName) : '';
-    const num  = o.orderNumber  ? `#${escHtml(o.orderNumber)}` : '—';
-    const itemCount = (o.items || []).reduce((s, i) => s + (i.qty || 1), 0);
-    return `
-      <div class="order-card ${cls}">
-        <div class="card-number ${cls}">${num}</div>
-        <div class="card-info">
-          ${name ? `<div class="card-name">${name}</div>` : ''}
-          <div class="card-items">${itemCount} item${itemCount !== 1 ? 's' : ''}</div>
-        </div>
-      </div>`;
+    const firstName   = o.customerName ? escHtml(o.customerName.trim().split(/\s+/)[0]) : '';
+    const displayName = firstName || (o.orderNumber ? `#${escHtml(String(o.orderNumber))}` : '—');
+    return `<div class="name-row">${displayName}</div>`;
   }).join('');
 }
 
+// ── DYNAMIC FONT SCALING ───────────────────────────────────────────────────
+// Uses calculation rather than scrollHeight (flex overflow:hidden returns
+// scrollHeight === clientHeight even when content overflows).
+function adjustFontSize() {
+  const MIN_SIZE     = 18;
+  const DEFAULT_SIZE = 42;
+  const LINE_H       = 1.15;  // matches CSS line-height on .name-row
+  const GAP          = 4;     // matches CSS gap in .col-names
+
+  const colEls   = ['colWaiting', 'colProgress', 'colReady'].map(id => document.getElementById(id));
+  const maxCount = Math.max(1, ...colEls.map(c => c.children.length));
+  const colH     = colEls[0].clientHeight || 300;
+  const padding  = 32;  // 16px top + 16px bottom from .col-names padding
+
+  // Solve: available >= maxCount × (size × LINE_H + GAP)
+  const available = colH - padding;
+  let size = Math.floor((available / maxCount - GAP) / LINE_H);
+  size = Math.max(MIN_SIZE, Math.min(DEFAULT_SIZE, size));
+
+  const root = document.documentElement.style;
+  root.setProperty('--name-size', size + 'px');
+  root.setProperty('--header-size', Math.max(13, Math.round(size * 0.43)) + 'px');
+}
+
+// ── HELPERS ────────────────────────────────────────────────────────────────
 function escHtml(str) {
   return String(str)
     .replace(/&/g, '&amp;').replace(/</g, '&lt;')
     .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
-// ── FIRESTORE LISTENER ────────────────────────────────────────────────────
+// ── FIRESTORE LISTENER ─────────────────────────────────────────────────────
 if (STORE_CODE) {
   const q = query(
     collection(db, 'carts'),
