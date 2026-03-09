@@ -55,23 +55,20 @@
     text-align: center;
     white-space: nowrap;
   }
-  .board-clock {
+  .header-time,
+  .header-store-name {
     position: absolute;
-    top: 10px;
-    right: 20px;
+    top: 50%;
+    transform: translateY(-50%);
     font-family: 'Oswald', sans-serif;
-    font-size: 16px;
+    font-size: clamp(13px, 1.6vw, 24px);
     font-weight: 400;
-    opacity: 0.6;
+    letter-spacing: 1px;
+    opacity: 0.85;
+    white-space: nowrap;
   }
-  .board-store {
-    position: absolute;
-    bottom: 4px;
-    right: 20px;
-    font-size: 11px;
-    opacity: 0.45;
-    letter-spacing: 0.3px;
-  }
+  .header-time       { left: 24px; }
+  .header-store-name { right: 24px; }
 
   /* ── COLUMNS ────────────────────────────────────────────── */
   .board-body {
@@ -171,8 +168,8 @@
   <img class="brand-logo" id="logoLeft"  alt="">
   <div class="board-title">Order Status</div>
   <img class="brand-logo" id="logoRight" alt="">
-  <div class="board-clock" id="boardClock"></div>
-  <div class="board-store" id="boardStore"></div>
+  <div class="header-time" id="headerTime"></div>
+  <div class="header-store-name" id="headerStoreName"></div>
 </div>
 
 <div class="board-body">
@@ -224,19 +221,24 @@ const db  = getFirestore(app);
 
 const urlParams  = new URLSearchParams(window.location.search);
 const STORE_CODE = (urlParams.get('store') || '').trim().toUpperCase();
+const STORE_NAME = (urlParams.get('name')  || '').trim();
 
 // ── CLOCK ──────────────────────────────────────────────────────────────────
 function updateClock() {
-  document.getElementById('boardClock').textContent =
-    new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  const n = new Date();
+  const timeStr = n.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  const dateStr = n.toLocaleDateString([], { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
+  document.getElementById('headerTime').textContent = timeStr + '\u00a0\u00a0·\u00a0\u00a0' + dateStr;
 }
 updateClock();
 setInterval(updateClock, 1000);
 
-// ── STORE LABEL ────────────────────────────────────────────────────────────
-if (STORE_CODE) {
-  document.getElementById('boardStore').textContent = 'Store: ' + STORE_CODE;
-} else {
+// ── STORE NAME ─────────────────────────────────────────────────────────────
+if (STORE_NAME) {
+  document.getElementById('headerStoreName').textContent = STORE_NAME;
+}
+
+if (!STORE_CODE) {
   document.body.innerHTML = `
     <div class="no-store">
       <h1>Order Status</h1>
