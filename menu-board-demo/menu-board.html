@@ -565,6 +565,7 @@ let _stock       = {};
 // Campaign SKUs: null = default menu; string[] = personalised override from Personalisation Hub API
 let _campaignSkus      = null;
 let _campaignFirstName = null; // null = no greeting; string = show personalised greeting in clock bar
+let _storeName         = null; // null = no store label; string = show store name in clock bar when no firstName
 
 const MENU_META = {
   breakfast: { label: 'Breakfast Menu',        emoji: '🌅' },
@@ -772,6 +773,9 @@ async function pollCampaign() {
     // Resolve first_name: try visitor_customer first, then data root
     const firstName = (vc?.first_name || d?.first_name || '').trim() || null;
 
+    // Resolve store_name from store_location
+    const storeName = (d?.store_location?.store_name || '').trim() || null;
+
     // Resolve SKUs: try visitor_customer first, then data root
     // Filter out empty/blank strings that can appear in sparse API payloads
     const rawSkus =
@@ -784,14 +788,16 @@ async function pollCampaign() {
 
     // Debug logging — visible in browser console; helps diagnose display-level issues
     console.log('[Campaign] visitor_customer:', JSON.stringify(vc));
-    console.log('[Campaign] resolved → firstName:', firstName, '| SKUs:', newSkus);
+    console.log('[Campaign] resolved → firstName:', firstName, '| SKUs:', newSkus, '| storeName:', storeName);
 
-    const skusChanged = JSON.stringify(newSkus) !== JSON.stringify(_campaignSkus);
-    const nameChanged = firstName !== _campaignFirstName;
+    const skusChanged      = JSON.stringify(newSkus) !== JSON.stringify(_campaignSkus);
+    const nameChanged      = firstName !== _campaignFirstName;
+    const storeNameChanged = storeName !== _storeName;
 
-    if (skusChanged || nameChanged) {
+    if (skusChanged || nameChanged || storeNameChanged) {
       _campaignSkus      = newSkus;
       _campaignFirstName = firstName;
+      _storeName         = storeName;
       render();
     }
   } catch (e) {
@@ -1011,7 +1017,9 @@ function render() {
     ` : ''}
     ${showClock ? `
       <div class="clock-bar">
-        ${_campaignFirstName ? `<div class="greeting-text">${_campaignFirstName.toUpperCase()}, THIS IS WHAT WE RECOMMEND FOR YOU</div>` : ''}
+        ${_campaignFirstName
+          ? `<div class="greeting-text">${_campaignFirstName.toUpperCase()}, THIS IS WHAT WE RECOMMEND FOR YOU</div>`
+          : (_storeName ? `<div class="greeting-text">${_storeName}</div>` : '')}
         <div class="time-display" id="clockDisplay"></div>
       </div>
     ` : ''}
