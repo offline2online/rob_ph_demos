@@ -558,42 +558,42 @@ function buildItemScaleCSS(count) {
 
   let listPad, listGap, rowPad, rowGap, rowBr, qtyPriceSz, nameSz, modsSz;
 
-  if (count <= 6) {         // ~87% scale
-    listPad    = 'clamp(9px, 1.1vw, 22px) clamp(20px, 3vw, 56px)';
-    listGap    = 'clamp(6px, 0.8vw, 14px)';
-    rowPad     = 'clamp(9px, 1.1vw, 18px) clamp(12px, 1.6vw, 26px)';
-    rowGap     = 'clamp(9px, 1.1vw, 18px)';
+  if (count <= 6) {         // 6 items — slight reduction
+    listPad    = 'clamp(8px, 1vw, 18px) clamp(20px, 3vw, 56px)';
+    listGap    = 'clamp(5px, 0.7vw, 12px)';
+    rowPad     = 'clamp(8px, 1vw, 16px) clamp(12px, 1.6vw, 26px)';
+    rowGap     = 'clamp(8px, 1vw, 16px)';
     rowBr      = 'clamp(6px, 0.8vw, 12px)';
-    qtyPriceSz = 'clamp(17px, 2.6vw, 38px)';
-    nameSz     = 'clamp(15px, 2.2vw, 30px)';
-    modsSz     = 'clamp(10px, 1.2vw, 16px)';
-  } else if (count <= 8) {  // ~72% scale
-    listPad    = 'clamp(7px, 1vw, 18px) clamp(20px, 3vw, 56px)';
-    listGap    = 'clamp(5px, 0.6vw, 10px)';
-    rowPad     = 'clamp(7px, 0.9vw, 14px) clamp(10px, 1.3vw, 22px)';
-    rowGap     = 'clamp(7px, 0.9vw, 14px)';
-    rowBr      = 'clamp(5px, 0.6vw, 10px)';
-    qtyPriceSz = 'clamp(14px, 2.2vw, 32px)';
-    nameSz     = 'clamp(13px, 1.9vw, 26px)';
-    modsSz     = 'clamp(9px, 1vw, 14px)';
-  } else if (count <= 10) { // ~60% scale
-    listPad    = 'clamp(5px, 0.7vw, 12px) clamp(20px, 3vw, 56px)';
-    listGap    = 'clamp(4px, 0.5vw, 7px)';
-    rowPad     = 'clamp(5px, 0.7vw,10px) clamp(8px, 1vw, 18px)';
-    rowGap     = 'clamp(5px, 0.7vw, 10px)';
-    rowBr      = 'clamp(4px, 0.5vw, 8px)';
-    qtyPriceSz = 'clamp(12px, 1.8vw, 26px)';
-    nameSz     = 'clamp(11px, 1.6vw, 22px)';
-    modsSz     = 'clamp(8px, 0.9vw, 12px)';
-  } else {                  // 11+ items: ~50% scale
-    listPad    = 'clamp(4px, 0.5vw, 9px) clamp(20px, 3vw, 56px)';
-    listGap    = 'clamp(3px, 0.4vw, 5px)';
-    rowPad     = 'clamp(4px, 0.5vw, 8px) clamp(7px, 0.9vw, 14px)';
-    rowGap     = 'clamp(4px, 0.5vw, 8px)';
-    rowBr      = 'clamp(3px, 0.4vw, 6px)';
-    qtyPriceSz = 'clamp(10px, 1.5vw, 22px)';
-    nameSz     = 'clamp(9px, 1.3vw, 18px)';
-    modsSz     = 'clamp(7px, 0.8vw, 10px)';
+    qtyPriceSz = 'clamp(16px, 2.5vw, 36px)';
+    nameSz     = 'clamp(14px, 2.1vw, 28px)';
+    modsSz     = 'clamp(10px, 1.1vw, 15px)';
+  } else if (count <= 8) {  // 7–8 items — medium reduction
+    listPad    = 'clamp(5px, 0.7vw, 10px) clamp(20px, 3vw, 56px)';
+    listGap    = 'clamp(4px, 0.5vw, 8px)';
+    rowPad     = 'clamp(5px, 0.65vw, 10px) clamp(10px, 1.3vw, 20px)';
+    rowGap     = 'clamp(5px, 0.65vw, 10px)';
+    rowBr      = 'clamp(4px, 0.6vw, 9px)';
+    qtyPriceSz = 'clamp(13px, 2vw, 28px)';
+    nameSz     = 'clamp(12px, 1.8vw, 24px)';
+    modsSz     = 'clamp(9px, 0.95vw, 13px)';
+  } else if (count <= 11) { // 9–11 items — strong reduction
+    listPad    = 'clamp(4px, 0.5vw, 7px) clamp(20px, 3vw, 56px)';
+    listGap    = 'clamp(3px, 0.38vw, 6px)';
+    rowPad     = 'clamp(4px, 0.5vw, 7px) clamp(8px, 1vw, 16px)';
+    rowGap     = 'clamp(4px, 0.5vw, 7px)';
+    rowBr      = 'clamp(3px, 0.45vw, 7px)';
+    qtyPriceSz = 'clamp(11px, 1.6vw, 22px)';
+    nameSz     = 'clamp(10px, 1.45vw, 19px)';
+    modsSz     = 'clamp(8px, 0.8vw, 11px)';
+  } else {                  // 12+ items — maximum compression
+    listPad    = 'clamp(3px, 0.35vw, 5px) clamp(20px, 3vw, 56px)';
+    listGap    = 'clamp(2px, 0.28vw, 4px)';
+    rowPad     = 'clamp(3px, 0.38vw, 6px) clamp(7px, 0.9vw, 13px)';
+    rowGap     = 'clamp(3px, 0.38vw, 6px)';
+    rowBr      = 'clamp(2px, 0.35vw, 5px)';
+    qtyPriceSz = 'clamp(10px, 1.35vw, 18px)';
+    nameSz     = 'clamp(9px, 1.2vw, 16px)';
+    modsSz     = 'clamp(7px, 0.7vw, 10px)';
   }
 
   return `
