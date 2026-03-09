@@ -221,7 +221,7 @@ const db  = getFirestore(app);
 
 const urlParams  = new URLSearchParams(window.location.search);
 const STORE_CODE = (urlParams.get('store') || '').trim().toUpperCase();
-const STORE_NAME = (urlParams.get('name')  || '').trim();
+const MB = 'menuboard';
 
 // ── CLOCK ──────────────────────────────────────────────────────────────────
 function updateClock() {
@@ -233,11 +233,6 @@ function updateClock() {
 updateClock();
 setInterval(updateClock, 1000);
 
-// ── STORE NAME ─────────────────────────────────────────────────────────────
-if (STORE_NAME) {
-  document.getElementById('headerStoreName').textContent = STORE_NAME;
-}
-
 if (!STORE_CODE) {
   document.body.innerHTML = `
     <div class="no-store">
@@ -247,7 +242,7 @@ if (!STORE_CODE) {
 }
 
 // ── BRAND LOGOS ────────────────────────────────────────────────────────────
-onSnapshot(doc(db, 'menuboard', 'brands'), snap => {
+onSnapshot(doc(db, MB, 'brands'), snap => {
   const brands = snap.exists() ? (snap.data().data || []) : [];
   const logo = brands[0]?.logo || '';
   ['logoLeft', 'logoRight'].forEach(id => {
@@ -256,6 +251,57 @@ onSnapshot(doc(db, 'menuboard', 'brands'), snap => {
     if (logo) { el.src = logo; el.style.display = 'block'; }
     else       { el.style.display = 'none'; }
   });
+});
+
+// ── PH API — STORE NAME ────────────────────────────────────────────────────
+let _settings = {};
+
+const _ENC_PASS = 'rob-ph-demos-phapi-v1';
+const _ENC_SALT = new TextEncoder().encode('ph-menuboard-salt-2024');
+let _derivedKeyPromise = null;
+async function _deriveKey() {
+  if (!_derivedKeyPromise) {
+    _derivedKeyPromise = (async () => {
+      const mat = await crypto.subtle.importKey(
+        'raw', new TextEncoder().encode(_ENC_PASS), 'PBKDF2', false, ['deriveKey']);
+      return crypto.subtle.deriveKey(
+        { name: 'PBKDF2', salt: _ENC_SALT, iterations: 100000, hash: 'SHA-256' },
+        mat, { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']);
+    })();
+  }
+  return _derivedKeyPromise;
+}
+
+let _tokenCache = { b64: null, plain: null };
+async function decryptToken(b64) {
+  if (_tokenCache.b64 === b64) return _tokenCache.plain;
+  const key   = await _deriveKey();
+  const buf   = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
+  const pt    = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: buf.slice(0, 12) }, key, buf.slice(12));
+  const plain = new TextDecoder().decode(pt);
+  _tokenCache = { b64, plain };
+  return plain;
+}
+
+async function pollStoreName() {
+  const phApi = _settings.phApi;
+  if (!phApi || !phApi.baseUrl || !phApi.authToken) return;
+  try {
+    const token = await decryptToken(phApi.authToken);
+    const url   = `${phApi.baseUrl}/location-api/device/${STORE_CODE}/campaign_data`;
+    const resp  = await fetch(url, { headers: { accept: 'application/json', 'x-api-key': token } });
+    if (!resp.ok) { console.warn(`[StoreData] API returned HTTP ${resp.status}`); return; }
+    const json  = await resp.json();
+    const name  = (json?.data?.store_location?.store_name || '').trim();
+    if (name) document.getElementById('headerStoreName').textContent = name;
+  } catch (e) {
+    console.warn('[StoreData] poll failed:', e);
+  }
+}
+
+onSnapshot(doc(db, MB, 'settings'), snap => {
+  _settings = snap.exists() ? snap.data() : {};
+  pollStoreName();
 });
 
 // ── DATA ───────────────────────────────────────────────────────────────────
