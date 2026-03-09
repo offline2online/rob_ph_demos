@@ -220,7 +220,8 @@ const app = initializeApp(firebaseConfig);
 const db  = getFirestore(app);
 
 const urlParams  = new URLSearchParams(window.location.search);
-const STORE_CODE = (urlParams.get('store') || '').trim().toUpperCase();
+const STORE_CODE  = (urlParams.get('store')  || '').trim().toUpperCase();
+const DEVICE_UDID = (urlParams.get('device') || '').trim();
 const MB = 'menuboard';
 
 // ── CLOCK ──────────────────────────────────────────────────────────────────
@@ -284,11 +285,12 @@ async function decryptToken(b64) {
 }
 
 async function pollStoreName() {
+  if (!DEVICE_UDID) return;
   const phApi = _settings.phApi;
   if (!phApi || !phApi.baseUrl || !phApi.authToken) return;
   try {
     const token = await decryptToken(phApi.authToken);
-    const url   = `${phApi.baseUrl}/location-api/device/${STORE_CODE}/campaign_data`;
+    const url   = `${phApi.baseUrl}/location-api/device/${DEVICE_UDID}/campaign_data`;
     const resp  = await fetch(url, { headers: { accept: 'application/json', 'x-api-key': token } });
     if (!resp.ok) { console.warn(`[StoreData] API returned HTTP ${resp.status}`); return; }
     const json  = await resp.json();
@@ -299,9 +301,11 @@ async function pollStoreName() {
   }
 }
 
+if (DEVICE_UDID) _deriveKey();  // warm up key derivation immediately
+
 onSnapshot(doc(db, MB, 'settings'), snap => {
   _settings = snap.exists() ? snap.data() : {};
-  pollStoreName();
+  if (DEVICE_UDID) pollStoreName();
 });
 
 // ── DATA ───────────────────────────────────────────────────────────────────
