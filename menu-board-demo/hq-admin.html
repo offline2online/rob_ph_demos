@@ -629,11 +629,6 @@
             <h3>&#x1F517; Personalisation Hub API</h3>
             <p class="settings-desc">Connect the menu board to the PersonalisationHub campaign API so the PWA Player can retrieve personalised product SKUs per device. The Device UDID is automatically passed as a URL parameter to the board.</p>
             <div class="form-group">
-              <label>Base URL</label>
-              <input type="text" id="phBaseUrl" placeholder="https://dev.personalisationhub.com" style="max-width:480px;">
-              <p class="form-help">&#x2139;&#xFE0F; The root domain of your PersonalisationHub instance. Do not include a trailing slash or path segment.</p>
-            </div>
-            <div class="form-group">
               <label>API Authentication Token</label>
               <div style="display:flex;gap:8px;align-items:flex-start;max-width:480px;">
                 <input type="password" id="phAuthToken" placeholder="Paste your API key or bearer token here&hellip;" style="flex:1;">
@@ -1147,16 +1142,13 @@ async function decryptToken(b64) {
 }
 
 async function savePhApi() {
-  const baseUrl      = (document.getElementById('phBaseUrl').value || '').trim().replace(/\/$/, '');
   const rawToken     = (document.getElementById('phAuthToken').value || '').trim();
   const campaignMode = (document.getElementById('phCampaignMode') || {}).value || 'override';
   const statusEl     = document.getElementById('phApiStatus');
   statusEl.textContent = '';
 
-  if (!baseUrl) { toast('\u26A0\uFE0F Base URL is required', 'warning'); return; }
-
   const existing = (_settings.phApi) || {};
-  const phApi    = { baseUrl, authToken: existing.authToken || '', campaignMode };
+  const phApi    = { authToken: existing.authToken || '', campaignMode };
 
   if (rawToken) {
     phApi.authToken = await encryptToken(rawToken);
@@ -1173,14 +1165,15 @@ async function testPhApi() {
   statusEl.style.color = 'var(--text2)';
   statusEl.textContent = 'Testing connection\u2026';
   const phApi = (_settings.phApi) || {};
-  if (!phApi.baseUrl || !phApi.authToken) {
+  if (!phApi.authToken) {
     statusEl.textContent = '\u26A0\uFE0F Save API settings first.'; return;
   }
   try {
-    const token    = await decryptToken(phApi.authToken);
-    const testDev  = '6cfd0049-40ce-4ac3-9eba-353337b48427';
-    const resp     = await fetch(
-      `${phApi.baseUrl}/location-api/device/${testDev}/campaign_data`,
+    const token   = await decryptToken(phApi.authToken);
+    const testDev = '6cfd0049-40ce-4ac3-9eba-353337b48427';
+    const baseUrl = window.location.origin;
+    const resp    = await fetch(
+      `${baseUrl}/location-api/device/${testDev}/campaign_data`,
       { headers: { accept: 'application/json', 'x-api-key': token } }
     );
     if (resp.ok) {
@@ -1188,7 +1181,7 @@ async function testPhApi() {
       statusEl.textContent = `\u2705 Connected successfully (HTTP ${resp.status})`;
     } else {
       statusEl.style.color = 'var(--danger)';
-      statusEl.textContent = `\u274C HTTP ${resp.status} \u2014 check Base URL and Token`;
+      statusEl.textContent = `\u274C HTTP ${resp.status} \u2014 check Token`;
     }
   } catch (e) {
     statusEl.style.color = 'var(--danger)';
@@ -2406,14 +2399,10 @@ onSnapshot(doc(db, MB, 'categories'), snap => {
 onSnapshot(doc(db, MB, 'settings'), snap => {
   _settings = snap.exists() ? snap.data() : { restaurantName: 'My Restaurant', currency: '$', logo: '' };
   // Populate Personalisation Hub API settings UI
-  const phApi   = _settings.phApi || {};
-  const urlEl   = document.getElementById('phBaseUrl');
-  if (urlEl) {
-    urlEl.value = phApi.baseUrl || '';
-    document.getElementById('phTokenStatus').style.display = phApi.authToken ? 'block' : 'none';
-    const modeEl = document.getElementById('phCampaignMode');
-    if (modeEl) modeEl.value = phApi.campaignMode || 'override';
-  }
+  const phApi  = _settings.phApi || {};
+  const modeEl = document.getElementById('phCampaignMode');
+  if (modeEl) modeEl.value = phApi.campaignMode || 'override';
+  document.getElementById('phTokenStatus').style.display = phApi.authToken ? 'block' : 'none';
 });
 
 onSnapshot(collection(db, STOCK_COLL), snapshot => {

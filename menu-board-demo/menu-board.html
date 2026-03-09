@@ -537,6 +537,18 @@
       font-weight: 700; padding: 10px 24px; border-radius: 8px;
       text-decoration: none; font-size: 14px;
     }
+
+    /* ── API ERROR BADGE ───────────────────────────── */
+    #apiErrorBadge {
+      position: fixed; bottom: 16px; right: 16px; z-index: 9999;
+      background: rgba(192,57,43,0.92); color: #fff;
+      font-family: 'Inter', sans-serif; font-size: 11px; font-weight: 600;
+      line-height: 1.4; padding: 8px 12px; border-radius: 6px;
+      max-width: 320px; word-break: break-all;
+      box-shadow: 0 2px 12px rgba(0,0,0,0.3);
+      display: none; pointer-events: none;
+    }
+    #apiErrorBadge.visible { display: block; }
   </style>
 </head>
 <body>
@@ -716,6 +728,20 @@ function buildNutrition(item) {
 // ── ROTATION STATE ───────────────────────────────────────────────────────────
 let currentPage    = SCREEN_LOCK || 1;
 let rotationTimer  = null;
+let _apiError      = null;   // null = ok; string = error message to display
+
+function _setApiError(msg) {
+  _apiError = msg || null;
+  const el = document.getElementById('apiErrorBadge');
+  if (!el) return;
+  if (_apiError) {
+    el.textContent = '\u274C API Error: ' + _apiError;
+    el.classList.add('visible');
+  } else {
+    el.textContent = '';
+    el.classList.remove('visible');
+  }
+}
 
 function startRotation(totalPages) {
   if (SCREEN_LOCK || totalPages <= 1) return;
@@ -783,13 +809,26 @@ async function pollCampaign() {
       json = await resp.json();
     } else {
       // ── REAL API MODE ───────────────────────────────────────────────────────
-      // Requires phApi to be fully configured in Firebase settings
+      // Base URL is derived from the player's own origin — no manual config needed
       const phApi = _settings.phApi;
-      if (!phApi || !phApi.baseUrl || !phApi.authToken) return;
-      const token = await decryptToken(phApi.authToken);
-      const url   = `${phApi.baseUrl}/location-api/device/${DEVICE_UDID}/campaign_data`;
-      const resp  = await fetch(url, { headers: { accept: 'application/json', 'x-api-key': token } });
-      if (!resp.ok) { console.warn(`[Campaign] API returned HTTP ${resp.status}`); return; }
+      if (!phApi || !phApi.authToken) return;
+      const token   = await decryptToken(phApi.authToken);
+      const baseUrl = window.location.origin;
+      const url     = `${baseUrl}/location-api/device/${DEVICE_UDID}/campaign_data`;
+      let resp;
+      try {
+        resp = await fetch(url, { headers: { accept: 'application/json', 'x-api-key': token } });
+      } catch (fetchErr) {
+        _setApiError(`${baseUrl} \u2014 ${fetchErr.message}`);
+        console.warn('[Campaign] fetch failed:', fetchErr);
+        return;
+      }
+      if (!resp.ok) {
+        _setApiError(`${baseUrl} \u2014 HTTP ${resp.status}`);
+        console.warn(`[Campaign] API returned HTTP ${resp.status}`);
+        return;
+      }
+      _setApiError(null);
       json = await resp.json();
     }
 
@@ -832,6 +871,7 @@ async function pollCampaign() {
     }
   } catch (e) {
     console.warn('[Campaign] poll failed:', e);
+    _setApiError(window.location.origin + ' \u2014 ' + e.message);
   }
 }
 
@@ -1186,6 +1226,8 @@ document.addEventListener('DOMContentLoaded', () => {
     <h2>Loading…</h2>
   </div>
 </div>
+
+<div id="apiErrorBadge"></div>
 
 </body>
 </html>
