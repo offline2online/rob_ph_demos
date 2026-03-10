@@ -558,13 +558,21 @@
       line-height: 1.8; padding: 10px 14px; border-radius: 8px;
       max-width: 400px; word-break: break-all;
       box-shadow: 0 2px 20px rgba(0,0,0,0.6);
-      display: none; pointer-events: none;
+      display: none;
     }
     #debugPanel.visible { display: block; }
     #debugPanel b       { color: #fff; font-size: 12px; }
     #debugPanel .ok     { color: #2ecc71; }
     #debugPanel .warn   { color: #f39c12; }
     #debugPanel .err    { color: #e74c3c; }
+    #debugPanel button.env-btn {
+      display: inline-block; margin: 2px 3px 0 0;
+      padding: 3px 8px; border-radius: 4px; border: 1px solid #555;
+      background: #222; color: #aaa; font-family: 'Courier New', monospace;
+      font-size: 10px; cursor: pointer; line-height: 1.4;
+    }
+    #debugPanel button.env-btn:hover  { border-color: #888; color: #fff; }
+    #debugPanel button.env-btn.active { background: #1a4a2a; border-color: #2ecc71; color: #2ecc71; }
   </style>
 </head>
 <body>
@@ -751,7 +759,7 @@ let _dbgMatchCount = null;   // "N of M" string updated during render()
 let _dbgRawSkuKey  = null;   // which key name the API used ("SKUs","skus", or "none")
 let _dbgRawSkuVal  = null;   // raw array as received before validation
 
-const DBG_VERSION  = 'v3';
+const DBG_VERSION  = 'v4';
 
 function _setApiError(msg) {
   _apiError = msg || null;
@@ -772,22 +780,56 @@ function _updateDebugPanel() {
   if (!el) return;
   if (!DEBUG_MODE) { el.classList.remove('visible'); return; }
 
+  // ── Device UDID ────────────────────────────────────────────────────────────
   const deviceHtml = DEVICE_UDID
     ? `<span class="ok">✓ ${esc(DEVICE_UDID.length > 16 ? DEVICE_UDID.slice(0,16)+'…' : DEVICE_UDID)}</span>`
     : `<span class="err">✗ NOT SET — add ?device=UDID to URL</span>`;
 
-  const apiHtml = MOCK_API_FILE
+  // ── PH API status + active base URL ────────────────────────────────────────
+  const activeUrl = _activeEndpoint?.baseUrl || _loadPreferredBaseUrl() || null;
+  const urlLine   = (!MOCK_API_FILE && activeUrl)
+    ? `<br><span style="font-size:10px;color:#aaa">${esc(activeUrl)}</span>`
+    : '';
+  const apiStatusHtml = MOCK_API_FILE
     ? `<span class="ok">🧪 MOCK (${esc(MOCK_API_FILE === '1' ? 'mock-ph-api.json' : MOCK_API_FILE)})</span>`
     : (_apiError
         ? `<span class="err">✗ ${esc(_apiError)}</span>`
         : (DEVICE_UDID
             ? `<span class="ok">✓ Live API (polling every 5s)</span>`
             : `<span class="warn">⚠ No UDID — polling disabled</span>`));
+  const apiHtml = apiStatusHtml + urlLine;
 
+  // ── Environment switcher (only in live mode with >1 endpoint configured) ───
+  const endpoints = (!MOCK_API_FILE && Array.isArray(_settings.phApi?.endpoints))
+    ? _settings.phApi.endpoints : [];
+  const envBtns = endpoints.map(ep => {
+    let host = ep.baseUrl;
+    try { host = new URL(ep.baseUrl).hostname; } catch (_) {}
+    const isActive = ep.baseUrl === activeUrl;
+    const safeUrl  = ep.baseUrl.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+    return `<button class="env-btn${isActive ? ' active' : ''}" ` +
+           `onclick="window._switchEndpoint('${safeUrl}')">${isActive ? '✓ ' : ''}${esc(host)}</button>`;
+  }).join('');
+  const switcherHtml = endpoints.length > 1
+    ? `<div>Environment : ${envBtns}</div>`
+    : '';
+
+  // ── Poll time ──────────────────────────────────────────────────────────────
   const pollHtml = _dbgLastPoll
     ? `<span class="ok">${new Date(_dbgLastPoll).toLocaleTimeString()}</span>`
     : `<span class="warn">not yet</span>`;
 
+  // ── Store name (from PH API store_location.store_name) ────────────────────
+  const storeHtml = _storeName
+    ? `<span class="ok">"${esc(_storeName)}"</span>`
+    : `<span class="warn">none</span>`;
+
+  // ── Raw API SKU field ──────────────────────────────────────────────────────
+  const rawHtml = _dbgRawSkuKey
+    ? `<span class="ok">field="${esc(_dbgRawSkuKey)}" → [${(_dbgRawSkuVal||[]).map(s=>esc(s)).join(', ')}]</span>`
+    : (DEVICE_UDID && _dbgLastPoll ? `<span class="warn">no skus/SKUs in response</span>` : `<span class="warn">—</span>`);
+
+  // ── Parsed campaign data ───────────────────────────────────────────────────
   const nameHtml = _campaignFirstName
     ? `<span class="ok">"${esc(_campaignFirstName)}"</span>`
     : `<span class="warn">none</span>`;
@@ -800,15 +842,13 @@ function _updateDebugPanel() {
     ? `<span class="ok">${esc(_dbgMatchCount)}</span>`
     : `<span class="warn">—</span>`;
 
-  const rawHtml = _dbgRawSkuKey
-    ? `<span class="ok">field="${esc(_dbgRawSkuKey)}" → [${(_dbgRawSkuVal||[]).map(s=>esc(s)).join(', ')}]</span>`
-    : (DEVICE_UDID && _dbgLastPoll ? `<span class="warn">no skus/SKUs in response</span>` : `<span class="warn">—</span>`);
-
   el.innerHTML =
     `<div><b>🛠 DEBUG MODE ${DBG_VERSION}</b></div>` +
     `<div>Device UDID : ${deviceHtml}</div>` +
     `<div>PH API      : ${apiHtml}</div>` +
+    switcherHtml +
     `<div>Last poll   : ${pollHtml}</div>` +
+    `<div>Store name  : ${storeHtml}</div>` +
     `<div>Raw API SKU : ${rawHtml}</div>` +
     `<div>First name  : ${nameHtml}</div>` +
     `<div>SKUs parsed : ${skuHtml}</div>` +
@@ -816,6 +856,13 @@ function _updateDebugPanel() {
 
   el.classList.add('visible');
 }
+
+// Exposed on window so debug-panel onclick attributes can call it from module scope
+window._switchEndpoint = function(baseUrl) {
+  _savePreferredBaseUrl(baseUrl);
+  _activeEndpoint = null;   // force re-probe on next poll
+  pollCampaign();           // immediate re-poll using the chosen environment
+};
 
 function startRotation(totalPages) {
   if (SCREEN_LOCK || totalPages <= 1) return;
