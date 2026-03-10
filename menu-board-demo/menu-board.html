@@ -549,6 +549,22 @@
       display: none; pointer-events: none;
     }
     #apiErrorBadge.visible { display: block; }
+
+    /* ── DEBUG PANEL (visible only with ?debug=1) ──── */
+    #debugPanel {
+      position: fixed; top: 12px; left: 12px; z-index: 9999;
+      background: rgba(0,0,0,0.88); color: #ccc;
+      font-family: 'Courier New', monospace; font-size: 11.5px; font-weight: 500;
+      line-height: 1.8; padding: 10px 14px; border-radius: 8px;
+      max-width: 400px; word-break: break-all;
+      box-shadow: 0 2px 20px rgba(0,0,0,0.6);
+      display: none; pointer-events: none;
+    }
+    #debugPanel.visible { display: block; }
+    #debugPanel b       { color: #fff; font-size: 12px; }
+    #debugPanel .ok     { color: #2ecc71; }
+    #debugPanel .warn   { color: #f39c12; }
+    #debugPanel .err    { color: #e74c3c; }
   </style>
 </head>
 <body>
@@ -619,6 +635,7 @@ const BRAND_ID = (urlParams.get('brand') || '').trim();
 // Mock API — set ?mockapi=1 to load ./mock-ph-api.json without real API credentials
 // or ?mockapi=custom.json to load a different local file. Requires ?device= to be set.
 const MOCK_API_FILE = urlParams.get('mockapi') || null;
+const DEBUG_MODE    = urlParams.get('debug') === '1';
 
 function getBrands() { return _brands; }
 
@@ -729,6 +746,8 @@ function buildNutrition(item) {
 let currentPage    = SCREEN_LOCK || 1;
 let rotationTimer  = null;
 let _apiError      = null;   // null = ok; string = error message to display
+let _dbgLastPoll   = null;   // timestamp of last completed poll() call
+let _dbgMatchCount = null;   // "N of M" string updated during render()
 
 function _setApiError(msg) {
   _apiError = msg || null;
@@ -741,6 +760,52 @@ function _setApiError(msg) {
     el.textContent = '';
     el.classList.remove('visible');
   }
+  _updateDebugPanel();
+}
+
+function _updateDebugPanel() {
+  const el = document.getElementById('debugPanel');
+  if (!el) return;
+  if (!DEBUG_MODE) { el.classList.remove('visible'); return; }
+
+  const deviceHtml = DEVICE_UDID
+    ? `<span class="ok">✓ ${esc(DEVICE_UDID.length > 16 ? DEVICE_UDID.slice(0,16)+'…' : DEVICE_UDID)}</span>`
+    : `<span class="err">✗ NOT SET — add ?device=UDID to URL</span>`;
+
+  const apiHtml = MOCK_API_FILE
+    ? `<span class="ok">🧪 MOCK (${esc(MOCK_API_FILE === '1' ? 'mock-ph-api.json' : MOCK_API_FILE)})</span>`
+    : (_apiError
+        ? `<span class="err">✗ ${esc(_apiError)}</span>`
+        : (DEVICE_UDID
+            ? `<span class="ok">✓ Live API (polling every 5s)</span>`
+            : `<span class="warn">⚠ No UDID — polling disabled</span>`));
+
+  const pollHtml = _dbgLastPoll
+    ? `<span class="ok">${new Date(_dbgLastPoll).toLocaleTimeString()}</span>`
+    : `<span class="warn">not yet</span>`;
+
+  const nameHtml = _campaignFirstName
+    ? `<span class="ok">"${esc(_campaignFirstName)}"</span>`
+    : `<span class="warn">none</span>`;
+
+  const skuHtml = (_campaignSkus && _campaignSkus.length)
+    ? `<span class="ok">[${_campaignSkus.map(s => esc(s)).join(', ')}]</span>`
+    : `<span class="warn">none — showing default menu</span>`;
+
+  const matchHtml = _dbgMatchCount !== null
+    ? `<span class="ok">${esc(_dbgMatchCount)}</span>`
+    : `<span class="warn">—</span>`;
+
+  el.innerHTML =
+    `<div><b>🛠 DEBUG MODE</b></div>` +
+    `<div>Device UDID : ${deviceHtml}</div>` +
+    `<div>PH API      : ${apiHtml}</div>` +
+    `<div>Last poll   : ${pollHtml}</div>` +
+    `<div>First name  : ${nameHtml}</div>` +
+    `<div>SKUs        : ${skuHtml}</div>` +
+    `<div>Matched     : ${matchHtml}</div>`;
+
+  el.classList.add('visible');
 }
 
 function startRotation(totalPages) {
@@ -925,11 +990,14 @@ async function pollCampaign() {
     const nameChanged      = firstName !== _campaignFirstName;
     const storeNameChanged = storeName !== _storeName;
 
+    _dbgLastPoll = Date.now();
     if (skusChanged || nameChanged || storeNameChanged) {
       _campaignSkus      = newSkus;
       _campaignFirstName = firstName;
       _storeName         = storeName;
       render();
+    } else {
+      _updateDebugPanel();   // refresh Last poll time even when nothing changed
     }
   } catch (e) {
     console.warn('[Campaign] poll failed:', e);
@@ -1027,7 +1095,11 @@ function render() {
       campaignFiltered = displayFiltered.filter(i => skuMatch(i));
     }
     console.log('[Render] Campaign SKUs:', _campaignSkus, '| Matched', campaignFiltered.length, 'of', items.length, 'items');
+    _dbgMatchCount = `${campaignFiltered.length} of ${items.length} items`;
+  } else {
+    _dbgMatchCount = null;
   }
+  _updateDebugPanel();
 
   // Sort: in-stock first, then by category, then name
   campaignFiltered.sort((a, b) => {
@@ -1301,6 +1373,7 @@ document.addEventListener('DOMContentLoaded', () => {
 </div>
 
 <div id="apiErrorBadge"></div>
+<div id="debugPanel"></div>
 
 </body>
 </html>
