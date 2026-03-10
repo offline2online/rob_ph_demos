@@ -28,7 +28,7 @@
       "events": null,
       "product_holdings": null,
       "purchase_history": null,
-      "SKUs": ["SBX-HC-001", "SBX-HC-002", "SBX-HC-003"],
+      "SKUs": ["SBX-SP-001", "SBX-SP-002", "SBX-SP-003"],
       "platform_data": ""
     },
     "queueing_appointment": {
