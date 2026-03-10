@@ -748,6 +748,10 @@ let rotationTimer  = null;
 let _apiError      = null;   // null = ok; string = error message to display
 let _dbgLastPoll   = null;   // timestamp of last completed poll() call
 let _dbgMatchCount = null;   // "N of M" string updated during render()
+let _dbgRawSkuKey  = null;   // which key name the API used ("SKUs","skus", or "none")
+let _dbgRawSkuVal  = null;   // raw array as received before validation
+
+const DBG_VERSION  = 'v3';
 
 function _setApiError(msg) {
   _apiError = msg || null;
@@ -796,13 +800,18 @@ function _updateDebugPanel() {
     ? `<span class="ok">${esc(_dbgMatchCount)}</span>`
     : `<span class="warn">—</span>`;
 
+  const rawHtml = _dbgRawSkuKey
+    ? `<span class="ok">field="${esc(_dbgRawSkuKey)}" → [${(_dbgRawSkuVal||[]).map(s=>esc(s)).join(', ')}]</span>`
+    : (DEVICE_UDID && _dbgLastPoll ? `<span class="warn">no skus/SKUs in response</span>` : `<span class="warn">—</span>`);
+
   el.innerHTML =
-    `<div><b>🛠 DEBUG MODE</b></div>` +
+    `<div><b>🛠 DEBUG MODE ${DBG_VERSION}</b></div>` +
     `<div>Device UDID : ${deviceHtml}</div>` +
     `<div>PH API      : ${apiHtml}</div>` +
     `<div>Last poll   : ${pollHtml}</div>` +
+    `<div>Raw API SKU : ${rawHtml}</div>` +
     `<div>First name  : ${nameHtml}</div>` +
-    `<div>SKUs        : ${skuHtml}</div>` +
+    `<div>SKUs parsed : ${skuHtml}</div>` +
     `<div>Matched     : ${matchHtml}</div>`;
 
   el.classList.add('visible');
@@ -975,11 +984,14 @@ async function pollCampaign() {
     // Resolve SKUs: try visitor_customer first, then data root
     // Filter out empty/blank strings that can appear in sparse API payloads
     // API may return field as "SKUs" (prompt schema) or "skus" (actual response) — handle both
-    const rawSkus =
-      (Array.isArray(vc?.SKUs) ? vc.SKUs : null) ||
-      (Array.isArray(vc?.skus) ? vc.skus : null) ||
-      (Array.isArray(d?.SKUs)  ? d.SKUs  : null) ||
-      (Array.isArray(d?.skus)  ? d.skus  : null);
+    // Record the raw key/value for the debug panel
+    if      (Array.isArray(vc?.SKUs)) { _dbgRawSkuKey = 'vc.SKUs'; _dbgRawSkuVal = vc.SKUs; }
+    else if (Array.isArray(vc?.skus)) { _dbgRawSkuKey = 'vc.skus'; _dbgRawSkuVal = vc.skus; }
+    else if (Array.isArray(d?.SKUs))  { _dbgRawSkuKey = 'd.SKUs';  _dbgRawSkuVal = d.SKUs;  }
+    else if (Array.isArray(d?.skus))  { _dbgRawSkuKey = 'd.skus';  _dbgRawSkuVal = d.skus;  }
+    else                              { _dbgRawSkuKey = null;       _dbgRawSkuVal = null;     }
+
+    const rawSkus = _dbgRawSkuVal;
     const validSkus = rawSkus
       ? rawSkus.filter(e => typeof e === 'string' && e.trim() !== '')
       : null;
