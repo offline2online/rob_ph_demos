@@ -759,6 +759,20 @@ let _dbgMatchCount = null;   // "N of M" string updated during render()
 let _dbgRawSkuKey  = null;   // which key name the API used ("SKUs","skus", or "none")
 let _dbgRawSkuVal  = null;   // raw array as received before validation
 
+// ── FIRESTORE RENDER CACHE ────────────────────────────────────────────────────
+// Fingerprints of last-rendered data — render() is only called when data changes
+let _itemsHash    = null;
+let _brandsHash   = null;
+let _settingsHash = null;
+let _stockHash    = null;
+
+// General fingerprint — catches any field change; used for small docs (brands, settings, stock)
+function _fp(obj) { try { return JSON.stringify(obj); } catch (_) { return String(Date.now()); } }
+// Lightweight per-item fingerprint — avoids stringifying large image URLs in the items collection
+function _itemsFp(items) {
+  return items.map(i => `${i.sku||''}|${i.active}|${i.updatedAt||i.createdAt||''}|${i.price||''}`).join('~');
+}
+
 const DBG_VERSION  = 'v4';
 
 function _setApiError(msg) {
@@ -1069,12 +1083,20 @@ async function pollCampaign() {
 
 // ── FIRESTORE LISTENERS ──────────────────────────────────────────────────────
 onSnapshot(collection(db, ITEMS_COLL), snap => {
-  _items = snap.docs.map(d => d.data()).sort((a, b) => (a.createdAt || '').localeCompare(b.createdAt || ''));
+  const newItems = snap.docs.map(d => d.data()).sort((a, b) => (a.createdAt || '').localeCompare(b.createdAt || ''));
+  const h = _itemsFp(newItems);
+  if (h === _itemsHash) return;   // data unchanged — skip render to preserve rotation timer
+  _itemsHash = h;
+  _items = newItems;
   render();
 });
 
 onSnapshot(doc(db, MB, 'brands'), snap => {
-  _brands = snap.exists() ? (snap.data().data || []) : [];
+  const newBrands = snap.exists() ? (snap.data().data || []) : [];
+  const h = _fp(newBrands);
+  if (h === _brandsHash) return;  // data unchanged — skip render
+  _brandsHash = h;
+  _brands = newBrands;
   const brand = getActiveBrand();
   if (MENU_TYPE && MENU_META[MENU_TYPE]) {
     document.title = MENU_META[MENU_TYPE].label + (brand ? ' \u2014 ' + brand.name : ' \u2014 ' + STORE_CODE);
@@ -1083,12 +1105,20 @@ onSnapshot(doc(db, MB, 'brands'), snap => {
 });
 
 onSnapshot(doc(db, MB, 'settings'), snap => {
-  _settings = snap.exists() ? snap.data() : { restaurantName: 'Our Restaurant', currency: '$', logo: '', logoRight: '' };
-  render();
-  // Trigger an immediate campaign poll when settings first load (or change) so we
-  // don't have to wait up to 30 s for the interval to fire.
-  if (DEVICE_UDID) {
-    _activeEndpoint = null;  // force re-probe with new settings
+  const newSettings = snap.exists() ? snap.data() : { restaurantName: 'Our Restaurant', currency: '$', logo: '', logoRight: '' };
+  // Fix 1: only reset active endpoint when the endpoint list itself changes (preserves manual env selection)
+  const endpointsChanged = JSON.stringify(_settings?.phApi?.endpoints)
+                        !== JSON.stringify(newSettings?.phApi?.endpoints);
+  const h = _fp(newSettings);
+  _settings = newSettings;
+  // Fix 2: only re-render when settings data actually changed
+  if (h !== _settingsHash) {
+    _settingsHash = h;
+    render();
+  }
+  // Only force re-probe when endpoint config genuinely changed — not on every snapshot
+  if (DEVICE_UDID && endpointsChanged) {
+    _activeEndpoint = null;
     pollCampaign();
   }
 });
@@ -1406,7 +1436,11 @@ document.addEventListener('DOMContentLoaded', () => {
   // Per-store stock listener — only when a store code is present
   if (STORE_CODE) {
     onSnapshot(doc(db, STOCK_COLL, STORE_CODE), snap => {
-      _stock = snap.exists() ? snap.data() : {};
+      const newStock = snap.exists() ? snap.data() : {};
+      const h = _fp(newStock);
+      if (h === _stockHash) return;   // data unchanged — skip render
+      _stockHash = h;
+      _stock = newStock;
       render();
     });
   }
