@@ -284,6 +284,8 @@ async function decryptToken(b64) {
   return plain;
 }
 
+let _storeName = null;  // from PH API store_location.store_name
+
 async function pollStoreName() {
   if (!DEVICE_UDID) return;
   const phApi = _settings.phApi;
@@ -294,14 +296,21 @@ async function pollStoreName() {
     const resp  = await fetch(url, { headers: { accept: 'application/json', 'x-api-key': token } });
     if (!resp.ok) { console.warn(`[StoreData] API returned HTTP ${resp.status}`); return; }
     const json  = await resp.json();
-    const name  = (json?.data?.store_location?.store_name || '').trim();
-    if (name) document.getElementById('headerStoreName').textContent = name;
+    const name  = (json?.data?.store_location?.store_name || '').trim() || null;
+    if (name !== _storeName) {
+      _storeName = name;
+      const el = document.getElementById('headerStoreName');
+      if (el) el.textContent = _storeName || '';
+    }
   } catch (e) {
     console.warn('[StoreData] poll failed:', e);
   }
 }
 
-if (DEVICE_UDID) _deriveKey();  // warm up key derivation immediately
+if (DEVICE_UDID) {
+  _deriveKey();  // warm up key derivation immediately
+  setInterval(pollStoreName, 5000);
+}
 
 onSnapshot(doc(db, MB, 'settings'), snap => {
   _settings = snap.exists() ? snap.data() : {};
