@@ -226,9 +226,14 @@
 // ═══════════════════════════════════════════════════════════════
 //  CONFIG — read from URL params (injected by PH platform)
 // ═══════════════════════════════════════════════════════════════
+
+// ▼ UPDATE THIS after deploying the session server to Railway ▼
+const WS_DEFAULT = 'wss://REPLACE-WITH-RAILWAY-URL.railway.app/ws';
+// ▲ ─────────────────────────────────────────────────────────── ▲
+
 const params     = new URLSearchParams(location.search);
 const SESSION_ID = params.get('session')     || '';     // provided by PH platform
-const WS_SERVER  = params.get('ws')          || null;   // e.g. wss://ws.personalisationhub.com
+const WS_SERVER  = params.get('ws')          || WS_DEFAULT;
 const STORE_CODE = params.get('store')       || 'DEMO';
 const DEVICE_UID = params.get('device')      || 'DISPLAY-001';
 const ENDED_URL  = params.get('endedUrl')    || (location.origin + location.pathname.replace('display', 'ended'));
@@ -830,9 +835,11 @@ function drawIdleDemo() {
 let ws = null;
 let mobileWs = null; // proxy for sending to mobile
 
+const WS_READY = !WS_SERVER.includes('REPLACE-WITH-RAILWAY-URL');
+
 function connectWebSocket() {
-  if (!WS_SERVER) {
-    console.log('[PH Display] No WS_SERVER configured. Running in demo mode.');
+  if (!WS_READY) {
+    console.log('[PH Display] WS_DEFAULT not configured. Running in BroadcastChannel demo mode.');
     return;
   }
   try {
@@ -942,8 +949,8 @@ connectWebSocket();
 showIdle();
 requestAnimationFrame(loop);
 
-// For demo: listen on BroadcastChannel when no WS server
-if (!WS_SERVER) {
+// For demo: listen on BroadcastChannel when WS server not yet configured
+if (!WS_READY) {
   const bc = new BroadcastChannel('ph-game-' + SESSION_ID);
   bc.onmessage = (ev) => {
     const msg = ev.data;

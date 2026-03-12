@@ -395,9 +395,15 @@
 // ═══════════════════════════════════════════════════════════════
 //  CONFIG — from URL params (injected by QR code scan)
 // ═══════════════════════════════════════════════════════════════
+
+// ▼ UPDATE THIS after deploying the session server to Railway ▼
+const WS_DEFAULT = 'wss://REPLACE-WITH-RAILWAY-URL.railway.app/ws';
+// ▲ ─────────────────────────────────────────────────────────── ▲
+
 const params     = new URLSearchParams(location.search);
 const SESSION_ID = params.get('session') || '';
-const WS_SERVER  = params.get('ws')      || null;
+const WS_SERVER  = params.get('ws')      || WS_DEFAULT;
+const WS_READY   = !WS_SERVER.includes('REPLACE-WITH-RAILWAY-URL');
 const ENDED_URL  = params.get('endedUrl')|| '';
 const STORE_CODE = params.get('store')   || 'DEMO';
 
@@ -442,7 +448,7 @@ function onMessage(msg) {
 
 // WebSocket mode
 function connectWS() {
-  if (!WS_SERVER || !SESSION_ID) return;
+  if (!WS_READY || !SESSION_ID) return;
   ws = new WebSocket(WS_SERVER);
   ws.onopen = () => {
     ws.send(JSON.stringify({ type: 'register', role: 'mobile', sessionId: SESSION_ID }));
@@ -472,7 +478,7 @@ function connectDemo() {
   }, 600);
 }
 
-if (WS_SERVER) {
+if (WS_READY) {
   connectWS();
 } else {
   connectDemo();
