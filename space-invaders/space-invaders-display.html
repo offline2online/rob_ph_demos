@@ -4,6 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Space Invaders — Personalisation Hub Gaming Experience</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
 
@@ -67,7 +68,7 @@
       margin-bottom: 5%;
     }
 
-    .waiting-prompt {
+    .scan-prompt {
       color: #ffffff;
       font-size: clamp(9px, 1.8vw, 16px);
       letter-spacing: 0.15em;
@@ -79,6 +80,22 @@
     @keyframes blink {
       0%, 100% { opacity: 1; }
       50% { opacity: 0.2; }
+    }
+
+    #qr-container {
+      background: #fff;
+      padding: 14px;
+      border-radius: 8px;
+      margin-bottom: 4%;
+      box-shadow: 0 0 30px rgba(0,255,0,0.4), 0 0 60px rgba(0,255,0,0.15);
+    }
+
+    .session-code {
+      color: #169bc2;
+      font-size: clamp(9px, 1.6vw, 14px);
+      letter-spacing: 0.2em;
+      text-align: center;
+      margin-top: 2%;
     }
 
     .idle-score-row {
@@ -195,7 +212,9 @@
     <div class="idle-title">★ SPACE INVADERS ★</div>
     <div class="idle-subtitle">PERSONALISATION HUB GAMING EXPERIENCE</div>
     <canvas id="idle-canvas"></canvas>
-    <div class="waiting-prompt">▼ WAITING FOR PLAYER ▼</div>
+    <div class="scan-prompt">▼ SCAN QR WITH YOUR PHONE TO PLAY ▼</div>
+    <div id="qr-container"><div id="qrcode"></div></div>
+    <div class="session-code" id="session-display">SESSION: ——</div>
     <div class="idle-score-row">
       <div class="idle-score-col">
         <span class="idle-score-val" id="hi-score-display">0000</span>
@@ -231,11 +250,17 @@
 const WS_DEFAULT = 'wss://REPLACE-WITH-RAILWAY-URL.railway.app/ws';
 // ▲ ─────────────────────────────────────────────────────────── ▲
 
+function generateSessionId() {
+  return Math.random().toString(36).substring(2, 10).toUpperCase();
+}
+
 const params     = new URLSearchParams(location.search);
-const SESSION_ID = params.get('session')     || '';     // provided by PH platform
+const SESSION_ID = params.get('session')     || generateSessionId();
 const WS_SERVER  = params.get('ws')          || WS_DEFAULT;
+const WS_READY   = !WS_SERVER.includes('REPLACE-WITH-RAILWAY-URL');
 const STORE_CODE = params.get('store')       || 'DEMO';
 const DEVICE_UID = params.get('device')      || 'DISPLAY-001';
+const MOBILE_BASE= params.get('mobileUrl')   || (location.origin + location.pathname.replace('display', 'mobile'));
 const ENDED_URL  = params.get('endedUrl')    || (location.origin + location.pathname.replace('display', 'ended'));
 
 // ═══════════════════════════════════════════════════════════════
@@ -835,8 +860,6 @@ function drawIdleDemo() {
 let ws = null;
 let mobileWs = null; // proxy for sending to mobile
 
-const WS_READY = !WS_SERVER.includes('REPLACE-WITH-RAILWAY-URL');
-
 function connectWebSocket() {
   if (!WS_READY) {
     console.log('[PH Display] WS_DEFAULT not configured. Running in BroadcastChannel demo mode.');
@@ -893,6 +916,43 @@ function handleInput(msg) {
 }
 
 // ═══════════════════════════════════════════════════════════════
+//  QR CODE GENERATION
+// ═══════════════════════════════════════════════════════════════
+function buildMobileUrl() {
+  const p = new URLSearchParams();
+  p.set('session', SESSION_ID);
+  if (WS_READY) p.set('ws', WS_SERVER);
+  p.set('store', STORE_CODE);
+  p.set('endedUrl', ENDED_URL);
+  return MOBILE_BASE + '?' + p.toString();
+}
+
+function generateQR() {
+  const mobileUrl = buildMobileUrl();
+  document.getElementById('session-display').textContent = 'SESSION: ' + SESSION_ID;
+
+  const vw = window.innerWidth, vh = window.innerHeight;
+  const scale = Math.min(vw / LW, vh / LH);
+  const qrSize = Math.round(Math.min(160, 160 * scale));
+
+  document.getElementById('qrcode').innerHTML = '';
+  try {
+    new QRCode(document.getElementById('qrcode'), {
+      text: mobileUrl,
+      width:  qrSize,
+      height: qrSize,
+      colorDark:  '#000000',
+      colorLight: '#ffffff',
+      correctLevel: QRCode.CorrectLevel.M,
+    });
+  } catch(e) {
+    document.getElementById('qrcode').textContent = mobileUrl;
+    document.getElementById('qrcode').style.cssText = 'color:#000;font-size:9px;word-break:break-all;max-width:160px';
+  }
+  console.log('[PH Display] Mobile URL:', mobileUrl);
+}
+
+// ═══════════════════════════════════════════════════════════════
 //  STATE TRANSITIONS
 // ═══════════════════════════════════════════════════════════════
 function showIdle() {
@@ -901,6 +961,7 @@ function showIdle() {
   document.getElementById('connecting-overlay').classList.add('hidden');
   document.getElementById('gameover-overlay').classList.add('hidden');
   document.getElementById('hi-score-display').textContent = String(hiScore).padStart(4, '0');
+  generateQR();
 }
 
 function showConnecting() {
