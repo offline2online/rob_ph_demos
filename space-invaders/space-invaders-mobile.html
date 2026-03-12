@@ -396,9 +396,7 @@
 //  CONFIG — from URL params (injected by QR code scan)
 // ═══════════════════════════════════════════════════════════════
 
-// ▼ UPDATE THIS after deploying the session server to Railway ▼
-const WS_DEFAULT = 'wss://REPLACE-WITH-RAILWAY-URL.railway.app/ws';
-// ▲ ─────────────────────────────────────────────────────────── ▲
+const WS_DEFAULT = 'wss://robphdemos-production.up.railway.app/ws';
 
 const params     = new URLSearchParams(location.search);
 const SESSION_ID = params.get('session') || '';

@@ -246,9 +246,7 @@
 //  CONFIG — read from URL params (injected by PH platform)
 // ═══════════════════════════════════════════════════════════════
 
-// ▼ UPDATE THIS after deploying the session server to Railway ▼
-const WS_DEFAULT = 'wss://REPLACE-WITH-RAILWAY-URL.railway.app/ws';
-// ▲ ─────────────────────────────────────────────────────────── ▲
+const WS_DEFAULT = 'wss://robphdemos-production.up.railway.app/ws';
 
 function generateSessionId() {
   return Math.random().toString(36).substring(2, 10).toUpperCase();
