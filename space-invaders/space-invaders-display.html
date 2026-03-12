@@ -1,0 +1,1033 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Space Invaders — Personalisation Hub Gaming Experience</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      background: #000;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 100vw;
+      height: 100vh;
+      overflow: hidden;
+      font-family: 'Courier New', Courier, monospace;
+    }
+
+    #wrapper {
+      position: relative;
+      background: #000;
+    }
+
+    canvas {
+      display: block;
+      image-rendering: pixelated;
+    }
+
+    /* ── IDLE OVERLAY ─────────────────────────────────────── */
+    #idle-overlay {
+      position: absolute;
+      top: 0; left: 0; right: 0; bottom: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: flex-start;
+      background: #000;
+      z-index: 20;
+      padding-top: 6%;
+    }
+
+    #idle-overlay.hidden { display: none; }
+
+    .idle-title {
+      color: #00ff00;
+      font-size: clamp(20px, 4.5vw, 42px);
+      font-weight: bold;
+      letter-spacing: 0.12em;
+      text-align: center;
+      text-shadow: 0 0 20px #00ff00, 0 0 40px #00cc00;
+      margin-bottom: 2%;
+    }
+
+    .idle-subtitle {
+      color: #ffffff;
+      font-size: clamp(10px, 2vw, 18px);
+      letter-spacing: 0.2em;
+      text-align: center;
+      opacity: 0.8;
+      margin-bottom: 5%;
+    }
+
+    #idle-canvas {
+      display: block;
+      margin-bottom: 5%;
+    }
+
+    .scan-prompt {
+      color: #ffffff;
+      font-size: clamp(9px, 1.8vw, 16px);
+      letter-spacing: 0.15em;
+      text-align: center;
+      margin-bottom: 4%;
+      animation: blink 1.2s ease-in-out infinite;
+    }
+
+    @keyframes blink {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.2; }
+    }
+
+    #qr-container {
+      background: #fff;
+      padding: 14px;
+      border-radius: 8px;
+      margin-bottom: 4%;
+      box-shadow: 0 0 30px rgba(0,255,0,0.4), 0 0 60px rgba(0,255,0,0.15);
+    }
+
+    .session-code {
+      color: #169bc2;
+      font-size: clamp(9px, 1.6vw, 14px);
+      letter-spacing: 0.2em;
+      text-align: center;
+      margin-top: 2%;
+    }
+
+    .idle-score-row {
+      display: flex;
+      gap: 8%;
+      color: #fff;
+      font-size: clamp(8px, 1.4vw, 12px);
+      letter-spacing: 0.1em;
+      margin-top: 2%;
+    }
+
+    .idle-score-col { text-align: center; }
+    .idle-score-val { color: #00ff00; font-size: 1.5em; display: block; }
+
+    /* ── CONNECTING OVERLAY ───────────────────────────────── */
+    #connecting-overlay {
+      position: absolute;
+      top: 0; left: 0; right: 0; bottom: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      background: rgba(0,0,0,0.92);
+      z-index: 20;
+    }
+
+    #connecting-overlay.hidden { display: none; }
+
+    .connecting-text {
+      color: #00ff00;
+      font-size: clamp(14px, 2.8vw, 28px);
+      letter-spacing: 0.15em;
+      animation: blink 0.8s linear infinite;
+      text-align: center;
+      text-shadow: 0 0 10px #00ff00;
+    }
+
+    /* ── GAME OVER OVERLAY ────────────────────────────────── */
+    #gameover-overlay {
+      position: absolute;
+      top: 0; left: 0; right: 0; bottom: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      background: rgba(0,0,0,0.88);
+      z-index: 20;
+    }
+
+    #gameover-overlay.hidden { display: none; }
+
+    .gameover-title {
+      color: #ff0000;
+      font-size: clamp(24px, 5.5vw, 56px);
+      font-weight: bold;
+      letter-spacing: 0.15em;
+      text-shadow: 0 0 20px #ff0000, 0 0 40px #cc0000;
+      margin-bottom: 4%;
+      text-align: center;
+    }
+
+    .gameover-score {
+      color: #ffffff;
+      font-size: clamp(14px, 3vw, 28px);
+      letter-spacing: 0.1em;
+      margin-bottom: 2%;
+      text-align: center;
+    }
+
+    .gameover-score span {
+      color: #ffcc00;
+      font-size: 1.4em;
+    }
+
+    .gameover-hi {
+      color: #00ff00;
+      font-size: clamp(10px, 2vw, 18px);
+      letter-spacing: 0.1em;
+      margin-bottom: 6%;
+      text-align: center;
+    }
+
+    .gameover-countdown {
+      color: rgba(255,255,255,0.5);
+      font-size: clamp(9px, 1.6vw, 14px);
+      letter-spacing: 0.15em;
+      text-align: center;
+    }
+
+    /* scanline effect */
+    #wrapper::after {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: repeating-linear-gradient(
+        0deg,
+        rgba(0,0,0,0.07) 0px,
+        rgba(0,0,0,0.07) 1px,
+        transparent 1px,
+        transparent 3px
+      );
+      pointer-events: none;
+      z-index: 100;
+    }
+  </style>
+</head>
+<body>
+<div id="wrapper">
+  <!-- Main game canvas -->
+  <canvas id="gameCanvas"></canvas>
+
+  <!-- IDLE: shown between games -->
+  <div id="idle-overlay">
+    <div class="idle-title">★ SPACE INVADERS ★</div>
+    <div class="idle-subtitle">PERSONALISATION HUB GAMING EXPERIENCE</div>
+    <canvas id="idle-canvas"></canvas>
+    <div class="scan-prompt">▼ SCAN QR WITH YOUR PHONE TO PLAY ▼</div>
+    <div id="qr-container"><div id="qrcode"></div></div>
+    <div class="session-code" id="session-display">SESSION: ——</div>
+    <div class="idle-score-row">
+      <div class="idle-score-col">
+        <span class="idle-score-val" id="hi-score-display">0000</span>
+        HIGH SCORE
+      </div>
+      <div class="idle-score-col">
+        <span class="idle-score-val">1</span>
+        CREDIT
+      </div>
+    </div>
+  </div>
+
+  <!-- CONNECTING: player scanned, waiting for WS -->
+  <div id="connecting-overlay" class="hidden">
+    <div class="connecting-text">PLAYER CONNECTED<br><br>GET READY…</div>
+  </div>
+
+  <!-- GAME OVER -->
+  <div id="gameover-overlay" class="hidden">
+    <div class="gameover-title">GAME OVER</div>
+    <div class="gameover-score">SCORE <span id="final-score">0000</span></div>
+    <div class="gameover-hi" id="new-hi-msg"></div>
+    <div class="gameover-countdown" id="go-countdown">RETURNING IN 10…</div>
+  </div>
+</div>
+
+<script>
+// ═══════════════════════════════════════════════════════════════
+//  CONFIG — read from URL params (injected by PH platform)
+// ═══════════════════════════════════════════════════════════════
+const params     = new URLSearchParams(location.search);
+const WS_SERVER  = params.get('ws')          || null;   // e.g. wss://ws.personalisationhub.com
+const STORE_CODE = params.get('store')       || 'DEMO';
+const DEVICE_UID = params.get('device')      || 'DISPLAY-001';
+const MOBILE_BASE= params.get('mobileUrl')   || (location.origin + location.pathname.replace('display', 'mobile'));
+const ENDED_URL  = params.get('endedUrl')    || (location.origin + location.pathname.replace('display', 'ended'));
+
+// ═══════════════════════════════════════════════════════════════
+//  CANVAS SETUP (9:16 portrait, logical 540×960)
+// ═══════════════════════════════════════════════════════════════
+const LW = 540, LH = 960;   // logical dimensions
+const canvas  = document.getElementById('gameCanvas');
+const ctx     = canvas.getContext('2d');
+const wrapper = document.getElementById('wrapper');
+
+function resizeCanvas() {
+  const vw = window.innerWidth, vh = window.innerHeight;
+  const scale = Math.min(vw / LW, vh / LH);
+  const cw = Math.round(LW * scale), ch = Math.round(LH * scale);
+  canvas.width  = LW; canvas.height = LH;
+  canvas.style.width  = cw + 'px';
+  canvas.style.height = ch + 'px';
+  wrapper.style.width  = cw + 'px';
+  wrapper.style.height = ch + 'px';
+}
+resizeCanvas();
+window.addEventListener('resize', resizeCanvas);
+
+// ═══════════════════════════════════════════════════════════════
+//  PIXEL ART SPRITES
+// ═══════════════════════════════════════════════════════════════
+const P = 4; // base pixel size
+
+const SPRITES = {
+  squidA: [
+    [0,0,0,1,0,0,0,0,1,0,0,0],
+    [0,0,0,0,1,0,0,1,0,0,0,0],
+    [0,0,0,1,1,1,1,1,1,0,0,0],
+    [0,0,1,1,0,1,1,0,1,1,0,0],
+    [0,1,1,1,1,1,1,1,1,1,1,0],
+    [0,1,0,1,1,1,1,1,1,0,1,0],
+    [0,1,0,1,0,0,0,0,1,0,1,0],
+    [0,0,0,0,1,1,1,1,0,0,0,0],
+  ],
+  squidB: [
+    [0,0,0,1,0,0,0,0,1,0,0,0],
+    [1,0,0,0,1,0,0,1,0,0,0,1],
+    [1,0,0,1,1,1,1,1,1,0,0,1],
+    [1,0,1,1,0,1,1,0,1,1,0,1],
+    [0,1,1,1,1,1,1,1,1,1,1,0],
+    [0,0,1,1,1,1,1,1,1,1,0,0],
+    [0,0,1,0,0,0,0,0,0,1,0,0],
+    [0,1,0,0,0,0,0,0,0,0,1,0],
+  ],
+  crabA: [
+    [0,0,1,0,0,0,0,0,1,0,0],
+    [0,0,0,1,0,0,0,1,0,0,0],
+    [0,0,1,1,1,1,1,1,1,0,0],
+    [0,1,1,0,1,1,1,0,1,1,0],
+    [1,1,1,1,1,1,1,1,1,1,1],
+    [1,0,1,1,1,1,1,1,1,0,1],
+    [1,0,1,0,0,0,0,0,1,0,1],
+    [0,0,0,1,0,0,0,1,0,0,0],
+  ],
+  crabB: [
+    [0,0,1,0,0,0,0,0,1,0,0],
+    [1,0,0,1,0,0,0,1,0,0,1],
+    [1,0,1,1,1,1,1,1,1,0,1],
+    [1,1,1,0,1,1,1,0,1,1,1],
+    [1,1,1,1,1,1,1,1,1,1,1],
+    [0,1,1,1,1,1,1,1,1,1,0],
+    [0,0,1,0,0,0,0,0,1,0,0],
+    [0,1,0,0,0,0,0,0,0,1,0],
+  ],
+  octoA: [
+    [0,0,0,0,1,1,1,1,0,0,0,0],
+    [0,0,1,1,1,1,1,1,1,1,0,0],
+    [0,1,1,1,1,1,1,1,1,1,1,0],
+    [1,1,0,1,1,0,0,1,1,0,1,1],
+    [1,1,1,1,1,1,1,1,1,1,1,1],
+    [0,0,1,1,1,0,0,1,1,1,0,0],
+    [0,1,1,0,0,1,1,0,0,1,1,0],
+    [1,1,0,0,0,1,1,0,0,0,1,1],
+  ],
+  octoB: [
+    [0,0,0,0,1,1,1,1,0,0,0,0],
+    [0,0,1,1,1,1,1,1,1,1,0,0],
+    [0,1,1,1,1,1,1,1,1,1,1,0],
+    [1,1,0,1,1,0,0,1,1,0,1,1],
+    [1,1,1,1,1,1,1,1,1,1,1,1],
+    [0,0,0,1,1,0,0,1,1,0,0,0],
+    [0,0,1,0,0,1,1,0,0,1,0,0],
+    [0,1,0,0,0,1,1,0,0,0,1,0],
+  ],
+  player: [
+    [0,0,0,0,0,1,0,0,0,0,0],
+    [0,0,0,0,1,1,1,0,0,0,0],
+    [0,0,0,0,1,1,1,0,0,0,0],
+    [0,1,1,1,1,1,1,1,1,1,0],
+    [1,1,1,1,1,1,1,1,1,1,1],
+    [1,1,1,1,1,1,1,1,1,1,1],
+  ],
+  ufo: [
+    [0,0,0,1,1,1,1,1,1,0,0,0],
+    [0,1,1,1,1,1,1,1,1,1,1,0],
+    [1,1,0,1,0,1,1,0,1,0,1,1],
+    [1,1,1,1,1,1,1,1,1,1,1,1],
+    [0,0,1,1,1,0,0,1,1,1,0,0],
+    [0,0,0,1,0,0,0,0,1,0,0,0],
+  ],
+  explosion: [
+    [1,0,0,0,1,0,0,0,1],
+    [0,1,0,0,0,0,0,1,0],
+    [0,0,0,1,0,1,0,0,0],
+    [1,0,1,0,0,0,1,0,1],
+    [0,0,0,0,1,0,0,0,0],
+    [1,0,1,0,0,0,1,0,1],
+    [0,0,0,1,0,1,0,0,0],
+    [0,1,0,0,0,0,0,1,0],
+    [1,0,0,0,1,0,0,0,1],
+  ],
+};
+
+function drawSprite(ctx, sprite, x, y, color, px) {
+  ctx.fillStyle = color;
+  for (let r = 0; r < sprite.length; r++) {
+    for (let c = 0; c < sprite[r].length; c++) {
+      if (sprite[r][c]) ctx.fillRect(x + c*px, y + r*px, px, px);
+    }
+  }
+}
+
+function spriteW(s, px) { return (s[0]?.length || 0) * px; }
+function spriteH(s, px) { return s.length * px; }
+
+// ═══════════════════════════════════════════════════════════════
+//  GAME STATE
+// ═══════════════════════════════════════════════════════════════
+let gameState = 'IDLE'; // IDLE | CONNECTING | PLAYING | GAMEOVER
+
+const ROWS = 5, COLS = 10;
+const CELL_W = 52, CELL_H = 40;
+const GRID_LEFT = 20, GRID_TOP = 110;
+
+let hiScore = 0;
+let game = null;
+
+function createGame() {
+  const invaders = [];
+  for (let r = 0; r < ROWS; r++) {
+    for (let c = 0; c < COLS; c++) {
+      invaders.push({
+        row: r, col: c,
+        alive: true,
+        x: GRID_LEFT + c * CELL_W,
+        y: GRID_TOP  + r * CELL_H,
+        frame: 0,
+      });
+    }
+  }
+  return {
+    score: 0,
+    lives: 3,
+    level: 1,
+    invaders,
+    gridDx: 1,        // grid movement direction
+    gridMoveTimer: 0,
+    gridMoveInterval: 55,  // frames between invader steps
+    gridX: 0,         // cumulative grid offset
+    gridY: 0,
+    playerX: LW / 2 - 22,
+    playerY: 820,
+    playerDx: 0,
+    bullets: [],       // player bullets
+    enemyBullets: [],  // enemy bullets
+    explosions: [],    // { x, y, timer }
+    ufo: null,         // { x, dir, visible }
+    ufoTimer: 0,
+    playerHit: false,
+    playerHitTimer: 0,
+    shieldPixels: initShields(),
+    animFrame: 0,
+    frameCount: 0,
+    invaderBulletTimer: 0,
+    invaderBulletInterval: 90,
+    totalKilled: 0,
+    gameOver: false,
+    won: false,
+  };
+}
+
+function initShields() {
+  // 4 shields, each a grid of pixels that can be destroyed
+  const shields = [];
+  const shield_positions = [70, 180, 295, 405];
+  const SW = 52, SH = 28;
+  const pixel = 4;
+  for (const sx of shield_positions) {
+    const block = [];
+    // arc-top shape
+    for (let row = 0; row < SH/pixel; row++) {
+      for (let col = 0; col < SW/pixel; col++) {
+        const cx = col * pixel + sx;
+        const cy = row * pixel + 730;
+        // carve bottom-centre arch
+        const inArch = (row >= (SH/pixel - 2)) &&
+                       col >= 2 && col <= (SW/pixel - 3);
+        if (!inArch) block.push({ x: cx, y: cy, w: pixel, alive: true });
+      }
+    }
+    shields.push(block);
+  }
+  return shields.flat();
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  GAME LOOP
+// ═══════════════════════════════════════════════════════════════
+let lastTime = 0, animId = null;
+
+function loop(ts) {
+  const dt = ts - lastTime; lastTime = ts;
+  if (gameState === 'PLAYING' && game) {
+    update(dt);
+    render();
+  } else if (gameState === 'IDLE') {
+    drawIdleDemo();
+  }
+  animId = requestAnimationFrame(loop);
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  UPDATE
+// ═══════════════════════════════════════════════════════════════
+function update(dt) {
+  const g = game;
+  if (g.gameOver) return;
+  g.frameCount++;
+  g.animFrame = Math.floor(g.frameCount / 20) % 2;
+
+  // Player movement
+  const PLAYER_SPEED = 4;
+  g.playerX = Math.max(10, Math.min(LW - 54, g.playerX + g.playerDx * PLAYER_SPEED));
+
+  // Player hit cooldown
+  if (g.playerHit) {
+    g.playerHitTimer--;
+    if (g.playerHitTimer <= 0) g.playerHit = false;
+  }
+
+  // Move invader grid
+  g.gridMoveTimer++;
+  const aliveCount = g.invaders.filter(i => i.alive).length;
+  // Speed up as invaders are killed
+  const speedFactor = Math.max(4, g.gridMoveInterval - g.totalKilled * 2);
+  if (g.gridMoveTimer >= speedFactor) {
+    g.gridMoveTimer = 0;
+    moveInvaders(g);
+  }
+
+  // Move player bullets
+  g.bullets = g.bullets.filter(b => {
+    b.y -= 14;
+    return b.y > 0;
+  });
+
+  // Move enemy bullets
+  g.enemyBullets = g.enemyBullets.filter(b => {
+    b.y += 5;
+    return b.y < LH;
+  });
+
+  // Enemy shooting
+  g.invaderBulletTimer++;
+  if (g.invaderBulletTimer >= g.invaderBulletInterval && g.enemyBullets.length < 4) {
+    g.invaderBulletTimer = 0;
+    shootEnemyBullet(g);
+  }
+
+  // UFO
+  g.ufoTimer++;
+  if (!g.ufo && g.ufoTimer > 400) {
+    g.ufoTimer = 0;
+    g.ufo = { x: -60, dir: 1, alive: true, hit: false, hitTimer: 0 };
+  }
+  if (g.ufo) {
+    if (g.ufo.hit) {
+      g.ufo.hitTimer--;
+      if (g.ufo.hitTimer <= 0) g.ufo = null;
+    } else {
+      g.ufo.x += g.ufo.dir * 2.5;
+      if (g.ufo.x > LW + 60) g.ufo = null;
+    }
+  }
+
+  // Collision: player bullets vs invaders
+  for (const b of g.bullets) {
+    for (const inv of g.invaders) {
+      if (!inv.alive) continue;
+      const ix = GRID_LEFT + inv.col * CELL_W + g.gridX + 6;
+      const iy = GRID_TOP  + inv.row * CELL_H + g.gridY + 4;
+      const iw = inv.row === 0 ? 48 : inv.row <= 2 ? 44 : 48;
+      const ih = 32;
+      if (b.x > ix && b.x < ix + iw && b.y > iy && b.y < iy + ih) {
+        inv.alive = false;
+        b.dead = true;
+        g.totalKilled++;
+        const points = inv.row === 0 ? 30 : inv.row <= 2 ? 20 : 10;
+        g.score += points;
+        g.explosions.push({ x: ix + iw/2, y: iy + ih/2, timer: 25 });
+        sendToMobile({ type: 'scoreUpdate', score: g.score, lives: g.lives, level: g.level });
+      }
+    }
+
+    // vs UFO
+    if (g.ufo && !g.ufo.hit && !g.ufo.dead) {
+      const ux = g.ufo.x, uy = 70;
+      if (b.x > ux && b.x < ux + 48 && b.y > uy && b.y < uy + 24) {
+        b.dead = true;
+        g.ufo.hit = true;
+        g.ufo.hitTimer = 60;
+        const bonus = [50, 100, 150, 300][Math.floor(Math.random() * 4)];
+        g.score += bonus;
+        g.explosions.push({ x: ux + 24, y: uy + 12, timer: 30 });
+        sendToMobile({ type: 'scoreUpdate', score: g.score, lives: g.lives, level: g.level });
+      }
+    }
+
+    // vs shields
+    for (const sp of g.shieldPixels) {
+      if (sp.alive && b.x >= sp.x && b.x <= sp.x + sp.w && b.y >= sp.y && b.y <= sp.y + sp.w) {
+        sp.alive = false;
+        b.dead = true;
+        break;
+      }
+    }
+  }
+  g.bullets = g.bullets.filter(b => !b.dead);
+
+  // Enemy bullets vs player
+  if (!g.playerHit) {
+    for (const b of g.enemyBullets) {
+      const px = g.playerX, py = g.playerY;
+      if (b.x > px && b.x < px + 44 && b.y > py && b.y < py + 24) {
+        b.dead = true;
+        g.playerHit = true;
+        g.playerHitTimer = 90;
+        g.lives--;
+        g.explosions.push({ x: px + 22, y: py + 12, timer: 40 });
+        sendToMobile({ type: 'scoreUpdate', score: g.score, lives: g.lives, level: g.level });
+        if (g.lives <= 0) { triggerGameOver(); return; }
+      }
+    }
+    g.enemyBullets = g.enemyBullets.filter(b => !b.dead);
+  }
+
+  // Enemy bullets vs shields
+  for (const b of g.enemyBullets) {
+    for (const sp of g.shieldPixels) {
+      if (sp.alive && b.x >= sp.x && b.x <= sp.x + sp.w && b.y >= sp.y && b.y <= sp.y + sp.w) {
+        sp.alive = false;
+        b.dead = true;
+        break;
+      }
+    }
+  }
+  g.enemyBullets = g.enemyBullets.filter(b => !b.dead);
+
+  // Explosions
+  g.explosions = g.explosions.filter(e => { e.timer--; return e.timer > 0; });
+
+  // Win condition
+  if (g.invaders.every(i => !i.alive)) {
+    g.level++;
+    resetInvaders(g);
+  }
+
+  // Invaders reach player line
+  for (const inv of g.invaders) {
+    if (!inv.alive) continue;
+    const iy = GRID_TOP + inv.row * CELL_H + g.gridY;
+    if (iy + 32 >= g.playerY) { triggerGameOver(); return; }
+  }
+}
+
+function moveInvaders(g) {
+  let hitWall = false;
+  // check bounds
+  for (const inv of g.invaders) {
+    if (!inv.alive) continue;
+    const sprW = inv.row === 0 ? 48 : inv.row <= 2 ? 44 : 48;
+    const ix = GRID_LEFT + inv.col * CELL_W + g.gridX;
+    if (g.gridDx > 0 && ix + sprW > LW - 15) { hitWall = true; break; }
+    if (g.gridDx < 0 && ix < 15) { hitWall = true; break; }
+  }
+  if (hitWall) {
+    g.gridDx *= -1;
+    g.gridY += 18;
+  } else {
+    g.gridX += g.gridDx * 7;
+  }
+  // toggle animation frame
+  for (const inv of g.invaders) inv.frame ^= 1;
+}
+
+function resetInvaders(g) {
+  g.gridX = 0; g.gridY = 0; g.gridDx = 1;
+  g.gridMoveTimer = 0;
+  g.invaderBulletInterval = Math.max(40, 90 - g.level * 8);
+  for (const inv of g.invaders) {
+    inv.alive = true;
+    inv.frame = 0;
+  }
+  g.totalKilled = 0;
+}
+
+function shootEnemyBullet(g) {
+  // find bottom-most alive invader in each column
+  const cols = {};
+  for (const inv of g.invaders) {
+    if (!inv.alive) continue;
+    if (!cols[inv.col] || inv.row > cols[inv.col].row) cols[inv.col] = inv;
+  }
+  const shooters = Object.values(cols);
+  if (!shooters.length) return;
+  const shooter = shooters[Math.floor(Math.random() * shooters.length)];
+  const ix = GRID_LEFT + shooter.col * CELL_W + g.gridX + 22;
+  const iy = GRID_TOP  + shooter.row * CELL_H + g.gridY + 32;
+  g.enemyBullets.push({ x: ix, y: iy, type: Math.random() > 0.5 ? 'zigzag' : 'straight', phase: 0 });
+}
+
+function triggerGameOver() {
+  game.gameOver = true;
+  if (game.score > hiScore) hiScore = game.score;
+  sendToMobile({ type: 'gameOver', score: game.score });
+  showGameOver(game.score);
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  RENDER
+// ═══════════════════════════════════════════════════════════════
+function render() {
+  const g = game;
+  ctx.fillStyle = '#000';
+  ctx.fillRect(0, 0, LW, LH);
+
+  // HUD: Score
+  ctx.fillStyle = '#fff';
+  ctx.font = `bold ${14}px 'Courier New'`;
+  ctx.fillText('SCORE', 20, 30);
+  ctx.fillStyle = '#00ff00';
+  ctx.fillText(String(g.score).padStart(6, '0'), 20, 52);
+
+  ctx.fillStyle = '#fff';
+  ctx.textAlign = 'center';
+  ctx.fillText('HI-SCORE', LW / 2, 30);
+  ctx.fillStyle = '#00ff00';
+  ctx.fillText(String(Math.max(hiScore, g.score)).padStart(6, '0'), LW / 2, 52);
+
+  ctx.fillStyle = '#fff';
+  ctx.textAlign = 'right';
+  ctx.fillText('LEVEL', LW - 20, 30);
+  ctx.fillStyle = '#00ff00';
+  ctx.fillText(String(g.level).padStart(2, '0'), LW - 20, 52);
+  ctx.textAlign = 'left';
+
+  // Lives
+  for (let i = 0; i < g.lives; i++) {
+    drawSprite(ctx, SPRITES.player, 20 + i * 38, 66, '#00ff00', 3);
+  }
+  ctx.fillStyle = '#fff';
+  ctx.font = `${11}px 'Courier New'`;
+  ctx.fillText('LIVES', 20 + g.lives * 38 + 6, 80);
+
+  // UFO
+  if (g.ufo && !g.ufo.dead) {
+    const col = g.ufo.hit ? '#ff4444' : '#ff0000';
+    drawSprite(ctx, SPRITES.ufo, g.ufo.x, 68, col, P);
+  }
+
+  // Shields
+  ctx.fillStyle = '#00ff00';
+  for (const sp of g.shieldPixels) {
+    if (sp.alive) ctx.fillRect(sp.x, sp.y, sp.w - 1, sp.w - 1);
+  }
+
+  // Invaders
+  for (const inv of g.invaders) {
+    if (!inv.alive) continue;
+    const ix = GRID_LEFT + inv.col * CELL_W + g.gridX;
+    const iy = GRID_TOP  + inv.row * CELL_H + g.gridY;
+    let spr, color;
+    if (inv.row === 0) {
+      spr   = inv.frame ? SPRITES.squidB : SPRITES.squidA;
+      color = '#ff77ff';
+    } else if (inv.row <= 2) {
+      spr   = inv.frame ? SPRITES.crabB : SPRITES.crabA;
+      color = '#00ddff';
+    } else {
+      spr   = inv.frame ? SPRITES.octoB : SPRITES.octoA;
+      color = '#00ff00';
+    }
+    drawSprite(ctx, spr, ix + 2, iy + 4, color, P - 1);
+  }
+
+  // Player
+  if (!g.playerHit || Math.floor(g.playerHitTimer / 8) % 2 === 0) {
+    drawSprite(ctx, SPRITES.player, g.playerX, g.playerY, '#00ff00', P);
+  }
+
+  // Player bullets
+  ctx.fillStyle = '#ffffff';
+  for (const b of g.bullets) ctx.fillRect(b.x - 2, b.y, 4, 18);
+
+  // Enemy bullets
+  for (const b of g.enemyBullets) {
+    ctx.fillStyle = '#ff5500';
+    if (b.type === 'zigzag') {
+      b.phase += 0.3;
+      ctx.fillRect(b.x + Math.sin(b.phase) * 4 - 2, b.y, 4, 14);
+    } else {
+      ctx.fillRect(b.x - 2, b.y, 4, 14);
+    }
+  }
+
+  // Explosions
+  for (const e of g.explosions) {
+    const alpha = e.timer / 30;
+    ctx.globalAlpha = alpha;
+    drawSprite(ctx, SPRITES.explosion, e.x - 18, e.y - 18, '#ffff00', P - 1);
+    ctx.globalAlpha = 1;
+  }
+
+  // Ground line
+  ctx.fillStyle = '#00ff00';
+  ctx.fillRect(0, 854, LW, 3);
+
+  // Bottom bar: store code / experience info
+  ctx.fillStyle = 'rgba(0,255,0,0.15)';
+  ctx.fillRect(0, 857, LW, LH - 857);
+  ctx.fillStyle = '#00ff00';
+  ctx.font = `${10}px 'Courier New'`;
+  ctx.textAlign = 'center';
+  ctx.fillText(`PERSONALISATION HUB  ·  STORE: ${STORE_CODE}`, LW / 2, 876);
+  ctx.textAlign = 'left';
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  IDLE DEMO ANIMATION
+// ═══════════════════════════════════════════════════════════════
+const idleCanvas = document.getElementById('idle-canvas');
+const ictx = idleCanvas.getContext('2d');
+let idleFrame = 0, idleDx = 1, idleX = 0;
+const IDLE_W = 340, IDLE_H = 120;
+
+function setupIdleCanvas() {
+  const vw = window.innerWidth, vh = window.innerHeight;
+  const scale = Math.min(vw / LW, vh / LH);
+  const px = Math.max(1, Math.round(2.5 * scale));
+  idleCanvas.width  = Math.round(IDLE_W * scale);
+  idleCanvas.height = Math.round(IDLE_H * scale);
+  idleCanvas.style.width  = idleCanvas.width + 'px';
+  idleCanvas.style.height = idleCanvas.height + 'px';
+  idleCanvas._scale = scale;
+  idleCanvas._px = px;
+}
+setupIdleCanvas();
+window.addEventListener('resize', setupIdleCanvas);
+
+function drawIdleDemo() {
+  const sc = idleCanvas._scale || 1;
+  const px = idleCanvas._px || 2;
+  const iw = idleCanvas.width, ih = idleCanvas.height;
+  ictx.fillStyle = '#000';
+  ictx.fillRect(0, 0, iw, ih);
+
+  idleFrame++;
+  const frame = Math.floor(idleFrame / 18) % 2;
+  if (idleFrame % 12 === 0) {
+    idleX += idleDx * 6;
+    if (idleX > iw * 0.25 || idleX < -iw * 0.05) idleDx *= -1;
+  }
+
+  const spacing = Math.round(36 * sc);
+  const rows = [
+    { spr: frame ? 'squidB' : 'squidA', color: '#ff77ff', count: 5 },
+    { spr: frame ? 'crabB'  : 'crabA',  color: '#00ddff', count: 5 },
+    { spr: frame ? 'octoB'  : 'octoA',  color: '#00ff00', count: 5 },
+  ];
+  rows.forEach((row, ri) => {
+    for (let c = 0; c < row.count; c++) {
+      const x = idleX + c * spacing + Math.round(10 * sc);
+      const y = ri * Math.round(38 * sc) + Math.round(6 * sc);
+      drawSprite(ictx, SPRITES[row.spr], x, y, row.color, px);
+    }
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  SESSION & WEBSOCKET
+// ═══════════════════════════════════════════════════════════════
+function generateSessionId() {
+  return Math.random().toString(36).substring(2, 10).toUpperCase();
+}
+
+const SESSION_ID = generateSessionId();
+let ws = null;
+let mobileWs = null; // proxy for sending to mobile
+
+function connectWebSocket() {
+  if (!WS_SERVER) {
+    console.log('[PH Display] No WS_SERVER configured. Running in demo mode.');
+    return;
+  }
+  try {
+    ws = new WebSocket(WS_SERVER);
+    ws.onopen = () => {
+      console.log('[PH Display] WS connected');
+      ws.send(JSON.stringify({ type: 'register', role: 'display', sessionId: SESSION_ID, storeCode: STORE_CODE, deviceUid: DEVICE_UID }));
+    };
+    ws.onmessage = (ev) => {
+      const msg = JSON.parse(ev.data);
+      handleServerMessage(msg);
+    };
+    ws.onclose = () => {
+      console.log('[PH Display] WS closed — reconnecting in 3s');
+      setTimeout(connectWebSocket, 3000);
+    };
+    ws.onerror = (e) => console.error('[PH Display] WS error', e);
+  } catch(e) { console.error('[PH Display] WS connect error', e); }
+}
+
+function handleServerMessage(msg) {
+  switch (msg.type) {
+    case 'player_connected':
+      if (gameState === 'IDLE') { startGame(); }
+      break;
+    case 'input':
+      if (gameState === 'PLAYING' && game) handleInput(msg);
+      break;
+    case 'peer_disconnected':
+      if (gameState === 'PLAYING') { triggerGameOver(); }
+      break;
+  }
+}
+
+function sendToMobile(data) {
+  if (ws && ws.readyState === 1) ws.send(JSON.stringify(data));
+}
+
+function handleInput(msg) {
+  if (!game) return;
+  switch (msg.action) {
+    case 'left':  game.playerDx = -1; break;
+    case 'right': game.playerDx =  1; break;
+    case 'stop':  game.playerDx =  0; break;
+    case 'fire':
+      if (game.bullets.length < 3) {
+        game.bullets.push({ x: game.playerX + 22, y: game.playerY - 4 });
+      }
+      break;
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  QR CODE GENERATION
+// ═══════════════════════════════════════════════════════════════
+function buildMobileUrl() {
+  const params = new URLSearchParams();
+  params.set('session', SESSION_ID);
+  if (WS_SERVER) params.set('ws', WS_SERVER);
+  params.set('endedUrl', ENDED_URL);
+  params.set('store', STORE_CODE);
+  return MOBILE_BASE + '?' + params.toString();
+}
+
+function generateQR() {
+  const url = buildMobileUrl();
+  document.getElementById('session-display').textContent = 'SESSION: ' + SESSION_ID;
+
+  const vw = window.innerWidth, vh = window.innerHeight;
+  const scale = Math.min(vw / LW, vh / LH);
+  const qrSize = Math.round(Math.min(160, 160 * scale));
+
+  document.getElementById('qrcode').innerHTML = '';
+  try {
+    new QRCode(document.getElementById('qrcode'), {
+      text: url,
+      width:  qrSize,
+      height: qrSize,
+      colorDark:  '#000000',
+      colorLight: '#ffffff',
+      correctLevel: QRCode.CorrectLevel.M,
+    });
+  } catch(e) {
+    // Fallback text
+    document.getElementById('qrcode').textContent = url;
+    document.getElementById('qrcode').style.color = '#000';
+    document.getElementById('qrcode').style.fontSize = '9px';
+    document.getElementById('qrcode').style.wordBreak = 'break-all';
+    document.getElementById('qrcode').style.maxWidth = '160px';
+  }
+  console.log('[PH Display] Mobile URL:', url);
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  STATE TRANSITIONS
+// ═══════════════════════════════════════════════════════════════
+function showIdle() {
+  gameState = 'IDLE';
+  document.getElementById('idle-overlay').classList.remove('hidden');
+  document.getElementById('connecting-overlay').classList.add('hidden');
+  document.getElementById('gameover-overlay').classList.add('hidden');
+  document.getElementById('hi-score-display').textContent = String(hiScore).padStart(4, '0');
+  generateQR();
+}
+
+function showConnecting() {
+  gameState = 'CONNECTING';
+  document.getElementById('idle-overlay').classList.add('hidden');
+  document.getElementById('connecting-overlay').classList.remove('hidden');
+  document.getElementById('gameover-overlay').classList.add('hidden');
+}
+
+function startGame() {
+  showConnecting();
+  setTimeout(() => {
+    gameState = 'PLAYING';
+    document.getElementById('connecting-overlay').classList.add('hidden');
+    game = createGame();
+    sendToMobile({ type: 'gameStart', sessionId: SESSION_ID });
+  }, 2000);
+}
+
+let goTimer = null;
+function showGameOver(score) {
+  gameState = 'GAMEOVER';
+  document.getElementById('gameover-overlay').classList.remove('hidden');
+  document.getElementById('final-score').textContent = String(score).padStart(4, '0');
+  const isHi = score >= hiScore;
+  document.getElementById('new-hi-msg').textContent = isHi && score > 0 ? '🏆 NEW HIGH SCORE!' : `HI-SCORE: ${String(hiScore).padStart(4, '0')}`;
+
+  let count = 10;
+  document.getElementById('go-countdown').textContent = `RETURNING IN ${count}…`;
+  if (goTimer) clearInterval(goTimer);
+  goTimer = setInterval(() => {
+    count--;
+    document.getElementById('go-countdown').textContent = `RETURNING IN ${count}…`;
+    if (count <= 0) {
+      clearInterval(goTimer);
+      document.getElementById('gameover-overlay').classList.add('hidden');
+      showIdle();
+    }
+  }, 1000);
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  INIT
+// ═══════════════════════════════════════════════════════════════
+connectWebSocket();
+showIdle();
+requestAnimationFrame(loop);
+
+// For demo: listen on BroadcastChannel when no WS server
+if (!WS_SERVER) {
+  const bc = new BroadcastChannel('ph-game-' + SESSION_ID);
+  bc.onmessage = (ev) => {
+    const msg = ev.data;
+    if (msg.type === 'join') {
+      if (gameState === 'IDLE') startGame();
+    } else if (msg.type === 'input' && gameState === 'PLAYING' && game) {
+      handleInput(msg);
+    }
+  };
+  // also expose send to mobile via BroadcastChannel
+  const origSend = sendToMobile;
+  window.sendToMobile = function(data) {
+    origSend(data);
+    bc.postMessage(data);
+  };
+  window.sendToMobile = function(data) { bc.postMessage(data); };
+  console.log('[PH Display] DEMO MODE via BroadcastChannel. Session:', SESSION_ID);
+}
+</script>
+</body>
+</html>

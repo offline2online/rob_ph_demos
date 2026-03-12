@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Space Invaders — PH Connected Gaming</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      background: #000;
+      color: #fff;
+      font-family: 'Courier New', Courier, monospace;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 32px 16px;
+    }
+    h1 {
+      color: #00ff00;
+      font-size: clamp(20px, 5vw, 40px);
+      letter-spacing: 0.12em;
+      text-shadow: 0 0 20px #00ff00;
+      text-align: center;
+      margin-bottom: 8px;
+    }
+    .subtitle {
+      color: #888;
+      font-size: 13px;
+      letter-spacing: 0.2em;
+      text-align: center;
+      margin-bottom: 48px;
+    }
+    .cards {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 20px;
+      justify-content: center;
+      max-width: 900px;
+      width: 100%;
+    }
+    .card {
+      background: #0a0a0a;
+      border: 1px solid #222;
+      border-radius: 8px;
+      padding: 24px;
+      width: 260px;
+      text-decoration: none;
+      color: inherit;
+      transition: border-color 0.2s, box-shadow 0.2s;
+    }
+    .card:hover {
+      border-color: #00ff00;
+      box-shadow: 0 0 16px rgba(0,255,0,0.2);
+    }
+    .card-icon { font-size: 32px; margin-bottom: 12px; }
+    .card-title {
+      color: #00ff00;
+      font-size: 13px;
+      letter-spacing: 0.15em;
+      margin-bottom: 8px;
+    }
+    .card-desc { color: #666; font-size: 11px; line-height: 1.6; }
+    .demo-box {
+      margin-top: 48px;
+      background: #050510;
+      border: 1px solid #169bc2;
+      border-radius: 8px;
+      padding: 24px;
+      max-width: 560px;
+      width: 100%;
+    }
+    .demo-box h2 {
+      color: #169bc2;
+      font-size: 12px;
+      letter-spacing: 0.2em;
+      margin-bottom: 16px;
+    }
+    .demo-box ol {
+      color: #aaa;
+      font-size: 12px;
+      line-height: 2;
+      padding-left: 20px;
+    }
+    .demo-box code {
+      color: #00ff00;
+      background: #0a1a0a;
+      padding: 1px 6px;
+      border-radius: 3px;
+    }
+    .demo-btn {
+      display: inline-block;
+      margin-top: 20px;
+      background: #00ff00;
+      color: #000;
+      font-family: inherit;
+      font-size: 12px;
+      font-weight: bold;
+      letter-spacing: 0.15em;
+      padding: 10px 24px;
+      border-radius: 4px;
+      text-decoration: none;
+      transition: opacity 0.2s;
+    }
+    .demo-btn:hover { opacity: 0.8; }
+    .footer {
+      margin-top: 48px;
+      color: #333;
+      font-size: 11px;
+      letter-spacing: 0.1em;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+  <h1>SPACE INVADERS</h1>
+  <p class="subtitle">PERSONALISATION HUB · CONNECTED GAMING EXPERIENCE</p>
+
+  <div class="cards">
+    <a class="card" href="space-invaders-display.html" target="_blank">
+      <div class="card-icon">🖥️</div>
+      <div class="card-title">DISPLAY SCREEN</div>
+      <div class="card-desc">Portrait digital signage PWA. Shows the game + QR code for customers to scan. Open this in a fullscreen browser window.</div>
+    </a>
+    <a class="card" href="space-invaders-mobile.html" target="_blank">
+      <div class="card-icon">📱</div>
+      <div class="card-title">MOBILE CONTROLLER</div>
+      <div class="card-desc">Arcade controller loaded on the customer's phone after scanning the QR code. Sends left/right/fire inputs to the display.</div>
+    </a>
+    <a class="card" href="space-invaders-ended.html?score=1240&reason=gameover&store=DEMO" target="_blank">
+      <div class="card-icon">💥</div>
+      <div class="card-title">GAME OVER SCREEN</div>
+      <div class="card-desc">Shown on the customer's phone after the game ends. Displays final score, high score, and store CTAs.</div>
+    </a>
+  </div>
+
+  <div class="demo-box">
+    <h2>▶ SAME-BROWSER DEMO (NO SERVER NEEDED)</h2>
+    <ol>
+      <li>Open the <strong>Display Screen</strong> — note the Session ID shown below the QR code</li>
+      <li>Open the <strong>Mobile Controller</strong> in a new tab in the <em>same browser</em></li>
+      <li>Append <code>?session=XXXXXXXX</code> to the mobile URL (use the Session ID from step 1)</li>
+      <li>The two screens connect automatically via BroadcastChannel</li>
+      <li>Use arrow keys or the on-screen buttons to play!</li>
+    </ol>
+    <a class="demo-btn" href="space-invaders-display.html" target="_blank">LAUNCH DISPLAY →</a>
+  </div>
+
+  <p class="footer">Personalisation Hub · Connected Retail Experience · Space Invaders v1.0</p>
+</body>
+</html>

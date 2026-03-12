@@ -1,0 +1,412 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="theme-color" content="#000000" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <title>Game Over — Space Invaders</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html, body {
+      width: 100%; min-height: 100%;
+      background: #050510;
+      font-family: 'Courier New', Courier, monospace;
+      color: #fff;
+      overflow-x: hidden;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    /* Starfield */
+    .stars {
+      position: fixed;
+      inset: 0;
+      overflow: hidden;
+      z-index: 0;
+    }
+    .star {
+      position: absolute;
+      background: #fff;
+      border-radius: 50%;
+      animation: twinkle linear infinite;
+    }
+    @keyframes twinkle {
+      0%, 100% { opacity: 0.2; }
+      50% { opacity: 1; }
+    }
+
+    /* Scanlines */
+    body::after {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background: repeating-linear-gradient(
+        0deg,
+        rgba(0,0,0,0.06) 0px, rgba(0,0,0,0.06) 1px,
+        transparent 1px, transparent 4px
+      );
+      pointer-events: none;
+      z-index: 900;
+    }
+
+    /* Main content */
+    .page {
+      position: relative;
+      z-index: 10;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      min-height: 100vh;
+      padding: 48px 24px 40px;
+      gap: 0;
+    }
+
+    /* PH Brand */
+    .ph-brand {
+      font-size: 10px;
+      letter-spacing: 0.3em;
+      color: #169bc2;
+      text-transform: uppercase;
+      margin-bottom: 32px;
+      text-align: center;
+    }
+
+    /* Invader art */
+    .invader-art {
+      font-size: 56px;
+      margin-bottom: 4px;
+      animation: explode-bounce 0.6s ease-out;
+      display: block;
+      text-align: center;
+    }
+    @keyframes explode-bounce {
+      0%  { transform: scale(0.3) rotate(-20deg); opacity: 0; }
+      60% { transform: scale(1.2) rotate(5deg);   opacity: 1; }
+      100%{ transform: scale(1)   rotate(0deg);   opacity: 1; }
+    }
+
+    /* Title */
+    .title-row {
+      margin-bottom: 8px;
+      text-align: center;
+    }
+    .title-reason {
+      font-size: 11px;
+      letter-spacing: 0.25em;
+      color: rgba(255,255,255,0.4);
+      display: block;
+      margin-bottom: 8px;
+      text-transform: uppercase;
+    }
+    .title-main {
+      font-size: 42px;
+      font-weight: bold;
+      letter-spacing: 0.08em;
+      display: block;
+      animation: flicker 3s ease-in-out infinite;
+    }
+    .title-main.gameover { color: #ff3c00; text-shadow: 0 0 20px #ff3c00, 0 0 40px #cc2200; }
+    .title-main.disconnect { color: #ffcc00; text-shadow: 0 0 20px #ffcc00, 0 0 40px #cc9900; }
+
+    @keyframes flicker {
+      0%, 19%, 21%, 23%, 25%, 54%, 56%, 100% { opacity: 1; }
+      20%, 24%, 55% { opacity: 0.6; }
+    }
+
+    /* Score card */
+    .score-card {
+      background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(0,255,0,0.2);
+      border-radius: 16px;
+      padding: 24px 32px;
+      text-align: center;
+      width: 100%;
+      max-width: 320px;
+      margin: 24px 0 32px;
+    }
+
+    .score-label {
+      font-size: 10px;
+      letter-spacing: 0.3em;
+      color: rgba(255,255,255,0.4);
+      text-transform: uppercase;
+      display: block;
+      margin-bottom: 8px;
+    }
+
+    .score-value {
+      font-size: 64px;
+      font-weight: bold;
+      color: #00ff00;
+      text-shadow: 0 0 20px #00ff00;
+      display: block;
+      line-height: 1;
+      letter-spacing: 0.05em;
+    }
+
+    .score-sub {
+      font-size: 11px;
+      letter-spacing: 0.2em;
+      color: rgba(255,255,255,0.3);
+      margin-top: 8px;
+      display: block;
+    }
+
+    .new-hi {
+      font-size: 13px;
+      letter-spacing: 0.15em;
+      color: #ffcc00;
+      text-shadow: 0 0 10px #ffcc00;
+      margin-top: 10px;
+      display: none;
+    }
+
+    /* CTA Buttons */
+    .cta-stack {
+      width: 100%;
+      max-width: 320px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .btn-primary {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      width: 100%;
+      height: 56px;
+      border-radius: 14px;
+      border: none;
+      background: #169bc2;
+      color: #fff;
+      font-family: 'Courier New', monospace;
+      font-size: 13px;
+      font-weight: bold;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      cursor: pointer;
+      text-decoration: none;
+      transition: background 0.15s, transform 0.08s;
+      box-shadow: 0 4px 20px rgba(22,155,194,0.35);
+    }
+    .btn-primary:active { background: #0d7a9e; transform: scale(0.97); }
+
+    .btn-secondary {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      width: 100%;
+      height: 52px;
+      border-radius: 14px;
+      border: 1px solid rgba(255,255,255,0.15);
+      background: rgba(255,255,255,0.05);
+      color: rgba(255,255,255,0.7);
+      font-family: 'Courier New', monospace;
+      font-size: 12px;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      cursor: pointer;
+      text-decoration: none;
+      transition: background 0.15s, transform 0.08s;
+    }
+    .btn-secondary:active { background: rgba(255,255,255,0.1); transform: scale(0.97); }
+
+    /* Divider */
+    .divider {
+      width: 100%;
+      max-width: 320px;
+      text-align: center;
+      position: relative;
+      margin: 8px 0;
+    }
+    .divider::before, .divider::after {
+      content: '';
+      position: absolute;
+      top: 50%;
+      width: 38%;
+      height: 1px;
+      background: rgba(255,255,255,0.1);
+    }
+    .divider::before { left: 0; }
+    .divider::after { right: 0; }
+    .divider span {
+      font-size: 10px;
+      letter-spacing: 0.2em;
+      color: rgba(255,255,255,0.25);
+    }
+
+    /* Footer */
+    .footer {
+      margin-top: auto;
+      padding-top: 32px;
+      text-align: center;
+    }
+    .footer-txt {
+      font-size: 9px;
+      letter-spacing: 0.2em;
+      color: rgba(255,255,255,0.2);
+      line-height: 1.8;
+    }
+    .footer-txt a { color: #169bc2; text-decoration: none; }
+
+    /* Disconnect message variant */
+    .disconnect-msg {
+      font-size: 12px;
+      letter-spacing: 0.1em;
+      color: rgba(255,255,255,0.45);
+      text-align: center;
+      max-width: 280px;
+      line-height: 1.7;
+      margin-bottom: 8px;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Starfield background -->
+  <div class="stars" id="stars"></div>
+
+  <div class="page">
+
+    <div class="ph-brand">Personalisation Hub · Space Invaders</div>
+
+    <span class="invader-art" id="invader-art">💥</span>
+
+    <div class="title-row">
+      <span class="title-reason" id="title-reason">GAME OVER</span>
+      <span class="title-main gameover" id="title-main">GAME OVER</span>
+    </div>
+
+    <div class="disconnect-msg" id="disconnect-msg" style="display:none;">
+      Looks like the connection was interrupted.<br>
+      Better luck next time, Commander!
+    </div>
+
+    <div class="score-card">
+      <span class="score-label">Your Score</span>
+      <span class="score-value" id="score-display">0000</span>
+      <span class="score-sub" id="score-sub">SESSION ENDED</span>
+      <div class="new-hi" id="new-hi">★ NEW HIGH SCORE ★</div>
+    </div>
+
+    <div class="cta-stack">
+      <a class="btn-primary" id="btn-play-again" href="#">
+        🎮 PLAY AGAIN
+      </a>
+
+      <div class="divider"><span>OR</span></div>
+
+      <a class="btn-secondary" id="btn-explore" href="#">
+        🏪 EXPLORE THE STORE
+      </a>
+
+      <a class="btn-secondary" id="btn-staff" href="#">
+        💬 SPEAK TO A TEAM MEMBER
+      </a>
+    </div>
+
+    <div class="footer">
+      <div class="footer-txt">
+        Store: <span id="store-display">—</span><br>
+        Session: <span id="session-display">—</span><br>
+        <br>
+        Powered by <a href="#">Personalisation Hub</a>
+      </div>
+    </div>
+
+  </div>
+
+<script>
+// ═══════════════════════════════════════════════════════════════
+//  CONFIG — from URL params
+// ═══════════════════════════════════════════════════════════════
+const params     = new URLSearchParams(location.search);
+const SCORE      = parseInt(params.get('score')   || '0', 10);
+const REASON     = params.get('reason')   || 'gameover';  // gameover | disconnect
+const SESSION_ID = params.get('session')  || '';
+const STORE_CODE = params.get('store')    || '';
+const PLAY_AGAIN_URL = params.get('playAgain') || document.referrer || '#';
+const STORE_URL  = params.get('storeUrl') || '#';
+const STAFF_URL  = params.get('staffUrl') || '#';
+
+// ═══════════════════════════════════════════════════════════════
+//  RENDER
+// ═══════════════════════════════════════════════════════════════
+function render() {
+  // Score
+  document.getElementById('score-display').textContent =
+    String(SCORE).padStart(4, '0');
+
+  // Reason variants
+  if (REASON === 'disconnect') {
+    document.getElementById('title-reason').textContent  = 'CONNECTION LOST';
+    document.getElementById('title-main').textContent    = 'DISCONNECTED';
+    document.getElementById('title-main').className      = 'title-main disconnect';
+    document.getElementById('invader-art').textContent   = '📡';
+    document.getElementById('score-sub').textContent     = 'SCORE RECORDED';
+    document.getElementById('disconnect-msg').style.display = 'block';
+  } else {
+    // gameover
+    document.getElementById('title-reason').textContent = 'MISSION FAILED';
+    document.getElementById('title-main').textContent   = 'GAME OVER';
+    document.getElementById('invader-art').textContent  = '💥';
+    document.getElementById('score-sub').textContent    = `FINAL SCORE`;
+  }
+
+  // High score check (localStorage)
+  const storageKey = 'ph-si-hi-' + STORE_CODE;
+  const storedHi   = parseInt(localStorage.getItem(storageKey) || '0', 10);
+  if (SCORE > 0 && SCORE >= storedHi) {
+    localStorage.setItem(storageKey, SCORE);
+    document.getElementById('new-hi').style.display = 'block';
+  }
+
+  // Metadata
+  document.getElementById('store-display').textContent  = STORE_CODE || '—';
+  document.getElementById('session-display').textContent = SESSION_ID || '—';
+
+  // CTAs
+  document.getElementById('btn-play-again').href = PLAY_AGAIN_URL;
+  document.getElementById('btn-explore').href    = STORE_URL;
+  document.getElementById('btn-staff').href      = STAFF_URL;
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  STARFIELD
+// ═══════════════════════════════════════════════════════════════
+function buildStars() {
+  const container = document.getElementById('stars');
+  for (let i = 0; i < 60; i++) {
+    const s = document.createElement('div');
+    s.className = 'star';
+    const size = Math.random() * 2 + 1;
+    s.style.cssText = `
+      width: ${size}px; height: ${size}px;
+      left: ${Math.random() * 100}%;
+      top:  ${Math.random() * 100}%;
+      animation-duration: ${2 + Math.random() * 3}s;
+      animation-delay: ${Math.random() * 3}s;
+      opacity: ${0.2 + Math.random() * 0.6};
+    `;
+    container.appendChild(s);
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  INIT
+// ═══════════════════════════════════════════════════════════════
+buildStars();
+render();
+
+// Prevent bounce scroll
+document.addEventListener('touchmove', (e) => {
+  if (e.target === document.body) e.preventDefault();
+}, { passive: false });
+</script>
+</body>
+</html>

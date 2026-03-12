@@ -1,0 +1,623 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="theme-color" content="#000000" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <title>Space Invaders — Controller</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html, body {
+      width: 100%; height: 100%;
+      background: #050510;
+      font-family: 'Courier New', Courier, monospace;
+      color: #fff;
+      overflow: hidden;
+      touch-action: none;
+      -webkit-tap-highlight-color: transparent;
+      user-select: none;
+    }
+
+    /* ── SCREENS ──────────────────────────────────────────── */
+    .screen {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.3s ease;
+    }
+    .screen.active {
+      opacity: 1;
+      pointer-events: all;
+    }
+
+    /* ── CONNECTING ───────────────────────────────────────── */
+    #screen-connecting {
+      gap: 24px;
+      padding: 32px;
+    }
+
+    .ph-logo {
+      font-size: 11px;
+      letter-spacing: 0.25em;
+      color: #169bc2;
+      text-transform: uppercase;
+      margin-bottom: 8px;
+      text-align: center;
+    }
+
+    .connecting-title {
+      font-size: 22px;
+      font-weight: bold;
+      letter-spacing: 0.08em;
+      color: #00ff00;
+      text-shadow: 0 0 12px #00ff00;
+      text-align: center;
+    }
+
+    .pulse-ring {
+      width: 80px; height: 80px;
+      border-radius: 50%;
+      border: 3px solid #169bc2;
+      animation: pulse-ring 1.4s ease-out infinite;
+    }
+
+    @keyframes pulse-ring {
+      0%   { transform: scale(0.8); opacity: 1; }
+      100% { transform: scale(1.6); opacity: 0; }
+    }
+
+    .connecting-sub {
+      font-size: 13px;
+      letter-spacing: 0.15em;
+      color: rgba(255,255,255,0.5);
+      text-align: center;
+    }
+
+    .session-badge {
+      background: rgba(22,155,194,0.15);
+      border: 1px solid rgba(22,155,194,0.4);
+      border-radius: 8px;
+      padding: 10px 20px;
+      font-size: 12px;
+      letter-spacing: 0.18em;
+      color: #169bc2;
+      text-align: center;
+    }
+
+    /* ── GET READY ────────────────────────────────────────── */
+    #screen-ready {
+      gap: 20px;
+      padding: 32px;
+    }
+
+    .ready-title {
+      font-size: 28px;
+      font-weight: bold;
+      color: #ffcc00;
+      text-shadow: 0 0 16px #ffcc00;
+      letter-spacing: 0.1em;
+      text-align: center;
+    }
+
+    .countdown-number {
+      font-size: 96px;
+      font-weight: bold;
+      color: #00ff00;
+      text-shadow: 0 0 30px #00ff00;
+      line-height: 1;
+    }
+
+    .ready-sub {
+      font-size: 12px;
+      letter-spacing: 0.2em;
+      color: rgba(255,255,255,0.5);
+      text-align: center;
+    }
+
+    /* ── PLAYING (CONTROLLER) ─────────────────────────────── */
+    #screen-playing {
+      flex-direction: column;
+      justify-content: space-between;
+      padding: 0;
+    }
+
+    /* Status bar */
+    .status-bar {
+      width: 100%;
+      background: rgba(0,0,0,0.8);
+      border-bottom: 1px solid rgba(0,255,0,0.2);
+      padding: 14px 20px 12px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-shrink: 0;
+    }
+
+    .status-item { text-align: center; }
+    .status-label {
+      font-size: 9px;
+      letter-spacing: 0.2em;
+      color: rgba(255,255,255,0.4);
+      text-transform: uppercase;
+      display: block;
+    }
+    .status-value {
+      font-size: 22px;
+      font-weight: bold;
+      color: #00ff00;
+      text-shadow: 0 0 8px #00ff00;
+      display: block;
+      line-height: 1.1;
+    }
+    .status-value.lives { color: #ff4444; font-size: 18px; }
+    .status-value.level { color: #ffcc00; }
+
+    /* Middle area: game info / controls reminder */
+    .controller-middle {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      padding: 12px;
+    }
+
+    .invader-icon {
+      font-size: 40px;
+      animation: float 2s ease-in-out infinite;
+    }
+
+    @keyframes float {
+      0%, 100% { transform: translateY(0); }
+      50% { transform: translateY(-8px); }
+    }
+
+    .controller-tip {
+      font-size: 11px;
+      letter-spacing: 0.15em;
+      color: rgba(255,255,255,0.3);
+      text-align: center;
+    }
+
+    /* Controller pad */
+    .controller-pad {
+      width: 100%;
+      background: #070715;
+      border-top: 1px solid rgba(0,255,0,0.15);
+      padding: 20px 16px 28px;
+      flex-shrink: 0;
+    }
+
+    /* Move buttons row */
+    .move-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+
+    /* Arrow buttons */
+    .btn-move {
+      flex: 1;
+      height: 88px;
+      border-radius: 16px;
+      border: 2px solid rgba(22,155,194,0.5);
+      background: rgba(22,155,194,0.1);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transition: background 0.08s, border-color 0.08s, transform 0.05s;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    .btn-move:active,
+    .btn-move.pressed {
+      background: rgba(22,155,194,0.35);
+      border-color: #169bc2;
+      transform: scale(0.96);
+    }
+
+    .arrow-icon {
+      font-size: 44px;
+      color: #169bc2;
+      line-height: 1;
+      text-shadow: 0 0 12px rgba(22,155,194,0.7);
+    }
+
+    /* Fire button */
+    .btn-fire {
+      width: 100%;
+      height: 96px;
+      border-radius: 18px;
+      border: 3px solid rgba(255,60,0,0.6);
+      background: rgba(255,60,0,0.15);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transition: background 0.08s, border-color 0.08s, transform 0.05s;
+      -webkit-tap-highlight-color: transparent;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .btn-fire:active,
+    .btn-fire.pressed {
+      background: rgba(255,60,0,0.45);
+      border-color: #ff3c00;
+      transform: scale(0.97);
+    }
+
+    .fire-label {
+      font-size: 28px;
+      font-weight: bold;
+      letter-spacing: 0.25em;
+      color: #ff3c00;
+      text-shadow: 0 0 16px rgba(255,60,0,0.8);
+    }
+
+    .fire-ripple {
+      position: absolute;
+      border-radius: 50%;
+      background: rgba(255,60,0,0.35);
+      width: 20px; height: 20px;
+      animation: ripple 0.4s ease-out forwards;
+      pointer-events: none;
+    }
+
+    @keyframes ripple {
+      to { transform: scale(12); opacity: 0; }
+    }
+
+    /* Connected indicator */
+    .connected-dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: #00ff00;
+      display: inline-block;
+      margin-right: 6px;
+      animation: dot-blink 1.5s ease-in-out infinite;
+      box-shadow: 0 0 6px #00ff00;
+    }
+
+    @keyframes dot-blink {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.3; }
+    }
+
+    .connected-label {
+      font-size: 10px;
+      letter-spacing: 0.15em;
+      color: rgba(255,255,255,0.4);
+      display: flex;
+      align-items: center;
+    }
+
+    /* ── SCANLINES overlay ────────────────────────────────── */
+    body::after {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background: repeating-linear-gradient(
+        0deg,
+        rgba(0,0,0,0.06) 0px,
+        rgba(0,0,0,0.06) 1px,
+        transparent 1px,
+        transparent 4px
+      );
+      pointer-events: none;
+      z-index: 999;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- ── CONNECTING ──────────────────────────────────────────── -->
+  <div id="screen-connecting" class="screen active">
+    <div class="ph-logo">Personalisation Hub</div>
+    <div class="connecting-title">SPACE INVADERS</div>
+    <div class="pulse-ring"></div>
+    <div class="connecting-sub">CONNECTING TO DISPLAY…</div>
+    <div class="session-badge" id="session-badge">SESSION: ——</div>
+  </div>
+
+  <!-- ── GET READY ───────────────────────────────────────────── -->
+  <div id="screen-ready" class="screen">
+    <div class="ph-logo">Personalisation Hub</div>
+    <div class="ready-title">GET READY!</div>
+    <div class="countdown-number" id="countdown-num">3</div>
+    <div class="ready-sub">GAME STARTING ON THE BIG SCREEN</div>
+  </div>
+
+  <!-- ── PLAYING (CONTROLLER) ────────────────────────────────── -->
+  <div id="screen-playing" class="screen">
+
+    <!-- Status bar -->
+    <div class="status-bar">
+      <div class="status-item">
+        <span class="status-label">Score</span>
+        <span class="status-value" id="score-display">000000</span>
+      </div>
+      <div class="status-item">
+        <span class="status-label">Lives</span>
+        <span class="status-value lives" id="lives-display">♥♥♥</span>
+      </div>
+      <div class="status-item">
+        <span class="status-label">Level</span>
+        <span class="status-value level" id="level-display">01</span>
+      </div>
+    </div>
+
+    <!-- Middle info zone -->
+    <div class="controller-middle">
+      <div class="invader-icon">👾</div>
+      <div class="controller-tip">USE THE CONTROLS BELOW<br>TO BATTLE THE INVADERS</div>
+      <div class="connected-label">
+        <span class="connected-dot"></span>
+        CONNECTED TO DISPLAY
+      </div>
+    </div>
+
+    <!-- Controller pad -->
+    <div class="controller-pad">
+
+      <!-- Move row -->
+      <div class="move-row">
+        <button class="btn-move" id="btn-left" aria-label="Move Left">
+          <span class="arrow-icon">◀</span>
+        </button>
+        <button class="btn-move" id="btn-right" aria-label="Move Right">
+          <span class="arrow-icon">▶</span>
+        </button>
+      </div>
+
+      <!-- Fire -->
+      <button class="btn-fire" id="btn-fire" aria-label="Fire">
+        <span class="fire-label">⚡ FIRE ⚡</span>
+      </button>
+
+    </div>
+  </div>
+
+<script>
+// ═══════════════════════════════════════════════════════════════
+//  CONFIG — from URL params (injected by QR code scan)
+// ═══════════════════════════════════════════════════════════════
+const params     = new URLSearchParams(location.search);
+const SESSION_ID = params.get('session') || '';
+const WS_SERVER  = params.get('ws')      || null;
+const ENDED_URL  = params.get('endedUrl')|| '';
+const STORE_CODE = params.get('store')   || 'DEMO';
+
+document.getElementById('session-badge').textContent = 'SESSION: ' + (SESSION_ID || '——');
+
+// ═══════════════════════════════════════════════════════════════
+//  SCREEN MANAGEMENT
+// ═══════════════════════════════════════════════════════════════
+function showScreen(id) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  COMMUNICATION
+// ═══════════════════════════════════════════════════════════════
+let ws = null, bc = null;
+let isConnected = false;
+
+function sendMsg(data) {
+  if (ws && ws.readyState === 1) ws.send(JSON.stringify(data));
+  if (bc) bc.postMessage(data);
+}
+
+function onMessage(msg) {
+  switch (msg.type) {
+    case 'game_ready':
+    case 'gameStart':
+      startCountdown();
+      break;
+    case 'scoreUpdate':
+      updateHUD(msg.score, msg.lives, msg.level);
+      break;
+    case 'gameOver':
+      handleGameOver(msg.score);
+      break;
+    case 'peer_disconnected':
+      handleDisconnect();
+      break;
+  }
+}
+
+// WebSocket mode
+function connectWS() {
+  if (!WS_SERVER || !SESSION_ID) return;
+  ws = new WebSocket(WS_SERVER);
+  ws.onopen = () => {
+    ws.send(JSON.stringify({ type: 'register', role: 'mobile', sessionId: SESSION_ID }));
+    isConnected = true;
+  };
+  ws.onmessage = (ev) => onMessage(JSON.parse(ev.data));
+  ws.onclose = () => {
+    isConnected = false;
+    console.log('[Controller] WS closed');
+  };
+  ws.onerror = (e) => console.error('[Controller] WS error', e);
+}
+
+// BroadcastChannel demo mode
+function connectDemo() {
+  if (!SESSION_ID) {
+    console.warn('[Controller] No session ID — cannot connect');
+    return;
+  }
+  bc = new BroadcastChannel('ph-game-' + SESSION_ID);
+  bc.onmessage = (ev) => onMessage(ev.data);
+  // announce ourselves
+  setTimeout(() => {
+    bc.postMessage({ type: 'join', sessionId: SESSION_ID });
+    isConnected = true;
+    console.log('[Controller] Demo mode — joined session', SESSION_ID);
+  }, 600);
+}
+
+if (WS_SERVER) {
+  connectWS();
+} else {
+  connectDemo();
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  COUNTDOWN
+// ═══════════════════════════════════════════════════════════════
+function startCountdown() {
+  showScreen('screen-ready');
+  let n = 3;
+  document.getElementById('countdown-num').textContent = n;
+  const t = setInterval(() => {
+    n--;
+    if (n > 0) {
+      document.getElementById('countdown-num').textContent = n;
+    } else {
+      clearInterval(t);
+      showScreen('screen-playing');
+    }
+  }, 1000);
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  HUD UPDATES
+// ═══════════════════════════════════════════════════════════════
+function updateHUD(score, lives, level) {
+  document.getElementById('score-display').textContent =
+    String(score || 0).padStart(6, '0');
+  const hearts = '♥'.repeat(Math.max(0, lives || 0)) +
+                 '♡'.repeat(Math.max(0, 3 - (lives || 0)));
+  document.getElementById('lives-display').textContent = hearts;
+  document.getElementById('level-display').textContent =
+    String(level || 1).padStart(2, '0');
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  GAME OVER / DISCONNECT
+// ═══════════════════════════════════════════════════════════════
+function handleGameOver(score) {
+  const url = buildEndedUrl(score, 'gameover');
+  setTimeout(() => { location.href = url; }, 1200);
+}
+
+function handleDisconnect() {
+  const url = buildEndedUrl(0, 'disconnect');
+  setTimeout(() => { location.href = url; }, 800);
+}
+
+function buildEndedUrl(score, reason) {
+  if (!ENDED_URL) return '#';
+  const p = new URLSearchParams();
+  p.set('score', score || 0);
+  p.set('reason', reason || 'gameover');
+  p.set('session', SESSION_ID);
+  p.set('store', STORE_CODE);
+  return ENDED_URL + (ENDED_URL.includes('?') ? '&' : '?') + p.toString();
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  CONTROLLER INPUT
+// ═══════════════════════════════════════════════════════════════
+let moveActive = null; // 'left' | 'right' | null
+
+function pressMove(dir) {
+  if (moveActive === dir) return;
+  moveActive = dir;
+  sendMsg({ type: 'input', action: dir });
+  if (navigator.vibrate) navigator.vibrate(18);
+  document.getElementById(`btn-${dir}`).classList.add('pressed');
+}
+
+function releaseMove() {
+  if (!moveActive) return;
+  document.getElementById(`btn-${moveActive}`)?.classList.remove('pressed');
+  moveActive = null;
+  sendMsg({ type: 'input', action: 'stop' });
+}
+
+function pressFire(ev) {
+  sendMsg({ type: 'input', action: 'fire' });
+  if (navigator.vibrate) navigator.vibrate([10, 30, 10]);
+  addRipple(document.getElementById('btn-fire'), ev);
+}
+
+function addRipple(btn, ev) {
+  const rect = btn.getBoundingClientRect();
+  const touch = ev.changedTouches?.[0] || ev;
+  const x = (touch.clientX - rect.left) - 10;
+  const y = (touch.clientY - rect.top)  - 10;
+  const ripple = document.createElement('span');
+  ripple.className = 'fire-ripple';
+  ripple.style.left = x + 'px';
+  ripple.style.top  = y + 'px';
+  btn.appendChild(ripple);
+  ripple.addEventListener('animationend', () => ripple.remove());
+}
+
+// Touch events for move buttons
+function setupMoveBtn(id, dir) {
+  const btn = document.getElementById(id);
+  btn.addEventListener('touchstart', (e) => { e.preventDefault(); pressMove(dir); }, { passive: false });
+  btn.addEventListener('touchend',   (e) => { e.preventDefault(); releaseMove(); }, { passive: false });
+  btn.addEventListener('touchcancel',(e) => { e.preventDefault(); releaseMove(); }, { passive: false });
+  // Mouse fallback (desktop testing)
+  btn.addEventListener('mousedown', () => pressMove(dir));
+  btn.addEventListener('mouseup',   () => releaseMove());
+  btn.addEventListener('mouseleave',() => releaseMove());
+}
+
+setupMoveBtn('btn-left',  'left');
+setupMoveBtn('btn-right', 'right');
+
+const fireBtn = document.getElementById('btn-fire');
+fireBtn.addEventListener('touchstart', (e) => {
+  e.preventDefault();
+  fireBtn.classList.add('pressed');
+  pressFire(e);
+}, { passive: false });
+fireBtn.addEventListener('touchend', (e) => {
+  e.preventDefault();
+  fireBtn.classList.remove('pressed');
+}, { passive: false });
+fireBtn.addEventListener('mousedown', (e) => {
+  fireBtn.classList.add('pressed');
+  pressFire(e);
+});
+fireBtn.addEventListener('mouseup', () => fireBtn.classList.remove('pressed'));
+
+// Keyboard fallback (desktop testing)
+const keyState = {};
+document.addEventListener('keydown', (e) => {
+  if (keyState[e.key]) return;
+  keyState[e.key] = true;
+  if (e.key === 'ArrowLeft')  pressMove('left');
+  if (e.key === 'ArrowRight') pressMove('right');
+  if (e.key === ' ' || e.key === 'z') pressFire(e);
+});
+document.addEventListener('keyup', (e) => {
+  keyState[e.key] = false;
+  if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') releaseMove();
+});
+
+// Prevent scroll on touch
+document.addEventListener('touchmove', (e) => e.preventDefault(), { passive: false });
+</script>
+</body>
+</html>

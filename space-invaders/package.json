@@ -1,0 +1,19 @@
+{
+  "name": "ph-space-invaders-session-server",
+  "version": "1.0.0",
+  "description": "Personalisation Hub — Space Invaders Connected Gaming Session Server",
+  "main": "session-server.js",
+  "scripts": {
+    "start": "node session-server.js",
+    "dev": "node --watch session-server.js"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "dependencies": {
+    "ws": "^8.17.0"
+  },
+  "keywords": ["personalisation-hub", "space-invaders", "websocket", "retail", "gaming"],
+  "license": "UNLICENSED",
+  "private": true
+}
