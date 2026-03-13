@@ -26,7 +26,7 @@
       --primary-light: rgba(0,98,65,0.10);
       --success:   #059669;
       --success-light: rgba(5,150,105,0.10);
-      --toggle-on: #3b82f6;
+      --toggle-on: #169bc2;
       --warning:   #D97706;
       --warning-light: rgba(217,119,6,0.10);
       --danger:    #DC2626;
@@ -269,19 +269,18 @@
     .badge-inactive { background: var(--danger-light); color: var(--danger); font-size: 11px; font-weight: 600; padding: 3px 9px; border-radius: 20px; }
     .actions { display: flex; gap: 6px; }
 
-    /* TOGGLE — always visible */
-    .toggle { position: relative; width: 38px; height: 20px; cursor: pointer; }
-    .toggle input { opacity: 0; width: 0; height: 0; }
+    /* TOGGLE — PH design system style (matches Ant Design Switch / ph-designer spec) */
+    .toggle { position: relative; width: 44px; height: 24px; cursor: pointer; display: inline-block; }
+    .toggle input { opacity: 0; width: 0; height: 0; position: absolute; }
     .toggle-slider {
       position: absolute; top: 0; left: 0; right: 0; bottom: 0;
-      background: #CBD5E1;
-      border-radius: 20px;
-      transition: 0.2s;
-      border: 2px solid rgba(0,0,0,0.1);
+      background: rgba(0, 0, 0, 0.25);
+      border-radius: 100px;
+      transition: background 0.2s;
     }
-    .toggle-slider::before { content: ''; position: absolute; width: 14px; height: 14px; left: 1px; top: 1px; background: #fff; border-radius: 50%; transition: 0.2s; box-shadow: 0 1px 3px rgba(0,0,0,0.2); }
-    .toggle input:checked + .toggle-slider { background: var(--toggle-on); border-color: rgba(0,0,0,0.08); }
-    .toggle input:checked + .toggle-slider::before { transform: translateX(18px); }
+    .toggle-slider::before { content: ''; position: absolute; width: 20px; height: 20px; left: 2px; top: 2px; background: #fff; border-radius: 50%; transition: transform 0.2s; box-shadow: 0 2px 4px rgba(0,0,0,0.2); }
+    .toggle input:checked + .toggle-slider { background: var(--toggle-on); }
+    .toggle input:checked + .toggle-slider::before { transform: translateX(20px); }
 
     /* EMPTY */
     .empty-state { text-align: center; padding: 52px 28px; color: var(--text2); }
@@ -411,7 +410,10 @@
 
     /* ── STICKY AG-GRID HEADER for Menu Items (domLayout: autoHeight) ─── */
     #itemsGrid .ag-root-wrapper,
-    #itemsGrid .ag-root { overflow: visible !important; }
+    #itemsGrid .ag-root,
+    #itemsGrid .ag-body-viewport,
+    #itemsGrid .ag-center-cols-clipper,
+    #itemsGrid .ag-center-cols-container { overflow: visible !important; }
     #itemsGrid .ag-header {
       position: sticky;
       top: 50px;
@@ -2660,7 +2662,12 @@ function importData(event) {
         toast(`\u{1F4E5} Merged: +${added} new item${added !== 1 ? 's' : ''}, ${updated} updated \u2022 ${brandCount} brand${brandCount !== 1 ? 's' : ''} total`, 'success');
       } else {
         // Legacy full-replace import (no items array — treat as settings-only)
-        if (data.settings)   saveSettingsData(data.settings);
+        if (data.settings) {
+          // Preserve phApi endpoints — must survive upgrades
+          const merged = { ...data.settings };
+          if (_settings.phApi) merged.phApi = _settings.phApi;
+          saveSettingsData(merged);
+        }
         if (data.categories) saveCats(data.categories);
         if (data.brands)     saveBrands(data.brands);
         renderDashboard();
