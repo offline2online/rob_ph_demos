@@ -441,7 +441,7 @@
     .items-sel-bar-sep { color: var(--border2); font-weight: 400; }
     .items-sel-bar-link { color: var(--primary); cursor: pointer; background: none; border: none; font-size: 13px; font-weight: 600; padding: 0; text-decoration: underline; }
     .items-sel-bar-link:hover { opacity: 0.75; }
-    .items-sel-bar-clear { margin-left: auto; color: var(--text2); cursor: pointer; background: none; border: none; font-size: 12px; padding: 0; }
+    .items-sel-bar-clear { color: var(--text2); cursor: pointer; background: none; border: none; font-size: 12px; padding: 0; }
     .items-sel-bar-clear:hover { color: var(--danger); }
     /* ── CHECKBOX SET FILTER ─────────────────────────── */
     .csf-wrap { width: 230px; background: var(--surface); font-family: 'Inter', sans-serif; font-size: 13px; }
@@ -652,7 +652,10 @@
             <span id="itemsSelCount"></span>
             <span class="items-sel-bar-sep">|</span>
             <button class="items-sel-bar-link" id="itemsSelViewBtn" onclick="viewSelectedItems()">View Selected</button>
-            <button class="items-sel-bar-clear" onclick="clearItemsSelection()">✕ Clear selection</button>
+            <div style="margin-left:auto;display:flex;align-items:center;gap:10px;">
+              <button class="btn btn-danger btn-sm" onclick="confirmDeleteSelection()">🗑️ Delete Selection</button>
+              <button class="items-sel-bar-clear" onclick="clearItemsSelection()">✕ Clear selection</button>
+            </div>
           </div>
           <div id="itemsGrid" class="ag-theme-alpine" style="width:100%;border-radius:var(--radius);border:1px solid var(--border);"></div>
         </div>
@@ -2333,6 +2336,29 @@ function doDelete() {
   toast('\u{1F5D1}\uFE0F Item deleted', 'info');
 }
 
+function confirmDeleteSelection() {
+  if (!itemsGridApi) return;
+  const selected = itemsGridApi.getSelectedRows();
+  if (!selected.length) return;
+  const n = selected.length;
+  pendingDeleteId = '__selection__';
+  document.getElementById('confirmTitle').textContent = `Delete ${n} Item${n !== 1 ? 's' : ''}?`;
+  document.getElementById('confirmMsg').textContent   = `${n} item${n !== 1 ? 's' : ''} will be permanently deleted. This cannot be undone.`;
+  document.getElementById('confirmBtn').onclick       = doDeleteSelection;
+  document.getElementById('confirmOverlay').classList.add('open');
+}
+function doDeleteSelection() {
+  if (!itemsGridApi) return;
+  const selectedIds = new Set(itemsGridApi.getSelectedRows().map(r => r.id));
+  const remaining   = getItems().filter(i => !selectedIds.has(i.id));
+  saveItems(remaining);
+  closeConfirm();
+  clearItemsSelection();
+  renderItems();
+  renderDashboard();
+  toast(`\u{1F5D1}\uFE0F ${selectedIds.size} item${selectedIds.size !== 1 ? 's' : ''} deleted`, 'info');
+}
+
 // ===== CATEGORIES =====
 function renderCategories() {
   const cats = getCats();
@@ -2855,8 +2881,9 @@ window.uploadBrandLogo    = uploadBrandLogo;
 window.uploadBagIcon      = uploadBagIcon;
 window.clearBagIcon       = clearBagIcon;
 window.renderItems        = renderItems;
-window.viewSelectedItems  = viewSelectedItems;
-window.clearItemsSelection = clearItemsSelection;
+window.viewSelectedItems     = viewSelectedItems;
+window.clearItemsSelection   = clearItemsSelection;
+window.confirmDeleteSelection = confirmDeleteSelection;
 window.openEditModal      = openEditModal;
 
 // ===== GRID INIT =====
