@@ -422,6 +422,27 @@
       box-shadow: 0 2px 6px rgba(0,0,0,0.07);
     }
 
+    /* ── ITEMS SELECTION BAR ─────────────────────────── */
+    .items-sel-bar {
+      display: none;
+      align-items: center;
+      gap: 10px;
+      padding: 9px 16px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-bottom: none;
+      border-radius: var(--radius) var(--radius) 0 0;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text);
+    }
+    .items-sel-bar.visible { display: flex; }
+    .items-sel-bar.visible + #itemsGrid { border-top-left-radius: 0; border-top-right-radius: 0; }
+    .items-sel-bar-sep { color: var(--border2); font-weight: 400; }
+    .items-sel-bar-link { color: var(--primary); cursor: pointer; background: none; border: none; font-size: 13px; font-weight: 600; padding: 0; text-decoration: underline; }
+    .items-sel-bar-link:hover { opacity: 0.75; }
+    .items-sel-bar-clear { margin-left: auto; color: var(--text2); cursor: pointer; background: none; border: none; font-size: 12px; padding: 0; }
+    .items-sel-bar-clear:hover { color: var(--danger); }
     /* ── CHECKBOX SET FILTER ─────────────────────────── */
     .csf-wrap { width: 230px; background: var(--surface); font-family: 'Inter', sans-serif; font-size: 13px; }
     .csf-search-row { padding: 8px; border-bottom: 1px solid var(--border); }
@@ -627,6 +648,12 @@
 
         <!-- MENU ITEMS -->
         <div id="view-items" class="view">
+          <div id="itemsSelBar" class="items-sel-bar">
+            <span id="itemsSelCount"></span>
+            <span class="items-sel-bar-sep">|</span>
+            <button class="items-sel-bar-link" id="itemsSelViewBtn" onclick="viewSelectedItems()">View Selected</button>
+            <button class="items-sel-bar-clear" onclick="clearItemsSelection()">✕ Clear selection</button>
+          </div>
           <div id="itemsGrid" class="ag-theme-alpine" style="width:100%;border-radius:var(--radius);border:1px solid var(--border);"></div>
         </div>
 
@@ -1141,6 +1168,8 @@ let _brands   = [];
 let _allStock = {};
 let itemsGridApi  = null;
 let brandsGridApi = null;
+let _itemsViewSelected = false;
+let _itemsSelectedIds  = new Set();
 
 function getBrands() { return _brands; }
 function saveBrands(brands) {
@@ -1736,13 +1765,25 @@ function initGrids() {
       rowHeight: 64,
       domLayout: 'autoHeight',
       suppressCellFocus: true,
+      rowSelection: 'multiple',
+      suppressRowClickSelection: true,
       getRowId: params => params.data.id,
+      isExternalFilterPresent: () => _itemsViewSelected,
+      doesExternalFilterPass: node => _itemsSelectedIds.has(node.data.id),
+      onSelectionChanged: () => updateItemsSelectionBar(),
       defaultColDef: {
         resizable: true,
         sortable: true,
         filter: 'agTextColumnFilter',
       },
       columnDefs: [
+        {
+          headerName: '', width: 44, minWidth: 44, maxWidth: 44,
+          resizable: false, sortable: false, filter: false, suppressMovable: true,
+          headerCheckboxSelection: true,
+          checkboxSelection: true,
+          cellStyle: { display: 'flex', alignItems: 'center', justifyContent: 'center' }
+        },
         {
           headerName: 'Item', field: 'name', flex: 3, minWidth: 220,
           cellRenderer: (params) => {
@@ -1983,6 +2024,50 @@ function initGrids() {
       ]
     });
   }
+}
+
+// ===== ITEMS SELECTION BAR =====
+function updateItemsSelectionBar() {
+  if (!itemsGridApi) return;
+  const selected = itemsGridApi.getSelectedRows();
+  const total    = getItems().length;
+  const bar      = document.getElementById('itemsSelBar');
+  const countEl  = document.getElementById('itemsSelCount');
+  const viewBtn  = document.getElementById('itemsSelViewBtn');
+  if (selected.length > 0) {
+    bar.classList.add('visible');
+    countEl.textContent = `${selected.length} of ${total} Products / Items`;
+    viewBtn.textContent = _itemsViewSelected ? 'Show All' : 'View Selected';
+  } else {
+    bar.classList.remove('visible');
+    // If filter was active with no selection, reset
+    if (_itemsViewSelected) {
+      _itemsViewSelected = false;
+      _itemsSelectedIds  = new Set();
+      itemsGridApi.onFilterChanged();
+    }
+  }
+}
+
+function viewSelectedItems() {
+  if (!itemsGridApi) return;
+  _itemsViewSelected = !_itemsViewSelected;
+  if (_itemsViewSelected) {
+    _itemsSelectedIds = new Set(itemsGridApi.getSelectedRows().map(r => r.id));
+  } else {
+    _itemsSelectedIds = new Set();
+  }
+  itemsGridApi.onFilterChanged();
+  updateItemsSelectionBar();
+}
+
+function clearItemsSelection() {
+  if (!itemsGridApi) return;
+  _itemsViewSelected = false;
+  _itemsSelectedIds  = new Set();
+  itemsGridApi.deselectAll();
+  itemsGridApi.onFilterChanged();
+  updateItemsSelectionBar();
 }
 
 // ===== ITEMS =====
@@ -2770,6 +2855,8 @@ window.uploadBrandLogo    = uploadBrandLogo;
 window.uploadBagIcon      = uploadBagIcon;
 window.clearBagIcon       = clearBagIcon;
 window.renderItems        = renderItems;
+window.viewSelectedItems  = viewSelectedItems;
+window.clearItemsSelection = clearItemsSelection;
 window.openEditModal      = openEditModal;
 
 // ===== GRID INIT =====
