@@ -803,8 +803,12 @@
         <input type="text" id="fName" placeholder="e.g. Classic Eggs Benedict">
       </div>
       <div class="form-group">
-        <label>Product Description</label>
-        <textarea id="fDesc" placeholder="Describe the item, ingredients, or allergens&hellip;" rows="3"></textarea>
+        <label>Short Description</label>
+        <input type="text" id="fDescShort" placeholder="One-line summary shown on menu boards&hellip;">
+      </div>
+      <div class="form-group">
+        <label>Long Description</label>
+        <textarea id="fDescLong" placeholder="Full description — ingredients, allergens, story, nutritional highlights&hellip;" rows="3"></textarea>
       </div>
       <div class="form-group">
         <label>Ingredients <span class="opt-tag">Optional</span></label>
@@ -1821,7 +1825,7 @@ function initGrids() {
             ingEl.style.cssText = 'font-size:11px;line-height:1.3;color:var(--text2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;';
             ingEl.textContent = (item.ingredients && item.ingredients.length)
               ? item.ingredients.join(', ')
-              : (item.description || '');
+              : (item.shortDescription || item.description || '');
             nameDiv.appendChild(nameEl);
             if (ingEl.textContent) nameDiv.appendChild(ingEl);
             div.appendChild(imgWrap); div.appendChild(nameDiv);
@@ -2274,10 +2278,11 @@ let editingImages = [];
 function openAddModal() {
   document.getElementById('modalTitle').textContent = 'Add Product / Item';
   document.getElementById('editId').value  = '';
-  document.getElementById('fSku').value    = '';
-  document.getElementById('fName').value   = '';
-  document.getElementById('fDesc').value   = '';
-  document.getElementById('fPrice').value  = '';
+  document.getElementById('fSku').value       = '';
+  document.getElementById('fName').value      = '';
+  document.getElementById('fDescShort').value = '';
+  document.getElementById('fDescLong').value  = '';
+  document.getElementById('fPrice').value     = '';
   document.getElementById('fActive').value = 'true';
   document.getElementById('fCalories').value = '';
   document.getElementById('fFat').value    = '';
@@ -2301,10 +2306,11 @@ function openEditModal(id) {
   if (!item) return;
   document.getElementById('modalTitle').textContent = 'Edit Product / Item';
   document.getElementById('editId').value  = id;
-  document.getElementById('fSku').value    = item.sku;
-  document.getElementById('fName').value   = item.name || item.productName || '';
-  document.getElementById('fDesc').value   = item.description || '';
-  document.getElementById('fPrice').value  = item.price;
+  document.getElementById('fSku').value       = item.sku;
+  document.getElementById('fName').value      = item.name || item.productName || '';
+  document.getElementById('fDescShort').value = item.shortDescription || item.description || '';
+  document.getElementById('fDescLong').value  = item.longDescription || '';
+  document.getElementById('fPrice').value     = item.price;
   document.getElementById('fActive').value = String(item.active);
   // category must be a string for comparison
   const catStr = typeof item.category === 'object'
@@ -2368,9 +2374,10 @@ function populateBrandDropdown(selectedId) {
 
 function saveItem() {
   const id       = document.getElementById('editId').value;
-  const sku      = document.getElementById('fSku').value.trim();
-  const name     = document.getElementById('fName').value.trim();
-  const desc     = document.getElementById('fDesc').value.trim();
+  const sku           = document.getElementById('fSku').value.trim();
+  const name          = document.getElementById('fName').value.trim();
+  const descShort     = document.getElementById('fDescShort').value.trim();
+  const descLong      = document.getElementById('fDescLong').value.trim();
   const price    = parseFloat(document.getElementById('fPrice').value);
   const category = String(document.getElementById('fCategory').value);
   const brand    = document.getElementById('fBrand').value || (getBrands()[0] && getBrands()[0].id) || '';
@@ -2412,7 +2419,10 @@ function saveItem() {
   const base = {
     '@context': 'https://gs1.org/voc/',
     '@type': 'Product',
-    sku, name, productName: name, description: desc,
+    sku, name, productName: name,
+    shortDescription: descShort,
+    longDescription: descLong,
+    description: descShort, // legacy alias — kept for backwards compatibility
     price, category, brand, active, menuTypes,
     images: editingImages,
     calories, fat, carbs, protein,
@@ -2943,9 +2953,11 @@ function _normaliseLegacyItem(item) {
   if (!result['gs1:netPrice'] && result.price != null) {
     result['gs1:netPrice'] = { '@type': 'gs1:PriceSpecification', 'gs1:price': String(result.price), 'gs1:priceCurrency': 'AUD' };
   }
-  if (!result['@context']) result['@context'] = 'https://gs1.org/voc/';
-  if (!result['@type'])    result['@type']    = 'Product';
-  if (!result.productName) result.productName  = result.name || '';
+  if (!result['@context'])       result['@context']       = 'https://gs1.org/voc/';
+  if (!result['@type'])          result['@type']          = 'Product';
+  if (!result.productName)       result.productName       = result.name || '';
+  if (!result.shortDescription)  result.shortDescription  = result.description || '';
+  if (!result.longDescription)   result.longDescription   = '';
   return result;
 }
 

@@ -158,7 +158,9 @@
             "priceAdj": 0.0
           }
         ]
-      }
+      },
+      "shortDescription": "Our signature medium roast with smooth, full-bodied flavour of toasted nuts and",
+      "longDescription": "Our signature medium roast with smooth, full-bodied flavour of toasted nuts and cocoa. Brewed fresh every 30 minutes — the coffee Starbucks was built on."
     },
     {
       "id": "sbx-002",
@@ -292,7 +294,9 @@
             "priceAdj": 0.0
           }
         ]
-      }
+      },
+      "shortDescription": "Bold espresso shots topped with hot water, producing a light crema",
+      "longDescription": "Bold espresso shots topped with hot water, producing a light crema. A clean, full-bodied drink with a rich, robust flavour profile."
     },
     {
       "id": "sbx-003",
@@ -426,7 +430,9 @@
             "priceAdj": 0.0
           }
         ]
-      }
+      },
+      "shortDescription": "Rich, full-bodied espresso in steamed milk with a light layer of foam",
+      "longDescription": "Rich, full-bodied espresso in steamed milk with a light layer of foam. A timeless classic crafted for those who love smooth, milky coffee."
     },
     {
       "id": "sbx-004",
@@ -560,7 +566,9 @@
             "priceAdj": 0.0
           }
         ]
-      }
+      },
+      "shortDescription": "Dark espresso balanced with steamed milk and a deep layer of velvety foam",
+      "longDescription": "Dark espresso balanced with steamed milk and a deep layer of velvety foam. A Starbucks hallmark since 1986, loved for its bold espresso character."
     },
     {
       "id": "sbx-005",
@@ -694,7 +702,9 @@
             "priceAdj": 0.0
           }
         ]
-      }
+      },
+      "shortDescription": "Ristretto espresso with velvety steamed whole milk in a smaller, stronger servin",
+      "longDescription": "Ristretto espresso with velvety steamed whole milk in a smaller, stronger serving. An extra-bold take on the classic latte originating from Australia and New Zealand."
     },
     {
       "id": "sbx-006",
@@ -828,7 +838,9 @@
             "priceAdj": 0.0
           }
         ]
-      }
+      },
+      "shortDescription": "Full-flavoured espresso combined with bittersweet mocha sauce and steamed milk,",
+      "longDescription": "Full-flavoured espresso combined with bittersweet mocha sauce and steamed milk, finished with a generous swirl of sweetened whipped cream. Indulgent and rich."
     },
     {
       "id": "sbx-007",
@@ -962,7 +974,9 @@
             "priceAdj": 0.0
           }
         ]
-      }
+      },
+      "shortDescription": "Espresso meets creamy white chocolate sauce and steamed milk in this beloved cla",
+      "longDescription": "Espresso meets creamy white chocolate sauce and steamed milk in this beloved classic, topped with sweetened whipped cream for an irresistibly sweet finish."
     },
     {
       "id": "sbx-008",
@@ -1096,7 +1110,9 @@
             "priceAdj": 0.0
           }
         ]
-      }
+      },
+      "shortDescription": "Vanilla-flavoured drink with fresh espresso marked with a caramel crosshatch dri",
+      "longDescription": "Vanilla-flavoured drink with fresh espresso marked with a caramel crosshatch drizzle. Layered beautifully for a balance of sweet and bold."
     },
     {
       "id": "sbx-009",
@@ -1230,7 +1246,9 @@
             "priceAdj": 0.0
           }
         ]
-      }
+      },
+      "shortDescription": "Espresso and steamed milk sweetened with cinnamon dolce syrup, topped with whipp",
+      "longDescription": "Espresso and steamed milk sweetened with cinnamon dolce syrup, topped with whipped cream and a dusting of cinnamon dolce sprinkles. Warmly spiced."
     },
     {
       "id": "sbx-010",
@@ -1364,7 +1382,9 @@
             "priceAdj": 0.0
           }
         ]
-      }
+      },
+      "shortDescription": "Smooth espresso with steamed milk elevated by the sweet, creamy taste of classic",
+      "longDescription": "Smooth espresso with steamed milk elevated by the sweet, creamy taste of classic vanilla syrup. Simple, satisfying and endlessly drinkable."
     },
     {
       "id": "sbx-011",
@@ -1498,7 +1518,9 @@
             "priceAdj": 0.0
           }
         ]
-      }
+      },
+      "shortDescription": "Starbucks Blonde® espresso with oat milk, honey blend, and steamed oat milk",
+      "longDescription": "Starbucks Blonde® espresso with oat milk, honey blend, and steamed oat milk. A lightly sweet, creamy latte with a golden honey flavour."
     },
     {
       "id": "sbx-012",
@@ -1632,7 +1654,9 @@
             "priceAdj": 0.0
           }
         ]
-      }
+      },
+      "shortDescription": "Blonde espresso shots shaken with hazelnut syrup then poured over ice with oat m",
+      "longDescription": "Blonde espresso shots shaken with hazelnut syrup then poured over ice with oat milk. Nutty, sweet, and refreshingly light."
     },
     {
       "id": "sbx-013",
@@ -1766,7 +1790,9 @@
             "priceAdj": 0.0
           }
         ]
-      }
+      },
+      "shortDescription": "Espresso shots topped with cold water and poured over ice",
+      "longDescription": "Espresso shots topped with cold water and poured over ice. Full-bodied and refreshing with that classic espresso boldness."
     },
     {
       "id": "sbx-014",
@@ -1900,7 +1926,9 @@
             "priceAdj": 0.0
           }
         ]
-      }
+      },
+      "shortDescription": "Espresso with cold milk poured over ice",
+      "longDescription": "Espresso with cold milk poured over ice. A refreshing mid-day sipper with the smooth taste of our espresso blend."
     },
     {
       "id": "sbx-015",
@@ -2034,7 +2062,9 @@
             "priceAdj": 0.0
           }
         ]
-      }
+      },
+      "shortDescription": "Vanilla syrup, cold milk, ice, and bold espresso topped with a signature caramel",
+      "longDescription": "Vanilla syrup, cold milk, ice, and bold espresso topped with a signature caramel drizzle. Sweet, indulgent and impossibly refreshing."
     },
     {
       "id": "sbx-016",
@@ -2168,7 +2198,9 @@
             "priceAdj": 0.0
           }
         ]
-      }
+      },
+      "shortDescription": "Espresso with white chocolate sauce, cold milk, and ice, finished with a cloud o",
+      "longDescription": "Espresso with white chocolate sauce, cold milk, and ice, finished with a cloud of sweetened whipped cream. Sweet perfection on ice."
     },
     {
       "id": "sbx-017",
@@ -2302,7 +2334,9 @@
             "priceAdj": 0.0
           }
         ]
-      }
+      },
+      "shortDescription": "Smooth espresso with vanilla syrup shaken with ice and finished with cold milk",
+      "longDescription": "Smooth espresso with vanilla syrup shaken with ice and finished with cold milk. A chilled take on our most beloved classic latte."
     },
     {
       "id": "sbx-018",
@@ -2436,7 +2470,9 @@
             "priceAdj": 0.0
           }
         ]
-      }
+      },
+      "shortDescription": "Blonde espresso shaken with brown sugar syrup and cinnamon, then poured over oat",
+      "longDescription": "Blonde espresso shaken with brown sugar syrup and cinnamon, then poured over oat milk and ice. Lightly sweet with a warm, spiced edge."
     },
     {
       "id": "sbx-019",
@@ -2535,7 +2571,9 @@
             "priceAdj": 0.0
           }
         ]
-      }
+      },
+      "shortDescription": "Steeped in cool water for 20 hours without heat for an ultra-smooth, naturally s",
+      "longDescription": "Steeped in cool water for 20 hours without heat for an ultra-smooth, naturally sweet flavour. Low acidity, full body — cold coffee perfected."
     },
     {
       "id": "sbx-020",
@@ -2634,7 +2672,9 @@
             "priceAdj": 0.0
           }
         ]
-      }
+      },
+      "shortDescription": "Our signature Cold Brew infused with nitrogen for a cascading, velvety texture",
+      "longDescription": "Our signature Cold Brew infused with nitrogen for a cascading, velvety texture. Served straight from the tap — no ice needed."
     },
     {
       "id": "sbx-021",
@@ -2733,7 +2773,9 @@
             "priceAdj": 0.0
           }
         ]
-      }
+      },
+      "shortDescription": "Cold Brew topped with a float of sweet cream infused with vanilla and a salted c",
+      "longDescription": "Cold Brew topped with a float of sweet cream infused with vanilla and a salted caramel drizzle. The ultimate indulgent cold coffee."
     },
     {
       "id": "sbx-022",
@@ -2832,7 +2874,9 @@
             "priceAdj": 0.0
           }
         ]
-      }
+      },
+      "shortDescription": "Cold Brew topped with a velvety float of house-made vanilla sweet cream",
+      "longDescription": "Cold Brew topped with a velvety float of house-made vanilla sweet cream. A perfect blend of bold coffee and delicate sweetness."
     },
     {
       "id": "sbx-023",
@@ -2926,7 +2970,9 @@
             "priceAdj": 0.0
           }
         ]
-      }
+      },
+      "shortDescription": "Black tea infused with cinnamon, clove, and warming spices combined with steamed",
+      "longDescription": "Black tea infused with cinnamon, clove, and warming spices combined with steamed milk and topped with foam. Spiced, fragrant and comforting."
     },
     {
       "id": "sbx-024",
@@ -3020,7 +3066,9 @@
             "priceAdj": 0.0
           }
         ]
-      }
+      },
+      "shortDescription": "Smooth, earthy matcha tea blended with steamed milk for a creamy, vibrant hot te",
+      "longDescription": "Smooth, earthy matcha tea blended with steamed milk for a creamy, vibrant hot tea latte. Naturally sweetened and energising."
     },
     {
       "id": "sbx-025",
@@ -3119,7 +3167,9 @@
             "priceAdj": 0.8
           }
         ]
-      }
+      },
+      "shortDescription": "Black tea with warm cinnamon and spice, sweetened and poured over ice with cold",
+      "longDescription": "Black tea with warm cinnamon and spice, sweetened and poured over ice with cold milk. Spicy, sweet and refreshingly chilled."
     },
     {
       "id": "sbx-026",
@@ -3218,7 +3268,9 @@
             "priceAdj": 0.8
           }
         ]
-      }
+      },
+      "shortDescription": "Smooth, earthy matcha whisked with milk and served over ice",
+      "longDescription": "Smooth, earthy matcha whisked with milk and served over ice. Bright, grassy flavour with a satisfying natural sweetness."
     },
     {
       "id": "sbx-027",
@@ -3312,7 +3364,9 @@
             "priceAdj": 0.0
           }
         ]
-      }
+      },
+      "shortDescription": "A calming pot of premium tea",
+      "longDescription": "A calming pot of premium tea. Choose from Earl Grey, English Breakfast, Mint Majesty, Jade Citrus Mint, or Peach Tranquility herbal blends."
     },
     {
       "id": "sbx-028",
@@ -3406,7 +3460,9 @@
             "priceAdj": 0.0
           }
         ]
-      }
+      },
+      "shortDescription": "Earl Grey tea infused with vanilla syrup and topped with steamed milk and foam",
+      "longDescription": "Earl Grey tea infused with vanilla syrup and topped with steamed milk and foam. A lavender-tinged, aromatic treat beloved by tea lovers."
     },
     {
       "id": "sbx-029",
@@ -3505,7 +3561,9 @@
             "priceAdj": 0.0
           }
         ]
-      }
+      },
+      "shortDescription": "Sweet strawberry flavours and whole dried strawberries shaken with ice and Starb",
+      "longDescription": "Sweet strawberry flavours and whole dried strawberries shaken with ice and Starbucks Refreshers energy — 45mg natural caffeine per serving."
     },
     {
       "id": "sbx-030",
@@ -3604,7 +3662,9 @@
             "priceAdj": 0.0
           }
         ]
-      }
+      },
+      "shortDescription": "Tropical mango flavours with a vibrant magenta colour from real dragon fruit pie",
+      "longDescription": "Tropical mango flavours with a vibrant magenta colour from real dragon fruit pieces, shaken with ice for a refreshing fruity boost."
     },
     {
       "id": "sbx-031",
@@ -3703,7 +3763,9 @@
             "priceAdj": 0.0
           }
         ]
-      }
+      },
+      "shortDescription": "Strawberry Açaí Refresher meets coconut milk for a light, creamy iced beverage w",
+      "longDescription": "Strawberry Açaí Refresher meets coconut milk for a light, creamy iced beverage with a fresh, fruity taste and beautiful blush colour."
     },
     {
       "id": "sbx-032",
@@ -3802,7 +3864,9 @@
             "priceAdj": 0.0
           }
         ]
-      }
+      },
+      "shortDescription": "Tropical pineapple and passionfruit flavours shaken with ice and pineapple piece",
+      "longDescription": "Tropical pineapple and passionfruit flavours shaken with ice and pineapple pieces. Bright, citrusy and seriously refreshing."
     },
     {
       "id": "sbx-033",
@@ -3901,7 +3965,9 @@
             "priceAdj": 0.0
           }
         ]
-      }
+      },
+      "shortDescription": "Pineapple Passionfruit Refresher meets creamy coconut milk for a tropical, islan",
+      "longDescription": "Pineapple Passionfruit Refresher meets creamy coconut milk for a tropical, island-inspired iced beverage with sunny pineapple flavours."
     },
     {
       "id": "sbx-034",
@@ -4040,7 +4106,9 @@
             "priceAdj": 0.6
           }
         ]
-      }
+      },
+      "shortDescription": "Buttery caramel sauce blended with coffee, ice, and milk, topped with sweetened",
+      "longDescription": "Buttery caramel sauce blended with coffee, ice, and milk, topped with sweetened whipped cream and a caramel drizzle. The classic crowd-pleaser."
     },
     {
       "id": "sbx-035",
@@ -4179,7 +4247,9 @@
             "priceAdj": 0.6
           }
         ]
-      }
+      },
+      "shortDescription": "Mocha sauce and Frappuccino chips blended with coffee, milk, and ice, finished w",
+      "longDescription": "Mocha sauce and Frappuccino chips blended with coffee, milk, and ice, finished with whipped cream and a mocha drizzle. For the true chocoholic."
     },
     {
       "id": "sbx-036",
@@ -4318,7 +4388,9 @@
             "priceAdj": 0.6
           }
         ]
-      }
+      },
+      "shortDescription": "Mocha sauce blended with Frappuccino roast coffee, milk, and ice",
+      "longDescription": "Mocha sauce blended with Frappuccino roast coffee, milk, and ice. Topped with sweetened whipped cream. Chocolatey and refreshing."
     },
     {
       "id": "sbx-037",
@@ -4457,7 +4529,9 @@
             "priceAdj": 0.6
           }
         ]
-      }
+      },
+      "shortDescription": "Strawberry purée layered with vanilla and milk, blended with ice and finished wi",
+      "longDescription": "Strawberry purée layered with vanilla and milk, blended with ice and finished with whipped cream. A delightful crème Frappuccino — no coffee."
     },
     {
       "id": "sbx-038",
@@ -4596,7 +4670,9 @@
             "priceAdj": 0.6
           }
         ]
-      }
+      },
+      "shortDescription": "Pure vanilla flavour blended with milk and ice, topped with sweetened whipped cr",
+      "longDescription": "Pure vanilla flavour blended with milk and ice, topped with sweetened whipped cream. Sweet, simple and utterly satisfying — crème base, no coffee."
     },
     {
       "id": "sbx-039",
@@ -4735,7 +4811,9 @@
             "priceAdj": 0.6
           }
         ]
-      }
+      },
+      "shortDescription": "White chocolate sauce blended with milk and ice, topped with sweetened whipped c",
+      "longDescription": "White chocolate sauce blended with milk and ice, topped with sweetened whipped cream. A decadently rich crème-based Frappuccino for white chocolate lovers."
     },
     {
       "id": "sbx-040",
@@ -4874,7 +4952,9 @@
             "priceAdj": 0.6
           }
         ]
-      }
+      },
+      "shortDescription": "Sweet matcha tea blended with milk and ice, topped with sweetened whipped cream",
+      "longDescription": "Sweet matcha tea blended with milk and ice, topped with sweetened whipped cream. An earthy, vibrant crème Frappuccino with a naturally beautiful green hue."
     },
     {
       "id": "sbx-041",
@@ -5013,7 +5093,9 @@
             "priceAdj": 0.6
           }
         ]
-      }
+      },
+      "shortDescription": "Dark caramel coffee Frappuccino with ribbon of caramel sauce, whipped cream, car",
+      "longDescription": "Dark caramel coffee Frappuccino with ribbon of caramel sauce, whipped cream, caramel drizzle, and caramel sugar crystals. A layered masterpiece."
     },
     {
       "id": "sbx-042",
@@ -5148,7 +5230,9 @@
             "priceAdj": 0.0
           }
         ]
-      }
+      },
+      "shortDescription": "Our iconic autumn favourite — espresso with pumpkin, cinnamon, nutmeg, and clove",
+      "longDescription": "Our iconic autumn favourite — espresso with pumpkin, cinnamon, nutmeg, and clove, finished with steamed milk and whipped cream dusted in pumpkin spice. Fall in a cup."
     },
     {
       "id": "sbx-043",
@@ -5283,7 +5367,9 @@
             "priceAdj": 0.0
           }
         ]
-      }
+      },
+      "shortDescription": "Rich espresso with bittersweet mocha sauce and peppermint-flavoured syrup, toppe",
+      "longDescription": "Rich espresso with bittersweet mocha sauce and peppermint-flavoured syrup, topped with whipped cream and dark chocolate curls. Holiday indulgence."
     },
     {
       "id": "sbx-044",
@@ -5418,7 +5504,9 @@
             "priceAdj": 0.0
           }
         ]
-      }
+      },
+      "shortDescription": "Espresso with caramel brulée sauce and steamed milk, topped with whipped cream a",
+      "longDescription": "Espresso with caramel brulée sauce and steamed milk, topped with whipped cream and caramel brulée topping. A festive, caramel-forward holiday treat."
     },
     {
       "id": "sbx-045",
@@ -5553,7 +5641,9 @@
             "priceAdj": 0.0
           }
         ]
-      }
+      },
+      "shortDescription": "Espresso with toasted white chocolate-flavoured sauce and steamed milk, finished",
+      "longDescription": "Espresso with toasted white chocolate-flavoured sauce and steamed milk, finished with whipped cream and a festive topping. A holiday Starbucks staple."
     },
     {
       "id": "sbx-046",
@@ -5688,7 +5778,9 @@
             "priceAdj": 0.0
           }
         ]
-      }
+      },
+      "shortDescription": "Rich espresso combined with creamy eggnog and steamed milk, dusted with fragrant",
+      "longDescription": "Rich espresso combined with creamy eggnog and steamed milk, dusted with fragrant nutmeg. A classic holiday latte available only in the festive season."
     },
     {
       "id": "sbx-047",
@@ -5823,7 +5915,9 @@
             "priceAdj": 0.0
           }
         ]
-      }
+      },
+      "shortDescription": "Cold Brew sweetened with vanilla syrup, topped with silky pumpkin cream cold foa",
+      "longDescription": "Cold Brew sweetened with vanilla syrup, topped with silky pumpkin cream cold foam and pumpkin spice topping. A chilled autumn dream."
     },
     {
       "id": "sbx-048",
@@ -5869,7 +5963,9 @@
             "priceAdj": 0.0
           }
         ]
-      }
+      },
+      "shortDescription": "A golden blondie bar topped with lemon cream cheese frosting, dried cranberries,",
+      "longDescription": "A golden blondie bar topped with lemon cream cheese frosting, dried cranberries, and a white chocolate drizzle. A beloved holiday treat."
     },
     {
       "id": "sbx-049",
@@ -5916,7 +6012,9 @@
             "priceAdj": 0.0
           }
         ]
-      }
+      },
+      "shortDescription": "A double-topped muffin with real pumpkin cream cheese filling and crunchy pepita",
+      "longDescription": "A double-topped muffin with real pumpkin cream cheese filling and crunchy pepitas on top. Moist, spiced perfection for the autumn season."
     },
     {
       "id": "sbx-050",
@@ -5963,7 +6061,9 @@
             "priceAdj": 0.0
           }
         ]
-      }
+      },
+      "shortDescription": "A moist, tender pumpkin loaf made with real pumpkin, cinnamon, and warm spices",
+      "longDescription": "A moist, tender pumpkin loaf made with real pumpkin, cinnamon, and warm spices. A comforting seasonal slice to enjoy with your favourite hot beverage."
     },
     {
       "id": "sbx-051",
@@ -6024,7 +6124,9 @@
             "priceAdj": 0.75
           }
         ]
-      }
+      },
+      "shortDescription": "Thick-cut, peppered bacon with a fried cage-free egg and aged Gouda cheese on a",
+      "longDescription": "Thick-cut, peppered bacon with a fried cage-free egg and aged Gouda cheese on a toasted artisan roll. A hearty breakfast favourite."
     },
     {
       "id": "sbx-052",
@@ -6085,7 +6187,9 @@
             "priceAdj": 0.75
           }
         ]
-      }
+      },
+      "shortDescription": "Savory pork sausage patty with a fried egg and sharp cheddar cheese on a warm cr",
+      "longDescription": "Savory pork sausage patty with a fried egg and sharp cheddar cheese on a warm croissant bun. Comfort food at its finest."
     },
     {
       "id": "sbx-053",
@@ -6146,7 +6250,9 @@
             "priceAdj": 0.75
           }
         ]
-      }
+      },
+      "shortDescription": "Lean turkey bacon with cage-free egg whites and reduced-fat cheddar on an Englis",
+      "longDescription": "Lean turkey bacon with cage-free egg whites and reduced-fat cheddar on an English muffin. A lighter morning option without compromising flavour."
     },
     {
       "id": "sbx-054",
@@ -6207,7 +6313,9 @@
             "priceAdj": 0.75
           }
         ]
-      }
+      },
+      "shortDescription": "Double-smoked bacon layered with a fried egg and aged white cheddar on a toasted",
+      "longDescription": "Double-smoked bacon layered with a fried egg and aged white cheddar on a toasted croissant bun. Bold, hearty and unapologetically satisfying."
     },
     {
       "id": "sbx-055",
@@ -6268,7 +6376,9 @@
             "priceAdj": 0.75
           }
         ]
-      }
+      },
+      "shortDescription": "Sliced black forest ham with melted Swiss cheese on a warm, flaky butter croissa",
+      "longDescription": "Sliced black forest ham with melted Swiss cheese on a warm, flaky butter croissant. A classic European-inspired breakfast pairing."
     },
     {
       "id": "sbx-056",
@@ -6334,7 +6444,9 @@
             "priceAdj": 0.0
           }
         ]
-      }
+      },
+      "shortDescription": "Cage-free egg whites with spinach, tomatoes, and feta cheese wrapped in a whole",
+      "longDescription": "Cage-free egg whites with spinach, tomatoes, and feta cheese wrapped in a whole wheat tortilla. Light, protein-packed and nutritiously satisfying."
     },
     {
       "id": "sbx-057",
@@ -6400,7 +6512,9 @@
             "priceAdj": 0.0
           }
         ]
-      }
+      },
+      "shortDescription": "Savoury chicken sausage with cage-free egg whites, spinach, and tomatoes wrapped",
+      "longDescription": "Savoury chicken sausage with cage-free egg whites, spinach, and tomatoes wrapped in a warm whole wheat flour tortilla. Lean and filling."
     },
     {
       "id": "sbx-058",
@@ -6456,7 +6570,9 @@
             "priceAdj": 4.95
           }
         ]
-      }
+      },
+      "shortDescription": "Applewood-smoked bacon and smooth Gruyère cheese in a fluffy sous vide egg bite",
+      "longDescription": "Applewood-smoked bacon and smooth Gruyère cheese in a fluffy sous vide egg bite. High-protein, low-carb and impossibly creamy. Two per serving."
     },
     {
       "id": "sbx-059",
@@ -6512,7 +6628,9 @@
             "priceAdj": 4.95
           }
         ]
-      }
+      },
+      "shortDescription": "Cage-free egg whites with roasted red pepper, cottage cheese, and Monterey Jack",
+      "longDescription": "Cage-free egg whites with roasted red pepper, cottage cheese, and Monterey Jack in a sous vide egg bite. Light, airy and packed with protein."
     },
     {
       "id": "sbx-060",
@@ -6568,7 +6686,9 @@
             "priceAdj": 4.95
           }
         ]
-      }
+      },
+      "shortDescription": "Egg whites with tender kale, roasted mushrooms, and aged Gouda in a sous vide eg",
+      "longDescription": "Egg whites with tender kale, roasted mushrooms, and aged Gouda in a sous vide egg bite. Wholesome vegetables meet satisfying protein in every bite."
     },
     {
       "id": "sbx-061",
@@ -6614,7 +6734,9 @@
             "priceAdj": 0.0
           }
         ]
-      }
+      },
+      "shortDescription": "A light and flaky all-butter croissant made with real butter and perfectly lamin",
+      "longDescription": "A light and flaky all-butter croissant made with real butter and perfectly laminated layers. Golden, delicate, and classically French."
     },
     {
       "id": "sbx-062",
@@ -6660,7 +6782,9 @@
             "priceAdj": 0.0
           }
         ]
-      }
+      },
+      "shortDescription": "A classic butter croissant with rich, dark chocolate baked inside",
+      "longDescription": "A classic butter croissant with rich, dark chocolate baked inside. Flaky, buttery pastry meets indulgent cocoa in every mouthful."
     },
     {
       "id": "sbx-063",
@@ -6706,7 +6830,9 @@
             "priceAdj": 0.0
           }
         ]
-      }
+      },
+      "shortDescription": "A crumbly, buttery scone studded with plump blueberries, finished with a sweet i",
+      "longDescription": "A crumbly, buttery scone studded with plump blueberries, finished with a sweet icing drizzle. A satisfying British-inspired breakfast bake."
     },
     {
       "id": "sbx-064",
@@ -6752,7 +6878,9 @@
             "priceAdj": 0.0
           }
         ]
-      }
+      },
+      "shortDescription": "Moist, tender banana bread packed with walnuts and the natural sweetness of real",
+      "longDescription": "Moist, tender banana bread packed with walnuts and the natural sweetness of real bananas. A comforting, classic bake loved for generations."
     },
     {
       "id": "sbx-065",
@@ -6798,7 +6926,9 @@
             "priceAdj": 0.0
           }
         ]
-      }
+      },
+      "shortDescription": "A generously-sized golden muffin bursting with fresh blueberries throughout",
+      "longDescription": "A generously-sized golden muffin bursting with fresh blueberries throughout. Moist and fluffy with a lightly crisp crown."
     },
     {
       "id": "sbx-066",
@@ -6844,7 +6974,9 @@
             "priceAdj": 0.0
           }
         ]
-      }
+      },
+      "shortDescription": "A classic plain bagel toasted to perfection and served with a generous portion o",
+      "longDescription": "A classic plain bagel toasted to perfection and served with a generous portion of smooth cream cheese. A simple, satisfying staple."
     },
     {
       "id": "sbx-067",
@@ -6891,7 +7023,9 @@
             "priceAdj": 0.0
           }
         ]
-      }
+      },
+      "shortDescription": "A moist, zesty lemon-flavoured loaf cake topped with a lemon icing",
+      "longDescription": "A moist, zesty lemon-flavoured loaf cake topped with a lemon icing. The perfect sweet slice to complement your favourite Starbucks beverage."
     },
     {
       "id": "sbx-068",
@@ -6939,7 +7073,9 @@
             "priceAdj": 0.0
           }
         ]
-      }
+      },
+      "shortDescription": "Moist vanilla cake mixed with icing, dipped in pink chocolatey coating and finis",
+      "longDescription": "Moist vanilla cake mixed with icing, dipped in pink chocolatey coating and finished with white sprinkles. A festive little celebration."
     },
     {
       "id": "sbx-069",
@@ -6986,7 +7122,9 @@
             "priceAdj": 0.0
           }
         ]
-      }
+      },
+      "shortDescription": "The nostalgic crunch of a rice crispy treat reimagined with Starbucks quality",
+      "longDescription": "The nostalgic crunch of a rice crispy treat reimagined with Starbucks quality. Sweet, chewy, and impossibly satisfying."
     },
     {
       "id": "sbx-070",
@@ -7047,7 +7185,9 @@
             "priceAdj": 0.6
           }
         ]
-      }
+      },
+      "shortDescription": "Hearty whole grain rolled oats served with your choice of toppings: a nut medley",
+      "longDescription": "Hearty whole grain rolled oats served with your choice of toppings: a nut medley, dried fruit, and brown sugar. A wholesome, warming start."
     },
     {
       "id": "sbx-071",
@@ -7103,7 +7243,9 @@
             "priceAdj": 0.75
           }
         ]
-      }
+      },
+      "shortDescription": "A chilled whole grain blend with strawberries, honey, and sunflower seeds",
+      "longDescription": "A chilled whole grain blend with strawberries, honey, and sunflower seeds. Ready-to-eat and packed with fibre and nutrition."
     },
     {
       "id": "sbx-072",
@@ -7165,7 +7307,9 @@
             "priceAdj": 0.0
           }
         ]
-      }
+      },
+      "shortDescription": "Cage-free hard-boiled eggs, reduced-fat white cheddar, multigrain muesli bread,",
+      "longDescription": "Cage-free hard-boiled eggs, reduced-fat white cheddar, multigrain muesli bread, honey peanut butter, and seasonal fruit. A balanced, protein-packed meal."
     },
     {
       "id": "sbx-073",
@@ -7227,7 +7371,9 @@
             "priceAdj": 0.0
           }
         ]
-      }
+      },
+      "shortDescription": "Classic peanut butter and strawberry jam with a sesame bagel, seasonal fruit, an",
+      "longDescription": "Classic peanut butter and strawberry jam with a sesame bagel, seasonal fruit, and a hard-boiled egg. Childhood nostalgia, elevated."
     },
     {
       "id": "sbx-074",
@@ -7288,7 +7434,9 @@
             "priceAdj": 0.0
           }
         ]
-      }
+      },
+      "shortDescription": "Grilled chicken strips with roasted red pepper hummus, white cheddar, seasonal f",
+      "longDescription": "Grilled chicken strips with roasted red pepper hummus, white cheddar, seasonal fruit, and multigrain crackers. Filling, flavourful and high-protein."
     },
     {
       "id": "sbx-075",
@@ -7349,7 +7497,9 @@
             "priceAdj": 0.0
           }
         ]
-      }
+      },
+      "shortDescription": "Reduced-fat white cheddar and smoked Gouda with seasonal fruit, honey peanut but",
+      "longDescription": "Reduced-fat white cheddar and smoked Gouda with seasonal fruit, honey peanut butter, and multigrain crackers. The perfect afternoon pick-me-up."
     },
     {
       "id": "sbx-076",
@@ -7411,7 +7561,9 @@
             "priceAdj": 0.0
           }
         ]
-      }
+      },
+      "shortDescription": "Cage-free hard-boiled egg with shelled edamame, grape tomatoes, carrots, mini Ba",
+      "longDescription": "Cage-free hard-boiled egg with shelled edamame, grape tomatoes, carrots, mini Babybel cheese, and rice crackers. Light, nutritious and satisfying."
     },
     {
       "id": "sbx-077",
@@ -7483,7 +7635,9 @@
             "priceAdj": 0.0
           }
         ]
-      }
+      },
+      "shortDescription": "Sliced turkey breast with basil pesto on toasted multigrain bread, layered with",
+      "longDescription": "Sliced turkey breast with basil pesto on toasted multigrain bread, layered with tomatoes, spinach, and havarti cheese. Fresh and flavourful."
     },
     {
       "id": "sbx-078",
@@ -7555,7 +7709,9 @@
             "priceAdj": 0.0
           }
         ]
-      }
+      },
+      "shortDescription": "Tender chicken breast with double-smoked bacon, havarti cheese, tomato, and chip",
+      "longDescription": "Tender chicken breast with double-smoked bacon, havarti cheese, tomato, and chipotle aioli on toasted sourdough. Bold, smoky and hearty."
     },
     {
       "id": "sbx-079",
@@ -7627,7 +7783,9 @@
             "priceAdj": 0.0
           }
         ]
-      }
+      },
+      "shortDescription": "Black forest ham with Swiss cheese pressed on toasted ciabatta with wholegrain m",
+      "longDescription": "Black forest ham with Swiss cheese pressed on toasted ciabatta with wholegrain mustard and lettuce. A warm, European-inspired classic."
     },
     {
       "id": "sbx-080",
@@ -7699,7 +7857,9 @@
             "priceAdj": 0.0
           }
         ]
-      }
+      },
+      "shortDescription": "Juicy chicken breast with crispy bacon, romaine lettuce, and tomatoes tossed wit",
+      "longDescription": "Juicy chicken breast with crispy bacon, romaine lettuce, and tomatoes tossed with ranch dressing on toasted artisan bread."
     },
     {
       "id": "sbx-081",
@@ -7766,7 +7926,9 @@
             "priceAdj": 1.25
           }
         ]
-      }
+      },
+      "shortDescription": "Grilled chicken with black beans, roasted corn, pepitas, and queso fresco on a b",
+      "longDescription": "Grilled chicken with black beans, roasted corn, pepitas, and queso fresco on a bed of hearty greens with a zesty lime vinaigrette."
     },
     {
       "id": "sbx-082",
@@ -7833,7 +7995,9 @@
             "priceAdj": 1.25
           }
         ]
-      }
+      },
+      "shortDescription": "Crisp romaine lettuce topped with grilled chicken, Parmesan shavings, croutons,",
+      "longDescription": "Crisp romaine lettuce topped with grilled chicken, Parmesan shavings, croutons, and a classic Caesar dressing. A timeless lunch staple."
     }
   ],
   "settings": {
