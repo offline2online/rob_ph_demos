@@ -555,7 +555,7 @@ categories = [
 ]
 
 settings = {
-    "restaurantName": "Starbucks",
+    "brandName": "Starbucks",
     "currency": "$",
     "logo": logo,
     "logoRight": logo,

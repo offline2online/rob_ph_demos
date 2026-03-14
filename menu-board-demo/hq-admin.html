@@ -742,7 +742,7 @@
         <!-- BRANDS -->
         <div id="view-brands" class="view">
           <div class="toolbar" style="margin-bottom:16px;">
-            <div style="flex:1;font-size:13px;color:var(--text2);">Manage brands. Each brand has its own restaurant settings, colour scheme, and display configuration.</div>
+            <div style="flex:1;font-size:13px;color:var(--text2);">Manage brands. Each brand has its own brand settings, colour scheme, and display configuration.</div>
             <button class="btn btn-primary" onclick="openAddBrandModal()">+ Add Brand</button>
           </div>
           <div id="brandsGrid" class="ag-theme-alpine" style="width:100%;height:500px;border-radius:var(--radius);overflow:hidden;border:1px solid var(--border);"></div>
@@ -952,7 +952,7 @@
         <input type="hidden" id="bEditId">
         <div class="form-row">
           <div class="form-group">
-            <label>Brand / Restaurant Name <span class="req">*</span></label>
+            <label>Brand Name <span class="req">*</span></label>
             <input type="text" id="bName" placeholder="e.g. The Grand Caf&#233;">
           </div>
           <div class="form-group">
@@ -1096,7 +1096,7 @@
               <div class="form-group"><label>Clock Bar Text</label><input type="color" id="tplColorClockText" style="height:40px;padding:4px;cursor:pointer;"></div>
             </div>
 
-            <div class="section-divider">Menu Board Settings</div>
+            <div class="section-divider">Offer Board Settings</div>
             <div class="form-group">
               <label>Item Type Filter</label>
               <div class="tpl-type-dropdown" id="tplTypeDropdown">
@@ -1265,7 +1265,7 @@ const DEFAULT_DISPLAY = {
 
 // ===== IN-MEMORY CACHE =====
 let _items    = [];
-let _settings    = { restaurantName: 'My Restaurant', currency: '$', logo: '' };
+let _settings    = { brandName: 'My Brand', currency: '$', logo: '' };
 let _phEndpoints = []; // [{ baseUrl: string, authToken: string /* AES-256-GCM encrypted */ }]
 let _cats     = [];
 let _brands   = [];
@@ -1312,7 +1312,7 @@ function migrateToBrands() {
   if (brands.length > 0) return;
   const s = getSettings();
   const migrated = createDefaultBrand({
-    name:      s.restaurantName || 'Default Brand',
+    name:      s.brandName || 'Default Brand',
     currency:  s.currency       || '$',
     logo:      s.logo           || '',
     logoRight: s.logoRight      || '',
@@ -3663,7 +3663,7 @@ onSnapshot(doc(db, MB, 'categories'), snap => {
 });
 
 onSnapshot(doc(db, MB, 'settings'), snap => {
-  _settings = snap.exists() ? snap.data() : { restaurantName: 'My Restaurant', currency: '$', logo: '' };
+  _settings = snap.exists() ? snap.data() : { brandName: 'My Brand', currency: '$', logo: '' };
   const phApi    = _settings.phApi || {};
   const modeEl   = document.getElementById('phCampaignMode');
   if (modeEl) modeEl.value = phApi.campaignMode || 'override';

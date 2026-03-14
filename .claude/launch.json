@@ -3,9 +3,8 @@
   "configurations": [
     {
       "name": "menuboard",
-      "runtimeExecutable": "python3",
-      "runtimeArgs": ["serve.py"],
-      "cwd": "${workspaceFolder}/menu-board-demo",
+      "runtimeExecutable": "/Users/rgeerdink/Library/Application Support/fnm/node-versions/v18.18.2/installation/bin/node",
+      "runtimeArgs": ["/Users/rgeerdink/Documents/Claude Code/menu-board-demo/serve.js"],
       "port": 3456,
       "autoPort": false
     }

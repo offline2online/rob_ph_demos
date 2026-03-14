@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Menu Board — API Reference</title>
+  <title>Offer Boards — API Reference</title>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
   <style>
     :root {
@@ -100,7 +100,7 @@
   <!-- SIDEBAR NAV -->
   <aside class="sidebar">
     <div class="sidebar-logo">
-      <h1>Menu Board API</h1>
+      <h1>Offer Boards API</h1>
       <p>localStorage + REST Reference</p>
     </div>
     <div class="sidebar-section">Overview</div>
@@ -133,9 +133,9 @@
 
   <!-- MAIN CONTENT -->
   <main class="main">
-    <h1 class="page-title">Menu Board API Reference</h1>
+    <h1 class="page-title">Offer Boards API Reference</h1>
     <p class="page-intro">
-      The Menu Board system stores all data in browser <code>localStorage</code>. These API specifications
+      The Offer Boards system stores all data in browser <code>localStorage</code>. These API specifications
       describe both the <strong>localStorage key/value schema</strong> (for direct integration) and a
       <strong>proposed REST API layer</strong> that can be implemented server-side as a thin bridge to the
       same data model. All endpoints use JSON payloads.
@@ -145,7 +145,7 @@
     <div id="overview" class="section">
       <h2 class="section-title">Introduction</h2>
       <p class="section-desc">
-        The Menu Board is a browser-based system. Data lives in <code>localStorage</code> on each
+        The Offer Boards system is browser-based. Data lives in <code>localStorage</code> on each
         device. The REST API specifications below describe the contract for a server-side relay service
         that syncs data to/from localStorage across devices. Base URL for all endpoints:
       </p>
@@ -166,10 +166,10 @@
         <thead><tr><th>Key</th><th>Type</th><th>Description</th></tr></thead>
         <tbody>
           <tr><td class="param-name">mb_items</td><td class="param-type">JSON Array</td><td>All menu item objects</td></tr>
-          <tr><td class="param-name">mb_settings</td><td class="param-type">JSON Object</td><td>Restaurant settings, logo, colours, orientation</td></tr>
+          <tr><td class="param-name">mb_settings</td><td class="param-type">JSON Object</td><td>Brand settings, logo, colours, orientation</td></tr>
           <tr><td class="param-name">mb_categories</td><td class="param-type">JSON Array&lt;string&gt;</td><td>Category name strings</td></tr>
           <tr><td class="param-name">mb_stock_{STORECODE}</td><td class="param-type">JSON Object</td><td>Per-store out-of-stock flags keyed by SKU</td></tr>
-          <tr><td class="param-name">mb_last_updated</td><td class="param-type">ISO 8601 string</td><td>Timestamp of last data change — menu boards poll this to detect updates</td></tr>
+          <tr><td class="param-name">mb_last_updated</td><td class="param-type">ISO 8601 string</td><td>Timestamp of last data change — offer boards poll this to detect updates</td></tr>
           <tr><td class="param-name">mb_menu_skus_{type}</td><td class="param-type">JSON Array&lt;string&gt; | null</td><td>Optional SKU whitelist for a specific menu type. When set, only listed SKUs appear on that menu.</td></tr>
         </tbody>
       </table>
@@ -187,7 +187,7 @@
   <span class="hl-key">"description"</span>: <span class="hl-str">"Poached eggs on toasted English muffin with hollandaise sauce"</span>,
   <span class="hl-key">"category"</span>:    <span class="hl-str">"Mains"</span>,               <span class="hl-comment">// Must match a value in mb_categories</span>
   <span class="hl-key">"price"</span>:       <span class="hl-num">16.50</span>,                 <span class="hl-comment">// Decimal price (no currency symbol)</span>
-  <span class="hl-key">"active"</span>:      <span class="hl-bool">true</span>,                  <span class="hl-comment">// false = hidden from all menu boards</span>
+  <span class="hl-key">"active"</span>:      <span class="hl-bool">true</span>,                  <span class="hl-comment">// false = hidden from all offer boards</span>
   <span class="hl-key">"menuTypes"</span>:   [<span class="hl-str">"breakfast"</span>, <span class="hl-str">"specials"</span>],<span class="hl-comment">// Values: breakfast|lunch|dinner|drinks|specials</span>
   <span class="hl-key">"images"</span>:      [<span class="hl-str">"data:image/png;base64,..."</span>], <span class="hl-comment">// Array of base64 data URIs; first = primary</span>
   <span class="hl-key">"calories"</span>:    <span class="hl-num">520</span>,                   <span class="hl-comment">// null if not provided</span>
@@ -469,12 +469,12 @@ Authorization: Bearer eyJhbGciOi...
   <span class="hl-key">"store"</span>: <span class="hl-str">"STORE001"</span>,
   <span class="hl-key">"skus"</span>: [<span class="hl-str">"BRK001"</span>, <span class="hl-str">"LCH005"</span>, <span class="hl-str">"DRK012"</span>, <span class="hl-str">"DSR003"</span>],
   <span class="hl-key">"count"</span>: <span class="hl-num">4</span>,
-  <span class="hl-key">"message"</span>: <span class="hl-str">"Specials menu whitelist updated. Menu boards will refresh within 5 seconds."</span>
+  <span class="hl-key">"message"</span>: <span class="hl-str">"Specials menu whitelist updated. Offer boards will refresh within 5 seconds."</span>
 }</pre>
 
           <div class="note warn">
             <span class="note-icon">⚠️</span>
-            <span>SKUs not found in the product catalogue are silently ignored. Only existing, <strong>active</strong> products matching the SKU whitelist will appear on the menu board.</span>
+            <span>SKUs not found in the product catalogue are silently ignored. Only existing, <strong>active</strong> products matching the SKU whitelist will appear on the offer board.</span>
           </div>
           <div class="response-codes">
             <span class="resp-code resp-200">200 OK</span>
@@ -550,14 +550,14 @@ Authorization: Bearer eyJhbGciOi...</pre>
         <div class="endpoint-header">
           <span class="method method-get">GET</span>
           <span class="endpoint-path">/settings</span>
-          <span class="endpoint-desc">Retrieve restaurant settings</span>
+          <span class="endpoint-desc">Retrieve brand settings</span>
         </div>
         <div class="endpoint-body">
           <div class="code-label">200 OK</div>
           <pre>{
   <span class="hl-key">"success"</span>: <span class="hl-bool">true</span>,
   <span class="hl-key">"data"</span>: {
-    <span class="hl-key">"restaurantName"</span>: <span class="hl-str">"Starbucks"</span>,
+    <span class="hl-key">"brandName"</span>: <span class="hl-str">"Starbucks"</span>,
     <span class="hl-key">"currency"</span>:       <span class="hl-str">"$"</span>,
     <span class="hl-key">"orientation"</span>:    <span class="hl-str">"landscape"</span>,  <span class="hl-comment">// "portrait" | "landscape"</span>
     <span class="hl-key">"colors"</span>: {
@@ -579,7 +579,7 @@ Authorization: Bearer eyJhbGciOi...</pre>
         <div class="endpoint-header">
           <span class="method method-put">PUT</span>
           <span class="endpoint-path">/settings</span>
-          <span class="endpoint-desc">Update restaurant settings (partial update supported)</span>
+          <span class="endpoint-desc">Update brand settings (partial update supported)</span>
         </div>
         <div class="endpoint-body">
           <div class="code-label">Example — Update orientation and colour scheme</div>
@@ -605,7 +605,7 @@ Content-Type: application/json
       <h2 class="section-title">localStorage Bridge Implementation</h2>
       <p class="section-desc">
         For a lightweight integration without a server, external systems can write directly to
-        <code>localStorage</code> on the menu board device using this JavaScript bridge. Call this
+        <code>localStorage</code> on the offer board device using this JavaScript bridge. Call this
         from a CMS, kiosk controller, or parent frame.
       </p>
 
@@ -622,7 +622,7 @@ window.addEventListener(<span class="hl-str">'message'</span>, (e) => {
   if (e.data.type === <span class="hl-str">'MB_SET_MENU_SKUS'</span>) {
     localStorage.setItem(<span class="hl-str">'mb_menu_skus_'</span> + e.data.menu, JSON.stringify(e.data.skus));
     localStorage.setItem(<span class="hl-str">'mb_last_updated'</span>, new Date().toISOString());
-    <span class="hl-comment">// Menu board auto-detects the change within 5 seconds</span>
+    <span class="hl-comment">// Offer board auto-detects the change within 5 seconds</span>
   }
 });</pre>
 
@@ -667,7 +667,7 @@ X-MenuBoard-Secret: &lt;your-shared-secret&gt;
 
       <div class="note">
         <span class="note-icon">💡</span>
-        <span>Menu boards poll <code>mb_last_updated</code> every 5 seconds. Any write to this key (from any source) causes all connected menu boards on that device to re-render immediately.</span>
+        <span>Offer boards poll <code>mb_last_updated</code> every 5 seconds. Any write to this key (from any source) causes all connected offer boards on that device to re-render immediately.</span>
       </div>
     </div>
 
@@ -680,7 +680,7 @@ X-MenuBoard-Secret: &lt;your-shared-secret&gt;
     <div id="stock-api" class="section">
       <h2 class="section-title">Stock API</h2>
       <p class="section-desc">
-        The Stock API lets external systems (POS, ERP, warehouse management) read and update per-store stock levels and availability flags in real time. Stock data is stored in Firestore under <code>stock/{STORE_CODE}</code> and is read directly by the Retail Admin and Menu Board displays.
+        The Stock API lets external systems (POS, ERP, warehouse management) read and update per-store stock levels and availability flags in real time. Stock data is stored in Firestore under <code>stock/{STORE_CODE}</code> and is read directly by the Retail Admin and Offer Board displays.
       </p>
 
       <div class="note">
@@ -696,7 +696,7 @@ X-MenuBoard-Secret: &lt;your-shared-secret&gt;
       <pre>{
   <span class="hl-key">"BRK001"</span>: {
     <span class="hl-key">"quantity"</span>:   <span class="hl-num">24</span>,                          <span class="hl-comment">// Current estimated stock level (null = unknown)</span>
-    <span class="hl-key">"outOfStock"</span>: <span class="hl-bool">false</span>,                       <span class="hl-comment">// true = OOS, hides from menu board</span>
+    <span class="hl-key">"outOfStock"</span>: <span class="hl-bool">false</span>,                       <span class="hl-comment">// true = OOS, hides from offer board</span>
     <span class="hl-key">"notStocked"</span>: <span class="hl-bool">false</span>,                       <span class="hl-comment">// true = store never carries this SKU</span>
     <span class="hl-key">"updatedAt"</span>:  <span class="hl-str">"2026-03-11T09:15:00.000Z"</span>,  <span class="hl-comment">// ISO 8601 timestamp of last change</span>
     <span class="hl-key">"updatedBy"</span>:  <span class="hl-str">"staff@example.com"</span>          <span class="hl-comment">// Staff ID who made the last change</span>
@@ -785,7 +785,7 @@ X-MenuBoard-Secret: &lt;your-shared-secret&gt;
             <thead><tr><th>Field</th><th>Type</th><th>Required</th><th>Description</th></tr></thead>
             <tbody>
               <tr><td class="param-name">quantity</td><td class="param-type">integer</td><td><span class="param-req req-no">Optional</span></td><td>Current stock level. Set to <code>null</code> to clear.</td></tr>
-              <tr><td class="param-name">outOfStock</td><td class="param-type">boolean</td><td><span class="param-req req-no">Optional</span></td><td>When <code>true</code>, hides item from menu board.</td></tr>
+              <tr><td class="param-name">outOfStock</td><td class="param-type">boolean</td><td><span class="param-req req-no">Optional</span></td><td>When <code>true</code>, hides item from offer board.</td></tr>
               <tr><td class="param-name">notStocked</td><td class="param-type">boolean</td><td><span class="param-req req-no">Optional</span></td><td>When <code>true</code>, marks as never stocked at this store.</td></tr>
               <tr><td class="param-name">updatedBy</td><td class="param-type">string</td><td><span class="param-req req-no">Optional</span></td><td>Identifier of the system or user making the change.</td></tr>
               <tr><td class="param-name">updatedAt</td><td class="param-type">string</td><td><span class="param-req req-no">Optional</span></td><td>ISO 8601 timestamp of the change. Defaults to server time if omitted.</td></tr>

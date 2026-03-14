@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Menu Board System — Portal</title>
+  <title>Offer Boards — Portal</title>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
   <style>
     :root {
@@ -270,7 +270,7 @@
     const store = p.get('store');
     const staff = p.get('staff');
     if (store) {
-      let url = 'store-admin.html?store=' + encodeURIComponent(store);
+      let url = 'retail-admin.html?store=' + encodeURIComponent(store);
       if (staff) url += '&staff=' + encodeURIComponent(staff);
       window.location.replace(url);
     }
@@ -281,7 +281,7 @@
   <div class="logo">
     <div class="logo-icon">🍽️</div>
     <div class="logo-text">
-      <h1>Menu Board System</h1>
+      <h1>Offer Boards</h1>
       <span>Digital Signage Management Platform</span>
     </div>
   </div>
@@ -294,7 +294,7 @@
   <div class="quick-links">
     <a href="hq-admin.html" class="quick-link">🏢 HQ Admin Panel</a>
     <span class="quick-link" onclick="document.getElementById('storeCard').scrollIntoView({behavior:'smooth'})">🏪 Store Portal</span>
-    <span class="quick-link" onclick="document.getElementById('boardCard').scrollIntoView({behavior:'smooth'})">📺 Menu Board Preview</span>
+    <span class="quick-link" onclick="document.getElementById('boardCard').scrollIntoView({behavior:'smooth'})">📺 Offer Board Preview</span>
     <a href="order.html" class="quick-link">🛍 Customer Order</a>
     <span class="quick-link" onclick="document.getElementById('summaryCard').scrollIntoView({behavior:'smooth'})">🛒 Order Summary</span>
   </div>
@@ -340,7 +340,7 @@
       <div class="card-header">
         <div class="card-icon amber">📺</div>
         <div>
-          <h2>Menu Board Preview</h2>
+          <h2>Offer Board Preview</h2>
           <span class="badge" style="background:rgba(245,158,11,0.15);color:#f59e0b;">Digital Signage</span>
         </div>
       </div>
@@ -359,7 +359,7 @@
           <option value="specials">⭐ Today's Specials</option>
         </select>
       </div>
-      <button onclick="goToBoard()" class="btn btn-amber btn-full">Open Menu Board →</button>
+      <button onclick="goToBoard()" class="btn btn-amber btn-full">Open Offer Board →</button>
     </div>
 
     <!-- Order Summary Board Card -->
@@ -418,7 +418,7 @@
       </tr>
       <tr>
         <td>Store Admin Direct</td>
-        <td><code>store-admin.html?store=<em>STORE001</em>&amp;staff=<em>STAFF001</em></code></td>
+        <td><code>retail-admin.html?store=<em>STORE001</em>&amp;staff=<em>STAFF001</em></code></td>
       </tr>
       <tr>
         <td>Breakfast Board</td>
@@ -464,7 +464,7 @@
     const store = document.getElementById('storeCode').value.trim();
     const staff = document.getElementById('staffId').value.trim();
     if (!store) { alert('Store Code is required.'); document.getElementById('storeCode').focus(); return; }
-    let url = 'store-admin.html?store=' + encodeURIComponent(store);
+    let url = 'retail-admin.html?store=' + encodeURIComponent(store);
     if (staff) url += '&staff=' + encodeURIComponent(staff);
     window.open(url, '_blank');
   }

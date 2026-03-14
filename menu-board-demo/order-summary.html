@@ -457,7 +457,7 @@ let _debugPanelVisible = (urlParams.get('debug') === '1');
 // ── STATE ─────────────────────────────────────────────────────────────────────
 let _cart     = null;   // Firestore cart document, or null if never written
 let _cartExists = false; // true once the document has been seen at least once
-let _settings = { restaurantName: 'Our Restaurant', currency: '$', logo: '', logoRight: '' };
+let _settings = { brandName: 'Our Brand', currency: '$', logo: '', logoRight: '' };
 let _brands   = [];
 let _storeName = null;  // from PH API store_location.store_name
 
@@ -479,7 +479,7 @@ function getActiveBrand() {
     const s = _settings;
     return {
       id: 'default',
-      name:      s.restaurantName || 'Our Restaurant',
+      name:      s.brandName || 'Our Brand',
       currency:  s.currency       || '$',
       logo:      s.logo           || '',
       logoRight: s.logoRight      || s.logo || '',
@@ -732,7 +732,7 @@ function render() {
 
   const logoLeft  = brand.logo      || '';
   const logoRight = brand.logoRight || brand.logo || '';
-  const brandName = brand.name  || 'Our Restaurant';
+  const brandName = brand.name  || 'Our Brand';
   const currency  = brand.currency  || '$';
 
   const showClock = brand.showClock !== false;
@@ -898,7 +898,7 @@ if (!DEVICE_UDID) {
 
   onSnapshot(doc(db, 'menuboard', 'settings'), snap => {
     _settings = snap.exists() ? snap.data()
-      : { restaurantName: 'Our Restaurant', currency: '$', logo: '', logoRight: '' };
+      : { brandName: 'Our Brand', currency: '$', logo: '', logoRight: '' };
     render();
     if (DEVICE_UDID) pollCampaign();
     _updateDebugPanel();

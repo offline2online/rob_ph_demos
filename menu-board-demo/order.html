@@ -1065,7 +1065,7 @@ if (HOST_HEADER_HEIGHT > 0) {
 
 // ── STATE ─────────────────────────────────────────────────────────────────
 let _items       = [];
-let _settings    = { restaurantName: 'Menu', currency: '$', logo: '' };
+let _settings    = { brandName: 'Menu', currency: '$', logo: '' };
 let _brands      = [];
 let _stock       = {};
 let _activeCat   = 'All';
@@ -1294,7 +1294,7 @@ function forgetLoyalty() {
 function applyBranding() {
   const brand = _brands[0];
   const s = _settings;
-  const name = brand?.name || s.restaurantName || 'Menu';
+  const name = brand?.name || s.brandName || 'Menu';
   document.getElementById('headerTitle').textContent = name;
   document.title = `Order — ${name}`;
 
@@ -1978,7 +1978,7 @@ onSnapshot(doc(db, 'menuboard', 'brands'), snap => {
 
 onSnapshot(doc(db, 'menuboard', 'settings'), snap => {
   _settings = snap.exists() ? snap.data()
-    : { restaurantName: 'Menu', currency: '$', logo: '' };
+    : { brandName: 'Menu', currency: '$', logo: '' };
   applyBranding();
   if (DEVICE_UDID) pollCampaign();
 });

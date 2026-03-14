@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Menu Board</title>
+  <title>Offer Board</title>
   <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@500;600;700&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <style>
     :root {
@@ -609,7 +609,7 @@ const ROTATION_INTERVAL = 8000; // ms
 
 // ── IN-MEMORY CACHE ──────────────────────────────────────────────────────────
 let _items       = [];
-let _settings    = { restaurantName: 'Our Restaurant', currency: '$', logo: '', logoRight: '' };
+let _settings    = { brandName: 'Our Brand', currency: '$', logo: '', logoRight: '' };
 let _brands      = [];
 let _stock       = {};
 // Campaign SKUs: null = default menu; string[] = personalised override from Personalisation Hub API
@@ -659,7 +659,7 @@ function getActiveBrand() {
     const s = getSettings();
     return {
       id: 'default',
-      name:      s.restaurantName || 'Our Restaurant',
+      name:      s.brandName || 'Our Brand',
       currency:  s.currency       || '$',
       logo:      s.logo           || '',
       logoRight: s.logoRight      || s.logo || '',
@@ -1126,7 +1126,7 @@ onSnapshot(doc(db, MB, 'brands'), snap => {
 });
 
 onSnapshot(doc(db, MB, 'settings'), snap => {
-  const newSettings = snap.exists() ? snap.data() : { restaurantName: 'Our Restaurant', currency: '$', logo: '', logoRight: '' };
+  const newSettings = snap.exists() ? snap.data() : { brandName: 'Our Brand', currency: '$', logo: '', logoRight: '' };
   // Fix 1: only reset active endpoint when the endpoint list itself changes (preserves manual env selection)
   const endpointsChanged = JSON.stringify(_settings?.phApi?.endpoints)
                         !== JSON.stringify(newSettings?.phApi?.endpoints);
@@ -1154,7 +1154,7 @@ function render() {
   const brand       = getActiveBrand();
   const themeSource = brand || getBrands()[0] || (() => {
     const s = getSettings();
-    return { name: s.restaurantName || 'Our Restaurant', currency: s.currency || '$', logo: s.logo || '', logoRight: s.logoRight || '', colors: s.colors || {}, showClock: true, timeFormat: 'british', display: { portrait: { cols: 3, rows: 5, maxItems: 15 }, landscape: { cols: 5, rows: 3, maxItems: 15 } } };
+    return { name: s.brandName || 'Our Brand', currency: s.currency || '$', logo: s.logo || '', logoRight: s.logoRight || '', colors: s.colors || {}, showClock: true, timeFormat: 'british', display: { portrait: { cols: 3, rows: 5, maxItems: 15 }, landscape: { cols: 5, rows: 3, maxItems: 15 } } };
   })();
 
   applyColorScheme(themeSource);
@@ -1174,7 +1174,7 @@ function render() {
   const items     = getItems();
   const logoLeft  = themeSource.logo      || '';
   const logoRight = themeSource.logoRight || themeSource.logo || '';
-  const brandName = esc(themeSource.name  || 'Our Restaurant');
+  const brandName = esc(themeSource.name  || 'Our Brand');
   const currency  = esc(themeSource.currency || '$');
 
   // ── STEP 1: Filter first so totalItems drives layout ────────────────────────
@@ -1448,8 +1448,8 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('boardRoot').innerHTML = `
       <div class="error-board">
         <div class="icon">📺</div>
-        <h2>Invalid Menu Board URL</h2>
-        <p>This menu board requires ${missing}.</p>
+        <h2>Invalid Offer Board URL</h2>
+        <p>This offer board requires ${missing}.</p>
         <br>
         <p>Example URLs:</p>
         <code>menu-board.html?store=STORE001&amp;menu=breakfast</code><br>

@@ -23,7 +23,28 @@
       "Bash(ruby --version)",
       "Bash(php --version)",
       "Read(//usr/bin/**)",
-      "Bash(command -v node npx)"
+      "Bash(command -v node npx)",
+      "Read(//usr/local/bin/**)",
+      "Read(//Users/rgeerdink/.nvm/versions/**)",
+      "Bash(find '/Users/rgeerdink/Documents/Claude Code' -name *.json -path */.claude/*)",
+      "Bash(find ~/.claude -name *.json)",
+      "Bash(find '/Users/rgeerdink/Library/Application Support/Claude' -name *.json)",
+      "Bash(find '/Users/rgeerdink/Library/Application Support/Claude/local-agent-mode-sessions' -name *.json)",
+      "Bash(find /Users/rgeerdink/.claude/plugins -name *.json)",
+      "Bash(/dev/null --include=*.json --include=*.md --include=*.sh -l)",
+      "Bash(find '/Users/rgeerdink/Documents/Claude Code' ~/.claude '/Users/rgeerdink/Library/Application Support/Claude/local-agent-mode-sessions' -name callback* -o -name *.sh)",
+      "Bash(find '/Users/rgeerdink/Library/Application Support/Claude/local-agent-mode-sessions/176d3032-efc9-46a4-b9c8-4ebba4c7b17f/701bd348-7e4c-46a0-8597-9948105f0432/cowork_plugins' -name *.json -o -name *.sh)",
+      "Read(//Users/rgeerdink/Library/Application Support/fnm/node-versions/**)",
+      "Bash(\"/Users/rgeerdink/Library/Application Support/fnm/node-versions/v18.18.2/installation/bin/node\" --version)",
+      "Bash(\"/Users/rgeerdink/Library/Application Support/fnm/node-versions/v18.18.2/installation/bin/node\":*)",
+      "Bash(ps -p 11413 -o command)",
+      "Bash(kill 11413)",
+      "mcp__Claude_in_Chrome__read_page",
+      "Bash(kill 13148)",
+      "Bash(ls /usr/local/bin/node /usr/bin/node ~/.nvm/versions/node/*/bin/node)",
+      "Bash(export PATH=\"$PATH:/usr/local/bin:/opt/homebrew/bin\")",
+      "Bash(pkill -f \"python3 serve.py\")",
+      "Bash(grep -E \"Offer Board Settings|brandName: ''''My Brand''''\")"
     ]
   }
 }
