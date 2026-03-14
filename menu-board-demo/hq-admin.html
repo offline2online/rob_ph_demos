@@ -4,7 +4,6 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>HQ Admin — PersonalisationHub</title>
-  <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@500;600;700&family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/ag-grid-community@32.3.3/styles/ag-grid.css">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/ag-grid-community@32.3.3/styles/ag-theme-alpine.css">
   <script src="https://cdn.jsdelivr.net/npm/ag-grid-community@32.3.3/dist/ag-grid-community.min.noStyle.js"></script>
@@ -13,32 +12,32 @@
        CSS VARIABLES
     ============================================================ */
     :root {
-      --bg:        #F0F4FA;
+      --bg:        #f5f5f5;
       --inner-sb:  #FFFFFF;
       --surface:   #FFFFFF;
-      --surface2:  #F4F7FB;
-      --surface3:  #EDF1F7;
+      --surface2:  #f5f5f5;
+      --surface3:  #f0f0f0;
       --border:    #E2E8F0;
       --border2:   #CBD5E1;
-      --text:      #1E293B;
-      --text2:     #64748B;
-      --primary:   #006241;
-      --primary-light: rgba(0,98,65,0.10);
-      --success:   #059669;
-      --success-light: rgba(5,150,105,0.10);
+      --text:      rgba(0,0,0,0.88);
+      --text2:     rgba(0,0,0,0.65);
+      --primary:   #169bc2;
+      --primary-light: rgba(22,155,194,0.10);
+      --success:   #52c41a;
+      --success-light: rgba(82,196,26,0.10);
       --toggle-on: #169bc2;
       --warning:   #D97706;
       --warning-light: rgba(217,119,6,0.10);
-      --danger:    #DC2626;
-      --danger-light: rgba(220,38,38,0.10);
+      --danger:    #ff4d4f;
+      --danger-light: rgba(255,77,79,0.10);
       --accent:    #818CF8;
-      --radius:    10px;
+      --radius:    8px;
     }
     * { margin:0; padding:0; box-sizing:border-box; }
     html { height:auto; overflow:auto; }
     body { height:auto; }
     body {
-      font-family: 'Inter', sans-serif;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
       background: var(--bg);
       color: var(--text);
       display: flex;
@@ -88,7 +87,7 @@
     }
     .brand-icon {
       width: 28px; height: 28px;
-      background: linear-gradient(135deg, #006241, #00a86b);
+      background: linear-gradient(135deg, #169bc2, #38b0cf);
       border-radius: 7px;
       display: flex; align-items: center; justify-content: center;
       font-size: 13px;
@@ -97,20 +96,19 @@
 
     .inner-nav { padding: 10px 8px; flex: 1; }
     .nav-label {
-      font-size: 9px;
+      font-size: 12px;
       font-weight: 700;
-      color: var(--text2);
-      letter-spacing: 1.2px;
+      color: rgba(0,0,0,0.45);
+      letter-spacing: 0.05em;
       text-transform: uppercase;
       padding: 8px 8px 4px;
-      opacity: 0.7;
     }
     .nav-item {
       display: flex;
       align-items: center;
       gap: 8px;
       padding: 8px 10px;
-      border-radius: 7px;
+      border-radius: 6px;
       cursor: pointer;
       color: var(--text2);
       font-size: 12.5px;
@@ -119,8 +117,8 @@
       user-select: none;
       margin-bottom: 1px;
     }
-    .nav-item:hover { background: var(--surface2); color: var(--text); }
-    .nav-item.active { background: var(--primary-light); color: var(--primary); font-weight: 600; }
+    .nav-item:hover { background: var(--surface3); color: var(--text); }
+    .nav-item.active { background: transparent; color: var(--primary); font-weight: 500; }
     .nav-item .icon { font-size: 13px; width: 17px; text-align: center; }
     .nav-badge {
       margin-left: auto;
@@ -149,8 +147,8 @@
       flex-direction: column;
     }
     .topbar {
-      background: var(--surface);
-      border-bottom: 1px solid var(--border);
+      background: #000;
+      border-bottom: none;
       padding: 0 22px;
       height: 50px;
       display: flex;
@@ -159,17 +157,18 @@
       position: sticky;
       top: 0;
       z-index: 100;
+      color: #fff;
     }
-    .topbar-title { font-family: 'Oswald', sans-serif; font-size: 16px; font-weight: 600; color: var(--text); letter-spacing: 0.3px; }
+    .topbar-title { font-size: 15px; font-weight: 600; color: #fff; letter-spacing: -0.1px; }
     .topbar-right { display: flex; align-items: center; gap: 10px; }
     .hq-badge {
-      background: var(--primary-light);
-      color: var(--primary);
+      background: transparent;
+      color: #fff;
       font-size: 11px;
       font-weight: 700;
       padding: 3px 10px;
       border-radius: 20px;
-      border: 1px solid rgba(0,98,65,0.2);
+      border: 1px solid rgba(255,255,255,0.35);
     }
     .content { padding: 22px; }
 
@@ -185,13 +184,12 @@
       margin-bottom: 22px;
     }
     .stat-card {
-      background: var(--surface);
-      border: 1px solid var(--border);
+      background: var(--surface2);
       border-radius: var(--radius);
       padding: 18px;
     }
-    .stat-label { font-size: 10px; font-weight: 700; color: var(--text2); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px; }
-    .stat-value { font-family: 'Oswald', sans-serif; font-size: 32px; font-weight: 700; color: var(--primary); line-height: 1; }
+    .stat-label { font-size: 12px; font-weight: 500; color: rgba(0,0,0,0.45); margin-bottom: 8px; }
+    .stat-value { font-size: 32px; font-weight: 700; color: rgba(0,0,0,0.88); line-height: 1; }
     .stat-sub { font-size: 11px; color: var(--text2); margin-top: 5px; }
     .stat-dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; margin-right: 4px; }
 
@@ -208,16 +206,15 @@
       flex: 1;
       min-width: 200px;
     }
-    .search-box input { background: none; border: none; outline: none; color: var(--text); font-size: 13px; font-family: 'Inter',sans-serif; width: 100%; }
+    .search-box input { background: none; border: none; outline: none; color: var(--text); font-size: 13px; width: 100%; }
     .search-box input::placeholder { color: var(--text2); }
     .filter-select {
       background: var(--surface);
       border: 1px solid var(--border);
-      border-radius: 8px;
+      border-radius: 6px;
       padding: 7px 10px;
       color: var(--text);
       font-size: 13px;
-      font-family: 'Inter',sans-serif;
       outline: none;
       cursor: pointer;
     }
@@ -228,10 +225,9 @@
       align-items: center;
       gap: 6px;
       padding: 8px 14px;
-      border-radius: 8px;
+      border-radius: 6px;
       font-size: 13px;
       font-weight: 600;
-      font-family: 'Inter',sans-serif;
       cursor: pointer;
       border: none;
       transition: all 0.14s;
@@ -239,11 +235,11 @@
       text-decoration: none;
     }
     .btn-primary { background: var(--primary); color: #fff; }
-    .btn-primary:hover { background: #004d33; }
+    .btn-primary:hover { background: #38b0cf; }
     .btn-success { background: var(--success); color: #fff; }
-    .btn-success:hover { background: #047857; }
+    .btn-success:hover { background: #3d9900; }
     .btn-danger { background: var(--danger); color: #fff; }
-    .btn-danger:hover { background: #B91C1C; }
+    .btn-danger:hover { background: #e53535; }
     .btn-ghost { background: var(--surface2); color: var(--text); border: 1px solid var(--border); }
     .btn-ghost:hover { background: var(--surface3); }
     .btn-sm { padding: 5px 10px; font-size: 12px; }
@@ -292,11 +288,11 @@
     /* MODAL */
     .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.40); z-index: 100; align-items: center; justify-content: center; padding: 20px; }
     .modal-overlay.open { display: flex; }
-    .modal { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; width: 100%; max-width: 680px; max-height: 90vh; display: flex; flex-direction: column; box-shadow: 0 20px 60px rgba(0,0,0,0.15); }
+    .modal { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; width: 100%; max-width: 680px; max-height: 90vh; display: flex; flex-direction: column; box-shadow: 0 20px 60px rgba(0,0,0,0.15); }
     .modal-header { padding: 20px 22px 16px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; }
     .modal-header h2 { font-size: 16px; font-weight: 700; color: var(--text); }
     .modal-close { width: 30px; height: 30px; background: var(--surface2); border: 1px solid var(--border); border-radius: 7px; cursor: pointer; color: var(--text2); font-size: 16px; display: flex; align-items: center; justify-content: center; transition: all 0.14s; }
-    .modal-close:hover { background: var(--danger); color: #fff; border-color: var(--danger); }
+    .modal-close:hover { background: rgba(0,0,0,0.06); color: var(--text2); border-color: var(--border); }
     .modal-body { padding: 22px; overflow-y: auto; flex: 1; }
     .modal-footer { padding: 14px 22px; border-top: 1px solid var(--border); display: flex; gap: 8px; justify-content: flex-end; }
 
@@ -309,8 +305,8 @@
     .form-group { margin-bottom: 16px; }
     .form-group label { display: block; font-size: 11px; font-weight: 700; color: var(--text2); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px; }
     .form-group label .req { color: var(--danger); }
-    .form-group input, .form-group select, .form-group textarea { width: 100%; background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; padding: 9px 11px; color: var(--text); font-size: 13px; font-family: 'Inter',sans-serif; outline: none; transition: border-color 0.15s; }
-    .form-group input:focus, .form-group select:focus, .form-group textarea:focus { border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-light); }
+    .form-group input, .form-group select, .form-group textarea { width: 100%; background: var(--surface2); border: 1px solid var(--border); border-radius: 6px; padding: 9px 11px; color: var(--text); font-size: 13px; outline: none; transition: border-color 0.15s; }
+    .form-group input:focus, .form-group select:focus, .form-group textarea:focus { border-color: var(--primary); box-shadow: 0 0 0 2px rgba(22,155,194,0.2); }
     .form-group textarea { resize: vertical; min-height: 72px; }
     .price-input-wrap { position: relative; }
     .price-symbol { position: absolute; left: 11px; top: 50%; transform: translateY(-50%); color: var(--text2); font-size: 13px; font-weight: 600; }
@@ -337,10 +333,9 @@
     /* SETTINGS */
     .settings-section { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 22px; margin-bottom: 18px; }
     .settings-section h3 {
-      font-family: 'Oswald', sans-serif;
-      font-size: 16px; font-weight: 600; color: var(--primary);
-      margin-bottom: 4px; padding-bottom: 12px; border-bottom: 2px solid var(--primary-light);
-      letter-spacing: 0.5px; text-transform: uppercase;
+      font-size: 11px; font-weight: 700; color: rgba(0,0,0,0.45);
+      margin-bottom: 4px; padding-bottom: 12px; border-bottom: 1px solid var(--border);
+      letter-spacing: 0.08em; text-transform: uppercase;
     }
     .settings-section .settings-desc { font-size: 12px; color: var(--text2); margin-bottom: 18px; line-height: 1.5; }
     .form-group .form-help { font-size: 11px; color: var(--text2); margin-top: 4px; line-height: 1.4; }
@@ -351,8 +346,8 @@
     .cat-tag button { background: none; border: none; cursor: pointer; color: var(--text2); font-size: 13px; padding: 0; line-height: 1; }
     .cat-tag button:hover { color: var(--danger); }
     .add-cat-row { display: flex; gap: 8px; }
-    .add-cat-row input { flex: 1; background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; padding: 8px 11px; color: var(--text); font-size: 13px; font-family: 'Inter',sans-serif; outline: none; }
-    .add-cat-row input:focus { border-color: var(--primary); }
+    .add-cat-row input { flex: 1; background: var(--surface2); border: 1px solid var(--border); border-radius: 6px; padding: 8px 11px; color: var(--text); font-size: 13px; outline: none; }
+    .add-cat-row input:focus { border-color: var(--primary); box-shadow: 0 0 0 2px rgba(22,155,194,0.2); }
 
     /* TOAST */
     .toast-container { position: fixed; bottom: 20px; right: 20px; z-index: 999; display: flex; flex-direction: column; gap: 8px; }
@@ -392,13 +387,14 @@
       --ag-border-color:              var(--border);
       --ag-header-foreground-color:   var(--text2);
       --ag-foreground-color:          var(--text);
-      --ag-font-family:               'Inter', sans-serif;
+      --ag-font-family:               -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif;
       --ag-font-size:                 13px;
       --ag-cell-horizontal-padding:   14px;
       --ag-floating-filter-height:    36px;
+      --ag-selected-row-background-color: rgba(22,155,194,0.08);
     }
     .ag-theme-alpine .ag-header-cell-label { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; }
-    .ag-theme-alpine .ag-floating-filter-input { font-family: 'Inter', sans-serif; font-size: 12px; }
+    .ag-theme-alpine .ag-floating-filter-input { font-size: 12px; }
     /* Propagate row height so cell renderers can use height:100% for vertical centering */
     .ag-theme-alpine .ag-cell { height: 100%; }
     .ag-theme-alpine .ag-cell-wrapper { width: 100%; height: 100%; }
@@ -444,7 +440,7 @@
     .items-sel-bar-clear { color: var(--text2); cursor: pointer; background: none; border: none; font-size: 12px; padding: 0; }
     .items-sel-bar-clear:hover { color: var(--danger); }
     /* ── CHECKBOX SET FILTER ─────────────────────────── */
-    .csf-wrap { width: 230px; background: var(--surface); font-family: 'Inter', sans-serif; font-size: 13px; }
+    .csf-wrap { width: 230px; background: var(--surface); font-size: 13px; }
     .csf-search-row { padding: 8px; border-bottom: 1px solid var(--border); }
     .csf-search { width: 100%; padding: 5px 8px; border: 1px solid var(--border); border-radius: 6px; font-size: 12px; font-family: inherit; outline: none; background: var(--surface2); color: var(--text); }
     .csf-list { max-height: 230px; overflow-y: auto; padding: 4px 0; }
@@ -497,15 +493,15 @@
     }
     .tag-chip-wrap:focus-within {
       border-color: var(--primary);
-      box-shadow: 0 0 0 3px rgba(0,98,65,0.12);
+      box-shadow: 0 0 0 2px rgba(22,155,194,0.2);
     }
     .tag-chip {
       display: inline-flex;
       align-items: center;
       gap: 4px;
-      background: rgba(0,98,65,0.1);
-      border: 1px solid rgba(0,98,65,0.3);
-      color: #004d33;
+      background: rgba(22,155,194,0.08);
+      border: 1px solid rgba(22,155,194,0.25);
+      color: #0e7a9c;
       border-radius: 5px;
       padding: 2px 7px;
       font-size: 12px;
@@ -516,7 +512,7 @@
       background: none;
       border: none;
       cursor: pointer;
-      color: #004d33;
+      color: #0e7a9c;
       font-size: 11px;
       padding: 0;
       line-height: 1;
@@ -530,7 +526,6 @@
       border: none;
       outline: none;
       font-size: 13px;
-      font-family: 'Inter', sans-serif;
       color: var(--text);
       padding: 2px 4px;
     }
@@ -557,13 +552,13 @@
     .ph-ep-url, .ph-ep-token {
       background:var(--surface); border:1px solid var(--border);
       border-radius:8px; padding:8px 11px; color:var(--text);
-      font-size:13px; font-family:'Inter',sans-serif; outline:none;
+      font-size:13px; outline:none;
       transition:border-color 0.15s;
     }
     .ph-ep-url  { flex:2; min-width:180px; }
     .ph-ep-token { flex:3; min-width:160px; }
     .ph-ep-url:focus, .ph-ep-token:focus {
-      border-color:var(--primary); box-shadow:0 0 0 3px var(--primary-light);
+      border-color:var(--primary); box-shadow:0 0 0 2px rgba(22,155,194,0.2);
     }
     .ph-ep-actions { display:flex; align-items:flex-start; gap:6px; flex-shrink:0; margin-top:1px; }
     .ph-ep-status { font-size:11px; margin-top:5px; min-height:16px; line-height:1.3; }
@@ -580,30 +575,30 @@
       <nav class="inner-nav">
         <div class="nav-label">Menu</div>
         <div class="nav-item active" onclick="showView('dashboard')">
-          <span class="icon">&#x1F4CA;</span>
+          <span class="icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg></span>
           <span>Dashboard</span>
         </div>
         <div class="nav-item" onclick="showView('items')">
-          <span class="icon">&#x1F35C;</span>
+          <span class="icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg></span>
           <span>Products / Items</span>
           <span class="nav-badge" id="navBadgeItems">0</span>
         </div>
         <div class="nav-label">Configuration</div>
         <div class="nav-item" onclick="showView('brands')">
-          <span class="icon">&#x1F3F7;&#xFE0F;</span>
+          <span class="icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg></span>
           <span>Brands</span>
         </div>
         <div class="nav-item" onclick="showView('categories')">
-          <span class="icon">&#x1F3F7;&#xFE0F;</span>
+          <span class="icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg></span>
           <span>Categories</span>
         </div>
         <div class="nav-item" onclick="showView('settings')">
-          <span class="icon">&#x2699;&#xFE0F;</span>
+          <span class="icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></span>
           <span>Settings</span>
         </div>
       </nav>
       <div class="sidebar-foot">
-        <div>Menu Board System</div>
+        <div>PersonalisationHub</div>
       </div>
     </aside>
 
@@ -663,7 +658,7 @@
         <!-- CATEGORIES -->
         <div id="view-categories" class="view">
           <div class="settings-section">
-            <h3>&#x1F3F7;&#xFE0F; Product Categories</h3>
+            <h3>Product Categories</h3>
             <div class="cat-list" id="catList"></div>
             <div class="add-cat-row">
               <input type="text" id="newCatInput" placeholder="Add new category&hellip;" onkeydown="if(event.key==='Enter')addCategory()">
@@ -685,7 +680,7 @@
         <!-- SETTINGS -->
         <div id="view-settings" class="view">
           <div class="settings-section">
-            <h3>&#x1F5C4;&#xFE0F; Data Management</h3>
+            <h3>Data Management</h3>
             <p class="settings-desc">Export all menu data to a JSON file, or import from a previously exported file to restore data.</p>
             <div style="display:flex;gap:8px;flex-wrap:wrap;">
               <button class="btn btn-ghost" onclick="exportData()">&#x1F4E4; Export All Data</button>
@@ -697,7 +692,7 @@
           </div>
 
           <div class="settings-section">
-            <h3>&#x1F4CA; Stock Alerts</h3>
+            <h3>Stock Alerts</h3>
             <p class="settings-desc">Configure when stores are flagged as running Low on Stock on the HQ Dashboard.</p>
             <div class="form-row" style="max-width:420px;align-items:flex-end;">
               <div class="form-group" style="flex:1;">
@@ -710,7 +705,7 @@
           </div>
 
           <div class="settings-section">
-            <h3>&#x1F511; Stock API Key</h3>
+            <h3>Stock API Key</h3>
             <p class="settings-desc">Set a secret key that external platforms must include when calling the Stock API. Used as the <code>X-Stock-Api-Key</code> header in API requests.</p>
             <div class="form-row" style="max-width:520px;align-items:flex-end;">
               <div class="form-group" style="flex:1;">
@@ -723,7 +718,7 @@
           </div>
 
           <div class="settings-section">
-            <h3>&#x1F517; Personalisation Hub API</h3>
+            <h3>Personalisation Hub API</h3>
             <p class="settings-desc">Configure one or more API environments (e.g. dev, staging, production). The menu board probes each in order and uses the first that responds successfully. Tokens are stored AES-256-GCM encrypted in Firestore.</p>
 
             <div class="form-group" style="max-width:320px;margin-bottom:18px;">
@@ -796,7 +791,7 @@
         </div>
         <div class="tag-chip-hint">Press Enter or comma to add &middot; Click &times; to remove</div>
       </div>
-      <div class="section-divider">&#x270F;&#xFE0F; Customisation Options <span class="opt-tag">Optional &mdash; items a customer can add or remove</span></div>
+      <div class="section-divider">Customisation Options <span class="opt-tag">Optional &mdash; items a customer can add or remove</span></div>
       <div class="form-group">
         <label>Can Add</label>
         <div class="tag-chip-wrap" id="addOnsChips"
@@ -831,7 +826,7 @@
           </select>
         </div>
       </div>
-      <div class="section-divider">&#x1F957; Nutrition Information <span class="opt-tag">Optional &mdash; shown on menu boards</span></div>
+      <div class="section-divider">Nutrition Information <span class="opt-tag">Optional &mdash; shown on menu boards</span></div>
       <div class="form-row cols-4">
         <div class="form-group">
           <label>Calories</label>
@@ -850,7 +845,7 @@
           <input type="number" id="fProtein" placeholder="e.g. 21" min="0" step="0.1">
         </div>
       </div>
-      <div class="section-divider">&#x1F3F7;&#xFE0F; Menu Types &amp; Availability</div>
+      <div class="section-divider">Menu Types &amp; Availability</div>
       <div class="form-group">
         <label>Menu Types <span class="req">*</span> <span style="font-size:10px;font-weight:400;text-transform:none;letter-spacing:0;">(select all that apply)</span></label>
         <div class="menu-types-selector" id="menuTypeSelector">
@@ -922,7 +917,7 @@
         </div>
       </div>
 
-      <div class="section-divider">&#x1F3F7;&#xFE0F; Menu Header</div>
+      <div class="section-divider">Menu Header</div>
       <div class="form-group">
         <label>Show Menu Header Bar</label>
         <select id="bShowHeader">
@@ -931,7 +926,7 @@
         </select>
       </div>
 
-      <div class="section-divider">&#x1F3A8; Colour Scheme</div>
+      <div class="section-divider">Colour Scheme</div>
       <div class="form-row cols-3">
         <div class="form-group">
           <label>Header Background</label>
@@ -967,7 +962,7 @@
         </div>
       </div>
 
-      <div class="section-divider">&#x1F4FA; Portrait Display <span class="opt-tag">1080&times;1920px</span></div>
+      <div class="section-divider">Portrait Display <span class="opt-tag">1080&times;1920px</span></div>
       <div class="form-row cols-3">
         <div class="form-group">
           <label>Items per Row</label>
@@ -986,7 +981,7 @@
         </div>
       </div>
 
-      <div class="section-divider">&#x1F4FA; Landscape Display <span class="opt-tag">1920&times;1080px</span></div>
+      <div class="section-divider">Landscape Display <span class="opt-tag">1920&times;1080px</span></div>
       <div class="form-row cols-3">
         <div class="form-group">
           <label>Items per Row</label>
@@ -1005,7 +1000,7 @@
         </div>
       </div>
 
-      <div class="section-divider">&#x26D4; Sold Out Behaviour</div>
+      <div class="section-divider">Sold Out Behaviour</div>
       <div class="form-group">
         <label>When a product is Sold Out</label>
         <select id="bHideOos">
@@ -1014,7 +1009,7 @@
         </select>
       </div>
 
-      <div class="section-divider">&#x1F551; Date &amp; Time Bar</div>
+      <div class="section-divider">Date &amp; Time Bar</div>
       <div class="form-row">
         <div class="form-group">
           <label>Show Date &amp; Time Bar</label>
@@ -1032,7 +1027,7 @@
         </div>
       </div>
 
-      <div class="section-divider">&#x1F4E1; Campaign Hub</div>
+      <div class="section-divider">Campaign Hub</div>
       <div class="form-group">
         <label>Campaign Filter Mode</label>
         <select id="bCampaignMode">
@@ -1042,7 +1037,7 @@
         <p style="font-size:12px;color:var(--text2);margin-top:4px;">Controls how campaign SKUs interact with the board&rsquo;s selected menu type (breakfast / lunch / etc.)</p>
       </div>
 
-      <div class="section-divider">&#x1F3EA; Store Distribution</div>
+      <div class="section-divider">Store Distribution</div>
       <div class="form-group">
         <label>Which stores stock this brand?</label>
         <select id="bStoreMode" onchange="toggleStoreModeUI()">
@@ -1076,7 +1071,7 @@
         </div>
       </div>
 
-      <div class="section-divider">&#x1F6CD;&#xFE0F; Takeout Bag</div>
+      <div class="section-divider">Takeout Bag</div>
       <div class="form-row">
         <div class="form-group">
           <label>Bag Label <span style="font-size:11px;font-weight:400;text-transform:none;color:var(--text2);">(shown in bag panel &amp; order summary)</span></label>
@@ -2893,11 +2888,11 @@ initGrids();
 onSnapshot(collection(db, ITEMS_COLL), snap => {
   _items = snap.docs.map(d => d.data()).sort((a, b) => (a.createdAt || '').localeCompare(b.createdAt || ''));
   document.getElementById('navBadgeItems').textContent = _items.length;
+  // Always update items grid if initialised (preserves filter state via renderItems)
+  if (itemsGridApi) renderItems();
+  // Update dashboard if it's the active view
   const activeView = document.querySelector('.view.active');
-  if (activeView) {
-    if (activeView.id === 'view-items')     renderItems();
-    if (activeView.id === 'view-dashboard') renderDashboard();
-  }
+  if (activeView && activeView.id === 'view-dashboard') renderDashboard();
 });
 
 onSnapshot(doc(db, MB, 'brands'), snap => {
@@ -2906,17 +2901,13 @@ onSnapshot(doc(db, MB, 'brands'), snap => {
   const firstBrand = _brands[0];
   const currEl = document.getElementById('currSymbol');
   if (currEl) currEl.textContent = firstBrand ? firstBrand.currency : '$';
+  // Always update brands grid if initialised
+  if (brandsGridApi) renderBrands();
+  // Always refresh brand column in items grid if initialised
+  if (itemsGridApi) setTimeout(() => itemsGridApi?.refreshCells({ columns: ['brand'], force: true }), 0);
+  // Update dashboard if it's the active view
   const activeView = document.querySelector('.view.active');
-  if (activeView) {
-    if (activeView.id === 'view-brands')    renderBrands();
-    if (activeView.id === 'view-dashboard') renderDashboard();
-    if (activeView.id === 'view-items') {
-      // Force-refresh brand column cells: valueFormatter depends on external brands data.
-      // With getRowId set, AG Grid won't re-render unchanged rows on setGridOption('rowData'),
-      // so we must explicitly force the brand column to re-evaluate its valueFormatter.
-      setTimeout(() => itemsGridApi?.refreshCells({ columns: ['brand'], force: true }), 0);
-    }
-  }
+  if (activeView && activeView.id === 'view-dashboard') renderDashboard();
 });
 
 onSnapshot(doc(db, MB, 'categories'), snap => {

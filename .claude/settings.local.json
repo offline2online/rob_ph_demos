@@ -4,7 +4,26 @@
       "mcp__Claude_Preview__preview_start",
       "Bash(node:*)",
       "Bash(python3:*)",
-      "Bash(curl:*)"
+      "Bash(curl:*)",
+      "Bash(gh auth status)",
+      "Bash(command -v gh)",
+      "Bash(command -v railway)",
+      "Bash(command -v node)",
+      "Bash(npm --version)",
+      "Bash(git -C \"/Users/rgeerdink/Documents/Claude Code\" remote -v)",
+      "mcp__Claude_in_Chrome__tabs_context_mcp",
+      "mcp__Claude_in_Chrome__navigate",
+      "Bash(\"/Users/rgeerdink/Library/Application Support/fnm/node-versions/v18.18.2/installation/bin/npx\" --version)",
+      "mcp__Claude_in_Chrome__computer",
+      "Bash(npx --version)",
+      "mcp__Claude_in_Chrome__find",
+      "mcp__Claude_in_Chrome__javascript_tool",
+      "Bash(lsof -ti :3456)",
+      "Bash(xargs kill -9)",
+      "Bash(ruby --version)",
+      "Bash(php --version)",
+      "Read(//usr/bin/**)",
+      "Bash(command -v node npx)"
     ]
   }
 }
