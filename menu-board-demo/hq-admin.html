@@ -609,7 +609,26 @@
     .tpl-editor-body { padding:16px; }
 
     /* ── DISABLED BUTTON STATE ──────────────── */
-    .btn:disabled { opacity:0.38; cursor:not-allowed; pointer-events:none; }
+    .btn:disabled { background:var(--surface2) !important; color:var(--text2) !important; border-color:transparent !important; opacity:1; cursor:not-allowed; pointer-events:none; box-shadow:none !important; }
+
+    /* ── TEMPLATE TYPE FILTER DROPDOWN ─────────── */
+    .tpl-type-dropdown { position:relative; }
+    .tpl-type-trigger { display:flex; align-items:center; justify-content:space-between; gap:8px; width:100%; padding:9px 12px; background:var(--surface); border:1px solid var(--border2); border-radius:var(--radius); font-size:13px; color:var(--text); cursor:pointer; text-align:left; }
+    .tpl-type-trigger:hover { border-color:var(--primary); }
+    .tpl-type-label { flex:1; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
+    .tpl-type-arrow { color:var(--text2); font-size:9px; flex-shrink:0; transition:transform .15s; }
+    .tpl-type-panel.open ~ * .tpl-type-arrow,
+    .tpl-type-trigger[aria-expanded="true"] .tpl-type-arrow { transform:rotate(180deg); }
+    .tpl-type-panel { display:none; position:absolute; top:calc(100% + 4px); left:0; right:0; background:var(--surface); border:1px solid var(--border2); border-radius:var(--radius); box-shadow:0 4px 16px rgba(0,0,0,.12); z-index:300; max-height:220px; overflow-y:auto; }
+    .tpl-type-panel.open { display:block; }
+    .tpl-type-panel-header { display:flex; align-items:center; justify-content:space-between; padding:8px 12px; border-bottom:1px solid var(--border); position:sticky; top:0; background:var(--surface); }
+    .tpl-type-panel-header span { font-size:11px; font-weight:700; color:var(--text2); text-transform:uppercase; letter-spacing:.5px; }
+    .tpl-type-panel-header button { background:none; border:none; cursor:pointer; font-size:11px; color:var(--primary); font-weight:600; padding:0; }
+    .tpl-type-panel-header button:hover { opacity:.75; }
+    .tpl-type-option { display:flex; align-items:center; gap:10px; padding:8px 12px; cursor:pointer; font-size:13px !important; font-weight:400 !important; color:var(--text) !important; text-transform:none !important; letter-spacing:0 !important; user-select:none; margin:0; }
+    .tpl-type-option:hover { background:var(--surface2); }
+    .tpl-type-option input[type=checkbox] { margin:0; accent-color:var(--primary); width:14px; height:14px; flex-shrink:0; cursor:pointer; }
+    .tpl-type-dot { display:inline-block; width:10px; height:10px; border-radius:50%; flex-shrink:0; }
 
     /* ── CLICKABLE BRAND NAME ────────────────── */
     .brand-name-link { color:var(--primary); font-weight:600; cursor:pointer; text-decoration:none; font-size:13px; }
@@ -752,7 +771,7 @@
                 <input type="number" id="lowStockThresholdInput" min="1" max="999" placeholder="5">
                 <p class="form-help">Items with stock at or below this quantity are highlighted in the Low on Stock dashboard tile.</p>
               </div>
-              <button class="btn btn-primary btn-sm" onclick="saveLowStockThreshold()" style="margin-bottom:20px;">Save Changes</button>
+              <button class="btn btn-primary btn-sm" id="lowStockSaveBtn" onclick="saveLowStockThreshold()" style="margin-bottom:20px;">Save Changes</button>
             </div>
           </div>
 
@@ -765,7 +784,7 @@
                 <input type="text" id="stockApiKeyInput" placeholder="e.g. sk-live-abc123..." autocomplete="off" spellcheck="false" style="font-family:monospace;font-size:12px;">
                 <p class="form-help">Store this securely &mdash; share only with authorised integrations. See <a href="api-reference.html" target="_blank" style="color:var(--primary);">API Reference</a> for usage.</p>
               </div>
-              <button class="btn btn-primary btn-sm" onclick="saveStockApiKey()" style="margin-bottom:20px;">Save Changes</button>
+              <button class="btn btn-primary btn-sm" id="stockApiSaveBtn" onclick="saveStockApiKey()" style="margin-bottom:20px;">Save Changes</button>
             </div>
           </div>
 
@@ -786,7 +805,7 @@
 
             <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:4px;">
               <button class="btn btn-ghost btn-sm" onclick="addPhEndpoint()">&#x2795; Add Environment</button>
-              <button class="btn btn-primary" onclick="savePhApi()">Save Changes</button>
+              <button class="btn btn-primary" id="phApiSaveBtn" onclick="savePhApi()">Save Changes</button>
             </div>
             <p id="phApiStatus" style="font-size:12px;margin-top:10px;min-height:18px;"></p>
 
@@ -922,7 +941,7 @@
     </div>
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="closeModal()">Cancel</button>
-      <button class="btn btn-primary" onclick="saveItem()">Save Changes</button>
+      <button class="btn btn-primary" id="itemSaveBtn" onclick="saveItem()">Save Changes</button>
     </div>
   </div>
 </div>
@@ -1079,6 +1098,23 @@
 
             <div class="section-divider">Menu Board Settings</div>
             <div class="form-group">
+              <label>Item Type Filter</label>
+              <div class="tpl-type-dropdown" id="tplTypeDropdown">
+                <button type="button" class="tpl-type-trigger" id="tplTypeTrigger" onclick="toggleTplTypePanel()">
+                  <span class="tpl-type-label" id="tplTypeLabel">All Types</span>
+                  <span class="tpl-type-arrow">&#9660;</span>
+                </button>
+                <div class="tpl-type-panel" id="tplTypePanel">
+                  <div class="tpl-type-panel-header">
+                    <span>Filter by type</span>
+                    <button type="button" onclick="clearTplTypes()">Show All</button>
+                  </div>
+                  <div id="tplTypeOptions"></div>
+                </div>
+              </div>
+              <p class="form-help">Only items matching the selected types will appear on this board. Leave all unchecked to show All Types.</p>
+            </div>
+            <div class="form-group">
               <label>Sold Out Behaviour</label>
               <select id="tplHideOos">
                 <option value="false">Show with &ldquo;Sold Out&rdquo; stamp &mdash; item remains visible</option>
@@ -1153,7 +1189,7 @@
 
             <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:8px;">
               <button class="btn btn-ghost btn-sm" onclick="closeTplEditor()">Cancel</button>
-              <button class="btn btn-primary btn-sm" onclick="saveTemplate()">Save Template</button>
+              <button class="btn btn-primary btn-sm" id="tplSaveBtn" onclick="saveTemplate()">Save Template</button>
             </div>
           </div>
         </div>
@@ -1392,11 +1428,13 @@ function addPhEndpoint() {
   const idx = _phEndpoints.length - 1;
   const urlInput = document.getElementById(`phEpUrl${idx}`);
   if (urlInput) urlInput.focus();
+  if (_phApiSave) _phApiSave.markDirty();
 }
 
 function removePhEndpoint(i) {
   _phEndpoints.splice(i, 1);
   renderPhEndpoints();
+  if (_phApiSave) _phApiSave.markDirty();
 }
 
 async function testPhEndpoint(i) {
@@ -2212,10 +2250,11 @@ function _addChip(inputEl, arr, containerId, removeFnName) {
   });
   inputEl.value = '';
   _renderTagChips(containerId, arr, removeFnName);
+  if (_itemSave) _itemSave.markDirty();
 }
 window._addChip = _addChip;
 
-window.removeIngredient = (i) => { window.editingIngredients.splice(i, 1); _renderTagChips('ingredientsChips', window.editingIngredients, 'removeIngredient'); };
+window.removeIngredient = (i) => { window.editingIngredients.splice(i, 1); _renderTagChips('ingredientsChips', window.editingIngredients, 'removeIngredient'); if (_itemSave) _itemSave.markDirty(); };
 
 // ===== GS1 CUSTOMIZATION OPTIONS =====
 let editingCustomizationOptions = [];
@@ -2252,6 +2291,7 @@ window._setCustOptType = (i, val) => {
 window._removeCustOpt = (i) => {
   editingCustomizationOptions.splice(i, 1);
   renderCustomizationOptions();
+  if (_itemSave) _itemSave.markDirty();
 };
 function addCustomizationOpt() {
   editingCustomizationOptions.push({
@@ -2262,6 +2302,7 @@ function addCustomizationOpt() {
     'gs1:priceAdjustment': '+0.00'
   });
   renderCustomizationOptions();
+  if (_itemSave) _itemSave.markDirty();
 }
 window.addCustomizationOpt = addCustomizationOpt;
 
@@ -2283,6 +2324,7 @@ function renderMenuTypeSelector(selectedTypes = []) {
       const cb = lbl.querySelector('input');
       cb.checked = !cb.checked;
       lbl.classList.toggle('checked', cb.checked);
+      if (_itemSave) _itemSave.markDirty();
     });
   });
 }
@@ -2372,6 +2414,7 @@ function openAddModal() {
   editingCustomizationOptions = []; renderCustomizationOptions();
   populateCatDropdown('');
   populateBrandDropdown('');
+  if (_itemSave) _itemSave.reset();
   document.getElementById('itemModal').classList.add('open');
 }
 
@@ -2417,6 +2460,7 @@ function openEditModal(id) {
   }
   renderCustomizationOptions();
   populateBrandDropdown(item.brand || (getBrands()[0] && getBrands()[0].id) || '');
+  if (_itemSave) _itemSave.reset();
   document.getElementById('itemModal').classList.add('open');
 }
 
@@ -2553,13 +2597,14 @@ function handleImages(event) {
       const compressed = await compressImage(e.target.result, 480, 480, 0.75);
       editingImages.push(compressed);
       renderImgPreviews();
+      if (_itemSave) _itemSave.markDirty();
     };
     reader.readAsDataURL(file);
   });
   event.target.value = '';
 }
 
-function removeImage(idx) { editingImages.splice(idx, 1); renderImgPreviews(); }
+function removeImage(idx) { editingImages.splice(idx, 1); renderImgPreviews(); if (_itemSave) _itemSave.markDirty(); }
 
 function renderImgPreviews() {
   const el = document.getElementById('imgPreviews');
@@ -2660,6 +2705,18 @@ let brandEditingLogoLeft = '';
 let brandEditingBagIcon = '';
 let _editingBrandTemplates = [];
 let _tplEditingId = null;
+let _tplSelectedTypes = []; // [] = All Types
+
+// ── DIRTY-STATE SAVE BUTTON TRACKING ────────────────────────────────────
+function _makeSaveBtn(btnId) {
+  const btn = document.getElementById(btnId);
+  return {
+    reset:     () => { if (btn) btn.disabled = true; },
+    markDirty: () => { if (btn) btn.disabled = false; }
+  };
+}
+// Initialised once DOM is ready (at end of script)
+let _itemSave, _brandSave, _tplSave, _lowStockSave, _stockApiSave, _phApiSave;
 
 function openAddBrandModal() {
   document.getElementById('brandModalTitle').textContent = 'Add Brand';
@@ -2679,6 +2736,7 @@ function openAddBrandModal() {
   _editingBrandTemplates = [];
   switchBrandTab('settings');
   closeTplEditor();
+  if (_brandSave) _brandSave.reset();
   document.getElementById('brandModal').classList.add('open');
 }
 
@@ -2724,6 +2782,7 @@ function openEditBrandModal(id) {
   _editingBrandTemplates = _ensureTemplates(brand).map(t => Object.assign({}, t));
   switchBrandTab('settings');
   closeTplEditor();
+  if (_brandSave) _brandSave.reset();
   document.getElementById('brandModal').classList.add('open');
 }
 
@@ -2739,6 +2798,7 @@ function uploadBrandLogo(event) {
     brandEditingLogoLeft = e.target.result;
     document.getElementById('bLogoPreview').style.display = 'block';
     document.getElementById('bLogoImg').src = e.target.result;
+    if (_brandSave) _brandSave.markDirty();
   };
   reader.readAsDataURL(file);
   event.target.value = '';
@@ -2753,6 +2813,7 @@ function uploadBagIcon(event) {
     brandEditingBagIcon = e.target.result;
     document.getElementById('bBagIconPreview').style.display = 'flex';
     document.getElementById('bBagIconImg').src = e.target.result;
+    if (_brandSave) _brandSave.markDirty();
   };
   reader.readAsDataURL(file);
   event.target.value = '';
@@ -2762,6 +2823,7 @@ function clearBagIcon() {
   brandEditingBagIcon = '';
   document.getElementById('bBagIconPreview').style.display = 'none';
   document.getElementById('bBagIconImg').src = '';
+  if (_brandSave) _brandSave.markDirty();
 }
 
 // ===== BRAND STORE DISTRIBUTION =====
@@ -2807,6 +2869,7 @@ function _renderStoreChips() {
 window.removeStoreChip = function(i) {
   window.editingStores.splice(i, 1);
   _renderStoreChips();
+  if (_brandSave) _brandSave.markDirty();
 };
 
 function addKnownStore() {
@@ -2816,6 +2879,7 @@ function addKnownStore() {
   if (!window.editingStores.includes(val)) {
     window.editingStores.push(val);
     _renderStoreChips();
+    if (_brandSave) _brandSave.markDirty();
   }
   sel.value = '';
 }
@@ -2904,7 +2968,8 @@ function _ensureTemplates(brand) {
       hideOutOfStock: !!(brand.display && brand.display.hideOutOfStock)
     },
     showClock: brand.showClock !== false, timeFormat: brand.timeFormat || 'british',
-    campaignMode: brand.campaignMode || 'override'
+    campaignMode: brand.campaignMode || 'override',
+    menuTypes: []
   }];
 }
 
@@ -2962,6 +3027,10 @@ function openNewTemplateEditor() {
   document.getElementById('tplShowClock').value       = _seedTpl ? String(_seedTpl.showClock !== false) : 'true';
   document.getElementById('tplTimeFormat').value      = (_seedTpl && _seedTpl.timeFormat)   || 'british';
   document.getElementById('tplCampaignMode').value    = (_seedTpl && _seedTpl.campaignMode) || 'override';
+  _tplSelectedTypes = (_seedTpl && Array.isArray(_seedTpl.menuTypes)) ? [..._seedTpl.menuTypes] : [];
+  _updateTplTypeLabel();
+  document.getElementById('tplTypePanel').classList.remove('open');
+  if (_tplSave) _tplSave.reset();
   _showTplEditor();
 }
 
@@ -2996,6 +3065,10 @@ function openEditTemplateEditor(tplId) {
   document.getElementById('tplShowClock').value       = tpl.showClock !== false ? 'true' : 'false';
   document.getElementById('tplTimeFormat').value      = tpl.timeFormat   || 'british';
   document.getElementById('tplCampaignMode').value    = tpl.campaignMode || 'override';
+  _tplSelectedTypes = Array.isArray(tpl.menuTypes) ? [...tpl.menuTypes] : [];
+  _updateTplTypeLabel();
+  document.getElementById('tplTypePanel').classList.remove('open');
+  if (_tplSave) _tplSave.reset();
   _showTplEditor();
 }
 
@@ -3008,6 +3081,54 @@ function closeTplEditor() {
   document.getElementById('tplEditorPanel').classList.remove('open');
   document.getElementById('tplListView').style.display = '';
   renderTemplateList();
+}
+
+// ── TEMPLATE TYPE FILTER ─────────────────────────────────────────────────
+function _updateTplTypeLabel() {
+  const label = document.getElementById('tplTypeLabel');
+  if (!label) return;
+  if (_tplSelectedTypes.length === 0) {
+    label.textContent = 'All Types';
+  } else if (_tplSelectedTypes.length === 1) {
+    const t = getTypes().find(x => x.id === _tplSelectedTypes[0]);
+    label.textContent = t ? t.label : '1 type selected';
+  } else {
+    label.textContent = `${_tplSelectedTypes.length} types selected`;
+  }
+}
+
+function renderTplTypeOptions() {
+  const el = document.getElementById('tplTypeOptions');
+  if (!el) return;
+  const types = getTypes();
+  el.innerHTML = types.map(t => `
+    <label class="tpl-type-option">
+      <input type="checkbox" value="${escHtml(t.id)}" ${_tplSelectedTypes.includes(t.id) ? 'checked' : ''} onchange="onTplTypeChange()">
+      <span class="tpl-type-dot" style="background:${escHtml(t.color || '#6b7280')}"></span>
+      <span>${escHtml(t.label)}</span>
+    </label>`).join('');
+  _updateTplTypeLabel();
+}
+
+function toggleTplTypePanel() {
+  const panel = document.getElementById('tplTypePanel');
+  if (!panel) return;
+  const opening = !panel.classList.contains('open');
+  if (opening) renderTplTypeOptions();
+  panel.classList.toggle('open', opening);
+}
+
+function onTplTypeChange() {
+  const checkboxes = document.querySelectorAll('#tplTypeOptions input[type=checkbox]');
+  _tplSelectedTypes = [...checkboxes].filter(c => c.checked).map(c => c.value);
+  _updateTplTypeLabel();
+  if (_tplSave) _tplSave.markDirty();
+}
+
+function clearTplTypes() {
+  _tplSelectedTypes = [];
+  renderTplTypeOptions();
+  if (_tplSave) _tplSave.markDirty();
 }
 
 function saveTemplate() {
@@ -3045,6 +3166,7 @@ function saveTemplate() {
     showClock:    document.getElementById('tplShowClock').value !== 'false',
     timeFormat:   document.getElementById('tplTimeFormat').value   || 'british',
     campaignMode: document.getElementById('tplCampaignMode').value || 'override',
+    menuTypes:    [..._tplSelectedTypes],
   };
 
   if (_tplEditingId) {
@@ -3055,6 +3177,7 @@ function saveTemplate() {
   }
 
   toast('✅ Template saved. Click Save Changes to persist.', 'success');
+  if (_brandSave) _brandSave.markDirty();
   closeTplEditor();
 }
 
@@ -3072,6 +3195,7 @@ function confirmDeleteTemplate(tplId) {
     closeConfirm();
     renderTemplateList();
     toast('🗑️ Template removed. Click Save Changes to persist.', 'info');
+    if (_brandSave) _brandSave.markDirty();
   };
   document.getElementById('confirmOverlay').classList.add('open');
 }
@@ -3361,6 +3485,9 @@ window.openEditTemplateEditor = openEditTemplateEditor;
 window.closeTplEditor         = closeTplEditor;
 window.saveTemplate           = saveTemplate;
 window.confirmDeleteTemplate  = confirmDeleteTemplate;
+window.toggleTplTypePanel     = toggleTplTypePanel;
+window.onTplTypeChange        = onTplTypeChange;
+window.clearTplTypes          = clearTplTypes;
 window.exportData         = exportData;
 window.importData         = importData;
 window.clearAllData       = clearAllData;
@@ -3432,6 +3559,10 @@ onSnapshot(doc(db, MB, 'settings'), snap => {
   // Stock API key
   const stockKeyEl = document.getElementById('stockApiKeyInput');
   if (stockKeyEl) stockKeyEl.value = _settings.stockApiKey || '';
+  // Reset dirty state for settings save buttons
+  if (_lowStockSave) _lowStockSave.reset();
+  if (_stockApiSave) _stockApiSave.reset();
+  if (_phApiSave)    _phApiSave.reset();
 });
 
 onSnapshot(collection(db, STOCK_COLL), snapshot => {
@@ -3442,6 +3573,46 @@ onSnapshot(collection(db, STOCK_COLL), snapshot => {
 });
 
 showView(localStorage.getItem('hqAdminView') || 'dashboard');
+
+// ── DIRTY-STATE TRACKER INIT ─────────────────────────────────────────────
+_itemSave     = _makeSaveBtn('itemSaveBtn');
+_brandSave    = _makeSaveBtn('brandSaveBtn');
+_tplSave      = _makeSaveBtn('tplSaveBtn');
+_lowStockSave = _makeSaveBtn('lowStockSaveBtn');
+_stockApiSave = _makeSaveBtn('stockApiSaveBtn');
+_phApiSave    = _makeSaveBtn('phApiSaveBtn');
+
+// Event delegation: any input/change inside the form containers marks the button dirty
+document.getElementById('itemModal')
+  .addEventListener('input',  () => _itemSave.markDirty());
+document.getElementById('itemModal')
+  .addEventListener('change', () => _itemSave.markDirty());
+document.getElementById('brandPane-settings')
+  .addEventListener('input',  () => _brandSave.markDirty());
+document.getElementById('brandPane-settings')
+  .addEventListener('change', () => _brandSave.markDirty());
+document.getElementById('tplEditorPanel')
+  .addEventListener('input',  () => _tplSave.markDirty());
+document.getElementById('tplEditorPanel')
+  .addEventListener('change', () => _tplSave.markDirty());
+document.getElementById('lowStockThresholdInput')
+  .addEventListener('input', () => _lowStockSave.markDirty());
+document.getElementById('stockApiKeyInput')
+  .addEventListener('input', () => _stockApiSave.markDirty());
+document.getElementById('phCampaignMode')
+  .addEventListener('change', () => _phApiSave.markDirty());
+// PH endpoint URL/token inputs are dynamically rendered; catch via their parent container
+document.getElementById('phEpList')
+  .addEventListener('input',  () => _phApiSave.markDirty());
+
+// Close the template type dropdown when clicking outside it
+document.addEventListener('click', (e) => {
+  const dd = document.getElementById('tplTypeDropdown');
+  if (dd && !dd.contains(e.target)) {
+    const panel = document.getElementById('tplTypePanel');
+    if (panel) panel.classList.remove('open');
+  }
+});
 
 // Expose async functions to global scope so HTML onclick attributes can call them
 window.saveLowStockThreshold = saveLowStockThreshold;
