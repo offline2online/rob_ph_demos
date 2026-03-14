@@ -1,4 +1,30 @@
 {
+  "@context": "https://gs1.org/voc/",
+  "@type": "ItemList",
+  "schemaVersion": "1.0",
+  "description": "Starbucks menu import — GS1 VOC compliant. Items include gs1:recipeIngredient and gs1:customizationOptions auto-mapped on import.",
+  "types": [
+    {
+      "id": "drinks",
+      "label": "Drinks",
+      "color": "#2563eb"
+    },
+    {
+      "id": "food",
+      "label": "Food",
+      "color": "#16a34a"
+    },
+    {
+      "id": "breakfast",
+      "label": "Breakfast",
+      "color": "#f59e0b"
+    },
+    {
+      "id": "specials",
+      "label": "Today's Specials",
+      "color": "#e11d48"
+    }
+  ],
   "items": [
     {
       "id": "sbx-001",

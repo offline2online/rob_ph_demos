@@ -465,6 +465,30 @@
     ::-webkit-scrollbar-track { background: transparent; }
     ::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 3px; }
 
+    /* ── GS1 CUSTOMIZATION OPTIONS EDITOR ─────────────────────── */
+    .cust-opt-row { display:flex; gap:6px; align-items:center; margin-bottom:6px; flex-wrap:wrap; }
+    .cust-opt-name { flex:2; min-width:120px; background:var(--surface2); border:1px solid var(--border); border-radius:6px; padding:7px 10px; color:var(--text); font-size:13px; outline:none; transition:border-color 0.15s; }
+    .cust-opt-name:focus { border-color:var(--primary); box-shadow:0 0 0 2px rgba(22,155,194,0.2); }
+    .cust-opt-type { flex:1; min-width:110px; background:var(--surface2); border:1px solid var(--border); border-radius:6px; padding:7px 6px; color:var(--text); font-size:13px; outline:none; cursor:pointer; transition:border-color 0.15s; }
+    .cust-opt-type:focus { border-color:var(--primary); }
+    .cust-opt-price { width:90px; background:var(--surface2); border:1px solid var(--border); border-radius:6px; padding:7px 8px; color:var(--text); font-size:13px; outline:none; font-family:monospace; transition:border-color 0.15s; }
+    .cust-opt-price:focus { border-color:var(--primary); box-shadow:0 0 0 2px rgba(22,155,194,0.2); }
+    .cust-opt-del { background:none; border:none; cursor:pointer; color:var(--text2); font-size:15px; padding:4px 7px; border-radius:4px; flex-shrink:0; line-height:1; }
+    .cust-opt-del:hover { background:var(--danger-light); color:var(--danger); }
+    .cust-opts-empty { color:var(--text2); font-size:12px; padding:6px 2px; }
+
+    /* ── MANAGE TYPES PANEL ───────────────────────────────────── */
+    .manage-types-panel { background:var(--surface2); border:1px solid var(--border); border-radius:8px; padding:12px 14px; margin-top:8px; }
+    .type-tag-row { display:flex; align-items:center; gap:6px; flex-wrap:wrap; margin-bottom:10px; min-height:28px; }
+    .type-tag-item { display:inline-flex; align-items:center; gap:5px; background:var(--surface); border:1px solid var(--border); border-radius:20px; padding:3px 8px 3px 5px; font-size:12px; }
+    .type-color-dot { width:10px; height:10px; border-radius:50%; display:inline-block; flex-shrink:0; }
+    .type-tag-del { background:none; border:none; cursor:pointer; color:var(--text2); font-size:11px; padding:0 0 0 2px; line-height:1; }
+    .type-tag-del:hover { color:var(--danger); }
+    .add-type-row { display:flex; gap:6px; align-items:center; }
+    .add-type-row input[type=text] { flex:1; background:var(--surface); border:1px solid var(--border); border-radius:6px; padding:6px 10px; font-size:13px; color:var(--text); outline:none; transition:border-color 0.15s; }
+    .add-type-row input[type=text]:focus { border-color:var(--primary); box-shadow:0 0 0 2px rgba(22,155,194,0.2); }
+    .add-type-row input[type=color] { width:36px; height:32px; padding:2px 3px; border:1px solid var(--border); border-radius:6px; cursor:pointer; background:var(--surface); }
+
     @media (max-width: 1060px) {
       .sidebar { width: 50px; min-width: 50px; }
       .brand-icon { margin: 0 auto; }
@@ -608,7 +632,7 @@
         <div class="topbar-title" id="topbarTitle">Dashboard</div>
         <div class="topbar-right">
           <span class="hq-badge">&#x1F3E2; HQ Admin</span>
-          <button class="btn btn-primary" onclick="openAddModal()">+ Add Item</button>
+          <button class="btn btn-primary" onclick="openAddModal()">+ Add Product/Item</button>
         </div>
       </div>
       <div class="content">
@@ -700,7 +724,7 @@
                 <input type="number" id="lowStockThresholdInput" min="1" max="999" placeholder="5">
                 <p class="form-help">Items with stock at or below this quantity are highlighted in the Low on Stock dashboard tile.</p>
               </div>
-              <button class="btn btn-primary btn-sm" onclick="saveLowStockThreshold()" style="margin-bottom:20px;">&#x1F4BE; Save</button>
+              <button class="btn btn-primary btn-sm" onclick="saveLowStockThreshold()" style="margin-bottom:20px;">Save Changes</button>
             </div>
           </div>
 
@@ -713,7 +737,7 @@
                 <input type="text" id="stockApiKeyInput" placeholder="e.g. sk-live-abc123..." autocomplete="off" spellcheck="false" style="font-family:monospace;font-size:12px;">
                 <p class="form-help">Store this securely &mdash; share only with authorised integrations. See <a href="api-reference.html" target="_blank" style="color:var(--primary);">API Reference</a> for usage.</p>
               </div>
-              <button class="btn btn-primary btn-sm" onclick="saveStockApiKey()" style="margin-bottom:20px;">&#x1F4BE; Save</button>
+              <button class="btn btn-primary btn-sm" onclick="saveStockApiKey()" style="margin-bottom:20px;">Save Changes</button>
             </div>
           </div>
 
@@ -734,7 +758,7 @@
 
             <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:4px;">
               <button class="btn btn-ghost btn-sm" onclick="addPhEndpoint()">&#x2795; Add Environment</button>
-              <button class="btn btn-primary" onclick="savePhApi()">&#x1F4BE; Save API Settings</button>
+              <button class="btn btn-primary" onclick="savePhApi()">Save Changes</button>
             </div>
             <p id="phApiStatus" style="font-size:12px;margin-top:10px;min-height:18px;"></p>
 
@@ -752,7 +776,7 @@
 <div class="modal-overlay" id="itemModal">
   <div class="modal">
     <div class="modal-header">
-      <h2 id="modalTitle">Add Menu Item</h2>
+      <h2 id="modalTitle">Add Product / Item</h2>
       <button class="modal-close" onclick="closeModal()">&#x2715;</button>
     </div>
     <div class="modal-body">
@@ -791,24 +815,15 @@
         </div>
         <div class="tag-chip-hint">Press Enter or comma to add &middot; Click &times; to remove</div>
       </div>
-      <div class="section-divider">Customisation Options <span class="opt-tag">Optional &mdash; items a customer can add or remove</span></div>
+      <div class="section-divider">Customisation Options <span class="opt-tag">Optional &mdash; items a customer can add, remove or swap</span></div>
       <div class="form-group">
-        <label>Can Add</label>
-        <div class="tag-chip-wrap" id="addOnsChips"
-             onclick="this.querySelector('.tag-chip-input').focus()">
-          <input class="tag-chip-input" type="text" placeholder="e.g. Extra cheese, Avocado&hellip;"
-                 onkeydown="if(event.key==='Enter'||event.key===','){event.preventDefault();window._addChip(this,window.editingAddOns,'addOnsChips','removeAddOn');}">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+          <label style="margin-bottom:0;">Options</label>
+          <span style="font-size:10px;color:var(--text2);font-weight:400;text-transform:none;letter-spacing:0;">Name &middot; Type &middot; Price Adj</span>
         </div>
-        <div class="tag-chip-hint">Things the customer can request to add</div>
-      </div>
-      <div class="form-group">
-        <label>Can Remove</label>
-        <div class="tag-chip-wrap" id="removeOnsChips"
-             onclick="this.querySelector('.tag-chip-input').focus()">
-          <input class="tag-chip-input" type="text" placeholder="e.g. Nuts, Pineapple, Onion&hellip;"
-                 onkeydown="if(event.key==='Enter'||event.key===','){event.preventDefault();window._addChip(this,window.editingRemoveOns,'removeOnsChips','removeRemoveOn');}">
-        </div>
-        <div class="tag-chip-hint">Things the customer can request to remove</div>
+        <div id="customizationList"></div>
+        <button class="btn btn-ghost btn-sm" type="button" onclick="addCustomizationOpt()" style="margin-top:6px;">+ Add Option</button>
+        <div class="tag-chip-hint">Customer-facing add / remove / swap options with optional price adjustment (e.g. +1.50 or -0.00)</div>
       </div>
       <div class="form-row">
         <div class="form-group">
@@ -845,30 +860,21 @@
           <input type="number" id="fProtein" placeholder="e.g. 21" min="0" step="0.1">
         </div>
       </div>
-      <div class="section-divider">Menu Types &amp; Availability</div>
+      <div class="section-divider" style="justify-content:space-between;">
+        <span>Types &amp; Availability</span>
+        <button class="btn btn-ghost btn-sm" type="button" onclick="toggleManageTypes()" style="font-size:11px;padding:3px 10px;">Manage Types</button>
+      </div>
       <div class="form-group">
-        <label>Menu Types <span class="req">*</span> <span style="font-size:10px;font-weight:400;text-transform:none;letter-spacing:0;">(select all that apply)</span></label>
-        <div class="menu-types-selector" id="menuTypeSelector">
-          <label class="mt-option" data-type="breakfast">
-            <input type="checkbox" value="breakfast">
-            <span class="dot">&#x2713;</span> &#x1F305; Breakfast
-          </label>
-          <label class="mt-option" data-type="lunch">
-            <input type="checkbox" value="lunch">
-            <span class="dot">&#x2713;</span> &#x2600;&#xFE0F; Lunch
-          </label>
-          <label class="mt-option" data-type="dinner">
-            <input type="checkbox" value="dinner">
-            <span class="dot">&#x2713;</span> &#x1F319; Dinner
-          </label>
-          <label class="mt-option" data-type="drinks">
-            <input type="checkbox" value="drinks">
-            <span class="dot">&#x2713;</span> &#x1F964; Drinks
-          </label>
-          <label class="mt-option" data-type="specials">
-            <input type="checkbox" value="specials">
-            <span class="dot">&#x2713;</span> &#x2B50; Today's Specials
-          </label>
+        <label>Types <span class="req">*</span> <span style="font-size:10px;font-weight:400;text-transform:none;letter-spacing:0;">(select all that apply)</span></label>
+        <div class="menu-types-selector" id="menuTypeSelector"></div>
+      </div>
+      <div id="manageTypesPanel" class="manage-types-panel" style="display:none;margin-bottom:16px;">
+        <div style="font-size:11px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px;">Manage Types</div>
+        <div class="type-tag-row" id="typeTagList"></div>
+        <div class="add-type-row">
+          <input type="text" id="newTypeName" placeholder="New type name&hellip;" onkeydown="if(event.key==='Enter'){event.preventDefault();addNewType();}">
+          <input type="color" id="newTypeColor" value="#2563eb" title="Pick a colour">
+          <button class="btn btn-primary btn-sm" type="button" onclick="addNewType()">+ Add</button>
         </div>
       </div>
       <div class="form-group">
@@ -884,7 +890,7 @@
     </div>
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="closeModal()">Cancel</button>
-      <button class="btn btn-primary" onclick="saveItem()">&#x1F4BE; Save Item</button>
+      <button class="btn btn-primary" onclick="saveItem()">Save Changes</button>
     </div>
   </div>
 </div>
@@ -1092,7 +1098,7 @@
     </div>
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="closeBrandModal()">Cancel</button>
-      <button class="btn btn-primary" onclick="saveBrand()">&#x1F4BE; Save Brand</button>
+      <button class="btn btn-primary" onclick="saveBrand()">Save Changes</button>
     </div>
   </div>
 </div>
@@ -1131,12 +1137,12 @@ const MB         = 'menuboard';
 const ITEMS_COLL = 'items';
 const STOCK_COLL = 'stock';
 
-const MENU_TYPES = [
-  { id: 'breakfast', label: 'Breakfast',        emoji: '\u{1F305}', color: '#f59e0b' },
-  { id: 'lunch',     label: 'Lunch',             emoji: '\u2600\uFE0F', color: '#16a34a' },
-  { id: 'dinner',    label: 'Dinner',            emoji: '\u{1F319}', color: '#7c3aed' },
-  { id: 'drinks',    label: 'Drinks',            emoji: '\u{1F964}', color: '#2563eb' },
-  { id: 'specials',  label: "Today's Specials",  emoji: '\u2B50', color: '#e11d48' }
+const DEFAULT_TYPES = [
+  { id: 'breakfast', label: 'Breakfast',        color: '#f59e0b' },
+  { id: 'lunch',     label: 'Lunch',             color: '#16a34a' },
+  { id: 'dinner',    label: 'Dinner',            color: '#7c3aed' },
+  { id: 'drinks',    label: 'Drinks',            color: '#2563eb' },
+  { id: 'specials',  label: "Today's Specials",  color: '#e11d48' }
 ];
 
 const DEFAULT_CATS = ['Mains','Starters','Sides','Desserts','Hot Drinks','Cold Drinks','Cocktails','Wines','Beers','Sandwiches','Salads','Pasta','Burgers'];
@@ -1163,6 +1169,13 @@ let _settings    = { restaurantName: 'My Restaurant', currency: '$', logo: '' };
 let _phEndpoints = []; // [{ baseUrl: string, authToken: string /* AES-256-GCM encrypted */ }]
 let _cats     = [];
 let _brands   = [];
+let _types = [];
+function getTypes() { return _types.length ? _types : DEFAULT_TYPES; }
+function saveTypes(types) {
+  _types = types;
+  setDoc(doc(db, MB, 'types'), { data: types })
+    .catch(err => toast('\u274C Failed to save types: ' + (err.message || err), 'error'));
+}
 let _allStock = {};
 let itemsGridApi  = null;
 let brandsGridApi = null;
@@ -1496,7 +1509,7 @@ function renderDashboard() {
   `;
 
   const breakdownEl = document.getElementById('menuTypeBreakdown');
-  breakdownEl.innerHTML = MENU_TYPES.map(mt => {
+  breakdownEl.innerHTML = getTypes().map(mt => {
     const count   = items.filter(i => (i.menuTypes||[]).includes(mt.id)).length;
     const pct     = items.length ? Math.round(count / items.length * 100) : 0;
     const screens = Math.ceil(count / PAGE_SIZE);
@@ -1841,34 +1854,34 @@ function initGrids() {
           valueFormatter: (params) => String(params.value || '')
         },
         {
-          headerName: 'Menu Types', field: 'menuTypes', flex: 1.5, minWidth: 140,
+          headerName: 'Types', field: 'menuTypes', flex: 1.5, minWidth: 140,
           sortable: false,
           autoHeight: true,
           filter: CheckboxSetFilter,
           filterParams: {
             itemRenderer: (value) => {
-              const mt = MENU_TYPES.find(m => (m.emoji + ' ' + m.label) === value);
+              const mt = getTypes().find(m => m.label === value) || getTypes().find(m => m.id === value);
+              const color = mt ? mt.color : '#64748b';
               const span = document.createElement('span');
-              if (mt) {
-                span.style.cssText = `display:inline-flex;align-items:center;gap:4px;padding:2px 8px 2px 5px;border-radius:20px;border:1.5px solid ${mt.color};font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.4px;white-space:nowrap;color:${mt.color};background:transparent;`;
-                span.textContent = mt.emoji + ' ' + mt.label;
-              } else { span.textContent = value; }
+              span.style.cssText = `display:inline-flex;align-items:center;padding:2px 8px;border-radius:20px;border:1.5px solid ${color};font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.4px;white-space:nowrap;color:${color};background:transparent;`;
+              span.textContent = mt ? mt.label : value;
               return span;
             }
           },
           getFilterValue: (data) => (data.menuTypes || []).map(t => {
-            const mt = MENU_TYPES.find(m => m.id === t);
-            return mt ? mt.emoji + ' ' + mt.label : t;
+            const mt = getTypes().find(m => m.id === t);
+            return mt ? mt.label : t;
           }),
           cellRenderer: (params) => {
             const wrap = document.createElement('div');
             wrap.style.cssText = 'display:flex;gap:4px;flex-wrap:wrap;align-content:center;align-items:center;padding:8px 0;';
             (params.value || []).forEach(t => {
-              const mt = MENU_TYPES.find(m => m.id === t);
-              if (!mt) return;
+              const mt = getTypes().find(m => m.id === t);
+              const color = mt ? mt.color : '#64748b';
+              const label = mt ? mt.label : t;
               const span = document.createElement('span');
-              span.style.cssText = `display:inline-flex;align-items:center;gap:4px;padding:2px 8px 2px 5px;border-radius:20px;border:1.5px solid ${mt.color};font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.4px;white-space:nowrap;color:${mt.color};background:transparent;flex-shrink:0;`;
-              span.textContent = mt.emoji + ' ' + mt.label;
+              span.style.cssText = `display:inline-flex;align-items:center;padding:2px 8px;border-radius:20px;border:1.5px solid ${color};font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.4px;white-space:nowrap;color:${color};background:transparent;flex-shrink:0;`;
+              span.textContent = label;
               wrap.appendChild(span);
             });
             return wrap;
@@ -2125,14 +2138,141 @@ function _addChip(inputEl, arr, containerId, removeFnName) {
 window._addChip = _addChip;
 
 window.removeIngredient = (i) => { window.editingIngredients.splice(i, 1); _renderTagChips('ingredientsChips', window.editingIngredients, 'removeIngredient'); };
-window.removeAddOn      = (i) => { window.editingAddOns.splice(i, 1);      _renderTagChips('addOnsChips',      window.editingAddOns,      'removeAddOn'); };
-window.removeRemoveOn   = (i) => { window.editingRemoveOns.splice(i, 1);   _renderTagChips('removeOnsChips',   window.editingRemoveOns,   'removeRemoveOn'); };
+
+// ===== GS1 CUSTOMIZATION OPTIONS =====
+let editingCustomizationOptions = [];
+
+function renderCustomizationOptions() {
+  const container = document.getElementById('customizationList');
+  if (!container) return;
+  if (!editingCustomizationOptions.length) {
+    container.innerHTML = '<div class="cust-opts-empty">No customisation options yet. Click + Add Option below.</div>';
+    return;
+  }
+  container.innerHTML = editingCustomizationOptions.map((opt, i) => `
+    <div class="cust-opt-row">
+      <input type="text" class="cust-opt-name" value="${_escHtml(opt.name || '')}" placeholder="Option name (e.g. Extra Cheese)"
+             onchange="window.editingCustomizationOptions[${i}].name = this.value">
+      <select class="cust-opt-type" onchange="window._setCustOptType(${i}, this.value)">
+        <option value="ADD"      ${opt['gs1:modificationType']==='ADD'      ? 'selected':''}>+ Add</option>
+        <option value="SUBTRACT" ${opt['gs1:modificationType']==='SUBTRACT' ? 'selected':''}>- Remove</option>
+        <option value="SWAP"     ${opt['gs1:modificationType']==='SWAP'     ? 'selected':''}>Swap</option>
+      </select>
+      <input type="text" class="cust-opt-price" value="${_escHtml(opt['gs1:priceAdjustment'] || '+0.00')}"
+             placeholder="+0.00" title="Price adjustment (e.g. +1.50 or -0.00)"
+             onchange="window.editingCustomizationOptions[${i}]['gs1:priceAdjustment'] = this.value">
+      <button class="cust-opt-del" type="button" onclick="window._removeCustOpt(${i})" title="Remove">&#x2715;</button>
+    </div>
+  `).join('');
+}
+window.renderCustomizationOptions = renderCustomizationOptions;
+
+window._setCustOptType = (i, val) => {
+  editingCustomizationOptions[i]['gs1:modificationType'] = val;
+  editingCustomizationOptions[i].value = val === 'ADD' ? 'Added' : val === 'SUBTRACT' ? 'Removed' : 'Swapped';
+};
+window._removeCustOpt = (i) => {
+  editingCustomizationOptions.splice(i, 1);
+  renderCustomizationOptions();
+};
+function addCustomizationOpt() {
+  editingCustomizationOptions.push({
+    '@type': 'PropertyValue',
+    'name': '',
+    'value': 'Added',
+    'gs1:modificationType': 'ADD',
+    'gs1:priceAdjustment': '+0.00'
+  });
+  renderCustomizationOptions();
+}
+window.addCustomizationOpt = addCustomizationOpt;
+
+// ===== TYPES MANAGEMENT (inline in item modal) =====
+let _manageTypesOpen = false;
+
+function renderMenuTypeSelector(selectedTypes = []) {
+  const el = document.getElementById('menuTypeSelector');
+  if (!el) return;
+  const types = getTypes();
+  el.innerHTML = types.map(t => `
+    <label class="mt-option ${selectedTypes.includes(t.id) ? 'checked' : ''}" data-type="${_escHtml(t.id)}">
+      <input type="checkbox" value="${_escHtml(t.id)}" ${selectedTypes.includes(t.id) ? 'checked' : ''}>
+      <span class="dot">&#x2713;</span> ${_escHtml(t.label)}
+    </label>
+  `).join('');
+  el.querySelectorAll('.mt-option').forEach(lbl => {
+    lbl.addEventListener('click', () => {
+      const cb = lbl.querySelector('input');
+      cb.checked = !cb.checked;
+      lbl.classList.toggle('checked', cb.checked);
+    });
+  });
+}
+window.renderMenuTypeSelector = renderMenuTypeSelector;
+
+function toggleManageTypes() {
+  _manageTypesOpen = !_manageTypesOpen;
+  const panel = document.getElementById('manageTypesPanel');
+  if (panel) {
+    panel.style.display = _manageTypesOpen ? 'block' : 'none';
+    if (_manageTypesOpen) _renderTypeTagList();
+  }
+}
+window.toggleManageTypes = toggleManageTypes;
+
+function _renderTypeTagList() {
+  const el = document.getElementById('typeTagList');
+  if (!el) return;
+  const types = getTypes();
+  if (!types.length) {
+    el.innerHTML = '<span style="font-size:12px;color:var(--text2);">No types defined yet.</span>';
+    return;
+  }
+  el.innerHTML = types.map(t => `
+    <div class="type-tag-item">
+      <span class="type-color-dot" style="background:${_escHtml(t.color)};"></span>
+      <span style="font-size:12px;color:var(--text);">${_escHtml(t.label)}</span>
+      <button class="type-tag-del" type="button" onclick="window._deleteType('${_escHtml(t.id)}')" title="Delete type">&#x2715;</button>
+    </div>
+  `).join('');
+}
+
+window._deleteType = (id) => {
+  const updated = getTypes().filter(t => t.id !== id);
+  saveTypes(updated);
+  _renderTypeTagList();
+  const checked = [...document.querySelectorAll('.mt-option input:checked')].map(i => i.value).filter(v => v !== id);
+  renderMenuTypeSelector(checked);
+  toast('Type deleted', 'info');
+};
+
+function addNewType() {
+  const nameEl  = document.getElementById('newTypeName');
+  const colorEl = document.getElementById('newTypeColor');
+  const name    = (nameEl?.value || '').trim();
+  if (!name) { toast('Enter a type name', 'error'); return; }
+  const id = name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
+  const types = getTypes();
+  if (types.some(t => t.id === id || t.label.toLowerCase() === name.toLowerCase())) {
+    toast('A type with that name already exists', 'error'); return;
+  }
+  const color = colorEl?.value || '#2563eb';
+  types.push({ id, label: name, color });
+  saveTypes(types);
+  if (nameEl) nameEl.value = '';
+  if (colorEl) colorEl.value = '#2563eb';
+  _renderTypeTagList();
+  const checked = [...document.querySelectorAll('.mt-option input:checked')].map(i => i.value);
+  renderMenuTypeSelector(checked);
+  toast('\u2705 Type added', 'success');
+}
+window.addNewType = addNewType;
 
 // ===== MODAL =====
 let editingImages = [];
 
 function openAddModal() {
-  document.getElementById('modalTitle').textContent = 'Add Menu Item';
+  document.getElementById('modalTitle').textContent = 'Add Product / Item';
   document.getElementById('editId').value  = '';
   document.getElementById('fSku').value    = '';
   document.getElementById('fName').value   = '';
@@ -2143,15 +2283,14 @@ function openAddModal() {
   document.getElementById('fFat').value    = '';
   document.getElementById('fCarbs').value  = '';
   document.getElementById('fProtein').value = '';
-  document.querySelectorAll('.mt-option').forEach(el => {
-    el.querySelector('input').checked = false;
-    el.classList.remove('checked');
-  });
+  _manageTypesOpen = false;
+  const mpanel = document.getElementById('manageTypesPanel');
+  if (mpanel) mpanel.style.display = 'none';
+  renderMenuTypeSelector([]);
   editingImages = [];
   renderImgPreviews();
   window.editingIngredients = []; _renderTagChips('ingredientsChips', window.editingIngredients, 'removeIngredient');
-  window.editingAddOns      = []; _renderTagChips('addOnsChips',      window.editingAddOns,      'removeAddOn');
-  window.editingRemoveOns   = []; _renderTagChips('removeOnsChips',   window.editingRemoveOns,   'removeRemoveOn');
+  editingCustomizationOptions = []; renderCustomizationOptions();
   populateCatDropdown('');
   populateBrandDropdown('');
   document.getElementById('itemModal').classList.add('open');
@@ -2160,10 +2299,10 @@ function openAddModal() {
 function openEditModal(id) {
   const item = getItems().find(i => i.id === id);
   if (!item) return;
-  document.getElementById('modalTitle').textContent = 'Edit Menu Item';
+  document.getElementById('modalTitle').textContent = 'Edit Product / Item';
   document.getElementById('editId').value  = id;
   document.getElementById('fSku').value    = item.sku;
-  document.getElementById('fName').value   = item.name;
+  document.getElementById('fName').value   = item.name || item.productName || '';
   document.getElementById('fDesc').value   = item.description || '';
   document.getElementById('fPrice').value  = item.price;
   document.getElementById('fActive').value = String(item.active);
@@ -2172,21 +2311,31 @@ function openEditModal(id) {
     ? (item.category.name || item.category.id || String(item.category))
     : String(item.category || '');
   populateCatDropdown(catStr);
-  document.querySelectorAll('.mt-option').forEach(el => {
-    const v       = el.getAttribute('data-type');
-    const checked = (item.menuTypes||[]).includes(v);
-    el.querySelector('input').checked = checked;
-    el.classList.toggle('checked', checked);
-  });
+  _manageTypesOpen = false;
+  const mpanel = document.getElementById('manageTypesPanel');
+  if (mpanel) mpanel.style.display = 'none';
+  renderMenuTypeSelector(item.menuTypes || []);
   document.getElementById('fCalories').value = item.calories != null ? item.calories : '';
   document.getElementById('fFat').value      = item.fat     != null ? item.fat     : '';
   document.getElementById('fCarbs').value    = item.carbs   != null ? item.carbs   : '';
   document.getElementById('fProtein').value  = item.protein != null ? item.protein : '';
   editingImages = [...(item.images || [])];
   renderImgPreviews();
-  window.editingIngredients = [...(item.ingredients || [])]; _renderTagChips('ingredientsChips', window.editingIngredients, 'removeIngredient');
-  window.editingAddOns      = [...(item.addOns      || [])]; _renderTagChips('addOnsChips',      window.editingAddOns,      'removeAddOn');
-  window.editingRemoveOns   = [...(item.removeOns   || [])]; _renderTagChips('removeOnsChips',   window.editingRemoveOns,   'removeRemoveOn');
+  // Load ingredients — support both GS1 array of objects and legacy string array
+  const rawIng = item['gs1:recipeIngredient'] || item.ingredients || [];
+  window.editingIngredients = rawIng.map(r => typeof r === 'string' ? r : (r.productName || r.name || String(r)));
+  _renderTagChips('ingredientsChips', window.editingIngredients, 'removeIngredient');
+  // Load customization options — support GS1 format and legacy addOns/removeOns
+  const rawCust = item['gs1:customizationOptions'];
+  if (rawCust && rawCust.length) {
+    editingCustomizationOptions = rawCust.map(o => ({ ...o }));
+  } else {
+    editingCustomizationOptions = [
+      ...(item.addOns || []).map(n => ({ '@type': 'PropertyValue', name: n, value: 'Added',   'gs1:modificationType': 'ADD',      'gs1:priceAdjustment': '+0.00' })),
+      ...(item.removeOns || []).map(n => ({ '@type': 'PropertyValue', name: n, value: 'Removed', 'gs1:modificationType': 'SUBTRACT', 'gs1:priceAdjustment': '-0.00' }))
+    ];
+  }
+  renderCustomizationOptions();
   populateBrandDropdown(item.brand || (getBrands()[0] && getBrands()[0].id) || '');
   document.getElementById('itemModal').classList.add('open');
 }
@@ -2237,7 +2386,7 @@ function saveItem() {
   const protein  = protRaw !== '' ? parseFloat(protRaw) : null;
 
   if (!sku || !name || !category || isNaN(price) || !menuTypes.length) {
-    toast('\u26A0\uFE0F Please fill all required fields and select at least one menu type.', 'error');
+    toast('\u26A0\uFE0F Please fill all required fields and select at least one type.', 'error');
     return;
   }
 
@@ -2245,14 +2394,44 @@ function saveItem() {
   const skuExists = items.some(i => i.sku === sku && i.id !== id);
   if (skuExists) { toast('\u26A0\uFE0F SKU already exists. Please use a unique SKU.', 'error'); return; }
 
+  // Build GS1-aligned fields
+  const gs1Ingredients = (window.editingIngredients || [])
+    .filter(s => String(s).trim())
+    .map(s => ({ '@type': 'Product', 'productName': String(s) }));
+
+  const gs1CustOpts = (editingCustomizationOptions || []).filter(o => (o.name || '').trim());
+
+  const currency = (getBrands().find(b => b.id === brand) || getBrands()[0] || {}).currency || '$';
+  const gs1NetPrice = {
+    '@type': 'gs1:PriceSpecification',
+    'gs1:price': price.toFixed(2),
+    'gs1:priceCurrency': currency
+  };
+
   const now = new Date().toISOString();
+  const base = {
+    '@context': 'https://gs1.org/voc/',
+    '@type': 'Product',
+    sku, name, productName: name, description: desc,
+    price, category, brand, active, menuTypes,
+    images: editingImages,
+    calories, fat, carbs, protein,
+    // GS1 structured fields
+    'gs1:recipeIngredient': gs1Ingredients,
+    'gs1:customizationOptions': gs1CustOpts,
+    'gs1:netPrice': gs1NetPrice,
+    // Legacy aliases kept for backwards compatibility
+    ingredients: (window.editingIngredients || []).filter(Boolean),
+    updatedAt: now
+  };
+
   if (id) {
     const idx = items.findIndex(i => i.id === id);
-    items[idx] = { ...items[idx], sku, name, description: desc, price, category, brand, active, menuTypes, images: editingImages, calories, fat, carbs, protein, ingredients: window.editingIngredients, addOns: window.editingAddOns, removeOns: window.editingRemoveOns, updatedAt: now };
+    items[idx] = { ...items[idx], ...base };
     saveItems(items);
     toast('\u2705 Item updated successfully', 'success');
   } else {
-    items.push({ id: genId(), sku, name, description: desc, price, category, brand, active, menuTypes, images: editingImages, calories, fat, carbs, protein, ingredients: window.editingIngredients, addOns: window.editingAddOns, removeOns: window.editingRemoveOns, createdAt: now, updatedAt: now });
+    items.push({ id: genId(), createdAt: now, ...base });
     saveItems(items);
     toast('\u2705 Item added successfully', 'success');
   }
@@ -2686,6 +2865,7 @@ function exportData() {
     settings:   getSettings(),
     categories: getCats(),
     brands:     getBrands(),
+    types:      getTypes(),
     exportedAt: new Date().toISOString()
   };
   const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
@@ -2712,6 +2892,63 @@ function stripOversizedImages(items) {
   return { sanitized, stripped };
 }
 
+// Convert Starbucks/legacy customization structure to GS1 customizationOptions
+function _normaliseLegacyItem(item) {
+  // Already has GS1 context — just ensure recipeIngredient and customizationOptions exist
+  const result = { ...item };
+  if (!result['gs1:recipeIngredient']) {
+    const rawIng = result.ingredients || [];
+    // Also pull in customization.defaultIngredients if present
+    const custDefIng = (result.customization && result.customization.defaultIngredients) || [];
+    const allIng = [...rawIng, ...custDefIng.map(d => d.label || d.id || d)];
+    const seen = new Set();
+    result['gs1:recipeIngredient'] = allIng
+      .filter(n => { const s = String(n).trim(); return s && !seen.has(s) && seen.add(s); })
+      .map(n => ({ '@type': 'Product', 'productName': String(n) }));
+    // Keep legacy ingredients array too
+    result.ingredients = result['gs1:recipeIngredient'].map(r => r.productName);
+  }
+  if (!result['gs1:customizationOptions']) {
+    const opts = [];
+    const cust = result.customization || {};
+    // Sizes → SWAP options
+    (cust.sizes || []).forEach(s => opts.push({
+      '@type': 'PropertyValue', 'name': s.label || s.id, 'value': 'Selected',
+      'gs1:modificationType': 'SWAP',
+      'gs1:priceAdjustment': s.priceAdj >= 0 ? `+${(+s.priceAdj).toFixed(2)}` : `${(+s.priceAdj).toFixed(2)}`
+    }));
+    // Milk options → SWAP options
+    (cust.milkOptions || []).forEach(m => opts.push({
+      '@type': 'PropertyValue', 'name': m.label || m.id, 'value': m.default ? 'Default' : 'Selected',
+      'gs1:modificationType': 'SWAP',
+      'gs1:priceAdjustment': m.priceAdj >= 0 ? `+${(+m.priceAdj).toFixed(2)}` : `${(+m.priceAdj).toFixed(2)}`
+    }));
+    // Additions → ADD options
+    (cust.additions || []).forEach(a => opts.push({
+      '@type': 'PropertyValue', 'name': a.label || a.id, 'value': 'Added',
+      'gs1:modificationType': 'ADD',
+      'gs1:priceAdjustment': a.priceAdj >= 0 ? `+${(+a.priceAdj).toFixed(2)}` : `${(+a.priceAdj).toFixed(2)}`
+    }));
+    // Legacy addOns/removeOns
+    (result.addOns || []).forEach(n => opts.push({
+      '@type': 'PropertyValue', 'name': n, 'value': 'Added',
+      'gs1:modificationType': 'ADD', 'gs1:priceAdjustment': '+0.00'
+    }));
+    (result.removeOns || []).forEach(n => opts.push({
+      '@type': 'PropertyValue', 'name': n, 'value': 'Removed',
+      'gs1:modificationType': 'SUBTRACT', 'gs1:priceAdjustment': '-0.00'
+    }));
+    result['gs1:customizationOptions'] = opts;
+  }
+  if (!result['gs1:netPrice'] && result.price != null) {
+    result['gs1:netPrice'] = { '@type': 'gs1:PriceSpecification', 'gs1:price': String(result.price), 'gs1:priceCurrency': 'AUD' };
+  }
+  if (!result['@context']) result['@context'] = 'https://gs1.org/voc/';
+  if (!result['@type'])    result['@type']    = 'Product';
+  if (!result.productName) result.productName  = result.name || '';
+  return result;
+}
+
 function importData(event) {
   const file = event.target.files[0];
   if (!file) return;
@@ -2722,7 +2959,9 @@ function importData(event) {
 
       // ── ITEMS: merge by id (upsert — never delete existing items) ────────
       if (data.items) {
-        const { sanitized, stripped } = stripOversizedImages(data.items);
+        // Normalise each item to GS1 format
+        const normalised = data.items.map(_normaliseLegacyItem);
+        const { sanitized, stripped } = stripOversizedImages(normalised);
         if (stripped.length) {
           toast(
             `\u26A0\uFE0F ${stripped.length} item${stripped.length > 1 ? 's' : ''} had oversized images removed: ${stripped.join(', ')}`,
@@ -2734,8 +2973,16 @@ function importData(event) {
         let added = 0, updated = 0;
         for (const item of sanitized) {
           const idx = merged.findIndex(i => i.id === item.id);
-          if (idx >= 0) { merged[idx] = item; updated++; }
-          else           { merged.push(item); added++; }
+          if (idx >= 0) {
+            // Preserve existing images if the incoming item has none
+            const existingImages = merged[idx].images || [];
+            const incomingImages = item.images || [];
+            const images = incomingImages.length ? incomingImages : existingImages;
+            merged[idx] = { ...item, images };
+            updated++;
+          } else {
+            merged.push(item); added++;
+          }
         }
         saveItems(merged);
 
@@ -2760,6 +3007,33 @@ function importData(event) {
           saveCats(mergedCats);
         }
 
+        // ── TYPES: merge by id (upsert) — also auto-create types found in items ──
+        {
+          const existingTypes = getTypes();
+          const mergedTypes = [...existingTypes];
+          // Merge explicit types from import file
+          if (data.types && Array.isArray(data.types)) {
+            for (const t of data.types) {
+              if (!t.id || !t.label) continue;
+              const idx = mergedTypes.findIndex(x => x.id === t.id);
+              if (idx >= 0) mergedTypes[idx] = { ...mergedTypes[idx], ...t };
+              else          mergedTypes.push(t);
+            }
+          }
+          // Auto-create any menuTypes found in items that don't yet exist
+          const FALLBACK_COLORS = ['#7c3aed','#0891b2','#15803d','#b45309','#be123c','#4338ca','#0f766e'];
+          let colorIdx = mergedTypes.length % FALLBACK_COLORS.length;
+          for (const item of sanitized) {
+            for (const tid of (item.menuTypes || [])) {
+              if (!mergedTypes.find(x => x.id === tid)) {
+                mergedTypes.push({ id: tid, label: tid.charAt(0).toUpperCase() + tid.slice(1).replace(/-/g,' '), color: FALLBACK_COLORS[colorIdx % FALLBACK_COLORS.length] });
+                colorIdx++;
+              }
+            }
+          }
+          saveTypes(mergedTypes);
+        }
+
         // Settings are intentionally NOT overwritten on brand merge imports.
         // Configure global settings manually in the Settings tab.
 
@@ -2777,6 +3051,7 @@ function importData(event) {
         }
         if (data.categories) saveCats(data.categories);
         if (data.brands)     saveBrands(data.brands);
+        if (data.types && Array.isArray(data.types)) saveTypes(data.types);
         renderDashboard();
         renderItems();
         toast('\u{1F4E5} Data imported successfully', 'success');
@@ -2839,15 +3114,6 @@ function escHtml(str) {
     .replace(/"/g,  '&quot;');
 }
 
-// ===== MULTI-SELECT TOGGLE =====
-document.querySelectorAll('.mt-option').forEach(el => {
-  el.addEventListener('click', () => {
-    const cb    = el.querySelector('input');
-    cb.checked  = !cb.checked;
-    el.classList.toggle('checked', cb.checked);
-  });
-});
-
 // ===== WINDOW EXPORTS (for inline event handlers) =====
 window.showView           = showView;
 window.openAddModal       = openAddModal;
@@ -2880,6 +3146,9 @@ window.viewSelectedItems     = viewSelectedItems;
 window.clearItemsSelection   = clearItemsSelection;
 window.confirmDeleteSelection = confirmDeleteSelection;
 window.openEditModal      = openEditModal;
+window.addCustomizationOpt   = addCustomizationOpt;
+window.toggleManageTypes     = toggleManageTypes;
+window.addNewType            = addNewType;
 
 // ===== GRID INIT =====
 initGrids();
@@ -2908,6 +3177,10 @@ onSnapshot(doc(db, MB, 'brands'), snap => {
   // Update dashboard if it's the active view
   const activeView = document.querySelector('.view.active');
   if (activeView && activeView.id === 'view-dashboard') renderDashboard();
+});
+
+onSnapshot(doc(db, MB, 'types'), snap => {
+  if (snap.exists() && snap.data().data) _types = snap.data().data;
 });
 
 onSnapshot(doc(db, MB, 'categories'), snap => {

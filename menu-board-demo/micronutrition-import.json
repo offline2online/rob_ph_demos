@@ -1,0 +1,724 @@
+{
+  "@context": "https://gs1.org/voc/",
+  "@type": "ItemList",
+  "schemaVersion": "1.0",
+  "description": "Micronutrition menu import — GS1 VOC compliant. Items include gs1:recipeIngredient and gs1:customizationOptions auto-mapped on import.",
+  "types": [
+    {
+      "id": "supplements",
+      "label": "Supplements",
+      "color": "#0891b2"
+    },
+    {
+      "id": "vitamins",
+      "label": "Vitamins",
+      "color": "#15803d"
+    },
+    {
+      "id": "lipocap",
+      "label": "Lipocap",
+      "color": "#7c3aed"
+    }
+  ],
+  "exportedAt": "2026-03-11T00:00:00Z",
+  "settings": {
+    "restaurantName": "Micronutrition",
+    "currency": "$",
+    "logo": "",
+    "logoRight": "",
+    "address": "",
+    "phone": "",
+    "tagline": "Combining The Best Of Nature And Science"
+  },
+  "brands": [
+    {
+      "id": "mn-brand-001",
+      "name": "Micronutrition",
+      "currency": "$",
+      "logo": "",
+      "logoRight": "",
+      "colors": {
+        "header": "#34aab1",
+        "accent": "#34aab1",
+        "catBar": "#1a3a3c",
+        "body": "#262428",
+        "text": "#FFFFFF",
+        "price": "#34aab1"
+      },
+      "display": {
+        "portrait": {
+          "cols": 3,
+          "rows": 5,
+          "maxItems": 15
+        },
+        "landscape": {
+          "cols": 5,
+          "rows": 3,
+          "maxItems": 15
+        }
+      },
+      "showClock": true,
+      "timeFormat": "british",
+      "createdAt": "2026-03-11T00:00:00Z",
+      "updatedAt": "2026-03-11T00:00:00Z"
+    }
+  ],
+  "categories": [
+    {
+      "id": "mn-cat-01",
+      "name": "Magnesium",
+      "description": "Magnesium supplements for muscle function, sleep and energy support"
+    },
+    {
+      "id": "mn-cat-02",
+      "name": "Gut Health",
+      "description": "Prebiotic fibre, probiotics and digestive support formulas"
+    },
+    {
+      "id": "mn-cat-03",
+      "name": "Vitamins & Minerals",
+      "description": "Essential vitamins and minerals for daily health and wellbeing"
+    },
+    {
+      "id": "mn-cat-04",
+      "name": "Sleep & Relaxation",
+      "description": "Herbal and nutritional formulas to support healthy sleep patterns"
+    },
+    {
+      "id": "mn-cat-05",
+      "name": "Cognitive Support",
+      "description": "Formulas supporting brain health, focus and nervous system function"
+    },
+    {
+      "id": "mn-cat-06",
+      "name": "Liver & Detox",
+      "description": "Herbal support for liver function and natural detoxification"
+    },
+    {
+      "id": "mn-cat-07",
+      "name": "Immune Support",
+      "description": "Targeted nutrients and antioxidants for immune system defence"
+    },
+    {
+      "id": "mn-cat-08",
+      "name": "Joint & Collagen",
+      "description": "Marine collagen and joint support formulas for mobility and skin health"
+    },
+    {
+      "id": "mn-cat-09",
+      "name": "LipoCap™ Liposomal",
+      "description": "Premium liposomal delivery range for superior nutrient absorption"
+    }
+  ],
+  "items": [
+    {
+      "id": "mn-001",
+      "sku": "MN-MAG-001",
+      "name": "MicroNutrition Magnesium Glycinate 750mg",
+      "category": "Magnesium",
+      "description": "Supports energy, bone health, muscle function and relaxation while maintaining healthy sleeping patterns and preventing magnesium deficiency.",
+      "price": 34.95,
+      "calories": null,
+      "fat": null,
+      "carbs": null,
+      "protein": null,
+      "menuTypes": [
+        "supplements"
+      ],
+      "images": [
+        "https://cdn.shopify.com/s/files/1/0450/2696/7706/files/micronutrition-magnesium-glycinate-750mg-876017.jpg"
+      ],
+      "active": true,
+      "createdAt": "2026-03-11T00:00:00Z",
+      "updatedAt": "2026-03-11T00:00:00Z",
+      "brand": "mn-brand-001",
+      "customization": {
+        "sizes": [],
+        "defaultSize": null,
+        "milkOptions": [],
+        "defaultIngredients": [],
+        "additions": []
+      }
+    },
+    {
+      "id": "mn-002",
+      "sku": "MN-MAG-002",
+      "name": "Micronutrition Magnesium Extra Powder",
+      "category": "Magnesium",
+      "description": "Four-form magnesium blend promoting muscle function, alleviating cramps, reducing free radicals and supporting nervous system and mood balance.",
+      "price": 29.95,
+      "calories": null,
+      "fat": null,
+      "carbs": null,
+      "protein": null,
+      "menuTypes": [
+        "supplements"
+      ],
+      "images": [
+        "https://cdn.shopify.com/s/files/1/0450/2696/7706/files/micronutrition-magnesium-extra-powder-661834.jpg"
+      ],
+      "active": true,
+      "createdAt": "2026-03-11T00:00:00Z",
+      "updatedAt": "2026-03-11T00:00:00Z",
+      "brand": "mn-brand-001",
+      "customization": {
+        "sizes": [],
+        "defaultSize": null,
+        "milkOptions": [],
+        "defaultIngredients": [],
+        "additions": []
+      }
+    },
+    {
+      "id": "mn-003",
+      "sku": "MN-GUT-001",
+      "name": "Micronutrition PHGG",
+      "category": "Gut Health",
+      "description": "Soluble prebiotic fibre from guar bean plant promoting healthy gut microbiome, regulating bowel movements and alleviating constipation symptoms.",
+      "price": 39.95,
+      "calories": null,
+      "fat": null,
+      "carbs": null,
+      "protein": null,
+      "menuTypes": [
+        "supplements"
+      ],
+      "images": [
+        "https://cdn.shopify.com/s/files/1/0450/2696/7706/files/micronutrition-phgg-295566.jpg"
+      ],
+      "active": true,
+      "createdAt": "2026-03-11T00:00:00Z",
+      "updatedAt": "2026-03-11T00:00:00Z",
+      "brand": "mn-brand-001",
+      "customization": {
+        "sizes": [],
+        "defaultSize": null,
+        "milkOptions": [],
+        "defaultIngredients": [],
+        "additions": []
+      }
+    },
+    {
+      "id": "mn-004",
+      "sku": "MN-GUT-002",
+      "name": "Micronutrition PHGG Plus",
+      "category": "Gut Health",
+      "description": "Water-soluble prebiotic fibre blend supporting digestive health, promoting fullness and preventing fat absorption while improving bowel frequency.",
+      "price": 39.95,
+      "calories": null,
+      "fat": null,
+      "carbs": null,
+      "protein": null,
+      "menuTypes": [
+        "supplements"
+      ],
+      "images": [
+        "https://cdn.shopify.com/s/files/1/0450/2696/7706/files/micronutrition-phgg-plus-367498.jpg"
+      ],
+      "active": true,
+      "createdAt": "2026-03-11T00:00:00Z",
+      "updatedAt": "2026-03-11T00:00:00Z",
+      "brand": "mn-brand-001",
+      "customization": {
+        "sizes": [],
+        "defaultSize": null,
+        "milkOptions": [],
+        "defaultIngredients": [],
+        "additions": []
+      }
+    },
+    {
+      "id": "mn-005",
+      "sku": "MN-GUT-003",
+      "name": "Micronutrition Saccharomyces cerevesiae (Boulardii)",
+      "category": "Gut Health",
+      "description": "Probiotic yeast supporting healthy digestive function, beneficial intestinal flora and immune system while reducing traveller's diarrhoea symptoms.",
+      "price": 34.95,
+      "calories": null,
+      "fat": null,
+      "carbs": null,
+      "protein": null,
+      "menuTypes": [
+        "supplements"
+      ],
+      "images": [
+        "https://cdn.shopify.com/s/files/1/0450/2696/7706/files/micronutrition-saccharomyces-cerevesiaeboulardii-149116.jpg"
+      ],
+      "active": true,
+      "createdAt": "2026-03-11T00:00:00Z",
+      "updatedAt": "2026-03-11T00:00:00Z",
+      "brand": "mn-brand-001",
+      "customization": {
+        "sizes": [],
+        "defaultSize": null,
+        "milkOptions": [],
+        "defaultIngredients": [],
+        "additions": []
+      }
+    },
+    {
+      "id": "mn-006",
+      "sku": "MN-GUT-004",
+      "name": "Micronutrition OxyCleanse",
+      "category": "Gut Health",
+      "description": "Assists mild constipation by increasing intestinal water, promoting elimination and carbohydrate metabolism while supporting digestive health.",
+      "price": 59.95,
+      "calories": null,
+      "fat": null,
+      "carbs": null,
+      "protein": null,
+      "menuTypes": [
+        "supplements"
+      ],
+      "images": [
+        "https://cdn.shopify.com/s/files/1/0450/2696/7706/files/micronutrition-oxycleanse-568056.jpg"
+      ],
+      "active": true,
+      "createdAt": "2026-03-11T00:00:00Z",
+      "updatedAt": "2026-03-11T00:00:00Z",
+      "brand": "mn-brand-001",
+      "customization": {
+        "sizes": [],
+        "defaultSize": null,
+        "milkOptions": [],
+        "defaultIngredients": [],
+        "additions": []
+      }
+    },
+    {
+      "id": "mn-007",
+      "sku": "MN-VIT-001",
+      "name": "Micronutrition Vitamin D3 And K2 Drops",
+      "category": "Vitamins & Minerals",
+      "description": "Vitamin D3 and K2 combination supporting bone health, calcium absorption and cardiovascular health while promoting immune function.",
+      "price": 39.95,
+      "calories": null,
+      "fat": null,
+      "carbs": null,
+      "protein": null,
+      "menuTypes": [
+        "vitamins"
+      ],
+      "images": [
+        "https://cdn.shopify.com/s/files/1/0450/2696/7706/files/micronutrition-vitamin-d3-and-k2-drops-883107.jpg"
+      ],
+      "active": true,
+      "createdAt": "2026-03-11T00:00:00Z",
+      "updatedAt": "2026-03-11T00:00:00Z",
+      "brand": "mn-brand-001",
+      "customization": {
+        "sizes": [],
+        "defaultSize": null,
+        "milkOptions": [],
+        "defaultIngredients": [],
+        "additions": []
+      }
+    },
+    {
+      "id": "mn-008",
+      "sku": "MN-VIT-002",
+      "name": "MicroNutrition Vitamin D3 1000IU",
+      "category": "Vitamins & Minerals",
+      "description": "One-capsule-daily vitamin D3 facilitating calcium absorption, supporting bone development and immune function while preventing dietary deficiency.",
+      "price": 26.95,
+      "calories": null,
+      "fat": null,
+      "carbs": null,
+      "protein": null,
+      "menuTypes": [
+        "vitamins"
+      ],
+      "images": [
+        "https://cdn.shopify.com/s/files/1/0450/2696/7706/files/micronutrition-vitamin-d3-1000iu-106077.jpg"
+      ],
+      "active": true,
+      "createdAt": "2026-03-11T00:00:00Z",
+      "updatedAt": "2026-03-11T00:00:00Z",
+      "brand": "mn-brand-001",
+      "customization": {
+        "sizes": [],
+        "defaultSize": null,
+        "milkOptions": [],
+        "defaultIngredients": [],
+        "additions": []
+      }
+    },
+    {
+      "id": "mn-009",
+      "sku": "MN-VIT-003",
+      "name": "MicroNutrition Advanced B Complex",
+      "category": "Vitamins & Minerals",
+      "description": "Comprehensive active B vitamins formula with nicotinamide riboside supporting energy, nervous system and cognitive function.",
+      "price": 49.95,
+      "calories": null,
+      "fat": null,
+      "carbs": null,
+      "protein": null,
+      "menuTypes": [
+        "vitamins"
+      ],
+      "images": [
+        "https://cdn.shopify.com/s/files/1/0450/2696/7706/files/micronutrition-advanced-b-complex-116944.jpg"
+      ],
+      "active": true,
+      "createdAt": "2026-03-11T00:00:00Z",
+      "updatedAt": "2026-03-11T00:00:00Z",
+      "brand": "mn-brand-001",
+      "customization": {
+        "sizes": [],
+        "defaultSize": null,
+        "milkOptions": [],
+        "defaultIngredients": [],
+        "additions": []
+      }
+    },
+    {
+      "id": "mn-010",
+      "sku": "MN-SLP-001",
+      "name": "Micronutrition Sleep Support",
+      "category": "Sleep & Relaxation",
+      "description": "Herbal blend with magnesium combining passionflower and california poppy to reduce sleeplessness and support healthy sleeping patterns.",
+      "price": 43.95,
+      "calories": null,
+      "fat": null,
+      "carbs": null,
+      "protein": null,
+      "menuTypes": [
+        "supplements"
+      ],
+      "images": [
+        "https://cdn.shopify.com/s/files/1/0450/2696/7706/files/micronutrition-sleep-support-281259.jpg"
+      ],
+      "active": true,
+      "createdAt": "2026-03-11T00:00:00Z",
+      "updatedAt": "2026-03-11T00:00:00Z",
+      "brand": "mn-brand-001",
+      "customization": {
+        "sizes": [],
+        "defaultSize": null,
+        "milkOptions": [],
+        "defaultIngredients": [],
+        "additions": []
+      }
+    },
+    {
+      "id": "mn-011",
+      "sku": "MN-COG-001",
+      "name": "Micronutrition Neuro Support",
+      "category": "Cognitive Support",
+      "description": "Herbal blend supporting cognitive and nervous system function, providing anxiety relief and promoting relaxation during mental stress.",
+      "price": 43.95,
+      "calories": null,
+      "fat": null,
+      "carbs": null,
+      "protein": null,
+      "menuTypes": [
+        "supplements"
+      ],
+      "images": [
+        "https://cdn.shopify.com/s/files/1/0450/2696/7706/files/micronutrition-neuro-support-794112.jpg"
+      ],
+      "active": true,
+      "createdAt": "2026-03-11T00:00:00Z",
+      "updatedAt": "2026-03-11T00:00:00Z",
+      "brand": "mn-brand-001",
+      "customization": {
+        "sizes": [],
+        "defaultSize": null,
+        "milkOptions": [],
+        "defaultIngredients": [],
+        "additions": []
+      }
+    },
+    {
+      "id": "mn-012",
+      "sku": "MN-LVR-001",
+      "name": "MicroNutrition Liver Support",
+      "category": "Liver & Detox",
+      "description": "Milk thistle-based herbal formula supporting healthy liver function, natural cleansing and bile flow while reducing indigestion symptoms.",
+      "price": 39.95,
+      "calories": null,
+      "fat": null,
+      "carbs": null,
+      "protein": null,
+      "menuTypes": [
+        "supplements"
+      ],
+      "images": [
+        "https://cdn.shopify.com/s/files/1/0450/2696/7706/files/micronutrition-liver-support-149832.jpg"
+      ],
+      "active": true,
+      "createdAt": "2026-03-11T00:00:00Z",
+      "updatedAt": "2026-03-11T00:00:00Z",
+      "brand": "mn-brand-001",
+      "customization": {
+        "sizes": [],
+        "defaultSize": null,
+        "milkOptions": [],
+        "defaultIngredients": [],
+        "additions": []
+      }
+    },
+    {
+      "id": "mn-013",
+      "sku": "MN-IMM-001",
+      "name": "MicroNutrition Liposomal Quercetin and Zinc",
+      "category": "Immune Support",
+      "description": "Liposomal formulation synergizing quercetin and zinc to support immune system and cognitive function while reducing free radical damage.",
+      "price": 49.95,
+      "calories": null,
+      "fat": null,
+      "carbs": null,
+      "protein": null,
+      "menuTypes": [
+        "supplements"
+      ],
+      "images": [
+        "https://cdn.shopify.com/s/files/1/0450/2696/7706/files/micronutrition-liposomal-quercetin-and-zinc-365405.jpg"
+      ],
+      "active": true,
+      "createdAt": "2026-03-11T00:00:00Z",
+      "updatedAt": "2026-03-11T00:00:00Z",
+      "brand": "mn-brand-001",
+      "customization": {
+        "sizes": [],
+        "defaultSize": null,
+        "milkOptions": [],
+        "defaultIngredients": [],
+        "additions": []
+      }
+    },
+    {
+      "id": "mn-014",
+      "sku": "MN-JNT-001",
+      "name": "Micronutrition Cartidyss Plus",
+      "category": "Joint & Collagen",
+      "description": "Marine collagen formula with biotin, vitamin C and zinc enhancing skin firmness, promoting collagen formation and supporting joint health.",
+      "price": 59.95,
+      "calories": null,
+      "fat": null,
+      "carbs": null,
+      "protein": null,
+      "menuTypes": [
+        "supplements"
+      ],
+      "images": [
+        "https://cdn.shopify.com/s/files/1/0450/2696/7706/files/micronutrition-cartidyss-plus-219665.jpg"
+      ],
+      "active": true,
+      "createdAt": "2026-03-11T00:00:00Z",
+      "updatedAt": "2026-03-11T00:00:00Z",
+      "brand": "mn-brand-001",
+      "customization": {
+        "sizes": [],
+        "defaultSize": null,
+        "milkOptions": [],
+        "defaultIngredients": [],
+        "additions": []
+      }
+    },
+    {
+      "id": "mn-015",
+      "sku": "MN-LPC-001",
+      "name": "Micronutrition LipoCap™ Vitamin C",
+      "category": "LipoCap™ Liposomal",
+      "description": "Liposomal vitamin C supporting immune function, collagen production and bone health while reducing free radical damage and cold symptoms.",
+      "price": 49.95,
+      "calories": null,
+      "fat": null,
+      "carbs": null,
+      "protein": null,
+      "menuTypes": [
+        "lipocap"
+      ],
+      "images": [
+        "https://cdn.shopify.com/s/files/1/0450/2696/7706/files/micronutrition-lipocap-vitamin-c-596489.webp"
+      ],
+      "active": true,
+      "createdAt": "2026-03-11T00:00:00Z",
+      "updatedAt": "2026-03-11T00:00:00Z",
+      "brand": "mn-brand-001",
+      "customization": {
+        "sizes": [],
+        "defaultSize": null,
+        "milkOptions": [],
+        "defaultIngredients": [],
+        "additions": []
+      }
+    },
+    {
+      "id": "mn-016",
+      "sku": "MN-LPC-002",
+      "name": "Micronutrition LipoCap™ Iron",
+      "category": "LipoCap™ Liposomal",
+      "description": "Liposomal iron formula supporting energy production, cognitive function and immune health while preventing dietary iron deficiency.",
+      "price": 39.95,
+      "calories": null,
+      "fat": null,
+      "carbs": null,
+      "protein": null,
+      "menuTypes": [
+        "lipocap"
+      ],
+      "images": [
+        "https://cdn.shopify.com/s/files/1/0450/2696/7706/files/micronutrition-lipocap-iron-298729.webp"
+      ],
+      "active": true,
+      "createdAt": "2026-03-11T00:00:00Z",
+      "updatedAt": "2026-03-11T00:00:00Z",
+      "brand": "mn-brand-001",
+      "customization": {
+        "sizes": [],
+        "defaultSize": null,
+        "milkOptions": [],
+        "defaultIngredients": [],
+        "additions": []
+      }
+    },
+    {
+      "id": "mn-017",
+      "sku": "MN-LPC-003",
+      "name": "Micronutrition LipoCap™ Glutathione",
+      "category": "LipoCap™ Liposomal",
+      "description": "Master antioxidant delivered via liposomal technology supporting liver detoxification, immunity and free radical defence.",
+      "price": 64.95,
+      "calories": null,
+      "fat": null,
+      "carbs": null,
+      "protein": null,
+      "menuTypes": [
+        "lipocap"
+      ],
+      "images": [
+        "https://cdn.shopify.com/s/files/1/0450/2696/7706/files/micronutrition-lipocap-glutathione-721943.webp"
+      ],
+      "active": true,
+      "createdAt": "2026-03-11T00:00:00Z",
+      "updatedAt": "2026-03-11T00:00:00Z",
+      "brand": "mn-brand-001",
+      "customization": {
+        "sizes": [],
+        "defaultSize": null,
+        "milkOptions": [],
+        "defaultIngredients": [],
+        "additions": []
+      }
+    },
+    {
+      "id": "mn-018",
+      "sku": "MN-LPC-004",
+      "name": "Micronutrition LipoCap™ Resveratrol",
+      "category": "LipoCap™ Liposomal",
+      "description": "High-strength liposomal antioxidant supporting heart health and cardiovascular function while reducing free radical damage.",
+      "price": 59.95,
+      "calories": null,
+      "fat": null,
+      "carbs": null,
+      "protein": null,
+      "menuTypes": [
+        "lipocap"
+      ],
+      "images": [
+        "https://cdn.shopify.com/s/files/1/0450/2696/7706/files/micronutrition-lipocap-resveratrol-363043.webp"
+      ],
+      "active": true,
+      "createdAt": "2026-03-11T00:00:00Z",
+      "updatedAt": "2026-03-11T00:00:00Z",
+      "brand": "mn-brand-001",
+      "customization": {
+        "sizes": [],
+        "defaultSize": null,
+        "milkOptions": [],
+        "defaultIngredients": [],
+        "additions": []
+      }
+    },
+    {
+      "id": "mn-019",
+      "sku": "MN-LPC-005",
+      "name": "Micronutrition LipoCap™ B12",
+      "category": "LipoCap™ Liposomal",
+      "description": "Methylcobalamin B12 via liposomal technology supporting energy production, brain health and nervous system function.",
+      "price": 39.95,
+      "calories": null,
+      "fat": null,
+      "carbs": null,
+      "protein": null,
+      "menuTypes": [
+        "lipocap"
+      ],
+      "images": [
+        "https://cdn.shopify.com/s/files/1/0450/2696/7706/files/micronutrition-lipocap-b12-771222.webp"
+      ],
+      "active": true,
+      "createdAt": "2026-03-11T00:00:00Z",
+      "updatedAt": "2026-03-11T00:00:00Z",
+      "brand": "mn-brand-001",
+      "customization": {
+        "sizes": [],
+        "defaultSize": null,
+        "milkOptions": [],
+        "defaultIngredients": [],
+        "additions": []
+      }
+    },
+    {
+      "id": "mn-020",
+      "sku": "MN-LPC-006",
+      "name": "Micronutrition LipoCap™ CoQ10",
+      "category": "LipoCap™ Liposomal",
+      "description": "Liposomal CoQ10 supporting energy production, heart health and antioxidant protection for active lifestyles and healthy ageing.",
+      "price": 79.95,
+      "calories": null,
+      "fat": null,
+      "carbs": null,
+      "protein": null,
+      "menuTypes": [
+        "lipocap"
+      ],
+      "images": [
+        "https://cdn.shopify.com/s/files/1/0450/2696/7706/files/micronutrition-lipocap-coq10-578575.webp"
+      ],
+      "active": true,
+      "createdAt": "2026-03-11T00:00:00Z",
+      "updatedAt": "2026-03-11T00:00:00Z",
+      "brand": "mn-brand-001",
+      "customization": {
+        "sizes": [],
+        "defaultSize": null,
+        "milkOptions": [],
+        "defaultIngredients": [],
+        "additions": []
+      }
+    },
+    {
+      "id": "mn-021",
+      "sku": "MN-LPC-007",
+      "name": "Micronutrition LipoCap™ P.E.A",
+      "category": "LipoCap™ Liposomal",
+      "description": "Palmitoylethanolamide formula providing analgesic action relieving joint pain, nerve pain and arthritis symptoms while supporting post-exercise recovery.",
+      "price": 54.95,
+      "calories": null,
+      "fat": null,
+      "carbs": null,
+      "protein": null,
+      "menuTypes": [
+        "lipocap"
+      ],
+      "images": [
+        "https://cdn.shopify.com/s/files/1/0450/2696/7706/files/micronutrition-lipocap-pea-170921.webp"
+      ],
+      "active": true,
+      "createdAt": "2026-03-11T00:00:00Z",
+      "updatedAt": "2026-03-11T00:00:00Z",
+      "brand": "mn-brand-001",
+      "customization": {
+        "sizes": [],
+        "defaultSize": null,
+        "milkOptions": [],
+        "defaultIngredients": [],
+        "additions": []
+      }
+    }
+  ]
+}
