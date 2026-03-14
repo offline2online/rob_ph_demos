@@ -2,7 +2,7 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 
-const PORT = 3456;
+const PORT = process.env.PORT || 3456;
 const ROOT = __dirname;
 
 const MIME = {
@@ -20,4 +20,6 @@ http.createServer((req, res) => {
     res.writeHead(200, { 'Content-Type': MIME[ext] || 'application/octet-stream' });
     res.end(data);
   });
-}).listen(PORT);
+}).listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
+});
