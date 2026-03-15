@@ -633,6 +633,34 @@
     /* ── CLICKABLE BRAND NAME ────────────────── */
     .brand-name-link { color:var(--primary); font-weight:600; cursor:pointer; text-decoration:none; font-size:13px; }
     .brand-name-link:hover { text-decoration:underline; }
+
+    /* ── TEMPLATE LIBRARY ───────────────────────────────────── */
+    .tpl-lib-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(320px,1fr)); gap:20px; margin-top:20px; }
+    .tpl-lib-card { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); overflow:hidden; transition:border-color .15s,box-shadow .15s; cursor:pointer; }
+    .tpl-lib-card:hover { border-color:var(--primary); box-shadow:0 4px 16px rgba(22,155,194,0.12); }
+    .tpl-lib-card-header { padding:14px 16px 10px; display:flex; align-items:flex-start; justify-content:space-between; gap:8px; }
+    .tpl-lib-card-name { font-size:14px; font-weight:700; color:var(--text); margin-bottom:3px; }
+    .tpl-lib-card-desc { font-size:12px; color:var(--text2); line-height:1.4; }
+    .tpl-lib-card-cat { font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.5px; padding:2px 8px; border-radius:20px; background:var(--primary-light); color:var(--primary); white-space:nowrap; flex-shrink:0; }
+    .tpl-lib-card-tags { display:flex; flex-wrap:wrap; gap:5px; padding:0 16px 10px; }
+    .tpl-lib-tag { font-size:10px; font-weight:500; padding:2px 7px; border-radius:4px; background:var(--surface2); color:var(--text2); border:1px solid var(--border); }
+    .tpl-lib-mockups { display:grid; grid-template-columns:1fr 1.8fr; gap:10px; padding:0 16px 16px; }
+    .tpl-lib-mockup-wrap { display:flex; flex-direction:column; gap:4px; }
+    .tpl-lib-mockup-label { font-size:10px; font-weight:600; color:var(--text2); text-transform:uppercase; letter-spacing:.5px; text-align:center; }
+    .tpl-lib-mockup { border:1px solid var(--border); border-radius:4px; overflow:hidden; background:var(--surface2); display:flex; align-items:center; justify-content:center; }
+    .tpl-lib-card-footer { padding:12px 16px; border-top:1px solid var(--border); display:flex; align-items:center; justify-content:space-between; background:var(--surface2); }
+    .tpl-lib-settings-count { font-size:11px; color:var(--text2); }
+
+    /* ── TEMPLATE PICKER MODAL (for Add Template in brand) ── */
+    .tpl-picker-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(240px,1fr)); gap:14px; padding:4px; }
+    .tpl-picker-card { background:var(--surface2); border:2px solid var(--border); border-radius:var(--radius); padding:14px; cursor:pointer; transition:border-color .14s,background .14s; }
+    .tpl-picker-card:hover { border-color:var(--primary); background:var(--surface); }
+    .tpl-picker-card.selected { border-color:var(--primary); background:var(--primary-light); }
+    .tpl-picker-card-name { font-size:13px; font-weight:700; color:var(--text); margin-bottom:4px; }
+    .tpl-picker-card-desc { font-size:11px; color:var(--text2); line-height:1.4; margin-bottom:8px; }
+    .tpl-picker-card-cat { display:inline-block; font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.4px; padding:2px 7px; border-radius:20px; background:var(--primary-light); color:var(--primary); }
+    .tpl-picker-mockup-row { display:flex; gap:6px; margin-top:10px; }
+    .tpl-picker-mockup { border:1px solid var(--border); border-radius:3px; overflow:hidden; background:var(--surface); flex-shrink:0; }
   </style>
 </head>
 <body>
@@ -658,6 +686,10 @@
         <div class="nav-item" onclick="showView('brands')">
           <span class="icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg></span>
           <span>Brands</span>
+        </div>
+        <div class="nav-item" onclick="showView('templates')">
+          <span class="icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg></span>
+          <span>Templates</span>
         </div>
         <div class="nav-item" onclick="showView('categories')">
           <span class="icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg></span>
@@ -746,6 +778,33 @@
             <button class="btn btn-primary" onclick="openAddBrandModal()">+ Add Brand</button>
           </div>
           <div id="brandsGrid" class="ag-theme-alpine" style="width:100%;height:500px;border-radius:var(--radius);overflow:hidden;border:1px solid var(--border);"></div>
+        </div>
+
+        <!-- ── TEMPLATES LIBRARY VIEW ─────────────────────────── -->
+        <div id="view-templates" class="view">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
+            <h2 style="font-size:20px;font-weight:700;color:var(--text);margin:0;">Templates</h2>
+          </div>
+          <div style="font-size:13px;color:var(--text2);margin-bottom:4px;">Platform-defined display templates for Dynamic Offer Boards. Browse the library and see how each template will look on portrait and landscape displays.</div>
+          <div style="font-size:12px;color:var(--text2);margin-bottom:20px;">To use a template for a brand, go to <span style="color:var(--primary);cursor:pointer;font-weight:600;" onclick="showView('brands')">Brands</span> → open a brand → Manage Offer Boards → + Add Template.</div>
+
+          <!-- Filter bar -->
+          <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:8px;">
+            <div class="search-box" style="max-width:280px;">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+              <input type="text" id="tplLibSearch" placeholder="Search templates…" oninput="renderTemplateLibrary()">
+            </div>
+            <select id="tplLibCatFilter" class="filter-select" onchange="renderTemplateLibrary()">
+              <option value="">All Categories</option>
+              <option value="Food &amp; Beverage">Food &amp; Beverage</option>
+              <option value="Retail">Retail</option>
+              <option value="In-Store Experience">In-Store Experience</option>
+              <option value="Out-of-Home">Out-of-Home</option>
+              <option value="Store Operations">Store Operations</option>
+            </select>
+          </div>
+
+          <div class="tpl-lib-grid" id="tplLibGrid"></div>
         </div>
 
         <!-- SETTINGS -->
@@ -1558,18 +1617,558 @@ function genSku() {
   document.getElementById('fSku').value = prefix + num;
 }
 
+// ===== TEMPLATE LIBRARY =====
+
+// SVG mockup helper — generates inline SVG wireframes
+function mkPortraitSVG(layoutFn) {
+  return `<svg width="68" height="110" viewBox="0 0 68 110" xmlns="http://www.w3.org/2000/svg">${layoutFn(68,110)}</svg>`;
+}
+function mkLandscapeSVG(layoutFn) {
+  return `<svg width="110" height="62" viewBox="0 0 110 62" xmlns="http://www.w3.org/2000/svg">${layoutFn(110,62)}</svg>`;
+}
+
+const C = { bg:'#f0f4f8', header:'#169bc2', body:'#e8edf2', card:'#ffffff', border:'#cbd5e0', text:'#2d3748', muted:'#a0aec0', accent:'#169bc2', price:'#169bc2', promo:'#f6ad55', danger:'#fc8181', dark:'#1a202c' };
+
+function gridCells(x,y,w,h,cols,rows,gap=3) {
+  const cw = (w - gap*(cols+1))/cols; const ch = (h - gap*(rows+1))/rows;
+  let s=''; for(let r=0;r<rows;r++) for(let c=0;c<cols;c++) {
+    const cx=x+gap+c*(cw+gap); const cy=y+gap+r*(ch+gap);
+    s+=`<rect x="${cx.toFixed(1)}" y="${cy.toFixed(1)}" width="${cw.toFixed(1)}" height="${ch.toFixed(1)}" rx="2" fill="${C.card}" stroke="${C.border}" stroke-width=".5"/>`;
+    s+=`<rect x="${cx.toFixed(1)}" y="${cy.toFixed(1)}" width="${cw.toFixed(1)}" height="${(ch*0.55).toFixed(1)}" rx="2" fill="${C.body}"/>`;
+    s+=`<rect x="${(cx+2).toFixed(1)}" y="${(cy+ch*0.6).toFixed(1)}" width="${(cw*0.7).toFixed(1)}" height="2.5" rx="1" fill="${C.muted}"/>`;
+    s+=`<rect x="${(cx+2).toFixed(1)}" y="${(cy+ch*0.78).toFixed(1)}" width="${(cw*0.45).toFixed(1)}" height="2" rx="1" fill="${C.price}"/>`;
+  } return s;
+}
+
+const TEMPLATE_LIBRARY = [
+  {
+    id: 'classic-menu-board',
+    name: 'Classic Menu Board',
+    description: 'Traditional tiled grid of products with prices. Ideal for restaurants, cafés, and QSR.',
+    category: 'Food & Beverage',
+    useCases: ['Restaurant','Café','QSR','Bakery','Food Court'],
+    settings: { showHeader:true, colorScheme:true, iconPosition:true, headerCopy:true, itemTypeFilter:true, categoryFilter:true, soldOutBehavior:true, portrait:true, landscape:true, showClock:true, personalGreeting:false, showStoreName:false, campaignFilter:false },
+    defaults: { showHeader:'true', iconPosition:'left', colorHeader:'#169bc2', colorHeaderText:'#ffffff', colorAccent:'#169bc2', colorCatBar:'#169bc2', colorBody:'#f5f5f5', colorText:'#1a1a1a', colorPrice:'#169bc2', colorClockText:'#ffffff', hideOos:'false', portraitCols:3, portraitRows:5, portraitMax:15, landscapeCols:5, landscapeRows:3, landscapeMax:15, showClock:'true', timeFormat:'british', campaignMode:'filter' },
+    portraitSVG: (W,H) => {
+      const hh=14; const fh=10;
+      return `<rect width="${W}" height="${H}" fill="${C.bg}"/><rect width="${W}" height="${hh}" fill="${C.header}"/><rect x="3" y="3.5" width="20" height="7" rx="1.5" fill="rgba(255,255,255,.25)"/><rect x="${W-23}" y="4" width="20" height="6" rx="1" fill="rgba(255,255,255,.15)"/>` +
+      gridCells(0,hh,W,H-hh-fh,3,5,2) +
+      `<rect y="${H-fh}" width="${W}" height="${fh}" fill="${C.dark}"/><rect x="4" y="${H-fh+3}" width="30" height="2" rx="1" fill="rgba(255,255,255,.3)"/>`;
+    },
+    landscapeSVG: (W,H) => {
+      const hh=11; const fh=8;
+      return `<rect width="${W}" height="${H}" fill="${C.bg}"/><rect width="${W}" height="${hh}" fill="${C.header}"/><rect x="4" y="3" width="18" height="5" rx="1" fill="rgba(255,255,255,.25)"/>` +
+      gridCells(0,hh,W,H-hh-fh,5,3,2) +
+      `<rect y="${H-fh}" width="${W}" height="${fh}" fill="${C.dark}"/><rect x="4" y="${H-fh+2.5}" width="28" height="2" rx="1" fill="rgba(255,255,255,.3)"/>`;
+    }
+  },
+  {
+    id: 'feature-hero-board',
+    name: 'Feature Hero Spotlight',
+    description: 'One promoted product dominates with large imagery, supporting items shown below.',
+    category: 'Food & Beverage',
+    useCases: ['Restaurant','Promotion','Retail','Café'],
+    settings: { showHeader:true, colorScheme:true, iconPosition:true, headerCopy:false, itemTypeFilter:true, categoryFilter:true, soldOutBehavior:true, portrait:true, landscape:true, showClock:false, personalGreeting:false, showStoreName:false, campaignFilter:true },
+    defaults: { showHeader:'true', iconPosition:'center', colorHeader:'#1a1a1a', colorHeaderText:'#ffffff', colorAccent:'#f6ad55', colorCatBar:'#f6ad55', colorBody:'#111111', colorText:'#ffffff', colorPrice:'#f6ad55', colorClockText:'#ffffff', hideOos:'true', portraitCols:3, portraitRows:2, portraitMax:6, landscapeCols:4, landscapeRows:2, landscapeMax:8, showClock:'false', timeFormat:'british', campaignMode:'override' },
+    portraitSVG: (W,H) => {
+      const hh=13; const heroH=Math.round(H*0.42); const bodyY=hh+heroH; const bodyH=H-bodyY-2;
+      return `<rect width="${W}" height="${H}" fill="#111"/><rect width="${W}" height="${hh}" fill="#1a1a1a"/>` +
+      `<rect x="4" y="3.5" width="20" height="6" rx="1" fill="rgba(255,255,255,.2)"/>` +
+      `<rect y="${hh}" width="${W}" height="${heroH}" fill="#2d2d2d"/>` +
+      `<rect x="${W/2-15}" y="${hh+heroH*0.35}" width="30" height="5" rx="2" fill="rgba(255,255,255,.85)"/>` +
+      `<rect x="${W/2-10}" y="${hh+heroH*0.6}" width="20" height="3" rx="1.5" fill="#f6ad55"/>` +
+      gridCells(0,bodyY,W,bodyH,3,2,2);
+    },
+    landscapeSVG: (W,H) => {
+      const hh=10; const heroW=Math.round(W*0.45); const bodyX=heroW+2; const bodyW=W-heroW-2;
+      return `<rect width="${W}" height="${H}" fill="#111"/><rect width="${W}" height="${hh}" fill="#1a1a1a"/>` +
+      `<rect y="${hh}" width="${heroW}" height="${H-hh}" fill="#2d2d2d"/>` +
+      `<rect x="${heroW*0.2}" y="${hh+(H-hh)*0.35}" width="${heroW*0.6}" height="5" rx="2" fill="rgba(255,255,255,.85)"/>` +
+      `<rect x="${heroW*0.3}" y="${hh+(H-hh)*0.58}" width="${heroW*0.4}" height="3" rx="1.5" fill="#f6ad55"/>` +
+      gridCells(bodyX,hh,bodyW,H-hh,2,3,2);
+    }
+  },
+  {
+    id: 'category-rotator',
+    name: 'Category Rotator',
+    description: 'Auto-rotates through categories full screen, one at a time. Ideal for large menus.',
+    category: 'Food & Beverage',
+    useCases: ['Restaurant','Supermarket','Pharmacy','Café'],
+    settings: { showHeader:true, colorScheme:true, iconPosition:true, headerCopy:false, itemTypeFilter:false, categoryFilter:true, soldOutBehavior:true, portrait:true, landscape:true, showClock:true, personalGreeting:false, showStoreName:true, campaignFilter:false },
+    defaults: { showHeader:'true', iconPosition:'left', colorHeader:'#169bc2', colorHeaderText:'#ffffff', colorAccent:'#169bc2', colorCatBar:'#169bc2', colorBody:'#f5f5f5', colorText:'#1a1a1a', colorPrice:'#169bc2', colorClockText:'#ffffff', hideOos:'false', portraitCols:3, portraitRows:4, portraitMax:12, landscapeCols:5, landscapeRows:2, landscapeMax:10, showClock:'true', timeFormat:'british', campaignMode:'filter' },
+    portraitSVG: (W,H) => {
+      const hh=14; const catH=16; const fh=10;
+      return `<rect width="${W}" height="${H}" fill="${C.bg}"/><rect width="${W}" height="${hh}" fill="${C.header}"/>` +
+      `<rect x="3" y="3.5" width="20" height="7" rx="1.5" fill="rgba(255,255,255,.25)"/>` +
+      `<rect y="${hh}" width="${W}" height="${catH}" fill="${C.accent}" opacity=".85"/>` +
+      `<rect x="${W/2-18}" y="${hh+5}" width="36" height="6" rx="2" fill="rgba(255,255,255,.9)"/>` +
+      gridCells(0,hh+catH,W,H-hh-catH-fh,3,4,2) +
+      `<rect y="${H-fh}" width="${W}" height="${fh}" fill="${C.dark}"/>` +
+      `<rect x="${W/2-12}" y="${H-fh+3}" width="24" height="2" rx="1" fill="rgba(255,255,255,.4)"/>` +
+      [0,1,2].map(i=>`<circle cx="${W/2-6+i*6}" cy="${H-3}" r="1.5" fill="${i===0?'#fff':'rgba(255,255,255,.35)'}" />`).join('');
+    },
+    landscapeSVG: (W,H) => {
+      const hh=11; const catH=13; const fh=8;
+      return `<rect width="${W}" height="${H}" fill="${C.bg}"/><rect width="${W}" height="${hh}" fill="${C.header}"/>` +
+      `<rect y="${hh}" width="${W}" height="${catH}" fill="${C.accent}" opacity=".85"/>` +
+      `<rect x="${W/2-18}" y="${hh+4}" width="36" height="5" rx="2" fill="rgba(255,255,255,.9)"/>` +
+      gridCells(0,hh+catH,W,H-hh-catH-fh,5,2,2) +
+      `<rect y="${H-fh}" width="${W}" height="${fh}" fill="${C.dark}"/>`;
+    }
+  },
+  {
+    id: 'promotional-offer-board',
+    name: 'Promotional Offer Board',
+    description: 'Price-led layout with prominent discount callouts and deal badges. Drives conversion.',
+    category: 'Retail',
+    useCases: ['Retail','Supermarket','Convenience','Petrol Station'],
+    settings: { showHeader:true, colorScheme:true, iconPosition:true, headerCopy:true, itemTypeFilter:true, categoryFilter:true, soldOutBehavior:true, portrait:true, landscape:true, showClock:false, personalGreeting:false, showStoreName:true, campaignFilter:true },
+    defaults: { showHeader:'true', iconPosition:'left', colorHeader:'#e53e3e', colorHeaderText:'#ffffff', colorAccent:'#e53e3e', colorCatBar:'#e53e3e', colorBody:'#fff5f5', colorText:'#1a1a1a', colorPrice:'#e53e3e', colorClockText:'#ffffff', hideOos:'true', portraitCols:2, portraitRows:4, portraitMax:8, landscapeCols:4, landscapeRows:2, landscapeMax:8, showClock:'false', timeFormat:'british', campaignMode:'override' },
+    portraitSVG: (W,H) => {
+      const hh=14; const bannerH=12;
+      return `<rect width="${W}" height="${H}" fill="#fff5f5"/><rect width="${W}" height="${hh}" fill="#e53e3e"/>` +
+      `<rect x="3" y="3.5" width="20" height="7" rx="1.5" fill="rgba(255,255,255,.25)"/>` +
+      `<rect y="${hh}" width="${W}" height="${bannerH}" fill="#fc8181" opacity=".5"/>` +
+      `<rect x="${W/2-20}" y="${hh+3}" width="40" height="6" rx="2" fill="rgba(139,0,0,.6)"/>` +
+      gridCells(0,hh+bannerH,W,H-hh-bannerH,2,4,3) +
+      [0,1,2,3].map(i=>`<rect x="${i%2*(W/2)+W/2-9}" y="${hh+bannerH+18+Math.floor(i/2)*((H-hh-bannerH)/4)}" width="14" height="7" rx="3.5" fill="#e53e3e"/>`).join('');
+    },
+    landscapeSVG: (W,H) => {
+      const hh=11; const bannerH=9;
+      return `<rect width="${W}" height="${H}" fill="#fff5f5"/><rect width="${W}" height="${hh}" fill="#e53e3e"/>` +
+      `<rect y="${hh}" width="${W}" height="${bannerH}" fill="#fc8181" opacity=".5"/>` +
+      gridCells(0,hh+bannerH,W,H-hh-bannerH,4,2,3) +
+      [0,1,2,3].map(i=>`<rect x="${i*(W/4)+W/4-6}" y="${hh+bannerH+16}" width="12" height="6" rx="3" fill="#e53e3e"/>`).join('');
+    }
+  },
+  {
+    id: 'personalised-welcome',
+    name: 'Personalised Welcome Screen',
+    description: 'Greets customers by first name with relevant offers. Ideal for in-queue or lobby displays.',
+    category: 'In-Store Experience',
+    useCases: ['Telco','Banking','Healthcare','Retail','Queue'],
+    settings: { showHeader:true, colorScheme:true, iconPosition:true, headerCopy:false, itemTypeFilter:true, categoryFilter:true, soldOutBehavior:false, portrait:true, landscape:true, showClock:true, personalGreeting:true, showStoreName:true, campaignFilter:true },
+    defaults: { showHeader:'true', iconPosition:'center', colorHeader:'#169bc2', colorHeaderText:'#ffffff', colorAccent:'#169bc2', colorCatBar:'#169bc2', colorBody:'#f0f9ff', colorText:'#1a1a1a', colorPrice:'#169bc2', colorClockText:'#ffffff', hideOos:'false', portraitCols:2, portraitRows:3, portraitMax:6, landscapeCols:3, landscapeRows:2, landscapeMax:6, showClock:'true', timeFormat:'british', campaignMode:'override' },
+    portraitSVG: (W,H) => {
+      const hh=14; const greetH=28;
+      return `<rect width="${W}" height="${H}" fill="#f0f9ff"/><rect width="${W}" height="${hh}" fill="${C.header}"/>` +
+      `<rect x="${W/2-14}" y="3.5" width="28" height="7" rx="1.5" fill="rgba(255,255,255,.3)"/>` +
+      `<rect y="${hh}" width="${W}" height="${greetH}" fill="rgba(22,155,194,.08)"/>` +
+      `<circle cx="${W/2}" cy="${hh+11}" r="7" fill="rgba(22,155,194,.2)" stroke="${C.header}" stroke-width=".8"/>` +
+      `<rect x="${W/2-14}" y="${hh+greetH-7}" width="28" height="4" rx="2" fill="${C.header}"/>` +
+      gridCells(0,hh+greetH,W,H-hh-greetH-4,2,3,3);
+    },
+    landscapeSVG: (W,H) => {
+      const hh=11; const greetW=Math.round(W*0.32); const bodyX=greetW+2;
+      return `<rect width="${W}" height="${H}" fill="#f0f9ff"/><rect width="${W}" height="${hh}" fill="${C.header}"/>` +
+      `<rect y="${hh}" width="${greetW}" height="${H-hh}" fill="rgba(22,155,194,.08)" stroke="${C.border}" stroke-width=".5"/>` +
+      `<circle cx="${greetW/2}" cy="${hh+(H-hh)*0.3}" r="8" fill="rgba(22,155,194,.2)" stroke="${C.header}" stroke-width=".8"/>` +
+      `<rect x="${greetW*0.15}" y="${hh+(H-hh)*0.55}" width="${greetW*0.7}" height="4" rx="2" fill="${C.header}"/>` +
+      `<rect x="${greetW*0.15}" y="${hh+(H-hh)*0.7}" width="${greetW*0.55}" height="2.5" rx="1.5" fill="${C.muted}"/>` +
+      gridCells(bodyX,hh,W-bodyX,H-hh,3,2,2);
+    }
+  },
+  {
+    id: 'queue-status-board',
+    name: 'Queue Status Board',
+    description: 'Shows live queue wait times, number of visitors, and store availability from the PH API.',
+    category: 'In-Store Experience',
+    useCases: ['Queue Management','Banking','Telco','Healthcare','Government'],
+    settings: { showHeader:true, colorScheme:true, iconPosition:true, headerCopy:false, itemTypeFilter:false, categoryFilter:false, soldOutBehavior:false, portrait:true, landscape:true, showClock:true, personalGreeting:false, showStoreName:true, campaignFilter:false },
+    defaults: { showHeader:'true', iconPosition:'center', colorHeader:'#169bc2', colorHeaderText:'#ffffff', colorAccent:'#169bc2', colorCatBar:'#169bc2', colorBody:'#f0f9ff', colorText:'#1a1a1a', colorPrice:'#169bc2', colorClockText:'#ffffff', hideOos:'false', portraitCols:1, portraitRows:2, portraitMax:2, landscapeCols:2, landscapeRows:1, landscapeMax:2, showClock:'true', timeFormat:'british', campaignMode:'filter' },
+    portraitSVG: (W,H) => {
+      const hh=14;
+      return `<rect width="${W}" height="${H}" fill="#f0f9ff"/><rect width="${W}" height="${hh}" fill="${C.header}"/>` +
+      `<rect x="${W/2-14}" y="3.5" width="28" height="7" rx="1.5" fill="rgba(255,255,255,.25)"/>` +
+      `<rect x="4" y="${hh+8}" width="${W-8}" height="28" rx="4" fill="${C.card}" stroke="${C.border}" stroke-width=".7"/>` +
+      `<rect x="${W/2-16}" y="${hh+14}" width="32" height="8" rx="2" fill="${C.header}" opacity=".15"/>` +
+      `<rect x="${W/2-8}" y="${hh+16}" width="16" height="4" rx="2" fill="${C.header}"/>` +
+      `<rect x="8" y="${hh+40}" width="${(W-16)*0.45}" height="22" rx="4" fill="${C.card}" stroke="${C.border}" stroke-width=".7"/>` +
+      `<rect x="${(W-16)*0.55+8+4}" y="${hh+40}" width="${(W-16)*0.45}" height="22" rx="4" fill="${C.card}" stroke="${C.border}" stroke-width=".7"/>` +
+      `<rect x="12" y="${hh+49}" width="20" height="6" rx="2" fill="#52c41a" opacity=".8"/>` +
+      `<rect x="${(W-16)*0.55+12}" y="${hh+49}" width="20" height="6" rx="2" fill="#faad14" opacity=".8"/>` +
+      `<rect x="4" y="${H-30}" width="${W-8}" height="26" rx="4" fill="rgba(22,155,194,.06)" stroke="${C.border}" stroke-width=".7"/>`;
+    },
+    landscapeSVG: (W,H) => {
+      const hh=11;
+      return `<rect width="${W}" height="${H}" fill="#f0f9ff"/><rect width="${W}" height="${hh}" fill="${C.header}"/>` +
+      `<rect x="4" y="${hh+5}" width="${W/2-6}" height="${H-hh-9}" rx="4" fill="${C.card}" stroke="${C.border}" stroke-width=".7"/>` +
+      `<rect x="${W/2+2}" y="${hh+5}" width="${W/2-6}" height="${H-hh-9}" rx="4" fill="${C.card}" stroke="${C.border}" stroke-width=".7"/>` +
+      `<rect x="${W*0.1}" y="${hh+H*0.3}" width="${W*0.3}" height="6" rx="3" fill="${C.header}"/>` +
+      `<rect x="${W*0.6}" y="${hh+H*0.3}" width="${W*0.3}" height="6" rx="3" fill="#52c41a" opacity=".8"/>`;
+    }
+  },
+  {
+    id: 'new-arrivals-showcase',
+    name: 'New Arrivals Showcase',
+    description: 'Magazine-style layout highlighting newest products. Perfect for fashion, electronics, and lifestyle retail.',
+    category: 'Retail',
+    useCases: ['Fashion','Electronics','Lifestyle','Beauty','Sport'],
+    settings: { showHeader:true, colorScheme:true, iconPosition:true, headerCopy:true, itemTypeFilter:true, categoryFilter:true, soldOutBehavior:true, portrait:true, landscape:true, showClock:false, personalGreeting:false, showStoreName:true, campaignFilter:true },
+    defaults: { showHeader:'true', iconPosition:'center', colorHeader:'#1a1a1a', colorHeaderText:'#ffffff', colorAccent:'#38b2ac', colorCatBar:'#38b2ac', colorBody:'#f7fafc', colorText:'#1a1a1a', colorPrice:'#38b2ac', colorClockText:'#ffffff', hideOos:'true', portraitCols:2, portraitRows:3, portraitMax:6, landscapeCols:4, landscapeRows:2, landscapeMax:8, showClock:'false', timeFormat:'british', campaignMode:'override' },
+    portraitSVG: (W,H) => {
+      const hh=14; const bannerH=10;
+      return `<rect width="${W}" height="${H}" fill="#f7fafc"/><rect width="${W}" height="${hh}" fill="#1a1a1a"/>` +
+      `<rect x="${W/2-14}" y="3.5" width="28" height="7" rx="1.5" fill="rgba(255,255,255,.25)"/>` +
+      `<rect y="${hh}" width="${W}" height="${bannerH}" fill="#38b2ac" opacity=".15"/>` +
+      `<rect x="${W/2-16}" y="${hh+2.5}" width="32" height="5" rx="2" fill="#38b2ac" opacity=".7"/>` +
+      gridCells(0,hh+bannerH,W,H-hh-bannerH,2,3,3) +
+      `<rect x="5" y="${hh+bannerH+5}" width="8" height="5" rx="2" fill="#38b2ac"/>` +
+      `<rect x="${W/2+5}" y="${hh+bannerH+5}" width="8" height="5" rx="2" fill="#38b2ac"/>`;
+    },
+    landscapeSVG: (W,H) => {
+      const hh=11; const bannerH=9;
+      return `<rect width="${W}" height="${H}" fill="#f7fafc"/><rect width="${W}" height="${hh}" fill="#1a1a1a"/>` +
+      `<rect y="${hh}" width="${W}" height="${bannerH}" fill="#38b2ac" opacity=".15"/>` +
+      `<rect x="${W/2-16}" y="${hh+2}" width="32" height="5" rx="2" fill="#38b2ac" opacity=".7"/>` +
+      gridCells(0,hh+bannerH,W,H-hh-bannerH,4,2,3) +
+      `<rect x="5" y="${hh+bannerH+5}" width="8" height="4" rx="2" fill="#38b2ac"/>`;
+    }
+  },
+  {
+    id: 'retail-media-banner',
+    name: 'Retail Media Banner',
+    description: 'Full-screen OOH-style advertisement with large brand imagery. Ideal for digital out-of-home and retail media networks.',
+    category: 'Out-of-Home',
+    useCases: ['DOOH','OOH','Retail Media','Brand Advertising','Mall'],
+    settings: { showHeader:false, colorScheme:true, iconPosition:false, headerCopy:false, itemTypeFilter:false, categoryFilter:false, soldOutBehavior:false, portrait:true, landscape:true, showClock:false, personalGreeting:false, showStoreName:false, campaignFilter:true },
+    defaults: { showHeader:'false', iconPosition:'center', colorHeader:'#000000', colorHeaderText:'#ffffff', colorAccent:'#f6ad55', colorCatBar:'#f6ad55', colorBody:'#000000', colorText:'#ffffff', colorPrice:'#f6ad55', colorClockText:'#ffffff', hideOos:'false', portraitCols:1, portraitRows:1, portraitMax:1, landscapeCols:1, landscapeRows:1, landscapeMax:1, showClock:'false', timeFormat:'british', campaignMode:'override' },
+    portraitSVG: (W,H) => {
+      return `<rect width="${W}" height="${H}" fill="#000"/>` +
+      `<rect x="4" y="4" width="${W-8}" height="${H*0.6}" rx="3" fill="#2d2d2d"/>` +
+      `<rect x="${W/2-18}" y="${H*0.65}" width="36" height="7" rx="2" fill="rgba(255,255,255,.9)"/>` +
+      `<rect x="${W/2-12}" y="${H*0.76}" width="24" height="4" rx="2" fill="#f6ad55"/>` +
+      `<rect x="${W/2-10}" y="${H*0.84}" width="20" height="3" rx="1.5" fill="rgba(255,255,255,.4)"/>` +
+      `<rect x="${W/2-14}" y="${H*0.91}" width="28" height="7" rx="3.5" fill="#f6ad55"/>`;
+    },
+    landscapeSVG: (W,H) => {
+      return `<rect width="${W}" height="${H}" fill="#000"/>` +
+      `<rect x="4" y="4" width="${W*0.55}" height="${H-8}" rx="3" fill="#2d2d2d"/>` +
+      `<rect x="${W*0.6}" y="${H*0.15}" width="${W*0.36}" height="7" rx="2" fill="rgba(255,255,255,.9)"/>` +
+      `<rect x="${W*0.6}" y="${H*0.37}" width="${W*0.28}" height="4" rx="2" fill="#f6ad55"/>` +
+      `<rect x="${W*0.6}" y="${H*0.54}" width="${W*0.32}" height="3" rx="1.5" fill="rgba(255,255,255,.4)"/>` +
+      `<rect x="${W*0.6}" y="${H*0.7}" width="${W*0.28}" height="7" rx="3.5" fill="#f6ad55"/>`;
+    }
+  },
+  {
+    id: 'price-grid',
+    name: 'Price Grid',
+    description: 'Dense compact grid maximising items per screen. Designed for value retailers and convenience stores.',
+    category: 'Food & Beverage',
+    useCases: ['Convenience','Petrol Station','Value Retail','Pharmacy'],
+    settings: { showHeader:true, colorScheme:true, iconPosition:false, headerCopy:false, itemTypeFilter:true, categoryFilter:true, soldOutBehavior:true, portrait:true, landscape:true, showClock:true, personalGreeting:false, showStoreName:false, campaignFilter:false },
+    defaults: { showHeader:'true', iconPosition:'left', colorHeader:'#1a1a1a', colorHeaderText:'#ffffff', colorAccent:'#f6ad55', colorCatBar:'#f6ad55', colorBody:'#ffffff', colorText:'#1a1a1a', colorPrice:'#e53e3e', colorClockText:'#ffffff', hideOos:'false', portraitCols:3, portraitRows:7, portraitMax:21, landscapeCols:6, landscapeRows:4, landscapeMax:24, showClock:'true', timeFormat:'british', campaignMode:'filter' },
+    portraitSVG: (W,H) => {
+      const hh=12; const fh=8;
+      return `<rect width="${W}" height="${H}" fill="#fff"/><rect width="${W}" height="${hh}" fill="#1a1a1a"/>` +
+      `<rect x="3" y="3" width="18" height="6" rx="1" fill="rgba(255,255,255,.25)"/>` +
+      gridCells(0,hh,W,H-hh-fh,3,7,1.5) +
+      `<rect y="${H-fh}" width="${W}" height="${fh}" fill="#1a1a1a"/>`;
+    },
+    landscapeSVG: (W,H) => {
+      const hh=10; const fh=7;
+      return `<rect width="${W}" height="${H}" fill="#fff"/><rect width="${W}" height="${hh}" fill="#1a1a1a"/>` +
+      gridCells(0,hh,W,H-hh-fh,6,4,1.5) +
+      `<rect y="${H-fh}" width="${W}" height="${fh}" fill="#1a1a1a"/>`;
+    }
+  },
+  {
+    id: 'split-screen-dual-zone',
+    name: 'Split Screen Dual Zone',
+    description: 'Display split into two zones — promotions on one side, product menu on the other.',
+    category: 'Retail',
+    useCases: ['QSR','Restaurant','Retail','Entertainment'],
+    settings: { showHeader:true, colorScheme:true, iconPosition:true, headerCopy:false, itemTypeFilter:true, categoryFilter:true, soldOutBehavior:true, portrait:true, landscape:true, showClock:true, personalGreeting:false, showStoreName:false, campaignFilter:true },
+    defaults: { showHeader:'true', iconPosition:'left', colorHeader:'#169bc2', colorHeaderText:'#ffffff', colorAccent:'#169bc2', colorCatBar:'#169bc2', colorBody:'#f5f5f5', colorText:'#1a1a1a', colorPrice:'#169bc2', colorClockText:'#ffffff', hideOos:'false', portraitCols:2, portraitRows:4, portraitMax:8, landscapeCols:3, landscapeRows:3, landscapeMax:9, showClock:'true', timeFormat:'british', campaignMode:'filter' },
+    portraitSVG: (W,H) => {
+      const hh=14; const midY=hh + Math.round((H-hh)*0.45);
+      return `<rect width="${W}" height="${H}" fill="${C.bg}"/><rect width="${W}" height="${hh}" fill="${C.header}"/>` +
+      `<rect x="3" y="3.5" width="20" height="7" rx="1.5" fill="rgba(255,255,255,.25)"/>` +
+      `<rect y="${hh}" width="${W}" height="${midY-hh}" fill="#1a1a1a"/>` +
+      `<rect x="${W/2-18}" y="${hh+(midY-hh)*0.35}" width="36" height="6" rx="2" fill="rgba(255,255,255,.85)"/>` +
+      `<rect x="${W/2-12}" y="${hh+(midY-hh)*0.6}" width="24" height="4" rx="2" fill="${C.accent}"/>` +
+      gridCells(0,midY,W,H-midY,2,3,2);
+    },
+    landscapeSVG: (W,H) => {
+      const hh=11; const splitX=Math.round(W*0.42);
+      return `<rect width="${W}" height="${H}" fill="${C.bg}"/><rect width="${W}" height="${hh}" fill="${C.header}"/>` +
+      `<rect y="${hh}" width="${splitX}" height="${H-hh}" fill="#1a1a1a"/>` +
+      `<rect x="${splitX*0.15}" y="${hh+(H-hh)*0.3}" width="${splitX*0.7}" height="5" rx="2" fill="rgba(255,255,255,.85)"/>` +
+      `<rect x="${splitX*0.25}" y="${hh+(H-hh)*0.52}" width="${splitX*0.5}" height="4" rx="2" fill="${C.accent}"/>` +
+      gridCells(splitX+2,hh,W-splitX-2,H-hh,3,3,2);
+    }
+  },
+  {
+    id: 'seasonal-promotion',
+    name: 'Seasonal / Event Promotion',
+    description: 'Full-bleed hero imagery with campaign product showcase. Perfect for seasonal events and limited-time offers.',
+    category: 'Retail',
+    useCases: ['Seasonal','Campaign','Holiday','Event','Launch'],
+    settings: { showHeader:true, colorScheme:true, iconPosition:true, headerCopy:true, itemTypeFilter:true, categoryFilter:true, soldOutBehavior:true, portrait:true, landscape:true, showClock:false, personalGreeting:false, showStoreName:false, campaignFilter:true },
+    defaults: { showHeader:'true', iconPosition:'center', colorHeader:'#1a1a1a', colorHeaderText:'#ffffff', colorAccent:'#e53e3e', colorCatBar:'#e53e3e', colorBody:'#1a1a1a', colorText:'#ffffff', colorPrice:'#f6ad55', colorClockText:'#ffffff', hideOos:'true', portraitCols:2, portraitRows:2, portraitMax:4, landscapeCols:4, landscapeRows:2, landscapeMax:8, showClock:'false', timeFormat:'british', campaignMode:'override' },
+    portraitSVG: (W,H) => {
+      const hh=14; const heroH=Math.round(H*0.38);
+      return `<rect width="${W}" height="${H}" fill="#1a1a1a"/><rect width="${W}" height="${hh}" fill="#1a1a1a"/>` +
+      `<rect x="${W/2-14}" y="3.5" width="28" height="7" rx="1.5" fill="rgba(255,255,255,.25)"/>` +
+      `<rect y="${hh}" width="${W}" height="${heroH}" fill="#2d2d2d"/>` +
+      `<rect y="${hh+heroH*0.6}" width="${W}" height="${heroH*0.4}" fill="linear-gradient(transparent,rgba(0,0,0,.8))"/>` +
+      `<rect x="${W/2-20}" y="${hh+heroH*0.7}" width="40" height="8" rx="2" fill="#e53e3e"/>` +
+      `<rect x="${W/2-14}" y="${hh+heroH*0.84}" width="28" height="4" rx="2" fill="rgba(255,255,255,.7)"/>` +
+      gridCells(0,hh+heroH,W,H-hh-heroH,2,3,2) +
+      `<rect x="0" y="${hh+heroH}" width="${W}" height="4" fill="#e53e3e"/>`;
+    },
+    landscapeSVG: (W,H) => {
+      const hh=11; const heroW=Math.round(W*0.5);
+      return `<rect width="${W}" height="${H}" fill="#1a1a1a"/><rect width="${W}" height="${hh}" fill="#1a1a1a"/>` +
+      `<rect y="${hh}" width="${heroW}" height="${H-hh}" fill="#2d2d2d"/>` +
+      `<rect x="${heroW*0.1}" y="${hh+(H-hh)*0.45}" width="${heroW*0.8}" height="6" rx="2" fill="#e53e3e"/>` +
+      `<rect x="${heroW*0.2}" y="${hh+(H-hh)*0.65}" width="${heroW*0.6}" height="4" rx="2" fill="rgba(255,255,255,.6)"/>` +
+      gridCells(heroW+2,hh,W-heroW-2,H-hh,2,3,2) +
+      `<rect x="${heroW}" y="${hh}" width="3" height="${H-hh}" fill="#e53e3e"/>`;
+    }
+  },
+  {
+    id: 'store-info-hours',
+    name: 'Store Info & Opening Hours',
+    description: 'Displays store name, opening hours, contact info and live time. Used at store entrance or lobby.',
+    category: 'Store Operations',
+    useCases: ['Entrance','Lobby','Reception','Clinic','Appointment'],
+    settings: { showHeader:true, colorScheme:true, iconPosition:true, headerCopy:true, itemTypeFilter:false, categoryFilter:false, soldOutBehavior:false, portrait:true, landscape:true, showClock:true, personalGreeting:false, showStoreName:true, campaignFilter:false },
+    defaults: { showHeader:'true', iconPosition:'center', colorHeader:'#169bc2', colorHeaderText:'#ffffff', colorAccent:'#169bc2', colorCatBar:'#169bc2', colorBody:'#f0f9ff', colorText:'#1a1a1a', colorPrice:'#169bc2', colorClockText:'#ffffff', hideOos:'false', portraitCols:1, portraitRows:3, portraitMax:3, landscapeCols:2, landscapeRows:2, landscapeMax:4, showClock:'true', timeFormat:'british', campaignMode:'filter' },
+    portraitSVG: (W,H) => {
+      const hh=14;
+      return `<rect width="${W}" height="${H}" fill="#f0f9ff"/><rect width="${W}" height="${hh}" fill="${C.header}"/>` +
+      `<rect x="${W/2-14}" y="3.5" width="28" height="7" rx="1.5" fill="rgba(255,255,255,.3)"/>` +
+      `<rect x="4" y="${hh+8}" width="${W-8}" height="16" rx="3" fill="${C.card}" stroke="${C.border}" stroke-width=".7"/>` +
+      `<rect x="${W/2-20}" y="${hh+13}" width="40" height="6" rx="2" fill="${C.header}" opacity=".8"/>` +
+      [0,1,2,3,4,5,6].map(i=>`<rect x="6" y="${hh+30+i*10}" width="${W-12}" height="7" rx="2" fill="${C.card}" stroke="${C.border}" stroke-width=".5"/><rect x="10" y="${hh+32.5+i*10}" width="${(W-20)*0.6}" height="2" rx="1" fill="${C.muted}"/>`).join('') +
+      `<rect x="4" y="${H-24}" width="${W-8}" height="20" rx="3" fill="${C.header}" opacity=".1"/>` +
+      `<rect x="${W/2-14}" y="${H-18}" width="28" height="8" rx="2" fill="${C.header}" opacity=".7"/>`;
+    },
+    landscapeSVG: (W,H) => {
+      const hh=11; const infoW=Math.round(W*0.42);
+      return `<rect width="${W}" height="${H}" fill="#f0f9ff"/><rect width="${W}" height="${hh}" fill="${C.header}"/>` +
+      `<rect y="${hh}" width="${infoW}" height="${H-hh}" fill="rgba(22,155,194,.04)" stroke="${C.border}" stroke-width=".5"/>` +
+      `<rect x="4" y="${hh+6}" width="${infoW-8}" height="10" rx="2" fill="${C.header}" opacity=".8"/>` +
+      [0,1,2,3].map(i=>`<rect x="4" y="${hh+20+i*9}" width="${infoW-8}" height="6" rx="2" fill="${C.card}" stroke="${C.border}" stroke-width=".5"/>`).join('') +
+      gridCells(infoW+3,hh,W-infoW-3,H-hh,2,2,2);
+    }
+  }
+];
+
+function renderTemplateLibrary() {
+  const grid = document.getElementById('tplLibGrid');
+  if (!grid) return;
+  const search = (document.getElementById('tplLibSearch')?.value || '').toLowerCase();
+  const catFilter = document.getElementById('tplLibCatFilter')?.value || '';
+
+  const filtered = TEMPLATE_LIBRARY.filter(t => {
+    if (catFilter && t.category !== catFilter) return false;
+    if (search && !t.name.toLowerCase().includes(search) && !t.description.toLowerCase().includes(search) && !t.useCases.some(u => u.toLowerCase().includes(search))) return false;
+    return true;
+  });
+
+  if (!filtered.length) {
+    grid.innerHTML = '<div style="grid-column:1/-1;text-align:center;padding:40px;color:var(--text2);font-size:14px;">No templates match your search.</div>';
+    return;
+  }
+
+  grid.innerHTML = filtered.map(t => {
+    const settingsCount = Object.values(t.settings).filter(Boolean).length;
+    const tagsHtml = t.useCases.map(u => `<span class="tpl-lib-tag">${u}</span>`).join('');
+    const portraitSVG = mkPortraitSVG(t.portraitSVG);
+    const landscapeSVG = mkLandscapeSVG(t.landscapeSVG);
+    return `<div class="tpl-lib-card" onclick="openTplDetail('${t.id}')">
+      <div class="tpl-lib-card-header">
+        <div>
+          <div class="tpl-lib-card-name">${t.name}</div>
+          <div class="tpl-lib-card-desc">${t.description}</div>
+        </div>
+        <span class="tpl-lib-card-cat">${t.category}</span>
+      </div>
+      <div class="tpl-lib-card-tags">${tagsHtml}</div>
+      <div class="tpl-lib-mockups">
+        <div class="tpl-lib-mockup-wrap">
+          <div class="tpl-lib-mockup-label">Portrait</div>
+          <div class="tpl-lib-mockup" style="height:110px;">${portraitSVG}</div>
+        </div>
+        <div class="tpl-lib-mockup-wrap">
+          <div class="tpl-lib-mockup-label">Landscape</div>
+          <div class="tpl-lib-mockup" style="height:62px;margin-top:auto;">${landscapeSVG}</div>
+        </div>
+      </div>
+      <div class="tpl-lib-card-footer">
+        <span class="tpl-lib-settings-count">${settingsCount} configurable settings</span>
+        <button class="btn btn-primary btn-sm" onclick="event.stopPropagation();openTplDetailFromLib('${t.id}')">View Details</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function openTplDetail(id) {
+  openTplDetailFromLib(id);
+}
+
+function openTplDetailFromLib(id) {
+  const t = TEMPLATE_LIBRARY.find(x => x.id === id);
+  if (!t) return;
+  const portraitSVG = mkPortraitSVG(t.portraitSVG);
+  const landscapeSVG = mkLandscapeSVG(t.landscapeSVG);
+  const settingLabels = {
+    showHeader: 'Show Header Bar', colorScheme: 'Colour Scheme', iconPosition: 'Icon/Logo Position',
+    headerCopy: 'Header Tagline Copy', itemTypeFilter: 'Item Type Filter',
+    categoryFilter: 'Category Filter', soldOutBehavior: 'Sold Out Behaviour',
+    portrait: 'Portrait Display Settings', landscape: 'Landscape Display Settings',
+    showClock: 'Show Date & Time', personalGreeting: 'Personalised Greeting (First Name)',
+    showStoreName: 'Show Store Name', campaignFilter: 'Campaign Filter Mode'
+  };
+  const settingsList = Object.entries(t.settings).filter(([,v])=>v).map(([k])=>`<li style="font-size:12px;color:var(--text2);padding:3px 0;">✓ ${settingLabels[k]||k}</li>`).join('');
+
+  let overlay = document.getElementById('tplDetailOverlay');
+  if (!overlay) {
+    overlay = document.createElement('div');
+    overlay.id = 'tplDetailOverlay';
+    overlay.style.cssText = 'display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:500;align-items:center;justify-content:center;padding:20px;';
+    overlay.innerHTML = `<div id="tplDetailBox" style="background:var(--surface);border:1px solid var(--border);border-radius:12px;width:700px;max-width:calc(100vw - 40px);max-height:90vh;display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(0,0,0,.2);overflow:hidden;">
+      <div id="tplDetailContent" style="overflow-y:auto;flex:1;"></div>
+      <div style="padding:14px 22px;border-top:1px solid var(--border);display:flex;justify-content:flex-end;gap:8px;">
+        <button class="btn btn-ghost" onclick="document.getElementById('tplDetailOverlay').style.display='none'">Close</button>
+      </div>
+    </div>`;
+    document.body.appendChild(overlay);
+  }
+
+  document.getElementById('tplDetailContent').innerHTML = `
+    <div style="padding:22px;">
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:16px;">
+        <div>
+          <h2 style="font-size:18px;font-weight:700;color:var(--text);margin-bottom:4px;">${t.name}</h2>
+          <p style="font-size:13px;color:var(--text2);">${t.description}</p>
+        </div>
+        <span style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;padding:3px 10px;border-radius:20px;background:var(--primary-light);color:var(--primary);white-space:nowrap;">${t.category}</span>
+      </div>
+      <div style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:20px;">
+        ${t.useCases.map(u=>`<span style="font-size:11px;padding:2px 8px;background:var(--surface2);border:1px solid var(--border);border-radius:4px;color:var(--text2);">${u}</span>`).join('')}
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1.7fr;gap:20px;margin-bottom:20px;align-items:start;">
+        <div>
+          <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text2);margin-bottom:6px;text-align:center;">Portrait (1080×1920)</div>
+          <div style="border:1px solid var(--border);border-radius:6px;overflow:hidden;background:var(--surface2);display:flex;align-items:center;justify-content:center;padding:8px;">
+            <svg width="136" height="220" viewBox="0 0 68 110" xmlns="http://www.w3.org/2000/svg">${t.portraitSVG(68,110)}</svg>
+          </div>
+        </div>
+        <div>
+          <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text2);margin-bottom:6px;text-align:center;">Landscape (1920×1080)</div>
+          <div style="border:1px solid var(--border);border-radius:6px;overflow:hidden;background:var(--surface2);display:flex;align-items:center;justify-content:center;padding:8px;">
+            <svg width="220" height="124" viewBox="0 0 110 62" xmlns="http://www.w3.org/2000/svg">${t.landscapeSVG(110,62)}</svg>
+          </div>
+        </div>
+      </div>
+      <div style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:16px;">
+        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text2);margin-bottom:10px;">Configurable Settings for this Template</div>
+        <ul style="list-style:none;columns:2;gap:12px;">${settingsList}</ul>
+      </div>
+    </div>`;
+  overlay.style.display = 'flex';
+}
+
+// ===== TEMPLATE PICKER (for Brand > Add Template) =====
+function openTemplatePicker(callback) {
+  let overlay = document.getElementById('tplPickerOverlay');
+  if (!overlay) {
+    overlay = document.createElement('div');
+    overlay.id = 'tplPickerOverlay';
+    overlay.style.cssText = 'display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:600;align-items:center;justify-content:center;padding:20px;';
+    overlay.innerHTML = `<div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;width:800px;max-width:calc(100vw - 40px);max-height:90vh;display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(0,0,0,.2);overflow:hidden;">
+      <div style="padding:18px 22px 14px;border-bottom:1px solid var(--border);">
+        <h2 style="font-size:16px;font-weight:700;color:var(--text);margin:0 0 4px;">Choose a Template</h2>
+        <p style="font-size:13px;color:var(--text2);margin:0;">Select a template from the library. Settings will be pre-configured based on the template type.</p>
+      </div>
+      <div style="padding:12px 22px 0;display:flex;gap:8px;">
+        <select id="tplPickerCatFilter" class="filter-select" onchange="renderTplPickerGrid()" style="width:220px;">
+          <option value="">All Categories</option>
+          <option value="Food &amp; Beverage">Food &amp; Beverage</option>
+          <option value="Retail">Retail</option>
+          <option value="In-Store Experience">In-Store Experience</option>
+          <option value="Out-of-Home">Out-of-Home</option>
+          <option value="Store Operations">Store Operations</option>
+        </select>
+      </div>
+      <div style="overflow-y:auto;flex:1;padding:16px 22px;" id="tplPickerScroll">
+        <div class="tpl-picker-grid" id="tplPickerGrid"></div>
+      </div>
+      <div style="padding:14px 22px;border-top:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;gap:8px;">
+        <span id="tplPickerSelectedLabel" style="font-size:13px;color:var(--text2);">No template selected</span>
+        <div style="display:flex;gap:8px;">
+          <button class="btn btn-ghost btn-sm" onclick="closeTplPicker()">Cancel</button>
+          <button class="btn btn-primary btn-sm" id="tplPickerConfirmBtn" disabled onclick="confirmTplPicker()">Select Template →</button>
+        </div>
+      </div>
+    </div>`;
+    document.body.appendChild(overlay);
+  }
+  window._tplPickerCallback = callback;
+  window._tplPickerSelected = null;
+  document.getElementById('tplPickerCatFilter').value = '';
+  document.getElementById('tplPickerSelectedLabel').textContent = 'No template selected';
+  document.getElementById('tplPickerConfirmBtn').disabled = true;
+  renderTplPickerGrid();
+  overlay.style.display = 'flex';
+}
+
+function renderTplPickerGrid() {
+  const catFilter = document.getElementById('tplPickerCatFilter')?.value || '';
+  const filtered = TEMPLATE_LIBRARY.filter(t => !catFilter || t.category === catFilter);
+  const grid = document.getElementById('tplPickerGrid');
+  grid.innerHTML = filtered.map(t => {
+    const portraitSVG = `<svg width="46" height="75" viewBox="0 0 68 110" xmlns="http://www.w3.org/2000/svg">${t.portraitSVG(68,110)}</svg>`;
+    const landscapeSVG = `<svg width="75" height="42" viewBox="0 0 110 62" xmlns="http://www.w3.org/2000/svg">${t.landscapeSVG(110,62)}</svg>`;
+    return `<div class="tpl-picker-card" id="tplpick-${t.id}" onclick="selectTplPickerCard('${t.id}')">
+      <div class="tpl-picker-card-name">${t.name}</div>
+      <div class="tpl-picker-card-desc">${t.description}</div>
+      <span class="tpl-picker-card-cat">${t.category}</span>
+      <div class="tpl-picker-mockup-row">
+        <div class="tpl-picker-mockup">${portraitSVG}</div>
+        <div class="tpl-picker-mockup">${landscapeSVG}</div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function selectTplPickerCard(id) {
+  window._tplPickerSelected = id;
+  document.querySelectorAll('.tpl-picker-card').forEach(c => c.classList.remove('selected'));
+  const card = document.getElementById('tplpick-' + id);
+  if (card) card.classList.add('selected');
+  const t = TEMPLATE_LIBRARY.find(x => x.id === id);
+  document.getElementById('tplPickerSelectedLabel').textContent = t ? `Selected: ${t.name}` : '';
+  document.getElementById('tplPickerConfirmBtn').disabled = false;
+}
+
+function closeTplPicker() {
+  document.getElementById('tplPickerOverlay').style.display = 'none';
+}
+
+function confirmTplPicker() {
+  if (!window._tplPickerSelected) return;
+  closeTplPicker();
+  if (typeof window._tplPickerCallback === 'function') {
+    window._tplPickerCallback(window._tplPickerSelected);
+  }
+}
+
 // ===== NAVIGATION =====
 function showView(view) {
   document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
   document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
   document.getElementById('view-' + view).classList.add('active');
 
-  const navMap = { dashboard: 0, items: 1, brands: 2, categories: 3, settings: 4 };
+  const navMap = { dashboard: 0, items: 1, brands: 2, templates: 3, categories: 4, settings: 5 };
   const navItems = document.querySelectorAll('.nav-item');
   const idx = navMap[view];
   if (idx !== undefined) navItems[idx].classList.add('active');
 
-  const titles = { dashboard: 'Dashboard', items: 'Products / Assets', brands: 'Brands', categories: 'Categories', settings: 'Settings' };
+  const titles = { dashboard: 'Dashboard', items: 'Products / Assets', brands: 'Brands', templates: 'Templates', categories: 'Categories', settings: 'Settings' };
   document.getElementById('topbarTitle').textContent = titles[view] || '';
 
   if (view === 'dashboard')  renderDashboard();
@@ -1581,6 +2180,7 @@ function showView(view) {
     renderBrands();
     requestAnimationFrame(() => brandsGridApi && brandsGridApi.sizeColumnsToFit());
   }
+  if (view === 'templates') renderTemplateLibrary();
   if (view === 'categories') renderCategories();
   localStorage.setItem('hqAdminView', view);
 }
@@ -3035,7 +3635,7 @@ function renderTemplateList() {
     row.className = 'tpl-row';
     const canDelete = _editingBrandTemplates.length > 1;
     row.innerHTML = `
-      <div class="tpl-row-name">${escHtml(tpl.name)}</div>
+      <div class="tpl-row-name">${escHtml(tpl.name)}${tpl.templateType ? `<span style="font-size:10px;color:var(--text2);font-weight:500;background:var(--surface2);border:1px solid var(--border);border-radius:4px;padding:1px 6px;margin-left:6px;">${TEMPLATE_LIBRARY.find(x=>x.id===tpl.templateType)?.name||tpl.templateType}</span>` : ''}</div>
       ${tpl.isDefault ? '<span class="tpl-default-badge">Default</span>' : ''}
       <div class="tpl-actions">
         <button class="btn btn-ghost btn-sm" onclick="openEditTemplateEditor('${tpl.id}')">Edit</button>
@@ -3046,41 +3646,87 @@ function renderTemplateList() {
 }
 
 function openNewTemplateEditor() {
-  _tplEditingId = null;
-  document.getElementById('tplEditorTitle').textContent = 'New Template';
-  document.getElementById('tplEditId').value = '';
-  document.getElementById('tplName').value = '';
-  // Seed from first existing template, or fall back to defaults
-  const _seedTpl = _editingBrandTemplates[0] || null;
-  const _seedC   = (_seedTpl && _seedTpl.colors)             || DEFAULT_COLORS;
-  const _seedPD  = (_seedTpl && _seedTpl.display && _seedTpl.display.portrait)  || DEFAULT_DISPLAY.portrait;
-  const _seedLD  = (_seedTpl && _seedTpl.display && _seedTpl.display.landscape) || DEFAULT_DISPLAY.landscape;
-  document.getElementById('tplShowHeader').value      = _seedTpl ? String(_seedTpl.showHeader !== false) : 'true';
-  document.getElementById('tplIconPosition').value    = (_seedTpl && _seedTpl.iconPosition) || 'left';
-  document.getElementById('tplHeaderCopy').value      = (_seedTpl && _seedTpl.headerCopy)   || '';
-  document.getElementById('tplColorHeader').value     = _seedC.header     || DEFAULT_COLORS.header;
-  document.getElementById('tplColorHeaderText').value = _seedC.headerText || DEFAULT_COLORS.headerText;
-  document.getElementById('tplColorAccent').value     = _seedC.accent     || DEFAULT_COLORS.accent;
-  document.getElementById('tplColorCatBar').value     = _seedC.catBar     || DEFAULT_COLORS.catBar;
-  document.getElementById('tplColorBody').value       = _seedC.body       || DEFAULT_COLORS.body;
-  document.getElementById('tplColorText').value       = _seedC.text       || DEFAULT_COLORS.text;
-  document.getElementById('tplColorPrice').value      = _seedC.price      || DEFAULT_COLORS.price;
-  document.getElementById('tplColorClockText').value  = _seedC.clockText  || DEFAULT_COLORS.clockText;
-  document.getElementById('tplPortraitCols').value    = _seedPD.cols     || 3;
-  document.getElementById('tplPortraitRows').value    = _seedPD.rows     || 5;
-  document.getElementById('tplPortraitMax').value     = _seedPD.maxItems || 15;
-  document.getElementById('tplLandscapeCols').value   = _seedLD.cols     || 5;
-  document.getElementById('tplLandscapeRows').value   = _seedLD.rows     || 3;
-  document.getElementById('tplLandscapeMax').value    = _seedLD.maxItems || 15;
-  document.getElementById('tplHideOos').value         = _seedTpl ? String(!!((_seedTpl.display || {}).hideOutOfStock)) : 'false';
-  document.getElementById('tplShowClock').value       = _seedTpl ? String(_seedTpl.showClock !== false) : 'true';
-  document.getElementById('tplTimeFormat').value      = (_seedTpl && _seedTpl.timeFormat)   || 'british';
-  document.getElementById('tplCampaignMode').value    = (_seedTpl && _seedTpl.campaignMode) || 'override';
-  _tplSelectedTypes = (_seedTpl && Array.isArray(_seedTpl.menuTypes)) ? [..._seedTpl.menuTypes] : [];
-  _updateTplTypeLabel();
-  document.getElementById('tplTypePanel').classList.remove('open');
-  if (_tplSave) _tplSave.reset();
-  _showTplEditor();
+  openTemplatePicker(templateId => {
+    const t = TEMPLATE_LIBRARY.find(x => x.id === templateId);
+    if (!t) return;
+    // Show the template editor panel
+    document.getElementById('tplListView').style.display = 'none';
+    const panel = document.getElementById('tplEditorPanel');
+    panel.classList.add('open');
+    document.getElementById('tplEditId').value = '';
+    document.getElementById('tplName').value = t.name;
+    document.getElementById('tplEditorTitle').textContent = `New — ${t.name}`;
+    // Store template type on the hidden field
+    document.getElementById('tplEditId').dataset.templateType = templateId;
+    // Apply defaults from template
+    const d = t.defaults;
+    if (d) {
+      setValue('tplShowHeader', d.showHeader);
+      setValue('tplIconPosition', d.iconPosition);
+      document.getElementById('tplHeaderCopy').value = d.headerCopy || '';
+      document.getElementById('tplColorHeader').value = d.colorHeader || '#169bc2';
+      document.getElementById('tplColorHeaderText').value = d.colorHeaderText || '#ffffff';
+      document.getElementById('tplColorAccent').value = d.colorAccent || '#169bc2';
+      document.getElementById('tplColorCatBar').value = d.colorCatBar || '#169bc2';
+      document.getElementById('tplColorBody').value = d.colorBody || '#f5f5f5';
+      document.getElementById('tplColorText').value = d.colorText || '#1a1a1a';
+      document.getElementById('tplColorPrice').value = d.colorPrice || '#169bc2';
+      document.getElementById('tplColorClockText').value = d.colorClockText || '#ffffff';
+      setValue('tplHideOos', d.hideOos);
+      document.getElementById('tplPortraitCols').value = d.portraitCols || 3;
+      document.getElementById('tplPortraitRows').value = d.portraitRows || 5;
+      document.getElementById('tplPortraitMax').value = d.portraitMax || 15;
+      document.getElementById('tplLandscapeCols').value = d.landscapeCols || 5;
+      document.getElementById('tplLandscapeRows').value = d.landscapeRows || 3;
+      document.getElementById('tplLandscapeMax').value = d.landscapeMax || 15;
+      setValue('tplShowClock', d.showClock);
+      setValue('tplTimeFormat', d.timeFormat);
+      setValue('tplCampaignMode', d.campaignMode);
+    }
+    // Show/hide settings sections based on template schema
+    applyTemplateSchema(templateId);
+  });
+}
+
+function setValue(id, val) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  const opts = el.options;
+  for (let i=0; i<opts.length; i++) if (opts[i].value == val) { el.selectedIndex = i; return; }
+}
+
+function applyTemplateSchema(templateId) {
+  const t = TEMPLATE_LIBRARY.find(x => x.id === templateId);
+  if (!t) return;
+  const s = t.settings;
+
+  // Helper to show/hide a section by querying its section-divider text content
+  function setSectionVisible(keyword, visible) {
+    document.querySelectorAll('.section-divider').forEach(div => {
+      if (div.textContent.toLowerCase().includes(keyword.toLowerCase())) {
+        const parent = div.parentElement;
+        // Hide from this divider to the next divider
+        let el = div;
+        div.style.display = visible ? '' : 'none';
+        // Also hide following form-groups until next section-divider
+        el = div.nextElementSibling;
+        while (el && !el.classList.contains('section-divider') && !el.classList.contains('modal-footer')) {
+          if (el.tagName !== 'BUTTON' && !el.classList.contains('tpl-save-row')) {
+            el.style.display = visible ? '' : 'none';
+          }
+          el = el.nextElementSibling;
+        }
+      }
+    });
+  }
+
+  setSectionVisible('Header Layout', s.showHeader || s.iconPosition || s.headerCopy);
+  setSectionVisible('Colour Scheme', s.colorScheme);
+  setSectionVisible('Offer Board Settings', s.itemTypeFilter || s.soldOutBehavior || s.categoryFilter);
+  setSectionVisible('Portrait Display', s.portrait);
+  setSectionVisible('Landscape Display', s.landscape);
+  setSectionVisible('Date & Time', s.showClock);
+  setSectionVisible('Campaign Filter', s.campaignFilter);
 }
 
 function openEditTemplateEditor(tplId) {
@@ -3089,6 +3735,7 @@ function openEditTemplateEditor(tplId) {
   _tplEditingId = tplId;
   document.getElementById('tplEditorTitle').textContent = tpl.isDefault ? 'Default Template' : 'Edit Template';
   document.getElementById('tplEditId').value = tplId;
+  document.getElementById('tplEditId').dataset.templateType = tpl.templateType || '';
   document.getElementById('tplName').value = tpl.name || '';
   document.getElementById('tplShowHeader').value = tpl.showHeader !== false ? 'true' : 'false';
   document.getElementById('tplIconPosition').value = tpl.iconPosition || 'left';
@@ -3118,6 +3765,7 @@ function openEditTemplateEditor(tplId) {
   _updateTplTypeLabel();
   document.getElementById('tplTypePanel').classList.remove('open');
   if (_tplSave) _tplSave.reset();
+  if (tpl.templateType) applyTemplateSchema(tpl.templateType);
   _showTplEditor();
 }
 
@@ -3186,6 +3834,7 @@ function saveTemplate() {
 
   const tplData = {
     name,
+    templateType: document.getElementById('tplEditId').dataset.templateType || '',
     showHeader:    document.getElementById('tplShowHeader').value !== 'false',
     iconPosition:  document.getElementById('tplIconPosition').value || 'left',
     headerCopy:    document.getElementById('tplHeaderCopy').value.trim(),

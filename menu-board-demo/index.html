@@ -3,497 +3,715 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Offer Boards — Portal</title>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <title>Dynamic Offer Boards — Portal</title>
   <style>
     :root {
-      --bg: #060b18;
-      --surface: #0f1a2e;
-      --surface2: #162032;
-      --border: #1e3050;
-      --text: #e8f0fe;
-      --muted: #6b84a8;
-      --primary: #3b82f6;
-      --primary-hover: #2563eb;
-      --success: #10b981;
-      --warning: #f59e0b;
-      --danger: #ef4444;
-      --accent: #818cf8;
+      --bg: #f5f5f5; --surface: #ffffff; --surface2: #f0f0f0; --surface3: #e8e8e8;
+      --border: #d9d9d9; --border2: #bfbfbf; --text: rgba(0,0,0,0.88);
+      --text2: rgba(0,0,0,0.65); --text3: rgba(0,0,0,0.45);
+      --primary: #169bc2; --primary-light: rgba(22,155,194,0.10); --primary-bg: #e8fdff;
+      --success: #52c41a; --warning: #faad14; --danger: #ff4d4f;
+      --radius: 8px; --shadow: 0 2px 8px rgba(0,0,0,0.08);
     }
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    body {
-      font-family: 'Inter', sans-serif;
-      background: var(--bg);
-      color: var(--text);
-      min-height: 100vh;
-      background-image: radial-gradient(ellipse at 20% 20%, rgba(59,130,246,0.08) 0%, transparent 60%),
-                        radial-gradient(ellipse at 80% 80%, rgba(129,140,248,0.06) 0%, transparent 60%);
+    * { margin:0; padding:0; box-sizing:border-box; }
+    body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif; background:var(--bg); color:var(--text); min-height:100vh; }
+
+    /* TOPBAR */
+    .topbar { background:#000; height:50px; display:flex; align-items:center; justify-content:space-between; padding:0 24px; position:sticky; top:0; z-index:100; }
+    .topbar-left { display:flex; align-items:center; gap:14px; }
+    .topbar-logo { display:flex; align-items:center; gap:10px; }
+    .topbar-logo-icon { width:30px; height:30px; background:linear-gradient(135deg,#169bc2,#38b0cf); border-radius:7px; display:flex; align-items:center; justify-content:center; font-size:14px; }
+    .topbar-logo-text { color:#fff; font-size:14px; font-weight:600; letter-spacing:-.2px; }
+    .topbar-badge { background:transparent; color:rgba(255,255,255,.7); font-size:11px; font-weight:600; padding:3px 10px; border-radius:20px; border:1px solid rgba(255,255,255,.3); }
+    .topbar-right { display:flex; gap:8px; }
+    .btn-topbar { background:var(--primary); color:#fff; border:none; border-radius:6px; padding:7px 14px; font-size:13px; font-weight:600; cursor:pointer; text-decoration:none; display:inline-flex; align-items:center; gap:6px; transition:background .15s; }
+    .btn-topbar:hover { background:#38b0cf; }
+
+    /* LAYOUT */
+    .page { max-width:1280px; margin:0 auto; padding:28px 24px 80px; }
+
+    /* SECTION HEADERS */
+    .section-head { margin-bottom:20px; }
+    .section-head h2 { font-size:20px; font-weight:700; color:var(--text); margin-bottom:4px; }
+    .section-head p { font-size:13px; color:var(--text2); }
+    .section-divider { border:none; border-top:1px solid var(--border); margin:36px 0; }
+
+    /* QUICK ACCESS STRIP */
+    .quick-strip { display:flex; gap:10px; flex-wrap:wrap; margin-bottom:32px; }
+    .quick-chip { display:flex; align-items:center; gap:7px; background:var(--surface); border:1px solid var(--border); border-radius:20px; padding:8px 16px; font-size:13px; font-weight:500; color:var(--text2); cursor:pointer; text-decoration:none; transition:all .14s; }
+    .quick-chip:hover { border-color:var(--primary); color:var(--primary); }
+    .quick-chip.primary { background:var(--primary); border-color:var(--primary); color:#fff; }
+    .quick-chip.primary:hover { background:#38b0cf; }
+
+    /* URL BUILDER */
+    .url-builder { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:24px; margin-bottom:32px; }
+    .url-builder-title { font-size:15px; font-weight:700; color:var(--text); margin-bottom:4px; display:flex; align-items:center; gap:8px; }
+    .url-builder-desc { font-size:12px; color:var(--text2); margin-bottom:20px; }
+    .url-fields { display:grid; grid-template-columns:repeat(auto-fill,minmax(220px,1fr)); gap:14px; margin-bottom:20px; }
+    .url-field { }
+    .url-field label { display:block; font-size:11px; font-weight:700; color:var(--text3); text-transform:uppercase; letter-spacing:.5px; margin-bottom:6px; }
+    .url-field label .ph-token { font-size:10px; font-weight:600; background:var(--primary-bg); color:var(--primary); border-radius:3px; padding:1px 5px; margin-left:4px; font-family:monospace; letter-spacing:0; text-transform:none; }
+    .url-field label .opt { font-size:10px; font-weight:400; color:var(--text3); text-transform:none; letter-spacing:0; margin-left:4px; }
+    .url-field input, .url-field select { width:100%; background:var(--surface2); border:1px solid var(--border); border-radius:6px; padding:8px 10px; font-size:13px; color:var(--text); outline:none; transition:border-color .14s; }
+    .url-field input:focus, .url-field select:focus { border-color:var(--primary); box-shadow:0 0 0 2px rgba(22,155,194,.15); }
+    .url-field.hidden { display:none; }
+    .url-output { background:var(--surface2); border:1px solid var(--border); border-radius:6px; padding:12px 14px; font-size:12px; font-family:monospace; color:var(--text); word-break:break-all; line-height:1.6; margin-bottom:14px; min-height:44px; }
+    .url-output .token { color:var(--primary); font-weight:600; }
+    .url-actions { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+    .btn { display:inline-flex; align-items:center; gap:6px; padding:8px 16px; border-radius:6px; font-size:13px; font-weight:600; cursor:pointer; border:none; transition:all .14s; text-decoration:none; white-space:nowrap; }
+    .btn-primary { background:var(--primary); color:#fff; }
+    .btn-primary:hover { background:#38b0cf; }
+    .btn-ghost { background:var(--surface); border:1px solid var(--border); color:var(--text); }
+    .btn-ghost:hover { background:var(--surface2); }
+    .btn-sm { padding:6px 12px; font-size:12px; }
+    .copy-success { font-size:12px; color:var(--success); font-weight:600; display:none; }
+
+    /* PH TOKEN GUIDE */
+    .token-guide { background:var(--primary-bg); border:1px solid rgba(22,155,194,.2); border-radius:var(--radius); padding:16px 20px; margin-bottom:32px; }
+    .token-guide-title { font-size:12px; font-weight:700; color:var(--primary); text-transform:uppercase; letter-spacing:.5px; margin-bottom:10px; }
+    .token-grid { display:flex; flex-wrap:wrap; gap:8px; }
+    .token-pill { display:inline-flex; align-items:center; gap:6px; background:var(--surface); border:1px solid rgba(22,155,194,.25); border-radius:20px; padding:4px 12px; font-size:12px; }
+    .token-pill code { font-family:monospace; color:var(--primary); font-size:11px; font-weight:700; }
+    .token-pill span { color:var(--text2); }
+
+    /* TEMPLATE LIBRARY */
+    .tpl-filter-bar { display:flex; gap:10px; flex-wrap:wrap; margin-bottom:20px; align-items:center; }
+    .tpl-filter-bar input { background:var(--surface); border:1px solid var(--border); border-radius:6px; padding:7px 12px; font-size:13px; color:var(--text); outline:none; width:240px; }
+    .tpl-filter-bar input:focus { border-color:var(--primary); }
+    .tpl-filter-bar select { background:var(--surface); border:1px solid var(--border); border-radius:6px; padding:7px 10px; font-size:13px; color:var(--text); outline:none; cursor:pointer; }
+    .tpl-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(320px,1fr)); gap:20px; }
+    .tpl-card { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); overflow:hidden; transition:border-color .15s,box-shadow .15s; }
+    .tpl-card:hover { border-color:var(--primary); box-shadow:0 4px 16px rgba(22,155,194,.12); }
+    .tpl-card-head { padding:14px 16px 10px; display:flex; align-items:flex-start; justify-content:space-between; gap:8px; }
+    .tpl-card-name { font-size:14px; font-weight:700; color:var(--text); margin-bottom:3px; }
+    .tpl-card-desc { font-size:12px; color:var(--text2); line-height:1.45; }
+    .tpl-cat-badge { font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.5px; padding:2px 8px; border-radius:20px; background:var(--primary-light); color:var(--primary); white-space:nowrap; flex-shrink:0; }
+    .tpl-tags { display:flex; flex-wrap:wrap; gap:5px; padding:0 16px 10px; }
+    .tpl-tag { font-size:10px; font-weight:500; padding:2px 7px; border-radius:4px; background:var(--surface2); color:var(--text2); border:1px solid var(--border); }
+    .tpl-mockups { display:grid; grid-template-columns:1fr 1.78fr; gap:10px; padding:0 16px 14px; }
+    .tpl-mockup-wrap { display:flex; flex-direction:column; gap:4px; }
+    .tpl-mockup-label { font-size:10px; font-weight:600; color:var(--text3); text-transform:uppercase; letter-spacing:.5px; text-align:center; }
+    .tpl-mockup { border:1px solid var(--border); border-radius:4px; overflow:hidden; background:var(--surface2); display:flex; align-items:center; justify-content:center; }
+    .tpl-card-foot { padding:11px 16px; border-top:1px solid var(--border); display:flex; align-items:center; justify-content:space-between; background:var(--surface2); gap:8px; }
+    .tpl-params { display:flex; flex-wrap:wrap; gap:4px; flex:1; }
+    .tpl-param-chip { font-size:10px; font-weight:600; padding:2px 7px; border-radius:4px; background:var(--primary-bg); color:var(--primary); border:1px solid rgba(22,155,194,.2); font-family:monospace; letter-spacing:0; }
+    .btn-use { background:var(--primary); color:#fff; border:none; border-radius:5px; padding:5px 12px; font-size:12px; font-weight:600; cursor:pointer; transition:background .14s; white-space:nowrap; }
+    .btn-use:hover { background:#38b0cf; }
+
+    /* MODAL / DETAIL */
+    .modal-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,.4); z-index:200; align-items:center; justify-content:center; padding:20px; }
+    .modal-overlay.open { display:flex; }
+    .modal { background:var(--surface); border:1px solid var(--border); border-radius:12px; width:720px; max-width:calc(100vw - 40px); max-height:90vh; display:flex; flex-direction:column; box-shadow:0 20px 60px rgba(0,0,0,.12); overflow:hidden; }
+    .modal-head { padding:20px 24px 16px; border-bottom:1px solid var(--border); display:flex; align-items:flex-start; justify-content:space-between; gap:12px; }
+    .modal-head h2 { font-size:18px; font-weight:700; color:var(--text); margin-bottom:4px; }
+    .modal-head p { font-size:13px; color:var(--text2); }
+    .modal-close { width:28px; height:28px; background:var(--surface2); border:1px solid var(--border); border-radius:6px; cursor:pointer; color:var(--text2); font-size:15px; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
+    .modal-close:hover { background:var(--surface3); }
+    .modal-body { overflow-y:auto; flex:1; padding:24px; }
+    .modal-foot { padding:14px 24px; border-top:1px solid var(--border); display:flex; justify-content:flex-end; gap:8px; }
+
+    /* RESPONSIVE */
+    @media(max-width:640px) {
+      .url-fields { grid-template-columns:1fr; }
+      .tpl-grid { grid-template-columns:1fr; }
+      .quick-strip { gap:8px; }
     }
-    .hero {
-      text-align: center;
-      padding: 64px 24px 40px;
-    }
-    .logo {
-      display: inline-flex;
-      align-items: center;
-      gap: 14px;
-      margin-bottom: 24px;
-    }
-    .logo-icon {
-      width: 56px; height: 56px;
-      background: linear-gradient(135deg, #3b82f6, #818cf8);
-      border-radius: 16px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 26px;
-    }
-    .logo-text {
-      text-align: left;
-    }
-    .logo-text h1 {
-      font-size: 22px;
-      font-weight: 800;
-      letter-spacing: -0.3px;
-      color: #fff;
-    }
-    .logo-text span {
-      font-size: 12px;
-      color: var(--muted);
-      font-weight: 500;
-      letter-spacing: 0.5px;
-      text-transform: uppercase;
-    }
-    .hero-sub {
-      font-size: 15px;
-      color: var(--muted);
-      max-width: 480px;
-      margin: 0 auto;
-      line-height: 1.6;
-    }
-    .container {
-      max-width: 1100px;
-      margin: 0 auto;
-      padding: 0 24px 80px;
-    }
-    .cards-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-      gap: 20px;
-      margin-bottom: 40px;
-    }
-    .card {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: 16px;
-      padding: 28px;
-      transition: border-color 0.2s, box-shadow 0.2s;
-    }
-    .card:hover { border-color: rgba(59,130,246,0.4); box-shadow: 0 0 0 1px rgba(59,130,246,0.1); }
-    .card-header {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      margin-bottom: 12px;
-    }
-    .card-icon {
-      width: 44px; height: 44px;
-      border-radius: 12px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 20px;
-      flex-shrink: 0;
-    }
-    .card-icon.blue { background: rgba(59,130,246,0.15); }
-    .card-icon.green { background: rgba(16,185,129,0.15); }
-    .card-icon.amber { background: rgba(245,158,11,0.15); }
-    .card h2 { font-size: 17px; font-weight: 700; color: #fff; }
-    .card p { font-size: 13px; color: var(--muted); margin-bottom: 20px; line-height: 1.6; }
-    .form-group { margin-bottom: 14px; }
-    .form-group label {
-      display: block;
-      font-size: 12px;
-      font-weight: 600;
-      color: var(--muted);
-      margin-bottom: 6px;
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-    }
-    .form-group label .req { color: var(--danger); margin-left: 2px; }
-    .form-group input,
-    .form-group select {
-      width: 100%;
-      background: var(--surface2);
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      padding: 10px 12px;
-      color: var(--text);
-      font-size: 14px;
-      font-family: 'Inter', sans-serif;
-      outline: none;
-      transition: border-color 0.2s;
-    }
-    .form-group input:focus,
-    .form-group select:focus { border-color: var(--primary); }
-    .form-group select option { background: #1e293b; }
-    .btn {
-      display: inline-flex;
-      align-items: center;
-      gap: 8px;
-      padding: 10px 18px;
-      border-radius: 8px;
-      font-size: 14px;
-      font-weight: 600;
-      font-family: 'Inter', sans-serif;
-      cursor: pointer;
-      border: none;
-      transition: all 0.2s;
-      text-decoration: none;
-      white-space: nowrap;
-    }
-    .btn-primary { background: var(--primary); color: #fff; }
-    .btn-primary:hover { background: var(--primary-hover); transform: translateY(-1px); }
-    .btn-success { background: var(--success); color: #fff; }
-    .btn-success:hover { background: #059669; transform: translateY(-1px); }
-    .btn-amber { background: var(--warning); color: #000; }
-    .btn-amber:hover { background: #d97706; transform: translateY(-1px); }
-    .btn-full { width: 100%; justify-content: center; }
-    .divider {
-      height: 1px;
-      background: var(--border);
-      margin: 32px 0;
-    }
-    .url-ref {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: 16px;
-      padding: 28px;
-    }
-    .url-ref h3 {
-      font-size: 15px;
-      font-weight: 700;
-      color: #fff;
-      margin-bottom: 20px;
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-    .url-table { width: 100%; border-collapse: collapse; }
-    .url-table tr:not(:last-child) td { border-bottom: 1px solid var(--border); }
-    .url-table td {
-      padding: 12px 0;
-      font-size: 13px;
-      vertical-align: top;
-    }
-    .url-table td:first-child {
-      color: var(--muted);
-      font-weight: 600;
-      width: 180px;
-      padding-right: 16px;
-      white-space: nowrap;
-    }
-    .url-table code {
-      background: var(--surface2);
-      border: 1px solid var(--border);
-      border-radius: 6px;
-      padding: 4px 10px;
-      font-size: 12px;
-      font-family: 'Courier New', monospace;
-      color: var(--accent);
-      display: inline-block;
-      word-break: break-all;
-    }
-    .badge {
-      display: inline-flex;
-      align-items: center;
-      padding: 3px 8px;
-      border-radius: 20px;
-      font-size: 11px;
-      font-weight: 600;
-      letter-spacing: 0.3px;
-    }
-    .badge-green { background: rgba(16,185,129,0.15); color: #10b981; }
-    .badge-blue { background: rgba(59,130,246,0.15); color: #60a5fa; }
-    .quick-links {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 10px;
-      margin-bottom: 32px;
-    }
-    .quick-link {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: 10px;
-      padding: 10px 16px;
-      font-size: 13px;
-      font-weight: 500;
-      color: var(--text);
-      text-decoration: none;
-      cursor: pointer;
-      transition: all 0.2s;
-    }
-    .quick-link:hover { border-color: var(--primary); color: var(--primary); }
-    .sect-label {
-      font-size: 11px;
-      font-weight: 700;
-      color: var(--muted);
-      letter-spacing: 1px;
-      text-transform: uppercase;
-      margin-bottom: 16px;
-    }
-    .tag {
-      display: inline-block;
-      background: rgba(59,130,246,0.12);
-      color: #93c5fd;
-      border-radius: 4px;
-      padding: 2px 7px;
-      font-size: 11px;
-      font-weight: 600;
-    }
-    @media (max-width: 600px) {
-      .cards-grid { grid-template-columns: 1fr; }
-      .hero { padding: 40px 16px 28px; }
-      .url-table td:first-child { width: 120px; }
-    }
+
+    /* ADMIN ACCESS CARDS */
+    .admin-cards { display:grid; grid-template-columns:repeat(auto-fill,minmax(260px,1fr)); gap:16px; margin-bottom:32px; }
+    .admin-card { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:20px; }
+    .admin-card-icon { width:40px; height:40px; border-radius:10px; display:flex; align-items:center; justify-content:center; font-size:18px; margin-bottom:12px; }
+    .admin-card h3 { font-size:14px; font-weight:700; color:var(--text); margin-bottom:4px; }
+    .admin-card p { font-size:12px; color:var(--text2); margin-bottom:14px; line-height:1.5; }
+    .admin-card-form { display:flex; flex-direction:column; gap:8px; margin-bottom:12px; }
+    .admin-card-form input, .admin-card-form select { background:var(--surface2); border:1px solid var(--border); border-radius:6px; padding:8px 10px; font-size:13px; color:var(--text); outline:none; width:100%; }
+    .admin-card-form input:focus { border-color:var(--primary); }
+    .badge { display:inline-flex; align-items:center; padding:2px 8px; border-radius:20px; font-size:10px; font-weight:700; letter-spacing:.3px; margin-bottom:8px; text-transform:uppercase; }
+    .badge-blue { background:var(--primary-light); color:var(--primary); }
+    .badge-green { background:rgba(82,196,26,.12); color:var(--success); }
+    .badge-amber { background:rgba(250,173,20,.12); color:var(--warning); }
   </style>
 </head>
 <body>
 
-<script>
-  // Auto-redirect if store param present in URL
-  (function() {
-    const p = new URLSearchParams(window.location.search);
-    const store = p.get('store');
-    const staff = p.get('staff');
-    if (store) {
-      let url = 'retail-admin.html?store=' + encodeURIComponent(store);
-      if (staff) url += '&staff=' + encodeURIComponent(staff);
-      window.location.replace(url);
-    }
-  })();
-</script>
-
-<div class="hero">
-  <div class="logo">
-    <div class="logo-icon">🍽️</div>
-    <div class="logo-text">
-      <h1>Offer Boards</h1>
-      <span>Digital Signage Management Platform</span>
+<!-- TOP BAR -->
+<div class="topbar">
+  <div class="topbar-left">
+    <div class="topbar-logo">
+      <div class="topbar-logo-icon">📺</div>
+      <div class="topbar-logo-text">Dynamic Offer Boards</div>
     </div>
+    <span class="topbar-badge">PersonalisationHub</span>
   </div>
-  <p class="hero-sub">Manage menu items from HQ, empower store staff to control stock, and display beautiful digital menus.</p>
+  <div class="topbar-right">
+    <a href="hq-admin.html" class="btn-topbar">🏢 HQ Admin</a>
+  </div>
 </div>
 
-<div class="container">
+<div class="page">
 
-  <div class="sect-label">Quick Access</div>
-  <div class="quick-links">
-    <a href="hq-admin.html" class="quick-link">🏢 HQ Admin Panel</a>
-    <span class="quick-link" onclick="document.getElementById('storeCard').scrollIntoView({behavior:'smooth'})">🏪 Store Portal</span>
-    <span class="quick-link" onclick="document.getElementById('boardCard').scrollIntoView({behavior:'smooth'})">📺 Offer Board Preview</span>
-    <a href="order.html" class="quick-link">🛍 Customer Order</a>
-    <span class="quick-link" onclick="document.getElementById('summaryCard').scrollIntoView({behavior:'smooth'})">🛒 Order Summary</span>
+  <!-- QUICK ACCESS -->
+  <div style="margin-bottom:28px;margin-top:4px;">
+    <div class="quick-strip">
+      <a href="hq-admin.html" class="quick-chip primary">🏢 HQ Admin Panel</a>
+      <a href="#url-builder" class="quick-chip" onclick="document.getElementById('url-builder').scrollIntoView({behavior:'smooth'});return false;">🔗 URL Builder</a>
+      <a href="#templates" class="quick-chip" onclick="document.getElementById('templates').scrollIntoView({behavior:'smooth'});return false;">🎨 Template Library</a>
+      <a href="#store-access" class="quick-chip" onclick="document.getElementById('store-access').scrollIntoView({behavior:'smooth'});return false;">🏪 Store Portal</a>
+    </div>
   </div>
 
-  <div class="cards-grid">
-
-    <!-- HQ Admin Card -->
-    <div class="card">
-      <div class="card-header">
-        <div class="card-icon blue">🏢</div>
-        <div>
-          <h2>HQ Administration</h2>
-          <span class="badge badge-blue">Headquarters Only</span>
-        </div>
-      </div>
-      <p>Manage all menu items, categories, pricing, and images. Activate or deactivate items globally across all stores.</p>
-      <a href="hq-admin.html" class="btn btn-primary btn-full">Open HQ Admin Panel →</a>
+  <!-- PH TOKEN GUIDE -->
+  <div class="token-guide">
+    <div class="token-guide-title">📌 Personalisation Hub Platform Tokens — Auto-injected by PH into all Board URLs</div>
+    <div class="token-grid">
+      <div class="token-pill"><code>${StoreCode}</code><span>→ Store Code (e.g. O2O-001)</span></div>
+      <div class="token-pill"><code>${UniqueDeviceID}</code><span>→ Device UDID (triggers campaign polling)</span></div>
+      <div class="token-pill"><code>${FirstName}</code><span>→ Customer first name (personalised greeting)</span></div>
+      <div class="token-pill"><code>${StoreName}</code><span>→ Store display name</span></div>
     </div>
+  </div>
 
-    <!-- Store Admin Card -->
-    <div class="card" id="storeCard">
-      <div class="card-header">
-        <div class="card-icon green">🏪</div>
-        <div>
-          <h2>Store Portal Access</h2>
-          <span class="badge badge-green">Store Staff</span>
-        </div>
-      </div>
-      <p>Access your store's menu management interface to view items and manage out-of-stock status.</p>
-      <div class="form-group">
-        <label>Store Code <span class="req">*</span></label>
-        <input type="text" id="storeCode" placeholder="e.g. STORE001" value="O2O-001" />
-      </div>
-      <div class="form-group">
-        <label>Staff Identifier <span style="color:var(--muted)">(optional)</span></label>
-        <input type="text" id="staffId" placeholder="e.g. STAFF001" />
-      </div>
-      <button onclick="goToStore()" class="btn btn-success btn-full">Access Store Portal →</button>
-    </div>
+  <!-- URL BUILDER -->
+  <div class="url-builder" id="url-builder">
+    <div class="url-builder-title">🔗 Offer Board URL Builder</div>
+    <div class="url-builder-desc">Select a template and configure parameters. Only fields relevant to the chosen template are shown. PH platform tokens are pre-filled — copy the URL and use it directly in your display configuration.</div>
 
-    <!-- Menu Board Card -->
-    <div class="card" id="boardCard">
-      <div class="card-header">
-        <div class="card-icon amber">📺</div>
-        <div>
-          <h2>Offer Board Preview</h2>
-          <span class="badge" style="background:rgba(245,158,11,0.15);color:#f59e0b;">Digital Signage</span>
-        </div>
-      </div>
-      <p>Preview portrait digital signage displays. Provide store code and menu type to generate the URL.</p>
-      <div class="form-group">
-        <label>Store Code <span class="req">*</span></label>
-        <input type="text" id="boardStore" placeholder="e.g. STORE001" value="O2O-001" />
-      </div>
-      <div class="form-group">
-        <label>Menu Type</label>
-        <select id="boardMenu">
-          <option value="breakfast">🌅 Breakfast</option>
-          <option value="lunch">☀️ Lunch</option>
-          <option value="dinner">🌙 Dinner</option>
-          <option value="drinks">🥤 Drinks</option>
-          <option value="specials">⭐ Today's Specials</option>
+    <div class="url-fields" id="urlFields">
+
+      <div class="url-field" id="field-template">
+        <label>Template <span class="opt">required</span></label>
+        <select id="urlTemplate" onchange="onTemplateChange()">
+          <option value="">— Select a Template —</option>
+          <optgroup label="Food &amp; Beverage">
+            <option value="classic-menu-board">Classic Menu Board</option>
+            <option value="feature-hero-board">Feature Hero Spotlight</option>
+            <option value="category-rotator">Category Rotator</option>
+            <option value="price-grid">Price Grid</option>
+          </optgroup>
+          <optgroup label="Retail">
+            <option value="promotional-offer-board">Promotional Offer Board</option>
+            <option value="new-arrivals-showcase">New Arrivals Showcase</option>
+            <option value="split-screen-dual-zone">Split Screen Dual Zone</option>
+            <option value="seasonal-promotion">Seasonal / Event Promotion</option>
+          </optgroup>
+          <optgroup label="In-Store Experience">
+            <option value="personalised-welcome">Personalised Welcome Screen</option>
+            <option value="queue-status-board">Queue Status Board</option>
+          </optgroup>
+          <optgroup label="Out-of-Home">
+            <option value="retail-media-banner">Retail Media Banner</option>
+          </optgroup>
+          <optgroup label="Store Operations">
+            <option value="store-info-hours">Store Info &amp; Opening Hours</option>
+          </optgroup>
         </select>
       </div>
-      <button onclick="goToBoard()" class="btn btn-amber btn-full">Open Offer Board →</button>
+
+      <div class="url-field" id="field-orientation">
+        <label>Orientation</label>
+        <select id="urlOrientation" onchange="updateUrl()">
+          <option value="portrait">Portrait (1080×1920)</option>
+          <option value="landscape">Landscape (1920×1080)</option>
+        </select>
+      </div>
+
+      <div class="url-field hidden" id="field-store">
+        <label>Store Code <span class="ph-token">${StoreCode}</span></label>
+        <input type="text" id="urlStore" placeholder="${StoreCode}" value="${StoreCode}" oninput="updateUrl()">
+      </div>
+
+      <div class="url-field hidden" id="field-device">
+        <label>Device UDID <span class="ph-token">${UniqueDeviceID}</span> <span class="opt">optional</span></label>
+        <input type="text" id="urlDevice" placeholder="${UniqueDeviceID}" value="" oninput="updateUrl()">
+      </div>
+
+      <div class="url-field hidden" id="field-brand">
+        <label>Brand <span class="opt">optional</span></label>
+        <input type="text" id="urlBrand" placeholder="Brand name or ID" value="" oninput="updateUrl()">
+      </div>
+
+      <div class="url-field hidden" id="field-category">
+        <label>Category Filter <span class="opt">optional</span></label>
+        <input type="text" id="urlCategory" placeholder="e.g. Drinks, Mains…" oninput="updateUrl()">
+      </div>
+
+      <div class="url-field hidden" id="field-type">
+        <label>Item Type Filter <span class="opt">optional</span></label>
+        <input type="text" id="urlType" placeholder="e.g. food, beverage…" oninput="updateUrl()">
+      </div>
+
+      <div class="url-field hidden" id="field-firstName">
+        <label>First Name <span class="ph-token">${FirstName}</span> <span class="opt">if known</span></label>
+        <input type="text" id="urlFirstName" placeholder="${FirstName}" value="${FirstName}" oninput="updateUrl()">
+      </div>
+
+      <div class="url-field hidden" id="field-storeName">
+        <label>Store Name <span class="ph-token">${StoreName}</span></label>
+        <input type="text" id="urlStoreName" placeholder="${StoreName}" value="${StoreName}" oninput="updateUrl()">
+      </div>
+
     </div>
 
-    <!-- Order Summary Board Card -->
-    <div class="card" id="summaryCard">
-      <div class="card-header">
-        <div class="card-icon" style="background:linear-gradient(135deg,#006241,#CBA258);">🛒</div>
-        <div>
-          <h2>Order Summary Board</h2>
-          <span class="badge" style="background:rgba(0,98,65,.15);color:#006241;">New · Digital Signage</span>
-        </div>
+    <div style="margin-bottom:10px;">
+      <div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px;">Generated URL</div>
+      <div class="url-output" id="urlOutput"><span style="color:var(--text3);font-style:italic;">Select a template above to generate the URL.</span></div>
+    </div>
+    <div class="url-actions">
+      <button class="btn btn-primary" onclick="copyUrl()">📋 Copy URL</button>
+      <button class="btn btn-ghost" onclick="openBoardUrl()" id="openBoardBtn" disabled>↗ Open Board</button>
+      <span class="copy-success" id="copySuccess">✓ Copied!</span>
+    </div>
+  </div>
+
+  <!-- STORE ACCESS CARDS -->
+  <hr class="section-divider">
+  <div class="section-head" id="store-access">
+    <h2>Quick Access Portals</h2>
+    <p>Direct access to the HQ Admin, Store Portal, and Retail Admin screens.</p>
+  </div>
+  <div class="admin-cards">
+
+    <div class="admin-card">
+      <div class="admin-card-icon" style="background:rgba(22,155,194,.1);">🏢</div>
+      <div class="badge badge-blue">HQ Only</div>
+      <h3>HQ Administration</h3>
+      <p>Manage all products, brands, templates, categories, and configurations.</p>
+      <a href="hq-admin.html" class="btn btn-primary" style="width:100%;justify-content:center;">Open HQ Admin →</a>
+    </div>
+
+    <div class="admin-card">
+      <div class="admin-card-icon" style="background:rgba(82,196,26,.1);">🏪</div>
+      <div class="badge badge-green">Store Staff</div>
+      <h3>Store Portal</h3>
+      <p>Manage stock, view items, and control out-of-stock status for a specific store.</p>
+      <div class="admin-card-form">
+        <input type="text" id="storeCode" placeholder="Store Code (e.g. O2O-001)" value="O2O-001">
+        <input type="text" id="staffId" placeholder="Staff ID (optional)">
       </div>
-      <p>Display a customer's live order summary on a screen. Links to a customer's mobile session via their Device UDID.</p>
-      <div class="form-group">
-        <label>Store Code <span class="req">*</span></label>
-        <input type="text" id="summaryStore" placeholder="e.g. STORE001" value="O2O-001" />
+      <button onclick="goToStore()" class="btn btn-primary" style="width:100%;justify-content:center;">Access Store Portal →</button>
+    </div>
+
+    <div class="admin-card">
+      <div class="admin-card-icon" style="background:rgba(250,173,20,.1);">🛒</div>
+      <div class="badge badge-amber">Customer</div>
+      <h3>Customer Ordering</h3>
+      <p>Responsive ordering site. Link to an Order Summary Board via Device UDID.</p>
+      <div class="admin-card-form">
+        <input type="text" id="orderStoreCode" placeholder="Store Code (optional)" value="O2O-001">
+        <input type="text" id="orderDeviceUdid" placeholder="Device UDID (links to Order Summary)">
       </div>
-      <div class="form-group">
-        <label>Device UDID <span class="req">*</span></label>
-        <input type="text" id="summaryDevice" placeholder="e.g. ABCD-1234" />
+      <button onclick="goToOrder()" class="btn btn-primary" style="width:100%;justify-content:center;">Open Ordering →</button>
+    </div>
+
+    <div class="admin-card">
+      <div class="admin-card-icon" style="background:rgba(129,140,248,.1);">📋</div>
+      <div class="badge" style="background:rgba(129,140,248,.12);color:#818CF8;">In-Store</div>
+      <h3>Order Summary Board</h3>
+      <p>Displays a customer's live order on a dedicated screen linked by Device UDID.</p>
+      <div class="admin-card-form">
+        <input type="text" id="summaryStore" placeholder="Store Code" value="O2O-001">
+        <input type="text" id="summaryDevice" placeholder="Device UDID">
       </div>
-      <button onclick="goToOrderSummary()" class="btn btn-full" style="background:linear-gradient(135deg,#006241,#004d33);color:#fff;">Open Order Summary Board →</button>
+      <button onclick="goToOrderSummary()" class="btn btn-primary" style="width:100%;justify-content:center;">Open Summary Board →</button>
     </div>
 
   </div>
 
-    <!-- Customer Ordering Card -->
-    <div class="card" id="orderCard">
-      <div class="card-header">
-        <div class="card-icon" style="background:linear-gradient(135deg,#006241,#CBA258);">🛍</div>
-        <div>
-          <h2>Customer Ordering</h2>
-          <span class="badge" style="background:rgba(0,98,65,.15);color:#006241;">Mobile / PC / Tablet</span>
-        </div>
-      </div>
-      <p>Responsive ordering site for customers to browse the menu, customise items, and place takeout orders with a unique order number.</p>
-      <div style="display:flex;gap:8px;margin-top:12px;">
-        <input id="orderStoreCode" placeholder="Store Code (optional)" value="O2O-001" style="flex:1;padding:10px 12px;border-radius:8px;border:1px solid var(--border);background:var(--surface2);color:var(--text);font-size:14px;">
-      </div>
-      <div style="display:flex;gap:8px;margin-top:8px;">
-        <input id="orderDeviceUdid" placeholder="Device UDID — links to Order Summary Board" style="flex:1;padding:10px 12px;border-radius:8px;border:1px solid var(--border);background:var(--surface2);color:var(--text);font-size:14px;">
-      </div>
-      <p style="font-size:11px;color:var(--muted);margin-top:6px;">💡 Enter the same Device UDID used on the Order Summary Board to link this mobile session to that display. Leave blank to browse without linking.</p>
-      <button onclick="goToOrder()" class="btn btn-full" style="background:linear-gradient(135deg,#006241,#004d33);color:#fff;margin-top:10px;">Open Ordering Menu →</button>
-    </div>
-
-  <div class="url-ref">
-    <h3>📋 URL Reference Guide</h3>
-    <table class="url-table">
-      <tr>
-        <td>HQ Admin</td>
-        <td><code id="hqUrl">hq-admin.html</code></td>
-      </tr>
-      <tr>
-        <td>Store Redirect <span class="tag">Recommended</span></td>
-        <td><code>index.html?store=<em>STORE001</em>&amp;staff=<em>STAFF001</em></code></td>
-      </tr>
-      <tr>
-        <td>Store Admin Direct</td>
-        <td><code>retail-admin.html?store=<em>STORE001</em>&amp;staff=<em>STAFF001</em></code></td>
-      </tr>
-      <tr>
-        <td>Breakfast Board</td>
-        <td><code>menu-board.html?store=<em>STORE001</em>&amp;menu=breakfast</code></td>
-      </tr>
-      <tr>
-        <td>Lunch Board</td>
-        <td><code>menu-board.html?store=<em>STORE001</em>&amp;menu=lunch</code></td>
-      </tr>
-      <tr>
-        <td>Dinner Board</td>
-        <td><code>menu-board.html?store=<em>STORE001</em>&amp;menu=dinner</code></td>
-      </tr>
-      <tr>
-        <td>Drinks Board</td>
-        <td><code>menu-board.html?store=<em>STORE001</em>&amp;menu=drinks</code></td>
-      </tr>
-      <tr>
-        <td>Today's Specials</td>
-        <td><code>menu-board.html?store=<em>STORE001</em>&amp;menu=specials</code></td>
-      </tr>
-      <tr>
-        <td>Customer Ordering <span class="tag" style="background:rgba(0,98,65,.15);color:#006241;">New</span></td>
-        <td><code>order.html?store=<em>STORE001</em></code></td>
-      </tr>
-      <tr>
-        <td>Order Summary Board <span class="tag" style="background:rgba(0,98,65,.15);color:#006241;">New</span></td>
-        <td><code>order-summary.html?store=<em>STORE001</em>&amp;device=<em>UDID</em></code></td>
-      </tr>
-    </table>
-    <p style="margin-top:16px;font-size:12px;color:var(--muted);">
-      ℹ️ Replace <em>STORE001</em> and <em>STAFF001</em> with your actual codes. Staff identifier is optional for store access.
-      Data is shared via browser localStorage — all pages must be served from the same origin.
-    </p>
+  <!-- TEMPLATE LIBRARY -->
+  <hr class="section-divider">
+  <div class="section-head" id="templates">
+    <h2>Template Library</h2>
+    <p>All available Offer Board templates. Click a template to see a detailed preview. Use the URL Builder above to generate a board URL for any template.</p>
   </div>
+
+  <div class="tpl-filter-bar">
+    <input type="text" id="libSearch" placeholder="Search templates…" oninput="renderLib()">
+    <select id="libCat" onchange="renderLib()">
+      <option value="">All Categories</option>
+      <option>Food &amp; Beverage</option>
+      <option>Retail</option>
+      <option>In-Store Experience</option>
+      <option>Out-of-Home</option>
+      <option>Store Operations</option>
+    </select>
+  </div>
+
+  <div class="tpl-grid" id="libGrid"></div>
 
 </div>
 
-<script>
-  document.getElementById('hqUrl').textContent = window.location.origin + window.location.pathname.replace('index.html','') + 'hq-admin.html';
+<!-- TEMPLATE DETAIL MODAL -->
+<div class="modal-overlay" id="detailOverlay">
+  <div class="modal">
+    <div class="modal-head" id="detailHead">
+      <div>
+        <h2 id="detailName"></h2>
+        <p id="detailDesc"></p>
+      </div>
+      <button class="modal-close" onclick="closeDetail()">✕</button>
+    </div>
+    <div class="modal-body" id="detailBody"></div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" onclick="closeDetail()">Close</button>
+      <button class="btn btn-primary" id="detailUseBtn">Use this Template</button>
+    </div>
+  </div>
+</div>
 
-  function goToStore() {
-    const store = document.getElementById('storeCode').value.trim();
-    const staff = document.getElementById('staffId').value.trim();
-    if (!store) { alert('Store Code is required.'); document.getElementById('storeCode').focus(); return; }
+<script>
+// ── Auto-redirect if store param present ──────────────────────────────────
+(function() {
+  const p = new URLSearchParams(window.location.search);
+  const store = p.get('store'), staff = p.get('staff');
+  if (store) {
     let url = 'retail-admin.html?store=' + encodeURIComponent(store);
     if (staff) url += '&staff=' + encodeURIComponent(staff);
-    window.open(url, '_blank');
+    window.location.replace(url);
   }
+})();
 
-  function goToBoard() {
-    const store = document.getElementById('boardStore').value.trim();
-    const menu = document.getElementById('boardMenu').value;
-    if (!store) { alert('Store Code is required.'); document.getElementById('boardStore').focus(); return; }
-    window.open('menu-board.html?store=' + encodeURIComponent(store) + '&menu=' + menu, '_blank');
-  }
+// ── SVG MOCKUP HELPERS ────────────────────────────────────────────────────
+const C = { bg:'#f0f4f8', header:'#169bc2', body:'#e8edf2', card:'#ffffff', border:'#cbd5e0', text:'#2d3748', muted:'#a0aec0', accent:'#169bc2', price:'#169bc2', promo:'#f6ad55', danger:'#fc8181', dark:'#1a202c' };
 
-  function goToOrder() {
-    const store  = document.getElementById('orderStoreCode').value.trim();
-    const device = document.getElementById('orderDeviceUdid').value.trim();
-    const params = new URLSearchParams();
-    if (store)  params.set('store',  store);
-    if (device) params.set('device', device);
-    const qs = params.toString();
-    window.open('order.html' + (qs ? '?' + qs : ''), '_blank');
-  }
+function gridCells(x,y,w,h,cols,rows,gap=3) {
+  const cw=(w-gap*(cols+1))/cols, ch=(h-gap*(rows+1))/rows;
+  let s=''; for(let r=0;r<rows;r++) for(let c=0;c<cols;c++) {
+    const cx=x+gap+c*(cw+gap), cy=y+gap+r*(ch+gap);
+    s+=`<rect x="${cx.toFixed(1)}" y="${cy.toFixed(1)}" width="${cw.toFixed(1)}" height="${ch.toFixed(1)}" rx="2" fill="${C.card}" stroke="${C.border}" stroke-width=".5"/>`;
+    s+=`<rect x="${cx.toFixed(1)}" y="${cy.toFixed(1)}" width="${cw.toFixed(1)}" height="${(ch*.55).toFixed(1)}" rx="2" fill="${C.body}"/>`;
+    s+=`<rect x="${(cx+2).toFixed(1)}" y="${(cy+ch*.62).toFixed(1)}" width="${(cw*.7).toFixed(1)}" height="2.5" rx="1" fill="${C.muted}"/>`;
+    s+=`<rect x="${(cx+2).toFixed(1)}" y="${(cy+ch*.8).toFixed(1)}" width="${(cw*.42).toFixed(1)}" height="2" rx="1" fill="${C.price}"/>`;
+  } return s;
+}
 
-  function goToOrderSummary() {
-    const store  = document.getElementById('summaryStore').value.trim();
-    const device = document.getElementById('summaryDevice').value.trim();
-    if (!store)  { alert('Store Code is required.');  document.getElementById('summaryStore').focus();  return; }
-    if (!device) { alert('Device UDID is required.'); document.getElementById('summaryDevice').focus(); return; }
-    window.open('order-summary.html?store=' + encodeURIComponent(store)
-              + '&device=' + encodeURIComponent(device), '_blank');
+// ── TEMPLATE REGISTRY ──────────────────────────────────────────────────────
+// Each template defines: id, name, description, category, useCases, params (URL params used), settings schema
+// portraitSVG and landscapeSVG: functions (W,H) => svgInnerString
+
+const TEMPLATES = [
+  {
+    id:'classic-menu-board', name:'Classic Menu Board',
+    description:'Traditional tiled grid of products with pricing. Perfect for restaurants, cafés, and QSR.',
+    category:'Food & Beverage', useCases:['Restaurant','Café','QSR','Bakery','Food Court'],
+    params:['store','device','brand','orientation','type','category'],
+    settings:{ showHeader:true, colorScheme:true, iconPosition:true, headerCopy:true, itemTypeFilter:true, categoryFilter:true, soldOutBehavior:true, portrait:true, landscape:true, showClock:true },
+    pSVG:(W,H)=>{const hh=14,fh=10;return `<rect width="${W}" height="${H}" fill="${C.bg}"/><rect width="${W}" height="${hh}" fill="${C.header}"/><rect x="3" y="3.5" width="20" height="7" rx="1.5" fill="rgba(255,255,255,.25)"/>` + gridCells(0,hh,W,H-hh-fh,3,5,2) + `<rect y="${H-fh}" width="${W}" height="${fh}" fill="${C.dark}"/><rect x="4" y="${H-fh+3}" width="30" height="2" rx="1" fill="rgba(255,255,255,.3)"/>`;},
+    lSVG:(W,H)=>{const hh=11,fh=8;return `<rect width="${W}" height="${H}" fill="${C.bg}"/><rect width="${W}" height="${hh}" fill="${C.header}"/>` + gridCells(0,hh,W,H-hh-fh,5,3,2) + `<rect y="${H-fh}" width="${W}" height="${fh}" fill="${C.dark}"/>`;},
+  },
+  {
+    id:'feature-hero-board', name:'Feature Hero Spotlight',
+    description:'One promoted product dominates with large imagery, supporting items shown below.',
+    category:'Food & Beverage', useCases:['Restaurant','Promotion','Retail','Café'],
+    params:['store','device','brand','orientation','type','category'],
+    settings:{ showHeader:true, colorScheme:true, iconPosition:true, itemTypeFilter:true, categoryFilter:true, soldOutBehavior:true, portrait:true, landscape:true, campaignFilter:true },
+    pSVG:(W,H)=>{const hh=13,heroH=Math.round(H*.42),bodyY=hh+heroH;return `<rect width="${W}" height="${H}" fill="#111"/><rect width="${W}" height="${hh}" fill="#1a1a1a"/><rect y="${hh}" width="${W}" height="${heroH}" fill="#2d2d2d"/><rect x="${W/2-15}" y="${hh+heroH*.35}" width="30" height="5" rx="2" fill="rgba(255,255,255,.85)"/><rect x="${W/2-10}" y="${hh+heroH*.58}" width="20" height="3" rx="1.5" fill="#f6ad55"/>` + gridCells(0,bodyY,W,H-bodyY,3,2,2);},
+    lSVG:(W,H)=>{const hh=10,heroW=Math.round(W*.45);return `<rect width="${W}" height="${H}" fill="#111"/><rect width="${W}" height="${hh}" fill="#1a1a1a"/><rect y="${hh}" width="${heroW}" height="${H-hh}" fill="#2d2d2d"/><rect x="${heroW*.2}" y="${hh+(H-hh)*.35}" width="${heroW*.6}" height="5" rx="2" fill="rgba(255,255,255,.85)"/><rect x="${heroW*.3}" y="${hh+(H-hh)*.58}" width="${heroW*.4}" height="3" rx="1.5" fill="#f6ad55"/>` + gridCells(heroW+2,hh,W-heroW-2,H-hh,2,3,2);},
+  },
+  {
+    id:'category-rotator', name:'Category Rotator',
+    description:'Auto-rotates through categories full screen, one at a time. Ideal for large menus.',
+    category:'Food & Beverage', useCases:['Restaurant','Supermarket','Pharmacy','Café'],
+    params:['store','device','brand','orientation','category'],
+    settings:{ showHeader:true, colorScheme:true, categoryFilter:true, soldOutBehavior:true, portrait:true, landscape:true, showClock:true, showStoreName:true },
+    pSVG:(W,H)=>{const hh=14,catH=16,fh=10;return `<rect width="${W}" height="${H}" fill="${C.bg}"/><rect width="${W}" height="${hh}" fill="${C.header}"/><rect y="${hh}" width="${W}" height="${catH}" fill="${C.accent}" opacity=".85"/><rect x="${W/2-18}" y="${hh+5}" width="36" height="6" rx="2" fill="rgba(255,255,255,.9)"/>` + gridCells(0,hh+catH,W,H-hh-catH-fh,3,4,2) + `<rect y="${H-fh}" width="${W}" height="${fh}" fill="${C.dark}"/>`;},
+    lSVG:(W,H)=>{const hh=11,catH=13,fh=8;return `<rect width="${W}" height="${H}" fill="${C.bg}"/><rect width="${W}" height="${hh}" fill="${C.header}"/><rect y="${hh}" width="${W}" height="${catH}" fill="${C.accent}" opacity=".85"/><rect x="${W/2-18}" y="${hh+4}" width="36" height="5" rx="2" fill="rgba(255,255,255,.9)"/>` + gridCells(0,hh+catH,W,H-hh-catH-fh,5,2,2) + `<rect y="${H-fh}" width="${W}" height="${fh}" fill="${C.dark}"/>`;},
+  },
+  {
+    id:'promotional-offer-board', name:'Promotional Offer Board',
+    description:'Price-led layout with prominent discount callouts and deal badges. Drives conversion.',
+    category:'Retail', useCases:['Retail','Supermarket','Convenience','Petrol Station'],
+    params:['store','device','brand','orientation','type','category'],
+    settings:{ showHeader:true, colorScheme:true, itemTypeFilter:true, categoryFilter:true, soldOutBehavior:true, portrait:true, landscape:true, showStoreName:true, campaignFilter:true },
+    pSVG:(W,H)=>{const hh=14,bannerH=12;return `<rect width="${W}" height="${H}" fill="#fff5f5"/><rect width="${W}" height="${hh}" fill="#e53e3e"/><rect x="3" y="3.5" width="20" height="7" rx="1.5" fill="rgba(255,255,255,.25)"/><rect y="${hh}" width="${W}" height="${bannerH}" fill="#fc8181" opacity=".5"/><rect x="${W/2-20}" y="${hh+3}" width="40" height="6" rx="2" fill="rgba(139,0,0,.6)"/>` + gridCells(0,hh+bannerH,W,H-hh-bannerH,2,4,3);},
+    lSVG:(W,H)=>{const hh=11,bannerH=9;return `<rect width="${W}" height="${H}" fill="#fff5f5"/><rect width="${W}" height="${hh}" fill="#e53e3e"/><rect y="${hh}" width="${W}" height="${bannerH}" fill="#fc8181" opacity=".5"/>` + gridCells(0,hh+bannerH,W,H-hh-bannerH,4,2,3);},
+  },
+  {
+    id:'personalised-welcome', name:'Personalised Welcome Screen',
+    description:'Greets customers by first name with relevant offers. Used in-queue or at reception.',
+    category:'In-Store Experience', useCases:['Telco','Banking','Healthcare','Retail','Queue'],
+    params:['store','device','brand','orientation','type','category','firstName','storeName'],
+    settings:{ showHeader:true, colorScheme:true, itemTypeFilter:true, categoryFilter:true, portrait:true, landscape:true, showClock:true, personalGreeting:true, showStoreName:true, campaignFilter:true },
+    pSVG:(W,H)=>{const hh=14,greetH=28;return `<rect width="${W}" height="${H}" fill="#f0f9ff"/><rect width="${W}" height="${hh}" fill="${C.header}"/><rect x="${W/2-14}" y="3.5" width="28" height="7" rx="1.5" fill="rgba(255,255,255,.3)"/><rect y="${hh}" width="${W}" height="${greetH}" fill="rgba(22,155,194,.08)"/><circle cx="${W/2}" cy="${hh+11}" r="7" fill="rgba(22,155,194,.2)" stroke="${C.header}" stroke-width=".8"/><rect x="${W/2-14}" y="${hh+greetH-7}" width="28" height="4" rx="2" fill="${C.header}"/>` + gridCells(0,hh+greetH,W,H-hh-greetH-4,2,3,3);},
+    lSVG:(W,H)=>{const hh=11,greetW=Math.round(W*.32);return `<rect width="${W}" height="${H}" fill="#f0f9ff"/><rect width="${W}" height="${hh}" fill="${C.header}"/><rect y="${hh}" width="${greetW}" height="${H-hh}" fill="rgba(22,155,194,.08)" stroke="${C.border}" stroke-width=".5"/><circle cx="${greetW/2}" cy="${hh+(H-hh)*.3}" r="8" fill="rgba(22,155,194,.2)" stroke="${C.header}" stroke-width=".8"/><rect x="${greetW*.15}" y="${hh+(H-hh)*.55}" width="${greetW*.7}" height="4" rx="2" fill="${C.header}"/>` + gridCells(greetW+2,hh,W-greetW-2,H-hh,3,2,2);},
+  },
+  {
+    id:'queue-status-board', name:'Queue Status Board',
+    description:'Shows live queue wait times and visitor count from the PH API. Keeps customers informed.',
+    category:'In-Store Experience', useCases:['Queue Management','Banking','Telco','Healthcare','Government'],
+    params:['store','device','brand','orientation','storeName'],
+    settings:{ showHeader:true, colorScheme:true, portrait:true, landscape:true, showClock:true, showStoreName:true },
+    pSVG:(W,H)=>{const hh=14;return `<rect width="${W}" height="${H}" fill="#f0f9ff"/><rect width="${W}" height="${hh}" fill="${C.header}"/><rect x="${W/2-14}" y="3.5" width="28" height="7" rx="1.5" fill="rgba(255,255,255,.25)"/><rect x="4" y="${hh+8}" width="${W-8}" height="28" rx="4" fill="${C.card}" stroke="${C.border}" stroke-width=".7"/><rect x="${W/2-8}" y="${hh+16}" width="16" height="4" rx="2" fill="${C.header}"/><rect x="8" y="${hh+40}" width="${(W-16)*.45}" height="22" rx="4" fill="${C.card}" stroke="${C.border}" stroke-width=".7"/><rect x="${(W-16)*.55+8+4}" y="${hh+40}" width="${(W-16)*.45}" height="22" rx="4" fill="${C.card}" stroke="${C.border}" stroke-width=".7"/><rect x="12" y="${hh+49}" width="20" height="6" rx="2" fill="#52c41a" opacity=".8"/><rect x="${(W-16)*.55+12}" y="${hh+49}" width="20" height="6" rx="2" fill="#faad14" opacity=".8"/>`;},
+    lSVG:(W,H)=>{const hh=11;return `<rect width="${W}" height="${H}" fill="#f0f9ff"/><rect width="${W}" height="${hh}" fill="${C.header}"/><rect x="4" y="${hh+5}" width="${W/2-6}" height="${H-hh-9}" rx="4" fill="${C.card}" stroke="${C.border}" stroke-width=".7"/><rect x="${W/2+2}" y="${hh+5}" width="${W/2-6}" height="${H-hh-9}" rx="4" fill="${C.card}" stroke="${C.border}" stroke-width=".7"/><rect x="${W*.1}" y="${hh+H*.3}" width="${W*.3}" height="6" rx="3" fill="${C.header}"/><rect x="${W*.6}" y="${hh+H*.3}" width="${W*.3}" height="6" rx="3" fill="#52c41a" opacity=".8"/>`;},
+  },
+  {
+    id:'new-arrivals-showcase', name:'New Arrivals Showcase',
+    description:'Magazine-style layout highlighting newest products. Perfect for fashion, electronics, and lifestyle retail.',
+    category:'Retail', useCases:['Fashion','Electronics','Lifestyle','Beauty','Sport'],
+    params:['store','device','brand','orientation','type','category'],
+    settings:{ showHeader:true, colorScheme:true, itemTypeFilter:true, categoryFilter:true, soldOutBehavior:true, portrait:true, landscape:true, showStoreName:true, campaignFilter:true },
+    pSVG:(W,H)=>{const hh=14,bannerH=10;return `<rect width="${W}" height="${H}" fill="#f7fafc"/><rect width="${W}" height="${hh}" fill="#1a1a1a"/><rect x="${W/2-14}" y="3.5" width="28" height="7" rx="1.5" fill="rgba(255,255,255,.25)"/><rect y="${hh}" width="${W}" height="${bannerH}" fill="#38b2ac" opacity=".15"/><rect x="${W/2-16}" y="${hh+2.5}" width="32" height="5" rx="2" fill="#38b2ac" opacity=".7"/>` + gridCells(0,hh+bannerH,W,H-hh-bannerH,2,3,3);},
+    lSVG:(W,H)=>{const hh=11,bannerH=9;return `<rect width="${W}" height="${H}" fill="#f7fafc"/><rect width="${W}" height="${hh}" fill="#1a1a1a"/><rect y="${hh}" width="${W}" height="${bannerH}" fill="#38b2ac" opacity=".15"/><rect x="${W/2-16}" y="${hh+2}" width="32" height="5" rx="2" fill="#38b2ac" opacity=".7"/>` + gridCells(0,hh+bannerH,W,H-hh-bannerH,4,2,3);},
+  },
+  {
+    id:'retail-media-banner', name:'Retail Media Banner',
+    description:'Full-screen OOH-style advertisement with large brand imagery. Ideal for digital out-of-home.',
+    category:'Out-of-Home', useCases:['DOOH','OOH','Retail Media','Brand Advertising','Mall'],
+    params:['device','brand','orientation'],
+    settings:{ colorScheme:true, portrait:true, landscape:true, campaignFilter:true },
+    pSVG:(W,H)=>`<rect width="${W}" height="${H}" fill="#000"/><rect x="4" y="4" width="${W-8}" height="${H*.6}" rx="3" fill="#2d2d2d"/><rect x="${W/2-18}" y="${H*.65}" width="36" height="7" rx="2" fill="rgba(255,255,255,.9)"/><rect x="${W/2-12}" y="${H*.76}" width="24" height="4" rx="2" fill="#f6ad55"/><rect x="${W/2-14}" y="${H*.91}" width="28" height="7" rx="3.5" fill="#f6ad55"/>`,
+    lSVG:(W,H)=>`<rect width="${W}" height="${H}" fill="#000"/><rect x="4" y="4" width="${W*.55}" height="${H-8}" rx="3" fill="#2d2d2d"/><rect x="${W*.6}" y="${H*.15}" width="${W*.36}" height="7" rx="2" fill="rgba(255,255,255,.9)"/><rect x="${W*.6}" y="${H*.37}" width="${W*.28}" height="4" rx="2" fill="#f6ad55"/><rect x="${W*.6}" y="${H*.7}" width="${W*.28}" height="7" rx="3.5" fill="#f6ad55"/>`,
+  },
+  {
+    id:'price-grid', name:'Price Grid',
+    description:'Dense compact grid maximising items per screen. For value retailers and convenience stores.',
+    category:'Food & Beverage', useCases:['Convenience','Petrol Station','Value Retail','Pharmacy'],
+    params:['store','device','brand','orientation','type','category'],
+    settings:{ showHeader:true, colorScheme:true, itemTypeFilter:true, categoryFilter:true, soldOutBehavior:true, portrait:true, landscape:true, showClock:true },
+    pSVG:(W,H)=>{const hh=12,fh=8;return `<rect width="${W}" height="${H}" fill="#fff"/><rect width="${W}" height="${hh}" fill="#1a1a1a"/><rect x="3" y="3" width="18" height="6" rx="1" fill="rgba(255,255,255,.25)"/>` + gridCells(0,hh,W,H-hh-fh,3,7,1.5) + `<rect y="${H-fh}" width="${W}" height="${fh}" fill="#1a1a1a"/>`;},
+    lSVG:(W,H)=>{const hh=10,fh=7;return `<rect width="${W}" height="${H}" fill="#fff"/><rect width="${W}" height="${hh}" fill="#1a1a1a"/>` + gridCells(0,hh,W,H-hh-fh,6,4,1.5) + `<rect y="${H-fh}" width="${W}" height="${fh}" fill="#1a1a1a"/>`;},
+  },
+  {
+    id:'split-screen-dual-zone', name:'Split Screen Dual Zone',
+    description:'Display split into two zones — promotions on one side, product menu on the other.',
+    category:'Retail', useCases:['QSR','Restaurant','Retail','Entertainment'],
+    params:['store','device','brand','orientation','type','category'],
+    settings:{ showHeader:true, colorScheme:true, itemTypeFilter:true, categoryFilter:true, soldOutBehavior:true, portrait:true, landscape:true, showClock:true, campaignFilter:true },
+    pSVG:(W,H)=>{const hh=14,midY=hh+Math.round((H-hh)*.45);return `<rect width="${W}" height="${H}" fill="${C.bg}"/><rect width="${W}" height="${hh}" fill="${C.header}"/><rect x="3" y="3.5" width="20" height="7" rx="1.5" fill="rgba(255,255,255,.25)"/><rect y="${hh}" width="${W}" height="${midY-hh}" fill="#1a1a1a"/><rect x="${W/2-18}" y="${hh+(midY-hh)*.35}" width="36" height="6" rx="2" fill="rgba(255,255,255,.85)"/><rect x="${W/2-12}" y="${hh+(midY-hh)*.6}" width="24" height="4" rx="2" fill="${C.accent}"/>` + gridCells(0,midY,W,H-midY,2,3,2);},
+    lSVG:(W,H)=>{const hh=11,splitX=Math.round(W*.42);return `<rect width="${W}" height="${H}" fill="${C.bg}"/><rect width="${W}" height="${hh}" fill="${C.header}"/><rect y="${hh}" width="${splitX}" height="${H-hh}" fill="#1a1a1a"/><rect x="${splitX*.15}" y="${hh+(H-hh)*.3}" width="${splitX*.7}" height="5" rx="2" fill="rgba(255,255,255,.85)"/><rect x="${splitX*.25}" y="${hh+(H-hh)*.52}" width="${splitX*.5}" height="4" rx="2" fill="${C.accent}"/>` + gridCells(splitX+2,hh,W-splitX-2,H-hh,3,3,2);},
+  },
+  {
+    id:'seasonal-promotion', name:'Seasonal / Event Promotion',
+    description:'Full-bleed hero imagery with campaign product showcase. For seasonal events and limited-time offers.',
+    category:'Retail', useCases:['Seasonal','Campaign','Holiday','Event','Launch'],
+    params:['store','device','brand','orientation','type','category'],
+    settings:{ showHeader:true, colorScheme:true, itemTypeFilter:true, categoryFilter:true, soldOutBehavior:true, portrait:true, landscape:true, campaignFilter:true },
+    pSVG:(W,H)=>{const hh=14,heroH=Math.round(H*.38);return `<rect width="${W}" height="${H}" fill="#1a1a1a"/><rect width="${W}" height="${hh}" fill="#1a1a1a"/><rect x="${W/2-14}" y="3.5" width="28" height="7" rx="1.5" fill="rgba(255,255,255,.25)"/><rect y="${hh}" width="${W}" height="${heroH}" fill="#2d2d2d"/><rect x="${W/2-20}" y="${hh+heroH*.7}" width="40" height="8" rx="2" fill="#e53e3e"/><rect x="${W/2-14}" y="${hh+heroH*.84}" width="28" height="4" rx="2" fill="rgba(255,255,255,.7)"/>` + gridCells(0,hh+heroH,W,H-hh-heroH,2,3,2) + `<rect x="0" y="${hh+heroH}" width="${W}" height="4" fill="#e53e3e"/>`;},
+    lSVG:(W,H)=>{const hh=11,heroW=Math.round(W*.5);return `<rect width="${W}" height="${H}" fill="#1a1a1a"/><rect width="${W}" height="${hh}" fill="#1a1a1a"/><rect y="${hh}" width="${heroW}" height="${H-hh}" fill="#2d2d2d"/><rect x="${heroW*.1}" y="${hh+(H-hh)*.45}" width="${heroW*.8}" height="6" rx="2" fill="#e53e3e"/>` + gridCells(heroW+2,hh,W-heroW-2,H-hh,2,3,2) + `<rect x="${heroW}" y="${hh}" width="3" height="${H-hh}" fill="#e53e3e"/>`;},
+  },
+  {
+    id:'store-info-hours', name:'Store Info & Opening Hours',
+    description:'Displays store name, opening hours, and contact details. Used at store entrance or lobby.',
+    category:'Store Operations', useCases:['Entrance','Lobby','Reception','Clinic','Appointment'],
+    params:['store','device','brand','orientation','storeName'],
+    settings:{ showHeader:true, colorScheme:true, portrait:true, landscape:true, showClock:true, showStoreName:true },
+    pSVG:(W,H)=>{const hh=14;return `<rect width="${W}" height="${H}" fill="#f0f9ff"/><rect width="${W}" height="${hh}" fill="${C.header}"/><rect x="${W/2-14}" y="3.5" width="28" height="7" rx="1.5" fill="rgba(255,255,255,.3)"/><rect x="4" y="${hh+8}" width="${W-8}" height="16" rx="3" fill="${C.card}" stroke="${C.border}" stroke-width=".7"/><rect x="${W/2-20}" y="${hh+13}" width="40" height="6" rx="2" fill="${C.header}" opacity=".8"/>` + [0,1,2,3,4,5,6].map(i=>`<rect x="6" y="${hh+30+i*10}" width="${W-12}" height="7" rx="2" fill="${C.card}" stroke="${C.border}" stroke-width=".5"/>`).join('');},
+    lSVG:(W,H)=>{const hh=11,infoW=Math.round(W*.42);return `<rect width="${W}" height="${H}" fill="#f0f9ff"/><rect width="${W}" height="${hh}" fill="${C.header}"/><rect y="${hh}" width="${infoW}" height="${H-hh}" fill="rgba(22,155,194,.04)" stroke="${C.border}" stroke-width=".5"/><rect x="4" y="${hh+6}" width="${infoW-8}" height="10" rx="2" fill="${C.header}" opacity=".8"/>` + [0,1,2,3].map(i=>`<rect x="4" y="${hh+20+i*9}" width="${infoW-8}" height="6" rx="2" fill="${C.card}" stroke="${C.border}" stroke-width=".5"/>`).join('') + gridCells(infoW+3,hh,W-infoW-3,H-hh,2,2,2);},
+  },
+];
+
+// ── RENDER TEMPLATE LIBRARY ────────────────────────────────────────────────
+function renderLib() {
+  const search = (document.getElementById('libSearch').value || '').toLowerCase();
+  const cat = document.getElementById('libCat').value || '';
+  const filtered = TEMPLATES.filter(t => {
+    if (cat && t.category !== cat) return false;
+    if (search && !t.name.toLowerCase().includes(search) && !t.description.toLowerCase().includes(search) && !t.useCases.some(u => u.toLowerCase().includes(search))) return false;
+    return true;
+  });
+  const grid = document.getElementById('libGrid');
+  if (!filtered.length) { grid.innerHTML = '<div style="grid-column:1/-1;text-align:center;padding:40px;color:var(--text2);font-size:14px;">No templates match your search.</div>'; return; }
+
+  grid.innerHTML = filtered.map(t => {
+    const pSVG = `<svg width="68" height="110" viewBox="0 0 68 110" xmlns="http://www.w3.org/2000/svg">${t.pSVG(68,110)}</svg>`;
+    const lSVG = `<svg width="110" height="62" viewBox="0 0 110 62" xmlns="http://www.w3.org/2000/svg">${t.lSVG(110,62)}</svg>`;
+    const paramsHtml = t.params.map(p => `<span class="tpl-param-chip">${p}</span>`).join('');
+    const tagsHtml = t.useCases.map(u => `<span class="tpl-tag">${u}</span>`).join('');
+    return `<div class="tpl-card">
+      <div class="tpl-card-head">
+        <div><div class="tpl-card-name">${t.name}</div><div class="tpl-card-desc">${t.description}</div></div>
+        <span class="tpl-cat-badge">${t.category}</span>
+      </div>
+      <div class="tpl-tags">${tagsHtml}</div>
+      <div class="tpl-mockups">
+        <div class="tpl-mockup-wrap"><div class="tpl-mockup-label">Portrait</div><div class="tpl-mockup" style="height:110px;">${pSVG}</div></div>
+        <div class="tpl-mockup-wrap"><div class="tpl-mockup-label">Landscape</div><div class="tpl-mockup" style="height:62px;margin-top:auto;">${lSVG}</div></div>
+      </div>
+      <div class="tpl-card-foot">
+        <div class="tpl-params">${paramsHtml}</div>
+        <div style="display:flex;gap:6px;flex-shrink:0;">
+          <button class="btn btn-ghost btn-sm" onclick="openDetail('${t.id}')">Details</button>
+          <button class="btn-use" onclick="selectTemplate('${t.id}')">Use Template ↑</button>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+// ── SELECT TEMPLATE (from library card → scroll to URL builder) ────────────
+function selectTemplate(id) {
+  document.getElementById('urlTemplate').value = id;
+  onTemplateChange();
+  document.getElementById('url-builder').scrollIntoView({ behavior:'smooth' });
+}
+
+// ── OPEN DETAIL MODAL ──────────────────────────────────────────────────────
+function openDetail(id) {
+  const t = TEMPLATES.find(x => x.id === id);
+  if (!t) return;
+  document.getElementById('detailName').textContent = t.name;
+  document.getElementById('detailDesc').textContent = t.description;
+  document.getElementById('detailUseBtn').onclick = () => { closeDetail(); selectTemplate(id); };
+
+  const settingLabels = {
+    showHeader:'Show Header Bar', colorScheme:'Colour Scheme', iconPosition:'Icon / Logo Position',
+    headerCopy:'Header Tagline Copy', itemTypeFilter:'Item Type Filter', categoryFilter:'Category Filter',
+    soldOutBehavior:'Sold Out Behaviour', portrait:'Portrait Display Settings',
+    landscape:'Landscape Display Settings', showClock:'Show Date & Time',
+    personalGreeting:'Personalised Greeting (First Name token)', showStoreName:'Show Store Name',
+    campaignFilter:'Campaign Filter Mode'
+  };
+  const settingsList = Object.entries(t.settings).filter(([,v])=>v).map(([k])=>`<li style="padding:4px 0;font-size:13px;color:var(--text2);display:flex;align-items:center;gap:6px;"><span style="color:var(--success);font-weight:700;">✓</span>${settingLabels[k]||k}</li>`).join('');
+
+  const paramDescs = {
+    store: '?store= · Store code · PH token: ${StoreCode}',
+    device: '?device= · Device UDID · PH token: ${UniqueDeviceID}',
+    brand: '?brand= · Brand identifier',
+    orientation: '?orientation= · portrait or landscape',
+    category: '?category= · Filter by product category',
+    type: '?type= · Filter by item type',
+    firstName: '?firstName= · PH token: ${FirstName}',
+    storeName: '?storeName= · PH token: ${StoreName}',
+  };
+  const paramsHtml = t.params.map(p => `<div style="padding:6px 0;border-bottom:1px solid var(--border);font-size:12px;"><code style="font-family:monospace;color:var(--primary);font-weight:600;">${paramDescs[p]||p}</code></div>`).join('');
+
+  const pSVGLarge = `<svg width="160" height="260" viewBox="0 0 68 110" xmlns="http://www.w3.org/2000/svg">${t.pSVG(68,110)}</svg>`;
+  const lSVGLarge = `<svg width="260" height="146" viewBox="0 0 110 62" xmlns="http://www.w3.org/2000/svg">${t.lSVG(110,62)}</svg>`;
+
+  document.getElementById('detailBody').innerHTML = `
+    <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:16px;">
+      <span class="tpl-cat-badge">${t.category}</span>
+      ${t.useCases.map(u=>`<span class="tpl-tag">${u}</span>`).join('')}
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1.6fr;gap:20px;margin-bottom:24px;align-items:start;">
+      <div>
+        <div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px;text-align:center;">Portrait (1080×1920)</div>
+        <div style="border:1px solid var(--border);border-radius:6px;overflow:hidden;background:var(--surface2);display:flex;align-items:center;justify-content:center;padding:8px;">${pSVGLarge}</div>
+      </div>
+      <div>
+        <div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px;text-align:center;">Landscape (1920×1080)</div>
+        <div style="border:1px solid var(--border);border-radius:6px;overflow:hidden;background:var(--surface2);display:flex;align-items:center;justify-content:center;padding:8px;">${lSVGLarge}</div>
+      </div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;">
+      <div>
+        <div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px;">Configurable Settings</div>
+        <ul style="list-style:none;">${settingsList}</ul>
+      </div>
+      <div>
+        <div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px;">URL Parameters Used</div>
+        <div>${paramsHtml}</div>
+      </div>
+    </div>`;
+
+  document.getElementById('detailOverlay').classList.add('open');
+}
+function closeDetail() { document.getElementById('detailOverlay').classList.remove('open'); }
+
+// ── URL BUILDER ────────────────────────────────────────────────────────────
+// Which fields are shown per template (subset of: store, device, brand, orientation, category, type, firstName, storeName)
+const TEMPLATE_PARAMS = {};
+TEMPLATES.forEach(t => { TEMPLATE_PARAMS[t.id] = t.params; });
+
+function onTemplateChange() {
+  const id = document.getElementById('urlTemplate').value;
+  const params = TEMPLATE_PARAMS[id] || [];
+  const allFields = ['store','device','brand','orientation','category','type','firstName','storeName'];
+  allFields.forEach(f => {
+    const el = document.getElementById('field-' + f);
+    if (el) el.classList.toggle('hidden', !params.includes(f));
+  });
+  // Always show template and orientation
+  const fTpl = document.getElementById('field-template');
+  if (fTpl) fTpl.classList.remove('hidden');
+  updateUrl();
+}
+
+function updateUrl() {
+  const id = document.getElementById('urlTemplate').value;
+  if (!id) {
+    document.getElementById('urlOutput').innerHTML = '<span style="color:var(--text3);font-style:italic;">Select a template above to generate the URL.</span>';
+    document.getElementById('openBoardBtn').disabled = true;
+    return;
   }
+  const base = 'menu-board.html';
+  const params = new URLSearchParams();
+  params.set('template', id);
+
+  const fields = TEMPLATE_PARAMS[id] || [];
+  const getVal = fid => { const el = document.getElementById('url' + fid.charAt(0).toUpperCase() + fid.slice(1)); return el ? el.value.trim() : ''; };
+
+  if (fields.includes('orientation')) params.set('orientation', getVal('orientation') || 'portrait');
+  if (fields.includes('store')) { const v = getVal('store'); if (v) params.set('store', v); }
+  if (fields.includes('device')) { const v = getVal('device'); if (v) params.set('device', v); }
+  if (fields.includes('brand')) { const v = getVal('brand'); if (v) params.set('brand', v); }
+  if (fields.includes('category')) { const v = getVal('category'); if (v) params.set('category', v); }
+  if (fields.includes('type')) { const v = getVal('type'); if (v) params.set('type', v); }
+  if (fields.includes('firstName')) { const v = getVal('firstName'); if (v) params.set('firstName', v); }
+  if (fields.includes('storeName')) { const v = getVal('storeName'); if (v) params.set('storeName', v); }
+
+  const url = base + '?' + params.toString();
+  // Highlight PH tokens in the output
+  const highlighted = url.replace(/(%24%7B[^}]+%7D|\$\{[^}]+\})/g, (m) => {
+    const decoded = decodeURIComponent(m);
+    return `<span class="token">${decoded}</span>`;
+  });
+  // Better: highlight the raw tokens in decoded form
+  const decoded = decodeURIComponent(url);
+  const htmlEscaped = decoded.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  const tokenHighlighted = htmlEscaped.replace(/\$\{[^}]+\}/g, m => `<span class="token">${m}</span>`);
+  document.getElementById('urlOutput').innerHTML = tokenHighlighted;
+  document.getElementById('openBoardBtn').disabled = false;
+  window._lastUrl = decoded;
+}
+
+function copyUrl() {
+  if (!window._lastUrl) return;
+  navigator.clipboard.writeText(window._lastUrl).then(() => {
+    const el = document.getElementById('copySuccess');
+    el.style.display = 'inline';
+    setTimeout(() => { el.style.display = 'none'; }, 2000);
+  });
+}
+
+function openBoardUrl() {
+  if (window._lastUrl) window.open(window._lastUrl, '_blank');
+}
+
+// ── PORTAL NAVIGATION ──────────────────────────────────────────────────────
+function goToStore() {
+  const store = document.getElementById('storeCode').value.trim();
+  const staff = document.getElementById('staffId').value.trim();
+  if (!store) { alert('Store Code is required.'); document.getElementById('storeCode').focus(); return; }
+  let url = 'retail-admin.html?store=' + encodeURIComponent(store);
+  if (staff) url += '&staff=' + encodeURIComponent(staff);
+  window.open(url, '_blank');
+}
+
+function goToOrder() {
+  const store  = document.getElementById('orderStoreCode').value.trim();
+  const device = document.getElementById('orderDeviceUdid').value.trim();
+  const params = new URLSearchParams();
+  if (store)  params.set('store',  store);
+  if (device) params.set('device', device);
+  const qs = params.toString();
+  window.open('order.html' + (qs ? '?' + qs : ''), '_blank');
+}
+
+function goToOrderSummary() {
+  const store  = document.getElementById('summaryStore').value.trim();
+  const device = document.getElementById('summaryDevice').value.trim();
+  if (!store)  { alert('Store Code is required.');  document.getElementById('summaryStore').focus();  return; }
+  if (!device) { alert('Device UDID is required.'); document.getElementById('summaryDevice').focus(); return; }
+  window.open('order-summary.html?store=' + encodeURIComponent(store) + '&device=' + encodeURIComponent(device), '_blank');
+}
+
+// ── INIT ──────────────────────────────────────────────────────────────────
+renderLib();
+
+// Close modal on backdrop click
+document.getElementById('detailOverlay').addEventListener('click', function(e) {
+  if (e.target === this) closeDetail();
+});
 </script>
 </body>
 </html>
