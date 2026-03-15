@@ -434,6 +434,31 @@ button { cursor: pointer; border: none; background: none; font-family: inherit; 
 .addon-row .addon-price { font-size: 12px; color: var(--green); font-weight: 600; }
 .addon-row .addon-price.free { color: var(--text-muted); }
 
+/* Addon stepper row */
+.addon-stepper-row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 12px; border-radius: var(--radius-sm);
+  border: 2px solid var(--border); transition: all .12s;
+}
+.addon-stepper-row.active { border-color: var(--green); background: var(--green-light); }
+.addon-stepper-row .addon-label { flex: 1; font-size: 14px; }
+.addon-stepper-row .addon-price { font-size: 12px; color: var(--green); font-weight: 600; }
+.addon-step-ctrl {
+  display: flex; align-items: center;
+  border: 1.5px solid var(--border); border-radius: 6px; overflow: hidden;
+  flex-shrink: 0;
+}
+.addon-step-btn {
+  width: 30px; height: 30px;
+  background: var(--cream); font-size: 18px; font-weight: 500;
+  color: var(--text); display: flex; align-items: center; justify-content: center;
+  transition: background .1s;
+}
+.addon-step-btn:active { background: var(--cream-dark); }
+.addon-step-val {
+  width: 28px; text-align: center; font-size: 14px; font-weight: 600; color: var(--text);
+}
+
 /* Quantity + Add button row */
 .modal-footer {
   flex-shrink: 0;
@@ -1083,6 +1108,7 @@ let _modalItem   = null;
 let _modalQty    = 1;
 let _modalRemovedIngredients = new Set();
 let _modalAddedIngredients   = new Set();
+let _modalStepperQtys        = new Map();
 let _modalSize   = null;
 let _modalMilk   = null;
 
@@ -1459,7 +1485,11 @@ function computeModalTotal() {
     if (m) price += m.priceAdj;
   }
   (c.additions || []).forEach(a => {
-    if (_modalAddedIngredients.has(a.id)) price += a.priceAdj;
+    if (a.type === 'stepper') {
+      price += a.priceAdj * (_modalStepperQtys.get(a.id) ?? 0);
+    } else if (_modalAddedIngredients.has(a.id)) {
+      price += a.priceAdj;
+    }
   });
   return price * _modalQty;
 }
@@ -1474,8 +1504,12 @@ function openModal(item) {
   _modalQty  = 1;
   _modalRemovedIngredients = new Set();
   _modalAddedIngredients   = new Set();
+  _modalStepperQtys        = new Map();
 
   const c = item.customization || {};
+  (c.additions || []).forEach(a => {
+    if (a.type === 'stepper') _modalStepperQtys.set(a.id, a.default ?? 0);
+  });
 
   _modalSize = c.defaultSize || (c.sizes?.[0]?.id ?? null);
   const defaultMilk = c.milkOptions?.find(m => m.default);
@@ -1583,7 +1617,24 @@ function openModal(item) {
       <div class="modal-section">
         <div class="modal-section-title">Add to your order</div>
         <div class="addon-list">
-          ${c.additions.map(a => `
+          ${c.additions.map(a => a.type === 'stepper'
+            ? (() => {
+                const qty = _modalStepperQtys.get(a.id) ?? 0;
+                const priceStr = a.priceAdj > 0
+                  ? `+${cur(a.priceAdj)}${a.unit ? `/${esc(a.unit)}` : ' ea'}`
+                  : '';
+                return `
+                <div class="addon-stepper-row${qty > 0 ? ' active' : ''}" data-addon-id="${esc(a.id)}">
+                  <span class="addon-label">${esc(a.label)}</span>
+                  ${priceStr ? `<span class="addon-price">${priceStr}</span>` : ''}
+                  <div class="addon-step-ctrl">
+                    <button class="addon-step-btn" data-action="minus" aria-label="Decrease">−</button>
+                    <span class="addon-step-val">${qty}</span>
+                    <button class="addon-step-btn" data-action="plus" aria-label="Increase">+</button>
+                  </div>
+                </div>`;
+              })()
+            : `
             <label class="addon-row" data-addon-id="${esc(a.id)}">
               <input type="checkbox" value="${esc(a.id)}">
               <div class="addon-check"></div>
@@ -1591,7 +1642,8 @@ function openModal(item) {
               <span class="addon-price${a.priceAdj === 0 ? ' free' : ''}">
                 ${a.priceAdj > 0 ? `+${cur(a.priceAdj)}` : 'Free'}
               </span>
-            </label>`).join('')}
+            </label>`
+          ).join('')}
         </div>
       </div>`;
     addEl.querySelectorAll('.addon-row').forEach(row => {
@@ -1603,6 +1655,26 @@ function openModal(item) {
         row.querySelector('.addon-check').textContent = chk.checked ? '✓' : '';
         if (chk.checked) _modalAddedIngredients.add(id);
         else             _modalAddedIngredients.delete(id);
+        updateModalTotal();
+      });
+    });
+    addEl.querySelectorAll('.addon-stepper-row').forEach(rowEl => {
+      const id    = rowEl.dataset.addonId;
+      const addon = c.additions.find(a => a.id === id);
+      const min   = addon?.min ?? 0;
+      const max   = addon?.max ?? 10;
+      rowEl.querySelector('[data-action="minus"]').addEventListener('click', () => {
+        const qty = Math.max(min, (_modalStepperQtys.get(id) ?? 0) - 1);
+        _modalStepperQtys.set(id, qty);
+        rowEl.querySelector('.addon-step-val').textContent = qty;
+        rowEl.classList.toggle('active', qty > 0);
+        updateModalTotal();
+      });
+      rowEl.querySelector('[data-action="plus"]').addEventListener('click', () => {
+        const qty = Math.min(max, (_modalStepperQtys.get(id) ?? 0) + 1);
+        _modalStepperQtys.set(id, qty);
+        rowEl.querySelector('.addon-step-val').textContent = qty;
+        rowEl.classList.toggle('active', qty > 0);
         updateModalTotal();
       });
     });
@@ -1705,8 +1777,10 @@ function addToBag() {
   if (sizeObj) price += sizeObj.priceAdj;
   if (milkObj) price += milkObj.priceAdj;
 
-  const addedList = (c.additions || []).filter(a => _modalAddedIngredients.has(a.id));
-  addedList.forEach(a => { price += a.priceAdj; });
+  const addedCheckbox = (c.additions || []).filter(a => (!a.type || a.type === 'checkbox') && _modalAddedIngredients.has(a.id));
+  const addedSteppers = (c.additions || []).filter(a => a.type === 'stepper' && (_modalStepperQtys.get(a.id) ?? 0) > 0);
+  addedCheckbox.forEach(a => { price += a.priceAdj; });
+  addedSteppers.forEach(a => { price += a.priceAdj * (_modalStepperQtys.get(a.id) ?? 0); });
 
   const resolvedSize    = sizeObj?.label  || null;
   const resolvedMilk    = milkObj?.label  || null;
@@ -1714,7 +1788,15 @@ function addToBag() {
     const ing = c.defaultIngredients?.find(i => i.id === id);
     return ing?.label || id;
   });
-  const resolvedAdded = addedList.map(a => a.label);
+  const resolvedAdded = [
+    ...addedCheckbox.map(a => a.label),
+    ...addedSteppers.map(a => {
+      const qty = _modalStepperQtys.get(a.id) ?? 0;
+      return a.unit
+        ? `${qty} ${a.unit}${qty !== 1 ? 's' : ''} ${a.label}`
+        : `${qty}× ${a.label}`;
+    })
+  ];
 
   // Consolidate with existing identical entry (same SKU + same customisation)
   const existing = _bag.find(r =>

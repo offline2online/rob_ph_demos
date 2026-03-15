@@ -46,7 +46,9 @@
       "Bash(pkill -f \"python3 serve.py\")",
       "Bash(grep -E \"Offer Board Settings|brandName: ''''My Brand''''\")",
       "Bash(/tmp/menuboard_serve.py:*)",
-      "Bash(/tmp/menuboard_proxy.py:*)"
+      "Bash(/tmp/menuboard_proxy.py:*)",
+      "Bash(cp \"/Users/rgeerdink/Documents/Claude Code/menu-board-demo/retail-admin.html\" /tmp/menuboard/)",
+      "Bash(cp \"/Users/rgeerdink/Documents/Claude Code/menu-board-demo/location-api.html\" /tmp/menuboard/)"
     ]
   }
 }
