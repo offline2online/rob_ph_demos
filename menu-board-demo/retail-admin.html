@@ -648,6 +648,47 @@
       line-height: 1;
     }
     .stock-summary-label { font-size: 12px; color: var(--text2); margin-top: 2px; }
+    .stock-qty-btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 30px;
+      height: 30px;
+      border-radius: 6px;
+      border: 1px solid;
+      font-size: 16px;
+      font-weight: 700;
+      cursor: pointer;
+      line-height: 1;
+      background: var(--surface);
+      transition: opacity 0.15s;
+    }
+    .stock-qty-btn:hover { opacity: 0.8; }
+    .stock-qty-btn.add { border-color: var(--success); color: var(--success); }
+    .stock-qty-btn.remove { border-color: var(--danger); color: var(--danger); }
+
+    /* Edit stock overlay */
+    .edit-stock-overlay {
+      display: none;
+      position: absolute;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(255,255,255,0.95);
+      z-index: 10;
+      align-items: center;
+      justify-content: center;
+      border-radius: 8px;
+    }
+    .edit-stock-overlay.open { display: flex; }
+    .edit-stock-box {
+      background: var(--surface);
+      border: 1px solid var(--border2);
+      border-radius: 10px;
+      padding: 22px 24px;
+      width: 320px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+    }
+    .edit-stock-box h4 { font-size: 14px; font-weight: 700; margin-bottom: 4px; color: var(--text); }
+    .edit-stock-box p { font-size: 12px; color: var(--text2); margin-bottom: 16px; }
 
     /* Add stock section */
     .add-stock-section {
@@ -873,13 +914,35 @@
     <div class="modal-body">
 
       <!-- STOCK MANAGEMENT PANE -->
-      <div class="modal-tab-pane active" id="paneStock">
+      <div class="modal-tab-pane active" id="paneStock" style="position:relative;">
+
+        <!-- EDIT CURRENT STOCK OVERLAY -->
+        <div class="edit-stock-overlay" id="editStockOverlay">
+          <div class="edit-stock-box">
+            <h4>✏️ Edit Current Stock</h4>
+            <p>Correct an inaccurate stock count. A correction record will be generated showing the old and new levels.</p>
+            <div class="field" style="margin-bottom:12px;">
+              <label for="editStockNewQty">New Stock Count</label>
+              <input type="number" id="editStockNewQty" min="0" step="1" placeholder="e.g. 48">
+            </div>
+            <div class="field" style="margin-bottom:16px;">
+              <label for="editStockNote">Reason / Note <span style="font-weight:400;color:var(--text3);">(optional)</span></label>
+              <input type="text" id="editStockNote" placeholder="e.g. Recount after stocktake">
+            </div>
+            <div style="display:flex;gap:8px;">
+              <button class="btn btn-ghost btn-sm" onclick="closeEditStockOverlay()">Cancel</button>
+              <button class="btn btn-primary btn-sm" onclick="saveEditedStock()">Save Correction</button>
+            </div>
+          </div>
+        </div>
+
         <div class="stock-summary" id="stockSummary">
           <div>
             <div class="stock-summary-qty" id="stockSummaryQty">—</div>
             <div class="stock-summary-label">units currently in stock</div>
           </div>
           <div id="stockSummaryPill"></div>
+          <div id="stockSummaryActions" style="margin-left:auto;display:flex;gap:6px;"></div>
         </div>
 
         <div class="add-stock-section">
@@ -894,7 +957,10 @@
         </div>
 
         <div class="history-section">
-          <h4>Stock History</h4>
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+            <h4 style="margin-bottom:0;">Stock History</h4>
+            <button class="btn btn-ghost btn-sm" onclick="openEditStockOverlay()" style="font-size:12px;">✏️ Edit Current Stock</button>
+          </div>
           <div id="stockHistoryContainer">
             <div class="history-empty">No stock additions recorded yet.</div>
           </div>
@@ -1557,6 +1623,17 @@ function _renderStockPane(sku) {
     pillEl.innerHTML = '<span style="display:inline-flex;align-items:center;gap:5px;padding:4px 10px;border-radius:6px;font-size:12px;font-weight:600;border:1px solid var(--success);color:var(--success);background:var(--success-light);">&#x2705; In Stock</span>';
   }
 
+  // +/- quick action buttons (only when item is in stock / has a quantity)
+  const actionsEl = document.getElementById('stockSummaryActions');
+  if (!ns && !oos) {
+    actionsEl.innerHTML = `
+      <button class="stock-qty-btn remove" title="Remove 1 unit" onclick="quickStockAdjust(-1)">&#8722;</button>
+      <button class="stock-qty-btn add" title="Add 1 unit" onclick="quickStockAdjust(1)">&#43;</button>
+    `;
+  } else {
+    actionsEl.innerHTML = '';
+  }
+
   // History
   const history = Array.isArray(stock.stockHistory) ? stock.stockHistory : [];
   const container = document.getElementById('stockHistoryContainer');
@@ -1568,15 +1645,32 @@ function _renderStockPane(sku) {
     const dt = new Date(h.addedAt);
     const dateStr = dt.toLocaleDateString(undefined, { day:'2-digit', month:'short', year:'numeric' });
     const timeStr = dt.toLocaleTimeString(undefined, { hour:'2-digit', minute:'2-digit' });
+    let changeCell, typeCell;
+    if (h.type === 'correction') {
+      const delta = h.runningTotal - (h.oldQuantity ?? 0);
+      const deltaStr = delta >= 0 ? `+${delta}` : `${delta}`;
+      const deltaColor = delta > 0 ? 'var(--success)' : delta < 0 ? 'var(--danger)' : 'var(--text2)';
+      changeCell = `<div style="font-size:12px;color:var(--text2);">${h.oldQuantity ?? '—'} → ${h.runningTotal}</div><div style="font-size:11px;font-weight:700;color:${deltaColor};">(${deltaStr})</div>${h.note ? `<div style="font-size:11px;color:var(--text3);margin-top:2px;font-style:italic;">${escHtml(h.note)}</div>` : ''}`;
+      typeCell = `<span style="font-size:10px;background:var(--warning-light);border:1px solid var(--warning);color:var(--warning);padding:2px 6px;border-radius:4px;font-weight:700;letter-spacing:0.3px;">CORRECTION</span>`;
+    } else if (h.type === 'adjustment') {
+      const sign = h.quantity >= 0 ? '+' : '';
+      const col = h.quantity >= 0 ? 'var(--success)' : 'var(--danger)';
+      changeCell = `<span style="font-weight:700;color:${col};">${sign}${h.quantity}</span>`;
+      typeCell = `<span style="font-size:10px;background:var(--primary-light);border:1px solid rgba(22,155,194,0.3);color:var(--primary);padding:2px 6px;border-radius:4px;font-weight:700;letter-spacing:0.3px;">ADJUST</span>`;
+    } else {
+      changeCell = `<span style="font-weight:700;color:var(--success);">+${h.quantity}</span>`;
+      typeCell = `<span style="font-size:10px;background:var(--success-light);border:1px solid rgba(82,196,26,0.3);color:var(--success);padding:2px 6px;border-radius:4px;font-weight:700;letter-spacing:0.3px;">ADD</span>`;
+    }
     return `<tr>
       <td><div>${escHtml(dateStr)}</div><div class="mono">${escHtml(timeStr)}</div></td>
-      <td style="font-weight:700;color:var(--success);">+${h.quantity}</td>
+      <td>${typeCell}</td>
+      <td>${changeCell}</td>
       <td>${h.runningTotal}</td>
       <td class="mono">${escHtml(h.addedBy || '—')}</td>
     </tr>`;
   }).join('');
   container.innerHTML = `<table class="history-table">
-    <thead><tr><th>Date / Time</th><th>Units Added</th><th>Running Total</th><th>Added By</th></tr></thead>
+    <thead><tr><th>Date / Time</th><th>Type</th><th>Change</th><th>New Total</th><th>Updated By</th></tr></thead>
     <tbody>${rows}</tbody>
   </table>`;
 }
@@ -1613,6 +1707,88 @@ function addStockToItem() {
     input.value = '';
     _renderStockPane(_modalSku);
     toast('Stock updated — ' + newTotal + ' units in stock', 'success');
+  });
+}
+
+function quickStockAdjust(delta) {
+  if (!_modalSku) return;
+  const stock = { ...getStock() };
+  if (!stock[_modalSku]) stock[_modalSku] = {};
+  const existing = stock[_modalSku];
+  const current  = typeof existing.quantity === 'number' ? existing.quantity : 0;
+  const newTotal = Math.max(0, current + delta);
+
+  const entry = {
+    type:         'adjustment',
+    quantity:     delta,
+    runningTotal: newTotal,
+    addedBy:      STAFF_ID || 'unknown',
+    addedAt:      new Date().toISOString()
+  };
+
+  stock[_modalSku] = {
+    ...existing,
+    quantity:     newTotal,
+    outOfStock:   newTotal === 0,
+    updatedBy:    STAFF_ID || null,
+    updatedAt:    new Date().toISOString(),
+    stockHistory: [...(existing.stockHistory || []), entry]
+  };
+
+  saveStock(stock).then(() => {
+    _renderStockPane(_modalSku);
+    const sign = delta >= 0 ? '+' : '';
+    toast(`Stock adjusted (${sign}${delta}) — ${newTotal} units in stock`, delta >= 0 ? 'success' : 'info');
+  });
+}
+
+function openEditStockOverlay() {
+  const stock = getStock();
+  const current = typeof (stock[_modalSku] || {}).quantity === 'number' ? stock[_modalSku].quantity : 0;
+  document.getElementById('editStockNewQty').value = current;
+  document.getElementById('editStockNote').value = '';
+  document.getElementById('editStockOverlay').classList.add('open');
+}
+
+function closeEditStockOverlay() {
+  document.getElementById('editStockOverlay').classList.remove('open');
+}
+
+function saveEditedStock() {
+  if (!_modalSku) return;
+  const newQtyRaw = document.getElementById('editStockNewQty').value;
+  const note = document.getElementById('editStockNote').value.trim();
+  const newQty = parseInt(newQtyRaw, 10);
+  if (isNaN(newQty) || newQty < 0) { toast('Enter a valid stock count (0 or more)', 'error'); return; }
+
+  const stock = { ...getStock() };
+  if (!stock[_modalSku]) stock[_modalSku] = {};
+  const existing = stock[_modalSku];
+  const oldQty   = typeof existing.quantity === 'number' ? existing.quantity : 0;
+
+  const entry = {
+    type:         'correction',
+    oldQuantity:  oldQty,
+    quantity:     newQty - oldQty,
+    runningTotal: newQty,
+    note:         note || null,
+    addedBy:      STAFF_ID || 'unknown',
+    addedAt:      new Date().toISOString()
+  };
+
+  stock[_modalSku] = {
+    ...existing,
+    quantity:     newQty,
+    outOfStock:   newQty === 0,
+    updatedBy:    STAFF_ID || null,
+    updatedAt:    new Date().toISOString(),
+    stockHistory: [...(existing.stockHistory || []), entry]
+  };
+
+  saveStock(stock).then(() => {
+    closeEditStockOverlay();
+    _renderStockPane(_modalSku);
+    toast(`Stock corrected: ${oldQty} → ${newQty} units`, 'success');
   });
 }
 
@@ -1794,6 +1970,10 @@ window.openItemModal         = openItemModal;
 window.closeItemModal        = closeItemModal;
 window.switchItemTab         = switchItemTab;
 window.addStockToItem        = addStockToItem;
+window.quickStockAdjust      = quickStockAdjust;
+window.openEditStockOverlay  = openEditStockOverlay;
+window.closeEditStockOverlay = closeEditStockOverlay;
+window.saveEditedStock       = saveEditedStock;
 window.saveItemLocation      = saveItemLocation;
 window.refreshLocationPreview= refreshLocationPreview;
 window.switchLocMode         = switchLocMode;

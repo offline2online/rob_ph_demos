@@ -319,7 +319,7 @@
 
     /* IMAGE UPLOAD */
     .img-upload-zone { border: 2px dashed var(--border2); border-radius: 10px; padding: 20px; text-align: center; cursor: pointer; transition: all 0.14s; position: relative; }
-    .img-upload-zone:hover { border-color: var(--primary); background: var(--primary-light); }
+    .img-upload-zone:hover, .img-upload-zone.drag-over { border-color: var(--primary); background: var(--primary-light); }
     .img-upload-zone input { display: none; }
     .img-upload-zone .upload-icon { font-size: 24px; margin-bottom: 6px; }
     .img-upload-zone p { font-size: 12px; color: var(--text2); }
@@ -651,7 +651,7 @@
         </div>
         <div class="nav-item" onclick="showView('items')">
           <span class="icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg></span>
-          <span>Products / Items</span>
+          <span>Products / Assets</span>
           <span class="nav-badge" id="navBadgeItems">0</span>
         </div>
         <div class="nav-label">Configuration</div>
@@ -679,7 +679,7 @@
         <div class="topbar-title" id="topbarTitle">Dashboard</div>
         <div class="topbar-right">
           <span class="hq-badge">&#x1F3E2; HQ Admin</span>
-          <button class="btn btn-primary" onclick="openAddModal()">+ Add Product/Item</button>
+          <button class="btn btn-primary" onclick="openAddModal()">+ Add Product / Asset</button>
         </div>
       </div>
       <div class="content">
@@ -801,7 +801,12 @@
       <h2 id="modalTitle">Add Product / Item</h2>
       <button class="modal-close" onclick="closeModal()">&#x2715;</button>
     </div>
-    <div class="modal-body">
+    <div class="modal-tabs">
+      <div class="modal-tab active" id="itemTab-details" onclick="switchItemModalTab('details')">Details</div>
+      <div class="modal-tab" id="itemTab-assets" onclick="switchItemModalTab('assets')">&#x1F4CE; Assets</div>
+    </div>
+    <div class="modal-body" style="padding:0;overflow:hidden;display:flex;flex-direction:column;">
+      <div class="modal-tab-pane active" id="itemPane-details" style="overflow-y:auto;flex:1;padding:22px;">
       <input type="hidden" id="editId">
       <div class="form-group">
         <label>Brand <span class="req">*</span></label>
@@ -910,17 +915,27 @@
           <button class="btn btn-primary btn-sm" type="button" onclick="addNewType()">+ Add</button>
         </div>
       </div>
-      <div class="form-group">
-        <label>Product Images</label>
-        <div class="img-upload-zone" onclick="document.getElementById('imgUpload').click()">
-          <input type="file" id="imgUpload" accept="image/*" multiple onchange="handleImages(event)">
-          <div class="upload-icon">&#x1F5BC;&#xFE0F;</div>
-          <p>Click to upload images</p>
-          <span>PNG, JPG &mdash; Multiple images supported (first shown on menu board)</span>
+      </div><!-- /itemPane-details -->
+
+      <!-- ASSETS TAB PANE -->
+      <div class="modal-tab-pane" id="itemPane-assets" style="overflow-y:auto;flex:1;padding:22px;">
+        <p style="font-size:12px;color:var(--text2);margin-bottom:18px;">Upload and manage product images. The first image will be shown on the menu board.</p>
+        <div class="form-group">
+          <label>Product Images</label>
+          <div class="img-upload-zone" id="imgDropZone" onclick="document.getElementById('imgUpload').click()"
+               ondragover="event.preventDefault();this.classList.add('drag-over')"
+               ondragleave="this.classList.remove('drag-over')"
+               ondrop="event.preventDefault();this.classList.remove('drag-over');handleImageDrop(event)">
+            <input type="file" id="imgUpload" accept="image/*" multiple onchange="handleImages(event)">
+            <div class="upload-icon">&#x1F5BC;&#xFE0F;</div>
+            <p>Click here or Drag &amp; Drop to upload images</p>
+            <span>PNG, JPG &mdash; Multiple images supported (first shown on menu board)</span>
+          </div>
+          <div class="img-previews" id="imgPreviews"></div>
         </div>
-        <div class="img-previews" id="imgPreviews"></div>
-      </div>
-    </div>
+      </div><!-- /itemPane-assets -->
+
+    </div><!-- /modal-body -->
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="closeModal()">Cancel</button>
       <button class="btn btn-primary" id="itemSaveBtn" onclick="saveItem()">Save Changes</button>
@@ -1554,7 +1569,7 @@ function showView(view) {
   const idx = navMap[view];
   if (idx !== undefined) navItems[idx].classList.add('active');
 
-  const titles = { dashboard: 'Dashboard', items: 'Products / Items', brands: 'Brands', categories: 'Categories', settings: 'Settings' };
+  const titles = { dashboard: 'Dashboard', items: 'Products / Assets', brands: 'Brands', categories: 'Categories', settings: 'Settings' };
   document.getElementById('topbarTitle').textContent = titles[view] || '';
 
   if (view === 'dashboard')  renderDashboard();
@@ -2163,7 +2178,7 @@ function updateItemsSelectionBar() {
   const viewBtn  = document.getElementById('itemsSelViewBtn');
   if (selected.length > 0) {
     bar.classList.add('visible');
-    countEl.textContent = `${selected.length} of ${total} Products / Items`;
+    countEl.textContent = `${selected.length} of ${total} Products / Assets`;
     viewBtn.textContent = _itemsViewSelected ? 'Show All' : 'View Selected';
   } else {
     bar.classList.remove('visible');
@@ -2463,11 +2478,21 @@ function openEditModal(id) {
   renderCustomizationOptions();
   populateBrandDropdown(item.brand || (getBrands()[0] && getBrands()[0].id) || '');
   if (_itemSave) _itemSave.reset();
+  switchItemModalTab('details');
   document.getElementById('itemModal').classList.add('open');
 }
 
 function closeModal() {
   document.getElementById('itemModal').classList.remove('open');
+  // Reset to Details tab when closing
+  switchItemModalTab('details');
+}
+
+function switchItemModalTab(tab) {
+  ['details', 'assets'].forEach(t => {
+    document.getElementById('itemTab-' + t).classList.toggle('active', t === tab);
+    document.getElementById('itemPane-' + t).classList.toggle('active', t === tab);
+  });
 }
 
 function populateCatDropdown(selected) {
@@ -2606,6 +2631,20 @@ function handleImages(event) {
     reader.readAsDataURL(file);
   });
   event.target.value = '';
+}
+
+function handleImageDrop(event) {
+  const files = [...(event.dataTransfer.files || [])].filter(f => f.type.startsWith('image/'));
+  files.forEach(file => {
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+      const compressed = await compressImage(e.target.result, 480, 480, 0.75);
+      editingImages.push(compressed);
+      renderImgPreviews();
+      if (_itemSave) _itemSave.markDirty();
+    };
+    reader.readAsDataURL(file);
+  });
 }
 
 function removeImage(idx) { editingImages.splice(idx, 1); renderImgPreviews(); if (_itemSave) _itemSave.markDirty(); }
@@ -3604,7 +3643,9 @@ window.confirmDelete      = confirmDelete;
 window.closeConfirm       = closeConfirm;
 window.genSku             = genSku;
 window.handleImages       = handleImages;
+window.handleImageDrop    = handleImageDrop;
 window.removeImage        = removeImage;
+window.switchItemModalTab = switchItemModalTab;
 window.addCategory        = addCategory;
 window.deleteCategory     = deleteCategory;
 window.openAddBrandModal      = openAddBrandModal;
