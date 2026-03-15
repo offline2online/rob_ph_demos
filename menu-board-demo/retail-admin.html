@@ -700,8 +700,109 @@
       gap: 8px;
     }
     .location-preview.empty { color: var(--text3); font-weight: 400; background: var(--surface2); border-color: var(--border); }
-    .loc-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 16px; }
-    .loc-grid .field-full { grid-column: 1 / -1; }
+
+    /* Location mode toggle */
+    .loc-mode-toggle {
+      display: flex;
+      gap: 4px;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 4px;
+      margin-bottom: 18px;
+      width: fit-content;
+    }
+    .loc-mode-btn {
+      padding: 6px 14px;
+      font-size: 12px;
+      font-weight: 600;
+      border: none;
+      border-radius: 5px;
+      cursor: pointer;
+      background: transparent;
+      color: var(--text2);
+      transition: all 0.15s;
+    }
+    .loc-mode-btn.active { background: var(--surface); color: var(--text); box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+    .loc-mode-btn:hover:not(.active) { color: var(--text); }
+
+    /* Tag list */
+    .loc-tag-list {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      margin-bottom: 14px;
+      min-height: 24px;
+    }
+    .loc-tag-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 7px;
+      padding: 8px 10px;
+    }
+    .loc-tag-label {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+      color: var(--text2);
+      min-width: 80px;
+      flex-shrink: 0;
+    }
+    .loc-tag-value {
+      flex: 1;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text);
+    }
+    .loc-tag-delete {
+      background: none;
+      border: none;
+      cursor: pointer;
+      color: var(--text3);
+      font-size: 15px;
+      padding: 0 2px;
+      line-height: 1;
+      border-radius: 3px;
+      flex-shrink: 0;
+    }
+    .loc-tag-delete:hover { color: var(--danger); background: var(--danger-light); }
+    .loc-tag-empty {
+      font-size: 13px;
+      color: var(--text3);
+      font-style: italic;
+      padding: 10px 4px;
+    }
+
+    /* Add variable row */
+    .loc-add-row {
+      display: flex;
+      gap: 8px;
+      align-items: flex-end;
+      background: var(--surface);
+      border: 1px dashed var(--border2);
+      border-radius: 7px;
+      padding: 10px 12px;
+      margin-bottom: 18px;
+    }
+    .loc-add-row .field { flex: 1; }
+    .loc-add-row .field.label-field { flex: 0 0 140px; }
+    .loc-add-btn {
+      padding: 8px 14px;
+      background: var(--primary);
+      color: #fff;
+      border: none;
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+    .loc-add-btn:hover { background: #38b0cf; }
   </style>
 </head>
 <body>
@@ -802,33 +903,38 @@
 
       <!-- LOCATION PANE -->
       <div class="modal-tab-pane" id="paneLocation">
-        <div class="location-preview empty" id="locationPreview">&#x1F4CD; No location set — fill in the fields below</div>
-        <div class="loc-grid">
-          <div class="field">
-            <label for="locFloor">Floor</label>
-            <input type="text" id="locFloor" placeholder="e.g. Ground Floor" oninput="refreshLocationPreview()">
+        <div class="location-preview empty" id="locationPreview">&#x1F4CD; No location set — add variables or enter manually below</div>
+
+        <!-- Mode toggle -->
+        <div class="loc-mode-toggle">
+          <button class="loc-mode-btn active" id="locModeTagsBtn" onclick="switchLocMode('tags')">&#x1F3F7; Build from Variables</button>
+          <button class="loc-mode-btn" id="locModeManualBtn" onclick="switchLocMode('manual')">&#x270F;&#xFE0F; Enter Manually</button>
+        </div>
+
+        <!-- TAG MODE -->
+        <div id="locTagsPane">
+          <div class="loc-tag-list" id="locTagList">
+            <div class="loc-tag-empty">No location variables yet — add one below.</div>
           </div>
-          <div class="field">
-            <label for="locAisle">Aisle</label>
-            <input type="text" id="locAisle" placeholder="e.g. A3" oninput="refreshLocationPreview()">
-          </div>
-          <div class="field">
-            <label for="locSection">Section</label>
-            <input type="text" id="locSection" placeholder="e.g. Beverages" oninput="refreshLocationPreview()">
-          </div>
-          <div class="field" style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
-            <div>
-              <label for="locShelfLetter">Shelf Letter</label>
-              <input type="text" id="locShelfLetter" placeholder="e.g. C" maxlength="3" oninput="refreshLocationPreview()">
+
+          <div class="loc-add-row">
+            <div class="field label-field">
+              <label for="locNewLabel">Variable Name</label>
+              <input type="text" id="locNewLabel" placeholder="e.g. Floor, Aisle, Shelf…">
             </div>
-            <div>
-              <label for="locShelfNumber">Shelf No.</label>
-              <input type="text" id="locShelfNumber" placeholder="e.g. 4" oninput="refreshLocationPreview()">
+            <div class="field">
+              <label for="locNewValue">Value</label>
+              <input type="text" id="locNewValue" placeholder="e.g. Ground Floor, A3, C4…" onkeydown="if(event.key==='Enter')addLocationTag()">
             </div>
+            <button class="loc-add-btn" onclick="addLocationTag()">+ Add</button>
           </div>
-          <div class="field field-full">
-            <label for="locNotes">Additional Notes</label>
-            <textarea id="locNotes" placeholder="Any extra details about where to find this product..."></textarea>
+        </div>
+
+        <!-- MANUAL MODE -->
+        <div id="locManualPane" style="display:none;">
+          <div class="field">
+            <label for="locManualText">Location (free text)</label>
+            <textarea id="locManualText" placeholder="Type the full location, e.g. Ground Floor → Aisle A3 → Beverages → Shelf C4" style="min-height:90px;" oninput="refreshLocationPreview()"></textarea>
           </div>
         </div>
       </div>
@@ -1400,14 +1506,7 @@ function openItemModal(sku) {
   _renderStockPane(sku);
 
   // Pre-fill location pane
-  const loc = stock.location || {};
-  document.getElementById('locFloor').value       = loc.floor       || '';
-  document.getElementById('locAisle').value       = loc.aisle       || '';
-  document.getElementById('locSection').value     = loc.section     || '';
-  document.getElementById('locShelfLetter').value = loc.shelfLetter || '';
-  document.getElementById('locShelfNumber').value = loc.shelfNumber || '';
-  document.getElementById('locNotes').value       = loc.notes       || '';
-  refreshLocationPreview();
+  _loadLocationPane(stock.location || {});
 
   document.getElementById('itemDetailModal').classList.add('open');
 }
@@ -1503,43 +1602,118 @@ function addStockToItem() {
   });
 }
 
+// In-memory tag array for the currently open modal
+let _locTags = [];   // [{ label, value }, ...]
+let _locMode = 'tags'; // 'tags' | 'manual'
+
+function _loadLocationPane(loc) {
+  // Determine mode
+  const useManual = !!loc.useManual;
+  _locMode = useManual ? 'manual' : 'tags';
+
+  // Load tags — support both new (tags array) and legacy (fixed fields) formats
+  if (Array.isArray(loc.tags) && loc.tags.length > 0) {
+    _locTags = loc.tags.map(t => ({ label: t.label || '', value: t.value || '' }));
+  } else if (!useManual) {
+    // Migrate legacy fixed fields to tags if they exist
+    _locTags = [];
+    if (loc.floor)       _locTags.push({ label: 'Floor',   value: loc.floor });
+    if (loc.aisle)       _locTags.push({ label: 'Aisle',   value: loc.aisle });
+    if (loc.section)     _locTags.push({ label: 'Section', value: loc.section });
+    const shelf = (loc.shelfLetter || '') + (loc.shelfNumber || '');
+    if (shelf)           _locTags.push({ label: 'Shelf',   value: shelf });
+  } else {
+    _locTags = [];
+  }
+
+  // Load manual text
+  document.getElementById('locManualText').value = loc.manual || loc.humanReadable || '';
+
+  // Reset add-variable inputs
+  document.getElementById('locNewLabel').value = '';
+  document.getElementById('locNewValue').value = '';
+
+  switchLocMode(_locMode);
+  _renderTagList();
+  refreshLocationPreview();
+}
+
+function switchLocMode(mode) {
+  _locMode = mode;
+  document.getElementById('locModeTagsBtn').classList.toggle('active', mode === 'tags');
+  document.getElementById('locModeManualBtn').classList.toggle('active', mode === 'manual');
+  document.getElementById('locTagsPane').style.display  = mode === 'tags'   ? '' : 'none';
+  document.getElementById('locManualPane').style.display = mode === 'manual' ? '' : 'none';
+  refreshLocationPreview();
+}
+
+function _renderTagList() {
+  const list = document.getElementById('locTagList');
+  if (_locTags.length === 0) {
+    list.innerHTML = '<div class="loc-tag-empty">No location variables yet — add one below.</div>';
+    return;
+  }
+  list.innerHTML = _locTags.map((t, i) => `
+    <div class="loc-tag-row">
+      <span class="loc-tag-label">${escHtml(t.label)}</span>
+      <span class="loc-tag-value">${escHtml(t.value)}</span>
+      <button class="loc-tag-delete" onclick="removeLocationTag(${i})" title="Remove">&#x2715;</button>
+    </div>
+  `).join('');
+}
+
+function addLocationTag() {
+  const label = document.getElementById('locNewLabel').value.trim();
+  const value = document.getElementById('locNewValue').value.trim();
+  if (!label && !value) { toast('Enter a variable name and value', 'error'); return; }
+  if (!label) { toast('Enter a variable name (e.g. Floor, Aisle, Shelf)', 'error'); return; }
+  if (!value) { toast('Enter a value for "' + label + '"', 'error'); return; }
+  _locTags.push({ label, value });
+  document.getElementById('locNewLabel').value = '';
+  document.getElementById('locNewValue').value = '';
+  document.getElementById('locNewLabel').focus();
+  _renderTagList();
+  refreshLocationPreview();
+}
+
+function removeLocationTag(index) {
+  _locTags.splice(index, 1);
+  _renderTagList();
+  refreshLocationPreview();
+}
+
 function refreshLocationPreview() {
-  const floor  = document.getElementById('locFloor').value.trim();
-  const aisle  = document.getElementById('locAisle').value.trim();
-  const section= document.getElementById('locSection').value.trim();
-  const letter = document.getElementById('locShelfLetter').value.trim();
-  const number = document.getElementById('locShelfNumber').value.trim();
-  const preview= document.getElementById('locationPreview');
-  const parts  = [];
-  if (floor)  parts.push(floor);
-  if (aisle)  parts.push('Aisle ' + aisle);
-  if (section)parts.push(section);
-  if (letter || number) parts.push('Shelf ' + (letter + number));
-  if (parts.length === 0) {
-    preview.textContent = '📍 No location set — fill in the fields below';
+  const preview = document.getElementById('locationPreview');
+  let human = '';
+  if (_locMode === 'manual') {
+    human = (document.getElementById('locManualText') || {}).value?.trim() || '';
+  } else {
+    human = _locTags.map(t => t.value).filter(Boolean).join(' → ');
+  }
+  if (!human) {
+    preview.textContent = '📍 No location set — add variables or enter manually below';
     preview.classList.add('empty');
   } else {
-    preview.textContent = '📍 ' + parts.join(' → ');
+    preview.textContent = '📍 ' + human;
     preview.classList.remove('empty');
   }
 }
 
 function saveItemLocation() {
   if (!_modalSku) return;
-  const floor  = document.getElementById('locFloor').value.trim();
-  const aisle  = document.getElementById('locAisle').value.trim();
-  const section= document.getElementById('locSection').value.trim();
-  const letter = document.getElementById('locShelfLetter').value.trim();
-  const number = document.getElementById('locShelfNumber').value.trim();
-  const notes  = document.getElementById('locNotes').value.trim();
+  let human = '';
+  if (_locMode === 'manual') {
+    human = document.getElementById('locManualText').value.trim();
+  } else {
+    human = _locTags.map(t => t.value).filter(Boolean).join(' → ');
+  }
 
-  const parts  = [];
-  if (floor)  parts.push(floor);
-  if (aisle)  parts.push('Aisle ' + aisle);
-  if (section)parts.push(section);
-  if (letter || number) parts.push('Shelf ' + (letter + number));
-
-  const location = { floor, aisle, section, shelfLetter: letter, shelfNumber: number, notes, humanReadable: parts.join(' → ') };
+  const location = {
+    useManual: _locMode === 'manual',
+    tags:      _locMode === 'tags' ? [..._locTags] : [],
+    manual:    _locMode === 'manual' ? document.getElementById('locManualText').value.trim() : '',
+    humanReadable: human
+  };
 
   const stock = { ...getStock() };
   if (!stock[_modalSku]) stock[_modalSku] = {};
@@ -1608,6 +1782,9 @@ window.switchItemTab         = switchItemTab;
 window.addStockToItem        = addStockToItem;
 window.saveItemLocation      = saveItemLocation;
 window.refreshLocationPreview= refreshLocationPreview;
+window.switchLocMode         = switchLocMode;
+window.addLocationTag        = addLocationTag;
+window.removeLocationTag     = removeLocationTag;
 
 // INIT
 init();

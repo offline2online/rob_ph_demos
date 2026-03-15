@@ -345,6 +345,15 @@ function setStatus(state, msg) {
 
 function buildLocationHuman(loc) {
   if (!loc) return '';
+  // New tag-based format
+  if (Array.isArray(loc.tags) && loc.tags.length > 0) {
+    return loc.tags.map(t => t.value).filter(Boolean).join(' → ');
+  }
+  // Manual text
+  if (loc.useManual && loc.manual) return loc.manual;
+  // humanReadable pre-computed
+  if (loc.humanReadable) return loc.humanReadable;
+  // Legacy fixed-field fallback
   const parts = [];
   if (loc.floor)  parts.push(loc.floor);
   if (loc.aisle)  parts.push('Aisle ' + loc.aisle);
@@ -454,14 +463,18 @@ function renderCards(results, store) {
     let locHtml = '';
     if (r.location && r.location.humanReadable) {
       locHtml += `<div class="loc-human">&#x1F4CD; ${escHtml(r.location.humanReadable)}</div>`;
-      const tags = [];
-      if (r.location.floor)        tags.push(`<span class="loc-tag"><span>Floor</span>${escHtml(r.location.floor)}</span>`);
-      if (r.location.aisle)        tags.push(`<span class="loc-tag"><span>Aisle</span>${escHtml(r.location.aisle)}</span>`);
-      if (r.location.section)      tags.push(`<span class="loc-tag"><span>Section</span>${escHtml(r.location.section)}</span>`);
-      if (r.location.shelfLetter)  tags.push(`<span class="loc-tag"><span>Shelf</span>${escHtml(r.location.shelfLetter)}</span>`);
-      if (r.location.shelfNumber)  tags.push(`<span class="loc-tag"><span>No.</span>${escHtml(r.location.shelfNumber)}</span>`);
-      if (r.location.notes)        tags.push(`<span class="loc-tag"><span>Notes</span>${escHtml(r.location.notes)}</span>`);
-      locHtml += `<div class="loc-details">${tags.join('')}</div>`;
+      // Show individual tags if available
+      const rawLoc = r.location;
+      const tagItems = Array.isArray(rawLoc.tags) && rawLoc.tags.length > 0
+        ? rawLoc.tags.map(t => `<span class="loc-tag"><span>${escHtml(t.label)}</span>${escHtml(t.value)}</span>`)
+        : [
+            rawLoc.floor       ? `<span class="loc-tag"><span>Floor</span>${escHtml(rawLoc.floor)}</span>` : null,
+            rawLoc.aisle       ? `<span class="loc-tag"><span>Aisle</span>${escHtml(rawLoc.aisle)}</span>` : null,
+            rawLoc.section     ? `<span class="loc-tag"><span>Section</span>${escHtml(rawLoc.section)}</span>` : null,
+            rawLoc.shelfLetter ? `<span class="loc-tag"><span>Shelf</span>${escHtml(rawLoc.shelfLetter)}</span>` : null,
+            rawLoc.shelfNumber ? `<span class="loc-tag"><span>No.</span>${escHtml(rawLoc.shelfNumber)}</span>` : null,
+          ].filter(Boolean);
+      if (tagItems.length) locHtml += `<div class="loc-details">${tagItems.join('')}</div>`;
     } else if (r.found) {
       locHtml = '<p class="no-location">&#x1F4CD; No location data recorded — set via Retail Admin</p>';
     }
