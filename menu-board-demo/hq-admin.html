@@ -2910,114 +2910,8 @@ function initGrids() {
     brandsGridApi = agGrid.createGrid(brandsEl, {
       rowHeight: 56,
       suppressCellFocus: true,
-      defaultColDef: {
-        resizable: true,
-        sortable: true,
-        filter: 'agTextColumnFilter',
-      },
-      columnDefs: [
-        {
-          headerName: 'Brand Name', field: 'name', flex: 2, minWidth: 130,
-          cellRenderer: (params) => {
-            const b = params.data;
-            const a = document.createElement('a');
-            a.className = 'brand-name-link';
-            a.textContent = b.name || '';
-            a.href = '#';
-            a.addEventListener('click', e => { e.preventDefault(); openEditBrandModal(b.id); });
-            const wrap = document.createElement('div');
-            wrap.style.cssText = 'display:flex;align-items:center;height:100%;';
-            wrap.appendChild(a);
-            return wrap;
-          }
-        },
-        {
-          headerName: 'ID', field: 'id', flex: 1.5, minWidth: 110,
-          cellStyle: { fontFamily: 'monospace', fontSize: '12px', color: 'var(--text2)' }
-        },
-        { headerName: 'Currency', field: 'currency', flex: 0.8, minWidth: 80 },
-        {
-          headerName: 'Stores', flex: 1.5, minWidth: 130,
-          valueGetter: (params) => {
-            const s = params.data.stores;
-            return (!s || s.length === 0) ? 'All Stores' : s.join(', ');
-          },
-          cellRenderer: (params) => {
-            const s = params.data.stores;
-            const allStores = !s || s.length === 0;
-            const div = document.createElement('div');
-            div.style.cssText = 'display:flex;align-items:center;height:100%;';
-            if (allStores) {
-              div.innerHTML = '<span style="font-size:12px;color:var(--success);font-weight:600;">&#x1F310; All Stores</span>';
-            } else {
-              div.innerHTML = `<span style="font-size:11px;color:var(--primary);font-weight:600;">${escHtml(s.join(', '))}</span>`;
-            }
-            return div;
-          }
-        },
-        {
-          headerName: 'Colors', flex: 1.8, minWidth: 200,
-          filter: false, sortable: false,
-          cellRenderer: (params) => {
-            const b = params.data;
-            const c = b.colors || DEFAULT_COLORS;
-            const div = document.createElement('div');
-            div.style.cssText = 'display:flex;align-items:center;gap:6px;height:100%;';
-            const s1 = document.createElement('div');
-            s1.className = 'brand-color-swatch';
-            s1.style.background = c.accent || '#006241';
-            s1.title = 'Accent: ' + (c.accent || '#006241');
-            const s2 = document.createElement('div');
-            s2.className = 'brand-color-swatch';
-            s2.style.background = c.body || '#f9f4ec';
-            s2.title = 'Body: ' + (c.body || '#f9f4ec');
-            const txt = document.createElement('span');
-            txt.style.cssText = 'font-size:11px;color:var(--text2);';
-            txt.textContent = (c.accent || '#006241') + ' / ' + (c.body || '#f9f4ec');
-            div.appendChild(s1); div.appendChild(s2); div.appendChild(txt);
-            return div;
-          }
-        },
-        {
-          headerName: 'Portrait', flex: 1.5, minWidth: 160,
-          valueGetter: (params) => {
-            const d = params.data.display?.portrait || DEFAULT_DISPLAY.portrait;
-            const max = Math.min(d.maxItems, d.cols * d.rows);
-            return `${d.cols}×${d.rows} cols/rows (max ${max})`;
-          }
-        },
-        {
-          headerName: 'Landscape', flex: 1.5, minWidth: 170,
-          valueGetter: (params) => {
-            const d = params.data.display?.landscape || DEFAULT_DISPLAY.landscape;
-            const max = Math.min(d.maxItems, d.cols * d.rows);
-            return `${d.cols}×${d.rows} cols/rows (max ${max})`;
-          }
-        },
-        {
-          headerName: 'Clock', flex: 1.2, minWidth: 140,
-          valueGetter: (params) => {
-            const b = params.data;
-            const vis = b.showClock === false ? 'Hidden' : 'Visible';
-            const fmt = b.timeFormat === 'us' ? '12h US' : '24h British';
-            return `${vis} · ${fmt}`;
-          }
-        },
-        {
-          headerName: 'Actions', flex: 0.8, minWidth: 90,
-          filter: false, sortable: false,
-          cellRenderer: (params) => {
-            const b = params.data;
-            const btn = document.createElement('button');
-            btn.className = 'row-menu-btn'; btn.textContent = '···';
-            btn.addEventListener('click', e => showRowMenu(e, [
-              { label: 'Edit',   action: () => openEditBrandModal(b.id) },
-              { label: 'Delete', action: () => confirmDeleteBrand(b.id, b.name), danger: true }
-            ]));
-            return btn;
-          }
-        }
-      ]
+      defaultColDef: { resizable: true, sortable: true, filter: 'agTextColumnFilter' },
+      columnDefs: []
     });
   }
 }
@@ -3593,9 +3487,125 @@ function deleteCategory(idx) {
 }
 
 // ===== BRANDS =====
+function _copyBrandTplUrl(brand, tpl) {
+  const base = window.location.origin + window.location.pathname.replace('hq-admin.html', 'menu-board.html');
+  const params = new URLSearchParams({ brand: (brand.name || brand.id) });
+  if (tpl.templateType) params.set('template', tpl.templateType);
+  params.set('store', '${StoreCode}');
+  const menuTypes = Array.isArray(tpl.menuTypes) && tpl.menuTypes.length > 0 ? tpl.menuTypes.join(',') : '${MenuType}';
+  params.set('menu', menuTypes);
+  params.set('device', '${DeviceUDID}');
+  params.set('orientation', 'landscape');
+  const url = decodeURIComponent(base + '?' + params.toString());
+  navigator.clipboard.writeText(url).then(() => {
+    toast('✅ Offer Board URL copied to clipboard.', 'success');
+  }).catch(() => { prompt('Copy this URL:', url); });
+}
+
 function renderBrands() {
   if (!brandsGridApi) return;
-  brandsGridApi.setGridOption('rowData', getBrands());
+  const brands = getBrands();
+
+  // Compute max number of offer boards across all brands
+  const maxBoards = brands.reduce((m, b) => Math.max(m, (_ensureTemplates(b) || []).length), 1);
+
+  // Dynamic offer board columns
+  const offerBoardCols = Array.from({ length: maxBoards }, (_, i) => ({
+    headerName: `Offer Board ${i + 1}`,
+    flex: 2, minWidth: 160,
+    filter: false, sortable: false,
+    cellRenderer: (params) => {
+      const b = params.data;
+      const tpl = (_ensureTemplates(b) || [])[i];
+      const wrap = document.createElement('div');
+      wrap.style.cssText = 'display:flex;align-items:center;height:100%;';
+      if (!tpl) return wrap;
+      const chip = document.createElement('button');
+      chip.style.cssText = 'background:var(--primary-light);border:1px solid var(--primary);color:var(--primary);border-radius:6px;padding:3px 10px;font-size:11px;font-weight:600;cursor:pointer;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
+      chip.title = 'Click to copy URL for: ' + tpl.name;
+      chip.innerHTML = '&#x1F4CB; ' + escHtml(tpl.name);
+      chip.addEventListener('click', () => _copyBrandTplUrl(b, tpl));
+      wrap.appendChild(chip);
+      return wrap;
+    }
+  }));
+
+  brandsGridApi.setGridOption('columnDefs', [
+    {
+      headerName: '', field: 'logo',
+      width: 52, minWidth: 52, maxWidth: 52,
+      resizable: false, sortable: false, filter: false,
+      cellRenderer: (params) => {
+        const b = params.data;
+        const wrap = document.createElement('div');
+        wrap.style.cssText = 'display:flex;align-items:center;justify-content:center;height:100%;';
+        if (b.logo) {
+          const img = document.createElement('img');
+          img.src = b.logo;
+          img.style.cssText = 'width:34px;height:34px;border-radius:6px;object-fit:contain;border:1px solid var(--border);';
+          wrap.appendChild(img);
+        } else {
+          const abbr = document.createElement('div');
+          abbr.style.cssText = 'width:34px;height:34px;border-radius:6px;background:var(--surface2);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;color:var(--text2);';
+          abbr.textContent = (b.name || '?').charAt(0).toUpperCase();
+          wrap.appendChild(abbr);
+        }
+        return wrap;
+      }
+    },
+    {
+      headerName: 'Brand Name', field: 'name', flex: 2, minWidth: 130,
+      cellRenderer: (params) => {
+        const b = params.data;
+        const a = document.createElement('a');
+        a.className = 'brand-name-link';
+        a.textContent = b.name || '';
+        a.href = '#';
+        a.addEventListener('click', e => { e.preventDefault(); openEditBrandModal(b.id); });
+        const wrap = document.createElement('div');
+        wrap.style.cssText = 'display:flex;align-items:center;height:100%;';
+        wrap.appendChild(a);
+        return wrap;
+      }
+    },
+    { headerName: 'Currency', field: 'currency', flex: 0.6, minWidth: 70 },
+    {
+      headerName: 'Stores', flex: 1.5, minWidth: 130,
+      valueGetter: (params) => {
+        const s = params.data.stores;
+        return (!s || s.length === 0) ? 'All Stores' : s.join(', ');
+      },
+      cellRenderer: (params) => {
+        const s = params.data.stores;
+        const allStores = !s || s.length === 0;
+        const div = document.createElement('div');
+        div.style.cssText = 'display:flex;align-items:center;height:100%;';
+        if (allStores) {
+          div.innerHTML = '<span style="font-size:12px;color:var(--success);font-weight:600;">&#x1F310; All Stores</span>';
+        } else {
+          div.innerHTML = `<span style="font-size:11px;color:var(--primary);font-weight:600;">${escHtml(s.join(', '))}</span>`;
+        }
+        return div;
+      }
+    },
+    ...offerBoardCols,
+    {
+      headerName: 'Actions', flex: 0.6, minWidth: 80,
+      filter: false, sortable: false,
+      cellRenderer: (params) => {
+        const b = params.data;
+        const btn = document.createElement('button');
+        btn.className = 'row-menu-btn'; btn.textContent = '···';
+        btn.addEventListener('click', e => showRowMenu(e, [
+          { label: 'Edit',   action: () => openEditBrandModal(b.id) },
+          { label: 'Delete', action: () => confirmDeleteBrand(b.id, b.name), danger: true }
+        ]));
+        return btn;
+      }
+    }
+  ]);
+
+  brandsGridApi.setGridOption('rowData', brands);
 }
 
 let brandEditingLogoLeft = '';
@@ -4605,6 +4615,7 @@ window.closeTplEditor         = closeTplEditor;
 window.saveTemplate           = saveTemplate;
 window.confirmDeleteTemplate  = confirmDeleteTemplate;
 window.copyOfferBoardUrl      = copyOfferBoardUrl;
+window._copyBrandTplUrl       = _copyBrandTplUrl;
 window.setTplCat              = setTplCat;
 window.renderTemplateLibrary  = renderTemplateLibrary;
 window.openTplDetailFromLib   = openTplDetailFromLib;
