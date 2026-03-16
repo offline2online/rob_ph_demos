@@ -67,7 +67,10 @@
       "Bash(ps -p 40757 -o command=)",
       "Bash(rm -f \"/Users/rgeerdink/Documents/Claude Code/.git/HEAD.lock\" \"/Users/rgeerdink/Documents/Claude Code/.git/index.lock\")",
       "Bash(ls \"/Users/rgeerdink/Documents/Claude Code/.git/\"*.lock)",
-      "Bash(grep -E \"\\\\.\\(html|js|json\\)$\")"
+      "Bash(grep -E \"\\\\.\\(html|js|json\\)$\")",
+      "Bash(cp \"/Users/rgeerdink/Documents/Claude Code/menu-board-demo/menu-board.html\" /tmp/menuboard/menu-board.html)",
+      "Bash(echo \"exit: $?\")",
+      "Bash(md5 /tmp/menuboard/menu-board.html \"/Users/rgeerdink/Documents/Claude Code/menu-board-demo/menu-board.html\")"
     ]
   }
 }

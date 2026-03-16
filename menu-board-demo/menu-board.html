@@ -578,8 +578,8 @@
 <body>
 
 <script type="module">
-import { initializeApp } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-app.js";
-import { getFirestore, doc, onSnapshot, collection } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-firestore.js";
+import { initializeApp, getApps } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-app.js";
+import { getFirestore, doc, setDoc, onSnapshot, collection } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-firestore.js";
 
 // ===== FIREBASE INIT =====
 const firebaseConfig = {
@@ -590,7 +590,7 @@ const firebaseConfig = {
   messagingSenderId: "199417645406",
   appId: "1:199417645406:web:0e7a54d00083b41ea9e7cf"
 };
-const app = initializeApp(firebaseConfig);
+const app = getApps().length ? getApps()[0] : initializeApp(firebaseConfig);
 const db  = getFirestore(app);
 const MB         = 'menuboard';
 const ITEMS_COLL = 'items';
@@ -599,13 +599,46 @@ const STOCK_COLL = 'stock';
 // ── URL PARAMS ──────────────────────────────────────────────────────────────
 const urlParams   = new URLSearchParams(window.location.search);
 const STORE_CODE  = (urlParams.get('store')   || '').trim().toUpperCase();
-const MENU_TYPE   = (urlParams.get('menu')    || '').trim().toLowerCase();
+// Menu type(s): comma-separated e.g. "drinks,specials". MENU_TYPE is the primary (first) type.
+const MENU_TYPES_RAW = (urlParams.get('menu') || '').trim().toLowerCase();
+const MENU_TYPES     = MENU_TYPES_RAW ? MENU_TYPES_RAW.split(',').map(s => s.trim()).filter(Boolean) : [];
+const MENU_TYPE      = MENU_TYPES[0] || ''; // primary type — used for MENU_META label/emoji
+const TEMPLATE_TYPE  = (urlParams.get('template') || '').trim(); // offer board template type id
 const SCREEN_LOCK = urlParams.get('screen') ? parseInt(urlParams.get('screen'), 10) : null;
 // Device UDID — passed by the PWA Player to enable personalised campaign mode
 // Example URL: menu-board.html?store=STORE001&menu=breakfast&device=6cfd0049-40ce-4ac3-9eba-353337b48427
 const DEVICE_UDID = (urlParams.get('device')  || '').trim();
+const ORIENTATION = urlParams.get('orientation') || 'portrait';
+const BRAND_ID    = (urlParams.get('brand')    || '').trim();
+const MOCK_API_FILE = urlParams.get('mockapi') || null;
+const DEBUG_MODE    = urlParams.get('debug') === '1';
 
 const ROTATION_INTERVAL = 8000; // ms
+
+// ── BOARD ACTIVITY HEARTBEAT ─────────────────────────────────────────────────
+// Unique key per brand+menuType+store combination — one doc per board instance
+const _boardKey = [BRAND_ID || 'all', MENU_TYPE || 'all', STORE_CODE || 'unknown']
+  .join('__').toLowerCase().replace(/[^a-z0-9_]+/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
+
+let _boardPinged = false;
+function _pingBoardActivity(brand) {
+  if (_boardPinged) return; // only ping once per page load
+  _boardPinged = true;
+  const templateType = urlParams.get('template') || '';
+  setDoc(doc(db, 'mbactivity', _boardKey), {
+    boardKey:     _boardKey,
+    brandId:      BRAND_ID || '',
+    brandName:    (brand && brand.name) || BRAND_ID || '',
+    brandLogo:    (brand && brand.logo) || '',
+    menuType:     MENU_TYPE || '',
+    storeCode:    STORE_CODE || '',
+    deviceUdid:   DEVICE_UDID || '',
+    templateType: templateType,
+    orientation:  urlParams.get('orientation') || 'portrait',
+    pageUrl:      window.location.pathname + window.location.search,
+    lastSeen:     new Date().toISOString()
+  }, { merge: true }).catch(() => {/* silent — non-critical */});
+}
 
 // ── IN-MEMORY CACHE ──────────────────────────────────────────────────────────
 let _items       = [];
@@ -634,19 +667,13 @@ function esc(str)      { return String(str || '').replace(/&/g,'&amp;').replace(
 function fmtTime(d)    { return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); }
 function fmtDate(d)    { return d.toLocaleDateString([], { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' }); }
 
-// ── ORIENTATION ─────────────────────────────────────────────────────────────
-// URL param > default 'portrait'
-const ORIENTATION = urlParams.get('orientation') || 'portrait';
-
 // ── BRAND SUPPORT ────────────────────────────────────────────────────────────
-const BRAND_ID = (urlParams.get('brand') || '').trim();
-// Mock API — set ?mockapi=1 to load ./mock-ph-api.json without real API credentials
-// or ?mockapi=custom.json to load a different local file. Requires ?device= to be set.
-const MOCK_API_FILE = urlParams.get('mockapi') || null;
-const DEBUG_MODE    = urlParams.get('debug') === '1';
 let _debugPanelVisible = DEBUG_MODE; // toggled by long-press on bottom-left corner
 
 function getBrands() { return _brands; }
+
+// Effective time format — updated each render() so updateClock() can use template's setting
+let _effectiveTimeFormat = 'british';
 
 // Returns the active brand object for filtering, or null when no ?brand= param is set
 // (null = "show all brands" mode). A separate themeSource is used for UI styling.
@@ -683,6 +710,20 @@ function getActiveBrand() {
   return null;
 }
 
+// Returns the active Offer Board template for the given brand.
+// Matches TEMPLATE_TYPE URL param against brand.templates[].templateType.
+// Falls back to the isDefault template, then first template, then null.
+function getActiveTemplate(brand) {
+  if (!brand) return null;
+  const templates = brand.templates;
+  if (!Array.isArray(templates) || !templates.length) return null;
+  if (TEMPLATE_TYPE) {
+    const match = templates.find(t => t.templateType === TEMPLATE_TYPE);
+    if (match) return match;
+  }
+  return templates.find(t => t.isDefault) || templates[0];
+}
+
 // ── COLOR SCHEME ─────────────────────────────────────────────────────────────
 function applyColorScheme(brand) {
   const colors = (brand && brand.colors) || {};
@@ -702,8 +743,7 @@ function applyColorScheme(brand) {
 function updateClock() {
   const el = document.getElementById('clockDisplay');
   if (!el) return;
-  const brand  = getActiveBrand();
-  const fmt    = brand && brand.timeFormat;
+  const fmt = _effectiveTimeFormat;
   const n      = new Date();
 
   let timeStr, dateStr;
@@ -1123,6 +1163,7 @@ onSnapshot(doc(db, MB, 'brands'), snap => {
     document.title = MENU_META[MENU_TYPE].label + (_titleBrand ? ' \u2014 ' + _titleBrand.name : ' \u2014 ' + STORE_CODE);
   }
   render();
+  _pingBoardActivity(brand || _titleBrand);
 });
 
 onSnapshot(doc(db, MB, 'settings'), snap => {
@@ -1157,7 +1198,27 @@ function render() {
     return { name: s.brandName || 'Our Brand', currency: s.currency || '$', logo: s.logo || '', logoRight: s.logoRight || '', colors: s.colors || {}, showClock: true, timeFormat: 'british', display: { portrait: { cols: 3, rows: 5, maxItems: 15 }, landscape: { cols: 5, rows: 3, maxItems: 15 } } };
   })();
 
-  applyColorScheme(themeSource);
+  // ── TEMPLATE RESOLUTION ──────────────────────────────────────────────────────
+  // Resolve the active Offer Board template and derive effective settings.
+  // Template values always win over top-level brand defaults.
+  const tpl = getActiveTemplate(brand || themeSource);
+
+  const effectiveColors       = (tpl && tpl.colors)      || themeSource.colors      || {};
+  const effectiveDisplay      = (tpl && tpl.display)     || themeSource.display     || {};
+  const effectiveShowHeader   = tpl ? (tpl.showHeader    !== false) : (themeSource.showHeader !== false);
+  const effectiveShowClock    = tpl ? (tpl.showClock     !== false) : (themeSource.showClock  !== false);
+  const effectiveCampaignMode = (tpl && tpl.campaignMode)    || themeSource.campaignMode    || 'override';
+  const effectiveTimeFormat   = (tpl && tpl.timeFormat)      || themeSource.timeFormat      || 'british';
+  const effectiveShowStoreName    = tpl ? (tpl.showStoreName    !== false) : true;
+  const effectivePersonalGreeting = tpl ? (tpl.personalGreeting !== false) : true;
+  const effectiveHeaderCopy       = (tpl && tpl.headerCopy)   || '';
+  const effectiveIconPosition     = (tpl && tpl.iconPosition)  || 'left';
+  const effectiveHeaderLogoType   = (tpl && tpl.headerLogoType)|| 'logo';
+
+  // Persist time format for updateClock() which runs outside render()
+  _effectiveTimeFormat = effectiveTimeFormat;
+
+  applyColorScheme({ colors: effectiveColors });
 
   // Apply orientation class to boardRoot
   const boardRoot = document.getElementById('boardRoot');
@@ -1171,22 +1232,32 @@ function render() {
     document.head.appendChild(dynStyle);
   }
 
-  const items     = getItems();
-  const logoLeft  = themeSource.logo      || '';
-  const logoRight = themeSource.logoRight || themeSource.logo || '';
-  const brandName = esc(themeSource.name  || 'Our Brand');
+  const items = getItems();
+
+  // ── LOGO RESOLUTION ────────────────────────────────────────────────────────
+  // Determine which brand asset to use based on template's headerLogoType setting
+  const _headerAsset = effectiveHeaderLogoType === 'icon'  ? (themeSource.icon || themeSource.logo || '')
+                     : effectiveHeaderLogoType === 'none'  ? ''
+                     : /* 'logo' default */                  (themeSource.logo || '');
+  let logoLeft = '', logoRight = '';
+  if      (effectiveIconPosition === 'left')   { logoLeft  = _headerAsset; }
+  else if (effectiveIconPosition === 'right')  { logoRight = _headerAsset; }
+  else if (effectiveIconPosition === 'both')   { logoLeft  = logoRight = _headerAsset; }
+  // 'center' and 'none': both sides empty; center logo rendered inside header-center below
+
+  const brandName = esc(themeSource.name     || 'Our Brand');
   const currency  = esc(themeSource.currency || '$');
 
   // ── STEP 1: Filter first so totalItems drives layout ────────────────────────
   // brand === null means no brand filter — show all active items for this menu type
   const allFiltered = items.filter(i =>
     i.active &&
-    (i.menuTypes || []).includes(MENU_TYPE) &&
+    (MENU_TYPES.length === 0 || (i.menuTypes || []).some(t => MENU_TYPES.includes(t))) &&
     (brand === null || !i.brand || i.brand === brand.id)
   );
 
-  // Apply hideOutOfStock brand option — remove OOS items from display entirely
-  const displayFiltered = (themeSource.display && themeSource.display.hideOutOfStock)
+  // Apply hideOutOfStock — from template setting (wins) or brand default
+  const displayFiltered = (effectiveDisplay && effectiveDisplay.hideOutOfStock)
     ? allFiltered.filter(i => !isOos(i.sku))
     : allFiltered;
 
@@ -1196,7 +1267,7 @@ function render() {
   // only a board with a defined brand applies personalised SKU filtering.
   let campaignFiltered = displayFiltered;
   if (_campaignSkus && _campaignSkus.length > 0 && brand !== null) {
-    const mode = brand.campaignMode || (_settings.phApi && _settings.phApi.campaignMode) || 'override';
+    const mode = effectiveCampaignMode || (_settings.phApi && _settings.phApi.campaignMode) || 'override';
     // Case-insensitive SKU set — handles mismatches between API and Firestore casing
     const skuSetLower = new Set(_campaignSkus.map(s => (s || '').trim().toLowerCase()));
     const skuMatch = i => skuSetLower.has((i.sku || '').trim().toLowerCase());
@@ -1207,8 +1278,8 @@ function render() {
         (!i.brand || i.brand === brand.id) &&
         skuMatch(i)
       );
-      // Also apply hideOutOfStock if brand requires it
-      if (themeSource.display && themeSource.display.hideOutOfStock) {
+      // Also apply hideOutOfStock if template/brand requires it
+      if (effectiveDisplay && effectiveDisplay.hideOutOfStock) {
         campaignFiltered = campaignFiltered.filter(i => !isOos(i.sku));
       }
     } else {
@@ -1233,7 +1304,7 @@ function render() {
   const totalItems = campaignFiltered.length;
 
   // ── STEP 2: Compute layout based on totalItems ───────────────────────────────
-  const dispCfg = (themeSource.display && themeSource.display[ORIENTATION]) || {};
+  const dispCfg = (effectiveDisplay && effectiveDisplay[ORIENTATION]) || {};
   let COLS, PAGE_SIZE;
 
   if (totalItems > 0 && totalItems <= 10) {
@@ -1334,15 +1405,18 @@ function render() {
     ? `<div class="header-logo-wrap"><img src="${src}" alt="${esc(side)} logo"></div>`
     : `<div class="header-logo-wrap no-logo"></div>`;
 
-  const showHeader = themeSource.showHeader !== false;
-  const showClock  = themeSource.showClock  !== false;
+  const showHeader = effectiveShowHeader;
+  const showClock  = effectiveShowClock;
   const headerHtml = `
     ${showHeader ? `
     <div class="board-header">
       ${logoSlot(logoLeft, 'Left')}
       <div class="header-center">
+        ${effectiveIconPosition === 'center' && _headerAsset
+          ? `<img src="${esc(_headerAsset)}" alt="${brandName} logo" style="height:2.4em;max-width:180px;object-fit:contain;margin-bottom:4px;">`
+          : ''}
         <div class="header-brand">${brandName}</div>
-        <div class="header-menu-type">${esc(meta.label)}</div>
+        <div class="header-menu-type">${esc(effectiveHeaderCopy || meta.label)}</div>
       </div>
       ${logoSlot(logoRight, 'Right')}
     </div>
@@ -1350,9 +1424,9 @@ function render() {
     ${showClock ? `
       <div class="clock-bar">
         ${MOCK_API_FILE ? `<span class="mock-badge">🧪 MOCK</span>` : ''}
-        ${_campaignFirstName
+        ${(effectivePersonalGreeting && _campaignFirstName)
           ? `<div class="greeting-text">${esc(_campaignFirstName).toUpperCase()}, THIS IS WHAT WE RECOMMEND FOR YOU</div>`
-          : (_storeName ? `<div class="greeting-text">${_storeName}</div>` : '')}
+          : ((effectiveShowStoreName && _storeName) ? `<div class="greeting-text">${_storeName}</div>` : '')}
         <div class="time-display" id="clockDisplay"></div>
       </div>
     ` : ''}
