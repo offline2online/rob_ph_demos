@@ -1032,12 +1032,28 @@
             <input type="text" id="bCurrency" placeholder="$" maxlength="3">
           </div>
         </div>
-        <div class="form-group">
-          <label>Brand Logo</label>
-          <div class="img-upload-zone" onclick="document.getElementById('bLogoUpload').click()" style="padding:12px;">
-            <input type="file" id="bLogoUpload" accept="image/*" onchange="uploadBrandLogo(event)">
-            <div id="bLogoPreview" style="display:none;margin-bottom:8px;"><img id="bLogoImg" style="height:48px;border-radius:8px;object-fit:contain;"></div>
-            <p>Click to upload brand logo</p>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Brand Icon <span style="font-size:11px;font-weight:400;text-transform:none;color:var(--text2);">(square — used in table &amp; as fallback)</span></label>
+            <div class="img-upload-zone" onclick="document.getElementById('bIconUpload').click()" style="padding:12px;text-align:center;">
+              <input type="file" id="bIconUpload" accept="image/*" onchange="uploadBrandIcon(event)">
+              <div id="bIconPreview" style="display:none;margin-bottom:8px;align-items:center;justify-content:center;gap:10px;">
+                <img id="bIconImg" style="height:48px;width:48px;border-radius:8px;object-fit:contain;border:1px solid var(--border);">
+                <button type="button" onclick="clearBrandIcon()" style="font-size:12px;color:var(--danger);text-decoration:underline;background:none;border:none;cursor:pointer;">Remove</button>
+              </div>
+              <p>Click to upload icon</p>
+            </div>
+          </div>
+          <div class="form-group">
+            <label>Brand Logo <span style="font-size:11px;font-weight:400;text-transform:none;color:var(--text2);">(wide — used in Offer Board header)</span></label>
+            <div class="img-upload-zone" onclick="document.getElementById('bLogoUpload').click()" style="padding:12px;text-align:center;">
+              <input type="file" id="bLogoUpload" accept="image/*" onchange="uploadBrandLogo(event)">
+              <div id="bLogoPreview" style="display:none;margin-bottom:8px;align-items:center;justify-content:center;gap:10px;">
+                <img id="bLogoImg" style="height:48px;border-radius:8px;object-fit:contain;max-width:140px;">
+                <button type="button" onclick="clearBrandLogo()" style="font-size:12px;color:var(--danger);text-decoration:underline;background:none;border:none;cursor:pointer;">Remove</button>
+              </div>
+              <p>Click to upload logo</p>
+            </div>
           </div>
         </div>
 
@@ -1198,6 +1214,14 @@
                   <option value="right">Right</option>
                 </select>
               </div>
+            </div>
+            <div class="form-group">
+              <label>Logo / Icon Asset in Header</label>
+              <select id="tplHeaderLogoType">
+                <option value="logo">Brand Logo (wide format)</option>
+                <option value="icon">Brand Icon (square format)</option>
+                <option value="none">None &mdash; no logo in header</option>
+              </select>
             </div>
             <div class="form-group">
               <label>Header Copy <span style="font-size:11px;font-weight:400;text-transform:none;color:var(--text2);">(tagline shown in header)</span></label>
@@ -3578,9 +3602,10 @@ function renderBrands() {
         const b = params.data;
         const wrap = document.createElement('div');
         wrap.style.cssText = 'display:flex;align-items:center;justify-content:center;height:100%;';
-        if (b.logo) {
+        const iconSrc = b.icon || b.logo;
+        if (iconSrc) {
           const img = document.createElement('img');
-          img.src = b.logo;
+          img.src = iconSrc;
           img.style.cssText = 'width:34px;height:34px;border-radius:6px;object-fit:contain;border:1px solid var(--border);';
           wrap.appendChild(img);
         } else {
@@ -3648,6 +3673,7 @@ function renderBrands() {
 }
 
 let brandEditingLogoLeft = '';
+let brandEditingIcon = '';
 let brandEditingBagIcon = '';
 let _editingBrandTemplates = [];
 let _tplEditingId = null;
@@ -3669,6 +3695,8 @@ function openAddBrandModal() {
   document.getElementById('bEditId').value    = '';
   document.getElementById('bName').value      = '';
   document.getElementById('bCurrency').value  = '$';
+  brandEditingIcon = '';
+  document.getElementById('bIconPreview').style.display = 'none';
   brandEditingLogoLeft = '';
   document.getElementById('bLogoPreview').style.display = 'none';
   brandEditingBagIcon = '';
@@ -3701,10 +3729,17 @@ function openEditBrandModal(id) {
   document.getElementById('bName').value      = brand.name     || '';
   document.getElementById('bCurrency').value  = brand.currency || '$';
 
-  brandEditingLogoLeft = brand.logo || '';
+  brandEditingIcon = brand.icon || '';
+  if (brandEditingIcon) {
+    document.getElementById('bIconPreview').style.display = 'flex';
+    document.getElementById('bIconImg').src = brandEditingIcon;
+  } else {
+    document.getElementById('bIconPreview').style.display = 'none';
+  }
 
+  brandEditingLogoLeft = brand.logo || '';
   if (brandEditingLogoLeft) {
-    document.getElementById('bLogoPreview').style.display = 'block';
+    document.getElementById('bLogoPreview').style.display = 'flex';
     document.getElementById('bLogoImg').src = brandEditingLogoLeft;
   } else {
     document.getElementById('bLogoPreview').style.display = 'none';
@@ -3748,18 +3783,46 @@ function closeBrandModal() {
   document.getElementById('brandModal').classList.remove('open');
 }
 
+function uploadBrandIcon(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    brandEditingIcon = e.target.result;
+    document.getElementById('bIconPreview').style.display = 'flex';
+    document.getElementById('bIconImg').src = e.target.result;
+    if (_brandSave) _brandSave.markDirty();
+  };
+  reader.readAsDataURL(file);
+  event.target.value = '';
+}
+
+function clearBrandIcon() {
+  brandEditingIcon = '';
+  document.getElementById('bIconPreview').style.display = 'none';
+  document.getElementById('bIconImg').src = '';
+  if (_brandSave) _brandSave.markDirty();
+}
+
 function uploadBrandLogo(event) {
   const file = event.target.files[0];
   if (!file) return;
   const reader = new FileReader();
   reader.onload = (e) => {
     brandEditingLogoLeft = e.target.result;
-    document.getElementById('bLogoPreview').style.display = 'block';
+    document.getElementById('bLogoPreview').style.display = 'flex';
     document.getElementById('bLogoImg').src = e.target.result;
     if (_brandSave) _brandSave.markDirty();
   };
   reader.readAsDataURL(file);
   event.target.value = '';
+}
+
+function clearBrandLogo() {
+  brandEditingLogoLeft = '';
+  document.getElementById('bLogoPreview').style.display = 'none';
+  document.getElementById('bLogoImg').src = '';
+  if (_brandSave) _brandSave.markDirty();
 }
 
 function uploadBagIcon(event) {
@@ -3971,10 +4034,10 @@ function saveBrand() {
     const idx = brands.findIndex(b => b.id === id);
     if (idx === -1) return;
     // colors/display/showClock etc. are now managed exclusively via templates; preserve existing brand values via spread
-    brands[idx] = { ...brands[idx], name, currency, logo: brandEditingLogoLeft, logoRight: '', bagLabel, bagIcon: brandEditingBagIcon, stores, lowStockThreshold, templates: _editingBrandTemplates, colourPalette: window._bPalette, brandGuidelines: window._bGuidelines, updatedAt: now };
+    brands[idx] = { ...brands[idx], name, currency, icon: brandEditingIcon, logo: brandEditingLogoLeft, logoRight: '', bagLabel, bagIcon: brandEditingBagIcon, stores, lowStockThreshold, templates: _editingBrandTemplates, colourPalette: window._bPalette, brandGuidelines: window._bGuidelines, updatedAt: now };
     toast('\u2705 Brand updated', 'success');
   } else {
-    brands.push({ id: genId(), name, currency, logo: brandEditingLogoLeft, logoRight: '', colors: { ...DEFAULT_COLORS }, display: { portrait: { ...DEFAULT_DISPLAY.portrait }, landscape: { ...DEFAULT_DISPLAY.landscape }, hideOutOfStock: false }, showClock: true, timeFormat: 'british', showHeader: true, campaignMode: 'override', bagLabel, bagIcon: brandEditingBagIcon, stores, lowStockThreshold, templates: [], colourPalette: window._bPalette, brandGuidelines: window._bGuidelines, createdAt: now, updatedAt: now });
+    brands.push({ id: genId(), name, currency, icon: brandEditingIcon, logo: brandEditingLogoLeft, logoRight: '', colors: { ...DEFAULT_COLORS }, display: { portrait: { ...DEFAULT_DISPLAY.portrait }, landscape: { ...DEFAULT_DISPLAY.landscape }, hideOutOfStock: false }, showClock: true, timeFormat: 'british', showHeader: true, campaignMode: 'override', bagLabel, bagIcon: brandEditingBagIcon, stores, lowStockThreshold, templates: [], colourPalette: window._bPalette, brandGuidelines: window._bGuidelines, createdAt: now, updatedAt: now });
     toast('\u2705 Brand added', 'success');
   }
 
@@ -4073,6 +4136,7 @@ function openNewTemplateEditor() {
     if (d) {
       setValue('tplShowHeader', d.showHeader);
       setValue('tplIconPosition', d.iconPosition);
+      document.getElementById('tplHeaderLogoType').value = d.headerLogoType || 'logo';
       document.getElementById('tplHeaderCopy').value = d.headerCopy || '';
       document.getElementById('tplColorHeader').value = d.colorHeader || '#169bc2';
       document.getElementById('tplColorHeaderText').value = d.colorHeaderText || '#ffffff';
@@ -4176,6 +4240,7 @@ function openEditTemplateEditor(tplId) {
   document.getElementById('tplName').value = tpl.name || '';
   document.getElementById('tplShowHeader').value = tpl.showHeader !== false ? 'true' : 'false';
   document.getElementById('tplIconPosition').value = tpl.iconPosition || 'left';
+  document.getElementById('tplHeaderLogoType').value = tpl.headerLogoType || 'logo';
   document.getElementById('tplHeaderCopy').value = tpl.headerCopy || '';
   const c = tpl.colors || DEFAULT_COLORS;
   document.getElementById('tplColorHeader').value     = c.header     || DEFAULT_COLORS.header;
@@ -4275,8 +4340,9 @@ function saveTemplate() {
     name,
     templateType: document.getElementById('tplEditId').dataset.templateType || '',
     showHeader:    document.getElementById('tplShowHeader').value !== 'false',
-    iconPosition:  document.getElementById('tplIconPosition').value || 'left',
-    headerCopy:    document.getElementById('tplHeaderCopy').value.trim(),
+    iconPosition:   document.getElementById('tplIconPosition').value || 'left',
+    headerLogoType: document.getElementById('tplHeaderLogoType').value || 'logo',
+    headerCopy:     document.getElementById('tplHeaderCopy').value.trim(),
     colors: {
       header:     document.getElementById('tplColorHeader').value,
       headerText: document.getElementById('tplColorHeaderText').value,
@@ -4795,7 +4861,10 @@ window.clearAllData       = clearAllData;
 window.exportBrandData    = exportBrandData;
 window.importBrandData    = importBrandData;
 window.clearBrandData     = clearBrandData;
+window.uploadBrandIcon    = uploadBrandIcon;
+window.clearBrandIcon     = clearBrandIcon;
 window.uploadBrandLogo    = uploadBrandLogo;
+window.clearBrandLogo     = clearBrandLogo;
 window.uploadBagIcon      = uploadBagIcon;
 window.clearBagIcon       = clearBagIcon;
 window.renderPaletteSwatches = renderPaletteSwatches;
