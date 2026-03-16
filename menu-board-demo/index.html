@@ -187,22 +187,28 @@
             <option value="feature-hero-board">Feature Hero Spotlight</option>
             <option value="category-rotator">Category Rotator</option>
             <option value="price-grid">Price Grid</option>
+            <option value="happy-hour-board">Happy Hour / Time-Sensitive Offer</option>
+            <option value="nutritional-focus">Nutritional Focus Board</option>
           </optgroup>
           <optgroup label="Retail">
             <option value="promotional-offer-board">Promotional Offer Board</option>
             <option value="new-arrivals-showcase">New Arrivals Showcase</option>
             <option value="split-screen-dual-zone">Split Screen Dual Zone</option>
             <option value="seasonal-promotion">Seasonal / Event Promotion</option>
+            <option value="sale-clearance-board">Sale / Clearance Board</option>
           </optgroup>
           <optgroup label="In-Store Experience">
             <option value="personalised-welcome">Personalised Welcome Screen</option>
             <option value="queue-status-board">Queue Status Board</option>
+            <option value="loyalty-rewards">Loyalty &amp; Rewards Showcase</option>
           </optgroup>
           <optgroup label="Out-of-Home">
             <option value="retail-media-banner">Retail Media Banner</option>
+            <option value="brand-campaign-fullscreen">Brand Campaign Full-Screen</option>
           </optgroup>
           <optgroup label="Store Operations">
             <option value="store-info-hours">Store Info &amp; Opening Hours</option>
+            <option value="digital-wayfinding">Digital Wayfinding</option>
           </optgroup>
         </select>
       </div>
@@ -492,10 +498,65 @@ const TEMPLATES = [
     id:'store-info-hours', name:'Store Info & Opening Hours',
     description:'Displays store name, opening hours, and contact details. Used at store entrance or lobby.',
     category:'Store Operations', useCases:['Entrance','Lobby','Reception','Clinic','Appointment'],
-    params:['store','device','brand','orientation','storeName'],
+    params:['store','device','orientation','storeName'],
     settings:{ showHeader:true, colorScheme:true, portrait:true, landscape:true, showClock:true, showStoreName:true },
     pSVG:(W,H)=>{const hh=14;return `<rect width="${W}" height="${H}" fill="#f0f9ff"/><rect width="${W}" height="${hh}" fill="${C.header}"/><rect x="${W/2-14}" y="3.5" width="28" height="7" rx="1.5" fill="rgba(255,255,255,.3)"/><rect x="4" y="${hh+8}" width="${W-8}" height="16" rx="3" fill="${C.card}" stroke="${C.border}" stroke-width=".7"/><rect x="${W/2-20}" y="${hh+13}" width="40" height="6" rx="2" fill="${C.header}" opacity=".8"/>` + [0,1,2,3,4,5,6].map(i=>`<rect x="6" y="${hh+30+i*10}" width="${W-12}" height="7" rx="2" fill="${C.card}" stroke="${C.border}" stroke-width=".5"/>`).join('');},
     lSVG:(W,H)=>{const hh=11,infoW=Math.round(W*.42);return `<rect width="${W}" height="${H}" fill="#f0f9ff"/><rect width="${W}" height="${hh}" fill="${C.header}"/><rect y="${hh}" width="${infoW}" height="${H-hh}" fill="rgba(22,155,194,.04)" stroke="${C.border}" stroke-width=".5"/><rect x="4" y="${hh+6}" width="${infoW-8}" height="10" rx="2" fill="${C.header}" opacity=".8"/>` + [0,1,2,3].map(i=>`<rect x="4" y="${hh+20+i*9}" width="${infoW-8}" height="6" rx="2" fill="${C.card}" stroke="${C.border}" stroke-width=".5"/>`).join('') + gridCells(infoW+3,hh,W-infoW-3,H-hh,2,2,2);},
+  },
+  // ── NEW TEMPLATES ──────────────────────────────────────────────────────
+  {
+    id:'happy-hour-board', name:'Happy Hour / Time-Sensitive Offer',
+    description:'Promotes time-limited deals with a countdown/clock emphasis. Perfect for bars, cafés, and QSR happy hours.',
+    category:'Food & Beverage', useCases:['Bar','Café','QSR','Restaurant','Hotel'],
+    params:['store','device','orientation','type'],
+    settings:{ showHeader:true, colorScheme:true, itemTypeFilter:true, portrait:true, landscape:true, showClock:true, campaignFilter:true },
+    pSVG:(W,H)=>{const hh=14,bannerH=14,fh=10;return `<rect width="${W}" height="${H}" fill="#fffbeb"/><rect width="${W}" height="${hh}" fill="#b45309"/><rect x="3" y="3.5" width="20" height="7" rx="1.5" fill="rgba(255,255,255,.25)"/><rect x="${W-12}" y="3" width="9" height="8" rx="4" fill="rgba(255,255,255,.2)"/><rect y="${hh}" width="${W}" height="${bannerH}" fill="#d97706"/><rect x="${W/2-22}" y="${hh+4}" width="44" height="6" rx="2" fill="rgba(255,255,255,.9)"/>` + gridCells(0,hh+bannerH,W,H-hh-bannerH-fh,2,3,2) + `<rect y="${H-fh}" width="${W}" height="${fh}" fill="#92400e"/>`;},
+    lSVG:(W,H)=>{const hh=11,cdW=Math.round(W*.24);return `<rect width="${W}" height="${H}" fill="#fffbeb"/><rect width="${W}" height="${hh}" fill="#b45309"/><rect x="3" y="3" width="18" height="5" rx="1" fill="rgba(255,255,255,.25)"/><rect y="${hh}" width="${cdW}" height="${H-hh}" fill="#92400e"/><circle cx="${cdW/2}" cy="${hh+(H-hh)*.35}" r="9" fill="none" stroke="rgba(255,255,255,.4)" stroke-width="1.5"/><rect x="${cdW*.2}" y="${hh+(H-hh)*.33}" width="${cdW*.6}" height="4" rx="2" fill="rgba(255,255,255,.8)"/>` + gridCells(cdW+2,hh,W-cdW-2,H-hh,4,2,2);},
+  },
+  {
+    id:'nutritional-focus', name:'Nutritional Focus Board',
+    description:'Highlights calorie counts and macro information alongside pricing. For health-conscious environments.',
+    category:'Food & Beverage', useCases:['Health Café','Gym','Hospital','School','Workplace Canteen'],
+    params:['store','device','orientation','type','category'],
+    settings:{ showHeader:true, colorScheme:true, itemTypeFilter:true, categoryFilter:true, soldOutBehavior:true, portrait:true, landscape:true },
+    pSVG:(W,H)=>{const hh=14,fh=8,cells=gridCells(0,hh,W,H-hh-fh,3,5,2),cellH=(H-hh-fh)/5,cellW=W/3,macros=[0,1,2,3,4].map(r=>[0,1,2].map(c=>`<rect x="${c*cellW+c*2+2}" y="${hh+r*cellH+r*2+cellH-4}" width="${cellW-4}" height="2.5" rx="1" fill="#16a34a" opacity=".6"/>`).join('')).join('');return `<rect width="${W}" height="${H}" fill="#f0fdf4"/><rect width="${W}" height="${hh}" fill="#16a34a"/><rect x="3" y="3.5" width="20" height="7" rx="1.5" fill="rgba(255,255,255,.25)"/>` + cells + macros + `<rect y="${H-fh}" width="${W}" height="${fh}" fill="#15803d"/>`;},
+    lSVG:(W,H)=>{const hh=11,fh=7,cells=gridCells(0,hh,W,H-hh-fh,5,3,2),cellH=(H-hh-fh)/3,cellW=W/5,macros=[0,1,2].map(r=>[0,1,2,3,4].map(c=>`<rect x="${c*cellW+c*2+2}" y="${hh+r*cellH+r*2+cellH-4}" width="${cellW-4}" height="2" rx="1" fill="#16a34a" opacity=".6"/>`).join('')).join('');return `<rect width="${W}" height="${H}" fill="#f0fdf4"/><rect width="${W}" height="${hh}" fill="#16a34a"/>` + cells + macros + `<rect y="${H-fh}" width="${W}" height="${fh}" fill="#15803d"/>`;},
+  },
+  {
+    id:'sale-clearance-board', name:'Sale / Clearance Board',
+    description:'High-energy promotional layout with SALE branding and badge callouts. Maximises urgency and drives foot traffic.',
+    category:'Retail', useCases:['Retail','Fashion','Department Store','Outlet','Electronics'],
+    params:['store','device','orientation','category'],
+    settings:{ showHeader:true, colorScheme:true, categoryFilter:true, soldOutBehavior:true, portrait:true, landscape:true, campaignFilter:true },
+    pSVG:(W,H)=>{const hh=14,bannerH=14;return `<rect width="${W}" height="${H}" fill="#fff1f2"/><rect width="${W}" height="${hh}" fill="#dc2626"/><rect x="3" y="3.5" width="20" height="7" rx="1.5" fill="rgba(255,255,255,.25)"/><rect y="${hh}" width="${W}" height="${bannerH}" fill="#b91c1c"/><rect x="${W/2-18}" y="${hh+4}" width="36" height="6" rx="2" fill="rgba(255,255,255,.95)"/>` + gridCells(0,hh+bannerH,W,H-hh-bannerH,2,4,3) + [0,1,2,3].map(i=>`<rect x="${(i%2)*(W/2)+W/2-7}" y="${hh+bannerH+8+Math.floor(i/2)*((H-hh-bannerH)/4)}" width="12" height="7" rx="3.5" fill="#dc2626"/>`).join('');},
+    lSVG:(W,H)=>{const hh=11,bannerH=10;return `<rect width="${W}" height="${H}" fill="#fff1f2"/><rect width="${W}" height="${hh}" fill="#dc2626"/><rect y="${hh}" width="${W}" height="${bannerH}" fill="#b91c1c"/><rect x="${W/2-16}" y="${hh+3}" width="32" height="5" rx="2" fill="rgba(255,255,255,.95)"/>` + gridCells(0,hh+bannerH,W,H-hh-bannerH,4,2,3) + [0,1,2,3].map(i=>`<rect x="${i*(W/4)+W/4-5}" y="${hh+bannerH+8}" width="10" height="5" rx="2.5" fill="#dc2626"/>`).join('');},
+  },
+  {
+    id:'loyalty-rewards', name:'Loyalty & Rewards Showcase',
+    description:'Promotes the loyalty programme with stamp card visual and personalised greeting when customer name is known.',
+    category:'In-Store Experience', useCases:['Retail','Café','Hospitality','Beauty','Gym'],
+    params:['store','device','storeName','firstName'],
+    settings:{ showHeader:true, colorScheme:true, portrait:true, landscape:true, personalGreeting:true, showStoreName:true, campaignFilter:true },
+    pSVG:(W,H)=>{const hh=14,cardH=Math.round((H-hh)*.38),cardY=hh+8;return `<rect width="${W}" height="${H}" fill="#f5f3ff"/><rect width="${W}" height="${hh}" fill="#7c3aed"/><rect x="${W/2-14}" y="3.5" width="28" height="7" rx="1.5" fill="rgba(255,255,255,.25)"/><rect x="4" y="${cardY}" width="${W-8}" height="${cardH}" rx="6" fill="#7c3aed" opacity=".12" stroke="#7c3aed" stroke-width=".8"/><rect x="${W/2-20}" y="${cardY+7}" width="40" height="5" rx="2" fill="#7c3aed" opacity=".7"/>` + [0,1,2,3,4,5,6].map(i=>`<circle cx="${W/2-18+i*6}" cy="${cardY+cardH-10}" r="4" fill="${i<4?'#7c3aed':'rgba(124,58,237,.2)'}" stroke="#7c3aed" stroke-width=".6"/>`).join('') + [0,1,2].map(i=>`<rect x="4" y="${cardY+cardH+12+i*18}" width="${W-8}" height="14" rx="4" fill="${C.card}" stroke="${C.border}" stroke-width=".7"/><rect x="${W-22}" y="${cardY+cardH+14+i*18}" width="14" height="8" rx="4" fill="#7c3aed"/>`).join('');},
+    lSVG:(W,H)=>{const hh=11,cardW=Math.round(W*.44);return `<rect width="${W}" height="${H}" fill="#f5f3ff"/><rect width="${W}" height="${hh}" fill="#7c3aed"/><rect x="3" y="3" width="18" height="5" rx="1" fill="rgba(255,255,255,.25)"/><rect x="4" y="${hh+5}" width="${cardW-8}" height="${H-hh-9}" rx="6" fill="#7c3aed" opacity=".1" stroke="#7c3aed" stroke-width=".8"/><rect x="${cardW*.1}" y="${hh+12}" width="${cardW*.8}" height="4" rx="2" fill="#7c3aed" opacity=".7"/>` + [0,1,2,3,4,5].map(i=>`<circle cx="${cardW*.12+i*(cardW*.14)}" cy="${hh+(H-hh)*.65}" r="3.5" fill="${i<4?'#7c3aed':'rgba(124,58,237,.25)'}" stroke="#7c3aed" stroke-width=".5"/>`).join('') + gridCells(cardW+3,hh,W-cardW-3,H-hh,2,2,2);},
+  },
+  {
+    id:'brand-campaign-fullscreen', name:'Brand Campaign Full-Screen',
+    description:'Immersive full-bleed campaign canvas with no chrome. Maximum visual impact for brand advertising and OOH media.',
+    category:'Out-of-Home', useCases:['DOOH','Brand Campaign','OOH','Mall','Airport'],
+    params:['device'],
+    settings:{ colorScheme:true, portrait:true, landscape:true, campaignFilter:true },
+    pSVG:(W,H)=>`<rect width="${W}" height="${H}" fill="#000"/><rect x="0" y="0" width="${W}" height="${H*.62}" fill="#1a1a1a"/><rect x="${W*.15}" y="${H*.18}" width="${W*.7}" height="${H*.32}" rx="3" fill="#2d2d2d"/><rect x="${W/2-22}" y="${H*.65}" width="44" height="7" rx="2" fill="rgba(255,255,255,.9)"/><rect x="${W/2-14}" y="${H*.76}" width="28" height="4" rx="2" fill="#f6ad55"/><rect x="${W/2-16}" y="${H*.91}" width="32" height="7" rx="3.5" fill="#f6ad55"/>`,
+    lSVG:(W,H)=>`<rect width="${W}" height="${H}" fill="#000"/><rect x="0" y="0" width="${W*.56}" height="${H}" fill="#1a1a1a"/><rect x="${W*.06}" y="${H*.12}" width="${W*.44}" height="${H*.65}" rx="3" fill="#2d2d2d"/><rect x="${W*.62}" y="${H*.14}" width="${W*.33}" height="6" rx="2" fill="rgba(255,255,255,.9)"/><rect x="${W*.62}" y="${H*.34}" width="${W*.24}" height="4" rx="2" fill="#f6ad55"/><rect x="${W*.62}" y="${H*.68}" width="${W*.26}" height="7" rx="3.5" fill="#f6ad55"/>`,
+  },
+  {
+    id:'digital-wayfinding', name:'Digital Wayfinding',
+    description:'Directional signage showing store zones and facilities. Ideal for malls, hospitals, and campuses.',
+    category:'Store Operations', useCases:['Mall','Hospital','Campus','Department Store','Airport'],
+    params:['store','device','orientation','storeName'],
+    settings:{ showHeader:true, colorScheme:true, portrait:true, landscape:true, showClock:true, showStoreName:true },
+    pSVG:(W,H)=>{const hh=14,snH=12,fh=8,rowH=(H-hh-snH-fh)/4;return `<rect width="${W}" height="${H}" fill="#f0f9ff"/><rect width="${W}" height="${hh}" fill="#0369a1"/><rect x="${W/2-14}" y="3.5" width="28" height="7" rx="1.5" fill="rgba(255,255,255,.3)"/><rect x="4" y="${hh+4}" width="${W-8}" height="${snH}" rx="3" fill="#0369a1" opacity=".15"/><rect x="${W/2-18}" y="${hh+7}" width="36" height="3.5" rx="2" fill="#0369a1" opacity=".6"/>` + [0,1,2,3].map(i=>`<rect x="4" y="${hh+snH+8+i*(rowH+2)}" width="${W-8}" height="${rowH}" rx="4" fill="${C.card}" stroke="${C.border}" stroke-width=".7"/><rect x="12" y="${hh+snH+12+i*(rowH+2)}" width="6" height="6" rx="1" fill="#0369a1" opacity=".7"/><rect x="24" y="${hh+snH+13+i*(rowH+2)}" width="${(W-34)*.6}" height="2.5" rx="1" fill="${C.muted}"/>`).join('') + `<rect y="${H-fh}" width="${W}" height="${fh}" fill="#075985"/>`;},
+    lSVG:(W,H)=>{const hh=11,mapW=Math.round(W*.38);return `<rect width="${W}" height="${H}" fill="#f0f9ff"/><rect width="${W}" height="${hh}" fill="#0369a1"/><rect x="3" y="3" width="18" height="5" rx="1" fill="rgba(255,255,255,.25)"/><rect y="${hh}" width="${mapW}" height="${H-hh}" fill="rgba(3,105,161,.06)" stroke="${C.border}" stroke-width=".5"/>` + [0,1,2].map(r=>[0,1,2].map(c=>`<rect x="${4+c*((mapW-8)/3)}" y="${hh+4+r*((H-hh-8)/3)}" width="${(mapW-8)/3-2}" height="${(H-hh-8)/3-2}" rx="2" fill="rgba(3,105,161,.1)"/>`).join('')).join('') + [0,1,2].map(i=>`<rect x="${mapW+4}" y="${hh+5+i*((H-hh-10)/3)}" width="${W-mapW-8}" height="${(H-hh-10)/3}" rx="4" fill="${C.card}" stroke="${C.border}" stroke-width=".7"/><rect x="${mapW+10}" y="${hh+9+i*((H-hh-10)/3)}" width="5" height="5" rx="1" fill="#0369a1" opacity=".7"/><rect x="${mapW+20}" y="${hh+10+i*((H-hh-10)/3)}" width="${(W-mapW-28)*.55}" height="2" rx="1" fill="${C.muted}"/>`).join('');},
   },
 ];
 

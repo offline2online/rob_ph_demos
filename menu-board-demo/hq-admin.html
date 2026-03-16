@@ -635,7 +635,11 @@
     .brand-name-link:hover { text-decoration:underline; }
 
     /* ── TEMPLATE LIBRARY ───────────────────────────────────── */
-    .tpl-lib-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(320px,1fr)); gap:20px; margin-top:20px; }
+    .tpl-lib-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(320px,1fr)); gap:20px; margin-top:16px; }
+    .tpl-cat-tabs { display:flex; gap:6px; flex-wrap:wrap; margin-bottom:4px; }
+    .tpl-cat-tab { background:var(--surface); border:1px solid var(--border); border-radius:20px; padding:5px 14px; font-size:12px; font-weight:600; color:var(--text2); cursor:pointer; transition:all .14s; white-space:nowrap; }
+    .tpl-cat-tab:hover { border-color:var(--primary); color:var(--primary); }
+    .tpl-cat-tab.active { background:var(--primary); border-color:var(--primary); color:#fff; }
     .tpl-lib-card { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); overflow:hidden; transition:border-color .15s,box-shadow .15s; cursor:pointer; }
     .tpl-lib-card:hover { border-color:var(--primary); box-shadow:0 4px 16px rgba(22,155,194,0.12); }
     .tpl-lib-card-header { padding:14px 16px 10px; display:flex; align-items:flex-start; justify-content:space-between; gap:8px; }
@@ -789,19 +793,19 @@
           <div style="font-size:12px;color:var(--text2);margin-bottom:20px;">To use a template for a brand, go to <span style="color:var(--primary);cursor:pointer;font-weight:600;" onclick="showView('brands')">Brands</span> → open a brand → Manage Offer Boards → + Add Template.</div>
 
           <!-- Filter bar -->
-          <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:8px;">
-            <div class="search-box" style="max-width:280px;">
+          <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:12px;">
+            <div class="search-box" style="max-width:260px;">
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
               <input type="text" id="tplLibSearch" placeholder="Search templates…" oninput="renderTemplateLibrary()">
             </div>
-            <select id="tplLibCatFilter" class="filter-select" onchange="renderTemplateLibrary()">
-              <option value="">All Categories</option>
-              <option value="Food &amp; Beverage">Food &amp; Beverage</option>
-              <option value="Retail">Retail</option>
-              <option value="In-Store Experience">In-Store Experience</option>
-              <option value="Out-of-Home">Out-of-Home</option>
-              <option value="Store Operations">Store Operations</option>
-            </select>
+          </div>
+          <div class="tpl-cat-tabs" id="tplCatTabs">
+            <button class="tpl-cat-tab active" onclick="setTplCat(this,'')">All</button>
+            <button class="tpl-cat-tab" onclick="setTplCat(this,'Food &amp; Beverage')">Food &amp; Bev</button>
+            <button class="tpl-cat-tab" onclick="setTplCat(this,'Retail')">Retail</button>
+            <button class="tpl-cat-tab" onclick="setTplCat(this,'In-Store Experience')">In-Store</button>
+            <button class="tpl-cat-tab" onclick="setTplCat(this,'Out-of-Home')">Out-of-Home</button>
+            <button class="tpl-cat-tab" onclick="setTplCat(this,'Store Operations')">Operations</button>
           </div>
 
           <div class="tpl-lib-grid" id="tplLibGrid"></div>
@@ -1264,6 +1268,24 @@
               </select>
             </div>
 
+            <div class="section-divider" id="sd-store-person">Store &amp; Personalisation</div>
+            <div class="form-row">
+              <div class="form-group">
+                <label>Show Store Name</label>
+                <select id="tplShowStoreName">
+                  <option value="true">On &mdash; Display store name on board</option>
+                  <option value="false">Off &mdash; Hide store name</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label>Personalised Greeting</label>
+                <select id="tplPersonalGreeting">
+                  <option value="true">Yes &mdash; Show greeting when first name is known</option>
+                  <option value="false">No &mdash; Always use generic greeting</option>
+                </select>
+              </div>
+            </div>
+
             <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:8px;">
               <button class="btn btn-ghost btn-sm" onclick="closeTplEditor()">Cancel</button>
               <button class="btn btn-primary btn-sm" id="tplSaveBtn" onclick="saveTemplate()">Save Template</button>
@@ -1647,6 +1669,7 @@ const TEMPLATE_LIBRARY = [
     description: 'Traditional tiled grid of products with prices. Ideal for restaurants, cafés, and QSR.',
     category: 'Food & Beverage',
     useCases: ['Restaurant','Café','QSR','Bakery','Food Court'],
+    phData: ['store_location'],
     settings: { showHeader:true, colorScheme:true, iconPosition:true, headerCopy:true, itemTypeFilter:true, categoryFilter:true, soldOutBehavior:true, portrait:true, landscape:true, showClock:true, personalGreeting:false, showStoreName:false, campaignFilter:false },
     defaults: { showHeader:'true', iconPosition:'left', colorHeader:'#169bc2', colorHeaderText:'#ffffff', colorAccent:'#169bc2', colorCatBar:'#169bc2', colorBody:'#f5f5f5', colorText:'#1a1a1a', colorPrice:'#169bc2', colorClockText:'#ffffff', hideOos:'false', portraitCols:3, portraitRows:5, portraitMax:15, landscapeCols:5, landscapeRows:3, landscapeMax:15, showClock:'true', timeFormat:'british', campaignMode:'filter' },
     portraitSVG: (W,H) => {
@@ -1668,6 +1691,7 @@ const TEMPLATE_LIBRARY = [
     description: 'One promoted product dominates with large imagery, supporting items shown below.',
     category: 'Food & Beverage',
     useCases: ['Restaurant','Promotion','Retail','Café'],
+    phData: ['store_location','interaction_campaign_data'],
     settings: { showHeader:true, colorScheme:true, iconPosition:true, headerCopy:false, itemTypeFilter:true, categoryFilter:true, soldOutBehavior:true, portrait:true, landscape:true, showClock:false, personalGreeting:false, showStoreName:false, campaignFilter:true },
     defaults: { showHeader:'true', iconPosition:'center', colorHeader:'#1a1a1a', colorHeaderText:'#ffffff', colorAccent:'#f6ad55', colorCatBar:'#f6ad55', colorBody:'#111111', colorText:'#ffffff', colorPrice:'#f6ad55', colorClockText:'#ffffff', hideOos:'true', portraitCols:3, portraitRows:2, portraitMax:6, landscapeCols:4, landscapeRows:2, landscapeMax:8, showClock:'false', timeFormat:'british', campaignMode:'override' },
     portraitSVG: (W,H) => {
@@ -1694,6 +1718,7 @@ const TEMPLATE_LIBRARY = [
     description: 'Auto-rotates through categories full screen, one at a time. Ideal for large menus.',
     category: 'Food & Beverage',
     useCases: ['Restaurant','Supermarket','Pharmacy','Café'],
+    phData: ['store_location'],
     settings: { showHeader:true, colorScheme:true, iconPosition:true, headerCopy:false, itemTypeFilter:false, categoryFilter:true, soldOutBehavior:true, portrait:true, landscape:true, showClock:true, personalGreeting:false, showStoreName:true, campaignFilter:false },
     defaults: { showHeader:'true', iconPosition:'left', colorHeader:'#169bc2', colorHeaderText:'#ffffff', colorAccent:'#169bc2', colorCatBar:'#169bc2', colorBody:'#f5f5f5', colorText:'#1a1a1a', colorPrice:'#169bc2', colorClockText:'#ffffff', hideOos:'false', portraitCols:3, portraitRows:4, portraitMax:12, landscapeCols:5, landscapeRows:2, landscapeMax:10, showClock:'true', timeFormat:'british', campaignMode:'filter' },
     portraitSVG: (W,H) => {
@@ -1722,6 +1747,7 @@ const TEMPLATE_LIBRARY = [
     description: 'Price-led layout with prominent discount callouts and deal badges. Drives conversion.',
     category: 'Retail',
     useCases: ['Retail','Supermarket','Convenience','Petrol Station'],
+    phData: ['store_location','interaction_campaign_data'],
     settings: { showHeader:true, colorScheme:true, iconPosition:true, headerCopy:true, itemTypeFilter:true, categoryFilter:true, soldOutBehavior:true, portrait:true, landscape:true, showClock:false, personalGreeting:false, showStoreName:true, campaignFilter:true },
     defaults: { showHeader:'true', iconPosition:'left', colorHeader:'#e53e3e', colorHeaderText:'#ffffff', colorAccent:'#e53e3e', colorCatBar:'#e53e3e', colorBody:'#fff5f5', colorText:'#1a1a1a', colorPrice:'#e53e3e', colorClockText:'#ffffff', hideOos:'true', portraitCols:2, portraitRows:4, portraitMax:8, landscapeCols:4, landscapeRows:2, landscapeMax:8, showClock:'false', timeFormat:'british', campaignMode:'override' },
     portraitSVG: (W,H) => {
@@ -1747,6 +1773,7 @@ const TEMPLATE_LIBRARY = [
     description: 'Greets customers by first name with relevant offers. Ideal for in-queue or lobby displays.',
     category: 'In-Store Experience',
     useCases: ['Telco','Banking','Healthcare','Retail','Queue'],
+    phData: ['store_location','visitor_customer'],
     settings: { showHeader:true, colorScheme:true, iconPosition:true, headerCopy:false, itemTypeFilter:true, categoryFilter:true, soldOutBehavior:false, portrait:true, landscape:true, showClock:true, personalGreeting:true, showStoreName:true, campaignFilter:true },
     defaults: { showHeader:'true', iconPosition:'center', colorHeader:'#169bc2', colorHeaderText:'#ffffff', colorAccent:'#169bc2', colorCatBar:'#169bc2', colorBody:'#f0f9ff', colorText:'#1a1a1a', colorPrice:'#169bc2', colorClockText:'#ffffff', hideOos:'false', portraitCols:2, portraitRows:3, portraitMax:6, landscapeCols:3, landscapeRows:2, landscapeMax:6, showClock:'true', timeFormat:'british', campaignMode:'override' },
     portraitSVG: (W,H) => {
@@ -1774,6 +1801,7 @@ const TEMPLATE_LIBRARY = [
     description: 'Shows live queue wait times, number of visitors, and store availability from the PH API.',
     category: 'In-Store Experience',
     useCases: ['Queue Management','Banking','Telco','Healthcare','Government'],
+    phData: ['store_location','queueing_appointment'],
     settings: { showHeader:true, colorScheme:true, iconPosition:true, headerCopy:false, itemTypeFilter:false, categoryFilter:false, soldOutBehavior:false, portrait:true, landscape:true, showClock:true, personalGreeting:false, showStoreName:true, campaignFilter:false },
     defaults: { showHeader:'true', iconPosition:'center', colorHeader:'#169bc2', colorHeaderText:'#ffffff', colorAccent:'#169bc2', colorCatBar:'#169bc2', colorBody:'#f0f9ff', colorText:'#1a1a1a', colorPrice:'#169bc2', colorClockText:'#ffffff', hideOos:'false', portraitCols:1, portraitRows:2, portraitMax:2, landscapeCols:2, landscapeRows:1, landscapeMax:2, showClock:'true', timeFormat:'british', campaignMode:'filter' },
     portraitSVG: (W,H) => {
@@ -1804,6 +1832,7 @@ const TEMPLATE_LIBRARY = [
     description: 'Magazine-style layout highlighting newest products. Perfect for fashion, electronics, and lifestyle retail.',
     category: 'Retail',
     useCases: ['Fashion','Electronics','Lifestyle','Beauty','Sport'],
+    phData: ['store_location','interaction_campaign_data'],
     settings: { showHeader:true, colorScheme:true, iconPosition:true, headerCopy:true, itemTypeFilter:true, categoryFilter:true, soldOutBehavior:true, portrait:true, landscape:true, showClock:false, personalGreeting:false, showStoreName:true, campaignFilter:true },
     defaults: { showHeader:'true', iconPosition:'center', colorHeader:'#1a1a1a', colorHeaderText:'#ffffff', colorAccent:'#38b2ac', colorCatBar:'#38b2ac', colorBody:'#f7fafc', colorText:'#1a1a1a', colorPrice:'#38b2ac', colorClockText:'#ffffff', hideOos:'true', portraitCols:2, portraitRows:3, portraitMax:6, landscapeCols:4, landscapeRows:2, landscapeMax:8, showClock:'false', timeFormat:'british', campaignMode:'override' },
     portraitSVG: (W,H) => {
@@ -1831,6 +1860,7 @@ const TEMPLATE_LIBRARY = [
     description: 'Full-screen OOH-style advertisement with large brand imagery. Ideal for digital out-of-home and retail media networks.',
     category: 'Out-of-Home',
     useCases: ['DOOH','OOH','Retail Media','Brand Advertising','Mall'],
+    phData: ['interaction_campaign_data'],
     settings: { showHeader:false, colorScheme:true, iconPosition:false, headerCopy:false, itemTypeFilter:false, categoryFilter:false, soldOutBehavior:false, portrait:true, landscape:true, showClock:false, personalGreeting:false, showStoreName:false, campaignFilter:true },
     defaults: { showHeader:'false', iconPosition:'center', colorHeader:'#000000', colorHeaderText:'#ffffff', colorAccent:'#f6ad55', colorCatBar:'#f6ad55', colorBody:'#000000', colorText:'#ffffff', colorPrice:'#f6ad55', colorClockText:'#ffffff', hideOos:'false', portraitCols:1, portraitRows:1, portraitMax:1, landscapeCols:1, landscapeRows:1, landscapeMax:1, showClock:'false', timeFormat:'british', campaignMode:'override' },
     portraitSVG: (W,H) => {
@@ -1856,6 +1886,7 @@ const TEMPLATE_LIBRARY = [
     description: 'Dense compact grid maximising items per screen. Designed for value retailers and convenience stores.',
     category: 'Food & Beverage',
     useCases: ['Convenience','Petrol Station','Value Retail','Pharmacy'],
+    phData: ['store_location'],
     settings: { showHeader:true, colorScheme:true, iconPosition:false, headerCopy:false, itemTypeFilter:true, categoryFilter:true, soldOutBehavior:true, portrait:true, landscape:true, showClock:true, personalGreeting:false, showStoreName:false, campaignFilter:false },
     defaults: { showHeader:'true', iconPosition:'left', colorHeader:'#1a1a1a', colorHeaderText:'#ffffff', colorAccent:'#f6ad55', colorCatBar:'#f6ad55', colorBody:'#ffffff', colorText:'#1a1a1a', colorPrice:'#e53e3e', colorClockText:'#ffffff', hideOos:'false', portraitCols:3, portraitRows:7, portraitMax:21, landscapeCols:6, landscapeRows:4, landscapeMax:24, showClock:'true', timeFormat:'british', campaignMode:'filter' },
     portraitSVG: (W,H) => {
@@ -1878,6 +1909,7 @@ const TEMPLATE_LIBRARY = [
     description: 'Display split into two zones — promotions on one side, product menu on the other.',
     category: 'Retail',
     useCases: ['QSR','Restaurant','Retail','Entertainment'],
+    phData: ['store_location','interaction_campaign_data'],
     settings: { showHeader:true, colorScheme:true, iconPosition:true, headerCopy:false, itemTypeFilter:true, categoryFilter:true, soldOutBehavior:true, portrait:true, landscape:true, showClock:true, personalGreeting:false, showStoreName:false, campaignFilter:true },
     defaults: { showHeader:'true', iconPosition:'left', colorHeader:'#169bc2', colorHeaderText:'#ffffff', colorAccent:'#169bc2', colorCatBar:'#169bc2', colorBody:'#f5f5f5', colorText:'#1a1a1a', colorPrice:'#169bc2', colorClockText:'#ffffff', hideOos:'false', portraitCols:2, portraitRows:4, portraitMax:8, landscapeCols:3, landscapeRows:3, landscapeMax:9, showClock:'true', timeFormat:'british', campaignMode:'filter' },
     portraitSVG: (W,H) => {
@@ -1904,6 +1936,7 @@ const TEMPLATE_LIBRARY = [
     description: 'Full-bleed hero imagery with campaign product showcase. Perfect for seasonal events and limited-time offers.',
     category: 'Retail',
     useCases: ['Seasonal','Campaign','Holiday','Event','Launch'],
+    phData: ['store_location','interaction_campaign_data'],
     settings: { showHeader:true, colorScheme:true, iconPosition:true, headerCopy:true, itemTypeFilter:true, categoryFilter:true, soldOutBehavior:true, portrait:true, landscape:true, showClock:false, personalGreeting:false, showStoreName:false, campaignFilter:true },
     defaults: { showHeader:'true', iconPosition:'center', colorHeader:'#1a1a1a', colorHeaderText:'#ffffff', colorAccent:'#e53e3e', colorCatBar:'#e53e3e', colorBody:'#1a1a1a', colorText:'#ffffff', colorPrice:'#f6ad55', colorClockText:'#ffffff', hideOos:'true', portraitCols:2, portraitRows:2, portraitMax:4, landscapeCols:4, landscapeRows:2, landscapeMax:8, showClock:'false', timeFormat:'british', campaignMode:'override' },
     portraitSVG: (W,H) => {
@@ -1933,6 +1966,7 @@ const TEMPLATE_LIBRARY = [
     description: 'Displays store name, opening hours, contact info and live time. Used at store entrance or lobby.',
     category: 'Store Operations',
     useCases: ['Entrance','Lobby','Reception','Clinic','Appointment'],
+    phData: ['store_location','store_info'],
     settings: { showHeader:true, colorScheme:true, iconPosition:true, headerCopy:true, itemTypeFilter:false, categoryFilter:false, soldOutBehavior:false, portrait:true, landscape:true, showClock:true, personalGreeting:false, showStoreName:true, campaignFilter:false },
     defaults: { showHeader:'true', iconPosition:'center', colorHeader:'#169bc2', colorHeaderText:'#ffffff', colorAccent:'#169bc2', colorCatBar:'#169bc2', colorBody:'#f0f9ff', colorText:'#1a1a1a', colorPrice:'#169bc2', colorClockText:'#ffffff', hideOos:'false', portraitCols:1, portraitRows:3, portraitMax:3, landscapeCols:2, landscapeRows:2, landscapeMax:4, showClock:'true', timeFormat:'british', campaignMode:'filter' },
     portraitSVG: (W,H) => {
@@ -1953,14 +1987,202 @@ const TEMPLATE_LIBRARY = [
       [0,1,2,3].map(i=>`<rect x="4" y="${hh+20+i*9}" width="${infoW-8}" height="6" rx="2" fill="${C.card}" stroke="${C.border}" stroke-width=".5"/>`).join('') +
       gridCells(infoW+3,hh,W-infoW-3,H-hh,2,2,2);
     }
+  },
+  // ── NEW TEMPLATES ──────────────────────────────────────────────────────
+  {
+    id: 'happy-hour-board',
+    name: 'Happy Hour / Time-Sensitive Offer',
+    description: 'Promotes time-limited deals with a countdown/clock emphasis. Perfect for bars, cafés, and QSR happy hours.',
+    category: 'Food & Beverage',
+    useCases: ['Bar','Café','QSR','Restaurant','Hotel'],
+    phData: ['store_location','interaction_campaign_data'],
+    settings: { showHeader:true, colorScheme:true, iconPosition:true, headerCopy:true, itemTypeFilter:true, categoryFilter:false, soldOutBehavior:false, portrait:true, landscape:true, showClock:true, personalGreeting:false, showStoreName:false, campaignFilter:true },
+    defaults: { showHeader:'true', iconPosition:'left', colorHeader:'#b45309', colorHeaderText:'#ffffff', colorAccent:'#d97706', colorCatBar:'#d97706', colorBody:'#fffbeb', colorText:'#1a1a1a', colorPrice:'#b45309', colorClockText:'#ffffff', hideOos:'false', portraitCols:2, portraitRows:3, portraitMax:6, landscapeCols:4, landscapeRows:2, landscapeMax:8, showClock:'true', timeFormat:'british', campaignMode:'override' },
+    portraitSVG: (W,H) => {
+      const hh=14; const bannerH=14; const fh=10;
+      return `<rect width="${W}" height="${H}" fill="#fffbeb"/><rect width="${W}" height="${hh}" fill="#b45309"/>` +
+      `<rect x="3" y="3.5" width="20" height="7" rx="1.5" fill="rgba(255,255,255,.25)"/>` +
+      `<rect x="${W-12}" y="3" width="9" height="8" rx="4" fill="rgba(255,255,255,.2)"/>` +
+      `<rect y="${hh}" width="${W}" height="${bannerH}" fill="#d97706"/>` +
+      `<rect x="${W/2-22}" y="${hh+4}" width="44" height="6" rx="2" fill="rgba(255,255,255,.9)"/>` +
+      gridCells(0,hh+bannerH,W,H-hh-bannerH-fh,2,3,2) +
+      `<rect y="${H-fh}" width="${W}" height="${fh}" fill="#92400e"/>` +
+      `<rect x="${W/2-16}" y="${H-fh+3}" width="32" height="2.5" rx="1" fill="rgba(255,255,255,.4)"/>`;
+    },
+    landscapeSVG: (W,H) => {
+      const hh=11; const cdW=Math.round(W*0.24);
+      return `<rect width="${W}" height="${H}" fill="#fffbeb"/><rect width="${W}" height="${hh}" fill="#b45309"/>` +
+      `<rect x="3" y="3" width="18" height="5" rx="1" fill="rgba(255,255,255,.25)"/>` +
+      `<rect y="${hh}" width="${cdW}" height="${H-hh}" fill="#92400e"/>` +
+      `<circle cx="${cdW/2}" cy="${hh+(H-hh)*0.35}" r="9" fill="none" stroke="rgba(255,255,255,.4)" stroke-width="1.5"/>` +
+      `<rect x="${cdW*0.2}" y="${hh+(H-hh)*0.33}" width="${cdW*0.6}" height="4" rx="2" fill="rgba(255,255,255,.8)"/>` +
+      `<rect x="${cdW*0.15}" y="${hh+(H-hh)*0.6}" width="${cdW*0.7}" height="3" rx="1.5" fill="rgba(255,255,255,.5)"/>` +
+      `<rect x="${cdW*0.15}" y="${hh+(H-hh)*0.72}" width="${cdW*0.7}" height="3" rx="1.5" fill="rgba(255,255,255,.35)"/>` +
+      gridCells(cdW+2,hh,W-cdW-2,H-hh,4,2,2);
+    }
+  },
+  {
+    id: 'nutritional-focus',
+    name: 'Nutritional Focus Board',
+    description: 'Highlights calorie counts and macro information alongside product pricing. Ideal for health-conscious environments.',
+    category: 'Food & Beverage',
+    useCases: ['Health Café','Gym','Hospital','School','Workplace Canteen'],
+    phData: ['store_location'],
+    settings: { showHeader:true, colorScheme:true, iconPosition:true, headerCopy:false, itemTypeFilter:true, categoryFilter:true, soldOutBehavior:true, portrait:true, landscape:true, showClock:false, personalGreeting:false, showStoreName:false, campaignFilter:false },
+    defaults: { showHeader:'true', iconPosition:'left', colorHeader:'#16a34a', colorHeaderText:'#ffffff', colorAccent:'#16a34a', colorCatBar:'#15803d', colorBody:'#f0fdf4', colorText:'#1a1a1a', colorPrice:'#16a34a', colorClockText:'#ffffff', hideOos:'false', portraitCols:3, portraitRows:5, portraitMax:15, landscapeCols:5, landscapeRows:3, landscapeMax:15, showClock:'false', timeFormat:'british', campaignMode:'filter' },
+    portraitSVG: (W,H) => {
+      const hh=14; const fh=8;
+      const cells = gridCells(0,hh,W,H-hh-fh,3,5,2);
+      const cellH = (H-hh-fh)/5; const cellW = W/3;
+      const macros = [0,1,2,3,4].map(r=>[0,1,2].map(c=>`<rect x="${c*cellW+c*2+2}" y="${hh+r*cellH+r*2+cellH-4}" width="${cellW-4}" height="2.5" rx="1" fill="#16a34a" opacity=".6"/>`).join('')).join('');
+      return `<rect width="${W}" height="${H}" fill="#f0fdf4"/><rect width="${W}" height="${hh}" fill="#16a34a"/>` +
+      `<rect x="3" y="3.5" width="20" height="7" rx="1.5" fill="rgba(255,255,255,.25)"/>` +
+      cells + macros +
+      `<rect y="${H-fh}" width="${W}" height="${fh}" fill="#15803d"/>`;
+    },
+    landscapeSVG: (W,H) => {
+      const hh=11; const fh=7;
+      const cells = gridCells(0,hh,W,H-hh-fh,5,3,2);
+      const cellH = (H-hh-fh)/3; const cellW = W/5;
+      const macros = [0,1,2].map(r=>[0,1,2,3,4].map(c=>`<rect x="${c*cellW+c*2+2}" y="${hh+r*cellH+r*2+cellH-4}" width="${cellW-4}" height="2" rx="1" fill="#16a34a" opacity=".6"/>`).join('')).join('');
+      return `<rect width="${W}" height="${H}" fill="#f0fdf4"/><rect width="${W}" height="${hh}" fill="#16a34a"/>` +
+      cells + macros +
+      `<rect y="${H-fh}" width="${W}" height="${fh}" fill="#15803d"/>`;
+    }
+  },
+  {
+    id: 'sale-clearance-board',
+    name: 'Sale / Clearance Board',
+    description: 'High-energy promotional layout with SALE branding and badge callouts. Maximises urgency and drives foot traffic.',
+    category: 'Retail',
+    useCases: ['Retail','Fashion','Department Store','Outlet','Electronics'],
+    phData: ['store_location','interaction_campaign_data'],
+    settings: { showHeader:true, colorScheme:true, iconPosition:true, headerCopy:true, itemTypeFilter:false, categoryFilter:true, soldOutBehavior:true, portrait:true, landscape:true, showClock:false, personalGreeting:false, showStoreName:false, campaignFilter:true },
+    defaults: { showHeader:'true', iconPosition:'left', colorHeader:'#dc2626', colorHeaderText:'#ffffff', colorAccent:'#dc2626', colorCatBar:'#dc2626', colorBody:'#fff1f2', colorText:'#1a1a1a', colorPrice:'#dc2626', colorClockText:'#ffffff', hideOos:'true', portraitCols:2, portraitRows:4, portraitMax:8, landscapeCols:4, landscapeRows:2, landscapeMax:8, showClock:'false', timeFormat:'british', campaignMode:'override' },
+    portraitSVG: (W,H) => {
+      const hh=14; const bannerH=14;
+      return `<rect width="${W}" height="${H}" fill="#fff1f2"/><rect width="${W}" height="${hh}" fill="#dc2626"/>` +
+      `<rect x="3" y="3.5" width="20" height="7" rx="1.5" fill="rgba(255,255,255,.25)"/>` +
+      `<rect y="${hh}" width="${W}" height="${bannerH}" fill="#b91c1c"/>` +
+      `<rect x="${W/2-18}" y="${hh+4}" width="36" height="6" rx="2" fill="rgba(255,255,255,.95)"/>` +
+      gridCells(0,hh+bannerH,W,H-hh-bannerH,2,4,3) +
+      [0,1,2,3].map(i=>`<rect x="${(i%2)*(W/2)+W/2-7}" y="${hh+bannerH+8+Math.floor(i/2)*((H-hh-bannerH)/4)}" width="12" height="7" rx="3.5" fill="#dc2626"/>`).join('');
+    },
+    landscapeSVG: (W,H) => {
+      const hh=11; const bannerH=10;
+      return `<rect width="${W}" height="${H}" fill="#fff1f2"/><rect width="${W}" height="${hh}" fill="#dc2626"/>` +
+      `<rect y="${hh}" width="${W}" height="${bannerH}" fill="#b91c1c"/>` +
+      `<rect x="${W/2-16}" y="${hh+3}" width="32" height="5" rx="2" fill="rgba(255,255,255,.95)"/>` +
+      gridCells(0,hh+bannerH,W,H-hh-bannerH,4,2,3) +
+      [0,1,2,3].map(i=>`<rect x="${i*(W/4)+W/4-5}" y="${hh+bannerH+8}" width="10" height="5" rx="2.5" fill="#dc2626"/>`).join('');
+    }
+  },
+  {
+    id: 'loyalty-rewards',
+    name: 'Loyalty & Rewards Showcase',
+    description: 'Promotes the loyalty programme with stamp card visual, tier benefits, and personalised greeting when customer name is known.',
+    category: 'In-Store Experience',
+    useCases: ['Retail','Café','Hospitality','Beauty','Gym'],
+    phData: ['store_location','visitor_customer','store_info'],
+    settings: { showHeader:true, colorScheme:true, iconPosition:true, headerCopy:true, itemTypeFilter:false, categoryFilter:false, soldOutBehavior:false, portrait:true, landscape:true, showClock:false, personalGreeting:true, showStoreName:true, campaignFilter:true },
+    defaults: { showHeader:'true', iconPosition:'center', colorHeader:'#7c3aed', colorHeaderText:'#ffffff', colorAccent:'#7c3aed', colorCatBar:'#6d28d9', colorBody:'#f5f3ff', colorText:'#1a1a1a', colorPrice:'#7c3aed', colorClockText:'#ffffff', hideOos:'false', portraitCols:1, portraitRows:3, portraitMax:3, landscapeCols:2, landscapeRows:2, landscapeMax:4, showClock:'false', timeFormat:'british', campaignMode:'override' },
+    portraitSVG: (W,H) => {
+      const hh=14; const cardH=Math.round((H-hh)*0.38); const cardY=hh+8;
+      return `<rect width="${W}" height="${H}" fill="#f5f3ff"/><rect width="${W}" height="${hh}" fill="#7c3aed"/>` +
+      `<rect x="${W/2-14}" y="3.5" width="28" height="7" rx="1.5" fill="rgba(255,255,255,.25)"/>` +
+      `<rect x="4" y="${cardY}" width="${W-8}" height="${cardH}" rx="6" fill="#7c3aed" opacity=".12" stroke="#7c3aed" stroke-width=".8"/>` +
+      `<rect x="${W/2-20}" y="${cardY+7}" width="40" height="5" rx="2" fill="#7c3aed" opacity=".7"/>` +
+      [0,1,2,3,4,5,6].map(i=>`<circle cx="${W/2-18+i*6}" cy="${cardY+cardH-10}" r="4" fill="${i<4?'#7c3aed':'rgba(124,58,237,.2)'}" stroke="#7c3aed" stroke-width=".6"/>`).join('') +
+      [0,1,2].map(i=>`<rect x="4" y="${cardY+cardH+12+i*18}" width="${W-8}" height="14" rx="4" fill="${C.card}" stroke="${C.border}" stroke-width=".7"/><rect x="10" y="${cardY+cardH+17+i*18}" width="${(W-20)*0.55}" height="2.5" rx="1" fill="${C.muted}"/><rect x="${W-22}" y="${cardY+cardH+14+i*18}" width="14" height="8" rx="4" fill="#7c3aed"/>`).join('');
+    },
+    landscapeSVG: (W,H) => {
+      const hh=11; const cardW=Math.round(W*0.44);
+      return `<rect width="${W}" height="${H}" fill="#f5f3ff"/><rect width="${W}" height="${hh}" fill="#7c3aed"/>` +
+      `<rect x="3" y="3" width="18" height="5" rx="1" fill="rgba(255,255,255,.25)"/>` +
+      `<rect x="4" y="${hh+5}" width="${cardW-8}" height="${H-hh-9}" rx="6" fill="#7c3aed" opacity=".1" stroke="#7c3aed" stroke-width=".8"/>` +
+      `<rect x="${cardW*0.1}" y="${hh+12}" width="${cardW*0.8}" height="4" rx="2" fill="#7c3aed" opacity=".7"/>` +
+      [0,1,2,3,4,5].map(i=>`<circle cx="${cardW*0.12+i*(cardW*0.14)}" cy="${hh+(H-hh)*0.65}" r="3.5" fill="${i<4?'#7c3aed':'rgba(124,58,237,.25)'}" stroke="#7c3aed" stroke-width=".5"/>`).join('') +
+      gridCells(cardW+3,hh,W-cardW-3,H-hh,2,2,2);
+    }
+  },
+  {
+    id: 'brand-campaign-fullscreen',
+    name: 'Brand Campaign Full-Screen',
+    description: 'Immersive full-bleed campaign canvas with no chrome. Maximum visual impact for brand advertising and OOH media.',
+    category: 'Out-of-Home',
+    useCases: ['DOOH','Brand Campaign','OOH','Mall','Airport'],
+    phData: ['interaction_campaign_data'],
+    settings: { showHeader:false, colorScheme:true, iconPosition:false, headerCopy:false, itemTypeFilter:false, categoryFilter:false, soldOutBehavior:false, portrait:true, landscape:true, showClock:false, personalGreeting:false, showStoreName:false, campaignFilter:true },
+    defaults: { showHeader:'false', iconPosition:'center', colorHeader:'#000000', colorHeaderText:'#ffffff', colorAccent:'#f6ad55', colorCatBar:'#f6ad55', colorBody:'#000000', colorText:'#ffffff', colorPrice:'#f6ad55', colorClockText:'#ffffff', hideOos:'false', portraitCols:1, portraitRows:1, portraitMax:1, landscapeCols:1, landscapeRows:1, landscapeMax:1, showClock:'false', timeFormat:'british', campaignMode:'override' },
+    portraitSVG: (W,H) => {
+      return `<rect width="${W}" height="${H}" fill="#000"/>` +
+      `<rect x="0" y="0" width="${W}" height="${H*0.62}" fill="#1a1a1a"/>` +
+      `<rect x="${W*0.15}" y="${H*0.18}" width="${W*0.7}" height="${H*0.32}" rx="3" fill="#2d2d2d"/>` +
+      `<rect x="${W/2-22}" y="${H*0.65}" width="44" height="7" rx="2" fill="rgba(255,255,255,.9)"/>` +
+      `<rect x="${W/2-14}" y="${H*0.76}" width="28" height="4" rx="2" fill="#f6ad55"/>` +
+      `<rect x="${W/2-10}" y="${H*0.84}" width="20" height="3" rx="1.5" fill="rgba(255,255,255,.35)"/>` +
+      `<rect x="${W/2-16}" y="${H*0.91}" width="32" height="7" rx="3.5" fill="#f6ad55"/>`;
+    },
+    landscapeSVG: (W,H) => {
+      return `<rect width="${W}" height="${H}" fill="#000"/>` +
+      `<rect x="0" y="0" width="${W*0.56}" height="${H}" fill="#1a1a1a"/>` +
+      `<rect x="${W*0.06}" y="${H*0.12}" width="${W*0.44}" height="${H*0.65}" rx="3" fill="#2d2d2d"/>` +
+      `<rect x="${W*0.62}" y="${H*0.14}" width="${W*0.33}" height="6" rx="2" fill="rgba(255,255,255,.9)"/>` +
+      `<rect x="${W*0.62}" y="${H*0.34}" width="${W*0.24}" height="4" rx="2" fill="#f6ad55"/>` +
+      `<rect x="${W*0.62}" y="${H*0.5}" width="${W*0.28}" height="3" rx="1.5" fill="rgba(255,255,255,.3)"/>` +
+      `<rect x="${W*0.62}" y="${H*0.68}" width="${W*0.26}" height="7" rx="3.5" fill="#f6ad55"/>`;
+    }
+  },
+  {
+    id: 'digital-wayfinding',
+    name: 'Digital Wayfinding',
+    description: 'Directional signage showing store zones, departments, and facilities. Ideal for large retail, malls, hospitals, and campuses.',
+    category: 'Store Operations',
+    useCases: ['Mall','Hospital','Campus','Department Store','Airport'],
+    phData: ['store_location','store_info'],
+    settings: { showHeader:true, colorScheme:true, iconPosition:true, headerCopy:false, itemTypeFilter:false, categoryFilter:false, soldOutBehavior:false, portrait:true, landscape:true, showClock:true, personalGreeting:false, showStoreName:true, campaignFilter:false },
+    defaults: { showHeader:'true', iconPosition:'center', colorHeader:'#0369a1', colorHeaderText:'#ffffff', colorAccent:'#0369a1', colorCatBar:'#0369a1', colorBody:'#f0f9ff', colorText:'#1a1a1a', colorPrice:'#0369a1', colorClockText:'#ffffff', hideOos:'false', portraitCols:1, portraitRows:4, portraitMax:4, landscapeCols:2, landscapeRows:3, landscapeMax:6, showClock:'true', timeFormat:'british', campaignMode:'filter' },
+    portraitSVG: (W,H) => {
+      const hh=14; const snH=12; const fh=8;
+      const rowH = (H-hh-snH-fh)/4;
+      return `<rect width="${W}" height="${H}" fill="#f0f9ff"/><rect width="${W}" height="${hh}" fill="#0369a1"/>` +
+      `<rect x="${W/2-14}" y="3.5" width="28" height="7" rx="1.5" fill="rgba(255,255,255,.3)"/>` +
+      `<rect x="4" y="${hh+4}" width="${W-8}" height="${snH}" rx="3" fill="#0369a1" opacity=".15"/>` +
+      `<rect x="${W/2-18}" y="${hh+7}" width="36" height="3.5" rx="2" fill="#0369a1" opacity=".6"/>` +
+      [0,1,2,3].map(i=>`<rect x="4" y="${hh+snH+8+i*(rowH+2)}" width="${W-8}" height="${rowH}" rx="4" fill="${C.card}" stroke="${C.border}" stroke-width=".7"/><rect x="12" y="${hh+snH+12+i*(rowH+2)}" width="6" height="6" rx="1" fill="#0369a1" opacity=".7"/><rect x="24" y="${hh+snH+13+i*(rowH+2)}" width="${(W-34)*0.6}" height="2.5" rx="1" fill="${C.muted}"/><rect x="${W-16}" y="${hh+snH+12+i*(rowH+2)}" width="8" height="6" rx="1" fill="rgba(3,105,161,.15)"/>`).join('') +
+      `<rect y="${H-fh}" width="${W}" height="${fh}" fill="#075985"/>`;
+    },
+    landscapeSVG: (W,H) => {
+      const hh=11; const mapW=Math.round(W*0.38);
+      return `<rect width="${W}" height="${H}" fill="#f0f9ff"/><rect width="${W}" height="${hh}" fill="#0369a1"/>` +
+      `<rect x="3" y="3" width="18" height="5" rx="1" fill="rgba(255,255,255,.25)"/>` +
+      `<rect y="${hh}" width="${mapW}" height="${H-hh}" fill="rgba(3,105,161,.06)" stroke="${C.border}" stroke-width=".5"/>` +
+      [0,1,2].map(r=>[0,1,2].map(c=>`<rect x="${4+c*((mapW-8)/3)}" y="${hh+4+r*((H-hh-8)/3)}" width="${(mapW-8)/3-2}" height="${(H-hh-8)/3-2}" rx="2" fill="rgba(3,105,161,.1)" stroke="rgba(3,105,161,.2)" stroke-width=".5"/>`).join('')).join('') +
+      [0,1,2].map(i=>`<rect x="${mapW+4}" y="${hh+5+i*((H-hh-10)/3)}" width="${W-mapW-8}" height="${(H-hh-10)/3}" rx="4" fill="${C.card}" stroke="${C.border}" stroke-width=".7"/><rect x="${mapW+10}" y="${hh+9+i*((H-hh-10)/3)}" width="5" height="5" rx="1" fill="#0369a1" opacity=".7"/><rect x="${mapW+20}" y="${hh+10+i*((H-hh-10)/3)}" width="${(W-mapW-28)*0.55}" height="2" rx="1" fill="${C.muted}"/>`).join('');
+    }
   }
 ];
+
+const PH_DATA_LABELS = {
+  store_location:          { label: 'Store Location',      fields: 'store_code, store_name, store_timezone, display_type' },
+  visitor_customer:        { label: 'Visitor / Customer',  fields: 'first_name, SKUs, segments, audience' },
+  queueing_appointment:    { label: 'Queue & Appointment', fields: 'estimated_waiting_time, number_of_visitors' },
+  store_info:              { label: 'Store Info & Hours',  fields: 'opening_hours, address, phone, reward_info' },
+  interaction_campaign_data: { label: 'Campaign Data',     fields: 'active_campaign, matched_intent, interaction_entities' }
+};
+
+function setTplCat(btn, cat) {
+  document.querySelectorAll('.tpl-cat-tab').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  window._tplLibCat = cat;
+  renderTemplateLibrary();
+}
 
 function renderTemplateLibrary() {
   const grid = document.getElementById('tplLibGrid');
   if (!grid) return;
   const search = (document.getElementById('tplLibSearch')?.value || '').toLowerCase();
-  const catFilter = document.getElementById('tplLibCatFilter')?.value || '';
+  const catFilter = window._tplLibCat || '';
 
   const filtered = TEMPLATE_LIBRARY.filter(t => {
     if (catFilter && t.category !== catFilter) return false;
@@ -2023,6 +2245,15 @@ function openTplDetailFromLib(id) {
     showStoreName: 'Show Store Name', campaignFilter: 'Campaign Filter Mode'
   };
   const settingsList = Object.entries(t.settings).filter(([,v])=>v).map(([k])=>`<li style="font-size:12px;color:var(--text2);padding:3px 0;">✓ ${settingLabels[k]||k}</li>`).join('');
+  const phDataHtml = (t.phData || []).map(key => {
+    const info = PH_DATA_LABELS[key] || { label: key, fields: '' };
+    return `<div style="display:flex;align-items:flex-start;gap:8px;padding:6px 0;border-bottom:1px solid var(--border);">
+      <div style="flex:1;">
+        <div style="font-size:12px;font-weight:600;color:var(--text);">${info.label}</div>
+        <div style="font-size:11px;color:var(--text2);margin-top:2px;font-family:monospace;">${info.fields}</div>
+      </div>
+    </div>`;
+  }).join('');
 
   let overlay = document.getElementById('tplDetailOverlay');
   if (!overlay) {
@@ -2042,10 +2273,13 @@ function openTplDetailFromLib(id) {
     <div style="padding:22px;">
       <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:16px;">
         <div>
-          <h2 style="font-size:18px;font-weight:700;color:var(--text);margin-bottom:4px;">${t.name}</h2>
-          <p style="font-size:13px;color:var(--text2);">${t.description}</p>
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">
+            <h2 style="font-size:18px;font-weight:700;color:var(--text);margin:0;">${t.name}</h2>
+            <span style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;padding:2px 8px;border-radius:20px;background:#f0fdf4;color:#16a34a;border:1px solid #bbf7d0;white-space:nowrap;">Global</span>
+          </div>
+          <p style="font-size:13px;color:var(--text2);margin:0;">${t.description}</p>
         </div>
-        <span style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;padding:3px 10px;border-radius:20px;background:var(--primary-light);color:var(--primary);white-space:nowrap;">${t.category}</span>
+        <span style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;padding:3px 10px;border-radius:20px;background:var(--primary-light);color:var(--primary);white-space:nowrap;flex-shrink:0;">${t.category}</span>
       </div>
       <div style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:20px;">
         ${t.useCases.map(u=>`<span style="font-size:11px;padding:2px 8px;background:var(--surface2);border:1px solid var(--border);border-radius:4px;color:var(--text2);">${u}</span>`).join('')}
@@ -2064,9 +2298,15 @@ function openTplDetailFromLib(id) {
           </div>
         </div>
       </div>
-      <div style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:16px;">
-        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text2);margin-bottom:10px;">Configurable Settings for this Template</div>
-        <ul style="list-style:none;columns:2;gap:12px;">${settingsList}</ul>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+        <div style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:16px;">
+          <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text2);margin-bottom:10px;">Configurable Settings</div>
+          <ul style="list-style:none;padding:0;margin:0;">${settingsList}</ul>
+        </div>
+        <div style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:16px;">
+          <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text2);margin-bottom:10px;">PH Data Sources Used</div>
+          ${phDataHtml || '<p style="font-size:12px;color:var(--text2);margin:0;">No external data required.</p>'}
+        </div>
       </div>
     </div>`;
   overlay.style.display = 'flex';
@@ -2084,8 +2324,12 @@ function openTemplatePicker(callback) {
         <h2 style="font-size:16px;font-weight:700;color:var(--text);margin:0 0 4px;">Choose a Template</h2>
         <p style="font-size:13px;color:var(--text2);margin:0;">Select a template from the library. Settings will be pre-configured based on the template type.</p>
       </div>
-      <div style="padding:12px 22px 0;display:flex;gap:8px;">
-        <select id="tplPickerCatFilter" class="filter-select" onchange="renderTplPickerGrid()" style="width:220px;">
+      <div style="padding:12px 22px 0;display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+        <div class="search-box" style="max-width:240px;">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          <input type="text" id="tplPickerSearch" placeholder="Search templates…" oninput="renderTplPickerGrid()">
+        </div>
+        <select id="tplPickerCatFilter" class="filter-select" onchange="renderTplPickerGrid()" style="width:200px;">
           <option value="">All Categories</option>
           <option value="Food &amp; Beverage">Food &amp; Beverage</option>
           <option value="Retail">Retail</option>
@@ -2110,6 +2354,7 @@ function openTemplatePicker(callback) {
   window._tplPickerCallback = callback;
   window._tplPickerSelected = null;
   document.getElementById('tplPickerCatFilter').value = '';
+  const ps = document.getElementById('tplPickerSearch'); if (ps) ps.value = '';
   document.getElementById('tplPickerSelectedLabel').textContent = 'No template selected';
   document.getElementById('tplPickerConfirmBtn').disabled = true;
   renderTplPickerGrid();
@@ -2118,11 +2363,17 @@ function openTemplatePicker(callback) {
 
 function renderTplPickerGrid() {
   const catFilter = document.getElementById('tplPickerCatFilter')?.value || '';
-  const filtered = TEMPLATE_LIBRARY.filter(t => !catFilter || t.category === catFilter);
+  const search = (document.getElementById('tplPickerSearch')?.value || '').toLowerCase();
+  const filtered = TEMPLATE_LIBRARY.filter(t => {
+    if (catFilter && t.category !== catFilter) return false;
+    if (search && !t.name.toLowerCase().includes(search) && !t.description.toLowerCase().includes(search) && !t.useCases.some(u => u.toLowerCase().includes(search))) return false;
+    return true;
+  });
   const grid = document.getElementById('tplPickerGrid');
+  if (!filtered.length) { grid.innerHTML = '<div style="grid-column:1/-1;text-align:center;padding:32px;color:var(--text2);font-size:14px;">No templates match your search.</div>'; return; }
   grid.innerHTML = filtered.map(t => {
-    const portraitSVG = `<svg width="46" height="75" viewBox="0 0 68 110" xmlns="http://www.w3.org/2000/svg">${t.portraitSVG(68,110)}</svg>`;
-    const landscapeSVG = `<svg width="75" height="42" viewBox="0 0 110 62" xmlns="http://www.w3.org/2000/svg">${t.landscapeSVG(110,62)}</svg>`;
+    const portraitSVG = `<svg width="50" height="81" viewBox="0 0 68 110" xmlns="http://www.w3.org/2000/svg">${t.portraitSVG(68,110)}</svg>`;
+    const landscapeSVG = `<svg width="81" height="46" viewBox="0 0 110 62" xmlns="http://www.w3.org/2000/svg">${t.landscapeSVG(110,62)}</svg>`;
     return `<div class="tpl-picker-card" id="tplpick-${t.id}" onclick="selectTplPickerCard('${t.id}')">
       <div class="tpl-picker-card-name">${t.name}</div>
       <div class="tpl-picker-card-desc">${t.description}</div>
@@ -2130,6 +2381,9 @@ function renderTplPickerGrid() {
       <div class="tpl-picker-mockup-row">
         <div class="tpl-picker-mockup">${portraitSVG}</div>
         <div class="tpl-picker-mockup">${landscapeSVG}</div>
+      </div>
+      <div style="margin-top:6px;text-align:right;">
+        <button class="btn btn-ghost btn-sm" style="font-size:11px;padding:3px 8px;" onclick="event.stopPropagation();openTplDetailFromLib('${t.id}')">Preview</button>
       </div>
     </div>`;
   }).join('');
@@ -3682,6 +3936,8 @@ function openNewTemplateEditor() {
       setValue('tplShowClock', d.showClock);
       setValue('tplTimeFormat', d.timeFormat);
       setValue('tplCampaignMode', d.campaignMode);
+      setValue('tplShowStoreName', d.showStoreName || 'true');
+      setValue('tplPersonalGreeting', d.personalGreeting || 'true');
     }
     // Show/hide settings sections based on template schema
     applyTemplateSchema(templateId);
@@ -3727,6 +3983,17 @@ function applyTemplateSchema(templateId) {
   setSectionVisible('Landscape Display', s.landscape);
   setSectionVisible('Date & Time', s.showClock);
   setSectionVisible('Campaign Filter', s.campaignFilter);
+  // Store & Personalisation section — use ID-based lookup for reliability
+  const sdStoreEl = document.getElementById('sd-store-person');
+  if (sdStoreEl) {
+    const show = !!(s.showStoreName || s.personalGreeting);
+    sdStoreEl.style.display = show ? '' : 'none';
+    let el = sdStoreEl.nextElementSibling;
+    while (el && !el.classList.contains('section-divider') && !el.classList.contains('tpl-save-row') && el.tagName !== 'BUTTON') {
+      if (!el.style.justifyContent) el.style.display = show ? '' : 'none';
+      el = el.nextElementSibling;
+    }
+  }
 }
 
 function openEditTemplateEditor(tplId) {
@@ -3761,6 +4028,8 @@ function openEditTemplateEditor(tplId) {
   document.getElementById('tplShowClock').value       = tpl.showClock !== false ? 'true' : 'false';
   document.getElementById('tplTimeFormat').value      = tpl.timeFormat   || 'british';
   document.getElementById('tplCampaignMode').value    = tpl.campaignMode || 'override';
+  if (document.getElementById('tplShowStoreName'))    document.getElementById('tplShowStoreName').value    = tpl.showStoreName !== false ? 'true' : 'false';
+  if (document.getElementById('tplPersonalGreeting')) document.getElementById('tplPersonalGreeting').value = tpl.personalGreeting !== false ? 'true' : 'false';
   _tplSelectedTypes = Array.isArray(tpl.menuTypes) ? [...tpl.menuTypes] : [];
   _updateTplTypeLabel();
   document.getElementById('tplTypePanel').classList.remove('open');
@@ -3861,10 +4130,12 @@ function saveTemplate() {
       },
       hideOutOfStock: document.getElementById('tplHideOos').value === 'true',
     },
-    showClock:    document.getElementById('tplShowClock').value !== 'false',
-    timeFormat:   document.getElementById('tplTimeFormat').value   || 'british',
-    campaignMode: document.getElementById('tplCampaignMode').value || 'override',
-    menuTypes:    [..._tplSelectedTypes],
+    showClock:      document.getElementById('tplShowClock').value !== 'false',
+    timeFormat:     document.getElementById('tplTimeFormat').value   || 'british',
+    campaignMode:   document.getElementById('tplCampaignMode').value || 'override',
+    showStoreName:  document.getElementById('tplShowStoreName')?.value !== 'false',
+    personalGreeting: document.getElementById('tplPersonalGreeting')?.value !== 'false',
+    menuTypes:      [..._tplSelectedTypes],
   };
 
   if (_tplEditingId) {
@@ -4311,6 +4582,16 @@ window.openEditTemplateEditor = openEditTemplateEditor;
 window.closeTplEditor         = closeTplEditor;
 window.saveTemplate           = saveTemplate;
 window.confirmDeleteTemplate  = confirmDeleteTemplate;
+window.setTplCat              = setTplCat;
+window.renderTemplateLibrary  = renderTemplateLibrary;
+window.openTplDetailFromLib   = openTplDetailFromLib;
+window.applyTemplateSchema    = applyTemplateSchema;
+window.openTemplatePicker     = openTemplatePicker;
+window.renderTplPickerGrid    = renderTplPickerGrid;
+window.selectTplPickerCard    = selectTplPickerCard;
+window.closeTplPicker         = closeTplPicker;
+window.confirmTplPicker       = confirmTplPicker;
+window.openTplDetail          = openTplDetail;
 window.toggleTplTypePanel     = toggleTplTypePanel;
 window.onTplTypeChange        = onTplTypeChange;
 window.clearTplTypes          = clearTplTypes;
