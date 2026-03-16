@@ -48,7 +48,26 @@
       "Bash(/tmp/menuboard_serve.py:*)",
       "Bash(/tmp/menuboard_proxy.py:*)",
       "Bash(cp \"/Users/rgeerdink/Documents/Claude Code/menu-board-demo/retail-admin.html\" /tmp/menuboard/)",
-      "Bash(cp \"/Users/rgeerdink/Documents/Claude Code/menu-board-demo/location-api.html\" /tmp/menuboard/)"
+      "Bash(cp \"/Users/rgeerdink/Documents/Claude Code/menu-board-demo/location-api.html\" /tmp/menuboard/)",
+      "WebSearch",
+      "WebFetch(domain:www.starbucks.com)",
+      "WebFetch(domain:globalassets.starbucks.com)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "WebFetch(domain:gist.github.com)",
+      "mcp__Claude_in_Chrome__read_network_requests",
+      "WebFetch(domain:cloudassets.starbucks.com)",
+      "Bash(ls \"/Users/rgeerdink/Documents/Claude Code/\"*.html)",
+      "Bash(ls \"/Users/rgeerdink/Documents/Claude Code/menu-board-demo/\"*.html)",
+      "Bash(cp \"/Users/rgeerdink/Documents/Claude Code/menu-board-demo/hq-admin.html\" /tmp/menuboard/hq-admin.html)",
+      "Bash(cp \"/Users/rgeerdink/Documents/Claude Code/menu-board-demo/retail-admin.html\" /tmp/menuboard/retail-admin.html)",
+      "Bash(grep -E \"\\\\.\\(html|js|css|json\\)$\")",
+      "Bash(cp \"/Users/rgeerdink/Documents/Claude Code/menu-board-demo/index.html\" /tmp/menuboard/index.html)",
+      "Read(//proc/40757/**)",
+      "Bash(ps -p 40757 -o command=)",
+      "Bash(rm -f \"/Users/rgeerdink/Documents/Claude Code/.git/HEAD.lock\" \"/Users/rgeerdink/Documents/Claude Code/.git/index.lock\")",
+      "Bash(ls \"/Users/rgeerdink/Documents/Claude Code/.git/\"*.lock)",
+      "Bash(grep -E \"\\\\.\\(html|js|json\\)$\")"
     ]
   }
 }
