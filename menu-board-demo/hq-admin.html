@@ -3494,7 +3494,7 @@ function _copyBrandTplUrl(brand, tpl) {
   params.set('store', '${StoreCode}');
   const menuTypes = Array.isArray(tpl.menuTypes) && tpl.menuTypes.length > 0 ? tpl.menuTypes.join(',') : '${MenuType}';
   params.set('menu', menuTypes);
-  params.set('device', '${DeviceUDID}');
+  params.set('device', '${UniqueDeviceID}');
   params.set('orientation', 'landscape');
   const url = decodeURIComponent(base + '?' + params.toString());
   navigator.clipboard.writeText(url).then(() => {
@@ -4172,7 +4172,7 @@ function copyOfferBoardUrl(tplId) {
   params.set('store',       '${StoreCode}');
   const menuTypes = Array.isArray(tpl.menuTypes) && tpl.menuTypes.length > 0 ? tpl.menuTypes.join(',') : '${MenuType}';
   params.set('menu',        menuTypes);
-  params.set('device',      '${DeviceUDID}');
+  params.set('device',      '${UniqueDeviceID}');
   params.set('orientation', 'landscape');
   const url = decodeURIComponent(base + '?' + params.toString());
   navigator.clipboard.writeText(url).then(() => {
