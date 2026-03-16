@@ -851,26 +851,29 @@
           </div>
 
           <div class="settings-section">
-            <h3>Takeout Bag</h3>
-            <p class="settings-desc">Configure the takeout bag label and icon used across all Brands / Suppliers in the bag panel and order summary.</p>
+            <h3>Shopping Cart</h3>
+            <p class="settings-desc">Configure the cart label and icon used across all Brands / Suppliers in the cart panel and order summary.</p>
             <div class="form-row" style="max-width:520px;">
               <div class="form-group" style="flex:1;">
-                <label>Bag Label <span style="font-size:11px;font-weight:400;text-transform:none;color:var(--text2);">(shown in bag panel &amp; order summary)</span></label>
-                <input type="text" id="sBagLabel" placeholder="Takeout Bag" maxlength="40">
+                <label>Cart Label <span style="font-size:11px;font-weight:400;text-transform:none;color:var(--text2);">(shown in cart panel &amp; order summary)</span></label>
+                <input type="text" id="sBagLabel" placeholder="Shopping Cart" maxlength="40" oninput="_cartMarkDirty()">
               </div>
             </div>
-            <div class="form-group" style="max-width:520px;">
-              <label>Bag Icon <span style="font-size:11px;font-weight:400;text-transform:none;color:var(--text2);">(transparent PNG &mdash; leave blank to use emoji &#x1F6CD;)</span></label>
-              <div class="img-upload-zone" onclick="document.getElementById('sBagIconUpload').click()" style="padding:12px;max-width:520px;">
-                <input type="file" id="sBagIconUpload" accept="image/png,image/webp,image/svg+xml" onchange="uploadSettingsBagIcon(event)">
-                <div id="sBagIconPreview" style="display:none;margin-bottom:8px;align-items:center;gap:12px;">
-                  <img id="sBagIconImg" style="height:40px;width:40px;object-fit:contain;">
-                  <button type="button" onclick="clearSettingsBagIcon()" style="font-size:12px;color:var(--danger);text-decoration:underline;background:none;border:none;cursor:pointer;">Remove icon</button>
+            <div class="form-group" style="max-width:560px;">
+              <label>Cart Icon <span style="font-size:11px;font-weight:400;text-transform:none;color:var(--text2);">(select a preset or upload your own)</span></label>
+              <div id="sCartIconGrid" style="display:flex;flex-wrap:wrap;gap:10px;"></div>
+              <div id="sCartCustomUploadZone" style="display:none;margin-top:10px;">
+                <div class="img-upload-zone" onclick="document.getElementById('sBagIconUpload').click()" style="padding:12px;">
+                  <input type="file" id="sBagIconUpload" accept="image/png,image/webp,image/svg+xml" onchange="uploadSettingsBagIcon(event)" style="display:none;">
+                  <div id="sBagIconPreview" style="display:none;align-items:center;gap:12px;margin-bottom:8px;">
+                    <img id="sBagIconImg" style="height:40px;width:40px;object-fit:contain;">
+                    <button type="button" onclick="clearCartCustomIcon()" style="font-size:12px;color:var(--danger);text-decoration:underline;background:none;border:none;cursor:pointer;">Remove</button>
+                  </div>
+                  <p style="margin:0;font-size:13px;color:var(--text2);">Click to upload cart icon (PNG, WebP or SVG &mdash; max 200KB)</p>
                 </div>
-                <p>Click to upload bag icon (PNG recommended, max 200KB)</p>
               </div>
             </div>
-            <button class="btn btn-primary btn-sm" onclick="saveTakeoutBag()">Save Changes</button>
+            <button id="sCartSaveBtn" class="btn btn-primary btn-sm" onclick="saveTakeoutBag()" disabled style="opacity:0.45;cursor:not-allowed;">Save Changes</button>
           </div>
         </div>
 
@@ -1661,7 +1664,74 @@ function saveStockApiKey() {
 }
 
 
+const CART_PRESET_ICONS = [
+  { label: 'Cart',
+    svg: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13 5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 1 0 0 4 2 2 0 0 0 0-4Zm-8 2a2 2 0 1 0 0 4 2 2 0 0 0 0-4Z"/></svg>` },
+  { label: 'Bag',
+    svg: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M16 11V7a4 4 0 0 0-8 0v4"/><path d="M5 9h14l1 12H4L5 9Z"/></svg>` },
+  { label: 'Tote',
+    svg: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4Z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>` },
+  { label: 'Basket',
+    svg: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M5.52 5h12.96L21 12H3L5.52 5Z"/><path d="M3 12h18v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-7Z"/><path d="M8.5 5 7 2M15.5 5 17 2"/></svg>` },
+  { label: 'Paper Bag',
+    svg: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2h12l2 6v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8l2-6Z"/><path d="M9 8c0 1.657 1.343 3 3 3s3-1.343 3-3"/><line x1="6" y1="8" x2="18" y2="8"/></svg>` },
+  { label: 'Trolley',
+    svg: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h1.5l1.8 9H17l2-6H6"/><circle cx="9" cy="19" r="1.5"/><circle cx="16" cy="19" r="1.5"/><path d="M5 12H2"/></svg>` },
+];
+
 let _settingsBagIcon = '';
+let _cartSelectedPreset = 0;
+let _cartSavedState = null;
+
+function _cartMarkDirty() {
+  if (!_cartSavedState) return;
+  const label = (document.getElementById('sBagLabel')?.value || '').trim();
+  const changed = label !== _cartSavedState.label
+    || _cartSelectedPreset !== _cartSavedState.preset
+    || _settingsBagIcon !== _cartSavedState.icon;
+  const btn = document.getElementById('sCartSaveBtn');
+  if (btn) {
+    btn.disabled = !changed;
+    btn.style.opacity = changed ? '' : '0.45';
+    btn.style.cursor = changed ? '' : 'not-allowed';
+  }
+}
+
+function _renderCartIconGrid() {
+  const grid = document.getElementById('sCartIconGrid');
+  if (!grid) return;
+  grid.innerHTML = '';
+  CART_PRESET_ICONS.forEach((icon, i) => {
+    const tile = document.createElement('div');
+    const sel = _cartSelectedPreset === i;
+    tile.style.cssText = `display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;width:72px;height:82px;border-radius:10px;border:2px solid ${sel ? 'var(--primary)' : 'var(--border)'};background:${sel ? 'rgba(14,165,233,0.09)' : 'var(--surface)'};cursor:pointer;padding:8px;box-sizing:border-box;transition:border-color 0.15s,background 0.15s;`;
+    tile.innerHTML = `<div style="width:36px;height:36px;color:${sel ? 'var(--primary)' : 'var(--text)'};display:flex;align-items:center;justify-content:center;">${icon.svg}</div><span style="font-size:10px;color:${sel ? 'var(--primary)' : 'var(--text2)'};text-align:center;line-height:1.2;font-weight:${sel ? '600' : '400'};">${icon.label}</span>`;
+    tile.onclick = () => selectCartIcon(i);
+    grid.appendChild(tile);
+  });
+  // Upload custom tile
+  const isCustom = _cartSelectedPreset === -1;
+  const uploadTile = document.createElement('div');
+  uploadTile.style.cssText = `display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;width:72px;height:82px;border-radius:10px;border:2px dashed ${isCustom ? 'var(--primary)' : 'var(--border)'};background:${isCustom ? 'rgba(14,165,233,0.09)' : 'var(--surface)'};cursor:pointer;padding:8px;box-sizing:border-box;transition:border-color 0.15s,background 0.15s;`;
+  uploadTile.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="${isCustom ? 'var(--primary)' : 'var(--text2)'}" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" style="width:28px;height:28px;"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg><span style="font-size:10px;color:${isCustom ? 'var(--primary)' : 'var(--text2)'};text-align:center;line-height:1.2;font-weight:${isCustom ? '600' : '400'};">Upload</span>`;
+  uploadTile.onclick = () => selectCartIcon(-1);
+  grid.appendChild(uploadTile);
+  const zone = document.getElementById('sCartCustomUploadZone');
+  if (zone) zone.style.display = isCustom ? '' : 'none';
+}
+
+function selectCartIcon(index) {
+  if (index !== -1) {
+    _settingsBagIcon = '';
+    const prev = document.getElementById('sBagIconPreview');
+    const img = document.getElementById('sBagIconImg');
+    if (prev) prev.style.display = 'none';
+    if (img) img.src = '';
+  }
+  _cartSelectedPreset = index;
+  _renderCartIconGrid();
+  _cartMarkDirty();
+}
 
 function uploadSettingsBagIcon(event) {
   const file = event.target.files[0];
@@ -1672,22 +1742,29 @@ function uploadSettingsBagIcon(event) {
     _settingsBagIcon = e.target.result;
     document.getElementById('sBagIconPreview').style.display = 'flex';
     document.getElementById('sBagIconImg').src = e.target.result;
+    _cartMarkDirty();
   };
   reader.readAsDataURL(file);
   event.target.value = '';
 }
 
-function clearSettingsBagIcon() {
+function clearCartCustomIcon() {
   _settingsBagIcon = '';
   document.getElementById('sBagIconPreview').style.display = 'none';
   document.getElementById('sBagIconImg').src = '';
+  _cartMarkDirty();
 }
 
 function saveTakeoutBag() {
   const bagLabel = (document.getElementById('sBagLabel')?.value || '').trim();
-  const updated = { ..._settings, bagLabel, bagIcon: _settingsBagIcon };
+  const updated = { ..._settings, bagLabel, bagIconPreset: _cartSelectedPreset, bagIcon: _settingsBagIcon };
   setDoc(doc(db, MB, 'settings'), updated)
-    .then(() => { _settings = updated; toast('✅ Takeout Bag settings saved', 'success'); })
+    .then(() => {
+      _settings = updated;
+      _cartSavedState = { label: bagLabel, preset: _cartSelectedPreset, icon: _settingsBagIcon };
+      _cartMarkDirty();
+      toast('✅ Shopping Cart settings saved', 'success');
+    })
     .catch(err => toast('❌ Failed to save: ' + (err.message || err), 'error'));
 }
 
@@ -1695,12 +1772,17 @@ function _loadTakeoutBagUI() {
   const el = document.getElementById('sBagLabel');
   if (el) el.value = _settings.bagLabel || '';
   _settingsBagIcon = _settings.bagIcon || '';
+  _cartSelectedPreset = (_settings.bagIconPreset !== undefined && _settings.bagIconPreset !== null)
+    ? _settings.bagIconPreset : 0;
   const prev = document.getElementById('sBagIconPreview');
   const img  = document.getElementById('sBagIconImg');
   if (prev && img) {
-    if (_settingsBagIcon) { prev.style.display = 'flex'; img.src = _settingsBagIcon; }
+    if (_settingsBagIcon && _cartSelectedPreset === -1) { prev.style.display = 'flex'; img.src = _settingsBagIcon; }
     else { prev.style.display = 'none'; img.src = ''; }
   }
+  _renderCartIconGrid();
+  _cartSavedState = { label: _settings.bagLabel || '', preset: _cartSelectedPreset, icon: _settingsBagIcon };
+  _cartMarkDirty();
 }
 
 async function savePhApi() {
@@ -4880,7 +4962,9 @@ window.clearBrandIcon     = clearBrandIcon;
 window.uploadBrandLogo    = uploadBrandLogo;
 window.clearBrandLogo     = clearBrandLogo;
 window.uploadSettingsBagIcon = uploadSettingsBagIcon;
-window.clearSettingsBagIcon  = clearSettingsBagIcon;
+window.clearCartCustomIcon   = clearCartCustomIcon;
+window.selectCartIcon        = selectCartIcon;
+window._cartMarkDirty        = _cartMarkDirty;
 window.saveTakeoutBag        = saveTakeoutBag;
 window.renderPaletteSwatches = renderPaletteSwatches;
 window.addPaletteColour      = addPaletteColour;
