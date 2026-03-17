@@ -21,9 +21,14 @@
       --board-header-bg:  #ffffff;
       --cat-bar-bg:       #006241;
       --price-color:      #004d33;
-      --item-color:       #004d33;
+      --item-color:       #004d33;  /* item name text — set from colors.text */
+      --item-text:        #1a1a1a;  /* hero item name text — set from colors.text */
+      --item-bg:          #ffffff;  /* item card background */
+      --item-desc:        #444444;  /* short description / secondary item text */
       --header-text:      #006241;
       --clock-text:       #1e293b;
+      --clock-bg:         #f0f4f8;  /* clock bar background */
+      --accent:           #006241;  /* explicit accent var (mirrors --green) */
     }
 
     * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -110,9 +115,9 @@
 
     /* ── CLOCK BAR ─────────────────────────── */
     .clock-bar {
-      background: #f0f4f8;
-      border-top: 1px solid #dde5ee;
-      border-bottom: 1px solid #dde5ee;
+      background: var(--clock-bg, #f0f4f8);
+      border-top: 1px solid var(--clock-bg, #dde5ee);
+      border-bottom: 1px solid var(--clock-bg, #dde5ee);
       display: flex;
       align-items: center;
       justify-content: flex-end;
@@ -227,7 +232,7 @@
       align-items: stretch;
       border-bottom: 1px solid var(--border);
       border-right: 1px solid var(--border);
-      background: var(--white);
+      background: var(--item-bg, var(--white));
       position: relative;
       min-height: 0;
       overflow: hidden;
@@ -352,7 +357,7 @@
     }
     .nutr-unit {
       font-size: clamp(8px, 0.85vw, 11px);
-      color: var(--text2);
+      color: var(--item-desc, var(--text2));
       font-weight: 500;
     }
     /* Calories row — full width above macros */
@@ -615,7 +620,7 @@
     .hero-name {
       font-family: 'Oswald', sans-serif;
       font-weight: 700;
-      color: var(--item-text, #ffffff);
+      color: var(--item-text, var(--text, #ffffff));
       font-size: clamp(20px, 3vw, 52px);
       line-height: 1.15;
       margin-bottom: clamp(4px, 0.6vw, 10px);
@@ -627,7 +632,7 @@
       font-size: clamp(24px, 3.6vw, 62px);
     }
     .hero-desc {
-      color: rgba(255,255,255,0.72);
+      color: var(--item-desc, rgba(255,255,255,0.72));
       font-size: clamp(10px, 1.2vw, 17px);
       line-height: 1.45;
       margin-top: clamp(4px, 0.6vw, 10px);
@@ -863,15 +868,30 @@ function getActiveTemplate(brand) {
 function applyColorScheme(brand) {
   const colors = (brand && brand.colors) || {};
   const root = document.documentElement.style;
-  if (colors.header)     root.setProperty('--board-header-bg', colors.header);
-  if (colors.header)     root.setProperty('--item-color',      colors.header);
-  if (colors.headerText) root.setProperty('--header-text',     colors.headerText);
-  if (colors.accent)     root.setProperty('--green',           colors.accent);
-  if (colors.catBar)     root.setProperty('--cat-bar-bg',      colors.catBar);
-  if (colors.body)       root.setProperty('--cream',           colors.body);
-  if (colors.text)       root.setProperty('--text',            colors.text);
-  if (colors.price)      root.setProperty('--price-color',     colors.price);
-  if (colors.clockText)  root.setProperty('--clock-text',      colors.clockText);
+  // Header
+  if (colors.header)      root.setProperty('--board-header-bg', colors.header);
+  if (colors.headerText)  root.setProperty('--header-text',     colors.headerText);
+  // Accent (mirrors --green for legacy compatibility + explicit --accent var)
+  if (colors.accent)      { root.setProperty('--green',   colors.accent); root.setProperty('--accent', colors.accent); }
+  // Category badge background
+  if (colors.catBar)      root.setProperty('--cat-bar-bg',   colors.catBar);
+  // Page / body background
+  if (colors.body)        root.setProperty('--cream',         colors.body);
+  // Item text — drives item name color, hero name, and nutrition values (was wrongly linked to header)
+  if (colors.text)        {
+    root.setProperty('--text',       colors.text);
+    root.setProperty('--item-color', colors.text);   // item name text
+    root.setProperty('--item-text',  colors.text);   // hero slot item name text
+  }
+  // Price text
+  if (colors.price)       root.setProperty('--price-color',   colors.price);
+  // Clock bar
+  if (colors.clockText)   root.setProperty('--clock-text',    colors.clockText);
+  if (colors.clockBg)     root.setProperty('--clock-bg',      colors.clockBg);
+  // Item card background
+  if (colors.itemBg)      root.setProperty('--item-bg',       colors.itemBg);
+  // Short description / secondary item text
+  if (colors.description) root.setProperty('--item-desc',     colors.description);
 }
 
 // ── CLOCK ────────────────────────────────────────────────────────────────────
@@ -1346,7 +1366,8 @@ function render() {
   const effectiveTimeFormat   = (tpl && tpl.timeFormat)      || themeSource.timeFormat      || 'british';
   const effectiveShowStoreName    = tpl ? (tpl.showStoreName    !== false) : true;
   const effectivePersonalGreeting = tpl ? (tpl.personalGreeting !== false) : true;
-  const effectiveHeaderCopy       = (tpl && tpl.headerCopy)   || '';
+  const effectiveHeaderTitle      = (tpl && tpl.headerTitle)   || themeSource.name || ''; // main heading; falls back to brand name
+  const effectiveHeaderCopy       = (tpl && tpl.headerCopy)   || '';         // sub-header; falls back to menu type label
   const effectiveIconPosition     = (tpl && tpl.iconPosition)  || 'left';
   const effectiveHeaderLogoType   = (tpl && tpl.headerLogoType)|| 'logo';
   const effectiveTemplateType     = (tpl && tpl.templateType)  || TEMPLATE_TYPE || '';
@@ -1554,7 +1575,7 @@ function render() {
         ${effectiveIconPosition === 'center' && _headerAsset
           ? `<img src="${esc(_headerAsset)}" alt="${brandName} logo" style="height:2.4em;max-width:180px;object-fit:contain;margin-bottom:4px;">`
           : ''}
-        <div class="header-brand">${brandName}</div>
+        <div class="header-brand">${esc(effectiveHeaderTitle)}</div>
         <div class="header-menu-type">${esc(effectiveHeaderCopy || meta.label)}</div>
       </div>
       ${logoSlot(logoRight, 'Right')}

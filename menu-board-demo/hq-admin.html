@@ -1244,20 +1244,29 @@
               </select>
             </div>
             <div class="form-group">
-              <label>Header Copy <span style="font-size:11px;font-weight:400;text-transform:none;color:var(--text2);">(tagline shown in header)</span></label>
-              <input type="text" id="tplHeaderCopy" placeholder="e.g. Fresh food, freshly made">
+              <label>Header Title <span style="font-size:11px;font-weight:400;text-transform:none;color:var(--text2);">(main heading in header)</span></label>
+              <input type="text" id="tplHeaderTitle" placeholder="Leave blank to use Brand Name">
+              <p class="form-help">The large primary heading shown in the board header. Leave blank to display the brand name.</p>
+            </div>
+            <div class="form-group">
+              <label>Sub-header Text <span style="font-size:11px;font-weight:400;text-transform:none;color:var(--text2);">(shown below header title)</span></label>
+              <input type="text" id="tplHeaderCopy" placeholder="Leave blank to use menu type label (e.g. Supplements Menu)">
+              <p class="form-help">The smaller line below the main title. Leave blank to use the board's menu type label.</p>
             </div>
 
             <div class="section-divider">Colour Scheme</div>
             <div class="form-row cols-3" style="row-gap:12px;">
-              <div class="form-group"><label>Header Background</label><input type="color" id="tplColorHeader" style="height:40px;padding:4px;cursor:pointer;"></div>
-              <div class="form-group"><label>Header Font</label><input type="color" id="tplColorHeaderText" style="height:40px;padding:4px;cursor:pointer;"></div>
-              <div class="form-group"><label>Brand Accent</label><input type="color" id="tplColorAccent" style="height:40px;padding:4px;cursor:pointer;"></div>
-              <div class="form-group"><label>Category Badge</label><input type="color" id="tplColorCatBar" style="height:40px;padding:4px;cursor:pointer;"></div>
-              <div class="form-group"><label>Body Background</label><input type="color" id="tplColorBody" style="height:40px;padding:4px;cursor:pointer;"></div>
-              <div class="form-group"><label>Item Text</label><input type="color" id="tplColorText" style="height:40px;padding:4px;cursor:pointer;"></div>
-              <div class="form-group"><label>Price</label><input type="color" id="tplColorPrice" style="height:40px;padding:4px;cursor:pointer;"></div>
-              <div class="form-group"><label>Clock Bar Text</label><input type="color" id="tplColorClockText" style="height:40px;padding:4px;cursor:pointer;"></div>
+              <div class="form-group" id="tplColorHeaderGroup"><label>Header Background</label><input type="color" id="tplColorHeader" style="height:40px;padding:4px;cursor:pointer;"></div>
+              <div class="form-group" id="tplColorHeaderTextGroup"><label>Header Text</label><input type="color" id="tplColorHeaderText" style="height:40px;padding:4px;cursor:pointer;"></div>
+              <div class="form-group" id="tplColorAccentGroup"><label>Accent &amp; Highlight</label><input type="color" id="tplColorAccent" style="height:40px;padding:4px;cursor:pointer;"></div>
+              <div class="form-group" id="tplColorCatBarGroup"><label>Category Badge Background</label><input type="color" id="tplColorCatBar" style="height:40px;padding:4px;cursor:pointer;"></div>
+              <div class="form-group" id="tplColorBodyGroup"><label>Page Background</label><input type="color" id="tplColorBody" style="height:40px;padding:4px;cursor:pointer;"></div>
+              <div class="form-group" id="tplColorItemBgGroup"><label>Item Card Background</label><input type="color" id="tplColorItemBg" style="height:40px;padding:4px;cursor:pointer;"></div>
+              <div class="form-group" id="tplColorTextGroup"><label>Item Name Text</label><input type="color" id="tplColorText" style="height:40px;padding:4px;cursor:pointer;"></div>
+              <div class="form-group" id="tplColorDescGroup"><label>Description Text</label><input type="color" id="tplColorDescription" style="height:40px;padding:4px;cursor:pointer;"></div>
+              <div class="form-group" id="tplColorPriceGroup"><label>Price Text</label><input type="color" id="tplColorPrice" style="height:40px;padding:4px;cursor:pointer;"></div>
+              <div class="form-group" id="tplColorClockTextGroup"><label>Clock &amp; Date Text</label><input type="color" id="tplColorClockText" style="height:40px;padding:4px;cursor:pointer;"></div>
+              <div class="form-group" id="tplColorClockBgGroup"><label>Clock Bar Background</label><input type="color" id="tplColorClockBg" style="height:40px;padding:4px;cursor:pointer;"></div>
             </div>
 
             <div class="section-divider">Offer Board Settings</div>
@@ -1444,14 +1453,17 @@ const DEFAULT_TYPES = [
 const DEFAULT_CATS = ['Mains','Starters','Sides','Desserts','Hot Drinks','Cold Drinks','Cocktails','Wines','Beers','Sandwiches','Salads','Pasta','Burgers'];
 
 const DEFAULT_COLORS = {
-  header:     '#ffffff',
-  headerText: '#006241',
-  accent:     '#006241',
-  clockText:  '#1e293b',
-  catBar:     '#006241',
-  body:       '#f9f4ec',
-  text:       '#1a1a1a',
-  price:      '#004d33'
+  header:      '#ffffff',
+  headerText:  '#006241',
+  accent:      '#006241',
+  clockText:   '#1e293b',
+  clockBg:     '#f0f4f8',
+  catBar:      '#006241',
+  body:        '#f9f4ec',
+  itemBg:      '#ffffff',
+  text:        '#1a1a1a',
+  description: '#444444',
+  price:       '#004d33'
 };
 
 const DEFAULT_DISPLAY = {
@@ -1912,7 +1924,7 @@ const TEMPLATE_LIBRARY = [
     useCases: ['Restaurant','Promotion','Retail','Café'],
     phData: ['store_location','interaction_campaign_data'],
     settings: { showHeader:true, colorScheme:true, iconPosition:true, headerCopy:false, itemTypeFilter:true, categoryFilter:true, soldOutBehavior:true, portrait:true, landscape:true, showClock:false, personalGreeting:false, showStoreName:false, campaignFilter:true },
-    defaults: { showHeader:'true', iconPosition:'center', colorHeader:'#1a1a1a', colorHeaderText:'#ffffff', colorAccent:'#f6ad55', colorCatBar:'#f6ad55', colorBody:'#111111', colorText:'#ffffff', colorPrice:'#f6ad55', colorClockText:'#ffffff', hideOos:'true', portraitCols:3, portraitRows:2, portraitMax:6, landscapeCols:4, landscapeRows:2, landscapeMax:8, showClock:'false', timeFormat:'british', campaignMode:'override' },
+    defaults: { showHeader:'true', iconPosition:'center', colorHeader:'#1a1a1a', colorHeaderText:'#ffffff', colorAccent:'#f6ad55', colorCatBar:'#f6ad55', colorBody:'#111111', colorItemBg:'#1e1e1e', colorText:'#ffffff', colorDescription:'#a8a8a8', colorPrice:'#f6ad55', colorClockText:'#ffffff', colorClockBg:'#1a1a1a', hideOos:'true', portraitCols:3, portraitRows:2, portraitMax:6, landscapeCols:4, landscapeRows:2, landscapeMax:8, showClock:'false', timeFormat:'british', campaignMode:'override' },
     portraitSVG: (W,H) => {
       const hh=13; const heroH=Math.round(H*0.42); const bodyY=hh+heroH; const bodyH=H-bodyY-2;
       return `<rect width="${W}" height="${H}" fill="#111"/><rect width="${W}" height="${hh}" fill="#1a1a1a"/>` +
@@ -4480,9 +4492,12 @@ function openNewTemplateEditor() {
       document.getElementById('tplColorAccent').value = d.colorAccent || '#169bc2';
       document.getElementById('tplColorCatBar').value = d.colorCatBar || '#169bc2';
       document.getElementById('tplColorBody').value = d.colorBody || '#f5f5f5';
+      if (document.getElementById('tplColorItemBg'))      document.getElementById('tplColorItemBg').value      = d.colorItemBg      || DEFAULT_COLORS.itemBg;
       document.getElementById('tplColorText').value = d.colorText || '#1a1a1a';
+      if (document.getElementById('tplColorDescription')) document.getElementById('tplColorDescription').value = d.colorDescription || DEFAULT_COLORS.description;
       document.getElementById('tplColorPrice').value = d.colorPrice || '#169bc2';
       document.getElementById('tplColorClockText').value = d.colorClockText || '#ffffff';
+      if (document.getElementById('tplColorClockBg'))     document.getElementById('tplColorClockBg').value     = d.colorClockBg     || DEFAULT_COLORS.clockBg;
       setValue('tplHideOos', d.hideOos);
       document.getElementById('tplPortraitCols').value = d.portraitCols || 3;
       document.getElementById('tplPortraitRows').value = d.portraitRows || 5;
@@ -4560,6 +4575,20 @@ function applyTemplateSchema(templateId) {
   if (heroCatGroup)  heroCatGroup.style.display  = s.categoryFilter ? '' : 'none';
   if (gridCatsGroup) gridCatsGroup.style.display = s.categoryFilter ? '' : 'none';
   if (s.categoryFilter) _populateTplCategoryOptions();
+  // Category badge colour — only relevant when category badges are shown
+  const catBarGroup = document.getElementById('tplColorCatBarGroup');
+  if (catBarGroup) catBarGroup.style.display = s.categoryFilter ? '' : 'none';
+  // Clock-related colours — only relevant when clock bar is shown
+  const clockTextGroup = document.getElementById('tplColorClockTextGroup');
+  const clockBgGroup   = document.getElementById('tplColorClockBgGroup');
+  if (clockTextGroup) clockTextGroup.style.display = s.showClock ? '' : 'none';
+  if (clockBgGroup)   clockBgGroup.style.display   = s.showClock ? '' : 'none';
+  // Header title / sub-header fields — show/hide based on whether header is enabled for this template
+  const headerTitleGroup = document.querySelector('#tplHeaderTitle')?.closest('.form-group');
+  const headerCopyGroup  = document.querySelector('#tplHeaderCopy')?.closest('.form-group');
+  const showHeaderFields = !!(s.showHeader || s.headerCopy);
+  if (headerTitleGroup) headerTitleGroup.style.display = showHeaderFields ? '' : 'none';
+  if (headerCopyGroup)  headerCopyGroup.style.display  = showHeaderFields ? '' : 'none';
   // Store & Personalisation section — use ID-based lookup for reliability
   const sdStoreEl = document.getElementById('sd-store-person');
   if (sdStoreEl) {
@@ -4584,16 +4613,20 @@ function openEditTemplateEditor(tplId) {
   document.getElementById('tplShowHeader').value = tpl.showHeader !== false ? 'true' : 'false';
   document.getElementById('tplIconPosition').value = tpl.iconPosition || 'left';
   document.getElementById('tplHeaderLogoType').value = tpl.headerLogoType || 'logo';
+  if (document.getElementById('tplHeaderTitle')) document.getElementById('tplHeaderTitle').value = tpl.headerTitle || '';
   document.getElementById('tplHeaderCopy').value = tpl.headerCopy || '';
   const c = tpl.colors || DEFAULT_COLORS;
-  document.getElementById('tplColorHeader').value     = c.header     || DEFAULT_COLORS.header;
-  document.getElementById('tplColorHeaderText').value = c.headerText || DEFAULT_COLORS.headerText;
-  document.getElementById('tplColorAccent').value     = c.accent     || DEFAULT_COLORS.accent;
-  document.getElementById('tplColorCatBar').value     = c.catBar     || DEFAULT_COLORS.catBar;
-  document.getElementById('tplColorBody').value       = c.body       || DEFAULT_COLORS.body;
-  document.getElementById('tplColorText').value       = c.text       || DEFAULT_COLORS.text;
-  document.getElementById('tplColorPrice').value      = c.price      || DEFAULT_COLORS.price;
-  document.getElementById('tplColorClockText').value  = c.clockText  || DEFAULT_COLORS.clockText;
+  document.getElementById('tplColorHeader').value     = c.header      || DEFAULT_COLORS.header;
+  document.getElementById('tplColorHeaderText').value = c.headerText  || DEFAULT_COLORS.headerText;
+  document.getElementById('tplColorAccent').value     = c.accent      || DEFAULT_COLORS.accent;
+  document.getElementById('tplColorCatBar').value     = c.catBar      || DEFAULT_COLORS.catBar;
+  document.getElementById('tplColorBody').value       = c.body        || DEFAULT_COLORS.body;
+  if (document.getElementById('tplColorItemBg'))      document.getElementById('tplColorItemBg').value      = c.itemBg      || DEFAULT_COLORS.itemBg;
+  document.getElementById('tplColorText').value       = c.text        || DEFAULT_COLORS.text;
+  if (document.getElementById('tplColorDescription')) document.getElementById('tplColorDescription').value = c.description || DEFAULT_COLORS.description;
+  document.getElementById('tplColorPrice').value      = c.price       || DEFAULT_COLORS.price;
+  document.getElementById('tplColorClockText').value  = c.clockText   || DEFAULT_COLORS.clockText;
+  if (document.getElementById('tplColorClockBg'))     document.getElementById('tplColorClockBg').value     = c.clockBg     || DEFAULT_COLORS.clockBg;
   const pD = (tpl.display && tpl.display.portrait)  || DEFAULT_DISPLAY.portrait;
   const lD = (tpl.display && tpl.display.landscape) || DEFAULT_DISPLAY.landscape;
   document.getElementById('tplPortraitCols').value    = pD.cols     || 3;
@@ -4738,16 +4771,20 @@ function saveTemplate() {
     showHeader:    document.getElementById('tplShowHeader').value !== 'false',
     iconPosition:   document.getElementById('tplIconPosition').value || 'left',
     headerLogoType: document.getElementById('tplHeaderLogoType').value || 'logo',
+    headerTitle:    document.getElementById('tplHeaderTitle')?.value.trim() || '',
     headerCopy:     document.getElementById('tplHeaderCopy').value.trim(),
     colors: {
-      header:     document.getElementById('tplColorHeader').value,
-      headerText: document.getElementById('tplColorHeaderText').value,
-      accent:     document.getElementById('tplColorAccent').value,
-      catBar:     document.getElementById('tplColorCatBar').value,
-      body:       document.getElementById('tplColorBody').value,
-      text:       document.getElementById('tplColorText').value,
-      price:      document.getElementById('tplColorPrice').value,
-      clockText:  document.getElementById('tplColorClockText').value,
+      header:      document.getElementById('tplColorHeader').value,
+      headerText:  document.getElementById('tplColorHeaderText').value,
+      accent:      document.getElementById('tplColorAccent').value,
+      catBar:      document.getElementById('tplColorCatBar').value,
+      body:        document.getElementById('tplColorBody').value,
+      itemBg:      document.getElementById('tplColorItemBg')?.value || '',
+      text:        document.getElementById('tplColorText').value,
+      description: document.getElementById('tplColorDescription')?.value || '',
+      price:       document.getElementById('tplColorPrice').value,
+      clockText:   document.getElementById('tplColorClockText').value,
+      clockBg:     document.getElementById('tplColorClockBg')?.value || '',
     },
     display: {
       portrait: {
