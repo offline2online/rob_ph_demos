@@ -1185,6 +1185,15 @@
       <!-- TAB PANE 2: Manage Offer Boards -->
       <div class="modal-tab-pane" id="brandPane-boards" style="overflow-y:auto;flex:1;padding:22px;">
 
+        <!-- PREREQUISITES CHECKLIST -->
+        <div id="offerBoardPrereqs" style="margin-bottom:16px;border-radius:8px;border:1px solid var(--border);background:var(--bg2);padding:12px 14px;font-size:12px;">
+          <div style="font-weight:600;font-size:12px;color:var(--text2);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px;">Before adding an Offer Board, this brand needs:</div>
+          <div id="prereqItemCount" style="display:flex;align-items:center;gap:8px;padding:4px 0;"></div>
+          <div id="prereqMenuTypes" style="display:flex;align-items:center;gap:8px;padding:4px 0;"></div>
+          <div id="prereqLogo" style="display:flex;align-items:center;gap:8px;padding:4px 0;"></div>
+          <div id="prereqCategories" style="display:flex;align-items:center;gap:8px;padding:4px 0;"></div>
+        </div>
+
         <!-- LIST VIEW -->
         <div id="tplListView">
           <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
@@ -1275,6 +1284,20 @@
                 <option value="false">Show with &ldquo;Sold Out&rdquo; stamp &mdash; item remains visible</option>
                 <option value="true">Hide completely &mdash; remove from menu board</option>
               </select>
+            </div>
+
+            <!-- Category Filter — shown only for templates with categoryFilter:true (e.g. Feature Hero Spotlight) -->
+            <div class="form-group" id="tplHeroCatGroup" style="display:none;">
+              <label>Hero Category <span class="opt-tag">Feature Hero</span></label>
+              <select id="tplHeroCategory">
+                <option value="">— Any (first available item) —</option>
+              </select>
+              <p class="form-help">Items from this category are candidates for the large hero spotlight slot. The first matching in-stock item is selected.</p>
+            </div>
+            <div class="form-group" id="tplGridCatsGroup" style="display:none;">
+              <label>Categories to Present in Grid</label>
+              <div id="tplCatFilterOptions" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px;"></div>
+              <p class="form-help">Only items from the checked categories will appear in the supporting grid. Leave all unchecked to show every category.</p>
             </div>
 
             <div class="section-divider">Portrait Display <span class="opt-tag">1080&times;1920px</span></div>
@@ -3953,6 +3976,7 @@ let brandEditingBagIcon = ''; // kept for legacy data reads; bag settings now li
 let _editingBrandTemplates = [];
 let _tplEditingId = null;
 let _tplSelectedTypes = []; // [] = All Types
+let _tplSelectedCategories = []; // [] = All Categories (for category filter UI)
 
 // ── DIRTY-STATE SAVE BUTTON TRACKING ────────────────────────────────────
 function _makeSaveBtn(btnId) {
@@ -4312,7 +4336,75 @@ function switchBrandTab(tabName) {
   document.getElementById('brandTab-' + tabName).classList.add('active');
   document.querySelectorAll('.modal-tab-pane').forEach(p => p.classList.remove('active'));
   document.getElementById('brandPane-' + tabName).classList.add('active');
-  if (tabName === 'boards') renderTemplateList();
+  if (tabName === 'boards') { renderTemplateList(); renderOfferBoardPrereqs(); }
+}
+
+function renderOfferBoardPrereqs() {
+  const brandId = document.getElementById('bEditId').value;
+  const allItems = getItems();
+  const brandItems = brandId ? allItems.filter(i => i.brand === brandId && i.active) : [];
+  const menuTypesOnItems = [...new Set(brandItems.flatMap(i => i.menuTypes || []))];
+  const categoriesOnItems = [...new Set(brandItems.map(i => i.category).filter(Boolean))];
+  const hasLogo = !!(brandEditingLogoLeft || brandEditingIcon);
+
+  const allOk = brandItems.length > 0 && menuTypesOnItems.length > 0 && categoriesOnItems.length > 0 && hasLogo;
+
+  const wrap = document.getElementById('offerBoardPrereqs');
+  if (!wrap) return;
+
+  // When all conditions pass, show a compact single-line summary and scroll to template list
+  if (allOk) {
+    wrap.innerHTML = `<div style="display:flex;align-items:center;gap:8px;font-size:12px;">
+      <span style="font-size:14px;">✅</span>
+      <span style="color:var(--green,#16a34a);font-weight:600;">Brand ready</span>
+      <span style="color:var(--text2);">— ${brandItems.length} items · ${menuTypesOnItems.join(', ')} · ${categoriesOnItems.length} categories · logo set</span>
+    </div>`;
+    // Auto-scroll past prereqs to show template list immediately
+    const pane = document.getElementById('brandPane-boards');
+    if (pane) setTimeout(() => { pane.scrollTop = wrap.offsetHeight + 16; }, 50);
+    return;
+  }
+
+  // One or more conditions unmet — restore full checklist rows
+  wrap.innerHTML = `
+    <div style="font-weight:600;font-size:12px;color:var(--text2);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px;">Before adding an Offer Board, this brand needs:</div>
+    <div id="prereqItemCount" style="display:flex;align-items:center;gap:8px;padding:4px 0;"></div>
+    <div id="prereqMenuTypes" style="display:flex;align-items:center;gap:8px;padding:4px 0;"></div>
+    <div id="prereqLogo" style="display:flex;align-items:center;gap:8px;padding:4px 0;"></div>
+    <div id="prereqCategories" style="display:flex;align-items:center;gap:8px;padding:4px 0;"></div>`;
+
+  function row(elId, ok, okMsg, failMsg, hint) {
+    const el = document.getElementById(elId);
+    if (!el) return;
+    const icon = ok ? '✅' : '⚠️';
+    const color = ok ? 'var(--green,#16a34a)' : 'var(--orange,#d97706)';
+    const msg   = ok ? okMsg : failMsg;
+    el.innerHTML = `<span style="font-size:14px;">${icon}</span><span style="color:${color};font-weight:500;">${msg}</span>${hint && !ok ? `<span style="color:var(--text2);margin-left:4px;">— ${hint}</span>` : ''}`;
+  }
+
+  row('prereqItemCount',
+    brandItems.length > 0,
+    `${brandItems.length} active item${brandItems.length !== 1 ? 's' : ''} imported`,
+    'No items imported yet',
+    'Import items via the Import tab or add them in Items &amp; Catalogue');
+
+  row('prereqMenuTypes',
+    menuTypesOnItems.length > 0,
+    `${menuTypesOnItems.length} menu type${menuTypesOnItems.length !== 1 ? 's' : ''} configured (${menuTypesOnItems.join(', ')})`,
+    'No menu types assigned to items',
+    'Assign menu types (e.g. supplements, vitamins) to items so the board can filter them');
+
+  row('prereqCategories',
+    categoriesOnItems.length > 0,
+    `${categoriesOnItems.length} categor${categoriesOnItems.length !== 1 ? 'ies' : 'y'} available (${categoriesOnItems.slice(0,4).join(', ')}${categoriesOnItems.length > 4 ? '…' : ''})`,
+    'No categories assigned to items',
+    'Assign categories to items — required for the Feature Hero Spotlight category filter');
+
+  row('prereqLogo',
+    hasLogo,
+    'Brand logo or icon configured',
+    'No logo or icon set',
+    'Add a logo in Brand Settings so it appears in the board header');
 }
 
 // ===== OFFER BOARD TEMPLATES =====
@@ -4364,6 +4456,9 @@ function openNewTemplateEditor() {
   openTemplatePicker(templateId => {
     const t = TEMPLATE_LIBRARY.find(x => x.id === templateId);
     if (!t) return;
+    // Reset category state for new template
+    _tplSelectedCategories = [];
+    _tplEditingId = null;
     // Show the template editor panel
     document.getElementById('tplListView').style.display = 'none';
     const panel = document.getElementById('tplEditorPanel');
@@ -4459,6 +4554,12 @@ function applyTemplateSchema(templateId) {
   setSectionVisible('Landscape Display', s.landscape);
   setSectionVisible('Date & Time', s.showClock);
   setSectionVisible('Campaign Filter', s.campaignFilter);
+  // Category filter groups — only for templates that support it (e.g. Feature Hero Spotlight)
+  const heroCatGroup  = document.getElementById('tplHeroCatGroup');
+  const gridCatsGroup = document.getElementById('tplGridCatsGroup');
+  if (heroCatGroup)  heroCatGroup.style.display  = s.categoryFilter ? '' : 'none';
+  if (gridCatsGroup) gridCatsGroup.style.display = s.categoryFilter ? '' : 'none';
+  if (s.categoryFilter) _populateTplCategoryOptions();
   // Store & Personalisation section — use ID-based lookup for reliability
   const sdStoreEl = document.getElementById('sd-store-person');
   if (sdStoreEl) {
@@ -4510,19 +4611,33 @@ function openEditTemplateEditor(tplId) {
   _tplSelectedTypes = Array.isArray(tpl.menuTypes) ? [...tpl.menuTypes] : [];
   _updateTplTypeLabel();
   document.getElementById('tplTypePanel').classList.remove('open');
+  _tplSelectedCategories = Array.isArray(tpl.categoriesToPresent) ? [...tpl.categoriesToPresent] : [];
   if (_tplSave) _tplSave.reset();
   if (tpl.templateType) applyTemplateSchema(tpl.templateType);
+  // Restore hero category after options are populated
+  if (tpl.heroCategory && document.getElementById('tplHeroCategory')) {
+    document.getElementById('tplHeroCategory').value = tpl.heroCategory;
+  }
   _showTplEditor();
 }
 
 function _showTplEditor() {
   document.getElementById('tplListView').style.display = 'none';
   document.getElementById('tplEditorPanel').classList.add('open');
+  // Hide prereqs banner while editing a template (not relevant in editor context)
+  const prereqs = document.getElementById('offerBoardPrereqs');
+  if (prereqs) prereqs.style.display = 'none';
+  // Scroll the editor into view
+  const pane = document.getElementById('brandPane-boards');
+  if (pane) pane.scrollTop = 0;
 }
 
 function closeTplEditor() {
   document.getElementById('tplEditorPanel').classList.remove('open');
   document.getElementById('tplListView').style.display = '';
+  // Restore prereqs banner
+  const prereqs = document.getElementById('offerBoardPrereqs');
+  if (prereqs) prereqs.style.display = '';
   renderTemplateList();
 }
 
@@ -4574,6 +4689,45 @@ function clearTplTypes() {
   if (_tplSave) _tplSave.markDirty();
 }
 
+// ── TEMPLATE CATEGORY FILTER ─────────────────────────────────────────────────
+// Populated from items belonging to the brand being edited
+function _populateTplCategoryOptions() {
+  const brandId = document.getElementById('bEditId').value;
+  const allItems = getItems();
+  const brandItems = brandId ? allItems.filter(i => i.brand === brandId) : allItems;
+  const cats = [...new Set(brandItems.map(i => i.category).filter(Boolean))].sort();
+
+  // Hero category — single select
+  const heroSel = document.getElementById('tplHeroCategory');
+  if (heroSel) {
+    const current = heroSel.value;
+    heroSel.innerHTML = '<option value="">— Any (first available item) —</option>';
+    cats.forEach(c => {
+      const opt = document.createElement('option');
+      opt.value = c; opt.textContent = c;
+      if (c === current) opt.selected = true;
+      heroSel.appendChild(opt);
+    });
+  }
+
+  // Grid categories — checkboxes
+  const gridEl = document.getElementById('tplCatFilterOptions');
+  if (gridEl) {
+    const checked = _tplSelectedCategories || [];
+    gridEl.innerHTML = cats.map(c => `
+      <label style="display:flex;align-items:center;gap:5px;font-size:12px;background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:4px 8px;cursor:pointer;">
+        <input type="checkbox" value="${escHtml(c)}" ${checked.includes(c) ? 'checked' : ''} onchange="onTplCatChange()">
+        ${escHtml(c)}
+      </label>`).join('');
+  }
+}
+
+function onTplCatChange() {
+  const checkboxes = document.querySelectorAll('#tplCatFilterOptions input[type=checkbox]');
+  _tplSelectedCategories = [...checkboxes].filter(c => c.checked).map(c => c.value);
+  if (_tplSave) _tplSave.markDirty();
+}
+
 function saveTemplate() {
   const name = document.getElementById('tplName').value.trim();
   if (!name) { toast('⚠️ Template name is required.', 'error'); return; }
@@ -4614,6 +4768,8 @@ function saveTemplate() {
     showStoreName:  document.getElementById('tplShowStoreName')?.value !== 'false',
     personalGreeting: document.getElementById('tplPersonalGreeting')?.value !== 'false',
     menuTypes:      [..._tplSelectedTypes],
+    heroCategory:   document.getElementById('tplHeroCategory')?.value || '',
+    categoriesToPresent: [..._tplSelectedCategories],
   };
 
   if (_tplEditingId) {
@@ -5097,6 +5253,8 @@ window.openTplDetail          = openTplDetail;
 window.toggleTplTypePanel     = toggleTplTypePanel;
 window.onTplTypeChange        = onTplTypeChange;
 window.clearTplTypes          = clearTplTypes;
+window.onTplCatChange         = onTplCatChange;
+window.renderOfferBoardPrereqs = renderOfferBoardPrereqs;
 window.exportData         = exportData;
 window.importData         = importData;
 window.clearAllData       = clearAllData;

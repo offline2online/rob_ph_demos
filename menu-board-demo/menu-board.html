@@ -538,6 +538,129 @@
       text-decoration: none; font-size: 14px;
     }
 
+    /* ── FEATURE HERO SPOTLIGHT LAYOUT ─────────────── */
+    /* Portrait: hero stacked above the grid */
+    .board.portrait .hero-body {
+      flex: 1;
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    .board.portrait .hero-slot {
+      flex: 0 0 42%;
+      display: flex;
+      flex-direction: row;
+      overflow: hidden;
+      border-bottom: 3px solid var(--accent, #f6ad55);
+    }
+    .board.portrait .hero-slot .hero-img {
+      flex: 0 0 42%;
+      overflow: hidden;
+    }
+    .board.portrait .hero-slot .hero-img img {
+      width: 100%; height: 100%; object-fit: cover;
+    }
+    .board.portrait .hero-slot .hero-info {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      padding: clamp(16px, 2.5vw, 40px);
+      overflow: hidden;
+    }
+    /* Landscape: hero left panel, grid right panel */
+    .board.landscape .hero-body {
+      flex: 1;
+      min-height: 0;
+      display: flex;
+      flex-direction: row;
+      overflow: hidden;
+    }
+    .board.landscape .hero-slot {
+      flex: 0 0 42%;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      border-right: 3px solid var(--accent, #f6ad55);
+      position: relative;
+    }
+    .board.landscape .hero-slot .hero-img {
+      flex: 1;
+      overflow: hidden;
+    }
+    .board.landscape .hero-slot .hero-img img {
+      width: 100%; height: 100%; object-fit: cover;
+    }
+    .board.landscape .hero-slot .hero-info {
+      position: absolute;
+      bottom: 0; left: 0; right: 0;
+      padding: clamp(12px, 2vw, 28px);
+      background: linear-gradient(to top, rgba(0,0,0,0.85) 0%, rgba(0,0,0,0) 100%);
+    }
+    /* Shared hero info text */
+    .hero-badge {
+      display: inline-block;
+      background: var(--accent, #f6ad55);
+      color: #111;
+      font-family: 'Oswald', sans-serif;
+      font-weight: 700;
+      font-size: clamp(10px, 1.1vw, 16px);
+      letter-spacing: .08em;
+      text-transform: uppercase;
+      padding: 3px 10px;
+      border-radius: 4px;
+      margin-bottom: clamp(6px, 1vw, 14px);
+    }
+    .hero-name {
+      font-family: 'Oswald', sans-serif;
+      font-weight: 700;
+      color: var(--item-text, #ffffff);
+      font-size: clamp(20px, 3vw, 52px);
+      line-height: 1.15;
+      margin-bottom: clamp(4px, 0.6vw, 10px);
+    }
+    .hero-price {
+      font-family: 'Oswald', sans-serif;
+      font-weight: 700;
+      color: var(--accent, #f6ad55);
+      font-size: clamp(24px, 3.6vw, 62px);
+    }
+    .hero-desc {
+      color: rgba(255,255,255,0.72);
+      font-size: clamp(10px, 1.2vw, 17px);
+      line-height: 1.45;
+      margin-top: clamp(4px, 0.6vw, 10px);
+      display: -webkit-box;
+      -webkit-line-clamp: 3;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+    /* Grid within hero layout */
+    .hero-grid-wrap {
+      flex: 1;
+      min-width: 0;
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    .hero-grid-wrap .board-body {
+      flex: 1;
+      min-height: 0;
+    }
+    /* Portrait grid strip below hero */
+    .board.portrait .hero-grid-wrap {
+      flex: 1;
+    }
+    /* No image placeholder for hero */
+    .hero-img-placeholder {
+      width: 100%; height: 100%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: clamp(48px, 8vw, 120px);
+      background: rgba(255,255,255,0.05);
+    }
+
     /* ── API ERROR BADGE ───────────────────────────── */
     #apiErrorBadge {
       position: fixed; bottom: 16px; right: 16px; z-index: 9999;
@@ -650,13 +773,25 @@ let _campaignSkus      = null;
 let _campaignFirstName = null; // null = no greeting; string = show personalised greeting in clock bar
 let _storeName         = null; // null = no store label; string = show store name in clock bar when no firstName
 
-const MENU_META = {
+const MENU_META_STATIC = {
   breakfast: { label: 'Breakfast Menu',        emoji: '🌅' },
   lunch:     { label: 'Lunch Menu',             emoji: '☀️' },
   dinner:    { label: 'Dinner Menu',            emoji: '🌙' },
   drinks:    { label: 'Drinks Menu',            emoji: '🥤' },
   specials:  { label: "Today's Specials Menu",  emoji: '⭐' },
 };
+// Dynamic fallback — any custom menu type (e.g. supplements, vitamins) gets a generic entry
+const MENU_META = new Proxy(MENU_META_STATIC, {
+  get(target, key) {
+    if (key in target) return target[key];
+    if (typeof key === 'string' && key.length > 0 && key !== '__esModule') {
+      const label = key.charAt(0).toUpperCase() + key.slice(1).replace(/-/g, ' ') + ' Menu';
+      return { label, emoji: '🏷️' };
+    }
+    return undefined;
+  },
+  has(target, key) { return true; }  // all string keys are "valid"
+});
 
 // ── HELPERS ─────────────────────────────────────────────────────────────────
 function getItems()    { return _items; }
@@ -1187,7 +1322,7 @@ onSnapshot(doc(db, MB, 'settings'), snap => {
 
 // ── RENDER ───────────────────────────────────────────────────────────────────
 function render() {
-  if (!MENU_TYPE || !MENU_META[MENU_TYPE] || (!STORE_CODE && !DEVICE_UDID)) return;
+  if (!MENU_TYPE || (!STORE_CODE && !DEVICE_UDID)) return;
   const meta = MENU_META[MENU_TYPE];
 
   // brand = null means "no ?brand= param — show all brands"
@@ -1214,6 +1349,10 @@ function render() {
   const effectiveHeaderCopy       = (tpl && tpl.headerCopy)   || '';
   const effectiveIconPosition     = (tpl && tpl.iconPosition)  || 'left';
   const effectiveHeaderLogoType   = (tpl && tpl.headerLogoType)|| 'logo';
+  const effectiveTemplateType     = (tpl && tpl.templateType)  || TEMPLATE_TYPE || '';
+  const effectiveHeroCategory     = (tpl && tpl.heroCategory)  || '';
+  const effectiveGridCategories   = (tpl && Array.isArray(tpl.categoriesToPresent) && tpl.categoriesToPresent.length > 0)
+    ? tpl.categoriesToPresent : [];
 
   // Persist time format for updateClock() which runs outside render()
   _effectiveTimeFormat = effectiveTimeFormat;
@@ -1435,6 +1574,30 @@ function render() {
   // ── BODY ────────────────────────────────────────────────────────────────────
   let bodyHtml = '';
 
+  // Helper to render a standard item cell
+  function _itemCell(item) {
+    const oos = isOos(item.sku);
+    const cat = item.category || '';
+    const thumbInner = (item.images && item.images[0])
+      ? `<img src="${item.images[0]}" alt="${esc(item.name)}" loading="lazy">`
+      : `<div class="item-thumb-placeholder">🍽️</div>`;
+    return `
+      <div class="item-cell${oos ? ' oos-cell' : ''}">
+        <div class="item-thumb">${thumbInner}</div>
+        <div class="item-right">
+          <div class="item-meta-bar">
+            <span class="item-price">${currency}${parseFloat(item.price || 0).toFixed(2)}</span>
+            ${cat ? `<span class="item-cat-badge">${esc(cat)}</span>` : ''}
+          </div>
+          <div class="item-text">
+            <div class="item-name">${esc(item.name)}</div>
+            ${buildNutrition(item)}
+          </div>
+        </div>
+        <div class="oos-overlay"><div class="oos-stamp"><div class="oos-stamp-text">SOLD OUT</div></div></div>
+      </div>`;
+  }
+
   if (!totalItems) {
     const campaignActive = _campaignSkus && _campaignSkus.length > 0;
     bodyHtml = `
@@ -1447,38 +1610,77 @@ function render() {
         }</p>
       </div>
     `;
-  } else {
-    // Flat grid — all items on this page
-    const cells = pageItems.map(item => {
-      const oos = isOos(item.sku);
-      const cat = item.category || '';
+  } else if (effectiveTemplateType === 'feature-hero-board') {
+    // ── FEATURE HERO SPOTLIGHT LAYOUT ────────────────────────────────────────
+    // Pick the hero item: first item matching heroCategory (if set), else first item overall
+    let heroPool = campaignFiltered;
+    if (effectiveHeroCategory) {
+      const catPool = campaignFiltered.filter(i => i.category === effectiveHeroCategory);
+      if (catPool.length > 0) heroPool = catPool;
+    }
+    const heroItem = heroPool[0] || null;
 
-      const thumbInner = (item.images && item.images[0])
-        ? `<img src="${item.images[0]}" alt="${esc(item.name)}" loading="lazy">`
-        : `<div class="item-thumb-placeholder">🍽️</div>`;
+    // Grid items: everything except the hero item, filtered by categoriesToPresent if set
+    let gridItems = campaignFiltered.filter(i => i !== heroItem);
+    if (effectiveGridCategories.length > 0) {
+      gridItems = gridItems.filter(i => effectiveGridCategories.includes(i.category || ''));
+    }
 
-      return `
-        <div class="item-cell${oos ? ' oos-cell' : ''}">
-          <div class="item-thumb">${thumbInner}</div>
-          <div class="item-right">
-            <div class="item-meta-bar">
-              <span class="item-price">${currency}${parseFloat(item.price || 0).toFixed(2)}</span>
-              ${cat ? `<span class="item-cat-badge">${esc(cat)}</span>` : ''}
-            </div>
-            <div class="item-text">
-              <div class="item-name">${esc(item.name)}</div>
-              ${buildNutrition(item)}
-            </div>
+    // Compute grid layout from template settings
+    const heroCols = ORIENTATION === 'portrait'
+      ? (parseInt((effectiveDisplay.portrait || {}).cols) || 3)
+      : (parseInt((effectiveDisplay.landscape || {}).cols) || 4);
+    const heroRows = ORIENTATION === 'portrait'
+      ? (parseInt((effectiveDisplay.portrait || {}).rows) || 2)
+      : (parseInt((effectiveDisplay.landscape || {}).rows) || 2);
+    const heroMax = heroCols * heroRows;
+    const gridPage = gridItems.slice(0, heroMax);
+
+    // Inject grid CSS for hero grid (appended to existing dynStyle)
+    dynStyle.textContent += `
+      .hero-items-grid {
+        display: grid;
+        grid-template-columns: repeat(${heroCols}, 1fr) !important;
+        grid-template-rows: repeat(${heroRows}, 1fr) !important;
+        height: 100%;
+      }
+    `;
+
+    // Build hero slot HTML
+    let heroSlotHtml = '';
+    if (heroItem) {
+      const heroImg = (heroItem.images && heroItem.images[0])
+        ? `<img src="${heroItem.images[0]}" alt="${esc(heroItem.name)}" loading="lazy">`
+        : `<div class="hero-img-placeholder">🏷️</div>`;
+      const heroDesc = heroItem.description
+        ? `<div class="hero-desc">${esc(heroItem.description)}</div>` : '';
+      heroSlotHtml = `
+        <div class="hero-slot">
+          <div class="hero-img">${heroImg}</div>
+          <div class="hero-info">
+            <div class="hero-badge">${esc(heroItem.category || 'Featured')}</div>
+            <div class="hero-name">${esc(heroItem.name)}</div>
+            <div class="hero-price">${currency}${parseFloat(heroItem.price || 0).toFixed(2)}</div>
+            ${heroDesc}
           </div>
-          <div class="oos-overlay">
-            <div class="oos-stamp">
-              <div class="oos-stamp-text">SOLD OUT</div>
-            </div>
+        </div>`;
+    }
+
+    // Build grid cells
+    const gridCells = gridPage.map(_itemCell).join('');
+
+    bodyHtml = `
+      <div class="hero-body">
+        ${heroSlotHtml}
+        <div class="hero-grid-wrap">
+          <div class="board-body">
+            <div class="hero-items-grid">${gridCells}</div>
           </div>
         </div>
-      `;
-    }).join('');
-
+      </div>`;
+  } else {
+    // Standard flat grid — all items on this page
+    const cells = pageItems.map(_itemCell).join('');
     bodyHtml = `<div class="board-body"><div class="items-grid">${cells}</div></div>`;
   }
 
@@ -1515,9 +1717,9 @@ function render() {
 
 // ── INIT ─────────────────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
-  if (!MENU_TYPE || !MENU_META[MENU_TYPE] || (!STORE_CODE && !DEVICE_UDID)) {
-    const missing = !MENU_TYPE || !MENU_META[MENU_TYPE]
-      ? 'a valid Menu Type (<code>?menu=breakfast</code>)'
+  if (!MENU_TYPE || (!STORE_CODE && !DEVICE_UDID)) {
+    const missing = !MENU_TYPE
+      ? 'a Menu Type (<code>?menu=supplements</code>)'
       : 'a Store Code (<code>?store=STORE001</code>) or Device UDID (<code>?device=…</code>)';
     document.getElementById('boardRoot').innerHTML = `
       <div class="error-board">
@@ -1526,10 +1728,8 @@ document.addEventListener('DOMContentLoaded', () => {
         <p>This offer board requires ${missing}.</p>
         <br>
         <p>Example URLs:</p>
-        <code>menu-board.html?store=STORE001&amp;menu=breakfast</code><br>
-        <code>menu-board.html?device=&lt;UDID&gt;&amp;menu=drinks</code>
-        <br><br>
-        <p>Valid menu types: breakfast · lunch · dinner · drinks · specials</p>
+        <code>menu-board.html?store=STORE001&amp;menu=supplements</code><br>
+        <code>menu-board.html?device=&lt;UDID&gt;&amp;menu=vitamins</code>
         <a href="index.html">← Back to Portal</a>
       </div>
     `;
