@@ -1,0 +1,186 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ── Helper functions ────────────────────────────────────────────────────
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function isNonEmptyString(v) {
+      return v is string && v.size() > 0;
+    }
+
+    function isNonEmptyBoundedString(v, max) {
+      return isNonEmptyString(v) && v.size() <= max;
+    }
+
+    // ── items ───────────────────────────────────────────────────────────────
+    // Product / menu-item catalogue.
+    // Read:   public (menu boards, ordering screens, location API)
+    // Write:  HQ admin batch imports — validate required fields and types.
+
+    match /items/{itemId} {
+      allow read: if true;
+
+      allow create, update: if
+        incoming().size() <= 100 &&
+        isNonEmptyBoundedString(incoming().id,       100) &&
+        isNonEmptyBoundedString(incoming().sku,      100) &&
+        isNonEmptyBoundedString(incoming().name,     200) &&
+        incoming().price is number &&
+        incoming().price >= 0 &&
+        isNonEmptyBoundedString(incoming().category, 100) &&
+        incoming().menuTypes is list;
+
+      allow delete: if true;
+    }
+
+    // ── carts ───────────────────────────────────────────────────────────────
+    // Customer shopping carts.  Document ID = device UDID.
+    // Read:   public (order-progress queries carts by store)
+    // Create: ordering screen — full cart write, validate required fields.
+    // Update: ordering screen (full write) OR order-progress (queueStatus only).
+    //         request.resource.data is the merged post-update state, so
+    //         storeCode from the original document satisfies the check below.
+    // Delete: allowed (cleanup of old carts).
+
+    match /carts/{deviceId} {
+      allow read: if true;
+
+      allow create: if
+        incoming().storeCode is string &&
+        incoming().storeCode.size() <= 50 &&
+        incoming().items      is list   &&
+        incoming().total      is number &&
+        incoming().total      >= 0      &&
+        incoming().itemCount  is number &&
+        isNonEmptyString(incoming().status);
+
+      allow update: if
+        incoming().storeCode is string &&
+        incoming().storeCode.size() <= 50 &&
+        (
+          // queueStatus-only update from order-progress.html
+          incoming().queueStatus == null ||
+          incoming().queueStatus in ['waiting', 'in-progress', 'ready']
+        );
+
+      allow delete: if true;
+    }
+
+    // ── stock ───────────────────────────────────────────────────────────────
+    // Per-store inventory levels.  Document ID = store code.
+    // Keys are dynamic SKUs so field-level validation isn't practical;
+    // limit document size instead.
+    // Read:   public (location API, menu board, retail admin)
+    // Write:  retail admin (no server-side auth available)
+
+    match /stock/{storeCode} {
+      allow read: if true;
+
+      allow create, update: if
+        isNonEmptyBoundedString(storeCode, 50) &&
+        incoming().size() <= 500;
+
+      allow delete: if true;
+    }
+
+    // ── menuboard ───────────────────────────────────────────────────────────
+    // Global menu-board configuration: brands, types, categories, settings.
+    // Documents: menuboard/brands  menuboard/types  menuboard/categories
+    //            menuboard/settings
+    // Read:   public (all display screens)
+    // Write:  HQ admin (config management — no auth available)
+
+    match /menuboard/{docId} {
+      allow read:  if true;
+      allow write: if true;
+
+      // Allow any future sub-collections under menuboard
+      match /{rest=**} {
+        allow read:  if true;
+        allow write: if true;
+      }
+    }
+
+    // ── mbactivity ──────────────────────────────────────────────────────────
+    // Menu-board heartbeat / activity log.  Document ID = board key.
+    // Read:   public (HQ admin dashboard)
+    // Write:  menu-board devices — validate required heartbeat fields.
+
+    match /mbactivity/{boardKey} {
+      allow read: if true;
+
+      allow create, update: if
+        incoming().size() <= 30 &&
+        isNonEmptyBoundedString(incoming().boardKey,   100) &&
+        isNonEmptyBoundedString(incoming().brandId,    100) &&
+        isNonEmptyBoundedString(incoming().storeCode,   50) &&
+        isNonEmptyBoundedString(incoming().deviceUdid, 100) &&
+        isNonEmptyString(incoming().lastSeen);
+
+      allow delete: if true;
+    }
+
+    // ── helpCategories ──────────────────────────────────────────────────────
+    // Help Centre category & subcategory tree.
+    // Read:  public (help centre browsing)
+    // Write: authenticated admin users only
+
+    match /helpCategories/{catId} {
+      allow read: if true;
+      allow create, update: if
+        request.auth != null &&
+        incoming().size() <= 20 &&
+        isNonEmptyBoundedString(incoming().name, 60);
+      allow delete: if request.auth != null;
+    }
+
+    // ── helpArticles ─────────────────────────────────────────────────────────
+    // Help Centre articles / FAQs.
+    // Read:  published articles are public; drafts are auth-only
+    // Write: authenticated admin users only
+
+    match /helpArticles/{articleId} {
+      allow read: if
+        resource.data.status == 'published' ||
+        request.auth != null;
+      allow create: if
+        request.auth != null &&
+        incoming().size() <= 100 &&
+        isNonEmptyBoundedString(incoming().title, 200) &&
+        incoming().status in ['draft', 'published'];
+      allow update: if
+        request.auth != null &&
+        incoming().size() <= 100 &&
+        isNonEmptyBoundedString(incoming().title, 200);
+      // Allow public increment of views and helpful counters
+      allow update: if
+        request.auth == null &&
+        incoming().diff(resource.data).affectedKeys()
+          .hasOnly(['views', 'helpfulYes', 'helpfulNo']);
+      allow delete: if request.auth != null;
+    }
+
+    // ── helpTemplates ────────────────────────────────────────────────────────
+    // Article CSS templates — admin-managed, referenced by articles.
+    // Read:  public (articles need to fetch template CSS to render)
+    // Write: authenticated admin users only
+
+    match /helpTemplates/{templateId} {
+      allow read: if true;
+      allow create, update: if
+        request.auth != null &&
+        incoming().size() <= 20 &&
+        isNonEmptyBoundedString(incoming().name, 100);
+      allow delete: if request.auth != null;
+    }
+
+    // ── deny everything else ────────────────────────────────────────────────
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

@@ -1708,9 +1708,9 @@ function bagItemCount() {
 }
 
 function syncCartToFirestore(statusOverride, orderNumber) {
-  if (!DEVICE_UDID || !STORE_CODE) return;
+  if (!DEVICE_UDID) return; // STORE_CODE optional — summary board only needs DEVICE_UDID
   const payload = {
-    storeCode:    STORE_CODE,
+    storeCode:    STORE_CODE || '',
     items:        _bag,
     total:        bagTotal(),
     itemCount:    bagItemCount(),
