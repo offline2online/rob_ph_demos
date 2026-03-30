@@ -70,7 +70,27 @@
       "Bash(grep -E \"\\\\.\\(html|js|json\\)$\")",
       "Bash(cp \"/Users/rgeerdink/Documents/Claude Code/menu-board-demo/menu-board.html\" /tmp/menuboard/menu-board.html)",
       "Bash(echo \"exit: $?\")",
-      "Bash(md5 /tmp/menuboard/menu-board.html \"/Users/rgeerdink/Documents/Claude Code/menu-board-demo/menu-board.html\")"
+      "Bash(md5 /tmp/menuboard/menu-board.html \"/Users/rgeerdink/Documents/Claude Code/menu-board-demo/menu-board.html\")",
+      "Read(//private/tmp/**)",
+      "Bash(mkdir -p /tmp/menuboard)",
+      "Bash(cp -r \"/Users/rgeerdink/Documents/Claude Code/menu-board-demo/\"* /tmp/menuboard/)",
+      "Bash(firebase deploy:*)",
+      "Bash(npx firebase-tools:*)",
+      "Bash(npm install:*)",
+      "Bash(FNM_NODE=\"/Users/rgeerdink/Library/Application Support/fnm/node-versions/v18.18.2/installation/bin\")",
+      "Bash(export PATH=\"$FNM_NODE:$PATH\")",
+      "Bash(npm list:*)",
+      "Bash(firebase --version)",
+      "Bash(fnm install:*)",
+      "Bash(FNM_NODE=\"/Users/rgeerdink/Library/Application Support/fnm/node-versions/v20.20.2/installation/bin\")",
+      "Bash(firebase login:*)",
+      "Bash(NODE_BIN=\"/Users/rgeerdink/Library/Application Support/fnm/node-versions/v20.20.2/installation/bin\")",
+      "Read(//Users/rgeerdink/Documents/Claude Code/**)",
+      "Bash(export PATH=\"/Users/rgeerdink/Library/Application Support/fnm/node-versions/v20.20.2/installation/bin:$PATH\")",
+      "Bash(NODE_BIN=\"/Users/rgeerdink/Library/Application Support/fnm/node-versions/v20.20.2/installation/bin/node\")",
+      "Bash(FIREBASE_BIN=\"/Users/rgeerdink/Library/Application Support/fnm/node-versions/v20.20.2/installation/bin/firebase\")",
+      "Bash(\"$NODE_BIN\" \"$FIREBASE_BIN\" deploy --only firestore:rules --project rob-ph-demos)",
+      "WebFetch(domain:help.personalisationhub.com)"
     ]
   }
 }

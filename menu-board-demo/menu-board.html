@@ -740,6 +740,9 @@ const ORIENTATION = urlParams.get('orientation') || 'portrait';
 const BRAND_ID    = (urlParams.get('brand')    || '').trim();
 const MOCK_API_FILE = urlParams.get('mockapi') || null;
 const DEBUG_MODE    = urlParams.get('debug') === '1';
+// Test SKUs — inject campaign SKUs via URL without needing the live PH API
+// e.g. ?testSkus=LS0873NBRONCOS,LS0873NBULLDOGS
+const TEST_SKUS = (urlParams.get('testSkus') || '').split(',').map(s => s.trim()).filter(Boolean);
 
 const ROTATION_INTERVAL = 8000; // ms
 
@@ -774,7 +777,7 @@ let _settings    = { brandName: 'Our Brand', currency: '$', logo: '', logoRight:
 let _brands      = [];
 let _stock       = {};
 // Campaign SKUs: null = default menu; string[] = personalised override from Personalisation Hub API
-let _campaignSkus      = null;
+let _campaignSkus      = TEST_SKUS.length > 0 ? TEST_SKUS : null;
 let _campaignFirstName = null; // null = no greeting; string = show personalised greeting in clock bar
 let _storeName         = null; // null = no store label; string = show store name in clock bar when no firstName
 
@@ -1600,7 +1603,7 @@ function render() {
     const oos = isOos(item.sku);
     const cat = item.category || '';
     const thumbInner = (item.images && item.images[0])
-      ? `<img src="${item.images[0]}" alt="${esc(item.name)}" loading="lazy">`
+      ? `<img src="${item.images[0]}" alt="${esc(item.name)}" loading="lazy" onerror="this.replaceWith(Object.assign(document.createElement('div'),{className:'item-thumb-placeholder',textContent:'🍽️'}))">`
       : `<div class="item-thumb-placeholder">🍽️</div>`;
     return `
       <div class="item-cell${oos ? ' oos-cell' : ''}">

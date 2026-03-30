@@ -3152,6 +3152,7 @@ function initGrids() {
             if (item.images && item.images[0]) {
               const img = document.createElement('img');
               img.src = item.images[0]; img.alt = item.name;
+              img.onerror = () => { imgWrap.innerHTML = '<span>\u{1F5BC}\uFE0F</span>'; };
               imgWrap.appendChild(img);
             } else {
               imgWrap.innerHTML = '<span>\u{1F37D}\uFE0F</span>';

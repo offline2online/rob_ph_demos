@@ -2,8 +2,15 @@
   "version": "0.0.1",
   "configurations": [
     {
+      "name": "help-centre",
+      "runtimeExecutable": "/Users/rgeerdink/Library/Application Support/fnm/node-versions/v20.20.2/installation/bin/node",
+      "runtimeArgs": ["/tmp/hc_serve.js"],
+      "port": 3458,
+      "autoPort": false
+    },
+    {
       "name": "menuboard",
-      "runtimeExecutable": "/Users/rgeerdink/Library/Application Support/fnm/node-versions/v18.18.2/installation/bin/node",
+      "runtimeExecutable": "/Users/rgeerdink/Library/Application Support/fnm/node-versions/v20.20.2/installation/bin/node",
       "runtimeArgs": ["/tmp/mb_serve.js"],
       "port": 3457,
       "autoPort": false
