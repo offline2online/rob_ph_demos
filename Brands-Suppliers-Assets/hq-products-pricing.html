@@ -52,12 +52,27 @@
     .page-title{font-size:20px;font-weight:800;margin-bottom:4px;}
     .page-sub{font-size:13px;color:var(--text2);margin-bottom:20px;}
 
-    /* TOOLBAR */
-    .toolbar{display:flex;align-items:center;gap:10px;margin-bottom:16px;flex-wrap:wrap;}
-    .search-box{display:flex;align-items:center;gap:8px;background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:7px 12px;flex:1;min-width:220px;}
+    /* GRID TOOLBAR */
+    .grid-toolbar{display:flex;align-items:center;gap:8px;padding:10px 14px;background:var(--surface);border-bottom:1px solid var(--border);border-radius:var(--radius) var(--radius) 0 0;position:sticky;top:50px;z-index:90;flex-wrap:nowrap;}
+    .search-box{display:flex;align-items:center;gap:8px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:7px 12px;min-width:200px;}
     .search-box input{background:none;border:none;outline:none;color:var(--text);font-size:13px;width:100%;}
     .search-box input::placeholder{color:var(--text2);}
-    .filter-select{background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:7px 10px;color:var(--text);font-size:13px;outline:none;cursor:pointer;}
+    /* FILTER BUTTON + PANEL */
+    .filter-btn-wrap{position:relative;}
+    .filter-btn{display:inline-flex;align-items:center;gap:6px;padding:7px 10px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;font-size:13px;font-weight:500;color:var(--text2);cursor:pointer;white-space:nowrap;transition:all .14s;line-height:1;}
+    .filter-btn:hover{background:var(--surface3);color:var(--text);}
+    .filter-btn.active{border-color:var(--primary);color:var(--primary);background:var(--primary-light);}
+    .filter-btn .dot{width:6px;height:6px;border-radius:50%;background:var(--primary);flex-shrink:0;}
+    .filter-panel{display:none;position:absolute;top:calc(100% + 6px);left:0;z-index:9999;background:var(--surface);border:1px solid var(--border);border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.14);min-width:220px;padding:10px;}
+    .filter-panel.open{display:block;}
+    .fp-search{width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:7px 10px;font-size:13px;color:var(--text);outline:none;margin-bottom:8px;box-sizing:border-box;}
+    .fp-search:focus{border-color:var(--primary);}
+    .fp-list{max-height:200px;overflow-y:auto;margin-bottom:8px;}
+    .fp-item{display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:5px;cursor:pointer;font-size:13px;color:var(--text);user-select:none;}
+    .fp-item:hover{background:var(--surface2);}
+    .fp-item input[type=checkbox]{cursor:pointer;accent-color:var(--primary);width:15px;height:15px;flex-shrink:0;}
+    .fp-clear{width:100%;padding:7px;background:var(--primary);color:#fff;border:none;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;transition:background .14s;}
+    .fp-clear:hover{background:#38b0cf;}
 
     /* BUTTONS */
     .btn{display:inline-flex;align-items:center;gap:6px;padding:8px 14px;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;border:none;transition:all .14s;white-space:nowrap;text-decoration:none;}
@@ -206,7 +221,7 @@
     .ag-theme-alpine .ag-header-cell-label{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;}
     .ag-theme-alpine .ag-cell{overflow:visible !important;}
     .ag-theme-alpine .ag-row{overflow:visible !important;}
-    .grid-wrap{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);overflow:visible;}
+    .grid-wrap{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);overflow:visible;margin-bottom:16px;}
 
     /* JSON PREVIEW */
     .json-preview{background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:14px;margin-top:10px;font-size:12px;color:var(--text2);}
@@ -445,25 +460,59 @@
         <div class="view active" id="view-products">
           <div class="page-title">Product Catalogue</div>
           <div class="page-sub">Manage all products, pricing, offer scheduling and enable/disable per product.</div>
-          <div class="toolbar">
-            <div class="search-box">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
-              <input type="text" id="productSearch" placeholder="Search products, SKU, brand…" oninput="productsGridApi.setGridOption('quickFilterText', this.value)">
-            </div>
-            <select class="filter-select" id="filterBrand" onchange="applyFilters()"><option value="">All Brands</option></select>
-            <select class="filter-select" id="filterCategory" onchange="applyFilters()">
-              <option value="">All Categories</option>
-              <option>Footwear</option><option>Apparel</option><option>Electronics</option><option>Accessories</option>
-            </select>
-            <select class="filter-select" id="filterStatus" onchange="applyFilters()">
-              <option value="">All Status</option>
-              <option value="enabled">Enabled</option>
-              <option value="disabled">Disabled</option>
-            </select>
-            <button class="btn btn-ghost" onclick="openJsonModal()">⬆️ Import JSON</button>
-            <button class="btn btn-primary" onclick="openAddProductModal()">+ Add Product</button>
-          </div>
           <div class="grid-wrap">
+            <div class="grid-toolbar">
+              <div class="search-box">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
+                <input type="text" id="productSearch" placeholder="Search products, SKU, brand…" oninput="productsGridApi.setGridOption('quickFilterText', this.value)">
+              </div>
+              <!-- Brand filter -->
+              <div class="filter-btn-wrap" id="wrap-brand">
+                <button class="filter-btn" id="fbtn-brand" onclick="toggleFilterPanel('brand')">
+                  Brand
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M6 9l6 6 6-6"/></svg>
+                </button>
+                <div class="filter-panel" id="panel-brand">
+                  <input type="text" class="fp-search" placeholder="Search..." oninput="filterPanelSearch('brand', this.value)">
+                  <div class="fp-list" id="fplist-brand"></div>
+                  <button class="fp-clear" onclick="clearFilter('brand')">Clear Filter</button>
+                </div>
+              </div>
+              <!-- Category filter -->
+              <div class="filter-btn-wrap" id="wrap-category">
+                <button class="filter-btn" id="fbtn-category" onclick="toggleFilterPanel('category')">
+                  Category
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M6 9l6 6 6-6"/></svg>
+                </button>
+                <div class="filter-panel" id="panel-category">
+                  <input type="text" class="fp-search" placeholder="Search..." oninput="filterPanelSearch('category', this.value)">
+                  <div class="fp-list" id="fplist-category">
+                    <label class="fp-item"><input type="checkbox" value="Footwear" onchange="applyFilters()"> Footwear</label>
+                    <label class="fp-item"><input type="checkbox" value="Apparel" onchange="applyFilters()"> Apparel</label>
+                    <label class="fp-item"><input type="checkbox" value="Electronics" onchange="applyFilters()"> Electronics</label>
+                    <label class="fp-item"><input type="checkbox" value="Accessories" onchange="applyFilters()"> Accessories</label>
+                  </div>
+                  <button class="fp-clear" onclick="clearFilter('category')">Clear Filter</button>
+                </div>
+              </div>
+              <!-- Status filter -->
+              <div class="filter-btn-wrap" id="wrap-status">
+                <button class="filter-btn" id="fbtn-status" onclick="toggleFilterPanel('status')">
+                  Status
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M6 9l6 6 6-6"/></svg>
+                </button>
+                <div class="filter-panel" id="panel-status">
+                  <div class="fp-list" id="fplist-status">
+                    <label class="fp-item"><input type="checkbox" value="enabled" onchange="applyFilters()"> Enabled</label>
+                    <label class="fp-item"><input type="checkbox" value="disabled" onchange="applyFilters()"> Disabled</label>
+                  </div>
+                  <button class="fp-clear" onclick="clearFilter('status')">Clear Filter</button>
+                </div>
+              </div>
+              <div style="flex:1;"></div>
+              <button class="btn btn-ghost" onclick="openJsonModal()">⬆️ Import JSON</button>
+              <button class="btn btn-primary" onclick="openAddProductModal()">+ Add Product</button>
+            </div>
             <div id="productsGrid" class="ag-theme-alpine" style="width:100%;"></div>
           </div>
         </div>
@@ -564,28 +613,72 @@ function showView(name){
 
 /* ============================================================ FILTERS */
 function applyFilters(){
-  const brand  = document.getElementById('filterBrand').value;
-  const cat    = document.getElementById('filterCategory').value;
-  const status = document.getElementById('filterStatus').value;
+  const brandChecks = [...document.querySelectorAll('#fplist-brand input[type=checkbox]:checked')].map(c => c.value);
+  const catChecks   = [...document.querySelectorAll('#fplist-category input[type=checkbox]:checked')].map(c => c.value);
+  const statChecks  = [...document.querySelectorAll('#fplist-status input[type=checkbox]:checked')].map(c => c.value);
   productsGridApi.setGridOption('rowData', PRODUCTS.filter(p => {
-    if (brand  && p.brandId !== brand) return false;
-    if (cat    && p.category !== cat) return false;
-    if (status === 'enabled'  && !p.enabled) return false;
-    if (status === 'disabled' &&  p.enabled) return false;
+    if (brandChecks.length && !brandChecks.includes(p.brandId)) return false;
+    if (catChecks.length   && !catChecks.includes(p.category))  return false;
+    if (statChecks.length) {
+      const st = p.enabled ? 'enabled' : 'disabled';
+      if (!statChecks.includes(st)) return false;
+    }
     return true;
   }));
+  _updateFilterBtnState('brand',    brandChecks.length > 0);
+  _updateFilterBtnState('category', catChecks.length   > 0);
+  _updateFilterBtnState('status',   statChecks.length  > 0);
+}
+
+function _updateFilterBtnState(id, active){
+  const btn = document.getElementById('fbtn-' + id);
+  if (!btn) return;
+  btn.classList.toggle('active', active);
+  let dot = btn.querySelector('.dot');
+  if (active && !dot) {
+    dot = document.createElement('span'); dot.className = 'dot';
+    btn.insertBefore(dot, btn.firstChild);
+  } else if (!active && dot) { dot.remove(); }
+}
+
+function toggleFilterPanel(id){
+  const panel = document.getElementById('panel-' + id);
+  const isOpen = panel.classList.contains('open');
+  document.querySelectorAll('.filter-panel').forEach(p => p.classList.remove('open'));
+  if (!isOpen) panel.classList.add('open');
+}
+
+function clearFilter(id){
+  document.querySelectorAll(`#fplist-${id} input[type=checkbox]`).forEach(c => { c.checked = false; });
+  const search = document.querySelector(`#panel-${id} .fp-search`);
+  if (search) { search.value = ''; filterPanelSearch(id, ''); }
+  applyFilters();
+}
+
+function filterPanelSearch(id, query){
+  const q = query.toLowerCase();
+  document.querySelectorAll(`#fplist-${id} .fp-item`).forEach(item => {
+    item.style.display = (q && !item.textContent.toLowerCase().includes(q)) ? 'none' : '';
+  });
+}
+
+function initFilterPanels(){
+  const brandList = document.getElementById('fplist-brand');
+  BRANDS_LIST.forEach(b => {
+    const label = document.createElement('label');
+    label.className = 'fp-item';
+    label.innerHTML = `<input type="checkbox" value="${escHtml(b.id)}" onchange="applyFilters()"> ${escHtml(b.name)}`;
+    brandList.appendChild(label);
+  });
+  document.addEventListener('click', e => {
+    if (!e.target.closest('.filter-btn-wrap')) {
+      document.querySelectorAll('.filter-panel').forEach(p => p.classList.remove('open'));
+    }
+  });
 }
 
 /* ============================================================ PRODUCTS GRID */
 function initProductsGrid(){
-  // Populate brand filter
-  const sel = document.getElementById('filterBrand');
-  BRANDS_LIST.forEach(b => {
-    const o = document.createElement('option');
-    o.value = b.id; o.textContent = b.name;
-    sel.appendChild(o);
-  });
-
   productsGridApi = agGrid.createGrid(document.getElementById('productsGrid'), {
     domLayout: 'autoHeight',
     rowHeight: 72,
@@ -1404,6 +1497,7 @@ function populateBrandSelect(){
 /* ============================================================ INIT */
 document.addEventListener('DOMContentLoaded', () => {
   populateBrandSelect();
+  initFilterPanels();
   initProductsGrid();
 });
 </script>
