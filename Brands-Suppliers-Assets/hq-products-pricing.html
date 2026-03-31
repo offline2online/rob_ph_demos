@@ -223,6 +223,22 @@
     .ag-theme-alpine .ag-row{overflow:visible !important;}
     .grid-wrap{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);overflow:visible;margin-bottom:16px;}
 
+    /* IMAGE ASSET TAG MANAGEMENT */
+    .img-tags-row{display:flex;flex-wrap:wrap;align-items:center;gap:4px;margin-top:6px;}
+    .img-tag-chip{display:inline-flex;align-items:center;gap:2px;padding:2px 7px;background:var(--primary-light);color:var(--primary);border:1px solid rgba(22,155,194,.2);border-radius:10px;font-size:10px;font-weight:600;}
+    .img-tag-rm{background:none;border:none;cursor:pointer;color:var(--primary);font-size:12px;line-height:1;padding:0 1px;opacity:.7;}
+    .img-tag-rm:hover{opacity:1;color:var(--danger);}
+    .img-tag-add-btn{background:none;border:1px dashed var(--border2);border-radius:10px;font-size:10px;color:var(--text3);cursor:pointer;padding:2px 8px;transition:all .12s;white-space:nowrap;}
+    .img-tag-add-btn:hover{border-color:var(--primary);color:var(--primary);}
+    .img-tag-input-wrap{display:flex;align-items:center;gap:5px;margin-top:6px;}
+    .img-tag-input{flex:1;background:var(--surface2);border:1px solid var(--border);border-radius:5px;padding:4px 8px;font-size:11px;color:var(--text);outline:none;min-width:0;}
+    .img-tag-input:focus{border-color:var(--primary);}
+    .btn-tag-confirm{background:var(--primary);color:#fff;border:none;border-radius:5px;padding:4px 8px;font-size:11px;cursor:pointer;flex-shrink:0;}
+    .btn-tag-confirm:hover{background:#38b0cf;}
+    .btn-tag-cancel{background:var(--surface2);color:var(--text2);border:1px solid var(--border);border-radius:5px;padding:4px 7px;font-size:11px;cursor:pointer;flex-shrink:0;}
+    .quick-tag{font-size:11px;background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:3px 9px;cursor:pointer;color:var(--text2);transition:all .12s;}
+    .quick-tag:hover{border-color:var(--primary);color:var(--primary);background:var(--primary-light);}
+
     /* JSON PREVIEW */
     .json-preview{background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:14px;margin-top:10px;font-size:12px;color:var(--text2);}
   </style>
@@ -973,10 +989,10 @@ function removeTag(type, idx){
 /* ============================================================ ACCORDIONS */
 function buildAccordions(colours, ingredients, customisations, nutrition, sizing){
   document.getElementById('accordionsContainer').innerHTML = `
-    ${makeAccordion('acc-colours','Available Colours', renderColoursContent(colours))}
     ${makeAccordion('acc-ingredients','Ingredients', renderIngredientsContent(ingredients))}
     ${makeAccordion('acc-custom','Customisation Options', renderCustomisationsContent(customisations))}
     ${makeAccordion('acc-nutrition','Nutrition Information', renderNutritionContent(nutrition))}
+    ${makeAccordion('acc-colours','Available Colours', renderColoursContent(colours))}
     ${makeAccordion('acc-sizing','Sizing Data', renderSizingContent(sizing))}
   `;
 }
@@ -1094,6 +1110,8 @@ function renderSizingContent(sizing){
 }
 
 /* ============================================================ IMAGE GALLERY */
+let _focusedTagImg = null;
+
 function renderImgGallery(){
   const gallery = document.getElementById('imgGallery');
   gallery.innerHTML = '';
@@ -1101,6 +1119,9 @@ function renderImgGallery(){
     const card = document.createElement('div');
     card.className = 'img-card' + (img.isPrimary ? ' primary-img' : '');
     card.id = 'imgCard-' + i;
+    const tagChips = (img.tags||[]).map((t,ti) =>
+      `<span class="img-tag-chip">${escHtml(t)}<button class="img-tag-rm" onclick="removeImgTag(${i},${ti});event.stopPropagation()">×</button></span>`
+    ).join('');
     card.innerHTML = `
       <img class="img-card-thumb" src="${escHtml(img.src)}" alt="${escHtml(img.label||'Product image')}">
       <div class="img-card-body">
@@ -1111,17 +1132,23 @@ function renderImgGallery(){
           ${img.isPrimary ? '<span style="font-size:10px;font-weight:700;color:var(--warning);background:rgba(245,158,11,.1);border-radius:4px;padding:2px 5px;">PRIMARY</span>' : ''}
           <button class="img-del-btn" onclick="deleteProductImage(${i})">🗑️</button>
         </div>
-        <div style="margin-top:5px;display:flex;flex-wrap:wrap;gap:4px;">
-          ${(img.tags||[]).map((t,ti) => `<span style="font-size:10px;background:var(--primary-light);color:var(--primary);border-radius:10px;padding:2px 6px;">${escHtml(t)}</span>`).join('')}
+        <div class="img-tags-row">${tagChips}<button class="img-tag-add-btn" onclick="focusTagInput(${i})">+ Tag</button></div>
+        <div class="img-tag-input-wrap" id="imgTagInputWrap-${i}" style="display:none;">
+          <input type="text" class="img-tag-input" id="imgTagInput-${i}" placeholder="Type tag…" list="imgTagList-${i}"
+            onfocus="_focusedTagImg=${i}"
+            onkeydown="handleImgTagKey(event,${i})">
+          <datalist id="imgTagList-${i}">${GLOBAL_TAGS.map(t=>`<option value="${escHtml(t)}">`).join('')}</datalist>
+          <button class="btn-tag-confirm" onclick="commitImgTag(${i})">✓</button>
+          <button class="btn-tag-cancel" onclick="document.getElementById('imgTagInputWrap-${i}').style.display='none'">✕</button>
         </div>
       </div>
     `;
     gallery.appendChild(card);
   });
 
-  // Global tags
+  // Quick tags palette — clicking adds to the currently focused image
   document.getElementById('globalTagsWrap').innerHTML = GLOBAL_TAGS.map(t =>
-    `<span style="font-size:11px;background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:3px 9px;cursor:pointer;color:var(--text2);" onclick="addTagToNewAsset('${t}')">${t}</span>`
+    `<span class="quick-tag" onclick="addTagToNewAsset('${escHtml(t)}')">${escHtml(t)}</span>`
   ).join('');
 }
 
@@ -1135,7 +1162,44 @@ function deleteProductImage(idx){
   renderImgGallery();
 }
 
-function addTagToNewAsset(tag){ showToast('Tag "' + tag + '" ready — upload an image to apply it','info'); }
+function focusTagInput(idx){
+  _focusedTagImg = idx;
+  const wrap = document.getElementById('imgTagInputWrap-' + idx);
+  if (wrap){ wrap.style.display = 'flex'; document.getElementById('imgTagInput-' + idx).focus(); }
+}
+
+function commitImgTag(idx){
+  const input = document.getElementById('imgTagInput-' + idx);
+  const val = (input?.value||'').trim().toLowerCase();
+  if (!val) return;
+  const img = currentProductImages[idx];
+  if (!img.tags) img.tags = [];
+  if (!img.tags.includes(val)) img.tags.push(val);
+  renderImgGallery();
+  // Re-open the input on same card so user can keep adding
+  focusTagInput(idx);
+}
+
+function handleImgTagKey(event, idx){
+  if (event.key === 'Enter'){ event.preventDefault(); commitImgTag(idx); }
+  if (event.key === 'Escape'){ document.getElementById('imgTagInputWrap-' + idx).style.display = 'none'; }
+}
+
+function removeImgTag(imgIdx, tagIdx){
+  currentProductImages[imgIdx].tags.splice(tagIdx, 1);
+  renderImgGallery();
+}
+
+function addTagToNewAsset(tag){
+  if (_focusedTagImg !== null && currentProductImages[_focusedTagImg]){
+    const img = currentProductImages[_focusedTagImg];
+    if (!img.tags) img.tags = [];
+    if (!img.tags.includes(tag)){ img.tags.push(tag); renderImgGallery(); focusTagInput(_focusedTagImg); }
+    else showToast('Tag already applied to this image', 'info');
+  } else {
+    showToast('Click "+ Tag" on an image first, then pick a quick tag', 'info');
+  }
+}
 
 function handleAssetUpload(event){
   const files = Array.from(event.target.files);
