@@ -550,13 +550,14 @@
 
 <script>
 /* ============================================================ DATA */
-const BRANDS_LIST = [
+const _BRANDS_LIST_DEFAULT = [
   {id:'brand-001',name:'Nike'},{id:'brand-002',name:'Adidas'},
   {id:'brand-003',name:'Samsung'},{id:'brand-004',name:'Apple'},
   {id:'brand-005',name:"Levi's"},{id:'brand-006',name:'Sony'}
 ];
+let BRANDS_LIST = (() => { try { const s = localStorage.getItem('ph_brands_list'); return s ? JSON.parse(s) : _BRANDS_LIST_DEFAULT; } catch(e) { return _BRANDS_LIST_DEFAULT; } })();
 
-let PRODUCTS = [
+const _PRODUCTS_DEFAULT = [
   // NIKE
   {id:'p-001',brandId:'brand-001',brandName:'Nike',sku:'NK-RN-001',name:'Air Max 270',category:'Footwear',subCategory:'Running Shoes',rrp:149.99,offerPrice:119.99,offerActive:true,offerScheduledAt:null,shortDescription:'Iconic Air Max cushioning for all-day comfort.',longDescription:'The Nike Air Max 270 features the biggest Air unit yet for a lifestyle shoe, delivering unparalleled, all-day cushioning.',features:['Air Max unit','Foam midsole','Mesh upper','Rubber outsole'],targetAudiences:['Men','Women','Runners'],thumbnail:'https://placehold.co/60x60/111/fff?text=AM270',enabled:true,images:[{id:'img-001',src:'https://placehold.co/300x200/111/fff?text=AM270+Main',label:'Hero Shot',tags:['primary','hero'],isPrimary:true},{id:'img-002',src:'https://placehold.co/300x200/333/fff?text=AM270+Side',label:'Side Profile',tags:['side'],isPrimary:false}],colours:[{hex:'#111111',label:'Black'},{hex:'#FFFFFF',label:'White'},{hex:'#FF6B35',label:'Orange'}],priceLog:[{date:'2026-03-15 10:22',changedBy:'Sarah Chen',oldPrice:149.99,newPrice:119.99,reason:'Spring sale'},{date:'2026-01-10 09:00',changedBy:'PIM Sync',oldPrice:159.99,newPrice:149.99,reason:'New season pricing'}]},
   {id:'p-002',brandId:'brand-001',brandName:'Nike',sku:'NK-JK-022',name:'Tech Fleece Hoodie',category:'Apparel',subCategory:'Hoodies',rrp:89.99,offerPrice:null,offerActive:false,offerScheduledAt:'2026-04-15T09:00',shortDescription:'Engineered fleece for warmth without the bulk.',longDescription:'Nike Tech Fleece combines innovative fabric with a modern silhouette.',features:['Tech Fleece fabric','Kangaroo pocket','Full zip','Tapered fit'],targetAudiences:['Men'],thumbnail:'https://placehold.co/60x60/222/fff?text=TF+Hood',enabled:true,images:[{id:'img-003',src:'https://placehold.co/300x200/222/fff?text=TechFleece',label:'Front View',tags:['front','primary'],isPrimary:true}],colours:[{hex:'#111111',label:'Black'},{hex:'#404040',label:'Dark Grey'}],priceLog:[{date:'2026-02-01 08:00',changedBy:'Emma Davies',oldPrice:99.99,newPrice:89.99,reason:'Price reduction Q1'}]},
@@ -588,6 +589,12 @@ let PRODUCTS = [
   {id:'p-023',brandId:'brand-006',brandName:'Sony',sku:'SN-CAM-A7M4',name:'Alpha 7 IV Camera Body',category:'Electronics',subCategory:'Cameras',rrp:2499.99,offerPrice:null,offerActive:false,offerScheduledAt:'2026-06-01T09:00',shortDescription:'33MP full-frame mirrorless camera with 4K 60p video.',longDescription:'The Sony Alpha 7 IV is a versatile full-frame mirrorless camera for both stills and video.',features:['33MP BSI sensor','4K 60p 10-bit','759-point AF','5-axis IBIS'],targetAudiences:['Photographers','Videographers'],thumbnail:'https://placehold.co/60x60/1a1a1a/fff?text=A7IV',enabled:true,images:[],colours:[],priceLog:[]},
   {id:'p-024',brandId:'brand-006',brandName:'Sony',sku:'SN-SPK-XB33',name:'XB33 Extra Bass Speaker',category:'Electronics',subCategory:'Speakers',rrp:149.99,offerPrice:119.99,offerActive:true,offerScheduledAt:null,shortDescription:'Waterproof portable speaker with Extra Bass.',longDescription:'Sony SRS-XB33 with EXTRA BASS, IP67 water resistance and 24hr battery.',features:['EXTRA BASS','IP67 waterproof','24hr battery','Party Connect'],targetAudiences:['Music lovers','Outdoor enthusiasts'],thumbnail:'https://placehold.co/60x60/FF0000/fff?text=XB33',enabled:true,images:[],colours:[],priceLog:[]}
 ];
+
+let PRODUCTS = (() => { try { const s = localStorage.getItem('ph_products'); return s ? JSON.parse(s) : _PRODUCTS_DEFAULT; } catch(e) { return _PRODUCTS_DEFAULT; } })();
+
+function saveProducts(){
+  try { localStorage.setItem('ph_products', JSON.stringify(PRODUCTS)); } catch(e) {}
+}
 
 let productsGridApi = null;
 let editingProductId = null;
@@ -794,7 +801,7 @@ function initProductsGrid(){
           inp.type = 'checkbox'; inp.checked = p.value;
           inp.onchange = () => {
             const prod = PRODUCTS.find(pr => pr.id === p.data.id);
-            if (prod) { prod.enabled = inp.checked; showToast(prod.name + (inp.checked ? ' enabled' : ' disabled'), 'info'); }
+            if (prod) { prod.enabled = inp.checked; saveProducts(); showToast(prod.name + (inp.checked ? ' enabled' : ' disabled'), 'info'); }
           };
           const slider = document.createElement('span');
           slider.className = 'toggle-slider';
@@ -935,6 +942,7 @@ function saveProduct(){
     PRODUCTS.push(payload);
     showToast(`"${name}" added`);
   }
+  saveProducts();
   productsGridApi.setGridOption('rowData', PRODUCTS);
   closeProductModal();
 }
@@ -946,6 +954,7 @@ function confirmDelete(id, name){
   document.getElementById('confirmBtn').onclick = () => {
     const idx = PRODUCTS.findIndex(p => p.id === id);
     if (idx !== -1) PRODUCTS.splice(idx,1);
+    saveProducts();
     productsGridApi.setGridOption('rowData', PRODUCTS);
     closeConfirm();
     showToast(`"${name}" deleted`,'info');
@@ -1532,6 +1541,7 @@ function importJsonProducts(){
     added++;
   });
 
+  saveProducts();
   productsGridApi.setGridOption('rowData', PRODUCTS);
   closeJsonModal();
   pendingJsonProducts = null;

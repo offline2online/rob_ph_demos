@@ -712,7 +712,7 @@
 ============================================================ */
 const STORES = ['STORE-001','STORE-002','STORE-003','STORE-004','STORE-005','STORE-006','STORE-007','STORE-008'];
 
-const BRANDS = [
+const _BRANDS_DEFAULT = [
   {
     id:'brand-001', name:'Nike', website:'nike.com',
     description:'Global leader in athletic footwear, apparel and equipment.',
@@ -798,6 +798,15 @@ const BRANDS = [
     productCount:4, storeCount:8
   }
 ];
+
+let BRANDS = (() => { try { const s = localStorage.getItem('ph_brands'); return s ? JSON.parse(s) : _BRANDS_DEFAULT; } catch(e) { return _BRANDS_DEFAULT; } })();
+
+function saveBrands(){
+  try {
+    localStorage.setItem('ph_brands', JSON.stringify(BRANDS));
+    localStorage.setItem('ph_brands_list', JSON.stringify(BRANDS.map(b => ({id: b.id, name: b.name}))));
+  } catch(e) {}
+}
 
 /* ============================================================
    STATE
@@ -1144,12 +1153,14 @@ function saveBrand() {
       payload.productCount    = BRANDS[idx].productCount;
       payload.storeCount      = BRANDS[idx].storeCount;
       BRANDS[idx] = payload;
+      saveBrands();
       showToast(`"${name}" updated successfully`);
     }
   } else {
     payload.id = 'brand-' + Date.now();
     payload.storeCount = payload.storeAssign === 'all' ? 8 : payload.selectedStores.length;
     BRANDS.push(payload);
+    saveBrands();
     showToast(`"${name}" added successfully`);
   }
 
@@ -1166,6 +1177,7 @@ function confirmDeleteBrand(id, name) {
   document.getElementById('confirmBtn').onclick = () => {
     const idx = BRANDS.findIndex(b => b.id === id);
     if (idx !== -1) BRANDS.splice(idx, 1);
+    saveBrands();
     brandsGridApi.setGridOption('rowData', BRANDS);
     closeConfirm();
     showToast(`"${name}" deleted`, 'info');
