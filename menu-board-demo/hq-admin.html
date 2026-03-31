@@ -3911,14 +3911,22 @@ function deleteCategory(idx) {
 
 // ===== BRANDS =====
 function _copyBrandTplUrl(brand, tpl) {
-  const base = window.location.origin + window.location.pathname.replace('hq-admin.html', 'menu-board.html');
+  const libEntry = TEMPLATE_LIBRARY.find(x => x.id === tpl.templateType);
+  const isStandalone = libEntry && libEntry.standalone;
+  const targetFile = isStandalone ? (libEntry.standaloneFile || 'order-summary.html') : 'menu-board.html';
+  const base = window.location.origin + window.location.pathname.replace('hq-admin.html', targetFile);
   const params = new URLSearchParams({ brand: (brand.name || brand.id) });
-  if (tpl.templateType) params.set('template', tpl.templateType);
-  params.set('store', '${StoreCode}');
-  const menuTypes = Array.isArray(tpl.menuTypes) && tpl.menuTypes.length > 0 ? tpl.menuTypes.join(',') : '${MenuType}';
-  params.set('menu', menuTypes);
-  params.set('device', '${UniqueDeviceID}');
-  params.set('orientation', 'landscape');
+  if (isStandalone) {
+    params.set('store',  '${StoreCode}');
+    params.set('device', '${UniqueDeviceID}');
+  } else {
+    if (tpl.templateType) params.set('template', tpl.templateType);
+    params.set('store', '${StoreCode}');
+    const menuTypes = Array.isArray(tpl.menuTypes) && tpl.menuTypes.length > 0 ? tpl.menuTypes.join(',') : '${MenuType}';
+    params.set('menu', menuTypes);
+    params.set('device', '${UniqueDeviceID}');
+    params.set('orientation', 'landscape');
+  }
   const url = decodeURIComponent(base + '?' + params.toString());
   navigator.clipboard.writeText(url).then(() => {
     toast('✅ Offer Board URL copied to clipboard.', 'success');
