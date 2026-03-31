@@ -707,6 +707,21 @@ button { cursor: pointer; border: none; background: none; font-family: inherit; 
 .state-screen h2 { font-family: 'Oswald', sans-serif; font-size: 22px; color: #1a1a1a; }
 .state-screen p { font-size: 14px; text-align: center; }
 
+/* ── DEBUG PANEL ───────────────────────────────────────────────────────── */
+#orderDebugPanel {
+  position: fixed; bottom: 10px; left: 10px; z-index: 9999;
+  background: rgba(0,0,0,.88); color: #ccc;
+  font-family: 'Courier New', monospace; font-size: 11px;
+  line-height: 1.85; padding: 10px 14px; border-radius: 8px;
+  max-width: 340px; word-break: break-all;
+  box-shadow: 0 2px 20px rgba(0,0,0,.6); display: none;
+}
+#orderDebugPanel.visible { display: block; }
+#orderDebugPanel b   { color: #fff; font-size: 11.5px; }
+#orderDebugPanel .ok { color: #2ecc71; }
+#orderDebugPanel .warn { color: #f39c12; }
+#orderDebugPanel .err { color: #e74c3c; }
+
 /* ── SCROLLBAR ─────────────────────────────────────────────────────────── */
 .bag-items::-webkit-scrollbar { width: 4px; }
 .bag-items::-webkit-scrollbar-track { background: transparent; }
@@ -1054,6 +1069,9 @@ button { cursor: pointer; border: none; background: none; font-family: inherit; 
   </div>
 </div>
 
+<!-- ── DEBUG PANEL ──────────────────────────────────────────────────────── -->
+<div id="orderDebugPanel"></div>
+
 <!-- ── ORDER CONFIRMATION ─────────────────────────────────────────────── -->
 <div class="confirm-screen" id="confirmScreen">
   <div class="confirm-check">✅</div>
@@ -1089,6 +1107,50 @@ const DEVICE_UDID = (urlParams.get('device') || '').trim();
 const HOST_HEADER_HEIGHT = Math.min(parseInt(urlParams.get('headerHeight') || '0', 10) || 0, 200);
 if (HOST_HEADER_HEIGHT > 0) {
   document.documentElement.style.setProperty('--host-header-height', HOST_HEADER_HEIGHT + 'px');
+}
+
+// ── DEBUG PANEL ───────────────────────────────────────────────────────────
+let _debugVisible = (urlParams.get('debug') === '1');
+let _lastSyncStatus = null; // null | 'ok' | 'err'
+let _lastSyncMsg    = '';
+let _lastSyncTime   = null;
+{
+  // Long-press bottom-left corner (120px zone, 800ms) to toggle panel
+  let _lpt = null;
+  const _CP = 120, _HM = 800;
+  const _isBL = (x, y) => x <= _CP && y >= window.innerHeight - _CP;
+  document.addEventListener('mousedown', e => {
+    if (!_isBL(e.clientX, e.clientY)) return;
+    _lpt = setTimeout(() => { _debugVisible = !_debugVisible; _updateDbg(); }, _HM);
+  });
+  document.addEventListener('mouseup', () => { clearTimeout(_lpt); _lpt = null; });
+  document.addEventListener('touchstart', e => {
+    const t = e.touches[0];
+    if (!_isBL(t.clientX, t.clientY)) return;
+    _lpt = setTimeout(() => { _debugVisible = !_debugVisible; _updateDbg(); }, _HM);
+  }, { passive: true });
+  document.addEventListener('touchend', () => { clearTimeout(_lpt); _lpt = null; }, { passive: true });
+}
+function _updateDbg() {
+  const el = document.getElementById('orderDebugPanel');
+  if (!el) return;
+  if (!_debugVisible) { el.classList.remove('visible'); return; }
+  const deviceHtml = DEVICE_UDID
+    ? `<span class="ok">✓ ${DEVICE_UDID}</span>`
+    : `<span class="err">✗ NOT SET — add ?device=UDID to URL</span>`;
+  const storeHtml = STORE_CODE
+    ? `<span class="ok">✓ ${STORE_CODE}</span>`
+    : `<span class="warn">⚠ not set (optional)</span>`;
+  let syncHtml = '<span class="warn">no sync yet</span>';
+  if (_lastSyncStatus === 'ok')  syncHtml = `<span class="ok">✓ OK — ${_lastSyncTime}</span>`;
+  if (_lastSyncStatus === 'err') syncHtml = `<span class="err">✗ FAILED — ${_lastSyncMsg}</span>`;
+  el.innerHTML =
+    `<div><b>🛠 Order Debug</b></div>` +
+    `<div>Device UDID : ${deviceHtml}</div>` +
+    `<div>Store Code  : ${storeHtml}</div>` +
+    `<div>Cart items  : <span class="ok">${_bag.length} rows / ${bagItemCount()} items</span></div>` +
+    `<div>Firestore   : ${syncHtml}</div>`;
+  el.classList.add('visible');
 }
 
 // ── STATE ─────────────────────────────────────────────────────────────────
@@ -1724,7 +1786,18 @@ function syncCartToFirestore(statusOverride, orderNumber) {
     payload.queueEnteredAt = new Date().toISOString();
   }
   setDoc(doc(db, 'carts', DEVICE_UDID), payload)
-    .catch(e => console.warn('[Cart sync] failed:', e));
+    .then(() => {
+      _lastSyncStatus = 'ok';
+      _lastSyncTime   = new Date().toLocaleTimeString();
+      _updateDbg();
+    })
+    .catch(e => {
+      _lastSyncStatus = 'err';
+      _lastSyncMsg    = e.message || String(e);
+      _lastSyncTime   = new Date().toLocaleTimeString();
+      console.error('[Cart sync] failed:', e);
+      _updateDbg();
+    });
 }
 
 function hasCustomization(item) {
