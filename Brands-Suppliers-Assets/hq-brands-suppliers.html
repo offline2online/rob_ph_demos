@@ -519,8 +519,12 @@
             <input type="file" id="prodJsonFile" accept=".json" onchange="handleProdJson(event)">
           </div>
           <div id="prodJsonPreview" style="display:none;" class="json-preview"></div>
-          <div id="prodJsonImportWrap" style="display:none;margin-top:10px;">
-            <button class="btn btn-primary btn-sm" id="prodJsonImportBtn" onclick="importBrandProducts()">Import Products</button>
+          <div id="prodJsonImportWrap" style="display:none;margin-top:12px;background:var(--primary-light);border:1.5px solid var(--primary);border-radius:8px;padding:14px 16px;align-items:center;justify-content:space-between;gap:12px;">
+            <div>
+              <div style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:2px;">Ready to import</div>
+              <div style="font-size:12px;color:var(--text2);">Click the button to add these products to the platform.</div>
+            </div>
+            <button class="btn btn-primary" id="prodJsonImportBtn" onclick="importBrandProducts()" style="white-space:nowrap;flex-shrink:0;font-size:14px;padding:10px 20px;">⬆️ Import Products</button>
           </div>
         </div>
         <div class="form-group">
@@ -1363,8 +1367,8 @@ function handleProdJson(event) {
 
       pendingProdJson = { items, meta, isGs1 };
       const btnWrap = document.getElementById('prodJsonImportWrap');
-      document.getElementById('prodJsonImportBtn').textContent = `Import ${items.length} Products`;
-      btnWrap.style.display = 'block';
+      document.getElementById('prodJsonImportBtn').textContent = `⬆️ Import ${items.length} Products`;
+      btnWrap.style.display = 'flex';
     } catch(err) {
       showToast('Invalid JSON: ' + err.message, 'error');
     }
