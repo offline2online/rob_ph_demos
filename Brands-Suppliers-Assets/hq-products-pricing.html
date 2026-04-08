@@ -487,7 +487,7 @@
             <div class="grid-toolbar">
               <div class="search-box">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
-                <input type="text" id="productSearch" placeholder="Search products, SKU, brand…" oninput="productsGridApi.setGridOption('quickFilterText', this.value)">
+                <input type="text" id="productSearch" placeholder="Search products, SKU, brand…" oninput="applyFilters()">
               </div>
               <!-- Brand filter -->
               <div class="filter-btn-wrap" id="wrap-brand">
@@ -509,12 +509,7 @@
                 </button>
                 <div class="filter-panel" id="panel-category">
                   <input type="text" class="fp-search" placeholder="Search..." oninput="filterPanelSearch('category', this.value)">
-                  <div class="fp-list" id="fplist-category">
-                    <label class="fp-item"><input type="checkbox" value="Footwear" onchange="applyFilters()"> Footwear</label>
-                    <label class="fp-item"><input type="checkbox" value="Apparel" onchange="applyFilters()"> Apparel</label>
-                    <label class="fp-item"><input type="checkbox" value="Electronics" onchange="applyFilters()"> Electronics</label>
-                    <label class="fp-item"><input type="checkbox" value="Accessories" onchange="applyFilters()"> Accessories</label>
-                  </div>
+                  <div class="fp-list" id="fplist-category"></div>
                   <button class="fp-clear" onclick="clearFilter('category')">Clear Filter</button>
                 </div>
               </div>
@@ -656,12 +651,17 @@ function applyFilters(){
   const brandChecks = [...document.querySelectorAll('#fplist-brand input[type=checkbox]:checked')].map(c => c.value);
   const catChecks   = [...document.querySelectorAll('#fplist-category input[type=checkbox]:checked')].map(c => c.value);
   const statChecks  = [...document.querySelectorAll('#fplist-status input[type=checkbox]:checked')].map(c => c.value);
+  const q = (document.getElementById('productSearch')?.value || '').toLowerCase().trim();
   productsGridApi.setGridOption('rowData', PRODUCTS.filter(p => {
     if (brandChecks.length && !brandChecks.includes(p.brandId)) return false;
     if (catChecks.length   && !catChecks.includes(p.category))  return false;
     if (statChecks.length) {
       const st = p.enabled ? 'enabled' : 'disabled';
       if (!statChecks.includes(st)) return false;
+    }
+    if (q) {
+      const hay = `${p.name||''} ${p.sku||''} ${p.brandId||''} ${p.category||''}`.toLowerCase();
+      if (!hay.includes(q)) return false;
     }
     return true;
   }));
@@ -703,12 +703,22 @@ function filterPanelSearch(id, query){
 }
 
 function initFilterPanels(){
+  // Brand list — from BRANDS_LIST
   const brandList = document.getElementById('fplist-brand');
   BRANDS_LIST.forEach(b => {
     const label = document.createElement('label');
     label.className = 'fp-item';
     label.innerHTML = `<input type="checkbox" value="${escHtml(b.id)}" onchange="applyFilters()"> ${escHtml(b.name)}`;
     brandList.appendChild(label);
+  });
+  // Category list — built dynamically from PRODUCTS
+  const catList = document.getElementById('fplist-category');
+  const cats = [...new Set(PRODUCTS.map(p => p.category).filter(Boolean))].sort();
+  cats.forEach(cat => {
+    const label = document.createElement('label');
+    label.className = 'fp-item';
+    label.innerHTML = `<input type="checkbox" value="${escHtml(cat)}" onchange="applyFilters()"> ${escHtml(cat)}`;
+    catList.appendChild(label);
   });
   document.addEventListener('click', e => {
     if (!e.target.closest('.filter-btn-wrap')) {
@@ -987,7 +997,7 @@ function saveProduct(){
     showToast(`"${name}" added`);
   }
   saveProducts();
-  productsGridApi.setGridOption('rowData', PRODUCTS);
+  applyFilters();
   closeProductModal();
 }
 
@@ -999,7 +1009,7 @@ function confirmDelete(id, name){
     const idx = PRODUCTS.findIndex(p => p.id === id);
     if (idx !== -1) PRODUCTS.splice(idx,1);
     saveProducts();
-    productsGridApi.setGridOption('rowData', PRODUCTS);
+    applyFilters();
     closeConfirm();
     showToast(`"${name}" deleted`,'info');
   };
@@ -1587,7 +1597,7 @@ function importJsonProducts(){
   });
 
   saveProducts();
-  productsGridApi.setGridOption('rowData', PRODUCTS);
+  applyFilters();
   closeJsonModal();
   pendingJsonProducts = null;
   showToast(`${added} product${added!==1?'s':''} imported${skipped ? ` (${skipped} skipped)` : ''}`);
