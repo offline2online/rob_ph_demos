@@ -531,6 +531,7 @@
                 </div>
               </div>
               <div style="flex:1;"></div>
+              <button id="deleteSelectionBtn" class="btn btn-danger" style="display:none;" onclick="deleteSelectedProducts()">🗑 Delete Selection (<span id="selectionCount">0</span>)</button>
               <button class="btn btn-ghost" onclick="showView('pricelog')">📋 Price Change Log</button>
               <button class="btn btn-ghost" onclick="openJsonModal()">⬆️ Import JSON</button>
               <button class="btn btn-primary" onclick="openAddProductModal()">+ Add Product</button>
@@ -711,6 +712,7 @@ function applyFilters(){
   _updateFilterBtnState('brand',    brandChecks.length > 0);
   _updateFilterBtnState('category', catChecks.length   > 0);
   _updateFilterBtnState('status',   statChecks.length  > 0);
+  updateSelectionUI();
 }
 
 function _updateFilterBtnState(id, active){
@@ -777,8 +779,20 @@ function initProductsGrid(){
     rowHeight: 72,
     suppressCellFocus: true,
     suppressMovableColumns: true,
+    rowSelection: 'multiple',
+    suppressRowClickSelection: true,
+    onSelectionChanged: updateSelectionUI,
     defaultColDef: { resizable:true, sortable:true, suppressMenu:true },
     columnDefs: [
+      {
+        headerName: '',
+        headerCheckboxSelection: true,
+        checkboxSelection: true,
+        width: 48,
+        sortable: false,
+        resizable: false,
+        suppressMenu: true,
+      },
       {
         headerName:'', field:'thumbnail', width:72, sortable:false,
         cellRenderer: p => {
@@ -1084,6 +1098,37 @@ function saveProduct(){
   saveProducts();
   applyFilters();
   closeProductModal();
+}
+
+/* ============================================================ SELECTION */
+function updateSelectionUI(){
+  if (!productsGridApi) return;
+  const selected = productsGridApi.getSelectedRows();
+  const btn   = document.getElementById('deleteSelectionBtn');
+  const count = document.getElementById('selectionCount');
+  if (selected.length > 0) {
+    btn.style.display = 'inline-flex';
+    count.textContent = selected.length;
+  } else {
+    btn.style.display = 'none';
+  }
+}
+
+function deleteSelectedProducts(){
+  const selected = productsGridApi.getSelectedRows();
+  if (!selected.length) return;
+  const n = selected.length;
+  document.getElementById('confirmTitle').textContent = `Delete ${n} Product${n > 1 ? 's' : ''}?`;
+  document.getElementById('confirmMsg').textContent   = `${n} product${n > 1 ? 's' : ''} will be permanently removed. This cannot be undone.`;
+  document.getElementById('confirmBtn').onclick = () => {
+    const ids = new Set(selected.map(p => p.id));
+    PRODUCTS = PRODUCTS.filter(p => !ids.has(p.id));
+    saveProducts();
+    applyFilters();
+    closeConfirm();
+    showToast(`${n} product${n > 1 ? 's' : ''} deleted`, 'info');
+  };
+  document.getElementById('confirmOverlay').classList.add('open');
 }
 
 /* ============================================================ DELETE */
