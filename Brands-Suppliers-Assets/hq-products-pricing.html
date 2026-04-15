@@ -271,6 +271,10 @@
     .tp-icon-esl{background:#ccfbf1;color:#0d9488;}
     .tp-icon-kiosk{background:#fef9c3;color:#a16207;}
     .tp-icon-mobile{background:#dcfce7;color:#16a34a;}
+
+    /* Template thumbnail in touchpoint row */
+    .tp-thumb{width:52px;height:52px;border-radius:8px;overflow:hidden;flex-shrink:0;position:relative;border:1px solid var(--border);box-shadow:0 1px 3px rgba(0,0,0,.10);}
+    .tp-thumb-inner{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%) scale(0.30);transform-origin:center center;white-space:nowrap;pointer-events:none;}
     .tp-info{flex:1;min-width:0;}
     .tp-name{font-size:13px;font-weight:700;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
     .tp-meta{font-size:11px;color:var(--text3);margin-top:2px;}
@@ -2069,10 +2073,27 @@ function buildActiveOffersTab() {
   }).join('');
 }
 
+function renderTpThumb(templateId) {
+  const builtinKeys = ['default','bold','minimal','flash','member'];
+  let badgeHtml = '';
+  let bg = '#f5f5f5';
+  if (builtinKeys.includes(templateId)) {
+    badgeHtml = renderBuiltinBadge(templateId);
+    bg = BUILTIN_BG[templateId] || '#f5f5f5';
+  } else {
+    const tpl = CUSTOM_TEMPLATES.find(t => t.id === templateId);
+    if (tpl) {
+      badgeHtml = renderCustomBadge(tpl);
+      bg = tpl.bgType === 'gradient'
+        ? `linear-gradient(135deg,${tpl.bgColor},${tpl.bgColor2})`
+        : tpl.bgColor;
+    }
+  }
+  return `<div class="tp-thumb" style="background:${bg};"><div class="tp-thumb-inner">${badgeHtml}</div></div>`;
+}
+
 function renderTouchpointRows() {
   const list = document.getElementById('touchpointList');
-  const templateOptions = Object.entries(TEMPLATE_LABELS)
-    .map(([v,l]) => `<option value="${v}">${l}</option>`).join('');
 
   let lastCat = null;
   list.innerHTML = DISCOUNT_TOUCHPOINTS.map(tp => {
@@ -2080,12 +2101,11 @@ function renderTouchpointRows() {
       ? `<div class="tp-section-label">${CAT_SECTION_LABELS[tp.cat] || tp.cat}</div>`
       : '';
     lastCat = tp.cat;
-    const iconClass = `tp-icon-${tp.cat}`;
     const selectedOpts = getAllTemplateOptions()
       .map(({value:v,label:l}) => `<option value="${v}"${v===tp.template?' selected':''}>${escHtml(l)}</option>`).join('');
     return `${catHeader}
     <div class="touchpoint-row${tp.enabled ? ' tp-enabled' : ''}" id="tprow-${tp.id}">
-      <div class="tp-icon ${iconClass}">${tp.icon}</div>
+      <div id="tpthumb-${tp.id}">${renderTpThumb(tp.template)}</div>
       <div class="tp-info">
         <div class="tp-name">${escHtml(tp.label)}</div>
         <div class="tp-meta">${escHtml(tp.size)}</div>
@@ -2124,6 +2144,9 @@ function setTouchpointTemplate(id, template) {
   const tp = DISCOUNT_TOUCHPOINTS.find(t => t.id === id);
   if (!tp) return;
   tp.template = template;
+  // Live-update the thumbnail without re-rendering the whole list
+  const thumbEl = document.getElementById('tpthumb-' + id);
+  if (thumbEl) thumbEl.innerHTML = renderTpThumb(template);
   saveDiscountTouchpoints();
 }
 
