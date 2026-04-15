@@ -272,9 +272,10 @@
     .tp-icon-kiosk{background:#fef9c3;color:#a16207;}
     .tp-icon-mobile{background:#dcfce7;color:#16a34a;}
 
-    /* Template thumbnail in touchpoint row */
-    .tp-thumb{width:52px;height:52px;border-radius:8px;overflow:hidden;flex-shrink:0;position:relative;border:1px solid var(--border);box-shadow:0 1px 3px rgba(0,0,0,.10);}
-    .tp-thumb-inner{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%) scale(0.30);transform-origin:center center;white-space:nowrap;pointer-events:none;}
+    /* Template badge preview in touchpoint row */
+    .tp-badge-preview{flex-shrink:0;display:flex;align-items:center;justify-content:center;}
+    .tp-badge-preview .bp-default,.tp-badge-preview .bp-bold,.tp-badge-preview .bp-minimal,
+    .tp-badge-preview .bp-flash,.tp-badge-preview .bp-member{min-width:100px;}
     .tp-info{flex:1;min-width:0;}
     .tp-name{font-size:13px;font-weight:700;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
     .tp-meta{font-size:11px;color:var(--text3);margin-top:2px;}
@@ -2076,20 +2077,13 @@ function buildActiveOffersTab() {
 function renderTpThumb(templateId) {
   const builtinKeys = ['default','bold','minimal','flash','member'];
   let badgeHtml = '';
-  let bg = '#f5f5f5';
   if (builtinKeys.includes(templateId)) {
     badgeHtml = renderBuiltinBadge(templateId);
-    bg = BUILTIN_BG[templateId] || '#f5f5f5';
   } else {
     const tpl = CUSTOM_TEMPLATES.find(t => t.id === templateId);
-    if (tpl) {
-      badgeHtml = renderCustomBadge(tpl);
-      bg = tpl.bgType === 'gradient'
-        ? `linear-gradient(135deg,${tpl.bgColor},${tpl.bgColor2})`
-        : tpl.bgColor;
-    }
+    if (tpl) badgeHtml = renderCustomBadge(tpl);
   }
-  return `<div class="tp-thumb" style="background:${bg};"><div class="tp-thumb-inner">${badgeHtml}</div></div>`;
+  return `<div class="tp-badge-preview">${badgeHtml}</div>`;
 }
 
 function renderTouchpointRows() {
@@ -2195,7 +2189,7 @@ function renderBuiltinBadge(key) {
     case 'bold':    return `<div class="bp-bold"><div class="bp-pct">28%</div><div class="bp-off">OFF</div></div>`;
     case 'minimal': return `<div class="bp-minimal"><div class="bp-was">$24.99</div><div class="bp-now">$17.99</div></div>`;
     case 'flash':   return `<div class="bp-flash"><div class="bp-label">⚡ Flash Sale</div><div class="bp-pct">40%</div></div>`;
-    case 'member':  return `<div class="bp-member"><div class="bp-tier">★ VIB Member</div><div class="bp-now">$17.99</div><div class="bp-label">Exclusive Price</div></div>`;
+    case 'member':  return `<div class="bp-member"><div class="bp-tier">★ VIP Member</div><div class="bp-now">$17.99</div><div class="bp-label">Exclusive Price</div></div>`;
     default: return '';
   }
 }
@@ -2207,7 +2201,7 @@ const BUILTIN_TEMPLATE_DATA = {
   bold:    { name:'Bold Savings',        bgType:'solid', bgColor:'#169bc2', bgColor2:'#0f6e91', shape:'rounded', borderEnabled:false, borderColor:'#ffffff', showLabel:false, labelIcon:'bolt', labelIconType:'material', labelIconColor:'#ffffff', labelText:'OFF', labelColor:'#ffffff', showWas:false, wasColor:'#aaaaaa', wasStrike:false, showNow:false, nowColor:'#ffffff', nowSize:'xl', savingDisplay:'pct', savingColor:'#ffffff', showName:false, nameColor:'#cccccc' },
   minimal: { name:'Minimal',             bgType:'solid', bgColor:'#fafafa', bgColor2:'#f0f0f0', shape:'square', borderEnabled:true, borderColor:'#333333', showLabel:false, labelIcon:'local_offer', labelIconType:'material', labelIconColor:'#333333', labelText:'', labelColor:'#333333', showWas:true, wasColor:'#999999', wasStrike:true, showNow:true, nowColor:'#111111', nowSize:'lg', savingDisplay:'none', savingColor:'#333333', showName:false, nameColor:'#666666' },
   flash:   { name:'Flash Sale',          bgType:'gradient', bgColor:'#ff4d4f', bgColor2:'#ff7a00', shape:'rounded', borderEnabled:false, borderColor:'#ffffff', showLabel:true, labelIcon:'bolt', labelIconType:'material', labelIconColor:'#ffffff', labelText:'FLASH SALE', labelColor:'#ffffff', showWas:false, wasColor:'rgba(255,255,255,0.6)', wasStrike:false, showNow:false, nowColor:'#ffffff', nowSize:'xl', savingDisplay:'pct', savingColor:'#ffffff', showName:false, nameColor:'#eeeeee' },
-  member:  { name:'Member Exclusive',    bgType:'gradient', bgColor:'#1e293b', bgColor2:'#334155', shape:'rounded', borderEnabled:false, borderColor:'#f59e0b', showLabel:true, labelIcon:'workspace_premium', labelIconType:'material', labelIconColor:'#f59e0b', labelText:'VIB MEMBER', labelColor:'#f59e0b', showWas:false, wasColor:'rgba(255,255,255,0.6)', wasStrike:false, showNow:true, nowColor:'#ffffff', nowSize:'lg', savingDisplay:'none', savingColor:'#f59e0b', showName:false, nameColor:'rgba(255,255,255,0.6)' },
+  member:  { name:'Member Exclusive',    bgType:'gradient', bgColor:'#1e293b', bgColor2:'#334155', shape:'rounded', borderEnabled:false, borderColor:'#f59e0b', showLabel:true, labelIcon:'workspace_premium', labelIconType:'material', labelIconColor:'#f59e0b', labelText:'VIP MEMBER', labelColor:'#f59e0b', showWas:false, wasColor:'rgba(255,255,255,0.6)', wasStrike:false, showNow:true, nowColor:'#ffffff', nowSize:'lg', savingDisplay:'none', savingColor:'#f59e0b', showName:false, nameColor:'rgba(255,255,255,0.6)' },
 };
 
 /* ---- Custom badge preview HTML (inline styles from template obj) ---- */
