@@ -15,5 +15,12 @@
       "port": 3457,
       "autoPort": false
     }
+    ,{
+      "name": "bsa",
+      "runtimeExecutable": "/Users/rgeerdink/Library/Application Support/fnm/node-versions/v20.20.2/installation/bin/node",
+      "runtimeArgs": ["/tmp/bsa_serve.js"],
+      "port": 3459,
+      "autoPort": false
+    }
   ]
 }

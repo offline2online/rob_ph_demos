@@ -90,7 +90,12 @@
       "Bash(NODE_BIN=\"/Users/rgeerdink/Library/Application Support/fnm/node-versions/v20.20.2/installation/bin/node\")",
       "Bash(FIREBASE_BIN=\"/Users/rgeerdink/Library/Application Support/fnm/node-versions/v20.20.2/installation/bin/firebase\")",
       "Bash(\"$NODE_BIN\" \"$FIREBASE_BIN\" deploy --only firestore:rules --project rob-ph-demos)",
-      "WebFetch(domain:help.personalisationhub.com)"
+      "WebFetch(domain:help.personalisationhub.com)",
+      "WebFetch(domain:offline2online.github.io)",
+      "Bash(curl -s \"https://firestore.googleapis.com/v1/projects/rob-ph-demos/databases/\\(default\\)/documents/menuboard/brands\")",
+      "Bash(curl -s \"https://firestore.googleapis.com/v1/projects/rob-ph-demos/databases/\\(default\\)/documents/carts\")",
+      "Bash(GIT_EDITOR=true git commit -m \"feat: bulk product selection with Delete Selection CTA\")",
+      "Bash(git -C \"/Users/rgeerdink/Documents/Claude Code\" rev-parse --show-toplevel)"
     ]
   }
 }

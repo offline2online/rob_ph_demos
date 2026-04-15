@@ -254,6 +254,74 @@
 
     /* JSON PREVIEW */
     .json-preview{background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:14px;margin-top:10px;font-size:12px;color:var(--text2);}
+
+    /* MANAGE OFFERS MODAL */
+    .modal-lg{width:1000px;}
+
+    /* Touchpoint rows */
+    .touchpoint-list{display:flex;flex-direction:column;gap:10px;}
+    .touchpoint-row{display:flex;align-items:center;gap:14px;padding:14px 16px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;transition:border-color .14s;}
+    .touchpoint-row:hover{border-color:var(--border2);}
+    .touchpoint-row.tp-enabled{border-color:rgba(22,155,194,.3);background:rgba(22,155,194,.04);}
+    .tp-icon{width:38px;height:38px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:17px;flex-shrink:0;}
+    .tp-icon-web{background:#dbeafe;color:#2563eb;}
+    .tp-icon-email{background:#ede9fe;color:#7c3aed;}
+    .tp-icon-signage{background:#ffedd5;color:#c2410c;}
+    .tp-icon-esl{background:#ccfbf1;color:#0d9488;}
+    .tp-icon-kiosk{background:#fef9c3;color:#a16207;}
+    .tp-icon-mobile{background:#dcfce7;color:#16a34a;}
+    .tp-info{flex:1;min-width:0;}
+    .tp-name{font-size:13px;font-weight:700;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+    .tp-meta{font-size:11px;color:var(--text3);margin-top:2px;}
+    .tp-template-select{background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:6px 10px;font-size:12px;color:var(--text);outline:none;cursor:pointer;min-width:160px;transition:border-color .14s;}
+    .tp-template-select:focus{border-color:var(--primary);}
+    .tp-template-select:disabled{opacity:.4;cursor:not-allowed;}
+    .tp-status{font-size:11px;font-weight:700;padding:3px 10px;border-radius:20px;white-space:nowrap;min-width:70px;text-align:center;}
+    .tp-status-on{background:var(--success-light);color:var(--success);}
+    .tp-status-off{background:var(--surface3);color:var(--text3);}
+
+    /* Template cards */
+    .template-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:14px;}
+    .template-card{background:var(--surface);border:2px solid var(--border);border-radius:10px;overflow:hidden;transition:all .14s;cursor:default;}
+    .template-card:hover{border-color:var(--primary);box-shadow:0 4px 16px rgba(22,155,194,.12);}
+    .template-card.tc-selected{border-color:var(--primary);}
+    .tc-preview{height:90px;display:flex;align-items:center;justify-content:center;border-bottom:1px solid var(--border);}
+    .tc-body{padding:12px;}
+    .tc-name{font-size:13px;font-weight:700;color:var(--text);margin-bottom:2px;}
+    .tc-meta{font-size:11px;color:var(--text3);margin-bottom:10px;}
+    .tc-apply{width:100%;padding:6px;background:var(--primary-light);color:var(--primary);border:1px solid rgba(22,155,194,.25);border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;transition:all .14s;}
+    .tc-apply:hover{background:var(--primary);color:#fff;}
+
+    /* Badge preview styles (CSS-only offer label mockups) */
+    .bp-default{background:#fff;border:2px solid var(--primary);border-radius:8px;padding:8px 14px;text-align:center;}
+    .bp-default .bp-was{font-size:10px;color:var(--text3);text-decoration:line-through;}
+    .bp-default .bp-now{font-size:18px;font-weight:900;color:var(--primary);}
+    .bp-bold{background:#169bc2;border-radius:8px;padding:8px 14px;text-align:center;}
+    .bp-bold .bp-pct{font-size:22px;font-weight:900;color:#fff;}
+    .bp-bold .bp-off{font-size:10px;color:rgba(255,255,255,.8);font-weight:600;}
+    .bp-minimal{border-bottom:3px solid var(--text);padding:8px 14px;}
+    .bp-minimal .bp-was{font-size:10px;color:var(--text3);text-decoration:line-through;}
+    .bp-minimal .bp-now{font-size:17px;font-weight:800;color:var(--text);}
+    .bp-flash{background:linear-gradient(135deg,#ff4d4f,#ff7a00);border-radius:8px;padding:8px 14px;text-align:center;}
+    .bp-flash .bp-label{font-size:10px;color:rgba(255,255,255,.9);font-weight:700;text-transform:uppercase;letter-spacing:.5px;}
+    .bp-flash .bp-pct{font-size:22px;font-weight:900;color:#fff;}
+    .bp-member{background:linear-gradient(135deg,#1e293b,#334155);border-radius:8px;padding:8px 14px;text-align:center;}
+    .bp-member .bp-tier{font-size:9px;color:#f59e0b;font-weight:700;text-transform:uppercase;letter-spacing:.8px;}
+    .bp-member .bp-now{font-size:17px;font-weight:900;color:#fff;}
+    .bp-member .bp-label{font-size:9px;color:rgba(255,255,255,.6);}
+
+    /* Offer summary table */
+    .offer-summary-table{width:100%;border-collapse:collapse;font-size:13px;}
+    .offer-summary-table th{text-align:left;padding:9px 12px;font-size:11px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.4px;background:var(--surface2);border-bottom:1px solid var(--border);}
+    .offer-summary-table td{padding:10px 12px;border-bottom:1px solid var(--border);vertical-align:middle;}
+    .offer-summary-table tr:last-child td{border-bottom:none;}
+    .offer-summary-table tr:hover td{background:var(--surface2);}
+    .saving-chip{font-size:11px;font-weight:700;padding:2px 8px;border-radius:10px;background:var(--success-light);color:var(--success);}
+    .empty-offers{text-align:center;padding:40px 20px;color:var(--text3);}
+    .empty-offers .eo-icon{font-size:36px;margin-bottom:10px;}
+    .empty-offers .eo-msg{font-size:13px;}
+    .tp-section-label{font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.6px;margin:18px 0 8px;padding-bottom:6px;border-bottom:1px solid var(--border);}
+    .tp-section-label:first-child{margin-top:0;}
   </style>
 </head>
 <body>
@@ -535,6 +603,7 @@
               <button id="deleteSelectionBtn" class="btn btn-danger" style="display:none;" onclick="deleteSelectedProducts()">🗑 Delete Selection (<span id="selectionCount">0</span>)</button>
               <button class="btn btn-ghost" onclick="showView('pricelog')">📋 Price Change Log</button>
               <button class="btn btn-ghost" onclick="openJsonModal()">⬆️ Import JSON</button>
+              <button class="btn btn-ghost" onclick="openDiscountModal()">🏷 Manage Offers</button>
               <button class="btn btn-primary" onclick="openAddProductModal()">+ Add Product</button>
             </div>
             <div id="productsGrid" class="ag-theme-alpine" style="width:100%;"></div>
@@ -1806,6 +1875,360 @@ document.addEventListener('DOMContentLoaded', () => {
   // Refresh grid every 30 seconds so scheduled offers activate/expire automatically
   setInterval(() => { if (productsGridApi) applyFilters(); }, 30000);
 });
+
+/* ============================================================ MANAGE OFFERS MODAL */
+
+const TOUCHPOINT_DEFAULTS = [
+  // Web
+  { id:'tp-plp',       cat:'web',     icon:'🌐', label:'Website — PLP Badge',          size:'200×200px',   enabled:true,  template:'default' },
+  { id:'tp-pdp',       cat:'web',     icon:'🌐', label:'Website — PDP Savings Badge',   size:'320×160px',   enabled:true,  template:'default' },
+  { id:'tp-hero',      cat:'web',     icon:'🌐', label:'Website — Hero Banner',         size:'1440×540px',  enabled:false, template:'bold'    },
+  { id:'tp-sticky',    cat:'web',     icon:'🌐', label:'Website — Sticky Bar',          size:'1440×80px',   enabled:false, template:'flash'   },
+  // Email
+  { id:'tp-email-hero',cat:'email',   icon:'✉️', label:'Email — Hero Block',            size:'600×300px',   enabled:true,  template:'default' },
+  { id:'tp-email-lbl', cat:'email',   icon:'✉️', label:'Email — Price Label',           size:'280×120px',   enabled:false, template:'minimal' },
+  // Digital Signage
+  { id:'tp-ds-land',   cat:'signage', icon:'📺', label:'Digital Signage — Landscape',   size:'1920×1080px', enabled:false, template:'bold'    },
+  { id:'tp-ds-port',   cat:'signage', icon:'📺', label:'Digital Signage — Portrait',    size:'1080×1920px', enabled:false, template:'bold'    },
+  // ESL
+  { id:'tp-esl-sm',    cat:'esl',     icon:'🏷', label:'ESL — Small 1.5"',             size:'152×76px',    enabled:false, template:'minimal' },
+  { id:'tp-esl-md',    cat:'esl',     icon:'🏷', label:'ESL — Medium 2.9"',            size:'296×128px',   enabled:false, template:'minimal' },
+  { id:'tp-esl-lg',    cat:'esl',     icon:'🏷', label:'ESL — Large 4.2"',             size:'400×300px',   enabled:false, template:'default' },
+  // Kiosk
+  { id:'tp-kiosk',     cat:'kiosk',   icon:'🖥', label:'Kiosk — Product Card',          size:'480×640px',   enabled:false, template:'bold'    },
+  // Mobile
+  { id:'tp-mob-plp',   cat:'mobile',  icon:'📱', label:'Mobile — App PLP Badge',        size:'160×160px',   enabled:true,  template:'default' },
+  { id:'tp-mob-push',  cat:'mobile',  icon:'📱', label:'Mobile — Push Notification',    size:'1024×512px',  enabled:false, template:'flash'   },
+];
+
+let DISCOUNT_TOUCHPOINTS = (() => {
+  try {
+    const stored = JSON.parse(localStorage.getItem('ph_discount_touchpoints'));
+    if (stored && Array.isArray(stored) && stored.length === TOUCHPOINT_DEFAULTS.length) return stored;
+  } catch(e) {}
+  return JSON.parse(JSON.stringify(TOUCHPOINT_DEFAULTS));
+})();
+
+const TEMPLATE_LABELS = {
+  default: 'Default Price Badge',
+  bold:    'Bold Savings',
+  minimal: 'Minimal',
+  flash:   'Flash Sale',
+  member:  'Member Exclusive',
+};
+
+const CAT_SECTION_LABELS = {
+  web:     '🌐 Website',
+  email:   '✉️ Email',
+  signage: '📺 Digital Signage',
+  esl:     '🏷 Electronic Shelf Labels (ESL)',
+  kiosk:   '🖥 Kiosk',
+  mobile:  '📱 Mobile',
+};
+
+function openDiscountModal() {
+  buildActiveOffersTab();
+  renderTouchpointRows();
+  updateTpEnabledCount();
+  document.getElementById('discountModal').classList.add('open');
+}
+
+function closeDiscountModal() {
+  document.getElementById('discountModal').classList.remove('open');
+}
+
+function switchDiscountTab(n) {
+  [1,2,3].forEach(i => {
+    document.getElementById('dtab-' + i).classList.toggle('active', i === n);
+    document.getElementById('dpane-' + i).classList.toggle('active', i === n);
+  });
+}
+
+function buildActiveOffersTab() {
+  const tbody = document.getElementById('activeOffersBody');
+  const countEl = document.getElementById('activeOffersCount');
+  const withOffers = PRODUCTS.filter(p => p.offerPrice);
+
+  countEl.textContent = withOffers.length + ' product' + (withOffers.length !== 1 ? 's' : '');
+
+  if (!withOffers.length) {
+    tbody.innerHTML = `<tr><td colspan="8">
+      <div class="empty-offers">
+        <div class="eo-icon">🏷</div>
+        <div class="eo-msg">No products currently have offer prices set.<br>Add an offer via a product's <strong>Pricing Management</strong> tab.</div>
+      </div>
+    </td></tr>`;
+    return;
+  }
+
+  tbody.innerHTML = withOffers.map(p => {
+    const status = getOfferStatus(p);
+    const saving = p.rrp && p.offerPrice ? (p.rrp - p.offerPrice) : 0;
+    const savingPct = p.rrp ? Math.round((saving / p.rrp) * 100) : 0;
+    const statusBadge = status === 'live'
+      ? '<span class="offer-badge offer-live">🟢 Live</span>'
+      : status === 'scheduled'
+        ? '<span class="offer-badge offer-scheduled">🕐 Scheduled</span>'
+        : '<span class="offer-badge" style="background:var(--surface3);color:var(--text3);">— None</span>';
+    const expiry = p.offerScheduledUntil
+      ? new Date(p.offerScheduledUntil).toLocaleDateString('en-AU', {day:'numeric',month:'short',year:'numeric'})
+      : p.offerScheduledAt && status === 'scheduled'
+        ? 'Starts ' + new Date(p.offerScheduledAt).toLocaleDateString('en-AU', {day:'numeric',month:'short'})
+        : '—';
+    return `<tr>
+      <td>
+        <div style="display:flex;align-items:center;gap:8px;">
+          <img src="${escHtml(p.thumbnail)}" style="width:36px;height:36px;border-radius:6px;object-fit:cover;border:1px solid var(--border);flex-shrink:0;" onerror="this.src='https://placehold.co/36x36/e2e8f0/94a3b8?text=${encodeURIComponent((p.name||'?').charAt(0))}'">
+          <span style="font-weight:600;font-size:13px;">${escHtml(p.name)}</span>
+        </div>
+      </td>
+      <td><code style="background:var(--surface2);padding:2px 6px;border-radius:4px;font-size:12px;">${escHtml(p.sku)}</code></td>
+      <td style="color:var(--text2);">${escHtml(p.brandName)}</td>
+      <td style="font-weight:600;">${fmtPrice(p.rrp)}</td>
+      <td style="font-weight:700;color:var(--primary);">${fmtPrice(p.offerPrice)}</td>
+      <td><span class="saving-chip">Save ${fmtPrice(saving)} (${savingPct}%)</span></td>
+      <td>${statusBadge}</td>
+      <td style="color:var(--text3);font-size:12px;">${escHtml(expiry)}</td>
+    </tr>`;
+  }).join('');
+}
+
+function renderTouchpointRows() {
+  const list = document.getElementById('touchpointList');
+  const templateOptions = Object.entries(TEMPLATE_LABELS)
+    .map(([v,l]) => `<option value="${v}">${l}</option>`).join('');
+
+  let lastCat = null;
+  list.innerHTML = DISCOUNT_TOUCHPOINTS.map(tp => {
+    const catHeader = tp.cat !== lastCat
+      ? `<div class="tp-section-label">${CAT_SECTION_LABELS[tp.cat] || tp.cat}</div>`
+      : '';
+    lastCat = tp.cat;
+    const iconClass = `tp-icon-${tp.cat}`;
+    const selectedOpts = Object.entries(TEMPLATE_LABELS)
+      .map(([v,l]) => `<option value="${v}"${v===tp.template?' selected':''}>${l}</option>`).join('');
+    return `${catHeader}
+    <div class="touchpoint-row${tp.enabled ? ' tp-enabled' : ''}" id="tprow-${tp.id}">
+      <div class="tp-icon ${iconClass}">${tp.icon}</div>
+      <div class="tp-info">
+        <div class="tp-name">${escHtml(tp.label)}</div>
+        <div class="tp-meta">${escHtml(tp.size)}</div>
+      </div>
+      <select class="tp-template-select" id="tpsel-${tp.id}" ${tp.enabled?'':'disabled'}
+        onchange="setTouchpointTemplate('${tp.id}', this.value)">
+        ${selectedOpts}
+      </select>
+      <label class="toggle" title="${tp.enabled?'Disable':'Enable'} this touchpoint">
+        <input type="checkbox" ${tp.enabled?'checked':''} onchange="toggleTouchpoint('${tp.id}', this.checked)">
+        <span class="toggle-slider"></span>
+      </label>
+      <span class="tp-status ${tp.enabled?'tp-status-on':'tp-status-off'}" id="tpstatus-${tp.id}">
+        ${tp.enabled?'Active':'Inactive'}
+      </span>
+    </div>`;
+  }).join('');
+}
+
+function toggleTouchpoint(id, enabled) {
+  const tp = DISCOUNT_TOUCHPOINTS.find(t => t.id === id);
+  if (!tp) return;
+  tp.enabled = enabled;
+  // Update row style, status badge, and template select disabled state
+  const row = document.getElementById('tprow-' + id);
+  const status = document.getElementById('tpstatus-' + id);
+  const sel = document.getElementById('tpsel-' + id);
+  if (row) row.classList.toggle('tp-enabled', enabled);
+  if (status) { status.textContent = enabled ? 'Active' : 'Inactive'; status.className = 'tp-status ' + (enabled ? 'tp-status-on' : 'tp-status-off'); }
+  if (sel) sel.disabled = !enabled;
+  updateTpEnabledCount();
+  saveDiscountTouchpoints();
+}
+
+function setTouchpointTemplate(id, template) {
+  const tp = DISCOUNT_TOUCHPOINTS.find(t => t.id === id);
+  if (!tp) return;
+  tp.template = template;
+  saveDiscountTouchpoints();
+}
+
+function applyTemplateToAll(template) {
+  DISCOUNT_TOUCHPOINTS.forEach(tp => { if (tp.enabled) tp.template = template; });
+  // Re-render rows to reflect updated selections
+  renderTouchpointRows();
+  updateTpEnabledCount();
+  saveDiscountTouchpoints();
+  showToast('Template "' + TEMPLATE_LABELS[template] + '" applied to all active touchpoints', 'success');
+  // Switch to touchpoint tab so user sees the result
+  switchDiscountTab(2);
+}
+
+function updateTpEnabledCount() {
+  const count = DISCOUNT_TOUCHPOINTS.filter(t => t.enabled).length;
+  const el = document.getElementById('tpEnabledCount');
+  if (el) el.textContent = count;
+}
+
+function saveDiscountTouchpoints() {
+  try { localStorage.setItem('ph_discount_touchpoints', JSON.stringify(DISCOUNT_TOUCHPOINTS)); } catch(e) {}
+}
 </script>
+
+<!-- MANAGE OFFERS MODAL -->
+<div class="modal-overlay" id="discountModal">
+  <div class="modal modal-lg">
+    <div class="modal-header">
+      <div style="display:flex;align-items:center;gap:10px;">
+        <span style="font-size:22px;">🏷</span>
+        <div>
+          <h2 style="margin:0;">Manage Offers</h2>
+          <div style="font-size:12px;color:var(--text3);margin-top:2px;font-weight:400;">Configure how discounts & offers are presented across touchpoints</div>
+        </div>
+      </div>
+      <button class="modal-close" onclick="closeDiscountModal()">&#x2715;</button>
+    </div>
+    <div class="modal-tabs">
+      <div class="modal-tab active" id="dtab-1" onclick="switchDiscountTab(1)">Active Offers</div>
+      <div class="modal-tab" id="dtab-2" onclick="switchDiscountTab(2)">Touchpoint Presentation</div>
+      <div class="modal-tab" id="dtab-3" onclick="switchDiscountTab(3)">Label Templates</div>
+    </div>
+    <div class="modal-body">
+
+      <!-- TAB 1: ACTIVE OFFERS -->
+      <div class="modal-tab-pane active" id="dpane-1">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
+          <div>
+            <div style="font-size:13px;font-weight:600;color:var(--text);">Products with active or scheduled offers</div>
+            <div style="font-size:12px;color:var(--text3);margin-top:2px;">Edit individual offers from the product's Pricing Management tab.</div>
+          </div>
+          <div id="activeOffersCount" style="font-size:13px;font-weight:700;color:var(--primary);"></div>
+        </div>
+        <div style="border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;">
+          <table class="offer-summary-table">
+            <thead>
+              <tr>
+                <th>Product</th>
+                <th>SKU</th>
+                <th>Brand</th>
+                <th>RRP</th>
+                <th>Offer Price</th>
+                <th>Saving</th>
+                <th>Status</th>
+                <th>Expiry</th>
+              </tr>
+            </thead>
+            <tbody id="activeOffersBody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- TAB 2: TOUCHPOINT PRESENTATION -->
+      <div class="modal-tab-pane" id="dpane-2">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
+          <div>
+            <div style="font-size:13px;font-weight:600;color:var(--text);">Configure offer label delivery per touchpoint</div>
+            <div style="font-size:12px;color:var(--text3);margin-top:2px;">Campaigns, scheduling &amp; targeting are managed by the Personalisation Hub platform.</div>
+          </div>
+          <div style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text3);">
+            <span id="tpEnabledCount" style="font-weight:700;color:var(--primary);"></span> touchpoints active
+          </div>
+        </div>
+        <div class="touchpoint-list" id="touchpointList"></div>
+      </div>
+
+      <!-- TAB 3: LABEL TEMPLATES -->
+      <div class="modal-tab-pane" id="dpane-3">
+        <div style="margin-bottom:16px;">
+          <div style="font-size:13px;font-weight:600;color:var(--text);">Select a label template style</div>
+          <div style="font-size:12px;color:var(--text3);margin-top:2px;">Apply a template to all enabled touchpoints, or set per-touchpoint in the Touchpoint Presentation tab.</div>
+        </div>
+        <div class="template-grid">
+
+          <!-- Default Price Badge -->
+          <div class="template-card" id="tc-default">
+            <div class="tc-preview" style="background:#f8fafc;">
+              <div class="bp-default">
+                <div class="bp-was">$24.99</div>
+                <div class="bp-now">$17.99</div>
+              </div>
+            </div>
+            <div class="tc-body">
+              <div class="tc-name">Default Price Badge</div>
+              <div class="tc-meta">Price Reduction · Clean</div>
+              <button class="tc-apply" onclick="applyTemplateToAll('default')">Apply to All Touchpoints</button>
+            </div>
+          </div>
+
+          <!-- Bold Savings -->
+          <div class="template-card" id="tc-bold">
+            <div class="tc-preview" style="background:#f0f9ff;">
+              <div class="bp-bold">
+                <div class="bp-pct">28%</div>
+                <div class="bp-off">OFF</div>
+              </div>
+            </div>
+            <div class="tc-body">
+              <div class="tc-name">Bold Savings</div>
+              <div class="tc-meta">Price Reduction · Bold</div>
+              <button class="tc-apply" onclick="applyTemplateToAll('bold')">Apply to All Touchpoints</button>
+            </div>
+          </div>
+
+          <!-- Minimal -->
+          <div class="template-card" id="tc-minimal">
+            <div class="tc-preview" style="background:#fafafa;">
+              <div class="bp-minimal">
+                <div class="bp-was">$24.99</div>
+                <div class="bp-now">$17.99</div>
+              </div>
+            </div>
+            <div class="tc-body">
+              <div class="tc-name">Minimal</div>
+              <div class="tc-meta">Price Reduction · Luxury</div>
+              <button class="tc-apply" onclick="applyTemplateToAll('minimal')">Apply to All Touchpoints</button>
+            </div>
+          </div>
+
+          <!-- Flash Sale -->
+          <div class="template-card" id="tc-flash">
+            <div class="tc-preview" style="background:#fff1f0;">
+              <div class="bp-flash">
+                <div class="bp-label">⚡ Flash Sale</div>
+                <div class="bp-pct">40%</div>
+              </div>
+            </div>
+            <div class="tc-body">
+              <div class="tc-name">Flash Sale</div>
+              <div class="tc-meta">Flash Sale · Urgent</div>
+              <button class="tc-apply" onclick="applyTemplateToAll('flash')">Apply to All Touchpoints</button>
+            </div>
+          </div>
+
+          <!-- Member Exclusive -->
+          <div class="template-card" id="tc-member">
+            <div class="tc-preview" style="background:#1e293b;">
+              <div class="bp-member">
+                <div class="bp-tier">★ VIB Member</div>
+                <div class="bp-now">$17.99</div>
+                <div class="bp-label">Exclusive Price</div>
+              </div>
+            </div>
+            <div class="tc-body">
+              <div class="tc-name">Member Exclusive</div>
+              <div class="tc-meta">Member Benefit · Premium</div>
+              <button class="tc-apply" onclick="applyTemplateToAll('member')">Apply to All Touchpoints</button>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+    </div>
+    <div class="modal-footer">
+      <div style="flex:1;font-size:12px;color:var(--text3);">Settings are saved automatically as you make changes.</div>
+      <button class="btn btn-primary" onclick="closeDiscountModal()">Done</button>
+    </div>
+  </div>
+</div>
+
 </body>
 </html>
