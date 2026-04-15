@@ -2220,11 +2220,28 @@ function renderCustomBadge(tpl) {
   const iconHtml = tpl.labelIconType === 'material'
     ? `<span class="material-icons" style="font-size:13px;vertical-align:middle;line-height:1;color:${iconColor};">${escHtml(tpl.labelIcon)}</span>`
     : escHtml(tpl.labelIcon);
+
+  const wasAlign  = tpl.wasAlign  || 'center';
+  const nowAlign  = tpl.nowAlign  || 'center';
+  const prefixFs  = tpl.nowSize === 'md' ? '11px' : tpl.nowSize === 'lg' ? '14px' : '16px';
+  const suffixFs  = tpl.nowSize === 'md' ? '10px' : tpl.nowSize === 'lg' ? '12px' : '14px';
+
+  const rrpHtml = tpl.showWas ? `
+    <div style="font-size:11px;color:${tpl.wasColor};text-align:${wasAlign};margin-bottom:3px;white-space:nowrap;">
+      ${tpl.wasPrefix ? `<span>${escHtml(tpl.wasPrefix)}&nbsp;</span>` : ''}<span style="${tpl.wasStrike ? 'text-decoration:line-through;' : ''}">$24.99</span>${tpl.wasSuffix ? `<span>&nbsp;${escHtml(tpl.wasSuffix)}</span>` : ''}
+    </div>` : '';
+
+  const nowHtml = tpl.showNow ? `
+    <div style="font-size:${nowFontSize};font-weight:900;color:${tpl.nowColor};line-height:1.1;text-align:${nowAlign};margin-bottom:4px;white-space:nowrap;">
+      ${tpl.nowPrefix ? `<span style="font-size:${prefixFs};font-weight:700;">${escHtml(tpl.nowPrefix)}&nbsp;</span>` : ''}$17.99${tpl.nowSuffix ? `<span style="font-size:${suffixFs};font-weight:600;">&nbsp;${escHtml(tpl.nowSuffix)}</span>` : ''}
+    </div>` : '';
+
+  const priceBlock = tpl.wasAboveNow !== false ? rrpHtml + nowHtml : nowHtml + rrpHtml;
+
   return `
     <div style="background:${bg};border-radius:${radius};border:${border};padding:12px 20px;text-align:center;min-width:120px;display:inline-block;">
       ${tpl.showLabel ? `<div style="font-size:11px;font-weight:800;color:${tpl.labelColor};text-transform:uppercase;letter-spacing:.6px;margin-bottom:6px;">${iconHtml} ${escHtml(tpl.labelText)}</div>` : ''}
-      ${tpl.showWas   ? `<div style="font-size:11px;color:${tpl.wasColor};${tpl.wasStrike?'text-decoration:line-through;':''}margin-bottom:3px;">$24.99</div>` : ''}
-      ${tpl.showNow   ? `<div style="font-size:${nowFontSize};font-weight:900;color:${tpl.nowColor};line-height:1.1;margin-bottom:4px;">$17.99</div>` : ''}
+      ${priceBlock}
       ${savingText    ? `<div style="font-size:11px;font-weight:700;color:${tpl.savingColor};">${escHtml(savingText)}</div>` : ''}
       ${tpl.showName  ? `<div style="font-size:10px;color:${tpl.nameColor};margin-top:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:120px;">Product Name</div>` : ''}
     </div>`;
@@ -2335,7 +2352,9 @@ const DESIGNER_DEFAULTS = {
   showLabel:true, labelIcon:'local_offer', labelIconType:'material', labelIconColor:'#ffffff',
   labelText:'SALE', labelColor:'#ffffff',
   showWas:true, wasColor:'#aaaaaa', wasStrike:true,
+  wasPrefix:'', wasSuffix:'', wasAlign:'center', wasAboveNow:true,
   showNow:true, nowColor:'#ffffff', nowSize:'xl',
+  nowPrefix:'', nowSuffix:'', nowAlign:'center',
   savingDisplay:'pct', savingColor:'#ffffff',
   showName:false, nameColor:'#cccccc',
 };
@@ -2386,7 +2405,11 @@ function _dsPopulateControls() {
   set('ds-labelColor', s.labelColor);
   set('ds-labelIconColor', s.labelIconColor || s.labelColor);
   set('ds-wasColor', s.wasColor);
+  set('ds-wasPrefix', s.wasPrefix || '');
+  set('ds-wasSuffix', s.wasSuffix || '');
   set('ds-nowColor', s.nowColor);
+  set('ds-nowPrefix', s.nowPrefix || '');
+  set('ds-nowSuffix', s.nowSuffix || '');
   set('ds-savingColor', s.savingColor);
   set('ds-nameColor', s.nameColor);
 
@@ -2408,6 +2431,9 @@ function _dsPopulateControls() {
   _dsActivatePill('shapepill', s.shape);
   _dsActivatePill('nowpill', s.nowSize);
   _dsActivatePill('savpill', s.savingDisplay);
+  _dsActivatePill('wasalignpill', s.wasAlign  || 'center');
+  _dsActivatePill('nowalignpill', s.nowAlign  || 'center');
+  _dsActivatePill('waspospill',   s.wasAboveNow !== false ? 'above' : 'below');
 
   // Conditional visibility
   document.getElementById('bgColor2Wrap').style.display = s.bgType === 'gradient' ? '' : 'none';
@@ -2471,10 +2497,12 @@ function dsSet(key, value) {
   updateDesignerPreview();
 }
 
-function dsSetBgType(val)   { designerState.bgType = val;       _dsActivatePill('bgpill', val);   dsSet('bgType', val); }
-function dsSetShape(val)    { designerState.shape = val;         _dsActivatePill('shapepill', val); updateDesignerPreview(); }
-function dsSetNowSize(val)  { designerState.nowSize = val;       _dsActivatePill('nowpill', val);  updateDesignerPreview(); }
-function dsSetSaving(val)   { designerState.savingDisplay = val; _dsActivatePill('savpill', val);  dsSet('savingDisplay', val); }
+function dsSetBgType(val)      { designerState.bgType = val;       _dsActivatePill('bgpill', val);      dsSet('bgType', val); }
+function dsSetShape(val)       { designerState.shape = val;         _dsActivatePill('shapepill', val);   updateDesignerPreview(); }
+function dsSetNowSize(val)     { designerState.nowSize = val;       _dsActivatePill('nowpill', val);     updateDesignerPreview(); }
+function dsSetSaving(val)      { designerState.savingDisplay = val; _dsActivatePill('savpill', val);     dsSet('savingDisplay', val); }
+function dsSetAlign(field, val){ designerState[field+'Align'] = val; _dsActivatePill(field+'alignpill', val); updateDesignerPreview(); }
+function dsSetWasPosition(above){ designerState.wasAboveNow = above; _dsActivatePill('waspospill', above ? 'above' : 'below'); updateDesignerPreview(); }
 
 function dsSetIcon(iconName) {
   designerState.labelIcon = iconName;
@@ -2727,43 +2755,95 @@ function toggleDsSection(id) {
           </div>
         </div>
 
-        <!-- Price Display -->
-        <div class="ds-section open" id="dss-price">
-          <div class="ds-section-header" onclick="toggleDsSection('price')">
-            Price Display <span class="ds-arrow">▼</span>
+        <!-- RRP / Was Price -->
+        <div class="ds-section open" id="dss-rrp">
+          <div class="ds-section-header" onclick="toggleDsSection('rrp')">
+            RRP / Was Price <span class="ds-arrow">▼</span>
           </div>
           <div class="ds-section-body">
             <label class="ds-check-row">
               <input type="checkbox" id="ds-showWas" checked onchange="dsSet('showWas',this.checked)">
-              Show RRP ("Was" price)
+              Show RRP
             </label>
-            <div id="wasFieldsWrap" style="padding-left:22px;display:flex;flex-direction:column;gap:7px;">
-              <div class="ds-row">
-                <span class="ds-label" style="margin:0;">Colour</span>
-                <input type="color" class="ds-color" id="ds-wasColor" value="#aaaaaa" oninput="dsSet('wasColor',this.value)">
-              </div>
-              <label class="ds-check-row">
-                <input type="checkbox" id="ds-wasStrike" checked onchange="dsSet('wasStrike',this.checked)">
-                Strikethrough
-              </label>
-            </div>
-            <div style="border-top:1px solid var(--border);padding-top:8px;margin-top:2px;">
-              <label class="ds-check-row" style="margin-bottom:7px;">
-                <input type="checkbox" id="ds-showNow" checked onchange="dsSet('showNow',this.checked)">
-                Show offer price
-              </label>
-              <div id="nowFieldsWrap" style="padding-left:22px;display:flex;flex-direction:column;gap:7px;">
-                <div class="ds-row">
-                  <span class="ds-label" style="margin:0;">Colour</span>
-                  <input type="color" class="ds-color" id="ds-nowColor" value="#ffffff" oninput="dsSet('nowColor',this.value)">
+            <div id="wasFieldsWrap" style="display:flex;flex-direction:column;gap:9px;">
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">
+                <div>
+                  <span class="ds-label">Before price</span>
+                  <input type="text" class="ds-input" id="ds-wasPrefix" maxlength="12" placeholder='e.g. Was' oninput="dsSet('wasPrefix',this.value)">
                 </div>
                 <div>
-                  <span class="ds-label">Size</span>
-                  <div class="ds-pill-group">
-                    <div class="ds-pill" id="nowpill-md" onclick="dsSetNowSize('md')">Medium</div>
-                    <div class="ds-pill" id="nowpill-lg" onclick="dsSetNowSize('lg')">Large</div>
-                    <div class="ds-pill active" id="nowpill-xl" onclick="dsSetNowSize('xl')">XL</div>
-                  </div>
+                  <span class="ds-label">After price</span>
+                  <input type="text" class="ds-input" id="ds-wasSuffix" maxlength="12" placeholder='e.g. each' oninput="dsSet('wasSuffix',this.value)">
+                </div>
+              </div>
+              <div class="ds-row" style="flex-wrap:wrap;gap:10px;">
+                <div class="ds-row" style="gap:6px;">
+                  <span class="ds-label" style="margin:0;">Colour</span>
+                  <input type="color" class="ds-color" id="ds-wasColor" value="#aaaaaa" oninput="dsSet('wasColor',this.value)">
+                </div>
+                <label class="ds-check-row" style="flex:1;">
+                  <input type="checkbox" id="ds-wasStrike" checked onchange="dsSet('wasStrike',this.checked)">
+                  Strikethrough
+                </label>
+              </div>
+              <div>
+                <span class="ds-label">Alignment</span>
+                <div class="ds-pill-group">
+                  <div class="ds-pill" id="wasalignpill-left"   onclick="dsSetAlign('was','left')">Left</div>
+                  <div class="ds-pill active" id="wasalignpill-center" onclick="dsSetAlign('was','center')">Centre</div>
+                  <div class="ds-pill" id="wasalignpill-right"  onclick="dsSetAlign('was','right')">Right</div>
+                </div>
+              </div>
+              <div>
+                <span class="ds-label">Position</span>
+                <div class="ds-pill-group">
+                  <div class="ds-pill active" id="waspospill-above" onclick="dsSetWasPosition(true)">Above offer price</div>
+                  <div class="ds-pill" id="waspospill-below"        onclick="dsSetWasPosition(false)">Below offer price</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Offer Price -->
+        <div class="ds-section open" id="dss-offer">
+          <div class="ds-section-header" onclick="toggleDsSection('offer')">
+            Offer Price <span class="ds-arrow">▼</span>
+          </div>
+          <div class="ds-section-body">
+            <label class="ds-check-row">
+              <input type="checkbox" id="ds-showNow" checked onchange="dsSet('showNow',this.checked)">
+              Show offer price
+            </label>
+            <div id="nowFieldsWrap" style="display:flex;flex-direction:column;gap:9px;">
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">
+                <div>
+                  <span class="ds-label">Before price</span>
+                  <input type="text" class="ds-input" id="ds-nowPrefix" maxlength="12" placeholder='e.g. Now' oninput="dsSet('nowPrefix',this.value)">
+                </div>
+                <div>
+                  <span class="ds-label">After price</span>
+                  <input type="text" class="ds-input" id="ds-nowSuffix" maxlength="12" placeholder='e.g. /kg' oninput="dsSet('nowSuffix',this.value)">
+                </div>
+              </div>
+              <div class="ds-row" style="gap:6px;">
+                <span class="ds-label" style="margin:0;">Colour</span>
+                <input type="color" class="ds-color" id="ds-nowColor" value="#ffffff" oninput="dsSet('nowColor',this.value)">
+              </div>
+              <div>
+                <span class="ds-label">Size</span>
+                <div class="ds-pill-group">
+                  <div class="ds-pill" id="nowpill-md" onclick="dsSetNowSize('md')">Medium</div>
+                  <div class="ds-pill" id="nowpill-lg" onclick="dsSetNowSize('lg')">Large</div>
+                  <div class="ds-pill active" id="nowpill-xl" onclick="dsSetNowSize('xl')">XL</div>
+                </div>
+              </div>
+              <div>
+                <span class="ds-label">Alignment</span>
+                <div class="ds-pill-group">
+                  <div class="ds-pill" id="nowalignpill-left"   onclick="dsSetAlign('now','left')">Left</div>
+                  <div class="ds-pill active" id="nowalignpill-center" onclick="dsSetAlign('now','center')">Centre</div>
+                  <div class="ds-pill" id="nowalignpill-right"  onclick="dsSetAlign('now','right')">Right</div>
                 </div>
               </div>
             </div>
