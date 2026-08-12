@@ -192,93 +192,60 @@
     /* Category section label — kept for colour-scheme compatibility but hidden */
     .cat-header { display: none; }
 
-    /* Per-tile category badge — now lives in .item-meta-bar (right-aligned) */
+    /* Category badge — bottom-right of each card */
     .item-cat-badge {
       display: inline-block;
-      background: var(--cat-bar-bg, var(--green));
-      color: rgba(255,255,255,0.95);
-      font-size: clamp(7px, 0.7vw, 10px);
+      background: var(--accent, var(--green));
+      color: #fff;
+      font-size: clamp(9px, 0.85vw, 13px);
       font-weight: 700;
       text-transform: uppercase;
-      letter-spacing: 0.6px;
-      padding: clamp(1px, 0.2vw, 3px) clamp(5px, 0.6vw, 9px);
-      border-radius: 3px;
+      letter-spacing: 0.5px;
+      padding: clamp(6px, 0.7vw, 11px) clamp(12px, 1.4vw, 22px);
+      border-radius: clamp(4px, 0.4vw, 7px);
       white-space: nowrap;
-      max-width: 50%;
+      max-width: 55%;
       overflow: hidden;
       text-overflow: ellipsis;
       flex-shrink: 0;
     }
-    .board.portrait .item-cat-badge {
-      font-size: clamp(9px, 1.1vw, 13px);
-      padding: clamp(2px, 0.4vw, 5px) clamp(7px, 1vw, 12px);
-      border-radius: 4px;
-    }
 
-    /* Default grid (landscape, 5 cols) */
+    /* Card grid — column count/row tracks are set per-page from JS (dynStyle) */
     .items-grid {
       display: grid;
       grid-template-columns: repeat(5, 1fr);
+      gap: clamp(10px, 1.2vw, 22px);
+      padding: clamp(10px, 1.2vw, 22px);
       height: 100%;
+      overflow: hidden;
     }
+    .board.portrait .items-grid { grid-template-columns: repeat(3, 1fr); }
+    .board.landscape .items-grid { grid-template-columns: repeat(5, 1fr); }
 
-    /* Portrait: 3-column grid */
-    .board.portrait .items-grid {
-      grid-template-columns: repeat(3, 1fr);
-    }
-
-    /* Landscape: 5-column grid (explicit, same as default) */
-    .board.landscape .items-grid {
-      grid-template-columns: repeat(5, 1fr);
-    }
-
-    /* Single item cell */
+    /* Card — hero photo on top, details below */
     .item-cell {
       display: flex;
-      flex-direction: row;
-      align-items: stretch;
-      border-bottom: 1px solid var(--border);
-      border-right: 1px solid var(--border);
+      flex-direction: column;
+      height: 100%;
       background: var(--item-bg, var(--white));
+      border-radius: clamp(8px, 1vw, 16px);
+      border: 1px solid rgba(0,0,0,.06);
+      box-shadow: 0 2px 10px rgba(0,0,0,.08);
       position: relative;
       min-height: 0;
       overflow: hidden;
     }
-    .board.landscape .item-cell {
-      min-height: 120px;
-    }
-
-    /* Portrait: vertical card layout — image on top, text below */
-    .board.portrait .item-cell {
-      flex-direction: column;
-    }
-
-    /* Border-right removal for last in row */
-    .board.portrait .item-cell:nth-child(3n) { border-right: none; }
-    .board.landscape .item-cell:nth-child(5n) { border-right: none; }
-    /* Default (5 cols) */
-    .item-cell:nth-child(5n) { border-right: none; }
-
     .item-cell.oos-cell { background: #fdf8f5; }
 
-    /* Thumbnail — LEFT side (landscape) / TOP (portrait) */
+    /* Thumb takes all the flexible space and shrinks first — the text/price
+       below it must never be pushed out, so it keeps its natural size. */
     .item-thumb {
-      width: clamp(60px, 7vw, 100px);
-      flex-shrink: 0;
+      width: 100%;
+      flex: 1 1 0%;
+      min-height: 0;
       position: relative;
       overflow: hidden;
       background: #f5f0e8;
-      order: 0;
-    }
-    /* Portrait: full-width image strip at top of cell — use flex to allocate ~45% */
-    .board.portrait .item-thumb {
-      width: 100%;
-      flex: 0 0 45%;
-      min-height: 0;      /* allow flex % to govern — no fixed floor that swamps small cells */
-      max-height: 220px;
-    }
-    .board.landscape .item-thumb {
-      width: clamp(60px, 7vw, 100px);
     }
     .item-thumb img {
       width: 100%;
@@ -292,128 +259,60 @@
       display: flex;
       align-items: center;
       justify-content: center;
-      font-size: clamp(16px, 2.5vw, 32px);
+      font-size: clamp(20px, 3vw, 42px);
       color: var(--border);
     }
 
-    /* Right-side column wrapper (meta bar + text, stacked vertically) */
-    .item-right {
-      flex: 1;
+    /* Body — name, description, divider, footer (price + category badge) */
+    /* Sized to its own content (never shrunk) so the name/price are always
+       fully visible — .item-thumb above absorbs all the squeeze instead. */
+    .item-body {
+      flex: 0 0 auto;
       display: flex;
       flex-direction: column;
-      min-width: 0;
-      min-height: 0;
+      padding: clamp(6px, 1vw, 24px) clamp(10px, 1.3vw, 26px);
       overflow: hidden;
     }
-
-    /* Meta bar: price left, category badge right — sits between image and text */
-    .item-meta-bar {
+    .item-name {
+      font-size: clamp(11px, 1.5vw, 22px);
+      font-weight: 800;
+      color: var(--item-color);
+      line-height: 1.25;
+      margin-bottom: clamp(2px, 0.4vw, 7px);
+      overflow: hidden;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+    }
+    .item-desc {
+      font-size: clamp(9px, 1.05vw, 15px);
+      color: var(--item-desc, var(--text2));
+      line-height: 1.4;
+      overflow: hidden;
+      display: -webkit-box;
+      -webkit-line-clamp: 1;
+      -webkit-box-orient: vertical;
+      margin-bottom: clamp(4px, 0.9vw, 16px);
+    }
+    .item-divider {
+      height: 1px;
+      background: rgba(0,0,0,.08);
+      margin-bottom: clamp(6px, 0.9vw, 16px);
+      flex-shrink: 0;
+    }
+    .item-footer {
       display: flex;
       align-items: center;
       justify-content: space-between;
-      gap: 6px;
-      padding: clamp(4px, 0.5vw, 8px) clamp(8px, 1.2vw, 16px);
-      background: var(--cream2, #f0e9dc);
-      border-bottom: 1px solid var(--border);
+      gap: 8px;
       flex-shrink: 0;
     }
-    .board.portrait .item-meta-bar {
-      padding: clamp(6px, 1vw, 12px) clamp(10px, 1.5vw, 18px);
-    }
-
-    /* Text portion — holds item name + nutrition only */
-    .item-text {
-      flex: 1;
-      padding: clamp(6px, 1vw, 14px) clamp(8px, 1.3vw, 18px);
-      display: flex;
-      flex-direction: column;
-      justify-content: flex-start;
-      min-width: 0;
-      min-height: 0;
-      overflow: hidden;
-    }
-    .board.portrait .item-text {
-      padding: clamp(8px, 1.5vw, 18px) clamp(10px, 1.8vw, 20px);
-    }
-    .item-name {
-      font-size: clamp(11px, 1.25vw, 17px);
-      font-weight: 700;
-      color: var(--item-color);
-      line-height: 1.3;
-      margin-bottom: clamp(4px, 0.5vw, 8px);
-    }
-    .board.portrait .item-name {
-      font-size: clamp(12px, 2.1vw, 24px);
-      margin-bottom: clamp(3px, 0.5vw, 6px);
-    }
-
-    /* Nutrition block */
-    .nutrition-block {
-      margin-top: clamp(2px, 0.3vw, 4px);
-    }
-    .nutr-row {
-      display: flex;
-      align-items: baseline;
-      gap: 3px;
-    }
-    .nutr-val {
-      font-size: clamp(11px, 1.2vw, 16px);
-      font-weight: 800;
-      color: var(--item-color);
-      line-height: 1;
-    }
-    .nutr-unit {
-      font-size: clamp(8px, 0.85vw, 11px);
-      color: var(--item-desc, var(--text2));
-      font-weight: 500;
-    }
-    /* Calories row — full width above macros */
-    .nutr-calories {
-      display: flex;
-      align-items: baseline;
-      gap: 3px;
-      margin-bottom: clamp(2px, 0.3vw, 4px);
-    }
-    .nutr-calories .nutr-val {
-      font-size: clamp(14px, 1.6vw, 22px);
-      color: var(--item-color);
-    }
-    .nutr-calories .nutr-unit {
-      font-size: clamp(9px, 1vw, 13px);
-      color: var(--item-color);
-    }
-    /* Macros row — fat, carbs, protein side by side */
-    .nutr-macros-row {
-      display: flex;
-      flex-direction: row;
-      flex-wrap: nowrap;
-      gap: clamp(5px, 0.7vw, 12px);
-      align-items: baseline;
-    }
-    /* Portrait: scale up nutrition */
-    .board.portrait .nutr-val {
-      font-size: clamp(12px, 1.8vw, 20px);
-    }
-    .board.portrait .nutr-unit {
-      font-size: clamp(9px, 1.2vw, 14px);
-    }
-    .board.portrait .nutr-calories .nutr-val {
-      font-size: clamp(15px, 2.2vw, 26px);
-    }
-    .board.portrait .nutr-calories .nutr-unit {
-      font-size: clamp(10px, 1.4vw, 16px);
-    }
-
-    /* Item price — lives in .item-meta-bar */
     .item-price {
-      font-size: clamp(15px, 1.8vw, 24px);
+      font-size: clamp(16px, 2vw, 30px);
       font-weight: 800;
       color: var(--price-color, var(--green-dark));
       letter-spacing: -0.3px;
       line-height: 1;
-    }
-    .board.portrait .item-price {
-      font-size: clamp(16px, 2.8vw, 32px);
     }
 
     /* ── OUT OF STOCK ───────────────────────── */
@@ -421,6 +320,7 @@
       display: none;
       position: absolute;
       inset: 0;
+      border-radius: inherit;
       background: rgba(255,255,255,0.65);
       align-items: center;
       justify-content: center;
@@ -1473,11 +1373,22 @@ function render() {
 
   const totalItems = campaignFiltered.length;
 
-  // Small item counts (≤10) get the large-tile dynamic layout — a handful of big,
-  // legible cards rather than a dense grid — so those cells should show the
-  // large/hero product photo. Bigger catalogues use the paginated grid, where
-  // cells are small, so they should show the compact thumbnail instead.
-  const isLargeTileLayout = totalItems > 0 && totalItems <= 10;
+  // ── STEP 2: Compute layout from the brand/template's configured display settings ──
+  // Always honoured — no automatic override based on how many items happen to be
+  // on the page — so Cols / Rows / Max Items configured in the template editor
+  // are reflected on every board, whether it's showing 2 items or 80.
+  const dispCfg   = (effectiveDisplay && effectiveDisplay[ORIENTATION]) || {};
+  const COLS      = Math.max(1, parseInt(dispCfg.cols)  || (ORIENTATION === 'portrait' ? 2 : 3));
+  const ROWS      = Math.max(1, parseInt(dispCfg.rows)  || (ORIENTATION === 'portrait' ? 3 : 2));
+  const PAGE_SIZE = Math.min(
+    Math.max(1, parseInt(dispCfg.maxItems) || (COLS * ROWS)),
+    COLS * ROWS
+  );
+
+  // Larger source photo once cards are spacious (1–2 columns); compact thumbnail
+  // once the grid gets denser — driven by the actual configured column count,
+  // not by how many items happen to be on the page.
+  const isLargeTileLayout = COLS <= 2;
 
   // Picks the best image URL for an item cell given the current layout size.
   // Falls back gracefully: large→small→none, small→large→none.
@@ -1486,34 +1397,6 @@ function render() {
     const large = item.imagesLarge && item.imagesLarge[0];
     if (isLargeTileLayout) return large || small || '';
     return small || large || '';
-  }
-
-  // ── STEP 2: Compute layout based on totalItems ───────────────────────────────
-  const dispCfg = (effectiveDisplay && effectiveDisplay[ORIENTATION]) || {};
-  let COLS, PAGE_SIZE;
-
-  if (totalItems > 0 && totalItems <= 10) {
-    // Dynamic small-count layout — all items on one screen, no pagination
-    if (totalItems === 1) {
-      COLS = 1;
-    } else if (totalItems === 2) {
-      // Portrait: stack one above the other; Landscape: side-by-side
-      COLS = ORIENTATION === 'portrait' ? 1 : 2;
-    } else if (totalItems <= 4) {
-      COLS = 2;
-    } else {
-      // 5–10: portrait 2-col ("2×2×2" for 6 items); landscape 5-col unchanged
-      COLS = ORIENTATION === 'portrait' ? 2 : 5;
-    }
-    PAGE_SIZE = totalItems;
-  } else {
-    // Standard brand settings + pagination for >10 items (or zero)
-    COLS      = Math.max(1, parseInt(dispCfg.cols)     || (ORIENTATION === 'portrait' ? 3 : 5));
-    const ROWS = Math.max(1, parseInt(dispCfg.rows)    || (ORIENTATION === 'portrait' ? 5 : 3));
-    PAGE_SIZE  = Math.min(
-      Math.max(1, parseInt(dispCfg.maxItems) || (COLS * ROWS)),
-      COLS * ROWS
-    );
   }
 
   const totalPages = Math.max(1, Math.ceil(totalItems / PAGE_SIZE));
@@ -1526,64 +1409,14 @@ function render() {
   const pageStart = (currentPage - 1) * PAGE_SIZE;
   const pageItems = campaignFiltered.slice(pageStart, pageStart + PAGE_SIZE);
 
-  // ── STEP 3: Inject dynamic grid + scale-up CSS ───────────────────────────────
+  // ── STEP 3: Inject this page's grid track sizing ─────────────────────────────
   const gridRows = Math.max(1, Math.ceil(pageItems.length / COLS));
-  let dynCss = `
+  dynStyle.textContent = `
     .items-grid {
       grid-template-columns: repeat(${COLS}, 1fr) !important;
       grid-template-rows: repeat(${gridRows}, 1fr) !important;
     }
-    .item-cell:nth-child(${COLS}n) { border-right: none !important; }
   `;
-
-  // Scale up tiles for small item counts so they fill the screen
-  if (totalItems === 1) {
-    dynCss += `
-      .board.portrait .item-thumb { flex: 0 0 65% !important; max-height: none !important; }
-      .board.landscape .item-thumb { width: 55% !important; }
-      .item-name { font-size: clamp(20px, 3.2vw, 40px) !important; }
-      .item-price { font-size: clamp(22px, 3.8vw, 48px) !important; }
-      .nutr-val { font-size: clamp(16px, 2.2vw, 28px) !important; }
-      .nutr-unit { font-size: clamp(12px, 1.6vw, 20px) !important; }
-      .nutr-calories .nutr-val { font-size: clamp(20px, 3vw, 38px) !important; }
-      .item-cat-badge { font-size: clamp(11px, 1.3vw, 16px) !important; padding: 4px 12px !important; }
-      .item-meta-bar { padding: clamp(8px, 1.2vw, 16px) clamp(14px, 2vw, 24px) !important; }
-    `;
-  } else if (totalItems <= 4) {
-    dynCss += `
-      .board.portrait .item-thumb { flex: 0 0 55% !important; max-height: none !important; }
-      .board.landscape .item-thumb { width: 40% !important; }
-      .item-name { font-size: clamp(15px, 2.2vw, 28px) !important; }
-      .item-price { font-size: clamp(17px, 2.8vw, 36px) !important; }
-      .nutr-val { font-size: clamp(13px, 1.8vw, 22px) !important; }
-      .nutr-unit { font-size: clamp(10px, 1.2vw, 15px) !important; }
-      .nutr-calories .nutr-val { font-size: clamp(16px, 2.4vw, 30px) !important; }
-      .item-cat-badge { font-size: clamp(10px, 1.1vw, 13px) !important; }
-    `;
-  } else if (totalItems <= 10 && ORIENTATION === 'portrait') {
-    // 5–10 items, portrait 2-col: slightly larger fonts/image than 3-col default
-    dynCss += `
-      .board.portrait .item-thumb { flex: 0 0 48% !important; max-height: none !important; }
-      .item-name  { font-size: clamp(13px, 1.9vw, 26px) !important; }
-      .item-price { font-size: clamp(15px, 2.5vw, 34px) !important; }
-      .nutr-val   { font-size: clamp(12px, 1.6vw, 20px) !important; }
-      .nutr-unit  { font-size: clamp(9px,  1.1vw, 14px) !important; }
-      .nutr-calories .nutr-val { font-size: clamp(14px, 2vw, 26px) !important; }
-    `;
-  } else if (totalItems <= 10 && ORIENTATION === 'landscape') {
-    // 5–10 items in landscape: 5-col grid creates portrait-shaped tiles (tall + narrow)
-    // Switch to portrait-card layout: image on top, text below — fills the tall cells properly
-    dynCss += `
-      .board.landscape .item-cell { flex-direction: column !important; }
-      .board.landscape .item-thumb {
-        width: 100% !important;
-        flex: 0 0 60% !important;
-        max-height: none !important;
-      }
-    `;
-  }
-
-  dynStyle.textContent = dynCss;
 
   // ── HEADER ──────────────────────────────────────────────────────────────────
   const logoSlot = (src, side) => src
@@ -1620,7 +1453,8 @@ function render() {
   // ── BODY ────────────────────────────────────────────────────────────────────
   let bodyHtml = '';
 
-  // Helper to render a standard item cell
+  // Helper to render a standard item card — full-width hero photo on top,
+  // name + description below, divider, then price and category badge.
   function _itemCell(item) {
     const oos = isOos(item.sku);
     const cat = item.category || '';
@@ -1628,17 +1462,17 @@ function render() {
     const thumbInner = cellImg
       ? `<img src="${cellImg}" alt="${esc(item.name)}" loading="lazy" onerror="this.replaceWith(Object.assign(document.createElement('div'),{className:'item-thumb-placeholder',textContent:'🍽️'}))">`
       : `<div class="item-thumb-placeholder">🍽️</div>`;
+    const desc = item.description ? `<div class="item-desc">${esc(item.description)}</div>` : '';
     return `
       <div class="item-cell${oos ? ' oos-cell' : ''}">
         <div class="item-thumb">${thumbInner}</div>
-        <div class="item-right">
-          <div class="item-meta-bar">
+        <div class="item-body">
+          <div class="item-name">${esc(item.name)}</div>
+          ${desc}
+          <div class="item-divider"></div>
+          <div class="item-footer">
             <span class="item-price">${currency}${parseFloat(item.price || 0).toFixed(2)}</span>
             ${cat ? `<span class="item-cat-badge">${esc(cat)}</span>` : ''}
-          </div>
-          <div class="item-text">
-            <div class="item-name">${esc(item.name)}</div>
-            ${buildNutrition(item)}
           </div>
         </div>
         <div class="oos-overlay"><div class="oos-stamp"><div class="oos-stamp-text">SOLD OUT</div></div></div>
@@ -1690,6 +1524,8 @@ function render() {
         grid-template-columns: repeat(${heroCols}, 1fr) !important;
         grid-template-rows: repeat(${heroRows}, 1fr) !important;
         height: 100%;
+        gap: clamp(10px, 1.2vw, 22px);
+        padding: clamp(10px, 1.2vw, 22px);
       }
     `;
 

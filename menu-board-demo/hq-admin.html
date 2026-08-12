@@ -1022,7 +1022,7 @@
             <input type="file" id="imgUpload" accept="image/*" multiple onchange="handleImages(event)">
             <div class="upload-icon">&#x1F5BC;&#xFE0F;</div>
             <p>Click here or Drag &amp; Drop to upload images</p>
-            <span>PNG, JPG &mdash; Multiple images supported (first shown on menu board)</span>
+            <span>PNG, JPG, WebP &mdash; Multiple images supported (first shown on menu board)</span>
           </div>
           <div class="img-previews" id="imgPreviews"></div>
         </div>
@@ -3770,22 +3770,33 @@ function saveItem() {
 }
 
 // ===== IMAGE HANDLING =====
+// Re-encodes any browser-decodable image format (JPEG, PNG, WebP, GIF, AVIF, ...)
+// down to a small JPEG via canvas. Rejects (rather than silently passing through
+// the original) when the browser can't decode the file, so callers can surface a
+// clear error instead of risking a multi-MB original slipping into Firestore.
 function compressImage(dataUrl, maxW, maxH, quality) {
-  return new Promise(resolve => {
+  return new Promise((resolve, reject) => {
     const img = new Image();
     img.onload = () => {
-      let w = img.width, h = img.height;
+      const w0 = img.naturalWidth || img.width;
+      const h0 = img.naturalHeight || img.height;
+      if (!w0 || !h0) { reject(new Error('the browser decoded it with zero dimensions')); return; }
+      let w = w0, h = h0;
       if (w > maxW || h > maxH) {
         const ratio = Math.min(maxW / w, maxH / h);
         w = Math.round(w * ratio);
         h = Math.round(h * ratio);
       }
-      const canvas = document.createElement('canvas');
-      canvas.width = w; canvas.height = h;
-      canvas.getContext('2d').drawImage(img, 0, 0, w, h);
-      resolve(canvas.toDataURL('image/jpeg', quality));
+      try {
+        const canvas = document.createElement('canvas');
+        canvas.width = w; canvas.height = h;
+        canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+        resolve(canvas.toDataURL('image/jpeg', quality));
+      } catch (err) {
+        reject(err);
+      }
     };
-    img.onerror = () => resolve(dataUrl); // fallback: keep original on error
+    img.onerror = () => reject(new Error('this browser could not decode that image format'));
     img.src = dataUrl;
   });
 }
@@ -3795,10 +3806,14 @@ function handleImages(event) {
   files.forEach(file => {
     const reader = new FileReader();
     reader.onload = async (e) => {
-      const compressed = await compressImage(e.target.result, 480, 480, 0.75);
-      editingImages.push(compressed);
-      renderImgPreviews();
-      if (_itemSave) _itemSave.markDirty();
+      try {
+        const compressed = await compressImage(e.target.result, 480, 480, 0.75);
+        editingImages.push(compressed);
+        renderImgPreviews();
+        if (_itemSave) _itemSave.markDirty();
+      } catch (err) {
+        toast(`⚠️ Couldn't add "${file.name}" — ${err.message}.`, 'error');
+      }
     };
     reader.readAsDataURL(file);
   });
@@ -3810,10 +3825,14 @@ function handleImageDrop(event) {
   files.forEach(file => {
     const reader = new FileReader();
     reader.onload = async (e) => {
-      const compressed = await compressImage(e.target.result, 480, 480, 0.75);
-      editingImages.push(compressed);
-      renderImgPreviews();
-      if (_itemSave) _itemSave.markDirty();
+      try {
+        const compressed = await compressImage(e.target.result, 480, 480, 0.75);
+        editingImages.push(compressed);
+        renderImgPreviews();
+        if (_itemSave) _itemSave.markDirty();
+      } catch (err) {
+        toast(`⚠️ Couldn't add "${file.name}" — ${err.message}.`, 'error');
+      }
     };
     reader.readAsDataURL(file);
   });
