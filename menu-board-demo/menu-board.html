@@ -51,20 +51,21 @@
     }
 
     /* ── HEADER ────────────────────────────── */
+    /* Fixed header bar height — uses vmin (the smaller of width/height) rather
+       than vw, so a screen showing the same physical panel rotated between
+       landscape and portrait renders an identical header height in both. This
+       is set once here and intentionally NOT overridden per orientation or
+       per template, so every menu board has a matching header height. */
     .board-header {
       background: var(--board-header-bg, #ffffff);
       border-bottom: 3px solid var(--green);
-      padding: clamp(14px, 2.5vw, 36px) clamp(20px, 4vw, 60px);
+      height: clamp(130px, 19vmin, 210px);
+      padding: 0 clamp(20px, 4vw, 60px);
       display: flex;
       align-items: stretch;
       justify-content: space-between;
       gap: 16px;
       flex-shrink: 0;
-    }
-
-    /* Portrait: bigger header padding */
-    .board.portrait .board-header {
-      padding: clamp(18px, 3vw, 48px) clamp(24px, 4.5vw, 70px);
     }
 
     /* Icon fills the full height of the header bar (between its top/bottom padding) */
