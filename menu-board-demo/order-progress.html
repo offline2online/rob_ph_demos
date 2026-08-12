@@ -29,22 +29,38 @@
   }
 
   /* ── HEADER ─────────────────────────────────────────────── */
+  /* Fixed header bar height — matches menu-board.html / order-summary.html
+     so every board in the family renders an identical header height. */
   .board-header {
     flex-shrink: 0;
+    height: 175px;
+    padding: 0 clamp(20px, 4vw, 60px);
+    display: flex;
+    align-items: stretch;
+    justify-content: space-between;
+    gap: 16px;
+  }
+  .header-logo-wrap {
+    width: clamp(64px, 9vw, 130px);
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 28px;
-    padding: 24px 40px 18px;
-    position: relative;
+    flex-shrink: 0;
   }
   .brand-logo {
-    width: 80px;
-    height: 80px;
+    max-width: 100%;
+    height: 100%;
+    max-height: 100%;
+    width: auto;
     object-fit: contain;
-    border-radius: 50%;
-    flex-shrink: 0;
     display: none; /* shown when logo loads */
+  }
+  .header-center {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
   }
   .board-title {
     font-family: 'Oswald', sans-serif;
@@ -55,11 +71,21 @@
     text-align: center;
     white-space: nowrap;
   }
+
+  /* ── CLOCK BAR — matches sibling boards' clock-bar treatment ──────── */
+  .clock-bar {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 16px;
+    padding: clamp(8px, 1vw, 14px) clamp(20px, 4vw, 60px);
+    background: rgba(255,255,255,0.06);
+    border-top: 1px solid var(--divider);
+    border-bottom: 1px solid var(--divider);
+  }
   .header-time,
   .header-store-name {
-    position: absolute;
-    top: 50%;
-    transform: translateY(-50%);
     font-family: 'Oswald', sans-serif;
     font-size: clamp(13px, 1.6vw, 24px);
     font-weight: 400;
@@ -67,8 +93,7 @@
     opacity: 0.85;
     white-space: nowrap;
   }
-  .header-time       { left: 24px; }
-  .header-store-name { right: 24px; }
+  .header-store-name { margin-right: auto; }
 
   /* ── COLUMNS ────────────────────────────────────────────── */
   .board-body {
@@ -188,11 +213,15 @@
 <body>
 
 <div class="board-header">
-  <img class="brand-logo" id="logoLeft"  alt="">
-  <div class="board-title">Order Status</div>
-  <img class="brand-logo" id="logoRight" alt="">
-  <div class="header-time" id="headerTime"></div>
+  <div class="header-logo-wrap"><img class="brand-logo" id="logoLeft" alt=""></div>
+  <div class="header-center">
+    <div class="board-title">Order Status</div>
+  </div>
+  <div class="header-logo-wrap"><img class="brand-logo" id="logoRight" alt=""></div>
+</div>
+<div class="clock-bar">
   <div class="header-store-name" id="headerStoreName"></div>
+  <div class="header-time" id="headerTime"></div>
 </div>
 
 <div class="board-body">
@@ -284,16 +313,21 @@ if (!STORE_CODE) {
     </div>`;
 }
 
-// ── BRAND LOGOS ────────────────────────────────────────────────────────────
+// ── BRAND LOGOS + COLOR ─────────────────────────────────────────────────────
 onSnapshot(doc(db, MB, 'brands'), snap => {
   const brands = snap.exists() ? (snap.data().data || []) : [];
-  const logo = brands[0]?.logo || '';
+  const brand  = brands[0] || {};
+  const logo   = brand.logo || '';
   ['logoLeft', 'logoRight'].forEach(id => {
     const el = document.getElementById(id);
     if (!el) return;
     if (logo) { el.src = logo; el.style.display = 'block'; }
     else       { el.style.display = 'none'; }
   });
+  // Board is a single solid brand-colored field (header color doubles as bg),
+  // same source as --board-header-bg on the sibling boards.
+  const headerColor = brand.colors?.header;
+  if (headerColor) document.documentElement.style.setProperty('--bg', headerColor);
 });
 
 // ── PH API — STORE NAME ────────────────────────────────────────────────────
