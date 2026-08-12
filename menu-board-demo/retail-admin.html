@@ -1313,7 +1313,7 @@ function initGrid() {
             const mt = MENU_TYPES.find(m => (m.emoji + ' ' + m.label) === value);
             const span = document.createElement('span');
             if (mt) {
-              span.style.cssText = `display:inline-flex;align-items:center;gap:4px;padding:2px 8px 2px 5px;border-radius:20px;border:1.5px solid ${mt.color};font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.4px;white-space:nowrap;color:${mt.color};background:transparent;`;
+              span.style.cssText = `display:inline-flex;align-items:center;gap:3px;padding:1px 5px 1px 4px;border-radius:10px;border:1px solid ${mt.color};font-size:8px;font-weight:700;text-transform:uppercase;letter-spacing:0.3px;white-space:nowrap;color:${mt.color};background:transparent;`;
               span.textContent = mt.emoji + ' ' + mt.label;
             } else { span.textContent = value; }
             return span;
@@ -1325,12 +1325,12 @@ function initGrid() {
         }),
         cellRenderer: (params) => {
           const wrap = document.createElement('div');
-          wrap.style.cssText = 'display:flex;gap:4px;flex-wrap:wrap;align-content:center;align-items:center;height:100%;';
+          wrap.style.cssText = 'display:flex;gap:3px;flex-wrap:wrap;align-content:center;align-items:center;height:100%;';
           (params.value || []).forEach(t => {
             const mt = MENU_TYPES.find(m => m.id === t);
             if (!mt) return;
             const span = document.createElement('span');
-            span.style.cssText = `display:inline-flex;align-items:center;gap:4px;padding:2px 8px 2px 5px;border-radius:20px;border:1.5px solid ${mt.color};font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.4px;white-space:nowrap;color:${mt.color};background:transparent;flex-shrink:0;`;
+            span.style.cssText = `display:inline-flex;align-items:center;gap:3px;padding:1px 5px 1px 4px;border-radius:10px;border:1px solid ${mt.color};font-size:8px;font-weight:700;text-transform:uppercase;letter-spacing:0.3px;white-space:nowrap;color:${mt.color};background:transparent;flex-shrink:0;`;
             span.textContent = mt.emoji + ' ' + mt.label;
             wrap.appendChild(span);
           });
@@ -1345,7 +1345,11 @@ function initGrid() {
       {
         headerName: 'Price', field: 'price', flex: 0.9, minWidth: 90,
         filter: 'agNumberColumnFilter',
-        valueFormatter: (p) => (getSettings().currency || '$') + parseFloat(p.value || 0).toFixed(2),
+        valueFormatter: (p) => {
+          const itemBrand = _brands.find(b => b.id === p.data.brand);
+          const currency = (itemBrand && itemBrand.currency) ? itemBrand.currency : (getSettings().currency || '$');
+          return currency + parseFloat(p.value || 0).toFixed(2);
+        },
         cellStyle: { fontWeight: '700', color: 'var(--primary)' }
       },
       {
@@ -1454,6 +1458,10 @@ function renderItems() {
 
   const fm = storeItemsGridApi.getFilterModel();
   storeItemsGridApi.setGridOption('rowData', sorted);
+  // Price's valueFormatter reads brand currency from outer scope, not from the row
+  // data itself, so AG-Grid's change-detection won't know to re-run it when only
+  // _brands (not the row) changes — force it explicitly.
+  storeItemsGridApi.refreshCells({ columns: ['price'], force: true });
   if (fm && Object.keys(fm).length) {
     setTimeout(() => storeItemsGridApi?.setFilterModel(fm), 0);
   }
