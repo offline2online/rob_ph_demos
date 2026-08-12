@@ -28,6 +28,14 @@
       --item-bg:          #ffffff;
       --item-desc:        #444444;
       --qr-safe-bottom:   0px;
+      /* Shared footer height for both the empty-cart QR footer and the
+         items-in-cart total bar, so the board doesn't jump in height when
+         a cart fills or clears. Set to the midpoint of what each footer
+         used independently before. */
+      --order-footer-h:   clamp(125px, 8vh, 175px);
+    }
+    .board.landscape {
+      --order-footer-h:   clamp(120px, 10vh, 160px);
     }
 
     * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -290,11 +298,8 @@
       align-items: center;
       justify-content: space-between;
       gap: clamp(20px, 4vw, 48px);
-      min-height: clamp(100px, 16vh, 200px);
+      min-height: var(--order-footer-h);
       padding: clamp(14px, 2vh, 32px) clamp(24px, 4vw, 64px);
-    }
-    .board.landscape .qr-footer {
-      min-height: clamp(90px, 20vh, 170px);
     }
     .qr-footer-copy {
       color: #fff;
@@ -427,7 +432,7 @@
     .order-total-bar {
       background: var(--item-color);
       color: var(--white);
-      min-height: 150px;
+      min-height: var(--order-footer-h);
       padding: clamp(16px, 2vw, 32px) clamp(20px, 3vw, 56px);
       padding-bottom: calc(clamp(16px, 2vw, 32px) + var(--qr-safe-bottom, 0px));
       display: flex;
@@ -597,7 +602,7 @@ function fmtDate(d) { return d.toLocaleDateString([], { weekday: 'short', day: '
 // a user picks in HQ Admin's Shopping Cart settings renders identically here.
 const CART_PRESET_ICONS = [
   { label: 'Cart',
-    svg: `<img src="images/icons/cart.png" alt="Cart" style="width:100%;height:100%;object-fit:contain;">` },
+    svg: `<img src="images/icons/cart.svg" alt="Cart" style="width:100%;height:100%;object-fit:contain;">` },
   { label: 'Bag',
     svg: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M16 11V7a4 4 0 0 0-8 0v4"/><path d="M5 9h14l1 12H4L5 9Z"/></svg>` },
   { label: 'Tote',
