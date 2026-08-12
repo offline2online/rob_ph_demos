@@ -1466,6 +1466,21 @@ function render() {
 
   const totalItems = campaignFiltered.length;
 
+  // Small item counts (≤10) get the large-tile dynamic layout — a handful of big,
+  // legible cards rather than a dense grid — so those cells should show the
+  // large/hero product photo. Bigger catalogues use the paginated grid, where
+  // cells are small, so they should show the compact thumbnail instead.
+  const isLargeTileLayout = totalItems > 0 && totalItems <= 10;
+
+  // Picks the best image URL for an item cell given the current layout size.
+  // Falls back gracefully: large→small→none, small→large→none.
+  function _pickImage(item) {
+    const small = item.images      && item.images[0];
+    const large = item.imagesLarge && item.imagesLarge[0];
+    if (isLargeTileLayout) return large || small || '';
+    return small || large || '';
+  }
+
   // ── STEP 2: Compute layout based on totalItems ───────────────────────────────
   const dispCfg = (effectiveDisplay && effectiveDisplay[ORIENTATION]) || {};
   let COLS, PAGE_SIZE;
@@ -1602,8 +1617,9 @@ function render() {
   function _itemCell(item) {
     const oos = isOos(item.sku);
     const cat = item.category || '';
-    const thumbInner = (item.images && item.images[0])
-      ? `<img src="${item.images[0]}" alt="${esc(item.name)}" loading="lazy" onerror="this.replaceWith(Object.assign(document.createElement('div'),{className:'item-thumb-placeholder',textContent:'🍽️'}))">`
+    const cellImg = _pickImage(item);
+    const thumbInner = cellImg
+      ? `<img src="${cellImg}" alt="${esc(item.name)}" loading="lazy" onerror="this.replaceWith(Object.assign(document.createElement('div'),{className:'item-thumb-placeholder',textContent:'🍽️'}))">`
       : `<div class="item-thumb-placeholder">🍽️</div>`;
     return `
       <div class="item-cell${oos ? ' oos-cell' : ''}">
@@ -1673,8 +1689,10 @@ function render() {
     // Build hero slot HTML
     let heroSlotHtml = '';
     if (heroItem) {
-      const heroImg = (heroItem.images && heroItem.images[0])
-        ? `<img src="${heroItem.images[0]}" alt="${esc(heroItem.name)}" loading="lazy">`
+      // The hero slot is always a large, single-item display — prefer the large photo.
+      const heroSrc = (heroItem.imagesLarge && heroItem.imagesLarge[0]) || (heroItem.images && heroItem.images[0]);
+      const heroImg = heroSrc
+        ? `<img src="${heroSrc}" alt="${esc(heroItem.name)}" loading="lazy">`
         : `<div class="hero-img-placeholder">🏷️</div>`;
       const heroDesc = heroItem.description
         ? `<div class="hero-desc">${esc(heroItem.description)}</div>` : '';

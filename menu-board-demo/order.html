@@ -79,10 +79,10 @@ button { cursor: pointer; border: none; background: none; font-family: inherit; 
 .cat-tab:active { opacity: .75; }
 .cat-tab.active {
   background: var(--gold);
-  color: var(--green-dark);
+  color: var(--white);
   font-weight: 700;
   border-color: var(--gold);
-  box-shadow: 0 2px 8px rgba(203,162,88,.4);
+  box-shadow: 0 2px 8px rgba(0,0,0,.3);
 }
 
 /* ── SEARCH BAR ─────────────────────────────────────────────────────────── */
@@ -150,9 +150,9 @@ button { cursor: pointer; border: none; background: none; font-family: inherit; 
   width: 68px;
   height: 68px;
   border-radius: 50%;
-  /* Gold background + dark green icon = maximum contrast against any background */
+  /* Brand-accent background + white icon = maximum contrast against any background */
   background: var(--gold);
-  color: var(--green-dark);
+  color: var(--white);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -624,7 +624,7 @@ button { cursor: pointer; border: none; background: none; font-family: inherit; 
 /* ── ORDER CONFIRMATION ────────────────────────────────────────────────── */
 .confirm-screen {
   position: fixed; inset: 0; z-index: 400;
-  background: #006241; /* intentionally hardcoded — not overridable by brand */
+  background: var(--green-dark); /* brand accent (dark shade) — set in applyBranding() */
   display: flex; flex-direction: column; align-items: center; justify-content: center;
   padding: 32px 24px;
   opacity: 0; pointer-events: none;
@@ -649,7 +649,7 @@ button { cursor: pointer; border: none; background: none; font-family: inherit; 
 .confirm-order-number {
   font-family: 'Oswald', sans-serif;
   font-size: 72px; font-weight: 700;
-  color: var(--gold); letter-spacing: 4px;
+  color: var(--white); letter-spacing: 4px;
   line-height: 1; margin-bottom: 24px;
 }
 .confirm-tagline {
@@ -668,7 +668,7 @@ button { cursor: pointer; border: none; background: none; font-family: inherit; 
   padding: 5px 0; border-bottom: 1px solid rgba(255,255,255,.1);
 }
 .confirm-item:last-child { border-bottom: none; }
-.confirm-item .ci-qty { color: var(--gold); font-weight: 700; margin-right: 6px; }
+.confirm-item .ci-qty { color: var(--white); font-weight: 700; margin-right: 6px; }
 .confirm-total {
   font-family: 'Oswald', sans-serif; font-size: 18px;
   color: var(--white); margin-top: 10px;
@@ -779,10 +779,10 @@ button { cursor: pointer; border: none; background: none; font-family: inherit; 
 .bag-loyalty-btn {
   width: 36px; height: 36px; border-radius: 50%;
   background: var(--gold);
-  color: var(--green-dark);
+  color: var(--white);
   display: flex; align-items: center; justify-content: center;
   font-size: 18px;
-  box-shadow: 0 2px 6px rgba(203,162,88,.4);
+  box-shadow: 0 2px 6px rgba(0,0,0,.3);
   transition: transform .12s, box-shadow .12s;
   flex-shrink: 0;
 }
@@ -1382,6 +1382,17 @@ function forgetLoyalty() {
   updateFabPopup();
 }
 
+// Shades a #rrggbb colour toward black (factor < 0) or white (factor > 0), factor in [-1, 1].
+function _shade(hex, factor) {
+  const m = /^#?([0-9a-f]{6})$/i.exec(hex || '');
+  if (!m) return hex;
+  const n = parseInt(m[1], 16);
+  let r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255;
+  const mix = (c) => Math.round(factor >= 0 ? c + (255 - c) * factor : c * (1 + factor));
+  r = mix(r); g = mix(g); b = mix(b);
+  return '#' + [r, g, b].map(c => Math.max(0, Math.min(255, c)).toString(16).padStart(2, '0')).join('');
+}
+
 function applyBranding() {
   const brand = _brands[0];
   const s = _settings;
@@ -1410,7 +1421,19 @@ function applyBranding() {
   }
   if (colors.body)    document.documentElement.style.setProperty('--body', colors.body);
   if (colors.text)    document.documentElement.style.setProperty('--text', colors.text);
-  if (colors.price)   document.documentElement.style.setProperty('--green-dark', colors.price);
+
+  // Drive every accent token (buttons, selected states, badges, the FAB, the
+  // confirmation screen) from the brand accent — previously only --green-dark
+  // was wired up, so the primary CTAs stayed the default green regardless of brand.
+  const accent = colors.accent || colors.price;
+  if (accent) {
+    const root = document.documentElement.style;
+    root.setProperty('--green',       accent);
+    root.setProperty('--green-dark',  colors.price || _shade(accent, -0.35));
+    root.setProperty('--green-light', _shade(accent, 0.88));
+    root.setProperty('--gold',        accent);
+    root.setProperty('--gold-dark',   _shade(accent, -0.2));
+  }
 
   const bagLabel = brand?.bagLabel || 'Takeout Bag';
   const bagIcon  = brand?.bagIcon  || '';

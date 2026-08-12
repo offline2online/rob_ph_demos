@@ -1,0 +1,1373 @@
+{
+  "@context": "https://gs1.org/voc/",
+  "@type": "ItemList",
+  "schemaVersion": "1.0",
+  "description": "Pizza Hut menu import \u2014 GS1 VOC compliant. Items include gs1:recipeIngredient and gs1:customizationOptions auto-mapped on import.",
+  "types": [
+    {
+      "id": "lunch",
+      "label": "Lunch",
+      "color": "#16a34a"
+    },
+    {
+      "id": "dinner",
+      "label": "Dinner",
+      "color": "#7c3aed"
+    },
+    {
+      "id": "drinks",
+      "label": "Drinks",
+      "color": "#2563eb"
+    },
+    {
+      "id": "specials",
+      "label": "Today's Specials",
+      "color": "#e11d48"
+    }
+  ],
+  "items": [
+    {
+      "id": "ph-001",
+      "sku": "PH-PAN-001",
+      "name": "Cheese Lover's Pan Pizza",
+      "category": "Pan Pizza",
+      "description": "A blend of mozzarella, cheddar and Parmesan on our signature golden, crispy-bottomed pan crust.",
+      "price": 13.99,
+      "menuTypes": [
+        "lunch",
+        "dinner"
+      ],
+      "images": [
+        "images/pizzas/cheese-lovers-pan-sm.jpg"
+      ],
+      "active": true,
+      "createdAt": "2026-08-11T23:27:21Z",
+      "updatedAt": "2026-08-11T23:27:21Z",
+      "imagesLarge": [
+        "images/pizzas/cheese-lovers-pan-lg.jpg"
+      ]
+    },
+    {
+      "id": "ph-002",
+      "sku": "PH-PAN-002",
+      "name": "Pepperoni Lover's Pan Pizza",
+      "category": "Pan Pizza",
+      "description": "Loaded with extra pepperoni and 100% real cheese, baked on our thick, buttery pan crust.",
+      "price": 14.99,
+      "menuTypes": [
+        "lunch",
+        "dinner"
+      ],
+      "images": [
+        "images/pizzas/pepperoni-lovers-pan-sm.jpg"
+      ],
+      "active": true,
+      "createdAt": "2026-08-11T23:27:21Z",
+      "updatedAt": "2026-08-11T23:27:21Z",
+      "imagesLarge": [
+        "images/pizzas/pepperoni-lovers-pan-lg.jpg"
+      ]
+    },
+    {
+      "id": "ph-003",
+      "sku": "PH-PAN-003",
+      "name": "Meat Lover's Pan Pizza",
+      "category": "Pan Pizza",
+      "description": "Pepperoni, ham, Italian sausage, beef and bacon piled high on our golden pan crust.",
+      "price": 16.49,
+      "menuTypes": [
+        "lunch",
+        "dinner"
+      ],
+      "images": [
+        "images/pizzas/meat-lovers-pan-sm.jpg"
+      ],
+      "active": true,
+      "createdAt": "2026-08-11T23:27:21Z",
+      "updatedAt": "2026-08-11T23:27:21Z",
+      "imagesLarge": [
+        "images/pizzas/meat-lovers-pan-lg.jpg"
+      ]
+    },
+    {
+      "id": "ph-004",
+      "sku": "PH-PAN-004",
+      "name": "Veggie Lover's Pan Pizza",
+      "category": "Pan Pizza",
+      "description": "Mushrooms, red onions, green peppers, tomatoes and black olives on a crispy pan crust.",
+      "price": 14.99,
+      "menuTypes": [
+        "lunch",
+        "dinner"
+      ],
+      "images": [
+        "images/pizzas/veggie-lovers-pan-sm.jpg"
+      ],
+      "active": true,
+      "createdAt": "2026-08-11T23:27:21Z",
+      "updatedAt": "2026-08-11T23:27:21Z",
+      "imagesLarge": [
+        "images/pizzas/veggie-lovers-pan-lg.jpg"
+      ]
+    },
+    {
+      "id": "ph-005",
+      "sku": "PH-PAN-005",
+      "name": "Supreme Pan Pizza",
+      "category": "Pan Pizza",
+      "description": "Pepperoni, Italian sausage, mushrooms, green peppers, red onions and black olives, all on our pan crust.",
+      "price": 16.99,
+      "menuTypes": [
+        "lunch",
+        "dinner"
+      ],
+      "images": [
+        "images/pizzas/supreme-pan-sm.jpg"
+      ],
+      "active": true,
+      "createdAt": "2026-08-11T23:27:21Z",
+      "updatedAt": "2026-08-11T23:27:21Z",
+      "imagesLarge": [
+        "images/pizzas/supreme-pan-lg.jpg"
+      ]
+    },
+    {
+      "id": "ph-006",
+      "sku": "PH-PAN-006",
+      "name": "Hawaiian Pan Pizza",
+      "category": "Pan Pizza",
+      "description": "Sweet pineapple and smoked ham with extra cheese on our signature golden pan crust.",
+      "price": 14.99,
+      "menuTypes": [
+        "lunch",
+        "dinner"
+      ],
+      "images": [
+        "images/pizzas/hawaiian-pan-sm.jpg"
+      ],
+      "active": true,
+      "createdAt": "2026-08-11T23:27:21Z",
+      "updatedAt": "2026-08-11T23:27:21Z",
+      "imagesLarge": [
+        "images/pizzas/hawaiian-pan-lg.jpg"
+      ]
+    },
+    {
+      "id": "ph-010",
+      "sku": "PH-STF-001",
+      "name": "Pepperoni Stuffed Crust",
+      "category": "Stuffed Crust",
+      "description": "Classic pepperoni pizza with a ring of melted mozzarella baked right into the crust.",
+      "price": 16.99,
+      "menuTypes": [
+        "lunch",
+        "dinner"
+      ],
+      "images": [
+        "images/pizzas/pepperoni-stuffed-sm.jpg"
+      ],
+      "active": true,
+      "createdAt": "2026-08-11T23:27:21Z",
+      "updatedAt": "2026-08-11T23:27:21Z",
+      "imagesLarge": [
+        "images/pizzas/pepperoni-stuffed-lg.jpg"
+      ]
+    },
+    {
+      "id": "ph-011",
+      "sku": "PH-STF-002",
+      "name": "Meat Lover's Stuffed Crust",
+      "category": "Stuffed Crust",
+      "description": "Pepperoni, ham, sausage, beef and bacon with a gooey cheese-stuffed crust.",
+      "price": 18.49,
+      "menuTypes": [
+        "lunch",
+        "dinner"
+      ],
+      "images": [
+        "images/pizzas/meat-lovers-stuffed-sm.jpg"
+      ],
+      "active": true,
+      "createdAt": "2026-08-11T23:27:21Z",
+      "updatedAt": "2026-08-11T23:27:21Z",
+      "imagesLarge": [
+        "images/pizzas/meat-lovers-stuffed-lg.jpg"
+      ]
+    },
+    {
+      "id": "ph-012",
+      "sku": "PH-STF-003",
+      "name": "Cheese Stuffed Crust",
+      "category": "Stuffed Crust",
+      "description": "Triple-cheese topping with an irresistible mozzarella-stuffed crust edge to edge.",
+      "price": 15.99,
+      "menuTypes": [
+        "lunch",
+        "dinner"
+      ],
+      "images": [
+        "images/pizzas/cheese-stuffed-sm.jpg"
+      ],
+      "active": true,
+      "createdAt": "2026-08-11T23:27:21Z",
+      "updatedAt": "2026-08-11T23:27:21Z",
+      "imagesLarge": [
+        "images/pizzas/cheese-stuffed-lg.jpg"
+      ]
+    },
+    {
+      "id": "ph-013",
+      "sku": "PH-STF-004",
+      "name": "Supreme Stuffed Crust",
+      "category": "Stuffed Crust",
+      "description": "Pepperoni, sausage, mushroom, onion, green pepper and olive with a cheese-stuffed crust.",
+      "price": 18.99,
+      "menuTypes": [
+        "lunch",
+        "dinner"
+      ],
+      "images": [
+        "images/pizzas/supreme-stuffed-sm.jpg"
+      ],
+      "active": true,
+      "createdAt": "2026-08-11T23:27:21Z",
+      "updatedAt": "2026-08-11T23:27:21Z",
+      "imagesLarge": [
+        "images/pizzas/supreme-stuffed-lg.jpg"
+      ]
+    },
+    {
+      "id": "ph-014",
+      "sku": "PH-STF-005",
+      "name": "BBQ Chicken Stuffed Crust",
+      "category": "Stuffed Crust",
+      "description": "Grilled chicken, red onion and smoky BBQ sauce with a cheese-stuffed crust finish.",
+      "price": 17.99,
+      "menuTypes": [
+        "lunch",
+        "dinner"
+      ],
+      "images": [
+        "images/pizzas/bbq-chicken-stuffed-sm.jpg"
+      ],
+      "active": true,
+      "createdAt": "2026-08-11T23:27:21Z",
+      "updatedAt": "2026-08-11T23:27:21Z",
+      "imagesLarge": [
+        "images/pizzas/bbq-chicken-stuffed-lg.jpg"
+      ]
+    },
+    {
+      "id": "ph-020",
+      "sku": "PH-THN-001",
+      "name": "Cheese Thin 'N Crispy",
+      "category": "Thin 'N Crispy",
+      "description": "A generous layer of mozzarella on our ultra-thin, crispy hand-tossed base.",
+      "price": 12.99,
+      "menuTypes": [
+        "lunch",
+        "dinner"
+      ],
+      "images": [
+        "images/pizzas/cheese-thin-sm.jpg"
+      ],
+      "active": true,
+      "createdAt": "2026-08-11T23:27:21Z",
+      "updatedAt": "2026-08-11T23:27:21Z",
+      "imagesLarge": [
+        "images/pizzas/cheese-thin-lg.jpg"
+      ]
+    },
+    {
+      "id": "ph-021",
+      "sku": "PH-THN-002",
+      "name": "Pepperoni Thin 'N Crispy",
+      "category": "Thin 'N Crispy",
+      "description": "Classic pepperoni on our cracker-thin crispy crust, baked until golden.",
+      "price": 13.99,
+      "menuTypes": [
+        "lunch",
+        "dinner"
+      ],
+      "images": [
+        "images/pizzas/pepperoni-thin-sm.jpg"
+      ],
+      "active": true,
+      "createdAt": "2026-08-11T23:27:21Z",
+      "updatedAt": "2026-08-11T23:27:21Z",
+      "imagesLarge": [
+        "images/pizzas/pepperoni-thin-lg.jpg"
+      ]
+    },
+    {
+      "id": "ph-022",
+      "sku": "PH-THN-003",
+      "name": "Veggie Thin 'N Crispy",
+      "category": "Thin 'N Crispy",
+      "description": "Mushroom, onion, green pepper and olive on our light and crispy thin crust.",
+      "price": 13.99,
+      "menuTypes": [
+        "lunch",
+        "dinner"
+      ],
+      "images": [
+        "images/pizzas/veggie-thin-sm.jpg"
+      ],
+      "active": true,
+      "createdAt": "2026-08-11T23:27:21Z",
+      "updatedAt": "2026-08-11T23:27:21Z",
+      "imagesLarge": [
+        "images/pizzas/veggie-thin-lg.jpg"
+      ]
+    },
+    {
+      "id": "ph-023",
+      "sku": "PH-THN-004",
+      "name": "Buffalo Chicken Thin 'N Crispy",
+      "category": "Thin 'N Crispy",
+      "description": "Spicy buffalo chicken, red onion and mozzarella with a drizzle of ranch on thin crust.",
+      "price": 14.99,
+      "menuTypes": [
+        "lunch",
+        "dinner"
+      ],
+      "images": [
+        "images/pizzas/buffalo-chicken-thin-sm.jpg"
+      ],
+      "active": true,
+      "createdAt": "2026-08-11T23:27:21Z",
+      "updatedAt": "2026-08-11T23:27:21Z",
+      "imagesLarge": [
+        "images/pizzas/buffalo-chicken-thin-lg.jpg"
+      ]
+    },
+    {
+      "id": "ph-024",
+      "sku": "PH-THN-005",
+      "name": "Margherita Thin 'N Crispy",
+      "category": "Thin 'N Crispy",
+      "description": "Fresh tomato, basil and mozzarella on our crispy thin crust with a drizzle of olive oil.",
+      "price": 13.49,
+      "menuTypes": [
+        "lunch",
+        "dinner"
+      ],
+      "images": [
+        "images/pizzas/margherita-thin-sm.jpg"
+      ],
+      "active": true,
+      "createdAt": "2026-08-11T23:27:21Z",
+      "updatedAt": "2026-08-11T23:27:21Z",
+      "imagesLarge": [
+        "images/pizzas/margherita-thin-lg.jpg"
+      ]
+    },
+    {
+      "id": "ph-030",
+      "sku": "PH-SPC-001",
+      "name": "Backyard BBQ Chicken",
+      "category": "Specialty Pizzas",
+      "description": "Grilled chicken, red onion and smoky BBQ sauce topped with a blend of cheeses.",
+      "price": 17.49,
+      "menuTypes": [
+        "lunch",
+        "dinner"
+      ],
+      "images": [
+        "images/pizzas/backyard-bbq-chicken-sm.jpg"
+      ],
+      "active": true,
+      "createdAt": "2026-08-11T23:27:21Z",
+      "updatedAt": "2026-08-11T23:27:21Z",
+      "imagesLarge": [
+        "images/pizzas/backyard-bbq-chicken-lg.jpg"
+      ]
+    },
+    {
+      "id": "ph-031",
+      "sku": "PH-SPC-002",
+      "name": "Ultimate Cheese Lover's",
+      "category": "Specialty Pizzas",
+      "description": "Six cheeses \u2014 mozzarella, cheddar, Parmesan, Romano, Asiago and provolone.",
+      "price": 16.49,
+      "menuTypes": [
+        "lunch",
+        "dinner"
+      ],
+      "images": [
+        "images/pizzas/ultimate-cheese-sm.jpg"
+      ],
+      "active": true,
+      "createdAt": "2026-08-11T23:27:21Z",
+      "updatedAt": "2026-08-11T23:27:21Z",
+      "imagesLarge": [
+        "images/pizzas/ultimate-cheese-lg.jpg"
+      ]
+    },
+    {
+      "id": "ph-032",
+      "sku": "PH-SPC-003",
+      "name": "Chicken Bacon Parmesan",
+      "category": "Specialty Pizzas",
+      "description": "Grilled chicken, crispy bacon and a creamy garlic Parmesan sauce base.",
+      "price": 17.99,
+      "menuTypes": [
+        "lunch",
+        "dinner"
+      ],
+      "images": [
+        "images/pizzas/chicken-bacon-parmesan-sm.jpg"
+      ],
+      "active": true,
+      "createdAt": "2026-08-11T23:27:21Z",
+      "updatedAt": "2026-08-11T23:27:21Z",
+      "imagesLarge": [
+        "images/pizzas/chicken-bacon-parmesan-lg.jpg"
+      ]
+    },
+    {
+      "id": "ph-033",
+      "sku": "PH-SPC-004",
+      "name": "Honolulu Luau",
+      "category": "Specialty Pizzas",
+      "description": "Ham, bacon, pineapple and a blend of mozzarella and cheddar cheese.",
+      "price": 16.99,
+      "menuTypes": [
+        "lunch",
+        "dinner"
+      ],
+      "images": [
+        "images/pizzas/honolulu-luau-sm.jpg"
+      ],
+      "active": true,
+      "createdAt": "2026-08-11T23:27:21Z",
+      "updatedAt": "2026-08-11T23:27:21Z",
+      "imagesLarge": [
+        "images/pizzas/honolulu-luau-lg.jpg"
+      ]
+    },
+    {
+      "id": "ph-034",
+      "sku": "PH-SPC-005",
+      "name": "Buffalo Chicken Specialty",
+      "category": "Specialty Pizzas",
+      "description": "Spicy buffalo chicken, mozzarella and a swirl of creamy ranch.",
+      "price": 17.49,
+      "menuTypes": [
+        "lunch",
+        "dinner"
+      ],
+      "images": [
+        "images/pizzas/buffalo-chicken-specialty-sm.jpg"
+      ],
+      "active": true,
+      "createdAt": "2026-08-11T23:27:21Z",
+      "updatedAt": "2026-08-11T23:27:21Z",
+      "imagesLarge": [
+        "images/pizzas/buffalo-chicken-specialty-lg.jpg"
+      ]
+    },
+    {
+      "id": "ph-035",
+      "sku": "PH-SPC-006",
+      "name": "Tuscani Meat Trio",
+      "category": "Specialty Pizzas",
+      "description": "Italian sausage, pepperoni and beef with a rich marinara-infused cheese blend.",
+      "price": 17.99,
+      "menuTypes": [
+        "lunch",
+        "dinner"
+      ],
+      "images": [
+        "images/pizzas/tuscani-meat-trio-sm.jpg"
+      ],
+      "active": true,
+      "createdAt": "2026-08-11T23:27:21Z",
+      "updatedAt": "2026-08-11T23:27:21Z",
+      "imagesLarge": [
+        "images/pizzas/tuscani-meat-trio-lg.jpg"
+      ]
+    },
+    {
+      "id": "ph-040",
+      "sku": "PH-WNG-001",
+      "name": "Traditional Bone-In Buffalo",
+      "category": "Wings",
+      "description": "8 crispy bone-in wings tossed in classic spicy buffalo sauce, served with celery.",
+      "price": 9.99,
+      "menuTypes": [
+        "lunch",
+        "dinner"
+      ],
+      "images": [
+        "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA0MDAgMzAwIiB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCI+PHJlY3Qgd2lkdGg9IjQwMCIgaGVpZ2h0PSIzMDAiIGZpbGw9IiMwMDAwMDAiIHJ4PSIxMiIvPjxyZWN0IHg9IjgiIHk9IjgiIHdpZHRoPSIzODQiIGhlaWdodD0iMjg0IiBmaWxsPSJub25lIiBzdHJva2U9IiNlOTFjMjQiIHN0cm9rZS13aWR0aD0iMyIgcng9IjkiLz48dGV4dCB4PSIyMDAiIHk9IjE1NSIgZm9udC1mYW1pbHk9IlNlZ29lIFVJIEVtb2ppLEFwcGxlIENvbG9yIEVtb2ppLE5vdG8gRW1vamksQXJpYWwiIGZvbnQtc2l6ZT0iMTEwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBkb21pbmFudC1iYXNlbGluZT0ibWlkZGxlIj7wn42XPC90ZXh0Pjx0ZXh0IHg9IjIwMCIgeT0iMjQ1IiBmb250LWZhbWlseT0iQXJpYWwsSGVsdmV0aWNhLHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMjAiIGZvbnQtd2VpZ2h0PSJib2xkIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjZTkxYzI0IiBsZXR0ZXItc3BhY2luZz0iMiI+V0lOR1M8L3RleHQ+PC9zdmc+"
+      ],
+      "active": true,
+      "createdAt": "2026-08-11T23:27:21Z",
+      "updatedAt": "2026-08-11T23:27:21Z"
+    },
+    {
+      "id": "ph-041",
+      "sku": "PH-WNG-002",
+      "name": "Boneless BBQ Wings",
+      "category": "Wings",
+      "description": "8 tender boneless wings glazed in sweet and smoky BBQ sauce.",
+      "price": 9.49,
+      "menuTypes": [
+        "lunch",
+        "dinner"
+      ],
+      "images": [
+        "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA0MDAgMzAwIiB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCI+PHJlY3Qgd2lkdGg9IjQwMCIgaGVpZ2h0PSIzMDAiIGZpbGw9IiMwMDAwMDAiIHJ4PSIxMiIvPjxyZWN0IHg9IjgiIHk9IjgiIHdpZHRoPSIzODQiIGhlaWdodD0iMjg0IiBmaWxsPSJub25lIiBzdHJva2U9IiNlOTFjMjQiIHN0cm9rZS13aWR0aD0iMyIgcng9IjkiLz48dGV4dCB4PSIyMDAiIHk9IjE1NSIgZm9udC1mYW1pbHk9IlNlZ29lIFVJIEVtb2ppLEFwcGxlIENvbG9yIEVtb2ppLE5vdG8gRW1vamksQXJpYWwiIGZvbnQtc2l6ZT0iMTEwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBkb21pbmFudC1iYXNlbGluZT0ibWlkZGxlIj7wn42XPC90ZXh0Pjx0ZXh0IHg9IjIwMCIgeT0iMjQ1IiBmb250LWZhbWlseT0iQXJpYWwsSGVsdmV0aWNhLHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMjAiIGZvbnQtd2VpZ2h0PSJib2xkIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjZTkxYzI0IiBsZXR0ZXItc3BhY2luZz0iMiI+V0lOR1M8L3RleHQ+PC9zdmc+"
+      ],
+      "active": true,
+      "createdAt": "2026-08-11T23:27:21Z",
+      "updatedAt": "2026-08-11T23:27:21Z"
+    },
+    {
+      "id": "ph-042",
+      "sku": "PH-WNG-003",
+      "name": "Honey BBQ Wings",
+      "category": "Wings",
+      "description": "8 bone-in wings coated in a sticky-sweet honey BBQ glaze.",
+      "price": 9.99,
+      "menuTypes": [
+        "lunch",
+        "dinner"
+      ],
+      "images": [
+        "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA0MDAgMzAwIiB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCI+PHJlY3Qgd2lkdGg9IjQwMCIgaGVpZ2h0PSIzMDAiIGZpbGw9IiMwMDAwMDAiIHJ4PSIxMiIvPjxyZWN0IHg9IjgiIHk9IjgiIHdpZHRoPSIzODQiIGhlaWdodD0iMjg0IiBmaWxsPSJub25lIiBzdHJva2U9IiNlOTFjMjQiIHN0cm9rZS13aWR0aD0iMyIgcng9IjkiLz48dGV4dCB4PSIyMDAiIHk9IjE1NSIgZm9udC1mYW1pbHk9IlNlZ29lIFVJIEVtb2ppLEFwcGxlIENvbG9yIEVtb2ppLE5vdG8gRW1vamksQXJpYWwiIGZvbnQtc2l6ZT0iMTEwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBkb21pbmFudC1iYXNlbGluZT0ibWlkZGxlIj7wn42XPC90ZXh0Pjx0ZXh0IHg9IjIwMCIgeT0iMjQ1IiBmb250LWZhbWlseT0iQXJpYWwsSGVsdmV0aWNhLHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMjAiIGZvbnQtd2VpZ2h0PSJib2xkIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjZTkxYzI0IiBsZXR0ZXItc3BhY2luZz0iMiI+V0lOR1M8L3RleHQ+PC9zdmc+"
+      ],
+      "active": true,
+      "createdAt": "2026-08-11T23:27:21Z",
+      "updatedAt": "2026-08-11T23:27:21Z"
+    },
+    {
+      "id": "ph-043",
+      "sku": "PH-WNG-004",
+      "name": "Garlic Parmesan Boneless",
+      "category": "Wings",
+      "description": "8 boneless wings tossed in creamy garlic Parmesan sauce.",
+      "price": 9.49,
+      "menuTypes": [
+        "lunch",
+        "dinner"
+      ],
+      "images": [
+        "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA0MDAgMzAwIiB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCI+PHJlY3Qgd2lkdGg9IjQwMCIgaGVpZ2h0PSIzMDAiIGZpbGw9IiMwMDAwMDAiIHJ4PSIxMiIvPjxyZWN0IHg9IjgiIHk9IjgiIHdpZHRoPSIzODQiIGhlaWdodD0iMjg0IiBmaWxsPSJub25lIiBzdHJva2U9IiNlOTFjMjQiIHN0cm9rZS13aWR0aD0iMyIgcng9IjkiLz48dGV4dCB4PSIyMDAiIHk9IjE1NSIgZm9udC1mYW1pbHk9IlNlZ29lIFVJIEVtb2ppLEFwcGxlIENvbG9yIEVtb2ppLE5vdG8gRW1vamksQXJpYWwiIGZvbnQtc2l6ZT0iMTEwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBkb21pbmFudC1iYXNlbGluZT0ibWlkZGxlIj7wn42XPC90ZXh0Pjx0ZXh0IHg9IjIwMCIgeT0iMjQ1IiBmb250LWZhbWlseT0iQXJpYWwsSGVsdmV0aWNhLHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMjAiIGZvbnQtd2VpZ2h0PSJib2xkIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjZTkxYzI0IiBsZXR0ZXItc3BhY2luZz0iMiI+V0lOR1M8L3RleHQ+PC9zdmc+"
+      ],
+      "active": true,
+      "createdAt": "2026-08-11T23:27:21Z",
+      "updatedAt": "2026-08-11T23:27:21Z"
+    },
+    {
+      "id": "ph-044",
+      "sku": "PH-WNG-005",
+      "name": "Spicy Asian Wings",
+      "category": "Wings",
+      "description": "8 bone-in wings glazed in a sweet-chilli inspired Asian-style sauce.",
+      "price": 9.99,
+      "menuTypes": [
+        "lunch",
+        "dinner"
+      ],
+      "images": [
+        "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA0MDAgMzAwIiB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCI+PHJlY3Qgd2lkdGg9IjQwMCIgaGVpZ2h0PSIzMDAiIGZpbGw9IiMwMDAwMDAiIHJ4PSIxMiIvPjxyZWN0IHg9IjgiIHk9IjgiIHdpZHRoPSIzODQiIGhlaWdodD0iMjg0IiBmaWxsPSJub25lIiBzdHJva2U9IiNlOTFjMjQiIHN0cm9rZS13aWR0aD0iMyIgcng9IjkiLz48dGV4dCB4PSIyMDAiIHk9IjE1NSIgZm9udC1mYW1pbHk9IlNlZ29lIFVJIEVtb2ppLEFwcGxlIENvbG9yIEVtb2ppLE5vdG8gRW1vamksQXJpYWwiIGZvbnQtc2l6ZT0iMTEwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBkb21pbmFudC1iYXNlbGluZT0ibWlkZGxlIj7wn42XPC90ZXh0Pjx0ZXh0IHg9IjIwMCIgeT0iMjQ1IiBmb250LWZhbWlseT0iQXJpYWwsSGVsdmV0aWNhLHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMjAiIGZvbnQtd2VpZ2h0PSJib2xkIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjZTkxYzI0IiBsZXR0ZXItc3BhY2luZz0iMiI+V0lOR1M8L3RleHQ+PC9zdmc+"
+      ],
+      "active": true,
+      "createdAt": "2026-08-11T23:27:21Z",
+      "updatedAt": "2026-08-11T23:27:21Z"
+    },
+    {
+      "id": "ph-050",
+      "sku": "PH-PST-001",
+      "name": "Chicken Alfredo Pasta",
+      "category": "Pasta",
+      "description": "Penne pasta tossed in creamy Alfredo sauce with grilled chicken, served with garlic bread.",
+      "price": 11.99,
+      "menuTypes": [
+        "lunch",
+        "dinner"
+      ],
+      "images": [
+        "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA0MDAgMzAwIiB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCI+PHJlY3Qgd2lkdGg9IjQwMCIgaGVpZ2h0PSIzMDAiIGZpbGw9IiNjODEwMmUiIHJ4PSIxMiIvPjxyZWN0IHg9IjgiIHk9IjgiIHdpZHRoPSIzODQiIGhlaWdodD0iMjg0IiBmaWxsPSJub25lIiBzdHJva2U9IiNmZmZmZmYiIHN0cm9rZS13aWR0aD0iMyIgcng9IjkiLz48dGV4dCB4PSIyMDAiIHk9IjE1NSIgZm9udC1mYW1pbHk9IlNlZ29lIFVJIEVtb2ppLEFwcGxlIENvbG9yIEVtb2ppLE5vdG8gRW1vamksQXJpYWwiIGZvbnQtc2l6ZT0iMTEwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBkb21pbmFudC1iYXNlbGluZT0ibWlkZGxlIj7wn42dPC90ZXh0Pjx0ZXh0IHg9IjIwMCIgeT0iMjQ1IiBmb250LWZhbWlseT0iQXJpYWwsSGVsdmV0aWNhLHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMjAiIGZvbnQtd2VpZ2h0PSJib2xkIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjZmZmZmZmIiBsZXR0ZXItc3BhY2luZz0iMiI+UEFTVEE8L3RleHQ+PC9zdmc+"
+      ],
+      "active": true,
+      "createdAt": "2026-08-11T23:27:21Z",
+      "updatedAt": "2026-08-11T23:27:21Z"
+    },
+    {
+      "id": "ph-051",
+      "sku": "PH-PST-002",
+      "name": "Meaty Marinara Pasta",
+      "category": "Pasta",
+      "description": "Penne pasta in a rich marinara sauce loaded with Italian sausage and beef.",
+      "price": 11.49,
+      "menuTypes": [
+        "lunch",
+        "dinner"
+      ],
+      "images": [
+        "images/pizzas/meaty-marinara-pasta-sm.jpg"
+      ],
+      "active": true,
+      "createdAt": "2026-08-11T23:27:21Z",
+      "updatedAt": "2026-08-11T23:27:21Z",
+      "imagesLarge": [
+        "images/pizzas/meaty-marinara-pasta-lg.jpg"
+      ]
+    },
+    {
+      "id": "ph-052",
+      "sku": "PH-PST-003",
+      "name": "Stuffed Chicken Alfredo",
+      "category": "Pasta",
+      "description": "A cheese-stuffed crust pizza baked with chicken Alfredo pasta on top.",
+      "price": 13.99,
+      "menuTypes": [
+        "lunch",
+        "dinner"
+      ],
+      "images": [
+        "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA0MDAgMzAwIiB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCI+PHJlY3Qgd2lkdGg9IjQwMCIgaGVpZ2h0PSIzMDAiIGZpbGw9IiNjODEwMmUiIHJ4PSIxMiIvPjxyZWN0IHg9IjgiIHk9IjgiIHdpZHRoPSIzODQiIGhlaWdodD0iMjg0IiBmaWxsPSJub25lIiBzdHJva2U9IiNmZmZmZmYiIHN0cm9rZS13aWR0aD0iMyIgcng9IjkiLz48dGV4dCB4PSIyMDAiIHk9IjE1NSIgZm9udC1mYW1pbHk9IlNlZ29lIFVJIEVtb2ppLEFwcGxlIENvbG9yIEVtb2ppLE5vdG8gRW1vamksQXJpYWwiIGZvbnQtc2l6ZT0iMTEwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBkb21pbmFudC1iYXNlbGluZT0ibWlkZGxlIj7wn42dPC90ZXh0Pjx0ZXh0IHg9IjIwMCIgeT0iMjQ1IiBmb250LWZhbWlseT0iQXJpYWwsSGVsdmV0aWNhLHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMjAiIGZvbnQtd2VpZ2h0PSJib2xkIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjZmZmZmZmIiBsZXR0ZXItc3BhY2luZz0iMiI+UEFTVEE8L3RleHQ+PC9zdmc+"
+      ],
+      "active": true,
+      "createdAt": "2026-08-11T23:27:21Z",
+      "updatedAt": "2026-08-11T23:27:21Z"
+    },
+    {
+      "id": "ph-053",
+      "sku": "PH-PST-004",
+      "name": "Five Cheese Marinara Pasta",
+      "category": "Pasta",
+      "description": "Penne pasta in marinara sauce topped with a blend of five melted cheeses.",
+      "price": 10.99,
+      "menuTypes": [
+        "lunch",
+        "dinner"
+      ],
+      "images": [
+        "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA0MDAgMzAwIiB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCI+PHJlY3Qgd2lkdGg9IjQwMCIgaGVpZ2h0PSIzMDAiIGZpbGw9IiNjODEwMmUiIHJ4PSIxMiIvPjxyZWN0IHg9IjgiIHk9IjgiIHdpZHRoPSIzODQiIGhlaWdodD0iMjg0IiBmaWxsPSJub25lIiBzdHJva2U9IiNmZmZmZmYiIHN0cm9rZS13aWR0aD0iMyIgcng9IjkiLz48dGV4dCB4PSIyMDAiIHk9IjE1NSIgZm9udC1mYW1pbHk9IlNlZ29lIFVJIEVtb2ppLEFwcGxlIENvbG9yIEVtb2ppLE5vdG8gRW1vamksQXJpYWwiIGZvbnQtc2l6ZT0iMTEwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBkb21pbmFudC1iYXNlbGluZT0ibWlkZGxlIj7wn42dPC90ZXh0Pjx0ZXh0IHg9IjIwMCIgeT0iMjQ1IiBmb250LWZhbWlseT0iQXJpYWwsSGVsdmV0aWNhLHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMjAiIGZvbnQtd2VpZ2h0PSJib2xkIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjZmZmZmZmIiBsZXR0ZXItc3BhY2luZz0iMiI+UEFTVEE8L3RleHQ+PC9zdmc+"
+      ],
+      "active": true,
+      "createdAt": "2026-08-11T23:27:21Z",
+      "updatedAt": "2026-08-11T23:27:21Z"
+    },
+    {
+      "id": "ph-060",
+      "sku": "PH-MLT-001",
+      "name": "P'Zone Classic",
+      "category": "Melts & Sandwiches",
+      "description": "A folded calzone-style pocket stuffed with pepperoni, ham, sausage and three cheeses.",
+      "price": 8.99,
+      "menuTypes": [
+        "lunch",
+        "dinner"
+      ],
+      "images": [
+        "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA0MDAgMzAwIiB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCI+PHJlY3Qgd2lkdGg9IjQwMCIgaGVpZ2h0PSIzMDAiIGZpbGw9IiNlOTFjMjQiIHJ4PSIxMiIvPjxyZWN0IHg9IjgiIHk9IjgiIHdpZHRoPSIzODQiIGhlaWdodD0iMjg0IiBmaWxsPSJub25lIiBzdHJva2U9IiNmZmZmZmYiIHN0cm9rZS13aWR0aD0iMyIgcng9IjkiLz48dGV4dCB4PSIyMDAiIHk9IjE1NSIgZm9udC1mYW1pbHk9IlNlZ29lIFVJIEVtb2ppLEFwcGxlIENvbG9yIEVtb2ppLE5vdG8gRW1vamksQXJpYWwiIGZvbnQtc2l6ZT0iMTEwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBkb21pbmFudC1iYXNlbGluZT0ibWlkZGxlIj7wn6WqPC90ZXh0Pjx0ZXh0IHg9IjIwMCIgeT0iMjQ1IiBmb250LWZhbWlseT0iQXJpYWwsSGVsdmV0aWNhLHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMjAiIGZvbnQtd2VpZ2h0PSJib2xkIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjZmZmZmZmIiBsZXR0ZXItc3BhY2luZz0iMiI+TUVMVFM8L3RleHQ+PC9zdmc+"
+      ],
+      "active": true,
+      "createdAt": "2026-08-11T23:27:21Z",
+      "updatedAt": "2026-08-11T23:27:21Z"
+    },
+    {
+      "id": "ph-061",
+      "sku": "PH-MLT-002",
+      "name": "P'Zone Meaty",
+      "category": "Melts & Sandwiches",
+      "description": "Loaded with pepperoni, sausage, beef and bacon folded into a crispy melt pocket.",
+      "price": 9.99,
+      "menuTypes": [
+        "lunch",
+        "dinner"
+      ],
+      "images": [
+        "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA0MDAgMzAwIiB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCI+PHJlY3Qgd2lkdGg9IjQwMCIgaGVpZ2h0PSIzMDAiIGZpbGw9IiNlOTFjMjQiIHJ4PSIxMiIvPjxyZWN0IHg9IjgiIHk9IjgiIHdpZHRoPSIzODQiIGhlaWdodD0iMjg0IiBmaWxsPSJub25lIiBzdHJva2U9IiNmZmZmZmYiIHN0cm9rZS13aWR0aD0iMyIgcng9IjkiLz48dGV4dCB4PSIyMDAiIHk9IjE1NSIgZm9udC1mYW1pbHk9IlNlZ29lIFVJIEVtb2ppLEFwcGxlIENvbG9yIEVtb2ppLE5vdG8gRW1vamksQXJpYWwiIGZvbnQtc2l6ZT0iMTEwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBkb21pbmFudC1iYXNlbGluZT0ibWlkZGxlIj7wn6WqPC90ZXh0Pjx0ZXh0IHg9IjIwMCIgeT0iMjQ1IiBmb250LWZhbWlseT0iQXJpYWwsSGVsdmV0aWNhLHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMjAiIGZvbnQtd2VpZ2h0PSJib2xkIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjZmZmZmZmIiBsZXR0ZXItc3BhY2luZz0iMiI+TUVMVFM8L3RleHQ+PC9zdmc+"
+      ],
+      "active": true,
+      "createdAt": "2026-08-11T23:27:21Z",
+      "updatedAt": "2026-08-11T23:27:21Z"
+    },
+    {
+      "id": "ph-062",
+      "sku": "PH-MLT-003",
+      "name": "Grilled Cheese Melt",
+      "category": "Melts & Sandwiches",
+      "description": "A gooey three-cheese blend grilled between crispy pizza-dough bread.",
+      "price": 7.99,
+      "menuTypes": [
+        "lunch",
+        "dinner"
+      ],
+      "images": [
+        "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA0MDAgMzAwIiB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCI+PHJlY3Qgd2lkdGg9IjQwMCIgaGVpZ2h0PSIzMDAiIGZpbGw9IiNlOTFjMjQiIHJ4PSIxMiIvPjxyZWN0IHg9IjgiIHk9IjgiIHdpZHRoPSIzODQiIGhlaWdodD0iMjg0IiBmaWxsPSJub25lIiBzdHJva2U9IiNmZmZmZmYiIHN0cm9rZS13aWR0aD0iMyIgcng9IjkiLz48dGV4dCB4PSIyMDAiIHk9IjE1NSIgZm9udC1mYW1pbHk9IlNlZ29lIFVJIEVtb2ppLEFwcGxlIENvbG9yIEVtb2ppLE5vdG8gRW1vamksQXJpYWwiIGZvbnQtc2l6ZT0iMTEwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBkb21pbmFudC1iYXNlbGluZT0ibWlkZGxlIj7wn6WqPC90ZXh0Pjx0ZXh0IHg9IjIwMCIgeT0iMjQ1IiBmb250LWZhbWlseT0iQXJpYWwsSGVsdmV0aWNhLHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMjAiIGZvbnQtd2VpZ2h0PSJib2xkIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjZmZmZmZmIiBsZXR0ZXItc3BhY2luZz0iMiI+TUVMVFM8L3RleHQ+PC9zdmc+"
+      ],
+      "active": true,
+      "createdAt": "2026-08-11T23:27:21Z",
+      "updatedAt": "2026-08-11T23:27:21Z"
+    },
+    {
+      "id": "ph-070",
+      "sku": "PH-SID-001",
+      "name": "Breadsticks",
+      "category": "Sides & Bread",
+      "description": "8 warm, buttery breadsticks dusted with garlic and Parmesan seasoning.",
+      "price": 6.49,
+      "menuTypes": [
+        "lunch",
+        "dinner"
+      ],
+      "images": [
+        "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA0MDAgMzAwIiB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCI+PHJlY3Qgd2lkdGg9IjQwMCIgaGVpZ2h0PSIzMDAiIGZpbGw9IiMwMDAwMDAiIHJ4PSIxMiIvPjxyZWN0IHg9IjgiIHk9IjgiIHdpZHRoPSIzODQiIGhlaWdodD0iMjg0IiBmaWxsPSJub25lIiBzdHJva2U9IiNlOTFjMjQiIHN0cm9rZS13aWR0aD0iMyIgcng9IjkiLz48dGV4dCB4PSIyMDAiIHk9IjE1NSIgZm9udC1mYW1pbHk9IlNlZ29lIFVJIEVtb2ppLEFwcGxlIENvbG9yIEVtb2ppLE5vdG8gRW1vamksQXJpYWwiIGZvbnQtc2l6ZT0iMTEwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBkb21pbmFudC1iYXNlbGluZT0ibWlkZGxlIj7wn6WWPC90ZXh0Pjx0ZXh0IHg9IjIwMCIgeT0iMjQ1IiBmb250LWZhbWlseT0iQXJpYWwsSGVsdmV0aWNhLHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMjAiIGZvbnQtd2VpZ2h0PSJib2xkIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjZTkxYzI0IiBsZXR0ZXItc3BhY2luZz0iMiI+U0lERVMgJiBCUkVBRDwvdGV4dD48L3N2Zz4="
+      ],
+      "active": true,
+      "createdAt": "2026-08-11T23:27:21Z",
+      "updatedAt": "2026-08-11T23:27:21Z"
+    },
+    {
+      "id": "ph-071",
+      "sku": "PH-SID-002",
+      "name": "Stuffed Cheesy Bread",
+      "category": "Sides & Bread",
+      "description": "Soft baked bread stuffed and topped with melted mozzarella and cheddar.",
+      "price": 7.99,
+      "menuTypes": [
+        "lunch",
+        "dinner"
+      ],
+      "images": [
+        "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA0MDAgMzAwIiB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCI+PHJlY3Qgd2lkdGg9IjQwMCIgaGVpZ2h0PSIzMDAiIGZpbGw9IiMwMDAwMDAiIHJ4PSIxMiIvPjxyZWN0IHg9IjgiIHk9IjgiIHdpZHRoPSIzODQiIGhlaWdodD0iMjg0IiBmaWxsPSJub25lIiBzdHJva2U9IiNlOTFjMjQiIHN0cm9rZS13aWR0aD0iMyIgcng9IjkiLz48dGV4dCB4PSIyMDAiIHk9IjE1NSIgZm9udC1mYW1pbHk9IlNlZ29lIFVJIEVtb2ppLEFwcGxlIENvbG9yIEVtb2ppLE5vdG8gRW1vamksQXJpYWwiIGZvbnQtc2l6ZT0iMTEwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBkb21pbmFudC1iYXNlbGluZT0ibWlkZGxlIj7wn6WWPC90ZXh0Pjx0ZXh0IHg9IjIwMCIgeT0iMjQ1IiBmb250LWZhbWlseT0iQXJpYWwsSGVsdmV0aWNhLHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMjAiIGZvbnQtd2VpZ2h0PSJib2xkIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjZTkxYzI0IiBsZXR0ZXItc3BhY2luZz0iMiI+U0lERVMgJiBCUkVBRDwvdGV4dD48L3N2Zz4="
+      ],
+      "active": true,
+      "createdAt": "2026-08-11T23:27:21Z",
+      "updatedAt": "2026-08-11T23:27:21Z"
+    },
+    {
+      "id": "ph-072",
+      "sku": "PH-SID-003",
+      "name": "Garlic Bread",
+      "category": "Sides & Bread",
+      "description": "Toasted bread brushed with garlic butter and herbs.",
+      "price": 5.49,
+      "menuTypes": [
+        "lunch",
+        "dinner"
+      ],
+      "images": [
+        "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA0MDAgMzAwIiB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCI+PHJlY3Qgd2lkdGg9IjQwMCIgaGVpZ2h0PSIzMDAiIGZpbGw9IiMwMDAwMDAiIHJ4PSIxMiIvPjxyZWN0IHg9IjgiIHk9IjgiIHdpZHRoPSIzODQiIGhlaWdodD0iMjg0IiBmaWxsPSJub25lIiBzdHJva2U9IiNlOTFjMjQiIHN0cm9rZS13aWR0aD0iMyIgcng9IjkiLz48dGV4dCB4PSIyMDAiIHk9IjE1NSIgZm9udC1mYW1pbHk9IlNlZ29lIFVJIEVtb2ppLEFwcGxlIENvbG9yIEVtb2ppLE5vdG8gRW1vamksQXJpYWwiIGZvbnQtc2l6ZT0iMTEwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBkb21pbmFudC1iYXNlbGluZT0ibWlkZGxlIj7wn6WWPC90ZXh0Pjx0ZXh0IHg9IjIwMCIgeT0iMjQ1IiBmb250LWZhbWlseT0iQXJpYWwsSGVsdmV0aWNhLHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMjAiIGZvbnQtd2VpZ2h0PSJib2xkIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjZTkxYzI0IiBsZXR0ZXItc3BhY2luZz0iMiI+U0lERVMgJiBCUkVBRDwvdGV4dD48L3N2Zz4="
+      ],
+      "active": true,
+      "createdAt": "2026-08-11T23:27:21Z",
+      "updatedAt": "2026-08-11T23:27:21Z"
+    },
+    {
+      "id": "ph-073",
+      "sku": "PH-SID-004",
+      "name": "Cheese Sticks",
+      "category": "Sides & Bread",
+      "description": "6 golden breaded mozzarella sticks, crispy outside and gooey inside.",
+      "price": 6.99,
+      "menuTypes": [
+        "lunch",
+        "dinner"
+      ],
+      "images": [
+        "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA0MDAgMzAwIiB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCI+PHJlY3Qgd2lkdGg9IjQwMCIgaGVpZ2h0PSIzMDAiIGZpbGw9IiMwMDAwMDAiIHJ4PSIxMiIvPjxyZWN0IHg9IjgiIHk9IjgiIHdpZHRoPSIzODQiIGhlaWdodD0iMjg0IiBmaWxsPSJub25lIiBzdHJva2U9IiNlOTFjMjQiIHN0cm9rZS13aWR0aD0iMyIgcng9IjkiLz48dGV4dCB4PSIyMDAiIHk9IjE1NSIgZm9udC1mYW1pbHk9IlNlZ29lIFVJIEVtb2ppLEFwcGxlIENvbG9yIEVtb2ppLE5vdG8gRW1vamksQXJpYWwiIGZvbnQtc2l6ZT0iMTEwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBkb21pbmFudC1iYXNlbGluZT0ibWlkZGxlIj7wn6WWPC90ZXh0Pjx0ZXh0IHg9IjIwMCIgeT0iMjQ1IiBmb250LWZhbWlseT0iQXJpYWwsSGVsdmV0aWNhLHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMjAiIGZvbnQtd2VpZ2h0PSJib2xkIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjZTkxYzI0IiBsZXR0ZXItc3BhY2luZz0iMiI+U0lERVMgJiBCUkVBRDwvdGV4dD48L3N2Zz4="
+      ],
+      "active": true,
+      "createdAt": "2026-08-11T23:27:21Z",
+      "updatedAt": "2026-08-11T23:27:21Z"
+    },
+    {
+      "id": "ph-074",
+      "sku": "PH-SID-005",
+      "name": "Loaded Potato Bites",
+      "category": "Sides & Bread",
+      "description": "Crispy potato bites topped with cheddar, bacon bits and a side of sour cream.",
+      "price": 6.99,
+      "menuTypes": [
+        "lunch",
+        "dinner"
+      ],
+      "images": [
+        "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA0MDAgMzAwIiB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCI+PHJlY3Qgd2lkdGg9IjQwMCIgaGVpZ2h0PSIzMDAiIGZpbGw9IiMwMDAwMDAiIHJ4PSIxMiIvPjxyZWN0IHg9IjgiIHk9IjgiIHdpZHRoPSIzODQiIGhlaWdodD0iMjg0IiBmaWxsPSJub25lIiBzdHJva2U9IiNlOTFjMjQiIHN0cm9rZS13aWR0aD0iMyIgcng9IjkiLz48dGV4dCB4PSIyMDAiIHk9IjE1NSIgZm9udC1mYW1pbHk9IlNlZ29lIFVJIEVtb2ppLEFwcGxlIENvbG9yIEVtb2ppLE5vdG8gRW1vamksQXJpYWwiIGZvbnQtc2l6ZT0iMTEwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBkb21pbmFudC1iYXNlbGluZT0ibWlkZGxlIj7wn6WWPC90ZXh0Pjx0ZXh0IHg9IjIwMCIgeT0iMjQ1IiBmb250LWZhbWlseT0iQXJpYWwsSGVsdmV0aWNhLHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMjAiIGZvbnQtd2VpZ2h0PSJib2xkIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjZTkxYzI0IiBsZXR0ZXItc3BhY2luZz0iMiI+U0lERVMgJiBCUkVBRDwvdGV4dD48L3N2Zz4="
+      ],
+      "active": true,
+      "createdAt": "2026-08-11T23:27:21Z",
+      "updatedAt": "2026-08-11T23:27:21Z"
+    },
+    {
+      "id": "ph-075",
+      "sku": "PH-SID-006",
+      "name": "Jalape\u00f1o Poppers",
+      "category": "Sides & Bread",
+      "description": "6 breaded jalape\u00f1o poppers filled with a creamy cheese blend.",
+      "price": 6.99,
+      "menuTypes": [
+        "lunch",
+        "dinner"
+      ],
+      "images": [
+        "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA0MDAgMzAwIiB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCI+PHJlY3Qgd2lkdGg9IjQwMCIgaGVpZ2h0PSIzMDAiIGZpbGw9IiMwMDAwMDAiIHJ4PSIxMiIvPjxyZWN0IHg9IjgiIHk9IjgiIHdpZHRoPSIzODQiIGhlaWdodD0iMjg0IiBmaWxsPSJub25lIiBzdHJva2U9IiNlOTFjMjQiIHN0cm9rZS13aWR0aD0iMyIgcng9IjkiLz48dGV4dCB4PSIyMDAiIHk9IjE1NSIgZm9udC1mYW1pbHk9IlNlZ29lIFVJIEVtb2ppLEFwcGxlIENvbG9yIEVtb2ppLE5vdG8gRW1vamksQXJpYWwiIGZvbnQtc2l6ZT0iMTEwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBkb21pbmFudC1iYXNlbGluZT0ibWlkZGxlIj7wn6WWPC90ZXh0Pjx0ZXh0IHg9IjIwMCIgeT0iMjQ1IiBmb250LWZhbWlseT0iQXJpYWwsSGVsdmV0aWNhLHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMjAiIGZvbnQtd2VpZ2h0PSJib2xkIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjZTkxYzI0IiBsZXR0ZXItc3BhY2luZz0iMiI+U0lERVMgJiBCUkVBRDwvdGV4dD48L3N2Zz4="
+      ],
+      "active": true,
+      "createdAt": "2026-08-11T23:27:21Z",
+      "updatedAt": "2026-08-11T23:27:21Z"
+    },
+    {
+      "id": "ph-080",
+      "sku": "PH-DIP-001",
+      "name": "Garlic Parmesan Dip",
+      "category": "Dips",
+      "description": "A creamy garlic and Parmesan dipping sauce, perfect with breadsticks or crust.",
+      "price": 0.79,
+      "menuTypes": [
+        "lunch",
+        "dinner"
+      ],
+      "images": [
+        "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA0MDAgMzAwIiB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCI+PHJlY3Qgd2lkdGg9IjQwMCIgaGVpZ2h0PSIzMDAiIGZpbGw9IiNjODEwMmUiIHJ4PSIxMiIvPjxyZWN0IHg9IjgiIHk9IjgiIHdpZHRoPSIzODQiIGhlaWdodD0iMjg0IiBmaWxsPSJub25lIiBzdHJva2U9IiNmZmZmZmYiIHN0cm9rZS13aWR0aD0iMyIgcng9IjkiLz48dGV4dCB4PSIyMDAiIHk9IjE1NSIgZm9udC1mYW1pbHk9IlNlZ29lIFVJIEVtb2ppLEFwcGxlIENvbG9yIEVtb2ppLE5vdG8gRW1vamksQXJpYWwiIGZvbnQtc2l6ZT0iMTEwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBkb21pbmFudC1iYXNlbGluZT0ibWlkZGxlIj7wn6WrPC90ZXh0Pjx0ZXh0IHg9IjIwMCIgeT0iMjQ1IiBmb250LWZhbWlseT0iQXJpYWwsSGVsdmV0aWNhLHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMjAiIGZvbnQtd2VpZ2h0PSJib2xkIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjZmZmZmZmIiBsZXR0ZXItc3BhY2luZz0iMiI+RElQUElORyBTQVVDRTwvdGV4dD48L3N2Zz4="
+      ],
+      "active": true,
+      "createdAt": "2026-08-11T23:27:21Z",
+      "updatedAt": "2026-08-11T23:27:21Z"
+    },
+    {
+      "id": "ph-081",
+      "sku": "PH-DIP-002",
+      "name": "Ranch Dip",
+      "category": "Dips",
+      "description": "Classic cool and creamy ranch dipping sauce.",
+      "price": 0.79,
+      "menuTypes": [
+        "lunch",
+        "dinner"
+      ],
+      "images": [
+        "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA0MDAgMzAwIiB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCI+PHJlY3Qgd2lkdGg9IjQwMCIgaGVpZ2h0PSIzMDAiIGZpbGw9IiNjODEwMmUiIHJ4PSIxMiIvPjxyZWN0IHg9IjgiIHk9IjgiIHdpZHRoPSIzODQiIGhlaWdodD0iMjg0IiBmaWxsPSJub25lIiBzdHJva2U9IiNmZmZmZmYiIHN0cm9rZS13aWR0aD0iMyIgcng9IjkiLz48dGV4dCB4PSIyMDAiIHk9IjE1NSIgZm9udC1mYW1pbHk9IlNlZ29lIFVJIEVtb2ppLEFwcGxlIENvbG9yIEVtb2ppLE5vdG8gRW1vamksQXJpYWwiIGZvbnQtc2l6ZT0iMTEwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBkb21pbmFudC1iYXNlbGluZT0ibWlkZGxlIj7wn6WrPC90ZXh0Pjx0ZXh0IHg9IjIwMCIgeT0iMjQ1IiBmb250LWZhbWlseT0iQXJpYWwsSGVsdmV0aWNhLHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMjAiIGZvbnQtd2VpZ2h0PSJib2xkIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjZmZmZmZmIiBsZXR0ZXItc3BhY2luZz0iMiI+RElQUElORyBTQVVDRTwvdGV4dD48L3N2Zz4="
+      ],
+      "active": true,
+      "createdAt": "2026-08-11T23:27:21Z",
+      "updatedAt": "2026-08-11T23:27:21Z"
+    },
+    {
+      "id": "ph-082",
+      "sku": "PH-DIP-003",
+      "name": "Blue Cheese Dip",
+      "category": "Dips",
+      "description": "Tangy, chunky blue cheese dip \u2014 the classic wing pairing.",
+      "price": 0.79,
+      "menuTypes": [
+        "lunch",
+        "dinner"
+      ],
+      "images": [
+        "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA0MDAgMzAwIiB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCI+PHJlY3Qgd2lkdGg9IjQwMCIgaGVpZ2h0PSIzMDAiIGZpbGw9IiNjODEwMmUiIHJ4PSIxMiIvPjxyZWN0IHg9IjgiIHk9IjgiIHdpZHRoPSIzODQiIGhlaWdodD0iMjg0IiBmaWxsPSJub25lIiBzdHJva2U9IiNmZmZmZmYiIHN0cm9rZS13aWR0aD0iMyIgcng9IjkiLz48dGV4dCB4PSIyMDAiIHk9IjE1NSIgZm9udC1mYW1pbHk9IlNlZ29lIFVJIEVtb2ppLEFwcGxlIENvbG9yIEVtb2ppLE5vdG8gRW1vamksQXJpYWwiIGZvbnQtc2l6ZT0iMTEwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBkb21pbmFudC1iYXNlbGluZT0ibWlkZGxlIj7wn6WrPC90ZXh0Pjx0ZXh0IHg9IjIwMCIgeT0iMjQ1IiBmb250LWZhbWlseT0iQXJpYWwsSGVsdmV0aWNhLHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMjAiIGZvbnQtd2VpZ2h0PSJib2xkIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjZmZmZmZmIiBsZXR0ZXItc3BhY2luZz0iMiI+RElQUElORyBTQVVDRTwvdGV4dD48L3N2Zz4="
+      ],
+      "active": true,
+      "createdAt": "2026-08-11T23:27:21Z",
+      "updatedAt": "2026-08-11T23:27:21Z"
+    },
+    {
+      "id": "ph-083",
+      "sku": "PH-DIP-004",
+      "name": "Marinara Dip",
+      "category": "Dips",
+      "description": "Rich, herby tomato marinara dipping sauce.",
+      "price": 0.79,
+      "menuTypes": [
+        "lunch",
+        "dinner"
+      ],
+      "images": [
+        "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA0MDAgMzAwIiB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCI+PHJlY3Qgd2lkdGg9IjQwMCIgaGVpZ2h0PSIzMDAiIGZpbGw9IiNjODEwMmUiIHJ4PSIxMiIvPjxyZWN0IHg9IjgiIHk9IjgiIHdpZHRoPSIzODQiIGhlaWdodD0iMjg0IiBmaWxsPSJub25lIiBzdHJva2U9IiNmZmZmZmYiIHN0cm9rZS13aWR0aD0iMyIgcng9IjkiLz48dGV4dCB4PSIyMDAiIHk9IjE1NSIgZm9udC1mYW1pbHk9IlNlZ29lIFVJIEVtb2ppLEFwcGxlIENvbG9yIEVtb2ppLE5vdG8gRW1vamksQXJpYWwiIGZvbnQtc2l6ZT0iMTEwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBkb21pbmFudC1iYXNlbGluZT0ibWlkZGxlIj7wn6WrPC90ZXh0Pjx0ZXh0IHg9IjIwMCIgeT0iMjQ1IiBmb250LWZhbWlseT0iQXJpYWwsSGVsdmV0aWNhLHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMjAiIGZvbnQtd2VpZ2h0PSJib2xkIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjZmZmZmZmIiBsZXR0ZXItc3BhY2luZz0iMiI+RElQUElORyBTQVVDRTwvdGV4dD48L3N2Zz4="
+      ],
+      "active": true,
+      "createdAt": "2026-08-11T23:27:21Z",
+      "updatedAt": "2026-08-11T23:27:21Z"
+    },
+    {
+      "id": "ph-084",
+      "sku": "PH-DIP-005",
+      "name": "Honey BBQ Dip",
+      "category": "Dips",
+      "description": "Sweet and smoky honey BBQ dipping sauce.",
+      "price": 0.79,
+      "menuTypes": [
+        "lunch",
+        "dinner"
+      ],
+      "images": [
+        "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA0MDAgMzAwIiB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCI+PHJlY3Qgd2lkdGg9IjQwMCIgaGVpZ2h0PSIzMDAiIGZpbGw9IiNjODEwMmUiIHJ4PSIxMiIvPjxyZWN0IHg9IjgiIHk9IjgiIHdpZHRoPSIzODQiIGhlaWdodD0iMjg0IiBmaWxsPSJub25lIiBzdHJva2U9IiNmZmZmZmYiIHN0cm9rZS13aWR0aD0iMyIgcng9IjkiLz48dGV4dCB4PSIyMDAiIHk9IjE1NSIgZm9udC1mYW1pbHk9IlNlZ29lIFVJIEVtb2ppLEFwcGxlIENvbG9yIEVtb2ppLE5vdG8gRW1vamksQXJpYWwiIGZvbnQtc2l6ZT0iMTEwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBkb21pbmFudC1iYXNlbGluZT0ibWlkZGxlIj7wn6WrPC90ZXh0Pjx0ZXh0IHg9IjIwMCIgeT0iMjQ1IiBmb250LWZhbWlseT0iQXJpYWwsSGVsdmV0aWNhLHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMjAiIGZvbnQtd2VpZ2h0PSJib2xkIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjZmZmZmZmIiBsZXR0ZXItc3BhY2luZz0iMiI+RElQUElORyBTQVVDRTwvdGV4dD48L3N2Zz4="
+      ],
+      "active": true,
+      "createdAt": "2026-08-11T23:27:21Z",
+      "updatedAt": "2026-08-11T23:27:21Z"
+    },
+    {
+      "id": "ph-085",
+      "sku": "PH-DIP-006",
+      "name": "Buffalo Dip",
+      "category": "Dips",
+      "description": "Tangy, spicy buffalo dipping sauce.",
+      "price": 0.79,
+      "menuTypes": [
+        "lunch",
+        "dinner"
+      ],
+      "images": [
+        "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA0MDAgMzAwIiB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCI+PHJlY3Qgd2lkdGg9IjQwMCIgaGVpZ2h0PSIzMDAiIGZpbGw9IiNjODEwMmUiIHJ4PSIxMiIvPjxyZWN0IHg9IjgiIHk9IjgiIHdpZHRoPSIzODQiIGhlaWdodD0iMjg0IiBmaWxsPSJub25lIiBzdHJva2U9IiNmZmZmZmYiIHN0cm9rZS13aWR0aD0iMyIgcng9IjkiLz48dGV4dCB4PSIyMDAiIHk9IjE1NSIgZm9udC1mYW1pbHk9IlNlZ29lIFVJIEVtb2ppLEFwcGxlIENvbG9yIEVtb2ppLE5vdG8gRW1vamksQXJpYWwiIGZvbnQtc2l6ZT0iMTEwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBkb21pbmFudC1iYXNlbGluZT0ibWlkZGxlIj7wn6WrPC90ZXh0Pjx0ZXh0IHg9IjIwMCIgeT0iMjQ1IiBmb250LWZhbWlseT0iQXJpYWwsSGVsdmV0aWNhLHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMjAiIGZvbnQtd2VpZ2h0PSJib2xkIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjZmZmZmZmIiBsZXR0ZXItc3BhY2luZz0iMiI+RElQUElORyBTQVVDRTwvdGV4dD48L3N2Zz4="
+      ],
+      "active": true,
+      "createdAt": "2026-08-11T23:27:21Z",
+      "updatedAt": "2026-08-11T23:27:21Z"
+    },
+    {
+      "id": "ph-090",
+      "sku": "PH-SAL-001",
+      "name": "Garden Salad",
+      "category": "Salads",
+      "description": "Crisp mixed greens, tomato, cucumber and red onion with your choice of dressing.",
+      "price": 6.49,
+      "menuTypes": [
+        "lunch",
+        "dinner"
+      ],
+      "images": [
+        "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA0MDAgMzAwIiB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCI+PHJlY3Qgd2lkdGg9IjQwMCIgaGVpZ2h0PSIzMDAiIGZpbGw9IiMxNmEzNGEiIHJ4PSIxMiIvPjxyZWN0IHg9IjgiIHk9IjgiIHdpZHRoPSIzODQiIGhlaWdodD0iMjg0IiBmaWxsPSJub25lIiBzdHJva2U9IiNmZmZmZmYiIHN0cm9rZS13aWR0aD0iMyIgcng9IjkiLz48dGV4dCB4PSIyMDAiIHk9IjE1NSIgZm9udC1mYW1pbHk9IlNlZ29lIFVJIEVtb2ppLEFwcGxlIENvbG9yIEVtb2ppLE5vdG8gRW1vamksQXJpYWwiIGZvbnQtc2l6ZT0iMTEwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBkb21pbmFudC1iYXNlbGluZT0ibWlkZGxlIj7wn6WXPC90ZXh0Pjx0ZXh0IHg9IjIwMCIgeT0iMjQ1IiBmb250LWZhbWlseT0iQXJpYWwsSGVsdmV0aWNhLHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMjAiIGZvbnQtd2VpZ2h0PSJib2xkIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjZmZmZmZmIiBsZXR0ZXItc3BhY2luZz0iMiI+U0FMQURTPC90ZXh0Pjwvc3ZnPg=="
+      ],
+      "active": true,
+      "createdAt": "2026-08-11T23:27:21Z",
+      "updatedAt": "2026-08-11T23:27:21Z"
+    },
+    {
+      "id": "ph-091",
+      "sku": "PH-SAL-002",
+      "name": "Caesar Salad",
+      "category": "Salads",
+      "description": "Romaine lettuce, Parmesan and croutons tossed in creamy Caesar dressing.",
+      "price": 6.99,
+      "menuTypes": [
+        "lunch",
+        "dinner"
+      ],
+      "images": [
+        "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA0MDAgMzAwIiB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCI+PHJlY3Qgd2lkdGg9IjQwMCIgaGVpZ2h0PSIzMDAiIGZpbGw9IiMxNmEzNGEiIHJ4PSIxMiIvPjxyZWN0IHg9IjgiIHk9IjgiIHdpZHRoPSIzODQiIGhlaWdodD0iMjg0IiBmaWxsPSJub25lIiBzdHJva2U9IiNmZmZmZmYiIHN0cm9rZS13aWR0aD0iMyIgcng9IjkiLz48dGV4dCB4PSIyMDAiIHk9IjE1NSIgZm9udC1mYW1pbHk9IlNlZ29lIFVJIEVtb2ppLEFwcGxlIENvbG9yIEVtb2ppLE5vdG8gRW1vamksQXJpYWwiIGZvbnQtc2l6ZT0iMTEwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBkb21pbmFudC1iYXNlbGluZT0ibWlkZGxlIj7wn6WXPC90ZXh0Pjx0ZXh0IHg9IjIwMCIgeT0iMjQ1IiBmb250LWZhbWlseT0iQXJpYWwsSGVsdmV0aWNhLHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMjAiIGZvbnQtd2VpZ2h0PSJib2xkIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjZmZmZmZmIiBsZXR0ZXItc3BhY2luZz0iMiI+U0FMQURTPC90ZXh0Pjwvc3ZnPg=="
+      ],
+      "active": true,
+      "createdAt": "2026-08-11T23:27:21Z",
+      "updatedAt": "2026-08-11T23:27:21Z"
+    },
+    {
+      "id": "ph-092",
+      "sku": "PH-SAL-003",
+      "name": "Italian Chopped Salad",
+      "category": "Salads",
+      "description": "Romaine, salami, provolone, tomato and olives with a zesty Italian dressing.",
+      "price": 7.49,
+      "menuTypes": [
+        "lunch",
+        "dinner"
+      ],
+      "images": [
+        "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA0MDAgMzAwIiB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCI+PHJlY3Qgd2lkdGg9IjQwMCIgaGVpZ2h0PSIzMDAiIGZpbGw9IiMxNmEzNGEiIHJ4PSIxMiIvPjxyZWN0IHg9IjgiIHk9IjgiIHdpZHRoPSIzODQiIGhlaWdodD0iMjg0IiBmaWxsPSJub25lIiBzdHJva2U9IiNmZmZmZmYiIHN0cm9rZS13aWR0aD0iMyIgcng9IjkiLz48dGV4dCB4PSIyMDAiIHk9IjE1NSIgZm9udC1mYW1pbHk9IlNlZ29lIFVJIEVtb2ppLEFwcGxlIENvbG9yIEVtb2ppLE5vdG8gRW1vamksQXJpYWwiIGZvbnQtc2l6ZT0iMTEwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBkb21pbmFudC1iYXNlbGluZT0ibWlkZGxlIj7wn6WXPC90ZXh0Pjx0ZXh0IHg9IjIwMCIgeT0iMjQ1IiBmb250LWZhbWlseT0iQXJpYWwsSGVsdmV0aWNhLHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMjAiIGZvbnQtd2VpZ2h0PSJib2xkIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjZmZmZmZmIiBsZXR0ZXItc3BhY2luZz0iMiI+U0FMQURTPC90ZXh0Pjwvc3ZnPg=="
+      ],
+      "active": true,
+      "createdAt": "2026-08-11T23:27:21Z",
+      "updatedAt": "2026-08-11T23:27:21Z"
+    },
+    {
+      "id": "ph-100",
+      "sku": "PH-DES-001",
+      "name": "Cinnamon Sticks",
+      "category": "Desserts",
+      "description": "Warm dough sticks dusted with cinnamon sugar, served with sweet icing dip.",
+      "price": 6.49,
+      "menuTypes": [
+        "lunch",
+        "dinner"
+      ],
+      "images": [
+        "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA0MDAgMzAwIiB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCI+PHJlY3Qgd2lkdGg9IjQwMCIgaGVpZ2h0PSIzMDAiIGZpbGw9IiNlOTFjMjQiIHJ4PSIxMiIvPjxyZWN0IHg9IjgiIHk9IjgiIHdpZHRoPSIzODQiIGhlaWdodD0iMjg0IiBmaWxsPSJub25lIiBzdHJva2U9IiNmZmQyMDAiIHN0cm9rZS13aWR0aD0iMyIgcng9IjkiLz48dGV4dCB4PSIyMDAiIHk9IjE1NSIgZm9udC1mYW1pbHk9IlNlZ29lIFVJIEVtb2ppLEFwcGxlIENvbG9yIEVtb2ppLE5vdG8gRW1vamksQXJpYWwiIGZvbnQtc2l6ZT0iMTEwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBkb21pbmFudC1iYXNlbGluZT0ibWlkZGxlIj7wn42qPC90ZXh0Pjx0ZXh0IHg9IjIwMCIgeT0iMjQ1IiBmb250LWZhbWlseT0iQXJpYWwsSGVsdmV0aWNhLHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMjAiIGZvbnQtd2VpZ2h0PSJib2xkIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjZmZkMjAwIiBsZXR0ZXItc3BhY2luZz0iMiI+REVTU0VSVFM8L3RleHQ+PC9zdmc+"
+      ],
+      "active": true,
+      "createdAt": "2026-08-11T23:27:21Z",
+      "updatedAt": "2026-08-11T23:27:21Z"
+    },
+    {
+      "id": "ph-101",
+      "sku": "PH-DES-002",
+      "name": "Ultimate Chocolate Chip Cookie",
+      "category": "Desserts",
+      "description": "A warm, gooey giant chocolate chip cookie baked fresh to order.",
+      "price": 6.99,
+      "menuTypes": [
+        "lunch",
+        "dinner"
+      ],
+      "images": [
+        "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA0MDAgMzAwIiB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCI+PHJlY3Qgd2lkdGg9IjQwMCIgaGVpZ2h0PSIzMDAiIGZpbGw9IiNlOTFjMjQiIHJ4PSIxMiIvPjxyZWN0IHg9IjgiIHk9IjgiIHdpZHRoPSIzODQiIGhlaWdodD0iMjg0IiBmaWxsPSJub25lIiBzdHJva2U9IiNmZmQyMDAiIHN0cm9rZS13aWR0aD0iMyIgcng9IjkiLz48dGV4dCB4PSIyMDAiIHk9IjE1NSIgZm9udC1mYW1pbHk9IlNlZ29lIFVJIEVtb2ppLEFwcGxlIENvbG9yIEVtb2ppLE5vdG8gRW1vamksQXJpYWwiIGZvbnQtc2l6ZT0iMTEwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBkb21pbmFudC1iYXNlbGluZT0ibWlkZGxlIj7wn42qPC90ZXh0Pjx0ZXh0IHg9IjIwMCIgeT0iMjQ1IiBmb250LWZhbWlseT0iQXJpYWwsSGVsdmV0aWNhLHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMjAiIGZvbnQtd2VpZ2h0PSJib2xkIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjZmZkMjAwIiBsZXR0ZXItc3BhY2luZz0iMiI+REVTU0VSVFM8L3RleHQ+PC9zdmc+"
+      ],
+      "active": true,
+      "createdAt": "2026-08-11T23:27:21Z",
+      "updatedAt": "2026-08-11T23:27:21Z"
+    },
+    {
+      "id": "ph-102",
+      "sku": "PH-DES-003",
+      "name": "Triple Chocolate Brownie",
+      "category": "Desserts",
+      "description": "A rich, fudgy brownie loaded with three kinds of chocolate.",
+      "price": 6.49,
+      "menuTypes": [
+        "lunch",
+        "dinner"
+      ],
+      "images": [
+        "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA0MDAgMzAwIiB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCI+PHJlY3Qgd2lkdGg9IjQwMCIgaGVpZ2h0PSIzMDAiIGZpbGw9IiNlOTFjMjQiIHJ4PSIxMiIvPjxyZWN0IHg9IjgiIHk9IjgiIHdpZHRoPSIzODQiIGhlaWdodD0iMjg0IiBmaWxsPSJub25lIiBzdHJva2U9IiNmZmQyMDAiIHN0cm9rZS13aWR0aD0iMyIgcng9IjkiLz48dGV4dCB4PSIyMDAiIHk9IjE1NSIgZm9udC1mYW1pbHk9IlNlZ29lIFVJIEVtb2ppLEFwcGxlIENvbG9yIEVtb2ppLE5vdG8gRW1vamksQXJpYWwiIGZvbnQtc2l6ZT0iMTEwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBkb21pbmFudC1iYXNlbGluZT0ibWlkZGxlIj7wn42qPC90ZXh0Pjx0ZXh0IHg9IjIwMCIgeT0iMjQ1IiBmb250LWZhbWlseT0iQXJpYWwsSGVsdmV0aWNhLHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMjAiIGZvbnQtd2VpZ2h0PSJib2xkIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjZmZkMjAwIiBsZXR0ZXItc3BhY2luZz0iMiI+REVTU0VSVFM8L3RleHQ+PC9zdmc+"
+      ],
+      "active": true,
+      "createdAt": "2026-08-11T23:27:21Z",
+      "updatedAt": "2026-08-11T23:27:21Z"
+    },
+    {
+      "id": "ph-103",
+      "sku": "PH-DES-004",
+      "name": "Cinnamon Mini Rolls",
+      "category": "Desserts",
+      "description": "12 bite-sized cinnamon rolls topped with sweet vanilla icing.",
+      "price": 6.99,
+      "menuTypes": [
+        "lunch",
+        "dinner"
+      ],
+      "images": [
+        "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA0MDAgMzAwIiB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCI+PHJlY3Qgd2lkdGg9IjQwMCIgaGVpZ2h0PSIzMDAiIGZpbGw9IiNlOTFjMjQiIHJ4PSIxMiIvPjxyZWN0IHg9IjgiIHk9IjgiIHdpZHRoPSIzODQiIGhlaWdodD0iMjg0IiBmaWxsPSJub25lIiBzdHJva2U9IiNmZmQyMDAiIHN0cm9rZS13aWR0aD0iMyIgcng9IjkiLz48dGV4dCB4PSIyMDAiIHk9IjE1NSIgZm9udC1mYW1pbHk9IlNlZ29lIFVJIEVtb2ppLEFwcGxlIENvbG9yIEVtb2ppLE5vdG8gRW1vamksQXJpYWwiIGZvbnQtc2l6ZT0iMTEwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBkb21pbmFudC1iYXNlbGluZT0ibWlkZGxlIj7wn42qPC90ZXh0Pjx0ZXh0IHg9IjIwMCIgeT0iMjQ1IiBmb250LWZhbWlseT0iQXJpYWwsSGVsdmV0aWNhLHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMjAiIGZvbnQtd2VpZ2h0PSJib2xkIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjZmZkMjAwIiBsZXR0ZXItc3BhY2luZz0iMiI+REVTU0VSVFM8L3RleHQ+PC9zdmc+"
+      ],
+      "active": true,
+      "createdAt": "2026-08-11T23:27:21Z",
+      "updatedAt": "2026-08-11T23:27:21Z"
+    },
+    {
+      "id": "ph-104",
+      "sku": "PH-DES-005",
+      "name": "Apple Dessert Pizza",
+      "category": "Desserts",
+      "description": "A sweet dessert pizza topped with spiced apple filling and cinnamon crumble.",
+      "price": 7.49,
+      "menuTypes": [
+        "lunch",
+        "dinner"
+      ],
+      "images": [
+        "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA0MDAgMzAwIiB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCI+PHJlY3Qgd2lkdGg9IjQwMCIgaGVpZ2h0PSIzMDAiIGZpbGw9IiNlOTFjMjQiIHJ4PSIxMiIvPjxyZWN0IHg9IjgiIHk9IjgiIHdpZHRoPSIzODQiIGhlaWdodD0iMjg0IiBmaWxsPSJub25lIiBzdHJva2U9IiNmZmQyMDAiIHN0cm9rZS13aWR0aD0iMyIgcng9IjkiLz48dGV4dCB4PSIyMDAiIHk9IjE1NSIgZm9udC1mYW1pbHk9IlNlZ29lIFVJIEVtb2ppLEFwcGxlIENvbG9yIEVtb2ppLE5vdG8gRW1vamksQXJpYWwiIGZvbnQtc2l6ZT0iMTEwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBkb21pbmFudC1iYXNlbGluZT0ibWlkZGxlIj7wn42qPC90ZXh0Pjx0ZXh0IHg9IjIwMCIgeT0iMjQ1IiBmb250LWZhbWlseT0iQXJpYWwsSGVsdmV0aWNhLHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMjAiIGZvbnQtd2VpZ2h0PSJib2xkIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjZmZkMjAwIiBsZXR0ZXItc3BhY2luZz0iMiI+REVTU0VSVFM8L3RleHQ+PC9zdmc+"
+      ],
+      "active": true,
+      "createdAt": "2026-08-11T23:27:21Z",
+      "updatedAt": "2026-08-11T23:27:21Z"
+    },
+    {
+      "id": "ph-110",
+      "sku": "PH-DRK-001",
+      "name": "Pepsi",
+      "category": "Soft Drinks",
+      "description": "Ice-cold classic Pepsi cola, 500ml bottle.",
+      "price": 2.99,
+      "menuTypes": [
+        "drinks"
+      ],
+      "images": [
+        "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA0MDAgMzAwIiB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCI+PHJlY3Qgd2lkdGg9IjQwMCIgaGVpZ2h0PSIzMDAiIGZpbGw9IiMwMDAwMDAiIHJ4PSIxMiIvPjxyZWN0IHg9IjgiIHk9IjgiIHdpZHRoPSIzODQiIGhlaWdodD0iMjg0IiBmaWxsPSJub25lIiBzdHJva2U9IiNmZmZmZmYiIHN0cm9rZS13aWR0aD0iMyIgcng9IjkiLz48dGV4dCB4PSIyMDAiIHk9IjE1NSIgZm9udC1mYW1pbHk9IlNlZ29lIFVJIEVtb2ppLEFwcGxlIENvbG9yIEVtb2ppLE5vdG8gRW1vamksQXJpYWwiIGZvbnQtc2l6ZT0iMTEwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBkb21pbmFudC1iYXNlbGluZT0ibWlkZGxlIj7wn6WkPC90ZXh0Pjx0ZXh0IHg9IjIwMCIgeT0iMjQ1IiBmb250LWZhbWlseT0iQXJpYWwsSGVsdmV0aWNhLHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMjAiIGZvbnQtd2VpZ2h0PSJib2xkIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjZmZmZmZmIiBsZXR0ZXItc3BhY2luZz0iMiI+U09GVCBEUklOS1M8L3RleHQ+PC9zdmc+"
+      ],
+      "active": true,
+      "createdAt": "2026-08-11T23:27:21Z",
+      "updatedAt": "2026-08-11T23:27:21Z"
+    },
+    {
+      "id": "ph-111",
+      "sku": "PH-DRK-002",
+      "name": "Diet Pepsi",
+      "category": "Soft Drinks",
+      "description": "Ice-cold Diet Pepsi cola, 500ml bottle.",
+      "price": 2.99,
+      "menuTypes": [
+        "drinks"
+      ],
+      "images": [
+        "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA0MDAgMzAwIiB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCI+PHJlY3Qgd2lkdGg9IjQwMCIgaGVpZ2h0PSIzMDAiIGZpbGw9IiMwMDAwMDAiIHJ4PSIxMiIvPjxyZWN0IHg9IjgiIHk9IjgiIHdpZHRoPSIzODQiIGhlaWdodD0iMjg0IiBmaWxsPSJub25lIiBzdHJva2U9IiNmZmZmZmYiIHN0cm9rZS13aWR0aD0iMyIgcng9IjkiLz48dGV4dCB4PSIyMDAiIHk9IjE1NSIgZm9udC1mYW1pbHk9IlNlZ29lIFVJIEVtb2ppLEFwcGxlIENvbG9yIEVtb2ppLE5vdG8gRW1vamksQXJpYWwiIGZvbnQtc2l6ZT0iMTEwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBkb21pbmFudC1iYXNlbGluZT0ibWlkZGxlIj7wn6WkPC90ZXh0Pjx0ZXh0IHg9IjIwMCIgeT0iMjQ1IiBmb250LWZhbWlseT0iQXJpYWwsSGVsdmV0aWNhLHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMjAiIGZvbnQtd2VpZ2h0PSJib2xkIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjZmZmZmZmIiBsZXR0ZXItc3BhY2luZz0iMiI+U09GVCBEUklOS1M8L3RleHQ+PC9zdmc+"
+      ],
+      "active": true,
+      "createdAt": "2026-08-11T23:27:21Z",
+      "updatedAt": "2026-08-11T23:27:21Z"
+    },
+    {
+      "id": "ph-112",
+      "sku": "PH-DRK-003",
+      "name": "Mountain Dew",
+      "category": "Soft Drinks",
+      "description": "Bold citrus-flavoured Mountain Dew, 500ml bottle.",
+      "price": 2.99,
+      "menuTypes": [
+        "drinks"
+      ],
+      "images": [
+        "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA0MDAgMzAwIiB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCI+PHJlY3Qgd2lkdGg9IjQwMCIgaGVpZ2h0PSIzMDAiIGZpbGw9IiMwMDAwMDAiIHJ4PSIxMiIvPjxyZWN0IHg9IjgiIHk9IjgiIHdpZHRoPSIzODQiIGhlaWdodD0iMjg0IiBmaWxsPSJub25lIiBzdHJva2U9IiNmZmZmZmYiIHN0cm9rZS13aWR0aD0iMyIgcng9IjkiLz48dGV4dCB4PSIyMDAiIHk9IjE1NSIgZm9udC1mYW1pbHk9IlNlZ29lIFVJIEVtb2ppLEFwcGxlIENvbG9yIEVtb2ppLE5vdG8gRW1vamksQXJpYWwiIGZvbnQtc2l6ZT0iMTEwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBkb21pbmFudC1iYXNlbGluZT0ibWlkZGxlIj7wn6WkPC90ZXh0Pjx0ZXh0IHg9IjIwMCIgeT0iMjQ1IiBmb250LWZhbWlseT0iQXJpYWwsSGVsdmV0aWNhLHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMjAiIGZvbnQtd2VpZ2h0PSJib2xkIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjZmZmZmZmIiBsZXR0ZXItc3BhY2luZz0iMiI+U09GVCBEUklOS1M8L3RleHQ+PC9zdmc+"
+      ],
+      "active": true,
+      "createdAt": "2026-08-11T23:27:21Z",
+      "updatedAt": "2026-08-11T23:27:21Z"
+    },
+    {
+      "id": "ph-113",
+      "sku": "PH-DRK-004",
+      "name": "Sierra Mist",
+      "category": "Soft Drinks",
+      "description": "Crisp, refreshing lemon-lime soda, 500ml bottle.",
+      "price": 2.99,
+      "menuTypes": [
+        "drinks"
+      ],
+      "images": [
+        "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA0MDAgMzAwIiB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCI+PHJlY3Qgd2lkdGg9IjQwMCIgaGVpZ2h0PSIzMDAiIGZpbGw9IiMwMDAwMDAiIHJ4PSIxMiIvPjxyZWN0IHg9IjgiIHk9IjgiIHdpZHRoPSIzODQiIGhlaWdodD0iMjg0IiBmaWxsPSJub25lIiBzdHJva2U9IiNmZmZmZmYiIHN0cm9rZS13aWR0aD0iMyIgcng9IjkiLz48dGV4dCB4PSIyMDAiIHk9IjE1NSIgZm9udC1mYW1pbHk9IlNlZ29lIFVJIEVtb2ppLEFwcGxlIENvbG9yIEVtb2ppLE5vdG8gRW1vamksQXJpYWwiIGZvbnQtc2l6ZT0iMTEwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBkb21pbmFudC1iYXNlbGluZT0ibWlkZGxlIj7wn6WkPC90ZXh0Pjx0ZXh0IHg9IjIwMCIgeT0iMjQ1IiBmb250LWZhbWlseT0iQXJpYWwsSGVsdmV0aWNhLHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMjAiIGZvbnQtd2VpZ2h0PSJib2xkIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjZmZmZmZmIiBsZXR0ZXItc3BhY2luZz0iMiI+U09GVCBEUklOS1M8L3RleHQ+PC9zdmc+"
+      ],
+      "active": true,
+      "createdAt": "2026-08-11T23:27:21Z",
+      "updatedAt": "2026-08-11T23:27:21Z"
+    },
+    {
+      "id": "ph-114",
+      "sku": "PH-DRK-005",
+      "name": "Dr Pepper",
+      "category": "Soft Drinks",
+      "description": "The one and only Dr Pepper, 500ml bottle.",
+      "price": 2.99,
+      "menuTypes": [
+        "drinks"
+      ],
+      "images": [
+        "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA0MDAgMzAwIiB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCI+PHJlY3Qgd2lkdGg9IjQwMCIgaGVpZ2h0PSIzMDAiIGZpbGw9IiMwMDAwMDAiIHJ4PSIxMiIvPjxyZWN0IHg9IjgiIHk9IjgiIHdpZHRoPSIzODQiIGhlaWdodD0iMjg0IiBmaWxsPSJub25lIiBzdHJva2U9IiNmZmZmZmYiIHN0cm9rZS13aWR0aD0iMyIgcng9IjkiLz48dGV4dCB4PSIyMDAiIHk9IjE1NSIgZm9udC1mYW1pbHk9IlNlZ29lIFVJIEVtb2ppLEFwcGxlIENvbG9yIEVtb2ppLE5vdG8gRW1vamksQXJpYWwiIGZvbnQtc2l6ZT0iMTEwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBkb21pbmFudC1iYXNlbGluZT0ibWlkZGxlIj7wn6WkPC90ZXh0Pjx0ZXh0IHg9IjIwMCIgeT0iMjQ1IiBmb250LWZhbWlseT0iQXJpYWwsSGVsdmV0aWNhLHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMjAiIGZvbnQtd2VpZ2h0PSJib2xkIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjZmZmZmZmIiBsZXR0ZXItc3BhY2luZz0iMiI+U09GVCBEUklOS1M8L3RleHQ+PC9zdmc+"
+      ],
+      "active": true,
+      "createdAt": "2026-08-11T23:27:21Z",
+      "updatedAt": "2026-08-11T23:27:21Z"
+    },
+    {
+      "id": "ph-115",
+      "sku": "PH-DRK-006",
+      "name": "Bottled Water",
+      "category": "Soft Drinks",
+      "description": "500ml still bottled spring water.",
+      "price": 1.99,
+      "menuTypes": [
+        "drinks"
+      ],
+      "images": [
+        "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA0MDAgMzAwIiB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCI+PHJlY3Qgd2lkdGg9IjQwMCIgaGVpZ2h0PSIzMDAiIGZpbGw9IiMwMDAwMDAiIHJ4PSIxMiIvPjxyZWN0IHg9IjgiIHk9IjgiIHdpZHRoPSIzODQiIGhlaWdodD0iMjg0IiBmaWxsPSJub25lIiBzdHJva2U9IiNmZmZmZmYiIHN0cm9rZS13aWR0aD0iMyIgcng9IjkiLz48dGV4dCB4PSIyMDAiIHk9IjE1NSIgZm9udC1mYW1pbHk9IlNlZ29lIFVJIEVtb2ppLEFwcGxlIENvbG9yIEVtb2ppLE5vdG8gRW1vamksQXJpYWwiIGZvbnQtc2l6ZT0iMTEwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBkb21pbmFudC1iYXNlbGluZT0ibWlkZGxlIj7wn6WkPC90ZXh0Pjx0ZXh0IHg9IjIwMCIgeT0iMjQ1IiBmb250LWZhbWlseT0iQXJpYWwsSGVsdmV0aWNhLHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMjAiIGZvbnQtd2VpZ2h0PSJib2xkIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjZmZmZmZmIiBsZXR0ZXItc3BhY2luZz0iMiI+U09GVCBEUklOS1M8L3RleHQ+PC9zdmc+"
+      ],
+      "active": true,
+      "createdAt": "2026-08-11T23:27:21Z",
+      "updatedAt": "2026-08-11T23:27:21Z"
+    },
+    {
+      "id": "ph-116",
+      "sku": "PH-DRK-007",
+      "name": "Fresh Lemonade",
+      "category": "Soft Drinks",
+      "description": "Freshly made lemonade, served ice cold.",
+      "price": 3.29,
+      "menuTypes": [
+        "drinks"
+      ],
+      "images": [
+        "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA0MDAgMzAwIiB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCI+PHJlY3Qgd2lkdGg9IjQwMCIgaGVpZ2h0PSIzMDAiIGZpbGw9IiMwMDAwMDAiIHJ4PSIxMiIvPjxyZWN0IHg9IjgiIHk9IjgiIHdpZHRoPSIzODQiIGhlaWdodD0iMjg0IiBmaWxsPSJub25lIiBzdHJva2U9IiNmZmZmZmYiIHN0cm9rZS13aWR0aD0iMyIgcng9IjkiLz48dGV4dCB4PSIyMDAiIHk9IjE1NSIgZm9udC1mYW1pbHk9IlNlZ29lIFVJIEVtb2ppLEFwcGxlIENvbG9yIEVtb2ppLE5vdG8gRW1vamksQXJpYWwiIGZvbnQtc2l6ZT0iMTEwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBkb21pbmFudC1iYXNlbGluZT0ibWlkZGxlIj7wn6WkPC90ZXh0Pjx0ZXh0IHg9IjIwMCIgeT0iMjQ1IiBmb250LWZhbWlseT0iQXJpYWwsSGVsdmV0aWNhLHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMjAiIGZvbnQtd2VpZ2h0PSJib2xkIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjZmZmZmZmIiBsZXR0ZXItc3BhY2luZz0iMiI+U09GVCBEUklOS1M8L3RleHQ+PC9zdmc+"
+      ],
+      "active": true,
+      "createdAt": "2026-08-11T23:27:21Z",
+      "updatedAt": "2026-08-11T23:27:21Z"
+    },
+    {
+      "id": "ph-120",
+      "sku": "PH-KID-001",
+      "name": "Kids Cheese Pizza Meal",
+      "category": "Kids Meals",
+      "description": "A personal cheese pizza with a drink and a fun activity sheet.",
+      "price": 6.99,
+      "menuTypes": [
+        "lunch",
+        "dinner"
+      ],
+      "images": [
+        "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA0MDAgMzAwIiB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCI+PHJlY3Qgd2lkdGg9IjQwMCIgaGVpZ2h0PSIzMDAiIGZpbGw9IiNlOTFjMjQiIHJ4PSIxMiIvPjxyZWN0IHg9IjgiIHk9IjgiIHdpZHRoPSIzODQiIGhlaWdodD0iMjg0IiBmaWxsPSJub25lIiBzdHJva2U9IiNmZmQyMDAiIHN0cm9rZS13aWR0aD0iMyIgcng9IjkiLz48dGV4dCB4PSIyMDAiIHk9IjE1NSIgZm9udC1mYW1pbHk9IlNlZ29lIFVJIEVtb2ppLEFwcGxlIENvbG9yIEVtb2ppLE5vdG8gRW1vamksQXJpYWwiIGZvbnQtc2l6ZT0iMTEwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBkb21pbmFudC1iYXNlbGluZT0ibWlkZGxlIj7wn6eSPC90ZXh0Pjx0ZXh0IHg9IjIwMCIgeT0iMjQ1IiBmb250LWZhbWlseT0iQXJpYWwsSGVsdmV0aWNhLHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMjAiIGZvbnQtd2VpZ2h0PSJib2xkIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjZmZkMjAwIiBsZXR0ZXItc3BhY2luZz0iMiI+S0lEUyBNRUFMPC90ZXh0Pjwvc3ZnPg=="
+      ],
+      "active": true,
+      "createdAt": "2026-08-11T23:27:21Z",
+      "updatedAt": "2026-08-11T23:27:21Z"
+    },
+    {
+      "id": "ph-121",
+      "sku": "PH-KID-002",
+      "name": "Kids Pepperoni Pizza Meal",
+      "category": "Kids Meals",
+      "description": "A personal pepperoni pizza with a drink and a fun activity sheet.",
+      "price": 6.99,
+      "menuTypes": [
+        "lunch",
+        "dinner"
+      ],
+      "images": [
+        "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA0MDAgMzAwIiB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCI+PHJlY3Qgd2lkdGg9IjQwMCIgaGVpZ2h0PSIzMDAiIGZpbGw9IiNlOTFjMjQiIHJ4PSIxMiIvPjxyZWN0IHg9IjgiIHk9IjgiIHdpZHRoPSIzODQiIGhlaWdodD0iMjg0IiBmaWxsPSJub25lIiBzdHJva2U9IiNmZmQyMDAiIHN0cm9rZS13aWR0aD0iMyIgcng9IjkiLz48dGV4dCB4PSIyMDAiIHk9IjE1NSIgZm9udC1mYW1pbHk9IlNlZ29lIFVJIEVtb2ppLEFwcGxlIENvbG9yIEVtb2ppLE5vdG8gRW1vamksQXJpYWwiIGZvbnQtc2l6ZT0iMTEwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBkb21pbmFudC1iYXNlbGluZT0ibWlkZGxlIj7wn6eSPC90ZXh0Pjx0ZXh0IHg9IjIwMCIgeT0iMjQ1IiBmb250LWZhbWlseT0iQXJpYWwsSGVsdmV0aWNhLHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMjAiIGZvbnQtd2VpZ2h0PSJib2xkIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjZmZkMjAwIiBsZXR0ZXItc3BhY2luZz0iMiI+S0lEUyBNRUFMPC90ZXh0Pjwvc3ZnPg=="
+      ],
+      "active": true,
+      "createdAt": "2026-08-11T23:27:21Z",
+      "updatedAt": "2026-08-11T23:27:21Z"
+    },
+    {
+      "id": "ph-122",
+      "sku": "PH-KID-003",
+      "name": "Kids Mac & Cheese",
+      "category": "Kids Meals",
+      "description": "Creamy mac & cheese with a drink and a fun activity sheet.",
+      "price": 6.49,
+      "menuTypes": [
+        "lunch",
+        "dinner"
+      ],
+      "images": [
+        "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA0MDAgMzAwIiB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCI+PHJlY3Qgd2lkdGg9IjQwMCIgaGVpZ2h0PSIzMDAiIGZpbGw9IiNlOTFjMjQiIHJ4PSIxMiIvPjxyZWN0IHg9IjgiIHk9IjgiIHdpZHRoPSIzODQiIGhlaWdodD0iMjg0IiBmaWxsPSJub25lIiBzdHJva2U9IiNmZmQyMDAiIHN0cm9rZS13aWR0aD0iMyIgcng9IjkiLz48dGV4dCB4PSIyMDAiIHk9IjE1NSIgZm9udC1mYW1pbHk9IlNlZ29lIFVJIEVtb2ppLEFwcGxlIENvbG9yIEVtb2ppLE5vdG8gRW1vamksQXJpYWwiIGZvbnQtc2l6ZT0iMTEwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBkb21pbmFudC1iYXNlbGluZT0ibWlkZGxlIj7wn6eSPC90ZXh0Pjx0ZXh0IHg9IjIwMCIgeT0iMjQ1IiBmb250LWZhbWlseT0iQXJpYWwsSGVsdmV0aWNhLHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMjAiIGZvbnQtd2VpZ2h0PSJib2xkIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjZmZkMjAwIiBsZXR0ZXItc3BhY2luZz0iMiI+S0lEUyBNRUFMPC90ZXh0Pjwvc3ZnPg=="
+      ],
+      "active": true,
+      "createdAt": "2026-08-11T23:27:21Z",
+      "updatedAt": "2026-08-11T23:27:21Z"
+    },
+    {
+      "id": "ph-130",
+      "sku": "PH-SPL-001",
+      "name": "Big Dinner Box",
+      "category": "Today's Specials",
+      "description": "2 medium 1-topping pizzas, 5 breadsticks and 2 desserts \u2014 feeds the whole family.",
+      "price": 24.99,
+      "menuTypes": [
+        "specials"
+      ],
+      "images": [
+        "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA0MDAgMzAwIiB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCI+PHJlY3Qgd2lkdGg9IjQwMCIgaGVpZ2h0PSIzMDAiIGZpbGw9IiMwMDAwMDAiIHJ4PSIxMiIvPjxyZWN0IHg9IjgiIHk9IjgiIHdpZHRoPSIzODQiIGhlaWdodD0iMjg0IiBmaWxsPSJub25lIiBzdHJva2U9IiNlOTFjMjQiIHN0cm9rZS13aWR0aD0iMyIgcng9IjkiLz48dGV4dCB4PSIyMDAiIHk9IjE1NSIgZm9udC1mYW1pbHk9IlNlZ29lIFVJIEVtb2ppLEFwcGxlIENvbG9yIEVtb2ppLE5vdG8gRW1vamksQXJpYWwiIGZvbnQtc2l6ZT0iMTEwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBkb21pbmFudC1iYXNlbGluZT0ibWlkZGxlIj7wn5SlPC90ZXh0Pjx0ZXh0IHg9IjIwMCIgeT0iMjQ1IiBmb250LWZhbWlseT0iQXJpYWwsSGVsdmV0aWNhLHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMjAiIGZvbnQtd2VpZ2h0PSJib2xkIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjZTkxYzI0IiBsZXR0ZXItc3BhY2luZz0iMiI+VE9EQVknUyBTUEVDSUFMPC90ZXh0Pjwvc3ZnPg=="
+      ],
+      "active": true,
+      "createdAt": "2026-08-11T23:27:21Z",
+      "updatedAt": "2026-08-11T23:27:21Z"
+    },
+    {
+      "id": "ph-131",
+      "sku": "PH-SPL-002",
+      "name": "$7 Deal Lover's",
+      "category": "Today's Specials",
+      "description": "Any medium 1-topping pizza, breadsticks, a pasta or 8pc wings \u2014 all just $7 each.",
+      "price": 7.0,
+      "menuTypes": [
+        "specials"
+      ],
+      "images": [
+        "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA0MDAgMzAwIiB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCI+PHJlY3Qgd2lkdGg9IjQwMCIgaGVpZ2h0PSIzMDAiIGZpbGw9IiMwMDAwMDAiIHJ4PSIxMiIvPjxyZWN0IHg9IjgiIHk9IjgiIHdpZHRoPSIzODQiIGhlaWdodD0iMjg0IiBmaWxsPSJub25lIiBzdHJva2U9IiNlOTFjMjQiIHN0cm9rZS13aWR0aD0iMyIgcng9IjkiLz48dGV4dCB4PSIyMDAiIHk9IjE1NSIgZm9udC1mYW1pbHk9IlNlZ29lIFVJIEVtb2ppLEFwcGxlIENvbG9yIEVtb2ppLE5vdG8gRW1vamksQXJpYWwiIGZvbnQtc2l6ZT0iMTEwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBkb21pbmFudC1iYXNlbGluZT0ibWlkZGxlIj7wn5SlPC90ZXh0Pjx0ZXh0IHg9IjIwMCIgeT0iMjQ1IiBmb250LWZhbWlseT0iQXJpYWwsSGVsdmV0aWNhLHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMjAiIGZvbnQtd2VpZ2h0PSJib2xkIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjZTkxYzI0IiBsZXR0ZXItc3BhY2luZz0iMiI+VE9EQVknUyBTUEVDSUFMPC90ZXh0Pjwvc3ZnPg=="
+      ],
+      "active": true,
+      "createdAt": "2026-08-11T23:27:21Z",
+      "updatedAt": "2026-08-11T23:27:21Z"
+    },
+    {
+      "id": "ph-132",
+      "sku": "PH-SPL-003",
+      "name": "Triple Treat Box",
+      "category": "Today's Specials",
+      "description": "2 medium 2-topping pizzas plus your choice of pasta or 8pc wings.",
+      "price": 22.99,
+      "menuTypes": [
+        "specials"
+      ],
+      "images": [
+        "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA0MDAgMzAwIiB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCI+PHJlY3Qgd2lkdGg9IjQwMCIgaGVpZ2h0PSIzMDAiIGZpbGw9IiMwMDAwMDAiIHJ4PSIxMiIvPjxyZWN0IHg9IjgiIHk9IjgiIHdpZHRoPSIzODQiIGhlaWdodD0iMjg0IiBmaWxsPSJub25lIiBzdHJva2U9IiNlOTFjMjQiIHN0cm9rZS13aWR0aD0iMyIgcng9IjkiLz48dGV4dCB4PSIyMDAiIHk9IjE1NSIgZm9udC1mYW1pbHk9IlNlZ29lIFVJIEVtb2ppLEFwcGxlIENvbG9yIEVtb2ppLE5vdG8gRW1vamksQXJpYWwiIGZvbnQtc2l6ZT0iMTEwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBkb21pbmFudC1iYXNlbGluZT0ibWlkZGxlIj7wn5SlPC90ZXh0Pjx0ZXh0IHg9IjIwMCIgeT0iMjQ1IiBmb250LWZhbWlseT0iQXJpYWwsSGVsdmV0aWNhLHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMjAiIGZvbnQtd2VpZ2h0PSJib2xkIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjZTkxYzI0IiBsZXR0ZXItc3BhY2luZz0iMiI+VE9EQVknUyBTUEVDSUFMPC90ZXh0Pjwvc3ZnPg=="
+      ],
+      "active": true,
+      "createdAt": "2026-08-11T23:27:21Z",
+      "updatedAt": "2026-08-11T23:27:21Z"
+    },
+    {
+      "id": "ph-133",
+      "sku": "PH-SPL-004",
+      "name": "Large 2-Topping Deal",
+      "category": "Today's Specials",
+      "description": "Any large 2-topping pizza for one unbeatable price.",
+      "price": 12.99,
+      "menuTypes": [
+        "specials"
+      ],
+      "images": [
+        "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA0MDAgMzAwIiB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCI+PHJlY3Qgd2lkdGg9IjQwMCIgaGVpZ2h0PSIzMDAiIGZpbGw9IiMwMDAwMDAiIHJ4PSIxMiIvPjxyZWN0IHg9IjgiIHk9IjgiIHdpZHRoPSIzODQiIGhlaWdodD0iMjg0IiBmaWxsPSJub25lIiBzdHJva2U9IiNlOTFjMjQiIHN0cm9rZS13aWR0aD0iMyIgcng9IjkiLz48dGV4dCB4PSIyMDAiIHk9IjE1NSIgZm9udC1mYW1pbHk9IlNlZ29lIFVJIEVtb2ppLEFwcGxlIENvbG9yIEVtb2ppLE5vdG8gRW1vamksQXJpYWwiIGZvbnQtc2l6ZT0iMTEwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBkb21pbmFudC1iYXNlbGluZT0ibWlkZGxlIj7wn5SlPC90ZXh0Pjx0ZXh0IHg9IjIwMCIgeT0iMjQ1IiBmb250LWZhbWlseT0iQXJpYWwsSGVsdmV0aWNhLHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMjAiIGZvbnQtd2VpZ2h0PSJib2xkIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjZTkxYzI0IiBsZXR0ZXItc3BhY2luZz0iMiI+VE9EQVknUyBTUEVDSUFMPC90ZXh0Pjwvc3ZnPg=="
+      ],
+      "active": true,
+      "createdAt": "2026-08-11T23:27:21Z",
+      "updatedAt": "2026-08-11T23:27:21Z"
+    },
+    {
+      "id": "ph-134",
+      "sku": "PH-SPL-005",
+      "name": "Carside Family Deal",
+      "category": "Today's Specials",
+      "description": "3 medium 1-topping pizzas, ready for pickup \u2014 perfect for feeding the family.",
+      "price": 19.99,
+      "menuTypes": [
+        "specials"
+      ],
+      "images": [
+        "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA0MDAgMzAwIiB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCI+PHJlY3Qgd2lkdGg9IjQwMCIgaGVpZ2h0PSIzMDAiIGZpbGw9IiMwMDAwMDAiIHJ4PSIxMiIvPjxyZWN0IHg9IjgiIHk9IjgiIHdpZHRoPSIzODQiIGhlaWdodD0iMjg0IiBmaWxsPSJub25lIiBzdHJva2U9IiNlOTFjMjQiIHN0cm9rZS13aWR0aD0iMyIgcng9IjkiLz48dGV4dCB4PSIyMDAiIHk9IjE1NSIgZm9udC1mYW1pbHk9IlNlZ29lIFVJIEVtb2ppLEFwcGxlIENvbG9yIEVtb2ppLE5vdG8gRW1vamksQXJpYWwiIGZvbnQtc2l6ZT0iMTEwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBkb21pbmFudC1iYXNlbGluZT0ibWlkZGxlIj7wn5SlPC90ZXh0Pjx0ZXh0IHg9IjIwMCIgeT0iMjQ1IiBmb250LWZhbWlseT0iQXJpYWwsSGVsdmV0aWNhLHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMjAiIGZvbnQtd2VpZ2h0PSJib2xkIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjZTkxYzI0IiBsZXR0ZXItc3BhY2luZz0iMiI+VE9EQVknUyBTUEVDSUFMPC90ZXh0Pjwvc3ZnPg=="
+      ],
+      "active": true,
+      "createdAt": "2026-08-11T23:27:21Z",
+      "updatedAt": "2026-08-11T23:27:21Z"
+    },
+    {
+      "id": "ph-135",
+      "sku": "PH-SPL-006",
+      "name": "Student Twin Deal",
+      "category": "Today's Specials",
+      "description": "2 medium 1-topping pizzas at a special student-friendly price.",
+      "price": 15.99,
+      "menuTypes": [
+        "specials"
+      ],
+      "images": [
+        "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA0MDAgMzAwIiB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCI+PHJlY3Qgd2lkdGg9IjQwMCIgaGVpZ2h0PSIzMDAiIGZpbGw9IiMwMDAwMDAiIHJ4PSIxMiIvPjxyZWN0IHg9IjgiIHk9IjgiIHdpZHRoPSIzODQiIGhlaWdodD0iMjg0IiBmaWxsPSJub25lIiBzdHJva2U9IiNlOTFjMjQiIHN0cm9rZS13aWR0aD0iMyIgcng9IjkiLz48dGV4dCB4PSIyMDAiIHk9IjE1NSIgZm9udC1mYW1pbHk9IlNlZ29lIFVJIEVtb2ppLEFwcGxlIENvbG9yIEVtb2ppLE5vdG8gRW1vamksQXJpYWwiIGZvbnQtc2l6ZT0iMTEwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBkb21pbmFudC1iYXNlbGluZT0ibWlkZGxlIj7wn5SlPC90ZXh0Pjx0ZXh0IHg9IjIwMCIgeT0iMjQ1IiBmb250LWZhbWlseT0iQXJpYWwsSGVsdmV0aWNhLHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMjAiIGZvbnQtd2VpZ2h0PSJib2xkIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjZTkxYzI0IiBsZXR0ZXItc3BhY2luZz0iMiI+VE9EQVknUyBTUEVDSUFMPC90ZXh0Pjwvc3ZnPg=="
+      ],
+      "active": true,
+      "createdAt": "2026-08-11T23:27:21Z",
+      "updatedAt": "2026-08-11T23:27:21Z"
+    }
+  ],
+  "settings": {
+    "brandName": "Pizza Hut",
+    "currency": "$",
+    "logo": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAzMDAgMzAwIiB3aWR0aD0iMzAwIiBoZWlnaHQ9IjMwMCI+PHJlY3Qgd2lkdGg9IjMwMCIgaGVpZ2h0PSIzMDAiIGZpbGw9IiNlOTFjMjQiIHJ4PSIxNiIvPjx0ZXh0IHg9IjE1MCIgeT0iMTUwIiBmb250LWZhbWlseT0iQXJpYWwsSGVsdmV0aWNhLHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iNDYiIGZvbnQtd2VpZ2h0PSI5MDAiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGRvbWluYW50LWJhc2VsaW5lPSJtaWRkbGUiIGZpbGw9IiNmZmZmZmYiIGxldHRlci1zcGFjaW5nPSIxIj5QSVpaQTwvdGV4dD48dGV4dCB4PSIxNTAiIHk9IjIwNSIgZm9udC1mYW1pbHk9IkFyaWFsLEhlbHZldGljYSxzYW5zLXNlcmlmIiBmb250LXNpemU9IjQ2IiBmb250LXdlaWdodD0iOTAwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBkb21pbmFudC1iYXNlbGluZT0ibWlkZGxlIiBmaWxsPSIjZmZmZmZmIiBsZXR0ZXItc3BhY2luZz0iMSI+SFVUPC90ZXh0Pjwvc3ZnPg==",
+    "logoRight": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAzMDAgMzAwIiB3aWR0aD0iMzAwIiBoZWlnaHQ9IjMwMCI+PHJlY3Qgd2lkdGg9IjMwMCIgaGVpZ2h0PSIzMDAiIGZpbGw9IiNlOTFjMjQiIHJ4PSIxNiIvPjx0ZXh0IHg9IjE1MCIgeT0iMTUwIiBmb250LWZhbWlseT0iQXJpYWwsSGVsdmV0aWNhLHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iNDYiIGZvbnQtd2VpZ2h0PSI5MDAiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGRvbWluYW50LWJhc2VsaW5lPSJtaWRkbGUiIGZpbGw9IiNmZmZmZmYiIGxldHRlci1zcGFjaW5nPSIxIj5QSVpaQTwvdGV4dD48dGV4dCB4PSIxNTAiIHk9IjIwNSIgZm9udC1mYW1pbHk9IkFyaWFsLEhlbHZldGljYSxzYW5zLXNlcmlmIiBmb250LXNpemU9IjQ2IiBmb250LXdlaWdodD0iOTAwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBkb21pbmFudC1iYXNlbGluZT0ibWlkZGxlIiBmaWxsPSIjZmZmZmZmIiBsZXR0ZXItc3BhY2luZz0iMSI+SFVUPC90ZXh0Pjwvc3ZnPg==",
+    "address": "Your Store Address",
+    "phone": "",
+    "tagline": "No One OutPizzas the Hut"
+  },
+  "categories": [
+    "Pan Pizza",
+    "Stuffed Crust",
+    "Thin 'N Crispy",
+    "Specialty Pizzas",
+    "Wings",
+    "Pasta",
+    "Melts & Sandwiches",
+    "Sides & Bread",
+    "Dips",
+    "Salads",
+    "Desserts",
+    "Soft Drinks",
+    "Kids Meals",
+    "Today's Specials"
+  ],
+  "exportedAt": "2026-08-11T23:27:21Z",
+  "brands": []
+}
