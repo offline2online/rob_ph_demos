@@ -443,6 +443,18 @@
     .confirm-box h3 { font-size: 17px; font-weight: 700; margin-bottom: 8px; }
     .confirm-box p { font-size: 14px; color: var(--text2); margin-bottom: 24px; line-height: 1.5; }
     .confirm-actions { display: flex; gap: 10px; justify-content: center; }
+    .confirm-actions-row { display: flex; gap: 10px; justify-content: center; }
+    .confirm-link-btn {
+      background: none;
+      border: none;
+      padding: 4px;
+      font-size: 12px;
+      font-weight: 500;
+      color: var(--text2);
+      text-decoration: underline;
+      cursor: pointer;
+    }
+    .confirm-link-btn:hover { color: var(--text); }
 
     /* AUTO REFRESH */
     @keyframes pulse { 0%,100%{opacity:1}50%{opacity:0.3} }
@@ -1503,10 +1515,14 @@ function showOosChoiceDialog(sku, name) {
     return;
   }
 
+  actionsEl.style.flexDirection = 'column';
+  actionsEl.style.gap = '14px';
   actionsEl.innerHTML = `
-    <button class="btn btn-ghost" onclick="closeConfirm()">Cancel</button>
-    <button class="btn btn-primary" onclick="window._doMarkInStock('${sku}')">✅ Back In Stock</button>
-    <button class="btn" style="background:var(--text2);color:#fff;" onclick="window._doMarkNotStocked('${sku}')">🚫 We don't sell/stock this</button>
+    <div class="confirm-actions-row">
+      <button class="btn btn-ghost" onclick="closeConfirm()">Cancel</button>
+      <button class="btn btn-primary" onclick="window._doMarkInStock('${sku}')">✅ Back In Stock</button>
+    </div>
+    <button type="button" class="confirm-link-btn" onclick="window._doMarkNotStocked('${sku}')">We don't sell/stock this item</button>
   `;
   document.getElementById('confirmOverlay').classList.add('open');
 }
@@ -1526,7 +1542,10 @@ window._doMarkNotStocked = function(sku) {
 
 function _restoreConfirmActions() {
   const actionsEl = document.getElementById('confirmActions');
-  if (actionsEl) actionsEl.innerHTML = `
+  if (!actionsEl) return;
+  actionsEl.style.flexDirection = '';
+  actionsEl.style.gap = '';
+  actionsEl.innerHTML = `
     <button class="btn btn-ghost" onclick="closeConfirm()">Cancel</button>
     <button class="btn btn-danger" id="confirmBtn">Confirm</button>
   `;
