@@ -1158,7 +1158,7 @@ let _items       = [];
 let _settings    = { brandName: 'Menu', currency: '$', logo: '' };
 let _brands      = [];
 let _stock       = {};
-let _activeCat   = 'All';
+let _activeCat   = 'DEALS';
 let _searchQuery = '';
 let _clearBagConfirming = false;
 let _campaignFirstName = null;
@@ -1463,9 +1463,10 @@ function getFilteredItems() {
 
 function renderCatBar() {
   const rawCats = [...new Set(_items.filter(i => i.active).map(i => i.category))];
-  const specials = rawCats.filter(c => c === "Today's Specials");
-  const others   = rawCats.filter(c => c !== "Today's Specials");
-  const cats     = ['All', ...specials, ...others];
+  const deals    = rawCats.filter(c => c.toUpperCase() === 'DEALS');
+  const specials = rawCats.filter(c => c !== "DEALS" && c === "Today's Specials");
+  const others   = rawCats.filter(c => c.toUpperCase() !== 'DEALS' && c !== "Today's Specials");
+  const cats     = [...deals, 'All', ...specials, ...others];
   const bar  = document.getElementById('catBar');
   bar.innerHTML = cats.map(c => `
     <button class="cat-tab${c === _activeCat ? ' active' : ''}" data-cat="${esc(c)}">${esc(c)}</button>
