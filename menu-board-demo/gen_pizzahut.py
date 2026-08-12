@@ -371,6 +371,12 @@ REAL_IMAGES = {
     "ph-034": {"small": "images/pizzas/buffalo-chicken-specialty-sm.jpg","large": "images/pizzas/buffalo-chicken-specialty-lg.jpg"},
     "ph-035": {"small": "images/pizzas/tuscani-meat-trio-sm.jpg",        "large": "images/pizzas/tuscani-meat-trio-lg.jpg"},
     "ph-051": {"small": "images/pizzas/meaty-marinara-pasta-sm.jpg",     "large": "images/pizzas/meaty-marinara-pasta-lg.jpg"},
+    "ph-130": {"small": "images/pizzas/big-dinner-box-sm.jpg",           "large": "images/pizzas/big-dinner-box-lg.jpg"},
+    "ph-131": {"small": "images/pizzas/deal-lover-7-sm.jpg",             "large": "images/pizzas/deal-lover-7-lg.jpg"},
+    "ph-132": {"small": "images/pizzas/triple-treat-box-sm.jpg",         "large": "images/pizzas/triple-treat-box-lg.jpg"},
+    "ph-133": {"small": "images/pizzas/large-2topping-sm.jpg",           "large": "images/pizzas/large-2topping-lg.jpg"},
+    "ph-134": {"small": "images/pizzas/carside-family-sm.jpg",           "large": "images/pizzas/carside-family-lg.jpg"},
+    "ph-135": {"small": "images/pizzas/student-twin-sm.jpg",             "large": "images/pizzas/student-twin-lg.jpg"},
 }
 for item in items:
     real = REAL_IMAGES.get(item["id"])
