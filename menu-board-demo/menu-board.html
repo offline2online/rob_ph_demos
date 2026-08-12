@@ -1252,8 +1252,7 @@ onSnapshot(doc(db, MB, 'settings'), snap => {
 
 // ── RENDER ───────────────────────────────────────────────────────────────────
 function render() {
-  if (!MENU_TYPE || (!STORE_CODE && !DEVICE_UDID)) return;
-  const meta = MENU_META[MENU_TYPE];
+  if (!STORE_CODE && !DEVICE_UDID) return;
 
   // brand = null means "no ?brand= param — show all brands"
   // themeSource is always a valid brand object used for colours, logos, layout
@@ -1267,6 +1266,15 @@ function render() {
   // Resolve the active Offer Board template and derive effective settings.
   // Template values always win over top-level brand defaults.
   const tpl = getActiveTemplate(brand || themeSource);
+
+  // Effective menu-type filter: the template's own "Item Type Filter" wins when
+  // configured (this board always shows only those types, regardless of the
+  // ?menu= URL param) — otherwise fall back to the URL, as before.
+  const effectiveMenuTypes = (tpl && Array.isArray(tpl.menuTypes) && tpl.menuTypes.length > 0)
+    ? tpl.menuTypes : MENU_TYPES;
+  const effectiveMenuType  = effectiveMenuTypes[0] || '';
+  if (!effectiveMenuType) return;
+  const meta = MENU_META[effectiveMenuType];
 
   const effectiveColors       = (tpl && tpl.colors)      || themeSource.colors      || {};
   const effectiveDisplay      = (tpl && tpl.display)     || themeSource.display     || {};
@@ -1318,11 +1326,14 @@ function render() {
   const brandName = esc(themeSource.name     || 'Our Brand');
   const currency  = esc(themeSource.currency || '$');
 
+  // Tab title reflects the effective menu type (template filter or URL), not the raw URL alone
+  if (meta) document.title = meta.label + (themeSource ? ' — ' + themeSource.name : ' — ' + STORE_CODE);
+
   // ── STEP 1: Filter first so totalItems drives layout ────────────────────────
   // brand === null means no brand filter — show all active items for this menu type
   const allFiltered = items.filter(i =>
     i.active &&
-    (MENU_TYPES.length === 0 || (i.menuTypes || []).some(t => MENU_TYPES.includes(t))) &&
+    (effectiveMenuTypes.length === 0 || (i.menuTypes || []).some(t => effectiveMenuTypes.includes(t))) &&
     (brand === null || !i.brand || i.brand === brand.id)
   );
 
@@ -1362,6 +1373,13 @@ function render() {
     _dbgMatchCount = null;
   }
   _updateDebugPanel();
+
+  // ── STEP 1c: Apply "Categories to Present in Grid" (standard flat-grid boards) ──
+  // Feature Hero Spotlight applies this separately, scoped to its supporting grid
+  // (excluding the hero slot) — see the hero-layout branch further down.
+  if (effectiveGridCategories.length > 0 && effectiveTemplateType !== 'feature-hero-board') {
+    campaignFiltered = campaignFiltered.filter(i => effectiveGridCategories.includes(i.category || ''));
+  }
 
   // Sort: in-stock first, then by category, then name
   campaignFiltered.sort((a, b) => {

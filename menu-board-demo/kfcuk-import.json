@@ -1,0 +1,1159 @@
+{
+  "@context": "https://gs1.org/voc/",
+  "@type": "ItemList",
+  "schemaVersion": "1.0",
+  "description": "KFC UK menu import \u2014 GS1 VOC compliant. Prices in GBP (\u00a3). Items include gs1:recipeIngredient and gs1:customizationOptions auto-mapped on import.",
+  "types": [
+    {
+      "id": "lunch",
+      "label": "Lunch",
+      "color": "#e4002b"
+    },
+    {
+      "id": "dinner",
+      "label": "Dinner",
+      "color": "#000000"
+    },
+    {
+      "id": "drinks",
+      "label": "Drinks",
+      "color": "#2563eb"
+    },
+    {
+      "id": "specials",
+      "label": "Meal Deals",
+      "color": "#f59e0b"
+    }
+  ],
+  "items": [
+    {
+      "id": "kfc-001",
+      "sku": "KFC-BKT-001",
+      "name": "10 pc Bucket",
+      "category": "Buckets",
+      "description": "10 pieces of our Original Recipe chicken on the bone, hand-breaded in our secret blend of 11 herbs and spices.",
+      "price": 14.99,
+      "menuTypes": [
+        "lunch",
+        "dinner"
+      ],
+      "images": [
+        "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA0MDAgMzAwIiB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCI+PHJlY3Qgd2lkdGg9IjQwMCIgaGVpZ2h0PSIzMDAiIGZpbGw9IiNlNDAwMmIiIHJ4PSIxMiIvPjxyZWN0IHg9IjgiIHk9IjgiIHdpZHRoPSIzODQiIGhlaWdodD0iMjg0IiBmaWxsPSJub25lIiBzdHJva2U9IiNmZmZmZmYiIHN0cm9rZS13aWR0aD0iMyIgcng9IjkiLz48dGV4dCB4PSIyMDAiIHk9IjE1NSIgZm9udC1mYW1pbHk9IlNlZ29lIFVJIEVtb2ppLEFwcGxlIENvbG9yIEVtb2ppLE5vdG8gRW1vamksQXJpYWwiIGZvbnQtc2l6ZT0iMTEwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBkb21pbmFudC1iYXNlbGluZT0ibWlkZGxlIj7wn42XPC90ZXh0Pjx0ZXh0IHg9IjIwMCIgeT0iMjQ1IiBmb250LWZhbWlseT0iQXJpYWwsSGVsdmV0aWNhLHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMjAiIGZvbnQtd2VpZ2h0PSJib2xkIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjZmZmZmZmIiBsZXR0ZXItc3BhY2luZz0iMiI+QlVDS0VUUzwvdGV4dD48L3N2Zz4="
+      ],
+      "active": true,
+      "createdAt": "2026-08-12T21:28:49Z",
+      "updatedAt": "2026-08-12T21:28:49Z",
+      "brand": "kfc-brand-001"
+    },
+    {
+      "id": "kfc-002",
+      "sku": "KFC-BKT-002",
+      "name": "6 pc Bucket",
+      "category": "Buckets",
+      "description": "6 pieces of Original Recipe chicken on the bone, freshly hand-breaded and pressure cooked.",
+      "price": 9.99,
+      "menuTypes": [
+        "lunch",
+        "dinner"
+      ],
+      "images": [
+        "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA0MDAgMzAwIiB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCI+PHJlY3Qgd2lkdGg9IjQwMCIgaGVpZ2h0PSIzMDAiIGZpbGw9IiNlNDAwMmIiIHJ4PSIxMiIvPjxyZWN0IHg9IjgiIHk9IjgiIHdpZHRoPSIzODQiIGhlaWdodD0iMjg0IiBmaWxsPSJub25lIiBzdHJva2U9IiNmZmZmZmYiIHN0cm9rZS13aWR0aD0iMyIgcng9IjkiLz48dGV4dCB4PSIyMDAiIHk9IjE1NSIgZm9udC1mYW1pbHk9IlNlZ29lIFVJIEVtb2ppLEFwcGxlIENvbG9yIEVtb2ppLE5vdG8gRW1vamksQXJpYWwiIGZvbnQtc2l6ZT0iMTEwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBkb21pbmFudC1iYXNlbGluZT0ibWlkZGxlIj7wn42XPC90ZXh0Pjx0ZXh0IHg9IjIwMCIgeT0iMjQ1IiBmb250LWZhbWlseT0iQXJpYWwsSGVsdmV0aWNhLHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMjAiIGZvbnQtd2VpZ2h0PSJib2xkIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjZmZmZmZmIiBsZXR0ZXItc3BhY2luZz0iMiI+QlVDS0VUUzwvdGV4dD48L3N2Zz4="
+      ],
+      "active": true,
+      "createdAt": "2026-08-12T21:28:49Z",
+      "updatedAt": "2026-08-12T21:28:49Z",
+      "brand": "kfc-brand-001"
+    },
+    {
+      "id": "kfc-003",
+      "sku": "KFC-BKT-003",
+      "name": "Family Feast Bucket",
+      "category": "Buckets",
+      "description": "14 pieces of Original Recipe chicken, 2 large fries, 2 large sides and 4 regular drinks \u2014 feeds the whole family.",
+      "price": 26.99,
+      "menuTypes": [
+        "lunch",
+        "dinner"
+      ],
+      "images": [
+        "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA0MDAgMzAwIiB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCI+PHJlY3Qgd2lkdGg9IjQwMCIgaGVpZ2h0PSIzMDAiIGZpbGw9IiNlNDAwMmIiIHJ4PSIxMiIvPjxyZWN0IHg9IjgiIHk9IjgiIHdpZHRoPSIzODQiIGhlaWdodD0iMjg0IiBmaWxsPSJub25lIiBzdHJva2U9IiNmZmZmZmYiIHN0cm9rZS13aWR0aD0iMyIgcng9IjkiLz48dGV4dCB4PSIyMDAiIHk9IjE1NSIgZm9udC1mYW1pbHk9IlNlZ29lIFVJIEVtb2ppLEFwcGxlIENvbG9yIEVtb2ppLE5vdG8gRW1vamksQXJpYWwiIGZvbnQtc2l6ZT0iMTEwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBkb21pbmFudC1iYXNlbGluZT0ibWlkZGxlIj7wn42XPC90ZXh0Pjx0ZXh0IHg9IjIwMCIgeT0iMjQ1IiBmb250LWZhbWlseT0iQXJpYWwsSGVsdmV0aWNhLHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMjAiIGZvbnQtd2VpZ2h0PSJib2xkIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjZmZmZmZmIiBsZXR0ZXItc3BhY2luZz0iMiI+QlVDS0VUUzwvdGV4dD48L3N2Zz4="
+      ],
+      "active": true,
+      "createdAt": "2026-08-12T21:28:49Z",
+      "updatedAt": "2026-08-12T21:28:49Z",
+      "brand": "kfc-brand-001"
+    },
+    {
+      "id": "kfc-004",
+      "sku": "KFC-BKT-004",
+      "name": "Boneless Bucket",
+      "category": "Buckets",
+      "description": "8 pieces of 100% boneless Original Recipe chicken, perfect for sharing.",
+      "price": 13.49,
+      "menuTypes": [
+        "lunch",
+        "dinner"
+      ],
+      "images": [
+        "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA0MDAgMzAwIiB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCI+PHJlY3Qgd2lkdGg9IjQwMCIgaGVpZ2h0PSIzMDAiIGZpbGw9IiNlNDAwMmIiIHJ4PSIxMiIvPjxyZWN0IHg9IjgiIHk9IjgiIHdpZHRoPSIzODQiIGhlaWdodD0iMjg0IiBmaWxsPSJub25lIiBzdHJva2U9IiNmZmZmZmYiIHN0cm9rZS13aWR0aD0iMyIgcng9IjkiLz48dGV4dCB4PSIyMDAiIHk9IjE1NSIgZm9udC1mYW1pbHk9IlNlZ29lIFVJIEVtb2ppLEFwcGxlIENvbG9yIEVtb2ppLE5vdG8gRW1vamksQXJpYWwiIGZvbnQtc2l6ZT0iMTEwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBkb21pbmFudC1iYXNlbGluZT0ibWlkZGxlIj7wn42XPC90ZXh0Pjx0ZXh0IHg9IjIwMCIgeT0iMjQ1IiBmb250LWZhbWlseT0iQXJpYWwsSGVsdmV0aWNhLHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMjAiIGZvbnQtd2VpZ2h0PSJib2xkIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjZmZmZmZmIiBsZXR0ZXItc3BhY2luZz0iMiI+QlVDS0VUUzwvdGV4dD48L3N2Zz4="
+      ],
+      "active": true,
+      "createdAt": "2026-08-12T21:28:49Z",
+      "updatedAt": "2026-08-12T21:28:49Z",
+      "brand": "kfc-brand-001"
+    },
+    {
+      "id": "kfc-005",
+      "sku": "KFC-BKT-005",
+      "name": "Mighty Bucket for One",
+      "category": "Buckets",
+      "description": "2 pieces of Original Recipe chicken, 5 hot wings, fries, a regular side and a drink.",
+      "price": 9.49,
+      "menuTypes": [
+        "lunch",
+        "dinner"
+      ],
+      "images": [
+        "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA0MDAgMzAwIiB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCI+PHJlY3Qgd2lkdGg9IjQwMCIgaGVpZ2h0PSIzMDAiIGZpbGw9IiNlNDAwMmIiIHJ4PSIxMiIvPjxyZWN0IHg9IjgiIHk9IjgiIHdpZHRoPSIzODQiIGhlaWdodD0iMjg0IiBmaWxsPSJub25lIiBzdHJva2U9IiNmZmZmZmYiIHN0cm9rZS13aWR0aD0iMyIgcng9IjkiLz48dGV4dCB4PSIyMDAiIHk9IjE1NSIgZm9udC1mYW1pbHk9IlNlZ29lIFVJIEVtb2ppLEFwcGxlIENvbG9yIEVtb2ppLE5vdG8gRW1vamksQXJpYWwiIGZvbnQtc2l6ZT0iMTEwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBkb21pbmFudC1iYXNlbGluZT0ibWlkZGxlIj7wn42XPC90ZXh0Pjx0ZXh0IHg9IjIwMCIgeT0iMjQ1IiBmb250LWZhbWlseT0iQXJpYWwsSGVsdmV0aWNhLHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMjAiIGZvbnQtd2VpZ2h0PSJib2xkIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjZmZmZmZmIiBsZXR0ZXItc3BhY2luZz0iMiI+QlVDS0VUUzwvdGV4dD48L3N2Zz4="
+      ],
+      "active": true,
+      "createdAt": "2026-08-12T21:28:49Z",
+      "updatedAt": "2026-08-12T21:28:49Z",
+      "brand": "kfc-brand-001"
+    },
+    {
+      "id": "kfc-010",
+      "sku": "KFC-BAN-001",
+      "name": "Boneless Banquet",
+      "category": "Boneless Banquets",
+      "description": "3 pieces of boneless Original Recipe chicken, fries, a regular side, a dip and a drink.",
+      "price": 8.49,
+      "menuTypes": [
+        "lunch",
+        "dinner"
+      ],
+      "images": [
+        "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA0MDAgMzAwIiB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCI+PHJlY3Qgd2lkdGg9IjQwMCIgaGVpZ2h0PSIzMDAiIGZpbGw9IiMwMDAwMDAiIHJ4PSIxMiIvPjxyZWN0IHg9IjgiIHk9IjgiIHdpZHRoPSIzODQiIGhlaWdodD0iMjg0IiBmaWxsPSJub25lIiBzdHJva2U9IiNlNDAwMmIiIHN0cm9rZS13aWR0aD0iMyIgcng9IjkiLz48dGV4dCB4PSIyMDAiIHk9IjE1NSIgZm9udC1mYW1pbHk9IlNlZ29lIFVJIEVtb2ppLEFwcGxlIENvbG9yIEVtb2ppLE5vdG8gRW1vamksQXJpYWwiIGZvbnQtc2l6ZT0iMTEwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBkb21pbmFudC1iYXNlbGluZT0ibWlkZGxlIj7wn42XPC90ZXh0Pjx0ZXh0IHg9IjIwMCIgeT0iMjQ1IiBmb250LWZhbWlseT0iQXJpYWwsSGVsdmV0aWNhLHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMjAiIGZvbnQtd2VpZ2h0PSJib2xkIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjZTQwMDJiIiBsZXR0ZXItc3BhY2luZz0iMiI+Qk9ORUxFU1MgQkFOUVVFVDwvdGV4dD48L3N2Zz4="
+      ],
+      "active": true,
+      "createdAt": "2026-08-12T21:28:49Z",
+      "updatedAt": "2026-08-12T21:28:49Z",
+      "brand": "kfc-brand-001"
+    },
+    {
+      "id": "kfc-011",
+      "sku": "KFC-BAN-002",
+      "name": "Zinger Boneless Banquet",
+      "category": "Boneless Banquets",
+      "description": "3 pieces of spicy boneless Zinger chicken, fries, a regular side, a dip and a drink.",
+      "price": 8.99,
+      "menuTypes": [
+        "lunch",
+        "dinner"
+      ],
+      "images": [
+        "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA0MDAgMzAwIiB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCI+PHJlY3Qgd2lkdGg9IjQwMCIgaGVpZ2h0PSIzMDAiIGZpbGw9IiMwMDAwMDAiIHJ4PSIxMiIvPjxyZWN0IHg9IjgiIHk9IjgiIHdpZHRoPSIzODQiIGhlaWdodD0iMjg0IiBmaWxsPSJub25lIiBzdHJva2U9IiNlNDAwMmIiIHN0cm9rZS13aWR0aD0iMyIgcng9IjkiLz48dGV4dCB4PSIyMDAiIHk9IjE1NSIgZm9udC1mYW1pbHk9IlNlZ29lIFVJIEVtb2ppLEFwcGxlIENvbG9yIEVtb2ppLE5vdG8gRW1vamksQXJpYWwiIGZvbnQtc2l6ZT0iMTEwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBkb21pbmFudC1iYXNlbGluZT0ibWlkZGxlIj7wn42XPC90ZXh0Pjx0ZXh0IHg9IjIwMCIgeT0iMjQ1IiBmb250LWZhbWlseT0iQXJpYWwsSGVsdmV0aWNhLHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMjAiIGZvbnQtd2VpZ2h0PSJib2xkIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjZTQwMDJiIiBsZXR0ZXItc3BhY2luZz0iMiI+Qk9ORUxFU1MgQkFOUVVFVDwvdGV4dD48L3N2Zz4="
+      ],
+      "active": true,
+      "createdAt": "2026-08-12T21:28:49Z",
+      "updatedAt": "2026-08-12T21:28:49Z",
+      "brand": "kfc-brand-001"
+    },
+    {
+      "id": "kfc-012",
+      "sku": "KFC-BAN-003",
+      "name": "Wicked Boneless Banquet",
+      "category": "Boneless Banquets",
+      "description": "3 pieces of Wicked Zinger boneless chicken with extra hot sauce, fries, a side and a drink.",
+      "price": 9.29,
+      "menuTypes": [
+        "lunch",
+        "dinner"
+      ],
+      "images": [
+        "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA0MDAgMzAwIiB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCI+PHJlY3Qgd2lkdGg9IjQwMCIgaGVpZ2h0PSIzMDAiIGZpbGw9IiMwMDAwMDAiIHJ4PSIxMiIvPjxyZWN0IHg9IjgiIHk9IjgiIHdpZHRoPSIzODQiIGhlaWdodD0iMjg0IiBmaWxsPSJub25lIiBzdHJva2U9IiNlNDAwMmIiIHN0cm9rZS13aWR0aD0iMyIgcng9IjkiLz48dGV4dCB4PSIyMDAiIHk9IjE1NSIgZm9udC1mYW1pbHk9IlNlZ29lIFVJIEVtb2ppLEFwcGxlIENvbG9yIEVtb2ppLE5vdG8gRW1vamksQXJpYWwiIGZvbnQtc2l6ZT0iMTEwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBkb21pbmFudC1iYXNlbGluZT0ibWlkZGxlIj7wn42XPC90ZXh0Pjx0ZXh0IHg9IjIwMCIgeT0iMjQ1IiBmb250LWZhbWlseT0iQXJpYWwsSGVsdmV0aWNhLHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMjAiIGZvbnQtd2VpZ2h0PSJib2xkIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjZTQwMDJiIiBsZXR0ZXItc3BhY2luZz0iMiI+Qk9ORUxFU1MgQkFOUVVFVDwvdGV4dD48L3N2Zz4="
+      ],
+      "active": true,
+      "createdAt": "2026-08-12T21:28:49Z",
+      "updatedAt": "2026-08-12T21:28:49Z",
+      "brand": "kfc-brand-001"
+    },
+    {
+      "id": "kfc-020",
+      "sku": "KFC-BUR-001",
+      "name": "Zinger Burger",
+      "category": "Burgers",
+      "description": "A spicy, crunchy fillet in a soft bun with fresh lettuce and mayo.",
+      "price": 5.49,
+      "menuTypes": [
+        "lunch",
+        "dinner"
+      ],
+      "images": [
+        "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA0MDAgMzAwIiB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCI+PHJlY3Qgd2lkdGg9IjQwMCIgaGVpZ2h0PSIzMDAiIGZpbGw9IiNlNDAwMmIiIHJ4PSIxMiIvPjxyZWN0IHg9IjgiIHk9IjgiIHdpZHRoPSIzODQiIGhlaWdodD0iMjg0IiBmaWxsPSJub25lIiBzdHJva2U9IiNmZmZmZmYiIHN0cm9rZS13aWR0aD0iMyIgcng9IjkiLz48dGV4dCB4PSIyMDAiIHk9IjE1NSIgZm9udC1mYW1pbHk9IlNlZ29lIFVJIEVtb2ppLEFwcGxlIENvbG9yIEVtb2ppLE5vdG8gRW1vamksQXJpYWwiIGZvbnQtc2l6ZT0iMTEwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBkb21pbmFudC1iYXNlbGluZT0ibWlkZGxlIj7wn42UPC90ZXh0Pjx0ZXh0IHg9IjIwMCIgeT0iMjQ1IiBmb250LWZhbWlseT0iQXJpYWwsSGVsdmV0aWNhLHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMjAiIGZvbnQtd2VpZ2h0PSJib2xkIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjZmZmZmZmIiBsZXR0ZXItc3BhY2luZz0iMiI+QlVSR0VSUzwvdGV4dD48L3N2Zz4="
+      ],
+      "active": true,
+      "createdAt": "2026-08-12T21:28:49Z",
+      "updatedAt": "2026-08-12T21:28:49Z",
+      "brand": "kfc-brand-001"
+    },
+    {
+      "id": "kfc-021",
+      "sku": "KFC-BUR-002",
+      "name": "Original Recipe Burger",
+      "category": "Burgers",
+      "description": "Our classic Original Recipe fillet with lettuce and mayo in a soft bun.",
+      "price": 4.99,
+      "menuTypes": [
+        "lunch",
+        "dinner"
+      ],
+      "images": [
+        "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA0MDAgMzAwIiB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCI+PHJlY3Qgd2lkdGg9IjQwMCIgaGVpZ2h0PSIzMDAiIGZpbGw9IiNlNDAwMmIiIHJ4PSIxMiIvPjxyZWN0IHg9IjgiIHk9IjgiIHdpZHRoPSIzODQiIGhlaWdodD0iMjg0IiBmaWxsPSJub25lIiBzdHJva2U9IiNmZmZmZmYiIHN0cm9rZS13aWR0aD0iMyIgcng9IjkiLz48dGV4dCB4PSIyMDAiIHk9IjE1NSIgZm9udC1mYW1pbHk9IlNlZ29lIFVJIEVtb2ppLEFwcGxlIENvbG9yIEVtb2ppLE5vdG8gRW1vamksQXJpYWwiIGZvbnQtc2l6ZT0iMTEwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBkb21pbmFudC1iYXNlbGluZT0ibWlkZGxlIj7wn42UPC90ZXh0Pjx0ZXh0IHg9IjIwMCIgeT0iMjQ1IiBmb250LWZhbWlseT0iQXJpYWwsSGVsdmV0aWNhLHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMjAiIGZvbnQtd2VpZ2h0PSJib2xkIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjZmZmZmZmIiBsZXR0ZXItc3BhY2luZz0iMiI+QlVSR0VSUzwvdGV4dD48L3N2Zz4="
+      ],
+      "active": true,
+      "createdAt": "2026-08-12T21:28:49Z",
+      "updatedAt": "2026-08-12T21:28:49Z",
+      "brand": "kfc-brand-001"
+    },
+    {
+      "id": "kfc-022",
+      "sku": "KFC-BUR-003",
+      "name": "Fillet Burger",
+      "category": "Burgers",
+      "description": "A tender, juicy chicken fillet burger with crisp lettuce and creamy mayo.",
+      "price": 5.29,
+      "menuTypes": [
+        "lunch",
+        "dinner"
+      ],
+      "images": [
+        "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA0MDAgMzAwIiB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCI+PHJlY3Qgd2lkdGg9IjQwMCIgaGVpZ2h0PSIzMDAiIGZpbGw9IiNlNDAwMmIiIHJ4PSIxMiIvPjxyZWN0IHg9IjgiIHk9IjgiIHdpZHRoPSIzODQiIGhlaWdodD0iMjg0IiBmaWxsPSJub25lIiBzdHJva2U9IiNmZmZmZmYiIHN0cm9rZS13aWR0aD0iMyIgcng9IjkiLz48dGV4dCB4PSIyMDAiIHk9IjE1NSIgZm9udC1mYW1pbHk9IlNlZ29lIFVJIEVtb2ppLEFwcGxlIENvbG9yIEVtb2ppLE5vdG8gRW1vamksQXJpYWwiIGZvbnQtc2l6ZT0iMTEwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBkb21pbmFudC1iYXNlbGluZT0ibWlkZGxlIj7wn42UPC90ZXh0Pjx0ZXh0IHg9IjIwMCIgeT0iMjQ1IiBmb250LWZhbWlseT0iQXJpYWwsSGVsdmV0aWNhLHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMjAiIGZvbnQtd2VpZ2h0PSJib2xkIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjZmZmZmZmIiBsZXR0ZXItc3BhY2luZz0iMiI+QlVSR0VSUzwvdGV4dD48L3N2Zz4="
+      ],
+      "active": true,
+      "createdAt": "2026-08-12T21:28:49Z",
+      "updatedAt": "2026-08-12T21:28:49Z",
+      "brand": "kfc-brand-001"
+    },
+    {
+      "id": "kfc-023",
+      "sku": "KFC-BUR-004",
+      "name": "Zinger Stacker",
+      "category": "Burgers",
+      "description": "Two spicy Zinger fillets stacked with bacon, cheese and BBQ sauce.",
+      "price": 6.99,
+      "menuTypes": [
+        "lunch",
+        "dinner"
+      ],
+      "images": [
+        "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA0MDAgMzAwIiB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCI+PHJlY3Qgd2lkdGg9IjQwMCIgaGVpZ2h0PSIzMDAiIGZpbGw9IiNlNDAwMmIiIHJ4PSIxMiIvPjxyZWN0IHg9IjgiIHk9IjgiIHdpZHRoPSIzODQiIGhlaWdodD0iMjg0IiBmaWxsPSJub25lIiBzdHJva2U9IiNmZmZmZmYiIHN0cm9rZS13aWR0aD0iMyIgcng9IjkiLz48dGV4dCB4PSIyMDAiIHk9IjE1NSIgZm9udC1mYW1pbHk9IlNlZ29lIFVJIEVtb2ppLEFwcGxlIENvbG9yIEVtb2ppLE5vdG8gRW1vamksQXJpYWwiIGZvbnQtc2l6ZT0iMTEwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBkb21pbmFudC1iYXNlbGluZT0ibWlkZGxlIj7wn42UPC90ZXh0Pjx0ZXh0IHg9IjIwMCIgeT0iMjQ1IiBmb250LWZhbWlseT0iQXJpYWwsSGVsdmV0aWNhLHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMjAiIGZvbnQtd2VpZ2h0PSJib2xkIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjZmZmZmZmIiBsZXR0ZXItc3BhY2luZz0iMiI+QlVSR0VSUzwvdGV4dD48L3N2Zz4="
+      ],
+      "active": true,
+      "createdAt": "2026-08-12T21:28:49Z",
+      "updatedAt": "2026-08-12T21:28:49Z",
+      "brand": "kfc-brand-001"
+    },
+    {
+      "id": "kfc-024",
+      "sku": "KFC-BUR-005",
+      "name": "Fiery Zinger Burger",
+      "category": "Burgers",
+      "description": "Our spiciest Zinger fillet yet, topped with a fiery sriracha-style sauce.",
+      "price": 5.79,
+      "menuTypes": [
+        "lunch",
+        "dinner"
+      ],
+      "images": [
+        "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA0MDAgMzAwIiB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCI+PHJlY3Qgd2lkdGg9IjQwMCIgaGVpZ2h0PSIzMDAiIGZpbGw9IiNlNDAwMmIiIHJ4PSIxMiIvPjxyZWN0IHg9IjgiIHk9IjgiIHdpZHRoPSIzODQiIGhlaWdodD0iMjg0IiBmaWxsPSJub25lIiBzdHJva2U9IiNmZmZmZmYiIHN0cm9rZS13aWR0aD0iMyIgcng9IjkiLz48dGV4dCB4PSIyMDAiIHk9IjE1NSIgZm9udC1mYW1pbHk9IlNlZ29lIFVJIEVtb2ppLEFwcGxlIENvbG9yIEVtb2ppLE5vdG8gRW1vamksQXJpYWwiIGZvbnQtc2l6ZT0iMTEwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBkb21pbmFudC1iYXNlbGluZT0ibWlkZGxlIj7wn42UPC90ZXh0Pjx0ZXh0IHg9IjIwMCIgeT0iMjQ1IiBmb250LWZhbWlseT0iQXJpYWwsSGVsdmV0aWNhLHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMjAiIGZvbnQtd2VpZ2h0PSJib2xkIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjZmZmZmZmIiBsZXR0ZXItc3BhY2luZz0iMiI+QlVSR0VSUzwvdGV4dD48L3N2Zz4="
+      ],
+      "active": true,
+      "createdAt": "2026-08-12T21:28:49Z",
+      "updatedAt": "2026-08-12T21:28:49Z",
+      "brand": "kfc-brand-001"
+    },
+    {
+      "id": "kfc-025",
+      "sku": "KFC-BUR-006",
+      "name": "Zinger Cheese Burger",
+      "category": "Burgers",
+      "description": "Spicy Zinger fillet topped with melted cheese, lettuce and mayo.",
+      "price": 5.99,
+      "menuTypes": [
+        "lunch",
+        "dinner"
+      ],
+      "images": [
+        "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA0MDAgMzAwIiB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCI+PHJlY3Qgd2lkdGg9IjQwMCIgaGVpZ2h0PSIzMDAiIGZpbGw9IiNlNDAwMmIiIHJ4PSIxMiIvPjxyZWN0IHg9IjgiIHk9IjgiIHdpZHRoPSIzODQiIGhlaWdodD0iMjg0IiBmaWxsPSJub25lIiBzdHJva2U9IiNmZmZmZmYiIHN0cm9rZS13aWR0aD0iMyIgcng9IjkiLz48dGV4dCB4PSIyMDAiIHk9IjE1NSIgZm9udC1mYW1pbHk9IlNlZ29lIFVJIEVtb2ppLEFwcGxlIENvbG9yIEVtb2ppLE5vdG8gRW1vamksQXJpYWwiIGZvbnQtc2l6ZT0iMTEwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBkb21pbmFudC1iYXNlbGluZT0ibWlkZGxlIj7wn42UPC90ZXh0Pjx0ZXh0IHg9IjIwMCIgeT0iMjQ1IiBmb250LWZhbWlseT0iQXJpYWwsSGVsdmV0aWNhLHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMjAiIGZvbnQtd2VpZ2h0PSJib2xkIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjZmZmZmZmIiBsZXR0ZXItc3BhY2luZz0iMiI+QlVSR0VSUzwvdGV4dD48L3N2Zz4="
+      ],
+      "active": true,
+      "createdAt": "2026-08-12T21:28:49Z",
+      "updatedAt": "2026-08-12T21:28:49Z",
+      "brand": "kfc-brand-001"
+    },
+    {
+      "id": "kfc-030",
+      "sku": "KFC-WRP-001",
+      "name": "Zinger Wrap",
+      "category": "Wraps & Flatbreads",
+      "description": "Spicy Zinger chicken strips wrapped with lettuce and mayo in a soft tortilla.",
+      "price": 4.99,
+      "menuTypes": [
+        "lunch",
+        "dinner"
+      ],
+      "images": [
+        "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA0MDAgMzAwIiB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCI+PHJlY3Qgd2lkdGg9IjQwMCIgaGVpZ2h0PSIzMDAiIGZpbGw9IiMwMDAwMDAiIHJ4PSIxMiIvPjxyZWN0IHg9IjgiIHk9IjgiIHdpZHRoPSIzODQiIGhlaWdodD0iMjg0IiBmaWxsPSJub25lIiBzdHJva2U9IiNlNDAwMmIiIHN0cm9rZS13aWR0aD0iMyIgcng9IjkiLz48dGV4dCB4PSIyMDAiIHk9IjE1NSIgZm9udC1mYW1pbHk9IlNlZ29lIFVJIEVtb2ppLEFwcGxlIENvbG9yIEVtb2ppLE5vdG8gRW1vamksQXJpYWwiIGZvbnQtc2l6ZT0iMTEwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBkb21pbmFudC1iYXNlbGluZT0ibWlkZGxlIj7wn4yvPC90ZXh0Pjx0ZXh0IHg9IjIwMCIgeT0iMjQ1IiBmb250LWZhbWlseT0iQXJpYWwsSGVsdmV0aWNhLHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMjAiIGZvbnQtd2VpZ2h0PSJib2xkIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjZTQwMDJiIiBsZXR0ZXItc3BhY2luZz0iMiI+V1JBUFM8L3RleHQ+PC9zdmc+"
+      ],
+      "active": true,
+      "createdAt": "2026-08-12T21:28:49Z",
+      "updatedAt": "2026-08-12T21:28:49Z",
+      "brand": "kfc-brand-001"
+    },
+    {
+      "id": "kfc-031",
+      "sku": "KFC-WRP-002",
+      "name": "Boneless Banquet Wrap",
+      "category": "Wraps & Flatbreads",
+      "description": "Original Recipe chicken pieces, lettuce and mayo wrapped in a soft tortilla.",
+      "price": 4.79,
+      "menuTypes": [
+        "lunch",
+        "dinner"
+      ],
+      "images": [
+        "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA0MDAgMzAwIiB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCI+PHJlY3Qgd2lkdGg9IjQwMCIgaGVpZ2h0PSIzMDAiIGZpbGw9IiMwMDAwMDAiIHJ4PSIxMiIvPjxyZWN0IHg9IjgiIHk9IjgiIHdpZHRoPSIzODQiIGhlaWdodD0iMjg0IiBmaWxsPSJub25lIiBzdHJva2U9IiNlNDAwMmIiIHN0cm9rZS13aWR0aD0iMyIgcng9IjkiLz48dGV4dCB4PSIyMDAiIHk9IjE1NSIgZm9udC1mYW1pbHk9IlNlZ29lIFVJIEVtb2ppLEFwcGxlIENvbG9yIEVtb2ppLE5vdG8gRW1vamksQXJpYWwiIGZvbnQtc2l6ZT0iMTEwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBkb21pbmFudC1iYXNlbGluZT0ibWlkZGxlIj7wn4yvPC90ZXh0Pjx0ZXh0IHg9IjIwMCIgeT0iMjQ1IiBmb250LWZhbWlseT0iQXJpYWwsSGVsdmV0aWNhLHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMjAiIGZvbnQtd2VpZ2h0PSJib2xkIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjZTQwMDJiIiBsZXR0ZXItc3BhY2luZz0iMiI+V1JBUFM8L3RleHQ+PC9zdmc+"
+      ],
+      "active": true,
+      "createdAt": "2026-08-12T21:28:49Z",
+      "updatedAt": "2026-08-12T21:28:49Z",
+      "brand": "kfc-brand-001"
+    },
+    {
+      "id": "kfc-032",
+      "sku": "KFC-WRP-003",
+      "name": "BBQ Tower Wrap",
+      "category": "Wraps & Flatbreads",
+      "description": "Crispy chicken, a hash brown, cheese and smoky BBQ sauce in a tortilla wrap.",
+      "price": 5.29,
+      "menuTypes": [
+        "lunch",
+        "dinner"
+      ],
+      "images": [
+        "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA0MDAgMzAwIiB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCI+PHJlY3Qgd2lkdGg9IjQwMCIgaGVpZ2h0PSIzMDAiIGZpbGw9IiMwMDAwMDAiIHJ4PSIxMiIvPjxyZWN0IHg9IjgiIHk9IjgiIHdpZHRoPSIzODQiIGhlaWdodD0iMjg0IiBmaWxsPSJub25lIiBzdHJva2U9IiNlNDAwMmIiIHN0cm9rZS13aWR0aD0iMyIgcng9IjkiLz48dGV4dCB4PSIyMDAiIHk9IjE1NSIgZm9udC1mYW1pbHk9IlNlZ29lIFVJIEVtb2ppLEFwcGxlIENvbG9yIEVtb2ppLE5vdG8gRW1vamksQXJpYWwiIGZvbnQtc2l6ZT0iMTEwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBkb21pbmFudC1iYXNlbGluZT0ibWlkZGxlIj7wn4yvPC90ZXh0Pjx0ZXh0IHg9IjIwMCIgeT0iMjQ1IiBmb250LWZhbWlseT0iQXJpYWwsSGVsdmV0aWNhLHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMjAiIGZvbnQtd2VpZ2h0PSJib2xkIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjZTQwMDJiIiBsZXR0ZXItc3BhY2luZz0iMiI+V1JBUFM8L3RleHQ+PC9zdmc+"
+      ],
+      "active": true,
+      "createdAt": "2026-08-12T21:28:49Z",
+      "updatedAt": "2026-08-12T21:28:49Z",
+      "brand": "kfc-brand-001"
+    },
+    {
+      "id": "kfc-033",
+      "sku": "KFC-WRP-004",
+      "name": "Flatbread Zinger",
+      "category": "Wraps & Flatbreads",
+      "description": "Zinger chicken fillet on a toasted flatbread with fresh salad and a spicy mayo.",
+      "price": 5.49,
+      "menuTypes": [
+        "lunch",
+        "dinner"
+      ],
+      "images": [
+        "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA0MDAgMzAwIiB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCI+PHJlY3Qgd2lkdGg9IjQwMCIgaGVpZ2h0PSIzMDAiIGZpbGw9IiMwMDAwMDAiIHJ4PSIxMiIvPjxyZWN0IHg9IjgiIHk9IjgiIHdpZHRoPSIzODQiIGhlaWdodD0iMjg0IiBmaWxsPSJub25lIiBzdHJva2U9IiNlNDAwMmIiIHN0cm9rZS13aWR0aD0iMyIgcng9IjkiLz48dGV4dCB4PSIyMDAiIHk9IjE1NSIgZm9udC1mYW1pbHk9IlNlZ29lIFVJIEVtb2ppLEFwcGxlIENvbG9yIEVtb2ppLE5vdG8gRW1vamksQXJpYWwiIGZvbnQtc2l6ZT0iMTEwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBkb21pbmFudC1iYXNlbGluZT0ibWlkZGxlIj7wn4yvPC90ZXh0Pjx0ZXh0IHg9IjIwMCIgeT0iMjQ1IiBmb250LWZhbWlseT0iQXJpYWwsSGVsdmV0aWNhLHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMjAiIGZvbnQtd2VpZ2h0PSJib2xkIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjZTQwMDJiIiBsZXR0ZXItc3BhY2luZz0iMiI+V1JBUFM8L3RleHQ+PC9zdmc+"
+      ],
+      "active": true,
+      "createdAt": "2026-08-12T21:28:49Z",
+      "updatedAt": "2026-08-12T21:28:49Z",
+      "brand": "kfc-brand-001"
+    },
+    {
+      "id": "kfc-040",
+      "sku": "KFC-WNG-001",
+      "name": "5 Wicked Wings",
+      "category": "Wicked Wings",
+      "description": "5 wings coated in our fiery Wicked Wings seasoning.",
+      "price": 3.99,
+      "menuTypes": [
+        "lunch",
+        "dinner"
+      ],
+      "images": [
+        "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA0MDAgMzAwIiB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCI+PHJlY3Qgd2lkdGg9IjQwMCIgaGVpZ2h0PSIzMDAiIGZpbGw9IiNlNDAwMmIiIHJ4PSIxMiIvPjxyZWN0IHg9IjgiIHk9IjgiIHdpZHRoPSIzODQiIGhlaWdodD0iMjg0IiBmaWxsPSJub25lIiBzdHJva2U9IiNmZmZmZmYiIHN0cm9rZS13aWR0aD0iMyIgcng9IjkiLz48dGV4dCB4PSIyMDAiIHk9IjE1NSIgZm9udC1mYW1pbHk9IlNlZ29lIFVJIEVtb2ppLEFwcGxlIENvbG9yIEVtb2ppLE5vdG8gRW1vamksQXJpYWwiIGZvbnQtc2l6ZT0iMTEwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBkb21pbmFudC1iYXNlbGluZT0ibWlkZGxlIj7wn42XPC90ZXh0Pjx0ZXh0IHg9IjIwMCIgeT0iMjQ1IiBmb250LWZhbWlseT0iQXJpYWwsSGVsdmV0aWNhLHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMjAiIGZvbnQtd2VpZ2h0PSJib2xkIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjZmZmZmZmIiBsZXR0ZXItc3BhY2luZz0iMiI+V0lDS0VEIFdJTkdTPC90ZXh0Pjwvc3ZnPg=="
+      ],
+      "active": true,
+      "createdAt": "2026-08-12T21:28:49Z",
+      "updatedAt": "2026-08-12T21:28:49Z",
+      "brand": "kfc-brand-001"
+    },
+    {
+      "id": "kfc-041",
+      "sku": "KFC-WNG-002",
+      "name": "10 Wicked Wings",
+      "category": "Wicked Wings",
+      "description": "10 wings coated in our fiery Wicked Wings seasoning \u2014 great for sharing.",
+      "price": 6.99,
+      "menuTypes": [
+        "lunch",
+        "dinner"
+      ],
+      "images": [
+        "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA0MDAgMzAwIiB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCI+PHJlY3Qgd2lkdGg9IjQwMCIgaGVpZ2h0PSIzMDAiIGZpbGw9IiNlNDAwMmIiIHJ4PSIxMiIvPjxyZWN0IHg9IjgiIHk9IjgiIHdpZHRoPSIzODQiIGhlaWdodD0iMjg0IiBmaWxsPSJub25lIiBzdHJva2U9IiNmZmZmZmYiIHN0cm9rZS13aWR0aD0iMyIgcng9IjkiLz48dGV4dCB4PSIyMDAiIHk9IjE1NSIgZm9udC1mYW1pbHk9IlNlZ29lIFVJIEVtb2ppLEFwcGxlIENvbG9yIEVtb2ppLE5vdG8gRW1vamksQXJpYWwiIGZvbnQtc2l6ZT0iMTEwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBkb21pbmFudC1iYXNlbGluZT0ibWlkZGxlIj7wn42XPC90ZXh0Pjx0ZXh0IHg9IjIwMCIgeT0iMjQ1IiBmb250LWZhbWlseT0iQXJpYWwsSGVsdmV0aWNhLHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMjAiIGZvbnQtd2VpZ2h0PSJib2xkIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjZmZmZmZmIiBsZXR0ZXItc3BhY2luZz0iMiI+V0lDS0VEIFdJTkdTPC90ZXh0Pjwvc3ZnPg=="
+      ],
+      "active": true,
+      "createdAt": "2026-08-12T21:28:49Z",
+      "updatedAt": "2026-08-12T21:28:49Z",
+      "brand": "kfc-brand-001"
+    },
+    {
+      "id": "kfc-042",
+      "sku": "KFC-WNG-003",
+      "name": "5 Hot Wings",
+      "category": "Wicked Wings",
+      "description": "5 classic hot wings, freshly hand-breaded and fried to order.",
+      "price": 3.79,
+      "menuTypes": [
+        "lunch",
+        "dinner"
+      ],
+      "images": [
+        "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA0MDAgMzAwIiB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCI+PHJlY3Qgd2lkdGg9IjQwMCIgaGVpZ2h0PSIzMDAiIGZpbGw9IiNlNDAwMmIiIHJ4PSIxMiIvPjxyZWN0IHg9IjgiIHk9IjgiIHdpZHRoPSIzODQiIGhlaWdodD0iMjg0IiBmaWxsPSJub25lIiBzdHJva2U9IiNmZmZmZmYiIHN0cm9rZS13aWR0aD0iMyIgcng9IjkiLz48dGV4dCB4PSIyMDAiIHk9IjE1NSIgZm9udC1mYW1pbHk9IlNlZ29lIFVJIEVtb2ppLEFwcGxlIENvbG9yIEVtb2ppLE5vdG8gRW1vamksQXJpYWwiIGZvbnQtc2l6ZT0iMTEwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBkb21pbmFudC1iYXNlbGluZT0ibWlkZGxlIj7wn42XPC90ZXh0Pjx0ZXh0IHg9IjIwMCIgeT0iMjQ1IiBmb250LWZhbWlseT0iQXJpYWwsSGVsdmV0aWNhLHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMjAiIGZvbnQtd2VpZ2h0PSJib2xkIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjZmZmZmZmIiBsZXR0ZXItc3BhY2luZz0iMiI+V0lDS0VEIFdJTkdTPC90ZXh0Pjwvc3ZnPg=="
+      ],
+      "active": true,
+      "createdAt": "2026-08-12T21:28:49Z",
+      "updatedAt": "2026-08-12T21:28:49Z",
+      "brand": "kfc-brand-001"
+    },
+    {
+      "id": "kfc-043",
+      "sku": "KFC-WNG-004",
+      "name": "10 Hot Wings",
+      "category": "Wicked Wings",
+      "description": "10 classic hot wings, freshly hand-breaded and fried to order.",
+      "price": 6.49,
+      "menuTypes": [
+        "lunch",
+        "dinner"
+      ],
+      "images": [
+        "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA0MDAgMzAwIiB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCI+PHJlY3Qgd2lkdGg9IjQwMCIgaGVpZ2h0PSIzMDAiIGZpbGw9IiNlNDAwMmIiIHJ4PSIxMiIvPjxyZWN0IHg9IjgiIHk9IjgiIHdpZHRoPSIzODQiIGhlaWdodD0iMjg0IiBmaWxsPSJub25lIiBzdHJva2U9IiNmZmZmZmYiIHN0cm9rZS13aWR0aD0iMyIgcng9IjkiLz48dGV4dCB4PSIyMDAiIHk9IjE1NSIgZm9udC1mYW1pbHk9IlNlZ29lIFVJIEVtb2ppLEFwcGxlIENvbG9yIEVtb2ppLE5vdG8gRW1vamksQXJpYWwiIGZvbnQtc2l6ZT0iMTEwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBkb21pbmFudC1iYXNlbGluZT0ibWlkZGxlIj7wn42XPC90ZXh0Pjx0ZXh0IHg9IjIwMCIgeT0iMjQ1IiBmb250LWZhbWlseT0iQXJpYWwsSGVsdmV0aWNhLHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMjAiIGZvbnQtd2VpZ2h0PSJib2xkIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjZmZmZmZmIiBsZXR0ZXItc3BhY2luZz0iMiI+V0lDS0VEIFdJTkdTPC90ZXh0Pjwvc3ZnPg=="
+      ],
+      "active": true,
+      "createdAt": "2026-08-12T21:28:49Z",
+      "updatedAt": "2026-08-12T21:28:49Z",
+      "brand": "kfc-brand-001"
+    },
+    {
+      "id": "kfc-050",
+      "sku": "KFC-POP-001",
+      "name": "Regular Popcorn Chicken",
+      "category": "Popcorn Chicken",
+      "description": "Bite-sized pieces of 100% chicken breast, freshly hand-breaded and fried.",
+      "price": 3.49,
+      "menuTypes": [
+        "lunch",
+        "dinner"
+      ],
+      "images": [
+        "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA0MDAgMzAwIiB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCI+PHJlY3Qgd2lkdGg9IjQwMCIgaGVpZ2h0PSIzMDAiIGZpbGw9IiMwMDAwMDAiIHJ4PSIxMiIvPjxyZWN0IHg9IjgiIHk9IjgiIHdpZHRoPSIzODQiIGhlaWdodD0iMjg0IiBmaWxsPSJub25lIiBzdHJva2U9IiNlNDAwMmIiIHN0cm9rZS13aWR0aD0iMyIgcng9IjkiLz48dGV4dCB4PSIyMDAiIHk9IjE1NSIgZm9udC1mYW1pbHk9IlNlZ29lIFVJIEVtb2ppLEFwcGxlIENvbG9yIEVtb2ppLE5vdG8gRW1vamksQXJpYWwiIGZvbnQtc2l6ZT0iMTEwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBkb21pbmFudC1iYXNlbGluZT0ibWlkZGxlIj7wn42XPC90ZXh0Pjx0ZXh0IHg9IjIwMCIgeT0iMjQ1IiBmb250LWZhbWlseT0iQXJpYWwsSGVsdmV0aWNhLHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMjAiIGZvbnQtd2VpZ2h0PSJib2xkIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjZTQwMDJiIiBsZXR0ZXItc3BhY2luZz0iMiI+UE9QQ09STiBDSElDS0VOPC90ZXh0Pjwvc3ZnPg=="
+      ],
+      "active": true,
+      "createdAt": "2026-08-12T21:28:49Z",
+      "updatedAt": "2026-08-12T21:28:49Z",
+      "brand": "kfc-brand-001"
+    },
+    {
+      "id": "kfc-051",
+      "sku": "KFC-POP-002",
+      "name": "Large Popcorn Chicken",
+      "category": "Popcorn Chicken",
+      "description": "A large portion of bite-sized 100% chicken breast pieces, hand-breaded and fried.",
+      "price": 4.49,
+      "menuTypes": [
+        "lunch",
+        "dinner"
+      ],
+      "images": [
+        "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA0MDAgMzAwIiB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCI+PHJlY3Qgd2lkdGg9IjQwMCIgaGVpZ2h0PSIzMDAiIGZpbGw9IiMwMDAwMDAiIHJ4PSIxMiIvPjxyZWN0IHg9IjgiIHk9IjgiIHdpZHRoPSIzODQiIGhlaWdodD0iMjg0IiBmaWxsPSJub25lIiBzdHJva2U9IiNlNDAwMmIiIHN0cm9rZS13aWR0aD0iMyIgcng9IjkiLz48dGV4dCB4PSIyMDAiIHk9IjE1NSIgZm9udC1mYW1pbHk9IlNlZ29lIFVJIEVtb2ppLEFwcGxlIENvbG9yIEVtb2ppLE5vdG8gRW1vamksQXJpYWwiIGZvbnQtc2l6ZT0iMTEwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBkb21pbmFudC1iYXNlbGluZT0ibWlkZGxlIj7wn42XPC90ZXh0Pjx0ZXh0IHg9IjIwMCIgeT0iMjQ1IiBmb250LWZhbWlseT0iQXJpYWwsSGVsdmV0aWNhLHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMjAiIGZvbnQtd2VpZ2h0PSJib2xkIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjZTQwMDJiIiBsZXR0ZXItc3BhY2luZz0iMiI+UE9QQ09STiBDSElDS0VOPC90ZXh0Pjwvc3ZnPg=="
+      ],
+      "active": true,
+      "createdAt": "2026-08-12T21:28:49Z",
+      "updatedAt": "2026-08-12T21:28:49Z",
+      "brand": "kfc-brand-001"
+    },
+    {
+      "id": "kfc-052",
+      "sku": "KFC-POP-003",
+      "name": "Popcorn Chicken Box",
+      "category": "Popcorn Chicken",
+      "description": "Popcorn chicken, fries, a dip and a drink.",
+      "price": 6.99,
+      "menuTypes": [
+        "lunch",
+        "dinner"
+      ],
+      "images": [
+        "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA0MDAgMzAwIiB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCI+PHJlY3Qgd2lkdGg9IjQwMCIgaGVpZ2h0PSIzMDAiIGZpbGw9IiMwMDAwMDAiIHJ4PSIxMiIvPjxyZWN0IHg9IjgiIHk9IjgiIHdpZHRoPSIzODQiIGhlaWdodD0iMjg0IiBmaWxsPSJub25lIiBzdHJva2U9IiNlNDAwMmIiIHN0cm9rZS13aWR0aD0iMyIgcng9IjkiLz48dGV4dCB4PSIyMDAiIHk9IjE1NSIgZm9udC1mYW1pbHk9IlNlZ29lIFVJIEVtb2ppLEFwcGxlIENvbG9yIEVtb2ppLE5vdG8gRW1vamksQXJpYWwiIGZvbnQtc2l6ZT0iMTEwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBkb21pbmFudC1iYXNlbGluZT0ibWlkZGxlIj7wn42XPC90ZXh0Pjx0ZXh0IHg9IjIwMCIgeT0iMjQ1IiBmb250LWZhbWlseT0iQXJpYWwsSGVsdmV0aWNhLHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMjAiIGZvbnQtd2VpZ2h0PSJib2xkIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjZTQwMDJiIiBsZXR0ZXItc3BhY2luZz0iMiI+UE9QQ09STiBDSElDS0VOPC90ZXh0Pjwvc3ZnPg=="
+      ],
+      "active": true,
+      "createdAt": "2026-08-12T21:28:49Z",
+      "updatedAt": "2026-08-12T21:28:49Z",
+      "brand": "kfc-brand-001"
+    },
+    {
+      "id": "kfc-060",
+      "sku": "KFC-SID-001",
+      "name": "Regular Fries",
+      "category": "Sides",
+      "description": "Golden, crispy skin-on fries, lightly salted.",
+      "price": 1.99,
+      "menuTypes": [
+        "lunch",
+        "dinner"
+      ],
+      "images": [
+        "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA0MDAgMzAwIiB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCI+PHJlY3Qgd2lkdGg9IjQwMCIgaGVpZ2h0PSIzMDAiIGZpbGw9IiNlNDAwMmIiIHJ4PSIxMiIvPjxyZWN0IHg9IjgiIHk9IjgiIHdpZHRoPSIzODQiIGhlaWdodD0iMjg0IiBmaWxsPSJub25lIiBzdHJva2U9IiNmZmZmZmYiIHN0cm9rZS13aWR0aD0iMyIgcng9IjkiLz48dGV4dCB4PSIyMDAiIHk9IjE1NSIgZm9udC1mYW1pbHk9IlNlZ29lIFVJIEVtb2ppLEFwcGxlIENvbG9yIEVtb2ppLE5vdG8gRW1vamksQXJpYWwiIGZvbnQtc2l6ZT0iMTEwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBkb21pbmFudC1iYXNlbGluZT0ibWlkZGxlIj7wn42fPC90ZXh0Pjx0ZXh0IHg9IjIwMCIgeT0iMjQ1IiBmb250LWZhbWlseT0iQXJpYWwsSGVsdmV0aWNhLHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMjAiIGZvbnQtd2VpZ2h0PSJib2xkIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjZmZmZmZmIiBsZXR0ZXItc3BhY2luZz0iMiI+U0lERVM8L3RleHQ+PC9zdmc+"
+      ],
+      "active": true,
+      "createdAt": "2026-08-12T21:28:49Z",
+      "updatedAt": "2026-08-12T21:28:49Z",
+      "brand": "kfc-brand-001"
+    },
+    {
+      "id": "kfc-061",
+      "sku": "KFC-SID-002",
+      "name": "Large Fries",
+      "category": "Sides",
+      "description": "A large portion of our golden, crispy skin-on fries.",
+      "price": 2.49,
+      "menuTypes": [
+        "lunch",
+        "dinner"
+      ],
+      "images": [
+        "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA0MDAgMzAwIiB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCI+PHJlY3Qgd2lkdGg9IjQwMCIgaGVpZ2h0PSIzMDAiIGZpbGw9IiNlNDAwMmIiIHJ4PSIxMiIvPjxyZWN0IHg9IjgiIHk9IjgiIHdpZHRoPSIzODQiIGhlaWdodD0iMjg0IiBmaWxsPSJub25lIiBzdHJva2U9IiNmZmZmZmYiIHN0cm9rZS13aWR0aD0iMyIgcng9IjkiLz48dGV4dCB4PSIyMDAiIHk9IjE1NSIgZm9udC1mYW1pbHk9IlNlZ29lIFVJIEVtb2ppLEFwcGxlIENvbG9yIEVtb2ppLE5vdG8gRW1vamksQXJpYWwiIGZvbnQtc2l6ZT0iMTEwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBkb21pbmFudC1iYXNlbGluZT0ibWlkZGxlIj7wn42fPC90ZXh0Pjx0ZXh0IHg9IjIwMCIgeT0iMjQ1IiBmb250LWZhbWlseT0iQXJpYWwsSGVsdmV0aWNhLHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMjAiIGZvbnQtd2VpZ2h0PSJib2xkIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjZmZmZmZmIiBsZXR0ZXItc3BhY2luZz0iMiI+U0lERVM8L3RleHQ+PC9zdmc+"
+      ],
+      "active": true,
+      "createdAt": "2026-08-12T21:28:49Z",
+      "updatedAt": "2026-08-12T21:28:49Z",
+      "brand": "kfc-brand-001"
+    },
+    {
+      "id": "kfc-062",
+      "sku": "KFC-SID-003",
+      "name": "Corn on the Cob",
+      "category": "Sides",
+      "description": "A whole sweet, juicy corn on the cob.",
+      "price": 1.99,
+      "menuTypes": [
+        "lunch",
+        "dinner"
+      ],
+      "images": [
+        "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA0MDAgMzAwIiB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCI+PHJlY3Qgd2lkdGg9IjQwMCIgaGVpZ2h0PSIzMDAiIGZpbGw9IiNlNDAwMmIiIHJ4PSIxMiIvPjxyZWN0IHg9IjgiIHk9IjgiIHdpZHRoPSIzODQiIGhlaWdodD0iMjg0IiBmaWxsPSJub25lIiBzdHJva2U9IiNmZmZmZmYiIHN0cm9rZS13aWR0aD0iMyIgcng9IjkiLz48dGV4dCB4PSIyMDAiIHk9IjE1NSIgZm9udC1mYW1pbHk9IlNlZ29lIFVJIEVtb2ppLEFwcGxlIENvbG9yIEVtb2ppLE5vdG8gRW1vamksQXJpYWwiIGZvbnQtc2l6ZT0iMTEwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBkb21pbmFudC1iYXNlbGluZT0ibWlkZGxlIj7wn42fPC90ZXh0Pjx0ZXh0IHg9IjIwMCIgeT0iMjQ1IiBmb250LWZhbWlseT0iQXJpYWwsSGVsdmV0aWNhLHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMjAiIGZvbnQtd2VpZ2h0PSJib2xkIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjZmZmZmZmIiBsZXR0ZXItc3BhY2luZz0iMiI+U0lERVM8L3RleHQ+PC9zdmc+"
+      ],
+      "active": true,
+      "createdAt": "2026-08-12T21:28:49Z",
+      "updatedAt": "2026-08-12T21:28:49Z",
+      "brand": "kfc-brand-001"
+    },
+    {
+      "id": "kfc-063",
+      "sku": "KFC-SID-004",
+      "name": "BBQ Beans",
+      "category": "Sides",
+      "description": "Beans in a rich, smoky BBQ sauce.",
+      "price": 1.79,
+      "menuTypes": [
+        "lunch",
+        "dinner"
+      ],
+      "images": [
+        "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA0MDAgMzAwIiB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCI+PHJlY3Qgd2lkdGg9IjQwMCIgaGVpZ2h0PSIzMDAiIGZpbGw9IiNlNDAwMmIiIHJ4PSIxMiIvPjxyZWN0IHg9IjgiIHk9IjgiIHdpZHRoPSIzODQiIGhlaWdodD0iMjg0IiBmaWxsPSJub25lIiBzdHJva2U9IiNmZmZmZmYiIHN0cm9rZS13aWR0aD0iMyIgcng9IjkiLz48dGV4dCB4PSIyMDAiIHk9IjE1NSIgZm9udC1mYW1pbHk9IlNlZ29lIFVJIEVtb2ppLEFwcGxlIENvbG9yIEVtb2ppLE5vdG8gRW1vamksQXJpYWwiIGZvbnQtc2l6ZT0iMTEwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBkb21pbmFudC1iYXNlbGluZT0ibWlkZGxlIj7wn42fPC90ZXh0Pjx0ZXh0IHg9IjIwMCIgeT0iMjQ1IiBmb250LWZhbWlseT0iQXJpYWwsSGVsdmV0aWNhLHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMjAiIGZvbnQtd2VpZ2h0PSJib2xkIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjZmZmZmZmIiBsZXR0ZXItc3BhY2luZz0iMiI+U0lERVM8L3RleHQ+PC9zdmc+"
+      ],
+      "active": true,
+      "createdAt": "2026-08-12T21:28:49Z",
+      "updatedAt": "2026-08-12T21:28:49Z",
+      "brand": "kfc-brand-001"
+    },
+    {
+      "id": "kfc-064",
+      "sku": "KFC-SID-005",
+      "name": "Gravy",
+      "category": "Sides",
+      "description": "Our classic savoury chicken gravy.",
+      "price": 1.29,
+      "menuTypes": [
+        "lunch",
+        "dinner"
+      ],
+      "images": [
+        "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA0MDAgMzAwIiB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCI+PHJlY3Qgd2lkdGg9IjQwMCIgaGVpZ2h0PSIzMDAiIGZpbGw9IiNlNDAwMmIiIHJ4PSIxMiIvPjxyZWN0IHg9IjgiIHk9IjgiIHdpZHRoPSIzODQiIGhlaWdodD0iMjg0IiBmaWxsPSJub25lIiBzdHJva2U9IiNmZmZmZmYiIHN0cm9rZS13aWR0aD0iMyIgcng9IjkiLz48dGV4dCB4PSIyMDAiIHk9IjE1NSIgZm9udC1mYW1pbHk9IlNlZ29lIFVJIEVtb2ppLEFwcGxlIENvbG9yIEVtb2ppLE5vdG8gRW1vamksQXJpYWwiIGZvbnQtc2l6ZT0iMTEwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBkb21pbmFudC1iYXNlbGluZT0ibWlkZGxlIj7wn42fPC90ZXh0Pjx0ZXh0IHg9IjIwMCIgeT0iMjQ1IiBmb250LWZhbWlseT0iQXJpYWwsSGVsdmV0aWNhLHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMjAiIGZvbnQtd2VpZ2h0PSJib2xkIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjZmZmZmZmIiBsZXR0ZXItc3BhY2luZz0iMiI+U0lERVM8L3RleHQ+PC9zdmc+"
+      ],
+      "active": true,
+      "createdAt": "2026-08-12T21:28:49Z",
+      "updatedAt": "2026-08-12T21:28:49Z",
+      "brand": "kfc-brand-001"
+    },
+    {
+      "id": "kfc-065",
+      "sku": "KFC-SID-006",
+      "name": "Coleslaw",
+      "category": "Sides",
+      "description": "Fresh, crunchy coleslaw made with shredded cabbage and carrot.",
+      "price": 1.79,
+      "menuTypes": [
+        "lunch",
+        "dinner"
+      ],
+      "images": [
+        "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA0MDAgMzAwIiB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCI+PHJlY3Qgd2lkdGg9IjQwMCIgaGVpZ2h0PSIzMDAiIGZpbGw9IiNlNDAwMmIiIHJ4PSIxMiIvPjxyZWN0IHg9IjgiIHk9IjgiIHdpZHRoPSIzODQiIGhlaWdodD0iMjg0IiBmaWxsPSJub25lIiBzdHJva2U9IiNmZmZmZmYiIHN0cm9rZS13aWR0aD0iMyIgcng9IjkiLz48dGV4dCB4PSIyMDAiIHk9IjE1NSIgZm9udC1mYW1pbHk9IlNlZ29lIFVJIEVtb2ppLEFwcGxlIENvbG9yIEVtb2ppLE5vdG8gRW1vamksQXJpYWwiIGZvbnQtc2l6ZT0iMTEwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBkb21pbmFudC1iYXNlbGluZT0ibWlkZGxlIj7wn42fPC90ZXh0Pjx0ZXh0IHg9IjIwMCIgeT0iMjQ1IiBmb250LWZhbWlseT0iQXJpYWwsSGVsdmV0aWNhLHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMjAiIGZvbnQtd2VpZ2h0PSJib2xkIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjZmZmZmZmIiBsZXR0ZXItc3BhY2luZz0iMiI+U0lERVM8L3RleHQ+PC9zdmc+"
+      ],
+      "active": true,
+      "createdAt": "2026-08-12T21:28:49Z",
+      "updatedAt": "2026-08-12T21:28:49Z",
+      "brand": "kfc-brand-001"
+    },
+    {
+      "id": "kfc-066",
+      "sku": "KFC-SID-007",
+      "name": "Mashed Potato & Gravy",
+      "category": "Sides",
+      "description": "Creamy mashed potato topped with our classic gravy.",
+      "price": 2.29,
+      "menuTypes": [
+        "lunch",
+        "dinner"
+      ],
+      "images": [
+        "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA0MDAgMzAwIiB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCI+PHJlY3Qgd2lkdGg9IjQwMCIgaGVpZ2h0PSIzMDAiIGZpbGw9IiNlNDAwMmIiIHJ4PSIxMiIvPjxyZWN0IHg9IjgiIHk9IjgiIHdpZHRoPSIzODQiIGhlaWdodD0iMjg0IiBmaWxsPSJub25lIiBzdHJva2U9IiNmZmZmZmYiIHN0cm9rZS13aWR0aD0iMyIgcng9IjkiLz48dGV4dCB4PSIyMDAiIHk9IjE1NSIgZm9udC1mYW1pbHk9IlNlZ29lIFVJIEVtb2ppLEFwcGxlIENvbG9yIEVtb2ppLE5vdG8gRW1vamksQXJpYWwiIGZvbnQtc2l6ZT0iMTEwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBkb21pbmFudC1iYXNlbGluZT0ibWlkZGxlIj7wn42fPC90ZXh0Pjx0ZXh0IHg9IjIwMCIgeT0iMjQ1IiBmb250LWZhbWlseT0iQXJpYWwsSGVsdmV0aWNhLHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMjAiIGZvbnQtd2VpZ2h0PSJib2xkIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjZmZmZmZmIiBsZXR0ZXItc3BhY2luZz0iMiI+U0lERVM8L3RleHQ+PC9zdmc+"
+      ],
+      "active": true,
+      "createdAt": "2026-08-12T21:28:49Z",
+      "updatedAt": "2026-08-12T21:28:49Z",
+      "brand": "kfc-brand-001"
+    },
+    {
+      "id": "kfc-067",
+      "sku": "KFC-SID-008",
+      "name": "Loaded Fries",
+      "category": "Sides",
+      "description": "Fries topped with cheese sauce, popcorn chicken pieces and a drizzle of BBQ sauce.",
+      "price": 4.29,
+      "menuTypes": [
+        "lunch",
+        "dinner"
+      ],
+      "images": [
+        "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA0MDAgMzAwIiB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCI+PHJlY3Qgd2lkdGg9IjQwMCIgaGVpZ2h0PSIzMDAiIGZpbGw9IiNlNDAwMmIiIHJ4PSIxMiIvPjxyZWN0IHg9IjgiIHk9IjgiIHdpZHRoPSIzODQiIGhlaWdodD0iMjg0IiBmaWxsPSJub25lIiBzdHJva2U9IiNmZmZmZmYiIHN0cm9rZS13aWR0aD0iMyIgcng9IjkiLz48dGV4dCB4PSIyMDAiIHk9IjE1NSIgZm9udC1mYW1pbHk9IlNlZ29lIFVJIEVtb2ppLEFwcGxlIENvbG9yIEVtb2ppLE5vdG8gRW1vamksQXJpYWwiIGZvbnQtc2l6ZT0iMTEwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBkb21pbmFudC1iYXNlbGluZT0ibWlkZGxlIj7wn42fPC90ZXh0Pjx0ZXh0IHg9IjIwMCIgeT0iMjQ1IiBmb250LWZhbWlseT0iQXJpYWwsSGVsdmV0aWNhLHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMjAiIGZvbnQtd2VpZ2h0PSJib2xkIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjZmZmZmZmIiBsZXR0ZXItc3BhY2luZz0iMiI+U0lERVM8L3RleHQ+PC9zdmc+"
+      ],
+      "active": true,
+      "createdAt": "2026-08-12T21:28:49Z",
+      "updatedAt": "2026-08-12T21:28:49Z",
+      "brand": "kfc-brand-001"
+    },
+    {
+      "id": "kfc-070",
+      "sku": "KFC-DIP-001",
+      "name": "BBQ Dip",
+      "category": "Dips",
+      "description": "Rich and smoky BBQ dipping sauce.",
+      "price": 0.69,
+      "menuTypes": [
+        "lunch",
+        "dinner"
+      ],
+      "images": [
+        "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA0MDAgMzAwIiB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCI+PHJlY3Qgd2lkdGg9IjQwMCIgaGVpZ2h0PSIzMDAiIGZpbGw9IiMwMDAwMDAiIHJ4PSIxMiIvPjxyZWN0IHg9IjgiIHk9IjgiIHdpZHRoPSIzODQiIGhlaWdodD0iMjg0IiBmaWxsPSJub25lIiBzdHJva2U9IiNlNDAwMmIiIHN0cm9rZS13aWR0aD0iMyIgcng9IjkiLz48dGV4dCB4PSIyMDAiIHk9IjE1NSIgZm9udC1mYW1pbHk9IlNlZ29lIFVJIEVtb2ppLEFwcGxlIENvbG9yIEVtb2ppLE5vdG8gRW1vamksQXJpYWwiIGZvbnQtc2l6ZT0iMTEwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBkb21pbmFudC1iYXNlbGluZT0ibWlkZGxlIj7wn6WrPC90ZXh0Pjx0ZXh0IHg9IjIwMCIgeT0iMjQ1IiBmb250LWZhbWlseT0iQXJpYWwsSGVsdmV0aWNhLHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMjAiIGZvbnQtd2VpZ2h0PSJib2xkIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjZTQwMDJiIiBsZXR0ZXItc3BhY2luZz0iMiI+RElQUzwvdGV4dD48L3N2Zz4="
+      ],
+      "active": true,
+      "createdAt": "2026-08-12T21:28:49Z",
+      "updatedAt": "2026-08-12T21:28:49Z",
+      "brand": "kfc-brand-001"
+    },
+    {
+      "id": "kfc-071",
+      "sku": "KFC-DIP-002",
+      "name": "Garlic Mayo Dip",
+      "category": "Dips",
+      "description": "Creamy garlic mayonnaise dip.",
+      "price": 0.69,
+      "menuTypes": [
+        "lunch",
+        "dinner"
+      ],
+      "images": [
+        "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA0MDAgMzAwIiB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCI+PHJlY3Qgd2lkdGg9IjQwMCIgaGVpZ2h0PSIzMDAiIGZpbGw9IiMwMDAwMDAiIHJ4PSIxMiIvPjxyZWN0IHg9IjgiIHk9IjgiIHdpZHRoPSIzODQiIGhlaWdodD0iMjg0IiBmaWxsPSJub25lIiBzdHJva2U9IiNlNDAwMmIiIHN0cm9rZS13aWR0aD0iMyIgcng9IjkiLz48dGV4dCB4PSIyMDAiIHk9IjE1NSIgZm9udC1mYW1pbHk9IlNlZ29lIFVJIEVtb2ppLEFwcGxlIENvbG9yIEVtb2ppLE5vdG8gRW1vamksQXJpYWwiIGZvbnQtc2l6ZT0iMTEwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBkb21pbmFudC1iYXNlbGluZT0ibWlkZGxlIj7wn6WrPC90ZXh0Pjx0ZXh0IHg9IjIwMCIgeT0iMjQ1IiBmb250LWZhbWlseT0iQXJpYWwsSGVsdmV0aWNhLHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMjAiIGZvbnQtd2VpZ2h0PSJib2xkIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjZTQwMDJiIiBsZXR0ZXItc3BhY2luZz0iMiI+RElQUzwvdGV4dD48L3N2Zz4="
+      ],
+      "active": true,
+      "createdAt": "2026-08-12T21:28:49Z",
+      "updatedAt": "2026-08-12T21:28:49Z",
+      "brand": "kfc-brand-001"
+    },
+    {
+      "id": "kfc-072",
+      "sku": "KFC-DIP-003",
+      "name": "Sweet Chilli Dip",
+      "category": "Dips",
+      "description": "Sweet and mildly spicy chilli dipping sauce.",
+      "price": 0.69,
+      "menuTypes": [
+        "lunch",
+        "dinner"
+      ],
+      "images": [
+        "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA0MDAgMzAwIiB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCI+PHJlY3Qgd2lkdGg9IjQwMCIgaGVpZ2h0PSIzMDAiIGZpbGw9IiMwMDAwMDAiIHJ4PSIxMiIvPjxyZWN0IHg9IjgiIHk9IjgiIHdpZHRoPSIzODQiIGhlaWdodD0iMjg0IiBmaWxsPSJub25lIiBzdHJva2U9IiNlNDAwMmIiIHN0cm9rZS13aWR0aD0iMyIgcng9IjkiLz48dGV4dCB4PSIyMDAiIHk9IjE1NSIgZm9udC1mYW1pbHk9IlNlZ29lIFVJIEVtb2ppLEFwcGxlIENvbG9yIEVtb2ppLE5vdG8gRW1vamksQXJpYWwiIGZvbnQtc2l6ZT0iMTEwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBkb21pbmFudC1iYXNlbGluZT0ibWlkZGxlIj7wn6WrPC90ZXh0Pjx0ZXh0IHg9IjIwMCIgeT0iMjQ1IiBmb250LWZhbWlseT0iQXJpYWwsSGVsdmV0aWNhLHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMjAiIGZvbnQtd2VpZ2h0PSJib2xkIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjZTQwMDJiIiBsZXR0ZXItc3BhY2luZz0iMiI+RElQUzwvdGV4dD48L3N2Zz4="
+      ],
+      "active": true,
+      "createdAt": "2026-08-12T21:28:49Z",
+      "updatedAt": "2026-08-12T21:28:49Z",
+      "brand": "kfc-brand-001"
+    },
+    {
+      "id": "kfc-073",
+      "sku": "KFC-DIP-004",
+      "name": "Hot Sauce Dip",
+      "category": "Dips",
+      "description": "Fiery hot sauce for dipping.",
+      "price": 0.69,
+      "menuTypes": [
+        "lunch",
+        "dinner"
+      ],
+      "images": [
+        "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA0MDAgMzAwIiB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCI+PHJlY3Qgd2lkdGg9IjQwMCIgaGVpZ2h0PSIzMDAiIGZpbGw9IiMwMDAwMDAiIHJ4PSIxMiIvPjxyZWN0IHg9IjgiIHk9IjgiIHdpZHRoPSIzODQiIGhlaWdodD0iMjg0IiBmaWxsPSJub25lIiBzdHJva2U9IiNlNDAwMmIiIHN0cm9rZS13aWR0aD0iMyIgcng9IjkiLz48dGV4dCB4PSIyMDAiIHk9IjE1NSIgZm9udC1mYW1pbHk9IlNlZ29lIFVJIEVtb2ppLEFwcGxlIENvbG9yIEVtb2ppLE5vdG8gRW1vamksQXJpYWwiIGZvbnQtc2l6ZT0iMTEwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBkb21pbmFudC1iYXNlbGluZT0ibWlkZGxlIj7wn6WrPC90ZXh0Pjx0ZXh0IHg9IjIwMCIgeT0iMjQ1IiBmb250LWZhbWlseT0iQXJpYWwsSGVsdmV0aWNhLHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMjAiIGZvbnQtd2VpZ2h0PSJib2xkIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjZTQwMDJiIiBsZXR0ZXItc3BhY2luZz0iMiI+RElQUzwvdGV4dD48L3N2Zz4="
+      ],
+      "active": true,
+      "createdAt": "2026-08-12T21:28:49Z",
+      "updatedAt": "2026-08-12T21:28:49Z",
+      "brand": "kfc-brand-001"
+    },
+    {
+      "id": "kfc-074",
+      "sku": "KFC-DIP-005",
+      "name": "Mayo Dip",
+      "category": "Dips",
+      "description": "Classic creamy mayonnaise.",
+      "price": 0.69,
+      "menuTypes": [
+        "lunch",
+        "dinner"
+      ],
+      "images": [
+        "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA0MDAgMzAwIiB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCI+PHJlY3Qgd2lkdGg9IjQwMCIgaGVpZ2h0PSIzMDAiIGZpbGw9IiMwMDAwMDAiIHJ4PSIxMiIvPjxyZWN0IHg9IjgiIHk9IjgiIHdpZHRoPSIzODQiIGhlaWdodD0iMjg0IiBmaWxsPSJub25lIiBzdHJva2U9IiNlNDAwMmIiIHN0cm9rZS13aWR0aD0iMyIgcng9IjkiLz48dGV4dCB4PSIyMDAiIHk9IjE1NSIgZm9udC1mYW1pbHk9IlNlZ29lIFVJIEVtb2ppLEFwcGxlIENvbG9yIEVtb2ppLE5vdG8gRW1vamksQXJpYWwiIGZvbnQtc2l6ZT0iMTEwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBkb21pbmFudC1iYXNlbGluZT0ibWlkZGxlIj7wn6WrPC90ZXh0Pjx0ZXh0IHg9IjIwMCIgeT0iMjQ1IiBmb250LWZhbWlseT0iQXJpYWwsSGVsdmV0aWNhLHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMjAiIGZvbnQtd2VpZ2h0PSJib2xkIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjZTQwMDJiIiBsZXR0ZXItc3BhY2luZz0iMiI+RElQUzwvdGV4dD48L3N2Zz4="
+      ],
+      "active": true,
+      "createdAt": "2026-08-12T21:28:49Z",
+      "updatedAt": "2026-08-12T21:28:49Z",
+      "brand": "kfc-brand-001"
+    },
+    {
+      "id": "kfc-080",
+      "sku": "KFC-DES-001",
+      "name": "Chocolate Fudge Cake",
+      "category": "Desserts",
+      "description": "A rich, gooey chocolate fudge cake slice.",
+      "price": 2.99,
+      "menuTypes": [
+        "lunch",
+        "dinner"
+      ],
+      "images": [
+        "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA0MDAgMzAwIiB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCI+PHJlY3Qgd2lkdGg9IjQwMCIgaGVpZ2h0PSIzMDAiIGZpbGw9IiNlNDAwMmIiIHJ4PSIxMiIvPjxyZWN0IHg9IjgiIHk9IjgiIHdpZHRoPSIzODQiIGhlaWdodD0iMjg0IiBmaWxsPSJub25lIiBzdHJva2U9IiNmZmZmZmYiIHN0cm9rZS13aWR0aD0iMyIgcng9IjkiLz48dGV4dCB4PSIyMDAiIHk9IjE1NSIgZm9udC1mYW1pbHk9IlNlZ29lIFVJIEVtb2ppLEFwcGxlIENvbG9yIEVtb2ppLE5vdG8gRW1vamksQXJpYWwiIGZvbnQtc2l6ZT0iMTEwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBkb21pbmFudC1iYXNlbGluZT0ibWlkZGxlIj7wn42mPC90ZXh0Pjx0ZXh0IHg9IjIwMCIgeT0iMjQ1IiBmb250LWZhbWlseT0iQXJpYWwsSGVsdmV0aWNhLHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMjAiIGZvbnQtd2VpZ2h0PSJib2xkIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjZmZmZmZmIiBsZXR0ZXItc3BhY2luZz0iMiI+REVTU0VSVFM8L3RleHQ+PC9zdmc+"
+      ],
+      "active": true,
+      "createdAt": "2026-08-12T21:28:49Z",
+      "updatedAt": "2026-08-12T21:28:49Z",
+      "brand": "kfc-brand-001"
+    },
+    {
+      "id": "kfc-081",
+      "sku": "KFC-DES-002",
+      "name": "Original Krushem",
+      "category": "Desserts",
+      "description": "A thick, creamy vanilla-flavoured Krushem shake.",
+      "price": 2.99,
+      "menuTypes": [
+        "drinks"
+      ],
+      "images": [
+        "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA0MDAgMzAwIiB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCI+PHJlY3Qgd2lkdGg9IjQwMCIgaGVpZ2h0PSIzMDAiIGZpbGw9IiNlNDAwMmIiIHJ4PSIxMiIvPjxyZWN0IHg9IjgiIHk9IjgiIHdpZHRoPSIzODQiIGhlaWdodD0iMjg0IiBmaWxsPSJub25lIiBzdHJva2U9IiNmZmZmZmYiIHN0cm9rZS13aWR0aD0iMyIgcng9IjkiLz48dGV4dCB4PSIyMDAiIHk9IjE1NSIgZm9udC1mYW1pbHk9IlNlZ29lIFVJIEVtb2ppLEFwcGxlIENvbG9yIEVtb2ppLE5vdG8gRW1vamksQXJpYWwiIGZvbnQtc2l6ZT0iMTEwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBkb21pbmFudC1iYXNlbGluZT0ibWlkZGxlIj7wn42mPC90ZXh0Pjx0ZXh0IHg9IjIwMCIgeT0iMjQ1IiBmb250LWZhbWlseT0iQXJpYWwsSGVsdmV0aWNhLHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMjAiIGZvbnQtd2VpZ2h0PSJib2xkIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjZmZmZmZmIiBsZXR0ZXItc3BhY2luZz0iMiI+REVTU0VSVFM8L3RleHQ+PC9zdmc+"
+      ],
+      "active": true,
+      "createdAt": "2026-08-12T21:28:49Z",
+      "updatedAt": "2026-08-12T21:28:49Z",
+      "brand": "kfc-brand-001"
+    },
+    {
+      "id": "kfc-082",
+      "sku": "KFC-DES-003",
+      "name": "Oreo Krushem",
+      "category": "Desserts",
+      "description": "A thick, creamy shake blended with crushed Oreo pieces.",
+      "price": 3.29,
+      "menuTypes": [
+        "drinks"
+      ],
+      "images": [
+        "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA0MDAgMzAwIiB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCI+PHJlY3Qgd2lkdGg9IjQwMCIgaGVpZ2h0PSIzMDAiIGZpbGw9IiNlNDAwMmIiIHJ4PSIxMiIvPjxyZWN0IHg9IjgiIHk9IjgiIHdpZHRoPSIzODQiIGhlaWdodD0iMjg0IiBmaWxsPSJub25lIiBzdHJva2U9IiNmZmZmZmYiIHN0cm9rZS13aWR0aD0iMyIgcng9IjkiLz48dGV4dCB4PSIyMDAiIHk9IjE1NSIgZm9udC1mYW1pbHk9IlNlZ29lIFVJIEVtb2ppLEFwcGxlIENvbG9yIEVtb2ppLE5vdG8gRW1vamksQXJpYWwiIGZvbnQtc2l6ZT0iMTEwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBkb21pbmFudC1iYXNlbGluZT0ibWlkZGxlIj7wn42mPC90ZXh0Pjx0ZXh0IHg9IjIwMCIgeT0iMjQ1IiBmb250LWZhbWlseT0iQXJpYWwsSGVsdmV0aWNhLHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMjAiIGZvbnQtd2VpZ2h0PSJib2xkIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjZmZmZmZmIiBsZXR0ZXItc3BhY2luZz0iMiI+REVTU0VSVFM8L3RleHQ+PC9zdmc+"
+      ],
+      "active": true,
+      "createdAt": "2026-08-12T21:28:49Z",
+      "updatedAt": "2026-08-12T21:28:49Z",
+      "brand": "kfc-brand-001"
+    },
+    {
+      "id": "kfc-083",
+      "sku": "KFC-DES-004",
+      "name": "Toffee Sundae",
+      "category": "Desserts",
+      "description": "Soft-serve ice cream topped with a rich toffee sauce.",
+      "price": 2.49,
+      "menuTypes": [
+        "lunch",
+        "dinner"
+      ],
+      "images": [
+        "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA0MDAgMzAwIiB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCI+PHJlY3Qgd2lkdGg9IjQwMCIgaGVpZ2h0PSIzMDAiIGZpbGw9IiNlNDAwMmIiIHJ4PSIxMiIvPjxyZWN0IHg9IjgiIHk9IjgiIHdpZHRoPSIzODQiIGhlaWdodD0iMjg0IiBmaWxsPSJub25lIiBzdHJva2U9IiNmZmZmZmYiIHN0cm9rZS13aWR0aD0iMyIgcng9IjkiLz48dGV4dCB4PSIyMDAiIHk9IjE1NSIgZm9udC1mYW1pbHk9IlNlZ29lIFVJIEVtb2ppLEFwcGxlIENvbG9yIEVtb2ppLE5vdG8gRW1vamksQXJpYWwiIGZvbnQtc2l6ZT0iMTEwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBkb21pbmFudC1iYXNlbGluZT0ibWlkZGxlIj7wn42mPC90ZXh0Pjx0ZXh0IHg9IjIwMCIgeT0iMjQ1IiBmb250LWZhbWlseT0iQXJpYWwsSGVsdmV0aWNhLHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMjAiIGZvbnQtd2VpZ2h0PSJib2xkIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjZmZmZmZmIiBsZXR0ZXItc3BhY2luZz0iMiI+REVTU0VSVFM8L3RleHQ+PC9zdmc+"
+      ],
+      "active": true,
+      "createdAt": "2026-08-12T21:28:49Z",
+      "updatedAt": "2026-08-12T21:28:49Z",
+      "brand": "kfc-brand-001"
+    },
+    {
+      "id": "kfc-090",
+      "sku": "KFC-DRK-001",
+      "name": "Pepsi",
+      "category": "Drinks",
+      "description": "Ice-cold Pepsi cola.",
+      "price": 1.99,
+      "menuTypes": [
+        "drinks"
+      ],
+      "images": [
+        "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA0MDAgMzAwIiB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCI+PHJlY3Qgd2lkdGg9IjQwMCIgaGVpZ2h0PSIzMDAiIGZpbGw9IiMwMDAwMDAiIHJ4PSIxMiIvPjxyZWN0IHg9IjgiIHk9IjgiIHdpZHRoPSIzODQiIGhlaWdodD0iMjg0IiBmaWxsPSJub25lIiBzdHJva2U9IiNlNDAwMmIiIHN0cm9rZS13aWR0aD0iMyIgcng9IjkiLz48dGV4dCB4PSIyMDAiIHk9IjE1NSIgZm9udC1mYW1pbHk9IlNlZ29lIFVJIEVtb2ppLEFwcGxlIENvbG9yIEVtb2ppLE5vdG8gRW1vamksQXJpYWwiIGZvbnQtc2l6ZT0iMTEwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBkb21pbmFudC1iYXNlbGluZT0ibWlkZGxlIj7wn6WkPC90ZXh0Pjx0ZXh0IHg9IjIwMCIgeT0iMjQ1IiBmb250LWZhbWlseT0iQXJpYWwsSGVsdmV0aWNhLHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMjAiIGZvbnQtd2VpZ2h0PSJib2xkIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjZTQwMDJiIiBsZXR0ZXItc3BhY2luZz0iMiI+RFJJTktTPC90ZXh0Pjwvc3ZnPg=="
+      ],
+      "active": true,
+      "createdAt": "2026-08-12T21:28:49Z",
+      "updatedAt": "2026-08-12T21:28:49Z",
+      "brand": "kfc-brand-001"
+    },
+    {
+      "id": "kfc-091",
+      "sku": "KFC-DRK-002",
+      "name": "Pepsi Max",
+      "category": "Drinks",
+      "description": "Ice-cold, no-sugar Pepsi Max.",
+      "price": 1.99,
+      "menuTypes": [
+        "drinks"
+      ],
+      "images": [
+        "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA0MDAgMzAwIiB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCI+PHJlY3Qgd2lkdGg9IjQwMCIgaGVpZ2h0PSIzMDAiIGZpbGw9IiMwMDAwMDAiIHJ4PSIxMiIvPjxyZWN0IHg9IjgiIHk9IjgiIHdpZHRoPSIzODQiIGhlaWdodD0iMjg0IiBmaWxsPSJub25lIiBzdHJva2U9IiNlNDAwMmIiIHN0cm9rZS13aWR0aD0iMyIgcng9IjkiLz48dGV4dCB4PSIyMDAiIHk9IjE1NSIgZm9udC1mYW1pbHk9IlNlZ29lIFVJIEVtb2ppLEFwcGxlIENvbG9yIEVtb2ppLE5vdG8gRW1vamksQXJpYWwiIGZvbnQtc2l6ZT0iMTEwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBkb21pbmFudC1iYXNlbGluZT0ibWlkZGxlIj7wn6WkPC90ZXh0Pjx0ZXh0IHg9IjIwMCIgeT0iMjQ1IiBmb250LWZhbWlseT0iQXJpYWwsSGVsdmV0aWNhLHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMjAiIGZvbnQtd2VpZ2h0PSJib2xkIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjZTQwMDJiIiBsZXR0ZXItc3BhY2luZz0iMiI+RFJJTktTPC90ZXh0Pjwvc3ZnPg=="
+      ],
+      "active": true,
+      "createdAt": "2026-08-12T21:28:49Z",
+      "updatedAt": "2026-08-12T21:28:49Z",
+      "brand": "kfc-brand-001"
+    },
+    {
+      "id": "kfc-092",
+      "sku": "KFC-DRK-003",
+      "name": "7UP",
+      "category": "Drinks",
+      "description": "Crisp, refreshing lemon-lime 7UP.",
+      "price": 1.99,
+      "menuTypes": [
+        "drinks"
+      ],
+      "images": [
+        "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA0MDAgMzAwIiB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCI+PHJlY3Qgd2lkdGg9IjQwMCIgaGVpZ2h0PSIzMDAiIGZpbGw9IiMwMDAwMDAiIHJ4PSIxMiIvPjxyZWN0IHg9IjgiIHk9IjgiIHdpZHRoPSIzODQiIGhlaWdodD0iMjg0IiBmaWxsPSJub25lIiBzdHJva2U9IiNlNDAwMmIiIHN0cm9rZS13aWR0aD0iMyIgcng9IjkiLz48dGV4dCB4PSIyMDAiIHk9IjE1NSIgZm9udC1mYW1pbHk9IlNlZ29lIFVJIEVtb2ppLEFwcGxlIENvbG9yIEVtb2ppLE5vdG8gRW1vamksQXJpYWwiIGZvbnQtc2l6ZT0iMTEwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBkb21pbmFudC1iYXNlbGluZT0ibWlkZGxlIj7wn6WkPC90ZXh0Pjx0ZXh0IHg9IjIwMCIgeT0iMjQ1IiBmb250LWZhbWlseT0iQXJpYWwsSGVsdmV0aWNhLHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMjAiIGZvbnQtd2VpZ2h0PSJib2xkIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjZTQwMDJiIiBsZXR0ZXItc3BhY2luZz0iMiI+RFJJTktTPC90ZXh0Pjwvc3ZnPg=="
+      ],
+      "active": true,
+      "createdAt": "2026-08-12T21:28:49Z",
+      "updatedAt": "2026-08-12T21:28:49Z",
+      "brand": "kfc-brand-001"
+    },
+    {
+      "id": "kfc-093",
+      "sku": "KFC-DRK-004",
+      "name": "Tango Orange",
+      "category": "Drinks",
+      "description": "Bold, fizzy orange Tango.",
+      "price": 1.99,
+      "menuTypes": [
+        "drinks"
+      ],
+      "images": [
+        "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA0MDAgMzAwIiB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCI+PHJlY3Qgd2lkdGg9IjQwMCIgaGVpZ2h0PSIzMDAiIGZpbGw9IiMwMDAwMDAiIHJ4PSIxMiIvPjxyZWN0IHg9IjgiIHk9IjgiIHdpZHRoPSIzODQiIGhlaWdodD0iMjg0IiBmaWxsPSJub25lIiBzdHJva2U9IiNlNDAwMmIiIHN0cm9rZS13aWR0aD0iMyIgcng9IjkiLz48dGV4dCB4PSIyMDAiIHk9IjE1NSIgZm9udC1mYW1pbHk9IlNlZ29lIFVJIEVtb2ppLEFwcGxlIENvbG9yIEVtb2ppLE5vdG8gRW1vamksQXJpYWwiIGZvbnQtc2l6ZT0iMTEwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBkb21pbmFudC1iYXNlbGluZT0ibWlkZGxlIj7wn6WkPC90ZXh0Pjx0ZXh0IHg9IjIwMCIgeT0iMjQ1IiBmb250LWZhbWlseT0iQXJpYWwsSGVsdmV0aWNhLHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMjAiIGZvbnQtd2VpZ2h0PSJib2xkIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjZTQwMDJiIiBsZXR0ZXItc3BhY2luZz0iMiI+RFJJTktTPC90ZXh0Pjwvc3ZnPg=="
+      ],
+      "active": true,
+      "createdAt": "2026-08-12T21:28:49Z",
+      "updatedAt": "2026-08-12T21:28:49Z",
+      "brand": "kfc-brand-001"
+    },
+    {
+      "id": "kfc-094",
+      "sku": "KFC-DRK-005",
+      "name": "Still Water",
+      "category": "Drinks",
+      "description": "500ml bottle of still water.",
+      "price": 1.49,
+      "menuTypes": [
+        "drinks"
+      ],
+      "images": [
+        "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA0MDAgMzAwIiB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCI+PHJlY3Qgd2lkdGg9IjQwMCIgaGVpZ2h0PSIzMDAiIGZpbGw9IiMwMDAwMDAiIHJ4PSIxMiIvPjxyZWN0IHg9IjgiIHk9IjgiIHdpZHRoPSIzODQiIGhlaWdodD0iMjg0IiBmaWxsPSJub25lIiBzdHJva2U9IiNlNDAwMmIiIHN0cm9rZS13aWR0aD0iMyIgcng9IjkiLz48dGV4dCB4PSIyMDAiIHk9IjE1NSIgZm9udC1mYW1pbHk9IlNlZ29lIFVJIEVtb2ppLEFwcGxlIENvbG9yIEVtb2ppLE5vdG8gRW1vamksQXJpYWwiIGZvbnQtc2l6ZT0iMTEwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBkb21pbmFudC1iYXNlbGluZT0ibWlkZGxlIj7wn6WkPC90ZXh0Pjx0ZXh0IHg9IjIwMCIgeT0iMjQ1IiBmb250LWZhbWlseT0iQXJpYWwsSGVsdmV0aWNhLHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMjAiIGZvbnQtd2VpZ2h0PSJib2xkIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjZTQwMDJiIiBsZXR0ZXItc3BhY2luZz0iMiI+RFJJTktTPC90ZXh0Pjwvc3ZnPg=="
+      ],
+      "active": true,
+      "createdAt": "2026-08-12T21:28:49Z",
+      "updatedAt": "2026-08-12T21:28:49Z",
+      "brand": "kfc-brand-001"
+    },
+    {
+      "id": "kfc-095",
+      "sku": "KFC-DRK-006",
+      "name": "Large Fizzy Drink",
+      "category": "Drinks",
+      "description": "A large serving of your favourite fizzy drink.",
+      "price": 2.29,
+      "menuTypes": [
+        "drinks"
+      ],
+      "images": [
+        "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA0MDAgMzAwIiB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCI+PHJlY3Qgd2lkdGg9IjQwMCIgaGVpZ2h0PSIzMDAiIGZpbGw9IiMwMDAwMDAiIHJ4PSIxMiIvPjxyZWN0IHg9IjgiIHk9IjgiIHdpZHRoPSIzODQiIGhlaWdodD0iMjg0IiBmaWxsPSJub25lIiBzdHJva2U9IiNlNDAwMmIiIHN0cm9rZS13aWR0aD0iMyIgcng9IjkiLz48dGV4dCB4PSIyMDAiIHk9IjE1NSIgZm9udC1mYW1pbHk9IlNlZ29lIFVJIEVtb2ppLEFwcGxlIENvbG9yIEVtb2ppLE5vdG8gRW1vamksQXJpYWwiIGZvbnQtc2l6ZT0iMTEwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBkb21pbmFudC1iYXNlbGluZT0ibWlkZGxlIj7wn6WkPC90ZXh0Pjx0ZXh0IHg9IjIwMCIgeT0iMjQ1IiBmb250LWZhbWlseT0iQXJpYWwsSGVsdmV0aWNhLHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMjAiIGZvbnQtd2VpZ2h0PSJib2xkIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjZTQwMDJiIiBsZXR0ZXItc3BhY2luZz0iMiI+RFJJTktTPC90ZXh0Pjwvc3ZnPg=="
+      ],
+      "active": true,
+      "createdAt": "2026-08-12T21:28:49Z",
+      "updatedAt": "2026-08-12T21:28:49Z",
+      "brand": "kfc-brand-001"
+    },
+    {
+      "id": "kfc-100",
+      "sku": "KFC-KID-001",
+      "name": "Kids Popcorn Chicken Meal",
+      "category": "Kids Meals",
+      "description": "Popcorn chicken, a small fries, a small drink and a toy.",
+      "price": 4.49,
+      "menuTypes": [
+        "lunch",
+        "dinner"
+      ],
+      "images": [
+        "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA0MDAgMzAwIiB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCI+PHJlY3Qgd2lkdGg9IjQwMCIgaGVpZ2h0PSIzMDAiIGZpbGw9IiNlNDAwMmIiIHJ4PSIxMiIvPjxyZWN0IHg9IjgiIHk9IjgiIHdpZHRoPSIzODQiIGhlaWdodD0iMjg0IiBmaWxsPSJub25lIiBzdHJva2U9IiNmZmQyMDAiIHN0cm9rZS13aWR0aD0iMyIgcng9IjkiLz48dGV4dCB4PSIyMDAiIHk9IjE1NSIgZm9udC1mYW1pbHk9IlNlZ29lIFVJIEVtb2ppLEFwcGxlIENvbG9yIEVtb2ppLE5vdG8gRW1vamksQXJpYWwiIGZvbnQtc2l6ZT0iMTEwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBkb21pbmFudC1iYXNlbGluZT0ibWlkZGxlIj7wn6eSPC90ZXh0Pjx0ZXh0IHg9IjIwMCIgeT0iMjQ1IiBmb250LWZhbWlseT0iQXJpYWwsSGVsdmV0aWNhLHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMjAiIGZvbnQtd2VpZ2h0PSJib2xkIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjZmZkMjAwIiBsZXR0ZXItc3BhY2luZz0iMiI+S0lEUyBNRUFMPC90ZXh0Pjwvc3ZnPg=="
+      ],
+      "active": true,
+      "createdAt": "2026-08-12T21:28:49Z",
+      "updatedAt": "2026-08-12T21:28:49Z",
+      "brand": "kfc-brand-001"
+    },
+    {
+      "id": "kfc-101",
+      "sku": "KFC-KID-002",
+      "name": "Kids Chicken Strip Meal",
+      "category": "Kids Meals",
+      "description": "A chicken strip, a small fries, a small drink and a toy.",
+      "price": 4.49,
+      "menuTypes": [
+        "lunch",
+        "dinner"
+      ],
+      "images": [
+        "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA0MDAgMzAwIiB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCI+PHJlY3Qgd2lkdGg9IjQwMCIgaGVpZ2h0PSIzMDAiIGZpbGw9IiNlNDAwMmIiIHJ4PSIxMiIvPjxyZWN0IHg9IjgiIHk9IjgiIHdpZHRoPSIzODQiIGhlaWdodD0iMjg0IiBmaWxsPSJub25lIiBzdHJva2U9IiNmZmQyMDAiIHN0cm9rZS13aWR0aD0iMyIgcng9IjkiLz48dGV4dCB4PSIyMDAiIHk9IjE1NSIgZm9udC1mYW1pbHk9IlNlZ29lIFVJIEVtb2ppLEFwcGxlIENvbG9yIEVtb2ppLE5vdG8gRW1vamksQXJpYWwiIGZvbnQtc2l6ZT0iMTEwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBkb21pbmFudC1iYXNlbGluZT0ibWlkZGxlIj7wn6eSPC90ZXh0Pjx0ZXh0IHg9IjIwMCIgeT0iMjQ1IiBmb250LWZhbWlseT0iQXJpYWwsSGVsdmV0aWNhLHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMjAiIGZvbnQtd2VpZ2h0PSJib2xkIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjZmZkMjAwIiBsZXR0ZXItc3BhY2luZz0iMiI+S0lEUyBNRUFMPC90ZXh0Pjwvc3ZnPg=="
+      ],
+      "active": true,
+      "createdAt": "2026-08-12T21:28:49Z",
+      "updatedAt": "2026-08-12T21:28:49Z",
+      "brand": "kfc-brand-001"
+    },
+    {
+      "id": "kfc-110",
+      "sku": "KFC-VEG-001",
+      "name": "Vegan Burger",
+      "category": "Meat-Free",
+      "description": "A plant-based fillet in our signature coating with lettuce and vegan mayo.",
+      "price": 5.49,
+      "menuTypes": [
+        "lunch",
+        "dinner"
+      ],
+      "images": [
+        "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA0MDAgMzAwIiB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCI+PHJlY3Qgd2lkdGg9IjQwMCIgaGVpZ2h0PSIzMDAiIGZpbGw9IiMxNmEzNGEiIHJ4PSIxMiIvPjxyZWN0IHg9IjgiIHk9IjgiIHdpZHRoPSIzODQiIGhlaWdodD0iMjg0IiBmaWxsPSJub25lIiBzdHJva2U9IiNmZmZmZmYiIHN0cm9rZS13aWR0aD0iMyIgcng9IjkiLz48dGV4dCB4PSIyMDAiIHk9IjE1NSIgZm9udC1mYW1pbHk9IlNlZ29lIFVJIEVtb2ppLEFwcGxlIENvbG9yIEVtb2ppLE5vdG8gRW1vamksQXJpYWwiIGZvbnQtc2l6ZT0iMTEwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBkb21pbmFudC1iYXNlbGluZT0ibWlkZGxlIj7wn6WsPC90ZXh0Pjx0ZXh0IHg9IjIwMCIgeT0iMjQ1IiBmb250LWZhbWlseT0iQXJpYWwsSGVsdmV0aWNhLHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMjAiIGZvbnQtd2VpZ2h0PSJib2xkIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjZmZmZmZmIiBsZXR0ZXItc3BhY2luZz0iMiI+TUVBVC1GUkVFPC90ZXh0Pjwvc3ZnPg=="
+      ],
+      "active": true,
+      "createdAt": "2026-08-12T21:28:49Z",
+      "updatedAt": "2026-08-12T21:28:49Z",
+      "brand": "kfc-brand-001"
+    },
+    {
+      "id": "kfc-111",
+      "sku": "KFC-VEG-002",
+      "name": "Vegan Popcorn",
+      "category": "Meat-Free",
+      "description": "Bite-sized pieces of plant-based popcorn, freshly fried.",
+      "price": 3.99,
+      "menuTypes": [
+        "lunch",
+        "dinner"
+      ],
+      "images": [
+        "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA0MDAgMzAwIiB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCI+PHJlY3Qgd2lkdGg9IjQwMCIgaGVpZ2h0PSIzMDAiIGZpbGw9IiMxNmEzNGEiIHJ4PSIxMiIvPjxyZWN0IHg9IjgiIHk9IjgiIHdpZHRoPSIzODQiIGhlaWdodD0iMjg0IiBmaWxsPSJub25lIiBzdHJva2U9IiNmZmZmZmYiIHN0cm9rZS13aWR0aD0iMyIgcng9IjkiLz48dGV4dCB4PSIyMDAiIHk9IjE1NSIgZm9udC1mYW1pbHk9IlNlZ29lIFVJIEVtb2ppLEFwcGxlIENvbG9yIEVtb2ppLE5vdG8gRW1vamksQXJpYWwiIGZvbnQtc2l6ZT0iMTEwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBkb21pbmFudC1iYXNlbGluZT0ibWlkZGxlIj7wn6WsPC90ZXh0Pjx0ZXh0IHg9IjIwMCIgeT0iMjQ1IiBmb250LWZhbWlseT0iQXJpYWwsSGVsdmV0aWNhLHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMjAiIGZvbnQtd2VpZ2h0PSJib2xkIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjZmZmZmZmIiBsZXR0ZXItc3BhY2luZz0iMiI+TUVBVC1GUkVFPC90ZXh0Pjwvc3ZnPg=="
+      ],
+      "active": true,
+      "createdAt": "2026-08-12T21:28:49Z",
+      "updatedAt": "2026-08-12T21:28:49Z",
+      "brand": "kfc-brand-001"
+    },
+    {
+      "id": "kfc-112",
+      "sku": "KFC-VEG-003",
+      "name": "Vegan Nuggets (5pc)",
+      "category": "Meat-Free",
+      "description": "5 plant-based nuggets in our signature crispy coating.",
+      "price": 3.49,
+      "menuTypes": [
+        "lunch",
+        "dinner"
+      ],
+      "images": [
+        "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA0MDAgMzAwIiB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCI+PHJlY3Qgd2lkdGg9IjQwMCIgaGVpZ2h0PSIzMDAiIGZpbGw9IiMxNmEzNGEiIHJ4PSIxMiIvPjxyZWN0IHg9IjgiIHk9IjgiIHdpZHRoPSIzODQiIGhlaWdodD0iMjg0IiBmaWxsPSJub25lIiBzdHJva2U9IiNmZmZmZmYiIHN0cm9rZS13aWR0aD0iMyIgcng9IjkiLz48dGV4dCB4PSIyMDAiIHk9IjE1NSIgZm9udC1mYW1pbHk9IlNlZ29lIFVJIEVtb2ppLEFwcGxlIENvbG9yIEVtb2ppLE5vdG8gRW1vamksQXJpYWwiIGZvbnQtc2l6ZT0iMTEwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBkb21pbmFudC1iYXNlbGluZT0ibWlkZGxlIj7wn6WsPC90ZXh0Pjx0ZXh0IHg9IjIwMCIgeT0iMjQ1IiBmb250LWZhbWlseT0iQXJpYWwsSGVsdmV0aWNhLHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMjAiIGZvbnQtd2VpZ2h0PSJib2xkIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjZmZmZmZmIiBsZXR0ZXItc3BhY2luZz0iMiI+TUVBVC1GUkVFPC90ZXh0Pjwvc3ZnPg=="
+      ],
+      "active": true,
+      "createdAt": "2026-08-12T21:28:49Z",
+      "updatedAt": "2026-08-12T21:28:49Z",
+      "brand": "kfc-brand-001"
+    },
+    {
+      "id": "kfc-120",
+      "sku": "KFC-SPL-001",
+      "name": "2 for \u00a36.29 Zinger Deal",
+      "category": "Meal Deals",
+      "description": "Any 2 Zinger Burgers for one unbeatable price.",
+      "price": 6.29,
+      "menuTypes": [
+        "specials"
+      ],
+      "images": [
+        "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA0MDAgMzAwIiB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCI+PHJlY3Qgd2lkdGg9IjQwMCIgaGVpZ2h0PSIzMDAiIGZpbGw9IiMwMDAwMDAiIHJ4PSIxMiIvPjxyZWN0IHg9IjgiIHk9IjgiIHdpZHRoPSIzODQiIGhlaWdodD0iMjg0IiBmaWxsPSJub25lIiBzdHJva2U9IiNlNDAwMmIiIHN0cm9rZS13aWR0aD0iMyIgcng9IjkiLz48dGV4dCB4PSIyMDAiIHk9IjE1NSIgZm9udC1mYW1pbHk9IlNlZ29lIFVJIEVtb2ppLEFwcGxlIENvbG9yIEVtb2ppLE5vdG8gRW1vamksQXJpYWwiIGZvbnQtc2l6ZT0iMTEwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBkb21pbmFudC1iYXNlbGluZT0ibWlkZGxlIj7wn5SlPC90ZXh0Pjx0ZXh0IHg9IjIwMCIgeT0iMjQ1IiBmb250LWZhbWlseT0iQXJpYWwsSGVsdmV0aWNhLHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMjAiIGZvbnQtd2VpZ2h0PSJib2xkIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjZTQwMDJiIiBsZXR0ZXItc3BhY2luZz0iMiI+TUVBTCBERUFMUzwvdGV4dD48L3N2Zz4="
+      ],
+      "active": true,
+      "createdAt": "2026-08-12T21:28:49Z",
+      "updatedAt": "2026-08-12T21:28:49Z",
+      "brand": "kfc-brand-001"
+    },
+    {
+      "id": "kfc-121",
+      "sku": "KFC-SPL-002",
+      "name": "Student Meal Deal",
+      "category": "Meal Deals",
+      "description": "Any burger, fries and a regular drink at a special student price.",
+      "price": 5.99,
+      "menuTypes": [
+        "specials"
+      ],
+      "images": [
+        "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA0MDAgMzAwIiB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCI+PHJlY3Qgd2lkdGg9IjQwMCIgaGVpZ2h0PSIzMDAiIGZpbGw9IiMwMDAwMDAiIHJ4PSIxMiIvPjxyZWN0IHg9IjgiIHk9IjgiIHdpZHRoPSIzODQiIGhlaWdodD0iMjg0IiBmaWxsPSJub25lIiBzdHJva2U9IiNlNDAwMmIiIHN0cm9rZS13aWR0aD0iMyIgcng9IjkiLz48dGV4dCB4PSIyMDAiIHk9IjE1NSIgZm9udC1mYW1pbHk9IlNlZ29lIFVJIEVtb2ppLEFwcGxlIENvbG9yIEVtb2ppLE5vdG8gRW1vamksQXJpYWwiIGZvbnQtc2l6ZT0iMTEwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBkb21pbmFudC1iYXNlbGluZT0ibWlkZGxlIj7wn5SlPC90ZXh0Pjx0ZXh0IHg9IjIwMCIgeT0iMjQ1IiBmb250LWZhbWlseT0iQXJpYWwsSGVsdmV0aWNhLHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMjAiIGZvbnQtd2VpZ2h0PSJib2xkIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjZTQwMDJiIiBsZXR0ZXItc3BhY2luZz0iMiI+TUVBTCBERUFMUzwvdGV4dD48L3N2Zz4="
+      ],
+      "active": true,
+      "createdAt": "2026-08-12T21:28:49Z",
+      "updatedAt": "2026-08-12T21:28:49Z",
+      "brand": "kfc-brand-001"
+    },
+    {
+      "id": "kfc-122",
+      "sku": "KFC-SPL-003",
+      "name": "Lunch Time Deal",
+      "category": "Meal Deals",
+      "description": "2 pieces of chicken, fries and a regular drink \u2014 weekday lunchtime special.",
+      "price": 5.49,
+      "menuTypes": [
+        "specials"
+      ],
+      "images": [
+        "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA0MDAgMzAwIiB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCI+PHJlY3Qgd2lkdGg9IjQwMCIgaGVpZ2h0PSIzMDAiIGZpbGw9IiMwMDAwMDAiIHJ4PSIxMiIvPjxyZWN0IHg9IjgiIHk9IjgiIHdpZHRoPSIzODQiIGhlaWdodD0iMjg0IiBmaWxsPSJub25lIiBzdHJva2U9IiNlNDAwMmIiIHN0cm9rZS13aWR0aD0iMyIgcng9IjkiLz48dGV4dCB4PSIyMDAiIHk9IjE1NSIgZm9udC1mYW1pbHk9IlNlZ29lIFVJIEVtb2ppLEFwcGxlIENvbG9yIEVtb2ppLE5vdG8gRW1vamksQXJpYWwiIGZvbnQtc2l6ZT0iMTEwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBkb21pbmFudC1iYXNlbGluZT0ibWlkZGxlIj7wn5SlPC90ZXh0Pjx0ZXh0IHg9IjIwMCIgeT0iMjQ1IiBmb250LWZhbWlseT0iQXJpYWwsSGVsdmV0aWNhLHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMjAiIGZvbnQtd2VpZ2h0PSJib2xkIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjZTQwMDJiIiBsZXR0ZXItc3BhY2luZz0iMiI+TUVBTCBERUFMUzwvdGV4dD48L3N2Zz4="
+      ],
+      "active": true,
+      "createdAt": "2026-08-12T21:28:49Z",
+      "updatedAt": "2026-08-12T21:28:49Z",
+      "brand": "kfc-brand-001"
+    },
+    {
+      "id": "kfc-123",
+      "sku": "KFC-SPL-004",
+      "name": "Big Bang Box",
+      "category": "Meal Deals",
+      "description": "A burger, popcorn chicken, fries, a side and a drink \u2014 our biggest box meal.",
+      "price": 9.99,
+      "menuTypes": [
+        "specials"
+      ],
+      "images": [
+        "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA0MDAgMzAwIiB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCI+PHJlY3Qgd2lkdGg9IjQwMCIgaGVpZ2h0PSIzMDAiIGZpbGw9IiMwMDAwMDAiIHJ4PSIxMiIvPjxyZWN0IHg9IjgiIHk9IjgiIHdpZHRoPSIzODQiIGhlaWdodD0iMjg0IiBmaWxsPSJub25lIiBzdHJva2U9IiNlNDAwMmIiIHN0cm9rZS13aWR0aD0iMyIgcng9IjkiLz48dGV4dCB4PSIyMDAiIHk9IjE1NSIgZm9udC1mYW1pbHk9IlNlZ29lIFVJIEVtb2ppLEFwcGxlIENvbG9yIEVtb2ppLE5vdG8gRW1vamksQXJpYWwiIGZvbnQtc2l6ZT0iMTEwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBkb21pbmFudC1iYXNlbGluZT0ibWlkZGxlIj7wn5SlPC90ZXh0Pjx0ZXh0IHg9IjIwMCIgeT0iMjQ1IiBmb250LWZhbWlseT0iQXJpYWwsSGVsdmV0aWNhLHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMjAiIGZvbnQtd2VpZ2h0PSJib2xkIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjZTQwMDJiIiBsZXR0ZXItc3BhY2luZz0iMiI+TUVBTCBERUFMUzwvdGV4dD48L3N2Zz4="
+      ],
+      "active": true,
+      "createdAt": "2026-08-12T21:28:49Z",
+      "updatedAt": "2026-08-12T21:28:49Z",
+      "brand": "kfc-brand-001"
+    }
+  ],
+  "settings": {
+    "brandName": "KFC",
+    "currency": "\u00a3",
+    "logo": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAzMDAgMzAwIiB3aWR0aD0iMzAwIiBoZWlnaHQ9IjMwMCI+PGNpcmNsZSBjeD0iMTUwIiBjeT0iMTUwIiByPSIxNTAiIGZpbGw9IiNlNDAwMmIiLz48dGV4dCB4PSIxNTAiIHk9IjEyOCIgZm9udC1mYW1pbHk9IkFyaWFsLEhlbHZldGljYSxzYW5zLXNlcmlmIiBmb250LXNpemU9IjcwIiBmb250LXdlaWdodD0iOTAwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBkb21pbmFudC1iYXNlbGluZT0ibWlkZGxlIiBmaWxsPSIjZmZmZmZmIj5LRkM8L3RleHQ+PHRleHQgeD0iMTUwIiB5PSIxOTAiIGZvbnQtZmFtaWx5PSJBcmlhbCxIZWx2ZXRpY2Esc2Fucy1zZXJpZiIgZm9udC1zaXplPSIxNyIgZm9udC13ZWlnaHQ9IjcwMCIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZmlsbD0iI2ZmZmZmZiIgbGV0dGVyLXNwYWNpbmc9IjEiPktFTlRVQ0tZIEZSSUVEPC90ZXh0Pjx0ZXh0IHg9IjE1MCIgeT0iMjEyIiBmb250LWZhbWlseT0iQXJpYWwsSGVsdmV0aWNhLHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMTciIGZvbnQtd2VpZ2h0PSI3MDAiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGZpbGw9IiNmZmZmZmYiIGxldHRlci1zcGFjaW5nPSIxIj5DSElDS0VOPC90ZXh0Pjwvc3ZnPg==",
+    "logoRight": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAzMDAgMzAwIiB3aWR0aD0iMzAwIiBoZWlnaHQ9IjMwMCI+PGNpcmNsZSBjeD0iMTUwIiBjeT0iMTUwIiByPSIxNTAiIGZpbGw9IiNlNDAwMmIiLz48dGV4dCB4PSIxNTAiIHk9IjEyOCIgZm9udC1mYW1pbHk9IkFyaWFsLEhlbHZldGljYSxzYW5zLXNlcmlmIiBmb250LXNpemU9IjcwIiBmb250LXdlaWdodD0iOTAwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBkb21pbmFudC1iYXNlbGluZT0ibWlkZGxlIiBmaWxsPSIjZmZmZmZmIj5LRkM8L3RleHQ+PHRleHQgeD0iMTUwIiB5PSIxOTAiIGZvbnQtZmFtaWx5PSJBcmlhbCxIZWx2ZXRpY2Esc2Fucy1zZXJpZiIgZm9udC1zaXplPSIxNyIgZm9udC13ZWlnaHQ9IjcwMCIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZmlsbD0iI2ZmZmZmZiIgbGV0dGVyLXNwYWNpbmc9IjEiPktFTlRVQ0tZIEZSSUVEPC90ZXh0Pjx0ZXh0IHg9IjE1MCIgeT0iMjEyIiBmb250LWZhbWlseT0iQXJpYWwsSGVsdmV0aWNhLHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMTciIGZvbnQtd2VpZ2h0PSI3MDAiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGZpbGw9IiNmZmZmZmYiIGxldHRlci1zcGFjaW5nPSIxIj5DSElDS0VOPC90ZXh0Pjwvc3ZnPg==",
+    "address": "Your Store Address",
+    "phone": "",
+    "tagline": "It's Finger Lickin' Good"
+  },
+  "categories": [
+    "Buckets",
+    "Boneless Banquets",
+    "Burgers",
+    "Wraps & Flatbreads",
+    "Wicked Wings",
+    "Popcorn Chicken",
+    "Sides",
+    "Dips",
+    "Desserts",
+    "Drinks",
+    "Kids Meals",
+    "Meat-Free",
+    "Meal Deals"
+  ],
+  "exportedAt": "2026-08-12T21:28:49Z",
+  "brands": [
+    {
+      "id": "kfc-brand-001",
+      "name": "KFC",
+      "currency": "\u00a3",
+      "logo": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAzMDAgMzAwIiB3aWR0aD0iMzAwIiBoZWlnaHQ9IjMwMCI+PGNpcmNsZSBjeD0iMTUwIiBjeT0iMTUwIiByPSIxNTAiIGZpbGw9IiNlNDAwMmIiLz48dGV4dCB4PSIxNTAiIHk9IjEyOCIgZm9udC1mYW1pbHk9IkFyaWFsLEhlbHZldGljYSxzYW5zLXNlcmlmIiBmb250LXNpemU9IjcwIiBmb250LXdlaWdodD0iOTAwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBkb21pbmFudC1iYXNlbGluZT0ibWlkZGxlIiBmaWxsPSIjZmZmZmZmIj5LRkM8L3RleHQ+PHRleHQgeD0iMTUwIiB5PSIxOTAiIGZvbnQtZmFtaWx5PSJBcmlhbCxIZWx2ZXRpY2Esc2Fucy1zZXJpZiIgZm9udC1zaXplPSIxNyIgZm9udC13ZWlnaHQ9IjcwMCIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZmlsbD0iI2ZmZmZmZiIgbGV0dGVyLXNwYWNpbmc9IjEiPktFTlRVQ0tZIEZSSUVEPC90ZXh0Pjx0ZXh0IHg9IjE1MCIgeT0iMjEyIiBmb250LWZhbWlseT0iQXJpYWwsSGVsdmV0aWNhLHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMTciIGZvbnQtd2VpZ2h0PSI3MDAiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGZpbGw9IiNmZmZmZmYiIGxldHRlci1zcGFjaW5nPSIxIj5DSElDS0VOPC90ZXh0Pjwvc3ZnPg==",
+      "logoRight": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAzMDAgMzAwIiB3aWR0aD0iMzAwIiBoZWlnaHQ9IjMwMCI+PGNpcmNsZSBjeD0iMTUwIiBjeT0iMTUwIiByPSIxNTAiIGZpbGw9IiNlNDAwMmIiLz48dGV4dCB4PSIxNTAiIHk9IjEyOCIgZm9udC1mYW1pbHk9IkFyaWFsLEhlbHZldGljYSxzYW5zLXNlcmlmIiBmb250LXNpemU9IjcwIiBmb250LXdlaWdodD0iOTAwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBkb21pbmFudC1iYXNlbGluZT0ibWlkZGxlIiBmaWxsPSIjZmZmZmZmIj5LRkM8L3RleHQ+PHRleHQgeD0iMTUwIiB5PSIxOTAiIGZvbnQtZmFtaWx5PSJBcmlhbCxIZWx2ZXRpY2Esc2Fucy1zZXJpZiIgZm9udC1zaXplPSIxNyIgZm9udC13ZWlnaHQ9IjcwMCIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZmlsbD0iI2ZmZmZmZiIgbGV0dGVyLXNwYWNpbmc9IjEiPktFTlRVQ0tZIEZSSUVEPC90ZXh0Pjx0ZXh0IHg9IjE1MCIgeT0iMjEyIiBmb250LWZhbWlseT0iQXJpYWwsSGVsdmV0aWNhLHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMTciIGZvbnQtd2VpZ2h0PSI3MDAiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGZpbGw9IiNmZmZmZmYiIGxldHRlci1zcGFjaW5nPSIxIj5DSElDS0VOPC90ZXh0Pjwvc3ZnPg==",
+      "colors": {
+        "header": "#e4002b",
+        "accent": "#ffffff",
+        "catBar": "#000000",
+        "body": "#ffffff",
+        "text": "#ffffff",
+        "price": "#e4002b"
+      },
+      "display": {
+        "portrait": {
+          "cols": 3,
+          "rows": 5,
+          "maxItems": 15
+        },
+        "landscape": {
+          "cols": 5,
+          "rows": 3,
+          "maxItems": 15
+        }
+      },
+      "showClock": true,
+      "timeFormat": "british",
+      "createdAt": "2026-08-12T21:28:49Z",
+      "updatedAt": "2026-08-12T21:28:49Z"
+    }
+  ]
+}

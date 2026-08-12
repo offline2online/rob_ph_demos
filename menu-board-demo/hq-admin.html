@@ -3287,7 +3287,8 @@ function initGrids() {
           filter: 'agNumberColumnFilter',
           valueFormatter: (params) => {
             const brands = getBrands();
-            const currency = (brands[0] && brands[0].currency) ? brands[0].currency : '$';
+            const itemBrand = brands.find(b => b.id === params.data.brand);
+            const currency = (itemBrand && itemBrand.currency) ? itemBrand.currency : ((brands[0] && brands[0].currency) ? brands[0].currency : '$');
             return currency + parseFloat(params.value || 0).toFixed(2);
           },
           cellStyle: { fontWeight: '700', color: 'var(--primary)' }
@@ -4647,10 +4648,15 @@ function applyTemplateSchema(templateId) {
   setSectionVisible('Landscape Display', s.landscape);
   setSectionVisible('Date & Time', s.showClock);
   setSectionVisible('Campaign Filter', s.campaignFilter);
-  // Category filter groups — only for templates that support it (e.g. Feature Hero Spotlight)
+  // Category filter groups.
+  // "Categories to Present in Grid" applies to every template's item grid, so it
+  // follows the schema's categoryFilter flag like the rest of this section.
+  // "Hero Category" only affects the single large spotlight slot, which only
+  // Feature Hero Spotlight renders — showing it for other templates implied it
+  // did something when it was silently ignored.
   const heroCatGroup  = document.getElementById('tplHeroCatGroup');
   const gridCatsGroup = document.getElementById('tplGridCatsGroup');
-  if (heroCatGroup)  heroCatGroup.style.display  = s.categoryFilter ? '' : 'none';
+  if (heroCatGroup)  heroCatGroup.style.display  = templateId === 'feature-hero-board' ? '' : 'none';
   if (gridCatsGroup) gridCatsGroup.style.display = s.categoryFilter ? '' : 'none';
   if (s.categoryFilter) _populateTplCategoryOptions();
   // Category badge colour — only relevant when category badges are shown
