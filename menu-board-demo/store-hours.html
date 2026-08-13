@@ -125,6 +125,19 @@
     }
     .board.landscape .clock-bar .time-display { font-size: clamp(20px, 2.4vw, 38px); }
 
+    /* Mock-mode badge — visible only when ?mockapi= is set in the URL */
+    .mock-badge {
+      font-family: 'Oswald', monospace;
+      font-size: 11px;
+      font-weight: 700;
+      background: #f59e0b;
+      color: #000;
+      padding: 2px 7px;
+      border-radius: 4px;
+      letter-spacing: 1px;
+      flex-shrink: 0;
+    }
+
     /* ── BODY ───────────────────────────────── */
     .hours-body {
       flex: 1;
@@ -294,6 +307,7 @@ const urlParams   = new URLSearchParams(window.location.search);
 const DEVICE_UDID = (urlParams.get('device')      || '').trim();
 const ORIENTATION = urlParams.get('orientation')  || 'portrait';
 const BRAND_ID    = (urlParams.get('brand')       || '').trim();
+const MOCK_API_FILE = urlParams.get('mockapi') || null; // ?mockapi=1 → mock-store-hours.json, or ?mockapi=file.json
 
 // ── DEBUG PANEL VISIBILITY + LONG-PRESS TRIGGER ───────────────────────────────
 let _debugPanelVisible = (urlParams.get('debug') === '1');
@@ -414,19 +428,28 @@ function _getActiveEndpoint() {
 
 async function pollStoreHours() {
   if (!DEVICE_UDID) return;
-  const ep = _getActiveEndpoint();
-  if (!ep) return;
   try {
-    const token = await decryptToken(ep.authToken);
-    const url   = `${ep.baseUrl}/location-api/device/${DEVICE_UDID}/campaign_data`;
-    const resp  = await fetch(url, { headers: { accept: 'application/json', 'x-api-key': token } });
-    if (!resp.ok) {
-      console.warn(`[StoreHours] API returned HTTP ${resp.status}`);
-      _hoursFetched = true;
-      render();
-      return;
+    let json;
+    if (MOCK_API_FILE) {
+      // ── MOCK MODE: bypass the real API — load a local JSON file instead ────
+      const mockPath = MOCK_API_FILE === '1' ? './mock-store-hours.json' : `./${MOCK_API_FILE}`;
+      const resp = await fetch(mockPath);
+      if (!resp.ok) { console.warn('[StoreHours] Mock file not found:', mockPath); _hoursFetched = true; render(); return; }
+      json = await resp.json();
+    } else {
+      const ep = _getActiveEndpoint();
+      if (!ep) return;
+      const token = await decryptToken(ep.authToken);
+      const url   = `${ep.baseUrl}/location-api/device/${DEVICE_UDID}/campaign_data`;
+      const resp  = await fetch(url, { headers: { accept: 'application/json', 'x-api-key': token } });
+      if (!resp.ok) {
+        console.warn(`[StoreHours] API returned HTTP ${resp.status}`);
+        _hoursFetched = true;
+        render();
+        return;
+      }
+      json = await resp.json();
     }
-    const json = await resp.json();
     const d    = json?.data;
     const storeName    = (d?.store_location?.store_name || '').trim() || null;
     const openingHours = Array.isArray(d?.store_info?.opening_hours) ? d.store_info.opening_hours : null;
@@ -450,9 +473,11 @@ function _updateDebugPanel() {
   const deviceHtml = DEVICE_UDID
     ? `<span class="ok">✓ ${esc(DEVICE_UDID)}</span>`
     : `<span class="err">✗ NOT SET — add ?device=UDID to URL</span>`;
-  const apiHtml = ep?.baseUrl
-    ? `<span class="ok">✓ ${esc(ep.baseUrl)}</span>`
-    : `<span class="warn">⚠ Not configured</span>`;
+  const apiHtml = MOCK_API_FILE
+    ? `<span class="ok">🧪 MOCK (${esc(MOCK_API_FILE === '1' ? 'mock-store-hours.json' : MOCK_API_FILE)})</span>`
+    : (ep?.baseUrl
+      ? `<span class="ok">✓ ${esc(ep.baseUrl)}</span>`
+      : `<span class="warn">⚠ Not configured</span>`);
   const hoursHtml = !_hoursFetched
     ? `<span class="warn">⚠ not yet fetched</span>`
     : (_openingHours
@@ -555,7 +580,10 @@ function render() {
       ${logoSlot(logoRight, 'Right')}
     </div>
     <div class="clock-bar">
-      ${_storeName ? `<div class="store-name">${esc(_storeName)}</div>` : '<div></div>'}
+      <div style="display:flex;align-items:center;gap:10px;">
+        ${MOCK_API_FILE ? `<span class="mock-badge">🧪 MOCK</span>` : ''}
+        ${_storeName ? `<div class="store-name">${esc(_storeName)}</div>` : ''}
+      </div>
       <div class="time-display" id="clockDisplay"></div>
     </div>
   `;

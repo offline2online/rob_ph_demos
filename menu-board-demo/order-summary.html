@@ -372,7 +372,7 @@
       font-family: 'Oswald', sans-serif;
       font-size: clamp(20px, 3vw, 44px);
       font-weight: 700;
-      color: var(--item-color);
+      color: var(--text);
       flex-shrink: 0;
       min-width: clamp(32px, 4vw, 60px);
       text-align: center;
@@ -386,7 +386,7 @@
       font-family: 'Oswald', sans-serif;
       font-size: clamp(18px, 2.5vw, 36px);
       font-weight: 600;
-      color: var(--item-color);
+      color: var(--text);
       line-height: 1.2;
     }
     .order-row-mods {
@@ -612,8 +612,16 @@ function getActiveBrand() {
   return _brands[0];
 }
 
+// Returns this brand's Order Summary Board template, if one has been configured.
+// Falls back to null so applyColorScheme() can fall back to the brand's legacy colours.
+function getActiveTemplate(brand) {
+  if (!brand || !Array.isArray(brand.templates)) return null;
+  return brand.templates.find(t => t.templateType === 'order-summary-board') || null;
+}
+
 function applyColorScheme(brand) {
-  const colors = (brand && brand.colors) || {};
+  const tpl    = getActiveTemplate(brand);
+  const colors = (tpl && tpl.colors) || (brand && brand.colors) || {};
   const root = document.documentElement.style;
   if (colors.header)      root.setProperty('--board-header-bg', colors.header);
   if (colors.header)      root.setProperty('--item-color',      colors.header);
@@ -916,7 +924,7 @@ function render() {
         <div class="order-empty">
           ${bagIconHtml}
           <h2>Scan QR Code to place your order</h2>
-          <p>Ready for pizza night? Scan the QR Code below to browse our menu from your mobile phone and add items to your cart.</p>
+          <p>Ready to order? Scan the QR Code below to browse our menu from your mobile phone and add items to your cart.</p>
         </div>
         <div class="qr-footer">
           <div class="qr-footer-glow" aria-hidden="true"></div>

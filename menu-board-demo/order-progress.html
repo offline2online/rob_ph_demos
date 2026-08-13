@@ -274,7 +274,23 @@ const db  = getFirestore(app);
 const urlParams  = new URLSearchParams(window.location.search);
 const STORE_CODE  = (urlParams.get('store')  || '').trim().toUpperCase();
 const DEVICE_UDID = (urlParams.get('device') || '').trim();
+const BRAND_ID    = (urlParams.get('brand')  || '').trim();
 const MB = 'menuboard';
+
+// Mirrors getActiveBrand()/getActiveTemplate() in order-summary.html so every
+// standalone board in the family resolves the same brand + template for a given URL.
+function getActiveBrand(brands) {
+  if (!brands.length) return {};
+  if (BRAND_ID) {
+    const found = brands.find(b => b.name.toLowerCase() === BRAND_ID.toLowerCase());
+    if (found) return found;
+  }
+  return brands[0];
+}
+function getActiveTemplate(brand) {
+  if (!brand || !Array.isArray(brand.templates)) return null;
+  return brand.templates.find(t => t.templateType === 'order-status-board') || null;
+}
 
 // ── DEBUG PANEL VISIBILITY + LONG-PRESS TRIGGER ───────────────────────────────
 let _debugPanelVisible = (urlParams.get('debug') === '1');
@@ -316,18 +332,22 @@ if (!STORE_CODE) {
 // ── BRAND LOGOS + COLOR ─────────────────────────────────────────────────────
 onSnapshot(doc(db, MB, 'brands'), snap => {
   const brands = snap.exists() ? (snap.data().data || []) : [];
-  const brand  = brands[0] || {};
-  const logo   = brand.logo || '';
-  ['logoLeft', 'logoRight'].forEach(id => {
+  const brand  = getActiveBrand(brands);
+  const logoLeft  = brand.logo      || '';
+  const logoRight = brand.logoRight || brand.logo || '';
+  const logos = { logoLeft, logoRight };
+  Object.entries(logos).forEach(([id, logo]) => {
     const el = document.getElementById(id);
     if (!el) return;
     if (logo) { el.src = logo; el.style.display = 'block'; }
     else       { el.style.display = 'none'; }
   });
   // Board is a single solid brand-colored field (header color doubles as bg),
-  // same source as --board-header-bg on the sibling boards.
-  const headerColor = brand.colors?.header;
-  if (headerColor) document.documentElement.style.setProperty('--bg', headerColor);
+  // same source as --board-header-bg on the sibling boards. Prefer the brand's
+  // Order Status Board template colour, falling back to the brand's legacy colour.
+  const tpl = getActiveTemplate(brand);
+  const colors = (tpl && tpl.colors) || brand.colors || {};
+  if (colors.header) document.documentElement.style.setProperty('--bg', colors.header);
 });
 
 // ── PH API — STORE NAME ────────────────────────────────────────────────────
@@ -544,10 +564,14 @@ if (STORE_CODE) {
     where('storeCode', '==', STORE_CODE)
   );
   onSnapshot(q, snap => {
-    snap.docs.forEach(d => {
-      const data = d.data();
+    snap.docChanges().forEach(change => {
+      if (change.type === 'removed') {
+        delete _orders[change.doc.id];
+        return;
+      }
+      const data = change.doc.data();
       if (data.queueStatus) {
-        _orders[d.id] = {
+        _orders[change.doc.id] = {
           orderNumber:    data.orderNumber || null,
           customerName:   data.customerName || '',
           queueStatus:    data.queueStatus,
@@ -555,7 +579,7 @@ if (STORE_CODE) {
           items:          data.items || []
         };
       } else {
-        delete _orders[d.id];
+        delete _orders[change.doc.id];
       }
     });
     renderBoard();
