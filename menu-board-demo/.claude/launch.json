@@ -7,6 +7,14 @@
       "runtimeArgs": ["/Users/rgeerdink/Documents/Claude Code/menu-board-demo/serve.js"],
       "port": 3456,
       "autoPort": false
+    },
+    {
+      "name": "hq-admin-py",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": ["/Users/rgeerdink/Documents/Claude Code/menu-board-demo/serve3457.py"],
+      "port": 3457,
+      "autoPort": false,
+      "url": "http://localhost:3457"
     }
   ]
 }

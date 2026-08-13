@@ -293,6 +293,8 @@
     /* Highlight filter icon when a filter is active */
     .ag-theme-alpine .ag-header-cell-filtered .ag-icon-filter { color: var(--primary) !important; }
     .ag-theme-alpine .ag-header-cell-filtered { background: var(--primary-light) !important; }
+    /* Products & Brands grids: flush white header, no grey top bar */
+    #itemsGrid, #brandsGrid { --ag-header-background-color: var(--surface); }
 
     /* ── STICKY AG-GRID HEADER for Menu Items (domLayout: autoHeight) ─── */
     #itemsGrid .ag-root-wrapper,
@@ -307,26 +309,37 @@
       box-shadow: 0 2px 6px rgba(0,0,0,0.07);
     }
 
-    /* ── ITEMS TABLE TOOLBAR ─────────────────────────── */
-    .items-toolbar {
+    /* ── PAGE HEADER (title + primary CTAs) ───────────── */
+    .page-header {
       display: flex;
       align-items: center;
       justify-content: space-between;
-      gap: 12px;
-      margin-bottom: 14px;
+      gap: 14px;
+      margin-bottom: 20px;
       flex-wrap: wrap;
     }
-    .items-toolbar-count {
-      font-size: 16px;
-      font-weight: 700;
-      color: var(--text);
-    }
-    .items-toolbar-count #itemsCount { color: var(--primary); }
-    .items-toolbar-actions {
+    .page-title { font-size: 24px; font-weight: 700; color: var(--text); line-height: 1.2; }
+    .page-header-actions {
       display: flex;
       align-items: center;
-      gap: 14px;
+      gap: 10px;
     }
+    .btn-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: var(--surface);
+      color: var(--text);
+      border: 1.5px solid rgba(0,0,0,0.78);
+      border-radius: 999px;
+      padding: 8px 18px;
+      font-size: 13px;
+      font-weight: 700;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: all 0.14s;
+    }
+    .btn-pill:hover { background: var(--surface2); }
     .toolbar-link-btn {
       background: none;
       border: none;
@@ -366,25 +379,32 @@
     }
     .back-link:hover { text-decoration: underline; }
 
-    /* ── ITEMS SELECTION BAR ─────────────────────────── */
-    .items-sel-bar {
-      display: none;
+    /* ── ITEMS TABLE TOOLBAR (count + bulk selection actions) ── */
+    .items-toolbar {
+      display: flex;
       align-items: center;
-      gap: 10px;
-      padding: 9px 16px;
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-bottom: none;
-      border-radius: var(--radius) var(--radius) 0 0;
+      gap: 12px;
+      margin-bottom: 12px;
+      flex-wrap: wrap;
+    }
+    .items-toolbar-count { font-size: 15px; font-weight: 700; color: var(--text); }
+    .items-toolbar-sel-actions {
+      display: flex;
+      align-items: center;
+      gap: 20px;
+      margin-left: auto;
+    }
+    .toolbar-text-link {
+      background: none;
+      border: none;
+      cursor: pointer;
+      color: var(--text);
       font-size: 13px;
       font-weight: 600;
-      color: var(--text);
+      padding: 0;
     }
-    .items-sel-bar.visible { display: flex; }
-    .items-sel-bar.visible + #itemsGrid { border-top-left-radius: 0; border-top-right-radius: 0; }
-    .items-sel-bar-sep { color: var(--border2); font-weight: 400; }
-    .items-sel-bar-link { color: var(--primary); cursor: pointer; background: none; border: none; font-size: 13px; font-weight: 600; padding: 0; text-decoration: underline; }
-    .items-sel-bar-link:hover { opacity: 0.75; }
+    .toolbar-text-link:hover { text-decoration: underline; }
+    .toolbar-text-link-danger { color: var(--danger); }
     .items-sel-bar-clear { color: var(--text2); cursor: pointer; background: none; border: none; font-size: 12px; padding: 0; }
     .items-sel-bar-clear:hover { color: var(--danger); }
     /* ── CHECKBOX SET FILTER ─────────────────────────── */
@@ -598,38 +618,42 @@
 
         <!-- MENU ITEMS -->
         <div id="view-items" class="view active">
-          <div class="items-toolbar">
-            <div class="items-toolbar-count"><span id="itemsCount">0</span> Products</div>
-            <div class="items-toolbar-actions">
-              <button class="toolbar-link-btn" onclick="showView('brands')">Manage Brands / Suppliers</button>
-              <button class="btn btn-primary" onclick="openAddModal()">+ Add New Product</button>
+          <div class="page-header">
+            <h1 class="page-title">Products</h1>
+            <div class="page-header-actions">
+              <button class="btn-pill" onclick="showView('brands')">Manage Brands / Suppliers</button>
+              <button class="btn-pill" onclick="openAddModal()">+ Add New Product</button>
               <button class="toolbar-icon-btn" onclick="showView('settings')" title="Settings">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
               </button>
             </div>
           </div>
-          <div id="itemsSelBar" class="items-sel-bar">
-            <span id="itemsSelCount"></span>
-            <span class="items-sel-bar-sep">|</span>
-            <button class="items-sel-bar-link" id="itemsSelViewBtn" onclick="viewSelectedItems()">View Selected</button>
-            <div style="margin-left:auto;display:flex;align-items:center;gap:10px;">
-              <button class="btn btn-sm" style="background:var(--success-light);color:var(--success);border:1px solid rgba(82,196,26,0.35);" onclick="bulkSetActive(true)">&#x2705; Activate Selection</button>
-              <button class="btn btn-sm" style="background:var(--surface3);color:var(--text2);border:1px solid var(--border2);" onclick="bulkSetActive(false)">&#x26D4; Deactivate Selection</button>
-              <button class="btn btn-danger btn-sm" onclick="confirmDeleteSelection()">🗑️ Delete Selection</button>
+          <div class="items-toolbar">
+            <div class="items-toolbar-count" id="itemsToolbarCount">
+              <span id="itemsCount">0</span> Products
+            </div>
+            <div class="items-toolbar-sel-actions" id="itemsSelActions" style="display:none;">
+              <button class="toolbar-text-link" id="itemsSelViewBtn" onclick="viewSelectedItems()">View Selected</button>
+              <button class="toolbar-text-link" onclick="bulkSetActive(true)">Activate Selected</button>
+              <button class="toolbar-text-link" onclick="bulkSetActive(false)">Deactivate Selected</button>
+              <button class="toolbar-text-link toolbar-text-link-danger" onclick="confirmDeleteSelection()">Delete Selected</button>
               <button class="items-sel-bar-clear" onclick="clearItemsSelection()">✕ Clear selection</button>
             </div>
           </div>
-          <div id="itemsGrid" class="ag-theme-alpine" style="width:100%;border-radius:var(--radius);border:1px solid var(--border);"></div>
+          <div id="itemsGrid" class="ag-theme-alpine" style="width:100%;"></div>
         </div>
 
         <!-- BRANDS -->
         <div id="view-brands" class="view">
           <button class="back-link" onclick="showView('items')">&#8592; Back to Products</button>
-          <div class="toolbar" style="margin-bottom:16px;">
-            <div style="flex:1;font-size:13px;color:var(--text2);">Manage brands and suppliers. Each brand has its own brand settings, colour scheme, and display configuration.</div>
-            <button class="btn btn-primary" onclick="openAddBrandModal()">+ Add Brand / Supplier</button>
+          <div class="page-header">
+            <h1 class="page-title">Brands / Suppliers</h1>
+            <div class="page-header-actions">
+              <button class="btn-pill" onclick="openAddBrandModal()">+ Add Brand / Supplier</button>
+            </div>
           </div>
-          <div id="brandsGrid" class="ag-theme-alpine" style="width:100%;height:500px;border-radius:var(--radius);overflow:hidden;border:1px solid var(--border);"></div>
+          <p style="font-size:13px;color:var(--text2);margin-bottom:16px;">Manage brands and suppliers. Each brand has its own brand settings, colour scheme, and display configuration.</p>
+          <div id="brandsGrid" class="ag-theme-alpine" style="width:100%;height:500px;"></div>
         </div>
 
         <!-- SETTINGS -->
@@ -2418,17 +2442,18 @@ function initGrids() {
 // ===== ITEMS SELECTION BAR =====
 function updateItemsSelectionBar() {
   if (!itemsGridApi) return;
-  const selected = itemsGridApi.getSelectedRows();
-  const total    = getItems().length;
-  const bar      = document.getElementById('itemsSelBar');
-  const countEl  = document.getElementById('itemsSelCount');
-  const viewBtn  = document.getElementById('itemsSelViewBtn');
+  const selected  = itemsGridApi.getSelectedRows();
+  const total     = getItems().length;
+  const countWrap = document.getElementById('itemsToolbarCount');
+  const selActions = document.getElementById('itemsSelActions');
+  const viewBtn   = document.getElementById('itemsSelViewBtn');
   if (selected.length > 0) {
-    bar.classList.add('visible');
-    countEl.textContent = `${selected.length} of ${total} Products`;
+    countWrap.innerHTML = `<span id="itemsCount">${selected.length}</span> of ${total} Products`;
+    selActions.style.display = 'flex';
     viewBtn.textContent = _itemsViewSelected ? 'Show All' : 'View Selected';
   } else {
-    bar.classList.remove('visible');
+    countWrap.innerHTML = `<span id="itemsCount">${total}</span> Products`;
+    selActions.style.display = 'none';
     // If filter was active with no selection, reset
     if (_itemsViewSelected) {
       _itemsViewSelected = false;
@@ -2462,13 +2487,16 @@ function clearItemsSelection() {
 // ===== ITEMS =====
 function renderItems() {
   const items = getItems();
-  document.getElementById('itemsCount').textContent = items.length;
-  if (!itemsGridApi) return;
+  if (!itemsGridApi) {
+    document.getElementById('itemsCount').textContent = items.length;
+    return;
+  }
   const fm = itemsGridApi.getFilterModel();
   itemsGridApi.setGridOption('rowData', items);
   if (fm && Object.keys(fm).length) {
     setTimeout(() => itemsGridApi?.setFilterModel(fm), 0);
   }
+  updateItemsSelectionBar();
 }
 
 function bulkSetActive(active) {
@@ -4578,9 +4606,9 @@ initGrids();
 // ===== FIRESTORE LISTENERS + INIT =====
 onSnapshot(collection(db, ITEMS_COLL), snap => {
   _items = snap.docs.map(d => d.data()).sort((a, b) => (a.createdAt || '').localeCompare(b.createdAt || ''));
-  document.getElementById('itemsCount').textContent = _items.length;
   // Always update items grid if initialised (preserves filter state via renderItems)
   if (itemsGridApi) renderItems();
+  else document.getElementById('itemsCount').textContent = _items.length;
 });
 
 onSnapshot(doc(db, MB, 'brands'), snap => {
