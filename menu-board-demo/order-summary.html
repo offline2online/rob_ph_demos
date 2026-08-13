@@ -30,12 +30,7 @@
       --qr-safe-bottom:   0px;
       /* Shared footer height for both the empty-cart QR footer and the
          items-in-cart total bar, so the board doesn't jump in height when
-         a cart fills or clears. Portrait is 2x the original matched value
-         (was clamp(125px, 8vh, 175px)) — portrait screens have the vertical
-         room and the footer needs to read as a much bigger, unmissable band. */
-      --order-footer-h:   clamp(250px, 16vh, 350px);
-    }
-    .board.landscape {
+         a cart fills or clears. Flat across both orientations. */
       --order-footer-h:   175px;
     }
 

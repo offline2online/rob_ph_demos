@@ -1158,7 +1158,11 @@ let _items       = [];
 let _settings    = { brandName: 'Menu', currency: '$', logo: '' };
 let _brands      = [];
 let _stock       = {};
-let _activeCat   = 'DEALS';
+// null until the category bar has real data to pick a default from — see
+// renderCatBar(), which selects the first tab rather than assuming "DEALS"
+// exists (stores that only stock a brand without a Deals category would
+// otherwise land on a category with zero items and no tab shown as active).
+let _activeCat   = null;
 let _searchQuery = '';
 let _clearBagConfirming = false;
 let _campaignFirstName = null;
@@ -1483,6 +1487,10 @@ function renderCatBar() {
   const specials = rawCats.filter(c => c !== "DEALS" && c === "Today's Specials");
   const others   = rawCats.filter(c => c.toUpperCase() !== 'DEALS' && c !== "Today's Specials");
   const cats     = [...deals, 'All', ...specials, ...others];
+  // Land on the first tab by default, and fall back to it if the store/brand
+  // changes out from under the previously active category (e.g. it doesn't
+  // carry a "Deals" category at all).
+  if (cats.length && !cats.includes(_activeCat)) _activeCat = cats[0];
   const bar  = document.getElementById('catBar');
   bar.innerHTML = cats.map(c => `
     <button class="cat-tab${c === _activeCat ? ' active' : ''}" data-cat="${esc(c)}">${esc(c)}</button>

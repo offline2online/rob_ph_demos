@@ -102,7 +102,8 @@
       "Read(//Users/rgeerdink/**)",
       "Bash(mkdir -p \"/Users/rgeerdink/Documents/Claude Code/menu-board-demo/images/icons\" && cp \"/Users/rgeerdink/Downloads/YUM - icon - dark \\(1\\).png\" \"/Users/rgeerdink/Documents/Claude Code/menu-board-demo/images/icons/cart.png\" && ls -la \"/Users/rgeerdink/Documents/Claude Code/menu-board-demo/images/icons\")",
       "Bash(ps -p 56146 -o pid,command)",
-      "Bash(ps -p 20205 -o pid,command)"
+      "Bash(ps -p 20205 -o pid,command)",
+      "Bash(pkill -f \"http.server 3458\")"
     ]
   }
 }
