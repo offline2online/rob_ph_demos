@@ -468,31 +468,64 @@ function _updateDebugPanel() {
 }
 
 // ── OPENING HOURS HELPERS ─────────────────────────────────────────────────────
-function _hoursByDay() {
+// Real Personalisation Hub shape (see Sample JSON prompt - PWA Player/sampleJSONprompt.md):
+// store_info.opening_hours = [
+//   { open_day: 'MONDAY', open_time: '05:00:00', close_day: 'MONDAY', close_time: '23:00:00', is_active: true },
+//   ...
+// ]
+// open_day/close_day are uppercase day names, times are HH:MM:SS, and an entry
+// may cross midnight (close_day is the day after open_day).
+function _activeEntries() {
+  return (_openingHours || []).filter(e =>
+    e && e.is_active !== false && e.open_day && e.open_time && e.close_day && e.close_time
+  );
+}
+
+// Groups active entries by their opening day (lowercased), sorted by open_time —
+// a day can have more than one entry (e.g. split lunch/dinner hours).
+function _hoursByOpenDay() {
   const map = {};
-  (_openingHours || []).forEach(entry => {
-    const day = (entry?.day || '').trim().toLowerCase();
-    if (WEEK_DAYS.includes(day)) map[day] = entry;
+  _activeEntries().forEach(e => {
+    const day = String(e.open_day).trim().toLowerCase();
+    if (!WEEK_DAYS.includes(day)) return;
+    (map[day] = map[day] || []).push(e);
   });
+  Object.values(map).forEach(list => list.sort((a, b) => a.open_time.localeCompare(b.open_time)));
   return map;
 }
 
-function _fmtHours(entry) {
-  if (!entry || !entry.open || !entry.close) return { text: 'Closed', closed: true };
-  return { text: `${entry.open} – ${entry.close}`, closed: false };
+function _shortTime(t) { return String(t || '').slice(0, 5); } // "05:00:00" → "05:00"
+
+function _fmtHours(entries) {
+  if (!entries || !entries.length) return { text: 'Closed', closed: true };
+  const text = entries.map(e => {
+    const overnight = String(e.close_day).trim().toLowerCase() !== String(e.open_day).trim().toLowerCase();
+    return `${_shortTime(e.open_time)} – ${_shortTime(e.close_time)}${overnight ? ' (+1 day)' : ''}`;
+  }).join(', ');
+  return { text, closed: false };
 }
 
-// Returns { open: bool, entry } for "right now", based on today's hours and the current clock time.
-function _isOpenNow(todayEntry) {
-  if (!todayEntry || !todayEntry.open || !todayEntry.close) return false;
-  const [oh, om] = todayEntry.open.split(':').map(Number);
-  const [ch, cm] = todayEntry.close.split(':').map(Number);
-  if ([oh, om, ch, cm].some(n => Number.isNaN(n))) return false;
+// Minutes since Monday 00:00, so entries that cross midnight can be compared
+// against "now" on a single wrapping timeline.
+function _weekMinutes(dayIdx, time) {
+  const [h, m] = String(time).split(':').map(Number);
+  return dayIdx * 1440 + h * 60 + (m || 0);
+}
+
+// Is "now" inside any active entry's [open, close) window? todayIdx is 0=Monday…6=Sunday.
+function _isOpenNow(todayIdx) {
   const now = new Date();
-  const nowMins   = now.getHours() * 60 + now.getMinutes();
-  const openMins  = oh * 60 + om;
-  const closeMins = ch * 60 + cm;
-  return nowMins >= openMins && nowMins < closeMins;
+  const nowWeekMins = _weekMinutes(todayIdx, `${now.getHours()}:${now.getMinutes()}`);
+  return _activeEntries().some(e => {
+    const openDay  = WEEK_DAYS.indexOf(String(e.open_day).trim().toLowerCase());
+    const closeDay = WEEK_DAYS.indexOf(String(e.close_day).trim().toLowerCase());
+    if (openDay === -1 || closeDay === -1) return false;
+    const openW = _weekMinutes(openDay, e.open_time);
+    let closeW  = _weekMinutes(closeDay, e.close_time);
+    if (closeW <= openW) closeW += 7 * 1440; // crosses Sunday → next Monday
+    return (nowWeekMins >= openW && nowWeekMins < closeW) ||
+           (nowWeekMins + 7 * 1440 >= openW && nowWeekMins + 7 * 1440 < closeW);
+  });
 }
 
 // ── RENDER ────────────────────────────────────────────────────────────────────
@@ -548,19 +581,18 @@ function render() {
         </div>
       </div>`;
   } else {
-    const byDay = _hoursByDay();
+    const byOpenDay = _hoursByOpenDay();
     const todayIdx = (new Date().getDay() + 6) % 7; // 0=Monday … 6=Sunday
     const order = dayOrder === 'monday'
       ? WEEK_DAYS
       : WEEK_DAYS.slice(todayIdx).concat(WEEK_DAYS.slice(0, todayIdx));
 
-    const todayEntry = byDay[WEEK_DAYS[todayIdx]];
-    const openNow = _isOpenNow(todayEntry);
+    const openNow = _isOpenNow(todayIdx);
     const statusBadge = `<div class="status-badge ${openNow ? 'open' : 'closed'}">${openNow ? 'Open Now' : 'Closed Now'}</div>`;
 
     const rows = order.map(day => {
       const isToday = day === WEEK_DAYS[todayIdx];
-      const { text, closed } = _fmtHours(byDay[day]);
+      const { text, closed } = _fmtHours(byOpenDay[day]);
       return `
         <div class="hours-row${isToday ? ' today' : ''}">
           <div class="hours-day-wrap">
