@@ -498,10 +498,11 @@ const TEMPLATES = [
   },
   {
     id:'store-info-hours', name:'Store Info & Opening Hours',
-    description:'Displays store name, opening hours, and contact details. Used at store entrance or lobby.',
+    description:'Live, device-driven overview of this store’s opening hours, fetched from the Personalisation Hub API for the device’s specific store. Used at store entrance or lobby.',
     category:'Store Operations', useCases:['Entrance','Lobby','Reception','Clinic','Appointment'],
-    params:['store','device','orientation'],
-    settings:{ showHeader:true, colorScheme:true, portrait:true, landscape:true, showClock:true, showStoreName:true },
+    params:['store','device','brand'],
+    standalone:true, standaloneFile:'store-hours.html',
+    settings:{ colorScheme:true, dayOrder:true },
     pSVG:(W,H)=>{const hh=14;return `<rect width="${W}" height="${H}" fill="#f0f9ff"/><rect width="${W}" height="${hh}" fill="${C.header}"/><rect x="${W/2-14}" y="3.5" width="28" height="7" rx="1.5" fill="rgba(255,255,255,.3)"/><rect x="4" y="${hh+8}" width="${W-8}" height="16" rx="3" fill="${C.card}" stroke="${C.border}" stroke-width=".7"/><rect x="${W/2-20}" y="${hh+13}" width="40" height="6" rx="2" fill="${C.header}" opacity=".8"/>` + [0,1,2,3,4,5,6].map(i=>`<rect x="6" y="${hh+30+i*10}" width="${W-12}" height="7" rx="2" fill="${C.card}" stroke="${C.border}" stroke-width=".5"/>`).join('');},
     lSVG:(W,H)=>{const hh=11,infoW=Math.round(W*.42);return `<rect width="${W}" height="${H}" fill="#f0f9ff"/><rect width="${W}" height="${hh}" fill="${C.header}"/><rect y="${hh}" width="${infoW}" height="${H-hh}" fill="rgba(22,155,194,.04)" stroke="${C.border}" stroke-width=".5"/><rect x="4" y="${hh+6}" width="${infoW-8}" height="10" rx="2" fill="${C.header}" opacity=".8"/>` + [0,1,2,3].map(i=>`<rect x="4" y="${hh+20+i*9}" width="${infoW-8}" height="6" rx="2" fill="${C.card}" stroke="${C.border}" stroke-width=".5"/>`).join('') + gridCells(infoW+3,hh,W-infoW-3,H-hh,2,2,2);},
   },
@@ -631,7 +632,7 @@ function openDetail(id) {
     soldOutBehavior:'Sold Out Behaviour', portrait:'Portrait Display Settings',
     landscape:'Landscape Display Settings', showClock:'Show Date & Time',
     personalGreeting:'Personalised Greeting (First Name token)', showStoreName:'Show Store Name',
-    campaignFilter:'Campaign Filter Mode'
+    campaignFilter:'Campaign Filter Mode', dayOrder:'Day Order (Current Day First / Monday–Sunday)'
   };
   const settingsList = Object.entries(t.settings).filter(([,v])=>v).map(([k])=>`<li style="padding:4px 0;font-size:13px;color:var(--text2);display:flex;align-items:center;gap:6px;"><span style="color:var(--success);font-weight:700;">✓</span>${settingLabels[k]||k}</li>`).join('');
 

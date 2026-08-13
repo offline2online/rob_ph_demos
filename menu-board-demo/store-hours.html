@@ -1,0 +1,629 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Store Info & Opening Hours</title>
+  <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@500;600;700&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --header-bg:   #169bc2;
+      --header-text: #ffffff;
+      --accent:      #169bc2;
+      --body-bg:     #f0f9ff;
+      --text:        #1a1a1a;
+      --card-bg:     #ffffff;
+      --border:      #e2e8f0;
+      --muted:       #94a3b8;
+      --clock-bg:    #f0f4f8;
+      --clock-text:  #1e293b;
+      --open-color:  #15803d;
+      --open-bg:     #dcfce7;
+      --closed-color:#64748b;
+      --closed-bg:   #f1f5f9;
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    html, body {
+      height: 100%;
+      overflow: hidden;
+      background: var(--body-bg);
+      color: var(--text);
+      font-family: 'Inter', sans-serif;
+    }
+
+    .board {
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      overflow: hidden;
+      background: var(--body-bg);
+    }
+
+    /* ── HEADER ─────────────────────────────── */
+    .board-header {
+      background: var(--header-bg);
+      border-bottom: 3px solid var(--accent);
+      height: 175px;
+      padding: 0 clamp(20px, 4vw, 60px);
+      display: flex;
+      align-items: stretch;
+      justify-content: space-between;
+      gap: 16px;
+      flex-shrink: 0;
+    }
+    .header-logo-wrap {
+      width: clamp(64px, 9vw, 130px);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+    .header-logo-wrap img {
+      max-width: 100%; height: 100%; max-height: 100%; width: auto; object-fit: contain;
+    }
+    .header-logo-wrap.no-logo { width: clamp(64px, 9vw, 130px); }
+    .header-center {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      text-align: center;
+      color: var(--header-text);
+    }
+    .header-brand {
+      font-family: 'Oswald', sans-serif;
+      font-size: clamp(20px, 4vw, 56px);
+      font-weight: 700;
+      letter-spacing: clamp(2px, 0.5vw, 8px);
+      text-transform: uppercase;
+      line-height: 1.1;
+      color: var(--header-text);
+    }
+    .board.portrait .header-brand { font-size: clamp(28px, 5vw, 72px); }
+    .header-menu-type {
+      font-family: 'Oswald', sans-serif;
+      font-size: clamp(14px, 2.5vw, 36px);
+      font-weight: 500;
+      letter-spacing: clamp(3px, 0.8vw, 12px);
+      text-transform: uppercase;
+      color: var(--header-text);
+      opacity: 0.85;
+      margin-top: clamp(2px, 0.4vw, 6px);
+    }
+    .board.portrait .header-menu-type { font-size: clamp(18px, 3vw, 44px); }
+
+    /* ── CLOCK BAR ──────────────────────────── */
+    .clock-bar {
+      background: var(--clock-bg);
+      border-top: 1px solid #dde5ee;
+      border-bottom: 1px solid #dde5ee;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: clamp(6px, 1vw, 12px) clamp(20px, 4vw, 60px);
+      flex-shrink: 0;
+    }
+    .board.portrait .clock-bar { padding: clamp(10px, 1.5vw, 20px) clamp(24px, 4.5vw, 70px); }
+    .clock-bar .store-name {
+      font-family: 'Oswald', sans-serif;
+      font-weight: 700;
+      font-size: clamp(15px, 1.8vw, 26px);
+      color: var(--clock-text);
+      letter-spacing: 1px;
+      text-transform: uppercase;
+    }
+    .board.landscape .clock-bar .store-name { font-size: clamp(20px, 2.4vw, 38px); }
+    .clock-bar .time-display {
+      font-family: 'Oswald', sans-serif;
+      font-size: clamp(15px, 1.8vw, 26px);
+      color: var(--clock-text);
+      letter-spacing: 1px;
+      margin-left: auto;
+    }
+    .board.landscape .clock-bar .time-display { font-size: clamp(20px, 2.4vw, 38px); }
+
+    /* ── BODY ───────────────────────────────── */
+    .hours-body {
+      flex: 1;
+      min-height: 0;
+      overflow: hidden;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: clamp(16px, 3vh, 48px) clamp(20px, 4vw, 60px);
+    }
+
+    .hours-card {
+      width: 100%;
+      max-width: clamp(420px, 46vw, 760px);
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: clamp(10px, 1vw, 20px);
+      box-shadow: 0 12px 40px rgba(0,0,0,0.06);
+      padding: clamp(20px, 3vw, 44px);
+      display: flex;
+      flex-direction: column;
+      gap: clamp(14px, 2vh, 28px);
+    }
+
+    .status-badge {
+      align-self: center;
+      font-family: 'Oswald', sans-serif;
+      font-weight: 700;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      font-size: clamp(13px, 1.6vw, 22px);
+      padding: clamp(6px, 0.9vw, 12px) clamp(18px, 2.6vw, 32px);
+      border-radius: 999px;
+    }
+    .status-badge.open   { color: var(--open-color);   background: var(--open-bg); }
+    .status-badge.closed { color: var(--closed-color); background: var(--closed-bg); }
+
+    .hours-list { display: flex; flex-direction: column; }
+    .hours-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      padding: clamp(10px, 1.4vh, 18px) clamp(10px, 1.2vw, 20px);
+      border-bottom: 1px solid var(--border);
+    }
+    .hours-row:last-child { border-bottom: none; }
+    .hours-row.today {
+      background: color-mix(in srgb, var(--accent) 10%, transparent);
+      border-radius: 10px;
+      border-bottom: none;
+    }
+
+    .hours-day-wrap { display: flex; align-items: center; gap: 10px; }
+    .hours-day {
+      font-family: 'Oswald', sans-serif;
+      font-weight: 600;
+      font-size: clamp(14px, 1.6vw, 22px);
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+    .today-pill {
+      font-family: 'Inter', sans-serif;
+      font-weight: 700;
+      font-size: clamp(9px, 0.85vw, 12px);
+      letter-spacing: 0.5px;
+      text-transform: uppercase;
+      color: #fff;
+      background: var(--accent);
+      padding: 2px 8px;
+      border-radius: 999px;
+    }
+    .hours-time {
+      font-family: 'Oswald', sans-serif;
+      font-variant-numeric: tabular-nums;
+      font-size: clamp(14px, 1.6vw, 22px);
+      color: var(--text);
+    }
+    .hours-time.closed-day { color: var(--muted); }
+
+    /* ── LOADING / ERROR ────────────────────── */
+    .hours-loading, .error-board {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      color: var(--text);
+      text-align: center;
+      padding: 40px;
+    }
+    .hours-loading .icon, .error-board .icon { font-size: 48px; }
+    .hours-loading p { color: var(--muted); font-size: 15px; }
+    .error-board { min-height: 100vh; background: var(--header-bg); color: #fff; }
+    .error-board h2 { font-family: 'Oswald', sans-serif; font-size: 28px; letter-spacing: 2px; }
+    .error-board p  { font-size: 14px; color: rgba(255,255,255,0.8); max-width: 440px; line-height: 1.6; }
+    .error-board code {
+      background: rgba(255,255,255,0.15); border-radius: 6px; padding: 3px 10px;
+      font-size: 13px; font-family: monospace; display: inline-block; margin-top: 6px; word-break: break-all;
+    }
+    .error-board a {
+      display: inline-flex; align-items: center; gap: 8px; margin-top: 20px;
+      background: #fff; color: var(--header-bg); font-weight: 700;
+      padding: 10px 24px; border-radius: 8px; text-decoration: none; font-size: 14px;
+    }
+
+    /* ── FOOTER ─────────────────────────────── */
+    .board-footer {
+      background: #f0f4f8;
+      border-top: 1px solid #dde5ee;
+      padding: clamp(8px, 1.2vw, 16px) clamp(20px, 4vw, 60px);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-shrink: 0;
+      opacity: 0;
+      transition: opacity 0.4s ease;
+    }
+    .board:hover .board-footer { opacity: 1; }
+    .footer-text { font-size: clamp(9px, 1vw, 13px); color: #64748b; font-weight: 500; letter-spacing: 0.5px; }
+    .footer-refresh { font-size: clamp(9px, 0.9vw, 12px); color: #94a3b8; display: flex; align-items: center; gap: 6px; }
+    .refresh-dot { width: 6px; height: 6px; border-radius: 50%; background: #4ade80; animation: pulse 2s infinite; }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.2} }
+
+    /* ── DEBUG PANEL ── */
+    #debugPanel {
+      position: fixed; bottom: 12px; left: 12px; z-index: 9999;
+      background: rgba(0,0,0,0.88); color: #ccc;
+      font-family: 'Courier New', monospace; font-size: 11.5px; font-weight: 500;
+      line-height: 1.8; padding: 10px 14px; border-radius: 8px;
+      max-width: 420px; word-break: break-all;
+      box-shadow: 0 2px 20px rgba(0,0,0,0.6); display: none;
+    }
+    #debugPanel.visible { display: block; }
+    #debugPanel b     { color: #fff; font-size: 12px; }
+    #debugPanel .ok   { color: #2ecc71; }
+    #debugPanel .warn { color: #f39c12; }
+    #debugPanel .err  { color: #e74c3c; }
+  </style>
+</head>
+<body>
+
+<div class="board portrait" id="boardRoot">
+  <!-- Content injected by JS -->
+</div>
+<div id="debugPanel"></div>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-app.js";
+import { getFirestore, doc, onSnapshot } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-firestore.js";
+
+// ── FIREBASE ─────────────────────────────────────────────────────────────────
+const firebaseConfig = {
+  apiKey:            "AIzaSyDrUKPNep2uxbZjYJ4i0vImdG7Xn_UuSXo",
+  authDomain:        "rob-ph-demos.firebaseapp.com",
+  projectId:         "rob-ph-demos",
+  storageBucket:     "rob-ph-demos.firebasestorage.app",
+  messagingSenderId: "199417645406",
+  appId:             "1:199417645406:web:0e7a54d00083b41ea9e7cf"
+};
+const app = initializeApp(firebaseConfig);
+const db  = getFirestore(app);
+
+// ── URL PARAMS ────────────────────────────────────────────────────────────────
+const urlParams   = new URLSearchParams(window.location.search);
+const DEVICE_UDID = (urlParams.get('device')      || '').trim();
+const ORIENTATION = urlParams.get('orientation')  || 'portrait';
+const BRAND_ID    = (urlParams.get('brand')       || '').trim();
+
+// ── DEBUG PANEL VISIBILITY + LONG-PRESS TRIGGER ───────────────────────────────
+let _debugPanelVisible = (urlParams.get('debug') === '1');
+{
+  let _lpt = null;
+  const _CP = 120, _HM = 800;
+  const _isBL = (x, y) => x <= _CP && y >= window.innerHeight - _CP;
+  document.addEventListener('mousedown', e => {
+    if (!_isBL(e.clientX, e.clientY)) return;
+    _lpt = setTimeout(() => { _debugPanelVisible = !_debugPanelVisible; _updateDebugPanel(); }, _HM);
+  });
+  document.addEventListener('mouseup', () => { clearTimeout(_lpt); _lpt = null; });
+  document.addEventListener('touchstart', e => {
+    const t = e.touches[0];
+    if (!_isBL(t.clientX, t.clientY)) return;
+    _lpt = setTimeout(() => { _debugPanelVisible = !_debugPanelVisible; _updateDebugPanel(); }, _HM);
+  }, { passive: true });
+  document.addEventListener('touchend', () => { clearTimeout(_lpt); _lpt = null; }, { passive: true });
+}
+
+// ── STATE ─────────────────────────────────────────────────────────────────────
+let _settings      = { brandName: 'Our Brand', logo: '', logoRight: '' };
+let _brands        = [];
+let _storeName     = null;  // from PH API store_location.store_name
+let _openingHours  = null;  // from PH API store_info.opening_hours — array of { day, open, close }
+let _hoursFetched  = false; // true once the API has responded at least once (successfully or not)
+
+const WEEK_DAYS = ['monday','tuesday','wednesday','thursday','friday','saturday','sunday'];
+const DAY_LABELS = { monday:'Monday', tuesday:'Tuesday', wednesday:'Wednesday', thursday:'Thursday', friday:'Friday', saturday:'Saturday', sunday:'Sunday' };
+
+// ── HELPERS ───────────────────────────────────────────────────────────────────
+function esc(str) { return String(str || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+function getActiveBrand() {
+  if (!_brands.length) {
+    const s = _settings;
+    return { id: 'default', name: s.brandName || 'Our Brand', logo: s.logo || '', logoRight: s.logoRight || s.logo || '', colors: s.colors || {} };
+  }
+  if (BRAND_ID) {
+    const found = _brands.find(b => b.name.toLowerCase() === BRAND_ID.toLowerCase());
+    if (found) return found;
+  }
+  return _brands[0];
+}
+
+// Returns this brand's Store Info & Opening Hours template, if one has been configured.
+function getActiveTemplate(brand) {
+  if (!brand || !Array.isArray(brand.templates)) return null;
+  return brand.templates.find(t => t.templateType === 'store-info-hours') || null;
+}
+
+function applyColorScheme(brand) {
+  const tpl    = getActiveTemplate(brand);
+  const colors = (tpl && tpl.colors) || (brand && brand.colors) || {};
+  const root = document.documentElement.style;
+  if (colors.header)     root.setProperty('--header-bg',   colors.header);
+  if (colors.headerText) root.setProperty('--header-text', colors.headerText);
+  if (colors.accent)     root.setProperty('--accent',      colors.accent);
+  if (colors.body)       root.setProperty('--body-bg',     colors.body);
+  if (colors.text)       root.setProperty('--text',        colors.text);
+  return tpl;
+}
+
+function updateClock() {
+  const el = document.getElementById('clockDisplay');
+  if (!el) return;
+  const n = new Date();
+  const timeStr = n.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  const dateStr = n.toLocaleDateString([], { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
+  el.textContent = timeStr + '  ·  ' + dateStr;
+}
+
+// ── PERSONALISATION HUB API — DECRYPTION + STORE HOURS POLLING ───────────────
+const _ENC_PASS = 'rob-ph-demos-phapi-v1';
+const _ENC_SALT = new TextEncoder().encode('ph-menuboard-salt-2024');
+
+let _derivedKeyPromise = null;
+async function _deriveKey() {
+  if (!_derivedKeyPromise) {
+    _derivedKeyPromise = (async () => {
+      const mat = await crypto.subtle.importKey(
+        'raw', new TextEncoder().encode(_ENC_PASS), 'PBKDF2', false, ['deriveKey']);
+      return crypto.subtle.deriveKey(
+        { name: 'PBKDF2', salt: _ENC_SALT, iterations: 100000, hash: 'SHA-256' },
+        mat, { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']);
+    })();
+  }
+  return _derivedKeyPromise;
+}
+
+let _tokenCache = { b64: null, plain: null };
+async function decryptToken(b64) {
+  if (_tokenCache.b64 === b64) return _tokenCache.plain;
+  const key   = await _deriveKey();
+  const buf   = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
+  const pt    = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: buf.slice(0, 12) }, key, buf.slice(12));
+  const plain = new TextDecoder().decode(pt);
+  _tokenCache = { b64, plain };
+  return plain;
+}
+
+function _epPrefKey()            { return `ph-ep-${DEVICE_UDID}`; }
+function _loadPreferredBaseUrl() { try { return localStorage.getItem(_epPrefKey()) || null; } catch (_) { return null; } }
+function _savePreferredBaseUrl(url) {
+  try { url ? localStorage.setItem(_epPrefKey(), url) : localStorage.removeItem(_epPrefKey()); } catch (_) {}
+}
+function _getActiveEndpoint() {
+  const endpoints = _settings?.phApi?.endpoints;
+  if (Array.isArray(endpoints) && endpoints.length > 0) {
+    const preferred = _loadPreferredBaseUrl();
+    if (preferred) { const ep = endpoints.find(e => e.baseUrl === preferred); if (ep) return ep; }
+    return endpoints[0];
+  }
+  const phApi = _settings?.phApi;
+  if (phApi?.baseUrl && phApi?.authToken) return { baseUrl: phApi.baseUrl, authToken: phApi.authToken };
+  return null;
+}
+
+async function pollStoreHours() {
+  if (!DEVICE_UDID) return;
+  const ep = _getActiveEndpoint();
+  if (!ep) return;
+  try {
+    const token = await decryptToken(ep.authToken);
+    const url   = `${ep.baseUrl}/location-api/device/${DEVICE_UDID}/campaign_data`;
+    const resp  = await fetch(url, { headers: { accept: 'application/json', 'x-api-key': token } });
+    if (!resp.ok) {
+      console.warn(`[StoreHours] API returned HTTP ${resp.status}`);
+      _hoursFetched = true;
+      render();
+      return;
+    }
+    const json = await resp.json();
+    const d    = json?.data;
+    const storeName    = (d?.store_location?.store_name || '').trim() || null;
+    const openingHours = Array.isArray(d?.store_info?.opening_hours) ? d.store_info.opening_hours : null;
+    _hoursFetched = true;
+    const changed = storeName !== _storeName || JSON.stringify(openingHours) !== JSON.stringify(_openingHours);
+    _storeName    = storeName;
+    _openingHours = openingHours;
+    if (changed) render(); else _updateDebugPanel();
+  } catch (e) {
+    console.warn('[StoreHours] poll failed:', e);
+    _hoursFetched = true;
+    render();
+  }
+}
+
+function _updateDebugPanel() {
+  const el = document.getElementById('debugPanel');
+  if (!el) return;
+  if (!_debugPanelVisible) { el.classList.remove('visible'); return; }
+  const ep = _getActiveEndpoint();
+  const deviceHtml = DEVICE_UDID
+    ? `<span class="ok">✓ ${esc(DEVICE_UDID)}</span>`
+    : `<span class="err">✗ NOT SET — add ?device=UDID to URL</span>`;
+  const apiHtml = ep?.baseUrl
+    ? `<span class="ok">✓ ${esc(ep.baseUrl)}</span>`
+    : `<span class="warn">⚠ Not configured</span>`;
+  const hoursHtml = !_hoursFetched
+    ? `<span class="warn">⚠ not yet fetched</span>`
+    : (_openingHours
+      ? `<span class="ok">✓ ${_openingHours.length} day(s) received</span>`
+      : `<span class="err">✗ store_info.opening_hours missing from response</span>`);
+  el.innerHTML =
+    `<div><b>🛠 Store Hours Debug</b></div>` +
+    `<div>Device UDID  : ${deviceHtml}</div>` +
+    `<div>Active API   : ${apiHtml}</div>` +
+    `<div>Opening hours: ${hoursHtml}</div>` +
+    `<div>Store name   : ${_storeName ? `<span class="ok">"${esc(_storeName)}"</span>` : '<span class="warn">none</span>'}</div>`;
+  el.classList.add('visible');
+}
+
+// ── OPENING HOURS HELPERS ─────────────────────────────────────────────────────
+function _hoursByDay() {
+  const map = {};
+  (_openingHours || []).forEach(entry => {
+    const day = (entry?.day || '').trim().toLowerCase();
+    if (WEEK_DAYS.includes(day)) map[day] = entry;
+  });
+  return map;
+}
+
+function _fmtHours(entry) {
+  if (!entry || !entry.open || !entry.close) return { text: 'Closed', closed: true };
+  return { text: `${entry.open} – ${entry.close}`, closed: false };
+}
+
+// Returns { open: bool, entry } for "right now", based on today's hours and the current clock time.
+function _isOpenNow(todayEntry) {
+  if (!todayEntry || !todayEntry.open || !todayEntry.close) return false;
+  const [oh, om] = todayEntry.open.split(':').map(Number);
+  const [ch, cm] = todayEntry.close.split(':').map(Number);
+  if ([oh, om, ch, cm].some(n => Number.isNaN(n))) return false;
+  const now = new Date();
+  const nowMins   = now.getHours() * 60 + now.getMinutes();
+  const openMins  = oh * 60 + om;
+  const closeMins = ch * 60 + cm;
+  return nowMins >= openMins && nowMins < closeMins;
+}
+
+// ── RENDER ────────────────────────────────────────────────────────────────────
+function render() {
+  const boardRoot = document.getElementById('boardRoot');
+  boardRoot.className = 'board ' + ORIENTATION;
+
+  const brand = getActiveBrand();
+  const tpl   = applyColorScheme(brand);
+  const dayOrder = (tpl && tpl.dayOrder) || 'current';
+
+  const logoLeft  = brand.logo      || '';
+  const logoRight = brand.logoRight || brand.logo || '';
+  const brandName = brand.name || 'Our Brand';
+
+  const logoSlot = (src, side) => src
+    ? `<div class="header-logo-wrap"><img src="${src}" alt="${esc(side)} logo"></div>`
+    : `<div class="header-logo-wrap no-logo"></div>`;
+
+  const headerHtml = `
+    <div class="board-header">
+      ${logoSlot(logoLeft, 'Left')}
+      <div class="header-center">
+        <div class="header-brand">${esc(brandName)}</div>
+        <div class="header-menu-type">Opening Hours</div>
+      </div>
+      ${logoSlot(logoRight, 'Right')}
+    </div>
+    <div class="clock-bar">
+      ${_storeName ? `<div class="store-name">${esc(_storeName)}</div>` : '<div></div>'}
+      <div class="time-display" id="clockDisplay"></div>
+    </div>
+  `;
+
+  let bodyHtml = '';
+
+  if (!_hoursFetched) {
+    bodyHtml = `
+      <div class="hours-body">
+        <div class="hours-loading">
+          <div class="icon">🕒</div>
+          <h2 style="font-family:'Oswald',sans-serif;font-size:22px;letter-spacing:1px;">Fetching store hours…</h2>
+          <p>Connecting to the Personalisation Hub API for this device's store.</p>
+        </div>
+      </div>`;
+  } else if (!_openingHours) {
+    bodyHtml = `
+      <div class="hours-body">
+        <div class="hours-loading">
+          <div class="icon">🕒</div>
+          <h2 style="font-family:'Oswald',sans-serif;font-size:22px;letter-spacing:1px;">Opening hours unavailable</h2>
+          <p>No store_info.opening_hours data was returned for this device's store.</p>
+        </div>
+      </div>`;
+  } else {
+    const byDay = _hoursByDay();
+    const todayIdx = (new Date().getDay() + 6) % 7; // 0=Monday … 6=Sunday
+    const order = dayOrder === 'monday'
+      ? WEEK_DAYS
+      : WEEK_DAYS.slice(todayIdx).concat(WEEK_DAYS.slice(0, todayIdx));
+
+    const todayEntry = byDay[WEEK_DAYS[todayIdx]];
+    const openNow = _isOpenNow(todayEntry);
+    const statusBadge = `<div class="status-badge ${openNow ? 'open' : 'closed'}">${openNow ? 'Open Now' : 'Closed Now'}</div>`;
+
+    const rows = order.map(day => {
+      const isToday = day === WEEK_DAYS[todayIdx];
+      const { text, closed } = _fmtHours(byDay[day]);
+      return `
+        <div class="hours-row${isToday ? ' today' : ''}">
+          <div class="hours-day-wrap">
+            <div class="hours-day">${DAY_LABELS[day]}</div>
+            ${isToday ? '<div class="today-pill">Today</div>' : ''}
+          </div>
+          <div class="hours-time${closed ? ' closed-day' : ''}">${esc(text)}</div>
+        </div>`;
+    }).join('');
+
+    bodyHtml = `
+      <div class="hours-body">
+        <div class="hours-card">
+          ${statusBadge}
+          <div class="hours-list">${rows}</div>
+        </div>
+      </div>`;
+  }
+
+  const footerHtml = `
+    <div class="board-footer">
+      <div class="footer-text">${esc(brandName)} — Store Info &amp; Opening Hours</div>
+      <div class="footer-refresh"><span class="refresh-dot"></span> Live sync enabled</div>
+    </div>
+  `;
+
+  boardRoot.innerHTML = headerHtml + bodyHtml + footerHtml;
+  updateClock();
+  _updateDebugPanel();
+}
+
+// ── INIT ──────────────────────────────────────────────────────────────────────
+if (!DEVICE_UDID) {
+  document.getElementById('boardRoot').innerHTML = `
+    <div class="error-board">
+      <div class="icon">🕒</div>
+      <h2>Missing Device ID</h2>
+      <p>This board requires a Device UDID so the Personalisation Hub API can resolve which store's hours to show.</p>
+      <code>store-hours.html?brand=YourBrand&amp;device=ABCD-1234</code>
+      <a href="index.html">← Back to Portal</a>
+    </div>`;
+} else {
+  updateClock();
+  setInterval(updateClock, 1000);
+  // Re-render every minute so the Open Now / Closed Now badge and Today's row
+  // stay accurate as the clock crosses an opening/closing boundary or midnight.
+  setInterval(render, 60000);
+
+  _deriveKey();
+  pollStoreHours();
+  setInterval(pollStoreHours, 30000);
+
+  onSnapshot(doc(db, 'menuboard', 'brands'), snap => {
+    _brands = snap.exists() ? (snap.data().data || []) : [];
+    render();
+  });
+
+  onSnapshot(doc(db, 'menuboard', 'settings'), snap => {
+    _settings = snap.exists() ? snap.data() : { brandName: 'Our Brand', logo: '', logoRight: '' };
+    render();
+    pollStoreHours();
+  });
+}
+</script>
+</body>
+</html>

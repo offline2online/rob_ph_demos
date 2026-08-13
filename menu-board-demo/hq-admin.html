@@ -1217,6 +1217,16 @@
               <input type="text" id="tplName" placeholder="e.g. Summer Menu">
             </div>
 
+            <div class="section-divider" id="sd-store-hours">Store Hours Display</div>
+            <div class="form-group">
+              <label>Day Order</label>
+              <select id="tplDayOrder">
+                <option value="current">Current Day First &mdash; today at the top, then rolling forward</option>
+                <option value="monday">Monday to Sunday &mdash; fixed week order</option>
+              </select>
+              <p class="form-help">Controls the order the 7 days are listed on the device. Hours themselves always come live from the Personalisation Hub API for that device&rsquo;s store.</p>
+            </div>
+
             <div class="section-divider">Header Layout</div>
             <div class="form-row">
               <div class="form-group">
@@ -2028,12 +2038,14 @@ const TEMPLATE_LIBRARY = [
   {
     id: 'store-info-hours',
     name: 'Store Info & Opening Hours',
-    description: 'Displays store name, opening hours, contact info and live time. Used at store entrance or lobby.',
+    description: 'Live, device-driven overview of this store’s opening hours, fetched from the Personalisation Hub API for the device’s specific store. Used at store entrance or lobby.',
     category: 'Store Operations',
     useCases: ['Entrance','Lobby','Reception','Clinic','Appointment'],
     phData: ['store_location','store_info'],
-    settings: { showHeader:true, colorScheme:true, iconPosition:true, headerCopy:true, itemTypeFilter:false, categoryFilter:false, soldOutBehavior:false, portrait:true, landscape:true, showClock:true, personalGreeting:false, showStoreName:true, campaignFilter:false },
-    defaults: { showHeader:'true', iconPosition:'center', colorHeader:'#169bc2', colorHeaderText:'#ffffff', colorAccent:'#169bc2', colorCatBar:'#169bc2', colorBody:'#f0f9ff', colorText:'#1a1a1a', colorPrice:'#169bc2', colorClockText:'#ffffff', hideOos:'false', portraitCols:1, portraitRows:3, portraitMax:3, landscapeCols:2, landscapeRows:2, landscapeMax:4, showClock:'true', timeFormat:'british', campaignMode:'filter' },
+    standalone: true,
+    standaloneFile: 'store-hours.html',
+    settings: { showHeader:false, colorScheme:true, iconPosition:false, headerCopy:false, itemTypeFilter:false, categoryFilter:false, soldOutBehavior:false, portrait:false, landscape:false, showClock:false, personalGreeting:false, showStoreName:false, campaignFilter:false, dayOrder:true },
+    defaults: { colorHeader:'#169bc2', colorHeaderText:'#ffffff', colorAccent:'#169bc2', colorBody:'#f0f9ff', colorText:'#1a1a1a', dayOrder:'current' },
     portraitSVG: (W,H) => {
       const hh=14;
       return `<rect width="${W}" height="${H}" fill="#f0f9ff"/><rect width="${W}" height="${hh}" fill="${C.header}"/>` +
@@ -2134,7 +2146,8 @@ function openTplDetailFromLib(id) {
     categoryFilter: 'Category Filter', soldOutBehavior: 'Sold Out Behaviour',
     portrait: 'Portrait Display Settings', landscape: 'Landscape Display Settings',
     showClock: 'Show Date & Time', personalGreeting: 'Personalised Greeting (First Name)',
-    showStoreName: 'Show Store Name', campaignFilter: 'Campaign Filter Mode'
+    showStoreName: 'Show Store Name', campaignFilter: 'Campaign Filter Mode',
+    dayOrder: 'Day Order (Current Day First / Monday–Sunday)'
   };
   const settingsList = Object.entries(t.settings).filter(([,v])=>v).map(([k])=>`<li style="font-size:12px;color:var(--text2);padding:3px 0;">✓ ${settingLabels[k]||k}</li>`).join('');
   const phDataHtml = (t.phData || []).map(key => {
@@ -4212,6 +4225,7 @@ function openNewTemplateEditor() {
       setValue('tplCampaignMode', d.campaignMode);
       setValue('tplShowStoreName', d.showStoreName || 'true');
       setValue('tplPersonalGreeting', d.personalGreeting || 'true');
+      setValue('tplDayOrder', d.dayOrder || 'current');
     }
     // Apply brand colour palette if available
     if (window._bPalette && window._bPalette.length > 0) {
@@ -4220,8 +4234,12 @@ function openNewTemplateEditor() {
       const dark = palette.filter(h => _getLuminance(h) < 128);
       const light = palette.filter(h => _getLuminance(h) >= 128);
       const mid = palette[Math.floor(palette.length / 2)];
+      // Palettes with no light (or no dark) swatch fall back to neutral white/near-black
+      // rather than leaving the template's own unrelated default colour in place.
       if (dark.length)  { document.getElementById('tplColorHeaderText').value = dark[0]; document.getElementById('tplColorText').value = dark[0]; }
+      else              { document.getElementById('tplColorHeaderText').value = '#1a1a1a'; document.getElementById('tplColorText').value = '#1a1a1a'; }
       if (light.length) { document.getElementById('tplColorHeader').value = light[light.length-1]; document.getElementById('tplColorBody').value = light[light.length-1]; }
+      else              { document.getElementById('tplColorHeader').value = '#ffffff'; document.getElementById('tplColorBody').value = '#ffffff'; }
       if (mid)          { document.getElementById('tplColorAccent').value = mid; document.getElementById('tplColorCatBar').value = mid; document.getElementById('tplColorPrice').value = mid; }
       // Clock text uses darkest of dark or lightest of light based on header bg
       const headerBg = document.getElementById('tplColorHeader').value;
@@ -4271,6 +4289,29 @@ function applyTemplateSchema(templateId) {
   setSectionVisible('Landscape Display', s.landscape);
   setSectionVisible('Date & Time', s.showClock);
   setSectionVisible('Campaign Filter', s.campaignFilter);
+  // Store Hours Display section — only for templates with dayOrder:true (Store Info & Opening Hours)
+  const sdHoursEl = document.getElementById('sd-store-hours');
+  if (sdHoursEl) {
+    const show = !!s.dayOrder;
+    sdHoursEl.style.display = show ? '' : 'none';
+    let el = sdHoursEl.nextElementSibling;
+    while (el && !el.classList.contains('section-divider') && !el.classList.contains('tpl-save-row') && el.tagName !== 'BUTTON') {
+      el.style.display = show ? '' : 'none';
+      el = el.nextElementSibling;
+    }
+  }
+  // Store Info & Opening Hours has no item grid, so price/description/item-card
+  // colours are irrelevant — hide them and repurpose the generic text colour as
+  // "Hours Text" instead of "Item Name Text".
+  const isStoreHours = templateId === 'store-info-hours';
+  const priceGroup  = document.getElementById('tplColorPriceGroup');
+  const descGroup   = document.getElementById('tplColorDescGroup');
+  const itemBgGroup = document.getElementById('tplColorItemBgGroup');
+  if (priceGroup)  priceGroup.style.display  = isStoreHours ? 'none' : '';
+  if (descGroup)   descGroup.style.display   = isStoreHours ? 'none' : '';
+  if (itemBgGroup) itemBgGroup.style.display = isStoreHours ? 'none' : '';
+  const textLabel = document.querySelector('#tplColorTextGroup label');
+  if (textLabel) textLabel.textContent = isStoreHours ? 'Hours Text' : 'Item Name Text';
   // Category filter groups.
   // "Categories to Present in Grid" applies to every template's item grid, so it
   // follows the schema's categoryFilter flag like the rest of this section.
@@ -4348,6 +4389,7 @@ function openEditTemplateEditor(tplId) {
   document.getElementById('tplCampaignMode').value    = tpl.campaignMode || 'override';
   if (document.getElementById('tplShowStoreName'))    document.getElementById('tplShowStoreName').value    = tpl.showStoreName !== false ? 'true' : 'false';
   if (document.getElementById('tplPersonalGreeting')) document.getElementById('tplPersonalGreeting').value = tpl.personalGreeting !== false ? 'true' : 'false';
+  if (document.getElementById('tplDayOrder'))         document.getElementById('tplDayOrder').value         = tpl.dayOrder || 'current';
   _tplSelectedTypes = Array.isArray(tpl.menuTypes) ? [...tpl.menuTypes] : [];
   _updateTplTypeLabel();
   document.getElementById('tplTypePanel').classList.remove('open');
@@ -4514,6 +4556,7 @@ function saveTemplate() {
     menuTypes:      [..._tplSelectedTypes],
     heroCategory:   document.getElementById('tplHeroCategory')?.value || '',
     categoriesToPresent: [..._tplSelectedCategories],
+    dayOrder:       document.getElementById('tplDayOrder')?.value || 'current',
   };
 
   if (_tplEditingId) {
