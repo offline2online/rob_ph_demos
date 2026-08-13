@@ -7,20 +7,22 @@
   <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@500;600;700&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <style>
     :root {
-      --header-bg:   #169bc2;
-      --header-text: #ffffff;
-      --accent:      #169bc2;
-      --body-bg:     #f0f9ff;
-      --text:        #1a1a1a;
-      --card-bg:     #ffffff;
-      --border:      #e2e8f0;
-      --muted:       #94a3b8;
-      --clock-bg:    #f0f4f8;
-      --clock-text:  #1e293b;
-      --open-color:  #15803d;
-      --open-bg:     #dcfce7;
-      --closed-color:#64748b;
-      --closed-bg:   #f1f5f9;
+      /* Single, admin-editable colour theme shared by every part of this
+         component — brand row, status badge and the hours overview all
+         draw from these same five variables, so there is one consistent
+         look rather than a separately-coloured header/clock bar. */
+      --header-bg:    #169bc2;  /* brand name / accent text */
+      --header-text:  #ffffff;  /* text on accent-filled chips (today pill, open badge) */
+      --accent:       #169bc2;  /* today row highlight, pill fill */
+      --body-bg:      #f0f9ff;  /* the entire screen's single background */
+      --text:         #1a1a1a;  /* hours text */
+      --daytime-color:#64748b;  /* the day/date + time display, top-right */
+      --border:       #e2e8f0;
+      --muted:        #94a3b8;
+      --open-color:   #15803d;
+      --open-bg:      #dcfce7;
+      --closed-color: #64748b;
+      --closed-bg:    #f1f5f9;
     }
 
     * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -33,97 +35,54 @@
       font-family: 'Inter', sans-serif;
     }
 
+    /* The board IS the single component — one full-screen surface, one
+       colour theme, no separate header/clock-bar elements. */
     .board {
       display: flex;
       flex-direction: column;
       height: 100vh;
       overflow: hidden;
       background: var(--body-bg);
+      padding: clamp(20px, 3.5vh, 56px) clamp(24px, 4.5vw, 72px);
+      gap: clamp(14px, 2.5vh, 32px);
     }
 
-    /* ── HEADER ─────────────────────────────── */
-    .board-header {
-      background: var(--header-bg);
-      border-bottom: 3px solid var(--accent);
-      height: 175px;
-      padding: 0 clamp(20px, 4vw, 60px);
+    /* ── BRAND ROW (logos + name, folded into the same surface) ──────── */
+    .brand-row {
       display: flex;
-      align-items: stretch;
+      align-items: center;
       justify-content: space-between;
-      gap: 16px;
+      gap: 20px;
       flex-shrink: 0;
     }
-    .header-logo-wrap {
-      width: clamp(64px, 9vw, 130px);
+    .brand-logo-wrap {
+      width: clamp(56px, 7vw, 110px);
       display: flex;
       align-items: center;
       justify-content: center;
       flex-shrink: 0;
     }
-    .header-logo-wrap img {
-      max-width: 100%; height: 100%; max-height: 100%; width: auto; object-fit: contain;
+    .brand-logo-wrap img {
+      max-width: 100%; height: 100%; max-height: clamp(48px, 8vh, 90px); width: auto; object-fit: contain;
     }
-    .header-logo-wrap.no-logo { width: clamp(64px, 9vw, 130px); }
-    .header-center {
+    .brand-center {
       flex: 1;
       display: flex;
       flex-direction: column;
-      justify-content: center;
+      align-items: center;
       text-align: center;
-      color: var(--header-text);
+      gap: 4px;
     }
-    .header-brand {
+    .brand-name {
       font-family: 'Oswald', sans-serif;
-      font-size: clamp(20px, 4vw, 56px);
+      font-size: clamp(22px, 4vw, 52px);
       font-weight: 700;
-      letter-spacing: clamp(2px, 0.5vw, 8px);
+      letter-spacing: clamp(2px, 0.5vw, 6px);
       text-transform: uppercase;
       line-height: 1.1;
-      color: var(--header-text);
+      color: var(--header-bg);
     }
-    .board.portrait .header-brand { font-size: clamp(28px, 5vw, 72px); }
-    .header-menu-type {
-      font-family: 'Oswald', sans-serif;
-      font-size: clamp(14px, 2.5vw, 36px);
-      font-weight: 500;
-      letter-spacing: clamp(3px, 0.8vw, 12px);
-      text-transform: uppercase;
-      color: var(--header-text);
-      opacity: 0.85;
-      margin-top: clamp(2px, 0.4vw, 6px);
-    }
-    .board.portrait .header-menu-type { font-size: clamp(18px, 3vw, 44px); }
-
-    /* ── CLOCK BAR ──────────────────────────── */
-    .clock-bar {
-      background: var(--clock-bg);
-      border-top: 1px solid #dde5ee;
-      border-bottom: 1px solid #dde5ee;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 12px;
-      padding: clamp(6px, 1vw, 12px) clamp(20px, 4vw, 60px);
-      flex-shrink: 0;
-    }
-    .board.portrait .clock-bar { padding: clamp(10px, 1.5vw, 20px) clamp(24px, 4.5vw, 70px); }
-    .clock-bar .store-name {
-      font-family: 'Oswald', sans-serif;
-      font-weight: 700;
-      font-size: clamp(15px, 1.8vw, 26px);
-      color: var(--clock-text);
-      letter-spacing: 1px;
-      text-transform: uppercase;
-    }
-    .board.landscape .clock-bar .store-name { font-size: clamp(20px, 2.4vw, 38px); }
-    .clock-bar .time-display {
-      font-family: 'Oswald', sans-serif;
-      font-size: clamp(15px, 1.8vw, 26px);
-      color: var(--clock-text);
-      letter-spacing: 1px;
-      margin-left: auto;
-    }
-    .board.landscape .clock-bar .time-display { font-size: clamp(20px, 2.4vw, 38px); }
+    .board.portrait .brand-name { font-size: clamp(28px, 5vw, 64px); }
 
     /* Mock-mode badge — visible only when ?mockapi= is set in the URL */
     .mock-badge {
@@ -138,82 +97,97 @@
       flex-shrink: 0;
     }
 
-    /* ── BODY ───────────────────────────────── */
-    .hours-body {
-      flex: 1;
-      min-height: 0;
-      overflow: hidden;
+    /* ── STORE NAME — sits directly beneath the header ────────────────── */
+    .store-name-line {
       display: flex;
       align-items: center;
       justify-content: center;
-      padding: clamp(16px, 3vh, 48px) clamp(20px, 4vw, 60px);
+      gap: 10px;
+      font-family: 'Oswald', sans-serif;
+      font-weight: 600;
+      font-size: clamp(14px, 1.8vw, 24px);
+      color: var(--text);
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      flex-shrink: 0;
     }
 
-    .hours-card {
-      width: 100%;
-      max-width: clamp(420px, 46vw, 760px);
-      background: var(--card-bg);
-      border: 1px solid var(--border);
-      border-radius: clamp(10px, 1vw, 20px);
-      box-shadow: 0 12px 40px rgba(0,0,0,0.06);
-      padding: clamp(20px, 3vw, 44px);
+    /* ── HOURS OVERVIEW — fills the remaining screen ──────────────────── */
+    .hours-panel {
+      flex: 1;
+      min-height: 0;
       display: flex;
       flex-direction: column;
-      gap: clamp(14px, 2vh, 28px);
+      gap: clamp(14px, 2.5vh, 28px);
     }
 
-    .status-badge {
-      align-self: center;
-      font-family: 'Oswald', sans-serif;
-      font-weight: 700;
-      letter-spacing: 2px;
-      text-transform: uppercase;
-      font-size: clamp(13px, 1.6vw, 22px);
-      padding: clamp(6px, 0.9vw, 12px) clamp(18px, 2.6vw, 32px);
-      border-radius: 999px;
-    }
-    .status-badge.open   { color: var(--open-color);   background: var(--open-bg); }
-    .status-badge.closed { color: var(--closed-color); background: var(--closed-bg); }
-
-    .hours-list { display: flex; flex-direction: column; }
-    .hours-row {
+    /* Status row: Open/Closed on the left, time + day/date on the right */
+    .status-row {
       display: flex;
       align-items: center;
       justify-content: space-between;
       gap: 16px;
-      padding: clamp(10px, 1.4vh, 18px) clamp(10px, 1.2vw, 20px);
+      flex-shrink: 0;
+    }
+    .status-badge {
+      font-family: 'Oswald', sans-serif;
+      font-weight: 700;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      font-size: clamp(14px, 1.8vw, 24px);
+      padding: clamp(7px, 1vw, 14px) clamp(20px, 3vw, 36px);
+      border-radius: 999px;
+    }
+    .status-badge.open   { color: var(--open-color);   background: var(--open-bg); }
+    .status-badge.closed { color: var(--closed-color); background: var(--closed-bg); }
+    .status-time {
+      font-family: 'Oswald', sans-serif;
+      font-variant-numeric: tabular-nums;
+      font-size: clamp(15px, 1.8vw, 26px);
+      color: var(--daytime-color);
+      letter-spacing: 1px;
+    }
+
+    .hours-list { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+    .hours-row {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      padding: clamp(6px, 1vh, 14px) clamp(14px, 2vw, 28px);
       border-bottom: 1px solid var(--border);
     }
     .hours-row:last-child { border-bottom: none; }
     .hours-row.today {
       background: color-mix(in srgb, var(--accent) 10%, transparent);
-      border-radius: 10px;
+      border-radius: 14px;
       border-bottom: none;
     }
 
-    .hours-day-wrap { display: flex; align-items: center; gap: 10px; }
+    .hours-day-wrap { display: flex; align-items: center; gap: 12px; }
     .hours-day {
       font-family: 'Oswald', sans-serif;
       font-weight: 600;
-      font-size: clamp(14px, 1.6vw, 22px);
+      font-size: clamp(18px, 2.6vw, 34px);
       text-transform: uppercase;
       letter-spacing: 1px;
     }
     .today-pill {
       font-family: 'Inter', sans-serif;
       font-weight: 700;
-      font-size: clamp(9px, 0.85vw, 12px);
+      font-size: clamp(10px, 1vw, 14px);
       letter-spacing: 0.5px;
       text-transform: uppercase;
-      color: #fff;
+      color: var(--header-text);
       background: var(--accent);
-      padding: 2px 8px;
+      padding: 3px 10px;
       border-radius: 999px;
     }
     .hours-time {
       font-family: 'Oswald', sans-serif;
       font-variant-numeric: tabular-nums;
-      font-size: clamp(14px, 1.6vw, 22px);
+      font-size: clamp(18px, 2.6vw, 34px);
       color: var(--text);
     }
     .hours-time.closed-day { color: var(--muted); }
@@ -245,11 +219,8 @@
       padding: 10px 24px; border-radius: 8px; text-decoration: none; font-size: 14px;
     }
 
-    /* ── FOOTER ─────────────────────────────── */
+    /* ── FOOTER (subtle, same surface — appears only on hover) ────────── */
     .board-footer {
-      background: #f0f4f8;
-      border-top: 1px solid #dde5ee;
-      padding: clamp(8px, 1.2vw, 16px) clamp(20px, 4vw, 60px);
       display: flex;
       align-items: center;
       justify-content: space-between;
@@ -258,8 +229,8 @@
       transition: opacity 0.4s ease;
     }
     .board:hover .board-footer { opacity: 1; }
-    .footer-text { font-size: clamp(9px, 1vw, 13px); color: #64748b; font-weight: 500; letter-spacing: 0.5px; }
-    .footer-refresh { font-size: clamp(9px, 0.9vw, 12px); color: #94a3b8; display: flex; align-items: center; gap: 6px; }
+    .footer-text { font-size: clamp(9px, 1vw, 13px); color: var(--muted); font-weight: 500; letter-spacing: 0.5px; }
+    .footer-refresh { font-size: clamp(9px, 0.9vw, 12px); color: var(--muted); display: flex; align-items: center; gap: 6px; }
     .refresh-dot { width: 6px; height: 6px; border-radius: 50%; background: #4ade80; animation: pulse 2s infinite; }
     @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.2} }
 
@@ -368,16 +339,17 @@ function applyColorScheme(brand) {
   if (colors.accent)     root.setProperty('--accent',      colors.accent);
   if (colors.body)       root.setProperty('--body-bg',     colors.body);
   if (colors.text)       root.setProperty('--text',        colors.text);
+  if (colors.clockText)  root.setProperty('--daytime-color', colors.clockText);
   return tpl;
 }
 
-function updateClock() {
-  const el = document.getElementById('clockDisplay');
+function updateStatusTime() {
+  const el = document.getElementById('statusTime');
   if (!el) return;
   const n = new Date();
   const timeStr = n.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  const dateStr = n.toLocaleDateString([], { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
-  el.textContent = timeStr + '  ·  ' + dateStr;
+  const dateStr = n.toLocaleDateString([], { weekday: 'short', day: 'numeric', month: 'short' });
+  el.textContent = `${timeStr}  ·  ${dateStr}`;
 }
 
 // ── PERSONALISATION HUB API — DECRYPTION + STORE HOURS POLLING ───────────────
@@ -567,32 +539,29 @@ function render() {
   const brandName = brand.name || 'Our Brand';
 
   const logoSlot = (src, side) => src
-    ? `<div class="header-logo-wrap"><img src="${src}" alt="${esc(side)} logo"></div>`
-    : `<div class="header-logo-wrap no-logo"></div>`;
+    ? `<div class="brand-logo-wrap"><img src="${src}" alt="${esc(side)} logo"></div>`
+    : `<div class="brand-logo-wrap"></div>`;
 
   const headerHtml = `
-    <div class="board-header">
+    <div class="brand-row">
       ${logoSlot(logoLeft, 'Left')}
-      <div class="header-center">
-        <div class="header-brand">${esc(brandName)}</div>
-        <div class="header-menu-type">Opening Hours</div>
+      <div class="brand-center">
+        <div class="brand-name">${esc(brandName)}</div>
       </div>
       ${logoSlot(logoRight, 'Right')}
     </div>
-    <div class="clock-bar">
-      <div style="display:flex;align-items:center;gap:10px;">
-        ${MOCK_API_FILE ? `<span class="mock-badge">🧪 MOCK</span>` : ''}
-        ${_storeName ? `<div class="store-name">${esc(_storeName)}</div>` : ''}
-      </div>
-      <div class="time-display" id="clockDisplay"></div>
-    </div>
+    ${(_storeName || MOCK_API_FILE) ? `
+    <div class="store-name-line">
+      ${MOCK_API_FILE ? `<span class="mock-badge">🧪 MOCK</span>` : ''}
+      ${_storeName ? `<span>${esc(_storeName)}</span>` : ''}
+    </div>` : ''}
   `;
 
   let bodyHtml = '';
 
   if (!_hoursFetched) {
     bodyHtml = `
-      <div class="hours-body">
+      <div class="hours-panel">
         <div class="hours-loading">
           <div class="icon">🕒</div>
           <h2 style="font-family:'Oswald',sans-serif;font-size:22px;letter-spacing:1px;">Fetching store hours…</h2>
@@ -601,7 +570,7 @@ function render() {
       </div>`;
   } else if (!_openingHours) {
     bodyHtml = `
-      <div class="hours-body">
+      <div class="hours-panel">
         <div class="hours-loading">
           <div class="icon">🕒</div>
           <h2 style="font-family:'Oswald',sans-serif;font-size:22px;letter-spacing:1px;">Opening hours unavailable</h2>
@@ -616,7 +585,11 @@ function render() {
       : WEEK_DAYS.slice(todayIdx).concat(WEEK_DAYS.slice(0, todayIdx));
 
     const openNow = _isOpenNow(todayIdx);
-    const statusBadge = `<div class="status-badge ${openNow ? 'open' : 'closed'}">${openNow ? 'Open Now' : 'Closed Now'}</div>`;
+    const statusRow = `
+      <div class="status-row">
+        <div class="status-badge ${openNow ? 'open' : 'closed'}">${openNow ? 'Open Now' : 'Closed Now'}</div>
+        <div class="status-time" id="statusTime"></div>
+      </div>`;
 
     const rows = order.map(day => {
       const isToday = day === WEEK_DAYS[todayIdx];
@@ -632,11 +605,9 @@ function render() {
     }).join('');
 
     bodyHtml = `
-      <div class="hours-body">
-        <div class="hours-card">
-          ${statusBadge}
-          <div class="hours-list">${rows}</div>
-        </div>
+      <div class="hours-panel">
+        ${statusRow}
+        <div class="hours-list">${rows}</div>
       </div>`;
   }
 
@@ -648,7 +619,7 @@ function render() {
   `;
 
   boardRoot.innerHTML = headerHtml + bodyHtml + footerHtml;
-  updateClock();
+  updateStatusTime();
   _updateDebugPanel();
 }
 
@@ -663,8 +634,9 @@ if (!DEVICE_UDID) {
       <a href="index.html">← Back to Portal</a>
     </div>`;
 } else {
-  updateClock();
-  setInterval(updateClock, 1000);
+  // The status-row time/day-date ticks every second independently of the
+  // full render, which only needs to re-run every minute.
+  setInterval(updateStatusTime, 1000);
   // Re-render every minute so the Open Now / Closed Now badge and Today's row
   // stay accurate as the clock crosses an opening/closing boundary or midnight.
   setInterval(render, 60000);

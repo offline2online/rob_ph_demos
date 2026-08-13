@@ -3765,6 +3765,14 @@ function applyTemplateSchema(templateId) {
   if (itemBgGroup) itemBgGroup.style.display = isStoreHours ? 'none' : '';
   const textLabel = document.querySelector('#tplColorTextGroup label');
   if (textLabel) textLabel.textContent = isStoreHours ? 'Hours Text' : 'Item Name Text';
+  // "Header Background" becomes the brand name's colour and "Header Text" the
+  // text colour on accent-filled chips (the Today pill) — this template has no
+  // separate header bar, so both fields are relabelled to describe what they
+  // actually control here.
+  const headerBgLabel   = document.querySelector('#tplColorHeaderGroup label');
+  const headerTextLabel = document.querySelector('#tplColorHeaderTextGroup label');
+  if (headerBgLabel)   headerBgLabel.textContent   = isStoreHours ? 'Brand Name Colour' : 'Header Background';
+  if (headerTextLabel) headerTextLabel.textContent = isStoreHours ? 'Highlight Text'    : 'Header Text';
   // Category filter groups.
   // "Categories to Present in Grid" applies to every template's item grid, so it
   // follows the schema's categoryFilter flag like the rest of this section.
@@ -3779,11 +3787,16 @@ function applyTemplateSchema(templateId) {
   // Category badge colour — only relevant when category badges are shown
   const catBarGroup = document.getElementById('tplColorCatBarGroup');
   if (catBarGroup) catBarGroup.style.display = s.categoryFilter ? '' : 'none';
-  // Clock-related colours — only relevant when clock bar is shown
+  // Clock-related colours — relevant when a clock bar is shown, and also for
+  // Store Info & Opening Hours, whose single-view status row shows a live
+  // day/time readout (no separate bar background there, so only the text
+  // colour applies).
   const clockTextGroup = document.getElementById('tplColorClockTextGroup');
   const clockBgGroup   = document.getElementById('tplColorClockBgGroup');
-  if (clockTextGroup) clockTextGroup.style.display = s.showClock ? '' : 'none';
+  if (clockTextGroup) clockTextGroup.style.display = (s.showClock || isStoreHours) ? '' : 'none';
   if (clockBgGroup)   clockBgGroup.style.display   = s.showClock ? '' : 'none';
+  const clockTextLabel = document.querySelector('#tplColorClockTextGroup label');
+  if (clockTextLabel) clockTextLabel.textContent = isStoreHours ? 'Day & Time Text' : 'Clock & Date Text';
   // Header title / sub-header fields — show/hide based on whether header is enabled for this template
   const headerTitleGroup = document.querySelector('#tplHeaderTitle')?.closest('.form-group');
   const headerCopyGroup  = document.querySelector('#tplHeaderCopy')?.closest('.form-group');
