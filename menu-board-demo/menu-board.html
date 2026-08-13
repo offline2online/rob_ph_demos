@@ -451,126 +451,134 @@
     }
 
     /* ── FEATURE HERO SPOTLIGHT LAYOUT ─────────────── */
-    /* Portrait: hero stacked above the grid */
-    .board.portrait .hero-body {
+    /* A full-bleed image panel (no overlay copy) alongside a stack of
+       equally-weighted promo cards — not one dominant item with a small
+       supporting grid. Portrait: image on top, promos below. Landscape:
+       image on the left, promos stacked down the right. */
+    .board.portrait .promo-board {
       flex: 1;
       min-height: 0;
       display: flex;
       flex-direction: column;
       overflow: hidden;
     }
-    .board.portrait .hero-slot {
-      flex: 0 0 42%;
-      display: flex;
-      flex-direction: row;
+    .board.portrait .promo-hero {
+      flex: 0 0 var(--hero-flex-basis, 42%);
       overflow: hidden;
       border-bottom: 3px solid var(--accent, #f6ad55);
     }
-    .board.portrait .hero-slot .hero-img {
-      flex: 0 0 42%;
-      overflow: hidden;
-    }
-    .board.portrait .hero-slot .hero-img img {
-      width: 100%; height: 100%; object-fit: cover;
-    }
-    .board.portrait .hero-slot .hero-info {
-      flex: 1;
-      display: flex;
-      flex-direction: column;
-      justify-content: center;
-      padding: clamp(16px, 2.5vw, 40px);
-      overflow: hidden;
-    }
-    /* Landscape: hero left panel, grid right panel */
-    .board.landscape .hero-body {
+    .board.landscape .promo-board {
       flex: 1;
       min-height: 0;
       display: flex;
       flex-direction: row;
       overflow: hidden;
     }
-    .board.landscape .hero-slot {
-      flex: 0 0 42%;
-      display: flex;
-      flex-direction: column;
+    .board.landscape .promo-hero {
+      flex: 0 0 var(--hero-flex-basis, 42%);
       overflow: hidden;
       border-right: 3px solid var(--accent, #f6ad55);
-      position: relative;
     }
-    .board.landscape .hero-slot .hero-img {
-      flex: 1;
-      overflow: hidden;
+    .promo-hero img {
+      width: 100%; height: 100%; object-fit: cover; display: block;
     }
-    .board.landscape .hero-slot .hero-img img {
-      width: 100%; height: 100%; object-fit: cover;
-    }
-    .board.landscape .hero-slot .hero-info {
-      position: absolute;
-      bottom: 0; left: 0; right: 0;
-      padding: clamp(12px, 2vw, 28px);
-      background: linear-gradient(to top, rgba(0,0,0,0.85) 0%, rgba(0,0,0,0) 100%);
-    }
-    /* Shared hero info text */
-    .hero-badge {
-      display: inline-block;
-      background: var(--accent, #f6ad55);
-      color: #111;
-      font-family: 'Oswald', sans-serif;
-      font-weight: 700;
-      font-size: clamp(10px, 1.1vw, 16px);
-      letter-spacing: .08em;
-      text-transform: uppercase;
-      padding: 3px 10px;
-      border-radius: 4px;
-      margin-bottom: clamp(6px, 1vw, 14px);
-    }
-    .hero-name {
-      font-family: 'Oswald', sans-serif;
-      font-weight: 700;
-      color: var(--item-text, var(--text, #ffffff));
-      font-size: clamp(20px, 3vw, 52px);
-      line-height: 1.15;
-      margin-bottom: clamp(4px, 0.6vw, 10px);
-    }
-    .hero-price {
-      font-family: 'Oswald', sans-serif;
-      font-weight: 700;
-      color: var(--accent, #f6ad55);
-      font-size: clamp(24px, 3.6vw, 62px);
-    }
-    .hero-desc {
-      color: var(--item-desc, rgba(255,255,255,0.72));
-      font-size: clamp(10px, 1.2vw, 17px);
-      line-height: 1.45;
-      margin-top: clamp(4px, 0.6vw, 10px);
-      display: -webkit-box;
-      -webkit-line-clamp: 3;
-      -webkit-box-orient: vertical;
-      overflow: hidden;
-    }
-    /* Grid within hero layout */
-    .hero-grid-wrap {
-      flex: 1;
-      min-width: 0;
-      min-height: 0;
-      display: flex;
-      flex-direction: column;
-      overflow: hidden;
-    }
-    .hero-grid-wrap .board-body {
-      flex: 1;
-      min-height: 0;
-    }
-    /* Portrait grid strip below hero */
-    .board.portrait .hero-grid-wrap {
-      flex: 1;
-    }
-    /* No image placeholder for hero */
-    .hero-img-placeholder {
+    .promo-hero-placeholder {
       width: 100%; height: 100%;
       display: flex; align-items: center; justify-content: center;
       font-size: clamp(48px, 8vw, 120px);
-      background: rgba(255,255,255,0.05);
+      background: rgba(0,0,0,0.05);
+    }
+    /* Promo card stack */
+    .promo-list {
+      flex: 1;
+      min-width: 0;
+      min-height: 0;
+      display: grid;
+      gap: clamp(10px, 1.4vw, 24px);
+      padding: clamp(10px, 1.4vw, 24px);
+    }
+    .promo-tile {
+      position: relative;
+      display: flex;
+      align-items: stretch;
+      min-height: 0;
+      background: var(--item-bg, #fff);
+      border-radius: clamp(8px, 1vw, 16px);
+      border: 1px solid rgba(0,0,0,.06);
+      box-shadow: 0 2px 10px rgba(0,0,0,.08);
+      overflow: hidden;
+    }
+    /* Angled candy-stripe accent bar, in the brand's own accent colour —
+       the recurring "promo flag" motif from QSR value-menu signage. */
+    .promo-tile::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      height: clamp(6px, 0.6vw, 10px);
+      background: repeating-linear-gradient(-45deg, var(--accent, #e4002b) 0 14px, #fff 14px 28px);
+    }
+    .promo-text {
+      flex: 1 1 55%;
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      padding: clamp(14px, 1.6vw, 30px) clamp(14px, 1.6vw, 30px) clamp(10px, 1.2vw, 22px);
+      gap: clamp(2px, 0.4vw, 6px);
+    }
+    .promo-cat {
+      display: inline-block;
+      align-self: flex-start;
+      background: var(--cat-bar-bg, var(--accent));
+      color: #fff;
+      font-family: 'Oswald', sans-serif;
+      font-weight: 700;
+      font-size: clamp(9px, 0.85vw, 13px);
+      letter-spacing: .05em;
+      text-transform: uppercase;
+      padding: clamp(2px, 0.35vw, 5px) clamp(8px, 0.9vw, 14px);
+      border-radius: clamp(3px, 0.35vw, 6px);
+      margin-bottom: clamp(4px, 0.6vw, 10px);
+    }
+    .promo-title {
+      font-family: 'Oswald', sans-serif;
+      font-weight: 800;
+      text-transform: uppercase;
+      color: var(--item-color, var(--text));
+      font-size: clamp(16px, 2.2vw, 32px);
+      line-height: 1.08;
+    }
+    .promo-desc {
+      font-style: italic;
+      color: var(--item-desc, var(--text2));
+      font-size: clamp(10px, 1vw, 15px);
+      line-height: 1.35;
+      overflow: hidden;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+    }
+    .promo-price {
+      font-family: 'Oswald', sans-serif;
+      font-weight: 800;
+      color: var(--price-color, var(--accent));
+      font-size: clamp(20px, 2.8vw, 40px);
+      margin-top: clamp(2px, 0.5vw, 8px);
+    }
+    .promo-img-wrap {
+      flex: 0 0 40%;
+      min-width: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: clamp(8px, 1vw, 18px);
+    }
+    .promo-img-wrap img {
+      max-width: 100%; max-height: 100%; object-fit: contain;
+    }
+    .promo-img-placeholder {
+      font-size: clamp(28px, 4vw, 56px);
+      opacity: .3;
     }
 
     /* ── API ERROR BADGE ───────────────────────────── */
@@ -782,7 +790,10 @@ function applyColorScheme(brand) {
   if (colors.header)      root.setProperty('--board-header-bg', colors.header);
   if (colors.headerText)  root.setProperty('--header-text',     colors.headerText);
   // Accent (mirrors --green for legacy compatibility + explicit --accent var)
-  if (colors.accent)      { root.setProperty('--green',   colors.accent); root.setProperty('--accent', colors.accent); }
+  if (colors.accent) {
+    root.setProperty('--green',   colors.accent);
+    root.setProperty('--accent', colors.accent);
+  }
   // Category badge background
   if (colors.catBar)      root.setProperty('--cat-bar-bg',   colors.catBar);
   // Page / body background
@@ -1292,6 +1303,7 @@ function render() {
   const effectiveHeroCategory     = (tpl && tpl.heroCategory)  || '';
   const effectiveGridCategories   = (tpl && Array.isArray(tpl.categoriesToPresent) && tpl.categoriesToPresent.length > 0)
     ? tpl.categoriesToPresent : [];
+  const effectiveHeroSize          = (tpl && tpl.heroSize)          || 'balanced';
 
   // Persist time format for updateClock() which runs outside render()
   _effectiveTimeFormat = effectiveTimeFormat;
@@ -1417,11 +1429,20 @@ function render() {
     return small || large || '';
   }
 
-  const totalPages = Math.max(1, Math.ceil(totalItems / PAGE_SIZE));
+  // Mutable: the Feature Hero Spotlight layout recomputes this below from its own
+  // hero-rotation + secondary-grid-overflow page count, so the footer and the
+  // shared rotation clock reflect what's actually rotating on screen.
+  let totalPages = Math.max(1, Math.ceil(totalItems / PAGE_SIZE));
 
-  // Clamp currentPage
-  if (currentPage > totalPages) currentPage = totalPages;
-  if (currentPage < 1) currentPage = 1;
+  // Clamp currentPage — skipped for Feature Hero Spotlight, which recomputes
+  // totalPages from its own hero-rotation + grid-overflow page count further
+  // down and clamps there instead; clamping here first (against this flat-grid
+  // totalPages, which is irrelevant to that layout) would stomp a valid
+  // rotated/locked page back down to 1 before the hero branch ever sees it.
+  if (effectiveTemplateType !== 'feature-hero-board') {
+    if (currentPage > totalPages) currentPage = totalPages;
+    if (currentPage < 1) currentPage = 1;
+  }
 
   // Slice page
   const pageStart = (currentPage - 1) * PAGE_SIZE;
@@ -1443,6 +1464,14 @@ function render() {
 
   const showHeader = effectiveShowHeader;
   const showClock  = effectiveShowClock;
+  // The greeting/store-name row is independently useful from the clock — templates
+  // like Feature Hero Spotlight hide the clock by default (dark, immersive layout)
+  // but should still surface a personalised "Recommended for you" message when the
+  // Personalisation Hub API has pushed a First Name for this device. So the bar
+  // renders whenever either the clock is on, or personalisation has something to show.
+  const showPersonalised = effectivePersonalGreeting && !!_campaignFirstName;
+  const showStoreNameRow = effectiveShowStoreName && !!_storeName;
+  const showInfoBar = showClock || showPersonalised || showStoreNameRow;
   const headerHtml = `
     ${showHeader ? `
     <div class="board-header">
@@ -1457,13 +1486,13 @@ function render() {
       ${logoSlot(logoRight, 'Right')}
     </div>
     ` : ''}
-    ${showClock ? `
+    ${showInfoBar ? `
       <div class="clock-bar">
         ${MOCK_API_FILE ? `<span class="mock-badge">🧪 MOCK</span>` : ''}
-        ${(effectivePersonalGreeting && _campaignFirstName)
+        ${showPersonalised
           ? `<div class="greeting-text">${esc(_campaignFirstName).toUpperCase()}, THIS IS WHAT WE RECOMMEND FOR YOU</div>`
-          : ((effectiveShowStoreName && _storeName) ? `<div class="greeting-text">${_storeName}</div>` : '')}
-        <div class="time-display" id="clockDisplay"></div>
+          : (showStoreNameRow ? `<div class="greeting-text">${_storeName}</div>` : '')}
+        ${showClock ? `<div class="time-display" id="clockDisplay"></div>` : ''}
       </div>
     ` : ''}
   `;
@@ -1511,75 +1540,106 @@ function render() {
     `;
   } else if (effectiveTemplateType === 'feature-hero-board') {
     // ── FEATURE HERO SPOTLIGHT LAYOUT ────────────────────────────────────────
-    // Pick the hero item: first item matching heroCategory (if set), else first item overall
+    // A full-bleed image (no overlay copy) beside/above a stack of equally-
+    // weighted promo cards — "just show promotions", not one dominant item
+    // with a small supporting grid.
+    //
+    // Hero image candidates: items matching heroCategory (if set), else the
+    // whole personalised/campaign-filtered set (so a first_name + SKUs push
+    // from the Personalisation Hub narrows the image the same way it narrows
+    // the promo cards).
     let heroPool = campaignFiltered;
     if (effectiveHeroCategory) {
       const catPool = campaignFiltered.filter(i => i.category === effectiveHeroCategory);
       if (catPool.length > 0) heroPool = catPool;
     }
-    const heroItem = heroPool[0] || null;
 
-    // Grid items: everything except the hero item, filtered by categoriesToPresent if set
-    let gridItems = campaignFiltered.filter(i => i !== heroItem);
+    // Only rotate the hero image when a Hero Category has been curated with
+    // more than one candidate — a deliberate multi-item rotation, not the
+    // "whatever happens to sort first" fallback used when no category is set.
+    // When rotating, all hero-pool candidates are held out of the promo
+    // cards so that list stays a stable, easy-to-scan lineup while only the
+    // background image cycles — standard QSR digital-signage practice.
+    const heroRotates = !!effectiveHeroCategory && heroPool.length > 1;
+    let promoItems = heroRotates
+      ? campaignFiltered.filter(i => !heroPool.includes(i))
+      : campaignFiltered.filter(i => i !== (heroPool[0] || null));
     if (effectiveGridCategories.length > 0) {
-      gridItems = gridItems.filter(i => effectiveGridCategories.includes(i.category || ''));
+      promoItems = promoItems.filter(i => effectiveGridCategories.includes(i.category || ''));
     }
 
-    // Compute grid layout from template settings
-    const heroCols = ORIENTATION === 'portrait'
-      ? (parseInt((effectiveDisplay.portrait || {}).cols) || 3)
-      : (parseInt((effectiveDisplay.landscape || {}).cols) || 4);
-    const heroRows = ORIENTATION === 'portrait'
+    // Promo card count from template settings — defaults to 2 stacked cards.
+    const promoCols = ORIENTATION === 'portrait'
+      ? (parseInt((effectiveDisplay.portrait || {}).cols) || 1)
+      : (parseInt((effectiveDisplay.landscape || {}).cols) || 1);
+    const promoRows = ORIENTATION === 'portrait'
       ? (parseInt((effectiveDisplay.portrait || {}).rows) || 2)
       : (parseInt((effectiveDisplay.landscape || {}).rows) || 2);
-    const heroMax = heroCols * heroRows;
-    const gridPage = gridItems.slice(0, heroMax);
+    const promoMax = promoCols * promoRows;
 
-    // Inject grid CSS for hero grid (appended to existing dynStyle)
+    // Reconcile pagination with the board's shared rotation clock: total
+    // pages is whichever needs more screens — the hero image rotating
+    // through its candidates, or the promo cards paging through overflow
+    // items — so both the footer ("Screen X of Y") and the existing
+    // rotation timer/progress bar (startRotation, further down) drive this
+    // layout the same way they drive every other template.
+    const promoPages = Math.max(1, Math.ceil(promoItems.length / promoMax));
+    const heroPoolPages = heroRotates ? heroPool.length : 1;
+    totalPages = Math.max(promoPages, heroPoolPages);
+    if (currentPage > totalPages) currentPage = totalPages;
+    if (currentPage < 1) currentPage = 1;
+
+    const heroItem = heroRotates ? heroPool[(currentPage - 1) % heroPool.length] : (heroPool[0] || null);
+    const promoPageIndex = (currentPage - 1) % promoPages;
+    const promoPage = promoItems.slice(promoPageIndex * promoMax, promoPageIndex * promoMax + promoMax);
+
+    // Hero image panel size — fine-tunes how much of the screen the image
+    // takes versus the promo cards (compact 32% / balanced 42% / dominant 55%).
+    const heroFlexBasis = effectiveHeroSize === 'compact' ? '32%'
+      : effectiveHeroSize === 'dominant' ? '55%'
+      : '42%';
+
     dynStyle.textContent += `
-      .hero-items-grid {
-        display: grid;
-        grid-template-columns: repeat(${heroCols}, 1fr) !important;
-        grid-template-rows: repeat(${heroRows}, 1fr) !important;
-        height: 100%;
-        gap: clamp(10px, 1.2vw, 22px);
-        padding: clamp(10px, 1.2vw, 22px);
+      .promo-hero { --hero-flex-basis: ${heroFlexBasis}; }
+      .promo-list {
+        grid-template-columns: repeat(${promoCols}, 1fr) !important;
+        grid-template-rows: repeat(${promoRows}, 1fr) !important;
       }
     `;
 
-    // Build hero slot HTML
-    let heroSlotHtml = '';
+    // Build hero image panel — full-bleed, no overlay text.
+    let heroImgHtml = `<div class="promo-hero-placeholder">🏷️</div>`;
     if (heroItem) {
-      // The hero slot is always a large, single-item display — prefer the large photo.
       const heroSrc = (heroItem.imagesLarge && heroItem.imagesLarge[0]) || (heroItem.images && heroItem.images[0]);
-      const heroImg = heroSrc
+      heroImgHtml = heroSrc
         ? `<img src="${heroSrc}" alt="${esc(heroItem.name)}" loading="lazy">`
-        : `<div class="hero-img-placeholder">🏷️</div>`;
-      const heroDesc = heroItem.description
-        ? `<div class="hero-desc">${esc(heroItem.description)}</div>` : '';
-      heroSlotHtml = `
-        <div class="hero-slot">
-          <div class="hero-img">${heroImg}</div>
-          <div class="hero-info">
-            <div class="hero-badge">${esc(heroItem.category || 'Featured')}</div>
-            <div class="hero-name">${esc(heroItem.name)}</div>
-            <div class="hero-price">${currency}${parseFloat(heroItem.price || 0).toFixed(2)}</div>
-            ${heroDesc}
-          </div>
-        </div>`;
+        : `<div class="promo-hero-placeholder">🏷️</div>`;
     }
 
-    // Build grid cells
-    const gridCells = gridPage.map(_itemCell).join('');
+    // Build promo tiles — striped accent bar, category tile, title, description, price, photo.
+    const promoTilesHtml = promoPage.map(item => {
+      const src = (item.imagesLarge && item.imagesLarge[0]) || (item.images && item.images[0]);
+      const img = src
+        ? `<img src="${src}" alt="${esc(item.name)}" loading="lazy">`
+        : `<div class="promo-img-placeholder">🍽️</div>`;
+      const desc = item.description ? `<div class="promo-desc">${esc(item.description)}</div>` : '';
+      const cat = item.category ? `<div class="promo-cat">${esc(item.category)}</div>` : '';
+      return `
+        <div class="promo-tile">
+          <div class="promo-text">
+            ${cat}
+            <div class="promo-title">${esc(item.name)}</div>
+            ${desc}
+            <div class="promo-price">${currency}${parseFloat(item.price || 0).toFixed(2)}</div>
+          </div>
+          <div class="promo-img-wrap">${img}</div>
+        </div>`;
+    }).join('');
 
     bodyHtml = `
-      <div class="hero-body">
-        ${heroSlotHtml}
-        <div class="hero-grid-wrap">
-          <div class="board-body">
-            <div class="hero-items-grid">${gridCells}</div>
-          </div>
-        </div>
+      <div class="promo-board">
+        <div class="promo-hero">${heroImgHtml}</div>
+        <div class="promo-list">${promoTilesHtml}</div>
       </div>`;
   } else {
     // Standard flat grid — all items on this page

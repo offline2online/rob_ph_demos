@@ -1136,16 +1136,25 @@
 
             <!-- Category Filter — shown only for templates with categoryFilter:true (e.g. Feature Hero Spotlight) -->
             <div class="form-group" id="tplHeroCatGroup" style="display:none;">
-              <label>Hero Category <span class="opt-tag">Feature Hero</span></label>
+              <label>Hero Image Category <span class="opt-tag">Feature Hero</span></label>
               <select id="tplHeroCategory">
                 <option value="">— Any (first available item) —</option>
               </select>
-              <p class="form-help">Items from this category are candidates for the large hero spotlight slot. The first matching in-stock item is selected.</p>
+              <p class="form-help">Items from this category are candidates for the full-bleed background image. When more than one item matches, the board automatically rotates the image between them on each screen rotation — giving every promoted item its own airtime, a standard QSR digital-signage practice — while the promo cards stay put.</p>
             </div>
             <div class="form-group" id="tplGridCatsGroup" style="display:none;">
-              <label>Categories to Present in Grid</label>
+              <label>Categories to Include as Promo Cards</label>
               <div id="tplCatFilterOptions" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px;"></div>
-              <p class="form-help">Only items from the checked categories will appear in the supporting grid. Leave all unchecked to show every category.</p>
+              <p class="form-help">Only items from the checked categories will appear as promo cards. Leave all unchecked to show every category. If there are more matching items than fit on screen, they page through automatically alongside the hero image rotation.</p>
+            </div>
+            <div class="form-group" id="tplHeroSizeGroup" style="display:none;">
+              <label>Hero Image Size <span class="opt-tag">Feature Hero</span></label>
+              <select id="tplHeroSize">
+                <option value="compact">Compact — more room for the promo cards</option>
+                <option value="balanced">Balanced — even split (default)</option>
+                <option value="dominant">Dominant — maximum image impact</option>
+              </select>
+              <p class="form-help">Controls how much of the screen the full-bleed image takes up versus the promo cards. Increase for high-priority campaigns, decrease when the promo cards need more room.</p>
             </div>
 
             <div class="section-divider">Portrait Display <span class="opt-tag">1080&times;1920px</span></div>
@@ -1838,28 +1847,37 @@ const TEMPLATE_LIBRARY = [
   {
     id: 'feature-hero-board',
     name: 'Feature Hero Spotlight',
-    description: 'One promoted product dominates with large imagery, supporting items shown below.',
+    description: 'A full-bleed promotional image alongside a stack of equally-weighted promo cards — just the promotions, no header or clock chrome. The image rotates through every candidate when a Hero Image Category has multiple matches, and personalises to the customer when a First Name and SKUs are pushed from the Personalisation Hub.',
     category: 'Food & Beverage',
     useCases: ['Restaurant','Promotion','Retail','Café'],
-    phData: ['store_location','interaction_campaign_data'],
-    settings: { showHeader:true, colorScheme:true, iconPosition:true, headerCopy:false, itemTypeFilter:true, categoryFilter:true, soldOutBehavior:true, portrait:true, landscape:true, showClock:false, personalGreeting:false, showStoreName:false, campaignFilter:true },
-    defaults: { showHeader:'true', iconPosition:'center', colorHeader:'#1a1a1a', colorHeaderText:'#ffffff', colorAccent:'#f6ad55', colorCatBar:'#f6ad55', colorBody:'#111111', colorItemBg:'#1e1e1e', colorText:'#ffffff', colorDescription:'#a8a8a8', colorPrice:'#f6ad55', colorClockText:'#ffffff', colorClockBg:'#1a1a1a', hideOos:'true', portraitCols:3, portraitRows:2, portraitMax:6, landscapeCols:4, landscapeRows:2, landscapeMax:8, showClock:'false', timeFormat:'british', campaignMode:'override' },
+    phData: ['store_location','visitor_customer','interaction_campaign_data'],
+    settings: { showHeader:true, colorScheme:true, iconPosition:true, headerCopy:false, itemTypeFilter:true, categoryFilter:true, soldOutBehavior:true, portrait:true, landscape:true, showClock:true, personalGreeting:true, showStoreName:true, campaignFilter:true },
+    defaults: { showHeader:'false', iconPosition:'center', colorHeader:'#1a1a1a', colorHeaderText:'#ffffff', colorAccent:'#169bc2', colorCatBar:'#169bc2', colorBody:'#ffffff', colorItemBg:'#ffffff', colorText:'#1a1a1a', colorDescription:'#666666', colorPrice:'#169bc2', colorClockText:'#ffffff', colorClockBg:'#1a1a1a', hideOos:'true', portraitCols:1, portraitRows:2, portraitMax:2, landscapeCols:1, landscapeRows:2, landscapeMax:2, showClock:'false', timeFormat:'british', campaignMode:'override', personalGreeting:'false', showStoreName:'false', heroSize:'balanced' },
     portraitSVG: (W,H) => {
-      const hh=13; const heroH=Math.round(H*0.42); const bodyY=hh+heroH; const bodyH=H-bodyY-2;
-      return `<rect width="${W}" height="${H}" fill="#111"/><rect width="${W}" height="${hh}" fill="#1a1a1a"/>` +
-      `<rect x="4" y="3.5" width="20" height="6" rx="1" fill="rgba(255,255,255,.2)"/>` +
-      `<rect y="${hh}" width="${W}" height="${heroH}" fill="#2d2d2d"/>` +
-      `<rect x="${W/2-15}" y="${hh+heroH*0.35}" width="30" height="5" rx="2" fill="rgba(255,255,255,.85)"/>` +
-      `<rect x="${W/2-10}" y="${hh+heroH*0.6}" width="20" height="3" rx="1.5" fill="#f6ad55"/>` +
-      gridCells(0,bodyY,W,bodyH,3,2,2);
+      // Full-bleed image on top, two stacked promo cards below — no header/clock bar.
+      const heroH=Math.round(H*0.42); const bodyY=heroH+2; const bodyH=H-bodyY-2; const cardH=(bodyH-3)/2;
+      const stripe = (y) => `<rect x="0" y="${y}" width="${W}" height="1.6" fill="#e4002b"/>`;
+      const card = (y,h) => `<rect x="0" y="${y}" width="${W}" height="${h}" fill="#fff" stroke="#eee" stroke-width=".5"/>` + stripe(y) +
+        `<rect x="4" y="${y+h*0.32}" width="${W*0.4}" height="4" rx="1" fill="#222"/>` +
+        `<rect x="4" y="${y+h*0.62}" width="${W*0.22}" height="4" rx="1.5" fill="#e4002b"/>` +
+        `<circle cx="${W*0.78}" cy="${y+h*0.5}" r="${h*0.32}" fill="#f0ede4"/>`;
+      return `<rect width="${W}" height="${H}" fill="#f2ede4"/>` +
+      `<rect y="0" width="${W}" height="${heroH}" fill="#d8d2c4"/>` +
+      `<circle cx="${W/2}" cy="${heroH*0.55}" r="${heroH*0.32}" fill="#c9c2b0"/>` +
+      card(bodyY, cardH) + card(bodyY+cardH+3, cardH);
     },
     landscapeSVG: (W,H) => {
-      const hh=10; const heroW=Math.round(W*0.45); const bodyX=heroW+2; const bodyW=W-heroW-2;
-      return `<rect width="${W}" height="${H}" fill="#111"/><rect width="${W}" height="${hh}" fill="#1a1a1a"/>` +
-      `<rect y="${hh}" width="${heroW}" height="${H-hh}" fill="#2d2d2d"/>` +
-      `<rect x="${heroW*0.2}" y="${hh+(H-hh)*0.35}" width="${heroW*0.6}" height="5" rx="2" fill="rgba(255,255,255,.85)"/>` +
-      `<rect x="${heroW*0.3}" y="${hh+(H-hh)*0.58}" width="${heroW*0.4}" height="3" rx="1.5" fill="#f6ad55"/>` +
-      gridCells(bodyX,hh,bodyW,H-hh,2,3,2);
+      // Full-bleed image on the left, two stacked promo cards down the right — no header/clock bar.
+      const heroW=Math.round(W*0.45); const bodyX=heroW+2; const bodyW=W-heroW-2; const cardH=(H-3)/2;
+      const stripe = (y) => `<rect x="${bodyX}" y="${y}" width="${bodyW}" height="1.6" fill="#e4002b"/>`;
+      const card = (y,h) => `<rect x="${bodyX}" y="${y}" width="${bodyW}" height="${h}" fill="#fff" stroke="#eee" stroke-width=".5"/>` + stripe(y) +
+        `<rect x="${bodyX+3}" y="${y+h*0.3}" width="${bodyW*0.4}" height="4" rx="1" fill="#222"/>` +
+        `<rect x="${bodyX+3}" y="${y+h*0.6}" width="${bodyW*0.22}" height="4" rx="1.5" fill="#e4002b"/>` +
+        `<circle cx="${bodyX+bodyW*0.78}" cy="${y+h*0.5}" r="${h*0.3}" fill="#f0ede4"/>`;
+      return `<rect width="${W}" height="${H}" fill="#f2ede4"/>` +
+      `<rect x="0" y="0" width="${heroW}" height="${H}" fill="#d8d2c4"/>` +
+      `<circle cx="${heroW/2}" cy="${H*0.55}" r="${heroW*0.3}" fill="#c9c2b0"/>` +
+      card(0, cardH) + card(cardH+3, cardH);
     }
   },
   {
@@ -3679,6 +3697,7 @@ function openNewTemplateEditor() {
       setValue('tplShowStoreName', d.showStoreName || 'true');
       setValue('tplPersonalGreeting', d.personalGreeting || 'true');
       setValue('tplDayOrder', d.dayOrder || 'current');
+      if (document.getElementById('tplHeroSize'))            setValue('tplHeroSize', d.heroSize || 'balanced');
     }
     // Apply brand colour palette if available
     if (window._bPalette && window._bPalette.length > 0) {
@@ -3781,9 +3800,16 @@ function applyTemplateSchema(templateId) {
   // did something when it was silently ignored.
   const heroCatGroup  = document.getElementById('tplHeroCatGroup');
   const gridCatsGroup = document.getElementById('tplGridCatsGroup');
-  if (heroCatGroup)  heroCatGroup.style.display  = templateId === 'feature-hero-board' ? '' : 'none';
+  const isHeroBoard = templateId === 'feature-hero-board';
+  if (heroCatGroup)  heroCatGroup.style.display  = isHeroBoard ? '' : 'none';
   if (gridCatsGroup) gridCatsGroup.style.display = s.categoryFilter ? '' : 'none';
   if (s.categoryFilter) _populateTplCategoryOptions();
+  // Feature Hero Spotlight — image-size field only makes sense for this
+  // template's full-bleed-image-plus-promo-cards layout.
+  ['tplHeroSizeGroup'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.style.display = isHeroBoard ? '' : 'none';
+  });
   // Category badge colour — only relevant when category badges are shown
   const catBarGroup = document.getElementById('tplColorCatBarGroup');
   if (catBarGroup) catBarGroup.style.display = s.categoryFilter ? '' : 'none';
@@ -3869,6 +3895,7 @@ function openEditTemplateEditor(tplId) {
   if (tpl.heroCategory && document.getElementById('tplHeroCategory')) {
     document.getElementById('tplHeroCategory').value = tpl.heroCategory;
   }
+  if (document.getElementById('tplHeroSize'))           document.getElementById('tplHeroSize').value           = tpl.heroSize || 'balanced';
   _showTplEditor();
 }
 
@@ -4026,6 +4053,7 @@ function saveTemplate() {
     heroCategory:   document.getElementById('tplHeroCategory')?.value || '',
     categoriesToPresent: [..._tplSelectedCategories],
     dayOrder:       document.getElementById('tplDayOrder')?.value || 'current',
+    heroSize:          document.getElementById('tplHeroSize')?.value || 'balanced',
   };
 
   if (_tplEditingId) {
