@@ -25,7 +25,6 @@
       --primary-light: rgba(22,155,194,0.10);
       --success:   #52c41a;
       --success-light: rgba(82,196,26,0.10);
-      --toggle-on: #169bc2;
       --warning:   #D97706;
       --warning-light: rgba(217,119,6,0.10);
       --danger:    #ff4d4f;
@@ -60,83 +59,6 @@
       background: var(--bg);
     }
 
-    /* ============================================================
-       INNER SIDEBAR — light theme
-    ============================================================ */
-    .sidebar {
-      width: 196px;
-      min-width: 196px;
-      background: var(--inner-sb);
-      display: flex;
-      flex-direction: column;
-      overflow-y: auto;
-      border-right: 1px solid var(--border);
-      position: sticky;
-      top: 0;
-      height: 100vh;
-      align-self: flex-start;
-    }
-    .sidebar-brand {
-      padding: 14px 14px 10px;
-      border-bottom: 1px solid var(--border);
-    }
-    .brand-row {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-    .brand-icon {
-      width: 28px; height: 28px;
-      background: linear-gradient(135deg, #169bc2, #38b0cf);
-      border-radius: 7px;
-      display: flex; align-items: center; justify-content: center;
-      font-size: 13px;
-      flex-shrink: 0;
-    }
-
-    .inner-nav { padding: 10px 8px; flex: 1; }
-    .nav-label {
-      font-size: 12px;
-      font-weight: 700;
-      color: rgba(0,0,0,0.45);
-      letter-spacing: 0.05em;
-      text-transform: uppercase;
-      padding: 8px 8px 4px;
-    }
-    .nav-item {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      padding: 8px 10px;
-      border-radius: 6px;
-      cursor: pointer;
-      color: var(--text2);
-      font-size: 12.5px;
-      font-weight: 500;
-      transition: all 0.14s;
-      user-select: none;
-      margin-bottom: 1px;
-    }
-    .nav-item:hover { background: var(--surface3); color: var(--text); }
-    .nav-item.active { background: transparent; color: var(--primary); font-weight: 500; }
-    .nav-item .icon { font-size: 13px; width: 17px; text-align: center; }
-    .nav-badge {
-      margin-left: auto;
-      background: var(--primary);
-      color: #fff;
-      font-size: 9px;
-      font-weight: 700;
-      padding: 2px 6px;
-      border-radius: 20px;
-    }
-    .sidebar-foot {
-      padding: 10px 12px 14px;
-      border-top: 1px solid var(--border);
-      font-size: 10px;
-      color: var(--text2);
-    }
-    .sidebar-foot a { color: var(--primary); text-decoration: none; }
-    .sidebar-foot a:hover { text-decoration: underline; }
 
     /* ============================================================
        MAIN CONTENT
@@ -145,30 +67,6 @@
       flex: 1;
       display: flex;
       flex-direction: column;
-    }
-    .topbar {
-      background: #000;
-      border-bottom: none;
-      padding: 0 22px;
-      height: 50px;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      position: sticky;
-      top: 0;
-      z-index: 100;
-      color: #fff;
-    }
-    .topbar-title { font-size: 15px; font-weight: 600; color: #fff; letter-spacing: -0.1px; }
-    .topbar-right { display: flex; align-items: center; gap: 10px; }
-    .hq-badge {
-      background: transparent;
-      color: #fff;
-      font-size: 11px;
-      font-weight: 700;
-      padding: 3px 10px;
-      border-radius: 20px;
-      border: 1px solid rgba(255,255,255,0.35);
     }
     .content { padding: 22px; }
 
@@ -266,18 +164,9 @@
     .badge-inactive { background: var(--danger-light); color: var(--danger); font-size: 11px; font-weight: 600; padding: 3px 9px; border-radius: 20px; }
     .actions { display: flex; gap: 6px; }
 
-    /* TOGGLE — PH design system style (matches Ant Design Switch / ph-designer spec) */
-    .toggle { position: relative; width: 44px; height: 24px; cursor: pointer; display: inline-block; }
-    .toggle input { opacity: 0; width: 0; height: 0; position: absolute; }
-    .toggle-slider {
-      position: absolute; top: 0; left: 0; right: 0; bottom: 0;
-      background: rgba(0, 0, 0, 0.25);
-      border-radius: 100px;
-      transition: background 0.2s;
-    }
-    .toggle-slider::before { content: ''; position: absolute; width: 20px; height: 20px; left: 2px; top: 2px; background: #fff; border-radius: 50%; transition: transform 0.2s; box-shadow: 0 2px 4px rgba(0,0,0,0.2); }
-    .toggle input:checked + .toggle-slider { background: var(--toggle-on); }
-    .toggle input:checked + .toggle-slider::before { transform: translateX(20px); }
+    /* STATUS DOT — read-only active/inactive indicator (bulk actions handle changes) */
+    .status-dot-wrap { display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; color: var(--text); }
+    .status-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; flex-shrink: 0; }
 
     /* EMPTY */
     .empty-state { text-align: center; padding: 52px 28px; color: var(--text2); }
@@ -418,6 +307,65 @@
       box-shadow: 0 2px 6px rgba(0,0,0,0.07);
     }
 
+    /* ── ITEMS TABLE TOOLBAR ─────────────────────────── */
+    .items-toolbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 14px;
+      flex-wrap: wrap;
+    }
+    .items-toolbar-count {
+      font-size: 16px;
+      font-weight: 700;
+      color: var(--text);
+    }
+    .items-toolbar-count #itemsCount { color: var(--primary); }
+    .items-toolbar-actions {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+    .toolbar-link-btn {
+      background: none;
+      border: none;
+      cursor: pointer;
+      color: var(--primary);
+      font-size: 13px;
+      font-weight: 700;
+      padding: 0;
+    }
+    .toolbar-link-btn:hover { text-decoration: underline; }
+    .toolbar-icon-btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 34px;
+      height: 34px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text2);
+      cursor: pointer;
+      transition: all 0.14s;
+    }
+    .toolbar-icon-btn:hover { background: var(--surface3); color: var(--text); border-color: var(--border2); }
+    .back-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: none;
+      border: none;
+      cursor: pointer;
+      color: var(--primary);
+      font-size: 13px;
+      font-weight: 700;
+      padding: 0;
+      margin-bottom: 14px;
+    }
+    .back-link:hover { text-decoration: underline; }
+
     /* ── ITEMS SELECTION BAR ─────────────────────────── */
     .items-sel-bar {
       display: none;
@@ -489,14 +437,6 @@
     .add-type-row input[type=text]:focus { border-color:var(--primary); box-shadow:0 0 0 2px rgba(22,155,194,0.2); }
     .add-type-row input[type=color] { width:36px; height:32px; padding:2px 3px; border:1px solid var(--border); border-radius:6px; cursor:pointer; background:var(--surface); }
 
-    @media (max-width: 1060px) {
-      .sidebar { width: 50px; min-width: 50px; }
-      .brand-icon { margin: 0 auto; }
-      .nav-item span:not(.icon), .nav-badge, .nav-label, .sidebar-foot { display: none; }
-      .nav-item { padding: 8px; justify-content: center; }
-      .nav-item .icon { width: auto; }
-      .sidebar-brand { padding: 10px 8px; justify-content: center; }
-    }
     @media (max-width: 640px) {
       .form-row { grid-template-columns: 1fr; }
     }
@@ -634,27 +574,6 @@
     .brand-name-link { color:var(--primary); font-weight:600; cursor:pointer; text-decoration:none; font-size:13px; }
     .brand-name-link:hover { text-decoration:underline; }
 
-    /* ── TEMPLATE LIBRARY ───────────────────────────────────── */
-    .tpl-lib-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(320px,1fr)); gap:20px; margin-top:16px; }
-    .tpl-cat-tabs { display:flex; gap:6px; flex-wrap:wrap; margin-bottom:4px; }
-    .tpl-cat-tab { background:var(--surface); border:1px solid var(--border); border-radius:20px; padding:5px 14px; font-size:12px; font-weight:600; color:var(--text2); cursor:pointer; transition:all .14s; white-space:nowrap; }
-    .tpl-cat-tab:hover { border-color:var(--primary); color:var(--primary); }
-    .tpl-cat-tab.active { background:var(--primary); border-color:var(--primary); color:#fff; }
-    .tpl-lib-card { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); overflow:hidden; transition:border-color .15s,box-shadow .15s; cursor:pointer; }
-    .tpl-lib-card:hover { border-color:var(--primary); box-shadow:0 4px 16px rgba(22,155,194,0.12); }
-    .tpl-lib-card-header { padding:14px 16px 10px; display:flex; align-items:flex-start; justify-content:space-between; gap:8px; }
-    .tpl-lib-card-name { font-size:14px; font-weight:700; color:var(--text); margin-bottom:3px; }
-    .tpl-lib-card-desc { font-size:12px; color:var(--text2); line-height:1.4; }
-    .tpl-lib-card-cat { font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.5px; padding:2px 8px; border-radius:20px; background:var(--primary-light); color:var(--primary); white-space:nowrap; flex-shrink:0; }
-    .tpl-lib-card-tags { display:flex; flex-wrap:wrap; gap:5px; padding:0 16px 10px; }
-    .tpl-lib-tag { font-size:10px; font-weight:500; padding:2px 7px; border-radius:4px; background:var(--surface2); color:var(--text2); border:1px solid var(--border); }
-    .tpl-lib-mockups { display:grid; grid-template-columns:1fr 1.8fr; gap:10px; padding:0 16px 16px; }
-    .tpl-lib-mockup-wrap { display:flex; flex-direction:column; gap:4px; }
-    .tpl-lib-mockup-label { font-size:10px; font-weight:600; color:var(--text2); text-transform:uppercase; letter-spacing:.5px; text-align:center; }
-    .tpl-lib-mockup { border:1px solid var(--border); border-radius:4px; overflow:hidden; background:var(--surface2); display:flex; align-items:center; justify-content:center; }
-    .tpl-lib-card-footer { padding:12px 16px; border-top:1px solid var(--border); display:flex; align-items:center; justify-content:space-between; background:var(--surface2); }
-    .tpl-lib-settings-count { font-size:11px; color:var(--text2); }
-
     /* ── TEMPLATE PICKER MODAL (for Add Template in brand) ── */
     .tpl-picker-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(240px,1fr)); gap:14px; padding:4px; }
     .tpl-picker-card { background:var(--surface2); border:2px solid var(--border); border-radius:var(--radius); padding:14px; cursor:pointer; transition:border-color .14s,background .14s; }
@@ -673,92 +592,29 @@
   <!-- INNER APP -->
   <div class="ph-inner">
 
-    <!-- INNER SIDEBAR — light theme, minimal brand -->
-    <aside class="sidebar">
-      <nav class="inner-nav">
-        <div class="nav-label">Menu</div>
-        <div class="nav-item active" onclick="showView('dashboard')">
-          <span class="icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg></span>
-          <span>Dashboard</span>
-        </div>
-        <div class="nav-item" onclick="showView('items')">
-          <span class="icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg></span>
-          <span>Products / Assets</span>
-          <span class="nav-badge" id="navBadgeItems">0</span>
-        </div>
-        <div class="nav-label">Configuration</div>
-        <div class="nav-item" onclick="showView('brands')">
-          <span class="icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg></span>
-          <span>Brands / Suppliers</span>
-        </div>
-        <div class="nav-item" onclick="showView('templates')">
-          <span class="icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg></span>
-          <span>Templates</span>
-        </div>
-        <div class="nav-item" onclick="showView('categories')">
-          <span class="icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg></span>
-          <span>Categories</span>
-        </div>
-        <div class="nav-item" onclick="showView('settings')">
-          <span class="icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></span>
-          <span>Settings</span>
-        </div>
-      </nav>
-      <div class="sidebar-foot">
-        <div>PersonalisationHub</div>
-      </div>
-    </aside>
-
     <!-- MAIN CONTENT -->
     <main class="main">
-      <div class="topbar">
-        <div class="topbar-title" id="topbarTitle">Offers Dashboard</div>
-        <div class="topbar-right">
-          <span class="hq-badge">&#x1F3E2; HQ Admin</span>
-          <button class="btn btn-primary" onclick="openAddModal()">+ Add Product / Asset</button>
-        </div>
-      </div>
       <div class="content">
 
-        <!-- DASHBOARD -->
-        <div id="view-dashboard" class="view active">
-          <div class="stats-grid" id="statsGrid"></div>
-          <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:18px;">
-            <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;">
-              <span style="font-size:15px;">📺</span>
-              <div style="font-size:13px;font-weight:700;color:var(--text);">Active Offer Boards</div>
-              <span id="activeOfferBoardsCount" style="font-size:11px;color:var(--text2);background:var(--surface2);border:1px solid var(--border);border-radius:20px;padding:2px 8px;"></span>
-            </div>
-            <div id="activeOfferBoards"></div>
-          </div>
-
-          <!-- OOS SUMMARY -->
-          <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:18px;">
-            <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;">
-              <span style="font-size:15px;">⛔</span>
-              <div style="font-size:13px;font-weight:700;color:var(--text);">Out of Stock — Store Summary</div>
-            </div>
-            <div id="oosSummaryContent"></div>
-          </div>
-
-          <!-- LOW STOCK SUMMARY -->
-          <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:18px;">
-            <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;">
-              <span style="font-size:15px;">&#x26A0;&#xFE0F;</span>
-              <div style="font-size:13px;font-weight:700;color:var(--text);">Low on Stock — Store Summary</div>
-              <span id="lowStockThresholdBadge" style="font-size:11px;color:var(--text2);background:var(--surface2);border:1px solid var(--border);border-radius:20px;padding:2px 8px;">threshold: 5</span>
-            </div>
-            <div id="lowStockContent"></div>
-          </div>
-        </div>
-
         <!-- MENU ITEMS -->
-        <div id="view-items" class="view">
+        <div id="view-items" class="view active">
+          <div class="items-toolbar">
+            <div class="items-toolbar-count"><span id="itemsCount">0</span> Products</div>
+            <div class="items-toolbar-actions">
+              <button class="toolbar-link-btn" onclick="showView('brands')">Manage Brands / Suppliers</button>
+              <button class="btn btn-primary" onclick="openAddModal()">+ Add New Product</button>
+              <button class="toolbar-icon-btn" onclick="showView('settings')" title="Settings">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+              </button>
+            </div>
+          </div>
           <div id="itemsSelBar" class="items-sel-bar">
             <span id="itemsSelCount"></span>
             <span class="items-sel-bar-sep">|</span>
             <button class="items-sel-bar-link" id="itemsSelViewBtn" onclick="viewSelectedItems()">View Selected</button>
             <div style="margin-left:auto;display:flex;align-items:center;gap:10px;">
+              <button class="btn btn-sm" style="background:var(--success-light);color:var(--success);border:1px solid rgba(82,196,26,0.35);" onclick="bulkSetActive(true)">&#x2705; Activate Selection</button>
+              <button class="btn btn-sm" style="background:var(--surface3);color:var(--text2);border:1px solid var(--border2);" onclick="bulkSetActive(false)">&#x26D4; Deactivate Selection</button>
               <button class="btn btn-danger btn-sm" onclick="confirmDeleteSelection()">🗑️ Delete Selection</button>
               <button class="items-sel-bar-clear" onclick="clearItemsSelection()">✕ Clear selection</button>
             </div>
@@ -766,21 +622,9 @@
           <div id="itemsGrid" class="ag-theme-alpine" style="width:100%;border-radius:var(--radius);border:1px solid var(--border);"></div>
         </div>
 
-        <!-- CATEGORIES -->
-        <div id="view-categories" class="view">
-          <div class="settings-section">
-            <h3>Product Categories</h3>
-            <div class="cat-list" id="catList"></div>
-            <div class="add-cat-row">
-              <input type="text" id="newCatInput" placeholder="Add new category&hellip;" onkeydown="if(event.key==='Enter')addCategory()">
-              <button class="btn btn-primary btn-sm" onclick="addCategory()">+ Add</button>
-            </div>
-            <p style="margin-top:10px;font-size:12px;color:var(--text2);">Categories organise menu items. Deleting a category will not delete items assigned to it.</p>
-          </div>
-        </div>
-
         <!-- BRANDS -->
         <div id="view-brands" class="view">
+          <button class="back-link" onclick="showView('items')">&#8592; Back to Products</button>
           <div class="toolbar" style="margin-bottom:16px;">
             <div style="flex:1;font-size:13px;color:var(--text2);">Manage brands and suppliers. Each brand has its own brand settings, colour scheme, and display configuration.</div>
             <button class="btn btn-primary" onclick="openAddBrandModal()">+ Add Brand / Supplier</button>
@@ -788,35 +632,9 @@
           <div id="brandsGrid" class="ag-theme-alpine" style="width:100%;height:500px;border-radius:var(--radius);overflow:hidden;border:1px solid var(--border);"></div>
         </div>
 
-        <!-- ── TEMPLATES LIBRARY VIEW ─────────────────────────── -->
-        <div id="view-templates" class="view">
-          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
-            <h2 style="font-size:20px;font-weight:700;color:var(--text);margin:0;">Templates</h2>
-          </div>
-          <div style="font-size:13px;color:var(--text2);margin-bottom:4px;">Platform-defined display templates for Dynamic Offer Boards. Browse the library and see how each template will look on portrait and landscape displays.</div>
-          <div style="font-size:12px;color:var(--text2);margin-bottom:20px;">To use a template for a brand, go to <span style="color:var(--primary);cursor:pointer;font-weight:600;" onclick="showView('brands')">Brands / Suppliers</span> → open a brand → Manage Offer Boards → + Add Template.</div>
-
-          <!-- Filter bar -->
-          <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:12px;">
-            <div class="search-box" style="max-width:260px;">
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-              <input type="text" id="tplLibSearch" placeholder="Search templates…" oninput="renderTemplateLibrary()">
-            </div>
-          </div>
-          <div class="tpl-cat-tabs" id="tplCatTabs">
-            <button class="tpl-cat-tab active" onclick="setTplCat(this,'')">All</button>
-            <button class="tpl-cat-tab" onclick="setTplCat(this,'Food &amp; Beverage')">Food &amp; Bev</button>
-            <button class="tpl-cat-tab" onclick="setTplCat(this,'Retail')">Retail</button>
-            <button class="tpl-cat-tab" onclick="setTplCat(this,'In-Store Experience')">In-Store</button>
-            <button class="tpl-cat-tab" onclick="setTplCat(this,'Out-of-Home')">Out-of-Home</button>
-            <button class="tpl-cat-tab" onclick="setTplCat(this,'Store Operations')">Operations</button>
-          </div>
-
-          <div class="tpl-lib-grid" id="tplLibGrid"></div>
-        </div>
-
         <!-- SETTINGS -->
         <div id="view-settings" class="view">
+          <button class="back-link" onclick="showView('items')">&#8592; Back to Products</button>
           <div class="settings-section">
             <h3>Stock API Key</h3>
             <p class="settings-desc">Set a secret key that external platforms must include when calling the Stock API. Used as the <code>X-Stock-Api-Key</code> header in API requests.</p>
@@ -916,7 +734,17 @@
         <div class="form-group">
           <label>Product Category <span class="req">*</span></label>
           <select id="fCategory"><option value="">Select category&hellip;</option></select>
+          <button class="toolbar-link-btn" type="button" onclick="toggleManageCategories()" style="margin-top:6px;font-size:11px;">Manage categories</button>
         </div>
+      </div>
+      <div id="manageCategoriesPanel" class="manage-types-panel" style="display:none;margin-bottom:16px;">
+        <div style="font-size:11px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px;">Manage Categories</div>
+        <div class="cat-list" id="modalCatList"></div>
+        <div class="add-cat-row">
+          <input type="text" id="modalNewCatInput" placeholder="Add new category&hellip;" onkeydown="if(event.key==='Enter'){event.preventDefault();addCategory();}">
+          <button class="btn btn-primary btn-sm" type="button" onclick="addCategory()">+ Add</button>
+        </div>
+        <p style="margin-top:10px;font-size:12px;color:var(--text2);">Categories organise menu items. Deleting a category will not delete items assigned to it.</p>
       </div>
       <div class="form-group">
         <label>Product Name <span class="req">*</span></label>
@@ -1496,7 +1324,6 @@ function saveTypes(types) {
     .catch(err => toast('\u274C Failed to save types: ' + (err.message || err), 'error'));
 }
 let _allStock    = {};
-let _allActivity = [];
 let itemsGridApi  = null;
 let brandsGridApi = null;
 let _itemsViewSelected = false;
@@ -2075,62 +1902,6 @@ const PH_DATA_LABELS = {
   interaction_campaign_data: { label: 'Campaign Data',     fields: 'active_campaign, matched_intent, interaction_entities' }
 };
 
-function setTplCat(btn, cat) {
-  document.querySelectorAll('.tpl-cat-tab').forEach(b => b.classList.remove('active'));
-  btn.classList.add('active');
-  window._tplLibCat = cat;
-  renderTemplateLibrary();
-}
-
-function renderTemplateLibrary() {
-  const grid = document.getElementById('tplLibGrid');
-  if (!grid) return;
-  const search = (document.getElementById('tplLibSearch')?.value || '').toLowerCase();
-  const catFilter = window._tplLibCat || '';
-
-  const filtered = TEMPLATE_LIBRARY.filter(t => {
-    if (catFilter && t.category !== catFilter) return false;
-    if (search && !t.name.toLowerCase().includes(search) && !t.description.toLowerCase().includes(search) && !t.useCases.some(u => u.toLowerCase().includes(search))) return false;
-    return true;
-  });
-
-  if (!filtered.length) {
-    grid.innerHTML = '<div style="grid-column:1/-1;text-align:center;padding:40px;color:var(--text2);font-size:14px;">No templates match your search.</div>';
-    return;
-  }
-
-  grid.innerHTML = filtered.map(t => {
-    const settingsCount = Object.values(t.settings).filter(Boolean).length;
-    const tagsHtml = t.useCases.map(u => `<span class="tpl-lib-tag">${u}</span>`).join('');
-    const portraitSVG = mkPortraitSVG(t.portraitSVG);
-    const landscapeSVG = mkLandscapeSVG(t.landscapeSVG);
-    return `<div class="tpl-lib-card" onclick="openTplDetail('${t.id}')">
-      <div class="tpl-lib-card-header">
-        <div>
-          <div class="tpl-lib-card-name">${t.name}</div>
-          <div class="tpl-lib-card-desc">${t.description}</div>
-        </div>
-        <span class="tpl-lib-card-cat">${t.category}</span>
-      </div>
-      <div class="tpl-lib-card-tags">${tagsHtml}</div>
-      <div class="tpl-lib-mockups">
-        <div class="tpl-lib-mockup-wrap">
-          <div class="tpl-lib-mockup-label">Portrait</div>
-          <div class="tpl-lib-mockup" style="height:110px;">${portraitSVG}</div>
-        </div>
-        <div class="tpl-lib-mockup-wrap">
-          <div class="tpl-lib-mockup-label">Landscape</div>
-          <div class="tpl-lib-mockup" style="height:62px;margin-top:auto;">${landscapeSVG}</div>
-        </div>
-      </div>
-      <div class="tpl-lib-card-footer">
-        <span class="tpl-lib-settings-count">${settingsCount} configurable settings</span>
-        <button class="btn btn-primary btn-sm" onclick="event.stopPropagation();openTplDetailFromLib('${t.id}')">View Details</button>
-      </div>
-    </div>`;
-  }).join('');
-}
-
 function openTplDetail(id) {
   openTplDetailFromLib(id);
 }
@@ -2318,19 +2089,10 @@ function confirmTplPicker() {
 
 // ===== NAVIGATION =====
 function showView(view) {
+  if (!document.getElementById('view-' + view)) view = 'items';
   document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
-  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
   document.getElementById('view-' + view).classList.add('active');
 
-  const navMap = { dashboard: 0, items: 1, brands: 2, templates: 3, categories: 4, settings: 5 };
-  const navItems = document.querySelectorAll('.nav-item');
-  const idx = navMap[view];
-  if (idx !== undefined) navItems[idx].classList.add('active');
-
-  const titles = { dashboard: 'Offers Dashboard', items: 'Products / Assets', brands: 'Brands / Suppliers', templates: 'Templates', categories: 'Categories', settings: 'Settings' };
-  document.getElementById('topbarTitle').textContent = titles[view] || '';
-
-  if (view === 'dashboard')  renderDashboard();
   if (view === 'items') {
     renderItems();
     requestAnimationFrame(() => itemsGridApi && itemsGridApi.sizeColumnsToFit());
@@ -2339,338 +2101,8 @@ function showView(view) {
     renderBrands();
     requestAnimationFrame(() => brandsGridApi && brandsGridApi.sizeColumnsToFit());
   }
-  if (view === 'templates') renderTemplateLibrary();
-  if (view === 'categories') renderCategories();
   if (view === 'settings') _loadTakeoutBagUI();
   localStorage.setItem('hqAdminView', view);
-}
-
-// ===== ACTIVE OFFER BOARDS =====
-function _timeSinceStr(isoStr) {
-  const s = Math.floor((Date.now() - new Date(isoStr).getTime()) / 1000);
-  if (s < 60)  return 'just now';
-  const m = Math.floor(s / 60);
-  if (m < 60)  return `${m}m ago`;
-  const h = Math.floor(m / 60);
-  if (h < 24)  return `${h}h ago`;
-  return `${Math.floor(h / 24)}d ago`;
-}
-
-const MENU_TYPE_META = {
-  breakfast: { label: 'Breakfast', emoji: '🌅' },
-  lunch:     { label: 'Lunch',     emoji: '☀️' },
-  dinner:    { label: 'Dinner',    emoji: '🌙' },
-  drinks:    { label: 'Drinks',    emoji: '🥤' },
-  specials:  { label: "Today's Specials", emoji: '⭐' },
-};
-
-function _renderActiveOfferBoards(items) {
-  const el        = document.getElementById('activeOfferBoards');
-  const countEl   = document.getElementById('activeOfferBoardsCount');
-  const PAGE_SIZE = 15;
-  const ACTIVE_WINDOW_MS = 48 * 60 * 60 * 1000; // 48 hours
-  const LIVE_WINDOW_MS   = 30 * 60 * 1000;       // 30 min = "live"
-  const now = Date.now();
-
-  if (!_allActivity.length) {
-    if (countEl) countEl.textContent = '';
-    el.innerHTML = `<div style="color:var(--text2);font-size:13px;padding:4px 0;">No boards have checked in yet. When a menu board or PWA loads, it will appear here automatically.</div>`;
-    return;
-  }
-
-  const activeBoards = _allActivity
-    .filter(a => a.lastSeen && (now - new Date(a.lastSeen).getTime()) < ACTIVE_WINDOW_MS)
-    .sort((a, b) => new Date(b.lastSeen) - new Date(a.lastSeen));
-
-  if (!activeBoards.length) {
-    if (countEl) countEl.textContent = 'none active';
-    el.innerHTML = `<div style="color:var(--text2);font-size:13px;padding:4px 0;">No boards have been active in the last 48 hours.</div>`;
-    return;
-  }
-
-  const types  = getTypes();
-  const brands = getBrands();
-
-  // ── GROUP by brand + menuType + templateType ─────────────────────────────
-  const groups = new Map();
-  for (const a of activeBoards) {
-    const key = `${(a.brandName || '').toLowerCase()}|${a.menuType || ''}|${a.templateType || ''}`;
-    if (!groups.has(key)) groups.set(key, { rep: a, stores: [] });
-    groups.get(key).stores.push(a);
-  }
-
-  if (countEl) countEl.textContent = `${groups.size} active`;
-
-  el.innerHTML = [...groups.values()].map(({ rep: a, stores }) => {
-    // Live if ANY store in group seen within LIVE_WINDOW_MS
-    const latestSeen = Math.max(...stores.map(s => new Date(s.lastSeen).getTime()));
-    const isLive     = (now - latestSeen) < LIVE_WINDOW_MS;
-    const timeSince  = _timeSinceStr(new Date(latestSeen).toISOString());
-
-    // Resolve brand
-    const brand = brands.find(b => b.name && b.name.toLowerCase() === (a.brandName || '').toLowerCase());
-
-    // Parse menu types
-    const menuTypeIds = (a.menuType || '').split(',').map(s => s.trim()).filter(Boolean);
-
-    // Count items this board shows
-    const boardItems = menuTypeIds.length
-      ? items.filter(i => i.active && menuTypeIds.some(mt => (i.menuTypes || []).includes(mt)))
-      : items.filter(i => i.active);
-    const itemCount = boardItems.length;
-    const screens   = Math.ceil(itemCount / PAGE_SIZE) || 1;
-
-    // Unique categories
-    const cats = [...new Set(boardItems.map(i => i.category).filter(Boolean))];
-
-    // Template label
-    const tplLabel = a.templateType
-      ? a.templateType.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
-      : 'Standard';
-
-    // Brand logo
-    const logoUrl  = (brand && brand.logo) || a.brandLogo || '';
-    const logoHtml = logoUrl
-      ? `<img src="${escHtml(logoUrl)}" style="height:32px;width:auto;max-width:80px;object-fit:contain;border-radius:4px;background:var(--surface2);padding:2px 4px;" onerror="this.style.display='none'">`
-      : `<div style="width:36px;height:36px;background:var(--primary-light);border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:16px;color:var(--primary);">📋</div>`;
-
-    // Menu type chips
-    const typeChips = menuTypeIds.map(mt => {
-      const meta  = MENU_TYPE_META[mt];
-      const tDef  = types.find(t => t.id === mt);
-      const label = (meta && meta.label) || (tDef && tDef.label) || mt;
-      const emoji = (meta && meta.emoji) || '';
-      const color = (tDef && tDef.color) || '#64748b';
-      return `<span style="display:inline-flex;align-items:center;gap:3px;padding:2px 8px;border-radius:20px;border:1.5px solid ${color};font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.4px;color:${color};background:transparent;">${emoji} ${escHtml(label)}</span>`;
-    }).join('');
-
-    // Store count pill with hover tooltip listing each store + orientation
-    const orientIcon = o => o === 'landscape' ? '⬛' : '▯';
-    const storeLines = stores.map(s => {
-      const label = s.storeCode || (s.deviceUdid ? 'PWA' : 'Unknown');
-      const orIcon = orientIcon(s.orientation || 'portrait');
-      const orText = s.orientation || 'portrait';
-      return `<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:3px 0;">
-        <span style="font-weight:500;">${escHtml(label)}${s.deviceUdid ? ' <span style="opacity:.6;font-size:10px;">PWA</span>' : ''}</span>
-        <span style="display:inline-flex;align-items:center;gap:3px;color:#94a3b8;">${orIcon} ${escHtml(orText)}</span>
-      </div>`;
-    }).join('');
-
-    const storeCount = stores.length;
-    const storePill = `
-      <span class="store-count-pill" style="position:relative;display:inline-flex;align-items:center;gap:4px;background:var(--surface2);border:1px solid var(--border);border-radius:4px;padding:2px 8px;font-size:11px;color:var(--text2);cursor:default;"
-        onmouseenter="this.querySelector('.store-tooltip').style.display='block'"
-        onmouseleave="this.querySelector('.store-tooltip').style.display='none'">
-        🏪 ${storeCount} store${storeCount !== 1 ? 's' : ''}
-        <span class="store-tooltip" style="display:none;position:absolute;top:100%;left:0;margin-top:4px;min-width:200px;background:var(--surface);border:1px solid var(--border);border-radius:6px;box-shadow:0 4px 12px rgba(0,0,0,0.12);padding:8px 10px;font-size:11px;color:var(--text);z-index:100;white-space:nowrap;">
-          <div style="font-weight:600;color:var(--text2);margin-bottom:4px;font-size:10px;text-transform:uppercase;letter-spacing:0.5px;">Stores playing this board</div>
-          ${storeLines}
-        </span>
-      </span>`;
-
-    // Live / last-seen badge
-    const liveBadge = isLive
-      ? `<span style="display:inline-flex;align-items:center;gap:4px;background:#dcfce7;border:1px solid rgba(5,150,105,0.3);color:#15803d;border-radius:20px;padding:2px 8px;font-size:11px;font-weight:600;"><span style="width:6px;height:6px;border-radius:50%;background:#16a34a;display:inline-block;"></span>Live</span>`
-      : `<span style="font-size:11px;color:var(--text2);">Last seen ${escHtml(timeSince)}</span>`;
-
-    const brandName   = escHtml((brand && brand.name) || a.brandName || 'Unknown Brand');
-    const catsSummary = cats.length ? `<span style="color:var(--text2);font-size:11px;">${cats.map(escHtml).join(', ')}</span>` : '';
-
-    return `
-      <div style="display:flex;align-items:flex-start;gap:12px;border:1px solid var(--border);border-radius:8px;padding:12px 14px;margin-bottom:10px;background:var(--surface);">
-        <div style="flex-shrink:0;display:flex;align-items:center;justify-content:center;min-width:40px;">
-          ${logoHtml}
-        </div>
-        <div style="flex:1;min-width:0;">
-          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:4px;">
-            <div style="font-size:13px;font-weight:700;color:var(--text);">${brandName}</div>
-            ${liveBadge}
-          </div>
-          <div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:6px;">
-            ${typeChips || '<span style="font-size:11px;color:var(--text2);">All types</span>'}
-          </div>
-          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:4px;">
-            <span style="font-size:12px;color:var(--text);font-weight:500;">
-              ${itemCount} item${itemCount !== 1 ? 's' : ''}
-              <span style="color:var(--text2);font-weight:400;"> &mdash; ${screens} page${screens !== 1 ? 's' : ''}</span>
-            </span>
-            ${catsSummary ? `<span style="color:var(--border);">|</span>${catsSummary}` : ''}
-          </div>
-          <div style="display:flex;align-items:center;gap:5px;flex-wrap:wrap;">
-            ${storePill}
-            <span style="background:var(--surface2);border:1px solid var(--border);border-radius:4px;padding:2px 7px;font-size:11px;color:var(--text2);">🎨 ${escHtml(tplLabel)}</span>
-          </div>
-        </div>
-      </div>
-    `;
-  }).join('');
-}
-
-// ===== DASHBOARD =====
-function renderDashboard() {
-  const items = getItems();
-  const active   = items.filter(i => i.active).length;
-  const inactive = items.length - active;
-  const PAGE_SIZE = 15;
-
-  const statsEl = document.getElementById('statsGrid');
-  statsEl.innerHTML = `
-    <div class="stat-card">
-      <div class="stat-label">Total Items</div>
-      <div class="stat-value">${items.length}</div>
-      <div class="stat-sub">All menu items</div>
-    </div>
-    <div class="stat-card">
-      <div class="stat-label">Active Items</div>
-      <div class="stat-value" style="color:var(--success)">${active}</div>
-      <div class="stat-sub"><span class="stat-dot" style="background:var(--success)"></span>Visible on menus</div>
-    </div>
-    <div class="stat-card">
-      <div class="stat-label">Inactive Items</div>
-      <div class="stat-value" style="color:var(--danger)">${inactive}</div>
-      <div class="stat-sub"><span class="stat-dot" style="background:var(--danger)"></span>Hidden from menus</div>
-    </div>
-    <div class="stat-card">
-      <div class="stat-label">Categories</div>
-      <div class="stat-value" style="color:var(--accent)">${getCats().length}</div>
-      <div class="stat-sub">Product categories</div>
-    </div>
-    <div class="stat-card">
-      <div class="stat-label">Brands / Suppliers</div>
-      <div class="stat-value" style="color:var(--primary)">${getBrands().length}</div>
-      <div class="stat-sub">Active brand configurations</div>
-    </div>
-  `;
-
-  _renderActiveOfferBoards(items);
-
-  // ── OOS STORE SUMMARY ──────────────────────────────────────────
-  const oosSummaryEl = document.getElementById('oosSummaryContent');
-  const storeStockKeys = Object.keys(_allStock);
-
-  if (!storeStockKeys.length) {
-    oosSummaryEl.innerHTML = `<div style="color:var(--text2);font-size:13px;padding:4px 0;">No store stock data found. Data is populated when stores use the Store Admin interface.</div>`;
-  } else {
-    // Build per-store reports
-    const storeReports = storeStockKeys.map(key => {
-      const storeCode = key;
-      const stock = _allStock[key];
-      const oosSkus = Object.keys(stock).filter(sku => stock[sku] && stock[sku].outOfStock);
-      const oosItems = oosSkus.map(sku => items.find(i => i.sku === sku)).filter(Boolean);
-      const unknownSkus = oosSkus.filter(sku => !items.find(i => i.sku === sku));
-      const lastUpdated = oosSkus.length
-        ? oosSkus.reduce((latest, sku) => {
-            const ts = stock[sku].updatedAt || 0;
-            return ts > latest ? ts : latest;
-          }, 0)
-        : null;
-      return { storeCode, oosSkus, oosItems, unknownSkus, lastUpdated };
-    });
-
-    const storesWithOos = storeReports.filter(r => r.oosItems.length > 0);
-    const storesAllClear = storeReports.filter(r => r.oosItems.length === 0);
-
-    let html = '';
-
-    // All-clear stores — compact bar
-    if (storesAllClear.length) {
-      html += `<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:${storesWithOos.length ? '14px' : '0'};">`;
-      html += storesAllClear.map(r => `
-        <div style="display:flex;align-items:center;gap:5px;background:var(--success-light);border:1px solid rgba(5,150,105,0.2);border-radius:20px;padding:3px 10px;font-size:12px;">
-          <span style="color:var(--success);">&#x2705;</span>
-          <span style="font-weight:600;color:var(--success);">${escHtml(r.storeCode)}</span>
-          <span style="color:var(--text2);">All clear</span>
-        </div>
-      `).join('');
-      html += '</div>';
-    }
-
-    // OOS stores — detailed cards
-    if (storesWithOos.length) {
-      html += storesWithOos.map(r => {
-        const updatedStr = r.lastUpdated
-          ? new Date(r.lastUpdated).toLocaleString([], { dateStyle:'short', timeStyle:'short' })
-          : '';
-        const itemRows = r.oosItems.map(item => `
-            <div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--border);font-size:12px;">
-              <span style="color:var(--danger);flex-shrink:0;">&#x26D4;</span>
-              <span style="font-weight:600;color:var(--text);flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escHtml(item.name)}</span>
-              <span style="color:var(--text2);font-family:monospace;">${escHtml(item.sku)}</span>
-              ${item.category ? `<span style="background:var(--surface3);padding:2px 7px;border-radius:3px;font-size:10px;color:var(--text2);flex-shrink:0;">${escHtml(item.category)}</span>` : ''}
-            </div>
-          `).join('');
-
-        return `
-          <div style="border:1px solid rgba(220,38,38,0.25);border-radius:8px;overflow:hidden;margin-bottom:10px;">
-            <div style="background:var(--danger-light);padding:9px 14px;display:flex;align-items:center;gap:10px;">
-              <span style="font-size:15px;">&#x1F3EA;</span>
-              <div style="font-weight:700;font-size:13px;color:var(--danger);flex:1;">Store ${escHtml(r.storeCode)}</div>
-              <span style="background:var(--danger);color:#fff;padding:2px 10px;border-radius:20px;font-size:12px;font-weight:600;">${r.oosItems.length} OOS</span>
-              ${updatedStr ? `<span style="font-size:11px;color:var(--text2);">Last updated ${updatedStr}</span>` : ''}
-            </div>
-            <div style="padding:4px 14px 6px;">${itemRows || '<div style="padding:6px 0;font-size:12px;color:var(--text2);">No product details found.</div>'}</div>
-          </div>
-        `;
-      }).join('');
-    } else if (!storesAllClear.length) {
-      html = `<div style="color:var(--text2);font-size:13px;">No stock data available for any store.</div>`;
-    }
-
-    if (!storesWithOos.length && storesAllClear.length) {
-      html += `<div style="margin-top:6px;color:var(--success);font-size:13px;font-weight:500;">&#x2705; All stores are fully stocked.</div>`;
-    }
-
-    oosSummaryEl.innerHTML = html;
-  }
-
-  // ── LOW STOCK SUMMARY ──────────────────────────────────────────
-  const lowStockEl = document.getElementById('lowStockContent');
-  const badgeEl = document.getElementById('lowStockThresholdBadge');
-  if (badgeEl) badgeEl.textContent = 'per-brand threshold';
-
-  if (!storeStockKeys.length) {
-    lowStockEl.innerHTML = `<div style="color:var(--text2);font-size:13px;padding:4px 0;">No store stock data found. Data is populated when stores use the Store Admin interface.</div>`;
-  } else {
-    const lowReports = storeStockKeys.map(key => {
-      const stock = _allStock[key];
-      const lowItems = Object.keys(stock).map(sku => {
-        const s = stock[sku];
-        if (typeof s.quantity !== 'number' || s.quantity <= 0 || s.outOfStock) return null;
-        const item = items.find(i => i.sku === sku);
-        if (!item) return null;
-        const brand = getBrands().find(b => b.id === item.brand);
-        const effectiveThreshold = item.lowStockThreshold || (brand && brand.lowStockThreshold) || 5;
-        if (s.quantity > effectiveThreshold) return null;
-        return { item, sku, quantity: s.quantity };
-      }).filter(Boolean);
-      return { storeCode: key, lowItems };
-    }).filter(r => r.lowItems.length > 0);
-
-    if (!lowReports.length) {
-      lowStockEl.innerHTML = `<div style="color:var(--success);font-size:13px;font-weight:500;">&#x2705; All stores are adequately stocked.</div>`;
-    } else {
-      lowStockEl.innerHTML = lowReports.map(r => {
-        const itemRows = r.lowItems.map(({ item, sku, quantity }) => `
-          <div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--border);font-size:12px;">
-            <span style="color:var(--warning);flex-shrink:0;">&#x26A0;&#xFE0F;</span>
-            <span style="font-weight:600;color:var(--text);flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escHtml(item.name)}</span>
-            <span style="color:var(--text2);font-family:monospace;">${escHtml(sku)}</span>
-            <span style="background:var(--warning-light);color:var(--warning);border:1px solid rgba(217,119,6,0.3);padding:2px 8px;border-radius:20px;font-size:11px;font-weight:700;flex-shrink:0;">${quantity} left</span>
-          </div>
-        `).join('');
-        return `
-          <div style="border:1px solid rgba(217,119,6,0.3);border-radius:8px;overflow:hidden;margin-bottom:10px;">
-            <div style="background:var(--warning-light);padding:9px 14px;display:flex;align-items:center;gap:10px;">
-              <span style="font-size:15px;">&#x1F3EA;</span>
-              <div style="font-weight:700;font-size:13px;color:var(--warning);flex:1;">Store ${escHtml(r.storeCode)}</div>
-              <span style="background:var(--warning);color:#fff;padding:2px 10px;border-radius:20px;font-size:12px;font-weight:600;">${r.lowItems.length} Low Stock</span>
-            </div>
-            <div style="padding:4px 14px 6px;">${itemRows}</div>
-          </div>
-        `;
-      }).join('');
-    }
-  }
 }
 
 // ===== AG-GRID INIT =====
@@ -2923,16 +2355,16 @@ function initGrids() {
           getFilterValue: (data) => data.active ? 'Active' : 'Inactive',
           cellRenderer: (params) => {
             const item = params.data;
-            const label = document.createElement('label');
-            label.className = 'toggle';
-            label.title = item.active ? 'Deactivate item' : 'Activate item';
-            const input = document.createElement('input');
-            input.type = 'checkbox'; input.checked = !!item.active;
-            input.addEventListener('change', () => toggleActive(item.id, input.checked));
-            const slider = document.createElement('span');
-            slider.className = 'toggle-slider';
-            label.appendChild(input); label.appendChild(slider);
-            return label;
+            const wrap = document.createElement('div');
+            wrap.className = 'status-dot-wrap';
+            wrap.title = item.active ? 'Active — visible on menus' : 'Inactive — hidden from menus';
+            const dot = document.createElement('span');
+            dot.className = 'status-dot';
+            dot.style.background = item.active ? 'var(--success)' : 'var(--text2)';
+            const label = document.createElement('span');
+            label.textContent = item.active ? 'Active' : 'Inactive';
+            wrap.appendChild(dot); wrap.appendChild(label);
+            return wrap;
           }
         },
         {
@@ -2975,7 +2407,7 @@ function updateItemsSelectionBar() {
   const viewBtn  = document.getElementById('itemsSelViewBtn');
   if (selected.length > 0) {
     bar.classList.add('visible');
-    countEl.textContent = `${selected.length} of ${total} Products / Assets`;
+    countEl.textContent = `${selected.length} of ${total} Products`;
     viewBtn.textContent = _itemsViewSelected ? 'Show All' : 'View Selected';
   } else {
     bar.classList.remove('visible');
@@ -3012,7 +2444,7 @@ function clearItemsSelection() {
 // ===== ITEMS =====
 function renderItems() {
   const items = getItems();
-  document.getElementById('navBadgeItems').textContent = items.length;
+  document.getElementById('itemsCount').textContent = items.length;
   if (!itemsGridApi) return;
   const fm = itemsGridApi.getFilterModel();
   itemsGridApi.setGridOption('rowData', items);
@@ -3021,15 +2453,19 @@ function renderItems() {
   }
 }
 
-function toggleActive(id, active) {
+function bulkSetActive(active) {
+  if (!itemsGridApi) return;
+  const selected = itemsGridApi.getSelectedRows();
+  if (!selected.length) return;
+  const ids = new Set(selected.map(r => r.id));
+  const now = new Date().toISOString();
   const items = getItems();
-  const idx = items.findIndex(i => i.id === id);
-  if (idx === -1) return;
-  items[idx].active    = active;
-  items[idx].updatedAt = new Date().toISOString();
+  items.forEach(i => { if (ids.has(i.id)) { i.active = active; i.updatedAt = now; } });
   saveItems(items);
-  toast(active ? '\u2705 Item activated' : '\u26D4 Item deactivated', active ? 'success' : 'info');
+  renderItems();
+  toast(active ? `\u2705 ${ids.size} item${ids.size !== 1 ? 's' : ''} activated` : `\u26D4 ${ids.size} item${ids.size !== 1 ? 's' : ''} deactivated`, active ? 'success' : 'info');
 }
+window.bulkSetActive = bulkSetActive;
 
 // ===== TAG-CHIP HELPERS =====
 window.editingIngredients = [];
@@ -3220,6 +2656,9 @@ function openAddModal() {
   _manageTypesOpen = false;
   const mpanel = document.getElementById('manageTypesPanel');
   if (mpanel) mpanel.style.display = 'none';
+  _manageCategoriesOpen = false;
+  const cpanel = document.getElementById('manageCategoriesPanel');
+  if (cpanel) cpanel.style.display = 'none';
   renderMenuTypeSelector([]);
   editingImages = [];
   renderImgPreviews();
@@ -3250,6 +2689,9 @@ function openEditModal(id) {
   _manageTypesOpen = false;
   const mpanel = document.getElementById('manageTypesPanel');
   if (mpanel) mpanel.style.display = 'none';
+  _manageCategoriesOpen = false;
+  const cpanel = document.getElementById('manageCategoriesPanel');
+  if (cpanel) cpanel.style.display = 'none';
   renderMenuTypeSelector(item.menuTypes || []);
   document.getElementById('fCalories').value = item.calories != null ? item.calories : '';
   document.getElementById('fFat').value      = item.fat     != null ? item.fat     : '';
@@ -3403,7 +2845,6 @@ function saveItem() {
   }
   closeModal();
   renderItems();
-  renderDashboard();
 }
 
 // ===== IMAGE HANDLING =====
@@ -3506,7 +2947,6 @@ function doDelete() {
   saveItems(items);
   closeConfirm();
   renderItems();
-  renderDashboard();
   toast('\u{1F5D1}\uFE0F Item deleted', 'info');
 }
 
@@ -3529,14 +2969,26 @@ function doDeleteSelection() {
   closeConfirm();
   clearItemsSelection();
   renderItems();
-  renderDashboard();
   toast(`\u{1F5D1}\uFE0F ${selectedIds.size} item${selectedIds.size !== 1 ? 's' : ''} deleted`, 'info');
 }
 
 // ===== CATEGORIES =====
+let _manageCategoriesOpen = false;
+function toggleManageCategories() {
+  _manageCategoriesOpen = !_manageCategoriesOpen;
+  const panel = document.getElementById('manageCategoriesPanel');
+  if (panel) {
+    panel.style.display = _manageCategoriesOpen ? 'block' : 'none';
+    if (_manageCategoriesOpen) renderCategories();
+  }
+}
+window.toggleManageCategories = toggleManageCategories;
+
 function renderCategories() {
   const cats = getCats();
-  document.getElementById('catList').innerHTML = cats.map((c, i) => `
+  const listEl = document.getElementById('modalCatList');
+  if (!listEl) return;
+  listEl.innerHTML = cats.map((c, i) => `
     <div class="cat-tag">
       <span>${escHtml(String(c))}</span>
       <button onclick="deleteCategory(${i})" title="Remove category">&#x2715;</button>
@@ -3545,7 +2997,7 @@ function renderCategories() {
 }
 
 function addCategory() {
-  const input = document.getElementById('newCatInput');
+  const input = document.getElementById('modalNewCatInput');
   const val   = input.value.trim();
   if (!val) return;
   const cats = getCats();
@@ -3554,15 +3006,18 @@ function addCategory() {
   saveCats(cats);
   input.value = '';
   renderCategories();
+  populateCatDropdown(val);
   toast(`\u2705 Category "${val}" added`, 'success');
 }
 
 function deleteCategory(idx) {
   const cats = getCats();
   const name = cats[idx];
+  const selected = document.getElementById('fCategory')?.value;
   cats.splice(idx, 1);
   saveCats(cats);
   renderCategories();
+  populateCatDropdown(selected === name ? '' : selected);
   toast(`\u{1F5D1}\uFE0F Category "${name}" removed`, 'info');
 }
 
@@ -4037,7 +3492,6 @@ function saveBrand() {
   saveBrands(brands);
   closeBrandModal();
   renderBrands();
-  renderDashboard();
 }
 
 function confirmDeleteBrand(id, name) {
@@ -4053,7 +3507,6 @@ function doDeleteBrand(id) {
   saveBrands(brands);
   closeConfirm();
   renderBrands();
-  renderDashboard();
   toast('\u{1F5D1}\uFE0F Brand deleted', 'info');
 }
 
@@ -4802,7 +4255,6 @@ function importData(event) {
         // Settings are intentionally NOT overwritten on brand merge imports.
         // Configure global settings manually in the Settings tab.
 
-        renderDashboard();
         renderItems();
         const brandCount = getBrands().length;
         toast(`\u{1F4E5} Merged: +${added} new item${added !== 1 ? 's' : ''}, ${updated} updated \u2022 ${brandCount} brand${brandCount !== 1 ? 's' : ''} total`, 'success');
@@ -4817,7 +4269,6 @@ function importData(event) {
         if (data.categories) saveCats(data.categories);
         if (data.brands)     saveBrands(data.brands);
         if (data.types && Array.isArray(data.types)) saveTypes(data.types);
-        renderDashboard();
         renderItems();
         toast('\u{1F4E5} Data imported successfully', 'success');
       }
@@ -4943,7 +4394,6 @@ function importBrandData(event) {
             if (threshEl) threshEl.value = data.brand.lowStockThreshold;
           }
         }
-        renderDashboard();
         renderItems();
         toast(`\u{1F4E5} Imported: +${added} new, ${updated} updated for this brand`, 'success');
       } else {
@@ -4974,7 +4424,6 @@ function clearBrandData() {
       const remainingBrands = getBrands().filter(b => b.id !== brandId);
       saveBrands(remainingBrands);
       closeBrandModal();
-      renderDashboard();
       renderItems();
       toast(`\u{1F5D1}\uFE0F "${brandName}" and its items removed`, 'info');
     } catch (err) {
@@ -5011,7 +4460,6 @@ window.openAddModal       = openAddModal;
 window.updatePriceCurrencySymbol = updatePriceCurrencySymbol;
 window.closeModal         = closeModal;
 window.saveItem           = saveItem;
-window.toggleActive       = toggleActive;
 window.confirmDelete      = confirmDelete;
 window.closeConfirm       = closeConfirm;
 window.genSku             = genSku;
@@ -5037,8 +4485,6 @@ window.saveTemplate           = saveTemplate;
 window.confirmDeleteTemplate  = confirmDeleteTemplate;
 window.copyOfferBoardUrl      = copyOfferBoardUrl;
 window._copyBrandTplUrl       = _copyBrandTplUrl;
-window.setTplCat              = setTplCat;
-window.renderTemplateLibrary  = renderTemplateLibrary;
 window.openTplDetailFromLib   = openTplDetailFromLib;
 window.applyTemplateSchema    = applyTemplateSchema;
 window.openTemplatePicker     = openTemplatePicker;
@@ -5088,12 +4534,9 @@ initGrids();
 // ===== FIRESTORE LISTENERS + INIT =====
 onSnapshot(collection(db, ITEMS_COLL), snap => {
   _items = snap.docs.map(d => d.data()).sort((a, b) => (a.createdAt || '').localeCompare(b.createdAt || ''));
-  document.getElementById('navBadgeItems').textContent = _items.length;
+  document.getElementById('itemsCount').textContent = _items.length;
   // Always update items grid if initialised (preserves filter state via renderItems)
   if (itemsGridApi) renderItems();
-  // Update dashboard if it's the active view
-  const activeView = document.querySelector('.view.active');
-  if (activeView && activeView.id === 'view-dashboard') renderDashboard();
 });
 
 onSnapshot(doc(db, MB, 'brands'), snap => {
@@ -5108,9 +4551,6 @@ onSnapshot(doc(db, MB, 'brands'), snap => {
   // valueFormatter reads brand currency from outer scope, not from the row data
   // itself, so it needs an explicit force refresh too when brands change.
   if (itemsGridApi) setTimeout(() => itemsGridApi?.refreshCells({ columns: ['brand', 'price'], force: true }), 0);
-  // Update dashboard if it's the active view
-  const activeView = document.querySelector('.view.active');
-  if (activeView && activeView.id === 'view-dashboard') renderDashboard();
 });
 
 onSnapshot(doc(db, MB, 'types'), snap => {
@@ -5119,8 +4559,8 @@ onSnapshot(doc(db, MB, 'types'), snap => {
 
 onSnapshot(doc(db, MB, 'categories'), snap => {
   _cats = snap.exists() ? (snap.data().data || [...DEFAULT_CATS]) : [...DEFAULT_CATS];
-  const activeView = document.querySelector('.view.active');
-  if (activeView && activeView.id === 'view-categories') renderCategories();
+  const panel = document.getElementById('manageCategoriesPanel');
+  if (panel && panel.style.display !== 'none') renderCategories();
 });
 
 onSnapshot(doc(db, MB, 'settings'), snap => {
@@ -5145,17 +4585,9 @@ onSnapshot(doc(db, MB, 'settings'), snap => {
 onSnapshot(collection(db, STOCK_COLL), snapshot => {
   _allStock = {};
   snapshot.forEach(d => { _allStock[d.id] = d.data(); });
-  const activeView = document.querySelector('.view.active');
-  if (activeView && activeView.id === 'view-dashboard') renderDashboard();
 });
 
-onSnapshot(collection(db, 'mbactivity'), snapshot => {
-  _allActivity = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
-  const activeView = document.querySelector('.view.active');
-  if (activeView && activeView.id === 'view-dashboard') renderDashboard();
-});
-
-showView(localStorage.getItem('hqAdminView') || 'dashboard');
+showView(localStorage.getItem('hqAdminView') || 'items');
 
 // ── DIRTY-STATE TRACKER INIT ─────────────────────────────────────────────
 _itemSave     = _makeSaveBtn('itemSaveBtn');
