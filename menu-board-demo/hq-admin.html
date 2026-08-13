@@ -1864,7 +1864,7 @@ const TEMPLATE_LIBRARY = [
   },
   {
     id: 'store-info-hours',
-    name: 'Store Info & Opening Hours',
+    name: 'Store Opening Hours',
     description: 'Live, device-driven overview of this store’s opening hours, fetched from the Personalisation Hub API for the device’s specific store. Used at store entrance or lobby.',
     category: 'Store Operations',
     useCases: ['Entrance','Lobby','Reception','Clinic','Appointment'],
@@ -3041,7 +3041,7 @@ function _copyBrandTplUrl(brand, tpl) {
   }
   const url = decodeURIComponent(base + '?' + params.toString());
   navigator.clipboard.writeText(url).then(() => {
-    toast('✅ Offer Board URL copied to clipboard.', 'success');
+    toast('✅ Link Copied to Clipboard', 'success');
   }).catch(() => { prompt('Copy this URL:', url); });
 }
 
@@ -3742,7 +3742,7 @@ function applyTemplateSchema(templateId) {
   setSectionVisible('Landscape Display', s.landscape);
   setSectionVisible('Date & Time', s.showClock);
   setSectionVisible('Campaign Filter', s.campaignFilter);
-  // Store Hours Display section — only for templates with dayOrder:true (Store Info & Opening Hours)
+  // Store Hours Display section — only for templates with dayOrder:true (Store Opening Hours)
   const sdHoursEl = document.getElementById('sd-store-hours');
   if (sdHoursEl) {
     const show = !!s.dayOrder;
@@ -3753,7 +3753,7 @@ function applyTemplateSchema(templateId) {
       el = el.nextElementSibling;
     }
   }
-  // Store Info & Opening Hours has no item grid, so price/description/item-card
+  // Store Opening Hours has no item grid, so price/description/item-card
   // colours are irrelevant — hide them and repurpose the generic text colour as
   // "Hours Text" instead of "Item Name Text".
   const isStoreHours = templateId === 'store-info-hours';
@@ -3788,7 +3788,7 @@ function applyTemplateSchema(templateId) {
   const catBarGroup = document.getElementById('tplColorCatBarGroup');
   if (catBarGroup) catBarGroup.style.display = s.categoryFilter ? '' : 'none';
   // Clock-related colours — relevant when a clock bar is shown, and also for
-  // Store Info & Opening Hours, whose single-view status row shows a live
+  // Store Opening Hours, whose single-view status row shows a live
   // day/time readout (no separate bar background there, so only the text
   // colour applies).
   const clockTextGroup = document.getElementById('tplColorClockTextGroup');
@@ -4062,7 +4062,7 @@ function copyOfferBoardUrl(tplId) {
   }
   const url = decodeURIComponent(base + '?' + params.toString());
   navigator.clipboard.writeText(url).then(() => {
-    toast('✅ Offer Board URL copied to clipboard.', 'success');
+    toast('✅ Link Copied to Clipboard', 'success');
   }).catch(() => {
     prompt('Copy this URL:', url);
   });

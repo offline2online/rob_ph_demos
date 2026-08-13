@@ -207,7 +207,7 @@
             <option value="brand-campaign-fullscreen">Brand Campaign Full-Screen</option>
           </optgroup>
           <optgroup label="Store Operations">
-            <option value="store-info-hours">Store Info &amp; Opening Hours</option>
+            <option value="store-info-hours">Store Opening Hours</option>
             <option value="digital-wayfinding">Digital Wayfinding</option>
             <option value="order-status-board">Order Status Board</option>
           </optgroup>
@@ -497,7 +497,7 @@ const TEMPLATES = [
     lSVG:(W,H)=>{const hh=11,heroW=Math.round(W*.5);return `<rect width="${W}" height="${H}" fill="#1a1a1a"/><rect width="${W}" height="${hh}" fill="#1a1a1a"/><rect y="${hh}" width="${heroW}" height="${H-hh}" fill="#2d2d2d"/><rect x="${heroW*.1}" y="${hh+(H-hh)*.45}" width="${heroW*.8}" height="6" rx="2" fill="#e53e3e"/>` + gridCells(heroW+2,hh,W-heroW-2,H-hh,2,3,2) + `<rect x="${heroW}" y="${hh}" width="3" height="${H-hh}" fill="#e53e3e"/>`;},
   },
   {
-    id:'store-info-hours', name:'Store Info & Opening Hours',
+    id:'store-info-hours', name:'Store Opening Hours',
     description:'Live, device-driven overview of this store’s opening hours, fetched from the Personalisation Hub API for the device’s specific store. Used at store entrance or lobby.',
     category:'Store Operations', useCases:['Entrance','Lobby','Reception','Clinic','Appointment'],
     params:['store','device','brand'],

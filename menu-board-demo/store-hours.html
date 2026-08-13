@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Store Info & Opening Hours</title>
+  <title>Store Opening Hours</title>
   <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@500;600;700&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <style>
     :root {
@@ -324,7 +324,7 @@ function getActiveBrand() {
   return _brands[0];
 }
 
-// Returns this brand's Store Info & Opening Hours template, if one has been configured.
+// Returns this brand's Store Opening Hours template, if one has been configured.
 function getActiveTemplate(brand) {
   if (!brand || !Array.isArray(brand.templates)) return null;
   return brand.templates.find(t => t.templateType === 'store-info-hours') || null;
@@ -613,7 +613,7 @@ function render() {
 
   const footerHtml = `
     <div class="board-footer">
-      <div class="footer-text">${esc(brandName)} — Store Info &amp; Opening Hours</div>
+      <div class="footer-text">${esc(brandName)} — Store Opening Hours</div>
       <div class="footer-refresh"><span class="refresh-dot"></span> Live sync enabled</div>
     </div>
   `;
