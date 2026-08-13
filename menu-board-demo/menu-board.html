@@ -466,6 +466,7 @@
       flex: 0 0 var(--hero-flex-basis, 42%);
       overflow: hidden;
       border-bottom: 3px solid var(--accent, #f6ad55);
+      position: relative;
     }
     .board.landscape .promo-board {
       flex: 1;
@@ -478,6 +479,7 @@
       flex: 0 0 var(--hero-flex-basis, 42%);
       overflow: hidden;
       border-right: 3px solid var(--accent, #f6ad55);
+      position: relative;
     }
     .promo-hero img {
       width: 100%; height: 100%; object-fit: cover; display: block;
@@ -487,6 +489,42 @@
       display: flex; align-items: center; justify-content: center;
       font-size: clamp(48px, 8vw, 120px);
       background: rgba(0,0,0,0.05);
+    }
+    /* Product info + pricing overlaid on the primary image — a scrim keeps
+       it legible regardless of what's underneath in the photo. */
+    .promo-hero-info {
+      position: absolute;
+      left: 0; right: 0; bottom: 0;
+      padding: clamp(16px, 2.4vw, 40px);
+      background: linear-gradient(to top, rgba(0,0,0,0.82) 0%, rgba(0,0,0,0.35) 55%, rgba(0,0,0,0) 100%);
+    }
+    .promo-hero-info .promo-cat {
+      background: var(--cat-bar-bg, var(--accent));
+    }
+    .promo-hero-title {
+      font-family: 'Oswald', sans-serif;
+      font-weight: 800;
+      text-transform: uppercase;
+      color: #fff;
+      font-size: clamp(22px, 3.4vw, 54px);
+      line-height: 1.08;
+      text-shadow: 0 2px 14px rgba(0,0,0,0.6), 0 1px 4px rgba(0,0,0,0.85);
+    }
+    .promo-hero-desc {
+      font-style: italic;
+      color: rgba(255,255,255,0.85);
+      font-size: clamp(11px, 1.2vw, 18px);
+      line-height: 1.4;
+      margin-top: clamp(3px, 0.5vw, 8px);
+      text-shadow: 0 1px 8px rgba(0,0,0,0.6);
+    }
+    .promo-hero-price {
+      font-family: 'Oswald', sans-serif;
+      font-weight: 800;
+      color: var(--accent, #f6ad55);
+      font-size: clamp(26px, 4vw, 62px);
+      margin-top: clamp(4px, 0.6vw, 10px);
+      text-shadow: 0 2px 12px rgba(0,0,0,0.6);
     }
     /* Promo card stack */
     .promo-list {
@@ -566,17 +604,16 @@
       margin-top: clamp(2px, 0.5vw, 8px);
     }
     .promo-img-wrap {
-      flex: 0 0 40%;
+      flex: 0 0 42%;
       min-width: 0;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      padding: clamp(8px, 1vw, 18px);
+      overflow: hidden;
     }
     .promo-img-wrap img {
-      max-width: 100%; max-height: 100%; object-fit: contain;
+      width: 100%; height: 100%; object-fit: cover; display: block;
     }
     .promo-img-placeholder {
+      width: 100%; height: 100%;
+      display: flex; align-items: center; justify-content: center;
       font-size: clamp(28px, 4vw, 56px);
       opacity: .3;
     }
@@ -1607,13 +1644,25 @@ function render() {
       }
     `;
 
-    // Build hero image panel — full-bleed, no overlay text.
+    // Build hero image panel — full-bleed photo with its product info and
+    // pricing overlaid at the bottom (scrimmed for legibility), the same
+    // fields shown on each promo card.
     let heroImgHtml = `<div class="promo-hero-placeholder">🏷️</div>`;
+    let heroInfoHtml = '';
     if (heroItem) {
       const heroSrc = (heroItem.imagesLarge && heroItem.imagesLarge[0]) || (heroItem.images && heroItem.images[0]);
       heroImgHtml = heroSrc
         ? `<img src="${heroSrc}" alt="${esc(heroItem.name)}" loading="lazy">`
         : `<div class="promo-hero-placeholder">🏷️</div>`;
+      const heroCat = heroItem.category ? `<div class="promo-cat">${esc(heroItem.category)}</div>` : '';
+      const heroDesc = heroItem.description ? `<div class="promo-hero-desc">${esc(heroItem.description)}</div>` : '';
+      heroInfoHtml = `
+        <div class="promo-hero-info">
+          ${heroCat}
+          <div class="promo-hero-title">${esc(heroItem.name)}</div>
+          ${heroDesc}
+          <div class="promo-hero-price">${currency}${parseFloat(heroItem.price || 0).toFixed(2)}</div>
+        </div>`;
     }
 
     // Build promo tiles — striped accent bar, category tile, title, description, price, photo.
@@ -1638,7 +1687,7 @@ function render() {
 
     bodyHtml = `
       <div class="promo-board">
-        <div class="promo-hero">${heroImgHtml}</div>
+        <div class="promo-hero">${heroImgHtml}${heroInfoHtml}</div>
         <div class="promo-list">${promoTilesHtml}</div>
       </div>`;
   } else {
