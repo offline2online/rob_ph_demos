@@ -538,7 +538,8 @@ function render() {
 
   const logoLeft  = brand.logo      || '';
   const logoRight = brand.logoRight || brand.logo || '';
-  const brandName = brand.name || 'Our Brand';
+  const brandName   = brand.name || 'Our Brand';
+  const headerTitle = (tpl && tpl.headerTitle && tpl.headerTitle.trim()) || brandName;
 
   const logoSlot = (src, side) => src
     ? `<div class="brand-logo-wrap"><img src="${src}" alt="${esc(side)} logo"></div>`
@@ -548,7 +549,7 @@ function render() {
     <div class="brand-row">
       ${logoSlot(logoLeft, 'Left')}
       <div class="brand-center">
-        <div class="brand-name">${esc(brandName)}</div>
+        <div class="brand-name">${esc(headerTitle)}</div>
       </div>
       ${logoSlot(logoRight, 'Right')}
     </div>

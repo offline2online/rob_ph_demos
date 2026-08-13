@@ -3801,7 +3801,10 @@ function applyTemplateSchema(templateId) {
   const headerTitleGroup = document.querySelector('#tplHeaderTitle')?.closest('.form-group');
   const headerCopyGroup  = document.querySelector('#tplHeaderCopy')?.closest('.form-group');
   const showHeaderFields = !!(s.showHeader || s.headerCopy);
-  if (headerTitleGroup) headerTitleGroup.style.display = showHeaderFields ? '' : 'none';
+  // Store Opening Hours has no sub-header line, but its single-view header
+  // still shows a large title (brand name by default) — let admins override
+  // that copy the same way other templates override their header title.
+  if (headerTitleGroup) headerTitleGroup.style.display = (showHeaderFields || isStoreHours) ? '' : 'none';
   if (headerCopyGroup)  headerCopyGroup.style.display  = showHeaderFields ? '' : 'none';
   // Store & Personalisation section — use ID-based lookup for reliability
   const sdStoreEl = document.getElementById('sd-store-person');
