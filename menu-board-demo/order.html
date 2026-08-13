@@ -1447,9 +1447,25 @@ function applyBranding() {
   }
 }
 
+// A brand with no `stores` list (or an empty one) is available everywhere;
+// otherwise it's only on sale at the stores explicitly listed there.
+// Items with no brand tag (or an unrecognised one) are never hidden by this
+// check — only known, store-restricted brands get filtered out.
+function isBrandAvailableAtStore(brandId) {
+  if (!STORE_CODE) return true;
+  const brand = _brands.find(b => b.id === brandId);
+  if (!brand) return true;
+  const stores = Array.isArray(brand.stores) ? brand.stores : [];
+  return stores.length === 0 || stores.includes(STORE_CODE);
+}
+
+function getStoreItems() {
+  return _items.filter(i => isBrandAvailableAtStore(i.brand));
+}
+
 function getFilteredItems() {
   const q = _searchQuery.trim().toLowerCase();
-  return _items.filter(i => {
+  return getStoreItems().filter(i => {
     if (!i.active) return false;
     // When a search query is active, search across ALL categories
     if (!q && _activeCat !== 'All' && i.category !== _activeCat) return false;
@@ -1462,7 +1478,7 @@ function getFilteredItems() {
 }
 
 function renderCatBar() {
-  const rawCats = [...new Set(_items.filter(i => i.active).map(i => i.category))];
+  const rawCats = [...new Set(getStoreItems().filter(i => i.active).map(i => i.category))];
   const deals    = rawCats.filter(c => c.toUpperCase() === 'DEALS');
   const specials = rawCats.filter(c => c !== "DEALS" && c === "Today's Specials");
   const others   = rawCats.filter(c => c.toUpperCase() !== 'DEALS' && c !== "Today's Specials");
@@ -2156,6 +2172,7 @@ onSnapshot(collection(db, 'items'), snap => {
 onSnapshot(doc(db, 'menuboard', 'brands'), snap => {
   _brands = snap.exists() ? (snap.data().data || []) : [];
   applyBranding();
+  renderAll(); // item visibility depends on brand.stores, not just item data
 });
 
 onSnapshot(doc(db, 'menuboard', 'settings'), snap => {
