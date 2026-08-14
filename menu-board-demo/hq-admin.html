@@ -1167,6 +1167,11 @@
                 <option value="true">Hide completely &mdash; remove from menu board</option>
               </select>
             </div>
+            <div class="form-group">
+              <label>Rotation Speed</label>
+              <input type="number" id="tplRotationSeconds" min="1" max="120" step="1">
+              <span style="font-size:11px;color:var(--text2);margin-top:4px;display:block;">Seconds each screen stays up before rotating to the next (default: 5)</span>
+            </div>
 
             <!-- Category Filter — shown only for templates with categoryFilter:true (e.g. Classic Menu Board) -->
             <div class="form-group" id="tplGridCatsGroup" style="display:none;">
@@ -2410,36 +2415,40 @@ function initGrids() {
           cellStyle: { fontWeight: '700', color: 'var(--primary)' }
         },
         {
-          headerName: 'Status', field: 'active', flex: 0.8, minWidth: 80,
+          headerName: 'Status', colId: 'status', field: 'active', flex: 1.3, minWidth: 140,
           filter: CheckboxSetFilter,
-          getFilterValue: (data) => data.active ? 'Active' : 'Inactive',
+          // Filter menu shows Active/Inactive plus, as an extra checkbox tag,
+          // "Featured" — so the product table can be filtered down to
+          // Featured items without a separate column (CheckboxSetFilter
+          // treats an array raw value as "matches if any tag is checked").
+          getFilterValue: (data) => {
+            const tag = data.active ? 'Active' : 'Inactive';
+            return data.featured ? [tag, 'Featured'] : [tag];
+          },
           cellRenderer: (params) => {
             const item = params.data;
             const wrap = document.createElement('div');
-            wrap.className = 'status-dot-wrap';
-            wrap.title = item.active ? 'Active — visible on menus' : 'Inactive — hidden from menus';
+            wrap.style.cssText = 'display:flex;align-items:center;gap:8px;height:100%;';
+
+            const statusWrap = document.createElement('div');
+            statusWrap.className = 'status-dot-wrap';
+            statusWrap.title = item.active ? 'Active — visible on menus' : 'Inactive — hidden from menus';
             const dot = document.createElement('span');
             dot.className = 'status-dot';
             dot.style.background = item.active ? 'var(--success)' : 'var(--text2)';
             const label = document.createElement('span');
             label.textContent = item.active ? 'Active' : 'Inactive';
-            wrap.appendChild(dot); wrap.appendChild(label);
-            return wrap;
-          }
-        },
-        {
-          headerName: 'Featured', field: 'featured', flex: 0.7, minWidth: 80,
-          filter: CheckboxSetFilter,
-          getFilterValue: (data) => data.featured ? 'Featured' : 'Not featured',
-          cellRenderer: (params) => {
-            const item = params.data;
-            const wrap = document.createElement('div');
-            wrap.className = 'status-dot-wrap';
-            wrap.title = item.featured
+            statusWrap.appendChild(dot); statusWrap.appendChild(label);
+            wrap.appendChild(statusWrap);
+
+            const star = document.createElement('span');
+            star.title = item.featured
               ? 'Featured — counts toward the Local Feature Highlight minimum of 3'
               : 'Not featured';
-            wrap.style.opacity = item.featured ? '1' : '.4';
-            wrap.textContent = item.featured ? '⭐ Featured' : '☆';
+            star.style.cssText = `opacity:${item.featured ? '1' : '.4'};`;
+            star.textContent = item.featured ? '⭐' : '☆';
+            wrap.appendChild(star);
+
             return wrap;
           }
         },
@@ -2534,6 +2543,12 @@ function renderItems() {
   // data — deferred a tick since setGridOption's internal row update hasn't
   // settled yet when called synchronously right after.
   setTimeout(() => itemsGridApi?.refreshClientSideRowModel('sort'), 0);
+  // The Status column's cellRenderer reads both `active` and `featured`,
+  // but AG Grid's row diffing decides whether to re-invoke a cellRenderer
+  // by comparing the colDef's own field ('active') — so toggling only
+  // `featured` (e.g. from the edit modal) updates the row's data but the
+  // Status cell's star silently stays stale until forced.
+  setTimeout(() => itemsGridApi?.refreshCells({ columns: ['status'], force: true }), 0);
   if (fm && Object.keys(fm).length) {
     setTimeout(() => itemsGridApi?.setFilterModel(fm), 0);
   }
@@ -3821,6 +3836,7 @@ function openNewTemplateEditor() {
       setValue('tplPersonalGreeting', d.personalGreeting || 'true');
       setValue('tplDayOrder', d.dayOrder || 'current');
       if (document.getElementById('tplHeroSize'))            setValue('tplHeroSize', d.heroSize || 'balanced');
+      document.getElementById('tplRotationSeconds').value = d.rotationSeconds || 5;
     }
     // Apply brand colour palette if available
     if (window._bPalette && window._bPalette.length > 0) {
@@ -4023,6 +4039,7 @@ function openEditTemplateEditor(tplId) {
   if (_tplSave) _tplSave.reset();
   if (tpl.templateType) applyTemplateSchema(tpl.templateType);
   if (document.getElementById('tplHeroSize'))           document.getElementById('tplHeroSize').value           = tpl.heroSize || 'balanced';
+  document.getElementById('tplRotationSeconds').value   = tpl.rotationSeconds || 5;
   _showTplEditor();
 }
 
@@ -4185,6 +4202,7 @@ function saveTemplate() {
     categoriesToPresent: [..._tplSelectedCategories],
     dayOrder:       document.getElementById('tplDayOrder')?.value || 'current',
     heroSize:          document.getElementById('tplHeroSize')?.value || 'balanced',
+    rotationSeconds: parseInt(document.getElementById('tplRotationSeconds')?.value) || 5,
   };
 
   if (_tplEditingId) {

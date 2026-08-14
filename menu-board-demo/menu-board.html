@@ -541,7 +541,8 @@
     .promo-hero-desc {
       font-style: italic;
       color: #666666;
-      font-size: clamp(11px, 1.2vw, 18px);
+      /* +30% over the original clamp(11px, 1.2vw, 18px) */
+      font-size: clamp(14px, 1.56vw, 23px);
       line-height: 1.4;
     }
     /* Promo card stack */
@@ -589,11 +590,12 @@
       color: #fff;
       font-family: 'Oswald', sans-serif;
       font-weight: 700;
-      font-size: clamp(11px, 1.02vw, 16px);
+      /* +30% over the original clamp(11px, 1.02vw, 16px) */
+      font-size: clamp(14px, 1.33vw, 21px);
       letter-spacing: .05em;
       text-transform: uppercase;
-      padding: clamp(2px, 0.35vw, 5px) clamp(8px, 0.9vw, 14px);
-      border-radius: clamp(3px, 0.35vw, 6px);
+      padding: clamp(3px, 0.46vw, 7px) clamp(10px, 1.17vw, 18px);
+      border-radius: clamp(4px, 0.46vw, 8px);
       margin-bottom: clamp(4px, 0.6vw, 10px);
     }
     .promo-title {
@@ -638,7 +640,8 @@
     .promo-tile-desc .promo-desc {
       font-style: italic;
       color: var(--item-desc, var(--text2));
-      font-size: clamp(11px, 1.2vw, 18px);
+      /* +30% over the original clamp(11px, 1.2vw, 18px) */
+      font-size: clamp(14px, 1.56vw, 23px);
       line-height: 1.4;
       overflow: hidden;
       display: -webkit-box;
@@ -725,7 +728,7 @@ const DEBUG_MODE    = urlParams.get('debug') === '1';
 // e.g. ?testSkus=LS0873NBRONCOS,LS0873NBULLDOGS
 const TEST_SKUS = (urlParams.get('testSkus') || '').split(',').map(s => s.trim()).filter(Boolean);
 
-const ROTATION_INTERVAL = 8000; // ms
+const DEFAULT_ROTATION_SECONDS = 5; // fallback when the active template has no Rotation Speed set
 
 // ── BOARD ACTIVITY HEARTBEAT ─────────────────────────────────────────────────
 // Unique key per brand+menuType+store combination — one doc per board instance
@@ -1095,9 +1098,10 @@ window._switchEndpoint = function(baseUrl) {
   document.addEventListener('touchend', () => { clearTimeout(_lpt); _lpt = null; }, { passive: true });
 }
 
-function startRotation(totalPages) {
+function startRotation(totalPages, intervalMs) {
   if (SCREEN_LOCK || totalPages <= 1) return;
   clearTimeout(rotationTimer);
+  intervalMs = intervalMs || DEFAULT_ROTATION_SECONDS * 1000;
 
   // Animate progress bar from 0 → 100%
   const bar = document.getElementById('rotationBar');
@@ -1105,7 +1109,7 @@ function startRotation(totalPages) {
     bar.style.transition = 'none';
     bar.style.width = '0%';
     setTimeout(() => {
-      bar.style.transition = `width ${ROTATION_INTERVAL}ms linear`;
+      bar.style.transition = `width ${intervalMs}ms linear`;
       bar.style.width = '100%';
     }, 50);
   }
@@ -1113,7 +1117,7 @@ function startRotation(totalPages) {
   rotationTimer = setTimeout(() => {
     currentPage = currentPage >= totalPages ? 1 : currentPage + 1;
     render();
-  }, ROTATION_INTERVAL);
+  }, intervalMs);
 }
 
 // ── PERSONALISATION HUB API — DECRYPTION + CAMPAIGN POLLING ─────────────────
@@ -1815,7 +1819,8 @@ function render() {
   updateClock();
 
   if (!SCREEN_LOCK && totalPages > 1) {
-    startRotation(totalPages);
+    const effectiveRotationSeconds = (tpl && parseInt(tpl.rotationSeconds)) || DEFAULT_ROTATION_SECONDS;
+    startRotation(totalPages, effectiveRotationSeconds * 1000);
   }
 }
 
