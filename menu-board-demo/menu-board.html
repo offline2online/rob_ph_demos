@@ -1485,6 +1485,37 @@ function render() {
     campaignFiltered = campaignFiltered.filter(i => effectiveGridCategories.includes(i.category || ''));
   }
 
+  // ── STEP 1d: Menu-type-agnostic candidate pool for Local Feature Highlight ──
+  // The Item Type Filter / ?menu= constraint baked into campaignFiltered above
+  // is a "which menu is this" concept that doesn't apply to a curated Featured
+  // selection — a store manager featuring a drinks item shouldn't have it
+  // silently excluded because the board happens to be configured for lunch.
+  // Recomputed without the menu-type clause, otherwise mirroring the same
+  // active/brand/stock/personalisation rules as campaignFiltered.
+  let featuredCandidates = campaignFiltered;
+  if (effectiveTemplateType === 'feature-hero-board') {
+    const allAnyMenuType = items.filter(i =>
+      i.active && (brand === null || !i.brand || i.brand === brand.id)
+    );
+    const displayAnyMenuType = (effectiveDisplay && effectiveDisplay.hideOutOfStock)
+      ? allAnyMenuType.filter(i => !isOos(i.sku))
+      : allAnyMenuType;
+    featuredCandidates = displayAnyMenuType;
+    if (_campaignSkus && _campaignSkus.length > 0 && brand !== null) {
+      const mode = effectiveCampaignMode || (_settings.phApi && _settings.phApi.campaignMode) || 'override';
+      const skuSetLower = new Set(_campaignSkus.map(s => (s || '').trim().toLowerCase()));
+      const skuMatch = i => skuSetLower.has((i.sku || '').trim().toLowerCase());
+      if (mode === 'override') {
+        featuredCandidates = items.filter(i => i.active && (!i.brand || i.brand === brand.id) && skuMatch(i));
+        if (effectiveDisplay && effectiveDisplay.hideOutOfStock) {
+          featuredCandidates = featuredCandidates.filter(i => !isOos(i.sku));
+        }
+      } else {
+        featuredCandidates = displayAnyMenuType.filter(i => skuMatch(i));
+      }
+    }
+  }
+
   // Sort: in-stock first, then by category, then name
   campaignFiltered.sort((a, b) => {
     const ao = isOos(a.sku), bo = isOos(b.sku);
@@ -1642,7 +1673,7 @@ function render() {
     // have >=3 items in the normal case (it can still be smaller for this
     // specific menu type/screen if some Featured items belong to others).
     const featuredSkus = getEffectiveFeaturedSkus(brand || themeSource);
-    const featuredPool = campaignFiltered.filter(i => featuredSkus.has(i.sku));
+    const featuredPool = featuredCandidates.filter(i => featuredSkus.has(i.sku));
 
     if (featuredPool.length === 0) {
       bodyHtml = `
