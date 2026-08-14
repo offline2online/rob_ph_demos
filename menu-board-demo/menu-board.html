@@ -701,6 +701,7 @@ const db  = getFirestore(app);
 const MB         = 'menuboard';
 const ITEMS_COLL = 'items';
 const STOCK_COLL = 'stock';
+const LOCAL_FEATURED_COLL = 'localFeatured';
 
 // ── URL PARAMS ──────────────────────────────────────────────────────────────
 const urlParams   = new URLSearchParams(window.location.search);
@@ -754,6 +755,7 @@ let _items       = [];
 let _settings    = { brandName: 'Our Brand', currency: '$', logo: '', logoRight: '' };
 let _brands      = [];
 let _stock       = {};
+let _localFeatured = {}; // per-store Featured override, set from Retail Admin — see LOCAL_FEATURED_COLL
 // Campaign SKUs: null = default menu; string[] = personalised override from Personalisation Hub API
 let _campaignSkus      = TEST_SKUS.length > 0 ? TEST_SKUS : null;
 let _campaignFirstName = null; // null = no greeting; string = show personalised greeting in clock bar
@@ -843,6 +845,19 @@ function getActiveTemplate(brand) {
     if (match) return match;
   }
   return templates.find(t => t.isDefault) || templates[0];
+}
+
+// Local Feature Highlight's item selection — a store's own Featured picks
+// (Retail Admin) override HQ's Featured list (HQ Admin) once the store has
+// starred 3 or more; below that, HQ's list is used as normal. Returns the
+// Set of qualifying SKUs, which may have fewer than 3 entries (or be empty)
+// — callers check .size to decide whether the template activates at all.
+function getEffectiveFeaturedSkus(brand) {
+  if (!brand) return new Set();
+  const brandItems = getItems().filter(i => i.active && (!i.brand || i.brand === brand.id));
+  const localSkus = Object.keys(_localFeatured || {}).filter(sku => _localFeatured[sku]);
+  if (localSkus.length >= 3) return new Set(localSkus);
+  return new Set(brandItems.filter(i => i.featured).map(i => i.sku));
 }
 
 // ── COLOR SCHEME ─────────────────────────────────────────────────────────────
@@ -946,6 +961,7 @@ let _itemsHash    = null;
 let _brandsHash   = null;
 let _settingsHash = null;
 let _stockHash    = null;
+let _localFeaturedHash = null;
 
 // General fingerprint — catches any field change; used for small docs (brands, settings, stock)
 function _fp(obj) { try { return JSON.stringify(obj); } catch (_) { return String(Date.now()); } }
@@ -1339,7 +1355,21 @@ function render() {
   // ── TEMPLATE RESOLUTION ──────────────────────────────────────────────────────
   // Resolve the active Offer Board template and derive effective settings.
   // Template values always win over top-level brand defaults.
-  const tpl = getActiveTemplate(brand || themeSource);
+  let tpl = getActiveTemplate(brand || themeSource);
+
+  // Local Feature Highlight needs >=3 qualifying Featured items (HQ, or a
+  // store's own override once it has 3+) before it activates — below that,
+  // the board falls back to rendering the brand's default template instead.
+  // This re-resolution runs on every render (i.e. every data change), so a
+  // store crossing the 3-item threshold flips the board automatically. If no
+  // template has isDefault set, tpl is left as-is rather than showing blank.
+  if (tpl && tpl.templateType === 'feature-hero-board') {
+    const featuredSkus = getEffectiveFeaturedSkus(brand || themeSource);
+    if (featuredSkus.size < 3) {
+      const fallbackTpl = (brand || themeSource).templates?.find(t => t.isDefault);
+      if (fallbackTpl) tpl = fallbackTpl;
+    }
+  }
 
   // Effective menu-type filter: the template's own "Item Type Filter" wins when
   // configured (this board always shows only those types, regardless of the
@@ -1363,7 +1393,6 @@ function render() {
   const effectiveIconPosition     = (tpl && tpl.iconPosition)  || 'left';
   const effectiveHeaderLogoType   = (tpl && tpl.headerLogoType)|| 'logo';
   const effectiveTemplateType     = (tpl && tpl.templateType)  || TEMPLATE_TYPE || '';
-  const effectiveHeroCategory     = (tpl && tpl.heroCategory)  || '';
   const effectiveGridCategories   = (tpl && Array.isArray(tpl.categoriesToPresent) && tpl.categoriesToPresent.length > 0)
     ? tpl.categoriesToPresent : [];
   const effectiveHeroSize          = (tpl && tpl.heroSize)          || 'balanced';
@@ -1602,125 +1631,118 @@ function render() {
       </div>
     `;
   } else if (effectiveTemplateType === 'feature-hero-board') {
-    // ── FEATURE HERO SPOTLIGHT LAYOUT ────────────────────────────────────────
+    // ── LOCAL FEATURE HIGHLIGHT LAYOUT ────────────────────────────────────────
     // A full-bleed image (no overlay copy) beside/above a stack of equally-
     // weighted promo cards — "just show promotions", not one dominant item
-    // with a small supporting grid.
-    //
-    // Hero image candidates: items matching heroCategory (if set), else the
-    // whole personalised/campaign-filtered set (so a first_name + SKUs push
-    // from the Personalisation Hub narrows the image the same way it narrows
-    // the promo cards).
-    let heroPool = campaignFiltered;
-    if (effectiveHeroCategory) {
-      const catPool = campaignFiltered.filter(i => i.category === effectiveHeroCategory);
-      if (catPool.length > 0) heroPool = catPool;
-    }
+    // with a small supporting grid. Item selection is driven entirely by the
+    // Featured flag (HQ Admin), overridable per store from Retail Admin —
+    // see getEffectiveFeaturedSkus(). By the time render() reaches here, tpl
+    // has already been re-resolved to the brand's default template if fewer
+    // than 3 qualifying items exist, so featuredPool below is expected to
+    // have >=3 items in the normal case (it can still be smaller for this
+    // specific menu type/screen if some Featured items belong to others).
+    const featuredSkus = getEffectiveFeaturedSkus(brand || themeSource);
+    const featuredPool = campaignFiltered.filter(i => featuredSkus.has(i.sku));
 
-    // Only rotate the hero image when a Hero Category has been curated with
-    // more than one candidate — a deliberate multi-item rotation, not the
-    // "whatever happens to sort first" fallback used when no category is set.
-    // When rotating, all hero-pool candidates are held out of the promo
-    // cards so that list stays a stable, easy-to-scan lineup while only the
-    // background image cycles — standard QSR digital-signage practice.
-    const heroRotates = !!effectiveHeroCategory && heroPool.length > 1;
-    let promoItems = heroRotates
-      ? campaignFiltered.filter(i => !heroPool.includes(i))
-      : campaignFiltered.filter(i => i !== (heroPool[0] || null));
-    if (effectiveGridCategories.length > 0) {
-      promoItems = promoItems.filter(i => effectiveGridCategories.includes(i.category || ''));
-    }
+    if (featuredPool.length === 0) {
+      bodyHtml = `
+        <div class="board-empty">
+          <div class="icon">${meta.emoji}</div>
+          <h2>No Featured Items</h2>
+          <p>No Featured items are configured for this menu. Feature at least 3 products from the product table (HQ Admin, or a store's own picks in Retail Admin) to activate this board.</p>
+        </div>
+      `;
+    } else {
+      // Promo card count from template settings — defaults to 2 stacked cards.
+      const promoCols = ORIENTATION === 'portrait'
+        ? (parseInt((effectiveDisplay.portrait || {}).cols) || 1)
+        : (parseInt((effectiveDisplay.landscape || {}).cols) || 1);
+      const promoRows = ORIENTATION === 'portrait'
+        ? (parseInt((effectiveDisplay.portrait || {}).rows) || 2)
+        : (parseInt((effectiveDisplay.landscape || {}).rows) || 2);
+      const promoMax = promoCols * promoRows;
 
-    // Promo card count from template settings — defaults to 2 stacked cards.
-    const promoCols = ORIENTATION === 'portrait'
-      ? (parseInt((effectiveDisplay.portrait || {}).cols) || 1)
-      : (parseInt((effectiveDisplay.landscape || {}).cols) || 1);
-    const promoRows = ORIENTATION === 'portrait'
-      ? (parseInt((effectiveDisplay.portrait || {}).rows) || 2)
-      : (parseInt((effectiveDisplay.landscape || {}).rows) || 2);
-    const promoMax = promoCols * promoRows;
+      // Reconcile pagination with the board's shared rotation clock: total
+      // pages is whichever needs more screens — the hero image rotating
+      // through every Featured item, or the promo cards paging through
+      // overflow — so both the footer and the existing rotation timer/
+      // progress bar (startRotation, further down) drive this layout the
+      // same way they drive every other template. Every Featured item
+      // takes a turn as hero; whichever one is NOT currently hero shows as
+      // a promo card, so the promo count is always featuredPool.length - 1
+      // regardless of which specific item is currently hero.
+      const promoCount = featuredPool.length - 1;
+      const promoPages = Math.max(1, Math.ceil(promoCount / promoMax));
+      totalPages = Math.max(promoPages, featuredPool.length);
+      if (currentPage > totalPages) currentPage = totalPages;
+      if (currentPage < 1) currentPage = 1;
 
-    // Reconcile pagination with the board's shared rotation clock: total
-    // pages is whichever needs more screens — the hero image rotating
-    // through its candidates, or the promo cards paging through overflow
-    // items — so both the footer ("Screen X of Y") and the existing
-    // rotation timer/progress bar (startRotation, further down) drive this
-    // layout the same way they drive every other template.
-    const promoPages = Math.max(1, Math.ceil(promoItems.length / promoMax));
-    const heroPoolPages = heroRotates ? heroPool.length : 1;
-    totalPages = Math.max(promoPages, heroPoolPages);
-    if (currentPage > totalPages) currentPage = totalPages;
-    if (currentPage < 1) currentPage = 1;
+      const heroItem = featuredPool[(currentPage - 1) % featuredPool.length];
+      const promoItems = featuredPool.filter(i => i !== heroItem);
+      const promoPageIndex = (currentPage - 1) % promoPages;
+      const promoPage = promoItems.slice(promoPageIndex * promoMax, promoPageIndex * promoMax + promoMax);
 
-    const heroItem = heroRotates ? heroPool[(currentPage - 1) % heroPool.length] : (heroPool[0] || null);
-    const promoPageIndex = (currentPage - 1) % promoPages;
-    const promoPage = promoItems.slice(promoPageIndex * promoMax, promoPageIndex * promoMax + promoMax);
+      // Hero image panel size — fine-tunes how much of the screen the image
+      // takes versus the promo cards (compact 32% / balanced 42% / dominant 55%).
+      const heroFlexBasis = effectiveHeroSize === 'compact' ? '32%'
+        : effectiveHeroSize === 'dominant' ? '55%'
+        : '42%';
 
-    // Hero image panel size — fine-tunes how much of the screen the image
-    // takes versus the promo cards (compact 32% / balanced 42% / dominant 55%).
-    const heroFlexBasis = effectiveHeroSize === 'compact' ? '32%'
-      : effectiveHeroSize === 'dominant' ? '55%'
-      : '42%';
+      dynStyle.textContent += `
+        .promo-hero { --hero-flex-basis: ${heroFlexBasis}; }
+        .promo-list {
+          grid-template-columns: repeat(${promoCols}, 1fr) !important;
+          grid-template-rows: repeat(${promoRows}, 1fr) !important;
+        }
+      `;
 
-    dynStyle.textContent += `
-      .promo-hero { --hero-flex-basis: ${heroFlexBasis}; }
-      .promo-list {
-        grid-template-columns: repeat(${promoCols}, 1fr) !important;
-        grid-template-rows: repeat(${promoRows}, 1fr) !important;
-      }
-    `;
-
-    // Build hero image panel — full-bleed photo with product info/pricing in
-    // a top-left card (black text) and the description in its own card at
-    // the bottom (grey text), the same fields shown on each promo card.
-    let heroImgHtml = `<div class="promo-hero-placeholder">🏷️</div>`;
-    let heroTopHtml = '';
-    let heroBottomHtml = '';
-    if (heroItem) {
+      // Build hero image panel — full-bleed photo with product info/pricing in
+      // a top-left card (black text) and the description in its own card at
+      // the bottom (grey text), the same fields shown on each promo card.
       const heroSrc = (heroItem.imagesLarge && heroItem.imagesLarge[0]) || (heroItem.images && heroItem.images[0]);
-      heroImgHtml = heroSrc
+      const heroImgHtml = heroSrc
         ? `<img src="${heroSrc}" alt="${esc(heroItem.name)}" loading="lazy">`
         : `<div class="promo-hero-placeholder">🏷️</div>`;
       const heroCat = heroItem.category ? `<div class="promo-cat">${esc(heroItem.category)}</div>` : '';
-      heroTopHtml = `
+      const heroTopHtml = `
         <div class="promo-hero-top">
           ${heroCat}
           <div class="promo-hero-title">${esc(heroItem.name)}</div>
           <div class="promo-hero-price">${currency}${parseFloat(heroItem.price || 0).toFixed(2)}</div>
         </div>`;
-      heroBottomHtml = heroItem.description
+      const heroBottomHtml = heroItem.description
         ? `<div class="promo-hero-bottom"><div class="promo-hero-desc">${esc(heroItem.description)}</div></div>`
         : '';
-    }
 
-    // Build promo tiles — striped accent bar, category/title/price in the
-    // text column, description overlaid across the full width of the tile
-    // (text column + photo) at the bottom.
-    const promoTilesHtml = promoPage.map(item => {
-      const src = (item.imagesLarge && item.imagesLarge[0]) || (item.images && item.images[0]);
-      const img = src
-        ? `<img src="${src}" alt="${esc(item.name)}" loading="lazy">`
-        : `<div class="promo-img-placeholder">🍽️</div>`;
-      const desc = item.description
-        ? `<div class="promo-tile-desc"><div class="promo-desc">${esc(item.description)}</div></div>` : '';
-      const cat = item.category ? `<div class="promo-cat">${esc(item.category)}</div>` : '';
-      return `
-        <div class="promo-tile">
-          <div class="promo-text">
-            ${cat}
-            <div class="promo-title">${esc(item.name)}</div>
-            <div class="promo-price">${currency}${parseFloat(item.price || 0).toFixed(2)}</div>
-          </div>
-          <div class="promo-img-wrap">${img}</div>
-          ${desc}
+      // Build promo tiles — striped accent bar, category/title/price in the
+      // text column, description overlaid across the full width of the tile
+      // (text column + photo) at the bottom.
+      const promoTilesHtml = promoPage.map(item => {
+        const src = (item.imagesLarge && item.imagesLarge[0]) || (item.images && item.images[0]);
+        const img = src
+          ? `<img src="${src}" alt="${esc(item.name)}" loading="lazy">`
+          : `<div class="promo-img-placeholder">🍽️</div>`;
+        const desc = item.description
+          ? `<div class="promo-tile-desc"><div class="promo-desc">${esc(item.description)}</div></div>` : '';
+        const cat = item.category ? `<div class="promo-cat">${esc(item.category)}</div>` : '';
+        return `
+          <div class="promo-tile">
+            <div class="promo-text">
+              ${cat}
+              <div class="promo-title">${esc(item.name)}</div>
+              <div class="promo-price">${currency}${parseFloat(item.price || 0).toFixed(2)}</div>
+            </div>
+            <div class="promo-img-wrap">${img}</div>
+            ${desc}
+          </div>`;
+      }).join('');
+
+      bodyHtml = `
+        <div class="promo-board">
+          <div class="promo-hero">${heroImgHtml}${heroTopHtml}${heroBottomHtml}</div>
+          <div class="promo-list">${promoTilesHtml}</div>
         </div>`;
-    }).join('');
-
-    bodyHtml = `
-      <div class="promo-board">
-        <div class="promo-hero">${heroImgHtml}${heroTopHtml}${heroBottomHtml}</div>
-        <div class="promo-list">${promoTilesHtml}</div>
-      </div>`;
+    }
   } else {
     // Standard flat grid — all items on this page
     const cells = pageItems.map(_itemCell).join('');
@@ -1789,6 +1811,17 @@ document.addEventListener('DOMContentLoaded', () => {
       if (h === _stockHash) return;   // data unchanged — skip render
       _stockHash = h;
       _stock = newStock;
+      render();
+    });
+    // Per-store Local Feature Highlight override, set from Retail Admin —
+    // once a store has starred 3+ items, this replaces HQ's Featured list
+    // for that store (see getEffectiveFeaturedSkus() in render()).
+    onSnapshot(doc(db, LOCAL_FEATURED_COLL, STORE_CODE), snap => {
+      const newLocalFeatured = snap.exists() ? snap.data() : {};
+      const h = _fp(newLocalFeatured);
+      if (h === _localFeaturedHash) return;
+      _localFeaturedHash = h;
+      _localFeatured = newLocalFeatured;
       render();
     });
   }

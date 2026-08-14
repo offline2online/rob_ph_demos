@@ -87,6 +87,25 @@ service cloud.firestore {
       allow delete: if true;
     }
 
+    // ── localFeatured ───────────────────────────────────────────────────────
+    // Per-store Local Feature Highlight override — a store manager's own
+    // Featured-item picks (Retail Admin), overriding HQ's Featured list once
+    // the store has 3+ starred. Document ID = store code, same shape/rules
+    // as `stock` above (dynamic SKU keys, so size-limited rather than
+    // field-validated).
+    // Read:   public (menu board, retail admin)
+    // Write:  retail admin (no server-side auth available)
+
+    match /localFeatured/{storeCode} {
+      allow read: if true;
+
+      allow create, update: if
+        isNonEmptyBoundedString(storeCode, 50) &&
+        incoming().size() <= 500;
+
+      allow delete: if true;
+    }
+
     // ── menuboard ───────────────────────────────────────────────────────────
     // Global menu-board configuration: brands, types, categories, settings.
     // Documents: menuboard/brands  menuboard/types  menuboard/categories

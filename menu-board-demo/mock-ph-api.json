@@ -3,11 +3,9 @@
     "visitor_customer": {
       "first_name": "Rob",
       "SKUs": [
+        "KFC-WNG-004",
         "KFC-BKT-001",
-        "KFC-BKT-005",
-        "KFC-SID-001",
-        "KFC-SID-006",
-        "KFC-DRK-001"
+        "KFC-SID-001"
       ]
     },
     "store_location": {

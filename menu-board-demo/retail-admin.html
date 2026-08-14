@@ -1047,6 +1047,7 @@ const db  = getFirestore(app);
 const MB         = 'menuboard';
 const ITEMS_COLL = 'items';
 const STOCK_COLL = 'stock';
+const LOCAL_FEATURED_COLL = 'localFeatured';
 
 const MENU_TYPES = [
   { id: 'breakfast', label: 'Breakfast', emoji: '🌅', color: '#f59e0b' },
@@ -1064,6 +1065,7 @@ const STAFF_ID = (urlParams.get('staff') || '').trim().toUpperCase();
 // ===== IN-MEMORY CACHE =====
 let _items    = [];
 let _stock    = {};
+let _localFeatured = {};
 let _settings = { currency: '$' };
 let _brands   = [];
 
@@ -1089,7 +1091,38 @@ if (STORE_CODE) {
       }
     }
   });
+  onSnapshot(doc(db, LOCAL_FEATURED_COLL, STORE_CODE), snap => {
+    _localFeatured = snap.exists() ? snap.data() : {};
+    if (document.getElementById('mainPage').style.display !== 'none') {
+      if (storeItemsGridApi) {
+        storeItemsGridApi.refreshCells({ force: true });
+      } else {
+        renderItems();
+      }
+    }
+  });
 }
+
+function isLocalFeatured(sku) { return !!_localFeatured[sku]; }
+
+function saveLocalFeatured(obj) {
+  _localFeatured = obj;
+  return setDoc(doc(db, LOCAL_FEATURED_COLL, STORE_CODE), obj)
+    .catch(err => toast('❌ Sync failed: ' + (err.message || err), 'error'));
+}
+
+function toggleLocalFeatured(sku) {
+  const next = { ..._localFeatured, [sku]: !_localFeatured[sku] };
+  if (!next[sku]) delete next[sku];
+  saveLocalFeatured(next);
+  const count = Object.values(next).filter(Boolean).length;
+  if (count >= 3) {
+    toast(`✅ ${count} local picks selected — now overriding HQ's featured list for this store`, 'success');
+  } else {
+    toast(`⭐ ${count} of 3 local picks — HQ's featured list is still active`, 'info');
+  }
+}
+window.toggleLocalFeatured = toggleLocalFeatured;
 
 onSnapshot(doc(db, MB, 'brands'), snap => {
   _brands = snap.exists() ? (snap.data().data || []) : [];
@@ -1370,7 +1403,10 @@ function initGrid() {
           const wrap = document.createElement('div');
           wrap.style.cssText = 'display:flex;flex-direction:column;justify-content:center;gap:5px;height:100%;padding:6px 0;';
 
-          // Status pill
+          // Status pill + local-featured star, side by side
+          const pillRow = document.createElement('div');
+          pillRow.style.cssText = 'display:flex;align-items:center;gap:8px;';
+
           const pill = document.createElement('div');
           if (ns) {
             pill.style.cssText = 'display:inline-flex;align-items:center;gap:5px;padding:4px 10px;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600;border:1px solid var(--border2);color:var(--text2);background:var(--surface2);width:fit-content;';
@@ -1383,7 +1419,22 @@ function initGrid() {
             pill.innerHTML = '&#x2705; In Stock';
           }
           pill.addEventListener('click', () => cycleStockStatus(item.sku, item.name));
-          wrap.appendChild(pill);
+          pillRow.appendChild(pill);
+
+          // Local Featured star — click to toggle this item into the
+          // store's own featured selection (overrides HQ's list once the
+          // store has 3+ starred, independent of stock status).
+          const featured = isLocalFeatured(item.sku);
+          const star = document.createElement('span');
+          star.textContent = featured ? '⭐' : '☆';
+          star.title = featured
+            ? 'Locally featured — click to remove from this store’s Local Feature Highlight picks'
+            : 'Click to feature this item locally (Local Feature Highlight)';
+          star.style.cssText = `cursor:pointer;font-size:17px;line-height:1;user-select:none;opacity:${featured ? '1' : '.45'};`;
+          star.addEventListener('click', () => toggleLocalFeatured(item.sku));
+          pillRow.appendChild(star);
+
+          wrap.appendChild(pillRow);
 
           // Stock quantity — read-only display (managed via item modal)
           if (!ns && qty !== null) {

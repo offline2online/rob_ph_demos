@@ -636,6 +636,8 @@
               <button class="toolbar-text-link" id="itemsSelViewBtn" onclick="viewSelectedItems()">View Selected</button>
               <button class="toolbar-text-link" onclick="bulkSetActive(true)">Activate Selected</button>
               <button class="toolbar-text-link" onclick="bulkSetActive(false)">Deactivate Selected</button>
+              <button class="toolbar-text-link" onclick="bulkSetFeatured(true)">&#11088; Feature Selected</button>
+              <button class="toolbar-text-link" onclick="bulkSetFeatured(false)">Unfeature Selected</button>
               <button class="toolbar-text-link toolbar-text-link-danger" onclick="confirmDeleteSelection()">Delete Selected</button>
               <button class="items-sel-bar-clear" onclick="clearItemsSelection()">✕ Clear selection</button>
             </div>
@@ -817,11 +819,19 @@
           </select>
         </div>
       </div>
-      <div class="form-row" style="max-width:320px;">
+      <div class="form-row" style="max-width:520px;">
         <div class="form-group" style="flex:1;">
           <label>Low Stock Alert Threshold <span class="opt-tag">Optional</span></label>
           <input type="number" id="fLowStockThreshold" min="1" max="999" placeholder="Brand default">
           <p class="form-help">Overrides the brand-level threshold for this item only. Leave blank to use the brand default.</p>
+        </div>
+        <div class="form-group" style="flex:1;">
+          <label>Featured <span class="opt-tag">Local Feature Highlight</span></label>
+          <select id="fFeatured" onchange="if (_itemSave) _itemSave.markDirty();">
+            <option value="false">Not featured</option>
+            <option value="true">&#11088; Featured</option>
+          </select>
+          <p class="form-help">At least 3 items must be Featured for a brand before the Local Feature Highlight template will activate.</p>
         </div>
       </div>
       <div class="section-divider">Nutrition Information <span class="opt-tag">Optional &mdash; shown on menu boards</span></div>
@@ -1158,27 +1168,25 @@
               </select>
             </div>
 
-            <!-- Category Filter — shown only for templates with categoryFilter:true (e.g. Feature Hero Spotlight) -->
-            <div class="form-group" id="tplHeroCatGroup" style="display:none;">
-              <label>Hero Image Category <span class="opt-tag">Feature Hero</span></label>
-              <select id="tplHeroCategory">
-                <option value="">— Any (first available item) —</option>
-              </select>
-              <p class="form-help">Items from this category are candidates for the full-bleed background image. When more than one item matches, the board automatically rotates the image between them on each screen rotation — giving every promoted item its own airtime, a standard QSR digital-signage practice — while the promo cards stay put.</p>
-            </div>
+            <!-- Category Filter — shown only for templates with categoryFilter:true (e.g. Classic Menu Board) -->
             <div class="form-group" id="tplGridCatsGroup" style="display:none;">
-              <label>Categories to Include as Promo Cards</label>
+              <label>Categories to Present in Grid</label>
               <div id="tplCatFilterOptions" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px;"></div>
-              <p class="form-help">Only items from the checked categories will appear as promo cards. Leave all unchecked to show every category. If there are more matching items than fit on screen, they page through automatically alongside the hero image rotation.</p>
+              <p class="form-help">Only items from the checked categories will appear on this board. Leave all unchecked to show every category.</p>
             </div>
             <div class="form-group" id="tplHeroSizeGroup" style="display:none;">
-              <label>Hero Image Size <span class="opt-tag">Feature Hero</span></label>
+              <label>Hero Image Size <span class="opt-tag">Local Feature</span></label>
               <select id="tplHeroSize">
                 <option value="compact">Compact — more room for the promo cards</option>
                 <option value="balanced">Balanced — even split (default)</option>
                 <option value="dominant">Dominant — maximum image impact</option>
               </select>
-              <p class="form-help">Controls how much of the screen the full-bleed image takes up versus the promo cards. Increase for high-priority campaigns, decrease when the promo cards need more room.</p>
+              <p class="form-help">Controls how much of the screen the full-bleed featured image takes up versus the promo cards. Increase for high-priority campaigns, decrease when the promo cards need more room.</p>
+            </div>
+            <div class="form-group" id="tplFeaturedInfoGroup" style="display:none;">
+              <label>Featured Products <span class="opt-tag">Local Feature</span></label>
+              <p class="form-help" id="tplFeaturedCount">Loading featured item count…</p>
+              <p class="form-help">Which products appear on this board is controlled from the product table (Featured column) — not from this editor. At least 3 items must be marked Featured for a brand before this board activates; a store manager can independently override HQ&rsquo;s picks from Retail Admin once they select 3 of their own. Below 3 (from either source), this board falls back to the brand&rsquo;s default template.</p>
             </div>
 
             <div class="section-divider">Portrait Display <span class="opt-tag">1080&times;1920px</span></div>
@@ -1870,12 +1878,12 @@ const TEMPLATE_LIBRARY = [
   },
   {
     id: 'feature-hero-board',
-    name: 'Feature Hero Spotlight',
-    description: 'A full-bleed promotional image alongside a stack of equally-weighted promo cards — just the promotions, no header or clock chrome. The image rotates through every candidate when a Hero Image Category has multiple matches, and personalises to the customer when a First Name and SKUs are pushed from the Personalisation Hub.',
+    name: 'Local Feature Highlight',
+    description: 'A full-bleed featured-product image alongside a stack of equally-weighted promo cards — just the promotions, no header or clock chrome. Which products appear is controlled by the Featured flag on the product table (HQ Admin), overridable per store from Retail Admin — not from this editor. Personalises to the customer when a First Name and SKUs are pushed from the Personalisation Hub.',
     category: 'Food & Beverage',
     useCases: ['Restaurant','Promotion','Retail','Café'],
     phData: ['store_location','visitor_customer','interaction_campaign_data'],
-    settings: { showHeader:true, colorScheme:true, iconPosition:true, headerCopy:false, itemTypeFilter:true, categoryFilter:true, soldOutBehavior:true, portrait:true, landscape:true, showClock:true, personalGreeting:true, showStoreName:true, campaignFilter:true },
+    settings: { showHeader:true, colorScheme:true, iconPosition:true, headerCopy:false, itemTypeFilter:true, categoryFilter:false, soldOutBehavior:true, portrait:true, landscape:true, showClock:true, personalGreeting:true, showStoreName:true, campaignFilter:true },
     defaults: { showHeader:'false', iconPosition:'center', colorHeader:'#1a1a1a', colorHeaderText:'#ffffff', colorAccent:'#169bc2', colorCatBar:'#169bc2', colorBody:'#ffffff', colorItemBg:'#ffffff', colorText:'#1a1a1a', colorDescription:'#666666', colorPrice:'#169bc2', colorClockText:'#ffffff', colorClockBg:'#1a1a1a', hideOos:'true', portraitCols:1, portraitRows:2, portraitMax:2, landscapeCols:1, landscapeRows:2, landscapeMax:2, showClock:'false', timeFormat:'british', campaignMode:'override', personalGreeting:'false', showStoreName:'false', heroSize:'balanced' },
     portraitSVG: (W,H) => {
       // Full-bleed image on top, two stacked promo cards below — no header/clock bar.
@@ -2410,6 +2418,22 @@ function initGrids() {
           }
         },
         {
+          headerName: 'Featured', field: 'featured', flex: 0.7, minWidth: 80,
+          filter: CheckboxSetFilter,
+          getFilterValue: (data) => data.featured ? 'Featured' : 'Not featured',
+          cellRenderer: (params) => {
+            const item = params.data;
+            const wrap = document.createElement('div');
+            wrap.className = 'status-dot-wrap';
+            wrap.title = item.featured
+              ? 'Featured — counts toward the Local Feature Highlight minimum of 3'
+              : 'Not featured';
+            wrap.style.opacity = item.featured ? '1' : '.4';
+            wrap.textContent = item.featured ? '⭐ Featured' : '☆';
+            return wrap;
+          }
+        },
+        {
           headerName: 'Actions', field: 'id', flex: 0.6, minWidth: 70,
           filter: false, sortable: false,
           cellRenderer: (params) => {
@@ -2512,6 +2536,44 @@ function bulkSetActive(active) {
   toast(active ? `\u2705 ${ids.size} item${ids.size !== 1 ? 's' : ''} activated` : `\u26D4 ${ids.size} item${ids.size !== 1 ? 's' : ''} deactivated`, active ? 'success' : 'info');
 }
 window.bulkSetActive = bulkSetActive;
+
+// Featured is a per-item flag, but whether it "does anything" is a per-brand
+// threshold (Local Feature Highlight needs >=3 featured+active items for a
+// brand to activate) \u2014 so after any bulk change, report the resulting count
+// for every brand touched by the selection, not just how many were toggled.
+function bulkSetFeatured(featured) {
+  if (!itemsGridApi) return;
+  const selected = itemsGridApi.getSelectedRows();
+  if (!selected.length) return;
+  const ids = new Set(selected.map(r => r.id));
+  const now = new Date().toISOString();
+  const items = getItems();
+  const touchedBrands = new Set(selected.map(r => r.brand).filter(Boolean));
+  items.forEach(i => { if (ids.has(i.id)) { i.featured = featured; i.updatedAt = now; } });
+  saveItems(items);
+  renderItems();
+
+  const brands = getBrands();
+  const shortfalls = [];
+  touchedBrands.forEach(brandId => {
+    const count = items.filter(i => i.brand === brandId && i.active && i.featured).length;
+    if (count < 3) {
+      const brandName = (brands.find(b => b.id === brandId) || {}).name || brandId;
+      shortfalls.push(`${brandName}: ${count}/3`);
+    }
+  });
+
+  let msg = featured
+    ? `\u2B50 ${ids.size} item${ids.size !== 1 ? 's' : ''} featured`
+    : `${ids.size} item${ids.size !== 1 ? 's' : ''} unfeatured`;
+  if (shortfalls.length) {
+    msg += ` \u2014 \u26A0\uFE0F ${shortfalls.join(', ')} featured (need 3 to activate Local Feature Highlight; default template shows until then)`;
+  } else if (featured) {
+    msg += ` \u2014 Local Feature Highlight is active`;
+  }
+  toast(msg, shortfalls.length ? 'info' : (featured ? 'success' : 'info'));
+}
+window.bulkSetFeatured = bulkSetFeatured;
 
 // ===== TAG-CHIP HELPERS =====
 window.editingIngredients = [];
@@ -2694,6 +2756,7 @@ function openAddModal() {
   document.getElementById('fDescLong').value  = '';
   document.getElementById('fPrice').value     = '';
   document.getElementById('fActive').value = 'true';
+  document.getElementById('fFeatured').value = 'false';
   document.getElementById('fCalories').value = '';
   document.getElementById('fFat').value    = '';
   document.getElementById('fCarbs').value  = '';
@@ -2727,6 +2790,7 @@ function openEditModal(id) {
   document.getElementById('fDescLong').value  = item.longDescription || '';
   document.getElementById('fPrice').value     = item.price;
   document.getElementById('fActive').value = String(item.active);
+  document.getElementById('fFeatured').value = String(!!item.featured);
   // category must be a string for comparison
   const catStr = typeof item.category === 'object'
     ? (item.category.name || item.category.id || String(item.category))
@@ -2824,6 +2888,7 @@ function saveItem() {
   const category = String(document.getElementById('fCategory').value);
   const brand    = document.getElementById('fBrand').value || (getBrands()[0] && getBrands()[0].id) || '';
   const active   = document.getElementById('fActive').value === 'true';
+  const featured = document.getElementById('fFeatured').value === 'true';
   const menuTypes = [...document.querySelectorAll('.mt-option input:checked')].map(i => i.value);
   const calRaw   = document.getElementById('fCalories').value;
   const fatRaw   = document.getElementById('fFat').value;
@@ -2867,7 +2932,7 @@ function saveItem() {
     shortDescription: descShort,
     longDescription: descLong,
     description: descShort, // legacy alias — kept for backwards compatibility
-    price, category, brand, active, menuTypes,
+    price, category, brand, active, featured, menuTypes,
     images: editingImages,
     calories, fat, carbs, protein, lowStockThreshold,
     // GS1 structured fields
@@ -3624,7 +3689,7 @@ function renderOfferBoardPrereqs() {
     categoriesOnItems.length > 0,
     `${categoriesOnItems.length} categor${categoriesOnItems.length !== 1 ? 'ies' : 'y'} available (${categoriesOnItems.slice(0,4).join(', ')}${categoriesOnItems.length > 4 ? '…' : ''})`,
     'No categories assigned to items',
-    'Assign categories to items — required for the Feature Hero Spotlight category filter');
+    'Assign categories to items — required for templates with a category filter (e.g. Classic Menu Board)');
 
   row('prereqLogo',
     hasLogo,
@@ -3670,6 +3735,7 @@ function renderTemplateList() {
       <div class="tpl-row-name">${escHtml(tpl.name)}${tpl.templateType ? `<span style="font-size:10px;color:var(--text2);font-weight:500;background:var(--surface2);border:1px solid var(--border);border-radius:4px;padding:1px 6px;margin-left:6px;">${TEMPLATE_LIBRARY.find(x=>x.id===tpl.templateType)?.name||tpl.templateType}</span>` : ''}</div>
       ${tpl.isDefault ? '<span class="tpl-default-badge">Default</span>' : ''}
       <div class="tpl-actions">
+        ${tpl.isDefault ? '' : `<button class="btn btn-ghost btn-sm" onclick="setTemplateAsDefault('${tpl.id}')" title="Fall back to this board when a Featured-item template (e.g. Local Feature Highlight) doesn't have enough items to activate">Set as Default</button>`}
         <button class="btn btn-ghost btn-sm" onclick="copyOfferBoardUrl('${tpl.id}')" title="Copy the full URL for this Offer Board">&#x1F4CB; Copy URL</button>
         <button class="btn btn-ghost btn-sm" onclick="openEditTemplateEditor('${tpl.id}')">Edit</button>
         <button class="btn btn-danger btn-sm" onclick="confirmDeleteTemplate('${tpl.id}')" ${canDelete ? '' : 'disabled title="Cannot delete the only template"'}>Delete</button>
@@ -3677,6 +3743,18 @@ function renderTemplateList() {
     list.appendChild(row);
   });
 }
+
+// Which template a board falls back to when a Featured-item template (e.g.
+// Local Feature Highlight) doesn't have enough qualifying items — previously
+// isDefault was only ever auto-assigned once, at brand creation, with no way
+// to change it afterward.
+function setTemplateAsDefault(tplId) {
+  _editingBrandTemplates.forEach(t => { t.isDefault = (t.id === tplId); });
+  renderTemplateList();
+  toast('✅ Default board updated. Click Save Changes to persist.', 'success');
+  if (_brandSave) _brandSave.markDirty();
+}
+window.setTemplateAsDefault = setTemplateAsDefault;
 
 function openNewTemplateEditor() {
   openTemplatePicker(templateId => {
@@ -3820,27 +3898,28 @@ function applyTemplateSchema(templateId) {
   const headerTextLabel = document.querySelector('#tplColorHeaderTextGroup label');
   if (headerBgLabel)   headerBgLabel.textContent   = isStoreHours ? 'Brand Name Colour' : 'Header Background';
   if (headerTextLabel) headerTextLabel.textContent = isStoreHours ? 'Highlight Text'    : 'Header Text';
-  // Category filter groups.
-  // "Categories to Present in Grid" applies to every template's item grid, so it
-  // follows the schema's categoryFilter flag like the rest of this section.
-  // "Hero Category" only affects the single large spotlight slot, which only
-  // Feature Hero Spotlight renders — showing it for other templates implied it
-  // did something when it was silently ignored.
-  const heroCatGroup  = document.getElementById('tplHeroCatGroup');
+  // Category filter group — "Categories to Present in Grid" applies to every
+  // template's item grid, so it follows the schema's categoryFilter flag
+  // like the rest of this section (Local Feature Highlight has this off:
+  // item selection there comes from the product table's Featured flag, not
+  // a category filter).
   const gridCatsGroup = document.getElementById('tplGridCatsGroup');
   const isHeroBoard = templateId === 'feature-hero-board';
-  if (heroCatGroup)  heroCatGroup.style.display  = isHeroBoard ? '' : 'none';
   if (gridCatsGroup) gridCatsGroup.style.display = s.categoryFilter ? '' : 'none';
   if (s.categoryFilter) _populateTplCategoryOptions();
-  // Feature Hero Spotlight — image-size field only makes sense for this
-  // template's full-bleed-image-plus-promo-cards layout.
-  ['tplHeroSizeGroup'].forEach(id => {
+  // Local Feature Highlight — image-size field only makes sense for this
+  // template's full-bleed-image-plus-promo-cards layout; the Featured-items
+  // info panel replaces the old Hero Category/Categories-to-Present pickers.
+  ['tplHeroSizeGroup', 'tplFeaturedInfoGroup'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.style.display = isHeroBoard ? '' : 'none';
   });
-  // Category badge colour — only relevant when category badges are shown
+  if (isHeroBoard) _updateTplFeaturedCount();
+  // Category badge colour — relevant when category badges are shown, which
+  // includes Local Feature Highlight's promo-card category tiles even
+  // though it no longer uses categoryFilter for item selection.
   const catBarGroup = document.getElementById('tplColorCatBarGroup');
-  if (catBarGroup) catBarGroup.style.display = s.categoryFilter ? '' : 'none';
+  if (catBarGroup) catBarGroup.style.display = (s.categoryFilter || isHeroBoard) ? '' : 'none';
   // Clock-related colours — relevant when a clock bar is shown, and also for
   // Store Opening Hours, whose single-view status row shows a live
   // day/time readout (no separate bar background there, so only the text
@@ -3919,10 +3998,6 @@ function openEditTemplateEditor(tplId) {
   _tplSelectedCategories = Array.isArray(tpl.categoriesToPresent) ? [...tpl.categoriesToPresent] : [];
   if (_tplSave) _tplSave.reset();
   if (tpl.templateType) applyTemplateSchema(tpl.templateType);
-  // Restore hero category after options are populated
-  if (tpl.heroCategory && document.getElementById('tplHeroCategory')) {
-    document.getElementById('tplHeroCategory').value = tpl.heroCategory;
-  }
   if (document.getElementById('tplHeroSize'))           document.getElementById('tplHeroSize').value           = tpl.heroSize || 'balanced';
   _showTplEditor();
 }
@@ -4003,19 +4078,6 @@ function _populateTplCategoryOptions() {
   const brandItems = brandId ? allItems.filter(i => i.brand === brandId) : allItems;
   const cats = [...new Set(brandItems.map(i => i.category).filter(Boolean))].sort();
 
-  // Hero category — single select
-  const heroSel = document.getElementById('tplHeroCategory');
-  if (heroSel) {
-    const current = heroSel.value;
-    heroSel.innerHTML = '<option value="">— Any (first available item) —</option>';
-    cats.forEach(c => {
-      const opt = document.createElement('option');
-      opt.value = c; opt.textContent = c;
-      if (c === current) opt.selected = true;
-      heroSel.appendChild(opt);
-    });
-  }
-
   // Grid categories — checkboxes
   const gridEl = document.getElementById('tplCatFilterOptions');
   if (gridEl) {
@@ -4032,6 +4094,24 @@ function onTplCatChange() {
   const checkboxes = document.querySelectorAll('#tplCatFilterOptions input[type=checkbox]');
   _tplSelectedCategories = [...checkboxes].filter(c => c.checked).map(c => c.value);
   if (_tplSave) _tplSave.markDirty();
+}
+
+// ── LOCAL FEATURE HIGHLIGHT — FEATURED COUNT (informational, read-only) ──────
+// Item selection for this template comes from the product table's Featured
+// flag, not from this editor — this just surfaces the current count so an
+// admin can see at a glance whether the board will activate.
+function _updateTplFeaturedCount() {
+  const el = document.getElementById('tplFeaturedCount');
+  if (!el) return;
+  const brandId = document.getElementById('bEditId').value;
+  const allItems = getItems();
+  const brandItems = brandId ? allItems.filter(i => i.brand === brandId) : allItems;
+  const count = brandItems.filter(i => i.active && i.featured).length;
+  if (count >= 3) {
+    el.innerHTML = `✅ <strong>${count} item${count !== 1 ? 's' : ''}</strong> currently featured for this brand — Local Feature Highlight is active.`;
+  } else {
+    el.innerHTML = `⚠️ Only <strong>${count} of 3</strong> required items are featured for this brand — the default template shows until 3 are featured (via the product table, or a store&rsquo;s own picks in Retail Admin).`;
+  }
 }
 
 function saveTemplate() {
@@ -4078,7 +4158,6 @@ function saveTemplate() {
     showStoreName:  document.getElementById('tplShowStoreName')?.value !== 'false',
     personalGreeting: document.getElementById('tplPersonalGreeting')?.value !== 'false',
     menuTypes:      [..._tplSelectedTypes],
-    heroCategory:   document.getElementById('tplHeroCategory')?.value || '',
     categoriesToPresent: [..._tplSelectedCategories],
     dayOrder:       document.getElementById('tplDayOrder')?.value || 'current',
     heroSize:          document.getElementById('tplHeroSize')?.value || 'balanced',
