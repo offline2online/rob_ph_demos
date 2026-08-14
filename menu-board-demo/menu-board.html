@@ -536,6 +536,7 @@
       left: 0; right: 0; bottom: 0;
       padding: clamp(12px, 1.8vw, 26px);
       background: linear-gradient(to top, rgba(255,255,255,0.92) 0%, rgba(255,255,255,0.7) 65%, rgba(255,255,255,0) 100%);
+      text-align: center;
     }
     .promo-hero-desc {
       font-style: italic;
@@ -632,6 +633,7 @@
       left: 0; right: 0; bottom: 0;
       padding: clamp(10px, 1.4vw, 22px);
       background: linear-gradient(to top, rgba(255,255,255,0.92) 0%, rgba(255,255,255,0.6) 70%, rgba(255,255,255,0) 100%);
+      text-align: center;
     }
     .promo-tile-desc .promo-desc {
       font-style: italic;
@@ -1693,25 +1695,29 @@ function render() {
         : (parseInt((effectiveDisplay.landscape || {}).rows) || 2);
       const promoMax = promoCols * promoRows;
 
-      // Reconcile pagination with the board's shared rotation clock: total
-      // pages is whichever needs more screens — the hero image rotating
-      // through every Featured item, or the promo cards paging through
-      // overflow — so both the footer and the existing rotation timer/
-      // progress bar (startRotation, further down) drive this layout the
-      // same way they drive every other template. Every Featured item
-      // takes a turn as hero; whichever one is NOT currently hero shows as
-      // a promo card, so the promo count is always featuredPool.length - 1
-      // regardless of which specific item is currently hero.
-      const promoCount = featuredPool.length - 1;
-      const promoPages = Math.max(1, Math.ceil(promoCount / promoMax));
-      totalPages = Math.max(promoPages, featuredPool.length);
+      // Rotation is a sliding window around the Featured pool, treated as a
+      // ring: each page's hero is the next item in sequence, and the promo
+      // cards are simply the promoMax items that immediately follow it in
+      // that same ring (wrapping back to the start past the end). Advancing
+      // one page slides the whole window forward by one, so every item gets
+      // a turn as hero and every promo slot is filled on every page — no
+      // separate "promo pages vs hero pages" pagination to keep in sync,
+      // which is what let some pages fall out of step and land on a
+      // partially-filled or duplicated promo row once there were enough
+      // Featured items (5+) that the two paginations' cycle lengths no
+      // longer lined up. Total pages is just the pool size — one full lap
+      // shows every item as hero exactly once.
+      totalPages = featuredPool.length;
       if (currentPage > totalPages) currentPage = totalPages;
       if (currentPage < 1) currentPage = 1;
 
-      const heroItem = featuredPool[(currentPage - 1) % featuredPool.length];
-      const promoItems = featuredPool.filter(i => i !== heroItem);
-      const promoPageIndex = (currentPage - 1) % promoPages;
-      const promoPage = promoItems.slice(promoPageIndex * promoMax, promoPageIndex * promoMax + promoMax);
+      const heroIndex = (currentPage - 1) % featuredPool.length;
+      const heroItem = featuredPool[heroIndex];
+      const promoSlots = Math.min(promoMax, featuredPool.length - 1);
+      const promoPage = [];
+      for (let k = 1; k <= promoSlots; k++) {
+        promoPage.push(featuredPool[(heroIndex + k) % featuredPool.length]);
+      }
 
       // Hero image panel size — fine-tunes how much of the screen the image
       // takes versus the promo cards (compact 32% / balanced 42% / dominant 55%).

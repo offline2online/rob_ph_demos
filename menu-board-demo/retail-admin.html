@@ -1386,7 +1386,7 @@ function initGrid() {
         cellStyle: { fontWeight: '700', color: 'var(--primary)' }
       },
       {
-        headerName: 'Stock Status', flex: 1.8, minWidth: 200,
+        headerName: 'Status', flex: 1.8, minWidth: 200,
         sortable: true,
         filter: CheckboxSetFilter,
         valueGetter: (p) => {
@@ -1403,10 +1403,6 @@ function initGrid() {
           const wrap = document.createElement('div');
           wrap.style.cssText = 'display:flex;flex-direction:column;justify-content:center;gap:5px;height:100%;padding:6px 0;';
 
-          // Status pill + local-featured star, side by side
-          const pillRow = document.createElement('div');
-          pillRow.style.cssText = 'display:flex;align-items:center;gap:8px;';
-
           const pill = document.createElement('div');
           if (ns) {
             pill.style.cssText = 'display:inline-flex;align-items:center;gap:5px;padding:4px 10px;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600;border:1px solid var(--border2);color:var(--text2);background:var(--surface2);width:fit-content;';
@@ -1419,22 +1415,7 @@ function initGrid() {
             pill.innerHTML = '&#x2705; In Stock';
           }
           pill.addEventListener('click', () => cycleStockStatus(item.sku, item.name));
-          pillRow.appendChild(pill);
-
-          // Local Featured star — click to toggle this item into the
-          // store's own featured selection (overrides HQ's list once the
-          // store has 3+ starred, independent of stock status).
-          const featured = isLocalFeatured(item.sku);
-          const star = document.createElement('span');
-          star.textContent = featured ? '⭐' : '☆';
-          star.title = featured
-            ? 'Locally featured — click to remove from this store’s Local Feature Highlight picks'
-            : 'Click to feature this item locally (Local Feature Highlight)';
-          star.style.cssText = `cursor:pointer;font-size:17px;line-height:1;user-select:none;opacity:${featured ? '1' : '.45'};`;
-          star.addEventListener('click', () => toggleLocalFeatured(item.sku));
-          pillRow.appendChild(star);
-
-          wrap.appendChild(pillRow);
+          wrap.appendChild(pill);
 
           // Stock quantity — read-only display (managed via item modal)
           if (!ns && qty !== null) {
@@ -1444,6 +1425,31 @@ function initGrid() {
             wrap.appendChild(qtyLabel);
           }
 
+          return wrap;
+        }
+      },
+      {
+        headerName: 'Featured', flex: 1, minWidth: 110,
+        sortable: true,
+        filter: CheckboxSetFilter,
+        getFilterValue: (data) => isLocalFeatured(data.sku) ? 'Featured' : 'Not Featured',
+        valueGetter: (p) => isLocalFeatured(p.data.sku) ? 'Featured' : 'Not Featured',
+        cellRenderer: (params) => {
+          const item = params.data;
+          // Click to toggle this item into the store's own Local Feature
+          // Highlight selection (overrides HQ's list once the store has 3+
+          // starred, independent of stock status).
+          const featured = isLocalFeatured(item.sku);
+          const wrap = document.createElement('div');
+          wrap.style.cssText = 'display:flex;align-items:center;height:100%;';
+          const star = document.createElement('span');
+          star.textContent = featured ? '⭐' : '☆';
+          star.title = featured
+            ? 'Locally featured — click to remove from this store’s Local Feature Highlight picks'
+            : 'Click to feature this item locally (Local Feature Highlight)';
+          star.style.cssText = `cursor:pointer;font-size:17px;line-height:1;user-select:none;opacity:${featured ? '1' : '.45'};`;
+          star.addEventListener('click', () => toggleLocalFeatured(item.sku));
+          wrap.appendChild(star);
           return wrap;
         }
       }
