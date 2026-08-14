@@ -1096,6 +1096,11 @@ if (STORE_CODE) {
     if (document.getElementById('mainPage').style.display !== 'none') {
       if (storeItemsGridApi) {
         storeItemsGridApi.refreshCells({ force: true });
+        // refreshCells repaints the star/pill but doesn't re-scan row data,
+        // so the Status filter's cached "Featured" checkbox option would
+        // otherwise only appear after a full rowData reload. Nudge its
+        // value list to pick up the new tag right away.
+        storeItemsGridApi.getColumnFilterInstance('status').then(f => f && f.onNewRowsLoaded && f.onNewRowsLoaded());
       } else {
         renderItems();
       }
@@ -1386,13 +1391,22 @@ function initGrid() {
         cellStyle: { fontWeight: '700', color: 'var(--primary)' }
       },
       {
-        headerName: 'Status', flex: 1.8, minWidth: 200,
+        headerName: 'Status', colId: 'status', flex: 1.8, minWidth: 200,
         sortable: true,
         filter: CheckboxSetFilter,
         valueGetter: (p) => {
           if (isNotStocked(p.data.sku)) return 'Not Stocked';
           if (isOos(p.data.sku)) return 'Out of Stock';
           return 'In Stock';
+        },
+        // Filter menu shows both the stock status and, as an extra
+        // checkbox tag, "Featured" — so HQ/store staff can filter the
+        // status column down to locally featured items without a
+        // separate column (CheckboxSetFilter treats an array raw value
+        // as "matches if any tag is checked").
+        getFilterValue: (data) => {
+          const tag = isNotStocked(data.sku) ? 'Not Stocked' : isOos(data.sku) ? 'Out of Stock' : 'In Stock';
+          return isLocalFeatured(data.sku) ? [tag, 'Featured'] : [tag];
         },
         cellRenderer: (params) => {
           const item = params.data;
@@ -1402,6 +1416,10 @@ function initGrid() {
 
           const wrap = document.createElement('div');
           wrap.style.cssText = 'display:flex;flex-direction:column;justify-content:center;gap:5px;height:100%;padding:6px 0;';
+
+          // Status pill + local-featured star, side by side
+          const pillRow = document.createElement('div');
+          pillRow.style.cssText = 'display:flex;align-items:center;gap:8px;';
 
           const pill = document.createElement('div');
           if (ns) {
@@ -1415,7 +1433,22 @@ function initGrid() {
             pill.innerHTML = '&#x2705; In Stock';
           }
           pill.addEventListener('click', () => cycleStockStatus(item.sku, item.name));
-          wrap.appendChild(pill);
+          pillRow.appendChild(pill);
+
+          // Local Featured star — click to toggle this item into the
+          // store's own featured selection (overrides HQ's list once the
+          // store has 3+ starred, independent of stock status).
+          const featured = isLocalFeatured(item.sku);
+          const star = document.createElement('span');
+          star.textContent = featured ? '⭐' : '☆';
+          star.title = featured
+            ? 'Locally featured — click to remove from this store’s Local Feature Highlight picks'
+            : 'Click to feature this item locally (Local Feature Highlight)';
+          star.style.cssText = `cursor:pointer;font-size:17px;line-height:1;user-select:none;opacity:${featured ? '1' : '.45'};`;
+          star.addEventListener('click', () => toggleLocalFeatured(item.sku));
+          pillRow.appendChild(star);
+
+          wrap.appendChild(pillRow);
 
           // Stock quantity — read-only display (managed via item modal)
           if (!ns && qty !== null) {
@@ -1425,31 +1458,6 @@ function initGrid() {
             wrap.appendChild(qtyLabel);
           }
 
-          return wrap;
-        }
-      },
-      {
-        headerName: 'Featured', flex: 1, minWidth: 110,
-        sortable: true,
-        filter: CheckboxSetFilter,
-        getFilterValue: (data) => isLocalFeatured(data.sku) ? 'Featured' : 'Not Featured',
-        valueGetter: (p) => isLocalFeatured(p.data.sku) ? 'Featured' : 'Not Featured',
-        cellRenderer: (params) => {
-          const item = params.data;
-          // Click to toggle this item into the store's own Local Feature
-          // Highlight selection (overrides HQ's list once the store has 3+
-          // starred, independent of stock status).
-          const featured = isLocalFeatured(item.sku);
-          const wrap = document.createElement('div');
-          wrap.style.cssText = 'display:flex;align-items:center;height:100%;';
-          const star = document.createElement('span');
-          star.textContent = featured ? '⭐' : '☆';
-          star.title = featured
-            ? 'Locally featured — click to remove from this store’s Local Feature Highlight picks'
-            : 'Click to feature this item locally (Local Feature Highlight)';
-          star.style.cssText = `cursor:pointer;font-size:17px;line-height:1;user-select:none;opacity:${featured ? '1' : '.45'};`;
-          star.addEventListener('click', () => toggleLocalFeatured(item.sku));
-          wrap.appendChild(star);
           return wrap;
         }
       }

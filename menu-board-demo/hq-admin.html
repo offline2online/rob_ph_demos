@@ -2332,6 +2332,16 @@ function initGrids() {
         {
           headerName: 'Brand', field: 'brand', flex: 1.5, minWidth: 110,
           filter: CheckboxSetFilter,
+          sort: 'asc',
+          // Sort by the brand's display NAME rather than its raw id — field
+          // sort would otherwise order rows by id string, which doesn't
+          // track alphabetical brand name order (e.g. would list Pizza Hut
+          // before KFC).
+          comparator: (idA, idB) => {
+            const nameA = ((getBrands().find(b => b.id === idA) || {}).name || idA || '').toLowerCase();
+            const nameB = ((getBrands().find(b => b.id === idB) || {}).name || idB || '').toLowerCase();
+            return nameA.localeCompare(nameB);
+          },
           // valueFormatter for display only — does NOT affect valueGetter/cell data type inference
           valueFormatter: (params) => {
             const b = getBrands().find(b => b.id === params.value);
@@ -2517,6 +2527,13 @@ function renderItems() {
   }
   const fm = itemsGridApi.getFilterModel();
   itemsGridApi.setGridOption('rowData', items);
+  // setGridOption('rowData', ...) doesn't re-apply the existing column sort
+  // model to the new rows on its own, so the Brand column's default
+  // asc-by-name sort (see initGrids) would otherwise only take effect after
+  // a manual header click. Force it to re-run against the freshly loaded
+  // data — deferred a tick since setGridOption's internal row update hasn't
+  // settled yet when called synchronously right after.
+  setTimeout(() => itemsGridApi?.refreshClientSideRowModel('sort'), 0);
   if (fm && Object.keys(fm).length) {
     setTimeout(() => itemsGridApi?.setFilterModel(fm), 0);
   }
