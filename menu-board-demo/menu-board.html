@@ -490,21 +490,21 @@
       font-size: clamp(48px, 8vw, 120px);
       background: rgba(0,0,0,0.05);
     }
-    /* Product info + pricing sit in a light card in the top-left corner of
-       the primary image (title/price in black); the description sits in
-       its own light strip at the bottom, in grey. Two separate blocks
-       rather than one bottom scrim. */
+    /* Product info + pricing sit top-left over the primary image. No box or
+       card behind them — even a translucent padded rectangle reads as "a
+       white background" once text is a single line (no wrap to clone a
+       highlight across). Instead a soft white glow hugs the glyphs
+       themselves via stacked text-shadows, so there's no rectangular edge
+       at any line count. */
     .promo-hero-top {
       position: absolute;
       top: 0; left: 0;
       max-width: 80%;
-      width: max-content;
       display: flex;
       flex-direction: column;
       align-items: flex-start;
+      gap: clamp(4px, 0.6vw, 10px);
       padding: clamp(14px, 2vw, 30px);
-      background: linear-gradient(135deg, rgba(255,255,255,0.95) 0%, rgba(255,255,255,0.86) 100%);
-      border-bottom-right-radius: clamp(10px, 1.2vw, 22px);
     }
     .promo-hero-top .promo-cat {
       background: var(--cat-bar-bg, var(--accent));
@@ -514,15 +514,22 @@
       font-weight: 800;
       text-transform: uppercase;
       color: #000;
+      text-shadow:
+        0 0 3px rgba(255,255,255,0.95), 0 0 3px rgba(255,255,255,0.95),
+        0 0 8px rgba(255,255,255,0.9), 0 0 8px rgba(255,255,255,0.9),
+        0 0 16px rgba(255,255,255,0.75), 0 0 16px rgba(255,255,255,0.75);
       font-size: clamp(26px, 4.1vw, 65px);
-      line-height: 1.08;
+      line-height: 1.15;
     }
     .promo-hero-price {
       font-family: 'Oswald', sans-serif;
       font-weight: 800;
-      color: #000;
+      color: var(--price-color, var(--accent));
+      text-shadow:
+        0 0 3px rgba(255,255,255,0.95), 0 0 3px rgba(255,255,255,0.95),
+        0 0 8px rgba(255,255,255,0.9), 0 0 8px rgba(255,255,255,0.9),
+        0 0 16px rgba(255,255,255,0.75), 0 0 16px rgba(255,255,255,0.75);
       font-size: clamp(31px, 4.8vw, 74px);
-      margin-top: clamp(4px, 0.6vw, 10px);
     }
     .promo-hero-bottom {
       position: absolute;
@@ -564,20 +571,15 @@
       top: 0; left: 0; right: 0;
       height: clamp(6px, 0.6vw, 10px);
       background: repeating-linear-gradient(-45deg, var(--accent, #e4002b) 0 14px, #fff 14px 28px);
+      z-index: 1;
     }
     .promo-text {
       flex: 1 1 55%;
       min-width: 0;
       display: flex;
       flex-direction: column;
-      padding: clamp(14px, 1.6vw, 30px) clamp(14px, 1.6vw, 30px) clamp(10px, 1.2vw, 22px);
-    }
-    /* Category/title/price cluster at the top of the card; .promo-desc
-       (below) is pushed to the bottom of the tile via margin-top:auto. */
-    .promo-top-group {
-      display: flex;
-      flex-direction: column;
       gap: clamp(2px, 0.4vw, 6px);
+      padding: clamp(14px, 1.6vw, 30px) clamp(14px, 1.6vw, 30px) clamp(10px, 1.2vw, 22px);
     }
     .promo-cat {
       display: inline-block;
@@ -604,21 +606,9 @@
     .promo-price {
       font-family: 'Oswald', sans-serif;
       font-weight: 800;
-      color: #000;
+      color: var(--price-color, var(--accent));
       font-size: clamp(24px, 3.36vw, 48px);
       margin-top: clamp(2px, 0.5vw, 8px);
-    }
-    .promo-desc {
-      font-style: italic;
-      color: var(--item-desc, var(--text2));
-      font-size: clamp(10px, 1vw, 15px);
-      line-height: 1.35;
-      overflow: hidden;
-      display: -webkit-box;
-      -webkit-line-clamp: 2;
-      -webkit-box-orient: vertical;
-      margin-top: auto;
-      padding-top: clamp(6px, 1vw, 16px);
     }
     .promo-img-wrap {
       flex: 0 0 42%;
@@ -633,6 +623,25 @@
       display: flex; align-items: center; justify-content: center;
       font-size: clamp(28px, 4vw, 56px);
       opacity: .3;
+    }
+    /* Description runs the full width of the tile, overlaid across both the
+       text column and the photo — same type size as the primary tile's
+       description, on its own scrim so it stays legible over the image. */
+    .promo-tile-desc {
+      position: absolute;
+      left: 0; right: 0; bottom: 0;
+      padding: clamp(10px, 1.4vw, 22px);
+      background: linear-gradient(to top, rgba(255,255,255,0.92) 0%, rgba(255,255,255,0.6) 70%, rgba(255,255,255,0) 100%);
+    }
+    .promo-tile-desc .promo-desc {
+      font-style: italic;
+      color: var(--item-desc, var(--text2));
+      font-size: clamp(11px, 1.2vw, 18px);
+      line-height: 1.4;
+      overflow: hidden;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
     }
 
     /* ── API ERROR BADGE ───────────────────────────── */
@@ -1684,26 +1693,26 @@ function render() {
         : '';
     }
 
-    // Build promo tiles — striped accent bar; category/title/price cluster
-    // at the top of the text column, description pushed to the bottom.
+    // Build promo tiles — striped accent bar, category/title/price in the
+    // text column, description overlaid across the full width of the tile
+    // (text column + photo) at the bottom.
     const promoTilesHtml = promoPage.map(item => {
       const src = (item.imagesLarge && item.imagesLarge[0]) || (item.images && item.images[0]);
       const img = src
         ? `<img src="${src}" alt="${esc(item.name)}" loading="lazy">`
         : `<div class="promo-img-placeholder">🍽️</div>`;
-      const desc = item.description ? `<div class="promo-desc">${esc(item.description)}</div>` : '';
+      const desc = item.description
+        ? `<div class="promo-tile-desc"><div class="promo-desc">${esc(item.description)}</div></div>` : '';
       const cat = item.category ? `<div class="promo-cat">${esc(item.category)}</div>` : '';
       return `
         <div class="promo-tile">
           <div class="promo-text">
-            <div class="promo-top-group">
-              ${cat}
-              <div class="promo-title">${esc(item.name)}</div>
-              <div class="promo-price">${currency}${parseFloat(item.price || 0).toFixed(2)}</div>
-            </div>
-            ${desc}
+            ${cat}
+            <div class="promo-title">${esc(item.name)}</div>
+            <div class="promo-price">${currency}${parseFloat(item.price || 0).toFixed(2)}</div>
           </div>
           <div class="promo-img-wrap">${img}</div>
+          ${desc}
         </div>`;
     }).join('');
 
@@ -1728,7 +1737,9 @@ function render() {
 
   const showProgressBar = !SCREEN_LOCK && totalPages > 1;
 
-  const footerHtml = `
+  // Feature Hero Spotlight has no footer — the promo tiles run edge to edge
+  // to the bottom of the screen instead of leaving room for a status bar.
+  const footerHtml = effectiveTemplateType === 'feature-hero-board' ? '' : `
     <div class="board-footer">
       <div class="footer-text">${brandName} — ${esc(meta.label)}</div>
       <div class="footer-page-info">${esc(pageInfoText)}</div>
