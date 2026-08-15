@@ -208,6 +208,7 @@
           </optgroup>
           <optgroup label="Store Operations">
             <option value="store-info-hours">Store Opening Hours</option>
+            <option value="languages-on-shift">Languages On Shift</option>
             <option value="digital-wayfinding">Digital Wayfinding</option>
             <option value="order-status-board">Order Status Board</option>
           </optgroup>
@@ -505,6 +506,30 @@ const TEMPLATES = [
     settings:{ colorScheme:true, dayOrder:true },
     pSVG:(W,H)=>{const hh=14;return `<rect width="${W}" height="${H}" fill="#f0f9ff"/><rect width="${W}" height="${hh}" fill="${C.header}"/><rect x="${W/2-14}" y="3.5" width="28" height="7" rx="1.5" fill="rgba(255,255,255,.3)"/><rect x="4" y="${hh+8}" width="${W-8}" height="16" rx="3" fill="${C.card}" stroke="${C.border}" stroke-width=".7"/><rect x="${W/2-20}" y="${hh+13}" width="40" height="6" rx="2" fill="${C.header}" opacity=".8"/>` + [0,1,2,3,4,5,6].map(i=>`<rect x="6" y="${hh+30+i*10}" width="${W-12}" height="7" rx="2" fill="${C.card}" stroke="${C.border}" stroke-width=".5"/>`).join('');},
     lSVG:(W,H)=>{const hh=11,infoW=Math.round(W*.42);return `<rect width="${W}" height="${H}" fill="#f0f9ff"/><rect width="${W}" height="${hh}" fill="${C.header}"/><rect y="${hh}" width="${infoW}" height="${H-hh}" fill="rgba(22,155,194,.04)" stroke="${C.border}" stroke-width=".5"/><rect x="4" y="${hh+6}" width="${infoW-8}" height="10" rx="2" fill="${C.header}" opacity=".8"/>` + [0,1,2,3].map(i=>`<rect x="4" y="${hh+20+i*9}" width="${infoW-8}" height="6" rx="2" fill="${C.card}" stroke="${C.border}" stroke-width=".5"/>`).join('') + gridCells(infoW+3,hh,W-infoW-3,H-hh,2,2,2);},
+  },
+  {
+    id:'languages-on-shift', name:'Languages On Shift',
+    description:'Animated shop-window sign showing which languages this store’s team can speak, cycling one flag and language name at a time, driven live from the store record.',
+    category:'Store Operations', useCases:['Shop Window','Entrance','Lobby','Reception','Travel Hub'],
+    params:['store','device','brand','orientation'],
+    standalone:true, standaloneFile:'languages-on-shift.html',
+    settings:{ colorScheme:true, portrait:true, landscape:true, languageDisplay:true },
+    pSVG:(W,H)=>{const hh=14,flagW=W*0.36,flagH=flagW*0.66,flagX=W/2-flagW/2,flagY=hh+16,dotY=H-26;
+      return `<rect width="${W}" height="${H}" fill="#070B10"/>` +
+      `<rect x="${W/2-14}" y="${hh-9}" width="28" height="5" rx="2.5" fill="#2FC3E8" opacity=".8"/>` +
+      `<rect x="${W/2-22}" y="${hh}" width="44" height="6" rx="2" fill="rgba(255,255,255,.85)"/>` +
+      `<rect x="${flagX}" y="${flagY}" width="${flagW}" height="${flagH}" rx="3" fill="#2FC3E8" opacity=".85"/>` +
+      `<rect x="${W/2-16}" y="${flagY+flagH+8}" width="32" height="10" rx="2" fill="rgba(255,255,255,.92)"/>` +
+      `<rect x="${W/2-12}" y="${flagY+flagH+22}" width="24" height="4" rx="2" fill="rgba(255,255,255,.4)"/>` +
+      [0,1,2].map(i=>`<rect x="${W/2-30+i*22}" y="${dotY}" width="18" height="7" rx="3.5" fill="rgba(255,255,255,.12)"/>`).join('') +
+      `<circle cx="${W/2-2}" cy="${H-8}" r="2.5" fill="#2FC3E8"/><circle cx="${W/2+6}" cy="${H-8}" r="2" fill="rgba(255,255,255,.3)"/><circle cx="${W/2+13}" cy="${H-8}" r="2" fill="rgba(255,255,255,.3)"/>`;
+    },
+    lSVG:(W,H)=>{const hh=11,flagH=H*0.34,flagW=flagH*1.5,flagX=W*0.22,flagY=H/2-flagH/2;
+      return `<rect width="${W}" height="${H}" fill="#070B10"/>` +
+      `<rect x="${flagX}" y="${flagY}" width="${flagW}" height="${flagH}" rx="3" fill="#2FC3E8" opacity=".85"/>` +
+      `<rect x="${flagX+flagW+16}" y="${H*0.32}" width="${W*0.22}" height="8" rx="2" fill="rgba(255,255,255,.35)"/>` +
+      `<rect x="${flagX+flagW+16}" y="${H*0.32+14}" width="${W*0.32}" height="16" rx="3" fill="rgba(255,255,255,.92)"/>` +
+      `<rect x="${flagX+flagW+16}" y="${H*0.32+38}" width="${W*0.18}" height="6" rx="2" fill="rgba(255,255,255,.3)"/>`;},
   },
   // ── NEW TEMPLATES ──────────────────────────────────────────────────────
   {

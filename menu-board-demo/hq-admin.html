@@ -191,6 +191,40 @@
     .form-row.cols-4 { grid-template-columns: 1fr 1fr 1fr 1fr; }
     .section-divider { font-size: 11px; font-weight: 700; color: var(--text2); text-transform: uppercase; letter-spacing: 0.8px; padding: 12px 0 8px; margin-top: 4px; border-top: 1px solid var(--border); display: flex; align-items: center; gap: 8px; }
     .section-divider .opt-tag { font-size: 10px; font-weight: 500; color: var(--text2); text-transform: none; letter-spacing: 0; background: var(--surface2); border: 1px solid var(--border); border-radius: 4px; padding: 1px 6px; }
+
+    /* LANGUAGES ON SHIFT — design template editor */
+    .los-preview-wrap { display: flex; gap: 16px; align-items: flex-start; margin-bottom: 18px; }
+    .los-preview-frame { width: 152px; height: 270px; flex-shrink: 0; border-radius: 10px; overflow: hidden;
+      background: #000; box-shadow: 0 6px 20px rgba(0,0,0,.25); position: relative; }
+    .los-preview-frame.landscape { width: 270px; height: 152px; }
+    .los-preview-frame iframe { position: absolute; top: 0; left: 0; width: 1080px; height: 1920px;
+      border: 0; transform: scale(0.1407); transform-origin: top left; pointer-events: none; }
+    .los-preview-frame.landscape iframe { width: 1920px; height: 1080px; transform: scale(0.1406); }
+    .los-preview-controls { flex: 1; padding-top: 4px; }
+    .los-subgroup { font-size: 10.5px; font-weight: 700; color: var(--text2); text-transform: uppercase;
+      letter-spacing: 0.6px; padding: 10px 0 6px; }
+    .los-preview-lang-picker { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+    .los-preview-lang-picker button { border: 1px solid var(--border); background: var(--surface2); border-radius: 999px;
+      padding: 4px 11px; font-size: 12px; font-family: inherit; cursor: pointer; color: var(--text2); }
+    .los-preview-lang-picker button.on { background: var(--primary); border-color: var(--primary); color: #fff; font-weight: 600; }
+
+    /* LANGUAGE REGISTRY */
+    .lang-registry-list { display: flex; flex-direction: column; gap: 1px; margin-top: 14px; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+    .lang-registry-row { display: flex; align-items: center; gap: 12px; padding: 9px 12px; background: var(--surface); }
+    .lang-registry-row:nth-child(even) { background: var(--surface2); }
+    .lang-registry-row .lrf { width: 27px; height: 18px; border-radius: 3px; background-size: cover; background-position: center; flex-shrink: 0; background-color: var(--surface2); display: flex; align-items: center; justify-content: center; font-size: 12px; }
+    .lang-registry-row .lrname { flex: 1; min-width: 0; }
+    .lang-registry-row .lrname .en { font-size: 13px; font-weight: 600; color: var(--text); }
+    .lang-registry-row .lrname .nat { font-size: 12px; color: var(--text2); margin-left: 6px; }
+    .lang-registry-row .lrcode { font-size: 11px; font-family: monospace; color: var(--text2); background: var(--surface2); border-radius: 4px; padding: 2px 6px; }
+    .lang-registry-row.inactive { opacity: 0.5; }
+    .lang-registry-row .lracts { display: flex; gap: 6px; }
+    .lang-registry-row .lracts button { border: none; background: none; cursor: pointer; font-size: 12px; color: var(--text2); padding: 4px 6px; border-radius: 4px; }
+    .lang-registry-row .lracts button:hover { background: var(--surface2); color: var(--primary); }
+    .lang-flag-picker { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+    .lang-flag-picker button { width: 44px; height: 30px; border-radius: 5px; border: 2px solid var(--border); background-size: cover; background-position: center; background-color: var(--surface2); cursor: pointer; padding: 0; }
+    .lang-flag-picker button.on { border-color: var(--primary); box-shadow: 0 0 0 2px rgba(22,155,194,0.25); }
+    .lang-flag-picker button.none { display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 600; color: var(--text2); text-transform: uppercase; }
     .form-group { margin-bottom: 16px; }
     .form-group label { display: block; font-size: 11px; font-weight: 700; color: var(--text2); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px; }
     .form-group label .req { color: var(--danger); }
@@ -723,6 +757,16 @@
             </div>
             <button id="sCartSaveBtn" class="btn btn-primary btn-sm" onclick="saveTakeoutBag()" disabled style="opacity:0.45;cursor:not-allowed;">Save Changes</button>
           </div>
+
+          <div class="settings-section">
+            <h3>Language Registry</h3>
+            <p class="settings-desc">Company-level reference data for the <strong>Languages On Shift</strong> display item. The store record only ever sends a language identifier (an ISO code, an English name, or an endonym) &mdash; everything needed to render it, the flag, the native-script name, reading direction and script, comes from this table. A language a store's record can send but that isn't listed here simply won't appear on screen.</p>
+            <p class="settings-desc" style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:10px 12px;">
+              <strong>A flag represents a country, not a language.</strong> English, Spanish, Arabic, Portuguese, French and Chinese are each spoken across many countries, and a single national flag can read as excluding other speakers of that language. Either pick the flag most recognisable to a given store's local population, or turn <em>Show Flag</em> off and use a glyph mark instead (for example 🤟 for British Sign Language).
+            </p>
+            <div id="langRegistryList" class="lang-registry-list"></div>
+            <button class="btn btn-primary btn-sm" onclick="openLangModal()" style="margin-top:10px;">+ Add Language</button>
+          </div>
         </div>
 
       </div><!-- /content -->
@@ -1089,6 +1133,23 @@
               <p class="form-help">Controls the order the 7 days are listed on the device. Hours themselves always come live from the Personalisation Hub API for that device&rsquo;s store.</p>
             </div>
 
+            <div class="section-divider" id="sd-language-display">Language Display</div>
+            <div id="losEditor" style="display:none;">
+              <div class="los-preview-wrap">
+                <div class="los-preview-frame">
+                  <iframe id="losPreviewFrame" src="languages-on-shift.html?preview=1" title="Language Display live preview"></iframe>
+                </div>
+                <div class="los-preview-controls">
+                  <div class="seg" id="losPreviewOrientation">
+                    <button type="button" data-v="portrait" class="on">Portrait</button>
+                    <button type="button" data-v="landscape">Landscape</button>
+                  </div>
+                  <p class="form-help" style="margin-top:8px;">Live preview &mdash; updates immediately as you change any field below. Nothing here is saved until you click Save Template.</p>
+                </div>
+              </div>
+              <div id="losFieldsContainer"></div>
+            </div>
+
             <div class="section-divider">Header Layout</div>
             <div class="form-row">
               <div class="form-group">
@@ -1293,6 +1354,83 @@
   </div>
 </div>
 
+<!-- LANGUAGE REGISTRY MODAL -->
+<div class="modal-overlay" id="langModal">
+  <div class="modal" style="max-width:600px;">
+    <div class="modal-header">
+      <h2 id="langModalTitle">Add Language</h2>
+      <button class="modal-close" onclick="closeLangModal()">&#x2715;</button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="langEditCode">
+      <div class="form-row">
+        <div class="form-group">
+          <label>Code <span class="req">*</span> <span style="font-size:11px;font-weight:400;text-transform:none;color:var(--text2);">(BCP-47, unique)</span></label>
+          <input type="text" id="langCode" placeholder="e.g. pl">
+        </div>
+        <div class="form-group">
+          <label>Active</label>
+          <select id="langActive"><option value="true">Active</option><option value="false">Inactive &mdash; filtered out of every feed</option></select>
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>English Name <span class="req">*</span></label>
+          <input type="text" id="langEnglish" placeholder="e.g. Polish">
+        </div>
+        <div class="form-group">
+          <label>Native Name (endonym) <span class="req">*</span></label>
+          <input type="text" id="langNative" placeholder="e.g. Polski &mdash; authored in the correct script">
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Aliases <span style="font-size:11px;font-weight:400;text-transform:none;color:var(--text2);">(comma-separated alternative spellings the store record might send)</span></label>
+        <input type="text" id="langAlias" placeholder="e.g. pol, polish, pl-PL">
+      </div>
+      <div class="form-group">
+        <label>Flag</label>
+        <div class="lang-flag-picker" id="langFlagPicker"></div>
+        <p class="form-help">SVG flags only &mdash; never emoji, which render inconsistently on signage hardware. Choose &ldquo;No flag&rdquo; and set a glyph below when a single national flag would misrepresent this language's speakers.</p>
+      </div>
+      <div class="form-row cols-3">
+        <div class="form-group">
+          <label>Flag Ratio</label>
+          <select id="langRatio">
+            <option value="3/2">3:2</option><option value="2/1">2:1</option><option value="1/1">1:1</option><option value="5/3">5:3</option><option value="1/2">1:2</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Show Flag</label>
+          <select id="langShowFlag"><option value="true">On</option><option value="false">Off &mdash; use glyph instead</option></select>
+        </div>
+        <div class="form-group">
+          <label>Glyph <span style="font-size:11px;font-weight:400;text-transform:none;color:var(--text2);">(fallback mark)</span></label>
+          <input type="text" id="langGlyph" placeholder="e.g. 🤟" maxlength="4">
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Direction</label>
+          <select id="langDirection"><option value="ltr">Left to right</option><option value="rtl">Right to left</option></select>
+          <p class="form-help">Applied to the native name only; the surrounding layout always stays LTR.</p>
+        </div>
+        <div class="form-group">
+          <label>Script <span style="font-size:11px;font-weight:400;text-transform:none;color:var(--text2);">(determines which font pack loads)</span></label>
+          <select id="langScript">
+            <option value="latin">Latin</option><option value="cyrillic">Cyrillic</option><option value="greek">Greek</option>
+            <option value="arabic">Arabic</option><option value="devanagari">Devanagari</option><option value="gurmukhi">Gurmukhi</option>
+            <option value="cjk">CJK (Chinese / Japanese / Korean)</option><option value="thai">Thai</option>
+          </select>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeLangModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="saveLangEntry()">Save Language</button>
+    </div>
+  </div>
+</div>
+
 <!-- CONFIRM DIALOG -->
 <div class="confirm-overlay" id="confirmOverlay">
   <div class="confirm-box">
@@ -1369,6 +1507,159 @@ function saveTypes(types) {
   setDoc(doc(db, MB, 'types'), { data: types })
     .catch(err => toast('\u274C Failed to save types: ' + (err.message || err), 'error'));
 }
+
+// ===== LANGUAGE REGISTRY (Languages On Shift) =====
+// The store record carries only identifiers (\u00A72.3/\u00A72.4 of the build brief) \u2014
+// this table supplies everything needed to render: endonym, flag, direction,
+// script. Seed matches languages-on-shift.html's SEED_REGISTRY.
+const DEFAULT_LANGUAGES = [
+  { code:'en',  native:'English',               english:'English',              flag:'GB', ratio:'2/1', direction:'ltr', script:'latin',    alias:['eng','en-gb','en-us'], showFlag:true,  glyph:'', active:true },
+  { code:'pl',  native:'Polski',                english:'Polish',               flag:'PL', ratio:'3/2', direction:'ltr', script:'latin',    alias:['pol'], showFlag:true, glyph:'', active:true },
+  { code:'ur',  native:'\u0627\u0631\u062F\u0648',                   english:'Urdu',                 flag:'PK', ratio:'3/2', direction:'rtl', script:'arabic',   alias:['urd'], showFlag:true, glyph:'', active:true },
+  { code:'es',  native:'Espa\u00F1ol',               english:'Spanish',              flag:'ES', ratio:'3/2', direction:'ltr', script:'latin',    alias:['spa','castellano'], showFlag:true, glyph:'', active:true },
+  { code:'zh',  native:'\u4E2D\u6587',                    english:'Mandarin',             flag:'CN', ratio:'3/2', direction:'ltr', script:'cjk',      alias:['mandarin','chinese','zh-hans','cmn'], showFlag:true, glyph:'', active:true },
+  { code:'ar',  native:'\u0627\u0644\u0639\u0631\u0628\u064A\u0629',                 english:'Arabic',               flag:'SA', ratio:'3/2', direction:'rtl', script:'arabic',   alias:['ara'], showFlag:true, glyph:'', active:true },
+  { code:'ro',  native:'Rom\u00E2n\u0103',                english:'Romanian',             flag:'RO', ratio:'3/2', direction:'ltr', script:'latin',    alias:['ron','rum'], showFlag:true, glyph:'', active:true },
+  { code:'bsl', native:'British Sign Language', english:'British Sign Language',flag:null, ratio:'3/2', direction:'ltr', script:'latin',    alias:['sign language','sign'], showFlag:false, glyph:'\uD83E\uDD1F', active:true },
+  { code:'fr',  native:'Fran\u00E7ais',              english:'French',               flag:'FR', ratio:'3/2', direction:'ltr', script:'latin',    alias:['fra','fre'], showFlag:true, glyph:'', active:true },
+  { code:'pa',  native:'\u0A2A\u0A70\u0A1C\u0A3E\u0A2C\u0A40',                   english:'Punjabi',              flag:'IN', ratio:'3/2', direction:'ltr', script:'gurmukhi', alias:['panjabi','pan'], showFlag:true, glyph:'', active:true },
+  { code:'pt',  native:'Portugu\u00EAs',             english:'Portuguese',           flag:'PT', ratio:'3/2', direction:'ltr', script:'latin',    alias:['por'], showFlag:true, glyph:'', active:true },
+  { code:'so',  native:'Soomaali',              english:'Somali',               flag:'SO', ratio:'3/2', direction:'ltr', script:'latin',    alias:['som'], showFlag:true, glyph:'', active:true },
+  { code:'it',  native:'Italiano',              english:'Italian',              flag:'IT', ratio:'3/2', direction:'ltr', script:'latin',    alias:['ita'], showFlag:true, glyph:'', active:true },
+  { code:'uk',  native:'\u0423\u043A\u0440\u0430\u0457\u043D\u0441\u044C\u043A\u0430',            english:'Ukrainian',            flag:'UA', ratio:'3/2', direction:'ltr', script:'cyrillic', alias:['ukr'], showFlag:true, glyph:'', active:true },
+  { code:'vi',  native:'Ti\u1EBFng Vi\u1EC7t',             english:'Vietnamese',           flag:'VN', ratio:'3/2', direction:'ltr', script:'latin',    alias:['vie'], showFlag:true, glyph:'', active:true },
+  { code:'de',  native:'Deutsch',               english:'German',               flag:'DE', ratio:'3/2', direction:'ltr', script:'latin',    alias:['deu','ger'], showFlag:true, glyph:'', active:true },
+  { code:'el',  native:'\u0395\u03BB\u03BB\u03B7\u03BD\u03B9\u03BA\u03AC',              english:'Greek',                flag:'GR', ratio:'3/2', direction:'ltr', script:'greek',    alias:['ell','gre'], showFlag:true, glyph:'', active:true },
+  { code:'tr',  native:'T\u00FCrk\u00E7e',                english:'Turkish',              flag:'TR', ratio:'3/2', direction:'ltr', script:'latin',    alias:['tur'], showFlag:true, glyph:'', active:true },
+];
+let _languages = [];
+function getLanguages() { return _languages.length ? _languages : DEFAULT_LANGUAGES; }
+function saveLanguages(languages) {
+  _languages = languages;
+  setDoc(doc(db, MB, 'languages'), { data: languages })
+    .catch(err => toast('\u274C Failed to save Language Registry: ' + (err.message || err), 'error'));
+}
+
+// Flag SVGs \u2014 inline, never emoji (\u00A79 non-functional requirement; emoji flags
+// render inconsistently across ChromeOS/Chrome versions). Mirrors the set in
+// languages-on-shift.html so admin previews match the display exactly.
+function _losStar(cx, cy, r, fill, rot){
+  rot = rot || 0; const p = [];
+  for (let i = 0; i < 10; i++){
+    const rad = (i % 2 === 0) ? r : r * 0.382;
+    const a = (-90 + rot + i * 36) * Math.PI / 180;
+    p.push((cx + rad * Math.cos(a)).toFixed(2) + ',' + (cy + rad * Math.sin(a)).toFixed(2));
+  }
+  return `<polygon points="${p.join(' ')}" fill="${fill}"/>`;
+}
+const _losSv = (w,h,inner) => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${w} ${h}">${inner}</svg>`;
+const LOS_FLAGS = {
+  GB: _losSv(60,30,`<rect width="60" height="30" fill="#012169"/><path d="M0,0 L60,30 M60,0 L0,30" stroke="#fff" stroke-width="6"/><path d="M0,0 L60,30 M60,0 L0,30" stroke="#C8102E" stroke-width="3"/><path d="M30,0 V30 M0,15 H60" stroke="#fff" stroke-width="10"/><path d="M30,0 V30 M0,15 H60" stroke="#C8102E" stroke-width="6"/>`),
+  PL: _losSv(60,40,`<rect width="60" height="40" fill="#fff"/><rect y="20" width="60" height="20" fill="#DC143C"/>`),
+  PK: _losSv(60,40,`<rect width="60" height="40" fill="#01411C"/><rect width="15" height="40" fill="#fff"/><circle cx="37" cy="20" r="9" fill="#fff"/><circle cx="40.5" cy="17" r="9" fill="#01411C"/>${_losStar(47,13,4,'#fff')}`),
+  ES: _losSv(60,40,`<rect width="60" height="40" fill="#AA151B"/><rect y="10" width="60" height="20" fill="#F1BF00"/>`),
+  CN: _losSv(60,40,`<rect width="60" height="40" fill="#DE2910"/>${_losStar(12,11,7,'#FFDE00')}${_losStar(23,4.5,2.6,'#FFDE00')}${_losStar(28,10,2.6,'#FFDE00')}${_losStar(28,17,2.6,'#FFDE00')}${_losStar(23,23,2.6,'#FFDE00')}`),
+  SA: _losSv(60,40,`<rect width="60" height="40" fill="#006C35"/><rect x="11" y="13" width="38" height="3" fill="#fff"/><rect x="14" y="19" width="32" height="2.4" fill="#fff"/><path d="M13 27 H45 M45 27 l-4.5 -3.2 M45 27 l-4.5 3.2" stroke="#fff" stroke-width="2" fill="none"/>`),
+  RO: _losSv(60,40,`<rect width="20" height="40" fill="#002B7F"/><rect x="20" width="20" height="40" fill="#FCD116"/><rect x="40" width="20" height="40" fill="#CE1126"/>`),
+  FR: _losSv(60,40,`<rect width="20" height="40" fill="#002395"/><rect x="20" width="20" height="40" fill="#fff"/><rect x="40" width="20" height="40" fill="#ED2939"/>`),
+  IT: _losSv(60,40,`<rect width="20" height="40" fill="#008C45"/><rect x="20" width="20" height="40" fill="#F4F5F0"/><rect x="40" width="20" height="40" fill="#CD212A"/>`),
+  IN: _losSv(60,40,`<rect width="60" height="13.33" fill="#FF9933"/><rect y="13.33" width="60" height="13.33" fill="#fff"/><rect y="26.66" width="60" height="13.34" fill="#138808"/><circle cx="30" cy="20" r="5.4" fill="none" stroke="#000080" stroke-width="1.1"/><circle cx="30" cy="20" r="1.1" fill="#000080"/>`),
+  PT: _losSv(60,40,`<rect width="60" height="40" fill="#DA291C"/><rect width="24" height="40" fill="#046A38"/><circle cx="24" cy="20" r="7.5" fill="#FFE900"/><circle cx="24" cy="20" r="5.2" fill="#DA291C"/>`),
+  SO: _losSv(60,40,`<rect width="60" height="40" fill="#4189DD"/>${_losStar(30,20,10,'#fff')}`),
+  UA: _losSv(60,40,`<rect width="60" height="20" fill="#005BBB"/><rect y="20" width="60" height="20" fill="#FFD500"/>`),
+  VN: _losSv(60,40,`<rect width="60" height="40" fill="#DA251D"/>${_losStar(30,20,11,'#FFFF00')}`),
+  DE: _losSv(60,40,`<rect width="60" height="13.33" fill="#000"/><rect y="13.33" width="60" height="13.33" fill="#DD0000"/><rect y="26.66" width="60" height="13.34" fill="#FFCE00"/>`),
+  GR: _losSv(60,40,`<rect width="60" height="40" fill="#0D5EAF"/>` + [1,3,5,7].map(i => `<rect y="${(i*40/9).toFixed(2)}" width="60" height="${(40/9).toFixed(2)}" fill="#fff"/>`).join('') + `<rect width="22.22" height="22.22" fill="#0D5EAF"/><rect x="8.89" width="4.44" height="22.22" fill="#fff"/><rect y="8.89" width="22.22" height="4.44" fill="#fff"/>`),
+  TR: _losSv(60,40,`<rect width="60" height="40" fill="#E30A17"/><circle cx="22" cy="20" r="9" fill="#fff"/><circle cx="25.5" cy="20" r="7.2" fill="#E30A17"/>${_losStar(36,20,4.5,'#fff')}`),
+};
+const losFlagUrl = k => LOS_FLAGS[k] ? `url("data:image/svg+xml,${encodeURIComponent(LOS_FLAGS[k])}")` : '';
+
+let _langModalFlag = null;
+function renderLanguageRegistry() {
+  const host = document.getElementById('langRegistryList');
+  if (!host) return;
+  const langs = getLanguages();
+  host.innerHTML = langs.map(l => `
+    <div class="lang-registry-row${l.active === false ? ' inactive' : ''}">
+      <div class="lrf" style="${l.flag && l.showFlag !== false ? `background-image:${losFlagUrl(l.flag)}` : ''}">${(!l.flag || l.showFlag === false) ? escHtml(l.glyph || '\u{1F4AC}') : ''}</div>
+      <div class="lrname"><span class="en">${escHtml(l.english)}</span><span class="nat">${escHtml(l.native)}</span></div>
+      <span class="lrcode">${escHtml(l.code)}</span>
+      <span class="lrcode" title="Text direction">${l.direction === 'rtl' ? 'RTL' : 'LTR'}</span>
+      <div class="lracts">
+        <button type="button" onclick="openLangModal('${escHtml(l.code)}')" title="Edit">&#9998;</button>
+        <button type="button" onclick="deleteLangEntry('${escHtml(l.code)}')" title="Delete">&#128465;</button>
+      </div>
+    </div>`).join('') || '<p style="padding:14px;font-size:13px;color:var(--text2);">No languages yet \u2014 add the first one.</p>';
+}
+
+function renderLangFlagPicker() {
+  const host = document.getElementById('langFlagPicker');
+  if (!host) return;
+  const noneBtn = `<button type="button" class="none${!_langModalFlag ? ' on' : ''}" data-f="" onclick="_pickLangFlag('')">None</button>`;
+  host.innerHTML = noneBtn + Object.keys(LOS_FLAGS).map(k =>
+    `<button type="button" class="${_langModalFlag===k?'on':''}" style="background-image:${losFlagUrl(k)}" data-f="${k}" onclick="_pickLangFlag('${k}')" title="${k}"></button>`).join('');
+}
+function _pickLangFlag(k) { _langModalFlag = k || null; renderLangFlagPicker(); }
+window._pickLangFlag = _pickLangFlag;
+
+function openLangModal(code) {
+  const existing = code ? getLanguages().find(l => l.code === code) : null;
+  document.getElementById('langModalTitle').textContent = existing ? 'Edit Language' : 'Add Language';
+  document.getElementById('langEditCode').value = existing ? existing.code : '';
+  document.getElementById('langCode').value = existing ? existing.code : '';
+  document.getElementById('langCode').disabled = !!existing;
+  document.getElementById('langEnglish').value = existing ? existing.english : '';
+  document.getElementById('langNative').value = existing ? existing.native : '';
+  document.getElementById('langAlias').value = existing ? (existing.alias || []).join(', ') : '';
+  document.getElementById('langRatio').value = existing ? (existing.ratio || '3/2') : '3/2';
+  document.getElementById('langShowFlag').value = existing && existing.showFlag === false ? 'false' : 'true';
+  document.getElementById('langGlyph').value = existing ? (existing.glyph || '') : '';
+  document.getElementById('langDirection').value = existing && existing.direction === 'rtl' ? 'rtl' : 'ltr';
+  document.getElementById('langScript').value = existing ? (existing.script || 'latin') : 'latin';
+  document.getElementById('langActive').value = existing && existing.active === false ? 'false' : 'true';
+  _langModalFlag = existing ? (existing.flag || null) : null;
+  renderLangFlagPicker();
+  document.getElementById('langModal').classList.add('open');
+}
+window.openLangModal = openLangModal;
+function closeLangModal() { document.getElementById('langModal').classList.remove('open'); }
+window.closeLangModal = closeLangModal;
+
+function saveLangEntry() {
+  const code = document.getElementById('langCode').value.trim().toLowerCase();
+  const english = document.getElementById('langEnglish').value.trim();
+  const native = document.getElementById('langNative').value.trim();
+  if (!code || !english || !native) { toast('\u26A0\uFE0F Code, English name and Native name are required.', 'error'); return; }
+  const editingCode = document.getElementById('langEditCode').value;
+  const langs = getLanguages().slice();
+  if (!editingCode && langs.some(l => l.code === code)) { toast('\u26A0\uFE0F That code is already in the registry.', 'error'); return; }
+  const entry = {
+    code, english, native,
+    alias: document.getElementById('langAlias').value.split(',').map(s=>s.trim()).filter(Boolean),
+    flag: _langModalFlag || null,
+    ratio: document.getElementById('langRatio').value,
+    showFlag: document.getElementById('langShowFlag').value === 'true',
+    glyph: document.getElementById('langGlyph').value.trim(),
+    direction: document.getElementById('langDirection').value,
+    script: document.getElementById('langScript').value,
+    active: document.getElementById('langActive').value === 'true',
+  };
+  const idx = langs.findIndex(l => l.code === (editingCode || code));
+  if (idx !== -1) langs[idx] = entry; else langs.push(entry);
+  saveLanguages(langs);
+  renderLanguageRegistry();
+  closeLangModal();
+  toast('\u2705 Language Registry saved', 'success');
+}
+window.saveLangEntry = saveLangEntry;
+
+function deleteLangEntry(code) {
+  if (!confirm(`Remove "${code}" from the Language Registry? Any store record still sending this identifier will simply stop resolving it.`)) return;
+  saveLanguages(getLanguages().filter(l => l.code !== code));
+  renderLanguageRegistry();
+  toast('Language removed', 'info');
+}
+window.deleteLangEntry = deleteLangEntry;
 let _allStock    = {};
 let itemsGridApi  = null;
 let brandsGridApi = null;
@@ -1947,6 +2238,55 @@ const TEMPLATE_LIBRARY = [
       gridCells(infoW+3,hh,W-infoW-3,H-hh,2,2,2);
     }
   },
+  {
+    id: 'languages-on-shift',
+    name: 'Languages On Shift',
+    description: 'Animated shop-window sign showing which languages this store’s team can speak, cycling one flag and language name at a time, driven live from the store record. The Language Registry (Settings) supplies the flag, endonym and script for every identifier the store record can send.',
+    category: 'Store Operations',
+    useCases: ['Shop Window','Entrance','Lobby','Reception','Travel Hub'],
+    phData: ['store_location','store_info'],
+    standalone: true,
+    standaloneFile: 'languages-on-shift.html',
+    settings: { showHeader:false, colorScheme:false, iconPosition:false, headerCopy:false, itemTypeFilter:false, categoryFilter:false, soldOutBehavior:false, portrait:false, landscape:false, showClock:false, personalGreeting:false, showStoreName:false, campaignFilter:false, dayOrder:false, languageDisplay:true },
+    defaults: {
+      losPreset:'signature-dark',
+      losFlagPosition:'above', losAlign:'center', losVerticalAnchor:'center', losSafeAreaScale:1, losGapScale:1, losHeroGap:64,
+      losFlagShape:'rounded', losFlagSizeScale:1, losFlagShadow:'deep', losFlagBorder:'none', losFlagRingGlow:'false', losFlagBehindOpacity:0.18,
+      losFontFamily:'system', losNativeScale:1, losNativeWeight:800, losNativeTrack:-0.025, losNativeCase:'none',
+      losEnglishScale:1, losEnglishWeight:500, losEnglishOpacity:0.58, losEnglishCase:'none',
+      losHeadlineScale:1, losHeadlineWeight:800, losEyebrowScale:1, losEyebrowTrack:0.2,
+      losColorPreset:'dark', losColorBg:'#070B10', losColorFg:'#FFFFFF', losColorAccent:'#2FC3E8', losBgStyle:'radialGlow', losGlow:0.16,
+      losCopyEyebrow:'On shift right now', losCopyHeadline:'We speak your language', losCopyKicker:'We speak',
+      losCopyFootNote:'{count} languages spoken by the team on shift', losCopyEmptyHeadline:'Here to help',
+      losCopyEmptyBody:'Ask any colleague — we will always find someone who can help.',
+      losCopyClosedHeadline:'Back tomorrow', losCopyClosedBody:'Our team will be here from {openTime}.',
+      losShowEyebrow:'true', losShowLiveDot:'true', losShowHeadline:'true', losShowKicker:'true', losShowFlag:'true',
+      losShowNative:'true', losShowEnglish:'true', losShowStrip:'true', losShowDots:'true', losShowFootNote:'true',
+      losEnterStyle:'rise', losDwellMs:3200, losTransitionMs:600, losStaggerMs:70, losEasing:'expo', losReducedMotion:'false',
+      losMaxLanguages:12, losOverflowBehaviour:'topN', losSortOrder:'apiOrder', losPinLanguages:'', losExcludedLanguages:'',
+      losPlaybackMode:'fullLoop', losDurationSeconds:30, losDaypartToOpeningHours:'true', losSuppressBelowLanguageCount:2,
+      losNoDataBehaviour:'skipItem', losShowStaleIndicator:'false',
+    },
+    portraitSVG: (W,H) => {
+      const flagW=W*0.34, flagH=flagW*0.66, flagX=W/2-flagW/2, flagY=18;
+      return `<rect width="${W}" height="${H}" fill="#070B10"/>` +
+      `<rect x="${W/2-13}" y="8" width="26" height="4" rx="2" fill="#2FC3E8" opacity=".85"/>` +
+      `<rect x="${W/2-20}" y="15" width="40" height="5" rx="2" fill="rgba(255,255,255,.85)"/>` +
+      `<rect x="${flagX}" y="${flagY+10}" width="${flagW}" height="${flagH}" rx="3" fill="#2FC3E8" opacity=".85"/>` +
+      `<rect x="${W/2-15}" y="${flagY+flagH+18}" width="30" height="9" rx="2" fill="rgba(255,255,255,.92)"/>` +
+      `<rect x="${W/2-11}" y="${flagY+flagH+31}" width="22" height="3.5" rx="1.5" fill="rgba(255,255,255,.4)"/>` +
+      [0,1,2].map(i=>`<rect x="${W/2-28+i*20}" y="${H-24}" width="16" height="6" rx="3" fill="rgba(255,255,255,.12)"/>`).join('') +
+      `<circle cx="${W/2-2}" cy="${H-8}" r="2.2" fill="#2FC3E8"/><circle cx="${W/2+5}" cy="${H-8}" r="1.8" fill="rgba(255,255,255,.3)"/><circle cx="${W/2+11}" cy="${H-8}" r="1.8" fill="rgba(255,255,255,.3)"/>`;
+    },
+    landscapeSVG: (W,H) => {
+      const flagH=H*0.38, flagW=flagH*1.5, flagX=W*0.2, flagY=H/2-flagH/2;
+      return `<rect width="${W}" height="${H}" fill="#070B10"/>` +
+      `<rect x="${flagX}" y="${flagY}" width="${flagW}" height="${flagH}" rx="3" fill="#2FC3E8" opacity=".85"/>` +
+      `<rect x="${flagX+flagW+14}" y="${H*0.3}" width="${W*0.2}" height="7" rx="2" fill="rgba(255,255,255,.35)"/>` +
+      `<rect x="${flagX+flagW+14}" y="${H*0.3+12}" width="${W*0.3}" height="14" rx="3" fill="rgba(255,255,255,.92)"/>` +
+      `<rect x="${flagX+flagW+14}" y="${H*0.3+32}" width="${W*0.16}" height="5" rx="2" fill="rgba(255,255,255,.3)"/>`;
+    }
+  },
 ];
 
 const PH_DATA_LABELS = {
@@ -1973,7 +2313,8 @@ function openTplDetailFromLib(id) {
     portrait: 'Portrait Display Settings', landscape: 'Landscape Display Settings',
     showClock: 'Show Date & Time', personalGreeting: 'Personalised Greeting (First Name)',
     showStoreName: 'Show Store Name', campaignFilter: 'Campaign Filter Mode',
-    dayOrder: 'Day Order (Current Day First / Monday–Sunday)'
+    dayOrder: 'Day Order (Current Day First / Monday–Sunday)',
+    languageDisplay: 'Language Display Settings'
   };
   const settingsList = Object.entries(t.settings).filter(([,v])=>v).map(([k])=>`<li style="font-size:12px;color:var(--text2);padding:3px 0;">✓ ${settingLabels[k]||k}</li>`).join('');
   const phDataHtml = (t.phData || []).map(key => {
@@ -3788,6 +4129,264 @@ function setTemplateAsDefault(tplId) {
 }
 window.setTemplateAsDefault = setTemplateAsDefault;
 
+// ===== LANGUAGES ON SHIFT — Language Display config (schema-driven) =====
+// Config is data-bound at the backend/template level only (§2 of the build
+// brief) — this UI never shows JSON, a field path, the resolver, or the
+// endpoint. Every field here is a styling/copy/motion choice.
+const LOS_SCHEMA = [
+  { g:'LAYOUT', f:[
+    { k:'losFlagPosition', t:'select', l:'Flag Position', o:[['above','Above the name'],['left','Left of the name'],['right','Right of the name'],['behind','Behind, full bleed'],['none','No flag']], help:'Where the flag sits relative to the language name.' },
+    { k:'losAlign', t:'select', l:'Alignment', o:[['center','Centre'],['left','Left']], help:'Horizontal alignment of the whole card.' },
+    { k:'losVerticalAnchor', t:'select', l:'Vertical Anchor', o:[['upper','Upper'],['center','Centre'],['lower','Lower']], help:'Where the hero content sits vertically on screen.' },
+    { k:'losSafeAreaScale', t:'number', l:'Safe-area Padding', min:0.6, max:1.6, step:0.05, help:'Multiplier on the outer margin, 0.6&ndash;1.6&times;.' },
+    { k:'losGapScale', t:'number', l:'Spacing Rhythm', min:0.5, max:2, step:0.05, help:'Multiplier on the spacing between elements, 0.5&ndash;2&times;.' },
+    { k:'losHeroGap', t:'number', l:'Flag / Text Gap (px)', min:0, max:160, step:4, help:'Gap in pixels between the flag and the language text.' },
+  ]},
+  { g:'FLAG TREATMENT', f:[
+    { k:'losFlagShape', t:'select', l:'Shape', o:[['natural','Natural ratio'],['rounded','Rounded rectangle 3:2'],['circle','Circle'],['squircle','Squircle']], help:'The flag&rsquo;s container shape.' },
+    { k:'losFlagSizeScale', t:'number', l:'Size', min:0.4, max:1.8, step:0.02, help:'Multiplier on the flag&rsquo;s base size, 0.4&ndash;1.8&times;.' },
+    { k:'losFlagShadow', t:'select', l:'Shadow', o:[['none','None'],['soft','Soft'],['deep','Deep']], help:'Drop shadow beneath the flag.' },
+    { k:'losFlagBorder', t:'select', l:'Border', o:[['none','None'],['hairline','Hairline rule'],['accent','Accent 4px'],['light','White 6px']], help:'Border treatment around the flag.' },
+    { k:'losFlagRingGlow', t:'bool', l:'Accent Ring', help:'Adds a thin accent-coloured ring around the flag.' },
+    { k:'losFlagBehindOpacity', t:'number', l:'Behind-mode Opacity', min:0.05, max:0.6, step:0.01, help:'Opacity of the full-bleed watermark flag when Flag Position is &ldquo;Behind&rdquo;.' },
+  ]},
+  { g:'TYPOGRAPHY', f:[
+    { k:'losFontFamily', t:'select', l:'Font Family', o:[['system','System / neutral'],['geometric','Geometric sans'],['humanist','Humanist sans'],['condensed','Condensed sans'],['serif','Serif']], help:'Typeface family for all text on the card.' },
+    { k:'losNativeScale', t:'number', l:'Language Name Size', min:0.5, max:1.6, step:0.02, help:'Multiplier on the native language name &mdash; always the largest text on screen.' },
+    { k:'losNativeWeight', t:'select', l:'Language Name Weight', o:[['400','Regular'],['500','Medium'],['600','Semibold'],['700','Bold'],['800','Extrabold'],['900','Black']], help:'Font weight of the native language name.' },
+    { k:'losNativeTrack', t:'number', l:'Language Name Tracking (em)', min:-0.06, max:0.12, step:0.005, help:'Letter spacing on the native name.' },
+    { k:'losNativeCase', t:'select', l:'Language Name Case', o:[['none','As typed'],['uppercase','UPPERCASE']], help:'Force the native name to uppercase (has no visual effect on non-cased scripts like Chinese or Arabic).' },
+    { k:'losEnglishScale', t:'number', l:'Secondary Name Size', min:0.4, max:1.4, step:0.02, help:'Multiplier on the secondary (English) name and kicker.' },
+    { k:'losEnglishWeight', t:'select', l:'Secondary Name Weight', o:[['300','Light'],['400','Regular'],['500','Medium'],['600','Semibold'],['700','Bold']], help:'Font weight of the secondary name.' },
+    { k:'losEnglishOpacity', t:'number', l:'Secondary Name Opacity', min:0.25, max:1, step:0.02, help:'How muted the secondary name is, 25%&ndash;100%.' },
+    { k:'losEnglishCase', t:'select', l:'Secondary Name Case', o:[['none','As typed'],['uppercase','UPPERCASE']], help:'Force the secondary name to uppercase.' },
+    { k:'losHeadlineScale', t:'number', l:'Headline Size', min:0.4, max:1.5, step:0.02, help:'Multiplier on the headline.' },
+    { k:'losHeadlineWeight', t:'select', l:'Headline Weight', o:[['400','Regular'],['500','Medium'],['600','Semibold'],['700','Bold'],['800','Extrabold'],['900','Black']], help:'Font weight of the headline.' },
+    { k:'losEyebrowScale', t:'number', l:'Eyebrow Size', min:0.5, max:1.6, step:0.02, help:'Multiplier on the small status line above the headline.' },
+    { k:'losEyebrowTrack', t:'number', l:'Eyebrow Tracking (em)', min:0, max:0.4, step:0.01, help:'Letter spacing on the eyebrow line.' },
+  ]},
+  { g:'COLOUR', f:[
+    { k:'losColorPreset', t:'select', l:'Palette', o:[['dark','Dark'],['light','Light'],['brand','Brand'],['custom','Custom']], help:'Built-in colour palette. Picking a swatch below switches this to Custom automatically.' },
+    { k:'losColorBg', t:'color', l:'Background' },
+    { k:'losColorFg', t:'color', l:'Text' },
+    { k:'losColorAccent', t:'color', l:'Accent' },
+    { k:'losBgStyle', t:'select', l:'Background Treatment', o:[['solid','Solid'],['radialGlow','Radial accent glow'],['linear','Vertical gradient'],['accentWash','Accent wash']], help:'Decorative background effect behind the card.' },
+    { k:'losGlow', t:'number', l:'Treatment Intensity', min:0, max:0.6, step:0.01, help:'Strength of the background treatment, 0%&ndash;60%.' },
+  ]},
+  { g:'COPY', f:[
+    { k:'_tokens', t:'note', l:'Tokens available in every field below: {language} {languageNative} {count} {index} {total} {storeName} {storeCode} {openTime} {updatedMinutes}' },
+    { k:'losCopyEyebrow', t:'text', l:'Eyebrow', max:30 },
+    { k:'losCopyHeadline', t:'text', l:'Headline', max:40 },
+    { k:'losCopyKicker', t:'text', l:'Kicker (above the name)', max:20 },
+    { k:'losCopyFootNote', t:'text', l:'Footer Note', max:70 },
+    { k:'losCopyEmptyHeadline', t:'text', l:'Empty-state Headline', max:30 },
+    { k:'losCopyEmptyBody', t:'text', l:'Empty-state Body', max:90 },
+    { k:'losCopyClosedHeadline', t:'text', l:'Closed Headline', max:30 },
+    { k:'losCopyClosedBody', t:'text', l:'Closed Body', max:90 },
+  ]},
+  { g:'ELEMENTS', f:[
+    { k:'losShowEyebrow', t:'bool', l:'Eyebrow' },
+    { k:'losShowLiveDot', t:'bool', l:'Live Status Dot' },
+    { k:'losShowHeadline', t:'bool', l:'Headline' },
+    { k:'losShowKicker', t:'bool', l:'Kicker' },
+    { k:'losShowFlag', t:'bool', l:'Flag' },
+    { k:'losShowNative', t:'bool', l:'Language Name (native)' },
+    { k:'losShowEnglish', t:'bool', l:'Secondary Name' },
+    { k:'losShowStrip', t:'bool', l:'Flag Strip (all languages)', help:'Automatically hides above 14 languages, where chips would fall below the legibility floor.' },
+    { k:'losShowDots', t:'bool', l:'Progress Dots' },
+    { k:'losShowFootNote', t:'bool', l:'Footer Note' },
+  ]},
+  { g:'MOTION', f:[
+    { k:'losEnterStyle', t:'select', l:'Enter Style', o:[['rise','Rise up'],['fade','Cross-fade'],['scale','Scale in'],['slide','Slide across'],['flip','Flip in']], help:'Animation style as each language enters.' },
+    { k:'losDwellMs', t:'number', l:'Dwell per Language (ms)', min:1500, max:10000, step:100, help:'How long each language stays on screen, 1500&ndash;10000ms.' },
+    { k:'losTransitionMs', t:'number', l:'Transition (ms)', min:200, max:1200, step:50, help:'Enter/exit animation duration. Must be no more than 40% of the dwell time.' },
+    { k:'losStaggerMs', t:'number', l:'Element Stagger (ms)', min:0, max:200, step:10, help:'Delay between each element animating in.' },
+    { k:'losEasing', t:'select', l:'Easing', o:[['expo','Expo out'],['smooth','Smooth'],['snap','Snap / overshoot'],['linear','Linear']], help:'Animation easing curve.' },
+    { k:'losReducedMotion', t:'bool', l:'Reduced Motion', help:'Forces a plain 400ms cross-fade with no movement, for accessibility.' },
+  ]},
+  { g:'PLAYBACK', f:[
+    { k:'losMaxLanguages', t:'number', l:'Max Languages Shown', min:1, max:24, step:1, help:'Caps how many resolved languages appear in one loop.' },
+    { k:'losOverflowBehaviour', t:'select', l:'Overflow Behaviour', o:[['topN','Show first N only'],['paginate','Rotate the excess across loops']], help:'What happens when more languages resolve than the cap above.' },
+    { k:'losSortOrder', t:'select', l:'Sort Order', o:[['apiOrder','As sent by the store record'],['registryPriority','Registry priority'],['alphaLocal','Alphabetical (native name)'],['randomPerLoop','Random each loop']], help:'Order languages play in.' },
+    { k:'losPinLanguages', t:'text', l:'Pinned Languages', help:'Comma-separated language codes to always show first, e.g. the store&rsquo;s main operating language. Store-overridable.' },
+    { k:'losExcludedLanguages', t:'text', l:'Excluded Languages', help:'Comma-separated language codes to never show, even if the store record sends them.' },
+    { k:'losPlaybackMode', t:'select', l:'Playback Mode', o:[['fullLoop','Play the full loop each time'],['fixedDuration','Stop after a fixed duration']], help:'Whether the item always completes a full loop or runs for a fixed time.' },
+    { k:'losDurationSeconds', t:'number', l:'Fixed Duration (seconds)', min:5, max:600, step:5, help:'Only used when Playback Mode is &ldquo;Fixed duration&rdquo;.' },
+    { k:'losDaypartToOpeningHours', t:'bool', l:'Skip Outside Opening Hours', help:'Shows the closed state outside the store&rsquo;s opening hours instead of the language sequence.' },
+    { k:'losSuppressBelowLanguageCount', t:'number', l:'Suppress Below Language Count', min:0, max:10, step:1, help:'Falls back below this many resolved languages. 0 disables. Exactly one language always gets its own static card regardless of this setting.' },
+  ]},
+  { g:'FALLBACK', f:[
+    { k:'losNoDataBehaviour', t:'select', l:'No-data Behaviour', o:[['skipItem','Skip this item'],['showFallbackCard','Show the empty-state card'],['showLastKnown','Keep showing the last known-good languages']], help:'What happens when no languages resolve at all.' },
+    { k:'losShowStaleIndicator', t:'bool', l:'Show Stale Indicator', help:'Appends &ldquo;&middot; updated N min ago&rdquo; to the eyebrow when data is older than the poll interval.' },
+  ]},
+];
+const LOS_BOOL_KEYS = new Set(['losFlagRingGlow','losShowEyebrow','losShowLiveDot','losShowHeadline','losShowKicker','losShowFlag','losShowNative','losShowEnglish','losShowStrip','losShowDots','losShowFootNote','losReducedMotion','losDaypartToOpeningHours','losShowStaleIndicator']);
+const LOS_NUMBER_KEYS = new Set(['losSafeAreaScale','losGapScale','losHeroGap','losFlagSizeScale','losFlagBehindOpacity','losNativeScale','losNativeWeight','losNativeTrack','losEnglishScale','losEnglishWeight','losEnglishOpacity','losHeadlineScale','losHeadlineWeight','losEyebrowScale','losEyebrowTrack','losGlow','losDwellMs','losTransitionMs','losStaggerMs','losMaxLanguages','losDurationSeconds','losSuppressBelowLanguageCount']);
+
+const LOS_PRESET_OPTIONS = [
+  ['signature-dark','Signature Dark (default)'], ['daylight-minimal','Daylight Minimal'],
+  ['brand-immersive','Brand Immersive'], ['editorial-serif','Editorial Serif'], ['high-contrast-max','High Contrast Max']
+];
+// Flat preset overrides — mirrors PRESETS in languages-on-shift.html, kept in
+// los* admin-key form so applying a preset here is a plain object merge.
+const LOS_ADMIN_PRESETS = {
+  'signature-dark': {},
+  'daylight-minimal': {
+    losFlagShape:'circle', losFlagSizeScale:0.85, losFlagShadow:'soft',
+    losHeadlineScale:0.8, losNativeScale:1.12, losEnglishOpacity:0.5,
+    losColorPreset:'light', losColorBg:'#FFFFFF', losColorFg:'#0B0F14', losColorAccent:'#0E7FA0', losBgStyle:'solid',
+    losShowStrip:'false', losShowKicker:'false', losEnterStyle:'fade', losDwellMs:3600
+  },
+  'brand-immersive': {
+    losFlagPosition:'behind', losFlagBehindOpacity:0.26,
+    losNativeCase:'uppercase', losNativeScale:0.92, losNativeTrack:0.01, losHeadlineScale:0.85,
+    losColorPreset:'brand', losColorBg:'#0C6F8C', losColorFg:'#FFFFFF', losColorAccent:'#9BE8FA', losBgStyle:'accentWash',
+    losShowKicker:'false', losEnterStyle:'scale', losDwellMs:3000
+  },
+  'editorial-serif': {
+    losFlagPosition:'left', losAlign:'left', losHeroGap:88, losSafeAreaScale:1.05,
+    losFlagShape:'natural', losFlagSizeScale:0.72, losFlagShadow:'soft',
+    losFontFamily:'serif', losNativeScale:0.92, losNativeWeight:700, losNativeTrack:-0.015,
+    losHeadlineScale:0.78, losEnglishCase:'uppercase', losEnglishScale:0.7,
+    losColorPreset:'light', losColorBg:'#FBF9F5', losColorFg:'#14110E', losColorAccent:'#8A6A3B', losBgStyle:'solid',
+    losShowStrip:'false', losShowKicker:'false', losEnterStyle:'fade', losDwellMs:4000, losTransitionMs:800
+  },
+  'high-contrast-max': {
+    losFlagShape:'squircle', losFlagSizeScale:1.15, losFlagShadow:'none', losFlagRingGlow:'true',
+    losNativeScale:1.25, losHeadlineScale:0.7, losEnglishOpacity:0.75, losEnglishScale:1.1,
+    losSafeAreaScale:0.85, losColorPreset:'dark', losColorBg:'#000000', losColorFg:'#FFFFFF', losColorAccent:'#FFD400', losBgStyle:'solid',
+    losShowStrip:'false', losEnterStyle:'rise', losDwellMs:2800
+  }
+};
+
+let _losPreviewLangs = ['en','pl','ur','es','zh','ro','bsl','pa'];
+let _losPreviewScenario = 'ok';
+let _losPreviewOrientation = 'portrait';
+
+function renderLosFields() {
+  const host = document.getElementById('losFieldsContainer');
+  if (!host || host.dataset.rendered) return;
+  host.dataset.rendered = '1';
+  const presetField = `<div class="form-group">
+      <label>Template Preset</label>
+      <select id="losPreset" onchange="onLosPresetChange()">
+        ${LOS_PRESET_OPTIONS.map(([v,t])=>`<option value="${v}">${t}</option>`).join('')}
+      </select>
+      <p class="form-help">Pick a starting point, then adjust anything below. Saved templates can be reused across stores and brands.</p>
+    </div>
+    <div class="form-group">
+      <label>Preview Languages <span style="font-size:11px;font-weight:400;text-transform:none;color:var(--text2);">(preview only &mdash; live stores get this from the store record)</span></label>
+      <div class="los-preview-lang-picker" id="losPreviewLangPicker"></div>
+    </div>
+    <div class="form-group">
+      <label>Preview Scenario</label>
+      <select id="losPreviewScenario" onchange="onLosPreviewControlChange()">
+        <option value="ok">Normal &mdash; languages available</option>
+        <option value="stale">Information a few minutes old</option>
+        <option value="empty">No languages recorded</option>
+        <option value="closed">Store closed</option>
+        <option value="error">Information unavailable</option>
+      </select>
+      <p class="form-help">Preview only. In a live store this comes from the store record automatically &mdash; nothing here is written back to it.</p>
+    </div>`;
+  const groups = LOS_SCHEMA.map(gr => {
+    const fields = gr.f.map(fd => {
+      if (fd.t === 'note') return `<p class="form-help" style="margin:-4px 0 12px;">${fd.l}</p>`;
+      const id = fd.k;
+      let control = '';
+      if (fd.t === 'select') control = `<select id="${id}" onchange="onLosFieldChange()">${fd.o.map(([v,t])=>`<option value="${v}">${t}</option>`).join('')}</select>`;
+      else if (fd.t === 'bool') control = `<select id="${id}" onchange="onLosFieldChange()"><option value="true">On</option><option value="false">Off</option></select>`;
+      else if (fd.t === 'number') control = `<input type="number" id="${id}" min="${fd.min}" max="${fd.max}" step="${fd.step}" oninput="onLosFieldChange()">`;
+      else if (fd.t === 'color') control = `<input type="color" id="${id}" style="height:40px;padding:4px;cursor:pointer;" oninput="onLosFieldChange()">`;
+      else control = `<input type="text" id="${id}" ${fd.max?`maxlength="${fd.max}"`:''} oninput="onLosFieldChange()">`;
+      return `<div class="form-group"><label>${fd.l}</label>${control}${fd.help?`<p class="form-help">${fd.help}</p>`:''}</div>`;
+    }).join('');
+    return `<div class="los-subgroup">${gr.g}</div><div class="form-row cols-2">${fields}</div>`;
+  }).join('');
+  host.innerHTML = presetField + groups;
+  document.getElementById('losPreviewLangPicker').onclick = ev => {
+    const b = ev.target.closest('button'); if (!b) return;
+    const c = b.dataset.c;
+    _losPreviewLangs = _losPreviewLangs.includes(c) ? _losPreviewLangs.filter(x=>x!==c) : [..._losPreviewLangs, c];
+    renderLosPreviewLangPicker();
+    pushLosPreview();
+  };
+}
+
+function renderLosPreviewLangPicker() {
+  const el = document.getElementById('losPreviewLangPicker');
+  if (!el) return;
+  el.innerHTML = getLanguages().map(l => `<button type="button" data-c="${escHtml(l.code)}" class="${_losPreviewLangs.includes(l.code)?'on':''}">${escHtml(l.english)}</button>`).join('');
+}
+
+function onLosPresetChange() {
+  const name = document.getElementById('losPreset').value;
+  const libEntry = TEMPLATE_LIBRARY.find(t => t.id === 'languages-on-shift');
+  const merged = Object.assign({}, libEntry.defaults, LOS_ADMIN_PRESETS[name] || {}, { losPreset: name });
+  loadLosFields(merged);
+  pushLosPreview();
+}
+window.onLosPresetChange = onLosPresetChange;
+
+function loadLosFields(flat) {
+  const libEntry = TEMPLATE_LIBRARY.find(t => t.id === 'languages-on-shift');
+  const d = Object.assign({}, libEntry.defaults, flat || {});
+  setValue('losPreset', d.losPreset || 'signature-dark');
+  LOS_SCHEMA.forEach(gr => gr.f.forEach(fd => {
+    if (fd.t === 'note') return;
+    const el = document.getElementById(fd.k);
+    if (!el) return;
+    const v = d[fd.k];
+    if (fd.t === 'select' || fd.t === 'bool') setValue(fd.k, LOS_BOOL_KEYS.has(fd.k) ? String(v === true || v === 'true') : v);
+    else el.value = v == null ? '' : (Array.isArray(v) ? v.join(', ') : v);
+  }));
+}
+
+function collectLosFields() {
+  const out = { losPreset: document.getElementById('losPreset')?.value || 'signature-dark' };
+  LOS_SCHEMA.forEach(gr => gr.f.forEach(fd => {
+    if (fd.t === 'note') return;
+    const el = document.getElementById(fd.k);
+    if (!el) return;
+    if (LOS_NUMBER_KEYS.has(fd.k)) out[fd.k] = parseFloat(el.value);
+    else out[fd.k] = el.value;
+  }));
+  return out;
+}
+window.onLosFieldChange = () => pushLosPreview();
+window.onLosPreviewControlChange = () => { _losPreviewScenario = document.getElementById('losPreviewScenario').value; pushLosPreview(); };
+
+const LOS_MOCK_HOURS_OPEN   = [{ open_day:'MONDAY', open_time:'00:00:00', close_day:'SUNDAY', close_time:'23:59:00', is_active:true }];
+const LOS_MOCK_HOURS_CLOSED = [{ open_day:'MONDAY', open_time:'03:00:00', close_day:'MONDAY', close_time:'03:01:00', is_active:true }];
+function pushLosPreview() {
+  const frame = document.getElementById('losPreviewFrame');
+  if (!frame || !frame.contentWindow) return;
+  const flat = collectLosFields();
+  const scenario = _losPreviewScenario;
+  const langs = getLanguages();
+  const rawLanguages = scenario === 'empty' ? [] : _losPreviewLangs.map(c => (langs.find(l=>l.code===c)||{}).english).filter(Boolean);
+  frame.contentWindow.postMessage({
+    type: 'los-preview-update',
+    flatSettings: flat,
+    orientation: _losPreviewOrientation,
+    storeLoc: { store_name: 'Preview Store', store_code: 'PREVIEW-01', store_timezone: 'Europe/London' },
+    openingHours: scenario === 'closed' ? LOS_MOCK_HOURS_CLOSED : LOS_MOCK_HOURS_OPEN,
+    rawLanguages: scenario === 'error' ? [] : rawLanguages,
+  }, '*');
+}
+document.addEventListener('DOMContentLoaded', () => {
+  const frame = document.getElementById('losPreviewFrame');
+  if (frame) frame.addEventListener('load', () => pushLosPreview());
+  const seg = document.getElementById('losPreviewOrientation');
+  if (seg) seg.onclick = e => {
+    const b = e.target.closest('button'); if (!b) return;
+    [...seg.children].forEach(x => x.classList.remove('on')); b.classList.add('on');
+    _losPreviewOrientation = b.dataset.v;
+    document.getElementById('losPreviewFrame').closest('.los-preview-frame').classList.toggle('landscape', _losPreviewOrientation === 'landscape');
+    pushLosPreview();
+  };
+});
+
 function openNewTemplateEditor() {
   openTemplatePicker(templateId => {
     const t = TEMPLATE_LIBRARY.find(x => x.id === templateId);
@@ -3858,6 +4457,7 @@ function openNewTemplateEditor() {
     }
     // Show/hide settings sections based on template schema
     applyTemplateSchema(templateId);
+    if (templateId === 'languages-on-shift') { loadLosFields(d); pushLosPreview(); }
   });
 }
 
@@ -3917,6 +4517,18 @@ function applyTemplateSchema(templateId) {
       el.style.display = show ? '' : 'none';
       el = el.nextElementSibling;
     }
+  }
+  // Language Display section — only for Languages On Shift. Everything else
+  // in this template (data binding, resolver, endpoint) stays invisible per
+  // the build brief's hard "no JSON" constraint — this section is styling,
+  // copy and motion only.
+  const sdLosEl = document.getElementById('sd-language-display');
+  const losEditorEl = document.getElementById('losEditor');
+  if (sdLosEl && losEditorEl) {
+    const show = !!s.languageDisplay;
+    sdLosEl.style.display = show ? '' : 'none';
+    losEditorEl.style.display = show ? '' : 'none';
+    if (show) { renderLosFields(); renderLosPreviewLangPicker(); }
   }
   // Store Opening Hours has no item grid, so price/description/item-card
   // colours are irrelevant — hide them and repurpose the generic text colour as
@@ -4038,6 +4650,7 @@ function openEditTemplateEditor(tplId) {
   _tplSelectedCategories = Array.isArray(tpl.categoriesToPresent) ? [...tpl.categoriesToPresent] : [];
   if (_tplSave) _tplSave.reset();
   if (tpl.templateType) applyTemplateSchema(tpl.templateType);
+  if (tpl.templateType === 'languages-on-shift') { loadLosFields(tpl); pushLosPreview(); }
   if (document.getElementById('tplHeroSize'))           document.getElementById('tplHeroSize').value           = tpl.heroSize || 'balanced';
   document.getElementById('tplRotationSeconds').value   = tpl.rotationSeconds || 5;
   _showTplEditor();
@@ -4204,6 +4817,10 @@ function saveTemplate() {
     heroSize:          document.getElementById('tplHeroSize')?.value || 'balanced',
     rotationSeconds: parseInt(document.getElementById('tplRotationSeconds')?.value) || 5,
   };
+
+  if (document.getElementById('tplEditId').dataset.templateType === 'languages-on-shift') {
+    Object.assign(tplData, collectLosFields());
+  }
 
   if (_tplEditingId) {
     const idx = _editingBrandTemplates.findIndex(t => t.id === _tplEditingId);
@@ -4748,6 +5365,13 @@ onSnapshot(doc(db, MB, 'brands'), snap => {
 
 onSnapshot(doc(db, MB, 'types'), snap => {
   if (snap.exists() && snap.data().data) _types = snap.data().data;
+});
+
+onSnapshot(doc(db, MB, 'languages'), snap => {
+  if (snap.exists() && snap.data().data) _languages = snap.data().data;
+  if (document.getElementById('losPreviewLangPicker')) renderLosPreviewLangPicker();
+  const panel = document.getElementById('langRegistryList');
+  if (panel) renderLanguageRegistry();
 });
 
 onSnapshot(doc(db, MB, 'categories'), snap => {

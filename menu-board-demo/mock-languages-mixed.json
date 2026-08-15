@@ -1,0 +1,22 @@
+{
+  "data": {
+    "store_location": {
+      "store_code": "O2O-001",
+      "store_name": "Pizza Hut — Leeds Trinity",
+      "languages": ["pl", "Polish", "Polski", "  urdu  ", "URDU", { "code": "es" }, "Klingon", "", null, "Mandarin"],
+      "display_type": "menu-board-portrait",
+      "store_timezone": "Europe/London"
+    },
+    "store_info": {
+      "opening_hours": [
+        { "open_day": "MONDAY",    "open_time": "11:00:00", "close_day": "MONDAY",    "close_time": "22:00:00", "is_active": true },
+        { "open_day": "TUESDAY",   "open_time": "11:00:00", "close_day": "TUESDAY",   "close_time": "22:00:00", "is_active": true },
+        { "open_day": "WEDNESDAY", "open_time": "11:00:00", "close_day": "WEDNESDAY", "close_time": "22:00:00", "is_active": true },
+        { "open_day": "THURSDAY",  "open_time": "11:00:00", "close_day": "THURSDAY",  "close_time": "22:00:00", "is_active": true },
+        { "open_day": "FRIDAY",    "open_time": "11:00:00", "close_day": "FRIDAY",    "close_time": "22:00:00", "is_active": true },
+        { "open_day": "SATURDAY",  "open_time": "11:00:00", "close_day": "SATURDAY",  "close_time": "23:00:00", "is_active": true },
+        { "open_day": "SUNDAY",    "open_time": "12:00:00", "close_day": "SUNDAY",    "close_time": "20:00:00", "is_active": true }
+      ]
+    }
+  }
+}

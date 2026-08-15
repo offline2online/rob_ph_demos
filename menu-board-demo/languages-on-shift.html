@@ -1,0 +1,1042 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Languages On Shift</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+<style>
+  /* Self-hosted, subsetted Noto script packs — Arabic/Urdu, Gurmukhi, Chinese
+     (Simplified) subset to exactly the glyphs the seed Registry uses; Devanagari
+     and Thai kept as full script subsets for future Registry entries. Latin,
+     Latin-ext, Cyrillic, Greek and Vietnamese are already covered by the Inter
+     family loaded above, so no separate pack is needed for those scripts. */
+  @font-face { font-family:'Noto Sans Arabic';     font-style:normal; font-weight:400 800; src:url('./fonts/noto-sans-arabic-subset.woff2') format('woff2'); font-display:swap; }
+  @font-face { font-family:'Noto Sans Gurmukhi';   font-style:normal; font-weight:400 800; src:url('./fonts/noto-sans-gurmukhi-subset.woff2') format('woff2'); font-display:swap; }
+  @font-face { font-family:'Noto Sans SC';         font-style:normal; font-weight:400 800; src:url('./fonts/noto-sans-sc-subset.woff2') format('woff2'); font-display:swap; }
+  @font-face { font-family:'Noto Sans Devanagari'; font-style:normal; font-weight:400;     src:url('./fonts/noto-sans-devanagari.woff2') format('woff2'); font-display:swap; }
+  @font-face { font-family:'Noto Sans Thai';       font-style:normal; font-weight:400;     src:url('./fonts/noto-sans-thai.woff2') format('woff2'); font-display:swap; }
+
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; overflow: hidden; }
+  body { -webkit-font-smoothing: antialiased; }
+
+  .sign {
+    width: 100vw; height: 100vh; position: relative; overflow: hidden;
+    display: flex; flex-direction: column;
+    background: var(--bg); color: var(--fg); font-family: var(--ff);
+  }
+  .sign .bgfx { position: absolute; inset: 0; z-index: 1; pointer-events: none; }
+  .sign .behindFlag { position: absolute; inset: 0; z-index: 0;
+    background-size: cover; background-position: center; opacity: var(--behindOpacity);
+    transition: opacity .35s ease; }
+
+  .hd, .bd, .ft { position: relative; z-index: 2; }
+  .hd { padding: var(--pad) var(--pad) 0; flex-shrink: 0; }
+  .ft { padding: 0 var(--pad) var(--pad); display: flex; flex-direction: column;
+    gap: calc(18px * var(--gap)); flex-shrink: 0; }
+  .bd { flex: 1; min-height: 0; display: flex; padding: 0 var(--pad); }
+
+  .a-center .hd, .a-center .ft { text-align: center; }
+  .a-center .ft .strip, .a-center .ft .dots { justify-content: center; }
+  .a-center .eyebrow { justify-content: center; }
+  .a-left .hd, .a-left .ft { text-align: left; }
+
+  .v-center .bd { align-items: center; }
+  .v-upper  .bd { align-items: flex-start; padding-top: calc(var(--pad) * .4); }
+  .v-lower  .bd { align-items: flex-end; padding-bottom: calc(var(--pad) * .4); }
+
+  .eyebrow { font-size: var(--eyebrow); letter-spacing: var(--eyebrowTrack);
+    text-transform: uppercase; font-weight: 700; color: var(--accent);
+    display: flex; align-items: center; gap: .55em; }
+  .live { width: .6em; height: .6em; border-radius: 50%; background: var(--accent);
+    animation: pulse 2.4s ease-out infinite; flex-shrink: 0; }
+  @keyframes pulse {
+    0%   { box-shadow: 0 0 0 0 var(--accent); opacity: 1; }
+    70%  { box-shadow: 0 0 0 26px rgba(0,0,0,0); opacity: .85; }
+    100% { box-shadow: 0 0 0 0 rgba(0,0,0,0); opacity: 1; }
+  }
+  .headline { font-size: var(--headline); font-weight: var(--headlineWeight);
+    line-height: 1.03; margin: .3em 0 0; letter-spacing: -0.02em; }
+
+  .heroWrap { width: 100%; display: flex; gap: calc(var(--heroGap) * var(--gap)); }
+  .p-above .heroWrap { flex-direction: column; }
+  .p-left  .heroWrap { flex-direction: row; }
+  .p-right .heroWrap { flex-direction: row-reverse; }
+  .a-center .heroWrap { align-items: center; text-align: center; }
+  .a-left   .heroWrap { align-items: center; text-align: left; }
+  .a-left.p-above .heroWrap { align-items: flex-start; }
+
+  .flagBox { flex-shrink: 0; background-repeat: no-repeat; background-position: center;
+    box-shadow: var(--flagShadow); border: var(--flagBorder); }
+  .s-natural  .flagBox { width: var(--flagSize); aspect-ratio: var(--flagRatio, 3/2);
+    background-size: contain; border-radius: calc(10px * var(--flagSize) / 300); }
+  .s-rounded  .flagBox { width: var(--flagSize); aspect-ratio: 3/2;
+    background-size: cover; border-radius: calc(var(--flagSize) * .09); }
+  .s-circle   .flagBox { width: var(--flagSize); aspect-ratio: 1;
+    background-size: cover; border-radius: 50%; }
+  .s-squircle .flagBox { width: var(--flagSize); aspect-ratio: 1;
+    background-size: cover; border-radius: calc(var(--flagSize) * .26); }
+  .flagBox.glyph { display: flex; align-items: center; justify-content: center;
+    background: var(--chip); font-size: calc(var(--flagSize) * .5); }
+  .ringGlow .flagBox { box-shadow: var(--flagShadow), 0 0 0 calc(var(--flagSize)*.035) var(--accent); }
+
+  .txt { min-width: 0; flex: 1 1 auto; }
+  .kicker { font-size: var(--kicker); font-weight: 600; color: var(--accent);
+    letter-spacing: .16em; text-transform: uppercase; }
+  .native { font-size: var(--native); font-weight: var(--nativeWeight);
+    line-height: 1.02; letter-spacing: var(--nativeTrack); margin-top: .14em;
+    text-transform: var(--nativeCase); overflow-wrap: normal; word-break: normal; }
+  /* Only used as a last-resort fallback by fitNative() when a single word is
+     still wider than the safe area at the size floor — avoids ugly mid-word
+     breaks ("Englis-h") at any size above that. */
+  .native.native-force-wrap { overflow-wrap: anywhere; }
+  /* Muted via colour alpha (--englishColor), never opacity — opacity belongs to
+     the enter/exit animation below and the two would otherwise fight. */
+  .english { font-size: var(--english); font-weight: var(--englishWeight);
+    color: var(--englishColor); margin-top: .3em; letter-spacing: .01em;
+    text-transform: var(--englishCase); }
+
+  .bd .flagBox, .bd .kicker, .bd .native, .bd .english { opacity: 0; }
+  .bd.in.e-rise  .flagBox { animation: fFlagRise var(--tIn) var(--ease) forwards; }
+  .bd.in.e-rise  .kicker  { animation: fRise var(--tIn) var(--ease) calc(var(--stag)*1) forwards; }
+  .bd.in.e-rise  .native  { animation: fRise var(--tIn) var(--ease) calc(var(--stag)*2) forwards; }
+  .bd.in.e-rise  .english { animation: fRise var(--tIn) var(--ease) calc(var(--stag)*3) forwards; }
+  .bd.in.e-fade  .flagBox,
+  .bd.in.e-fade  .kicker, .bd.in.e-fade .native, .bd.in.e-fade .english {
+    animation: fFade var(--tIn) var(--ease) forwards; }
+  .bd.in.e-fade  .kicker  { animation-delay: calc(var(--stag)*1); }
+  .bd.in.e-fade  .native  { animation-delay: calc(var(--stag)*2); }
+  .bd.in.e-fade  .english { animation-delay: calc(var(--stag)*3); }
+  .bd.in.e-scale .flagBox { animation: fScale var(--tIn) var(--ease) forwards; }
+  .bd.in.e-scale .kicker  { animation: fScale var(--tIn) var(--ease) calc(var(--stag)*1) forwards; }
+  .bd.in.e-scale .native  { animation: fScale var(--tIn) var(--ease) calc(var(--stag)*2) forwards; }
+  .bd.in.e-scale .english { animation: fScale var(--tIn) var(--ease) calc(var(--stag)*3) forwards; }
+  .bd.in.e-slide .flagBox { animation: fSlide var(--tIn) var(--ease) forwards; }
+  .bd.in.e-slide .kicker  { animation: fSlide var(--tIn) var(--ease) calc(var(--stag)*1) forwards; }
+  .bd.in.e-slide .native  { animation: fSlide var(--tIn) var(--ease) calc(var(--stag)*2) forwards; }
+  .bd.in.e-slide .english { animation: fSlide var(--tIn) var(--ease) calc(var(--stag)*3) forwards; }
+  .bd.in.e-flip  .heroWrap { perspective: 1600px; }
+  .bd.in.e-flip  .flagBox { animation: fFlip var(--tIn) var(--ease) forwards; }
+  .bd.in.e-flip  .kicker  { animation: fFlip var(--tIn) var(--ease) calc(var(--stag)*1) forwards; }
+  .bd.in.e-flip  .native  { animation: fFlip var(--tIn) var(--ease) calc(var(--stag)*2) forwards; }
+  .bd.in.e-flip  .english { animation: fFlip var(--tIn) var(--ease) calc(var(--stag)*3) forwards; }
+  .bd.out .flagBox, .bd.out .kicker, .bd.out .native, .bd.out .english {
+    animation: fOut var(--tOut) cubic-bezier(.55,0,.68,.2) forwards; }
+
+  @keyframes fRise    { from{opacity:0;transform:translateY(46px)} to{opacity:1;transform:none} }
+  @keyframes fFlagRise{ from{opacity:0;transform:translateY(28px) scale(.87)} to{opacity:1;transform:none} }
+  @keyframes fFade    { from{opacity:0} to{opacity:1} }
+  @keyframes fScale   { from{opacity:0;transform:scale(.88)} to{opacity:1;transform:none} }
+  @keyframes fSlide   { from{opacity:0;transform:translateX(70px)} to{opacity:1;transform:none} }
+  @keyframes fFlip    { from{opacity:0;transform:rotateX(-42deg)} to{opacity:1;transform:none} }
+  @keyframes fOut     { from{opacity:1;transform:none} to{opacity:0;transform:translateY(-34px)} }
+
+  .strip { display: flex; flex-wrap: wrap; gap: calc(12px * var(--gap)); }
+  .chip { display: flex; align-items: center; gap: .45em; background: var(--chip);
+    border-radius: 999px; padding: .3em .8em .3em .34em; transition: opacity .4s, transform .4s, background .4s; }
+  .chip .cf { width: calc(var(--chipFlag) * 1.5); height: var(--chipFlag); border-radius: 5px;
+    background-size: cover; background-position: center; flex-shrink: 0; }
+  .chip .cg { width: calc(var(--chipFlag) * 1.5); height: var(--chipFlag); display: flex;
+    align-items: center; justify-content: center; font-size: calc(var(--chipFlag) * .8); }
+  .chip .ct { font-size: var(--chipText); font-weight: 600; color: var(--fg); opacity: .6;
+    letter-spacing: .02em; }
+  .chip.dim { opacity: .32; }
+  .chip.act { background: var(--accent); transform: scale(1.05); }
+  .chip.act .ct { color: var(--bg); opacity: 1; }
+  .dots { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; }
+  .dot { width: var(--dot); height: var(--dot); border-radius: 50%; background: var(--rule);
+    transition: background .35s, width .35s; }
+  .dot.on { background: var(--accent); width: var(--dotOn); border-radius: 8px; }
+  .footNote { font-size: var(--footNote); color: var(--fg); opacity: .58; font-weight: 500; }
+
+  .fallback { width: 100%; display: flex; flex-direction: column; gap: .4em; }
+  .a-center .fallback { align-items: center; text-align: center; }
+  .fbIcon  { font-size: calc(var(--flagSize) * .45); opacity: .5; }
+  .fbTitle { font-size: calc(var(--native) * .6); font-weight: var(--nativeWeight);
+    letter-spacing: -.02em; line-height: 1.05; }
+  .fbBody  { font-size: var(--english); opacity: .6; max-width: 24ch; }
+
+  /* ── ERROR BOARD (missing device) ── */
+  .error-board {
+    min-height: 100vh; display: flex; flex-direction: column; align-items: center;
+    justify-content: center; gap: 12px; text-align: center; padding: 40px;
+    background: #169bc2; color: #fff;
+  }
+  .error-board .icon { font-size: 48px; }
+  .error-board h2 { font-family: 'Inter', sans-serif; font-size: 24px; letter-spacing: 1px; margin: 0; }
+  .error-board p { font-size: 14px; color: rgba(255,255,255,0.8); max-width: 440px; line-height: 1.6; margin: 0; }
+  .error-board code {
+    background: rgba(255,255,255,0.15); border-radius: 6px; padding: 3px 10px;
+    font-size: 13px; font-family: monospace; display: inline-block; margin-top: 6px; word-break: break-all;
+  }
+  .error-board a {
+    display: inline-flex; align-items: center; gap: 8px; margin-top: 20px;
+    background: #fff; color: #169bc2; font-weight: 700;
+    padding: 10px 24px; border-radius: 8px; text-decoration: none; font-size: 14px;
+  }
+
+  /* ── DEBUG PANEL — identical pattern to store-hours.html ── */
+  #debugPanel {
+    position: fixed; bottom: 12px; left: 12px; z-index: 9999;
+    background: rgba(0,0,0,0.88); color: #ccc;
+    font-family: 'Courier New', monospace; font-size: 11.5px; font-weight: 500;
+    line-height: 1.8; padding: 10px 14px; border-radius: 8px;
+    max-width: 420px; word-break: break-all;
+    box-shadow: 0 2px 20px rgba(0,0,0,0.6); display: none;
+  }
+  #debugPanel.visible { display: block; }
+  #debugPanel b     { color: #fff; font-size: 12px; }
+  #debugPanel .ok   { color: #2ecc71; }
+  #debugPanel .warn { color: #f39c12; }
+  #debugPanel .err  { color: #e74c3c; }
+</style>
+</head>
+<body>
+
+<div id="signRoot"></div>
+<div id="debugPanel"></div>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-app.js";
+import { getFirestore, doc, onSnapshot } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-firestore.js";
+
+// ── FIREBASE ─────────────────────────────────────────────────────────────────
+const firebaseConfig = {
+  apiKey:            "AIzaSyDrUKPNep2uxbZjYJ4i0vImdG7Xn_UuSXo",
+  authDomain:        "rob-ph-demos.firebaseapp.com",
+  projectId:         "rob-ph-demos",
+  storageBucket:     "rob-ph-demos.firebasestorage.app",
+  messagingSenderId: "199417645406",
+  appId:             "1:199417645406:web:0e7a54d00083b41ea9e7cf"
+};
+const app = initializeApp(firebaseConfig);
+const db  = getFirestore(app);
+
+// ── URL PARAMS ────────────────────────────────────────────────────────────────
+const urlParams      = new URLSearchParams(window.location.search);
+const DEVICE_UDID    = (urlParams.get('device')  || '').trim();
+const BRAND_ID       = (urlParams.get('brand')   || '').trim();
+const ORIENTATION_OVERRIDE = urlParams.get('orientation') || null;
+const MOCK_API_FILE  = urlParams.get('mockapi')  || null; // ?mockapi=1 → mock-languages.json, or ?mockapi=file.json
+const PREVIEW_MODE   = urlParams.get('preview') === '1';  // embedded live-preview iframe inside HQ Admin
+
+// ── DEBUG PANEL VISIBILITY + LONG-PRESS TRIGGER (bottom-left, 120px corner, 800ms hold) ──
+let _debugPanelVisible = (urlParams.get('debug') === '1');
+{
+  let _lpt = null;
+  const _CP = 120, _HM = 800;
+  const _isBL = (x, y) => x <= _CP && y >= window.innerHeight - _CP;
+  document.addEventListener('mousedown', e => {
+    if (!_isBL(e.clientX, e.clientY)) return;
+    _lpt = setTimeout(() => { _debugPanelVisible = !_debugPanelVisible; updateDebugPanel(); }, _HM);
+  });
+  document.addEventListener('mouseup', () => { clearTimeout(_lpt); _lpt = null; });
+  document.addEventListener('touchstart', e => {
+    const t = e.touches[0];
+    if (!_isBL(t.clientX, t.clientY)) return;
+    _lpt = setTimeout(() => { _debugPanelVisible = !_debugPanelVisible; updateDebugPanel(); }, _HM);
+  }, { passive: true });
+  document.addEventListener('touchend', () => { clearTimeout(_lpt); _lpt = null; }, { passive: true });
+}
+
+function esc(str) { return String(str || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+// ── PERSONALISATION HUB API — DECRYPTION ──────────────────────────────────────
+const _ENC_PASS = 'rob-ph-demos-phapi-v1';
+const _ENC_SALT = new TextEncoder().encode('ph-menuboard-salt-2024');
+
+let _derivedKeyPromise = null;
+async function _deriveKey() {
+  if (!_derivedKeyPromise) {
+    _derivedKeyPromise = (async () => {
+      const mat = await crypto.subtle.importKey(
+        'raw', new TextEncoder().encode(_ENC_PASS), 'PBKDF2', false, ['deriveKey']);
+      return crypto.subtle.deriveKey(
+        { name: 'PBKDF2', salt: _ENC_SALT, iterations: 100000, hash: 'SHA-256' },
+        mat, { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']);
+    })();
+  }
+  return _derivedKeyPromise;
+}
+let _tokenCache = { b64: null, plain: null };
+async function decryptToken(b64) {
+  if (_tokenCache.b64 === b64) return _tokenCache.plain;
+  const key   = await _deriveKey();
+  const buf   = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
+  const pt    = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: buf.slice(0, 12) }, key, buf.slice(12));
+  const plain = new TextDecoder().decode(pt);
+  _tokenCache = { b64, plain };
+  return plain;
+}
+function _epPrefKey()            { return `ph-ep-${DEVICE_UDID}`; }
+function _loadPreferredBaseUrl() { try { return localStorage.getItem(_epPrefKey()) || null; } catch (_) { return null; } }
+function _savePreferredBaseUrl(url) {
+  try { url ? localStorage.setItem(_epPrefKey(), url) : localStorage.removeItem(_epPrefKey()); } catch (_) {}
+}
+function _getActiveEndpoint() {
+  const endpoints = _settings?.phApi?.endpoints;
+  if (Array.isArray(endpoints) && endpoints.length > 0) {
+    const preferred = _loadPreferredBaseUrl();
+    if (preferred) { const ep = endpoints.find(e => e.baseUrl === preferred); if (ep) return ep; }
+    return endpoints[0];
+  }
+  const phApi = _settings?.phApi;
+  if (phApi?.baseUrl && phApi?.authToken) return { baseUrl: phApi.baseUrl, authToken: phApi.authToken };
+  return null;
+}
+
+/* ==================================================================
+   FLAG ASSETS — inline SVG, never emoji (inconsistent on ChromeOS).
+   ================================================================== */
+function star(cx, cy, r, fill, rot){
+  rot = rot || 0; const p = [];
+  for (let i = 0; i < 10; i++){
+    const rad = (i % 2 === 0) ? r : r * 0.382;
+    const a = (-90 + rot + i * 36) * Math.PI / 180;
+    p.push((cx + rad * Math.cos(a)).toFixed(2) + ',' + (cy + rad * Math.sin(a)).toFixed(2));
+  }
+  return `<polygon points="${p.join(' ')}" fill="${fill}"/>`;
+}
+const sv = (w,h,inner) => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${w} ${h}">${inner}</svg>`;
+const FLAGS = {
+  GB: sv(60,30,`<rect width="60" height="30" fill="#012169"/>
+      <path d="M0,0 L60,30 M60,0 L0,30" stroke="#fff" stroke-width="6"/>
+      <path d="M0,0 L60,30 M60,0 L0,30" stroke="#C8102E" stroke-width="3"/>
+      <path d="M30,0 V30 M0,15 H60" stroke="#fff" stroke-width="10"/>
+      <path d="M30,0 V30 M0,15 H60" stroke="#C8102E" stroke-width="6"/>`),
+  PL: sv(60,40,`<rect width="60" height="40" fill="#fff"/><rect y="20" width="60" height="20" fill="#DC143C"/>`),
+  PK: sv(60,40,`<rect width="60" height="40" fill="#01411C"/><rect width="15" height="40" fill="#fff"/>
+      <circle cx="37" cy="20" r="9" fill="#fff"/><circle cx="40.5" cy="17" r="9" fill="#01411C"/>${star(47,13,4,'#fff')}`),
+  ES: sv(60,40,`<rect width="60" height="40" fill="#AA151B"/><rect y="10" width="60" height="20" fill="#F1BF00"/>`),
+  CN: sv(60,40,`<rect width="60" height="40" fill="#DE2910"/>${star(12,11,7,'#FFDE00')}${star(23,4.5,2.6,'#FFDE00')}${star(28,10,2.6,'#FFDE00')}${star(28,17,2.6,'#FFDE00')}${star(23,23,2.6,'#FFDE00')}`),
+  SA: sv(60,40,`<rect width="60" height="40" fill="#006C35"/>
+      <rect x="11" y="13" width="38" height="3" fill="#fff"/><rect x="14" y="19" width="32" height="2.4" fill="#fff"/>
+      <path d="M13 27 H45 M45 27 l-4.5 -3.2 M45 27 l-4.5 3.2" stroke="#fff" stroke-width="2" fill="none"/>`),
+  RO: sv(60,40,`<rect width="20" height="40" fill="#002B7F"/><rect x="20" width="20" height="40" fill="#FCD116"/><rect x="40" width="20" height="40" fill="#CE1126"/>`),
+  FR: sv(60,40,`<rect width="20" height="40" fill="#002395"/><rect x="20" width="20" height="40" fill="#fff"/><rect x="40" width="20" height="40" fill="#ED2939"/>`),
+  IT: sv(60,40,`<rect width="20" height="40" fill="#008C45"/><rect x="20" width="20" height="40" fill="#F4F5F0"/><rect x="40" width="20" height="40" fill="#CD212A"/>`),
+  IN: sv(60,40,`<rect width="60" height="13.33" fill="#FF9933"/><rect y="13.33" width="60" height="13.33" fill="#fff"/>
+      <rect y="26.66" width="60" height="13.34" fill="#138808"/>
+      <circle cx="30" cy="20" r="5.4" fill="none" stroke="#000080" stroke-width="1.1"/><circle cx="30" cy="20" r="1.1" fill="#000080"/>`),
+  PT: sv(60,40,`<rect width="60" height="40" fill="#DA291C"/><rect width="24" height="40" fill="#046A38"/>
+      <circle cx="24" cy="20" r="7.5" fill="#FFE900"/><circle cx="24" cy="20" r="5.2" fill="#DA291C"/>`),
+  SO: sv(60,40,`<rect width="60" height="40" fill="#4189DD"/>${star(30,20,10,'#fff')}`),
+  UA: sv(60,40,`<rect width="60" height="20" fill="#005BBB"/><rect y="20" width="60" height="20" fill="#FFD500"/>`),
+  VN: sv(60,40,`<rect width="60" height="40" fill="#DA251D"/>${star(30,20,11,'#FFFF00')}`),
+  DE: sv(60,40,`<rect width="60" height="13.33" fill="#000"/><rect y="13.33" width="60" height="13.33" fill="#DD0000"/><rect y="26.66" width="60" height="13.34" fill="#FFCE00"/>`),
+  GR: sv(60,40,`<rect width="60" height="40" fill="#0D5EAF"/>` +
+      [1,3,5,7].map(i => `<rect y="${(i*40/9).toFixed(2)}" width="60" height="${(40/9).toFixed(2)}" fill="#fff"/>`).join('') +
+      `<rect width="22.22" height="22.22" fill="#0D5EAF"/><rect x="8.89" width="4.44" height="22.22" fill="#fff"/><rect y="8.89" width="22.22" height="4.44" fill="#fff"/>`),
+  TR: sv(60,40,`<rect width="60" height="40" fill="#E30A17"/><circle cx="22" cy="20" r="9" fill="#fff"/>
+      <circle cx="25.5" cy="20" r="7.2" fill="#E30A17"/>${star(36,20,4.5,'#fff')}`),
+};
+const flagUrl = k => FLAGS[k] ? `url("data:image/svg+xml,${encodeURIComponent(FLAGS[k])}")` : '';
+
+/* ==================================================================
+   LANGUAGE REGISTRY — Firestore doc(db,'menuboard','languages'),
+   { data: [...] }. Seed used as fallback until the first snapshot
+   arrives (or if the registry doc has never been populated), same
+   fallback-until-loaded pattern as brands/types elsewhere in this app.
+   ================================================================== */
+const SEED_REGISTRY = [
+  { code:'en',  native:'English',               english:'English',              flag:'GB', ratio:'2/1', direction:'ltr', script:'latin', alias:['eng','en-gb','en-us'], showFlag:true, active:true },
+  { code:'pl',  native:'Polski',                english:'Polish',               flag:'PL', ratio:'3/2', direction:'ltr', script:'latin', alias:['pol'], showFlag:true, active:true },
+  { code:'ur',  native:'اردو',                   english:'Urdu',                 flag:'PK', ratio:'3/2', direction:'rtl', script:'arabic', alias:['urd'], showFlag:true, active:true },
+  { code:'es',  native:'Español',               english:'Spanish',              flag:'ES', ratio:'3/2', direction:'ltr', script:'latin', alias:['spa','castellano'], showFlag:true, active:true },
+  { code:'zh',  native:'中文',                    english:'Mandarin',             flag:'CN', ratio:'3/2', direction:'ltr', script:'cjk', alias:['mandarin','chinese','zh-hans','cmn'], showFlag:true, active:true },
+  { code:'ar',  native:'العربية',                 english:'Arabic',               flag:'SA', ratio:'3/2', direction:'rtl', script:'arabic', alias:['ara'], showFlag:true, active:true },
+  { code:'ro',  native:'Română',                english:'Romanian',             flag:'RO', ratio:'3/2', direction:'ltr', script:'latin', alias:['ron','rum'], showFlag:true, active:true },
+  { code:'bsl', native:'British Sign Language', english:'British Sign Language',flag:null, ratio:'3/2', direction:'ltr', script:'latin', glyph:'🤟', alias:['sign language','sign'], showFlag:false, active:true },
+  { code:'fr',  native:'Français',              english:'French',               flag:'FR', ratio:'3/2', direction:'ltr', script:'latin', alias:['fra','fre'], showFlag:true, active:true },
+  { code:'pa',  native:'ਪੰਜਾਬੀ',                   english:'Punjabi',              flag:'IN', ratio:'3/2', direction:'ltr', script:'gurmukhi', alias:['panjabi','pan'], showFlag:true, active:true },
+  { code:'pt',  native:'Português',             english:'Portuguese',           flag:'PT', ratio:'3/2', direction:'ltr', script:'latin', alias:['por'], showFlag:true, active:true },
+  { code:'so',  native:'Soomaali',              english:'Somali',               flag:'SO', ratio:'3/2', direction:'ltr', script:'latin', alias:['som'], showFlag:true, active:true },
+  { code:'it',  native:'Italiano',              english:'Italian',              flag:'IT', ratio:'3/2', direction:'ltr', script:'latin', alias:['ita'], showFlag:true, active:true },
+  { code:'uk',  native:'Українська',            english:'Ukrainian',            flag:'UA', ratio:'3/2', direction:'ltr', script:'cyrillic', alias:['ukr'], showFlag:true, active:true },
+  { code:'vi',  native:'Tiếng Việt',             english:'Vietnamese',           flag:'VN', ratio:'3/2', direction:'ltr', script:'latin', alias:['vie'], showFlag:true, active:true },
+  { code:'de',  native:'Deutsch',               english:'German',               flag:'DE', ratio:'3/2', direction:'ltr', script:'latin', alias:['deu','ger'], showFlag:true, active:true },
+  { code:'el',  native:'Ελληνικά',              english:'Greek',                flag:'GR', ratio:'3/2', direction:'ltr', script:'greek', alias:['ell','gre'], showFlag:true, active:true },
+  { code:'tr',  native:'Türkçe',                english:'Turkish',              flag:'TR', ratio:'3/2', direction:'ltr', script:'latin', alias:['tur'], showFlag:true, active:true },
+];
+let _registry = SEED_REGISTRY;
+let _registryLoaded = false;
+
+/* Tolerant resolver — PHAPI may send ISO codes, English names, endonyms, or
+   objects (§2.3). Case-insensitive, whitespace-trimmed, matched against the
+   Registry's code / english / native / alias fields. */
+function findLang(s){
+  const n = String(s == null ? '' : s).trim().toLowerCase();
+  if (!n) return null;
+  return _registry.find(l => l.active !== false && (
+    l.code.toLowerCase() === n ||
+    l.english.toLowerCase() === n ||
+    l.native.toLowerCase() === n ||
+    (l.alias || []).some(a => a.toLowerCase() === n)
+  )) || null;
+}
+function resolveEntry(e){
+  if (e && typeof e === 'object' && !Array.isArray(e))
+    return findLang(e.code || e.language_code || e.language || e.name || e.value);
+  return findLang(e);
+}
+
+/* ==================================================================
+   DESIGN TEMPLATE — defaults, presets, metrics (ported from
+   languages-on-shift-prototype.html, already tested there).
+   ================================================================== */
+const DEFAULTS = {
+  layout: { flagPosition:'above', align:'center', verticalAnchor:'center', safeAreaScale:1, gapScale:1, heroGap:64 },
+  flag:   { shape:'rounded', sizeScale:1, shadow:'deep', border:'none', ringGlow:false, behindOpacity:0.18 },
+  type:   { fontFamily:'system', headlineScale:1, headlineWeight:800, eyebrowScale:1, eyebrowTrack:0.2,
+            nativeScale:1, nativeWeight:800, nativeTrack:-0.025, nativeCase:'none',
+            englishScale:1, englishWeight:500, englishOpacity:0.58, englishCase:'none' },
+  colour: { preset:'dark', bg:'#070B10', fg:'#FFFFFF', accent:'#2FC3E8', bgStyle:'radialGlow', glow:0.16 },
+  copy:   { eyebrow:'On shift right now', // TODO(open-question-1): confirm whether languages[] is live-to-shift or a
+            headline:'We speak your language', // static store attribute; if static, swap for "Languages we speak here" /
+            kicker:'We speak',                 // "spoken by our team" — see requirements §13, Q1.
+            footNote:'{count} languages spoken by the team on shift',
+            emptyHeadline:'Here to help',
+            emptyBody:'Ask any colleague — we will always find someone who can help.',
+            closedHeadline:'Back tomorrow',
+            closedBody:'Our team will be here from {openTime}.' },
+  elements:{ showEyebrow:true, showLiveDot:true, showHeadline:true, showKicker:true,
+             showNative:true, showEnglish:true, showFlag:true, showStrip:true, showDots:true, showFootNote:true },
+  motion: { enterStyle:'rise', dwellMs:3200, transitionMs:600, staggerMs:70, easing:'expo', reducedMotion:false },
+  data:   { maxLanguages:12, overflowBehaviour:'topN', sortOrder:'apiOrder', pinLanguages:[], excludedLanguages:[] },
+  playback:{ mode:'fullLoop', durationSeconds:30, daypartToOpeningHours:true, suppressBelowLanguageCount:2 },
+  fallback:{ noDataBehaviour:'skipItem', showStaleIndicator:false },
+};
+
+const PRESETS = {
+  'signature-dark': {},
+  'daylight-minimal': {
+    layout:{ flagPosition:'above', align:'center', safeAreaScale:1.1, gapScale:1.2 },
+    flag:{ shape:'circle', sizeScale:0.85, shadow:'soft' },
+    type:{ headlineScale:0.8, nativeScale:1.12, nativeWeight:800, englishOpacity:0.5 },
+    colour:{ preset:'light', bg:'#FFFFFF', fg:'#0B0F14', accent:'#0E7FA0', bgStyle:'solid' },
+    elements:{ showStrip:false, showKicker:false },
+    motion:{ enterStyle:'fade', dwellMs:3600 }
+  },
+  'brand-immersive': {
+    layout:{ flagPosition:'behind', align:'center', verticalAnchor:'center' },
+    flag:{ behindOpacity:0.26 },
+    type:{ nativeCase:'uppercase', nativeScale:0.92, nativeTrack:0.01, headlineScale:0.85 },
+    colour:{ preset:'brand', bg:'#0C6F8C', fg:'#FFFFFF', accent:'#9BE8FA', bgStyle:'accentWash' },
+    elements:{ showKicker:false },
+    motion:{ enterStyle:'scale', dwellMs:3000 }
+  },
+  'editorial-serif': {
+    layout:{ flagPosition:'left', align:'left', heroGap:88, safeAreaScale:1.05 },
+    flag:{ shape:'natural', sizeScale:0.72, shadow:'soft' },
+    type:{ fontFamily:'serif', nativeScale:0.92, nativeWeight:700, nativeTrack:-0.015,
+           headlineScale:0.78, englishCase:'uppercase', englishScale:0.7 },
+    colour:{ preset:'light', bg:'#FBF9F5', fg:'#14110E', accent:'#8A6A3B', bgStyle:'solid' },
+    elements:{ showStrip:false, showDots:true, showKicker:false },
+    motion:{ enterStyle:'fade', dwellMs:4000, transitionMs:800 }
+  },
+  'high-contrast-max': {
+    layout:{ flagPosition:'above', align:'center', safeAreaScale:0.85 },
+    flag:{ shape:'squircle', sizeScale:1.15, shadow:'none', ringGlow:true },
+    type:{ nativeScale:1.25, nativeWeight:800, headlineScale:0.7, englishOpacity:0.75, englishScale:1.1 },
+    colour:{ preset:'dark', bg:'#000000', fg:'#FFFFFF', accent:'#FFD400', bgStyle:'solid' },
+    elements:{ showStrip:false },
+    motion:{ enterStyle:'rise', dwellMs:2800 }
+  }
+};
+
+const FONTS = {
+  system:   `-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Inter', 'Noto Sans Arabic', 'Noto Sans Gurmukhi', 'Noto Sans SC', 'Noto Sans Devanagari', 'Noto Sans Thai', Roboto, Arial, sans-serif`,
+  geometric:`'Avenir Next', 'Century Gothic', Futura, 'Inter', 'Noto Sans Arabic', 'Noto Sans Gurmukhi', 'Noto Sans SC', Arial, sans-serif`,
+  humanist: `'Segoe UI', 'Trebuchet MS', 'Inter', 'Noto Sans Arabic', 'Noto Sans Gurmukhi', 'Noto Sans SC', Verdana, sans-serif`,
+  condensed:`'Helvetica Neue', 'Arial Narrow', 'Inter', 'Noto Sans Arabic', 'Noto Sans Gurmukhi', 'Noto Sans SC', Arial, sans-serif`,
+  serif:    `Georgia, 'Times New Roman', 'Inter', 'Noto Sans Arabic', 'Noto Sans Gurmukhi', 'Noto Sans SC', serif`
+};
+const EASINGS = {
+  expo:'cubic-bezier(.19,1,.22,1)', smooth:'cubic-bezier(.4,0,.2,1)',
+  snap:'cubic-bezier(.34,1.56,.64,1)', linear:'linear'
+};
+/* 'none' is a transparent shadow (not `none`) so it still composes with the accent ring. */
+const SHADOWS = { none:'0 0 0 rgba(0,0,0,0)', soft:'0 12px 30px rgba(0,0,0,.25)', deep:'0 26px 60px rgba(0,0,0,.45)' };
+const METRICS = {
+  portrait:  { h:1920, pad:88, eyebrow:34, headline:78, kicker:46, native:156, nativeMin:120,
+               english:66, flag:400, chipFlag:34, chipText:30, foot:34, dot:16, dotOn:52 },
+  landscape: { h:1080, pad:72, eyebrow:30, headline:62, kicker:39, native:128, nativeMin:100,
+               english:56, flag:300, chipFlag:30, chipText:27, foot:30, dot:16, dotOn:52 },
+};
+
+// Flattened admin key → nested cfg path (los* keys, per build brief §5/§8).
+const LOS_FIELD_MAP = {
+  losFlagPosition:'layout.flagPosition', losAlign:'layout.align', losVerticalAnchor:'layout.verticalAnchor',
+  losSafeAreaScale:'layout.safeAreaScale', losGapScale:'layout.gapScale', losHeroGap:'layout.heroGap',
+  losFlagShape:'flag.shape', losFlagSizeScale:'flag.sizeScale', losFlagShadow:'flag.shadow',
+  losFlagBorder:'flag.border', losFlagRingGlow:'flag.ringGlow', losFlagBehindOpacity:'flag.behindOpacity',
+  losFontFamily:'type.fontFamily', losNativeScale:'type.nativeScale', losNativeWeight:'type.nativeWeight',
+  losNativeTrack:'type.nativeTrack', losNativeCase:'type.nativeCase', losEnglishScale:'type.englishScale',
+  losEnglishWeight:'type.englishWeight', losEnglishOpacity:'type.englishOpacity', losEnglishCase:'type.englishCase',
+  losHeadlineScale:'type.headlineScale', losHeadlineWeight:'type.headlineWeight',
+  losEyebrowScale:'type.eyebrowScale', losEyebrowTrack:'type.eyebrowTrack',
+  losColorPreset:'colour.preset', losColorBg:'colour.bg', losColorFg:'colour.fg', losColorAccent:'colour.accent',
+  losBgStyle:'colour.bgStyle', losGlow:'colour.glow',
+  losCopyEyebrow:'copy.eyebrow', losCopyHeadline:'copy.headline', losCopyKicker:'copy.kicker',
+  losCopyFootNote:'copy.footNote', losCopyEmptyHeadline:'copy.emptyHeadline', losCopyEmptyBody:'copy.emptyBody',
+  losCopyClosedHeadline:'copy.closedHeadline', losCopyClosedBody:'copy.closedBody',
+  losShowEyebrow:'elements.showEyebrow', losShowLiveDot:'elements.showLiveDot', losShowHeadline:'elements.showHeadline',
+  losShowKicker:'elements.showKicker', losShowFlag:'elements.showFlag', losShowNative:'elements.showNative',
+  losShowEnglish:'elements.showEnglish', losShowStrip:'elements.showStrip', losShowDots:'elements.showDots',
+  losShowFootNote:'elements.showFootNote',
+  losEnterStyle:'motion.enterStyle', losDwellMs:'motion.dwellMs', losTransitionMs:'motion.transitionMs',
+  losStaggerMs:'motion.staggerMs', losEasing:'motion.easing', losReducedMotion:'motion.reducedMotion',
+  losMaxLanguages:'data.maxLanguages', losOverflowBehaviour:'data.overflowBehaviour', losSortOrder:'data.sortOrder',
+  losPinLanguages:'data.pinLanguages', losExcludedLanguages:'data.excludedLanguages',
+  losPlaybackMode:'playback.mode', losDurationSeconds:'playback.durationSeconds',
+  losDaypartToOpeningHours:'playback.daypartToOpeningHours', losSuppressBelowLanguageCount:'playback.suppressBelowLanguageCount',
+  losNoDataBehaviour:'fallback.noDataBehaviour', losShowStaleIndicator:'fallback.showStaleIndicator',
+};
+const LOS_BOOL_FIELDS = new Set(['losFlagRingGlow','losShowEyebrow','losShowLiveDot','losShowHeadline','losShowKicker',
+  'losShowFlag','losShowNative','losShowEnglish','losShowStrip','losShowDots','losShowFootNote','losReducedMotion',
+  'losDaypartToOpeningHours','losShowStaleIndicator']);
+const LOS_NUMBER_FIELDS = new Set(['losSafeAreaScale','losGapScale','losHeroGap','losFlagSizeScale','losFlagBehindOpacity',
+  'losNativeScale','losNativeWeight','losNativeTrack','losEnglishScale','losEnglishWeight','losEnglishOpacity',
+  'losHeadlineScale','losHeadlineWeight','losEyebrowScale','losEyebrowTrack','losGlow','losDwellMs','losTransitionMs',
+  'losStaggerMs','losMaxLanguages','losDurationSeconds','losSuppressBelowLanguageCount']);
+const LOS_LIST_FIELDS = new Set(['losPinLanguages','losExcludedLanguages']);
+
+function deepMerge(t, s){
+  Object.keys(s).forEach(k => {
+    if (s[k] && typeof s[k] === 'object' && !Array.isArray(s[k])) { t[k] = t[k] || {}; deepMerge(t[k], s[k]); }
+    else t[k] = s[k];
+  });
+  return t;
+}
+function setPath(obj, path, val){
+  const ks = path.split('.'); const last = ks.pop();
+  ks.reduce((o,k) => (o[k] = o[k] || {}), obj)[last] = val;
+}
+function applyFlatOverrides(cfg, flat){
+  if (!flat) return cfg;
+  Object.keys(flat).forEach(k => {
+    const path = LOS_FIELD_MAP[k];
+    if (!path || flat[k] == null || flat[k] === '') return;
+    let v = flat[k];
+    if (LOS_BOOL_FIELDS.has(k))        v = (v === true || v === 'true');
+    else if (LOS_NUMBER_FIELDS.has(k)) v = Number(v);
+    else if (LOS_LIST_FIELDS.has(k))   v = Array.isArray(v) ? v : String(v).split(',').map(s=>s.trim()).filter(Boolean);
+    setPath(cfg, path, v);
+  });
+  return cfg;
+}
+function buildConfig(flatTplSettings){
+  const presetName = (flatTplSettings && flatTplSettings.losPreset) || 'signature-dark';
+  let cfg = deepMerge(structuredClone(DEFAULTS), structuredClone(PRESETS[presetName] || {}));
+  applyFlatOverrides(cfg, flatTplSettings);
+  return cfg;
+}
+
+/* ==================================================================
+   STATE
+   ================================================================== */
+let _settings     = { brandName: 'Our Brand', logo: '', logoRight: '' };
+let _brands       = [];
+let _cfg          = buildConfig(null);
+let _orientation  = ORIENTATION_OVERRIDE || 'portrait';
+let _storeLoc     = null;   // store_location from campaign_data
+let _openingHours = null;   // store_info.opening_hours
+let _rawLanguages = null;   // raw languages[] as received
+let _fetched      = false;
+let _pollTimer    = null;
+
+let _feed = [], _unresolvedRaw = [], _idx = 0, _renderTimers = [];
+const clearRT = () => { _renderTimers.forEach(clearTimeout); _renderTimers = []; };
+const later = (fn, ms) => { const t = setTimeout(fn, ms); _renderTimers.push(t); return t; };
+
+const WEEK_DAYS  = ['monday','tuesday','wednesday','thursday','friday','saturday','sunday'];
+const _loadStart = Date.now();
+let _lastPollAt  = null;
+
+// ── LOCAL CACHE (render from cache before first successful poll, §2.5) ──────
+function _cacheKey(){ return `los-cache-${DEVICE_UDID}`; }
+function _loadCache(){ try { return JSON.parse(localStorage.getItem(_cacheKey()) || 'null'); } catch(_) { return null; } }
+function _saveCache(){
+  try { localStorage.setItem(_cacheKey(), JSON.stringify({
+    storeLoc:_storeLoc, openingHours:_openingHours, rawLanguages:_rawLanguages, at: Date.now()
+  })); } catch(_) {}
+}
+
+function getActiveBrand() {
+  if (!_brands.length) {
+    const s = _settings;
+    return { id: 'default', name: s.brandName || 'Our Brand', colors: s.colors || {} };
+  }
+  if (BRAND_ID) {
+    const found = _brands.find(b => b.name.toLowerCase() === BRAND_ID.toLowerCase());
+    if (found) return found;
+  }
+  return _brands[0];
+}
+function getActiveTemplate(brand) {
+  if (!brand || !Array.isArray(brand.templates)) return null;
+  return brand.templates.find(t => t.templateType === 'languages-on-shift') || null;
+}
+
+// ── OPENING HOURS HELPERS (ported from store-hours.html §454-514) ───────────
+function _activeEntries() {
+  return (_openingHours || []).filter(e =>
+    e && e.is_active !== false && e.open_day && e.open_time && e.close_day && e.close_time
+  );
+}
+function _weekMinutes(dayIdx, time) {
+  const [h, m] = String(time).split(':').map(Number);
+  return dayIdx * 1440 + h * 60 + (m || 0);
+}
+// Resolves "now" in the store's own timezone (§2.2, T-C02) rather than the
+// device's local clock — a device in one region must not compute another
+// region's open/closed state off its own wall clock.
+function _nowInStoreTz() {
+  const tz = _storeLoc?.store_timezone;
+  const now = new Date();
+  if (!tz) return { dayIdx: (now.getDay() + 6) % 7, h: now.getHours(), m: now.getMinutes() };
+  try {
+    const parts = new Intl.DateTimeFormat('en-US', {
+      timeZone: tz, weekday: 'short', hour: 'numeric', minute: 'numeric', hourCycle: 'h23'
+    }).formatToParts(now);
+    const get = t => parts.find(p => p.type === t)?.value;
+    const wd = { Mon:0, Tue:1, Wed:2, Thu:3, Fri:4, Sat:5, Sun:6 }[get('weekday')];
+    return { dayIdx: wd ?? (now.getDay()+6)%7, h: Number(get('hour')), m: Number(get('minute')) };
+  } catch (_) {
+    return { dayIdx: (now.getDay() + 6) % 7, h: now.getHours(), m: now.getMinutes() };
+  }
+}
+function _isOpenNow() {
+  const { dayIdx: todayIdx, h, m } = _nowInStoreTz();
+  const nowWeekMins = _weekMinutes(todayIdx, `${h}:${m}`);
+  return _activeEntries().some(e => {
+    const openDay  = WEEK_DAYS.indexOf(String(e.open_day).trim().toLowerCase());
+    const closeDay = WEEK_DAYS.indexOf(String(e.close_day).trim().toLowerCase());
+    if (openDay === -1 || closeDay === -1) return false;
+    const openW = _weekMinutes(openDay, e.open_time);
+    let closeW  = _weekMinutes(closeDay, e.close_time);
+    if (closeW <= openW) closeW += 7 * 1440;
+    return (nowWeekMins >= openW && nowWeekMins < closeW) ||
+           (nowWeekMins + 7 * 1440 >= openW && nowWeekMins + 7 * 1440 < closeW);
+  });
+}
+function _nextOpenTime() {
+  if (!_activeEntries().length) return '';
+  const { dayIdx: todayIdx, h, m } = _nowInStoreTz();
+  const nowWeekMins = _weekMinutes(todayIdx, `${h}:${m}`);
+  let best = null;
+  _activeEntries().forEach(e => {
+    const openDay = WEEK_DAYS.indexOf(String(e.open_day).trim().toLowerCase());
+    if (openDay === -1) return;
+    let openW = _weekMinutes(openDay, e.open_time);
+    if (openW < nowWeekMins) openW += 7 * 1440;
+    if (best === null || openW < best.w) best = { w: openW, time: String(e.open_time).slice(0,5) };
+  });
+  return best ? best.time : '';
+}
+
+/* ==================================================================
+   POLLING — reuses the same campaign_data call as every other menu
+   board item; no second poll loop, no new endpoint (§2.1, T-D18).
+   ================================================================== */
+async function pollFeed() {
+  if (!DEVICE_UDID || PREVIEW_MODE) return;
+  try {
+    let json;
+    if (MOCK_API_FILE) {
+      const mockPath = MOCK_API_FILE === '1' ? './mock-languages.json' : `./${MOCK_API_FILE}`;
+      const resp = await fetch(mockPath);
+      if (!resp.ok) { console.warn('[LanguagesOnShift] Mock file not found:', mockPath); _fetched = true; render(); return; }
+      json = await resp.json();
+    } else {
+      const ep = _getActiveEndpoint();
+      if (!ep) return;
+      const token = await decryptToken(ep.authToken);
+      const url   = `${ep.baseUrl}/location-api/device/${DEVICE_UDID}/campaign_data`;
+      const resp  = await fetch(url, { headers: { accept: 'application/json', 'x-api-key': token } });
+      if (!resp.ok) { console.warn(`[LanguagesOnShift] API returned HTTP ${resp.status}`); _fetched = true; render(); return; }
+      json = await resp.json();
+    }
+    const d = json?.data;
+    const sl = d?.store_location || null;
+    const newOpeningHours = Array.isArray(d?.store_info?.opening_hours) ? d.store_info.opening_hours : null;
+    const newRawLanguages = sl && 'languages' in sl ? sl.languages : undefined;
+    if (!ORIENTATION_OVERRIDE) _orientation = (sl?.display_type || '').includes('landscape') ? 'landscape' : 'portrait';
+
+    const changed = JSON.stringify(sl) !== JSON.stringify(_storeLoc)
+                 || JSON.stringify(newOpeningHours) !== JSON.stringify(_openingHours)
+                 || JSON.stringify(newRawLanguages) !== JSON.stringify(_rawLanguages);
+    _storeLoc = sl; _openingHours = newOpeningHours; _rawLanguages = newRawLanguages;
+    _fetched = true; _lastPollAt = Date.now();
+    _saveCache();
+    if (changed) render(); else updateDebugPanel();
+  } catch (e) {
+    console.warn('[LanguagesOnShift] poll failed:', e);
+    _fetched = true;
+    render();
+  }
+}
+
+/* ==================================================================
+   RESOLUTION — rendering rules §7
+   ================================================================== */
+function resolveFeed() {
+  const list = Array.isArray(_rawLanguages) ? _rawLanguages : [];
+  const resolved = []; _unresolvedRaw = [];
+  list.forEach(e => {
+    const l = resolveEntry(e);
+    if (l) { if (!resolved.some(x => x.code === l.code)) resolved.push(l); }
+    else if (String(e ?? '').trim()) _unresolvedRaw.push(e);
+  });
+  // filter excluded, pin, sort, truncate/paginate (§7 rule 3)
+  const excluded = new Set((_cfg.data.excludedLanguages || []).map(c => String(c).toLowerCase()));
+  let out = resolved.filter(l => !excluded.has(l.code.toLowerCase()));
+  const pins = (_cfg.data.pinLanguages || []).map(c => String(c).toLowerCase());
+  if (pins.length) {
+    out = [...out.filter(l => pins.includes(l.code.toLowerCase())), ...out.filter(l => !pins.includes(l.code.toLowerCase()))];
+  }
+  if (_cfg.data.sortOrder === 'alphaLocal') out = [...out].sort((a,b) => a.native.localeCompare(b.native));
+  else if (_cfg.data.sortOrder === 'registryPriority') out = [...out].sort((a,b) => _registry.indexOf(a) - _registry.indexOf(b));
+  else if (_cfg.data.sortOrder === 'randomPerLoop') out = [...out].sort(() => Math.random() - 0.5);
+  const max = _cfg.data.maxLanguages || 12;
+  if (out.length > max) out = out.slice(0, max);
+  _feed = out;
+  if (_unresolvedRaw.length) console.warn('[LanguagesOnShift] not in Language Registry (device diagnostics only):', _unresolvedRaw);
+}
+
+/* ==================================================================
+   TOKENS + RENDER
+   ================================================================== */
+function tok(str, l){
+  const sl = _storeLoc || {};
+  const ageMin = _lastPollAt ? Math.round((Date.now() - _lastPollAt) / 60000) : 0;
+  return String(str || '')
+    .replace(/\{language\}/g,       l ? l.english : '')
+    .replace(/\{languageNative\}/g, l ? l.native  : '')
+    .replace(/\{count\}/g,          String(_feed.length))
+    .replace(/\{index\}/g,          _idx + 1)
+    .replace(/\{total\}/g,          _feed.length)
+    .replace(/\{storeName\}/g,      sl.store_name || '')
+    .replace(/\{storeCode\}/g,      sl.store_code || '')
+    .replace(/\{openTime\}/g,       _nextOpenTime() || 'the next scheduled opening')
+    .replace(/\{updatedMinutes\}/g, String(ageMin));
+}
+function hexA(hex, a){
+  const h = String(hex||'#000').replace('#',''); const n = parseInt(h.length === 3
+    ? h.split('').map(x=>x+x).join('') : h, 16) || 0;
+  return `rgba(${(n>>16)&255},${(n>>8)&255},${n&255},${a})`;
+}
+function fluid(px, heightRef, scale, floor, cap){
+  const vh = (px / heightRef * 100 * scale);
+  return `clamp(${floor}px, ${vh.toFixed(4)}vh, ${cap}px)`;
+}
+function bgfxStyle(){
+  const c = _cfg.colour;
+  if (c.bgStyle === 'solid')      return 'background:none';
+  if (c.bgStyle === 'radialGlow') return `background:radial-gradient(120% 70% at 50% -10%, ${c.accent} 0%, transparent 58%);opacity:${c.glow}`;
+  if (c.bgStyle === 'linear')     return `background:linear-gradient(180deg, ${c.accent} 0%, transparent 70%);opacity:${c.glow}`;
+  return `background:linear-gradient(135deg, ${c.accent} 0%, transparent 45%, ${c.accent} 100%);opacity:${c.glow}`;
+}
+function flagStyleFor(l){
+  if (!l || !l.flag) return '';
+  return `background-image:${flagUrl(l.flag)};--flagRatio:${l.ratio || '3/2'}`;
+}
+function applyVars(sign){
+  const m = METRICS[_orientation], c = _cfg.colour, t = _cfg.type;
+  const s = sign.style;
+  s.setProperty('--pad',        fluid(m.pad, m.h, _cfg.layout.safeAreaScale, Math.round(m.pad*0.4), Math.round(m.pad*2)));
+  s.setProperty('--gap',        _cfg.layout.gapScale);
+  s.setProperty('--heroGap',    fluid(_cfg.layout.heroGap || 1, m.h, 1, 0, Math.round((_cfg.layout.heroGap||64)*2)));
+  s.setProperty('--eyebrow',    fluid(m.eyebrow, m.h, t.eyebrowScale, Math.round(m.eyebrow*0.55), Math.round(m.eyebrow*1.8)));
+  s.setProperty('--eyebrowTrack', t.eyebrowTrack + 'em');
+  s.setProperty('--headline',   fluid(m.headline, m.h, t.headlineScale, Math.round(m.headline*0.5), Math.round(m.headline*1.7)));
+  s.setProperty('--headlineWeight', t.headlineWeight);
+  s.setProperty('--kicker',     fluid(m.kicker, m.h, t.englishScale, Math.round(m.kicker*0.5), Math.round(m.kicker*1.8)));
+  s.setProperty('--native',     fluid(m.native, m.h, t.nativeScale, m.nativeMin, Math.round(m.native*1.9)));
+  s.setProperty('--nativeWeight', t.nativeWeight);
+  s.setProperty('--nativeTrack', t.nativeTrack + 'em');
+  s.setProperty('--nativeCase', t.nativeCase);
+  s.setProperty('--english',    fluid(m.english, m.h, t.englishScale, Math.round(m.english*0.45), Math.round(m.english*1.8)));
+  s.setProperty('--englishWeight', t.englishWeight);
+  s.setProperty('--englishColor', hexA(c.fg, t.englishOpacity));
+  s.setProperty('--englishCase', t.englishCase);
+  s.setProperty('--flagSize',   fluid(m.flag, m.h, _cfg.flag.sizeScale, Math.round(m.flag*0.3), Math.round(m.flag*2)));
+  s.setProperty('--flagShadow', SHADOWS[_cfg.flag.shadow] || SHADOWS.deep);
+  s.setProperty('--flagBorder', { none:'none', hairline:'2px solid ' + hexA(c.fg, .28),
+      accent:'4px solid ' + c.accent, light:'6px solid #fff' }[_cfg.flag.border] || 'none');
+  s.setProperty('--behindOpacity', _cfg.flag.behindOpacity);
+  s.setProperty('--chipFlag',   fluid(m.chipFlag, m.h, 1, Math.round(m.chipFlag*0.6), Math.round(m.chipFlag*1.5)));
+  s.setProperty('--chipText',   fluid(m.chipText, m.h, 1, Math.round(m.chipText*0.6), Math.round(m.chipText*1.5)));
+  s.setProperty('--footNote',   fluid(m.foot, m.h, 1, Math.round(m.foot*0.55), Math.round(m.foot*1.6)));
+  s.setProperty('--dot',        fluid(m.dot, m.h, 1, 8, 24));
+  s.setProperty('--dotOn',      fluid(m.dotOn, m.h, 1, 26, 78));
+  s.setProperty('--ff',         FONTS[t.fontFamily] || FONTS.system);
+  s.setProperty('--bg', c.bg); s.setProperty('--fg', c.fg); s.setProperty('--accent', c.accent);
+  s.setProperty('--rule',  hexA(c.fg, 0.16));
+  s.setProperty('--chip',  hexA(c.fg, 0.09));
+  const rm = _cfg.motion.reducedMotion;
+  s.setProperty('--tIn',  (rm ? 400 : Math.round(_cfg.motion.transitionMs)) + 'ms');
+  s.setProperty('--tOut', Math.round(_cfg.motion.transitionMs * 0.7) + 'ms');
+  s.setProperty('--stag', (rm ? 0 : _cfg.motion.staggerMs) + 'ms');
+  s.setProperty('--ease', EASINGS[_cfg.motion.easing] || EASINGS.expo);
+}
+
+function fitNative(){
+  const n = document.getElementById('native'); if (!n) return;
+  const m = METRICS[_orientation];
+  n.classList.remove('native-force-wrap');
+  n.style.fontSize = '';
+  let size = parseFloat(getComputedStyle(n).fontSize);
+  const min = m.nativeMin;
+  let guard = 60;
+  while (guard-- > 0 && size > min){
+    const lines = n.scrollHeight / (size * 1.02);
+    if (lines <= 2.15 && n.scrollWidth <= n.clientWidth + 2) break;
+    size -= 4; n.style.fontSize = size + 'px';
+  }
+  // At the floor, a single unbroken word (no space to wrap at) may still be
+  // wider than the safe area — only then allow a mid-word break. A multi-word
+  // phrase is left to wrap across as many lines as it needs at the floor
+  // instead: an extra line reads far better than a fragmented word.
+  if (n.scrollWidth > n.clientWidth + 2 && !/\s/.test(n.textContent.trim())) n.classList.add('native-force-wrap');
+}
+
+function render() {
+  const root = document.getElementById('signRoot');
+  const el = _cfg.elements, cp = _cfg.copy, L = _cfg.layout;
+
+  resolveFeed();
+  clearRT(); _idx = 0;
+
+  const now = Date.now();
+  const loading = !_fetched && (now - _loadStart) < 3000;
+  const closed  = !loading && _cfg.playback.daypartToOpeningHours && _openingHours && !_isOpenNow();
+  const single  = !loading && !closed && _feed.length === 1;
+  const empty   = !loading && !closed && _feed.length === 0;
+  // suppressBelowLanguageCount gates counts ABOVE 1; exactly one language always
+  // gets the dedicated single-language state (states table §8 / T-R07), even
+  // though a literal reading of rule §7.4 would also catch count===1 at the
+  // default threshold of 2 — the explicit single-language state wins.
+  const suppressed = !loading && !closed && !empty && !single
+    && _cfg.playback.suppressBelowLanguageCount > 0
+    && _feed.length < _cfg.playback.suppressBelowLanguageCount;
+  const stale = _lastPollAt && (now - _lastPollAt) > 120000; // beyond one default poll interval
+
+  const sign = document.createElement('div');
+  sign.className = `sign a-${L.align} v-${L.verticalAnchor} p-${L.flagPosition} `
+                 + `s-${_cfg.flag.shape} ${_cfg.flag.ringGlow ? 'ringGlow' : ''}`;
+  applyVars(sign);
+
+  if (loading) {
+    sign.innerHTML = `<div class="bgfx" style="${bgfxStyle()}"></div><div class="hd"></div><div class="bd"></div><div class="ft"></div>`;
+    root.innerHTML = ''; root.appendChild(sign);
+    updateDebugPanel();
+    return;
+  }
+
+  const eyebrowTxt = (stale && _cfg.fallback.showStaleIndicator)
+    ? tok(cp.eyebrow) + ` · updated ${Math.round((now - (_lastPollAt||now))/60000)} min ago`
+    : tok(cp.eyebrow);
+
+  sign.innerHTML =
+    `<div class="bgfx" style="${bgfxStyle()}"></div>` +
+    `<div class="hd">` +
+      (el.showEyebrow ? `<div class="eyebrow">${el.showLiveDot?'<span class="live"></span>':''}${esc(eyebrowTxt)}</div>` : '') +
+      (el.showHeadline ? `<div class="headline">${esc(tok(cp.headline))}</div>` : '') +
+    `</div>` +
+    `<div class="bd" id="bd"></div>` +
+    `<div class="ft" id="ft"></div>`;
+  root.innerHTML = ''; root.appendChild(sign);
+
+  const bd = sign.querySelector('#bd'), ft = sign.querySelector('#ft');
+
+  if (closed || empty || suppressed) {
+    const isClosed = closed;
+    bd.innerHTML = `<div class="fallback">
+        <div class="fbIcon">${isClosed ? '🕗' : '💬'}</div>
+        <div class="fbTitle">${esc(tok(isClosed ? cp.closedHeadline : cp.emptyHeadline))}</div>
+        <div class="fbBody">${esc(tok(isClosed ? cp.closedBody : cp.emptyBody))}</div>
+      </div>`;
+    updateDebugPanel();
+    return;
+  }
+
+  let f = '';
+  const stripEligible = el.showStrip && _feed.length <= 14; // auto-disable above 14, §6.7
+  if (stripEligible && !single) f += `<div class="strip" id="strip">` + _feed.map((l,i) =>
+      `<div class="chip" data-i="${i}">` +
+      (l.flag && l.showFlag !== false ? `<span class="cf" style="background-image:${flagUrl(l.flag)}"></span>`
+              : `<span class="cg">${esc(l.glyph||'💬')}</span>`) +
+      `<span class="ct">${esc(l.english)}</span></div>`).join('') + `</div>`;
+  if (el.showDots && !single) f += `<div class="dots" id="dots">` +
+      _feed.map((_,i)=>`<div class="dot" data-i="${i}"></div>`).join('') + `</div>`;
+  // Single-language state gets a short literal footer ("1 language") rather
+  // than the templated copy.footNote sentence, per the states table (§8) and
+  // T-R07 — the templated string is written for the plural, multi-language case.
+  if (el.showFootNote) f += `<div class="footNote">${single ? '1 language' : esc(tok(cp.footNote))}</div>`;
+  ft.innerHTML = f;
+
+  const behind = L.flagPosition === 'behind';
+  const showFlagInline = el.showFlag && L.flagPosition !== 'none' && !behind;
+  bd.innerHTML = `<div class="heroWrap">` +
+      (showFlagInline ? `<div class="flagBox" id="flagBox"></div>` : '') +
+      `<div class="txt">` +
+        (el.showKicker  ? `<div class="kicker" id="kicker"></div>` : '') +
+        (el.showNative  ? `<div class="native" id="native"></div>` : '') +
+        (el.showEnglish ? `<div class="english" id="english"></div>` : '') +
+      `</div></div>`;
+  if (behind && el.showFlag){
+    const b = document.createElement('div'); b.className = 'behindFlag'; b.id = 'behindFlag';
+    sign.insertBefore(b, sign.firstChild);
+  }
+
+  paint(0);
+  if (!single && _feed.length > 1) later(tick, _cfg.motion.dwellMs);
+  updateDebugPanel();
+}
+
+function paint(i){
+  const l = _feed[i]; if (!l) return;
+  const bd = document.getElementById('bd'); if (!bd) return;
+  bd.className = 'bd';
+
+  const fb = document.getElementById('flagBox');
+  if (fb){
+    const showFlag = l.flag && l.showFlag !== false;
+    fb.className = 'flagBox' + (showFlag ? '' : ' glyph');
+    fb.style.cssText = showFlag ? flagStyleFor(l) : '';
+    fb.textContent = showFlag ? '' : (l.glyph || '💬');
+  }
+  const beh = document.getElementById('behindFlag');
+  if (beh){
+    const showFlag = l.flag && l.showFlag !== false;
+    beh.style.backgroundImage = showFlag ? flagUrl(l.flag) : 'none';
+    beh.style.opacity = _cfg.flag.behindOpacity;
+  }
+
+  const k = document.getElementById('kicker'); if (k) k.textContent = tok(_cfg.copy.kicker, l);
+  const n = document.getElementById('native');
+  if (n){
+    n.textContent = l.native; n.setAttribute('lang', l.code);
+    if (l.direction === 'rtl') n.setAttribute('dir','rtl'); else n.removeAttribute('dir');
+  }
+  const e = document.getElementById('english');
+  if (e){
+    const same = l.native === l.english; // secondary line auto-suppresses (§7 rule 8, AC-08)
+    e.textContent = same ? '' : l.english;
+    e.style.display = same ? 'none' : '';
+  }
+
+  document.querySelectorAll('#dots .dot').forEach(d => d.classList.toggle('on', +d.dataset.i === i));
+  document.querySelectorAll('#strip .chip').forEach(c => {
+    c.classList.toggle('act', +c.dataset.i === i);
+    c.classList.toggle('dim', +c.dataset.i !== i);
+  });
+
+  void bd.offsetWidth;
+  bd.classList.add('in', 'e-' + (_cfg.motion.reducedMotion ? 'fade' : _cfg.motion.enterStyle));
+  fitNative();
+}
+
+function tick(){
+  const bd = document.getElementById('bd'); if (!bd) return;
+  bd.className = 'bd out';
+  const beh = document.getElementById('behindFlag'); if (beh) beh.style.opacity = 0;
+  later(() => {
+    _idx = (_idx + 1) % _feed.length;
+    paint(_idx);
+    later(tick, _cfg.motion.dwellMs);
+  }, _cfg.motion.transitionMs * 0.7);
+}
+
+// ── DEBUG PANEL ───────────────────────────────────────────────────────────────
+function updateDebugPanel() {
+  const elp = document.getElementById('debugPanel');
+  if (!elp) return;
+  if (!_debugPanelVisible) { elp.classList.remove('visible'); return; }
+  const ep = _getActiveEndpoint();
+  const deviceHtml = DEVICE_UDID
+    ? `<span class="ok">✓ ${esc(DEVICE_UDID)}</span>`
+    : `<span class="err">✗ NOT SET — add ?device=UDID to URL</span>`;
+  const apiHtml = MOCK_API_FILE
+    ? `<span class="ok">🧪 MOCK (${esc(MOCK_API_FILE === '1' ? 'mock-languages.json' : MOCK_API_FILE)})</span>`
+    : (ep?.baseUrl ? `<span class="ok">✓ ${esc(ep.baseUrl)}</span>` : `<span class="warn">⚠ Not configured</span>`);
+  const rawCount = Array.isArray(_rawLanguages) ? _rawLanguages.length : 0;
+  elp.innerHTML =
+    `<div><b>🛠 Languages On Shift Debug</b></div>` +
+    `<div>Device UDID    : ${deviceHtml}</div>` +
+    `<div>Active API     : ${apiHtml}</div>` +
+    `<div>Languages recv.: <span class="ok">${rawCount}</span></div>` +
+    `<div>Resolved       : <span class="ok">${_feed.length}</span>${_unresolvedRaw.length ? ` <span class="warn">(${_unresolvedRaw.length} unresolved)</span>` : ''}</div>` +
+    `<div>Orientation    : ${esc(_orientation)}</div>` +
+    `<div>Preset         : ${esc((getActiveTemplate(getActiveBrand())||{}).losPreset || 'signature-dark')}</div>`;
+  elp.classList.add('visible');
+}
+
+/* ==================================================================
+   PREVIEW MODE — embedded inside HQ Admin's Language Display live
+   preview iframe. No Firestore writes; overrides arrive via
+   postMessage so the config UI never needs a JSON/field-path surface.
+   ================================================================== */
+if (PREVIEW_MODE) {
+  window.addEventListener('message', ev => {
+    const msg = ev.data;
+    if (!msg || msg.type !== 'los-preview-update') return;
+    _cfg = buildConfig(msg.flatSettings || null);
+    _orientation = msg.orientation || _orientation;
+    _storeLoc = msg.storeLoc || { store_name: 'Preview Store', store_code: 'PREVIEW-01' };
+    _openingHours = msg.openingHours || null;
+    _rawLanguages = msg.rawLanguages || [];
+    _fetched = true;
+    render();
+  });
+}
+
+/* ==================================================================
+   INIT
+   ================================================================== */
+if (!DEVICE_UDID && !PREVIEW_MODE) {
+  document.getElementById('signRoot').innerHTML = `
+    <div class="error-board">
+      <div class="icon">🌐</div>
+      <h2>Missing Device ID</h2>
+      <p>This board requires a Device UDID so the Personalisation Hub API can resolve which store's languages to show.</p>
+      <code>languages-on-shift.html?brand=YourBrand&amp;device=ABCD-1234</code>
+      <a href="index.html">← Back to Portal</a>
+    </div>`;
+} else {
+  const cache = _loadCache();
+  if (cache && !PREVIEW_MODE) { _storeLoc = cache.storeLoc; _openingHours = cache.openingHours; _rawLanguages = cache.rawLanguages; }
+
+  setInterval(() => { if (_fetched) render(); }, 60000); // keep open/closed + stale indicator accurate
+
+  onSnapshot(doc(db, 'menuboard', 'languages'), snap => {
+    const data = snap.exists() ? (snap.data().data || []) : [];
+    _registry = data.length ? data : SEED_REGISTRY;
+    _registryLoaded = true;
+    if (_fetched || PREVIEW_MODE) render();
+  });
+
+  if (!PREVIEW_MODE) {
+    onSnapshot(doc(db, 'menuboard', 'brands'), snap => {
+      _brands = snap.exists() ? (snap.data().data || []) : [];
+      const tpl = getActiveTemplate(getActiveBrand());
+      _cfg = buildConfig(tpl || null);
+      render();
+    });
+    onSnapshot(doc(db, 'menuboard', 'settings'), snap => {
+      _settings = snap.exists() ? snap.data() : { brandName: 'Our Brand' };
+      render();
+      pollFeed();
+    });
+    _deriveKey();
+    pollFeed();
+    _pollTimer = setInterval(pollFeed, 120000); // §2.5 — shares no second call, default 120s
+  } else {
+    render();
+  }
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,16 @@
+{
+  "data": {
+    "store_location": {
+      "store_code": "O2O-001",
+      "store_name": "Pizza Hut — Leeds Trinity",
+      "languages": ["English", "Polish", "Urdu", "Spanish", "Mandarin", "Romanian", "British Sign Language", "Punjabi"],
+      "display_type": "menu-board-portrait",
+      "store_timezone": "Europe/London"
+    },
+    "store_info": {
+      "opening_hours": [
+        { "open_day": "MONDAY", "open_time": "00:00:00", "close_day": "SUNDAY", "close_time": "23:59:00", "is_active": true }
+      ]
+    }
+  }
+}
