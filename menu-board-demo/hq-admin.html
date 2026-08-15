@@ -1419,7 +1419,11 @@
           <select id="langScript">
             <option value="latin">Latin</option><option value="cyrillic">Cyrillic</option><option value="greek">Greek</option>
             <option value="arabic">Arabic</option><option value="devanagari">Devanagari</option><option value="gurmukhi">Gurmukhi</option>
-            <option value="cjk">CJK (Chinese / Japanese / Korean)</option><option value="thai">Thai</option>
+            <option value="cjk">Chinese (Han)</option><option value="cjk-jp">Japanese (Kanji/Kana)</option><option value="hangul">Korean (Hangul)</option>
+            <option value="thai">Thai</option><option value="hebrew">Hebrew</option><option value="bengali">Bengali</option>
+            <option value="gujarati">Gujarati</option><option value="malayalam">Malayalam</option><option value="tamil">Tamil</option>
+            <option value="telugu">Telugu</option><option value="georgian">Georgian</option><option value="armenian">Armenian</option>
+            <option value="khmer">Khmer</option><option value="tibetan">Tibetan</option>
           </select>
         </div>
       </div>
@@ -1517,7 +1521,7 @@ const DEFAULT_LANGUAGES = [
   { code:'pl',  native:'Polski',                english:'Polish',               flag:'PL', ratio:'3/2', direction:'ltr', script:'latin',    alias:['pol'], showFlag:true, glyph:'', active:true },
   { code:'ur',  native:'\u0627\u0631\u062F\u0648',                   english:'Urdu',                 flag:'PK', ratio:'3/2', direction:'rtl', script:'arabic',   alias:['urd'], showFlag:true, glyph:'', active:true },
   { code:'es',  native:'Espa\u00F1ol',               english:'Spanish',              flag:'ES', ratio:'3/2', direction:'ltr', script:'latin',    alias:['spa','castellano'], showFlag:true, glyph:'', active:true },
-  { code:'zh',  native:'\u4E2D\u6587',                    english:'Mandarin',             flag:'CN', ratio:'3/2', direction:'ltr', script:'cjk',      alias:['mandarin','chinese','zh-hans','cmn'], showFlag:true, glyph:'', active:true },
+  { code:'zh',  native:'\u4E2D\u6587',                    english:'Mandarin',             flag:'CN', ratio:'3/2', direction:'ltr', script:'cjk',      alias:['mandarin','chinese','chinese (mandarin)','zh-hans','cmn'], showFlag:true, glyph:'', active:true },
   { code:'ar',  native:'\u0627\u0644\u0639\u0631\u0628\u064A\u0629',                 english:'Arabic',               flag:'SA', ratio:'3/2', direction:'rtl', script:'arabic',   alias:['ara'], showFlag:true, glyph:'', active:true },
   { code:'ro',  native:'Rom\u00E2n\u0103',                english:'Romanian',             flag:'RO', ratio:'3/2', direction:'ltr', script:'latin',    alias:['ron','rum'], showFlag:true, glyph:'', active:true },
   { code:'bsl', native:'British Sign Language', english:'British Sign Language',flag:null, ratio:'3/2', direction:'ltr', script:'latin',    alias:['sign language','sign'], showFlag:false, glyph:'\uD83E\uDD1F', active:true },
@@ -1526,11 +1530,68 @@ const DEFAULT_LANGUAGES = [
   { code:'pt',  native:'Portugu\u00EAs',             english:'Portuguese',           flag:'PT', ratio:'3/2', direction:'ltr', script:'latin',    alias:['por'], showFlag:true, glyph:'', active:true },
   { code:'so',  native:'Soomaali',              english:'Somali',               flag:'SO', ratio:'3/2', direction:'ltr', script:'latin',    alias:['som'], showFlag:true, glyph:'', active:true },
   { code:'it',  native:'Italiano',              english:'Italian',              flag:'IT', ratio:'3/2', direction:'ltr', script:'latin',    alias:['ita'], showFlag:true, glyph:'', active:true },
-  { code:'uk',  native:'\u0423\u043A\u0440\u0430\u0457\u043D\u0441\u044C\u043A\u0430',            english:'Ukrainian',            flag:'UA', ratio:'3/2', direction:'ltr', script:'cyrillic', alias:['ukr'], showFlag:true, glyph:'', active:true },
+  { code:'uk',  native:'\u0423\u043A\u0440\u0430\u0457\u043D\u0441\u044C\u043A\u0430',            english:'Ukrainian',            flag:'UA', ratio:'3/2', direction:'ltr', script:'cyrillic', alias:['ukr','ukranian'], showFlag:true, glyph:'', active:true },
   { code:'vi',  native:'Ti\u1EBFng Vi\u1EC7t',             english:'Vietnamese',           flag:'VN', ratio:'3/2', direction:'ltr', script:'latin',    alias:['vie'], showFlag:true, glyph:'', active:true },
   { code:'de',  native:'Deutsch',               english:'German',               flag:'DE', ratio:'3/2', direction:'ltr', script:'latin',    alias:['deu','ger'], showFlag:true, glyph:'', active:true },
   { code:'el',  native:'\u0395\u03BB\u03BB\u03B7\u03BD\u03B9\u03BA\u03AC',              english:'Greek',                flag:'GR', ratio:'3/2', direction:'ltr', script:'greek',    alias:['ell','gre'], showFlag:true, glyph:'', active:true },
   { code:'tr',  native:'T\u00FCrk\u00E7e',                english:'Turkish',              flag:'TR', ratio:'3/2', direction:'ltr', script:'latin',    alias:['tur'], showFlag:true, glyph:'', active:true },
+  // \u2500\u2500 Expanded to cover the real "Languages Spoken by Staff" field (72 entries) \u2500\u2500
+  { code:'af',  native:'Afrikaans',            english:'Afrikaans',            flag:'ZA', ratio:'3/2', direction:'ltr', script:'latin',     alias:['afr'], showFlag:true, glyph:'', active:true },
+  { code:'sq',  native:'Shqip',                english:'Albanian',             flag:'AL', ratio:'3/2', direction:'ltr', script:'latin',     alias:['alb','sqi'], showFlag:true, glyph:'', active:true },
+  { code:'hy',  native:'\u0540\u0561\u0575\u0565\u0580\u0565\u0576',               english:'Armenian',             flag:'AM', ratio:'3/2', direction:'ltr', script:'armenian',  alias:['arm','hye'], showFlag:true, glyph:'', active:true },
+  { code:'eu',  native:'Euskara',              english:'Basque',               flag:'ES', ratio:'3/2', direction:'ltr', script:'latin',     alias:['baq','eus'], showFlag:true, glyph:'', active:true },
+  { code:'bn',  native:'\u09AC\u09BE\u0982\u09B2\u09BE',                 english:'Bengali',              flag:'BD', ratio:'3/2', direction:'ltr', script:'bengali',   alias:['ben','bangla'], showFlag:true, glyph:'', active:true },
+  { code:'bg',  native:'\u0411\u044A\u043B\u0433\u0430\u0440\u0441\u043A\u0438',            english:'Bulgarian',            flag:'BG', ratio:'3/2', direction:'ltr', script:'cyrillic',  alias:['bul'], showFlag:true, glyph:'', active:true },
+  { code:'ca',  native:'Catal\u00E0',               english:'Catalan',              flag:'ES', ratio:'3/2', direction:'ltr', script:'latin',     alias:['cat'], showFlag:true, glyph:'', active:true },
+  { code:'km',  native:'\u1781\u17D2\u1798\u17C2\u179A',                  english:'Cambodian',            flag:'KH', ratio:'3/2', direction:'ltr', script:'khmer',     alias:['khm','khmer'], showFlag:true, glyph:'', active:true },
+  { code:'hr',  native:'Hrvatski',             english:'Croatian',             flag:'HR', ratio:'3/2', direction:'ltr', script:'latin',     alias:['hrv','croation'], showFlag:true, glyph:'', active:true },
+  { code:'cs',  native:'\u010Ce\u0161tina',              english:'Czech',                flag:'CZ', ratio:'3/2', direction:'ltr', script:'latin',     alias:['cze','ces'], showFlag:true, glyph:'', active:true },
+  { code:'da',  native:'Dansk',                english:'Danish',               flag:'DK', ratio:'3/2', direction:'ltr', script:'latin',     alias:['dan'], showFlag:true, glyph:'', active:true },
+  { code:'nl',  native:'Nederlands',           english:'Dutch',                flag:'NL', ratio:'3/2', direction:'ltr', script:'latin',     alias:['dut','nld'], showFlag:true, glyph:'', active:true },
+  { code:'et',  native:'Eesti',                english:'Estonian',             flag:'EE', ratio:'3/2', direction:'ltr', script:'latin',     alias:['est'], showFlag:true, glyph:'', active:true },
+  { code:'fj',  native:'Vosa Vakaviti',        english:'Fijian',               flag:'FJ', ratio:'3/2', direction:'ltr', script:'latin',     alias:['fij','fiji'], showFlag:true, glyph:'', active:true },
+  { code:'fi',  native:'Suomi',                english:'Finnish',              flag:'FI', ratio:'3/2', direction:'ltr', script:'latin',     alias:['fin'], showFlag:true, glyph:'', active:true },
+  { code:'ka',  native:'\u10E5\u10D0\u10E0\u10D7\u10E3\u10DA\u10D8',              english:'Georgian',             flag:'GE', ratio:'3/2', direction:'ltr', script:'georgian',  alias:['geo','kat'], showFlag:true, glyph:'', active:true },
+  { code:'gu',  native:'\u0A97\u0AC1\u0A9C\u0AB0\u0ABE\u0AA4\u0AC0',                english:'Gujarati',             flag:'IN', ratio:'3/2', direction:'ltr', script:'gujarati',  alias:['guj'], showFlag:true, glyph:'', active:true },
+  { code:'he',  native:'\u05E2\u05D1\u05E8\u05D9\u05EA',                 english:'Hebrew',               flag:'IL', ratio:'3/2', direction:'rtl', script:'hebrew',    alias:['heb'], showFlag:true, glyph:'', active:true },
+  { code:'hi',  native:'\u0939\u093F\u0928\u094D\u0926\u0940',                 english:'Hindi',                flag:'IN', ratio:'3/2', direction:'ltr', script:'devanagari',alias:['hin'], showFlag:true, glyph:'', active:true },
+  { code:'hu',  native:'Magyar',               english:'Hungarian',            flag:'HU', ratio:'3/2', direction:'ltr', script:'latin',     alias:['hun'], showFlag:true, glyph:'', active:true },
+  { code:'is',  native:'\u00CDslenska',             english:'Icelandic',            flag:'IS', ratio:'3/2', direction:'ltr', script:'latin',     alias:['ice','isl'], showFlag:true, glyph:'', active:true },
+  { code:'id',  native:'Bahasa Indonesia',     english:'Indonesian',           flag:'ID', ratio:'3/2', direction:'ltr', script:'latin',     alias:['ind'], showFlag:true, glyph:'', active:true },
+  { code:'ga',  native:'Gaeilge',              english:'Irish',                flag:'IE', ratio:'3/2', direction:'ltr', script:'latin',     alias:['gle'], showFlag:true, glyph:'', active:true },
+  { code:'ja',  native:'\u65E5\u672C\u8A9E',                 english:'Japanese',             flag:'JP', ratio:'3/2', direction:'ltr', script:'cjk-jp',    alias:['jpn'], showFlag:true, glyph:'', active:true },
+  { code:'jv',  native:'Basa Jawa',            english:'Javanese',             flag:'ID', ratio:'3/2', direction:'ltr', script:'latin',     alias:['jav'], showFlag:true, glyph:'', active:true },
+  { code:'ko',  native:'\uD55C\uAD6D\uC5B4',                 english:'Korean',               flag:'KR', ratio:'3/2', direction:'ltr', script:'hangul',    alias:['kor'], showFlag:true, glyph:'', active:true },
+  { code:'la',  native:'Latina',               english:'Latin',                flag:null, ratio:'3/2', direction:'ltr', script:'latin',     alias:['lat'], showFlag:false, glyph:'\uD83D\uDCDC', active:true },
+  { code:'lv',  native:'Latvie\u0161u',             english:'Latvian',              flag:'LV', ratio:'3/2', direction:'ltr', script:'latin',     alias:['lav'], showFlag:true, glyph:'', active:true },
+  { code:'lt',  native:'Lietuvi\u0173',             english:'Lithuanian',           flag:'LT', ratio:'3/2', direction:'ltr', script:'latin',     alias:['lit'], showFlag:true, glyph:'', active:true },
+  { code:'mk',  native:'\u041C\u0430\u043A\u0435\u0434\u043E\u043D\u0441\u043A\u0438',           english:'Macedonian',           flag:'MK', ratio:'3/2', direction:'ltr', script:'cyrillic',  alias:['mac','mkd'], showFlag:true, glyph:'', active:true },
+  { code:'ms',  native:'Bahasa Melayu',        english:'Malay',                flag:'MY', ratio:'3/2', direction:'ltr', script:'latin',     alias:['msa'], showFlag:true, glyph:'', active:true },
+  { code:'ml',  native:'\u0D2E\u0D32\u0D2F\u0D3E\u0D33\u0D02',                english:'Malayalam',            flag:'IN', ratio:'3/2', direction:'ltr', script:'malayalam', alias:['mal'], showFlag:true, glyph:'', active:true },
+  { code:'mt',  native:'Malti',                english:'Maltese',              flag:'MT', ratio:'3/2', direction:'ltr', script:'latin',     alias:['mlt'], showFlag:true, glyph:'', active:true },
+  { code:'mi',  native:'Te Reo M\u0101ori',         english:'Maori',                flag:'NZ', ratio:'3/2', direction:'ltr', script:'latin',     alias:['mao','mri'], showFlag:true, glyph:'', active:true },
+  { code:'mr',  native:'\u092E\u0930\u093E\u0920\u0940',                 english:'Marathi',              flag:'IN', ratio:'3/2', direction:'ltr', script:'devanagari',alias:['mar'], showFlag:true, glyph:'', active:true },
+  { code:'mn',  native:'\u041C\u043E\u043D\u0433\u043E\u043B',               english:'Mongolian',            flag:'MN', ratio:'3/2', direction:'ltr', script:'cyrillic',  alias:['mon'], showFlag:true, glyph:'', active:true },
+  { code:'ne',  native:'\u0928\u0947\u092A\u093E\u0932\u0940',                 english:'Nepali',               flag:'NP', ratio:'3/2', direction:'ltr', script:'devanagari',alias:['nep'], showFlag:true, glyph:'', active:true },
+  { code:'no',  native:'Norsk',                english:'Norwegian',            flag:'NO', ratio:'3/2', direction:'ltr', script:'latin',     alias:['nor'], showFlag:true, glyph:'', active:true },
+  { code:'fa',  native:'\u0641\u0627\u0631\u0633\u06CC',                 english:'Persian',              flag:'IR', ratio:'3/2', direction:'rtl', script:'arabic',    alias:['per','fas','farsi'], showFlag:true, glyph:'', active:true },
+  { code:'qu',  native:'Runa Simi',            english:'Quechua',              flag:'PE', ratio:'3/2', direction:'ltr', script:'latin',     alias:['que'], showFlag:true, glyph:'', active:true },
+  { code:'ru',  native:'\u0420\u0443\u0441\u0441\u043A\u0438\u0439',              english:'Russian',              flag:'RU', ratio:'3/2', direction:'ltr', script:'cyrillic',  alias:['rus'], showFlag:true, glyph:'', active:true },
+  { code:'sm',  native:'Gagana S\u0101moa',         english:'Samoan',               flag:'WS', ratio:'3/2', direction:'ltr', script:'latin',     alias:['smo'], showFlag:true, glyph:'', active:true },
+  { code:'sr',  native:'\u0421\u0440\u043F\u0441\u043A\u0438',               english:'Serbian',              flag:'RS', ratio:'3/2', direction:'ltr', script:'cyrillic',  alias:['srp'], showFlag:true, glyph:'', active:true },
+  { code:'sk',  native:'Sloven\u010Dina',           english:'Slovak',               flag:'SK', ratio:'3/2', direction:'ltr', script:'latin',     alias:['slo','slk'], showFlag:true, glyph:'', active:true },
+  { code:'sl',  native:'Sloven\u0161\u010Dina',          english:'Slovenian',            flag:'SI', ratio:'3/2', direction:'ltr', script:'latin',     alias:['slv'], showFlag:true, glyph:'', active:true },
+  { code:'sw',  native:'Kiswahili',            english:'Swahili',              flag:'KE', ratio:'3/2', direction:'ltr', script:'latin',     alias:['swa'], showFlag:true, glyph:'', active:true },
+  { code:'sv',  native:'Svenska',              english:'Swedish',              flag:'SE', ratio:'3/2', direction:'ltr', script:'latin',     alias:['swe'], showFlag:true, glyph:'', active:true },
+  { code:'ta',  native:'\u0BA4\u0BAE\u0BBF\u0BB4\u0BCD',                  english:'Tamil',                flag:'IN', ratio:'3/2', direction:'ltr', script:'tamil',     alias:['tam'], showFlag:true, glyph:'', active:true },
+  { code:'tt',  native:'\u0422\u0430\u0442\u0430\u0440\u0447\u0430',              english:'Tatar',                flag:'RU', ratio:'3/2', direction:'ltr', script:'cyrillic',  alias:['tat'], showFlag:true, glyph:'', active:true },
+  { code:'te',  native:'\u0C24\u0C46\u0C32\u0C41\u0C17\u0C41',                 english:'Telugu',               flag:'IN', ratio:'3/2', direction:'ltr', script:'telugu',    alias:['tel'], showFlag:true, glyph:'', active:true },
+  { code:'th',  native:'\u0E44\u0E17\u0E22',                   english:'Thai',                 flag:'TH', ratio:'3/2', direction:'ltr', script:'thai',      alias:['tha'], showFlag:true, glyph:'', active:true },
+  { code:'bo',  native:'\u0F56\u0F7C\u0F51\u0F0B\u0F66\u0F90\u0F51',                english:'Tibetan',              flag:null, ratio:'3/2', direction:'ltr', script:'tibetan',   alias:['tib','bod'], showFlag:false, glyph:'\uD83C\uDFD4', active:true },
+  { code:'to',  native:'Lea Fakatonga',        english:'Tongan',               flag:'TO', ratio:'3/2', direction:'ltr', script:'latin',     alias:['ton','tonga'], showFlag:true, glyph:'', active:true },
+  { code:'uz',  native:'O\u02BBzbekcha',            english:'Uzbek',                flag:'UZ', ratio:'3/2', direction:'ltr', script:'latin',     alias:['uzb'], showFlag:true, glyph:'', active:true },
+  { code:'cy',  native:'Cymraeg',              english:'Welsh',                flag:'WA', ratio:'3/2', direction:'ltr', script:'latin',     alias:['wel','cym'], showFlag:true, glyph:'', active:true },
+  { code:'xh',  native:'isiXhosa',             english:'Xhosa',                flag:'ZA', ratio:'3/2', direction:'ltr', script:'latin',     alias:['xho'], showFlag:true, glyph:'', active:true },
 ];
 let _languages = [];
 function getLanguages() { return _languages.length ? _languages : DEFAULT_LANGUAGES; }
@@ -1571,6 +1632,69 @@ const LOS_FLAGS = {
   DE: _losSv(60,40,`<rect width="60" height="13.33" fill="#000"/><rect y="13.33" width="60" height="13.33" fill="#DD0000"/><rect y="26.66" width="60" height="13.34" fill="#FFCE00"/>`),
   GR: _losSv(60,40,`<rect width="60" height="40" fill="#0D5EAF"/>` + [1,3,5,7].map(i => `<rect y="${(i*40/9).toFixed(2)}" width="60" height="${(40/9).toFixed(2)}" fill="#fff"/>`).join('') + `<rect width="22.22" height="22.22" fill="#0D5EAF"/><rect x="8.89" width="4.44" height="22.22" fill="#fff"/><rect y="8.89" width="22.22" height="4.44" fill="#fff"/>`),
   TR: _losSv(60,40,`<rect width="60" height="40" fill="#E30A17"/><circle cx="22" cy="20" r="9" fill="#fff"/><circle cx="25.5" cy="20" r="7.2" fill="#E30A17"/>${_losStar(36,20,4.5,'#fff')}`),
+  // ── Added for the full real-world "Languages Spoken by Staff" list (72 entries) ──
+  ZA: _losSv(60,40,`<rect width="60" height="40" fill="#fff"/><rect y="0" width="60" height="13.33" fill="#DE3831"/><rect y="26.66" width="60" height="13.34" fill="#002395"/>
+      <polygon points="0,0 22,20 0,40" fill="#000"/><polygon points="0,6 16,20 0,34" fill="#FFB612"/><polygon points="0,11 11,20 0,29" fill="#007A4D"/>`),
+  AL: _losSv(60,40,`<rect width="60" height="40" fill="#E41E20"/>
+      <ellipse cx="30" cy="20" rx="3.2" ry="3.2" fill="#000"/>
+      <path d="M22 16 L30 20 L22 24 M38 16 L30 20 L38 24" stroke="#000" stroke-width="2.4" fill="none"/>`),
+  AM: _losSv(60,40,`<rect width="60" height="13.33" fill="#D90012"/><rect y="13.33" width="60" height="13.33" fill="#0033A0"/><rect y="26.66" width="60" height="13.34" fill="#F2A800"/>`),
+  BD: _losSv(60,40,`<rect width="60" height="40" fill="#006A4E"/><circle cx="26" cy="20" r="9" fill="#F42A41"/>`),
+  BG: _losSv(60,40,`<rect width="60" height="13.33" fill="#fff"/><rect y="13.33" width="60" height="13.33" fill="#00966E"/><rect y="26.66" width="60" height="13.34" fill="#D62612"/>`),
+  KH: _losSv(60,40,`<rect width="60" height="10" fill="#032EA1"/><rect y="10" width="60" height="20" fill="#E00025"/><rect y="30" width="60" height="10" fill="#032EA1"/>
+      <rect x="24" y="14" width="12" height="12" fill="#fff"/><polygon points="24,14 30,8 36,14" fill="#fff"/>`),
+  HR: _losSv(60,40,`<rect width="60" height="13.33" fill="#FF0000"/><rect y="13.33" width="60" height="13.33" fill="#fff"/><rect y="26.66" width="60" height="13.34" fill="#171796"/>
+      ${[0,1,2,3,4].map(i=>`<rect x="${25+((i%3)*3.4)}" y="${13.5+Math.floor(i/3)*3.4}" width="3.4" height="3.4" fill="${(Math.floor(i/3)+i%3)%2?'#FF0000':'#fff'}"/>`).join('')}`),
+  CZ: _losSv(60,40,`<rect width="60" height="20" fill="#fff"/><rect y="20" width="60" height="20" fill="#D7141A"/><polygon points="0,0 26,20 0,40" fill="#11457E"/>`),
+  DK: _losSv(60,40,`<rect width="60" height="40" fill="#C60C30"/><rect x="20" width="7" height="40" fill="#fff"/><rect y="17" width="60" height="7" fill="#fff"/>`),
+  NL: _losSv(60,40,`<rect width="60" height="13.33" fill="#AE1C28"/><rect y="13.33" width="60" height="13.33" fill="#fff"/><rect y="26.66" width="60" height="13.34" fill="#21468B"/>`),
+  EE: _losSv(60,40,`<rect width="60" height="13.33" fill="#0072CE"/><rect y="13.33" width="60" height="13.33" fill="#000"/><rect y="26.66" width="60" height="13.34" fill="#fff"/>`),
+  FJ: _losSv(60,40,`<rect width="60" height="40" fill="#68BFE5"/><rect width="30" height="20" fill="#012169"/>
+      <path d="M0,0 L30,20 M30,0 L0,20" stroke="#fff" stroke-width="3"/><path d="M15,0 V20 M0,10 H30" stroke="#fff" stroke-width="5"/><path d="M15,0 V20 M0,10 H30" stroke="#C8102E" stroke-width="2.6"/>
+      <circle cx="46" cy="26" r="9" fill="#fff"/><rect x="41" y="21" width="10" height="6" fill="#FFD100"/>`),
+  FI: _losSv(60,40,`<rect width="60" height="40" fill="#fff"/><rect x="19" width="8" height="40" fill="#002F6C"/><rect y="16" width="60" height="8" fill="#002F6C"/>`),
+  GE: _losSv(60,40,`<rect width="60" height="40" fill="#fff"/><rect x="25.5" width="9" height="40" fill="#FF0000"/><rect y="15.5" width="60" height="9" fill="#FF0000"/>
+      ${[[9,7],[9,33],[51,7],[51,33]].map(([x,y])=>`<g transform="translate(${x},${y})"><rect x="-3" y="-1" width="6" height="2" fill="#FF0000"/><rect x="-1" y="-3" width="2" height="6" fill="#FF0000"/></g>`).join('')}`),
+  HU: _losSv(60,40,`<rect width="60" height="13.33" fill="#CE2939"/><rect y="13.33" width="60" height="13.33" fill="#fff"/><rect y="26.66" width="60" height="13.34" fill="#477050"/>`),
+  IS: _losSv(60,40,`<rect width="60" height="40" fill="#02529C"/><rect x="19" width="10" height="40" fill="#fff"/><rect y="15" width="60" height="10" fill="#fff"/><rect x="21.5" width="5" height="40" fill="#DC1E35"/><rect y="17.5" width="60" height="5" fill="#DC1E35"/>`),
+  ID: _losSv(60,40,`<rect width="60" height="20" fill="#FF0000"/><rect y="20" width="60" height="20" fill="#fff"/>`),
+  IE: _losSv(60,40,`<rect width="20" height="40" fill="#169B62"/><rect x="20" width="20" height="40" fill="#fff"/><rect x="40" width="20" height="40" fill="#FF883E"/>`),
+  JP: _losSv(60,40,`<rect width="60" height="40" fill="#fff"/><circle cx="30" cy="20" r="10" fill="#BC002D"/>`),
+  KR: _losSv(60,40,`<rect width="60" height="40" fill="#fff"/><circle cx="30" cy="20" r="9" fill="#CD2E3A"/><path d="M30,11 A9,9 0 0,1 30,29 A4.5,4.5 0 0,1 30,20 A4.5,4.5 0 0,0 30,11" fill="#0047A0"/>`),
+  LV: _losSv(60,40,`<rect width="60" height="16" fill="#9E3039"/><rect y="16" width="60" height="8" fill="#fff"/><rect y="24" width="60" height="16" fill="#9E3039"/>`),
+  LT: _losSv(60,40,`<rect width="60" height="13.33" fill="#FDB913"/><rect y="13.33" width="60" height="13.33" fill="#006A44"/><rect y="26.66" width="60" height="13.34" fill="#C1272D"/>`),
+  MK: _losSv(60,40,`<rect width="60" height="40" fill="#D20000"/><circle cx="30" cy="20" r="6" fill="#FFE600"/>${[0,45,90,135,180,225,270,315].map(a=>`<polygon points="30,20 ${(30+30*Math.cos(a*Math.PI/180)).toFixed(1)},${(20+30*Math.sin(a*Math.PI/180)).toFixed(1)} ${(30+30*Math.cos((a+18)*Math.PI/180)).toFixed(1)},${(20+30*Math.sin((a+18)*Math.PI/180)).toFixed(1)}" fill="#FFE600"/>`).join('')}`),
+  MY: _losSv(60,40,`<rect width="60" height="40" fill="#fff"/>${[0,1,2,3,6].map(i=>`<rect y="${i*40/14}" width="60" height="${40/14}" fill="#CC0001"/>`).join('')}<rect width="30" height="21.4" fill="#010066"/>${_losStar(12,10.7,5,'#FFCC00')}<circle cx="20" cy="10.7" r="5" fill="#FFCC00"/><circle cx="21.5" cy="10.7" r="4" fill="#010066"/>`),
+  MT: _losSv(60,40,`<rect width="30" height="40" fill="#fff"/><rect x="30" width="30" height="40" fill="#CF142B"/><rect x="2" y="2" width="9" height="9" fill="#B4B4B4"/><rect x="3" y="3" width="7" height="7" fill="#CF142B"/>`),
+  NZ: _losSv(60,40,`<rect width="60" height="40" fill="#00247D"/><rect width="30" height="20" fill="#012169"/>
+      <path d="M0,0 L30,20 M30,0 L0,20" stroke="#fff" stroke-width="3"/><path d="M15,0 V20 M0,10 H30" stroke="#fff" stroke-width="5"/><path d="M15,0 V20 M0,10 H30" stroke="#C8102E" stroke-width="2.6"/>
+      ${_losStar(44,10,3,'#C8102E')}${_losStar(52,18,3,'#C8102E')}${_losStar(44,28,3.4,'#C8102E')}${_losStar(37,33,2.6,'#C8102E')}`),
+  MN: _losSv(60,40,`<rect width="17" height="40" fill="#C4272F"/><rect x="17" width="26" height="40" fill="#015197"/><rect x="43" width="17" height="40" fill="#C4272F"/>
+      <circle cx="8.5" cy="14" r="3.4" fill="#FFD900"/><rect x="6.5" y="18" width="4" height="16" fill="#FFD900"/>`),
+  NP: _losSv(60,40,`<rect width="52" height="40" fill="#DC143C"/><path d="M52,0 L52,40 L38,26 Z M52,4 L52,36 L42,22 Z" fill="none" stroke="#003893" stroke-width="1.4"/>
+      <circle cx="24" cy="12" r="5" fill="#fff"/><path d="M18,26 L30,26 L24,34 Z" fill="#fff"/>`),
+  NO: _losSv(60,40,`<rect width="60" height="40" fill="#EF2B2D"/><rect x="19" width="10" height="40" fill="#fff"/><rect y="15" width="60" height="10" fill="#fff"/><rect x="21.5" width="5" height="40" fill="#002868"/><rect y="17.5" width="60" height="5" fill="#002868"/>`),
+  IR: _losSv(60,40,`<rect width="60" height="13.33" fill="#239F40"/><rect y="13.33" width="60" height="13.33" fill="#fff"/><rect y="26.66" width="60" height="13.34" fill="#DA0000"/><circle cx="30" cy="20" r="4.6" fill="#DA0000"/>`),
+  PE: _losSv(60,40,`<rect width="20" height="40" fill="#D91023"/><rect x="20" width="20" height="40" fill="#fff"/><rect x="40" width="20" height="40" fill="#D91023"/>`),
+  RU: _losSv(60,40,`<rect width="60" height="13.33" fill="#fff"/><rect y="13.33" width="60" height="13.33" fill="#0039A6"/><rect y="26.66" width="60" height="13.34" fill="#D52B1E"/>`),
+  WS: _losSv(60,40,`<rect width="60" height="40" fill="#CE1126"/><rect width="26" height="20" fill="#002B7F"/>${_losStar(9,7,2.6,'#fff')}${_losStar(17,11,2.6,'#fff')}${_losStar(9,15,2.6,'#fff')}${_losStar(15,4,1.8,'#fff')}${_losStar(20,16,1.8,'#fff')}`),
+  RS: _losSv(60,40,`<rect width="60" height="13.33" fill="#C6363C"/><rect y="13.33" width="60" height="13.33" fill="#0C4076"/><rect y="26.66" width="60" height="13.34" fill="#fff"/>`),
+  SK: _losSv(60,40,`<rect width="60" height="13.33" fill="#fff"/><rect y="13.33" width="60" height="13.33" fill="#0B4EA2"/><rect y="26.66" width="60" height="13.34" fill="#EE1C25"/>
+      <rect x="10" y="12" width="12" height="16" fill="#fff"/><path d="M10,12 H22 V22 Q16,28 16,28 Q10,22 10,22 Z" fill="#EE1C25"/><rect x="14.5" y="14" width="3" height="12" fill="#0B4EA2"/><rect x="11.5" y="17" width="9" height="3" fill="#0B4EA2"/>`),
+  SI: _losSv(60,40,`<rect width="60" height="13.33" fill="#fff"/><rect y="13.33" width="60" height="13.33" fill="#005CE7"/><rect y="26.66" width="60" height="13.34" fill="#ED1C24"/>
+      <polygon points="8,26 16,10 24,26" fill="#005CE7" stroke="#fff" stroke-width="0.6"/>${_losStar(16,15,1.6,'#FFD700')}`),
+  KE: _losSv(60,40,`<rect width="60" height="10" fill="#000"/><rect y="10" width="60" height="4" fill="#fff"/><rect y="14" width="60" height="12" fill="#BB0000"/><rect y="26" width="60" height="4" fill="#fff"/><rect y="30" width="60" height="10" fill="#006600"/>
+      <polygon points="30,14 24,26 36,26" fill="#BB0000" stroke="#fff" stroke-width="0.6"/><rect x="28.5" y="10" width="3" height="20" fill="#5C3317"/>`),
+  SE: _losSv(60,40,`<rect width="60" height="40" fill="#005293"/><rect x="19" width="8" height="40" fill="#FECC00"/><rect y="16" width="60" height="8" fill="#FECC00"/>`),
+  TH: _losSv(60,40,`<rect width="60" height="40" fill="#A51931"/><rect y="6.67" width="60" height="26.66" fill="#fff"/><rect y="13.33" width="60" height="13.34" fill="#2D2A4A"/>`),
+  TO: _losSv(60,40,`<rect width="60" height="40" fill="#C10000"/><rect width="24" height="20" fill="#fff"/>
+      <rect x="9" y="4" width="6" height="12" fill="#C10000"/><rect x="3" y="8" width="18" height="4" fill="#C10000"/>`),
+  UZ: _losSv(60,40,`<rect width="60" height="11.6" fill="#1EB53A"/><rect y="11.6" width="60" height="1.6" fill="#CE1126"/><rect y="13.2" width="60" height="13.6" fill="#0099B5"/><rect y="26.8" width="60" height="1.6" fill="#CE1126"/><rect y="28.4" width="60" height="11.6" fill="#1EB53A"/>
+      <circle cx="12" cy="9" r="4" fill="#fff"/><circle cx="13.5" cy="9" r="3.3" fill="#0099B5"/>`),
+  IL: _losSv(60,40,`<rect width="60" height="40" fill="#fff"/><rect y="5" width="60" height="4" fill="#0038B8"/><rect y="31" width="60" height="4" fill="#0038B8"/>
+      <path d="M30,14 L34,21 L26,21 Z M30,26 L26,19 L34,19 Z" fill="none" stroke="#0038B8" stroke-width="1.4"/>`),
+  WA: _losSv(60,40,`<rect width="60" height="20" fill="#fff"/><rect y="20" width="60" height="20" fill="#00B140"/>
+      <path d="M22,14 Q28,8 36,12 Q42,10 40,16 Q46,16 42,22 Q44,26 38,25 Q36,30 30,26 Q24,29 24,23 Q18,24 20,18 Q16,16 22,14 Z" fill="#C8102E"/>`),
 };
 const losFlagUrl = k => LOS_FLAGS[k] ? `url("data:image/svg+xml,${encodeURIComponent(LOS_FLAGS[k])}")` : '';
 

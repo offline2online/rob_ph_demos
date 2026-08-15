@@ -6,16 +6,27 @@
 <title>Languages On Shift</title>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
 <style>
-  /* Self-hosted, subsetted Noto script packs — Arabic/Urdu, Gurmukhi, Chinese
-     (Simplified) subset to exactly the glyphs the seed Registry uses; Devanagari
-     and Thai kept as full script subsets for future Registry entries. Latin,
-     Latin-ext, Cyrillic, Greek and Vietnamese are already covered by the Inter
-     family loaded above, so no separate pack is needed for those scripts. */
+  /* Self-hosted, subsetted Noto script packs — each subset to exactly the
+     glyphs the Registry's native names use for that script. Latin, Latin-ext,
+     Cyrillic, Greek and Vietnamese are already covered by the Inter family
+     loaded above, so no separate pack is needed for those scripts. */
   @font-face { font-family:'Noto Sans Arabic';     font-style:normal; font-weight:400 800; src:url('./fonts/noto-sans-arabic-subset.woff2') format('woff2'); font-display:swap; }
   @font-face { font-family:'Noto Sans Gurmukhi';   font-style:normal; font-weight:400 800; src:url('./fonts/noto-sans-gurmukhi-subset.woff2') format('woff2'); font-display:swap; }
   @font-face { font-family:'Noto Sans SC';         font-style:normal; font-weight:400 800; src:url('./fonts/noto-sans-sc-subset.woff2') format('woff2'); font-display:swap; }
-  @font-face { font-family:'Noto Sans Devanagari'; font-style:normal; font-weight:400;     src:url('./fonts/noto-sans-devanagari.woff2') format('woff2'); font-display:swap; }
-  @font-face { font-family:'Noto Sans Thai';       font-style:normal; font-weight:400;     src:url('./fonts/noto-sans-thai.woff2') format('woff2'); font-display:swap; }
+  @font-face { font-family:'Noto Sans Devanagari'; font-style:normal; font-weight:400 800; src:url('./fonts/noto-sans-devanagari.woff2') format('woff2'); font-display:swap; }
+  @font-face { font-family:'Noto Sans Thai';       font-style:normal; font-weight:400 800; src:url('./fonts/noto-sans-thai.woff2') format('woff2'); font-display:swap; }
+  @font-face { font-family:'Noto Sans Hebrew';     font-style:normal; font-weight:400 800; src:url('./fonts/noto-sans-hebrew-subset.woff2') format('woff2'); font-display:swap; }
+  @font-face { font-family:'Noto Sans Bengali';    font-style:normal; font-weight:400 800; src:url('./fonts/noto-sans-bengali-subset.woff2') format('woff2'); font-display:swap; }
+  @font-face { font-family:'Noto Sans Gujarati';   font-style:normal; font-weight:400 800; src:url('./fonts/noto-sans-gujarati-subset.woff2') format('woff2'); font-display:swap; }
+  @font-face { font-family:'Noto Sans Malayalam';  font-style:normal; font-weight:400 800; src:url('./fonts/noto-sans-malayalam-subset.woff2') format('woff2'); font-display:swap; }
+  @font-face { font-family:'Noto Sans Tamil';      font-style:normal; font-weight:400 800; src:url('./fonts/noto-sans-tamil-subset.woff2') format('woff2'); font-display:swap; }
+  @font-face { font-family:'Noto Sans Telugu';     font-style:normal; font-weight:400 800; src:url('./fonts/noto-sans-telugu-subset.woff2') format('woff2'); font-display:swap; }
+  @font-face { font-family:'Noto Sans Georgian';   font-style:normal; font-weight:400 800; src:url('./fonts/noto-sans-georgian-subset.woff2') format('woff2'); font-display:swap; }
+  @font-face { font-family:'Noto Sans Armenian';   font-style:normal; font-weight:400 800; src:url('./fonts/noto-sans-armenian-subset.woff2') format('woff2'); font-display:swap; }
+  @font-face { font-family:'Noto Sans Khmer';      font-style:normal; font-weight:400 800; src:url('./fonts/noto-sans-khmer-subset.woff2') format('woff2'); font-display:swap; }
+  @font-face { font-family:'Noto Serif Tibetan';   font-style:normal; font-weight:400 700; src:url('./fonts/noto-serif-tibetan-subset.woff2') format('woff2'); font-display:swap; }
+  @font-face { font-family:'Noto Sans JP';         font-style:normal; font-weight:400 800; src:url('./fonts/noto-sans-japanese-subset.woff2') format('woff2'); font-display:swap; }
+  @font-face { font-family:'Noto Sans KR';         font-style:normal; font-weight:400 800; src:url('./fonts/noto-sans-korean-subset.woff2') format('woff2'); font-display:swap; }
 
   * { box-sizing: border-box; }
   html, body { height: 100%; margin: 0; overflow: hidden; }
@@ -330,6 +341,69 @@ const FLAGS = {
       `<rect width="22.22" height="22.22" fill="#0D5EAF"/><rect x="8.89" width="4.44" height="22.22" fill="#fff"/><rect y="8.89" width="22.22" height="4.44" fill="#fff"/>`),
   TR: sv(60,40,`<rect width="60" height="40" fill="#E30A17"/><circle cx="22" cy="20" r="9" fill="#fff"/>
       <circle cx="25.5" cy="20" r="7.2" fill="#E30A17"/>${star(36,20,4.5,'#fff')}`),
+  // ── Added for the full real-world "Languages Spoken by Staff" list (72 entries) ──
+  ZA: sv(60,40,`<rect width="60" height="40" fill="#fff"/><rect y="0" width="60" height="13.33" fill="#DE3831"/><rect y="26.66" width="60" height="13.34" fill="#002395"/>
+      <polygon points="0,0 22,20 0,40" fill="#000"/><polygon points="0,6 16,20 0,34" fill="#FFB612"/><polygon points="0,11 11,20 0,29" fill="#007A4D"/>`),
+  AL: sv(60,40,`<rect width="60" height="40" fill="#E41E20"/>
+      <ellipse cx="30" cy="20" rx="3.2" ry="3.2" fill="#000"/>
+      <path d="M22 16 L30 20 L22 24 M38 16 L30 20 L38 24" stroke="#000" stroke-width="2.4" fill="none"/>`),
+  AM: sv(60,40,`<rect width="60" height="13.33" fill="#D90012"/><rect y="13.33" width="60" height="13.33" fill="#0033A0"/><rect y="26.66" width="60" height="13.34" fill="#F2A800"/>`),
+  BD: sv(60,40,`<rect width="60" height="40" fill="#006A4E"/><circle cx="26" cy="20" r="9" fill="#F42A41"/>`),
+  BG: sv(60,40,`<rect width="60" height="13.33" fill="#fff"/><rect y="13.33" width="60" height="13.33" fill="#00966E"/><rect y="26.66" width="60" height="13.34" fill="#D62612"/>`),
+  KH: sv(60,40,`<rect width="60" height="10" fill="#032EA1"/><rect y="10" width="60" height="20" fill="#E00025"/><rect y="30" width="60" height="10" fill="#032EA1"/>
+      <rect x="24" y="14" width="12" height="12" fill="#fff"/><polygon points="24,14 30,8 36,14" fill="#fff"/>`),
+  HR: sv(60,40,`<rect width="60" height="13.33" fill="#FF0000"/><rect y="13.33" width="60" height="13.33" fill="#fff"/><rect y="26.66" width="60" height="13.34" fill="#171796"/>
+      ${[0,1,2,3,4].map(i=>`<rect x="${25+((i%3)*3.4)}" y="${13.5+Math.floor(i/3)*3.4}" width="3.4" height="3.4" fill="${(Math.floor(i/3)+i%3)%2?'#FF0000':'#fff'}"/>`).join('')}`),
+  CZ: sv(60,40,`<rect width="60" height="20" fill="#fff"/><rect y="20" width="60" height="20" fill="#D7141A"/><polygon points="0,0 26,20 0,40" fill="#11457E"/>`),
+  DK: sv(60,40,`<rect width="60" height="40" fill="#C60C30"/><rect x="20" width="7" height="40" fill="#fff"/><rect y="17" width="60" height="7" fill="#fff"/>`),
+  NL: sv(60,40,`<rect width="60" height="13.33" fill="#AE1C28"/><rect y="13.33" width="60" height="13.33" fill="#fff"/><rect y="26.66" width="60" height="13.34" fill="#21468B"/>`),
+  EE: sv(60,40,`<rect width="60" height="13.33" fill="#0072CE"/><rect y="13.33" width="60" height="13.33" fill="#000"/><rect y="26.66" width="60" height="13.34" fill="#fff"/>`),
+  FJ: sv(60,40,`<rect width="60" height="40" fill="#68BFE5"/><rect width="30" height="20" fill="#012169"/>
+      <path d="M0,0 L30,20 M30,0 L0,20" stroke="#fff" stroke-width="3"/><path d="M15,0 V20 M0,10 H30" stroke="#fff" stroke-width="5"/><path d="M15,0 V20 M0,10 H30" stroke="#C8102E" stroke-width="2.6"/>
+      <circle cx="46" cy="26" r="9" fill="#fff"/><rect x="41" y="21" width="10" height="6" fill="#FFD100"/>`),
+  FI: sv(60,40,`<rect width="60" height="40" fill="#fff"/><rect x="19" width="8" height="40" fill="#002F6C"/><rect y="16" width="60" height="8" fill="#002F6C"/>`),
+  GE: sv(60,40,`<rect width="60" height="40" fill="#fff"/><rect x="25.5" width="9" height="40" fill="#FF0000"/><rect y="15.5" width="60" height="9" fill="#FF0000"/>
+      ${[[9,7],[9,33],[51,7],[51,33]].map(([x,y])=>`<g transform="translate(${x},${y})"><rect x="-3" y="-1" width="6" height="2" fill="#FF0000"/><rect x="-1" y="-3" width="2" height="6" fill="#FF0000"/></g>`).join('')}`),
+  HU: sv(60,40,`<rect width="60" height="13.33" fill="#CE2939"/><rect y="13.33" width="60" height="13.33" fill="#fff"/><rect y="26.66" width="60" height="13.34" fill="#477050"/>`),
+  IS: sv(60,40,`<rect width="60" height="40" fill="#02529C"/><rect x="19" width="10" height="40" fill="#fff"/><rect y="15" width="60" height="10" fill="#fff"/><rect x="21.5" width="5" height="40" fill="#DC1E35"/><rect y="17.5" width="60" height="5" fill="#DC1E35"/>`),
+  ID: sv(60,40,`<rect width="60" height="20" fill="#FF0000"/><rect y="20" width="60" height="20" fill="#fff"/>`),
+  IE: sv(60,40,`<rect width="20" height="40" fill="#169B62"/><rect x="20" width="20" height="40" fill="#fff"/><rect x="40" width="20" height="40" fill="#FF883E"/>`),
+  JP: sv(60,40,`<rect width="60" height="40" fill="#fff"/><circle cx="30" cy="20" r="10" fill="#BC002D"/>`),
+  KR: sv(60,40,`<rect width="60" height="40" fill="#fff"/><circle cx="30" cy="20" r="9" fill="#CD2E3A"/><path d="M30,11 A9,9 0 0,1 30,29 A4.5,4.5 0 0,1 30,20 A4.5,4.5 0 0,0 30,11" fill="#0047A0"/>`),
+  LV: sv(60,40,`<rect width="60" height="16" fill="#9E3039"/><rect y="16" width="60" height="8" fill="#fff"/><rect y="24" width="60" height="16" fill="#9E3039"/>`),
+  LT: sv(60,40,`<rect width="60" height="13.33" fill="#FDB913"/><rect y="13.33" width="60" height="13.33" fill="#006A44"/><rect y="26.66" width="60" height="13.34" fill="#C1272D"/>`),
+  MK: sv(60,40,`<rect width="60" height="40" fill="#D20000"/><circle cx="30" cy="20" r="6" fill="#FFE600"/>${[0,45,90,135,180,225,270,315].map(a=>`<polygon points="30,20 ${(30+30*Math.cos(a*Math.PI/180)).toFixed(1)},${(20+30*Math.sin(a*Math.PI/180)).toFixed(1)} ${(30+30*Math.cos((a+18)*Math.PI/180)).toFixed(1)},${(20+30*Math.sin((a+18)*Math.PI/180)).toFixed(1)}" fill="#FFE600"/>`).join('')}`),
+  MY: sv(60,40,`<rect width="60" height="40" fill="#fff"/>${[0,1,2,3,6].map(i=>`<rect y="${i*40/14}" width="60" height="${40/14}" fill="#CC0001"/>`).join('')}<rect width="30" height="21.4" fill="#010066"/>${star(12,10.7,5,'#FFCC00')}<circle cx="20" cy="10.7" r="5" fill="#FFCC00"/><circle cx="21.5" cy="10.7" r="4" fill="#010066"/>`),
+  MT: sv(60,40,`<rect width="30" height="40" fill="#fff"/><rect x="30" width="30" height="40" fill="#CF142B"/><rect x="2" y="2" width="9" height="9" fill="#B4B4B4"/><rect x="3" y="3" width="7" height="7" fill="#CF142B"/>`),
+  NZ: sv(60,40,`<rect width="60" height="40" fill="#00247D"/><rect width="30" height="20" fill="#012169"/>
+      <path d="M0,0 L30,20 M30,0 L0,20" stroke="#fff" stroke-width="3"/><path d="M15,0 V20 M0,10 H30" stroke="#fff" stroke-width="5"/><path d="M15,0 V20 M0,10 H30" stroke="#C8102E" stroke-width="2.6"/>
+      ${star(44,10,3,'#C8102E')}${star(52,18,3,'#C8102E')}${star(44,28,3.4,'#C8102E')}${star(37,33,2.6,'#C8102E')}`),
+  MN: sv(60,40,`<rect width="17" height="40" fill="#C4272F"/><rect x="17" width="26" height="40" fill="#015197"/><rect x="43" width="17" height="40" fill="#C4272F"/>
+      <circle cx="8.5" cy="14" r="3.4" fill="#FFD900"/><rect x="6.5" y="18" width="4" height="16" fill="#FFD900"/>`),
+  NP: sv(60,40,`<rect width="52" height="40" fill="#DC143C"/><path d="M52,0 L52,40 L38,26 Z M52,4 L52,36 L42,22 Z" fill="none" stroke="#003893" stroke-width="1.4"/>
+      <circle cx="24" cy="12" r="5" fill="#fff"/><path d="M18,26 L30,26 L24,34 Z" fill="#fff"/>`),
+  NO: sv(60,40,`<rect width="60" height="40" fill="#EF2B2D"/><rect x="19" width="10" height="40" fill="#fff"/><rect y="15" width="60" height="10" fill="#fff"/><rect x="21.5" width="5" height="40" fill="#002868"/><rect y="17.5" width="60" height="5" fill="#002868"/>`),
+  IR: sv(60,40,`<rect width="60" height="13.33" fill="#239F40"/><rect y="13.33" width="60" height="13.33" fill="#fff"/><rect y="26.66" width="60" height="13.34" fill="#DA0000"/><circle cx="30" cy="20" r="4.6" fill="#DA0000"/>`),
+  PE: sv(60,40,`<rect width="20" height="40" fill="#D91023"/><rect x="20" width="20" height="40" fill="#fff"/><rect x="40" width="20" height="40" fill="#D91023"/>`),
+  RU: sv(60,40,`<rect width="60" height="13.33" fill="#fff"/><rect y="13.33" width="60" height="13.33" fill="#0039A6"/><rect y="26.66" width="60" height="13.34" fill="#D52B1E"/>`),
+  WS: sv(60,40,`<rect width="60" height="40" fill="#CE1126"/><rect width="26" height="20" fill="#002B7F"/>${star(9,7,2.6,'#fff')}${star(17,11,2.6,'#fff')}${star(9,15,2.6,'#fff')}${star(15,4,1.8,'#fff')}${star(20,16,1.8,'#fff')}`),
+  RS: sv(60,40,`<rect width="60" height="13.33" fill="#C6363C"/><rect y="13.33" width="60" height="13.33" fill="#0C4076"/><rect y="26.66" width="60" height="13.34" fill="#fff"/>`),
+  SK: sv(60,40,`<rect width="60" height="13.33" fill="#fff"/><rect y="13.33" width="60" height="13.33" fill="#0B4EA2"/><rect y="26.66" width="60" height="13.34" fill="#EE1C25"/>
+      <rect x="10" y="12" width="12" height="16" fill="#fff"/><path d="M10,12 H22 V22 Q16,28 16,28 Q10,22 10,22 Z" fill="#EE1C25"/><rect x="14.5" y="14" width="3" height="12" fill="#0B4EA2"/><rect x="11.5" y="17" width="9" height="3" fill="#0B4EA2"/>`),
+  SI: sv(60,40,`<rect width="60" height="13.33" fill="#fff"/><rect y="13.33" width="60" height="13.33" fill="#005CE7"/><rect y="26.66" width="60" height="13.34" fill="#ED1C24"/>
+      <polygon points="8,26 16,10 24,26" fill="#005CE7" stroke="#fff" stroke-width="0.6"/>${star(16,15,1.6,'#FFD700')}`),
+  KE: sv(60,40,`<rect width="60" height="10" fill="#000"/><rect y="10" width="60" height="4" fill="#fff"/><rect y="14" width="60" height="12" fill="#BB0000"/><rect y="26" width="60" height="4" fill="#fff"/><rect y="30" width="60" height="10" fill="#006600"/>
+      <polygon points="30,14 24,26 36,26" fill="#BB0000" stroke="#fff" stroke-width="0.6"/><rect x="28.5" y="10" width="3" height="20" fill="#5C3317"/>`),
+  SE: sv(60,40,`<rect width="60" height="40" fill="#005293"/><rect x="19" width="8" height="40" fill="#FECC00"/><rect y="16" width="60" height="8" fill="#FECC00"/>`),
+  TH: sv(60,40,`<rect width="60" height="40" fill="#A51931"/><rect y="6.67" width="60" height="26.66" fill="#fff"/><rect y="13.33" width="60" height="13.34" fill="#2D2A4A"/>`),
+  TO: sv(60,40,`<rect width="60" height="40" fill="#C10000"/><rect width="24" height="20" fill="#fff"/>
+      <rect x="9" y="4" width="6" height="12" fill="#C10000"/><rect x="3" y="8" width="18" height="4" fill="#C10000"/>`),
+  UZ: sv(60,40,`<rect width="60" height="11.6" fill="#1EB53A"/><rect y="11.6" width="60" height="1.6" fill="#CE1126"/><rect y="13.2" width="60" height="13.6" fill="#0099B5"/><rect y="26.8" width="60" height="1.6" fill="#CE1126"/><rect y="28.4" width="60" height="11.6" fill="#1EB53A"/>
+      <circle cx="12" cy="9" r="4" fill="#fff"/><circle cx="13.5" cy="9" r="3.3" fill="#0099B5"/>`),
+  IL: sv(60,40,`<rect width="60" height="40" fill="#fff"/><rect y="5" width="60" height="4" fill="#0038B8"/><rect y="31" width="60" height="4" fill="#0038B8"/>
+      <path d="M30,14 L34,21 L26,21 Z M30,26 L26,19 L34,19 Z" fill="none" stroke="#0038B8" stroke-width="1.4"/>`),
+  WA: sv(60,40,`<rect width="60" height="20" fill="#fff"/><rect y="20" width="60" height="20" fill="#00B140"/>
+      <path d="M22,14 Q28,8 36,12 Q42,10 40,16 Q46,16 42,22 Q44,26 38,25 Q36,30 30,26 Q24,29 24,23 Q18,24 20,18 Q16,16 22,14 Z" fill="#C8102E"/>`),
 };
 const flagUrl = k => FLAGS[k] ? `url("data:image/svg+xml,${encodeURIComponent(FLAGS[k])}")` : '';
 
@@ -344,7 +418,7 @@ const SEED_REGISTRY = [
   { code:'pl',  native:'Polski',                english:'Polish',               flag:'PL', ratio:'3/2', direction:'ltr', script:'latin', alias:['pol'], showFlag:true, active:true },
   { code:'ur',  native:'اردو',                   english:'Urdu',                 flag:'PK', ratio:'3/2', direction:'rtl', script:'arabic', alias:['urd'], showFlag:true, active:true },
   { code:'es',  native:'Español',               english:'Spanish',              flag:'ES', ratio:'3/2', direction:'ltr', script:'latin', alias:['spa','castellano'], showFlag:true, active:true },
-  { code:'zh',  native:'中文',                    english:'Mandarin',             flag:'CN', ratio:'3/2', direction:'ltr', script:'cjk', alias:['mandarin','chinese','zh-hans','cmn'], showFlag:true, active:true },
+  { code:'zh',  native:'中文',                    english:'Mandarin',             flag:'CN', ratio:'3/2', direction:'ltr', script:'cjk', alias:['mandarin','chinese','chinese (mandarin)','zh-hans','cmn'], showFlag:true, active:true },
   { code:'ar',  native:'العربية',                 english:'Arabic',               flag:'SA', ratio:'3/2', direction:'rtl', script:'arabic', alias:['ara'], showFlag:true, active:true },
   { code:'ro',  native:'Română',                english:'Romanian',             flag:'RO', ratio:'3/2', direction:'ltr', script:'latin', alias:['ron','rum'], showFlag:true, active:true },
   { code:'bsl', native:'British Sign Language', english:'British Sign Language',flag:null, ratio:'3/2', direction:'ltr', script:'latin', glyph:'🤟', alias:['sign language','sign'], showFlag:false, active:true },
@@ -353,11 +427,68 @@ const SEED_REGISTRY = [
   { code:'pt',  native:'Português',             english:'Portuguese',           flag:'PT', ratio:'3/2', direction:'ltr', script:'latin', alias:['por'], showFlag:true, active:true },
   { code:'so',  native:'Soomaali',              english:'Somali',               flag:'SO', ratio:'3/2', direction:'ltr', script:'latin', alias:['som'], showFlag:true, active:true },
   { code:'it',  native:'Italiano',              english:'Italian',              flag:'IT', ratio:'3/2', direction:'ltr', script:'latin', alias:['ita'], showFlag:true, active:true },
-  { code:'uk',  native:'Українська',            english:'Ukrainian',            flag:'UA', ratio:'3/2', direction:'ltr', script:'cyrillic', alias:['ukr'], showFlag:true, active:true },
+  { code:'uk',  native:'Українська',            english:'Ukrainian',            flag:'UA', ratio:'3/2', direction:'ltr', script:'cyrillic', alias:['ukr','ukranian'], showFlag:true, active:true },
   { code:'vi',  native:'Tiếng Việt',             english:'Vietnamese',           flag:'VN', ratio:'3/2', direction:'ltr', script:'latin', alias:['vie'], showFlag:true, active:true },
   { code:'de',  native:'Deutsch',               english:'German',               flag:'DE', ratio:'3/2', direction:'ltr', script:'latin', alias:['deu','ger'], showFlag:true, active:true },
   { code:'el',  native:'Ελληνικά',              english:'Greek',                flag:'GR', ratio:'3/2', direction:'ltr', script:'greek', alias:['ell','gre'], showFlag:true, active:true },
   { code:'tr',  native:'Türkçe',                english:'Turkish',              flag:'TR', ratio:'3/2', direction:'ltr', script:'latin', alias:['tur'], showFlag:true, active:true },
+  // ── Expanded to cover the real "Languages Spoken by Staff" field (72 entries) ──
+  { code:'af',  native:'Afrikaans',            english:'Afrikaans',            flag:'ZA', ratio:'3/2', direction:'ltr', script:'latin',     alias:['afr'], showFlag:true, active:true },
+  { code:'sq',  native:'Shqip',                english:'Albanian',             flag:'AL', ratio:'3/2', direction:'ltr', script:'latin',     alias:['alb','sqi'], showFlag:true, active:true },
+  { code:'hy',  native:'Հայերեն',               english:'Armenian',             flag:'AM', ratio:'3/2', direction:'ltr', script:'armenian',  alias:['arm','hye'], showFlag:true, active:true },
+  { code:'eu',  native:'Euskara',              english:'Basque',               flag:'ES', ratio:'3/2', direction:'ltr', script:'latin',     alias:['baq','eus'], showFlag:true, active:true },
+  { code:'bn',  native:'বাংলা',                 english:'Bengali',              flag:'BD', ratio:'3/2', direction:'ltr', script:'bengali',   alias:['ben','bangla'], showFlag:true, active:true },
+  { code:'bg',  native:'Български',            english:'Bulgarian',            flag:'BG', ratio:'3/2', direction:'ltr', script:'cyrillic',  alias:['bul'], showFlag:true, active:true },
+  { code:'ca',  native:'Català',               english:'Catalan',              flag:'ES', ratio:'3/2', direction:'ltr', script:'latin',     alias:['cat'], showFlag:true, active:true },
+  { code:'km',  native:'ខ្មែរ',                  english:'Cambodian',            flag:'KH', ratio:'3/2', direction:'ltr', script:'khmer',     alias:['khm','khmer'], showFlag:true, active:true },
+  { code:'hr',  native:'Hrvatski',             english:'Croatian',             flag:'HR', ratio:'3/2', direction:'ltr', script:'latin',     alias:['hrv','croation'], showFlag:true, active:true },
+  { code:'cs',  native:'Čeština',              english:'Czech',                flag:'CZ', ratio:'3/2', direction:'ltr', script:'latin',     alias:['cze','ces'], showFlag:true, active:true },
+  { code:'da',  native:'Dansk',                english:'Danish',               flag:'DK', ratio:'3/2', direction:'ltr', script:'latin',     alias:['dan'], showFlag:true, active:true },
+  { code:'nl',  native:'Nederlands',           english:'Dutch',                flag:'NL', ratio:'3/2', direction:'ltr', script:'latin',     alias:['dut','nld'], showFlag:true, active:true },
+  { code:'et',  native:'Eesti',                english:'Estonian',             flag:'EE', ratio:'3/2', direction:'ltr', script:'latin',     alias:['est'], showFlag:true, active:true },
+  { code:'fj',  native:'Vosa Vakaviti',        english:'Fijian',               flag:'FJ', ratio:'3/2', direction:'ltr', script:'latin',     alias:['fij','fiji'], showFlag:true, active:true },
+  { code:'fi',  native:'Suomi',                english:'Finnish',              flag:'FI', ratio:'3/2', direction:'ltr', script:'latin',     alias:['fin'], showFlag:true, active:true },
+  { code:'ka',  native:'ქართული',              english:'Georgian',             flag:'GE', ratio:'3/2', direction:'ltr', script:'georgian',  alias:['geo','kat'], showFlag:true, active:true },
+  { code:'gu',  native:'ગુજરાતી',                english:'Gujarati',             flag:'IN', ratio:'3/2', direction:'ltr', script:'gujarati',  alias:['guj'], showFlag:true, active:true },
+  { code:'he',  native:'עברית',                 english:'Hebrew',               flag:'IL', ratio:'3/2', direction:'rtl', script:'hebrew',    alias:['heb'], showFlag:true, active:true },
+  { code:'hi',  native:'हिन्दी',                 english:'Hindi',                flag:'IN', ratio:'3/2', direction:'ltr', script:'devanagari',alias:['hin'], showFlag:true, active:true },
+  { code:'hu',  native:'Magyar',               english:'Hungarian',            flag:'HU', ratio:'3/2', direction:'ltr', script:'latin',     alias:['hun'], showFlag:true, active:true },
+  { code:'is',  native:'Íslenska',             english:'Icelandic',            flag:'IS', ratio:'3/2', direction:'ltr', script:'latin',     alias:['ice','isl'], showFlag:true, active:true },
+  { code:'id',  native:'Bahasa Indonesia',     english:'Indonesian',           flag:'ID', ratio:'3/2', direction:'ltr', script:'latin',     alias:['ind'], showFlag:true, active:true },
+  { code:'ga',  native:'Gaeilge',              english:'Irish',                flag:'IE', ratio:'3/2', direction:'ltr', script:'latin',     alias:['gle'], showFlag:true, active:true },
+  { code:'ja',  native:'日本語',                 english:'Japanese',             flag:'JP', ratio:'3/2', direction:'ltr', script:'cjk-jp',    alias:['jpn'], showFlag:true, active:true },
+  { code:'jv',  native:'Basa Jawa',            english:'Javanese',             flag:'ID', ratio:'3/2', direction:'ltr', script:'latin',     alias:['jav'], showFlag:true, active:true },
+  { code:'ko',  native:'한국어',                 english:'Korean',               flag:'KR', ratio:'3/2', direction:'ltr', script:'hangul',    alias:['kor'], showFlag:true, active:true },
+  { code:'la',  native:'Latina',               english:'Latin',                flag:null, ratio:'3/2', direction:'ltr', script:'latin',     glyph:'📜', alias:['lat'], showFlag:false, active:true },
+  { code:'lv',  native:'Latviešu',             english:'Latvian',              flag:'LV', ratio:'3/2', direction:'ltr', script:'latin',     alias:['lav'], showFlag:true, active:true },
+  { code:'lt',  native:'Lietuvių',             english:'Lithuanian',           flag:'LT', ratio:'3/2', direction:'ltr', script:'latin',     alias:['lit'], showFlag:true, active:true },
+  { code:'mk',  native:'Македонски',           english:'Macedonian',           flag:'MK', ratio:'3/2', direction:'ltr', script:'cyrillic',  alias:['mac','mkd'], showFlag:true, active:true },
+  { code:'ms',  native:'Bahasa Melayu',        english:'Malay',                flag:'MY', ratio:'3/2', direction:'ltr', script:'latin',     alias:['msa'], showFlag:true, active:true },
+  { code:'ml',  native:'മലയാളം',                english:'Malayalam',            flag:'IN', ratio:'3/2', direction:'ltr', script:'malayalam', alias:['mal'], showFlag:true, active:true },
+  { code:'mt',  native:'Malti',                english:'Maltese',              flag:'MT', ratio:'3/2', direction:'ltr', script:'latin',     alias:['mlt'], showFlag:true, active:true },
+  { code:'mi',  native:'Te Reo Māori',         english:'Maori',                flag:'NZ', ratio:'3/2', direction:'ltr', script:'latin',     alias:['mao','mri'], showFlag:true, active:true },
+  { code:'mr',  native:'मराठी',                 english:'Marathi',              flag:'IN', ratio:'3/2', direction:'ltr', script:'devanagari',alias:['mar'], showFlag:true, active:true },
+  { code:'mn',  native:'Монгол',               english:'Mongolian',            flag:'MN', ratio:'3/2', direction:'ltr', script:'cyrillic',  alias:['mon'], showFlag:true, active:true },
+  { code:'ne',  native:'नेपाली',                 english:'Nepali',               flag:'NP', ratio:'3/2', direction:'ltr', script:'devanagari',alias:['nep'], showFlag:true, active:true },
+  { code:'no',  native:'Norsk',                english:'Norwegian',            flag:'NO', ratio:'3/2', direction:'ltr', script:'latin',     alias:['nor'], showFlag:true, active:true },
+  { code:'fa',  native:'فارسی',                 english:'Persian',              flag:'IR', ratio:'3/2', direction:'rtl', script:'arabic',    alias:['per','fas','farsi'], showFlag:true, active:true },
+  { code:'qu',  native:'Runa Simi',            english:'Quechua',              flag:'PE', ratio:'3/2', direction:'ltr', script:'latin',     alias:['que'], showFlag:true, active:true },
+  { code:'ru',  native:'Русский',              english:'Russian',              flag:'RU', ratio:'3/2', direction:'ltr', script:'cyrillic',  alias:['rus'], showFlag:true, active:true },
+  { code:'sm',  native:'Gagana Sāmoa',         english:'Samoan',               flag:'WS', ratio:'3/2', direction:'ltr', script:'latin',     alias:['smo'], showFlag:true, active:true },
+  { code:'sr',  native:'Српски',               english:'Serbian',              flag:'RS', ratio:'3/2', direction:'ltr', script:'cyrillic',  alias:['srp'], showFlag:true, active:true },
+  { code:'sk',  native:'Slovenčina',           english:'Slovak',               flag:'SK', ratio:'3/2', direction:'ltr', script:'latin',     alias:['slo','slk'], showFlag:true, active:true },
+  { code:'sl',  native:'Slovenščina',          english:'Slovenian',            flag:'SI', ratio:'3/2', direction:'ltr', script:'latin',     alias:['slv'], showFlag:true, active:true },
+  { code:'sw',  native:'Kiswahili',            english:'Swahili',              flag:'KE', ratio:'3/2', direction:'ltr', script:'latin',     alias:['swa'], showFlag:true, active:true },
+  { code:'sv',  native:'Svenska',              english:'Swedish',              flag:'SE', ratio:'3/2', direction:'ltr', script:'latin',     alias:['swe'], showFlag:true, active:true },
+  { code:'ta',  native:'தமிழ்',                  english:'Tamil',                flag:'IN', ratio:'3/2', direction:'ltr', script:'tamil',     alias:['tam'], showFlag:true, active:true },
+  { code:'tt',  native:'Татарча',              english:'Tatar',                flag:'RU', ratio:'3/2', direction:'ltr', script:'cyrillic',  alias:['tat'], showFlag:true, active:true },
+  { code:'te',  native:'తెలుగు',                 english:'Telugu',               flag:'IN', ratio:'3/2', direction:'ltr', script:'telugu',    alias:['tel'], showFlag:true, active:true },
+  { code:'th',  native:'ไทย',                   english:'Thai',                 flag:'TH', ratio:'3/2', direction:'ltr', script:'thai',      alias:['tha'], showFlag:true, active:true },
+  { code:'bo',  native:'བོད་སྐད',                english:'Tibetan',              flag:null, ratio:'3/2', direction:'ltr', script:'tibetan',   glyph:'🏔', alias:['tib','bod'], showFlag:false, active:true },
+  { code:'to',  native:'Lea Fakatonga',        english:'Tongan',               flag:'TO', ratio:'3/2', direction:'ltr', script:'latin',     alias:['ton','tonga'], showFlag:true, active:true },
+  { code:'uz',  native:'Oʻzbekcha',            english:'Uzbek',                flag:'UZ', ratio:'3/2', direction:'ltr', script:'latin',     alias:['uzb'], showFlag:true, active:true },
+  { code:'cy',  native:'Cymraeg',              english:'Welsh',                flag:'WA', ratio:'3/2', direction:'ltr', script:'latin',     alias:['wel','cym'], showFlag:true, active:true },
+  { code:'xh',  native:'isiXhosa',             english:'Xhosa',                flag:'ZA', ratio:'3/2', direction:'ltr', script:'latin',     alias:['xho'], showFlag:true, active:true },
 ];
 let _registry = SEED_REGISTRY;
 let _registryLoaded = false;
@@ -445,12 +576,16 @@ const PRESETS = {
   }
 };
 
+// Shared script-pack fallback chain — every self-hosted Noto family, appended
+// after each design font so the browser falls through to whichever pack
+// actually covers the current language's characters.
+const SCRIPT_FONTS = `'Noto Sans Arabic', 'Noto Sans Gurmukhi', 'Noto Sans SC', 'Noto Sans Devanagari', 'Noto Sans Thai', 'Noto Sans Hebrew', 'Noto Sans Bengali', 'Noto Sans Gujarati', 'Noto Sans Malayalam', 'Noto Sans Tamil', 'Noto Sans Telugu', 'Noto Sans Georgian', 'Noto Sans Armenian', 'Noto Sans Khmer', 'Noto Serif Tibetan', 'Noto Sans JP', 'Noto Sans KR'`;
 const FONTS = {
-  system:   `-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Inter', 'Noto Sans Arabic', 'Noto Sans Gurmukhi', 'Noto Sans SC', 'Noto Sans Devanagari', 'Noto Sans Thai', Roboto, Arial, sans-serif`,
-  geometric:`'Avenir Next', 'Century Gothic', Futura, 'Inter', 'Noto Sans Arabic', 'Noto Sans Gurmukhi', 'Noto Sans SC', Arial, sans-serif`,
-  humanist: `'Segoe UI', 'Trebuchet MS', 'Inter', 'Noto Sans Arabic', 'Noto Sans Gurmukhi', 'Noto Sans SC', Verdana, sans-serif`,
-  condensed:`'Helvetica Neue', 'Arial Narrow', 'Inter', 'Noto Sans Arabic', 'Noto Sans Gurmukhi', 'Noto Sans SC', Arial, sans-serif`,
-  serif:    `Georgia, 'Times New Roman', 'Inter', 'Noto Sans Arabic', 'Noto Sans Gurmukhi', 'Noto Sans SC', serif`
+  system:   `-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Inter', ${SCRIPT_FONTS}, Roboto, Arial, sans-serif`,
+  geometric:`'Avenir Next', 'Century Gothic', Futura, 'Inter', ${SCRIPT_FONTS}, Arial, sans-serif`,
+  humanist: `'Segoe UI', 'Trebuchet MS', 'Inter', ${SCRIPT_FONTS}, Verdana, sans-serif`,
+  condensed:`'Helvetica Neue', 'Arial Narrow', 'Inter', ${SCRIPT_FONTS}, Arial, sans-serif`,
+  serif:    `Georgia, 'Times New Roman', 'Inter', ${SCRIPT_FONTS}, serif`
 };
 const EASINGS = {
   expo:'cubic-bezier(.19,1,.22,1)', smooth:'cubic-bezier(.4,0,.2,1)',
