@@ -342,8 +342,11 @@ const FLAGS = {
   TR: sv(60,40,`<rect width="60" height="40" fill="#E30A17"/><circle cx="22" cy="20" r="9" fill="#fff"/>
       <circle cx="25.5" cy="20" r="7.2" fill="#E30A17"/>${star(36,20,4.5,'#fff')}`),
   // ── Added for the full real-world "Languages Spoken by Staff" list (72 entries) ──
-  ZA: sv(60,40,`<rect width="60" height="40" fill="#fff"/><rect y="0" width="60" height="13.33" fill="#DE3831"/><rect y="26.66" width="60" height="13.34" fill="#002395"/>
-      <polygon points="0,0 22,20 0,40" fill="#000"/><polygon points="0,6 16,20 0,34" fill="#FFB612"/><polygon points="0,11 11,20 0,29" fill="#007A4D"/>`),
+  ZA: sv(60,40,`<path fill="#E03C31" d="M0,0 H60 V20 H30 Z"/><path fill="#001489" d="M0,40 H60 V20 H30 Z"/>
+      <path fill="none" stroke="#fff" stroke-width="13.33" d="M60,20 H30 L0,0 V40 L30,20"/>
+      <clipPath id="zaTri"><path d="M0,0 L30,20 L0,40 Z"/></clipPath>
+      <g clip-path="url(#zaTri)"><path fill="#000" stroke="#FFB81C" stroke-width="13.33" d="M0,0 L30,20 L0,40"/></g>
+      <path fill="none" stroke="#007749" stroke-width="8" d="M0,0 L30,20 H60 M0,40 L30,20"/>`),
   AL: sv(60,40,`<rect width="60" height="40" fill="#E41E20"/>
       <ellipse cx="30" cy="20" rx="3.2" ry="3.2" fill="#000"/>
       <path d="M22 16 L30 20 L22 24 M38 16 L30 20 L38 24" stroke="#000" stroke-width="2.4" fill="none"/>`),
@@ -804,8 +807,9 @@ async function pollFeed() {
                  || JSON.stringify(newRawLanguages) !== JSON.stringify(_rawLanguages);
     _storeLoc = sl; _openingHours = newOpeningHours; _rawLanguages = newRawLanguages;
     _fetched = true; _lastPollAt = Date.now();
-    _saveCache();
-    if (changed) render(); else updateDebugPanel();
+    // Cache (and re-render) only on an actual change — an unchanged poll
+    // shouldn't rewrite localStorage or restart the enter animation.
+    if (changed) { _saveCache(); render(); } else { updateDebugPanel(); }
   } catch (e) {
     console.warn('[LanguagesOnShift] poll failed:', e);
     _fetched = true;
@@ -1141,8 +1145,16 @@ if (!DEVICE_UDID && !PREVIEW_MODE) {
       <a href="index.html">← Back to Portal</a>
     </div>`;
 } else {
+  // Render from cache on the very first frame, before any network round-trip —
+  // when this item comes up in a rotation alongside other campaigns it must
+  // play immediately, not wait out the loading gate below for a fresh poll.
   const cache = _loadCache();
-  if (cache && !PREVIEW_MODE) { _storeLoc = cache.storeLoc; _openingHours = cache.openingHours; _rawLanguages = cache.rawLanguages; }
+  if (cache && !PREVIEW_MODE) {
+    _storeLoc = cache.storeLoc; _openingHours = cache.openingHours; _rawLanguages = cache.rawLanguages;
+    _lastPollAt = cache.at || null;
+    _fetched = true;
+    render();
+  }
 
   setInterval(() => { if (_fetched) render(); }, 60000); // keep open/closed + stale indicator accurate
 
