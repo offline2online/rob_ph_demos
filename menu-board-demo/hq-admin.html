@@ -650,7 +650,7 @@
             </div>
             <div class="page-header-actions" id="itemsToolbarActions">
               <button class="toolbar-link-btn" onclick="showView('brands')">Manage Brands / Suppliers</button>
-              <button class="toolbar-link-btn" onclick="openAddModal()">Add New Product</button>
+              <button class="toolbar-link-btn" onclick="location.href='product/#/products/new'">Add New Product</button>
             </div>
             <div class="items-toolbar-sel-actions" id="itemsSelActions" style="display:none;">
               <button class="toolbar-text-link" id="itemsSelViewBtn" onclick="viewSelectedItems()">View Selected</button>
@@ -765,172 +765,6 @@
 </div><!-- /ph-main -->
 
 <!-- ADD/EDIT MODAL -->
-<div class="modal-overlay" id="itemModal">
-  <div class="modal">
-    <div class="modal-header">
-      <h2 id="modalTitle">Add Product / Item</h2>
-      <button class="modal-close" onclick="closeModal()">&#x2715;</button>
-    </div>
-    <div class="modal-tabs">
-      <div class="modal-tab active" id="itemTab-details" onclick="switchItemModalTab('details')">Details</div>
-      <div class="modal-tab" id="itemTab-assets" onclick="switchItemModalTab('assets')">Assets</div>
-    </div>
-    <div class="modal-body" style="padding:0;overflow:hidden;display:flex;flex-direction:column;">
-      <div class="modal-tab-pane active" id="itemPane-details" style="overflow-y:auto;flex:1;padding:22px;">
-      <input type="hidden" id="editId">
-      <div class="form-group">
-        <label>Brand <span class="req">*</span></label>
-        <select id="fBrand" onchange="updatePriceCurrencySymbol()"></select>
-      </div>
-      <div class="form-row">
-        <div class="form-group">
-          <label>SKU <span class="req">*</span></label>
-          <div style="display:flex;gap:6px;">
-            <input type="text" id="fSku" placeholder="e.g. BRK001">
-            <button class="btn btn-ghost btn-sm" onclick="genSku()" title="Auto-generate SKU">&#x26A1;</button>
-          </div>
-        </div>
-        <div class="form-group">
-          <label>Product Category <span class="req">*</span></label>
-          <select id="fCategory"><option value="">Select category&hellip;</option></select>
-          <button class="toolbar-link-btn" type="button" onclick="toggleManageCategories()" style="margin-top:6px;font-size:11px;">Manage categories</button>
-        </div>
-      </div>
-      <div id="manageCategoriesPanel" class="manage-types-panel" style="display:none;margin-bottom:16px;">
-        <div style="font-size:11px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px;">Manage Categories</div>
-        <div class="cat-list" id="modalCatList"></div>
-        <div class="add-cat-row">
-          <input type="text" id="modalNewCatInput" placeholder="Add new category&hellip;" onkeydown="if(event.key==='Enter'){event.preventDefault();addCategory();}">
-          <button class="btn btn-primary btn-sm" type="button" onclick="addCategory()">+ Add</button>
-        </div>
-        <p style="margin-top:10px;font-size:12px;color:var(--text2);">Categories organise menu items. Deleting a category will not delete items assigned to it.</p>
-      </div>
-      <div class="form-group">
-        <label>Product Name <span class="req">*</span></label>
-        <input type="text" id="fName" placeholder="e.g. Classic Eggs Benedict">
-      </div>
-      <div class="form-group">
-        <label>Short Description</label>
-        <input type="text" id="fDescShort" placeholder="One-line summary shown on menu boards&hellip;">
-      </div>
-      <div class="form-group">
-        <label>Long Description</label>
-        <textarea id="fDescLong" placeholder="Full description — ingredients, allergens, story, nutritional highlights&hellip;" rows="3"></textarea>
-      </div>
-      <div class="form-group">
-        <label>Ingredients <span class="opt-tag">Optional</span></label>
-        <div class="tag-chip-wrap" id="ingredientsChips"
-             onclick="this.querySelector('.tag-chip-input').focus()">
-          <input class="tag-chip-input" type="text" placeholder="Type an ingredient, then Enter or comma&hellip;"
-                 onkeydown="if(event.key==='Enter'||event.key===','){event.preventDefault();window._addChip(this,window.editingIngredients,'ingredientsChips','removeIngredient');}">
-        </div>
-        <div class="tag-chip-hint">Press Enter or comma to add &middot; Click &times; to remove</div>
-      </div>
-      <div class="section-divider">Customisation Options <span class="opt-tag">Optional &mdash; items a customer can add, remove or swap</span></div>
-      <div class="form-group">
-        <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
-          <label style="margin-bottom:0;">Options</label>
-          <span style="font-size:10px;color:var(--text2);font-weight:400;text-transform:none;letter-spacing:0;">Name &middot; Type &middot; Price Adj</span>
-        </div>
-        <div id="customizationList"></div>
-        <button class="btn btn-ghost btn-sm" type="button" onclick="addCustomizationOpt()" style="margin-top:6px;">+ Add Option</button>
-        <div class="tag-chip-hint">Customer-facing add / remove / swap options with optional price adjustment (e.g. +1.50 or -0.00)</div>
-      </div>
-      <div class="form-row">
-        <div class="form-group">
-          <label>Price <span class="req">*</span></label>
-          <div class="price-input-wrap">
-            <span class="price-symbol" id="currSymbol">$</span>
-            <input type="number" id="fPrice" placeholder="0.00" step="0.01" min="0">
-          </div>
-        </div>
-        <div class="form-group">
-          <label>Status</label>
-          <select id="fActive">
-            <option value="true">Active &mdash; Visible on menus</option>
-            <option value="false">Inactive &mdash; Hidden from menus</option>
-          </select>
-        </div>
-      </div>
-      <div class="form-row" style="max-width:520px;">
-        <div class="form-group" style="flex:1;">
-          <label>Low Stock Alert Threshold <span class="opt-tag">Optional</span></label>
-          <input type="number" id="fLowStockThreshold" min="1" max="999" placeholder="Brand default">
-          <p class="form-help">Overrides the brand-level threshold for this item only. Leave blank to use the brand default.</p>
-        </div>
-        <div class="form-group" style="flex:1;">
-          <label>Featured <span class="opt-tag">Local Feature Highlight</span></label>
-          <select id="fFeatured" onchange="if (_itemSave) _itemSave.markDirty();">
-            <option value="false">Not featured</option>
-            <option value="true">&#11088; Featured</option>
-          </select>
-          <p class="form-help">At least 3 items must be Featured for a brand before the Local Feature Highlight template will activate.</p>
-        </div>
-      </div>
-      <div class="section-divider">Nutrition Information <span class="opt-tag">Optional &mdash; shown on menu boards</span></div>
-      <div class="form-row cols-4">
-        <div class="form-group">
-          <label>Calories</label>
-          <input type="number" id="fCalories" placeholder="e.g. 420" min="0" step="1">
-        </div>
-        <div class="form-group">
-          <label>Fat (g)</label>
-          <input type="number" id="fFat" placeholder="e.g. 22" min="0" step="0.1">
-        </div>
-        <div class="form-group">
-          <label>Carbs (g)</label>
-          <input type="number" id="fCarbs" placeholder="e.g. 36" min="0" step="0.1">
-        </div>
-        <div class="form-group">
-          <label>Protein (g)</label>
-          <input type="number" id="fProtein" placeholder="e.g. 21" min="0" step="0.1">
-        </div>
-      </div>
-      <div class="section-divider" style="justify-content:space-between;">
-        <span>Types &amp; Availability</span>
-        <button class="btn btn-ghost btn-sm" type="button" onclick="toggleManageTypes()" style="font-size:11px;padding:3px 10px;">Manage Types</button>
-      </div>
-      <div class="form-group">
-        <label>Types <span class="req">*</span> <span style="font-size:10px;font-weight:400;text-transform:none;letter-spacing:0;">(select all that apply)</span></label>
-        <div class="menu-types-selector" id="menuTypeSelector"></div>
-      </div>
-      <div id="manageTypesPanel" class="manage-types-panel" style="display:none;margin-bottom:16px;">
-        <div style="font-size:11px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px;">Manage Types</div>
-        <div class="type-tag-row" id="typeTagList"></div>
-        <div class="add-type-row">
-          <input type="text" id="newTypeName" placeholder="New type name&hellip;" onkeydown="if(event.key==='Enter'){event.preventDefault();addNewType();}">
-          <input type="color" id="newTypeColor" value="#2563eb" title="Pick a colour">
-          <button class="btn btn-primary btn-sm" type="button" onclick="addNewType()">+ Add</button>
-        </div>
-      </div>
-      </div><!-- /itemPane-details -->
-
-      <!-- ASSETS TAB PANE -->
-      <div class="modal-tab-pane" id="itemPane-assets" style="overflow-y:auto;flex:1;padding:22px;">
-        <p style="font-size:12px;color:var(--text2);margin-bottom:18px;">Upload and manage product images. The first image will be shown on the menu board.</p>
-        <div class="form-group">
-          <label>Product Images</label>
-          <div class="img-upload-zone" id="imgDropZone" onclick="document.getElementById('imgUpload').click()"
-               ondragover="event.preventDefault();this.classList.add('drag-over')"
-               ondragleave="this.classList.remove('drag-over')"
-               ondrop="event.preventDefault();this.classList.remove('drag-over');handleImageDrop(event)">
-            <input type="file" id="imgUpload" accept="image/*" multiple onchange="handleImages(event)">
-            <div class="upload-icon">&#x1F5BC;&#xFE0F;</div>
-            <p>Click here or Drag &amp; Drop to upload images</p>
-            <span>PNG, JPG, WebP &mdash; Multiple images supported (first shown on menu board)</span>
-          </div>
-          <div class="img-previews" id="imgPreviews"></div>
-        </div>
-      </div><!-- /itemPane-assets -->
-
-    </div><!-- /modal-body -->
-    <div class="modal-footer">
-      <button class="btn btn-ghost" onclick="closeModal()">Cancel</button>
-      <button class="btn btn-primary" id="itemSaveBtn" onclick="saveItem()">Save Changes</button>
-    </div>
-  </div>
-</div>
-
 <!-- BRAND ADD/EDIT MODAL -->
 <div class="modal-overlay" id="brandModal">
   <div class="modal" style="max-width:760px;height:85vh;">
@@ -2153,13 +1987,6 @@ function saveCats(c) {
 }
 
 function genId() { return Date.now().toString(36) + Math.random().toString(36).substr(2,6); }
-function genSku() {
-  const items = getItems();
-  const catVal = document.getElementById('fCategory').value;
-  const prefix = String(catVal).slice(0,3).toUpperCase() || 'ITM';
-  const num = String(items.length + 1).padStart(3,'0');
-  document.getElementById('fSku').value = prefix + num;
-}
 
 // ===== TEMPLATE LIBRARY =====
 
@@ -2765,7 +2592,7 @@ function initGrids() {
             const div = document.createElement('div');
             div.style.cssText = 'display:flex;align-items:center;gap:12px;height:100%;cursor:pointer;width:100%;';
             div.title = 'Click to edit';
-            div.addEventListener('click', () => openEditModal(item.id));
+            div.addEventListener('click', () => location.href = 'product/#/products/' + item.id + '/details');
             const imgWrap = document.createElement('div');
             imgWrap.className = 'item-img';
             if (item.images && item.images[0]) {
@@ -2918,7 +2745,7 @@ function initGrids() {
             const btn = document.createElement('button');
             btn.className = 'row-menu-btn'; btn.textContent = '···';
             btn.addEventListener('click', e => showRowMenu(e, [
-              { label: 'Edit', action: () => openEditModal(item.id) },
+              { label: 'Edit', action: () => location.href = 'product/#/products/' + item.id + '/details' },
               item.active
                 ? { label: 'Deactivate', action: () => bulkSetActive(false, [item.id]) }
                 : { label: 'Activate',   action: () => bulkSetActive(true,  [item.id]) },
@@ -3099,473 +2926,6 @@ function bulkSetFeatured(featured, itemIds) {
 }
 window.bulkSetFeatured = bulkSetFeatured;
 
-// ===== TAG-CHIP HELPERS =====
-window.editingIngredients = [];
-window.editingAddOns      = [];
-window.editingRemoveOns   = [];
-
-function _escHtml(s) {
-  return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-}
-
-function _renderTagChips(containerId, arr, removeFnName) {
-  const wrap = document.getElementById(containerId);
-  if (!wrap) return;
-  const input = wrap.querySelector('.tag-chip-input');
-  wrap.querySelectorAll('.tag-chip').forEach(c => c.remove());
-  arr.forEach((tag, i) => {
-    const chip = document.createElement('div');
-    chip.className = 'tag-chip';
-    chip.innerHTML = `<span>${_escHtml(tag)}</span><button class="tag-chip-remove" type="button" onclick="window.${removeFnName}(${i})" title="Remove">&#x2715;</button>`;
-    wrap.insertBefore(chip, input);
-  });
-}
-window._renderTagChips = _renderTagChips;
-
-function _addChip(inputEl, arr, containerId, removeFnName) {
-  const val = inputEl.value.trim();
-  if (!val) return;
-  val.split(',').map(v => v.trim()).filter(Boolean).forEach(v => {
-    if (!arr.includes(v)) arr.push(v);
-  });
-  inputEl.value = '';
-  _renderTagChips(containerId, arr, removeFnName);
-  if (_itemSave) _itemSave.markDirty();
-}
-window._addChip = _addChip;
-
-window.removeIngredient = (i) => { window.editingIngredients.splice(i, 1); _renderTagChips('ingredientsChips', window.editingIngredients, 'removeIngredient'); if (_itemSave) _itemSave.markDirty(); };
-
-// ===== GS1 CUSTOMIZATION OPTIONS =====
-let editingCustomizationOptions = [];
-
-function renderCustomizationOptions() {
-  const container = document.getElementById('customizationList');
-  if (!container) return;
-  if (!editingCustomizationOptions.length) {
-    container.innerHTML = '<div class="cust-opts-empty">No customisation options yet. Click + Add Option below.</div>';
-    return;
-  }
-  container.innerHTML = editingCustomizationOptions.map((opt, i) => `
-    <div class="cust-opt-row">
-      <input type="text" class="cust-opt-name" value="${_escHtml(opt.name || '')}" placeholder="Option name (e.g. Extra Cheese)"
-             onchange="window.editingCustomizationOptions[${i}].name = this.value">
-      <select class="cust-opt-type" onchange="window._setCustOptType(${i}, this.value)">
-        <option value="ADD"      ${opt['gs1:modificationType']==='ADD'      ? 'selected':''}>+ Add</option>
-        <option value="SUBTRACT" ${opt['gs1:modificationType']==='SUBTRACT' ? 'selected':''}>- Remove</option>
-        <option value="SWAP"     ${opt['gs1:modificationType']==='SWAP'     ? 'selected':''}>Swap</option>
-      </select>
-      <input type="text" class="cust-opt-price" value="${_escHtml(opt['gs1:priceAdjustment'] || '+0.00')}"
-             placeholder="+0.00" title="Price adjustment (e.g. +1.50 or -0.00)"
-             onchange="window.editingCustomizationOptions[${i}]['gs1:priceAdjustment'] = this.value">
-      <button class="cust-opt-del" type="button" onclick="window._removeCustOpt(${i})" title="Remove">&#x2715;</button>
-    </div>
-  `).join('');
-}
-window.renderCustomizationOptions = renderCustomizationOptions;
-
-window._setCustOptType = (i, val) => {
-  editingCustomizationOptions[i]['gs1:modificationType'] = val;
-  editingCustomizationOptions[i].value = val === 'ADD' ? 'Added' : val === 'SUBTRACT' ? 'Removed' : 'Swapped';
-};
-window._removeCustOpt = (i) => {
-  editingCustomizationOptions.splice(i, 1);
-  renderCustomizationOptions();
-  if (_itemSave) _itemSave.markDirty();
-};
-function addCustomizationOpt() {
-  editingCustomizationOptions.push({
-    '@type': 'PropertyValue',
-    'name': '',
-    'value': 'Added',
-    'gs1:modificationType': 'ADD',
-    'gs1:priceAdjustment': '+0.00'
-  });
-  renderCustomizationOptions();
-  if (_itemSave) _itemSave.markDirty();
-}
-window.addCustomizationOpt = addCustomizationOpt;
-
-// ===== TYPES MANAGEMENT (inline in item modal) =====
-let _manageTypesOpen = false;
-
-function renderMenuTypeSelector(selectedTypes = []) {
-  const el = document.getElementById('menuTypeSelector');
-  if (!el) return;
-  const types = getTypes();
-  el.innerHTML = types.map(t => `
-    <label class="mt-option ${selectedTypes.includes(t.id) ? 'checked' : ''}" data-type="${_escHtml(t.id)}">
-      <input type="checkbox" value="${_escHtml(t.id)}" ${selectedTypes.includes(t.id) ? 'checked' : ''}>
-      <span class="dot">&#x2713;</span> ${_escHtml(t.label)}
-    </label>
-  `).join('');
-  el.querySelectorAll('.mt-option').forEach(lbl => {
-    lbl.addEventListener('click', () => {
-      const cb = lbl.querySelector('input');
-      cb.checked = !cb.checked;
-      lbl.classList.toggle('checked', cb.checked);
-      if (_itemSave) _itemSave.markDirty();
-    });
-  });
-}
-window.renderMenuTypeSelector = renderMenuTypeSelector;
-
-function toggleManageTypes() {
-  _manageTypesOpen = !_manageTypesOpen;
-  const panel = document.getElementById('manageTypesPanel');
-  if (panel) {
-    panel.style.display = _manageTypesOpen ? 'block' : 'none';
-    if (_manageTypesOpen) _renderTypeTagList();
-  }
-}
-window.toggleManageTypes = toggleManageTypes;
-
-function _renderTypeTagList() {
-  const el = document.getElementById('typeTagList');
-  if (!el) return;
-  const types = getTypes();
-  if (!types.length) {
-    el.innerHTML = '<span style="font-size:12px;color:var(--text2);">No types defined yet.</span>';
-    return;
-  }
-  el.innerHTML = types.map(t => `
-    <div class="type-tag-item">
-      <span class="type-color-dot" style="background:${_escHtml(t.color)};"></span>
-      <span style="font-size:12px;color:var(--text);">${_escHtml(t.label)}</span>
-      <button class="type-tag-del" type="button" onclick="window._deleteType('${_escHtml(t.id)}')" title="Delete type">&#x2715;</button>
-    </div>
-  `).join('');
-}
-
-window._deleteType = (id) => {
-  const updated = getTypes().filter(t => t.id !== id);
-  saveTypes(updated);
-  _renderTypeTagList();
-  const checked = [...document.querySelectorAll('.mt-option input:checked')].map(i => i.value).filter(v => v !== id);
-  renderMenuTypeSelector(checked);
-  toast('Type deleted', 'info');
-};
-
-function addNewType() {
-  const nameEl  = document.getElementById('newTypeName');
-  const colorEl = document.getElementById('newTypeColor');
-  const name    = (nameEl?.value || '').trim();
-  if (!name) { toast('Enter a type name', 'error'); return; }
-  const id = name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
-  const types = getTypes();
-  if (types.some(t => t.id === id || t.label.toLowerCase() === name.toLowerCase())) {
-    toast('A type with that name already exists', 'error'); return;
-  }
-  const color = colorEl?.value || '#2563eb';
-  types.push({ id, label: name, color });
-  saveTypes(types);
-  if (nameEl) nameEl.value = '';
-  if (colorEl) colorEl.value = '#2563eb';
-  _renderTypeTagList();
-  const checked = [...document.querySelectorAll('.mt-option input:checked')].map(i => i.value);
-  renderMenuTypeSelector(checked);
-  toast('\u2705 Type added', 'success');
-}
-window.addNewType = addNewType;
-
-// ===== MODAL =====
-let editingImages = [];
-
-function openAddModal() {
-  document.getElementById('modalTitle').textContent = 'Add Product / Item';
-  document.getElementById('editId').value  = '';
-  document.getElementById('fSku').value       = '';
-  document.getElementById('fName').value      = '';
-  document.getElementById('fDescShort').value = '';
-  document.getElementById('fDescLong').value  = '';
-  document.getElementById('fPrice').value     = '';
-  document.getElementById('fActive').value = 'true';
-  document.getElementById('fFeatured').value = 'false';
-  document.getElementById('fCalories').value = '';
-  document.getElementById('fFat').value    = '';
-  document.getElementById('fCarbs').value  = '';
-  document.getElementById('fProtein').value = '';
-  document.getElementById('fLowStockThreshold').value = '';
-  _manageTypesOpen = false;
-  const mpanel = document.getElementById('manageTypesPanel');
-  if (mpanel) mpanel.style.display = 'none';
-  _manageCategoriesOpen = false;
-  const cpanel = document.getElementById('manageCategoriesPanel');
-  if (cpanel) cpanel.style.display = 'none';
-  renderMenuTypeSelector([]);
-  editingImages = [];
-  renderImgPreviews();
-  window.editingIngredients = []; _renderTagChips('ingredientsChips', window.editingIngredients, 'removeIngredient');
-  editingCustomizationOptions = []; renderCustomizationOptions();
-  populateCatDropdown('');
-  populateBrandDropdown('');
-  if (_itemSave) _itemSave.reset();
-  document.getElementById('itemModal').classList.add('open');
-}
-
-function openEditModal(id) {
-  const item = getItems().find(i => i.id === id);
-  if (!item) return;
-  document.getElementById('modalTitle').textContent = 'Edit Product / Item';
-  document.getElementById('editId').value  = id;
-  document.getElementById('fSku').value       = item.sku;
-  document.getElementById('fName').value      = item.name || item.productName || '';
-  document.getElementById('fDescShort').value = item.shortDescription || item.description || '';
-  document.getElementById('fDescLong').value  = item.longDescription || '';
-  document.getElementById('fPrice').value     = item.price;
-  document.getElementById('fActive').value = String(item.active);
-  document.getElementById('fFeatured').value = String(!!item.featured);
-  // category must be a string for comparison
-  const catStr = typeof item.category === 'object'
-    ? (item.category.name || item.category.id || String(item.category))
-    : String(item.category || '');
-  populateCatDropdown(catStr);
-  _manageTypesOpen = false;
-  const mpanel = document.getElementById('manageTypesPanel');
-  if (mpanel) mpanel.style.display = 'none';
-  _manageCategoriesOpen = false;
-  const cpanel = document.getElementById('manageCategoriesPanel');
-  if (cpanel) cpanel.style.display = 'none';
-  renderMenuTypeSelector(item.menuTypes || []);
-  document.getElementById('fCalories').value = item.calories != null ? item.calories : '';
-  document.getElementById('fFat').value      = item.fat     != null ? item.fat     : '';
-  document.getElementById('fCarbs').value    = item.carbs   != null ? item.carbs   : '';
-  document.getElementById('fProtein').value  = item.protein != null ? item.protein : '';
-  document.getElementById('fLowStockThreshold').value = item.lowStockThreshold != null ? item.lowStockThreshold : '';
-  editingImages = [...(item.images || [])];
-  renderImgPreviews();
-  // Load ingredients — support both GS1 array of objects and legacy string array
-  const rawIng = item['gs1:recipeIngredient'] || item.ingredients || [];
-  window.editingIngredients = rawIng.map(r => typeof r === 'string' ? r : (r.productName || r.name || String(r)));
-  _renderTagChips('ingredientsChips', window.editingIngredients, 'removeIngredient');
-  // Load customization options — support GS1 format and legacy addOns/removeOns
-  const rawCust = item['gs1:customizationOptions'];
-  if (rawCust && rawCust.length) {
-    editingCustomizationOptions = rawCust.map(o => ({ ...o }));
-  } else {
-    editingCustomizationOptions = [
-      ...(item.addOns || []).map(n => ({ '@type': 'PropertyValue', name: n, value: 'Added',   'gs1:modificationType': 'ADD',      'gs1:priceAdjustment': '+0.00' })),
-      ...(item.removeOns || []).map(n => ({ '@type': 'PropertyValue', name: n, value: 'Removed', 'gs1:modificationType': 'SUBTRACT', 'gs1:priceAdjustment': '-0.00' }))
-    ];
-  }
-  renderCustomizationOptions();
-  populateBrandDropdown(item.brand || (getBrands()[0] && getBrands()[0].id) || '');
-  if (_itemSave) _itemSave.reset();
-  switchItemModalTab('details');
-  document.getElementById('itemModal').classList.add('open');
-}
-
-function closeModal() {
-  document.getElementById('itemModal').classList.remove('open');
-  // Reset to Details tab when closing
-  switchItemModalTab('details');
-}
-
-function switchItemModalTab(tab) {
-  ['details', 'assets'].forEach(t => {
-    document.getElementById('itemTab-' + t).classList.toggle('active', t === tab);
-    document.getElementById('itemPane-' + t).classList.toggle('active', t === tab);
-  });
-}
-
-function populateCatDropdown(selected) {
-  const cats  = getCats();
-  const selStr = String(selected || '');
-  const el    = document.getElementById('fCategory');
-  el.innerHTML = '<option value="">Select category\u2026</option>' +
-    cats.map(c => {
-      const cStr = String(c);
-      return `<option value="${escHtml(cStr)}" ${cStr === selStr ? 'selected' : ''}>${escHtml(cStr)}</option>`;
-    }).join('');
-}
-
-function populateBrandDropdown(selectedId) {
-  const brands = getBrands();
-  const el = document.getElementById('fBrand');
-  if (!el) return;
-  const sel = selectedId || (brands[0] && brands[0].id) || '';
-  el.innerHTML = brands.map(b =>
-    `<option value="${escHtml(b.id)}" ${b.id === sel ? 'selected' : ''}>${escHtml(b.name)}</option>`
-  ).join('');
-  if (!el.innerHTML) el.innerHTML = '<option value="">No brands defined</option>';
-  updatePriceCurrencySymbol();
-}
-
-// Keeps the $/£/etc. hint next to the Price field in sync with whichever
-// brand is selected in the item form — it previously always showed the
-// first brand's currency regardless of the form's actual selection.
-function updatePriceCurrencySymbol() {
-  const currEl = document.getElementById('currSymbol');
-  if (!currEl) return;
-  const selectedId = document.getElementById('fBrand')?.value;
-  const brand = getBrands().find(b => b.id === selectedId) || getBrands()[0];
-  currEl.textContent = brand ? brand.currency : '$';
-}
-
-function saveItem() {
-  const id       = document.getElementById('editId').value;
-  const sku           = document.getElementById('fSku').value.trim();
-  const name          = document.getElementById('fName').value.trim();
-  const descShort     = document.getElementById('fDescShort').value.trim();
-  const descLong      = document.getElementById('fDescLong').value.trim();
-  const price    = parseFloat(document.getElementById('fPrice').value);
-  const category = String(document.getElementById('fCategory').value);
-  const brand    = document.getElementById('fBrand').value || (getBrands()[0] && getBrands()[0].id) || '';
-  const active   = document.getElementById('fActive').value === 'true';
-  const featured = document.getElementById('fFeatured').value === 'true';
-  const menuTypes = [...document.querySelectorAll('.mt-option input:checked')].map(i => i.value);
-  const calRaw   = document.getElementById('fCalories').value;
-  const fatRaw   = document.getElementById('fFat').value;
-  const carbRaw  = document.getElementById('fCarbs').value;
-  const protRaw  = document.getElementById('fProtein').value;
-  const calories = calRaw !== '' ? parseFloat(calRaw) : null;
-  const fat      = fatRaw !== '' ? parseFloat(fatRaw) : null;
-  const carbs    = carbRaw !== '' ? parseFloat(carbRaw) : null;
-  const protein  = protRaw !== '' ? parseFloat(protRaw) : null;
-  const lstItemRaw = document.getElementById('fLowStockThreshold').value;
-  const lowStockThreshold = lstItemRaw !== '' ? (parseInt(lstItemRaw) || null) : null;
-
-  if (!sku || !name || !category || isNaN(price) || !menuTypes.length) {
-    toast('\u26A0\uFE0F Please fill all required fields and select at least one type.', 'error');
-    return;
-  }
-
-  const items     = getItems();
-  const skuExists = items.some(i => i.sku === sku && i.id !== id);
-  if (skuExists) { toast('\u26A0\uFE0F SKU already exists. Please use a unique SKU.', 'error'); return; }
-
-  // Build GS1-aligned fields
-  const gs1Ingredients = (window.editingIngredients || [])
-    .filter(s => String(s).trim())
-    .map(s => ({ '@type': 'Product', 'productName': String(s) }));
-
-  const gs1CustOpts = (editingCustomizationOptions || []).filter(o => (o.name || '').trim());
-
-  const currency = (getBrands().find(b => b.id === brand) || getBrands()[0] || {}).currency || '$';
-  const gs1NetPrice = {
-    '@type': 'gs1:PriceSpecification',
-    'gs1:price': price.toFixed(2),
-    'gs1:priceCurrency': currency
-  };
-
-  const now = new Date().toISOString();
-  const base = {
-    '@context': 'https://gs1.org/voc/',
-    '@type': 'Product',
-    sku, name, productName: name,
-    shortDescription: descShort,
-    longDescription: descLong,
-    description: descShort, // legacy alias — kept for backwards compatibility
-    price, category, brand, active, featured, menuTypes,
-    images: editingImages,
-    calories, fat, carbs, protein, lowStockThreshold,
-    // GS1 structured fields
-    'gs1:recipeIngredient': gs1Ingredients,
-    'gs1:customizationOptions': gs1CustOpts,
-    'gs1:netPrice': gs1NetPrice,
-    // Legacy aliases kept for backwards compatibility
-    ingredients: (window.editingIngredients || []).filter(Boolean),
-    updatedAt: now
-  };
-
-  if (id) {
-    const idx = items.findIndex(i => i.id === id);
-    items[idx] = { ...items[idx], ...base };
-    saveItems(items);
-    toast('\u2705 Item updated successfully', 'success');
-  } else {
-    items.push({ id: genId(), createdAt: now, ...base });
-    saveItems(items);
-    toast('\u2705 Item added successfully', 'success');
-  }
-  closeModal();
-  renderItems();
-}
-
-// ===== IMAGE HANDLING =====
-// Re-encodes any browser-decodable image format (JPEG, PNG, WebP, GIF, AVIF, ...)
-// down to a small JPEG via canvas. Rejects (rather than silently passing through
-// the original) when the browser can't decode the file, so callers can surface a
-// clear error instead of risking a multi-MB original slipping into Firestore.
-function compressImage(dataUrl, maxW, maxH, quality) {
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    img.onload = () => {
-      const w0 = img.naturalWidth || img.width;
-      const h0 = img.naturalHeight || img.height;
-      if (!w0 || !h0) { reject(new Error('the browser decoded it with zero dimensions')); return; }
-      let w = w0, h = h0;
-      if (w > maxW || h > maxH) {
-        const ratio = Math.min(maxW / w, maxH / h);
-        w = Math.round(w * ratio);
-        h = Math.round(h * ratio);
-      }
-      try {
-        const canvas = document.createElement('canvas');
-        canvas.width = w; canvas.height = h;
-        canvas.getContext('2d').drawImage(img, 0, 0, w, h);
-        resolve(canvas.toDataURL('image/jpeg', quality));
-      } catch (err) {
-        reject(err);
-      }
-    };
-    img.onerror = () => reject(new Error('this browser could not decode that image format'));
-    img.src = dataUrl;
-  });
-}
-
-function handleImages(event) {
-  const files = [...event.target.files];
-  files.forEach(file => {
-    const reader = new FileReader();
-    reader.onload = async (e) => {
-      try {
-        const compressed = await compressImage(e.target.result, 480, 480, 0.75);
-        editingImages.push(compressed);
-        renderImgPreviews();
-        if (_itemSave) _itemSave.markDirty();
-      } catch (err) {
-        toast(`⚠️ Couldn't add "${file.name}" — ${err.message}.`, 'error');
-      }
-    };
-    reader.readAsDataURL(file);
-  });
-  event.target.value = '';
-}
-
-function handleImageDrop(event) {
-  const files = [...(event.dataTransfer.files || [])].filter(f => f.type.startsWith('image/'));
-  files.forEach(file => {
-    const reader = new FileReader();
-    reader.onload = async (e) => {
-      try {
-        const compressed = await compressImage(e.target.result, 480, 480, 0.75);
-        editingImages.push(compressed);
-        renderImgPreviews();
-        if (_itemSave) _itemSave.markDirty();
-      } catch (err) {
-        toast(`⚠️ Couldn't add "${file.name}" — ${err.message}.`, 'error');
-      }
-    };
-    reader.readAsDataURL(file);
-  });
-}
-
-function removeImage(idx) { editingImages.splice(idx, 1); renderImgPreviews(); if (_itemSave) _itemSave.markDirty(); }
-
-function renderImgPreviews() {
-  const el = document.getElementById('imgPreviews');
-  el.innerHTML = editingImages.map((img, i) => `
-    <div class="img-preview-item">
-      <img src="${img}" alt="Preview ${i+1}">
-      <button class="img-remove" onclick="removeImage(${i})" title="Remove image">&#x2715;</button>
-    </div>
-  `).join('');
-  if (editingImages.length > 0) {
-    el.insertAdjacentHTML('afterbegin', `<div style="width:72px;display:flex;align-items:center;justify-content:center;font-size:11px;color:var(--text2);text-align:center;font-weight:600;">Primary &#x2197;</div>`);
-  }
-}
-
 // ===== DELETE =====
 let pendingDeleteId = null;
 function confirmDelete(id, name) {
@@ -3605,55 +2965,6 @@ function doDeleteSelection() {
   clearItemsSelection();
   renderItems();
   toast(`\u{1F5D1}\uFE0F ${selectedIds.size} item${selectedIds.size !== 1 ? 's' : ''} deleted`, 'info');
-}
-
-// ===== CATEGORIES =====
-let _manageCategoriesOpen = false;
-function toggleManageCategories() {
-  _manageCategoriesOpen = !_manageCategoriesOpen;
-  const panel = document.getElementById('manageCategoriesPanel');
-  if (panel) {
-    panel.style.display = _manageCategoriesOpen ? 'block' : 'none';
-    if (_manageCategoriesOpen) renderCategories();
-  }
-}
-window.toggleManageCategories = toggleManageCategories;
-
-function renderCategories() {
-  const cats = getCats();
-  const listEl = document.getElementById('modalCatList');
-  if (!listEl) return;
-  listEl.innerHTML = cats.map((c, i) => `
-    <div class="cat-tag">
-      <span>${escHtml(String(c))}</span>
-      <button onclick="deleteCategory(${i})" title="Remove category">&#x2715;</button>
-    </div>
-  `).join('');
-}
-
-function addCategory() {
-  const input = document.getElementById('modalNewCatInput');
-  const val   = input.value.trim();
-  if (!val) return;
-  const cats = getCats();
-  if (cats.includes(val)) { toast('Category already exists', 'error'); return; }
-  cats.push(val);
-  saveCats(cats);
-  input.value = '';
-  renderCategories();
-  populateCatDropdown(val);
-  toast(`\u2705 Category "${val}" added`, 'success');
-}
-
-function deleteCategory(idx) {
-  const cats = getCats();
-  const name = cats[idx];
-  const selected = document.getElementById('fCategory')?.value;
-  cats.splice(idx, 1);
-  saveCats(cats);
-  renderCategories();
-  populateCatDropdown(selected === name ? '' : selected);
-  toast(`\u{1F5D1}\uFE0F Category "${name}" removed`, 'info');
 }
 
 // ===== BRANDS =====
@@ -3806,7 +3117,7 @@ function _makeSaveBtn(btnId) {
   };
 }
 // Initialised once DOM is ready (at end of script)
-let _itemSave, _brandSave, _tplSave, _stockApiSave, _phApiSave;
+let _brandSave, _tplSave, _stockApiSave, _phApiSave;
 
 function openAddBrandModal() {
   document.getElementById('brandModalTitle').textContent = 'Add Brand / Supplier';
@@ -5419,19 +4730,8 @@ function escHtml(str) {
 
 // ===== WINDOW EXPORTS (for inline event handlers) =====
 window.showView           = showView;
-window.openAddModal       = openAddModal;
-window.updatePriceCurrencySymbol = updatePriceCurrencySymbol;
-window.closeModal         = closeModal;
-window.saveItem           = saveItem;
 window.confirmDelete      = confirmDelete;
 window.closeConfirm       = closeConfirm;
-window.genSku             = genSku;
-window.handleImages       = handleImages;
-window.handleImageDrop    = handleImageDrop;
-window.removeImage        = removeImage;
-window.switchItemModalTab = switchItemModalTab;
-window.addCategory        = addCategory;
-window.deleteCategory     = deleteCategory;
 window.openAddBrandModal      = openAddBrandModal;
 window.openEditBrandModal     = openEditBrandModal;
 window.closeBrandModal        = closeBrandModal;
@@ -5486,10 +4786,6 @@ window.renderItems        = renderItems;
 window.viewSelectedItems     = viewSelectedItems;
 window.clearItemsSelection   = clearItemsSelection;
 window.confirmDeleteSelection = confirmDeleteSelection;
-window.openEditModal      = openEditModal;
-window.addCustomizationOpt   = addCustomizationOpt;
-window.toggleManageTypes     = toggleManageTypes;
-window.addNewType            = addNewType;
 
 // ===== GRID INIT =====
 initGrids();
@@ -5560,17 +4856,12 @@ onSnapshot(collection(db, STOCK_COLL), snapshot => {
 showView(localStorage.getItem('hqAdminView') || 'items');
 
 // ── DIRTY-STATE TRACKER INIT ─────────────────────────────────────────────
-_itemSave     = _makeSaveBtn('itemSaveBtn');
 _brandSave    = _makeSaveBtn('brandSaveBtn');
 _tplSave      = _makeSaveBtn('tplSaveBtn');
 _stockApiSave = _makeSaveBtn('stockApiSaveBtn');
 _phApiSave    = _makeSaveBtn('phApiSaveBtn');
 
 // Event delegation: any input/change inside the form containers marks the button dirty
-document.getElementById('itemModal')
-  .addEventListener('input',  () => _itemSave.markDirty());
-document.getElementById('itemModal')
-  .addEventListener('change', () => _itemSave.markDirty());
 document.getElementById('brandPane-settings')
   .addEventListener('input',  () => _brandSave.markDirty());
 document.getElementById('brandPane-settings')

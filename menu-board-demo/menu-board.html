@@ -1679,7 +1679,16 @@ function render() {
     // have >=3 items in the normal case (it can still be smaller for this
     // specific menu type/screen if some Featured items belong to others).
     const featuredSkus = getEffectiveFeaturedSkus(brand || themeSource);
-    const featuredPool = featuredCandidates.filter(i => featuredSkus.has(i.sku));
+    // Feature priority (HQ Admin, Product Details — 1 = highest) decides
+    // which item leads: sorted ascending, with unset/blank priority sinking
+    // to the end (stable sort keeps their relative order otherwise).
+    const featuredPool = featuredCandidates.filter(i => featuredSkus.has(i.sku)).slice().sort((a, b) => {
+      const pa = parseInt(a.featurePriority, 10);
+      const pb = parseInt(b.featurePriority, 10);
+      const va = isNaN(pa) ? Infinity : pa;
+      const vb = isNaN(pb) ? Infinity : pb;
+      return va - vb;
+    });
 
     if (featuredPool.length === 0) {
       bodyHtml = `

@@ -1,0 +1,135 @@
+import { useEffect, useMemo, useState } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
+import { Tabs, Tag, Button, Spin, App } from 'antd';
+import MaterialIcon from '../components/MaterialIcon.jsx';
+import ProductDetailsTab from './tabs/ProductDetailsTab.jsx';
+import ProductAssetsTab from './tabs/ProductAssetsTab.jsx';
+import PricingTab from './tabs/PricingTab.jsx';
+import { getProduct, blankProduct, upsertProduct } from '../data/productStore.js';
+
+const STATUS_COLOR = {
+  Active: { bg: '#f6ffed', border: '#b7eb8f', color: '#389e0d' },
+  Draft: { bg: '#fffbe6', border: '#ffe58f', color: '#ad6800' },
+  Inactive: { bg: '#fffbe6', border: '#ffe58f', color: '#ad6800' },
+  Archived: { bg: '#fff2f0', border: '#ffccc7', color: '#cf1322' },
+};
+
+export default function ProductPage({ isNew = false }) {
+  const { id, tab = 'details' } = useParams();
+  const navigate = useNavigate();
+  const { message } = App.useApp();
+
+  const [baseline, setBaseline] = useState(null);
+  const [draft, setDraft] = useState(null);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    setDraft(null);
+    setBaseline(null);
+    (async () => {
+      const p = isNew ? blankProduct() : await getProduct(id);
+      if (cancelled) return;
+      if (!p) {
+        navigate('/products/new', { replace: true });
+        return;
+      }
+      setBaseline(p);
+      setDraft(p);
+    })();
+    return () => { cancelled = true; };
+  }, [id, isNew]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const patch = (fields) => setDraft((d) => ({ ...d, ...fields }));
+
+  const goTab = (t) => navigate(`/products/${draft.id}/${t}`, { replace: true });
+
+  const imageCount = useMemo(() => (draft?.images || []).filter((i) => i.type !== 'video').length, [draft]);
+  const videoCount = useMemo(() => (draft?.images || []).filter((i) => i.type === 'video').length, [draft]);
+
+  const saveDetailsOrAssets = async () => {
+    setSaving(true);
+    try {
+      const saved = await upsertProduct(draft);
+      setBaseline(saved);
+      setDraft(saved);
+      message.success(`"${draft.name || 'Product'}" saved`);
+      if (isNew) navigate(`/products/${draft.id}/details`, { replace: true });
+    } catch (e) {
+      message.error('Save failed: ' + (e.message || e));
+    } finally {
+      setSaving(false);
+    }
+  };
+  const discardDetailsOrAssets = () => setDraft(baseline);
+
+  if (!draft) {
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh' }}>
+        <Spin size="large" />
+      </div>
+    );
+  }
+
+  const sc = STATUS_COLOR[draft.status] || STATUS_COLOR.Draft;
+
+  return (
+    <div style={{ padding: 24, background: '#f5f5f5', minHeight: '100vh' }}>
+      <div style={{ maxWidth: 940, margin: '0 auto' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 16, marginBottom: 4 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <Button type="text" onClick={() => navigate(-1)} style={{ padding: '0 4px' }} title="Back to Products">
+              <MaterialIcon name="arrow_back" />
+            </Button>
+            <h1 style={{ margin: 0, fontWeight: 600, fontSize: 24 }}>{draft.name || 'New Product'}</h1>
+            {draft.sku && (
+              <Tag style={{ fontFamily: 'ui-monospace,Menlo,Consolas,monospace' }}>{draft.sku}</Tag>
+            )}
+            <Tag style={{ background: sc.bg, borderColor: sc.border, color: sc.color, fontWeight: 600 }}>
+              {draft.status?.toUpperCase()}
+            </Tag>
+            {draft.featured && (
+              <Tag style={{ background: '#fffbe6', borderColor: '#ffe58f', color: '#d48806', fontWeight: 600 }}>
+                ★ FEATURED
+              </Tag>
+            )}
+          </div>
+        </div>
+        <div style={{ fontSize: 12, color: 'rgba(0,0,0,.45)', marginBottom: 16 }}>
+          {[draft.category, imageCount ? `${imageCount} images` : null, videoCount ? `${videoCount} videos` : null]
+            .filter(Boolean)
+            .join(' · ') || 'Uncategorised'}
+        </div>
+
+        <Tabs
+          activeKey={tab}
+          onChange={goTab}
+          items={[
+            { key: 'details', label: 'Product Details' },
+            { key: 'assets', label: 'Product Assets' },
+            { key: 'pricing', label: 'Pricing' },
+          ]}
+        />
+
+        {tab === 'details' && (
+          <ProductDetailsTab draft={draft} patch={patch} onGoPricing={() => goTab('pricing')} />
+        )}
+        {tab === 'assets' && <ProductAssetsTab draft={draft} patch={patch} />}
+        {tab === 'pricing' && <PricingTab draft={draft} baseline={baseline} setDraft={setDraft} setBaseline={setBaseline} />}
+
+        {tab !== 'pricing' && (
+          <div className="ph-savebar">
+            <span style={{ fontSize: 13, color: 'rgba(0,0,0,.65)' }}>
+              Images and video are on <strong>Product Assets</strong>. All pricing is on <strong>Pricing</strong>.
+            </span>
+            <div style={{ flex: 1 }} />
+            <Button onClick={discardDetailsOrAssets} disabled={saving}>Discard</Button>
+            <Button type="primary" onClick={saveDetailsOrAssets} loading={saving}>
+              Save Product
+            </Button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}

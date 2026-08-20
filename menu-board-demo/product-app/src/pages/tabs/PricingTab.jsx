@@ -1,0 +1,257 @@
+import { useMemo, useState } from 'react';
+import { Input, InputNumber, Table, Button, App } from 'antd';
+import MaterialIcon from '../../components/MaterialIcon.jsx';
+import ClearableDate from '../../components/ClearableDate.jsx';
+import OfferBanner from '../../components/OfferBanner.jsx';
+import { upsertProduct, appendPriceLogEntries } from '../../data/productStore.js';
+
+function Field({ label, children, hint }) {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column' }}>
+      <label style={{ fontSize: 13, color: 'rgba(0,0,0,.65)', marginBottom: 6 }}>{label}</label>
+      {children}
+      {hint && <p style={{ fontSize: 12, color: 'rgba(0,0,0,.45)', marginTop: 5 }}>{hint}</p>}
+    </div>
+  );
+}
+
+export default function PricingTab({ draft, baseline, setDraft, setBaseline }) {
+  const { message } = App.useApp();
+  const [unlocked, setUnlocked] = useState(false);
+  const [showReason, setShowReason] = useState(false);
+  const [reason, setReason] = useState('');
+
+  const rrpChanged = String(draft.rrp) !== String(baseline.rrp);
+  const offerChanged = String(draft.offerPrice || '') !== String(baseline.offerPrice || '');
+  const dirty = rrpChanged || offerChanged;
+
+  const changeSummary = [
+    rrpChanged ? `RRP $${baseline.rrp || '0.00'} → $${draft.rrp}` : null,
+    offerChanged ? `Offer price $${baseline.offerPrice || '0.00'} → $${draft.offerPrice}` : null,
+  ]
+    .filter(Boolean)
+    .join(' · ');
+
+  const discardChange = () => setDraft((d) => ({ ...d, rrp: baseline.rrp, offerPrice: baseline.offerPrice }));
+
+  const [savingPrice, setSavingPrice] = useState(false);
+
+  const confirmSave = async () => {
+    const changes = [];
+    if (rrpChanged) changes.push({ fieldName: 'RRP', oldValue: baseline.rrp || '—', newValue: draft.rrp });
+    if (offerChanged) changes.push({ fieldName: 'Offer price', oldValue: baseline.offerPrice || '—', newValue: draft.offerPrice });
+    const withLog = appendPriceLogEntries(draft, changes, reason || '(no reason given)');
+    setSavingPrice(true);
+    try {
+      const saved = await upsertProduct(withLog);
+      setBaseline(saved);
+      setDraft(saved);
+      setShowReason(false);
+      setReason('');
+      message.success('Price change saved');
+    } catch (e) {
+      message.error('Save failed: ' + (e.message || e));
+    } finally {
+      setSavingPrice(false);
+    }
+  };
+
+  const log = draft.priceLog || [];
+  const hqCount = log.filter((e) => e.src === 'HQ Admin').length;
+  const storeCount = log.length - hqCount;
+
+  const columns = useMemo(
+    () => [
+      {
+        title: 'Date',
+        dataIndex: 'when',
+        width: 130,
+        render: (v) => {
+          const [d, t] = (v || '').split(' ');
+          return (
+            <div>
+              <div>{d}</div>
+              <div style={{ fontSize: 12, color: 'rgba(0,0,0,.45)' }}>{t}</div>
+            </div>
+          );
+        },
+      },
+      {
+        title: (
+          <span>
+            Changed in <MaterialIcon name="filter_alt" style={{ fontSize: 13, color: 'rgba(0,0,0,.45)' }} />
+          </span>
+        ),
+        dataIndex: 'src',
+        width: 140,
+        render: (v, row) => (
+          <div>
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 13 }}>
+              <span style={{ width: 7, height: 7, borderRadius: '50%', background: v === 'HQ Admin' ? '#169bc2' : '#722ed1' }} />
+              <span style={{ color: v === 'HQ Admin' ? '#09759c' : '#531dab' }}>{v}</span>
+            </span>
+            {row.store && <div style={{ fontFamily: 'ui-monospace,Menlo,Consolas,monospace', fontSize: 12, color: 'rgba(0,0,0,.45)' }}>{row.store}</div>}
+          </div>
+        ),
+      },
+      {
+        title: (
+          <span>
+            Changed by <MaterialIcon name="filter_alt" style={{ fontSize: 13, color: 'rgba(0,0,0,.45)' }} />
+          </span>
+        ),
+        dataIndex: 'by',
+        width: 120,
+      },
+      {
+        title: (
+          <span>
+            Field <MaterialIcon name="filter_alt" style={{ fontSize: 13, color: 'rgba(0,0,0,.45)' }} />
+          </span>
+        ),
+        dataIndex: 'fieldName',
+        width: 100,
+      },
+      { title: 'Old', dataIndex: 'old', align: 'right', width: 80, render: (v) => <span style={{ fontVariantNumeric: 'tabular-nums' }}>{v}</span> },
+      { title: 'New', dataIndex: 'neu', align: 'right', width: 80, render: (v) => <span style={{ fontVariantNumeric: 'tabular-nums' }}>{v}</span> },
+      {
+        title: 'Change',
+        align: 'right',
+        width: 90,
+        render: (_, row) => {
+          const o = parseFloat(row.old);
+          const n = parseFloat(row.neu);
+          if (isNaN(o) || isNaN(n)) return <span>—</span>;
+          const diff = n - o;
+          if (diff === 0) return <span>—</span>;
+          const up = diff > 0;
+          return (
+            <span style={{ fontWeight: 500, fontVariantNumeric: 'tabular-nums', color: up ? '#cf1322' : '#389e0d' }}>
+              {up ? '▲' : '▼'} ${Math.abs(diff).toFixed(2)}
+            </span>
+          );
+        },
+      },
+      { title: 'Reason', dataIndex: 'reason' },
+    ],
+    []
+  );
+
+  return (
+    <div>
+      <div className="ph-sect">
+        <div className="ph-sect-label" style={{ marginBottom: 12 }}>
+          RRP &amp; Offer Pricing
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px 16px' }}>
+          <Field label="RRP">
+            <InputNumber
+              value={draft.rrp}
+              onChange={(v) => setDraft((d) => ({ ...d, rrp: v }))}
+              prefix="$"
+              style={{ width: '100%', ...(rrpChanged ? { background: '#e8fdff' } : {}) }}
+              min={0}
+              step={0.01}
+            />
+          </Field>
+          <Field label="Offer price">
+            <InputNumber
+              value={draft.offerPrice}
+              onChange={(v) => setDraft((d) => ({ ...d, offerPrice: v }))}
+              prefix="$"
+              style={{ width: '100%', ...(offerChanged ? { background: '#e8fdff' } : {}) }}
+              min={0}
+              step={0.01}
+            />
+          </Field>
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px 16px', marginTop: 14 }}>
+          <Field label="Schedule offer from" hint="Blank means the offer starts now. Changing this is not a price change and is not logged.">
+            <ClearableDate value={draft.offerFrom} onChange={(v) => setDraft((d) => ({ ...d, offerFrom: v }))} showTime blankHint={{ blank: '', set: '' }} />
+          </Field>
+          <Field label="Schedule offer until" hint="Blank means the offer runs until removed. Changing this is not a price change and is not logged.">
+            <ClearableDate value={draft.offerUntil} onChange={(v) => setDraft((d) => ({ ...d, offerUntil: v }))} showTime blankHint={{ blank: '', set: '' }} />
+          </Field>
+        </div>
+        <div style={{ marginTop: 14 }}>
+          <OfferBanner rrp={draft.rrp} offerPrice={draft.offerPrice} offerFrom={draft.offerFrom} offerUntil={draft.offerUntil} />
+        </div>
+      </div>
+
+      <div className="ph-sect">
+        <div className="ph-sect-label">Currency &amp; tax</div>
+        <p style={{ fontSize: 12, color: 'rgba(0,0,0,.45)', margin: '4px 0 12px' }}>
+          Set once for the product. These are not part of a price change and never differ between scheduled offers.
+        </p>
+        {!unlocked && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, background: '#fafafa', border: '1px solid #f0f0f0', borderRadius: 6, padding: '10px 12px', fontSize: 13, color: 'rgba(0,0,0,.65)', marginBottom: 14 }}>
+            <MaterialIcon name="lock" style={{ fontSize: 15 }} />
+            <span style={{ flex: 1 }}>Locked. Currency and tax class were set when the product was created and apply to every price, offer and scheduled change.</span>
+            <Button size="small" onClick={() => setUnlocked(true)}>
+              Unlock to change
+            </Button>
+          </div>
+        )}
+        {unlocked && (
+          <div style={{ background: '#fff2f0', border: '1px solid #ffccc7', color: '#a8071a', borderRadius: 6, padding: '10px 12px', fontSize: 13, marginBottom: 14 }}>
+            Changing these rewrites how every historical and scheduled price is interpreted.
+          </div>
+        )}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px 16px', maxWidth: 500 }}>
+          <Field label="Currency">
+            <Input disabled={!unlocked} value={draft.currency} onChange={(e) => setDraft((d) => ({ ...d, currency: e.target.value }))} />
+          </Field>
+          <Field label="Tax class">
+            <Input disabled={!unlocked} value={draft.taxClass} onChange={(e) => setDraft((d) => ({ ...d, taxClass: e.target.value }))} />
+          </Field>
+        </div>
+      </div>
+
+      <div className="ph-sect">
+        <div className="ph-sect-label" style={{ marginBottom: 12 }}>
+          Price Change History
+        </div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+          <span style={{ fontSize: 12, color: 'rgba(0,0,0,.45)' }}>
+            {log.length} price change{log.length === 1 ? '' : 's'} · {hqCount} from HQ Admin, {storeCount} from stores
+          </span>
+          <Button type="link" style={{ padding: 0 }}>
+            Export history
+          </Button>
+        </div>
+        <Table
+          rowKey={(r, i) => i}
+          dataSource={log}
+          columns={columns}
+          size="middle"
+          bordered={false}
+          pagination={{ pageSize: 25, showSizeChanger: true, pageSizeOptions: ['25', '50', '100'] }}
+        />
+      </div>
+
+      <div className="ph-savebar" style={{ flexDirection: 'column', alignItems: 'stretch', gap: 10 }}>
+        {showReason && (
+          <div style={{ display: 'flex', gap: 8 }}>
+            <Input placeholder="Reason for this price change…" value={reason} onChange={(e) => setReason(e.target.value)} autoFocus />
+            <Button type="primary" onClick={confirmSave} loading={savingPrice}>
+              Confirm &amp; save
+            </Button>
+            <Button onClick={() => setShowReason(false)} disabled={savingPrice}>Cancel</Button>
+          </div>
+        )}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <span style={{ fontSize: 13, color: 'rgba(0,0,0,.65)' }}>
+            {dirty ? `Unsaved price change — ${changeSummary}` : 'No price change to save. Editing RRP or the offer price enables the save and writes an entry to the log.'}
+          </span>
+          <div style={{ flex: 1 }} />
+          <Button disabled={!dirty} onClick={discardChange}>
+            Discard change
+          </Button>
+          <Button type="primary" disabled={!dirty} onClick={() => setShowReason(true)}>
+            Save price change
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
