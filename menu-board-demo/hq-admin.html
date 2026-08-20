@@ -2918,7 +2918,13 @@ function initGrids() {
             const btn = document.createElement('button');
             btn.className = 'row-menu-btn'; btn.textContent = '···';
             btn.addEventListener('click', e => showRowMenu(e, [
-              { label: 'Edit',   action: () => openEditModal(item.id) },
+              { label: 'Edit', action: () => openEditModal(item.id) },
+              item.active
+                ? { label: 'Deactivate', action: () => bulkSetActive(false, [item.id]) }
+                : { label: 'Activate',   action: () => bulkSetActive(true,  [item.id]) },
+              item.featured
+                ? { label: 'Unfeature', action: () => bulkSetFeatured(false, [item.id]) }
+                : { label: 'Feature',   action: () => bulkSetFeatured(true,  [item.id]) },
               { label: 'Delete', action: () => confirmDelete(item.id, item.name), danger: true }
             ]));
             return btn;
@@ -3029,11 +3035,16 @@ function renderItems() {
   updateItemsSelectionBar();
 }
 
-function bulkSetActive(active) {
+function bulkSetActive(active, itemIds) {
   if (!itemsGridApi) return;
-  const selected = itemsGridApi.getSelectedRows();
-  if (!selected.length) return;
-  const ids = new Set(selected.map(r => r.id));
+  let ids;
+  if (itemIds) {
+    ids = new Set(itemIds);
+  } else {
+    const selected = itemsGridApi.getSelectedRows();
+    if (!selected.length) return;
+    ids = new Set(selected.map(r => r.id));
+  }
   const now = new Date().toISOString();
   const items = getItems();
   items.forEach(i => { if (ids.has(i.id)) { i.active = active; i.updatedAt = now; } });
@@ -3047,14 +3058,21 @@ window.bulkSetActive = bulkSetActive;
 // threshold (Local Feature Highlight needs >=3 featured+active items for a
 // brand to activate) \u2014 so after any bulk change, report the resulting count
 // for every brand touched by the selection, not just how many were toggled.
-function bulkSetFeatured(featured) {
+function bulkSetFeatured(featured, itemIds) {
   if (!itemsGridApi) return;
-  const selected = itemsGridApi.getSelectedRows();
-  if (!selected.length) return;
-  const ids = new Set(selected.map(r => r.id));
+  let ids, touchedBrandItems;
+  if (itemIds) {
+    ids = new Set(itemIds);
+    touchedBrandItems = getItems().filter(i => ids.has(i.id));
+  } else {
+    const selected = itemsGridApi.getSelectedRows();
+    if (!selected.length) return;
+    ids = new Set(selected.map(r => r.id));
+    touchedBrandItems = selected;
+  }
   const now = new Date().toISOString();
   const items = getItems();
-  const touchedBrands = new Set(selected.map(r => r.brand).filter(Boolean));
+  const touchedBrands = new Set(touchedBrandItems.map(r => r.brand).filter(Boolean));
   items.forEach(i => { if (ids.has(i.id)) { i.featured = featured; i.updatedAt = now; } });
   saveItems(items);
   renderItems();
