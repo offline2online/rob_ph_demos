@@ -654,10 +654,10 @@
             </div>
             <div class="items-toolbar-sel-actions" id="itemsSelActions" style="display:none;">
               <button class="toolbar-text-link" id="itemsSelViewBtn" onclick="viewSelectedItems()">View Selected</button>
-              <button class="toolbar-text-link" onclick="bulkSetActive(true)">Activate Selected</button>
-              <button class="toolbar-text-link" onclick="bulkSetActive(false)">Deactivate Selected</button>
-              <button class="toolbar-text-link" onclick="bulkSetFeatured(true)">&#11088; Feature Selected</button>
-              <button class="toolbar-text-link" onclick="bulkSetFeatured(false)">Unfeature Selected</button>
+              <button class="toolbar-text-link" id="itemsSelActivateBtn" onclick="bulkSetActive(true)">Activate Selected</button>
+              <button class="toolbar-text-link" id="itemsSelDeactivateBtn" onclick="bulkSetActive(false)">Deactivate Selected</button>
+              <button class="toolbar-text-link" id="itemsSelFeatureBtn" onclick="bulkSetFeatured(true)">&#11088; Feature Selected</button>
+              <button class="toolbar-text-link" id="itemsSelUnfeatureBtn" onclick="bulkSetFeatured(false)">Unfeature Selected</button>
               <button class="toolbar-text-link toolbar-text-link-danger" onclick="confirmDeleteSelection()">Delete Selected</button>
               <button class="items-sel-bar-clear" onclick="clearItemsSelection()">✕ Clear selection</button>
             </div>
@@ -2949,11 +2949,24 @@ function updateItemsSelectionBar() {
   const selActions = document.getElementById('itemsSelActions');
   const toolbarActions = document.getElementById('itemsToolbarActions');
   const viewBtn   = document.getElementById('itemsSelViewBtn');
+  const activateBtn   = document.getElementById('itemsSelActivateBtn');
+  const deactivateBtn = document.getElementById('itemsSelDeactivateBtn');
+  const featureBtn    = document.getElementById('itemsSelFeatureBtn');
+  const unfeatureBtn  = document.getElementById('itemsSelUnfeatureBtn');
   if (selected.length > 0) {
     countWrap.innerHTML = `<span id="itemsCount">${selected.length}</span> of ${total} Products`;
     selActions.style.display = 'flex';
     toolbarActions.style.display = 'none';
     viewBtn.textContent = _itemsViewSelected ? 'Show All' : 'View Selected';
+
+    const hasActive     = selected.some(i => i.active);
+    const hasInactive    = selected.some(i => !i.active);
+    const hasFeatured   = selected.some(i => i.featured);
+    const hasUnfeatured = selected.some(i => !i.featured);
+    activateBtn.style.display   = hasInactive ? '' : 'none';
+    deactivateBtn.style.display = hasActive ? '' : 'none';
+    featureBtn.style.display    = hasUnfeatured ? '' : 'none';
+    unfeatureBtn.style.display  = hasFeatured ? '' : 'none';
   } else {
     countWrap.innerHTML = `<span id="itemsCount">${total}</span> Products`;
     selActions.style.display = 'none';
