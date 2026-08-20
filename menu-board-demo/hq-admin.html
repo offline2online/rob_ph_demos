@@ -12,7 +12,6 @@
        CSS VARIABLES
     ============================================================ */
     :root {
-      --bg:        #f5f5f5;
       --inner-sb:  #FFFFFF;
       --surface:   #FFFFFF;
       --surface2:  #f5f5f5;
@@ -37,7 +36,7 @@
     body { height:auto; }
     body {
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-      background: var(--bg);
+      background: var(--surface);
       color: var(--text);
       display: flex;
       min-height: 100vh;
@@ -56,7 +55,7 @@
     .ph-inner {
       flex: 1;
       display: flex;
-      background: var(--bg);
+      background: var(--surface);
     }
 
 
@@ -308,7 +307,7 @@
       --ag-odd-row-background-color:  var(--surface);
       --ag-row-hover-color:           var(--surface2);
       --ag-border-color:              var(--border);
-      --ag-header-foreground-color:   var(--text2);
+      --ag-header-foreground-color:   var(--text);
       --ag-foreground-color:          var(--text);
       --ag-font-family:               -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif;
       --ag-font-size:                 13px;
@@ -316,14 +315,14 @@
       --ag-floating-filter-height:    36px;
       --ag-selected-row-background-color: rgba(22,155,194,0.08);
     }
-    .ag-theme-alpine .ag-header-cell-label { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; }
+    .ag-theme-alpine .ag-header-cell-label { font-size: 14px; font-weight: 700; color: var(--text); }
     .ag-theme-alpine .ag-floating-filter-input { font-size: 12px; }
     /* Propagate row height so cell renderers can use height:100% for vertical centering */
     .ag-theme-alpine .ag-cell { height: 100%; }
     .ag-theme-alpine .ag-cell-wrapper { width: 100%; height: 100%; }
     .ag-theme-alpine .ag-cell-value { height: 100%; }
-    /* Always show the filter icon button (default: only on hover) */
-    .ag-theme-alpine .ag-header-cell-filter-button { opacity: 1 !important; }
+    /* Filter controls live in the floating filter row, not the header — hide the header's own filter icon */
+    .ag-theme-alpine .ag-header-cell-filter-button { display: none !important; }
     /* Highlight filter icon when a filter is active */
     .ag-theme-alpine .ag-header-cell-filtered .ag-icon-filter { color: var(--primary) !important; }
     .ag-theme-alpine .ag-header-cell-filtered { background: var(--primary-light) !important; }
@@ -352,34 +351,19 @@
       margin-bottom: 20px;
       flex-wrap: wrap;
     }
-    .page-title { font-size: 24px; font-weight: 700; color: var(--text); line-height: 1.2; }
+    .page-title { font-size: 26px; font-weight: 700; color: var(--text); line-height: 1.2; }
     .page-header-actions {
       display: flex;
       align-items: center;
-      gap: 10px;
+      gap: 18px;
+      margin-left: auto;
     }
-    .btn-pill {
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-      background: var(--surface);
-      color: var(--text);
-      border: 1.5px solid rgba(0,0,0,0.78);
-      border-radius: 999px;
-      padding: 8px 18px;
-      font-size: 13px;
-      font-weight: 700;
-      cursor: pointer;
-      white-space: nowrap;
-      transition: all 0.14s;
-    }
-    .btn-pill:hover { background: var(--surface2); }
     .toolbar-link-btn {
       background: none;
       border: none;
       cursor: pointer;
       color: var(--primary);
-      font-size: 13px;
+      font-size: 14px;
       font-weight: 700;
       padding: 0;
     }
@@ -418,7 +402,9 @@
       display: flex;
       align-items: center;
       gap: 12px;
-      margin-bottom: 12px;
+      margin-bottom: 16px;
+      padding-top: 16px;
+      border-top: 1px solid var(--border);
       flex-wrap: wrap;
     }
     .items-toolbar-count { font-size: 15px; font-weight: 700; color: var(--text); }
@@ -654,17 +640,17 @@
         <div id="view-items" class="view active">
           <div class="page-header">
             <h1 class="page-title">Products</h1>
-            <div class="page-header-actions">
-              <button class="btn-pill" onclick="showView('brands')">Manage Brands / Suppliers</button>
-              <button class="btn-pill" onclick="openAddModal()">+ Add New Product</button>
-              <button class="toolbar-icon-btn" onclick="showView('settings')" title="Settings">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
-              </button>
-            </div>
+            <button class="toolbar-icon-btn" onclick="showView('settings')" title="Settings">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+            </button>
           </div>
           <div class="items-toolbar">
             <div class="items-toolbar-count" id="itemsToolbarCount">
               <span id="itemsCount">0</span> Products
+            </div>
+            <div class="page-header-actions" id="itemsToolbarActions">
+              <button class="toolbar-link-btn" onclick="showView('brands')">Manage Brands / Suppliers</button>
+              <button class="toolbar-link-btn" onclick="openAddModal()">Add New Product</button>
             </div>
             <div class="items-toolbar-sel-actions" id="itemsSelActions" style="display:none;">
               <button class="toolbar-text-link" id="itemsSelViewBtn" onclick="viewSelectedItems()">View Selected</button>
@@ -684,11 +670,14 @@
           <button class="back-link" onclick="showView('items')">&#8592; Back to Products</button>
           <div class="page-header">
             <h1 class="page-title">Brands / Suppliers</h1>
-            <div class="page-header-actions">
-              <button class="btn-pill" onclick="openAddBrandModal()">+ Add Brand / Supplier</button>
-            </div>
           </div>
           <p style="font-size:13px;color:var(--text2);margin-bottom:16px;">Manage brands and suppliers. Each brand has its own brand settings, colour scheme, and display configuration.</p>
+          <div class="items-toolbar">
+            <div class="items-toolbar-count"><span id="brandsCount">0</span> Brands / Suppliers</div>
+            <div class="page-header-actions">
+              <button class="toolbar-link-btn" onclick="openAddBrandModal()">Add Brand / Supplier</button>
+            </div>
+          </div>
           <div id="brandsGrid" class="ag-theme-alpine" style="width:100%;height:500px;"></div>
         </div>
 
@@ -2759,6 +2748,7 @@ function initGrids() {
         resizable: true,
         sortable: true,
         filter: 'agTextColumnFilter',
+        floatingFilter: true,
       },
       columnDefs: [
         {
@@ -2944,7 +2934,7 @@ function initGrids() {
     brandsGridApi = agGrid.createGrid(brandsEl, {
       rowHeight: 56,
       suppressCellFocus: true,
-      defaultColDef: { resizable: true, sortable: true, filter: 'agTextColumnFilter' },
+      defaultColDef: { resizable: true, sortable: true, filter: 'agTextColumnFilter', floatingFilter: true },
       columnDefs: []
     });
   }
@@ -2957,14 +2947,17 @@ function updateItemsSelectionBar() {
   const total     = getItems().length;
   const countWrap = document.getElementById('itemsToolbarCount');
   const selActions = document.getElementById('itemsSelActions');
+  const toolbarActions = document.getElementById('itemsToolbarActions');
   const viewBtn   = document.getElementById('itemsSelViewBtn');
   if (selected.length > 0) {
     countWrap.innerHTML = `<span id="itemsCount">${selected.length}</span> of ${total} Products`;
     selActions.style.display = 'flex';
+    toolbarActions.style.display = 'none';
     viewBtn.textContent = _itemsViewSelected ? 'Show All' : 'View Selected';
   } else {
     countWrap.innerHTML = `<span id="itemsCount">${total}</span> Products`;
     selActions.style.display = 'none';
+    toolbarActions.style.display = 'flex';
     // If filter was active with no selection, reset
     if (_itemsViewSelected) {
       _itemsViewSelected = false;
@@ -3761,6 +3754,8 @@ function renderBrands() {
   ]);
 
   brandsGridApi.setGridOption('rowData', brands);
+  const brandsCountEl = document.getElementById('brandsCount');
+  if (brandsCountEl) brandsCountEl.textContent = brands.length;
 }
 
 let brandEditingLogoLeft = '';
