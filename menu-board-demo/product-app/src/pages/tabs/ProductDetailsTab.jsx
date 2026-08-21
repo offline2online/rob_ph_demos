@@ -90,6 +90,13 @@ export default function ProductDetailsTab({ draft, patch, onGoPricing }) {
             <InputNumber disabled value={draft.offerPrice} prefix={draft.currency || brand?.currency || '$'} style={{ width: '100%' }} />
           </Field>
         </div>
+        {draft.showOnMenuBoard && (
+          <div style={{ marginTop: 12 }}>
+            <Field label="Show on Menu Board">
+              <Input disabled value={draft.showOnMenuBoard} />
+            </Field>
+          </div>
+        )}
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, background: '#fafafa', border: '1px solid #f0f0f0', borderRadius: 6, padding: '10px 12px', fontSize: 13, color: 'rgba(0,0,0,.65)', marginTop: 12 }}>
           <MaterialIcon name="lock" style={{ fontSize: 15 }} />
           <span style={{ flex: 1 }}>

@@ -15,38 +15,75 @@ function Field({ label, children, hint }) {
   );
 }
 
+// `when` may be a real ISO timestamp (current writes) or a legacy
+// pre-formatted "DD Mon YYYY HH:mm" string (entries written before this
+// changed) — both parse fine via `new Date(...)`, so one code path
+// renders both a correctly-split date and a time, instead of the old
+// naive `split(' ')` which silently dropped the year and the time.
+function parseWhen(v) {
+  const d = new Date(v);
+  return isNaN(d.getTime()) ? null : d;
+}
+
+function fmtDateVal(v) {
+  if (!v) return '—';
+  const d = new Date(v);
+  if (isNaN(d.getTime())) return String(v);
+  return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) +
+    (v.includes('T') ? ' ' + d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) : '');
+}
+
 export default function PricingTab({ draft, baseline, setDraft, setBaseline }) {
   const { message } = App.useApp();
   const [unlocked, setUnlocked] = useState(false);
-  const [showReason, setShowReason] = useState(false);
   const [reason, setReason] = useState('');
 
   const rrpChanged = String(draft.rrp) !== String(baseline.rrp);
   const offerChanged = String(draft.offerPrice || '') !== String(baseline.offerPrice || '');
-  const dirty = rrpChanged || offerChanged;
+  const fromChanged = String(draft.offerFrom || '') !== String(baseline.offerFrom || '');
+  const untilChanged = String(draft.offerUntil || '') !== String(baseline.offerUntil || '');
+  const menuBoardCopyChanged = String(draft.showOnMenuBoard || '') !== String(baseline.showOnMenuBoard || '');
+  const dirty = rrpChanged || offerChanged || fromChanged || untilChanged || menuBoardCopyChanged;
+  const canSave = dirty && reason.trim() !== '';
 
   const changeSummary = [
     rrpChanged ? `RRP $${baseline.rrp || '0.00'} → $${draft.rrp}` : null,
     offerChanged ? `Offer price $${baseline.offerPrice || '0.00'} → $${draft.offerPrice}` : null,
+    fromChanged ? `Offer from ${fmtDateVal(baseline.offerFrom)} → ${fmtDateVal(draft.offerFrom)}` : null,
+    untilChanged ? `Offer until ${fmtDateVal(baseline.offerUntil)} → ${fmtDateVal(draft.offerUntil)}` : null,
+    menuBoardCopyChanged ? `Menu board copy updated` : null,
   ]
     .filter(Boolean)
     .join(' · ');
 
-  const discardChange = () => setDraft((d) => ({ ...d, rrp: baseline.rrp, offerPrice: baseline.offerPrice }));
+  const discardChange = () => {
+    setDraft((d) => ({
+      ...d,
+      rrp: baseline.rrp,
+      offerPrice: baseline.offerPrice,
+      offerFrom: baseline.offerFrom,
+      offerUntil: baseline.offerUntil,
+      showOnMenuBoard: baseline.showOnMenuBoard,
+    }));
+    setReason('');
+  };
 
   const [savingPrice, setSavingPrice] = useState(false);
 
   const confirmSave = async () => {
+    if (!canSave) return;
     const changes = [];
     if (rrpChanged) changes.push({ fieldName: 'RRP', oldValue: baseline.rrp || '—', newValue: draft.rrp });
     if (offerChanged) changes.push({ fieldName: 'Offer price', oldValue: baseline.offerPrice || '—', newValue: draft.offerPrice });
-    const withLog = appendPriceLogEntries(draft, changes, reason || '(no reason given)');
+    if (fromChanged) changes.push({ fieldName: 'Offer from', oldValue: fmtDateVal(baseline.offerFrom), newValue: fmtDateVal(draft.offerFrom) });
+    if (untilChanged) changes.push({ fieldName: 'Offer until', oldValue: fmtDateVal(baseline.offerUntil), newValue: fmtDateVal(draft.offerUntil) });
+    if (menuBoardCopyChanged) changes.push({ fieldName: 'Show on Menu Board', oldValue: baseline.showOnMenuBoard || '—', newValue: draft.showOnMenuBoard || '—' });
+    const withLog = appendPriceLogEntries(draft, changes, reason);
     setSavingPrice(true);
     try {
       const saved = await upsertProduct(withLog);
       setBaseline(saved);
       setDraft(saved);
-      setShowReason(false);
       setReason('');
       message.success('Price change saved');
     } catch (e) {
@@ -56,7 +93,16 @@ export default function PricingTab({ draft, baseline, setDraft, setBaseline }) {
     }
   };
 
-  const log = draft.priceLog || [];
+  // Newest first — explicit rather than relying on append order, so the
+  // log stays correctly ordered even if entries ever arrive out of order
+  // (e.g. a store writing its own entries independently of HQ Admin).
+  const log = useMemo(() => {
+    return [...(draft.priceLog || [])].sort((a, b) => {
+      const ta = parseWhen(a.when)?.getTime() ?? 0;
+      const tb = parseWhen(b.when)?.getTime() ?? 0;
+      return tb - ta;
+    });
+  }, [draft.priceLog]);
   const hqCount = log.filter((e) => e.src === 'HQ Admin').length;
   const storeCount = log.length - hqCount;
 
@@ -67,11 +113,11 @@ export default function PricingTab({ draft, baseline, setDraft, setBaseline }) {
         dataIndex: 'when',
         width: 130,
         render: (v) => {
-          const [d, t] = (v || '').split(' ');
+          const d = parseWhen(v);
           return (
             <div>
-              <div>{d}</div>
-              <div style={{ fontSize: 12, color: 'rgba(0,0,0,.45)' }}>{t}</div>
+              <div>{d ? d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : v}</div>
+              <div style={{ fontSize: 12, color: 'rgba(0,0,0,.45)' }}>{d ? d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) : ''}</div>
             </div>
           );
         },
@@ -166,15 +212,34 @@ export default function PricingTab({ draft, baseline, setDraft, setBaseline }) {
           </Field>
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px 16px', marginTop: 14 }}>
-          <Field label="Schedule offer from" hint="Blank means the offer starts now. Changing this is not a price change and is not logged.">
+          <Field label="Schedule offer from" hint="Blank means the offer starts now.">
             <ClearableDate value={draft.offerFrom} onChange={(v) => setDraft((d) => ({ ...d, offerFrom: v }))} showTime blankHint={{ blank: '', set: '' }} />
           </Field>
-          <Field label="Schedule offer until" hint="Blank means the offer runs until removed. Changing this is not a price change and is not logged.">
+          <Field label="Schedule offer until" hint="Blank means the offer runs until removed.">
             <ClearableDate value={draft.offerUntil} onChange={(v) => setDraft((d) => ({ ...d, offerUntil: v }))} showTime blankHint={{ blank: '', set: '' }} />
           </Field>
         </div>
         <div style={{ marginTop: 14 }}>
+          <Field label="Show on Menu Board" hint="Optional promo copy shown alongside this product's price on the menu board, e.g. &ldquo;Limited time only!&rdquo; Leave blank to show nothing extra.">
+            <Input
+              value={draft.showOnMenuBoard}
+              onChange={(e) => setDraft((d) => ({ ...d, showOnMenuBoard: e.target.value }))}
+              placeholder="e.g. Limited time only!"
+              style={menuBoardCopyChanged ? { background: '#e8fdff' } : undefined}
+            />
+          </Field>
+        </div>
+        <div style={{ marginTop: 14 }}>
           <OfferBanner rrp={draft.rrp} offerPrice={draft.offerPrice} offerFrom={draft.offerFrom} offerUntil={draft.offerUntil} />
+        </div>
+        <div style={{ marginTop: 14 }}>
+          <Field label="Reason for this change" hint="Required to save — recorded in the price change log below.">
+            <Input
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              placeholder="Why is this pricing changing?"
+            />
+          </Field>
         </div>
       </div>
 
@@ -229,28 +294,19 @@ export default function PricingTab({ draft, baseline, setDraft, setBaseline }) {
         />
       </div>
 
-      <div className="ph-savebar" style={{ flexDirection: 'column', alignItems: 'stretch', gap: 10 }}>
-        {showReason && (
-          <div style={{ display: 'flex', gap: 8 }}>
-            <Input placeholder="Reason for this price change…" value={reason} onChange={(e) => setReason(e.target.value)} autoFocus />
-            <Button type="primary" onClick={confirmSave} loading={savingPrice}>
-              Confirm &amp; save
-            </Button>
-            <Button onClick={() => setShowReason(false)} disabled={savingPrice}>Cancel</Button>
-          </div>
-        )}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <span style={{ fontSize: 13, color: 'rgba(0,0,0,.65)' }}>
-            {dirty ? `Unsaved price change — ${changeSummary}` : 'No price change to save. Editing RRP or the offer price enables the save and writes an entry to the log.'}
-          </span>
-          <div style={{ flex: 1 }} />
-          <Button disabled={!dirty} onClick={discardChange}>
-            Discard change
-          </Button>
-          <Button type="primary" disabled={!dirty} onClick={() => setShowReason(true)}>
-            Save price change
-          </Button>
-        </div>
+      <div className="ph-savebar">
+        <span style={{ fontSize: 13, color: 'rgba(0,0,0,.65)' }}>
+          {dirty
+            ? (reason.trim() ? `Unsaved price change — ${changeSummary}` : `Unsaved price change — enter a reason above to enable saving`)
+            : 'No changes to save. Editing RRP, offer price, dates or the menu board copy enables the save and writes an entry to the log.'}
+        </span>
+        <div style={{ flex: 1 }} />
+        <Button disabled={!dirty} onClick={discardChange}>
+          Discard change
+        </Button>
+        <Button type="primary" disabled={!canSave} onClick={confirmSave} loading={savingPrice}>
+          Save price change
+        </Button>
       </div>
     </div>
   );

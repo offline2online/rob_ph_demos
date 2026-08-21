@@ -28,6 +28,7 @@ export function blankProduct() {
     offerPrice: '',
     offerFrom: '',
     offerUntil: '',
+    showOnMenuBoard: '',
     currency: '$',
     taxClass: '',
     currencyLocked: true,
@@ -86,10 +87,12 @@ export async function upsertProduct(product) {
   return migrateItem({ id: product.id, ...payload }, getBrandById(payload.brand)?.currency);
 }
 
+// `when` is stored as a real ISO timestamp (not a pre-formatted locale
+// string) so the log can be sorted chronologically and so the table can
+// render date and time as two independent, correctly-parsed pieces
+// instead of guessing where one ends and the other starts.
 export function appendPriceLogEntries(product, changes, reason, actor = 'HQ Admin User') {
-  const now = new Date();
-  const when = now.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) +
-    ' ' + now.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+  const when = new Date().toISOString();
   const entries = changes.map((c) => ({
     when,
     src: 'HQ Admin',
