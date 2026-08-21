@@ -2129,24 +2129,51 @@ function _offerTooltip(currency, rrp, offerNum, offerFrom, offerUntil) {
 }
 
 // ── Date + time field pair ────────────────────────────────────────────────
-// The underlying #<prefix> hidden input always holds the combined
-// "YYYY-MM-DDTHH:mm" value every existing read/save path already expects —
-// only how the user edits it changes: a native date input, plus a custom
-// time field that opens a plain scrollable hour/minute list (never a
-// continuously-spinning wheel), matching the platform's standard date/time
-// picker.
+// The underlying #<prefix> hidden input holds a real UTC-anchored ISO
+// string (toISOString(), always ending in Z) — not a bare
+// "YYYY-MM-DDTHH:mm". A naive string like that gets parsed as local time
+// by whichever browser reads it back, but as UTC by the backend sweep
+// (functions/index.js), which runs in a different timezone — two readers
+// disagreeing about what "now" means relative to the same string is
+// exactly what let an already-expired offer keep showing as live on the
+// Pricing pane long after it should have cleared. A real UTC string parses
+// identically everywhere, so there's nothing left to disagree about.
+// Display still shows the store's own local wall-clock time in the two
+// picker sub-fields — only the stored value is UTC.
 function _syncDateTimeDisplay(prefix) {
   const raw = document.getElementById(prefix).value || '';
-  const [datePart, timePart] = raw.split('T');
-  document.getElementById(prefix + 'Date').value = datePart || '';
-  document.getElementById(prefix + 'Time').value = timePart || '';
+  if (!raw) {
+    document.getElementById(prefix + 'Date').value = '';
+    document.getElementById(prefix + 'Time').value = '';
+    return;
+  }
+  const d = new Date(raw);
+  if (isNaN(d.getTime())) {
+    // Legacy value that isn't a parseable date at all — shouldn't happen,
+    // but don't crash the form over it.
+    document.getElementById(prefix + 'Date').value = '';
+    document.getElementById(prefix + 'Time').value = '';
+    return;
+  }
+  const pad = (n) => String(n).padStart(2, '0');
+  document.getElementById(prefix + 'Date').value = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  document.getElementById(prefix + 'Time').value = `${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
 function _combineDateTimePart(prefix) {
   const datePart = document.getElementById(prefix + 'Date').value;
   const timePart = document.getElementById(prefix + 'Time').value;
   const hidden = document.getElementById(prefix);
-  hidden.value = datePart ? (datePart + 'T' + (timePart || '00:00')) : '';
+  if (!datePart) {
+    hidden.value = '';
+  } else {
+    const [y, m, day] = datePart.split('-').map(Number);
+    const [hh, mm] = (timePart || '00:00').split(':').map(Number);
+    // The multi-arg Date constructor interprets these numbers as local
+    // wall-clock time (matching what the user picked), then toISOString()
+    // converts that to the unambiguous UTC string that's actually stored.
+    hidden.value = new Date(y, m - 1, day, hh, mm, 0, 0).toISOString();
+  }
   hidden.dispatchEvent(new Event('input', { bubbles: true }));
 }
 
