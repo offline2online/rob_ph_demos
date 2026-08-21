@@ -1725,89 +1725,12 @@ function saveItems(items) {
     }
   })();
 }
-// ===== EXPIRED OFFER AUTO-REVERT =====
-// A scheduled offer ("Schedule offer until") is a promise about when the
-// discount stops, not just when the boards stop *displaying* it as live —
-// isLive() checks already hide an expired offer's struck-through price
-// everywhere, but the stale offerPrice/offerFrom/offerUntil fields would
-// otherwise sit on the record forever. Once the end time passes, clear
-// them back to plain RRP and drop a price-log entry recording the
-// reversion, so the log reads as a real audit trail instead of silence.
-// Runs from HQ Admin (the one surface that always has write access to
-// both items and every store's pricing) — reactively whenever fresh
-// items/storePricing data arrives, and on a timer so it also fires
-// between unrelated Firestore writes.
-function _fmtSweepDate(v) {
-  const d = new Date(v);
-  if (isNaN(d.getTime())) return String(v);
-  return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) +
-    ' ' + d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
-}
-function _currencyForItem(item) {
-  const brands = getBrands();
-  const itemBrand = brands.find(b => b.id === item.brand);
-  return (itemBrand && itemBrand.currency) ? itemBrand.currency : ((brands[0] && brands[0].currency) ? brands[0].currency : '$');
-}
-function _sweepExpiredOffers() {
-  const now = new Date();
-  const items = getItems();
-
-  // HQ's own offer, set directly on the shared item.
-  let itemsChanged = false;
-  items.forEach(item => {
-    const offerNum = parseFloat(item.offerPrice);
-    const until = item.offerUntil ? new Date(item.offerUntil) : null;
-    if (!(offerNum > 0) || !until || !(until < now)) return;
-    const currency = _currencyForItem(item);
-    const rrp = parseFloat(item.price || 0);
-    item.priceLog = [{
-      when: now.toISOString(), src: 'HQ Admin', store: '', by: 'System',
-      fieldName: 'Offer price', old: currency + offerNum.toFixed(2), neu: '—',
-      reason: `Offer expired (was scheduled until ${_fmtSweepDate(item.offerUntil)}) — automatically reverted to RRP ${currency}${rrp.toFixed(2)}`,
-    }, ...(item.priceLog || [])];
-    item.offerPrice = null;
-    item.offerFrom = '';
-    item.offerUntil = '';
-    item.updatedAt = now.toISOString();
-    itemsChanged = true;
-  });
-  if (itemsChanged) saveItems(items);
-
-  // Every store's own override, scoped to that store's own storePricing
-  // doc — the log entry still lands on the shared item.priceLog (merge
-  // write only, same as a manual store-level price edit) so HQ sees it
-  // in the same history as everything else.
-  Object.keys(_allStorePricing).forEach(storeCode => {
-    const overrides = _allStorePricing[storeCode] || {};
-    const nextOverrides = { ...overrides };
-    let storeChanged = false;
-    Object.keys(overrides).forEach(sku => {
-      const o = overrides[sku];
-      const offerNum = parseFloat(o.offerPrice);
-      const until = o.offerUntil ? new Date(o.offerUntil) : null;
-      if (!(offerNum > 0) || !until || !(until < now)) return;
-      const item = items.find(i => i.sku === sku);
-      if (!item) return;
-      const currency = _currencyForItem(item);
-      const rrp = parseFloat(o.price != null ? o.price : (item.price || 0));
-      const logEntry = {
-        when: now.toISOString(), src: storeCode, store: storeCode, by: 'System',
-        fieldName: 'Offer price', old: currency + offerNum.toFixed(2), neu: '—',
-        reason: `Offer expired (was scheduled until ${_fmtSweepDate(o.offerUntil)}) — automatically reverted to RRP ${currency}${rrp.toFixed(2)}`,
-      };
-      setDoc(doc(db, ITEMS_COLL, item.id), { priceLog: [logEntry, ...(item.priceLog || [])] }, { merge: true })
-        .catch(err => toast('❌ Failed to log offer expiry: ' + (err.message || err), 'error'));
-      nextOverrides[sku] = { ...o, offerPrice: null, offerFrom: '', offerUntil: '', updatedAt: now.toISOString() };
-      storeChanged = true;
-    });
-    if (storeChanged) {
-      _allStorePricing[storeCode] = nextOverrides;
-      setDoc(doc(db, STORE_PRICING_COLL, storeCode), nextOverrides)
-        .catch(err => toast('❌ Failed to revert expired store offer: ' + (err.message || err), 'error'));
-    }
-  });
-}
-setInterval(_sweepExpiredOffers, 60000);
+// Expired-offer auto-revert (clearing offerPrice/offerFrom/offerUntil back
+// to RRP and logging the reversion once "Schedule offer until" passes) runs
+// server-side now — see functions/index.js's scheduled sweepExpiredOffers,
+// deployed via `firebase deploy --only functions`. It used to run from this
+// page on a client-side timer, but that only fired while someone had HQ
+// Admin open; a real backend job fires on schedule regardless.
 
 function getSettings() { return _settings; }
 function saveSettingsData(s) {
@@ -5012,7 +4935,6 @@ onSnapshot(collection(db, ITEMS_COLL), snap => {
   // Always update items grid if initialised (preserves filter state via renderItems)
   if (itemsGridApi) renderItems();
   else document.getElementById('itemsCount').textContent = _items.length;
-  _sweepExpiredOffers();
 });
 
 onSnapshot(doc(db, MB, 'brands'), snap => {
@@ -5075,7 +4997,6 @@ onSnapshot(collection(db, STORE_PRICING_COLL), snapshot => {
   snapshot.forEach(d => { _allStorePricing[d.id] = d.data(); });
   _rebuildSkuLocalOfferStores();
   if (itemsGridApi) itemsGridApi.refreshCells({ columns: ['price'], force: true });
-  _sweepExpiredOffers();
 });
 
 showView(localStorage.getItem('hqAdminView') || 'items');

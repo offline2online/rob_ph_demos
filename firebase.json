@@ -1,0 +1,11 @@
+{
+  "firestore": {
+    "rules": "firestore.rules"
+  },
+  "functions": [
+    {
+      "source": "menu-board-demo/functions",
+      "codebase": "default"
+    }
+  ]
+}
