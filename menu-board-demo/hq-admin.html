@@ -2712,7 +2712,7 @@ function initGrids() {
               const pill = document.createElement('span');
               pill.textContent = localStores.length === 1 ? 'Local offer' : `Local offer ×${localStores.length}`;
               pill.title = `${localStores.join(', ')} ${localStores.length === 1 ? 'is' : 'are'} running a different price for this item — click to view`;
-              pill.style.cssText = 'display:inline-flex;align-items:center;width:fit-content;padding:1px 7px;border-radius:9px;background:#f9f0ff;color:#722ed1;border:1px solid #d3adf7;font-size:10px;font-weight:700;cursor:pointer;letter-spacing:0.2px;';
+              pill.style.cssText = 'display:inline-flex;align-items:center;width:fit-content;line-height:1;padding:3px 7px 2px;border-radius:9px;background:#f9f0ff;color:#722ed1;border:1px solid #d3adf7;font-size:10px;font-weight:700;cursor:pointer;letter-spacing:0.2px;';
               pill.addEventListener('click', (e) => {
                 e.stopPropagation();
                 location.href = 'product/#/products/' + item.id + '/pricing?filter=local';
