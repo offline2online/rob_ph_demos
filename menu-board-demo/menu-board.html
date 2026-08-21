@@ -864,6 +864,20 @@ function priceHtml(item, currency, wasClass) {
   const offer = parseFloat(item.offerPrice).toFixed(2);
   return `<span class="${wasClass}">${currency}${rrp}</span>${currency}${offer}`;
 }
+// "Show on Menu Board" copy is written alongside an offer's own price/dates
+// on the Pricing tab, and reads as being about that offer ("Limited time
+// only!") — so it has to disappear the instant the offer stops being live,
+// the same way the struck-through price already does, rather than staying
+// up until a backend job gets around to clearing the field (that clears it
+// on a schedule for tidiness/audit-log purposes, but this board shouldn't
+// need to wait on it to stop showing stale promo copy). An item with no
+// offer configured at all still shows its note unconditionally — there's
+// nothing time-boxed for it to have expired against.
+function shouldShowMenuNote(item) {
+  if (!item.showOnMenuBoard) return false;
+  if (!(parseFloat(item.offerPrice) > 0)) return true;
+  return isOfferLive(item);
+}
 
 // ── BRAND SUPPORT ────────────────────────────────────────────────────────────
 let _debugPanelVisible = DEBUG_MODE; // toggled by long-press on bottom-left corner
@@ -1710,7 +1724,7 @@ function render() {
       ? `<img src="${cellImg}" alt="${esc(item.name)}" loading="lazy" onerror="this.replaceWith(Object.assign(document.createElement('div'),{className:'item-thumb-placeholder',textContent:'🍽️'}))">`
       : `<div class="item-thumb-placeholder">🍽️</div>`;
     const desc = item.description ? `<div class="item-desc">${esc(item.description)}</div>` : '';
-    const menuNote = item.showOnMenuBoard ? `<div class="menu-board-note">${esc(item.showOnMenuBoard)}</div>` : '';
+    const menuNote = shouldShowMenuNote(item) ? `<div class="menu-board-note">${esc(item.showOnMenuBoard)}</div>` : '';
     return `
       <div class="item-cell${oos ? ' oos-cell' : ''}">
         <div class="item-thumb">${thumbInner}</div>
@@ -1827,7 +1841,7 @@ function render() {
         ? `<img src="${heroSrc}" alt="${esc(heroItem.name)}" loading="lazy">`
         : `<div class="promo-hero-placeholder">🏷️</div>`;
       const heroCat = heroItem.category ? `<div class="promo-cat">${esc(heroItem.category)}</div>` : '';
-      const heroMenuNote = heroItem.showOnMenuBoard ? `<div class="menu-board-note">${esc(heroItem.showOnMenuBoard)}</div>` : '';
+      const heroMenuNote = shouldShowMenuNote(heroItem) ? `<div class="menu-board-note">${esc(heroItem.showOnMenuBoard)}</div>` : '';
       const heroTopHtml = `
         <div class="promo-hero-top">
           ${heroCat}
@@ -1850,7 +1864,7 @@ function render() {
         const desc = item.description
           ? `<div class="promo-tile-desc"><div class="promo-desc">${esc(item.description)}</div></div>` : '';
         const cat = item.category ? `<div class="promo-cat">${esc(item.category)}</div>` : '';
-        const menuNote = item.showOnMenuBoard ? `<div class="menu-board-note">${esc(item.showOnMenuBoard)}</div>` : '';
+        const menuNote = shouldShowMenuNote(item) ? `<div class="menu-board-note">${esc(item.showOnMenuBoard)}</div>` : '';
         return `
           <div class="promo-tile">
             <div class="promo-text">
