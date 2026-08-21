@@ -728,6 +728,37 @@
     .field input:focus, .field textarea:focus { border-color: var(--primary); }
     .field textarea { resize: vertical; min-height: 72px; }
 
+    /* Time picker popup — a plain scrollable hour/minute list (matches the
+       platform's standard date/time picker), never a continuously-spinning
+       wheel. */
+    .time-picker-popup {
+      position: fixed;
+      display: flex;
+      background: var(--surface);
+      border: 1px solid var(--border2);
+      border-radius: 8px;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.15);
+      z-index: 3000;
+      overflow: hidden;
+    }
+    .time-picker-col {
+      width: 56px;
+      max-height: 200px;
+      overflow-y: auto;
+      padding: 4px 0;
+      border-right: 1px solid var(--border);
+    }
+    .time-picker-col:last-child { border-right: none; }
+    .time-picker-item {
+      padding: 6px 0;
+      text-align: center;
+      font-size: 13px;
+      cursor: pointer;
+      color: var(--text);
+    }
+    .time-picker-item:hover { background: var(--surface2); }
+    .time-picker-item.selected { background: var(--primary); color: #fff; font-weight: 600; }
+
     /* Stock history table */
     .history-section h4 { font-size: 13px; font-weight: 700; margin-bottom: 12px; color: var(--text); }
     .history-table { width: 100%; border-collapse: collapse; font-size: 12px; }
@@ -943,13 +974,21 @@
           </div>
           <div class="form-row" style="display:flex;gap:14px;margin-top:12px;">
             <div class="field" style="flex:1;">
-              <label for="priceOfferFrom">Schedule offer from</label>
-              <input type="datetime-local" id="priceOfferFrom" oninput="_onPricingFieldChange()">
+              <label for="priceOfferFromDate">Schedule offer from</label>
+              <input type="hidden" id="priceOfferFrom" oninput="_onPricingFieldChange()">
+              <div style="display:flex;gap:6px;">
+                <input type="date" id="priceOfferFromDate" style="flex:1;" onchange="_onDateTimePartChange('priceOfferFrom')">
+                <input type="text" id="priceOfferFromTime" readonly placeholder="Select time" style="width:100px;cursor:pointer;background:var(--surface);" onclick="_openTimePicker('priceOfferFrom', this)">
+              </div>
               <p style="font-size:11px;color:var(--text2);margin-top:4px;">Blank means the offer starts now.</p>
             </div>
             <div class="field" style="flex:1;">
-              <label for="priceOfferUntil">Schedule offer until</label>
-              <input type="datetime-local" id="priceOfferUntil" oninput="_onPricingFieldChange()">
+              <label for="priceOfferUntilDate">Schedule offer until</label>
+              <input type="hidden" id="priceOfferUntil" oninput="_onPricingFieldChange()">
+              <div style="display:flex;gap:6px;">
+                <input type="date" id="priceOfferUntilDate" style="flex:1;" onchange="_onDateTimePartChange('priceOfferUntil')">
+                <input type="text" id="priceOfferUntilTime" readonly placeholder="Select time" style="width:100px;cursor:pointer;background:var(--surface);" onclick="_openTimePicker('priceOfferUntil', this)">
+              </div>
               <p style="font-size:11px;color:var(--text2);margin-top:4px;">Blank means the offer runs until removed.</p>
             </div>
           </div>
@@ -962,7 +1001,7 @@
           <div class="field" style="margin-top:12px;">
             <label for="priceReason">Reason for this change <span style="color:var(--danger);font-weight:700;">*</span></label>
             <input type="text" id="priceReason" placeholder="Why is this pricing changing?" oninput="_onPricingFieldChange()">
-            <p style="font-size:11px;color:var(--text2);margin-top:4px;">Always required — the <b>Save price change</b> button below only turns on once you've both changed a price field above <i>and</i> filled this in.</p>
+            <p style="font-size:11px;color:var(--text2);margin-top:4px;">Always required — the <b>Save Changes</b> button below only turns on once you've both changed a price field above <i>and</i> filled this in.</p>
           </div>
         </div>
 
@@ -975,8 +1014,8 @@
 
         <div style="display:flex;align-items:center;gap:10px;padding-top:6px;">
           <span id="priceSaveHelper" style="font-size:12px;color:var(--text2);flex:1;">No changes to save yet — edit RRP, offer price, dates or the menu board copy above to start.</span>
-          <button class="btn btn-ghost btn-sm" id="priceDiscardBtn" onclick="_discardPricingChange()" disabled>Discard</button>
-          <button class="btn btn-primary btn-sm" id="priceSaveBtn" onclick="savePricingChange()" disabled>&#x1F4BE; Save price change</button>
+          <button class="btn btn-ghost btn-sm" id="priceDiscardBtn" onclick="_discardPricingChange()" disabled>Cancel</button>
+          <button class="btn btn-primary btn-sm" id="priceSaveBtn" onclick="savePricingChange()" disabled>&#x1F4BE; Save Changes</button>
         </div>
       </div>
 
@@ -998,7 +1037,7 @@
             </div>
             <div style="display:flex;gap:8px;">
               <button class="btn btn-ghost btn-sm" onclick="closeEditStockOverlay()">Cancel</button>
-              <button class="btn btn-primary btn-sm" onclick="saveEditedStock()">Save Correction</button>
+              <button class="btn btn-primary btn-sm" onclick="saveEditedStock()">Save Changes</button>
             </div>
           </div>
         </div>
@@ -2063,6 +2102,114 @@ function _fmtPriceDateVal(v) {
     (v.includes('T') ? ' ' + d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) : '');
 }
 
+// ── Date + time field pair ────────────────────────────────────────────────
+// The underlying #<prefix> hidden input always holds the combined
+// "YYYY-MM-DDTHH:mm" value every existing read/save path already expects —
+// only how the user edits it changes: a native date input, plus a custom
+// time field that opens a plain scrollable hour/minute list (never a
+// continuously-spinning wheel), matching the platform's standard date/time
+// picker.
+function _syncDateTimeDisplay(prefix) {
+  const raw = document.getElementById(prefix).value || '';
+  const [datePart, timePart] = raw.split('T');
+  document.getElementById(prefix + 'Date').value = datePart || '';
+  document.getElementById(prefix + 'Time').value = timePart || '';
+}
+
+function _combineDateTimePart(prefix) {
+  const datePart = document.getElementById(prefix + 'Date').value;
+  const timePart = document.getElementById(prefix + 'Time').value;
+  const hidden = document.getElementById(prefix);
+  hidden.value = datePart ? (datePart + 'T' + (timePart || '00:00')) : '';
+  hidden.dispatchEvent(new Event('input', { bubbles: true }));
+}
+
+function _onDateTimePartChange(prefix) {
+  _combineDateTimePart(prefix);
+}
+
+let _openTimePickerPopup = null;
+
+function _openTimePicker(prefix, triggerEl) {
+  _closeTimePicker();
+  const dateEl = document.getElementById(prefix + 'Date');
+  if (!dateEl.value) { dateEl.focus(); toast('Pick a date first', 'info'); return; }
+
+  const current = document.getElementById(prefix + 'Time').value || '00:00';
+  const [curH, curM] = current.split(':').map(Number);
+
+  const popup = document.createElement('div');
+  popup.className = 'time-picker-popup';
+  const hourCol = document.createElement('div');
+  hourCol.className = 'time-picker-col';
+  const minCol = document.createElement('div');
+  minCol.className = 'time-picker-col';
+
+  const pick = (h, m) => {
+    document.getElementById(prefix + 'Time').value =
+      String(h).padStart(2, '0') + ':' + String(m).padStart(2, '0');
+    _combineDateTimePart(prefix);
+    _closeTimePicker();
+  };
+
+  let selH = null, selM = null;
+  for (let h = 0; h < 24; h++) {
+    const item = document.createElement('div');
+    item.className = 'time-picker-item' + (h === curH ? ' selected' : '');
+    item.textContent = String(h).padStart(2, '0');
+    item.onclick = () => pick(h, curM);
+    hourCol.appendChild(item);
+    if (h === curH) selH = item;
+  }
+  for (let m = 0; m < 60; m++) {
+    const item = document.createElement('div');
+    item.className = 'time-picker-item' + (m === curM ? ' selected' : '');
+    item.textContent = String(m).padStart(2, '0');
+    item.onclick = () => pick(curH, m);
+    minCol.appendChild(item);
+    if (m === curM) selM = item;
+  }
+  popup.appendChild(hourCol);
+  popup.appendChild(minCol);
+  document.body.appendChild(popup);
+
+  const rect = triggerEl.getBoundingClientRect();
+  popup.style.top = (rect.bottom + 4) + 'px';
+  popup.style.left = Math.min(rect.left, window.innerWidth - popup.offsetWidth - 8) + 'px';
+
+  if (selH) selH.scrollIntoView({ block: 'center' });
+  if (selM) selM.scrollIntoView({ block: 'center' });
+
+  _openTimePickerPopup = popup;
+  setTimeout(() => document.addEventListener('mousedown', _onTimePickerOutsideClick), 0);
+  // position:fixed doesn't track the trigger if an ancestor (not just the
+  // hour/minute columns themselves) scrolls — e.g. the modal body, or
+  // scroll-chaining once a column hits its own limit. Close in that case
+  // rather than try to keep repositioning against every possible scroll
+  // container — but ignore scrolling *inside* the popup's own hour/minute
+  // columns, which is the normal way to reach an off-screen value.
+  window.addEventListener('scroll', _onTimePickerAncestorScroll, { capture: true });
+}
+
+function _onTimePickerAncestorScroll(e) {
+  if (_openTimePickerPopup && !_openTimePickerPopup.contains(e.target)) _closeTimePicker();
+}
+
+function _onTimePickerOutsideClick(e) {
+  if (_openTimePickerPopup && !_openTimePickerPopup.contains(e.target)) _closeTimePicker();
+}
+
+function _closeTimePicker() {
+  if (_openTimePickerPopup) {
+    _openTimePickerPopup.remove();
+    _openTimePickerPopup = null;
+  }
+  document.removeEventListener('mousedown', _onTimePickerOutsideClick);
+  window.removeEventListener('scroll', _onTimePickerAncestorScroll, { capture: true });
+}
+window._openTimePicker = _openTimePicker;
+window._onDateTimePartChange = _onDateTimePartChange;
+
 function _currencyFor(brand) {
   return (brand && brand.currency) || _settings.currency || '$';
 }
@@ -2087,6 +2234,8 @@ function _loadPricingPane(item, brand) {
   document.getElementById('priceOffer').value = _pricingBaseline.offerPrice;
   document.getElementById('priceOfferFrom').value = _pricingBaseline.offerFrom;
   document.getElementById('priceOfferUntil').value = _pricingBaseline.offerUntil;
+  _syncDateTimeDisplay('priceOfferFrom');
+  _syncDateTimeDisplay('priceOfferUntil');
   document.getElementById('priceMenuBoardCopy').value = _pricingBaseline.showOnMenuBoard;
   document.getElementById('priceReason').value = '';
   window._pricingCurrency = _currencyFor(brand);
@@ -2175,6 +2324,8 @@ function _discardPricingChange() {
   document.getElementById('priceOffer').value = _pricingBaseline.offerPrice;
   document.getElementById('priceOfferFrom').value = _pricingBaseline.offerFrom;
   document.getElementById('priceOfferUntil').value = _pricingBaseline.offerUntil;
+  _syncDateTimeDisplay('priceOfferFrom');
+  _syncDateTimeDisplay('priceOfferUntil');
   document.getElementById('priceMenuBoardCopy').value = _pricingBaseline.showOnMenuBoard;
   document.getElementById('priceReason').value = '';
   _pricingDraft = { ..._pricingBaseline };

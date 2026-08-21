@@ -140,9 +140,9 @@ export default function ProductPage({ isNew = false }) {
               Images and video are on <strong>Product Assets</strong>. All pricing is on <strong>Pricing</strong>.
             </span>
             <div style={{ flex: 1 }} />
-            <Button onClick={discardDetailsOrAssets} disabled={saving || !dirty}>Discard</Button>
+            <Button onClick={discardDetailsOrAssets} disabled={saving || !dirty}>Cancel</Button>
             <Button type="primary" onClick={saveDetailsOrAssets} loading={saving} disabled={!dirty}>
-              Save Product
+              Save Changes
             </Button>
           </div>
         )}

@@ -320,10 +320,10 @@ export default function PricingTab({ draft, baseline, setDraft, setBaseline }) {
         </span>
         <div style={{ flex: 1 }} />
         <Button disabled={!dirty} onClick={discardChange}>
-          Discard change
+          Cancel
         </Button>
         <Button type="primary" disabled={!canSave} onClick={confirmSave} loading={savingPrice}>
-          Save price change
+          Save Changes
         </Button>
       </div>
     </div>
