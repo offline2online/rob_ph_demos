@@ -2781,7 +2781,7 @@ function initGrids() {
           }),
           cellRenderer: (params) => {
             const wrap = document.createElement('div');
-            wrap.style.cssText = 'display:flex;gap:3px;flex-wrap:wrap;align-content:center;align-items:center;padding:4px 0;';
+            wrap.style.cssText = 'display:flex;gap:3px;flex-wrap:wrap;align-content:center;align-items:center;height:100%;';
             (params.value || []).forEach(t => {
               const mt = getTypes().find(m => m.id === t);
               const color = mt ? mt.color : '#64748b';
