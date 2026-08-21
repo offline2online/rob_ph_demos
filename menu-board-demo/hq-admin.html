@@ -1311,6 +1311,7 @@ const db  = getFirestore(app);
 const MB         = 'menuboard';
 const ITEMS_COLL = 'items';
 const STOCK_COLL = 'stock';
+const STORE_PRICING_COLL = 'storePricing';
 
 const DEFAULT_TYPES = [
   { id: 'breakfast', label: 'Breakfast',        color: '#f59e0b' },
@@ -1631,6 +1632,22 @@ function deleteLangEntry(code) {
 }
 window.deleteLangEntry = deleteLangEntry;
 let _allStock    = {};
+let _allStorePricing = {};
+// sku -> [storeCode, ...] currently running their own price override —
+// rebuilt whenever _allStorePricing changes, so the Price column's "Local
+// offer" pill lookup stays O(1) instead of scanning every store per row.
+let _skuLocalOfferStores = {};
+function _rebuildSkuLocalOfferStores() {
+  const map = {};
+  Object.keys(_allStorePricing).forEach(storeCode => {
+    const overrides = _allStorePricing[storeCode] || {};
+    Object.keys(overrides).forEach(sku => {
+      (map[sku] || (map[sku] = [])).push(storeCode);
+    });
+  });
+  _skuLocalOfferStores = map;
+}
+function getStoresWithLocalOffer(sku) { return _skuLocalOfferStores[sku] || []; }
 let itemsGridApi  = null;
 let brandsGridApi = null;
 let _itemsViewSelected = false;
@@ -2663,8 +2680,8 @@ function initGrids() {
             const from = item.offerFrom ? new Date(item.offerFrom) : null;
             const until = item.offerUntil ? new Date(item.offerUntil) : null;
             const isLive = offerNum > 0 && !(until && until < now) && !(from && from > now);
-            const wrap = document.createElement('div');
-            wrap.style.cssText = 'display:flex;align-items:center;gap:6px;height:100%;';
+            const priceRow = document.createElement('div');
+            priceRow.style.cssText = 'display:flex;align-items:center;gap:6px;';
             if (isLive) {
               const was = document.createElement('span');
               was.style.cssText = 'text-decoration:line-through;color:var(--text2);font-weight:400;font-size:11px;';
@@ -2672,13 +2689,35 @@ function initGrids() {
               const nowSpan = document.createElement('span');
               nowSpan.style.cssText = 'font-weight:700;color:var(--primary);';
               nowSpan.textContent = currency + offerNum.toFixed(2);
-              wrap.appendChild(was);
-              wrap.appendChild(nowSpan);
+              priceRow.appendChild(was);
+              priceRow.appendChild(nowSpan);
             } else {
               const span = document.createElement('span');
               span.style.cssText = 'font-weight:700;color:var(--primary);';
               span.textContent = currency + rrp.toFixed(2);
-              wrap.appendChild(span);
+              priceRow.appendChild(span);
+            }
+
+            // This grid always shows HQ's own RRP/offer above — never a
+            // store's override. When one or more stores currently have
+            // their own price running for this item, surface that as a
+            // small pill rather than silently hiding it, so HQ staff know
+            // local pricing is in effect without the grid lying about
+            // "the" price.
+            const localStores = getStoresWithLocalOffer(item.sku);
+            const wrap = document.createElement('div');
+            wrap.style.cssText = 'display:flex;flex-direction:column;justify-content:center;gap:3px;height:100%;';
+            wrap.appendChild(priceRow);
+            if (localStores.length) {
+              const pill = document.createElement('span');
+              pill.textContent = localStores.length === 1 ? 'Local offer' : `Local offer ×${localStores.length}`;
+              pill.title = `${localStores.join(', ')} ${localStores.length === 1 ? 'is' : 'are'} running a different price for this item — click to view`;
+              pill.style.cssText = 'display:inline-flex;align-items:center;width:fit-content;padding:1px 7px;border-radius:9px;background:#f9f0ff;color:#722ed1;border:1px solid #d3adf7;font-size:10px;font-weight:700;cursor:pointer;letter-spacing:0.2px;';
+              pill.addEventListener('click', (e) => {
+                e.stopPropagation();
+                location.href = 'product/#/products/' + item.id + '/pricing?filter=local';
+              });
+              wrap.appendChild(pill);
             }
             return wrap;
           }
@@ -2808,9 +2847,9 @@ function initGrids() {
                 : { label: 'Activate',   action: () => bulkSetActive(true,  [item.id]) },
               item.featured
                 ? { label: 'Unfeature', action: () => bulkSetFeatured(false, [item.id]) }
-                : { label: 'Feature',   action: () => bulkSetFeatured(true,  [item.id]) },
+                : (item.active ? { label: 'Feature', action: () => bulkSetFeatured(true, [item.id]) } : null),
               { label: 'Delete', action: () => confirmDelete(item.id, item.name), danger: true }
-            ]));
+            ].filter(Boolean)));
             return btn;
           }
         }
@@ -2852,7 +2891,7 @@ function updateItemsSelectionBar() {
     const hasActive     = selected.some(i => i.active);
     const hasInactive    = selected.some(i => !i.active);
     const hasFeatured   = selected.some(i => i.featured);
-    const hasUnfeatured = selected.some(i => !i.featured);
+    const hasUnfeatured = selected.some(i => i.active && !i.featured);
     activateBtn.style.display   = hasInactive ? '' : 'none';
     deactivateBtn.style.display = hasActive ? '' : 'none';
     featureBtn.style.display    = hasUnfeatured ? '' : 'none';
@@ -2933,7 +2972,19 @@ function bulkSetActive(active, itemIds) {
   }
   const now = new Date().toISOString();
   const items = getItems();
-  items.forEach(i => { if (ids.has(i.id)) { i.active = active; i.updatedAt = now; } });
+  items.forEach(i => {
+    if (!ids.has(i.id)) return;
+    i.active = active;
+    // Keep the newer `status` string (read by the Product Details page)
+    // in sync with this legacy boolean toggle \u2014 otherwise an item
+    // deactivated here still shows "Active" on its own details page,
+    // since that page trusts an existing `status` field over `active`.
+    i.status = active ? 'Active' : 'Inactive';
+    // An inactive item can't be featured anywhere \u2014 clear it here so the
+    // grid, menu boards and Retail Admin don't keep treating it as one.
+    if (!active) i.featured = false;
+    i.updatedAt = now;
+  });
   saveItems(items);
   renderItems();
   toast(active ? `\u2705 ${ids.size} item${ids.size !== 1 ? 's' : ''} activated` : `\u26D4 ${ids.size} item${ids.size !== 1 ? 's' : ''} deactivated`, active ? 'success' : 'info');
@@ -2958,8 +3009,19 @@ function bulkSetFeatured(featured, itemIds) {
   }
   const now = new Date().toISOString();
   const items = getItems();
+  // Inactive items can't be featured \u2014 silently drop them from a
+  // "Feature" bulk action (Unfeature is unaffected, it only ever turns
+  // the flag off).
+  const skippedInactive = featured ? [...ids].filter(id => {
+    const it = items.find(i => i.id === id);
+    return it && !it.active;
+  }).length : 0;
   const touchedBrands = new Set(touchedBrandItems.map(r => r.brand).filter(Boolean));
-  items.forEach(i => { if (ids.has(i.id)) { i.featured = featured; i.updatedAt = now; } });
+  items.forEach(i => {
+    if (!ids.has(i.id)) return;
+    if (featured && !i.active) return;
+    i.featured = featured; i.updatedAt = now;
+  });
   saveItems(items);
   renderItems();
 
@@ -2973,12 +3035,14 @@ function bulkSetFeatured(featured, itemIds) {
     }
   });
 
+  const changed = ids.size - skippedInactive;
   let msg = featured
-    ? `\u2B50 ${ids.size} item${ids.size !== 1 ? 's' : ''} featured`
+    ? `\u2B50 ${changed} item${changed !== 1 ? 's' : ''} featured`
     : `${ids.size} item${ids.size !== 1 ? 's' : ''} unfeatured`;
+  if (skippedInactive) msg += ` \u2014 ${skippedInactive} skipped (inactive items can't be featured)`;
   if (shortfalls.length) {
     msg += ` \u2014 \u26A0\uFE0F ${shortfalls.join(', ')} featured (need 3 to activate Local Feature Highlight; default template shows until then)`;
-  } else if (featured) {
+  } else if (featured && changed) {
     msg += ` \u2014 Local Feature Highlight is active`;
   }
   toast(msg, shortfalls.length ? 'info' : (featured ? 'success' : 'info'));
@@ -4913,6 +4977,13 @@ onSnapshot(doc(db, MB, 'settings'), snap => {
 onSnapshot(collection(db, STOCK_COLL), snapshot => {
   _allStock = {};
   snapshot.forEach(d => { _allStock[d.id] = d.data(); });
+});
+
+onSnapshot(collection(db, STORE_PRICING_COLL), snapshot => {
+  _allStorePricing = {};
+  snapshot.forEach(d => { _allStorePricing[d.id] = d.data(); });
+  _rebuildSkuLocalOfferStores();
+  if (itemsGridApi) itemsGridApi.refreshCells({ columns: ['price'], force: true });
 });
 
 showView(localStorage.getItem('hqAdminView') || 'items');

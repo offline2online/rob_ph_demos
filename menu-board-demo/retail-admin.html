@@ -1195,6 +1195,10 @@ function saveLocalFeatured(obj) {
 }
 
 function toggleLocalFeatured(sku) {
+  if (!_localFeatured[sku] && isOos(sku)) {
+    toast('⛔ Can’t feature an item that’s out of stock', 'error');
+    return;
+  }
   const next = { ..._localFeatured, [sku]: !_localFeatured[sku] };
   if (!next[sku]) delete next[sku];
   saveLocalFeatured(next);
@@ -1328,6 +1332,18 @@ function saveStock(s) {
 function isOos(sku) {
   const stock = getStock();
   return !!(stock[sku] && stock[sku].outOfStock);
+}
+
+// An item that's out of stock (or not stocked here) can't stay locally
+// featured — call this right after any write that may have flipped
+// outOfStock/notStocked to true. Returns true if it actually cleared a
+// featured pick, so the caller can fold a warning into its own toast.
+function _clearFeaturedIfOos(sku, isUnavailable) {
+  if (!isUnavailable || !_localFeatured[sku]) return false;
+  const next = { ..._localFeatured };
+  delete next[sku];
+  saveLocalFeatured(next);
+  return true;
 }
 
 function isNotStocked(sku) {
@@ -1551,11 +1567,16 @@ function initGrid() {
           const featured = isLocalFeatured(item.sku);
           const star = document.createElement('span');
           star.textContent = featured ? '⭐' : '☆';
-          star.title = featured
-            ? 'Locally featured — click to remove from this store’s Local Feature Highlight picks'
-            : 'Click to feature this item locally (Local Feature Highlight)';
-          star.style.cssText = `cursor:pointer;font-size:17px;line-height:1;user-select:none;opacity:${featured ? '1' : '.45'};`;
-          star.addEventListener('click', () => toggleLocalFeatured(item.sku));
+          if (oos) {
+            star.title = 'Can’t feature an item that’s out of stock';
+            star.style.cssText = 'cursor:not-allowed;font-size:17px;line-height:1;user-select:none;opacity:.25;';
+          } else {
+            star.title = featured
+              ? 'Locally featured — click to remove from this store’s Local Feature Highlight picks'
+              : 'Click to feature this item locally (Local Feature Highlight)';
+            star.style.cssText = `cursor:pointer;font-size:17px;line-height:1;user-select:none;opacity:${featured ? '1' : '.45'};`;
+            star.addEventListener('click', () => toggleLocalFeatured(item.sku));
+          }
           pillRow.appendChild(star);
 
           wrap.appendChild(pillRow);
@@ -1579,6 +1600,7 @@ function initGrid() {
 function updateSummaryBar() {
   const allItems = getItems();
   const visibleItems = allItems.filter(i => {
+    if (!i.active) return false;
     if (!i.brand) return true;
     const brand = _brands.find(b => b.id === i.brand);
     if (!brand) return true;
@@ -1610,8 +1632,10 @@ function updateSummaryBar() {
 function renderItems() {
   const allItems = getItems();
 
-  // Filter by brand-store assignment
+  // Filter by active status and brand-store assignment — an item HQ has
+  // deactivated has no place in a store's operational list at all.
   const visibleItems = allItems.filter(i => {
+    if (!i.active) return false;
     if (!i.brand) return true;
     const brand = _brands.find(b => b.id === i.brand);
     if (!brand) return true;
@@ -1623,9 +1647,8 @@ function renderItems() {
 
   if (!storeItemsGridApi) return;
 
-  // Sort: active first, not-stocked last, then alphabetically
+  // Sort: not-stocked last, then alphabetically (all rows are active now)
   const sorted = [...visibleItems].sort((a, b) => {
-    if (a.active !== b.active) return a.active ? -1 : 1;
     const aNs = isNotStocked(a.sku), bNs = isNotStocked(b.sku);
     if (aNs !== bNs) return aNs ? 1 : -1;
     return a.name.localeCompare(b.name);
@@ -1750,6 +1773,8 @@ function doStockAction() {
   };
 
   saveStock(stock);
+  const unfeaturedWarning = _clearFeaturedIfOos(sku, outOfStock || notStocked);
+
   closeConfirm();
   renderItems();
 
@@ -1757,6 +1782,7 @@ function doStockAction() {
   if (notStocked) { msg = '🚫 Marked as not stocked here'; type = 'info'; }
   else if (outOfStock) { msg = '⛔ Item marked as Out of Stock'; type = 'error'; }
   else { msg = '✅ Item marked as In Stock'; type = 'success'; }
+  if (unfeaturedWarning) msg += ' — ⭐ also removed from this store’s Local Feature Highlight picks';
   toast(msg, type);
 }
 
@@ -1948,10 +1974,13 @@ function quickStockAdjust(delta) {
     stockHistory: [...(existing.stockHistory || []), entry]
   };
 
+  const unfeaturedWarning = _clearFeaturedIfOos(_modalSku, newTotal === 0);
   saveStock(stock).then(() => {
     _renderStockPane(_modalSku);
     const sign = delta >= 0 ? '+' : '';
-    toast(`Stock adjusted (${sign}${delta}) — ${newTotal} units in stock`, delta >= 0 ? 'success' : 'info');
+    let msg = `Stock adjusted (${sign}${delta}) — ${newTotal} units in stock`;
+    if (unfeaturedWarning) msg += ' — ⭐ also removed from this store’s Local Feature Highlight picks';
+    toast(msg, delta >= 0 ? 'success' : 'info');
   });
 }
 
@@ -1998,10 +2027,13 @@ function saveEditedStock() {
     stockHistory: [...(existing.stockHistory || []), entry]
   };
 
+  const unfeaturedWarning = _clearFeaturedIfOos(_modalSku, newQty === 0);
   saveStock(stock).then(() => {
     closeEditStockOverlay();
     _renderStockPane(_modalSku);
-    toast(`Stock corrected: ${oldQty} → ${newQty} units`, 'success');
+    let msg = `Stock corrected: ${oldQty} → ${newQty} units`;
+    if (unfeaturedWarning) msg += ' — ⭐ also removed from this store’s Local Feature Highlight picks';
+    toast(msg, 'success');
   });
 }
 

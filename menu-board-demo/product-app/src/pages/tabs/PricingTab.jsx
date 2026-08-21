@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
-import { Input, InputNumber, Table, Button, App } from 'antd';
+import { useSearchParams } from 'react-router-dom';
+import { Input, InputNumber, Table, Button, App, Tag } from 'antd';
 import MaterialIcon from '../../components/MaterialIcon.jsx';
 import ClearableDate from '../../components/ClearableDate.jsx';
 import OfferBanner from '../../components/OfferBanner.jsx';
@@ -37,6 +38,17 @@ export default function PricingTab({ draft, baseline, setDraft, setBaseline }) {
   const { message } = App.useApp();
   const [unlocked, setUnlocked] = useState(false);
   const [reason, setReason] = useState('');
+  const [searchParams, setSearchParams] = useSearchParams();
+  // Arriving here from the "Local offer" pill on the HQ Admin grid — jump
+  // straight to only the store-originated log entries so HQ staff can see
+  // which store(s) are running a different price, without wading through
+  // every HQ Admin edit too.
+  const localOnly = searchParams.get('filter') === 'local';
+  const clearLocalFilter = () => {
+    const next = new URLSearchParams(searchParams);
+    next.delete('filter');
+    setSearchParams(next, { replace: true });
+  };
 
   const rrpChanged = String(draft.rrp) !== String(baseline.rrp);
   const offerChanged = String(draft.offerPrice || '') !== String(baseline.offerPrice || '');
@@ -105,6 +117,7 @@ export default function PricingTab({ draft, baseline, setDraft, setBaseline }) {
   }, [draft.priceLog]);
   const hqCount = log.filter((e) => e.src === 'HQ Admin').length;
   const storeCount = log.length - hqCount;
+  const filteredLog = localOnly ? log.filter((e) => e.src !== 'HQ Admin') : log;
 
   const columns = useMemo(
     () => [
@@ -277,8 +290,13 @@ export default function PricingTab({ draft, baseline, setDraft, setBaseline }) {
           Price Change History
         </div>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-          <span style={{ fontSize: 12, color: 'rgba(0,0,0,.45)' }}>
+          <span style={{ fontSize: 12, color: 'rgba(0,0,0,.45)', display: 'flex', alignItems: 'center', gap: 8 }}>
             {log.length} price change{log.length === 1 ? '' : 's'} · {hqCount} from HQ Admin, {storeCount} from stores
+            {localOnly && (
+              <Tag color="purple" closable onClose={(e) => { e.preventDefault(); clearLocalFilter(); }}>
+                Showing store pricing only
+              </Tag>
+            )}
           </span>
           <Button type="link" style={{ padding: 0 }}>
             Export history
@@ -286,7 +304,7 @@ export default function PricingTab({ draft, baseline, setDraft, setBaseline }) {
         </div>
         <Table
           rowKey={(r, i) => i}
-          dataSource={log}
+          dataSource={filteredLog}
           columns={columns}
           size="middle"
           bordered={false}

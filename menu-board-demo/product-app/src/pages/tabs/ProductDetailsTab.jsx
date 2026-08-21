@@ -126,13 +126,16 @@ export default function ProductDetailsTab({ draft, patch, onGoPricing }) {
           >
             <Select
               value={draft.status}
-              onChange={(v) => patch({ status: v })}
+              onChange={(v) => patch(v === 'Active' ? { status: v } : { status: v, featured: false })}
               options={['Draft', 'Active', 'Inactive', 'Archived'].map((s) => ({ value: s, label: s }))}
             />
           </Field>
-          <Field label="Featured item" hint="Drives hero placement on boards and in campaign creative.">
+          <Field
+            label="Featured item"
+            hint={draft.status === 'Active' ? 'Drives hero placement on boards and in campaign creative.' : 'Only Active products can be featured.'}
+          >
             <div style={{ marginTop: 4 }}>
-              <Switch checked={draft.featured} onChange={(v) => patch({ featured: v })} />
+              <Switch checked={draft.featured} disabled={draft.status !== 'Active'} onChange={(v) => patch({ featured: v })} />
             </div>
           </Field>
           {draft.featured && (
