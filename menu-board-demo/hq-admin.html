@@ -2664,7 +2664,7 @@ function initGrids() {
             const until = item.offerUntil ? new Date(item.offerUntil) : null;
             const isLive = offerNum > 0 && !(until && until < now) && !(from && from > now);
             const wrap = document.createElement('div');
-            wrap.style.cssText = 'display:flex;align-items:baseline;gap:6px;height:100%;';
+            wrap.style.cssText = 'display:flex;align-items:center;gap:6px;height:100%;';
             if (isLive) {
               const was = document.createElement('span');
               was.style.cssText = 'text-decoration:line-through;color:var(--text2);font-weight:400;font-size:11px;';
@@ -2685,6 +2685,7 @@ function initGrids() {
         },
         {
           headerName: 'Brand', field: 'brand', flex: 1.5, minWidth: 110,
+          cellStyle: { display: 'flex', alignItems: 'center' },
           filter: CheckboxSetFilter,
           sort: 'asc',
           // Sort by the brand's display NAME rather than its raw id — field
@@ -2711,15 +2712,17 @@ function initGrids() {
         },
         {
           headerName: 'SKU', field: 'sku', flex: 1.2, minWidth: 100,
-          cellStyle: { fontFamily: 'monospace', fontSize: '11px', color: 'var(--text2)' }
+          cellStyle: { fontFamily: 'monospace', fontSize: '11px', color: 'var(--text2)', display: 'flex', alignItems: 'center' }
         },
         {
           headerName: 'Category', field: 'category', flex: 1.2, minWidth: 110,
+          cellStyle: { display: 'flex', alignItems: 'center' },
           filter: CheckboxSetFilter,
           valueFormatter: (params) => String(params.value || '')
         },
         {
           headerName: 'Types', field: 'menuTypes', flex: 1.5, minWidth: 140,
+          cellStyle: { display: 'flex', alignItems: 'center' },
           sortable: false,
           autoHeight: true,
           filter: CheckboxSetFilter,
@@ -2793,6 +2796,7 @@ function initGrids() {
         {
           headerName: 'Actions', field: 'id', flex: 0.6, minWidth: 70,
           filter: false, sortable: false,
+          cellStyle: { display: 'flex', alignItems: 'center', justifyContent: 'center' },
           cellRenderer: (params) => {
             const item = params.data;
             const btn = document.createElement('button');

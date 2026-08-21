@@ -960,9 +960,9 @@
           </div>
           <div id="priceOfferBanner" style="display:none;border-radius:6px;padding:10px 12px;font-size:13px;margin-top:12px;"></div>
           <div class="field" style="margin-top:12px;">
-            <label for="priceReason">Reason for this change</label>
+            <label for="priceReason">Reason for this change <span style="color:var(--danger);font-weight:700;">*</span></label>
             <input type="text" id="priceReason" placeholder="Why is this pricing changing?" oninput="_onPricingFieldChange()">
-            <p style="font-size:11px;color:var(--text2);margin-top:4px;">Required to save — recorded in the price change log below.</p>
+            <p style="font-size:11px;color:var(--text2);margin-top:4px;">Always required — the <b>Save price change</b> button below only turns on once you've both changed a price field above <i>and</i> filled this in.</p>
           </div>
         </div>
 
@@ -974,7 +974,7 @@
         </div>
 
         <div style="display:flex;align-items:center;gap:10px;padding-top:6px;">
-          <span id="priceSaveHelper" style="font-size:12px;color:var(--text2);flex:1;">No changes to save.</span>
+          <span id="priceSaveHelper" style="font-size:12px;color:var(--text2);flex:1;">No changes to save yet — edit RRP, offer price, dates or the menu board copy above to start.</span>
           <button class="btn btn-ghost btn-sm" id="priceDiscardBtn" onclick="_discardPricingChange()" disabled>Discard</button>
           <button class="btn btn-primary btn-sm" id="priceSaveBtn" onclick="savePricingChange()" disabled>&#x1F4BE; Save price change</button>
         </div>
@@ -1418,6 +1418,7 @@ function initGrid() {
       },
       {
         headerName: 'Category', field: 'category', flex: 1.2, minWidth: 120,
+        cellStyle: { display: 'flex', alignItems: 'center' },
         filter: CheckboxSetFilter
       },
       {
@@ -1456,7 +1457,7 @@ function initGrid() {
       {
         headerName: 'Ingredients', flex: 1.5, minWidth: 130,
         valueGetter: (p) => (p.data.ingredients || []).join(', ') || '\u2014',
-        cellStyle: { fontSize: '12px', color: 'var(--text2)' }
+        cellStyle: { fontSize: '12px', color: 'var(--text2)', display: 'flex', alignItems: 'center' }
       },
       {
         // Shows this store's own effective price — its saved override if
@@ -1480,7 +1481,7 @@ function initGrid() {
           const offerNum = parseFloat(eff.offerPrice);
           const live = _isOfferLive(eff.price, eff.offerPrice, eff.offerFrom, eff.offerUntil);
           const wrap = document.createElement('div');
-          wrap.style.cssText = 'display:flex;align-items:baseline;gap:6px;height:100%;';
+          wrap.style.cssText = 'display:flex;align-items:center;gap:6px;height:100%;';
           if (live) {
             const was = document.createElement('span');
             was.style.cssText = 'text-decoration:line-through;color:var(--text2);font-weight:400;font-size:11px;';
@@ -2109,16 +2110,25 @@ function _refreshOfferBanner() {
 }
 
 function _refreshPricingSaveState() {
-  const reason = (document.getElementById('priceReason').value || '').trim();
+  const reasonInput = document.getElementById('priceReason');
+  const reason = (reasonInput.value || '').trim();
   const dirty = _pricingDirty();
   const saveBtn = document.getElementById('priceSaveBtn');
   const discardBtn = document.getElementById('priceDiscardBtn');
   const helper = document.getElementById('priceSaveHelper');
+  // The Save CTA only ever turns on when BOTH conditions hold: something
+  // was actually changed, and a reason has been given for it.
   saveBtn.disabled = !(dirty && reason);
   discardBtn.disabled = !dirty;
-  if (!dirty) helper.textContent = 'No changes to save. Editing RRP, offer price, dates or the menu board copy enables the save.';
-  else if (!reason) helper.textContent = 'Unsaved price change — enter a reason above to enable saving.';
-  else helper.textContent = 'Unsaved price change — ready to save.';
+  // Blocking-on-reason is the one state worth calling out on the field
+  // itself, not just in the helper text below — dirty with no reason yet
+  // is the exact moment a store manager needs that nudge.
+  const blockedOnReason = dirty && !reason;
+  reasonInput.style.borderColor = blockedOnReason ? 'var(--danger)' : '';
+  reasonInput.style.background = blockedOnReason ? 'var(--danger-light)' : '';
+  if (!dirty) helper.textContent = 'No changes to save yet — edit RRP, offer price, dates or the menu board copy above to start.';
+  else if (!reason) helper.textContent = '⚠️ Enter a reason above — the Save button stays off until you do.';
+  else helper.textContent = '✅ Ready to save.';
 }
 
 function _onPricingFieldChange() {
