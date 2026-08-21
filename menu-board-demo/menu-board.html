@@ -330,6 +330,12 @@
        product info. */
     .menu-board-note {
       display: inline-block;
+      /* Only takes effect where this sits inside a flex column (the
+         Featured Item board's hero and promo-tile text blocks) — without
+         it, those containers' default align-items:stretch would widen the
+         pill's background to the full column instead of hugging its own
+         text, the way it already does everywhere else. */
+      align-self: flex-start;
       margin-top: clamp(5px, 0.65vw, 10px);
       padding: clamp(4px, 0.5vw, 8px) clamp(10px, 1.2vw, 18px);
       background: #fff7e6;

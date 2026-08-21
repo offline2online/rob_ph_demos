@@ -70,13 +70,15 @@ async function sweepExpiredOffers() {
 
     const currency = currencyFor(item);
     const rrp = parseFloat(item.price || 0);
+    const hadMenuBoardCopy = !!item.showOnMenuBoard;
     const p = patchFor({ id: doc.id, ref: doc.ref, priceLog: item.priceLog });
     p.priceLog = [{
       when: now.toISOString(), src: 'HQ Admin', store: '', by: 'System',
       fieldName: 'Offer price', old: currency + offerNum.toFixed(2), neu: '—',
-      reason: `Offer expired (was scheduled until ${fmtDate(item.offerUntil)}) — automatically reverted to RRP ${currency}${rrp.toFixed(2)}`,
+      reason: `Offer expired (was scheduled until ${fmtDate(item.offerUntil)}) — automatically reverted to RRP ${currency}${rrp.toFixed(2)}`
+        + (hadMenuBoardCopy ? '; menu board promo copy cleared' : ''),
     }, ...p.priceLog];
-    Object.assign(p.fieldPatch, { offerPrice: null, offerFrom: '', offerUntil: '', updatedAt: now.toISOString() });
+    Object.assign(p.fieldPatch, { offerPrice: null, offerFrom: '', offerUntil: '', showOnMenuBoard: '', updatedAt: now.toISOString() });
   }
 
   // Every store's own override, scoped to that store's own storePricing
@@ -101,16 +103,19 @@ async function sweepExpiredOffers() {
 
       const currency = currencyFor(item);
       const rrp = parseFloat(o.price != null ? o.price : (item.price || 0));
+      const hadMenuBoardCopy = !!o.showOnMenuBoard;
       const p = patchFor(item);
       p.priceLog = [{
         when: now.toISOString(), src: storeCode, store: storeCode, by: 'System',
         fieldName: 'Offer price', old: currency + offerNum.toFixed(2), neu: '—',
-        reason: `Offer expired (was scheduled until ${fmtDate(o.offerUntil)}) — automatically reverted to RRP ${currency}${rrp.toFixed(2)}`,
+        reason: `Offer expired (was scheduled until ${fmtDate(o.offerUntil)}) — automatically reverted to RRP ${currency}${rrp.toFixed(2)}`
+          + (hadMenuBoardCopy ? '; menu board promo copy cleared' : ''),
       }, ...p.priceLog];
 
       patch[`${sku}.offerPrice`] = null;
       patch[`${sku}.offerFrom`] = '';
       patch[`${sku}.offerUntil`] = '';
+      patch[`${sku}.showOnMenuBoard`] = '';
       patch[`${sku}.updatedAt`] = now.toISOString();
       storeChanged = true;
     }

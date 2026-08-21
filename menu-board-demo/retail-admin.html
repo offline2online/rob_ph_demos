@@ -1495,6 +1495,7 @@ function initGrid() {
           const wrap = document.createElement('div');
           wrap.style.cssText = 'display:flex;align-items:center;gap:6px;height:100%;';
           if (live) {
+            wrap.title = _offerTooltip(currency, rrp, offerNum, eff.offerFrom, eff.offerUntil);
             const was = document.createElement('span');
             was.style.cssText = 'text-decoration:line-through;color:var(--text2);font-weight:400;font-size:11px;';
             was.textContent = currency + rrp.toFixed(2);
@@ -2100,6 +2101,20 @@ function _fmtPriceDateVal(v) {
   if (isNaN(d.getTime())) return String(v);
   return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) +
     (v.includes('T') ? ' ' + d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) : '');
+}
+
+// Tooltip text for a live offer's price cell — the RRP/offer values shown
+// in the cell already say "there's a discount," but not when it started or
+// ends; hovering fills that in without needing a whole extra column.
+function _offerTooltip(currency, rrp, offerNum, offerFrom, offerUntil) {
+  const from = offerFrom ? _fmtPriceDateVal(offerFrom) : null;
+  const until = offerUntil ? _fmtPriceDateVal(offerUntil) : null;
+  let schedule;
+  if (from && until) schedule = `Scheduled ${from} — ${until}`;
+  else if (until) schedule = `Runs until ${until}`;
+  else if (from) schedule = `Started ${from}, runs until removed`;
+  else schedule = 'Runs until removed (no end date set)';
+  return `Offer price: ${currency}${offerNum.toFixed(2)} (was ${currency}${rrp.toFixed(2)})\n${schedule}`;
 }
 
 // ── Date + time field pair ────────────────────────────────────────────────
