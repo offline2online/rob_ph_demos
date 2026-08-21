@@ -1478,7 +1478,16 @@ function initGrid() {
         // sort/filter working off the raw HQ value; the cellRenderer is
         // what actually displays the effective, possibly-overridden one.
         headerName: 'Price', field: 'price', flex: 0.9, minWidth: 90,
-        filter: 'agNumberColumnFilter',
+        filter: CheckboxSetFilter,
+        // Offer-running is a yes/no state, not a numeric range, so this
+        // trades the usual agNumberColumnFilter for the same checkbox-tag
+        // pattern Status/Menu Types already use — lets staff filter the
+        // table down to just the items with a live offer right now
+        // (using this store's own effective price, same as the cell).
+        getFilterValue: (data) => {
+          const eff = _effectivePricing(data);
+          return _isOfferLive(eff.price, eff.offerPrice, eff.offerFrom, eff.offerUntil) ? ['Offer running'] : ['No offer'];
+        },
         valueFormatter: (p) => {
           const itemBrand = _brands.find(b => b.id === p.data.brand);
           const currency = (itemBrand && itemBrand.currency) ? itemBrand.currency : (getSettings().currency || '$');
@@ -1493,7 +1502,9 @@ function initGrid() {
           const offerNum = parseFloat(eff.offerPrice);
           const live = _isOfferLive(eff.price, eff.offerPrice, eff.offerFrom, eff.offerUntil);
           const wrap = document.createElement('div');
-          wrap.style.cssText = 'display:flex;align-items:center;gap:6px;height:100%;';
+          wrap.style.cssText = 'display:flex;align-items:center;gap:6px;height:100%;cursor:pointer;';
+          wrap.title = 'Click to view pricing';
+          wrap.addEventListener('click', () => openItemModal(item.sku));
           if (live) {
             wrap.title = _offerTooltip(currency, rrp, offerNum, eff.offerFrom, eff.offerUntil);
             const was = document.createElement('span');

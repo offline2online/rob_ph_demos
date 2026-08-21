@@ -1634,16 +1634,36 @@ function deleteLangEntry(code) {
 window.deleteLangEntry = deleteLangEntry;
 let _allStock    = {};
 let _allStorePricing = {};
-// sku -> [storeCode, ...] currently running their own price override —
-// rebuilt whenever _allStorePricing changes, so the Price column's "Local
-// offer" pill lookup stays O(1) instead of scanning every store per row.
+// sku -> [storeCode, ...] currently running a price that's actually
+// different from HQ's own — rebuilt whenever _allStorePricing or _items
+// changes, so the Price column's "Local offer" pill lookup stays O(1)
+// instead of scanning every store per row.
+//
+// A storePricing entry existing at all isn't enough on its own: once an
+// offer expires (cleared back to plain RRP by the scheduled backend sweep)
+// or a store's override price is edited back to match HQ's, the entry
+// itself is left in place with nothing left to say — showing the pill for
+// it would tell HQ staff a store is running different pricing when it
+// isn't anymore.
 let _skuLocalOfferStores = {};
 function _rebuildSkuLocalOfferStores() {
   const map = {};
+  const itemsBySku = {};
+  getItems().forEach(i => { itemsBySku[i.sku] = i; });
+  const now = new Date();
   Object.keys(_allStorePricing).forEach(storeCode => {
     const overrides = _allStorePricing[storeCode] || {};
     Object.keys(overrides).forEach(sku => {
-      (map[sku] || (map[sku] = [])).push(storeCode);
+      const o = overrides[sku];
+      const item = itemsBySku[sku];
+      const offerNum = parseFloat(o.offerPrice);
+      const until = o.offerUntil ? new Date(o.offerUntil) : null;
+      const from = o.offerFrom ? new Date(o.offerFrom) : null;
+      const hasLiveOffer = offerNum > 0 && !(until && until < now) && !(from && from > now);
+      const priceDiffers = item && parseFloat(o.price) !== parseFloat(item.price || 0);
+      if (hasLiveOffer || priceDiffers) {
+        (map[sku] || (map[sku] = [])).push(storeCode);
+      }
     });
   });
   _skuLocalOfferStores = map;
@@ -2687,7 +2707,20 @@ function initGrids() {
         },
         {
           headerName: 'Price', field: 'price', flex: 1, minWidth: 80,
-          filter: 'agNumberColumnFilter',
+          filter: CheckboxSetFilter,
+          // Offer-running is a yes/no state, not a numeric range, so this
+          // trades the usual agNumberColumnFilter for the same
+          // checkbox-tag pattern Status/Types already use — lets staff
+          // filter the table down to just the items with a live offer
+          // right now.
+          getFilterValue: (data) => {
+            const offerNum = parseFloat(data.offerPrice);
+            const now = new Date();
+            const from = data.offerFrom ? new Date(data.offerFrom) : null;
+            const until = data.offerUntil ? new Date(data.offerUntil) : null;
+            const isLive = offerNum > 0 && !(until && until < now) && !(from && from > now);
+            return isLive ? ['Offer running'] : ['No offer'];
+          },
           valueFormatter: (params) => {
             const brands = getBrands();
             const itemBrand = brands.find(b => b.id === params.data.brand);
@@ -2736,7 +2769,16 @@ function initGrids() {
             // "the" price.
             const localStores = getStoresWithLocalOffer(item.sku);
             const wrap = document.createElement('div');
-            wrap.style.cssText = 'display:flex;flex-direction:column;justify-content:center;gap:3px;height:100%;';
+            // flex-start (not center) so the price sits right at the top of
+            // the row, same as the Item column's title — centering left the
+            // price+pill block floating mid-row against the taller Item
+            // cell next to it, which read as a much bigger gap between the
+            // price and the pill than the 3px actually between them.
+            wrap.style.cssText = 'display:flex;flex-direction:column;justify-content:flex-start;gap:3px;height:100%;padding:4px 0;cursor:pointer;';
+            wrap.title = 'Click to view pricing';
+            wrap.addEventListener('click', () => {
+              location.href = 'product/#/products/' + item.id + '/pricing';
+            });
             wrap.appendChild(priceRow);
             if (localStores.length) {
               const pill = document.createElement('span');
@@ -4954,6 +4996,7 @@ initGrids();
 // ===== FIRESTORE LISTENERS + INIT =====
 onSnapshot(collection(db, ITEMS_COLL), snap => {
   _items = snap.docs.map(d => d.data()).sort((a, b) => (a.createdAt || '').localeCompare(b.createdAt || ''));
+  _rebuildSkuLocalOfferStores();
   // Always update items grid if initialised (preserves filter state via renderItems)
   if (itemsGridApi) renderItems();
   else document.getElementById('itemsCount').textContent = _items.length;
