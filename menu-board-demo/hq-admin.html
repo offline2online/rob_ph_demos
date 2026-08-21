@@ -2697,7 +2697,40 @@ function initGrids() {
             const currency = (itemBrand && itemBrand.currency) ? itemBrand.currency : ((brands[0] && brands[0].currency) ? brands[0].currency : '$');
             return currency + parseFloat(params.value || 0).toFixed(2);
           },
-          cellStyle: { fontWeight: '700', color: 'var(--primary)' }
+          // A live offer (offerPrice set, and within offerFrom/offerUntil if
+          // given) shows as struck-through RRP + offer price, same "live"
+          // rule as the Pricing tab's OfferBanner — so the table and the
+          // product page never disagree about whether an offer is active.
+          cellRenderer: (params) => {
+            const item = params.data;
+            const brands = getBrands();
+            const itemBrand = brands.find(b => b.id === item.brand);
+            const currency = (itemBrand && itemBrand.currency) ? itemBrand.currency : ((brands[0] && brands[0].currency) ? brands[0].currency : '$');
+            const rrp = parseFloat(item.price || 0);
+            const offerNum = parseFloat(item.offerPrice);
+            const now = new Date();
+            const from = item.offerFrom ? new Date(item.offerFrom) : null;
+            const until = item.offerUntil ? new Date(item.offerUntil) : null;
+            const isLive = offerNum > 0 && !(until && until < now) && !(from && from > now);
+            const wrap = document.createElement('div');
+            wrap.style.cssText = 'display:flex;align-items:baseline;gap:6px;height:100%;';
+            if (isLive) {
+              const was = document.createElement('span');
+              was.style.cssText = 'text-decoration:line-through;color:var(--text2);font-weight:400;font-size:11px;';
+              was.textContent = currency + rrp.toFixed(2);
+              const nowSpan = document.createElement('span');
+              nowSpan.style.cssText = 'font-weight:700;color:var(--primary);';
+              nowSpan.textContent = currency + offerNum.toFixed(2);
+              wrap.appendChild(was);
+              wrap.appendChild(nowSpan);
+            } else {
+              const span = document.createElement('span');
+              span.style.cssText = 'font-weight:700;color:var(--primary);';
+              span.textContent = currency + rrp.toFixed(2);
+              wrap.appendChild(span);
+            }
+            return wrap;
+          }
         },
         {
           headerName: 'Status', colId: 'status', field: 'active', flex: 1.3, minWidth: 140,
@@ -2851,11 +2884,13 @@ function renderItems() {
   // settled yet when called synchronously right after.
   setTimeout(() => itemsGridApi?.refreshClientSideRowModel('sort'), 0);
   // The Status column's cellRenderer reads both `active` and `featured`,
-  // but AG Grid's row diffing decides whether to re-invoke a cellRenderer
-  // by comparing the colDef's own field ('active') — so toggling only
-  // `featured` (e.g. from the edit modal) updates the row's data but the
-  // Status cell's star silently stays stale until forced.
-  setTimeout(() => itemsGridApi?.refreshCells({ columns: ['status'], force: true }), 0);
+  // and the Price column's reads `offerPrice`/`offerFrom`/`offerUntil` on
+  // top of `price` — but AG Grid's row diffing decides whether to
+  // re-invoke a cellRenderer by comparing only the colDef's own field
+  // ('active', 'price'), so a change to just the other fields (e.g.
+  // setting an offer price with RRP unchanged) updates the row's data but
+  // the cell silently stays stale until forced.
+  setTimeout(() => itemsGridApi?.refreshCells({ columns: ['status', 'price'], force: true }), 0);
   if (fm && Object.keys(fm).length) {
     setTimeout(() => itemsGridApi?.setFilterModel(fm), 0);
   }
