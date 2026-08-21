@@ -54,6 +54,20 @@ function mapOptionGroups(raw) {
 }
 
 function mapImages(raw) {
+  // imagesRich is the source of truth once it exists — metadata only (no
+  // src; see toItemDoc()'s comment for why `images` itself has to stay a
+  // flat array of plain URL strings — the grid thumbnail, menu-board.html
+  // and location-api.html all read images[0] as a URL, not an object).
+  // Without a separate field to round-trip through, every save silently
+  // reset every image's variant name, tags, rights and A/B-testing flag
+  // back to fresh defaults on next load — the flat array carries none of
+  // that, so there was nowhere for it to survive a save at all. Paired
+  // back up positionally with `images` (same order, src stripped out to
+  // avoid storing every photo's base64 data twice and blowing Firestore's
+  // 1MB document limit).
+  if (raw.imagesRich && raw.imagesRich.length && raw.images && raw.imagesRich.length === raw.images.length) {
+    return raw.imagesRich.map((meta, i) => ({ ...meta, src: raw.images[i] }));
+  }
   if (raw.images && raw.images.length && typeof raw.images[0] === 'object') return raw.images;
   return (raw.images || []).map((src, i) => ({
     id: `img-${raw.id}-${i}`,
@@ -156,6 +170,22 @@ export function toItemDoc(product) {
         ? [imgs[defaultIdx], ...imgs.filter((_, i) => i !== defaultIdx)]
         : imgs;
       return ordered.map((img) => (typeof img === 'string' ? img : img.src)).filter(Boolean);
+    })(),
+    // Per-image metadata (variant, tags, rights, isDefault,
+    // availableForTesting, bgRemoved, enhanced) that `images` above can't
+    // carry — this app's own source of truth for the Assets tab. Deliberately
+    // excludes `src`: it's index-aligned with `images` (same reordering, same
+    // filter) and reconstructed from it on read, so a product's photos never
+    // get stored twice in the same document.
+    imagesRich: (() => {
+      const imgs = product.images || [];
+      const defaultIdx = imgs.findIndex((img) => img && typeof img === 'object' && img.isDefault);
+      const ordered = defaultIdx > 0
+        ? [imgs[defaultIdx], ...imgs.filter((_, i) => i !== defaultIdx)]
+        : imgs;
+      return ordered
+        .filter((img) => img && typeof img === 'object' && img.src)
+        .map(({ src, ...meta }) => meta);
     })(),
     calories: nutritionVal('Calories'),
     fat: nutritionVal('Fat'),
