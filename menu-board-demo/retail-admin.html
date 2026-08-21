@@ -1433,6 +1433,47 @@ function initGrid() {
         }
       },
       {
+        // Shows this store's own effective price — its saved override if
+        // it has one, otherwise HQ's current price — never another
+        // store's price. field:'price' (rather than a valueGetter) keeps
+        // sort/filter working off the raw HQ value; the cellRenderer is
+        // what actually displays the effective, possibly-overridden one.
+        headerName: 'Price', field: 'price', flex: 0.9, minWidth: 90,
+        filter: 'agNumberColumnFilter',
+        valueFormatter: (p) => {
+          const itemBrand = _brands.find(b => b.id === p.data.brand);
+          const currency = (itemBrand && itemBrand.currency) ? itemBrand.currency : (getSettings().currency || '$');
+          return currency + parseFloat(p.value || 0).toFixed(2);
+        },
+        cellRenderer: (params) => {
+          const item = params.data;
+          const itemBrand = _brands.find(b => b.id === item.brand);
+          const currency = (itemBrand && itemBrand.currency) ? itemBrand.currency : (getSettings().currency || '$');
+          const eff = _effectivePricing(item);
+          const rrp = parseFloat(eff.price || 0);
+          const offerNum = parseFloat(eff.offerPrice);
+          const live = _isOfferLive(eff.price, eff.offerPrice, eff.offerFrom, eff.offerUntil);
+          const wrap = document.createElement('div');
+          wrap.style.cssText = 'display:flex;align-items:center;gap:6px;height:100%;';
+          if (live) {
+            const was = document.createElement('span');
+            was.style.cssText = 'text-decoration:line-through;color:var(--text2);font-weight:400;font-size:11px;';
+            was.textContent = currency + rrp.toFixed(2);
+            const now = document.createElement('span');
+            now.style.cssText = 'font-weight:700;color:var(--primary);';
+            now.textContent = currency + offerNum.toFixed(2);
+            wrap.appendChild(was);
+            wrap.appendChild(now);
+          } else {
+            const span = document.createElement('span');
+            span.style.cssText = 'font-weight:700;color:var(--primary);';
+            span.textContent = currency + rrp.toFixed(2);
+            wrap.appendChild(span);
+          }
+          return wrap;
+        }
+      },
+      {
         headerName: 'Category', field: 'category', flex: 1.2, minWidth: 120,
         cellStyle: { display: 'flex', alignItems: 'center' },
         filter: CheckboxSetFilter
@@ -1474,47 +1515,6 @@ function initGrid() {
         headerName: 'Ingredients', flex: 1.5, minWidth: 130,
         valueGetter: (p) => (p.data.ingredients || []).join(', ') || '\u2014',
         cellStyle: { fontSize: '12px', color: 'var(--text2)', display: 'flex', alignItems: 'center' }
-      },
-      {
-        // Shows this store's own effective price — its saved override if
-        // it has one, otherwise HQ's current price — never another
-        // store's price. field:'price' (rather than a valueGetter) keeps
-        // sort/filter working off the raw HQ value; the cellRenderer is
-        // what actually displays the effective, possibly-overridden one.
-        headerName: 'Price', field: 'price', flex: 0.9, minWidth: 90,
-        filter: 'agNumberColumnFilter',
-        valueFormatter: (p) => {
-          const itemBrand = _brands.find(b => b.id === p.data.brand);
-          const currency = (itemBrand && itemBrand.currency) ? itemBrand.currency : (getSettings().currency || '$');
-          return currency + parseFloat(p.value || 0).toFixed(2);
-        },
-        cellRenderer: (params) => {
-          const item = params.data;
-          const itemBrand = _brands.find(b => b.id === item.brand);
-          const currency = (itemBrand && itemBrand.currency) ? itemBrand.currency : (getSettings().currency || '$');
-          const eff = _effectivePricing(item);
-          const rrp = parseFloat(eff.price || 0);
-          const offerNum = parseFloat(eff.offerPrice);
-          const live = _isOfferLive(eff.price, eff.offerPrice, eff.offerFrom, eff.offerUntil);
-          const wrap = document.createElement('div');
-          wrap.style.cssText = 'display:flex;align-items:center;gap:6px;height:100%;';
-          if (live) {
-            const was = document.createElement('span');
-            was.style.cssText = 'text-decoration:line-through;color:var(--text2);font-weight:400;font-size:11px;';
-            was.textContent = currency + rrp.toFixed(2);
-            const now = document.createElement('span');
-            now.style.cssText = 'font-weight:700;color:var(--primary);';
-            now.textContent = currency + offerNum.toFixed(2);
-            wrap.appendChild(was);
-            wrap.appendChild(now);
-          } else {
-            const span = document.createElement('span');
-            span.style.cssText = 'font-weight:700;color:var(--primary);';
-            span.textContent = currency + rrp.toFixed(2);
-            wrap.appendChild(span);
-          }
-          return wrap;
-        }
       },
       {
         headerName: 'Status', colId: 'status', flex: 1.8, minWidth: 200,
