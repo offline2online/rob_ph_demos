@@ -2770,7 +2770,7 @@ function initGrids() {
               const mt = getTypes().find(m => m.label === value) || getTypes().find(m => m.id === value);
               const color = mt ? mt.color : '#64748b';
               const span = document.createElement('span');
-              span.style.cssText = `display:inline-flex;align-items:center;padding:1px 5px;border-radius:10px;border:1px solid ${color};font-size:8px;font-weight:700;text-transform:uppercase;letter-spacing:0.3px;white-space:nowrap;color:${color};background:transparent;`;
+              span.style.cssText = `display:inline-flex;align-items:center;line-height:1;padding:3px 5px 2px;border-radius:10px;border:1px solid ${color};font-size:8px;font-weight:700;text-transform:uppercase;letter-spacing:0.3px;white-space:nowrap;color:${color};background:transparent;`;
               span.textContent = mt ? mt.label : value;
               return span;
             }
@@ -2787,7 +2787,7 @@ function initGrids() {
               const color = mt ? mt.color : '#64748b';
               const label = mt ? mt.label : t;
               const span = document.createElement('span');
-              span.style.cssText = `display:inline-flex;align-items:center;padding:1px 5px;border-radius:10px;border:1px solid ${color};font-size:8px;font-weight:700;text-transform:uppercase;letter-spacing:0.3px;white-space:nowrap;color:${color};background:transparent;flex-shrink:0;`;
+              span.style.cssText = `display:inline-flex;align-items:center;line-height:1;padding:3px 5px 2px;border-radius:10px;border:1px solid ${color};font-size:8px;font-weight:700;text-transform:uppercase;letter-spacing:0.3px;white-space:nowrap;color:${color};background:transparent;flex-shrink:0;`;
               span.textContent = label;
               wrap.appendChild(span);
             });

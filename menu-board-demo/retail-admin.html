@@ -1487,7 +1487,7 @@ function initGrid() {
             const mt = MENU_TYPES.find(m => (m.emoji + ' ' + m.label) === value);
             const span = document.createElement('span');
             if (mt) {
-              span.style.cssText = `display:inline-flex;align-items:center;gap:3px;padding:1px 5px 1px 4px;border-radius:10px;border:1px solid ${mt.color};font-size:8px;font-weight:700;text-transform:uppercase;letter-spacing:0.3px;white-space:nowrap;color:${mt.color};background:transparent;`;
+              span.style.cssText = `display:inline-flex;align-items:center;gap:3px;line-height:1;padding:3px 5px 2px 4px;border-radius:10px;border:1px solid ${mt.color};font-size:8px;font-weight:700;text-transform:uppercase;letter-spacing:0.3px;white-space:nowrap;color:${mt.color};background:transparent;`;
               span.textContent = mt.emoji + ' ' + mt.label;
             } else { span.textContent = value; }
             return span;
@@ -1504,7 +1504,7 @@ function initGrid() {
             const mt = MENU_TYPES.find(m => m.id === t);
             if (!mt) return;
             const span = document.createElement('span');
-            span.style.cssText = `display:inline-flex;align-items:center;gap:3px;padding:1px 5px 1px 4px;border-radius:10px;border:1px solid ${mt.color};font-size:8px;font-weight:700;text-transform:uppercase;letter-spacing:0.3px;white-space:nowrap;color:${mt.color};background:transparent;flex-shrink:0;`;
+            span.style.cssText = `display:inline-flex;align-items:center;gap:3px;line-height:1;padding:3px 5px 2px 4px;border-radius:10px;border:1px solid ${mt.color};font-size:8px;font-weight:700;text-transform:uppercase;letter-spacing:0.3px;white-space:nowrap;color:${mt.color};background:transparent;flex-shrink:0;`;
             span.textContent = mt.emoji + ' ' + mt.label;
             wrap.appendChild(span);
           });
