@@ -159,8 +159,22 @@ export default function ProductAssetsTab({ draft, patch }) {
     setSelected(Math.max(0, selected - 1));
   };
 
+  // Default applies immediately rather than waiting for "Commit changes" —
+  // unlike Variant name/Tags/Rights (draft edits you're still composing),
+  // Default is a single binary switch a user expects to take effect the
+  // moment they click it, same as Featured on Product Details. Left as a
+  // draft-only field here, it looked like it worked (the toolbar icon lit
+  // up) but silently didn't persist unless the user also remembered to hit
+  // Commit — which nothing else in the flow prompts them to do.
   const setDefault = () => {
-    setWorking((w) => ({ ...w, isDefault: !w.isDefault }));
+    if (!working) return;
+    const newVal = !working.isDefault;
+    const next = images.map((img, i) => {
+      if (i === selected) return { ...img, isDefault: newVal };
+      return newVal && img.isDefault ? { ...img, isDefault: false } : img;
+    });
+    patch({ images: next });
+    setWorking((w) => ({ ...w, isDefault: newVal }));
   };
   const toggleTesting = () => setWorking((w) => ({ ...w, availableForTesting: !w.availableForTesting }));
   const toggleBg = () => setWorking((w) => ({ ...w, bgRemoved: !w.bgRemoved }));

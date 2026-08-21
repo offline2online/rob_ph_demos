@@ -142,7 +142,20 @@ export function toItemDoc(product) {
     price: isNaN(price) ? 0 : price,
     offerPrice: isNaN(offerPrice) ? null : offerPrice,
     active: product.status === 'Active',
-    images: (product.images || []).map((img) => (typeof img === 'string' ? img : img.src)).filter(Boolean),
+    // The grid thumbnail and every menu board just read images[0] as "the"
+    // photo — none of them know about isDefault, which only exists on the
+    // rich per-image objects this app works with. So the default image has
+    // to be moved to position 0 here, on the way back to the flat URL array
+    // everything else reads, or marking an image "default" would have no
+    // visible effect anywhere outside this tab.
+    images: (() => {
+      const imgs = product.images || [];
+      const defaultIdx = imgs.findIndex((img) => img && typeof img === 'object' && img.isDefault);
+      const ordered = defaultIdx > 0
+        ? [imgs[defaultIdx], ...imgs.filter((_, i) => i !== defaultIdx)]
+        : imgs;
+      return ordered.map((img) => (typeof img === 'string' ? img : img.src)).filter(Boolean);
+    })(),
     calories: nutritionVal('Calories'),
     fat: nutritionVal('Fat'),
     carbs: nutritionVal('Carbs'),
