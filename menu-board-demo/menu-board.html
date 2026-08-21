@@ -732,6 +732,7 @@ const MB         = 'menuboard';
 const ITEMS_COLL = 'items';
 const STOCK_COLL = 'stock';
 const LOCAL_FEATURED_COLL = 'localFeatured';
+const STORE_PRICING_COLL = 'storePricing';
 
 // ── URL PARAMS ──────────────────────────────────────────────────────────────
 const urlParams   = new URLSearchParams(window.location.search);
@@ -786,6 +787,7 @@ let _settings    = { brandName: 'Our Brand', currency: '$', logo: '', logoRight:
 let _brands      = [];
 let _stock       = {};
 let _localFeatured = {}; // per-store Featured override, set from Retail Admin — see LOCAL_FEATURED_COLL
+let _storePricing  = {}; // per-store price override (by sku), set from Retail Admin — see STORE_PRICING_COLL
 // Campaign SKUs: null = default menu; string[] = personalised override from Personalisation Hub API
 let _campaignSkus      = TEST_SKUS.length > 0 ? TEST_SKUS : null;
 let _campaignFirstName = null; // null = no greeting; string = show personalised greeting in clock bar
@@ -812,7 +814,20 @@ const MENU_META = new Proxy(MENU_META_STATIC, {
 });
 
 // ── HELPERS ─────────────────────────────────────────────────────────────────
-function getItems()    { return _items; }
+// Merges in this store's own price override (if any) for each item — set
+// via Retail Admin's Pricing tab, and scoped to this store's own
+// storePricing/{STORE_CODE} doc only, never touching the shared item or
+// any other store. Every caller reads through here so price/offer/menu-
+// board-copy display is correct everywhere without each call site having
+// to know about store overrides.
+function getItems() {
+  if (!STORE_CODE || !_storePricing || !Object.keys(_storePricing).length) return _items;
+  return _items.map(i => {
+    const o = _storePricing[i.sku];
+    if (!o) return i;
+    return { ...i, price: o.price, offerPrice: o.offerPrice, offerFrom: o.offerFrom, offerUntil: o.offerUntil, showOnMenuBoard: o.showOnMenuBoard };
+  });
+}
 function getSettings() { return _settings; }
 function getStock()    { return _stock; }
 function isOos(sku)    { return !!(_stock[sku] && _stock[sku].outOfStock); }
@@ -1016,6 +1031,7 @@ let _brandsHash   = null;
 let _settingsHash = null;
 let _stockHash    = null;
 let _localFeaturedHash = null;
+let _storePricingHash  = null;
 
 // General fingerprint — catches any field change; used for small docs (brands, settings, stock)
 function _fp(obj) { try { return JSON.stringify(obj); } catch (_) { return String(Date.now()); } }
@@ -1928,6 +1944,18 @@ document.addEventListener('DOMContentLoaded', () => {
       if (h === _localFeaturedHash) return;
       _localFeaturedHash = h;
       _localFeatured = newLocalFeatured;
+      render();
+    });
+    // Per-store price override, set from Retail Admin's Pricing tab (only
+    // shown there when HQ Admin has switched it on for the item's brand) —
+    // a store's own price/offer/menu-board-copy for a sku, never affecting
+    // any other store or HQ's own default. See getItems() below.
+    onSnapshot(doc(db, STORE_PRICING_COLL, STORE_CODE), snap => {
+      const newStorePricing = snap.exists() ? snap.data() : {};
+      const h = _fp(newStorePricing);
+      if (h === _storePricingHash) return;
+      _storePricingHash = h;
+      _storePricing = newStorePricing;
       render();
     });
   }

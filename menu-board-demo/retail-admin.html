@@ -930,6 +930,7 @@
       <div class="modal-tab-pane" id="panePricing">
         <div class="add-stock-section">
           <h4>RRP &amp; Offer Pricing</h4>
+          <div id="priceScopeNote" style="font-size:12px;color:var(--text2);margin-bottom:12px;"></div>
           <div class="form-row" style="display:flex;gap:14px;">
             <div class="field" style="flex:1;">
               <label for="priceRrp">RRP</label>
@@ -1102,6 +1103,7 @@ const MB         = 'menuboard';
 const ITEMS_COLL = 'items';
 const STOCK_COLL = 'stock';
 const LOCAL_FEATURED_COLL = 'localFeatured';
+const STORE_PRICING_COLL = 'storePricing';
 
 const MENU_TYPES = [
   { id: 'breakfast', label: 'Breakfast', emoji: '🌅', color: '#f59e0b' },
@@ -1120,6 +1122,7 @@ const STAFF_ID = (urlParams.get('staff') || '').trim().toUpperCase();
 let _items    = [];
 let _stock    = {};
 let _localFeatured = {};
+let _storePricing  = {}; // this store's own price overrides, keyed by sku — never affects other stores or HQ's default
 let _settings = { currency: '$' };
 let _brands   = [];
 
@@ -1160,9 +1163,30 @@ if (STORE_CODE) {
       }
     }
   });
+  onSnapshot(doc(db, STORE_PRICING_COLL, STORE_CODE), snap => {
+    _storePricing = snap.exists() ? snap.data() : {};
+    if (document.getElementById('mainPage').style.display !== 'none') {
+      if (storeItemsGridApi) storeItemsGridApi.refreshCells({ force: true });
+      else renderItems();
+    }
+  });
 }
 
 function isLocalFeatured(sku) { return !!_localFeatured[sku]; }
+
+function getStorePricing() { return _storePricing; }
+function saveStorePricing(obj) {
+  _storePricing = obj;
+  return setDoc(doc(db, STORE_PRICING_COLL, STORE_CODE), obj)
+    .catch(err => toast('❌ Sync failed: ' + (err.message || err), 'error'));
+}
+// This store's effective price fields for an item — its own override if
+// it has saved one, otherwise HQ's own current price for that item.
+function _effectivePricing(item) {
+  const o = _storePricing[item.sku];
+  if (!o) return { price: item.price, offerPrice: item.offerPrice, offerFrom: item.offerFrom, offerUntil: item.offerUntil, showOnMenuBoard: item.showOnMenuBoard };
+  return { price: o.price, offerPrice: o.offerPrice, offerFrom: o.offerFrom, offerUntil: o.offerUntil, showOnMenuBoard: o.showOnMenuBoard };
+}
 
 function saveLocalFeatured(obj) {
   _localFeatured = obj;
@@ -1435,6 +1459,11 @@ function initGrid() {
         cellStyle: { fontSize: '12px', color: 'var(--text2)' }
       },
       {
+        // Shows this store's own effective price — its saved override if
+        // it has one, otherwise HQ's current price — never another
+        // store's price. field:'price' (rather than a valueGetter) keeps
+        // sort/filter working off the raw HQ value; the cellRenderer is
+        // what actually displays the effective, possibly-overridden one.
         headerName: 'Price', field: 'price', flex: 0.9, minWidth: 90,
         filter: 'agNumberColumnFilter',
         valueFormatter: (p) => {
@@ -1442,7 +1471,33 @@ function initGrid() {
           const currency = (itemBrand && itemBrand.currency) ? itemBrand.currency : (getSettings().currency || '$');
           return currency + parseFloat(p.value || 0).toFixed(2);
         },
-        cellStyle: { fontWeight: '700', color: 'var(--primary)' }
+        cellRenderer: (params) => {
+          const item = params.data;
+          const itemBrand = _brands.find(b => b.id === item.brand);
+          const currency = (itemBrand && itemBrand.currency) ? itemBrand.currency : (getSettings().currency || '$');
+          const eff = _effectivePricing(item);
+          const rrp = parseFloat(eff.price || 0);
+          const offerNum = parseFloat(eff.offerPrice);
+          const live = _isOfferLive(eff.price, eff.offerPrice, eff.offerFrom, eff.offerUntil);
+          const wrap = document.createElement('div');
+          wrap.style.cssText = 'display:flex;align-items:baseline;gap:6px;height:100%;';
+          if (live) {
+            const was = document.createElement('span');
+            was.style.cssText = 'text-decoration:line-through;color:var(--text2);font-weight:400;font-size:11px;';
+            was.textContent = currency + rrp.toFixed(2);
+            const now = document.createElement('span');
+            now.style.cssText = 'font-weight:700;color:var(--primary);';
+            now.textContent = currency + offerNum.toFixed(2);
+            wrap.appendChild(was);
+            wrap.appendChild(now);
+          } else {
+            const span = document.createElement('span');
+            span.style.cssText = 'font-weight:700;color:var(--primary);';
+            span.textContent = currency + rrp.toFixed(2);
+            wrap.appendChild(span);
+          }
+          return wrap;
+        }
       },
       {
         headerName: 'Status', colId: 'status', flex: 1.8, minWidth: 200,
@@ -1980,12 +2035,19 @@ function _currencyFor(brand) {
 }
 
 function _loadPricingPane(item, brand) {
+  // A saved override belongs to THIS store only — it's the starting point
+  // whenever this store already has one. With no override yet, editing
+  // starts from HQ's current price as a baseline, but saving still only
+  // ever writes storePricing/{STORE_CODE} — it can never touch HQ's price
+  // or any other store's.
+  const hasOverride = !!_storePricing[item.sku];
+  const eff = _effectivePricing(item);
   _pricingBaseline = {
-    rrp: item.rrp != null && item.rrp !== '' ? String(item.rrp) : (item.price != null ? String(item.price) : ''),
-    offerPrice: item.offerPrice != null ? String(item.offerPrice) : '',
-    offerFrom: item.offerFrom || '',
-    offerUntil: item.offerUntil || '',
-    showOnMenuBoard: item.showOnMenuBoard || '',
+    rrp: eff.price != null && eff.price !== '' ? String(eff.price) : '',
+    offerPrice: eff.offerPrice != null ? String(eff.offerPrice) : '',
+    offerFrom: eff.offerFrom || '',
+    offerUntil: eff.offerUntil || '',
+    showOnMenuBoard: eff.showOnMenuBoard || '',
   };
   _pricingDraft = { ..._pricingBaseline };
   document.getElementById('priceRrp').value = _pricingBaseline.rrp;
@@ -1995,6 +2057,10 @@ function _loadPricingPane(item, brand) {
   document.getElementById('priceMenuBoardCopy').value = _pricingBaseline.showOnMenuBoard;
   document.getElementById('priceReason').value = '';
   window._pricingCurrency = _currencyFor(brand);
+  const currency = window._pricingCurrency;
+  document.getElementById('priceScopeNote').textContent = hasOverride
+    ? `Showing ${STORE_CODE}'s own price for this item. Other stores and HQ's default (${currency}${parseFloat(item.price || 0).toFixed(2)}) are unaffected.`
+    : `Showing HQ's default price. Saving a change here only sets ${STORE_CODE}'s own price — other stores and HQ's default stay as they are.`;
   _renderPriceLog(item.priceLog || []);
   _refreshOfferBanner();
   _refreshPricingSaveState();
@@ -2111,7 +2177,7 @@ function _renderPriceLog(log) {
 }
 
 function savePricingChange() {
-  if (!_modalSku || !_pricingDraft || !_pricingBaseline) return;
+  if (!_modalSku || !_pricingDraft || !_pricingBaseline || !STORE_CODE) return;
   const reason = (document.getElementById('priceReason').value || '').trim();
   if (!reason || !_pricingDirty()) return;
 
@@ -2129,31 +2195,43 @@ function savePricingChange() {
   const when = new Date().toISOString();
   const by = STAFF_ID || STORE_CODE || 'Store User';
   const logEntries = changes.map(c => ({
-    when, src: STORE_CODE || 'Store', store: STORE_CODE || '', by,
+    when, src: STORE_CODE, store: STORE_CODE, by,
     fieldName: c.fieldName, old: c.oldValue, neu: c.newValue, reason,
   }));
 
   const rrpNum = parseFloat(_pricingDraft.rrp);
   const offerNum = parseFloat(_pricingDraft.offerPrice);
 
-  const updated = {
-    ...item,
-    rrp: _pricingDraft.rrp,
-    price: isNaN(rrpNum) ? 0 : rrpNum,
-    offerPrice: isNaN(offerNum) ? null : offerNum,
-    offerFrom: _pricingDraft.offerFrom,
-    offerUntil: _pricingDraft.offerUntil,
-    showOnMenuBoard: _pricingDraft.showOnMenuBoard,
-    priceLog: [...logEntries, ...(item.priceLog || [])],
-    updatedAt: when,
+  // Two separate writes, deliberately: the override is scoped to THIS
+  // store's own doc (storePricing/{STORE_CODE}) and never touches the
+  // shared item or any other store's pricing. The log entry is appended
+  // to the item's own priceLog via {merge:true} so HQ can see every
+  // store's history in one place — but that merge only ever adds to the
+  // log array, it never writes price/rrp/offerPrice back onto the item.
+  const nextOverride = {
+    ..._storePricing,
+    [_modalSku]: {
+      price: isNaN(rrpNum) ? 0 : rrpNum,
+      offerPrice: isNaN(offerNum) ? null : offerNum,
+      offerFrom: _pricingDraft.offerFrom,
+      offerUntil: _pricingDraft.offerUntil,
+      showOnMenuBoard: _pricingDraft.showOnMenuBoard,
+      updatedAt: when,
+      updatedBy: by,
+    },
   };
 
-  setDoc(doc(db, ITEMS_COLL, item.id), updated)
+  Promise.all([
+    saveStorePricing(nextOverride),
+    setDoc(doc(db, ITEMS_COLL, item.id), { priceLog: [...logEntries, ...(item.priceLog || [])] }, { merge: true }),
+  ])
     .then(() => {
-      toast('✅ Price change saved', 'success');
+      toast(`✅ Price change saved for ${STORE_CODE}`, 'success');
       _pricingBaseline = { ..._pricingDraft };
       document.getElementById('priceReason').value = '';
-      _renderPriceLog(updated.priceLog);
+      document.getElementById('priceScopeNote').textContent =
+        `Showing ${STORE_CODE}'s own price for this item. Other stores and HQ's default (${window._pricingCurrency || '$'}${parseFloat(item.price || 0).toFixed(2)}) are unaffected.`;
+      _renderPriceLog([...logEntries, ...(item.priceLog || [])]);
       _refreshPricingSaveState();
     })
     .catch(err => toast('❌ Save failed: ' + (err.message || err), 'error'));

@@ -106,6 +106,26 @@ service cloud.firestore {
       allow delete: if true;
     }
 
+    // ── storePricing ─────────────────────────────────────────────────────────
+    // Per-store price override — a store manager's own RRP/offer price for
+    // an item (Retail Admin's Pricing tab, only shown when HQ Admin has
+    // switched it on for the item's brand). Document ID = store code, same
+    // shape/rules as `stock` above (dynamic SKU keys, so size-limited rather
+    // than field-validated). Scoped to one store's own doc — never touches
+    // the shared item or any other store's pricing.
+    // Read:   public (menu board, retail admin)
+    // Write:  retail admin (no server-side auth available)
+
+    match /storePricing/{storeCode} {
+      allow read: if true;
+
+      allow create, update: if
+        isNonEmptyBoundedString(storeCode, 50) &&
+        incoming().size() <= 500;
+
+      allow delete: if true;
+    }
+
     // ── menuboard ───────────────────────────────────────────────────────────
     // Global menu-board configuration: brands, types, categories, settings.
     // Documents: menuboard/brands  menuboard/types  menuboard/categories
