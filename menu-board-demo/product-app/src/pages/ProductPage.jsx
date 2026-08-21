@@ -56,7 +56,16 @@ export default function ProductPage({ isNew = false }) {
       message.success(`"${draft.name || 'Product'}" saved`);
       if (isNew) navigate(`/products/${draft.id}/details`, { replace: true });
     } catch (e) {
-      message.error('Save failed: ' + (e.message || e));
+      const raw = e.message || String(e);
+      // Firestore's own error for this case names an internal field path
+      // ("array") that means nothing to someone editing a product — the
+      // Assets tab now compresses uploads before they reach this point, so
+      // this should be rare, but if it still happens, say what's actually
+      // wrong and how to fix it rather than surfacing the raw SDK message.
+      const friendly = /longer than \d+ bytes/i.test(raw)
+        ? 'Save failed: this product\'s images are too large in total. Remove one or replace it with a smaller file.'
+        : 'Save failed: ' + raw;
+      message.error(friendly, 6);
     } finally {
       setSaving(false);
     }

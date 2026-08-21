@@ -24,6 +24,56 @@ function nextVariantLabel(images, type) {
   return String.fromCharCode(65 + existing.length);
 }
 
+// Every image is stored as a base64 data URI inside the Firestore document
+// itself (no separate blob storage), and the whole document has to stay
+// under Firestore's ~1 MiB limit. An unedited marketing photo (600KB-1.2MB
+// raw) blows that on its own — and the save then fails outright with
+// nothing wrong-looking in this tab itself, since setting it as default
+// already updated the on-screen state before the save is even attempted.
+// Downscale/recompress anything over a modest threshold before it's ever
+// added to state, so an oversized upload can't silently fail to save.
+const COMPRESS_THRESHOLD_BYTES = 300_000;
+const MAX_DIMENSION = 1000;
+const JPEG_QUALITY = 0.75;
+
+function readAndCompress(file) {
+  const readAsDataUrl = () =>
+    new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.readAsDataURL(file);
+    });
+
+  if (!file.type.startsWith('image') || file.size <= COMPRESS_THRESHOLD_BYTES) {
+    return readAsDataUrl();
+  }
+
+  return readAsDataUrl().then(
+    (dataUrl) =>
+      new Promise((resolve) => {
+        const img = new Image();
+        img.onload = () => {
+          const scale = Math.min(1, MAX_DIMENSION / Math.max(img.width, img.height));
+          const width = Math.round(img.width * scale);
+          const height = Math.round(img.height * scale);
+          const canvas = document.createElement('canvas');
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          // Flattens transparency to white — matches how the rest of the
+          // catalog's photography is shot (plain white background), and
+          // JPEG can't carry an alpha channel anyway.
+          ctx.fillStyle = '#fff';
+          ctx.fillRect(0, 0, width, height);
+          ctx.drawImage(img, 0, 0, width, height);
+          resolve(canvas.toDataURL('image/jpeg', JPEG_QUALITY));
+        };
+        img.onerror = () => resolve(dataUrl);
+        img.src = dataUrl;
+      })
+  );
+}
+
 function Tile({ img, selected, onClick }) {
   const state = img.rightsOn ? licenceState(img.rights?.expiry) : 'ok';
   const expired = state === 'expired';
@@ -107,34 +157,26 @@ export default function ProductAssetsTab({ draft, patch }) {
   const expiredCount = images.filter((i) => i.rightsOn && licenceState(i.rights?.expiry) === 'expired').length;
 
   const handleFiles = (files) => {
-    const additions = [];
-    let remaining = files.length;
-    [...files].forEach((file) => {
-      const reader = new FileReader();
-      reader.onload = () => {
-        additions.push({
-          id: 'img-' + Date.now() + Math.random().toString(36).slice(2, 7),
-          src: reader.result,
-          type: file.type.startsWith('video') ? 'video' : 'image',
-          name: '',
-          tags: [],
-          isDefault: false,
-          availableForTesting: false,
-          bgRemoved: false,
-          enhanced: false,
-          rightsOn: false,
-          rights: {},
-          isPending: true,
-          variant: 'NEW',
-        });
-        remaining -= 1;
-        if (remaining === 0) {
-          const next = [...images, ...additions];
-          patch({ images: next });
-          setSelected(next.length - additions.length);
-        }
-      };
-      reader.readAsDataURL(file);
+    Promise.all([...files].map((file) =>
+      readAndCompress(file).then((src) => ({
+        id: 'img-' + Date.now() + Math.random().toString(36).slice(2, 7),
+        src,
+        type: file.type.startsWith('video') ? 'video' : 'image',
+        name: '',
+        tags: [],
+        isDefault: false,
+        availableForTesting: false,
+        bgRemoved: false,
+        enhanced: false,
+        rightsOn: false,
+        rights: {},
+        isPending: true,
+        variant: 'NEW',
+      }))
+    )).then((additions) => {
+      const next = [...images, ...additions];
+      patch({ images: next });
+      setSelected(next.length - additions.length);
     });
   };
 
