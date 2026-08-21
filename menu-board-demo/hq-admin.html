@@ -2620,6 +2620,50 @@ function initGrids() {
           }
         },
         {
+          headerName: 'Price', field: 'price', flex: 1, minWidth: 80,
+          filter: 'agNumberColumnFilter',
+          valueFormatter: (params) => {
+            const brands = getBrands();
+            const itemBrand = brands.find(b => b.id === params.data.brand);
+            const currency = (itemBrand && itemBrand.currency) ? itemBrand.currency : ((brands[0] && brands[0].currency) ? brands[0].currency : '$');
+            return currency + parseFloat(params.value || 0).toFixed(2);
+          },
+          // A live offer (offerPrice set, and within offerFrom/offerUntil if
+          // given) shows as struck-through RRP + offer price, same "live"
+          // rule as the Pricing tab's OfferBanner — so the table and the
+          // product page never disagree about whether an offer is active.
+          cellRenderer: (params) => {
+            const item = params.data;
+            const brands = getBrands();
+            const itemBrand = brands.find(b => b.id === item.brand);
+            const currency = (itemBrand && itemBrand.currency) ? itemBrand.currency : ((brands[0] && brands[0].currency) ? brands[0].currency : '$');
+            const rrp = parseFloat(item.price || 0);
+            const offerNum = parseFloat(item.offerPrice);
+            const now = new Date();
+            const from = item.offerFrom ? new Date(item.offerFrom) : null;
+            const until = item.offerUntil ? new Date(item.offerUntil) : null;
+            const isLive = offerNum > 0 && !(until && until < now) && !(from && from > now);
+            const wrap = document.createElement('div');
+            wrap.style.cssText = 'display:flex;align-items:baseline;gap:6px;height:100%;';
+            if (isLive) {
+              const was = document.createElement('span');
+              was.style.cssText = 'text-decoration:line-through;color:var(--text2);font-weight:400;font-size:11px;';
+              was.textContent = currency + rrp.toFixed(2);
+              const nowSpan = document.createElement('span');
+              nowSpan.style.cssText = 'font-weight:700;color:var(--primary);';
+              nowSpan.textContent = currency + offerNum.toFixed(2);
+              wrap.appendChild(was);
+              wrap.appendChild(nowSpan);
+            } else {
+              const span = document.createElement('span');
+              span.style.cssText = 'font-weight:700;color:var(--primary);';
+              span.textContent = currency + rrp.toFixed(2);
+              wrap.appendChild(span);
+            }
+            return wrap;
+          }
+        },
+        {
           headerName: 'Brand', field: 'brand', flex: 1.5, minWidth: 110,
           filter: CheckboxSetFilter,
           sort: 'asc',
@@ -2685,50 +2729,6 @@ function initGrids() {
               span.textContent = label;
               wrap.appendChild(span);
             });
-            return wrap;
-          }
-        },
-        {
-          headerName: 'Price', field: 'price', flex: 1, minWidth: 80,
-          filter: 'agNumberColumnFilter',
-          valueFormatter: (params) => {
-            const brands = getBrands();
-            const itemBrand = brands.find(b => b.id === params.data.brand);
-            const currency = (itemBrand && itemBrand.currency) ? itemBrand.currency : ((brands[0] && brands[0].currency) ? brands[0].currency : '$');
-            return currency + parseFloat(params.value || 0).toFixed(2);
-          },
-          // A live offer (offerPrice set, and within offerFrom/offerUntil if
-          // given) shows as struck-through RRP + offer price, same "live"
-          // rule as the Pricing tab's OfferBanner — so the table and the
-          // product page never disagree about whether an offer is active.
-          cellRenderer: (params) => {
-            const item = params.data;
-            const brands = getBrands();
-            const itemBrand = brands.find(b => b.id === item.brand);
-            const currency = (itemBrand && itemBrand.currency) ? itemBrand.currency : ((brands[0] && brands[0].currency) ? brands[0].currency : '$');
-            const rrp = parseFloat(item.price || 0);
-            const offerNum = parseFloat(item.offerPrice);
-            const now = new Date();
-            const from = item.offerFrom ? new Date(item.offerFrom) : null;
-            const until = item.offerUntil ? new Date(item.offerUntil) : null;
-            const isLive = offerNum > 0 && !(until && until < now) && !(from && from > now);
-            const wrap = document.createElement('div');
-            wrap.style.cssText = 'display:flex;align-items:baseline;gap:6px;height:100%;';
-            if (isLive) {
-              const was = document.createElement('span');
-              was.style.cssText = 'text-decoration:line-through;color:var(--text2);font-weight:400;font-size:11px;';
-              was.textContent = currency + rrp.toFixed(2);
-              const nowSpan = document.createElement('span');
-              nowSpan.style.cssText = 'font-weight:700;color:var(--primary);';
-              nowSpan.textContent = currency + offerNum.toFixed(2);
-              wrap.appendChild(was);
-              wrap.appendChild(nowSpan);
-            } else {
-              const span = document.createElement('span');
-              span.style.cssText = 'font-weight:700;color:var(--primary);';
-              span.textContent = currency + rrp.toFixed(2);
-              wrap.appendChild(span);
-            }
             return wrap;
           }
         },
