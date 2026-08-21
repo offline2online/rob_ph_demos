@@ -314,6 +314,16 @@
       letter-spacing: -0.3px;
       line-height: 1;
     }
+    /* Struck-through RRP shown ahead of a live offer price — sized off the
+       parent price element's own font-size so it scales in every context
+       (item tile, promo hero, promo card) without a per-context rule. */
+    .price-was {
+      text-decoration: line-through;
+      opacity: 0.55;
+      font-weight: 600;
+      font-size: 0.55em;
+      margin-right: 0.3em;
+    }
 
     /* ── OUT OF STOCK ───────────────────────── */
     .oos-overlay {
@@ -794,6 +804,30 @@ function isOos(sku)    { return !!(_stock[sku] && _stock[sku].outOfStock); }
 function esc(str)      { return String(str || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 function fmtTime(d)    { return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); }
 function fmtDate(d)    { return d.toLocaleDateString([], { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' }); }
+
+// An offer is "live" under the same rule as HQ Admin's Products table and
+// the Pricing tab's own offer banner — offerPrice set, and within
+// offerFrom/offerUntil if either is given — so all three surfaces never
+// disagree about whether an offer is currently on.
+function isOfferLive(item) {
+  const offerNum = parseFloat(item.offerPrice);
+  if (!(offerNum > 0)) return false;
+  const now = new Date();
+  const from = item.offerFrom ? new Date(item.offerFrom) : null;
+  const until = item.offerUntil ? new Date(item.offerUntil) : null;
+  if (until && until < now) return false;
+  if (from && from > now) return false;
+  return true;
+}
+// Renders the price for a board item — struck-through RRP + offer price
+// when a live offer is on, plain RRP otherwise. `wasClass` sizes the
+// struck-through RRP relative to the caller's own price font-size via em.
+function priceHtml(item, currency, wasClass) {
+  const rrp = parseFloat(item.price || 0).toFixed(2);
+  if (!isOfferLive(item)) return `${currency}${rrp}`;
+  const offer = parseFloat(item.offerPrice).toFixed(2);
+  return `<span class="${wasClass}">${currency}${rrp}</span>${currency}${offer}`;
+}
 
 // ── BRAND SUPPORT ────────────────────────────────────────────────────────────
 let _debugPanelVisible = DEBUG_MODE; // toggled by long-press on bottom-left corner
@@ -1647,7 +1681,7 @@ function render() {
           ${desc}
           <div class="item-divider"></div>
           <div class="item-footer">
-            <span class="item-price">${currency}${parseFloat(item.price || 0).toFixed(2)}</span>
+            <span class="item-price">${priceHtml(item, currency, 'price-was')}</span>
             ${cat ? `<span class="item-cat-badge">${esc(cat)}</span>` : ''}
           </div>
         </div>
@@ -1758,7 +1792,7 @@ function render() {
         <div class="promo-hero-top">
           ${heroCat}
           <div class="promo-hero-title">${esc(heroItem.name)}</div>
-          <div class="promo-hero-price">${currency}${parseFloat(heroItem.price || 0).toFixed(2)}</div>
+          <div class="promo-hero-price">${priceHtml(heroItem, currency, 'price-was')}</div>
         </div>`;
       const heroBottomHtml = heroItem.description
         ? `<div class="promo-hero-bottom"><div class="promo-hero-desc">${esc(heroItem.description)}</div></div>`
@@ -1780,7 +1814,7 @@ function render() {
             <div class="promo-text">
               ${cat}
               <div class="promo-title">${esc(item.name)}</div>
-              <div class="promo-price">${currency}${parseFloat(item.price || 0).toFixed(2)}</div>
+              <div class="promo-price">${priceHtml(item, currency, 'price-was')}</div>
             </div>
             <div class="promo-img-wrap">${img}</div>
             ${desc}
