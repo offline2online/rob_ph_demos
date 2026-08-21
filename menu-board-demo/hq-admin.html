@@ -190,6 +190,15 @@
     .form-row.cols-4 { grid-template-columns: 1fr 1fr 1fr 1fr; }
     .section-divider { font-size: 11px; font-weight: 700; color: var(--text2); text-transform: uppercase; letter-spacing: 0.8px; padding: 12px 0 8px; margin-top: 4px; border-top: 1px solid var(--border); display: flex; align-items: center; gap: 8px; }
     .section-divider .opt-tag { font-size: 10px; font-weight: 500; color: var(--text2); text-transform: none; letter-spacing: 0; background: var(--surface2); border: 1px solid var(--border); border-radius: 4px; padding: 1px 6px; }
+    .switch-row { display: flex; align-items: flex-start; gap: 12px; padding: 10px 0; }
+    .switch-toggle { position: relative; display: inline-block; width: 38px; height: 22px; flex-shrink: 0; margin-top: 1px; }
+    .switch-toggle input { opacity: 0; width: 0; height: 0; }
+    .switch-toggle .switch-track { position: absolute; inset: 0; background: var(--border); border-radius: 999px; cursor: pointer; transition: background 0.15s; }
+    .switch-toggle .switch-track::before { content: ''; position: absolute; width: 16px; height: 16px; left: 3px; top: 3px; background: #fff; border-radius: 50%; transition: transform 0.15s; box-shadow: 0 1px 2px rgba(0,0,0,0.25); }
+    .switch-toggle input:checked + .switch-track { background: var(--primary); }
+    .switch-toggle input:checked + .switch-track::before { transform: translateX(16px); }
+    .switch-row-label { font-size: 13px; color: var(--text); font-weight: 600; }
+    .switch-row-help { font-size: 12px; color: var(--text2); margin-top: 2px; }
 
     /* LANGUAGES ON SHIFT — design template editor */
     .los-preview-wrap { display: flex; gap: 16px; align-items: flex-start; margin-bottom: 18px; }
@@ -886,6 +895,17 @@
             <div class="tag-chip-wrap" id="bStoreChipsWrap" style="min-height:36px;cursor:default;">
               <span id="bStoreChipsEmpty" style="font-size:12px;color:var(--text2);padding:4px 0;">No stores selected — add at least one store code above.</span>
             </div>
+          </div>
+        </div>
+
+        <div class="switch-row">
+          <label class="switch-toggle">
+            <input type="checkbox" id="bAllowStorePricing">
+            <span class="switch-track"></span>
+          </label>
+          <div>
+            <div class="switch-row-label">Allow store-level price updates</div>
+            <div class="switch-row-help">When on, store managers can update this brand's products' pricing (RRP, offer price, scheduling) from a new Pricing tab in Retail Admin. Every change is still recorded in the product's price change log.</div>
           </div>
         </div>
 
@@ -3164,6 +3184,7 @@ function openAddBrandModal() {
   brandEditingLogoLeft = '';
   document.getElementById('bLogoPreview').style.display = 'none';
   document.getElementById('bLowStockThreshold').value = '';
+  document.getElementById('bAllowStorePricing').checked = false;
   // Store distribution — default "All Stores"
   window.editingStores = [];
   document.getElementById('bStoreMode').value = 'all';
@@ -3208,6 +3229,7 @@ function openEditBrandModal(id) {
 
   brandEditingBagIcon = brand.bagIcon || '';
   document.getElementById('bLowStockThreshold').value = brand.lowStockThreshold != null ? brand.lowStockThreshold : '';
+  document.getElementById('bAllowStorePricing').checked = !!brand.allowStorePricing;
 
   // Store distribution
   const stores = Array.isArray(brand.stores) ? brand.stores : [];
@@ -3457,6 +3479,7 @@ function saveBrand() {
   const stores       = document.getElementById('bStoreMode').value === 'specific' ? [...window.editingStores] : [];
   const lstRaw       = document.getElementById('bLowStockThreshold').value;
   const lowStockThreshold = lstRaw !== '' ? (parseInt(lstRaw) || null) : null;
+  const allowStorePricing = document.getElementById('bAllowStorePricing').checked;
 
   const brands = getBrands();
   const now    = new Date().toISOString();
@@ -3465,10 +3488,10 @@ function saveBrand() {
     const idx = brands.findIndex(b => b.id === id);
     if (idx === -1) return;
     // colors/display/showClock etc. are now managed exclusively via templates; preserve existing brand values via spread
-    brands[idx] = { ...brands[idx], name, currency, icon: brandEditingIcon, logo: brandEditingLogoLeft, logoRight: '', stores, lowStockThreshold, templates: _editingBrandTemplates, colourPalette: window._bPalette, brandGuidelines: window._bGuidelines, updatedAt: now };
+    brands[idx] = { ...brands[idx], name, currency, icon: brandEditingIcon, logo: brandEditingLogoLeft, logoRight: '', stores, lowStockThreshold, allowStorePricing, templates: _editingBrandTemplates, colourPalette: window._bPalette, brandGuidelines: window._bGuidelines, updatedAt: now };
     toast('\u2705 Brand updated', 'success');
   } else {
-    brands.push({ id: genId(), name, currency, icon: brandEditingIcon, logo: brandEditingLogoLeft, logoRight: '', colors: { ...DEFAULT_COLORS }, display: { portrait: { ...DEFAULT_DISPLAY.portrait }, landscape: { ...DEFAULT_DISPLAY.landscape }, hideOutOfStock: false }, showClock: true, timeFormat: 'british', showHeader: true, campaignMode: 'override', stores, lowStockThreshold, templates: [], colourPalette: window._bPalette, brandGuidelines: window._bGuidelines, createdAt: now, updatedAt: now });
+    brands.push({ id: genId(), name, currency, icon: brandEditingIcon, logo: brandEditingLogoLeft, logoRight: '', colors: { ...DEFAULT_COLORS }, display: { portrait: { ...DEFAULT_DISPLAY.portrait }, landscape: { ...DEFAULT_DISPLAY.landscape }, hideOutOfStock: false }, showClock: true, timeFormat: 'british', showHeader: true, campaignMode: 'override', stores, lowStockThreshold, allowStorePricing, templates: [], colourPalette: window._bPalette, brandGuidelines: window._bGuidelines, createdAt: now, updatedAt: now });
     toast('\u2705 Brand added', 'success');
   }
 

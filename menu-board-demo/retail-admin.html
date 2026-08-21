@@ -920,10 +920,64 @@
       <button class="modal-close" onclick="closeItemModal()">&#x2715;</button>
     </div>
     <div class="modal-tabs">
+      <button class="modal-tab" id="tabPricing" onclick="switchItemTab('pricing')" style="display:none;">Pricing</button>
       <button class="modal-tab active" id="tabStock" onclick="switchItemTab('stock')">Stock Management</button>
       <button class="modal-tab" id="tabLocation" onclick="switchItemTab('location')">Location</button>
     </div>
     <div class="modal-body">
+
+      <!-- PRICING PANE — only shown when the brand has store-level pricing enabled (HQ Admin ▸ Brand ▸ Store Distribution) -->
+      <div class="modal-tab-pane" id="panePricing">
+        <div class="add-stock-section">
+          <h4>RRP &amp; Offer Pricing</h4>
+          <div class="form-row" style="display:flex;gap:14px;">
+            <div class="field" style="flex:1;">
+              <label for="priceRrp">RRP</label>
+              <input type="number" id="priceRrp" min="0" step="0.01" placeholder="0.00" oninput="_onPricingFieldChange()">
+            </div>
+            <div class="field" style="flex:1;">
+              <label for="priceOffer">Offer price</label>
+              <input type="number" id="priceOffer" min="0" step="0.01" placeholder="0.00" oninput="_onPricingFieldChange()">
+            </div>
+          </div>
+          <div class="form-row" style="display:flex;gap:14px;margin-top:12px;">
+            <div class="field" style="flex:1;">
+              <label for="priceOfferFrom">Schedule offer from</label>
+              <input type="datetime-local" id="priceOfferFrom" oninput="_onPricingFieldChange()">
+              <p style="font-size:11px;color:var(--text2);margin-top:4px;">Blank means the offer starts now.</p>
+            </div>
+            <div class="field" style="flex:1;">
+              <label for="priceOfferUntil">Schedule offer until</label>
+              <input type="datetime-local" id="priceOfferUntil" oninput="_onPricingFieldChange()">
+              <p style="font-size:11px;color:var(--text2);margin-top:4px;">Blank means the offer runs until removed.</p>
+            </div>
+          </div>
+          <div class="field" style="margin-top:12px;">
+            <label for="priceMenuBoardCopy">Show on Menu Board</label>
+            <input type="text" id="priceMenuBoardCopy" placeholder="e.g. Limited time only!" oninput="_onPricingFieldChange()">
+            <p style="font-size:11px;color:var(--text2);margin-top:4px;">Optional promo copy shown alongside the price on the menu board. Leave blank to show nothing extra.</p>
+          </div>
+          <div id="priceOfferBanner" style="display:none;border-radius:6px;padding:10px 12px;font-size:13px;margin-top:12px;"></div>
+          <div class="field" style="margin-top:12px;">
+            <label for="priceReason">Reason for this change</label>
+            <input type="text" id="priceReason" placeholder="Why is this pricing changing?" oninput="_onPricingFieldChange()">
+            <p style="font-size:11px;color:var(--text2);margin-top:4px;">Required to save — recorded in the price change log below.</p>
+          </div>
+        </div>
+
+        <div class="history-section">
+          <h4>Price Change History</h4>
+          <div id="priceHistoryContainer">
+            <div class="history-empty">No price changes recorded yet.</div>
+          </div>
+        </div>
+
+        <div style="display:flex;align-items:center;gap:10px;padding-top:6px;">
+          <span id="priceSaveHelper" style="font-size:12px;color:var(--text2);flex:1;">No changes to save.</span>
+          <button class="btn btn-ghost btn-sm" id="priceDiscardBtn" onclick="_discardPricingChange()" disabled>Discard</button>
+          <button class="btn btn-primary btn-sm" id="priceSaveBtn" onclick="savePricingChange()" disabled>&#x1F4BE; Save price change</button>
+        </div>
+      </div>
 
       <!-- STOCK MANAGEMENT PANE -->
       <div class="modal-tab-pane active" id="paneStock" style="position:relative;">
@@ -1671,8 +1725,17 @@ function openItemModal(sku) {
   document.getElementById('itemModalName').textContent = item.name || sku;
   document.getElementById('itemModalSku').textContent  = sku;
 
-  // Reset to stock tab
-  switchItemTab('stock');
+  // Pricing tab only appears when HQ Admin has switched on store-level
+  // pricing for this item's brand (Brand ▸ Store Distribution ▸ Allow
+  // store-level price updates) — otherwise pricing stays HQ Admin-only.
+  const brand = _brands.find(b => b.id === item.brand);
+  const pricingAllowed = !!(brand && brand.allowStorePricing);
+  document.getElementById('tabPricing').style.display = pricingAllowed ? '' : 'none';
+  if (pricingAllowed) _loadPricingPane(item, brand);
+
+  // Pricing is the first tab and the default view when it's available —
+  // otherwise fall back to the previous default.
+  switchItemTab(pricingAllowed ? 'pricing' : 'stock');
 
   // Render stock pane
   _renderStockPane(sku);
@@ -1689,8 +1752,10 @@ function closeItemModal() {
 }
 
 function switchItemTab(tab) {
+  document.getElementById('tabPricing').classList.toggle('active', tab === 'pricing');
   document.getElementById('tabStock').classList.toggle('active', tab === 'stock');
   document.getElementById('tabLocation').classList.toggle('active', tab === 'location');
+  document.getElementById('panePricing').classList.toggle('active', tab === 'pricing');
   document.getElementById('paneStock').classList.toggle('active', tab === 'stock');
   document.getElementById('paneLocation').classList.toggle('active', tab === 'location');
   document.getElementById('itemModalFooter').style.display = tab === 'location' ? 'flex' : 'none';
@@ -1884,6 +1949,216 @@ function saveEditedStock() {
   });
 }
 
+// ===== PRICING (store-level price updates, brand-gated) =====
+// draft/baseline mirror the shape written by HQ Admin's own Pricing tab
+// (product-app/src/pages/tabs/PricingTab.jsx) so a store's edits and HQ's
+// edits are indistinguishable in the item doc and the price log.
+let _pricingBaseline = null;
+let _pricingDraft = null;
+
+function _isOfferLive(rrp, offerPrice, offerFrom, offerUntil) {
+  const offerNum = parseFloat(offerPrice);
+  if (!(offerNum > 0)) return false;
+  const now = new Date();
+  const from = offerFrom ? new Date(offerFrom) : null;
+  const until = offerUntil ? new Date(offerUntil) : null;
+  if (until && until < now) return false;
+  if (from && from > now) return false;
+  return true;
+}
+
+function _fmtPriceDateVal(v) {
+  if (!v) return '—';
+  const d = new Date(v);
+  if (isNaN(d.getTime())) return String(v);
+  return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) +
+    (v.includes('T') ? ' ' + d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) : '');
+}
+
+function _currencyFor(brand) {
+  return (brand && brand.currency) || _settings.currency || '$';
+}
+
+function _loadPricingPane(item, brand) {
+  _pricingBaseline = {
+    rrp: item.rrp != null && item.rrp !== '' ? String(item.rrp) : (item.price != null ? String(item.price) : ''),
+    offerPrice: item.offerPrice != null ? String(item.offerPrice) : '',
+    offerFrom: item.offerFrom || '',
+    offerUntil: item.offerUntil || '',
+    showOnMenuBoard: item.showOnMenuBoard || '',
+  };
+  _pricingDraft = { ..._pricingBaseline };
+  document.getElementById('priceRrp').value = _pricingBaseline.rrp;
+  document.getElementById('priceOffer').value = _pricingBaseline.offerPrice;
+  document.getElementById('priceOfferFrom').value = _pricingBaseline.offerFrom;
+  document.getElementById('priceOfferUntil').value = _pricingBaseline.offerUntil;
+  document.getElementById('priceMenuBoardCopy').value = _pricingBaseline.showOnMenuBoard;
+  document.getElementById('priceReason').value = '';
+  window._pricingCurrency = _currencyFor(brand);
+  _renderPriceLog(item.priceLog || []);
+  _refreshOfferBanner();
+  _refreshPricingSaveState();
+}
+
+function _readPricingFieldsFromForm() {
+  _pricingDraft = {
+    rrp: document.getElementById('priceRrp').value,
+    offerPrice: document.getElementById('priceOffer').value,
+    offerFrom: document.getElementById('priceOfferFrom').value,
+    offerUntil: document.getElementById('priceOfferUntil').value,
+    showOnMenuBoard: document.getElementById('priceMenuBoardCopy').value,
+  };
+}
+
+function _pricingDirty() {
+  if (!_pricingDraft || !_pricingBaseline) return false;
+  return Object.keys(_pricingDraft).some(k => String(_pricingDraft[k] || '') !== String(_pricingBaseline[k] || ''));
+}
+
+function _refreshOfferBanner() {
+  const el = document.getElementById('priceOfferBanner');
+  const { rrp, offerPrice, offerFrom, offerUntil } = _pricingDraft || {};
+  const currency = window._pricingCurrency || '$';
+  const rrpNum = parseFloat(rrp);
+  const offerNum = parseFloat(offerPrice);
+  if (!(offerNum > 0)) { el.style.display = 'none'; return; }
+  const live = _isOfferLive(rrp, offerPrice, offerFrom, offerUntil);
+  const now = new Date();
+  const from = offerFrom ? new Date(offerFrom) : null;
+  const until = offerUntil ? new Date(offerUntil) : null;
+  el.style.display = 'block';
+  if (live) {
+    const rrpSafe = isNaN(rrpNum) ? 0 : rrpNum;
+    el.style.background = 'var(--success-light)'; el.style.color = 'var(--success)'; el.style.border = '1px solid rgba(82,196,26,0.3)';
+    el.textContent = `Offer live — ${currency}${offerNum.toFixed(2)} instead of ${currency}${rrpSafe.toFixed(2)}, saving ${currency}${(rrpSafe - offerNum).toFixed(2)}` + (until ? ` until ${_fmtPriceDateVal(offerUntil)}.` : '.');
+  } else if (from && from > now) {
+    el.style.background = 'var(--warning-light)'; el.style.color = 'var(--warning)'; el.style.border = '1px solid rgba(250,173,20,0.3)';
+    el.textContent = `Offer scheduled from ${_fmtPriceDateVal(offerFrom)}${until ? ` until ${_fmtPriceDateVal(offerUntil)}` : ''}.`;
+  } else if (until && until < now) {
+    el.style.background = 'var(--danger-light)'; el.style.color = 'var(--danger)'; el.style.border = '1px solid rgba(255,77,79,0.3)';
+    el.textContent = `Offer ended ${_fmtPriceDateVal(offerUntil)}.`;
+  } else {
+    el.style.display = 'none';
+  }
+}
+
+function _refreshPricingSaveState() {
+  const reason = (document.getElementById('priceReason').value || '').trim();
+  const dirty = _pricingDirty();
+  const saveBtn = document.getElementById('priceSaveBtn');
+  const discardBtn = document.getElementById('priceDiscardBtn');
+  const helper = document.getElementById('priceSaveHelper');
+  saveBtn.disabled = !(dirty && reason);
+  discardBtn.disabled = !dirty;
+  if (!dirty) helper.textContent = 'No changes to save. Editing RRP, offer price, dates or the menu board copy enables the save.';
+  else if (!reason) helper.textContent = 'Unsaved price change — enter a reason above to enable saving.';
+  else helper.textContent = 'Unsaved price change — ready to save.';
+}
+
+function _onPricingFieldChange() {
+  _readPricingFieldsFromForm();
+  _refreshOfferBanner();
+  _refreshPricingSaveState();
+}
+
+function _discardPricingChange() {
+  if (!_pricingBaseline) return;
+  document.getElementById('priceRrp').value = _pricingBaseline.rrp;
+  document.getElementById('priceOffer').value = _pricingBaseline.offerPrice;
+  document.getElementById('priceOfferFrom').value = _pricingBaseline.offerFrom;
+  document.getElementById('priceOfferUntil').value = _pricingBaseline.offerUntil;
+  document.getElementById('priceMenuBoardCopy').value = _pricingBaseline.showOnMenuBoard;
+  document.getElementById('priceReason').value = '';
+  _pricingDraft = { ..._pricingBaseline };
+  _refreshOfferBanner();
+  _refreshPricingSaveState();
+}
+
+function _renderPriceLog(log) {
+  const container = document.getElementById('priceHistoryContainer');
+  const sorted = [...log].sort((a, b) => {
+    const ta = new Date(a.when).getTime() || 0;
+    const tb = new Date(b.when).getTime() || 0;
+    return tb - ta;
+  });
+  if (sorted.length === 0) {
+    container.innerHTML = '<div class="history-empty">No price changes recorded yet.</div>';
+    return;
+  }
+  const rows = sorted.map(h => {
+    const d = new Date(h.when);
+    const valid = !isNaN(d.getTime());
+    const dateStr = valid ? d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : escHtml(h.when || '');
+    const timeStr = valid ? d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) : '';
+    const isHq = h.src === 'HQ Admin';
+    const srcCell = isHq
+      ? `<span style="font-size:10px;background:var(--primary-light);border:1px solid rgba(22,155,194,0.3);color:var(--primary);padding:2px 6px;border-radius:4px;font-weight:700;letter-spacing:0.3px;">HQ ADMIN</span>`
+      : `<span style="font-size:10px;background:var(--surface2);border:1px solid var(--border);color:var(--text2);padding:2px 6px;border-radius:4px;font-weight:700;letter-spacing:0.3px;">${escHtml(h.src || 'STORE')}</span>`;
+    return `<tr>
+      <td><div>${escHtml(dateStr)}</div><div class="mono">${escHtml(timeStr)}</div></td>
+      <td>${srcCell}</td>
+      <td class="mono">${escHtml(h.by || '—')}</td>
+      <td>${escHtml(h.fieldName || '')}</td>
+      <td>${escHtml(String(h.old ?? '—'))}</td>
+      <td>${escHtml(String(h.neu ?? '—'))}</td>
+      <td>${escHtml(h.reason || '')}</td>
+    </tr>`;
+  }).join('');
+  container.innerHTML = `<table class="history-table">
+    <thead><tr><th>Date / Time</th><th>Changed in</th><th>Changed by</th><th>Field</th><th>Old</th><th>New</th><th>Reason</th></tr></thead>
+    <tbody>${rows}</tbody>
+  </table>`;
+}
+
+function savePricingChange() {
+  if (!_modalSku || !_pricingDraft || !_pricingBaseline) return;
+  const reason = (document.getElementById('priceReason').value || '').trim();
+  if (!reason || !_pricingDirty()) return;
+
+  const item = _items.find(i => i.sku === _modalSku);
+  if (!item || !item.id) { toast('❌ Could not find this product to update', 'error'); return; }
+
+  const changes = [];
+  if (_pricingDraft.rrp !== _pricingBaseline.rrp) changes.push({ fieldName: 'RRP', oldValue: _pricingBaseline.rrp || '—', newValue: _pricingDraft.rrp || '—' });
+  if (_pricingDraft.offerPrice !== _pricingBaseline.offerPrice) changes.push({ fieldName: 'Offer price', oldValue: _pricingBaseline.offerPrice || '—', newValue: _pricingDraft.offerPrice || '—' });
+  if (_pricingDraft.offerFrom !== _pricingBaseline.offerFrom) changes.push({ fieldName: 'Offer from', oldValue: _fmtPriceDateVal(_pricingBaseline.offerFrom), newValue: _fmtPriceDateVal(_pricingDraft.offerFrom) });
+  if (_pricingDraft.offerUntil !== _pricingBaseline.offerUntil) changes.push({ fieldName: 'Offer until', oldValue: _fmtPriceDateVal(_pricingBaseline.offerUntil), newValue: _fmtPriceDateVal(_pricingDraft.offerUntil) });
+  if (_pricingDraft.showOnMenuBoard !== _pricingBaseline.showOnMenuBoard) changes.push({ fieldName: 'Show on Menu Board', oldValue: _pricingBaseline.showOnMenuBoard || '—', newValue: _pricingDraft.showOnMenuBoard || '—' });
+  if (!changes.length) return;
+
+  const when = new Date().toISOString();
+  const by = STAFF_ID || STORE_CODE || 'Store User';
+  const logEntries = changes.map(c => ({
+    when, src: STORE_CODE || 'Store', store: STORE_CODE || '', by,
+    fieldName: c.fieldName, old: c.oldValue, neu: c.newValue, reason,
+  }));
+
+  const rrpNum = parseFloat(_pricingDraft.rrp);
+  const offerNum = parseFloat(_pricingDraft.offerPrice);
+
+  const updated = {
+    ...item,
+    rrp: _pricingDraft.rrp,
+    price: isNaN(rrpNum) ? 0 : rrpNum,
+    offerPrice: isNaN(offerNum) ? null : offerNum,
+    offerFrom: _pricingDraft.offerFrom,
+    offerUntil: _pricingDraft.offerUntil,
+    showOnMenuBoard: _pricingDraft.showOnMenuBoard,
+    priceLog: [...logEntries, ...(item.priceLog || [])],
+    updatedAt: when,
+  };
+
+  setDoc(doc(db, ITEMS_COLL, item.id), updated)
+    .then(() => {
+      toast('✅ Price change saved', 'success');
+      _pricingBaseline = { ..._pricingDraft };
+      document.getElementById('priceReason').value = '';
+      _renderPriceLog(updated.priceLog);
+      _refreshPricingSaveState();
+    })
+    .catch(err => toast('❌ Save failed: ' + (err.message || err), 'error'));
+}
+
 // In-memory tag array for the currently open modal
 let _locTags = [];   // [{ label, value }, ...]
 let _locMode = 'tags'; // 'tags' | 'manual'
@@ -2067,6 +2342,9 @@ window.openEditStockOverlay  = openEditStockOverlay;
 window.closeEditStockOverlay = closeEditStockOverlay;
 window.saveEditedStock       = saveEditedStock;
 window.saveItemLocation      = saveItemLocation;
+window._onPricingFieldChange = _onPricingFieldChange;
+window._discardPricingChange = _discardPricingChange;
+window.savePricingChange     = savePricingChange;
 window.refreshLocationPreview= refreshLocationPreview;
 window.switchLocMode         = switchLocMode;
 window.addLocationTag        = addLocationTag;
