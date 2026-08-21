@@ -1273,7 +1273,7 @@
     </div>
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="closeLangModal()">Cancel</button>
-      <button class="btn btn-primary" onclick="saveLangEntry()">Save Language</button>
+      <button class="btn btn-primary" id="langSaveBtn" onclick="saveLangEntry()">Save Language</button>
     </div>
   </div>
 </div>
@@ -1570,7 +1570,7 @@ function renderLangFlagPicker() {
   host.innerHTML = noneBtn + Object.keys(LOS_FLAGS).map(k =>
     `<button type="button" class="${_langModalFlag===k?'on':''}" style="background-image:${losFlagUrl(k)}" data-f="${k}" onclick="_pickLangFlag('${k}')" title="${k}"></button>`).join('');
 }
-function _pickLangFlag(k) { _langModalFlag = k || null; renderLangFlagPicker(); }
+function _pickLangFlag(k) { _langModalFlag = k || null; renderLangFlagPicker(); if (_langSave) _langSave.markDirty(); }
 window._pickLangFlag = _pickLangFlag;
 
 function openLangModal(code) {
@@ -1591,6 +1591,7 @@ function openLangModal(code) {
   _langModalFlag = existing ? (existing.flag || null) : null;
   renderLangFlagPicker();
   document.getElementById('langModal').classList.add('open');
+  if (_langSave) _langSave.reset();
 }
 window.openLangModal = openLangModal;
 function closeLangModal() { document.getElementById('langModal').classList.remove('open'); }
@@ -3240,7 +3241,7 @@ function _makeSaveBtn(btnId) {
   };
 }
 // Initialised once DOM is ready (at end of script)
-let _brandSave, _tplSave, _stockApiSave, _phApiSave;
+let _brandSave, _tplSave, _stockApiSave, _phApiSave, _langSave;
 
 function openAddBrandModal() {
   document.getElementById('brandModalTitle').textContent = 'Add Brand / Supplier';
@@ -3991,6 +3992,11 @@ function openNewTemplateEditor() {
     document.getElementById('tplEditId').value = '';
     document.getElementById('tplName').value = t.name;
     document.getElementById('tplEditorTitle').textContent = `New — ${t.name}`;
+    // Opening straight from a prior Edit could otherwise leave Save Template
+    // disabled (stale state from that session), or enabled from a page load
+    // that never touched the tracker at all — reset explicitly so it always
+    // starts disabled here too, same as every other Add/Edit entry point.
+    if (_tplSave) _tplSave.reset();
     // Store template type on the hidden field
     document.getElementById('tplEditId').dataset.templateType = templateId;
     // Apply defaults from template
@@ -4993,6 +4999,7 @@ _brandSave    = _makeSaveBtn('brandSaveBtn');
 _tplSave      = _makeSaveBtn('tplSaveBtn');
 _stockApiSave = _makeSaveBtn('stockApiSaveBtn');
 _phApiSave    = _makeSaveBtn('phApiSaveBtn');
+_langSave     = _makeSaveBtn('langSaveBtn');
 
 // Event delegation: any input/change inside the form containers marks the button dirty
 document.getElementById('brandPane-settings')
@@ -5010,6 +5017,10 @@ document.getElementById('phCampaignMode')
 // PH endpoint URL/token inputs are dynamically rendered; catch via their parent container
 document.getElementById('phEpList')
   .addEventListener('input',  () => _phApiSave.markDirty());
+document.querySelector('#langModal .modal-body')
+  .addEventListener('input',  () => _langSave.markDirty());
+document.querySelector('#langModal .modal-body')
+  .addEventListener('change', () => _langSave.markDirty());
 
 // Close the template type dropdown when clicking outside it
 document.addEventListener('click', (e) => {

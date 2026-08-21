@@ -46,6 +46,11 @@ export default function ProductPage({ isNew = false }) {
 
   const imageCount = useMemo(() => (draft?.images || []).filter((i) => i.type !== 'video').length, [draft]);
   const videoCount = useMemo(() => (draft?.images || []).filter((i) => i.type === 'video').length, [draft]);
+  // Details and Assets share one save bar and touch dozens of fields
+  // (including nested image/attribute arrays), so a deep JSON compare
+  // against the last-saved baseline is the reliable way to gate it —
+  // hand-picking individual fields to watch would only catch some edits.
+  const dirty = useMemo(() => JSON.stringify(draft) !== JSON.stringify(baseline), [draft, baseline]);
 
   const saveDetailsOrAssets = async () => {
     setSaving(true);
@@ -129,11 +134,14 @@ export default function ProductPage({ isNew = false }) {
         {tab !== 'pricing' && (
           <div className="ph-savebar">
             <span style={{ fontSize: 13, color: 'rgba(0,0,0,.65)' }}>
+              {dirty
+                ? 'Unsaved changes.'
+                : 'No changes to save.'}{' '}
               Images and video are on <strong>Product Assets</strong>. All pricing is on <strong>Pricing</strong>.
             </span>
             <div style={{ flex: 1 }} />
-            <Button onClick={discardDetailsOrAssets} disabled={saving}>Discard</Button>
-            <Button type="primary" onClick={saveDetailsOrAssets} loading={saving}>
+            <Button onClick={discardDetailsOrAssets} disabled={saving || !dirty}>Discard</Button>
+            <Button type="primary" onClick={saveDetailsOrAssets} loading={saving} disabled={!dirty}>
               Save Product
             </Button>
           </div>
