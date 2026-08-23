@@ -44,7 +44,20 @@ export default function ClearableDate({ value, onChange, blankHint, showTime = f
       <div style={{ display: 'flex', gap: 8, ...style }}>
         <DatePicker allowClear style={{ flex: 1 }} value={valid} onChange={handleDateChange} />
         {showTime && (
-          <TimePicker allowClear={false} format="HH:mm" style={{ width: 110 }} value={valid} onChange={handleTimeChange} />
+          // needConfirm={false}: without it, AntD shows an "OK" button in
+          // the time panel and won't fire onChange until it's clicked — so
+          // picking an hour/minute and then just clicking away (closing the
+          // panel, tabbing out, saving the form) silently drops the change.
+          // Every date/time picker on both HQ Admin and Retail Admin should
+          // carry this; see ph-designer skill, components.md §13.
+          <TimePicker
+            allowClear={false}
+            needConfirm={false}
+            format="HH:mm"
+            style={{ width: 110 }}
+            value={valid}
+            onChange={handleTimeChange}
+          />
         )}
       </div>
       {blankHint && (

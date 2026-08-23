@@ -143,6 +143,26 @@ export default function ProductDetailsTab({ draft, patch, onGoPricing }) {
             </Field>
           )}
         </div>
+        {draft.featured && (
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px 16px', marginTop: 14 }}>
+            <Field label="Featured from">
+              <ClearableDate
+                value={draft.featuredFrom}
+                onChange={(v) => patch({ featuredFrom: v })}
+                showTime
+                blankHint={{ blank: 'Featured starts now.', set: 'Set — see date above.' }}
+              />
+            </Field>
+            <Field label="Featured until">
+              <ClearableDate
+                value={draft.featuredUntil}
+                onChange={(v) => patch({ featuredUntil: v })}
+                showTime
+                blankHint={{ blank: 'Featured runs until turned off.', set: 'Set — see date above.' }}
+              />
+            </Field>
+          </div>
+        )}
       </SectionCard>
 
       {/* Descriptions + Classification & availability */}
@@ -243,32 +263,6 @@ export default function ProductDetailsTab({ draft, patch, onGoPricing }) {
           </Field>
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '14px 16px', marginTop: 14 }}>
-          <Field
-            label="Availability"
-            hint={draft.availability !== 'Available' ? <span style={{ color: '#faad14' }}>Boards will fall back or suppress this item.</span> : null}
-          >
-            <Select
-              value={draft.availability}
-              onChange={(v) => patch({ availability: v })}
-              options={['Available', 'Temporarily unavailable', 'Coming soon', 'Discontinued'].map((s) => ({ value: s, label: s }))}
-            />
-          </Field>
-          <Field label="Available from">
-            <ClearableDate
-              value={draft.availFrom}
-              onChange={(v) => patch({ availFrom: v })}
-              blankHint={{ blank: 'Available immediately', set: 'Set — see date above' }}
-            />
-          </Field>
-          <Field label="Available to">
-            <ClearableDate
-              value={draft.availTo}
-              onChange={(v) => patch({ availTo: v })}
-              blankHint={{ blank: 'No end date', set: 'Set — see date above' }}
-            />
-          </Field>
-        </div>
       </SectionCard>
 
       {/* Attributes */}

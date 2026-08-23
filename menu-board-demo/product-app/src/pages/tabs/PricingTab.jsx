@@ -202,6 +202,15 @@ export default function PricingTab({ draft, baseline, setDraft, setBaseline }) {
         <div className="ph-sect-label" style={{ marginBottom: 12 }}>
           RRP &amp; Offer Pricing
         </div>
+        <div style={{ marginBottom: 14 }}>
+          <Field label="Offer description" hint="Required to save — describes this price change and is recorded in the price change log below.">
+            <Input
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              placeholder="e.g. Summer sale — 20% off for two weeks"
+            />
+          </Field>
+        </div>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px 16px' }}>
           <Field label="RRP">
             <InputNumber
@@ -244,15 +253,6 @@ export default function PricingTab({ draft, baseline, setDraft, setBaseline }) {
         </div>
         <div style={{ marginTop: 14 }}>
           <OfferBanner rrp={draft.rrp} offerPrice={draft.offerPrice} offerFrom={draft.offerFrom} offerUntil={draft.offerUntil} />
-        </div>
-        <div style={{ marginTop: 14 }}>
-          <Field label="Reason for this change" hint="Required to save — recorded in the price change log below.">
-            <Input
-              value={reason}
-              onChange={(e) => setReason(e.target.value)}
-              placeholder="Why is this pricing changing?"
-            />
-          </Field>
         </div>
       </div>
 

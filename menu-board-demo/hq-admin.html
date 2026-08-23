@@ -469,10 +469,9 @@
     .csf-item { display: flex; align-items: center; gap: 8px; padding: 6px 14px; cursor: pointer; font-size: 12px; color: var(--text); line-height: 1.4; }
     .csf-item:hover { background: var(--surface2); }
     .csf-item input[type=checkbox] { cursor: pointer; accent-color: var(--primary); flex-shrink: 0; }
-    .csf-footer { display: flex; gap: 6px; padding: 7px 8px; border-top: 1px solid var(--border); background: var(--surface2); }
-    .csf-btn-all, .csf-btn-none { flex: 1; padding: 4px 6px; font-size: 11px; font-family: inherit; border: 1px solid var(--border); border-radius: 5px; cursor: pointer; background: var(--surface); color: var(--text2); font-weight: 600; }
-    .csf-btn-all:hover { background: var(--primary); color: #fff; border-color: var(--primary); }
-    .csf-btn-none:hover { background: var(--danger); color: #fff; border-color: var(--danger); }
+    .csf-footer { padding: 8px; border-top: 1px solid var(--border); background: var(--surface2); }
+    .csf-btn-clear { width: 100%; padding: 6px 10px; font-size: 12px; font-family: inherit; font-weight: 600; border: none; border-radius: 6px; cursor: pointer; background: var(--primary); color: #fff; }
+    .csf-btn-clear:hover { background: #38b0cf; }
 
     /* ── 3-DOT ROW ACTION MENU ────────────────────────── */
     .row-menu-btn { background: transparent; border: none; cursor: pointer; font-size: 18px; color: var(--text2); padding: 4px 10px; border-radius: 6px; line-height: 1; letter-spacing: 3px; font-weight: 700; }
@@ -707,7 +706,7 @@
           </div>
           <p style="font-size:13px;color:var(--text2);margin-bottom:16px;">Manage brands and suppliers. Each brand has its own brand settings, colour scheme, and display configuration.</p>
           <div class="items-toolbar">
-            <div class="items-toolbar-count"><b id="brandsCount">0</b> Brands / Suppliers</div>
+            <div class="items-toolbar-count" id="brandsToolbarCount"><b id="brandsCount">0</b> Brands / Suppliers</div>
             <div class="page-header-actions">
               <button class="toolbar-link-btn" onclick="openAddBrandModal()">Add Brand / Supplier</button>
             </div>
@@ -2565,15 +2564,11 @@ class CheckboxSetFilter {
     this.eGui.innerHTML =
       '<div class="csf-search-row"><input class="csf-search" type="text" placeholder="Search…"></div>' +
       '<div class="csf-list"></div>' +
-      '<div class="csf-footer"><button class="csf-btn-all">Select All</button><button class="csf-btn-none">Clear All</button></div>';
+      '<div class="csf-footer"><button class="csf-btn-clear">Clear Filter</button></div>';
     this._searchEl = this.eGui.querySelector('.csf-search');
     this._listEl   = this.eGui.querySelector('.csf-list');
     this._searchEl.addEventListener('input', () => this._renderList());
-    this.eGui.querySelector('.csf-btn-all').addEventListener('click', () => {
-      this.allValues.forEach(v => this.checkedValues.add(v));
-      this._renderList(); params.filterChangedCallback();
-    });
-    this.eGui.querySelector('.csf-btn-none').addEventListener('click', () => {
+    this.eGui.querySelector('.csf-btn-clear').addEventListener('click', () => {
       this.checkedValues.clear();
       this._renderList(); params.filterChangedCallback();
     });
@@ -2704,6 +2699,7 @@ function initGrids() {
       isExternalFilterPresent: () => _itemsViewSelected,
       doesExternalFilterPass: node => _itemsSelectedIds.has(node.data.id),
       onSelectionChanged: () => updateItemsSelectionBar(),
+      onFilterChanged: () => updateItemsSelectionBar(),
       defaultColDef: {
         resizable: true,
         sortable: true,
@@ -2919,6 +2915,23 @@ function initGrids() {
             const tag = data.active ? 'Active' : 'Inactive';
             return data.featured ? [tag, 'Featured'] : [tag];
           },
+          // Filter checklist echoes the same dot/icon the cell itself
+          // shows, not a bare label — same rule the Types column already
+          // follows (ph-designer skill, components.md §3.1).
+          filterParams: {
+            itemRenderer: (value) => {
+              const span = document.createElement('span');
+              span.style.cssText = 'display:inline-flex;align-items:center;gap:6px;';
+              if (value === 'Featured') {
+                span.innerHTML = '<span class="material-symbols-outlined" style="font-size:14px;color:#faad14;font-variation-settings:\'FILL\' 1;">star</span>';
+              } else {
+                const dotColor = value === 'Active' ? 'var(--success)' : 'var(--danger)';
+                span.innerHTML = `<span style="width:8px;height:8px;border-radius:50%;background:${dotColor};display:inline-block;flex-shrink:0;"></span>`;
+              }
+              span.appendChild(document.createTextNode(value));
+              return span;
+            }
+          },
           cellRenderer: (params) => {
             const item = params.data;
             const wrap = document.createElement('div');
@@ -2929,7 +2942,7 @@ function initGrids() {
             statusWrap.title = item.active ? 'Active — visible on menus' : 'Inactive — hidden from menus';
             const dot = document.createElement('span');
             dot.className = 'status-dot';
-            dot.style.background = item.active ? 'var(--success)' : 'var(--text2)';
+            dot.style.background = item.active ? 'var(--success)' : 'var(--danger)';
             const label = document.createElement('span');
             label.textContent = item.active ? 'Active' : 'Inactive';
             statusWrap.appendChild(dot); statusWrap.appendChild(label);
@@ -2982,6 +2995,7 @@ function initGrids() {
       paginationPageSize: 25,
       paginationPageSizeSelector: [25, 50, 100],
       defaultColDef: { resizable: true, sortable: true, filter: 'agTextColumnFilter', floatingFilter: true },
+      onFilterChanged: () => updateBrandsCount(),
       columnDefs: []
     });
   }
@@ -3015,7 +3029,15 @@ function updateItemsSelectionBar() {
     featureBtn.style.display    = hasUnfeatured ? '' : 'none';
     unfeatureBtn.style.display  = hasFeatured ? '' : 'none';
   } else {
-    countWrap.innerHTML = `<b id="itemsCount">${total}</b> Products`;
+    // Column filters swap the count line to "Showing K of N", reverting to
+    // the plain "N Products" form the moment every filter clears (verified
+    // live on Stores / Branches; ph-designer skill, components.md §6).
+    if (itemsGridApi.isAnyFilterPresent()) {
+      const shown = itemsGridApi.getDisplayedRowCount();
+      countWrap.innerHTML = `Showing <b id="itemsCount">${shown}</b> of ${total} Products`;
+    } else {
+      countWrap.innerHTML = `<b id="itemsCount">${total}</b> Products`;
+    }
     selActions.style.display = 'none';
     toolbarActions.style.display = 'flex';
     // If filter was active with no selection, reset
@@ -3347,8 +3369,23 @@ function renderBrands() {
   ]);
 
   brandsGridApi.setGridOption('rowData', brands);
-  const brandsCountEl = document.getElementById('brandsCount');
-  if (brandsCountEl) brandsCountEl.textContent = brands.length;
+  _brandsTotal = brands.length;
+  updateBrandsCount();
+}
+
+// Column filters swap the count line to "Showing K of N", reverting to the
+// plain "N Brands / Suppliers" form once every filter clears (verified live
+// on Stores / Branches; ph-designer skill, components.md §6).
+let _brandsTotal = 0;
+function updateBrandsCount() {
+  const wrap = document.getElementById('brandsToolbarCount');
+  if (!wrap || !brandsGridApi) return;
+  if (brandsGridApi.isAnyFilterPresent()) {
+    const shown = brandsGridApi.getDisplayedRowCount();
+    wrap.innerHTML = `Showing <b id="brandsCount">${shown}</b> of ${_brandsTotal} Brands / Suppliers`;
+  } else {
+    wrap.innerHTML = `<b id="brandsCount">${_brandsTotal}</b> Brands / Suppliers`;
+  }
 }
 
 let brandEditingLogoLeft = '';

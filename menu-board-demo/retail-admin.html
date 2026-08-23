@@ -560,26 +560,23 @@
     .csf-item:hover { background: var(--surface2); }
     .csf-item input[type=checkbox] { cursor: pointer; accent-color: var(--primary); flex-shrink: 0; }
     .csf-footer {
-      display: flex;
-      gap: 6px;
-      padding: 7px 8px;
+      padding: 8px;
       border-top: 1px solid var(--border);
       background: var(--surface2);
     }
-    .csf-btn-all, .csf-btn-none {
-      flex: 1;
-      padding: 4px 6px;
-      font-size: 11px;
+    .csf-btn-clear {
+      width: 100%;
+      padding: 6px 10px;
+      font-size: 12px;
       font-family: inherit;
-      border: 1px solid var(--border);
-      border-radius: 5px;
-      cursor: pointer;
-      background: var(--surface);
-      color: var(--text2);
       font-weight: 600;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      background: var(--primary);
+      color: #fff;
     }
-    .csf-btn-all:hover { background: var(--primary); color: #fff; border-color: var(--primary); }
-    .csf-btn-none:hover { background: var(--danger); color: #fff; border-color: var(--danger); }
+    .csf-btn-clear:hover { background: #38b0cf; }
 
     /* ── ITEM DETAIL MODAL ───────────────────────── */
     .modal-overlay {
@@ -1283,15 +1280,11 @@ class CheckboxSetFilter {
     this.eGui.innerHTML =
       '<div class="csf-search-row"><input class="csf-search" type="text" placeholder="Search…"></div>' +
       '<div class="csf-list"></div>' +
-      '<div class="csf-footer"><button class="csf-btn-all">Select All</button><button class="csf-btn-none">Clear All</button></div>';
+      '<div class="csf-footer"><button class="csf-btn-clear">Clear Filter</button></div>';
     this._searchEl = this.eGui.querySelector('.csf-search');
     this._listEl   = this.eGui.querySelector('.csf-list');
     this._searchEl.addEventListener('input', () => this._renderList());
-    this.eGui.querySelector('.csf-btn-all').addEventListener('click', () => {
-      this.allValues.forEach(v => this.checkedValues.add(v));
-      this._renderList(); params.filterChangedCallback();
-    });
-    this.eGui.querySelector('.csf-btn-none').addEventListener('click', () => {
+    this.eGui.querySelector('.csf-btn-clear').addEventListener('click', () => {
       this.checkedValues.clear();
       this._renderList(); params.filterChangedCallback();
     });
@@ -1600,6 +1593,27 @@ function initGrid() {
         getFilterValue: (data) => {
           const tag = isNotStocked(data.sku) ? 'Not Stocked' : isOos(data.sku) ? 'Out of Stock' : 'In Stock';
           return isLocalFeatured(data.sku) ? [tag, 'Featured'] : [tag];
+        },
+        // Filter checklist echoes the same icon/colour the cell itself
+        // shows, not a bare label (ph-designer skill, components.md §3.1).
+        filterParams: {
+          itemRenderer: (value) => {
+            const ICONS = {
+              'Not Stocked': ['do_not_disturb_on', 'var(--text2)'],
+              'Out of Stock': ['block', 'var(--danger)'],
+              'In Stock': ['check_circle', 'var(--success)'],
+              'Featured': ['star', '#faad14'],
+            };
+            const [icon, color] = ICONS[value] || [null, null];
+            const span = document.createElement('span');
+            span.style.cssText = 'display:inline-flex;align-items:center;gap:6px;';
+            if (icon) {
+              const fill = value === 'Featured' ? "'FILL' 1," : '';
+              span.innerHTML = `<span class="material-symbols-outlined" style="font-size:14px;color:${color};font-variation-settings:${fill}">${icon}</span>`;
+            }
+            span.appendChild(document.createTextNode(value));
+            return span;
+          }
         },
         cellRenderer: (params) => {
           const item = params.data;
