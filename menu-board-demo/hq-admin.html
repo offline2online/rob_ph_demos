@@ -4,6 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>HQ Admin — PersonalisationHub</title>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;600;700&family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/ag-grid-community@32.3.3/styles/ag-grid.css">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/ag-grid-community@32.3.3/styles/ag-theme-alpine.css">
   <script src="https://cdn.jsdelivr.net/npm/ag-grid-community@32.3.3/dist/ag-grid-community.min.noStyle.js"></script>
@@ -16,15 +17,15 @@
       --surface:   #FFFFFF;
       --surface2:  #f5f5f5;
       --surface3:  #f0f0f0;
-      --border:    #E2E8F0;
+      --border:    #d9d9d9;
       --border2:   #CBD5E1;
-      --text:      rgba(0,0,0,0.88);
-      --text2:     rgba(0,0,0,0.65);
+      --text:      #333333;
+      --text2:     rgba(0,0,0,0.45);
       --primary:   #169bc2;
       --primary-light: rgba(22,155,194,0.10);
       --success:   #52c41a;
       --success-light: rgba(82,196,26,0.10);
-      --warning:   #D97706;
+      --warning:   #faad14;
       --warning-light: rgba(217,119,6,0.10);
       --danger:    #ff4d4f;
       --danger-light: rgba(255,77,79,0.10);
@@ -34,8 +35,14 @@
     * { margin:0; padding:0; box-sizing:border-box; }
     html { height:auto; overflow:auto; }
     body { height:auto; }
+    .material-symbols-outlined {
+      font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+      vertical-align: middle;
+      font-size: 20px;
+      display: inline-block;
+    }
     body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+      font-family: Roboto, "Helvetica Neue", Helvetica, Arial, sans-serif;
       background: var(--surface);
       color: var(--text);
       display: flex;
@@ -121,10 +128,11 @@
       display: inline-flex;
       align-items: center;
       gap: 6px;
-      padding: 8px 14px;
+      padding: 0 15px;
+      height: 32px;
       border-radius: 6px;
-      font-size: 13px;
-      font-weight: 600;
+      font-size: 14px;
+      font-weight: 400;
       cursor: pointer;
       border: none;
       transition: all 0.14s;
@@ -159,8 +167,8 @@
     .item-img img { width: 100%; height: 100%; object-fit: cover; }
     .item-name { font-weight: 600; color: var(--text); margin-bottom: 2px; }
     .item-sku { font-size: 11px; color: var(--text2); font-family: monospace; }
-    .badge-active { background: var(--success-light); color: var(--success); font-size: 11px; font-weight: 600; padding: 3px 9px; border-radius: 20px; }
-    .badge-inactive { background: var(--danger-light); color: var(--danger); font-size: 11px; font-weight: 600; padding: 3px 9px; border-radius: 20px; }
+    .badge-active { background: var(--success-light); color: var(--success); font-size: 11px; font-weight: 600; padding: 3px 9px; border-radius: 9999px; }
+    .badge-inactive { background: var(--danger-light); color: var(--danger); font-size: 11px; font-weight: 600; padding: 3px 9px; border-radius: 9999px; }
     .actions { display: flex; gap: 6px; }
 
     /* STATUS DOT — read-only active/inactive indicator (bulk actions handle changes) */
@@ -234,7 +242,7 @@
     .lang-flag-picker button.on { border-color: var(--primary); box-shadow: 0 0 0 2px rgba(22,155,194,0.25); }
     .lang-flag-picker button.none { display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 600; color: var(--text2); text-transform: uppercase; }
     .form-group { margin-bottom: 16px; }
-    .form-group label { display: block; font-size: 11px; font-weight: 700; color: var(--text2); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px; }
+    .form-group label { display: block; font-size: 14px; font-weight: 400; color: var(--text2); margin-bottom: 6px; }
     .form-group label .req { color: var(--danger); }
     .form-group input, .form-group select, .form-group textarea { width: 100%; background: var(--surface2); border: 1px solid var(--border); border-radius: 6px; padding: 9px 11px; color: var(--text); font-size: 13px; outline: none; transition: border-color 0.15s; }
     .form-group input:focus, .form-group select:focus, .form-group textarea:focus { border-color: var(--primary); box-shadow: 0 0 0 2px rgba(22,155,194,0.2); }
@@ -270,6 +278,12 @@
     }
     .settings-section .settings-desc { font-size: 12px; color: var(--text2); margin-bottom: 18px; line-height: 1.5; }
     .form-group .form-help { font-size: 11px; color: var(--text2); margin-top: 4px; line-height: 1.4; }
+    .settings-layout { display: flex; align-items: flex-start; gap: 24px; }
+    .settings-nav { width: 245px; flex-shrink: 0; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; position: sticky; top: 16px; }
+    .settings-nav-item { display: block; width: 100%; text-align: left; padding: 11px 16px; font-size: 14px; color: #333333; background: none; border: none; cursor: pointer; }
+    .settings-nav-item:hover { background: var(--surface2); }
+    .settings-nav-item.active { color: #169bc2; background: rgba(22,155,194,0.10); font-weight: 500; }
+    .settings-content { flex: 1; min-width: 0; }
 
     /* CATEGORIES */
     .cat-list { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
@@ -312,19 +326,19 @@
     /* ── AG-GRID THEME OVERRIDES ─────────────── */
     .ag-theme-alpine {
       --ag-background-color:          var(--surface);
-      --ag-header-background-color:   var(--surface2);
+      --ag-header-background-color:   var(--surface);
       --ag-odd-row-background-color:  var(--surface);
-      --ag-row-hover-color:           var(--surface2);
+      --ag-row-hover-color:           #e8fdff;
       --ag-border-color:              var(--border);
-      --ag-header-foreground-color:   var(--text);
-      --ag-foreground-color:          var(--text);
-      --ag-font-family:               -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif;
+      --ag-header-foreground-color:   #181d1f;
+      --ag-foreground-color:          #181d1f;
+      --ag-font-family:               Roboto, "Helvetica Neue", Helvetica, Arial, sans-serif;
       --ag-font-size:                 13px;
-      --ag-cell-horizontal-padding:   14px;
+      --ag-cell-horizontal-padding:   15px;
       --ag-floating-filter-height:    36px;
       --ag-selected-row-background-color: rgba(22,155,194,0.08);
     }
-    .ag-theme-alpine .ag-header-cell-label { font-size: 14px; font-weight: 700; color: var(--text); }
+    .ag-theme-alpine .ag-header-cell-label { font-size: 13px; font-weight: 700; color: var(--text); }
     .ag-theme-alpine .ag-floating-filter-input { font-size: 12px; }
     /* Propagate row height so cell renderers can use height:100% for vertical centering */
     .ag-theme-alpine .ag-cell { height: 100%; }
@@ -360,7 +374,7 @@
       margin-bottom: 20px;
       flex-wrap: wrap;
     }
-    .page-title { font-size: 26px; font-weight: 700; color: var(--text); line-height: 1.2; }
+    .page-title { font-size: 20px; font-weight: 700; color: var(--text); line-height: 1.2; }
     .page-header-actions {
       display: flex;
       align-items: center;
@@ -371,9 +385,9 @@
       background: none;
       border: none;
       cursor: pointer;
-      color: var(--primary);
+      color: #333333;
       font-size: 14px;
-      font-weight: 700;
+      font-weight: 400;
       padding: 0;
     }
     .toolbar-link-btn:hover { text-decoration: underline; }
@@ -416,7 +430,7 @@
       border-top: 1px solid var(--border);
       flex-wrap: wrap;
     }
-    .items-toolbar-count { font-size: 15px; font-weight: 700; color: var(--text); }
+    .items-toolbar-count { font-size: 14px; font-weight: 400; color: var(--text); }
     .items-toolbar-sel-actions {
       display: flex;
       align-items: center;
@@ -578,9 +592,9 @@
 
     /* ── BRAND MODAL TABS ─────────────────────── */
     .modal-tabs { display:flex; gap:0; border-bottom:1px solid var(--border); padding:0 22px; background:var(--surface); flex-shrink:0; }
-    .modal-tab { padding:12px 16px; font-size:13px; font-weight:600; color:var(--text2); cursor:pointer; border-bottom:2px solid transparent; margin-bottom:-1px; white-space:nowrap; transition:color .15s,border-color .15s; user-select:none; }
+    .modal-tab { padding:12px 8px; font-size:14px; font-weight:400; color:#333333; cursor:pointer; border-bottom:2px solid transparent; margin-bottom:-1px; margin-right:16px; white-space:nowrap; transition:color .15s,border-color .15s,background .15s; user-select:none; }
     .modal-tab:hover { color:var(--text); }
-    .modal-tab.active { color:var(--primary); border-bottom-color:var(--primary); }
+    .modal-tab.active { color:#169bc2; font-weight:500; background:rgba(22,155,194,0.1); border-bottom-color:#169bc2; }
     .modal-tab-pane { display:none; }
     .modal-tab-pane.active { display:block; }
 
@@ -650,12 +664,12 @@
           <div class="page-header">
             <h1 class="page-title">Products</h1>
             <button class="toolbar-icon-btn" onclick="showView('settings')" title="Settings">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+              <span class="material-symbols-outlined" style="font-size:16px;">settings</span>
             </button>
           </div>
           <div class="items-toolbar">
             <div class="items-toolbar-count" id="itemsToolbarCount">
-              <span id="itemsCount">0</span> Products
+              <b id="itemsCount">0</b> Products
             </div>
             <div class="page-header-actions" id="itemsToolbarActions">
               <button class="toolbar-link-btn" onclick="showView('brands')">Manage Brands / Suppliers</button>
@@ -665,10 +679,10 @@
               <button class="toolbar-text-link" id="itemsSelViewBtn" onclick="viewSelectedItems()">View Selected</button>
               <button class="toolbar-text-link" id="itemsSelActivateBtn" onclick="bulkSetActive(true)">Activate Selected</button>
               <button class="toolbar-text-link" id="itemsSelDeactivateBtn" onclick="bulkSetActive(false)">Deactivate Selected</button>
-              <button class="toolbar-text-link" id="itemsSelFeatureBtn" onclick="bulkSetFeatured(true)">&#11088; Feature Selected</button>
+              <button class="toolbar-text-link" id="itemsSelFeatureBtn" onclick="bulkSetFeatured(true)"><span class="material-symbols-outlined" style="font-size:14px;">star</span> Feature Selected</button>
               <button class="toolbar-text-link" id="itemsSelUnfeatureBtn" onclick="bulkSetFeatured(false)">Unfeature Selected</button>
               <button class="toolbar-text-link toolbar-text-link-danger" onclick="confirmDeleteSelection()">Delete Selected</button>
-              <button class="items-sel-bar-clear" onclick="clearItemsSelection()">✕ Clear selection</button>
+              <button class="items-sel-bar-clear" onclick="clearItemsSelection()"><span class="material-symbols-outlined" style="font-size:14px;">close</span> Clear selection</button>
             </div>
           </div>
           <div id="itemsGrid" class="ag-theme-alpine" style="width:100%;"></div>
@@ -676,13 +690,13 @@
 
         <!-- BRANDS -->
         <div id="view-brands" class="view">
-          <button class="back-link" onclick="showView('items')">&#8592; Back to Products</button>
+          <button class="back-link" onclick="showView('items')"><span class="material-symbols-outlined" style="font-size:14px;">arrow_back</span> Back to Products</button>
           <div class="page-header">
             <h1 class="page-title">Brands / Suppliers</h1>
           </div>
           <p style="font-size:13px;color:var(--text2);margin-bottom:16px;">Manage brands and suppliers. Each brand has its own brand settings, colour scheme, and display configuration.</p>
           <div class="items-toolbar">
-            <div class="items-toolbar-count"><span id="brandsCount">0</span> Brands / Suppliers</div>
+            <div class="items-toolbar-count"><b id="brandsCount">0</b> Brands / Suppliers</div>
             <div class="page-header-actions">
               <button class="toolbar-link-btn" onclick="openAddBrandModal()">Add Brand / Supplier</button>
             </div>
@@ -692,8 +706,16 @@
 
         <!-- SETTINGS -->
         <div id="view-settings" class="view">
-          <button class="back-link" onclick="showView('items')">&#8592; Back to Products</button>
-          <div class="settings-section">
+          <button class="back-link" onclick="showView('items')"><span class="material-symbols-outlined" style="font-size:14px;">arrow_back</span> Back to Products</button>
+          <div class="settings-layout">
+            <nav class="settings-nav" id="settingsNav">
+              <button type="button" class="settings-nav-item active" data-settings-target="settingsSection-stockApi" onclick="scrollToSettingsSection('settingsSection-stockApi', this)">Stock API Key</button>
+              <button type="button" class="settings-nav-item" data-settings-target="settingsSection-phApi" onclick="scrollToSettingsSection('settingsSection-phApi', this)">Personalisation Hub API</button>
+              <button type="button" class="settings-nav-item" data-settings-target="settingsSection-cart" onclick="scrollToSettingsSection('settingsSection-cart', this)">Shopping Cart</button>
+              <button type="button" class="settings-nav-item" data-settings-target="settingsSection-lang" onclick="scrollToSettingsSection('settingsSection-lang', this)">Language Registry</button>
+            </nav>
+            <div class="settings-content">
+          <div class="settings-section" id="settingsSection-stockApi">
             <h3>Stock API Key</h3>
             <p class="settings-desc">Set a secret key that external platforms must include when calling the Stock API. Used as the <code>X-Stock-Api-Key</code> header in API requests.</p>
             <div class="form-row" style="max-width:520px;align-items:flex-end;">
@@ -706,7 +728,7 @@
             </div>
           </div>
 
-          <div class="settings-section">
+          <div class="settings-section" id="settingsSection-phApi">
             <h3>Personalisation Hub API</h3>
             <p class="settings-desc">Configure one or more API environments (e.g. dev, staging, production). The menu board probes each in order and uses the first that responds successfully. Tokens are stored AES-256-GCM encrypted in Firestore.</p>
 
@@ -722,15 +744,15 @@
             <div class="ph-ep-list" id="phEpList"></div>
 
             <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:4px;">
-              <button class="btn btn-ghost btn-sm" onclick="addPhEndpoint()">&#x2795; Add Environment</button>
+              <button class="btn btn-ghost btn-sm" onclick="addPhEndpoint()"><span class="material-symbols-outlined" style="font-size:14px;">add</span> Add Environment</button>
               <button class="btn btn-primary" id="phApiSaveBtn" onclick="savePhApi()">Save Changes</button>
             </div>
             <p id="phApiStatus" style="font-size:12px;margin-top:10px;min-height:18px;"></p>
 
-            <p id="phLegacyNotice" style="display:none;font-size:12px;color:var(--warning);margin-top:10px;background:rgba(217,119,6,0.08);padding:8px 11px;border-radius:7px;border:1px solid rgba(217,119,6,0.25);">&#x26A0;&#xFE0F; Settings use an older single-token format. Please re-enter your API token(s) above and save.</p>
+            <p id="phLegacyNotice" style="display:none;font-size:12px;color:var(--warning);margin-top:10px;background:rgba(217,119,6,0.08);padding:8px 11px;border-radius:7px;border:1px solid rgba(217,119,6,0.25);"><span class="material-symbols-outlined" style="font-size:14px;">warning</span> Settings use an older single-token format. Please re-enter your API token(s) above and save.</p>
           </div>
 
-          <div class="settings-section">
+          <div class="settings-section" id="settingsSection-cart">
             <h3>Shopping Cart</h3>
             <p class="settings-desc">Configure the cart label and icon used across all Brands / Suppliers in the cart panel and order summary.</p>
             <div class="form-row" style="max-width:520px;">
@@ -756,7 +778,7 @@
             <button id="sCartSaveBtn" class="btn btn-primary btn-sm" onclick="saveTakeoutBag()" disabled style="opacity:0.45;cursor:not-allowed;">Save Changes</button>
           </div>
 
-          <div class="settings-section">
+          <div class="settings-section" id="settingsSection-lang">
             <h3>Language Registry</h3>
             <p class="settings-desc">Company-level reference data for the <strong>Languages On Shift</strong> display item. The store record only ever sends a language identifier (an ISO code, an English name, or an endonym) &mdash; everything needed to render it, the flag, the native-script name, reading direction and script, comes from this table. A language a store's record can send but that isn't listed here simply won't appear on screen.</p>
             <p class="settings-desc" style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:10px 12px;">
@@ -765,6 +787,8 @@
             <div id="langRegistryList" class="lang-registry-list"></div>
             <button class="btn btn-primary btn-sm" onclick="openLangModal()" style="margin-top:10px;">+ Add Language</button>
           </div>
+            </div><!-- /settings-content -->
+          </div><!-- /settings-layout -->
         </div>
 
       </div><!-- /content -->
@@ -779,7 +803,7 @@
   <div class="modal" style="max-width:760px;height:85vh;">
     <div class="modal-header">
       <h2 id="brandModalTitle">Add Brand</h2>
-      <button class="modal-close" onclick="closeBrandModal()">&#x2715;</button>
+      <button class="modal-close" onclick="closeBrandModal()"><span class="material-symbols-outlined" style="font-size:18px;">close</span></button>
     </div>
     <div class="modal-tabs">
       <div class="modal-tab active" id="brandTab-settings" onclick="switchBrandTab('settings')">Brand Settings</div>
@@ -792,7 +816,7 @@
         <input type="hidden" id="bEditId">
         <div class="form-row">
           <div class="form-group">
-            <label>Brand Name <span class="req">*</span></label>
+            <label><span class="req">*</span> Brand Name</label>
             <input type="text" id="bName" placeholder="e.g. The Grand Caf&#233;">
           </div>
           <div class="form-group">
@@ -849,7 +873,7 @@
                    accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
                    onchange="uploadBrandGuidelines(event)" style="display:none;">
             <div id="bGuidelinesPreview" style="display:none;align-items:center;gap:12px;justify-content:center;">
-              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="var(--primary)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+              <span class="material-symbols-outlined" style="font-size:28px;color:var(--primary);">description</span>
               <div style="text-align:left;">
                 <div id="bGuidelinesFileName" style="font-size:13px;font-weight:600;color:var(--text);"></div>
                 <div id="bGuidelinesFileSize" style="font-size:11px;color:var(--text2);"></div>
@@ -857,7 +881,7 @@
               <button type="button" onclick="event.stopPropagation();clearBrandGuidelines()" style="font-size:12px;color:var(--danger);text-decoration:underline;background:none;border:none;cursor:pointer;margin-left:8px;">Remove</button>
             </div>
             <div id="bGuidelinesEmpty">
-              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="var(--primary)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="margin-bottom:8px;"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg>
+              <span class="material-symbols-outlined" style="font-size:32px;color:var(--primary);margin-bottom:8px;">upload_file</span>
               <p style="font-weight:600;margin:0 0 4px;">&lsquo;Click to upload&rsquo; or &lsquo;Drag &amp; Drop Brand Guidelines here&rsquo;</p>
               <p style="font-size:12px;color:var(--text2);margin:0;">(PDF and Word documents are currently supported)</p>
             </div>
@@ -923,10 +947,10 @@
           <div style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:4px;">Data Management</div>
           <p style="font-size:12px;color:var(--text2);margin-bottom:10px;">Export or import this brand&rsquo;s items, or remove all data for this brand.</p>
           <div style="display:flex;gap:8px;flex-wrap:wrap;">
-            <button class="btn btn-ghost btn-sm" onclick="exportBrandData()">&#x1F4E4; Export Brand</button>
-            <button class="btn btn-ghost btn-sm" onclick="document.getElementById('brandImportFile').click()">&#x1F4E5; Import Data</button>
+            <button class="btn btn-ghost btn-sm" onclick="exportBrandData()"><span class="material-symbols-outlined" style="font-size:14px;">upload</span> Export Brand</button>
+            <button class="btn btn-ghost btn-sm" onclick="document.getElementById('brandImportFile').click()"><span class="material-symbols-outlined" style="font-size:14px;">download</span> Import Data</button>
             <input type="file" id="brandImportFile" accept=".json" style="display:none" onchange="importBrandData(event)">
-            <button class="btn btn-danger btn-sm" onclick="clearBrandData()">&#x1F5D1;&#xFE0F; Clear Brand Data</button>
+            <button class="btn btn-danger btn-sm" onclick="clearBrandData()"><span class="material-symbols-outlined" style="font-size:14px;">delete</span> Clear Brand Data</button>
           </div>
         </div>
       </div>
@@ -955,14 +979,14 @@
         <!-- INLINE EDITOR PANEL -->
         <div class="tpl-editor-panel" id="tplEditorPanel">
           <div class="tpl-editor-header">
-            <button class="tpl-editor-back" onclick="closeTplEditor()">&#8592; Back to templates</button>
+            <button class="tpl-editor-back" onclick="closeTplEditor()"><span class="material-symbols-outlined" style="font-size:14px;">arrow_back</span> Back to templates</button>
             <span id="tplEditorTitle" style="margin-left:auto;font-size:12px;color:var(--text2);font-weight:400;"></span>
           </div>
           <div class="tpl-editor-body">
             <input type="hidden" id="tplEditId">
 
             <div class="form-group">
-              <label>Template Name <span class="req">*</span></label>
+              <label><span class="req">*</span> Template Name</label>
               <input type="text" id="tplName" placeholder="e.g. Summer Menu">
             </div>
 
@@ -1052,7 +1076,7 @@
               <div class="tpl-type-dropdown" id="tplTypeDropdown">
                 <button type="button" class="tpl-type-trigger" id="tplTypeTrigger" onclick="toggleTplTypePanel()">
                   <span class="tpl-type-label" id="tplTypeLabel">All Types</span>
-                  <span class="tpl-type-arrow">&#9660;</span>
+                  <span class="tpl-type-arrow material-symbols-outlined" style="font-size:16px;">expand_more</span>
                 </button>
                 <div class="tpl-type-panel" id="tplTypePanel">
                   <div class="tpl-type-panel-header">
@@ -1202,13 +1226,13 @@
   <div class="modal" style="max-width:600px;">
     <div class="modal-header">
       <h2 id="langModalTitle">Add Language</h2>
-      <button class="modal-close" onclick="closeLangModal()">&#x2715;</button>
+      <button class="modal-close" onclick="closeLangModal()"><span class="material-symbols-outlined" style="font-size:18px;">close</span></button>
     </div>
     <div class="modal-body">
       <input type="hidden" id="langEditCode">
       <div class="form-row">
         <div class="form-group">
-          <label>Code <span class="req">*</span> <span style="font-size:11px;font-weight:400;text-transform:none;color:var(--text2);">(BCP-47, unique)</span></label>
+          <label><span class="req">*</span> Code <span style="font-size:11px;font-weight:400;text-transform:none;color:var(--text2);">(BCP-47, unique)</span></label>
           <input type="text" id="langCode" placeholder="e.g. pl">
         </div>
         <div class="form-group">
@@ -1218,11 +1242,11 @@
       </div>
       <div class="form-row">
         <div class="form-group">
-          <label>English Name <span class="req">*</span></label>
+          <label><span class="req">*</span> English Name</label>
           <input type="text" id="langEnglish" placeholder="e.g. Polish">
         </div>
         <div class="form-group">
-          <label>Native Name (endonym) <span class="req">*</span></label>
+          <label><span class="req">*</span> Native Name (endonym)</label>
           <input type="text" id="langNative" placeholder="e.g. Polski &mdash; authored in the correct script">
         </div>
       </div>
@@ -1281,7 +1305,7 @@
 <!-- CONFIRM DIALOG -->
 <div class="confirm-overlay" id="confirmOverlay">
   <div class="confirm-box">
-    <div class="icon">&#x26A0;&#xFE0F;</div>
+    <div class="icon"><span class="material-symbols-outlined" style="font-size:36px;color:var(--warning);">warning</span></div>
     <h3 id="confirmTitle">Are you sure?</h3>
     <p id="confirmMsg">This action cannot be undone.</p>
     <div class="confirm-actions">
@@ -1353,7 +1377,7 @@ function getTypes() { return _types.length ? _types : DEFAULT_TYPES; }
 function saveTypes(types) {
   _types = types;
   setDoc(doc(db, MB, 'types'), { data: types })
-    .catch(err => toast('\u274C Failed to save types: ' + (err.message || err), 'error'));
+    .catch(err => toast('Failed to save types: ' + (err.message || err), 'error'));
 }
 
 // ===== LANGUAGE REGISTRY (Languages On Shift) =====
@@ -1442,7 +1466,7 @@ function getLanguages() { return _languages.length ? _languages : DEFAULT_LANGUA
 function saveLanguages(languages) {
   _languages = languages;
   setDoc(doc(db, MB, 'languages'), { data: languages })
-    .catch(err => toast('\u274C Failed to save Language Registry: ' + (err.message || err), 'error'));
+    .catch(err => toast('Failed to save Language Registry: ' + (err.message || err), 'error'));
 }
 
 // Flag SVGs \u2014 inline, never emoji (\u00A79 non-functional requirement; emoji flags
@@ -1557,8 +1581,8 @@ function renderLanguageRegistry() {
       <span class="lrcode">${escHtml(l.code)}</span>
       <span class="lrcode" title="Text direction">${l.direction === 'rtl' ? 'RTL' : 'LTR'}</span>
       <div class="lracts">
-        <button type="button" onclick="openLangModal('${escHtml(l.code)}')" title="Edit">&#9998;</button>
-        <button type="button" onclick="deleteLangEntry('${escHtml(l.code)}')" title="Delete">&#128465;</button>
+        <button type="button" onclick="openLangModal('${escHtml(l.code)}')" title="Edit"><span class="material-symbols-outlined" style="font-size:16px;">edit</span></button>
+        <button type="button" onclick="deleteLangEntry('${escHtml(l.code)}')" title="Delete"><span class="material-symbols-outlined" style="font-size:16px;">delete</span></button>
       </div>
     </div>`).join('') || '<p style="padding:14px;font-size:13px;color:var(--text2);">No languages yet \u2014 add the first one.</p>';
 }
@@ -1601,10 +1625,10 @@ function saveLangEntry() {
   const code = document.getElementById('langCode').value.trim().toLowerCase();
   const english = document.getElementById('langEnglish').value.trim();
   const native = document.getElementById('langNative').value.trim();
-  if (!code || !english || !native) { toast('\u26A0\uFE0F Code, English name and Native name are required.', 'error'); return; }
+  if (!code || !english || !native) { toast('Code, English name and Native name are required.', 'error'); return; }
   const editingCode = document.getElementById('langEditCode').value;
   const langs = getLanguages().slice();
-  if (!editingCode && langs.some(l => l.code === code)) { toast('\u26A0\uFE0F That code is already in the registry.', 'error'); return; }
+  if (!editingCode && langs.some(l => l.code === code)) { toast('That code is already in the registry.', 'error'); return; }
   const entry = {
     code, english, native,
     alias: document.getElementById('langAlias').value.split(',').map(s=>s.trim()).filter(Boolean),
@@ -1621,7 +1645,7 @@ function saveLangEntry() {
   saveLanguages(langs);
   renderLanguageRegistry();
   closeLangModal();
-  toast('\u2705 Language Registry saved', 'success');
+  toast('Language Registry saved', 'success');
 }
 window.saveLangEntry = saveLangEntry;
 
@@ -1678,7 +1702,7 @@ function getBrands() { return _brands; }
 function saveBrands(brands) {
   _brands = brands;
   setDoc(doc(db, MB, 'brands'), { data: brands })
-    .catch(err => toast('\u274C Failed to save brands: ' + (err.message || err), 'error'));
+    .catch(err => toast('Failed to save brands: ' + (err.message || err), 'error'));
 }
 
 function createDefaultBrand(overrides) {
@@ -1741,7 +1765,7 @@ function saveItems(items) {
         await batch.commit();
       }
     } catch (err) {
-      toast('\u274C Failed to save: ' + (err.message || err), 'error');
+      toast('Failed to save: ' + (err.message || err), 'error');
     }
   })();
 }
@@ -1756,7 +1780,7 @@ function getSettings() { return _settings; }
 function saveSettingsData(s) {
   _settings = s;
   setDoc(doc(db, MB, 'settings'), s)
-    .catch(err => toast('\u274C Failed to save settings', 'error'));
+    .catch(err => toast('Failed to save settings', 'error'));
 }
 
 // ===== PERSONALISATION HUB API — ENCRYPTION HELPERS =====
@@ -1811,8 +1835,8 @@ function renderPhEndpoints() {
             <input type="password" class="ph-ep-token" id="phEpToken${i}"
               placeholder="${tokPh}">
             <div class="ph-ep-actions">
-              <button class="btn btn-ghost btn-sm" onclick="testPhEndpoint(${i})">&#x1F50D; Test</button>
-              <button class="btn btn-sm" style="background:rgba(220,38,38,0.08);color:var(--danger);border:1px solid rgba(220,38,38,0.2);" onclick="removePhEndpoint(${i})">&#x2715;</button>
+              <button class="btn btn-ghost btn-sm" onclick="testPhEndpoint(${i})"><span class="material-symbols-outlined" style="font-size:14px;">search</span> Test</button>
+              <button class="btn btn-sm" style="background:rgba(220,38,38,0.08);color:var(--danger);border:1px solid rgba(220,38,38,0.2);" onclick="removePhEndpoint(${i})"><span class="material-symbols-outlined" style="font-size:14px;">close</span></button>
             </div>
           </div>
           <p class="ph-ep-status" id="phEpStatus${i}"></p>
@@ -1847,7 +1871,7 @@ async function testPhEndpoint(i) {
 
   if (!baseUrl) {
     statusEl.style.color = 'var(--warning)';
-    statusEl.textContent = '\u26A0\uFE0F Enter a Base URL first.';
+    statusEl.textContent = 'Enter a Base URL first.';
     return;
   }
 
@@ -1859,12 +1883,12 @@ async function testPhEndpoint(i) {
       token = await decryptToken(_phEndpoints[i].authToken);
     } else {
       statusEl.style.color = 'var(--warning)';
-      statusEl.textContent = '\u26A0\uFE0F Enter an Auth Token first.';
+      statusEl.textContent = 'Enter an Auth Token first.';
       return;
     }
   } catch (_) {
     statusEl.style.color = 'var(--danger)';
-    statusEl.textContent = '\u274C Could not decrypt stored token.';
+    statusEl.textContent = 'Could not decrypt stored token.';
     return;
   }
 
@@ -1874,14 +1898,14 @@ async function testPhEndpoint(i) {
       { headers: { accept: 'application/json', 'x-api-key': token } });
     if (resp.ok) {
       statusEl.style.color = 'var(--success)';
-      statusEl.textContent = `\u2705 Connected (HTTP ${resp.status})`;
+      statusEl.textContent = `Connected (HTTP ${resp.status})`;
     } else {
       statusEl.style.color = 'var(--danger)';
-      statusEl.textContent = `\u274C HTTP ${resp.status} \u2014 check URL or Token`;
+      statusEl.textContent = `HTTP ${resp.status} \u2014 check URL or Token`;
     }
   } catch (e) {
     statusEl.style.color = 'var(--danger)';
-    statusEl.textContent = `\u274C ${e.message}`;
+    statusEl.textContent = `${e.message}`;
   }
 }
 
@@ -1889,8 +1913,8 @@ function saveStockApiKey() {
   const key = (document.getElementById('stockApiKeyInput')?.value || '').trim();
   const updated = { ..._settings, stockApiKey: key };
   setDoc(doc(db, MB, 'settings'), updated)
-    .then(() => toast('\u2705 Stock API key saved', 'success'))
-    .catch(err => toast('\u274C Failed to save: ' + (err.message || err), 'error'));
+    .then(() => toast('Stock API key saved', 'success'))
+    .catch(err => toast('Failed to save: ' + (err.message || err), 'error'));
 }
 
 
@@ -1943,7 +1967,7 @@ function _renderCartIconGrid() {
   const isCustom = _cartSelectedPreset === -1;
   const uploadTile = document.createElement('div');
   uploadTile.style.cssText = `display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;width:72px;height:82px;border-radius:10px;border:2px dashed ${isCustom ? 'var(--primary)' : 'var(--border)'};background:${isCustom ? 'rgba(14,165,233,0.09)' : 'var(--surface)'};cursor:pointer;padding:8px;box-sizing:border-box;transition:border-color 0.15s,background 0.15s;`;
-  uploadTile.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="${isCustom ? 'var(--primary)' : 'var(--text2)'}" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" style="width:28px;height:28px;"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg><span style="font-size:10px;color:${isCustom ? 'var(--primary)' : 'var(--text2)'};text-align:center;line-height:1.2;font-weight:${isCustom ? '600' : '400'};">Upload</span>`;
+  uploadTile.innerHTML = `<span class="material-symbols-outlined" style="font-size:28px;color:${isCustom ? 'var(--primary)' : 'var(--text2)'};">upload</span><span style="font-size:10px;color:${isCustom ? 'var(--primary)' : 'var(--text2)'};text-align:center;line-height:1.2;font-weight:${isCustom ? '600' : '400'};">Upload</span>`;
   uploadTile.onclick = () => selectCartIcon(-1);
   grid.appendChild(uploadTile);
   const zone = document.getElementById('sCartCustomUploadZone');
@@ -1966,7 +1990,7 @@ function selectCartIcon(index) {
 function uploadSettingsBagIcon(event) {
   const file = event.target.files[0];
   if (!file) return;
-  if (file.size > 200 * 1024) { toast('⚠️ Icon must be under 200KB', 'error'); return; }
+  if (file.size > 200 * 1024) { toast('Icon must be under 200KB', 'error'); return; }
   const reader = new FileReader();
   reader.onload = e => {
     _settingsBagIcon = e.target.result;
@@ -1993,9 +2017,9 @@ function saveTakeoutBag() {
       _settings = updated;
       _cartSavedState = { label: bagLabel, preset: _cartSelectedPreset, icon: _settingsBagIcon };
       _cartMarkDirty();
-      toast('✅ Shopping Cart settings saved', 'success');
+      toast('Shopping Cart settings saved', 'success');
     })
-    .catch(err => toast('❌ Failed to save: ' + (err.message || err), 'error'));
+    .catch(err => toast('Failed to save: ' + (err.message || err), 'error'));
 }
 
 function _loadTakeoutBagUI() {
@@ -2038,7 +2062,7 @@ async function savePhApi() {
     if (t) t.value = '';
   });
   renderPhEndpoints();
-  toast('\u2705 Changes Updated', 'success');
+  toast('Changes Updated', 'success');
 }
 
 // Fix: normalize categories — could be stored as objects from old imports
@@ -2048,7 +2072,7 @@ function getCats() {
 function saveCats(c) {
   _cats = c;
   setDoc(doc(db, MB, 'categories'), { data: c })
-    .catch(err => toast('\u274C Failed to save categories', 'error'));
+    .catch(err => toast('Failed to save categories', 'error'));
 }
 
 function genId() { return Date.now().toString(36) + Math.random().toString(36).substr(2,6); }
@@ -2324,7 +2348,7 @@ function openTplDetailFromLib(id) {
     dayOrder: 'Day Order (Current Day First / Monday–Sunday)',
     languageDisplay: 'Language Display Settings'
   };
-  const settingsList = Object.entries(t.settings).filter(([,v])=>v).map(([k])=>`<li style="font-size:12px;color:var(--text2);padding:3px 0;">✓ ${settingLabels[k]||k}</li>`).join('');
+  const settingsList = Object.entries(t.settings).filter(([,v])=>v).map(([k])=>`<li style="font-size:12px;color:var(--text2);padding:3px 0;display:flex;align-items:center;gap:4px;"><span class="material-symbols-outlined" style="font-size:14px;">check</span> ${settingLabels[k]||k}</li>`).join('');
   const phDataHtml = (t.phData || []).map(key => {
     const info = PH_DATA_LABELS[key] || { label: key, fields: '' };
     return `<div style="display:flex;align-items:flex-start;gap:8px;padding:6px 0;border-bottom:1px solid var(--border);">
@@ -2406,7 +2430,7 @@ function openTemplatePicker(callback) {
       </div>
       <div style="padding:12px 22px 0;display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
         <div class="search-box" style="max-width:240px;">
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          <span class="material-symbols-outlined" style="font-size:14px;color:var(--text2);">search</span>
           <input type="text" id="tplPickerSearch" placeholder="Search templates…" oninput="renderTplPickerGrid()">
         </div>
         <select id="tplPickerCatFilter" class="filter-select" onchange="renderTplPickerGrid()" style="width:200px;">
@@ -2508,6 +2532,15 @@ function showView(view) {
   if (view === 'settings') _loadTakeoutBagUI();
   localStorage.setItem('hqAdminView', view);
 }
+
+// ===== SETTINGS SECONDARY NAV =====
+function scrollToSettingsSection(sectionId, navBtn) {
+  document.querySelectorAll('.settings-nav-item').forEach(b => b.classList.remove('active'));
+  if (navBtn) navBtn.classList.add('active');
+  const el = document.getElementById(sectionId);
+  if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+window.scrollToSettingsSection = scrollToSettingsSection;
 
 // ===== AG-GRID INIT =====
 // ── Custom Checkbox Set Filter (AG-Grid Community equivalent of Set Filter) ──
@@ -2648,11 +2681,14 @@ function initGrids() {
   const itemsEl = document.getElementById('itemsGrid');
   if (itemsEl && !itemsGridApi) {
     itemsGridApi = agGrid.createGrid(itemsEl, {
-      rowHeight: 64,
+      rowHeight: 99,
       domLayout: 'autoHeight',
       suppressCellFocus: true,
       rowSelection: 'multiple',
       suppressRowClickSelection: true,
+      pagination: true,
+      paginationPageSize: 25,
+      paginationPageSizeSelector: [25, 50, 100],
       getRowId: params => params.data.id,
       isExternalFilterPresent: () => _itemsViewSelected,
       doesExternalFilterPass: node => _itemsSelectedIds.has(node.data.id),
@@ -2894,11 +2930,12 @@ function initGrids() {
             wrap.appendChild(statusWrap);
 
             const star = document.createElement('span');
+            star.className = 'material-symbols-outlined';
             star.title = item.featured
               ? 'Featured — counts toward the Local Feature Highlight minimum of 3'
               : 'Not featured';
-            star.style.cssText = `opacity:${item.featured ? '1' : '.4'};`;
-            star.textContent = item.featured ? '⭐' : '☆';
+            star.style.cssText = `font-size:18px;color:${item.featured ? '#faad14' : 'var(--text2)'};opacity:${item.featured ? '1' : '.4'};font-variation-settings:'FILL' ${item.featured ? 1 : 0}, 'wght' 400, 'GRAD' 0, 'opsz' 24;`;
+            star.textContent = 'star';
             wrap.appendChild(star);
 
             return wrap;
@@ -2933,8 +2970,11 @@ function initGrids() {
   const brandsEl = document.getElementById('brandsGrid');
   if (brandsEl && !brandsGridApi) {
     brandsGridApi = agGrid.createGrid(brandsEl, {
-      rowHeight: 56,
+      rowHeight: 42,
       suppressCellFocus: true,
+      pagination: true,
+      paginationPageSize: 25,
+      paginationPageSizeSelector: [25, 50, 100],
       defaultColDef: { resizable: true, sortable: true, filter: 'agTextColumnFilter', floatingFilter: true },
       columnDefs: []
     });
@@ -2955,7 +2995,7 @@ function updateItemsSelectionBar() {
   const featureBtn    = document.getElementById('itemsSelFeatureBtn');
   const unfeatureBtn  = document.getElementById('itemsSelUnfeatureBtn');
   if (selected.length > 0) {
-    countWrap.innerHTML = `<span id="itemsCount">${selected.length}</span> of ${total} Products`;
+    countWrap.innerHTML = `<b id="itemsCount">${selected.length}</b> of ${total} Products`;
     selActions.style.display = 'flex';
     toolbarActions.style.display = 'none';
     viewBtn.textContent = _itemsViewSelected ? 'Show All' : 'View Selected';
@@ -2969,7 +3009,7 @@ function updateItemsSelectionBar() {
     featureBtn.style.display    = hasUnfeatured ? '' : 'none';
     unfeatureBtn.style.display  = hasFeatured ? '' : 'none';
   } else {
-    countWrap.innerHTML = `<span id="itemsCount">${total}</span> Products`;
+    countWrap.innerHTML = `<b id="itemsCount">${total}</b> Products`;
     selActions.style.display = 'none';
     toolbarActions.style.display = 'flex';
     // If filter was active with no selection, reset
@@ -3059,7 +3099,7 @@ function bulkSetActive(active, itemIds) {
   });
   saveItems(items);
   renderItems();
-  toast(active ? `\u2705 ${ids.size} item${ids.size !== 1 ? 's' : ''} activated` : `\u26D4 ${ids.size} item${ids.size !== 1 ? 's' : ''} deactivated`, active ? 'success' : 'info');
+  toast(active ? `${ids.size} item${ids.size !== 1 ? 's' : ''} activated` : `${ids.size} item${ids.size !== 1 ? 's' : ''} deactivated`, active ? 'success' : 'info');
 }
 window.bulkSetActive = bulkSetActive;
 
@@ -3109,11 +3149,11 @@ function bulkSetFeatured(featured, itemIds) {
 
   const changed = ids.size - skippedInactive;
   let msg = featured
-    ? `\u2B50 ${changed} item${changed !== 1 ? 's' : ''} featured`
+    ? `${changed} item${changed !== 1 ? 's' : ''} featured`
     : `${ids.size} item${ids.size !== 1 ? 's' : ''} unfeatured`;
   if (skippedInactive) msg += ` \u2014 ${skippedInactive} skipped (inactive items can't be featured)`;
   if (shortfalls.length) {
-    msg += ` \u2014 \u26A0\uFE0F ${shortfalls.join(', ')} featured (need 3 to activate Local Feature Highlight; default template shows until then)`;
+    msg += ` \u2014 ${shortfalls.join(', ')} featured (need 3 to activate Local Feature Highlight; default template shows until then)`;
   } else if (featured && changed) {
     msg += ` \u2014 Local Feature Highlight is active`;
   }
@@ -3137,7 +3177,7 @@ function doDelete() {
   saveItems(items);
   closeConfirm();
   renderItems();
-  toast('\u{1F5D1}\uFE0F Item deleted', 'info');
+  toast('Item deleted', 'info');
 }
 
 function confirmDeleteSelection() {
@@ -3159,7 +3199,7 @@ function doDeleteSelection() {
   closeConfirm();
   clearItemsSelection();
   renderItems();
-  toast(`\u{1F5D1}\uFE0F ${selectedIds.size} item${selectedIds.size !== 1 ? 's' : ''} deleted`, 'info');
+  toast(`${selectedIds.size} item${selectedIds.size !== 1 ? 's' : ''} deleted`, 'info');
 }
 
 // ===== BRANDS =====
@@ -3182,7 +3222,7 @@ function _copyBrandTplUrl(brand, tpl) {
   }
   const url = decodeURIComponent(base + '?' + params.toString());
   navigator.clipboard.writeText(url).then(() => {
-    toast('✅ Link Copied to Clipboard', 'success');
+    toast('Link Copied to Clipboard', 'success');
   }).catch(() => { prompt('Copy this URL:', url); });
 }
 
@@ -3207,7 +3247,7 @@ function renderBrands() {
       const chip = document.createElement('button');
       chip.style.cssText = 'background:var(--primary-light);border:1px solid var(--primary);color:var(--primary);border-radius:6px;padding:3px 10px;font-size:11px;font-weight:600;cursor:pointer;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
       chip.title = 'Click to copy URL for: ' + tpl.name;
-      chip.innerHTML = '&#x1F4CB; ' + escHtml(tpl.name);
+      chip.innerHTML = '<span class="material-symbols-outlined" style="font-size:12px;vertical-align:-2px;">content_copy</span> ' + escHtml(tpl.name);
       chip.addEventListener('click', () => _copyBrandTplUrl(b, tpl));
       wrap.appendChild(chip);
       return wrap;
@@ -3266,7 +3306,7 @@ function renderBrands() {
         const div = document.createElement('div');
         div.style.cssText = 'display:flex;align-items:center;height:100%;';
         if (allStores) {
-          div.innerHTML = '<span style="font-size:12px;color:var(--success);font-weight:600;">&#x1F310; All Stores</span>';
+          div.innerHTML = '<span style="font-size:12px;color:var(--success);font-weight:600;display:inline-flex;align-items:center;gap:3px;"><span class="material-symbols-outlined" style="font-size:14px;">public</span> All Stores</span>';
         } else {
           div.innerHTML = `<span style="font-size:11px;color:var(--primary);font-weight:600;">${escHtml(s.join(', '))}</span>`;
         }
@@ -3472,7 +3512,7 @@ function renderPaletteSwatches() {
 }
 
 function addPaletteColour() {
-  if (window._bPalette.length >= 12) { toast('⚠️ Maximum 12 colours allowed.', 'error'); return; }
+  if (window._bPalette.length >= 12) { toast('Maximum 12 colours allowed.', 'error'); return; }
   const hex = document.getElementById('bPaletteColorPicker').value;
   if (!window._bPalette.includes(hex)) window._bPalette.push(hex);
   renderPaletteSwatches();
@@ -3510,9 +3550,9 @@ function _processGuidelinesFile(file) {
   const allowedExt = ['.pdf','.doc','.docx'];
   const ext = file.name.slice(file.name.lastIndexOf('.')).toLowerCase();
   if (!allowed.includes(file.type) && !allowedExt.includes(ext)) {
-    toast('⚠️ Only PDF and Word documents are supported.', 'error'); return;
+    toast('Only PDF and Word documents are supported.', 'error'); return;
   }
-  if (file.size > 2 * 1024 * 1024) { toast('⚠️ File is too large (max 2MB).', 'error'); return; }
+  if (file.size > 2 * 1024 * 1024) { toast('File is too large (max 2MB).', 'error'); return; }
   const sizeFmt = file.size > 1024*1024 ? (file.size/(1024*1024)).toFixed(1)+' MB' : Math.round(file.size/1024)+' KB';
   const reader = new FileReader();
   reader.onload = e => {
@@ -3573,7 +3613,7 @@ function _renderStoreChips() {
     window.editingStores.forEach((code, i) => {
       const chip = document.createElement('div');
       chip.className = 'tag-chip';
-      chip.innerHTML = `<span>${escHtml(code)}</span><button class="tag-chip-remove" type="button" onclick="removeStoreChip(${i})" title="Remove">&#x2715;</button>`;
+      chip.innerHTML = `<span>${escHtml(code)}</span><button class="tag-chip-remove" type="button" onclick="removeStoreChip(${i})" title="Remove"><span class="material-symbols-outlined" style="font-size:12px;">close</span></button>`;
       wrap.insertBefore(chip, emptyMsg || null);
     });
   }
@@ -3614,7 +3654,7 @@ function saveBrand() {
   const name     = document.getElementById('bName').value.trim();
   const currency = document.getElementById('bCurrency').value.trim() || '$';
 
-  if (!name) { toast('\u26A0\uFE0F Brand name is required.', 'error'); return; }
+  if (!name) { toast('Brand name is required.', 'error'); return; }
 
   const stores       = document.getElementById('bStoreMode').value === 'specific' ? [...window.editingStores] : [];
   const lstRaw       = document.getElementById('bLowStockThreshold').value;
@@ -3629,10 +3669,10 @@ function saveBrand() {
     if (idx === -1) return;
     // colors/display/showClock etc. are now managed exclusively via templates; preserve existing brand values via spread
     brands[idx] = { ...brands[idx], name, currency, icon: brandEditingIcon, logo: brandEditingLogoLeft, logoRight: '', stores, lowStockThreshold, allowStorePricing, templates: _editingBrandTemplates, colourPalette: window._bPalette, brandGuidelines: window._bGuidelines, updatedAt: now };
-    toast('\u2705 Brand updated', 'success');
+    toast('Brand updated', 'success');
   } else {
     brands.push({ id: genId(), name, currency, icon: brandEditingIcon, logo: brandEditingLogoLeft, logoRight: '', colors: { ...DEFAULT_COLORS }, display: { portrait: { ...DEFAULT_DISPLAY.portrait }, landscape: { ...DEFAULT_DISPLAY.landscape }, hideOutOfStock: false }, showClock: true, timeFormat: 'british', showHeader: true, campaignMode: 'override', stores, lowStockThreshold, allowStorePricing, templates: [], colourPalette: window._bPalette, brandGuidelines: window._bGuidelines, createdAt: now, updatedAt: now });
-    toast('\u2705 Brand added', 'success');
+    toast('Brand added', 'success');
   }
 
   saveBrands(brands);
@@ -3653,7 +3693,7 @@ function doDeleteBrand(id) {
   saveBrands(brands);
   closeConfirm();
   renderBrands();
-  toast('\u{1F5D1}\uFE0F Brand deleted', 'info');
+  toast('Brand deleted', 'info');
 }
 
 // ===== BRAND MODAL TABS =====
@@ -3681,7 +3721,7 @@ function renderOfferBoardPrereqs() {
   // When all conditions pass, show a compact single-line summary and scroll to template list
   if (allOk) {
     wrap.innerHTML = `<div style="display:flex;align-items:center;gap:8px;font-size:12px;">
-      <span style="font-size:14px;">✅</span>
+      <span style="font-size:14px;"></span>
       <span style="color:var(--green,#16a34a);font-weight:600;">Brand ready</span>
       <span style="color:var(--text2);">— ${brandItems.length} items · ${menuTypesOnItems.join(', ')} · ${categoriesOnItems.length} categories · logo set</span>
     </div>`;
@@ -3702,10 +3742,10 @@ function renderOfferBoardPrereqs() {
   function row(elId, ok, okMsg, failMsg, hint) {
     const el = document.getElementById(elId);
     if (!el) return;
-    const icon = ok ? '✅' : '⚠️';
+    const icon = ok ? 'check_circle' : 'warning';
     const color = ok ? 'var(--green,#16a34a)' : 'var(--orange,#d97706)';
     const msg   = ok ? okMsg : failMsg;
-    el.innerHTML = `<span style="font-size:14px;">${icon}</span><span style="color:${color};font-weight:500;">${msg}</span>${hint && !ok ? `<span style="color:var(--text2);margin-left:4px;">— ${hint}</span>` : ''}`;
+    el.innerHTML = `<span class="material-symbols-outlined" style="font-size:14px;color:${color};">${icon}</span><span style="color:${color};font-weight:500;">${msg}</span>${hint && !ok ? `<span style="color:var(--text2);margin-left:4px;">— ${hint}</span>` : ''}`;
   }
 
   row('prereqItemCount',
@@ -3771,7 +3811,7 @@ function renderTemplateList() {
       ${tpl.isDefault ? '<span class="tpl-default-badge">Default</span>' : ''}
       <div class="tpl-actions">
         ${tpl.isDefault ? '' : `<button class="btn btn-ghost btn-sm" onclick="setTemplateAsDefault('${tpl.id}')" title="Fall back to this board when a Featured-item template (e.g. Local Feature Highlight) doesn't have enough items to activate">Set as Default</button>`}
-        <button class="btn btn-ghost btn-sm" onclick="copyOfferBoardUrl('${tpl.id}')" title="Copy the full URL for this Offer Board">&#x1F4CB; Copy URL</button>
+        <button class="btn btn-ghost btn-sm" onclick="copyOfferBoardUrl('${tpl.id}')" title="Copy the full URL for this Offer Board"><span class="material-symbols-outlined" style="font-size:14px;">content_copy</span> Copy URL</button>
         <button class="btn btn-ghost btn-sm" onclick="openEditTemplateEditor('${tpl.id}')">Edit</button>
         <button class="btn btn-danger btn-sm" onclick="confirmDeleteTemplate('${tpl.id}')" ${canDelete ? '' : 'disabled title="Cannot delete the only template"'}>Delete</button>
       </div>`;
@@ -3786,7 +3826,7 @@ function renderTemplateList() {
 function setTemplateAsDefault(tplId) {
   _editingBrandTemplates.forEach(t => { t.isDefault = (t.id === tplId); });
   renderTemplateList();
-  toast('✅ Default board updated. Click Save Changes to persist.', 'success');
+  toast('Default board updated. Click Save Changes to persist.', 'success');
   if (_brandSave) _brandSave.markDirty();
 }
 window.setTemplateAsDefault = setTemplateAsDefault;
@@ -4429,15 +4469,15 @@ function _updateTplFeaturedCount() {
   const brandItems = brandId ? allItems.filter(i => i.brand === brandId) : allItems;
   const count = brandItems.filter(i => i.active && i.featured).length;
   if (count >= 3) {
-    el.innerHTML = `✅ <strong>${count} item${count !== 1 ? 's' : ''}</strong> currently featured for this brand — Local Feature Highlight is active.`;
+    el.innerHTML = `<span class="material-symbols-outlined" style="font-size:14px;vertical-align:-2px;color:var(--success);">check_circle</span> <strong>${count} item${count !== 1 ? 's' : ''}</strong> currently featured for this brand — Local Feature Highlight is active.`;
   } else {
-    el.innerHTML = `⚠️ Only <strong>${count} of 3</strong> required items are featured for this brand — the default template shows until 3 are featured (via the product table, or a store&rsquo;s own picks in Retail Admin).`;
+    el.innerHTML = `<span class="material-symbols-outlined" style="font-size:14px;vertical-align:-2px;">warning</span> Only <strong>${count} of 3</strong> required items are featured for this brand — the default template shows until 3 are featured (via the product table, or a store&rsquo;s own picks in Retail Admin).`;
   }
 }
 
 function saveTemplate() {
   const name = document.getElementById('tplName').value.trim();
-  if (!name) { toast('⚠️ Template name is required.', 'error'); return; }
+  if (!name) { toast('Template name is required.', 'error'); return; }
 
   const tplData = {
     name,
@@ -4496,7 +4536,7 @@ function saveTemplate() {
     _editingBrandTemplates.push(Object.assign({ id: genId(), isDefault: false }, tplData));
   }
 
-  toast('✅ Template saved. Click Save Changes to persist.', 'success');
+  toast('Template saved. Click Save Changes to persist.', 'success');
   if (_brandSave) _brandSave.markDirty();
   closeTplEditor();
 }
@@ -4526,7 +4566,7 @@ function copyOfferBoardUrl(tplId) {
   }
   const url = decodeURIComponent(base + '?' + params.toString());
   navigator.clipboard.writeText(url).then(() => {
-    toast('✅ Link Copied to Clipboard', 'success');
+    toast('Link Copied to Clipboard', 'success');
   }).catch(() => {
     prompt('Copy this URL:', url);
   });
@@ -4545,7 +4585,7 @@ function confirmDeleteTemplate(tplId) {
     _editingBrandTemplates = _editingBrandTemplates.filter(t => t.id !== tplId);
     closeConfirm();
     renderTemplateList();
-    toast('🗑️ Template removed. Click Save Changes to persist.', 'info');
+    toast('Template removed. Click Save Changes to persist.', 'info');
     if (_brandSave) _brandSave.markDirty();
   };
   document.getElementById('confirmOverlay').classList.add('open');
@@ -4568,7 +4608,7 @@ function exportData() {
   a.download = `menuboard-export-${new Date().toISOString().slice(0,10)}.json`;
   a.click();
   URL.revokeObjectURL(url);
-  toast('\u{1F4E4} Data exported successfully', 'success');
+  toast('Data exported successfully', 'success');
 }
 
 // Firestore documents are capped at ~1 MB. Strip images from any item whose
@@ -4659,7 +4699,7 @@ function importData(event) {
         const { sanitized, stripped } = stripOversizedImages(normalised);
         if (stripped.length) {
           toast(
-            `\u26A0\uFE0F ${stripped.length} item${stripped.length > 1 ? 's' : ''} had oversized images removed: ${stripped.join(', ')}`,
+            `${stripped.length} item${stripped.length > 1 ? 's' : ''} had oversized images removed: ${stripped.join(', ')}`,
             'error'
           );
         }
@@ -4734,7 +4774,7 @@ function importData(event) {
 
         renderItems();
         const brandCount = getBrands().length;
-        toast(`\u{1F4E5} Merged: +${added} new item${added !== 1 ? 's' : ''}, ${updated} updated \u2022 ${brandCount} brand${brandCount !== 1 ? 's' : ''} total`, 'success');
+        toast(`Merged: +${added} new item${added !== 1 ? 's' : ''}, ${updated} updated \u2022 ${brandCount} brand${brandCount !== 1 ? 's' : ''} total`, 'success');
       } else {
         // Legacy full-replace import (no items array — treat as settings-only)
         if (data.settings) {
@@ -4747,10 +4787,10 @@ function importData(event) {
         if (data.brands)     saveBrands(data.brands);
         if (data.types && Array.isArray(data.types)) saveTypes(data.types);
         renderItems();
-        toast('\u{1F4E5} Data imported successfully', 'success');
+        toast('Data imported successfully', 'success');
       }
     } catch(err) {
-      toast('\u274C Import failed: ' + (err.message || err), 'error');
+      toast('Import failed: ' + (err.message || err), 'error');
     }
     event.target.value = '';
   };
@@ -4778,9 +4818,9 @@ function clearAllData() {
         deleteDoc(doc(db, MB, 'categories')),
         deleteDoc(doc(db, MB, 'brands')),
       ]);
-      toast('\u{1F5D1}\uFE0F All data cleared', 'info');
+      toast('All data cleared', 'info');
     } catch (err) {
-      toast('\u274C Failed to clear: ' + (err.message || err), 'error');
+      toast('Failed to clear: ' + (err.message || err), 'error');
     }
   };
   document.getElementById('confirmOverlay').classList.add('open');
@@ -4808,7 +4848,7 @@ function exportBrandData() {
   a.download = `${safeName}-export-${new Date().toISOString().slice(0,10)}.json`;
   a.click();
   URL.revokeObjectURL(url);
-  toast('\u{1F4E4} Brand data exported', 'success');
+  toast('Brand data exported', 'success');
 }
 
 function importBrandData(event) {
@@ -4825,7 +4865,7 @@ function importBrandData(event) {
         const normalised = data.items.map(item => _normaliseLegacyItem({ ...item, brand: brandId }));
         const { sanitized, stripped } = stripOversizedImages(normalised);
         if (stripped.length) {
-          toast(`\u26A0\uFE0F ${stripped.length} item${stripped.length > 1 ? 's' : ''} had oversized images removed: ${stripped.join(', ')}`, 'error');
+          toast(`${stripped.length} item${stripped.length > 1 ? 's' : ''} had oversized images removed: ${stripped.join(', ')}`, 'error');
         }
         const existing = getItems();
         const merged = [...existing];
@@ -4872,12 +4912,12 @@ function importBrandData(event) {
           }
         }
         renderItems();
-        toast(`\u{1F4E5} Imported: +${added} new, ${updated} updated for this brand`, 'success');
+        toast(`Imported: +${added} new, ${updated} updated for this brand`, 'success');
       } else {
-        toast('\u274C No items array found in file', 'error');
+        toast('No items array found in file', 'error');
       }
     } catch(err) {
-      toast('\u274C Import failed: ' + (err.message || err), 'error');
+      toast('Import failed: ' + (err.message || err), 'error');
     }
     event.target.value = '';
   };
@@ -4902,9 +4942,9 @@ function clearBrandData() {
       saveBrands(remainingBrands);
       closeBrandModal();
       renderItems();
-      toast(`\u{1F5D1}\uFE0F "${brandName}" and its items removed`, 'info');
+      toast(`"${brandName}" and its items removed`, 'info');
     } catch (err) {
-      toast('\u274C Failed to clear: ' + (err.message || err), 'error');
+      toast('Failed to clear: ' + (err.message || err), 'error');
     }
   };
   document.getElementById('confirmOverlay').classList.add('open');
@@ -4914,7 +4954,8 @@ function clearBrandData() {
 function toast(msg, type = 'info') {
   const el      = document.createElement('div');
   el.className  = `toast ${type}`;
-  el.textContent = msg;
+  const icon = type === 'success' ? 'check_circle' : type === 'error' ? 'error' : 'info';
+  el.innerHTML = `<span class="material-symbols-outlined" style="font-size:18px;flex-shrink:0;">${icon}</span><span>${escHtml(msg)}</span>`;
   document.getElementById('toastContainer').appendChild(el);
   setTimeout(() => {
     el.style.animation = 'slideOut 0.2s ease forwards';
