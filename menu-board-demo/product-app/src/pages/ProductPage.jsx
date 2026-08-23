@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { Tabs, Tag, Button, Spin, App } from 'antd';
 import MaterialIcon from '../components/MaterialIcon.jsx';
 import ProductDetailsTab from './tabs/ProductDetailsTab.jsx';
+import StockTab from './tabs/StockTab.jsx';
 import ProductAssetsTab from './tabs/ProductAssetsTab.jsx';
 import PricingTab from './tabs/PricingTab.jsx';
 import { getProduct, blankProduct, upsertProduct } from '../data/productStore.js';
@@ -110,9 +111,7 @@ export default function ProductPage({ isNew = false }) {
           </div>
         </div>
         <div style={{ fontSize: 12, color: 'rgba(0,0,0,.45)', marginBottom: 16 }}>
-          {[draft.category, imageCount ? `${imageCount} images` : null, videoCount ? `${videoCount} videos` : null]
-            .filter(Boolean)
-            .join(' · ') || 'Uncategorised'}
+          {draft.category || 'Uncategorised'}
         </div>
         <div style={{ height: 1, background: 'rgba(5,5,5,0.06)', margin: '4px 0 16px' }} />
 
@@ -121,7 +120,8 @@ export default function ProductPage({ isNew = false }) {
           onChange={goTab}
           items={[
             { key: 'details', label: 'Product Details' },
-            { key: 'assets', label: 'Product Assets' },
+            { key: 'stock', label: 'Stock' },
+            { key: 'assets', label: `Product Assets (${imageCount + videoCount})` },
             { key: 'pricing', label: 'Pricing' },
           ]}
         />
@@ -129,6 +129,7 @@ export default function ProductPage({ isNew = false }) {
         {tab === 'details' && (
           <ProductDetailsTab draft={draft} patch={patch} onGoPricing={() => goTab('pricing')} />
         )}
+        {tab === 'stock' && <StockTab draft={draft} patch={patch} />}
         {tab === 'assets' && <ProductAssetsTab draft={draft} patch={patch} />}
         {tab === 'pricing' && <PricingTab draft={draft} baseline={baseline} setDraft={setDraft} setBaseline={setBaseline} />}
 

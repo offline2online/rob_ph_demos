@@ -2816,12 +2816,7 @@ function initGrids() {
             // "the" price.
             const localStores = getStoresWithLocalOffer(item.sku);
             const wrap = document.createElement('div');
-            // flex-start (not center) so the price sits right at the top of
-            // the row, same as the Item column's title — centering left the
-            // price+pill block floating mid-row against the taller Item
-            // cell next to it, which read as a much bigger gap between the
-            // price and the pill than the 3px actually between them.
-            wrap.style.cssText = 'display:flex;flex-direction:column;justify-content:flex-start;gap:3px;height:100%;padding:4px 0;cursor:pointer;';
+            wrap.style.cssText = 'display:flex;flex-direction:column;justify-content:center;gap:3px;height:100%;padding:4px 0;cursor:pointer;';
             wrap.title = 'Click to view pricing';
             wrap.addEventListener('click', () => {
               location.href = 'product/#/products/' + item.id + '/pricing';

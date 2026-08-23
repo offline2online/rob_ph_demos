@@ -2,7 +2,6 @@ import { useMemo, useState } from 'react';
 import { Input, InputNumber, Select, Switch, Button } from 'antd';
 import MaterialIcon from '../../components/MaterialIcon.jsx';
 import ClearableDate from '../../components/ClearableDate.jsx';
-import StorePicker from '../../components/StorePicker.jsx';
 import AttributeGroups from '../../components/AttributeGroups.jsx';
 import OptionGroups from '../../components/OptionGroups.jsx';
 import OfferBanner from '../../components/OfferBanner.jsx';
@@ -267,43 +266,6 @@ export default function ProductDetailsTab({ draft, patch, onGoPricing }) {
               value={draft.availTo}
               onChange={(v) => patch({ availTo: v })}
               blankHint={{ blank: 'No end date', set: 'Set — see date above' }}
-            />
-          </Field>
-        </div>
-
-        <div style={{ marginTop: 14 }}>
-          <StorePicker mode={draft.storeMode} stores={draft.stores} onChange={({ mode, stores }) => patch({ storeMode: mode, stores })} />
-        </div>
-      </SectionCard>
-
-      {/* Stock alert */}
-      <SectionCard>
-        <div className="ph-sect-label">Stock alert</div>
-        <p style={{ fontSize: 12, color: 'rgba(0,0,0,.45)', margin: '4px 0 12px' }}>
-          When to warn the team that this item is running low.
-        </p>
-        <div style={{ maxWidth: 340 }}>
-          <Field
-            label="Low stock alert threshold"
-            hint={
-              draft.lowStockThreshold === '' || draft.lowStockThreshold == null ? (
-                brand?.lowStockThreshold != null
-                  ? `Using the brand default of ${brand.lowStockThreshold}. Enter a value to override it for this product only.`
-                  : 'No brand default set. Enter a value to set an alert threshold for this product.'
-              ) : (
-                <>
-                  {brand?.lowStockThreshold != null && <>Overriding the brand default of {brand.lowStockThreshold}. </>}
-                  <a onClick={() => patch({ lowStockThreshold: '' })}>Reset to brand default</a>
-                </>
-              )
-            }
-          >
-            <InputNumber
-              value={draft.lowStockThreshold}
-              onChange={(v) => patch({ lowStockThreshold: v })}
-              placeholder={brand?.lowStockThreshold != null ? String(brand.lowStockThreshold) : ''}
-              style={{ width: '100%' }}
-              min={0}
             />
           </Field>
         </div>
