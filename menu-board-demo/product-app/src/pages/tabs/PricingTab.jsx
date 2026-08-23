@@ -6,10 +6,13 @@ import ClearableDate from '../../components/ClearableDate.jsx';
 import OfferBanner from '../../components/OfferBanner.jsx';
 import { upsertProduct, appendPriceLogEntries } from '../../data/productStore.js';
 
-function Field({ label, children, hint }) {
+function Field({ label, required, children, hint }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column' }}>
-      <label style={{ fontSize: 13, color: 'rgba(0,0,0,.65)', marginBottom: 6 }}>{label}</label>
+      <label style={{ fontSize: 13, color: 'rgba(0,0,0,.65)', marginBottom: 6 }}>
+        {required && <span style={{ color: '#ff4d4f' }}>* </span>}
+        {label}
+      </label>
       {children}
       {hint && <p style={{ fontSize: 12, color: 'rgba(0,0,0,.45)', marginTop: 5 }}>{hint}</p>}
     </div>
@@ -203,7 +206,7 @@ export default function PricingTab({ draft, baseline, setDraft, setBaseline }) {
           RRP &amp; Offer Pricing
         </div>
         <div style={{ marginBottom: 14 }}>
-          <Field label="Offer description" hint="Required to save — describes this price change and is recorded in the price change log below.">
+          <Field label="Offer description" required hint="Describes this price change and is recorded in the price change log below.">
             <Input
               value={reason}
               onChange={(e) => setReason(e.target.value)}
@@ -222,7 +225,7 @@ export default function PricingTab({ draft, baseline, setDraft, setBaseline }) {
               step={0.01}
             />
           </Field>
-          <Field label="Offer price">
+          <Field label="Offer price" required>
             <InputNumber
               value={draft.offerPrice}
               onChange={(v) => setDraft((d) => ({ ...d, offerPrice: v }))}
