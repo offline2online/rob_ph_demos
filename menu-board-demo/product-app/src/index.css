@@ -22,6 +22,16 @@ html, body, #root {
   display: inline-block;
 }
 
+/* AntD colours an Input/TextArea's own text red once its value exceeds
+   maxLength (the .ant-input-out-of-range class). That's error styling
+   landing on ordinary description copy, which the design system reserves
+   for actual error/danger states — the character-count hint already says
+   the same thing without alarming the copy itself. Neutralise it; keep
+   the field otherwise untouched (border, background, focus ring). */
+.ant-input-out-of-range {
+  color: inherit !important;
+}
+
 .ph-sect {
   background: #fff;
   border-radius: 8px;
