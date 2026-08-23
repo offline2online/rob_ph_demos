@@ -337,8 +337,19 @@
       --ag-cell-horizontal-padding:   15px;
       --ag-floating-filter-height:    36px;
       --ag-selected-row-background-color: rgba(22,155,194,0.08);
+      /* No vertical column dividers anywhere in the grid — header, floating
+         filter row, and body cells are all row-separator-only, matching
+         real HQ Admin. Data cells already had none; the header/filter row
+         is AG Grid Alpine's default and needs suppressing explicitly. */
+      --ag-header-column-separator-display: none;
+      --ag-cell-horizontal-border:    none;
     }
     .ag-theme-alpine .ag-header-cell-label { font-size: 13px; font-weight: 700; color: var(--text); }
+    /* This AG Grid version hardcodes the header column-separator line rather
+       than reading --ag-header-column-separator-display — hide the pseudo-
+       element directly. Only ::after is hidden, so the resize handle itself
+       (same element) still works. */
+    .ag-theme-alpine .ag-header-cell-resize::after { display: none !important; }
     .ag-theme-alpine .ag-floating-filter-input { font-size: 12px; }
     /* Propagate row height so cell renderers can use height:100% for vertical centering */
     .ag-theme-alpine .ag-cell { height: 100%; }
@@ -3293,9 +3304,19 @@ function renderBrands() {
         return wrap;
       }
     },
-    { headerName: 'Currency', field: 'currency', flex: 0.6, minWidth: 70 },
+    { headerName: 'Currency', field: 'currency', flex: 0.6, minWidth: 70, filter: CheckboxSetFilter },
     {
       headerName: 'Stores', flex: 1.5, minWidth: 130,
+      filter: CheckboxSetFilter,
+      // Enumerable, multi-value column — same shape as Types on the products
+      // grid: a brand applies to either every store ("All Stores", a single
+      // sentinel tag) or a specific list of named stores. getFilterValue
+      // returns the array CheckboxSetFilter expects; the plain valueGetter
+      // below stays a display-only comma-joined string for sorting/export.
+      getFilterValue: (data) => {
+        const s = data.stores;
+        return (!s || s.length === 0) ? ['All Stores'] : s;
+      },
       valueGetter: (params) => {
         const s = params.data.stores;
         return (!s || s.length === 0) ? 'All Stores' : s.join(', ');

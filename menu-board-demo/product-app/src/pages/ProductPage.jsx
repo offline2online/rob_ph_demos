@@ -88,14 +88,14 @@ export default function ProductPage({ isNew = false }) {
   const sc = STATUS_COLOR[draft.status] || STATUS_COLOR.Draft;
 
   return (
-    <div style={{ padding: 24, background: '#f5f5f5', minHeight: '100vh' }}>
-      <div style={{ maxWidth: 940, margin: '0 auto' }}>
+    <div style={{ padding: 20, background: '#ffffff', minHeight: '100vh' }}>
+      <div>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 16, marginBottom: 4 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <Button type="text" onClick={() => navigate(-1)} style={{ padding: '0 4px' }} title="Back to Products">
               <MaterialIcon name="arrow_back" />
             </Button>
-            <h1 style={{ margin: 0, fontWeight: 600, fontSize: 24 }}>{draft.name || 'New Product'}</h1>
+            <h1 style={{ margin: 0, fontWeight: 700, fontSize: 20, color: '#333333' }}>{draft.name || 'New Product'}</h1>
             {draft.sku && (
               <Tag style={{ fontFamily: 'ui-monospace,Menlo,Consolas,monospace' }}>{draft.sku}</Tag>
             )}
@@ -104,7 +104,7 @@ export default function ProductPage({ isNew = false }) {
             </Tag>
             {draft.featured && (
               <Tag style={{ background: '#fffbe6', borderColor: '#ffe58f', color: '#d48806', fontWeight: 600 }}>
-                ★ FEATURED
+                <MaterialIcon name="star" style={{ fontSize: 12, verticalAlign: -2, fontVariationSettings: "'FILL' 1, 'wght' 600, 'GRAD' 0, 'opsz' 20" }} /> FEATURED
               </Tag>
             )}
           </div>
@@ -114,6 +114,7 @@ export default function ProductPage({ isNew = false }) {
             .filter(Boolean)
             .join(' · ') || 'Uncategorised'}
         </div>
+        <div style={{ height: 1, background: 'rgba(5,5,5,0.06)', margin: '4px 0 16px' }} />
 
         <Tabs
           activeKey={tab}
