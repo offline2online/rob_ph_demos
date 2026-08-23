@@ -224,23 +224,6 @@
       padding: 4px 11px; font-size: 12px; font-family: inherit; cursor: pointer; color: var(--text2); }
     .los-preview-lang-picker button.on { background: var(--primary); border-color: var(--primary); color: #fff; font-weight: 600; }
 
-    /* LANGUAGE REGISTRY */
-    .lang-registry-list { display: flex; flex-direction: column; gap: 1px; margin-top: 14px; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
-    .lang-registry-row { display: flex; align-items: center; gap: 12px; padding: 9px 12px; background: var(--surface); }
-    .lang-registry-row:nth-child(even) { background: var(--surface2); }
-    .lang-registry-row .lrf { width: 27px; height: 18px; border-radius: 3px; background-size: cover; background-position: center; flex-shrink: 0; background-color: var(--surface2); display: flex; align-items: center; justify-content: center; font-size: 12px; }
-    .lang-registry-row .lrname { flex: 1; min-width: 0; }
-    .lang-registry-row .lrname .en { font-size: 13px; font-weight: 600; color: var(--text); }
-    .lang-registry-row .lrname .nat { font-size: 12px; color: var(--text2); margin-left: 6px; }
-    .lang-registry-row .lrcode { font-size: 11px; font-family: monospace; color: var(--text2); background: var(--surface2); border-radius: 4px; padding: 2px 6px; }
-    .lang-registry-row.inactive { opacity: 0.5; }
-    .lang-registry-row .lracts { display: flex; gap: 6px; }
-    .lang-registry-row .lracts button { border: none; background: none; cursor: pointer; font-size: 12px; color: var(--text2); padding: 4px 6px; border-radius: 4px; }
-    .lang-registry-row .lracts button:hover { background: var(--surface2); color: var(--primary); }
-    .lang-flag-picker { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
-    .lang-flag-picker button { width: 44px; height: 30px; border-radius: 5px; border: 2px solid var(--border); background-size: cover; background-position: center; background-color: var(--surface2); cursor: pointer; padding: 0; }
-    .lang-flag-picker button.on { border-color: var(--primary); box-shadow: 0 0 0 2px rgba(22,155,194,0.25); }
-    .lang-flag-picker button.none { display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 600; color: var(--text2); text-transform: uppercase; }
     .form-group { margin-bottom: 16px; }
     .form-group label { display: block; font-size: 14px; font-weight: 400; color: var(--text2); margin-bottom: 6px; }
     .form-group label .req { color: var(--danger); }
@@ -278,12 +261,7 @@
     }
     .settings-section .settings-desc { font-size: 12px; color: var(--text2); margin-bottom: 18px; line-height: 1.5; }
     .form-group .form-help { font-size: 11px; color: var(--text2); margin-top: 4px; line-height: 1.4; }
-    .settings-layout { display: flex; align-items: flex-start; gap: 24px; }
-    .settings-nav { width: 245px; flex-shrink: 0; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; position: sticky; top: 16px; }
-    .settings-nav-item { display: block; width: 100%; text-align: left; padding: 11px 16px; font-size: 14px; color: #333333; background: none; border: none; cursor: pointer; }
-    .settings-nav-item:hover { background: var(--surface2); }
-    .settings-nav-item.active { color: #169bc2; background: rgba(22,155,194,0.10); font-weight: 500; }
-    .settings-content { flex: 1; min-width: 0; }
+    .settings-content { max-width: 720px; }
 
     /* CATEGORIES */
     .cat-list { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
@@ -717,14 +695,7 @@
         <!-- SETTINGS -->
         <div id="view-settings" class="view">
           <button class="back-link" onclick="showView('items')"><span class="material-symbols-outlined" style="font-size:14px;">arrow_back</span> Back to Products</button>
-          <div class="settings-layout">
-            <nav class="settings-nav" id="settingsNav">
-              <button type="button" class="settings-nav-item active" data-settings-target="settingsSection-stockApi" onclick="scrollToSettingsSection('settingsSection-stockApi', this)">Stock API Key</button>
-              <button type="button" class="settings-nav-item" data-settings-target="settingsSection-phApi" onclick="scrollToSettingsSection('settingsSection-phApi', this)">Personalisation Hub API</button>
-              <button type="button" class="settings-nav-item" data-settings-target="settingsSection-cart" onclick="scrollToSettingsSection('settingsSection-cart', this)">Shopping Cart</button>
-              <button type="button" class="settings-nav-item" data-settings-target="settingsSection-lang" onclick="scrollToSettingsSection('settingsSection-lang', this)">Language Registry</button>
-            </nav>
-            <div class="settings-content">
+          <div class="settings-content">
           <div class="settings-section" id="settingsSection-stockApi">
             <h3>Stock API Key</h3>
             <p class="settings-desc">Set a secret key that external platforms must include when calling the Stock API. Used as the <code>X-Stock-Api-Key</code> header in API requests.</p>
@@ -787,18 +758,7 @@
             </div>
             <button id="sCartSaveBtn" class="btn btn-primary btn-sm" onclick="saveTakeoutBag()" disabled style="opacity:0.45;cursor:not-allowed;">Save Changes</button>
           </div>
-
-          <div class="settings-section" id="settingsSection-lang">
-            <h3>Language Registry</h3>
-            <p class="settings-desc">Company-level reference data for the <strong>Languages On Shift</strong> display item. The store record only ever sends a language identifier (an ISO code, an English name, or an endonym) &mdash; everything needed to render it, the flag, the native-script name, reading direction and script, comes from this table. A language a store's record can send but that isn't listed here simply won't appear on screen.</p>
-            <p class="settings-desc" style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:10px 12px;">
-              <strong>A flag represents a country, not a language.</strong> English, Spanish, Arabic, Portuguese, French and Chinese are each spoken across many countries, and a single national flag can read as excluding other speakers of that language. Either pick the flag most recognisable to a given store's local population, or turn <em>Show Flag</em> off and use a glyph mark instead (for example 🤟 for British Sign Language).
-            </p>
-            <div id="langRegistryList" class="lang-registry-list"></div>
-            <button class="btn btn-primary btn-sm" onclick="openLangModal()" style="margin-top:10px;">+ Add Language</button>
-          </div>
-            </div><!-- /settings-content -->
-          </div><!-- /settings-layout -->
+          </div><!-- /settings-content -->
         </div>
 
       </div><!-- /content -->
@@ -1231,87 +1191,6 @@
   </div>
 </div>
 
-<!-- LANGUAGE REGISTRY MODAL -->
-<div class="modal-overlay" id="langModal">
-  <div class="modal" style="max-width:600px;">
-    <div class="modal-header">
-      <h2 id="langModalTitle">Add Language</h2>
-      <button class="modal-close" onclick="closeLangModal()"><span class="material-symbols-outlined" style="font-size:18px;">close</span></button>
-    </div>
-    <div class="modal-body">
-      <input type="hidden" id="langEditCode">
-      <div class="form-row">
-        <div class="form-group">
-          <label><span class="req">*</span> Code <span style="font-size:11px;font-weight:400;text-transform:none;color:var(--text2);">(BCP-47, unique)</span></label>
-          <input type="text" id="langCode" placeholder="e.g. pl">
-        </div>
-        <div class="form-group">
-          <label>Active</label>
-          <select id="langActive"><option value="true">Active</option><option value="false">Inactive &mdash; filtered out of every feed</option></select>
-        </div>
-      </div>
-      <div class="form-row">
-        <div class="form-group">
-          <label><span class="req">*</span> English Name</label>
-          <input type="text" id="langEnglish" placeholder="e.g. Polish">
-        </div>
-        <div class="form-group">
-          <label><span class="req">*</span> Native Name (endonym)</label>
-          <input type="text" id="langNative" placeholder="e.g. Polski &mdash; authored in the correct script">
-        </div>
-      </div>
-      <div class="form-group">
-        <label>Aliases <span style="font-size:11px;font-weight:400;text-transform:none;color:var(--text2);">(comma-separated alternative spellings the store record might send)</span></label>
-        <input type="text" id="langAlias" placeholder="e.g. pol, polish, pl-PL">
-      </div>
-      <div class="form-group">
-        <label>Flag</label>
-        <div class="lang-flag-picker" id="langFlagPicker"></div>
-        <p class="form-help">SVG flags only &mdash; never emoji, which render inconsistently on signage hardware. Choose &ldquo;No flag&rdquo; and set a glyph below when a single national flag would misrepresent this language's speakers.</p>
-      </div>
-      <div class="form-row cols-3">
-        <div class="form-group">
-          <label>Flag Ratio</label>
-          <select id="langRatio">
-            <option value="3/2">3:2</option><option value="2/1">2:1</option><option value="1/1">1:1</option><option value="5/3">5:3</option><option value="1/2">1:2</option>
-          </select>
-        </div>
-        <div class="form-group">
-          <label>Show Flag</label>
-          <select id="langShowFlag"><option value="true">On</option><option value="false">Off &mdash; use glyph instead</option></select>
-        </div>
-        <div class="form-group">
-          <label>Glyph <span style="font-size:11px;font-weight:400;text-transform:none;color:var(--text2);">(fallback mark)</span></label>
-          <input type="text" id="langGlyph" placeholder="e.g. 🤟" maxlength="4">
-        </div>
-      </div>
-      <div class="form-row">
-        <div class="form-group">
-          <label>Direction</label>
-          <select id="langDirection"><option value="ltr">Left to right</option><option value="rtl">Right to left</option></select>
-          <p class="form-help">Applied to the native name only; the surrounding layout always stays LTR.</p>
-        </div>
-        <div class="form-group">
-          <label>Script <span style="font-size:11px;font-weight:400;text-transform:none;color:var(--text2);">(determines which font pack loads)</span></label>
-          <select id="langScript">
-            <option value="latin">Latin</option><option value="cyrillic">Cyrillic</option><option value="greek">Greek</option>
-            <option value="arabic">Arabic</option><option value="devanagari">Devanagari</option><option value="gurmukhi">Gurmukhi</option>
-            <option value="cjk">Chinese (Han)</option><option value="cjk-jp">Japanese (Kanji/Kana)</option><option value="hangul">Korean (Hangul)</option>
-            <option value="thai">Thai</option><option value="hebrew">Hebrew</option><option value="bengali">Bengali</option>
-            <option value="gujarati">Gujarati</option><option value="malayalam">Malayalam</option><option value="tamil">Tamil</option>
-            <option value="telugu">Telugu</option><option value="georgian">Georgian</option><option value="armenian">Armenian</option>
-            <option value="khmer">Khmer</option><option value="tibetan">Tibetan</option>
-          </select>
-        </div>
-      </div>
-    </div>
-    <div class="modal-footer">
-      <button class="btn btn-ghost" onclick="closeLangModal()">Cancel</button>
-      <button class="btn btn-primary" id="langSaveBtn" onclick="saveLangEntry()">Save Changes</button>
-    </div>
-  </div>
-</div>
-
 <!-- CONFIRM DIALOG -->
 <div class="confirm-overlay" id="confirmOverlay">
   <div class="confirm-box">
@@ -1473,11 +1352,6 @@ const DEFAULT_LANGUAGES = [
 ];
 let _languages = [];
 function getLanguages() { return _languages.length ? _languages : DEFAULT_LANGUAGES; }
-function saveLanguages(languages) {
-  _languages = languages;
-  setDoc(doc(db, MB, 'languages'), { data: languages })
-    .catch(err => toast('Failed to save Language Registry: ' + (err.message || err), 'error'));
-}
 
 // Flag SVGs \u2014 inline, never emoji (\u00A79 non-functional requirement; emoji flags
 // render inconsistently across ChromeOS/Chrome versions). Mirrors the set in
@@ -1579,93 +1453,6 @@ const LOS_FLAGS = {
 };
 const losFlagUrl = k => LOS_FLAGS[k] ? `url("data:image/svg+xml,${encodeURIComponent(LOS_FLAGS[k])}")` : '';
 
-let _langModalFlag = null;
-function renderLanguageRegistry() {
-  const host = document.getElementById('langRegistryList');
-  if (!host) return;
-  const langs = getLanguages();
-  host.innerHTML = langs.map(l => `
-    <div class="lang-registry-row${l.active === false ? ' inactive' : ''}">
-      <div class="lrf" style="${l.flag && l.showFlag !== false ? `background-image:${losFlagUrl(l.flag)}` : ''}">${(!l.flag || l.showFlag === false) ? escHtml(l.glyph || '\u{1F4AC}') : ''}</div>
-      <div class="lrname"><span class="en">${escHtml(l.english)}</span><span class="nat">${escHtml(l.native)}</span></div>
-      <span class="lrcode">${escHtml(l.code)}</span>
-      <span class="lrcode" title="Text direction">${l.direction === 'rtl' ? 'RTL' : 'LTR'}</span>
-      <div class="lracts">
-        <button type="button" onclick="openLangModal('${escHtml(l.code)}')" title="Edit"><span class="material-symbols-outlined" style="font-size:16px;">edit</span></button>
-        <button type="button" onclick="deleteLangEntry('${escHtml(l.code)}')" title="Delete"><span class="material-symbols-outlined" style="font-size:16px;">delete</span></button>
-      </div>
-    </div>`).join('') || '<p style="padding:14px;font-size:13px;color:var(--text2);">No languages yet \u2014 add the first one.</p>';
-}
-
-function renderLangFlagPicker() {
-  const host = document.getElementById('langFlagPicker');
-  if (!host) return;
-  const noneBtn = `<button type="button" class="none${!_langModalFlag ? ' on' : ''}" data-f="" onclick="_pickLangFlag('')">None</button>`;
-  host.innerHTML = noneBtn + Object.keys(LOS_FLAGS).map(k =>
-    `<button type="button" class="${_langModalFlag===k?'on':''}" style="background-image:${losFlagUrl(k)}" data-f="${k}" onclick="_pickLangFlag('${k}')" title="${k}"></button>`).join('');
-}
-function _pickLangFlag(k) { _langModalFlag = k || null; renderLangFlagPicker(); if (_langSave) _langSave.markDirty(); }
-window._pickLangFlag = _pickLangFlag;
-
-function openLangModal(code) {
-  const existing = code ? getLanguages().find(l => l.code === code) : null;
-  document.getElementById('langModalTitle').textContent = existing ? 'Edit Language' : 'Add Language';
-  document.getElementById('langEditCode').value = existing ? existing.code : '';
-  document.getElementById('langCode').value = existing ? existing.code : '';
-  document.getElementById('langCode').disabled = !!existing;
-  document.getElementById('langEnglish').value = existing ? existing.english : '';
-  document.getElementById('langNative').value = existing ? existing.native : '';
-  document.getElementById('langAlias').value = existing ? (existing.alias || []).join(', ') : '';
-  document.getElementById('langRatio').value = existing ? (existing.ratio || '3/2') : '3/2';
-  document.getElementById('langShowFlag').value = existing && existing.showFlag === false ? 'false' : 'true';
-  document.getElementById('langGlyph').value = existing ? (existing.glyph || '') : '';
-  document.getElementById('langDirection').value = existing && existing.direction === 'rtl' ? 'rtl' : 'ltr';
-  document.getElementById('langScript').value = existing ? (existing.script || 'latin') : 'latin';
-  document.getElementById('langActive').value = existing && existing.active === false ? 'false' : 'true';
-  _langModalFlag = existing ? (existing.flag || null) : null;
-  renderLangFlagPicker();
-  document.getElementById('langModal').classList.add('open');
-  if (_langSave) _langSave.reset();
-}
-window.openLangModal = openLangModal;
-function closeLangModal() { document.getElementById('langModal').classList.remove('open'); }
-window.closeLangModal = closeLangModal;
-
-function saveLangEntry() {
-  const code = document.getElementById('langCode').value.trim().toLowerCase();
-  const english = document.getElementById('langEnglish').value.trim();
-  const native = document.getElementById('langNative').value.trim();
-  if (!code || !english || !native) { toast('Code, English name and Native name are required.', 'error'); return; }
-  const editingCode = document.getElementById('langEditCode').value;
-  const langs = getLanguages().slice();
-  if (!editingCode && langs.some(l => l.code === code)) { toast('That code is already in the registry.', 'error'); return; }
-  const entry = {
-    code, english, native,
-    alias: document.getElementById('langAlias').value.split(',').map(s=>s.trim()).filter(Boolean),
-    flag: _langModalFlag || null,
-    ratio: document.getElementById('langRatio').value,
-    showFlag: document.getElementById('langShowFlag').value === 'true',
-    glyph: document.getElementById('langGlyph').value.trim(),
-    direction: document.getElementById('langDirection').value,
-    script: document.getElementById('langScript').value,
-    active: document.getElementById('langActive').value === 'true',
-  };
-  const idx = langs.findIndex(l => l.code === (editingCode || code));
-  if (idx !== -1) langs[idx] = entry; else langs.push(entry);
-  saveLanguages(langs);
-  renderLanguageRegistry();
-  closeLangModal();
-  toast('Language Registry saved', 'success');
-}
-window.saveLangEntry = saveLangEntry;
-
-function deleteLangEntry(code) {
-  if (!confirm(`Remove "${code}" from the Language Registry? Any store record still sending this identifier will simply stop resolving it.`)) return;
-  saveLanguages(getLanguages().filter(l => l.code !== code));
-  renderLanguageRegistry();
-  toast('Language removed', 'info');
-}
-window.deleteLangEntry = deleteLangEntry;
 let _allStock    = {};
 let _allStorePricing = {};
 // sku -> [storeCode, ...] currently running a price that's actually
@@ -1928,19 +1715,18 @@ function saveStockApiKey() {
 }
 
 
+// Real Google Material Symbols glyphs, not hand-drawn SVGs — keeps every
+// icon in the app on the same icon set instead of two visually different
+// styles sitting side by side. Mirrored in order-summary.html (see the
+// comment there) so the icon a user picks here renders identically on the
+// customer-facing order summary board.
 const CART_PRESET_ICONS = [
-  { label: 'Cart',
-    svg: `<img src="images/icons/cart.svg" alt="Cart" style="width:100%;height:100%;object-fit:contain;">` },
-  { label: 'Bag',
-    svg: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M16 11V7a4 4 0 0 0-8 0v4"/><path d="M5 9h14l1 12H4L5 9Z"/></svg>` },
-  { label: 'Tote',
-    svg: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4Z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>` },
-  { label: 'Basket',
-    svg: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M5.52 5h12.96L21 12H3L5.52 5Z"/><path d="M3 12h18v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-7Z"/><path d="M8.5 5 7 2M15.5 5 17 2"/></svg>` },
-  { label: 'Paper Bag',
-    svg: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2h12l2 6v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8l2-6Z"/><path d="M9 8c0 1.657 1.343 3 3 3s3-1.343 3-3"/><line x1="6" y1="8" x2="18" y2="8"/></svg>` },
-  { label: 'Trolley',
-    svg: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h1.5l1.8 9H17l2-6H6"/><circle cx="9" cy="19" r="1.5"/><circle cx="16" cy="19" r="1.5"/><path d="M5 12H2"/></svg>` },
+  { label: 'Cart',      icon: 'shopping_cart' },
+  { label: 'Bag',       icon: 'shopping_bag' },
+  { label: 'Tote',      icon: 'local_mall' },
+  { label: 'Basket',    icon: 'shopping_basket' },
+  { label: 'Paper Bag', icon: 'takeout_dining' },
+  { label: 'Trolley',   icon: 'local_grocery_store' },
 ];
 
 let _settingsBagIcon = '';
@@ -1969,7 +1755,7 @@ function _renderCartIconGrid() {
     const tile = document.createElement('div');
     const sel = _cartSelectedPreset === i;
     tile.style.cssText = `display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;width:72px;height:82px;border-radius:10px;border:2px solid ${sel ? 'var(--primary)' : 'var(--border)'};background:${sel ? 'rgba(14,165,233,0.09)' : 'var(--surface)'};cursor:pointer;padding:8px;box-sizing:border-box;transition:border-color 0.15s,background 0.15s;`;
-    tile.innerHTML = `<div style="width:36px;height:36px;color:${sel ? 'var(--primary)' : 'var(--text)'};display:flex;align-items:center;justify-content:center;">${icon.svg}</div><span style="font-size:10px;color:${sel ? 'var(--primary)' : 'var(--text2)'};text-align:center;line-height:1.2;font-weight:${sel ? '600' : '400'};">${icon.label}</span>`;
+    tile.innerHTML = `<span class="material-symbols-outlined" style="font-size:30px;color:${sel ? 'var(--primary)' : 'var(--text)'};">${icon.icon}</span><span style="font-size:10px;color:${sel ? 'var(--primary)' : 'var(--text2)'};text-align:center;line-height:1.2;font-weight:${sel ? '600' : '400'};">${icon.label}</span>`;
     tile.onclick = () => selectCartIcon(i);
     grid.appendChild(tile);
   });
@@ -2542,15 +2328,6 @@ function showView(view) {
   if (view === 'settings') _loadTakeoutBagUI();
   localStorage.setItem('hqAdminView', view);
 }
-
-// ===== SETTINGS SECONDARY NAV =====
-function scrollToSettingsSection(sectionId, navBtn) {
-  document.querySelectorAll('.settings-nav-item').forEach(b => b.classList.remove('active'));
-  if (navBtn) navBtn.classList.add('active');
-  const el = document.getElementById(sectionId);
-  if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
-}
-window.scrollToSettingsSection = scrollToSettingsSection;
 
 // ===== AG-GRID INIT =====
 // ── Custom Checkbox Set Filter (AG-Grid Community equivalent of Set Filter) ──
@@ -3405,7 +3182,7 @@ function _makeSaveBtn(btnId) {
   };
 }
 // Initialised once DOM is ready (at end of script)
-let _brandSave, _tplSave, _stockApiSave, _phApiSave, _langSave;
+let _brandSave, _tplSave, _stockApiSave, _phApiSave;
 
 function openAddBrandModal() {
   document.getElementById('brandModalTitle').textContent = 'Add Brand / Supplier';
@@ -5117,8 +4894,6 @@ onSnapshot(doc(db, MB, 'types'), snap => {
 onSnapshot(doc(db, MB, 'languages'), snap => {
   if (snap.exists() && snap.data().data) _languages = snap.data().data;
   if (document.getElementById('losPreviewLangPicker')) renderLosPreviewLangPicker();
-  const panel = document.getElementById('langRegistryList');
-  if (panel) renderLanguageRegistry();
 });
 
 onSnapshot(doc(db, MB, 'categories'), snap => {
@@ -5165,7 +4940,6 @@ _brandSave    = _makeSaveBtn('brandSaveBtn');
 _tplSave      = _makeSaveBtn('tplSaveBtn');
 _stockApiSave = _makeSaveBtn('stockApiSaveBtn');
 _phApiSave    = _makeSaveBtn('phApiSaveBtn');
-_langSave     = _makeSaveBtn('langSaveBtn');
 
 // Event delegation: any input/change inside the form containers marks the button dirty
 document.getElementById('brandPane-settings')
@@ -5183,10 +4957,6 @@ document.getElementById('phCampaignMode')
 // PH endpoint URL/token inputs are dynamically rendered; catch via their parent container
 document.getElementById('phEpList')
   .addEventListener('input',  () => _phApiSave.markDirty());
-document.querySelector('#langModal .modal-body')
-  .addEventListener('input',  () => _langSave.markDirty());
-document.querySelector('#langModal .modal-body')
-  .addEventListener('change', () => _langSave.markDirty());
 
 // Close the template type dropdown when clicking outside it
 document.addEventListener('click', (e) => {
