@@ -1,7 +1,11 @@
 // Brief §6.2: full-width banner stating the saving and end date. Shared
 // between Product Details and Pricing.
-export default function OfferBanner({ rrp, offerPrice, offerFrom, offerUntil }) {
-  const rrpNum = parseFloat(rrp);
+//
+// getOfferState is exported so anything that needs to know whether an
+// offer is live/scheduled/ended right now — the Pricing tab pre-filling
+// Offer description is the reason this got pulled out — uses the exact
+// same rule this banner does, rather than a second copy that could drift.
+export function getOfferState(rrp, offerPrice, offerFrom, offerUntil) {
   const offerNum = parseFloat(offerPrice);
   const now = new Date();
   const from = offerFrom ? new Date(offerFrom) : null;
@@ -13,6 +17,15 @@ export default function OfferBanner({ rrp, offerPrice, offerFrom, offerUntil }) 
     else if (from && from > now) state = 'scheduled';
     else state = 'live';
   }
+  return state;
+}
+
+export default function OfferBanner({ rrp, offerPrice, offerFrom, offerUntil }) {
+  const rrpNum = parseFloat(rrp);
+  const offerNum = parseFloat(offerPrice);
+  const from = offerFrom ? new Date(offerFrom) : null;
+  const until = offerUntil ? new Date(offerUntil) : null;
+  const state = getOfferState(rrp, offerPrice, offerFrom, offerUntil);
 
   const fmt = (d) => d && d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
 

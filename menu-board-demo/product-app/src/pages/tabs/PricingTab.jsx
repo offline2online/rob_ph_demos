@@ -1,9 +1,9 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Input, InputNumber, Table, Button, App, Tag } from 'antd';
 import MaterialIcon from '../../components/MaterialIcon.jsx';
 import ClearableDate from '../../components/ClearableDate.jsx';
-import OfferBanner from '../../components/OfferBanner.jsx';
+import OfferBanner, { getOfferState } from '../../components/OfferBanner.jsx';
 import { upsertProduct, appendPriceLogEntries } from '../../data/productStore.js';
 
 function Field({ label, required, children, hint }) {
@@ -53,6 +53,19 @@ export default function PricingTab({ draft, baseline, setDraft, setBaseline }) {
     setSearchParams(next, { replace: true });
   };
 
+  // Offer description pre-fills from the saved offer only while that offer
+  // is actually live — the same rule OfferBanner uses to decide what to
+  // show. Once the offer ends (or there's no offer, or it's only
+  // scheduled), the field goes back to blank: a past offer's description
+  // isn't the reason for whatever gets typed next. Tied to draft.id, not
+  // every render, so it only resets on landing here for a given product,
+  // not while someone is mid-edit.
+  const isLive = getOfferState(draft.rrp, draft.offerPrice, draft.offerFrom, draft.offerUntil) === 'live';
+  useEffect(() => {
+    setReason(isLive ? draft.offerDescription || '' : '');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draft.id]);
+
   const rrpChanged = String(draft.rrp) !== String(baseline.rrp);
   const offerChanged = String(draft.offerPrice || '') !== String(baseline.offerPrice || '');
   const fromChanged = String(draft.offerFrom || '') !== String(baseline.offerFrom || '');
@@ -93,7 +106,12 @@ export default function PricingTab({ draft, baseline, setDraft, setBaseline }) {
     if (fromChanged) changes.push({ fieldName: 'Offer from', oldValue: fmtDateVal(baseline.offerFrom), newValue: fmtDateVal(draft.offerFrom) });
     if (untilChanged) changes.push({ fieldName: 'Offer until', oldValue: fmtDateVal(baseline.offerUntil), newValue: fmtDateVal(draft.offerUntil) });
     if (menuBoardCopyChanged) changes.push({ fieldName: 'Show on Menu Board', oldValue: baseline.showOnMenuBoard || '—', newValue: draft.showOnMenuBoard || '—' });
-    const withLog = appendPriceLogEntries(draft, changes, reason);
+    // Persisted separately from the price-log entries above (which are a
+    // permanent audit trail of every past reason) — offerDescription is
+    // just "the reason behind the offer as it currently stands," so the
+    // Pricing tab can show it again next time this offer is live, without
+    // digging through the log.
+    const withLog = appendPriceLogEntries({ ...draft, offerDescription: reason }, changes, reason);
     setSavingPrice(true);
     try {
       const saved = await upsertProduct(withLog);

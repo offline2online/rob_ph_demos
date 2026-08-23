@@ -28,6 +28,7 @@ export function blankProduct() {
     offerPrice: '',
     offerFrom: '',
     offerUntil: '',
+    offerDescription: '',
     showOnMenuBoard: '',
     currency: '$',
     taxClass: '',

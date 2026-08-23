@@ -114,6 +114,7 @@ export function migrateItem(raw, brandCurrency) {
     offerPrice: raw.offerPrice != null ? String(raw.offerPrice) : '',
     offerFrom: raw.offerFrom || '',
     offerUntil: raw.offerUntil || '',
+    offerDescription: raw.offerDescription || '',
     showOnMenuBoard: raw.showOnMenuBoard || '',
     menuTypes: raw.menuTypes || [],
     attrGroups: mapAttrGroups(raw),
