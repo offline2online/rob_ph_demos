@@ -20,6 +20,26 @@ export function getOfferState(rrp, offerPrice, offerFrom, offerUntil) {
   return state;
 }
 
+// The grid, its price-column filters, and the Product Details banner all
+// still read a single flat offerPrice/offerFrom/offerUntil/offerDescription
+// off the product — none of them know about the offers[] array multi-offer
+// support introduced on the Pricing tab. Rather than rewriting every one of
+// those call sites to understand a list, PricingTab derives "the one offer
+// that currently matters" at save time and writes it back into those same
+// flat fields. Live beats scheduled (a customer standing at the till cares
+// what price rings up right now); among several scheduled offers, the one
+// starting soonest is shown next.
+export function pickEffectiveOffer(offers) {
+  if (!offers || offers.length === 0) return null;
+  const enabled = offers.filter((o) => o.enabled !== false);
+  const live = enabled.find((o) => getOfferState(null, o.offerPrice, o.offerFrom, o.offerUntil) === 'live');
+  if (live) return live;
+  const scheduled = enabled
+    .filter((o) => getOfferState(null, o.offerPrice, o.offerFrom, o.offerUntil) === 'scheduled')
+    .sort((a, b) => new Date(a.offerFrom) - new Date(b.offerFrom));
+  return scheduled[0] || null;
+}
+
 export default function OfferBanner({ rrp, offerPrice, offerFrom, offerUntil }) {
   const rrpNum = parseFloat(rrp);
   const offerNum = parseFloat(offerPrice);

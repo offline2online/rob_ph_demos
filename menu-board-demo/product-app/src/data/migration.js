@@ -85,6 +85,23 @@ function mapImages(raw) {
   }));
 }
 
+// A product saved before multi-offer support has only the flat
+// offerPrice/offerFrom/offerUntil/offerDescription fields — wrap that as a
+// single-entry offers[] so it shows up as "Offer 1" instead of vanishing
+// the first time this product is opened on the Pricing tab.
+function legacyOffer(raw) {
+  if (raw.offerPrice == null || raw.offerPrice === '') return [];
+  return [{
+    id: 'offer-legacy-' + raw.id,
+    enabled: true,
+    description: raw.offerDescription || '',
+    offerPrice: String(raw.offerPrice),
+    offerFrom: raw.offerFrom || '',
+    offerUntil: raw.offerUntil || '',
+    targeting: [],
+  }];
+}
+
 export function migrateItem(raw, brandCurrency) {
   if (raw.status) {
     // Already migrated — but toItemDoc() always flattens images back to
@@ -92,7 +109,7 @@ export function migrateItem(raw, brandCurrency) {
     // images[0] as a URL directly), so a second edit must still re-inflate
     // them into the rich per-image shape this UI works with. mapImages()
     // is idempotent — a no-op if images are already rich objects.
-    return { ...raw, images: mapImages(raw) };
+    return { ...raw, images: mapImages(raw), offers: raw.offers || legacyOffer(raw) };
   }
 
   return {
@@ -115,6 +132,7 @@ export function migrateItem(raw, brandCurrency) {
     offerFrom: raw.offerFrom || '',
     offerUntil: raw.offerUntil || '',
     offerDescription: raw.offerDescription || '',
+    offers: raw.offers || legacyOffer(raw),
     showOnMenuBoard: raw.showOnMenuBoard || '',
     menuTypes: raw.menuTypes || [],
     attrGroups: mapAttrGroups(raw),

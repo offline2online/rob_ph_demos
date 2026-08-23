@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Input, InputNumber, Table, Button, App, Tag } from 'antd';
+import { Input, InputNumber, Table, Button, App, Tag, Switch } from 'antd';
 import MaterialIcon from '../../components/MaterialIcon.jsx';
 import ClearableDate from '../../components/ClearableDate.jsx';
-import OfferBanner, { getOfferState } from '../../components/OfferBanner.jsx';
-import { upsertProduct, appendPriceLogEntries } from '../../data/productStore.js';
+import OfferBanner, { getOfferState, pickEffectiveOffer } from '../../components/OfferBanner.jsx';
+import OfferTargetingBuilder from '../../components/OfferTargetingBuilder.jsx';
+import { upsertProduct, appendPriceLogEntries, genId } from '../../data/productStore.js';
 
 function Field({ label, required, children, hint }) {
   return (
@@ -15,6 +16,88 @@ function Field({ label, required, children, hint }) {
       </label>
       {children}
       {hint && <p style={{ fontSize: 12, color: 'rgba(0,0,0,.45)', marginTop: 5 }}>{hint}</p>}
+    </div>
+  );
+}
+
+function blankOffer() {
+  return { id: genId('offer'), enabled: true, description: '', offerPrice: '', offerFrom: '', offerUntil: '', targeting: [] };
+}
+
+const OFFER_STATE_STYLE = {
+  live: { background: '#f6ffed', border: '1px solid #b7eb8f', color: '#237804' },
+  scheduled: { background: '#fffbe6', border: '1px solid #ffe58f', color: '#874d00' },
+  ended: { background: '#fff2f0', border: '1px solid #ffccc7', color: '#a8071a' },
+  none: { background: '#fafafa', border: '1px solid #f0f0f0', color: 'rgba(0,0,0,.45)' },
+  off: { background: '#fafafa', border: '1px solid #f0f0f0', color: 'rgba(0,0,0,.45)' },
+};
+const OFFER_STATE_LABEL = { live: 'Live', scheduled: 'Scheduled', ended: 'Ended', none: 'Not scheduled', off: 'Off' };
+
+// One offer's own card: on/off switch, state badge, its own
+// description/price/schedule, and its own store targeting rule-builder
+// (ph-designer skill components.md §16.1 — list-of-records, each with a
+// nested §16 rule-builder scoped to Store / Location Data only). The
+// switch overrides whatever the dates say — a disabled offer always reads
+// "Off", never "Live", since the switch is the more relevant fact once
+// it's been turned off deliberately.
+function OfferCard({ offer, index, rrp, onChange, onRemove }) {
+  const dateState = getOfferState(rrp, offer.offerPrice, offer.offerFrom, offer.offerUntil);
+  const state = offer.enabled === false ? 'off' : dateState;
+  return (
+    <div style={{ border: '1px solid #f0f0f0', borderRadius: 8, padding: 16, marginBottom: 14, opacity: offer.enabled === false ? 0.6 : 1 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
+        <Switch checked={offer.enabled !== false} onChange={(v) => onChange({ enabled: v })} />
+        <span style={{ fontSize: 14, fontWeight: 500 }}>Offer {index + 1}</span>
+        <span style={{ borderRadius: 4, padding: '2px 8px', fontSize: 12, ...OFFER_STATE_STYLE[state] }}>
+          {OFFER_STATE_LABEL[state]}
+        </span>
+        <div style={{ flex: 1 }} />
+        <Button type="text" danger size="small" icon={<MaterialIcon name="delete" style={{ fontSize: 15 }} />} onClick={onRemove}>
+          Remove
+        </Button>
+      </div>
+
+      <div style={{ marginBottom: 14 }}>
+        <Field label="Offer description" required hint="Describes this offer and is recorded in the price change log when saved.">
+          <Input
+            value={offer.description}
+            onChange={(e) => onChange({ description: e.target.value })}
+            placeholder="e.g. Summer sale — 20% off for two weeks"
+          />
+        </Field>
+      </div>
+
+      <div style={{ maxWidth: 240 }}>
+        <Field label="Offer price" required>
+          <InputNumber value={offer.offerPrice} onChange={(v) => onChange({ offerPrice: v })} prefix="$" style={{ width: '100%' }} min={0} step={0.01} />
+        </Field>
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px 16px', marginTop: 14 }}>
+        <Field label="Schedule offer from" hint="Blank means the offer starts now.">
+          <ClearableDate value={offer.offerFrom} onChange={(v) => onChange({ offerFrom: v })} showTime blankHint={{ blank: '', set: '' }} />
+        </Field>
+        <Field label="Schedule offer until" hint="Blank means the offer runs until removed.">
+          <ClearableDate value={offer.offerUntil} onChange={(v) => onChange({ offerUntil: v })} showTime blankHint={{ blank: '', set: '' }} />
+        </Field>
+      </div>
+
+      <div style={{ marginTop: 14 }}>
+        {offer.enabled === false ? (
+          <div style={{ borderRadius: 6, padding: '10px 12px', fontSize: 13, lineHeight: 1.6, ...OFFER_STATE_STYLE.off }}>
+            Switched off — this offer won't apply even if its schedule is current.
+          </div>
+        ) : (
+          <OfferBanner rrp={rrp} offerPrice={offer.offerPrice} offerFrom={offer.offerFrom} offerUntil={offer.offerUntil} />
+        )}
+      </div>
+
+      <div style={{ marginTop: 14 }}>
+        <div style={{ fontSize: 11, color: 'rgba(0,0,0,.45)', letterSpacing: '0.08em', fontWeight: 500, marginBottom: 10, textTransform: 'uppercase' }}>
+          Store targeting
+        </div>
+        <OfferTargetingBuilder groups={offer.targeting || []} onChange={(groups) => onChange({ targeting: groups })} />
+      </div>
     </div>
   );
 }
@@ -53,32 +136,21 @@ export default function PricingTab({ draft, baseline, setDraft, setBaseline }) {
     setSearchParams(next, { replace: true });
   };
 
-  // Offer description pre-fills from the saved offer only while that offer
-  // is actually live — the same rule OfferBanner uses to decide what to
-  // show. Once the offer ends (or there's no offer, or it's only
-  // scheduled), the field goes back to blank: a past offer's description
-  // isn't the reason for whatever gets typed next. Tied to draft.id, not
-  // every render, so it only resets on landing here for a given product,
-  // not while someone is mid-edit.
-  const isLive = getOfferState(draft.rrp, draft.offerPrice, draft.offerFrom, draft.offerUntil) === 'live';
+  // Resets on landing here for a given product, not on every render — a
+  // reason typed for one product must never leak onto the next.
   useEffect(() => {
-    setReason(isLive ? draft.offerDescription || '' : '');
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    setReason('');
   }, [draft.id]);
 
   const rrpChanged = String(draft.rrp) !== String(baseline.rrp);
-  const offerChanged = String(draft.offerPrice || '') !== String(baseline.offerPrice || '');
-  const fromChanged = String(draft.offerFrom || '') !== String(baseline.offerFrom || '');
-  const untilChanged = String(draft.offerUntil || '') !== String(baseline.offerUntil || '');
   const menuBoardCopyChanged = String(draft.showOnMenuBoard || '') !== String(baseline.showOnMenuBoard || '');
-  const dirty = rrpChanged || offerChanged || fromChanged || untilChanged || menuBoardCopyChanged;
+  const offersChanged = JSON.stringify(draft.offers || []) !== JSON.stringify(baseline.offers || []);
+  const dirty = rrpChanged || menuBoardCopyChanged || offersChanged;
   const canSave = dirty && reason.trim() !== '';
 
   const changeSummary = [
     rrpChanged ? `RRP $${baseline.rrp || '0.00'} → $${draft.rrp}` : null,
-    offerChanged ? `Offer price $${baseline.offerPrice || '0.00'} → $${draft.offerPrice}` : null,
-    fromChanged ? `Offer from ${fmtDateVal(baseline.offerFrom)} → ${fmtDateVal(draft.offerFrom)}` : null,
-    untilChanged ? `Offer until ${fmtDateVal(baseline.offerUntil)} → ${fmtDateVal(draft.offerUntil)}` : null,
+    offersChanged ? `Offers updated (${(draft.offers || []).length} defined)` : null,
     menuBoardCopyChanged ? `Menu board copy updated` : null,
   ]
     .filter(Boolean)
@@ -88,13 +160,16 @@ export default function PricingTab({ draft, baseline, setDraft, setBaseline }) {
     setDraft((d) => ({
       ...d,
       rrp: baseline.rrp,
-      offerPrice: baseline.offerPrice,
-      offerFrom: baseline.offerFrom,
-      offerUntil: baseline.offerUntil,
+      offers: baseline.offers || [],
       showOnMenuBoard: baseline.showOnMenuBoard,
     }));
     setReason('');
   };
+
+  const addOffer = () => setDraft((d) => ({ ...d, offers: [...(d.offers || []), blankOffer()] }));
+  const removeOffer = (id) => setDraft((d) => ({ ...d, offers: (d.offers || []).filter((o) => o.id !== id) }));
+  const updateOffer = (id, fields) =>
+    setDraft((d) => ({ ...d, offers: (d.offers || []).map((o) => (o.id === id ? { ...o, ...fields } : o)) }));
 
   const [savingPrice, setSavingPrice] = useState(false);
 
@@ -102,16 +177,29 @@ export default function PricingTab({ draft, baseline, setDraft, setBaseline }) {
     if (!canSave) return;
     const changes = [];
     if (rrpChanged) changes.push({ fieldName: 'RRP', oldValue: baseline.rrp || '—', newValue: draft.rrp });
-    if (offerChanged) changes.push({ fieldName: 'Offer price', oldValue: baseline.offerPrice || '—', newValue: draft.offerPrice });
-    if (fromChanged) changes.push({ fieldName: 'Offer from', oldValue: fmtDateVal(baseline.offerFrom), newValue: fmtDateVal(draft.offerFrom) });
-    if (untilChanged) changes.push({ fieldName: 'Offer until', oldValue: fmtDateVal(baseline.offerUntil), newValue: fmtDateVal(draft.offerUntil) });
+    if (offersChanged) {
+      changes.push({
+        fieldName: 'Offers',
+        oldValue: `${(baseline.offers || []).length} offer(s)`,
+        newValue: `${(draft.offers || []).length} offer(s)`,
+      });
+    }
     if (menuBoardCopyChanged) changes.push({ fieldName: 'Show on Menu Board', oldValue: baseline.showOnMenuBoard || '—', newValue: draft.showOnMenuBoard || '—' });
-    // Persisted separately from the price-log entries above (which are a
-    // permanent audit trail of every past reason) — offerDescription is
-    // just "the reason behind the offer as it currently stands," so the
-    // Pricing tab can show it again next time this offer is live, without
-    // digging through the log.
-    const withLog = appendPriceLogEntries({ ...draft, offerDescription: reason }, changes, reason);
+
+    // The grid, its price-column filter, and the Product Details banner
+    // only know the legacy flat offerPrice/offerFrom/offerUntil/
+    // offerDescription fields, not offers[] — derive "the one that
+    // currently matters" and write it back into those fields so none of
+    // that downstream code needs to change to understand multiple offers.
+    const effective = pickEffectiveOffer(draft.offers) || {};
+    const withLegacy = {
+      ...draft,
+      offerPrice: effective.offerPrice || '',
+      offerFrom: effective.offerFrom || '',
+      offerUntil: effective.offerUntil || '',
+      offerDescription: effective.description || '',
+    };
+    const withLog = appendPriceLogEntries(withLegacy, changes, reason);
     setSavingPrice(true);
     try {
       const saved = await upsertProduct(withLog);
@@ -199,6 +287,10 @@ export default function PricingTab({ draft, baseline, setDraft, setBaseline }) {
         align: 'right',
         width: 90,
         render: (_, row) => {
+          // Only price fields carry a real $ delta — "Offers" logs a count
+          // like "1 offer(s)", which parseFloat happily reads as 1 and
+          // would otherwise render a nonsensical "▲ $1.00".
+          if (row.fieldName !== 'RRP' && row.fieldName !== 'Offer price') return <span>—</span>;
           const o = parseFloat(row.old);
           const n = parseFloat(row.neu);
           if (isNaN(o) || isNaN(n)) return <span>—</span>;
@@ -221,18 +313,18 @@ export default function PricingTab({ draft, baseline, setDraft, setBaseline }) {
     <div>
       <div className="ph-sect">
         <div className="ph-sect-label" style={{ marginBottom: 12 }}>
-          RRP &amp; Offer Pricing
+          RRP
         </div>
         <div style={{ marginBottom: 14 }}>
-          <Field label="Offer description" required hint="Describes this price change and is recorded in the price change log below.">
+          <Field label="Reason for this change" required hint="Describes this price change and is recorded in the price change log below.">
             <Input
               value={reason}
               onChange={(e) => setReason(e.target.value)}
-              placeholder="e.g. Summer sale — 20% off for two weeks"
+              placeholder="e.g. Cost increase from supplier"
             />
           </Field>
         </div>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px 16px' }}>
+        <div style={{ maxWidth: 240 }}>
           <Field label="RRP">
             <InputNumber
               value={draft.rrp}
@@ -242,24 +334,6 @@ export default function PricingTab({ draft, baseline, setDraft, setBaseline }) {
               min={0}
               step={0.01}
             />
-          </Field>
-          <Field label="Offer price" required>
-            <InputNumber
-              value={draft.offerPrice}
-              onChange={(v) => setDraft((d) => ({ ...d, offerPrice: v }))}
-              prefix="$"
-              style={{ width: '100%', ...(offerChanged ? { background: '#e8fdff' } : {}) }}
-              min={0}
-              step={0.01}
-            />
-          </Field>
-        </div>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px 16px', marginTop: 14 }}>
-          <Field label="Schedule offer from" hint="Blank means the offer starts now.">
-            <ClearableDate value={draft.offerFrom} onChange={(v) => setDraft((d) => ({ ...d, offerFrom: v }))} showTime blankHint={{ blank: '', set: '' }} />
-          </Field>
-          <Field label="Schedule offer until" hint="Blank means the offer runs until removed.">
-            <ClearableDate value={draft.offerUntil} onChange={(v) => setDraft((d) => ({ ...d, offerUntil: v }))} showTime blankHint={{ blank: '', set: '' }} />
           </Field>
         </div>
         <div style={{ marginTop: 14 }}>
@@ -272,9 +346,39 @@ export default function PricingTab({ draft, baseline, setDraft, setBaseline }) {
             />
           </Field>
         </div>
-        <div style={{ marginTop: 14 }}>
-          <OfferBanner rrp={draft.rrp} offerPrice={draft.offerPrice} offerFrom={draft.offerFrom} offerUntil={draft.offerUntil} />
+      </div>
+
+      <div className="ph-sect">
+        <div className="ph-sect-label" style={{ marginBottom: 4 }}>
+          Offers
         </div>
+        <p style={{ fontSize: 12, color: 'rgba(0,0,0,.45)', margin: '0 0 12px' }}>
+          {(draft.offers || []).length} Offer{(draft.offers || []).length === 1 ? '' : 's'} Defined. Each offer can be
+          switched on or off independently and targeted to specific stores.
+        </p>
+        {(draft.offers || []).length === 0 && (
+          <div style={{ background: '#fafafa', border: '1px dashed #d9d9d9', borderRadius: 8, padding: 20, textAlign: 'center', color: 'rgba(0,0,0,.45)', fontSize: 13, marginBottom: 14 }}>
+            No offers yet. This product sells at RRP everywhere until you add one.
+          </div>
+        )}
+        {(draft.offers || []).map((offer, idx) => (
+          <OfferCard
+            key={offer.id}
+            offer={offer}
+            index={idx}
+            rrp={draft.rrp}
+            onChange={(fields) => updateOffer(offer.id, fields)}
+            onRemove={() => removeOffer(offer.id)}
+          />
+        ))}
+        <Button
+          type="text"
+          icon={<MaterialIcon name="add" style={{ fontSize: 15 }} />}
+          onClick={addOffer}
+          style={{ color: '#169bc2', paddingLeft: 0 }}
+        >
+          Add New Offer
+        </Button>
       </div>
 
       <div className="ph-sect">
@@ -337,7 +441,7 @@ export default function PricingTab({ draft, baseline, setDraft, setBaseline }) {
         <span style={{ fontSize: 13, color: 'rgba(0,0,0,.65)' }}>
           {dirty
             ? (reason.trim() ? `Unsaved price change — ${changeSummary}` : `Unsaved price change — enter a reason above to enable saving`)
-            : 'No changes to save. Editing RRP, offer price, dates or the menu board copy enables the save and writes an entry to the log.'}
+            : 'No changes to save. Editing RRP, offers or the menu board copy enables the save and writes an entry to the log.'}
         </span>
         <div style={{ flex: 1 }} />
         <Button disabled={!dirty} onClick={discardChange}>

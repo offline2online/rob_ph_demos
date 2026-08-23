@@ -3,8 +3,8 @@ import { db, ITEMS_COLL } from './firebase.js';
 import { migrateItem, toItemDoc } from './migration.js';
 import { getBrandById } from './registries.js';
 
-function genId() {
-  return 'item-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8);
+export function genId(prefix = 'item') {
+  return prefix + '-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8);
 }
 
 export async function getProduct(id) {
@@ -29,6 +29,7 @@ export function blankProduct() {
     offerFrom: '',
     offerUntil: '',
     offerDescription: '',
+    offers: [],
     showOnMenuBoard: '',
     currency: '$',
     taxClass: '',
