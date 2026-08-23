@@ -130,8 +130,21 @@ export default function ProductAssetsTab({ draft, patch }) {
   const [filter, setFilter] = useState('all');
   const [q, setQ] = useState('');
   const [dragOver, setDragOver] = useState(false);
+  const [newTagText, setNewTagText] = useState('');
   const fileInput = useRef(null);
   const fileIntent = useRef('upload'); // 'upload' | 'replace' — which action opened the picker
+
+  // The "+ Add tag" input was uncontrolled, cleared imperatively via
+  // e.currentTarget.value = ''. With no key of its own it sits right after
+  // a .map() of Tag chips whose count changes on every add/remove — React
+  // reconciles that whole run of siblings by position, so once the chip
+  // count shifts, the previously-typed text could resurface in the input
+  // on the next render instead of staying cleared. A controlled input,
+  // reset here whenever the selected image changes, removes the need for
+  // React to guess which DOM node is "the same one" at all.
+  useEffect(() => {
+    setNewTagText('');
+  }, [selected]);
 
   // Reset the selected tile whenever the product itself changes (navigating
   // straight from one product's Assets tab to another's, e.g. via a direct
@@ -388,10 +401,12 @@ export default function ProductAssetsTab({ draft, patch }) {
                       size="small"
                       style={{ width: 120 }}
                       placeholder="+ Add tag"
+                      value={newTagText}
+                      onChange={(e) => setNewTagText(e.target.value)}
                       onKeyDown={(e) => {
-                        if (e.key === 'Enter' && e.currentTarget.value.trim()) {
-                          updateSelected({ tags: [...(current.tags || []), e.currentTarget.value.trim()] });
-                          e.currentTarget.value = '';
+                        if (e.key === 'Enter' && newTagText.trim()) {
+                          updateSelected({ tags: [...(current.tags || []), newTagText.trim()] });
+                          setNewTagText('');
                         }
                       }}
                     />

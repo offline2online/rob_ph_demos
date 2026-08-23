@@ -84,10 +84,10 @@ export default function BeforeAfterSlider({ beforeSrc, afterSrc, hasChange, tran
           >
             ◂▸
           </div>
-          <span style={{ position: 'absolute', bottom: 10, left: 10, fontSize: 10, letterSpacing: '.06em', background: 'rgba(0,0,0,.6)', color: '#fff', padding: '2px 8px', borderRadius: 3 }}>
+          <span style={{ position: 'absolute', top: 10, left: 10, fontSize: 10, letterSpacing: '.06em', background: 'rgba(0,0,0,.6)', color: '#fff', padding: '2px 8px', borderRadius: 3 }}>
             BEFORE
           </span>
-          <span style={{ position: 'absolute', bottom: 10, right: 10, fontSize: 10, letterSpacing: '.06em', background: 'rgba(0,0,0,.6)', color: '#fff', padding: '2px 8px', borderRadius: 3 }}>
+          <span style={{ position: 'absolute', top: 10, right: 10, fontSize: 10, letterSpacing: '.06em', background: 'rgba(0,0,0,.6)', color: '#fff', padding: '2px 8px', borderRadius: 3 }}>
             AFTER
           </span>
         </>
