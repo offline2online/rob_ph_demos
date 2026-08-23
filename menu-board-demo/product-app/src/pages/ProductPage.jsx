@@ -110,9 +110,6 @@ export default function ProductPage({ isNew = false }) {
             )}
           </div>
         </div>
-        <div style={{ fontSize: 12, color: 'rgba(0,0,0,.45)', marginBottom: 16 }}>
-          {draft.category || 'Uncategorised'}
-        </div>
         <div style={{ height: 1, background: 'rgba(5,5,5,0.06)', margin: '4px 0 16px' }} />
 
         <Tabs
@@ -120,18 +117,18 @@ export default function ProductPage({ isNew = false }) {
           onChange={goTab}
           items={[
             { key: 'details', label: 'Product Details' },
-            { key: 'stock', label: 'Stock' },
             { key: 'assets', label: `Product Assets (${imageCount + videoCount})` },
             { key: 'pricing', label: 'Pricing' },
+            { key: 'stock', label: 'Stock' },
           ]}
         />
 
         {tab === 'details' && (
           <ProductDetailsTab draft={draft} patch={patch} onGoPricing={() => goTab('pricing')} />
         )}
-        {tab === 'stock' && <StockTab draft={draft} patch={patch} />}
         {tab === 'assets' && <ProductAssetsTab draft={draft} patch={patch} />}
         {tab === 'pricing' && <PricingTab draft={draft} baseline={baseline} setDraft={setDraft} setBaseline={setBaseline} />}
+        {tab === 'stock' && <StockTab draft={draft} patch={patch} />}
 
         {tab !== 'pricing' && (
           <div className="ph-savebar">
