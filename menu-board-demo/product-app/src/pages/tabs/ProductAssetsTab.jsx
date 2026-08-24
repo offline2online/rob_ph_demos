@@ -489,7 +489,7 @@ export default function ProductAssetsTab({ draft, patch }) {
 
             <div style={{ borderTop: '1px solid #f0f0f0', padding: '20px 20px 22px' }}>
               <div style={{ fontSize: 11, color: 'rgba(0,0,0,.45)', letterSpacing: '0.08em', fontWeight: 500, marginBottom: 8, textTransform: 'uppercase' }}>
-                Targeting for this asset
+                Asset Targeting Rules
               </div>
               <p style={{ fontSize: 12, color: 'rgba(0,0,0,.45)', margin: '0 0 14px' }}>
                 These rules apply only to &ldquo;{current.name.trim() || current.variant}&rdquo; — not to any other image or video on this product.

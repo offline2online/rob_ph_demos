@@ -122,7 +122,7 @@ function OfferFormModal({ open, initialOffer, onCancel, onSave, currency }) {
           </div>
           <div style={{ marginTop: 24, paddingTop: 20, paddingBottom: 20, borderTop: '1px solid #f0f0f0', borderBottom: '1px solid #f0f0f0' }}>
             <div style={{ fontSize: 11, color: 'rgba(0,0,0,.45)', letterSpacing: '0.08em', fontWeight: 500, marginBottom: 8, textTransform: 'uppercase' }}>
-              Targeting for this offer
+              Offer Targeting Rules
             </div>
             <p style={{ fontSize: 12, color: 'rgba(0,0,0,.45)', margin: '0 0 14px' }}>
               These rules apply only to &ldquo;{form.description.trim() || 'this offer'}&rdquo; — not to any other offer on this product.
