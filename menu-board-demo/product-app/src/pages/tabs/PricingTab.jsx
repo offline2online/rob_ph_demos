@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Input, InputNumber, Table, Button, App, Tag, Switch, Modal } from 'antd';
+import { Input, InputNumber, Table, Button, App, Tag, Switch, Modal, Tooltip } from 'antd';
 import MaterialIcon from '../../components/MaterialIcon.jsx';
 import ClearableDate, { shiftEndOneHour } from '../../components/ClearableDate.jsx';
 import { getOfferState, pickEffectiveOffer } from '../../components/OfferBanner.jsx';
-import OfferTargetingBuilder from '../../components/OfferTargetingBuilder.jsx';
+import OfferTargetingBuilder, { describeTargeting } from '../../components/OfferTargetingBuilder.jsx';
 import { upsertProduct, appendPriceLogEntries, genId } from '../../data/productStore.js';
 
 function Field({ label, required, children, hint }) {
@@ -348,11 +348,25 @@ export default function PricingTab({ draft, baseline, setDraft, setBaseline }) {
         ),
       },
       {
+        // Same treatment as Campaigns' own Targeting column: a plain dash
+        // for "no rules, applies everywhere," a coloured pill once any
+        // rule is set, and the actual rule text on hover rather than
+        // making someone open the record to find out what it says.
         title: 'Store Targeting',
         width: 130,
         render: (_, row) => {
           const n = (row.targeting || []).length;
-          return n === 0 ? 'All stores' : `${n} rule${n === 1 ? '' : 's'}`;
+          if (n === 0) return <span style={{ color: 'rgba(0,0,0,.45)' }}>All stores</span>;
+          return (
+            <Tooltip title={describeTargeting(row.targeting)} onClick={(e) => e.stopPropagation()}>
+              <span
+                onClick={(e) => e.stopPropagation()}
+                style={{ borderRadius: 4, padding: '2px 8px', fontSize: 12, background: '#e6f7ff', border: '1px solid #91caff', color: '#0958a5', cursor: 'default' }}
+              >
+                Targeted
+              </span>
+            </Tooltip>
+          );
         },
       },
       {

@@ -794,6 +794,14 @@ let _brands      = [];
 let _stock       = {};
 let _localFeatured = {}; // per-store Featured override, set from Retail Admin — see LOCAL_FEATURED_COLL
 let _storePricing  = {}; // per-store price override (by sku), set from Retail Admin — see STORE_PRICING_COLL
+// This store's Fixed/Variable Store Segment membership — sourced from the
+// PH API's own campaign_data response (data.store_location, same place
+// store_name and store_timezone already come from), never managed locally.
+// Populated in pollCampaign() below; stays empty until the first
+// successful poll (Device UDID boards only — Store Code boards have no PH
+// API session and so never receive segments, same as they never receive a
+// personalised first name today).
+let _storeProfile  = { fixedSegments: [], variableSegments: [] };
 // Campaign SKUs: null = default menu; string[] = personalised override from Personalisation Hub API
 let _campaignSkus      = TEST_SKUS.length > 0 ? TEST_SKUS : null;
 let _campaignFirstName = null; // null = no greeting; string = show personalised greeting in clock bar
@@ -826,9 +834,71 @@ const MENU_META = new Proxy(MENU_META_STATIC, {
 // any other store. Every caller reads through here so price/offer/menu-
 // board-copy display is correct everywhere without each call site having
 // to know about store overrides.
+// Store-targeted offers: an offer's `targeting` is an AND-of-ORs, same
+// rule as Campaign Targeting's condition-tree builder (ph-designer skill
+// components.md §16) — each entry in the array is one AND-group, and the
+// conditions listed inside a group are OR'd together. No targeting at all
+// means the offer applies at every store.
+function _offerConditionMatches(cond, store) {
+  const have = (
+    cond.field === 'storeCode' ? [STORE_CODE] :
+    cond.field === 'fixedSegment' ? (store.fixedSegments || []) :
+    cond.field === 'variableSegment' ? (store.variableSegments || []) :
+    cond.field === 'storeState' ? (store.state ? [store.state] : []) :
+    []
+  ).map(v => String(v).trim().toLowerCase());
+  const want = (cond.values || []).map(v => String(v).trim().toLowerCase());
+  if (!want.length) return true; // an empty value list restricts nothing
+  const anyOverlap = want.some(w => have.includes(w));
+  const allPresent = want.every(w => have.includes(w));
+  switch (cond.operator) {
+    case 'matches':    return allPresent && have.length === want.length;
+    case 'excludesOr':  return !anyOverlap;
+    case 'excludesAnd': return !allPresent;
+    case 'includes':
+    default:            return anyOverlap;
+  }
+}
+function _offerTargetingMatches(targeting, store) {
+  if (!Array.isArray(targeting) || !targeting.length) return true;
+  return targeting.every(group => (group.conditions || []).some(c => _offerConditionMatches(c, store)));
+}
+// Which of an item's offers actually applies at THIS store right now —
+// live beats scheduled, same precedence as pickEffectiveOffer() in the
+// product-app's OfferBanner.jsx, but evaluated per-store instead of once
+// at save time, since which offer wins can differ store to store. Items
+// saved before multi-offer support (no `offers` array) fall through
+// untouched — their flat offerPrice/offerFrom/offerUntil/showOnMenuBoard
+// are already correct and were never store-targeted to begin with.
+function _resolveItemOffersForStore(item, store) {
+  if (!Array.isArray(item.offers) || !item.offers.length) return item;
+  const eligible = item.offers.filter(o => o.enabled !== false && _offerTargetingMatches(o.targeting, store));
+  const now = new Date();
+  const isLive = (o) => {
+    const n = parseFloat(o.offerPrice);
+    if (!(n > 0)) return false;
+    const from = o.offerFrom ? new Date(o.offerFrom) : null;
+    const until = o.offerUntil ? new Date(o.offerUntil) : null;
+    if (until && until < now) return false;
+    if (from && from > now) return false;
+    return true;
+  };
+  const live = eligible.find(isLive);
+  const effective = live || eligible
+    .filter((o) => parseFloat(o.offerPrice) > 0 && o.offerFrom && new Date(o.offerFrom) > now)
+    .sort((a, b) => new Date(a.offerFrom) - new Date(b.offerFrom))[0];
+  return {
+    ...item,
+    offerPrice: effective ? effective.offerPrice : null,
+    offerFrom: effective ? effective.offerFrom : '',
+    offerUntil: effective ? effective.offerUntil : '',
+    showOnMenuBoard: effective ? (effective.showOnMenuBoard || '') : '',
+  };
+}
 function getItems() {
-  if (!STORE_CODE || !_storePricing || !Object.keys(_storePricing).length) return _items;
-  return _items.map(i => {
+  const withOffers = _items.map(i => _resolveItemOffersForStore(i, _storeProfile));
+  if (!STORE_CODE || !_storePricing || !Object.keys(_storePricing).length) return withOffers;
+  return withOffers.map(i => {
     const o = _storePricing[i.sku];
     if (!o) return i;
     return { ...i, price: o.price, offerPrice: o.offerPrice, offerFrom: o.offerFrom, offerUntil: o.offerUntil, showOnMenuBoard: o.showOnMenuBoard };
@@ -1348,6 +1418,14 @@ async function pollCampaign() {
     // Resolve store_name from store_location
     const storeName = (d?.store_location?.store_name || '').trim() || null;
 
+    // Resolve this store's Fixed/Variable Store Segment membership from
+    // store_location, same place store_name/store_timezone already come
+    // from — used by _resolveItemOffersForStore() in getItems() above to
+    // decide which of an item's several offers (if any) apply here. Never
+    // sourced or managed locally; whatever the PH API returns is authoritative.
+    const fixedSegments = Array.isArray(d?.store_location?.fixed_store_segments) ? d.store_location.fixed_store_segments : [];
+    const variableSegments = Array.isArray(d?.store_location?.variable_store_segments) ? d.store_location.variable_store_segments : [];
+
     // Resolve SKUs: try visitor_customer first, then data root
     // Filter out empty/blank strings that can appear in sparse API payloads
     // API may return field as "SKUs" (prompt schema) or "skus" (actual response) — handle both
@@ -1371,12 +1449,14 @@ async function pollCampaign() {
     const skusChanged      = JSON.stringify(newSkus) !== JSON.stringify(_campaignSkus);
     const nameChanged      = firstName !== _campaignFirstName;
     const storeNameChanged = storeName !== _storeName;
+    const segmentsChanged  = JSON.stringify({ fixedSegments, variableSegments }) !== JSON.stringify(_storeProfile);
 
     _dbgLastPoll = Date.now();
-    if (skusChanged || nameChanged || storeNameChanged) {
+    if (skusChanged || nameChanged || storeNameChanged || segmentsChanged) {
       _campaignSkus      = newSkus;
       _campaignFirstName = firstName;
       _storeName         = storeName;
+      _storeProfile       = { fixedSegments, variableSegments };
       render();
     } else {
       _updateDebugPanel();   // refresh Last poll time even when nothing changed

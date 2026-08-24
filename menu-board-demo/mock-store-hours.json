@@ -3,7 +3,9 @@
     "store_location": {
       "store_code": "O2O-001",
       "store_name": "Pizza Hut — Leeds Trinity",
-      "store_timezone": "Europe/London"
+      "store_timezone": "Europe/London",
+      "fixed_store_segments": [],
+      "variable_store_segments": ["Hot Day"]
     },
     "store_info": {
       "manager_info": { "name": "", "show_on_display": false },

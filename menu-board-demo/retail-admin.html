@@ -1174,6 +1174,15 @@ let _items    = [];
 let _stock    = {};
 let _localFeatured = {};
 let _storePricing  = {}; // this store's own price overrides, keyed by sku — never affects other stores or HQ's default
+// Store Segment membership comes from the PH API's device-level
+// campaign_data response (data.store_location) — Retail Admin has no
+// Device UDID or PH API session, so it has no way to know this store's
+// segments, and never tries to manage them itself. Left permanently
+// empty: a segment-targeted offer simply can't be shown as "live" here
+// (the honest answer, since this surface genuinely doesn't know), while
+// non-targeted offers and this store's own price overrides still resolve
+// normally.
+let _storeProfile  = { fixedSegments: [], variableSegments: [] };
 let _settings = { currency: '$' };
 let _brands   = [];
 
@@ -1231,11 +1240,72 @@ function saveStorePricing(obj) {
   return setDoc(doc(db, STORE_PRICING_COLL, STORE_CODE), obj)
     .catch(err => toast('Sync failed: ' + (err.message || err), 'error'));
 }
+// Store-targeted offers: an offer's `targeting` is an AND-of-ORs, same
+// rule as Campaign Targeting's condition-tree builder (ph-designer skill
+// components.md §16) — mirrors menu-board.html's copy of the same logic.
+function _offerConditionMatches(cond, store) {
+  const have = (
+    cond.field === 'storeCode' ? [STORE_CODE] :
+    cond.field === 'fixedSegment' ? (store.fixedSegments || []) :
+    cond.field === 'variableSegment' ? (store.variableSegments || []) :
+    cond.field === 'storeState' ? (store.state ? [store.state] : []) :
+    []
+  ).map(v => String(v).trim().toLowerCase());
+  const want = (cond.values || []).map(v => String(v).trim().toLowerCase());
+  if (!want.length) return true;
+  const anyOverlap = want.some(w => have.includes(w));
+  const allPresent = want.every(w => have.includes(w));
+  switch (cond.operator) {
+    case 'matches':      return allPresent && have.length === want.length;
+    case 'excludesOr':   return !anyOverlap;
+    case 'excludesAnd':  return !allPresent;
+    case 'includes':
+    default:             return anyOverlap;
+  }
+}
+function _offerTargetingMatches(targeting, store) {
+  if (!Array.isArray(targeting) || !targeting.length) return true;
+  return targeting.every(group => (group.conditions || []).some(c => _offerConditionMatches(c, store)));
+}
+// Which of an item's offers applies at THIS store right now — live beats
+// scheduled, mirrors pickEffectiveOffer() in the product-app's
+// OfferBanner.jsx, evaluated per-store since which offer wins can differ
+// store to store. Items with no `offers` array (pre multi-offer, never
+// store-targeted) fall through untouched.
+function _resolveItemOffersForStore(item, store) {
+  if (!Array.isArray(item.offers) || !item.offers.length) return item;
+  const eligible = item.offers.filter(o => o.enabled !== false && _offerTargetingMatches(o.targeting, store));
+  const now = new Date();
+  const isLive = (o) => {
+    const n = parseFloat(o.offerPrice);
+    if (!(n > 0)) return false;
+    const from = o.offerFrom ? new Date(o.offerFrom) : null;
+    const until = o.offerUntil ? new Date(o.offerUntil) : null;
+    if (until && until < now) return false;
+    if (from && from > now) return false;
+    return true;
+  };
+  const live = eligible.find(isLive);
+  const effective = live || eligible
+    .filter((o) => parseFloat(o.offerPrice) > 0 && o.offerFrom && new Date(o.offerFrom) > now)
+    .sort((a, b) => new Date(a.offerFrom) - new Date(b.offerFrom))[0];
+  return {
+    ...item,
+    offerPrice: effective ? effective.offerPrice : null,
+    offerFrom: effective ? effective.offerFrom : '',
+    offerUntil: effective ? effective.offerUntil : '',
+    showOnMenuBoard: effective ? (effective.showOnMenuBoard || '') : '',
+  };
+}
 // This store's effective price fields for an item — its own override if
-// it has saved one, otherwise HQ's own current price for that item.
+// it has saved one, otherwise whichever of HQ's offers (if any) targets
+// this store, falling back to HQ's plain current price.
 function _effectivePricing(item) {
   const o = _storePricing[item.sku];
-  if (!o) return { price: item.price, offerPrice: item.offerPrice, offerFrom: item.offerFrom, offerUntil: item.offerUntil, showOnMenuBoard: item.showOnMenuBoard };
+  if (!o) {
+    const resolved = _resolveItemOffersForStore(item, _storeProfile);
+    return { price: resolved.price, offerPrice: resolved.offerPrice, offerFrom: resolved.offerFrom, offerUntil: resolved.offerUntil, showOnMenuBoard: resolved.showOnMenuBoard };
+  }
   return { price: o.price, offerPrice: o.offerPrice, offerFrom: o.offerFrom, offerUntil: o.offerUntil, showOnMenuBoard: o.showOnMenuBoard };
 }
 

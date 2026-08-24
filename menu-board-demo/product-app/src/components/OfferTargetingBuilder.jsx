@@ -11,19 +11,40 @@ const { Text } = Typography;
 // stores, not visitors, queues, or webcams, so only the fields relevant
 // to "which stores does this apply to" are offered here, not the full
 // five-category list a campaign gets.
-const STORE_FIELDS = [
+export const STORE_FIELDS = [
   { value: 'storeCode', label: 'Store Code(s)' },
   { value: 'fixedSegment', label: 'Fixed Store Segments' },
   { value: 'variableSegment', label: 'Variable Store Segments' },
   { value: 'storeState', label: 'Store State' },
 ];
 
-const OPERATORS = [
+export const OPERATORS = [
   { value: 'includes', label: 'includes selected' },
   { value: 'matches', label: 'matches exactly' },
   { value: 'excludesOr', label: 'excludes selected [OR]' },
   { value: 'excludesAnd', label: 'excludes selected [AND]' },
 ];
+
+// Plain-English rendering of a targeting tree, for the hover tooltip on
+// the Scheduled Offers table's Targeted pill (ph-designer skill
+// components.md §16 vocabulary) — each AND-group's conditions joined
+// with "or", groups themselves joined with "and", matching the same
+// AND-of-ORs structure the builder above authors.
+export function describeTargeting(groups) {
+  if (!groups || !groups.length) return 'Applies at every store.';
+  return groups
+    .map((g) =>
+      (g.conditions || [])
+        .map((c) => {
+          const fieldLabel = STORE_FIELDS.find((f) => f.value === c.field)?.label || c.field;
+          const opLabel = OPERATORS.find((o) => o.value === c.operator)?.label || c.operator;
+          const vals = (c.values || []).join(', ') || '—';
+          return `${fieldLabel} ${opLabel} ${vals}`;
+        })
+        .join(' OR ')
+    )
+    .join(' AND ');
+}
 
 function blankCondition() {
   return { id: genId('cond'), field: 'storeCode', operator: 'includes', values: [] };
