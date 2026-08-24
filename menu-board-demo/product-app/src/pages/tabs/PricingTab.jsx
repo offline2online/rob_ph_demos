@@ -120,11 +120,11 @@ function OfferFormModal({ open, initialOffer, onCancel, onSave, currency }) {
               />
             </Field>
           </div>
-          <div style={{ marginTop: 20, paddingTop: 16, borderTop: '1px solid #f0f0f0' }}>
-            <div style={{ fontSize: 11, color: 'rgba(0,0,0,.45)', letterSpacing: '0.08em', fontWeight: 500, marginBottom: 4, textTransform: 'uppercase' }}>
+          <div style={{ marginTop: 24, paddingTop: 20, paddingBottom: 20, borderTop: '1px solid #f0f0f0', borderBottom: '1px solid #f0f0f0' }}>
+            <div style={{ fontSize: 11, color: 'rgba(0,0,0,.45)', letterSpacing: '0.08em', fontWeight: 500, marginBottom: 8, textTransform: 'uppercase' }}>
               Targeting for this offer
             </div>
-            <p style={{ fontSize: 12, color: 'rgba(0,0,0,.45)', margin: '0 0 10px' }}>
+            <p style={{ fontSize: 12, color: 'rgba(0,0,0,.45)', margin: '0 0 14px' }}>
               These rules apply only to &ldquo;{form.description.trim() || 'this offer'}&rdquo; — not to any other offer on this product.
             </p>
             <OfferTargetingBuilder groups={form.targeting || []} onChange={(groups) => setForm((f) => ({ ...f, targeting: groups }))} />

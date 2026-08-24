@@ -1,8 +1,6 @@
-import { Select, Button, Typography } from 'antd';
+import { Select, Button, Empty } from 'antd';
 import MaterialIcon from './MaterialIcon.jsx';
 import { genId } from '../data/productStore.js';
-
-const { Text } = Typography;
 
 // Same AND/OR rule-builder mechanism and category → field → operator →
 // value(s) row shape as Campaign Targeting — verified live against
@@ -138,19 +136,20 @@ export default function OfferTargetingBuilder({ groups, onChange }) {
   if (groups.length === 0) {
     return (
       <div>
-        <Text type="secondary" style={{ fontSize: 12 }}>
-          No targeting — this offer applies at every store, to every visitor.
-        </Text>
-        <div style={{ marginTop: 8 }}>
-          <Button
-            size="small"
-            icon={<MaterialIcon name="add" style={{ fontSize: 14 }} />}
-            onClick={addGroup}
-            style={{ borderColor: '#169bc2', color: '#169bc2' }}
-          >
-            Add New &quot;AND&quot; Condition
-          </Button>
+        <div style={{ padding: '28px 0 24px' }}>
+          <Empty
+            image={<MaterialIcon name="inbox" style={{ fontSize: 40, color: '#d9d9d9' }} />}
+            description="No targeting rules defined. This offer applies at every store, to every visitor."
+          />
         </div>
+        <Button
+          size="small"
+          icon={<MaterialIcon name="add" style={{ fontSize: 14 }} />}
+          onClick={addGroup}
+          style={{ borderColor: '#169bc2', color: '#169bc2' }}
+        >
+          Add New &quot;AND&quot; Condition
+        </Button>
       </div>
     );
   }
@@ -158,19 +157,23 @@ export default function OfferTargetingBuilder({ groups, onChange }) {
   return (
     <div>
       {groups.map((g) => (
-        <div key={g.id} style={{ border: '1px solid #f0f0f0', borderRadius: 8, padding: 12, marginBottom: 10 }}>
+        <div key={g.id} style={{ background: 'rgba(0,0,0,0.06)', borderRadius: 4, padding: 12, marginBottom: 10 }}>
           {g.conditions.map((c, i) => (
-            <div
-              key={c.id}
-              style={{
-                display: 'flex',
-                gap: 8,
-                alignItems: 'center',
-                marginBottom: i < g.conditions.length - 1 ? 8 : 0,
-                flexWrap: 'wrap',
-              }}
-            >
-              <Select
+            <div key={c.id}>
+              {i > 0 && (
+                <div style={{ textAlign: 'center', fontSize: 12, fontWeight: 600, color: 'rgba(0,0,0,.45)', margin: '8px 0' }}>
+                  OR
+                </div>
+              )}
+              <div
+                style={{
+                  display: 'flex',
+                  gap: 8,
+                  alignItems: 'center',
+                  flexWrap: 'wrap',
+                }}
+              >
+                <Select
                 size="small"
                 style={{ width: 170 }}
                 value={c.category || 'store'}
@@ -210,13 +213,14 @@ export default function OfferTargetingBuilder({ groups, onChange }) {
                 onClick={() => removeCondition(g.id, c.id)}
               />
             </div>
+            </div>
           ))}
           <div style={{ height: 1, background: '#f0f0f0', margin: '10px 0' }} />
           <Button
             size="small"
             icon={<MaterialIcon name="add" style={{ fontSize: 14 }} />}
             onClick={() => addCondition(g.id)}
-            style={{ borderColor: '#169bc2', color: '#169bc2' }}
+            style={{ borderColor: '#169bc2', color: '#169bc2', borderStyle: 'dashed' }}
           >
             Add new &quot;OR&quot; Condition
           </Button>
