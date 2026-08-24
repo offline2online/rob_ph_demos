@@ -2445,10 +2445,32 @@ function _fmtOfferDate(v) {
   return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) +
     ' ' + d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
 }
+const _RECUR_WEEKDAY_LABELS = { SUN: 'Sunday', MON: 'Monday', TUE: 'Tuesday', WED: 'Wednesday', THU: 'Thursday', FRI: 'Friday', SAT: 'Saturday' };
+// Plain-English label for a recurrence rule, same vocabulary as
+// product-app's describeRecurrence (lib/recurrence.js) — used only in
+// tooltip text here, so this trims the "Ends" suffix the full version
+// carries (not worth the space in a one-line hover).
+function _recurDescribe(rule, startDate) {
+  if (!rule || rule.freq === 'none') return '';
+  const d = startDate ? new Date(startDate) : new Date();
+  const weekdayLabel = _RECUR_WEEKDAY_LABELS[_recurWeekday(d)];
+  const nth = ['1st','2nd','3rd','4th','5th'][_recurNthWeekdayOfMonth(d) - 1] || `${_recurNthWeekdayOfMonth(d)}th`;
+  const monthDay = d.toLocaleDateString('en-GB', { month: 'long', day: 'numeric' });
+  if (rule.freq === 'daily') return 'Daily';
+  if (rule.freq === 'weekly') return `Weekly on ${weekdayLabel}`;
+  if (rule.freq === 'monthly') return `Monthly on the ${nth} ${weekdayLabel}`;
+  if (rule.freq === 'yearly') return `Annually on ${monthDay}`;
+  if (rule.freq === 'weekday') return 'Every weekday (Mon-Fri)';
+  const interval = Math.max(1, Number(rule.interval) || 1);
+  const unitLabel = { day: 'day', week: 'week', month: 'month', year: 'year' }[rule.unit] || 'week';
+  let s = interval === 1 ? `Every ${unitLabel}` : `Every ${interval} ${unitLabel}s`;
+  if (rule.unit === 'week' && rule.byDay && rule.byDay.length) s += ` on ${rule.byDay.map(c => _RECUR_WEEKDAY_LABELS[c].slice(0, 3)).join(', ')}`;
+  return s;
+}
 // Tooltip text for a live offer's price cell — the RRP/offer values shown
 // in the cell already say "there's a discount," but not when it started or
 // ends; hovering fills that in without needing a whole extra column.
-function _offerTooltip(currency, rrp, offerNum, offerFrom, offerUntil) {
+function _offerTooltip(currency, rrp, offerNum, offerFrom, offerUntil, recurrence) {
   const from = _fmtOfferDate(offerFrom);
   const until = _fmtOfferDate(offerUntil);
   let schedule;
@@ -2456,30 +2478,133 @@ function _offerTooltip(currency, rrp, offerNum, offerFrom, offerUntil) {
   else if (until) schedule = `Runs until ${until}`;
   else if (from) schedule = `Started ${from}, runs until removed`;
   else schedule = 'Runs until removed (no end date set)';
-  return `Offer price: ${currency}${offerNum.toFixed(2)} (was ${currency}${rrp.toFixed(2)})\n${schedule}`;
+  const recurText = recurrence && recurrence.freq !== 'none' ? `\nRepeats: ${_recurDescribe(recurrence, offerFrom)}` : '';
+  return `Offer price: ${currency}${offerNum.toFixed(2)} (was ${currency}${rrp.toFixed(2)})\n${schedule}${recurText}`;
 }
 
-// Same vocabulary as OfferTargetingBuilder.jsx's STORE_FIELDS/OPERATORS/
-// describeTargeting (product-app) — duplicated here since this is plain
-// JS, not the React app, matching how this file already duplicates the
-// offer-targeting match logic instead of sharing a module.
-const _OFFER_TARGET_FIELDS = { storeCode: 'Store Code(s)', fixedSegment: 'Fixed Store Segments', variableSegment: 'Variable Store Segments', storeState: 'Store State' };
+// Same vocabulary as OfferTargetingBuilder.jsx's FIELDS_BY_CATEGORY/
+// OPERATORS/describeTargeting (product-app) — duplicated here since this
+// is plain JS, not the React app, matching how this file already
+// duplicates the offer-targeting match logic instead of sharing a module.
+const _OFFER_TARGET_FIELDS_BY_CATEGORY = {
+  store: {
+    storeCode: 'Store Code(s)', storeName: 'Store Name(s)', storeSegmentConsolidated: 'Store Segment (Consolidated)',
+    fixedSegment: 'Fixed Store Segments', variableSegment: 'Variable Store Segments', displayTag: 'Display Tag(s)',
+    languagesSpokenByStaff: 'Languages Spoken by Staff', displayId: 'Display ID', displayType: 'Display Type(s)',
+    displayName: 'Display Name(s)', storeSuburb: 'Store Suburb', storeState: 'Store State', storeCountry: 'Store Country',
+  },
+  visitor: {
+    firstName: 'First Name', companyName: 'Company Name', purchaseIntent: 'Purchase Intent', visitorType: 'Visitor Type (Individual)',
+    reasonForVisit: 'Reason for Visit (Individual)', deviceType: 'Device Type (Individual)', age: 'Age', gender: 'Gender',
+    audienceSegments: 'Audience / Segments', productTypes: 'Product Type(s)', planTypes: 'Plan Type(s)', planValues: 'Plan Value(s)',
+    pageViews: 'Page Views', events: 'Events', productHoldings: 'Product Holdings', purchaseHistory: 'Purchase History', skus: 'SKU(s)',
+  },
+};
 const _OFFER_TARGET_OPS = { includes: 'includes selected', matches: 'matches exactly', excludesOr: 'excludes selected [OR]', excludesAnd: 'excludes selected [AND]' };
 function _describeOfferTargeting(groups) {
-  if (!groups || !groups.length) return 'Applies at every store.';
+  if (!groups || !groups.length) return 'Applies at every store, to every visitor.';
   return groups.map(g => (g.conditions || []).map(c => {
-    const fieldLabel = _OFFER_TARGET_FIELDS[c.field] || c.field;
+    const category = c.category || 'store';
+    const fieldLabel = (_OFFER_TARGET_FIELDS_BY_CATEGORY[category] || {})[c.field] || c.field;
     const opLabel = _OFFER_TARGET_OPS[c.operator] || c.operator;
     const vals = (c.values || []).join(', ') || '—';
     return `${fieldLabel} ${opLabel} ${vals}`;
   }).join(' OR ')).join(' AND ');
 }
-// Offers on this item that are store-targeted (targeting.length > 0) and
-// not disabled — the grid's flat offerPrice never reflects one of these
-// (see pickDefaultOffer in product-app), so this is the only way HQ staff
-// see that a targeted offer exists for the item at all.
+// Offers on this item that are targeted (targeting.length > 0) and not
+// disabled — the grid's flat offerPrice never reflects one of these (see
+// pickDefaultOffer in product-app), so this is the only way HQ staff see
+// that a targeted offer exists for the item at all.
 function _getTargetedOffers(item) {
   return (item.offers || []).filter(o => o.enabled !== false && o.targeting && o.targeting.length > 0);
+}
+
+// Recurring day-part schedules for offers — duplicated from
+// product-app/src/lib/recurrence.js, same convention as
+// _describeOfferTargeting above. Only what this file needs: whether an
+// offer's window, including any recurring day-part pattern, is open now.
+function _recurWeekday(d) { return ['SUN','MON','TUE','WED','THU','FRI','SAT'][d.getDay()]; }
+function _recurStartOfDay(d) { const r = new Date(d); r.setHours(0,0,0,0); return r; }
+function _recurEndOfDay(d) { const r = new Date(d); r.setHours(23,59,59,999); return r; }
+function _recurAddDays(d, n) { const r = new Date(d); r.setDate(r.getDate()+n); return r; }
+function _recurNthWeekdayOfMonth(d) { return Math.ceil(d.getDate()/7); }
+function _recurMatchesCadence(rule, startDate, testDate) {
+  const start = _recurStartOfDay(startDate), test = _recurStartOfDay(testDate);
+  if (test < start) return false;
+  const interval = Math.max(1, Number(rule.interval) || 1);
+  if (rule.unit === 'day') {
+    return Math.round((test - start) / 86400000) % interval === 0;
+  }
+  if (rule.unit === 'week') {
+    const days = (rule.byDay && rule.byDay.length) ? rule.byDay : [_recurWeekday(start)];
+    if (!days.includes(_recurWeekday(test))) return false;
+    const startSunday = _recurAddDays(start, -start.getDay());
+    const testSunday = _recurAddDays(test, -test.getDay());
+    return Math.round((testSunday - startSunday) / (7 * 86400000)) % interval === 0;
+  }
+  if (rule.unit === 'month') {
+    if (rule.monthlyMode === 'dayOfMonth') {
+      if (test.getDate() !== start.getDate()) return false;
+    } else {
+      if (test.getDay() !== start.getDay()) return false;
+      if (_recurNthWeekdayOfMonth(test) !== _recurNthWeekdayOfMonth(start)) return false;
+    }
+    const diffMonths = (test.getFullYear() - start.getFullYear()) * 12 + (test.getMonth() - start.getMonth());
+    return diffMonths >= 0 && diffMonths % interval === 0;
+  }
+  if (rule.unit === 'year') {
+    if (test.getMonth() !== start.getMonth() || test.getDate() !== start.getDate()) return false;
+    const diffYears = test.getFullYear() - start.getFullYear();
+    return diffYears >= 0 && diffYears % interval === 0;
+  }
+  return false;
+}
+function _recurOccurrenceIndex(rule, startDate, testDate) {
+  const start = _recurStartOfDay(startDate), test = _recurStartOfDay(testDate);
+  const cap = _recurAddDays(start, 3660);
+  let count = 0, cursor = start;
+  while (cursor <= test && cursor <= cap) {
+    if (_recurMatchesCadence(rule, start, cursor)) {
+      count += 1;
+      if (cursor.getTime() === test.getTime()) return count;
+    }
+    cursor = _recurAddDays(cursor, 1);
+  }
+  return count;
+}
+function _recurOccursOnDate(rule, startDate, testDate) {
+  if (!startDate) return false;
+  if (!rule || rule.freq === 'none') return _recurStartOfDay(startDate).getTime() === _recurStartOfDay(testDate).getTime();
+  if (rule.ends && rule.ends.type === 'on' && rule.ends.date) {
+    if (_recurStartOfDay(testDate) > _recurEndOfDay(new Date(rule.ends.date))) return false;
+  }
+  if (!_recurMatchesCadence(rule, startDate, testDate)) return false;
+  if (rule.ends && rule.ends.type === 'after' && rule.ends.count) {
+    if (_recurOccurrenceIndex(rule, startDate, testDate) > Number(rule.ends.count)) return false;
+  }
+  return true;
+}
+function _isOfferWindowLiveNow(offerFrom, offerUntil, recurrence, now) {
+  now = now || new Date();
+  if (!offerFrom) return true;
+  const from = new Date(offerFrom);
+  const until = offerUntil ? new Date(offerUntil) : null;
+  if (!recurrence || recurrence.freq === 'none') {
+    if (from > now) return false;
+    if (until && until < now) return false;
+    return true;
+  }
+  if (from > now) return false;
+  const fromMinutes = from.getHours() * 60 + from.getMinutes();
+  const untilMinutes = until ? (until.getHours() * 60 + until.getMinutes()) : 24 * 60;
+  const crossesMidnight = !!until && untilMinutes <= fromMinutes;
+  const nowMinutes = now.getHours() * 60 + now.getMinutes();
+  if (_recurOccursOnDate(recurrence, from, now)) {
+    if (!crossesMidnight) { if (nowMinutes >= fromMinutes && nowMinutes < untilMinutes) return true; }
+    else if (nowMinutes >= fromMinutes) return true;
+  }
+  if (crossesMidnight && nowMinutes < untilMinutes && _recurOccursOnDate(recurrence, from, _recurAddDays(now, -1))) return true;
+  return false;
 }
 
 function initGrids() {
@@ -2558,10 +2683,7 @@ function initGrids() {
           // right now.
           getFilterValue: (data) => {
             const offerNum = parseFloat(data.offerPrice);
-            const now = new Date();
-            const from = data.offerFrom ? new Date(data.offerFrom) : null;
-            const until = data.offerUntil ? new Date(data.offerUntil) : null;
-            const isLive = offerNum > 0 && !(until && until < now) && !(from && from > now);
+            const isLive = offerNum > 0 && _isOfferWindowLiveNow(data.offerFrom, data.offerUntil, data.offerRecurrence);
             return isLive ? ['Offer running'] : ['No offer'];
           },
           valueFormatter: (params) => {
@@ -2582,13 +2704,11 @@ function initGrids() {
             const rrp = parseFloat(item.price || 0);
             const offerNum = parseFloat(item.offerPrice);
             const now = new Date();
-            const from = item.offerFrom ? new Date(item.offerFrom) : null;
-            const until = item.offerUntil ? new Date(item.offerUntil) : null;
-            const isLive = offerNum > 0 && !(until && until < now) && !(from && from > now);
+            const isLive = offerNum > 0 && _isOfferWindowLiveNow(item.offerFrom, item.offerUntil, item.offerRecurrence, now);
             const priceRow = document.createElement('div');
             priceRow.style.cssText = 'display:flex;align-items:center;gap:6px;';
             if (isLive) {
-              priceRow.title = _offerTooltip(currency, rrp, offerNum, item.offerFrom, item.offerUntil);
+              priceRow.title = _offerTooltip(currency, rrp, offerNum, item.offerFrom, item.offerUntil, item.offerRecurrence);
               const was = document.createElement('span');
               was.style.cssText = 'text-decoration:line-through;color:var(--text2);font-weight:400;font-size:11px;';
               was.textContent = currency + rrp.toFixed(2);
@@ -2639,8 +2759,9 @@ function initGrids() {
               pill.title = targetedOffers.map(o => {
                 const oNum = parseFloat(o.offerPrice);
                 const oFrom = o.offerFrom ? new Date(o.offerFrom) : null;
-                const oUntil = o.offerUntil ? new Date(o.offerUntil) : null;
-                const status = oNum > 0 && !(oUntil && oUntil < now) && !(oFrom && oFrom > now) ? 'live' : (oFrom && oFrom > now ? 'scheduled' : 'off');
+                const oLive = oNum > 0 && _isOfferWindowLiveNow(o.offerFrom, o.offerUntil, o.recurrence, now);
+                const oStarted = oNum > 0 && oFrom && oFrom <= now;
+                const status = oLive ? 'live' : (o.recurrence && o.recurrence.freq !== 'none' && oStarted ? 'recurring — off now' : (oFrom && oFrom > now ? 'scheduled' : 'off'));
                 return `${o.description || 'Untitled offer'} (${status}) — ${_describeOfferTargeting(o.targeting)}`;
               }).join('\n');
               pill.style.cssText = 'display:inline-flex;align-items:center;width:fit-content;line-height:1;padding:3px 7px 2px;border-radius:9px;background:#e6f7ff;color:#0958a5;border:1px solid #91caff;font-size:10px;font-weight:700;cursor:pointer;letter-spacing:0.2px;';

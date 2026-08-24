@@ -5,6 +5,8 @@ import MaterialIcon from '../../components/MaterialIcon.jsx';
 import ClearableDate, { shiftEndOneHour } from '../../components/ClearableDate.jsx';
 import { getOfferState, pickEffectiveOffer, pickDefaultOffer } from '../../components/OfferBanner.jsx';
 import OfferTargetingBuilder, { describeTargeting } from '../../components/OfferTargetingBuilder.jsx';
+import RecurrenceControl from '../../components/RecurrenceControl.jsx';
+import { describeRecurrence } from '../../lib/recurrence.js';
 import { upsertProduct, appendPriceLogEntries, genId } from '../../data/productStore.js';
 
 function Field({ label, required, children, hint }) {
@@ -21,17 +23,18 @@ function Field({ label, required, children, hint }) {
 }
 
 function blankOffer() {
-  return { id: genId('offer'), enabled: true, description: '', offerPrice: '', offerFrom: '', offerUntil: '', showOnMenuBoard: '', targeting: [] };
+  return { id: genId('offer'), enabled: true, description: '', offerPrice: '', offerFrom: '', offerUntil: '', showOnMenuBoard: '', targeting: [], recurrence: null };
 }
 
 const OFFER_STATE_STYLE = {
   live: { background: '#f6ffed', border: '1px solid #b7eb8f', color: '#237804' },
+  recurring: { background: '#e6f7ff', border: '1px solid #91caff', color: '#0958a5' },
   scheduled: { background: '#fffbe6', border: '1px solid #ffe58f', color: '#874d00' },
   ended: { background: '#fff2f0', border: '1px solid #ffccc7', color: '#a8071a' },
   none: { background: '#fafafa', border: '1px solid #f0f0f0', color: 'rgba(0,0,0,.45)' },
   off: { background: '#fafafa', border: '1px solid #f0f0f0', color: 'rgba(0,0,0,.45)' },
 };
-const OFFER_STATE_LABEL = { live: 'Live', scheduled: 'Scheduled', ended: 'Ended', none: 'Not scheduled', off: 'Off' };
+const OFFER_STATE_LABEL = { live: 'Live', recurring: 'Recurring — off now', scheduled: 'Scheduled', ended: 'Ended', none: 'Not scheduled', off: 'Off' };
 
 // Add/Edit Offer popup — same mechanism as Campaign Scheduling's "Add New
 // Schedule" (ph-designer skill components.md §16.1): the table only shows
@@ -96,6 +99,18 @@ function OfferFormModal({ open, initialOffer, onCancel, onSave, currency }) {
               <ClearableDate value={form.offerUntil} onChange={(v) => setForm((f) => ({ ...f, offerUntil: v }))} showTime blankHint={{ blank: '', set: '' }} />
             </Field>
           </div>
+          <div style={{ marginTop: 14, maxWidth: 320 }}>
+            <Field
+              label="Repeat"
+              hint="Day-parting — e.g. Weekly on Mon-Fri repeats this same offer time (11:00-14:00 above) every one of those days, instead of running continuously between Start and End."
+            >
+              <RecurrenceControl
+                value={form.recurrence}
+                startDate={form.offerFrom}
+                onChange={(rule) => setForm((f) => ({ ...f, recurrence: rule }))}
+              />
+            </Field>
+          </div>
           <div style={{ marginTop: 14 }}>
             <Field label="Show on Menu Board" hint="Promo copy shown alongside this offer's price while it's live, e.g. &ldquo;Today only!&rdquo; Leave blank to show nothing extra.">
               <Input
@@ -107,7 +122,7 @@ function OfferFormModal({ open, initialOffer, onCancel, onSave, currency }) {
           </div>
           <div style={{ marginTop: 20, paddingTop: 16, borderTop: '1px solid #f0f0f0' }}>
             <div style={{ fontSize: 11, color: 'rgba(0,0,0,.45)', letterSpacing: '0.08em', fontWeight: 500, marginBottom: 4, textTransform: 'uppercase' }}>
-              Store targeting for this offer
+              Targeting for this offer
             </div>
             <p style={{ fontSize: 12, color: 'rgba(0,0,0,.45)', margin: '0 0 10px' }}>
               These rules apply only to &ldquo;{form.description.trim() || 'this offer'}&rdquo; — not to any other offer on this product.
@@ -280,6 +295,7 @@ export default function PricingTab({ draft, baseline, setDraft, setBaseline }) {
       offerFrom: effective.offerFrom || '',
       offerUntil: effective.offerUntil || '',
       offerDescription: effective.description || '',
+      offerRecurrence: effective.recurrence || null,
       showOnMenuBoard: draft.menuBoardNote || '',
     };
     const withLog = appendPriceLogEntries(withLegacy, changes, reason);
@@ -332,9 +348,9 @@ export default function PricingTab({ draft, baseline, setDraft, setBaseline }) {
       },
       {
         title: 'Status',
-        width: 110,
+        width: 130,
         render: (_, row) => {
-          const dateState = getOfferState(draft.rrp, row.offerPrice, row.offerFrom, row.offerUntil);
+          const dateState = getOfferState(draft.rrp, row.offerPrice, row.offerFrom, row.offerUntil, row.recurrence);
           const state = row.enabled === false ? 'off' : dateState;
           return (
             <span style={{ borderRadius: 4, padding: '2px 8px', fontSize: 12, ...OFFER_STATE_STYLE[state] }}>
@@ -347,9 +363,14 @@ export default function PricingTab({ draft, baseline, setDraft, setBaseline }) {
         title: 'Schedule',
         width: 230,
         render: (_, row) => (
-          <span style={{ fontSize: 13 }}>
-            {row.offerFrom ? fmtDateVal(row.offerFrom) : 'Now'} → {row.offerUntil ? fmtDateVal(row.offerUntil) : 'No end date'}
-          </span>
+          <div>
+            <div style={{ fontSize: 13 }}>
+              {row.offerFrom ? fmtDateVal(row.offerFrom) : 'Now'} → {row.offerUntil ? fmtDateVal(row.offerUntil) : 'No end date'}
+            </div>
+            {row.recurrence && row.recurrence.freq !== 'none' && (
+              <div style={{ fontSize: 12, color: 'rgba(0,0,0,.45)' }}>{describeRecurrence(row.recurrence, row.offerFrom)}</div>
+            )}
+          </div>
         ),
       },
       {

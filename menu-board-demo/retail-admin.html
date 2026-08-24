@@ -1182,7 +1182,7 @@ let _storePricing  = {}; // this store's own price overrides, keyed by sku — n
 // (the honest answer, since this surface genuinely doesn't know), while
 // non-targeted offers and this store's own price overrides still resolve
 // normally.
-let _storeProfile  = { fixedSegments: [], variableSegments: [] };
+let _storeProfile  = { storeName: null, fixedSegments: [], variableSegments: [], suburb: '', state: '' };
 let _settings = { currency: '$' };
 let _brands   = [];
 
@@ -1243,13 +1243,25 @@ function saveStorePricing(obj) {
 // Store-targeted offers: an offer's `targeting` is an AND-of-ORs, same
 // rule as Campaign Targeting's condition-tree builder (ph-designer skill
 // components.md §16) — mirrors menu-board.html's copy of the same logic.
+// Category-aware (Store / Location Data or Visitor / Customer Data) —
+// visitor fields always resolve empty here since this surface has no PH
+// API session and genuinely doesn't know who's standing in front of it,
+// same honest-gap treatment as the segment fields already got.
 function _offerConditionMatches(cond, store) {
+  const category = cond.category || 'store';
   const have = (
-    cond.field === 'storeCode' ? [STORE_CODE] :
-    cond.field === 'fixedSegment' ? (store.fixedSegments || []) :
-    cond.field === 'variableSegment' ? (store.variableSegments || []) :
-    cond.field === 'storeState' ? (store.state ? [store.state] : []) :
-    []
+    category === 'visitor'
+      ? []
+      : (
+          cond.field === 'storeCode' ? [STORE_CODE] :
+          cond.field === 'storeName' ? (store.storeName ? [store.storeName] : []) :
+          cond.field === 'fixedSegment' ? (store.fixedSegments || []) :
+          cond.field === 'variableSegment' ? (store.variableSegments || []) :
+          cond.field === 'storeSegmentConsolidated' ? [...(store.fixedSegments || []), ...(store.variableSegments || [])] :
+          cond.field === 'storeState' ? (store.state ? [store.state] : []) :
+          cond.field === 'storeSuburb' ? (store.suburb ? [store.suburb] : []) :
+          []
+        )
   ).map(v => String(v).trim().toLowerCase());
   const want = (cond.values || []).map(v => String(v).trim().toLowerCase());
   if (!want.length) return true;
@@ -1267,6 +1279,95 @@ function _offerTargetingMatches(targeting, store) {
   if (!Array.isArray(targeting) || !targeting.length) return true;
   return targeting.every(group => (group.conditions || []).some(c => _offerConditionMatches(c, store)));
 }
+
+// Recurring day-part schedules for offers — duplicated from
+// product-app/src/lib/recurrence.js, same convention as
+// _offerConditionMatches above. Only what this file needs: whether an
+// offer's window, including any recurring day-part pattern, is open now.
+function _recurWeekday(d) { return ['SUN','MON','TUE','WED','THU','FRI','SAT'][d.getDay()]; }
+function _recurStartOfDay(d) { const r = new Date(d); r.setHours(0,0,0,0); return r; }
+function _recurEndOfDay(d) { const r = new Date(d); r.setHours(23,59,59,999); return r; }
+function _recurAddDays(d, n) { const r = new Date(d); r.setDate(r.getDate()+n); return r; }
+function _recurNthWeekdayOfMonth(d) { return Math.ceil(d.getDate()/7); }
+function _recurMatchesCadence(rule, startDate, testDate) {
+  const start = _recurStartOfDay(startDate), test = _recurStartOfDay(testDate);
+  if (test < start) return false;
+  const interval = Math.max(1, Number(rule.interval) || 1);
+  if (rule.unit === 'day') {
+    return Math.round((test - start) / 86400000) % interval === 0;
+  }
+  if (rule.unit === 'week') {
+    const days = (rule.byDay && rule.byDay.length) ? rule.byDay : [_recurWeekday(start)];
+    if (!days.includes(_recurWeekday(test))) return false;
+    const startSunday = _recurAddDays(start, -start.getDay());
+    const testSunday = _recurAddDays(test, -test.getDay());
+    return Math.round((testSunday - startSunday) / (7 * 86400000)) % interval === 0;
+  }
+  if (rule.unit === 'month') {
+    if (rule.monthlyMode === 'dayOfMonth') {
+      if (test.getDate() !== start.getDate()) return false;
+    } else {
+      if (test.getDay() !== start.getDay()) return false;
+      if (_recurNthWeekdayOfMonth(test) !== _recurNthWeekdayOfMonth(start)) return false;
+    }
+    const diffMonths = (test.getFullYear() - start.getFullYear()) * 12 + (test.getMonth() - start.getMonth());
+    return diffMonths >= 0 && diffMonths % interval === 0;
+  }
+  if (rule.unit === 'year') {
+    if (test.getMonth() !== start.getMonth() || test.getDate() !== start.getDate()) return false;
+    const diffYears = test.getFullYear() - start.getFullYear();
+    return diffYears >= 0 && diffYears % interval === 0;
+  }
+  return false;
+}
+function _recurOccurrenceIndex(rule, startDate, testDate) {
+  const start = _recurStartOfDay(startDate), test = _recurStartOfDay(testDate);
+  const cap = _recurAddDays(start, 3660);
+  let count = 0, cursor = start;
+  while (cursor <= test && cursor <= cap) {
+    if (_recurMatchesCadence(rule, start, cursor)) {
+      count += 1;
+      if (cursor.getTime() === test.getTime()) return count;
+    }
+    cursor = _recurAddDays(cursor, 1);
+  }
+  return count;
+}
+function _recurOccursOnDate(rule, startDate, testDate) {
+  if (!startDate) return false;
+  if (!rule || rule.freq === 'none') return _recurStartOfDay(startDate).getTime() === _recurStartOfDay(testDate).getTime();
+  if (rule.ends && rule.ends.type === 'on' && rule.ends.date) {
+    if (_recurStartOfDay(testDate) > _recurEndOfDay(new Date(rule.ends.date))) return false;
+  }
+  if (!_recurMatchesCadence(rule, startDate, testDate)) return false;
+  if (rule.ends && rule.ends.type === 'after' && rule.ends.count) {
+    if (_recurOccurrenceIndex(rule, startDate, testDate) > Number(rule.ends.count)) return false;
+  }
+  return true;
+}
+function _isOfferWindowLiveNow(offerFrom, offerUntil, recurrence, now) {
+  now = now || new Date();
+  if (!offerFrom) return true;
+  const from = new Date(offerFrom);
+  const until = offerUntil ? new Date(offerUntil) : null;
+  if (!recurrence || recurrence.freq === 'none') {
+    if (from > now) return false;
+    if (until && until < now) return false;
+    return true;
+  }
+  if (from > now) return false;
+  const fromMinutes = from.getHours() * 60 + from.getMinutes();
+  const untilMinutes = until ? (until.getHours() * 60 + until.getMinutes()) : 24 * 60;
+  const crossesMidnight = !!until && untilMinutes <= fromMinutes;
+  const nowMinutes = now.getHours() * 60 + now.getMinutes();
+  if (_recurOccursOnDate(recurrence, from, now)) {
+    if (!crossesMidnight) { if (nowMinutes >= fromMinutes && nowMinutes < untilMinutes) return true; }
+    else if (nowMinutes >= fromMinutes) return true;
+  }
+  if (crossesMidnight && nowMinutes < untilMinutes && _recurOccursOnDate(recurrence, from, _recurAddDays(now, -1))) return true;
+  return false;
+}
+
 // Which of an item's offers applies at THIS store right now — live beats
 // scheduled, mirrors pickEffectiveOffer() in the product-app's
 // OfferBanner.jsx, evaluated per-store since which offer wins can differ
@@ -1276,19 +1377,15 @@ function _resolveItemOffersForStore(item, store) {
   if (!Array.isArray(item.offers) || !item.offers.length) return item;
   const eligible = item.offers.filter(o => o.enabled !== false && _offerTargetingMatches(o.targeting, store));
   const now = new Date();
-  const isLive = (o) => {
-    const n = parseFloat(o.offerPrice);
-    if (!(n > 0)) return false;
-    const from = o.offerFrom ? new Date(o.offerFrom) : null;
-    const until = o.offerUntil ? new Date(o.offerUntil) : null;
-    if (until && until < now) return false;
-    if (from && from > now) return false;
-    return true;
-  };
+  const isPriced = (o) => parseFloat(o.offerPrice) > 0;
+  const isLive = (o) => isPriced(o) && _isOfferWindowLiveNow(o.offerFrom, o.offerUntil, o.recurrence, now);
+  const hasStarted = (o) => isPriced(o) && o.offerFrom && new Date(o.offerFrom) <= now;
   const live = eligible.find(isLive);
-  const effective = live || eligible
-    .filter((o) => parseFloat(o.offerPrice) > 0 && o.offerFrom && new Date(o.offerFrom) > now)
-    .sort((a, b) => new Date(a.offerFrom) - new Date(b.offerFrom))[0];
+  const effective = live
+    || eligible.filter(hasStarted).sort((a, b) => new Date(a.offerFrom) - new Date(b.offerFrom))[0]
+    || eligible
+      .filter((o) => isPriced(o) && o.offerFrom && new Date(o.offerFrom) > now)
+      .sort((a, b) => new Date(a.offerFrom) - new Date(b.offerFrom))[0];
   // The board's default note (item.menuBoardNote) is only ever overridden
   // by a *store-targeted* offer's own note — an untargeted offer applies
   // everywhere anyway, so the default stays the source of truth for it.
@@ -1298,6 +1395,7 @@ function _resolveItemOffersForStore(item, store) {
     offerPrice: effective ? effective.offerPrice : null,
     offerFrom: effective ? effective.offerFrom : '',
     offerUntil: effective ? effective.offerUntil : '',
+    offerRecurrence: effective ? (effective.recurrence || null) : null,
     showOnMenuBoard: (isTargeted && effective.showOnMenuBoard) ? effective.showOnMenuBoard : (item.menuBoardNote || ''),
   };
 }
@@ -1308,9 +1406,11 @@ function _effectivePricing(item) {
   const o = _storePricing[item.sku];
   if (!o) {
     const resolved = _resolveItemOffersForStore(item, _storeProfile);
-    return { price: resolved.price, offerPrice: resolved.offerPrice, offerFrom: resolved.offerFrom, offerUntil: resolved.offerUntil, showOnMenuBoard: resolved.showOnMenuBoard };
+    return { price: resolved.price, offerPrice: resolved.offerPrice, offerFrom: resolved.offerFrom, offerUntil: resolved.offerUntil, offerRecurrence: resolved.offerRecurrence || null, showOnMenuBoard: resolved.showOnMenuBoard };
   }
-  return { price: o.price, offerPrice: o.offerPrice, offerFrom: o.offerFrom, offerUntil: o.offerUntil, showOnMenuBoard: o.showOnMenuBoard };
+  // Retail Admin's own store-price override is a single flat price/
+  // window, no recurrence concept.
+  return { price: o.price, offerPrice: o.offerPrice, offerFrom: o.offerFrom, offerUntil: o.offerUntil, offerRecurrence: null, showOnMenuBoard: o.showOnMenuBoard };
 }
 
 function saveLocalFeatured(obj) {
@@ -1569,7 +1669,7 @@ function initGrid() {
         // (using this store's own effective price, same as the cell).
         getFilterValue: (data) => {
           const eff = _effectivePricing(data);
-          return _isOfferLive(eff.price, eff.offerPrice, eff.offerFrom, eff.offerUntil) ? ['Offer running'] : ['No offer'];
+          return _isOfferLive(eff.price, eff.offerPrice, eff.offerFrom, eff.offerUntil, eff.offerRecurrence) ? ['Offer running'] : ['No offer'];
         },
         valueFormatter: (p) => {
           const itemBrand = _brands.find(b => b.id === p.data.brand);
@@ -1583,7 +1683,7 @@ function initGrid() {
           const eff = _effectivePricing(item);
           const rrp = parseFloat(eff.price || 0);
           const offerNum = parseFloat(eff.offerPrice);
-          const live = _isOfferLive(eff.price, eff.offerPrice, eff.offerFrom, eff.offerUntil);
+          const live = _isOfferLive(eff.price, eff.offerPrice, eff.offerFrom, eff.offerUntil, eff.offerRecurrence);
           const wrap = document.createElement('div');
           wrap.style.cssText = 'display:flex;align-items:center;gap:6px;height:100%;cursor:pointer;';
           wrap.title = 'Click to view pricing';
@@ -2201,15 +2301,10 @@ function saveEditedStock() {
 let _pricingBaseline = null;
 let _pricingDraft = null;
 
-function _isOfferLive(rrp, offerPrice, offerFrom, offerUntil) {
+function _isOfferLive(rrp, offerPrice, offerFrom, offerUntil, recurrence) {
   const offerNum = parseFloat(offerPrice);
   if (!(offerNum > 0)) return false;
-  const now = new Date();
-  const from = offerFrom ? new Date(offerFrom) : null;
-  const until = offerUntil ? new Date(offerUntil) : null;
-  if (until && until < now) return false;
-  if (from && from > now) return false;
-  return true;
+  return _isOfferWindowLiveNow(offerFrom, offerUntil, recurrence);
 }
 
 function _fmtPriceDateVal(v) {

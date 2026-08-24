@@ -4,19 +4,69 @@ import { genId } from '../data/productStore.js';
 
 const { Text } = Typography;
 
-// Same AND/OR rule-builder mechanism as Campaign Targeting (ph-designer
-// skill, components.md §16) — a bordered card is one AND group, rows
-// inside it are OR'd together, "Add New AND Condition" starts a new
-// sibling group. Scoped to Store / Location Data only: an offer targets
-// stores, not visitors, queues, or webcams, so only the fields relevant
-// to "which stores does this apply to" are offered here, not the full
-// five-category list a campaign gets.
-export const STORE_FIELDS = [
+// Same AND/OR rule-builder mechanism and category → field → operator →
+// value(s) row shape as Campaign Targeting — verified live against
+// demo.personalisationhub.com 24 Aug 2026: a bordered card is one AND
+// group, rows inside it are OR'd together, "Add New AND Condition" starts
+// a new sibling group. An offer only targets by where it's shown (store)
+// or who's in front of it (visitor/customer) — Campaign Targeting's other
+// three categories (Queueing / Aggregate Visitor Data, Interaction /
+// Campaign Data, Computer Vision / Webcam Data) describe playback/creative
+// concepts an offer's price has no use for, so they're not offered here.
+export const CATEGORIES = [
+  { value: 'store', label: 'Store / Location Data' },
+  { value: 'visitor', label: 'Visitor / Customer Data' },
+];
+
+// Full 13-field list, verified live on Campaign Targeting's own Store /
+// Location Data category. Not every field has a live data source flowing
+// through this repo's PH API integration yet (see _offerTargetingMatches
+// in menu-board.html/retail-admin.html for which ones actually resolve
+// today) — they're offered here regardless, same as the live product,
+// so a rule can be authored and will simply start matching the moment
+// real data for that field arrives.
+const STORE_FIELDS = [
   { value: 'storeCode', label: 'Store Code(s)' },
+  { value: 'storeName', label: 'Store Name(s)' },
+  { value: 'storeSegmentConsolidated', label: 'Store Segment (Consolidated)' },
   { value: 'fixedSegment', label: 'Fixed Store Segments' },
   { value: 'variableSegment', label: 'Variable Store Segments' },
+  { value: 'displayTag', label: 'Display Tag(s)' },
+  { value: 'languagesSpokenByStaff', label: 'Languages Spoken by Staff' },
+  { value: 'displayId', label: 'Display ID' },
+  { value: 'displayType', label: 'Display Type(s)' },
+  { value: 'displayName', label: 'Display Name(s)' },
+  { value: 'storeSuburb', label: 'Store Suburb' },
   { value: 'storeState', label: 'Store State' },
+  { value: 'storeCountry', label: 'Store Country' },
 ];
+
+// Full 16-field list, verified live on Campaign Targeting's own
+// Visitor / Customer Data category. Only First Name and SKU(s) have real
+// mock PH API data behind them in this repo (mock-ph-api.json) — the rest
+// are offered for the same forward-compatible reason as the store fields
+// above.
+const VISITOR_FIELDS = [
+  { value: 'firstName', label: 'First Name' },
+  { value: 'companyName', label: 'Company Name' },
+  { value: 'purchaseIntent', label: 'Purchase Intent' },
+  { value: 'visitorType', label: 'Visitor Type (Individual)' },
+  { value: 'reasonForVisit', label: 'Reason for Visit (Individual)' },
+  { value: 'deviceType', label: 'Device Type (Individual)' },
+  { value: 'age', label: 'Age' },
+  { value: 'gender', label: 'Gender' },
+  { value: 'audienceSegments', label: 'Audience / Segments' },
+  { value: 'productTypes', label: 'Product Type(s)' },
+  { value: 'planTypes', label: 'Plan Type(s)' },
+  { value: 'planValues', label: 'Plan Value(s)' },
+  { value: 'pageViews', label: 'Page Views' },
+  { value: 'events', label: 'Events' },
+  { value: 'productHoldings', label: 'Product Holdings' },
+  { value: 'purchaseHistory', label: 'Purchase History' },
+  { value: 'skus', label: 'SKU(s)' },
+];
+
+export const FIELDS_BY_CATEGORY = { store: STORE_FIELDS, visitor: VISITOR_FIELDS };
 
 export const OPERATORS = [
   { value: 'includes', label: 'includes selected' },
@@ -25,18 +75,23 @@ export const OPERATORS = [
   { value: 'excludesAnd', label: 'excludes selected [AND]' },
 ];
 
+function fieldsFor(category) {
+  return FIELDS_BY_CATEGORY[category] || STORE_FIELDS;
+}
+
 // Plain-English rendering of a targeting tree, for the hover tooltip on
-// the Scheduled Offers table's Targeted pill (ph-designer skill
-// components.md §16 vocabulary) — each AND-group's conditions joined
-// with "or", groups themselves joined with "and", matching the same
-// AND-of-ORs structure the builder above authors.
+// the Scheduled Offers table's Targeted pill — each AND-group's
+// conditions joined with "or", groups themselves joined with "and".
+// Conditions saved before the category dimension existed have no
+// `category` field — they were all store-only, so default to 'store'.
 export function describeTargeting(groups) {
   if (!groups || !groups.length) return 'Applies at every store.';
   return groups
     .map((g) =>
       (g.conditions || [])
         .map((c) => {
-          const fieldLabel = STORE_FIELDS.find((f) => f.value === c.field)?.label || c.field;
+          const category = c.category || 'store';
+          const fieldLabel = fieldsFor(category).find((f) => f.value === c.field)?.label || c.field;
           const opLabel = OPERATORS.find((o) => o.value === c.operator)?.label || c.operator;
           const vals = (c.values || []).join(', ') || '—';
           return `${fieldLabel} ${opLabel} ${vals}`;
@@ -47,7 +102,7 @@ export function describeTargeting(groups) {
 }
 
 function blankCondition() {
-  return { id: genId('cond'), field: 'storeCode', operator: 'includes', values: [] };
+  return { id: genId('cond'), category: 'store', field: 'storeCode', operator: 'includes', values: [] };
 }
 
 export default function OfferTargetingBuilder({ groups, onChange }) {
@@ -74,11 +129,17 @@ export default function OfferTargetingBuilder({ groups, onChange }) {
       )
     );
 
+  // Switching category clears field/operator/values — same behaviour as
+  // the live product, since a field from the old category rarely means
+  // anything under the new one.
+  const changeCategory = (gid, cid, category) =>
+    updateCondition(gid, cid, { category, field: '', operator: '', values: [] });
+
   if (groups.length === 0) {
     return (
       <div>
         <Text type="secondary" style={{ fontSize: 12 }}>
-          No store targeting — this offer applies at every store.
+          No targeting — this offer applies at every store, to every visitor.
         </Text>
         <div style={{ marginTop: 8 }}>
           <Button
@@ -112,14 +173,25 @@ export default function OfferTargetingBuilder({ groups, onChange }) {
               <Select
                 size="small"
                 style={{ width: 170 }}
-                value={c.field}
-                options={STORE_FIELDS}
+                value={c.category || 'store'}
+                options={CATEGORIES}
+                onChange={(v) => changeCategory(g.id, c.id, v)}
+              />
+              <Select
+                size="small"
+                style={{ width: 190 }}
+                value={c.field || undefined}
+                placeholder="Field"
+                showSearch
+                filterOption={(input, option) => (option?.label ?? '').toLowerCase().includes(input.toLowerCase())}
+                options={fieldsFor(c.category || 'store')}
                 onChange={(v) => updateCondition(g.id, c.id, { field: v })}
               />
               <Select
                 size="small"
                 style={{ width: 190 }}
-                value={c.operator}
+                value={c.operator || undefined}
+                placeholder="Operator"
                 options={OPERATORS}
                 onChange={(v) => updateCondition(g.id, c.id, { operator: v })}
               />

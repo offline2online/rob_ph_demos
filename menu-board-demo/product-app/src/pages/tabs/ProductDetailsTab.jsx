@@ -107,7 +107,7 @@ export default function ProductDetailsTab({ draft, patch, onGoPricing }) {
           </Button>
         </div>
         <div style={{ marginTop: 12 }}>
-          <OfferBanner rrp={draft.rrp} offerPrice={draft.offerPrice} offerFrom={draft.offerFrom} offerUntil={draft.offerUntil} currency={draft.currency || brand?.currency || '$'} />
+          <OfferBanner rrp={draft.rrp} offerPrice={draft.offerPrice} offerFrom={draft.offerFrom} offerUntil={draft.offerUntil} recurrence={draft.offerRecurrence} currency={draft.currency || brand?.currency || '$'} />
         </div>
       </SectionCard>
 

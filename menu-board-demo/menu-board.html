@@ -801,7 +801,7 @@ let _storePricing  = {}; // per-store price override (by sku), set from Retail A
 // successful poll (Device UDID boards only — Store Code boards have no PH
 // API session and so never receive segments, same as they never receive a
 // personalised first name today).
-let _storeProfile  = { fixedSegments: [], variableSegments: [] };
+let _storeProfile  = { storeName: null, fixedSegments: [], variableSegments: [], suburb: '', state: '' };
 // Campaign SKUs: null = default menu; string[] = personalised override from Personalisation Hub API
 let _campaignSkus      = TEST_SKUS.length > 0 ? TEST_SKUS : null;
 let _campaignFirstName = null; // null = no greeting; string = show personalised greeting in clock bar
@@ -839,13 +839,34 @@ const MENU_META = new Proxy(MENU_META_STATIC, {
 // components.md §16) — each entry in the array is one AND-group, and the
 // conditions listed inside a group are OR'd together. No targeting at all
 // means the offer applies at every store.
+// Category-aware — an offer's targeting can now be Store / Location Data
+// OR Visitor / Customer Data (ph-designer skill components.md §16,
+// verified live against demo.personalisationhub.com 24 Aug 2026).
+// Visitor fields read the same _campaignFirstName/_campaignSkus globals
+// pollCampaign() already populates from the PH API's campaign_data
+// response — never sourced or managed locally. Fields with no live data
+// source in this repo yet (Display Tag(s), Store Country, Age, Gender,
+// etc.) resolve to an empty `have` array — offered for authoring, but
+// inert until real PH API data for them exists.
 function _offerConditionMatches(cond, store) {
+  const category = cond.category || 'store';
   const have = (
-    cond.field === 'storeCode' ? [STORE_CODE] :
-    cond.field === 'fixedSegment' ? (store.fixedSegments || []) :
-    cond.field === 'variableSegment' ? (store.variableSegments || []) :
-    cond.field === 'storeState' ? (store.state ? [store.state] : []) :
-    []
+    category === 'visitor'
+      ? (
+          cond.field === 'firstName' ? (_campaignFirstName ? [_campaignFirstName] : []) :
+          cond.field === 'skus' ? (_campaignSkus || []) :
+          []
+        )
+      : (
+          cond.field === 'storeCode' ? [STORE_CODE] :
+          cond.field === 'storeName' ? (store.storeName ? [store.storeName] : []) :
+          cond.field === 'fixedSegment' ? (store.fixedSegments || []) :
+          cond.field === 'variableSegment' ? (store.variableSegments || []) :
+          cond.field === 'storeSegmentConsolidated' ? [...(store.fixedSegments || []), ...(store.variableSegments || [])] :
+          cond.field === 'storeState' ? (store.state ? [store.state] : []) :
+          cond.field === 'storeSuburb' ? (store.suburb ? [store.suburb] : []) :
+          []
+        )
   ).map(v => String(v).trim().toLowerCase());
   const want = (cond.values || []).map(v => String(v).trim().toLowerCase());
   if (!want.length) return true; // an empty value list restricts nothing
@@ -863,6 +884,98 @@ function _offerTargetingMatches(targeting, store) {
   if (!Array.isArray(targeting) || !targeting.length) return true;
   return targeting.every(group => (group.conditions || []).some(c => _offerConditionMatches(c, store)));
 }
+
+// Recurring day-part schedules for offers — duplicated from
+// product-app/src/lib/recurrence.js (same convention as
+// _offerConditionMatches above: kept in sync by hand rather than shared
+// as a module). Only what this file needs: whether an offer's window,
+// including any recurring day-part pattern, is open right now.
+function _recurWeekday(d) { return ['SUN','MON','TUE','WED','THU','FRI','SAT'][d.getDay()]; }
+function _recurStartOfDay(d) { const r = new Date(d); r.setHours(0,0,0,0); return r; }
+function _recurEndOfDay(d) { const r = new Date(d); r.setHours(23,59,59,999); return r; }
+function _recurAddDays(d, n) { const r = new Date(d); r.setDate(r.getDate()+n); return r; }
+function _recurNthWeekdayOfMonth(d) { return Math.ceil(d.getDate()/7); }
+function _recurMatchesCadence(rule, startDate, testDate) {
+  const start = _recurStartOfDay(startDate), test = _recurStartOfDay(testDate);
+  if (test < start) return false;
+  const interval = Math.max(1, Number(rule.interval) || 1);
+  if (rule.unit === 'day') {
+    return Math.round((test - start) / 86400000) % interval === 0;
+  }
+  if (rule.unit === 'week') {
+    const days = (rule.byDay && rule.byDay.length) ? rule.byDay : [_recurWeekday(start)];
+    if (!days.includes(_recurWeekday(test))) return false;
+    const startSunday = _recurAddDays(start, -start.getDay());
+    const testSunday = _recurAddDays(test, -test.getDay());
+    return Math.round((testSunday - startSunday) / (7 * 86400000)) % interval === 0;
+  }
+  if (rule.unit === 'month') {
+    if (rule.monthlyMode === 'dayOfMonth') {
+      if (test.getDate() !== start.getDate()) return false;
+    } else {
+      if (test.getDay() !== start.getDay()) return false;
+      if (_recurNthWeekdayOfMonth(test) !== _recurNthWeekdayOfMonth(start)) return false;
+    }
+    const diffMonths = (test.getFullYear() - start.getFullYear()) * 12 + (test.getMonth() - start.getMonth());
+    return diffMonths >= 0 && diffMonths % interval === 0;
+  }
+  if (rule.unit === 'year') {
+    if (test.getMonth() !== start.getMonth() || test.getDate() !== start.getDate()) return false;
+    const diffYears = test.getFullYear() - start.getFullYear();
+    return diffYears >= 0 && diffYears % interval === 0;
+  }
+  return false;
+}
+function _recurOccurrenceIndex(rule, startDate, testDate) {
+  const start = _recurStartOfDay(startDate), test = _recurStartOfDay(testDate);
+  const cap = _recurAddDays(start, 3660);
+  let count = 0, cursor = start;
+  while (cursor <= test && cursor <= cap) {
+    if (_recurMatchesCadence(rule, start, cursor)) {
+      count += 1;
+      if (cursor.getTime() === test.getTime()) return count;
+    }
+    cursor = _recurAddDays(cursor, 1);
+  }
+  return count;
+}
+function _recurOccursOnDate(rule, startDate, testDate) {
+  if (!startDate) return false;
+  if (!rule || rule.freq === 'none') return _recurStartOfDay(startDate).getTime() === _recurStartOfDay(testDate).getTime();
+  if (rule.ends && rule.ends.type === 'on' && rule.ends.date) {
+    if (_recurStartOfDay(testDate) > _recurEndOfDay(new Date(rule.ends.date))) return false;
+  }
+  if (!_recurMatchesCadence(rule, startDate, testDate)) return false;
+  if (rule.ends && rule.ends.type === 'after' && rule.ends.count) {
+    if (_recurOccurrenceIndex(rule, startDate, testDate) > Number(rule.ends.count)) return false;
+  }
+  return true;
+}
+// Combines the recurring date pattern with the daily time-of-day window
+// offerFrom/offerUntil define; offerUntil earlier in the day than
+// offerFrom means the window crosses midnight.
+function _isOfferWindowLiveNow(offerFrom, offerUntil, recurrence, now) {
+  now = now || new Date();
+  if (!offerFrom) return true;
+  const from = new Date(offerFrom);
+  const until = offerUntil ? new Date(offerUntil) : null;
+  if (!recurrence || recurrence.freq === 'none') {
+    if (from > now) return false;
+    if (until && until < now) return false;
+    return true;
+  }
+  if (from > now) return false;
+  const fromMinutes = from.getHours() * 60 + from.getMinutes();
+  const untilMinutes = until ? (until.getHours() * 60 + until.getMinutes()) : 24 * 60;
+  const crossesMidnight = !!until && untilMinutes <= fromMinutes;
+  const nowMinutes = now.getHours() * 60 + now.getMinutes();
+  if (_recurOccursOnDate(recurrence, from, now)) {
+    if (!crossesMidnight) { if (nowMinutes >= fromMinutes && nowMinutes < untilMinutes) return true; }
+    else if (nowMinutes >= fromMinutes) return true;
+  }
+  if (crossesMidnight && nowMinutes < untilMinutes && _recurOccursOnDate(recurrence, from, _recurAddDays(now, -1))) return true;
+  return false;
+}
 // Which of an item's offers actually applies at THIS store right now —
 // live beats scheduled, same precedence as pickEffectiveOffer() in the
 // product-app's OfferBanner.jsx, but evaluated per-store instead of once
@@ -874,19 +987,18 @@ function _resolveItemOffersForStore(item, store) {
   if (!Array.isArray(item.offers) || !item.offers.length) return item;
   const eligible = item.offers.filter(o => o.enabled !== false && _offerTargetingMatches(o.targeting, store));
   const now = new Date();
-  const isLive = (o) => {
-    const n = parseFloat(o.offerPrice);
-    if (!(n > 0)) return false;
-    const from = o.offerFrom ? new Date(o.offerFrom) : null;
-    const until = o.offerUntil ? new Date(o.offerUntil) : null;
-    if (until && until < now) return false;
-    if (from && from > now) return false;
-    return true;
-  };
+  const isPriced = (o) => parseFloat(o.offerPrice) > 0;
+  const isLive = (o) => isPriced(o) && _isOfferWindowLiveNow(o.offerFrom, o.offerUntil, o.recurrence, now);
+  // "Started" = has begun its overall window/series, even if a recurring
+  // offer is off right now (e.g. a lunch day-part checked at 9pm) — a
+  // better fallback than one that hasn't started at all yet.
+  const hasStarted = (o) => isPriced(o) && o.offerFrom && new Date(o.offerFrom) <= now;
   const live = eligible.find(isLive);
-  const effective = live || eligible
-    .filter((o) => parseFloat(o.offerPrice) > 0 && o.offerFrom && new Date(o.offerFrom) > now)
-    .sort((a, b) => new Date(a.offerFrom) - new Date(b.offerFrom))[0];
+  const effective = live
+    || eligible.filter(hasStarted).sort((a, b) => new Date(a.offerFrom) - new Date(b.offerFrom))[0]
+    || eligible
+      .filter((o) => isPriced(o) && o.offerFrom && new Date(o.offerFrom) > now)
+      .sort((a, b) => new Date(a.offerFrom) - new Date(b.offerFrom))[0];
   // The board's default note (item.menuBoardNote) is only ever overridden
   // by a *store-targeted* offer's own note — an untargeted offer applies
   // everywhere anyway, so the default stays the source of truth for it.
@@ -896,6 +1008,7 @@ function _resolveItemOffersForStore(item, store) {
     offerPrice: effective ? effective.offerPrice : null,
     offerFrom: effective ? effective.offerFrom : '',
     offerUntil: effective ? effective.offerUntil : '',
+    offerRecurrence: effective ? (effective.recurrence || null) : null,
     showOnMenuBoard: (isTargeted && effective.showOnMenuBoard) ? effective.showOnMenuBoard : (item.menuBoardNote || ''),
   };
 }
@@ -905,7 +1018,10 @@ function getItems() {
   return withOffers.map(i => {
     const o = _storePricing[i.sku];
     if (!o) return i;
-    return { ...i, price: o.price, offerPrice: o.offerPrice, offerFrom: o.offerFrom, offerUntil: o.offerUntil, showOnMenuBoard: o.showOnMenuBoard };
+    // Retail Admin's own store-price override is a single flat price/
+    // window, no recurrence concept — never let an HQ-resolved offer's
+    // recurrence rule bleed through onto a store's simple override.
+    return { ...i, price: o.price, offerPrice: o.offerPrice, offerFrom: o.offerFrom, offerUntil: o.offerUntil, offerRecurrence: null, showOnMenuBoard: o.showOnMenuBoard };
   });
 }
 function getSettings() { return _settings; }
@@ -917,17 +1033,12 @@ function fmtDate(d)    { return d.toLocaleDateString([], { weekday: 'short', day
 
 // An offer is "live" under the same rule as HQ Admin's Products table and
 // the Pricing tab's own offer banner — offerPrice set, and within
-// offerFrom/offerUntil if either is given — so all three surfaces never
-// disagree about whether an offer is currently on.
+// offerFrom/offerUntil (and any recurring day-part window) if set — so
+// all three surfaces never disagree about whether an offer is currently on.
 function isOfferLive(item) {
   const offerNum = parseFloat(item.offerPrice);
   if (!(offerNum > 0)) return false;
-  const now = new Date();
-  const from = item.offerFrom ? new Date(item.offerFrom) : null;
-  const until = item.offerUntil ? new Date(item.offerUntil) : null;
-  if (until && until < now) return false;
-  if (from && from > now) return false;
-  return true;
+  return _isOfferWindowLiveNow(item.offerFrom, item.offerUntil, item.offerRecurrence);
 }
 // Renders the price for a board item — struck-through RRP + offer price
 // when a live offer is on, plain RRP otherwise. `wasClass` sizes the
@@ -1429,6 +1540,10 @@ async function pollCampaign() {
     // sourced or managed locally; whatever the PH API returns is authoritative.
     const fixedSegments = Array.isArray(d?.store_location?.fixed_store_segments) ? d.store_location.fixed_store_segments : [];
     const variableSegments = Array.isArray(d?.store_location?.variable_store_segments) ? d.store_location.variable_store_segments : [];
+    // Store Suburb / Store State targeting fields — sourced from
+    // store_info.address_info, same PH API response as opening_hours.
+    const suburb = (d?.store_info?.address_info?.suburb || '').trim();
+    const state = (d?.store_info?.address_info?.state || '').trim();
 
     // Resolve SKUs: try visitor_customer first, then data root
     // Filter out empty/blank strings that can appear in sparse API payloads
@@ -1453,14 +1568,15 @@ async function pollCampaign() {
     const skusChanged      = JSON.stringify(newSkus) !== JSON.stringify(_campaignSkus);
     const nameChanged      = firstName !== _campaignFirstName;
     const storeNameChanged = storeName !== _storeName;
-    const segmentsChanged  = JSON.stringify({ fixedSegments, variableSegments }) !== JSON.stringify(_storeProfile);
+    const nextStoreProfile = { storeName, fixedSegments, variableSegments, suburb, state };
+    const segmentsChanged  = JSON.stringify(nextStoreProfile) !== JSON.stringify(_storeProfile);
 
     _dbgLastPoll = Date.now();
     if (skusChanged || nameChanged || storeNameChanged || segmentsChanged) {
       _campaignSkus      = newSkus;
       _campaignFirstName = firstName;
       _storeName         = storeName;
-      _storeProfile       = { fixedSegments, variableSegments };
+      _storeProfile       = nextStoreProfile;
       render();
     } else {
       _updateDebugPanel();   // refresh Last poll time even when nothing changed

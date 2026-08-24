@@ -29,6 +29,7 @@ export function blankProduct() {
     offerFrom: '',
     offerUntil: '',
     offerDescription: '',
+    offerRecurrence: null,
     offers: [],
     // menuBoardNote is the one the Pricing tab UI actually edits — the
     // fallback note used when no live offer has a note of its own.

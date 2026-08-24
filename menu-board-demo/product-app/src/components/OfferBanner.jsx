@@ -1,3 +1,5 @@
+import { recurrenceOverallState, describeRecurrence } from '../lib/recurrence.js';
+
 // Brief §6.2: full-width banner stating the saving and end date. Shared
 // between Product Details and Pricing.
 //
@@ -5,19 +7,24 @@
 // offer is live/scheduled/ended right now — the Pricing tab pre-filling
 // Offer description is the reason this got pulled out — uses the exact
 // same rule this banner does, rather than a second copy that could drift.
-export function getOfferState(rrp, offerPrice, offerFrom, offerUntil) {
+// `recurrence` is optional — omitting it (or passing `{freq:'none'}`)
+// collapses to the original single-window behaviour exactly; when set,
+// state comes from recurrenceOverallState (lib/recurrence.js), which adds
+// a fifth possible value, 'recurring': the series has started and hasn't
+// ended, but right now falls outside today's day-part window.
+export function getOfferState(rrp, offerPrice, offerFrom, offerUntil, recurrence) {
   const offerNum = parseFloat(offerPrice);
+  if (!(offerNum > 0)) return 'none';
   const now = new Date();
+
+  if (recurrence && recurrence.freq !== 'none') {
+    return recurrenceOverallState(offerFrom, offerUntil, recurrence, now);
+  }
   const from = offerFrom ? new Date(offerFrom) : null;
   const until = offerUntil ? new Date(offerUntil) : null;
-
-  let state = 'none';
-  if (offerNum > 0) {
-    if (until && until < now) state = 'ended';
-    else if (from && from > now) state = 'scheduled';
-    else state = 'live';
-  }
-  return state;
+  if (until && until < now) return 'ended';
+  if (from && from > now) return 'scheduled';
+  return 'live';
 }
 
 // The grid, its price-column filters, and the Product Details banner all
@@ -32,12 +39,20 @@ export function getOfferState(rrp, offerPrice, offerFrom, offerUntil) {
 export function pickEffectiveOffer(offers) {
   if (!offers || offers.length === 0) return null;
   const enabled = offers.filter((o) => o.enabled !== false);
-  const live = enabled.find((o) => getOfferState(null, o.offerPrice, o.offerFrom, o.offerUntil) === 'live');
-  if (live) return live;
-  const scheduled = enabled
-    .filter((o) => getOfferState(null, o.offerPrice, o.offerFrom, o.offerUntil) === 'scheduled')
-    .sort((a, b) => new Date(a.offerFrom) - new Date(b.offerFrom));
-  return scheduled[0] || null;
+  const withState = enabled.map((o) => ({ o, state: getOfferState(null, o.offerPrice, o.offerFrom, o.offerUntil, o.recurrence) }));
+  const live = withState.find((x) => x.state === 'live');
+  if (live) return live.o;
+  // A day-parted offer that's merely off right now (e.g. checked at 9pm
+  // for a lunch window) is a better "what to show" answer than an offer
+  // that hasn't started its series at all yet.
+  const recurring = withState
+    .filter((x) => x.state === 'recurring')
+    .sort((a, b) => new Date(a.o.offerFrom) - new Date(b.o.offerFrom));
+  if (recurring[0]) return recurring[0].o;
+  const scheduled = withState
+    .filter((x) => x.state === 'scheduled')
+    .sort((a, b) => new Date(a.o.offerFrom) - new Date(b.o.offerFrom));
+  return scheduled[0]?.o || null;
 }
 
 // Same precedence as pickEffectiveOffer(), but never considers a
@@ -54,17 +69,19 @@ export function pickDefaultOffer(offers) {
   return pickEffectiveOffer((offers || []).filter((o) => !o.targeting || !o.targeting.length));
 }
 
-export default function OfferBanner({ rrp, offerPrice, offerFrom, offerUntil, currency = '$' }) {
+export default function OfferBanner({ rrp, offerPrice, offerFrom, offerUntil, recurrence, currency = '$' }) {
   const rrpNum = parseFloat(rrp);
   const offerNum = parseFloat(offerPrice);
   const from = offerFrom ? new Date(offerFrom) : null;
   const until = offerUntil ? new Date(offerUntil) : null;
-  const state = getOfferState(rrp, offerPrice, offerFrom, offerUntil);
+  const state = getOfferState(rrp, offerPrice, offerFrom, offerUntil, recurrence);
 
   const fmt = (d) => d && d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+  const fmtTime = (d) => d && d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
 
   const styles = {
     live: { background: '#f6ffed', border: '1px solid #b7eb8f', color: '#237804' },
+    recurring: { background: '#e6f7ff', border: '1px solid #91caff', color: '#0958a5' },
     scheduled: { background: '#fffbe6', border: '1px solid #ffe58f', color: '#874d00' },
     ended: { background: '#fff2f0', border: '1px solid #ffccc7', color: '#a8071a' },
     none: { background: '#fafafa', border: '1px solid #f0f0f0', color: 'rgba(0,0,0,.65)' },
@@ -74,6 +91,9 @@ export default function OfferBanner({ rrp, offerPrice, offerFrom, offerUntil, cu
   if (state === 'live') {
     text = `Offer live — ${currency}${offerNum.toFixed(2)} instead of ${currency}${rrpNum.toFixed(2)}, saving ${currency}${(rrpNum - offerNum).toFixed(2)}` +
       (until ? ` until ${fmt(until)}.` : '.');
+  } else if (state === 'recurring') {
+    text = `Recurring offer — off right now, ${currency}${offerNum.toFixed(2)} instead of ${currency}${rrpNum.toFixed(2)} during its next window: ` +
+      `${describeRecurrence(recurrence, offerFrom)}, ${fmtTime(from)}–${until ? fmtTime(until) : 'end of day'}.`;
   } else if (state === 'scheduled') {
     text = `Offer scheduled from ${fmt(from)}${until ? ` until ${fmt(until)}` : ''}.`;
   } else if (state === 'ended') {
