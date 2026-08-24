@@ -95,7 +95,11 @@ function Tile({ img, selected, onClick }) {
           opacity: expired ? 0.5 : 1,
         }}
       >
-        {img.src && <img src={img.src} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />}
+        {img.src && (
+          img.type === 'video'
+            ? <video src={img.src} muted autoPlay loop playsInline style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+            : <img src={img.src} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+        )}
         <span style={{ position: 'absolute', top: 4, left: 4, fontSize: 10, lineHeight: '16px', padding: '0 5px', borderRadius: 3, background: 'rgba(255,255,255,.94)', border: '1px solid #87d9ec', color: '#09759c', fontWeight: 600 }}>
           {img.variant}
         </span>
@@ -261,6 +265,10 @@ export default function ProductAssetsTab({ draft, patch }) {
   // "targeted" are mutually exclusive roles, so Default is disabled the
   // moment this asset carries any targeting rule at all.
   const isTargeted = !!(current?.targeting && current.targeting.length);
+  // Background removal and Enhance are photo-editing operations — neither
+  // has any meaning for a video file, and the before/after slider below
+  // is built entirely around comparing two still frames.
+  const isVideo = current?.type === 'video';
 
   const rightsSummary = current?.rightsOn
     ? [current.rights.type, current.rights.territory, current.rights.expiry ? `Expires ${dayjs(current.rights.expiry).format('D MMM YYYY, HH:mm')}` : 'No expiry', current.rights.release ? 'release on file' : null]
@@ -320,11 +328,13 @@ export default function ProductAssetsTab({ draft, patch }) {
                 icon={<BespokeIcon name="removeBg" />}
                 caption="Background"
                 active={current.bgRemoved}
-                disabled={expired}
+                disabled={expired || isVideo}
                 onClick={toggleBg}
                 tooltipTitle={current.bgRemoved ? 'Restore background' : 'Remove background'}
                 tooltipDesc={
-                  expired
+                  isVideo
+                    ? 'Not available for video.'
+                    : expired
                     ? undefined
                     : current.bgRemoved
                     ? 'Puts the original background back. The cut-out is discarded.'
@@ -335,10 +345,10 @@ export default function ProductAssetsTab({ draft, patch }) {
                 icon={<MaterialIcon name="auto_fix_high" />}
                 caption="Enhance"
                 active={current.enhanced}
-                disabled={expired}
+                disabled={expired || isVideo}
                 onClick={toggleEnhance}
                 tooltipTitle={current.enhanced ? 'Undo enhancement' : 'Enhance quality'}
-                tooltipDesc={current.enhanced ? 'Reverts to the original upload.' : 'Sharpens and colour-corrects the image.'}
+                tooltipDesc={isVideo ? 'Not available for video.' : current.enhanced ? 'Reverts to the original upload.' : 'Sharpens and colour-corrects the image.'}
               />
               <div style={{ width: 1, background: '#f0f0f0', margin: '4px 8px' }} />
               <IconAction
@@ -372,9 +382,18 @@ export default function ProductAssetsTab({ draft, patch }) {
 
             <div style={{ display: 'flex', gap: 24, padding: '20px 20px 22px', flexWrap: 'wrap' }}>
               <div style={{ width: 470, flexShrink: 0, maxWidth: '100%' }}>
-                <BeforeAfterSlider beforeSrc={current.src} afterSrc={current.src} hasChange={hasTreatment} transparent={current.bgRemoved} />
+                {isVideo ? (
+                  <video
+                    key={current.id}
+                    src={current.src}
+                    controls
+                    style={{ width: '100%', aspectRatio: '1 / 1', background: '#000', borderRadius: 6, display: 'block' }}
+                  />
+                ) : (
+                  <BeforeAfterSlider beforeSrc={current.src} afterSrc={current.src} hasChange={hasTreatment} transparent={current.bgRemoved} />
+                )}
                 <p style={{ fontSize: 12, color: 'rgba(0,0,0,.45)', marginTop: 8 }}>
-                  {hasTreatment ? 'Drag the slider to compare before/after.' : 'No treatment applied yet.'}
+                  {isVideo ? 'Background removal and Enhance aren’t available for video.' : hasTreatment ? 'Drag the slider to compare before/after.' : 'No treatment applied yet.'}
                 </p>
                 <div style={{ display: 'flex', gap: 8, marginTop: 14, paddingTop: 14, borderTop: '1px solid #f0f0f0' }}>
                   <IconAction icon={<MaterialIcon name="cached" />} caption="Replace" row tooltipTitle="Replace" tooltipDesc="Swaps the underlying file; variant label, tags and settings are kept." onClick={openReplace} />

@@ -164,7 +164,7 @@
     tbody tr:hover { background: var(--surface2); }
     tbody td { padding: 11px 14px; font-size: 13px; vertical-align: middle; }
     .item-img { position: relative; width: 44px; height: 44px; border-radius: 8px; object-fit: cover; background: var(--surface2); border: 1px solid var(--border); display: flex; align-items: center; justify-content: center; font-size: 18px; flex-shrink: 0; overflow: visible; }
-    .item-img img { width: 100%; height: 100%; object-fit: cover; border-radius: 8px; }
+    .item-img img, .item-img video { width: 100%; height: 100%; object-fit: cover; border-radius: 8px; }
     /* How many assets (images/video) are assigned to this product — only
        shown once there's more than one, since "1" tells staff nothing they
        don't already see from the thumbnail itself. */
@@ -2616,6 +2616,14 @@ function _worstAssetRightsState(item) {
   }
   return worst;
 }
+// Duplicated from menu-board.html's _isVideoSrc — a product's default
+// asset can be a video (Product Assets), stored the same way as an image
+// (base64 data URI in `images[0]`), just with a video/* MIME type. Any
+// place that builds an <img> straight from images[0] needs this check
+// first, or a video default renders as a broken image icon.
+function _isVideoSrc(src) {
+  return typeof src === 'string' && /^data:video\//.test(src);
+}
 function _isOfferWindowLiveNow(offerFrom, offerUntil, recurrence, now) {
   now = now || new Date();
   if (!offerFrom) return true;
@@ -2688,7 +2696,12 @@ function initGrids() {
             div.addEventListener('click', () => location.href = 'product/#/products/' + item.id + '/details');
             const imgWrap = document.createElement('div');
             imgWrap.className = 'item-img';
-            if (item.images && item.images[0]) {
+            if (item.images && item.images[0] && _isVideoSrc(item.images[0])) {
+              const video = document.createElement('video');
+              video.src = item.images[0]; video.muted = true; video.autoplay = true; video.loop = true; video.playsInline = true;
+              video.onerror = () => { imgWrap.innerHTML = '<span>\u{1F5BC}\uFE0F</span>'; };
+              imgWrap.appendChild(video);
+            } else if (item.images && item.images[0]) {
               const img = document.createElement('img');
               img.src = item.images[0]; img.alt = item.name;
               img.onerror = () => { imgWrap.innerHTML = '<span>\u{1F5BC}\uFE0F</span>'; };

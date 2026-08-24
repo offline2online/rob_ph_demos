@@ -1280,6 +1280,15 @@ function _offerTargetingMatches(targeting, store) {
   return targeting.every(group => (group.conditions || []).some(c => _offerConditionMatches(c, store)));
 }
 
+// Duplicated from menu-board.html's _isVideoSrc — a product's default
+// asset can be a video (Product Assets), stored the same way as an image
+// (base64 data URI in `images[0]`), just with a video/* MIME type. Any
+// place that builds an <img> straight from images[0] needs this check
+// first, or a video default renders as a broken image icon.
+function _isVideoSrc(src) {
+  return typeof src === 'string' && /^data:video\//.test(src);
+}
+
 // Recurring day-part schedules for offers — duplicated from
 // product-app/src/lib/recurrence.js, same convention as
 // _offerConditionMatches above. Only what this file needs: whether an
@@ -1600,7 +1609,12 @@ function initGrid() {
           const item = params.data;
           const wrap = document.createElement('div');
           wrap.style.cssText = 'height:100%;display:flex;align-items:center;justify-content:center;';
-          if (item.images && item.images[0]) {
+          if (item.images && item.images[0] && _isVideoSrc(item.images[0])) {
+            const video = document.createElement('video');
+            video.src = item.images[0]; video.muted = true; video.autoplay = true; video.loop = true; video.playsInline = true;
+            video.style.cssText = 'width:70px;height:70px;object-fit:cover;border-radius:8px;';
+            wrap.appendChild(video);
+          } else if (item.images && item.images[0]) {
             const img = document.createElement('img');
             img.src = item.images[0]; img.alt = item.name;
             img.style.cssText = 'width:70px;height:70px;object-fit:cover;border-radius:8px;';
