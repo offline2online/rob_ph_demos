@@ -17,17 +17,50 @@ export const DEFAULT_CATS = [
   'Cocktails', 'Wines', 'Beers', 'Sandwiches', 'Salads', 'Pasta', 'Burgers',
 ];
 
+// Same fallback default as hq-admin.html's own DEFAULT_LANGUAGES (line
+// ~1275) — its first 18 entries specifically, before the comment there
+// marks "Expanded to cover the real 'Languages Spoken by Staff' field (72
+// entries)". Those first 18 are the platform's curated, commonly-used
+// language set; the remaining ~54 exist only to satisfy the free-text
+// staff-language matching field and aren't meant to populate a content
+// dropdown like this one. Trimmed to {code, name} — this dropdown only
+// ever needs a code to key translated content by and a label to show,
+// not the flag/script/direction metadata the Languages On Shift display
+// template needs.
+export const DEFAULT_LANGUAGES = [
+  { code: 'en', name: 'English' },
+  { code: 'pl', name: 'Polish' },
+  { code: 'ur', name: 'Urdu' },
+  { code: 'es', name: 'Spanish' },
+  { code: 'zh', name: 'Mandarin' },
+  { code: 'ar', name: 'Arabic' },
+  { code: 'ro', name: 'Romanian' },
+  { code: 'bsl', name: 'British Sign Language' },
+  { code: 'fr', name: 'French' },
+  { code: 'pa', name: 'Punjabi' },
+  { code: 'pt', name: 'Portuguese' },
+  { code: 'so', name: 'Somali' },
+  { code: 'it', name: 'Italian' },
+  { code: 'uk', name: 'Ukrainian' },
+  { code: 'vi', name: 'Vietnamese' },
+  { code: 'de', name: 'German' },
+  { code: 'el', name: 'Greek' },
+  { code: 'tr', name: 'Turkish' },
+];
+
 let _brands = [];
 let _types = [];
 let _cats = [];
+let _languages = [];
 let _storeCodes = [];
 let _loaded = false;
 
 export async function loadRegistries() {
-  const [brandsSnap, typesSnap, catsSnap, stockSnap] = await Promise.all([
+  const [brandsSnap, typesSnap, catsSnap, languagesSnap, stockSnap] = await Promise.all([
     getDoc(doc(db, MB, 'brands')),
     getDoc(doc(db, MB, 'types')),
     getDoc(doc(db, MB, 'categories')),
+    getDoc(doc(db, MB, 'languages')),
     getDocs(collection(db, STOCK_COLL_NAME)),
   ]);
   _brands = brandsSnap.exists() ? brandsSnap.data().data || [] : [];
@@ -36,6 +69,7 @@ export async function loadRegistries() {
   // some legacy imports stored categories as objects, not strings.
   const rawCats = catsSnap.exists() ? catsSnap.data().data || [] : [];
   _cats = rawCats.map((c) => (typeof c === 'object' ? c.name || c.id || String(c) : String(c))).filter(Boolean);
+  _languages = languagesSnap.exists() ? languagesSnap.data().data || [] : [];
   _storeCodes = stockSnap.docs.map((d) => d.id).sort();
   _loaded = true;
 }
@@ -58,6 +92,10 @@ export function getTypes() {
 
 export function getCats() {
   return _cats.length ? _cats : DEFAULT_CATS;
+}
+
+export function getLanguages() {
+  return _languages.length ? _languages : DEFAULT_LANGUAGES;
 }
 
 // Mirrors the vanilla page's addCategory() (hq-admin.html:3634) — writes

@@ -5,7 +5,7 @@ import ClearableDate, { shiftEndOneHour } from '../../components/ClearableDate.j
 import AttributeGroups from '../../components/AttributeGroups.jsx';
 import OptionGroups from '../../components/OptionGroups.jsx';
 import OfferBanner from '../../components/OfferBanner.jsx';
-import { getCats, getTypes, getBrands, getBrandById, addCategoryToRegistry } from '../../data/registries.js';
+import { getCats, getTypes, getBrands, getBrandById, addCategoryToRegistry, getLanguages } from '../../data/registries.js';
 
 const { TextArea } = Input;
 
@@ -27,6 +27,15 @@ function Field({ label, required, children, hint }) {
 export default function ProductDetailsTab({ draft, patch, onGoPricing }) {
   const [newCat, setNewCat] = useState('');
   const [addingCat, setAddingCat] = useState(false);
+  // Which language's Short/Long description is currently shown — page-
+  // local UI state, not persisted itself. English is the one language
+  // every product already has real content for (draft.shortDescription/
+  // longDescription, read by the grid, menu-board.html, everywhere else),
+  // so it stays the default and keeps writing straight to those same flat
+  // fields; every other language is additive, stored only in
+  // draft.descriptionTranslations so nothing outside this tab needs to
+  // know translations exist yet.
+  const [descLang, setDescLang] = useState('en');
 
   const catOptions = useMemo(() => {
     const set = new Set(getCats());
@@ -37,7 +46,35 @@ export default function ProductDetailsTab({ draft, patch, onGoPricing }) {
   const types = getTypes();
   const brands = getBrands();
   const brand = getBrandById(draft.brand);
-  const shortLen = (draft.shortDescription || '').length;
+  const languages = getLanguages();
+
+  const isEnglishDesc = descLang === 'en';
+  const currentShortDescription = isEnglishDesc
+    ? draft.shortDescription || ''
+    : draft.descriptionTranslations?.[descLang]?.shortDescription || '';
+  const currentLongDescription = isEnglishDesc
+    ? draft.longDescription || ''
+    : draft.descriptionTranslations?.[descLang]?.longDescription || '';
+  const shortLen = currentShortDescription.length;
+
+  const patchShortDescription = (value) => {
+    if (isEnglishDesc) { patch({ shortDescription: value }); return; }
+    patch({
+      descriptionTranslations: {
+        ...(draft.descriptionTranslations || {}),
+        [descLang]: { ...(draft.descriptionTranslations?.[descLang] || {}), shortDescription: value },
+      },
+    });
+  };
+  const patchLongDescription = (value) => {
+    if (isEnglishDesc) { patch({ longDescription: value }); return; }
+    patch({
+      descriptionTranslations: {
+        ...(draft.descriptionTranslations || {}),
+        [descLang]: { ...(draft.descriptionTranslations?.[descLang] || {}), longDescription: value },
+      },
+    });
+  };
 
   const confirmNewCategory = async () => {
     const name = newCat.trim();
@@ -158,15 +195,24 @@ export default function ProductDetailsTab({ draft, patch, onGoPricing }) {
         <div className="ph-sect-label" style={{ marginBottom: 12 }}>
           Descriptions
         </div>
+        <div style={{ marginBottom: 14, maxWidth: 280 }}>
+          <Field label="Language" hint="Short and long description below are shown for whichever language is selected here.">
+            <Select
+              value={descLang}
+              onChange={setDescLang}
+              options={languages.map((l) => ({ value: l.code, label: l.name }))}
+            />
+          </Field>
+        </div>
         <Field
           label="Short description"
           hint={`${shortLen}/90`}
         >
-          <Input maxLength={90} value={draft.shortDescription} onChange={(e) => patch({ shortDescription: e.target.value })} />
+          <Input maxLength={90} value={currentShortDescription} onChange={(e) => patchShortDescription(e.target.value)} />
         </Field>
         <div style={{ marginTop: 14 }}>
           <Field label="Long description">
-            <TextArea rows={4} value={draft.longDescription} onChange={(e) => patch({ longDescription: e.target.value })} />
+            <TextArea rows={4} value={currentLongDescription} onChange={(e) => patchLongDescription(e.target.value)} />
           </Field>
         </div>
 

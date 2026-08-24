@@ -51,6 +51,7 @@ export function blankProduct() {
     featuredUntil: '',
     shortDescription: '',
     longDescription: '',
+    descriptionTranslations: {},
     menuTypes: [],
     storeMode: 'all',
     stores: [],
