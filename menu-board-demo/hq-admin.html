@@ -163,8 +163,28 @@
     tbody tr { border-top: 1px solid var(--border); transition: background 0.12s; }
     tbody tr:hover { background: var(--surface2); }
     tbody td { padding: 11px 14px; font-size: 13px; vertical-align: middle; }
-    .item-img { width: 44px; height: 44px; border-radius: 8px; object-fit: cover; background: var(--surface2); border: 1px solid var(--border); display: flex; align-items: center; justify-content: center; font-size: 18px; flex-shrink: 0; overflow: hidden; }
-    .item-img img { width: 100%; height: 100%; object-fit: cover; }
+    .item-img { position: relative; width: 44px; height: 44px; border-radius: 8px; object-fit: cover; background: var(--surface2); border: 1px solid var(--border); display: flex; align-items: center; justify-content: center; font-size: 18px; flex-shrink: 0; overflow: visible; }
+    .item-img img { width: 100%; height: 100%; object-fit: cover; border-radius: 8px; }
+    /* How many assets (images/video) are assigned to this product — only
+       shown once there's more than one, since "1" tells staff nothing they
+       don't already see from the thumbnail itself. */
+    .item-img-count-badge {
+      position: absolute; top: -6px; right: -6px; min-width: 16px; height: 16px; padding: 0 4px;
+      border-radius: 8px; background: #333; color: #fff; border: 1.5px solid var(--surface, #fff);
+      font-size: 9px; font-weight: 700; line-height: 16px; text-align: center;
+    }
+    /* Worst licence state across this product's assets — expired (red)
+       takes priority over expiring-soon (amber) takes priority over no
+       badge at all, mirroring the per-asset badges on Product Assets'
+       own thumbnail strip (ProductAssetsTab.jsx Tile). */
+    .item-img-rights-badge {
+      position: absolute; bottom: -6px; right: -6px; width: 16px; height: 16px;
+      border-radius: 50%; display: flex; align-items: center; justify-content: center;
+      border: 1.5px solid var(--surface, #fff);
+    }
+    .item-img-rights-badge .material-symbols-outlined { font-size: 11px; }
+    .item-img-rights-badge.expired { background: var(--danger, #ff4d4f); color: #fff; }
+    .item-img-rights-badge.soon { background: #faad14; color: #3d2800; }
     .item-name { font-weight: 600; color: var(--text); margin-bottom: 2px; }
     .item-sku { font-size: 11px; color: var(--text2); font-family: monospace; }
     .badge-active { background: var(--success-light); color: var(--success); font-size: 11px; font-weight: 600; padding: 3px 9px; border-radius: 9999px; }
@@ -2571,6 +2591,31 @@ function _recurOccursOnDate(rule, startDate, testDate) {
   }
   return true;
 }
+// Duplicated from ProductAssetsTab.jsx's licenceState() — same 30-day
+// "expiring soon" threshold, kept in sync by hand per this file's usual
+// convention for logic mirrored from the React app.
+function _assetLicenceState(expiry) {
+  if (!expiry) return 'ok';
+  const days = Math.ceil((new Date(expiry) - new Date()) / 86400000);
+  if (days < 0) return 'expired';
+  if (days <= 30) return 'soon';
+  return 'ok';
+}
+// Worst licence state across every asset on this product — expired beats
+// soon beats ok, so one overdue asset among several still shows red even
+// if the rest are fine. Only assets with rights tracking switched on
+// (rightsOn) carry an expiry at all.
+function _worstAssetRightsState(item) {
+  const rich = (item && item.imagesRich) || [];
+  let worst = 'ok';
+  for (const img of rich) {
+    if (!img || !img.rightsOn) continue;
+    const state = _assetLicenceState(img.rights && img.rights.expiry);
+    if (state === 'expired') return 'expired';
+    if (state === 'soon') worst = 'soon';
+  }
+  return worst;
+}
 function _isOfferWindowLiveNow(offerFrom, offerUntil, recurrence, now) {
   now = now || new Date();
   if (!offerFrom) return true;
@@ -2650,6 +2695,26 @@ function initGrids() {
               imgWrap.appendChild(img);
             } else {
               imgWrap.innerHTML = '<span>\u{1F37D}\uFE0F</span>';
+            }
+            // How many assets are assigned \u2014 only worth a badge once
+            // there's more than one to distinguish.
+            const assetCount = (item.imagesRich || item.images || []).length;
+            if (assetCount > 1) {
+              const countBadge = document.createElement('span');
+              countBadge.className = 'item-img-count-badge';
+              countBadge.textContent = '\u00D7' + assetCount;
+              countBadge.title = assetCount + ' assets assigned to this product';
+              imgWrap.appendChild(countBadge);
+            }
+            const rightsState = _worstAssetRightsState(item);
+            if (rightsState !== 'ok') {
+              const rightsBadge = document.createElement('span');
+              rightsBadge.className = 'item-img-rights-badge ' + rightsState;
+              rightsBadge.title = rightsState === 'expired'
+                ? 'One or more assets have an expired licence'
+                : 'One or more assets have a licence expiring within 30 days';
+              rightsBadge.innerHTML = '<span class="material-symbols-outlined">' + (rightsState === 'expired' ? 'report' : 'schedule') + '</span>';
+              imgWrap.appendChild(rightsBadge);
             }
             const nameDiv = document.createElement('div');
             nameDiv.style.cssText = 'display:flex;flex-direction:column;justify-content:center;gap:2px;min-width:0;flex:1;';

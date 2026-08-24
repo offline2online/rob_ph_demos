@@ -1834,9 +1834,35 @@ function render() {
   // not by how many items happen to be on the page.
   const isLargeTileLayout = COLS <= 2;
 
-  // Picks the best image URL for an item cell given the current layout size.
-  // Falls back gracefully: large→small→none, small→large→none.
+  // A targeted asset always overrides the default the instant its own
+  // targeting rule matches this store/visitor — Product Assets
+  // (ProductAssetsTab.jsx) enforces the two as mutually exclusive (an
+  // asset can't be both default and targeted), so there's no ambiguity to
+  // resolve here: the first targeted asset whose rule matches wins over
+  // whatever's marked default. Reuses the same category-aware condition
+  // matcher as offer targeting (_offerTargetingMatches above) since asset
+  // targeting is built from the identical TargetingBuilder.jsx shape.
+  // imagesRich is index-aligned with images/imagesLarge (src stripped out
+  // — see migration.js toItemDoc()'s comment), so the matched index reads
+  // straight across to the actual src arrays.
+  function _pickTargetedAssetIndex(item) {
+    const rich = item.imagesRich;
+    if (!Array.isArray(rich)) return -1;
+    return rich.findIndex(r => r && Array.isArray(r.targeting) && r.targeting.length && _offerTargetingMatches(r.targeting, _storeProfile));
+  }
+
+  // Picks the best image/video URL for an item given the current layout
+  // size. Falls back gracefully: large→small→none, small→large→none —
+  // unless a targeted asset matches this store/visitor, in which case it
+  // wins over the default at whichever size is available.
   function _pickImage(item) {
+    const idx = _pickTargetedAssetIndex(item);
+    if (idx !== -1) {
+      const tSmall = item.images      && item.images[idx];
+      const tLarge = item.imagesLarge && item.imagesLarge[idx];
+      const picked = isLargeTileLayout ? (tLarge || tSmall) : (tSmall || tLarge);
+      if (picked) return picked;
+    }
     const small = item.images      && item.images[0];
     const large = item.imagesLarge && item.imagesLarge[0];
     if (isLargeTileLayout) return large || small || '';
@@ -2059,7 +2085,10 @@ function render() {
       // Build hero image panel — full-bleed photo with product info/pricing in
       // a top-left card (black text) and the description in its own card at
       // the bottom (grey text), the same fields shown on each promo card.
-      const heroSrc = (heroItem.imagesLarge && heroItem.imagesLarge[0]) || (heroItem.images && heroItem.images[0]);
+      const heroTargetedIdx = _pickTargetedAssetIndex(heroItem);
+      const heroSrc = heroTargetedIdx !== -1
+        ? ((heroItem.imagesLarge && heroItem.imagesLarge[heroTargetedIdx]) || (heroItem.images && heroItem.images[heroTargetedIdx]))
+        : ((heroItem.imagesLarge && heroItem.imagesLarge[0]) || (heroItem.images && heroItem.images[0]));
       const heroImgHtml = heroSrc
         ? _mediaTag(heroSrc, heroItem.name, 'promo-hero-placeholder', '🏷️')
         : `<div class="promo-hero-placeholder">🏷️</div>`;
@@ -2080,7 +2109,10 @@ function render() {
       // text column, description overlaid across the full width of the tile
       // (text column + photo) at the bottom.
       const promoTilesHtml = promoPage.map(item => {
-        const src = (item.imagesLarge && item.imagesLarge[0]) || (item.images && item.images[0]);
+        const targetedIdx = _pickTargetedAssetIndex(item);
+        const src = targetedIdx !== -1
+          ? ((item.imagesLarge && item.imagesLarge[targetedIdx]) || (item.images && item.images[targetedIdx]))
+          : ((item.imagesLarge && item.imagesLarge[0]) || (item.images && item.images[0]));
         const img = src
           ? _mediaTag(src, item.name, 'promo-img-placeholder', '🍽️')
           : `<div class="promo-img-placeholder">🍽️</div>`;

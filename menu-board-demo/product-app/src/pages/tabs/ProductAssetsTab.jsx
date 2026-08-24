@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Input, Switch, Select, Tag } from 'antd';
+import dayjs from 'dayjs';
 import MaterialIcon from '../../components/MaterialIcon.jsx';
 import BespokeIcon from '../../components/BespokeIcon.jsx';
 import IconAction from '../../components/IconAction.jsx';
@@ -255,9 +256,14 @@ export default function ProductAssetsTab({ draft, patch }) {
 
   const expired = current?.rightsOn && licenceState(current.rights?.expiry) === 'expired';
   const soon = current?.rightsOn && licenceState(current.rights?.expiry) === 'soon';
+  // A targeted asset always overrides the default the instant its rule
+  // matches (menu-board.html's _pickTargetedAssetIndex) — "default" and
+  // "targeted" are mutually exclusive roles, so Default is disabled the
+  // moment this asset carries any targeting rule at all.
+  const isTargeted = !!(current?.targeting && current.targeting.length);
 
   const rightsSummary = current?.rightsOn
-    ? [current.rights.type, current.rights.territory, current.rights.expiry ? `Expires ${current.rights.expiry}` : 'No expiry', current.rights.release ? 'release on file' : null]
+    ? [current.rights.type, current.rights.territory, current.rights.expiry ? `Expires ${dayjs(current.rights.expiry).format('D MMM YYYY, HH:mm')}` : 'No expiry', current.rights.release ? 'release on file' : null]
         .filter(Boolean)
         .join(' · ')
     : 'Off — no licence terms recorded. Turn on for licensed, stock or talent-bearing assets.';
@@ -340,10 +346,18 @@ export default function ProductAssetsTab({ draft, patch }) {
                 caption="Default"
                 gold
                 active={current.isDefault}
-                disabled={expired}
+                disabled={expired || isTargeted}
                 onClick={setDefault}
                 tooltipTitle={current.isDefault ? 'Remove as default' : 'Set as default'}
-                tooltipDesc={expired ? 'Renew the licence before making this the default.' : current.isDefault ? 'Another image can be chosen as default instead.' : 'Personalisation Hub uses this image unless a campaign specifies otherwise.'}
+                tooltipDesc={
+                  isTargeted
+                    ? 'This asset has targeting rules, so it already overrides the default whenever they match — it can’t also be the default.'
+                    : expired
+                    ? 'Renew the licence before making this the default.'
+                    : current.isDefault
+                    ? 'Another image can be chosen as default instead.'
+                    : 'Personalisation Hub uses this image unless a campaign specifies otherwise.'
+                }
               />
               <IconAction
                 icon={<BespokeIcon name="ab" />}
@@ -435,8 +449,9 @@ export default function ProductAssetsTab({ draft, patch }) {
                         />
                       </div>
                       <div>
-                        <label style={{ fontSize: 12, color: 'rgba(0,0,0,.65)', display: 'block', marginBottom: 4 }}>Expiry date</label>
+                        <label style={{ fontSize: 12, color: 'rgba(0,0,0,.65)', display: 'block', marginBottom: 4 }}>Expiry date &amp; time</label>
                         <ClearableDate
+                          showTime
                           value={current.rights.expiry}
                           onChange={(v) => updateRights({ expiry: v })}
                           blankHint={{ blank: 'No expiry', set: '' }}
@@ -469,7 +484,20 @@ export default function ProductAssetsTab({ draft, patch }) {
               </p>
               <TargetingBuilder
                 groups={current.targeting || []}
-                onChange={(groups) => updateSelected({ targeting: groups })}
+                onChange={(groups) => {
+                  // A targeted asset can't also be the default (Default
+                  // is disabled above once targeting exists) — if rules
+                  // are added to the asset that's currently default,
+                  // clear that flag in the same update rather than
+                  // leaving the two in an inconsistent state until the
+                  // next unrelated edit touches isDefault.
+                  const next = images.map((img, i) => {
+                    if (i !== selected) return img;
+                    const stillDefault = groups.length > 0 ? false : img.isDefault;
+                    return { ...img, targeting: groups, isDefault: stillDefault };
+                  });
+                  patch({ images: next });
+                }}
                 emptyDescription="No targeting rules defined. This asset can be shown at every store, to every visitor."
               />
             </div>
