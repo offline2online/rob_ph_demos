@@ -30,6 +30,15 @@ export function blankProduct() {
     offerUntil: '',
     offerDescription: '',
     offers: [],
+    // menuBoardNote is the one the Pricing tab UI actually edits — the
+    // fallback note used when no live offer has a note of its own.
+    // showOnMenuBoard is the flat field menu-board.html/hq-admin.html
+    // actually read; confirmSave derives it fresh on every save (an
+    // offer's own note, else menuBoardNote) and it must never be read
+    // back into an editable field, or a save made while an offer's note
+    // was overriding it would bake that override in as the new
+    // "fallback," permanently masking menuBoardNote from then on.
+    menuBoardNote: '',
     showOnMenuBoard: '',
     currency: '$',
     taxClass: '',

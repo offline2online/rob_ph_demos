@@ -21,7 +21,7 @@ function Field({ label, required, children, hint }) {
 }
 
 function blankOffer() {
-  return { id: genId('offer'), enabled: true, description: '', offerPrice: '', offerFrom: '', offerUntil: '', targeting: [] };
+  return { id: genId('offer'), enabled: true, description: '', offerPrice: '', offerFrom: '', offerUntil: '', showOnMenuBoard: '', targeting: [] };
 }
 
 const OFFER_STATE_STYLE = {
@@ -91,6 +91,15 @@ function OfferFormModal({ open, initialOffer, onCancel, onSave }) {
               <ClearableDate value={form.offerUntil} onChange={(v) => setForm((f) => ({ ...f, offerUntil: v }))} showTime blankHint={{ blank: '', set: '' }} />
             </Field>
           </div>
+          <div style={{ marginTop: 14 }}>
+            <Field label="Show on Menu Board" hint="Promo copy shown alongside this offer's price while it's live, e.g. &ldquo;Today only!&rdquo; Leave blank to show nothing extra.">
+              <Input
+                value={form.showOnMenuBoard}
+                onChange={(e) => setForm((f) => ({ ...f, showOnMenuBoard: e.target.value }))}
+                placeholder="e.g. Today only!"
+              />
+            </Field>
+          </div>
           <div style={{ marginTop: 20, paddingTop: 16, borderTop: '1px solid #f0f0f0' }}>
             <div style={{ fontSize: 11, color: 'rgba(0,0,0,.45)', letterSpacing: '0.08em', fontWeight: 500, marginBottom: 4, textTransform: 'uppercase' }}>
               Store targeting for this offer
@@ -146,8 +155,18 @@ export default function PricingTab({ draft, baseline, setDraft, setBaseline }) {
     setReason('');
   }, [draft.id]);
 
+  // Whichever offer is actually live/next-up gets to say what the board
+  // shows — same "one effective offer" rule pickEffectiveOffer applies to
+  // price. Its own note wins over the plain top-level field whenever it
+  // has one set, since that's the text actually promoting the price
+  // change the board is showing; the top-level field only takes over when
+  // there's no offer, or the live one has nothing of its own to say.
+  const effectiveOffer = useMemo(() => pickEffectiveOffer(draft.offers), [draft.offers]);
+  const noteOverridden = !!(effectiveOffer && effectiveOffer.showOnMenuBoard && effectiveOffer.showOnMenuBoard.trim() !== '');
+  const effectiveMenuBoardNote = noteOverridden ? effectiveOffer.showOnMenuBoard : draft.menuBoardNote || '';
+
   const rrpChanged = String(draft.rrp) !== String(baseline.rrp);
-  const menuBoardCopyChanged = String(draft.showOnMenuBoard || '') !== String(baseline.showOnMenuBoard || '');
+  const menuBoardCopyChanged = String(draft.menuBoardNote || '') !== String(baseline.menuBoardNote || '');
   const offersChanged = JSON.stringify(draft.offers || []) !== JSON.stringify(baseline.offers || []);
   const dirty = rrpChanged || menuBoardCopyChanged || offersChanged;
   const canSave = dirty && reason.trim() !== '';
@@ -165,7 +184,7 @@ export default function PricingTab({ draft, baseline, setDraft, setBaseline }) {
       ...d,
       rrp: baseline.rrp,
       offers: baseline.offers || [],
-      showOnMenuBoard: baseline.showOnMenuBoard,
+      menuBoardNote: baseline.menuBoardNote,
     }));
     setReason('');
   };
@@ -216,7 +235,7 @@ export default function PricingTab({ draft, baseline, setDraft, setBaseline }) {
         newValue: `${(draft.offers || []).length} offer(s)`,
       });
     }
-    if (menuBoardCopyChanged) changes.push({ fieldName: 'Show on Menu Board', oldValue: baseline.showOnMenuBoard || '—', newValue: draft.showOnMenuBoard || '—' });
+    if (menuBoardCopyChanged) changes.push({ fieldName: 'Show on Menu Board', oldValue: baseline.menuBoardNote || '—', newValue: draft.menuBoardNote || '—' });
 
     // The grid, its price-column filter, and the Product Details banner
     // only know the legacy flat offerPrice/offerFrom/offerUntil/
@@ -230,6 +249,7 @@ export default function PricingTab({ draft, baseline, setDraft, setBaseline }) {
       offerFrom: effective.offerFrom || '',
       offerUntil: effective.offerUntil || '',
       offerDescription: effective.description || '',
+      showOnMenuBoard: effectiveMenuBoardNote,
     };
     const withLog = appendPriceLogEntries(withLegacy, changes, reason);
     setSavingPrice(true);
@@ -436,10 +456,18 @@ export default function PricingTab({ draft, baseline, setDraft, setBaseline }) {
           </Field>
         </div>
         <div style={{ marginTop: 14 }}>
-          <Field label="Show on Menu Board" hint="Optional promo copy shown alongside this product's price on the menu board, e.g. &ldquo;Limited time only!&rdquo; Leave blank to show nothing extra.">
+          <Field
+            label="Show on Menu Board"
+            hint={
+              noteOverridden
+                ? `Showing “${effectiveOffer.description}”'s own promo copy while that offer is live. Edit it from that offer below, or this field takes over again once it ends.`
+                : 'Optional promo copy shown alongside this product’s price on the menu board, e.g. “Limited time only!” Leave blank to show nothing extra.'
+            }
+          >
             <Input
-              value={draft.showOnMenuBoard}
-              onChange={(e) => setDraft((d) => ({ ...d, showOnMenuBoard: e.target.value }))}
+              value={effectiveMenuBoardNote}
+              disabled={noteOverridden}
+              onChange={(e) => setDraft((d) => ({ ...d, menuBoardNote: e.target.value }))}
               placeholder="e.g. Limited time only!"
               style={menuBoardCopyChanged ? { background: '#e8fdff' } : undefined}
             />
@@ -449,7 +477,7 @@ export default function PricingTab({ draft, baseline, setDraft, setBaseline }) {
 
       <div className="ph-sect">
         <div className="ph-sect-label" style={{ marginBottom: 12 }}>
-          Offers
+          Scheduled Offers
         </div>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
           <span style={{ fontSize: 12, color: 'rgba(0,0,0,.45)' }}>

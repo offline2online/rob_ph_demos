@@ -98,6 +98,7 @@ function legacyOffer(raw) {
     offerPrice: String(raw.offerPrice),
     offerFrom: raw.offerFrom || '',
     offerUntil: raw.offerUntil || '',
+    showOnMenuBoard: raw.showOnMenuBoard || '',
     targeting: [],
   }];
 }
@@ -109,7 +110,21 @@ export function migrateItem(raw, brandCurrency) {
     // images[0] as a URL directly), so a second edit must still re-inflate
     // them into the rich per-image shape this UI works with. mapImages()
     // is idempotent — a no-op if images are already rich objects.
-    return { ...raw, images: mapImages(raw), offers: raw.offers || legacyOffer(raw) };
+    return {
+      ...raw,
+      images: mapImages(raw),
+      offers: raw.offers || legacyOffer(raw),
+      // Falls back to whatever showOnMenuBoard already held — before the
+      // per-offer note existed, that flat field WAS the user's real
+      // fallback text, so a product migrating through this for the first
+      // time must carry it forward rather than silently losing it. Checked
+      // against `undefined`, not falsiness — a product that's already been
+      // through this migration once and genuinely has no fallback note (a
+      // real '') must stay that way, not keep re-absorbing whatever
+      // showOnMenuBoard currently holds (which may be an offer's own note,
+      // overriding it) on every subsequent load.
+      menuBoardNote: raw.menuBoardNote !== undefined ? raw.menuBoardNote : (raw.showOnMenuBoard || ''),
+    };
   }
 
   return {
@@ -133,6 +148,7 @@ export function migrateItem(raw, brandCurrency) {
     offerUntil: raw.offerUntil || '',
     offerDescription: raw.offerDescription || '',
     offers: raw.offers || legacyOffer(raw),
+    menuBoardNote: raw.menuBoardNote !== undefined ? raw.menuBoardNote : (raw.showOnMenuBoard || ''),
     showOnMenuBoard: raw.showOnMenuBoard || '',
     menuTypes: raw.menuTypes || [],
     attrGroups: mapAttrGroups(raw),
