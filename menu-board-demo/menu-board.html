@@ -247,7 +247,7 @@
       overflow: hidden;
       background: #f5f0e8;
     }
-    .item-thumb img {
+    .item-thumb img, .item-thumb video {
       width: 100%;
       height: 100%;
       object-fit: cover;
@@ -512,7 +512,7 @@
       border-right: 3px solid var(--accent, #f6ad55);
       position: relative;
     }
-    .promo-hero img {
+    .promo-hero img, .promo-hero video {
       width: 100%; height: 100%; object-fit: cover; display: block;
     }
     .promo-hero-placeholder {
@@ -649,7 +649,7 @@
       min-width: 0;
       overflow: hidden;
     }
-    .promo-img-wrap img {
+    .promo-img-wrap img, .promo-img-wrap video {
       width: 100%; height: 100%; object-fit: cover; display: block;
     }
     .promo-img-placeholder {
@@ -1843,6 +1843,29 @@ function render() {
     return small || large || '';
   }
 
+  // A product's default asset can be a video, not just a photo — Product
+  // Assets (product-app) stores it the same way (images[0], base64 data
+  // URI), just with a video/* MIME type instead of image/*. Detected off
+  // the data URI itself rather than any separate per-item flag, since
+  // that's the one thing guaranteed to travel with the src no matter which
+  // render site picked it up (imagesLarge vs images, hero vs grid vs promo).
+  function _isVideoSrc(src) {
+    return typeof src === 'string' && /^data:video\//.test(src);
+  }
+
+  // Renders whichever media the item's picked src actually is — muted/
+  // autoplay/loop so it behaves like ambient signage, not something a
+  // customer has to press play on. Falls back to the same onerror swap
+  // <img> already used per call site, so a corrupt/oversized asset
+  // degrades to that site's own placeholder instead of a dead player.
+  function _mediaTag(src, alt, placeholderClass, placeholderEmoji) {
+    const onerror = `this.replaceWith(Object.assign(document.createElement('div'),{className:'${placeholderClass}',textContent:'${placeholderEmoji}'}))`;
+    if (_isVideoSrc(src)) {
+      return `<video src="${src}" autoplay muted loop playsinline disablepictureinpicture onerror="${onerror}"></video>`;
+    }
+    return `<img src="${src}" alt="${esc(alt)}" loading="lazy" onerror="${onerror}">`;
+  }
+
   // Mutable: the Feature Hero Spotlight layout recomputes this below from its own
   // hero-rotation + secondary-grid-overflow page count, so the footer and the
   // shared rotation clock reflect what's actually rotating on screen.
@@ -1921,7 +1944,7 @@ function render() {
     const cat = item.category || '';
     const cellImg = _pickImage(item);
     const thumbInner = cellImg
-      ? `<img src="${cellImg}" alt="${esc(item.name)}" loading="lazy" onerror="this.replaceWith(Object.assign(document.createElement('div'),{className:'item-thumb-placeholder',textContent:'🍽️'}))">`
+      ? _mediaTag(cellImg, item.name, 'item-thumb-placeholder', '🍽️')
       : `<div class="item-thumb-placeholder">🍽️</div>`;
     const desc = item.description ? `<div class="item-desc">${esc(item.description)}</div>` : '';
     const menuNote = shouldShowMenuNote(item) ? `<div class="menu-board-note">${esc(item.showOnMenuBoard)}</div>` : '';
@@ -2038,7 +2061,7 @@ function render() {
       // the bottom (grey text), the same fields shown on each promo card.
       const heroSrc = (heroItem.imagesLarge && heroItem.imagesLarge[0]) || (heroItem.images && heroItem.images[0]);
       const heroImgHtml = heroSrc
-        ? `<img src="${heroSrc}" alt="${esc(heroItem.name)}" loading="lazy">`
+        ? _mediaTag(heroSrc, heroItem.name, 'promo-hero-placeholder', '🏷️')
         : `<div class="promo-hero-placeholder">🏷️</div>`;
       const heroCat = heroItem.category ? `<div class="promo-cat">${esc(heroItem.category)}</div>` : '';
       const heroMenuNote = shouldShowMenuNote(heroItem) ? `<div class="menu-board-note">${esc(heroItem.showOnMenuBoard)}</div>` : '';
@@ -2059,7 +2082,7 @@ function render() {
       const promoTilesHtml = promoPage.map(item => {
         const src = (item.imagesLarge && item.imagesLarge[0]) || (item.images && item.images[0]);
         const img = src
-          ? `<img src="${src}" alt="${esc(item.name)}" loading="lazy">`
+          ? _mediaTag(src, item.name, 'promo-img-placeholder', '🍽️')
           : `<div class="promo-img-placeholder">🍽️</div>`;
         const desc = item.description
           ? `<div class="promo-tile-desc"><div class="promo-desc">${esc(item.description)}</div></div>` : '';
