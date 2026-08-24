@@ -3,7 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import { Input, InputNumber, Table, Button, App, Tag, Switch, Modal, Tooltip } from 'antd';
 import MaterialIcon from '../../components/MaterialIcon.jsx';
 import ClearableDate, { shiftEndOneHour } from '../../components/ClearableDate.jsx';
-import { getOfferState, pickEffectiveOffer } from '../../components/OfferBanner.jsx';
+import { getOfferState, pickEffectiveOffer, pickDefaultOffer } from '../../components/OfferBanner.jsx';
 import OfferTargetingBuilder, { describeTargeting } from '../../components/OfferTargetingBuilder.jsx';
 import { upsertProduct, appendPriceLogEntries, genId } from '../../data/productStore.js';
 
@@ -168,7 +168,6 @@ export default function PricingTab({ draft, baseline, setDraft, setBaseline }) {
   const effectiveOffer = useMemo(() => pickEffectiveOffer(draft.offers), [draft.offers]);
   const effectiveOfferIsTargeted = !!(effectiveOffer && effectiveOffer.targeting && effectiveOffer.targeting.length > 0);
   const noteOverridden = !!(effectiveOfferIsTargeted && effectiveOffer.showOnMenuBoard && effectiveOffer.showOnMenuBoard.trim() !== '');
-  const effectiveMenuBoardNote = noteOverridden ? effectiveOffer.showOnMenuBoard : draft.menuBoardNote || '';
 
   const rrpChanged = String(draft.rrp) !== String(baseline.rrp);
   const menuBoardCopyChanged = String(draft.menuBoardNote || '') !== String(baseline.menuBoardNote || '');
@@ -270,14 +269,18 @@ export default function PricingTab({ draft, baseline, setDraft, setBaseline }) {
     // offerDescription fields, not offers[] — derive "the one that
     // currently matters" and write it back into those fields so none of
     // that downstream code needs to change to understand multiple offers.
-    const effective = pickEffectiveOffer(draft.offers) || {};
+    // pickDefaultOffer (not pickEffectiveOffer) on purpose: those flat
+    // fields feed aggregate, all-stores surfaces (HQ Admin's grid,
+    // Product Details), so a store-targeted offer's price must never
+    // land there — it's only ever correct at the stores it targets.
+    const effective = pickDefaultOffer(draft.offers) || {};
     const withLegacy = {
       ...draft,
       offerPrice: effective.offerPrice || '',
       offerFrom: effective.offerFrom || '',
       offerUntil: effective.offerUntil || '',
       offerDescription: effective.description || '',
-      showOnMenuBoard: effectiveMenuBoardNote,
+      showOnMenuBoard: draft.menuBoardNote || '',
     };
     const withLog = appendPriceLogEntries(withLegacy, changes, reason);
     setSavingPrice(true);

@@ -2459,6 +2459,29 @@ function _offerTooltip(currency, rrp, offerNum, offerFrom, offerUntil) {
   return `Offer price: ${currency}${offerNum.toFixed(2)} (was ${currency}${rrp.toFixed(2)})\n${schedule}`;
 }
 
+// Same vocabulary as OfferTargetingBuilder.jsx's STORE_FIELDS/OPERATORS/
+// describeTargeting (product-app) — duplicated here since this is plain
+// JS, not the React app, matching how this file already duplicates the
+// offer-targeting match logic instead of sharing a module.
+const _OFFER_TARGET_FIELDS = { storeCode: 'Store Code(s)', fixedSegment: 'Fixed Store Segments', variableSegment: 'Variable Store Segments', storeState: 'Store State' };
+const _OFFER_TARGET_OPS = { includes: 'includes selected', matches: 'matches exactly', excludesOr: 'excludes selected [OR]', excludesAnd: 'excludes selected [AND]' };
+function _describeOfferTargeting(groups) {
+  if (!groups || !groups.length) return 'Applies at every store.';
+  return groups.map(g => (g.conditions || []).map(c => {
+    const fieldLabel = _OFFER_TARGET_FIELDS[c.field] || c.field;
+    const opLabel = _OFFER_TARGET_OPS[c.operator] || c.operator;
+    const vals = (c.values || []).join(', ') || '—';
+    return `${fieldLabel} ${opLabel} ${vals}`;
+  }).join(' OR ')).join(' AND ');
+}
+// Offers on this item that are store-targeted (targeting.length > 0) and
+// not disabled — the grid's flat offerPrice never reflects one of these
+// (see pickDefaultOffer in product-app), so this is the only way HQ staff
+// see that a targeted offer exists for the item at all.
+function _getTargetedOffers(item) {
+  return (item.offers || []).filter(o => o.enabled !== false && o.targeting && o.targeting.length > 0);
+}
+
 function initGrids() {
   // ── Menu Items Grid ──────────────────────────────────────────────────
   const itemsEl = document.getElementById('itemsGrid');
@@ -2588,6 +2611,7 @@ function initGrids() {
             // local pricing is in effect without the grid lying about
             // "the" price.
             const localStores = getStoresWithLocalOffer(item.sku);
+            const targetedOffers = _getTargetedOffers(item);
             const wrap = document.createElement('div');
             wrap.style.cssText = 'display:flex;flex-direction:column;justify-content:center;gap:3px;height:100%;padding:4px 0;cursor:pointer;';
             wrap.title = 'Click to view pricing';
@@ -2603,6 +2627,26 @@ function initGrids() {
               pill.addEventListener('click', (e) => {
                 e.stopPropagation();
                 location.href = 'product/#/products/' + item.id + '/pricing?filter=local';
+              });
+              wrap.appendChild(pill);
+            }
+            if (targetedOffers.length) {
+              const pill = document.createElement('span');
+              pill.textContent = targetedOffers.length === 1 ? 'Targeted' : `Targeted ×${targetedOffers.length}`;
+              // Same live/scheduled rule as the price cell above, applied
+              // per targeted offer, so the tooltip says what's actually
+              // happening rather than just listing rule text.
+              pill.title = targetedOffers.map(o => {
+                const oNum = parseFloat(o.offerPrice);
+                const oFrom = o.offerFrom ? new Date(o.offerFrom) : null;
+                const oUntil = o.offerUntil ? new Date(o.offerUntil) : null;
+                const status = oNum > 0 && !(oUntil && oUntil < now) && !(oFrom && oFrom > now) ? 'live' : (oFrom && oFrom > now ? 'scheduled' : 'off');
+                return `${o.description || 'Untitled offer'} (${status}) — ${_describeOfferTargeting(o.targeting)}`;
+              }).join('\n');
+              pill.style.cssText = 'display:inline-flex;align-items:center;width:fit-content;line-height:1;padding:3px 7px 2px;border-radius:9px;background:#e6f7ff;color:#0958a5;border:1px solid #91caff;font-size:10px;font-weight:700;cursor:pointer;letter-spacing:0.2px;';
+              pill.addEventListener('click', (e) => {
+                e.stopPropagation();
+                location.href = 'product/#/products/' + item.id + '/pricing';
               });
               wrap.appendChild(pill);
             }

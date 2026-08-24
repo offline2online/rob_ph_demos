@@ -40,6 +40,20 @@ export function pickEffectiveOffer(offers) {
   return scheduled[0] || null;
 }
 
+// Same precedence as pickEffectiveOffer(), but never considers a
+// store-targeted offer — used for the flat legacy fields
+// (offerPrice/offerFrom/offerUntil/offerDescription) that HQ Admin's
+// grid and Product Details' banner read as if they applied everywhere.
+// A targeted offer's price is only ever correct at the stores it
+// targets, so it must never be written into a field every one of those
+// aggregate/all-stores surfaces treats as universal — pickEffectiveOffer()
+// above is still used where the admin UI itself needs to reason about a
+// targeted offer specifically (e.g. which offer's note is currently
+// overriding the default at its target stores).
+export function pickDefaultOffer(offers) {
+  return pickEffectiveOffer((offers || []).filter((o) => !o.targeting || !o.targeting.length));
+}
+
 export default function OfferBanner({ rrp, offerPrice, offerFrom, offerUntil, currency = '$' }) {
   const rrpNum = parseFloat(rrp);
   const offerNum = parseFloat(offerPrice);
