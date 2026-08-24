@@ -1,19 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { Tabs, Tag, Button, Spin, App } from 'antd';
+import { Tabs, Tag, Button, Spin, App, Badge, Switch } from 'antd';
 import MaterialIcon from '../components/MaterialIcon.jsx';
 import ProductDetailsTab from './tabs/ProductDetailsTab.jsx';
 import StockTab from './tabs/StockTab.jsx';
 import ProductAssetsTab from './tabs/ProductAssetsTab.jsx';
 import PricingTab from './tabs/PricingTab.jsx';
 import { getProduct, blankProduct, upsertProduct } from '../data/productStore.js';
-
-const STATUS_COLOR = {
-  Active: { bg: '#f6ffed', border: '#b7eb8f', color: '#389e0d' },
-  Draft: { bg: '#fffbe6', border: '#ffe58f', color: '#ad6800' },
-  Inactive: { bg: '#fffbe6', border: '#ffe58f', color: '#ad6800' },
-  Archived: { bg: '#fff2f0', border: '#ffccc7', color: '#cf1322' },
-};
 
 export default function ProductPage({ isNew = false }) {
   const { id, tab = 'details' } = useParams();
@@ -86,8 +79,6 @@ export default function ProductPage({ isNew = false }) {
     );
   }
 
-  const sc = STATUS_COLOR[draft.status] || STATUS_COLOR.Draft;
-
   return (
     <div style={{ padding: 20, background: '#ffffff', minHeight: '100vh' }}>
       <div>
@@ -100,14 +91,25 @@ export default function ProductPage({ isNew = false }) {
             {draft.sku && (
               <Tag style={{ fontFamily: 'ui-monospace,Menlo,Consolas,monospace' }}>{draft.sku}</Tag>
             )}
-            <Tag style={{ background: sc.bg, borderColor: sc.border, color: sc.color, fontWeight: 600 }}>
-              {draft.status?.toUpperCase()}
-            </Tag>
             {draft.featured && (
               <Tag style={{ background: '#fffbe6', borderColor: '#ffe58f', color: '#d48806', fontWeight: 600 }}>
                 <MaterialIcon name="star" style={{ fontSize: 12, verticalAlign: -2, fontVariationSettings: "'FILL' 1, 'wght' 600, 'GRAD' 0, 'opsz' 20" }} /> FEATURED
               </Tag>
             )}
+          </div>
+          {/* Same treatment as Campaign Detail's own Status control
+              (ph-designer skill references/hq-admin.md §2) — muted "Status"
+              label, coloured dot, bold status text, teal Switch — top-right
+              of the page header, visible across every tab since it's a
+              page-level property, not something scoped to Details. */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{ fontSize: 14, color: 'rgba(0,0,0,.65)' }}>Status</span>
+            <Badge dot color={draft.status === 'Active' ? '#52c41a' : '#ff4d4f'} />
+            <span style={{ fontSize: 14, fontWeight: 700, color: '#333333' }}>{draft.status === 'Active' ? 'Active' : 'Inactive'}</span>
+            <Switch
+              checked={draft.status === 'Active'}
+              onChange={(v) => patch(v ? { status: 'Active' } : { status: 'Inactive', featured: false })}
+            />
           </div>
         </div>
         <div style={{ height: 1, background: 'rgba(5,5,5,0.06)', margin: '4px 0 16px' }} />

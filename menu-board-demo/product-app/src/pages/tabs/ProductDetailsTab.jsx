@@ -107,7 +107,7 @@ export default function ProductDetailsTab({ draft, patch, onGoPricing }) {
           </Button>
         </div>
         <div style={{ marginTop: 12 }}>
-          <OfferBanner rrp={draft.rrp} offerPrice={draft.offerPrice} offerFrom={draft.offerFrom} offerUntil={draft.offerUntil} />
+          <OfferBanner rrp={draft.rrp} offerPrice={draft.offerPrice} offerFrom={draft.offerFrom} offerUntil={draft.offerUntil} currency={draft.currency || brand?.currency || '$'} />
         </div>
       </SectionCard>
 
@@ -116,19 +116,7 @@ export default function ProductDetailsTab({ draft, patch, onGoPricing }) {
         <div className="ph-sect-label" style={{ marginBottom: 12 }}>
           Status &amp; merchandising
         </div>
-        <div style={{ display: 'grid', gridTemplateColumns: draft.featured ? '1fr 1fr 1fr' : '1fr 1fr', gap: '14px 16px' }}>
-          <Field
-            label="Product status"
-            hint={
-              { Draft: 'Not visible on any board yet.', Active: 'Live and available on boards.', Inactive: 'Temporarily hidden from boards.', Archived: 'Retired — kept for reporting only.' }[draft.status]
-            }
-          >
-            <Select
-              value={draft.status}
-              onChange={(v) => patch(v === 'Active' ? { status: v } : { status: v, featured: false })}
-              options={['Draft', 'Active', 'Inactive', 'Archived'].map((s) => ({ value: s, label: s }))}
-            />
-          </Field>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px 16px' }}>
           <Field
             label="Featured item"
             hint={draft.status === 'Active' ? 'Drives hero placement on boards and in campaign creative.' : 'Only Active products can be featured.'}

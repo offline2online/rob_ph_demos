@@ -40,7 +40,7 @@ export function pickEffectiveOffer(offers) {
   return scheduled[0] || null;
 }
 
-export default function OfferBanner({ rrp, offerPrice, offerFrom, offerUntil }) {
+export default function OfferBanner({ rrp, offerPrice, offerFrom, offerUntil, currency = '$' }) {
   const rrpNum = parseFloat(rrp);
   const offerNum = parseFloat(offerPrice);
   const from = offerFrom ? new Date(offerFrom) : null;
@@ -58,7 +58,7 @@ export default function OfferBanner({ rrp, offerPrice, offerFrom, offerUntil }) 
 
   let text = 'No offer price set.';
   if (state === 'live') {
-    text = `Offer live — $${offerNum.toFixed(2)} instead of $${rrpNum.toFixed(2)}, saving $${(rrpNum - offerNum).toFixed(2)}` +
+    text = `Offer live — ${currency}${offerNum.toFixed(2)} instead of ${currency}${rrpNum.toFixed(2)}, saving ${currency}${(rrpNum - offerNum).toFixed(2)}` +
       (until ? ` until ${fmt(until)}.` : '.');
   } else if (state === 'scheduled') {
     text = `Offer scheduled from ${fmt(from)}${until ? ` until ${fmt(until)}` : ''}.`;
