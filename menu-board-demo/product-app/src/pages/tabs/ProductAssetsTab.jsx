@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Input, Segmented, Switch, Select, Tag } from 'antd';
+import { Input, Switch, Select, Tag } from 'antd';
 import MaterialIcon from '../../components/MaterialIcon.jsx';
 import BespokeIcon from '../../components/BespokeIcon.jsx';
 import IconAction from '../../components/IconAction.jsx';
@@ -136,8 +136,6 @@ function Tile({ img, selected, onClick }) {
 export default function ProductAssetsTab({ draft, patch }) {
   const images = draft.images || [];
   const [selected, setSelected] = useState(0);
-  const [filter, setFilter] = useState('all');
-  const [q, setQ] = useState('');
   const [dragOver, setDragOver] = useState(false);
   const [newTagText, setNewTagText] = useState('');
   const fileInput = useRef(null);
@@ -175,17 +173,6 @@ export default function ProductAssetsTab({ draft, patch }) {
   // changes, and the shared Save Changes / Cancel bar (ProductPage.jsx)
   // is the only save step left, same as every other field on this product.
   const current = images[selected] || null;
-
-  const filtered = images.filter((img) => {
-    if (filter === 'image' && img.type !== 'image') return false;
-    if (filter === 'video' && !['video', '3d'].includes(img.type)) return false;
-    if (q && !(`${img.name} ${(img.tags || []).join(' ')}`.toLowerCase().includes(q.toLowerCase()))) return false;
-    return true;
-  });
-
-  const testingCount = images.filter((i) => i.availableForTesting).length;
-  const expiringCount = images.filter((i) => i.rightsOn && licenceState(i.rights?.expiry) === 'soon').length;
-  const expiredCount = images.filter((i) => i.rightsOn && licenceState(i.rights?.expiry) === 'expired').length;
 
   const updateSelected = (fields) => {
     const next = images.map((img, i) => (i === selected ? { ...img, ...fields } : img));
@@ -286,20 +273,9 @@ export default function ProductAssetsTab({ draft, patch }) {
           through a long asset panel (Rights & licensing, Targeting) —
           switching assets from here doesn't reset scroll position, since
           nothing here does anything but flip `selected`. */}
-      <div style={{ position: 'sticky', top: 0, zIndex: 10, background: '#fff', paddingTop: 4, paddingBottom: 4, marginTop: -4 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10, flexWrap: 'wrap' }}>
-          <span className="ph-sect-label">Select an image or video</span>
-          <div style={{ flex: 1 }} />
-          <Segmented
-            value={filter}
-            onChange={setFilter}
-            options={[{ label: 'All', value: 'all' }, { label: 'Images', value: 'image' }, { label: 'Video & 3D', value: 'video' }]}
-          />
-          <Input style={{ width: 200 }} placeholder="Search by name or tag…" value={q} onChange={(e) => setQ(e.target.value)} />
-        </div>
-
+      <div style={{ position: 'sticky', top: 0, zIndex: 10, background: 'rgba(255,255,255,.98)', paddingTop: 4, paddingBottom: 4, marginTop: -4 }}>
         <div
-          style={{ display: 'flex', gap: 10, overflowX: 'auto', padding: '14px 16px', background: '#fff', borderRadius: 8, boxShadow: '0 2px 6px rgba(0,0,0,.06)' }}
+          style={{ display: 'flex', gap: 10, overflowX: 'auto', padding: '8px 4px' }}
           onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
           onDragLeave={() => setDragOver(false)}
           onDrop={(e) => { e.preventDefault(); setDragOver(false); handleUpload(e.dataTransfer.files); }}
@@ -308,26 +284,19 @@ export default function ProductAssetsTab({ draft, patch }) {
             onClick={openUpload}
             style={{
               width: 88, height: 88, flexShrink: 0, border: '2px dashed ' + (dragOver ? '#169bc2' : '#d9d9d9'),
-              borderRadius: 6, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-              gap: 2, cursor: 'pointer', color: dragOver ? '#169bc2' : 'rgba(0,0,0,.45)', background: dragOver ? '#e8fdff' : '#fafafa',
+              borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center',
+              cursor: 'pointer', color: dragOver ? '#169bc2' : 'rgba(0,0,0,.45)', background: dragOver ? '#e8fdff' : '#fafafa',
             }}
           >
             <MaterialIcon name="add_photo_alternate" style={{ fontSize: 22 }} />
-            <span style={{ fontSize: 10, textAlign: 'center', padding: '0 6px' }}>Drop files</span>
             <input ref={fileInput} type="file" multiple={fileIntent.current === 'upload'} accept="image/*,video/*" style={{ display: 'none' }} onChange={onFileInputChange} />
           </div>
-          {filtered.map((img) => {
-            const idx = images.indexOf(img);
-            return <Tile key={img.id} img={img} selected={idx === selected} onClick={() => setSelected(idx)} />;
-          })}
-        </div>
-        <div style={{ fontSize: 12, color: 'rgba(0,0,0,.45)', margin: '8px 0' }}>
-          {images.length} of {images.length} shown · {testingCount} available for testing
-          {expiringCount ? ` · ${expiringCount} licence expiring` : ''}
-          {expiredCount ? ` · ${expiredCount} licence expired` : ''}
+          {images.map((img, idx) => (
+            <Tile key={img.id} img={img} selected={idx === selected} onClick={() => setSelected(idx)} />
+          ))}
         </div>
       </div>
-      <div style={{ height: 12 }} />
+      <div style={{ height: 8 }} />
 
       <div className="ph-sect" style={{ padding: 0 }}>
         {!current ? (
