@@ -106,8 +106,6 @@ function blankCondition() {
 export default function OfferTargetingBuilder({ groups, onChange }) {
   const addGroup = () => onChange([...groups, { id: genId('grp'), conditions: [blankCondition()] }]);
 
-  const removeGroup = (gid) => onChange(groups.filter((g) => g.id !== gid));
-
   const addCondition = (gid) =>
     onChange(groups.map((g) => (g.id === gid ? { ...g, conditions: [...g.conditions, blankCondition()] } : g)));
 
@@ -223,9 +221,6 @@ export default function OfferTargetingBuilder({ groups, onChange }) {
             style={{ borderColor: '#169bc2', color: '#169bc2', borderStyle: 'dashed' }}
           >
             Add new &quot;OR&quot; Condition
-          </Button>
-          <Button type="text" size="small" danger onClick={() => removeGroup(g.id)} style={{ marginLeft: 8 }}>
-            Remove group
           </Button>
         </div>
       ))}
