@@ -1,6 +1,20 @@
 import { DatePicker, TimePicker } from 'antd';
 import dayjs from 'dayjs';
 
+// Every start/end datetime pair in the app (an offer's schedule, a
+// product's featured window) defaults its end to one hour after whatever
+// start just got picked — ph-designer skill components.md §13's
+// date-pair rule. Picking a start always arrives with a sensible non-empty
+// end already filled in, rather than leaving staff to pick a second
+// timestamp by hand for the common case. Callers wire this into the
+// start field's own onChange; it only fires when a start value is
+// actually being set, never on clear.
+export function shiftEndOneHour(startISO) {
+  if (!startISO) return '';
+  const d = dayjs(startISO);
+  return d.isValid() ? d.add(1, 'hour').toISOString() : '';
+}
+
 // Brief §7 / requirements.md G2: every optional date field carries a clear
 // button (AntD DatePicker's built-in allowClear covers this) and a hint
 // stating what blank means, re-evaluated live.

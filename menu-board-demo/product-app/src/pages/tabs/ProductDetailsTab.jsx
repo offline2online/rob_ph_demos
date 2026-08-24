@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { Input, InputNumber, Select, Switch, Button } from 'antd';
 import MaterialIcon from '../../components/MaterialIcon.jsx';
-import ClearableDate from '../../components/ClearableDate.jsx';
+import ClearableDate, { shiftEndOneHour } from '../../components/ClearableDate.jsx';
 import AttributeGroups from '../../components/AttributeGroups.jsx';
 import OptionGroups from '../../components/OptionGroups.jsx';
 import OfferBanner from '../../components/OfferBanner.jsx';
@@ -148,7 +148,7 @@ export default function ProductDetailsTab({ draft, patch, onGoPricing }) {
             <Field label="Featured from">
               <ClearableDate
                 value={draft.featuredFrom}
-                onChange={(v) => patch({ featuredFrom: v })}
+                onChange={(v) => patch({ featuredFrom: v, featuredUntil: v ? shiftEndOneHour(v) : draft.featuredUntil })}
                 showTime
                 blankHint={{ blank: 'Featured starts now.', set: 'Set — see date above.' }}
               />

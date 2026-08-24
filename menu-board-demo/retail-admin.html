@@ -2209,8 +2209,23 @@ function _combineDateTimePart(prefix) {
   hidden.dispatchEvent(new Event('input', { bubbles: true }));
 }
 
+// A start/end datetime pair defaults its end to one hour after whatever
+// start just got picked — ph-designer skill components.md §13's date-pair
+// rule (mirrors product-app's ClearableDate.jsx shiftEndOneHour()).
+function _shiftPriceOfferUntil() {
+  const fromRaw = document.getElementById('priceOfferFrom').value;
+  if (!fromRaw) return;
+  const from = new Date(fromRaw);
+  if (isNaN(from.getTime())) return;
+  const until = new Date(from.getTime() + 60 * 60 * 1000);
+  document.getElementById('priceOfferUntil').value = until.toISOString();
+  _syncDateTimeDisplay('priceOfferUntil');
+  document.getElementById('priceOfferUntil').dispatchEvent(new Event('input', { bubbles: true }));
+}
+
 function _onDateTimePartChange(prefix) {
   _combineDateTimePart(prefix);
+  if (prefix === 'priceOfferFrom') _shiftPriceOfferUntil();
 }
 
 let _openTimePickerPopup = null;
@@ -2234,6 +2249,7 @@ function _openTimePicker(prefix, triggerEl) {
     document.getElementById(prefix + 'Time').value =
       String(h).padStart(2, '0') + ':' + String(m).padStart(2, '0');
     _combineDateTimePart(prefix);
+    if (prefix === 'priceOfferFrom') _shiftPriceOfferUntil();
     _closeTimePicker();
   };
 

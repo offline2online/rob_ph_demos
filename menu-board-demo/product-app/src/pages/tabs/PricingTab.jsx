@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Input, InputNumber, Table, Button, App, Tag, Switch, Modal } from 'antd';
 import MaterialIcon from '../../components/MaterialIcon.jsx';
-import ClearableDate from '../../components/ClearableDate.jsx';
+import ClearableDate, { shiftEndOneHour } from '../../components/ClearableDate.jsx';
 import { getOfferState, pickEffectiveOffer } from '../../components/OfferBanner.jsx';
 import OfferTargetingBuilder from '../../components/OfferTargetingBuilder.jsx';
 import { upsertProduct, appendPriceLogEntries, genId } from '../../data/productStore.js';
@@ -85,7 +85,12 @@ function OfferFormModal({ open, initialOffer, onCancel, onSave }) {
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px 16px', marginTop: 14 }}>
             <Field label="Schedule offer from" hint="Blank means the offer starts now.">
-              <ClearableDate value={form.offerFrom} onChange={(v) => setForm((f) => ({ ...f, offerFrom: v }))} showTime blankHint={{ blank: '', set: '' }} />
+              <ClearableDate
+                value={form.offerFrom}
+                onChange={(v) => setForm((f) => ({ ...f, offerFrom: v, offerUntil: v ? shiftEndOneHour(v) : f.offerUntil }))}
+                showTime
+                blankHint={{ blank: '', set: '' }}
+              />
             </Field>
             <Field label="Schedule offer until" hint="Blank means the offer runs until removed.">
               <ClearableDate value={form.offerUntil} onChange={(v) => setForm((f) => ({ ...f, offerUntil: v }))} showTime blankHint={{ blank: '', set: '' }} />
@@ -135,7 +140,6 @@ function fmtDateVal(v) {
 
 export default function PricingTab({ draft, baseline, setDraft, setBaseline }) {
   const { message } = App.useApp();
-  const [unlocked, setUnlocked] = useState(false);
   const [reason, setReason] = useState('');
   const [searchParams, setSearchParams] = useSearchParams();
   // Arriving here from the "Local offer" pill on the HQ Admin grid — jump
@@ -189,9 +193,30 @@ export default function PricingTab({ draft, baseline, setDraft, setBaseline }) {
     setReason('');
   };
 
-  const removeOffer = (id) => setDraft((d) => ({ ...d, offers: (d.offers || []).filter((o) => o.id !== id) }));
-  const updateOffer = (id, fields) =>
+  // Adding/editing/removing an offer via its own modal or the table's own
+  // controls must never leave the outer Save Changes button stuck disabled
+  // behind an unrelated, easy-to-miss "Reason for this change" field the
+  // user never touched — that's exactly how an offer looked saved (the
+  // modal has its own "Save Changes") but silently never reached Firestore.
+  // Auto-filling the reason (only when it's still blank — never overwrite
+  // something the user already typed) means the button is always live the
+  // moment there's something to save.
+  const autoFillReason = (text) => {
+    setReason((r) => (r.trim() === '' ? text : r));
+  };
+
+  const removeOffer = (id) => {
+    const removed = (draft.offers || []).find((o) => o.id === id);
+    setDraft((d) => ({ ...d, offers: (d.offers || []).filter((o) => o.id !== id) }));
+    if (removed) autoFillReason(`Removed offer: "${removed.description || 'Untitled offer'}"`);
+  };
+  const updateOffer = (id, fields) => {
+    const target = (draft.offers || []).find((o) => o.id === id);
     setDraft((d) => ({ ...d, offers: (d.offers || []).map((o) => (o.id === id ? { ...o, ...fields } : o)) }));
+    if (target && 'enabled' in fields) {
+      autoFillReason(`${fields.enabled ? 'Switched on' : 'Switched off'} offer: "${target.description || 'Untitled offer'}"`);
+    }
+  };
 
   const [offerModalOpen, setOfferModalOpen] = useState(false);
   const [editingOffer, setEditingOffer] = useState(null);
@@ -219,6 +244,7 @@ export default function PricingTab({ draft, baseline, setDraft, setBaseline }) {
       if (isNew) return { ...d, offers: [...offers, { ...offer, enabled: true }] };
       return { ...d, offers: offers.map((o) => (o.id === offer.id ? { ...o, ...offer } : o)) };
     });
+    autoFillReason(`${isNew ? 'Added' : 'Updated'} offer: "${offer.description}"`);
     closeOfferModal();
   };
 
@@ -502,35 +528,6 @@ export default function PricingTab({ draft, baseline, setDraft, setBaseline }) {
       </div>
 
       <OfferFormModal open={offerModalOpen} initialOffer={editingOffer} onCancel={closeOfferModal} onSave={handleOfferModalSave} />
-
-      <div className="ph-sect">
-        <div className="ph-sect-label">Currency &amp; tax</div>
-        <p style={{ fontSize: 12, color: 'rgba(0,0,0,.45)', margin: '4px 0 12px' }}>
-          Set once for the product. These are not part of a price change and never differ between scheduled offers.
-        </p>
-        {!unlocked && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, background: '#fafafa', border: '1px solid #f0f0f0', borderRadius: 6, padding: '10px 12px', fontSize: 13, color: 'rgba(0,0,0,.65)', marginBottom: 14 }}>
-            <MaterialIcon name="lock" style={{ fontSize: 15 }} />
-            <span style={{ flex: 1 }}>Locked. Currency and tax class were set when the product was created and apply to every price, offer and scheduled change.</span>
-            <Button size="small" onClick={() => setUnlocked(true)}>
-              Unlock to change
-            </Button>
-          </div>
-        )}
-        {unlocked && (
-          <div style={{ background: '#fff2f0', border: '1px solid #ffccc7', color: '#a8071a', borderRadius: 6, padding: '10px 12px', fontSize: 13, marginBottom: 14 }}>
-            Changing these rewrites how every historical and scheduled price is interpreted.
-          </div>
-        )}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px 16px', maxWidth: 500 }}>
-          <Field label="Currency">
-            <Input disabled={!unlocked} value={draft.currency} onChange={(e) => setDraft((d) => ({ ...d, currency: e.target.value }))} />
-          </Field>
-          <Field label="Tax class">
-            <Input disabled={!unlocked} value={draft.taxClass} onChange={(e) => setDraft((d) => ({ ...d, taxClass: e.target.value }))} />
-          </Field>
-        </div>
-      </div>
 
       <div className="ph-sect">
         <div className="ph-sect-label" style={{ marginBottom: 12 }}>
