@@ -4,13 +4,16 @@ import { genId } from '../data/productStore.js';
 
 // Same AND/OR rule-builder mechanism and category → field → operator →
 // value(s) row shape as Campaign Targeting — verified live against
-// demo.personalisationhub.com 24 Aug 2026: a bordered card is one AND
+// demo.personalisationhub.com 24 Aug 2026: a grey-filled group is one AND
 // group, rows inside it are OR'd together, "Add New AND Condition" starts
-// a new sibling group. An offer only targets by where it's shown (store)
-// or who's in front of it (visitor/customer) — Campaign Targeting's other
-// three categories (Queueing / Aggregate Visitor Data, Interaction /
-// Campaign Data, Computer Vision / Webcam Data) describe playback/creative
-// concepts an offer's price has no use for, so they're not offered here.
+// a new sibling group. This is the general targeting-criteria pattern —
+// reused by both the Pricing tab's per-offer targeting and Product
+// Assets' per-image/video targeting, not offer-specific despite the
+// history of the name. Only Store / Location Data and Visitor / Customer
+// Data are offered: Campaign Targeting's other three categories
+// (Queueing / Aggregate Visitor Data, Interaction / Campaign Data,
+// Computer Vision / Webcam Data) describe playback/creative concepts
+// neither an offer's price nor a product asset has any use for.
 export const CATEGORIES = [
   { value: 'store', label: 'Store / Location Data' },
   { value: 'visitor', label: 'Visitor / Customer Data' },
@@ -103,7 +106,7 @@ function blankCondition() {
   return { id: genId('cond'), category: 'store', field: 'storeCode', operator: 'includes', values: [] };
 }
 
-export default function OfferTargetingBuilder({ groups, onChange }) {
+export default function TargetingBuilder({ groups, onChange, emptyDescription = 'No targeting rules defined. Applies at every store, to every visitor.' }) {
   const addGroup = () => onChange([...groups, { id: genId('grp'), conditions: [blankCondition()] }]);
 
   const addCondition = (gid) =>
@@ -137,7 +140,7 @@ export default function OfferTargetingBuilder({ groups, onChange }) {
         <div style={{ padding: '28px 0 24px' }}>
           <Empty
             image={<MaterialIcon name="inbox" style={{ fontSize: 40, color: '#d9d9d9' }} />}
-            description="No targeting rules defined. This offer applies at every store, to every visitor."
+            description={emptyDescription}
           />
         </div>
         <Button

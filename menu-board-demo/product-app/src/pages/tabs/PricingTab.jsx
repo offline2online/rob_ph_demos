@@ -4,7 +4,7 @@ import { Input, InputNumber, Table, Button, App, Tag, Switch, Modal, Tooltip } f
 import MaterialIcon from '../../components/MaterialIcon.jsx';
 import ClearableDate, { shiftEndOneHour } from '../../components/ClearableDate.jsx';
 import { getOfferState, pickEffectiveOffer, pickDefaultOffer } from '../../components/OfferBanner.jsx';
-import OfferTargetingBuilder, { describeTargeting } from '../../components/OfferTargetingBuilder.jsx';
+import TargetingBuilder, { describeTargeting } from '../../components/TargetingBuilder.jsx';
 import RecurrenceControl from '../../components/RecurrenceControl.jsx';
 import { describeRecurrence } from '../../lib/recurrence.js';
 import { upsertProduct, appendPriceLogEntries, genId } from '../../data/productStore.js';
@@ -127,7 +127,11 @@ function OfferFormModal({ open, initialOffer, onCancel, onSave, currency }) {
             <p style={{ fontSize: 12, color: 'rgba(0,0,0,.45)', margin: '0 0 14px' }}>
               These rules apply only to &ldquo;{form.description.trim() || 'this offer'}&rdquo; — not to any other offer on this product.
             </p>
-            <OfferTargetingBuilder groups={form.targeting || []} onChange={(groups) => setForm((f) => ({ ...f, targeting: groups }))} />
+            <TargetingBuilder
+              groups={form.targeting || []}
+              onChange={(groups) => setForm((f) => ({ ...f, targeting: groups }))}
+              emptyDescription="No targeting rules defined. This offer applies at every store, to every visitor."
+            />
           </div>
         </div>
       )}

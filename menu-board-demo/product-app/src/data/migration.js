@@ -80,6 +80,7 @@ function mapImages(raw) {
     enhanced: false,
     rightsOn: false,
     rights: {},
+    targeting: [],
     type: 'image',
     src,
   }));

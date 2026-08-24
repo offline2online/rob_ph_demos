@@ -5,6 +5,7 @@ import BespokeIcon from '../../components/BespokeIcon.jsx';
 import IconAction from '../../components/IconAction.jsx';
 import BeforeAfterSlider from '../../components/BeforeAfterSlider.jsx';
 import ClearableDate from '../../components/ClearableDate.jsx';
+import TargetingBuilder, { describeTargeting } from '../../components/TargetingBuilder.jsx';
 
 function licenceState(expiry) {
   if (!expiry) return 'ok';
@@ -110,6 +111,14 @@ function Tile({ img, selected, onClick }) {
           >
             <BespokeIcon name="ab" size={12} />
           </span>
+          {!!(img.targeting || []).length && (
+            <span
+              title={`Targeted — ${describeTargeting(img.targeting)}`}
+              style={{ width: 20, height: 20, borderRadius: 4, background: 'rgba(232,253,255,.97)', border: '1px solid #87d9ec', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#169bc2' }}
+            >
+              <MaterialIcon name="my_location" style={{ fontSize: 12 }} />
+            </span>
+          )}
         </div>
         {badge && (
           <span style={{ position: 'absolute', bottom: 4, left: 4, fontSize: 9, lineHeight: '16px', padding: '0 5px', borderRadius: 3, fontWeight: 600, background: badge.bg, color: badge.color }}>
@@ -201,6 +210,7 @@ export default function ProductAssetsTab({ draft, patch }) {
           enhanced: false,
           rightsOn: false,
           rights: {},
+          targeting: [],
           variant: nextVariantLabel(next, type),
         });
       });
@@ -475,6 +485,20 @@ export default function ProductAssetsTab({ draft, patch }) {
                   </div>
                 )}
               </div>
+            </div>
+
+            <div style={{ borderTop: '1px solid #f0f0f0', padding: '20px 20px 22px' }}>
+              <div style={{ fontSize: 11, color: 'rgba(0,0,0,.45)', letterSpacing: '0.08em', fontWeight: 500, marginBottom: 8, textTransform: 'uppercase' }}>
+                Targeting for this asset
+              </div>
+              <p style={{ fontSize: 12, color: 'rgba(0,0,0,.45)', margin: '0 0 14px' }}>
+                These rules apply only to &ldquo;{current.name.trim() || current.variant}&rdquo; — not to any other image or video on this product.
+              </p>
+              <TargetingBuilder
+                groups={current.targeting || []}
+                onChange={(groups) => updateSelected({ targeting: groups })}
+                emptyDescription="No targeting rules defined. This asset can be shown at every store, to every visitor."
+              />
             </div>
           </>
         )}
