@@ -55,6 +55,15 @@ export function blankProduct() {
     menuTypes: [],
     storeMode: 'all',
     stores: [],
+    // Separate from storeMode/stores above (the Stock tab's flat store-
+    // code picker, StorePicker.jsx) — this is the rule-based Distribution
+    // control on Product Details, matching the brand modal's own
+    // Distribution section (hq-admin.html) and offer/asset targeting's
+    // AND/OR shape. Authoring only for now — nothing evaluates it yet, the
+    // same starting point offer and asset targeting had before their own
+    // evaluation logic was wired in.
+    distributionMode: 'all',
+    distributionTargeting: [],
     lowStockThreshold: '',
     attrGroups: [],
     optionGroups: [],

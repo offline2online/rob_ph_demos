@@ -5,7 +5,13 @@ import ClearableDate, { shiftEndOneHour } from '../../components/ClearableDate.j
 import AttributeGroups from '../../components/AttributeGroups.jsx';
 import OptionGroups from '../../components/OptionGroups.jsx';
 import OfferBanner from '../../components/OfferBanner.jsx';
+import TargetingBuilder, { CATEGORIES as TARGETING_CATEGORIES } from '../../components/TargetingBuilder.jsx';
 import { getCats, getTypes, getBrands, getBrandById, addCategoryToRegistry, getLanguages } from '../../data/registries.js';
+
+// Store / Location Data only — a product's distribution is about which
+// stores carry it, not who's standing in front of one, so Visitor /
+// Customer Data is never offered here.
+const STORE_ONLY_CATEGORIES = [TARGETING_CATEGORIES[0]];
 
 const { TextArea } = Input;
 
@@ -187,6 +193,33 @@ export default function ProductDetailsTab({ draft, patch, onGoPricing }) {
               />
             </Field>
           </div>
+        )}
+      </SectionCard>
+
+      {/* Distribution */}
+      <SectionCard>
+        <div className="ph-sect-label" style={{ marginBottom: 12 }}>
+          Distribution
+        </div>
+        <div style={{ maxWidth: 320, marginBottom: draft.distributionMode === 'targeted' ? 16 : 0 }}>
+          <Field label="Which stores carry this product?">
+            <Select
+              value={draft.distributionMode || 'all'}
+              onChange={(v) => patch({ distributionMode: v })}
+              options={[
+                { value: 'all', label: 'All Stores — available at every location' },
+                { value: 'targeted', label: 'Targeted Stores — only stores matching rules below' },
+              ]}
+            />
+          </Field>
+        </div>
+        {draft.distributionMode === 'targeted' && (
+          <TargetingBuilder
+            groups={draft.distributionTargeting || []}
+            onChange={(groups) => patch({ distributionTargeting: groups })}
+            categories={STORE_ONLY_CATEGORIES}
+            emptyDescription="No targeting rules defined. This product is distributed to every store."
+          />
         )}
       </SectionCard>
 

@@ -858,38 +858,18 @@
           </div>
         </div>
 
-        <div class="section-divider">Store Distribution</div>
+        <div class="section-divider">Distribution</div>
         <div class="form-group">
-          <label>Which stores stock this brand?</label>
+          <label>Which stores carry this brand?</label>
           <select id="bStoreMode" onchange="toggleStoreModeUI()">
             <option value="all">All Stores &mdash; available at every location</option>
-            <option value="specific">Specific Stores &mdash; only selected locations</option>
+            <option value="targeted">Targeted Stores &mdash; only stores matching rules below</option>
           </select>
-          <p style="font-size:12px;color:var(--text2);margin-top:4px;">When set to &ldquo;Specific Stores&rdquo;, this brand&rsquo;s products will only appear in the Store Admin for the listed store codes.</p>
+          <p style="font-size:12px;color:var(--text2);margin-top:4px;">When set to &ldquo;Targeted Stores&rdquo;, define which stores carry this brand using the same rule builder as offer and product targeting.</p>
         </div>
         <div id="bStoreSelector" style="display:none;">
-          <div class="form-row" style="align-items:flex-end;gap:8px;">
-            <div class="form-group" style="flex:1;margin-bottom:0;">
-              <label>Add from known stores</label>
-              <select id="bKnownStoreSelect">
-                <option value="">— select a store code —</option>
-              </select>
-            </div>
-            <button type="button" class="btn btn-ghost btn-sm" onclick="addKnownStore()" style="margin-bottom:0;flex-shrink:0;">+ Add</button>
-          </div>
-          <div class="form-group" style="margin-top:10px;">
-            <label>Or enter a store code manually</label>
-            <div style="display:flex;gap:6px;">
-              <input type="text" id="bManualStore" placeholder="e.g. STORE042" style="flex:1;" onkeydown="if(event.key==='Enter'){event.preventDefault();addManualStore();}">
-              <button type="button" class="btn btn-ghost btn-sm" onclick="addManualStore()">+ Add</button>
-            </div>
-          </div>
-          <div class="form-group" style="margin-top:4px;">
-            <label>Selected stores</label>
-            <div class="tag-chip-wrap" id="bStoreChipsWrap" style="min-height:36px;cursor:default;">
-              <span id="bStoreChipsEmpty" style="font-size:12px;color:var(--text2);padding:4px 0;">No stores selected — add at least one store code above.</span>
-            </div>
-          </div>
+          <div id="bLegacyStoresNote" style="display:none;font-size:12px;color:var(--text2);background:#fafafa;border:1px solid var(--border);border-radius:6px;padding:8px 10px;margin-bottom:10px;"></div>
+          <div id="bDistributionTargeting"></div>
         </div>
 
         <div class="switch-row">
@@ -3313,21 +3293,32 @@ function renderBrands() {
       // below stays a display-only comma-joined string for sorting/export.
       getFilterValue: (data) => {
         const s = data.stores;
-        return (!s || s.length === 0) ? ['All Stores'] : s;
+        const dt = data.distributionTargeting;
+        if (s && s.length) return s;
+        if (dt && dt.length) return ['Targeted Stores'];
+        return ['All Stores'];
       },
       valueGetter: (params) => {
         const s = params.data.stores;
-        return (!s || s.length === 0) ? 'All Stores' : s.join(', ');
+        const dt = params.data.distributionTargeting;
+        if (s && s.length) return s.join(', ');
+        if (dt && dt.length) return 'Targeted Stores';
+        return 'All Stores';
       },
       cellRenderer: (params) => {
         const s = params.data.stores;
-        const allStores = !s || s.length === 0;
+        const dt = params.data.distributionTargeting;
         const div = document.createElement('div');
         div.style.cssText = 'display:flex;align-items:center;height:100%;';
-        if (allStores) {
-          div.innerHTML = '<span style="font-size:12px;color:var(--success);font-weight:600;display:inline-flex;align-items:center;gap:3px;"><span class="material-symbols-outlined" style="font-size:14px;">public</span> All Stores</span>';
-        } else {
+        if (s && s.length) {
+          // Legacy flat store-code list — still the real, enforced
+          // restriction (retail-admin.html), so it takes precedence in
+          // display even if rule-based targeting has also been defined.
           div.innerHTML = `<span style="font-size:11px;color:var(--primary);font-weight:600;">${escHtml(s.join(', '))}</span>`;
+        } else if (dt && dt.length) {
+          div.innerHTML = '<span style="font-size:12px;color:#0958a5;font-weight:600;display:inline-flex;align-items:center;gap:3px;"><span class="material-symbols-outlined" style="font-size:14px;">my_location</span> Targeted Stores</span>';
+        } else {
+          div.innerHTML = '<span style="font-size:12px;color:var(--success);font-weight:600;display:inline-flex;align-items:center;gap:3px;"><span class="material-symbols-outlined" style="font-size:14px;">public</span> All Stores</span>';
         }
         return div;
       }
@@ -3399,11 +3390,15 @@ function openAddBrandModal() {
   document.getElementById('bLogoPreview').style.display = 'none';
   document.getElementById('bLowStockThreshold').value = '';
   document.getElementById('bAllowStorePricing').checked = false;
-  // Store distribution — default "All Stores"
+  // Distribution — default "All Stores". Legacy flat editingStores is
+  // kept only as a read-through for older brands' `stores` field (see
+  // openEditBrandModal) — a brand-new brand never has any.
   window.editingStores = [];
+  window.editingDistributionTargeting = [];
   document.getElementById('bStoreMode').value = 'all';
   document.getElementById('bStoreSelector').style.display = 'none';
-  _renderStoreChips();
+  document.getElementById('bLegacyStoresNote').style.display = 'none';
+  _renderDistributionTargeting();
   window._bPalette = [];
   renderPaletteSwatches();
   window._bGuidelines = null;
@@ -3445,17 +3440,25 @@ function openEditBrandModal(id) {
   document.getElementById('bLowStockThreshold').value = brand.lowStockThreshold != null ? brand.lowStockThreshold : '';
   document.getElementById('bAllowStorePricing').checked = !!brand.allowStorePricing;
 
-  // Store distribution
+  // Distribution — window.editingStores is the brand's pre-existing flat
+  // store-code list (retail-admin.html still enforces this for real, see
+  // its own brand-visibility filter), preserved untouched on save even
+  // though this modal no longer edits it directly; window.editingDistributionTargeting
+  // is the new rule-based targeting, additive and authoring-only so far.
   const stores = Array.isArray(brand.stores) ? brand.stores : [];
   window.editingStores = [...stores];
-  if (stores.length === 0) {
-    document.getElementById('bStoreMode').value = 'all';
-    document.getElementById('bStoreSelector').style.display = 'none';
+  window.editingDistributionTargeting = Array.isArray(brand.distributionTargeting) ? brand.distributionTargeting.map(g => ({ ...g, conditions: (g.conditions || []).map(c => ({ ...c })) })) : [];
+  const targeted = stores.length > 0 || window.editingDistributionTargeting.length > 0;
+  document.getElementById('bStoreMode').value = targeted ? 'targeted' : 'all';
+  document.getElementById('bStoreSelector').style.display = targeted ? 'block' : 'none';
+  const legacyNote = document.getElementById('bLegacyStoresNote');
+  if (stores.length > 0) {
+    legacyNote.style.display = 'block';
+    legacyNote.textContent = `Also restricted to these specific store codes from before this rule builder existed (still enforced in Retail Admin, not editable here): ${stores.join(', ')}`;
   } else {
-    document.getElementById('bStoreMode').value = 'specific';
-    document.getElementById('bStoreSelector').style.display = 'block';
+    legacyNote.style.display = 'none';
   }
-  _renderStoreChips();
+  _renderDistributionTargeting();
 
   window._bPalette = Array.isArray(brand.colourPalette) ? [...brand.colourPalette] : [];
   renderPaletteSwatches();
@@ -3614,73 +3617,190 @@ function clearBrandGuidelines() {
   if (_brandSave) _brandSave.markDirty();
 }
 
-// ===== BRAND STORE DISTRIBUTION =====
+// ===== BRAND DISTRIBUTION TARGETING (Store / Location Data only) =====
+// Same AND/OR rule-builder mechanism and visual spec as TargetingBuilder.jsx
+// (product-app) — grey-filled AND-group cards, dashed "Add new OR
+// Condition" vs solid "Add New AND Condition", inbox empty state — see
+// components.md §16 in the ph-designer skill. Reuses the Store field
+// list/operator vocabulary already duplicated above for offer targeting
+// (_OFFER_TARGET_FIELDS_BY_CATEGORY.store / _OFFER_TARGET_OPS) rather than
+// a third copy. Store-only by design, with no category picker at all —
+// which visitor is at a store has no bearing on which stores carry a
+// brand, so there's nothing to choose between.
 window.editingStores = [];
+window.editingDistributionTargeting = [];
 
 function toggleStoreModeUI() {
   const mode = document.getElementById('bStoreMode').value;
-  document.getElementById('bStoreSelector').style.display = mode === 'specific' ? 'block' : 'none';
+  document.getElementById('bStoreSelector').style.display = mode === 'targeted' ? 'block' : 'none';
 }
 
-function _populateKnownStoresDropdown() {
-  const sel = document.getElementById('bKnownStoreSelect');
-  if (!sel) return;
-  const known = Object.keys(_allStock).sort();
-  sel.innerHTML = '<option value="">— select a store code —</option>';
-  known.forEach(code => {
-    if (!window.editingStores.includes(code)) {
-      const opt = document.createElement('option');
-      opt.value = code; opt.textContent = code;
-      sel.appendChild(opt);
-    }
-  });
+function _blankDistributionCondition() {
+  return { id: genId(), field: '', operator: 'includes', values: [] };
 }
 
-function _renderStoreChips() {
-  const wrap = document.getElementById('bStoreChipsWrap');
-  const emptyMsg = document.getElementById('bStoreChipsEmpty');
-  wrap.querySelectorAll('.tag-chip').forEach(c => c.remove());
-  if (window.editingStores.length === 0) {
-    if (emptyMsg) emptyMsg.style.display = '';
-  } else {
-    if (emptyMsg) emptyMsg.style.display = 'none';
-    window.editingStores.forEach((code, i) => {
-      const chip = document.createElement('div');
-      chip.className = 'tag-chip';
-      chip.innerHTML = `<span>${escHtml(code)}</span><button class="tag-chip-remove" type="button" onclick="removeStoreChip(${i})" title="Remove"><span class="material-symbols-outlined" style="font-size:12px;">close</span></button>`;
-      wrap.insertBefore(chip, emptyMsg || null);
-    });
-  }
-  _populateKnownStoresDropdown();
-}
-
-window.removeStoreChip = function(i) {
-  window.editingStores.splice(i, 1);
-  _renderStoreChips();
+function addDistributionGroup() {
+  window.editingDistributionTargeting.push({ id: genId(), conditions: [_blankDistributionCondition()] });
+  _renderDistributionTargeting();
   if (_brandSave) _brandSave.markDirty();
-};
-
-function addKnownStore() {
-  const sel = document.getElementById('bKnownStoreSelect');
-  const val = (sel.value || '').trim().toUpperCase();
-  if (!val) return;
-  if (!window.editingStores.includes(val)) {
-    window.editingStores.push(val);
-    _renderStoreChips();
-    if (_brandSave) _brandSave.markDirty();
-  }
-  sel.value = '';
 }
 
-function addManualStore() {
-  const inp = document.getElementById('bManualStore');
-  const val = (inp.value || '').trim().toUpperCase();
-  if (!val) return;
-  if (!window.editingStores.includes(val)) {
-    window.editingStores.push(val);
-    _renderStoreChips();
+function addDistributionCondition(gid) {
+  const g = window.editingDistributionTargeting.find(g => g.id === gid);
+  if (!g) return;
+  g.conditions.push(_blankDistributionCondition());
+  _renderDistributionTargeting();
+  if (_brandSave) _brandSave.markDirty();
+}
+
+// Removing a group's last condition removes the group itself — an AND
+// group with zero OR conditions inside it isn't a rule, it's nothing.
+function removeDistributionCondition(gid, cid) {
+  const g = window.editingDistributionTargeting.find(g => g.id === gid);
+  if (!g) return;
+  g.conditions = g.conditions.filter(c => c.id !== cid);
+  if (g.conditions.length === 0) {
+    window.editingDistributionTargeting = window.editingDistributionTargeting.filter(x => x.id !== gid);
   }
-  inp.value = '';
+  _renderDistributionTargeting();
+  if (_brandSave) _brandSave.markDirty();
+}
+
+function updateDistributionCondition(gid, cid, field, value) {
+  const g = window.editingDistributionTargeting.find(g => g.id === gid);
+  const c = g && g.conditions.find(c => c.id === cid);
+  if (!c) return;
+  c[field] = value;
+  if (_brandSave) _brandSave.markDirty();
+}
+
+function addDistributionValue(gid, cid, inputEl) {
+  const val = (inputEl.value || '').trim();
+  if (!val) return;
+  const g = window.editingDistributionTargeting.find(g => g.id === gid);
+  const c = g && g.conditions.find(c => c.id === cid);
+  if (!c) return;
+  if (!c.values.includes(val)) c.values.push(val);
+  inputEl.value = '';
+  _renderDistributionTargeting();
+  if (_brandSave) _brandSave.markDirty();
+}
+
+function removeDistributionValue(gid, cid, val) {
+  const g = window.editingDistributionTargeting.find(g => g.id === gid);
+  const c = g && g.conditions.find(c => c.id === cid);
+  if (!c) return;
+  c.values = c.values.filter(v => v !== val);
+  _renderDistributionTargeting();
+  if (_brandSave) _brandSave.markDirty();
+}
+
+function _renderDistributionTargeting() {
+  const root = document.getElementById('bDistributionTargeting');
+  if (!root) return;
+  root.innerHTML = '';
+  const groups = window.editingDistributionTargeting || [];
+
+  if (groups.length === 0) {
+    const emptyWrap = document.createElement('div');
+    emptyWrap.style.cssText = 'padding:28px 0 24px;text-align:center;';
+    emptyWrap.innerHTML =
+      '<span class="material-symbols-outlined" style="font-size:40px;color:#d9d9d9;">inbox</span>' +
+      '<div style="font-size:14px;color:rgba(0,0,0,.45);margin-top:8px;">No targeting rules defined. This brand is distributed to every store.</div>';
+    root.appendChild(emptyWrap);
+    const addBtn = document.createElement('button');
+    addBtn.type = 'button';
+    addBtn.className = 'btn btn-sm';
+    addBtn.style.cssText = 'background:#fff;border:1px solid #169bc2;color:#169bc2;';
+    addBtn.innerHTML = '<span class="material-symbols-outlined" style="font-size:14px;vertical-align:-3px;">add</span> Add New "AND" Condition';
+    addBtn.onclick = addDistributionGroup;
+    root.appendChild(addBtn);
+    return;
+  }
+
+  groups.forEach(g => {
+    const card = document.createElement('div');
+    card.style.cssText = 'background:rgba(0,0,0,0.06);border-radius:4px;padding:12px;margin-bottom:10px;';
+
+    g.conditions.forEach((c, i) => {
+      if (i > 0) {
+        const orLabel = document.createElement('div');
+        orLabel.style.cssText = 'text-align:center;font-size:12px;font-weight:600;color:rgba(0,0,0,.45);margin:8px 0;';
+        orLabel.textContent = 'OR';
+        card.appendChild(orLabel);
+      }
+      const row = document.createElement('div');
+      row.style.cssText = 'display:flex;gap:8px;align-items:center;flex-wrap:wrap;';
+
+      const fieldSel = document.createElement('select');
+      fieldSel.style.cssText = 'width:190px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:9px 11px;color:var(--text);font-size:13px;outline:none;';
+      fieldSel.innerHTML = '<option value="">Field</option>' +
+        Object.entries(_OFFER_TARGET_FIELDS_BY_CATEGORY.store).map(([k, label]) =>
+          `<option value="${k}" ${c.field === k ? 'selected' : ''}>${escHtml(label)}</option>`
+        ).join('');
+      fieldSel.onchange = () => updateDistributionCondition(g.id, c.id, 'field', fieldSel.value);
+      row.appendChild(fieldSel);
+
+      const opSel = document.createElement('select');
+      opSel.style.cssText = 'width:190px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:9px 11px;color:var(--text);font-size:13px;outline:none;';
+      opSel.innerHTML = Object.entries(_OFFER_TARGET_OPS).map(([k, label]) =>
+        `<option value="${k}" ${c.operator === k ? 'selected' : ''}>${escHtml(label)}</option>`
+      ).join('');
+      opSel.onchange = () => updateDistributionCondition(g.id, c.id, 'operator', opSel.value);
+      row.appendChild(opSel);
+
+      const valWrap = document.createElement('div');
+      valWrap.className = 'tag-chip-wrap';
+      valWrap.style.cssText = 'flex:1;min-width:160px;';
+      (c.values || []).forEach(v => {
+        const chip = document.createElement('div');
+        chip.className = 'tag-chip';
+        chip.innerHTML = `<span>${escHtml(v)}</span><button type="button" class="tag-chip-remove" title="Remove"><span class="material-symbols-outlined" style="font-size:12px;">close</span></button>`;
+        chip.querySelector('.tag-chip-remove').onclick = () => removeDistributionValue(g.id, c.id, v);
+        valWrap.appendChild(chip);
+      });
+      const valInput = document.createElement('input');
+      valInput.type = 'text';
+      valInput.className = 'tag-chip-input';
+      valInput.placeholder = 'Press Enter to add multiple values';
+      valInput.onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); addDistributionValue(g.id, c.id, valInput); } };
+      valWrap.appendChild(valInput);
+      row.appendChild(valWrap);
+
+      const delBtn = document.createElement('button');
+      delBtn.type = 'button';
+      delBtn.className = 'btn btn-icon';
+      delBtn.style.cssText = 'background:transparent;border:none;color:var(--text2);';
+      delBtn.innerHTML = '<span class="material-symbols-outlined" style="font-size:16px;">delete</span>';
+      delBtn.title = 'Remove';
+      delBtn.onclick = () => removeDistributionCondition(g.id, c.id);
+      row.appendChild(delBtn);
+
+      card.appendChild(row);
+    });
+
+    const divider = document.createElement('div');
+    divider.style.cssText = 'height:1px;background:#f0f0f0;margin:10px 0;';
+    card.appendChild(divider);
+
+    const addOrBtn = document.createElement('button');
+    addOrBtn.type = 'button';
+    addOrBtn.className = 'btn btn-sm';
+    addOrBtn.style.cssText = 'background:#fff;border:1px dashed #169bc2;color:#169bc2;';
+    addOrBtn.innerHTML = '<span class="material-symbols-outlined" style="font-size:14px;vertical-align:-3px;">add</span> Add new "OR" Condition';
+    addOrBtn.onclick = () => addDistributionCondition(g.id);
+    card.appendChild(addOrBtn);
+
+    root.appendChild(card);
+  });
+
+  const addAndBtn = document.createElement('button');
+  addAndBtn.type = 'button';
+  addAndBtn.className = 'btn btn-sm';
+  addAndBtn.style.cssText = 'background:#fff;border:1px solid #169bc2;color:#169bc2;';
+  addAndBtn.innerHTML = '<span class="material-symbols-outlined" style="font-size:14px;vertical-align:-3px;">add</span> Add New "AND" Condition';
+  addAndBtn.onclick = addDistributionGroup;
+  root.appendChild(addAndBtn);
 }
 
 function saveBrand() {
@@ -3690,7 +3810,13 @@ function saveBrand() {
 
   if (!name) { toast('Brand name is required.', 'error'); return; }
 
-  const stores       = document.getElementById('bStoreMode').value === 'specific' ? [...window.editingStores] : [];
+  // distributionTargeting is the new rule-based Distribution control;
+  // the legacy flat `stores` list is deliberately left untouched here —
+  // this modal no longer edits it (see bLegacyStoresNote), but
+  // retail-admin.html still enforces it for real, so a save must never
+  // silently wipe it out from under an existing brand.
+  const targetedMode = document.getElementById('bStoreMode').value === 'targeted';
+  const distributionTargeting = targetedMode ? [...window.editingDistributionTargeting] : [];
   const lstRaw       = document.getElementById('bLowStockThreshold').value;
   const lowStockThreshold = lstRaw !== '' ? (parseInt(lstRaw) || null) : null;
   const allowStorePricing = document.getElementById('bAllowStorePricing').checked;
@@ -3702,10 +3828,10 @@ function saveBrand() {
     const idx = brands.findIndex(b => b.id === id);
     if (idx === -1) return;
     // colors/display/showClock etc. are now managed exclusively via templates; preserve existing brand values via spread
-    brands[idx] = { ...brands[idx], name, currency, icon: brandEditingIcon, logo: brandEditingLogoLeft, logoRight: '', stores, lowStockThreshold, allowStorePricing, templates: _editingBrandTemplates, colourPalette: window._bPalette, brandGuidelines: window._bGuidelines, updatedAt: now };
+    brands[idx] = { ...brands[idx], name, currency, icon: brandEditingIcon, logo: brandEditingLogoLeft, logoRight: '', distributionTargeting, lowStockThreshold, allowStorePricing, templates: _editingBrandTemplates, colourPalette: window._bPalette, brandGuidelines: window._bGuidelines, updatedAt: now };
     toast('Brand updated', 'success');
   } else {
-    brands.push({ id: genId(), name, currency, icon: brandEditingIcon, logo: brandEditingLogoLeft, logoRight: '', colors: { ...DEFAULT_COLORS }, display: { portrait: { ...DEFAULT_DISPLAY.portrait }, landscape: { ...DEFAULT_DISPLAY.landscape }, hideOutOfStock: false }, showClock: true, timeFormat: 'british', showHeader: true, campaignMode: 'override', stores, lowStockThreshold, allowStorePricing, templates: [], colourPalette: window._bPalette, brandGuidelines: window._bGuidelines, createdAt: now, updatedAt: now });
+    brands.push({ id: genId(), name, currency, icon: brandEditingIcon, logo: brandEditingLogoLeft, logoRight: '', colors: { ...DEFAULT_COLORS }, display: { portrait: { ...DEFAULT_DISPLAY.portrait }, landscape: { ...DEFAULT_DISPLAY.landscape }, hideOutOfStock: false }, showClock: true, timeFormat: 'british', showHeader: true, campaignMode: 'override', stores: [], distributionTargeting, lowStockThreshold, allowStorePricing, templates: [], colourPalette: window._bPalette, brandGuidelines: window._bGuidelines, createdAt: now, updatedAt: now });
     toast('Brand added', 'success');
   }
 
@@ -5016,8 +5142,6 @@ window.closeBrandModal        = closeBrandModal;
 window.saveBrand              = saveBrand;
 window.confirmDeleteBrand     = confirmDeleteBrand;
 window.toggleStoreModeUI      = toggleStoreModeUI;
-window.addKnownStore          = addKnownStore;
-window.addManualStore         = addManualStore;
 window.switchBrandTab         = switchBrandTab;
 window.openNewTemplateEditor  = openNewTemplateEditor;
 window.openEditTemplateEditor = openEditTemplateEditor;

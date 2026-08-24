@@ -139,6 +139,8 @@ export function migrateItem(raw, brandCurrency) {
     subCategory: raw.subCategory || '',
     storeMode: raw.storeMode || 'all',
     stores: raw.stores || [],
+    distributionMode: raw.distributionMode || 'all',
+    distributionTargeting: raw.distributionTargeting || [],
     lowStockThreshold: raw.lowStockThreshold != null ? raw.lowStockThreshold : '',
     currency: raw.currency || brandCurrency || '$',
     taxClass: raw.taxClass || '',

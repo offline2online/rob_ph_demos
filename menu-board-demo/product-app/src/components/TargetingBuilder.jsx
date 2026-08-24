@@ -102,15 +102,31 @@ export function describeTargeting(groups) {
     .join(' AND ');
 }
 
-function blankCondition() {
-  return { id: genId('cond'), category: 'store', field: 'storeCode', operator: 'includes', values: [] };
+function blankCondition(defaultCategory) {
+  return { id: genId('cond'), category: defaultCategory, field: '', operator: 'includes', values: [] };
 }
 
-export default function TargetingBuilder({ groups, onChange, emptyDescription = 'No targeting rules defined. Applies at every store, to every visitor.' }) {
-  const addGroup = () => onChange([...groups, { id: genId('grp'), conditions: [blankCondition()] }]);
+// `categories` restricts which Category options a caller offers — default
+// is both (Store / Location Data + Visitor / Customer Data, matching
+// offer and asset targeting). Brand/product Distribution scopes this to
+// Store / Location Data only (`categories={[CATEGORIES[0]]}`), since
+// which visitor is standing at a store has no bearing on which stores a
+// brand or product is distributed to. When only one category is offered,
+// the Category picker itself is hidden — there's nothing to choose — and
+// every condition is pinned to it.
+export default function TargetingBuilder({
+  groups,
+  onChange,
+  emptyDescription = 'No targeting rules defined. Applies at every store, to every visitor.',
+  categories = CATEGORIES,
+}) {
+  const singleCategory = categories.length === 1 ? categories[0].value : null;
+  const makeBlankCondition = () => blankCondition(singleCategory || 'store');
+
+  const addGroup = () => onChange([...groups, { id: genId('grp'), conditions: [makeBlankCondition()] }]);
 
   const addCondition = (gid) =>
-    onChange(groups.map((g) => (g.id === gid ? { ...g, conditions: [...g.conditions, blankCondition()] } : g)));
+    onChange(groups.map((g) => (g.id === gid ? { ...g, conditions: [...g.conditions, makeBlankCondition()] } : g)));
 
   // Removing a group's last condition removes the group itself — an AND
   // group with zero OR conditions inside it isn't a rule, it's nothing.
@@ -174,13 +190,15 @@ export default function TargetingBuilder({ groups, onChange, emptyDescription = 
                   flexWrap: 'wrap',
                 }}
               >
-                <Select
-                size="small"
-                style={{ width: 170 }}
-                value={c.category || 'store'}
-                options={CATEGORIES}
-                onChange={(v) => changeCategory(g.id, c.id, v)}
-              />
+                {!singleCategory && (
+                  <Select
+                    size="small"
+                    style={{ width: 170 }}
+                    value={c.category || 'store'}
+                    options={categories}
+                    onChange={(v) => changeCategory(g.id, c.id, v)}
+                  />
+                )}
               <Select
                 size="small"
                 style={{ width: 190 }}
