@@ -2518,6 +2518,13 @@ function _describeOfferTargeting(groups) {
 function _getTargetedOffers(item) {
   return (item.offers || []).filter(o => o.enabled !== false && o.targeting && o.targeting.length > 0);
 }
+// Offers on this item with a recurring day-part schedule and not disabled
+// — same structural (not live-state-dependent) check as _getTargetedOffers
+// above, so the pill shows whenever a recurring offer is defined, not only
+// while it happens to be off right now.
+function _getRecurringOffers(item) {
+  return (item.offers || []).filter(o => o.enabled !== false && o.recurrence && o.recurrence.freq !== 'none');
+}
 
 // Recurring day-part schedules for offers — duplicated from
 // product-app/src/lib/recurrence.js, same convention as
@@ -2761,10 +2768,29 @@ function initGrids() {
                 const oFrom = o.offerFrom ? new Date(o.offerFrom) : null;
                 const oLive = oNum > 0 && _isOfferWindowLiveNow(o.offerFrom, o.offerUntil, o.recurrence, now);
                 const oStarted = oNum > 0 && oFrom && oFrom <= now;
-                const status = oLive ? 'live' : (o.recurrence && o.recurrence.freq !== 'none' && oStarted ? 'recurring — off now' : (oFrom && oFrom > now ? 'scheduled' : 'off'));
+                const status = oLive ? 'live' : (o.recurrence && o.recurrence.freq !== 'none' && oStarted ? 'recurring' : (oFrom && oFrom > now ? 'scheduled' : 'off'));
                 return `${o.description || 'Untitled offer'} (${status}) — ${_describeOfferTargeting(o.targeting)}`;
               }).join('\n');
               pill.style.cssText = 'display:inline-flex;align-items:center;width:fit-content;line-height:1;padding:3px 7px 2px;border-radius:9px;background:#e6f7ff;color:#0958a5;border:1px solid #91caff;font-size:10px;font-weight:700;cursor:pointer;letter-spacing:0.2px;';
+              pill.addEventListener('click', (e) => {
+                e.stopPropagation();
+                location.href = 'product/#/products/' + item.id + '/pricing';
+              });
+              wrap.appendChild(pill);
+            }
+            const recurringOffers = _getRecurringOffers(item);
+            if (recurringOffers.length) {
+              const pill = document.createElement('span');
+              pill.textContent = recurringOffers.length === 1 ? 'Recurring' : `Recurring ×${recurringOffers.length}`;
+              // Same live-check as the price cell and the Targeted pill
+              // above, so the tooltip says what's actually happening
+              // right now rather than just the repeat rule text.
+              pill.title = recurringOffers.map(o => {
+                const oNum = parseFloat(o.offerPrice);
+                const oLive = oNum > 0 && _isOfferWindowLiveNow(o.offerFrom, o.offerUntil, o.recurrence, now);
+                return `${o.description || 'Untitled offer'} (${oLive ? 'live' : 'recurring'}) — ${_recurDescribe(o.recurrence, o.offerFrom)}`;
+              }).join('\n');
+              pill.style.cssText = 'display:inline-flex;align-items:center;width:fit-content;line-height:1;padding:3px 7px 2px;border-radius:9px;background:#fff7e6;color:#ad6800;border:1px solid #ffd591;font-size:10px;font-weight:700;cursor:pointer;letter-spacing:0.2px;';
               pill.addEventListener('click', (e) => {
                 e.stopPropagation();
                 location.href = 'product/#/products/' + item.id + '/pricing';

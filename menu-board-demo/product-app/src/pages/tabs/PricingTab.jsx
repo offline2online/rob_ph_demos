@@ -34,7 +34,7 @@ const OFFER_STATE_STYLE = {
   none: { background: '#fafafa', border: '1px solid #f0f0f0', color: 'rgba(0,0,0,.45)' },
   off: { background: '#fafafa', border: '1px solid #f0f0f0', color: 'rgba(0,0,0,.45)' },
 };
-const OFFER_STATE_LABEL = { live: 'Live', recurring: 'Recurring — off now', scheduled: 'Scheduled', ended: 'Ended', none: 'Not scheduled', off: 'Off' };
+const OFFER_STATE_LABEL = { live: 'Live', recurring: 'Recurring', scheduled: 'Scheduled', ended: 'Ended', none: 'Not scheduled', off: 'Off' };
 
 // Add/Edit Offer popup — same mechanism as Campaign Scheduling's "Add New
 // Schedule" (ph-designer skill components.md §16.1): the table only shows
