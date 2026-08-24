@@ -283,15 +283,11 @@ export default function PricingTab({ draft, baseline, setDraft, setBaseline }) {
   // Table columns are the offer's own distinguishing fields, same rule as
   // Campaign Scheduling's table (ph-designer skill components.md §16.1) —
   // enough to tell offers apart at a glance without opening any of them.
+  // Matches that table's chrome exactly: plain header row, Actions column
+  // holds the on/off Switch + delete only (no separate edit icon — the
+  // row itself opens the Edit modal, same as clicking a schedule row).
   const offerColumns = useMemo(
     () => [
-      {
-        title: 'On',
-        width: 52,
-        render: (_, row) => (
-          <Switch size="small" checked={row.enabled !== false} onChange={(v) => updateOffer(row.id, { enabled: v })} />
-        ),
-      },
       {
         title: 'Description',
         dataIndex: 'description',
@@ -334,12 +330,12 @@ export default function PricingTab({ draft, baseline, setDraft, setBaseline }) {
         },
       },
       {
-        title: '',
-        width: 84,
+        title: 'Actions',
+        width: 90,
         render: (_, row) => (
-          <div style={{ display: 'flex', gap: 2 }}>
-            <Button type="text" size="small" icon={<MaterialIcon name="edit" style={{ fontSize: 15 }} />} onClick={() => openEditOfferModal(row)} />
-            <Button type="text" size="small" danger icon={<MaterialIcon name="delete" style={{ fontSize: 15 }} />} onClick={() => removeOffer(row.id)} />
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }} onClick={(e) => e.stopPropagation()}>
+            <Switch size="small" checked={row.enabled !== false} onChange={(v) => updateOffer(row.id, { enabled: v })} />
+            <Button type="text" size="small" icon={<MaterialIcon name="delete" style={{ fontSize: 15 }} />} onClick={() => removeOffer(row.id)} />
           </div>
         ),
       },
@@ -483,12 +479,7 @@ export default function PricingTab({ draft, baseline, setDraft, setBaseline }) {
           <span style={{ fontSize: 12, color: 'rgba(0,0,0,.45)' }}>
             <b>{(draft.offers || []).length}</b> Offer{(draft.offers || []).length === 1 ? '' : 's'} Defined
           </span>
-          <Button
-            type="text"
-            icon={<MaterialIcon name="add" style={{ fontSize: 15 }} />}
-            onClick={openAddOfferModal}
-            style={{ color: '#169bc2', padding: 0 }}
-          >
+          <Button type="text" onClick={openAddOfferModal} style={{ color: '#169bc2', padding: 0 }}>
             Add New Offer
           </Button>
         </div>
@@ -499,6 +490,7 @@ export default function PricingTab({ draft, baseline, setDraft, setBaseline }) {
           size="middle"
           bordered={false}
           pagination={false}
+          onRow={(row) => ({ onClick: () => openEditOfferModal(row), style: { cursor: 'pointer' } })}
           locale={{
             emptyText: (
               <div style={{ padding: '22px 0', color: 'rgba(0,0,0,.45)', fontSize: 13 }}>
