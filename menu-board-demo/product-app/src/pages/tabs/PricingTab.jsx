@@ -469,7 +469,10 @@ export default function PricingTab({ draft, baseline, setDraft, setBaseline }) {
           <Field label="RRP">
             <InputNumber
               value={draft.rrp}
-              onChange={(v) => setDraft((d) => ({ ...d, rrp: v }))}
+              onChange={(v) => {
+                setDraft((d) => ({ ...d, rrp: v }));
+                autoFillReason('Updated RRP');
+              }}
               prefix="$"
               style={{ width: '100%', ...(rrpChanged ? { background: '#e8fdff' } : {}) }}
               min={0}
@@ -489,7 +492,10 @@ export default function PricingTab({ draft, baseline, setDraft, setBaseline }) {
             <Input
               value={effectiveMenuBoardNote}
               disabled={noteOverridden}
-              onChange={(e) => setDraft((d) => ({ ...d, menuBoardNote: e.target.value }))}
+              onChange={(e) => {
+                setDraft((d) => ({ ...d, menuBoardNote: e.target.value }));
+                autoFillReason('Updated menu board note');
+              }}
               placeholder="e.g. Limited time only!"
               style={menuBoardCopyChanged ? { background: '#e8fdff' } : undefined}
             />
