@@ -39,7 +39,7 @@ const OFFER_STATE_LABEL = { live: 'Live', scheduled: 'Scheduled', ended: 'Ended'
 // modal. The store-targeting rule-builder lives inside this same modal,
 // scoped to and clearly labelled for the one offer being edited, so it's
 // never ambiguous which offer a given targeting rule belongs to.
-function OfferFormModal({ open, initialOffer, onCancel, onSave }) {
+function OfferFormModal({ open, initialOffer, onCancel, onSave, currency }) {
   const [form, setForm] = useState(initialOffer);
   useEffect(() => {
     if (open) setForm(initialOffer);
@@ -76,7 +76,7 @@ function OfferFormModal({ open, initialOffer, onCancel, onSave }) {
               <InputNumber
                 value={form.offerPrice}
                 onChange={(v) => setForm((f) => ({ ...f, offerPrice: v }))}
-                prefix="$"
+                prefix={currency || '$'}
                 style={{ width: '100%' }}
                 min={0}
                 step={0.01}
@@ -159,14 +159,15 @@ export default function PricingTab({ draft, baseline, setDraft, setBaseline }) {
     setReason('');
   }, [draft.id]);
 
-  // Whichever offer is actually live/next-up gets to say what the board
-  // shows — same "one effective offer" rule pickEffectiveOffer applies to
-  // price. Its own note wins over the plain top-level field whenever it
-  // has one set, since that's the text actually promoting the price
-  // change the board is showing; the top-level field only takes over when
-  // there's no offer, or the live one has nothing of its own to say.
+  // The default "Show on Menu Board" note is always editable here — it's
+  // only ever *overridden on the board* by a specifically store-targeted
+  // offer's own note (not by just any live offer), since a targeted offer
+  // is the one case where different stores legitimately need to see
+  // different messaging; an untargeted offer applies everywhere anyway,
+  // so the default stays the source of truth for it.
   const effectiveOffer = useMemo(() => pickEffectiveOffer(draft.offers), [draft.offers]);
-  const noteOverridden = !!(effectiveOffer && effectiveOffer.showOnMenuBoard && effectiveOffer.showOnMenuBoard.trim() !== '');
+  const effectiveOfferIsTargeted = !!(effectiveOffer && effectiveOffer.targeting && effectiveOffer.targeting.length > 0);
+  const noteOverridden = !!(effectiveOfferIsTargeted && effectiveOffer.showOnMenuBoard && effectiveOffer.showOnMenuBoard.trim() !== '');
   const effectiveMenuBoardNote = noteOverridden ? effectiveOffer.showOnMenuBoard : draft.menuBoardNote || '';
 
   const rrpChanged = String(draft.rrp) !== String(baseline.rrp);
@@ -175,8 +176,9 @@ export default function PricingTab({ draft, baseline, setDraft, setBaseline }) {
   const dirty = rrpChanged || menuBoardCopyChanged || offersChanged;
   const canSave = dirty && reason.trim() !== '';
 
+  const currencySymbol = draft.currency || '$';
   const changeSummary = [
-    rrpChanged ? `RRP $${baseline.rrp || '0.00'} → $${draft.rrp}` : null,
+    rrpChanged ? `RRP ${currencySymbol}${baseline.rrp || '0.00'} → ${currencySymbol}${draft.rrp}` : null,
     offersChanged ? `Offers updated (${(draft.offers || []).length} defined)` : null,
     menuBoardCopyChanged ? `Menu board copy updated` : null,
   ]
@@ -323,7 +325,7 @@ export default function PricingTab({ draft, baseline, setDraft, setBaseline }) {
         title: 'Price',
         dataIndex: 'offerPrice',
         width: 90,
-        render: (v) => (v !== '' && v != null ? `$${parseFloat(v).toFixed(2)}` : '—'),
+        render: (v) => (v !== '' && v != null ? `${draft.currency || '$'}${parseFloat(v).toFixed(2)}` : '—'),
       },
       {
         title: 'Status',
@@ -380,7 +382,7 @@ export default function PricingTab({ draft, baseline, setDraft, setBaseline }) {
         ),
       },
     ],
-    [draft.rrp]
+    [draft.rrp, draft.currency]
   );
 
   const columns = useMemo(
@@ -454,14 +456,14 @@ export default function PricingTab({ draft, baseline, setDraft, setBaseline }) {
           const up = diff > 0;
           return (
             <span style={{ fontWeight: 500, fontVariantNumeric: 'tabular-nums', color: up ? '#cf1322' : '#389e0d' }}>
-              {up ? '▲' : '▼'} ${Math.abs(diff).toFixed(2)}
+              {up ? '▲' : '▼'} {currencySymbol}{Math.abs(diff).toFixed(2)}
             </span>
           );
         },
       },
       { title: 'Reason', dataIndex: 'reason' },
     ],
-    []
+    [currencySymbol]
   );
 
   return (
@@ -487,7 +489,7 @@ export default function PricingTab({ draft, baseline, setDraft, setBaseline }) {
                 setDraft((d) => ({ ...d, rrp: v }));
                 autoFillReason('Updated RRP');
               }}
-              prefix="$"
+              prefix={draft.currency || '$'}
               style={{ width: '100%', ...(rrpChanged ? { background: '#e8fdff' } : {}) }}
               min={0}
               step={0.01}
@@ -499,13 +501,12 @@ export default function PricingTab({ draft, baseline, setDraft, setBaseline }) {
             label="Show on Menu Board"
             hint={
               noteOverridden
-                ? `Showing “${effectiveOffer.description}”'s own promo copy while that offer is live. Edit it from that offer below, or this field takes over again once it ends.`
+                ? `This is the default, shown everywhere except at the stores targeted by "${effectiveOffer.description}" — that offer's own note (below) takes over there while it's live.`
                 : 'Optional promo copy shown alongside this product’s price on the menu board, e.g. “Limited time only!” Leave blank to show nothing extra.'
             }
           >
             <Input
-              value={effectiveMenuBoardNote}
-              disabled={noteOverridden}
+              value={draft.menuBoardNote || ''}
               onChange={(e) => {
                 setDraft((d) => ({ ...d, menuBoardNote: e.target.value }));
                 autoFillReason('Updated menu board note');
@@ -519,7 +520,7 @@ export default function PricingTab({ draft, baseline, setDraft, setBaseline }) {
 
       <div className="ph-sect">
         <div className="ph-sect-label" style={{ marginBottom: 12 }}>
-          Scheduled Offers
+          Scheduled and Targeted Offers
         </div>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
           <span style={{ fontSize: 12, color: 'rgba(0,0,0,.45)' }}>
@@ -547,7 +548,7 @@ export default function PricingTab({ draft, baseline, setDraft, setBaseline }) {
         />
       </div>
 
-      <OfferFormModal open={offerModalOpen} initialOffer={editingOffer} onCancel={closeOfferModal} onSave={handleOfferModalSave} />
+      <OfferFormModal open={offerModalOpen} initialOffer={editingOffer} onCancel={closeOfferModal} onSave={handleOfferModalSave} currency={draft.currency} />
 
       <div className="ph-sect">
         <div className="ph-sect-label" style={{ marginBottom: 12 }}>

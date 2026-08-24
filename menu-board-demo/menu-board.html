@@ -887,12 +887,16 @@ function _resolveItemOffersForStore(item, store) {
   const effective = live || eligible
     .filter((o) => parseFloat(o.offerPrice) > 0 && o.offerFrom && new Date(o.offerFrom) > now)
     .sort((a, b) => new Date(a.offerFrom) - new Date(b.offerFrom))[0];
+  // The board's default note (item.menuBoardNote) is only ever overridden
+  // by a *store-targeted* offer's own note — an untargeted offer applies
+  // everywhere anyway, so the default stays the source of truth for it.
+  const isTargeted = !!(effective && Array.isArray(effective.targeting) && effective.targeting.length);
   return {
     ...item,
     offerPrice: effective ? effective.offerPrice : null,
     offerFrom: effective ? effective.offerFrom : '',
     offerUntil: effective ? effective.offerUntil : '',
-    showOnMenuBoard: effective ? (effective.showOnMenuBoard || '') : '',
+    showOnMenuBoard: (isTargeted && effective.showOnMenuBoard) ? effective.showOnMenuBoard : (item.menuBoardNote || ''),
   };
 }
 function getItems() {
