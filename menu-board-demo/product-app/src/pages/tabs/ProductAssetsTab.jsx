@@ -85,10 +85,10 @@ function Tile({ img, selected, onClick }) {
   else if (img.type === 'video') badge = { text: 'VIDEO', bg: 'rgba(0,0,0,.7)', color: '#fff' };
 
   return (
-    <div style={{ width: 88, flexShrink: 0, cursor: 'pointer' }} onClick={onClick}>
+    <div style={{ flex: '1 1 88px', minWidth: 88, cursor: 'pointer' }} onClick={onClick}>
       <div
         style={{
-          width: 88, height: 88, borderRadius: 6, overflow: 'hidden', position: 'relative',
+          width: '100%', height: 88, borderRadius: 6, overflow: 'hidden', position: 'relative',
           border: '1px solid ' + (selected ? '#169bc2' : '#f0f0f0'),
           boxShadow: selected ? '0 0 0 2px rgba(22,155,194,.25)' : 'none',
           opacity: expired ? 0.5 : 1,
@@ -125,9 +125,6 @@ function Tile({ img, selected, onClick }) {
             {badge.text}
           </span>
         )}
-      </div>
-      <div style={{ fontSize: 11, color: 'rgba(0,0,0,.65)', marginTop: 6, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', textAlign: 'center' }}>
-        {img.name || img.variant}
       </div>
     </div>
   );
