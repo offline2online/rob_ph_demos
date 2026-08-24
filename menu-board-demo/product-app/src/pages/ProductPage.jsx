@@ -6,7 +6,7 @@ import ProductDetailsTab from './tabs/ProductDetailsTab.jsx';
 import StockTab from './tabs/StockTab.jsx';
 import ProductAssetsTab from './tabs/ProductAssetsTab.jsx';
 import PricingTab from './tabs/PricingTab.jsx';
-import { getProduct, blankProduct, upsertProduct } from '../data/productStore.js';
+import { getProduct, blankProduct, upsertProduct, setProductStatus } from '../data/productStore.js';
 
 export default function ProductPage({ isNew = false }) {
   const { id, tab = 'details' } = useParams();
@@ -16,6 +16,7 @@ export default function ProductPage({ isNew = false }) {
   const [baseline, setBaseline] = useState(null);
   const [draft, setDraft] = useState(null);
   const [saving, setSaving] = useState(false);
+  const [statusSaving, setStatusSaving] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -71,6 +72,33 @@ export default function ProductPage({ isNew = false }) {
   };
   const discardDetailsOrAssets = () => setDraft(baseline);
 
+  // Status is the one field that behaves like HQ Admin's grid row
+  // Activate/Deactivate action — it flips immediately, without the user
+  // having to find and click a Save Changes button (which, on the
+  // Pricing tab, doesn't even exist for this field — see
+  // setProductStatus's comment). A brand-new, not-yet-created product
+  // has no Firestore document to merge onto, so it still just patches
+  // the draft; the toggle is then included in the product's first save.
+  const toggleStatus = async (v) => {
+    const status = v ? 'Active' : 'Inactive';
+    const fields = v ? { status: 'Active' } : { status: 'Inactive', featured: false };
+    if (isNew) {
+      patch(fields);
+      return;
+    }
+    setStatusSaving(true);
+    try {
+      await setProductStatus(draft.id, status);
+      setDraft((d) => ({ ...d, ...fields }));
+      setBaseline((b) => ({ ...b, ...fields }));
+      message.success(status === 'Active' ? 'Product activated' : 'Product deactivated');
+    } catch (e) {
+      message.error('Status change failed: ' + (e.message || e));
+    } finally {
+      setStatusSaving(false);
+    }
+  };
+
   if (!draft) {
     return (
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh' }}>
@@ -108,7 +136,8 @@ export default function ProductPage({ isNew = false }) {
             <span style={{ fontSize: 14, fontWeight: 700, color: '#333333' }}>{draft.status === 'Active' ? 'Active' : 'Inactive'}</span>
             <Switch
               checked={draft.status === 'Active'}
-              onChange={(v) => patch(v ? { status: 'Active' } : { status: 'Inactive', featured: false })}
+              loading={statusSaving}
+              onChange={toggleStatus}
             />
           </div>
         </div>

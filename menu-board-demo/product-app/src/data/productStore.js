@@ -97,6 +97,20 @@ export async function upsertProduct(product) {
   return migrateItem({ id: product.id, ...payload }, getBrandById(payload.brand)?.currency);
 }
 
+// Status is a page-level property visible (and toggleable) on every tab,
+// not just Details — same treatment as HQ Admin's own grid row
+// Activate/Deactivate action (hq-admin.html's bulkSetActive), which
+// writes immediately rather than waiting on a separate Save Changes
+// click. A merge write here (not upsertProduct's full setDoc) means
+// toggling Status can never clobber an in-progress, not-yet-saved edit
+// on another field the user is mid-way through on Details/Assets/Stock.
+export async function setProductStatus(id, status) {
+  const patch = { status, active: status === 'Active', updatedAt: new Date().toISOString() };
+  if (status !== 'Active') patch.featured = false;
+  await setDoc(doc(db, ITEMS_COLL, id), patch, { merge: true });
+  return patch;
+}
+
 // `when` is stored as a real ISO timestamp (not a pre-formatted locale
 // string) so the log can be sorted chronologically and so the table can
 // render date and time as two independent, correctly-parsed pieces
