@@ -1844,29 +1844,76 @@ function render() {
   // targeting is built from the identical TargetingBuilder.jsx shape.
   // imagesRich is index-aligned with images/imagesLarge (src stripped out
   // — see migration.js toItemDoc()'s comment), so the matched index reads
-  // straight across to the actual src arrays.
-  function _pickTargetedAssetIndex(item) {
+  // straight across to the actual src arrays. `allowVideo` false excludes
+  // video-type assets from matching at all — every panel except the
+  // Feature Hero Spotlight's own primary panel must never end up showing
+  // a targeted video, only a targeted photo.
+  function _pickTargetedAssetIndex(item, allowVideo) {
     const rich = item.imagesRich;
     if (!Array.isArray(rich)) return -1;
-    return rich.findIndex(r => r && Array.isArray(r.targeting) && r.targeting.length && _offerTargetingMatches(r.targeting, _storeProfile));
+    return rich.findIndex(r => r && Array.isArray(r.targeting) && r.targeting.length && (allowVideo || r.type !== 'video') && _offerTargetingMatches(r.targeting, _storeProfile));
   }
 
-  // Picks the best image/video URL for an item given the current layout
-  // size. Falls back gracefully: large→small→none, small→large→none —
-  // unless a targeted asset matches this store/visitor, in which case it
-  // wins over the default at whichever size is available.
+  // A product can carry a default *image* and a default *video* at once
+  // (ProductAssetsTab.jsx's setDefault() scopes "one default" to each type
+  // independently) — migration.js's toItemDoc() always moves the default
+  // image (never a default video) to index 0, so images[0]/imagesRich[0]
+  // is normally already the right answer here. Still walks the array to
+  // find the first non-video entry as a defensive fallback for any legacy
+  // item saved before that reordering rule existed.
+  function _defaultImageIndex(item) {
+    const rich = item.imagesRich;
+    if (!Array.isArray(rich) || !rich.length) return (item.images && item.images.length) ? 0 : -1;
+    if (rich[0] && rich[0].type !== 'video') return 0;
+    return rich.findIndex(r => r && r.type !== 'video');
+  }
+
+  // The default *video*, if one is set — only ever looked up by the
+  // Feature Hero Spotlight's primary panel (_pickHeroSrc below).
+  function _defaultVideoIndex(item) {
+    const rich = item.imagesRich;
+    if (!Array.isArray(rich)) return -1;
+    return rich.findIndex(r => r && r.type === 'video' && r.isDefault);
+  }
+
+  function _srcAt(item, idx, preferLarge) {
+    if (idx == null || idx < 0) return '';
+    const small = item.images      && item.images[idx];
+    const large = item.imagesLarge && item.imagesLarge[idx];
+    return (preferLarge ? (large || small) : (small || large)) || '';
+  }
+
+  // Picks the best image URL for an item given the current layout size —
+  // used by every panel EXCEPT the Feature Hero Spotlight's primary panel
+  // (grid cells, promo tiles, and anywhere else an item's photo shows).
+  // Video is never eligible here, whether it's the default or a matching
+  // targeted asset — video only ever appears in the one primary panel.
   function _pickImage(item) {
-    const idx = _pickTargetedAssetIndex(item);
-    if (idx !== -1) {
-      const tSmall = item.images      && item.images[idx];
-      const tLarge = item.imagesLarge && item.imagesLarge[idx];
-      const picked = isLargeTileLayout ? (tLarge || tSmall) : (tSmall || tLarge);
+    const targetedIdx = _pickTargetedAssetIndex(item, false);
+    if (targetedIdx !== -1) {
+      const picked = _srcAt(item, targetedIdx, isLargeTileLayout);
       if (picked) return picked;
     }
-    const small = item.images      && item.images[0];
-    const large = item.imagesLarge && item.imagesLarge[0];
-    if (isLargeTileLayout) return large || small || '';
-    return small || large || '';
+    return _srcAt(item, _defaultImageIndex(item), isLargeTileLayout);
+  }
+
+  // Picks the source for the Feature Hero Spotlight's primary panel only
+  // — the one place a default video is actually used. A matching targeted
+  // asset (image or video) still wins first, same as every other panel;
+  // failing that, the default video takes priority over the default image
+  // here specifically, which is the whole point of having both.
+  function _pickHeroSrc(item) {
+    const targetedIdx = _pickTargetedAssetIndex(item, true);
+    if (targetedIdx !== -1) {
+      const picked = _srcAt(item, targetedIdx, true);
+      if (picked) return picked;
+    }
+    const videoIdx = _defaultVideoIndex(item);
+    if (videoIdx !== -1) {
+      const picked = _srcAt(item, videoIdx, true);
+      if (picked) return picked;
+    }
+    return _srcAt(item, _defaultImageIndex(item), true);
   }
 
   // A product's default asset can be a video, not just a photo — Product
@@ -2085,10 +2132,8 @@ function render() {
       // Build hero image panel — full-bleed photo with product info/pricing in
       // a top-left card (black text) and the description in its own card at
       // the bottom (grey text), the same fields shown on each promo card.
-      const heroTargetedIdx = _pickTargetedAssetIndex(heroItem);
-      const heroSrc = heroTargetedIdx !== -1
-        ? ((heroItem.imagesLarge && heroItem.imagesLarge[heroTargetedIdx]) || (heroItem.images && heroItem.images[heroTargetedIdx]))
-        : ((heroItem.imagesLarge && heroItem.imagesLarge[0]) || (heroItem.images && heroItem.images[0]));
+      // The one place a default video is used at all — see _pickHeroSrc.
+      const heroSrc = _pickHeroSrc(heroItem);
       const heroImgHtml = heroSrc
         ? _mediaTag(heroSrc, heroItem.name, 'promo-hero-placeholder', '🏷️')
         : `<div class="promo-hero-placeholder">🏷️</div>`;
@@ -2109,10 +2154,9 @@ function render() {
       // text column, description overlaid across the full width of the tile
       // (text column + photo) at the bottom.
       const promoTilesHtml = promoPage.map(item => {
-        const targetedIdx = _pickTargetedAssetIndex(item);
-        const src = targetedIdx !== -1
-          ? ((item.imagesLarge && item.imagesLarge[targetedIdx]) || (item.images && item.images[targetedIdx]))
-          : ((item.imagesLarge && item.imagesLarge[0]) || (item.images && item.images[0]));
+        // The "small panel" — always the image, never the video, even if
+        // this item's default/targeted video would otherwise apply.
+        const src = _pickImage(item);
         const img = src
           ? _mediaTag(src, item.name, 'promo-img-placeholder', '🍽️')
           : `<div class="promo-img-placeholder">🍽️</div>`;

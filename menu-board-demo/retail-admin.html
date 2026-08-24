@@ -1280,13 +1280,23 @@ function _offerTargetingMatches(targeting, store) {
   return targeting.every(group => (group.conditions || []).some(c => _offerConditionMatches(c, store)));
 }
 
-// Duplicated from menu-board.html's _isVideoSrc — a product's default
-// asset can be a video (Product Assets), stored the same way as an image
-// (base64 data URI in `images[0]`), just with a video/* MIME type. Any
-// place that builds an <img> straight from images[0] needs this check
-// first, or a video default renders as a broken image icon.
-function _isVideoSrc(src) {
-  return typeof src === 'string' && /^data:video\//.test(src);
+// A product can carry a default image AND a separate default video at
+// once (ProductAssetsTab.jsx's setDefault() scopes "one default" to each
+// type independently) — the video is only ever used in the Feature Hero
+// Spotlight board's own primary panel (menu-board.html's _pickHeroSrc),
+// so this grid's thumbnail always wants the image one. migration.js's
+// toItemDoc() already moves the default image (never a default video) to
+// images[0]/imagesRich[0], so this is normally just index 0 — the walk
+// below is a defensive fallback for any legacy item saved before that
+// reordering rule existed.
+function _defaultImageSrc(item) {
+  const imgs = item.images || [];
+  if (!imgs.length) return '';
+  const rich = item.imagesRich;
+  if (!Array.isArray(rich) || !rich.length) return imgs[0];
+  if (rich[0] && rich[0].type !== 'video') return imgs[0];
+  const idx = rich.findIndex(r => r && r.type !== 'video');
+  return idx !== -1 ? imgs[idx] : '';
 }
 
 // Recurring day-part schedules for offers — duplicated from
@@ -1609,14 +1619,10 @@ function initGrid() {
           const item = params.data;
           const wrap = document.createElement('div');
           wrap.style.cssText = 'height:100%;display:flex;align-items:center;justify-content:center;';
-          if (item.images && item.images[0] && _isVideoSrc(item.images[0])) {
-            const video = document.createElement('video');
-            video.src = item.images[0]; video.muted = true; video.autoplay = true; video.loop = true; video.playsInline = true;
-            video.style.cssText = 'width:70px;height:70px;object-fit:cover;border-radius:8px;';
-            wrap.appendChild(video);
-          } else if (item.images && item.images[0]) {
+          const thumbSrc = _defaultImageSrc(item);
+          if (thumbSrc) {
             const img = document.createElement('img');
-            img.src = item.images[0]; img.alt = item.name;
+            img.src = thumbSrc; img.alt = item.name;
             img.style.cssText = 'width:70px;height:70px;object-fit:cover;border-radius:8px;';
             wrap.appendChild(img);
           } else {

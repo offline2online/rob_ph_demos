@@ -118,7 +118,7 @@ function Tile({ img, selected, onClick }) {
             </span>
           ) : (
             <span
-              title={img.isDefault ? 'Default image' : 'Not the default image'}
+              title={img.isDefault ? `Default ${img.type === 'video' ? 'video' : 'image'}` : `Not the default ${img.type === 'video' ? 'video' : 'image'}`}
               style={{ width: 20, height: 20, borderRadius: 4, background: 'rgba(255,255,255,.95)', border: '1px solid rgba(0,0,0,.08)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: img.isDefault ? '#faad14' : '#cfcfcf' }}
             >
               <BespokeIcon name={img.isDefault ? 'starFill' : 'starOutline'} size={12} />
@@ -249,14 +249,20 @@ export default function ProductAssetsTab({ draft, patch }) {
 
   // Default applies immediately — a single binary switch a user expects to
   // take effect the moment they click it, same as Featured on Product
-  // Details — and also handles clearing any other image's Default flag,
-  // since only one image can be default per product.
+  // Details — and also handles clearing any other same-type asset's
+  // Default flag. "Same-type" (not "any other asset") deliberately: a
+  // product can carry one default image AND one default video at once —
+  // the image is what every standard panel/thumbnail/table shows, the
+  // video is only ever used in the Feature Hero Spotlight's own primary
+  // panel (menu-board.html's _pickHeroSrc) — so marking a video default
+  // must not clear an existing default image, and vice versa.
   const setDefault = () => {
     if (!current) return;
     const newVal = !current.isDefault;
+    const sameType = (img) => (img.type === 'video') === (current.type === 'video');
     const next = images.map((img, i) => {
       if (i === selected) return { ...img, isDefault: newVal };
-      return newVal && img.isDefault ? { ...img, isDefault: false } : img;
+      return newVal && img.isDefault && sameType(img) ? { ...img, isDefault: false } : img;
     });
     patch({ images: next });
   };
@@ -378,12 +384,14 @@ export default function ProductAssetsTab({ draft, patch }) {
                   active={current.isDefault}
                   disabled={expired}
                   onClick={setDefault}
-                  tooltipTitle={current.isDefault ? 'Remove as default' : 'Set as default'}
+                  tooltipTitle={current.isDefault ? 'Remove as default' : (isVideo ? 'Set as default video' : 'Set as default image')}
                   tooltipDesc={
                     expired
                       ? 'Renew the licence before making this the default.'
                       : current.isDefault
-                      ? 'Another image can be chosen as default instead.'
+                      ? `Another ${isVideo ? 'video' : 'image'} can be chosen as the default ${isVideo ? 'video' : 'image'} instead.`
+                      : isVideo
+                      ? 'Used only in the Feature Hero Spotlight board’s primary panel — every other panel, thumbnail and table always shows the default image instead.'
                       : 'Personalisation Hub uses this image unless a campaign specifies otherwise.'
                   }
                 />

@@ -194,15 +194,20 @@ export function toItemDoc(product) {
     price: isNaN(price) ? 0 : price,
     offerPrice: isNaN(offerPrice) ? null : offerPrice,
     active: product.status === 'Active',
-    // The grid thumbnail and every menu board just read images[0] as "the"
-    // photo — none of them know about isDefault, which only exists on the
-    // rich per-image objects this app works with. So the default image has
-    // to be moved to position 0 here, on the way back to the flat URL array
-    // everything else reads, or marking an image "default" would have no
-    // visible effect anywhere outside this tab.
+    // The grid thumbnail, retail-admin's stock grid and every menu board
+    // panel other than the Feature Hero Spotlight's own primary panel just
+    // read images[0] as "the" photo and render it as an <img> — none of
+    // them know about isDefault, or should ever end up trying to paint a
+    // video into a plain <img> tag. So it's specifically the default
+    // *image* (never a default video) that gets moved to position 0 here,
+    // on the way back to the flat URL array everything else reads — a
+    // product can have a default image AND a separate default video at
+    // the same time (ProductAssetsTab.jsx's setDefault() now scopes
+    // "only one default" to each type independently), and only the
+    // primary hero panel is allowed to go looking for the video one.
     images: (() => {
       const imgs = product.images || [];
-      const defaultIdx = imgs.findIndex((img) => img && typeof img === 'object' && img.isDefault);
+      const defaultIdx = imgs.findIndex((img) => img && typeof img === 'object' && img.isDefault && img.type !== 'video');
       const ordered = defaultIdx > 0
         ? [imgs[defaultIdx], ...imgs.filter((_, i) => i !== defaultIdx)]
         : imgs;
@@ -216,7 +221,7 @@ export function toItemDoc(product) {
     // get stored twice in the same document.
     imagesRich: (() => {
       const imgs = product.images || [];
-      const defaultIdx = imgs.findIndex((img) => img && typeof img === 'object' && img.isDefault);
+      const defaultIdx = imgs.findIndex((img) => img && typeof img === 'object' && img.isDefault && img.type !== 'video');
       const ordered = defaultIdx > 0
         ? [imgs[defaultIdx], ...imgs.filter((_, i) => i !== defaultIdx)]
         : imgs;
