@@ -282,45 +282,52 @@ export default function ProductAssetsTab({ draft, patch }) {
 
   return (
     <div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10, flexWrap: 'wrap' }}>
-        <span className="ph-sect-label">Select an image or video</span>
-        <div style={{ flex: 1 }} />
-        <Segmented
-          value={filter}
-          onChange={setFilter}
-          options={[{ label: 'All', value: 'all' }, { label: 'Images', value: 'image' }, { label: 'Video & 3D', value: 'video' }]}
-        />
-        <Input style={{ width: 200 }} placeholder="Search by name or tag…" value={q} onChange={(e) => setQ(e.target.value)} />
-      </div>
-
-      <div
-        style={{ display: 'flex', gap: 10, overflowX: 'auto', padding: '14px 16px', background: '#fff', borderRadius: 8 }}
-        onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
-        onDragLeave={() => setDragOver(false)}
-        onDrop={(e) => { e.preventDefault(); setDragOver(false); handleUpload(e.dataTransfer.files); }}
-      >
-        <div
-          onClick={openUpload}
-          style={{
-            width: 88, height: 88, flexShrink: 0, border: '2px dashed ' + (dragOver ? '#169bc2' : '#d9d9d9'),
-            borderRadius: 6, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-            gap: 2, cursor: 'pointer', color: dragOver ? '#169bc2' : 'rgba(0,0,0,.45)', background: dragOver ? '#e8fdff' : '#fafafa',
-          }}
-        >
-          <MaterialIcon name="add_photo_alternate" style={{ fontSize: 22 }} />
-          <span style={{ fontSize: 10, textAlign: 'center', padding: '0 6px' }}>Drop files</span>
-          <input ref={fileInput} type="file" multiple={fileIntent.current === 'upload'} accept="image/*,video/*" style={{ display: 'none' }} onChange={onFileInputChange} />
+      {/* Sticky so the thumbnail strip stays reachable while scrolling
+          through a long asset panel (Rights & licensing, Targeting) —
+          switching assets from here doesn't reset scroll position, since
+          nothing here does anything but flip `selected`. */}
+      <div style={{ position: 'sticky', top: 0, zIndex: 10, background: '#fff', paddingTop: 4, paddingBottom: 4, marginTop: -4 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10, flexWrap: 'wrap' }}>
+          <span className="ph-sect-label">Select an image or video</span>
+          <div style={{ flex: 1 }} />
+          <Segmented
+            value={filter}
+            onChange={setFilter}
+            options={[{ label: 'All', value: 'all' }, { label: 'Images', value: 'image' }, { label: 'Video & 3D', value: 'video' }]}
+          />
+          <Input style={{ width: 200 }} placeholder="Search by name or tag…" value={q} onChange={(e) => setQ(e.target.value)} />
         </div>
-        {filtered.map((img) => {
-          const idx = images.indexOf(img);
-          return <Tile key={img.id} img={img} selected={idx === selected} onClick={() => setSelected(idx)} />;
-        })}
+
+        <div
+          style={{ display: 'flex', gap: 10, overflowX: 'auto', padding: '14px 16px', background: '#fff', borderRadius: 8, boxShadow: '0 2px 6px rgba(0,0,0,.06)' }}
+          onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+          onDragLeave={() => setDragOver(false)}
+          onDrop={(e) => { e.preventDefault(); setDragOver(false); handleUpload(e.dataTransfer.files); }}
+        >
+          <div
+            onClick={openUpload}
+            style={{
+              width: 88, height: 88, flexShrink: 0, border: '2px dashed ' + (dragOver ? '#169bc2' : '#d9d9d9'),
+              borderRadius: 6, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+              gap: 2, cursor: 'pointer', color: dragOver ? '#169bc2' : 'rgba(0,0,0,.45)', background: dragOver ? '#e8fdff' : '#fafafa',
+            }}
+          >
+            <MaterialIcon name="add_photo_alternate" style={{ fontSize: 22 }} />
+            <span style={{ fontSize: 10, textAlign: 'center', padding: '0 6px' }}>Drop files</span>
+            <input ref={fileInput} type="file" multiple={fileIntent.current === 'upload'} accept="image/*,video/*" style={{ display: 'none' }} onChange={onFileInputChange} />
+          </div>
+          {filtered.map((img) => {
+            const idx = images.indexOf(img);
+            return <Tile key={img.id} img={img} selected={idx === selected} onClick={() => setSelected(idx)} />;
+          })}
+        </div>
+        <div style={{ fontSize: 12, color: 'rgba(0,0,0,.45)', margin: '8px 0' }}>
+          {images.length} of {images.length} shown · {testingCount} available for testing
+          {expiringCount ? ` · ${expiringCount} licence expiring` : ''}
+          {expiredCount ? ` · ${expiredCount} licence expired` : ''}
+        </div>
       </div>
-      <div style={{ fontSize: 12, color: 'rgba(0,0,0,.45)', margin: '8px 0 20px' }}>
-        {images.length} of {images.length} shown · {testingCount} available for testing
-        {expiringCount ? ` · ${expiringCount} licence expiring` : ''}
-        {expiredCount ? ` · ${expiredCount} licence expired` : ''}
-      </div>
+      <div style={{ height: 12 }} />
 
       <div className="ph-sect" style={{ padding: 0 }}>
         {!current ? (
