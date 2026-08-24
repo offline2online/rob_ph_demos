@@ -2643,6 +2643,13 @@ function initGrids() {
           headerName: '', width: 44, minWidth: 44, maxWidth: 44,
           resizable: false, sortable: false, filter: false, suppressMovable: true,
           headerCheckboxSelection: true,
+          // Without this, the header checkbox selects every row in the
+          // dataset regardless of an active column filter — a staff member
+          // filtering by Brand and then clicking "select all" would silently
+          // select every other brand's items too. Scopes it to whatever
+          // rows the filter is currently showing, matching what "select
+          // all" visually looks like it's doing.
+          headerCheckboxSelectionFilteredOnly: true,
           checkboxSelection: true,
           cellStyle: { display: 'flex', alignItems: 'center', justifyContent: 'center' }
         },

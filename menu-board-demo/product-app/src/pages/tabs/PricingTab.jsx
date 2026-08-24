@@ -48,7 +48,12 @@ function OfferFormModal({ open, initialOffer, onCancel, onSave, currency }) {
     if (open) setForm(initialOffer);
   }, [open, initialOffer]);
 
-  const canSave = !!form && form.description.trim() !== '' && form.offerPrice !== '' && form.offerPrice != null;
+  // Save Changes stays disabled until something inside this modal actually
+  // changed — for an existing offer, initialOffer already has a valid
+  // description/price, so validity alone would leave the button active
+  // the instant the modal opens, before anyone touched anything.
+  const dirty = !!form && JSON.stringify(form) !== JSON.stringify(initialOffer);
+  const canSave = dirty && form.description.trim() !== '' && form.offerPrice !== '' && form.offerPrice != null;
 
   return (
     <Modal
