@@ -104,26 +104,32 @@ function Tile({ img, selected, onClick }) {
           {img.variant}
         </span>
         <div style={{ position: 'absolute', top: 4, right: 4, display: 'flex', gap: 3 }}>
-          <span
-            title={img.isDefault ? 'Default image' : 'Not the default image'}
-            style={{ width: 20, height: 20, borderRadius: 4, background: 'rgba(255,255,255,.95)', border: '1px solid rgba(0,0,0,.08)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: img.isDefault ? '#faad14' : '#cfcfcf' }}
-          >
-            <BespokeIcon name={img.isDefault ? 'starFill' : 'starOutline'} size={12} />
-          </span>
-          <span
-            title={img.availableForTesting ? 'Available for testing' : 'Not available for testing'}
-            style={{ width: 20, height: 20, borderRadius: 4, background: img.availableForTesting ? 'rgba(232,253,255,.97)' : 'rgba(255,255,255,.95)', border: '1px solid ' + (img.availableForTesting ? '#87d9ec' : 'rgba(0,0,0,.08)'), display: 'flex', alignItems: 'center', justifyContent: 'center', color: img.availableForTesting ? '#169bc2' : '#c4c4c4' }}
-          >
-            <BespokeIcon name="ab" size={12} />
-          </span>
-          {!!(img.targeting || []).length && (
+          {(img.targeting || []).length ? (
+            // A targeted asset can never also be default (it already
+            // overrides the default whenever its rule matches — see the
+            // Default button in the toolbar below) — so the default
+            // star is replaced outright by the targeting pin here, not
+            // just dimmed, to make the two states unambiguous at a glance.
             <span
               title={`Targeted — ${describeTargeting(img.targeting)}`}
               style={{ width: 20, height: 20, borderRadius: 4, background: 'rgba(232,253,255,.97)', border: '1px solid #87d9ec', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#169bc2' }}
             >
               <MaterialIcon name="my_location" style={{ fontSize: 12 }} />
             </span>
+          ) : (
+            <span
+              title={img.isDefault ? 'Default image' : 'Not the default image'}
+              style={{ width: 20, height: 20, borderRadius: 4, background: 'rgba(255,255,255,.95)', border: '1px solid rgba(0,0,0,.08)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: img.isDefault ? '#faad14' : '#cfcfcf' }}
+            >
+              <BespokeIcon name={img.isDefault ? 'starFill' : 'starOutline'} size={12} />
+            </span>
           )}
+          <span
+            title={img.availableForTesting ? 'Available for testing' : 'Not available for testing'}
+            style={{ width: 20, height: 20, borderRadius: 4, background: img.availableForTesting ? 'rgba(232,253,255,.97)' : 'rgba(255,255,255,.95)', border: '1px solid ' + (img.availableForTesting ? '#87d9ec' : 'rgba(0,0,0,.08)'), display: 'flex', alignItems: 'center', justifyContent: 'center', color: img.availableForTesting ? '#169bc2' : '#c4c4c4' }}
+          >
+            <BespokeIcon name="ab" size={12} />
+          </span>
         </div>
         {badge && (
           <span style={{ position: 'absolute', bottom: 4, left: 4, fontSize: 9, lineHeight: '16px', padding: '0 5px', borderRadius: 3, fontWeight: 600, background: badge.bg, color: badge.color }}>
@@ -351,24 +357,37 @@ export default function ProductAssetsTab({ draft, patch }) {
                 tooltipDesc={isVideo ? 'Not available for video.' : current.enhanced ? 'Reverts to the original upload.' : 'Sharpens and colour-corrects the image.'}
               />
               <div style={{ width: 1, background: '#f0f0f0', margin: '4px 8px' }} />
-              <IconAction
-                icon={<MaterialIcon name={current.isDefault ? 'star' : 'star_border'} />}
-                caption="Default"
-                gold
-                active={current.isDefault}
-                disabled={expired || isTargeted}
-                onClick={setDefault}
-                tooltipTitle={current.isDefault ? 'Remove as default' : 'Set as default'}
-                tooltipDesc={
-                  isTargeted
-                    ? 'This asset has targeting rules, so it already overrides the default whenever they match — it can’t also be the default.'
-                    : expired
-                    ? 'Renew the licence before making this the default.'
-                    : current.isDefault
-                    ? 'Another image can be chosen as default instead.'
-                    : 'Personalisation Hub uses this image unless a campaign specifies otherwise.'
-                }
-              />
+              {isTargeted ? (
+                // A targeted asset can never also be default — it already
+                // overrides the default whenever its rule matches — so the
+                // Default toggle is replaced outright by a clearly-active
+                // status indicator here, not just disabled next to a star
+                // that no longer means anything for this asset.
+                <IconAction
+                  icon={<MaterialIcon name="my_location" />}
+                  caption="Targeted"
+                  active
+                  tooltipTitle="This asset is targeted"
+                  tooltipDesc="It overrides the default automatically whenever its targeting rules (below) match — it can't also be set as the default."
+                />
+              ) : (
+                <IconAction
+                  icon={<MaterialIcon name={current.isDefault ? 'star' : 'star_border'} />}
+                  caption="Default"
+                  gold
+                  active={current.isDefault}
+                  disabled={expired}
+                  onClick={setDefault}
+                  tooltipTitle={current.isDefault ? 'Remove as default' : 'Set as default'}
+                  tooltipDesc={
+                    expired
+                      ? 'Renew the licence before making this the default.'
+                      : current.isDefault
+                      ? 'Another image can be chosen as default instead.'
+                      : 'Personalisation Hub uses this image unless a campaign specifies otherwise.'
+                  }
+                />
+              )}
               <IconAction
                 icon={<BespokeIcon name="ab" />}
                 caption="Testing"
