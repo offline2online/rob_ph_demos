@@ -2747,7 +2747,13 @@ function initGrids() {
             const localStores = getStoresWithLocalOffer(item.sku);
             const targetedOffers = _getTargetedOffers(item);
             const wrap = document.createElement('div');
-            wrap.style.cssText = 'display:flex;flex-direction:column;justify-content:center;gap:3px;height:100%;padding:4px 0;cursor:pointer;';
+            // flex-start (not center) so the price always sits at the top
+            // of the cell with pills stacking tight underneath it — with
+            // center, a row with only one or two pills (out of the three
+            // possible: Local offer/Targeted/Recurring) floated the whole
+            // block toward the middle of the fixed 99px row height, pushing
+            // the price down and opening up a gap above the last pill.
+            wrap.style.cssText = 'display:flex;flex-direction:column;justify-content:flex-start;gap:3px;height:100%;padding:4px 0;cursor:pointer;';
             wrap.title = 'Click to view pricing';
             wrap.addEventListener('click', () => {
               location.href = 'product/#/products/' + item.id + '/pricing';
