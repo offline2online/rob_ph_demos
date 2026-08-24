@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Input, InputNumber, Table, Button, App, Tag, Switch } from 'antd';
+import { Input, InputNumber, Table, Button, App, Tag, Switch, Modal } from 'antd';
 import MaterialIcon from '../../components/MaterialIcon.jsx';
 import ClearableDate from '../../components/ClearableDate.jsx';
-import OfferBanner, { getOfferState, pickEffectiveOffer } from '../../components/OfferBanner.jsx';
+import { getOfferState, pickEffectiveOffer } from '../../components/OfferBanner.jsx';
 import OfferTargetingBuilder from '../../components/OfferTargetingBuilder.jsx';
 import { upsertProduct, appendPriceLogEntries, genId } from '../../data/productStore.js';
 
@@ -33,72 +33,76 @@ const OFFER_STATE_STYLE = {
 };
 const OFFER_STATE_LABEL = { live: 'Live', scheduled: 'Scheduled', ended: 'Ended', none: 'Not scheduled', off: 'Off' };
 
-// One offer's own card: on/off switch, state badge, its own
-// description/price/schedule, and its own store targeting rule-builder
-// (ph-designer skill components.md §16.1 — list-of-records, each with a
-// nested §16 rule-builder scoped to Store / Location Data only). The
-// switch overrides whatever the dates say — a disabled offer always reads
-// "Off", never "Live", since the switch is the more relevant fact once
-// it's been turned off deliberately.
-function OfferCard({ offer, index, rrp, onChange, onRemove }) {
-  const dateState = getOfferState(rrp, offer.offerPrice, offer.offerFrom, offer.offerUntil);
-  const state = offer.enabled === false ? 'off' : dateState;
+// Add/Edit Offer popup — same mechanism as Campaign Scheduling's "Add New
+// Schedule" (ph-designer skill components.md §16.1): the table only shows
+// each record's distinguishing fields, everything else is captured in a
+// modal. The store-targeting rule-builder lives inside this same modal,
+// scoped to and clearly labelled for the one offer being edited, so it's
+// never ambiguous which offer a given targeting rule belongs to.
+function OfferFormModal({ open, initialOffer, onCancel, onSave }) {
+  const [form, setForm] = useState(initialOffer);
+  useEffect(() => {
+    if (open) setForm(initialOffer);
+  }, [open, initialOffer]);
+
+  const canSave = !!form && form.description.trim() !== '' && form.offerPrice !== '' && form.offerPrice != null;
+
   return (
-    <div style={{ border: '1px solid #f0f0f0', borderRadius: 8, padding: 16, marginBottom: 14, opacity: offer.enabled === false ? 0.6 : 1 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
-        <Switch checked={offer.enabled !== false} onChange={(v) => onChange({ enabled: v })} />
-        <span style={{ fontSize: 14, fontWeight: 500 }}>Offer {index + 1}</span>
-        <span style={{ borderRadius: 4, padding: '2px 8px', fontSize: 12, ...OFFER_STATE_STYLE[state] }}>
-          {OFFER_STATE_LABEL[state]}
-        </span>
-        <div style={{ flex: 1 }} />
-        <Button type="text" danger size="small" icon={<MaterialIcon name="delete" style={{ fontSize: 15 }} />} onClick={onRemove}>
-          Remove
-        </Button>
-      </div>
-
-      <div style={{ marginBottom: 14 }}>
-        <Field label="Offer description" required hint="Describes this offer and is recorded in the price change log when saved.">
-          <Input
-            value={offer.description}
-            onChange={(e) => onChange({ description: e.target.value })}
-            placeholder="e.g. Summer sale — 20% off for two weeks"
-          />
-        </Field>
-      </div>
-
-      <div style={{ maxWidth: 240 }}>
-        <Field label="Offer price" required>
-          <InputNumber value={offer.offerPrice} onChange={(v) => onChange({ offerPrice: v })} prefix="$" style={{ width: '100%' }} min={0} step={0.01} />
-        </Field>
-      </div>
-
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px 16px', marginTop: 14 }}>
-        <Field label="Schedule offer from" hint="Blank means the offer starts now.">
-          <ClearableDate value={offer.offerFrom} onChange={(v) => onChange({ offerFrom: v })} showTime blankHint={{ blank: '', set: '' }} />
-        </Field>
-        <Field label="Schedule offer until" hint="Blank means the offer runs until removed.">
-          <ClearableDate value={offer.offerUntil} onChange={(v) => onChange({ offerUntil: v })} showTime blankHint={{ blank: '', set: '' }} />
-        </Field>
-      </div>
-
-      <div style={{ marginTop: 14 }}>
-        {offer.enabled === false ? (
-          <div style={{ borderRadius: 6, padding: '10px 12px', fontSize: 13, lineHeight: 1.6, ...OFFER_STATE_STYLE.off }}>
-            Switched off — this offer won't apply even if its schedule is current.
+    <Modal
+      open={open}
+      onCancel={onCancel}
+      title={form?.isNew ? 'Add Offer' : 'Edit Offer'}
+      width={640}
+      footer={[
+        <Button key="cancel" onClick={onCancel}>
+          Cancel
+        </Button>,
+        <Button key="save" type="primary" disabled={!canSave} onClick={() => onSave(form)}>
+          Save Changes
+        </Button>,
+      ]}
+    >
+      {form && (
+        <div>
+          <Field label="Offer description" required hint="Describes this offer and is recorded in the price change log when saved.">
+            <Input
+              value={form.description}
+              onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
+              placeholder="e.g. Summer sale — 20% off for two weeks"
+            />
+          </Field>
+          <div style={{ maxWidth: 240, marginTop: 14 }}>
+            <Field label="Offer price" required>
+              <InputNumber
+                value={form.offerPrice}
+                onChange={(v) => setForm((f) => ({ ...f, offerPrice: v }))}
+                prefix="$"
+                style={{ width: '100%' }}
+                min={0}
+                step={0.01}
+              />
+            </Field>
           </div>
-        ) : (
-          <OfferBanner rrp={rrp} offerPrice={offer.offerPrice} offerFrom={offer.offerFrom} offerUntil={offer.offerUntil} />
-        )}
-      </div>
-
-      <div style={{ marginTop: 14 }}>
-        <div style={{ fontSize: 11, color: 'rgba(0,0,0,.45)', letterSpacing: '0.08em', fontWeight: 500, marginBottom: 10, textTransform: 'uppercase' }}>
-          Store targeting
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px 16px', marginTop: 14 }}>
+            <Field label="Schedule offer from" hint="Blank means the offer starts now.">
+              <ClearableDate value={form.offerFrom} onChange={(v) => setForm((f) => ({ ...f, offerFrom: v }))} showTime blankHint={{ blank: '', set: '' }} />
+            </Field>
+            <Field label="Schedule offer until" hint="Blank means the offer runs until removed.">
+              <ClearableDate value={form.offerUntil} onChange={(v) => setForm((f) => ({ ...f, offerUntil: v }))} showTime blankHint={{ blank: '', set: '' }} />
+            </Field>
+          </div>
+          <div style={{ marginTop: 20, paddingTop: 16, borderTop: '1px solid #f0f0f0' }}>
+            <div style={{ fontSize: 11, color: 'rgba(0,0,0,.45)', letterSpacing: '0.08em', fontWeight: 500, marginBottom: 4, textTransform: 'uppercase' }}>
+              Store targeting for this offer
+            </div>
+            <p style={{ fontSize: 12, color: 'rgba(0,0,0,.45)', margin: '0 0 10px' }}>
+              These rules apply only to &ldquo;{form.description.trim() || 'this offer'}&rdquo; — not to any other offer on this product.
+            </p>
+            <OfferTargetingBuilder groups={form.targeting || []} onChange={(groups) => setForm((f) => ({ ...f, targeting: groups }))} />
+          </div>
         </div>
-        <OfferTargetingBuilder groups={offer.targeting || []} onChange={(groups) => onChange({ targeting: groups })} />
-      </div>
-    </div>
+      )}
+    </Modal>
   );
 }
 
@@ -166,10 +170,38 @@ export default function PricingTab({ draft, baseline, setDraft, setBaseline }) {
     setReason('');
   };
 
-  const addOffer = () => setDraft((d) => ({ ...d, offers: [...(d.offers || []), blankOffer()] }));
   const removeOffer = (id) => setDraft((d) => ({ ...d, offers: (d.offers || []).filter((o) => o.id !== id) }));
   const updateOffer = (id, fields) =>
     setDraft((d) => ({ ...d, offers: (d.offers || []).map((o) => (o.id === id ? { ...o, ...fields } : o)) }));
+
+  const [offerModalOpen, setOfferModalOpen] = useState(false);
+  const [editingOffer, setEditingOffer] = useState(null);
+  const openAddOfferModal = () => {
+    setEditingOffer({ ...blankOffer(), isNew: true });
+    setOfferModalOpen(true);
+  };
+  const openEditOfferModal = (offer) => {
+    setEditingOffer({ ...offer, isNew: false });
+    setOfferModalOpen(true);
+  };
+  const closeOfferModal = () => {
+    setOfferModalOpen(false);
+    setEditingOffer(null);
+  };
+  // A brand new offer always saves switched on — that's the whole point of
+  // adding one. Editing an existing offer leaves its on/off state exactly
+  // as it was; the modal has no on/off control of its own, the table's
+  // Switch column does, and saving a description/price tweak shouldn't
+  // silently reactivate something that was deliberately turned off.
+  const handleOfferModalSave = (form) => {
+    const { isNew, ...offer } = form;
+    setDraft((d) => {
+      const offers = d.offers || [];
+      if (isNew) return { ...d, offers: [...offers, { ...offer, enabled: true }] };
+      return { ...d, offers: offers.map((o) => (o.id === offer.id ? { ...o, ...offer } : o)) };
+    });
+    closeOfferModal();
+  };
 
   const [savingPrice, setSavingPrice] = useState(false);
 
@@ -227,6 +259,73 @@ export default function PricingTab({ draft, baseline, setDraft, setBaseline }) {
   const hqCount = log.filter((e) => e.src === 'HQ Admin').length;
   const storeCount = log.length - hqCount;
   const filteredLog = localOnly ? log.filter((e) => e.src !== 'HQ Admin') : log;
+
+  // Table columns are the offer's own distinguishing fields, same rule as
+  // Campaign Scheduling's table (ph-designer skill components.md §16.1) —
+  // enough to tell offers apart at a glance without opening any of them.
+  const offerColumns = useMemo(
+    () => [
+      {
+        title: 'On',
+        width: 52,
+        render: (_, row) => (
+          <Switch size="small" checked={row.enabled !== false} onChange={(v) => updateOffer(row.id, { enabled: v })} />
+        ),
+      },
+      {
+        title: 'Description',
+        dataIndex: 'description',
+        render: (v) => v || <span style={{ color: 'rgba(0,0,0,.35)' }}>—</span>,
+      },
+      {
+        title: 'Price',
+        dataIndex: 'offerPrice',
+        width: 90,
+        render: (v) => (v !== '' && v != null ? `$${parseFloat(v).toFixed(2)}` : '—'),
+      },
+      {
+        title: 'Status',
+        width: 110,
+        render: (_, row) => {
+          const dateState = getOfferState(draft.rrp, row.offerPrice, row.offerFrom, row.offerUntil);
+          const state = row.enabled === false ? 'off' : dateState;
+          return (
+            <span style={{ borderRadius: 4, padding: '2px 8px', fontSize: 12, ...OFFER_STATE_STYLE[state] }}>
+              {OFFER_STATE_LABEL[state]}
+            </span>
+          );
+        },
+      },
+      {
+        title: 'Schedule',
+        width: 230,
+        render: (_, row) => (
+          <span style={{ fontSize: 13 }}>
+            {row.offerFrom ? fmtDateVal(row.offerFrom) : 'Now'} → {row.offerUntil ? fmtDateVal(row.offerUntil) : 'No end date'}
+          </span>
+        ),
+      },
+      {
+        title: 'Store Targeting',
+        width: 130,
+        render: (_, row) => {
+          const n = (row.targeting || []).length;
+          return n === 0 ? 'All stores' : `${n} rule${n === 1 ? '' : 's'}`;
+        },
+      },
+      {
+        title: '',
+        width: 84,
+        render: (_, row) => (
+          <div style={{ display: 'flex', gap: 2 }}>
+            <Button type="text" size="small" icon={<MaterialIcon name="edit" style={{ fontSize: 15 }} />} onClick={() => openEditOfferModal(row)} />
+            <Button type="text" size="small" danger icon={<MaterialIcon name="delete" style={{ fontSize: 15 }} />} onClick={() => removeOffer(row.id)} />
+          </div>
+        ),
+      },
+    ],
+    [draft.rrp]
+  );
 
   const columns = useMemo(
     () => [
@@ -349,37 +448,40 @@ export default function PricingTab({ draft, baseline, setDraft, setBaseline }) {
       </div>
 
       <div className="ph-sect">
-        <div className="ph-sect-label" style={{ marginBottom: 4 }}>
+        <div className="ph-sect-label" style={{ marginBottom: 12 }}>
           Offers
         </div>
-        <p style={{ fontSize: 12, color: 'rgba(0,0,0,.45)', margin: '0 0 12px' }}>
-          {(draft.offers || []).length} Offer{(draft.offers || []).length === 1 ? '' : 's'} Defined. Each offer can be
-          switched on or off independently and targeted to specific stores.
-        </p>
-        {(draft.offers || []).length === 0 && (
-          <div style={{ background: '#fafafa', border: '1px dashed #d9d9d9', borderRadius: 8, padding: 20, textAlign: 'center', color: 'rgba(0,0,0,.45)', fontSize: 13, marginBottom: 14 }}>
-            No offers yet. This product sells at RRP everywhere until you add one.
-          </div>
-        )}
-        {(draft.offers || []).map((offer, idx) => (
-          <OfferCard
-            key={offer.id}
-            offer={offer}
-            index={idx}
-            rrp={draft.rrp}
-            onChange={(fields) => updateOffer(offer.id, fields)}
-            onRemove={() => removeOffer(offer.id)}
-          />
-        ))}
-        <Button
-          type="text"
-          icon={<MaterialIcon name="add" style={{ fontSize: 15 }} />}
-          onClick={addOffer}
-          style={{ color: '#169bc2', paddingLeft: 0 }}
-        >
-          Add New Offer
-        </Button>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+          <span style={{ fontSize: 12, color: 'rgba(0,0,0,.45)' }}>
+            <b>{(draft.offers || []).length}</b> Offer{(draft.offers || []).length === 1 ? '' : 's'} Defined
+          </span>
+          <Button
+            type="text"
+            icon={<MaterialIcon name="add" style={{ fontSize: 15 }} />}
+            onClick={openAddOfferModal}
+            style={{ color: '#169bc2', padding: 0 }}
+          >
+            Add New Offer
+          </Button>
+        </div>
+        <Table
+          rowKey="id"
+          dataSource={draft.offers || []}
+          columns={offerColumns}
+          size="middle"
+          bordered={false}
+          pagination={false}
+          locale={{
+            emptyText: (
+              <div style={{ padding: '22px 0', color: 'rgba(0,0,0,.45)', fontSize: 13 }}>
+                No Offer(s) Defined. This product sells at RRP everywhere until you add one.
+              </div>
+            ),
+          }}
+        />
       </div>
+
+      <OfferFormModal open={offerModalOpen} initialOffer={editingOffer} onCancel={closeOfferModal} onSave={handleOfferModalSave} />
 
       <div className="ph-sect">
         <div className="ph-sect-label">Currency &amp; tax</div>
