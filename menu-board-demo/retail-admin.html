@@ -1260,6 +1260,12 @@ function _offerConditionMatches(cond, store) {
           cond.field === 'storeSegmentConsolidated' ? [...(store.fixedSegments || []), ...(store.variableSegments || [])] :
           cond.field === 'storeState' ? (store.state ? [store.state] : []) :
           cond.field === 'storeSuburb' ? (store.suburb ? [store.suburb] : []) :
+          cond.field === 'storeCountry' ? (store.storeCountry ? [store.storeCountry] : []) :
+          cond.field === 'displayTag' ? (store.displayTags || []) :
+          cond.field === 'displayId' ? (store.displayId ? [store.displayId] : []) :
+          cond.field === 'displayType' ? (store.displayType ? [store.displayType] : []) :
+          cond.field === 'displayName' ? (store.displayName ? [store.displayName] : []) :
+          cond.field === 'languagesSpokenByStaff' ? (store.languagesSpokenByStaff || []) :
           []
         )
   ).map(v => String(v).trim().toLowerCase());

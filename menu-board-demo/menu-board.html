@@ -801,7 +801,7 @@ let _storePricing  = {}; // per-store price override (by sku), set from Retail A
 // successful poll (Device UDID boards only — Store Code boards have no PH
 // API session and so never receive segments, same as they never receive a
 // personalised first name today).
-let _storeProfile  = { storeName: null, fixedSegments: [], variableSegments: [], suburb: '', state: '' };
+let _storeProfile  = { storeName: null, fixedSegments: [], variableSegments: [], suburb: '', state: '', storeCountry: '', displayTags: [], displayId: '', displayType: '', displayName: '', languagesSpokenByStaff: [] };
 // Campaign SKUs: null = default menu; string[] = personalised override from Personalisation Hub API
 let _campaignSkus      = TEST_SKUS.length > 0 ? TEST_SKUS : null;
 let _campaignFirstName = null; // null = no greeting; string = show personalised greeting in clock bar
@@ -865,6 +865,12 @@ function _offerConditionMatches(cond, store) {
           cond.field === 'storeSegmentConsolidated' ? [...(store.fixedSegments || []), ...(store.variableSegments || [])] :
           cond.field === 'storeState' ? (store.state ? [store.state] : []) :
           cond.field === 'storeSuburb' ? (store.suburb ? [store.suburb] : []) :
+          cond.field === 'storeCountry' ? (store.storeCountry ? [store.storeCountry] : []) :
+          cond.field === 'displayTag' ? (store.displayTags || []) :
+          cond.field === 'displayId' ? (store.displayId ? [store.displayId] : []) :
+          cond.field === 'displayType' ? (store.displayType ? [store.displayType] : []) :
+          cond.field === 'displayName' ? (store.displayName ? [store.displayName] : []) :
+          cond.field === 'languagesSpokenByStaff' ? (store.languagesSpokenByStaff || []) :
           []
         )
   ).map(v => String(v).trim().toLowerCase());
@@ -1544,6 +1550,17 @@ async function pollCampaign() {
     // store_info.address_info, same PH API response as opening_hours.
     const suburb = (d?.store_info?.address_info?.suburb || '').trim();
     const state = (d?.store_info?.address_info?.state || '').trim();
+    // Remaining Store/Location targeting fields (components.md §16) — all
+    // sourced from the same store_location object as store_name/segments
+    // above, confirmed live against a real campaign_data sample
+    // (mock-languages.json) rather than guessed. Previously offered for
+    // authoring only with no live data behind them at all.
+    const storeCountry = (d?.store_location?.store_country || '').trim();
+    const displayTags = Array.isArray(d?.store_location?.display_tags) ? d.store_location.display_tags : [];
+    const displayId = (d?.store_location?.display_id || '').trim();
+    const displayType = (d?.store_location?.display_type || '').trim();
+    const displayName = (d?.store_location?.display_name || '').trim();
+    const languagesSpokenByStaff = Array.isArray(d?.store_location?.languages) ? d.store_location.languages : [];
 
     // Resolve SKUs: try visitor_customer first, then data root
     // Filter out empty/blank strings that can appear in sparse API payloads
@@ -1568,7 +1585,7 @@ async function pollCampaign() {
     const skusChanged      = JSON.stringify(newSkus) !== JSON.stringify(_campaignSkus);
     const nameChanged      = firstName !== _campaignFirstName;
     const storeNameChanged = storeName !== _storeName;
-    const nextStoreProfile = { storeName, fixedSegments, variableSegments, suburb, state };
+    const nextStoreProfile = { storeName, fixedSegments, variableSegments, suburb, state, storeCountry, displayTags, displayId, displayType, displayName, languagesSpokenByStaff };
     const segmentsChanged  = JSON.stringify(nextStoreProfile) !== JSON.stringify(_storeProfile);
 
     _dbgLastPoll = Date.now();
