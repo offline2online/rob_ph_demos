@@ -2825,6 +2825,16 @@ function initGrids() {
     itemsGridApi = agGrid.createGrid(itemsEl, {
       rowHeight: 99,
       domLayout: 'autoHeight',
+      // Filter popups (CheckboxSetFilter's own dropdown, incl. the new
+      // Ingredients/Calories columns) default to rendering inside the
+      // grid's own DOM — with autoHeight plus the sticky header above
+      // (position:sticky; z-index:10), that put the popup behind the
+      // header and let ancestor containers clip its item list. Body-level
+      // popups escape every ancestor's overflow/z-index entirely, and —
+      // since this grid has no internal scroll of its own (autoHeight
+      // means the *page* scrolls) — stay correctly anchored under their
+      // header cell as the page scrolls, exactly like a normal popup.
+      popupParent: document.body,
       suppressCellFocus: true,
       rowSelection: 'multiple',
       suppressRowClickSelection: true,
@@ -3220,6 +3230,16 @@ function initGrids() {
         }
       ]
     });
+
+    // This grid has no scrollbar of its own (domLayout: 'autoHeight' — the
+    // *page* scrolls instead), and an open CheckboxSetFilter popup is
+    // positioned in the page's own document flow (see popupParent above),
+    // not tied to the sticky header it opened under. Scroll far enough and
+    // the header stays pinned while the popup keeps scrolling away from
+    // it — closing the popup on scroll, the same way virtually every
+    // dropdown/menu component does, avoids that drift entirely rather
+    // than trying to keep it live-anchored to a sticky element.
+    window.addEventListener('scroll', () => itemsGridApi?.hidePopupMenu(), { passive: true });
   }
 
   // ── Brands Grid ──────────────────────────────────────────────────────
