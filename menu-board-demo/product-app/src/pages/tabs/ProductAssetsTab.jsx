@@ -312,12 +312,21 @@ export default function ProductAssetsTab({ draft, patch }) {
             }}
           >
             <MaterialIcon name="add_photo_alternate" style={{ fontSize: 22 }} />
-            <input ref={fileInput} type="file" multiple={fileIntent.current === 'upload'} accept="image/*,video/*" style={{ display: 'none' }} onChange={onFileInputChange} />
           </div>
           {images.map((img, idx) => (
             <Tile key={img.id} img={img} selected={idx === selected} onClick={() => setSelected(idx)} />
           ))}
         </div>
+        {/* Deliberately a sibling of the "+" tile, not nested inside it —
+            fileInput.current.click() (called by both openUpload and
+            openReplace) fires a real DOM click on this element, which
+            bubbles. Nested inside the "+" tile's own onClick={openUpload}
+            div, that bubble re-fired openUpload right after openReplace
+            had just set fileIntent to 'replace', silently turning every
+            Replace into an Upload (a new tile appended, old one left
+            untouched) — the exact bug Replace's own tooltip claims not
+            to have. */}
+        <input ref={fileInput} type="file" multiple={fileIntent.current === 'upload'} accept="image/*,video/*" style={{ display: 'none' }} onChange={onFileInputChange} />
       </div>
       <div style={{ height: 8 }} />
 
