@@ -9,7 +9,7 @@ import PricingTab from './tabs/PricingTab.jsx';
 import { getProduct, blankProduct, upsertProduct, setProductStatus } from '../data/productStore.js';
 
 export default function ProductPage({ isNew = false }) {
-  const { id, tab = 'details' } = useParams();
+  const { id, tab = 'assets' } = useParams();
   const navigate = useNavigate();
   const { message } = App.useApp();
 
@@ -147,8 +147,8 @@ export default function ProductPage({ isNew = false }) {
           activeKey={tab}
           onChange={goTab}
           items={[
-            { key: 'details', label: 'Product Details' },
             { key: 'assets', label: `Product Assets (${imageCount + videoCount})` },
+            { key: 'details', label: 'Product Details' },
             { key: 'pricing', label: 'Pricing' },
             { key: 'stock', label: 'Stock' },
           ]}

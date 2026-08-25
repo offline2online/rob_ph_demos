@@ -2703,7 +2703,7 @@ function initGrids() {
             const div = document.createElement('div');
             div.style.cssText = 'display:flex;align-items:center;gap:12px;height:100%;cursor:pointer;width:100%;';
             div.title = 'Click to edit';
-            div.addEventListener('click', () => location.href = 'product/#/products/' + item.id + '/details');
+            div.addEventListener('click', () => location.href = 'product/#/products/' + item.id + '/assets');
             const imgWrap = document.createElement('div');
             imgWrap.className = 'item-img';
             const thumbSrc = _defaultImageSrc(item);
@@ -3014,7 +3014,7 @@ function initGrids() {
             const btn = document.createElement('button');
             btn.className = 'row-menu-btn'; btn.textContent = '···';
             btn.addEventListener('click', e => showRowMenu(e, [
-              { label: 'Edit', action: () => location.href = 'product/#/products/' + item.id + '/details' },
+              { label: 'Edit', action: () => location.href = 'product/#/products/' + item.id + '/assets' },
               item.active
                 ? { label: 'Deactivate', action: () => bulkSetActive(false, [item.id]) }
                 : { label: 'Activate',   action: () => bulkSetActive(true,  [item.id]) },

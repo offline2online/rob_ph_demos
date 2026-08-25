@@ -4,9 +4,9 @@ import { Spin } from 'antd';
 import ProductPage from './pages/ProductPage.jsx';
 import { loadRegistries } from './data/registries.js';
 
-function RedirectToDetails() {
+function RedirectToAssets() {
   const { id } = useParams();
-  return <Navigate to={`/products/${id}/details`} replace />;
+  return <Navigate to={`/products/${id}/assets`} replace />;
 }
 
 export default function App() {
@@ -37,7 +37,7 @@ export default function App() {
   return (
     <Routes>
       <Route path="/products/new" element={<ProductPage isNew />} />
-      <Route path="/products/:id" element={<RedirectToDetails />} />
+      <Route path="/products/:id" element={<RedirectToAssets />} />
       <Route path="/products/:id/:tab" element={<ProductPage />} />
       <Route path="*" element={<Navigate to="/products/new" replace />} />
     </Routes>
