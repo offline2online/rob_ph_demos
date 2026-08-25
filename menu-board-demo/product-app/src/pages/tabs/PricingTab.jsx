@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Input, InputNumber, Table, Button, App, Tag, Switch, Modal, Tooltip } from 'antd';
+import { Input, InputNumber, Table, Button, App, Tag, Switch, Modal, Tooltip, Select } from 'antd';
 import MaterialIcon from '../../components/MaterialIcon.jsx';
 import ClearableDate, { shiftEndOneHour } from '../../components/ClearableDate.jsx';
 import { getOfferState, pickEffectiveOffer, pickDefaultOffer } from '../../components/OfferBanner.jsx';
@@ -24,6 +24,48 @@ function Field({ label, required, children, hint }) {
 
 function blankOffer() {
   return { id: genId('offer'), enabled: true, description: '', offerPrice: '', offerFrom: '', offerUntil: '', showOnMenuBoard: '', targeting: [], recurrence: null };
+}
+
+// Matches productStore.js's blankProduct() default, and the fallback
+// menu-board.html applies to items saved before these controls existed.
+const DEFAULT_MENU_BOARD_NOTE_STYLE = { size: 'medium', uppercase: false, outlined: false, borderWidth: 'thin', radius: 'rounded' };
+
+// Same colors/proportions menu-board.html's .menu-board-note pill uses,
+// scaled down to fixed px for this fixed-size editor preview instead of
+// the board's viewport-relative clamp() sizing.
+const MENU_NOTE_SIZE_CSS = {
+  small: { fontSize: 13, padding: '4px 10px' },
+  medium: { fontSize: 15, padding: '6px 13px' },
+  large: { fontSize: 18, padding: '8px 16px' },
+};
+const MENU_NOTE_RADIUS_CSS = { square: 2, rounded: 6, pill: 999 };
+const MENU_NOTE_BORDER_PX = { thin: 1, medium: 2, thick: 3 };
+const MENU_NOTE_COLORS = { bg: '#fff7e6', fg: '#ad4e00' };
+
+function noteStyleToPreviewCss(style) {
+  const s = style || DEFAULT_MENU_BOARD_NOTE_STYLE;
+  const size = MENU_NOTE_SIZE_CSS[s.size] || MENU_NOTE_SIZE_CSS.medium;
+  return {
+    display: 'inline-block',
+    fontWeight: 700,
+    lineHeight: 1.3,
+    fontSize: size.fontSize,
+    padding: size.padding,
+    borderRadius: MENU_NOTE_RADIUS_CSS[s.radius] ?? MENU_NOTE_RADIUS_CSS.rounded,
+    textTransform: s.uppercase ? 'uppercase' : 'none',
+    background: s.outlined ? 'transparent' : MENU_NOTE_COLORS.bg,
+    color: MENU_NOTE_COLORS.fg,
+    border: s.outlined ? `${MENU_NOTE_BORDER_PX[s.borderWidth] || 1}px solid ${MENU_NOTE_COLORS.fg}` : 'none',
+  };
+}
+
+function describeNoteStyle(style) {
+  const s = style || DEFAULT_MENU_BOARD_NOTE_STYLE;
+  const size = { small: 'Small', medium: 'Medium', large: 'Large' }[s.size] || 'Medium';
+  const radius = { square: 'Square', rounded: 'Rounded', pill: 'Pill' }[s.radius] || 'Rounded';
+  const parts = [size, radius, s.outlined ? `Outlined (${s.borderWidth || 'thin'})` : 'Filled'];
+  if (s.uppercase) parts.push('ALL CAPS');
+  return parts.join(', ');
 }
 
 const OFFER_STATE_STYLE = {
@@ -195,8 +237,9 @@ export default function PricingTab({ draft, baseline, setDraft, setBaseline }) {
 
   const rrpChanged = String(draft.rrp) !== String(baseline.rrp);
   const menuBoardCopyChanged = String(draft.menuBoardNote || '') !== String(baseline.menuBoardNote || '');
+  const menuBoardStyleChanged = JSON.stringify(draft.menuBoardNoteStyle || DEFAULT_MENU_BOARD_NOTE_STYLE) !== JSON.stringify(baseline.menuBoardNoteStyle || DEFAULT_MENU_BOARD_NOTE_STYLE);
   const offersChanged = JSON.stringify(draft.offers || []) !== JSON.stringify(baseline.offers || []);
-  const dirty = rrpChanged || menuBoardCopyChanged || offersChanged;
+  const dirty = rrpChanged || menuBoardCopyChanged || menuBoardStyleChanged || offersChanged;
   const canSave = dirty && reason.trim() !== '';
 
   const currencySymbol = draft.currency || '$';
@@ -204,9 +247,15 @@ export default function PricingTab({ draft, baseline, setDraft, setBaseline }) {
     rrpChanged ? `RRP ${currencySymbol}${baseline.rrp || '0.00'} → ${currencySymbol}${draft.rrp}` : null,
     offersChanged ? `Offers updated (${(draft.offers || []).length} defined)` : null,
     menuBoardCopyChanged ? `Menu board copy updated` : null,
+    menuBoardStyleChanged ? `Menu board badge style updated` : null,
   ]
     .filter(Boolean)
     .join(' · ');
+
+  const updateNoteStyle = (fields) => {
+    setDraft((d) => ({ ...d, menuBoardNoteStyle: { ...(d.menuBoardNoteStyle || DEFAULT_MENU_BOARD_NOTE_STYLE), ...fields } }));
+    autoFillReason('Updated menu board badge style');
+  };
 
   const discardChange = () => {
     setDraft((d) => ({
@@ -214,6 +263,7 @@ export default function PricingTab({ draft, baseline, setDraft, setBaseline }) {
       rrp: baseline.rrp,
       offers: baseline.offers || [],
       menuBoardNote: baseline.menuBoardNote,
+      menuBoardNoteStyle: baseline.menuBoardNoteStyle,
     }));
     setReason('');
   };
@@ -287,6 +337,7 @@ export default function PricingTab({ draft, baseline, setDraft, setBaseline }) {
       });
     }
     if (menuBoardCopyChanged) changes.push({ fieldName: 'Show on Menu Board', oldValue: baseline.menuBoardNote || '—', newValue: draft.menuBoardNote || '—' });
+    if (menuBoardStyleChanged) changes.push({ fieldName: 'Menu Board Badge Style', oldValue: describeNoteStyle(baseline.menuBoardNoteStyle), newValue: describeNoteStyle(draft.menuBoardNoteStyle) });
 
     // The grid, its price-column filter, and the Product Details banner
     // only know the legacy flat offerPrice/offerFrom/offerUntil/
@@ -547,6 +598,62 @@ export default function PricingTab({ draft, baseline, setDraft, setBaseline }) {
               placeholder="e.g. Limited time only!"
               style={menuBoardCopyChanged ? { background: '#e8fdff' } : undefined}
             />
+          </Field>
+        </div>
+        <div style={{ marginTop: 14, display: 'flex', gap: 20, alignItems: 'flex-end', flexWrap: 'wrap' }}>
+          <div style={{ width: 120 }}>
+            <Field label="Badge size">
+              <Select
+                value={draft.menuBoardNoteStyle?.size || 'medium'}
+                onChange={(v) => updateNoteStyle({ size: v })}
+                options={[
+                  { value: 'small', label: 'Small' },
+                  { value: 'medium', label: 'Medium' },
+                  { value: 'large', label: 'Large' },
+                ]}
+                style={{ width: '100%' }}
+              />
+            </Field>
+          </div>
+          <div style={{ width: 130 }}>
+            <Field label="Corner radius">
+              <Select
+                value={draft.menuBoardNoteStyle?.radius || 'rounded'}
+                onChange={(v) => updateNoteStyle({ radius: v })}
+                options={[
+                  { value: 'square', label: 'Square' },
+                  { value: 'rounded', label: 'Rounded' },
+                  { value: 'pill', label: 'Pill' },
+                ]}
+                style={{ width: '100%' }}
+              />
+            </Field>
+          </div>
+          <Field label="ALL CAPS">
+            <Switch checked={!!draft.menuBoardNoteStyle?.uppercase} onChange={(v) => updateNoteStyle({ uppercase: v })} />
+          </Field>
+          <Field label="Outline">
+            <Switch checked={!!draft.menuBoardNoteStyle?.outlined} onChange={(v) => updateNoteStyle({ outlined: v })} />
+          </Field>
+          <div style={{ width: 120 }}>
+            <Field label="Border width">
+              <Select
+                disabled={!draft.menuBoardNoteStyle?.outlined}
+                value={draft.menuBoardNoteStyle?.borderWidth || 'thin'}
+                onChange={(v) => updateNoteStyle({ borderWidth: v })}
+                options={[
+                  { value: 'thin', label: 'Thin' },
+                  { value: 'medium', label: 'Medium' },
+                  { value: 'thick', label: 'Thick' },
+                ]}
+                style={{ width: '100%' }}
+              />
+            </Field>
+          </div>
+          <Field label="Preview">
+            <span style={noteStyleToPreviewCss(draft.menuBoardNoteStyle)}>
+              {draft.menuBoardNote || 'Limited time only!'}
+            </span>
           </Field>
         </div>
       </div>

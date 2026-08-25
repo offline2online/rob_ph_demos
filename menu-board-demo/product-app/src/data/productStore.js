@@ -40,6 +40,12 @@ export function blankProduct() {
     // was overriding it would bake that override in as the new
     // "fallback," permanently masking menuBoardNote from then on.
     menuBoardNote: '',
+    // How the "Show on Menu Board" note renders as a badge/pill on the
+    // board itself — set once at HQ level, not overridable per store (the
+    // store-level field only ever overrides the note's text). Keys mirror
+    // the fallback menu-board.html applies to items saved before this
+    // existed, so an old product renders identically either way.
+    menuBoardNoteStyle: { size: 'medium', uppercase: false, outlined: false, borderWidth: 'thin', radius: 'rounded' },
     showOnMenuBoard: '',
     currency: '$',
     taxClass: '',

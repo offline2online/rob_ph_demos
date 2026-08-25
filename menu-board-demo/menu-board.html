@@ -1070,6 +1070,31 @@ function shouldShowMenuNote(item) {
   return isOfferLive(item);
 }
 
+// The "Show on Menu Board" badge's look (size/case/outline/border/radius),
+// set once per product on the Pricing tab (product-app/PricingTab.jsx) —
+// a store-level override only ever replaces the *text*, never the style,
+// so this always reads from the raw item, not the store-resolved copy.
+// Values mirror productStore.js's blankProduct() default so an item saved
+// before these controls existed renders exactly as it always has.
+const MENU_NOTE_SIZES = {
+  small:  { font: 'clamp(11px, 1.0vw, 15px)',   pad: 'clamp(3px, 0.4vw, 6px) clamp(8px, 0.9vw, 14px)' },
+  medium: { font: 'clamp(13px, 1.3vw, 19.5px)', pad: 'clamp(4px, 0.5vw, 8px) clamp(10px, 1.2vw, 18px)' },
+  large:  { font: 'clamp(16px, 1.7vw, 25px)',   pad: 'clamp(6px, 0.7vw, 11px) clamp(13px, 1.5vw, 22px)' },
+};
+const MENU_NOTE_RADII = { square: '2px', rounded: 'clamp(4px, 0.45vw, 8px)', pill: '999px' };
+const MENU_NOTE_BORDER_WIDTHS = { thin: '1px', medium: '2px', thick: '3px' };
+const MENU_NOTE_COLORS = { bg: '#fff7e6', fg: '#ad4e00' };
+function menuNoteStyleAttr(item) {
+  const s = item.menuBoardNoteStyle || {};
+  const size = MENU_NOTE_SIZES[s.size] || MENU_NOTE_SIZES.medium;
+  const radius = MENU_NOTE_RADII[s.radius] || MENU_NOTE_RADII.rounded;
+  const outlined = !!s.outlined;
+  const borderWidth = MENU_NOTE_BORDER_WIDTHS[s.borderWidth] || MENU_NOTE_BORDER_WIDTHS.thin;
+  const border = outlined ? `${borderWidth} solid ${MENU_NOTE_COLORS.fg}` : 'none';
+  const bg = outlined ? 'transparent' : MENU_NOTE_COLORS.bg;
+  return `font-size:${size.font};padding:${size.pad};border-radius:${radius};background:${bg};color:${MENU_NOTE_COLORS.fg};border:${border};text-transform:${s.uppercase ? 'uppercase' : 'none'};`;
+}
+
 // ── BRAND SUPPORT ────────────────────────────────────────────────────────────
 let _debugPanelVisible = DEBUG_MODE; // toggled by long-press on bottom-left corner
 
@@ -2040,7 +2065,7 @@ function render() {
       ? _mediaTag(cellImg, item.name, 'item-thumb-placeholder', '🍽️')
       : `<div class="item-thumb-placeholder">🍽️</div>`;
     const desc = item.description ? `<div class="item-desc">${esc(item.description)}</div>` : '';
-    const menuNote = shouldShowMenuNote(item) ? `<div class="menu-board-note">${esc(item.showOnMenuBoard)}</div>` : '';
+    const menuNote = shouldShowMenuNote(item) ? `<div class="menu-board-note" style="${menuNoteStyleAttr(item)}">${esc(item.showOnMenuBoard)}</div>` : '';
     return `
       <div class="item-cell${oos ? ' oos-cell' : ''}">
         <div class="item-thumb">${thumbInner}</div>
@@ -2158,7 +2183,7 @@ function render() {
         ? _mediaTag(heroSrc, heroItem.name, 'promo-hero-placeholder', '🏷️')
         : `<div class="promo-hero-placeholder">🏷️</div>`;
       const heroCat = heroItem.category ? `<div class="promo-cat">${esc(heroItem.category)}</div>` : '';
-      const heroMenuNote = shouldShowMenuNote(heroItem) ? `<div class="menu-board-note">${esc(heroItem.showOnMenuBoard)}</div>` : '';
+      const heroMenuNote = shouldShowMenuNote(heroItem) ? `<div class="menu-board-note" style="${menuNoteStyleAttr(heroItem)}">${esc(heroItem.showOnMenuBoard)}</div>` : '';
       const heroTopHtml = `
         <div class="promo-hero-top">
           ${heroCat}
@@ -2183,7 +2208,7 @@ function render() {
         const desc = item.description
           ? `<div class="promo-tile-desc"><div class="promo-desc">${esc(item.description)}</div></div>` : '';
         const cat = item.category ? `<div class="promo-cat">${esc(item.category)}</div>` : '';
-        const menuNote = shouldShowMenuNote(item) ? `<div class="menu-board-note">${esc(item.showOnMenuBoard)}</div>` : '';
+        const menuNote = shouldShowMenuNote(item) ? `<div class="menu-board-note" style="${menuNoteStyleAttr(item)}">${esc(item.showOnMenuBoard)}</div>` : '';
         return `
           <div class="promo-tile">
             <div class="promo-text">
