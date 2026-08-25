@@ -792,7 +792,7 @@
 
           <div class="settings-section" id="settingsSection-badgeTemplates">
             <h3>Menu Board Badge Templates</h3>
-            <p class="settings-desc">Define reusable badge/button styles once — a name, size, text case, outline, border and colours — then pick one for a product's "Show on Menu Board" copy. Offers and store-level copy for that product always use the same template.</p>
+            <p class="settings-desc">Define reusable badge/button styles once — a name, size, text case, corner radius, colours, and a background/border that can be set independently — then pick one for a product's "Show on Menu Board" copy. Offers and store-level copy for that product always use the same template.</p>
             <div class="bt-list" id="btList"></div>
             <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
               <button class="btn btn-ghost btn-sm" onclick="addBadgeTemplate()"><span class="material-symbols-outlined" style="font-size:14px;">add</span> Add Template</button>
@@ -1264,7 +1264,7 @@ const DEFAULT_CATS = ['Mains','Starters','Sides','Desserts','Hot Drinks','Cold D
 // this repo duplicates small shared registries as plain JS/data across
 // its vanilla pages and the React app rather than sharing an import.
 const DEFAULT_BADGE_TEMPLATES = [
-  { id: 'default', name: 'Amber (Default)', size: 'medium', uppercase: false, outlined: false, borderWidth: 'thin', radius: 'rounded', bg: '#fff7e6', color: '#ad4e00', borderColor: '#ad4e00' },
+  { id: 'default', name: 'Amber (Default)', size: 'medium', uppercase: false, outlined: false, borderWidth: 'none', radius: 'rounded', bg: '#fff7e6', color: '#ad4e00', borderColor: '#ad4e00' },
 ];
 
 const DEFAULT_COLORS = {
@@ -1697,12 +1697,16 @@ function removePhEndpoint(i) {
 const BT_SIZE_CSS   = { small: { font: '13px', pad: '4px 10px' }, medium: { font: '15px', pad: '6px 13px' }, large: { font: '18px', pad: '8px 16px' } };
 const BT_RADIUS_CSS = { square: '2px', rounded: '6px', pill: '999px' };
 const BT_BORDER_PX  = { thin: '1px', medium: '2px', thick: '3px' };
+// `outlined` only controls the fill (transparent vs. background colour) —
+// the border is independent, gated purely by borderWidth being something
+// other than 'none'. A template can be filled AND bordered at once.
 function badgeTemplatePreviewStyle(t) {
   const size = BT_SIZE_CSS[t.size] || BT_SIZE_CSS.medium;
   const radius = BT_RADIUS_CSS[t.radius] || BT_RADIUS_CSS.rounded;
   const color = t.color || '#ad4e00';
   const bg = t.outlined ? 'transparent' : (t.bg || '#fff7e6');
-  const border = t.outlined ? `${BT_BORDER_PX[t.borderWidth] || '1px'} solid ${t.borderColor || color}` : 'none';
+  const hasBorder = !!t.borderWidth && t.borderWidth !== 'none';
+  const border = hasBorder ? `${BT_BORDER_PX[t.borderWidth] || '1px'} solid ${t.borderColor || color}` : 'none';
   return `font-size:${size.font};padding:${size.pad};border-radius:${radius};background:${bg};color:${color};border:${border};text-transform:${t.uppercase ? 'uppercase' : 'none'};`;
 }
 
@@ -1736,28 +1740,29 @@ function renderBadgeTemplates() {
         </select>
       </div>
       <div class="form-group" style="width:64px;">
-        <label>Text</label>
+        <label>Text colour</label>
         <input type="color" class="bt-color-input" id="btColor${i}" value="${t.color || '#ad4e00'}" oninput="updateBadgeTemplateField(${i},'color',this.value)">
       </div>
       <div class="form-group" style="width:64px;">
-        <label>Background</label>
+        <label>Fill colour</label>
         <input type="color" class="bt-color-input" id="btBg${i}" value="${t.bg || '#fff7e6'}" oninput="updateBadgeTemplateField(${i},'bg',this.value)">
       </div>
       <div class="form-group" style="width:64px;">
-        <label>Border</label>
+        <label>Border colour</label>
         <input type="color" class="bt-color-input" id="btBorderColor${i}" value="${t.borderColor || t.color || '#ad4e00'}" oninput="updateBadgeTemplateField(${i},'borderColor',this.value)">
       </div>
-      <div class="form-group" style="width:90px;">
-        <label>Style</label>
+      <div class="form-group" style="width:100px;">
+        <label>Background</label>
         <select id="btOutlined${i}" onchange="updateBadgeTemplateField(${i},'outlined',this.value === '1')">
           <option value="0" ${!t.outlined ? 'selected' : ''}>Filled</option>
-          <option value="1" ${t.outlined ? 'selected' : ''}>Outlined</option>
+          <option value="1" ${t.outlined ? 'selected' : ''}>Transparent</option>
         </select>
       </div>
       <div class="form-group" style="width:100px;">
-        <label>Border width</label>
+        <label>Border</label>
         <select id="btBorderWidth${i}" onchange="updateBadgeTemplateField(${i},'borderWidth',this.value)">
-          <option value="thin" ${(!t.borderWidth || t.borderWidth === 'thin') ? 'selected' : ''}>Thin</option>
+          <option value="none" ${(!t.borderWidth || t.borderWidth === 'none') ? 'selected' : ''}>None</option>
+          <option value="thin" ${t.borderWidth === 'thin' ? 'selected' : ''}>Thin</option>
           <option value="medium" ${t.borderWidth === 'medium' ? 'selected' : ''}>Medium</option>
           <option value="thick" ${t.borderWidth === 'thick' ? 'selected' : ''}>Thick</option>
         </select>
@@ -1789,7 +1794,7 @@ function updateBadgeTemplateField(i, field, value) {
 }
 
 function addBadgeTemplate() {
-  _badgeTemplates.push({ id: genId(), name: '', size: 'medium', uppercase: false, outlined: false, borderWidth: 'thin', radius: 'rounded', bg: '#fff7e6', color: '#ad4e00', borderColor: '#ad4e00' });
+  _badgeTemplates.push({ id: genId(), name: '', size: 'medium', uppercase: false, outlined: false, borderWidth: 'none', radius: 'rounded', bg: '#fff7e6', color: '#ad4e00', borderColor: '#ad4e00' });
   renderBadgeTemplates();
   const idx = _badgeTemplates.length - 1;
   document.getElementById(`btName${idx}`)?.focus();

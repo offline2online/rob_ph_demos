@@ -42,11 +42,15 @@ const MENU_NOTE_BORDER_PX = { thin: 1, medium: 2, thick: 3 };
 // `template` is a badge template record from getBadgeTemplateById() — see
 // registries.js and hq-admin.html's Settings section where these are
 // authored. Falls back to sane defaults for a template missing a field
-// (e.g. saved before a colour existed on it).
+// (e.g. saved before a colour existed on it). `outlined` only controls the
+// fill (transparent vs. background colour) — the border is independent,
+// gated purely by borderWidth being something other than 'none', so a
+// template can be filled AND bordered at once.
 function templateToPreviewCss(template) {
   const t = template || {};
   const size = MENU_NOTE_SIZE_CSS[t.size] || MENU_NOTE_SIZE_CSS.medium;
   const color = t.color || '#ad4e00';
+  const hasBorder = !!t.borderWidth && t.borderWidth !== 'none';
   return {
     display: 'inline-block',
     fontWeight: 700,
@@ -57,7 +61,7 @@ function templateToPreviewCss(template) {
     textTransform: t.uppercase ? 'uppercase' : 'none',
     background: t.outlined ? 'transparent' : (t.bg || '#fff7e6'),
     color,
-    border: t.outlined ? `${MENU_NOTE_BORDER_PX[t.borderWidth] || 1}px solid ${t.borderColor || color}` : 'none',
+    border: hasBorder ? `${MENU_NOTE_BORDER_PX[t.borderWidth] || 1}px solid ${t.borderColor || color}` : 'none',
   };
 }
 
@@ -151,18 +155,17 @@ function OfferFormModal({ open, initialOffer, onCancel, onSave, currency, noteTe
               />
             </Field>
           </div>
-          <div style={{ marginTop: 14, display: 'flex', gap: 20, alignItems: 'flex-end', flexWrap: 'wrap' }}>
-            <div style={{ flex: 1, minWidth: 220 }}>
-              <Field label="Show on Menu Board" hint="Promo copy shown alongside this offer's price while it's live, e.g. &ldquo;Today only!&rdquo; Leave blank to show nothing extra. Always uses this product's badge template (set above, on the Show on Menu Board field) — an offer can't pick its own.">
+          <div style={{ marginTop: 14 }}>
+            <Field label="Show on Menu Board" hint="Promo copy shown alongside this offer's price while it's live, e.g. &ldquo;Today only!&rdquo; Leave blank to show nothing extra. Always uses this product's badge template (set above, on the Show on Menu Board field) — an offer can't pick its own.">
+              <div style={{ display: 'flex', gap: 16, alignItems: 'center', flexWrap: 'wrap' }}>
                 <Input
                   value={form.showOnMenuBoard}
                   onChange={(e) => setForm((f) => ({ ...f, showOnMenuBoard: e.target.value }))}
                   placeholder="e.g. Today only!"
+                  style={{ flex: 1, minWidth: 200 }}
                 />
-              </Field>
-            </div>
-            <Field label="Preview">
-              <span style={templateToPreviewCss(noteTemplate)}>{form.showOnMenuBoard || 'Today only!'}</span>
+                <span style={templateToPreviewCss(noteTemplate)}>{form.showOnMenuBoard || 'Today only!'}</span>
+              </div>
             </Field>
           </div>
           <div style={{ marginTop: 24, paddingTop: 20, paddingBottom: 20, borderTop: '1px solid #f0f0f0', borderBottom: '1px solid #f0f0f0' }}>
@@ -601,12 +604,12 @@ export default function PricingTab({ draft, baseline, setDraft, setBaseline }) {
             />
           </Field>
         </div>
-        <div style={{ marginTop: 14, display: 'flex', gap: 20, alignItems: 'flex-end', flexWrap: 'wrap' }}>
-          <div style={{ width: 240 }}>
-            <Field
-              label="Badge template"
-              hint="Defined once under HQ Admin → Settings → Menu Board Badge Templates. This template also applies to every offer's note below and to any store-level override of this copy."
-            >
+        <div style={{ marginTop: 14 }}>
+          <Field
+            label="Badge template"
+            hint="Defined once under HQ Admin → Settings → Menu Board Badge Templates. This template also applies to every offer's note below and to any store-level override of this copy."
+          >
+            <div style={{ display: 'flex', gap: 16, alignItems: 'center', flexWrap: 'wrap' }}>
               <Select
                 value={draft.menuBoardNoteTemplateId || 'default'}
                 onChange={(v) => {
@@ -614,14 +617,12 @@ export default function PricingTab({ draft, baseline, setDraft, setBaseline }) {
                   autoFillReason('Updated menu board badge template');
                 }}
                 options={getBadgeTemplates().map((t) => ({ value: t.id, label: t.name }))}
-                style={{ width: '100%' }}
+                style={{ width: 240 }}
               />
-            </Field>
-          </div>
-          <Field label="Preview">
-            <span style={templateToPreviewCss(selectedTemplate)}>
-              {draft.menuBoardNote || 'Limited time only!'}
-            </span>
+              <span style={templateToPreviewCss(selectedTemplate)}>
+                {draft.menuBoardNote || 'Limited time only!'}
+              </span>
+            </div>
           </Field>
         </div>
       </div>

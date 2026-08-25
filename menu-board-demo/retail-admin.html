@@ -1193,7 +1193,7 @@ let _brands   = [];
 // is still empty. A store can never restyle this, only its text, so the
 // Pricing tab's preview here always resolves the *product's* template.
 const DEFAULT_BADGE_TEMPLATES = [
-  { id: 'default', name: 'Amber (Default)', size: 'medium', uppercase: false, outlined: false, borderWidth: 'thin', radius: 'rounded', bg: '#fff7e6', color: '#ad4e00', borderColor: '#ad4e00' },
+  { id: 'default', name: 'Amber (Default)', size: 'medium', uppercase: false, outlined: false, borderWidth: 'none', radius: 'rounded', bg: '#fff7e6', color: '#ad4e00', borderColor: '#ad4e00' },
 ];
 let _badgeTemplates = [];
 function getBadgeTemplateById(id) {
@@ -1211,7 +1211,8 @@ function badgeTemplatePreviewStyle(t) {
   const radius = BT_RADIUS_CSS[t.radius] || BT_RADIUS_CSS.rounded;
   const color = t.color || '#ad4e00';
   const bg = t.outlined ? 'transparent' : (t.bg || '#fff7e6');
-  const border = t.outlined ? `${BT_BORDER_PX[t.borderWidth] || '1px'} solid ${t.borderColor || color}` : 'none';
+  const hasBorder = !!t.borderWidth && t.borderWidth !== 'none';
+  const border = hasBorder ? `${BT_BORDER_PX[t.borderWidth] || '1px'} solid ${t.borderColor || color}` : 'none';
   return `display:inline-block;font-weight:700;line-height:1.3;font-size:${size.font};padding:${size.pad};border-radius:${radius};background:${bg};color:${color};border:${border};text-transform:${t.uppercase ? 'uppercase' : 'none'};`;
 }
 let _pricingItemTemplateId = 'default';

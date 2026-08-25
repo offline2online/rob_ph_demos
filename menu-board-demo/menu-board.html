@@ -1079,7 +1079,7 @@ function shouldShowMenuNote(item) {
 // copy. DEFAULT_BADGE_TEMPLATES mirrors hq-admin.html's own fallback, used
 // whenever the badgeTemplates registry doc is still empty.
 const DEFAULT_BADGE_TEMPLATES = [
-  { id: 'default', name: 'Amber (Default)', size: 'medium', uppercase: false, outlined: false, borderWidth: 'thin', radius: 'rounded', bg: '#fff7e6', color: '#ad4e00', borderColor: '#ad4e00' },
+  { id: 'default', name: 'Amber (Default)', size: 'medium', uppercase: false, outlined: false, borderWidth: 'none', radius: 'rounded', bg: '#fff7e6', color: '#ad4e00', borderColor: '#ad4e00' },
 ];
 let _badgeTemplates = [];
 function getBadgeTemplates() { return _badgeTemplates.length ? _badgeTemplates : DEFAULT_BADGE_TEMPLATES; }
@@ -1094,15 +1094,20 @@ const MENU_NOTE_SIZES = {
 };
 const MENU_NOTE_RADII = { square: '2px', rounded: 'clamp(4px, 0.45vw, 8px)', pill: '999px' };
 const MENU_NOTE_BORDER_WIDTHS = { thin: '1px', medium: '2px', thick: '3px' };
+// `outlined` only controls the fill (transparent vs. background colour) —
+// the border is independent of it, gated purely by borderWidth being set
+// to something other than 'none'. Previously the border only ever showed
+// when outlined was also on, which silently dropped a template's border
+// whenever it was paired with a filled background (e.g. a solid-colour
+// badge with a contrasting outline) — that's the bug this fixes.
 function menuNoteStyleAttr(item) {
   const t = getBadgeTemplateById(item.menuBoardNoteTemplateId || 'default');
   const size = MENU_NOTE_SIZES[t.size] || MENU_NOTE_SIZES.medium;
   const radius = MENU_NOTE_RADII[t.radius] || MENU_NOTE_RADII.rounded;
-  const outlined = !!t.outlined;
-  const borderWidth = MENU_NOTE_BORDER_WIDTHS[t.borderWidth] || MENU_NOTE_BORDER_WIDTHS.thin;
   const color = t.color || '#ad4e00';
-  const border = outlined ? `${borderWidth} solid ${t.borderColor || color}` : 'none';
-  const bg = outlined ? 'transparent' : (t.bg || '#fff7e6');
+  const hasBorder = !!t.borderWidth && t.borderWidth !== 'none';
+  const border = hasBorder ? `${MENU_NOTE_BORDER_WIDTHS[t.borderWidth] || MENU_NOTE_BORDER_WIDTHS.thin} solid ${t.borderColor || color}` : 'none';
+  const bg = t.outlined ? 'transparent' : (t.bg || '#fff7e6');
   return `font-size:${size.font};padding:${size.pad};border-radius:${radius};background:${bg};color:${color};border:${border};text-transform:${t.uppercase ? 'uppercase' : 'none'};`;
 }
 
