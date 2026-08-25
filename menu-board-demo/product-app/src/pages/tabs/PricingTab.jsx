@@ -8,6 +8,7 @@ import TargetingBuilder, { describeTargeting } from '../../components/TargetingB
 import RecurrenceControl from '../../components/RecurrenceControl.jsx';
 import { describeRecurrence } from '../../lib/recurrence.js';
 import { upsertProduct, appendPriceLogEntries, genId } from '../../data/productStore.js';
+import { getBadgeTemplates, getBadgeTemplateById } from '../../data/registries.js';
 
 function Field({ label, required, children, hint }) {
   return (
@@ -26,13 +27,10 @@ function blankOffer() {
   return { id: genId('offer'), enabled: true, description: '', offerPrice: '', offerFrom: '', offerUntil: '', showOnMenuBoard: '', targeting: [], recurrence: null };
 }
 
-// Matches productStore.js's blankProduct() default, and the fallback
-// menu-board.html applies to items saved before these controls existed.
-const DEFAULT_MENU_BOARD_NOTE_STYLE = { size: 'medium', uppercase: false, outlined: false, borderWidth: 'thin', radius: 'rounded' };
-
 // Same colors/proportions menu-board.html's .menu-board-note pill uses,
 // scaled down to fixed px for this fixed-size editor preview instead of
-// the board's viewport-relative clamp() sizing.
+// the board's viewport-relative clamp() sizing. Mirrored in hq-admin.html
+// (Settings → Menu Board Badge Templates' own preview swatch).
 const MENU_NOTE_SIZE_CSS = {
   small: { fontSize: 13, padding: '4px 10px' },
   medium: { fontSize: 15, padding: '6px 13px' },
@@ -40,32 +38,27 @@ const MENU_NOTE_SIZE_CSS = {
 };
 const MENU_NOTE_RADIUS_CSS = { square: 2, rounded: 6, pill: 999 };
 const MENU_NOTE_BORDER_PX = { thin: 1, medium: 2, thick: 3 };
-const MENU_NOTE_COLORS = { bg: '#fff7e6', fg: '#ad4e00' };
 
-function noteStyleToPreviewCss(style) {
-  const s = style || DEFAULT_MENU_BOARD_NOTE_STYLE;
-  const size = MENU_NOTE_SIZE_CSS[s.size] || MENU_NOTE_SIZE_CSS.medium;
+// `template` is a badge template record from getBadgeTemplateById() — see
+// registries.js and hq-admin.html's Settings section where these are
+// authored. Falls back to sane defaults for a template missing a field
+// (e.g. saved before a colour existed on it).
+function templateToPreviewCss(template) {
+  const t = template || {};
+  const size = MENU_NOTE_SIZE_CSS[t.size] || MENU_NOTE_SIZE_CSS.medium;
+  const color = t.color || '#ad4e00';
   return {
     display: 'inline-block',
     fontWeight: 700,
     lineHeight: 1.3,
     fontSize: size.fontSize,
     padding: size.padding,
-    borderRadius: MENU_NOTE_RADIUS_CSS[s.radius] ?? MENU_NOTE_RADIUS_CSS.rounded,
-    textTransform: s.uppercase ? 'uppercase' : 'none',
-    background: s.outlined ? 'transparent' : MENU_NOTE_COLORS.bg,
-    color: MENU_NOTE_COLORS.fg,
-    border: s.outlined ? `${MENU_NOTE_BORDER_PX[s.borderWidth] || 1}px solid ${MENU_NOTE_COLORS.fg}` : 'none',
+    borderRadius: MENU_NOTE_RADIUS_CSS[t.radius] ?? MENU_NOTE_RADIUS_CSS.rounded,
+    textTransform: t.uppercase ? 'uppercase' : 'none',
+    background: t.outlined ? 'transparent' : (t.bg || '#fff7e6'),
+    color,
+    border: t.outlined ? `${MENU_NOTE_BORDER_PX[t.borderWidth] || 1}px solid ${t.borderColor || color}` : 'none',
   };
-}
-
-function describeNoteStyle(style) {
-  const s = style || DEFAULT_MENU_BOARD_NOTE_STYLE;
-  const size = { small: 'Small', medium: 'Medium', large: 'Large' }[s.size] || 'Medium';
-  const radius = { square: 'Square', rounded: 'Rounded', pill: 'Pill' }[s.radius] || 'Rounded';
-  const parts = [size, radius, s.outlined ? `Outlined (${s.borderWidth || 'thin'})` : 'Filled'];
-  if (s.uppercase) parts.push('ALL CAPS');
-  return parts.join(', ');
 }
 
 const OFFER_STATE_STYLE = {
@@ -84,7 +77,7 @@ const OFFER_STATE_LABEL = { live: 'Live', recurring: 'Recurring', scheduled: 'Sc
 // modal. The store-targeting rule-builder lives inside this same modal,
 // scoped to and clearly labelled for the one offer being edited, so it's
 // never ambiguous which offer a given targeting rule belongs to.
-function OfferFormModal({ open, initialOffer, onCancel, onSave, currency }) {
+function OfferFormModal({ open, initialOffer, onCancel, onSave, currency, noteTemplate }) {
   const [form, setForm] = useState(initialOffer);
   useEffect(() => {
     if (open) setForm(initialOffer);
@@ -158,13 +151,18 @@ function OfferFormModal({ open, initialOffer, onCancel, onSave, currency }) {
               />
             </Field>
           </div>
-          <div style={{ marginTop: 14 }}>
-            <Field label="Show on Menu Board" hint="Promo copy shown alongside this offer's price while it's live, e.g. &ldquo;Today only!&rdquo; Leave blank to show nothing extra.">
-              <Input
-                value={form.showOnMenuBoard}
-                onChange={(e) => setForm((f) => ({ ...f, showOnMenuBoard: e.target.value }))}
-                placeholder="e.g. Today only!"
-              />
+          <div style={{ marginTop: 14, display: 'flex', gap: 20, alignItems: 'flex-end', flexWrap: 'wrap' }}>
+            <div style={{ flex: 1, minWidth: 220 }}>
+              <Field label="Show on Menu Board" hint="Promo copy shown alongside this offer's price while it's live, e.g. &ldquo;Today only!&rdquo; Leave blank to show nothing extra. Always uses this product's badge template (set above, on the Show on Menu Board field) — an offer can't pick its own.">
+                <Input
+                  value={form.showOnMenuBoard}
+                  onChange={(e) => setForm((f) => ({ ...f, showOnMenuBoard: e.target.value }))}
+                  placeholder="e.g. Today only!"
+                />
+              </Field>
+            </div>
+            <Field label="Preview">
+              <span style={templateToPreviewCss(noteTemplate)}>{form.showOnMenuBoard || 'Today only!'}</span>
             </Field>
           </div>
           <div style={{ marginTop: 24, paddingTop: 20, paddingBottom: 20, borderTop: '1px solid #f0f0f0', borderBottom: '1px solid #f0f0f0' }}>
@@ -237,9 +235,9 @@ export default function PricingTab({ draft, baseline, setDraft, setBaseline }) {
 
   const rrpChanged = String(draft.rrp) !== String(baseline.rrp);
   const menuBoardCopyChanged = String(draft.menuBoardNote || '') !== String(baseline.menuBoardNote || '');
-  const menuBoardStyleChanged = JSON.stringify(draft.menuBoardNoteStyle || DEFAULT_MENU_BOARD_NOTE_STYLE) !== JSON.stringify(baseline.menuBoardNoteStyle || DEFAULT_MENU_BOARD_NOTE_STYLE);
+  const menuBoardTemplateChanged = (draft.menuBoardNoteTemplateId || 'default') !== (baseline.menuBoardNoteTemplateId || 'default');
   const offersChanged = JSON.stringify(draft.offers || []) !== JSON.stringify(baseline.offers || []);
-  const dirty = rrpChanged || menuBoardCopyChanged || menuBoardStyleChanged || offersChanged;
+  const dirty = rrpChanged || menuBoardCopyChanged || menuBoardTemplateChanged || offersChanged;
   const canSave = dirty && reason.trim() !== '';
 
   const currencySymbol = draft.currency || '$';
@@ -247,15 +245,12 @@ export default function PricingTab({ draft, baseline, setDraft, setBaseline }) {
     rrpChanged ? `RRP ${currencySymbol}${baseline.rrp || '0.00'} → ${currencySymbol}${draft.rrp}` : null,
     offersChanged ? `Offers updated (${(draft.offers || []).length} defined)` : null,
     menuBoardCopyChanged ? `Menu board copy updated` : null,
-    menuBoardStyleChanged ? `Menu board badge style updated` : null,
+    menuBoardTemplateChanged ? `Menu board badge template updated` : null,
   ]
     .filter(Boolean)
     .join(' · ');
 
-  const updateNoteStyle = (fields) => {
-    setDraft((d) => ({ ...d, menuBoardNoteStyle: { ...(d.menuBoardNoteStyle || DEFAULT_MENU_BOARD_NOTE_STYLE), ...fields } }));
-    autoFillReason('Updated menu board badge style');
-  };
+  const selectedTemplate = getBadgeTemplateById(draft.menuBoardNoteTemplateId || 'default');
 
   const discardChange = () => {
     setDraft((d) => ({
@@ -263,7 +258,7 @@ export default function PricingTab({ draft, baseline, setDraft, setBaseline }) {
       rrp: baseline.rrp,
       offers: baseline.offers || [],
       menuBoardNote: baseline.menuBoardNote,
-      menuBoardNoteStyle: baseline.menuBoardNoteStyle,
+      menuBoardNoteTemplateId: baseline.menuBoardNoteTemplateId,
     }));
     setReason('');
   };
@@ -337,7 +332,13 @@ export default function PricingTab({ draft, baseline, setDraft, setBaseline }) {
       });
     }
     if (menuBoardCopyChanged) changes.push({ fieldName: 'Show on Menu Board', oldValue: baseline.menuBoardNote || '—', newValue: draft.menuBoardNote || '—' });
-    if (menuBoardStyleChanged) changes.push({ fieldName: 'Menu Board Badge Style', oldValue: describeNoteStyle(baseline.menuBoardNoteStyle), newValue: describeNoteStyle(draft.menuBoardNoteStyle) });
+    if (menuBoardTemplateChanged) {
+      changes.push({
+        fieldName: 'Menu Board Badge Template',
+        oldValue: getBadgeTemplateById(baseline.menuBoardNoteTemplateId || 'default').name,
+        newValue: getBadgeTemplateById(draft.menuBoardNoteTemplateId || 'default').name,
+      });
+    }
 
     // The grid, its price-column filter, and the Product Details banner
     // only know the legacy flat offerPrice/offerFrom/offerUntil/
@@ -601,57 +602,24 @@ export default function PricingTab({ draft, baseline, setDraft, setBaseline }) {
           </Field>
         </div>
         <div style={{ marginTop: 14, display: 'flex', gap: 20, alignItems: 'flex-end', flexWrap: 'wrap' }}>
-          <div style={{ width: 120 }}>
-            <Field label="Badge size">
+          <div style={{ width: 240 }}>
+            <Field
+              label="Badge template"
+              hint="Defined once under HQ Admin → Settings → Menu Board Badge Templates. This template also applies to every offer's note below and to any store-level override of this copy."
+            >
               <Select
-                value={draft.menuBoardNoteStyle?.size || 'medium'}
-                onChange={(v) => updateNoteStyle({ size: v })}
-                options={[
-                  { value: 'small', label: 'Small' },
-                  { value: 'medium', label: 'Medium' },
-                  { value: 'large', label: 'Large' },
-                ]}
-                style={{ width: '100%' }}
-              />
-            </Field>
-          </div>
-          <div style={{ width: 130 }}>
-            <Field label="Corner radius">
-              <Select
-                value={draft.menuBoardNoteStyle?.radius || 'rounded'}
-                onChange={(v) => updateNoteStyle({ radius: v })}
-                options={[
-                  { value: 'square', label: 'Square' },
-                  { value: 'rounded', label: 'Rounded' },
-                  { value: 'pill', label: 'Pill' },
-                ]}
-                style={{ width: '100%' }}
-              />
-            </Field>
-          </div>
-          <Field label="ALL CAPS">
-            <Switch checked={!!draft.menuBoardNoteStyle?.uppercase} onChange={(v) => updateNoteStyle({ uppercase: v })} />
-          </Field>
-          <Field label="Outline">
-            <Switch checked={!!draft.menuBoardNoteStyle?.outlined} onChange={(v) => updateNoteStyle({ outlined: v })} />
-          </Field>
-          <div style={{ width: 120 }}>
-            <Field label="Border width">
-              <Select
-                disabled={!draft.menuBoardNoteStyle?.outlined}
-                value={draft.menuBoardNoteStyle?.borderWidth || 'thin'}
-                onChange={(v) => updateNoteStyle({ borderWidth: v })}
-                options={[
-                  { value: 'thin', label: 'Thin' },
-                  { value: 'medium', label: 'Medium' },
-                  { value: 'thick', label: 'Thick' },
-                ]}
+                value={draft.menuBoardNoteTemplateId || 'default'}
+                onChange={(v) => {
+                  setDraft((d) => ({ ...d, menuBoardNoteTemplateId: v }));
+                  autoFillReason('Updated menu board badge template');
+                }}
+                options={getBadgeTemplates().map((t) => ({ value: t.id, label: t.name }))}
                 style={{ width: '100%' }}
               />
             </Field>
           </div>
           <Field label="Preview">
-            <span style={noteStyleToPreviewCss(draft.menuBoardNoteStyle)}>
+            <span style={templateToPreviewCss(selectedTemplate)}>
               {draft.menuBoardNote || 'Limited time only!'}
             </span>
           </Field>
@@ -688,7 +656,7 @@ export default function PricingTab({ draft, baseline, setDraft, setBaseline }) {
         />
       </div>
 
-      <OfferFormModal open={offerModalOpen} initialOffer={editingOffer} onCancel={closeOfferModal} onSave={handleOfferModalSave} currency={draft.currency} />
+      <OfferFormModal open={offerModalOpen} initialOffer={editingOffer} onCancel={closeOfferModal} onSave={handleOfferModalSave} currency={draft.currency} noteTemplate={selectedTemplate} />
 
       <div className="ph-sect">
         <div className="ph-sect-label" style={{ marginBottom: 12 }}>

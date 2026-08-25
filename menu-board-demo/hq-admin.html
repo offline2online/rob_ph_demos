@@ -598,6 +598,17 @@
     .ph-ep-actions { display:flex; align-items:flex-start; gap:6px; flex-shrink:0; margin-top:1px; }
     .ph-ep-status { font-size:11px; margin-top:5px; min-height:16px; line-height:1.3; }
 
+    /* ── MENU BOARD BADGE TEMPLATES (Settings) ────────── */
+    .bt-list { display:flex; flex-direction:column; gap:10px; margin-bottom:14px; }
+    .bt-row {
+      display:flex; align-items:flex-end; gap:10px; flex-wrap:wrap;
+      background:var(--surface2); border:1px solid var(--border);
+      border-radius:8px; padding:12px;
+    }
+    .bt-row .form-group { margin-bottom:0; }
+    .bt-color-input { height:38px; width:100%; padding:3px; cursor:pointer; }
+    .bt-preview { display:inline-block; font-weight:700; line-height:1.3; white-space:nowrap; }
+
     /* ── BRAND MODAL TABS ─────────────────────── */
     .modal-tabs { display:flex; gap:0; border-bottom:1px solid var(--border); padding:0 22px; background:var(--surface); flex-shrink:0; }
     .modal-tab { padding:12px 8px; font-size:14px; font-weight:400; color:#333333; cursor:pointer; border-bottom:2px solid transparent; margin-bottom:-1px; margin-right:16px; white-space:nowrap; transition:color .15s,border-color .15s,background .15s; user-select:none; }
@@ -777,6 +788,16 @@
               </div>
             </div>
             <button id="sCartSaveBtn" class="btn btn-primary btn-sm" onclick="saveTakeoutBag()" disabled style="opacity:0.45;cursor:not-allowed;">Save Changes</button>
+          </div>
+
+          <div class="settings-section" id="settingsSection-badgeTemplates">
+            <h3>Menu Board Badge Templates</h3>
+            <p class="settings-desc">Define reusable badge/button styles once — a name, size, text case, outline, border and colours — then pick one for a product's "Show on Menu Board" copy. Offers and store-level copy for that product always use the same template.</p>
+            <div class="bt-list" id="btList"></div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+              <button class="btn btn-ghost btn-sm" onclick="addBadgeTemplate()"><span class="material-symbols-outlined" style="font-size:14px;">add</span> Add Template</button>
+              <button class="btn btn-primary btn-sm" id="btSaveBtn" onclick="saveBadgeTemplates()" disabled>Save Changes</button>
+            </div>
           </div>
           </div><!-- /settings-content -->
         </div>
@@ -1236,6 +1257,16 @@ const DEFAULT_TYPES = [
 
 const DEFAULT_CATS = ['Mains','Starters','Sides','Desserts','Hot Drinks','Cold Drinks','Cocktails','Wines','Beers','Sandwiches','Salads','Pasta','Burgers'];
 
+// Same shape/id — and same "if the registry doc is empty, fall back to
+// this" convention — as DEFAULT_TYPES/DEFAULT_CATS above. Mirrored in
+// menu-board.html (renders the note), retail-admin.html (preview) and
+// product-app's registries.js (the Pricing tab's template picker), since
+// this repo duplicates small shared registries as plain JS/data across
+// its vanilla pages and the React app rather than sharing an import.
+const DEFAULT_BADGE_TEMPLATES = [
+  { id: 'default', name: 'Amber (Default)', size: 'medium', uppercase: false, outlined: false, borderWidth: 'thin', radius: 'rounded', bg: '#fff7e6', color: '#ad4e00', borderColor: '#ad4e00' },
+];
+
 const DEFAULT_COLORS = {
   header:      '#ffffff',
   headerText:  '#006241',
@@ -1262,6 +1293,9 @@ let _phEndpoints = []; // [{ baseUrl: string, authToken: string /* AES-256-GCM e
 let _cats     = [];
 let _brands   = [];
 let _types = [];
+let _badgeTemplates = [];
+function getBadgeTemplates() { return _badgeTemplates.length ? _badgeTemplates : DEFAULT_BADGE_TEMPLATES; }
+function getBadgeTemplateById(id) { return getBadgeTemplates().find(t => t.id === id) || getBadgeTemplates()[0] || DEFAULT_BADGE_TEMPLATES[0]; }
 function getTypes() { return _types.length ? _types : DEFAULT_TYPES; }
 function saveTypes(types) {
   _types = types;
@@ -1655,6 +1689,128 @@ function removePhEndpoint(i) {
   _phEndpoints.splice(i, 1);
   renderPhEndpoints();
   if (_phApiSave) _phApiSave.markDirty();
+}
+
+// Fixed px sizing for this admin preview swatch, unlike the viewport-
+// relative clamp() sizing menu-board.html's real render uses — same
+// convention as the Pricing tab's own preview pill.
+const BT_SIZE_CSS   = { small: { font: '13px', pad: '4px 10px' }, medium: { font: '15px', pad: '6px 13px' }, large: { font: '18px', pad: '8px 16px' } };
+const BT_RADIUS_CSS = { square: '2px', rounded: '6px', pill: '999px' };
+const BT_BORDER_PX  = { thin: '1px', medium: '2px', thick: '3px' };
+function badgeTemplatePreviewStyle(t) {
+  const size = BT_SIZE_CSS[t.size] || BT_SIZE_CSS.medium;
+  const radius = BT_RADIUS_CSS[t.radius] || BT_RADIUS_CSS.rounded;
+  const color = t.color || '#ad4e00';
+  const bg = t.outlined ? 'transparent' : (t.bg || '#fff7e6');
+  const border = t.outlined ? `${BT_BORDER_PX[t.borderWidth] || '1px'} solid ${t.borderColor || color}` : 'none';
+  return `font-size:${size.font};padding:${size.pad};border-radius:${radius};background:${bg};color:${color};border:${border};text-transform:${t.uppercase ? 'uppercase' : 'none'};`;
+}
+
+function renderBadgeTemplates() {
+  const list = document.getElementById('btList');
+  if (!list) return;
+  if (_badgeTemplates.length === 0) {
+    list.innerHTML = '<p style="font-size:12px;color:var(--text2);padding:4px 0;">No badge templates yet — products fall back to a built-in default. Click “Add Template” to create your first one.</p>';
+    return;
+  }
+  list.innerHTML = _badgeTemplates.map((t, i) => `
+    <div class="bt-row" id="btRow${i}">
+      <div class="form-group" style="width:170px;">
+        <label>Name</label>
+        <input type="text" id="btName${i}" value="${escHtml(t.name)}" placeholder="e.g. Promo Amber" oninput="updateBadgeTemplateField(${i},'name',this.value)">
+      </div>
+      <div class="form-group" style="width:100px;">
+        <label>Size</label>
+        <select id="btSize${i}" onchange="updateBadgeTemplateField(${i},'size',this.value)">
+          <option value="small" ${t.size === 'small' ? 'selected' : ''}>Small</option>
+          <option value="medium" ${(!t.size || t.size === 'medium') ? 'selected' : ''}>Medium</option>
+          <option value="large" ${t.size === 'large' ? 'selected' : ''}>Large</option>
+        </select>
+      </div>
+      <div class="form-group" style="width:110px;">
+        <label>Radius</label>
+        <select id="btRadius${i}" onchange="updateBadgeTemplateField(${i},'radius',this.value)">
+          <option value="square" ${t.radius === 'square' ? 'selected' : ''}>Square</option>
+          <option value="rounded" ${(!t.radius || t.radius === 'rounded') ? 'selected' : ''}>Rounded</option>
+          <option value="pill" ${t.radius === 'pill' ? 'selected' : ''}>Pill</option>
+        </select>
+      </div>
+      <div class="form-group" style="width:64px;">
+        <label>Text</label>
+        <input type="color" class="bt-color-input" id="btColor${i}" value="${t.color || '#ad4e00'}" oninput="updateBadgeTemplateField(${i},'color',this.value)">
+      </div>
+      <div class="form-group" style="width:64px;">
+        <label>Background</label>
+        <input type="color" class="bt-color-input" id="btBg${i}" value="${t.bg || '#fff7e6'}" oninput="updateBadgeTemplateField(${i},'bg',this.value)">
+      </div>
+      <div class="form-group" style="width:64px;">
+        <label>Border</label>
+        <input type="color" class="bt-color-input" id="btBorderColor${i}" value="${t.borderColor || t.color || '#ad4e00'}" oninput="updateBadgeTemplateField(${i},'borderColor',this.value)">
+      </div>
+      <div class="form-group" style="width:90px;">
+        <label>Style</label>
+        <select id="btOutlined${i}" onchange="updateBadgeTemplateField(${i},'outlined',this.value === '1')">
+          <option value="0" ${!t.outlined ? 'selected' : ''}>Filled</option>
+          <option value="1" ${t.outlined ? 'selected' : ''}>Outlined</option>
+        </select>
+      </div>
+      <div class="form-group" style="width:100px;">
+        <label>Border width</label>
+        <select id="btBorderWidth${i}" onchange="updateBadgeTemplateField(${i},'borderWidth',this.value)">
+          <option value="thin" ${(!t.borderWidth || t.borderWidth === 'thin') ? 'selected' : ''}>Thin</option>
+          <option value="medium" ${t.borderWidth === 'medium' ? 'selected' : ''}>Medium</option>
+          <option value="thick" ${t.borderWidth === 'thick' ? 'selected' : ''}>Thick</option>
+        </select>
+      </div>
+      <div class="form-group" style="width:90px;">
+        <label>ALL CAPS</label>
+        <select id="btUppercase${i}" onchange="updateBadgeTemplateField(${i},'uppercase',this.value === '1')">
+          <option value="0" ${!t.uppercase ? 'selected' : ''}>Off</option>
+          <option value="1" ${t.uppercase ? 'selected' : ''}>On</option>
+        </select>
+      </div>
+      <div class="form-group" style="min-width:150px;flex:1;">
+        <label>Preview</label>
+        <div id="btPreview${i}" class="bt-preview" style="${badgeTemplatePreviewStyle(t)}">${escHtml(t.name || 'Preview')}</div>
+      </div>
+      <button class="btn btn-sm" style="background:rgba(220,38,38,0.08);color:var(--danger);border:1px solid rgba(220,38,38,0.2);" onclick="removeBadgeTemplate(${i})" title="Delete template"><span class="material-symbols-outlined" style="font-size:14px;">close</span></button>
+    </div>`).join('');
+}
+
+function updateBadgeTemplateField(i, field, value) {
+  if (!_badgeTemplates[i]) return;
+  _badgeTemplates[i][field] = value;
+  const preview = document.getElementById(`btPreview${i}`);
+  if (preview) {
+    preview.setAttribute('style', badgeTemplatePreviewStyle(_badgeTemplates[i]));
+    preview.textContent = _badgeTemplates[i].name || 'Preview';
+  }
+  if (_btSave) _btSave.markDirty();
+}
+
+function addBadgeTemplate() {
+  _badgeTemplates.push({ id: genId(), name: '', size: 'medium', uppercase: false, outlined: false, borderWidth: 'thin', radius: 'rounded', bg: '#fff7e6', color: '#ad4e00', borderColor: '#ad4e00' });
+  renderBadgeTemplates();
+  const idx = _badgeTemplates.length - 1;
+  document.getElementById(`btName${idx}`)?.focus();
+  if (_btSave) _btSave.markDirty();
+}
+
+function removeBadgeTemplate(i) {
+  _badgeTemplates.splice(i, 1);
+  renderBadgeTemplates();
+  if (_btSave) _btSave.markDirty();
+}
+
+function saveBadgeTemplates() {
+  const named = _badgeTemplates.filter(t => (t.name || '').trim() !== '');
+  if (named.length !== _badgeTemplates.length) {
+    toast('Every template needs a name before saving', 'error');
+    return;
+  }
+  setDoc(doc(db, MB, 'badgeTemplates'), { data: _badgeTemplates })
+    .then(() => { toast('Badge templates saved', 'success'); if (_btSave) _btSave.reset(); })
+    .catch(err => toast('Failed to save: ' + (err.message || err), 'error'));
 }
 
 async function testPhEndpoint(i) {
@@ -3461,7 +3617,7 @@ function _makeSaveBtn(btnId) {
   };
 }
 // Initialised once DOM is ready (at end of script)
-let _brandSave, _tplSave, _stockApiSave, _phApiSave;
+let _brandSave, _tplSave, _stockApiSave, _phApiSave, _btSave;
 
 function openAddBrandModal() {
   document.getElementById('brandModalTitle').textContent = 'Add Brand / Supplier';
@@ -5314,6 +5470,12 @@ onSnapshot(doc(db, MB, 'categories'), snap => {
   if (panel && panel.style.display !== 'none') renderCategories();
 });
 
+onSnapshot(doc(db, MB, 'badgeTemplates'), snap => {
+  _badgeTemplates = snap.exists() ? (snap.data().data || []) : [];
+  renderBadgeTemplates();
+  if (_btSave) _btSave.reset();
+});
+
 onSnapshot(doc(db, MB, 'settings'), snap => {
   _settings = snap.exists() ? snap.data() : { brandName: 'My Brand', currency: '$', logo: '' };
   const phApi    = _settings.phApi || {};
@@ -5352,6 +5514,7 @@ _brandSave    = _makeSaveBtn('brandSaveBtn');
 _tplSave      = _makeSaveBtn('tplSaveBtn');
 _stockApiSave = _makeSaveBtn('stockApiSaveBtn');
 _phApiSave    = _makeSaveBtn('phApiSaveBtn');
+_btSave       = _makeSaveBtn('btSaveBtn');
 
 // Event delegation: any input/change inside the form containers marks the button dirty
 document.getElementById('brandPane-settings')
@@ -5385,6 +5548,10 @@ window.savePhApi        = savePhApi;
 window.addPhEndpoint    = addPhEndpoint;
 window.removePhEndpoint = removePhEndpoint;
 window.testPhEndpoint   = testPhEndpoint;
+window.updateBadgeTemplateField = updateBadgeTemplateField;
+window.addBadgeTemplate    = addBadgeTemplate;
+window.removeBadgeTemplate = removeBadgeTemplate;
+window.saveBadgeTemplates  = saveBadgeTemplates;
 </script>
 </body>
 </html>

@@ -1070,12 +1070,23 @@ function shouldShowMenuNote(item) {
   return isOfferLive(item);
 }
 
-// The "Show on Menu Board" badge's look (size/case/outline/border/radius),
-// set once per product on the Pricing tab (product-app/PricingTab.jsx) —
-// a store-level override only ever replaces the *text*, never the style,
-// so this always reads from the raw item, not the store-resolved copy.
-// Values mirror productStore.js's blankProduct() default so an item saved
-// before these controls existed renders exactly as it always has.
+// The "Show on Menu Board" badge's look comes from a named template
+// (Settings → Menu Board Badge Templates in hq-admin.html), referenced by
+// item.menuBoardNoteTemplateId — set once per product on the Pricing tab
+// (product-app/PricingTab.jsx), never per store. A store-level override
+// only ever replaces the note's *text*, never its template, so this
+// always resolves the template off the raw item, not the store-resolved
+// copy. DEFAULT_BADGE_TEMPLATES mirrors hq-admin.html's own fallback, used
+// whenever the badgeTemplates registry doc is still empty.
+const DEFAULT_BADGE_TEMPLATES = [
+  { id: 'default', name: 'Amber (Default)', size: 'medium', uppercase: false, outlined: false, borderWidth: 'thin', radius: 'rounded', bg: '#fff7e6', color: '#ad4e00', borderColor: '#ad4e00' },
+];
+let _badgeTemplates = [];
+function getBadgeTemplates() { return _badgeTemplates.length ? _badgeTemplates : DEFAULT_BADGE_TEMPLATES; }
+function getBadgeTemplateById(id) {
+  const templates = getBadgeTemplates();
+  return templates.find(t => t.id === id) || templates[0] || DEFAULT_BADGE_TEMPLATES[0];
+}
 const MENU_NOTE_SIZES = {
   small:  { font: 'clamp(11px, 1.0vw, 15px)',   pad: 'clamp(3px, 0.4vw, 6px) clamp(8px, 0.9vw, 14px)' },
   medium: { font: 'clamp(13px, 1.3vw, 19.5px)', pad: 'clamp(4px, 0.5vw, 8px) clamp(10px, 1.2vw, 18px)' },
@@ -1083,16 +1094,16 @@ const MENU_NOTE_SIZES = {
 };
 const MENU_NOTE_RADII = { square: '2px', rounded: 'clamp(4px, 0.45vw, 8px)', pill: '999px' };
 const MENU_NOTE_BORDER_WIDTHS = { thin: '1px', medium: '2px', thick: '3px' };
-const MENU_NOTE_COLORS = { bg: '#fff7e6', fg: '#ad4e00' };
 function menuNoteStyleAttr(item) {
-  const s = item.menuBoardNoteStyle || {};
-  const size = MENU_NOTE_SIZES[s.size] || MENU_NOTE_SIZES.medium;
-  const radius = MENU_NOTE_RADII[s.radius] || MENU_NOTE_RADII.rounded;
-  const outlined = !!s.outlined;
-  const borderWidth = MENU_NOTE_BORDER_WIDTHS[s.borderWidth] || MENU_NOTE_BORDER_WIDTHS.thin;
-  const border = outlined ? `${borderWidth} solid ${MENU_NOTE_COLORS.fg}` : 'none';
-  const bg = outlined ? 'transparent' : MENU_NOTE_COLORS.bg;
-  return `font-size:${size.font};padding:${size.pad};border-radius:${radius};background:${bg};color:${MENU_NOTE_COLORS.fg};border:${border};text-transform:${s.uppercase ? 'uppercase' : 'none'};`;
+  const t = getBadgeTemplateById(item.menuBoardNoteTemplateId || 'default');
+  const size = MENU_NOTE_SIZES[t.size] || MENU_NOTE_SIZES.medium;
+  const radius = MENU_NOTE_RADII[t.radius] || MENU_NOTE_RADII.rounded;
+  const outlined = !!t.outlined;
+  const borderWidth = MENU_NOTE_BORDER_WIDTHS[t.borderWidth] || MENU_NOTE_BORDER_WIDTHS.thin;
+  const color = t.color || '#ad4e00';
+  const border = outlined ? `${borderWidth} solid ${t.borderColor || color}` : 'none';
+  const bg = outlined ? 'transparent' : (t.bg || '#fff7e6');
+  return `font-size:${size.font};padding:${size.pad};border-radius:${radius};background:${bg};color:${color};border:${border};text-transform:${t.uppercase ? 'uppercase' : 'none'};`;
 }
 
 // ── BRAND SUPPORT ────────────────────────────────────────────────────────────
@@ -1268,6 +1279,7 @@ let _settingsHash = null;
 let _stockHash    = null;
 let _localFeaturedHash = null;
 let _storePricingHash  = null;
+let _badgeTemplatesHash = null;
 
 // General fingerprint — catches any field change; used for small docs (brands, settings, stock)
 function _fp(obj) { try { return JSON.stringify(obj); } catch (_) { return String(Date.now()); } }
@@ -1655,6 +1667,15 @@ onSnapshot(doc(db, MB, 'brands'), snap => {
   }
   render();
   _pingBoardActivity(brand || _titleBrand);
+});
+
+onSnapshot(doc(db, MB, 'badgeTemplates'), snap => {
+  const newTemplates = snap.exists() ? (snap.data().data || []) : [];
+  const h = _fp(newTemplates);
+  if (h === _badgeTemplatesHash) return;  // data unchanged — skip render
+  _badgeTemplatesHash = h;
+  _badgeTemplates = newTemplates;
+  render();
 });
 
 onSnapshot(doc(db, MB, 'settings'), snap => {

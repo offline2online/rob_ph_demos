@@ -48,20 +48,29 @@ export const DEFAULT_LANGUAGES = [
   { code: 'tr', name: 'Turkish' },
 ];
 
+// Same shape/id/fallback convention as DEFAULT_TYPES/DEFAULT_CATS above —
+// mirrored in hq-admin.html (where these are authored, under Settings)
+// and menu-board.html (where they're rendered).
+export const DEFAULT_BADGE_TEMPLATES = [
+  { id: 'default', name: 'Amber (Default)', size: 'medium', uppercase: false, outlined: false, borderWidth: 'thin', radius: 'rounded', bg: '#fff7e6', color: '#ad4e00', borderColor: '#ad4e00' },
+];
+
 let _brands = [];
 let _types = [];
 let _cats = [];
 let _languages = [];
 let _storeCodes = [];
+let _badgeTemplates = [];
 let _loaded = false;
 
 export async function loadRegistries() {
-  const [brandsSnap, typesSnap, catsSnap, languagesSnap, stockSnap] = await Promise.all([
+  const [brandsSnap, typesSnap, catsSnap, languagesSnap, stockSnap, badgeTemplatesSnap] = await Promise.all([
     getDoc(doc(db, MB, 'brands')),
     getDoc(doc(db, MB, 'types')),
     getDoc(doc(db, MB, 'categories')),
     getDoc(doc(db, MB, 'languages')),
     getDocs(collection(db, STOCK_COLL_NAME)),
+    getDoc(doc(db, MB, 'badgeTemplates')),
   ]);
   _brands = brandsSnap.exists() ? brandsSnap.data().data || [] : [];
   _types = typesSnap.exists() ? typesSnap.data().data || [] : [];
@@ -71,6 +80,7 @@ export async function loadRegistries() {
   _cats = rawCats.map((c) => (typeof c === 'object' ? c.name || c.id || String(c) : String(c))).filter(Boolean);
   _languages = languagesSnap.exists() ? languagesSnap.data().data || [] : [];
   _storeCodes = stockSnap.docs.map((d) => d.id).sort();
+  _badgeTemplates = badgeTemplatesSnap.exists() ? badgeTemplatesSnap.data().data || [] : [];
   _loaded = true;
 }
 
@@ -92,6 +102,15 @@ export function getTypes() {
 
 export function getCats() {
   return _cats.length ? _cats : DEFAULT_CATS;
+}
+
+export function getBadgeTemplates() {
+  return _badgeTemplates.length ? _badgeTemplates : DEFAULT_BADGE_TEMPLATES;
+}
+
+export function getBadgeTemplateById(id) {
+  const templates = getBadgeTemplates();
+  return templates.find((t) => t.id === id) || templates[0] || DEFAULT_BADGE_TEMPLATES[0];
 }
 
 export function getLanguages() {

@@ -1007,7 +1007,8 @@
           <div class="field" style="margin-top:12px;">
             <label for="priceMenuBoardCopy">Show on Menu Board</label>
             <input type="text" id="priceMenuBoardCopy" placeholder="e.g. Limited time only!" oninput="_onPricingFieldChange()">
-            <p style="font-size:11px;color:var(--text2);margin-top:4px;">Optional promo copy shown alongside the price on the menu board. Leave blank to show nothing extra.</p>
+            <p style="font-size:11px;color:var(--text2);margin-top:4px;">Optional promo copy shown alongside the price on the menu board. Leave blank to show nothing extra. Uses this product's badge template, set by HQ — it can't be restyled per store.</p>
+            <div id="priceMenuBoardPreview" style="margin-top:6px;"></div>
           </div>
           <div id="priceOfferBanner" style="display:none;border-radius:6px;padding:10px 12px;font-size:13px;margin-top:12px;"></div>
           <div class="field" style="margin-top:12px;">
@@ -1186,10 +1187,52 @@ let _storeProfile  = { storeName: null, fixedSegments: [], variableSegments: [],
 let _settings = { currency: '$' };
 let _brands   = [];
 
+// Same fallback default as hq-admin.html (where these are authored, under
+// Settings → Menu Board Badge Templates) and menu-board.html (where the
+// note actually renders) — used only when the badgeTemplates registry doc
+// is still empty. A store can never restyle this, only its text, so the
+// Pricing tab's preview here always resolves the *product's* template.
+const DEFAULT_BADGE_TEMPLATES = [
+  { id: 'default', name: 'Amber (Default)', size: 'medium', uppercase: false, outlined: false, borderWidth: 'thin', radius: 'rounded', bg: '#fff7e6', color: '#ad4e00', borderColor: '#ad4e00' },
+];
+let _badgeTemplates = [];
+function getBadgeTemplateById(id) {
+  const templates = _badgeTemplates.length ? _badgeTemplates : DEFAULT_BADGE_TEMPLATES;
+  return templates.find(t => t.id === id) || templates[0] || DEFAULT_BADGE_TEMPLATES[0];
+}
+// Fixed px sizing for this admin preview swatch, same convention as
+// hq-admin.html's Settings preview and the Pricing tab's own preview pill
+// in product-app — menu-board.html's real render uses viewport clamp().
+const BT_SIZE_CSS   = { small: { font: '13px', pad: '4px 10px' }, medium: { font: '15px', pad: '6px 13px' }, large: { font: '18px', pad: '8px 16px' } };
+const BT_RADIUS_CSS = { square: '2px', rounded: '6px', pill: '999px' };
+const BT_BORDER_PX  = { thin: '1px', medium: '2px', thick: '3px' };
+function badgeTemplatePreviewStyle(t) {
+  const size = BT_SIZE_CSS[t.size] || BT_SIZE_CSS.medium;
+  const radius = BT_RADIUS_CSS[t.radius] || BT_RADIUS_CSS.rounded;
+  const color = t.color || '#ad4e00';
+  const bg = t.outlined ? 'transparent' : (t.bg || '#fff7e6');
+  const border = t.outlined ? `${BT_BORDER_PX[t.borderWidth] || '1px'} solid ${t.borderColor || color}` : 'none';
+  return `display:inline-block;font-weight:700;line-height:1.3;font-size:${size.font};padding:${size.pad};border-radius:${radius};background:${bg};color:${color};border:${border};text-transform:${t.uppercase ? 'uppercase' : 'none'};`;
+}
+let _pricingItemTemplateId = 'default';
+function _renderPricingMenuBoardPreview() {
+  const el = document.getElementById('priceMenuBoardPreview');
+  if (!el) return;
+  const text = document.getElementById('priceMenuBoardCopy')?.value || '';
+  if (!text.trim()) { el.innerHTML = ''; return; }
+  const t = getBadgeTemplateById(_pricingItemTemplateId);
+  el.innerHTML = `<span style="${badgeTemplatePreviewStyle(t)}">${escHtml(text)}</span>`;
+}
+
 // ===== FIRESTORE LISTENERS =====
 onSnapshot(collection(db, ITEMS_COLL), snap => {
   _items = snap.docs.map(d => d.data()).sort((a, b) => (a.createdAt || '').localeCompare(b.createdAt || ''));
   if (STORE_CODE && document.getElementById('mainPage').style.display !== 'none') renderItems();
+});
+
+onSnapshot(doc(db, MB, 'badgeTemplates'), snap => {
+  _badgeTemplates = snap.exists() ? (snap.data().data || []) : [];
+  _renderPricingMenuBoardPreview();
 });
 
 onSnapshot(doc(db, MB, 'settings'), snap => {
@@ -2526,6 +2569,7 @@ function _loadPricingPane(item, brand) {
     showOnMenuBoard: eff.showOnMenuBoard || '',
   };
   _pricingDraft = { ..._pricingBaseline };
+  _pricingItemTemplateId = item.menuBoardNoteTemplateId || 'default';
   document.getElementById('priceRrp').value = _pricingBaseline.rrp;
   document.getElementById('priceOffer').value = _pricingBaseline.offerPrice;
   document.getElementById('priceOfferFrom').value = _pricingBaseline.offerFrom;
@@ -2533,6 +2577,7 @@ function _loadPricingPane(item, brand) {
   _syncDateTimeDisplay('priceOfferFrom');
   _syncDateTimeDisplay('priceOfferUntil');
   document.getElementById('priceMenuBoardCopy').value = _pricingBaseline.showOnMenuBoard;
+  _renderPricingMenuBoardPreview();
   document.getElementById('priceReason').value = '';
   window._pricingCurrency = _currencyFor(brand);
   const currency = window._pricingCurrency;
@@ -2612,6 +2657,7 @@ function _onPricingFieldChange() {
   _readPricingFieldsFromForm();
   _refreshOfferBanner();
   _refreshPricingSaveState();
+  _renderPricingMenuBoardPreview();
 }
 
 function _discardPricingChange() {
@@ -2627,6 +2673,7 @@ function _discardPricingChange() {
   _pricingDraft = { ..._pricingBaseline };
   _refreshOfferBanner();
   _refreshPricingSaveState();
+  _renderPricingMenuBoardPreview();
 }
 
 function _renderPriceLog(log) {
