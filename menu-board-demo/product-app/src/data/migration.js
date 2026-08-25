@@ -3,29 +3,31 @@
 // back again on save. Purely additive/derived — never drops a field the
 // rest of the app (grid, menu-board.html, location-api.html) still reads.
 
-function mapAttrGroups(raw) {
-  if (raw.attrGroups) return raw.attrGroups;
-  const groups = [];
+// Ingredients has its own dedicated Product Details field/section now
+// (ProductDetailsTab.jsx) — a raw import's ingredients only ever need
+// pulling out of the GS1 nested form once, on first migration.
+function mapLegacyIngredients(raw) {
   const rawIng = raw['gs1:recipeIngredient'] || [];
-  const ingredientNames = rawIng.length
-    ? rawIng.map((r) => (typeof r === 'string' ? r : r.productName || r.name || '')).filter(Boolean)
-    : (raw.ingredients || []);
-  if (ingredientNames.length) {
-    groups.push({ name: 'Ingredients', rows: [{ label: 'Ingredients', value: ingredientNames.join(', '), unit: '', show: false }] });
+  if (rawIng.length) {
+    return rawIng.map((r) => (typeof r === 'string' ? r : r.productName || r.name || '')).filter(Boolean);
   }
+  return raw.ingredients || [];
+}
+
+// "Additional Attributes" is a single flat list of rows now — no more
+// named sub-groups (Ingredients moved out to its own field above; nothing
+// else in this repo ever depended on a group being called "Nutrition"
+// specifically, see toItemDoc() below). A legacy raw import's flat
+// calories/fat/carbs/protein fields become that list's starting rows.
+function mapLegacyAttributes(raw) {
+  if (raw.attributes) return raw.attributes;
   const nutrition = [
     { key: 'calories', label: 'Calories', unit: 'kcal' },
     { key: 'fat', label: 'Fat', unit: 'g' },
     { key: 'carbs', label: 'Carbs', unit: 'g' },
     { key: 'protein', label: 'Protein', unit: 'g' },
   ].filter((f) => raw[f.key] != null);
-  if (nutrition.length) {
-    groups.push({
-      name: 'Nutrition',
-      rows: nutrition.map((f) => ({ label: f.label, value: String(raw[f.key]), unit: f.unit, show: false })),
-    });
-  }
-  return groups;
+  return nutrition.map((f) => ({ label: f.label, value: String(raw[f.key]), unit: f.unit, show: false }));
 }
 
 function mapOptionGroups(raw) {
@@ -132,6 +134,8 @@ export function migrateItem(raw, brandCurrency) {
       // overriding it) on every subsequent load.
       menuBoardNote: raw.menuBoardNote !== undefined ? raw.menuBoardNote : (raw.showOnMenuBoard || ''),
       menuBoardNoteTemplateId: raw.menuBoardNoteTemplateId || DEFAULT_MENU_BOARD_NOTE_TEMPLATE_ID,
+      ingredients: raw.ingredients || [],
+      attributes: raw.attributes || [],
     };
   }
 
@@ -162,7 +166,8 @@ export function migrateItem(raw, brandCurrency) {
     menuBoardNoteTemplateId: raw.menuBoardNoteTemplateId || DEFAULT_MENU_BOARD_NOTE_TEMPLATE_ID,
     showOnMenuBoard: raw.showOnMenuBoard || '',
     menuTypes: raw.menuTypes || [],
-    attrGroups: mapAttrGroups(raw),
+    ingredients: mapLegacyIngredients(raw),
+    attributes: mapLegacyAttributes(raw),
     optionGroups: mapOptionGroups(raw),
     images: mapImages(raw),
     priceLog: raw.priceLog || [],
@@ -170,16 +175,13 @@ export function migrateItem(raw, brandCurrency) {
 }
 
 // Derives the legacy GS1-aligned fields the rest of the app (grid,
-// menu-board.html, location-api.html) still reads directly, from the new
-// structured attrGroups/optionGroups — so nothing downstream regresses.
+// menu-board.html, location-api.html) still reads directly, from the
+// dedicated ingredients field and the flat attributes/optionGroups lists
+// — so nothing downstream regresses.
 export function toItemDoc(product) {
-  const ingredientsRow = (product.attrGroups || []).find((g) => g.name === 'Ingredients');
-  const ingredientNames = ingredientsRow
-    ? ingredientsRow.rows.flatMap((r) => (r.value || '').split(',').map((s) => s.trim()).filter(Boolean))
-    : [];
-  const nutritionRow = (product.attrGroups || []).find((g) => g.name === 'Nutrition');
+  const ingredientNames = product.ingredients || [];
   const nutritionVal = (label) => {
-    const row = nutritionRow?.rows.find((r) => r.label === label);
+    const row = (product.attributes || []).find((r) => r.label === label);
     return row && row.value !== '' ? parseFloat(row.value) : null;
   };
 

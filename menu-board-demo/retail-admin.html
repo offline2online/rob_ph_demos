@@ -1816,9 +1816,15 @@ function initGrid() {
         }
       },
       {
-        headerName: 'Ingredients', flex: 1.5, minWidth: 130,
+        headerName: 'Ingredients', colId: 'ingredients', flex: 1.5, minWidth: 130, hide: true,
         valueGetter: (p) => (p.data.ingredients || []).join(', ') || '\u2014',
-        cellStyle: { fontSize: '12px', color: 'var(--text2)', display: 'flex', alignItems: 'center' }
+        cellStyle: { fontSize: '12px', color: 'var(--text2)', display: 'flex', alignItems: 'center' },
+        // Hidden by renderItems() whenever no product currently has any
+        // ingredients set \u2014 an all-empty column is just noise. One
+        // checkbox tag per ingredient (not per product), same "matches if
+        // any tag is checked" convention as the Types/Status columns.
+        filter: CheckboxSetFilter,
+        getFilterValue: (data) => data.ingredients || []
       },
       {
         headerName: 'Status', colId: 'status', flex: 1.8, minWidth: 200,
@@ -1987,6 +1993,7 @@ function renderItems() {
   // data itself, so AG-Grid's change-detection won't know to re-run it when only
   // _brands (not the row) changes — force it explicitly.
   storeItemsGridApi.refreshCells({ columns: ['price'], force: true });
+  storeItemsGridApi.setColumnsVisible(['ingredients'], sorted.some(i => Array.isArray(i.ingredients) && i.ingredients.length > 0));
   if (fm && Object.keys(fm).length) {
     setTimeout(() => storeItemsGridApi?.setFilterModel(fm), 0);
   }

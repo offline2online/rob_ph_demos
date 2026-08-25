@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { Input, InputNumber, Select, Switch, Button } from 'antd';
 import MaterialIcon from '../../components/MaterialIcon.jsx';
 import ClearableDate, { shiftEndOneHour } from '../../components/ClearableDate.jsx';
-import AttributeGroups from '../../components/AttributeGroups.jsx';
+import AdditionalAttributes from '../../components/AdditionalAttributes.jsx';
 import OptionGroups from '../../components/OptionGroups.jsx';
 import OfferBanner from '../../components/OfferBanner.jsx';
 import TargetingBuilder, { CATEGORIES as TARGETING_CATEGORIES } from '../../components/TargetingBuilder.jsx';
@@ -332,12 +332,31 @@ export default function ProductDetailsTab({ draft, patch, onGoPricing }) {
 
       </SectionCard>
 
-      {/* Attributes */}
+      {/* Ingredients */}
       <SectionCard>
         <div className="ph-sect-label" style={{ marginBottom: 12 }}>
-          Attributes
+          Ingredients
         </div>
-        <AttributeGroups groups={draft.attrGroups} onChange={(attrGroups) => patch({ attrGroups })} />
+        <Field
+          label="Ingredients"
+          hint="Type an ingredient and press Enter to add it. Shows as an Ingredients column (with a filter) in HQ Admin and Retail Admin once any product has at least one — hidden otherwise."
+        >
+          <Select
+            mode="tags"
+            style={{ width: '100%' }}
+            value={draft.ingredients}
+            onChange={(ingredients) => patch({ ingredients })}
+            placeholder="Press Enter to add an ingredient"
+          />
+        </Field>
+      </SectionCard>
+
+      {/* Additional Attributes */}
+      <SectionCard>
+        <div className="ph-sect-label" style={{ marginBottom: 12 }}>
+          Additional Attributes
+        </div>
+        <AdditionalAttributes rows={draft.attributes} onChange={(attributes) => patch({ attributes })} />
       </SectionCard>
 
       {/* Options */}
