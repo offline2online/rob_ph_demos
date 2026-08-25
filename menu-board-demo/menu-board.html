@@ -314,6 +314,59 @@
       letter-spacing: -0.3px;
       line-height: 1;
     }
+
+    /* Calorie/nutrition info — required at point of choice by the UK
+       Calorie Labelling (Out of Home Sector) Regulations 2021 for large
+       businesses: kcal per portion as sold, shown clearly alongside the
+       name/price, plus a "2000 kcal a day" reference statement somewhere
+       on the board (see .kcal-disclaimer). Fat/carbs/protein aren't
+       legally required but render too, smaller, when present. */
+    .nutrition-block {
+      display: flex;
+      align-items: baseline;
+      flex-wrap: wrap;
+      column-gap: clamp(8px, 1vw, 14px);
+      row-gap: 2px;
+      margin-top: clamp(3px, 0.5vw, 8px);
+    }
+    .nutr-calories .nutr-val {
+      font-size: clamp(11px, 1.15vw, 16px);
+      font-weight: 800;
+      color: var(--text);
+    }
+    .nutr-calories .nutr-unit {
+      font-size: clamp(8px, 0.75vw, 11px);
+      font-weight: 700;
+      color: var(--text2);
+      text-transform: uppercase;
+      letter-spacing: 0.3px;
+    }
+    .nutr-macros-row {
+      display: flex;
+      flex-wrap: wrap;
+      column-gap: clamp(6px, 0.7vw, 10px);
+    }
+    .nutr-row {
+      font-size: clamp(8px, 0.7vw, 10.5px);
+      color: var(--text2);
+      white-space: nowrap;
+    }
+    .nutr-row .nutr-val { font-weight: 700; color: var(--text); }
+    .nutr-row .nutr-unit { margin-left: 1px; }
+
+    /* Regulatory reference statement — required wherever calorie
+       information is shown on the board, not per item. A slim, always-
+       visible strip (the existing .board-footer above only shows on
+       :hover, so it can't carry this) covers every screen/rotation. */
+    .kcal-disclaimer {
+      flex-shrink: 0;
+      padding: clamp(3px, 0.4vw, 6px) clamp(20px, 4vw, 60px);
+      font-size: clamp(7px, 0.65vw, 9.5px);
+      color: var(--text2);
+      opacity: 0.8;
+      letter-spacing: 0.1px;
+      background: var(--cream);
+    }
     /* Struck-through RRP shown ahead of a live offer price — sized off the
        parent price element's own font-size so it scales in every context
        (item tile, promo hero, promo card) without a per-context rule. */
@@ -1237,11 +1290,18 @@ function updateClock() {
 }
 
 // ── BUILD NUTRITION HTML ─────────────────────────────────────────────────────
-function buildNutrition(item) {
+// `compact` (used for the dense per-item grid cells and promo tiles,
+// where vertical space is already tight across many cards on one screen)
+// shows calories only — that's the one figure the UK Calorie Labelling
+// (Out of Home Sector) Regulations 2021 actually require at the point of
+// choice. The full breakdown (fat/carbs/protein) isn't legally required
+// and only renders in roomier contexts (the Feature Hero Spotlight panel)
+// to avoid squeezing the product photo down to nothing.
+function buildNutrition(item, compact) {
   const hasCal  = item.calories != null;
-  const hasFat  = item.fat      != null;
-  const hasCarb = item.carbs    != null;
-  const hasProt = item.protein  != null;
+  const hasFat  = !compact && item.fat     != null;
+  const hasCarb = !compact && item.carbs   != null;
+  const hasProt = !compact && item.protein != null;
 
   if (!hasCal && !hasFat && !hasCarb && !hasProt) return '';
 
@@ -2103,6 +2163,7 @@ function render() {
             <span class="item-price">${priceHtml(item, currency, 'price-was')}</span>
             ${cat ? `<span class="item-cat-badge">${esc(cat)}</span>` : ''}
           </div>
+          ${buildNutrition(item, true)}
           ${menuNote}
         </div>
         <div class="oos-overlay"><div class="oos-stamp"><div class="oos-stamp-text">SOLD OUT</div></div></div>
@@ -2215,6 +2276,7 @@ function render() {
           ${heroCat}
           <div class="promo-hero-title">${esc(heroItem.name)}</div>
           <div class="promo-hero-price">${priceHtml(heroItem, currency, 'price-was')}</div>
+          ${buildNutrition(heroItem)}
           ${heroMenuNote}
         </div>`;
       const heroBottomHtml = heroItem.description
@@ -2241,6 +2303,7 @@ function render() {
               ${cat}
               <div class="promo-title">${esc(item.name)}</div>
               <div class="promo-price">${priceHtml(item, currency, 'price-was')}</div>
+              ${buildNutrition(item, true)}
               ${menuNote}
             </div>
             <div class="promo-img-wrap">${img}</div>
@@ -2283,8 +2346,16 @@ function render() {
     ${showProgressBar ? '<div class="rotation-bar-wrap"><div class="rotation-bar" id="rotationBar"></div></div>' : ''}
   `;
 
+  // UK Calorie Labelling (Out of Home Sector) Regulations 2021 require this
+  // reference statement wherever calorie information is displayed — shown
+  // once per screen (not per item), and only on a screen that's actually
+  // showing calories at all. Positioned absolutely so it survives on every
+  // template, including Feature Hero Spotlight's footer-less layout.
+  const kcalDisclaimerHtml = pageItems.some(i => i.calories != null)
+    ? `<div class="kcal-disclaimer">Adults need around 2000 kcal a day</div>` : '';
+
   // ── INJECT ──────────────────────────────────────────────────────────────────
-  boardRoot.innerHTML = headerHtml + bodyHtml + footerHtml;
+  boardRoot.innerHTML = headerHtml + bodyHtml + footerHtml + kcalDisclaimerHtml;
 
   updateClock();
 
