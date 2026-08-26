@@ -1858,16 +1858,6 @@ function initGrid() {
         getFilterValue: (data) => data.ingredients || []
       },
       {
-        headerName: 'Calories', colId: 'calories', field: 'calories', flex: 0.9, minWidth: 100, hide: true,
-        // A genuinely continuous number (unlike Ingredients/Types/Status
-        // above) — a range filter suits it, not one checkbox per distinct
-        // value. Hidden by renderItems() whenever no product currently has
-        // calories set.
-        filter: 'agNumberColumnFilter',
-        valueFormatter: (params) => params.value != null ? `${params.value} kcal` : '—',
-        cellStyle: { fontSize: '12px', color: 'var(--text2)', display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }
-      },
-      {
         headerName: 'Status', colId: 'status', flex: 1.8, minWidth: 200,
         sortable: true,
         filter: CheckboxSetFilter,
@@ -2049,7 +2039,6 @@ function renderItems() {
   // flips from hidden to visible via setColumnsVisible alone — cells can
   // render blank until forced. Cheap and harmless when already visible.
   setTimeout(() => storeItemsGridApi?.refreshCells({ columns: ['ingredients'], force: true }), 0);
-  storeItemsGridApi.setColumnsVisible(['calories'], sorted.some(i => i.calories != null));
   if (fm && Object.keys(fm).length) {
     setTimeout(() => storeItemsGridApi?.setFilterModel(fm), 0);
   }

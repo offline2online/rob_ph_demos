@@ -1,5 +1,5 @@
 import { doc, getDoc, setDoc, collection, getDocs } from 'firebase/firestore';
-import { db, MB, STOCK_COLL_NAME } from './firebase.js';
+import { db, MB, STOCK_COLL_NAME, ITEMS_COLL } from './firebase.js';
 
 // Same fallback defaults as menu-board-demo/hq-admin.html (lines 1461-1469) —
 // used only when the live Firestore docs are empty, exactly like the
@@ -61,16 +61,18 @@ let _cats = [];
 let _languages = [];
 let _storeCodes = [];
 let _badgeTemplates = [];
+let _knownIngredients = [];
 let _loaded = false;
 
 export async function loadRegistries() {
-  const [brandsSnap, typesSnap, catsSnap, languagesSnap, stockSnap, badgeTemplatesSnap] = await Promise.all([
+  const [brandsSnap, typesSnap, catsSnap, languagesSnap, stockSnap, badgeTemplatesSnap, itemsSnap] = await Promise.all([
     getDoc(doc(db, MB, 'brands')),
     getDoc(doc(db, MB, 'types')),
     getDoc(doc(db, MB, 'categories')),
     getDoc(doc(db, MB, 'languages')),
     getDocs(collection(db, STOCK_COLL_NAME)),
     getDoc(doc(db, MB, 'badgeTemplates')),
+    getDocs(collection(db, ITEMS_COLL)),
   ]);
   _brands = brandsSnap.exists() ? brandsSnap.data().data || [] : [];
   _types = typesSnap.exists() ? typesSnap.data().data || [] : [];
@@ -81,6 +83,13 @@ export async function loadRegistries() {
   _languages = languagesSnap.exists() ? languagesSnap.data().data || [] : [];
   _storeCodes = stockSnap.docs.map((d) => d.id).sort();
   _badgeTemplates = badgeTemplatesSnap.exists() ? badgeTemplatesSnap.data().data || [] : [];
+  // Not a separate authored registry (nobody manages an "Ingredients"
+  // list under Settings) — just every distinct ingredient any product has
+  // ever had, so the Ingredients field's dropdown can suggest ones
+  // already in use instead of only ever accepting fresh free text.
+  const seen = new Set();
+  itemsSnap.docs.forEach((d) => (d.data().ingredients || []).forEach((i) => i && seen.add(i)));
+  _knownIngredients = [...seen].sort((a, b) => a.localeCompare(b));
   _loaded = true;
 }
 
@@ -130,4 +139,8 @@ export async function addCategoryToRegistry(name) {
 
 export function getKnownStoreCodes() {
   return _storeCodes;
+}
+
+export function getKnownIngredients() {
+  return _knownIngredients;
 }

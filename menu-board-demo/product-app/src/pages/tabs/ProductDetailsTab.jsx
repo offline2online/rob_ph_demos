@@ -6,7 +6,7 @@ import AdditionalAttributes from '../../components/AdditionalAttributes.jsx';
 import OptionGroups from '../../components/OptionGroups.jsx';
 import OfferBanner from '../../components/OfferBanner.jsx';
 import TargetingBuilder, { CATEGORIES as TARGETING_CATEGORIES } from '../../components/TargetingBuilder.jsx';
-import { getCats, getTypes, getBrands, getBrandById, addCategoryToRegistry, getLanguages } from '../../data/registries.js';
+import { getCats, getTypes, getBrands, getBrandById, addCategoryToRegistry, getLanguages, getKnownIngredients } from '../../data/registries.js';
 
 // Store / Location Data only — a product's distribution is about which
 // stores carry it, not who's standing in front of one, so Visitor /
@@ -339,14 +339,16 @@ export default function ProductDetailsTab({ draft, patch, onGoPricing }) {
         </div>
         <Field
           label="Ingredients"
-          hint="Type an ingredient and press Enter to add it. Shows as an Ingredients column (with a filter) in HQ Admin and Retail Admin once any product has at least one — hidden otherwise."
+          hint="Pick from ingredients already used on other products, or type a new one and press Enter to add it. Shows as an Ingredients column (with a filter) in HQ Admin and Retail Admin once any product has at least one — hidden otherwise."
         >
           <Select
             mode="tags"
             style={{ width: '100%' }}
             value={draft.ingredients}
             onChange={(ingredients) => patch({ ingredients })}
-            placeholder="Press Enter to add an ingredient"
+            placeholder="Select or type an ingredient"
+            options={getKnownIngredients().map((i) => ({ value: i, label: i }))}
+            optionFilterProp="label"
           />
         </Field>
       </SectionCard>
