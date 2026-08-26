@@ -800,12 +800,12 @@
            RRP fields and Price Change History first — the tablet-fit issue
            this replaced. -->
       <span id="priceSaveHelper" style="display:none;font-size:12px;color:var(--text2);flex:1;">No changes to save yet — edit RRP, offer price, dates or the menu board copy above to start.</span>
-      <button class="btn btn-ghost" id="priceDiscardBtn" style="display:none;" onclick="_discardPricingChange()" disabled>Cancel</button>
+      <button class="btn btn-ghost" id="priceDiscardBtn" style="display:none;" onclick="_discardPricingChange()">Cancel</button>
       <button class="btn btn-primary" id="priceSaveBtn" style="display:none;" onclick="savePricingChange()" disabled><span class="material-symbols-outlined" style="font-size:16px;">save</span> Save Changes</button>
 
       <!-- Stock & Location tab's own controls -->
       <button class="btn btn-ghost" id="stockCancelBtn" style="display:none;" onclick="closeItemModal()">Cancel</button>
-      <button class="btn btn-primary" id="stockSaveBtn" style="display:none;" onclick="saveStockLocation()"><span class="material-symbols-outlined" style="font-size:16px;">save</span> Save Changes</button>
+      <button class="btn btn-primary" id="stockSaveBtn" style="display:none;" onclick="saveStockLocation()" disabled><span class="material-symbols-outlined" style="font-size:16px;">save</span> Save Changes</button>
     </div>
   </div>
 </div>
@@ -1823,12 +1823,19 @@ function openItemModal(sku) {
   // Pre-fill location pane (also loads the Location Badge picker + visibility)
   _loadLocationPane(stock.location || {}, stock.locationBadgeTemplateId || '');
 
+  // Snapshot the resting state *after* every field above has loaded, so
+  // Save Changes starts disabled and only turns on once something in this
+  // pane actually moves away from it.
+  _stockLocationBaseline = _currentStockLocationSnapshot();
+  _refreshStockLocationSaveState();
+
   document.getElementById('itemDetailModal').classList.add('open');
 }
 
 function closeItemModal() {
   document.getElementById('itemDetailModal').classList.remove('open');
   _modalSku = null;
+  _stockLocationBaseline = null;
 }
 
 function switchItemTab(tab) {
@@ -1850,6 +1857,7 @@ function switchItemTab(tab) {
 function setStockFlag(flag) {
   _modalStockFlag = flag;
   _renderStockFlagButtons();
+  _refreshStockLocationSaveState();
 }
 
 function _renderStockFlagButtons() {
@@ -1864,6 +1872,40 @@ function _renderStockFlagButtons() {
 function setStockLevel(level) {
   _modalStockLevel = level;
   _renderStockLevelButtons();
+  _refreshStockLocationSaveState();
+}
+
+// ===== STOCK & LOCATION DIRTY TRACKING =====
+// Snapshotted once, right after the modal finishes loading a sku, then
+// re-compared on every control change so Save Changes only ever turns on
+// once something has actually moved from that baseline.
+let _stockLocationBaseline = null;
+
+function _currentStockLocationSnapshot() {
+  const human = _currentLocationHumanText();
+  return {
+    flag: _modalStockFlag,
+    level: _modalStockLevel,
+    location: {
+      useManual: _locMode === 'manual',
+      tags: _locMode === 'tags' ? [..._locTags] : [],
+      manual: _locMode === 'manual' ? (document.getElementById('locManualText').value || '').trim() : '',
+    },
+    // Mirrors saveStockLocation()'s own rule: the badge id is only ever
+    // meaningful (and only ever saved) once there's location text for it
+    // to label — an id picked before that never counts as a real change.
+    locationBadgeTemplateId: human ? (_modalLocationBadgeTemplateId || '') : '',
+  };
+}
+
+function _stockLocationDirty() {
+  if (!_stockLocationBaseline) return false;
+  return JSON.stringify(_currentStockLocationSnapshot()) !== JSON.stringify(_stockLocationBaseline);
+}
+
+function _refreshStockLocationSaveState() {
+  const saveBtn = document.getElementById('stockSaveBtn');
+  if (saveBtn) saveBtn.disabled = !_stockLocationDirty();
 }
 
 function _renderStockLevelButtons() {
@@ -2145,12 +2187,12 @@ function _refreshPricingSaveState() {
   const reason = (reasonInput.value || '').trim();
   const dirty = _pricingDirty();
   const saveBtn = document.getElementById('priceSaveBtn');
-  const discardBtn = document.getElementById('priceDiscardBtn');
   const helper = document.getElementById('priceSaveHelper');
   // The Save CTA only ever turns on when BOTH conditions hold: something
-  // was actually changed, and a reason has been given for it.
+  // was actually changed, and a reason has been given for it. Cancel stays
+  // enabled regardless — it always closes the modal, discarding any
+  // pending edits first, same as Stock & Location's Cancel.
   saveBtn.disabled = !(dirty && reason);
-  discardBtn.disabled = !dirty;
   // Blocking-on-reason is the one state worth calling out on the field
   // itself, not just in the helper text below — dirty with no reason yet
   // is the exact moment a store manager needs that nudge.
@@ -2170,19 +2212,22 @@ function _onPricingFieldChange() {
 }
 
 function _discardPricingChange() {
-  if (!_pricingBaseline) return;
-  document.getElementById('priceRrp').value = _pricingBaseline.rrp;
-  document.getElementById('priceOffer').value = _pricingBaseline.offerPrice;
-  document.getElementById('priceOfferFrom').value = _pricingBaseline.offerFrom;
-  document.getElementById('priceOfferUntil').value = _pricingBaseline.offerUntil;
-  _syncDateTimeDisplay('priceOfferFrom');
-  _syncDateTimeDisplay('priceOfferUntil');
-  document.getElementById('priceMenuBoardCopy').value = _pricingBaseline.showOnMenuBoard;
-  document.getElementById('priceReason').value = '';
-  _pricingDraft = { ..._pricingBaseline };
-  _refreshOfferBanner();
-  _refreshPricingSaveState();
-  _renderPricingMenuBoardPreview();
+  if (_pricingBaseline) {
+    document.getElementById('priceRrp').value = _pricingBaseline.rrp;
+    document.getElementById('priceOffer').value = _pricingBaseline.offerPrice;
+    document.getElementById('priceOfferFrom').value = _pricingBaseline.offerFrom;
+    document.getElementById('priceOfferUntil').value = _pricingBaseline.offerUntil;
+    _syncDateTimeDisplay('priceOfferFrom');
+    _syncDateTimeDisplay('priceOfferUntil');
+    document.getElementById('priceMenuBoardCopy').value = _pricingBaseline.showOnMenuBoard;
+    document.getElementById('priceReason').value = '';
+    _pricingDraft = { ..._pricingBaseline };
+    _refreshOfferBanner();
+    _refreshPricingSaveState();
+    _renderPricingMenuBoardPreview();
+  }
+  // Cancel discards and closes, same as Stock & Location's Cancel.
+  closeItemModal();
 }
 
 function _renderPriceLog(log) {
@@ -2272,12 +2317,7 @@ function savePricingChange() {
   ])
     .then(() => {
       toast(`Price change saved for ${STORE_CODE}`, 'success');
-      _pricingBaseline = { ..._pricingDraft };
-      document.getElementById('priceReason').value = '';
-      document.getElementById('priceScopeNote').textContent =
-        `Showing ${STORE_CODE}'s own price for this item. Other stores and HQ's default (${window._pricingCurrency || '$'}${parseFloat(item.price || 0).toFixed(2)}) are unaffected.`;
-      _renderPriceLog([...logEntries, ...(item.priceLog || [])]);
-      _refreshPricingSaveState();
+      closeItemModal();
     })
     .catch(err => toast('Save failed: ' + (err.message || err), 'error'));
 }
@@ -2332,6 +2372,7 @@ function _loadLocationPane(loc, locationBadgeTemplateId) {
 function onLocationBadgeTemplateChange() {
   _modalLocationBadgeTemplateId = document.getElementById('locationBadgeTemplateSelect').value;
   _renderLocationBadgePreview();
+  _refreshStockLocationSaveState();
 }
 
 function _renderLocationBadgePreview() {
@@ -2408,6 +2449,7 @@ function refreshLocationPreview() {
   // HQ Admin's Pricing tab hiding its own badge template until copy exists).
   document.getElementById('locationBadgeSection').style.display = human ? '' : 'none';
   _renderLocationBadgePreview();
+  _refreshStockLocationSaveState();
 }
 
 function saveStockLocation() {
@@ -2442,6 +2484,7 @@ function saveStockLocation() {
     }
     toast(msg, 'success');
     if (storeItemsGridApi) storeItemsGridApi.refreshCells({ force: true });
+    closeItemModal();
   });
 }
 
