@@ -384,8 +384,7 @@
       transition: all 0.15s;
     }
     .stock-flag-btn:hover:not(.active) { color: var(--text); }
-    .stock-flag-btn[data-flag="medium"].active   { background: var(--warning-light); border-color: var(--warning); color: var(--warning); }
-    .stock-flag-btn[data-flag="low"].active      { background: var(--warning-light); border-color: var(--danger); color: var(--danger); }
+    .stock-flag-btn[data-flag="inStock"].active    { background: var(--success-light); border-color: var(--success); color: var(--success); }
     .stock-flag-btn[data-flag="outOfStock"].active { background: var(--danger-light); border-color: var(--danger); color: var(--danger); }
     .field input, .field textarea, .field select {
       width: 100%;
@@ -681,10 +680,9 @@
 
         <div class="add-stock-section">
           <h4>Stock Level</h4>
-          <p style="font-size:12px;color:var(--text2);margin:-6px 0 14px;">How much of this item is available right now at this store — a Location Badge for it can be set below once a location is defined.</p>
+          <p style="font-size:12px;color:var(--text2);margin:-6px 0 14px;">Whether this item is available right now at this store — a Location Badge for it can be set below once a location is defined.</p>
           <div class="stock-flag-group" id="stockFlagGroup">
-            <button type="button" class="stock-flag-btn" data-flag="medium" onclick="setStockFlag('medium')">Medium</button>
-            <button type="button" class="stock-flag-btn" data-flag="low" onclick="setStockFlag('low')">Low</button>
+            <button type="button" class="stock-flag-btn" data-flag="inStock" onclick="setStockFlag('inStock')">In Stock</button>
             <button type="button" class="stock-flag-btn" data-flag="outOfStock" onclick="setStockFlag('outOfStock')">Out of Stock</button>
           </div>
         </div>
@@ -1244,22 +1242,19 @@ function saveStock(s) {
     .catch(err => toast('\u274C Sync failed: ' + (err.message || err), 'error'));
 }
 
-// Stock level is a simple 5-value flag per SKU, per store — replaces the
-// old quantity/history-based tracking. 'unknown' is the default for any
-// item this store hasn't set a level for yet.
-const STOCK_FLAGS = ['high', 'medium', 'low', 'outOfStock', 'unknown'];
-const STOCK_FLAG_LABELS = { high: 'High', medium: 'Medium', low: 'Low', outOfStock: 'Out of Stock', unknown: 'Unknown' };
+// Stock level is a simple in-stock/out-of-stock flag per SKU, per store.
+// 'inStock' is the default for any item this store hasn't touched — every
+// item starts in stock, and a store only ever acts to flag one as out.
+const STOCK_FLAGS = ['inStock', 'outOfStock'];
+const STOCK_FLAG_LABELS = { inStock: 'In Stock', outOfStock: 'Out of Stock' };
 const STOCK_FLAG_VISUAL = {
-  high:       { icon: 'check_circle', color: 'var(--success)', bg: 'var(--success-light)', border: 'var(--success)' },
-  medium:     { icon: 'trending_flat', color: 'var(--warning)', bg: 'var(--warning-light)', border: 'var(--warning)' },
-  low:        { icon: 'trending_down', color: 'var(--danger)', bg: 'var(--warning-light)', border: 'var(--danger)' },
+  inStock:    { icon: 'check_circle', color: 'var(--success)', bg: 'var(--success-light)', border: 'var(--success)' },
   outOfStock: { icon: 'block', color: 'var(--danger)', bg: 'var(--danger-light)', border: 'var(--danger)' },
-  unknown:    { icon: 'help', color: 'var(--text2)', bg: 'var(--surface2)', border: 'var(--border2)' },
 };
 function getStockFlag(sku) {
   const stock = getStock();
   const flag = stock[sku] && stock[sku].flag;
-  return STOCK_FLAGS.includes(flag) ? flag : 'unknown';
+  return STOCK_FLAGS.includes(flag) ? flag : 'inStock';
 }
 
 function isOos(sku) { return getStockFlag(sku) === 'outOfStock'; }
@@ -1591,7 +1586,7 @@ function updateSummaryBar() {
     return brand.stores.map(s => s.toUpperCase()).includes(STORE_CODE);
   });
   const totalActive = visibleItems.filter(i => i.active).length;
-  const counts = { high: 0, medium: 0, low: 0, outOfStock: 0, unknown: 0 };
+  const counts = { inStock: 0, outOfStock: 0 };
   visibleItems.forEach(i => { if (i.active) counts[getStockFlag(i.sku)]++; });
 
   document.getElementById('summaryBar').innerHTML = `
@@ -1599,10 +1594,7 @@ function updateSummaryBar() {
       <div class="num">${totalActive}</div><div class="lbl">Active Items</div>
     </div>
     <div class="summary-chip">
-      <div class="num" style="color:${STOCK_FLAG_VISUAL.medium.color}">${counts.medium}</div><div class="lbl">Medium</div>
-    </div>
-    <div class="summary-chip">
-      <div class="num" style="color:${STOCK_FLAG_VISUAL.low.color}">${counts.low}</div><div class="lbl">Low</div>
+      <div class="num" style="color:${STOCK_FLAG_VISUAL.inStock.color}">${counts.inStock}</div><div class="lbl">In Stock</div>
     </div>
     <div class="summary-chip">
       <div class="num" style="color:${STOCK_FLAG_VISUAL.outOfStock.color}">${counts.outOfStock}</div><div class="lbl">Out of Stock</div>
@@ -1670,7 +1662,7 @@ function _updateIngredientsColumnVisibility() {
 
 // ===== ITEM DETAIL MODAL =====
 let _modalSku = null;
-let _modalStockFlag = 'unknown';
+let _modalStockFlag = 'inStock';
 
 function openItemModal(sku) {
   _modalSku = sku;
