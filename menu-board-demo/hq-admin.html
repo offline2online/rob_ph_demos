@@ -2835,6 +2835,16 @@ function initGrids() {
       // means the *page* scrolls) — stay correctly anchored under their
       // header cell as the page scrolls, exactly like a normal popup.
       popupParent: document.body,
+      // AG Grid positions the filter popup a few px under the floating-
+      // filter *button*, not the taller header row it sits inside — since
+      // that row has its own vertical padding around the button, the
+      // popup's top ~10px overlapped the header's own bottom padding
+      // (measured live: popup top at 99.5px vs. the header row's true
+      // bottom at 110px). Nudging every popup down clears it with room to
+      // spare, regardless of which column's filter opened it.
+      postProcessPopup: (params) => {
+        if (params.ePopup) params.ePopup.style.top = `${parseFloat(params.ePopup.style.top || '0') + 12}px`;
+      },
       suppressCellFocus: true,
       rowSelection: 'multiple',
       suppressRowClickSelection: true,
