@@ -72,7 +72,6 @@ export function blankProduct() {
     // evaluation logic was wired in.
     distributionMode: 'all',
     distributionTargeting: [],
-    lowStockThreshold: '',
     ingredients: [],
     attributes: [],
     optionGroups: [],

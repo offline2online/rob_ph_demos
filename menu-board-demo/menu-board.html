@@ -1085,7 +1085,7 @@ function getItems() {
 }
 function getSettings() { return _settings; }
 function getStock()    { return _stock; }
-function isOos(sku)    { return !!(_stock[sku] && _stock[sku].outOfStock); }
+function isOos(sku)    { return !!(_stock[sku] && _stock[sku].flag === 'outOfStock'); }
 function esc(str)      { return String(str || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 function fmtTime(d)    { return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); }
 function fmtDate(d)    { return d.toLocaleDateString([], { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' }); }
@@ -1153,8 +1153,8 @@ const MENU_NOTE_BORDER_WIDTHS = { thin: '1px', medium: '2px', thick: '3px' };
 // when outlined was also on, which silently dropped a template's border
 // whenever it was paired with a filled background (e.g. a solid-colour
 // badge with a contrasting outline) — that's the bug this fixes.
-function menuNoteStyleAttr(item) {
-  const t = getBadgeTemplateById(item.menuBoardNoteTemplateId || 'default');
+function badgeStyleForTemplateId(templateId) {
+  const t = getBadgeTemplateById(templateId || 'default');
   const size = MENU_NOTE_SIZES[t.size] || MENU_NOTE_SIZES.medium;
   const radius = MENU_NOTE_RADII[t.radius] || MENU_NOTE_RADII.rounded;
   const color = t.color || '#ad4e00';
@@ -1162,6 +1162,26 @@ function menuNoteStyleAttr(item) {
   const border = hasBorder ? `${MENU_NOTE_BORDER_WIDTHS[t.borderWidth] || MENU_NOTE_BORDER_WIDTHS.thin} solid ${t.borderColor || color}` : 'none';
   const bg = t.outlined ? 'transparent' : (t.bg || '#fff7e6');
   return `font-size:${size.font};padding:${size.pad};border-radius:${radius};background:${bg};color:${color};border:${border};text-transform:${t.uppercase ? 'uppercase' : 'none'};`;
+}
+function menuNoteStyleAttr(item) {
+  return badgeStyleForTemplateId(item.menuBoardNoteTemplateId);
+}
+
+// A store's own Location Badge (Retail Admin ▸ Stock & Location tab) — a
+// per-store, per-item badge that renders the item's physical location text
+// (e.g. "Aisle A3 → Shelf C4") in whichever badge template that store
+// picked. Independent of the HQ-authored "Show on Menu Board" note above:
+// a store sets its own template here, unlike menuBoardNoteTemplateId which
+// stays HQ-locked. Requires both a template and non-empty location text —
+// Retail Admin already enforces this by hiding its own picker until one
+// exists, but a stale saved id with the text since cleared is still
+// handled here rather than trusting that invariant to always hold.
+function locationBadgeHtml(item) {
+  const s = _stock[item.sku];
+  if (!s || !s.locationBadgeTemplateId) return '';
+  const human = (s.location && s.location.humanReadable || '').trim();
+  if (!human) return '';
+  return `<div class="menu-board-note location-badge" style="${badgeStyleForTemplateId(s.locationBadgeTemplateId)}">${esc(human)}</div>`;
 }
 
 // ── BRAND SUPPORT ────────────────────────────────────────────────────────────
@@ -1762,6 +1782,45 @@ onSnapshot(doc(db, MB, 'settings'), snap => {
   }
 });
 
+// Per-store listeners — registered at top level like the ones above (not
+// deferred behind DOMContentLoaded, which module scripts can otherwise
+// race: it may already have fired by the time this script runs, leaving
+// these listeners never attached and stock/local-featured/store-pricing
+// permanently empty for the life of the page).
+if (STORE_CODE) {
+  onSnapshot(doc(db, STOCK_COLL, STORE_CODE), snap => {
+    const newStock = snap.exists() ? snap.data() : {};
+    const h = _fp(newStock);
+    if (h === _stockHash) return;   // data unchanged — skip render
+    _stockHash = h;
+    _stock = newStock;
+    render();
+  });
+  // Per-store Local Feature Highlight override, set from Retail Admin —
+  // once a store has starred 3+ items, this replaces HQ's Featured list
+  // for that store (see getEffectiveFeaturedSkus() in render()).
+  onSnapshot(doc(db, LOCAL_FEATURED_COLL, STORE_CODE), snap => {
+    const newLocalFeatured = snap.exists() ? snap.data() : {};
+    const h = _fp(newLocalFeatured);
+    if (h === _localFeaturedHash) return;
+    _localFeaturedHash = h;
+    _localFeatured = newLocalFeatured;
+    render();
+  });
+  // Per-store price override, set from Retail Admin's Pricing tab (only
+  // shown there when HQ Admin has switched it on for the item's brand) —
+  // a store's own price/offer/menu-board-copy for a sku, never affecting
+  // any other store or HQ's own default. See getItems() below.
+  onSnapshot(doc(db, STORE_PRICING_COLL, STORE_CODE), snap => {
+    const newStorePricing = snap.exists() ? snap.data() : {};
+    const h = _fp(newStorePricing);
+    if (h === _storePricingHash) return;
+    _storePricingHash = h;
+    _storePricing = newStorePricing;
+    render();
+  });
+}
+
 // ── RENDER ───────────────────────────────────────────────────────────────────
 function render() {
   if (!STORE_CODE && !DEVICE_UDID) return;
@@ -2152,6 +2211,7 @@ function render() {
       : `<div class="item-thumb-placeholder">🍽️</div>`;
     const desc = item.description ? `<div class="item-desc">${esc(item.description)}</div>` : '';
     const menuNote = shouldShowMenuNote(item) ? `<div class="menu-board-note" style="${menuNoteStyleAttr(item)}">${esc(item.showOnMenuBoard)}</div>` : '';
+    const locationNote = locationBadgeHtml(item);
     return `
       <div class="item-cell${oos ? ' oos-cell' : ''}">
         <div class="item-thumb">${thumbInner}</div>
@@ -2165,6 +2225,7 @@ function render() {
           </div>
           ${buildNutrition(item, true)}
           ${menuNote}
+          ${locationNote}
         </div>
         <div class="oos-overlay"><div class="oos-stamp"><div class="oos-stamp-text">SOLD OUT</div></div></div>
       </div>`;
@@ -2271,6 +2332,7 @@ function render() {
         : `<div class="promo-hero-placeholder">🏷️</div>`;
       const heroCat = heroItem.category ? `<div class="promo-cat">${esc(heroItem.category)}</div>` : '';
       const heroMenuNote = shouldShowMenuNote(heroItem) ? `<div class="menu-board-note" style="${menuNoteStyleAttr(heroItem)}">${esc(heroItem.showOnMenuBoard)}</div>` : '';
+      const heroLocationNote = locationBadgeHtml(heroItem);
       const heroTopHtml = `
         <div class="promo-hero-top">
           ${heroCat}
@@ -2278,6 +2340,7 @@ function render() {
           <div class="promo-hero-price">${priceHtml(heroItem, currency, 'price-was')}</div>
           ${buildNutrition(heroItem)}
           ${heroMenuNote}
+          ${heroLocationNote}
         </div>`;
       const heroBottomHtml = heroItem.description
         ? `<div class="promo-hero-bottom"><div class="promo-hero-desc">${esc(heroItem.description)}</div></div>`
@@ -2297,6 +2360,7 @@ function render() {
           ? `<div class="promo-tile-desc"><div class="promo-desc">${esc(item.description)}</div></div>` : '';
         const cat = item.category ? `<div class="promo-cat">${esc(item.category)}</div>` : '';
         const menuNote = shouldShowMenuNote(item) ? `<div class="menu-board-note" style="${menuNoteStyleAttr(item)}">${esc(item.showOnMenuBoard)}</div>` : '';
+        const locationNote = locationBadgeHtml(item);
         return `
           <div class="promo-tile">
             <div class="promo-text">
@@ -2305,6 +2369,7 @@ function render() {
               <div class="promo-price">${priceHtml(item, currency, 'price-was')}</div>
               ${buildNutrition(item, true)}
               ${menuNote}
+              ${locationNote}
             </div>
             <div class="promo-img-wrap">${img}</div>
             ${desc}
@@ -2384,41 +2449,6 @@ document.addEventListener('DOMContentLoaded', () => {
       </div>
     `;
     return;
-  }
-
-  // Per-store stock listener — only when a store code is present
-  if (STORE_CODE) {
-    onSnapshot(doc(db, STOCK_COLL, STORE_CODE), snap => {
-      const newStock = snap.exists() ? snap.data() : {};
-      const h = _fp(newStock);
-      if (h === _stockHash) return;   // data unchanged — skip render
-      _stockHash = h;
-      _stock = newStock;
-      render();
-    });
-    // Per-store Local Feature Highlight override, set from Retail Admin —
-    // once a store has starred 3+ items, this replaces HQ's Featured list
-    // for that store (see getEffectiveFeaturedSkus() in render()).
-    onSnapshot(doc(db, LOCAL_FEATURED_COLL, STORE_CODE), snap => {
-      const newLocalFeatured = snap.exists() ? snap.data() : {};
-      const h = _fp(newLocalFeatured);
-      if (h === _localFeaturedHash) return;
-      _localFeaturedHash = h;
-      _localFeatured = newLocalFeatured;
-      render();
-    });
-    // Per-store price override, set from Retail Admin's Pricing tab (only
-    // shown there when HQ Admin has switched it on for the item's brand) —
-    // a store's own price/offer/menu-board-copy for a sku, never affecting
-    // any other store or HQ's own default. See getItems() below.
-    onSnapshot(doc(db, STORE_PRICING_COLL, STORE_CODE), snap => {
-      const newStorePricing = snap.exists() ? snap.data() : {};
-      const h = _fp(newStorePricing);
-      if (h === _storePricingHash) return;
-      _storePricingHash = h;
-      _storePricing = newStorePricing;
-      render();
-    });
   }
 
   updateClock();

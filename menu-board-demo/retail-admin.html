@@ -423,45 +423,6 @@
     .toast.error { border-left: 3px solid var(--danger); }
     .toast.info { border-left: 3px solid var(--primary); }
 
-    /* CONFIRM DIALOG */
-    .confirm-overlay {
-      display: none;
-      position: fixed;
-      inset: 0;
-      background: rgba(0,0,0,0.45);
-      z-index: 200;
-      align-items: center;
-      justify-content: center;
-      padding: 20px;
-    }
-    .confirm-overlay.open { display: flex; }
-    .confirm-box {
-      background: var(--surface);
-      border: 1px solid var(--border2);
-      border-radius: 8px;
-      padding: 32px;
-      max-width: 380px;
-      width: 100%;
-      text-align: center;
-      box-shadow: 0 20px 50px rgba(0,0,0,0.15);
-    }
-    .confirm-box .icon { font-size: 40px; margin-bottom: 14px; }
-    .confirm-box h3 { font-size: 17px; font-weight: 700; margin-bottom: 8px; }
-    .confirm-box p { font-size: 14px; color: var(--text2); margin-bottom: 24px; line-height: 1.5; }
-    .confirm-actions { display: flex; gap: 10px; justify-content: center; }
-    .confirm-actions-row { display: flex; gap: 10px; justify-content: center; }
-    .confirm-link-btn {
-      background: none;
-      border: none;
-      padding: 4px;
-      font-size: 12px;
-      font-weight: 500;
-      color: var(--text2);
-      text-decoration: underline;
-      cursor: pointer;
-    }
-    .confirm-link-btn:hover { color: var(--text); }
-
     /* AUTO REFRESH */
     @keyframes pulse { 0%,100%{opacity:1}50%{opacity:0.3} }
     @keyframes toastIn { from { transform: translateX(20px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
@@ -651,66 +612,6 @@
       flex-shrink: 0;
     }
 
-    /* Stock summary row inside modal */
-    .stock-summary {
-      display: flex;
-      align-items: center;
-      gap: 16px;
-      background: var(--surface2);
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      padding: 14px 18px;
-      margin-bottom: 20px;
-    }
-    .stock-summary-qty {
-      font-size: 32px;
-      font-weight: 800;
-      color: var(--text);
-      line-height: 1;
-    }
-    .stock-summary-label { font-size: 12px; color: var(--text2); margin-top: 2px; }
-    .stock-qty-btn {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      width: 30px;
-      height: 30px;
-      border-radius: 6px;
-      border: 1px solid;
-      font-size: 16px;
-      font-weight: 700;
-      cursor: pointer;
-      line-height: 1;
-      background: var(--surface);
-      transition: opacity 0.15s;
-    }
-    .stock-qty-btn:hover { opacity: 0.8; }
-    .stock-qty-btn.add { border-color: var(--success); color: var(--success); }
-    .stock-qty-btn.remove { border-color: var(--danger); color: var(--danger); }
-
-    /* Edit stock overlay */
-    .edit-stock-overlay {
-      display: none;
-      position: absolute;
-      top: 0; left: 0; right: 0; bottom: 0;
-      background: rgba(255,255,255,0.95);
-      z-index: 10;
-      align-items: center;
-      justify-content: center;
-      border-radius: 8px;
-    }
-    .edit-stock-overlay.open { display: flex; }
-    .edit-stock-box {
-      background: var(--surface);
-      border: 1px solid var(--border2);
-      border-radius: 10px;
-      padding: 22px 24px;
-      width: 320px;
-      box-shadow: 0 4px 20px rgba(0,0,0,0.1);
-    }
-    .edit-stock-box h4 { font-size: 14px; font-weight: 700; margin-bottom: 4px; color: var(--text); }
-    .edit-stock-box p { font-size: 12px; color: var(--text2); margin-bottom: 16px; }
-
     /* Add stock section */
     .add-stock-section {
       background: var(--surface);
@@ -720,9 +621,27 @@
       margin-bottom: 20px;
     }
     .add-stock-section h4 { font-size: 13px; font-weight: 700; margin-bottom: 12px; color: var(--text); }
-    .add-stock-row { display: flex; gap: 10px; align-items: flex-end; }
-    .add-stock-row .field { flex: 1; }
     .field label { display: block; font-size: 12px; font-weight: 600; color: var(--text2); margin-bottom: 6px; }
+
+    /* Stock flag picker (Stock & Location tab) */
+    .stock-flag-group { display: flex; gap: 8px; flex-wrap: wrap; }
+    .stock-flag-btn {
+      padding: 7px 14px;
+      font-size: 12px;
+      font-weight: 700;
+      border-radius: 20px;
+      cursor: pointer;
+      background: var(--surface2);
+      border: 1px solid var(--border2);
+      color: var(--text2);
+      transition: all 0.15s;
+    }
+    .stock-flag-btn:hover:not(.active) { color: var(--text); }
+    .stock-flag-btn[data-flag="high"].active     { background: var(--success-light); border-color: var(--success); color: var(--success); }
+    .stock-flag-btn[data-flag="medium"].active   { background: var(--warning-light); border-color: var(--warning); color: var(--warning); }
+    .stock-flag-btn[data-flag="low"].active      { background: var(--warning-light); border-color: var(--danger); color: var(--danger); }
+    .stock-flag-btn[data-flag="outOfStock"].active { background: var(--danger-light); border-color: var(--danger); color: var(--danger); }
+    .stock-flag-btn[data-flag="unknown"].active  { background: var(--surface2); border-color: var(--text2); color: var(--text); }
     .field input, .field textarea, .field select {
       width: 100%;
       padding: 8px 12px;
@@ -939,19 +858,6 @@
   </div><!-- /ra-content -->
 </div><!-- /ra-main -->
 
-<!-- CONFIRM DIALOG -->
-<div class="confirm-overlay" id="confirmOverlay">
-  <div class="confirm-box">
-    <div class="icon material-symbols-outlined" id="confirmIcon">help</div>
-    <h3 id="confirmTitle">Confirm Action</h3>
-    <p id="confirmMsg">Are you sure?</p>
-    <div class="confirm-actions" id="confirmActions">
-      <button class="btn btn-ghost" onclick="closeConfirm()">Cancel</button>
-      <button class="btn btn-danger" id="confirmBtn">Confirm</button>
-    </div>
-  </div>
-</div>
-
 <!-- ITEM DETAIL MODAL -->
 <div class="modal-overlay" id="itemDetailModal">
   <div class="modal">
@@ -964,8 +870,7 @@
     </div>
     <div class="modal-tabs">
       <button class="modal-tab" id="tabPricing" onclick="switchItemTab('pricing')" style="display:none;">Pricing</button>
-      <button class="modal-tab active" id="tabStock" onclick="switchItemTab('stock')">Stock Management</button>
-      <button class="modal-tab" id="tabLocation" onclick="switchItemTab('location')">Location</button>
+      <button class="modal-tab active" id="tabStock" onclick="switchItemTab('stock')">Stock &amp; Location</button>
     </div>
     <div class="modal-body">
 
@@ -1032,94 +937,67 @@
         </div>
       </div>
 
-      <!-- STOCK MANAGEMENT PANE -->
-      <div class="modal-tab-pane active" id="paneStock" style="position:relative;">
+      <!-- STOCK & LOCATION PANE -->
+      <div class="modal-tab-pane active" id="paneStock">
 
-        <!-- EDIT CURRENT STOCK OVERLAY -->
-        <div class="edit-stock-overlay" id="editStockOverlay">
-          <div class="edit-stock-box">
-            <h4><span class="material-symbols-outlined" style="font-size:16px;">edit</span> Edit Current Stock</h4>
-            <p>Correct an inaccurate stock count. A correction record will be generated showing the old and new levels.</p>
-            <div class="field" style="margin-bottom:12px;">
-              <label for="editStockNewQty">New Stock Count</label>
-              <input type="number" id="editStockNewQty" min="0" step="1" placeholder="e.g. 48">
-            </div>
-            <div class="field" style="margin-bottom:16px;">
-              <label for="editStockNote">Reason / Note <span style="font-weight:400;color:var(--text3);">(optional)</span></label>
-              <input type="text" id="editStockNote" placeholder="e.g. Recount after stocktake">
-            </div>
-            <div style="display:flex;gap:8px;">
-              <button class="btn btn-ghost btn-sm" onclick="closeEditStockOverlay()">Cancel</button>
-              <button class="btn btn-primary btn-sm" onclick="saveEditedStock()">Save Changes</button>
-            </div>
+        <div class="add-stock-section">
+          <h4>Stock Level</h4>
+          <p style="font-size:12px;color:var(--text2);margin:-6px 0 14px;">How much of this item is available right now at this store — a Location Badge for it can be set below once a location is defined.</p>
+          <div class="stock-flag-group" id="stockFlagGroup">
+            <button type="button" class="stock-flag-btn" data-flag="high" onclick="setStockFlag('high')">High</button>
+            <button type="button" class="stock-flag-btn" data-flag="medium" onclick="setStockFlag('medium')">Medium</button>
+            <button type="button" class="stock-flag-btn" data-flag="low" onclick="setStockFlag('low')">Low</button>
+            <button type="button" class="stock-flag-btn" data-flag="outOfStock" onclick="setStockFlag('outOfStock')">Out of Stock</button>
+            <button type="button" class="stock-flag-btn" data-flag="unknown" onclick="setStockFlag('unknown')">Unknown</button>
           </div>
-        </div>
-
-        <div class="stock-summary" id="stockSummary">
-          <div>
-            <div class="stock-summary-qty" id="stockSummaryQty">—</div>
-            <div class="stock-summary-label">units currently in stock</div>
-          </div>
-          <div id="stockSummaryPill"></div>
-          <div id="stockSummaryActions" style="margin-left:auto;display:flex;gap:6px;"></div>
         </div>
 
         <div class="add-stock-section">
-          <h4>Add Stock</h4>
-          <div class="add-stock-row">
+          <h4>Location</h4>
+          <div class="location-preview empty" id="locationPreview"><span class="material-symbols-outlined" style="font-size:15px;">location_on</span> No location set — add variables or enter manually below</div>
+
+          <!-- Mode toggle -->
+          <div class="loc-mode-toggle">
+            <button class="loc-mode-btn active" id="locModeTagsBtn" onclick="switchLocMode('tags')"><span class="material-symbols-outlined" style="font-size:15px;">sell</span> Build from Variables</button>
+            <button class="loc-mode-btn" id="locModeManualBtn" onclick="switchLocMode('manual')"><span class="material-symbols-outlined" style="font-size:15px;">edit</span> Enter Manually</button>
+          </div>
+
+          <!-- TAG MODE -->
+          <div id="locTagsPane">
+            <div class="loc-tag-list" id="locTagList">
+              <div class="loc-tag-empty">No location variables yet — add one below.</div>
+            </div>
+
+            <div class="loc-add-row">
+              <div class="field label-field">
+                <label for="locNewLabel">Variable Name</label>
+                <input type="text" id="locNewLabel" placeholder="e.g. Floor, Aisle, Shelf…">
+              </div>
+              <div class="field">
+                <label for="locNewValue">Value</label>
+                <input type="text" id="locNewValue" placeholder="e.g. Ground Floor, A3, C4…" onkeydown="if(event.key==='Enter')addLocationTag()">
+              </div>
+              <button class="loc-add-btn" onclick="addLocationTag()">+ Add</button>
+            </div>
+          </div>
+
+          <!-- MANUAL MODE -->
+          <div id="locManualPane" style="display:none;">
             <div class="field">
-              <label for="addStockQty">Units to Add</label>
-              <input type="number" id="addStockQty" min="1" step="1" placeholder="e.g. 24">
+              <label for="locManualText">Location (free text)</label>
+              <textarea id="locManualText" placeholder="Type the full location, e.g. Ground Floor → Aisle A3 → Beverages → Shelf C4" style="min-height:90px;" oninput="refreshLocationPreview()"></textarea>
             </div>
-            <button class="btn btn-primary" onclick="addStockToItem()" style="flex-shrink:0;">Add Stock</button>
           </div>
         </div>
 
-        <div class="history-section">
-          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
-            <h4 style="margin-bottom:0;">Stock History</h4>
-            <button class="btn btn-ghost btn-sm" onclick="openEditStockOverlay()" style="font-size:12px;"><span class="material-symbols-outlined" style="font-size:15px;">edit</span> Edit Current Stock</button>
-          </div>
-          <div id="stockHistoryContainer">
-            <div class="history-empty">No stock additions recorded yet.</div>
-          </div>
-        </div>
-      </div>
-
-      <!-- LOCATION PANE -->
-      <div class="modal-tab-pane" id="paneLocation">
-        <div class="location-preview empty" id="locationPreview"><span class="material-symbols-outlined" style="font-size:15px;">location_on</span> No location set — add variables or enter manually below</div>
-
-        <!-- Mode toggle -->
-        <div class="loc-mode-toggle">
-          <button class="loc-mode-btn active" id="locModeTagsBtn" onclick="switchLocMode('tags')"><span class="material-symbols-outlined" style="font-size:15px;">sell</span> Build from Variables</button>
-          <button class="loc-mode-btn" id="locModeManualBtn" onclick="switchLocMode('manual')"><span class="material-symbols-outlined" style="font-size:15px;">edit</span> Enter Manually</button>
-        </div>
-
-        <!-- TAG MODE -->
-        <div id="locTagsPane">
-          <div class="loc-tag-list" id="locTagList">
-            <div class="loc-tag-empty">No location variables yet — add one below.</div>
-          </div>
-
-          <div class="loc-add-row">
-            <div class="field label-field">
-              <label for="locNewLabel">Variable Name</label>
-              <input type="text" id="locNewLabel" placeholder="e.g. Floor, Aisle, Shelf…">
-            </div>
-            <div class="field">
-              <label for="locNewValue">Value</label>
-              <input type="text" id="locNewValue" placeholder="e.g. Ground Floor, A3, C4…" onkeydown="if(event.key==='Enter')addLocationTag()">
-            </div>
-            <button class="loc-add-btn" onclick="addLocationTag()">+ Add</button>
-          </div>
-        </div>
-
-        <!-- MANUAL MODE -->
-        <div id="locManualPane" style="display:none;">
-          <div class="field">
-            <label for="locManualText">Location (free text)</label>
-            <textarea id="locManualText" placeholder="Type the full location, e.g. Ground Floor → Aisle A3 → Beverages → Shelf C4" style="min-height:90px;" oninput="refreshLocationPreview()"></textarea>
+        <div class="add-stock-section" id="locationBadgeSection" style="display:none;">
+          <h4>Location Badge</h4>
+          <p style="font-size:12px;color:var(--text2);margin:-6px 0 14px;">Shown on the customer-facing menu board next to this item at this store, using the location text above. Pick one of the buttons defined under HQ Admin → Settings → Menu Board Badge Templates.</p>
+          <div style="display:flex;gap:16px;align-items:center;flex-wrap:wrap;">
+            <select id="locationBadgeTemplateSelect" onchange="onLocationBadgeTemplateChange()" style="width:240px;padding:8px 12px;border:1px solid var(--border2);border-radius:6px;font-size:13px;font-family:inherit;background:var(--surface);color:var(--text);outline:none;">
+              <option value="">No badge</option>
+            </select>
+            <div id="locationBadgePreview"></div>
           </div>
         </div>
       </div>
@@ -1128,7 +1006,7 @@
 
     <div class="modal-footer" id="itemModalFooter" style="display:none;">
       <button class="btn btn-ghost" onclick="closeItemModal()">Cancel</button>
-      <button class="btn btn-primary" onclick="saveItemLocation()"><span class="material-symbols-outlined" style="font-size:16px;">save</span> Save Location</button>
+      <button class="btn btn-primary" onclick="saveStockLocation()"><span class="material-symbols-outlined" style="font-size:16px;">save</span> Save Changes</button>
     </div>
   </div>
 </div>
@@ -1619,26 +1497,36 @@ function saveStock(s) {
     .catch(err => toast('\u274C Sync failed: ' + (err.message || err), 'error'));
 }
 
-function isOos(sku) {
+// Stock level is a simple 5-value flag per SKU, per store — replaces the
+// old quantity/history-based tracking. 'unknown' is the default for any
+// item this store hasn't set a level for yet.
+const STOCK_FLAGS = ['high', 'medium', 'low', 'outOfStock', 'unknown'];
+const STOCK_FLAG_LABELS = { high: 'High', medium: 'Medium', low: 'Low', outOfStock: 'Out of Stock', unknown: 'Unknown' };
+const STOCK_FLAG_VISUAL = {
+  high:       { icon: 'check_circle', color: 'var(--success)', bg: 'var(--success-light)', border: 'var(--success)' },
+  medium:     { icon: 'trending_flat', color: 'var(--warning)', bg: 'var(--warning-light)', border: 'var(--warning)' },
+  low:        { icon: 'trending_down', color: 'var(--danger)', bg: 'var(--warning-light)', border: 'var(--danger)' },
+  outOfStock: { icon: 'block', color: 'var(--danger)', bg: 'var(--danger-light)', border: 'var(--danger)' },
+  unknown:    { icon: 'help', color: 'var(--text2)', bg: 'var(--surface2)', border: 'var(--border2)' },
+};
+function getStockFlag(sku) {
   const stock = getStock();
-  return !!(stock[sku] && stock[sku].outOfStock);
+  const flag = stock[sku] && stock[sku].flag;
+  return STOCK_FLAGS.includes(flag) ? flag : 'unknown';
 }
 
-// An item that's out of stock (or not stocked here) can't stay locally
-// featured — call this right after any write that may have flipped
-// outOfStock/notStocked to true. Returns true if it actually cleared a
-// featured pick, so the caller can fold a warning into its own toast.
+function isOos(sku) { return getStockFlag(sku) === 'outOfStock'; }
+
+// An item that's out of stock can't stay locally featured — call this
+// right after any write that may have flipped the flag to outOfStock.
+// Returns true if it actually cleared a featured pick, so the caller can
+// fold a warning into its own toast.
 function _clearFeaturedIfOos(sku, isUnavailable) {
   if (!isUnavailable || !_localFeatured[sku]) return false;
   const next = { ..._localFeatured };
   delete next[sku];
   saveLocalFeatured(next);
   return true;
-}
-
-function isNotStocked(sku) {
-  const stock = getStock();
-  return !!(stock[sku] && stock[sku].notStocked);
 }
 
 // GRID INIT
@@ -1670,12 +1558,6 @@ function initGrid() {
     rowHeight: 99,
     suppressCellFocus: true,
     getRowId: params => params.data.sku,
-    getRowStyle: params => {
-      if (params.data && isNotStocked(params.data.sku)) {
-        return { opacity: '0.45' };
-      }
-      return null;
-    },
     defaultColDef: {
       resizable: true,
       sortable: true,
@@ -1858,39 +1740,29 @@ function initGrid() {
         getFilterValue: (data) => data.ingredients || []
       },
       {
-        headerName: 'Status', colId: 'status', flex: 1.8, minWidth: 200,
+        headerName: 'Stock Level', colId: 'status', flex: 1.8, minWidth: 200,
         sortable: true,
         filter: CheckboxSetFilter,
-        valueGetter: (p) => {
-          if (isNotStocked(p.data.sku)) return 'Not Stocked';
-          if (isOos(p.data.sku)) return 'Out of Stock';
-          return 'In Stock';
-        },
-        // Filter menu shows both the stock status and, as an extra
-        // checkbox tag, "Featured" — so HQ/store staff can filter the
-        // status column down to locally featured items without a
-        // separate column (CheckboxSetFilter treats an array raw value
-        // as "matches if any tag is checked").
+        valueGetter: (p) => STOCK_FLAG_LABELS[getStockFlag(p.data.sku)],
+        // Filter menu shows both the stock level and, as an extra checkbox
+        // tag, "Featured" — so store staff can filter the column down to
+        // locally featured items without a separate column (CheckboxSetFilter
+        // treats an array raw value as "matches if any tag is checked").
         getFilterValue: (data) => {
-          const tag = isNotStocked(data.sku) ? 'Not Stocked' : isOos(data.sku) ? 'Out of Stock' : 'In Stock';
+          const tag = STOCK_FLAG_LABELS[getStockFlag(data.sku)];
           return isLocalFeatured(data.sku) ? [tag, 'Featured'] : [tag];
         },
         // Filter checklist echoes the same icon/colour the cell itself
         // shows, not a bare label (ph-designer skill, components.md §3.1).
         filterParams: {
           itemRenderer: (value) => {
-            const ICONS = {
-              'Not Stocked': ['do_not_disturb_on', 'var(--text2)'],
-              'Out of Stock': ['block', 'var(--danger)'],
-              'In Stock': ['check_circle', 'var(--success)'],
-              'Featured': ['star', '#faad14'],
-            };
-            const [icon, color] = ICONS[value] || [null, null];
+            const flag = Object.keys(STOCK_FLAG_LABELS).find(f => STOCK_FLAG_LABELS[f] === value);
+            const visual = flag ? STOCK_FLAG_VISUAL[flag] : { icon: 'star', color: '#faad14' };
             const span = document.createElement('span');
             span.style.cssText = 'display:inline-flex;align-items:center;gap:6px;';
-            if (icon) {
+            if (visual.icon) {
               const fill = value === 'Featured' ? "'FILL' 1," : '';
-              span.innerHTML = `<span class="material-symbols-outlined" style="font-size:14px;color:${color};font-variation-settings:${fill}">${icon}</span>`;
+              span.innerHTML = `<span class="material-symbols-outlined" style="font-size:14px;color:${visual.color};font-variation-settings:${fill}">${visual.icon}</span>`;
             }
             span.appendChild(document.createTextNode(value));
             return span;
@@ -1898,34 +1770,23 @@ function initGrid() {
         },
         cellRenderer: (params) => {
           const item = params.data;
-          const oos = isOos(item.sku);
-          const ns  = isNotStocked(item.sku);
-          const qty = typeof (_stock[item.sku] || {}).quantity === 'number' ? _stock[item.sku].quantity : null;
+          const flag = getStockFlag(item.sku);
+          const oos = flag === 'outOfStock';
+          const visual = STOCK_FLAG_VISUAL[flag];
 
           const wrap = document.createElement('div');
-          wrap.style.cssText = 'display:flex;flex-direction:column;justify-content:center;gap:5px;height:100%;padding:6px 0;';
-
-          // Status pill + local-featured star, side by side
-          const pillRow = document.createElement('div');
-          pillRow.style.cssText = 'display:flex;align-items:center;gap:8px;';
+          wrap.style.cssText = 'display:flex;align-items:center;gap:8px;height:100%;';
 
           const pill = document.createElement('div');
-          if (ns) {
-            pill.style.cssText = 'display:inline-flex;align-items:center;gap:5px;padding:4px 10px;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600;border:1px solid var(--border2);color:var(--text2);background:var(--surface2);width:fit-content;';
-            pill.innerHTML = '<span class="material-symbols-outlined" style="font-size:14px;">do_not_disturb_on</span> We don\'t sell/stock this';
-          } else if (oos) {
-            pill.style.cssText = 'display:inline-flex;align-items:center;gap:5px;padding:4px 10px;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600;border:1px solid var(--danger);color:var(--danger);background:var(--danger-light);width:fit-content;';
-            pill.innerHTML = '<span class="material-symbols-outlined" style="font-size:14px;">block</span> Out of Stock';
-          } else {
-            pill.style.cssText = 'display:inline-flex;align-items:center;gap:5px;padding:4px 10px;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600;border:1px solid var(--success);color:var(--success);background:var(--success-light);width:fit-content;';
-            pill.innerHTML = '<span class="material-symbols-outlined" style="font-size:14px;">check_circle</span> In Stock';
-          }
-          pill.addEventListener('click', () => cycleStockStatus(item.sku, item.name));
-          pillRow.appendChild(pill);
+          pill.style.cssText = `display:inline-flex;align-items:center;gap:5px;padding:4px 10px;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600;border:1px solid ${visual.border};color:${visual.color};background:${visual.bg};width:fit-content;`;
+          pill.innerHTML = `<span class="material-symbols-outlined" style="font-size:14px;">${visual.icon}</span> ${STOCK_FLAG_LABELS[flag]}`;
+          pill.title = 'Click to manage stock & location';
+          pill.addEventListener('click', () => openItemModal(item.sku));
+          wrap.appendChild(pill);
 
           // Local Featured star — click to toggle this item into the
           // store's own featured selection (overrides HQ's list once the
-          // store has 3+ starred, independent of stock status).
+          // store has 3+ starred, independent of stock level).
           const featured = isLocalFeatured(item.sku);
           const star = document.createElement('span');
           star.className = 'material-symbols-outlined';
@@ -1941,17 +1802,7 @@ function initGrid() {
             star.style.cssText = `cursor:pointer;font-size:17px;line-height:1;user-select:none;opacity:${featured ? '1' : '.45'};color:#faad14;${starFill}`;
             star.addEventListener('click', () => toggleLocalFeatured(item.sku));
           }
-          pillRow.appendChild(star);
-
-          wrap.appendChild(pillRow);
-
-          // Stock quantity — read-only display (managed via item modal)
-          if (!ns && qty !== null) {
-            const qtyLabel = document.createElement('span');
-            qtyLabel.style.cssText = 'font-size:11px;color:var(--text2);';
-            qtyLabel.textContent = qty + ' units in stock';
-            wrap.appendChild(qtyLabel);
-          }
+          wrap.appendChild(star);
 
           return wrap;
         }
@@ -1982,22 +1833,27 @@ function updateSummaryBar() {
     return brand.stores.map(s => s.toUpperCase()).includes(STORE_CODE);
   });
   const totalActive = visibleItems.filter(i => i.active).length;
-  const totalNotStocked = visibleItems.filter(i => i.active && isNotStocked(i.sku)).length;
-  const totalOos = visibleItems.filter(i => i.active && isOos(i.sku) && !isNotStocked(i.sku)).length;
-  const totalIn = totalActive - totalOos - totalNotStocked;
+  const counts = { high: 0, medium: 0, low: 0, outOfStock: 0, unknown: 0 };
+  visibleItems.forEach(i => { if (i.active) counts[getStockFlag(i.sku)]++; });
 
   document.getElementById('summaryBar').innerHTML = `
     <div class="summary-chip">
       <div class="num">${totalActive}</div><div class="lbl">Active Items</div>
     </div>
     <div class="summary-chip">
-      <div class="num" style="color:var(--success)">${totalIn}</div><div class="lbl">In Stock</div>
+      <div class="num" style="color:${STOCK_FLAG_VISUAL.high.color}">${counts.high}</div><div class="lbl">High</div>
     </div>
     <div class="summary-chip">
-      <div class="num" style="color:var(--danger)">${totalOos}</div><div class="lbl">Out of Stock</div>
+      <div class="num" style="color:${STOCK_FLAG_VISUAL.medium.color}">${counts.medium}</div><div class="lbl">Medium</div>
     </div>
     <div class="summary-chip">
-      <div class="num" style="color:var(--text2)">${totalNotStocked}</div><div class="lbl">Not Stocked</div>
+      <div class="num" style="color:${STOCK_FLAG_VISUAL.low.color}">${counts.low}</div><div class="lbl">Low</div>
+    </div>
+    <div class="summary-chip">
+      <div class="num" style="color:${STOCK_FLAG_VISUAL.outOfStock.color}">${counts.outOfStock}</div><div class="lbl">Out of Stock</div>
+    </div>
+    <div class="summary-chip">
+      <div class="num" style="color:${STOCK_FLAG_VISUAL.unknown.color}">${counts.unknown}</div><div class="lbl">Unknown</div>
     </div>
   `;
 }
@@ -2021,10 +1877,10 @@ function renderItems() {
 
   if (!storeItemsGridApi) return;
 
-  // Sort: not-stocked last, then alphabetically (all rows are active now)
+  // Sort: out-of-stock last, then alphabetically (all rows are active now)
   const sorted = [...visibleItems].sort((a, b) => {
-    const aNs = isNotStocked(a.sku), bNs = isNotStocked(b.sku);
-    if (aNs !== bNs) return aNs ? 1 : -1;
+    const aOos = isOos(a.sku), bOos = isOos(b.sku);
+    if (aOos !== bOos) return aOos ? 1 : -1;
     return a.name.localeCompare(b.name);
   });
 
@@ -2044,138 +1900,9 @@ function renderItems() {
   }
 }
 
-// STOCK STATUS TOGGLE (3-state)
-let pendingStockAction = null;
-
-function cycleStockStatus(sku, name) {
-  const oos = isOos(sku);
-  const ns  = isNotStocked(sku);
-
-  if (ns) {
-    // Not Stocked → Mark as In Stock
-    pendingStockAction = { sku, outOfStock: false, notStocked: false };
-    document.getElementById('confirmIcon').textContent = 'check_circle';
-    document.getElementById('confirmTitle').textContent = 'Mark as In Stock';
-    document.getElementById('confirmMsg').textContent = `"${name}" will be marked as available again for ${STORE_CODE}.`;
-    const btn = document.getElementById('confirmBtn');
-    btn.textContent = 'Mark as In Stock';
-    btn.className = 'btn btn-primary';
-    btn.onclick = doStockAction;
-    document.getElementById('confirmOverlay').classList.add('open');
-    return;
-  }
-
-  if (oos) {
-    // Out of Stock → offer In Stock OR Not Stocked
-    showOosChoiceDialog(sku, name);
-    return;
-  }
-
-  // In Stock → Mark as Out of Stock
-  pendingStockAction = { sku, outOfStock: true, notStocked: false };
-  document.getElementById('confirmIcon').textContent = 'block';
-  document.getElementById('confirmTitle').textContent = 'Mark as Out of Stock';
-  document.getElementById('confirmMsg').textContent = `"${name}" will be flagged as Out of Stock for ${STORE_CODE}. An Out of Stock badge will appear on the menu board.`;
-  const btn = document.getElementById('confirmBtn');
-  btn.textContent = 'Mark as Out of Stock';
-  btn.className = 'btn btn-danger';
-  btn.onclick = doStockAction;
-  document.getElementById('confirmOverlay').classList.add('open');
-}
-
-function showOosChoiceDialog(sku, name) {
-  // Replace confirm dialog content with choice buttons
-  document.getElementById('confirmIcon').textContent = 'block';
-  document.getElementById('confirmTitle').textContent = 'Out of Stock — What next?';
-  document.getElementById('confirmMsg').textContent = `Choose how to update "${name}" for ${STORE_CODE}:`;
-
-  const actionsEl = document.getElementById('confirmActions');
-  if (!actionsEl) {
-    // Fallback: just mark as in stock
-    pendingStockAction = { sku, outOfStock: false, notStocked: false };
-    document.getElementById('confirmBtn').textContent = 'Mark as In Stock';
-    document.getElementById('confirmBtn').className = 'btn btn-primary';
-    document.getElementById('confirmBtn').onclick = doStockAction;
-    document.getElementById('confirmOverlay').classList.add('open');
-    return;
-  }
-
-  actionsEl.style.flexDirection = 'column';
-  actionsEl.style.gap = '14px';
-  actionsEl.innerHTML = `
-    <div class="confirm-actions-row">
-      <button class="btn btn-ghost" onclick="closeConfirm()">Cancel</button>
-      <button class="btn btn-primary" onclick="window._doMarkInStock('${sku}')"><span class="material-symbols-outlined" style="font-size:16px;">check_circle</span> Back In Stock</button>
-    </div>
-    <button type="button" class="confirm-link-btn" onclick="window._doMarkNotStocked('${sku}')">We don't sell/stock this item</button>
-  `;
-  document.getElementById('confirmOverlay').classList.add('open');
-}
-
-window._doMarkInStock = function(sku) {
-  pendingStockAction = { sku, outOfStock: false, notStocked: false };
-  doStockAction();
-  // Restore confirm actions
-  _restoreConfirmActions();
-};
-
-window._doMarkNotStocked = function(sku) {
-  pendingStockAction = { sku, outOfStock: false, notStocked: true };
-  doStockAction();
-  _restoreConfirmActions();
-};
-
-function _restoreConfirmActions() {
-  const actionsEl = document.getElementById('confirmActions');
-  if (!actionsEl) return;
-  actionsEl.style.flexDirection = '';
-  actionsEl.style.gap = '';
-  actionsEl.innerHTML = `
-    <button class="btn btn-ghost" onclick="closeConfirm()">Cancel</button>
-    <button class="btn btn-danger" id="confirmBtn">Confirm</button>
-  `;
-}
-
-function doStockAction() {
-  if (!pendingStockAction) return;
-  const { sku, outOfStock, notStocked } = pendingStockAction;
-  const stock = { ...getStock() };
-  const existing = stock[sku] || {};
-  const now = new Date().toISOString();
-
-  stock[sku] = {
-    ...existing,
-    outOfStock,
-    notStocked: notStocked || false,
-    updatedBy: STAFF_ID || null,
-    updatedAt: now
-  };
-
-  saveStock(stock);
-  const unfeaturedWarning = _clearFeaturedIfOos(sku, outOfStock || notStocked);
-
-  closeConfirm();
-  renderItems();
-
-  let msg, type;
-  if (notStocked) { msg = 'Marked as not stocked here'; type = 'info'; }
-  else if (outOfStock) { msg = 'Item marked as Out of Stock'; type = 'error'; }
-  else { msg = 'Item marked as In Stock'; type = 'success'; }
-  if (unfeaturedWarning) msg += ' — also removed from this store’s Local Feature Highlight picks';
-  toast(msg, type);
-}
-
-// Keep doToggleOos as alias for backward compat
-function doToggleOos() { doStockAction(); }
-
-function closeConfirm() {
-  document.getElementById('confirmOverlay').classList.remove('open');
-  pendingStockAction = null;
-  _restoreConfirmActions();
-}
-
 // ===== ITEM DETAIL MODAL =====
 let _modalSku = null;
+let _modalStockFlag = 'unknown';
 
 function openItemModal(sku) {
   _modalSku = sku;
@@ -2198,11 +1925,12 @@ function openItemModal(sku) {
   // otherwise fall back to the previous default.
   switchItemTab(pricingAllowed ? 'pricing' : 'stock');
 
-  // Render stock pane
-  _renderStockPane(sku);
+  // Pre-fill stock level
+  _modalStockFlag = getStockFlag(sku);
+  _renderStockFlagButtons();
 
-  // Pre-fill location pane
-  _loadLocationPane(stock.location || {});
+  // Pre-fill location pane (also loads the Location Badge picker + visibility)
+  _loadLocationPane(stock.location || {}, stock.locationBadgeTemplateId || '');
 
   document.getElementById('itemDetailModal').classList.add('open');
 }
@@ -2215,204 +1943,19 @@ function closeItemModal() {
 function switchItemTab(tab) {
   document.getElementById('tabPricing').classList.toggle('active', tab === 'pricing');
   document.getElementById('tabStock').classList.toggle('active', tab === 'stock');
-  document.getElementById('tabLocation').classList.toggle('active', tab === 'location');
   document.getElementById('panePricing').classList.toggle('active', tab === 'pricing');
   document.getElementById('paneStock').classList.toggle('active', tab === 'stock');
-  document.getElementById('paneLocation').classList.toggle('active', tab === 'location');
-  document.getElementById('itemModalFooter').style.display = tab === 'location' ? 'flex' : 'none';
+  document.getElementById('itemModalFooter').style.display = tab === 'stock' ? 'flex' : 'none';
 }
 
-function _renderStockPane(sku) {
-  const stock = _stock[sku] || {};
-  const qty   = typeof stock.quantity === 'number' ? stock.quantity : null;
-  const oos   = isOos(sku);
-  const ns    = isNotStocked(sku);
-
-  // Quantity summary
-  document.getElementById('stockSummaryQty').textContent = qty !== null ? qty : '—';
-
-  // Status pill
-  const pillEl = document.getElementById('stockSummaryPill');
-  if (ns) {
-    pillEl.innerHTML = '<span style="display:inline-flex;align-items:center;gap:5px;padding:4px 10px;border-radius:6px;font-size:12px;font-weight:600;border:1px solid var(--border2);color:var(--text2);background:var(--surface2);"><span class="material-symbols-outlined" style="font-size:14px;">do_not_disturb_on</span> We don\'t sell/stock this</span>';
-  } else if (oos) {
-    pillEl.innerHTML = '<span style="display:inline-flex;align-items:center;gap:5px;padding:4px 10px;border-radius:6px;font-size:12px;font-weight:600;border:1px solid var(--danger);color:var(--danger);background:var(--danger-light);"><span class="material-symbols-outlined" style="font-size:14px;">block</span> Out of Stock</span>';
-  } else {
-    pillEl.innerHTML = '<span style="display:inline-flex;align-items:center;gap:5px;padding:4px 10px;border-radius:6px;font-size:12px;font-weight:600;border:1px solid var(--success);color:var(--success);background:var(--success-light);"><span class="material-symbols-outlined" style="font-size:14px;">check_circle</span> In Stock</span>';
-  }
-
-  // +/- quick action buttons (only when item is in stock / has a quantity)
-  const actionsEl = document.getElementById('stockSummaryActions');
-  if (!ns && !oos) {
-    actionsEl.innerHTML = `
-      <button class="stock-qty-btn remove" title="Remove 1 unit" onclick="quickStockAdjust(-1)">&#8722;</button>
-      <button class="stock-qty-btn add" title="Add 1 unit" onclick="quickStockAdjust(1)">&#43;</button>
-    `;
-  } else {
-    actionsEl.innerHTML = '';
-  }
-
-  // History
-  const history = Array.isArray(stock.stockHistory) ? stock.stockHistory : [];
-  const container = document.getElementById('stockHistoryContainer');
-  if (history.length === 0) {
-    container.innerHTML = '<div class="history-empty">No stock additions recorded yet.</div>';
-    return;
-  }
-  const rows = [...history].reverse().map(h => {
-    const dt = new Date(h.addedAt);
-    const dateStr = dt.toLocaleDateString(undefined, { day:'2-digit', month:'short', year:'numeric' });
-    const timeStr = dt.toLocaleTimeString(undefined, { hour:'2-digit', minute:'2-digit' });
-    let changeCell, typeCell;
-    if (h.type === 'correction') {
-      const delta = h.runningTotal - (h.oldQuantity ?? 0);
-      const deltaStr = delta >= 0 ? `+${delta}` : `${delta}`;
-      const deltaColor = delta > 0 ? 'var(--success)' : delta < 0 ? 'var(--danger)' : 'var(--text2)';
-      changeCell = `<div style="font-size:12px;color:var(--text2);">${h.oldQuantity ?? '—'} → ${h.runningTotal}</div><div style="font-size:11px;font-weight:700;color:${deltaColor};">(${deltaStr})</div>${h.note ? `<div style="font-size:11px;color:var(--text3);margin-top:2px;font-style:italic;">${escHtml(h.note)}</div>` : ''}`;
-      typeCell = `<span style="font-size:10px;background:var(--warning-light);border:1px solid var(--warning);color:var(--warning);padding:2px 6px;border-radius:4px;font-weight:700;letter-spacing:0.3px;">CORRECTION</span>`;
-    } else if (h.type === 'adjustment') {
-      const sign = h.quantity >= 0 ? '+' : '';
-      const col = h.quantity >= 0 ? 'var(--success)' : 'var(--danger)';
-      changeCell = `<span style="font-weight:700;color:${col};">${sign}${h.quantity}</span>`;
-      typeCell = `<span style="font-size:10px;background:var(--primary-light);border:1px solid rgba(22,155,194,0.3);color:var(--primary);padding:2px 6px;border-radius:4px;font-weight:700;letter-spacing:0.3px;">ADJUST</span>`;
-    } else {
-      changeCell = `<span style="font-weight:700;color:var(--success);">+${h.quantity}</span>`;
-      typeCell = `<span style="font-size:10px;background:var(--success-light);border:1px solid rgba(82,196,26,0.3);color:var(--success);padding:2px 6px;border-radius:4px;font-weight:700;letter-spacing:0.3px;">ADD</span>`;
-    }
-    return `<tr>
-      <td><div>${escHtml(dateStr)}</div><div class="mono">${escHtml(timeStr)}</div></td>
-      <td>${typeCell}</td>
-      <td>${changeCell}</td>
-      <td>${h.runningTotal}</td>
-      <td class="mono">${escHtml(h.addedBy || '—')}</td>
-    </tr>`;
-  }).join('');
-  container.innerHTML = `<table class="history-table">
-    <thead><tr><th>Date / Time</th><th>Type</th><th>Change</th><th>New Total</th><th>Updated By</th></tr></thead>
-    <tbody>${rows}</tbody>
-  </table>`;
+function setStockFlag(flag) {
+  _modalStockFlag = flag;
+  _renderStockFlagButtons();
 }
 
-function addStockToItem() {
-  if (!_modalSku) return;
-  const input = document.getElementById('addStockQty');
-  const qty = parseInt(input.value, 10);
-  if (!qty || qty < 1) { toast('Enter a valid quantity (1 or more)', 'error'); return; }
-
-  const stock = { ...getStock() };
-  if (!stock[_modalSku]) stock[_modalSku] = {};
-  const existing = stock[_modalSku];
-  const current  = typeof existing.quantity === 'number' ? existing.quantity : 0;
-  const newTotal = current + qty;
-
-  const entry = {
-    quantity:     qty,
-    runningTotal: newTotal,
-    addedBy:      STAFF_ID || 'unknown',
-    addedAt:      new Date().toISOString()
-  };
-
-  stock[_modalSku] = {
-    ...existing,
-    quantity:     newTotal,
-    outOfStock:   false,
-    updatedBy:    STAFF_ID || null,
-    updatedAt:    new Date().toISOString(),
-    stockHistory: [...(existing.stockHistory || []), entry]
-  };
-
-  saveStock(stock).then(() => {
-    input.value = '';
-    _renderStockPane(_modalSku);
-    toast('Stock updated — ' + newTotal + ' units in stock', 'success');
-  });
-}
-
-function quickStockAdjust(delta) {
-  if (!_modalSku) return;
-  const stock = { ...getStock() };
-  if (!stock[_modalSku]) stock[_modalSku] = {};
-  const existing = stock[_modalSku];
-  const current  = typeof existing.quantity === 'number' ? existing.quantity : 0;
-  const newTotal = Math.max(0, current + delta);
-
-  const entry = {
-    type:         'adjustment',
-    quantity:     delta,
-    runningTotal: newTotal,
-    addedBy:      STAFF_ID || 'unknown',
-    addedAt:      new Date().toISOString()
-  };
-
-  stock[_modalSku] = {
-    ...existing,
-    quantity:     newTotal,
-    outOfStock:   newTotal === 0,
-    updatedBy:    STAFF_ID || null,
-    updatedAt:    new Date().toISOString(),
-    stockHistory: [...(existing.stockHistory || []), entry]
-  };
-
-  const unfeaturedWarning = _clearFeaturedIfOos(_modalSku, newTotal === 0);
-  saveStock(stock).then(() => {
-    _renderStockPane(_modalSku);
-    const sign = delta >= 0 ? '+' : '';
-    let msg = `Stock adjusted (${sign}${delta}) — ${newTotal} units in stock`;
-    if (unfeaturedWarning) msg += ' — also removed from this store’s Local Feature Highlight picks';
-    toast(msg, delta >= 0 ? 'success' : 'info');
-  });
-}
-
-function openEditStockOverlay() {
-  const stock = getStock();
-  const current = typeof (stock[_modalSku] || {}).quantity === 'number' ? stock[_modalSku].quantity : 0;
-  document.getElementById('editStockNewQty').value = current;
-  document.getElementById('editStockNote').value = '';
-  document.getElementById('editStockOverlay').classList.add('open');
-}
-
-function closeEditStockOverlay() {
-  document.getElementById('editStockOverlay').classList.remove('open');
-}
-
-function saveEditedStock() {
-  if (!_modalSku) return;
-  const newQtyRaw = document.getElementById('editStockNewQty').value;
-  const note = document.getElementById('editStockNote').value.trim();
-  const newQty = parseInt(newQtyRaw, 10);
-  if (isNaN(newQty) || newQty < 0) { toast('Enter a valid stock count (0 or more)', 'error'); return; }
-
-  const stock = { ...getStock() };
-  if (!stock[_modalSku]) stock[_modalSku] = {};
-  const existing = stock[_modalSku];
-  const oldQty   = typeof existing.quantity === 'number' ? existing.quantity : 0;
-
-  const entry = {
-    type:         'correction',
-    oldQuantity:  oldQty,
-    quantity:     newQty - oldQty,
-    runningTotal: newQty,
-    note:         note || null,
-    addedBy:      STAFF_ID || 'unknown',
-    addedAt:      new Date().toISOString()
-  };
-
-  stock[_modalSku] = {
-    ...existing,
-    quantity:     newQty,
-    outOfStock:   newQty === 0,
-    updatedBy:    STAFF_ID || null,
-    updatedAt:    new Date().toISOString(),
-    stockHistory: [...(existing.stockHistory || []), entry]
-  };
-
-  const unfeaturedWarning = _clearFeaturedIfOos(_modalSku, newQty === 0);
-  saveStock(stock).then(() => {
-    closeEditStockOverlay();
-    _renderStockPane(_modalSku);
-    let msg = `Stock corrected: ${oldQty} → ${newQty} units`;
-    if (unfeaturedWarning) msg += ' — also removed from this store’s Local Feature Highlight picks';
-    toast(msg, 'success');
+function _renderStockFlagButtons() {
+  document.querySelectorAll('#stockFlagGroup .stock-flag-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.flag === _modalStockFlag);
   });
 }
 
@@ -2830,7 +2373,9 @@ function savePricingChange() {
 let _locTags = [];   // [{ label, value }, ...]
 let _locMode = 'tags'; // 'tags' | 'manual'
 
-function _loadLocationPane(loc) {
+let _modalLocationBadgeTemplateId = '';
+
+function _loadLocationPane(loc, locationBadgeTemplateId) {
   // Determine mode
   const useManual = !!loc.useManual;
   _locMode = useManual ? 'manual' : 'tags';
@@ -2857,9 +2402,31 @@ function _loadLocationPane(loc) {
   document.getElementById('locNewLabel').value = '';
   document.getElementById('locNewValue').value = '';
 
+  // Populate the Location Badge picker from the same registry HQ Admin
+  // authors under Settings → Menu Board Badge Templates.
+  const templates = _badgeTemplates.length ? _badgeTemplates : DEFAULT_BADGE_TEMPLATES;
+  const select = document.getElementById('locationBadgeTemplateSelect');
+  select.innerHTML = '<option value="">No badge</option>' +
+    templates.map(t => `<option value="${escHtml(t.id)}">${escHtml(t.name)}</option>`).join('');
+  _modalLocationBadgeTemplateId = locationBadgeTemplateId || '';
+  select.value = _modalLocationBadgeTemplateId;
+
   switchLocMode(_locMode);
   _renderTagList();
   refreshLocationPreview();
+}
+
+function onLocationBadgeTemplateChange() {
+  _modalLocationBadgeTemplateId = document.getElementById('locationBadgeTemplateSelect').value;
+  _renderLocationBadgePreview();
+}
+
+function _renderLocationBadgePreview() {
+  const el = document.getElementById('locationBadgePreview');
+  const human = _currentLocationHumanText();
+  if (!_modalLocationBadgeTemplateId || !human) { el.innerHTML = ''; return; }
+  const t = getBadgeTemplateById(_modalLocationBadgeTemplateId);
+  el.innerHTML = `<span style="${badgeTemplatePreviewStyle(t)}">${escHtml(human)}</span>`;
 }
 
 function switchLocMode(mode) {
@@ -2906,14 +2473,16 @@ function removeLocationTag(index) {
   refreshLocationPreview();
 }
 
+function _currentLocationHumanText() {
+  if (_locMode === 'manual') {
+    return (document.getElementById('locManualText') || {}).value?.trim() || '';
+  }
+  return _locTags.map(t => t.value).filter(Boolean).join(' → ');
+}
+
 function refreshLocationPreview() {
   const preview = document.getElementById('locationPreview');
-  let human = '';
-  if (_locMode === 'manual') {
-    human = (document.getElementById('locManualText') || {}).value?.trim() || '';
-  } else {
-    human = _locTags.map(t => t.value).filter(Boolean).join(' → ');
-  }
+  const human = _currentLocationHumanText();
   if (!human) {
     preview.innerHTML = '<span class="material-symbols-outlined" style="font-size:15px;">location_on</span> No location set — add variables or enter manually below';
     preview.classList.add('empty');
@@ -2921,16 +2490,16 @@ function refreshLocationPreview() {
     preview.innerHTML = '<span class="material-symbols-outlined" style="font-size:15px;">location_on</span> ' + escHtml(human);
     preview.classList.remove('empty');
   }
+  // The Location Badge only makes sense once there's location text to show
+  // on the menu board — stay collapsed until one is set (same pattern as
+  // HQ Admin's Pricing tab hiding its own badge template until copy exists).
+  document.getElementById('locationBadgeSection').style.display = human ? '' : 'none';
+  _renderLocationBadgePreview();
 }
 
-function saveItemLocation() {
+function saveStockLocation() {
   if (!_modalSku) return;
-  let human = '';
-  if (_locMode === 'manual') {
-    human = document.getElementById('locManualText').value.trim();
-  } else {
-    human = _locTags.map(t => t.value).filter(Boolean).join(' → ');
-  }
+  const human = _currentLocationHumanText();
 
   const location = {
     useManual: _locMode === 'manual',
@@ -2940,33 +2509,26 @@ function saveItemLocation() {
   };
 
   const stock = { ...getStock() };
-  if (!stock[_modalSku]) stock[_modalSku] = {};
-  stock[_modalSku] = { ...stock[_modalSku], location, updatedBy: STAFF_ID || null, updatedAt: new Date().toISOString() };
-
-  saveStock(stock).then(() => {
-    toast('Location saved', 'success');
-    if (storeItemsGridApi) storeItemsGridApi.refreshCells({ force: true });
-  });
-}
-
-// STOCK QUANTITY ADJUSTMENT
-function adjustQuantity(sku, delta) {
-  const stock = { ...getStock() };
-  if (!stock[sku]) stock[sku] = {};
-  const existing = stock[sku];
-  const current = typeof existing.quantity === 'number' ? existing.quantity : 0;
-  const newQty = Math.max(0, current + delta);
-  stock[sku] = {
+  const existing = stock[_modalSku] || {};
+  const wasOos = existing.flag === 'outOfStock';
+  stock[_modalSku] = {
     ...existing,
-    quantity: newQty,
+    flag: _modalStockFlag,
+    location,
+    locationBadgeTemplateId: human ? (_modalLocationBadgeTemplateId || '') : '',
     updatedBy: STAFF_ID || null,
     updatedAt: new Date().toISOString()
   };
-  // Auto-flag OOS when quantity hits 0
-  if (newQty === 0 && !existing.notStocked) stock[sku].outOfStock = true;
-  // Auto-clear OOS when quantity goes above 0
-  if (newQty > 0 && existing.outOfStock) stock[sku].outOfStock = false;
-  saveStock(stock);
+
+  const unfeaturedWarning = _clearFeaturedIfOos(_modalSku, _modalStockFlag === 'outOfStock');
+  saveStock(stock).then(() => {
+    let msg = 'Stock & location saved';
+    if (!wasOos && _modalStockFlag === 'outOfStock' && unfeaturedWarning) {
+      msg += ' — also removed from this store’s Local Feature Highlight picks';
+    }
+    toast(msg, 'success');
+    if (storeItemsGridApi) storeItemsGridApi.refreshCells({ force: true });
+  });
 }
 
 // UTILS
@@ -3001,21 +2563,12 @@ function toast(msg, type = 'info') {
 
 // ===== WINDOW EXPORTS (for inline event handlers) =====
 window.renderItems           = renderItems;
-window.cycleStockStatus      = cycleStockStatus;
-window.doStockAction         = doStockAction;
-window.doToggleOos           = doToggleOos;
-window.closeConfirm          = closeConfirm;
-window.adjustQuantity        = adjustQuantity;
+window.setStockFlag          = setStockFlag;
 window.updateSummaryBar      = updateSummaryBar;
 window.openItemModal         = openItemModal;
 window.closeItemModal        = closeItemModal;
 window.switchItemTab         = switchItemTab;
-window.addStockToItem        = addStockToItem;
-window.quickStockAdjust      = quickStockAdjust;
-window.openEditStockOverlay  = openEditStockOverlay;
-window.closeEditStockOverlay = closeEditStockOverlay;
-window.saveEditedStock       = saveEditedStock;
-window.saveItemLocation      = saveItemLocation;
+window.saveStockLocation     = saveStockLocation;
 window._onPricingFieldChange = _onPricingFieldChange;
 window._discardPricingChange = _discardPricingChange;
 window.savePricingChange     = savePricingChange;
@@ -3023,6 +2576,7 @@ window.refreshLocationPreview= refreshLocationPreview;
 window.switchLocMode         = switchLocMode;
 window.addLocationTag        = addLocationTag;
 window.removeLocationTag     = removeLocationTag;
+window.onLocationBadgeTemplateChange = onLocationBadgeTemplateChange;
 
 // INIT
 init();

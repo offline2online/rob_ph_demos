@@ -150,7 +150,7 @@ export default function ProductPage({ isNew = false }) {
             { key: 'assets', label: `Product Assets (${imageCount + videoCount})` },
             { key: 'details', label: 'Product Details' },
             { key: 'pricing', label: 'Pricing' },
-            { key: 'stock', label: 'Stock' },
+            { key: 'stock', label: 'Stockists' },
           ]}
         />
 

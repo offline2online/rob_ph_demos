@@ -604,27 +604,29 @@ export default function PricingTab({ draft, baseline, setDraft, setBaseline }) {
             />
           </Field>
         </div>
-        <div style={{ marginTop: 14 }}>
-          <Field
-            label="Badge template"
-            hint="Defined once under HQ Admin → Settings → Menu Board Badge Templates. This template also applies to every offer's note below and to any store-level override of this copy."
-          >
-            <div style={{ display: 'flex', gap: 16, alignItems: 'center', flexWrap: 'wrap' }}>
-              <Select
-                value={draft.menuBoardNoteTemplateId || 'default'}
-                onChange={(v) => {
-                  setDraft((d) => ({ ...d, menuBoardNoteTemplateId: v }));
-                  autoFillReason('Updated menu board badge template');
-                }}
-                options={getBadgeTemplates().map((t) => ({ value: t.id, label: t.name }))}
-                style={{ width: 240 }}
-              />
-              <span style={templateToPreviewCss(selectedTemplate)}>
-                {draft.menuBoardNote || 'Limited time only!'}
-              </span>
-            </div>
-          </Field>
-        </div>
+        {(draft.menuBoardNote || '').trim() !== '' && (
+          <div style={{ marginTop: 14 }}>
+            <Field
+              label="Badge template"
+              hint="Defined once under HQ Admin → Settings → Menu Board Badge Templates. This template also applies to every offer's note below and to any store-level override of this copy."
+            >
+              <div style={{ display: 'flex', gap: 16, alignItems: 'center', flexWrap: 'wrap' }}>
+                <Select
+                  value={draft.menuBoardNoteTemplateId || 'default'}
+                  onChange={(v) => {
+                    setDraft((d) => ({ ...d, menuBoardNoteTemplateId: v }));
+                    autoFillReason('Updated menu board badge template');
+                  }}
+                  options={getBadgeTemplates().map((t) => ({ value: t.id, label: t.name }))}
+                  style={{ width: 240 }}
+                />
+                <span style={templateToPreviewCss(selectedTemplate)}>
+                  {draft.menuBoardNote || 'Limited time only!'}
+                </span>
+              </div>
+            </Field>
+          </div>
+        )}
       </div>
 
       <div className="ph-sect">
