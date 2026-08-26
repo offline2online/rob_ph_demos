@@ -112,37 +112,25 @@ function legacyOffer(raw) {
   }];
 }
 
+// Used to be two separate branches (a full "never touched this app before"
+// shape vs. a "trust it, only patch the newest few fields" shape for
+// anything with a `status`). That trusted-shortcut branch was wrong: 14 of
+// 44 live products have a `status` (so took that branch) but were seeded
+// directly into Firestore by the original import script and are missing
+// fields the "never touched" branch would have backfilled — optionGroups
+// most visibly, which OptionGroups.jsx calls `.map()` on with no fallback,
+// crashing that product's entire Details page. One unified shape now, so
+// every field gets its safe default regardless of which path a product
+// came from. `ingredients`/`attributes` still branch on alreadyMigrated —
+// unlike the others, re-deriving those from GS1/legacy fields on a product
+// that already has its own `ingredients` (from Settings-authored data, not
+// the original import) would silently overwrite better data with older.
 export function migrateItem(raw, brandCurrency) {
-  if (raw.status) {
-    // Already migrated — but toItemDoc() always flattens images back to
-    // plain src strings on save (for the grid/menu-board.html, which read
-    // images[0] as a URL directly), so a second edit must still re-inflate
-    // them into the rich per-image shape this UI works with. mapImages()
-    // is idempotent — a no-op if images are already rich objects.
-    return {
-      ...raw,
-      images: mapImages(raw),
-      offers: raw.offers || legacyOffer(raw),
-      // Falls back to whatever showOnMenuBoard already held — before the
-      // per-offer note existed, that flat field WAS the user's real
-      // fallback text, so a product migrating through this for the first
-      // time must carry it forward rather than silently losing it. Checked
-      // against `undefined`, not falsiness — a product that's already been
-      // through this migration once and genuinely has no fallback note (a
-      // real '') must stay that way, not keep re-absorbing whatever
-      // showOnMenuBoard currently holds (which may be an offer's own note,
-      // overriding it) on every subsequent load.
-      menuBoardNote: raw.menuBoardNote !== undefined ? raw.menuBoardNote : (raw.showOnMenuBoard || ''),
-      menuBoardNoteTemplateId: raw.menuBoardNoteTemplateId || DEFAULT_MENU_BOARD_NOTE_TEMPLATE_ID,
-      ingredients: raw.ingredients || [],
-      attributes: raw.attributes || [],
-    };
-  }
-
+  const alreadyMigrated = !!raw.status;
   return {
     ...raw,
     displayName: raw.displayName || '',
-    status: raw.active === false ? 'Inactive' : 'Active',
+    status: raw.status || (raw.active === false ? 'Inactive' : 'Active'),
     featured: raw.featured || false,
     featurePriority: raw.featurePriority || '',
     featuredFrom: raw.featuredFrom || '',
@@ -156,19 +144,33 @@ export function migrateItem(raw, brandCurrency) {
     currency: raw.currency || brandCurrency || '$',
     taxClass: raw.taxClass || '',
     currencyLocked: raw.currencyLocked !== false,
-    rrp: raw.price != null ? String(raw.price) : '',
+    rrp: raw.rrp != null ? raw.rrp : (raw.price != null ? String(raw.price) : ''),
     offerPrice: raw.offerPrice != null ? String(raw.offerPrice) : '',
     offerFrom: raw.offerFrom || '',
     offerUntil: raw.offerUntil || '',
     offerDescription: raw.offerDescription || '',
     offers: raw.offers || legacyOffer(raw),
+    // Falls back to whatever showOnMenuBoard already held — before the
+    // per-offer note existed, that flat field WAS the user's real
+    // fallback text, so a product migrating through this for the first
+    // time must carry it forward rather than silently losing it. Checked
+    // against `undefined`, not falsiness — a product that's already been
+    // through this migration once and genuinely has no fallback note (a
+    // real '') must stay that way, not keep re-absorbing whatever
+    // showOnMenuBoard currently holds (which may be an offer's own note,
+    // overriding it) on every subsequent load.
     menuBoardNote: raw.menuBoardNote !== undefined ? raw.menuBoardNote : (raw.showOnMenuBoard || ''),
     menuBoardNoteTemplateId: raw.menuBoardNoteTemplateId || DEFAULT_MENU_BOARD_NOTE_TEMPLATE_ID,
     showOnMenuBoard: raw.showOnMenuBoard || '',
     menuTypes: raw.menuTypes || [],
-    ingredients: mapLegacyIngredients(raw),
-    attributes: mapLegacyAttributes(raw),
+    ingredients: alreadyMigrated ? (raw.ingredients || []) : mapLegacyIngredients(raw),
+    attributes: alreadyMigrated ? (raw.attributes || []) : mapLegacyAttributes(raw),
     optionGroups: mapOptionGroups(raw),
+    // toItemDoc() always flattens images back to plain src strings on
+    // save (for the grid/menu-board.html, which read images[0] as a URL
+    // directly), so a second edit must still re-inflate them into the
+    // rich per-image shape this UI works with. mapImages() is idempotent
+    // — a no-op if images are already rich objects.
     images: mapImages(raw),
     priceLog: raw.priceLog || [],
   };
