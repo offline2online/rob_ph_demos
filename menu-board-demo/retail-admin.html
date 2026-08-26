@@ -87,6 +87,8 @@
       border: 1px solid var(--border);
     }
     .btn-ghost:hover { background: var(--border); color: var(--text); }
+    .btn-danger { background: var(--danger); color: #fff; }
+    .btn-danger:hover { background: #e53535; }
 
     /* SUMMARY BAR */
     .summary-bar {
@@ -145,6 +147,33 @@
       font-family: monospace;
       word-break: break-all;
     }
+
+    /* CONFIRM DIALOG */
+    .confirm-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.45);
+      z-index: 200;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+    .confirm-overlay.open { display: flex; }
+    .confirm-box {
+      background: var(--surface);
+      border: 1px solid var(--border2);
+      border-radius: 8px;
+      padding: 32px;
+      max-width: 380px;
+      width: 100%;
+      text-align: center;
+      box-shadow: 0 20px 50px rgba(0,0,0,0.15);
+    }
+    .confirm-box .icon { font-size: 40px; margin-bottom: 14px; }
+    .confirm-box h3 { font-size: 17px; font-weight: 700; margin-bottom: 8px; }
+    .confirm-box p { font-size: 14px; color: var(--text2); margin-bottom: 24px; line-height: 1.5; }
+    .confirm-actions { display: flex; gap: 10px; justify-content: center; }
 
     /* MAIN PAGE */
     /* .ra-content already provides the standard 20px content padding —
@@ -386,6 +415,7 @@
     .stock-flag-btn:hover:not(.active) { color: var(--text); }
     .stock-flag-btn[data-flag="inStock"].active    { background: var(--success-light); border-color: var(--success); color: var(--success); }
     .stock-flag-btn[data-flag="outOfStock"].active { background: var(--danger-light); border-color: var(--danger); color: var(--danger); }
+    .stock-flag-btn[data-level].active { background: var(--primary-light); border-color: var(--primary); color: var(--primary); }
     .field input, .field textarea, .field select {
       width: 100%;
       padding: 8px 12px;
@@ -602,6 +632,19 @@
   </div><!-- /ra-content -->
 </div><!-- /ra-main -->
 
+<!-- CONFIRM DIALOG -->
+<div class="confirm-overlay" id="confirmOverlay">
+  <div class="confirm-box">
+    <div class="icon material-symbols-outlined" id="confirmIcon">help</div>
+    <h3 id="confirmTitle">Confirm Action</h3>
+    <p id="confirmMsg">Are you sure?</p>
+    <div class="confirm-actions" id="confirmActions">
+      <button class="btn btn-ghost" onclick="closeConfirm()">Cancel</button>
+      <button class="btn btn-danger" id="confirmBtn">Confirm</button>
+    </div>
+  </div>
+</div>
+
 <!-- ITEM DETAIL MODAL -->
 <div class="modal-overlay" id="itemDetailModal">
   <div class="modal">
@@ -684,6 +727,15 @@
           <div class="stock-flag-group" id="stockFlagGroup">
             <button type="button" class="stock-flag-btn" data-flag="inStock" onclick="setStockFlag('inStock')">In Stock</button>
             <button type="button" class="stock-flag-btn" data-flag="outOfStock" onclick="setStockFlag('outOfStock')">Out of Stock</button>
+          </div>
+          <div id="stockLevelSubGroup" style="margin-top:14px;">
+            <label style="display:block;font-size:12px;font-weight:600;color:var(--text2);margin-bottom:8px;">Level (optional)</label>
+            <div class="stock-flag-group" id="stockLevelGroup">
+              <button type="button" class="stock-flag-btn" data-level="" onclick="setStockLevel('')">Not set</button>
+              <button type="button" class="stock-flag-btn" data-level="high" onclick="setStockLevel('high')">High</button>
+              <button type="button" class="stock-flag-btn" data-level="medium" onclick="setStockLevel('medium')">Medium</button>
+              <button type="button" class="stock-flag-btn" data-level="low" onclick="setStockLevel('low')">Low</button>
+            </div>
           </div>
         </div>
 
@@ -1259,6 +1311,25 @@ function getStockFlag(sku) {
 
 function isOos(sku) { return getStockFlag(sku) === 'outOfStock'; }
 
+// Level is an optional, purely informational refinement of "In Stock" —
+// it never applies to (or is shown for) an Out of Stock item. Set from the
+// item modal only; the grid's own quick-toggle popup (cycleStockStatus)
+// never touches it.
+const STOCK_LEVELS = ['high', 'medium', 'low'];
+const STOCK_LEVEL_LABELS = { high: 'High', medium: 'Medium', low: 'Low' };
+function getStockLevel(sku) {
+  const stock = getStock();
+  const level = stock[sku] && stock[sku].level;
+  return STOCK_LEVELS.includes(level) ? level : '';
+}
+// "In Stock", "In Stock (Medium)", or "Out of Stock" — what the grid cell
+// and its checkbox filter both show and match against.
+function stockStatusLabel(sku) {
+  if (getStockFlag(sku) === 'outOfStock') return STOCK_FLAG_LABELS.outOfStock;
+  const level = getStockLevel(sku);
+  return level ? `${STOCK_FLAG_LABELS.inStock} (${STOCK_LEVEL_LABELS[level]})` : STOCK_FLAG_LABELS.inStock;
+}
+
 // An item that's out of stock can't stay locally featured — call this
 // right after any write that may have flipped the flag to outOfStock.
 // Returns true if it actually cleared a featured pick, so the caller can
@@ -1485,21 +1556,25 @@ function initGrid() {
         headerName: 'Stock Level', colId: 'status', flex: 1.5, minWidth: 170,
         sortable: true,
         filter: CheckboxSetFilter,
-        valueGetter: (p) => STOCK_FLAG_LABELS[getStockFlag(p.data.sku)],
+        valueGetter: (p) => stockStatusLabel(p.data.sku),
         // Filter menu shows both the stock level and, as an extra checkbox
         // tag, "Featured" — so store staff can filter the column down to
         // locally featured items without a separate column (CheckboxSetFilter
         // treats an array raw value as "matches if any tag is checked").
         getFilterValue: (data) => {
-          const tag = STOCK_FLAG_LABELS[getStockFlag(data.sku)];
+          const tag = stockStatusLabel(data.sku);
           return isLocalFeatured(data.sku) ? [tag, 'Featured'] : [tag];
         },
         // Filter checklist echoes the same icon/colour the cell itself
         // shows, not a bare label (ph-designer skill, components.md §3.1).
+        // Matched by prefix rather than an exact STOCK_FLAG_LABELS lookup
+        // since an in-stock value can carry a "(Level)" suffix (e.g. "In
+        // Stock (Medium)") that isn't one of the two raw flag labels.
         filterParams: {
           itemRenderer: (value) => {
-            const flag = Object.keys(STOCK_FLAG_LABELS).find(f => STOCK_FLAG_LABELS[f] === value);
-            const visual = flag ? STOCK_FLAG_VISUAL[flag] : { icon: 'star', color: '#faad14' };
+            const visual = value.startsWith(STOCK_FLAG_LABELS.outOfStock) ? STOCK_FLAG_VISUAL.outOfStock
+              : value.startsWith(STOCK_FLAG_LABELS.inStock) ? STOCK_FLAG_VISUAL.inStock
+              : { icon: 'star', color: '#faad14' };
             const span = document.createElement('span');
             span.style.cssText = 'display:inline-flex;align-items:center;gap:6px;';
             if (visual.icon) {
@@ -1521,9 +1596,9 @@ function initGrid() {
 
           const pill = document.createElement('div');
           pill.style.cssText = `display:inline-flex;align-items:center;gap:5px;padding:4px 10px;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600;border:1px solid ${visual.border};color:${visual.color};background:${visual.bg};width:fit-content;`;
-          pill.innerHTML = `<span class="material-symbols-outlined" style="font-size:14px;">${visual.icon}</span> ${STOCK_FLAG_LABELS[flag]}`;
-          pill.title = 'Click to manage stock & location';
-          pill.addEventListener('click', () => openItemModal(item.sku));
+          pill.innerHTML = `<span class="material-symbols-outlined" style="font-size:14px;">${visual.icon}</span> ${stockStatusLabel(item.sku)}`;
+          pill.title = oos ? 'Click to mark as In Stock' : 'Click to mark as Out of Stock';
+          pill.addEventListener('click', () => cycleStockStatus(item.sku, item.name));
           wrap.appendChild(pill);
 
           // Local Featured star — click to toggle this item into the
@@ -1660,9 +1735,63 @@ function _updateIngredientsColumnVisibility() {
   storeItemsGridApi.sizeColumnsToFit();
 }
 
+// ===== QUICK STOCK TOGGLE (grid pill → confirm popup) =====
+// Restores the original Retail Admin interaction: clicking the Stock Level
+// pill in the grid pops a small confirm dialog to flip in/out of stock
+// immediately, without opening the full item modal. Level (High/Medium/Low)
+// is a separate, optional refinement only ever set from that modal — this
+// quick path only ever touches the flag.
+let pendingStockAction = null;
+
+function cycleStockStatus(sku, name) {
+  const oos = isOos(sku);
+  pendingStockAction = { sku, outOfStock: !oos };
+
+  document.getElementById('confirmIcon').textContent = oos ? 'check_circle' : 'block';
+  document.getElementById('confirmTitle').textContent = oos ? 'Mark as In Stock' : 'Mark as Out of Stock';
+  document.getElementById('confirmMsg').textContent = oos
+    ? `"${name}" will be marked as available again for ${STORE_CODE}.`
+    : `"${name}" will be flagged as Out of Stock for ${STORE_CODE}. A SOLD OUT badge will appear on the menu board.`;
+  const btn = document.getElementById('confirmBtn');
+  btn.textContent = oos ? 'Mark as In Stock' : 'Mark as Out of Stock';
+  btn.className = oos ? 'btn btn-primary' : 'btn btn-danger';
+  btn.onclick = doStockAction;
+  document.getElementById('confirmOverlay').classList.add('open');
+}
+
+function doStockAction() {
+  if (!pendingStockAction) return;
+  const { sku, outOfStock } = pendingStockAction;
+  const stock = { ...getStock() };
+  const existing = stock[sku] || {};
+
+  stock[sku] = {
+    ...existing,
+    flag: outOfStock ? 'outOfStock' : 'inStock',
+    updatedBy: STAFF_ID || null,
+    updatedAt: new Date().toISOString()
+  };
+
+  saveStock(stock);
+  const unfeaturedWarning = _clearFeaturedIfOos(sku, outOfStock);
+
+  closeConfirm();
+  renderItems();
+
+  let msg = outOfStock ? 'Item marked as Out of Stock' : 'Item marked as In Stock';
+  if (unfeaturedWarning) msg += ' — also removed from this store’s Local Feature Highlight picks';
+  toast(msg, outOfStock ? 'error' : 'success');
+}
+
+function closeConfirm() {
+  document.getElementById('confirmOverlay').classList.remove('open');
+  pendingStockAction = null;
+}
+
 // ===== ITEM DETAIL MODAL =====
 let _modalSku = null;
 let _modalStockFlag = 'inStock';
+let _modalStockLevel = '';
 
 function openItemModal(sku) {
   _modalSku = sku;
@@ -1687,7 +1816,9 @@ function openItemModal(sku) {
 
   // Pre-fill stock level
   _modalStockFlag = getStockFlag(sku);
+  _modalStockLevel = getStockLevel(sku);
   _renderStockFlagButtons();
+  _renderStockLevelButtons();
 
   // Pre-fill location pane (also loads the Location Badge picker + visibility)
   _loadLocationPane(stock.location || {}, stock.locationBadgeTemplateId || '');
@@ -1724,6 +1855,20 @@ function setStockFlag(flag) {
 function _renderStockFlagButtons() {
   document.querySelectorAll('#stockFlagGroup .stock-flag-btn').forEach(btn => {
     btn.classList.toggle('active', btn.dataset.flag === _modalStockFlag);
+  });
+  // Level is meaningless for an Out of Stock item — hide the sub-picker
+  // entirely rather than let it disagree with the flag above it.
+  document.getElementById('stockLevelSubGroup').style.display = _modalStockFlag === 'inStock' ? '' : 'none';
+}
+
+function setStockLevel(level) {
+  _modalStockLevel = level;
+  _renderStockLevelButtons();
+}
+
+function _renderStockLevelButtons() {
+  document.querySelectorAll('#stockLevelGroup .stock-flag-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.level === _modalStockLevel);
   });
 }
 
@@ -2282,6 +2427,7 @@ function saveStockLocation() {
   stock[_modalSku] = {
     ...existing,
     flag: _modalStockFlag,
+    level: _modalStockLevel,
     location,
     locationBadgeTemplateId: human ? (_modalLocationBadgeTemplateId || '') : '',
     updatedBy: STAFF_ID || null,
@@ -2331,7 +2477,11 @@ function toast(msg, type = 'info') {
 
 // ===== WINDOW EXPORTS (for inline event handlers) =====
 window.renderItems           = renderItems;
+window.cycleStockStatus      = cycleStockStatus;
+window.doStockAction         = doStockAction;
+window.closeConfirm          = closeConfirm;
 window.setStockFlag          = setStockFlag;
+window.setStockLevel         = setStockLevel;
 window.updateSummaryBar      = updateSummaryBar;
 window.openItemModal         = openItemModal;
 window.closeItemModal        = closeItemModal;
