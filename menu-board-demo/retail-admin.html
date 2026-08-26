@@ -10,11 +10,10 @@
   <script src="https://cdn.jsdelivr.net/npm/ag-grid-community@32.3.3/dist/ag-grid-community.min.noStyle.js"></script>
   <style>
     :root {
-      --bg: #f5f5f5;
       --surface: #ffffff;
       --surface2: #f5f5f5;
       --border: #d9d9d9;
-      --border2: #cbd5e1;
+      --border2: #d9d9d9;
       --text: rgba(0,0,0,0.88);
       --text2: rgba(0,0,0,0.65);
       --text3: rgba(0,0,0,0.45);
@@ -31,7 +30,7 @@
     * { margin:0; padding:0; box-sizing:border-box; }
     body {
       font-family: Roboto, "Helvetica Neue", Helvetica, Arial, sans-serif;
-      background: var(--bg);
+      background: var(--surface);
       color: var(--text);
       min-height: 100vh;
       display: flex;
@@ -57,8 +56,8 @@
 
     /* CONTENT AREA (page scrolls, not this div) */
     .ra-content {
-      background: var(--bg);
-      padding: 16px 20px;
+      background: var(--surface);
+      padding: 20px;
     }
 
     /* ============================================
@@ -88,89 +87,6 @@
       border: 1px solid var(--border);
     }
     .btn-ghost:hover { background: var(--border); color: var(--text); }
-    .btn-sm { padding: 8px 12px; font-size: 12px; min-height: 40px; }
-    .btn-danger { background: var(--danger); color: #fff; }
-    .btn-danger:hover { background: #e53535; }
-
-    /* FILTERS */
-    .filters-bar {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-      padding: 14px 18px;
-      margin-bottom: 18px;
-      display: flex;
-      gap: 12px;
-      align-items: center;
-      flex-wrap: wrap;
-    }
-    .search-wrap {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      background: var(--surface2);
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      padding: 8px 14px;
-      flex: 1;
-      min-width: 180px;
-    }
-    .search-wrap input {
-      background: none; border: none; outline: none;
-      color: var(--text); font-size: 14px;
-      width: 100%;
-    }
-    .search-wrap input::placeholder { color: var(--text3); }
-    .filter-pills { display: flex; gap: 6px; flex-wrap: wrap; }
-    .pill {
-      padding: 5px 13px;
-      border-radius: 20px;
-      font-size: 12px;
-      font-weight: 600;
-      min-height: 36px;
-      cursor: pointer;
-      border: 1px solid var(--border);
-      border-left-width: 4px;
-      transition: all 0.15s;
-      white-space: nowrap;
-      user-select: none;
-      display: inline-flex;
-      align-items: center;
-      background: transparent;
-      color: var(--text2);
-    }
-    .pill-all { border-left-color: var(--border2); }
-    .pill-all.active, .pill-all:hover { background: var(--primary); border-color: var(--primary); color: #fff; }
-
-    .pill-breakfast { border-left-color: #f59e0b; }
-    .pill-breakfast.active, .pill-breakfast:hover { background: var(--primary); border-color: var(--primary); color: #fff; }
-    .pill-lunch { border-left-color: #16a34a; }
-    .pill-lunch.active, .pill-lunch:hover { background: var(--primary); border-color: var(--primary); color: #fff; }
-    .pill-dinner { border-left-color: #7c3aed; }
-    .pill-dinner.active, .pill-dinner:hover { background: var(--primary); border-color: var(--primary); color: #fff; }
-    .pill-drinks { border-left-color: #2563eb; }
-    .pill-drinks.active, .pill-drinks:hover { background: var(--primary); border-color: var(--primary); color: #fff; }
-    .pill-specials { border-left-color: #e11d48; }
-    .pill-specials.active, .pill-specials:hover { background: var(--primary); border-color: var(--primary); color: #fff; }
-
-    /* STOCK FILTER */
-    .stock-filter { display: flex; gap: 6px; }
-    .stock-pill {
-      padding: 5px 11px;
-      border-radius: 20px;
-      font-size: 12px;
-      font-weight: 700;
-      cursor: pointer;
-      border: 2px solid transparent;
-      transition: all 0.15s;
-      user-select: none;
-    }
-    .stock-pill-all { background: var(--surface2); border-color: var(--border2); color: var(--text2); }
-    .stock-pill-all.active { background: var(--text); border-color: var(--text); color: #fff; }
-    .stock-pill-in { background: var(--success-light); border-color: #a7f3d0; color: var(--success); }
-    .stock-pill-in.active { background: var(--success); border-color: var(--success); color: #fff; }
-    .stock-pill-out { background: var(--danger-light); border-color: #fecaca; color: var(--danger); }
-    .stock-pill-out.active { background: var(--danger); border-color: var(--danger); color: #fff; }
 
     /* SUMMARY BAR */
     .summary-bar {
@@ -188,140 +104,14 @@
       text-align: center;
       flex: 1;
       min-width: 120px;
+      /* Without a cap, a chip that wraps to a row of its own (6 chips at
+         120px min-width don't all fit on an iPad-portrait 768px content
+         width) stretches to fill the whole row by itself — jarring next to
+         its same-sized siblings above. */
+      max-width: 200px;
     }
     .summary-chip .num { font-size: 22px; font-weight: 700; color: rgba(0,0,0,0.88); line-height: 1; display: block; }
     .summary-chip .lbl { font-size: 11px; font-weight: 600; color: var(--text2); margin-top: 4px; display: block; }
-
-    /* ITEM GRID */
-    .items-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(268px, 1fr));
-      gap: 16px;
-    }
-
-    /* ITEM CARD */
-    .item-card {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-      overflow: hidden;
-      transition: box-shadow 0.15s, border-color 0.15s;
-    }
-    .item-card:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.08); }
-    .item-card.oos { border-color: #fca5a5; }
-    .item-card.inactive-item { opacity: 0.6; }
-    .item-card-img {
-      width: 100%;
-      height: 154px;
-      background: #f1f5f9;
-      position: relative;
-      overflow: hidden;
-    }
-    .item-card-img img { width: 100%; height: 100%; object-fit: cover; }
-    .item-card-img .no-img {
-      width: 100%; height: 100%;
-      display: flex; align-items: center; justify-content: center;
-      font-size: 40px; color: #cbd5e1;
-    }
-    .oos-overlay {
-      display: none;
-      position: absolute;
-      inset: 0;
-      background: rgba(0,0,0,0.55);
-      align-items: center;
-      justify-content: center;
-    }
-    .item-card.oos .oos-overlay { display: flex; }
-    .oos-badge-card {
-      background: var(--danger);
-      color: #fff;
-      font-size: 12px;
-      font-weight: 800;
-      letter-spacing: 1.5px;
-      text-transform: uppercase;
-      padding: 6px 14px;
-      border-radius: 4px;
-      transform: rotate(-8deg);
-      box-shadow: 0 2px 8px rgba(0,0,0,0.3);
-    }
-    .inactive-overlay {
-      display: none;
-      position: absolute;
-      top: 10px; left: 10px;
-      background: rgba(0,0,0,0.7);
-      color: #fff;
-      font-size: 10px;
-      font-weight: 700;
-      letter-spacing: 0.8px;
-      text-transform: uppercase;
-      padding: 3px 8px;
-      border-radius: 4px;
-    }
-    .item-card.inactive-item .inactive-overlay { display: block; }
-    .item-card-body { padding: 14px 16px; }
-    .item-card-meta {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      margin-bottom: 6px;
-    }
-    .item-sku-tag { font-size: 10px; font-weight: 700; font-family: monospace; color: var(--text3); letter-spacing: 0.5px; }
-    .item-cat-tag { font-size: 10px; font-weight: 600; background: var(--surface2); color: var(--text2); padding: 2px 7px; border-radius: 20px; }
-    .item-card-name { font-size: 15px; font-weight: 700; color: var(--text); margin-bottom: 4px; }
-    .item-card-desc {
-      font-size: 12px; color: var(--text2); line-height: 1.5; margin-bottom: 8px;
-      display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
-    }
-    .nutrition-strip { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 8px; }
-    .nutr-chip { display: inline-flex; align-items: baseline; gap: 2px; background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 20px; padding: 2px 8px; font-size: 11px; }
-    .nutr-chip .nv { font-weight: 800; color: var(--success); }
-    .nutr-chip .nl { font-weight: 500; color: #6b7280; }
-    .item-card-footer {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 8px;
-      border-top: 1px solid var(--border);
-      padding-top: 12px;
-    }
-    .item-price { font-size: 20px; font-weight: 700; color: var(--primary); }
-    .item-types { display: flex; gap: 4px; flex-wrap: wrap; flex: 1; }
-    .type-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
-
-    /* OOS TOGGLE */
-    .oos-toggle-wrap { display: flex; flex-direction: column; align-items: center; gap: 4px; }
-    .oos-toggle {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      background: var(--success-light);
-      border: 2px solid #a7f3d0;
-      border-radius: 8px;
-      padding: 7px 12px;
-      cursor: pointer;
-      transition: all 0.2s;
-      font-size: 12px;
-      font-weight: 700;
-      color: var(--success);
-      user-select: none;
-    }
-    .oos-toggle:hover { filter: brightness(0.95); }
-    .oos-toggle.out-of-stock { background: var(--danger-light); border-color: #fca5a5; color: var(--danger); }
-    .oos-toggle .toggle-icon { font-size: 14px; }
-    .oos-update-time { font-size: 9px; color: var(--text3); text-align: center; }
-
-    /* EMPTY STATE */
-    .empty-state {
-      grid-column: 1 / -1;
-      text-align: center;
-      padding: 64px 32px;
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-    }
-    .empty-state .icon { font-size: 48px; margin-bottom: 16px; }
-    .empty-state h3 { font-size: 18px; font-weight: 700; margin-bottom: 8px; }
-    .empty-state p { font-size: 14px; color: var(--text2); max-width: 360px; margin: 0 auto; line-height: 1.6; }
 
     /* NO STORE PAGE */
     .no-store-page {
@@ -344,7 +134,7 @@
     .no-store-box h2 { font-size: 20px; font-weight: 700; margin-bottom: 10px; }
     .no-store-box p { font-size: 14px; color: var(--text2); margin-bottom: 24px; line-height: 1.6; }
     .url-example {
-      background: #f8fafc;
+      background: var(--surface2);
       border: 1px solid var(--border);
       border-radius: 8px;
       padding: 10px 14px;
@@ -356,51 +146,12 @@
       word-break: break-all;
     }
 
-    /* TOPBAR */
-    .ra-topbar {
-      background: #fff;
-      border-bottom: 1px solid var(--border);
-      height: 54px;
-      display: flex;
-      align-items: center;
-      padding: 0 20px;
-      gap: 12px;
-      flex-shrink: 0;
-      position: sticky;
-      top: 0;
-      z-index: 100;
-    }
-    .ra-topbar-title {
-      font-size: 15px;
-      font-weight: 600;
-      color: rgba(0,0,0,0.88);
-    }
-    .ra-store-badge {
-      background: var(--primary-light);
-      color: var(--primary);
-      border: 1px solid rgba(22,155,194,0.25);
-      font-size: 11px;
-      font-weight: 700;
-      padding: 3px 10px;
-      border-radius: 20px;
-    }
-    .ra-topbar-spacer { flex: 1; }
-    .ra-topbar-back {
-      font-size: 12px;
-      color: var(--text2);
-      text-decoration: none;
-      display: flex;
-      align-items: center;
-      gap: 4px;
-      padding: 5px 10px;
-      border-radius: 6px;
-      border: 1px solid var(--border);
-      background: var(--surface2);
-    }
-    .ra-topbar-back:hover { background: var(--border); color: var(--text); }
-
     /* MAIN PAGE */
-    .page { padding: 20px 24px; }
+    /* .ra-content already provides the standard 20px content padding —
+       .page must not add its own on top of that (was 20px 24px, doubling
+       up to 44px total each side and starving the table of width on a
+       tablet-portrait viewport). */
+    .page { padding: 0; }
 
     /* TOAST */
     .toast-container { position: fixed; bottom: 24px; right: 24px; z-index: 999; display: flex; flex-direction: column; gap: 10px; }
@@ -431,10 +182,6 @@
     ::-webkit-scrollbar { width: 5px; }
     ::-webkit-scrollbar-track { background: transparent; }
     ::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 3px; }
-
-    @media (max-width: 700px) {
-      .filters-bar { flex-direction: column; align-items: stretch; }
-    }
 
     /* ── AG-GRID THEME OVERRIDES ─────────────── */
     .ag-theme-alpine {
@@ -637,11 +384,9 @@
       transition: all 0.15s;
     }
     .stock-flag-btn:hover:not(.active) { color: var(--text); }
-    .stock-flag-btn[data-flag="high"].active     { background: var(--success-light); border-color: var(--success); color: var(--success); }
     .stock-flag-btn[data-flag="medium"].active   { background: var(--warning-light); border-color: var(--warning); color: var(--warning); }
     .stock-flag-btn[data-flag="low"].active      { background: var(--warning-light); border-color: var(--danger); color: var(--danger); }
     .stock-flag-btn[data-flag="outOfStock"].active { background: var(--danger-light); border-color: var(--danger); color: var(--danger); }
-    .stock-flag-btn[data-flag="unknown"].active  { background: var(--surface2); border-color: var(--text2); color: var(--text); }
     .field input, .field textarea, .field select {
       width: 100%;
       padding: 8px 12px;
@@ -851,7 +596,7 @@
       <div class="summary-bar" id="summaryBar"></div>
 
       <!-- ITEMS GRID (AG-Grid) -->
-      <div id="itemsGrid" class="ag-theme-alpine" style="width:100%;min-width:880px;border-radius:var(--radius);"></div>
+      <div id="itemsGrid" class="ag-theme-alpine" style="width:100%;border-radius:var(--radius);"></div>
 
     </div><!-- /page -->
 
@@ -929,12 +674,6 @@
             <div class="history-empty">No price changes recorded yet.</div>
           </div>
         </div>
-
-        <div style="display:flex;align-items:center;gap:10px;padding-top:6px;">
-          <span id="priceSaveHelper" style="font-size:12px;color:var(--text2);flex:1;">No changes to save yet — edit RRP, offer price, dates or the menu board copy above to start.</span>
-          <button class="btn btn-ghost btn-sm" id="priceDiscardBtn" onclick="_discardPricingChange()" disabled>Cancel</button>
-          <button class="btn btn-primary btn-sm" id="priceSaveBtn" onclick="savePricingChange()" disabled><span class="material-symbols-outlined" style="font-size:16px;">save</span> Save Changes</button>
-        </div>
       </div>
 
       <!-- STOCK & LOCATION PANE -->
@@ -944,11 +683,9 @@
           <h4>Stock Level</h4>
           <p style="font-size:12px;color:var(--text2);margin:-6px 0 14px;">How much of this item is available right now at this store — a Location Badge for it can be set below once a location is defined.</p>
           <div class="stock-flag-group" id="stockFlagGroup">
-            <button type="button" class="stock-flag-btn" data-flag="high" onclick="setStockFlag('high')">High</button>
             <button type="button" class="stock-flag-btn" data-flag="medium" onclick="setStockFlag('medium')">Medium</button>
             <button type="button" class="stock-flag-btn" data-flag="low" onclick="setStockFlag('low')">Low</button>
             <button type="button" class="stock-flag-btn" data-flag="outOfStock" onclick="setStockFlag('outOfStock')">Out of Stock</button>
-            <button type="button" class="stock-flag-btn" data-flag="unknown" onclick="setStockFlag('unknown')">Unknown</button>
           </div>
         </div>
 
@@ -1004,9 +741,21 @@
 
     </div><!-- /modal-body -->
 
-    <div class="modal-footer" id="itemModalFooter" style="display:none;">
-      <button class="btn btn-ghost" onclick="closeItemModal()">Cancel</button>
-      <button class="btn btn-primary" onclick="saveStockLocation()"><span class="material-symbols-outlined" style="font-size:16px;">save</span> Save Changes</button>
+    <div class="modal-footer" id="itemModalFooter">
+      <!-- Pricing tab's own controls — a required Reason field gates Save,
+           so a plain "changes pending" helper sits alongside it, unlike
+           Stock & Location's controls which are always enabled. Kept in
+           this shared, always-visible footer (not scrolled away inside
+           .modal-body) so Save stays reachable without hunting through
+           RRP fields and Price Change History first — the tablet-fit issue
+           this replaced. -->
+      <span id="priceSaveHelper" style="display:none;font-size:12px;color:var(--text2);flex:1;">No changes to save yet — edit RRP, offer price, dates or the menu board copy above to start.</span>
+      <button class="btn btn-ghost" id="priceDiscardBtn" style="display:none;" onclick="_discardPricingChange()" disabled>Cancel</button>
+      <button class="btn btn-primary" id="priceSaveBtn" style="display:none;" onclick="savePricingChange()" disabled><span class="material-symbols-outlined" style="font-size:16px;">save</span> Save Changes</button>
+
+      <!-- Stock & Location tab's own controls -->
+      <button class="btn btn-ghost" id="stockCancelBtn" style="display:none;" onclick="closeItemModal()">Cancel</button>
+      <button class="btn btn-primary" id="stockSaveBtn" style="display:none;" onclick="saveStockLocation()"><span class="material-symbols-outlined" style="font-size:16px;">save</span> Save Changes</button>
     </div>
   </div>
 </div>
@@ -1479,8 +1228,6 @@ function init() {
 
   document.getElementById('mainPage').style.display = 'block';
   document.title = 'Store ' + STORE_CODE + ' — Menu Admin';
-  const badge = document.getElementById('storeCodeBadge');
-  if (badge && STORE_CODE) { badge.innerHTML = '<span class="material-symbols-outlined" style="font-size:15px;">storefront</span> ' + escHtml(STORE_CODE); badge.style.display = ''; }
 
   initGrid();
   renderItems();
@@ -1588,7 +1335,7 @@ function initGrid() {
         }
       },
       {
-        headerName: 'Product Name', field: 'name', flex: 2.5, minWidth: 180,
+        headerName: 'Product Name', field: 'name', flex: 2.2, minWidth: 155,
         cellRenderer: (params) => {
           const item = params.data;
           const div = document.createElement('div');
@@ -1632,7 +1379,7 @@ function initGrid() {
         // store's price. field:'price' (rather than a valueGetter) keeps
         // sort/filter working off the raw HQ value; the cellRenderer is
         // what actually displays the effective, possibly-overridden one.
-        headerName: 'Price', field: 'price', flex: 0.9, minWidth: 90,
+        headerName: 'Price', field: 'price', flex: 0.8, minWidth: 75,
         filter: CheckboxSetFilter,
         // Offer-running is a yes/no state, not a numeric range, so this
         // trades the usual agNumberColumnFilter for the same checkbox-tag
@@ -1680,12 +1427,12 @@ function initGrid() {
         }
       },
       {
-        headerName: 'Category', field: 'category', flex: 1.2, minWidth: 120,
+        headerName: 'Category', field: 'category', flex: 1, minWidth: 90,
         cellStyle: { display: 'flex', alignItems: 'center' },
         filter: CheckboxSetFilter
       },
       {
-        headerName: 'Menu Types', field: 'menuTypes', flex: 1.5, minWidth: 150,
+        headerName: 'Menu Types', field: 'menuTypes', flex: 1.3, minWidth: 125,
         sortable: false,
         filter: CheckboxSetFilter,
         filterParams: {
@@ -1718,7 +1465,7 @@ function initGrid() {
         }
       },
       {
-        headerName: 'Ingredients', colId: 'ingredients', flex: 1.5, minWidth: 130, hide: true,
+        headerName: 'Ingredients', colId: 'ingredients', flex: 1.3, minWidth: 105, hide: true,
         valueGetter: (p) => (p.data.ingredients || []).join(', ') || '\u2014',
         cellStyle: { fontSize: '12px', color: 'var(--text2)', display: 'flex', alignItems: 'center' },
         // Wraps to 2 lines (row height already allows it) instead of
@@ -1740,7 +1487,7 @@ function initGrid() {
         getFilterValue: (data) => data.ingredients || []
       },
       {
-        headerName: 'Stock Level', colId: 'status', flex: 1.8, minWidth: 200,
+        headerName: 'Stock Level', colId: 'status', flex: 1.5, minWidth: 170,
         sortable: true,
         filter: CheckboxSetFilter,
         valueGetter: (p) => STOCK_FLAG_LABELS[getStockFlag(p.data.sku)],
@@ -1819,6 +1566,17 @@ function initGrid() {
   // dropdown/menu component does, avoids that drift entirely rather
   // than trying to keep it live-anchored to a sticky element.
   window.addEventListener('scroll', () => storeItemsGridApi?.hidePopupMenu(), { passive: true });
+
+  // Rotating an iPad (or resizing a split-view window) between portrait and
+  // landscape crosses INGREDIENTS_COLUMN_MIN_WIDTH — re-check column
+  // visibility and re-fit so the table never ends up wider than the
+  // viewport after the fact. Debounced since 'resize' fires continuously
+  // while dragging/rotating.
+  let _resizeDebounce = null;
+  window.addEventListener('resize', () => {
+    clearTimeout(_resizeDebounce);
+    _resizeDebounce = setTimeout(_updateIngredientsColumnVisibility, 150);
+  });
 }
 
 // SUMMARY BAR ONLY (called from stock onSnapshot without full re-render)
@@ -1841,9 +1599,6 @@ function updateSummaryBar() {
       <div class="num">${totalActive}</div><div class="lbl">Active Items</div>
     </div>
     <div class="summary-chip">
-      <div class="num" style="color:${STOCK_FLAG_VISUAL.high.color}">${counts.high}</div><div class="lbl">High</div>
-    </div>
-    <div class="summary-chip">
       <div class="num" style="color:${STOCK_FLAG_VISUAL.medium.color}">${counts.medium}</div><div class="lbl">Medium</div>
     </div>
     <div class="summary-chip">
@@ -1851,9 +1606,6 @@ function updateSummaryBar() {
     </div>
     <div class="summary-chip">
       <div class="num" style="color:${STOCK_FLAG_VISUAL.outOfStock.color}">${counts.outOfStock}</div><div class="lbl">Out of Stock</div>
-    </div>
-    <div class="summary-chip">
-      <div class="num" style="color:${STOCK_FLAG_VISUAL.unknown.color}">${counts.unknown}</div><div class="lbl">Unknown</div>
     </div>
   `;
 }
@@ -1890,14 +1642,30 @@ function renderItems() {
   // data itself, so AG-Grid's change-detection won't know to re-run it when only
   // _brands (not the row) changes — force it explicitly.
   storeItemsGridApi.refreshCells({ columns: ['price'], force: true });
-  storeItemsGridApi.setColumnsVisible(['ingredients'], sorted.some(i => Array.isArray(i.ingredients) && i.ingredients.length > 0));
+  _itemsHaveIngredients = sorted.some(i => Array.isArray(i.ingredients) && i.ingredients.length > 0);
+  _updateIngredientsColumnVisibility();
+  if (fm && Object.keys(fm).length) {
+    setTimeout(() => storeItemsGridApi?.setFilterModel(fm), 0);
+  }
+}
+
+// Ingredients is the one column that's also fully duplicated (truncated to
+// one line) under Product Name — the only one worth dropping on a narrow
+// tablet-portrait viewport (~768px) so the rest of the table still fits
+// without horizontal scroll, per the ph-designer skill's Retail Admin
+// touch-target/tablet guidance. Re-evaluated on both data changes (does any
+// product even have ingredients?) and viewport resize.
+let _itemsHaveIngredients = false;
+const INGREDIENTS_COLUMN_MIN_WIDTH = 900;
+function _updateIngredientsColumnVisibility() {
+  if (!storeItemsGridApi) return;
+  const show = _itemsHaveIngredients && window.innerWidth >= INGREDIENTS_COLUMN_MIN_WIDTH;
+  storeItemsGridApi.setColumnsVisible(['ingredients'], show);
   // AG Grid doesn't reliably invoke a column's cellRenderer the instant it
   // flips from hidden to visible via setColumnsVisible alone — cells can
   // render blank until forced. Cheap and harmless when already visible.
   setTimeout(() => storeItemsGridApi?.refreshCells({ columns: ['ingredients'], force: true }), 0);
-  if (fm && Object.keys(fm).length) {
-    setTimeout(() => storeItemsGridApi?.setFilterModel(fm), 0);
-  }
+  storeItemsGridApi.sizeColumnsToFit();
 }
 
 // ===== ITEM DETAIL MODAL =====
@@ -1945,7 +1713,15 @@ function switchItemTab(tab) {
   document.getElementById('tabStock').classList.toggle('active', tab === 'stock');
   document.getElementById('panePricing').classList.toggle('active', tab === 'pricing');
   document.getElementById('paneStock').classList.toggle('active', tab === 'stock');
-  document.getElementById('itemModalFooter').style.display = tab === 'stock' ? 'flex' : 'none';
+  // Both tabs share one always-visible footer — only its buttons swap, so
+  // Save is never scrolled away inside .modal-body on a shorter (tablet)
+  // viewport.
+  const showPricing = tab === 'pricing';
+  document.getElementById('priceSaveHelper').style.display = showPricing ? '' : 'none';
+  document.getElementById('priceDiscardBtn').style.display = showPricing ? '' : 'none';
+  document.getElementById('priceSaveBtn').style.display    = showPricing ? '' : 'none';
+  document.getElementById('stockCancelBtn').style.display  = showPricing ? 'none' : '';
+  document.getElementById('stockSaveBtn').style.display    = showPricing ? 'none' : '';
 }
 
 function setStockFlag(flag) {
