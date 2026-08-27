@@ -283,15 +283,6 @@
     .form-group .form-help { font-size: 11px; color: var(--text2); margin-top: 4px; line-height: 1.4; }
     .settings-content { max-width: 720px; }
 
-    /* CATEGORIES */
-    .cat-list { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
-    .cat-tag { display: flex; align-items: center; gap: 6px; background: var(--surface2); border: 1px solid var(--border); border-radius: 20px; padding: 4px 12px; font-size: 13px; color: var(--text); }
-    .cat-tag button { background: none; border: none; cursor: pointer; color: var(--text2); font-size: 13px; padding: 0; line-height: 1; }
-    .cat-tag button:hover { color: var(--danger); }
-    .add-cat-row { display: flex; gap: 8px; }
-    .add-cat-row input { flex: 1; background: var(--surface2); border: 1px solid var(--border); border-radius: 6px; padding: 8px 11px; color: var(--text); font-size: 13px; outline: none; }
-    .add-cat-row input:focus { border-color: var(--primary); box-shadow: 0 0 0 2px rgba(22,155,194,0.2); }
-
     /* TOAST */
     .toast-container { position: fixed; bottom: 20px; right: 20px; z-index: 999; display: flex; flex-direction: column; gap: 8px; }
     .toast { display: flex; align-items: center; gap: 9px; background: #1e293b; color: #fff; border-radius: 10px; padding: 11px 14px; font-size: 13px; font-weight: 500; min-width: 240px; max-width: 340px; box-shadow: 0 8px 24px rgba(0,0,0,0.25); animation: slideIn 0.2s ease; }
@@ -3493,6 +3484,13 @@ function doDeleteSelection() {
 }
 
 // ===== BRANDS =====
+function _unescapePlaceholders(url) {
+  return url
+    .replace(/%24%7BStoreCode%7D/g, '${StoreCode}')
+    .replace(/%24%7BUniqueDeviceID%7D/g, '${UniqueDeviceID}')
+    .replace(/%24%7BMenuType%7D/g, '${MenuType}');
+}
+
 function _copyBrandTplUrl(brand, tpl) {
   const libEntry = TEMPLATE_LIBRARY.find(x => x.id === tpl.templateType);
   const isStandalone = libEntry && libEntry.standalone;
@@ -3510,7 +3508,7 @@ function _copyBrandTplUrl(brand, tpl) {
     params.set('device', '${UniqueDeviceID}');
     params.set('orientation', 'landscape');
   }
-  const url = decodeURIComponent(base + '?' + params.toString());
+  const url = _unescapePlaceholders(base + '?' + params.toString());
   navigator.clipboard.writeText(url).then(() => {
     toast('Link Copied to Clipboard', 'success');
   }).catch(() => { prompt('Copy this URL:', url); });
@@ -3780,6 +3778,8 @@ function closeBrandModal() {
 function uploadBrandIcon(event) {
   const file = event.target.files[0];
   if (!file) return;
+  if (!file.type.startsWith('image/')) { toast('Only image files are supported.', 'error'); event.target.value = ''; return; }
+  if (file.size > 1024 * 1024) { toast('Image is too large (max 1MB).', 'error'); event.target.value = ''; return; }
   const reader = new FileReader();
   reader.onload = (e) => {
     brandEditingIcon = e.target.result;
@@ -3801,6 +3801,8 @@ function clearBrandIcon() {
 function uploadBrandLogo(event) {
   const file = event.target.files[0];
   if (!file) return;
+  if (!file.type.startsWith('image/')) { toast('Only image files are supported.', 'error'); event.target.value = ''; return; }
+  if (file.size > 1024 * 1024) { toast('Image is too large (max 1MB).', 'error'); event.target.value = ''; return; }
   const reader = new FileReader();
   reader.onload = (e) => {
     brandEditingLogoLeft = e.target.result;
@@ -5025,7 +5027,7 @@ function copyOfferBoardUrl(tplId) {
     params.set('device',      '${UniqueDeviceID}');
     params.set('orientation', 'landscape');
   }
-  const url = decodeURIComponent(base + '?' + params.toString());
+  const url = _unescapePlaceholders(base + '?' + params.toString());
   navigator.clipboard.writeText(url).then(() => {
     toast('Link Copied to Clipboard', 'success');
   }).catch(() => {
@@ -5527,8 +5529,6 @@ onSnapshot(doc(db, MB, 'languages'), snap => {
 
 onSnapshot(doc(db, MB, 'categories'), snap => {
   _cats = snap.exists() ? (snap.data().data || [...DEFAULT_CATS]) : [...DEFAULT_CATS];
-  const panel = document.getElementById('manageCategoriesPanel');
-  if (panel && panel.style.display !== 'none') renderCategories();
 });
 
 onSnapshot(doc(db, MB, 'badgeTemplates'), snap => {

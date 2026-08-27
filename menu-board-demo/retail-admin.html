@@ -913,19 +913,28 @@ function _renderPricingMenuBoardPreview() {
 }
 
 // ===== FIRESTORE LISTENERS =====
+// Every onSnapshot below used to have only a success callback — a
+// permission-denied (e.g. after a rules change) or a persistent connection
+// error would silently stop that one data source updating forever, with
+// nothing visible to tell store staff their screen has gone stale. This
+// surfaces it as a toast instead of failing silently.
+function _onSnapshotError(label) {
+  return err => toast(`⚠️ ${label} sync lost: ` + (err.message || err), 'error');
+}
+
 onSnapshot(collection(db, ITEMS_COLL), snap => {
   _items = snap.docs.map(d => d.data()).sort((a, b) => (a.createdAt || '').localeCompare(b.createdAt || ''));
   if (STORE_CODE && document.getElementById('mainPage').style.display !== 'none') renderItems();
-});
+}, _onSnapshotError('Products'));
 
 onSnapshot(doc(db, MB, 'badgeTemplates'), snap => {
   _badgeTemplates = snap.exists() ? (snap.data().data || []) : [];
   _renderPricingMenuBoardPreview();
-});
+}, _onSnapshotError('Badge templates'));
 
 onSnapshot(doc(db, MB, 'settings'), snap => {
   _settings = snap.exists() ? snap.data() : { currency: '$' };
-});
+}, _onSnapshotError('Settings'));
 
 if (STORE_CODE) {
   onSnapshot(doc(db, STOCK_COLL, STORE_CODE), snap => {
@@ -938,7 +947,7 @@ if (STORE_CODE) {
         renderItems();
       }
     }
-  });
+  }, _onSnapshotError('Stock'));
   onSnapshot(doc(db, LOCAL_FEATURED_COLL, STORE_CODE), snap => {
     _localFeatured = snap.exists() ? snap.data() : {};
     if (document.getElementById('mainPage').style.display !== 'none') {
@@ -953,23 +962,31 @@ if (STORE_CODE) {
         renderItems();
       }
     }
-  });
+  }, _onSnapshotError('Local Featured'));
   onSnapshot(doc(db, STORE_PRICING_COLL, STORE_CODE), snap => {
     _storePricing = snap.exists() ? snap.data() : {};
     if (document.getElementById('mainPage').style.display !== 'none') {
       if (storeItemsGridApi) storeItemsGridApi.refreshCells({ force: true });
       else renderItems();
     }
-  });
+  }, _onSnapshotError('Store pricing'));
 }
 
 function isLocalFeatured(sku) { return !!_localFeatured[sku]; }
 
 function getStorePricing() { return _storePricing; }
-function saveStorePricing(obj) {
-  _storePricing = obj;
-  return setDoc(doc(db, STORE_PRICING_COLL, STORE_CODE), obj)
-    .catch(err => toast('Sync failed: ' + (err.message || err), 'error'));
+// Same fix as saveStock(): writes only this one sku's override via
+// {merge:true} instead of the whole local _storePricing object, so two
+// staff editing different items' prices at the same time can't clobber
+// each other. Re-throws after toasting so savePricingChange()'s
+// Promise.all() only reports success once this write genuinely succeeded.
+function saveStorePricing(sku, data) {
+  _storePricing = { ..._storePricing, [sku]: data };
+  return setDoc(doc(db, STORE_PRICING_COLL, STORE_CODE), { [sku]: data }, { merge: true })
+    .catch(err => {
+      toast('Sync failed: ' + (err.message || err), 'error');
+      throw err;
+    });
 }
 // Store-targeted offers: an offer's `targeting` is an AND-of-ORs, same
 // rule as Campaign Targeting's condition-tree builder (ph-designer skill
@@ -1195,7 +1212,7 @@ window.toggleLocalFeatured = toggleLocalFeatured;
 onSnapshot(doc(db, MB, 'brands'), snap => {
   _brands = snap.exists() ? (snap.data().data || []) : [];
   if (STORE_CODE && document.getElementById('mainPage').style.display !== 'none') renderItems();
-});
+}, _onSnapshotError('Brands'));
 
 let storeItemsGridApi = null;
 
@@ -1298,10 +1315,21 @@ function init() {
 function getItems()    { return _items; }
 function getSettings() { return _settings; }
 function getStock()    { return _stock; }
-function saveStock(s) {
-  _stock = s;
-  return setDoc(doc(db, STOCK_COLL, STORE_CODE), s)
-    .catch(err => toast('\u274C Sync failed: ' + (err.message || err), 'error'));
+// Writes only this one sku's data via {merge:true} \u2014 never the whole
+// local _stock object. Two staff on two tablets editing DIFFERENT skus in
+// the same store at the same time used to silently clobber each other's
+// change here, because the old read-the-whole-doc-then-overwrite pattern
+// had no way to know about an edit the other device's snapshot listener
+// hadn't delivered yet. Re-throws after toasting so a caller that chains
+// .then() can tell a real failure apart from success (see doStockAction /
+// saveStockLocation) instead of reporting success unconditionally.
+function saveStock(sku, data) {
+  _stock = { ..._stock, [sku]: data };
+  return setDoc(doc(db, STOCK_COLL, STORE_CODE), { [sku]: data }, { merge: true })
+    .catch(err => {
+      toast('\u274C Sync failed: ' + (err.message || err), 'error');
+      throw err;
+    });
 }
 
 // Stock level is a simple in-stock/out-of-stock flag per SKU, per store.
@@ -1772,25 +1800,28 @@ function cycleStockStatus(sku, name) {
 function doStockAction() {
   if (!pendingStockAction) return;
   const { sku, outOfStock } = pendingStockAction;
-  const stock = { ...getStock() };
-  const existing = stock[sku] || {};
+  const existing = getStock()[sku] || {};
 
-  stock[sku] = {
+  const newData = {
     ...existing,
     flag: outOfStock ? 'outOfStock' : 'inStock',
     updatedBy: STAFF_ID || null,
     updatedAt: new Date().toISOString()
   };
 
-  saveStock(stock);
   const unfeaturedWarning = _clearFeaturedIfOos(sku, outOfStock);
 
   closeConfirm();
-  renderItems();
+  renderItems(); // optimistic — saveStock() already updated the local cache
 
-  let msg = outOfStock ? 'Item marked as Out of Stock' : 'Item marked as In Stock';
-  if (unfeaturedWarning) msg += ' — also removed from this store’s Local Feature Highlight picks';
-  toast(msg, outOfStock ? 'error' : 'success');
+  // The toast only fires once the write actually resolves, so a failure
+  // shows just saveStock()'s own error toast instead of a contradictory
+  // "success" message on top of it.
+  saveStock(sku, newData).then(() => {
+    let msg = outOfStock ? 'Item marked as Out of Stock' : 'Item marked as In Stock';
+    if (unfeaturedWarning) msg += ' — also removed from this store’s Local Feature Highlight picks';
+    toast(msg, outOfStock ? 'error' : 'success');
+  }).catch(() => {});
 }
 
 function closeConfirm() {
@@ -2308,21 +2339,18 @@ function savePricingChange() {
   // to the item's own priceLog via {merge:true} so HQ can see every
   // store's history in one place — but that merge only ever adds to the
   // log array, it never writes price/rrp/offerPrice back onto the item.
-  const nextOverride = {
-    ..._storePricing,
-    [_modalSku]: {
-      price: isNaN(rrpNum) ? 0 : rrpNum,
-      offerPrice: isNaN(offerNum) ? null : offerNum,
-      offerFrom: _pricingDraft.offerFrom,
-      offerUntil: _pricingDraft.offerUntil,
-      showOnMenuBoard: _pricingDraft.showOnMenuBoard,
-      updatedAt: when,
-      updatedBy: by,
-    },
+  const overrideData = {
+    price: isNaN(rrpNum) ? 0 : rrpNum,
+    offerPrice: isNaN(offerNum) ? null : offerNum,
+    offerFrom: _pricingDraft.offerFrom,
+    offerUntil: _pricingDraft.offerUntil,
+    showOnMenuBoard: _pricingDraft.showOnMenuBoard,
+    updatedAt: when,
+    updatedBy: by,
   };
 
   Promise.all([
-    saveStorePricing(nextOverride),
+    saveStorePricing(_modalSku, overrideData),
     setDoc(doc(db, ITEMS_COLL, item.id), { priceLog: [...logEntries, ...(item.priceLog || [])] }, { merge: true }),
   ])
     .then(() => {
@@ -2473,10 +2501,9 @@ function saveStockLocation() {
     humanReadable: human
   };
 
-  const stock = { ...getStock() };
-  const existing = stock[_modalSku] || {};
+  const existing = getStock()[_modalSku] || {};
   const wasOos = existing.flag === 'outOfStock';
-  stock[_modalSku] = {
+  const newData = {
     ...existing,
     flag: _modalStockFlag,
     level: _modalStockLevel,
@@ -2487,7 +2514,11 @@ function saveStockLocation() {
   };
 
   const unfeaturedWarning = _clearFeaturedIfOos(_modalSku, _modalStockFlag === 'outOfStock');
-  saveStock(stock).then(() => {
+  // Only close the modal and claim success once the write actually
+  // resolves — saveStock() already surfaces its own failure toast, so on
+  // failure this leaves the modal open (with the edit still in it) instead
+  // of closing as if it had saved.
+  saveStock(_modalSku, newData).then(() => {
     let msg = 'Stock & location saved';
     if (!wasOos && _modalStockFlag === 'outOfStock' && unfeaturedWarning) {
       msg += ' — also removed from this store’s Local Feature Highlight picks';
@@ -2495,7 +2526,7 @@ function saveStockLocation() {
     toast(msg, 'success');
     if (storeItemsGridApi) storeItemsGridApi.refreshCells({ force: true });
     closeItemModal();
-  });
+  }).catch(() => {});
 }
 
 // UTILS

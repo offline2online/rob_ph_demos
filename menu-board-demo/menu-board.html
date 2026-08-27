@@ -1561,8 +1561,17 @@ function _savePreferredBaseUrl(url) {
   catch (_) {}
 }
 
+// True while a poll is in flight. Without this, a single stalled fetch
+// (a real risk on a store's own network, with no timeout on any of the
+// fetch calls below) never blocked the next setInterval(pollCampaign, 5000)
+// tick from firing — so a hung connection just accumulated a new pending
+// request every 5 seconds indefinitely instead of the board waiting for
+// one poll to finish before starting the next.
+let _pollInFlight = false;
+
 async function pollCampaign() {
-  if (!DEVICE_UDID) return;
+  if (!DEVICE_UDID || _pollInFlight) return;
+  _pollInFlight = true;
   try {
     let json = null;
 
@@ -1726,10 +1735,22 @@ async function pollCampaign() {
   } catch (e) {
     console.warn('[Campaign] poll failed:', e);
     _setApiError(`Poll error \u2014 ${e.message}`);
+  } finally {
+    _pollInFlight = false;
   }
 }
 
 // ── FIRESTORE LISTENERS ──────────────────────────────────────────────────────
+// None of the listeners below had an error callback before — a
+// permission-denied (e.g. after a rules change) or a persistent connection
+// error meant that one data source just silently stopped updating forever,
+// with nothing visible to explain why an unattended board went stale.
+// Reuses the same visible #apiErrorBadge the PH API path already has,
+// rather than failing quietly.
+function _onFirestoreError(label) {
+  return err => _setApiError(`Firestore (${label}): ` + (err.message || err));
+}
+
 onSnapshot(collection(db, ITEMS_COLL), snap => {
   const newItems = snap.docs.map(d => d.data()).sort((a, b) => (a.createdAt || '').localeCompare(b.createdAt || ''));
   const h = _itemsFp(newItems);
@@ -1737,7 +1758,7 @@ onSnapshot(collection(db, ITEMS_COLL), snap => {
   _itemsHash = h;
   _items = newItems;
   render();
-});
+}, _onFirestoreError('items'));
 
 onSnapshot(doc(db, MB, 'brands'), snap => {
   const newBrands = snap.exists() ? (snap.data().data || []) : [];
@@ -1752,7 +1773,7 @@ onSnapshot(doc(db, MB, 'brands'), snap => {
   }
   render();
   _pingBoardActivity(brand || _titleBrand);
-});
+}, _onFirestoreError('brands'));
 
 onSnapshot(doc(db, MB, 'badgeTemplates'), snap => {
   const newTemplates = snap.exists() ? (snap.data().data || []) : [];
@@ -1761,7 +1782,7 @@ onSnapshot(doc(db, MB, 'badgeTemplates'), snap => {
   _badgeTemplatesHash = h;
   _badgeTemplates = newTemplates;
   render();
-});
+}, _onFirestoreError('badge templates'));
 
 onSnapshot(doc(db, MB, 'settings'), snap => {
   const newSettings = snap.exists() ? snap.data() : { brandName: 'Our Brand', currency: '$', logo: '', logoRight: '' };
@@ -1780,7 +1801,7 @@ onSnapshot(doc(db, MB, 'settings'), snap => {
     _activeEndpoint = null;
     pollCampaign();
   }
-});
+}, _onFirestoreError('settings'));
 
 // Per-store listeners — registered at top level like the ones above (not
 // deferred behind DOMContentLoaded, which module scripts can otherwise
@@ -1795,7 +1816,7 @@ if (STORE_CODE) {
     _stockHash = h;
     _stock = newStock;
     render();
-  });
+  }, _onFirestoreError('stock'));
   // Per-store Local Feature Highlight override, set from Retail Admin —
   // once a store has starred 3+ items, this replaces HQ's Featured list
   // for that store (see getEffectiveFeaturedSkus() in render()).
@@ -1806,7 +1827,7 @@ if (STORE_CODE) {
     _localFeaturedHash = h;
     _localFeatured = newLocalFeatured;
     render();
-  });
+  }, _onFirestoreError('local featured'));
   // Per-store price override, set from Retail Admin's Pricing tab (only
   // shown there when HQ Admin has switched it on for the item's brand) —
   // a store's own price/offer/menu-board-copy for a sku, never affecting
@@ -1818,11 +1839,30 @@ if (STORE_CODE) {
     _storePricingHash = h;
     _storePricing = newStorePricing;
     render();
-  });
+  }, _onFirestoreError('store pricing'));
 }
 
 // ── RENDER ───────────────────────────────────────────────────────────────────
+// A thin, deliberately dumb wrapper around the real renderer. This board
+// runs unattended for hours/days with no one to notice or refresh it — a
+// single bad document (e.g. a product missing a field the sort/render path
+// assumes exists) used to throw uncaught partway through _renderUnsafe(),
+// which meant it never reached startRotation() at the bottom, permanently
+// freezing the display on stale content with nothing visible to explain
+// why. This catches that, logs it, and keeps retrying on a fixed interval
+// so the board recovers on its own the moment the bad data is fixed or a
+// fresh snapshot arrives, instead of staying stuck until someone manually
+// reloads the screen.
 function render() {
+  try {
+    _renderUnsafe();
+  } catch (err) {
+    console.error('[Board] render() failed — will retry in 10s:', err);
+    setTimeout(render, 10000);
+  }
+}
+
+function _renderUnsafe() {
   if (!STORE_CODE && !DEVICE_UDID) return;
 
   // brand = null means "no ?brand= param — show all brands"
@@ -2002,7 +2042,7 @@ function render() {
     const ao = isOos(a.sku), bo = isOos(b.sku);
     if (ao !== bo) return ao ? 1 : -1;
     if ((a.category || '') !== (b.category || '')) return (a.category || '').localeCompare(b.category || '');
-    return a.name.localeCompare(b.name);
+    return (a.name || '').localeCompare(b.name || '');
   });
 
   const totalItems = campaignFiltered.length;
@@ -2123,10 +2163,14 @@ function render() {
   // degrades to that site's own placeholder instead of a dead player.
   function _mediaTag(src, alt, placeholderClass, placeholderEmoji) {
     const onerror = `this.replaceWith(Object.assign(document.createElement('div'),{className:'${placeholderClass}',textContent:'${placeholderEmoji}'}))`;
+    // src is always a base64 data URI from Product Assets today (never
+    // externally supplied), so this can't actually break out of the
+    // attribute in practice — escaped anyway as defense-in-depth in case
+    // that assumption ever changes.
     if (_isVideoSrc(src)) {
-      return `<video src="${src}" autoplay muted loop playsinline disablepictureinpicture onerror="${onerror}"></video>`;
+      return `<video src="${esc(src)}" autoplay muted loop playsinline disablepictureinpicture onerror="${onerror}"></video>`;
     }
-    return `<img src="${src}" alt="${esc(alt)}" loading="lazy" onerror="${onerror}">`;
+    return `<img src="${esc(src)}" alt="${esc(alt)}" loading="lazy" onerror="${onerror}">`;
   }
 
   // Mutable: the Feature Hero Spotlight layout recomputes this below from its own
@@ -2159,7 +2203,7 @@ function render() {
 
   // ── HEADER ──────────────────────────────────────────────────────────────────
   const logoSlot = (src, side) => src
-    ? `<div class="header-logo-wrap"><img src="${src}" alt="${esc(side)} logo"></div>`
+    ? `<div class="header-logo-wrap"><img src="${esc(src)}" alt="${esc(side)} logo"></div>`
     : `<div class="header-logo-wrap no-logo"></div>`;
 
   const showHeader = effectiveShowHeader;
@@ -2191,7 +2235,7 @@ function render() {
         ${MOCK_API_FILE ? `<span class="mock-badge">🧪 MOCK</span>` : ''}
         ${showPersonalised
           ? `<div class="greeting-text">${esc(_campaignFirstName).toUpperCase()}, THIS IS WHAT WE RECOMMEND FOR YOU</div>`
-          : (showStoreNameRow ? `<div class="greeting-text">${_storeName}</div>` : '')}
+          : (showStoreNameRow ? `<div class="greeting-text">${esc(_storeName)}</div>` : '')}
         ${showClock ? `<div class="time-display" id="clockDisplay"></div>` : ''}
       </div>
     ` : ''}
