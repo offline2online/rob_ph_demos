@@ -89,6 +89,16 @@
     .btn-ghost:hover { background: var(--border); color: var(--text); }
     .btn-danger { background: var(--danger); color: #fff; }
     .btn-danger:hover { background: #e53535; }
+    /* Without this, a disabled Save Changes button is functionally inert
+       (its onclick never fires) but looks pixel-identical to an active
+       one — the same solid teal fill — reading as "still active" even
+       though clicking it does nothing. */
+    .btn:disabled {
+      opacity: 0.45;
+      cursor: not-allowed;
+    }
+    .btn-primary:hover:disabled { background: var(--primary); }
+    .btn-danger:hover:disabled { background: var(--danger); }
 
     /* SUMMARY BAR */
     .summary-bar {
