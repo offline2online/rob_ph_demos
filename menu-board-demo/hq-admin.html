@@ -687,7 +687,7 @@
               <b id="itemsCount">0</b> Products
             </div>
             <div class="page-header-actions" id="itemsToolbarActions">
-              <button class="toolbar-link-btn" onclick="showView('brands')">Manage Brands / Suppliers</button>
+              <button class="toolbar-link-btn" onclick="showView('settings')">Manage Brands / Suppliers</button>
               <button class="toolbar-link-btn" onclick="location.href='product/#/products/new'">Add New Product</button>
             </div>
             <div class="items-toolbar-sel-actions" id="itemsSelActions" style="display:none;">
@@ -703,26 +703,56 @@
           <div id="itemsGrid" class="ag-theme-alpine" style="width:100%;"></div>
         </div>
 
-        <!-- BRANDS -->
-        <div id="view-brands" class="view">
-          <button class="back-link" onclick="showView('items')"><span class="material-symbols-outlined" style="font-size:14px;">arrow_back</span> Back to Products</button>
-          <div class="page-header">
-            <h1 class="page-title">Brands / Suppliers</h1>
-          </div>
-          <p style="font-size:13px;color:var(--text2);margin-bottom:16px;">Manage brands and suppliers. Each brand has its own brand settings, colour scheme, and display configuration.</p>
-          <div class="items-toolbar">
-            <div class="items-toolbar-count" id="brandsToolbarCount"><b id="brandsCount">0</b> Brands / Suppliers</div>
-            <div class="page-header-actions">
-              <button class="toolbar-link-btn" onclick="openAddBrandModal()">Add Brand / Supplier</button>
-            </div>
-          </div>
-          <div id="brandsGrid" class="ag-theme-alpine" style="width:100%;height:500px;"></div>
-        </div>
-
         <!-- SETTINGS -->
         <div id="view-settings" class="view">
           <button class="back-link" onclick="showView('items')"><span class="material-symbols-outlined" style="font-size:14px;">arrow_back</span> Back to Products</button>
           <div class="settings-content">
+
+          <!-- Master toggle, replicating Platform Admin's "Enable Digital Signage" /
+               "Enable Queueing" row: label + info icon, switch right-aligned. Purely
+               decorative — it only shows/hides the sections below on this page, it
+               doesn't gate anything else in the app. Defaults on so the page is
+               useful the moment you land on it. -->
+          <div class="settings-section" id="settingsSection-productsPricingToggle">
+            <div style="display:flex;align-items:center;justify-content:space-between;">
+              <span style="display:flex;align-items:center;gap:6px;font-size:14px;font-weight:700;color:var(--text);">
+                Enable Products &amp; Pricing
+                <span class="material-symbols-outlined" style="font-size:16px;color:var(--text2);cursor:default;" title="Turns on product catalogue management for this account — Brands / Suppliers, pricing and menu board badge templates.">info</span>
+              </span>
+              <label class="switch-toggle">
+                <input type="checkbox" id="sEnableProductsPricing" checked onchange="toggleProductsPricingSection()">
+                <span class="switch-track"></span>
+              </label>
+            </div>
+          </div>
+
+          <div id="productsPricingSections">
+
+          <div class="settings-section" id="settingsSection-brands">
+            <h3>Brands / Suppliers</h3>
+            <p class="settings-desc">Manage brands and suppliers. Each brand has its own brand settings, colour scheme, and display configuration.</p>
+            <div class="items-toolbar">
+              <div class="items-toolbar-count" id="brandsToolbarCount"><b id="brandsCount">0</b> Brands / Suppliers</div>
+              <div class="page-header-actions">
+                <button class="toolbar-link-btn" onclick="openAddBrandModal()">Add Brand / Supplier</button>
+              </div>
+            </div>
+            <div id="brandsGrid" class="ag-theme-alpine" style="width:100%;height:500px;"></div>
+          </div>
+
+          <div class="settings-section" id="settingsSection-badgeTemplates">
+            <h3>Menu Board Badge Templates</h3>
+            <p class="settings-desc">Define reusable badge/button styles once — a name, size, text case, corner radius, colours, and a background/border that can be set independently — then pick one for a product's "Show on Menu Board" copy. Offers and store-level copy for that product always use the same template.</p>
+            <div class="bt-list" id="btList"></div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+              <button class="btn btn-ghost btn-sm" onclick="addBadgeTemplate()"><span class="material-symbols-outlined" style="font-size:14px;">add</span> Add Template</button>
+              <button class="btn btn-primary btn-sm" id="btSaveBtn" onclick="saveBadgeTemplates()" disabled>Save Changes</button>
+            </div>
+          </div>
+
+          <div class="section-divider">Prototype Only <span class="opt-tag">Not part of the live product</span></div>
+          <p style="font-size:12px;color:var(--text2);line-height:1.5;margin:-6px 0 14px;">The sections below exist only to support this demo prototype — a real Personalisation Hub account wouldn't have them.</p>
+
           <div class="settings-section" id="settingsSection-stockApi">
             <h3>Stock API Key</h3>
             <p class="settings-desc">Set a secret key that external platforms must include when calling the Stock API. Used as the <code>X-Stock-Api-Key</code> header in API requests.</p>
@@ -786,15 +816,8 @@
             <button id="sCartSaveBtn" class="btn btn-primary btn-sm" onclick="saveTakeoutBag()" disabled style="opacity:0.45;cursor:not-allowed;">Save Changes</button>
           </div>
 
-          <div class="settings-section" id="settingsSection-badgeTemplates">
-            <h3>Menu Board Badge Templates</h3>
-            <p class="settings-desc">Define reusable badge/button styles once — a name, size, text case, corner radius, colours, and a background/border that can be set independently — then pick one for a product's "Show on Menu Board" copy. Offers and store-level copy for that product always use the same template.</p>
-            <div class="bt-list" id="btList"></div>
-            <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
-              <button class="btn btn-ghost btn-sm" onclick="addBadgeTemplate()"><span class="material-symbols-outlined" style="font-size:14px;">add</span> Add Template</button>
-              <button class="btn btn-primary btn-sm" id="btSaveBtn" onclick="saveBadgeTemplates()" disabled>Save Changes</button>
-            </div>
-          </div>
+          </div><!-- /productsPricingSections -->
+
           </div><!-- /settings-content -->
         </div>
 
@@ -2469,12 +2492,21 @@ function showView(view) {
     renderItems();
     requestAnimationFrame(() => itemsGridApi && itemsGridApi.sizeColumnsToFit());
   }
-  if (view === 'brands') {
+  if (view === 'settings') {
     renderBrands();
     requestAnimationFrame(() => brandsGridApi && brandsGridApi.sizeColumnsToFit());
+    _loadTakeoutBagUI();
   }
-  if (view === 'settings') _loadTakeoutBagUI();
   localStorage.setItem('hqAdminView', view);
+}
+
+// Master toggle on the Settings page — "Enable Products & Pricing", replicating
+// Platform Admin's Digital Signage/Queueing toggle rows. Deliberately does nothing
+// beyond show/hide the sections below it: no persistence, no effect elsewhere.
+function toggleProductsPricingSection() {
+  const on = document.getElementById('sEnableProductsPricing').checked;
+  document.getElementById('productsPricingSections').style.display = on ? '' : 'none';
+  if (on) requestAnimationFrame(() => brandsGridApi && brandsGridApi.sizeColumnsToFit());
 }
 
 // ===== AG-GRID INIT =====
@@ -5418,6 +5450,7 @@ function escHtml(str) {
 
 // ===== WINDOW EXPORTS (for inline event handlers) =====
 window.showView           = showView;
+window.toggleProductsPricingSection = toggleProductsPricingSection;
 window.confirmDelete      = confirmDelete;
 window.closeConfirm       = closeConfirm;
 window.openAddBrandModal      = openAddBrandModal;
