@@ -27,7 +27,10 @@ export default function AdditionalAttributes({ rows, onChange }) {
           <Input size="small" value={r.label} onChange={(e) => updateRow(ri, { label: e.target.value })} placeholder="Label" />
           <Input size="small" value={r.value} onChange={(e) => updateRow(ri, { value: e.target.value })} placeholder="Value" />
           <Input size="small" value={r.unit} onChange={(e) => updateRow(ri, { unit: e.target.value })} placeholder="unit" />
-          <Switch size="small" checked={!!r.show} onChange={(v) => updateRow(ri, { show: v })} />
+          {/* ph-designer §12 Toggle setting row: Switch always themed default size
+              (22px track / 18px handle via antdTheme.js), never size="small" —
+              the compact variant falls back to AntD's own unthemed SM tokens. */}
+          <Switch checked={!!r.show} onChange={(v) => updateRow(ri, { show: v })} />
           <Button type="text" size="small" onClick={() => removeRow(ri)} icon={<MaterialIcon name="close" style={{ fontSize: 14 }} />} />
         </div>
       ))}

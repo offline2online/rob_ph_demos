@@ -341,6 +341,18 @@
       text-transform: uppercase;
       letter-spacing: 0.3px;
     }
+    /* "per <serving>" — the portion the calorie figure above is for, e.g.
+       "per burger" or "per 10 pieces". Lower-case, no bold, sits right
+       after the CALORIES unit rather than on its own row, since it's a
+       qualifier on that number rather than a separate stat. */
+    .nutr-calories .nutr-serving {
+      font-size: clamp(7px, 0.65vw, 10px);
+      font-weight: 500;
+      font-style: italic;
+      color: var(--text2);
+      opacity: 0.85;
+      margin-left: 2px;
+    }
     .nutr-macros-row {
       display: flex;
       flex-wrap: wrap;
@@ -1328,9 +1340,17 @@ function buildNutrition(item, compact) {
   let html = '<div class="nutrition-block">';
 
   if (hasCal) {
+    // Lower-case the leading word ("Whole banquet" -> "whole banquet") so it
+    // reads as a continuation of "per " rather than its own sentence — a
+    // leading number ("10 pieces") is unaffected since there's no letter to touch.
+    const servingText = item.servingSize ? item.servingSize.replace(/^[A-Z]/, (c) => c.toLowerCase()) : '';
+    const servingHtml = servingText
+      ? `<span class="nutr-serving">per ${esc(servingText)}</span>`
+      : '';
     html += `<div class="nutr-calories">
       <span class="nutr-val">${item.calories}</span>
       <span class="nutr-unit">&nbsp;Calories</span>
+      ${servingHtml}
     </div>`;
   }
 

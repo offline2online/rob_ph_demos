@@ -15,6 +15,13 @@
       "port": 3457,
       "autoPort": false,
       "url": "http://localhost:3457"
+    },
+    {
+      "name": "product-app",
+      "runtimeExecutable": "/Users/rgeerdink/Library/Application Support/fnm/node-versions/v18.18.2/installation/bin/node",
+      "runtimeArgs": ["/Users/rgeerdink/Documents/Claude Code/menu-board-demo/product-app/node_modules/vite/bin/vite.js", "/Users/rgeerdink/Documents/Claude Code/menu-board-demo/product-app", "--port", "5173", "--strictPort"],
+      "port": 5173,
+      "autoPort": false
     }
   ]
 }

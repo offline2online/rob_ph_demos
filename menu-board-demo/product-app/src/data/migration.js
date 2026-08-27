@@ -27,7 +27,12 @@ function mapLegacyAttributes(raw) {
     { key: 'carbs', label: 'Carbs', unit: 'g' },
     { key: 'protein', label: 'Protein', unit: 'g' },
   ].filter((f) => raw[f.key] != null);
-  return nutrition.map((f) => ({ label: f.label, value: String(raw[f.key]), unit: f.unit, show: false }));
+  const rows = nutrition.map((f) => ({ label: f.label, value: String(raw[f.key]), unit: f.unit, show: false }));
+  // Serving Size is a free-text descriptor of the portion the calorie
+  // figure above is for ("1 burger", "10 pieces") — a string, not a
+  // number, so it's its own row rather than another `nutrition` entry.
+  if (raw.servingSize) rows.push({ label: 'Serving Size', value: String(raw.servingSize), unit: '', show: false });
+  return rows;
 }
 
 function mapOptionGroups(raw) {
@@ -185,6 +190,8 @@ export function toItemDoc(product) {
     const row = (product.attributes || []).find((r) => r.label === label);
     return row && row.value !== '' ? parseFloat(row.value) : null;
   };
+  const servingSizeRow = (product.attributes || []).find((r) => r.label === 'Serving Size');
+  const servingSize = servingSizeRow && servingSizeRow.value !== '' ? servingSizeRow.value : null;
 
   const addExtras = (product.optionGroups || []).find((g) => g.name === 'Add extras');
   const removeGroup = (product.optionGroups || []).find((g) => g.name === 'Remove');
@@ -244,6 +251,7 @@ export function toItemDoc(product) {
     fat: nutritionVal('Fat'),
     carbs: nutritionVal('Carbs'),
     protein: nutritionVal('Protein'),
+    servingSize,
     ingredients: ingredientNames,
     'gs1:recipeIngredient': ingredientNames.map((n) => ({ '@type': 'Product', productName: n })),
     'gs1:customizationOptions': gs1CustOpts,
