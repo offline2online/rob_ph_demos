@@ -326,19 +326,24 @@
       --ag-cell-horizontal-padding:   15px;
       --ag-floating-filter-height:    36px;
       --ag-selected-row-background-color: rgba(22,155,194,0.08);
-      /* No vertical column dividers anywhere in the grid — header, floating
-         filter row, and body cells are all row-separator-only, matching
-         real HQ Admin. Data cells already had none; the header/filter row
-         is AG Grid Alpine's default and needs suppressing explicitly. */
-      --ag-header-column-separator-display: none;
+      /* A visible line between header cells marks where a column can be
+         dragged to resize. Body cells and the floating filter row stay
+         row-separator-only — no vertical dividers there. */
+      --ag-header-column-separator-display: block;
+      --ag-header-column-separator-color:  var(--border);
+      --ag-header-column-separator-height: 100%;
       --ag-cell-horizontal-border:    none;
     }
     .ag-theme-alpine .ag-header-cell-label { font-size: 13px; font-weight: 700; color: var(--text); }
-    /* This AG Grid version hardcodes the header column-separator line rather
-       than reading --ag-header-column-separator-display — hide the pseudo-
-       element directly. Only ::after is hidden, so the resize handle itself
-       (same element) still works. */
-    .ag-theme-alpine .ag-header-cell-resize::after { display: none !important; }
+    /* This AG Grid version renders the header divider via the resize-handle
+       pseudo-element rather than reading --ag-header-column-separator-* —
+       style that element directly so it matches the values above. */
+    .ag-theme-alpine .ag-header-cell-resize::after {
+      display: block !important;
+      width: 1px;
+      height: 100%;
+      background-color: var(--border);
+    }
     .ag-theme-alpine .ag-floating-filter-input { font-size: 12px; }
     /* Propagate row height so cell renderers can use height:100% for vertical centering */
     .ag-theme-alpine .ag-cell { height: 100%; }
@@ -912,15 +917,6 @@
           <div>
             <div class="switch-row-label">Allow store-level price updates</div>
             <div class="switch-row-help">When on, store managers can update this brand's products' pricing (RRP, offer price, scheduling) from a new Pricing tab in Retail Admin. Every change is still recorded in the product's price change log.</div>
-          </div>
-        </div>
-
-        <div class="section-divider">Stock Alerts</div>
-        <div class="form-row" style="max-width:340px;">
-          <div class="form-group" style="flex:1;">
-            <label>Default Low Stock Threshold</label>
-            <input type="number" id="bLowStockThreshold" min="1" max="999" placeholder="5">
-            <p class="form-help">Items with stock at or below this quantity trigger a low stock alert on the HQ Dashboard. Can be overridden per item.</p>
           </div>
         </div>
 
@@ -3687,7 +3683,6 @@ function openAddBrandModal() {
   document.getElementById('bIconPreview').style.display = 'none';
   brandEditingLogoLeft = '';
   document.getElementById('bLogoPreview').style.display = 'none';
-  document.getElementById('bLowStockThreshold').value = '';
   document.getElementById('bAllowStorePricing').checked = false;
   // Distribution — default "All Stores". Legacy flat editingStores is
   // kept only as a read-through for older brands' `stores` field (see
@@ -3736,7 +3731,6 @@ function openEditBrandModal(id) {
   }
 
   brandEditingBagIcon = brand.bagIcon || '';
-  document.getElementById('bLowStockThreshold').value = brand.lowStockThreshold != null ? brand.lowStockThreshold : '';
   document.getElementById('bAllowStorePricing').checked = !!brand.allowStorePricing;
 
   // Distribution — window.editingStores is the brand's pre-existing flat
@@ -4120,8 +4114,6 @@ function saveBrand() {
   // silently wipe it out from under an existing brand.
   const targetedMode = document.getElementById('bStoreMode').value === 'targeted';
   const distributionTargeting = targetedMode ? [...window.editingDistributionTargeting] : [];
-  const lstRaw       = document.getElementById('bLowStockThreshold').value;
-  const lowStockThreshold = lstRaw !== '' ? (parseInt(lstRaw) || null) : null;
   const allowStorePricing = document.getElementById('bAllowStorePricing').checked;
 
   const brands = getBrands();
@@ -4131,10 +4123,10 @@ function saveBrand() {
     const idx = brands.findIndex(b => b.id === id);
     if (idx === -1) return;
     // colors/display/showClock etc. are now managed exclusively via templates; preserve existing brand values via spread
-    brands[idx] = { ...brands[idx], name, currency, icon: brandEditingIcon, logo: brandEditingLogoLeft, logoRight: '', distributionTargeting, lowStockThreshold, allowStorePricing, templates: _editingBrandTemplates, colourPalette: window._bPalette, brandGuidelines: window._bGuidelines, updatedAt: now };
+    brands[idx] = { ...brands[idx], name, currency, icon: brandEditingIcon, logo: brandEditingLogoLeft, logoRight: '', distributionTargeting, allowStorePricing, templates: _editingBrandTemplates, colourPalette: window._bPalette, brandGuidelines: window._bGuidelines, updatedAt: now };
     toast('Brand updated', 'success');
   } else {
-    brands.push({ id: genId(), name, currency, icon: brandEditingIcon, logo: brandEditingLogoLeft, logoRight: '', colors: { ...DEFAULT_COLORS }, display: { portrait: { ...DEFAULT_DISPLAY.portrait }, landscape: { ...DEFAULT_DISPLAY.landscape }, hideOutOfStock: false }, showClock: true, timeFormat: 'british', showHeader: true, campaignMode: 'override', stores: [], distributionTargeting, lowStockThreshold, allowStorePricing, templates: [], colourPalette: window._bPalette, brandGuidelines: window._bGuidelines, createdAt: now, updatedAt: now });
+    brands.push({ id: genId(), name, currency, icon: brandEditingIcon, logo: brandEditingLogoLeft, logoRight: '', colors: { ...DEFAULT_COLORS }, display: { portrait: { ...DEFAULT_DISPLAY.portrait }, landscape: { ...DEFAULT_DISPLAY.landscape }, hideOutOfStock: false }, showClock: true, timeFormat: 'british', showHeader: true, campaignMode: 'override', stores: [], distributionTargeting, allowStorePricing, templates: [], colourPalette: window._bPalette, brandGuidelines: window._bGuidelines, createdAt: now, updatedAt: now });
     toast('Brand added', 'success');
   }
 
@@ -5362,17 +5354,6 @@ function importBrandData(event) {
             else          mergedTypes.push(t);
           }
           saveTypes(mergedTypes);
-        }
-        // Brand low stock threshold — apply if provided in export
-        if (data.brand && typeof data.brand.lowStockThreshold === 'number') {
-          const brands = getBrands();
-          const bIdx = brands.findIndex(b => b.id === brandId);
-          if (bIdx >= 0) {
-            brands[bIdx] = { ...brands[bIdx], lowStockThreshold: data.brand.lowStockThreshold };
-            saveBrands(brands);
-            const threshEl = document.getElementById('bLowStockThreshold');
-            if (threshEl) threshEl.value = data.brand.lowStockThreshold;
-          }
         }
         renderItems();
         toast(`Imported: +${added} new, ${updated} updated for this brand`, 'success');

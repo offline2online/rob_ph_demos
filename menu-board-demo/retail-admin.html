@@ -236,15 +236,24 @@
       --ag-cell-horizontal-padding:   15px;
       --ag-floating-filter-height:    36px;
       --ag-selected-row-background-color: rgba(22,155,194,0.08);
+      /* A visible line between header cells marks where a column can be
+         dragged to resize. Body cells and the floating filter row stay
+         row-separator-only — no vertical dividers there. */
+      --ag-header-column-separator-display: block;
+      --ag-header-column-separator-color:  var(--border);
+      --ag-header-column-separator-height: 100%;
     }
     .ag-theme-alpine .ag-header-cell-label { font-size:13px;font-weight:700;color:#181d1f; }
     .ag-theme-alpine .ag-floating-filter-input { font-size:12px; }
-    /* This AG Grid version hardcodes the header column-separator line rather
-       than reading --ag-header-column-separator-display — hide the pseudo-
-       element directly. Only ::after is hidden, so the resize handle itself
-       (same element) still works. No vertical column dividers anywhere in
-       the grid, matching HQ Admin. */
-    .ag-theme-alpine .ag-header-cell-resize::after { display: none !important; }
+    /* This AG Grid version renders the header divider via the resize-handle
+       pseudo-element rather than reading --ag-header-column-separator-* —
+       style that element directly so it matches the values above. */
+    .ag-theme-alpine .ag-header-cell-resize::after {
+      display: block !important;
+      width: 1px;
+      height: 100%;
+      background-color: var(--border);
+    }
     /* Propagate row height so cell renderers can use height:100% for vertical centering */
     .ag-theme-alpine .ag-cell { height:100%; }
     .ag-theme-alpine .ag-cell-wrapper { width:100%;height:100%; }
