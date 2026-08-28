@@ -401,7 +401,14 @@
          pill's background to the full column instead of hugging its own
          text, the way it already does everywhere else. */
       align-self: flex-start;
+      /* Symmetric — Menu Board Badge Templates' Position setting can place
+         this either right before the price (needs space below, before the
+         price row) or in its usual spot after it (needs space above, from
+         whatever precedes it). Both margins are always applied; the one
+         that ends up adjacent to another element does the work, the other
+         is inert against the price row's own edge. */
       margin-top: clamp(5px, 0.65vw, 10px);
+      margin-bottom: clamp(5px, 0.65vw, 10px);
       padding: clamp(4px, 0.5vw, 8px) clamp(10px, 1.2vw, 18px);
       background: #fff7e6;
       color: #ad4e00;
@@ -1111,12 +1118,23 @@ function isOfferLive(item) {
   if (!(offerNum > 0)) return false;
   return _isOfferWindowLiveNow(item.offerFrom, item.offerUntil, item.offerRecurrence);
 }
+// An offer priced exactly at RRP has nothing to discount — a struck-
+// through "was £X" next to an identical "now £X" reads as a rendering bug,
+// not a real promotion. This gates the PRICE display only (priceHtml,
+// below); the "Show on Menu Board" note is a separate, deliberately
+// unaffected signal that still uses isOfferLive on its own — see
+// shouldShowMenuNote further down.
+function isOfferPriceDiscounted(item) {
+  if (!isOfferLive(item)) return false;
+  return parseFloat(item.offerPrice).toFixed(2) !== parseFloat(item.price || 0).toFixed(2);
+}
 // Renders the price for a board item — struck-through RRP + offer price
-// when a live offer is on, plain RRP otherwise. `wasClass` sizes the
-// struck-through RRP relative to the caller's own price font-size via em.
+// when a live, discounted offer is on, plain RRP otherwise. `wasClass`
+// sizes the struck-through RRP relative to the caller's own price
+// font-size via em.
 function priceHtml(item, currency, wasClass) {
   const rrp = parseFloat(item.price || 0).toFixed(2);
-  if (!isOfferLive(item)) return `${currency}${rrp}`;
+  if (!isOfferPriceDiscounted(item)) return `${currency}${rrp}`;
   const offer = parseFloat(item.offerPrice).toFixed(2);
   return `<span class="${wasClass}">${currency}${rrp}</span>${currency}${offer}`;
 }
@@ -1144,7 +1162,7 @@ function shouldShowMenuNote(item) {
 // copy. DEFAULT_BADGE_TEMPLATES mirrors hq-admin.html's own fallback, used
 // whenever the badgeTemplates registry doc is still empty.
 const DEFAULT_BADGE_TEMPLATES = [
-  { id: 'default', name: 'Amber (Default)', size: 'medium', uppercase: false, outlined: false, borderWidth: 'none', radius: 'rounded', bg: '#fff7e6', color: '#ad4e00', borderColor: '#ad4e00' },
+  { id: 'default', name: 'Amber (Default)', size: 'medium', uppercase: false, outlined: false, borderWidth: 'none', radius: 'rounded', bg: '#fff7e6', color: '#ad4e00', borderColor: '#ad4e00', pricePosition: 'below' },
 ];
 let _badgeTemplates = [];
 function getBadgeTemplates() { return _badgeTemplates.length ? _badgeTemplates : DEFAULT_BADGE_TEMPLATES; }
@@ -1194,6 +1212,22 @@ function locationBadgeHtml(item) {
   const human = (s.location && s.location.humanReadable || '').trim();
   if (!human) return '';
   return `<div class="menu-board-note location-badge" style="${badgeStyleForTemplateId(s.locationBadgeTemplateId)}">${esc(human)}</div>`;
+}
+
+// Buckets pre-rendered badge HTML — the "Show on Menu Board" note and the
+// store's Location Badge — by each one's OWN resolved template's Position
+// setting (Menu Board Badge Templates → Position: Above/Below price). The
+// two badges can use different templates, so one can render above the
+// price while the other stays below. Shared by all three render sites
+// (grid tile, hero panel, promo tile) instead of repeating this per site.
+function bucketBadgeNotes(entries) {
+  const above = [], below = [];
+  entries.forEach(({ html, templateId }) => {
+    if (!html) return;
+    const pos = getBadgeTemplateById(templateId || 'default').pricePosition === 'above' ? 'above' : 'below';
+    (pos === 'above' ? above : below).push(html);
+  });
+  return { above: above.join(''), below: below.join('') };
 }
 
 // ── BRAND SUPPORT ────────────────────────────────────────────────────────────
@@ -2276,6 +2310,11 @@ function _renderUnsafe() {
     const desc = item.description ? `<div class="item-desc">${esc(item.description)}</div>` : '';
     const menuNote = shouldShowMenuNote(item) ? `<div class="menu-board-note" style="${menuNoteStyleAttr(item)}">${esc(item.showOnMenuBoard)}</div>` : '';
     const locationNote = locationBadgeHtml(item);
+    const stockRec = _stock[item.sku];
+    const { above: notesAbove, below: notesBelow } = bucketBadgeNotes([
+      { html: menuNote, templateId: item.menuBoardNoteTemplateId },
+      { html: locationNote, templateId: stockRec && stockRec.locationBadgeTemplateId },
+    ]);
     return `
       <div class="item-cell${oos ? ' oos-cell' : ''}">
         <div class="item-thumb">${thumbInner}</div>
@@ -2283,13 +2322,13 @@ function _renderUnsafe() {
           <div class="item-name">${esc(item.name)}</div>
           ${desc}
           <div class="item-divider"></div>
+          ${notesAbove}
           <div class="item-footer">
             <span class="item-price">${priceHtml(item, currency, 'price-was')}</span>
             ${cat ? `<span class="item-cat-badge">${esc(cat)}</span>` : ''}
           </div>
           ${buildNutrition(item, true)}
-          ${menuNote}
-          ${locationNote}
+          ${notesBelow}
         </div>
         <div class="oos-overlay"><div class="oos-stamp"><div class="oos-stamp-text">SOLD OUT</div></div></div>
       </div>`;
@@ -2397,14 +2436,19 @@ function _renderUnsafe() {
       const heroCat = heroItem.category ? `<div class="promo-cat">${esc(heroItem.category)}</div>` : '';
       const heroMenuNote = shouldShowMenuNote(heroItem) ? `<div class="menu-board-note" style="${menuNoteStyleAttr(heroItem)}">${esc(heroItem.showOnMenuBoard)}</div>` : '';
       const heroLocationNote = locationBadgeHtml(heroItem);
+      const heroStockRec = _stock[heroItem.sku];
+      const { above: heroNotesAbove, below: heroNotesBelow } = bucketBadgeNotes([
+        { html: heroMenuNote, templateId: heroItem.menuBoardNoteTemplateId },
+        { html: heroLocationNote, templateId: heroStockRec && heroStockRec.locationBadgeTemplateId },
+      ]);
       const heroTopHtml = `
         <div class="promo-hero-top">
           ${heroCat}
           <div class="promo-hero-title">${esc(heroItem.name)}</div>
+          ${heroNotesAbove}
           <div class="promo-hero-price">${priceHtml(heroItem, currency, 'price-was')}</div>
           ${buildNutrition(heroItem)}
-          ${heroMenuNote}
-          ${heroLocationNote}
+          ${heroNotesBelow}
         </div>`;
       const heroBottomHtml = heroItem.description
         ? `<div class="promo-hero-bottom"><div class="promo-hero-desc">${esc(heroItem.description)}</div></div>`
@@ -2425,15 +2469,20 @@ function _renderUnsafe() {
         const cat = item.category ? `<div class="promo-cat">${esc(item.category)}</div>` : '';
         const menuNote = shouldShowMenuNote(item) ? `<div class="menu-board-note" style="${menuNoteStyleAttr(item)}">${esc(item.showOnMenuBoard)}</div>` : '';
         const locationNote = locationBadgeHtml(item);
+        const tileStockRec = _stock[item.sku];
+        const { above: tileNotesAbove, below: tileNotesBelow } = bucketBadgeNotes([
+          { html: menuNote, templateId: item.menuBoardNoteTemplateId },
+          { html: locationNote, templateId: tileStockRec && tileStockRec.locationBadgeTemplateId },
+        ]);
         return `
           <div class="promo-tile">
             <div class="promo-text">
               ${cat}
               <div class="promo-title">${esc(item.name)}</div>
+              ${tileNotesAbove}
               <div class="promo-price">${priceHtml(item, currency, 'price-was')}</div>
               ${buildNutrition(item, true)}
-              ${menuNote}
-              ${locationNote}
+              ${tileNotesBelow}
             </div>
             <div class="promo-img-wrap">${img}</div>
             ${desc}

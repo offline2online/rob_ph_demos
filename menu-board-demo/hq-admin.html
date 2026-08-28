@@ -766,7 +766,7 @@
 
           <div class="settings-section" id="settingsSection-badgeTemplates">
             <h3>Menu Board Badge Templates</h3>
-            <p class="settings-desc">Define reusable badge/button styles once — a name, size, text case, corner radius, colours, and a background/border that can be set independently — then pick one for a product's "Show on Menu Board" copy. Offers and store-level copy for that product always use the same template.</p>
+            <p class="settings-desc">Define reusable badge/button styles once — a name, size, text case, corner radius, colours, a background/border that can be set independently, and whether the badge sits above or below the price — then pick one for a product's "Show on Menu Board" copy or a store's Location Badge. Offers and store-level copy for that product always use the same template.</p>
             <div class="bt-list" id="btList"></div>
             <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
               <button class="btn btn-ghost btn-sm" onclick="addBadgeTemplate()"><span class="material-symbols-outlined" style="font-size:14px;">add</span> Add Template</button>
@@ -1298,7 +1298,7 @@ const DEFAULT_CATS = ['Mains','Starters','Sides','Desserts','Hot Drinks','Cold D
 // this repo duplicates small shared registries as plain JS/data across
 // its vanilla pages and the React app rather than sharing an import.
 const DEFAULT_BADGE_TEMPLATES = [
-  { id: 'default', name: 'Amber (Default)', size: 'medium', uppercase: false, outlined: false, borderWidth: 'none', radius: 'rounded', bg: '#fff7e6', color: '#ad4e00', borderColor: '#ad4e00' },
+  { id: 'default', name: 'Amber (Default)', size: 'medium', uppercase: false, outlined: false, borderWidth: 'none', radius: 'rounded', bg: '#fff7e6', color: '#ad4e00', borderColor: '#ad4e00', pricePosition: 'below' },
 ];
 
 const DEFAULT_COLORS = {
@@ -1897,6 +1897,13 @@ function renderBadgeTemplates() {
           <option value="1" ${t.uppercase ? 'selected' : ''}>On</option>
         </select>
       </div>
+      <div class="form-group" style="width:110px;">
+        <label>Position</label>
+        <select id="btPricePosition${i}" onchange="updateBadgeTemplateField(${i},'pricePosition',this.value)">
+          <option value="above" ${t.pricePosition === 'above' ? 'selected' : ''}>Above price</option>
+          <option value="below" ${(!t.pricePosition || t.pricePosition === 'below') ? 'selected' : ''}>Below price</option>
+        </select>
+      </div>
       <div class="form-group" style="min-width:150px;flex:1;">
         <label>Preview</label>
         <div id="btPreview${i}" class="bt-preview" style="${badgeTemplatePreviewStyle(t)}">${escHtml(t.name || 'Preview')}</div>
@@ -1917,7 +1924,7 @@ function updateBadgeTemplateField(i, field, value) {
 }
 
 function addBadgeTemplate() {
-  _badgeTemplates.push({ id: genId(), name: '', size: 'medium', uppercase: false, outlined: false, borderWidth: 'none', radius: 'rounded', bg: '#fff7e6', color: '#ad4e00', borderColor: '#ad4e00' });
+  _badgeTemplates.push({ id: genId(), name: '', size: 'medium', uppercase: false, outlined: false, borderWidth: 'none', radius: 'rounded', bg: '#fff7e6', color: '#ad4e00', borderColor: '#ad4e00', pricePosition: 'below' });
   renderBadgeTemplates();
   const idx = _badgeTemplates.length - 1;
   document.getElementById(`btName${idx}`)?.focus();
@@ -3096,9 +3103,18 @@ function initGrids() {
             const offerNum = parseFloat(item.offerPrice);
             const now = new Date();
             const isLive = offerNum > 0 && _isOfferWindowLiveNow(item.offerFrom, item.offerUntil, item.offerRecurrence, now);
+            // An offer priced exactly at RRP has nothing to discount — a
+            // struck-through "was £X" next to an identical "now £X" reads
+            // as a rendering bug, not a real offer. Fall back to the plain
+            // single-price display in that case. This only affects the
+            // price presentation: the Local offer/Targeted/Recurring pills
+            // further down still render normally regardless, since they
+            // describe separate facts about the offer that don't depend on
+            // whether it actually discounts the price.
+            const isDiscounted = isLive && offerNum.toFixed(2) !== rrp.toFixed(2);
             const priceRow = document.createElement('div');
             priceRow.style.cssText = 'display:flex;align-items:center;gap:6px;';
-            if (isLive) {
+            if (isDiscounted) {
               priceRow.title = _offerTooltip(currency, rrp, offerNum, item.offerFrom, item.offerUntil, item.offerRecurrence);
               const was = document.createElement('span');
               was.style.cssText = 'text-decoration:line-through;color:var(--text2);font-weight:400;font-size:11px;';

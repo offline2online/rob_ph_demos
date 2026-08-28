@@ -52,7 +52,7 @@ export const DEFAULT_LANGUAGES = [
 // mirrored in hq-admin.html (where these are authored, under Settings)
 // and menu-board.html (where they're rendered).
 export const DEFAULT_BADGE_TEMPLATES = [
-  { id: 'default', name: 'Amber (Default)', size: 'medium', uppercase: false, outlined: false, borderWidth: 'none', radius: 'rounded', bg: '#fff7e6', color: '#ad4e00', borderColor: '#ad4e00' },
+  { id: 'default', name: 'Amber (Default)', size: 'medium', uppercase: false, outlined: false, borderWidth: 'none', radius: 'rounded', bg: '#fff7e6', color: '#ad4e00', borderColor: '#ad4e00', pricePosition: 'below' },
 ];
 
 let _brands = [];
