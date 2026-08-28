@@ -6,10 +6,18 @@
   <title>Offer Board</title>
   <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@500;600;700&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <style>
+    /* These are pre-fetch defaults only — every real Offer Board template
+       (menuboard/brands' own templates[].colors) already uses KFC's actual
+       red/black/white scheme; applyColorScheme() overwrites these the
+       moment brand data loads. Kept in KFC's own palette (not a generic
+       placeholder colour) so the two screens that render before that fetch
+       resolves — the initial "Loading…" state and the invalid-URL error
+       screen below — are never off-brand, and so there's no colour flash
+       once the real template data arrives. */
     :root {
-      --green:            #006241;
-      --green-dark:       #004d33;
-      --green-light:      #d4edda;
+      --green:            #e4002b;
+      --green-dark:       #a3001a;
+      --green-light:      #fbe1df;
       --cream:            #f9f4ec;
       --cream2:           #f0e9dc;
       --white:            #ffffff;
@@ -19,16 +27,16 @@
       --border-lt:        #e8dfd3;
       --danger:           #c0392b;
       --board-header-bg:  #ffffff;
-      --cat-bar-bg:       #006241;
-      --price-color:      #004d33;
-      --item-color:       #004d33;  /* item name text — set from colors.text */
+      --cat-bar-bg:       #e4002b;
+      --price-color:      #e4002b;
+      --item-color:       #1a1a1a;  /* item name text — set from colors.text */
       --item-text:        #1a1a1a;  /* hero item name text — set from colors.text */
       --item-bg:          #ffffff;  /* item card background */
       --item-desc:        #444444;  /* short description / secondary item text */
-      --header-text:      #006241;
+      --header-text:      #e4002b;
       --clock-text:       #1e293b;
       --clock-bg:         #f0f4f8;  /* clock bar background */
-      --accent:           #006241;  /* explicit accent var (mirrors --green) */
+      --accent:           #e4002b;  /* explicit accent var (mirrors --green) */
     }
 
     * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -2640,7 +2648,12 @@ document.addEventListener('DOMContentLoaded', () => {
       : 'a Store Code (<code>?store=STORE001</code>) or Device UDID (<code>?device=…</code>)';
     document.getElementById('boardRoot').innerHTML = `
       <div class="error-board">
-        <div class="icon">📺</div>
+        <svg width="72" height="72" viewBox="0 0 300 300" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="KFC" style="margin-bottom:20px;">
+          <circle cx="150" cy="150" r="150" fill="#ffffff"/>
+          <text x="150" y="128" font-family="Arial,Helvetica,sans-serif" font-size="70" font-weight="900" text-anchor="middle" dominant-baseline="middle" fill="#e4002b">KFC</text>
+          <text x="150" y="190" font-family="Arial,Helvetica,sans-serif" font-size="17" font-weight="700" text-anchor="middle" fill="#e4002b" letter-spacing="1">KENTUCKY FRIED</text>
+          <text x="150" y="212" font-family="Arial,Helvetica,sans-serif" font-size="17" font-weight="700" text-anchor="middle" fill="#e4002b" letter-spacing="1">CHICKEN</text>
+        </svg>
         <h2>Invalid Offer Board URL</h2>
         <p>This offer board requires ${missing}.</p>
         <br>
@@ -2671,7 +2684,12 @@ document.addEventListener('DOMContentLoaded', () => {
 <!-- ROOT -->
 <div class="board portrait" id="boardRoot">
   <div class="board-empty">
-    <div class="icon" style="font-size:40px;margin-bottom:16px;">⏳</div>
+    <svg width="64" height="64" viewBox="0 0 300 300" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="KFC" style="margin-bottom:20px;">
+      <circle cx="150" cy="150" r="150" fill="#e4002b"/>
+      <text x="150" y="128" font-family="Arial,Helvetica,sans-serif" font-size="70" font-weight="900" text-anchor="middle" dominant-baseline="middle" fill="#ffffff">KFC</text>
+      <text x="150" y="190" font-family="Arial,Helvetica,sans-serif" font-size="17" font-weight="700" text-anchor="middle" fill="#ffffff" letter-spacing="1">KENTUCKY FRIED</text>
+      <text x="150" y="212" font-family="Arial,Helvetica,sans-serif" font-size="17" font-weight="700" text-anchor="middle" fill="#ffffff" letter-spacing="1">CHICKEN</text>
+    </svg>
     <h2>Loading…</h2>
   </div>
 </div>
