@@ -281,7 +281,11 @@
     }
     .settings-section .settings-desc { font-size: 12px; color: var(--text2); margin-bottom: 18px; line-height: 1.5; }
     .form-group .form-help { font-size: 11px; color: var(--text2); margin-top: 4px; line-height: 1.4; }
-    .settings-content { max-width: 720px; }
+    /* Full-bleed, matching real Platform Admin (aws.personalisationhub.com/hq-admin/
+       platform-admin/...) — its settings pages run edge-to-edge with no boxed-in
+       centered column. Individual controls (.form-row, etc.) keep their own natural
+       widths; only the AG Grid/list sections (Brands table, badge templates) are
+       meant to actually use the full available width. */
 
     /* TOAST */
     .toast-container { position: fixed; bottom: 20px; right: 20px; z-index: 999; display: flex; flex-direction: column; gap: 8px; }
@@ -330,18 +334,25 @@
          can be dragged to resize — a small tick, not a full-height rule
          (AG Grid's own default resize handle is 30% tall; this matches
          that scale). Body cells and the floating filter row stay
-         row-separator-only — no vertical dividers there. */
-      --ag-header-column-separator-display: block;
-      --ag-header-column-separator-color:  var(--border);
-      --ag-header-column-separator-height: 50%;
+         row-separator-only — no vertical dividers there.
+         --ag-header-column-separator-* is a no-op on this AG Grid build —
+         its base stylesheet (not the alpine theme) unconditionally paints
+         .ag-header-cell::before regardless of this variable, so setting it
+         has no effect either way; see the explicit ::before override below,
+         which is what actually controls that element. */
       --ag-cell-horizontal-border:    none;
     }
     .ag-theme-alpine .ag-header-cell-label { font-size: 13px; font-weight: 700; color: var(--text); }
-    /* This AG Grid version renders the header divider via the resize-handle
-       pseudo-element rather than reading --ag-header-column-separator-* —
-       style that element directly so it matches the values above. Each
-       header row (label row, floating filter row) gets its own short tick,
-       not one continuous line spanning both. */
+    /* AG Grid renders TWO separate elements per header cell that can each
+       paint a divider line: .ag-header-cell::before (always on, ignores
+       --ag-header-column-separator-display — see note above) and
+       .ag-header-cell-resize::after (the resize handle). Left alone, both
+       render at once as two adjacent lines. Kill the ::before one and make
+       ::after — the one that's actually resizable — the single source of
+       the divider, a short centered tick, not a full-height rule. Each
+       header row (label row, floating filter row) gets its own tick, not
+       one continuous line spanning both. */
+    .ag-theme-alpine .ag-header-cell::before { display: none !important; }
     .ag-theme-alpine .ag-header-cell-resize::after {
       display: block !important;
       width: 1px;
@@ -691,7 +702,6 @@
               <b id="itemsCount">0</b> Products
             </div>
             <div class="page-header-actions" id="itemsToolbarActions">
-              <button class="toolbar-link-btn" onclick="showView('settings')">Manage Brands / Suppliers</button>
               <button class="toolbar-link-btn" onclick="location.href='product/#/products/new'">Add New Product</button>
             </div>
             <div class="items-toolbar-sel-actions" id="itemsSelActions" style="display:none;">

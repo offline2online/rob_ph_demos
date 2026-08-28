@@ -193,9 +193,10 @@
     @keyframes slideIn{from{opacity:0;transform:translateX(10px)}to{opacity:1;transform:translateX(0)}}
 
     /* ── AG GRID ── */
-    .ag-theme-alpine{--ag-header-background-color:var(--surface2);--ag-header-foreground-color:var(--text2);--ag-border-color:var(--border);--ag-row-hover-color:var(--surface2);--ag-selected-row-background-color:var(--primary-light);--ag-font-size:13px;--ag-font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;--ag-cell-horizontal-padding:12px;--ag-row-height:68px;--ag-header-column-separator-display:block;--ag-header-column-separator-color:var(--border);--ag-header-column-separator-height:50%;}
+    .ag-theme-alpine{--ag-header-background-color:var(--surface2);--ag-header-foreground-color:var(--text2);--ag-border-color:var(--border);--ag-row-hover-color:var(--surface2);--ag-selected-row-background-color:var(--primary-light);--ag-font-size:13px;--ag-font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;--ag-cell-horizontal-padding:12px;--ag-row-height:68px;}
     .ag-theme-alpine .ag-header-cell-label{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;justify-content:flex-start;}
-    /* This AG Grid version renders the header divider via the resize-handle pseudo-element rather than reading --ag-header-column-separator-* — style that element directly so it matches the values above. A short, centered tick (50% height), not a full-height rule. */
+    /* AG Grid renders TWO elements per header cell that can each paint a divider: .ag-header-cell::before (always on — --ag-header-column-separator-display is a no-op on this build) and .ag-header-cell-resize::after (the resize handle). Kill ::before and make ::after the single source: a short, centered tick (50% height), not a full-height rule. */
+    .ag-theme-alpine .ag-header-cell::before{display:none !important;}
     .ag-theme-alpine .ag-header-cell-resize::after{display:block !important;width:1px;height:50%;background-color:var(--border);}
     .ag-theme-alpine .ag-cell{overflow:visible !important;}
     .ag-theme-alpine .ag-cell-wrapper{align-items:center;}

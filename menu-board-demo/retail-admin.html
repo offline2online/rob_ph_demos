@@ -240,16 +240,23 @@
          can be dragged to resize — a small tick, not a full-height rule
          (AG Grid's own default resize handle is 30% tall; this matches
          that scale). Body cells and the floating filter row stay
-         row-separator-only — no vertical dividers there. */
-      --ag-header-column-separator-display: block;
-      --ag-header-column-separator-color:  var(--border);
-      --ag-header-column-separator-height: 50%;
+         row-separator-only — no vertical dividers there.
+         --ag-header-column-separator-* is a no-op on this AG Grid build —
+         its base stylesheet (not the alpine theme) unconditionally paints
+         .ag-header-cell::before regardless of this variable, so setting it
+         has no effect either way; see the explicit ::before override below,
+         which is what actually controls that element. */
     }
     .ag-theme-alpine .ag-header-cell-label { font-size:13px;font-weight:700;color:#181d1f; }
     .ag-theme-alpine .ag-floating-filter-input { font-size:12px; }
-    /* This AG Grid version renders the header divider via the resize-handle
-       pseudo-element rather than reading --ag-header-column-separator-* —
-       style that element directly so it matches the values above. */
+    /* AG Grid renders TWO separate elements per header cell that can each
+       paint a divider line: .ag-header-cell::before (always on, ignores
+       --ag-header-column-separator-display — see note above) and
+       .ag-header-cell-resize::after (the resize handle). Left alone, both
+       render at once as two adjacent lines. Kill the ::before one and make
+       ::after — the one that's actually resizable — the single source of
+       the divider, a short centered tick, not a full-height rule. */
+    .ag-theme-alpine .ag-header-cell::before { display: none !important; }
     .ag-theme-alpine .ag-header-cell-resize::after {
       display: block !important;
       width: 1px;
