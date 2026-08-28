@@ -166,6 +166,16 @@
     .board.landscape .clock-bar .greeting-text {
       font-size: clamp(25px, 3.1vw, 48px);
     }
+    /* Personalised greeting on Feature Hero Spotlight: no clock sharing the
+       row, so the greeting is centred and spans the full bar width instead
+       of being left-aligned against a right-aligned clock. */
+    .clock-bar-personalised {
+      justify-content: center;
+    }
+    .clock-bar-personalised .greeting-text {
+      margin-right: 0;
+      text-align: center;
+    }
     /* Mock-mode badge — visible only when ?mockapi= is set in the URL */
     .mock-badge {
       font-family: 'Oswald', monospace;
@@ -401,14 +411,15 @@
          pill's background to the full column instead of hugging its own
          text, the way it already does everywhere else. */
       align-self: flex-start;
-      /* Symmetric — Menu Board Badge Templates' Position setting can place
-         this either right before the price (needs space below, before the
-         price row) or in its usual spot after it (needs space above, from
-         whatever precedes it). Both margins are always applied; the one
-         that ends up adjacent to another element does the work, the other
-         is inert against the price row's own edge. */
-      margin-top: clamp(5px, 0.65vw, 10px);
-      margin-bottom: clamp(5px, 0.65vw, 10px);
+      /* Symmetric and small — Menu Board Badge Templates' Position setting
+         can place this either right before the price (needs space below,
+         before the price row) or in its usual spot after it (needs space
+         above, from whatever precedes it) — the badge should sit DIRECTLY
+         against the price either way, not float off it. Matches
+         .nutrition-block's own margin-top scale just below, so the gap
+         reads as consistently "tight" throughout this text column. */
+      margin-top: clamp(3px, 0.5vw, 8px);
+      margin-bottom: clamp(3px, 0.5vw, 8px);
       padding: clamp(4px, 0.5vw, 8px) clamp(10px, 1.2vw, 18px);
       background: #fff7e6;
       color: #ad4e00;
@@ -416,6 +427,20 @@
       font-size: clamp(13px, 1.3vw, 19.5px);
       font-weight: 700;
       line-height: 1.3;
+    }
+    /* .promo-hero-top and .promo-text are flex columns with their own
+       `gap` already spacing every child consistently (title, price,
+       nutrition, notes) — gap and margin don't collapse into each other,
+       so the note's own margin above was ADDING to that gap instead of
+       being absorbed by it, on top of the flex-column's spacing every
+       other child already gets "for free". Zero it out here so the badge
+       sits exactly one `gap` from the price, matching every other
+       child-to-child spacing in these two containers. The grid item tile
+       (.item-body) has no such gap — its note keeps its own margin above. */
+    .promo-hero-top .menu-board-note,
+    .promo-text .menu-board-note {
+      margin-top: 0;
+      margin-bottom: 0;
     }
 
     /* ── OUT OF STOCK ───────────────────────── */
@@ -1932,13 +1957,29 @@ function _renderUnsafe() {
   // Template values always win over top-level brand defaults.
   let tpl = getActiveTemplate(brand || themeSource);
 
+  // A visitor's own PH-API recommendations always drive the Feature Hero
+  // Spotlight template when present — overriding whatever HQ Admin's
+  // isDefault/?template= URL param would otherwise pick, AND (via the
+  // eligibility bypass in the hero-layout branch further down) whatever
+  // Retail Admin's Local Featured override or HQ's own Featured flag would
+  // otherwise pick within that template. Personalisation outranks both.
+  const isPersonalised = !!(_campaignSkus && _campaignSkus.length > 0 && _campaignFirstName);
+  if (isPersonalised) {
+    const heroTpl = (brand || themeSource).templates?.find(t => t.templateType === 'feature-hero-board');
+    if (heroTpl) tpl = heroTpl;
+  }
+
   // Local Feature Highlight needs >=3 qualifying Featured items (HQ, or a
   // store's own override once it has 3+) before it activates — below that,
   // the board falls back to rendering the brand's default template instead.
   // This re-resolution runs on every render (i.e. every data change), so a
   // store crossing the 3-item threshold flips the board automatically. If no
   // template has isDefault set, tpl is left as-is rather than showing blank.
-  if (tpl && tpl.templateType === 'feature-hero-board') {
+  // Skipped while personalised — the Featured-flag eligibility check this
+  // guards doesn't apply once the hero/promo pool is driven by campaign SKUs
+  // instead (see the hero-layout branch below), so there's nothing threshold
+  // to fall back from; even a single recommended item should still show.
+  if (!isPersonalised && tpl && tpl.templateType === 'feature-hero-board') {
     const featuredSkus = getEffectiveFeaturedSkus(brand || themeSource);
     if (featuredSkus.size < 3) {
       const fallbackTpl = (brand || themeSource).templates?.find(t => t.isDefault);
@@ -2267,9 +2308,23 @@ function _renderUnsafe() {
   // but should still surface a personalised "Recommended for you" message when the
   // Personalisation Hub API has pushed a First Name for this device. So the bar
   // renders whenever either the clock is on, or personalisation has something to show.
-  const showPersonalised = effectivePersonalGreeting && !!_campaignFirstName;
+  // Once personalisation is actively driving the board onto Feature Hero
+  // Spotlight (isPersonalised, TEMPLATE RESOLUTION section above — this
+  // template was forced BECAUSE this visitor has recommendations), showing
+  // who it's for is the whole point: a template's own Personal Greeting
+  // toggle (meant for a non-personalised, generic "Featured Items" board)
+  // doesn't get a vote in that case. Outside personalised-hero, the toggle
+  // still governs exactly as before.
+  const showPersonalised = !!_campaignFirstName
+    && (effectivePersonalGreeting || (isPersonalised && effectiveTemplateType === 'feature-hero-board'));
   const showStoreNameRow = effectiveShowStoreName && !!_storeName;
   const showInfoBar = showClock || showPersonalised || showStoreNameRow;
+  // Personalisation takes the whole top bar for itself on the Feature Hero
+  // Spotlight template specifically — no clock sharing the row — so the
+  // greeting reads as its own dedicated banner spanning the full board
+  // width, not one flex child fighting the clock for space off to the side.
+  const isPersonalisedHero = showPersonalised && effectiveTemplateType === 'feature-hero-board';
+  const showClockInBar = showClock && !isPersonalisedHero;
   const headerHtml = `
     ${showHeader ? `
     <div class="board-header">
@@ -2285,12 +2340,12 @@ function _renderUnsafe() {
     </div>
     ` : ''}
     ${showInfoBar ? `
-      <div class="clock-bar">
+      <div class="clock-bar${isPersonalisedHero ? ' clock-bar-personalised' : ''}">
         ${MOCK_API_FILE ? `<span class="mock-badge">🧪 MOCK</span>` : ''}
         ${showPersonalised
           ? `<div class="greeting-text">${esc(_campaignFirstName).toUpperCase()}, THIS IS WHAT WE RECOMMEND FOR YOU</div>`
           : (showStoreNameRow ? `<div class="greeting-text">${esc(_storeName)}</div>` : '')}
-        ${showClock ? `<div class="time-display" id="clockDisplay"></div>` : ''}
+        ${showClockInBar ? `<div class="time-display" id="clockDisplay"></div>` : ''}
       </div>
     ` : ''}
   `;
@@ -2327,8 +2382,8 @@ function _renderUnsafe() {
             <span class="item-price">${priceHtml(item, currency, 'price-was')}</span>
             ${cat ? `<span class="item-cat-badge">${esc(cat)}</span>` : ''}
           </div>
-          ${buildNutrition(item, true)}
           ${notesBelow}
+          ${buildNutrition(item, true)}
         </div>
         <div class="oos-overlay"><div class="oos-stamp"><div class="oos-stamp-text">SOLD OUT</div></div></div>
       </div>`;
@@ -2350,27 +2405,58 @@ function _renderUnsafe() {
     // ── LOCAL FEATURE HIGHLIGHT LAYOUT ────────────────────────────────────────
     // A full-bleed image (no overlay copy) beside/above a stack of equally-
     // weighted promo cards — "just show promotions", not one dominant item
-    // with a small supporting grid. Item selection is driven entirely by the
-    // Featured flag (HQ Admin), overridable per store from Retail Admin —
-    // see getEffectiveFeaturedSkus(). By the time render() reaches here, tpl
-    // has already been re-resolved to the brand's default template if fewer
-    // than 3 qualifying items exist, so featuredPool below is expected to
-    // have >=3 items in the normal case (it can still be smaller for this
-    // specific menu type/screen if some Featured items belong to others).
-    const featuredSkus = getEffectiveFeaturedSkus(brand || themeSource);
-    // Feature priority (HQ Admin, Product Details — 1 = highest) decides
-    // which item leads: sorted ascending, with unset/blank priority sinking
-    // to the end (stable sort keeps their relative order otherwise).
-    const featuredPool = featuredCandidates.filter(i => featuredSkus.has(i.sku)).slice().sort((a, b) => {
-      const pa = parseInt(a.featurePriority, 10);
-      const pb = parseInt(b.featurePriority, 10);
-      const va = isNaN(pa) ? Infinity : pa;
-      const vb = isNaN(pb) ? Infinity : pb;
-      return va - vb;
-    });
+    // with a small supporting grid. Item selection is normally driven
+    // entirely by the Featured flag (HQ Admin), overridable per store from
+    // Retail Admin — see getEffectiveFeaturedSkus() — UNLESS this visitor
+    // has personalised PH-API recommendations, in which case those always
+    // win instead (see isPersonalised below): the campaign SKU list IS
+    // the featured list for a personalised visitor, bypassing both the
+    // Featured flag and its own store-level override entirely, not just
+    // supplementing them. By the time render() reaches here, tpl has
+    // already been re-resolved to the brand's default template if fewer
+    // than 3 qualifying (non-personalised) Featured items exist, so
+    // featuredPool below is expected to have >=3 items in that normal case
+    // (it can still be smaller for this specific menu type/screen if some
+    // Featured items belong to others) — personalised mode has no such
+    // minimum; even a single recommendation still plays.
+    // isPersonalised (not isPersonalisedHero) gates this — isPersonalisedHero
+    // is greeting-driven and can be true from _campaignFirstName alone with
+    // no SKUs at all, which would make the .map() below blow up on a null
+    // _campaignSkus. isPersonalised guarantees _campaignSkus is a non-empty
+    // array (see its own definition, TEMPLATE RESOLUTION section above).
+    let featuredPool;
+    if (isPersonalised) {
+      // Order IS the PH API's own recommendation rank — featuredCandidates
+      // is already scoped to this visitor's campaign SKUs (STEP 1d above),
+      // so this just reorders that set to match _campaignSkus, discarding
+      // whatever incidental order .filter() left it in. featurePriority
+      // (below, non-personalised branch) never applies here.
+      const bySku = new Map(featuredCandidates.map(i => [(i.sku || '').trim().toLowerCase(), i]));
+      featuredPool = _campaignSkus
+        .map(sku => bySku.get((sku || '').trim().toLowerCase()))
+        .filter(Boolean);
+    } else {
+      const featuredSkus = getEffectiveFeaturedSkus(brand || themeSource);
+      // Feature priority (HQ Admin, Product Details — 1 = highest) decides
+      // which item leads: sorted ascending, with unset/blank priority sinking
+      // to the end (stable sort keeps their relative order otherwise).
+      featuredPool = featuredCandidates.filter(i => featuredSkus.has(i.sku)).slice().sort((a, b) => {
+        const pa = parseInt(a.featurePriority, 10);
+        const pb = parseInt(b.featurePriority, 10);
+        const va = isNaN(pa) ? Infinity : pa;
+        const vb = isNaN(pb) ? Infinity : pb;
+        return va - vb;
+      });
+    }
 
     if (featuredPool.length === 0) {
-      bodyHtml = `
+      bodyHtml = isPersonalised ? `
+        <div class="board-empty">
+          <div class="icon">${meta.emoji}</div>
+          <h2>No Recommended Items</h2>
+          <p>None of ${esc(_campaignFirstName)}'s recommended items are currently available on this menu.</p>
+        </div>
+      ` : `
         <div class="board-empty">
           <div class="icon">${meta.emoji}</div>
           <h2>No Featured Items</h2>
@@ -2447,8 +2533,8 @@ function _renderUnsafe() {
           <div class="promo-hero-title">${esc(heroItem.name)}</div>
           ${heroNotesAbove}
           <div class="promo-hero-price">${priceHtml(heroItem, currency, 'price-was')}</div>
-          ${buildNutrition(heroItem)}
           ${heroNotesBelow}
+          ${buildNutrition(heroItem)}
         </div>`;
       const heroBottomHtml = heroItem.description
         ? `<div class="promo-hero-bottom"><div class="promo-hero-desc">${esc(heroItem.description)}</div></div>`
@@ -2481,8 +2567,8 @@ function _renderUnsafe() {
               <div class="promo-title">${esc(item.name)}</div>
               ${tileNotesAbove}
               <div class="promo-price">${priceHtml(item, currency, 'price-was')}</div>
-              ${buildNutrition(item, true)}
               ${tileNotesBelow}
+              ${buildNutrition(item, true)}
             </div>
             <div class="promo-img-wrap">${img}</div>
             ${desc}
