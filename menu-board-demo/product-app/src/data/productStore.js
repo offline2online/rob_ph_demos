@@ -60,6 +60,7 @@ export function blankProduct() {
     shortDescription: '',
     longDescription: '',
     descriptionTranslations: {},
+    descriptionLanguages: ['en'],
     menuTypes: [],
     storeMode: 'all',
     stores: [],

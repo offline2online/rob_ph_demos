@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Input, InputNumber, Select, Switch, Button } from 'antd';
+import { Input, InputNumber, Select, Switch, Button, Modal } from 'antd';
 import MaterialIcon from '../../components/MaterialIcon.jsx';
 import ClearableDate, { shiftEndOneHour } from '../../components/ClearableDate.jsx';
 import AdditionalAttributes from '../../components/AdditionalAttributes.jsx';
@@ -30,6 +30,33 @@ function Field({ label, required, children, hint }) {
   );
 }
 
+// AI-driven action button — ph-designer skill's AI gradient recipe
+// (references/components.md §1): a 20%-opacity teal→violet gradient fill,
+// no border, and gradient-clipped label text. Used for every AI-driven
+// action in this file (opening the language picker, and the picker's own
+// "Translate" confirm) rather than a plain solid-teal primary button.
+function AiButton({ children, icon = 'auto_awesome', ...rest }) {
+  return (
+    <Button
+      className="border-none!"
+      style={{ background: 'linear-gradient(135deg, rgba(22,155,194,.2), rgba(151,71,255,.2))' }}
+      icon={<MaterialIcon name={icon} style={{ fontSize: 16 }} />}
+      {...rest}
+    >
+      <span
+        style={{
+          backgroundImage: 'linear-gradient(135deg, #169bc2, #9747ff)',
+          WebkitBackgroundClip: 'text',
+          backgroundClip: 'text',
+          color: 'transparent',
+        }}
+      >
+        {children}
+      </span>
+    </Button>
+  );
+}
+
 export default function ProductDetailsTab({ draft, patch, onGoPricing }) {
   const [newCat, setNewCat] = useState('');
   const [addingCat, setAddingCat] = useState(false);
@@ -42,6 +69,14 @@ export default function ProductDetailsTab({ draft, patch, onGoPricing }) {
   // draft.descriptionTranslations so nothing outside this tab needs to
   // know translations exist yet.
   const [descLang, setDescLang] = useState('en');
+  // "Add New Language" modal — mock-only translation flow (see
+  // confirmAddLanguage below). English is always present; every other
+  // language must be explicitly added here before it shows up in the
+  // Language selector above, rather than every registry language always
+  // being offered whether or not this product has been translated into it.
+  const [addLangOpen, setAddLangOpen] = useState(false);
+  const [pickedLang, setPickedLang] = useState(undefined);
+  const [translating, setTranslating] = useState(false);
 
   const catOptions = useMemo(() => {
     const set = new Set(getCats());
@@ -53,8 +88,17 @@ export default function ProductDetailsTab({ draft, patch, onGoPricing }) {
   const brands = getBrands();
   const brand = getBrandById(draft.brand);
   const languages = getLanguages();
+  const addedLanguageCodes = draft.descriptionLanguages && draft.descriptionLanguages.length
+    ? draft.descriptionLanguages
+    : ['en'];
+  const addedLanguages = addedLanguageCodes
+    .map((code) => languages.find((l) => l.code === code) || { code, name: code });
+  const availableToAddLanguages = languages.filter((l) => !addedLanguageCodes.includes(l.code));
 
   const isEnglishDesc = descLang === 'en';
+  const currentDisplayName = isEnglishDesc
+    ? draft.displayName || ''
+    : draft.descriptionTranslations?.[descLang]?.displayName || '';
   const currentShortDescription = isEnglishDesc
     ? draft.shortDescription || ''
     : draft.descriptionTranslations?.[descLang]?.shortDescription || '';
@@ -63,6 +107,15 @@ export default function ProductDetailsTab({ draft, patch, onGoPricing }) {
     : draft.descriptionTranslations?.[descLang]?.longDescription || '';
   const shortLen = currentShortDescription.length;
 
+  const patchDisplayName = (value) => {
+    if (isEnglishDesc) { patch({ displayName: value }); return; }
+    patch({
+      descriptionTranslations: {
+        ...(draft.descriptionTranslations || {}),
+        [descLang]: { ...(draft.descriptionTranslations?.[descLang] || {}), displayName: value },
+      },
+    });
+  };
   const patchShortDescription = (value) => {
     if (isEnglishDesc) { patch({ shortDescription: value }); return; }
     patch({
@@ -80,6 +133,45 @@ export default function ProductDetailsTab({ draft, patch, onGoPricing }) {
         [descLang]: { ...(draft.descriptionTranslations?.[descLang] || {}), longDescription: value },
       },
     });
+  };
+
+  const openAddLanguage = () => {
+    setPickedLang(undefined);
+    setAddLangOpen(true);
+  };
+
+  // Mock only — no real translation call exists yet. Simulates the AI
+  // assistant drafting a translation: a believable delay, then the source
+  // English copy carried over with a clearly-labelled "AI draft" prefix
+  // (so it reads as a first draft awaiting review, not a real finished
+  // translation) rather than leaving the new language's fields empty.
+  // Adds the picked language to descriptionLanguages so it now appears in
+  // the Language selector above, and switches to it so the result is
+  // immediately visible.
+  const confirmAddLanguage = () => {
+    if (!pickedLang) return;
+    const lang = languages.find((l) => l.code === pickedLang);
+    if (!lang) return;
+    setTranslating(true);
+    setTimeout(() => {
+      const sourceDisplayName = draft.displayName || '';
+      const sourceShort = draft.shortDescription || '';
+      const sourceLong = draft.longDescription || '';
+      patch({
+        descriptionTranslations: {
+          ...(draft.descriptionTranslations || {}),
+          [pickedLang]: {
+            displayName: sourceDisplayName ? `[AI draft — ${lang.name}] ${sourceDisplayName}` : '',
+            shortDescription: sourceShort ? `[AI draft — ${lang.name}] ${sourceShort}` : '',
+            longDescription: sourceLong ? `[AI draft — ${lang.name}] ${sourceLong}` : '',
+          },
+        },
+        descriptionLanguages: [...addedLanguageCodes, pickedLang],
+      });
+      setDescLang(pickedLang);
+      setTranslating(false);
+      setAddLangOpen(false);
+    }, 900);
   };
 
   const confirmNewCategory = async () => {
@@ -114,11 +206,6 @@ export default function ProductDetailsTab({ draft, patch, onGoPricing }) {
           </Field>
           <Field label="Product name" required>
             <Input value={draft.name} onChange={(e) => patch({ name: e.target.value })} placeholder="Full product name" />
-          </Field>
-        </div>
-        <div style={{ marginBottom: 14 }}>
-          <Field label="Display name" hint="Short board-safe name for menu boards.">
-            <Input value={draft.displayName} onChange={(e) => patch({ displayName: e.target.value })} placeholder="Short form" style={{ maxWidth: 420 }} />
           </Field>
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: '1.3fr 1fr 1fr', gap: '14px 16px' }}>
@@ -228,13 +315,23 @@ export default function ProductDetailsTab({ draft, patch, onGoPricing }) {
         <div className="ph-sect-label" style={{ marginBottom: 12 }}>
           Descriptions
         </div>
-        <div style={{ marginBottom: 14, maxWidth: 280 }}>
-          <Field label="Language" hint="Short and long description below are shown for whichever language is selected here.">
-            <Select
-              value={descLang}
-              onChange={setDescLang}
-              options={languages.map((l) => ({ value: l.code, label: l.name }))}
-            />
+        <div style={{ marginBottom: 14, display: 'flex', gap: 10, alignItems: 'flex-end' }}>
+          <div style={{ maxWidth: 280, flex: 1 }}>
+            <Field label="Language" hint="Display name and the descriptions below are all shown for whichever language is selected here.">
+              <Select
+                value={descLang}
+                onChange={setDescLang}
+                options={addedLanguages.map((l) => ({ value: l.code, label: l.name }))}
+              />
+            </Field>
+          </div>
+          <AiButton onClick={openAddLanguage} disabled={availableToAddLanguages.length === 0}>
+            Add New Language
+          </AiButton>
+        </div>
+        <div style={{ marginBottom: 14 }}>
+          <Field label="Display name" hint="Short board-safe name for menu boards.">
+            <Input value={currentDisplayName} onChange={(e) => patchDisplayName(e.target.value)} placeholder="Short form" style={{ maxWidth: 420 }} />
           </Field>
         </div>
         <Field
@@ -248,6 +345,31 @@ export default function ProductDetailsTab({ draft, patch, onGoPricing }) {
             <TextArea rows={4} value={currentLongDescription} onChange={(e) => patchLongDescription(e.target.value)} />
           </Field>
         </div>
+
+        <Modal
+          title="Add New Language"
+          open={addLangOpen}
+          onCancel={() => setAddLangOpen(false)}
+          destroyOnClose
+          footer={[
+            <Button key="cancel" onClick={() => setAddLangOpen(false)}>Cancel</Button>,
+            <AiButton key="translate" loading={translating} disabled={!pickedLang} onClick={confirmAddLanguage}>
+              Translate &amp; Add
+            </AiButton>,
+          ]}
+        >
+          <p style={{ fontSize: 13, color: 'rgba(0,0,0,.65)', marginBottom: 12 }}>
+            Pick a language and the AI assistant will draft a translation of this product's Short
+            and Long description into it. Prototype only — no real translation happens yet.
+          </p>
+          <Select
+            style={{ width: '100%' }}
+            placeholder="Select a language"
+            value={pickedLang}
+            onChange={setPickedLang}
+            options={availableToAddLanguages.map((l) => ({ value: l.code, label: l.name }))}
+          />
+        </Modal>
 
         <div style={{ height: 1, background: '#f0f0f0', margin: '18px 0' }} />
         <div className="ph-sect-label" style={{ marginBottom: 12 }}>

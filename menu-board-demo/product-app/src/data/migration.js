@@ -166,6 +166,16 @@ export function migrateItem(raw, brandCurrency) {
     menuBoardNote: raw.menuBoardNote !== undefined ? raw.menuBoardNote : (raw.showOnMenuBoard || ''),
     menuBoardNoteTemplateId: raw.menuBoardNoteTemplateId || DEFAULT_MENU_BOARD_NOTE_TEMPLATE_ID,
     showOnMenuBoard: raw.showOnMenuBoard || '',
+    // Which languages the Descriptions tab's selector offers for this
+    // product — English is always present (it's the one language every
+    // product already has real content for, see ProductDetailsTab.jsx).
+    // A product saved before this field existed still had translations if
+    // someone had typed into a language via the old always-show-every-
+    // language selector — derive its language list from whatever
+    // descriptionTranslations keys it already has, so that authored copy
+    // doesn't silently disappear from the selector on first load.
+    descriptionLanguages: raw.descriptionLanguages
+      || ['en', ...Object.keys(raw.descriptionTranslations || {})].filter((v, i, a) => a.indexOf(v) === i),
     menuTypes: raw.menuTypes || [],
     ingredients: alreadyMigrated ? (raw.ingredients || []) : mapLegacyIngredients(raw),
     attributes: alreadyMigrated ? (raw.attributes || []) : mapLegacyAttributes(raw),
