@@ -385,11 +385,13 @@
       --ag-font-size: 13px;
       --ag-font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
       --ag-cell-horizontal-padding: 14px;
-      /* A visible line between header cells marks where a column can be
-         dragged to resize. Body cells stay row-separator-only. */
+      /* A short, centered line between header cells marks where a column
+         can be dragged to resize — a small tick, not a full-height rule
+         (AG Grid's own default resize handle is 30% tall; this matches
+         that scale). Body cells stay row-separator-only. */
       --ag-header-column-separator-display: block;
       --ag-header-column-separator-color:  var(--border);
-      --ag-header-column-separator-height: 100%;
+      --ag-header-column-separator-height: 50%;
     }
     .ag-theme-alpine .ag-header-cell-label { font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.4px; justify-content:flex-start; }
     /* This AG Grid version renders the header divider via the resize-handle
@@ -398,7 +400,7 @@
     .ag-theme-alpine .ag-header-cell-resize::after {
       display: block !important;
       width: 1px;
-      height: 100%;
+      height: 50%;
       background-color: var(--border);
     }
     .ag-theme-alpine .ag-cell { overflow:visible !important; }
