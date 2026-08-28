@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { Tabs, Tag, Button, Spin, App, Badge, Switch } from 'antd';
+import { Tabs, Tag, Button, Spin, App, Badge, Switch, Tooltip } from 'antd';
 import MaterialIcon from '../components/MaterialIcon.jsx';
 import ProductDetailsTab from './tabs/ProductDetailsTab.jsx';
 import StockTab from './tabs/StockTab.jsx';
@@ -9,7 +9,11 @@ import PricingTab from './tabs/PricingTab.jsx';
 import { getProduct, blankProduct, upsertProduct, setProductStatus } from '../data/productStore.js';
 
 export default function ProductPage({ isNew = false }) {
-  const { id, tab = 'assets' } = useParams();
+  // /products/new carries no :tab segment (App.jsx's route for it is
+  // path-only), so this default is what actually decides a brand-new
+  // product's landing tab — Product Details first, so its required fields
+  // (checked by detailsIncomplete below) get filled in before anything else.
+  const { id, tab = 'details' } = useParams();
   const navigate = useNavigate();
   const { message } = App.useApp();
 
@@ -38,6 +42,13 @@ export default function ProductPage({ isNew = false }) {
   const patch = (fields) => setDraft((d) => ({ ...d, ...fields }));
 
   const goTab = (t) => navigate(`/products/${draft.id}/${t}`, { replace: true });
+
+  // Mirrors Product Details' own required-field markers (ProductDetailsTab.jsx:
+  // Brand, Product name, SKU, Category, Menu types) — a product can't go
+  // Active until all of them are filled in, so it can never reach a live
+  // board half-defined.
+  const detailsIncomplete = !draft?.brand || !(draft?.name || '').trim() || !(draft?.sku || '').trim()
+    || !draft?.category || !(draft?.menuTypes || []).length;
 
   const imageCount = useMemo(() => (draft?.images || []).filter((i) => i.type !== 'video').length, [draft]);
   const videoCount = useMemo(() => (draft?.images || []).filter((i) => i.type === 'video').length, [draft]);
@@ -134,11 +145,14 @@ export default function ProductPage({ isNew = false }) {
             <span style={{ fontSize: 14, color: 'rgba(0,0,0,.65)' }}>Status</span>
             <Badge dot color={draft.status === 'Active' ? '#52c41a' : '#ff4d4f'} />
             <span style={{ fontSize: 14, fontWeight: 700, color: '#333333' }}>{draft.status === 'Active' ? 'Active' : 'Inactive'}</span>
-            <Switch
-              checked={draft.status === 'Active'}
-              loading={statusSaving}
-              onChange={toggleStatus}
-            />
+            <Tooltip title={detailsIncomplete ? 'Complete Brand, Product name, SKU, Category and Menu types on Product Details before activating' : ''}>
+              <Switch
+                checked={draft.status === 'Active'}
+                loading={statusSaving}
+                disabled={draft.status !== 'Active' && detailsIncomplete}
+                onChange={toggleStatus}
+              />
+            </Tooltip>
           </div>
         </div>
         <div style={{ height: 1, background: 'rgba(5,5,5,0.06)', margin: '4px 0 16px' }} />

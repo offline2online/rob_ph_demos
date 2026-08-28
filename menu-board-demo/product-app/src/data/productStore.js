@@ -52,7 +52,11 @@ export function blankProduct() {
     currency: '$',
     taxClass: '',
     currencyLocked: true,
-    status: 'Active',
+    // New products start Inactive — Product Details' required fields
+    // (brand, name, SKU, category, menu type) must be filled in before
+    // ProductPage.jsx's Status toggle will let it go Active, so an
+    // incomplete product can never reach a live board.
+    status: 'Inactive',
     featured: false,
     featurePriority: '',
     featuredFrom: '',
