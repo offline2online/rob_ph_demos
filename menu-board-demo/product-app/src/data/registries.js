@@ -17,6 +17,12 @@ export const DEFAULT_CATS = [
   'Cocktails', 'Wines', 'Beers', 'Sandwiches', 'Salads', 'Pasta', 'Burgers',
 ];
 
+// Unlike DEFAULT_CATS, sub-categories aren't a curated platform-wide set —
+// every brand's own products define what sub-categories make sense for it
+// (see addSubCategoryToRegistry below), so there's nothing sensible to
+// seed here before anyone's added one.
+export const DEFAULT_SUB_CATS = [];
+
 // Same fallback default as hq-admin.html's own DEFAULT_LANGUAGES (line
 // ~1275) — its first 18 entries specifically, before the comment there
 // marks "Expanded to cover the real 'Languages Spoken by Staff' field (72
@@ -58,6 +64,7 @@ export const DEFAULT_BADGE_TEMPLATES = [
 let _brands = [];
 let _types = [];
 let _cats = [];
+let _subCats = [];
 let _languages = [];
 let _storeCodes = [];
 let _badgeTemplates = [];
@@ -65,10 +72,11 @@ let _knownIngredients = [];
 let _loaded = false;
 
 export async function loadRegistries() {
-  const [brandsSnap, typesSnap, catsSnap, languagesSnap, stockSnap, badgeTemplatesSnap, itemsSnap] = await Promise.all([
+  const [brandsSnap, typesSnap, catsSnap, subCatsSnap, languagesSnap, stockSnap, badgeTemplatesSnap, itemsSnap] = await Promise.all([
     getDoc(doc(db, MB, 'brands')),
     getDoc(doc(db, MB, 'types')),
     getDoc(doc(db, MB, 'categories')),
+    getDoc(doc(db, MB, 'subCategories')),
     getDoc(doc(db, MB, 'languages')),
     getDocs(collection(db, STOCK_COLL_NAME)),
     getDoc(doc(db, MB, 'badgeTemplates')),
@@ -80,6 +88,8 @@ export async function loadRegistries() {
   // some legacy imports stored categories as objects, not strings.
   const rawCats = catsSnap.exists() ? catsSnap.data().data || [] : [];
   _cats = rawCats.map((c) => (typeof c === 'object' ? c.name || c.id || String(c) : String(c))).filter(Boolean);
+  const rawSubCats = subCatsSnap.exists() ? subCatsSnap.data().data || [] : [];
+  _subCats = rawSubCats.map((c) => (typeof c === 'object' ? c.name || c.id || String(c) : String(c))).filter(Boolean);
   _languages = languagesSnap.exists() ? languagesSnap.data().data || [] : [];
   _storeCodes = stockSnap.docs.map((d) => d.id).sort();
   _badgeTemplates = badgeTemplatesSnap.exists() ? badgeTemplatesSnap.data().data || [] : [];
@@ -113,6 +123,10 @@ export function getCats() {
   return _cats.length ? _cats : DEFAULT_CATS;
 }
 
+export function getSubCats() {
+  return _subCats.length ? _subCats : DEFAULT_SUB_CATS;
+}
+
 export function getBadgeTemplates() {
   return _badgeTemplates.length ? _badgeTemplates : DEFAULT_BADGE_TEMPLATES;
 }
@@ -134,6 +148,18 @@ export async function addCategoryToRegistry(name) {
   const next = [...cats, name];
   _cats = next;
   await setDoc(doc(db, MB, 'categories'), { data: next });
+  return next;
+}
+
+// Same shape/pattern as addCategoryToRegistry above, own Firestore doc —
+// sub-categories are managed the same way as categories on Product
+// Details, just a separate registry since they're a different taxonomy.
+export async function addSubCategoryToRegistry(name) {
+  const subCats = getSubCats();
+  if (subCats.includes(name)) return subCats;
+  const next = [...subCats, name];
+  _subCats = next;
+  await setDoc(doc(db, MB, 'subCategories'), { data: next });
   return next;
 }
 

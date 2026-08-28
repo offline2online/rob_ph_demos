@@ -6,7 +6,7 @@ import AdditionalAttributes from '../../components/AdditionalAttributes.jsx';
 import OptionGroups from '../../components/OptionGroups.jsx';
 import OfferBanner from '../../components/OfferBanner.jsx';
 import TargetingBuilder, { CATEGORIES as TARGETING_CATEGORIES } from '../../components/TargetingBuilder.jsx';
-import { getCats, getTypes, getBrands, getBrandById, addCategoryToRegistry, getLanguages, getKnownIngredients } from '../../data/registries.js';
+import { getCats, getSubCats, getTypes, getBrands, getBrandById, addCategoryToRegistry, addSubCategoryToRegistry, getLanguages, getKnownIngredients } from '../../data/registries.js';
 
 // Store / Location Data only — a product's distribution is about which
 // stores carry it, not who's standing in front of one, so Visitor /
@@ -60,6 +60,8 @@ function AiButton({ children, icon = 'auto_awesome', ...rest }) {
 export default function ProductDetailsTab({ draft, patch, onGoPricing }) {
   const [newCat, setNewCat] = useState('');
   const [addingCat, setAddingCat] = useState(false);
+  const [newSubCat, setNewSubCat] = useState('');
+  const [addingSubCat, setAddingSubCat] = useState(false);
   // Which language's Short/Long description is currently shown — page-
   // local UI state, not persisted itself. English is the one language
   // every product already has real content for (draft.shortDescription/
@@ -83,6 +85,12 @@ export default function ProductDetailsTab({ draft, patch, onGoPricing }) {
     if (draft.category) set.add(draft.category);
     return [...set].sort().map((c) => ({ value: c, label: c }));
   }, [draft.category]);
+
+  const subCatOptions = useMemo(() => {
+    const set = new Set(getSubCats());
+    if (draft.subCategory) set.add(draft.subCategory);
+    return [...set].sort().map((c) => ({ value: c, label: c }));
+  }, [draft.subCategory]);
 
   const types = getTypes();
   const brands = getBrands();
@@ -181,6 +189,15 @@ export default function ProductDetailsTab({ draft, patch, onGoPricing }) {
     patch({ category: name });
     setNewCat('');
     setAddingCat(false);
+  };
+
+  const confirmNewSubCategory = async () => {
+    const name = newSubCat.trim();
+    if (!name) return;
+    await addSubCategoryToRegistry(name);
+    patch({ subCategory: name });
+    setNewSubCat('');
+    setAddingSubCat(false);
   };
 
   const toggleType = (id) => {
@@ -315,19 +332,27 @@ export default function ProductDetailsTab({ draft, patch, onGoPricing }) {
         <div className="ph-sect-label" style={{ marginBottom: 12 }}>
           Descriptions
         </div>
-        <div style={{ marginBottom: 14, display: 'flex', gap: 10, alignItems: 'flex-end' }}>
-          <div style={{ maxWidth: 280, flex: 1 }}>
-            <Field label="Language" hint="Display name and the descriptions below are all shown for whichever language is selected here.">
-              <Select
-                value={descLang}
-                onChange={setDescLang}
-                options={addedLanguages.map((l) => ({ value: l.code, label: l.name }))}
-              />
-            </Field>
+        <div style={{ marginBottom: 14 }}>
+          <label style={{ fontSize: 13, color: 'rgba(0,0,0,.65)', marginBottom: 6, display: 'block' }}>Language</label>
+          <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+            {/* Fixed width sized to the longest language name in the registry
+                ("British Sign Language") rather than stretching to fill the
+                row — matches the compact width other selects on this page
+                (e.g. Sub-category) use, instead of ballooning just because
+                it happened to share a flex row with the AI button. */}
+            <Select
+              value={descLang}
+              onChange={setDescLang}
+              style={{ width: 230 }}
+              options={addedLanguages.map((l) => ({ value: l.code, label: l.name }))}
+            />
+            <AiButton onClick={openAddLanguage} disabled={availableToAddLanguages.length === 0}>
+              Add New Language
+            </AiButton>
           </div>
-          <AiButton onClick={openAddLanguage} disabled={availableToAddLanguages.length === 0}>
-            Add New Language
-          </AiButton>
+          <p style={{ fontSize: 12, color: 'rgba(0,0,0,.45)', marginTop: 5 }}>
+            Display name and the descriptions below are all shown for whichever language is selected here.
+          </p>
         </div>
         <div style={{ marginBottom: 14 }}>
           <Field label="Display name" hint="Short board-safe name for menu boards.">
@@ -412,7 +437,40 @@ export default function ProductDetailsTab({ draft, patch, onGoPricing }) {
             />
           </Field>
           <Field label="Sub-category">
-            <Input value={draft.subCategory} onChange={(e) => patch({ subCategory: e.target.value })} placeholder="e.g. Analgesics" />
+            <Select
+              value={draft.subCategory || undefined}
+              onChange={(v) => patch({ subCategory: v })}
+              options={subCatOptions}
+              showSearch
+              allowClear
+              placeholder="Select sub-category"
+              dropdownRender={(menu) => (
+                <>
+                  {menu}
+                  <div style={{ padding: 8, borderTop: '1px solid #f0f0f0' }}>
+                    {addingSubCat ? (
+                      <div style={{ display: 'flex', gap: 6 }}>
+                        <Input
+                          size="small"
+                          autoFocus
+                          value={newSubCat}
+                          onChange={(e) => setNewSubCat(e.target.value)}
+                          onKeyDown={(e) => e.key === 'Enter' && confirmNewSubCategory()}
+                          placeholder="New sub-category name…"
+                        />
+                        <Button size="small" type="primary" onClick={confirmNewSubCategory}>
+                          Add
+                        </Button>
+                      </div>
+                    ) : (
+                      <Button type="text" size="small" onClick={() => setAddingSubCat(true)} icon={<MaterialIcon name="add" style={{ fontSize: 14 }} />}>
+                        Add new sub-category
+                      </Button>
+                    )}
+                  </div>
+                </>
+              )}
+            />
           </Field>
         </div>
 
