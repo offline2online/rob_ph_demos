@@ -3024,14 +3024,18 @@ function initGrids() {
             // "the" price.
             const localStores = getStoresWithLocalOffer(item.sku);
             const targetedOffers = _getTargetedOffers(item);
+            const recurringOffers = _getRecurringOffers(item);
             const wrap = document.createElement('div');
-            // flex-start (not center) so the price always sits at the top
-            // of the cell with pills stacking tight underneath it — with
-            // center, a row with only one or two pills (out of the three
-            // possible: Local offer/Targeted/Recurring) floated the whole
-            // block toward the middle of the fixed 99px row height, pushing
-            // the price down and opening up a gap above the last pill.
-            wrap.style.cssText = 'display:flex;flex-direction:column;justify-content:flex-start;gap:3px;height:100%;padding:4px 0;cursor:pointer;';
+            // Center when the price is the only thing in the cell — with
+            // no pills, there's nothing to top-align against and a plain
+            // price should sit in the middle of the row like every other
+            // column. Once there's at least one pill (out of the three
+            // possible: Local offer/Targeted/Recurring), switch to
+            // flex-start instead: centering the whole flex-column block
+            // there pushes the price down and opens an inconsistent gap
+            // above the last pill on rows with only one or two of them.
+            const hasPills = localStores.length || targetedOffers.length || recurringOffers.length;
+            wrap.style.cssText = `display:flex;flex-direction:column;justify-content:${hasPills ? 'flex-start' : 'center'};gap:3px;height:100%;padding:4px 0;cursor:pointer;`;
             wrap.title = 'Click to view pricing';
             wrap.addEventListener('click', () => {
               location.href = 'product/#/products/' + item.id + '/pricing';
@@ -3069,7 +3073,6 @@ function initGrids() {
               });
               wrap.appendChild(pill);
             }
-            const recurringOffers = _getRecurringOffers(item);
             if (recurringOffers.length) {
               const pill = document.createElement('span');
               pill.textContent = recurringOffers.length === 1 ? 'Recurring' : `Recurring ×${recurringOffers.length}`;
@@ -3360,6 +3363,40 @@ function clearItemsSelection() {
   updateItemsSelectionBar();
 }
 
+// Same threshold/shape as retail-admin.html's own
+// _updateIngredientsColumnVisibility — below this width the column is
+// dropped rather than squeezed, same call this grid already makes when a
+// brand simply has no ingredients data at all (see below).
+const INGREDIENTS_COLUMN_MIN_WIDTH = 900;
+function _updateItemsIngredientsColumnVisibility() {
+  if (!itemsGridApi) return;
+  const items = getItems();
+  const show = items.some(i => Array.isArray(i.ingredients) && i.ingredients.length > 0) && window.innerWidth >= INGREDIENTS_COLUMN_MIN_WIDTH;
+  itemsGridApi.setColumnsVisible(['ingredients'], show);
+  // AG Grid doesn't reliably invoke a column's cellRenderer the instant it
+  // flips from hidden to visible via setColumnsVisible alone — cells can
+  // render blank until forced. Cheap and harmless when already visible.
+  setTimeout(() => itemsGridApi?.refreshCells({ columns: ['ingredients'], force: true }), 0);
+}
+
+// Resizing the browser/iframe — e.g. the parent platform's own sidebar
+// toggling between icon-rail and full width, which changes how much room
+// this frame actually gets — should re-fit both grids to the new width,
+// same as retail-admin.html's Stock grid. Without this, a grid keeps its
+// stale column widths after the page has already loaded and grows an
+// internal horizontal scrollbar (the Actions column becomes unreachable
+// without scrolling right) instead of reflowing to fit. Debounced since
+// 'resize' fires continuously while dragging/rotating.
+let _hqResizeDebounce = null;
+window.addEventListener('resize', () => {
+  clearTimeout(_hqResizeDebounce);
+  _hqResizeDebounce = setTimeout(() => {
+    _updateItemsIngredientsColumnVisibility();
+    itemsGridApi && itemsGridApi.sizeColumnsToFit();
+    brandsGridApi && brandsGridApi.sizeColumnsToFit();
+  }, 150);
+});
+
 // ===== ITEMS =====
 function renderItems() {
   const items = getItems();
@@ -3369,11 +3406,7 @@ function renderItems() {
   }
   const fm = itemsGridApi.getFilterModel();
   itemsGridApi.setGridOption('rowData', items);
-  itemsGridApi.setColumnsVisible(['ingredients'], items.some(i => Array.isArray(i.ingredients) && i.ingredients.length > 0));
-  // AG Grid doesn't reliably invoke a column's cellRenderer the instant it
-  // flips from hidden to visible via setColumnsVisible alone — cells can
-  // render blank until forced. Cheap and harmless when already visible.
-  setTimeout(() => itemsGridApi?.refreshCells({ columns: ['ingredients'], force: true }), 0);
+  _updateItemsIngredientsColumnVisibility();
   // setGridOption('rowData', ...) doesn't re-apply the existing column sort
   // model to the new rows on its own, so the Brand column's default
   // asc-by-name sort (see initGrids) would otherwise only take effect after
