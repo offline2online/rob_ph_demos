@@ -202,8 +202,12 @@
     /* Category section label — kept for colour-scheme compatibility but hidden */
     .cat-header { display: none; }
 
-    /* Category badge — bottom-right of each card */
+    /* Category badge — floats over the top-right corner of each card's photo */
     .item-cat-badge {
+      position: absolute;
+      top: clamp(8px, 1vw, 16px);
+      right: clamp(8px, 1vw, 16px);
+      z-index: 2;
       display: inline-block;
       background: var(--accent, var(--green));
       color: #fff;
@@ -217,7 +221,6 @@
       max-width: 55%;
       overflow: hidden;
       text-overflow: ellipsis;
-      flex-shrink: 0;
     }
 
     /* Card grid — column count/row tracks are set per-page from JS (dynStyle) */
@@ -325,56 +328,42 @@
       line-height: 1;
     }
 
-    /* Calorie/nutrition info — required at point of choice by the UK
+    /* Calorie/kilojoule info — required at point of choice by the UK
        Calorie Labelling (Out of Home Sector) Regulations 2021 for large
        businesses: kcal per portion as sold, shown clearly alongside the
        name/price, plus a "2000 kcal a day" reference statement somewhere
-       on the board (see .kcal-disclaimer). Fat/carbs/protein aren't
-       legally required but render too, smaller, when present. */
+       on the board (see .kcal-disclaimer). kJ is derived from kcal at
+       render time (buildNutrition()), never stored. A product with a
+       Servings count above 1 (a shareable bucket/banquet) gets a second
+       "Per person" line; everything else is just the one total line.
+       Always right-aligned via margin-left:auto — every placement (the
+       standard tile's footer, the hero/promo-tile bottom bar) is a wider
+       flex row this block sits at the right-hand end of. */
     .nutrition-block {
       display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 1px;
+      margin-left: auto;
+    }
+    .nutr-row-line {
+      display: flex;
       align-items: baseline;
-      flex-wrap: wrap;
-      column-gap: clamp(8px, 1vw, 14px);
-      row-gap: 2px;
-      margin-top: clamp(3px, 0.5vw, 8px);
+      gap: clamp(6px, 0.8vw, 12px);
+      white-space: nowrap;
     }
-    .nutr-calories .nutr-val {
-      font-size: clamp(11px, 1.15vw, 16px);
-      font-weight: 800;
-      color: var(--text);
-    }
-    .nutr-calories .nutr-unit {
+    .nutr-label {
       font-size: clamp(8px, 0.75vw, 11px);
       font-weight: 700;
       color: var(--text2);
       text-transform: uppercase;
       letter-spacing: 0.3px;
     }
-    /* "per <serving>" — the portion the calorie figure above is for, e.g.
-       "per burger" or "per 10 pieces". Lower-case, no bold, sits right
-       after the CALORIES unit rather than on its own row, since it's a
-       qualifier on that number rather than a separate stat. */
-    .nutr-calories .nutr-serving {
-      font-size: clamp(7px, 0.65vw, 10px);
-      font-weight: 500;
-      font-style: italic;
-      color: var(--text2);
-      opacity: 0.85;
-      margin-left: 2px;
+    .nutr-values {
+      font-size: clamp(10px, 1vw, 14px);
+      font-weight: 800;
+      color: var(--text);
     }
-    .nutr-macros-row {
-      display: flex;
-      flex-wrap: wrap;
-      column-gap: clamp(6px, 0.7vw, 10px);
-    }
-    .nutr-row {
-      font-size: clamp(8px, 0.7vw, 10.5px);
-      color: var(--text2);
-      white-space: nowrap;
-    }
-    .nutr-row .nutr-val { font-weight: 700; color: var(--text); }
-    .nutr-row .nutr-unit { margin-left: 1px; }
 
     /* Regulatory reference statement — required wherever calorie
        information is shown on the board, not per item. A slim, always-
@@ -415,9 +404,7 @@
          can place this either right before the price (needs space below,
          before the price row) or in its usual spot after it (needs space
          above, from whatever precedes it) — the badge should sit DIRECTLY
-         against the price either way, not float off it. Matches
-         .nutrition-block's own margin-top scale just below, so the gap
-         reads as consistently "tight" throughout this text column. */
+         against the price either way, not float off it. */
       margin-top: clamp(3px, 0.5vw, 8px);
       margin-bottom: clamp(3px, 0.5vw, 8px);
       padding: clamp(4px, 0.5vw, 8px) clamp(10px, 1.2vw, 18px);
@@ -430,7 +417,7 @@
     }
     /* .promo-hero-top and .promo-text are flex columns with their own
        `gap` already spacing every child consistently (title, price,
-       nutrition, notes) — gap and margin don't collapse into each other,
+       notes) — gap and margin don't collapse into each other,
        so the note's own margin above was ADDING to that gap instead of
        being absorbed by it, on top of the flex-column's spacing every
        other child already gets "for free". Zero it out here so the badge
@@ -659,12 +646,20 @@
         0 0 16px rgba(255,255,255,0.75), 0 0 16px rgba(255,255,255,0.75);
       font-size: clamp(31px, 4.8vw, 74px);
     }
+    /* Bottom bar splits left (description, ≤50% width) from right (calorie/
+       kilojoule info) — nutrition-block's own margin-left:auto hugs it to
+       the right edge regardless of whether the description column exists. */
     .promo-hero-bottom {
       position: absolute;
       left: 0; right: 0; bottom: 0;
       padding: clamp(12px, 1.8vw, 26px);
       background: linear-gradient(to top, rgba(255,255,255,0.92) 0%, rgba(255,255,255,0.7) 65%, rgba(255,255,255,0) 100%);
-      text-align: center;
+      display: flex;
+      align-items: flex-end;
+      gap: clamp(10px, 1.5vw, 24px);
+    }
+    .promo-hero-desc-col {
+      max-width: 50%;
     }
     .promo-hero-desc {
       font-style: italic;
@@ -755,15 +750,21 @@
       font-size: clamp(28px, 4vw, 56px);
       opacity: .3;
     }
-    /* Description runs the full width of the tile, overlaid across both the
-       text column and the photo — same type size as the primary tile's
-       description, on its own scrim so it stays legible over the image. */
+    /* Bottom bar runs the full width of the tile, overlaid across both the
+       text column and the photo — description on the left (≤50% width),
+       calorie/kilojoule info hugging the right edge (nutrition-block's own
+       margin-left:auto), same split as the hero panel's own bottom bar. */
     .promo-tile-desc {
       position: absolute;
       left: 0; right: 0; bottom: 0;
       padding: clamp(10px, 1.4vw, 22px);
       background: linear-gradient(to top, rgba(255,255,255,0.92) 0%, rgba(255,255,255,0.6) 70%, rgba(255,255,255,0) 100%);
-      text-align: center;
+      display: flex;
+      align-items: flex-end;
+      gap: clamp(8px, 1.2vw, 18px);
+    }
+    .promo-desc-col {
+      max-width: 50%;
     }
     .promo-tile-desc .promo-desc {
       font-style: italic;
@@ -1388,42 +1389,27 @@ function updateClock() {
 // choice. The full breakdown (fat/carbs/protein) isn't legally required
 // and only renders in roomier contexts (the Feature Hero Spotlight panel)
 // to avoid squeezing the product photo down to nothing.
-function buildNutrition(item, compact) {
-  const hasCal  = item.calories != null;
-  const hasFat  = !compact && item.fat     != null;
-  const hasCarb = !compact && item.carbs   != null;
-  const hasProt = !compact && item.protein != null;
+function buildNutrition(item) {
+  if (item.calories == null) return '';
+  const kcalTotal = Math.round(item.calories);
+  // kJ isn't captured directly — UK packaging derives it from kcal via the
+  // standard kcal-to-kJ conversion factor (4.184) whenever only kcal is
+  // measured, so this does the same rather than storing a second figure
+  // that would just have to be kept in sync with the first.
+  const kjTotal = Math.round(kcalTotal * 4.184);
+  const servings = parseFloat(item.servings);
 
-  if (!hasCal && !hasFat && !hasCarb && !hasProt) return '';
-
-  let html = '<div class="nutrition-block">';
-
-  if (hasCal) {
-    // Lower-case the leading word ("Whole banquet" -> "whole banquet") so it
-    // reads as a continuation of "per " rather than its own sentence — a
-    // leading number ("10 pieces") is unaffected since there's no letter to touch.
-    const servingText = item.servingSize ? item.servingSize.replace(/^[A-Z]/, (c) => c.toLowerCase()) : '';
-    const servingHtml = servingText
-      ? `<span class="nutr-serving">per ${esc(servingText)}</span>`
-      : '';
-    html += `<div class="nutr-calories">
-      <span class="nutr-val">${item.calories}</span>
-      <span class="nutr-unit">&nbsp;Calories</span>
-      ${servingHtml}
+  if (servings > 1) {
+    const kcalPerson = Math.round(kcalTotal / servings);
+    const kjPerson = Math.round(kcalPerson * 4.184);
+    return `<div class="nutrition-block">
+      <div class="nutr-row-line"><span class="nutr-label">Serves ${servings}</span><span class="nutr-values">${kjTotal}kJ&nbsp;/&nbsp;${kcalTotal}kcal</span></div>
+      <div class="nutr-row-line"><span class="nutr-label">Per person</span><span class="nutr-values">${kjPerson}kJ&nbsp;/&nbsp;${kcalPerson}kcal</span></div>
     </div>`;
   }
-
-  const macros = [];
-  if (hasFat)  macros.push(`<span class="nutr-val">${item.fat}</span><span class="nutr-unit">g&nbsp;Fat</span>`);
-  if (hasCarb) macros.push(`<span class="nutr-val">${item.carbs}</span><span class="nutr-unit">g&nbsp;Carbs</span>`);
-  if (hasProt) macros.push(`<span class="nutr-val">${item.protein}</span><span class="nutr-unit">g&nbsp;Prot</span>`);
-
-  if (macros.length) {
-    html += `<div class="nutr-macros-row">${macros.map(m => `<div class="nutr-row">${m}</div>`).join('')}</div>`;
-  }
-
-  html += '</div>';
-  return html;
+  return `<div class="nutrition-block">
+    <div class="nutr-row-line"><span class="nutr-values">${kjTotal}kJ&nbsp;/&nbsp;${kcalTotal}kcal</span></div>
+  </div>`;
 }
 
 // ── ROTATION STATE ───────────────────────────────────────────────────────────
@@ -2353,8 +2339,10 @@ function _renderUnsafe() {
   // ── BODY ────────────────────────────────────────────────────────────────────
   let bodyHtml = '';
 
-  // Helper to render a standard item card — full-width hero photo on top,
-  // name + description below, divider, then price and category badge.
+  // Helper to render a standard item card — full-width hero photo on top
+  // with the category badge floating over its top-right corner, then name
+  // + description below, divider, then a footer with price on the left and
+  // calorie/kilojoule info on the right.
   function _itemCell(item) {
     const oos = isOos(item.sku);
     const cat = item.category || '';
@@ -2372,7 +2360,10 @@ function _renderUnsafe() {
     ]);
     return `
       <div class="item-cell${oos ? ' oos-cell' : ''}">
-        <div class="item-thumb">${thumbInner}</div>
+        <div class="item-thumb">
+          ${thumbInner}
+          ${cat ? `<span class="item-cat-badge">${esc(cat)}</span>` : ''}
+        </div>
         <div class="item-body">
           <div class="item-name">${esc(item.name)}</div>
           ${desc}
@@ -2380,10 +2371,9 @@ function _renderUnsafe() {
           ${notesAbove}
           <div class="item-footer">
             <span class="item-price">${priceHtml(item, currency, 'price-was')}</span>
-            ${cat ? `<span class="item-cat-badge">${esc(cat)}</span>` : ''}
+            ${buildNutrition(item)}
           </div>
           ${notesBelow}
-          ${buildNutrition(item, true)}
         </div>
         <div class="oos-overlay"><div class="oos-stamp"><div class="oos-stamp-text">SOLD OUT</div></div></div>
       </div>`;
@@ -2534,15 +2524,22 @@ function _renderUnsafe() {
           ${heroNotesAbove}
           <div class="promo-hero-price">${priceHtml(heroItem, currency, 'price-was')}</div>
           ${heroNotesBelow}
-          ${buildNutrition(heroItem)}
         </div>`;
-      const heroBottomHtml = heroItem.description
-        ? `<div class="promo-hero-bottom"><div class="promo-hero-desc">${esc(heroItem.description)}</div></div>`
+      // Bottom bar: description on the left (≤50% width via CSS),
+      // calorie/kilojoule info hugging the right edge — nutrition-block's
+      // own margin-left:auto positions it regardless of whether the
+      // description column is present.
+      const heroDescHtml = heroItem.description
+        ? `<div class="promo-hero-desc-col"><div class="promo-hero-desc">${esc(heroItem.description)}</div></div>` : '';
+      const heroNutrHtml = buildNutrition(heroItem);
+      const heroBottomHtml = (heroDescHtml || heroNutrHtml)
+        ? `<div class="promo-hero-bottom">${heroDescHtml}${heroNutrHtml}</div>`
         : '';
 
       // Build promo tiles — striped accent bar, category/title/price in the
-      // text column, description overlaid across the full width of the tile
-      // (text column + photo) at the bottom.
+      // text column, then a bottom bar overlaid across the full width of
+      // the tile (text column + photo) with description on the left
+      // (≤50% width) and calorie/kilojoule info hugging the right edge.
       const promoTilesHtml = promoPage.map(item => {
         // The "small panel" — always the image, never the video, even if
         // this item's default/targeted video would otherwise apply.
@@ -2550,8 +2547,11 @@ function _renderUnsafe() {
         const img = src
           ? _mediaTag(src, item.name, 'promo-img-placeholder', '🍽️')
           : `<div class="promo-img-placeholder">🍽️</div>`;
-        const desc = item.description
-          ? `<div class="promo-tile-desc"><div class="promo-desc">${esc(item.description)}</div></div>` : '';
+        const descHtml = item.description
+          ? `<div class="promo-desc-col"><div class="promo-desc">${esc(item.description)}</div></div>` : '';
+        const nutrHtml = buildNutrition(item);
+        const bottomHtml = (descHtml || nutrHtml)
+          ? `<div class="promo-tile-desc">${descHtml}${nutrHtml}</div>` : '';
         const cat = item.category ? `<div class="promo-cat">${esc(item.category)}</div>` : '';
         const menuNote = shouldShowMenuNote(item) ? `<div class="menu-board-note" style="${menuNoteStyleAttr(item)}">${esc(item.showOnMenuBoard)}</div>` : '';
         const locationNote = locationBadgeHtml(item);
@@ -2568,10 +2568,9 @@ function _renderUnsafe() {
               ${tileNotesAbove}
               <div class="promo-price">${priceHtml(item, currency, 'price-was')}</div>
               ${tileNotesBelow}
-              ${buildNutrition(item, true)}
             </div>
             <div class="promo-img-wrap">${img}</div>
-            ${desc}
+            ${bottomHtml}
           </div>`;
       }).join('');
 

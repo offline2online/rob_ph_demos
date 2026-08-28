@@ -200,8 +200,13 @@ export function toItemDoc(product) {
     const row = (product.attributes || []).find((r) => r.label === label);
     return row && row.value !== '' ? parseFloat(row.value) : null;
   };
-  const servingSizeRow = (product.attributes || []).find((r) => r.label === 'Serving Size');
-  const servingSize = servingSizeRow && servingSizeRow.value !== '' ? servingSizeRow.value : null;
+  // Servings — how many people the pack feeds, e.g. a shared bucket — is
+  // the only other nutrition figure menu-board.html reads (buildNutrition()
+  // uses it to derive a "Serves N / Per person" split; kJ is calculated
+  // from kcal at render time, never stored). Fat/Carbs/Protein/Serving
+  // Size used to be derived here too but aren't shown anywhere anymore.
+  const servingsRow = (product.attributes || []).find((r) => r.label === 'Servings');
+  const servings = servingsRow && servingsRow.value !== '' ? parseFloat(servingsRow.value) : null;
 
   const addExtras = (product.optionGroups || []).find((g) => g.name === 'Add extras');
   const removeGroup = (product.optionGroups || []).find((g) => g.name === 'Remove');
@@ -258,10 +263,7 @@ export function toItemDoc(product) {
         .map(({ src, ...meta }) => meta);
     })(),
     calories: nutritionVal('Calories'),
-    fat: nutritionVal('Fat'),
-    carbs: nutritionVal('Carbs'),
-    protein: nutritionVal('Protein'),
-    servingSize,
+    servings,
     ingredients: ingredientNames,
     'gs1:recipeIngredient': ingredientNames.map((n) => ({ '@type': 'Product', productName: n })),
     'gs1:customizationOptions': gs1CustOpts,
