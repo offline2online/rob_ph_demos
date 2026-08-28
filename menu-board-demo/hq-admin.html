@@ -754,6 +754,16 @@
             <div id="brandsGrid" class="ag-theme-alpine" style="width:100%;height:500px;"></div>
           </div>
 
+          <div class="settings-section" id="settingsSection-menuTypes">
+            <h3>Menu Types</h3>
+            <p class="settings-desc">Define the menu-type tags available when tagging a product — Breakfast, Lunch, Dinner, Drinks and Meal Deals by default. Shown as coloured pills in the product table on both HQ Admin and Retail Admin, and selected per product on its Product Details page.</p>
+            <div class="bt-list" id="mtList"></div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+              <button class="btn btn-ghost btn-sm" onclick="addMenuType()"><span class="material-symbols-outlined" style="font-size:14px;">add</span> Add Menu Type</button>
+              <button class="btn btn-primary btn-sm" id="mtSaveBtn" onclick="saveMenuTypesUI()" disabled>Save Changes</button>
+            </div>
+          </div>
+
           <div class="settings-section" id="settingsSection-badgeTemplates">
             <h3>Menu Board Badge Templates</h3>
             <p class="settings-desc">Define reusable badge/button styles once — a name, size, text case, corner radius, colours, and a background/border that can be set independently — then pick one for a product's "Show on Menu Board" copy. Offers and store-level copy for that product always use the same template.</p>
@@ -1272,11 +1282,11 @@ const STOCK_COLL = 'stock';
 const STORE_PRICING_COLL = 'storePricing';
 
 const DEFAULT_TYPES = [
-  { id: 'breakfast', label: 'Breakfast',        color: '#f59e0b' },
-  { id: 'lunch',     label: 'Lunch',             color: '#16a34a' },
-  { id: 'dinner',    label: 'Dinner',            color: '#7c3aed' },
-  { id: 'drinks',    label: 'Drinks',            color: '#2563eb' },
-  { id: 'specials',  label: "Today's Specials",  color: '#e11d48' }
+  { id: 'breakfast', label: 'Breakfast',   color: '#f59e0b' },
+  { id: 'lunch',     label: 'Lunch',       color: '#16a34a' },
+  { id: 'dinner',    label: 'Dinner',      color: '#7c3aed' },
+  { id: 'drinks',    label: 'Drinks',      color: '#2563eb' },
+  { id: 'specials',  label: 'Meal Deals',  color: '#e11d48' }
 ];
 
 const DEFAULT_CATS = ['Mains','Starters','Sides','Desserts','Hot Drinks','Cold Drinks','Cocktails','Wines','Beers','Sandwiches','Salads','Pasta','Burgers'];
@@ -1732,6 +1742,95 @@ function badgeTemplatePreviewStyle(t) {
   const hasBorder = !!t.borderWidth && t.borderWidth !== 'none';
   const border = hasBorder ? `${BT_BORDER_PX[t.borderWidth] || '1px'} solid ${t.borderColor || color}` : 'none';
   return `font-size:${size.font};padding:${size.pad};border-radius:${radius};background:${bg};color:${color};border:${border};text-transform:${t.uppercase ? 'uppercase' : 'none'};`;
+}
+
+// ── MENU TYPES (Settings) ────────────────────────────────────────────────
+// Same list/edit/save shape as the Badge Templates editor just below —
+// reuses its .bt-list/.bt-row/.bt-color-input CSS directly rather than
+// inventing a parallel set of classes for what's structurally the same
+// "list of named, coloured things" pattern.
+function renderMenuTypes() {
+  const list = document.getElementById('mtList');
+  if (!list) return;
+  const types = getTypes();
+  if (types.length === 0) {
+    list.innerHTML = '<p style="font-size:12px;color:var(--text2);padding:4px 0;">No menu types yet — click “Add Menu Type” to create your first one.</p>';
+    return;
+  }
+  list.innerHTML = types.map((t, i) => `
+    <div class="bt-row" id="mtRow${i}">
+      <div class="form-group" style="width:200px;">
+        <label>Label</label>
+        <input type="text" id="mtLabel${i}" value="${escHtml(t.label)}" placeholder="e.g. Breakfast" oninput="updateMenuTypeField(${i},'label',this.value)">
+      </div>
+      <div class="form-group" style="width:64px;">
+        <label>Colour</label>
+        <input type="color" class="bt-color-input" id="mtColor${i}" value="${t.color || '#64748b'}" oninput="updateMenuTypeField(${i},'color',this.value)">
+      </div>
+      <div class="form-group" style="min-width:150px;flex:1;">
+        <label>Preview</label>
+        <span id="mtPreview${i}" style="${menuTypePreviewStyle(t)}">${escHtml(t.label || 'Preview')}</span>
+      </div>
+      <button class="btn btn-sm" style="background:rgba(220,38,38,0.08);color:var(--danger);border:1px solid rgba(220,38,38,0.2);" onclick="removeMenuType(${i})" title="Delete menu type"><span class="material-symbols-outlined" style="font-size:14px;">close</span></button>
+    </div>`).join('');
+}
+
+function menuTypePreviewStyle(t) {
+  const color = t.color || '#64748b';
+  return `display:inline-flex;align-items:center;line-height:1;padding:3px 5px 2px;border-radius:10px;border:1px solid ${color};font-size:8px;font-weight:700;text-transform:uppercase;letter-spacing:0.3px;white-space:nowrap;color:${color};background:transparent;`;
+}
+
+// getTypes() falls back to the shared DEFAULT_TYPES constant while _types
+// is still empty (nothing saved yet) — the first edit of any kind must
+// detach into an independent copy in _types, not mutate that shared
+// constant in place. Existing ids are never re-slugged from their label —
+// changing an id after products have already been tagged with it would
+// silently orphan those tags.
+function _detachMenuTypesForEditing() {
+  if (_types.length === 0) _types = getTypes().map(t => ({ ...t }));
+}
+
+function updateMenuTypeField(i, field, value) {
+  _detachMenuTypesForEditing();
+  if (!_types[i]) return;
+  _types[i][field] = value;
+  const preview = document.getElementById(`mtPreview${i}`);
+  if (preview) {
+    preview.setAttribute('style', menuTypePreviewStyle(_types[i]));
+    preview.textContent = _types[i].label || 'Preview';
+  }
+  if (_mtSave) _mtSave.markDirty();
+}
+
+function addMenuType() {
+  _detachMenuTypesForEditing();
+  _types.push({ id: genId(), label: '', color: '#64748b' });
+  renderMenuTypes();
+  const idx = _types.length - 1;
+  document.getElementById(`mtLabel${idx}`)?.focus();
+  if (_mtSave) _mtSave.markDirty();
+}
+
+function removeMenuType(i) {
+  _detachMenuTypesForEditing();
+  _types.splice(i, 1);
+  renderMenuTypes();
+  if (_mtSave) _mtSave.markDirty();
+}
+
+function saveMenuTypesUI() {
+  const named = _types.filter(t => (t.label || '').trim() !== '');
+  if (named.length !== _types.length) {
+    toast('Every menu type needs a label before saving', 'error');
+    return;
+  }
+  setDoc(doc(db, MB, 'types'), { data: _types })
+    .then(() => {
+      toast('Menu types saved', 'success');
+      if (_mtSave) _mtSave.reset();
+      if (itemsGridApi) itemsGridApi.refreshCells({ columns: ['menuTypes'], force: true });
+    })
+    .catch(err => toast('Failed to save: ' + (err.message || err), 'error'));
 }
 
 function renderBadgeTemplates() {
@@ -3132,7 +3231,7 @@ function initGrids() {
           valueFormatter: (params) => String(params.value || '')
         },
         {
-          headerName: 'Types', field: 'menuTypes', flex: 1.5, minWidth: 140,
+          headerName: 'Menu Types', field: 'menuTypes', flex: 1.5, minWidth: 140,
           cellStyle: { display: 'flex', alignItems: 'center' },
           sortable: false,
           autoHeight: true,
@@ -3751,7 +3850,7 @@ function _makeSaveBtn(btnId) {
   };
 }
 // Initialised once DOM is ready (at end of script)
-let _brandSave, _tplSave, _stockApiSave, _phApiSave, _btSave;
+let _brandSave, _tplSave, _stockApiSave, _phApiSave, _btSave, _mtSave;
 
 function openAddBrandModal() {
   document.getElementById('brandModalTitle').textContent = 'Add Brand / Supplier';
@@ -5581,6 +5680,9 @@ onSnapshot(doc(db, MB, 'brands'), snap => {
 
 onSnapshot(doc(db, MB, 'types'), snap => {
   if (snap.exists() && snap.data().data) _types = snap.data().data;
+  renderMenuTypes();
+  if (_mtSave) _mtSave.reset();
+  if (itemsGridApi) itemsGridApi.refreshCells({ columns: ['menuTypes'], force: true });
 });
 
 onSnapshot(doc(db, MB, 'languages'), snap => {
@@ -5637,6 +5739,7 @@ _tplSave      = _makeSaveBtn('tplSaveBtn');
 _stockApiSave = _makeSaveBtn('stockApiSaveBtn');
 _phApiSave    = _makeSaveBtn('phApiSaveBtn');
 _btSave       = _makeSaveBtn('btSaveBtn');
+_mtSave       = _makeSaveBtn('mtSaveBtn');
 
 // Event delegation: any input/change inside the form containers marks the button dirty
 document.getElementById('brandPane-settings')
@@ -5674,6 +5777,10 @@ window.updateBadgeTemplateField = updateBadgeTemplateField;
 window.addBadgeTemplate    = addBadgeTemplate;
 window.removeBadgeTemplate = removeBadgeTemplate;
 window.saveBadgeTemplates  = saveBadgeTemplates;
+window.updateMenuTypeField = updateMenuTypeField;
+window.addMenuType         = addMenuType;
+window.removeMenuType      = removeMenuType;
+window.saveMenuTypesUI     = saveMenuTypesUI;
 </script>
 </body>
 </html>

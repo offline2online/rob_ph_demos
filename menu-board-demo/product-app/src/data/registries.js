@@ -9,7 +9,7 @@ export const DEFAULT_TYPES = [
   { id: 'lunch', label: 'Lunch', color: '#16a34a' },
   { id: 'dinner', label: 'Dinner', color: '#7c3aed' },
   { id: 'drinks', label: 'Drinks', color: '#2563eb' },
-  { id: 'specials', label: "Today's Specials", color: '#e11d48' },
+  { id: 'specials', label: 'Meal Deals', color: '#e11d48' },
 ];
 
 export const DEFAULT_CATS = [

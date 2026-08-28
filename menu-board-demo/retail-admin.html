@@ -862,13 +862,25 @@ const STOCK_COLL = 'stock';
 const LOCAL_FEATURED_COLL = 'localFeatured';
 const STORE_PRICING_COLL = 'storePricing';
 
-const MENU_TYPES = [
-  { id: 'breakfast', label: 'Breakfast', emoji: 'wb_twilight', color: '#f59e0b' },
-  { id: 'lunch', label: 'Lunch', emoji: 'wb_sunny', color: '#16a34a' },
-  { id: 'dinner', label: 'Dinner', emoji: 'bedtime', color: '#7c3aed' },
-  { id: 'drinks', label: 'Drinks', emoji: 'local_cafe', color: '#2563eb' },
-  { id: 'specials', label: "Today's Specials", emoji: 'star', color: '#e11d48' }
+// Same fallback defaults/shape as hq-admin.html's DEFAULT_TYPES — that
+// file is where these are authored (Settings → Menu Types), this one only
+// reads them via the 'types' onSnapshot listener below. `emoji` is a
+// decorative, retail-only touch with no equivalent in hq-admin.html's
+// data — looked up locally by id below, not stored on the type itself, so
+// a custom type someone adds in HQ Admin still renders (with a generic
+// fallback icon) instead of being silently dropped for having no emoji.
+const DEFAULT_TYPES = [
+  { id: 'breakfast', label: 'Breakfast', color: '#f59e0b' },
+  { id: 'lunch',     label: 'Lunch',     color: '#16a34a' },
+  { id: 'dinner',    label: 'Dinner',    color: '#7c3aed' },
+  { id: 'drinks',    label: 'Drinks',    color: '#2563eb' },
+  { id: 'specials',  label: 'Meal Deals', color: '#e11d48' },
 ];
+const MENU_TYPE_EMOJI = { breakfast: 'wb_twilight', lunch: 'wb_sunny', dinner: 'bedtime', drinks: 'local_cafe', specials: 'star' };
+const MENU_TYPE_EMOJI_FALLBACK = 'sell';
+let _types = [];
+function getTypes() { return _types.length ? _types : DEFAULT_TYPES; }
+function menuTypeEmoji(id) { return MENU_TYPE_EMOJI[id] || MENU_TYPE_EMOJI_FALLBACK; }
 
 // Parse URL params
 const urlParams = new URLSearchParams(window.location.search);
@@ -949,6 +961,12 @@ onSnapshot(doc(db, MB, 'badgeTemplates'), snap => {
   _badgeTemplates = snap.exists() ? (snap.data().data || []) : [];
   _renderPricingMenuBoardPreview();
 }, _onSnapshotError('Badge templates'));
+
+// Authored in hq-admin.html (Settings → Menu Types) — this page only reads.
+onSnapshot(doc(db, MB, 'types'), snap => {
+  _types = snap.exists() ? (snap.data().data || []) : [];
+  if (storeItemsGridApi) storeItemsGridApi.refreshCells({ columns: ['menuTypes'], force: true });
+}, _onSnapshotError('Menu types'));
 
 onSnapshot(doc(db, MB, 'settings'), snap => {
   _settings = snap.exists() ? snap.data() : { currency: '$' };
@@ -1559,28 +1577,34 @@ function initGrid() {
         filter: CheckboxSetFilter,
         filterParams: {
           itemRenderer: (value) => {
-            const mt = MENU_TYPES.find(m => (m.emoji + ' ' + m.label) === value);
+            const mt = getTypes().find(m => (menuTypeEmoji(m.id) + ' ' + m.label) === value) || getTypes().find(m => m.label === value);
+            const color = mt ? mt.color : '#64748b';
+            const emoji = mt ? menuTypeEmoji(mt.id) : MENU_TYPE_EMOJI_FALLBACK;
             const span = document.createElement('span');
-            if (mt) {
-              span.style.cssText = `display:inline-flex;align-items:center;gap:3px;line-height:1;padding:3px 5px 2px 4px;border-radius:10px;border:1px solid ${mt.color};font-size:8px;font-weight:700;text-transform:uppercase;letter-spacing:0.3px;white-space:nowrap;color:${mt.color};background:transparent;`;
-              span.innerHTML = `<span class="material-symbols-outlined" style="font-size:9px;">${mt.emoji}</span> ${mt.label}`;
-            } else { span.textContent = value; }
+            span.style.cssText = `display:inline-flex;align-items:center;gap:3px;line-height:1;padding:3px 5px 2px 4px;border-radius:10px;border:1px solid ${color};font-size:8px;font-weight:700;text-transform:uppercase;letter-spacing:0.3px;white-space:nowrap;color:${color};background:transparent;`;
+            span.innerHTML = `<span class="material-symbols-outlined" style="font-size:9px;">${emoji}</span> ${mt ? mt.label : value}`;
             return span;
           }
         },
         getFilterValue: (data) => (data.menuTypes || []).map(t => {
-          const mt = MENU_TYPES.find(m => m.id === t);
-          return mt ? mt.emoji + ' ' + mt.label : t;
+          const mt = getTypes().find(m => m.id === t);
+          return mt ? menuTypeEmoji(mt.id) + ' ' + mt.label : t;
         }),
         cellRenderer: (params) => {
           const wrap = document.createElement('div');
           wrap.style.cssText = 'display:flex;gap:3px;flex-wrap:wrap;align-content:center;align-items:center;height:100%;';
           (params.value || []).forEach(t => {
-            const mt = MENU_TYPES.find(m => m.id === t);
-            if (!mt) return;
+            const mt = getTypes().find(m => m.id === t);
+            // A type id with no match (e.g. deleted since this product was
+            // tagged) still renders, with a neutral fallback colour/icon —
+            // never silently dropped, which would make it look like the
+            // tag had quietly vanished from the product.
+            const color = mt ? mt.color : '#64748b';
+            const label = mt ? mt.label : t;
+            const emoji = mt ? menuTypeEmoji(mt.id) : MENU_TYPE_EMOJI_FALLBACK;
             const span = document.createElement('span');
-            span.style.cssText = `display:inline-flex;align-items:center;gap:3px;line-height:1;padding:3px 5px 2px 4px;border-radius:10px;border:1px solid ${mt.color};font-size:8px;font-weight:700;text-transform:uppercase;letter-spacing:0.3px;white-space:nowrap;color:${mt.color};background:transparent;flex-shrink:0;`;
-            span.innerHTML = `<span class="material-symbols-outlined" style="font-size:9px;">${mt.emoji}</span> ${mt.label}`;
+            span.style.cssText = `display:inline-flex;align-items:center;gap:3px;line-height:1;padding:3px 5px 2px 4px;border-radius:10px;border:1px solid ${color};font-size:8px;font-weight:700;text-transform:uppercase;letter-spacing:0.3px;white-space:nowrap;color:${color};background:transparent;flex-shrink:0;`;
+            span.innerHTML = `<span class="material-symbols-outlined" style="font-size:9px;">${emoji}</span> ${label}`;
             wrap.appendChild(span);
           });
           return wrap;
