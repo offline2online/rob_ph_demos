@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Input, Switch, Select, Tag, Modal, Drawer, Button, message } from 'antd';
+import { Input, Switch, Select, Tag, Modal, Button, message } from 'antd';
 import dayjs from 'dayjs';
 import { removeBackground as imglyRemoveBackground, preload as imglyPreload } from '@imgly/background-removal';
 import MaterialIcon from '../../components/MaterialIcon.jsx';
@@ -1113,13 +1113,17 @@ export default function ProductAssetsTab({ draft, baseline, patch }) {
                   <IconAction icon={<MaterialIcon name="delete" />} caption="Delete" row danger tooltipTitle="Delete" tooltipDesc="Removes this asset from the product." onClick={deleteAsset} />
                   <IconAction icon={<MaterialIcon name="cached" />} caption="Replace" row tooltipTitle="Replace" tooltipDesc="Swaps the underlying file; variant label, tags and settings are kept." onClick={openReplace} />
                   <IconAction icon={<MaterialIcon name="content_copy" />} caption="Duplicate" row tooltipTitle="Duplicate" tooltipDesc="Adds a copy of this asset as a new tile — its own id and variant label, never default or targeted." onClick={duplicateAsset} />
-                  {!isVideo && (
+                  {/* Hidden once the panel below is open — verified live
+                      against demo.personalisationhub.com's own Storyboard &
+                      Copy "Request changes": the trigger disappears in favour
+                      of the expanded panel rather than sitting redundantly
+                      above it. */}
+                  {!isVideo && !requestChangesModalOpen && (
                     <IconAction
                       ai
                       row
-                      busy={imageBusy === 'custom'}
                       icon={<MaterialIcon name="smart_toy" />}
-                      caption={imageBusy === 'custom' ? 'Applying…' : 'Request changes'}
+                      caption="Request changes"
                       disabled={expired || !!imageBusy}
                       onClick={openRequestChangesModal}
                       tooltipTitle="Request changes"
@@ -1127,6 +1131,58 @@ export default function ProductAssetsTab({ draft, baseline, patch }) {
                     />
                   )}
                 </div>
+                {!isVideo && requestChangesModalOpen && (
+                  // Verified live against demo.personalisationhub.com's own
+                  // Storyboard & Copy tab: "Request changes" there expands
+                  // into an inline bordered card directly under the image
+                  // preview, in the same column — not a side drawer or a
+                  // centred modal — so this matches that exactly rather
+                  // than the drawer tried previously.
+                  <div style={{ border: '1px solid #f0f0f0', borderRadius: 8, padding: 16, marginTop: 14 }}>
+                    <p style={{ fontSize: 15, fontWeight: 500, color: 'rgba(0,0,0,.85)', margin: '0 0 10px' }}>
+                      What changes would you like me to make?
+                    </p>
+                    <div style={{ position: 'relative' }}>
+                      <Input
+                        autoFocus
+                        value={requestChangesPrompt}
+                        onChange={(e) => setRequestChangesPrompt(e.target.value)}
+                        disabled={imageBusy === 'custom'}
+                        placeholder="e.g., remove label, change background…"
+                        onPressEnter={() => requestChangesPrompt.trim() && imageBusy !== 'custom' && confirmRequestChanges()}
+                        style={{ paddingRight: SpeechRecognitionCtor ? 40 : undefined }}
+                      />
+                      {SpeechRecognitionCtor && (
+                        <span
+                          onClick={imageBusy === 'custom' ? undefined : toggleListening}
+                          title={listening ? 'Stop dictating' : 'Dictate your request'}
+                          style={{
+                            position: 'absolute', top: '50%', right: 8, transform: 'translateY(-50%)', width: 26, height: 26,
+                            borderRadius: listening ? 6 : '50%',
+                            display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: imageBusy === 'custom' ? 'default' : 'pointer',
+                            background: listening ? '#f0f0f0' : 'transparent', color: listening ? '#ff4d4f' : '#169bc2',
+                          }}
+                        >
+                          <MaterialIcon name={listening ? 'pause' : 'mic'} style={{ fontSize: 15 }} />
+                        </span>
+                      )}
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 12 }}>
+                      <Button onClick={closeRequestChangesModal} disabled={imageBusy === 'custom'}>
+                        Cancel
+                      </Button>
+                      <IconAction
+                        ai
+                        row
+                        busy={imageBusy === 'custom'}
+                        icon={<MaterialIcon name="smart_toy" />}
+                        caption={imageBusy === 'custom' ? 'Applying…' : 'Request changes'}
+                        disabled={!requestChangesPrompt.trim() || imageBusy === 'custom'}
+                        onClick={confirmRequestChanges}
+                      />
+                    </div>
+                  </div>
+                )}
               </div>
               <div style={{ flex: 1, minWidth: 260, maxWidth: 382, display: 'flex', flexDirection: 'column' }}>
                 <div style={{ marginBottom: 16 }}>
@@ -1273,59 +1329,6 @@ export default function ProductAssetsTab({ draft, baseline, patch }) {
         />
       </Modal>
 
-      {/* A slide-in panel rather than a centred Modal — Request Changes is a
-          quick, single-field ask, not a multi-field form, and reads better
-          sliding in alongside the asset it's about rather than covering it. */}
-      <Drawer
-        title="What changes would you like me to make?"
-        placement="right"
-        width={420}
-        open={requestChangesModalOpen}
-        onClose={() => !imageBusy && closeRequestChangesModal()}
-        closable={imageBusy !== 'custom'}
-        maskClosable={imageBusy !== 'custom'}
-        footer={
-          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
-            <Button onClick={closeRequestChangesModal} disabled={imageBusy === 'custom'}>
-              Cancel
-            </Button>
-            <IconAction
-              ai
-              row
-              busy={imageBusy === 'custom'}
-              icon={<MaterialIcon name="smart_toy" />}
-              caption={imageBusy === 'custom' ? 'Applying…' : 'Request changes'}
-              disabled={!requestChangesPrompt.trim() || imageBusy === 'custom'}
-              onClick={confirmRequestChanges}
-            />
-          </div>
-        }
-      >
-        <div style={{ position: 'relative' }}>
-          <Input
-            value={requestChangesPrompt}
-            onChange={(e) => setRequestChangesPrompt(e.target.value)}
-            disabled={imageBusy === 'custom'}
-            placeholder="e.g., remove label, change background…"
-            onPressEnter={() => requestChangesPrompt.trim() && imageBusy !== 'custom' && confirmRequestChanges()}
-            style={{ paddingRight: SpeechRecognitionCtor ? 40 : undefined }}
-          />
-          {SpeechRecognitionCtor && (
-            <span
-              onClick={imageBusy === 'custom' ? undefined : toggleListening}
-              title={listening ? 'Stop dictating' : 'Dictate your request'}
-              style={{
-                position: 'absolute', top: '50%', right: 8, transform: 'translateY(-50%)', width: 26, height: 26, borderRadius: '50%',
-                display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: imageBusy === 'custom' ? 'default' : 'pointer',
-                background: listening ? '#ff4d4f' : 'transparent', color: listening ? '#fff' : '#169bc2',
-              }}
-            >
-              <MaterialIcon name="mic" style={{ fontSize: 15 }} />
-            </span>
-          )}
-        </div>
-        {listening && <p style={{ fontSize: 12, color: '#ff4d4f', marginTop: 6 }}>Listening…</p>}
-      </Drawer>
 
       <TouchUpModal
         open={touchUpOpen}
