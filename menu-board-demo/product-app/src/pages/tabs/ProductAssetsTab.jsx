@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Input, Switch, Select, Tag, Modal, message } from 'antd';
+import { Input, Switch, Select, Tag, Modal, Button, message } from 'antd';
 import dayjs from 'dayjs';
 import { removeBackground as imglyRemoveBackground, preload as imglyPreload } from '@imgly/background-removal';
 import MaterialIcon from '../../components/MaterialIcon.jsx';
@@ -72,7 +72,61 @@ const DEFAULT_ROTATION_SECONDS = 5;
 // added to state, so an oversized upload can't silently fail to save.
 const COMPRESS_THRESHOLD_BYTES = 300_000;
 const MAX_DIMENSION = 1000;
-const JPEG_QUALITY = 0.75;
+
+// Firestore counts a base64 string toward its ~1 MiB document limit by its
+// raw character length — base64 is plain ASCII, one byte stored per
+// character — not the (smaller) size of the image it decodes to. Base64
+// expands binary data by roughly 4/3, so measuring "decoded bytes" against
+// a byte threshold under-counts the real stored size by that same margin.
+// Every size check in this file measures raw string length directly.
+function rawBytes(dataUrl) {
+  return dataUrl.length - dataUrl.indexOf(',') - 1;
+}
+
+// Firestore's hard limit on a whole document is 1,048,576 bytes; this
+// margin leaves headroom for the rest of the product's own fields (name,
+// descriptions, pricing, targeting, ...) to grow a little later without an
+// unrelated edit tipping the same document over by itself.
+const MAX_DOC_BYTES = 950_000;
+
+// How much of that budget is actually free right now, for one asset —
+// computed against the true rest of the document (every other field,
+// every other asset), not a flat per-image assumption. A product already
+// carrying several assets (or, worse, one big never-compressed legacy
+// video) can be sitting close to the ceiling before this particular asset
+// is even touched — confirmed live on a real product whose whole document
+// was already ~1.01 MB, at which point even a well-compressed few-hundred-
+// KB replacement image tipped a save over the edge with an error naming an
+// internal field path, not "too big." `images`/`draft` are passed in
+// (rather than closed over) so this can be called with a hypothetical
+// next-state before it's actually patched. `targetIndex` is the index of
+// the asset this budget is *for*, when it's replacing one that already
+// exists in `images` — its own current contribution is zeroed out first
+// so it isn't counted against itself; omit it for a brand new asset that
+// doesn't exist in `images` yet (a fresh upload, a generated video).
+// `nextFields`, when given, are other fields on the target asset that are
+// about to change alongside its src — most importantly `original`. The
+// first time any treatment (Enhance/Background/Touch Up/Request Changes)
+// is ever applied to an asset, it copies that asset's own pre-treatment
+// src into a new `original` field so the treatment can be undone later —
+// a second, full-size copy of an image that didn't exist a moment before,
+// and one a budget computed only against the *current* state (before that
+// copy exists) would never see coming. Confirmed live: enhancing a 222KB
+// image whose document was already tight on room made the save fail
+// *worse* than before, because the "rest of the document" grew by a whole
+// extra copy of that same 222KB the instant `original` was first set,
+// while the budget calculation still thought only the new (smaller,
+// compressed) src needed to fit. Pass `{ original: current.original ||
+// current.src }` — the exact value the operation is about to write —
+// from any call site that sets `original`, so it's accounted for whether
+// this is that asset's first treatment or a later one.
+function computeImageBudget(draft, images, targetIndex, nextFields = {}) {
+  const withoutTarget = targetIndex == null
+    ? images
+    : images.map((img, i) => (i === targetIndex ? { ...img, src: '', ...nextFields } : img));
+  const restBytes = JSON.stringify({ ...draft, images: withoutTarget }).length;
+  return Math.max(30_000, MAX_DOC_BYTES - restBytes);
+}
 
 // Same size budget as readAndCompress below, applied to a data URL rather
 // than a File — an AI-edited image comes back from the provider as base64
@@ -91,10 +145,12 @@ const JPEG_QUALITY = 0.75;
 // that needs shrinking — transparent or not. If one pass still isn't
 // under budget, it retries progressively smaller/lower-quality passes
 // rather than saving something guaranteed to blow the document limit.
-function compressDataUrl(dataUrl) {
+// `budgetBytes` is this asset's actual remaining headroom (see
+// computeImageBudget above) — falls back to the flat threshold only for
+// call sites that haven't been given a real one.
+function compressDataUrl(dataUrl, budgetBytes = COMPRESS_THRESHOLD_BYTES) {
   return new Promise((resolve) => {
-    const sizeOf = (s) => Math.round((s.length - s.indexOf(',') - 1) * 0.75);
-    if (sizeOf(dataUrl) <= COMPRESS_THRESHOLD_BYTES) { resolve(dataUrl); return; }
+    if (rawBytes(dataUrl) <= budgetBytes) { resolve(dataUrl); return; }
     const img = new Image();
     img.onload = () => {
       const render = (maxDim, quality) => {
@@ -107,9 +163,13 @@ function compressDataUrl(dataUrl) {
         canvas.getContext('2d').drawImage(img, 0, 0, width, height);
         return canvas.toDataURL('image/webp', quality);
       };
-      const passes = [[MAX_DIMENSION, 0.82], [800, 0.76], [600, 0.7], [450, 0.6]];
+      // Two extra, more aggressive passes over the original four — a tight
+      // budget (a product already near the ceiling) needs somewhere left
+      // to go rather than giving up at 450px/0.6 and saving something
+      // guaranteed to still be over.
+      const passes = [[MAX_DIMENSION, 0.82], [800, 0.76], [600, 0.7], [450, 0.6], [300, 0.5], [200, 0.4]];
       let out = render(...passes[0]);
-      for (let i = 1; i < passes.length && sizeOf(out) > COMPRESS_THRESHOLD_BYTES; i++) {
+      for (let i = 1; i < passes.length && rawBytes(out) > budgetBytes; i++) {
         out = render(...passes[i]);
       }
       resolve(out);
@@ -334,42 +394,21 @@ function enhanceImageLocally(dataUrl) {
   });
 }
 
-function readAndCompress(file) {
-  const readAsDataUrl = () =>
-    new Promise((resolve) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(reader.result);
-      reader.readAsDataURL(file);
-    });
-
-  if (!file.type.startsWith('image') || file.size <= COMPRESS_THRESHOLD_BYTES) {
-    return readAsDataUrl();
-  }
-
-  return readAsDataUrl().then(
-    (dataUrl) =>
-      new Promise((resolve) => {
-        const img = new Image();
-        img.onload = () => {
-          const scale = Math.min(1, MAX_DIMENSION / Math.max(img.width, img.height));
-          const width = Math.round(img.width * scale);
-          const height = Math.round(img.height * scale);
-          const canvas = document.createElement('canvas');
-          canvas.width = width;
-          canvas.height = height;
-          const ctx = canvas.getContext('2d');
-          // Flattens transparency to white — matches how the rest of the
-          // catalog's photography is shot (plain white background), and
-          // JPEG can't carry an alpha channel anyway.
-          ctx.fillStyle = '#fff';
-          ctx.fillRect(0, 0, width, height);
-          ctx.drawImage(img, 0, 0, width, height);
-          resolve(canvas.toDataURL('image/jpeg', JPEG_QUALITY));
-        };
-        img.onerror = () => resolve(dataUrl);
-        img.src = dataUrl;
-      })
-  );
+// Reads a raw File as a data URL, then runs it through the same adaptive,
+// budget-aware compressor every other image path uses (compressDataUrl
+// above) — used to duplicate this file's own multi-pass downscale logic
+// here, capped against the flat COMPRESS_THRESHOLD_BYTES regardless of how
+// much of the document was actually free; a fresh upload deserves the same
+// real per-document headroom check as a Replace or an AI-edited result,
+// not a separate, less accurate one. `budgetBytes` is the caller's actual
+// computed headroom (see computeImageBudget) — falls back to the flat
+// threshold if the caller doesn't have a real document to check against.
+function readAndCompress(file, budgetBytes = COMPRESS_THRESHOLD_BYTES) {
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(compressDataUrl(reader.result, budgetBytes));
+    reader.readAsDataURL(file);
+  });
 }
 
 function Tile({ img, selected, onClick }) {
@@ -539,7 +578,11 @@ export default function ProductAssetsTab({ draft, baseline, patch }) {
   const updateRights = (fields) => updateSelected({ rights: { ...(current?.rights || {}), ...fields } });
 
   const handleUpload = (files) => {
-    Promise.all([...files].map((file) => readAndCompress(file).then((src) => ({ file, src })))).then((loaded) => {
+    // Purely additive — none of these files replace an existing asset —
+    // so every file in this batch shares the same remaining headroom,
+    // computed once against the document as it stands right now.
+    const budget = computeImageBudget(draft, images, null);
+    Promise.all([...files].map((file) => readAndCompress(file, budget).then((src) => ({ file, src })))).then((loaded) => {
       const next = [...images];
       loaded.forEach(({ file, src }) => {
         const type = file.type.startsWith('video') ? 'video' : 'image';
@@ -573,7 +616,11 @@ export default function ProductAssetsTab({ draft, baseline, patch }) {
   const handleReplace = (files) => {
     const file = files[0];
     if (!file || !current) return;
-    readAndCompress(file).then((src) => {
+    // Excludes the asset being replaced from the "rest of the document"
+    // calculation — its own current size shouldn't count against the
+    // budget for what's about to take its place.
+    const budget = computeImageBudget(draft, images, selected);
+    readAndCompress(file, budget).then((src) => {
       updateSelected({ src, type: file.type.startsWith('video') ? 'video' : 'image' });
     });
   };
@@ -596,6 +643,35 @@ export default function ProductAssetsTab({ draft, baseline, patch }) {
     // this slot is what's shown next, rather than always jumping back one —
     // only clamp when the deleted tile was the last one in the list.
     setSelected((s) => Math.max(0, Math.min(s, next.length - 1)));
+  };
+
+  // Adds a copy of the current asset as a brand new tile — its own id and
+  // variant label, but never default or targeted: silently carrying over
+  // either would mean the copy immediately overrides something (the
+  // product's default, or whichever store/visitor the original's rule
+  // matched) the moment it's saved, which isn't what "duplicate this
+  // asset" implies. Re-compressed against its own real remaining budget
+  // like every other asset here — a straight byte-for-byte copy of an
+  // already-large image is exactly as likely to tip the document over as
+  // any other new asset would be. Skipped for video: compressDataUrl only
+  // knows how to re-encode an image (it loads the src into an <img>,
+  // which can't decode video), so a video's src is carried over as-is.
+  const duplicateAsset = async () => {
+    if (!current) return;
+    const src = current.type === 'video'
+      ? current.src
+      : await compressDataUrl(current.src, computeImageBudget(draft, images, null));
+    const copy = {
+      ...current,
+      id: 'img-' + Date.now() + Math.random().toString(36).slice(2, 7),
+      src,
+      isDefault: false,
+      targeting: [],
+      variant: nextVariantLabel(images, current.type),
+    };
+    const next = [...images, copy];
+    patch({ images: next });
+    setSelected(next.length - 1);
   };
 
   // Default applies immediately — a single binary switch a user expects to
@@ -665,8 +741,9 @@ export default function ProductAssetsTab({ draft, baseline, patch }) {
       } else {
         fixed = await enhanceImageLocally(current.src);
       }
-      const compressed = await compressDataUrl(fixed);
-      updateSelected({ [flagKey]: true, src: compressed, original: current.original || current.src });
+      const nextOriginal = current.original || current.src;
+      const compressed = await compressDataUrl(fixed, computeImageBudget(draft, images, selected, { original: nextOriginal }));
+      updateSelected({ [flagKey]: true, src: compressed, original: nextOriginal });
     } catch (e) {
       message.error(`Image edit failed: ${e.message}`);
     } finally {
@@ -691,7 +768,7 @@ export default function ProductAssetsTab({ draft, baseline, patch }) {
   const [touchUpOpen, setTouchUpOpen] = useState(false);
   const openTouchUp = () => { if (!current || imageBusy) return; setTouchUpOpen(true); };
   const applyTouchUp = async (dataUrl) => {
-    const compressed = await compressDataUrl(dataUrl);
+    const compressed = await compressDataUrl(dataUrl, computeImageBudget(draft, images, selected));
     updateSelected({ src: compressed });
     setTouchUpOpen(false);
     message.success('Touch-up applied');
@@ -762,8 +839,9 @@ export default function ProductAssetsTab({ draft, baseline, patch }) {
       // grey/white checker or, here, flattened solid black; both are
       // near-zero chroma).
       const fixed = current.bgRemoved ? await forceTransparentBackground(edited) : edited;
-      const compressed = await compressDataUrl(fixed);
-      updateSelected({ customEdited: true, src: compressed, original: current.original || current.src });
+      const nextOriginal = current.original || current.src;
+      const compressed = await compressDataUrl(fixed, computeImageBudget(draft, images, selected, { original: nextOriginal }));
+      updateSelected({ customEdited: true, src: compressed, original: nextOriginal });
       setRequestChangesModalOpen(false);
       message.success('Changes applied');
     } catch (e) {
@@ -956,17 +1034,6 @@ export default function ProductAssetsTab({ draft, baseline, patch }) {
               />
               <IconAction
                 ai
-                busy={imageBusy === 'custom'}
-                icon={<MaterialIcon name="edit" />}
-                caption={imageBusy === 'custom' ? 'Applying…' : 'Request'}
-                active={current.customEdited}
-                disabled={expired || isVideo || !!imageBusy}
-                onClick={openRequestChangesModal}
-                tooltipTitle="Request changes"
-                tooltipDesc={isVideo ? 'Not available for video.' : 'Describe (or dictate) any change you want and the configured Image provider will apply it — not limited to Enhance or Background.'}
-              />
-              <IconAction
-                ai
                 icon={<MaterialIcon name="movie" />}
                 caption="Video"
                 disabled={expired || isVideo || !!imageBusy}
@@ -1054,9 +1121,33 @@ export default function ProductAssetsTab({ draft, baseline, patch }) {
                     : 'No treatment applied yet.'}
                 </p>
                 <div style={{ display: 'flex', gap: 8, marginTop: 14, paddingTop: 14, borderTop: '1px solid #f0f0f0' }}>
-                  <IconAction icon={<MaterialIcon name="cached" />} caption="Replace" row tooltipTitle="Replace" tooltipDesc="Swaps the underlying file; variant label, tags and settings are kept." onClick={openReplace} />
                   <IconAction icon={<MaterialIcon name="delete" />} caption="Delete" row danger tooltipTitle="Delete" tooltipDesc="Removes this asset from the product." onClick={deleteAsset} />
+                  <IconAction icon={<MaterialIcon name="cached" />} caption="Replace" row tooltipTitle="Replace" tooltipDesc="Swaps the underlying file; variant label, tags and settings are kept." onClick={openReplace} />
+                  <IconAction icon={<MaterialIcon name="content_copy" />} caption="Duplicate" row tooltipTitle="Duplicate" tooltipDesc="Adds a copy of this asset as a new tile — its own id and variant label, never default or targeted." onClick={duplicateAsset} />
                 </div>
+                {!isVideo && (
+                  // Same card + solid teal CTA treatment HQ Admin uses for
+                  // requesting changes to a campaign image — moved down here
+                  // (it used to be a toolbar icon at the top) since it's the
+                  // one action here that hands the image to another provider
+                  // rather than editing it directly, and reads better as a
+                  // deliberate, separate step after the direct edit tools above.
+                  <div style={{ background: '#f5f5f5', borderRadius: 8, padding: 12, marginTop: 14 }}>
+                    <p style={{ fontSize: 13, color: 'rgba(0,0,0,.78)', margin: '0 0 8px' }}>
+                      Let us know if you&rsquo;d like to make changes to this image.
+                    </p>
+                    <Button
+                      type="primary"
+                      size="small"
+                      style={{ background: '#169bc2', borderColor: '#169bc2' }}
+                      disabled={expired || !!imageBusy}
+                      loading={imageBusy === 'custom'}
+                      onClick={openRequestChangesModal}
+                    >
+                      Request Changes
+                    </Button>
+                  </div>
+                )}
               </div>
               <div style={{ flex: 1, minWidth: 260, maxWidth: 382, display: 'flex', flexDirection: 'column' }}>
                 <div style={{ marginBottom: 16 }}>
