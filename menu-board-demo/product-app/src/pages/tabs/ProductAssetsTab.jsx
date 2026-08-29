@@ -6,6 +6,7 @@ import MaterialIcon from '../../components/MaterialIcon.jsx';
 import BespokeIcon from '../../components/BespokeIcon.jsx';
 import IconAction from '../../components/IconAction.jsx';
 import BeforeAfterSlider from '../../components/BeforeAfterSlider.jsx';
+import TouchUpModal from '../../components/TouchUpModal.jsx';
 import ClearableDate from '../../components/ClearableDate.jsx';
 import TargetingBuilder, { describeTargeting } from '../../components/TargetingBuilder.jsx';
 import { useAiProviders } from '../../data/registries.js';
@@ -630,6 +631,27 @@ export default function ProductAssetsTab({ draft, baseline, patch }) {
   const toggleBg = () => applyImageTreatment('bg');
   const toggleEnhance = () => applyImageTreatment('enhance');
 
+  // Touch Up — a manual, non-AI complement to Background removal, added
+  // after finding (and failing to fully fix by switching model tiers — see
+  // BG_REMOVAL_CONFIG's comment above) a real segmentation gap: a light-
+  // coloured prop next to the backdrop sometimes gets cut away with it.
+  // Modelled on Canva's own Eraser tool, which offers exactly this same
+  // Restore/Erase pair for exactly this same class of mistake. Unlike the
+  // toggles above, it directly edits `src` in place rather than chaining a
+  // new treatment — there's no separate flag to track or lock, since a
+  // manual, deterministic brush stroke carries none of the "can't cleanly
+  // un-chain a generative result" risk that governs bgRemoved/enhanced/
+  // customEdited, and stays available even after Background removal itself
+  // has been saved and locked.
+  const [touchUpOpen, setTouchUpOpen] = useState(false);
+  const openTouchUp = () => { if (!current || imageBusy) return; setTouchUpOpen(true); };
+  const applyTouchUp = async (dataUrl) => {
+    const compressed = await compressDataUrl(dataUrl);
+    updateSelected({ src: compressed });
+    setTouchUpOpen(false);
+    message.success('Touch-up applied');
+  };
+
   // Request Changes — a free-text sibling of Enhance/Remove Background:
   // same Image provider, but the instruction is whatever the user types (or
   // dictates) instead of one of the two canned ones. Opens a prompt modal
@@ -863,6 +885,20 @@ export default function ProductAssetsTab({ draft, baseline, patch }) {
                     : current.bgRemoved
                     ? 'Puts the original background back. The cut-out is discarded.'
                     : 'Cuts the product out to a transparent PNG so it can sit on any campaign layout — real subject segmentation, run locally. First use on this device downloads a model in the background and can take a while.'
+                }
+              />
+              <IconAction
+                icon={<MaterialIcon name="healing" />}
+                caption="Touch Up"
+                disabled={expired || isVideo || !!imageBusy || !current.bgRemoved}
+                onClick={openTouchUp}
+                tooltipTitle="Touch Up"
+                tooltipDesc={
+                  isVideo
+                    ? 'Not available for video.'
+                    : !current.bgRemoved
+                    ? 'Available once Background removal has been applied — there’s nothing to touch up before then.'
+                    : 'Manually restore or erase parts of the cut-out by hand — for when the automatic background removal gets something wrong. Not AI — a plain brush, applied instantly, always available even after saving.'
                 }
               />
               <IconAction
@@ -1152,6 +1188,14 @@ export default function ProductAssetsTab({ draft, baseline, patch }) {
         </div>
         {listening && <p style={{ fontSize: 12, color: '#ff4d4f', marginTop: 6 }}>Listening…</p>}
       </Modal>
+
+      <TouchUpModal
+        open={touchUpOpen}
+        src={current?.src}
+        originalSrc={current?.original}
+        onCancel={() => setTouchUpOpen(false)}
+        onApply={applyTouchUp}
+      />
     </div>
   );
 }
