@@ -38,9 +38,21 @@ const TREATMENT_FLAGS = ['bgRemoved', 'enhanced', 'customEdited'];
 // isnet_fp16 — the library's own default/balanced model — trades a larger
 // one-time download (~80MB vs quint8's ~40MB) for meaningfully better edge
 // fidelity; quint8 ("smallest... sometimes shows artifacts", per its own
-// docs) was eroding fine product detail on real photos. Shared by both the
-// background preload below and the actual removeBackground call so they
-// always agree on — and reuse the same cached — model.
+// docs) was eroding fine product detail on real photos. The full-precision
+// `isnet` tier was also tried, compared directly against Canva's own BG
+// Remover on the same photo — it produced a pixel-for-pixel identical
+// result to fp16 on the one known gap this library has (see below), so
+// there's no quality reason to ship its larger download over fp16. Shared
+// by both the background preload below and the actual removeBackground
+// call so they always agree on — and reuse the same cached — model.
+//
+// Known gap vs Canva's (proprietary, server-side) BG Remover: on a photo
+// with a large light-coloured garnish/napkin surface adjacent to the main
+// backdrop, this model's family sometimes treats that surface as
+// background too (with a few stray red fragments left behind from a
+// patterned print on it), where Canva's correctly keeps it as part of the
+// product. Confirmed present in both isnet_fp16 and full isnet — not a
+// precision issue, so switching tiers again won't fix it.
 const BG_REMOVAL_CONFIG = { model: 'isnet_fp16' };
 
 // Every image is stored as a base64 data URI inside the Firestore document
