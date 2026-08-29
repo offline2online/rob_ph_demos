@@ -61,8 +61,8 @@ export const DEFAULT_LANGUAGES = [
 // per product anymore. Mirrored in hq-admin.html (authored), menu-board.html
 // and order.html (rendered).
 export const DEFAULT_BADGE_TEMPLATES = [
-  { id: 'offer',    name: 'Offer Badge',    size: 'medium', uppercase: false, outlined: false, borderWidth: 'none', radius: 'rounded', bg: '#fff7e6', color: '#ad4e00', borderColor: '#ad4e00', pricePosition: 'below' },
-  { id: 'location', name: 'Location Badge', size: 'medium', uppercase: false, outlined: false, borderWidth: 'none', radius: 'rounded', bg: '#e8fdff', color: '#0e7a9c', borderColor: '#0e7a9c', pricePosition: 'below' },
+  { id: 'offer',    name: 'Offer Badge',    size: 'medium', uppercase: false, outlined: false, borderWidth: 'none', radius: 'rounded', bg: '#fff7e6', color: '#ad4e00', borderColor: '#ad4e00' },
+  { id: 'location', name: 'Location Badge', size: 'medium', uppercase: false, outlined: false, borderWidth: 'none', radius: 'rounded', bg: '#e8fdff', color: '#0e7a9c', borderColor: '#0e7a9c' },
   { id: 'soldOut',  name: 'Sold Out Badge', size: 'medium', uppercase: true,  outlined: false, borderWidth: 'thin', radius: 'square',  bg: '#ffffff', color: '#c0392b', borderColor: '#c0392b' },
   { id: 'category', name: 'Category Badge', size: 'small',  uppercase: true,  outlined: false, borderWidth: 'none', radius: 'square',  bg: '#006241', color: '#ffffff', borderColor: '#006241' },
 ];

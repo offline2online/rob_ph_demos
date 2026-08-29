@@ -1416,21 +1416,21 @@ const DEFAULT_CATS = ['Mains','Starters','Sides','Desserts','Hot Drinks','Cold D
 
 // Fixed set of exactly 4 badge TYPES — one default style per type, used
 // everywhere that badge appears, rather than an arbitrary named-template
-// list a product/store used to pick from individually. `pricePosition`
-// only applies to offer/location (both render next to a price); soldOut/
-// category have no such field since neither sits near a price. Mirrored in
-// menu-board.html (renders the notes), order.html (Sold Out badge),
-// retail-admin.html (Location Badge preview) and product-app's
-// registries.js (Offer Badge preview), since this repo duplicates small
-// shared registries as plain JS/data across its vanilla pages and the
-// React app rather than sharing an import.
+// list a product/store used to pick from individually. No Position
+// (above/below price) field — where a badge sits is a menu-board-level
+// concern (each template's own Tile Layout editor, where one exists),
+// not a property of the badge's own style. Mirrored in menu-board.html
+// (renders the notes), order.html (Sold Out badge), retail-admin.html
+// (Location Badge preview) and product-app's registries.js (Offer Badge
+// preview), since this repo duplicates small shared registries as plain
+// JS/data across its vanilla pages and the React app rather than sharing
+// an import.
 const DEFAULT_BADGE_TEMPLATES = [
-  { id: 'offer',    name: 'Offer Badge',    size: 'medium', uppercase: false, outlined: false, borderWidth: 'none', radius: 'rounded', bg: '#fff7e6', color: '#ad4e00', borderColor: '#ad4e00', pricePosition: 'below' },
-  { id: 'location', name: 'Location Badge', size: 'medium', uppercase: false, outlined: false, borderWidth: 'none', radius: 'rounded', bg: '#e8fdff', color: '#0e7a9c', borderColor: '#0e7a9c', pricePosition: 'below' },
+  { id: 'offer',    name: 'Offer Badge',    size: 'medium', uppercase: false, outlined: false, borderWidth: 'none', radius: 'rounded', bg: '#fff7e6', color: '#ad4e00', borderColor: '#ad4e00' },
+  { id: 'location', name: 'Location Badge', size: 'medium', uppercase: false, outlined: false, borderWidth: 'none', radius: 'rounded', bg: '#e8fdff', color: '#0e7a9c', borderColor: '#0e7a9c' },
   { id: 'soldOut',  name: 'Sold Out Badge', size: 'medium', uppercase: true,  outlined: false, borderWidth: 'thin', radius: 'square',  bg: '#ffffff', color: '#c0392b', borderColor: '#c0392b' },
   { id: 'category', name: 'Category Badge', size: 'small',  uppercase: true,  outlined: false, borderWidth: 'none', radius: 'square',  bg: '#006241', color: '#ffffff', borderColor: '#006241' },
 ];
-const BADGE_TYPES_WITH_PRICE_POSITION = new Set(['offer', 'location']);
 
 const DEFAULT_COLORS = {
   header:      '#ffffff',
@@ -1498,13 +1498,11 @@ function _normalizeTileLayout(layout) {
 }
 
 // Only used to seed the editor the first time someone opens a template that
-// has no saved heroLayout/promoLayout yet — approximates today's hardcoded
-// order as a sensible starting point to adjust, not a byte-for-byte replica
-// (badges' current above/below-price placement is driven per-badge by each
-// Badge Template's own pricePosition, which no single static array can
-// represent). menu-board.html only switches to this new zone/order system
-// once a template actually has a saved heroLayout/promoLayout — until then
-// it keeps rendering exactly as it does today, regardless of this default.
+// has no saved heroLayout/promoLayout yet — matches today's hardcoded
+// order (badges always sit directly after price) as a starting point to
+// adjust. menu-board.html only switches to this new zone/order system once
+// a template actually has a saved heroLayout/promoLayout — until then it
+// keeps rendering exactly as it does today, regardless of this default.
 const DEFAULT_TILE_LAYOUTS = {
   hero: {
     top:         ['category', 'name', 'menuBoardNote', 'locationBadge', 'price'].map(k => _tileLayoutEntry(k)),
@@ -2157,7 +2155,6 @@ function renderBadgeTemplates() {
   list.innerHTML = DEFAULT_BADGE_TEMPLATES.map(def => {
     const id = def.id;
     const t = _badgeTemplates.find(x => x.id === id) || def;
-    const hasPricePosition = BADGE_TYPES_WITH_PRICE_POSITION.has(id);
     return `
     <div class="bt-row" id="btRow-${id}">
       <div class="form-group" style="width:150px;">
@@ -2215,14 +2212,6 @@ function renderBadgeTemplates() {
           <option value="1" ${t.uppercase ? 'selected' : ''}>On</option>
         </select>
       </div>
-      ${hasPricePosition ? `
-      <div class="form-group" style="width:110px;">
-        <label>Position</label>
-        <select onchange="updateBadgeTemplateField('${id}','pricePosition',this.value)">
-          <option value="above" ${t.pricePosition === 'above' ? 'selected' : ''}>Above price</option>
-          <option value="below" ${(!t.pricePosition || t.pricePosition === 'below') ? 'selected' : ''}>Below price</option>
-        </select>
-      </div>` : ''}
       <div class="form-group" style="min-width:150px;flex:1;">
         <label>Preview</label>
         <div id="btPreview-${id}" class="bt-preview" style="${badgeTemplatePreviewStyle(t)}">${escHtml(def.name)}</div>

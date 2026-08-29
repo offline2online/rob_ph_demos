@@ -1221,8 +1221,8 @@ function shouldShowMenuNote(item) {
 // own fallback, used whenever the badgeTemplates registry doc is still
 // empty or missing an entry.
 const DEFAULT_BADGE_TEMPLATES = [
-  { id: 'offer',    name: 'Offer Badge',    size: 'medium', uppercase: false, outlined: false, borderWidth: 'none', radius: 'rounded', bg: '#fff7e6', color: '#ad4e00', borderColor: '#ad4e00', pricePosition: 'below' },
-  { id: 'location', name: 'Location Badge', size: 'medium', uppercase: false, outlined: false, borderWidth: 'none', radius: 'rounded', bg: '#e8fdff', color: '#0e7a9c', borderColor: '#0e7a9c', pricePosition: 'below' },
+  { id: 'offer',    name: 'Offer Badge',    size: 'medium', uppercase: false, outlined: false, borderWidth: 'none', radius: 'rounded', bg: '#fff7e6', color: '#ad4e00', borderColor: '#ad4e00' },
+  { id: 'location', name: 'Location Badge', size: 'medium', uppercase: false, outlined: false, borderWidth: 'none', radius: 'rounded', bg: '#e8fdff', color: '#0e7a9c', borderColor: '#0e7a9c' },
   { id: 'soldOut',  name: 'Sold Out Badge', size: 'medium', uppercase: true,  outlined: false, borderWidth: 'thin', radius: 'square',  bg: '#ffffff', color: '#c0392b', borderColor: '#c0392b' },
   { id: 'category', name: 'Category Badge', size: 'small',  uppercase: true,  outlined: false, borderWidth: 'none', radius: 'square',  bg: '#006241', color: '#ffffff', borderColor: '#006241' },
 ];
@@ -1270,22 +1270,6 @@ function locationBadgeHtml(item) {
   const human = (s && s.location && s.location.humanReadable || '').trim();
   if (!human) return '';
   return `<div class="menu-board-note location-badge" style="${badgeStyleForTemplateId('location')}">${esc(human)}</div>`;
-}
-
-// Buckets pre-rendered badge HTML — the "Show on Menu Board" note and the
-// store's Location Badge — by each one's fixed type's Position setting
-// (Menu Board Badge Templates → Position: Above/Below price). Offer and
-// Location can each independently render above or below the price. Shared
-// by all three render sites (grid tile, hero panel, promo tile) instead of
-// repeating this per site.
-function bucketBadgeNotes(entries) {
-  const above = [], below = [];
-  entries.forEach(({ html, templateId }) => {
-    if (!html) return;
-    const pos = getBadgeTemplateById(templateId).pricePosition === 'above' ? 'above' : 'below';
-    (pos === 'above' ? above : below).push(html);
-  });
-  return { above: above.join(''), below: below.join('') };
 }
 
 // ── BRAND SUPPORT ────────────────────────────────────────────────────────────
@@ -2455,10 +2439,7 @@ function _renderUnsafe() {
     const desc = item.description ? `<div class="item-desc">${esc(item.description)}</div>` : '';
     const menuNote = shouldShowMenuNote(item) ? `<div class="menu-board-note" style="${menuNoteStyleAttr()}">${esc(item.showOnMenuBoard)}</div>` : '';
     const locationNote = locationBadgeHtml(item);
-    const { above: notesAbove, below: notesBelow } = bucketBadgeNotes([
-      { html: menuNote, templateId: 'offer' },
-      { html: locationNote, templateId: 'location' },
-    ]);
+    const notes = menuNote + locationNote;
     return `
       <div class="item-cell${oos ? ' oos-cell' : ''}">
         <div class="item-thumb">
@@ -2469,12 +2450,11 @@ function _renderUnsafe() {
           <div class="item-name">${esc(item.name)}</div>
           ${desc}
           <div class="item-divider"></div>
-          ${notesAbove}
           <div class="item-footer">
             <span class="item-price">${priceHtml(item, currency, 'price-was')}</span>
             ${buildNutrition(item)}
           </div>
-          ${notesBelow}
+          ${notes}
         </div>
         <div class="oos-overlay"><div class="oos-stamp" style="${badgeStyleForTemplateId('soldOut')}"><div class="oos-stamp-text">SOLD OUT</div></div></div>
       </div>`;
@@ -2636,8 +2616,8 @@ function _renderUnsafe() {
         : `<div class="promo-hero-placeholder">🏷️</div>`;
       // Tile Layout (hq-admin.html ▸ Settings ▸ Offer Boards ▸ this template's
       // Tile Layout editor) takes over entirely once a brand has configured
-      // one — including badge above/below-price placement, which otherwise
-      // comes from bucketBadgeNotes below. Left unset, every existing
+      // one — including badge placement/order, which otherwise always
+      // sits directly after the price below. Left unset, every existing
       // brand's hero panel renders exactly as it always has.
       const heroCtx = { currency, titleClass: 'promo-hero-title', priceClass: 'promo-hero-price', descColClass: 'promo-hero-desc-col', descClass: 'promo-hero-desc' };
       let heroTopHtml, heroBottomHtml;
@@ -2649,17 +2629,12 @@ function _renderUnsafe() {
         const heroCat = heroItem.category ? `<div class="promo-cat" style="${badgeStyleForTemplateId('category')}">${esc(heroItem.category)}</div>` : '';
         const heroMenuNote = shouldShowMenuNote(heroItem) ? `<div class="menu-board-note" style="${menuNoteStyleAttr()}">${esc(heroItem.showOnMenuBoard)}</div>` : '';
         const heroLocationNote = locationBadgeHtml(heroItem);
-        const { above: heroNotesAbove, below: heroNotesBelow } = bucketBadgeNotes([
-          { html: heroMenuNote, templateId: 'offer' },
-          { html: heroLocationNote, templateId: 'location' },
-        ]);
         heroTopHtml = `
           <div class="promo-hero-top">
             ${heroCat}
             <div class="promo-hero-title">${esc(heroItem.name)}</div>
-            ${heroNotesAbove}
             <div class="promo-hero-price">${priceHtml(heroItem, currency, 'price-was')}</div>
-            ${heroNotesBelow}
+            ${heroMenuNote}${heroLocationNote}
           </div>`;
         // Bottom bar: description on the left (≤50% width via CSS),
         // calorie/kilojoule info hugging the right edge — nutrition-block's
@@ -2706,18 +2681,13 @@ function _renderUnsafe() {
         const cat = item.category ? `<div class="promo-cat" style="${badgeStyleForTemplateId('category')}">${esc(item.category)}</div>` : '';
         const menuNote = shouldShowMenuNote(item) ? `<div class="menu-board-note" style="${menuNoteStyleAttr()}">${esc(item.showOnMenuBoard)}</div>` : '';
         const locationNote = locationBadgeHtml(item);
-        const { above: tileNotesAbove, below: tileNotesBelow } = bucketBadgeNotes([
-          { html: menuNote, templateId: 'offer' },
-          { html: locationNote, templateId: 'location' },
-        ]);
         return `
           <div class="promo-tile">
             <div class="promo-text">
               ${cat}
               <div class="promo-title">${esc(item.name)}</div>
-              ${tileNotesAbove}
               <div class="promo-price">${priceHtml(item, currency, 'price-was')}</div>
-              ${tileNotesBelow}
+              ${menuNote}${locationNote}
             </div>
             <div class="promo-img-wrap">${img}</div>
             ${bottomHtml}
