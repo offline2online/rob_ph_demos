@@ -40,14 +40,9 @@ export function blankProduct() {
     // was overriding it would bake that override in as the new
     // "fallback," permanently masking menuBoardNote from then on.
     menuBoardNote: '',
-    // Which badge template (Settings → Menu Board Badge Templates,
-    // registries.js's getBadgeTemplateById) renders the "Show on Menu
-    // Board" note as a pill on the board — set once at HQ level, not
-    // overridable per store (the store-level field only ever overrides
-    // the note's *text*). Offers on this product use it too — there's no
-    // separate per-offer template, by design, so a product's badge always
-    // looks the same no matter which note is currently showing.
-    menuBoardNoteTemplateId: 'default',
+    // The badge's own look (Settings → Menu Board Badge Templates → Offer
+    // Badge) is fixed for every product now — no per-product template id
+    // to default here anymore.
     showOnMenuBoard: '',
     currency: '$',
     taxClass: '',

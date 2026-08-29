@@ -807,13 +807,8 @@
 
         <div class="add-stock-section" id="locationBadgeSection" style="display:none;">
           <h4>Location Badge</h4>
-          <p style="font-size:12px;color:var(--text2);margin:-6px 0 14px;">Shown on the customer-facing menu board next to this item at this store, using the location text above. Pick one of the buttons defined under HQ Admin → Settings → Menu Board Badge Templates.</p>
-          <div style="display:flex;gap:16px;align-items:center;flex-wrap:wrap;">
-            <select id="locationBadgeTemplateSelect" onchange="onLocationBadgeTemplateChange()" style="width:240px;padding:8px 12px;border:1px solid var(--border2);border-radius:6px;font-size:13px;font-family:inherit;background:var(--surface);color:var(--text);outline:none;">
-              <option value="">No badge</option>
-            </select>
-            <div id="locationBadgePreview"></div>
-          </div>
+          <p style="font-size:12px;color:var(--text2);margin:-6px 0 14px;">Shown on the customer-facing menu board next to this item at this store, using the location text above, in the style set once under HQ Admin → Settings → Menu Board Badge Templates → Location Badge.</p>
+          <div id="locationBadgePreview"></div>
         </div>
       </div>
 
@@ -904,18 +899,21 @@ let _storeProfile  = { storeName: null, fixedSegments: [], variableSegments: [],
 let _settings = { currency: '$' };
 let _brands   = [];
 
-// Same fallback default as hq-admin.html (where these are authored, under
-// Settings → Menu Board Badge Templates) and menu-board.html (where the
-// note actually renders) — used only when the badgeTemplates registry doc
-// is still empty. A store can never restyle this, only its text, so the
-// Pricing tab's preview here always resolves the *product's* template.
+// Fixed set of exactly 4 badge types — one default style per type, set
+// once under HQ Admin → Settings → Menu Board Badge Templates and used
+// everywhere that badge appears. This page never restyles any of them,
+// only reads them: a read-only preview of the product's Offer Badge here,
+// and the Location Badge this store itself sets the *text* for below.
 const DEFAULT_BADGE_TEMPLATES = [
-  { id: 'default', name: 'Amber (Default)', size: 'medium', uppercase: false, outlined: false, borderWidth: 'none', radius: 'rounded', bg: '#fff7e6', color: '#ad4e00', borderColor: '#ad4e00' },
+  { id: 'offer',    name: 'Offer Badge',    size: 'medium', uppercase: false, outlined: false, borderWidth: 'none', radius: 'rounded', bg: '#fff7e6', color: '#ad4e00', borderColor: '#ad4e00' },
+  { id: 'location', name: 'Location Badge', size: 'medium', uppercase: false, outlined: false, borderWidth: 'none', radius: 'rounded', bg: '#e8fdff', color: '#0e7a9c', borderColor: '#0e7a9c' },
+  { id: 'soldOut',  name: 'Sold Out Badge', size: 'medium', uppercase: true,  outlined: false, borderWidth: 'thin', radius: 'square',  bg: '#ffffff', color: '#c0392b', borderColor: '#c0392b' },
+  { id: 'category', name: 'Category Badge', size: 'small',  uppercase: true,  outlined: false, borderWidth: 'none', radius: 'square',  bg: '#006241', color: '#ffffff', borderColor: '#006241' },
 ];
 let _badgeTemplates = [];
 function getBadgeTemplateById(id) {
   const templates = _badgeTemplates.length ? _badgeTemplates : DEFAULT_BADGE_TEMPLATES;
-  return templates.find(t => t.id === id) || templates[0] || DEFAULT_BADGE_TEMPLATES[0];
+  return templates.find(t => t.id === id) || DEFAULT_BADGE_TEMPLATES.find(t => t.id === id) || DEFAULT_BADGE_TEMPLATES[0];
 }
 // Fixed px sizing for this admin preview swatch, same convention as
 // hq-admin.html's Settings preview and the Pricing tab's own preview pill
@@ -932,13 +930,12 @@ function badgeTemplatePreviewStyle(t) {
   const border = hasBorder ? `${BT_BORDER_PX[t.borderWidth] || '1px'} solid ${t.borderColor || color}` : 'none';
   return `display:inline-block;font-weight:700;line-height:1.3;font-size:${size.font};padding:${size.pad};border-radius:${radius};background:${bg};color:${color};border:${border};text-transform:${t.uppercase ? 'uppercase' : 'none'};`;
 }
-let _pricingItemTemplateId = 'default';
 function _renderPricingMenuBoardPreview() {
   const el = document.getElementById('priceMenuBoardPreview');
   if (!el) return;
   const text = document.getElementById('priceMenuBoardCopy')?.value || '';
   if (!text.trim()) { el.innerHTML = ''; return; }
-  const t = getBadgeTemplateById(_pricingItemTemplateId);
+  const t = getBadgeTemplateById('offer');
   el.innerHTML = `<span style="${badgeTemplatePreviewStyle(t)}">${escHtml(text)}</span>`;
 }
 
@@ -1195,31 +1192,42 @@ function _resolveItemOffersForStore(item, store) {
     || eligible
       .filter((o) => isPriced(o) && o.offerFrom && new Date(o.offerFrom) > now)
       .sort((a, b) => new Date(a.offerFrom) - new Date(b.offerFrom))[0];
-  // The board's default note (item.menuBoardNote) is only ever overridden
-  // by a *store-targeted* offer's own note — an untargeted offer applies
-  // everywhere anyway, so the default stays the source of truth for it.
-  const isTargeted = !!(effective && Array.isArray(effective.targeting) && effective.targeting.length);
+  // The board's default note (item.menuBoardNote) is overridden by the
+  // effective offer's own note whenever that offer applies here at all —
+  // via targeting, via being live/scheduled, or both (same rule as
+  // menu-board.html's own copy of this function).
   return {
     ...item,
     offerPrice: effective ? effective.offerPrice : null,
     offerFrom: effective ? effective.offerFrom : '',
     offerUntil: effective ? effective.offerUntil : '',
     offerRecurrence: effective ? (effective.recurrence || null) : null,
-    showOnMenuBoard: (isTargeted && effective.showOnMenuBoard) ? effective.showOnMenuBoard : (item.menuBoardNote || ''),
+    showOnMenuBoard: (effective && effective.showOnMenuBoard) ? effective.showOnMenuBoard : (item.menuBoardNote || ''),
   };
 }
 // This store's effective price fields for an item — its own override if
 // it has saved one, otherwise whichever of HQ's offers (if any) targets
 // this store, falling back to HQ's plain current price.
 function _effectivePricing(item) {
+  const resolved = _resolveItemOffersForStore(item, _storeProfile);
   const o = _storePricing[item.sku];
+  // savePricingChange() always writes a storePricing/{store} record the
+  // moment this store saves ANY pricing edit at all — even a plain RRP
+  // change with no offer of its own — so the record's mere existence
+  // can't mean "this store has its own offer." Only treat it as one when
+  // it's actually priced; otherwise defer entirely to what
+  // _resolveItemOffersForStore already resolved from HQ's offers[], the
+  // same as if this store had no override on file.
   if (!o) {
-    const resolved = _resolveItemOffersForStore(item, _storeProfile);
     return { price: resolved.price, offerPrice: resolved.offerPrice, offerFrom: resolved.offerFrom, offerUntil: resolved.offerUntil, offerRecurrence: resolved.offerRecurrence || null, showOnMenuBoard: resolved.showOnMenuBoard };
+  }
+  const price = o.price != null ? o.price : resolved.price;
+  if (!(parseFloat(o.offerPrice) > 0)) {
+    return { price, offerPrice: resolved.offerPrice, offerFrom: resolved.offerFrom, offerUntil: resolved.offerUntil, offerRecurrence: resolved.offerRecurrence || null, showOnMenuBoard: resolved.showOnMenuBoard };
   }
   // Retail Admin's own store-price override is a single flat price/
   // window, no recurrence concept.
-  return { price: o.price, offerPrice: o.offerPrice, offerFrom: o.offerFrom, offerUntil: o.offerUntil, offerRecurrence: null, showOnMenuBoard: o.showOnMenuBoard };
+  return { price, offerPrice: o.offerPrice, offerFrom: o.offerFrom, offerUntil: o.offerUntil, offerRecurrence: null, showOnMenuBoard: o.showOnMenuBoard };
 }
 
 function saveLocalFeatured(obj) {
@@ -1909,8 +1917,8 @@ function openItemModal(sku) {
   _renderStockFlagButtons();
   _renderStockLevelButtons();
 
-  // Pre-fill location pane (also loads the Location Badge picker + visibility)
-  _loadLocationPane(stock.location || {}, stock.locationBadgeTemplateId || '');
+  // Pre-fill location pane (also loads the Location Badge preview + visibility)
+  _loadLocationPane(stock.location || {});
 
   // Snapshot the resting state *after* every field above has loaded, so
   // Save Changes starts disabled and only turns on once something in this
@@ -1980,10 +1988,6 @@ function _currentStockLocationSnapshot() {
       tags: _locMode === 'tags' ? [..._locTags] : [],
       manual: _locMode === 'manual' ? (document.getElementById('locManualText').value || '').trim() : '',
     },
-    // Mirrors saveStockLocation()'s own rule: the badge id is only ever
-    // meaningful (and only ever saved) once there's location text for it
-    // to label — an id picked before that never counts as a real change.
-    locationBadgeTemplateId: human ? (_modalLocationBadgeTemplateId || '') : '',
   };
 }
 
@@ -2209,7 +2213,6 @@ function _loadPricingPane(item, brand) {
     showOnMenuBoard: eff.showOnMenuBoard || '',
   };
   _pricingDraft = { ..._pricingBaseline };
-  _pricingItemTemplateId = item.menuBoardNoteTemplateId || 'default';
   document.getElementById('priceRrp').value = _pricingBaseline.rrp;
   document.getElementById('priceOffer').value = _pricingBaseline.offerPrice;
   document.getElementById('priceOfferFrom').value = _pricingBaseline.offerFrom;
@@ -2412,9 +2415,7 @@ function savePricingChange() {
 let _locTags = [];   // [{ label, value }, ...]
 let _locMode = 'tags'; // 'tags' | 'manual'
 
-let _modalLocationBadgeTemplateId = '';
-
-function _loadLocationPane(loc, locationBadgeTemplateId) {
+function _loadLocationPane(loc) {
   // Determine mode
   const useManual = !!loc.useManual;
   _locMode = useManual ? 'manual' : 'tags';
@@ -2441,31 +2442,19 @@ function _loadLocationPane(loc, locationBadgeTemplateId) {
   document.getElementById('locNewLabel').value = '';
   document.getElementById('locNewValue').value = '';
 
-  // Populate the Location Badge picker from the same registry HQ Admin
-  // authors under Settings → Menu Board Badge Templates.
-  const templates = _badgeTemplates.length ? _badgeTemplates : DEFAULT_BADGE_TEMPLATES;
-  const select = document.getElementById('locationBadgeTemplateSelect');
-  select.innerHTML = '<option value="">No badge</option>' +
-    templates.map(t => `<option value="${escHtml(t.id)}">${escHtml(t.name)}</option>`).join('');
-  _modalLocationBadgeTemplateId = locationBadgeTemplateId || '';
-  select.value = _modalLocationBadgeTemplateId;
-
   switchLocMode(_locMode);
   _renderTagList();
   refreshLocationPreview();
 }
 
-function onLocationBadgeTemplateChange() {
-  _modalLocationBadgeTemplateId = document.getElementById('locationBadgeTemplateSelect').value;
-  _renderLocationBadgePreview();
-  _refreshStockLocationSaveState();
-}
-
+// Style is fixed (Settings → Menu Board Badge Templates → Location Badge)
+// — the badge shows whenever this store has set location text at all, no
+// separate on/off template choice anymore.
 function _renderLocationBadgePreview() {
   const el = document.getElementById('locationBadgePreview');
   const human = _currentLocationHumanText();
-  if (!_modalLocationBadgeTemplateId || !human) { el.innerHTML = ''; return; }
-  const t = getBadgeTemplateById(_modalLocationBadgeTemplateId);
+  if (!human) { el.innerHTML = ''; return; }
+  const t = getBadgeTemplateById('location');
   el.innerHTML = `<span style="${badgeTemplatePreviewStyle(t)}">${escHtml(human)}</span>`;
 }
 
@@ -2556,7 +2545,6 @@ function saveStockLocation() {
     flag: _modalStockFlag,
     level: _modalStockLevel,
     location,
-    locationBadgeTemplateId: human ? (_modalLocationBadgeTemplateId || '') : '',
     updatedBy: STAFF_ID || null,
     updatedAt: new Date().toISOString()
   };
@@ -2626,7 +2614,6 @@ window.refreshLocationPreview= refreshLocationPreview;
 window.switchLocMode         = switchLocMode;
 window.addLocationTag        = addLocationTag;
 window.removeLocationTag     = removeLocationTag;
-window.onLocationBadgeTemplateChange = onLocationBadgeTemplateChange;
 
 // INIT
 init();

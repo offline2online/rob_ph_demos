@@ -55,11 +55,16 @@ export const DEFAULT_LANGUAGES = [
   { code: 'tr', name: 'Turkish' },
 ];
 
-// Same shape/id/fallback convention as DEFAULT_TYPES/DEFAULT_CATS above —
-// mirrored in hq-admin.html (where these are authored, under Settings)
-// and menu-board.html (where they're rendered).
+// Fixed set of exactly 4 badge types — one default style per type, set
+// once under Settings → Menu Board Badge Templates (hq-admin.html) and
+// used everywhere that badge appears; nothing here picks a template by id
+// per product anymore. Mirrored in hq-admin.html (authored), menu-board.html
+// and order.html (rendered).
 export const DEFAULT_BADGE_TEMPLATES = [
-  { id: 'default', name: 'Amber (Default)', size: 'medium', uppercase: false, outlined: false, borderWidth: 'none', radius: 'rounded', bg: '#fff7e6', color: '#ad4e00', borderColor: '#ad4e00', pricePosition: 'below' },
+  { id: 'offer',    name: 'Offer Badge',    size: 'medium', uppercase: false, outlined: false, borderWidth: 'none', radius: 'rounded', bg: '#fff7e6', color: '#ad4e00', borderColor: '#ad4e00', pricePosition: 'below' },
+  { id: 'location', name: 'Location Badge', size: 'medium', uppercase: false, outlined: false, borderWidth: 'none', radius: 'rounded', bg: '#e8fdff', color: '#0e7a9c', borderColor: '#0e7a9c', pricePosition: 'below' },
+  { id: 'soldOut',  name: 'Sold Out Badge', size: 'medium', uppercase: true,  outlined: false, borderWidth: 'thin', radius: 'square',  bg: '#ffffff', color: '#c0392b', borderColor: '#c0392b' },
+  { id: 'category', name: 'Category Badge', size: 'small',  uppercase: true,  outlined: false, borderWidth: 'none', radius: 'square',  bg: '#006241', color: '#ffffff', borderColor: '#006241' },
 ];
 
 let _brands = [];
@@ -153,7 +158,7 @@ export function getBadgeTemplates() {
 
 export function getBadgeTemplateById(id) {
   const templates = getBadgeTemplates();
-  return templates.find((t) => t.id === id) || templates[0] || DEFAULT_BADGE_TEMPLATES[0];
+  return templates.find((t) => t.id === id) || DEFAULT_BADGE_TEMPLATES.find((t) => t.id === id) || DEFAULT_BADGE_TEMPLATES[0];
 }
 
 export function getLanguages() {

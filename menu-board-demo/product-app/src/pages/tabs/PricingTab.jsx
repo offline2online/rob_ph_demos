@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Input, InputNumber, Table, Button, App, Tag, Switch, Modal, Tooltip, Select } from 'antd';
+import { Input, InputNumber, Table, Button, App, Tag, Switch, Modal, Tooltip } from 'antd';
 import MaterialIcon from '../../components/MaterialIcon.jsx';
 import ClearableDate, { shiftEndOneHour } from '../../components/ClearableDate.jsx';
 import { getOfferState, pickEffectiveOffer, pickDefaultOffer } from '../../components/OfferBanner.jsx';
@@ -8,7 +8,7 @@ import TargetingBuilder, { describeTargeting } from '../../components/TargetingB
 import RecurrenceControl from '../../components/RecurrenceControl.jsx';
 import { describeRecurrence } from '../../lib/recurrence.js';
 import { upsertProduct, appendPriceLogEntries, genId } from '../../data/productStore.js';
-import { getBadgeTemplates, getBadgeTemplateById } from '../../data/registries.js';
+import { getBadgeTemplateById } from '../../data/registries.js';
 
 function Field({ label, required, children, hint }) {
   return (
@@ -227,20 +227,19 @@ export default function PricingTab({ draft, baseline, setDraft, setBaseline }) {
   }, [draft.id]);
 
   // The default "Show on Menu Board" note is always editable here — it's
-  // only ever *overridden on the board* by a specifically store-targeted
-  // offer's own note (not by just any live offer), since a targeted offer
-  // is the one case where different stores legitimately need to see
-  // different messaging; an untargeted offer applies everywhere anyway,
-  // so the default stays the source of truth for it.
+  // overridden on the board by the effective offer's own note whenever
+  // that offer applies at all, whether that's because it's targeted,
+  // because it's live/scheduled, or both. Targeting only changes *where*
+  // the override applies (specific stores vs. everywhere) — it doesn't
+  // gate *whether* the offer's own note is allowed to override the default.
   const effectiveOffer = useMemo(() => pickEffectiveOffer(draft.offers), [draft.offers]);
   const effectiveOfferIsTargeted = !!(effectiveOffer && effectiveOffer.targeting && effectiveOffer.targeting.length > 0);
-  const noteOverridden = !!(effectiveOfferIsTargeted && effectiveOffer.showOnMenuBoard && effectiveOffer.showOnMenuBoard.trim() !== '');
+  const noteOverridden = !!(effectiveOffer && effectiveOffer.showOnMenuBoard && effectiveOffer.showOnMenuBoard.trim() !== '');
 
   const rrpChanged = String(draft.rrp) !== String(baseline.rrp);
   const menuBoardCopyChanged = String(draft.menuBoardNote || '') !== String(baseline.menuBoardNote || '');
-  const menuBoardTemplateChanged = (draft.menuBoardNoteTemplateId || 'default') !== (baseline.menuBoardNoteTemplateId || 'default');
   const offersChanged = JSON.stringify(draft.offers || []) !== JSON.stringify(baseline.offers || []);
-  const dirty = rrpChanged || menuBoardCopyChanged || menuBoardTemplateChanged || offersChanged;
+  const dirty = rrpChanged || menuBoardCopyChanged || offersChanged;
   const canSave = dirty && reason.trim() !== '';
 
   const currencySymbol = draft.currency || '$';
@@ -248,12 +247,13 @@ export default function PricingTab({ draft, baseline, setDraft, setBaseline }) {
     rrpChanged ? `RRP ${currencySymbol}${baseline.rrp || '0.00'} → ${currencySymbol}${draft.rrp}` : null,
     offersChanged ? `Offers updated (${(draft.offers || []).length} defined)` : null,
     menuBoardCopyChanged ? `Menu board copy updated` : null,
-    menuBoardTemplateChanged ? `Menu board badge template updated` : null,
   ]
     .filter(Boolean)
     .join(' · ');
 
-  const selectedTemplate = getBadgeTemplateById(draft.menuBoardNoteTemplateId || 'default');
+  // Fixed — the Offer Badge style is set once under Settings → Menu Board
+  // Badge Templates, not chosen per product anymore.
+  const selectedTemplate = getBadgeTemplateById('offer');
 
   const discardChange = () => {
     setDraft((d) => ({
@@ -261,7 +261,6 @@ export default function PricingTab({ draft, baseline, setDraft, setBaseline }) {
       rrp: baseline.rrp,
       offers: baseline.offers || [],
       menuBoardNote: baseline.menuBoardNote,
-      menuBoardNoteTemplateId: baseline.menuBoardNoteTemplateId,
     }));
     setReason('');
   };
@@ -335,13 +334,6 @@ export default function PricingTab({ draft, baseline, setDraft, setBaseline }) {
       });
     }
     if (menuBoardCopyChanged) changes.push({ fieldName: 'Show on Menu Board', oldValue: baseline.menuBoardNote || '—', newValue: draft.menuBoardNote || '—' });
-    if (menuBoardTemplateChanged) {
-      changes.push({
-        fieldName: 'Menu Board Badge Template',
-        oldValue: getBadgeTemplateById(baseline.menuBoardNoteTemplateId || 'default').name,
-        newValue: getBadgeTemplateById(draft.menuBoardNoteTemplateId || 'default').name,
-      });
-    }
 
     // The grid, its price-column filter, and the Product Details banner
     // only know the legacy flat offerPrice/offerFrom/offerUntil/
@@ -589,7 +581,9 @@ export default function PricingTab({ draft, baseline, setDraft, setBaseline }) {
             label="Show on Menu Board"
             hint={
               noteOverridden
-                ? `This is the default, shown everywhere except at the stores targeted by "${effectiveOffer.description}" — that offer's own note (below) takes over there while it's live.`
+                ? effectiveOfferIsTargeted
+                  ? `This is the default, shown everywhere except at the stores targeted by "${effectiveOffer.description}" — that offer's own note (below) takes over there while it's live.`
+                  : `This is the default — "${effectiveOffer.description}"'s own note (below) takes over everywhere while it's live.`
                 : 'Optional promo copy shown alongside this product’s price on the menu board, e.g. “Limited time only!” Leave blank to show nothing extra.'
             }
           >
@@ -606,24 +600,10 @@ export default function PricingTab({ draft, baseline, setDraft, setBaseline }) {
         </div>
         {(draft.menuBoardNote || '').trim() !== '' && (
           <div style={{ marginTop: 14 }}>
-            <Field
-              label="Badge template"
-              hint="Defined once under HQ Admin → Settings → Menu Board Badge Templates. This template also applies to every offer's note below and to any store-level override of this copy."
-            >
-              <div style={{ display: 'flex', gap: 16, alignItems: 'center', flexWrap: 'wrap' }}>
-                <Select
-                  value={draft.menuBoardNoteTemplateId || 'default'}
-                  onChange={(v) => {
-                    setDraft((d) => ({ ...d, menuBoardNoteTemplateId: v }));
-                    autoFillReason('Updated menu board badge template');
-                  }}
-                  options={getBadgeTemplates().map((t) => ({ value: t.id, label: t.name }))}
-                  style={{ width: 240 }}
-                />
-                <span style={templateToPreviewCss(selectedTemplate)}>
-                  {draft.menuBoardNote || 'Limited time only!'}
-                </span>
-              </div>
+            <Field label="Preview" hint="Style is set once under HQ Admin → Settings → Menu Board Badge Templates → Offer Badge — applies to every note here and on every offer below.">
+              <span style={templateToPreviewCss(selectedTemplate)}>
+                {draft.menuBoardNote || 'Limited time only!'}
+              </span>
             </Field>
           </div>
         )}

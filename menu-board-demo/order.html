@@ -275,11 +275,13 @@ button { cursor: pointer; border: none; background: none; font-family: inherit; 
   cursor: pointer;
   border: none;
 }
+/* Background/colour/font-size/border/text-case come from the 'soldOut'
+   Badge Template inline (see badgeStyleForTemplateId call site) — same
+   fixed style the menu board's own Sold Out stamp uses now, so the two
+   finally agree on what "Sold Out" looks like. */
 .oos-badge {
   position: absolute; top: 8px; left: 8px;
-  background: var(--red); color: var(--white);
-  font-size: 10px; font-weight: 700; letter-spacing: .5px;
-  padding: 3px 7px; border-radius: 4px; text-transform: uppercase;
+  font-weight: 700; letter-spacing: .5px;
 }
 
 /* ── MODAL ─────────────────────────────────────────────────────────────── */
@@ -1238,6 +1240,42 @@ function cur(n) {
 function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 function isOos(sku) { return !!(STORE_CODE && _stock[sku] && _stock[sku].outOfStock); }
 
+// ── BADGE TEMPLATES ───────────────────────────────────────────────────────
+// Same fixed 4-type system as menu-board.html/hq-admin.html (Settings →
+// Menu Board Badge Templates) — duplicated here per this repo's convention
+// of keeping small shared data/logic in sync by hand across its vanilla
+// pages rather than sharing an import. Only the Sold Out badge is used on
+// this page today, but the full lookup is copied so this page can pick up
+// any of the 4 types without another duplication pass later.
+const DEFAULT_BADGE_TEMPLATES = [
+  { id: 'offer',    name: 'Offer Badge',    size: 'medium', uppercase: false, outlined: false, borderWidth: 'none', radius: 'rounded', bg: '#fff7e6', color: '#ad4e00', borderColor: '#ad4e00', pricePosition: 'below' },
+  { id: 'location', name: 'Location Badge', size: 'medium', uppercase: false, outlined: false, borderWidth: 'none', radius: 'rounded', bg: '#e8fdff', color: '#0e7a9c', borderColor: '#0e7a9c', pricePosition: 'below' },
+  { id: 'soldOut',  name: 'Sold Out Badge', size: 'medium', uppercase: true,  outlined: false, borderWidth: 'thin', radius: 'square',  bg: '#ffffff', color: '#c0392b', borderColor: '#c0392b' },
+  { id: 'category', name: 'Category Badge', size: 'small',  uppercase: true,  outlined: false, borderWidth: 'none', radius: 'square',  bg: '#006241', color: '#ffffff', borderColor: '#006241' },
+];
+let _badgeTemplates = [];
+function getBadgeTemplateById(id) {
+  const templates = _badgeTemplates.length ? _badgeTemplates : DEFAULT_BADGE_TEMPLATES;
+  return templates.find(t => t.id === id) || DEFAULT_BADGE_TEMPLATES.find(t => t.id === id) || DEFAULT_BADGE_TEMPLATES[0];
+}
+const MENU_NOTE_SIZES = {
+  small:  { font: '11px', pad: '3px 8px' },
+  medium: { font: '13px', pad: '4px 10px' },
+  large:  { font: '16px', pad: '6px 13px' },
+};
+const MENU_NOTE_RADII = { square: '2px', rounded: '6px', pill: '999px' };
+const MENU_NOTE_BORDER_WIDTHS = { thin: '1px', medium: '2px', thick: '3px' };
+function badgeStyleForTemplateId(templateId) {
+  const t = getBadgeTemplateById(templateId);
+  const size = MENU_NOTE_SIZES[t.size] || MENU_NOTE_SIZES.medium;
+  const radius = MENU_NOTE_RADII[t.radius] || MENU_NOTE_RADII.rounded;
+  const color = t.color || '#ad4e00';
+  const hasBorder = !!t.borderWidth && t.borderWidth !== 'none';
+  const border = hasBorder ? `${MENU_NOTE_BORDER_WIDTHS[t.borderWidth] || MENU_NOTE_BORDER_WIDTHS.thin} solid ${t.borderColor || color}` : 'none';
+  const bg = t.outlined ? 'transparent' : (t.bg || '#fff7e6');
+  return `font-size:${size.font};padding:${size.pad};border-radius:${radius};background:${bg};color:${color};border:${border};text-transform:${t.uppercase ? 'uppercase' : 'none'};`;
+}
+
 // ── RENDERING ─────────────────────────────────────────────────────────────
 
 function renderGreeting() {
@@ -1546,7 +1584,7 @@ function renderItemsGrid() {
     const img = item.images?.[0] || '';
     return `
     <div class="item-card${oos ? ' oos' : ''}" data-sku="${esc(item.sku)}">
-      ${oos ? '<span class="oos-badge">Sold Out</span>' : ''}
+      ${oos ? `<span class="oos-badge" style="${badgeStyleForTemplateId('soldOut')}">Sold Out</span>` : ''}
       <div class="thumb-placeholder">
         ${img ? `<img src="${esc(img)}" alt="${esc(item.name)}" loading="lazy">` : ''}
       </div>
@@ -2174,6 +2212,11 @@ function startNewOrder() {
 onSnapshot(collection(db, 'items'), snap => {
   _items = snap.docs.map(d => d.data()).sort((a,b) =>
     (a.createdAt||'').localeCompare(b.createdAt||''));
+  renderAll();
+});
+
+onSnapshot(doc(db, 'menuboard', 'badgeTemplates'), snap => {
+  _badgeTemplates = snap.exists() ? (snap.data().data || []) : [];
   renderAll();
 });
 

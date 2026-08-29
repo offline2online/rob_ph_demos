@@ -210,21 +210,20 @@
     /* Category section label — kept for colour-scheme compatibility but hidden */
     .cat-header { display: none; }
 
-    /* Category badge — floats over the top-left corner of each card's photo */
+    /* Category badge — floats over the top-left corner of each card's photo.
+       Position/shape is fixed here; background/colour/font-size/border/
+       text-case come from the 'category' Badge Template instead, applied
+       inline (see catBadgeStyleAttr()) — previously this always matched
+       the brand's own accent colour; now every brand uses the one fixed
+       Category Badge style from Settings. */
     .item-cat-badge {
       position: absolute;
       top: clamp(8px, 1vw, 16px);
       left: clamp(8px, 1vw, 16px);
       z-index: 2;
       display: inline-block;
-      background: var(--accent, var(--green));
-      color: #fff;
-      font-size: clamp(9px, 0.85vw, 13px);
       font-weight: 700;
-      text-transform: uppercase;
       letter-spacing: 0.5px;
-      padding: clamp(6px, 0.7vw, 11px) clamp(12px, 1.4vw, 22px);
-      border-radius: clamp(4px, 0.4vw, 7px);
       white-space: nowrap;
       max-width: 55%;
       overflow: hidden;
@@ -451,24 +450,24 @@
     }
     .item-cell.oos-cell .oos-overlay { display: flex; }
 
+    /* Structural "stamp" look (rotation, box-shadow, inline-flex centering)
+       stays fixed here — border/radius/background/padding and the text's
+       colour/size/case come from the 'soldOut' Badge Template instead
+       (applied inline, see _itemCell below), so .oos-stamp-text
+       deliberately carries no colour/size/case of its own anymore: it
+       inherits every one of those from the inline-styled .oos-stamp
+       around it. */
     .oos-stamp {
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      border: clamp(2px, 0.3vw, 3px) solid var(--danger);
-      border-radius: 4px;
-      padding: clamp(4px, 0.5vw, 8px) clamp(8px, 1.2vw, 18px);
       transform: rotate(-12deg);
-      background: rgba(255,255,255,0.9);
       box-shadow: 0 2px 10px rgba(192,57,43,0.25);
     }
     .oos-stamp-text {
       font-family: 'Oswald', sans-serif;
-      font-size: clamp(9px, 1.1vw, 14px);
       font-weight: 700;
-      color: var(--danger);
       letter-spacing: clamp(1px, 0.3vw, 4px);
-      text-transform: uppercase;
       line-height: 1.1;
     }
 
@@ -629,9 +628,6 @@
       gap: clamp(4px, 0.6vw, 10px);
       padding: clamp(14px, 2vw, 30px);
     }
-    .promo-hero-top .promo-cat {
-      background: var(--cat-bar-bg, var(--accent));
-    }
     .promo-hero-title {
       font-family: 'Oswald', sans-serif;
       font-weight: 800;
@@ -718,19 +714,16 @@
       gap: clamp(2px, 0.4vw, 6px);
       padding: clamp(14px, 1.6vw, 30px) clamp(14px, 1.6vw, 30px) clamp(10px, 1.2vw, 22px);
     }
+    /* Background/colour/font-size/border-radius/text-transform come from
+       the 'category' Badge Template inline (see badgeStyleForTemplateId
+       call sites) — previously this always matched the brand's own accent
+       colour; every brand now uses the one fixed Category Badge style. */
     .promo-cat {
       display: inline-block;
       align-self: flex-start;
-      background: var(--cat-bar-bg, var(--accent));
-      color: #fff;
       font-family: 'Oswald', sans-serif;
       font-weight: 700;
-      /* +30% over the original clamp(11px, 1.02vw, 16px) */
-      font-size: clamp(14px, 1.33vw, 21px);
       letter-spacing: .05em;
-      text-transform: uppercase;
-      padding: clamp(3px, 0.46vw, 7px) clamp(10px, 1.17vw, 18px);
-      border-radius: clamp(4px, 0.46vw, 8px);
       margin-bottom: clamp(4px, 0.6vw, 10px);
     }
     .promo-title {
@@ -1123,17 +1116,19 @@ function _resolveItemOffersForStore(item, store) {
     || eligible
       .filter((o) => isPriced(o) && o.offerFrom && new Date(o.offerFrom) > now)
       .sort((a, b) => new Date(a.offerFrom) - new Date(b.offerFrom))[0];
-  // The board's default note (item.menuBoardNote) is only ever overridden
-  // by a *store-targeted* offer's own note — an untargeted offer applies
-  // everywhere anyway, so the default stays the source of truth for it.
-  const isTargeted = !!(effective && Array.isArray(effective.targeting) && effective.targeting.length);
+  // The board's default note (item.menuBoardNote) is overridden by the
+  // effective offer's own note whenever that offer applies here at all —
+  // via targeting, via being live/scheduled, or both. What used to require
+  // targeting specifically was wrong: a scheduled-but-untargeted offer's
+  // own note is just as much "this offer's own message" as a targeted
+  // one's, and should take over the same way while it's live.
   return {
     ...item,
     offerPrice: effective ? effective.offerPrice : null,
     offerFrom: effective ? effective.offerFrom : '',
     offerUntil: effective ? effective.offerUntil : '',
     offerRecurrence: effective ? (effective.recurrence || null) : null,
-    showOnMenuBoard: (isTargeted && effective.showOnMenuBoard) ? effective.showOnMenuBoard : (item.menuBoardNote || ''),
+    showOnMenuBoard: (effective && effective.showOnMenuBoard) ? effective.showOnMenuBoard : (item.menuBoardNote || ''),
   };
 }
 function getItems() {
@@ -1142,10 +1137,29 @@ function getItems() {
   return withOffers.map(i => {
     const o = _storePricing[i.sku];
     if (!o) return i;
-    // Retail Admin's own store-price override is a single flat price/
-    // window, no recurrence concept — never let an HQ-resolved offer's
-    // recurrence rule bleed through onto a store's simple override.
-    return { ...i, price: o.price, offerPrice: o.offerPrice, offerFrom: o.offerFrom, offerUntil: o.offerUntil, offerRecurrence: null, showOnMenuBoard: o.showOnMenuBoard };
+    // A storePricing/{store} record for this SKU exists the moment a store
+    // saves ANY pricing change at all (retail-admin.html's savePricingChange
+    // always writes one, even for a plain RRP edit with no offer of the
+    // store's own) — so its mere existence can't be treated as "this store
+    // has its own offer," or a record that's really just an RRP sync
+    // permanently shadows every future HQ-level offer/note update for that
+    // SKU at that store, offer or not. The RRP override is real and
+    // independent of any offer, so it always applies; the offer-shaped
+    // fields (price/window/note) only take over when this store genuinely
+    // has its own priced offer running — otherwise whatever
+    // _resolveItemOffersForStore already resolved from the item's own
+    // offers[] stands, exactly as if this store had no override at all.
+    const patch = { ...i, price: o.price != null ? o.price : i.price };
+    if (parseFloat(o.offerPrice) > 0) {
+      Object.assign(patch, {
+        offerPrice: o.offerPrice,
+        offerFrom: o.offerFrom,
+        offerUntil: o.offerUntil,
+        offerRecurrence: null, // store overrides are a single flat window, no recurrence concept
+        showOnMenuBoard: o.showOnMenuBoard,
+      });
+    }
+    return patch;
   });
 }
 function getSettings() { return _settings; }
@@ -1199,22 +1213,24 @@ function shouldShowMenuNote(item) {
   return isOfferLive(item);
 }
 
-// The "Show on Menu Board" badge's look comes from a named template
-// (Settings → Menu Board Badge Templates in hq-admin.html), referenced by
-// item.menuBoardNoteTemplateId — set once per product on the Pricing tab
-// (product-app/PricingTab.jsx), never per store. A store-level override
-// only ever replaces the note's *text*, never its template, so this
-// always resolves the template off the raw item, not the store-resolved
-// copy. DEFAULT_BADGE_TEMPLATES mirrors hq-admin.html's own fallback, used
-// whenever the badgeTemplates registry doc is still empty.
+// Fixed set of exactly 4 badge TYPES — one default style per type, set
+// once in Settings → Menu Board Badge Templates (hq-admin.html) and used
+// everywhere that badge appears. Nothing per-product or per-store picks a
+// template by id anymore — every call site below just asks for one of
+// these 4 fixed ids directly. DEFAULT_BADGE_TEMPLATES mirrors hq-admin.html's
+// own fallback, used whenever the badgeTemplates registry doc is still
+// empty or missing an entry.
 const DEFAULT_BADGE_TEMPLATES = [
-  { id: 'default', name: 'Amber (Default)', size: 'medium', uppercase: false, outlined: false, borderWidth: 'none', radius: 'rounded', bg: '#fff7e6', color: '#ad4e00', borderColor: '#ad4e00', pricePosition: 'below' },
+  { id: 'offer',    name: 'Offer Badge',    size: 'medium', uppercase: false, outlined: false, borderWidth: 'none', radius: 'rounded', bg: '#fff7e6', color: '#ad4e00', borderColor: '#ad4e00', pricePosition: 'below' },
+  { id: 'location', name: 'Location Badge', size: 'medium', uppercase: false, outlined: false, borderWidth: 'none', radius: 'rounded', bg: '#e8fdff', color: '#0e7a9c', borderColor: '#0e7a9c', pricePosition: 'below' },
+  { id: 'soldOut',  name: 'Sold Out Badge', size: 'medium', uppercase: true,  outlined: false, borderWidth: 'thin', radius: 'square',  bg: '#ffffff', color: '#c0392b', borderColor: '#c0392b' },
+  { id: 'category', name: 'Category Badge', size: 'small',  uppercase: true,  outlined: false, borderWidth: 'none', radius: 'square',  bg: '#006241', color: '#ffffff', borderColor: '#006241' },
 ];
 let _badgeTemplates = [];
 function getBadgeTemplates() { return _badgeTemplates.length ? _badgeTemplates : DEFAULT_BADGE_TEMPLATES; }
 function getBadgeTemplateById(id) {
   const templates = getBadgeTemplates();
-  return templates.find(t => t.id === id) || templates[0] || DEFAULT_BADGE_TEMPLATES[0];
+  return templates.find(t => t.id === id) || DEFAULT_BADGE_TEMPLATES.find(t => t.id === id) || DEFAULT_BADGE_TEMPLATES[0];
 }
 const MENU_NOTE_SIZES = {
   small:  { font: 'clamp(11px, 1.0vw, 15px)',   pad: 'clamp(3px, 0.4vw, 6px) clamp(8px, 0.9vw, 14px)' },
@@ -1230,7 +1246,7 @@ const MENU_NOTE_BORDER_WIDTHS = { thin: '1px', medium: '2px', thick: '3px' };
 // whenever it was paired with a filled background (e.g. a solid-colour
 // badge with a contrasting outline) — that's the bug this fixes.
 function badgeStyleForTemplateId(templateId) {
-  const t = getBadgeTemplateById(templateId || 'default');
+  const t = getBadgeTemplateById(templateId);
   const size = MENU_NOTE_SIZES[t.size] || MENU_NOTE_SIZES.medium;
   const radius = MENU_NOTE_RADII[t.radius] || MENU_NOTE_RADII.rounded;
   const color = t.color || '#ad4e00';
@@ -1239,38 +1255,34 @@ function badgeStyleForTemplateId(templateId) {
   const bg = t.outlined ? 'transparent' : (t.bg || '#fff7e6');
   return `font-size:${size.font};padding:${size.pad};border-radius:${radius};background:${bg};color:${color};border:${border};text-transform:${t.uppercase ? 'uppercase' : 'none'};`;
 }
-function menuNoteStyleAttr(item) {
-  return badgeStyleForTemplateId(item.menuBoardNoteTemplateId);
+function menuNoteStyleAttr() {
+  return badgeStyleForTemplateId('offer');
 }
 
-// A store's own Location Badge (Retail Admin ▸ Stock & Location tab) — a
-// per-store, per-item badge that renders the item's physical location text
-// (e.g. "Aisle A3 → Shelf C4") in whichever badge template that store
-// picked. Independent of the HQ-authored "Show on Menu Board" note above:
-// a store sets its own template here, unlike menuBoardNoteTemplateId which
-// stays HQ-locked. Requires both a template and non-empty location text —
-// Retail Admin already enforces this by hiding its own picker until one
-// exists, but a stale saved id with the text since cleared is still
-// handled here rather than trusting that invariant to always hold.
+// A store's own Location Badge (Retail Admin ▸ Stock & Location tab) —
+// renders the item's physical location text (e.g. "Aisle A3 → Shelf C4")
+// whenever that store has set one for this SKU. Its look always comes from
+// the fixed 'location' badge type (Settings → Menu Board Badge Templates) —
+// there's no per-item template choice anymore, so the only thing gating
+// whether it shows at all is whether there's location text to show.
 function locationBadgeHtml(item) {
   const s = _stock[item.sku];
-  if (!s || !s.locationBadgeTemplateId) return '';
-  const human = (s.location && s.location.humanReadable || '').trim();
+  const human = (s && s.location && s.location.humanReadable || '').trim();
   if (!human) return '';
-  return `<div class="menu-board-note location-badge" style="${badgeStyleForTemplateId(s.locationBadgeTemplateId)}">${esc(human)}</div>`;
+  return `<div class="menu-board-note location-badge" style="${badgeStyleForTemplateId('location')}">${esc(human)}</div>`;
 }
 
 // Buckets pre-rendered badge HTML — the "Show on Menu Board" note and the
-// store's Location Badge — by each one's OWN resolved template's Position
-// setting (Menu Board Badge Templates → Position: Above/Below price). The
-// two badges can use different templates, so one can render above the
-// price while the other stays below. Shared by all three render sites
-// (grid tile, hero panel, promo tile) instead of repeating this per site.
+// store's Location Badge — by each one's fixed type's Position setting
+// (Menu Board Badge Templates → Position: Above/Below price). Offer and
+// Location can each independently render above or below the price. Shared
+// by all three render sites (grid tile, hero panel, promo tile) instead of
+// repeating this per site.
 function bucketBadgeNotes(entries) {
   const above = [], below = [];
   entries.forEach(({ html, templateId }) => {
     if (!html) return;
-    const pos = getBadgeTemplateById(templateId || 'default').pricePosition === 'above' ? 'above' : 'below';
+    const pos = getBadgeTemplateById(templateId).pricePosition === 'above' ? 'above' : 'below';
     (pos === 'above' ? above : below).push(html);
   });
   return { above: above.join(''), below: below.join('') };
@@ -1457,34 +1469,48 @@ function _tileAttributesHtml(item) {
   return parts.length ? `<div class="promo-attributes">${parts.join(' &middot; ')}</div>` : '';
 }
 
-function renderTileZone(elementKeys, item, ctx) {
-  return (elementKeys || []).map(key => {
-    switch (key) {
-      case 'category':
-        return item.category ? `<div class="promo-cat">${esc(item.category)}</div>` : '';
-      case 'name':
-        return `<div class="${ctx.titleClass}">${esc(item.name)}</div>`;
-      case 'shortDescription': {
-        const text = item.shortDescription || item.description || '';
-        return text ? `<div class="${ctx.descColClass}"><div class="${ctx.descClass}">${esc(text)}</div></div>` : '';
-      }
-      case 'longDescription': {
-        const text = item.longDescription || '';
-        return text ? `<div class="${ctx.descColClass}"><div class="${ctx.descClass}">${esc(text)}</div></div>` : '';
-      }
-      case 'price':
-        return `<div class="${ctx.priceClass}">${priceHtml(item, ctx.currency, 'price-was')}</div>`;
-      case 'menuBoardNote':
-        return shouldShowMenuNote(item) ? `<div class="menu-board-note" style="${menuNoteStyleAttr(item)}">${esc(item.showOnMenuBoard)}</div>` : '';
-      case 'locationBadge':
-        return locationBadgeHtml(item);
-      case 'nutrition':
-        return buildNutrition(item);
-      case 'attributes':
-        return _tileAttributesHtml(item);
-      default:
-        return '';
+function _tileElementHtml(key, item, ctx) {
+  switch (key) {
+    case 'category':
+      return item.category ? `<div class="promo-cat" style="${badgeStyleForTemplateId('category')}">${esc(item.category)}</div>` : '';
+    case 'name':
+      return `<div class="${ctx.titleClass}">${esc(item.name)}</div>`;
+    case 'shortDescription': {
+      const text = item.shortDescription || item.description || '';
+      return text ? `<div class="${ctx.descColClass}"><div class="${ctx.descClass}">${esc(text)}</div></div>` : '';
     }
+    case 'longDescription': {
+      const text = item.longDescription || '';
+      return text ? `<div class="${ctx.descColClass}"><div class="${ctx.descClass}">${esc(text)}</div></div>` : '';
+    }
+    case 'price':
+      return `<div class="${ctx.priceClass}">${priceHtml(item, ctx.currency, 'price-was')}</div>`;
+    case 'menuBoardNote':
+      return shouldShowMenuNote(item) ? `<div class="menu-board-note" style="${menuNoteStyleAttr(item)}">${esc(item.showOnMenuBoard)}</div>` : '';
+    case 'locationBadge':
+      return locationBadgeHtml(item);
+    case 'nutrition':
+      return buildNutrition(item);
+    case 'attributes':
+      return _tileAttributesHtml(item);
+    default:
+      return '';
+  }
+}
+
+// Each zone entry is { key, align } — align is 'left'|'center'|'right', set
+// via hq-admin.html's Tile Layout editor (a per-element icon toggle, not
+// free-form CSS). 'left' is left unwrapped so every existing configured
+// layout's default alignment renders exactly as before this existed — the
+// wrapping div's own width:100% only ever gets introduced for center/right,
+// where it's required for text-align to have anything to align within.
+function renderTileZone(entries, item, ctx) {
+  return (entries || []).map(entry => {
+    const key = typeof entry === 'string' ? entry : entry.key;
+    const align = (typeof entry === 'object' && entry.align) || 'left';
+    const html = _tileElementHtml(key, item, ctx);
+    if (!html) return '';
+    return align === 'left' ? html : `<div style="width:100%;text-align:${align};">${html}</div>`;
   }).join('');
 }
 
@@ -2427,18 +2453,17 @@ function _renderUnsafe() {
       ? _mediaTag(cellImg, item.name, 'item-thumb-placeholder', '🍽️')
       : `<div class="item-thumb-placeholder">🍽️</div>`;
     const desc = item.description ? `<div class="item-desc">${esc(item.description)}</div>` : '';
-    const menuNote = shouldShowMenuNote(item) ? `<div class="menu-board-note" style="${menuNoteStyleAttr(item)}">${esc(item.showOnMenuBoard)}</div>` : '';
+    const menuNote = shouldShowMenuNote(item) ? `<div class="menu-board-note" style="${menuNoteStyleAttr()}">${esc(item.showOnMenuBoard)}</div>` : '';
     const locationNote = locationBadgeHtml(item);
-    const stockRec = _stock[item.sku];
     const { above: notesAbove, below: notesBelow } = bucketBadgeNotes([
-      { html: menuNote, templateId: item.menuBoardNoteTemplateId },
-      { html: locationNote, templateId: stockRec && stockRec.locationBadgeTemplateId },
+      { html: menuNote, templateId: 'offer' },
+      { html: locationNote, templateId: 'location' },
     ]);
     return `
       <div class="item-cell${oos ? ' oos-cell' : ''}">
         <div class="item-thumb">
           ${thumbInner}
-          ${cat ? `<span class="item-cat-badge">${esc(cat)}</span>` : ''}
+          ${cat ? `<span class="item-cat-badge" style="${badgeStyleForTemplateId('category')}">${esc(cat)}</span>` : ''}
         </div>
         <div class="item-body">
           <div class="item-name">${esc(item.name)}</div>
@@ -2451,7 +2476,7 @@ function _renderUnsafe() {
           </div>
           ${notesBelow}
         </div>
-        <div class="oos-overlay"><div class="oos-stamp"><div class="oos-stamp-text">SOLD OUT</div></div></div>
+        <div class="oos-overlay"><div class="oos-stamp" style="${badgeStyleForTemplateId('soldOut')}"><div class="oos-stamp-text">SOLD OUT</div></div></div>
       </div>`;
   }
 
@@ -2577,6 +2602,30 @@ function _renderUnsafe() {
         }
       `;
 
+      // Centre/right alignment (Tile Layout editor) needs somewhere to sit
+      // — a box that already shrink-wraps to its own text has no spare
+      // room to align into. .promo-hero-top normally does exactly that
+      // (align-items:flex-start, max-width:80%), same as the description
+      // column inside each bottom bar (max-width:68%). Both are widened to
+      // a real, full-width box only when this template actually has a
+      // saved layout to align — every other board's identical-looking
+      // elements keep shrink-wrapping exactly as before. .promo-cat and
+      // .menu-board-note already carry their own align-self:flex-start, so
+      // switching the parent to align-items:stretch doesn't turn either
+      // into a full-width bar — only genuine text/description elements
+      // (which have no such override) actually gain the extra width.
+      if (tpl && tpl.heroLayout) {
+        dynStyle.textContent += `
+          .promo-hero-top { right: 0; max-width: none; align-items: stretch; }
+          .promo-hero-bottom .promo-hero-desc-col { flex: 0 1 68%; max-width: 68%; }
+        `;
+      }
+      if (tpl && tpl.promoLayout) {
+        dynStyle.textContent += `
+          .promo-tile-desc .promo-desc-col { flex: 0 1 68%; max-width: 68%; }
+        `;
+      }
+
       // Build hero image panel — full-bleed photo with product info/pricing in
       // a top-left card (black text) and the description in its own card at
       // the bottom (grey text), the same fields shown on each promo card.
@@ -2597,13 +2646,12 @@ function _renderUnsafe() {
         const heroBottomInner = renderTileZone(tpl.heroLayout.bottomLeft, heroItem, heroCtx) + renderTileZone(tpl.heroLayout.bottomRight, heroItem, heroCtx);
         heroBottomHtml = heroBottomInner ? `<div class="promo-hero-bottom">${heroBottomInner}</div>` : '';
       } else {
-        const heroCat = heroItem.category ? `<div class="promo-cat">${esc(heroItem.category)}</div>` : '';
-        const heroMenuNote = shouldShowMenuNote(heroItem) ? `<div class="menu-board-note" style="${menuNoteStyleAttr(heroItem)}">${esc(heroItem.showOnMenuBoard)}</div>` : '';
+        const heroCat = heroItem.category ? `<div class="promo-cat" style="${badgeStyleForTemplateId('category')}">${esc(heroItem.category)}</div>` : '';
+        const heroMenuNote = shouldShowMenuNote(heroItem) ? `<div class="menu-board-note" style="${menuNoteStyleAttr()}">${esc(heroItem.showOnMenuBoard)}</div>` : '';
         const heroLocationNote = locationBadgeHtml(heroItem);
-        const heroStockRec = _stock[heroItem.sku];
         const { above: heroNotesAbove, below: heroNotesBelow } = bucketBadgeNotes([
-          { html: heroMenuNote, templateId: heroItem.menuBoardNoteTemplateId },
-          { html: heroLocationNote, templateId: heroStockRec && heroStockRec.locationBadgeTemplateId },
+          { html: heroMenuNote, templateId: 'offer' },
+          { html: heroLocationNote, templateId: 'location' },
         ]);
         heroTopHtml = `
           <div class="promo-hero-top">
@@ -2655,13 +2703,12 @@ function _renderUnsafe() {
         const nutrHtml = buildNutrition(item);
         const bottomHtml = (descHtml || nutrHtml)
           ? `<div class="promo-tile-desc">${descHtml}${nutrHtml}</div>` : '';
-        const cat = item.category ? `<div class="promo-cat">${esc(item.category)}</div>` : '';
-        const menuNote = shouldShowMenuNote(item) ? `<div class="menu-board-note" style="${menuNoteStyleAttr(item)}">${esc(item.showOnMenuBoard)}</div>` : '';
+        const cat = item.category ? `<div class="promo-cat" style="${badgeStyleForTemplateId('category')}">${esc(item.category)}</div>` : '';
+        const menuNote = shouldShowMenuNote(item) ? `<div class="menu-board-note" style="${menuNoteStyleAttr()}">${esc(item.showOnMenuBoard)}</div>` : '';
         const locationNote = locationBadgeHtml(item);
-        const tileStockRec = _stock[item.sku];
         const { above: tileNotesAbove, below: tileNotesBelow } = bucketBadgeNotes([
-          { html: menuNote, templateId: item.menuBoardNoteTemplateId },
-          { html: locationNote, templateId: tileStockRec && tileStockRec.locationBadgeTemplateId },
+          { html: menuNote, templateId: 'offer' },
+          { html: locationNote, templateId: 'location' },
         ]);
         return `
           <div class="promo-tile">

@@ -93,12 +93,6 @@ function mapImages(raw) {
   }));
 }
 
-// Same default productStore.js's blankProduct() uses — a product saved
-// before badge templates existed just gets this, which resolves (via
-// registries.js's getBadgeTemplateById) to the same hardcoded look
-// menu-board.html rendered every note with previously.
-const DEFAULT_MENU_BOARD_NOTE_TEMPLATE_ID = 'default';
-
 // A product saved before multi-offer support has only the flat
 // offerPrice/offerFrom/offerUntil/offerDescription fields — wrap that as a
 // single-entry offers[] so it shows up as "Offer 1" instead of vanishing
@@ -164,7 +158,6 @@ export function migrateItem(raw, brandCurrency) {
     // showOnMenuBoard currently holds (which may be an offer's own note,
     // overriding it) on every subsequent load.
     menuBoardNote: raw.menuBoardNote !== undefined ? raw.menuBoardNote : (raw.showOnMenuBoard || ''),
-    menuBoardNoteTemplateId: raw.menuBoardNoteTemplateId || DEFAULT_MENU_BOARD_NOTE_TEMPLATE_ID,
     showOnMenuBoard: raw.showOnMenuBoard || '',
     // Which languages the Descriptions tab's selector offers for this
     // product — English is always present (it's the one language every
