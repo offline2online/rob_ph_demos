@@ -870,6 +870,14 @@ const DEBUG_MODE    = urlParams.get('debug') === '1';
 // Test SKUs — inject campaign SKUs via URL without needing the live PH API
 // e.g. ?testSkus=LS0873NBRONCOS,LS0873NBULLDOGS
 const TEST_SKUS = (urlParams.get('testSkus') || '').split(',').map(s => s.trim()).filter(Boolean);
+// Test Device Type — same idea as testSkus above, for Visitor targeting's
+// Device Type field. Unlike testSkus (a stand-in for a real
+// visitor_customer.SKUs value the live PH API already sends), there is no
+// confirmed real device-type field in this repo's PH API contract yet —
+// see _offerConditionMatches's comment below — so this is local-simulation
+// only, not wired into pollCampaign()'s real API parsing at all.
+// e.g. ?testDeviceType=generic_android_k
+const TEST_DEVICE_TYPE = (urlParams.get('testDeviceType') || '').trim();
 
 const DEFAULT_ROTATION_SECONDS = 5; // fallback when the active template has no Rotation Speed set
 
@@ -916,6 +924,11 @@ let _storeProfile  = { storeName: null, fixedSegments: [], variableSegments: [],
 // Campaign SKUs: null = default menu; string[] = personalised override from Personalisation Hub API
 let _campaignSkus      = TEST_SKUS.length > 0 ? TEST_SKUS : null;
 let _campaignFirstName = null; // null = no greeting; string = show personalised greeting in clock bar
+// Device Type targeting's only data source today — see TEST_DEVICE_TYPE's
+// comment above. Never set anywhere else (no real PH API field to read it
+// from yet), so this only ever reflects whatever ?testDeviceType= was
+// passed in on load.
+let _campaignDeviceType = TEST_DEVICE_TYPE || null;
 let _storeName         = null; // null = no store label; string = show store name in clock bar when no firstName
 
 const MENU_META_STATIC = {
@@ -953,12 +966,16 @@ const MENU_META = new Proxy(MENU_META_STATIC, {
 // Category-aware — an offer's targeting can now be Store / Location Data
 // OR Visitor / Customer Data (ph-designer skill components.md §16,
 // verified live against demo.personalisationhub.com 24 Aug 2026).
-// Visitor fields read the same _campaignFirstName/_campaignSkus globals
-// pollCampaign() already populates from the PH API's campaign_data
-// response — never sourced or managed locally. Fields with no live data
-// source in this repo yet (Display Tag(s), Store Country, Age, Gender,
-// etc.) resolve to an empty `have` array — offered for authoring, but
-// inert until real PH API data for them exists.
+// Visitor fields mostly read the same _campaignFirstName/_campaignSkus
+// globals pollCampaign() already populates from the PH API's campaign_data
+// response — never sourced or managed locally. Device Type is the odd one
+// out: there's no confirmed real device-type field in this repo's PH API
+// contract, so _campaignDeviceType is a local-simulation stand-in only
+// (set from ?testDeviceType=, see its comment above), not a real API read.
+// Every other field with no live data source in this repo yet (Display
+// Tag(s), Store Country, Age, Gender, etc.) resolves to an empty `have`
+// array — offered for authoring, but inert until real PH API data for them
+// exists.
 function _offerConditionMatches(cond, store) {
   const category = cond.category || 'store';
   const have = (
@@ -966,6 +983,7 @@ function _offerConditionMatches(cond, store) {
       ? (
           cond.field === 'firstName' ? (_campaignFirstName ? [_campaignFirstName] : []) :
           cond.field === 'skus' ? (_campaignSkus || []) :
+          cond.field === 'deviceType' ? (_campaignDeviceType ? [_campaignDeviceType] : []) :
           []
         )
       : (
@@ -1603,6 +1621,11 @@ function _updateDebugPanel() {
     ? `<span class="ok">[${_campaignSkus.map(s => esc(s)).join(', ')}]</span>`
     : `<span class="warn">none — showing default menu</span>`;
 
+  // Local-simulation only — see TEST_DEVICE_TYPE's comment above.
+  const deviceTypeHtml = _campaignDeviceType
+    ? `<span class="ok">🧪 "${esc(_campaignDeviceType)}" (from ?testDeviceType=)</span>`
+    : `<span class="warn">none — add ?testDeviceType=... to simulate</span>`;
+
   const matchHtml = _dbgMatchCount !== null
     ? `<span class="ok">${esc(_dbgMatchCount)}</span>`
     : `<span class="warn">—</span>`;
@@ -1617,6 +1640,7 @@ function _updateDebugPanel() {
     `<div>Raw API SKU : ${rawHtml}</div>` +
     `<div>First name  : ${nameHtml}</div>` +
     `<div>SKUs parsed : ${skuHtml}</div>` +
+    `<div>Device Type : ${deviceTypeHtml}</div>` +
     `<div>Matched     : ${matchHtml}</div>`;
 
   el.classList.add('visible');
