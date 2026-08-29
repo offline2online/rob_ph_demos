@@ -40,7 +40,7 @@ export async function editProductImage({ imageDataUrl, prompt }) {
   return data.imageDataUrl;
 }
 
-export async function generateProductVideo({ imageDataUrl, prompt }) {
-  const { data } = await generateProductVideoFn({ imageDataUrl, prompt });
+export async function generateProductVideo({ imageDataUrl, prompt, durationSeconds }) {
+  const { data } = await generateProductVideoFn({ imageDataUrl, prompt, durationSeconds });
   return data.videoUrl;
 }

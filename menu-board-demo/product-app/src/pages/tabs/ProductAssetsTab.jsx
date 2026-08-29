@@ -9,7 +9,7 @@ import BeforeAfterSlider from '../../components/BeforeAfterSlider.jsx';
 import TouchUpModal from '../../components/TouchUpModal.jsx';
 import ClearableDate from '../../components/ClearableDate.jsx';
 import TargetingBuilder, { describeTargeting } from '../../components/TargetingBuilder.jsx';
-import { useAiProviders } from '../../data/registries.js';
+import { useAiProviders, getBrandById } from '../../data/registries.js';
 import { editProductImage, generateProductVideo, isProviderConfigured } from '../../lib/aiProviders.js';
 
 function licenceState(expiry) {
@@ -55,6 +55,12 @@ const TREATMENT_FLAGS = ['bgRemoved', 'enhanced', 'customEdited'];
 // product. Confirmed present in both isnet_fp16 and full isnet — not a
 // precision issue, so switching tiers again won't fix it.
 const BG_REMOVAL_CONFIG = { model: 'isnet_fp16' };
+
+// Mirrors menu-board.html's own DEFAULT_ROTATION_SECONDS fallback (used
+// there when the active Local Feature Highlight template has no Rotation
+// Speed set) — see the Generate Video duration comment below for why this
+// value matters here too.
+const DEFAULT_ROTATION_SECONDS = 5;
 
 // Every image is stored as a base64 data URI inside the Firestore document
 // itself (no separate blob storage), and the whole document has to stay
@@ -455,6 +461,17 @@ export default function ProductAssetsTab({ draft, baseline, patch }) {
   const [videoPrompt, setVideoPrompt] = useState('The product rotates slowly in a smooth, continuous 360-degree turntable spin, studio lighting unchanged.');
   const [videoBusy, setVideoBusy] = useState(false);
 
+  // Generated video is meant for the Local Feature Highlight board's hero
+  // panel (menu-board.html's _pickHeroSrc) — a clip whose own length
+  // doesn't match how long that board actually displays it for (its
+  // Rotation Speed, set per brand in hq-admin.html's Template editor)
+  // either loops mid-motion or sits on a frozen last frame for the
+  // remainder of the slot. Falls back to the same 5s menu-board.html
+  // itself falls back to when a brand has no Local Feature Highlight
+  // template configured at all.
+  const heroTemplate = (getBrandById(draft.brand)?.templates || []).find((t) => t.templateType === 'feature-hero-board');
+  const videoDurationSeconds = parseInt(heroTemplate?.rotationSeconds, 10) || DEFAULT_ROTATION_SECONDS;
+
   // The "+ Add tag" input was uncontrolled, cleared imperatively via
   // e.currentTarget.value = ''. With no key of its own it sits right after
   // a .map() of Tag chips whose count changes on every add/remove — React
@@ -777,7 +794,7 @@ export default function ProductAssetsTab({ draft, baseline, patch }) {
       const promptForVideo = current.bgRemoved
         ? `${videoPrompt.trim()} Plain white studio background throughout, matching the product's own cut-out.`
         : videoPrompt.trim();
-      const videoSrc = await generateProductVideo({ imageDataUrl: imageForVideo, prompt: promptForVideo });
+      const videoSrc = await generateProductVideo({ imageDataUrl: imageForVideo, prompt: promptForVideo, durationSeconds: videoDurationSeconds });
       const next = [...images];
       const newAsset = {
         id: 'img-' + Date.now() + Math.random().toString(36).slice(2, 7),
@@ -1175,7 +1192,7 @@ export default function ProductAssetsTab({ draft, baseline, patch }) {
         onOk={confirmGenerateVideo}
       >
         <p style={{ fontSize: 13, color: 'rgba(0,0,0,.65)', marginBottom: 12 }}>
-          The configured Video provider will animate the currently selected image into a short hero clip using the prompt below. The result is added as a new video asset.
+          The configured Video provider will animate the currently selected image into a short hero clip using the prompt below. The result is added as a new video asset, rendered at {videoDurationSeconds}s to match the Local Feature Highlight board's Rotation Speed{heroTemplate ? '' : ' (default — this brand has no Local Feature Highlight template configured)'}.
         </p>
         <Input.TextArea
           rows={4}

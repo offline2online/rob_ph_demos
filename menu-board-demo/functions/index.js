@@ -366,9 +366,15 @@ exports.editProductImage = onCall({ secrets: [AI_TOKEN_ENC_KEY], maxInstances: 1
 // needed, the client's already-compressed imageDataUrl is passed straight
 // through.
 exports.generateProductVideo = onCall({ secrets: [AI_TOKEN_ENC_KEY], maxInstances: 10, timeoutSeconds: 300 }, async (request) => {
-  const { imageDataUrl, prompt } = request.data || {};
+  const { imageDataUrl, prompt, durationSeconds } = request.data || {};
   if (!/^data:[^;]+;base64,/.test(imageDataUrl || '')) throw new HttpsError('invalid-argument', 'imageDataUrl must be a base64 data URL');
   if (!prompt || !prompt.trim()) throw new HttpsError('invalid-argument', 'prompt is required');
+  // The client derives this from the Local Feature Highlight board's own
+  // Rotation Speed setting (product-app's ProductAssetsTab.jsx) so the
+  // clip's length matches how long it's actually displayed for — but this
+  // still ends up straight in an external API call, so it's re-validated
+  // here rather than trusted as-is.
+  const duration = Math.min(20, Math.max(2, parseInt(durationSeconds, 10) || 5));
 
   const cfg = await loadAiProviderConfig('video');
   const token = decryptAiToken(cfg.authToken);
@@ -384,7 +390,7 @@ exports.generateProductVideo = onCall({ secrets: [AI_TOKEN_ENC_KEY], maxInstance
       // rotation (e.g. the default turntable-style prompt below) is the
       // product turning in place, described in `prompt` text, since a
       // single flat photo has no depth data for a real camera orbit.
-      body: JSON.stringify({ model, prompt, image_uri: imageDataUrl, duration: null, resolution: '1920x1080', generate_audio: false, camera_motion: 'static' }),
+      body: JSON.stringify({ model, prompt, image_uri: imageDataUrl, duration, resolution: '1920x1080', generate_audio: false, camera_motion: 'static' }),
     });
   } catch (e) {
     throw new HttpsError('unavailable', e.message);
