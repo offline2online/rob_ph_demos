@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Input, Switch, Select, Tag, Modal, Button, message } from 'antd';
+import { Input, Switch, Select, Tag, Modal, Drawer, Button, message } from 'antd';
 import dayjs from 'dayjs';
 import { removeBackground as imglyRemoveBackground, preload as imglyPreload } from '@imgly/background-removal';
 import MaterialIcon from '../../components/MaterialIcon.jsx';
@@ -1124,30 +1124,20 @@ export default function ProductAssetsTab({ draft, baseline, patch }) {
                   <IconAction icon={<MaterialIcon name="delete" />} caption="Delete" row danger tooltipTitle="Delete" tooltipDesc="Removes this asset from the product." onClick={deleteAsset} />
                   <IconAction icon={<MaterialIcon name="cached" />} caption="Replace" row tooltipTitle="Replace" tooltipDesc="Swaps the underlying file; variant label, tags and settings are kept." onClick={openReplace} />
                   <IconAction icon={<MaterialIcon name="content_copy" />} caption="Duplicate" row tooltipTitle="Duplicate" tooltipDesc="Adds a copy of this asset as a new tile — its own id and variant label, never default or targeted." onClick={duplicateAsset} />
-                </div>
-                {!isVideo && (
-                  // Same card + solid teal CTA treatment HQ Admin uses for
-                  // requesting changes to a campaign image — moved down here
-                  // (it used to be a toolbar icon at the top) since it's the
-                  // one action here that hands the image to another provider
-                  // rather than editing it directly, and reads better as a
-                  // deliberate, separate step after the direct edit tools above.
-                  <div style={{ background: '#f5f5f5', borderRadius: 8, padding: 12, marginTop: 14 }}>
-                    <p style={{ fontSize: 13, color: 'rgba(0,0,0,.78)', margin: '0 0 8px' }}>
-                      Let us know if you&rsquo;d like to make changes to this image.
-                    </p>
-                    <Button
-                      type="primary"
-                      size="small"
-                      style={{ background: '#169bc2', borderColor: '#169bc2' }}
+                  {!isVideo && (
+                    <IconAction
+                      ai
+                      row
+                      busy={imageBusy === 'custom'}
+                      icon={<MaterialIcon name="smart_toy" />}
+                      caption={imageBusy === 'custom' ? 'Applying…' : 'Request changes'}
                       disabled={expired || !!imageBusy}
-                      loading={imageBusy === 'custom'}
                       onClick={openRequestChangesModal}
-                    >
-                      Request Changes
-                    </Button>
-                  </div>
-                )}
+                      tooltipTitle="Request changes"
+                      tooltipDesc="Describe (or dictate) any change you want and the configured Image provider will apply it — not limited to Enhance or Background."
+                    />
+                  )}
+                </div>
               </div>
               <div style={{ flex: 1, minWidth: 260, maxWidth: 382, display: 'flex', flexDirection: 'column' }}>
                 <div style={{ marginBottom: 16 }}>
@@ -1294,25 +1284,41 @@ export default function ProductAssetsTab({ draft, baseline, patch }) {
         />
       </Modal>
 
-      <Modal
-        title="Request Changes"
+      {/* A slide-in panel rather than a centred Modal — Request Changes is a
+          quick, single-field ask, not a multi-field form, and reads better
+          sliding in alongside the asset it's about rather than covering it. */}
+      <Drawer
+        title="What changes would you like me to make?"
+        placement="right"
+        width={420}
         open={requestChangesModalOpen}
-        onCancel={() => !imageBusy && closeRequestChangesModal()}
-        okText="Apply"
-        okButtonProps={{ loading: imageBusy === 'custom', disabled: !requestChangesPrompt.trim() }}
-        cancelButtonProps={{ disabled: imageBusy === 'custom' }}
-        onOk={confirmRequestChanges}
+        onClose={() => !imageBusy && closeRequestChangesModal()}
+        closable={imageBusy !== 'custom'}
+        maskClosable={imageBusy !== 'custom'}
+        footer={
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+            <Button onClick={closeRequestChangesModal} disabled={imageBusy === 'custom'}>
+              Cancel
+            </Button>
+            <IconAction
+              ai
+              row
+              busy={imageBusy === 'custom'}
+              icon={<MaterialIcon name="smart_toy" />}
+              caption={imageBusy === 'custom' ? 'Applying…' : 'Request changes'}
+              disabled={!requestChangesPrompt.trim() || imageBusy === 'custom'}
+              onClick={confirmRequestChanges}
+            />
+          </div>
+        }
       >
-        <p style={{ fontSize: 13, color: 'rgba(0,0,0,.65)', marginBottom: 12 }}>
-          Describe any change you want made to this image — not limited to Enhance or Background. The configured Image provider applies it to the currently displayed version.
-        </p>
         <div style={{ position: 'relative' }}>
-          <Input.TextArea
-            rows={4}
+          <Input
             value={requestChangesPrompt}
             onChange={(e) => setRequestChangesPrompt(e.target.value)}
             disabled={imageBusy === 'custom'}
-            placeholder="e.g. Make the sauce glossier and add a light steam effect…"
+            placeholder="e.g., remove label, change background…"
+            onPressEnter={() => requestChangesPrompt.trim() && imageBusy !== 'custom' && confirmRequestChanges()}
             style={{ paddingRight: SpeechRecognitionCtor ? 40 : undefined }}
           />
           {SpeechRecognitionCtor && (
@@ -1320,9 +1326,9 @@ export default function ProductAssetsTab({ draft, baseline, patch }) {
               onClick={imageBusy === 'custom' ? undefined : toggleListening}
               title={listening ? 'Stop dictating' : 'Dictate your request'}
               style={{
-                position: 'absolute', top: 8, right: 8, width: 26, height: 26, borderRadius: '50%',
+                position: 'absolute', top: '50%', right: 8, transform: 'translateY(-50%)', width: 26, height: 26, borderRadius: '50%',
                 display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: imageBusy === 'custom' ? 'default' : 'pointer',
-                background: listening ? '#ff4d4f' : '#f0f0f0', color: listening ? '#fff' : 'rgba(0,0,0,.55)',
+                background: listening ? '#ff4d4f' : 'transparent', color: listening ? '#fff' : '#169bc2',
               }}
             >
               <MaterialIcon name="mic" style={{ fontSize: 15 }} />
@@ -1330,7 +1336,7 @@ export default function ProductAssetsTab({ draft, baseline, patch }) {
           )}
         </div>
         {listening && <p style={{ fontSize: 12, color: '#ff4d4f', marginTop: 6 }}>Listening…</p>}
-      </Modal>
+      </Drawer>
 
       <TouchUpModal
         open={touchUpOpen}
