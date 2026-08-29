@@ -28,6 +28,12 @@ function nextVariantLabel(images, type) {
   return String.fromCharCode(65 + existing.length);
 }
 
+// The three image-editing treatments an asset can carry at once — shared
+// by the chaining/revert logic in applyImageTreatment and by the saved-vs-
+// pending check that locks a toggle and drops the before/after slider once
+// its flag is also true in the last-saved baseline.
+const TREATMENT_FLAGS = ['bgRemoved', 'enhanced', 'customEdited'];
+
 // Every image is stored as a base64 data URI inside the Firestore document
 // itself (no separate blob storage), and the whole document has to stay
 // under Firestore's ~1 MiB limit. An unedited marketing photo (600KB-1.2MB
@@ -366,7 +372,7 @@ function Tile({ img, selected, onClick }) {
   );
 }
 
-export default function ProductAssetsTab({ draft, patch }) {
+export default function ProductAssetsTab({ draft, baseline, patch }) {
   const images = draft.images || [];
   const aiProviders = useAiProviders();
   const [selected, setSelected] = useState(0);
@@ -422,6 +428,21 @@ export default function ProductAssetsTab({ draft, patch }) {
   // changes, and the shared Save Changes / Cancel bar (ProductPage.jsx)
   // is the only save step left, same as every other field on this product.
   const current = images[selected] || null;
+
+  // Enhance and Remove Background are undo-able toggles right up until
+  // they're actually saved — once Save Changes commits one to the last-
+  // saved baseline, it's permanent (chaining another treatment on top of a
+  // saved cutout can't cleanly un-chain just its own contribution, the same
+  // reason turning either off already clears every treatment — see
+  // applyImageTreatment's comment), so the toggle itself is disabled the
+  // moment its flag is also true in baseline, and the before/after slider
+  // — nothing left to compare once there's no pending, revertible edit —
+  // gives way to a single flat view of the saved result.
+  const baselineCurrent = current && (baseline?.images || []).find((img) => img.id === current.id);
+  const isTreatmentLocked = (flagKey) => !!(current?.[flagKey] && baselineCurrent?.[flagKey]);
+  const enhanceLocked = isTreatmentLocked('enhanced');
+  const bgLocked = isTreatmentLocked('bgRemoved');
+  const pendingTreatment = current && TREATMENT_FLAGS.some((f) => current[f] && !baselineCurrent?.[f]);
 
   const updateSelected = (fields) => {
     const next = images.map((img, i) => (i === selected ? { ...img, ...fields } : img));
@@ -528,7 +549,6 @@ export default function ProductAssetsTab({ draft, patch }) {
   // un-chain just its own contribution. Rather than show a result that's
   // silently wrong, that case reverts to the untouched original and clears
   // every flag, with a toast explaining why.
-  const TREATMENT_FLAGS = ['bgRemoved', 'enhanced', 'customEdited'];
   const applyImageTreatment = async (kind) => {
     if (!current || imageBusy) return;
     const isBg = kind === 'bg';
@@ -713,7 +733,7 @@ export default function ProductAssetsTab({ draft, patch }) {
         .join(' · ')
     : 'Off — no licence terms recorded. Turn on for licensed, stock or talent-bearing assets.';
 
-  const hasTreatment = current && (current.bgRemoved || current.enhanced || current.customEdited);
+  const hasAnyTreatment = current && (current.bgRemoved || current.enhanced || current.customEdited);
 
   return (
     <div>
@@ -776,10 +796,18 @@ export default function ProductAssetsTab({ draft, patch }) {
                 icon={<MaterialIcon name="auto_fix_high" />}
                 caption={imageBusy === 'enhance' ? 'Enhancing…' : 'Enhance'}
                 active={current.enhanced}
-                disabled={expired || isVideo || !!imageBusy}
+                disabled={expired || isVideo || !!imageBusy || enhanceLocked}
                 onClick={toggleEnhance}
-                tooltipTitle={current.enhanced ? 'Undo enhancement' : 'Enhance quality'}
-                tooltipDesc={isVideo ? 'Not available for video.' : current.enhanced ? 'Reverts to the original upload.' : 'Sharpens, colour-corrects and lifts contrast — real image processing, applied locally, so it can never warp or regenerate the photo.'}
+                tooltipTitle={enhanceLocked ? 'Enhancement saved' : current.enhanced ? 'Undo enhancement' : 'Enhance quality'}
+                tooltipDesc={
+                  isVideo
+                    ? 'Not available for video.'
+                    : enhanceLocked
+                    ? 'Saved changes can’t be undone from here — replace the asset to start over.'
+                    : current.enhanced
+                    ? 'Reverts to the original upload.'
+                    : 'Sharpens, colour-corrects and lifts contrast — real image processing, applied locally, so it can never warp or regenerate the photo.'
+                }
               />
               <IconAction
                 ai
@@ -787,14 +815,16 @@ export default function ProductAssetsTab({ draft, patch }) {
                 icon={<BespokeIcon name="removeBg" />}
                 caption={imageBusy === 'bg' ? 'Removing…' : 'Background'}
                 active={current.bgRemoved}
-                disabled={expired || isVideo || !!imageBusy}
+                disabled={expired || isVideo || !!imageBusy || bgLocked}
                 onClick={toggleBg}
-                tooltipTitle={current.bgRemoved ? 'Restore background' : 'Remove background'}
+                tooltipTitle={bgLocked ? 'Background removal saved' : current.bgRemoved ? 'Restore background' : 'Remove background'}
                 tooltipDesc={
                   isVideo
                     ? 'Not available for video.'
                     : expired
                     ? undefined
+                    : bgLocked
+                    ? 'Saved changes can’t be undone from here — replace the asset to start over.'
                     : current.bgRemoved
                     ? 'Puts the original background back. The cut-out is discarded.'
                     : 'Calls the configured Image provider to cut the product out to a transparent PNG so it can sit on any campaign layout.'
@@ -875,10 +905,30 @@ export default function ProductAssetsTab({ draft, patch }) {
                     style={{ width: '100%', aspectRatio: '1 / 1', background: '#000', borderRadius: 6, display: 'block' }}
                   />
                 ) : (
-                  <BeforeAfterSlider beforeSrc={current.original || current.src} afterSrc={current.src} hasChange={hasTreatment} transparent={current.bgRemoved} />
+                  // The slider is only meaningful while there's something
+                  // pending to weigh up — once a treatment is saved there's
+                  // nothing left to revert, so this shows a single flat view
+                  // of the current (saved) result instead. Achieved without
+                  // a second code path: with hasChange false, the slider
+                  // component only ever renders its own beforeSrc, so
+                  // passing current.src there (instead of the original)
+                  // is what makes that flat view show the saved edit, not
+                  // the pre-edit upload.
+                  <BeforeAfterSlider
+                    beforeSrc={pendingTreatment ? (current.original || current.src) : current.src}
+                    afterSrc={current.src}
+                    hasChange={pendingTreatment}
+                    transparent={current.bgRemoved}
+                  />
                 )}
                 <p style={{ fontSize: 12, color: 'rgba(0,0,0,.45)', marginTop: 8 }}>
-                  {isVideo ? 'Background removal and Enhance aren’t available for video.' : hasTreatment ? 'Drag the slider to compare before/after.' : 'No treatment applied yet.'}
+                  {isVideo
+                    ? 'Background removal and Enhance aren’t available for video.'
+                    : pendingTreatment
+                    ? 'Drag the slider to compare before/after.'
+                    : hasAnyTreatment
+                    ? 'Saved — this edit is permanent.'
+                    : 'No treatment applied yet.'}
                 </p>
                 <div style={{ display: 'flex', gap: 8, marginTop: 14, paddingTop: 14, borderTop: '1px solid #f0f0f0' }}>
                   <IconAction icon={<MaterialIcon name="cached" />} caption="Replace" row tooltipTitle="Replace" tooltipDesc="Swaps the underlying file; variant label, tags and settings are kept." onClick={openReplace} />

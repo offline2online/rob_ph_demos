@@ -171,7 +171,7 @@ export default function ProductPage({ isNew = false }) {
         {tab === 'details' && (
           <ProductDetailsTab draft={draft} patch={patch} onGoPricing={() => goTab('pricing')} />
         )}
-        {tab === 'assets' && <ProductAssetsTab draft={draft} patch={patch} />}
+        {tab === 'assets' && <ProductAssetsTab draft={draft} baseline={baseline} patch={patch} />}
         {tab === 'pricing' && <PricingTab draft={draft} baseline={baseline} setDraft={setDraft} setBaseline={setBaseline} />}
         {tab === 'stock' && <StockTab draft={draft} patch={patch} />}
 

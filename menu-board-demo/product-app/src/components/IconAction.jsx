@@ -40,7 +40,11 @@ export default function IconAction({
     cursor: disabled ? 'not-allowed' : 'pointer',
     color: 'rgba(0,0,0,.65)',
     transition: 'all .15s',
-    opacity: disabled ? 0.35 : 1,
+    // A disabled *and* active button is a treatment that's been saved and
+    // can no longer be toggled — still clearly "in effect," just no longer
+    // actionable, so it stays fully legible rather than dimming the way a
+    // plain disabled control (nothing to show, just unavailable) does.
+    opacity: disabled && !active ? 0.35 : 1,
   };
   if (active && !disabled) {
     base.background = gold ? '#fffbe6' : '#e8fdff';
@@ -53,8 +57,11 @@ export default function IconAction({
   // get the same gradient treatment as every other AI-driven control in
   // this app — a soft tint while idle/busy, a solid fill once its result
   // is actually applied (active), so "this is an AI action" and "this AI
-  // action is currently in effect" both read consistently everywhere.
-  if (ai && !disabled) {
+  // action is currently in effect" both read consistently everywhere. Kept
+  // even when disabled as long as it's active, for the same saved-and-
+  // locked case described above — a plain disabled (inactive) AI button
+  // still falls through to the ordinary dimmed look.
+  if (ai && (active || !disabled)) {
     base.borderColor = 'transparent';
     if (active) {
       base.background = AI_GRADIENT_SOLID;
