@@ -2300,25 +2300,34 @@ function _renderUnsafe() {
   // failing that, the default video takes priority over the default image
   // here specifically, which is the whole point of having both.
   function _pickHeroSrc(item) {
+    const rich = item.imagesRich;
     const targetedIdx = _pickTargetedAssetIndex(item, true);
     if (targetedIdx !== -1) {
       const picked = _srcAt(item, targetedIdx, true);
-      if (picked) return picked;
+      if (picked) return { src: picked, isVideo: !!(Array.isArray(rich) && rich[targetedIdx] && rich[targetedIdx].type === 'video') };
     }
     const videoIdx = _defaultVideoIndex(item);
     if (videoIdx !== -1) {
       const picked = _srcAt(item, videoIdx, true);
-      if (picked) return picked;
+      if (picked) return { src: picked, isVideo: true };
     }
-    return _srcAt(item, _defaultImageIndex(item), true);
+    return { src: _srcAt(item, _defaultImageIndex(item), true), isVideo: false };
   }
 
-  // A product's default asset can be a video, not just a photo — Product
-  // Assets (product-app) stores it the same way (images[0], base64 data
-  // URI), just with a video/* MIME type instead of image/*. Detected off
-  // the data URI itself rather than any separate per-item flag, since
-  // that's the one thing guaranteed to travel with the src no matter which
-  // render site picked it up (imagesLarge vs images, hero vs grid vs promo).
+  // A product's default asset can be a video, not just a photo. Used to be
+  // detected purely off the src string itself (a `data:video/` prefix,
+  // since Product Assets stored every asset — image or video — as a base64
+  // data URI). Generate Video (ProductAssetsTab.jsx's confirmGenerateVideo)
+  // broke that assumption: it stores the video provider's own hosted
+  // `https://` result URL as-is, which has no `data:video/` prefix and no
+  // reliable file extension to sniff either — confirmed live, that made a
+  // generated video's hero panel render as a broken `<img>` instead of a
+  // `<video>`. `_isVideoSrc` is kept as a fallback for the two call sites
+  // that never handle video (the grid cell and promo tile — always
+  // `_pickImage`'s result, real image data URIs, so the sniff still gives
+  // the right answer there); the hero panel — the only place a video can
+  // actually appear — now passes its already-known type straight from
+  // `_pickHeroSrc` instead of re-guessing it from the URL shape.
   function _isVideoSrc(src) {
     return typeof src === 'string' && /^data:video\//.test(src);
   }
@@ -2328,13 +2337,12 @@ function _renderUnsafe() {
   // customer has to press play on. Falls back to the same onerror swap
   // <img> already used per call site, so a corrupt/oversized asset
   // degrades to that site's own placeholder instead of a dead player.
-  function _mediaTag(src, alt, placeholderClass, placeholderEmoji) {
+  // `isVideo`, when passed explicitly (the hero panel), overrides the
+  // src-sniffing fallback described in _isVideoSrc's comment above.
+  function _mediaTag(src, alt, placeholderClass, placeholderEmoji, isVideo) {
     const onerror = `this.replaceWith(Object.assign(document.createElement('div'),{className:'${placeholderClass}',textContent:'${placeholderEmoji}'}))`;
-    // src is always a base64 data URI from Product Assets today (never
-    // externally supplied), so this can't actually break out of the
-    // attribute in practice — escaped anyway as defense-in-depth in case
-    // that assumption ever changes.
-    if (_isVideoSrc(src)) {
+    const video = isVideo !== undefined ? isVideo : _isVideoSrc(src);
+    if (video) {
       return `<video src="${esc(src)}" autoplay muted loop playsinline disablepictureinpicture onerror="${onerror}"></video>`;
     }
     return `<img src="${esc(src)}" alt="${esc(alt)}" loading="lazy" onerror="${onerror}">`;
@@ -2611,8 +2619,8 @@ function _renderUnsafe() {
       // the bottom (grey text), the same fields shown on each promo card.
       // The one place a default video is used at all — see _pickHeroSrc.
       const heroSrc = _pickHeroSrc(heroItem);
-      const heroImgHtml = heroSrc
-        ? _mediaTag(heroSrc, heroItem.name, 'promo-hero-placeholder', '🏷️')
+      const heroImgHtml = heroSrc.src
+        ? _mediaTag(heroSrc.src, heroItem.name, 'promo-hero-placeholder', '🏷️', heroSrc.isVideo)
         : `<div class="promo-hero-placeholder">🏷️</div>`;
       // Tile Layout (hq-admin.html ▸ Settings ▸ Offer Boards ▸ this template's
       // Tile Layout editor) takes over entirely once a brand has configured
