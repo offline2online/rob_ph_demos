@@ -43,16 +43,18 @@ const STORE_FIELDS = [
   { value: 'storeCountry', label: 'Store Country' },
 ];
 
-// Full 16-field list, verified live on Campaign Targeting's own
-// Visitor / Customer Data category. First Name, SKU(s), and Device Type
-// (Individual) have real PH API data behind them — confirmed live against
-// demo.personalisationhub.com's own campaign_data response (visitor_customer.
-// first_name/.skus/.device_type), wired up in menu-board.html's
-// pollCampaign()/_offerConditionMatches. The rest are offered for the same
-// forward-compatible reason as the store fields above — that same
-// visitor_customer response already carries real fields for several of
-// them too (company_name, purchase_intent, age, gender, ...), just not
-// read here yet.
+// Full 17-field list, verified live on Campaign Targeting's own
+// Visitor / Customer Data category (ph-designer skill components.md §16).
+// All 17 now have real PH API data behind them, confirmed live against
+// demo.personalisationhub.com's own campaign_data response — every field
+// here maps to a real visitor_customer.* property, wired up in
+// menu-board.html's pollCampaign()/_offerConditionMatches (Audience /
+// Segments is the one exception worth knowing about: it's a single field
+// here but two separate ones in the real API, segments[] and a standalone
+// audience string — combined on the read side, per the skill's own note to
+// treat this dropdown, not the API shape, as authoritative). platform_data
+// is a real visitor_customer field too but has no corresponding entry in
+// the live category dropdown, so it's deliberately not offered here either.
 const VISITOR_FIELDS = [
   { value: 'firstName', label: 'First Name' },
   { value: 'companyName', label: 'Company Name' },

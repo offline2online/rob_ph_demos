@@ -881,6 +881,31 @@ const TEST_SKUS = (urlParams.get('testSkus') || '').split(',').map(s => s.trim()
 // e.g. ?testDeviceType=android
 const TEST_DEVICE_TYPE = (urlParams.get('testDeviceType') || '').trim();
 
+// Test override for the rest of Visitor / Customer Data (every
+// visitor_customer field besides First Name/SKU(s)/Device Type, which get
+// their own dedicated ?test*= params above for historical reasons — those
+// three were wired and verified one at a time). One generic param instead
+// of 14 near-identical ones: comma-separated field:value pairs, semicolon
+// for a field that itself takes multiple values (Audience/Segments,
+// Product Type(s), etc. are all multi-value in the real API).
+// e.g. ?testVisitor=companyName:Acme,age:34,gender:Male,productTypes:Broadband;Mobile
+const TEST_VISITOR = {};
+(urlParams.get('testVisitor') || '').split(',').map(s => s.trim()).filter(Boolean).forEach((pair) => {
+  const i = pair.indexOf(':');
+  if (i === -1) return;
+  const key = pair.slice(0, i).trim();
+  const val = pair.slice(i + 1).trim();
+  TEST_VISITOR[key] = val.includes(';') ? val.split(';').map((v) => v.trim()).filter(Boolean) : val;
+});
+function _testVisitorStr(key) {
+  const v = TEST_VISITOR[key];
+  return (Array.isArray(v) ? v[0] : v) || null;
+}
+function _testVisitorArr(key) {
+  const v = TEST_VISITOR[key];
+  return v ? (Array.isArray(v) ? v : [v]) : [];
+}
+
 const DEFAULT_ROTATION_SECONDS = 5; // fallback when the active template has no Rotation Speed set
 
 // ── BOARD ACTIVITY HEARTBEAT ─────────────────────────────────────────────────
@@ -932,6 +957,30 @@ let _campaignFirstName = null; // null = no greeting; string = show personalised
 // _campaignFirstName.
 let _campaignDeviceType = TEST_DEVICE_TYPE || null;
 let _storeName         = null; // null = no store label; string = show store name in clock bar when no firstName
+// The rest of Visitor / Customer Data (ph-designer skill components.md
+// §16's 17-field list, minus First Name/SKU(s)/Device Type above, which
+// keep their own dedicated globals) — same shape/role as _storeProfile,
+// just for the individual visitor instead of the store. Every field here
+// is a real visitor_customer field, confirmed live against
+// demo.personalisationhub.com's own campaign_data response 30 Aug 2026.
+// Reassigned for real in pollCampaign() below; seeded here from
+// TEST_VISITOR for boards that never poll or haven't polled yet.
+let _visitorProfile = {
+  companyName: _testVisitorStr('companyName'),
+  purchaseIntent: _testVisitorStr('purchaseIntent'),
+  visitorType: _testVisitorStr('visitorType'),
+  reasonForVisit: _testVisitorStr('reasonForVisit'),
+  age: _testVisitorStr('age'),
+  gender: _testVisitorStr('gender'),
+  audienceSegments: _testVisitorArr('audienceSegments'),
+  productTypes: _testVisitorArr('productTypes'),
+  planTypes: _testVisitorArr('planTypes'),
+  planValues: _testVisitorArr('planValues'),
+  pageViews: _testVisitorArr('pageViews'),
+  events: _testVisitorArr('events'),
+  productHoldings: _testVisitorArr('productHoldings'),
+  purchaseHistory: _testVisitorArr('purchaseHistory'),
+};
 
 const MENU_META_STATIC = {
   breakfast: { label: 'Breakfast Menu',        emoji: '🌅' },
@@ -968,16 +1017,16 @@ const MENU_META = new Proxy(MENU_META_STATIC, {
 // Category-aware — an offer's targeting can now be Store / Location Data
 // OR Visitor / Customer Data (ph-designer skill components.md §16,
 // verified live against demo.personalisationhub.com 24 Aug 2026).
-// Visitor fields read the same _campaignFirstName/_campaignSkus/
-// _campaignDeviceType globals pollCampaign() already populates from the
-// PH API's campaign_data response (visitor_customer.first_name/.skus/
-// .device_type — device_type confirmed live against
-// demo.personalisationhub.com 30 Aug 2026) — never sourced or managed
-// locally. Every other field with no live data source in this repo yet
-// (Display Tag(s), Age, Gender, Purchase Intent, etc. — all present in the
-// same visitor_customer object, just not read here) resolves to an empty
-// `have` array — offered for authoring, but inert until wired up the same
-// way these three were.
+// Visitor fields read _campaignFirstName/_campaignSkus/_campaignDeviceType
+// plus _visitorProfile for the rest — all populated by pollCampaign() from
+// the PH API's real campaign_data response (visitor_customer.*), never
+// sourced or managed locally. All 17 Visitor / Customer Data fields
+// (ph-designer skill components.md §16) are wired as of 30 Aug 2026 —
+// confirmed live against demo.personalisationhub.com's own response.
+// Audience / Segments is one field in the targeting UI but two separate
+// fields in the real API (segments[] and audience string) — combined here
+// per the skill's own note to treat the dropdown, not the API shape, as
+// authoritative.
 function _offerConditionMatches(cond, store) {
   const category = cond.category || 'store';
   const have = (
@@ -986,6 +1035,20 @@ function _offerConditionMatches(cond, store) {
           cond.field === 'firstName' ? (_campaignFirstName ? [_campaignFirstName] : []) :
           cond.field === 'skus' ? (_campaignSkus || []) :
           cond.field === 'deviceType' ? (_campaignDeviceType ? [_campaignDeviceType] : []) :
+          cond.field === 'companyName' ? (_visitorProfile.companyName ? [_visitorProfile.companyName] : []) :
+          cond.field === 'purchaseIntent' ? (_visitorProfile.purchaseIntent ? [_visitorProfile.purchaseIntent] : []) :
+          cond.field === 'visitorType' ? (_visitorProfile.visitorType ? [_visitorProfile.visitorType] : []) :
+          cond.field === 'reasonForVisit' ? (_visitorProfile.reasonForVisit ? [_visitorProfile.reasonForVisit] : []) :
+          cond.field === 'age' ? (_visitorProfile.age ? [_visitorProfile.age] : []) :
+          cond.field === 'gender' ? (_visitorProfile.gender ? [_visitorProfile.gender] : []) :
+          cond.field === 'audienceSegments' ? (_visitorProfile.audienceSegments || []) :
+          cond.field === 'productTypes' ? (_visitorProfile.productTypes || []) :
+          cond.field === 'planTypes' ? (_visitorProfile.planTypes || []) :
+          cond.field === 'planValues' ? (_visitorProfile.planValues || []) :
+          cond.field === 'pageViews' ? (_visitorProfile.pageViews || []) :
+          cond.field === 'events' ? (_visitorProfile.events || []) :
+          cond.field === 'productHoldings' ? (_visitorProfile.productHoldings || []) :
+          cond.field === 'purchaseHistory' ? (_visitorProfile.purchaseHistory || []) :
           []
         )
       : (
@@ -1661,6 +1724,14 @@ function _updateDebugPanel() {
     ? `<span class="ok">"${esc(_campaignDeviceType)}"</span>`
     : `<span class="warn">none — add ?testDeviceType=... to simulate, or from a live poll</span>`;
 
+  // Compact — one line for all 14 remaining Visitor/Customer fields rather
+  // than 14 more rows; only non-empty ones are shown so this stays short
+  // in the (usual) case that no visitor is currently detected.
+  const visitorProfileEntries = Object.entries(_visitorProfile).filter(([, v]) => (Array.isArray(v) ? v.length : v));
+  const visitorProfileHtml = visitorProfileEntries.length
+    ? `<span class="ok">${visitorProfileEntries.map(([k, v]) => `${esc(k)}=${esc(Array.isArray(v) ? `[${v.join(', ')}]` : v)}`).join(', ')}</span>`
+    : `<span class="warn">none — add ?testVisitor=field:value,... to simulate, or from a live poll</span>`;
+
   const matchHtml = _dbgMatchCount !== null
     ? `<span class="ok">${esc(_dbgMatchCount)}</span>`
     : `<span class="warn">—</span>`;
@@ -1676,6 +1747,7 @@ function _updateDebugPanel() {
     `<div>First name  : ${nameHtml}</div>` +
     `<div>SKUs parsed : ${skuHtml}</div>` +
     `<div>Device Type : ${deviceTypeHtml}</div>` +
+    `<div>Visitor     : ${visitorProfileHtml}</div>` +
     `<div>Matched     : ${matchHtml}</div>`;
 
   el.classList.add('visible');
@@ -1889,6 +1961,35 @@ async function pollCampaign() {
     // simulation fallback this still keeps for boards that never poll.
     const deviceType = String(vc?.device_type || '').trim() || null;
 
+    // The rest of Visitor / Customer Data (ph-designer skill
+    // components.md §16's 17-field list) — all real visitor_customer
+    // fields, confirmed live against demo.personalisationhub.com's own
+    // campaign_data response 30 Aug 2026, same as device_type above.
+    // age=0 is the API's "no visitor detected" sentinel here, the same
+    // role an empty string plays for the string fields — not a real age.
+    const companyName = String(vc?.company_name || '').trim() || null;
+    const purchaseIntent = String(vc?.purchase_intent || '').trim() || null;
+    const visitorType = String(vc?.visitor_type || '').trim() || null;
+    const reasonForVisit = String(vc?.reason_for_visit || '').trim() || null;
+    const age = (typeof vc?.age === 'number' && vc.age > 0) ? String(vc.age) : null;
+    const gender = String(vc?.gender || '').trim() || null;
+    // Audience / Segments is one field in the targeting UI but two
+    // separate fields in the real API response (segments[] and a
+    // standalone audience string) — combined here per the skill's own
+    // note (components.md §16) to treat the dropdown, not the API shape,
+    // as authoritative.
+    const audienceSegments = [
+      ...(Array.isArray(vc?.segments) ? vc.segments.filter(Boolean) : []),
+      ...(vc?.audience ? [String(vc.audience).trim()].filter(Boolean) : []),
+    ];
+    const productTypes = Array.isArray(vc?.product_types) ? vc.product_types.filter(Boolean) : [];
+    const planTypes = Array.isArray(vc?.plan_types) ? vc.plan_types.filter(Boolean) : [];
+    const planValues = Array.isArray(vc?.plan_values) ? vc.plan_values.filter(Boolean) : [];
+    const pageViews = Array.isArray(vc?.page_views) ? vc.page_views.filter(Boolean) : [];
+    const events = Array.isArray(vc?.events) ? vc.events.filter(Boolean) : [];
+    const productHoldings = Array.isArray(vc?.product_holdings) ? vc.product_holdings.filter(Boolean) : [];
+    const purchaseHistory = Array.isArray(vc?.purchase_history) ? vc.purchase_history.filter(Boolean) : [];
+
     // Resolve store_name from store_location
     const storeName = String(d?.store_location?.store_name || '').trim() || null;
 
@@ -1941,14 +2042,17 @@ async function pollCampaign() {
     const storeNameChanged  = storeName !== _storeName;
     const nextStoreProfile = { storeName, fixedSegments, variableSegments, suburb, state, storeCountry, displayTags, displayId, displayType, displayName, languagesSpokenByStaff };
     const segmentsChanged  = JSON.stringify(nextStoreProfile) !== JSON.stringify(_storeProfile);
+    const nextVisitorProfile = { companyName, purchaseIntent, visitorType, reasonForVisit, age, gender, audienceSegments, productTypes, planTypes, planValues, pageViews, events, productHoldings, purchaseHistory };
+    const visitorProfileChanged = JSON.stringify(nextVisitorProfile) !== JSON.stringify(_visitorProfile);
 
     _dbgLastPoll = Date.now();
-    if (skusChanged || nameChanged || deviceTypeChanged || storeNameChanged || segmentsChanged) {
+    if (skusChanged || nameChanged || deviceTypeChanged || storeNameChanged || segmentsChanged || visitorProfileChanged) {
       _campaignSkus       = newSkus;
       _campaignFirstName  = firstName;
       _campaignDeviceType = deviceType;
       _storeName          = storeName;
       _storeProfile       = nextStoreProfile;
+      _visitorProfile     = nextVisitorProfile;
       render();
     } else {
       _updateDebugPanel();   // refresh Last poll time even when nothing changed
