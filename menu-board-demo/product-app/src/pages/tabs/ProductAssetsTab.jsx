@@ -85,28 +85,43 @@ function compressDataUrl(dataUrl) {
   });
 }
 
-// The Image provider's "remove background" edit (confirmed live, 29 Aug
-// 2026, by sampling returned pixels) doesn't actually come back with a real
-// alpha channel — it paints a plain light grey/white checkerboard into the
-// opaque pixels themselves as a *picture* of transparency, the way it's seen
-// transparency represented in training images. Left alone that shows up as
-// a second, fake checker pattern layered underneath this app's own
-// transparency-indicator checker (BeforeAfterSlider.jsx, Tile thumbnails),
-// which reads as "weird graphics," not a clean cut-out.
+// The Image provider's "remove background" edit doesn't reliably come back
+// fully cut out. Confirmed live against two different products: sometimes
+// it paints a fake grey/white checkerboard into the opaque pixels instead
+// of real alpha (a *picture* of transparency, the way it's seen
+// transparency represented in training images); on a photo with a
+// saturated colour backdrop (a red seasonal studio background), it left
+// patches of that original red fully opaque and untouched, only partially
+// clearing it. Either way the result isn't genuinely transparent.
 //
-// This flood-fills real alpha=0 outward from the image border through
-// pixels that look like the model's fake background — near-grey/white,
-// i.e. low "chroma" (max channel − min channel) — regardless of exact
-// brightness, since that background is sometimes a gradient/vignette
-// rather than one flat tone. Chroma, not a colour-distance-to-neighbour
-// chain, is the gate: an earlier version compared each pixel only to the
-// neighbour it was reached from and had no way to tell "smooth gradient
-// through more background" apart from "smooth gradient across the food
-// itself" — it leaked straight through the product to the far edge.
-// Real food (fried chicken orange/brown, red packaging, golden fries) is
-// always strongly saturated, so gating on chroma stops the fill dead at
-// the product's actual edge while still connecting every grey/white
-// background pixel, checkerboard or gradient alike, back to the border.
+// This flood-fills real alpha=0 outward from the image border, accepting a
+// pixel once it's close enough to an adaptively-updating reference colour
+// for its own connected region (not one fixed reference for the whole
+// image, and not a chroma cutoff) — each accepted pixel nudges its
+// region's reference a little toward its own colour before propagating
+// further. That follows a gradient or lightly-varying solid colour
+// (checkerboard, vignette, or a flat red backdrop alike) exactly the way a
+// magic-wand tool does, while an early version that compared only to the
+// immediate neighbour it was reached from had no way to tell "smooth
+// gradient through more background" apart from "smooth gradient across the
+// food itself" and leaked straight through the product to the far edge —
+// the slow-adapting reference resists being dragged that far off its
+// starting colour by a short run of small steps. A later version gated on
+// low chroma instead, correctly refusing saturated colours — but that
+// can't tell a saturated *backdrop* apart from saturated food/packaging,
+// which is exactly the red-backdrop case the adaptive-reference approach
+// above was written for.
+//
+// In practice the model produces *either* pattern depending on the call,
+// and each heuristic alone regresses on the other's case: a checkerboard's
+// tiles butt up against each other with a hard edge, not a gradient, so
+// adaptive-reference chaining stops dead at every tile boundary and leaves
+// most of the checkerboard opaque; chroma-gating alone leaves the red
+// backdrop patches untouched exactly as described above. A pixel is
+// accepted into the fill if it satisfies *either* test — low chroma (any
+// brightness, any adjacent jump) or closeness to its region's adaptive
+// reference (any saturation, as long as it's reached smoothly) — which
+// covers both failure modes at once.
 function forceTransparentBackground(dataUrl) {
   return new Promise((resolve) => {
     const img = new Image();
@@ -123,35 +138,47 @@ function forceTransparentBackground(dataUrl) {
       const { data } = imageData;
 
       const CHROMA_MAX = 22;
-      const isBackgroundish = (i) => {
-        const r = data[i], g = data[i + 1], b = data[i + 2];
-        return Math.max(r, g, b) - Math.min(r, g, b) <= CHROMA_MAX;
-      };
-
+      // A single hop may drift this far from its region's current
+      // reference colour — comfortably more than typical backdrop lighting
+      // variance, comfortably less than the jump from a studio backdrop to
+      // the product itself (measured ~90 between a red backdrop and this
+      // product's fried-chicken colouring).
+      const STEP_THRESHOLD = 55;
       const visited = new Uint8Array(width * height);
-      const stack = [];
-      // Seed every border pixel that already looks background-ish —
-      // product photography always frames the subject with clear space
-      // around it, so this only skips a seed in the rare case where the
-      // subject itself touches the very edge of the frame.
-      for (let x = 0; x < width; x++) { stack.push(x, 0, x, height - 1); }
-      for (let y = 0; y < height; y++) { stack.push(0, y, width - 1, y); }
+      const stack = []; // flat [x, y, refR, refG, refB, ...]
+      const seed = (x, y) => {
+        const i = (y * width + x) * 4;
+        stack.push(x, y, data[i], data[i + 1], data[i + 2]);
+      };
+      // Seed every border pixel with its own colour as its region's
+      // starting reference — product photography always frames the
+      // subject with clear space around it, so this only misfires in the
+      // rare case where the subject itself touches the very edge.
+      for (let x = 0; x < width; x++) { seed(x, 0); seed(x, height - 1); }
+      for (let y = 0; y < height; y++) { seed(0, y); seed(width - 1, y); }
 
       while (stack.length) {
-        const y = stack.pop();
-        const x = stack.pop();
+        const refB = stack.pop(), refG = stack.pop(), refR = stack.pop();
+        const y = stack.pop(), x = stack.pop();
         if (x < 0 || y < 0 || x >= width || y >= height) continue;
         const p = y * width + x;
         if (visited[p]) continue;
-        visited[p] = 1;
         const i = p * 4;
-        if (!isBackgroundish(i)) continue;
+        const r = data[i], g = data[i + 1], b = data[i + 2];
+        const lowChroma = Math.max(r, g, b) - Math.min(r, g, b) <= CHROMA_MAX;
+        const dr = r - refR, dg = g - refG, db = b - refB;
+        const nearReference = Math.sqrt(dr * dr + dg * dg + db * db) <= STEP_THRESHOLD;
+        if (!lowChroma && !nearReference) continue;
+        visited[p] = 1;
         data[i + 3] = 0;
-        stack.push(x + 1, y, x - 1, y, x, y + 1, x, y - 1);
+        const nr = refR * 0.9 + r * 0.1;
+        const ng = refG * 0.9 + g * 0.1;
+        const nb = refB * 0.9 + b * 0.1;
+        stack.push(x + 1, y, nr, ng, nb, x - 1, y, nr, ng, nb, x, y + 1, nr, ng, nb, x, y - 1, nr, ng, nb);
       }
 
       ctx.putImageData(imageData, 0, 0);
-      resolve(canvas.toDataURL('image/png'));
+      resolve(canvas.toDataURL('image/webp', 0.92));
     };
     img.onerror = () => resolve(dataUrl);
     img.src = dataUrl;
