@@ -1522,6 +1522,40 @@ let rotationTimer  = null;
 let _apiError      = null;   // null = ok; string = error message to display
 let _dbgLastPoll   = null;   // timestamp of last completed poll() call
 let _dbgMatchCount = null;   // "N of M" string updated during render()
+
+// Every render() call replaces boardRoot's whole innerHTML (see the
+// bottom of _renderUnsafe) — including, each time the hero rotates onto a
+// video, a brand new <video> element. An already-in-memory base64 data
+// URI (every other asset in this app) is instant either way, but Generate
+// Video's asset is the provider's own hosted https:// URL (see
+// _isVideoSrc's comment) — that <video> only starts actually downloading
+// the instant it's inserted, and confirmed live, a several-second real
+// network fetch at that exact moment reads as a stuck white screen. This
+// starts that download one full rotation interval early, in a hidden
+// element appended straight to document.body — not boardRoot — so it
+// survives the innerHTML replace above and has time to buffer before it's
+// needed. Declared at module scope (not inside _renderUnsafe, which reruns
+// this whole file's render-time code fresh on every rotation tick) so the
+// in-flight preload element itself persists — and can be found and
+// deduped or torn down — across renders instead of being forgotten the
+// moment the render that started it ends.
+let _nextHeroPreload = null;
+function _preloadNextHeroVideo(src, isVideo) {
+  if (!isVideo || !src || /^data:/.test(src)) { // data URIs need no head start
+    if (_nextHeroPreload) { _nextHeroPreload.remove(); _nextHeroPreload = null; }
+    return;
+  }
+  if (_nextHeroPreload && _nextHeroPreload.dataset.src === src) return; // already warming this one
+  if (_nextHeroPreload) _nextHeroPreload.remove();
+  const v = document.createElement('video');
+  v.preload = 'auto';
+  v.muted = true;
+  v.style.cssText = 'position:fixed;top:-9999px;left:-9999px;width:1px;height:1px;opacity:0;pointer-events:none';
+  v.dataset.src = src;
+  v.src = src;
+  document.body.appendChild(v);
+  _nextHeroPreload = v;
+}
 let _dbgRawSkuKey  = null;   // which key name the API used ("SKUs","skus", or "none")
 let _dbgRawSkuVal  = null;   // raw array as received before validation
 
@@ -2367,7 +2401,7 @@ function _renderUnsafe() {
     const onerror = `this.replaceWith(Object.assign(document.createElement('div'),{className:'${placeholderClass}',textContent:'${placeholderEmoji}'}))`;
     const video = isVideo !== undefined ? isVideo : _isVideoSrc(src);
     if (video) {
-      return `<video src="${esc(src)}" autoplay muted loop playsinline disablepictureinpicture onerror="${onerror}"></video>`;
+      return `<video src="${esc(src)}" preload="auto" autoplay muted loop playsinline disablepictureinpicture onerror="${onerror}"></video>`;
     }
     return `<img src="${esc(src)}" alt="${esc(alt)}" loading="lazy" onerror="${onerror}">`;
   }
@@ -2598,6 +2632,16 @@ function _renderUnsafe() {
       const promoPage = [];
       for (let k = 1; k <= promoSlots; k++) {
         promoPage.push(featuredPool[(heroIndex + k) % featuredPool.length]);
+      }
+
+      // Start warming whatever the hero rotates to NEXT — see
+      // _preloadNextHeroVideo's comment — using the rest of this
+      // rotation's own interval as the head start. A pool of 1 never
+      // rotates (startRotation no-ops below totalPages<=1), so there's
+      // deliberately no "next" to warm in that case.
+      if (featuredPool.length > 1) {
+        const nextHero = _pickHeroSrc(featuredPool[(heroIndex + 1) % featuredPool.length]);
+        _preloadNextHeroVideo(nextHero.src, nextHero.isVideo);
       }
 
       // Hero image panel size — fine-tunes how much of the screen the image
