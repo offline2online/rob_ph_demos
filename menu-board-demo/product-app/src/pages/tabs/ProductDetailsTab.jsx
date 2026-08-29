@@ -246,7 +246,12 @@ export default function ProductDetailsTab({ draft, patch, onGoPricing, showValid
 
   return (
     <div>
-      {/* Identity & pricing */}
+      {/* Identity, classification & pricing — one section, not two. Order
+          is Brand/Product name, then SKU/Category/Sub-category on one
+          line (Category and Menu types are both mandatory, so they sit
+          right under SKU rather than buried further down the page), then
+          Menu types, then pricing last — pricing is read-only here
+          anyway (see the lock note below), so it doesn't need to lead. */}
       <SectionCard>
         <div className="ph-sect-label" style={{ marginBottom: 12 }}>
           Identity &amp; pricing
@@ -270,9 +275,11 @@ export default function ProductDetailsTab({ draft, patch, onGoPricing, showValid
             />
           </Field>
         </div>
-        <div style={{ display: 'grid', gridTemplateColumns: '1.3fr 1fr 1fr', gap: '14px 16px' }}>
+
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '14px 16px', marginBottom: 14 }}>
           <Field label="SKU" required error={showErr(!(draft.sku || '').trim()) ? 'SKU is required.' : undefined}>
             <Input
+              size="small"
               value={draft.sku}
               onChange={(e) => patch({ sku: e.target.value })}
               style={{ fontFamily: 'ui-monospace,Menlo,Consolas,monospace' }}
@@ -280,47 +287,9 @@ export default function ProductDetailsTab({ draft, patch, onGoPricing, showValid
               status={showErr(!(draft.sku || '').trim()) ? 'error' : undefined}
             />
           </Field>
-          <Field label="RRP">
-            <InputNumber disabled value={draft.rrp} prefix={draft.currency || brand?.currency || '$'} style={{ width: '100%' }} />
-          </Field>
-          <Field label="Offer price">
-            <InputNumber disabled value={draft.offerPrice} prefix={draft.currency || brand?.currency || '$'} style={{ width: '100%' }} />
-          </Field>
-        </div>
-        {draft.showOnMenuBoard && (
-          <div style={{ marginTop: 12 }}>
-            <Field label="Show on Menu Board">
-              <Input disabled value={draft.showOnMenuBoard} />
-            </Field>
-          </div>
-        )}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, background: '#fafafa', border: '1px solid #f0f0f0', borderRadius: 6, padding: '10px 12px', fontSize: 13, color: 'rgba(0,0,0,.65)', marginTop: 12 }}>
-          <MaterialIcon name="lock" style={{ fontSize: 15 }} />
-          <span style={{ flex: 1 }}>
-            Pricing is read-only here. RRP, offer price, scheduling, currency and tax class are all managed on the
-            Pricing tab so that every change is captured in the price change log.
-          </span>
-          <Button size="small" onClick={onGoPricing}>
-            Go to Pricing →
-          </Button>
-        </div>
-        <div style={{ marginTop: 12 }}>
-          <OfferBanner rrp={draft.rrp} offerPrice={draft.offerPrice} offerFrom={draft.offerFrom} offerUntil={draft.offerUntil} recurrence={draft.offerRecurrence} currency={draft.currency || brand?.currency || '$'} />
-        </div>
-      </SectionCard>
-
-      {/* Classification & availability — directly under Identity & pricing
-          (right after SKU) since Category and Menu types are both
-          mandatory; previously buried under Descriptions, well below
-          fields someone fills in and saves without ever scrolling that
-          far. */}
-      <SectionCard>
-        <div className="ph-sect-label" style={{ marginBottom: 12 }}>
-          Classification &amp; availability
-        </div>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px 16px' }}>
           <Field label="Category" required error={showErr(!draft.category) ? 'Category is required.' : undefined}>
             <Select
+              size="small"
               value={draft.category || undefined}
               onChange={(v) => patch({ category: v })}
               options={catOptions}
@@ -357,6 +326,7 @@ export default function ProductDetailsTab({ draft, patch, onGoPricing, showValid
           </Field>
           <Field label="Sub-category">
             <Select
+              size="small"
               value={draft.subCategory || undefined}
               onChange={(v) => patch({ subCategory: v })}
               options={subCatOptions}
@@ -393,7 +363,7 @@ export default function ProductDetailsTab({ draft, patch, onGoPricing, showValid
           </Field>
         </div>
 
-        <div style={{ marginTop: 14 }}>
+        <div style={{ marginBottom: 14 }}>
           <Field
             label="Menu types"
             required
@@ -421,6 +391,35 @@ export default function ProductDetailsTab({ draft, patch, onGoPricing, showValid
               })}
             </div>
           </Field>
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px 16px' }}>
+          <Field label="RRP">
+            <InputNumber disabled value={draft.rrp} prefix={draft.currency || brand?.currency || '$'} style={{ width: '100%' }} />
+          </Field>
+          <Field label="Offer price">
+            <InputNumber disabled value={draft.offerPrice} prefix={draft.currency || brand?.currency || '$'} style={{ width: '100%' }} />
+          </Field>
+        </div>
+        {draft.showOnMenuBoard && (
+          <div style={{ marginTop: 12 }}>
+            <Field label="Show on Menu Board">
+              <Input disabled value={draft.showOnMenuBoard} />
+            </Field>
+          </div>
+        )}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, background: '#fafafa', border: '1px solid #f0f0f0', borderRadius: 6, padding: '10px 12px', fontSize: 13, color: 'rgba(0,0,0,.65)', marginTop: 12 }}>
+          <MaterialIcon name="lock" style={{ fontSize: 15 }} />
+          <span style={{ flex: 1 }}>
+            Pricing is read-only here. RRP, offer price, scheduling, currency and tax class are all managed on the
+            Pricing tab so that every change is captured in the price change log.
+          </span>
+          <Button size="small" onClick={onGoPricing}>
+            Go to Pricing →
+          </Button>
+        </div>
+        <div style={{ marginTop: 12 }}>
+          <OfferBanner rrp={draft.rrp} offerPrice={draft.offerPrice} offerFrom={draft.offerFrom} offerUntil={draft.offerUntil} recurrence={draft.offerRecurrence} currency={draft.currency || brand?.currency || '$'} />
         </div>
       </SectionCard>
 
