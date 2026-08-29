@@ -224,6 +224,34 @@ function forceTransparentBackground(dataUrl) {
   });
 }
 
+// Video providers don't understand alpha the way this app's own preview
+// does — confirmed live on a cut-out product photo (barbecue beans), the
+// provider rendered the see-through area as solid black with stray odd
+// colouring instead of leaving it blank, since the model has to put
+// *something* there and was never told what. Flattening onto plain white
+// before the call — the same white the rest of the catalog's own product
+// photography is shot against — gives it an ordinary opaque photo instead
+// of leaving that decision to the model. Only ever applied to the copy of
+// the image sent to the Video provider; the asset's own stored src (and
+// its transparency) is untouched.
+function flattenToWhite(dataUrl) {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      canvas.width = img.naturalWidth;
+      canvas.height = img.naturalHeight;
+      const ctx = canvas.getContext('2d');
+      ctx.fillStyle = '#fff';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(img, 0, 0);
+      resolve(canvas.toDataURL('image/jpeg', 0.92));
+    };
+    img.onerror = () => resolve(dataUrl);
+    img.src = dataUrl;
+  });
+}
+
 function blobToDataUrl(blob) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -741,7 +769,15 @@ export default function ProductAssetsTab({ draft, baseline, patch }) {
     }
     setVideoBusy(true);
     try {
-      const videoSrc = await generateProductVideo({ imageDataUrl: current.src, prompt: videoPrompt.trim() });
+      const imageForVideo = current.bgRemoved ? await flattenToWhite(current.src) : current.src;
+      // Belt-and-braces alongside the flattening above — the provider is
+      // regenerating the whole scene from this single frame, not just
+      // animating the exact pixels, so it can still drift the backdrop
+      // over the course of the clip unless it's told what to hold steady.
+      const promptForVideo = current.bgRemoved
+        ? `${videoPrompt.trim()} Plain white studio background throughout, matching the product's own cut-out.`
+        : videoPrompt.trim();
+      const videoSrc = await generateProductVideo({ imageDataUrl: imageForVideo, prompt: promptForVideo });
       const next = [...images];
       const newAsset = {
         id: 'img-' + Date.now() + Math.random().toString(36).slice(2, 7),
@@ -989,7 +1025,6 @@ export default function ProductAssetsTab({ draft, baseline, patch }) {
                     beforeSrc={pendingTreatment ? (current.original || current.src) : current.src}
                     afterSrc={current.src}
                     hasChange={pendingTreatment}
-                    transparent={current.bgRemoved}
                   />
                 )}
                 <p style={{ fontSize: 12, color: 'rgba(0,0,0,.45)', marginTop: 8 }}>

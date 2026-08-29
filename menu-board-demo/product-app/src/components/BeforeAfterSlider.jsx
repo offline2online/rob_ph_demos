@@ -3,7 +3,7 @@ import { useRef, useState, useCallback } from 'react';
 // Draggable before/after slider — no AntD equivalent (brief §9 calls this
 // out explicitly as one of the two components to build once and reuse).
 // Works on mouse and touch via the Pointer Events API.
-export default function BeforeAfterSlider({ beforeSrc, afterSrc, hasChange, transparent = false }) {
+export default function BeforeAfterSlider({ beforeSrc, afterSrc, hasChange }) {
   const [pos, setPos] = useState(50);
   const boxRef = useRef(null);
   const dragging = useRef(false);
@@ -30,16 +30,6 @@ export default function BeforeAfterSlider({ beforeSrc, afterSrc, hasChange, tran
     dragging.current = false;
   };
 
-  const bg = transparent
-    ? {
-        backgroundColor: '#fff',
-        backgroundImage:
-          'linear-gradient(45deg,#f0f0f0 25%,transparent 25%),linear-gradient(-45deg,#f0f0f0 25%,transparent 25%),linear-gradient(45deg,transparent 75%,#f0f0f0 75%),linear-gradient(-45deg,transparent 75%,#f0f0f0 75%)',
-        backgroundSize: '18px 18px',
-        backgroundPosition: '0 0,0 9px,9px -9px,-9px 0',
-      }
-    : { background: '#fff' };
-
   return (
     <div
       ref={boxRef}
@@ -52,7 +42,14 @@ export default function BeforeAfterSlider({ beforeSrc, afterSrc, hasChange, tran
         overflow: 'hidden',
         userSelect: 'none',
         touchAction: 'none',
-        ...bg,
+        // A cut-out's transparent area is shown against plain white here
+        // (matching the rest of the catalog's photography) rather than a
+        // checkerboard — the checkerboard pattern reads as "unfinished"
+        // for a preview that's meant to show what campaign layouts will
+        // actually see it on. TouchUpModal keeps its own checkerboard,
+        // since that's a working canvas for editing transparency, not a
+        // preview of the result.
+        background: '#fff',
       }}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
