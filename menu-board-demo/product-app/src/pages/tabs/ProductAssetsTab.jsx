@@ -921,8 +921,6 @@ export default function ProductAssetsTab({ draft, baseline, patch }) {
         .join(' · ')
     : 'Off — no licence terms recorded. Turn on for licensed, stock or talent-bearing assets.';
 
-  const hasAnyTreatment = current && (current.bgRemoved || current.enhanced || current.customEdited);
-
   return (
     <div>
       {/* Sticky so the thumbnail strip stays reachable while scrolling
@@ -1111,15 +1109,6 @@ export default function ProductAssetsTab({ draft, baseline, patch }) {
                     hasChange={pendingTreatment}
                   />
                 )}
-                <p style={{ fontSize: 12, color: 'rgba(0,0,0,.45)', marginTop: 8 }}>
-                  {isVideo
-                    ? 'Background removal and Enhance aren’t available for video.'
-                    : pendingTreatment
-                    ? 'Drag the slider to compare before/after.'
-                    : hasAnyTreatment
-                    ? 'Saved — this edit is permanent.'
-                    : 'No treatment applied yet.'}
-                </p>
                 <div style={{ display: 'flex', gap: 8, marginTop: 14, paddingTop: 14, borderTop: '1px solid #f0f0f0' }}>
                   <IconAction icon={<MaterialIcon name="delete" />} caption="Delete" row danger tooltipTitle="Delete" tooltipDesc="Removes this asset from the product." onClick={deleteAsset} />
                   <IconAction icon={<MaterialIcon name="cached" />} caption="Replace" row tooltipTitle="Replace" tooltipDesc="Swaps the underlying file; variant label, tags and settings are kept." onClick={openReplace} />
