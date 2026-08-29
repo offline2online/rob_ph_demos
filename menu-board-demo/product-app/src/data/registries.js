@@ -194,8 +194,13 @@ export function getBadgeTemplateById(id) {
   return templates.find((t) => t.id === id) || DEFAULT_BADGE_TEMPLATES.find((t) => t.id === id) || DEFAULT_BADGE_TEMPLATES[0];
 }
 
+// Sorted by name (not registry/insertion order) for its one consumer,
+// ProductDetailsTab.jsx's Language selector and Add New Language picker —
+// alphabetical is easier to scan once more than a couple of languages are
+// in play, and there's no other ordering (usage frequency, etc.) worth
+// preserving instead.
 export function getLanguages() {
-  return _languages.length ? _languages : DEFAULT_LANGUAGES;
+  return [...(_languages.length ? _languages : DEFAULT_LANGUAGES)].sort((a, b) => a.name.localeCompare(b.name));
 }
 
 export function getAiProviders() {
