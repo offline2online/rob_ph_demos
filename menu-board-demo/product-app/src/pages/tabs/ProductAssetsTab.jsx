@@ -1093,7 +1093,7 @@ export default function ProductAssetsTab({ draft, baseline, patch }) {
                     key={current.id}
                     src={current.src}
                     controls
-                    style={{ width: '100%', aspectRatio: '1 / 1', background: '#000', borderRadius: 6, display: 'block' }}
+                    style={{ width: '100%', aspectRatio: '1 / 1', background: '#fff', borderRadius: 6, display: 'block' }}
                   />
                 ) : (
                   // The slider is only meaningful while there's something
