@@ -881,30 +881,47 @@ const TEST_SKUS = (urlParams.get('testSkus') || '').split(',').map(s => s.trim()
 // e.g. ?testDeviceType=android
 const TEST_DEVICE_TYPE = (urlParams.get('testDeviceType') || '').trim();
 
+// Shared parser for the two generic test-override params below: comma-
+// separated field:value pairs, semicolon for a field that itself takes
+// multiple values (Audience/Segments, Product Type(s), etc. are all
+// multi-value in the real API).
+function _parseTestFieldPairs(paramName) {
+  const map = {};
+  (urlParams.get(paramName) || '').split(',').map((s) => s.trim()).filter(Boolean).forEach((pair) => {
+    const i = pair.indexOf(':');
+    if (i === -1) return;
+    const key = pair.slice(0, i).trim();
+    const val = pair.slice(i + 1).trim();
+    map[key] = val.includes(';') ? val.split(';').map((v) => v.trim()).filter(Boolean) : val;
+  });
+  return map;
+}
+function _testFieldStr(map, key) {
+  const v = map[key];
+  return (Array.isArray(v) ? v[0] : v) || null;
+}
+function _testFieldArr(map, key) {
+  const v = map[key];
+  return v ? (Array.isArray(v) ? v : [v]) : [];
+}
+
 // Test override for the rest of Visitor / Customer Data (every
 // visitor_customer field besides First Name/SKU(s)/Device Type, which get
 // their own dedicated ?test*= params above for historical reasons — those
 // three were wired and verified one at a time). One generic param instead
-// of 14 near-identical ones: comma-separated field:value pairs, semicolon
-// for a field that itself takes multiple values (Audience/Segments,
-// Product Type(s), etc. are all multi-value in the real API).
+// of 14 near-identical ones.
 // e.g. ?testVisitor=companyName:Acme,age:34,gender:Male,productTypes:Broadband;Mobile
-const TEST_VISITOR = {};
-(urlParams.get('testVisitor') || '').split(',').map(s => s.trim()).filter(Boolean).forEach((pair) => {
-  const i = pair.indexOf(':');
-  if (i === -1) return;
-  const key = pair.slice(0, i).trim();
-  const val = pair.slice(i + 1).trim();
-  TEST_VISITOR[key] = val.includes(';') ? val.split(';').map((v) => v.trim()).filter(Boolean) : val;
-});
-function _testVisitorStr(key) {
-  const v = TEST_VISITOR[key];
-  return (Array.isArray(v) ? v[0] : v) || null;
-}
-function _testVisitorArr(key) {
-  const v = TEST_VISITOR[key];
-  return v ? (Array.isArray(v) ? v : [v]) : [];
-}
+const TEST_VISITOR = _parseTestFieldPairs('testVisitor');
+function _testVisitorStr(key) { return _testFieldStr(TEST_VISITOR, key); }
+function _testVisitorArr(key) { return _testFieldArr(TEST_VISITOR, key); }
+
+// Test override for Queueing / Aggregate Visitor Data — same idea, its
+// own param since it's a genuinely separate data source (aggregate queue
+// stats, not the one individual visitor_customer describes).
+// e.g. ?testQueue=queueNumberOfVisitors:4,queueDeviceTypes:android;ios
+const TEST_QUEUE = _parseTestFieldPairs('testQueue');
+function _testQueueStr(key) { return _testFieldStr(TEST_QUEUE, key); }
+function _testQueueArr(key) { return _testFieldArr(TEST_QUEUE, key); }
 
 const DEFAULT_ROTATION_SECONDS = 5; // fallback when the active template has no Rotation Speed set
 
@@ -981,6 +998,19 @@ let _visitorProfile = {
   productHoldings: _testVisitorArr('productHoldings'),
   purchaseHistory: _testVisitorArr('purchaseHistory'),
 };
+// Queueing / Aggregate Visitor Data — the real queueing_appointment
+// object, aggregate stats about everyone currently waiting in the store's
+// queue right now (confirmed live against demo.personalisationhub.com's
+// campaign_data response 30 Aug 2026), not the one individual
+// _visitorProfile above describes. Same role/shape/seeding pattern as
+// _visitorProfile; reassigned for real in pollCampaign() below.
+let _queueProfile = {
+  estimatedWaitingTime: _testQueueStr('queueEstimatedWaitingTime'),
+  numberOfVisitors: _testQueueStr('queueNumberOfVisitors'),
+  visitorTypes: _testQueueArr('queueVisitorTypes'),
+  reasonForVisit: _testQueueArr('queueReasonForVisit'),
+  deviceTypes: _testQueueArr('queueDeviceTypes'),
+};
 
 const MENU_META_STATIC = {
   breakfast: { label: 'Breakfast Menu',        emoji: '🌅' },
@@ -1014,9 +1044,10 @@ const MENU_META = new Proxy(MENU_META_STATIC, {
 // components.md §16) — each entry in the array is one AND-group, and the
 // conditions listed inside a group are OR'd together. No targeting at all
 // means the offer applies at every store.
-// Category-aware — an offer's targeting can now be Store / Location Data
-// OR Visitor / Customer Data (ph-designer skill components.md §16,
-// verified live against demo.personalisationhub.com 24 Aug 2026).
+// Category-aware — an offer's targeting can now be Store / Location Data,
+// Visitor / Customer Data, or (30 Aug 2026) Queueing / Aggregate Visitor
+// Data (ph-designer skill components.md §16, verified live against
+// demo.personalisationhub.com 24 Aug 2026).
 // Visitor fields read _campaignFirstName/_campaignSkus/_campaignDeviceType
 // plus _visitorProfile for the rest — all populated by pollCampaign() from
 // the PH API's real campaign_data response (visitor_customer.*), never
@@ -1027,6 +1058,15 @@ const MENU_META = new Proxy(MENU_META_STATIC, {
 // fields in the real API (segments[] and audience string) — combined here
 // per the skill's own note to treat the dropdown, not the API shape, as
 // authoritative.
+// Queueing fields read _queueProfile — real queueing_appointment.* data,
+// aggregate stats about everyone currently in the store's queue, NOT the
+// one individual _visitorProfile/_campaign* above describe. Deliberately
+// a separate `have` source even though a couple of these fields share a
+// concept with an "(Individual)" Visitor field of a similar name (Visitor
+// Type, Reason for Visit, Device Type) — the aggregate array already
+// matches with the same "any element" semantics every other array-valued
+// field here uses (fixedSegment, displayTag, ...), so no new matching
+// logic was needed, just a new data source.
 function _offerConditionMatches(cond, store) {
   const category = cond.category || 'store';
   const have = (
@@ -1049,6 +1089,15 @@ function _offerConditionMatches(cond, store) {
           cond.field === 'events' ? (_visitorProfile.events || []) :
           cond.field === 'productHoldings' ? (_visitorProfile.productHoldings || []) :
           cond.field === 'purchaseHistory' ? (_visitorProfile.purchaseHistory || []) :
+          []
+        )
+      : category === 'queueing'
+      ? (
+          cond.field === 'queueEstimatedWaitingTime' ? (_queueProfile.estimatedWaitingTime ? [_queueProfile.estimatedWaitingTime] : []) :
+          cond.field === 'queueNumberOfVisitors' ? (_queueProfile.numberOfVisitors ? [_queueProfile.numberOfVisitors] : []) :
+          cond.field === 'queueVisitorTypes' ? (_queueProfile.visitorTypes || []) :
+          cond.field === 'queueReasonForVisit' ? (_queueProfile.reasonForVisit || []) :
+          cond.field === 'queueDeviceTypes' ? (_queueProfile.deviceTypes || []) :
           []
         )
       : (
@@ -1732,6 +1781,13 @@ function _updateDebugPanel() {
     ? `<span class="ok">${visitorProfileEntries.map(([k, v]) => `${esc(k)}=${esc(Array.isArray(v) ? `[${v.join(', ')}]` : v)}`).join(', ')}</span>`
     : `<span class="warn">none — add ?testVisitor=field:value,... to simulate, or from a live poll</span>`;
 
+  // Same compact treatment as Visitor above, for the separate aggregate
+  // queueing_appointment data.
+  const queueProfileEntries = Object.entries(_queueProfile).filter(([, v]) => (Array.isArray(v) ? v.length : v));
+  const queueProfileHtml = queueProfileEntries.length
+    ? `<span class="ok">${queueProfileEntries.map(([k, v]) => `${esc(k)}=${esc(Array.isArray(v) ? `[${v.join(', ')}]` : v)}`).join(', ')}</span>`
+    : `<span class="warn">none — add ?testQueue=field:value,... to simulate, or from a live poll</span>`;
+
   const matchHtml = _dbgMatchCount !== null
     ? `<span class="ok">${esc(_dbgMatchCount)}</span>`
     : `<span class="warn">—</span>`;
@@ -1748,6 +1804,7 @@ function _updateDebugPanel() {
     `<div>SKUs parsed : ${skuHtml}</div>` +
     `<div>Device Type : ${deviceTypeHtml}</div>` +
     `<div>Visitor     : ${visitorProfileHtml}</div>` +
+    `<div>Queue       : ${queueProfileHtml}</div>` +
     `<div>Matched     : ${matchHtml}</div>`;
 
   el.classList.add('visible');
@@ -1990,6 +2047,19 @@ async function pollCampaign() {
     const productHoldings = Array.isArray(vc?.product_holdings) ? vc.product_holdings.filter(Boolean) : [];
     const purchaseHistory = Array.isArray(vc?.purchase_history) ? vc.purchase_history.filter(Boolean) : [];
 
+    // Queueing / Aggregate Visitor Data — real queueing_appointment
+    // fields, confirmed live against demo.personalisationhub.com's own
+    // campaign_data response 30 Aug 2026. Aggregate stats about everyone
+    // currently in the store's queue, not the one individual
+    // visitor_customer describes above — a separate object in the same
+    // response, never conflated with it.
+    const qa = d?.queueing_appointment;
+    const estimatedWaitingTime = (typeof qa?.estimated_waiting_time === 'number' && qa.estimated_waiting_time > 0) ? String(qa.estimated_waiting_time) : null;
+    const numberOfVisitors = (typeof qa?.number_of_visitors === 'number' && qa.number_of_visitors > 0) ? String(qa.number_of_visitors) : null;
+    const queueVisitorTypes = Array.isArray(qa?.visitor_type) ? qa.visitor_type.filter(Boolean) : [];
+    const queueReasonForVisit = Array.isArray(qa?.reason_for_visit) ? qa.reason_for_visit.filter(Boolean) : [];
+    const queueDeviceTypes = Array.isArray(qa?.device_type) ? qa.device_type.filter(Boolean) : [];
+
     // Resolve store_name from store_location
     const storeName = String(d?.store_location?.store_name || '').trim() || null;
 
@@ -2044,15 +2114,18 @@ async function pollCampaign() {
     const segmentsChanged  = JSON.stringify(nextStoreProfile) !== JSON.stringify(_storeProfile);
     const nextVisitorProfile = { companyName, purchaseIntent, visitorType, reasonForVisit, age, gender, audienceSegments, productTypes, planTypes, planValues, pageViews, events, productHoldings, purchaseHistory };
     const visitorProfileChanged = JSON.stringify(nextVisitorProfile) !== JSON.stringify(_visitorProfile);
+    const nextQueueProfile = { estimatedWaitingTime, numberOfVisitors, visitorTypes: queueVisitorTypes, reasonForVisit: queueReasonForVisit, deviceTypes: queueDeviceTypes };
+    const queueProfileChanged = JSON.stringify(nextQueueProfile) !== JSON.stringify(_queueProfile);
 
     _dbgLastPoll = Date.now();
-    if (skusChanged || nameChanged || deviceTypeChanged || storeNameChanged || segmentsChanged || visitorProfileChanged) {
+    if (skusChanged || nameChanged || deviceTypeChanged || storeNameChanged || segmentsChanged || visitorProfileChanged || queueProfileChanged) {
       _campaignSkus       = newSkus;
       _campaignFirstName  = firstName;
       _campaignDeviceType = deviceType;
       _storeName          = storeName;
       _storeProfile       = nextStoreProfile;
       _visitorProfile     = nextVisitorProfile;
+      _queueProfile       = nextQueueProfile;
       render();
     } else {
       _updateDebugPanel();   // refresh Last poll time even when nothing changed

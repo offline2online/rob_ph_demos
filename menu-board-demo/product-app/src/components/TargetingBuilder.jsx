@@ -10,14 +10,16 @@ import { getKnownTargetingValues } from '../data/registries.js';
 // a new sibling group. This is the general targeting-criteria pattern —
 // reused by both the Pricing tab's per-offer targeting and Product
 // Assets' per-image/video targeting, not offer-specific despite the
-// history of the name. Only Store / Location Data and Visitor / Customer
-// Data are offered: Campaign Targeting's other three categories
-// (Queueing / Aggregate Visitor Data, Interaction / Campaign Data,
-// Computer Vision / Webcam Data) describe playback/creative concepts
-// neither an offer's price nor a product asset has any use for.
+// history of the name. Store / Location Data, Visitor / Customer Data,
+// and (30 Aug 2026) Queueing / Aggregate Visitor Data are offered here;
+// Campaign Targeting's remaining two categories (Interaction / Campaign
+// Data, Computer Vision / Webcam Data) still aren't — they describe
+// playback/creative concepts neither an offer's price nor a product asset
+// has any use for.
 export const CATEGORIES = [
   { value: 'store', label: 'Store / Location Data' },
   { value: 'visitor', label: 'Visitor / Customer Data' },
+  { value: 'queueing', label: 'Queueing / Aggregate Visitor Data' },
 ];
 
 // Full 13-field list, verified live on Campaign Targeting's own Store /
@@ -75,7 +77,30 @@ const VISITOR_FIELDS = [
   { value: 'skus', label: 'SKU(s)' },
 ];
 
-export const FIELDS_BY_CATEGORY = { store: STORE_FIELDS, visitor: VISITOR_FIELDS };
+// Queueing / Aggregate Visitor Data — the API's `queueing_appointment`
+// object, aggregate stats about everyone currently waiting in the store's
+// queue right now, distinct from the one identified individual
+// `visitor_customer` fields above (that's exactly why several of those
+// carry the "(Individual)" qualifier — Visitor Type, Reason for Visit and
+// Device Type each have an aggregate sibling here). Own value keys
+// (queueVisitorTypes, not visitorType) even though the underlying concept
+// overlaps with a Visitor / Customer Data field of a similar name, so the
+// two can never be confused in code despite sharing a category-scoped
+// field list. Field labels here are inferred from the real API response
+// shape and the "(Individual)" naming convention already established on
+// the live dropdown — unlike every other category's fields, these
+// specific labels weren't confirmed against the live Campaign Targeting
+// UI itself (its login wall blocks unattended verification); treat them
+// as a reasonable placeholder pending a live check.
+const QUEUEING_FIELDS = [
+  { value: 'queueEstimatedWaitingTime', label: 'Estimated Waiting Time' },
+  { value: 'queueNumberOfVisitors', label: 'Number of Visitors' },
+  { value: 'queueVisitorTypes', label: 'Visitor Type(s)' },
+  { value: 'queueReasonForVisit', label: 'Reason(s) for Visit' },
+  { value: 'queueDeviceTypes', label: 'Device Type(s)' },
+];
+
+export const FIELDS_BY_CATEGORY = { store: STORE_FIELDS, visitor: VISITOR_FIELDS, queueing: QUEUEING_FIELDS };
 
 export const OPERATORS = [
   { value: 'includes', label: 'includes selected' },
