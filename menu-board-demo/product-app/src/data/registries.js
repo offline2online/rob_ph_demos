@@ -24,16 +24,21 @@ export const DEFAULT_CATS = [
 // seed here before anyone's added one.
 export const DEFAULT_SUB_CATS = [];
 
-// Same fallback default as hq-admin.html's own DEFAULT_LANGUAGES (line
-// ~1275) — its first 18 entries specifically, before the comment there
-// marks "Expanded to cover the real 'Languages Spoken by Staff' field (72
-// entries)". Those first 18 are the platform's curated, commonly-used
-// language set; the remaining ~54 exist only to satisfy the free-text
-// staff-language matching field and aren't meant to populate a content
-// dropdown like this one. Trimmed to {code, name} — this dropdown only
-// ever needs a code to key translated content by and a label to show,
-// not the flag/script/direction metadata the Languages On Shift display
-// template needs.
+// Based on hq-admin.html's own DEFAULT_LANGUAGES (line ~1275) — its first
+// 18 entries specifically, before the comment there marks "Expanded to
+// cover the real 'Languages Spoken by Staff' field (72 entries)". Those
+// first 18 are the platform's curated, commonly-used language set; the
+// remaining ~54 exist only to satisfy the free-text staff-language
+// matching field and aren't meant to populate a content dropdown like
+// this one. Trimmed to {code, name} — this dropdown only ever needs a
+// code to key translated content by and a label to show, not the flag/
+// script/direction metadata the Languages On Shift display template
+// needs. British Sign Language is deliberately dropped from this copy
+// (17 of the 18 entries) even though hq-admin.html's own list keeps it —
+// it has no meaningful written-text form for a Short/Long description to
+// be machine-translated into, unlike every other entry here; it remains
+// valid on the Languages Spoken by Staff field, a real fact about a
+// store's team that has nothing to do with translating product copy.
 export const DEFAULT_LANGUAGES = [
   { code: 'en', name: 'English' },
   { code: 'pl', name: 'Polish' },
@@ -42,7 +47,6 @@ export const DEFAULT_LANGUAGES = [
   { code: 'zh', name: 'Mandarin' },
   { code: 'ar', name: 'Arabic' },
   { code: 'ro', name: 'Romanian' },
-  { code: 'bsl', name: 'British Sign Language' },
   { code: 'fr', name: 'French' },
   { code: 'pa', name: 'Punjabi' },
   { code: 'pt', name: 'Portuguese' },
