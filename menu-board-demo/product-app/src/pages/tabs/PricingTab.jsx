@@ -27,6 +27,16 @@ function blankOffer() {
   return { id: genId('offer'), enabled: true, description: '', offerPrice: '', offerFrom: '', offerUntil: '', showOnMenuBoard: '', targeting: [], recurrence: null };
 }
 
+// Palette cycled per save-group in the Price Change History table below —
+// picked for visible contrast from each other and from the existing
+// red/green "Change" column and blue/purple "Changed in" dot.
+const LOG_GROUP_COLORS = [
+  { border: '#1677ff', bg: 'rgba(22,119,255,0.07)' },
+  { border: '#d4380d', bg: 'rgba(212,56,13,0.07)' },
+  { border: '#08979c', bg: 'rgba(8,151,156,0.07)' },
+  { border: '#d46b08', bg: 'rgba(212,107,8,0.07)' },
+];
+
 // Same colors/proportions menu-board.html's .menu-board-note pill uses,
 // scaled down to fixed px for this fixed-size editor preview instead of
 // the board's viewport-relative clamp() sizing. Mirrored in hq-admin.html
@@ -386,6 +396,28 @@ export default function PricingTab({ draft, baseline, setDraft, setBaseline }) {
   const storeCount = log.length - hqCount;
   const filteredLog = localOnly ? log.filter((e) => e.src !== 'HQ Admin') : log;
 
+  // Every field changed in the same confirmSave()/savePricingChange() call
+  // shares one `when` timestamp (see appendPriceLogEntries in
+  // productStore.js and its retail-admin.html equivalent) — that's the
+  // natural, already-present grouping key for "which rows happened
+  // together", no schema change needed. Cycle a small palette so adjacent
+  // groups in the (already newest-first) list get visibly different
+  // colours; keyed by row object identity rather than index since antd
+  // Table's render index is page-relative once pagination kicks in.
+  const logGroupColor = useMemo(() => {
+    const map = new Map();
+    let colorIndex = -1;
+    let prevWhen = null;
+    filteredLog.forEach((row) => {
+      if (row.when !== prevWhen) {
+        colorIndex = (colorIndex + 1) % LOG_GROUP_COLORS.length;
+        prevWhen = row.when;
+      }
+      map.set(row, LOG_GROUP_COLORS[colorIndex]);
+    });
+    return map;
+  }, [filteredLog]);
+
   // Table columns are the offer's own distinguishing fields, same rule as
   // Campaign Scheduling's table (ph-designer skill components.md §16.1) —
   // enough to tell offers apart at a glance without opening any of them.
@@ -474,12 +506,16 @@ export default function PricingTab({ draft, baseline, setDraft, setBaseline }) {
         title: 'Date',
         dataIndex: 'when',
         width: 130,
-        render: (v) => {
+        render: (v, row) => {
           const d = parseWhen(v);
+          const groupColor = logGroupColor.get(row);
           return (
-            <div>
-              <div>{d ? d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : v}</div>
-              <div style={{ fontSize: 12, color: 'rgba(0,0,0,.45)' }}>{d ? d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) : ''}</div>
+            <div style={{ display: 'flex', alignItems: 'stretch', gap: 8 }}>
+              <span style={{ width: 4, borderRadius: 2, background: groupColor?.border, flexShrink: 0 }} />
+              <div>
+                <div>{d ? d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : v}</div>
+                <div style={{ fontSize: 12, color: 'rgba(0,0,0,.45)' }}>{d ? d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) : ''}</div>
+              </div>
             </div>
           );
         },
@@ -546,7 +582,7 @@ export default function PricingTab({ draft, baseline, setDraft, setBaseline }) {
       },
       { title: 'Reason', dataIndex: 'reason' },
     ],
-    [currencySymbol]
+    [currencySymbol, logGroupColor]
   );
 
   return (
@@ -668,6 +704,7 @@ export default function PricingTab({ draft, baseline, setDraft, setBaseline }) {
           size="middle"
           bordered={false}
           pagination={{ pageSize: 25, showSizeChanger: true, pageSizeOptions: ['25', '50', '100'] }}
+          onRow={(row) => ({ style: { background: logGroupColor.get(row)?.bg } })}
         />
       </div>
 
