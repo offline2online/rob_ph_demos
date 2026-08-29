@@ -126,14 +126,25 @@ function forceTransparentBackground(dataUrl) {
   return new Promise((resolve) => {
     const img = new Image();
     img.onload = () => {
-      const width = img.naturalWidth;
-      const height = img.naturalHeight;
+      // A per-pixel flood fill over a phone photo's native resolution
+      // (often 4000px+ on a side) is millions of pixels — confirmed live,
+      // it took several seconds and froze the tab solid for the duration,
+      // reading as "nothing happened" until it finally finished. readAndCompress
+      // only downscales an *upload* whose raw file size already exceeds
+      // COMPRESS_THRESHOLD_BYTES, so a well-compressed but large-dimension
+      // photo (very common — phones compress hard) can sail through under
+      // that budget at full pixel dimensions. The output gets downscaled to
+      // MAX_DIMENSION by compressDataUrl regardless, so working at that same
+      // size here costs nothing in final quality and keeps this near-instant.
+      const scale = Math.min(1, MAX_DIMENSION / Math.max(img.naturalWidth, img.naturalHeight));
+      const width = Math.max(1, Math.round(img.naturalWidth * scale));
+      const height = Math.max(1, Math.round(img.naturalHeight * scale));
       if (!width || !height) { resolve(dataUrl); return; }
       const canvas = document.createElement('canvas');
       canvas.width = width;
       canvas.height = height;
       const ctx = canvas.getContext('2d');
-      ctx.drawImage(img, 0, 0);
+      ctx.drawImage(img, 0, 0, width, height);
       const imageData = ctx.getImageData(0, 0, width, height);
       const { data } = imageData;
 
@@ -200,15 +211,23 @@ function enhanceImageLocally(dataUrl) {
   return new Promise((resolve) => {
     const img = new Image();
     img.onload = () => {
-      const width = img.naturalWidth;
-      const height = img.naturalHeight;
+      // Same reasoning as forceTransparentBackground's — the manual
+      // convolution below is a per-pixel loop, so working at a phone
+      // photo's native resolution (often 4000px+ on a side, and not
+      // necessarily caught by readAndCompress's byte-size-only check)
+      // measured several seconds of a fully frozen tab. compressDataUrl
+      // downscales the output to MAX_DIMENSION regardless, so pre-scaling
+      // here first costs nothing in final quality.
+      const scale = Math.min(1, MAX_DIMENSION / Math.max(img.naturalWidth, img.naturalHeight));
+      const width = Math.max(1, Math.round(img.naturalWidth * scale));
+      const height = Math.max(1, Math.round(img.naturalHeight * scale));
       if (!width || !height) { resolve(dataUrl); return; }
       const canvas = document.createElement('canvas');
       canvas.width = width;
       canvas.height = height;
       const ctx = canvas.getContext('2d');
       ctx.filter = 'contrast(112%) saturate(118%) brightness(103%)';
-      ctx.drawImage(img, 0, 0);
+      ctx.drawImage(img, 0, 0, width, height);
       ctx.filter = 'none';
 
       const src = ctx.getImageData(0, 0, width, height);
