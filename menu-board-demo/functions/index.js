@@ -209,19 +209,6 @@ async function loadAiProviderConfig(kind) {
   return cfg;
 }
 
-// Canned instruction lives here, not in the client — Remove Background is a
-// fixed operation (the client only ever sends that it wants it), unlike
-// Request Changes and video generation, whose prompts are deliberately
-// user-authored free text. Enhance used to have an entry here too, but a
-// generative model regenerating the whole photo doesn't reliably keep it
-// pixel-stable even when told to — confirmed live, it visibly warped the
-// product — so Enhance now runs a deterministic local filter in
-// ProductAssetsTab.jsx instead of calling this function at all.
-const IMAGE_INSTRUCTIONS = {
-  removeBackground:
-    'Remove the background from this product photo and replace it with a fully transparent background. Keep the product itself pixel-for-pixel unchanged — do not alter its shape, colour or position.',
-};
-
 // ── Settings — save a provider's config, encrypting a freshly-pasted token server-side ──
 exports.saveAiProviderToken = onCall({ secrets: [AI_TOKEN_ENC_KEY], maxInstances: 10 }, async (request) => {
   const { kind, name, baseUrl, model, token } = request.data || {};
@@ -320,16 +307,21 @@ exports.translateProductCopy = onCall({ secrets: [AI_TOKEN_ENC_KEY], maxInstance
   };
 });
 
-// ── Product Assets → Remove Background / Request Changes (e.g. Nano Banana Pro via the Gemini generateContent API) ──
-// Remove Background is still a fixed operation, chosen via instructionKey;
-// Request Changes is free-text authored by the user in the product-app
-// modal (optionally dictated via the browser's own speech-to-text, never
-// transcribed server-side), sent as `prompt` instead. Enhance no longer
-// calls this function at all — see IMAGE_INSTRUCTIONS' comment.
+// ── Product Assets → Request Changes (e.g. Nano Banana Pro via the Gemini generateContent API) ──
+// Free-text, authored by the user in the product-app modal (optionally
+// dictated via the browser's own speech-to-text, never transcribed
+// server-side). Remove Background and Enhance both used to call this with
+// a fixed instructionKey instead of a prompt, but neither does anymore —
+// Remove Background moved to @imgly/background-removal (a real client-side
+// segmentation model; Gemini's generative edit didn't reliably tell
+// "product" apart from "background" at the pixel level), and Enhance to a
+// deterministic local filter (a generative model regenerating the whole
+// photo doesn't reliably stay pixel-stable — confirmed live, it visibly
+// warped the product). This function now only ever receives a prompt.
 exports.editProductImage = onCall({ secrets: [AI_TOKEN_ENC_KEY], maxInstances: 10, timeoutSeconds: 120, memory: '512MiB' }, async (request) => {
-  const { imageDataUrl, instructionKey, prompt } = request.data || {};
-  const instruction = instructionKey ? IMAGE_INSTRUCTIONS[instructionKey] : (prompt || '').trim();
-  if (!instruction) throw new HttpsError('invalid-argument', 'Provide instructionKey ("removeBackground") or a non-empty prompt');
+  const { imageDataUrl, prompt } = request.data || {};
+  const instruction = (prompt || '').trim();
+  if (!instruction) throw new HttpsError('invalid-argument', 'prompt is required');
   const match = /^data:([^;]+);base64,(.*)$/s.exec(imageDataUrl || '');
   if (!match) throw new HttpsError('invalid-argument', 'imageDataUrl must be a base64 data URL');
   const [, mimeType, base64] = match;

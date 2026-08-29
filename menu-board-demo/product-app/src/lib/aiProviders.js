@@ -30,15 +30,13 @@ export async function translateProductCopy({ targetLangName, displayName, shortD
   return data;
 }
 
-// instructionKey is 'removeBackground' — the actual instruction text sent
-// to the image model is chosen server-side (functions/index.js's
-// IMAGE_INSTRUCTIONS), not passed through from here, since it's a fixed
-// operation rather than free text. Pass `prompt` instead (Request Changes)
-// for a user-authored edit — the function accepts either. Enhance no
-// longer goes through this call at all (see ProductAssetsTab.jsx's
-// enhanceImageLocally).
-export async function editProductImage({ imageDataUrl, instructionKey, prompt }) {
-  const { data } = await editProductImageFn({ imageDataUrl, instructionKey, prompt });
+// Only Request Changes calls this now — Remove Background moved to
+// @imgly/background-removal (a real client-side segmentation model) and
+// Enhance to a deterministic local filter (see ProductAssetsTab.jsx's
+// enhanceImageLocally), both for the same reason: Gemini's generative edit
+// doesn't reliably behave like the fixed operation each used to ask for.
+export async function editProductImage({ imageDataUrl, prompt }) {
+  const { data } = await editProductImageFn({ imageDataUrl, prompt });
   return data.imageDataUrl;
 }
 

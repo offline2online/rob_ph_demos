@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Input, Switch, Select, Tag, Modal, message } from 'antd';
 import dayjs from 'dayjs';
+import { removeBackground as imglyRemoveBackground } from '@imgly/background-removal';
 import MaterialIcon from '../../components/MaterialIcon.jsx';
 import BespokeIcon from '../../components/BespokeIcon.jsx';
 import IconAction from '../../components/IconAction.jsx';
@@ -199,6 +200,15 @@ function forceTransparentBackground(dataUrl) {
     };
     img.onerror = () => resolve(dataUrl);
     img.src = dataUrl;
+  });
+}
+
+function blobToDataUrl(blob) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
   });
 }
 
@@ -531,16 +541,18 @@ export default function ProductAssetsTab({ draft, baseline, patch }) {
   };
   const toggleTesting = () => current && updateSelected({ availableForTesting: !current.availableForTesting });
 
-  // Remove Background and Request Changes call out to the configured Image
-  // provider (Nano Banana Pro / Gemini, per Settings → AI Integrations) and
-  // replace `src` with the real edited result. Enhance used to as well, but
-  // a generative model regenerating the whole photo doesn't reliably keep
-  // it pixel-stable even when told to (confirmed live — it visibly warped
-  // the product) — real image processing can't drift like that, so Enhance
-  // now runs a deterministic local filter (enhanceImageLocally) instead of
-  // calling the provider at all. `original` is captured the first time any
-  // treatment is applied and never overwritten again, so turning one back
-  // off can restore the untouched upload.
+  // Remove Background used to call the configured Image provider (Gemini) —
+  // a generative image editor repurposed for the job, not a real
+  // segmentation model, and confirmed live it didn't reliably tell "product"
+  // apart from "background" at the pixel level: sometimes leaving backdrop
+  // patches opaque, sometimes eating into the product itself. It's now
+  // @imgly/background-removal instead — a real subject-segmentation model
+  // (ONNX/WASM) running entirely client-side, no Image provider or network
+  // call involved. Enhance made the same move earlier for a related reason
+  // (Gemini's regeneration doesn't reliably stay pixel-stable either).
+  // `original` is captured the first time any treatment is applied and
+  // never overwritten again, so turning one back off can restore the
+  // untouched upload.
   //
   // Combining more than one at once chains each call on top of whatever is
   // currently displayed (so the after-image genuinely reflects every edit
@@ -566,21 +578,12 @@ export default function ProductAssetsTab({ draft, baseline, patch }) {
       return;
     }
 
-    if (isBg && !isProviderConfigured(aiProviders.image)) {
-      message.error('No Image provider configured — add one in Settings → AI Integrations.');
-      return;
-    }
-
     setImageBusy(kind);
     try {
       let fixed;
       if (isBg) {
-        const edited = await editProductImage({ imageDataUrl: current.src, instructionKey: 'removeBackground' });
-        // The Image provider paints a fake grey/white checker into the pixels
-        // instead of real alpha — see forceTransparentBackground's comment —
-        // so a background-removal result gets keyed to genuine transparency
-        // before it's ever shown or saved.
-        fixed = await forceTransparentBackground(edited);
+        const blob = await imglyRemoveBackground(current.src, { model: 'isnet_quint8' });
+        fixed = await blobToDataUrl(blob);
       } else {
         fixed = await enhanceImageLocally(current.src);
       }
@@ -827,7 +830,7 @@ export default function ProductAssetsTab({ draft, baseline, patch }) {
                     ? 'Saved changes can’t be undone from here — replace the asset to start over.'
                     : current.bgRemoved
                     ? 'Puts the original background back. The cut-out is discarded.'
-                    : 'Calls the configured Image provider to cut the product out to a transparent PNG so it can sit on any campaign layout.'
+                    : 'Cuts the product out to a transparent PNG so it can sit on any campaign layout — real subject segmentation, run locally.'
                 }
               />
               <IconAction
