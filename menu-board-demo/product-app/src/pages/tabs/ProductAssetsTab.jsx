@@ -189,7 +189,13 @@ export default function ProductAssetsTab({ draft, patch }) {
   // first's response into overwriting it.
   const [imageBusy, setImageBusy] = useState(null);
   const [videoModalOpen, setVideoModalOpen] = useState(false);
-  const [videoPrompt, setVideoPrompt] = useState('Animate this product photo with a subtle, appetizing hero rotation and soft studio lighting.');
+  // Written for LTX-2 (docs.ltx.io): its prompt field is free text describing
+  // motion, not a shot list, and camera_motion is sent separately as 'static'
+  // (see functions/index.js) — a single flat photo has no depth data for a
+  // real camera orbit, so the rotation described here is the product turning
+  // in place, turntable-style, which these models render convincingly from
+  // one image where an actual camera-orbit-around-3D-geometry wouldn't.
+  const [videoPrompt, setVideoPrompt] = useState('The product rotates slowly in a smooth, continuous 360-degree turntable spin, studio lighting unchanged.');
   const [videoBusy, setVideoBusy] = useState(false);
 
   // The "+ Add tag" input was uncontrolled, cleared imperatively via

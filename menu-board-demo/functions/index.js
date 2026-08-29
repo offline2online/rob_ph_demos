@@ -353,59 +353,59 @@ exports.editProductImage = onCall({ secrets: [AI_TOKEN_ENC_KEY], maxInstances: 1
   return { imageDataUrl: `data:${imagePart.inlineData.mimeType || 'image/png'};base64,${imagePart.inlineData.data}` };
 });
 
-// ── Product Assets → Generate Video (e.g. LTX 2.5) ──
-// Async job-style contract (create → poll), same assumption as the old
-// client-side implementation this replaces — see product-app's git
-// history for the reasoning. Runs server-side now mainly for token
-// custody, but as a side effect a slow render also no longer holds the
-// caller's own tab/network connection open for the whole poll loop.
+// ── Product Assets → Generate Video (LTX-2, https://docs.ltx.io) ──
+// Real LTX-2 async contract, confirmed against docs.ltx.io 29 Aug 2026
+// (the sync /v1/image-to-video returns the video file directly, which
+// doesn't fit this prototype's "store a URL, not bytes" asset model —
+// this uses the async /v2/image-to-video job instead):
+//   POST {baseUrl}/v2/image-to-video  { model, prompt, image_uri, duration, resolution, generate_audio }
+//     -> 202 { id }
+//   GET  {baseUrl}/v2/image-to-video/{id}  every ~3s
+//     -> { status: pending|processing|completed|failed, result?: { video_url }, error? }
+// image_uri accepts an inline `data:` URI directly (docs.ltx.io/input-formats,
+// up to 7MB encoded) as well as a hosted https URL — no Cloud Storage upload
+// needed, the client's already-compressed imageDataUrl is passed straight
+// through.
 exports.generateProductVideo = onCall({ secrets: [AI_TOKEN_ENC_KEY], maxInstances: 10, timeoutSeconds: 300 }, async (request) => {
   const { imageDataUrl, prompt } = request.data || {};
-  const match = /^data:([^;]+);base64,(.*)$/s.exec(imageDataUrl || '');
-  if (!match) throw new HttpsError('invalid-argument', 'imageDataUrl must be a base64 data URL');
-  const [, mimeType, base64] = match;
+  if (!/^data:[^;]+;base64,/.test(imageDataUrl || '')) throw new HttpsError('invalid-argument', 'imageDataUrl must be a base64 data URL');
   if (!prompt || !prompt.trim()) throw new HttpsError('invalid-argument', 'prompt is required');
 
   const cfg = await loadAiProviderConfig('video');
   const token = decryptAiToken(cfg.authToken);
   const baseUrl = (cfg.baseUrl || '').replace(/\/+$/, '');
-  const model = cfg.model || 'ltx-2.5';
+  const model = cfg.model || 'ltx-2-5-fast';
 
   let createResp;
   try {
-    createResp = await fetch(`${baseUrl}/v1/videos/generations`, {
+    createResp = await fetch(`${baseUrl}/v2/image-to-video`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-      body: JSON.stringify({ model, prompt, image: { mimeType, data: base64 } }),
+      // camera_motion: 'static' — the camera itself doesn't move; any
+      // rotation (e.g. the default turntable-style prompt below) is the
+      // product turning in place, described in `prompt` text, since a
+      // single flat photo has no depth data for a real camera orbit.
+      body: JSON.stringify({ model, prompt, image_uri: imageDataUrl, duration: null, resolution: '1920x1080', generate_audio: false, camera_motion: 'static' }),
     });
   } catch (e) {
     throw new HttpsError('unavailable', e.message);
   }
-  if (!createResp.ok) throw new HttpsError('unavailable', `Video provider returned HTTP ${createResp.status}`);
+  if (!createResp.ok) throw new HttpsError('unavailable', `Video provider returned HTTP ${createResp.status}: ${await createResp.text()}`);
   let job = await createResp.json();
+  const jobId = job?.id;
+  if (!jobId) throw new HttpsError('internal', 'Video provider did not return a job id');
 
-  const isTerminalVideoJob = (j) => j?.status === 'completed' || j?.status === 'succeeded' || !!j?.videoUrl || !!j?.video || !!j?.output;
   let polls = 0;
-  while (!isTerminalVideoJob(job) && job?.id && polls < 40) {
+  while (job?.status !== 'completed' && job?.status !== 'failed' && polls < 90) {
     await new Promise((resolve) => setTimeout(resolve, 3000));
-    const pollResp = await fetch(`${baseUrl}/v1/videos/generations/${job.id}`, { headers: { Authorization: `Bearer ${token}` } });
+    const pollResp = await fetch(`${baseUrl}/v2/image-to-video/${jobId}`, { headers: { Authorization: `Bearer ${token}` } });
     if (!pollResp.ok) throw new HttpsError('unavailable', `Video provider returned HTTP ${pollResp.status} while checking progress`);
     job = await pollResp.json();
     polls += 1;
   }
-  if (job?.status === 'failed' || job?.status === 'error') {
-    throw new HttpsError('internal', job?.error || 'Video generation failed');
-  }
 
-  const videoUrl = job?.videoUrl || job?.video?.url || job?.output?.url;
-  if (videoUrl) return { videoUrl };
-
-  // A hosted URL is strongly preferred over inline base64 video — this
-  // product stores just the URL string on the asset, not the video bytes
-  // themselves, matching how every other asset src is stored.
-  const hasInlineVideo = !!(job?.video?.data || job?.output?.data);
-  if (hasInlineVideo) {
-    throw new HttpsError('unimplemented', 'Video provider returned inline video data with no hosted URL — this prototype can only store a video URL, not inline video bytes.');
-  }
-  throw new HttpsError('deadline-exceeded', 'Video provider did not return a video in time');
+  if (job?.status === 'failed') throw new HttpsError('internal', job?.error?.message || job?.error || 'Video generation failed');
+  const videoUrl = job?.result?.video_url;
+  if (!videoUrl) throw new HttpsError('deadline-exceeded', 'Video provider did not return a video in time');
+  return { videoUrl };
 });
