@@ -871,12 +871,14 @@ const DEBUG_MODE    = urlParams.get('debug') === '1';
 // e.g. ?testSkus=LS0873NBRONCOS,LS0873NBULLDOGS
 const TEST_SKUS = (urlParams.get('testSkus') || '').split(',').map(s => s.trim()).filter(Boolean);
 // Test Device Type — same idea as testSkus above, for Visitor targeting's
-// Device Type field. Unlike testSkus (a stand-in for a real
-// visitor_customer.SKUs value the live PH API already sends), there is no
-// confirmed real device-type field in this repo's PH API contract yet —
-// see _offerConditionMatches's comment below — so this is local-simulation
-// only, not wired into pollCampaign()'s real API parsing at all.
-// e.g. ?testDeviceType=generic_android_k
+// Device Type field: visitor_customer.device_type, confirmed live against
+// demo.personalisationhub.com's real /location-api/.../campaign_data
+// response (30 Aug 2026) and now parsed for real in pollCampaign() below.
+// This URL param is only an initial seed for boards that never poll (no
+// ?device= UDID) or before their first poll resolves — same as testSkus,
+// a real poll's result always wins once one comes in, even if that means
+// overwriting this with an empty value.
+// e.g. ?testDeviceType=android
 const TEST_DEVICE_TYPE = (urlParams.get('testDeviceType') || '').trim();
 
 const DEFAULT_ROTATION_SECONDS = 5; // fallback when the active template has no Rotation Speed set
@@ -924,10 +926,10 @@ let _storeProfile  = { storeName: null, fixedSegments: [], variableSegments: [],
 // Campaign SKUs: null = default menu; string[] = personalised override from Personalisation Hub API
 let _campaignSkus      = TEST_SKUS.length > 0 ? TEST_SKUS : null;
 let _campaignFirstName = null; // null = no greeting; string = show personalised greeting in clock bar
-// Device Type targeting's only data source today — see TEST_DEVICE_TYPE's
-// comment above. Never set anywhere else (no real PH API field to read it
-// from yet), so this only ever reflects whatever ?testDeviceType= was
-// passed in on load.
+// Device Type: null = no data; string = visitor_customer.device_type from
+// the PH API (or ?testDeviceType= before the first poll — see its
+// comment above). Reassigned for real in pollCampaign() below, same as
+// _campaignFirstName.
 let _campaignDeviceType = TEST_DEVICE_TYPE || null;
 let _storeName         = null; // null = no store label; string = show store name in clock bar when no firstName
 
@@ -966,16 +968,16 @@ const MENU_META = new Proxy(MENU_META_STATIC, {
 // Category-aware — an offer's targeting can now be Store / Location Data
 // OR Visitor / Customer Data (ph-designer skill components.md §16,
 // verified live against demo.personalisationhub.com 24 Aug 2026).
-// Visitor fields mostly read the same _campaignFirstName/_campaignSkus
-// globals pollCampaign() already populates from the PH API's campaign_data
-// response — never sourced or managed locally. Device Type is the odd one
-// out: there's no confirmed real device-type field in this repo's PH API
-// contract, so _campaignDeviceType is a local-simulation stand-in only
-// (set from ?testDeviceType=, see its comment above), not a real API read.
-// Every other field with no live data source in this repo yet (Display
-// Tag(s), Store Country, Age, Gender, etc.) resolves to an empty `have`
-// array — offered for authoring, but inert until real PH API data for them
-// exists.
+// Visitor fields read the same _campaignFirstName/_campaignSkus/
+// _campaignDeviceType globals pollCampaign() already populates from the
+// PH API's campaign_data response (visitor_customer.first_name/.skus/
+// .device_type — device_type confirmed live against
+// demo.personalisationhub.com 30 Aug 2026) — never sourced or managed
+// locally. Every other field with no live data source in this repo yet
+// (Display Tag(s), Age, Gender, Purchase Intent, etc. — all present in the
+// same visitor_customer object, just not read here) resolves to an empty
+// `have` array — offered for authoring, but inert until wired up the same
+// way these three were.
 function _offerConditionMatches(cond, store) {
   const category = cond.category || 'store';
   const have = (
@@ -1655,10 +1657,9 @@ function _updateDebugPanel() {
     ? `<span class="ok">[${_campaignSkus.map(s => esc(s)).join(', ')}]</span>`
     : `<span class="warn">none — showing default menu</span>`;
 
-  // Local-simulation only — see TEST_DEVICE_TYPE's comment above.
   const deviceTypeHtml = _campaignDeviceType
-    ? `<span class="ok">🧪 "${esc(_campaignDeviceType)}" (from ?testDeviceType=)</span>`
-    : `<span class="warn">none — add ?testDeviceType=... to simulate</span>`;
+    ? `<span class="ok">"${esc(_campaignDeviceType)}"</span>`
+    : `<span class="warn">none — add ?testDeviceType=... to simulate, or from a live poll</span>`;
 
   const matchHtml = _dbgMatchCount !== null
     ? `<span class="ok">${esc(_dbgMatchCount)}</span>`
@@ -1879,6 +1880,15 @@ async function pollCampaign() {
     // "trim is not a function" if x is truthy but not a string.
     const firstName = String(vc?.first_name || d?.first_name || '').trim() || null;
 
+    // Device Type — confirmed live against demo.personalisationhub.com's
+    // real /location-api/.../campaign_data response (30 Aug 2026):
+    // visitor_customer.device_type is a real, present field (empty string
+    // when no visitor is currently detected) — not a guess. Previously
+    // had no live data source at all, so `deviceType` targeting could
+    // never match anything; see TEST_DEVICE_TYPE's comment for the local-
+    // simulation fallback this still keeps for boards that never poll.
+    const deviceType = String(vc?.device_type || '').trim() || null;
+
     // Resolve store_name from store_location
     const storeName = String(d?.store_location?.store_name || '').trim() || null;
 
@@ -1925,17 +1935,19 @@ async function pollCampaign() {
     console.log('[Campaign] visitor_customer:', JSON.stringify(vc));
     console.log('[Campaign] resolved \u2192 firstName:', firstName, '| SKUs:', newSkus, '| storeName:', storeName);
 
-    const skusChanged      = JSON.stringify(newSkus) !== JSON.stringify(_campaignSkus);
-    const nameChanged      = firstName !== _campaignFirstName;
-    const storeNameChanged = storeName !== _storeName;
+    const skusChanged       = JSON.stringify(newSkus) !== JSON.stringify(_campaignSkus);
+    const nameChanged       = firstName !== _campaignFirstName;
+    const deviceTypeChanged = deviceType !== _campaignDeviceType;
+    const storeNameChanged  = storeName !== _storeName;
     const nextStoreProfile = { storeName, fixedSegments, variableSegments, suburb, state, storeCountry, displayTags, displayId, displayType, displayName, languagesSpokenByStaff };
     const segmentsChanged  = JSON.stringify(nextStoreProfile) !== JSON.stringify(_storeProfile);
 
     _dbgLastPoll = Date.now();
-    if (skusChanged || nameChanged || storeNameChanged || segmentsChanged) {
-      _campaignSkus      = newSkus;
-      _campaignFirstName = firstName;
-      _storeName         = storeName;
+    if (skusChanged || nameChanged || deviceTypeChanged || storeNameChanged || segmentsChanged) {
+      _campaignSkus       = newSkus;
+      _campaignFirstName  = firstName;
+      _campaignDeviceType = deviceType;
+      _storeName          = storeName;
       _storeProfile       = nextStoreProfile;
       render();
     } else {

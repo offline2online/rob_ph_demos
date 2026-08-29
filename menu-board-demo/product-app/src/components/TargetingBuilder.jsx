@@ -44,10 +44,15 @@ const STORE_FIELDS = [
 ];
 
 // Full 16-field list, verified live on Campaign Targeting's own
-// Visitor / Customer Data category. Only First Name and SKU(s) have real
-// mock PH API data behind them in this repo (mock-ph-api.json) — the rest
-// are offered for the same forward-compatible reason as the store fields
-// above.
+// Visitor / Customer Data category. First Name, SKU(s), and Device Type
+// (Individual) have real PH API data behind them — confirmed live against
+// demo.personalisationhub.com's own campaign_data response (visitor_customer.
+// first_name/.skus/.device_type), wired up in menu-board.html's
+// pollCampaign()/_offerConditionMatches. The rest are offered for the same
+// forward-compatible reason as the store fields above — that same
+// visitor_customer response already carries real fields for several of
+// them too (company_name, purchase_intent, age, gender, ...), just not
+// read here yet.
 const VISITOR_FIELDS = [
   { value: 'firstName', label: 'First Name' },
   { value: 'companyName', label: 'Company Name' },
