@@ -1,12 +1,13 @@
 import { useMemo, useState } from 'react';
-import { Input, InputNumber, Select, Switch, Button, Modal } from 'antd';
+import { Input, InputNumber, Select, Switch, Button, Modal, message } from 'antd';
 import MaterialIcon from '../../components/MaterialIcon.jsx';
 import ClearableDate, { shiftEndOneHour } from '../../components/ClearableDate.jsx';
 import AdditionalAttributes from '../../components/AdditionalAttributes.jsx';
 import OptionGroups from '../../components/OptionGroups.jsx';
 import OfferBanner from '../../components/OfferBanner.jsx';
 import TargetingBuilder, { CATEGORIES as TARGETING_CATEGORIES } from '../../components/TargetingBuilder.jsx';
-import { getCats, getSubCats, getTypes, getBrands, getBrandById, addCategoryToRegistry, addSubCategoryToRegistry, getLanguages, getKnownIngredients } from '../../data/registries.js';
+import { getCats, getSubCats, getTypes, getBrands, getBrandById, addCategoryToRegistry, addSubCategoryToRegistry, getLanguages, getKnownIngredients, useAiProviders } from '../../data/registries.js';
+import { translateProductCopy, isProviderConfigured } from '../../lib/aiProviders.js';
 
 // Store / Location Data only — a product's distribution is about which
 // stores carry it, not who's standing in front of one, so Visitor /
@@ -58,6 +59,7 @@ function AiButton({ children, icon = 'auto_awesome', ...rest }) {
 }
 
 export default function ProductDetailsTab({ draft, patch, onGoPricing }) {
+  const aiProviders = useAiProviders();
   const [newCat, setNewCat] = useState('');
   const [addingCat, setAddingCat] = useState(false);
   const [newSubCat, setNewSubCat] = useState('');
@@ -148,38 +150,43 @@ export default function ProductDetailsTab({ draft, patch, onGoPricing }) {
     setAddLangOpen(true);
   };
 
-  // Mock only — no real translation call exists yet. Simulates the AI
-  // assistant drafting a translation: a believable delay, then the source
-  // English copy carried over with a clearly-labelled "AI draft" prefix
-  // (so it reads as a first draft awaiting review, not a real finished
-  // translation) rather than leaving the new language's fields empty.
-  // Adds the picked language to descriptionLanguages so it now appears in
-  // the Language selector above, and switches to it so the result is
-  // immediately visible.
-  const confirmAddLanguage = () => {
+  // Calls the configured Translation provider (e.g. GPT-5.2, per Settings
+  // → AI Integrations) to translate this product's Display name, Short and
+  // Long description into the picked language. Adds the picked language to
+  // descriptionLanguages so it now appears in the Language selector above,
+  // and switches to it so the result is immediately visible.
+  const hasTranslationProvider = isProviderConfigured(aiProviders.translation);
+
+  const confirmAddLanguage = async () => {
     if (!pickedLang) return;
     const lang = languages.find((l) => l.code === pickedLang);
     if (!lang) return;
+    if (!hasTranslationProvider) {
+      message.error('No Translation provider configured — add one in Settings → AI Integrations.');
+      return;
+    }
     setTranslating(true);
-    setTimeout(() => {
-      const sourceDisplayName = draft.displayName || '';
-      const sourceShort = draft.shortDescription || '';
-      const sourceLong = draft.longDescription || '';
+    try {
+      const translated = await translateProductCopy({
+        targetLangName: lang.name,
+        displayName: draft.displayName || '',
+        shortDescription: draft.shortDescription || '',
+        longDescription: draft.longDescription || '',
+      });
       patch({
         descriptionTranslations: {
           ...(draft.descriptionTranslations || {}),
-          [pickedLang]: {
-            displayName: sourceDisplayName ? `[AI draft — ${lang.name}] ${sourceDisplayName}` : '',
-            shortDescription: sourceShort ? `[AI draft — ${lang.name}] ${sourceShort}` : '',
-            longDescription: sourceLong ? `[AI draft — ${lang.name}] ${sourceLong}` : '',
-          },
+          [pickedLang]: translated,
         },
         descriptionLanguages: [...addedLanguageCodes, pickedLang],
       });
       setDescLang(pickedLang);
-      setTranslating(false);
       setAddLangOpen(false);
-    }, 900);
+    } catch (e) {
+      message.error(`Translation failed: ${e.message}`);
+    } finally {
+      setTranslating(false);
+    }
   };
 
   const confirmNewCategory = async () => {
@@ -378,15 +385,20 @@ export default function ProductDetailsTab({ draft, patch, onGoPricing }) {
           destroyOnClose
           footer={[
             <Button key="cancel" onClick={() => setAddLangOpen(false)}>Cancel</Button>,
-            <AiButton key="translate" loading={translating} disabled={!pickedLang} onClick={confirmAddLanguage}>
+            <AiButton key="translate" loading={translating} disabled={!pickedLang || !hasTranslationProvider} onClick={confirmAddLanguage}>
               Translate &amp; Add
             </AiButton>,
           ]}
         >
           <p style={{ fontSize: 13, color: 'rgba(0,0,0,.65)', marginBottom: 12 }}>
-            Pick a language and the AI assistant will draft a translation of this product's Short
-            and Long description into it. Prototype only — no real translation happens yet.
+            Pick a language and the configured Translation provider will translate this product's
+            Display name, Short and Long description into it.
           </p>
+          {!hasTranslationProvider && (
+            <p style={{ fontSize: 12, color: '#a8071a', background: '#fff2f0', border: '1px solid #ffccc7', borderRadius: 6, padding: '8px 10px', marginBottom: 12 }}>
+              No Translation provider configured — add one in Settings &rarr; AI Integrations before translating.
+            </p>
+          )}
           <Select
             style={{ width: '100%' }}
             placeholder="Select a language"

@@ -609,6 +609,20 @@
     .ph-ep-actions { display:flex; align-items:flex-start; gap:6px; flex-shrink:0; margin-top:1px; }
     .ph-ep-status { font-size:11px; margin-top:5px; min-height:16px; line-height:1.3; }
 
+    /* ── AI PROVIDER CARDS (Settings — AI Integrations) ────────── */
+    .ai-provider-card {
+      background:var(--surface2); border:1px solid var(--border);
+      border-radius:8px; padding:14px 16px; margin-bottom:12px;
+    }
+    .ai-provider-card-head { display:flex; align-items:center; gap:10px; margin-bottom:12px; }
+    .ai-provider-card-head .material-symbols-outlined { font-size:20px; color:var(--primary); flex-shrink:0; }
+    .ai-provider-card-title { font-size:13px; font-weight:700; color:var(--text); }
+    .ai-provider-card-sub { font-size:11px; color:var(--text2); margin-top:1px; }
+    .ai-provider-fields { display:flex; gap:10px; flex-wrap:wrap; }
+    .ai-provider-fields .form-group { flex:1; min-width:160px; margin-bottom:0; }
+    .ai-provider-actions { display:flex; align-items:center; gap:10px; margin-top:10px; }
+    .ai-provider-status { font-size:11px; line-height:1.3; }
+
     /* ── MENU BOARD BADGE TEMPLATES (Settings) ────────── */
     .bt-list { display:flex; flex-direction:column; gap:10px; margin-bottom:14px; }
     .bt-row {
@@ -619,6 +633,23 @@
     .bt-row .form-group { margin-bottom:0; }
     .bt-color-input { height:38px; width:100%; padding:3px; cursor:pointer; }
     .bt-preview { display:inline-block; font-weight:700; line-height:1.3; white-space:nowrap; }
+
+    /* ── TILE LAYOUT EDITOR (Local Feature Highlight template) ────────── */
+    .tile-layout-editor { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+    .tile-layout-tile h4 { font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:.4px; color:var(--text2); margin:0 0 8px; }
+    .tile-layout-zone { background:var(--surface2); border:1px solid var(--border); border-radius:8px; padding:10px; margin-bottom:10px; }
+    .tile-layout-zone-label { font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.4px; color:var(--text2); margin-bottom:8px; }
+    .tile-layout-row { display:flex; align-items:center; gap:8px; background:var(--surface); border:1px solid var(--border); border-radius:6px; padding:6px 8px; margin-bottom:6px; font-size:13px; }
+    .tile-layout-row:last-of-type { margin-bottom:0; }
+    .tile-layout-row-label { flex:1; }
+    .tile-layout-row-actions { display:flex; gap:2px; flex-shrink:0; }
+    .tile-layout-row-actions button { background:none; border:none; cursor:pointer; color:var(--text2); padding:2px; display:flex; align-items:center; border-radius:4px; }
+    .tile-layout-row-actions button:hover { background:var(--surface2); color:var(--text); }
+    .tile-layout-row-actions button:disabled { opacity:.3; cursor:not-allowed; }
+    .tile-layout-row-actions button.danger:hover { color:var(--danger); }
+    .tile-layout-add { display:flex; gap:6px; }
+    .tile-layout-add select { flex:1; }
+    @media (max-width: 900px) { .tile-layout-editor { grid-template-columns:1fr; } }
 
     /* ── BRAND MODAL TABS ─────────────────────── */
     .modal-tabs { display:flex; gap:0; border-bottom:1px solid var(--border); padding:0 22px; background:var(--surface); flex-shrink:0; }
@@ -812,6 +843,78 @@
             <p id="phApiStatus" style="font-size:12px;margin-top:10px;min-height:18px;"></p>
 
             <p id="phLegacyNotice" style="display:none;font-size:12px;color:var(--warning);margin-top:10px;background:rgba(217,119,6,0.08);padding:8px 11px;border-radius:7px;border:1px solid rgba(217,119,6,0.25);"><span class="material-symbols-outlined" style="font-size:14px;">warning</span> Settings use an older single-token format. Please re-enter your API token(s) above and save.</p>
+          </div>
+
+          <div class="settings-section" id="settingsSection-aiProviders">
+            <h3>AI Integrations</h3>
+            <p class="settings-desc">Connect the AI providers used across Product Details and Product Assets &mdash; translating a product's Short/Long description, removing a photo's background or enhancing it, and generating an animated hero video from a product image. Tokens are encrypted server-side (Cloud Functions, AES-256-GCM, key held in Firebase Secret Manager) and decrypted only there, at the moment a call is made &mdash; this page and product-app never see a token in plain text. <strong>Test</strong> checks the last saved configuration, so save a new token before testing it.</p>
+
+            <div id="aiProvidersSection">
+
+              <div class="ai-provider-card">
+                <div class="ai-provider-card-head">
+                  <span class="material-symbols-outlined">translate</span>
+                  <div>
+                    <div class="ai-provider-card-title">Translation</div>
+                    <div class="ai-provider-card-sub">Used by Product Details &rarr; Add New Language (e.g. GPT&#8209;5.2)</div>
+                  </div>
+                </div>
+                <div class="ai-provider-fields">
+                  <div class="form-group"><label>Provider Name</label><input type="text" id="aiTranslationName" placeholder="e.g. OpenAI"></div>
+                  <div class="form-group"><label>Base API URL</label><input type="text" id="aiTranslationBaseUrl" placeholder="https://api.openai.com/v1" style="font-family:monospace;font-size:12px;"></div>
+                  <div class="form-group"><label>Model</label><input type="text" id="aiTranslationModel" placeholder="gpt-5.2"></div>
+                  <div class="form-group"><label>API Token</label><input type="password" id="aiTranslationToken" placeholder="Paste API key or token&hellip;" autocomplete="off" spellcheck="false" style="font-family:monospace;font-size:12px;"></div>
+                </div>
+                <div class="ai-provider-actions">
+                  <button class="btn btn-ghost btn-sm" onclick="testAiProvider('translation')"><span class="material-symbols-outlined" style="font-size:14px;">search</span> Test</button>
+                  <span class="ai-provider-status" id="aiTranslationStatus"></span>
+                </div>
+              </div>
+
+              <div class="ai-provider-card">
+                <div class="ai-provider-card-head">
+                  <span class="material-symbols-outlined">auto_fix_high</span>
+                  <div>
+                    <div class="ai-provider-card-title">Image Editing</div>
+                    <div class="ai-provider-card-sub">Used by Product Assets &rarr; Remove Background / Enhance (e.g. Nano Banana Pro / Gemini)</div>
+                  </div>
+                </div>
+                <div class="ai-provider-fields">
+                  <div class="form-group"><label>Provider Name</label><input type="text" id="aiImageName" placeholder="e.g. Google Gemini"></div>
+                  <div class="form-group"><label>Base API URL</label><input type="text" id="aiImageBaseUrl" placeholder="https://generativelanguage.googleapis.com" style="font-family:monospace;font-size:12px;"></div>
+                  <div class="form-group"><label>Model</label><input type="text" id="aiImageModel" placeholder="e.g. nano-banana-pro"></div>
+                  <div class="form-group"><label>API Token</label><input type="password" id="aiImageToken" placeholder="Paste API key or token&hellip;" autocomplete="off" spellcheck="false" style="font-family:monospace;font-size:12px;"></div>
+                </div>
+                <div class="ai-provider-actions">
+                  <button class="btn btn-ghost btn-sm" onclick="testAiProvider('image')"><span class="material-symbols-outlined" style="font-size:14px;">search</span> Test</button>
+                  <span class="ai-provider-status" id="aiImageStatus"></span>
+                </div>
+              </div>
+
+              <div class="ai-provider-card">
+                <div class="ai-provider-card-head">
+                  <span class="material-symbols-outlined">movie</span>
+                  <div>
+                    <div class="ai-provider-card-title">Video Generation</div>
+                    <div class="ai-provider-card-sub">Used by Product Assets &rarr; Generate Video (e.g. LTX 2.5)</div>
+                  </div>
+                </div>
+                <div class="ai-provider-fields">
+                  <div class="form-group"><label>Provider Name</label><input type="text" id="aiVideoName" placeholder="e.g. LTX Studio"></div>
+                  <div class="form-group"><label>Base API URL</label><input type="text" id="aiVideoBaseUrl" placeholder="https://api.ltx.studio" style="font-family:monospace;font-size:12px;"></div>
+                  <div class="form-group"><label>Model</label><input type="text" id="aiVideoModel" placeholder="ltx-2.5"></div>
+                  <div class="form-group"><label>API Token</label><input type="password" id="aiVideoToken" placeholder="Paste API key or token&hellip;" autocomplete="off" spellcheck="false" style="font-family:monospace;font-size:12px;"></div>
+                </div>
+                <div class="ai-provider-actions">
+                  <button class="btn btn-ghost btn-sm" onclick="testAiProvider('video')"><span class="material-symbols-outlined" style="font-size:14px;">search</span> Test</button>
+                  <span class="ai-provider-status" id="aiVideoStatus"></span>
+                </div>
+              </div>
+
+            </div>
+
+            <button class="btn btn-primary" id="aiProvidersSaveBtn" onclick="saveAiProviders()">Save Changes</button>
+            <p id="aiProvidersStatus" style="font-size:12px;margin-top:10px;min-height:18px;"></p>
           </div>
 
           <div class="settings-section" id="settingsSection-cart">
@@ -1147,6 +1250,21 @@
               <p class="form-help">Which products appear on this board is controlled from the product table (Featured column) — not from this editor. At least 3 items must be marked Featured for a brand before this board activates; a store manager can independently override HQ&rsquo;s picks from Retail Admin once they select 3 of their own. Below 3 (from either source), this board falls back to the brand&rsquo;s default template.</p>
             </div>
 
+            <div class="section-divider" id="tplTileLayoutDivider" style="display:none;">Tile Layout <span class="opt-tag">Local Feature</span></div>
+            <div class="form-group" id="tplTileLayoutGroup" style="display:none;">
+              <p class="form-help" style="margin-top:0;">Choose which elements appear on the Primary (Hero) and Secondary (Promo) tiles, which section of the tile each sits in, and their order within that section. Elements left off a tile simply don&rsquo;t show.</p>
+              <div class="tile-layout-editor">
+                <div class="tile-layout-tile">
+                  <h4>Primary Tile <span style="font-weight:400;color:var(--text2);">(Hero)</span></h4>
+                  <div id="tplHeroLayoutEditor"></div>
+                </div>
+                <div class="tile-layout-tile">
+                  <h4>Secondary Tile <span style="font-weight:400;color:var(--text2);">(Promo)</span></h4>
+                  <div id="tplPromoLayoutEditor"></div>
+                </div>
+              </div>
+            </div>
+
             <div class="section-divider">Portrait Display <span class="opt-tag">1080&times;1920px</span></div>
             <div class="form-row cols-3">
               <div class="form-group">
@@ -1264,6 +1382,7 @@
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-app.js";
 import { getFirestore, doc, setDoc, deleteDoc, onSnapshot, collection, writeBatch, getDocs } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-firestore.js";
+import { getFunctions, httpsCallable } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-functions.js";
 
 // ===== FIREBASE INIT =====
 const firebaseConfig = {
@@ -1276,6 +1395,7 @@ const firebaseConfig = {
 };
 const app = initializeApp(firebaseConfig);
 const db  = getFirestore(app);
+const functions = getFunctions(app);
 const MB         = 'menuboard';
 const ITEMS_COLL = 'items';
 const STOCK_COLL = 'stock';
@@ -1318,6 +1438,43 @@ const DEFAULT_COLORS = {
 const DEFAULT_DISPLAY = {
   portrait:  { cols: 3, rows: 5, maxItems: 15 },
   landscape: { cols: 5, rows: 3, maxItems: 15 }
+};
+
+// ===== TILE LAYOUT (Local Feature Highlight template) =====
+// The placeable element palette for the Feature Hero Spotlight board's
+// Primary (Hero) and Secondary (Promo) tiles — mirrored in menu-board.html's
+// renderTileZone(), which is the only place these keys turn into HTML.
+// Keeping the ids/labels here (data) and the actual rendering there (view)
+// is the same split menu-board.html already uses for badge templates etc.
+const TILE_LAYOUT_ELEMENTS = [
+  { key: 'category',         label: 'Category Tag' },
+  { key: 'name',              label: 'Product Name' },
+  { key: 'shortDescription',  label: 'Short Description' },
+  { key: 'longDescription',   label: 'Long Description' },
+  { key: 'price',              label: 'Price' },
+  { key: 'menuBoardNote',     label: 'Offer Badge' },
+  { key: 'locationBadge',     label: 'Location Badge' },
+  { key: 'nutrition',          label: 'Nutrition' },
+  { key: 'attributes',        label: 'Attributes' },
+];
+// Media (the photo/video itself) is deliberately not in the palette above —
+// it's the tile's structural background (Hero) / dedicated image well
+// (Promo), not something reassignable to a text zone in this first version.
+const TILE_LAYOUT_ZONES = {
+  hero:  [{ key: 'top', label: 'Top Overlay' }, { key: 'bottomLeft', label: 'Bottom-Left' }, { key: 'bottomRight', label: 'Bottom-Right' }],
+  promo: [{ key: 'textColumn', label: 'Text Column' }, { key: 'bottomLeft', label: 'Bottom-Left' }, { key: 'bottomRight', label: 'Bottom-Right' }],
+};
+// Only used to seed the editor the first time someone opens a template that
+// has no saved heroLayout/promoLayout yet — approximates today's hardcoded
+// order as a sensible starting point to adjust, not a byte-for-byte replica
+// (badges' current above/below-price placement is driven per-badge by each
+// Badge Template's own pricePosition, which no single static array can
+// represent). menu-board.html only switches to this new zone/order system
+// once a template actually has a saved heroLayout/promoLayout — until then
+// it keeps rendering exactly as it does today, regardless of this default.
+const DEFAULT_TILE_LAYOUTS = {
+  hero:  { top: ['category', 'name', 'menuBoardNote', 'locationBadge', 'price'], bottomLeft: ['shortDescription'], bottomRight: ['nutrition'] },
+  promo: { textColumn: ['category', 'name', 'menuBoardNote', 'locationBadge', 'price'], bottomLeft: ['shortDescription'], bottomRight: ['nutrition'] },
 };
 
 // ===== IN-MEMORY CACHE =====
@@ -1675,6 +1832,115 @@ async function decryptToken(b64) {
   const buf = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
   const pt  = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: buf.slice(0, 12) }, key, buf.slice(12));
   return new TextDecoder().decode(pt);
+}
+
+// ===== AI PROVIDERS — STATE, RENDER, SAVE, TEST =====
+// Tokens are no longer encrypted in this page at all — Save and Test both
+// call Cloud Functions (menu-board-demo/functions/index.js, "AI PROVIDERS"
+// section) that hold the only copy of the encryption key, in Firebase
+// Secret Manager, and are the only place a token is ever decrypted. This
+// page sends a freshly-pasted token once, over the callable function's TLS
+// connection, and never sees it again — _aiProviders below only ever holds
+// the opaque ciphertext Firestore stores, same as before, just no longer
+// something this page's own JS can turn back into plaintext.
+const saveAiProviderTokenFn    = httpsCallable(functions, 'saveAiProviderToken');
+const testAiProviderConnectionFn = httpsCallable(functions, 'testAiProviderConnection');
+const AI_PROVIDER_KINDS = ['translation', 'image', 'video'];
+const AI_PROVIDER_FIELDS = {
+  translation: { name: 'aiTranslationName', baseUrl: 'aiTranslationBaseUrl', model: 'aiTranslationModel', token: 'aiTranslationToken', status: 'aiTranslationStatus' },
+  image:       { name: 'aiImageName',       baseUrl: 'aiImageBaseUrl',       model: 'aiImageModel',       token: 'aiImageToken',       status: 'aiImageStatus' },
+  video:       { name: 'aiVideoName',       baseUrl: 'aiVideoBaseUrl',       model: 'aiVideoModel',       token: 'aiVideoToken',       status: 'aiVideoStatus' },
+};
+let _aiProviders = {}; // { translation: {name,baseUrl,model,authToken}, image: {...}, video: {...} } — authToken is AES-256-GCM encrypted
+
+function _loadAiProvidersUI() {
+  AI_PROVIDER_KINDS.forEach(kind => {
+    const cfg = _aiProviders[kind] || {};
+    const f = AI_PROVIDER_FIELDS[kind];
+    const nameEl = document.getElementById(f.name);
+    const urlEl  = document.getElementById(f.baseUrl);
+    const modelEl = document.getElementById(f.model);
+    const tokenEl = document.getElementById(f.token);
+    if (nameEl) nameEl.value = cfg.name || '';
+    if (urlEl) urlEl.value = cfg.baseUrl || '';
+    if (modelEl) modelEl.value = cfg.model || '';
+    if (tokenEl) {
+      tokenEl.value = '';
+      tokenEl.placeholder = cfg.authToken ? 'Token saved — enter new to replace' : 'Paste API key or token…';
+    }
+    const statusEl = document.getElementById(f.status);
+    if (statusEl) statusEl.textContent = '';
+  });
+}
+
+async function saveAiProviders() {
+  // Read every kind's fields up front, before any network call — each
+  // saveAiProviderTokenFn call writes to the same settings doc this page's
+  // own onSnapshot listener is watching, and that listener's response
+  // (_loadAiProvidersUI) resets every input back to its saved value. Reading
+  // one kind's fields, awaiting its save, then reading the next kind's
+  // fields let the first save's own echo wipe the second/third kind's
+  // still-unsaved input values out from under this function before they
+  // were ever read.
+  const payloads = AI_PROVIDER_KINDS.map(kind => {
+    const f = AI_PROVIDER_FIELDS[kind];
+    return {
+      kind,
+      name:    (document.getElementById(f.name)?.value || '').trim(),
+      baseUrl: (document.getElementById(f.baseUrl)?.value || '').trim(),
+      model:   (document.getElementById(f.model)?.value || '').trim(),
+      // token is only sent when the field actually has something typed —
+      // omitting it tells the function to keep whatever's already saved,
+      // so leaving this blank on an edit doesn't wipe out an existing key.
+      token: (document.getElementById(f.token)?.value || '').trim() || undefined,
+    };
+  });
+
+  for (const payload of payloads) {
+    try {
+      await saveAiProviderTokenFn(payload);
+    } catch (e) {
+      toast(`Failed to save ${payload.kind} provider: ${e.message}`, 'error');
+      return;
+    }
+  }
+  // _aiProviders/_loadAiProvidersUI refresh via the settings onSnapshot
+  // listener once the function's own write reaches Firestore — no local
+  // mutation needed here.
+
+  // Clear token inputs after save (security: don't leave plain text in DOM)
+  AI_PROVIDER_KINDS.forEach(kind => {
+    const t = document.getElementById(AI_PROVIDER_FIELDS[kind].token);
+    if (t) t.value = '';
+  });
+  if (_aiProvidersSave) _aiProvidersSave.reset();
+  toast('AI integrations saved', 'success');
+}
+
+// Tests the configuration already saved server-side — a token still
+// sitting in the field but not yet saved isn't reachable to test, since
+// nothing in this page ever holds it in a form Test could send anywhere
+// but Save. Save first, then Test.
+async function testAiProvider(kind) {
+  const f = AI_PROVIDER_FIELDS[kind];
+  const statusEl = document.getElementById(f.status);
+  if (!statusEl) return;
+  statusEl.style.color = 'var(--text2)';
+  statusEl.textContent = 'Testing…';
+
+  try {
+    const { data } = await testAiProviderConnectionFn({ kind });
+    if (data.ok) {
+      statusEl.style.color = 'var(--success)';
+      statusEl.textContent = `Connected (HTTP ${data.status})`;
+    } else {
+      statusEl.style.color = 'var(--danger)';
+      statusEl.textContent = `HTTP ${data.status} — check URL or Token`;
+    }
+  } catch (e) {
+    statusEl.style.color = 'var(--danger)';
+    statusEl.textContent = e.message;
+  }
 }
 
 // ===== PH ENDPOINT LIST — RENDER & MUTATE =====
@@ -3856,6 +4122,7 @@ let _editingBrandTemplates = [];
 let _tplEditingId = null;
 let _tplSelectedTypes = []; // [] = All Types
 let _tplSelectedCategories = []; // [] = All Categories (for category filter UI)
+let _tplLayouts = null; // { hero: {zoneKey:[elementKey,...]}, promo: {...} } — Local Feature Highlight only
 
 // ── DIRTY-STATE SAVE BUTTON TRACKING ────────────────────────────────────
 function _makeSaveBtn(btnId) {
@@ -3866,7 +4133,7 @@ function _makeSaveBtn(btnId) {
   };
 }
 // Initialised once DOM is ready (at end of script)
-let _brandSave, _tplSave, _stockApiSave, _phApiSave, _btSave, _mtSave;
+let _brandSave, _tplSave, _stockApiSave, _phApiSave, _btSave, _mtSave, _aiProvidersSave;
 
 function openAddBrandModal() {
   document.getElementById('brandModalTitle').textContent = 'Add Brand / Supplier';
@@ -4745,6 +5012,7 @@ function openNewTemplateEditor() {
     // Reset category state for new template
     _tplSelectedCategories = [];
     _tplEditingId = null;
+    _tplLayouts = { hero: JSON.parse(JSON.stringify(DEFAULT_TILE_LAYOUTS.hero)), promo: JSON.parse(JSON.stringify(DEFAULT_TILE_LAYOUTS.promo)) };
     // Show the template editor panel
     document.getElementById('tplListView').style.display = 'none';
     const panel = document.getElementById('tplEditorPanel');
@@ -4918,11 +5186,12 @@ function applyTemplateSchema(templateId) {
   // Local Feature Highlight — image-size field only makes sense for this
   // template's full-bleed-image-plus-promo-cards layout; the Featured-items
   // info panel replaces the old Hero Category/Categories-to-Present pickers.
-  ['tplHeroSizeGroup', 'tplFeaturedInfoGroup'].forEach(id => {
+  ['tplHeroSizeGroup', 'tplFeaturedInfoGroup', 'tplTileLayoutDivider', 'tplTileLayoutGroup'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.style.display = isHeroBoard ? '' : 'none';
   });
   if (isHeroBoard) _updateTplFeaturedCount();
+  if (isHeroBoard) renderTileLayoutEditor();
   // Category badge colour — relevant when category badges are shown, which
   // includes Local Feature Highlight's promo-card category tiles even
   // though it no longer uses categoryFilter for item selection.
@@ -5004,6 +5273,12 @@ function openEditTemplateEditor(tplId) {
   _updateTplTypeLabel();
   document.getElementById('tplTypePanel').classList.remove('open');
   _tplSelectedCategories = Array.isArray(tpl.categoriesToPresent) ? [...tpl.categoriesToPresent] : [];
+  // Deep-copied so edits here don't mutate the saved template (or the
+  // shared DEFAULT_TILE_LAYOUTS constant) until Save Changes is clicked.
+  _tplLayouts = {
+    hero:  JSON.parse(JSON.stringify(tpl.heroLayout  || DEFAULT_TILE_LAYOUTS.hero)),
+    promo: JSON.parse(JSON.stringify(tpl.promoLayout || DEFAULT_TILE_LAYOUTS.promo)),
+  };
   if (_tplSave) _tplSave.reset();
   if (tpl.templateType) applyTemplateSchema(tpl.templateType);
   if (tpl.templateType === 'languages-on-shift') { loadLosFields(tpl); pushLosPreview(); }
@@ -5124,6 +5399,89 @@ function _updateTplFeaturedCount() {
   }
 }
 
+// ── TILE LAYOUT EDITOR (Local Feature Highlight template) ────────────────
+// _tplLayouts holds the two tiles' zone-keyed element-key arrays while the
+// editor is open — same "detach into a plain array/object, mutate it, write
+// it all back on Save" shape as _tplSelectedTypes/_tplSelectedCategories
+// just above, not a per-field two-way binding.
+
+function _tileLayoutPlacedElsewhere(tile, zone, key) {
+  const zones = _tplLayouts[tile];
+  return Object.keys(zones).some(z => z !== zone && zones[z].includes(key));
+}
+
+function _tileLayoutUnplaced(tile) {
+  const zones = _tplLayouts[tile];
+  const placed = new Set(Object.values(zones).flat());
+  return TILE_LAYOUT_ELEMENTS.filter(e => !placed.has(e.key));
+}
+
+function renderTileLayoutEditor() {
+  if (!_tplLayouts) return;
+  ['hero', 'promo'].forEach(tile => {
+    const container = document.getElementById(tile === 'hero' ? 'tplHeroLayoutEditor' : 'tplPromoLayoutEditor');
+    if (!container) return;
+    const zones = TILE_LAYOUT_ZONES[tile];
+    container.innerHTML = zones.map(zone => {
+      const keys = _tplLayouts[tile][zone.key] || [];
+      const rows = keys.map((key, i) => {
+        const el = TILE_LAYOUT_ELEMENTS.find(e => e.key === key);
+        const label = el ? el.label : key;
+        return `
+          <div class="tile-layout-row">
+            <span class="tile-layout-row-label">${escHtml(label)}</span>
+            <div class="tile-layout-row-actions">
+              <button type="button" title="Move up" ${i === 0 ? 'disabled' : ''} onclick="moveTileLayoutElement('${tile}','${zone.key}',${i},-1)"><span class="material-symbols-outlined" style="font-size:15px;">arrow_upward</span></button>
+              <button type="button" title="Move down" ${i === keys.length - 1 ? 'disabled' : ''} onclick="moveTileLayoutElement('${tile}','${zone.key}',${i},1)"><span class="material-symbols-outlined" style="font-size:15px;">arrow_downward</span></button>
+              <button type="button" class="danger" title="Remove" onclick="removeTileLayoutElement('${tile}','${zone.key}',${i})"><span class="material-symbols-outlined" style="font-size:15px;">close</span></button>
+            </div>
+          </div>`;
+      }).join('') || `<p style="font-size:12px;color:var(--text2);margin:0 0 8px;">No elements in this section.</p>`;
+
+      const unplaced = _tileLayoutUnplaced(tile);
+      const addRow = unplaced.length ? `
+        <div class="tile-layout-add">
+          <select id="tplAdd-${tile}-${zone.key}">
+            ${unplaced.map(e => `<option value="${e.key}">${escHtml(e.label)}</option>`).join('')}
+          </select>
+          <button type="button" class="btn btn-ghost btn-sm" onclick="addTileLayoutElement('${tile}','${zone.key}')">+ Add</button>
+        </div>` : '';
+
+      return `
+        <div class="tile-layout-zone">
+          <div class="tile-layout-zone-label">${escHtml(zone.label)}</div>
+          ${rows}
+          ${addRow}
+        </div>`;
+    }).join('');
+  });
+}
+
+function addTileLayoutElement(tile, zone) {
+  const select = document.getElementById(`tplAdd-${tile}-${zone}`);
+  const key = select?.value;
+  if (!key) return;
+  if (_tileLayoutPlacedElsewhere(tile, zone, key)) return; // shouldn't happen — unplaced list already excludes it
+  _tplLayouts[tile][zone].push(key);
+  renderTileLayoutEditor();
+  if (_tplSave) _tplSave.markDirty();
+}
+
+function removeTileLayoutElement(tile, zone, idx) {
+  _tplLayouts[tile][zone].splice(idx, 1);
+  renderTileLayoutEditor();
+  if (_tplSave) _tplSave.markDirty();
+}
+
+function moveTileLayoutElement(tile, zone, idx, dir) {
+  const arr = _tplLayouts[tile][zone];
+  const j = idx + dir;
+  if (j < 0 || j >= arr.length) return;
+  [arr[idx], arr[j]] = [arr[j], arr[idx]];
+  renderTileLayoutEditor();
+  if (_tplSave) _tplSave.markDirty();
+}
+
 function saveTemplate() {
   const name = document.getElementById('tplName').value.trim();
   if (!name) { toast('Template name is required.', 'error'); return; }
@@ -5176,6 +5534,10 @@ function saveTemplate() {
 
   if (document.getElementById('tplEditId').dataset.templateType === 'languages-on-shift') {
     Object.assign(tplData, collectLosFields());
+  }
+  if (document.getElementById('tplEditId').dataset.templateType === 'feature-hero-board' && _tplLayouts) {
+    tplData.heroLayout = _tplLayouts.hero;
+    tplData.promoLayout = _tplLayouts.promo;
   }
 
   if (_tplEditingId) {
@@ -5730,9 +6092,13 @@ onSnapshot(doc(db, MB, 'settings'), snap => {
   // Stock API key
   const stockKeyEl = document.getElementById('stockApiKeyInput');
   if (stockKeyEl) stockKeyEl.value = _settings.stockApiKey || '';
+  // AI Integrations
+  _aiProviders = _settings.aiProviders || {};
+  _loadAiProvidersUI();
   // Reset dirty state for settings save buttons
-  if (_stockApiSave) _stockApiSave.reset();
-  if (_phApiSave)    _phApiSave.reset();
+  if (_stockApiSave)    _stockApiSave.reset();
+  if (_phApiSave)       _phApiSave.reset();
+  if (_aiProvidersSave) _aiProvidersSave.reset();
 });
 
 onSnapshot(collection(db, STOCK_COLL), snapshot => {
@@ -5756,6 +6122,7 @@ _stockApiSave = _makeSaveBtn('stockApiSaveBtn');
 _phApiSave    = _makeSaveBtn('phApiSaveBtn');
 _btSave       = _makeSaveBtn('btSaveBtn');
 _mtSave       = _makeSaveBtn('mtSaveBtn');
+_aiProvidersSave = _makeSaveBtn('aiProvidersSaveBtn');
 
 // Event delegation: any input/change inside the form containers marks the button dirty
 document.getElementById('brandPane-settings')
@@ -5773,6 +6140,8 @@ document.getElementById('phCampaignMode')
 // PH endpoint URL/token inputs are dynamically rendered; catch via their parent container
 document.getElementById('phEpList')
   .addEventListener('input',  () => _phApiSave.markDirty());
+document.getElementById('aiProvidersSection')
+  .addEventListener('input',  () => _aiProvidersSave.markDirty());
 
 // Close the template type dropdown when clicking outside it
 document.addEventListener('click', (e) => {
@@ -5789,6 +6158,8 @@ window.savePhApi        = savePhApi;
 window.addPhEndpoint    = addPhEndpoint;
 window.removePhEndpoint = removePhEndpoint;
 window.testPhEndpoint   = testPhEndpoint;
+window.saveAiProviders  = saveAiProviders;
+window.testAiProvider   = testAiProvider;
 window.updateBadgeTemplateField = updateBadgeTemplateField;
 window.addBadgeTemplate    = addBadgeTemplate;
 window.removeBadgeTemplate = removeBadgeTemplate;
@@ -5797,6 +6168,9 @@ window.updateMenuTypeField = updateMenuTypeField;
 window.addMenuType         = addMenuType;
 window.removeMenuType      = removeMenuType;
 window.saveMenuTypesUI     = saveMenuTypesUI;
+window.addTileLayoutElement    = addTileLayoutElement;
+window.removeTileLayoutElement = removeTileLayoutElement;
+window.moveTileLayoutElement   = moveTileLayoutElement;
 </script>
 </body>
 </html>

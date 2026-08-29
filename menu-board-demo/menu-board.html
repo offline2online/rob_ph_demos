@@ -789,6 +789,14 @@
       -webkit-line-clamp: 2;
       -webkit-box-orient: vertical;
     }
+    /* "Attributes" — only reachable via a Tile Layout, never shown on any
+       board before it existed, so kept deliberately plain rather than
+       inventing a look nobody's asked for. */
+    .promo-attributes {
+      font-size: clamp(11px, 1.1vw, 16px);
+      color: rgba(0,0,0,.65);
+      line-height: 1.4;
+    }
 
     /* ── API ERROR BADGE ───────────────────────────── */
     #apiErrorBadge {
@@ -1422,6 +1430,62 @@ function buildNutrition(item) {
   return `<div class="nutrition-block">
     <div class="nutr-row-line"><span class="nutr-values">${kjTotal}kJ&nbsp;/&nbsp;${kcalTotal}kcal</span></div>
   </div>`;
+}
+
+// ── TILE LAYOUT — data-driven Hero/Promo tile rendering (Local Feature Highlight) ──
+// Only used when a template carries an explicit heroLayout/promoLayout
+// (authored via hq-admin.html's Settings → Offer Boards → Tile Layout editor,
+// Local Feature Highlight only). When a template has neither, the
+// feature-hero-board branch below keeps building heroTopHtml/heroBottomHtml/
+// promo tiles exactly as it always has — every existing brand's board stays
+// pixel-identical until an admin actively opts into a Tile Layout.
+//
+// "attributes" is the only element with no existing single-purpose renderer
+// to call into (every other key already had one — priceHtml, buildNutrition,
+// etc.) since ingredients/Additional Attributes have never been shown on any
+// board before this.
+function _tileAttributesHtml(item) {
+  const parts = [];
+  if (Array.isArray(item.ingredients) && item.ingredients.length) {
+    parts.push(esc(item.ingredients.join(', ')));
+  }
+  if (Array.isArray(item.attributes)) {
+    item.attributes.filter(a => a.show && a.label).forEach(a => {
+      parts.push(`${esc(a.label)}${a.value ? ': ' + esc(a.value) : ''}${a.unit ? ' ' + esc(a.unit) : ''}`);
+    });
+  }
+  return parts.length ? `<div class="promo-attributes">${parts.join(' &middot; ')}</div>` : '';
+}
+
+function renderTileZone(elementKeys, item, ctx) {
+  return (elementKeys || []).map(key => {
+    switch (key) {
+      case 'category':
+        return item.category ? `<div class="promo-cat">${esc(item.category)}</div>` : '';
+      case 'name':
+        return `<div class="${ctx.titleClass}">${esc(item.name)}</div>`;
+      case 'shortDescription': {
+        const text = item.shortDescription || item.description || '';
+        return text ? `<div class="${ctx.descColClass}"><div class="${ctx.descClass}">${esc(text)}</div></div>` : '';
+      }
+      case 'longDescription': {
+        const text = item.longDescription || '';
+        return text ? `<div class="${ctx.descColClass}"><div class="${ctx.descClass}">${esc(text)}</div></div>` : '';
+      }
+      case 'price':
+        return `<div class="${ctx.priceClass}">${priceHtml(item, ctx.currency, 'price-was')}</div>`;
+      case 'menuBoardNote':
+        return shouldShowMenuNote(item) ? `<div class="menu-board-note" style="${menuNoteStyleAttr(item)}">${esc(item.showOnMenuBoard)}</div>` : '';
+      case 'locationBadge':
+        return locationBadgeHtml(item);
+      case 'nutrition':
+        return buildNutrition(item);
+      case 'attributes':
+        return _tileAttributesHtml(item);
+      default:
+        return '';
+    }
+  }).join('');
 }
 
 // ── ROTATION STATE ───────────────────────────────────────────────────────────
@@ -2521,37 +2585,51 @@ function _renderUnsafe() {
       const heroImgHtml = heroSrc
         ? _mediaTag(heroSrc, heroItem.name, 'promo-hero-placeholder', '🏷️')
         : `<div class="promo-hero-placeholder">🏷️</div>`;
-      const heroCat = heroItem.category ? `<div class="promo-cat">${esc(heroItem.category)}</div>` : '';
-      const heroMenuNote = shouldShowMenuNote(heroItem) ? `<div class="menu-board-note" style="${menuNoteStyleAttr(heroItem)}">${esc(heroItem.showOnMenuBoard)}</div>` : '';
-      const heroLocationNote = locationBadgeHtml(heroItem);
-      const heroStockRec = _stock[heroItem.sku];
-      const { above: heroNotesAbove, below: heroNotesBelow } = bucketBadgeNotes([
-        { html: heroMenuNote, templateId: heroItem.menuBoardNoteTemplateId },
-        { html: heroLocationNote, templateId: heroStockRec && heroStockRec.locationBadgeTemplateId },
-      ]);
-      const heroTopHtml = `
-        <div class="promo-hero-top">
-          ${heroCat}
-          <div class="promo-hero-title">${esc(heroItem.name)}</div>
-          ${heroNotesAbove}
-          <div class="promo-hero-price">${priceHtml(heroItem, currency, 'price-was')}</div>
-          ${heroNotesBelow}
-        </div>`;
-      // Bottom bar: description on the left (≤50% width via CSS),
-      // calorie/kilojoule info hugging the right edge — nutrition-block's
-      // own margin-left:auto positions it regardless of whether the
-      // description column is present.
-      const heroDescHtml = heroItem.description
-        ? `<div class="promo-hero-desc-col"><div class="promo-hero-desc">${esc(heroItem.description)}</div></div>` : '';
-      const heroNutrHtml = buildNutrition(heroItem);
-      const heroBottomHtml = (heroDescHtml || heroNutrHtml)
-        ? `<div class="promo-hero-bottom">${heroDescHtml}${heroNutrHtml}</div>`
-        : '';
+      // Tile Layout (hq-admin.html ▸ Settings ▸ Offer Boards ▸ this template's
+      // Tile Layout editor) takes over entirely once a brand has configured
+      // one — including badge above/below-price placement, which otherwise
+      // comes from bucketBadgeNotes below. Left unset, every existing
+      // brand's hero panel renders exactly as it always has.
+      const heroCtx = { currency, titleClass: 'promo-hero-title', priceClass: 'promo-hero-price', descColClass: 'promo-hero-desc-col', descClass: 'promo-hero-desc' };
+      let heroTopHtml, heroBottomHtml;
+      if (tpl && tpl.heroLayout) {
+        heroTopHtml = `<div class="promo-hero-top">${renderTileZone(tpl.heroLayout.top, heroItem, heroCtx)}</div>`;
+        const heroBottomInner = renderTileZone(tpl.heroLayout.bottomLeft, heroItem, heroCtx) + renderTileZone(tpl.heroLayout.bottomRight, heroItem, heroCtx);
+        heroBottomHtml = heroBottomInner ? `<div class="promo-hero-bottom">${heroBottomInner}</div>` : '';
+      } else {
+        const heroCat = heroItem.category ? `<div class="promo-cat">${esc(heroItem.category)}</div>` : '';
+        const heroMenuNote = shouldShowMenuNote(heroItem) ? `<div class="menu-board-note" style="${menuNoteStyleAttr(heroItem)}">${esc(heroItem.showOnMenuBoard)}</div>` : '';
+        const heroLocationNote = locationBadgeHtml(heroItem);
+        const heroStockRec = _stock[heroItem.sku];
+        const { above: heroNotesAbove, below: heroNotesBelow } = bucketBadgeNotes([
+          { html: heroMenuNote, templateId: heroItem.menuBoardNoteTemplateId },
+          { html: heroLocationNote, templateId: heroStockRec && heroStockRec.locationBadgeTemplateId },
+        ]);
+        heroTopHtml = `
+          <div class="promo-hero-top">
+            ${heroCat}
+            <div class="promo-hero-title">${esc(heroItem.name)}</div>
+            ${heroNotesAbove}
+            <div class="promo-hero-price">${priceHtml(heroItem, currency, 'price-was')}</div>
+            ${heroNotesBelow}
+          </div>`;
+        // Bottom bar: description on the left (≤50% width via CSS),
+        // calorie/kilojoule info hugging the right edge — nutrition-block's
+        // own margin-left:auto positions it regardless of whether the
+        // description column is present.
+        const heroDescHtml = heroItem.description
+          ? `<div class="promo-hero-desc-col"><div class="promo-hero-desc">${esc(heroItem.description)}</div></div>` : '';
+        const heroNutrHtml = buildNutrition(heroItem);
+        heroBottomHtml = (heroDescHtml || heroNutrHtml)
+          ? `<div class="promo-hero-bottom">${heroDescHtml}${heroNutrHtml}</div>`
+          : '';
+      }
 
       // Build promo tiles — striped accent bar, category/title/price in the
       // text column, then a bottom bar overlaid across the full width of
       // the tile (text column + photo) with description on the left
       // (≤50% width) and calorie/kilojoule info hugging the right edge.
+      const promoCtx = { currency, titleClass: 'promo-title', priceClass: 'promo-price', descColClass: 'promo-desc-col', descClass: 'promo-desc' };
       const promoTilesHtml = promoPage.map(item => {
         // The "small panel" — always the image, never the video, even if
         // this item's default/targeted video would otherwise apply.
@@ -2559,6 +2637,19 @@ function _renderUnsafe() {
         const img = src
           ? _mediaTag(src, item.name, 'promo-img-placeholder', '🍽️')
           : `<div class="promo-img-placeholder">🍽️</div>`;
+
+        if (tpl && tpl.promoLayout) {
+          const textHtml = renderTileZone(tpl.promoLayout.textColumn, item, promoCtx);
+          const bottomInner = renderTileZone(tpl.promoLayout.bottomLeft, item, promoCtx) + renderTileZone(tpl.promoLayout.bottomRight, item, promoCtx);
+          const bottomHtml = bottomInner ? `<div class="promo-tile-desc">${bottomInner}</div>` : '';
+          return `
+            <div class="promo-tile">
+              <div class="promo-text">${textHtml}</div>
+              <div class="promo-img-wrap">${img}</div>
+              ${bottomHtml}
+            </div>`;
+        }
+
         const descHtml = item.description
           ? `<div class="promo-desc-col"><div class="promo-desc">${esc(item.description)}</div></div>` : '';
         const nutrHtml = buildNutrition(item);

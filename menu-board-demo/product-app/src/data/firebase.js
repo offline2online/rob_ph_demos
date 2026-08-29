@@ -1,5 +1,6 @@
 import { initializeApp } from 'firebase/app';
 import { getFirestore } from 'firebase/firestore';
+import { getFunctions } from 'firebase/functions';
 
 // Same project/config as menu-board-demo/hq-admin.html (lines 1447-1456) —
 // this page reads/writes the same live `items` collection, so it must
@@ -15,6 +16,7 @@ const firebaseConfig = {
 
 const app = initializeApp(firebaseConfig);
 export const db = getFirestore(app);
+export const functions = getFunctions(app);
 export const MB = 'menuboard';
 export const ITEMS_COLL = 'items';
 export const STOCK_COLL_NAME = 'stock';

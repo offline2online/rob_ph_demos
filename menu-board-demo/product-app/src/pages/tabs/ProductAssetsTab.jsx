@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Input, Switch, Select, Tag } from 'antd';
+import { Input, Switch, Select, Tag, Modal, message } from 'antd';
 import dayjs from 'dayjs';
 import MaterialIcon from '../../components/MaterialIcon.jsx';
 import BespokeIcon from '../../components/BespokeIcon.jsx';
@@ -7,6 +7,8 @@ import IconAction from '../../components/IconAction.jsx';
 import BeforeAfterSlider from '../../components/BeforeAfterSlider.jsx';
 import ClearableDate from '../../components/ClearableDate.jsx';
 import TargetingBuilder, { describeTargeting } from '../../components/TargetingBuilder.jsx';
+import { useAiProviders } from '../../data/registries.js';
+import { editProductImage, generateProductVideo, isProviderConfigured } from '../../lib/aiProviders.js';
 
 function licenceState(expiry) {
   if (!expiry) return 'ok';
@@ -37,6 +39,37 @@ function nextVariantLabel(images, type) {
 const COMPRESS_THRESHOLD_BYTES = 300_000;
 const MAX_DIMENSION = 1000;
 const JPEG_QUALITY = 0.75;
+
+// Same size budget as readAndCompress below, applied to a data URL rather
+// than a File — an AI-edited image comes back from the provider as base64
+// already, and can just as easily blow Firestore's ~1 MiB document limit
+// as a raw upload can (background removal in particular tends to return a
+// full-resolution, uncompressed PNG).
+function compressDataUrl(dataUrl) {
+  return new Promise((resolve) => {
+    const head = dataUrl.slice(0, 40);
+    const approxBytes = Math.round((dataUrl.length - head.indexOf(',') - 1) * 0.75);
+    if (approxBytes <= COMPRESS_THRESHOLD_BYTES) { resolve(dataUrl); return; }
+    const img = new Image();
+    img.onload = () => {
+      const scale = Math.min(1, MAX_DIMENSION / Math.max(img.width, img.height));
+      const width = Math.round(img.width * scale);
+      const height = Math.round(img.height * scale);
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      // Unlike readAndCompress, a transparent (background-removed) result
+      // must stay transparent — flattening it to white here would silently
+      // undo the very edit this compression step is meant to sit downstream
+      // of, so this keeps PNG/alpha instead of forcing JPEG.
+      ctx.drawImage(img, 0, 0, width, height);
+      resolve(canvas.toDataURL('image/png'));
+    };
+    img.onerror = () => resolve(dataUrl);
+    img.src = dataUrl;
+  });
+}
 
 function readAndCompress(file) {
   const readAsDataUrl = () =>
@@ -143,11 +176,21 @@ function Tile({ img, selected, onClick }) {
 
 export default function ProductAssetsTab({ draft, patch }) {
   const images = draft.images || [];
+  const aiProviders = useAiProviders();
   const [selected, setSelected] = useState(0);
   const [dragOver, setDragOver] = useState(false);
   const [newTagText, setNewTagText] = useState('');
   const fileInput = useRef(null);
   const fileIntent = useRef('upload'); // 'upload' | 'replace' — which action opened the picker
+
+  // Which image-editing call is in flight, if any — 'bg' | 'enhance' | null.
+  // Only one of Remove Background / Enhance can run at a time; both are
+  // disabled while the other is busy so a second click can't race the
+  // first's response into overwriting it.
+  const [imageBusy, setImageBusy] = useState(null);
+  const [videoModalOpen, setVideoModalOpen] = useState(false);
+  const [videoPrompt, setVideoPrompt] = useState('Animate this product photo with a subtle, appetizing hero rotation and soft studio lighting.');
+  const [videoBusy, setVideoBusy] = useState(false);
 
   // The "+ Add tag" input was uncontrolled, cleared imperatively via
   // e.currentTarget.value = ''. With no key of its own it sits right after
@@ -267,8 +310,101 @@ export default function ProductAssetsTab({ draft, patch }) {
     patch({ images: next });
   };
   const toggleTesting = () => current && updateSelected({ availableForTesting: !current.availableForTesting });
-  const toggleBg = () => current && updateSelected({ bgRemoved: !current.bgRemoved });
-  const toggleEnhance = () => current && updateSelected({ enhanced: !current.enhanced });
+
+  // Remove Background and Enhance both call out to the configured Image
+  // provider (Nano Banana Pro / Gemini, per Settings → AI Integrations)
+  // and replace `src` with the real edited result — there's no local
+  // simulation of either effect. `original` is captured the first time
+  // either treatment is applied and never overwritten again, so turning a
+  // treatment back off can restore the untouched upload.
+  //
+  // Combining both at once chains the second call on top of whatever is
+  // currently displayed (so the after-image genuinely reflects both
+  // edits) — but only one intermediate result is ever kept, so switching
+  // either flag off while the other is still on can't cleanly un-chain
+  // just its own contribution. Rather than show a result that's silently
+  // wrong, that case reverts to the untouched original and clears both
+  // flags, with a toast explaining why.
+  const applyImageTreatment = async (kind) => {
+    if (!current || imageBusy) return;
+    const isBg = kind === 'bg';
+    const flagKey = isBg ? 'bgRemoved' : 'enhanced';
+    const otherFlagKey = isBg ? 'enhanced' : 'bgRemoved';
+    const turningOn = !current[flagKey];
+
+    if (!turningOn) {
+      if (current[otherFlagKey]) {
+        message.warning('Turning this off also clears the other treatment — edits can’t be cleanly un-chained. Reapply as needed.');
+        updateSelected({ bgRemoved: false, enhanced: false, src: current.original || current.src });
+      } else {
+        updateSelected({ [flagKey]: false, src: current.original || current.src });
+      }
+      return;
+    }
+
+    if (!isProviderConfigured(aiProviders.image)) {
+      message.error('No Image provider configured — add one in Settings → AI Integrations.');
+      return;
+    }
+
+    setImageBusy(kind);
+    try {
+      const instructionKey = isBg ? 'removeBackground' : 'enhance';
+      const edited = await editProductImage({ imageDataUrl: current.src, instructionKey });
+      const compressed = await compressDataUrl(edited);
+      updateSelected({ [flagKey]: true, src: compressed, original: current.original || current.src });
+    } catch (e) {
+      message.error(`Image edit failed: ${e.message}`);
+    } finally {
+      setImageBusy(null);
+    }
+  };
+  const toggleBg = () => applyImageTreatment('bg');
+  const toggleEnhance = () => applyImageTreatment('enhance');
+
+  const openVideoModal = () => {
+    if (!current) return;
+    setVideoModalOpen(true);
+  };
+
+  const confirmGenerateVideo = async () => {
+    if (!current) return;
+    if (!isProviderConfigured(aiProviders.video)) {
+      message.error('No Video provider configured — add one in Settings → AI Integrations.');
+      return;
+    }
+    setVideoBusy(true);
+    try {
+      const videoSrc = await generateProductVideo({ imageDataUrl: current.src, prompt: videoPrompt.trim() });
+      const next = [...images];
+      const newAsset = {
+        id: 'img-' + Date.now() + Math.random().toString(36).slice(2, 7),
+        src: videoSrc,
+        type: 'video',
+        name: '',
+        tags: [],
+        isDefault: false,
+        availableForTesting: false,
+        bgRemoved: false,
+        enhanced: false,
+        rightsOn: false,
+        rights: {},
+        targeting: [],
+        variant: nextVariantLabel(next, 'video'),
+        generatedFrom: current.id,
+        generationPrompt: videoPrompt.trim(),
+      };
+      next.push(newAsset);
+      patch({ images: next });
+      setSelected(next.length - 1);
+      setVideoModalOpen(false);
+      message.success('Video generated');
+    } catch (e) {
+      message.error(`Video generation failed: ${e.message}`);
+    } finally {
+      setVideoBusy(false);
+    }
+  };
 
   const expired = current?.rightsOn && licenceState(current.rights?.expiry) === 'expired';
   const soon = current?.rightsOn && licenceState(current.rights?.expiry) === 'soon';
@@ -347,9 +483,9 @@ export default function ProductAssetsTab({ draft, patch }) {
             <div style={{ display: 'flex', alignItems: 'stretch', gap: 4, padding: '11px 16px', borderBottom: '1px solid #f0f0f0', flexWrap: 'wrap' }}>
               <IconAction
                 icon={<BespokeIcon name="removeBg" />}
-                caption="Background"
+                caption={imageBusy === 'bg' ? 'Working…' : 'Background'}
                 active={current.bgRemoved}
-                disabled={expired || isVideo}
+                disabled={expired || isVideo || !!imageBusy}
                 onClick={toggleBg}
                 tooltipTitle={current.bgRemoved ? 'Restore background' : 'Remove background'}
                 tooltipDesc={
@@ -359,17 +495,25 @@ export default function ProductAssetsTab({ draft, patch }) {
                     ? undefined
                     : current.bgRemoved
                     ? 'Puts the original background back. The cut-out is discarded.'
-                    : 'Cuts the product out to a transparent PNG so it can sit on any campaign layout.'
+                    : 'Calls the configured Image provider to cut the product out to a transparent PNG so it can sit on any campaign layout.'
                 }
               />
               <IconAction
                 icon={<MaterialIcon name="auto_fix_high" />}
-                caption="Enhance"
+                caption={imageBusy === 'enhance' ? 'Working…' : 'Enhance'}
                 active={current.enhanced}
-                disabled={expired || isVideo}
+                disabled={expired || isVideo || !!imageBusy}
                 onClick={toggleEnhance}
                 tooltipTitle={current.enhanced ? 'Undo enhancement' : 'Enhance quality'}
-                tooltipDesc={isVideo ? 'Not available for video.' : current.enhanced ? 'Reverts to the original upload.' : 'Sharpens and colour-corrects the image.'}
+                tooltipDesc={isVideo ? 'Not available for video.' : current.enhanced ? 'Reverts to the original upload.' : 'Calls the configured Image provider to sharpen and colour-correct the image.'}
+              />
+              <IconAction
+                icon={<MaterialIcon name="movie" />}
+                caption="Video"
+                disabled={expired || isVideo || !!imageBusy}
+                onClick={openVideoModal}
+                tooltipTitle="Generate video"
+                tooltipDesc={isVideo ? 'Already a video.' : 'Calls the configured Video provider to animate this photo into a short hero clip, using a prompt you control.'}
               />
               <div style={{ width: 1, background: '#f0f0f0', margin: '4px 8px' }} />
               {isTargeted ? (
@@ -426,7 +570,7 @@ export default function ProductAssetsTab({ draft, patch }) {
                     style={{ width: '100%', aspectRatio: '1 / 1', background: '#000', borderRadius: 6, display: 'block' }}
                   />
                 ) : (
-                  <BeforeAfterSlider beforeSrc={current.src} afterSrc={current.src} hasChange={hasTreatment} transparent={current.bgRemoved} />
+                  <BeforeAfterSlider beforeSrc={current.original || current.src} afterSrc={current.src} hasChange={hasTreatment} transparent={current.bgRemoved} />
                 )}
                 <p style={{ fontSize: 12, color: 'rgba(0,0,0,.45)', marginTop: 8 }}>
                   {isVideo ? 'Background removal and Enhance aren’t available for video.' : hasTreatment ? 'Drag the slider to compare before/after.' : 'No treatment applied yet.'}
@@ -559,6 +703,27 @@ export default function ProductAssetsTab({ draft, patch }) {
           </>
         )}
       </div>
+
+      <Modal
+        title="Generate Video"
+        open={videoModalOpen}
+        onCancel={() => !videoBusy && setVideoModalOpen(false)}
+        okText="Generate"
+        okButtonProps={{ loading: videoBusy, disabled: !videoPrompt.trim() }}
+        cancelButtonProps={{ disabled: videoBusy }}
+        onOk={confirmGenerateVideo}
+      >
+        <p style={{ fontSize: 13, color: 'rgba(0,0,0,.65)', marginBottom: 12 }}>
+          The configured Video provider will animate the currently selected image into a short hero clip using the prompt below. The result is added as a new video asset.
+        </p>
+        <Input.TextArea
+          rows={4}
+          value={videoPrompt}
+          onChange={(e) => setVideoPrompt(e.target.value)}
+          disabled={videoBusy}
+          placeholder="Describe the animation you want…"
+        />
+      </Modal>
     </div>
   );
 }

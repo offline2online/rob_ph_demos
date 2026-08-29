@@ -1,4 +1,5 @@
-import { doc, getDoc, setDoc, collection, getDocs } from 'firebase/firestore';
+import { doc, getDoc, setDoc, collection, getDocs, onSnapshot } from 'firebase/firestore';
+import { useEffect, useState } from 'react';
 import { db, MB, STOCK_COLL_NAME, ITEMS_COLL } from './firebase.js';
 
 // Same fallback defaults as menu-board-demo/hq-admin.html (lines 1461-1469) —
@@ -69,10 +70,11 @@ let _languages = [];
 let _storeCodes = [];
 let _badgeTemplates = [];
 let _knownIngredients = [];
+let _aiProviders = {};
 let _loaded = false;
 
 export async function loadRegistries() {
-  const [brandsSnap, typesSnap, catsSnap, subCatsSnap, languagesSnap, stockSnap, badgeTemplatesSnap, itemsSnap] = await Promise.all([
+  const [brandsSnap, typesSnap, catsSnap, subCatsSnap, languagesSnap, stockSnap, badgeTemplatesSnap, itemsSnap, settingsSnap] = await Promise.all([
     getDoc(doc(db, MB, 'brands')),
     getDoc(doc(db, MB, 'types')),
     getDoc(doc(db, MB, 'categories')),
@@ -81,6 +83,7 @@ export async function loadRegistries() {
     getDocs(collection(db, STOCK_COLL_NAME)),
     getDoc(doc(db, MB, 'badgeTemplates')),
     getDocs(collection(db, ITEMS_COLL)),
+    getDoc(doc(db, MB, 'settings')),
   ]);
   _brands = brandsSnap.exists() ? brandsSnap.data().data || [] : [];
   _types = typesSnap.exists() ? typesSnap.data().data || [] : [];
@@ -100,7 +103,24 @@ export async function loadRegistries() {
   const seen = new Set();
   itemsSnap.docs.forEach((d) => (d.data().ingredients || []).forEach((i) => i && seen.add(i)));
   _knownIngredients = [...seen].sort((a, b) => a.localeCompare(b));
+  // AI provider configs authored in hq-admin.html's Settings → AI
+  // Integrations (Prototype Only) — authToken stays AES-256-GCM encrypted
+  // here and is only ever decrypted inside the Cloud Functions in
+  // functions/index.js that use it, never in this app.
+  _aiProviders = settingsSnap.exists() ? settingsSnap.data().aiProviders || {} : {};
   _loaded = true;
+
+  // Kept live rather than loaded once like the registries above: HQ Admin
+  // can edit AI Integrations while a Product page is already open, and
+  // there's no security reason not to — this field never holds a
+  // plaintext token, so syncing it live costs nothing that a one-time
+  // load would have avoided. _notifyAiProviderListeners lets any mounted
+  // useAiProviders() hook re-render the instant this changes, rather than
+  // only picking up the fresh value on whatever's next incidental re-render.
+  onSnapshot(doc(db, MB, 'settings'), (snap) => {
+    _aiProviders = snap.exists() ? snap.data().aiProviders || {} : {};
+    _notifyAiProviderListeners();
+  });
 }
 
 export function registriesLoaded() {
@@ -138,6 +158,31 @@ export function getBadgeTemplateById(id) {
 
 export function getLanguages() {
   return _languages.length ? _languages : DEFAULT_LANGUAGES;
+}
+
+export function getAiProviders() {
+  return _aiProviders;
+}
+
+const _aiProviderListeners = new Set();
+function _notifyAiProviderListeners() {
+  _aiProviderListeners.forEach((cb) => cb(_aiProviders));
+}
+
+// React hook version of getAiProviders() — subscribes so the calling
+// component re-renders the moment Settings → AI Integrations changes,
+// instead of only seeing the fresh value whenever something else happens
+// to re-render it. Safe to call from any already-mounted component (Assets
+// tab, Details tab, …) since loadRegistries() has always run first (see
+// App.jsx) and started the onSnapshot listener above before any tab mounts.
+export function useAiProviders() {
+  const [providers, setProviders] = useState(() => getAiProviders());
+  useEffect(() => {
+    setProviders(getAiProviders()); // pick up anything that changed between initial render and this effect running
+    _aiProviderListeners.add(setProviders);
+    return () => _aiProviderListeners.delete(setProviders);
+  }, []);
+  return providers;
 }
 
 // Mirrors the vanilla page's addCategory() (hq-admin.html:3634) — writes
