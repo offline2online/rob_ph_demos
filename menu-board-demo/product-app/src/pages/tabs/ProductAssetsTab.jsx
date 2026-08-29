@@ -44,26 +44,113 @@ const JPEG_QUALITY = 0.75;
 // than a File — an AI-edited image comes back from the provider as base64
 // already, and can just as easily blow Firestore's ~1 MiB document limit
 // as a raw upload can (background removal in particular tends to return a
-// full-resolution, uncompressed PNG).
+// full-resolution image, and so does Request Changes).
+//
+// This used to re-encode as PNG — safe for transparency (unlike JPEG,
+// which has no alpha channel and would silently flatten a cut-out back to
+// solid), but PNG is lossless, so a busy/detailed AI result (food texture,
+// a checkerboard, steam) barely shrinks: one real save attempt came back
+// from Remove Background + Request Changes at 1.06 MB *alone*, over
+// Firestore's whole-document cap before any other asset or field is even
+// counted, and setDoc failed outright. WebP keeps the alpha channel PNG
+// has but compresses far tighter, so it replaces PNG here for any image
+// that needs shrinking — transparent or not. If one pass still isn't
+// under budget, it retries progressively smaller/lower-quality passes
+// rather than saving something guaranteed to blow the document limit.
 function compressDataUrl(dataUrl) {
   return new Promise((resolve) => {
-    const head = dataUrl.slice(0, 40);
-    const approxBytes = Math.round((dataUrl.length - head.indexOf(',') - 1) * 0.75);
-    if (approxBytes <= COMPRESS_THRESHOLD_BYTES) { resolve(dataUrl); return; }
+    const sizeOf = (s) => Math.round((s.length - s.indexOf(',') - 1) * 0.75);
+    if (sizeOf(dataUrl) <= COMPRESS_THRESHOLD_BYTES) { resolve(dataUrl); return; }
     const img = new Image();
     img.onload = () => {
-      const scale = Math.min(1, MAX_DIMENSION / Math.max(img.width, img.height));
-      const width = Math.round(img.width * scale);
-      const height = Math.round(img.height * scale);
+      const render = (maxDim, quality) => {
+        const scale = Math.min(1, maxDim / Math.max(img.width, img.height));
+        const width = Math.max(1, Math.round(img.width * scale));
+        const height = Math.max(1, Math.round(img.height * scale));
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        canvas.getContext('2d').drawImage(img, 0, 0, width, height);
+        return canvas.toDataURL('image/webp', quality);
+      };
+      const passes = [[MAX_DIMENSION, 0.82], [800, 0.76], [600, 0.7], [450, 0.6]];
+      let out = render(...passes[0]);
+      for (let i = 1; i < passes.length && sizeOf(out) > COMPRESS_THRESHOLD_BYTES; i++) {
+        out = render(...passes[i]);
+      }
+      resolve(out);
+    };
+    img.onerror = () => resolve(dataUrl);
+    img.src = dataUrl;
+  });
+}
+
+// The Image provider's "remove background" edit (confirmed live, 29 Aug
+// 2026, by sampling returned pixels) doesn't actually come back with a real
+// alpha channel — it paints a plain light grey/white checkerboard into the
+// opaque pixels themselves as a *picture* of transparency, the way it's seen
+// transparency represented in training images. Left alone that shows up as
+// a second, fake checker pattern layered underneath this app's own
+// transparency-indicator checker (BeforeAfterSlider.jsx, Tile thumbnails),
+// which reads as "weird graphics," not a clean cut-out.
+//
+// This flood-fills real alpha=0 outward from the image border through
+// pixels that look like the model's fake background — near-grey/white,
+// i.e. low "chroma" (max channel − min channel) — regardless of exact
+// brightness, since that background is sometimes a gradient/vignette
+// rather than one flat tone. Chroma, not a colour-distance-to-neighbour
+// chain, is the gate: an earlier version compared each pixel only to the
+// neighbour it was reached from and had no way to tell "smooth gradient
+// through more background" apart from "smooth gradient across the food
+// itself" — it leaked straight through the product to the far edge.
+// Real food (fried chicken orange/brown, red packaging, golden fries) is
+// always strongly saturated, so gating on chroma stops the fill dead at
+// the product's actual edge while still connecting every grey/white
+// background pixel, checkerboard or gradient alike, back to the border.
+function forceTransparentBackground(dataUrl) {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      const width = img.naturalWidth;
+      const height = img.naturalHeight;
+      if (!width || !height) { resolve(dataUrl); return; }
       const canvas = document.createElement('canvas');
       canvas.width = width;
       canvas.height = height;
       const ctx = canvas.getContext('2d');
-      // Unlike readAndCompress, a transparent (background-removed) result
-      // must stay transparent — flattening it to white here would silently
-      // undo the very edit this compression step is meant to sit downstream
-      // of, so this keeps PNG/alpha instead of forcing JPEG.
-      ctx.drawImage(img, 0, 0, width, height);
+      ctx.drawImage(img, 0, 0);
+      const imageData = ctx.getImageData(0, 0, width, height);
+      const { data } = imageData;
+
+      const CHROMA_MAX = 22;
+      const isBackgroundish = (i) => {
+        const r = data[i], g = data[i + 1], b = data[i + 2];
+        return Math.max(r, g, b) - Math.min(r, g, b) <= CHROMA_MAX;
+      };
+
+      const visited = new Uint8Array(width * height);
+      const stack = [];
+      // Seed every border pixel that already looks background-ish —
+      // product photography always frames the subject with clear space
+      // around it, so this only skips a seed in the rare case where the
+      // subject itself touches the very edge of the frame.
+      for (let x = 0; x < width; x++) { stack.push(x, 0, x, height - 1); }
+      for (let y = 0; y < height; y++) { stack.push(0, y, width - 1, y); }
+
+      while (stack.length) {
+        const y = stack.pop();
+        const x = stack.pop();
+        if (x < 0 || y < 0 || x >= width || y >= height) continue;
+        const p = y * width + x;
+        if (visited[p]) continue;
+        visited[p] = 1;
+        const i = p * 4;
+        if (!isBackgroundish(i)) continue;
+        data[i + 3] = 0;
+        stack.push(x + 1, y, x - 1, y, x, y + 1, x, y - 1);
+      }
+
+      ctx.putImageData(imageData, 0, 0);
       resolve(canvas.toDataURL('image/png'));
     };
     img.onerror = () => resolve(dataUrl);
@@ -252,6 +339,7 @@ export default function ProductAssetsTab({ draft, patch }) {
           availableForTesting: false,
           bgRemoved: false,
           enhanced: false,
+          customEdited: false,
           rightsOn: false,
           rights: {},
           targeting: [],
@@ -317,31 +405,32 @@ export default function ProductAssetsTab({ draft, patch }) {
   };
   const toggleTesting = () => current && updateSelected({ availableForTesting: !current.availableForTesting });
 
-  // Remove Background and Enhance both call out to the configured Image
-  // provider (Nano Banana Pro / Gemini, per Settings → AI Integrations)
-  // and replace `src` with the real edited result — there's no local
-  // simulation of either effect. `original` is captured the first time
-  // either treatment is applied and never overwritten again, so turning a
-  // treatment back off can restore the untouched upload.
+  // Remove Background, Enhance and Request Changes all call out to the
+  // configured Image provider (Nano Banana Pro / Gemini, per Settings → AI
+  // Integrations) and replace `src` with the real edited result — there's
+  // no local simulation of any of them. `original` is captured the first
+  // time any treatment is applied and never overwritten again, so turning
+  // one back off can restore the untouched upload.
   //
-  // Combining both at once chains the second call on top of whatever is
-  // currently displayed (so the after-image genuinely reflects both
-  // edits) — but only one intermediate result is ever kept, so switching
-  // either flag off while the other is still on can't cleanly un-chain
-  // just its own contribution. Rather than show a result that's silently
-  // wrong, that case reverts to the untouched original and clears both
-  // flags, with a toast explaining why.
+  // Combining more than one at once chains each call on top of whatever is
+  // currently displayed (so the after-image genuinely reflects every edit
+  // applied so far) — but only one intermediate result is ever kept, so
+  // switching one flag off while another is still on can't cleanly
+  // un-chain just its own contribution. Rather than show a result that's
+  // silently wrong, that case reverts to the untouched original and clears
+  // every flag, with a toast explaining why.
+  const TREATMENT_FLAGS = ['bgRemoved', 'enhanced', 'customEdited'];
   const applyImageTreatment = async (kind) => {
     if (!current || imageBusy) return;
     const isBg = kind === 'bg';
     const flagKey = isBg ? 'bgRemoved' : 'enhanced';
-    const otherFlagKey = isBg ? 'enhanced' : 'bgRemoved';
     const turningOn = !current[flagKey];
 
     if (!turningOn) {
-      if (current[otherFlagKey]) {
-        message.warning('Turning this off also clears the other treatment — edits can’t be cleanly un-chained. Reapply as needed.');
-        updateSelected({ bgRemoved: false, enhanced: false, src: current.original || current.src });
+      const otherFlagsOn = TREATMENT_FLAGS.some((f) => f !== flagKey && current[f]);
+      if (otherFlagsOn) {
+        message.warning('Turning this off also clears the other treatments — edits can’t be cleanly un-chained. Reapply as needed.');
+        updateSelected({ bgRemoved: false, enhanced: false, customEdited: false, src: current.original || current.src });
       } else {
         updateSelected({ [flagKey]: false, src: current.original || current.src });
       }
@@ -357,7 +446,12 @@ export default function ProductAssetsTab({ draft, patch }) {
     try {
       const instructionKey = isBg ? 'removeBackground' : 'enhance';
       const edited = await editProductImage({ imageDataUrl: current.src, instructionKey });
-      const compressed = await compressDataUrl(edited);
+      // The Image provider paints a fake grey/white checker into the pixels
+      // instead of real alpha — see forceTransparentBackground's comment —
+      // so a background-removal result gets keyed to genuine transparency
+      // before it's ever shown or saved.
+      const fixed = isBg ? await forceTransparentBackground(edited) : edited;
+      const compressed = await compressDataUrl(fixed);
       updateSelected({ [flagKey]: true, src: compressed, original: current.original || current.src });
     } catch (e) {
       message.error(`Image edit failed: ${e.message}`);
@@ -367,6 +461,82 @@ export default function ProductAssetsTab({ draft, patch }) {
   };
   const toggleBg = () => applyImageTreatment('bg');
   const toggleEnhance = () => applyImageTreatment('enhance');
+
+  // Request Changes — a free-text sibling of Enhance/Remove Background:
+  // same Image provider, but the instruction is whatever the user types (or
+  // dictates) instead of one of the two canned ones. Opens a prompt modal
+  // rather than acting immediately, since there's no fixed instruction to
+  // just toggle on.
+  const [requestChangesModalOpen, setRequestChangesModalOpen] = useState(false);
+  const [requestChangesPrompt, setRequestChangesPrompt] = useState('');
+  const [listening, setListening] = useState(false);
+  const recognitionRef = useRef(null);
+
+  const openRequestChangesModal = () => {
+    if (!current || imageBusy) return;
+    setRequestChangesPrompt('');
+    setRequestChangesModalOpen(true);
+  };
+  const closeRequestChangesModal = () => {
+    recognitionRef.current?.stop();
+    setRequestChangesModalOpen(false);
+  };
+
+  // Dictation is a nice-to-have on top of typing, not a replacement for
+  // it — SpeechRecognition isn't implemented in every browser (notably
+  // Firefox), so the mic button simply doesn't render when it's absent
+  // rather than trying to polyfill browser speech recognition here.
+  const SpeechRecognitionCtor = typeof window !== 'undefined' && (window.SpeechRecognition || window.webkitSpeechRecognition);
+  const toggleListening = () => {
+    if (!SpeechRecognitionCtor) return;
+    if (listening) {
+      recognitionRef.current?.stop();
+      return;
+    }
+    const rec = new SpeechRecognitionCtor();
+    rec.lang = 'en-US';
+    rec.interimResults = false;
+    rec.onresult = (e) => {
+      const transcript = Array.from(e.results).map((r) => r[0].transcript).join(' ').trim();
+      if (transcript) setRequestChangesPrompt((prev) => (prev.trim() ? prev.trim() + ' ' + transcript : transcript));
+    };
+    rec.onerror = () => setListening(false);
+    rec.onend = () => setListening(false);
+    recognitionRef.current = rec;
+    setListening(true);
+    rec.start();
+  };
+
+  const confirmRequestChanges = async () => {
+    if (!current || !requestChangesPrompt.trim()) return;
+    if (!isProviderConfigured(aiProviders.image)) {
+      message.error('No Image provider configured — add one in Settings → AI Integrations.');
+      return;
+    }
+    recognitionRef.current?.stop();
+    setImageBusy('custom');
+    try {
+      const edited = await editProductImage({ imageDataUrl: current.src, prompt: requestChangesPrompt.trim() });
+      // A free-text request has no reason to mention "keep the background
+      // transparent" unless the user thinks to say so — confirmed live: the
+      // Image provider flattens an incoming transparent cutout to solid
+      // black rather than preserving alpha it wasn't told to keep. If this
+      // asset was already a cutout, recover transparency the same way
+      // Remove Background does (chroma-gated flood fill from the border —
+      // works regardless of whether "no background" comes back as a fake
+      // grey/white checker or, here, flattened solid black; both are
+      // near-zero chroma).
+      const fixed = current.bgRemoved ? await forceTransparentBackground(edited) : edited;
+      const compressed = await compressDataUrl(fixed);
+      updateSelected({ customEdited: true, src: compressed, original: current.original || current.src });
+      setRequestChangesModalOpen(false);
+      message.success('Changes applied');
+    } catch (e) {
+      message.error(`Request failed: ${e.message}`);
+    } finally {
+      setImageBusy(null);
+    }
+  };
 
   const openVideoModal = () => {
     if (!current) return;
@@ -430,7 +600,7 @@ export default function ProductAssetsTab({ draft, patch }) {
         .join(' · ')
     : 'Off — no licence terms recorded. Turn on for licensed, stock or talent-bearing assets.';
 
-  const hasTreatment = current && (current.bgRemoved || current.enhanced);
+  const hasTreatment = current && (current.bgRemoved || current.enhanced || current.customEdited);
 
   return (
     <div>
@@ -488,6 +658,15 @@ export default function ProductAssetsTab({ draft, patch }) {
           <>
             <div style={{ display: 'flex', alignItems: 'stretch', gap: 4, padding: '11px 16px', borderBottom: '1px solid #f0f0f0', flexWrap: 'wrap' }}>
               <IconAction
+                icon={<MaterialIcon name="auto_fix_high" />}
+                caption={imageBusy === 'enhance' ? 'Working…' : 'Enhance'}
+                active={current.enhanced}
+                disabled={expired || isVideo || !!imageBusy}
+                onClick={toggleEnhance}
+                tooltipTitle={current.enhanced ? 'Undo enhancement' : 'Enhance quality'}
+                tooltipDesc={isVideo ? 'Not available for video.' : current.enhanced ? 'Reverts to the original upload.' : 'Calls the configured Image provider to sharpen and colour-correct the image.'}
+              />
+              <IconAction
                 icon={<BespokeIcon name="removeBg" />}
                 caption={imageBusy === 'bg' ? 'Working…' : 'Background'}
                 active={current.bgRemoved}
@@ -505,13 +684,13 @@ export default function ProductAssetsTab({ draft, patch }) {
                 }
               />
               <IconAction
-                icon={<MaterialIcon name="auto_fix_high" />}
-                caption={imageBusy === 'enhance' ? 'Working…' : 'Enhance'}
-                active={current.enhanced}
+                icon={<MaterialIcon name="edit" />}
+                caption={imageBusy === 'custom' ? 'Working…' : 'Request Changes'}
+                active={current.customEdited}
                 disabled={expired || isVideo || !!imageBusy}
-                onClick={toggleEnhance}
-                tooltipTitle={current.enhanced ? 'Undo enhancement' : 'Enhance quality'}
-                tooltipDesc={isVideo ? 'Not available for video.' : current.enhanced ? 'Reverts to the original upload.' : 'Calls the configured Image provider to sharpen and colour-correct the image.'}
+                onClick={openRequestChangesModal}
+                tooltipTitle="Request changes"
+                tooltipDesc={isVideo ? 'Not available for video.' : 'Describe (or dictate) any change you want and the configured Image provider will apply it — not limited to Enhance or Background.'}
               />
               <IconAction
                 icon={<MaterialIcon name="movie" />}
@@ -729,6 +908,44 @@ export default function ProductAssetsTab({ draft, patch }) {
           disabled={videoBusy}
           placeholder="Describe the animation you want…"
         />
+      </Modal>
+
+      <Modal
+        title="Request Changes"
+        open={requestChangesModalOpen}
+        onCancel={() => !imageBusy && closeRequestChangesModal()}
+        okText="Apply"
+        okButtonProps={{ loading: imageBusy === 'custom', disabled: !requestChangesPrompt.trim() }}
+        cancelButtonProps={{ disabled: imageBusy === 'custom' }}
+        onOk={confirmRequestChanges}
+      >
+        <p style={{ fontSize: 13, color: 'rgba(0,0,0,.65)', marginBottom: 12 }}>
+          Describe any change you want made to this image — not limited to Enhance or Background. The configured Image provider applies it to the currently displayed version.
+        </p>
+        <div style={{ position: 'relative' }}>
+          <Input.TextArea
+            rows={4}
+            value={requestChangesPrompt}
+            onChange={(e) => setRequestChangesPrompt(e.target.value)}
+            disabled={imageBusy === 'custom'}
+            placeholder="e.g. Make the sauce glossier and add a light steam effect…"
+            style={{ paddingRight: SpeechRecognitionCtor ? 40 : undefined }}
+          />
+          {SpeechRecognitionCtor && (
+            <span
+              onClick={imageBusy === 'custom' ? undefined : toggleListening}
+              title={listening ? 'Stop dictating' : 'Dictate your request'}
+              style={{
+                position: 'absolute', top: 8, right: 8, width: 26, height: 26, borderRadius: '50%',
+                display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: imageBusy === 'custom' ? 'default' : 'pointer',
+                background: listening ? '#ff4d4f' : '#f0f0f0', color: listening ? '#fff' : 'rgba(0,0,0,.55)',
+              }}
+            >
+              <MaterialIcon name="mic" style={{ fontSize: 15 }} />
+            </span>
+          )}
+        </div>
+        {listening && <p style={{ fontSize: 12, color: '#ff4d4f', marginTop: 6 }}>Listening…</p>}
       </Modal>
     </div>
   );

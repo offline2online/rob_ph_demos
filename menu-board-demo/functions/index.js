@@ -318,11 +318,15 @@ exports.translateProductCopy = onCall({ secrets: [AI_TOKEN_ENC_KEY], maxInstance
   };
 });
 
-// ── Product Assets → Remove Background / Enhance (e.g. Nano Banana Pro via the Gemini generateContent API) ──
+// ── Product Assets → Remove Background / Enhance / Request Changes (e.g. Nano Banana Pro via the Gemini generateContent API) ──
+// Remove Background and Enhance are still fixed operations, chosen via
+// instructionKey; Request Changes is free-text authored by the user in the
+// product-app modal (optionally dictated via the browser's own speech-to-
+// text, never transcribed server-side), sent as `prompt` instead.
 exports.editProductImage = onCall({ secrets: [AI_TOKEN_ENC_KEY], maxInstances: 10, timeoutSeconds: 120, memory: '512MiB' }, async (request) => {
-  const { imageDataUrl, instructionKey } = request.data || {};
-  const instruction = IMAGE_INSTRUCTIONS[instructionKey];
-  if (!instruction) throw new HttpsError('invalid-argument', 'instructionKey must be "removeBackground" or "enhance"');
+  const { imageDataUrl, instructionKey, prompt } = request.data || {};
+  const instruction = instructionKey ? IMAGE_INSTRUCTIONS[instructionKey] : (prompt || '').trim();
+  if (!instruction) throw new HttpsError('invalid-argument', 'Provide instructionKey ("removeBackground" or "enhance") or a non-empty prompt');
   const match = /^data:([^;]+);base64,(.*)$/s.exec(imageDataUrl || '');
   if (!match) throw new HttpsError('invalid-argument', 'imageDataUrl must be a base64 data URL');
   const [, mimeType, base64] = match;

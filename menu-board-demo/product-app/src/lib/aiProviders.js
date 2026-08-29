@@ -33,9 +33,10 @@ export async function translateProductCopy({ targetLangName, displayName, shortD
 // instructionKey is 'removeBackground' | 'enhance' — the actual instruction
 // text sent to the image model is chosen server-side (functions/index.js's
 // IMAGE_INSTRUCTIONS), not passed through from here, since these two are
-// fixed operations rather than free text.
-export async function editProductImage({ imageDataUrl, instructionKey }) {
-  const { data } = await editProductImageFn({ imageDataUrl, instructionKey });
+// fixed operations rather than free text. Pass `prompt` instead (Request
+// Changes) for a user-authored edit — the function accepts either.
+export async function editProductImage({ imageDataUrl, instructionKey, prompt }) {
+  const { data } = await editProductImageFn({ imageDataUrl, instructionKey, prompt });
   return data.imageDataUrl;
 }
 
