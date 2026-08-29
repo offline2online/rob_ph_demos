@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Input, Switch, Select, Tag, Modal, message } from 'antd';
 import dayjs from 'dayjs';
-import { removeBackground as imglyRemoveBackground } from '@imgly/background-removal';
+import { removeBackground as imglyRemoveBackground, preload as imglyPreload } from '@imgly/background-removal';
 import MaterialIcon from '../../components/MaterialIcon.jsx';
 import BespokeIcon from '../../components/BespokeIcon.jsx';
 import IconAction from '../../components/IconAction.jsx';
@@ -34,6 +34,14 @@ function nextVariantLabel(images, type) {
 // pending check that locks a toggle and drops the before/after slider once
 // its flag is also true in the last-saved baseline.
 const TREATMENT_FLAGS = ['bgRemoved', 'enhanced', 'customEdited'];
+
+// isnet_fp16 — the library's own default/balanced model — trades a larger
+// one-time download (~80MB vs quint8's ~40MB) for meaningfully better edge
+// fidelity; quint8 ("smallest... sometimes shows artifacts", per its own
+// docs) was eroding fine product detail on real photos. Shared by both the
+// background preload below and the actual removeBackground call so they
+// always agree on — and reuse the same cached — model.
+const BG_REMOVAL_CONFIG = { model: 'isnet_fp16' };
 
 // Every image is stored as a base64 data URI inside the Firestore document
 // itself (no separate blob storage), and the whole document has to stay
@@ -426,6 +434,18 @@ export default function ProductAssetsTab({ draft, baseline, patch }) {
     setSelected(0);
   }, [draft.id]);
 
+  // Warms the background-removal model up the moment this tab mounts,
+  // well before anyone's clicked Background — confirmed live, the first
+  // real removeBackground call (model download + single-threaded WASM
+  // init, since GitHub Pages doesn't send the COOP/COEP headers needed
+  // for multi-threading) took 30+ seconds, long enough that it looked
+  // like nothing was happening at all. Fire-and-forget: any failure here
+  // just means the model isn't warm yet, and the real call still runs (and
+  // still surfaces its own error) when the user actually clicks Background.
+  useEffect(() => {
+    imglyPreload(BG_REMOVAL_CONFIG).catch(() => {});
+  }, []);
+
   // The image being viewed/edited is read directly from images[selected] —
   // there is deliberately no separate "working copy" state to keep in sync
   // with it. That used to exist (a local draft only committed into images
@@ -582,7 +602,7 @@ export default function ProductAssetsTab({ draft, baseline, patch }) {
     try {
       let fixed;
       if (isBg) {
-        const blob = await imglyRemoveBackground(current.src, { model: 'isnet_quint8' });
+        const blob = await imglyRemoveBackground(current.src, BG_REMOVAL_CONFIG);
         fixed = await blobToDataUrl(blob);
       } else {
         fixed = await enhanceImageLocally(current.src);
@@ -830,7 +850,7 @@ export default function ProductAssetsTab({ draft, baseline, patch }) {
                     ? 'Saved changes can’t be undone from here — replace the asset to start over.'
                     : current.bgRemoved
                     ? 'Puts the original background back. The cut-out is discarded.'
-                    : 'Cuts the product out to a transparent PNG so it can sit on any campaign layout — real subject segmentation, run locally.'
+                    : 'Cuts the product out to a transparent PNG so it can sit on any campaign layout — real subject segmentation, run locally. First use on this device downloads a model in the background and can take a while.'
                 }
               />
               <IconAction
