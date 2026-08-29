@@ -47,6 +47,11 @@ html, body, #root {
   text-transform: uppercase;
 }
 
+@keyframes ph-ai-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
 .ph-savebar {
   position: sticky;
   bottom: 0;

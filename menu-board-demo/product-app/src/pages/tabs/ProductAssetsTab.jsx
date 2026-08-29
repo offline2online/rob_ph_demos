@@ -158,6 +158,65 @@ function forceTransparentBackground(dataUrl) {
   });
 }
 
+// Enhance used to call the Image provider with an instruction to "keep
+// composition and background exactly as they are" — but a generative model
+// regenerates the whole photo from scratch on every call, and confirmed
+// live, it doesn't reliably honour that: the product visibly warped.
+// Real pixel filters can't have that failure mode, since they only ever
+// adjust the existing pixels rather than recreating them, so this replaces
+// the provider call for Enhance specifically: a contrast/saturation/
+// brightness lift via the canvas's own filter pipeline, plus a manual
+// unsharp-mask-style convolution for the sharpening CSS filter has no
+// operator for. Runs entirely client-side — no network round trip, no
+// Image provider needed.
+function enhanceImageLocally(dataUrl) {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      const width = img.naturalWidth;
+      const height = img.naturalHeight;
+      if (!width || !height) { resolve(dataUrl); return; }
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      ctx.filter = 'contrast(112%) saturate(118%) brightness(103%)';
+      ctx.drawImage(img, 0, 0);
+      ctx.filter = 'none';
+
+      const src = ctx.getImageData(0, 0, width, height);
+      const dst = ctx.createImageData(width, height);
+      const sd = src.data, dd = dst.data;
+      // A gentle unsharp-mask kernel (centre-weighted, sums to 1) —
+      // strong enough to read as "sharper" without haloing.
+      const k = [0, -0.5, 0, -0.5, 3, -0.5, 0, -0.5, 0];
+      for (let y = 0; y < height; y++) {
+        for (let x = 0; x < width; x++) {
+          const di = (y * width + x) * 4;
+          if (x === 0 || y === 0 || x === width - 1 || y === height - 1) {
+            dd[di] = sd[di]; dd[di + 1] = sd[di + 1]; dd[di + 2] = sd[di + 2]; dd[di + 3] = sd[di + 3];
+            continue;
+          }
+          for (let c = 0; c < 3; c++) {
+            let sum = 0, ki = 0;
+            for (let ky = -1; ky <= 1; ky++) {
+              for (let kx = -1; kx <= 1; kx++) {
+                sum += sd[((y + ky) * width + (x + kx)) * 4 + c] * k[ki++];
+              }
+            }
+            dd[di + c] = sum < 0 ? 0 : sum > 255 ? 255 : sum;
+          }
+          dd[di + 3] = sd[di + 3];
+        }
+      }
+      ctx.putImageData(dst, 0, 0);
+      resolve(canvas.toDataURL('image/webp', 0.9));
+    };
+    img.onerror = () => resolve(dataUrl);
+    img.src = dataUrl;
+  });
+}
+
 function readAndCompress(file) {
   const readAsDataUrl = () =>
     new Promise((resolve) => {
@@ -405,12 +464,16 @@ export default function ProductAssetsTab({ draft, patch }) {
   };
   const toggleTesting = () => current && updateSelected({ availableForTesting: !current.availableForTesting });
 
-  // Remove Background, Enhance and Request Changes all call out to the
-  // configured Image provider (Nano Banana Pro / Gemini, per Settings → AI
-  // Integrations) and replace `src` with the real edited result — there's
-  // no local simulation of any of them. `original` is captured the first
-  // time any treatment is applied and never overwritten again, so turning
-  // one back off can restore the untouched upload.
+  // Remove Background and Request Changes call out to the configured Image
+  // provider (Nano Banana Pro / Gemini, per Settings → AI Integrations) and
+  // replace `src` with the real edited result. Enhance used to as well, but
+  // a generative model regenerating the whole photo doesn't reliably keep
+  // it pixel-stable even when told to (confirmed live — it visibly warped
+  // the product) — real image processing can't drift like that, so Enhance
+  // now runs a deterministic local filter (enhanceImageLocally) instead of
+  // calling the provider at all. `original` is captured the first time any
+  // treatment is applied and never overwritten again, so turning one back
+  // off can restore the untouched upload.
   //
   // Combining more than one at once chains each call on top of whatever is
   // currently displayed (so the after-image genuinely reflects every edit
@@ -437,20 +500,24 @@ export default function ProductAssetsTab({ draft, patch }) {
       return;
     }
 
-    if (!isProviderConfigured(aiProviders.image)) {
+    if (isBg && !isProviderConfigured(aiProviders.image)) {
       message.error('No Image provider configured — add one in Settings → AI Integrations.');
       return;
     }
 
     setImageBusy(kind);
     try {
-      const instructionKey = isBg ? 'removeBackground' : 'enhance';
-      const edited = await editProductImage({ imageDataUrl: current.src, instructionKey });
-      // The Image provider paints a fake grey/white checker into the pixels
-      // instead of real alpha — see forceTransparentBackground's comment —
-      // so a background-removal result gets keyed to genuine transparency
-      // before it's ever shown or saved.
-      const fixed = isBg ? await forceTransparentBackground(edited) : edited;
+      let fixed;
+      if (isBg) {
+        const edited = await editProductImage({ imageDataUrl: current.src, instructionKey: 'removeBackground' });
+        // The Image provider paints a fake grey/white checker into the pixels
+        // instead of real alpha — see forceTransparentBackground's comment —
+        // so a background-removal result gets keyed to genuine transparency
+        // before it's ever shown or saved.
+        fixed = await forceTransparentBackground(edited);
+      } else {
+        fixed = await enhanceImageLocally(current.src);
+      }
       const compressed = await compressDataUrl(fixed);
       updateSelected({ [flagKey]: true, src: compressed, original: current.original || current.src });
     } catch (e) {
@@ -658,17 +725,21 @@ export default function ProductAssetsTab({ draft, patch }) {
           <>
             <div style={{ display: 'flex', alignItems: 'stretch', gap: 4, padding: '11px 16px', borderBottom: '1px solid #f0f0f0', flexWrap: 'wrap' }}>
               <IconAction
+                ai
+                busy={imageBusy === 'enhance'}
                 icon={<MaterialIcon name="auto_fix_high" />}
-                caption={imageBusy === 'enhance' ? 'Working…' : 'Enhance'}
+                caption={imageBusy === 'enhance' ? 'Enhancing…' : 'Enhance'}
                 active={current.enhanced}
                 disabled={expired || isVideo || !!imageBusy}
                 onClick={toggleEnhance}
                 tooltipTitle={current.enhanced ? 'Undo enhancement' : 'Enhance quality'}
-                tooltipDesc={isVideo ? 'Not available for video.' : current.enhanced ? 'Reverts to the original upload.' : 'Calls the configured Image provider to sharpen and colour-correct the image.'}
+                tooltipDesc={isVideo ? 'Not available for video.' : current.enhanced ? 'Reverts to the original upload.' : 'Sharpens, colour-corrects and lifts contrast — real image processing, applied locally, so it can never warp or regenerate the photo.'}
               />
               <IconAction
+                ai
+                busy={imageBusy === 'bg'}
                 icon={<BespokeIcon name="removeBg" />}
-                caption={imageBusy === 'bg' ? 'Working…' : 'Background'}
+                caption={imageBusy === 'bg' ? 'Removing…' : 'Background'}
                 active={current.bgRemoved}
                 disabled={expired || isVideo || !!imageBusy}
                 onClick={toggleBg}
@@ -684,8 +755,10 @@ export default function ProductAssetsTab({ draft, patch }) {
                 }
               />
               <IconAction
+                ai
+                busy={imageBusy === 'custom'}
                 icon={<MaterialIcon name="edit" />}
-                caption={imageBusy === 'custom' ? 'Working…' : 'Request Changes'}
+                caption={imageBusy === 'custom' ? 'Applying…' : 'Request'}
                 active={current.customEdited}
                 disabled={expired || isVideo || !!imageBusy}
                 onClick={openRequestChangesModal}
@@ -693,6 +766,7 @@ export default function ProductAssetsTab({ draft, patch }) {
                 tooltipDesc={isVideo ? 'Not available for video.' : 'Describe (or dictate) any change you want and the configured Image provider will apply it — not limited to Enhance or Background.'}
               />
               <IconAction
+                ai
                 icon={<MaterialIcon name="movie" />}
                 caption="Video"
                 disabled={expired || isVideo || !!imageBusy}
