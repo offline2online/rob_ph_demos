@@ -1,6 +1,7 @@
 import { Select, Button, Empty } from 'antd';
 import MaterialIcon from './MaterialIcon.jsx';
 import { genId } from '../data/productStore.js';
+import { getKnownTargetingValues } from '../data/registries.js';
 
 // Same AND/OR rule-builder mechanism and category → field → operator →
 // value(s) row shape as Campaign Targeting — verified live against
@@ -223,6 +224,8 @@ export default function TargetingBuilder({
                 style={{ flex: 1, minWidth: 160 }}
                 value={c.values}
                 placeholder="Press Enter to add multiple values"
+                filterOption={(input, option) => (option?.label ?? '').toLowerCase().includes(input.toLowerCase())}
+                options={getKnownTargetingValues(c.category || 'store', c.field).map((v) => ({ value: v, label: v }))}
                 onChange={(v) => updateCondition(g.id, c.id, { values: v })}
               />
               <Button

@@ -76,7 +76,26 @@ let _storeCodes = [];
 let _badgeTemplates = [];
 let _knownIngredients = [];
 let _aiProviders = {};
+let _knownTargetingValues = {}; // `${category}:${field}` -> string[]
 let _loaded = false;
+
+// Collects every value ever entered into a targeting condition of a given
+// category+field, across every source TargetingBuilder.jsx is used from
+// (offer targeting, product distribution targeting, asset targeting) —
+// scoped per category+field so e.g. Store Segment values never suggest
+// themselves for a Display Tag(s) condition. `into` is a plain object of
+// Sets, mutated in place so the three call sites in loadRegistries() below
+// can all feed the same accumulator.
+function _collectTargetingValues(groups, into) {
+  (groups || []).forEach((g) => {
+    (g.conditions || []).forEach((c) => {
+      if (!c.field) return;
+      const key = `${c.category || 'store'}:${c.field}`;
+      if (!into[key]) into[key] = new Set();
+      (c.values || []).forEach((v) => { if (v) into[key].add(v); });
+    });
+  });
+}
 
 export async function loadRegistries() {
   const [brandsSnap, typesSnap, catsSnap, subCatsSnap, languagesSnap, stockSnap, badgeTemplatesSnap, itemsSnap, settingsSnap] = await Promise.all([
@@ -108,6 +127,20 @@ export async function loadRegistries() {
   const seen = new Set();
   itemsSnap.docs.forEach((d) => (d.data().ingredients || []).forEach((i) => i && seen.add(i)));
   _knownIngredients = [...seen].sort((a, b) => a.localeCompare(b));
+  // Every targeting condition value ever entered anywhere — offer
+  // targeting, product distribution targeting, and per-asset targeting —
+  // so TargetingBuilder.jsx can suggest a value already used elsewhere
+  // instead of requiring it to be retyped from scratch every time.
+  const targetingSets = {};
+  itemsSnap.docs.forEach((d) => {
+    const item = d.data();
+    _collectTargetingValues(item.distributionTargeting, targetingSets);
+    (item.offers || []).forEach((o) => _collectTargetingValues(o.targeting, targetingSets));
+    (item.images || []).forEach((img) => _collectTargetingValues(img.targeting, targetingSets));
+  });
+  _knownTargetingValues = Object.fromEntries(
+    Object.entries(targetingSets).map(([key, set]) => [key, [...set].sort((a, b) => a.localeCompare(b))])
+  );
   // AI provider configs authored in hq-admin.html's Settings → AI
   // Integrations (Prototype Only) — authToken stays AES-256-GCM encrypted
   // here and is only ever decrypted inside the Cloud Functions in
@@ -219,4 +252,8 @@ export function getKnownStoreCodes() {
 
 export function getKnownIngredients() {
   return _knownIngredients;
+}
+
+export function getKnownTargetingValues(category, field) {
+  return _knownTargetingValues[`${category || 'store'}:${field}`] || [];
 }

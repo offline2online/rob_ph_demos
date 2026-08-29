@@ -293,7 +293,10 @@ export default function PricingTab({ draft, baseline, setDraft, setBaseline }) {
   const [offerModalOpen, setOfferModalOpen] = useState(false);
   const [editingOffer, setEditingOffer] = useState(null);
   const openAddOfferModal = () => {
-    setEditingOffer({ ...blankOffer(), isNew: true });
+    // Pre-fill with the product's current RRP rather than leaving it blank
+    // — the common case is discounting off that price, not starting from
+    // nothing, so this saves retyping it every time an offer is added.
+    setEditingOffer({ ...blankOffer(), offerPrice: draft.rrp, isNew: true });
     setOfferModalOpen(true);
   };
   const openEditOfferModal = (offer) => {
