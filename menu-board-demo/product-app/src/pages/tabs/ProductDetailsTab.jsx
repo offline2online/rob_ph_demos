@@ -19,14 +19,21 @@ const { TextArea } = Input;
 function SectionCard({ children }) {
   return <div className="ph-sect">{children}</div>;
 }
-function Field({ label, required, children, hint }) {
+// `error`, when set, always wins over `hint` — same slot, red instead of
+// muted grey, so a field never shows both its normal hint and a
+// validation message stacked on top of each other.
+function Field({ label, required, children, hint, error }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column' }}>
       <label style={{ fontSize: 13, color: 'rgba(0,0,0,.65)', marginBottom: 6 }}>
         {label} {required && <span style={{ color: '#ff4d4f' }}>*</span>}
       </label>
       {children}
-      {hint && <p style={{ fontSize: 12, color: 'rgba(0,0,0,.45)', marginTop: 5 }}>{hint}</p>}
+      {error ? (
+        <p style={{ fontSize: 12, color: '#ff4d4f', marginTop: 5 }}>{error}</p>
+      ) : hint ? (
+        <p style={{ fontSize: 12, color: 'rgba(0,0,0,.45)', marginTop: 5 }}>{hint}</p>
+      ) : null}
     </div>
   );
 }
@@ -58,7 +65,7 @@ function AiButton({ children, icon = 'auto_awesome', ...rest }) {
   );
 }
 
-export default function ProductDetailsTab({ draft, patch, onGoPricing }) {
+export default function ProductDetailsTab({ draft, patch, onGoPricing, showValidation }) {
   const aiProviders = useAiProviders();
   const [newCat, setNewCat] = useState('');
   const [addingCat, setAddingCat] = useState(false);
@@ -97,6 +104,12 @@ export default function ProductDetailsTab({ draft, patch, onGoPricing }) {
   const types = getTypes();
   const brands = getBrands();
   const brand = getBrandById(draft.brand);
+  // Mirrors ProductPage.jsx's own detailsIncomplete check (same 5 fields:
+  // Brand, Product name, SKU, Category, Menu types) — showValidation only
+  // turns true once a save has actually been attempted while one of them
+  // was missing, so a fresh blank product doesn't greet the user with a
+  // wall of red before they've touched anything.
+  const showErr = (missing) => showValidation && missing;
   const languages = getLanguages();
   const addedLanguageCodes = draft.descriptionLanguages && draft.descriptionLanguages.length
     ? draft.descriptionLanguages
@@ -212,6 +225,25 @@ export default function ProductDetailsTab({ draft, patch, onGoPricing }) {
     patch({ menuTypes: has ? draft.menuTypes.filter((t) => t !== id) : [...draft.menuTypes, id] });
   };
 
+  // Display name (the short, board-safe name shown further down under
+  // Descriptions) auto-follows Product name until someone actually types
+  // something different into it — same "keep following until diverged"
+  // rule a URL slug field would use. Only ever touches the flat English
+  // field, never descriptionTranslations — Product name has no per-
+  // language variant of its own for this to sync from.
+  const handleNameChange = (name) => {
+    const stillFollowing = !draft.displayName || draft.displayName === draft.name;
+    patch(stillFollowing ? { name, displayName: name } : { name });
+  };
+
+  // Changing Brand re-syncs currency to match — there's no separate
+  // currency-editing control anywhere in this app (see productStore.js's
+  // blankProduct comment), so the selected brand's own currency
+  // (hq-admin.html's brand modal) is the only real source for it.
+  const handleBrandChange = (brandId) => {
+    patch({ brand: brandId, currency: getBrandById(brandId)?.currency || '$' });
+  };
+
   return (
     <div>
       {/* Identity & pricing */}
@@ -220,21 +252,33 @@ export default function ProductDetailsTab({ draft, patch, onGoPricing }) {
           Identity &amp; pricing
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px 16px', marginBottom: 14 }}>
-          <Field label="Brand" required>
+          <Field label="Brand" required error={showErr(!draft.brand) ? 'Brand is required.' : undefined}>
             <Select
               value={draft.brand || undefined}
-              onChange={(v) => patch({ brand: v })}
+              onChange={handleBrandChange}
               options={brands.map((b) => ({ value: b.id, label: b.name }))}
               placeholder="Select brand"
+              status={showErr(!draft.brand) ? 'error' : undefined}
             />
           </Field>
-          <Field label="Product name" required>
-            <Input value={draft.name} onChange={(e) => patch({ name: e.target.value })} placeholder="Full product name" />
+          <Field label="Product name" required error={showErr(!(draft.name || '').trim()) ? 'Product name is required.' : undefined}>
+            <Input
+              value={draft.name}
+              onChange={(e) => handleNameChange(e.target.value)}
+              placeholder="Full product name"
+              status={showErr(!(draft.name || '').trim()) ? 'error' : undefined}
+            />
           </Field>
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: '1.3fr 1fr 1fr', gap: '14px 16px' }}>
-          <Field label="SKU" required>
-            <Input value={draft.sku} onChange={(e) => patch({ sku: e.target.value })} style={{ fontFamily: 'ui-monospace,Menlo,Consolas,monospace' }} placeholder="e.g. BYR-CHK-001" />
+          <Field label="SKU" required error={showErr(!(draft.sku || '').trim()) ? 'SKU is required.' : undefined}>
+            <Input
+              value={draft.sku}
+              onChange={(e) => patch({ sku: e.target.value })}
+              style={{ fontFamily: 'ui-monospace,Menlo,Consolas,monospace' }}
+              placeholder="e.g. BYR-CHK-001"
+              status={showErr(!(draft.sku || '').trim()) ? 'error' : undefined}
+            />
           </Field>
           <Field label="RRP">
             <InputNumber disabled value={draft.rrp} prefix={draft.currency || brand?.currency || '$'} style={{ width: '100%' }} />
@@ -262,6 +306,121 @@ export default function ProductDetailsTab({ draft, patch, onGoPricing }) {
         </div>
         <div style={{ marginTop: 12 }}>
           <OfferBanner rrp={draft.rrp} offerPrice={draft.offerPrice} offerFrom={draft.offerFrom} offerUntil={draft.offerUntil} recurrence={draft.offerRecurrence} currency={draft.currency || brand?.currency || '$'} />
+        </div>
+      </SectionCard>
+
+      {/* Classification & availability — directly under Identity & pricing
+          (right after SKU) since Category and Menu types are both
+          mandatory; previously buried under Descriptions, well below
+          fields someone fills in and saves without ever scrolling that
+          far. */}
+      <SectionCard>
+        <div className="ph-sect-label" style={{ marginBottom: 12 }}>
+          Classification &amp; availability
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px 16px' }}>
+          <Field label="Category" required error={showErr(!draft.category) ? 'Category is required.' : undefined}>
+            <Select
+              value={draft.category || undefined}
+              onChange={(v) => patch({ category: v })}
+              options={catOptions}
+              showSearch
+              placeholder="Select category"
+              status={showErr(!draft.category) ? 'error' : undefined}
+              dropdownRender={(menu) => (
+                <>
+                  {menu}
+                  <div style={{ padding: 8, borderTop: '1px solid #f0f0f0' }}>
+                    {addingCat ? (
+                      <div style={{ display: 'flex', gap: 6 }}>
+                        <Input
+                          size="small"
+                          autoFocus
+                          value={newCat}
+                          onChange={(e) => setNewCat(e.target.value)}
+                          onKeyDown={(e) => e.key === 'Enter' && confirmNewCategory()}
+                          placeholder="New category name…"
+                        />
+                        <Button size="small" type="primary" onClick={confirmNewCategory}>
+                          Add
+                        </Button>
+                      </div>
+                    ) : (
+                      <Button type="text" size="small" onClick={() => setAddingCat(true)} icon={<MaterialIcon name="add" style={{ fontSize: 14 }} />}>
+                        Add new category
+                      </Button>
+                    )}
+                  </div>
+                </>
+              )}
+            />
+          </Field>
+          <Field label="Sub-category">
+            <Select
+              value={draft.subCategory || undefined}
+              onChange={(v) => patch({ subCategory: v })}
+              options={subCatOptions}
+              showSearch
+              allowClear
+              placeholder="Select sub-category"
+              dropdownRender={(menu) => (
+                <>
+                  {menu}
+                  <div style={{ padding: 8, borderTop: '1px solid #f0f0f0' }}>
+                    {addingSubCat ? (
+                      <div style={{ display: 'flex', gap: 6 }}>
+                        <Input
+                          size="small"
+                          autoFocus
+                          value={newSubCat}
+                          onChange={(e) => setNewSubCat(e.target.value)}
+                          onKeyDown={(e) => e.key === 'Enter' && confirmNewSubCategory()}
+                          placeholder="New sub-category name…"
+                        />
+                        <Button size="small" type="primary" onClick={confirmNewSubCategory}>
+                          Add
+                        </Button>
+                      </div>
+                    ) : (
+                      <Button type="text" size="small" onClick={() => setAddingSubCat(true)} icon={<MaterialIcon name="add" style={{ fontSize: 14 }} />}>
+                        Add new sub-category
+                      </Button>
+                    )}
+                  </div>
+                </>
+              )}
+            />
+          </Field>
+        </div>
+
+        <div style={{ marginTop: 14 }}>
+          <Field
+            label="Menu types"
+            required
+            error={showErr(draft.menuTypes.length === 0) ? 'At least one menu type is required — the item will not appear on any board without one.' : undefined}
+          >
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+              {types.map((t) => {
+                const on = draft.menuTypes.includes(t.id);
+                return (
+                  <button
+                    type="button"
+                    key={t.id}
+                    onClick={() => toggleType(t.id)}
+                    style={{
+                      display: 'inline-flex', alignItems: 'center', gap: 7,
+                      border: '1px solid ' + (showErr(draft.menuTypes.length === 0) ? '#ff4d4f' : on ? '#169bc2' : '#d9d9d9'),
+                      borderRadius: 6, padding: '6px 11px', fontSize: 13, cursor: 'pointer',
+                      background: on ? '#e8fdff' : '#fff', color: on ? '#09759c' : 'rgba(0,0,0,.88)',
+                    }}
+                  >
+                    <span style={{ width: 9, height: 9, borderRadius: '50%', border: `1.5px solid ${t.color}`, background: on ? t.color : 'transparent' }} />
+                    {t.label}
+                  </button>
+                );
+              })}
+            </div>
+          </Field>
         </div>
       </SectionCard>
 
@@ -334,7 +493,7 @@ export default function ProductDetailsTab({ draft, patch, onGoPricing }) {
         )}
       </SectionCard>
 
-      {/* Descriptions + Classification & availability */}
+      {/* Descriptions */}
       <SectionCard>
         <div className="ph-sect-label" style={{ marginBottom: 12 }}>
           Descriptions
@@ -407,120 +566,6 @@ export default function ProductDetailsTab({ draft, patch, onGoPricing }) {
             options={availableToAddLanguages.map((l) => ({ value: l.code, label: l.name }))}
           />
         </Modal>
-
-        <div style={{ height: 1, background: '#f0f0f0', margin: '18px 0' }} />
-        <div className="ph-sect-label" style={{ marginBottom: 12 }}>
-          Classification &amp; availability
-        </div>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px 16px' }}>
-          <Field label="Category" required>
-            <Select
-              value={draft.category || undefined}
-              onChange={(v) => patch({ category: v })}
-              options={catOptions}
-              showSearch
-              placeholder="Select category"
-              dropdownRender={(menu) => (
-                <>
-                  {menu}
-                  <div style={{ padding: 8, borderTop: '1px solid #f0f0f0' }}>
-                    {addingCat ? (
-                      <div style={{ display: 'flex', gap: 6 }}>
-                        <Input
-                          size="small"
-                          autoFocus
-                          value={newCat}
-                          onChange={(e) => setNewCat(e.target.value)}
-                          onKeyDown={(e) => e.key === 'Enter' && confirmNewCategory()}
-                          placeholder="New category name…"
-                        />
-                        <Button size="small" type="primary" onClick={confirmNewCategory}>
-                          Add
-                        </Button>
-                      </div>
-                    ) : (
-                      <Button type="text" size="small" onClick={() => setAddingCat(true)} icon={<MaterialIcon name="add" style={{ fontSize: 14 }} />}>
-                        Add new category
-                      </Button>
-                    )}
-                  </div>
-                </>
-              )}
-            />
-          </Field>
-          <Field label="Sub-category">
-            <Select
-              value={draft.subCategory || undefined}
-              onChange={(v) => patch({ subCategory: v })}
-              options={subCatOptions}
-              showSearch
-              allowClear
-              placeholder="Select sub-category"
-              dropdownRender={(menu) => (
-                <>
-                  {menu}
-                  <div style={{ padding: 8, borderTop: '1px solid #f0f0f0' }}>
-                    {addingSubCat ? (
-                      <div style={{ display: 'flex', gap: 6 }}>
-                        <Input
-                          size="small"
-                          autoFocus
-                          value={newSubCat}
-                          onChange={(e) => setNewSubCat(e.target.value)}
-                          onKeyDown={(e) => e.key === 'Enter' && confirmNewSubCategory()}
-                          placeholder="New sub-category name…"
-                        />
-                        <Button size="small" type="primary" onClick={confirmNewSubCategory}>
-                          Add
-                        </Button>
-                      </div>
-                    ) : (
-                      <Button type="text" size="small" onClick={() => setAddingSubCat(true)} icon={<MaterialIcon name="add" style={{ fontSize: 14 }} />}>
-                        Add new sub-category
-                      </Button>
-                    )}
-                  </div>
-                </>
-              )}
-            />
-          </Field>
-        </div>
-
-        <div style={{ marginTop: 14 }}>
-          <Field
-            label="Menu types"
-            required
-            hint={
-              draft.menuTypes.length === 0 ? (
-                <span style={{ color: '#ff4d4f' }}>
-                  At least one menu type is required — the item will not appear on any board without one.
-                </span>
-              ) : null
-            }
-          >
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-              {types.map((t) => {
-                const on = draft.menuTypes.includes(t.id);
-                return (
-                  <button
-                    type="button"
-                    key={t.id}
-                    onClick={() => toggleType(t.id)}
-                    style={{
-                      display: 'inline-flex', alignItems: 'center', gap: 7,
-                      border: '1px solid ' + (on ? '#169bc2' : '#d9d9d9'),
-                      borderRadius: 6, padding: '6px 11px', fontSize: 13, cursor: 'pointer',
-                      background: on ? '#e8fdff' : '#fff', color: on ? '#09759c' : 'rgba(0,0,0,.88)',
-                    }}
-                  >
-                    <span style={{ width: 9, height: 9, borderRadius: '50%', border: `1.5px solid ${t.color}`, background: on ? t.color : 'transparent' }} />
-                    {t.label}
-                  </button>
-                );
-              })}
-            </div>
-          </Field>
-        </div>
 
       </SectionCard>
 

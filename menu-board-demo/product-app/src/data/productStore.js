@@ -1,7 +1,7 @@
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { db, ITEMS_COLL } from './firebase.js';
 import { migrateItem, toItemDoc } from './migration.js';
-import { getBrandById } from './registries.js';
+import { getBrandById, getBrands } from './registries.js';
 
 export function genId(prefix = 'item') {
   return prefix + '-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8);
@@ -16,9 +16,18 @@ export async function getProduct(id) {
 }
 
 export function blankProduct() {
+  // Defaults to the first brand in the registry (and that brand's own
+  // currency, below) rather than leaving Brand blank — a brand-new
+  // product almost always belongs to whichever brand HQ Admin is
+  // currently managing, and an unset Brand was otherwise just an extra
+  // required click before anything else on the page could be filled in.
+  // Still just a default: the Select can be changed immediately if this
+  // guess is wrong, and doing so re-syncs currency to match (see
+  // ProductDetailsTab.jsx's Brand onChange).
+  const firstBrand = getBrands()[0];
   return {
     id: genId(),
-    brand: '',
+    brand: firstBrand?.id || '',
     sku: '',
     name: '',
     displayName: '',
@@ -44,7 +53,12 @@ export function blankProduct() {
     // Badge) is fixed for every product now — no per-product template id
     // to default here anymore.
     showOnMenuBoard: '',
-    currency: '$',
+    // Follows the default brand above, not a bare '$' — a product's RRP/
+    // offer price are shown with this prefix (ProductDetailsTab.jsx,
+    // PricingTab.jsx) and there's no currency-editing control anywhere in
+    // this app; a brand's own currency (set in hq-admin.html's brand
+    // modal) is the only real source for it.
+    currency: firstBrand?.currency || '$',
     taxClass: '',
     currencyLocked: true,
     // New products start Inactive — Product Details' required fields

@@ -21,6 +21,14 @@ export default function ProductPage({ isNew = false }) {
   const [draft, setDraft] = useState(null);
   const [saving, setSaving] = useState(false);
   const [statusSaving, setStatusSaving] = useState(false);
+  // Turns true only once a save has actually been attempted while a
+  // required field was missing — a fresh blank product shouldn't greet
+  // the user with a wall of red before they've touched anything. Once
+  // true, ProductDetailsTab.jsx keeps showing per-field errors live as
+  // the user fixes them (rather than only re-checking on the next save
+  // attempt), same as switching it off would be a worse "did that field
+  // count?" experience.
+  const [showValidation, setShowValidation] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -59,6 +67,18 @@ export default function ProductPage({ isNew = false }) {
   const dirty = useMemo(() => JSON.stringify(draft) !== JSON.stringify(baseline), [draft, baseline]);
 
   const saveDetailsOrAssets = async () => {
+    // Blocks the save itself, not just the Active toggle — a product
+    // missing Brand/Product name/SKU/Category/Menu types could previously
+    // still be saved as Inactive with no feedback about what was missing.
+    // Jumps to Details (wherever the save was actually attempted from) so
+    // the per-field error states this turns on are visible, not just a
+    // toast naming fields the user can't currently see.
+    if (detailsIncomplete) {
+      setShowValidation(true);
+      if (tab !== 'details') goTab('details');
+      message.error('Complete the required fields (marked *) on Product Details before saving.');
+      return;
+    }
     setSaving(true);
     try {
       const saved = await upsertProduct(draft);
@@ -169,7 +189,7 @@ export default function ProductPage({ isNew = false }) {
         />
 
         {tab === 'details' && (
-          <ProductDetailsTab draft={draft} patch={patch} onGoPricing={() => goTab('pricing')} />
+          <ProductDetailsTab draft={draft} patch={patch} onGoPricing={() => goTab('pricing')} showValidation={showValidation} />
         )}
         {tab === 'assets' && <ProductAssetsTab draft={draft} baseline={baseline} patch={patch} />}
         {tab === 'pricing' && <PricingTab draft={draft} baseline={baseline} setDraft={setDraft} setBaseline={setBaseline} />}
