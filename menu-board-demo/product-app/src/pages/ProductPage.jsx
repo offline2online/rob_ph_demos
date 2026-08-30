@@ -88,13 +88,18 @@ export default function ProductPage({ isNew = false }) {
       if (isNew) navigate(`/products/${draft.id}/details`, { replace: true });
     } catch (e) {
       const raw = e.message || String(e);
-      // Firestore's own error for this case names an internal field path
-      // ("array") that means nothing to someone editing a product — the
-      // Assets tab now compresses uploads before they reach this point, so
-      // this should be rare, but if it still happens, say what's actually
-      // wrong and how to fix it rather than surfacing the raw SDK message.
-      const friendly = /longer than \d+ bytes/i.test(raw)
-        ? 'Save failed: this product\'s images are too large in total. Remove one or replace it with a smaller file.'
+      // Firestore has (at least) two different wordings for "this document
+      // is too big" — a per-field "longer than N bytes" and a whole-document
+      // "cannot be written because its size (...) exceeds the maximum
+      // allowed size" (confirmed live: this second one is what a real save
+      // failure actually said, and the first regex alone didn't match it,
+      // so it fell through to the raw message naming an internal document
+      // path instead of this friendly one). The Assets tab compresses
+      // images before they reach this point, but has nothing that can
+      // shrink a video the same way, so video is called out specifically —
+      // it's the near-certain cause whenever this still trips.
+      const friendly = /longer than \d+ bytes/i.test(raw) || /exceeds the maximum allowed size/i.test(raw)
+        ? 'Save failed: this product\'s assets are too large in total. Video in particular isn\'t compressed the way images are — remove one, or replace it with a shorter/smaller clip, then try again.'
         : 'Save failed: ' + raw;
       message.error(friendly, 6);
     } finally {

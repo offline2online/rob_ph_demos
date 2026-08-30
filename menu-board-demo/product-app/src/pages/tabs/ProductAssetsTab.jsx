@@ -618,9 +618,25 @@ export default function ProductAssetsTab({ draft, baseline, patch }) {
     // computed once against the document as it stands right now.
     const budget = computeImageBudget(draft, images, null);
     Promise.all([...files].map((file) => readAndCompress(file, budget).then((src) => ({ file, src })))).then((loaded) => {
+      const startLen = images.length;
       const next = [...images];
       loaded.forEach(({ file, src }) => {
         const type = file.type.startsWith('video') ? 'video' : 'image';
+        // readAndCompress -> compressDataUrl re-encodes an over-budget
+        // image until it fits, but its <img> load fails silently for a
+        // video src (see compressDataUrl's own onerror) and just resolves
+        // with the original, full-size file — so an oversized video would
+        // otherwise sail straight through here at any size and only fail
+        // much later, confusingly, when Save hits Firestore's whole-document
+        // limit (a real live failure: a second, undownscaled video pushed
+        // this exact product from ~1.0MB to ~1.78MB and Firestore rejected
+        // the write outright). Reject it here instead, immediately, naming
+        // the actual numbers, rather than letting it become unsaveable
+        // asset state the user has to somehow notice and undo later.
+        if (type === 'video' && rawBytes(src) > budget) {
+          message.error(`"${file.name || 'Video'}" is too large to add (${Math.round(rawBytes(src) / 1024)}KB, only ${Math.round(budget / 1024)}KB free in this product) — videos aren't compressed the way images are, so use a shorter or lower-resolution clip.`, 6);
+          return;
+        }
         // A brand-new product's very first image (or video) becomes its
         // default automatically, rather than leaving every new product
         // one manual "set as default" click away from being ready — there
@@ -652,7 +668,10 @@ export default function ProductAssetsTab({ draft, baseline, patch }) {
         });
       });
       patch({ images: next });
-      setSelectedId(next[next.length - loaded.length].id);
+      // Some files in the batch may have been rejected above (an oversized
+      // video) — select the first one that actually got added, if any,
+      // rather than assuming every loaded file made it into `next`.
+      if (next.length > startLen) setSelectedId(next[startLen].id);
     });
   };
 
@@ -707,6 +726,22 @@ export default function ProductAssetsTab({ draft, baseline, patch }) {
   // which can't decode video), so a video's src is carried over as-is.
   const duplicateAsset = async () => {
     if (!current) return;
+    // A duplicated video is carried over byte-for-byte (see the comment
+    // above) with no re-encoding to shrink it — so unlike an image, which
+    // always re-fits itself against computeImageBudget, an already-large
+    // video's copy can't be brought under budget at all here. Confirmed
+    // live: duplicating this product's one existing video (753KB) pushed
+    // the whole document from ~1.0MB to ~1.78MB, well past Firestore's
+    // 1,048,576-byte document limit, and only failed later at Save with a
+    // raw Firestore error naming an internal document path. Block it here
+    // instead, immediately, with the actual numbers.
+    if (current.type === 'video') {
+      const budget = computeImageBudget(draft, images, null);
+      if (rawBytes(current.src) > budget) {
+        message.error(`Can't duplicate — this video is ${Math.round(rawBytes(current.src) / 1024)}KB and only ${Math.round(budget / 1024)}KB is free in this product's document. Videos aren't compressed the way images are, so remove or replace another asset first to make room.`, 6);
+        return;
+      }
+    }
     const src = current.type === 'video'
       ? current.src
       : await compressDataUrl(current.src, computeImageBudget(draft, images, null));
@@ -927,6 +962,16 @@ export default function ProductAssetsTab({ draft, baseline, patch }) {
         ? `${videoPrompt.trim()} Plain white studio background throughout, matching the product's own cut-out.`
         : videoPrompt.trim();
       const videoSrc = await generateProductVideo({ imageDataUrl: imageForVideo, prompt: promptForVideo, durationSeconds: videoDurationSeconds });
+      // A generated clip comes back from the provider as a real video file
+      // too, with nothing here to shrink it — same failure mode as an
+      // oversized upload or duplicate (see handleUpload/duplicateAsset's own
+      // comments), just from a different source. Caught here, before the
+      // asset is ever added, rather than only at Save.
+      const budget = computeImageBudget(draft, images, null);
+      if (rawBytes(videoSrc) > budget) {
+        message.error(`The generated video is too large to add (${Math.round(rawBytes(videoSrc) / 1024)}KB, only ${Math.round(budget / 1024)}KB free in this product) — try a shorter duration.`, 6);
+        return;
+      }
       const next = [...images];
       // Same "first asset of its type becomes the default automatically"
       // rule handleUpload uses above.
