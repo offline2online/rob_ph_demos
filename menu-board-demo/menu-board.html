@@ -2358,6 +2358,60 @@ if (STORE_CODE) {
 // so the board recovers on its own the moment the bad data is fixed or a
 // fresh snapshot arrives, instead of staying stuck until someone manually
 // reloads the screen.
+// The Feature Hero Spotlight template overlays a text block on top of a
+// photo in two places — the hero panel (.promo-hero-top over the full-bleed
+// image, .promo-hero-bottom the description/nutrition bar) and each promo
+// tile (.promo-text over its own thumbnail, .promo-tile-desc the same kind
+// of bar) — and in both cases the two pieces are absolutely positioned
+// independently, on purpose, so either can float without pushing the photo
+// around. The bar used to just pin to its container's bottom edge with no
+// awareness of the text block's actual height, which was fine while that
+// block was always a fixed ~2 rows — but pricingBlockHtml() combining the
+// Offer Badge with the RRP (Settings → Pricing: badge above/below the
+// price, RRP above/below the offer price) can now make it 3-4 rows tall
+// depending on those settings, tall enough to reach into the bar's
+// territory. Confirmed live, in both places: with badge+RRP both set to
+// stack vertically, the RRP line rendered directly underneath the
+// description text painted on top of it — not simply hidden, but visually
+// garbled, since the bar's own gradient is transparent right at the top
+// edge where the overlap happens. Measured and pushed down here, after
+// every render, rather than in CSS, because the text block's height
+// depends on account-wide settings CSS alone has no way to react to.
+// `bottom:'auto'` (not just setting `top`) matters: the bar's CSS also sets
+// `bottom:0`, and an absolutely positioned box with both `top` and `bottom`
+// set stretches to fill that whole span instead of sizing to its own
+// content — clearing `bottom` keeps the bar sized to what it actually
+// contains, just anchored lower.
+function _clearAbsoluteOverlap(topEl, barEl, container) {
+  if (!topEl || !barEl || !container) return;
+  const clearance = Math.ceil(topEl.getBoundingClientRect().bottom - container.getBoundingClientRect().top) + 16;
+  barEl.style.top = clearance + 'px';
+  barEl.style.bottom = 'auto';
+}
+function _layoutHeroOverlapClearance() {
+  const top = document.querySelector('.promo-hero-top');
+  const bottom = document.querySelector('.promo-hero-bottom');
+  _clearAbsoluteOverlap(top, bottom, top && top.closest('.promo-hero'));
+  document.querySelectorAll('.promo-tile').forEach(tile => {
+    _clearAbsoluteOverlap(tile.querySelector('.promo-text'), tile.querySelector('.promo-tile-desc'), tile);
+  });
+}
+// Confirmed live: measuring synchronously right after the innerHTML swap
+// above can under-count the text block's real height during the first few
+// seconds after a fresh page load — the 'Oswald' custom font hadn't
+// finished loading yet (text briefly renders in a narrower fallback font),
+// and separately, Firestore's local cache can deliver a stale pre-offer
+// snapshot a moment before the authoritative server one arrives — either
+// one changes the block's real height *after* this function already ran
+// once for that render. Neither is a single deterministic event worth
+// wiring up individually, so this just re-checks a handful of times over
+// the first few seconds after load — harmless to call redundantly (it
+// just recomputes the same clearance if nothing changed) — since every
+// render from then on measures correctly the first time, once fonts and
+// Firestore have both settled.
+document.fonts.ready.then(_layoutHeroOverlapClearance).catch(() => {});
+[300, 800, 1500, 3000].forEach(ms => setTimeout(_layoutHeroOverlapClearance, ms));
+
 function render() {
   try {
     _renderUnsafe();
@@ -3136,6 +3190,7 @@ function _renderUnsafe() {
 
   // ── INJECT ──────────────────────────────────────────────────────────────────
   boardRoot.innerHTML = headerHtml + bodyHtml + footerHtml + kcalDisclaimerHtml;
+  _layoutHeroOverlapClearance();
 
   updateClock();
 
