@@ -451,29 +451,33 @@ function Tile({ img, selected, onClick }) {
           {img.variant}
         </span>
         <div style={{ position: 'absolute', top: 4, right: 4, display: 'flex', gap: 3 }}>
-          {(img.targeting || []).length ? (
-            // A targeted asset can never also be default (it already
-            // overrides the default whenever its rule matches — see the
-            // Default button in the toolbar below) — so the default
-            // star is replaced outright by the targeting pin here, not
-            // just dimmed, to make the two states unambiguous at a glance.
-            <span
-              title={`Targeted — ${describeTargeting(img.targeting)}`}
-              style={{ width: 20, height: 20, borderRadius: 4, background: 'rgba(232,253,255,.97)', border: '1px solid #87d9ec', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#169bc2' }}
-            >
-              <MaterialIcon name="my_location" style={{ fontSize: 12 }} />
-            </span>
-          ) : (img.scheduleFrom || img.scheduleUntil) ? (
-            // Same reasoning as the targeting pin above — a scheduled asset
-            // overrides the default automatically during its window, so it
-            // can never also be the default, and the star is replaced
-            // outright by the schedule icon rather than dimmed.
-            <span
-              title={`Scheduled — ${describeSchedule(img)}`}
-              style={{ width: 20, height: 20, borderRadius: 4, background: 'rgba(255,247,230,.97)', border: '1px solid #ffd591', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#ad6800' }}
-            >
-              <MaterialIcon name="schedule" style={{ fontSize: 12 }} />
-            </span>
+          {(img.targeting || []).length || img.scheduleFrom || img.scheduleUntil ? (
+            // Targeted and scheduled are independent conditions — an asset
+            // can carry either or both at once (both together means it only
+            // overrides the default when BOTH currently hold), so both
+            // badges show side by side here, same as the toolbar's own
+            // Targeted/Scheduled indicators below. Either one replaces the
+            // default star outright rather than dimming it: a conditioned
+            // asset can never also be the default (see the Default button
+            // in the toolbar), so the star wouldn't mean anything here.
+            <>
+              {(img.targeting || []).length ? (
+                <span
+                  title={`Targeted — ${describeTargeting(img.targeting)}`}
+                  style={{ width: 20, height: 20, borderRadius: 4, background: 'rgba(232,253,255,.97)', border: '1px solid #87d9ec', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#169bc2' }}
+                >
+                  <MaterialIcon name="my_location" style={{ fontSize: 12 }} />
+                </span>
+              ) : null}
+              {(img.scheduleFrom || img.scheduleUntil) ? (
+                <span
+                  title={`Scheduled — ${describeSchedule(img)}`}
+                  style={{ width: 20, height: 20, borderRadius: 4, background: 'rgba(255,247,230,.97)', border: '1px solid #ffd591', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#ad6800' }}
+                >
+                  <MaterialIcon name="schedule" style={{ fontSize: 12 }} />
+                </span>
+              ) : null}
+            </>
           ) : (
             <span
               title={img.isDefault ? `Default ${img.type === 'video' ? 'video' : 'image'}` : `Not the default ${img.type === 'video' ? 'video' : 'image'}`}
