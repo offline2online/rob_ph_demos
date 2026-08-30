@@ -2384,17 +2384,52 @@ if (STORE_CODE) {
 // contains, just anchored lower.
 function _clearAbsoluteOverlap(topEl, barEl, container) {
   if (!topEl || !barEl || !container) return;
-  const clearance = Math.ceil(topEl.getBoundingClientRect().bottom - container.getBoundingClientRect().top) + 16;
-  barEl.style.top = clearance + 'px';
-  barEl.style.bottom = 'auto';
+  // Reset to the CSS default (bottom:0) first so this always measures the
+  // bar's true natural position/height, not a previous call's override —
+  // this runs several times against the same render (the retries below),
+  // and every call has to compare against the same baseline, not
+  // whatever the last call left behind.
+  barEl.style.top = '';
+  barEl.style.bottom = '';
+  const containerRect = container.getBoundingClientRect();
+  const topElBottom = topEl.getBoundingClientRect().bottom;
+  const barRect = barEl.getBoundingClientRect();
+  const neededTop = topElBottom + 16;
+  // Only override position when the text block would actually reach into
+  // the bar's natural (bottom-anchored) space — every tile whose text is
+  // short enough to leave room, which is most of them, stays exactly
+  // bottom-aligned like every other tile, unchanged from before this
+  // whole fix existed. Confirmed live: unconditionally repositioning
+  // every bar to sit just below its own text block (regardless of
+  // whether it needed to) pulled every tile's description up to a
+  // different height depending on that tile's own content, breaking the
+  // bottom-aligned row of description/nutrition bars this was never
+  // meant to touch in the first place.
+  if (neededTop > barRect.top) {
+    barEl.style.top = Math.ceil(neededTop - containerRect.top) + 'px';
+    barEl.style.bottom = 'auto';
+  }
 }
 function _layoutHeroOverlapClearance() {
+  // Deliberately the hero panel only (.promo-hero-top is a plain
+  // absolutely-positioned block, sized to its own content, so measuring it
+  // is reliable) — NOT each promo tile's .promo-text, which is a flex
+  // child of .promo-tile with align-items:stretch, so its own box always
+  // stretches to match the row's height (the thumbnail image's height)
+  // regardless of how little text is inside it. Even measuring its actual
+  // last content element instead, that content can *already* run past the
+  // tile's own bottom edge in the ordinary, no-badge case — .promo-tile
+  // relies on its own overflow:hidden to silently clip long content
+  // instead of reflowing anything, by original design — so "does the
+  // content reach the bar's natural position" isn't a meaningful question
+  // to ask per-tile the way it is for the hero panel, and trying to
+  // answer it anyway pushed every tile's description bar to a different,
+  // often off-tile position, breaking the bottom-aligned row of bars this
+  // was never meant to touch. Confirmed live, twice, before settling on
+  // leaving promo tiles alone entirely.
   const top = document.querySelector('.promo-hero-top');
   const bottom = document.querySelector('.promo-hero-bottom');
   _clearAbsoluteOverlap(top, bottom, top && top.closest('.promo-hero'));
-  document.querySelectorAll('.promo-tile').forEach(tile => {
-    _clearAbsoluteOverlap(tile.querySelector('.promo-text'), tile.querySelector('.promo-tile-desc'), tile);
-  });
 }
 // Confirmed live: measuring synchronously right after the innerHTML swap
 // above can under-count the text block's real height during the first few
