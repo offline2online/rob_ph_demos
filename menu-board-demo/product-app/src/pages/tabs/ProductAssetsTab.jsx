@@ -7,7 +7,7 @@ import BespokeIcon from '../../components/BespokeIcon.jsx';
 import IconAction from '../../components/IconAction.jsx';
 import BeforeAfterSlider from '../../components/BeforeAfterSlider.jsx';
 import TouchUpModal from '../../components/TouchUpModal.jsx';
-import ClearableDate from '../../components/ClearableDate.jsx';
+import ClearableDate, { shiftEndOneHour } from '../../components/ClearableDate.jsx';
 import TargetingBuilder, { describeTargeting } from '../../components/TargetingBuilder.jsx';
 import { useAiProviders, getBrandById } from '../../data/registries.js';
 import { editProductImage, generateProductVideo, isProviderConfigured } from '../../lib/aiProviders.js';
@@ -586,13 +586,24 @@ export default function ProductAssetsTab({ draft, baseline, patch }) {
       const next = [...images];
       loaded.forEach(({ file, src }) => {
         const type = file.type.startsWith('video') ? 'video' : 'image';
+        // A brand-new product's very first image (or video) becomes its
+        // default automatically, rather than leaving every new product
+        // one manual "set as default" click away from being ready — there
+        // being no default image yet is exactly the case (as opposed to
+        // "no assets at all") since a default image and a default video
+        // are independent (setDefault's own comment above). Re-checked
+        // fresh per file, not just once for the whole batch: uploading
+        // several images at once must still only default the first,
+        // matching what a one-at-a-time upload would do.
+        const sameType = (img) => (img.type === 'video') === (type === 'video');
+        const isDefault = !next.some((img) => img.isDefault && sameType(img));
         next.push({
           id: 'img-' + Date.now() + Math.random().toString(36).slice(2, 7),
           src,
           type,
           name: '',
           tags: [],
-          isDefault: false,
+          isDefault,
           availableForTesting: false,
           bgRemoved: false,
           enhanced: false,
@@ -600,6 +611,8 @@ export default function ProductAssetsTab({ draft, baseline, patch }) {
           rightsOn: false,
           rights: {},
           targeting: [],
+          scheduleFrom: '',
+          scheduleUntil: '',
           variant: nextVariantLabel(next, type),
         });
       });
@@ -874,19 +887,23 @@ export default function ProductAssetsTab({ draft, baseline, patch }) {
         : videoPrompt.trim();
       const videoSrc = await generateProductVideo({ imageDataUrl: imageForVideo, prompt: promptForVideo, durationSeconds: videoDurationSeconds });
       const next = [...images];
+      // Same "first asset of its type becomes the default automatically"
+      // rule handleUpload uses above.
       const newAsset = {
         id: 'img-' + Date.now() + Math.random().toString(36).slice(2, 7),
         src: videoSrc,
         type: 'video',
         name: '',
         tags: [],
-        isDefault: false,
+        isDefault: !next.some((img) => img.isDefault && img.type === 'video'),
         availableForTesting: false,
         bgRemoved: false,
         enhanced: false,
         rightsOn: false,
         rights: {},
         targeting: [],
+        scheduleFrom: '',
+        scheduleUntil: '',
         variant: nextVariantLabel(next, 'video'),
         generatedFrom: current.id,
         generationPrompt: videoPrompt.trim(),
@@ -1280,11 +1297,31 @@ export default function ProductAssetsTab({ draft, baseline, patch }) {
 
             <div style={{ borderTop: '1px solid #f0f0f0', padding: '20px 20px 22px' }}>
               <div style={{ fontSize: 11, color: 'rgba(0,0,0,.45)', letterSpacing: '0.08em', fontWeight: 500, marginBottom: 8, textTransform: 'uppercase' }}>
-                Asset Targeting Rules
+                Asset Scheduling &amp; Targeting Rules
               </div>
               <p style={{ fontSize: 12, color: 'rgba(0,0,0,.45)', margin: '0 0 14px' }}>
-                These rules apply only to &ldquo;{current.name.trim() || current.variant}&rdquo; — not to any other image or video on this product.
+                These apply only to &ldquo;{current.name.trim() || current.variant}&rdquo; — not to any other image or video on this product.
               </p>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px 16px', marginBottom: 20 }}>
+                <div>
+                  <label style={{ fontSize: 12, color: 'rgba(0,0,0,.65)', display: 'block', marginBottom: 4 }}>Schedule from</label>
+                  <ClearableDate
+                    showTime
+                    value={current.scheduleFrom}
+                    onChange={(v) => updateSelected({ scheduleFrom: v, scheduleUntil: v ? shiftEndOneHour(v) : current.scheduleUntil })}
+                    blankHint={{ blank: 'Available immediately.', set: 'Set — see date above.' }}
+                  />
+                </div>
+                <div>
+                  <label style={{ fontSize: 12, color: 'rgba(0,0,0,.65)', display: 'block', marginBottom: 4 }}>Schedule until</label>
+                  <ClearableDate
+                    showTime
+                    value={current.scheduleUntil}
+                    onChange={(v) => updateSelected({ scheduleUntil: v })}
+                    blankHint={{ blank: 'Runs indefinitely.', set: 'Set — see date above.' }}
+                  />
+                </div>
+              </div>
               <TargetingBuilder
                 groups={current.targeting || []}
                 onChange={(groups) => {

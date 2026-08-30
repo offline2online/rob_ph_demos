@@ -2492,10 +2492,26 @@ function _renderUnsafe() {
   // video-type assets from matching at all — every panel except the
   // Feature Hero Spotlight's own primary panel must never end up showing
   // a targeted video, only a targeted photo.
+  // An asset's own Schedule from/until (Product Assets → Asset Scheduling
+  // & Targeting Rules) restricts when it's eligible at all — independent
+  // of, and checked alongside, its targeting rule. Blank means no bound on
+  // that side (matches every other from/until pair in this app — an
+  // offer's schedule, a product's Featured window). An asset outside its
+  // own window is skipped exactly like a targeting rule that doesn't
+  // match, falling through to whatever's next (another targeted asset,
+  // then the default).
+  function _assetInSchedule(rich) {
+    if (!rich) return true;
+    const now = Date.now();
+    if (rich.scheduleFrom && now < new Date(rich.scheduleFrom).getTime()) return false;
+    if (rich.scheduleUntil && now > new Date(rich.scheduleUntil).getTime()) return false;
+    return true;
+  }
+
   function _pickTargetedAssetIndex(item, allowVideo) {
     const rich = item.imagesRich;
     if (!Array.isArray(rich)) return -1;
-    return rich.findIndex(r => r && Array.isArray(r.targeting) && r.targeting.length && (allowVideo || r.type !== 'video') && _offerTargetingMatches(r.targeting, _storeProfile));
+    return rich.findIndex(r => r && Array.isArray(r.targeting) && r.targeting.length && (allowVideo || r.type !== 'video') && _assetInSchedule(r) && _offerTargetingMatches(r.targeting, _storeProfile));
   }
 
   // A product can carry a default *image* and a default *video* at once
@@ -2504,20 +2520,24 @@ function _renderUnsafe() {
   // image (never a default video) to index 0, so images[0]/imagesRich[0]
   // is normally already the right answer here. Still walks the array to
   // find the first non-video entry as a defensive fallback for any legacy
-  // item saved before that reordering rule existed.
+  // item saved before that reordering rule existed — and, now, to skip
+  // past a default that's marked default but outside its own Schedule
+  // from/until window, the same way a stale-but-still-marked-default asset
+  // was already being defended against.
   function _defaultImageIndex(item) {
     const rich = item.imagesRich;
     if (!Array.isArray(rich) || !rich.length) return (item.images && item.images.length) ? 0 : -1;
-    if (rich[0] && rich[0].type !== 'video') return 0;
-    return rich.findIndex(r => r && r.type !== 'video');
+    if (rich[0] && rich[0].type !== 'video' && _assetInSchedule(rich[0])) return 0;
+    return rich.findIndex(r => r && r.type !== 'video' && _assetInSchedule(r));
   }
 
-  // The default *video*, if one is set — only ever looked up by the
-  // Feature Hero Spotlight's primary panel (_pickHeroSrc below).
+  // The default *video*, if one is set (and currently in schedule) — only
+  // ever looked up by the Feature Hero Spotlight's primary panel
+  // (_pickHeroSrc below).
   function _defaultVideoIndex(item) {
     const rich = item.imagesRich;
     if (!Array.isArray(rich)) return -1;
-    return rich.findIndex(r => r && r.type === 'video' && r.isDefault);
+    return rich.findIndex(r => r && r.type === 'video' && r.isDefault && _assetInSchedule(r));
   }
 
   function _srcAt(item, idx, preferLarge) {
