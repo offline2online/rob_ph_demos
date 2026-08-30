@@ -1564,27 +1564,35 @@ function initGrid() {
           if (isDiscounted) {
             // Settings → Pricing (hq-admin.html) governs this presentation
             // account-wide — same source of truth the customer-facing board
-            // reads (menu-board.html's priceHtml()).
-            const pd = getSettings().pricingDisplay || { strikethrough: true, rrpPrefix: '', rrpSuffix: '' };
+            // reads (menu-board.html's priceHtml()), including where the
+            // RRP sits relative to the offer price.
+            const pd = getSettings().pricingDisplay || { strikethrough: true, rrpPrefix: '', rrpSuffix: '', rrpPlacement: 'left' };
+            const placement = pd.rrpPlacement || 'left';
+            const stacked = placement === 'above' || placement === 'below';
+            const flexDir = { left: 'row', right: 'row-reverse', above: 'column', below: 'column-reverse' }[placement] || 'row';
             wrap.title = _offerTooltip(currency, rrp, offerNum, eff.offerFrom, eff.offerUntil);
+            wrap.style.cssText = `display:flex;align-items:${stacked ? 'flex-start' : 'center'};gap:${stacked ? '1px' : '6px'};flex-direction:${flexDir};height:100%;cursor:pointer;`;
+            const rrpBlock = document.createElement('span');
+            rrpBlock.style.cssText = 'display:flex;align-items:center;gap:4px;';
             if (pd.rrpPrefix) {
               const pre = document.createElement('span');
               pre.style.cssText = 'font-size:11px;color:var(--text2);';
               pre.textContent = pd.rrpPrefix;
-              wrap.appendChild(pre);
+              rrpBlock.appendChild(pre);
             }
             const was = document.createElement('span');
             was.style.cssText = pd.strikethrough !== false
               ? 'text-decoration:line-through;color:var(--text2);font-weight:400;font-size:11px;'
               : 'color:var(--text2);font-weight:400;font-size:11px;';
             was.textContent = currency + rrp.toFixed(2);
-            wrap.appendChild(was);
+            rrpBlock.appendChild(was);
             if (pd.rrpSuffix) {
               const suf = document.createElement('span');
               suf.style.cssText = 'font-size:11px;color:var(--text2);';
               suf.textContent = pd.rrpSuffix;
-              wrap.appendChild(suf);
+              rrpBlock.appendChild(suf);
             }
+            wrap.appendChild(rrpBlock);
             const now = document.createElement('span');
             now.style.cssText = 'font-weight:700;color:var(--primary);';
             now.textContent = currency + offerNum.toFixed(2);

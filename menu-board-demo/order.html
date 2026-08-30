@@ -262,16 +262,29 @@ button { cursor: pointer; border: none; background: none; font-family: inherit; 
   font-family: 'Oswald', sans-serif;
   font-size: 18px; font-weight: 600; color: var(--green-dark);
 }
-/* Struck-through RRP shown ahead of a live offer price — same convention
-   as menu-board.html's own .price-was/.price-was-strike/.price-rrp-copy
-   (Settings → Pricing governs whether the strike shows and any copy
-   before/after the RRP), sized off the parent price element's own
-   font-size so it scales wherever it's used (grid card, item modal). */
+/* Struck-through RRP shown next to a live offer price — same convention
+   as menu-board.html's own .price-line/.price-was/.price-rrp-copy
+   (Settings → Pricing governs whether the strike shows, any copy
+   before/after the RRP, and where the RRP sits relative to the offer
+   price), sized off the parent price element's own font-size so it
+   scales wherever it's used (grid card, item modal). */
+.price-line {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.3em;
+}
+.price-line.price-place-right { flex-direction: row-reverse; }
+.price-line.price-place-above { flex-direction: column; align-items: flex-start; gap: 0; }
+.price-line.price-place-below { flex-direction: column-reverse; align-items: flex-start; gap: 0; }
+.price-rrp-block {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.15em;
+}
 .price-was {
   opacity: 0.55;
   font-weight: 500;
   font-size: 0.6em;
-  margin-right: 0.3em;
 }
 .price-was.price-was-strike {
   text-decoration: line-through;
@@ -1383,11 +1396,12 @@ function effectivePrice(item) {
 // identically here and on the board.
 function priceHtml(item) {
   if (!isOfferPriceDiscounted(item)) return cur(item.price);
-  const pd = _settings.pricingDisplay || { strikethrough: true, rrpPrefix: '', rrpSuffix: '' };
+  const pd = _settings.pricingDisplay || { strikethrough: true, rrpPrefix: '', rrpSuffix: '', rrpPlacement: 'left' };
   const rrpClass = pd.strikethrough === false ? 'price-was' : 'price-was price-was-strike';
   const prefix = pd.rrpPrefix ? `<span class="price-rrp-copy">${esc(pd.rrpPrefix)} </span>` : '';
   const suffix = pd.rrpSuffix ? `<span class="price-rrp-copy"> ${esc(pd.rrpSuffix)}</span>` : '';
-  return `${prefix}<span class="${rrpClass}">${cur(item.price)}</span>${suffix}${cur(item.offerPrice)}`;
+  const placement = pd.rrpPlacement || 'left';
+  return `<span class="price-line price-place-${placement}"><span class="price-rrp-block">${prefix}<span class="${rrpClass}">${cur(item.price)}</span>${suffix}</span><span class="price-offer">${cur(item.offerPrice)}</span></span>`;
 }
 
 // ── BADGE TEMPLATES ───────────────────────────────────────────────────────

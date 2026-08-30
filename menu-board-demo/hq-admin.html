@@ -829,6 +829,15 @@
               </div>
             </div>
             <p class="form-help" style="margin-bottom:10px;">Both are optional and only ever shown alongside a struck-through RRP next to a live offer price — a regular, non-offer price never carries this copy.</p>
+            <div class="form-group" style="max-width:260px;margin-bottom:10px;">
+              <label>RRP position relative to offer price</label>
+              <select id="sPricingRrpPlacement">
+                <option value="left">Left of offer price</option>
+                <option value="right">Right of offer price</option>
+                <option value="above">Above offer price</option>
+                <option value="below">Below offer price</option>
+              </select>
+            </div>
             <p style="font-size:12px;color:var(--text2);margin:0 0 14px;">Preview: <span id="sPricingPreview"></span></p>
             <button class="btn btn-primary btn-sm" id="pricingSaveBtn" onclick="savePricingDisplay()" disabled>Save Changes</button>
           </div>
@@ -1867,27 +1876,36 @@ function saveSettingsData(s) {
 // Offer Badge entry — that's the badge/note's own colours and shape,
 // this is the price *line* itself, which isn't a badge at all.
 function _defaultPricingDisplay() {
-  return { strikethrough: true, rrpPrefix: '', rrpSuffix: '' };
+  return { strikethrough: true, rrpPrefix: '', rrpSuffix: '', rrpPlacement: 'left' };
 }
+// left/right are a row (RRP first vs offer-price first); above/below are a
+// column (same idea, just vertical) — one flex-direction switch covers all
+// four, with the RRP+its copy always the first flex child and the offer
+// price always the second, so "left"/"above" (RRP-first, normal order) and
+// "right"/"below" (RRP-second, reversed order) fall out for free.
+const PRICING_PLACEMENT_FLEX_DIR = { left: 'row', right: 'row-reverse', above: 'column', below: 'column-reverse' };
 function _renderPricingPreview() {
-  const on     = document.getElementById('sPricingStrikethrough')?.checked;
-  const prefix = (document.getElementById('sPricingRrpPrefix')?.value || '').trim();
-  const suffix = (document.getElementById('sPricingRrpSuffix')?.value || '').trim();
-  const rrpHtml = on
-    ? '<span style="text-decoration:line-through;opacity:.6;">£12.99</span>'
-    : '£12.99';
-  const parts = [prefix, rrpHtml, suffix, '£9.99'].filter(p => p !== '');
+  const on        = document.getElementById('sPricingStrikethrough')?.checked;
+  const prefix    = (document.getElementById('sPricingRrpPrefix')?.value || '').trim();
+  const suffix    = (document.getElementById('sPricingRrpSuffix')?.value || '').trim();
+  const placement = document.getElementById('sPricingRrpPlacement')?.value || 'left';
+  const rrpSpan = `<span style="${on ? 'text-decoration:line-through;' : ''}opacity:.6;">£12.99</span>`;
+  const rrpBlock = [prefix && escHtml(prefix), rrpSpan, suffix && escHtml(suffix)].filter(Boolean).join(' ');
+  const flexDir = PRICING_PLACEMENT_FLEX_DIR[placement] || 'row';
+  const alignItems = (placement === 'above' || placement === 'below') ? 'flex-start' : 'baseline';
   const el = document.getElementById('sPricingPreview');
-  if (el) el.innerHTML = parts.map(p => p === rrpHtml || p === '£9.99' ? p : escHtml(p)).join(' ');
+  if (el) el.innerHTML = `<span style="display:inline-flex;flex-direction:${flexDir};align-items:${alignItems};gap:4px;"><span>${rrpBlock}</span><span>£9.99</span></span>`;
 }
 function _loadPricingDisplayUI() {
   const p = _settings.pricingDisplay || _defaultPricingDisplay();
   const stEl = document.getElementById('sPricingStrikethrough');
   const preEl = document.getElementById('sPricingRrpPrefix');
   const sufEl = document.getElementById('sPricingRrpSuffix');
+  const plEl  = document.getElementById('sPricingRrpPlacement');
   if (stEl)  stEl.checked = p.strikethrough !== false;
   if (preEl) preEl.value  = p.rrpPrefix || '';
   if (sufEl) sufEl.value  = p.rrpSuffix || '';
+  if (plEl)  plEl.value   = p.rrpPlacement || 'left';
   _renderPricingPreview();
 }
 function savePricingDisplay() {
@@ -1895,6 +1913,7 @@ function savePricingDisplay() {
     strikethrough: !!document.getElementById('sPricingStrikethrough')?.checked,
     rrpPrefix: (document.getElementById('sPricingRrpPrefix')?.value || '').trim(),
     rrpSuffix: (document.getElementById('sPricingRrpSuffix')?.value || '').trim(),
+    rrpPlacement: document.getElementById('sPricingRrpPlacement')?.value || 'left',
   };
   saveSettingsData({ ..._settings, pricingDisplay });
 }
@@ -3465,27 +3484,34 @@ function initGrids() {
               // Settings → Pricing governs the struck-through-RRP-next-to-
               // offer-price presentation account-wide — same source of
               // truth the customer-facing board reads (menu-board.html's
-              // priceHtml()).
+              // priceHtml()), including where the RRP sits relative to the
+              // offer price (PRICING_PLACEMENT_FLEX_DIR).
               const pd = _settings.pricingDisplay || _defaultPricingDisplay();
+              const placement = pd.rrpPlacement || 'left';
+              const stacked = placement === 'above' || placement === 'below';
               priceRow.title = _offerTooltip(currency, rrp, offerNum, item.offerFrom, item.offerUntil, item.offerRecurrence);
+              priceRow.style.cssText = `display:flex;align-items:${stacked ? 'flex-start' : 'center'};gap:${stacked ? '1px' : '6px'};flex-direction:${PRICING_PLACEMENT_FLEX_DIR[placement] || 'row'};`;
+              const rrpBlock = document.createElement('span');
+              rrpBlock.style.cssText = 'display:flex;align-items:center;gap:4px;';
               if (pd.rrpPrefix) {
                 const pre = document.createElement('span');
                 pre.style.cssText = 'font-size:11px;color:var(--text2);';
                 pre.textContent = pd.rrpPrefix;
-                priceRow.appendChild(pre);
+                rrpBlock.appendChild(pre);
               }
               const was = document.createElement('span');
               was.style.cssText = pd.strikethrough !== false
                 ? 'text-decoration:line-through;color:var(--text2);font-weight:400;font-size:11px;'
                 : 'color:var(--text2);font-weight:400;font-size:11px;';
               was.textContent = currency + rrp.toFixed(2);
-              priceRow.appendChild(was);
+              rrpBlock.appendChild(was);
               if (pd.rrpSuffix) {
                 const suf = document.createElement('span');
                 suf.style.cssText = 'font-size:11px;color:var(--text2);';
                 suf.textContent = pd.rrpSuffix;
-                priceRow.appendChild(suf);
+                rrpBlock.appendChild(suf);
               }
+              priceRow.appendChild(rrpBlock);
               const nowSpan = document.createElement('span');
               nowSpan.style.cssText = 'font-weight:700;color:var(--primary);';
               nowSpan.textContent = currency + offerNum.toFixed(2);

@@ -385,14 +385,32 @@
       letter-spacing: 0.1px;
       background: var(--cream);
     }
-    /* Struck-through RRP shown ahead of a live offer price — sized off the
-       parent price element's own font-size so it scales in every context
-       (item tile, promo hero, promo card) without a per-context rule. */
+    /* The struck-through-RRP-next-to-offer-price block (priceHtml()) —
+       sized off the parent price element's own font-size so it scales in
+       every context (item tile, promo hero, promo card) without a
+       per-context rule. .price-line is the flex container whose direction
+       Settings → Pricing's RRP-placement setting switches between a row
+       (RRP left/right of the offer price) and a column (RRP above/below
+       it); .price-rrp-block keeps the copy+RRP+copy together as one flex
+       item so placement only ever reorders it against the offer price as
+       a whole, never splits it apart. */
+    .price-line {
+      display: inline-flex;
+      align-items: baseline;
+      gap: 0.3em;
+    }
+    .price-line.price-place-right { flex-direction: row-reverse; }
+    .price-line.price-place-above { flex-direction: column; align-items: flex-start; gap: 0; }
+    .price-line.price-place-below { flex-direction: column-reverse; align-items: flex-start; gap: 0; }
+    .price-rrp-block {
+      display: inline-flex;
+      align-items: baseline;
+      gap: 0.15em;
+    }
     .price-was {
       opacity: 0.55;
       font-weight: 600;
       font-size: 0.55em;
-      margin-right: 0.3em;
     }
     /* The actual line-through is its own modifier, toggled by Settings →
        Pricing's "Strike through RRP when an offer is active" — off just
@@ -1361,8 +1379,12 @@ function isOfferPriceDiscounted(item) {
 // hq-admin.html's own Products grid, retail-admin.html and order.html all
 // read, so a live offer presents identically wherever it shows.
 function _pricingDisplaySettings() {
-  return (_settings && _settings.pricingDisplay) || { strikethrough: true, rrpPrefix: '', rrpSuffix: '' };
+  return (_settings && _settings.pricingDisplay) || { strikethrough: true, rrpPrefix: '', rrpSuffix: '', rrpPlacement: 'left' };
 }
+// left/right are a row (RRP-block first vs offer-price first); above/below
+// are the same idea vertically — one flex-direction switch covers all
+// four (see .price-place-* CSS), with the RRP+its copy always the first
+// DOM child and the offer price always second.
 function priceHtml(item, currency, wasClass) {
   const rrp = parseFloat(item.price || 0).toFixed(2);
   if (!isOfferPriceDiscounted(item)) return `${currency}${rrp}`;
@@ -1371,7 +1393,8 @@ function priceHtml(item, currency, wasClass) {
   const rrpClass = pd.strikethrough === false ? wasClass : `${wasClass} price-was-strike`;
   const prefix = pd.rrpPrefix ? `<span class="price-rrp-copy">${esc(pd.rrpPrefix)} </span>` : '';
   const suffix = pd.rrpSuffix ? `<span class="price-rrp-copy"> ${esc(pd.rrpSuffix)}</span>` : '';
-  return `${prefix}<span class="${rrpClass}">${currency}${rrp}</span>${suffix}${currency}${offer}`;
+  const placement = pd.rrpPlacement || 'left';
+  return `<span class="price-line price-place-${placement}"><span class="price-rrp-block">${prefix}<span class="${rrpClass}">${currency}${rrp}</span>${suffix}</span><span class="price-offer">${currency}${offer}</span></span>`;
 }
 // "Show on Menu Board" copy is written alongside an offer's own price/dates
 // on the Pricing tab, and reads as being about that offer ("Limited time
