@@ -389,11 +389,24 @@
        parent price element's own font-size so it scales in every context
        (item tile, promo hero, promo card) without a per-context rule. */
     .price-was {
-      text-decoration: line-through;
       opacity: 0.55;
       font-weight: 600;
       font-size: 0.55em;
       margin-right: 0.3em;
+    }
+    /* The actual line-through is its own modifier, toggled by Settings →
+       Pricing's "Strike through RRP when an offer is active" — off just
+       drops the strike, the RRP still shows secondary/dimmed either way. */
+    .price-was.price-was-strike {
+      text-decoration: line-through;
+    }
+    /* Optional "Copy before/after RRP" text (Settings → Pricing) — sits
+       right next to the RRP, same secondary weight, never struck through
+       itself even when the RRP next to it is. */
+    .price-rrp-copy {
+      opacity: 0.55;
+      font-weight: 600;
+      font-size: 0.55em;
     }
     /* Optional promo copy set on the product's Pricing tab ("Show on Menu
        Board") — a small highlighted strip near the price, distinct from
@@ -1343,11 +1356,22 @@ function isOfferPriceDiscounted(item) {
 // when a live, discounted offer is on, plain RRP otherwise. `wasClass`
 // sizes the struck-through RRP relative to the caller's own price
 // font-size via em.
+// Settings → Pricing (hq-admin.html) governs the struck-through-RRP-next-
+// to-offer-price presentation account-wide — same source of truth
+// hq-admin.html's own Products grid, retail-admin.html and order.html all
+// read, so a live offer presents identically wherever it shows.
+function _pricingDisplaySettings() {
+  return (_settings && _settings.pricingDisplay) || { strikethrough: true, rrpPrefix: '', rrpSuffix: '' };
+}
 function priceHtml(item, currency, wasClass) {
   const rrp = parseFloat(item.price || 0).toFixed(2);
   if (!isOfferPriceDiscounted(item)) return `${currency}${rrp}`;
   const offer = parseFloat(item.offerPrice).toFixed(2);
-  return `<span class="${wasClass}">${currency}${rrp}</span>${currency}${offer}`;
+  const pd = _pricingDisplaySettings();
+  const rrpClass = pd.strikethrough === false ? wasClass : `${wasClass} price-was-strike`;
+  const prefix = pd.rrpPrefix ? `<span class="price-rrp-copy">${esc(pd.rrpPrefix)} </span>` : '';
+  const suffix = pd.rrpSuffix ? `<span class="price-rrp-copy"> ${esc(pd.rrpSuffix)}</span>` : '';
+  return `${prefix}<span class="${rrpClass}">${currency}${rrp}</span>${suffix}${currency}${offer}`;
 }
 // "Show on Menu Board" copy is written alongside an offer's own price/dates
 // on the Pricing tab, and reads as being about that offer ("Limited time

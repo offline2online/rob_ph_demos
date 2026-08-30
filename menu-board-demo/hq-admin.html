@@ -808,6 +808,31 @@
             </div>
           </div>
 
+          <div class="settings-section" id="settingsSection-pricing">
+            <h3>Pricing</h3>
+            <p class="settings-desc">How RRP and an active offer's price present together, account-wide — every menu board, Retail Admin and the ordering screen all follow this. The Offer Badge's own colours/size/shape are set separately, in Menu Board Badge Templates above.</p>
+            <div style="display:flex;align-items:center;justify-content:space-between;max-width:520px;margin-bottom:14px;">
+              <span style="font-size:13px;color:var(--text);">Strike through RRP when an offer is active</span>
+              <label class="switch-toggle">
+                <input type="checkbox" id="sPricingStrikethrough" checked>
+                <span class="switch-track"></span>
+              </label>
+            </div>
+            <div class="form-row" style="max-width:520px;">
+              <div class="form-group" style="flex:1;">
+                <label>Copy before RRP</label>
+                <input type="text" id="sPricingRrpPrefix" placeholder="e.g. Was">
+              </div>
+              <div class="form-group" style="flex:1;">
+                <label>Copy after RRP</label>
+                <input type="text" id="sPricingRrpSuffix" placeholder="e.g. each">
+              </div>
+            </div>
+            <p class="form-help" style="margin-bottom:10px;">Both are optional and only ever shown alongside a struck-through RRP next to a live offer price — a regular, non-offer price never carries this copy.</p>
+            <p style="font-size:12px;color:var(--text2);margin:0 0 14px;">Preview: <span id="sPricingPreview"></span></p>
+            <button class="btn btn-primary btn-sm" id="pricingSaveBtn" onclick="savePricingDisplay()" disabled>Save Changes</button>
+          </div>
+
           <div class="section-divider">Prototype Only <span class="opt-tag">Not part of the live product</span></div>
           <p style="font-size:12px;color:var(--text2);line-height:1.5;margin:-6px 0 14px;">The sections below exist only to support this demo prototype — a real Personalisation Hub account wouldn't have them.</p>
 
@@ -1833,6 +1858,45 @@ function saveSettingsData(s) {
   _settings = s;
   setDoc(doc(db, MB, 'settings'), s)
     .catch(err => toast('Failed to save settings', 'error'));
+}
+
+// ===== PRICING DISPLAY (account-wide RRP/offer presentation) =====
+// Governs the one thing every board, Retail Admin and the ordering screen
+// need to agree on: how a struck-through RRP presents next to a live
+// offer's price. Deliberately separate from Menu Board Badge Templates'
+// Offer Badge entry — that's the badge/note's own colours and shape,
+// this is the price *line* itself, which isn't a badge at all.
+function _defaultPricingDisplay() {
+  return { strikethrough: true, rrpPrefix: '', rrpSuffix: '' };
+}
+function _renderPricingPreview() {
+  const on     = document.getElementById('sPricingStrikethrough')?.checked;
+  const prefix = (document.getElementById('sPricingRrpPrefix')?.value || '').trim();
+  const suffix = (document.getElementById('sPricingRrpSuffix')?.value || '').trim();
+  const rrpHtml = on
+    ? '<span style="text-decoration:line-through;opacity:.6;">£12.99</span>'
+    : '£12.99';
+  const parts = [prefix, rrpHtml, suffix, '£9.99'].filter(p => p !== '');
+  const el = document.getElementById('sPricingPreview');
+  if (el) el.innerHTML = parts.map(p => p === rrpHtml || p === '£9.99' ? p : escHtml(p)).join(' ');
+}
+function _loadPricingDisplayUI() {
+  const p = _settings.pricingDisplay || _defaultPricingDisplay();
+  const stEl = document.getElementById('sPricingStrikethrough');
+  const preEl = document.getElementById('sPricingRrpPrefix');
+  const sufEl = document.getElementById('sPricingRrpSuffix');
+  if (stEl)  stEl.checked = p.strikethrough !== false;
+  if (preEl) preEl.value  = p.rrpPrefix || '';
+  if (sufEl) sufEl.value  = p.rrpSuffix || '';
+  _renderPricingPreview();
+}
+function savePricingDisplay() {
+  const pricingDisplay = {
+    strikethrough: !!document.getElementById('sPricingStrikethrough')?.checked,
+    rrpPrefix: (document.getElementById('sPricingRrpPrefix')?.value || '').trim(),
+    rrpSuffix: (document.getElementById('sPricingRrpSuffix')?.value || '').trim(),
+  };
+  saveSettingsData({ ..._settings, pricingDisplay });
 }
 
 // ===== PERSONALISATION HUB API — ENCRYPTION HELPERS =====
@@ -3398,14 +3462,33 @@ function initGrids() {
             const priceRow = document.createElement('div');
             priceRow.style.cssText = 'display:flex;align-items:center;gap:6px;';
             if (isDiscounted) {
+              // Settings → Pricing governs the struck-through-RRP-next-to-
+              // offer-price presentation account-wide — same source of
+              // truth the customer-facing board reads (menu-board.html's
+              // priceHtml()).
+              const pd = _settings.pricingDisplay || _defaultPricingDisplay();
               priceRow.title = _offerTooltip(currency, rrp, offerNum, item.offerFrom, item.offerUntil, item.offerRecurrence);
+              if (pd.rrpPrefix) {
+                const pre = document.createElement('span');
+                pre.style.cssText = 'font-size:11px;color:var(--text2);';
+                pre.textContent = pd.rrpPrefix;
+                priceRow.appendChild(pre);
+              }
               const was = document.createElement('span');
-              was.style.cssText = 'text-decoration:line-through;color:var(--text2);font-weight:400;font-size:11px;';
+              was.style.cssText = pd.strikethrough !== false
+                ? 'text-decoration:line-through;color:var(--text2);font-weight:400;font-size:11px;'
+                : 'color:var(--text2);font-weight:400;font-size:11px;';
               was.textContent = currency + rrp.toFixed(2);
+              priceRow.appendChild(was);
+              if (pd.rrpSuffix) {
+                const suf = document.createElement('span');
+                suf.style.cssText = 'font-size:11px;color:var(--text2);';
+                suf.textContent = pd.rrpSuffix;
+                priceRow.appendChild(suf);
+              }
               const nowSpan = document.createElement('span');
               nowSpan.style.cssText = 'font-weight:700;color:var(--primary);';
               nowSpan.textContent = currency + offerNum.toFixed(2);
-              priceRow.appendChild(was);
               priceRow.appendChild(nowSpan);
             } else {
               const span = document.createElement('span');
@@ -4150,7 +4233,7 @@ function _makeSaveBtn(btnId) {
   };
 }
 // Initialised once DOM is ready (at end of script)
-let _brandSave, _tplSave, _stockApiSave, _phApiSave, _btSave, _mtSave, _aiProvidersSave;
+let _brandSave, _tplSave, _stockApiSave, _phApiSave, _btSave, _mtSave, _aiProvidersSave, _pricingSave;
 
 function openAddBrandModal() {
   document.getElementById('brandModalTitle').textContent = 'Add Brand / Supplier';
@@ -6122,10 +6205,13 @@ onSnapshot(doc(db, MB, 'settings'), snap => {
   // AI Integrations
   _aiProviders = _settings.aiProviders || {};
   _loadAiProvidersUI();
+  // Pricing display
+  _loadPricingDisplayUI();
   // Reset dirty state for settings save buttons
   if (_stockApiSave)    _stockApiSave.reset();
   if (_phApiSave)       _phApiSave.reset();
   if (_aiProvidersSave) _aiProvidersSave.reset();
+  if (_pricingSave)     _pricingSave.reset();
 });
 
 onSnapshot(collection(db, STOCK_COLL), snapshot => {
@@ -6150,6 +6236,7 @@ _phApiSave    = _makeSaveBtn('phApiSaveBtn');
 _btSave       = _makeSaveBtn('btSaveBtn');
 _mtSave       = _makeSaveBtn('mtSaveBtn');
 _aiProvidersSave = _makeSaveBtn('aiProvidersSaveBtn');
+_pricingSave  = _makeSaveBtn('pricingSaveBtn');
 
 // Event delegation: any input/change inside the form containers marks the button dirty
 document.getElementById('brandPane-settings')
@@ -6167,6 +6254,10 @@ document.getElementById('phEpList')
   .addEventListener('input',  () => _phApiSave.markDirty());
 document.getElementById('aiProvidersSection')
   .addEventListener('input',  () => _aiProvidersSave.markDirty());
+document.getElementById('settingsSection-pricing')
+  .addEventListener('input',  () => { _pricingSave.markDirty(); _renderPricingPreview(); });
+document.getElementById('settingsSection-pricing')
+  .addEventListener('change', () => { _pricingSave.markDirty(); _renderPricingPreview(); });
 
 // Close the template type dropdown when clicking outside it
 document.addEventListener('click', (e) => {
@@ -6180,6 +6271,7 @@ document.addEventListener('click', (e) => {
 // Expose async functions to global scope so HTML onclick attributes can call them
 window.saveStockApiKey       = saveStockApiKey;
 window.savePhApi        = savePhApi;
+window.savePricingDisplay = savePricingDisplay;
 window.addPhEndpoint    = addPhEndpoint;
 window.removePhEndpoint = removePhEndpoint;
 window.testPhEndpoint   = testPhEndpoint;

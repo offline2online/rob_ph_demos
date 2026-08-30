@@ -262,6 +262,25 @@ button { cursor: pointer; border: none; background: none; font-family: inherit; 
   font-family: 'Oswald', sans-serif;
   font-size: 18px; font-weight: 600; color: var(--green-dark);
 }
+/* Struck-through RRP shown ahead of a live offer price — same convention
+   as menu-board.html's own .price-was/.price-was-strike/.price-rrp-copy
+   (Settings → Pricing governs whether the strike shows and any copy
+   before/after the RRP), sized off the parent price element's own
+   font-size so it scales wherever it's used (grid card, item modal). */
+.price-was {
+  opacity: 0.55;
+  font-weight: 500;
+  font-size: 0.6em;
+  margin-right: 0.3em;
+}
+.price-was.price-was-strike {
+  text-decoration: line-through;
+}
+.price-rrp-copy {
+  opacity: 0.55;
+  font-weight: 500;
+  font-size: 0.6em;
+}
 .item-card .add-icon {
   padding: 0 12px;
   height: 32px;
@@ -1240,6 +1259,137 @@ function cur(n) {
 function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 function isOos(sku) { return !!(STORE_CODE && _stock[sku] && _stock[sku].outOfStock); }
 
+// ── OFFER PRICING ─────────────────────────────────────────────────────────
+// Recurring day-part schedules for offers — duplicated from
+// menu-board.html/product-app's lib/recurrence.js (kept in sync by hand
+// rather than shared as a module, same convention as every other
+// cross-file helper in this app). Only what this file needs: whether an
+// offer's window, including any recurring day-part pattern, is open now.
+function _recurWeekday(d) { return ['SUN','MON','TUE','WED','THU','FRI','SAT'][d.getDay()]; }
+function _recurStartOfDay(d) { const r = new Date(d); r.setHours(0,0,0,0); return r; }
+function _recurEndOfDay(d) { const r = new Date(d); r.setHours(23,59,59,999); return r; }
+function _recurAddDays(d, n) { const r = new Date(d); r.setDate(r.getDate()+n); return r; }
+function _recurNthWeekdayOfMonth(d) { return Math.ceil(d.getDate()/7); }
+function _recurMatchesCadence(rule, startDate, testDate) {
+  const start = _recurStartOfDay(startDate), test = _recurStartOfDay(testDate);
+  if (test < start) return false;
+  const interval = Math.max(1, Number(rule.interval) || 1);
+  if (rule.unit === 'day') {
+    return Math.round((test - start) / 86400000) % interval === 0;
+  }
+  if (rule.unit === 'week') {
+    const days = (rule.byDay && rule.byDay.length) ? rule.byDay : [_recurWeekday(start)];
+    if (!days.includes(_recurWeekday(test))) return false;
+    const startSunday = _recurAddDays(start, -start.getDay());
+    const testSunday = _recurAddDays(test, -test.getDay());
+    return Math.round((testSunday - startSunday) / (7 * 86400000)) % interval === 0;
+  }
+  if (rule.unit === 'month') {
+    if (rule.monthlyMode === 'dayOfMonth') {
+      if (test.getDate() !== start.getDate()) return false;
+    } else {
+      if (test.getDay() !== start.getDay()) return false;
+      if (_recurNthWeekdayOfMonth(test) !== _recurNthWeekdayOfMonth(start)) return false;
+    }
+    const diffMonths = (test.getFullYear() - start.getFullYear()) * 12 + (test.getMonth() - start.getMonth());
+    return diffMonths >= 0 && diffMonths % interval === 0;
+  }
+  if (rule.unit === 'year') {
+    if (test.getMonth() !== start.getMonth() || test.getDate() !== start.getDate()) return false;
+    const diffYears = test.getFullYear() - start.getFullYear();
+    return diffYears >= 0 && diffYears % interval === 0;
+  }
+  return false;
+}
+function _recurOccurrenceIndex(rule, startDate, testDate) {
+  const start = _recurStartOfDay(startDate), test = _recurStartOfDay(testDate);
+  const cap = _recurAddDays(start, 3660);
+  let count = 0, cursor = start;
+  while (cursor <= test && cursor <= cap) {
+    if (_recurMatchesCadence(rule, start, cursor)) {
+      count += 1;
+      if (cursor.getTime() === test.getTime()) return count;
+    }
+    cursor = _recurAddDays(cursor, 1);
+  }
+  return count;
+}
+function _recurOccursOnDate(rule, startDate, testDate) {
+  if (!startDate) return false;
+  if (!rule || rule.freq === 'none') return _recurStartOfDay(startDate).getTime() === _recurStartOfDay(testDate).getTime();
+  if (rule.ends && rule.ends.type === 'on' && rule.ends.date) {
+    if (_recurStartOfDay(testDate) > _recurEndOfDay(new Date(rule.ends.date))) return false;
+  }
+  if (!_recurMatchesCadence(rule, startDate, testDate)) return false;
+  if (rule.ends && rule.ends.type === 'after' && rule.ends.count) {
+    if (_recurOccurrenceIndex(rule, startDate, testDate) > Number(rule.ends.count)) return false;
+  }
+  return true;
+}
+// Combines the recurring date pattern with the daily time-of-day window
+// offerFrom/offerUntil define; offerUntil earlier in the day than
+// offerFrom means the window crosses midnight.
+function _isOfferWindowLiveNow(offerFrom, offerUntil, recurrence, now) {
+  now = now || new Date();
+  if (!offerFrom) return true;
+  const from = new Date(offerFrom);
+  const until = offerUntil ? new Date(offerUntil) : null;
+  if (!recurrence || recurrence.freq === 'none') {
+    if (from > now) return false;
+    if (until && until < now) return false;
+    return true;
+  }
+  if (from > now) return false;
+  const fromMinutes = from.getHours() * 60 + from.getMinutes();
+  const untilMinutes = until ? (until.getHours() * 60 + until.getMinutes()) : 24 * 60;
+  const crossesMidnight = !!until && untilMinutes <= fromMinutes;
+  const nowMinutes = now.getHours() * 60 + now.getMinutes();
+  if (_recurOccursOnDate(recurrence, from, now)) {
+    if (!crossesMidnight) { if (nowMinutes >= fromMinutes && nowMinutes < untilMinutes) return true; }
+    else if (nowMinutes >= fromMinutes) return true;
+  }
+  if (crossesMidnight && nowMinutes < untilMinutes && _recurOccursOnDate(recurrence, from, _recurAddDays(now, -1))) return true;
+  return false;
+}
+// This page doesn't do full multi-offer, store-targeted resolution the way
+// menu-board.html's _resolveItemOffersForStore does — that needs the same
+// live campaign-poll infrastructure the board has. It reads the same flat
+// offerPrice/offerFrom/offerUntil/offerRecurrence fields every other
+// non-multi-offer-aware surface already relies on (see migration.js's
+// pickDefaultOffer, which keeps these in sync with item.offers[] on save).
+function isOfferLive(item) {
+  const offerNum = parseFloat(item.offerPrice);
+  if (!(offerNum > 0)) return false;
+  return _isOfferWindowLiveNow(item.offerFrom, item.offerUntil, item.offerRecurrence);
+}
+// An offer priced exactly at RRP has nothing to discount — matches
+// menu-board.html's isOfferPriceDiscounted exactly.
+function isOfferPriceDiscounted(item) {
+  if (!isOfferLive(item)) return false;
+  return parseFloat(item.offerPrice).toFixed(2) !== parseFloat(item.price || 0).toFixed(2);
+}
+// The price actually charged — RRP unless a live, genuinely-discounted
+// offer applies, in which case it's the offer price. Used everywhere this
+// page turns a price into money owed (the quick-add bag row, the item
+// modal's running total, Add to Bag) — previously this whole file only
+// ever charged item.price, so a live offer never actually applied to what
+// a customer paid here, only what the board displayed to them.
+function effectivePrice(item) {
+  return isOfferPriceDiscounted(item) ? parseFloat(item.offerPrice) : parseFloat(item.price || 0);
+}
+// Settings → Pricing (hq-admin.html) governs the struck-through-RRP-next-
+// to-offer-price presentation account-wide — same source of truth
+// menu-board.html's priceHtml() reads, so a live offer presents
+// identically here and on the board.
+function priceHtml(item) {
+  if (!isOfferPriceDiscounted(item)) return cur(item.price);
+  const pd = _settings.pricingDisplay || { strikethrough: true, rrpPrefix: '', rrpSuffix: '' };
+  const rrpClass = pd.strikethrough === false ? 'price-was' : 'price-was price-was-strike';
+  const prefix = pd.rrpPrefix ? `<span class="price-rrp-copy">${esc(pd.rrpPrefix)} </span>` : '';
+  const suffix = pd.rrpSuffix ? `<span class="price-rrp-copy"> ${esc(pd.rrpSuffix)}</span>` : '';
+  return `${prefix}<span class="${rrpClass}">${cur(item.price)}</span>${suffix}${cur(item.offerPrice)}`;
+}
+
 // ── BADGE TEMPLATES ───────────────────────────────────────────────────────
 // Same fixed 4-type system as menu-board.html/hq-admin.html (Settings →
 // Menu Board Badge Templates) — duplicated here per this repo's convention
@@ -1592,7 +1742,7 @@ function renderItemsGrid() {
         <div class="card-cat">${esc(item.category)}</div>
         <div class="card-name">${esc(item.name)}</div>
         <div class="card-footer">
-          <div class="card-price">${cur(item.price)}</div>
+          <div class="card-price">${priceHtml(item)}</div>
           <button class="add-icon" data-sku="${esc(item.sku)}" aria-label="Add ${esc(item.name)} to bag">+ADD</button>
         </div>
       </div>
@@ -1625,7 +1775,7 @@ function renderAll() {
 
 function computeModalTotal() {
   if (!_modalItem) return 0;
-  let price = _modalItem.price;
+  let price = effectivePrice(_modalItem);
   const c = _modalItem.customization || {};
   if (_modalSize && c.sizes?.length) {
     const s = c.sizes.find(s => s.id === _modalSize);
@@ -1673,7 +1823,7 @@ function openModal(item) {
 
   document.getElementById('modalName').textContent       = item.name;
   document.getElementById('modalDesc').textContent       = item.description || '';
-  document.getElementById('modalBasePrice').textContent  = cur(item.price);
+  document.getElementById('modalBasePrice').innerHTML    = priceHtml(item);
   document.getElementById('qtyVal').textContent          = '1';
 
   // Sizes
@@ -1902,6 +2052,7 @@ function addItemDirectly(item) {
     existing.qty++;
     existing.lineTotal = existing.unitPrice * existing.qty;
   } else {
+    const price = effectivePrice(item);
     _bag.push({
       uid:                Date.now() + Math.random(),
       sku:                item.sku,
@@ -1912,8 +2063,8 @@ function addItemDirectly(item) {
       removedIngredients: [],
       addedIngredients:   [],
       qty:                1,
-      unitPrice:          item.price,
-      lineTotal:          item.price
+      unitPrice:          price,
+      lineTotal:          price
     });
   }
   renderBagPanel();
@@ -1932,7 +2083,7 @@ function updateBagBadge() {
 function addToBag() {
   if (!_modalItem) return;
   const c    = _modalItem.customization || {};
-  let price  = _modalItem.price;
+  let price  = effectivePrice(_modalItem);
 
   const sizeObj = c.sizes?.find(s => s.id === _modalSize);
   const milkObj = c.milkOptions?.find(m => m.id === _modalMilk);
