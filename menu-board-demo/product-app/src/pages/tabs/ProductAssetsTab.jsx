@@ -411,6 +411,18 @@ function readAndCompress(file, budgetBytes = COMPRESS_THRESHOLD_BYTES) {
   });
 }
 
+// Mirrors describeTargeting's job for the other half of "why isn't this
+// the default" — used in both the Tile badge tooltip and the toolbar's
+// Scheduled indicator below.
+function describeSchedule(img) {
+  const from = img.scheduleFrom ? dayjs(img.scheduleFrom).format('D MMM YYYY, HH:mm') : null;
+  const until = img.scheduleUntil ? dayjs(img.scheduleUntil).format('D MMM YYYY, HH:mm') : null;
+  if (from && until) return `${from} until ${until}`;
+  if (from) return `From ${from}`;
+  if (until) return `Until ${until}`;
+  return '';
+}
+
 function Tile({ img, selected, onClick }) {
   const state = img.rightsOn ? licenceState(img.rights?.expiry) : 'ok';
   const expired = state === 'expired';
@@ -450,6 +462,17 @@ function Tile({ img, selected, onClick }) {
               style={{ width: 20, height: 20, borderRadius: 4, background: 'rgba(232,253,255,.97)', border: '1px solid #87d9ec', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#169bc2' }}
             >
               <MaterialIcon name="my_location" style={{ fontSize: 12 }} />
+            </span>
+          ) : (img.scheduleFrom || img.scheduleUntil) ? (
+            // Same reasoning as the targeting pin above — a scheduled asset
+            // overrides the default automatically during its window, so it
+            // can never also be the default, and the star is replaced
+            // outright by the schedule icon rather than dimmed.
+            <span
+              title={`Scheduled — ${describeSchedule(img)}`}
+              style={{ width: 20, height: 20, borderRadius: 4, background: 'rgba(255,247,230,.97)', border: '1px solid #ffd591', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#ad6800' }}
+            >
+              <MaterialIcon name="schedule" style={{ fontSize: 12 }} />
             </span>
           ) : (
             <span
@@ -680,6 +703,11 @@ export default function ProductAssetsTab({ draft, baseline, patch }) {
       src,
       isDefault: false,
       targeting: [],
+      // Same reasoning as targeting: this is meant to become a deliberately
+      // conditioned variant, not an accidental clone of whichever window
+      // the original happened to carry — so it starts unscheduled too.
+      scheduleFrom: '',
+      scheduleUntil: '',
       variant: nextVariantLabel(images, current.type),
     };
     const next = [...images, copy];
@@ -927,6 +955,12 @@ export default function ProductAssetsTab({ draft, baseline, patch }) {
   // "targeted" are mutually exclusive roles, so Default is disabled the
   // moment this asset carries any targeting rule at all.
   const isTargeted = !!(current?.targeting && current.targeting.length);
+  // Same mutual-exclusivity rule as targeting, just on the schedule fields
+  // instead of the targeting rules (menu-board.html's _assetInSchedule
+  // gates the exact same _pickTargetedAssetIndex/_defaultImageIndex/
+  // _defaultVideoIndex chain) — a scheduled asset overrides the default
+  // during its window, so it can't also be the default.
+  const isScheduled = !!(current?.scheduleFrom || current?.scheduleUntil);
   // Background removal and Enhance are photo-editing operations — neither
   // has any meaning for a video file, and the before/after slider below
   // is built entirely around comparing two still frames.
@@ -1057,19 +1091,34 @@ export default function ProductAssetsTab({ draft, baseline, patch }) {
                 tooltipDesc={isVideo ? 'Already a video.' : 'Calls the configured Video provider to animate this photo into a short hero clip, using a prompt you control.'}
               />
               <div style={{ width: 1, background: '#f0f0f0', margin: '4px 8px' }} />
-              {isTargeted ? (
-                // A targeted asset can never also be default — it already
-                // overrides the default whenever its rule matches — so the
-                // Default toggle is replaced outright by a clearly-active
-                // status indicator here, not just disabled next to a star
-                // that no longer means anything for this asset.
-                <IconAction
-                  icon={<MaterialIcon name="my_location" />}
-                  caption="Targeted"
-                  active
-                  tooltipTitle="This asset is targeted"
-                  tooltipDesc="It overrides the default automatically whenever its targeting rules (below) match — it can't also be set as the default."
-                />
+              {(isTargeted || isScheduled) ? (
+                // A targeted or scheduled asset can never also be default —
+                // it already overrides the default whenever its rule
+                // matches (or its window is active) — so the Default toggle
+                // is replaced outright by a clearly-active status indicator
+                // here, not just disabled next to a star that no longer
+                // means anything for this asset. Both can show at once —
+                // an asset can be targeted AND scheduled simultaneously.
+                <>
+                  {isTargeted && (
+                    <IconAction
+                      icon={<MaterialIcon name="my_location" />}
+                      caption="Targeted"
+                      active
+                      tooltipTitle="This asset is targeted"
+                      tooltipDesc="It overrides the default automatically whenever its targeting rules (below) match — it can't also be set as the default."
+                    />
+                  )}
+                  {isScheduled && (
+                    <IconAction
+                      icon={<MaterialIcon name="schedule" />}
+                      caption="Scheduled"
+                      active
+                      tooltipTitle="This asset is scheduled"
+                      tooltipDesc={`It overrides the default automatically during its scheduled window (${describeSchedule(current)}) — it can't also be set as the default.`}
+                    />
+                  )}
+                </>
               ) : (
                 <IconAction
                   icon={<MaterialIcon name={current.isDefault ? 'star' : 'star_border'} />}
@@ -1129,7 +1178,7 @@ export default function ProductAssetsTab({ draft, baseline, patch }) {
                 <div style={{ display: 'flex', gap: 8, marginTop: 14, paddingTop: 14, borderTop: '1px solid #f0f0f0' }}>
                   <IconAction icon={<MaterialIcon name="delete" />} caption="Delete" row danger tooltipTitle="Delete" tooltipDesc="Removes this asset from the product." onClick={deleteAsset} />
                   <IconAction icon={<MaterialIcon name="cached" />} caption="Replace" row tooltipTitle="Replace" tooltipDesc="Swaps the underlying file; variant label, tags and settings are kept." onClick={openReplace} />
-                  <IconAction icon={<MaterialIcon name="content_copy" />} caption="Duplicate" row tooltipTitle="Duplicate" tooltipDesc="Adds a copy of this asset as a new tile — its own id and variant label, never default or targeted." onClick={duplicateAsset} />
+                  <IconAction icon={<MaterialIcon name="content_copy" />} caption="Duplicate" row tooltipTitle="Duplicate" tooltipDesc="Adds a copy of this asset as a new tile — its own id and variant label, never default, targeted, or scheduled." onClick={duplicateAsset} />
                   {/* Hidden once the panel below is open — verified live
                       against demo.personalisationhub.com's own Storyboard &
                       Copy "Request changes": the trigger disappears in favour
@@ -1299,47 +1348,62 @@ export default function ProductAssetsTab({ draft, baseline, patch }) {
               <div style={{ fontSize: 11, color: 'rgba(0,0,0,.45)', letterSpacing: '0.08em', fontWeight: 500, marginBottom: 8, textTransform: 'uppercase' }}>
                 Asset Scheduling &amp; Targeting Rules
               </div>
-              <p style={{ fontSize: 12, color: 'rgba(0,0,0,.45)', margin: '0 0 14px' }}>
-                These apply only to &ldquo;{current.name.trim() || current.variant}&rdquo; — not to any other image or video on this product.
-              </p>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px 16px', marginBottom: 20 }}>
-                <div>
-                  <label style={{ fontSize: 12, color: 'rgba(0,0,0,.65)', display: 'block', marginBottom: 4 }}>Schedule from</label>
-                  <ClearableDate
-                    showTime
-                    value={current.scheduleFrom}
-                    onChange={(v) => updateSelected({ scheduleFrom: v, scheduleUntil: v ? shiftEndOneHour(v) : current.scheduleUntil })}
-                    blankHint={{ blank: 'Available immediately.', set: 'Set — see date above.' }}
+              {current.isDefault ? (
+                // The default is always the fallback Personalisation Hub
+                // falls back to once every targeted and scheduled asset has
+                // been ruled out (menu-board.html's _defaultImageIndex /
+                // _defaultVideoIndex) — it has to stay unconditional for
+                // that to mean anything, so it can't carry its own schedule
+                // or targeting rules. Duplicate (below) to get a copy that
+                // isn't default and can have either set on it.
+                <p style={{ fontSize: 12, color: 'rgba(0,0,0,.45)', margin: 0 }}>
+                  This is the default {isVideo ? 'video' : 'image'} — the fallback shown whenever no other asset&rsquo;s schedule or targeting rules apply. It can&rsquo;t carry its own schedule or targeting; use Duplicate above to create a scheduled or targeted variant instead.
+                </p>
+              ) : (
+                <>
+                  <p style={{ fontSize: 12, color: 'rgba(0,0,0,.45)', margin: '0 0 14px' }}>
+                    These apply only to &ldquo;{current.name.trim() || current.variant}&rdquo; — not to any other image or video on this product.
+                  </p>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px 16px', marginBottom: 20 }}>
+                    <div>
+                      <label style={{ fontSize: 12, color: 'rgba(0,0,0,.65)', display: 'block', marginBottom: 4 }}>Schedule from</label>
+                      <ClearableDate
+                        showTime
+                        value={current.scheduleFrom}
+                        onChange={(v) => updateSelected({ scheduleFrom: v, scheduleUntil: v ? shiftEndOneHour(v) : current.scheduleUntil })}
+                        blankHint={{ blank: 'Available immediately.', set: 'Set — see date above.' }}
+                      />
+                    </div>
+                    <div>
+                      <label style={{ fontSize: 12, color: 'rgba(0,0,0,.65)', display: 'block', marginBottom: 4 }}>Schedule until</label>
+                      <ClearableDate
+                        showTime
+                        value={current.scheduleUntil}
+                        onChange={(v) => updateSelected({ scheduleUntil: v })}
+                        blankHint={{ blank: 'Runs indefinitely.', set: 'Set — see date above.' }}
+                      />
+                    </div>
+                  </div>
+                  <TargetingBuilder
+                    groups={current.targeting || []}
+                    onChange={(groups) => {
+                      // A targeted asset can't also be the default (Default
+                      // is disabled above once targeting exists) — if rules
+                      // are added to the asset that's currently default,
+                      // clear that flag in the same update rather than
+                      // leaving the two in an inconsistent state until the
+                      // next unrelated edit touches isDefault.
+                      const next = images.map((img, i) => {
+                        if (i !== selected) return img;
+                        const stillDefault = groups.length > 0 ? false : img.isDefault;
+                        return { ...img, targeting: groups, isDefault: stillDefault };
+                      });
+                      patch({ images: next });
+                    }}
+                    emptyDescription="No targeting rules defined. This asset can be shown at every store, to every visitor."
                   />
-                </div>
-                <div>
-                  <label style={{ fontSize: 12, color: 'rgba(0,0,0,.65)', display: 'block', marginBottom: 4 }}>Schedule until</label>
-                  <ClearableDate
-                    showTime
-                    value={current.scheduleUntil}
-                    onChange={(v) => updateSelected({ scheduleUntil: v })}
-                    blankHint={{ blank: 'Runs indefinitely.', set: 'Set — see date above.' }}
-                  />
-                </div>
-              </div>
-              <TargetingBuilder
-                groups={current.targeting || []}
-                onChange={(groups) => {
-                  // A targeted asset can't also be the default (Default
-                  // is disabled above once targeting exists) — if rules
-                  // are added to the asset that's currently default,
-                  // clear that flag in the same update rather than
-                  // leaving the two in an inconsistent state until the
-                  // next unrelated edit touches isDefault.
-                  const next = images.map((img, i) => {
-                    if (i !== selected) return img;
-                    const stillDefault = groups.length > 0 ? false : img.isDefault;
-                    return { ...img, targeting: groups, isDefault: stillDefault };
-                  });
-                  patch({ images: next });
-                }}
-                emptyDescription="No targeting rules defined. This asset can be shown at every store, to every visitor."
-              />
+                </>
+              )}
             </div>
           </>
         )}
