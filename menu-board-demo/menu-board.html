@@ -1129,9 +1129,28 @@ function _offerConditionMatches(cond, store) {
     default:            return anyOverlap;
   }
 }
+// Works on anything carrying a Schedule from/until pair — originally just
+// a per-asset field, now (Product Assets → Asset Scheduling & Targeting
+// Rules) a field on each individual AND/OR targeting GROUP instead: an
+// asset can carry several independent rules, each with its own optional
+// time window, rather than one schedule applying uniformly to all of
+// them. Blank means no bound on that side (matches every other from/until
+// pair in this app — an offer's schedule, a product's Featured window).
+function _inSchedule(obj) {
+  if (!obj) return true;
+  const now = Date.now();
+  if (obj.scheduleFrom && now < new Date(obj.scheduleFrom).getTime()) return false;
+  if (obj.scheduleUntil && now > new Date(obj.scheduleUntil).getTime()) return false;
+  return true;
+}
 function _offerTargetingMatches(targeting, store) {
   if (!Array.isArray(targeting) || !targeting.length) return true;
-  return targeting.every(group => (group.conditions || []).some(c => _offerConditionMatches(c, store)));
+  // Every group must both be inside its own schedule window (if it has
+  // one) and satisfy its own conditions — any one of a group's OR'd
+  // conditions is enough, and a group with no conditions at all (Product
+  // Assets: delete a group down to just its schedule, nothing else)
+  // restricts nothing on the conditions side, only on schedule.
+  return targeting.every(group => _inSchedule(group) && ((group.conditions || []).length === 0 || group.conditions.some(c => _offerConditionMatches(c, store))));
 }
 
 // Recurring day-part schedules for offers — duplicated from
@@ -2492,42 +2511,24 @@ function _renderUnsafe() {
   // video-type assets from matching at all — every panel except the
   // Feature Hero Spotlight's own primary panel must never end up showing
   // a targeted video, only a targeted photo.
-  // An asset's own Schedule from/until (Product Assets → Asset Scheduling
-  // & Targeting Rules) restricts when it's eligible at all — independent
-  // of, and checked alongside, its targeting rule. Blank means no bound on
-  // that side (matches every other from/until pair in this app — an
-  // offer's schedule, a product's Featured window). An asset outside its
-  // own window is skipped exactly like a targeting rule that doesn't
-  // match, falling through to whatever's next (another targeted asset,
-  // then the default).
-  function _assetInSchedule(rich) {
-    if (!rich) return true;
-    const now = Date.now();
-    if (rich.scheduleFrom && now < new Date(rich.scheduleFrom).getTime()) return false;
-    if (rich.scheduleUntil && now > new Date(rich.scheduleUntil).getTime()) return false;
-    return true;
-  }
-
-  // An asset only needs ONE of the two conditions to be eligible to
-  // override the default — a schedule with no targeting rule at all is a
-  // perfectly normal "show this from date X to date Y, to everyone" asset
-  // (ProductAssetsTab.jsx's Duplicate starts a copy with neither, ready for
-  // the user to add whichever one they mean), not just a targeting rule
-  // with an extra date check bolted on. Requiring targeting.length here
-  // (as this used to) meant a schedule-only asset could never be picked at
-  // all — its own from/until was checked below via _assetInSchedule(), but
-  // there was nothing that would ever route to it in the first place.
+  // Scheduling now lives on each individual targeting GROUP (see
+  // _inSchedule/_offerTargetingMatches, top-level, above) rather than on
+  // the asset as a flat field — a schedule-only group (Product Assets:
+  // delete a group's conditions down to nothing, leaving just its
+  // schedule) is still "conditioned" in the sense that matters here: it's
+  // a real rule that can override the default, just one with no value
+  // check attached, only a time window.
   function _isConditionedAsset(r) {
-    return !!(r && ((Array.isArray(r.targeting) && r.targeting.length) || r.scheduleFrom || r.scheduleUntil));
+    return !!(r && Array.isArray(r.targeting) && r.targeting.length);
   }
 
   function _pickTargetedAssetIndex(item, allowVideo) {
     const rich = item.imagesRich;
     if (!Array.isArray(rich)) return -1;
-    // _offerTargetingMatches already returns true for an empty/missing
-    // targeting array, so a schedule-only asset (no targeting rules) still
-    // passes this check — only its own _assetInSchedule() window gates it.
-    return rich.findIndex(r => r && _isConditionedAsset(r) && (allowVideo || r.type !== 'video') && _assetInSchedule(r) && _offerTargetingMatches(r.targeting, _storeProfile));
+    // _offerTargetingMatches itself now checks each group's own schedule
+    // window as part of matching — no separate asset-level schedule check
+    // needed here any more.
+    return rich.findIndex(r => r && _isConditionedAsset(r) && (allowVideo || r.type !== 'video') && _offerTargetingMatches(r.targeting, _storeProfile));
   }
 
   // A product can carry a default *image* and a default *video* at once
@@ -2543,8 +2544,12 @@ function _renderUnsafe() {
   function _defaultImageIndex(item) {
     const rich = item.imagesRich;
     if (!Array.isArray(rich) || !rich.length) return (item.images && item.images.length) ? 0 : -1;
-    if (rich[0] && rich[0].type !== 'video' && _assetInSchedule(rich[0])) return 0;
-    return rich.findIndex(r => r && r.type !== 'video' && _assetInSchedule(r));
+    // _inSchedule(rich[0]) is a defensive check, not an expected case: the
+    // default can no longer carry its own schedule at all (Product Assets
+    // hides that whole section for it) — this only still matters for
+    // legacy data saved before that rule existed.
+    if (rich[0] && rich[0].type !== 'video' && _inSchedule(rich[0])) return 0;
+    return rich.findIndex(r => r && r.type !== 'video' && _inSchedule(r));
   }
 
   // The default *video*, if one is set (and currently in schedule) — only
@@ -2553,7 +2558,7 @@ function _renderUnsafe() {
   function _defaultVideoIndex(item) {
     const rich = item.imagesRich;
     if (!Array.isArray(rich)) return -1;
-    return rich.findIndex(r => r && r.type === 'video' && r.isDefault && _assetInSchedule(r));
+    return rich.findIndex(r => r && r.type === 'video' && r.isDefault && _inSchedule(r));
   }
 
   function _srcAt(item, idx, preferLarge) {

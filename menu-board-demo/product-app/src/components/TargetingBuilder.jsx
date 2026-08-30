@@ -1,5 +1,6 @@
 import { Select, Button, Empty } from 'antd';
 import MaterialIcon from './MaterialIcon.jsx';
+import ClearableDate, { shiftEndOneHour } from './ClearableDate.jsx';
 import { genId } from '../data/productStore.js';
 import { getKnownTargetingValues } from '../data/registries.js';
 
@@ -121,8 +122,8 @@ function fieldsFor(category) {
 export function describeTargeting(groups) {
   if (!groups || !groups.length) return 'Applies at every store.';
   return groups
-    .map((g) =>
-      (g.conditions || [])
+    .map((g) => {
+      const condText = (g.conditions || [])
         .map((c) => {
           const category = c.category || 'store';
           const fieldLabel = fieldsFor(category).find((f) => f.value === c.field)?.label || c.field;
@@ -130,8 +131,13 @@ export function describeTargeting(groups) {
           const vals = (c.values || []).join(', ') || '—';
           return `${fieldLabel} ${opLabel} ${vals}`;
         })
-        .join(' OR ')
-    )
+        .join(' OR ');
+      // A group can now be schedule-only — no conditions at all, just a
+      // Schedule from/until (see TargetingBuilder's own per-group fields
+      // above) — condText is '' in that case, so name it explicitly rather
+      // than leaving a blank segment in the joined description.
+      return condText || 'Scheduled window (no other conditions)';
+    })
     .join(' AND ');
 }
 
@@ -156,19 +162,27 @@ export default function TargetingBuilder({
   const singleCategory = categories.length === 1 ? categories[0].value : null;
   const makeBlankCondition = () => blankCondition(singleCategory || 'store');
 
-  const addGroup = () => onChange([...groups, { id: genId('grp'), conditions: [makeBlankCondition()] }]);
+  const addGroup = () => onChange([...groups, { id: genId('grp'), conditions: [makeBlankCondition()], scheduleFrom: '', scheduleUntil: '' }]);
 
   const addCondition = (gid) =>
     onChange(groups.map((g) => (g.id === gid ? { ...g, conditions: [...g.conditions, makeBlankCondition()] } : g)));
 
-  // Removing a group's last condition removes the group itself — an AND
-  // group with zero OR conditions inside it isn't a rule, it's nothing.
+  // Removing a group's last condition used to remove the group itself —
+  // an AND group with zero OR conditions and no schedule isn't a rule,
+  // it's nothing. Now that a group can carry its own Schedule from/until
+  // (see the fields rendered per group below), a group that's down to
+  // zero conditions but still has a schedule set is a real, meaningful
+  // rule on its own — "show to everyone, but only during this window" —
+  // so it's only actually removed once both are empty.
   const removeCondition = (gid, cid) =>
     onChange(
       groups
         .map((g) => (g.id === gid ? { ...g, conditions: g.conditions.filter((c) => c.id !== cid) } : g))
-        .filter((g) => g.conditions.length > 0)
+        .filter((g) => g.conditions.length > 0 || g.scheduleFrom || g.scheduleUntil)
     );
+
+  const updateGroupSchedule = (gid, fields) =>
+    onChange(groups.map((g) => (g.id === gid ? { ...g, ...fields } : g)));
 
   const updateCondition = (gid, cid, fields) =>
     onChange(
@@ -208,6 +222,31 @@ export default function TargetingBuilder({
     <div>
       {groups.map((g) => (
         <div key={g.id} style={{ background: 'rgba(0,0,0,0.06)', borderRadius: 4, padding: 12, marginBottom: 10 }}>
+          {/* Each AND group carries its own optional schedule — this whole
+              rule (its conditions, OR'd together, below) only overrides
+              the default while it's also within this window. A product can
+              carry several groups, each independently time-boxed, instead
+              of one schedule applying to every rule on the asset. */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px 10px', marginBottom: 12 }}>
+            <div>
+              <label style={{ fontSize: 11, color: 'rgba(0,0,0,.55)', display: 'block', marginBottom: 3 }}>Schedule from</label>
+              <ClearableDate
+                showTime
+                value={g.scheduleFrom}
+                onChange={(v) => updateGroupSchedule(g.id, { scheduleFrom: v, scheduleUntil: v ? shiftEndOneHour(v) : g.scheduleUntil })}
+                blankHint={{ blank: 'Active immediately.', set: 'Set — see date above.' }}
+              />
+            </div>
+            <div>
+              <label style={{ fontSize: 11, color: 'rgba(0,0,0,.55)', display: 'block', marginBottom: 3 }}>Schedule until</label>
+              <ClearableDate
+                showTime
+                value={g.scheduleUntil}
+                onChange={(v) => updateGroupSchedule(g.id, { scheduleUntil: v })}
+                blankHint={{ blank: 'Active indefinitely.', set: 'Set — see date above.' }}
+              />
+            </div>
+          </div>
           {g.conditions.map((c, i) => (
             <div key={c.id}>
               {i > 0 && (

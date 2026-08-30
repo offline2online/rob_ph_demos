@@ -7,7 +7,7 @@ import BespokeIcon from '../../components/BespokeIcon.jsx';
 import IconAction from '../../components/IconAction.jsx';
 import BeforeAfterSlider from '../../components/BeforeAfterSlider.jsx';
 import TouchUpModal from '../../components/TouchUpModal.jsx';
-import ClearableDate, { shiftEndOneHour } from '../../components/ClearableDate.jsx';
+import ClearableDate from '../../components/ClearableDate.jsx';
 import TargetingBuilder, { describeTargeting } from '../../components/TargetingBuilder.jsx';
 import { useAiProviders, getBrandById } from '../../data/registries.js';
 import { editProductImage, generateProductVideo, isProviderConfigured } from '../../lib/aiProviders.js';
@@ -411,16 +411,24 @@ function readAndCompress(file, budgetBytes = COMPRESS_THRESHOLD_BYTES) {
   });
 }
 
-// Mirrors describeTargeting's job for the other half of "why isn't this
-// the default" — used in both the Tile badge tooltip and the toolbar's
-// Scheduled indicator below.
-function describeSchedule(img) {
-  const from = img.scheduleFrom ? dayjs(img.scheduleFrom).format('D MMM YYYY, HH:mm') : null;
-  const until = img.scheduleUntil ? dayjs(img.scheduleUntil).format('D MMM YYYY, HH:mm') : null;
-  if (from && until) return `${from} until ${until}`;
-  if (from) return `From ${from}`;
-  if (until) return `Until ${until}`;
-  return '';
+// Scheduling now lives on each individual targeting group (TargetingBuilder's
+// own Schedule from/until per AND block) rather than on the asset as a flat
+// field, so an asset can carry several independently time-boxed rules
+// instead of one schedule applying to all of them. `anyGroupScheduled` is
+// the asset-level "does this need a Scheduled badge at all" check used by
+// both the Tile badge and the toolbar's Scheduled indicator below; the
+// per-group detail itself is only ever shown in the targeting rules
+// section, not summarised here (multiple groups could each have a
+// different window, too much to compress into one compact tooltip).
+function anyGroupScheduled(targeting) {
+  return (targeting || []).some((g) => g.scheduleFrom || g.scheduleUntil);
+}
+// A group can now be schedule-only — present in `targeting` (so the asset
+// is still "conditioned", can't be default) but with zero conditions of
+// its own. That shouldn't count as "targeted" for badge purposes; only a
+// group that actually carries at least one value condition does.
+function hasRealTargeting(targeting) {
+  return (targeting || []).some((g) => (g.conditions || []).length > 0);
 }
 
 function Tile({ img, selected, onClick }) {
@@ -451,17 +459,18 @@ function Tile({ img, selected, onClick }) {
           {img.variant}
         </span>
         <div style={{ position: 'absolute', top: 4, right: 4, display: 'flex', gap: 3 }}>
-          {(img.targeting || []).length || img.scheduleFrom || img.scheduleUntil ? (
-            // Targeted and scheduled are independent conditions — an asset
-            // can carry either or both at once (both together means it only
-            // overrides the default when BOTH currently hold), so both
-            // badges show side by side here, same as the toolbar's own
-            // Targeted/Scheduled indicators below. Either one replaces the
-            // default star outright rather than dimming it: a conditioned
-            // asset can never also be the default (see the Default button
-            // in the toolbar), so the star wouldn't mean anything here.
+          {(img.targeting || []).length ? (
+            // Targeted and scheduled are independent — a group can carry
+            // either or both at once (both together means that group only
+            // matches when BOTH currently hold), so both badges show side
+            // by side here, same as the toolbar's own Targeted/Scheduled
+            // indicators below. Either replaces the default star outright
+            // rather than dimming it: a conditioned asset (real conditions,
+            // a schedule, or both) can never also be the default (see the
+            // Default button in the toolbar), so the star wouldn't mean
+            // anything here.
             <>
-              {(img.targeting || []).length ? (
+              {hasRealTargeting(img.targeting) ? (
                 <span
                   title={`Targeted — ${describeTargeting(img.targeting)}`}
                   style={{ width: 20, height: 20, borderRadius: 4, background: 'rgba(232,253,255,.97)', border: '1px solid #87d9ec', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#169bc2' }}
@@ -469,9 +478,9 @@ function Tile({ img, selected, onClick }) {
                   <MaterialIcon name="my_location" style={{ fontSize: 12 }} />
                 </span>
               ) : null}
-              {(img.scheduleFrom || img.scheduleUntil) ? (
+              {anyGroupScheduled(img.targeting) ? (
                 <span
-                  title={`Scheduled — ${describeSchedule(img)}`}
+                  title="Scheduled — one or more of this asset's targeting rules has its own window (see below)"
                   style={{ width: 20, height: 20, borderRadius: 4, background: 'rgba(255,247,230,.97)', border: '1px solid #ffd591', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#ad6800' }}
                 >
                   <MaterialIcon name="schedule" style={{ fontSize: 12 }} />
@@ -666,8 +675,6 @@ export default function ProductAssetsTab({ draft, baseline, patch }) {
           rightsOn: false,
           rights: {},
           targeting: [],
-          scheduleFrom: '',
-          scheduleUntil: '',
           variant: nextVariantLabel(next, type),
         });
       });
@@ -754,12 +761,12 @@ export default function ProductAssetsTab({ draft, baseline, patch }) {
       id: 'img-' + Date.now() + Math.random().toString(36).slice(2, 7),
       src,
       isDefault: false,
+      // Clearing targeting (rather than carrying it over) also clears any
+      // per-group schedule the original had, since scheduling now lives
+      // inside each targeting group — this is meant to become a
+      // deliberately conditioned variant, not an accidental clone of
+      // whichever rule(s)/window(s) the original happened to carry.
       targeting: [],
-      // Same reasoning as targeting: this is meant to become a deliberately
-      // conditioned variant, not an accidental clone of whichever window
-      // the original happened to carry — so it starts unscheduled too.
-      scheduleFrom: '',
-      scheduleUntil: '',
       variant: nextVariantLabel(images, current.type),
     };
     const next = [...images, copy];
@@ -992,8 +999,6 @@ export default function ProductAssetsTab({ draft, baseline, patch }) {
         rightsOn: false,
         rights: {},
         targeting: [],
-        scheduleFrom: '',
-        scheduleUntil: '',
         variant: nextVariantLabel(next, 'video'),
         generatedFrom: current.id,
         generationPrompt: videoPrompt.trim(),
@@ -1016,13 +1021,14 @@ export default function ProductAssetsTab({ draft, baseline, patch }) {
   // matches (menu-board.html's _pickTargetedAssetIndex) — "default" and
   // "targeted" are mutually exclusive roles, so Default is disabled the
   // moment this asset carries any targeting rule at all.
-  const isTargeted = !!(current?.targeting && current.targeting.length);
-  // Same mutual-exclusivity rule as targeting, just on the schedule fields
-  // instead of the targeting rules (menu-board.html's _assetInSchedule
-  // gates the exact same _pickTargetedAssetIndex/_defaultImageIndex/
-  // _defaultVideoIndex chain) — a scheduled asset overrides the default
-  // during its window, so it can't also be the default.
-  const isScheduled = !!(current?.scheduleFrom || current?.scheduleUntil);
+  const isTargeted = hasRealTargeting(current?.targeting);
+  // Same mutual-exclusivity rule as targeting, just on schedule instead —
+  // scheduling now lives on each targeting group rather than on the asset
+  // itself (menu-board.html's _inSchedule/_offerTargetingMatches gate the
+  // same _pickTargetedAssetIndex/_defaultImageIndex/_defaultVideoIndex
+  // chain), so "scheduled" here means at least one of this asset's groups
+  // carries its own window.
+  const isScheduled = anyGroupScheduled(current?.targeting);
   // Background removal and Enhance are photo-editing operations — neither
   // has any meaning for a video file, and the before/after slider below
   // is built entirely around comparing two still frames.
@@ -1177,7 +1183,7 @@ export default function ProductAssetsTab({ draft, baseline, patch }) {
                       caption="Scheduled"
                       active
                       tooltipTitle="This asset is scheduled"
-                      tooltipDesc={`It overrides the default automatically during its scheduled window (${describeSchedule(current)}) — it can't also be set as the default.`}
+                      tooltipDesc="It overrides the default automatically during its own targeting rule's window (see below — each rule can carry its own schedule) — it can't also be set as the default."
                     />
                   )}
                 </>
@@ -1424,28 +1430,8 @@ export default function ProductAssetsTab({ draft, baseline, patch }) {
               ) : (
                 <>
                   <p style={{ fontSize: 12, color: 'rgba(0,0,0,.45)', margin: '0 0 14px' }}>
-                    These apply only to &ldquo;{current.name.trim() || current.variant}&rdquo; — not to any other image or video on this product.
+                    These apply only to &ldquo;{current.name.trim() || current.variant}&rdquo; — not to any other image or video on this product. Each rule below (an &ldquo;AND&rdquo; block) can carry its own Schedule from/until, so different rules can be time-boxed independently instead of sharing one schedule.
                   </p>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px 16px', marginBottom: 20 }}>
-                    <div>
-                      <label style={{ fontSize: 12, color: 'rgba(0,0,0,.65)', display: 'block', marginBottom: 4 }}>Schedule from</label>
-                      <ClearableDate
-                        showTime
-                        value={current.scheduleFrom}
-                        onChange={(v) => updateSelected({ scheduleFrom: v, scheduleUntil: v ? shiftEndOneHour(v) : current.scheduleUntil })}
-                        blankHint={{ blank: 'Available immediately.', set: 'Set — see date above.' }}
-                      />
-                    </div>
-                    <div>
-                      <label style={{ fontSize: 12, color: 'rgba(0,0,0,.65)', display: 'block', marginBottom: 4 }}>Schedule until</label>
-                      <ClearableDate
-                        showTime
-                        value={current.scheduleUntil}
-                        onChange={(v) => updateSelected({ scheduleUntil: v })}
-                        blankHint={{ blank: 'Runs indefinitely.', set: 'Set — see date above.' }}
-                      />
-                    </div>
-                  </div>
                   <TargetingBuilder
                     groups={current.targeting || []}
                     onChange={(groups) => {
