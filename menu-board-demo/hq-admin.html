@@ -828,15 +828,6 @@
             <h3>Personalisation Hub API</h3>
             <p class="settings-desc">Configure one or more API environments (e.g. dev, staging, production). The menu board probes each in order and uses the first that responds successfully. Tokens are stored AES-256-GCM encrypted in Firestore.</p>
 
-            <div class="form-group" style="max-width:320px;margin-bottom:18px;">
-              <label>Campaign Mode</label>
-              <select id="phCampaignMode">
-                <option value="override">Override &mdash; show only campaign SKUs</option>
-                <option value="filter">Filter &mdash; highlight campaign SKUs within menu</option>
-              </select>
-              <p class="form-help">Controls how the board renders when campaign SKUs are active.</p>
-            </div>
-
             <div class="ph-ep-list" id="phEpList"></div>
 
             <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:4px;">
@@ -2420,7 +2411,6 @@ function _loadTakeoutBagUI() {
 }
 
 async function savePhApi() {
-  const campaignMode = document.getElementById('phCampaignMode')?.value || 'override';
   document.getElementById('phApiStatus').textContent = '';
 
   const updated = [];
@@ -2434,7 +2424,7 @@ async function savePhApi() {
   }
   _phEndpoints = updated;
 
-  saveSettingsData({ ..._settings, phApi: { endpoints: _phEndpoints, campaignMode } });
+  saveSettingsData({ ..._settings, phApi: { endpoints: _phEndpoints } });
 
   // Clear token inputs after save (security: don't leave plain text in DOM)
   _phEndpoints.forEach((_, i) => {
@@ -6120,8 +6110,6 @@ onSnapshot(doc(db, MB, 'badgeTemplates'), snap => {
 onSnapshot(doc(db, MB, 'settings'), snap => {
   _settings = snap.exists() ? snap.data() : { brandName: 'My Brand', currency: '$', logo: '' };
   const phApi    = _settings.phApi || {};
-  const modeEl   = document.getElementById('phCampaignMode');
-  if (modeEl) modeEl.value = phApi.campaignMode || 'override';
   // Legacy: old single-token format had phApi.authToken but no phApi.endpoints
   const isLegacy = !!phApi.authToken && !phApi.endpoints;
   const legacyEl = document.getElementById('phLegacyNotice');
@@ -6174,8 +6162,6 @@ document.getElementById('tplEditorPanel')
   .addEventListener('change', () => _tplSave.markDirty());
 document.getElementById('stockApiKeyInput')
   .addEventListener('input', () => _stockApiSave.markDirty());
-document.getElementById('phCampaignMode')
-  .addEventListener('change', () => _phApiSave.markDirty());
 // PH endpoint URL/token inputs are dynamically rendered; catch via their parent container
 document.getElementById('phEpList')
   .addEventListener('input',  () => _phApiSave.markDirty());

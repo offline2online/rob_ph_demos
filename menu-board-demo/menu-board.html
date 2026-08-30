@@ -2406,7 +2406,12 @@ function _renderUnsafe() {
   // only a board with a defined brand applies personalised SKU filtering.
   let campaignFiltered = displayFiltered;
   if (_campaignSkus && _campaignSkus.length > 0 && brand !== null) {
-    const mode = effectiveCampaignMode || (_settings.phApi && _settings.phApi.campaignMode) || 'override';
+    // effectiveCampaignMode always resolves to at least 'override' (its own
+    // fallback chain, above), so there's no case where a Settings-level
+    // default would ever be consulted — Campaign Mode is only ever set on
+    // a Brand or a Board Template (see settingsSection-phApi's now-removed
+    // dropdown, which never actually had any effect for that reason).
+    const mode = effectiveCampaignMode;
     // Case-insensitive SKU set — handles mismatches between API and Firestore casing
     const skuSetLower = new Set(_campaignSkus.map(s => (s || '').trim().toLowerCase()));
     const skuMatch = i => skuSetLower.has((i.sku || '').trim().toLowerCase());
@@ -2456,7 +2461,9 @@ function _renderUnsafe() {
       : allAnyMenuType;
     featuredCandidates = displayAnyMenuType;
     if (_campaignSkus && _campaignSkus.length > 0 && brand !== null) {
-      const mode = effectiveCampaignMode || (_settings.phApi && _settings.phApi.campaignMode) || 'override';
+      // Same reasoning as the other campaignFiltered branch above —
+      // effectiveCampaignMode already always resolves to a real value.
+      const mode = effectiveCampaignMode;
       const skuSetLower = new Set(_campaignSkus.map(s => (s || '').trim().toLowerCase()));
       const skuMatch = i => skuSetLower.has((i.sku || '').trim().toLowerCase());
       if (mode === 'override') {
