@@ -957,6 +957,11 @@
                   <div class="form-group"><label>Base API URL</label><input type="text" id="aiVideoBaseUrl" placeholder="https://api.ltx.studio" style="font-family:monospace;font-size:12px;"></div>
                   <div class="form-group"><label>Model</label><input type="text" id="aiVideoModel" placeholder="ltx-2.5"></div>
                   <div class="form-group"><label>API Token</label><input type="password" id="aiVideoToken" placeholder="Paste API key or token&hellip;" autocomplete="off" spellcheck="false" style="font-family:monospace;font-size:12px;"></div>
+                  <div class="form-group" style="flex-basis:100%;">
+                    <label>Default Prompt</label>
+                    <textarea id="aiVideoDefaultPrompt" rows="2" placeholder="The product rotates slowly in a smooth, continuous 360-degree turntable spin, studio lighting unchanged." style="width:100%;resize:vertical;font-family:inherit;font-size:13px;padding:8px 10px;border:1px solid var(--border);border-radius:6px;box-sizing:border-box;"></textarea>
+                    <p class="form-help">Starting prompt for Product Assets &rarr; Generate Video &mdash; staff can still edit it per video before generating. Leave blank to use the built-in default shown above.</p>
+                  </div>
                 </div>
                 <div class="ai-provider-actions">
                   <button class="btn btn-ghost btn-sm" onclick="testAiProvider('video')"><span class="material-symbols-outlined" style="font-size:14px;">search</span> Test</button>
@@ -2023,7 +2028,10 @@ const AI_PROVIDER_KINDS = ['translation', 'image', 'video'];
 const AI_PROVIDER_FIELDS = {
   translation: { name: 'aiTranslationName', baseUrl: 'aiTranslationBaseUrl', model: 'aiTranslationModel', token: 'aiTranslationToken', status: 'aiTranslationStatus' },
   image:       { name: 'aiImageName',       baseUrl: 'aiImageBaseUrl',       model: 'aiImageModel',       token: 'aiImageToken',       status: 'aiImageStatus' },
-  video:       { name: 'aiVideoName',       baseUrl: 'aiVideoBaseUrl',       model: 'aiVideoModel',       token: 'aiVideoToken',       status: 'aiVideoStatus' },
+  // defaultPrompt only exists for video — translation/image have no
+  // equivalent free-text field, so their entries above simply don't list
+  // one; every read/write of f.defaultPrompt below guards on it existing.
+  video:       { name: 'aiVideoName',       baseUrl: 'aiVideoBaseUrl',       model: 'aiVideoModel',       token: 'aiVideoToken',       status: 'aiVideoStatus', defaultPrompt: 'aiVideoDefaultPrompt' },
 };
 let _aiProviders = {}; // { translation: {name,baseUrl,model,authToken}, image: {...}, video: {...} } — authToken is AES-256-GCM encrypted
 
@@ -2041,6 +2049,10 @@ function _loadAiProvidersUI() {
     if (tokenEl) {
       tokenEl.value = '';
       tokenEl.placeholder = cfg.authToken ? 'Token saved — enter new to replace' : 'Paste API key or token…';
+    }
+    if (f.defaultPrompt) {
+      const promptEl = document.getElementById(f.defaultPrompt);
+      if (promptEl) promptEl.value = cfg.defaultPrompt || '';
     }
     const statusEl = document.getElementById(f.status);
     if (statusEl) statusEl.textContent = '';
@@ -2067,6 +2079,7 @@ async function saveAiProviders() {
       // omitting it tells the function to keep whatever's already saved,
       // so leaving this blank on an edit doesn't wipe out an existing key.
       token: (document.getElementById(f.token)?.value || '').trim() || undefined,
+      defaultPrompt: f.defaultPrompt ? (document.getElementById(f.defaultPrompt)?.value || '').trim() : undefined,
     };
   });
 

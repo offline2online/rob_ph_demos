@@ -211,7 +211,7 @@ async function loadAiProviderConfig(kind) {
 
 // ── Settings — save a provider's config, encrypting a freshly-pasted token server-side ──
 exports.saveAiProviderToken = onCall({ secrets: [AI_TOKEN_ENC_KEY], maxInstances: 10 }, async (request) => {
-  const { kind, name, baseUrl, model, token } = request.data || {};
+  const { kind, name, baseUrl, model, token, defaultPrompt } = request.data || {};
   if (!AI_PROVIDER_KINDS.includes(kind)) {
     throw new HttpsError('invalid-argument', `kind must be one of ${AI_PROVIDER_KINDS.join(', ')}`);
   }
@@ -225,7 +225,7 @@ exports.saveAiProviderToken = onCall({ secrets: [AI_TOKEN_ENC_KEY], maxInstances
   // this doc's unrelated fields (phApi, stockApiKey, bagLabel, …), if
   // another save lands in between reading and writing here.
   await settingsRef.set({
-    aiProviders: { [kind]: { name: name || '', baseUrl: baseUrl || '', model: model || '', authToken } },
+    aiProviders: { [kind]: { name: name || '', baseUrl: baseUrl || '', model: model || '', authToken, defaultPrompt: defaultPrompt || '' } },
   }, { merge: true });
 
   return { ok: true, hasToken: !!authToken };
@@ -244,13 +244,33 @@ exports.testAiProviderConnection = onCall({ secrets: [AI_TOKEN_ENC_KEY], maxInst
       resp = await fetch(`${baseUrl}/v1beta/models`, { headers: { 'x-goog-api-key': token } });
     } else if (kind === 'translation') {
       resp = await fetch(`${baseUrl}/models`, { headers: { Authorization: `Bearer ${token}` } });
+    } else if (kind === 'video') {
+      // A bare HEAD on the base URL (the old behaviour here) 404s
+      // regardless of whether the URL/token are actually correct — almost
+      // no API serves anything at its literal root path, and this one
+      // doesn't either, so every video provider always reported broken
+      // here even when generateProductVideo's own real call, below, works
+      // fine. That real call POSTs to the same base URL's /v2/image-to-video
+      // with an authenticated body — this hits that exact path with the
+      // same auth, but a deliberately empty body, so it can never actually
+      // start a real (billable) job. A server that has this route wired up
+      // rejects an empty body with a validation error (400/422) rather than
+      // "route not found" (404) — that validation error is what actually
+      // confirms the base URL and token are both correct, so it's treated
+      // as success below alongside a literal 2xx.
+      resp = await fetch(`${baseUrl}/v2/image-to-video`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({}),
+      });
     } else {
       resp = await fetch(baseUrl, { method: 'HEAD' });
     }
   } catch (e) {
     throw new HttpsError('unavailable', e.message);
   }
-  return { ok: resp.ok, status: resp.status };
+  const videoValidationOk = kind === 'video' && (resp.status === 400 || resp.status === 422);
+  return { ok: resp.ok || videoValidationOk, status: resp.status };
 });
 
 // ── Product Details → Add New Language (e.g. GPT-5.2 via an OpenAI-compatible Chat Completions API) ──

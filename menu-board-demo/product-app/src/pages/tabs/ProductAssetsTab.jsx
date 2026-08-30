@@ -89,6 +89,12 @@ function rawBytes(dataUrl) {
 // unrelated edit tipping the same document over by itself.
 const MAX_DOC_BYTES = 950_000;
 
+// Built-in fallback for the Generate Video modal's starting prompt —
+// Settings → AI Integrations' Video Generation card can override this
+// account-wide (see the videoPromptSeeded effect below); this is what's
+// used until/unless that's ever configured.
+const DEFAULT_VIDEO_PROMPT = 'The product rotates slowly in a smooth, continuous 360-degree turntable spin, studio lighting unchanged.';
+
 // How much of that budget is actually free right now, for one asset —
 // computed against the true rest of the document (every other field,
 // every other asset), not a flat per-image assumption. A product already
@@ -545,8 +551,24 @@ export default function ProductAssetsTab({ draft, baseline, patch }) {
   // real camera orbit, so the rotation described here is the product turning
   // in place, turntable-style, which these models render convincingly from
   // one image where an actual camera-orbit-around-3D-geometry wouldn't.
-  const [videoPrompt, setVideoPrompt] = useState('The product rotates slowly in a smooth, continuous 360-degree turntable spin, studio lighting unchanged.');
+  const [videoPrompt, setVideoPrompt] = useState(DEFAULT_VIDEO_PROMPT);
   const [videoBusy, setVideoBusy] = useState(false);
+  // Settings → AI Integrations' Video Generation card can configure an
+  // account-wide default prompt, but useAiProviders() hasn't necessarily
+  // delivered that yet on this component's very first render (its own
+  // Firestore listener needs a moment) — the useState above already had
+  // to pick something in the meantime, so this seeds the real configured
+  // value in as soon as it arrives, but only once, and only while the
+  // field still holds the untouched built-in fallback, so it can never
+  // clobber a prompt the user has since typed or edited themselves.
+  const videoPromptSeeded = useRef(false);
+  useEffect(() => {
+    if (videoPromptSeeded.current) return;
+    const configured = (aiProviders.video?.defaultPrompt || '').trim();
+    if (!configured) return;
+    videoPromptSeeded.current = true;
+    setVideoPrompt((current) => (current === DEFAULT_VIDEO_PROMPT ? configured : current));
+  }, [aiProviders.video?.defaultPrompt]);
 
   // Generated video is meant for the Local Feature Highlight board's hero
   // panel (menu-board.html's _pickHeroSrc) — a clip whose own length
