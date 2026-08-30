@@ -502,7 +502,19 @@ function Tile({ img, selected, onClick }) {
 export default function ProductAssetsTab({ draft, baseline, patch }) {
   const images = draft.images || [];
   const aiProviders = useAiProviders();
-  const [selected, setSelected] = useState(0);
+  // Selection is tracked by asset id, not raw array position — toItemDoc()
+  // (migration.js) moves the default image to index 0 on every save, and
+  // Save replaces `images` wholesale from the server's response
+  // (ProductPage.jsx's setDraft(saved)). A plain index would then silently
+  // point at whichever asset now happens to sit at that position — the
+  // exact bug reported live: marking a non-first asset as Default, saving,
+  // and still seeing the (now differently-positioned) previous asset's
+  // schedule/targeting section instead of the new default's "this is the
+  // default" message. Deriving the index from the id every render means
+  // any reordering, from any cause, can never desync selection from asset.
+  const [selectedId, setSelectedId] = useState(images[0]?.id ?? null);
+  const selectedIndex = images.findIndex((img) => img.id === selectedId);
+  const selected = selectedIndex === -1 ? 0 : selectedIndex;
   const [dragOver, setDragOver] = useState(false);
   const [newTagText, setNewTagText] = useState('');
   const fileInput = useRef(null);
@@ -551,7 +563,7 @@ export default function ProductAssetsTab({ draft, baseline, patch }) {
   // link) — otherwise `selected` can stay pointed at an index that belongs
   // to the previous product's image list.
   useEffect(() => {
-    setSelected(0);
+    setSelectedId(images[0]?.id ?? null);
   }, [draft.id]);
 
   // Warms the background-removal model up the moment this tab mounts,
@@ -640,7 +652,7 @@ export default function ProductAssetsTab({ draft, baseline, patch }) {
         });
       });
       patch({ images: next });
-      setSelected(next.length - loaded.length);
+      setSelectedId(next[next.length - loaded.length].id);
     });
   };
 
@@ -678,7 +690,8 @@ export default function ProductAssetsTab({ draft, baseline, patch }) {
     // Keep the same index where possible so the item that shifts up into
     // this slot is what's shown next, rather than always jumping back one —
     // only clamp when the deleted tile was the last one in the list.
-    setSelected((s) => Math.max(0, Math.min(s, next.length - 1)));
+    const clampedIdx = Math.max(0, Math.min(selected, next.length - 1));
+    setSelectedId(next[clampedIdx]?.id ?? null);
   };
 
   // Adds a copy of the current asset as a brand new tile — its own id and
@@ -712,7 +725,7 @@ export default function ProductAssetsTab({ draft, baseline, patch }) {
     };
     const next = [...images, copy];
     patch({ images: next });
-    setSelected(next.length - 1);
+    setSelectedId(copy.id);
   };
 
   // Default applies immediately — a single binary switch a user expects to
@@ -938,7 +951,7 @@ export default function ProductAssetsTab({ draft, baseline, patch }) {
       };
       next.push(newAsset);
       patch({ images: next });
-      setSelected(next.length - 1);
+      setSelectedId(newAsset.id);
       setVideoModalOpen(false);
       message.success('Video generated');
     } catch (e) {
@@ -996,7 +1009,7 @@ export default function ProductAssetsTab({ draft, baseline, patch }) {
             <MaterialIcon name="add_photo_alternate" style={{ fontSize: 22 }} />
           </div>
           {images.map((img, idx) => (
-            <Tile key={img.id} img={img} selected={idx === selected} onClick={() => setSelected(idx)} />
+            <Tile key={img.id} img={img} selected={idx === selected} onClick={() => setSelectedId(img.id)} />
           ))}
         </div>
         {/* Deliberately a sibling of the "+" tile, not nested inside it —

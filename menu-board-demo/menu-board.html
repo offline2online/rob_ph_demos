@@ -2508,10 +2508,26 @@ function _renderUnsafe() {
     return true;
   }
 
+  // An asset only needs ONE of the two conditions to be eligible to
+  // override the default — a schedule with no targeting rule at all is a
+  // perfectly normal "show this from date X to date Y, to everyone" asset
+  // (ProductAssetsTab.jsx's Duplicate starts a copy with neither, ready for
+  // the user to add whichever one they mean), not just a targeting rule
+  // with an extra date check bolted on. Requiring targeting.length here
+  // (as this used to) meant a schedule-only asset could never be picked at
+  // all — its own from/until was checked below via _assetInSchedule(), but
+  // there was nothing that would ever route to it in the first place.
+  function _isConditionedAsset(r) {
+    return !!(r && ((Array.isArray(r.targeting) && r.targeting.length) || r.scheduleFrom || r.scheduleUntil));
+  }
+
   function _pickTargetedAssetIndex(item, allowVideo) {
     const rich = item.imagesRich;
     if (!Array.isArray(rich)) return -1;
-    return rich.findIndex(r => r && Array.isArray(r.targeting) && r.targeting.length && (allowVideo || r.type !== 'video') && _assetInSchedule(r) && _offerTargetingMatches(r.targeting, _storeProfile));
+    // _offerTargetingMatches already returns true for an empty/missing
+    // targeting array, so a schedule-only asset (no targeting rules) still
+    // passes this check — only its own _assetInSchedule() window gates it.
+    return rich.findIndex(r => r && _isConditionedAsset(r) && (allowVideo || r.type !== 'video') && _assetInSchedule(r) && _offerTargetingMatches(r.targeting, _storeProfile));
   }
 
   // A product can carry a default *image* and a default *video* at once
