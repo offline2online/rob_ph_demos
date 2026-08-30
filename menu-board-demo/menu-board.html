@@ -453,20 +453,32 @@
       font-weight: 700;
       line-height: 1.3;
     }
-    /* .promo-hero-top and .promo-text are flex columns with their own
-       `gap` already spacing every child consistently (title, price,
-       notes) — gap and margin don't collapse into each other,
-       so the note's own margin above was ADDING to that gap instead of
-       being absorbed by it, on top of the flex-column's spacing every
-       other child already gets "for free". Zero it out here so the badge
-       sits exactly one `gap` from the price, matching every other
-       child-to-child spacing in these two containers. The grid item tile
-       (.item-body) has no such gap — its note keeps its own margin above. */
-    .promo-hero-top .menu-board-note,
-    .promo-text .menu-board-note {
+    /* The offer badge's own margin-top/margin-bottom above exists for
+       wherever it still renders as a standalone element (the Location
+       Badge shares this same .menu-board-note class and does still float
+       independently) — but wherever it's the Offer Badge specifically,
+       it's always inside pricingBlockHtml()'s .pricing-block now, whose
+       own `gap` (Settings → Pricing's badge-gap control) owns the spacing
+       between it and the price instead. Gap and margin don't collapse
+       into each other, so leaving the note's margin in here would add to
+       that gap rather than being absorbed by it — on top of which, before
+       this, the grid item tile got the note's raw, uncontrolled margin
+       while the hero/promo panels had a one-off override zeroing it out,
+       so the exact same badge visibly sat a different distance from the
+       price depending on which board layout you were looking at. One
+       rule, applied everywhere pricingBlockHtml() is used, replaces both.
+    */
+    .pricing-block .menu-board-note {
       margin-top: 0;
       margin-bottom: 0;
     }
+    .pricing-block {
+      display: inline-flex;
+      align-items: center;
+    }
+    .pricing-block.pricing-place-right { flex-direction: row-reverse; }
+    .pricing-block.pricing-place-above { flex-direction: column; align-items: flex-start; }
+    .pricing-block.pricing-place-below { flex-direction: column-reverse; align-items: flex-start; }
 
     /* ── OUT OF STOCK ───────────────────────── */
     .oos-overlay {
@@ -1379,7 +1391,7 @@ function isOfferPriceDiscounted(item) {
 // hq-admin.html's own Products grid, retail-admin.html and order.html all
 // read, so a live offer presents identically wherever it shows.
 function _pricingDisplaySettings() {
-  return (_settings && _settings.pricingDisplay) || { strikethrough: true, rrpPrefix: '', rrpSuffix: '', rrpPlacement: 'left' };
+  return (_settings && _settings.pricingDisplay) || { strikethrough: true, rrpPrefix: '', rrpSuffix: '', rrpPlacement: 'left', badgePlacement: 'below', badgeGap: 6 };
 }
 // left/right are a row (RRP-block first vs offer-price first); above/below
 // are the same idea vertically — one flex-direction switch covers all
@@ -1455,6 +1467,28 @@ function badgeStyleForTemplateId(templateId) {
 }
 function menuNoteStyleAttr() {
   return badgeStyleForTemplateId('offer');
+}
+
+// Combines the Offer Badge ("Show on Menu Board" note) and the price block
+// into one rendering unit, laid out via Settings → Pricing's badge
+// placement (above/below/left/right of the price) and gap. These used to
+// be two independent, separately-positioned elements — the badge simply
+// fell wherever plain document flow put it after the price, with nothing
+// configuring the relationship between them at all — which is exactly
+// what made their spacing look arbitrary on a real board. `priceClass` is
+// the caller's own price-text styling class (item-price / promo-price /
+// promo-hero-price); it's applied only to the price span, never the
+// badge. Board Templates using the Tile Layout editor place this whole
+// unit as a single 'pricing' element instead of 'price'/'menuBoardNote'
+// separately (see TILE_LAYOUT_ELEMENTS in hq-admin.html).
+function pricingBlockHtml(item, currency, priceClass) {
+  const priceSpan = `<span class="${priceClass}">${priceHtml(item, currency, 'price-was')}</span>`;
+  if (!shouldShowMenuNote(item)) return priceSpan;
+  const badgeHtml = `<div class="menu-board-note" style="${menuNoteStyleAttr()}">${esc(item.showOnMenuBoard)}</div>`;
+  const pd = _pricingDisplaySettings();
+  const placement = pd.badgePlacement || 'below';
+  const gap = pd.badgeGap != null ? pd.badgeGap : 6;
+  return `<span class="pricing-block pricing-place-${placement}" style="gap:${gap}px;">${badgeHtml}${priceSpan}</span>`;
 }
 
 // A store's own Location Badge (Retail Admin ▸ Stock & Location tab) —
@@ -1665,6 +1699,13 @@ function _tileElementHtml(key, item, ctx) {
       const text = item.longDescription || '';
       return text ? `<div class="${ctx.descColClass}"><div class="${ctx.descClass}">${esc(text)}</div></div>` : '';
     }
+    // Combined Price + Offer Badge element (pricingBlockHtml()) — the
+    // only way to add either to a Tile Layout going forward (see
+    // TILE_LAYOUT_ELEMENTS in hq-admin.html). 'price' and 'menuBoardNote'
+    // below are kept working, unchanged, purely so a template saved
+    // before this existed keeps rendering exactly as it always has.
+    case 'pricing':
+      return pricingBlockHtml(item, ctx.currency, ctx.priceClass);
     case 'price':
       return `<div class="${ctx.priceClass}">${priceHtml(item, ctx.currency, 'price-was')}</div>`;
     case 'menuBoardNote':
@@ -2787,9 +2828,7 @@ function _renderUnsafe() {
       ? _mediaTag(cellImg, item.name, 'item-thumb-placeholder', '🍽️')
       : `<div class="item-thumb-placeholder">🍽️</div>`;
     const desc = item.description ? `<div class="item-desc">${esc(item.description)}</div>` : '';
-    const menuNote = shouldShowMenuNote(item) ? `<div class="menu-board-note" style="${menuNoteStyleAttr()}">${esc(item.showOnMenuBoard)}</div>` : '';
     const locationNote = locationBadgeHtml(item);
-    const notes = menuNote + locationNote;
     return `
       <div class="item-cell${oos ? ' oos-cell' : ''}">
         <div class="item-thumb">
@@ -2801,10 +2840,10 @@ function _renderUnsafe() {
           ${desc}
           <div class="item-divider"></div>
           <div class="item-footer">
-            <span class="item-price">${priceHtml(item, currency, 'price-was')}</span>
+            ${pricingBlockHtml(item, currency, 'item-price')}
             ${buildNutrition(item)}
           </div>
-          ${notes}
+          ${locationNote}
         </div>
         <div class="oos-overlay"><div class="oos-stamp" style="${badgeStyleForTemplateId('soldOut')}"><div class="oos-stamp-text">SOLD OUT</div></div></div>
       </div>`;
@@ -2987,14 +3026,13 @@ function _renderUnsafe() {
         heroBottomHtml = heroBottomInner ? `<div class="promo-hero-bottom">${heroBottomInner}</div>` : '';
       } else {
         const heroCat = heroItem.category ? `<div class="promo-cat" style="${badgeStyleForTemplateId('category')}">${esc(heroItem.category)}</div>` : '';
-        const heroMenuNote = shouldShowMenuNote(heroItem) ? `<div class="menu-board-note" style="${menuNoteStyleAttr()}">${esc(heroItem.showOnMenuBoard)}</div>` : '';
         const heroLocationNote = locationBadgeHtml(heroItem);
         heroTopHtml = `
           <div class="promo-hero-top">
             ${heroCat}
             <div class="promo-hero-title">${esc(heroItem.name)}</div>
-            <div class="promo-hero-price">${priceHtml(heroItem, currency, 'price-was')}</div>
-            ${heroMenuNote}${heroLocationNote}
+            ${pricingBlockHtml(heroItem, currency, 'promo-hero-price')}
+            ${heroLocationNote}
           </div>`;
         // Bottom bar: description on the left (≤50% width via CSS),
         // calorie/kilojoule info hugging the right edge — nutrition-block's
@@ -3039,15 +3077,14 @@ function _renderUnsafe() {
         const bottomHtml = (descHtml || nutrHtml)
           ? `<div class="promo-tile-desc">${descHtml}${nutrHtml}</div>` : '';
         const cat = item.category ? `<div class="promo-cat" style="${badgeStyleForTemplateId('category')}">${esc(item.category)}</div>` : '';
-        const menuNote = shouldShowMenuNote(item) ? `<div class="menu-board-note" style="${menuNoteStyleAttr()}">${esc(item.showOnMenuBoard)}</div>` : '';
         const locationNote = locationBadgeHtml(item);
         return `
           <div class="promo-tile">
             <div class="promo-text">
               ${cat}
               <div class="promo-title">${esc(item.name)}</div>
-              <div class="promo-price">${priceHtml(item, currency, 'price-was')}</div>
-              ${menuNote}${locationNote}
+              ${pricingBlockHtml(item, currency, 'promo-price')}
+              ${locationNote}
             </div>
             <div class="promo-img-wrap">${img}</div>
             ${bottomHtml}

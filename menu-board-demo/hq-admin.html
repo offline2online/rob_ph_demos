@@ -810,36 +810,61 @@
 
           <div class="settings-section" id="settingsSection-pricing">
             <h3>Pricing</h3>
-            <p class="settings-desc">How RRP and an active offer's price present together, account-wide — every menu board, Retail Admin and the ordering screen all follow this. The Offer Badge's own colours/size/shape are set separately, in Menu Board Badge Templates above.</p>
-            <div style="display:flex;align-items:center;justify-content:space-between;max-width:520px;margin-bottom:14px;">
-              <span style="font-size:13px;color:var(--text);">Strike through RRP when an offer is active</span>
-              <label class="switch-toggle">
-                <input type="checkbox" id="sPricingStrikethrough" checked>
-                <span class="switch-track"></span>
-              </label>
-            </div>
-            <div class="form-row" style="max-width:520px;">
-              <div class="form-group" style="flex:1;">
-                <label>Copy before RRP</label>
-                <input type="text" id="sPricingRrpPrefix" placeholder="e.g. Was">
+            <p class="settings-desc">How the Offer Badge, RRP and an active offer's price present together as one combined block, account-wide — every menu board and Retail Admin follow this. The Offer Badge's own colours/size/shape are set separately, in Menu Board Badge Templates above.</p>
+            <div style="display:flex;gap:32px;flex-wrap:wrap;align-items:flex-start;">
+              <div style="flex:1 1 320px;min-width:280px;max-width:420px;">
+                <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
+                  <span style="font-size:13px;color:var(--text);">Strike through RRP when an offer is active</span>
+                  <label class="switch-toggle">
+                    <input type="checkbox" id="sPricingStrikethrough" checked>
+                    <span class="switch-track"></span>
+                  </label>
+                </div>
+                <div class="form-row">
+                  <div class="form-group" style="flex:1;">
+                    <label>Copy before RRP</label>
+                    <input type="text" id="sPricingRrpPrefix" placeholder="e.g. Was">
+                  </div>
+                  <div class="form-group" style="flex:1;">
+                    <label>Copy after RRP</label>
+                    <input type="text" id="sPricingRrpSuffix" placeholder="e.g. each">
+                  </div>
+                </div>
+                <p class="form-help" style="margin-bottom:10px;">Both are optional and only ever shown alongside a struck-through RRP next to a live offer price — a regular, non-offer price never carries this copy.</p>
+                <div class="form-group" style="margin-bottom:10px;">
+                  <label>RRP position relative to offer price</label>
+                  <select id="sPricingRrpPlacement">
+                    <option value="left">Left of offer price</option>
+                    <option value="right">Right of offer price</option>
+                    <option value="above">Above offer price</option>
+                    <option value="below">Below offer price</option>
+                  </select>
+                </div>
+                <div class="form-group" style="margin-bottom:10px;">
+                  <label>Offer Badge position relative to price</label>
+                  <select id="sPricingBadgePlacement">
+                    <option value="above">Above price</option>
+                    <option value="below">Below price</option>
+                    <option value="left">Left of price</option>
+                    <option value="right">Right of price</option>
+                  </select>
+                </div>
+                <div class="form-group" style="max-width:200px;margin-bottom:6px;">
+                  <label>Gap between badge and price</label>
+                  <input type="number" id="sPricingBadgeGap" min="0" max="40" step="1" style="width:100%;">
+                </div>
+                <p class="form-help" style="margin-bottom:14px;">Fine control over exactly how far the Offer Badge sits from the price — previously the two had no configured relationship at all, which is what made them look unevenly spaced from one board layout to another.</p>
+                <button class="btn btn-primary btn-sm" id="pricingSaveBtn" onclick="savePricingDisplay()" disabled>Save Changes</button>
               </div>
-              <div class="form-group" style="flex:1;">
-                <label>Copy after RRP</label>
-                <input type="text" id="sPricingRrpSuffix" placeholder="e.g. each">
+              <div style="flex:1 1 260px;min-width:240px;max-width:340px;">
+                <label style="display:block;font-size:11px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px;">Live Preview — Menu Board Item</label>
+                <div style="border:1px solid var(--border);border-radius:10px;padding:18px;background:#fafafa;">
+                  <div style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:10px;">10 pc Bucket</div>
+                  <div id="sPricingPreview"></div>
+                </div>
+                <p style="font-size:11px;color:var(--text2);margin-top:8px;">Uses the Offer Badge style from Menu Board Badge Templates above, with a sample &ldquo;Limited time!&rdquo; badge and a £12.99 &rarr; £9.99 offer.</p>
               </div>
             </div>
-            <p class="form-help" style="margin-bottom:10px;">Both are optional and only ever shown alongside a struck-through RRP next to a live offer price — a regular, non-offer price never carries this copy.</p>
-            <div class="form-group" style="max-width:260px;margin-bottom:10px;">
-              <label>RRP position relative to offer price</label>
-              <select id="sPricingRrpPlacement">
-                <option value="left">Left of offer price</option>
-                <option value="right">Right of offer price</option>
-                <option value="above">Above offer price</option>
-                <option value="below">Below offer price</option>
-              </select>
-            </div>
-            <p style="font-size:12px;color:var(--text2);margin:0 0 14px;">Preview: <span id="sPricingPreview"></span></p>
-            <button class="btn btn-primary btn-sm" id="pricingSaveBtn" onclick="savePricingDisplay()" disabled>Save Changes</button>
           </div>
 
           <div class="section-divider">Prototype Only <span class="opt-tag">Not part of the live product</span></div>
@@ -1487,8 +1512,14 @@ const TILE_LAYOUT_ELEMENTS = [
   { key: 'name',              label: 'Product Name' },
   { key: 'shortDescription',  label: 'Short Description' },
   { key: 'longDescription',   label: 'Long Description' },
-  { key: 'price',              label: 'Price' },
-  { key: 'menuBoardNote',     label: 'Offer Badge' },
+  // Price and Offer Badge used to be two separately-placeable elements
+  // here — combined into one (Settings → Pricing now owns their relative
+  // placement/spacing account-wide, the same everywhere, instead of it
+  // being one more thing to configure per template). Existing saved
+  // templates that still have the old separate 'price'/'menuBoardNote'
+  // keys keep rendering exactly as before (menu-board.html still handles
+  // both) — this palette just never offers adding them separately again.
+  { key: 'pricing',          label: 'Pricing (Price + Offer Badge)' },
   { key: 'locationBadge',     label: 'Location Badge' },
   { key: 'nutrition',          label: 'Nutrition' },
   { key: 'attributes',        label: 'Attributes' },
@@ -1524,18 +1555,23 @@ function _normalizeTileLayout(layout) {
 
 // Only used to seed the editor the first time someone opens a template that
 // has no saved heroLayout/promoLayout yet — matches today's hardcoded
-// order (badges always sit directly after price) as a starting point to
-// adjust. menu-board.html only switches to this new zone/order system once
-// a template actually has a saved heroLayout/promoLayout — until then it
-// keeps rendering exactly as it does today, regardless of this default.
+// order as a starting point to adjust. menu-board.html only switches to
+// this new zone/order system once a template actually has a saved
+// heroLayout/promoLayout — until then it keeps rendering exactly as it
+// does today, regardless of this default. 'pricing' is the combined
+// Price + Offer Badge element (pricingBlockHtml() in menu-board.html) —
+// their relative placement (badge above/below/left/right of the price)
+// and spacing come from Settings → Pricing, account-wide, not from this
+// per-template zone/order system, so they're never offered here as two
+// separately-placeable elements the way they used to be.
 const DEFAULT_TILE_LAYOUTS = {
   hero: {
-    top:         ['category', 'name', 'menuBoardNote', 'locationBadge', 'price'].map(k => _tileLayoutEntry(k)),
+    top:         ['category', 'name', 'locationBadge', 'pricing'].map(k => _tileLayoutEntry(k)),
     bottomLeft:  ['shortDescription'].map(k => _tileLayoutEntry(k)),
     bottomRight: ['nutrition'].map(k => _tileLayoutEntry(k)),
   },
   promo: {
-    textColumn:  ['category', 'name', 'menuBoardNote', 'locationBadge', 'price'].map(k => _tileLayoutEntry(k)),
+    textColumn:  ['category', 'name', 'locationBadge', 'pricing'].map(k => _tileLayoutEntry(k)),
     bottomLeft:  ['shortDescription'].map(k => _tileLayoutEntry(k)),
     bottomRight: ['nutrition'].map(k => _tileLayoutEntry(k)),
   },
@@ -1869,43 +1905,66 @@ function saveSettingsData(s) {
     .catch(err => toast('Failed to save settings', 'error'));
 }
 
-// ===== PRICING DISPLAY (account-wide RRP/offer presentation) =====
-// Governs the one thing every board, Retail Admin and the ordering screen
-// need to agree on: how a struck-through RRP presents next to a live
-// offer's price. Deliberately separate from Menu Board Badge Templates'
-// Offer Badge entry — that's the badge/note's own colours and shape,
-// this is the price *line* itself, which isn't a badge at all.
+// ===== PRICING DISPLAY (account-wide RRP/offer/badge presentation) =====
+// Governs the one thing every menu board and Retail Admin need to agree
+// on: how a struck-through RRP presents next to a live offer's price, and
+// how the Offer Badge sits relative to that combined price block
+// (menu-board.html's pricingBlockHtml()). Deliberately separate from Menu
+// Board Badge Templates' Offer Badge entry — that's the badge's own
+// colours/size/shape, this is its position and the price line itself,
+// which isn't a badge at all. Previously the badge and price were two
+// independent elements with no configured relationship between them, so
+// they landed at whatever distance plain document flow happened to put
+// them — this is what fixes that.
 function _defaultPricingDisplay() {
-  return { strikethrough: true, rrpPrefix: '', rrpSuffix: '', rrpPlacement: 'left' };
+  return { strikethrough: true, rrpPrefix: '', rrpSuffix: '', rrpPlacement: 'left', badgePlacement: 'below', badgeGap: 6 };
 }
-// left/right are a row (RRP first vs offer-price first); above/below are a
-// column (same idea, just vertical) — one flex-direction switch covers all
-// four, with the RRP+its copy always the first flex child and the offer
-// price always the second, so "left"/"above" (RRP-first, normal order) and
-// "right"/"below" (RRP-second, reversed order) fall out for free.
+// left/right are a row (first element first vs second element first);
+// above/below are a column (same idea, just vertical) — one flex-direction
+// switch covers all four, used for both the RRP-vs-offer-price placement
+// (RRP is always the first flex child) and the badge-vs-price placement
+// (badge is always the first flex child) below.
 const PRICING_PLACEMENT_FLEX_DIR = { left: 'row', right: 'row-reverse', above: 'column', below: 'column-reverse' };
+// Renders an actual sample item — badge (real Offer Badge template style)
+// + price (real priceHtml()-equivalent: strikethrough/copy/RRP-placement)
+// — combined exactly the way pricingBlockHtml() combines them on the real
+// board, so this preview is a true preview, not just a rough approximation.
 function _renderPricingPreview() {
-  const on        = document.getElementById('sPricingStrikethrough')?.checked;
-  const prefix    = (document.getElementById('sPricingRrpPrefix')?.value || '').trim();
-  const suffix    = (document.getElementById('sPricingRrpSuffix')?.value || '').trim();
-  const placement = document.getElementById('sPricingRrpPlacement')?.value || 'left';
+  const on          = document.getElementById('sPricingStrikethrough')?.checked;
+  const prefix      = (document.getElementById('sPricingRrpPrefix')?.value || '').trim();
+  const suffix      = (document.getElementById('sPricingRrpSuffix')?.value || '').trim();
+  const rrpPlacement = document.getElementById('sPricingRrpPlacement')?.value || 'left';
+  const badgePlacement = document.getElementById('sPricingBadgePlacement')?.value || 'below';
+  const gap = Math.max(0, parseInt(document.getElementById('sPricingBadgeGap')?.value, 10) || 0);
+
   const rrpSpan = `<span style="${on ? 'text-decoration:line-through;' : ''}opacity:.6;">£12.99</span>`;
-  const rrpBlock = [prefix && escHtml(prefix), rrpSpan, suffix && escHtml(suffix)].filter(Boolean).join(' ');
-  const flexDir = PRICING_PLACEMENT_FLEX_DIR[placement] || 'row';
-  const alignItems = (placement === 'above' || placement === 'below') ? 'flex-start' : 'baseline';
+  const rrpParts = [prefix && escHtml(prefix), rrpSpan, suffix && escHtml(suffix)].filter(Boolean).join(' ');
+  const rrpFlexDir = PRICING_PLACEMENT_FLEX_DIR[rrpPlacement] || 'row';
+  const rrpAlign = (rrpPlacement === 'above' || rrpPlacement === 'below') ? 'flex-start' : 'baseline';
+  const priceHtml = `<span style="display:inline-flex;flex-direction:${rrpFlexDir};align-items:${rrpAlign};gap:4px;font-size:22px;font-weight:800;color:var(--primary);"><span>${rrpParts}</span><span>£9.99</span></span>`;
+
+  const badgeTemplate = getBadgeTemplateById('offer');
+  const badgeHtml = `<span style="display:inline-block;${badgeTemplatePreviewStyle(badgeTemplate)}">Limited time!</span>`;
+
+  const badgeFlexDir = PRICING_PLACEMENT_FLEX_DIR[badgePlacement] || 'column-reverse';
+  const stacked = badgePlacement === 'above' || badgePlacement === 'below';
   const el = document.getElementById('sPricingPreview');
-  if (el) el.innerHTML = `<span style="display:inline-flex;flex-direction:${flexDir};align-items:${alignItems};gap:4px;"><span>${rrpBlock}</span><span>£9.99</span></span>`;
+  if (el) el.innerHTML = `<span style="display:inline-flex;flex-direction:${badgeFlexDir};align-items:${stacked ? 'flex-start' : 'center'};gap:${gap}px;">${badgeHtml}${priceHtml}</span>`;
 }
 function _loadPricingDisplayUI() {
   const p = _settings.pricingDisplay || _defaultPricingDisplay();
-  const stEl = document.getElementById('sPricingStrikethrough');
+  const stEl  = document.getElementById('sPricingStrikethrough');
   const preEl = document.getElementById('sPricingRrpPrefix');
   const sufEl = document.getElementById('sPricingRrpSuffix');
   const plEl  = document.getElementById('sPricingRrpPlacement');
+  const bpEl  = document.getElementById('sPricingBadgePlacement');
+  const bgEl  = document.getElementById('sPricingBadgeGap');
   if (stEl)  stEl.checked = p.strikethrough !== false;
   if (preEl) preEl.value  = p.rrpPrefix || '';
   if (sufEl) sufEl.value  = p.rrpSuffix || '';
   if (plEl)  plEl.value   = p.rrpPlacement || 'left';
+  if (bpEl)  bpEl.value   = p.badgePlacement || 'below';
+  if (bgEl)  bgEl.value   = p.badgeGap != null ? p.badgeGap : 6;
   _renderPricingPreview();
 }
 function savePricingDisplay() {
@@ -1914,6 +1973,8 @@ function savePricingDisplay() {
     rrpPrefix: (document.getElementById('sPricingRrpPrefix')?.value || '').trim(),
     rrpSuffix: (document.getElementById('sPricingRrpSuffix')?.value || '').trim(),
     rrpPlacement: document.getElementById('sPricingRrpPlacement')?.value || 'left',
+    badgePlacement: document.getElementById('sPricingBadgePlacement')?.value || 'below',
+    badgeGap: Math.max(0, parseInt(document.getElementById('sPricingBadgeGap')?.value, 10) || 0),
   };
   saveSettingsData({ ..._settings, pricingDisplay });
 }
