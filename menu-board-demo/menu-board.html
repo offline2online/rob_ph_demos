@@ -479,6 +479,27 @@
     .pricing-block.pricing-place-right { flex-direction: row-reverse; }
     .pricing-block.pricing-place-above { flex-direction: column; align-items: flex-start; }
     .pricing-block.pricing-place-below { flex-direction: column-reverse; align-items: flex-start; }
+    /* The hero panel lays out category/title/pricing-block in one flex
+       column with a single, uniform `gap` between every child — so the
+       title-to-badge distance and the badge-to-price distance (Settings →
+       Pricing's own gap, inside .pricing-block) ended up close to the same
+       size, and the badge read as sitting with the title above it as
+       easily as with the price below it, instead of reading as one
+       bundled unit with the price the way it's actually built. This extra
+       margin — on top of, not instead of, that flow gap — makes the gap
+       above the whole badge+price group meaningfully bigger than the gap
+       inside it, so the two always read as one group, regardless of
+       whatever gap value Settings itself is set to. Scoped to the hero
+       panel specifically, not promo tiles too: a promo tile's own text
+       column can already run past its own fixed height in the ordinary
+       case (see _layoutHeroOverlapClearance's own comment — .promo-tile
+       relies on overflow:hidden to clip that silently, by original
+       design, and isn't dynamically cleared the way the hero panel is),
+       so adding more height there would only push more of a badged tile's
+       price out of view, not fix anything. */
+    .promo-hero-top > .pricing-block {
+      margin-top: clamp(8px, 1.2vw, 18px);
+    }
 
     /* ── OUT OF STOCK ───────────────────────── */
     .oos-overlay {
