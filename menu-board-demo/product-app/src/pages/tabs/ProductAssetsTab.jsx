@@ -920,6 +920,19 @@ export default function ProductAssetsTab({ draft, baseline, patch }) {
   // it — SpeechRecognition isn't implemented in every browser (notably
   // Firefox), so the mic button simply doesn't render when it's absent
   // rather than trying to polyfill browser speech recognition here.
+  //
+  // This page is normally loaded inside an <iframe> on the live
+  // Personalisation Hub platform (see product-app/README or the
+  // deployment notes for the CTA Experience embed). A cross-origin iframe
+  // has no microphone access at all unless its own <iframe> tag on the
+  // PARENT page carries `allow="microphone"` (Permissions Policy) — that
+  // attribute lives on the platform side, outside this repo, so it can't
+  // be fixed from here. What this page IS responsible for is not failing
+  // silently when that's missing: rec.onerror used to just flip the
+  // button back to idle with no explanation, which reads as "the mic
+  // button doesn't work" with nothing to go on. It now surfaces the
+  // specific reason so it's obvious whether this is a permissions-policy
+  // gap on the embed vs. the visitor's own browser/OS blocking the mic.
   const SpeechRecognitionCtor = typeof window !== 'undefined' && (window.SpeechRecognition || window.webkitSpeechRecognition);
   const toggleListening = () => {
     if (!SpeechRecognitionCtor) return;
@@ -934,7 +947,17 @@ export default function ProductAssetsTab({ draft, baseline, patch }) {
       const transcript = Array.from(e.results).map((r) => r[0].transcript).join(' ').trim();
       if (transcript) setRequestChangesPrompt((prev) => (prev.trim() ? prev.trim() + ' ' + transcript : transcript));
     };
-    rec.onerror = () => setListening(false);
+    rec.onerror = (e) => {
+      setListening(false);
+      if (e.error === 'aborted') return; // the user's own Stop click — not a failure
+      const isBlocked = e.error === 'not-allowed' || e.error === 'service-not-allowed';
+      message.error(
+        isBlocked
+          ? 'Microphone is blocked in this view — if this product page is embedded in an iframe, its allow attribute needs "microphone"; otherwise check your browser/OS mic permission for this site. You can still type your request.'
+          : `Dictation stopped (${e.error || 'unknown error'}) — you can still type your request.`,
+        6,
+      );
+    };
     rec.onend = () => setListening(false);
     recognitionRef.current = rec;
     setListening(true);
