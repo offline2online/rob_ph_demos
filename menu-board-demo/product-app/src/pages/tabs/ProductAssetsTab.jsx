@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Input, Switch, Select, Tag, Modal, Button, message } from 'antd';
+import { Input, Switch, Select, Tag, Modal, Button, Spin, message } from 'antd';
 import dayjs from 'dayjs';
 import { removeBackground as imglyRemoveBackground, preload as imglyPreload } from '@imgly/background-removal';
 import MaterialIcon from '../../components/MaterialIcon.jsx';
@@ -920,6 +920,19 @@ export default function ProductAssetsTab({ draft, baseline, patch }) {
   // it — SpeechRecognition isn't implemented in every browser (notably
   // Firefox), so the mic button simply doesn't render when it's absent
   // rather than trying to polyfill browser speech recognition here.
+  //
+  // This page is normally loaded inside an <iframe> on the live
+  // Personalisation Hub platform (see product-app/README or the
+  // deployment notes for the CTA Experience embed). A cross-origin iframe
+  // has no microphone access at all unless its own <iframe> tag on the
+  // PARENT page carries `allow="microphone"` (Permissions Policy) — that
+  // attribute lives on the platform side, outside this repo, so it can't
+  // be fixed from here. What this page IS responsible for is not failing
+  // silently when that's missing: rec.onerror used to just flip the
+  // button back to idle with no explanation, which reads as "the mic
+  // button doesn't work" with nothing to go on. It now surfaces the
+  // specific reason so it's obvious whether this is a permissions-policy
+  // gap on the embed vs. the visitor's own browser/OS blocking the mic.
   const SpeechRecognitionCtor = typeof window !== 'undefined' && (window.SpeechRecognition || window.webkitSpeechRecognition);
   const toggleListening = () => {
     if (!SpeechRecognitionCtor) return;
@@ -934,7 +947,17 @@ export default function ProductAssetsTab({ draft, baseline, patch }) {
       const transcript = Array.from(e.results).map((r) => r[0].transcript).join(' ').trim();
       if (transcript) setRequestChangesPrompt((prev) => (prev.trim() ? prev.trim() + ' ' + transcript : transcript));
     };
-    rec.onerror = () => setListening(false);
+    rec.onerror = (e) => {
+      setListening(false);
+      if (e.error === 'aborted') return; // the user's own Stop click — not a failure
+      const isBlocked = e.error === 'not-allowed' || e.error === 'service-not-allowed';
+      message.error(
+        isBlocked
+          ? 'Microphone is blocked in this view — if this product page is embedded in an iframe, its allow attribute needs "microphone"; otherwise check your browser/OS mic permission for this site. You can still type your request.'
+          : `Dictation stopped (${e.error || 'unknown error'}) — you can still type your request.`,
+        6,
+      );
+    };
     rec.onend = () => setListening(false);
     recognitionRef.current = rec;
     setListening(true);
@@ -948,6 +971,12 @@ export default function ProductAssetsTab({ draft, baseline, patch }) {
       return;
     }
     recognitionRef.current?.stop();
+    // Close the inline panel and drop straight to the generating overlay on
+    // the image itself (see the `generating` block below) the moment the
+    // request goes out, rather than leaving the panel open with a busy
+    // button — matches the Canva pattern of the in-progress state living on
+    // the canvas, not the trigger that started it.
+    setRequestChangesModalOpen(false);
     setImageBusy('custom');
     try {
       const edited = await editProductImage({ imageDataUrl: current.src, prompt: requestChangesPrompt.trim() });
@@ -964,7 +993,6 @@ export default function ProductAssetsTab({ draft, baseline, patch }) {
       const nextOriginal = current.original || current.src;
       const compressed = await compressDataUrl(fixed, computeImageBudget(draft, images, selected, { original: nextOriginal }));
       updateSelected({ customEdited: true, src: compressed, original: nextOriginal });
-      setRequestChangesModalOpen(false);
       message.success('Changes applied');
     } catch (e) {
       message.error(`Request failed: ${e.message}`);
@@ -984,6 +1012,11 @@ export default function ProductAssetsTab({ draft, baseline, patch }) {
       message.error('No Video provider configured — add one in Settings → AI Integrations.');
       return;
     }
+    // Close the modal immediately and drop to the generating overlay on the
+    // image/video preview itself (see the `generating` block below) — same
+    // reasoning as confirmRequestChanges: the in-progress state belongs on
+    // the canvas, not inside a modal blocking the rest of the panel.
+    setVideoModalOpen(false);
     setVideoBusy(true);
     try {
       const imageForVideo = current.bgRemoved ? await flattenToWhite(current.src) : current.src;
@@ -1028,7 +1061,6 @@ export default function ProductAssetsTab({ draft, baseline, patch }) {
       next.push(newAsset);
       patch({ images: next });
       setSelectedId(newAsset.id);
-      setVideoModalOpen(false);
       message.success('Video generated');
     } catch (e) {
       message.error(`Video generation failed: ${e.message}`);
@@ -1055,6 +1087,13 @@ export default function ProductAssetsTab({ draft, baseline, patch }) {
   // has any meaning for a video file, and the before/after slider below
   // is built entirely around comparing two still frames.
   const isVideo = current?.type === 'video';
+
+  // Drives the generating overlay drawn over the preview itself (see the
+  // `generating` block below the video/slider) — video generation and a
+  // custom "Request changes" edit are the two AI calls that used to keep
+  // their own modal/panel open with just a busy button while they ran.
+  const generating = videoBusy || imageBusy === 'custom';
+  const generatingLabel = videoBusy ? 'Generating video…' : 'Applying changes…';
 
   const rightsSummary = current?.rightsOn
     ? [current.rights.type, current.rights.territory, current.rights.expiry ? `Expires ${dayjs(current.rights.expiry).format('D MMM YYYY, HH:mm')}` : 'No expiry', current.rights.release ? 'release on file' : null]
@@ -1241,7 +1280,7 @@ export default function ProductAssetsTab({ draft, baseline, patch }) {
             </div>
 
             <div style={{ display: 'flex', gap: 24, padding: '20px 20px 22px', flexWrap: 'wrap' }}>
-              <div style={{ width: 470, flexShrink: 0, maxWidth: '100%' }}>
+              <div style={{ width: 470, flexShrink: 0, maxWidth: '100%', position: 'relative' }}>
                 {isVideo ? (
                   <video
                     key={current.id}
@@ -1264,6 +1303,23 @@ export default function ProductAssetsTab({ draft, baseline, patch }) {
                     afterSrc={current.src}
                     hasChange={pendingTreatment}
                   />
+                )}
+                {generating && (
+                  // Canva-style in-progress state: sits directly over the
+                  // asset itself instead of inside the modal/panel that
+                  // triggered it (see confirmGenerateVideo / confirmRequestChanges),
+                  // so the rest of the panel — tags, rights, scheduling — stays
+                  // usable while the call is in flight.
+                  <div
+                    style={{
+                      position: 'absolute', inset: 0, borderRadius: 6,
+                      background: 'rgba(255,255,255,.82)',
+                      display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 10,
+                    }}
+                  >
+                    <Spin size="large" />
+                    <span style={{ fontSize: 13, color: 'rgba(0,0,0,.65)' }}>{generatingLabel}</span>
+                  </div>
                 )}
                 <div style={{ display: 'flex', gap: 8, marginTop: 14, paddingTop: 14, borderTop: '1px solid #f0f0f0' }}>
                   <IconAction icon={<MaterialIcon name="delete" />} caption="Delete" row danger tooltipTitle="Delete" tooltipDesc="Removes this asset from the product." onClick={deleteAsset} />
