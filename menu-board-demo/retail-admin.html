@@ -701,7 +701,12 @@
             </div>
             <div class="field" style="flex:1;">
               <label for="priceOffer">Offer price</label>
-              <input type="number" id="priceOffer" min="0" step="0.01" placeholder="0.00" oninput="_onPricingFieldChange()">
+              <div style="display:flex;gap:8px;align-items:flex-start;">
+                <input type="number" id="priceOffer" min="0" step="0.01" placeholder="0.00" oninput="_onPricingFieldChange()" style="flex:1;">
+                <button type="button" class="btn btn-ghost" style="white-space:nowrap;" onclick="revertToRrp()" title="Clears the offer's schedule, promo copy and any recurring rule, and stops it discounting — this store shows RRP.">
+                  <span class="material-symbols-outlined" style="font-size:15px;">restart_alt</span> Return to RRP
+                </button>
+              </div>
             </div>
           </div>
           <div class="form-row" style="display:flex;gap:14px;margin-top:12px;">
@@ -2237,6 +2242,13 @@ function _loadPricingPane(item, brand) {
     offerFrom: eff.offerFrom || '',
     offerUntil: eff.offerUntil || '',
     showOnMenuBoard: eff.showOnMenuBoard || '',
+    // Not exposed as its own field (no UI here for building a recurrence
+    // rule — that's HQ Admin's job), but a recurring offer set some other
+    // way still needs a way OUT: carried through untouched by every normal
+    // edit, and only ever cleared by "Return to RRP" below. Previously
+    // this pane never read or wrote it at all, so a recurring offer could
+    // never be cleared here no matter what else you changed and saved.
+    offerRecurrence: eff.offerRecurrence || null,
   };
   _pricingDraft = { ..._pricingBaseline };
   document.getElementById('priceRrp').value = _pricingBaseline.rrp;
@@ -2265,13 +2277,51 @@ function _readPricingFieldsFromForm() {
     offerFrom: document.getElementById('priceOfferFrom').value,
     offerUntil: document.getElementById('priceOfferUntil').value,
     showOnMenuBoard: document.getElementById('priceMenuBoardCopy').value,
+    // No form field for this — carry forward whatever revertToRrp() last
+    // set (or the baseline, on the very first read) rather than dropping
+    // it, so a plain price/date edit never silently discards it.
+    offerRecurrence: (_pricingDraft && _pricingDraft.offerRecurrence !== undefined)
+      ? _pricingDraft.offerRecurrence
+      : (_pricingBaseline ? _pricingBaseline.offerRecurrence : null),
   };
 }
 
 function _pricingDirty() {
   if (!_pricingDraft || !_pricingBaseline) return false;
-  return Object.keys(_pricingDraft).some(k => String(_pricingDraft[k] || '') !== String(_pricingBaseline[k] || ''));
+  return Object.keys(_pricingDraft).some(k => {
+    if (k === 'offerRecurrence') return JSON.stringify(_pricingDraft[k] || null) !== JSON.stringify(_pricingBaseline[k] || null);
+    return String(_pricingDraft[k] || '') !== String(_pricingBaseline[k] || '');
+  });
 }
+
+// One-click "no offer here, full stop." A BLANK offer price does not mean
+// "no offer" in this data model — _effectivePricing() only uses this
+// store's own override once it carries its OWN priced offerPrice; leaving
+// it blank instead falls through to whatever HQ has configured, recurring
+// offers included. That's the actual "unable to clear it" bug: blanking
+// the field looks like it worked, but a recurring HQ offer (a "10-piece
+// bucket" style deal, say) just re-appears on its own schedule regardless.
+// Setting the offer price to match RRP instead is what makes this store's
+// override "win" — it's priced (>0), so it's used in full, and
+// offerRecurrence is forced to null in that branch — while
+// isOfferPriceDiscounted()/isDiscounted (menu-board.html, this file's own
+// price cell) suppress the strikethrough the moment offer price === RRP,
+// so nothing here reads as a live discount either.
+function revertToRrp() {
+  const rrp = document.getElementById('priceRrp').value;
+  document.getElementById('priceOffer').value = rrp;
+  document.getElementById('priceOfferFrom').value = '';
+  document.getElementById('priceOfferUntil').value = '';
+  document.getElementById('priceMenuBoardCopy').value = '';
+  _syncDateTimeDisplay('priceOfferFrom');
+  _syncDateTimeDisplay('priceOfferUntil');
+  _readPricingFieldsFromForm();
+  _pricingDraft.offerRecurrence = null;
+  _refreshOfferBanner();
+  _refreshPricingSaveState();
+  _renderPricingMenuBoardPreview();
+}
+window.revertToRrp = revertToRrp;
 
 function _refreshOfferBanner() {
   const el = document.getElementById('priceOfferBanner');
@@ -2398,6 +2448,9 @@ function savePricingChange() {
   if (_pricingDraft.offerFrom !== _pricingBaseline.offerFrom) changes.push({ fieldName: 'Offer from', oldValue: _fmtPriceDateVal(_pricingBaseline.offerFrom), newValue: _fmtPriceDateVal(_pricingDraft.offerFrom) });
   if (_pricingDraft.offerUntil !== _pricingBaseline.offerUntil) changes.push({ fieldName: 'Offer until', oldValue: _fmtPriceDateVal(_pricingBaseline.offerUntil), newValue: _fmtPriceDateVal(_pricingDraft.offerUntil) });
   if (_pricingDraft.showOnMenuBoard !== _pricingBaseline.showOnMenuBoard) changes.push({ fieldName: 'Show on Menu Board', oldValue: _pricingBaseline.showOnMenuBoard || '—', newValue: _pricingDraft.showOnMenuBoard || '—' });
+  if (JSON.stringify(_pricingDraft.offerRecurrence || null) !== JSON.stringify(_pricingBaseline.offerRecurrence || null)) {
+    changes.push({ fieldName: 'Recurring offer', oldValue: _pricingBaseline.offerRecurrence ? 'Set' : '—', newValue: _pricingDraft.offerRecurrence ? 'Set' : '—' });
+  }
   if (!changes.length) return;
 
   const when = new Date().toISOString();
@@ -2421,6 +2474,7 @@ function savePricingChange() {
     offerPrice: isNaN(offerNum) ? null : offerNum,
     offerFrom: _pricingDraft.offerFrom,
     offerUntil: _pricingDraft.offerUntil,
+    offerRecurrence: _pricingDraft.offerRecurrence || null,
     showOnMenuBoard: _pricingDraft.showOnMenuBoard,
     updatedAt: when,
     updatedBy: by,
