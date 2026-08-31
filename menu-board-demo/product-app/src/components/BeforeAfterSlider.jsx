@@ -46,7 +46,7 @@ export default function BeforeAfterSlider({ beforeSrc, afterSrc, hasChange }) {
         // (matching the rest of the catalog's photography) rather than a
         // checkerboard — the checkerboard pattern reads as "unfinished"
         // for a preview that's meant to show what campaign layouts will
-        // actually see it on. TouchUpModal keeps its own checkerboard,
+        // actually see it on. MagicEditModal keeps its own checkerboard,
         // since that's a working canvas for editing transparency, not a
         // preview of the result.
         background: '#fff',

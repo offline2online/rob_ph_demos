@@ -6,7 +6,7 @@ import MaterialIcon from '../../components/MaterialIcon.jsx';
 import BespokeIcon from '../../components/BespokeIcon.jsx';
 import IconAction from '../../components/IconAction.jsx';
 import BeforeAfterSlider from '../../components/BeforeAfterSlider.jsx';
-import TouchUpModal from '../../components/TouchUpModal.jsx';
+import MagicEditModal from '../../components/MagicEditModal.jsx';
 import ClearableDate from '../../components/ClearableDate.jsx';
 import TargetingBuilder, { describeTargeting } from '../../components/TargetingBuilder.jsx';
 import { useAiProviders, getBrandById } from '../../data/registries.js';
@@ -875,25 +875,27 @@ export default function ProductAssetsTab({ draft, baseline, patch }) {
   const toggleBg = () => applyImageTreatment('bg');
   const toggleEnhance = () => applyImageTreatment('enhance');
 
-  // Touch Up — a manual, non-AI complement to Background removal, added
-  // after finding (and failing to fully fix by switching model tiers — see
-  // BG_REMOVAL_CONFIG's comment above) a real segmentation gap: a light-
-  // coloured prop next to the backdrop sometimes gets cut away with it.
-  // Modelled on Canva's own Eraser tool, which offers exactly this same
-  // Restore/Erase pair for exactly this same class of mistake. Unlike the
-  // toggles above, it directly edits `src` in place rather than chaining a
-  // new treatment — there's no separate flag to track or lock, since a
-  // manual, deterministic brush stroke carries none of the "can't cleanly
-  // un-chain a generative result" risk that governs bgRemoved/enhanced/
-  // customEdited, and stays available even after Background removal itself
-  // has been saved and locked.
-  const [touchUpOpen, setTouchUpOpen] = useState(false);
-  const openTouchUp = () => { if (!current || imageBusy) return; setTouchUpOpen(true); };
-  const applyTouchUp = async (dataUrl) => {
+  // Magic Edit — a manual, non-AI toolset for an already-uploaded image:
+  // crop, zoom in for precise work, and the Restore/Erase brush that used
+  // to be this button's whole job (added after finding, and failing to
+  // fully fix by switching model tiers — see BG_REMOVAL_CONFIG's comment
+  // above, a real segmentation gap: a light-coloured prop next to the
+  // backdrop sometimes gets cut away with it — modelled on Canva's own
+  // Eraser tool, which offers exactly this same Restore/Erase pair for
+  // exactly this same class of mistake). Unlike the toggles above, it
+  // directly edits `src` in place rather than chaining a new treatment —
+  // there's no separate flag to track or lock, since none of crop/
+  // restore/erase carries the "can't cleanly un-chain a generative
+  // result" risk that governs bgRemoved/enhanced/customEdited — so it
+  // stays available on any image, at any point, background removal
+  // included, rather than gated behind another treatment having run first.
+  const [magicEditOpen, setMagicEditOpen] = useState(false);
+  const openMagicEdit = () => { if (!current || imageBusy) return; setMagicEditOpen(true); };
+  const applyMagicEdit = async (dataUrl) => {
     const compressed = await compressDataUrl(dataUrl, computeImageBudget(draft, images, selected));
     updateSelected({ src: compressed });
-    setTouchUpOpen(false);
-    message.success('Touch-up applied');
+    setMagicEditOpen(false);
+    message.success('Changes applied');
   };
 
   // Request Changes — a free-text sibling of Enhance/Remove Background:
@@ -1204,17 +1206,15 @@ export default function ProductAssetsTab({ draft, baseline, patch }) {
                 }
               />
               <IconAction
-                icon={<MaterialIcon name="healing" />}
-                caption="Touch Up"
-                disabled={expired || isVideo || !!imageBusy || !current.bgRemoved}
-                onClick={openTouchUp}
-                tooltipTitle="Touch Up"
+                icon={<MaterialIcon name="auto_fix_high" />}
+                caption="Magic Edit"
+                disabled={expired || isVideo || !!imageBusy}
+                onClick={openMagicEdit}
+                tooltipTitle="Magic Edit"
                 tooltipDesc={
                   isVideo
                     ? 'Not available for video.'
-                    : !current.bgRemoved
-                    ? 'Available once Background removal has been applied — there’s nothing to touch up before then.'
-                    : 'Manually restore or erase parts of the cut-out by hand — for when the automatic background removal gets something wrong. Not AI — a plain brush, applied instantly, always available even after saving.'
+                    : 'Crop, zoom in, and manually restore or erase parts of the cut-out by hand — for when the automatic background removal gets something wrong. Not AI — instant, on-device, and always available.'
                 }
               />
               <IconAction
@@ -1564,12 +1564,12 @@ export default function ProductAssetsTab({ draft, baseline, patch }) {
       </Modal>
 
 
-      <TouchUpModal
-        open={touchUpOpen}
+      <MagicEditModal
+        open={magicEditOpen}
         src={current?.src}
         originalSrc={current?.original}
-        onCancel={() => setTouchUpOpen(false)}
-        onApply={applyTouchUp}
+        onCancel={() => setMagicEditOpen(false)}
+        onApply={applyMagicEdit}
       />
     </div>
   );
