@@ -1003,6 +1003,13 @@ export default function ProductAssetsTab({ draft, baseline, patch }) {
 
   const openVideoModal = () => {
     if (!current) return;
+    // Reset to the effective default (the account-configured prompt, or the
+    // built-in fallback) on every open — previously this only happened once
+    // ever (see videoPromptSeeded above), so after generating one video the
+    // field kept showing that same prompt for the next one, on this product
+    // or any other, instead of starting fresh each time.
+    const configured = (aiProviders.video?.defaultPrompt || '').trim();
+    setVideoPrompt(configured || DEFAULT_VIDEO_PROMPT);
     setVideoModalOpen(true);
   };
 
