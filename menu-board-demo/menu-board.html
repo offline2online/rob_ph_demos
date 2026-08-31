@@ -1200,8 +1200,17 @@ function _offerConditionMatches(cond, store) {
 // time window, rather than one schedule applying uniformly to all of
 // them. Blank means no bound on that side (matches every other from/until
 // pair in this app — an offer's schedule, a product's Featured window).
+// A group's own `recurrence` (same shape and control — RecurrenceControl,
+// recurrence.js — as an offer's) is handled by routing to the exact same
+// day-part evaluation offers already use below (_isOfferWindowLiveNow),
+// once it actually carries a real rule anchored on a from-date; every
+// group saved before recurrence existed, or with no rule set, falls
+// through to the plain from/until bound check unchanged.
 function _inSchedule(obj) {
   if (!obj) return true;
+  if (obj.recurrence && obj.recurrence.freq && obj.recurrence.freq !== 'none' && obj.scheduleFrom) {
+    return _isOfferWindowLiveNow(obj.scheduleFrom, obj.scheduleUntil, obj.recurrence, new Date());
+  }
   const now = Date.now();
   if (obj.scheduleFrom && now < new Date(obj.scheduleFrom).getTime()) return false;
   if (obj.scheduleUntil && now > new Date(obj.scheduleUntil).getTime()) return false;
