@@ -312,6 +312,36 @@
       overflow-y: auto;
       padding: 4px 0;
     }
+    /* Replaces the plain "Image"/"Product Name" header text on the merged
+       Product column — those two labels didn't help a staff member find a
+       specific product any faster than scanning the rows themselves, so
+       the header itself is now a live search box (filters name/SKU/etc.
+       as you type via AG Grid's quick filter) instead of static text. */
+    .grid-search-header {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      width: 100%;
+      height: 32px;
+      background: var(--surface2);
+      border-radius: 6px;
+      padding: 0 9px;
+      box-sizing: border-box;
+    }
+    .grid-search-header input {
+      background: none;
+      border: none;
+      outline: none;
+      color: var(--text);
+      font-size: 12px;
+      font-weight: 400;
+      text-transform: none;
+      letter-spacing: normal;
+      width: 100%;
+      font-family: inherit;
+    }
+    .grid-search-header input::placeholder { color: var(--text2); }
+    .grid-search-header .material-symbols-outlined { font-size: 15px; color: var(--text2); flex-shrink: 0; }
     .csf-item {
       display: flex;
       align-items: center;
@@ -701,7 +731,12 @@
             </div>
             <div class="field" style="flex:1;">
               <label for="priceOffer">Offer price</label>
-              <input type="number" id="priceOffer" min="0" step="0.01" placeholder="0.00" oninput="_onPricingFieldChange()">
+              <div style="display:flex;gap:8px;align-items:flex-start;">
+                <input type="number" id="priceOffer" min="0" step="0.01" placeholder="0.00" oninput="_onPricingFieldChange()" style="flex:1;">
+                <button type="button" class="btn btn-ghost" style="white-space:nowrap;" onclick="revertToRrp()" title="Clears the offer's schedule, promo copy and any recurring rule, and stops it discounting — this store shows RRP.">
+                  <span class="material-symbols-outlined" style="font-size:15px;">restart_alt</span> Return to RRP
+                </button>
+              </div>
             </div>
           </div>
           <div class="form-row" style="display:flex;gap:14px;margin-top:12px;">
@@ -1261,6 +1296,32 @@ onSnapshot(doc(db, MB, 'brands'), snap => {
 let storeItemsGridApi = null;
 
 // ── CHECKBOX SET FILTER (Community AG-Grid) ──────────────────────────────────
+// Header component for the merged Product column — a live search box in
+// place of static header text. AG Grid's quickFilterText already searches
+// every column's rendered/raw values, which for this row (name,
+// ingredients, SKU) is exactly the "quickly search for a product" the
+// static Image/Product Name headers couldn't offer.
+class ProductSearchHeader {
+  init(params) {
+    this.params = params;
+    this.eGui = document.createElement('div');
+    this.eGui.className = 'grid-search-header';
+    this.eGui.innerHTML =
+      '<span class="material-symbols-outlined">search</span>' +
+      '<input type="text" placeholder="Search products…" />';
+    this._input = this.eGui.querySelector('input');
+    this._input.addEventListener('input', () => {
+      params.api.setGridOption('quickFilterText', this._input.value);
+    });
+    // Keep clicks/drags in the search box from being read by AG Grid as a
+    // header click (sort) or column-resize drag.
+    ['click', 'mousedown', 'touchstart'].forEach(evt =>
+      this.eGui.addEventListener(evt, e => e.stopPropagation())
+    );
+  }
+  getGui() { return this.eGui; }
+}
+
 class CheckboxSetFilter {
   init(params) {
     this.params = params;
@@ -1460,34 +1521,27 @@ function initGrid() {
     },
     columnDefs: [
       {
-        headerName: 'Image', field: 'images', width: 100, minWidth: 100, maxWidth: 100,
-        filter: false, sortable: false, resizable: false,
+        headerName: 'Product', field: 'name', flex: 2.6, minWidth: 220,
+        headerComponent: ProductSearchHeader,
         cellRenderer: (params) => {
           const item = params.data;
-          const wrap = document.createElement('div');
-          wrap.style.cssText = 'height:100%;display:flex;align-items:center;justify-content:center;';
+          const row = document.createElement('div');
+          row.style.cssText = 'height:100%;display:flex;align-items:center;gap:10px;width:100%;min-width:0;';
           const thumbSrc = _defaultImageSrc(item);
           if (thumbSrc) {
             const img = document.createElement('img');
             img.src = thumbSrc; img.alt = item.name;
-            img.style.cssText = 'width:70px;height:70px;object-fit:cover;border-radius:8px;';
-            wrap.appendChild(img);
+            img.style.cssText = 'width:44px;height:44px;object-fit:cover;border-radius:8px;flex-shrink:0;';
+            row.appendChild(img);
           } else {
             const em = document.createElement('span');
             em.className = 'material-symbols-outlined';
-            em.style.cssText = 'font-size:32px;color:var(--text3);';
+            em.style.cssText = 'font-size:26px;color:var(--text3);width:44px;height:44px;display:flex;align-items:center;justify-content:center;flex-shrink:0;';
             em.textContent = 'restaurant';
-            wrap.appendChild(em);
+            row.appendChild(em);
           }
-          return wrap;
-        }
-      },
-      {
-        headerName: 'Product Name', field: 'name', flex: 2.2, minWidth: 155,
-        cellRenderer: (params) => {
-          const item = params.data;
           const div = document.createElement('div');
-          div.style.cssText = 'display:flex;flex-direction:column;justify-content:center;height:100%;gap:2px;width:100%;min-width:0;';
+          div.style.cssText = 'display:flex;flex-direction:column;justify-content:center;gap:2px;min-width:0;flex:1;';
           const nameEl = document.createElement('div');
           nameEl.style.cssText = 'font-weight:600;color:var(--primary);font-size:13px;line-height:1.3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:left;cursor:pointer;text-decoration:underline;text-underline-offset:2px;';
           nameEl.textContent = item.name;
@@ -1514,11 +1568,12 @@ function initGrid() {
             subEl.innerHTML = '<span class="material-symbols-outlined" style="font-size:11px;">location_on</span> ' + escHtml(locHuman);
             subEl.title = locHuman;
           } else {
-            subEl.style.cssText = 'font-size:10px;line-height:1.3;color:var(--text2);font-family:monospace;align-self:flex-end;text-align:right;';
+            subEl.style.cssText = 'font-size:10px;line-height:1.3;color:var(--text2);font-family:monospace;';
             subEl.textContent = item.sku;
           }
           div.appendChild(subEl);
-          return div;
+          row.appendChild(div);
+          return row;
         }
       },
       {
@@ -2237,6 +2292,13 @@ function _loadPricingPane(item, brand) {
     offerFrom: eff.offerFrom || '',
     offerUntil: eff.offerUntil || '',
     showOnMenuBoard: eff.showOnMenuBoard || '',
+    // Not exposed as its own field (no UI here for building a recurrence
+    // rule — that's HQ Admin's job), but a recurring offer set some other
+    // way still needs a way OUT: carried through untouched by every normal
+    // edit, and only ever cleared by "Return to RRP" below. Previously
+    // this pane never read or wrote it at all, so a recurring offer could
+    // never be cleared here no matter what else you changed and saved.
+    offerRecurrence: eff.offerRecurrence || null,
   };
   _pricingDraft = { ..._pricingBaseline };
   document.getElementById('priceRrp').value = _pricingBaseline.rrp;
@@ -2265,13 +2327,51 @@ function _readPricingFieldsFromForm() {
     offerFrom: document.getElementById('priceOfferFrom').value,
     offerUntil: document.getElementById('priceOfferUntil').value,
     showOnMenuBoard: document.getElementById('priceMenuBoardCopy').value,
+    // No form field for this — carry forward whatever revertToRrp() last
+    // set (or the baseline, on the very first read) rather than dropping
+    // it, so a plain price/date edit never silently discards it.
+    offerRecurrence: (_pricingDraft && _pricingDraft.offerRecurrence !== undefined)
+      ? _pricingDraft.offerRecurrence
+      : (_pricingBaseline ? _pricingBaseline.offerRecurrence : null),
   };
 }
 
 function _pricingDirty() {
   if (!_pricingDraft || !_pricingBaseline) return false;
-  return Object.keys(_pricingDraft).some(k => String(_pricingDraft[k] || '') !== String(_pricingBaseline[k] || ''));
+  return Object.keys(_pricingDraft).some(k => {
+    if (k === 'offerRecurrence') return JSON.stringify(_pricingDraft[k] || null) !== JSON.stringify(_pricingBaseline[k] || null);
+    return String(_pricingDraft[k] || '') !== String(_pricingBaseline[k] || '');
+  });
 }
+
+// One-click "no offer here, full stop." A BLANK offer price does not mean
+// "no offer" in this data model — _effectivePricing() only uses this
+// store's own override once it carries its OWN priced offerPrice; leaving
+// it blank instead falls through to whatever HQ has configured for this
+// item, recurring offers included. That's the actual "unable to clear it"
+// bug: blanking the field looks like it worked, but a recurring HQ offer
+// (a "10-piece bucket" style deal, say) just re-appears on its own
+// schedule regardless. Setting the offer price to match RRP instead is
+// what makes this store's override "win" — it's priced (>0), so it's used
+// in full, and offerRecurrence is forced to null in that branch — while
+// isOfferPriceDiscounted()/isDiscounted (menu-board.html, this file's own
+// price cell) suppress the strikethrough the moment offer price === RRP,
+// so nothing here reads as a live discount either.
+function revertToRrp() {
+  const rrp = document.getElementById('priceRrp').value;
+  document.getElementById('priceOffer').value = rrp;
+  document.getElementById('priceOfferFrom').value = '';
+  document.getElementById('priceOfferUntil').value = '';
+  document.getElementById('priceMenuBoardCopy').value = '';
+  _syncDateTimeDisplay('priceOfferFrom');
+  _syncDateTimeDisplay('priceOfferUntil');
+  _readPricingFieldsFromForm();
+  _pricingDraft.offerRecurrence = null;
+  _refreshOfferBanner();
+  _refreshPricingSaveState();
+  _renderPricingMenuBoardPreview();
+}
+window.revertToRrp = revertToRrp;
 
 function _refreshOfferBanner() {
   const el = document.getElementById('priceOfferBanner');
@@ -2398,6 +2498,9 @@ function savePricingChange() {
   if (_pricingDraft.offerFrom !== _pricingBaseline.offerFrom) changes.push({ fieldName: 'Offer from', oldValue: _fmtPriceDateVal(_pricingBaseline.offerFrom), newValue: _fmtPriceDateVal(_pricingDraft.offerFrom) });
   if (_pricingDraft.offerUntil !== _pricingBaseline.offerUntil) changes.push({ fieldName: 'Offer until', oldValue: _fmtPriceDateVal(_pricingBaseline.offerUntil), newValue: _fmtPriceDateVal(_pricingDraft.offerUntil) });
   if (_pricingDraft.showOnMenuBoard !== _pricingBaseline.showOnMenuBoard) changes.push({ fieldName: 'Show on Menu Board', oldValue: _pricingBaseline.showOnMenuBoard || '—', newValue: _pricingDraft.showOnMenuBoard || '—' });
+  if (JSON.stringify(_pricingDraft.offerRecurrence || null) !== JSON.stringify(_pricingBaseline.offerRecurrence || null)) {
+    changes.push({ fieldName: 'Recurring offer', oldValue: _pricingBaseline.offerRecurrence ? 'Set' : '—', newValue: _pricingDraft.offerRecurrence ? 'Set' : '—' });
+  }
   if (!changes.length) return;
 
   const when = new Date().toISOString();
@@ -2421,6 +2524,7 @@ function savePricingChange() {
     offerPrice: isNaN(offerNum) ? null : offerNum,
     offerFrom: _pricingDraft.offerFrom,
     offerUntil: _pricingDraft.offerUntil,
+    offerRecurrence: _pricingDraft.offerRecurrence || null,
     showOnMenuBoard: _pricingDraft.showOnMenuBoard,
     updatedAt: when,
     updatedBy: by,
