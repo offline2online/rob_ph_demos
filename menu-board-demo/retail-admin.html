@@ -933,6 +933,21 @@ let _storePricing  = {}; // this store's own price overrides, keyed by sku — n
 let _storeProfile  = { storeName: null, fixedSegments: [], variableSegments: [], suburb: '', state: '' };
 let _settings = { currency: '$' };
 let _brands   = [];
+// The product grid's Price cell looks up its brand once per row per
+// render — an _brands.find() for each of those is an O(n*m) scan across
+// every render/sort/filter pass. Cached against the current _brands array
+// reference (only ever reassigned wholesale, never mutated in place), so
+// a cache built once per brands update covers every row lookup until the
+// next one.
+let _brandsById = null;
+let _brandsByIdSource = null;
+function getBrandById(id) {
+  if (_brandsByIdSource !== _brands) {
+    _brandsById = new Map(_brands.map(b => [b.id, b]));
+    _brandsByIdSource = _brands;
+  }
+  return _brandsById.get(id);
+}
 
 // Fixed set of exactly 4 badge types — one default style per type, set
 // once under HQ Admin → Settings → Menu Board Badge Templates and used
@@ -1594,13 +1609,13 @@ function initGrid() {
           return _isOfferLive(eff.price, eff.offerPrice, eff.offerFrom, eff.offerUntil, eff.offerRecurrence) ? ['Offer running'] : ['No offer'];
         },
         valueFormatter: (p) => {
-          const itemBrand = _brands.find(b => b.id === p.data.brand);
+          const itemBrand = getBrandById(p.data.brand);
           const currency = (itemBrand && itemBrand.currency) ? itemBrand.currency : (getSettings().currency || '$');
           return currency + parseFloat(p.value || 0).toFixed(2);
         },
         cellRenderer: (params) => {
           const item = params.data;
-          const itemBrand = _brands.find(b => b.id === item.brand);
+          const itemBrand = getBrandById(item.brand);
           const currency = (itemBrand && itemBrand.currency) ? itemBrand.currency : (getSettings().currency || '$');
           const eff = _effectivePricing(item);
           const rrp = parseFloat(eff.price || 0);
@@ -1825,16 +1840,25 @@ function initGrid() {
 }
 
 // SUMMARY BAR ONLY (called from stock onSnapshot without full re-render)
-function updateSummaryBar() {
-  const allItems = getItems();
-  const visibleItems = allItems.filter(i => {
-    if (!i.active) return false;
-    if (!i.brand) return true;
-    const brand = _brands.find(b => b.id === i.brand);
-    if (!brand) return true;
-    if (!brand.stores || !brand.stores.length) return true;
-    return brand.stores.map(s => s.toUpperCase()).includes(STORE_CODE);
-  });
+// `visibleItems`, when the caller already has one (renderItems does, right
+// below), is reused as-is rather than recomputed — this filter includes a
+// per-item brand lookup, and recomputing it here on every call duplicated
+// that same O(items × brands) scan a second time on every items/stock/
+// localFeatured/pricing change. Callers with no fresh list of their own
+// (e.g. a stock-only update that skips renderItems) still get one computed
+// here, just via the O(1) getBrandById() cache instead of a raw scan.
+function updateSummaryBar(visibleItems) {
+  if (!visibleItems) {
+    const allItems = getItems();
+    visibleItems = allItems.filter(i => {
+      if (!i.active) return false;
+      if (!i.brand) return true;
+      const brand = getBrandById(i.brand);
+      if (!brand) return true;
+      if (!brand.stores || !brand.stores.length) return true;
+      return brand.stores.map(s => s.toUpperCase()).includes(STORE_CODE);
+    });
+  }
   const totalActive = visibleItems.filter(i => i.active).length;
   const counts = { inStock: 0, outOfStock: 0 };
   visibleItems.forEach(i => { if (i.active) counts[getStockFlag(i.sku)]++; });
@@ -1861,13 +1885,13 @@ function renderItems() {
   const visibleItems = allItems.filter(i => {
     if (!i.active) return false;
     if (!i.brand) return true;
-    const brand = _brands.find(b => b.id === i.brand);
+    const brand = getBrandById(i.brand);
     if (!brand) return true;
     if (!brand.stores || !brand.stores.length) return true;
     return brand.stores.map(s => s.toUpperCase()).includes(STORE_CODE);
   });
 
-  updateSummaryBar();
+  updateSummaryBar(visibleItems);
 
   if (!storeItemsGridApi) return;
 
@@ -2347,13 +2371,13 @@ function _pricingDirty() {
 // One-click "no offer here, full stop." A BLANK offer price does not mean
 // "no offer" in this data model — _effectivePricing() only uses this
 // store's own override once it carries its OWN priced offerPrice; leaving
-// it blank instead falls through to whatever HQ has configured, recurring
-// offers included. That's the actual "unable to clear it" bug: blanking
-// the field looks like it worked, but a recurring HQ offer (a "10-piece
-// bucket" style deal, say) just re-appears on its own schedule regardless.
-// Setting the offer price to match RRP instead is what makes this store's
-// override "win" — it's priced (>0), so it's used in full, and
-// offerRecurrence is forced to null in that branch — while
+// it blank instead falls through to whatever HQ has configured for this
+// item, recurring offers included. That's the actual "unable to clear it"
+// bug: blanking the field looks like it worked, but a recurring HQ offer
+// (a "10-piece bucket" style deal, say) just re-appears on its own
+// schedule regardless. Setting the offer price to match RRP instead is
+// what makes this store's override "win" — it's priced (>0), so it's used
+// in full, and offerRecurrence is forced to null in that branch — while
 // isOfferPriceDiscounted()/isDiscounted (menu-board.html, this file's own
 // price cell) suppress the strikethrough the moment offer price === RRP,
 // so nothing here reads as a live discount either.
