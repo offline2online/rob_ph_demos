@@ -2628,6 +2628,15 @@ function _renderUnsafe() {
       // 'filter' mode — campaign SKUs narrowed to current menu type
       campaignFiltered = displayFiltered.filter(i => skuMatch(i));
     }
+    // Array.filter() above preserves items' own catalog order, not the
+    // order Personalisation Hub sent the SKUs in — but that order is
+    // meaningful (the API's own ranking/relevance for this campaign), so
+    // re-sort the matched items to follow _campaignSkus instead of
+    // whatever position they happen to sit at in the underlying catalog.
+    const skuOrderIndex = new Map(_campaignSkus.map((s, idx) => [(s || '').trim().toLowerCase(), idx]));
+    campaignFiltered = [...campaignFiltered].sort((a, b) =>
+      skuOrderIndex.get((a.sku || '').trim().toLowerCase()) - skuOrderIndex.get((b.sku || '').trim().toLowerCase())
+    );
     console.log('[Render] Campaign SKUs:', _campaignSkus, '| Matched', campaignFiltered.length, 'of', items.length, 'items');
     _dbgMatchCount = `${campaignFiltered.length} of ${items.length} items`;
   } else {
