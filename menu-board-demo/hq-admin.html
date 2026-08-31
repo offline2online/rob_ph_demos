@@ -185,6 +185,17 @@
     .item-img-rights-badge .material-symbols-outlined { font-size: 11px; }
     .item-img-rights-badge.expired { background: var(--danger, #ff4d4f); color: #fff; }
     .item-img-rights-badge.soon { background: #faad14; color: #3d2800; }
+    /* Whether ANY asset on this product is targeted / scheduled / available
+       for A/B testing — same colours as Product Assets' own per-tile badges
+       (ProductAssetsTab.jsx Tile), placed beside the name rather than on the
+       44px thumbnail itself, which is already carrying the count and rights
+       badges and has no room left for three more without overlapping. */
+    .item-asset-indicators { display: flex; gap: 4px; margin-top: 3px; }
+    .item-asset-indicator { width: 16px; height: 16px; border-radius: 4px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+    .item-asset-indicator .material-symbols-outlined { font-size: 11px; }
+    .item-asset-indicator.targeted { background: rgba(232,253,255,.97); border: 1px solid #87d9ec; color: #169bc2; }
+    .item-asset-indicator.scheduled { background: rgba(255,247,230,.97); border: 1px solid #ffd591; color: #ad6800; }
+    .item-asset-indicator.testing { background: rgba(240,235,255,.97); border: 1px solid #d3adf7; color: #722ed1; }
     .item-name { font-weight: 600; color: var(--text); margin-bottom: 2px; }
     .item-sku { font-size: 11px; color: var(--text2); font-family: monospace; }
     .badge-active { background: var(--success-light); color: var(--success); font-size: 11px; font-weight: 600; padding: 3px 9px; border-radius: 9999px; }
@@ -3357,6 +3368,33 @@ function _assetLicenceState(expiry) {
   if (days <= 30) return 'soon';
   return 'ok';
 }
+// Duplicated from ProductAssetsTab.jsx's hasRealTargeting()/anyGroupScheduled()
+// — same rules: a group only counts as "targeted" once it carries a real
+// condition (an empty group can exist purely to hold a schedule), and
+// "scheduled" is independent of that (a group can carry either, both, or
+// neither).
+function _assetHasRealTargeting(targeting) {
+  return (targeting || []).some(g => (g.conditions || []).length > 0);
+}
+function _assetAnyGroupScheduled(targeting) {
+  return (targeting || []).some(g => g.scheduleFrom || g.scheduleUntil);
+}
+// Aggregated across every asset on the product, same "any asset" scope
+// _worstAssetRightsState uses below — lets the items table flag "something
+// on this product is targeted / scheduled / in A/B testing" without staff
+// having to open Product Assets to find out (previously only visible
+// per-asset on that page's own thumbnail strip).
+function _assetIndicators(item) {
+  const rich = (item && item.imagesRich) || [];
+  let targeted = false, scheduled = false, testing = false;
+  for (const img of rich) {
+    if (!img) continue;
+    if (_assetHasRealTargeting(img.targeting)) targeted = true;
+    if (_assetAnyGroupScheduled(img.targeting)) scheduled = true;
+    if (img.availableForTesting) testing = true;
+  }
+  return { targeted, scheduled, testing };
+}
 // Worst licence state across every asset on this product — expired beats
 // soon beats ok, so one overdue asset among several still shows red even
 // if the rest are fine. Only assets with rights tracking switched on
@@ -3523,6 +3561,33 @@ function initGrids() {
               : (item.shortDescription || item.description || '');
             nameDiv.appendChild(nameEl);
             if (ingEl.textContent) nameDiv.appendChild(ingEl);
+            const indicators = _assetIndicators(item);
+            if (indicators.targeted || indicators.scheduled || indicators.testing) {
+              const indRow = document.createElement('div');
+              indRow.className = 'item-asset-indicators';
+              if (indicators.targeted) {
+                const b = document.createElement('span');
+                b.className = 'item-asset-indicator targeted';
+                b.title = 'One or more assets are targeted';
+                b.innerHTML = '<span class="material-symbols-outlined">my_location</span>';
+                indRow.appendChild(b);
+              }
+              if (indicators.scheduled) {
+                const b = document.createElement('span');
+                b.className = 'item-asset-indicator scheduled';
+                b.title = 'One or more assets have a scheduling window on their targeting rules';
+                b.innerHTML = '<span class="material-symbols-outlined">schedule</span>';
+                indRow.appendChild(b);
+              }
+              if (indicators.testing) {
+                const b = document.createElement('span');
+                b.className = 'item-asset-indicator testing';
+                b.title = 'One or more assets are available for A/B testing';
+                b.innerHTML = '<span class="material-symbols-outlined">science</span>';
+                indRow.appendChild(b);
+              }
+              nameDiv.appendChild(indRow);
+            }
             div.appendChild(imgWrap); div.appendChild(nameDiv);
             return div;
           }
