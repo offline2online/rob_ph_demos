@@ -1470,13 +1470,29 @@ const MENU_NOTE_SIZES = {
 };
 const MENU_NOTE_RADII = { square: '2px', rounded: 'clamp(4px, 0.45vw, 8px)', pill: '999px' };
 const MENU_NOTE_BORDER_WIDTHS = { thin: '1px', medium: '2px', thick: '3px' };
+// Every number embedded in a clamp() expression (both px bounds and the vw
+// midpoint), scaled by `factor` and rounded to sane precision — used below
+// to grow the Offer Badge's font-size/padding in proportion to whichever
+// tile it's actually rendered in, instead of at one fixed size everywhere.
+function _scaleSizeExpr(expr, factor) {
+  if (!factor || factor === 1) return expr;
+  return expr.replace(/(-?\d*\.?\d+)(px|vw)/g, (m, num, unit) => {
+    const scaled = parseFloat(num) * factor;
+    return (unit === 'vw' ? Math.round(scaled * 100) / 100 : Math.round(scaled * 10) / 10) + unit;
+  });
+}
 // `outlined` only controls the fill (transparent vs. background colour) —
 // the border is independent of it, gated purely by borderWidth being set
 // to something other than 'none'. Previously the border only ever showed
 // when outlined was also on, which silently dropped a template's border
 // whenever it was paired with a filled background (e.g. a solid-colour
 // badge with a contrasting outline) — that's the bug this fixes.
-function badgeStyleForTemplateId(templateId) {
+// `scale` (see BADGE_TILE_SCALE below) grows font-size/padding for a
+// badge placed in a bigger tile than the one its size (small/medium/large)
+// was chosen against — border/radius are left alone since those read as
+// a fixed design choice (a hairline border, a pill shape) rather than
+// something that should visually grow with the tile.
+function badgeStyleForTemplateId(templateId, scale) {
   const t = getBadgeTemplateById(templateId);
   const size = MENU_NOTE_SIZES[t.size] || MENU_NOTE_SIZES.medium;
   const radius = MENU_NOTE_RADII[t.radius] || MENU_NOTE_RADII.rounded;
@@ -1484,10 +1500,25 @@ function badgeStyleForTemplateId(templateId) {
   const hasBorder = !!t.borderWidth && t.borderWidth !== 'none';
   const border = hasBorder ? `${MENU_NOTE_BORDER_WIDTHS[t.borderWidth] || MENU_NOTE_BORDER_WIDTHS.thin} solid ${t.borderColor || color}` : 'none';
   const bg = t.outlined ? 'transparent' : (t.bg || '#fff7e6');
-  return `font-size:${size.font};padding:${size.pad};border-radius:${radius};background:${bg};color:${color};border:${border};text-transform:${t.uppercase ? 'uppercase' : 'none'};`;
+  const fontSize = _scaleSizeExpr(size.font, scale);
+  const padding = _scaleSizeExpr(size.pad, scale);
+  return `font-size:${fontSize};padding:${padding};border-radius:${radius};background:${bg};color:${color};border:${border};text-transform:${t.uppercase ? 'uppercase' : 'none'};`;
 }
-function menuNoteStyleAttr() {
-  return badgeStyleForTemplateId('offer');
+// The Offer Badge previously rendered at one fixed size everywhere it
+// appeared — correct next to a regular item tile's price (clamp(16px,
+// 2vw, 30px)), but tiny and out of proportion next to the Feature Hero
+// Spotlight's much larger price (clamp(31px, 4.8vw, 74px)), and slightly
+// undersized next to a promo tile's (clamp(24px, 3.36vw, 48px)). These
+// factors are each context's price vw-size relative to item-price's own
+// (2vw) — the same ratio the price text itself already scales by between
+// tiles — so the badge grows in step with the price/tile it sits beside.
+const BADGE_TILE_SCALE = {
+  'item-price': 1,
+  'promo-price': 1.68,
+  'promo-hero-price': 2.4,
+};
+function menuNoteStyleAttr(scale) {
+  return badgeStyleForTemplateId('offer', scale);
 }
 
 // Combines the Offer Badge ("Show on Menu Board" note) and the price block
@@ -1505,7 +1536,7 @@ function menuNoteStyleAttr() {
 function pricingBlockHtml(item, currency, priceClass) {
   const priceSpan = `<span class="${priceClass}">${priceHtml(item, currency, 'price-was')}</span>`;
   if (!shouldShowMenuNote(item)) return priceSpan;
-  const badgeHtml = `<div class="menu-board-note" style="${menuNoteStyleAttr()}">${esc(item.showOnMenuBoard)}</div>`;
+  const badgeHtml = `<div class="menu-board-note" style="${menuNoteStyleAttr(BADGE_TILE_SCALE[priceClass] || 1)}">${esc(item.showOnMenuBoard)}</div>`;
   const pd = _pricingDisplaySettings();
   const placement = pd.badgePlacement || 'below';
   const gap = pd.badgeGap != null ? pd.badgeGap : 6;
@@ -1730,7 +1761,7 @@ function _tileElementHtml(key, item, ctx) {
     case 'price':
       return `<div class="${ctx.priceClass}">${priceHtml(item, ctx.currency, 'price-was')}</div>`;
     case 'menuBoardNote':
-      return shouldShowMenuNote(item) ? `<div class="menu-board-note" style="${menuNoteStyleAttr(item)}">${esc(item.showOnMenuBoard)}</div>` : '';
+      return shouldShowMenuNote(item) ? `<div class="menu-board-note" style="${menuNoteStyleAttr(BADGE_TILE_SCALE[ctx.priceClass] || 1)}">${esc(item.showOnMenuBoard)}</div>` : '';
     case 'locationBadge':
       return locationBadgeHtml(item);
     case 'nutrition':
