@@ -1837,6 +1837,21 @@ let _itemsViewSelected = false;
 let _itemsSelectedIds  = new Set();
 
 function getBrands() { return _brands; }
+// The items grid calls a brand lookup once per row per render — a
+// getBrands().find() for each of those is an O(n*m) scan across every
+// render/sort/filter pass. Cached against the current _brands array
+// reference (which is only ever reassigned wholesale, on save or on the
+// brands onSnapshot — never mutated in place), so a cache built once per
+// brands update covers every row lookup until the next one.
+let _brandsById = null;
+let _brandsByIdSource = null;
+function getBrandById(id) {
+  if (_brandsByIdSource !== _brands) {
+    _brandsById = new Map(_brands.map(b => [b.id, b]));
+    _brandsByIdSource = _brands;
+  }
+  return _brandsById.get(id);
+}
 function saveBrands(brands) {
   _brands = brands;
   setDoc(doc(db, MB, 'brands'), { data: brands })
@@ -3607,7 +3622,7 @@ function initGrids() {
           },
           valueFormatter: (params) => {
             const brands = getBrands();
-            const itemBrand = brands.find(b => b.id === params.data.brand);
+            const itemBrand = getBrandById(params.data.brand);
             const currency = (itemBrand && itemBrand.currency) ? itemBrand.currency : ((brands[0] && brands[0].currency) ? brands[0].currency : '$');
             return currency + parseFloat(params.value || 0).toFixed(2);
           },
@@ -3618,7 +3633,7 @@ function initGrids() {
           cellRenderer: (params) => {
             const item = params.data;
             const brands = getBrands();
-            const itemBrand = brands.find(b => b.id === item.brand);
+            const itemBrand = getBrandById(item.brand);
             const currency = (itemBrand && itemBrand.currency) ? itemBrand.currency : ((brands[0] && brands[0].currency) ? brands[0].currency : '$');
             const rrp = parseFloat(item.price || 0);
             const offerNum = parseFloat(item.offerPrice);
@@ -3766,19 +3781,19 @@ function initGrids() {
           // track alphabetical brand name order (e.g. would list Pizza Hut
           // before KFC).
           comparator: (idA, idB) => {
-            const nameA = ((getBrands().find(b => b.id === idA) || {}).name || idA || '').toLowerCase();
-            const nameB = ((getBrands().find(b => b.id === idB) || {}).name || idB || '').toLowerCase();
+            const nameA = ((getBrandById(idA) || {}).name || idA || '').toLowerCase();
+            const nameB = ((getBrandById(idB) || {}).name || idB || '').toLowerCase();
             return nameA.localeCompare(nameB);
           },
           // valueFormatter for display only — does NOT affect valueGetter/cell data type inference
           valueFormatter: (params) => {
-            const b = getBrands().find(b => b.id === params.value);
+            const b = getBrandById(params.value);
             return b ? b.name : (params.value || '—');
           },
           // context.getFilterValue: AG Grid-safe location for custom data used by CheckboxSetFilter
           context: {
             getFilterValue: (data) => {
-              const b = getBrands().find(b => b.id === data.brand);
+              const b = getBrandById(data.brand);
               return b ? b.name : (data.brand || '—');
             }
           }

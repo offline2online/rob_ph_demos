@@ -933,6 +933,21 @@ let _storePricing  = {}; // this store's own price overrides, keyed by sku — n
 let _storeProfile  = { storeName: null, fixedSegments: [], variableSegments: [], suburb: '', state: '' };
 let _settings = { currency: '$' };
 let _brands   = [];
+// The product grid's Price cell looks up its brand once per row per
+// render — an _brands.find() for each of those is an O(n*m) scan across
+// every render/sort/filter pass. Cached against the current _brands array
+// reference (only ever reassigned wholesale, never mutated in place), so
+// a cache built once per brands update covers every row lookup until the
+// next one.
+let _brandsById = null;
+let _brandsByIdSource = null;
+function getBrandById(id) {
+  if (_brandsByIdSource !== _brands) {
+    _brandsById = new Map(_brands.map(b => [b.id, b]));
+    _brandsByIdSource = _brands;
+  }
+  return _brandsById.get(id);
+}
 
 // Fixed set of exactly 4 badge types — one default style per type, set
 // once under HQ Admin → Settings → Menu Board Badge Templates and used
@@ -1594,13 +1609,13 @@ function initGrid() {
           return _isOfferLive(eff.price, eff.offerPrice, eff.offerFrom, eff.offerUntil, eff.offerRecurrence) ? ['Offer running'] : ['No offer'];
         },
         valueFormatter: (p) => {
-          const itemBrand = _brands.find(b => b.id === p.data.brand);
+          const itemBrand = getBrandById(p.data.brand);
           const currency = (itemBrand && itemBrand.currency) ? itemBrand.currency : (getSettings().currency || '$');
           return currency + parseFloat(p.value || 0).toFixed(2);
         },
         cellRenderer: (params) => {
           const item = params.data;
-          const itemBrand = _brands.find(b => b.id === item.brand);
+          const itemBrand = getBrandById(item.brand);
           const currency = (itemBrand && itemBrand.currency) ? itemBrand.currency : (getSettings().currency || '$');
           const eff = _effectivePricing(item);
           const rrp = parseFloat(eff.price || 0);
