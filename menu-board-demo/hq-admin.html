@@ -879,7 +879,7 @@
                 <input type="text" id="stockApiKeyInput" placeholder="e.g. sk-live-abc123..." autocomplete="off" spellcheck="false" style="font-family:monospace;font-size:12px;">
                 <p class="form-help">Store this securely &mdash; share only with authorised integrations. See <a href="api-reference.html" target="_blank" style="color:var(--primary);">API Reference</a> for usage.</p>
               </div>
-              <button class="btn btn-primary btn-sm" id="stockApiSaveBtn" onclick="saveStockApiKey()" style="margin-bottom:20px;">Save Changes</button>
+              <button class="btn btn-primary btn-sm" id="stockApiSaveBtn" onclick="saveStockApiKey()" disabled style="margin-bottom:20px;">Save Changes</button>
             </div>
           </div>
 
@@ -891,7 +891,7 @@
 
             <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:4px;">
               <button class="btn btn-ghost btn-sm" onclick="addPhEndpoint()"><span class="material-symbols-outlined" style="font-size:14px;">add</span> Add Environment</button>
-              <button class="btn btn-primary" id="phApiSaveBtn" onclick="savePhApi()">Save Changes</button>
+              <button class="btn btn-primary" id="phApiSaveBtn" onclick="savePhApi()" disabled>Save Changes</button>
             </div>
             <p id="phApiStatus" style="font-size:12px;margin-top:10px;min-height:18px;"></p>
 
@@ -971,7 +971,7 @@
 
             </div>
 
-            <button class="btn btn-primary" id="aiProvidersSaveBtn" onclick="saveAiProviders()">Save Changes</button>
+            <button class="btn btn-primary" id="aiProvidersSaveBtn" onclick="saveAiProviders()" disabled>Save Changes</button>
             <p id="aiProvidersStatus" style="font-size:12px;margin-top:10px;min-height:18px;"></p>
           </div>
 
@@ -1408,7 +1408,7 @@
 
             <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:8px;">
               <button class="btn btn-ghost btn-sm" onclick="closeTplEditor()">Cancel</button>
-              <button class="btn btn-primary btn-sm" id="tplSaveBtn" onclick="saveTemplate()">Save Changes</button>
+              <button class="btn btn-primary btn-sm" id="tplSaveBtn" onclick="saveTemplate()" disabled>Save Changes</button>
             </div>
           </div>
         </div>
@@ -1417,7 +1417,7 @@
     </div>
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="closeBrandModal()">Cancel</button>
-      <button class="btn btn-primary" id="brandSaveBtn" onclick="saveBrand()">Save Changes</button>
+      <button class="btn btn-primary" id="brandSaveBtn" onclick="saveBrand()" disabled>Save Changes</button>
     </div>
   </div>
 </div>
@@ -1988,12 +1988,23 @@ function savePricingDisplay() {
 const _ENC_PASS = 'rob-ph-demos-phapi-v1';
 const _ENC_SALT = new TextEncoder().encode('ph-menuboard-salt-2024');
 
+// PBKDF2 at 100k iterations is deliberately slow (that's the point of PBKDF2)
+// but the derived key is deterministic for this page's lifetime, so deriving
+// it fresh per token — as savePhApi did for every endpoint row in its save
+// loop — serialised N * ~100ms of pure CPU work into one save. Cache the
+// derived key after the first derivation and reuse it for every subsequent
+// encrypt/decrypt call in this session.
+let _derivedKeyPromise = null;
 async function _deriveKey() {
-  const mat = await crypto.subtle.importKey(
-    'raw', new TextEncoder().encode(_ENC_PASS), 'PBKDF2', false, ['deriveKey']);
-  return crypto.subtle.deriveKey(
-    { name: 'PBKDF2', salt: _ENC_SALT, iterations: 100000, hash: 'SHA-256' },
-    mat, { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']);
+  if (_derivedKeyPromise) return _derivedKeyPromise;
+  _derivedKeyPromise = (async () => {
+    const mat = await crypto.subtle.importKey(
+      'raw', new TextEncoder().encode(_ENC_PASS), 'PBKDF2', false, ['deriveKey']);
+    return crypto.subtle.deriveKey(
+      { name: 'PBKDF2', salt: _ENC_SALT, iterations: 100000, hash: 'SHA-256' },
+      mat, { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']);
+  })();
+  return _derivedKeyPromise;
 }
 
 async function encryptToken(token) {
@@ -2570,15 +2581,20 @@ function _loadTakeoutBagUI() {
 async function savePhApi() {
   document.getElementById('phApiStatus').textContent = '';
 
-  const updated = [];
+  const rows = [];
   for (let i = 0; i < _phEndpoints.length; i++) {
     const baseUrl  = (document.getElementById(`phEpUrl${i}`)?.value   || '').trim();
     const rawToken = (document.getElementById(`phEpToken${i}`)?.value || '').trim();
     if (!baseUrl && !rawToken && !_phEndpoints[i].authToken) continue; // skip fully blank rows
-    let authToken = _phEndpoints[i].authToken || '';
-    if (rawToken) authToken = await encryptToken(rawToken);
-    updated.push({ baseUrl, authToken });
+    rows.push({ baseUrl, rawToken, existingToken: _phEndpoints[i].authToken || '' });
   }
+  // Encrypt rows with a changed token in parallel rather than one `await` per
+  // row — the shared derived key is already cached (see _deriveKey), so this
+  // just avoids serialising each row's AES-GCM call behind the last.
+  const updated = await Promise.all(rows.map(async row => ({
+    baseUrl: row.baseUrl,
+    authToken: row.rawToken ? await encryptToken(row.rawToken) : row.existingToken
+  })));
   _phEndpoints = updated;
 
   saveSettingsData({ ..._settings, phApi: { endpoints: _phEndpoints } });
