@@ -1763,25 +1763,18 @@ function _tileElementHtml(key, item, ctx) {
     // Combined Price + Offer Badge element (pricingBlockHtml()) — the
     // only way to add either to a Tile Layout going forward (see
     // TILE_LAYOUT_ELEMENTS in hq-admin.html). 'price' and 'menuBoardNote'
-    // below are kept working for a template saved before this existed —
-    // but as two separate block-level entries in renderTileZone()'s own
-    // join, rather than pricingBlockHtml()'s single flex container, the
-    // Settings → Pricing gap has nothing to apply to: confirmed live, a
-    // pre-existing Feature Hero Spotlight template built with these two
-    // as separate zone elements just ignored the gap control entirely.
-    // Overriding the badge's own margin with that same gap value here
-    // gets both paths reading the one account-wide number, without
-    // touching this template's already-saved zone layout.
+    // below are kept working, unchanged, purely so a template saved
+    // before this existed keeps rendering exactly as it always has when
+    // they DON'T sit next to each other — renderTileZone() below already
+    // catches the case where they do (the actual pre-existing Feature
+    // Hero Spotlight layouts) and renders that pair via pricingBlockHtml()
+    // instead, so Settings → Pricing's gap and placement apply there too.
     case 'pricing':
       return pricingBlockHtml(item, ctx.currency, ctx.priceClass);
     case 'price':
       return `<div class="${ctx.priceClass}">${priceHtml(item, ctx.currency, 'price-was')}</div>`;
-    case 'menuBoardNote': {
-      if (!shouldShowMenuNote(item)) return '';
-      const gap = _pricingDisplaySettings().badgeGap;
-      const gapOverride = gap != null ? `margin-top:${gap}px;margin-bottom:${gap}px;` : '';
-      return `<div class="menu-board-note" style="${menuNoteStyleAttr(BADGE_TILE_SCALE[ctx.priceClass] || 1)}${gapOverride}">${esc(item.showOnMenuBoard)}</div>`;
-    }
+    case 'menuBoardNote':
+      return shouldShowMenuNote(item) ? `<div class="menu-board-note" style="${menuNoteStyleAttr(BADGE_TILE_SCALE[ctx.priceClass] || 1)}">${esc(item.showOnMenuBoard)}</div>` : '';
     case 'locationBadge':
       return locationBadgeHtml(item);
     case 'nutrition':
@@ -1799,14 +1792,39 @@ function _tileElementHtml(key, item, ctx) {
 // layout's default alignment renders exactly as before this existed — the
 // wrapping div's own width:100% only ever gets introduced for center/right,
 // where it's required for text-align to have anything to align within.
+//
+// A template saved before Price and the Offer Badge were combined into one
+// 'pricing' element still has them as two adjacent, independent entries
+// here — confirmed live, that leaves them exactly as far apart as plain
+// block flow (or a zone with its own flex `gap`, e.g. the hero panel's
+// .promo-hero-top) happens to put them, with Settings → Pricing's gap and
+// placement controls having nothing to apply to. Rather than patch the
+// badge's own spacing to approximate that setting, an adjacent 'price' +
+// 'menuBoardNote' pair (either order — older layouts saved both) renders
+// through pricingBlockHtml() instead, exactly as a template built today
+// would render its single 'pricing' element — so a legacy layout's
+// badge-to-price distance is governed by the one account-wide setting,
+// not by whichever flex container happens to contain it.
 function renderTileZone(entries, item, ctx) {
-  return (entries || []).map(entry => {
+  const list = entries || [];
+  const parts = [];
+  for (let i = 0; i < list.length; i++) {
+    const entry = list[i];
     const key = typeof entry === 'string' ? entry : entry.key;
+    const next = list[i + 1];
+    const nextKey = next && (typeof next === 'string' ? next : next.key);
+    const isLegacyPricingPair =
+      (key === 'price' && nextKey === 'menuBoardNote') ||
+      (key === 'menuBoardNote' && nextKey === 'price');
     const align = (typeof entry === 'object' && entry.align) || 'left';
-    const html = _tileElementHtml(key, item, ctx);
-    if (!html) return '';
-    return align === 'left' ? html : `<div style="width:100%;text-align:${align};">${html}</div>`;
-  }).join('');
+    const html = isLegacyPricingPair
+      ? pricingBlockHtml(item, ctx.currency, ctx.priceClass)
+      : _tileElementHtml(key, item, ctx);
+    if (isLegacyPricingPair) { i++; } // consume the paired entry too
+    if (!html) { continue; }
+    parts.push(align === 'left' ? html : `<div style="width:100%;text-align:${align};">${html}</div>`);
+  }
+  return parts.join('');
 }
 
 // ── ROTATION STATE ───────────────────────────────────────────────────────────
