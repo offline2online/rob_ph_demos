@@ -164,7 +164,16 @@
       position: fixed;
       inset: 0;
       background: rgba(0,0,0,0.45);
-      z-index: 200;
+      /* Above .modal-overlay (300) — confirmClearLocalOverride() (and any
+         future confirm triggered from inside the item detail modal) opens
+         this while that modal is still open. At a lower z-index this
+         stacked *behind* it: invisible, so a real mouse click just hit the
+         modal underneath and did nothing — a programmatic .click() in a
+         test still fires the handler regardless of stacking, which is why
+         that masked this in testing. cycleStockStatus() (triggered from a
+         grid row with no modal open) still works identically at this
+         higher value. */
+      z-index: 400;
       align-items: center;
       justify-content: center;
       padding: 20px;
