@@ -35,6 +35,8 @@ https://claude.ai/code/artifact/0573d999-a32a-499f-bc2f-d10ba7b494a4
 
 Columns: Backlog → Ready for Testing → Ready to Publish → Published Live. New feature/bug requests land in Backlog; once a card is moved to "Ready for Testing" with an approval, push the change and mark it "Published Live". Read this artifact (via the Artifact tool, `action: "read"`) to check current backlog items before starting prototype work.
 
+**Always keep the board in sync with reality** — every time work on a card actually changes state (a fix is ready to test, a push lands on `main`, an investigation turns up a finding, feedback comes in), read the artifact fresh and republish it with that card updated before ending the turn. Never leave a card sitting one step behind what's actually true in the repo.
+
 ## Guidelines
 
 - Always push to `main` branch
