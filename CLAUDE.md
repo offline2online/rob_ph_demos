@@ -37,6 +37,8 @@ Columns: Backlog → Ready for Testing → Ready to Publish → Published Live. 
 
 **Always keep the board in sync with reality** — every time work on a card actually changes state (a fix is ready to test, a push lands on `main`, an investigation turns up a finding, feedback comes in), read the artifact fresh and republish it with that card updated before ending the turn. Never leave a card sitting one step behind what's actually true in the repo.
 
+**Every card moved to "Ready for Testing" needs a `testUrl`** set to the live page the fix actually lives on (e.g. the GitHub Pages URL for `menu-board-demo/hq-admin.html`, `retail-admin.html`, or `menu-board.html`) — the board shows a quick-launch icon at the top of the card for it, so a tester can jump straight into testing instead of hunting down the right URL first.
+
 ## Guidelines
 
 - Always push to `main` branch
