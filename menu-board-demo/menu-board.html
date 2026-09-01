@@ -1794,37 +1794,47 @@ function _tileElementHtml(key, item, ctx) {
 // where it's required for text-align to have anything to align within.
 //
 // A template saved before Price and the Offer Badge were combined into one
-// 'pricing' element still has them as two adjacent, independent entries
-// here — confirmed live, that leaves them exactly as far apart as plain
-// block flow (or a zone with its own flex `gap`, e.g. the hero panel's
+// 'pricing' element still has them as two independent entries here —
+// confirmed live, that leaves them exactly as far apart as plain block
+// flow (or a zone with its own flex `gap`, e.g. the hero panel's
 // .promo-hero-top) happens to put them, with Settings → Pricing's gap and
 // placement controls having nothing to apply to. Rather than patch the
-// badge's own spacing to approximate that setting, an adjacent 'price' +
-// 'menuBoardNote' pair (either order — older layouts saved both) renders
-// through pricingBlockHtml() instead, exactly as a template built today
-// would render its single 'pricing' element — so a legacy layout's
-// badge-to-price distance is governed by the one account-wide setting,
-// not by whichever flex container happens to contain it.
+// badge's own spacing to approximate that setting, a 'price' +
+// 'menuBoardNote' pair (either order — older layouts saved both) that end
+// up next to each other renders through pricingBlockHtml() instead,
+// exactly as a template built today would render its single 'pricing'
+// element — so a legacy layout's badge-to-price distance is governed by
+// the one account-wide setting, not by whichever flex container happens
+// to contain it.
+//
+// "Next to each other" is judged on what actually renders, not raw saved
+// order: a template can carry another element (Location Badge, most
+// commonly) between the two that renders nothing for a given item — no
+// location text set, say — which still puts the badge directly against
+// the price on screen. Resolving every entry to its own html first and
+// dropping the empty ones before scanning for the pair is what catches
+// that; checking adjacency in the raw entries array missed it, and a
+// board with exactly this saved layout kept showing the old fixed
+// spacing even after the first version of this fix landed.
 function renderTileZone(entries, item, ctx) {
   const list = entries || [];
-  const parts = [];
-  for (let i = 0; i < list.length; i++) {
-    const entry = list[i];
+  const resolved = list.map(entry => {
     const key = typeof entry === 'string' ? entry : entry.key;
-    const next = list[i + 1];
-    const nextKey = next && (typeof next === 'string' ? next : next.key);
-    const isLegacyPricingPair =
-      (key === 'price' && nextKey === 'menuBoardNote') ||
-      (key === 'menuBoardNote' && nextKey === 'price');
     const align = (typeof entry === 'object' && entry.align) || 'left';
-    const html = isLegacyPricingPair
-      ? pricingBlockHtml(item, ctx.currency, ctx.priceClass)
-      : _tileElementHtml(key, item, ctx);
-    if (isLegacyPricingPair) { i++; } // consume the paired entry too
-    if (!html) { continue; }
-    parts.push(align === 'left' ? html : `<div style="width:100%;text-align:${align};">${html}</div>`);
+    return { key, align, html: _tileElementHtml(key, item, ctx) };
+  }).filter(r => r.html);
+
+  for (let i = 0; i < resolved.length - 1; i++) {
+    const a = resolved[i], b = resolved[i + 1];
+    const isLegacyPricingPair =
+      (a.key === 'price' && b.key === 'menuBoardNote') ||
+      (a.key === 'menuBoardNote' && b.key === 'price');
+    if (isLegacyPricingPair) {
+      resolved.splice(i, 2, { key: 'pricing', align: a.align, html: pricingBlockHtml(item, ctx.currency, ctx.priceClass) });
+    }
   }
-  return parts.join('');
+
+  return resolved.map(r => r.align === 'left' ? r.html : `<div style="width:100%;text-align:${r.align};">${r.html}</div>`).join('');
 }
 
 // ── ROTATION STATE ───────────────────────────────────────────────────────────
