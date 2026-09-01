@@ -185,6 +185,36 @@
     .item-img-rights-badge .material-symbols-outlined { font-size: 11px; }
     .item-img-rights-badge.expired { background: var(--danger, #ff4d4f); color: #fff; }
     .item-img-rights-badge.soon { background: #faad14; color: #3d2800; }
+    /* The DEFAULT asset — the one this thumbnail is actually showing, and
+       the one that's actually live on a menu board right now — being
+       expired is a different severity to some other, unused asset on the
+       product having an old licence: staff asked for this to be
+       impossible to scroll past, not a small corner icon they can miss.
+       A diagonal ribbon across the thumbnail itself (same construction as
+       an e-commerce "Sold Out" ribbon) rather than another dot badge —
+       stacking with the count badge is fine since they sit in opposite
+       corners, but takes over from the small rights-badge dot for this
+       specific asset since a whole banner already says "expired" louder
+       than that icon ever could. */
+    .item-img-expired-stamp {
+      position: absolute; inset: 0; overflow: hidden; border-radius: 8px; pointer-events: none;
+    }
+    .item-img-expired-stamp::after {
+      content: 'EXPIRED';
+      position: absolute;
+      top: 7px; left: -15px;
+      width: 74px;
+      transform: rotate(-45deg);
+      transform-origin: center;
+      background: var(--danger, #ff4d4f);
+      color: #fff;
+      font-size: 7px;
+      font-weight: 800;
+      letter-spacing: 0.4px;
+      text-align: center;
+      line-height: 12px;
+      box-shadow: 0 1px 3px rgba(0,0,0,.35);
+    }
     /* Whether ANY asset on this product is targeted / scheduled / available
        for A/B testing — same colours as Product Assets' own per-tile badges
        (ProductAssetsTab.jsx Tile), placed beside the name rather than on the
@@ -3428,6 +3458,22 @@ function _defaultImageSrc(item) {
   const idx = rich.findIndex(r => r && r.type !== 'video');
   return idx !== -1 ? imgs[idx] : '';
 }
+// The imagesRich entry backing _defaultImageSrc's pick — i.e. the actual
+// asset this table's thumbnail is showing, and the one that's actually
+// live on a menu board (not just any asset sitting unused on the
+// product). Same index logic as _defaultImageSrc, kept in sync by hand
+// since one returns a src string and the other needs the rich object's
+// own rights/expiry field.
+function _defaultAssetRichEntry(item) {
+  const rich = item.imagesRich;
+  if (!Array.isArray(rich) || !rich.length) return null;
+  if (rich[0] && rich[0].type !== 'video') return rich[0];
+  return rich.find(r => r && r.type !== 'video') || null;
+}
+function _defaultAssetExpired(item) {
+  const entry = _defaultAssetRichEntry(item);
+  return !!(entry && entry.rightsOn && _assetLicenceState(entry.rights && entry.rights.expiry) === 'expired');
+}
 function _isOfferWindowLiveNow(offerFrom, offerUntil, recurrence, now) {
   now = now || new Date();
   if (!offerFrom) return true;
@@ -3539,8 +3585,21 @@ function initGrids() {
               countBadge.title = assetCount + ' assets assigned to this product';
               imgWrap.appendChild(countBadge);
             }
+            // The asset THIS thumbnail is showing — the one actually live
+            // on a menu board right now — being expired gets the loud
+            // diagonal stamp staff asked for, impossible to scroll past.
+            // A small corner dot stays for every other case (some other,
+            // unused asset on the product is expired, or something's
+            // expiring within 30 days) — real signal, just not this urgent.
+            const defaultExpired = _defaultAssetExpired(item);
+            if (defaultExpired) {
+              const stamp = document.createElement('span');
+              stamp.className = 'item-img-expired-stamp';
+              stamp.title = 'This is the asset currently showing on the menu board, and its licence has expired';
+              imgWrap.appendChild(stamp);
+            }
             const rightsState = _worstAssetRightsState(item);
-            if (rightsState !== 'ok') {
+            if (rightsState !== 'ok' && !defaultExpired) {
               const rightsBadge = document.createElement('span');
               rightsBadge.className = 'item-img-rights-badge ' + rightsState;
               rightsBadge.title = rightsState === 'expired'
@@ -3906,7 +3965,8 @@ function initGrids() {
           }
         },
         {
-          headerName: 'Actions', field: 'id', flex: 0.6, minWidth: 70,
+          headerName: '', field: 'id', width: 70, minWidth: 70, maxWidth: 70,
+          pinned: 'right', resizable: false,
           filter: false, sortable: false,
           cellStyle: { display: 'flex', alignItems: 'center', justifyContent: 'center' },
           cellRenderer: (params) => {

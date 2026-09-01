@@ -342,6 +342,12 @@
     }
     .grid-search-header input::placeholder { color: var(--text2); }
     .grid-search-header .material-symbols-outlined { font-size: 15px; color: var(--text2); flex-shrink: 0; }
+    .grid-search-header .grid-search-clear {
+      cursor: pointer;
+      border-radius: 50%;
+      padding: 1px;
+    }
+    .grid-search-header .grid-search-clear:hover { background: var(--border); color: var(--text); }
     .csf-item {
       display: flex;
       align-items: center;
@@ -1323,10 +1329,19 @@ class ProductSearchHeader {
     this.eGui.className = 'grid-search-header';
     this.eGui.innerHTML =
       '<span class="material-symbols-outlined">search</span>' +
-      '<input type="text" placeholder="Search products…" />';
+      '<input type="text" placeholder="Search products…" />' +
+      '<span class="material-symbols-outlined grid-search-clear" title="Clear search" aria-label="Clear search" hidden>close</span>';
     this._input = this.eGui.querySelector('input');
+    this._clearBtn = this.eGui.querySelector('.grid-search-clear');
     this._input.addEventListener('input', () => {
       params.api.setGridOption('quickFilterText', this._input.value);
+      this._clearBtn.hidden = !this._input.value;
+    });
+    this._clearBtn.addEventListener('click', () => {
+      this._input.value = '';
+      params.api.setGridOption('quickFilterText', '');
+      this._clearBtn.hidden = true;
+      this._input.focus();
     });
     // Keep clicks/drags in the search box from being read by AG Grid as a
     // header click (sort) or column-resize drag.
