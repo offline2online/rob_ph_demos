@@ -2,10 +2,10 @@ import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Input, InputNumber, Table, Button, App, Tag, Switch, Modal, Tooltip } from 'antd';
 import MaterialIcon from '../../components/MaterialIcon.jsx';
-import ClearableDate, { shiftEndOneHour } from '../../components/ClearableDate.jsx';
+import { shiftEndOneHour } from '../../components/ClearableDate.jsx';
+import ScheduleRepeatFields from '../../components/ScheduleRepeatFields.jsx';
 import { getOfferState, pickEffectiveOffer, pickDefaultOffer } from '../../components/OfferBanner.jsx';
 import TargetingBuilder, { describeTargeting } from '../../components/TargetingBuilder.jsx';
-import RecurrenceControl from '../../components/RecurrenceControl.jsx';
 import { describeRecurrence } from '../../lib/recurrence.js';
 import { upsertProduct, appendPriceLogEntries, genId } from '../../data/productStore.js';
 import { getBadgeTemplateById } from '../../data/registries.js';
@@ -140,31 +140,6 @@ function OfferFormModal({ open, initialOffer, onCancel, onSave, currency, noteTe
               />
             </Field>
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px 16px', marginTop: 14 }}>
-            <Field label="Schedule offer from" hint="Blank means the offer starts now.">
-              <ClearableDate
-                value={form.offerFrom}
-                onChange={(v) => setForm((f) => ({ ...f, offerFrom: v, offerUntil: v ? shiftEndOneHour(v) : f.offerUntil }))}
-                showTime
-                blankHint={{ blank: '', set: '' }}
-              />
-            </Field>
-            <Field label="Schedule offer until" hint="Blank means the offer runs until removed.">
-              <ClearableDate value={form.offerUntil} onChange={(v) => setForm((f) => ({ ...f, offerUntil: v }))} showTime blankHint={{ blank: '', set: '' }} />
-            </Field>
-          </div>
-          <div style={{ marginTop: 14, maxWidth: 320 }}>
-            <Field
-              label="Repeat"
-              hint="Day-parting — e.g. Weekly on Mon-Fri repeats this same offer time (11:00-14:00 above) every one of those days, instead of running continuously between Start and End."
-            >
-              <RecurrenceControl
-                value={form.recurrence}
-                startDate={form.offerFrom}
-                onChange={(rule) => setForm((f) => ({ ...f, recurrence: rule }))}
-              />
-            </Field>
-          </div>
           <div style={{ marginTop: 14 }}>
             <Field label="Show on Menu Board" hint="Promo copy shown alongside this offer's price while it's live, e.g. &ldquo;Today only!&rdquo; Leave blank to show nothing extra. Always uses this product's badge template (set above, on the Show on Menu Board field) — an offer can't pick its own.">
               <div style={{ display: 'flex', gap: 16, alignItems: 'center', flexWrap: 'wrap' }}>
@@ -178,13 +153,39 @@ function OfferFormModal({ open, initialOffer, onCancel, onSave, currency, noteTe
               </div>
             </Field>
           </div>
+          {/* One combined section, same shape as Product Assets' own "Asset
+              Scheduling & Targeting Rules" — the offer's own active window
+              (Schedule offer from/until + Repeat, via the same
+              ScheduleRepeatFields row Store/Visitor targeting groups use
+              below) sits directly above the targeting rules it governs,
+              instead of being a disconnected block earlier in the form. */}
           <div style={{ marginTop: 24, paddingTop: 20, paddingBottom: 20, borderTop: '1px solid #f0f0f0', borderBottom: '1px solid #f0f0f0' }}>
             <div style={{ fontSize: 11, color: 'rgba(0,0,0,.45)', letterSpacing: '0.08em', fontWeight: 500, marginBottom: 8, textTransform: 'uppercase' }}>
-              Offer Targeting Rules
+              Offer Scheduling &amp; Targeting Rules
             </div>
             <p style={{ fontSize: 12, color: 'rgba(0,0,0,.45)', margin: '0 0 14px' }}>
-              These rules apply only to &ldquo;{form.description.trim() || 'this offer'}&rdquo; — not to any other offer on this product.
+              These apply only to &ldquo;{form.description.trim() || 'this offer'}&rdquo; — not to any other offer on this product.
             </p>
+            <div style={{ marginBottom: 16 }}>
+              <ScheduleRepeatFields
+                scheduleFrom={form.offerFrom}
+                scheduleUntil={form.offerUntil}
+                recurrence={form.recurrence}
+                onScheduleFromChange={(v) => setForm((f) => ({
+                  ...f,
+                  offerFrom: v,
+                  offerUntil: v ? shiftEndOneHour(v) : f.offerUntil,
+                  recurrence: v ? f.recurrence : null,
+                }))}
+                onScheduleUntilChange={(v) => setForm((f) => ({ ...f, offerUntil: v }))}
+                onRecurrenceChange={(rule) => setForm((f) => ({ ...f, recurrence: rule }))}
+                fromLabel="Schedule offer from"
+                untilLabel="Schedule offer until"
+                fromHint={{ blank: 'Offer starts now.', set: 'Set — see date above.' }}
+                untilHint={{ blank: 'Offer runs until removed.', set: 'Set — see date above.' }}
+                repeatDisabledHint="Set a Schedule offer from date above to repeat this offer."
+              />
+            </div>
             <TargetingBuilder
               groups={form.targeting || []}
               onChange={(groups) => setForm((f) => ({ ...f, targeting: groups }))}

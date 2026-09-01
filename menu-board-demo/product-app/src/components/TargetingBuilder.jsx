@@ -1,7 +1,7 @@
 import { Select, Button, Empty } from 'antd';
 import MaterialIcon from './MaterialIcon.jsx';
-import ClearableDate, { shiftEndOneHour } from './ClearableDate.jsx';
-import RecurrenceControl from './RecurrenceControl.jsx';
+import { shiftEndOneHour } from './ClearableDate.jsx';
+import ScheduleRepeatFields from './ScheduleRepeatFields.jsx';
 import { genId } from '../data/productStore.js';
 import { getKnownTargetingValues } from '../data/registries.js';
 
@@ -228,51 +228,31 @@ export default function TargetingBuilder({
               the default while it's also within this window. A product can
               carry several groups, each independently time-boxed, instead
               of one schedule applying to every rule on the asset. Repeat
-              (below) reuses the exact same control and day-part evaluation
+              reuses the exact same control and day-part evaluation
               (RecurrenceControl / recurrence.js) an offer's own schedule
               already uses — Schedule from/until become the recurring
               rule's daily time-of-day window once a repeat is chosen,
               instead of one fixed window. */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px 10px', marginBottom: 12 }}>
-            <div>
-              <label style={{ fontSize: 11, color: 'rgba(0,0,0,.55)', display: 'block', marginBottom: 3 }}>Schedule from</label>
-              <ClearableDate
-                showTime
-                value={g.scheduleFrom}
-                onChange={(v) => updateGroupSchedule(g.id, {
-                  scheduleFrom: v,
-                  scheduleUntil: v ? shiftEndOneHour(v) : g.scheduleUntil,
-                  // A repeat rule is anchored on Schedule from — clearing
-                  // the start date leaves it with nothing to anchor to, so
-                  // drop it too rather than leaving a rule that can never
-                  // evaluate to anything.
-                  recurrence: v ? g.recurrence : null,
-                })}
-                blankHint={{ blank: 'Active immediately.', set: 'Set — see date above.' }}
-              />
-            </div>
-            <div>
-              <label style={{ fontSize: 11, color: 'rgba(0,0,0,.55)', display: 'block', marginBottom: 3 }}>Schedule until</label>
-              <ClearableDate
-                showTime
-                value={g.scheduleUntil}
-                onChange={(v) => updateGroupSchedule(g.id, { scheduleUntil: v })}
-                blankHint={{ blank: 'Active indefinitely.', set: 'Set — see date above.' }}
-              />
-            </div>
-            <div style={{ gridColumn: '1 / -1' }}>
-              <label style={{ fontSize: 11, color: 'rgba(0,0,0,.55)', display: 'block', marginBottom: 3 }}>Repeat</label>
-              <div style={!g.scheduleFrom ? { opacity: 0.5, pointerEvents: 'none' } : undefined}>
-                <RecurrenceControl
-                  value={g.recurrence}
-                  startDate={g.scheduleFrom}
-                  onChange={(rule) => updateGroupSchedule(g.id, { recurrence: rule })}
-                />
-              </div>
-              {!g.scheduleFrom && (
-                <div style={{ fontSize: 11, color: 'rgba(0,0,0,.45)', marginTop: 3 }}>Set a Schedule from date above to repeat this rule.</div>
-              )}
-            </div>
+          <div style={{ marginBottom: 12 }}>
+            <ScheduleRepeatFields
+              scheduleFrom={g.scheduleFrom}
+              scheduleUntil={g.scheduleUntil}
+              recurrence={g.recurrence}
+              onScheduleFromChange={(v) => updateGroupSchedule(g.id, {
+                scheduleFrom: v,
+                scheduleUntil: v ? shiftEndOneHour(v) : g.scheduleUntil,
+                // A repeat rule is anchored on Schedule from — clearing
+                // the start date leaves it with nothing to anchor to, so
+                // drop it too rather than leaving a rule that can never
+                // evaluate to anything.
+                recurrence: v ? g.recurrence : null,
+              })}
+              onScheduleUntilChange={(v) => updateGroupSchedule(g.id, { scheduleUntil: v })}
+              onRecurrenceChange={(rule) => updateGroupSchedule(g.id, { recurrence: rule })}
+              fromHint={{ blank: 'Active immediately.', set: 'Set — see date above.' }}
+              untilHint={{ blank: 'Active indefinitely.', set: 'Set — see date above.' }}
+              repeatDisabledHint="Set a Schedule from date above to repeat this rule."
+            />
           </div>
           {g.conditions.map((c, i) => (
             <div key={c.id}>

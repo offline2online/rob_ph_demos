@@ -24,7 +24,7 @@ export function shiftEndOneHour(startISO) {
 // standard date/time selection pattern: a plain calendar for the date, and
 // AntD's TimePicker (a discrete, scrollable hour/minute list — not a
 // continuously-spinning wheel) for the time.
-export default function ClearableDate({ value, onChange, blankHint, showTime = false, style }) {
+export default function ClearableDate({ value, onChange, blankHint, showTime = false, style, timeWidth = 110 }) {
   const parsed = value ? dayjs(value) : null;
   const valid = parsed && parsed.isValid() ? parsed : null;
 
@@ -68,7 +68,7 @@ export default function ClearableDate({ value, onChange, blankHint, showTime = f
             allowClear={false}
             needConfirm={false}
             format="HH:mm"
-            style={{ width: 110 }}
+            style={{ width: timeWidth }}
             value={valid}
             onChange={handleTimeChange}
           />
