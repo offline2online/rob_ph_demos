@@ -37,7 +37,7 @@ Columns: Backlog → Ready for Testing → Ready to Publish → Published Live. 
 
 **Always keep the board in sync with reality** — every time work on a card actually changes state (a fix is ready to test, a push lands on `main`, an investigation turns up a finding, feedback comes in), read the artifact fresh and republish it with that card updated before ending the turn. Never leave a card sitting one step behind what's actually true in the repo.
 
-**Every card moved to "Ready for Testing" needs a `testUrl`** set to the live page the fix actually lives on (e.g. the GitHub Pages URL for `menu-board-demo/hq-admin.html`, `retail-admin.html`, or `menu-board.html`) — the board shows a quick-launch icon at the top of the card for it, so a tester can jump straight into testing instead of hunting down the right URL first.
+**Every card moved to "Ready for Testing" needs a `testUrl`** — the board shows a quick-launch icon at the top of the card for it, so a tester can jump straight into testing instead of hunting down the right URL first. While a card sits in this column the fix is, by definition, not on `main` yet, so `testUrl` must point at a preview of the *feature branch*, never the published `offline2online.github.io` site (that's still serving the old code) — use `https://raw.githack.com/offline2online/rob_ph_demos/<branch>/<path>` (e.g. `.../claude/prototype-backlog-review-oruk9v/menu-board-demo/hq-admin.html`), which proxies a specific branch's file with a real `text/html` content-type so it actually renders. Only once the card moves to "Published Live" does the equivalent `offline2online.github.io` URL become the right one to reference (though by then the card no longer shows the icon at all).
 
 ## Guidelines
 
