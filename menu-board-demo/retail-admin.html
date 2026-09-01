@@ -729,7 +729,12 @@
       <div class="modal-tab-pane" id="panePricing">
         <div class="add-stock-section">
           <h4>RRP &amp; Offer Pricing</h4>
-          <div id="priceScopeNote" style="font-size:12px;color:var(--text2);margin-bottom:12px;"></div>
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px;flex-wrap:wrap;">
+            <span id="priceScopeNote" style="font-size:12px;color:var(--text2);"></span>
+            <button type="button" class="btn btn-ghost" id="priceClearOverrideBtn" style="display:none;white-space:nowrap;color:var(--danger);border-color:var(--danger);" onclick="confirmClearLocalOverride()" title="Removes this store's own price entirely — RRP, offer, schedule and menu board copy all revert fully to HQ's default. Different from Return to RRP, which keeps a (non-discounting) override on file.">
+              <span class="material-symbols-outlined" style="font-size:15px;">delete_sweep</span> Clear local override
+            </button>
+          </div>
           <div class="form-row" style="display:flex;gap:14px;">
             <div class="field" style="flex:1;">
               <label for="priceRrp">RRP</label>
@@ -879,7 +884,7 @@
 
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-app.js";
-import { getFirestore, doc, setDoc, onSnapshot, collection } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-firestore.js";
+import { getFirestore, doc, setDoc, onSnapshot, collection, deleteField } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-firestore.js";
 
 // ===== FIREBASE INIT =====
 const firebaseConfig = {
@@ -1072,6 +1077,23 @@ function getStorePricing() { return _storePricing; }
 function saveStorePricing(sku, data) {
   _storePricing = { ..._storePricing, [sku]: data };
   return setDoc(doc(db, STORE_PRICING_COLL, STORE_CODE), { [sku]: data }, { merge: true })
+    .catch(err => {
+      toast('Sync failed: ' + (err.message || err), 'error');
+      throw err;
+    });
+}
+// Distinct from "Return to RRP" (which still leaves a non-discounting
+// override on file — price===offerPrice) — this removes the sku's entry
+// from storePricing/{STORE_CODE} entirely via deleteField(), so the item
+// falls back 100% to HQ's own price/offer, with no local record at all.
+// The fix for a corrupted override (e.g. RRP itself got overwritten to
+// match an intended offer price) is to clear it outright rather than try
+// to patch it back to a guessed-correct state.
+function clearStorePricing(sku) {
+  const next = { ..._storePricing };
+  delete next[sku];
+  _storePricing = next;
+  return setDoc(doc(db, STORE_PRICING_COLL, STORE_CODE), { [sku]: deleteField() }, { merge: true })
     .catch(err => {
       toast('Sync failed: ' + (err.message || err), 'error');
       throw err;
@@ -2354,6 +2376,7 @@ function _loadPricingPane(item, brand) {
   document.getElementById('priceScopeNote').textContent = hasOverride
     ? `Showing ${STORE_CODE}'s own price for this item. Other stores and HQ's default (${currency}${parseFloat(item.price || 0).toFixed(2)}) are unaffected.`
     : `Showing HQ's default price. Saving a change here only sets ${STORE_CODE}'s own price — other stores and HQ's default stay as they are.`;
+  document.getElementById('priceClearOverrideBtn').style.display = hasOverride ? '' : 'none';
   _renderPriceLog(item.priceLog || []);
   _refreshOfferBanner();
   _refreshPricingSaveState();
@@ -2411,6 +2434,35 @@ function revertToRrp() {
   _renderPricingMenuBoardPreview();
 }
 window.revertToRrp = revertToRrp;
+
+// Reuses the same confirm-overlay pattern cycleStockStatus() already wires
+// up (icon/title/msg/button text+class+onclick, then .open) rather than a
+// second, near-duplicate dialog mechanism.
+function confirmClearLocalOverride() {
+  const item = _items.find(i => i.sku === _modalSku);
+  if (!item) return;
+  document.getElementById('confirmIcon').textContent = 'delete_sweep';
+  document.getElementById('confirmTitle').textContent = 'Clear local override';
+  document.getElementById('confirmMsg').textContent =
+    `This removes ${STORE_CODE}'s own price entirely for "${item.name}" — RRP, offer, schedule and menu board copy will all revert fully to HQ's default. This can't be undone from here.`;
+  const btn = document.getElementById('confirmBtn');
+  btn.textContent = 'Clear override';
+  btn.className = 'btn btn-danger';
+  btn.onclick = doClearLocalOverride;
+  document.getElementById('confirmOverlay').classList.add('open');
+}
+window.confirmClearLocalOverride = confirmClearLocalOverride;
+
+function doClearLocalOverride() {
+  const sku = _modalSku;
+  const item = _items.find(i => i.sku === sku);
+  closeConfirm();
+  closeItemModal();
+  if (!sku) return;
+  clearStorePricing(sku)
+    .then(() => toast(`Cleared ${STORE_CODE}'s local price override for "${item ? item.name : sku}" — now following HQ's default`, 'success'))
+    .catch(() => {});
+}
 
 function _refreshOfferBanner() {
   const el = document.getElementById('priceOfferBanner');
