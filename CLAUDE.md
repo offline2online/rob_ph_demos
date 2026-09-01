@@ -49,6 +49,18 @@ When told (in chat) to check the board, read it fresh and:
 1. If `notifyClaudeRequestedAt` is newer than `notifyClaudeHandledAt` (or the latter is unset): work through every card in Backlog the same way as any other backlog sweep (investigate/fix, commit + push to the feature branch, add a Claude note, set `testUrl`, move to "Ready for Testing"), then set `notifyClaudeHandledAt` to now and republish.
 2. Independently: if "Ready for Testing" is empty AND "Ready to Publish" has one or more cards, that itself is the trigger to run the publish workflow for all of them — no further "please publish" confirmation is required per card, since moving a card to "Ready to Publish" (via the board's own "Ready to publish" approval button) already is the user's explicit approval. Fast-forward push each one's already-committed fix to `main`, mark it "Published Live" with a `claudeNote`, and republish the board.
 
+### GitHub commit badge on Published Live cards
+
+Every "Published Live" card shows a clickable commit badge at the top linking to `https://github.com/offline2online/rob_ph_demos/commit/<sha>`. The board doesn't store a structured commit field for this — it parses the sha straight out of the card's own `claudeNote` text with a regex looking for `main as [commit ]<sha>`. **This means the existing `claudeNote` phrasing convention ("Pushed to main as commit `<sha>`. Live now." / "...cherry-picked commit `<x>` onto main as `<sha>`...") is now load-bearing for the UI, not just descriptive text** — always phrase a Published Live `claudeNote` that way (the sha that's actually live on `main`, not an intermediate branch commit) so the badge picks it up correctly.
+
+### Archiving Published Live cards
+
+Published Live cards have an **Archive** action (next to the feedback/delete icons). Archiving sets `status: "archived"` and `archivedAt` — archived cards keep all their data (including the commit link) but stop matching any of the four board columns, so they simply disappear from the board rather than being deleted. The topbar's **Archived (N)** button opens a list of every archived card with a **Restore** button that sets `status` back to `"published-live"`. When asked to archive/restore a card, use these same fields rather than deleting cards outright — deletion (the trash icon) is reserved for Backlog cards only now.
+
+### Mic dictation (New Item / Feedback forms)
+
+The mic button now explicitly requests microphone permission (`getUserMedia`) before starting Web Speech dictation, and surfaces a specific, visible error message (blocked permission, no device, no browser support, network needed, etc.) instead of silently doing nothing when dictation can't start — this couldn't be verified end-to-end from this sandbox (no live network path to the browser's speech-recognition backend, and no real microphone hardware), so if a user still reports the mic doing nothing, ask what error text now appears rather than assuming it's still silent. The New Item and Feedback textareas also auto-grow to fit what's been typed or dictated (capped near half the viewport, with the modal itself scrolling beyond that), so captured speech stays visible instead of scrolling inside a fixed-height box.
+
 ## Guidelines
 
 - Always push to `main` branch
