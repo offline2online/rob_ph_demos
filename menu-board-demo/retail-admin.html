@@ -727,6 +727,25 @@
 
       <!-- PRICING PANE — only shown when the brand has store-level pricing enabled (HQ Admin ▸ Brand ▸ Store Distribution) -->
       <div class="modal-tab-pane" id="panePricing">
+        <!-- Prominent, top-of-pane CTA — only shown while a local promotion
+             is genuinely running (live and actually discounting), rather
+             than as a small, easy-to-miss button sitting inline next to the
+             Offer price field regardless of whether there's anything live
+             to revert. Pressing it fills the fields in below; Save Changes
+             still needs a reason and a click, same two-step save every
+             other pricing edit here requires. -->
+        <div id="priceRevertBanner" style="display:none;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;border-radius:8px;padding:14px 16px;margin-bottom:16px;">
+          <div style="display:flex;align-items:center;gap:10px;">
+            <span class="material-symbols-outlined" style="font-size:22px;">sell</span>
+            <div>
+              <div style="font-weight:700;font-size:13px;" id="priceRevertBannerText">A local promotion is currently running.</div>
+              <div style="font-size:11px;opacity:.8;">Stops the discount for this store — stock, targeting and HQ's own RRP are unaffected.</div>
+            </div>
+          </div>
+          <button type="button" class="btn btn-primary" onclick="revertToRrp()" style="white-space:nowrap;" title="Clears the offer's schedule, promo copy and any recurring rule, and stops it discounting — this store shows RRP. Still needs Save Changes below.">
+            <span class="material-symbols-outlined" style="font-size:16px;">restart_alt</span> Return to RRP
+          </button>
+        </div>
         <div class="add-stock-section">
           <h4>RRP &amp; Offer Pricing</h4>
           <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px;flex-wrap:wrap;">
@@ -742,12 +761,7 @@
             </div>
             <div class="field" style="flex:1;">
               <label for="priceOffer">Offer price</label>
-              <div style="display:flex;gap:8px;align-items:flex-start;">
-                <input type="number" id="priceOffer" min="0" step="0.01" placeholder="0.00" oninput="_onPricingFieldChange()" style="flex:1;">
-                <button type="button" class="btn btn-ghost" style="white-space:nowrap;" onclick="revertToRrp()" title="Clears the offer's schedule, promo copy and any recurring rule, and stops it discounting — this store shows RRP.">
-                  <span class="material-symbols-outlined" style="font-size:15px;">restart_alt</span> Return to RRP
-                </button>
-              </div>
+              <input type="number" id="priceOffer" min="0" step="0.01" placeholder="0.00" oninput="_onPricingFieldChange()" style="width:100%;">
             </div>
           </div>
           <div class="form-row" style="display:flex;gap:14px;margin-top:12px;">
@@ -2466,28 +2480,42 @@ function doClearLocalOverride() {
 
 function _refreshOfferBanner() {
   const el = document.getElementById('priceOfferBanner');
+  const revertBanner = document.getElementById('priceRevertBanner');
   const { rrp, offerPrice, offerFrom, offerUntil } = _pricingDraft || {};
   const currency = window._pricingCurrency || '$';
   const rrpNum = parseFloat(rrp);
   const offerNum = parseFloat(offerPrice);
-  if (!(offerNum > 0)) { el.style.display = 'none'; return; }
+  if (!(offerNum > 0)) { el.style.display = 'none'; revertBanner.style.display = 'none'; return; }
   const live = _isOfferLive(rrp, offerPrice, offerFrom, offerUntil);
   const now = new Date();
   const from = offerFrom ? new Date(offerFrom) : null;
   const until = offerUntil ? new Date(offerUntil) : null;
   el.style.display = 'block';
-  if (live) {
+  // Same "nothing to discount" rule as everywhere else this data shows
+  // (the grid, the menu board) — an offer priced exactly at RRP has
+  // nothing running worth a "Return to RRP" CTA for.
+  const isDiscounting = live && !isNaN(rrpNum) && offerNum.toFixed(2) !== rrpNum.toFixed(2);
+  if (isDiscounting) {
     const rrpSafe = isNaN(rrpNum) ? 0 : rrpNum;
     el.style.background = 'var(--success-light)'; el.style.color = 'var(--success)'; el.style.border = '1px solid rgba(82,196,26,0.3)';
     el.textContent = `Offer live — ${currency}${offerNum.toFixed(2)} instead of ${currency}${rrpSafe.toFixed(2)}, saving ${currency}${(rrpSafe - offerNum).toFixed(2)}` + (until ? ` until ${_fmtPriceDateVal(offerUntil)}.` : '.');
+    revertBanner.style.display = 'flex';
+    revertBanner.style.background = 'var(--success-light)';
+    revertBanner.style.border = '1px solid rgba(82,196,26,0.3)';
+    revertBanner.style.color = 'var(--success)';
+    document.getElementById('priceRevertBannerText').textContent =
+      `A local promotion is currently running — ${currency}${offerNum.toFixed(2)} instead of ${currency}${rrpSafe.toFixed(2)}.`;
   } else if (from && from > now) {
     el.style.background = 'var(--warning-light)'; el.style.color = 'var(--warning)'; el.style.border = '1px solid rgba(250,173,20,0.3)';
     el.textContent = `Offer scheduled from ${_fmtPriceDateVal(offerFrom)}${until ? ` until ${_fmtPriceDateVal(offerUntil)}` : ''}.`;
+    revertBanner.style.display = 'none';
   } else if (until && until < now) {
     el.style.background = 'var(--danger-light)'; el.style.color = 'var(--danger)'; el.style.border = '1px solid rgba(255,77,79,0.3)';
     el.textContent = `Offer ended ${_fmtPriceDateVal(offerUntil)}.`;
+    revertBanner.style.display = 'none';
   } else {
     el.style.display = 'none';
+    revertBanner.style.display = 'none';
   }
 }
 
