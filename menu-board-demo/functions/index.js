@@ -430,7 +430,35 @@ exports.generateProductVideo = onCall({ secrets: [AI_TOKEN_ENC_KEY], maxInstance
   }
 
   if (job?.status === 'failed') throw new HttpsError('internal', job?.error?.message || job?.error || 'Video generation failed');
-  const videoUrl = job?.result?.video_url;
-  if (!videoUrl) throw new HttpsError('deadline-exceeded', 'Video provider did not return a video in time');
+  const providerVideoUrl = job?.result?.video_url;
+  if (!providerVideoUrl) throw new HttpsError('deadline-exceeded', 'Video provider did not return a video in time');
+
+  // The video provider's own result URL is only hosted temporarily — this
+  // is why a Generate Video hero panel that worked fine when it was made
+  // stops loading days later with no code or data change anywhere near
+  // it (confirmed live: several products' primary-tile videos went dead
+  // at once, all Generate Video results, while every directly-uploaded
+  // image/video — stored as a data: URI in Firestore itself, permanent by
+  // construction — kept working). Re-hosting the bytes in this project's
+  // own Cloud Storage bucket the moment generation finishes is what makes
+  // the result permanent, matching an upload's own guarantee. A signed
+  // URL with a far-future expiry (rather than bucket/object ACLs) is used
+  // so this doesn't depend on how the bucket's public-access settings
+  // happen to be configured.
+  let videoUrl;
+  try {
+    const videoResp = await fetch(providerVideoUrl);
+    if (!videoResp.ok) throw new Error(`HTTP ${videoResp.status}`);
+    const videoBuffer = Buffer.from(await videoResp.arrayBuffer());
+    const contentType = videoResp.headers.get('content-type') || 'video/mp4';
+    const bucket = admin.storage().bucket();
+    const filePath = `generated-videos/${Date.now()}-${crypto.randomBytes(6).toString('hex')}.mp4`;
+    const file = bucket.file(filePath);
+    await file.save(videoBuffer, { contentType, metadata: { cacheControl: 'public, max-age=31536000' } });
+    [videoUrl] = await file.getSignedUrl({ action: 'read', expires: '01-01-2500' });
+  } catch (e) {
+    logger.error('generateProductVideo: failed to re-host provider video, returning its (temporary) URL as a fallback', e);
+    videoUrl = providerVideoUrl;
+  }
   return { videoUrl };
 });

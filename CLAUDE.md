@@ -13,6 +13,10 @@ This is a static site repository used to publish HTML and static resources (CSS,
 - `index.html` — Main entry point
 - Static assets (CSS, JS, images) go directly in the repo root or organized subdirectories
 
+## Cloud Functions need a separate manual deploy
+
+`menu-board-demo/functions/` (Cloud Functions for Firebase — the scheduled offer-expiry sweep, the AI provider calls) is **not** part of the static site. Pushing a change there to `main` does **not** make it live — GitHub Pages only serves the static HTML/JS/CSS, and this sandbox has no `firebase` CLI or deploy credentials, so **Claude cannot deploy a functions change itself**. Whoever owns Firebase deploy access needs to separately run `firebase deploy --only functions` (or `npm run deploy` inside `menu-board-demo/functions`) before a functions fix actually takes effect. Always say this explicitly when committing a functions/ change — don't imply "pushed to main" means "live" the way it does for everything else in this repo.
+
 ## Common Workflows
 
 ### Publish changes
