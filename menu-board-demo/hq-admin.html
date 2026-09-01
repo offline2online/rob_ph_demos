@@ -1591,10 +1591,40 @@ function _tileLayoutEntry(key, align) { return { key, align: align || 'left' }; 
 // guard) old shape where entries were bare key strings rather than
 // { key, align } objects, so a template saved before alignment existed
 // still loads instead of throwing.
+//
+// Also migrates a template saved before Price and the Offer Badge were
+// combined into one 'pricing' element: TILE_LAYOUT_ELEMENTS (the editor's
+// own add/reorder palette) has no listing for either 'price' or
+// 'menuBoardNote' any more, so a template still carrying them showed up
+// in the editor as two unrecognized raw-key rows — reordering worked on
+// each independently rather than as the one unit they actually render as
+// on the board, and "Pricing (Price + Offer Badge)" still looked
+// available to add even though it was conceptually already there,
+// confirmed live to produce exactly that: three pricing-shaped rows in
+// one zone once someone added it. Collapsing an adjacent pair into a
+// single 'pricing' entry the first time a legacy template is opened here
+// brings its editor model in line with what a template built today
+// already looks like — the same migration menu-board.html applies at
+// render time for a template that's never reopened in the editor.
 function _normalizeTileLayout(layout) {
   const out = {};
   Object.keys(layout || {}).forEach(zoneKey => {
-    out[zoneKey] = (layout[zoneKey] || []).map(e => typeof e === 'string' ? _tileLayoutEntry(e) : e);
+    const entries = (layout[zoneKey] || []).map(e => typeof e === 'string' ? _tileLayoutEntry(e) : e);
+    const merged = [];
+    for (let i = 0; i < entries.length; i++) {
+      const a = entries[i], b = entries[i + 1];
+      const isLegacyPricingPair = b && (
+        (a.key === 'price' && b.key === 'menuBoardNote') ||
+        (a.key === 'menuBoardNote' && b.key === 'price')
+      );
+      if (isLegacyPricingPair) {
+        merged.push(_tileLayoutEntry('pricing', a.align));
+        i++; // consume the paired entry too
+      } else {
+        merged.push(a);
+      }
+    }
+    out[zoneKey] = merged;
   });
   return out;
 }
