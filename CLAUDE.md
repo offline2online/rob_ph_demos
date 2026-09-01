@@ -61,6 +61,14 @@ Published Live cards have an **Archive** action (next to the feedback/delete ico
 
 The mic button now explicitly requests microphone permission (`getUserMedia`) before starting Web Speech dictation, and surfaces a specific, visible error message (blocked permission, no device, no browser support, network needed, etc.) instead of silently doing nothing when dictation can't start — this couldn't be verified end-to-end from this sandbox (no live network path to the browser's speech-recognition backend, and no real microphone hardware), so if a user still reports the mic doing nothing, ask what error text now appears rather than assuming it's still silent. The New Item and Feedback textareas also auto-grow to fit what's been typed or dictated (capped near half the viewport, with the modal itself scrolling beyond that), so captured speech stays visible instead of scrolling inside a fixed-height box.
 
+## These prototypes run iframed inside the real Personalisation Hub platform
+
+`hq-admin.html` and `retail-admin.html` are not viewed standalone in real use — they're **iframed into the actual Personalisation Hub platform** (confirmed directly by the user; also already documented in-code, e.g. hq-admin.html's own comments about "the parent platform's own sidebar" and the mic-permission-inside-iframe backlog item). This means:
+
+- **A screenshot of either page in real use will show the real platform's own chrome around our content** — its branded top bar/logo, its left-hand icon sidebar, its own breadcrumbs (e.g. "Retail Admin / Menu Boards"). That outer chrome is the platform's, not this repo's, and seeing it is normal — **it is not a sign the user is looking at the wrong system or a different codebase.** Don't ask "is this our prototype or the real platform?" — assume iframe chrome and move on to the actual content/bug.
+- **The reverse can also be true**: some screens the user screenshots (e.g. a card-style "Menu Boards" list with items/price/category, RRP shown as a plain secondary line rather than a struck-through price) may be a **native page of the real platform itself**, not our iframed content at all — e.g. nothing in this repo renders price as a stacked "RRP £X" label the way one such screen did. If a screenshot's content/layout doesn't match anything `grep`-able in this repo (page title, exact copy, that specific price/badge presentation), say so plainly rather than continuing to hunt for the bug in this codebase — it may need fixing on the platform side, outside this repo's reach.
+- When debugging a visual report, check which case applies: platform chrome around our real content (debug here) vs. a platform-native screen that merely happens to show the same product data (out of scope here).
+
 ## Guidelines
 
 - Always push to `main` branch
