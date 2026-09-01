@@ -1206,6 +1206,7 @@ export default function ProductAssetsTab({ draft, baseline, patch }) {
                 }
               />
               <IconAction
+                ai
                 icon={<MaterialIcon name="auto_fix_high" />}
                 caption="Magic Edit"
                 disabled={expired || isVideo || !!imageBusy}

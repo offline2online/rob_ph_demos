@@ -20,3 +20,4 @@ export const functions = getFunctions(app);
 export const MB = 'menuboard';
 export const ITEMS_COLL = 'items';
 export const STOCK_COLL_NAME = 'stock';
+export const STORE_PRICING_COLL = 'storePricing';

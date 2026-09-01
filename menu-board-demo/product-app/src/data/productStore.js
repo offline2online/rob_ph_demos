@@ -1,5 +1,5 @@
-import { doc, getDoc, setDoc } from 'firebase/firestore';
-import { db, ITEMS_COLL } from './firebase.js';
+import { doc, getDoc, setDoc, collection, getDocs } from 'firebase/firestore';
+import { db, ITEMS_COLL, STORE_PRICING_COLL } from './firebase.js';
 import { migrateItem, toItemDoc } from './migration.js';
 import { getBrandById, getBrands } from './registries.js';
 
@@ -148,6 +148,24 @@ export async function setProductStatus(id, status) {
 // string) so the log can be sorted chronologically and so the table can
 // render date and time as two independent, correctly-parsed pieces
 // instead of guessing where one ends and the other starts.
+// Every store's own storePricing/{storeCode} doc, filtered down to just
+// this SKU's entry — so a product's Stock tab can show "which stores are
+// running their own price for this item and what it is" without needing
+// its own per-store collection (retail-admin.html's local-offer records
+// are the only place this data already lives; there's no separate
+// "stores" registry with human-readable names anywhere in this app, so
+// the store's own code is the only identifier shown).
+export async function getLocalOffersForSku(sku) {
+  if (!sku) return [];
+  const snap = await getDocs(collection(db, STORE_PRICING_COLL));
+  const rows = [];
+  snap.forEach((d) => {
+    const override = (d.data() || {})[sku];
+    if (override) rows.push({ storeCode: d.id, ...override });
+  });
+  return rows.sort((a, b) => a.storeCode.localeCompare(b.storeCode));
+}
+
 export function appendPriceLogEntries(product, changes, reason, actor = 'HQ Admin User') {
   const when = new Date().toISOString();
   const entries = changes.map((c) => ({

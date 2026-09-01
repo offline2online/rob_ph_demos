@@ -3695,7 +3695,7 @@ function initGrids() {
           }
         },
         {
-          headerName: 'Price', field: 'price', flex: 1, minWidth: 80,
+          headerName: 'Price', field: 'price', flex: 0.7, minWidth: 68,
           filter: CheckboxSetFilter,
           // Offer-running is a yes/no state, not a numeric range, so this
           // trades the usual agNumberColumnFilter for the same
@@ -3890,13 +3890,13 @@ function initGrids() {
           cellStyle: { fontFamily: 'monospace', fontSize: '11px', color: 'var(--text2)', display: 'flex', alignItems: 'center' }
         },
         {
-          headerName: 'Category', field: 'category', flex: 1.2, minWidth: 110,
+          headerName: 'Category', field: 'category', flex: 0.9, minWidth: 85,
           cellStyle: { display: 'flex', alignItems: 'center' },
           filter: CheckboxSetFilter,
           valueFormatter: (params) => String(params.value || '')
         },
         {
-          headerName: 'Menu Types', field: 'menuTypes', flex: 1.5, minWidth: 140,
+          headerName: 'Menu Types', field: 'menuTypes', flex: 1.1, minWidth: 105,
           cellStyle: { display: 'flex', alignItems: 'center' },
           sortable: false,
           autoHeight: true,

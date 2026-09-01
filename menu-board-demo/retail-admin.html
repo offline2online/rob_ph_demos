@@ -1648,7 +1648,7 @@ function initGrid() {
         // store's price. field:'price' (rather than a valueGetter) keeps
         // sort/filter working off the raw HQ value; the cellRenderer is
         // what actually displays the effective, possibly-overridden one.
-        headerName: 'Price', field: 'price', flex: 0.8, minWidth: 75,
+        headerName: 'Price', field: 'price', flex: 0.6, minWidth: 65,
         filter: CheckboxSetFilter,
         // Offer-running is a yes/no state, not a numeric range, so this
         // trades the usual agNumberColumnFilter for the same checkbox-tag
@@ -1728,12 +1728,12 @@ function initGrid() {
         }
       },
       {
-        headerName: 'Category', field: 'category', flex: 1, minWidth: 90,
+        headerName: 'Category', field: 'category', flex: 0.8, minWidth: 75,
         cellStyle: { display: 'flex', alignItems: 'center' },
         filter: CheckboxSetFilter
       },
       {
-        headerName: 'Menu Types', field: 'menuTypes', flex: 1.3, minWidth: 125,
+        headerName: 'Menu Types', field: 'menuTypes', flex: 1, minWidth: 95,
         sortable: false,
         filter: CheckboxSetFilter,
         filterParams: {
@@ -1913,6 +1913,7 @@ function updateSummaryBar(visibleItems) {
   const totalActive = visibleItems.filter(i => i.active).length;
   const counts = { inStock: 0, outOfStock: 0 };
   visibleItems.forEach(i => { if (i.active) counts[getStockFlag(i.sku)]++; });
+  const totalLocallyFeatured = visibleItems.filter(i => i.active && isLocalFeatured(i.sku)).length;
 
   document.getElementById('summaryBar').innerHTML = `
     <div class="summary-chip">
@@ -1923,6 +1924,9 @@ function updateSummaryBar(visibleItems) {
     </div>
     <div class="summary-chip">
       <div class="num" style="color:${STOCK_FLAG_VISUAL.outOfStock.color}">${counts.outOfStock}</div><div class="lbl">Out of Stock</div>
+    </div>
+    <div class="summary-chip">
+      <div class="num" style="color:#faad14">${totalLocallyFeatured}</div><div class="lbl">Locally Featured</div>
     </div>
   `;
 }
