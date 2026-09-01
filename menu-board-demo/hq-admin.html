@@ -4153,14 +4153,28 @@ function _updateItemsIngredientsColumnVisibility() {
 // without scrolling right) instead of reflowing to fit. Debounced since
 // 'resize' fires continuously while dragging/rotating.
 let _hqResizeDebounce = null;
-window.addEventListener('resize', () => {
+function _hqRefitGrids() {
   clearTimeout(_hqResizeDebounce);
   _hqResizeDebounce = setTimeout(() => {
     _updateItemsIngredientsColumnVisibility();
     itemsGridApi && itemsGridApi.sizeColumnsToFit();
     brandsGridApi && brandsGridApi.sizeColumnsToFit();
   }, 150);
-});
+}
+window.addEventListener('resize', _hqRefitGrids);
+// A real 'resize' event only fires once the browser has already settled
+// on a new size — confirmed live: on first load the grid picked up the
+// wrong (too-narrow) column widths and stayed that way until the
+// platform's own sidebar was toggled once, which was the first thing to
+// actually fire 'resize'. The race is on the platform's side: this frame
+// can finish its own layout before the platform has settled the iframe
+// into its final box (still animating the sidebar in, other shell
+// panels still loading, etc.), and nothing here re-checks after that
+// until some later resize happens to come along. A ResizeObserver on
+// <body> catches the frame's real size the moment it's actually known,
+// same recompute either way, so the very first render lands correctly
+// without needing that manual nudge.
+new ResizeObserver(_hqRefitGrids).observe(document.body);
 
 // ===== ITEMS =====
 function renderItems() {
