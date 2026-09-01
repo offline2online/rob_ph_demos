@@ -676,7 +676,21 @@
     .bt-preview { display:inline-block; font-weight:700; line-height:1.3; white-space:nowrap; }
 
     /* ── TILE LAYOUT EDITOR (Local Feature Highlight template) ────────── */
-    .tile-layout-editor { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+    /* This editor lives in the same shared #brandModal every brand/template
+       tab uses — fixed at 680px (see .modal above) regardless of the
+       surrounding window or iframe. A `@media (max-width: 900px)` rule
+       here was checking the wrong thing entirely: that reads the outer
+       viewport, which on any normal-sized screen is comfortably above
+       900px even though the 680px modal itself never was — so it never
+       fired, and two columns were squeezed into content barely 600px
+       wide. Confirmed live: that's what pushed each row's align/reorder/
+       delete controls off the right edge, not something a narrower
+       screen would ever have fixed on its own. Stacking the two tiles
+       unconditionally is what actually fits this modal's real width —
+       there's no viewport this shared modal would ever be wide enough
+       for two side-by-side columns to make sense in. */
+    .tile-layout-editor { display:flex; flex-direction:column; gap:16px; }
+    .tile-layout-tile { min-width:0; }
     .tile-layout-tile h4 { font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:.4px; color:var(--text2); margin:0 0 8px; }
     .tile-layout-zone { background:var(--surface2); border:1px solid var(--border); border-radius:8px; padding:10px; margin-bottom:10px; }
     .tile-layout-zone-label { font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.4px; color:var(--text2); margin-bottom:8px; }
@@ -693,8 +707,7 @@
     .tile-layout-row-actions button:disabled { opacity:.3; cursor:not-allowed; }
     .tile-layout-row-actions button.danger:hover { color:var(--danger); }
     .tile-layout-add { display:flex; gap:6px; }
-    .tile-layout-add select { flex:1; }
-    @media (max-width: 900px) { .tile-layout-editor { grid-template-columns:1fr; } }
+    .tile-layout-add select { flex:1; min-width:0; }
 
     /* ── BRAND MODAL TABS ─────────────────────── */
     .modal-tabs { display:flex; gap:0; border-bottom:1px solid var(--border); padding:0 22px; background:var(--surface); flex-shrink:0; }
