@@ -1329,28 +1329,39 @@ export default function ProductAssetsTab({ draft, baseline, patch }) {
                     <span style={{ fontSize: 13, color: 'rgba(0,0,0,.65)' }}>{generatingLabel}</span>
                   </div>
                 )}
-                <div style={{ display: 'flex', gap: 8, marginTop: 14, paddingTop: 14, borderTop: '1px solid #f0f0f0' }}>
-                  <IconAction icon={<MaterialIcon name="delete" />} caption="Delete" row danger tooltipTitle="Delete" tooltipDesc="Removes this asset from the product." onClick={deleteAsset} />
-                  <IconAction icon={<MaterialIcon name="cached" />} caption="Replace" row tooltipTitle="Replace" tooltipDesc="Swaps the underlying file; variant label, tags and settings are kept." onClick={openReplace} />
-                  <IconAction icon={<MaterialIcon name="content_copy" />} caption="Duplicate" row tooltipTitle="Duplicate" tooltipDesc="Adds a copy of this asset as a new tile — its own id and variant label, never default, targeted, or scheduled." onClick={duplicateAsset} />
-                  {/* Hidden once the panel below is open — verified live
-                      against demo.personalisationhub.com's own Storyboard &
-                      Copy "Request changes": the trigger disappears in favour
-                      of the expanded panel rather than sitting redundantly
-                      above it. */}
-                  {!isVideo && !requestChangesModalOpen && (
-                    <IconAction
-                      ai
-                      row
-                      icon={<MaterialIcon name="smart_toy" />}
-                      caption="Request changes"
-                      disabled={expired || !!imageBusy}
-                      onClick={openRequestChangesModal}
-                      tooltipTitle="Request changes"
-                      tooltipDesc="Describe (or dictate) any change you want and the configured Image provider will apply it — not limited to Enhance or Background."
-                    />
-                  )}
-                </div>
+                {/* The whole row — Delete/Replace/Duplicate included, not
+                    just the Request Changes trigger — hides once the panel
+                    below is open: with the prompt asking the user to look
+                    at the image and describe a change, Delete/Replace/
+                    Duplicate sitting right above it just added clutter
+                    competing for attention. They come back the moment the
+                    panel closes (Cancel, or a submit — confirmRequestChanges
+                    itself flips requestChangesModalOpen back to false the
+                    instant it goes to the busy/generating state). */}
+                {!requestChangesModalOpen && (
+                  <div style={{ display: 'flex', gap: 8, marginTop: 14, paddingTop: 14, borderTop: '1px solid #f0f0f0' }}>
+                    <IconAction icon={<MaterialIcon name="delete" />} caption="Delete" row danger tooltipTitle="Delete" tooltipDesc="Removes this asset from the product." onClick={deleteAsset} />
+                    <IconAction icon={<MaterialIcon name="cached" />} caption="Replace" row tooltipTitle="Replace" tooltipDesc="Swaps the underlying file; variant label, tags and settings are kept." onClick={openReplace} />
+                    <IconAction icon={<MaterialIcon name="content_copy" />} caption="Duplicate" row tooltipTitle="Duplicate" tooltipDesc="Adds a copy of this asset as a new tile — its own id and variant label, never default, targeted, or scheduled." onClick={duplicateAsset} />
+                    {/* Hidden once the panel below is open — verified live
+                        against demo.personalisationhub.com's own Storyboard &
+                        Copy "Request changes": the trigger disappears in favour
+                        of the expanded panel rather than sitting redundantly
+                        above it. */}
+                    {!isVideo && (
+                      <IconAction
+                        ai
+                        row
+                        icon={<MaterialIcon name="smart_toy" />}
+                        caption="Request changes"
+                        disabled={expired || !!imageBusy}
+                        onClick={openRequestChangesModal}
+                        tooltipTitle="Request changes"
+                        tooltipDesc="Describe (or dictate) any change you want and the configured Image provider will apply it — not limited to Enhance or Background."
+                      />
+                    )}
+                  </div>
+                )}
                 {!isVideo && requestChangesModalOpen && (
                   // Verified live against demo.personalisationhub.com's own
                   // Storyboard & Copy tab: "Request changes" there expands

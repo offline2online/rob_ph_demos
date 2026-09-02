@@ -89,6 +89,13 @@ export default function MagicEditModal({ open, src, originalSrc, onCancel, onApp
   const [zoom, setZoom] = useState(1);
   const [fitWidth, setFitWidth] = useState(0);
   const [cropRect, setCropRect] = useState({ x: 0.1, y: 0.1, w: 0.8, h: 0.8 });
+  // Brush cursor overlay — position in on-screen (CSS) px relative to the
+  // canvas, plus the current CSS-px-per-canvas-px scale (changes with zoom
+  // and with the modal's own responsive width). Kept separate from
+  // brushSize itself so dragging the size slider resizes the circle
+  // immediately at render time, with no pointer movement needed.
+  const [brushCursorPos, setBrushCursorPos] = useState(null);
+  const [displayScale, setDisplayScale] = useState(1);
 
   useEffect(() => {
     if (!open) { setReady(false); return undefined; }
@@ -144,17 +151,46 @@ export default function MagicEditModal({ open, src, originalSrc, onCancel, onApp
     return () => { cancelled = true; };
   }, [open, src, originalSrc]);
 
+  // Each entry carries its own canvas dimensions (and the offscreen
+  // Restore-source canvas's own snapshot + dimensions) alongside the pixel
+  // data, not just the pixels — applyCrop() below calls this too, and a
+  // crop actually shrinks canvas.width/height, so a plain ImageData isn't
+  // enough to undo back to: putImageData onto a now-smaller canvas would
+  // just clip the restored pixels to the current (cropped) size instead of
+  // genuinely reverting the crop.
   const pushHistory = () => {
     const canvas = canvasRef.current;
-    const snap = canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height);
-    historyRef.current.push(snap);
+    const orig = origCanvasRef.current;
+    historyRef.current.push({
+      imageData: canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height),
+      width: canvas.width,
+      height: canvas.height,
+      origImageData: orig ? orig.getContext('2d').getImageData(0, 0, orig.width, orig.height) : null,
+      origWidth: orig ? orig.width : 0,
+      origHeight: orig ? orig.height : 0,
+    });
     if (historyRef.current.length > 20) historyRef.current.shift();
     setCanUndo(true);
   };
   const undo = () => {
-    const snap = historyRef.current.pop();
-    if (!snap) return;
-    canvasRef.current.getContext('2d').putImageData(snap, 0, 0);
+    const entry = historyRef.current.pop();
+    if (!entry) return;
+    const canvas = canvasRef.current;
+    canvas.width = entry.width;
+    canvas.height = entry.height;
+    canvas.getContext('2d').putImageData(entry.imageData, 0, 0);
+    const orig = origCanvasRef.current;
+    if (orig && entry.origImageData) {
+      orig.width = entry.origWidth;
+      orig.height = entry.origHeight;
+      orig.getContext('2d').putImageData(entry.origImageData, 0, 0);
+    }
+    // Same fit-width recompute applyCrop() does — undoing a crop can change
+    // the canvas's own pixel dimensions back, so the display size needs to
+    // follow, not stay sized for whatever was on screen a moment ago.
+    const containerWidth = containerRef.current ? containerRef.current.clientWidth : entry.width;
+    const widthForMaxHeight = entry.width * (420 / entry.height);
+    setFitWidth(Math.max(1, Math.min(entry.width, containerWidth, widthForMaxHeight)));
     setCanUndo(historyRef.current.length > 0);
   };
 
@@ -219,6 +255,25 @@ export default function MagicEditModal({ open, src, originalSrc, onCancel, onApp
     lastPointRef.current = null;
   };
 
+  // Brush cursor overlay — tracked separately from the paint/stroke path
+  // above so it keeps following the pointer whether or not a stroke is
+  // currently being drawn (paintAt only runs while the button is held).
+  const updateBrushCursor = (e) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const rect = canvas.getBoundingClientRect();
+    setDisplayScale(rect.width / canvas.width);
+    setBrushCursorPos({ left: e.clientX - rect.left, top: e.clientY - rect.top });
+  };
+  const handleBrushPointerMove = (e) => {
+    updateBrushCursor(e);
+    handlePointerMove(e);
+  };
+  const handleBrushPointerLeave = () => {
+    setBrushCursorPos(null);
+    handlePointerUp();
+  };
+
   // ── Crop ──────────────────────────────────────────────────────────────
   const handleCropPointerDown = (e) => {
     if (!ready) return;
@@ -258,6 +313,10 @@ export default function MagicEditModal({ open, src, originalSrc, onCancel, onApp
   const handleCropPointerUp = () => { cropDragRef.current = null; };
 
   const applyCrop = () => {
+    // Pushed before the crop mutates anything, same as a brush stroke does
+    // — so committing a crop is itself undoable back to the full pre-crop
+    // photo, instead of Undo staying disabled the moment you crop.
+    pushHistory();
     const canvas = canvasRef.current;
     const px = Math.round(cropRect.x * canvas.width);
     const py = Math.round(cropRect.y * canvas.height);
@@ -283,8 +342,6 @@ export default function MagicEditModal({ open, src, originalSrc, onCancel, onApp
     const containerWidth = containerRef.current ? containerRef.current.clientWidth : pw;
     const widthForMaxHeight = pw * (420 / ph);
     setFitWidth(Math.max(1, Math.min(pw, containerWidth, widthForMaxHeight)));
-    historyRef.current = [];
-    setCanUndo(false);
     setZoom(1);
     setTool('brush');
   };
@@ -297,9 +354,13 @@ export default function MagicEditModal({ open, src, originalSrc, onCancel, onApp
     onApply(canvasRef.current.toDataURL('image/webp', 0.92));
   };
 
+  // Brush mode hides the native cursor entirely (cursor: 'none') — the
+  // overlay circle below is what shows instead, sized to the actual brush
+  // diameter so it's obvious exactly what a stroke will cover, rather than
+  // a generic crosshair that says nothing about size.
   const canvasStyle = zoom === 1
-    ? { maxWidth: '100%', maxHeight: 420, display: 'block', touchAction: 'none', cursor: tool === 'crop' ? 'default' : 'crosshair' }
-    : { width: fitWidth * zoom, height: 'auto', display: 'block', touchAction: 'none', cursor: tool === 'crop' ? 'default' : 'crosshair' };
+    ? { maxWidth: '100%', maxHeight: 420, display: 'block', touchAction: 'none', cursor: tool === 'crop' ? 'default' : 'none' }
+    : { width: fitWidth * zoom, height: 'auto', display: 'block', touchAction: 'none', cursor: tool === 'crop' ? 'default' : 'none' };
 
   return (
     <Modal title="Magic Edit" open={open} onCancel={onCancel} width={680} okText="Apply" onOk={handleApply} okButtonProps={{ disabled: !ready || tool === 'crop' }}>
@@ -370,10 +431,26 @@ export default function MagicEditModal({ open, src, originalSrc, onCancel, onApp
             ref={canvasRef}
             style={canvasStyle}
             onPointerDown={tool === 'crop' ? handleCropPointerDown : handlePointerDown}
-            onPointerMove={tool === 'crop' ? handleCropPointerMove : handlePointerMove}
+            onPointerMove={tool === 'crop' ? handleCropPointerMove : handleBrushPointerMove}
             onPointerUp={tool === 'crop' ? handleCropPointerUp : handlePointerUp}
-            onPointerLeave={tool === 'crop' ? handleCropPointerUp : handlePointerUp}
+            onPointerEnter={tool === 'crop' ? undefined : updateBrushCursor}
+            onPointerLeave={tool === 'crop' ? handleCropPointerUp : handleBrushPointerLeave}
           />
+          {tool === 'brush' && brushCursorPos && (
+            <div
+              style={{
+                position: 'absolute',
+                left: brushCursorPos.left - (brushSize * displayScale) / 2,
+                top: brushCursorPos.top - (brushSize * displayScale) / 2,
+                width: brushSize * displayScale,
+                height: brushSize * displayScale,
+                borderRadius: '50%',
+                border: '1.5px solid ' + (mode === 'erase' ? '#ff4d4f' : '#169bc2'),
+                background: mode === 'erase' ? 'rgba(255,77,79,.15)' : 'rgba(22,155,194,.15)',
+                pointerEvents: 'none',
+              }}
+            />
+          )}
           {tool === 'crop' && ready && (
             <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}>
               <div style={{ position: 'absolute', left: 0, top: 0, right: 0, height: `${cropRect.y * 100}%`, background: 'rgba(0,0,0,.45)' }} />
