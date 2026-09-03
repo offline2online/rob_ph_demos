@@ -59,7 +59,15 @@ Every "Published Live" card shows a clickable commit badge at the top linking to
 
 ### Archiving Published Live cards
 
-Published Live cards have an **Archive** action (next to the feedback/delete icons). Archiving sets `status: "archived"` and `archivedAt` — archived cards keep all their data (including the commit link) but stop matching any of the four board columns, so they simply disappear from the board rather than being deleted. The topbar's **Archived (N)** button opens a list of every archived card with a **Restore** button that sets `status` back to `"published-live"`. When asked to archive/restore a card, use these same fields rather than deleting cards outright — deletion (the trash icon) is reserved for Backlog cards only now.
+Published Live cards have an **Archive** action (next to the feedback/delete icons). Archiving sets `status: "archived"` and `archivedAt` — archived cards keep all their data (including the commit link) but stop matching any of the four board columns, so they simply disappear from the board rather than being deleted. The topbar's **Archived (N)** button opens a dedicated full-page table (not a modal) of every archived card — sortable by clicking a column heading (Type / Area / Ticket / Date) and filterable by area, type, and a free-text search — each row carrying a **Restore** button that sets `status` back to `"published-live"`. When asked to archive/restore a card, use these same fields rather than deleting cards outright — deletion (the trash icon) is reserved for Backlog cards only now.
+
+### Every card carries an `category` (area impacted)
+
+Every card — New Item form included — has a `category` field, one of a fixed set (`CATEGORIES` in the board's own JS): `Pricing & Offers`, `Product Assets`, `HQ Admin`, `Retail Admin`, `Menu Board`, `Prototype Pipeline Board`, `Backend / Infrastructure`, `Uncategorised`. It's what the Archived page's Area column, filter, and colour-coded badge are keyed on — the "quick snapshot by area" only works if this field is kept accurate.
+
+- **A brand-new ticket gets a best-effort guess, not a final answer.** The New Item form runs a keyword heuristic (`suggestCategory()`, same spirit as the existing Feature/Bug guess) live as the description is typed or dictated, pre-selecting the Area dropdown — but it's just a starting point, same as the Feature/Bug toggle.
+- **The real classification is a step in every backlog sweep, not optional.** When investigating/fixing a Backlog card (the standard "investigate/fix, commit + push, add a Claude note, set `testUrl`, move to Ready for Testing" workflow above), also set `category` to whatever the ticket actually turned out to be about, based on the real analysis — correcting the initial guess if it was off, or filling it in if it was still `Uncategorised`. This is the "automated once analysed" classification: automated in the sense that it's now a mandatory, unskippable part of the same workflow pass, not a separate manual step someone has to remember.
+- The category can also be changed directly from the small select on any card (any column, not just Backlog) — use this to correct a stale/wrong area on an existing card rather than leaving it wrong.
 
 ### Mic dictation (New Item / Feedback forms)
 
