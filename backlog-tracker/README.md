@@ -55,39 +55,133 @@ change.
 
 Same caveat as `menu-board-demo/functions` in the root `CLAUDE.md`:
 **Claude cannot create the Firebase project or deploy this itself.**
-Whoever owns Firebase access needs to:
+Everything below runs on your own machine, with a Google account that has
+(or can create) a Firebase project. Prerequisite: Node.js installed
+locally (needed for `npm` and the Firebase CLI).
 
-1. **Create a new Firebase project** in the [Firebase Console](https://console.firebase.google.com/) —
-   deliberately a *new* one, not `rob-ph-demos`, so the isolation above
-   actually holds. Enable **Firestore** (Native mode) in it.
-2. Add a **Web app** to that project (Project settings → Your apps), copy
-   the config object it gives you into `public/js/firebase-config.js`
-   (replacing the `REPLACE-ME` placeholders).
-3. Put the real project ID in `.firebaserc` (replacing
-   `REPLACE-WITH-YOUR-NEW-FIREBASE-PROJECT-ID`, both places it appears).
-4. From inside this folder: `firebase deploy --only firestore:rules` to
-   publish `firestore.rules`.
-5. `cd functions && npm install`.
-6. **Wire up `NOTIFY_WEBHOOK_URL`** (see below), then
-   `firebase deploy --only functions`.
-7. `firebase deploy --only hosting` to publish `public/` (or just open
-   `public/index.html` locally / host it wherever you like — it's static).
+### 1. Create the Firebase project
 
-### Wiring up NOTIFY_WEBHOOK_URL
+1. Go to the [Firebase Console](https://console.firebase.google.com/) →
+   **Add project**.
+2. Name it something like `backlog-tracker` — deliberately a *new*
+   project, not `rob-ph-demos` (the one `menu-board-demo` uses), so the
+   isolation described above actually holds. Firebase will generate a
+   project ID like `backlog-tracker-a1b2c`; **note the exact ID**, you'll
+   need it twice below.
+3. Google Analytics prompt: not needed for this, skip/disable it.
+4. **Create project**, wait for provisioning, **Continue**.
 
-The function POSTs a JSON payload to whatever URL you set here:
+### 2. Enable Firestore
+
+1. Left sidebar → **Build → Firestore Database → Create database**.
+2. Start in **production mode** (locked by default — safe, since we
+   deploy our own rules in step 5 right after).
+3. Pick a location (can't be changed later) → **Enable**.
+
+### 3. Register a Web app and get its config
+
+1. Project Overview page → click the **`</>`** (Web) icon → **Add app**.
+2. Nickname it e.g. `backlog-tracker-web`. You can skip the Firebase
+   Hosting checkbox here — hosting is deployed via the CLI in step 8.
+3. **Register app** — Firebase shows a `firebaseConfig` object
+   (`apiKey`, `authDomain`, `projectId`, `storageBucket`,
+   `messagingSenderId`, `appId`). Copy the whole thing.
+
+### 4. Wire the config into this repo
+
+On the machine where you'll run the `firebase` CLI (pull/clone this repo
+there first):
+
+1. Open `backlog-tracker/public/js/firebase-config.js` and replace the
+   `REPLACE-ME` placeholders with the real values from step 3.
+2. Open `backlog-tracker/.firebaserc` and replace
+   `REPLACE-WITH-YOUR-NEW-FIREBASE-PROJECT-ID` with the real project ID
+   from step 1 (the short slug, e.g. `backlog-tracker-a1b2c` — not the
+   display name).
+
+### 5. Install the Firebase CLI and log in (one-time)
 
 ```bash
+npm install -g firebase-tools
+firebase login                 # opens a browser — sign in with the
+                                # Google account that owns the project
 cd backlog-tracker
-firebase functions:secrets:set NOTIFY_WEBHOOK_URL
+firebase use --add             # pick the new project, alias it "default"
 ```
 
-What you point it at determines how automatic this really is:
+### 6. Deploy the Firestore rules
 
-- **Slack incoming webhook** — easiest to set up, and the payload's
-  `text` field is already Slack-message-shaped. A person still relays it
-  into a Claude conversation, but nobody has to remember to check a
-  board.
+```bash
+firebase deploy --only firestore:rules
+```
+
+Confirm it in the console: Firestore → **Rules** tab should show the new
+rules content.
+
+### 7. Set up a notification target — Slack incoming webhook (simplest)
+
+This is the concrete, easiest-to-verify option; see the alternatives
+further down if you want a different target.
+
+1. Go to <https://api.slack.com/apps> → **Create New App → From scratch**.
+2. Name it (e.g. `Backlog Tracker Notifier`), pick your workspace.
+3. Left sidebar → **Incoming Webhooks** → toggle it **On**.
+4. **Add New Webhook to Workspace** → choose a channel (e.g.
+   `#backlog-alerts`) → **Allow**.
+5. Slack shows a URL like `https://hooks.slack.com/services/T000/B000/XXXX`
+   — copy it.
+
+### 8. Install function dependencies, store the webhook secret, deploy
+
+```bash
+cd backlog-tracker/functions
+npm install
+cd ..
+firebase functions:secrets:set NOTIFY_WEBHOOK_URL
+#   ↳ paste the Slack webhook URL from step 7 when prompted
+firebase deploy --only functions
+#   ↳ first deploy of a 2nd-gen function prompts to enable the Blaze
+#     (pay-as-you-go) plan and a few Google Cloud APIs (Cloud Build,
+#     Artifact Registry, Eventarc) — confirm these; see "Will this cost
+#     money?" below, they stay within the free tier at this scale.
+```
+
+### 9. Deploy hosting (optional — the app is static and can be hosted anywhere)
+
+```bash
+firebase deploy --only hosting
+```
+
+Firebase prints a live URL, e.g. `https://backlog-tracker-a1b2c.web.app`.
+
+### 10. Test it end to end
+
+1. Open the hosting URL (or `public/index.html` locally — Firestore and
+   the function are cloud-hosted either way, only the static files would
+   be local).
+2. Click **+ New item**, fill in a title and description, submit.
+3. Check the Slack channel from step 7 — a message should land within a
+   few seconds.
+4. If nothing shows up: `firebase functions:log` — look for "Notified
+   webhook of new backlog item" (success) or the logged error.
+
+### Ongoing: redeploying after a code change
+
+Nothing auto-deploys — any future edit needs the matching command run
+again from inside `backlog-tracker/`:
+
+| Changed | Redeploy with |
+|---|---|
+| `public/**` | `firebase deploy --only hosting` |
+| `functions/**` | `firebase deploy --only functions` |
+| `firestore.rules` | `firebase deploy --only firestore:rules` |
+
+### Alternatives to the Slack webhook
+
+What `NOTIFY_WEBHOOK_URL` points at determines how automatic this really is:
+
+- **Slack incoming webhook** (above) — easiest, but a person still
+  relays the message into a Claude conversation.
 - **A live Claude Code Remote session's `watch_url` webhook** — the same
   kind of URL this session used to watch the Prototype Pipeline Artifact.
   Wakes that specific session directly with no human in the loop, but the
