@@ -1,0 +1,34 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // This Firestore database belongs ONLY to backlog-tracker — it runs in
+    // its own Firebase project (see .firebaserc), never the "rob-ph-demos"
+    // project menu-board-demo uses, so there is no shared rules file and no
+    // way a change here can affect menu-board-demo's items/carts/etc rules.
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function isNonEmptyBoundedString(v, max) {
+      return v is string && v.size() > 0 && v.size() <= max;
+    }
+
+    // Prototype-stage rules: open read/write, same permissive posture the
+    // rest of this repo's prototypes start with (see rob_ph_demos root
+    // firestore.rules for items/carts). Tighten with Firebase Auth before
+    // this is used for anything beyond an internal team tool.
+    match /backlogItems/{itemId} {
+      allow read: if true;
+
+      allow create, update: if
+        isNonEmptyBoundedString(incoming().title, 200) &&
+        isNonEmptyBoundedString(incoming().desc, 2000) &&
+        incoming().type in ["feature", "bug"] &&
+        incoming().status in ["backlog", "ready-for-testing", "ready-to-publish", "published-live", "archived"];
+
+      allow delete: if true;
+    }
+  }
+}

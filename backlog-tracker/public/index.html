@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Backlog Tracker</title>
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+  <div class="app">
+    <header class="topbar">
+      <div>
+        <h1>Backlog Tracker</h1>
+        <p class="subtitle"><span id="total-summary">0 items</span> &middot; a new Backlog item notifies automatically — no button to click</p>
+      </div>
+      <button class="btn-primary" id="new-item-btn" type="button">+ New item</button>
+    </header>
+
+    <div class="modal-backdrop" id="ni-backdrop" hidden>
+      <div class="modal-panel" role="dialog" aria-modal="true" aria-labelledby="ni-title">
+        <div class="modal-header">
+          <h2 id="ni-title">New item</h2>
+          <button type="button" class="modal-close" id="ni-close" aria-label="Close">&times;</button>
+        </div>
+        <label class="field-label" for="ni-title-input">Title</label>
+        <input type="text" id="ni-title-input" maxlength="200" placeholder="Short title">
+        <label class="field-label" for="ni-desc-input">Description</label>
+        <textarea id="ni-desc-input" rows="4" maxlength="2000" placeholder="What's the feature or bug?"></textarea>
+        <label class="field-label" for="ni-category-input">Area impacted</label>
+        <select id="ni-category-input"></select>
+        <div class="form-row">
+          <div class="type-toggle" role="radiogroup" aria-label="Item type">
+            <button type="button" class="type-opt active" data-type="feature">Feature</button>
+            <button type="button" class="type-opt" data-type="bug">Bug</button>
+          </div>
+          <div class="form-actions">
+            <button type="button" class="btn-ghost" id="ni-cancel">Cancel</button>
+            <button type="button" class="btn-primary" id="ni-submit">Add to backlog</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="board" id="board">
+      <section class="column" data-col="backlog">
+        <div class="col-head col-head-backlog"><span>Backlog</span><span class="col-count" id="count-backlog">0</span></div>
+        <div class="col-list" id="col-backlog"></div>
+      </section>
+      <section class="column" data-col="ready-for-testing">
+        <div class="col-head col-head-testing"><span>Ready for Testing</span><span class="col-count" id="count-ready-for-testing">0</span></div>
+        <div class="col-list" id="col-ready-for-testing"></div>
+      </section>
+      <section class="column" data-col="ready-to-publish">
+        <div class="col-head col-head-publish"><span>Live on Feature Branch</span><span class="col-count" id="count-ready-to-publish">0</span></div>
+        <div class="col-list" id="col-ready-to-publish"></div>
+      </section>
+      <section class="column" data-col="published-live">
+        <div class="col-head col-head-live"><span>Merged to Main (Live)</span><span class="col-count" id="count-published-live">0</span></div>
+        <div class="col-list" id="col-published-live"></div>
+      </section>
+    </div>
+  </div>
+
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>
