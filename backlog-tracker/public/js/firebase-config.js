@@ -8,10 +8,10 @@
 // access — Firestore security is enforced by firestore.rules), so it's
 // normal for them to live in a committed file like this one.
 export const firebaseConfig = {
-  apiKey: "REPLACE-ME",
-  authDomain: "REPLACE-ME.firebaseapp.com",
-  projectId: "REPLACE-WITH-YOUR-NEW-FIREBASE-PROJECT-ID",
-  storageBucket: "REPLACE-ME.appspot.com",
-  messagingSenderId: "REPLACE-ME",
-  appId: "REPLACE-ME",
+  apiKey: "AIzaSyDzG5MzavLWyKU7NXfTPskuWbFYFlc5W3g",
+  authDomain: "backlog-tracker-e4ed2.firebaseapp.com",
+  projectId: "backlog-tracker-e4ed2",
+  storageBucket: "backlog-tracker-e4ed2.firebasestorage.app",
+  messagingSenderId: "410903316373",
+  appId: "1:410903316373:web:8477a9848cb41ad3c7589c",
 };
