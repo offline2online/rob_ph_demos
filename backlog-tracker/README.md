@@ -167,8 +167,27 @@ Firebase prints a live URL, e.g. `https://backlog-tracker-a1b2c.web.app`.
 
 ### Ongoing: redeploying after a code change
 
-Nothing auto-deploys — any future edit needs the matching command run
-again from inside `backlog-tracker/`:
+A push to `main` that touches anything under `backlog-tracker/` now
+auto-deploys via `.github/workflows/deploy-backlog-tracker.yml` — it runs
+`firebase deploy --only hosting,functions,firestore:rules` for you, the
+same way pushing to `main` already publishes the rest of this repo via
+GitHub Pages. This needs one thing only a project owner can create: a
+Firebase service account key for `backlog-tracker-e4ed2`, stored as the
+GitHub Actions secret `FIREBASE_SERVICE_ACCOUNT_BACKLOG_TRACKER`.
+
+1. Firebase Console → **Project settings → Service accounts → Generate
+   new private key** (downloads a JSON file).
+2. GitHub repo → **Settings → Secrets and variables → Actions → New
+   repository secret**, name it `FIREBASE_SERVICE_ACCOUNT_BACKLOG_TRACKER`,
+   paste the whole JSON file contents as the value.
+
+Once that secret exists, every push to `main` deploys automatically — no
+one needs to run `firebase deploy` by hand again. You can also trigger it
+manually from the Actions tab (`workflow_dispatch`) without a new push.
+
+If the secret isn't set yet, or you need to deploy from a machine
+directly, the manual commands still work exactly as before, run from
+inside `backlog-tracker/`:
 
 | Changed | Redeploy with |
 |---|---|
