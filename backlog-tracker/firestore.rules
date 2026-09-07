@@ -19,10 +19,17 @@ service cloud.firestore {
     // rest of this repo's prototypes start with (see rob_ph_demos root
     // firestore.rules for items/carts). Tighten with Firebase Auth before
     // this is used for anything beyond an internal team tool.
+    match /projects/{projectId} {
+      allow read: if true;
+      allow create, update: if isNonEmptyBoundedString(incoming().name, 80);
+      allow delete: if true;
+    }
+
     match /backlogItems/{itemId} {
       allow read: if true;
 
       allow create, update: if
+        isNonEmptyBoundedString(incoming().projectId, 100) &&
         isNonEmptyBoundedString(incoming().title, 200) &&
         isNonEmptyBoundedString(incoming().desc, 2000) &&
         incoming().type in ["feature", "bug"] &&

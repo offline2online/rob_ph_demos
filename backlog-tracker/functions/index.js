@@ -12,6 +12,10 @@
 const { onDocumentCreated } = require("firebase-functions/v2/firestore");
 const { defineSecret } = require("firebase-functions/params");
 const logger = require("firebase-functions/logger");
+const { initializeApp } = require("firebase-admin/app");
+const { getFirestore } = require("firebase-admin/firestore");
+
+initializeApp();
 
 // Stored as a Firebase secret, never committed — set it with:
 //   firebase functions:secrets:set NOTIFY_WEBHOOK_URL
@@ -50,9 +54,32 @@ exports.notifyOnBacklogItemCreated = onDocumentCreated(
       return;
     }
 
+    // Multi-project items carry a projectId rather than embedding the
+    // project's own name — one extra read here keeps the notification
+    // readable ("New item in Products and Pricing: ...") instead of
+    // surfacing an opaque id, and this only runs once per new item, not
+    // once per page view.
+    let projectName = item.projectId || "Unknown project";
+    if (item.projectId) {
+      try {
+        const projectSnap = await getFirestore().collection("projects").doc(item.projectId).get();
+        if (projectSnap.exists && projectSnap.data().name) {
+          projectName = projectSnap.data().name;
+        }
+      } catch (err) {
+        logger.warn("Could not look up project name for notification", {
+          itemId: event.params.itemId,
+          projectId: item.projectId,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
+
     const payload = {
-      text: `New backlog item: "${item.title}" (${item.type === "bug" ? "Bug" : "Feature"}, ${item.category || "Uncategorised"})`,
+      text: `New backlog item in ${projectName}: "${item.title}" (${item.type === "bug" ? "Bug" : "Feature"}, ${item.category || "Uncategorised"})`,
       itemId: event.params.itemId,
+      projectId: item.projectId || null,
+      projectName,
       title: item.title,
       desc: item.desc,
       type: item.type,
