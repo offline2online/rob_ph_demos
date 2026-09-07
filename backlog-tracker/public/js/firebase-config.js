@@ -13,5 +13,5 @@ export const firebaseConfig = {
   projectId: "backlog-tracker-e4ed2",
   storageBucket: "backlog-tracker-e4ed2.firebasestorage.app",
   messagingSenderId: "410903316373",
-  appId: "1:410903316373:web:8477a9848cb41ad3c7589c"
+  appId: "1:410903316373:web:8477a9848cb41ad3c7589c",
 };
