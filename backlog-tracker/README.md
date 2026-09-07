@@ -185,6 +185,35 @@ Once that secret exists, every push to `main` deploys automatically — no
 one needs to run `firebase deploy` by hand again. You can also trigger it
 manually from the Actions tab (`workflow_dispatch`) without a new push.
 
+The service account also needs enough IAM roles on the
+`backlog-tracker-e4ed2` Google Cloud project (Console →
+**IAM & Admin → IAM**, edit that service account's roles) to actually
+deploy each piece — at minimum:
+
+- **Service Account User** (`roles/iam.serviceAccountUser`) — required to
+  deploy the Cloud Function at all.
+- **Firebase Admin** (`roles/firebase.admin`) — covers hosting, functions
+  config, and Firestore rules deploy/test in one grant.
+- **Secret Manager Admin** (`roles/secretmanager.admin`) — the notify
+  function reads a `NOTIFY_WEBHOOK_URL` secret (see below); creating and
+  reading it needs this.
+
+If the workflow's deploy step fails with a permissions/IAM error, that's
+almost always a role missing here, not a bug in the workflow itself.
+
+### The `NOTIFY_WEBHOOK_URL` secret
+
+`functions/index.js`'s `notifyOnBacklogItemCreated` reads a Firebase
+secret called `NOTIFY_WEBHOOK_URL` (see step 7 above for creating a Slack
+incoming webhook, or an alternative target). The workflow keeps this in
+sync automatically from a GitHub Actions secret of the same name — add a
+repo secret named `NOTIFY_WEBHOOK_URL` (Settings → Secrets and variables →
+Actions → New repository secret) with the webhook URL as its value, and
+every deploy pushes that value into Firebase Secret Manager before
+deploying the function. If that GitHub secret isn't set, this step is
+skipped and the manual `firebase functions:secrets:set NOTIFY_WEBHOOK_URL`
+command still works as a one-off alternative.
+
 If the secret isn't set yet, or you need to deploy from a machine
 directly, the manual commands still work exactly as before, run from
 inside `backlog-tracker/`:
