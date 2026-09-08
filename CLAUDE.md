@@ -37,14 +37,15 @@ tied to the other project's release cadence.
   versioning rules).
 - Each has its own `REQUIREMENTS.md` in its own folder.
 
-**On the Prototype Backlog board**, these are two separate entries in
-`STATE.projects[]` — `live-visitor-profile` ("Live Visitor Profile") and
-`experience-templates` ("Experience Templates") — each with its own
-Backlog → Ready for Testing → Live on Feature Branch → Merged to Main (Live)
-pipeline and its own Archive, fully independent of each other and of the
-original "Products and Pricing" project. Treat backlog sweeps, Notify Claude
-handling, and publish workflows for each project exactly as described in the
-"Prototype Backlog" section above — per-project, not shared.
+**On the Prototype Backlog board** (the live `backlog-tracker` app, not the
+retired Artifact — see "Prototype Backlog" below), these are two separate
+docs in the `projects` Firestore collection — **"Live Visitor Profile"** and
+**"Experience Templates"** — each with its own Backlog → Ready for Testing →
+Live on Feature Branch → Merged to Main (Live) pipeline and its own Archive,
+fully independent of each other and of "Products, Pricing & Asset
+Management". Treat backlog sweeps and publish workflows for each exactly as
+described in the "Prototype Backlog" section below — per-project, not
+shared.
 
 ## Common Workflows
 
@@ -63,52 +64,137 @@ git push origin main
 
 ## Prototype Backlog
 
-The prototype backlog is tracked as a Claude Artifact board, not a file in this repo:
-https://claude.ai/code/artifact/0573d999-a32a-499f-bc2f-d10ba7b494a4
+**The backlog now lives on a real, Firestore-backed web app — `backlog-tracker/` —
+not the Claude Artifact this used to be.** Live board:
+https://backlog-tracker-e4ed2.web.app/
 
-**The board is multi-project** — it's no longer a single fixed "Prototype Pipeline". `STATE.projects[]` holds one or more independent projects, each with its own full pipeline (Backlog → Ready for Testing → Live on Feature Branch → Merged to Main (Live) → its own Archive), rendered as a collapsible section on the same page. The original board was renamed **"Products and Pricing"** (its `id` is `products-and-pricing`) and holds all the pre-existing cards; a client can have several concurrent prototypes/projects tracked side by side.
+The Claude Artifact ("Prototype Pipeline", `0573d999-a32a-499f-bc2f-d10ba7b494a4`)
+is **retired — do not read from it, write to it, or republish it.** Its
+historical cards were migrated once into this app (see
+`backlog-tracker/README.md` → "Historical data migrated from the Artifact
+board"); the name "Prototype Pipeline" is no longer used anywhere.
 
-- **Adding a project**: the page-level "New project" button opens a name-entry modal and creates a new, empty project with the identical pipeline — its own Backlog/Testing/Live-on-branch/Merged columns and its own Archive.
-- **Renaming a project**: the pencil icon next to a project's name (`.project-rename-btn`) turns it into an inline text input — commits on Enter/blur, cancels on Escape. Not a one-time setup step; any project can be renamed at any time.
-- **Collapsing a project**: the chevron button on a project's header toggles its body closed, so a client managing several prototypes can collapse the ones they aren't focused on. This is a per-viewer display preference kept in `sessionStorage`, not published `STATE` — collapsing doesn't trigger a republish or affect what other viewers see.
-- **Card ids stay globally unique** across all projects, so a card's own status/category/notes are still edited by id alone without needing to know which project it's in. Only creating a card (`addCard`) and opening a project's own Archive page need an explicit project id.
-- Old flat single-board saves (`STATE.cards`, no `STATE.projects`) are migrated automatically on load into the "Products and Pricing" project — nothing needs manual conversion.
+**The board is multi-project.** Firestore's `projects` collection holds one
+doc per project (`{name, createdAt}`, auto-generated id); `backlogItems`
+holds every card, each carrying a `projectId`. The original board's cards
+live under the project named "Products, Pricing & Asset Management" — a
+client can have several concurrent prototypes/projects tracked side by side,
+each rendered as its own collapsible section on the one page.
 
-Within each project, the columns are: **Backlog → Ready for Testing → Live on Feature Branch → Merged to Main (Live)**. The last two column *labels* changed (their underlying status keys, `ready-to-publish` and `published-live`, did not) specifically to make the git-merge step unambiguous: a card only reaches "Live on Feature Branch" once it's been tested and is genuinely working on the branch, and it does **not** move itself into "Merged to Main (Live)" — that transition has its own distinct green **"Merge to main"** button on the card (separate from the blue "Confirm live on branch" button that moves a card out of Ready for Testing), so the person driving the board always has one deliberate, clearly-labelled click that corresponds to the actual `git merge`/fast-forward push to `main`, never an implicit "next column" click. New feature/bug requests land in a project's Backlog; once a card is moved to "Ready for Testing" with an approval and then confirmed "Live on Feature Branch", push the change and mark it "Merged to Main (Live)" (clicking that card's own "Merge to main" button). Read this artifact (via the Artifact tool, `action: "read"`) to check current backlog items — across every project — before starting prototype work.
+- **Adding a project**: the page's "New project" button, or write a doc
+  directly into `projects` (`{name, createdAt: serverTimestamp()}}`) —
+  everything else (its Backlog/Testing/Live-on-branch/Merged columns, its
+  own Archive) follows automatically from its `projectId` being used on
+  `backlogItems` docs.
+- **Renaming a project**: the pencil icon next to its name, or
+  `setDoc(doc(db,"projects",id), {name}, {merge:true})`.
+- **Collapsing a project**: per-viewer only, kept in that browser's
+  `localStorage` (`bt-collapsed-projects`) — never written to Firestore, so
+  it can't be set or read from outside a real browser session.
+- Items saved before multi-project shipped (no `projectId`) are grouped
+  under a synthesized "General" project automatically — nothing to migrate
+  by hand.
 
-**Always keep the board in sync with reality** — every time work on a card actually changes state (a fix is ready to test, a push lands on `main`, an investigation turns up a finding, feedback comes in), read the artifact fresh and republish it with that card updated before ending the turn. Never leave a card sitting one step behind what's actually true in the repo.
+Within each project, the columns are: **Backlog → Ready for Testing → Live on
+Feature Branch → Merged to Main (Live)** (status keys: `backlog`,
+`ready-for-testing`, `ready-to-publish`, `published-live`). A card does
+**not** move itself from "Live on Feature Branch" into "Merged to Main
+(Live)" — that's its own distinct **"Merge to main"** button, separate from
+the **"Confirm live on branch"** button that clears Ready for Testing, so
+there's always one deliberate click that corresponds to the actual
+`git merge`/fast-forward push to `main`. New feature/bug requests land in a
+project's Backlog; once tested and confirmed "Live on Feature Branch", push
+the change and click that card's own "Merge to main" button.
 
-**Every card moved to "Ready for Testing" needs a `testUrl`** — the board shows a quick-launch icon at the top of the card for it, so a tester can jump straight into testing instead of hunting down the right URL first. While a card sits in this column, or in "Live on Feature Branch" after it, the fix is, by definition, not on `main` yet, so `testUrl` must point at a preview of the *feature branch*, never the published `offline2online.github.io` site (that's still serving the old code) — use `https://raw.githack.com/offline2online/rob_ph_demos/<branch>/<path>` (e.g. `.../claude/prototype-backlog-review-oruk9v/menu-board-demo/hq-admin.html`), which proxies a specific branch's file with a real `text/html` content-type so it actually renders. Only once the card is clicked through to "Merged to Main (Live)" does the equivalent `offline2online.github.io` URL become the right one to reference (though by then the card no longer shows the icon at all).
+**There's no separate "publish" step anymore — a write to Firestore is
+live immediately**, for every open tab, via `onSnapshot()`. Check/update the
+board with direct Firestore REST calls when working outside the browser UI
+(this sandbox has no Firebase CLI, but the REST API works over plain HTTPS
+since `firestore.rules` allows open, unauthenticated read/write on both
+collections — see `backlog-tracker/firestore.rules`):
 
-### "Notify Claude" — how it actually works
+```bash
+# List all projects
+curl -sS "https://firestore.googleapis.com/v1/projects/backlog-tracker-e4ed2/databases/(default)/documents/projects"
 
-Each project's Backlog column header has its own **Notify Claude** button (visible only once that project's Backlog has ≥1 card). Clicking it sets `notifyClaudeRequestedAt` on that **project** (`STATE.projects[i].notifyClaudeRequestedAt` — this moved off the top-level `STATE` object when the board went multi-project) and republishes — the button then shows a disabled "Claude notified" state until it's cleared.
+# List all backlog items
+curl -sS "https://firestore.googleapis.com/v1/projects/backlog-tracker-e4ed2/databases/(default)/documents/backlogItems"
 
-**Important limitation, confirmed directly:** this platform does not support waking a remote Claude Code session on artifact republish, and an attempt to stand up a recurring scheduled check-in (a Routine polling the board) to substitute for that was blocked by the permission system as a standing autonomous action. So neither pressing the button nor moving a card to "Ready to Publish" pushes a live notification into any Claude session — **there is no automatic wake-up**. Per the user's explicit choice, this is intentionally a manual-ping model: the button is a visible "queued for Claude" signal on the board, and the user separately tells Claude in chat when to act. Do not re-attempt an automatic wake/poll mechanism unless the user asks again.
+# Move a card (PATCH with updateMask; status/updatedAt shown, add more fields+mask entries as needed)
+curl -sS -X PATCH \
+  "https://firestore.googleapis.com/v1/projects/backlog-tracker-e4ed2/databases/(default)/documents/backlogItems/<ITEM_ID>?updateMask.fieldPaths=status&updateMask.fieldPaths=updatedAt" \
+  -H "Content-Type: application/json" \
+  -d '{"fields":{"status":{"stringValue":"ready-for-testing"},"updatedAt":{"timestampValue":"<ISO8601>"}}}'
+```
 
-When told (in chat) to check the board, read it fresh and, **for every project in `STATE.projects[]`**:
-1. If that project's `notifyClaudeRequestedAt` is newer than its `notifyClaudeHandledAt` (or the latter is unset): work through every card in that project's Backlog the same way as any other backlog sweep (investigate/fix, commit + push to the feature branch, add a Claude note, set `testUrl`, move to "Ready for Testing"), then set that project's `notifyClaudeHandledAt` to now and republish.
-2. Independently, per project: if that project's "Ready for Testing" is empty AND its "Live on Feature Branch" has one or more cards, that itself is the trigger to run the publish workflow for all of them — no further "please publish" confirmation is required per card, since a card reaching "Live on Feature Branch" (via the board's own "Confirm live on branch" approval button) already is the user's explicit approval to test it there; clicking a card's own "Merge to main" button is what then represents the actual `git merge`/fast-forward push. Fast-forward push each one's already-committed fix to `main`, mark it "Merged to Main (Live)" with a `claudeNote`, and republish the board.
+Read the board fresh before starting prototype work, and update it the
+moment a card's real state changes (fix ready to test, pushed to `main`,
+archived) — there's no "forgot to republish" risk now since writes are
+instant, so there's no excuse for the board drifting from reality.
 
-### GitHub commit badge on Merged to Main (Live) cards
+**Known gaps vs. the old Artifact board — don't assume feature parity:**
 
-Every "Merged to Main (Live)" card shows a clickable commit badge at the top linking to `https://github.com/offline2online/rob_ph_demos/commit/<sha>`. The board doesn't store a structured commit field for this — it parses the sha straight out of the card's own `claudeNote` text with a regex looking for `main as [commit ]<sha>`. **This means the existing `claudeNote` phrasing convention ("Pushed to main as commit `<sha>`. Live now." / "...cherry-picked commit `<x>` onto main as `<sha>`...") is now load-bearing for the UI, not just descriptive text** — always phrase a Merged to Main (Live) `claudeNote` that way (the sha that's actually live on `main`, not an intermediate branch commit) so the badge picks it up correctly.
+- **No automatic "Notify Claude" wake-up exists yet either, but for a
+  different reason than before.** A Cloud Function
+  (`functions/notifyOnBacklogItemCreated`) fires automatically the instant a
+  new `backlogItems` doc is created with `status: "backlog"` — no button to
+  click. But *what* it notifies depends entirely on the `NOTIFY_WEBHOOK_URL`
+  secret someone wires up (see `backlog-tracker/README.md`): a Slack webhook
+  still needs a human to relay the message into chat; only a live session's
+  own `watch_url`, or a custom relay/Routine, would wake Claude with no
+  human in the loop, and neither is set up by default. **Until you're told
+  otherwise, treat this exactly like the old board: the user tells Claude in
+  chat when to go check it.**
+- **No `testUrl` field or quick-launch icon on cards.** When a fix is ready
+  to test on a feature branch, say the branch/preview URL in chat (e.g.
+  `https://raw.githack.com/offline2online/rob_ph_demos/<branch>/<path>`) —
+  there's nowhere on the card itself to put it yet.
+- **No per-card notes/`claudeNote` field, and no GitHub commit badge.** The
+  schema is just `{projectId, title, desc, type, category, status,
+  createdAt, updatedAt, archivedAt}` — there's nowhere on a card to record
+  "pushed as commit `<sha>`" the way the old board's `claudeNote` did.
+  Report that kind of progress in chat instead of trying to write it
+  somewhere the UI won't show it.
+- New items no longer take a title or category up front — just a
+  description (typed or dictated); a short title is auto-generated and the
+  category best-guessed (`suggestCategory()`), same spirit as before.
 
 ### Archiving Merged to Main (Live) cards
 
-Merged to Main (Live) cards have an **Archive** action (next to the feedback/delete icons). Archiving sets `status: "archived"` and `archivedAt` — archived cards keep all their data (including the commit link) but stop matching any of the four board columns, so they simply disappear from the board rather than being deleted. Each project's own **Archived (N)** button (in that project's header) opens the same dedicated full-page table (not a modal), scoped to that project's cards only — sortable by clicking a column heading (Type / Area / Ticket / Date) and filterable by area, type, and a free-text search — each row carrying a **Restore** button that sets `status` back to `"published-live"` (the underlying key for "Merged to Main (Live)" — unchanged by the column rename). When asked to archive/restore a card, use these same fields rather than deleting cards outright — deletion (the trash icon) is reserved for Backlog cards only now.
+Merged to Main (Live) cards have an **Archive** action. Archiving sets
+`status: "archived"` and `archivedAt` — archived cards keep their data but
+drop off all four columns rather than being deleted. Each project's own
+**Archived (N)** button opens a dedicated full-page table scoped to that
+project, sortable by Type / Area / Ticket / Date and filterable by area,
+type, and free-text search, each row with a **Restore** button that sets
+`status` back to `"published-live"`. Deletion (the trash icon on a card) is
+reserved for Backlog cards only.
 
-### Every card carries an `category` (area impacted)
+### Every card carries a `category` (area impacted)
 
-Every card — New Item form included — has a `category` field, one of a fixed set (`CATEGORIES` in the board's own JS): `Pricing & Offers`, `Product Assets`, `HQ Admin`, `Retail Admin`, `Menu Board`, `Prototype Pipeline Board`, `Backend / Infrastructure`, `Uncategorised`. It's what the Archived page's Area column, filter, and colour-coded badge are keyed on — the "quick snapshot by area" only works if this field is kept accurate.
+One of a fixed set (`CATEGORIES` in `backlog-tracker/public/js/app.js`):
+`Pricing & Offers`, `Product Assets`, `HQ Admin`, `Retail Admin`,
+`Menu Board`, `Backend / Infrastructure`, `Uncategorised`. This is what the
+Archived page's Area column/filter/badge are keyed on.
 
-- **A brand-new ticket gets a best-effort guess, not a final answer.** The New Item form runs a keyword heuristic (`suggestCategory()`, same spirit as the existing Feature/Bug guess) live as the description is typed or dictated, pre-selecting the Area dropdown — but it's just a starting point, same as the Feature/Bug toggle.
-- **The real classification is a step in every backlog sweep, not optional.** When investigating/fixing a Backlog card (the standard "investigate/fix, commit + push, add a Claude note, set `testUrl`, move to Ready for Testing" workflow above), also set `category` to whatever the ticket actually turned out to be about, based on the real analysis — correcting the initial guess if it was off, or filling it in if it was still `Uncategorised`. This is the "automated once analysed" classification: automated in the sense that it's now a mandatory, unskippable part of the same workflow pass, not a separate manual step someone has to remember.
-- The category can also be changed directly from the small select on any card (any column, not just Backlog) — use this to correct a stale/wrong area on an existing card rather than leaving it wrong.
+- A brand-new ticket gets `suggestCategory()`'s best-effort keyword guess —
+  a starting point, not a final answer, same as the Feature/Bug guess.
+- **The real classification is a mandatory step in every backlog sweep**:
+  when investigating/fixing a Backlog card, correct `category` to whatever
+  it actually turned out to be about before moving it to Ready for Testing.
+- Can also be corrected any time via direct Firestore write (no in-app
+  select on the card itself in this build, unlike the old Artifact board).
 
-### Mic dictation (New Item / Feedback forms)
+### Mic dictation (New Item form)
 
-The mic button now explicitly requests microphone permission (`getUserMedia`) before starting Web Speech dictation, and surfaces a specific, visible error message (blocked permission, no device, no browser support, network needed, etc.) instead of silently doing nothing when dictation can't start — this couldn't be verified end-to-end from this sandbox (no live network path to the browser's speech-recognition backend, and no real microphone hardware), so if a user still reports the mic doing nothing, ask what error text now appears rather than assuming it's still silent. The New Item and Feedback textareas also auto-grow to fit what's been typed or dictated (capped near half the viewport, with the modal itself scrolling beyond that), so captured speech stays visible instead of scrolling inside a fixed-height box.
+The mic button requests microphone permission (`getUserMedia`) before
+starting Web Speech dictation, with a specific visible error (blocked
+permission, no device, no browser support, network needed, etc.) instead of
+failing silently — not verifiable end-to-end from this sandbox (no real mic,
+no live path to the speech-recognition backend), so if a user reports the
+mic doing nothing, ask what error text appeared rather than assuming it's
+still silent. The description textarea auto-grows to fit what's been typed
+or dictated (capped near half the viewport).
 
 ## These prototypes run iframed inside the real Personalisation Hub platform
 
