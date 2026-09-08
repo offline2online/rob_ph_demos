@@ -195,10 +195,11 @@ exports.notifyOnProjectReadyForReview = onDocumentUpdated(
         headers: {
           "Content-Type": "application/json",
           "Authorization": `Bearer ${token}`,
-          // Research-preview API trigger feature — this header name may
-          // change; if firing starts failing with an auth/version error,
-          // check Anthropic's current docs for the routine-fire beta header.
+          // Research-preview API trigger feature — these header names/values
+          // may change; if firing starts failing with an auth/version error,
+          // check Anthropic's current docs for the routine-fire headers.
           "anthropic-beta": "experimental-cc-routine-2026-04-01",
+          "anthropic-version": "2023-06-01",
         },
         body: JSON.stringify({ text }),
       });
