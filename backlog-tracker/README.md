@@ -63,7 +63,9 @@ functions/notifyOnBacklogItemCreated          functions/notifyOnProjectReadyForR
         ▼                                                      ▼
   NOTIFY_WEBHOOK_URL                          CLAUDE_ROUTINE_FIRE_URL + CLAUDE_ROUTINE_TOKEN
   (Slack, a session's watch_url, etc. —       (a Claude Code Routine's API trigger — POSTing
-   still needs a human to relay it)            here starts a real Claude Code session directly)
+   still needs a human to relay it)            here starts a real Claude Code session directly,
+                                                `text` = project's own routinePromptMd, if any,
+                                                + that project's current Backlog items)
 ```
 
 Frontend (`public/`) is a plain Firestore-backed board — vanilla JS,
@@ -323,6 +325,31 @@ starts failing with an auth or version-related error after previously
 working, check Anthropic's current Claude Code Routines docs for what
 changed, and re-test with `curl` before re-patching the function — see
 the request shape in `functions/index.js`'s `notifyOnProjectReadyForReview`.
+
+### Per-project Routine instructions (`routinePromptMd`)
+
+The Routine itself has one fixed prompt shared by every project on the
+board (see `claude.ai/code/routines` — its prompt covers the generic
+"how to work this board" workflow: read `requirementsMd`, check
+`interfaces`, rewrite item titles, PATCH the right fields, open a PR).
+Some projects need something extra on top of that without editing the
+shared Routine prompt for everyone else — a different branch naming
+convention, a note about which slice of the repo this project owns,
+anything the generic workflow wouldn't know on its own.
+
+Each project's **⋮ → Docs** page has a **Routine instructions** field for
+exactly this (`projects/{id}.routinePromptMd`, plain markdown, optional —
+blank means "just use the Routine's own default instructions"). When
+**Notify Claude** is clicked, `notifyOnProjectReadyForReview` reads this
+field and, if non-blank, prepends it to the fire request's `text` wrapped
+in `=== PROJECT-SPECIFIC INSTRUCTIONS ===` / `=== END ===` markers, ahead
+of the usual "Project X has N items in Backlog" list — see
+`functions/index.js`. The Routine's own prompt needs to know to look for
+and follow that block; if you update the per-project field but the fired
+session doesn't seem to pick it up, check the Routine's prompt at
+`claude.ai/code/routines` for that instruction (this can't be added by an
+agent session — a Routine created via the `claude.ai` UI's own "API
+trigger" flow can only be edited there, not via `update_trigger`).
 
 ## FAQ / Help Center
 

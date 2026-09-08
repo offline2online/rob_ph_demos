@@ -402,6 +402,15 @@ async function setProjectRequirements(id, md) {
   await setDoc(doc(db, "projects", id), { requirementsMd: md, updatedAt: serverTimestamp() }, { merge: true });
 }
 
+// Per-project addendum to the Notify Claude Routine's own fixed prompt —
+// prepended to the fire request's `text` by notifyOnProjectReadyForReview
+// (see functions/index.js) so one project can hand the Routine extra
+// context (a branch convention, which part of the repo it owns, anything
+// the generic workflow wouldn't know) without editing the Routine itself.
+async function setProjectRoutinePrompt(id, md) {
+  await setDoc(doc(db, "projects", id), { routinePromptMd: md, updatedAt: serverTimestamp() }, { merge: true });
+}
+
 // An interface is a maintained contract document shared between exactly
 // two projects — the backlog-tracker-native equivalent of a shared
 // markdown file, so it survives independently of either project's repo
@@ -722,6 +731,7 @@ document.getElementById("archive-table-body").addEventListener("click", (e) => {
 // ── Docs page (per-project requirements + interfaces with other projects) ─
 const docsPage = document.getElementById("docs-page");
 const docsRequirementsInput = document.getElementById("docs-requirements-input");
+const docsRoutinePromptInput = document.getElementById("docs-routine-prompt-input");
 
 function openDocsPage(pid) {
   docsProjectId = pid;
@@ -764,6 +774,9 @@ function renderDocsPage() {
   if (document.activeElement !== docsRequirementsInput) {
     docsRequirementsInput.value = (project && project.requirementsMd) || "";
   }
+  if (document.activeElement !== docsRoutinePromptInput) {
+    docsRoutinePromptInput.value = (project && project.routinePromptMd) || "";
+  }
   const rows = interfacesForProject(docsProjectId);
   document.getElementById("docs-interfaces-list").innerHTML = rows.length
     ? rows.map(interfaceRowHTML).join("")
@@ -774,6 +787,10 @@ document.getElementById("docs-back-btn").addEventListener("click", closeDocsPage
 document.getElementById("docs-requirements-save").addEventListener("click", () => {
   if (!docsProjectId) return;
   setProjectRequirements(docsProjectId, docsRequirementsInput.value);
+});
+document.getElementById("docs-routine-prompt-save").addEventListener("click", () => {
+  if (!docsProjectId) return;
+  setProjectRoutinePrompt(docsProjectId, docsRoutinePromptInput.value);
 });
 document.getElementById("docs-interfaces-list").addEventListener("click", (e) => {
   const editBtn = e.target.closest(".interface-edit-btn");

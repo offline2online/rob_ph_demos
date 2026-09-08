@@ -119,6 +119,15 @@
       </div>
 
       <div class="docs-block">
+        <h3>Routine instructions</h3>
+        <p class="field-hint">Extra instructions for this project only, included automatically at the top of what "Notify Claude" sends the Routine — a different branch convention, which part of the repo this project owns, anything the generic workflow wouldn't know. Leave blank to just use the Routine's own default instructions.</p>
+        <textarea id="docs-routine-prompt-input" rows="8" placeholder="No project-specific instructions yet — optional."></textarea>
+        <div class="form-row" style="justify-content:flex-end;">
+          <button type="button" class="btn-primary" id="docs-routine-prompt-save">Save instructions</button>
+        </div>
+      </div>
+
+      <div class="docs-block">
         <div class="docs-block-header">
           <h3>Interfaces with other projects</h3>
           <button type="button" class="btn-ghost" id="docs-add-interface-btn">+ New interface</button>
