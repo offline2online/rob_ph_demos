@@ -99,12 +99,13 @@ body {
 /* ── Multi-project sections ─────────────────────────────────────────── */
 #projects-root { display: flex; flex-direction: column; gap: 20px; }
 .project { border: 1px solid var(--border); border-radius: 10px; padding: 16px 16px 18px; background: var(--bg); }
-.project-header { display: flex; align-items: flex-start; gap: 10px; flex-wrap: wrap; margin-bottom: 14px; }
+.project-header { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
 .project-collapse-btn { border: none; background: transparent; cursor: pointer; font-size: 16px; color: var(--text-muted); padding: 2px 6px; flex-shrink: 0; }
 .project-collapse-btn:hover { color: var(--text); }
 .project-title-wrap { flex: 1; min-width: 180px; }
 .project-name-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .project-name { margin: 0; font-size: 18px; font-weight: 700; }
+.project-item-count { font-size: 13px; font-weight: 500; color: var(--text-muted); }
 .project-rename-btn { border: none; background: transparent; cursor: pointer; font-size: 13px; color: var(--text-muted); padding: 2px 6px; }
 .project-rename-btn:hover { color: var(--text); }
 .project-name-input {
@@ -229,6 +230,10 @@ body {
   .project-options-menu { left: auto; right: 0; max-width: calc(100vw - 24px); }
 
   .modal-panel { max-width: 94vw; max-height: 90vh; overflow-y: auto; }
+  /* New item modal anchors near the top instead of centering — centered on
+     a phone, the on-screen keyboard opening for the description textarea
+     pushes the Add-to-backlog button down under the keyboard. */
+  #ni-backdrop { align-items: flex-start; padding-top: 14px; }
   .mic-btn { width: 42px; height: 42px; font-size: 18px; }
   .type-opt { padding: 10px 16px; font-size: 13px; }
   .form-row { gap: 10px; }
