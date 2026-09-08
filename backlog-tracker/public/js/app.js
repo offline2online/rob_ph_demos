@@ -917,7 +917,19 @@ function startListening(isRestart) {
   if (baseline) baseline += " ";
   recognition = new SpeechRecognitionCtor();
   recognition.lang = "en-US";
-  recognition.continuous = true;
+  // continuous:true is a known bad actor on Android Chrome — reported live:
+  // speech gets tripled/repeated 10x over, then it dies anyway around 10s.
+  // Android's continuous-mode implementation is documented to redeliver or
+  // duplicate prior results across its own internal keep-alive restarts,
+  // which then compounds with this file's own baseline-carrying restart
+  // logic (baseline already has the old text, and if the native results
+  // array ALSO still contains it, it doubles up every cycle). continuous:
+  // false makes each session a single short utterance with a clean, fresh
+  // results array every time — onend below already restarts immediately
+  // after every session end regardless, so dictation still reads as
+  // continuous to the user; it's just genuinely fresh state underneath
+  // instead of relying on Android's own long-running continuous handling.
+  recognition.continuous = false;
   recognition.interimResults = true;
   recognition.onresult = (e) => {
     // Any result at all — even an interim one — proves audio is actually
