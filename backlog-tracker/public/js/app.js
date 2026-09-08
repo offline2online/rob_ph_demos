@@ -462,7 +462,7 @@ function openForm(projectId) {
 function closeForm() {
   niBackdrop.hidden = true;
   activeNewItemProjectId = null;
-  if (listening) { try { recognition.stop(); } catch (err) {} }
+  if (listening) { stopRequested = true; try { recognition.stop(); } catch (err) {} }
   const descEl = document.getElementById("ni-desc-input");
   descEl.value = "";
   descEl.style.height = "";
@@ -803,6 +803,13 @@ document.getElementById("if-submit").addEventListener("click", async () => {
 const SpeechRecognitionCtor = window.SpeechRecognition || window.webkitSpeechRecognition;
 let recognition = null;
 let listening = false;
+// Chrome/Android's SpeechRecognition ends itself after a few seconds of
+// silence even with continuous:true (surfaces as a "no-speech" error, then
+// "end") — that's the "mic cuts out after ~10s" behaviour. stopRequested
+// distinguishes that automatic, unwanted end from one the user actually
+// asked for (clicking the mic again, closing the form, or submitting), so
+// onend below knows whether to silently restart or really stop.
+let stopRequested = false;
 
 function showMicError(msg) {
   const el = document.getElementById("ni-mic-error");
@@ -854,7 +861,7 @@ function wireMicButton() {
   }
   micBtn.hidden = false;
   micBtn.addEventListener("click", () => {
-    if (listening) { recognition && recognition.stop(); return; }
+    if (listening) { stopRequested = true; recognition && recognition.stop(); return; }
     requestMicAndListen();
   });
 }
@@ -885,6 +892,7 @@ function requestMicAndListen() {
 function startListening() {
   if (!SpeechRecognitionCtor) return;
   if (listening && recognition) { try { recognition.stop(); } catch (err) {} }
+  stopRequested = false;
   const desc = document.getElementById("ni-desc-input");
   const micBtn = document.getElementById("ni-mic-btn");
   const hint = document.getElementById("ni-listening-hint");
@@ -907,18 +915,51 @@ function startListening() {
     const code = e && e.error;
     if (code === "not-allowed" || code === "service-not-allowed") {
       showMicError("Microphone access is blocked for this page — check your browser's site permissions and try again.");
+      stopRequested = true;
     } else if (code === "audio-capture") {
       showMicError("No microphone could be accessed.");
+      stopRequested = true;
     } else if (code === "network") {
       showMicError("Dictation needs an internet connection to convert speech to text — check your connection and try again.");
-    } else if (code && code !== "no-speech" && code !== "aborted") {
+      stopRequested = true;
+    } else if (code === "no-speech" || code === "aborted") {
+      // Expected/transient, not a real failure: "no-speech" is exactly the
+      // browser's own silence timeout (the "cuts out after ~10s" report),
+      // and "aborted" fires when we stop it ourselves. Leave stopRequested
+      // as-is so onend below restarts through a silence and only really
+      // stops when the user (or closeForm/submit) actually asked it to.
+    } else if (code) {
       showMicError(`Dictation stopped (${code}) — you can keep typing instead.`);
+      stopRequested = true;
     }
-    stopListening();
   };
-  recognition.onend = () => stopListening();
+  recognition.onend = () => {
+    // Detach this now-finished instance's own handlers before doing
+    // anything else. Both branches below end up calling something that
+    // may call .stop() on this same (already-ended) instance again — the
+    // restart branch's startListening() re-enters its own guard against
+    // "already listening", and the stop branch's stopListening() calls
+    // recognition.stop() unconditionally — and without this, that second
+    // .stop() re-fires this exact onend closure while it's still on the
+    // stack, which re-reads `recognition`/`stopRequested` mid-flight and
+    // recurses (verified: an unguarded version of this spun into thousands
+    // of recognition instances off a single simulated restart in testing).
+    // Nulling the handlers first makes any such re-entrant call inert.
+    const finished = recognition;
+    if (finished) { finished.onend = null; finished.onerror = null; finished.onresult = null; }
+    if (stopRequested) { stopListening(); return; }
+    // The browser ended this recognition session on its own (silence
+    // timeout is the common case) but nobody asked to stop — restart
+    // immediately so dictation feels continuous. desc.value already holds
+    // everything transcribed so far, and startListening() re-reads it as
+    // the new baseline, so nothing is lost across the restart.
+    try { startListening(); } catch (err) { stopListening(); }
+  };
   listening = true;
   micBtn.classList.add("listening");
+  micBtn.innerHTML = "&#9209;"; // ⏹ — unambiguous "tap to stop", not just a color change
+  micBtn.title = "Stop dictation";
+  micBtn.setAttribute("aria-label", "Stop dictation");
   hint.classList.add("on");
   try { recognition.start(); } catch (err) {
     showMicError("Dictation didn't start — you can keep typing instead.");
@@ -928,9 +969,15 @@ function startListening() {
 
 function stopListening() {
   listening = false;
+  stopRequested = false;
   const micBtn = document.getElementById("ni-mic-btn");
   const hint = document.getElementById("ni-listening-hint");
-  if (micBtn) micBtn.classList.remove("listening");
+  if (micBtn) {
+    micBtn.classList.remove("listening");
+    micBtn.innerHTML = "&#127908;"; // 🎤
+    micBtn.title = "Dictate";
+    micBtn.setAttribute("aria-label", "Dictate");
+  }
   if (hint) hint.classList.remove("on");
   if (recognition) { try { recognition.stop(); } catch (err) {} }
   const descEl = document.getElementById("ni-desc-input");
