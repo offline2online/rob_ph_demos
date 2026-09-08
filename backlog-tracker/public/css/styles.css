@@ -137,4 +137,41 @@ body {
 .restore-btn { background: var(--primary-tint); color: var(--primary); border: none; border-radius: 6px; padding: 6px 10px; font-size: 12px; font-weight: 600; cursor: pointer; font-family: inherit; white-space: nowrap; }
 .restore-btn:hover { background: var(--primary); color: #fff; }
 
+/* ── New Project modal — optional interface block ───────────────────── */
+.np-interface-block { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--border); }
+.np-interface-toggle { display: flex; align-items: center; gap: 8px; font-size: 13px; cursor: pointer; }
+.np-interface-toggle input { width: 15px; height: 15px; }
+#np-if-fields { margin-top: 10px; }
+#np-if-fields select, #np-if-fields input, #np-if-fields textarea {
+  width: 100%; font-family: inherit; font-size: 13px; color: var(--text); background: var(--surface);
+  border: 1px solid var(--border); border-radius: 6px; padding: 7px 9px; box-sizing: border-box;
+}
+#np-if-fields textarea { resize: vertical; }
+
+/* ── Interface modal (shared with New Project's inline fields) ─────────── */
+#if-backdrop select, #if-backdrop input, #if-backdrop textarea,
+#docs-requirements-input {
+  width: 100%; font-family: inherit; font-size: 13px; color: var(--text); background: var(--surface);
+  border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; box-sizing: border-box; resize: vertical;
+}
+#if-content-input { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px; line-height: 1.5; }
+#docs-requirements-input { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px; line-height: 1.5; }
+
+/* ── Docs page ───────────────────────────────────────────────────────── */
+.docs-page { margin-bottom: 20px; }
+.docs-page-header { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
+.docs-page-header h2 { margin: 0; font-size: 18px; font-weight: 700; }
+.docs-block { border: 1px solid var(--border); border-radius: 8px; padding: 16px; background: var(--surface); margin-bottom: 16px; }
+.docs-block h3 { margin: 0 0 4px; font-size: 15px; }
+.docs-block-header { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.docs-block-header h3 { margin: 0; }
+.interface-row { border: 1px solid var(--border); border-radius: 8px; padding: 12px; margin-top: 10px; background: var(--bg); }
+.interface-row-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.interface-row-title { font-weight: 600; font-size: 13.5px; }
+.interface-row-with { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+.interface-row-actions { display: flex; gap: 4px; }
+.interface-row-content { margin-top: 8px; font-size: 12.5px; color: var(--text); white-space: pre-wrap; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; max-height: 160px; overflow-y: auto; background: var(--surface); border-radius: 6px; padding: 8px 10px; }
+.interface-row-empty { color: var(--text-muted); font-style: italic; }
+.project-docs-btn { flex-shrink: 0; }
+
 [hidden] { display: none !important; }

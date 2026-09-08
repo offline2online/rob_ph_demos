@@ -21,6 +21,7 @@ const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 const itemsRef = collection(db, "backlogItems");
 const projectsRef = collection(db, "projects");
+const interfacesRef = collection(db, "interfaces");
 
 const COLUMNS = [
   { key: "backlog", label: "Backlog", headClass: "backlog" },
@@ -46,7 +47,15 @@ function escapeHTML(s) {
 let allItems = [];
 let items = [];
 let projects = [];
+let interfaces = [];
 let editingProjectId = null;
+
+// ── Docs page state (per-project requirements + interfaces with other
+// projects) — an interface is a maintained contract doc shared between
+// exactly two projects, stored once in "interfaces" and shown identically
+// from either side. ──────────────────────────────────────────────────────
+let docsProjectId = null;
+let editingInterfaceId = null; // null while adding, an id while editing
 
 // ── Archive page state ─────────────────────────────────────────────────
 let archiveProjectId = null;
@@ -118,6 +127,10 @@ function archivedCountForProject(pid) {
   return allItems.filter((i) => (i.projectId || GENERAL_PROJECT_ID) === pid && i.status === "archived").length;
 }
 
+function interfacesForProject(pid) {
+  return interfaces.filter((f) => Array.isArray(f.projectIds) && f.projectIds.includes(pid));
+}
+
 function projectSectionHTML(project) {
   const collapsed = isProjectCollapsed(project.id);
   const projectItems = items.filter((i) => (i.projectId || GENERAL_PROJECT_ID) === project.id);
@@ -150,6 +163,7 @@ function projectSectionHTML(project) {
           ${nameRow}
           <p class="subtitle"><b>${total}</b> item${total === 1 ? "" : "s"} in the pipeline</p>
         </div>
+        <button type="button" class="btn-ghost project-docs-btn" data-project-id="${escapeHTML(project.id)}">Docs (${interfacesForProject(project.id).length})</button>
         <button type="button" class="btn-ghost project-archive-btn" data-project-id="${escapeHTML(project.id)}">Archived (${archivedCount})</button>
         <button class="btn-primary new-item-btn" data-project-id="${escapeHTML(project.id)}" type="button">+ New item</button>
       </div>
@@ -224,8 +238,17 @@ onSnapshot(query(projectsRef, orderBy("createdAt", "asc")), (snap) => {
   projects = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
   render();
   if (archiveProjectId) renderArchivePage();
+  if (docsProjectId) renderDocsPage();
 }, (err) => {
   console.error("backlog-tracker: projects listener error", err);
+});
+
+onSnapshot(interfacesRef, (snap) => {
+  interfaces = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  render();
+  if (docsProjectId) renderDocsPage();
+}, (err) => {
+  console.error("backlog-tracker: interfaces listener error", err);
 });
 
 async function addItem(projectId, title, desc, type, category) {
@@ -278,6 +301,31 @@ async function setProjectName(id, name) {
   return true;
 }
 
+async function setProjectRequirements(id, md) {
+  await setDoc(doc(db, "projects", id), { requirementsMd: md, updatedAt: serverTimestamp() }, { merge: true });
+}
+
+// An interface is a maintained contract document shared between exactly
+// two projects — the backlog-tracker-native equivalent of a shared
+// markdown file, so it survives independently of either project's repo
+// folder and is editable from either side.
+async function addInterface(name, projectIds, contentMd) {
+  await addDoc(interfacesRef, {
+    name: name.trim(), projectIds, contentMd: contentMd || "",
+    createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
+  });
+}
+
+async function updateInterface(id, name, contentMd) {
+  await setDoc(doc(db, "interfaces", id), {
+    name: name.trim(), contentMd: contentMd || "", updatedAt: serverTimestamp(),
+  }, { merge: true });
+}
+
+async function deleteInterface(id) {
+  await deleteDoc(doc(db, "interfaces", id));
+}
+
 function startEditingProjectName(pid) {
   editingProjectId = pid;
   render();
@@ -309,6 +357,8 @@ projectsRoot.addEventListener("click", (e) => {
   if (newItemBtn) { openForm(newItemBtn.dataset.projectId); return; }
   const archiveNavBtn = e.target.closest(".project-archive-btn");
   if (archiveNavBtn) { openArchivePage(archiveNavBtn.dataset.projectId); return; }
+  const docsNavBtn = e.target.closest(".project-docs-btn");
+  if (docsNavBtn) { openDocsPage(docsNavBtn.dataset.projectId); return; }
 });
 projectsRoot.addEventListener("keydown", (e) => {
   if (!e.target.classList.contains("project-name-input")) return;
@@ -382,13 +432,35 @@ document.getElementById("ni-submit").addEventListener("click", async () => {
 });
 
 // ── New Project modal ───────────────────────────────────────────────────
+// Optionally defines one interface with an existing project in the same
+// step — the "when adding a new project, also define its interfaces with
+// other projects" path. Fully optional; skipping it just creates a plain
+// project, same as before.
 const npBackdrop = document.getElementById("np-backdrop");
+const npIfEnable = document.getElementById("np-if-enable");
+const npIfFields = document.getElementById("np-if-fields");
+const npIfProject = document.getElementById("np-if-project");
+
+function populateProjectSelect(selectEl, excludeId) {
+  const opts = projects.filter((p) => p.id !== excludeId);
+  selectEl.innerHTML = opts.length
+    ? opts.map((p) => `<option value="${escapeHTML(p.id)}">${escapeHTML(p.name)}</option>`).join("")
+    : '<option value="">No other projects yet</option>';
+}
+
 function openProjectModal() {
   npBackdrop.hidden = false;
   document.getElementById("np-name-input").value = "";
+  npIfEnable.checked = false;
+  npIfFields.hidden = true;
+  document.getElementById("np-if-name").value = "";
+  document.getElementById("np-if-content").value = "";
+  populateProjectSelect(npIfProject, null);
   document.getElementById("np-name-input").focus();
 }
 function closeProjectModal() { npBackdrop.hidden = true; }
+
+npIfEnable.addEventListener("change", () => { npIfFields.hidden = !npIfEnable.checked; });
 
 document.getElementById("new-project-btn").addEventListener("click", openProjectModal);
 document.getElementById("np-cancel").addEventListener("click", closeProjectModal);
@@ -401,7 +473,16 @@ document.getElementById("np-submit").addEventListener("click", async () => {
   const nameEl = document.getElementById("np-name-input");
   const name = nameEl.value.trim();
   if (!name) { nameEl.focus(); return; }
-  await addProject(name);
+  const newId = await addProject(name);
+
+  if (npIfEnable.checked) {
+    const otherId = npIfProject.value;
+    const ifName = document.getElementById("np-if-name").value.trim();
+    const ifContent = document.getElementById("np-if-content").value.trim();
+    if (otherId && ifName) {
+      await addInterface(ifName, [newId, otherId], ifContent);
+    }
+  }
   closeProjectModal();
 });
 
@@ -527,6 +608,116 @@ archiveFilterSearch.addEventListener("input", () => {
 document.getElementById("archive-table-body").addEventListener("click", (e) => {
   const btn = e.target.closest(".restore-btn");
   if (btn) restoreItem(btn.dataset.id);
+});
+
+// ── Docs page (per-project requirements + interfaces with other projects) ─
+const docsPage = document.getElementById("docs-page");
+const docsRequirementsInput = document.getElementById("docs-requirements-input");
+
+function openDocsPage(pid) {
+  docsProjectId = pid;
+  document.getElementById("projects-root").hidden = true;
+  docsPage.hidden = false;
+  renderDocsPage();
+}
+
+function closeDocsPage() {
+  docsProjectId = null;
+  docsPage.hidden = true;
+  document.getElementById("projects-root").hidden = false;
+}
+
+function interfaceRowHTML(f) {
+  const otherId = f.projectIds.find((id) => id !== docsProjectId);
+  const contentPreview = f.contentMd
+    ? `<div class="interface-row-content">${escapeHTML(f.contentMd)}</div>`
+    : `<p class="interface-row-empty" style="margin:8px 0 0;">No contract written yet.</p>`;
+  return `
+    <div class="interface-row" data-id="${f.id}">
+      <div class="interface-row-top">
+        <div>
+          <div class="interface-row-title">${escapeHTML(f.name)}</div>
+          <div class="interface-row-with">with <b>${escapeHTML(projectName(otherId))}</b></div>
+        </div>
+        <div class="interface-row-actions">
+          <button type="button" class="icon-btn interface-edit-btn" data-id="${f.id}" title="Edit">&#9998;</button>
+          <button type="button" class="icon-btn interface-delete-btn" data-id="${f.id}" title="Remove">&times;</button>
+        </div>
+      </div>
+      ${contentPreview}
+    </div>`;
+}
+
+function renderDocsPage() {
+  if (!docsProjectId) return;
+  const project = projects.find((p) => p.id === docsProjectId);
+  document.getElementById("docs-page-project-name").textContent = project ? project.name : projectName(docsProjectId);
+  if (document.activeElement !== docsRequirementsInput) {
+    docsRequirementsInput.value = (project && project.requirementsMd) || "";
+  }
+  const rows = interfacesForProject(docsProjectId);
+  document.getElementById("docs-interfaces-list").innerHTML = rows.length
+    ? rows.map(interfaceRowHTML).join("")
+    : '<p class="interface-row-empty">No interfaces defined with another project yet.</p>';
+}
+
+document.getElementById("docs-back-btn").addEventListener("click", closeDocsPage);
+document.getElementById("docs-requirements-save").addEventListener("click", () => {
+  if (!docsProjectId) return;
+  setProjectRequirements(docsProjectId, docsRequirementsInput.value);
+});
+document.getElementById("docs-interfaces-list").addEventListener("click", (e) => {
+  const editBtn = e.target.closest(".interface-edit-btn");
+  if (editBtn) { openInterfaceModal(editBtn.dataset.id); return; }
+  const delBtn = e.target.closest(".interface-delete-btn");
+  if (delBtn) { deleteInterface(delBtn.dataset.id); return; }
+});
+
+// ── Interface modal — shared "add" (from Docs page) and "edit" flow ──────
+const ifBackdrop = document.getElementById("if-backdrop");
+const ifOtherProject = document.getElementById("if-other-project");
+const ifNameInput = document.getElementById("if-name-input");
+const ifContentInput = document.getElementById("if-content-input");
+
+function openInterfaceModal(interfaceId) {
+  editingInterfaceId = interfaceId || null;
+  ifBackdrop.hidden = false;
+  if (editingInterfaceId) {
+    const f = interfaces.find((x) => x.id === editingInterfaceId);
+    document.getElementById("if-title").textContent = "Edit interface";
+    ifOtherProject.parentElement.querySelectorAll("select#if-other-project, label[for='if-other-project']").forEach((el) => { el.hidden = true; });
+    ifNameInput.value = f ? f.name : "";
+    ifContentInput.value = f ? f.contentMd || "" : "";
+  } else {
+    document.getElementById("if-title").textContent = "New interface";
+    document.querySelector("label[for='if-other-project']").hidden = false;
+    ifOtherProject.hidden = false;
+    populateProjectSelect(ifOtherProject, docsProjectId);
+    ifNameInput.value = "";
+    ifContentInput.value = "";
+  }
+  ifNameInput.focus();
+}
+function closeInterfaceModal() { ifBackdrop.hidden = true; editingInterfaceId = null; }
+
+document.getElementById("docs-add-interface-btn").addEventListener("click", () => openInterfaceModal(null));
+document.getElementById("if-cancel").addEventListener("click", closeInterfaceModal);
+document.getElementById("if-close").addEventListener("click", closeInterfaceModal);
+ifBackdrop.addEventListener("click", (e) => { if (e.target === ifBackdrop) closeInterfaceModal(); });
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && !ifBackdrop.hidden) closeInterfaceModal();
+});
+document.getElementById("if-submit").addEventListener("click", async () => {
+  const name = ifNameInput.value.trim();
+  if (!name) { ifNameInput.focus(); return; }
+  if (editingInterfaceId) {
+    await updateInterface(editingInterfaceId, name, ifContentInput.value);
+  } else {
+    const otherId = ifOtherProject.value;
+    if (!otherId || !docsProjectId) return;
+    await addInterface(name, [docsProjectId, otherId], ifContentInput.value);
+  }
+  closeInterfaceModal();
 });
 
 // ── VOICE DICTATION (New Item description) ──────────────────────────────

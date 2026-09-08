@@ -37,5 +37,24 @@ service cloud.firestore {
 
       allow delete: if true;
     }
+
+    // An interface is a maintained contract document shared between exactly
+    // two projects (e.g. "Live Visitor Profile" <-> "Experience Templates")
+    // — the backlog-tracker-native equivalent of a shared markdown file in
+    // the repo, editable by whoever is driving either project's board.
+    match /interfaces/{interfaceId} {
+      allow read: if true;
+
+      allow create, update: if
+        isNonEmptyBoundedString(incoming().name, 120) &&
+        incoming().projectIds is list &&
+        incoming().projectIds.size() == 2 &&
+        isNonEmptyBoundedString(incoming().projectIds[0], 100) &&
+        isNonEmptyBoundedString(incoming().projectIds[1], 100) &&
+        incoming().contentMd is string &&
+        incoming().contentMd.size() <= 20000;
+
+      allow delete: if true;
+    }
   }
 }

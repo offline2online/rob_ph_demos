@@ -52,6 +52,22 @@
         <label class="field-label" for="np-name-input">Project name</label>
         <input type="text" id="np-name-input" maxlength="80" placeholder="e.g. Loyalty App">
         <p class="field-hint">Creates a new, independent Backlog → Ready for Testing → Live on Feature Branch → Merged to Main (Live) pipeline, same as any other project here.</p>
+
+        <div class="np-interface-block">
+          <label class="np-interface-toggle">
+            <input type="checkbox" id="np-if-enable">
+            Define an interface with an existing project
+          </label>
+          <div id="np-if-fields" hidden>
+            <label class="field-label" for="np-if-project">Interfaces with</label>
+            <select id="np-if-project"></select>
+            <label class="field-label" for="np-if-name">Interface name</label>
+            <input type="text" id="np-if-name" maxlength="120" placeholder="e.g. Live Visitor Profile ↔ Experience Templates">
+            <label class="field-label" for="np-if-content">Contract (optional — can be filled in later)</label>
+            <textarea id="np-if-content" rows="4" placeholder="What crosses this boundary, owned by which side..."></textarea>
+          </div>
+        </div>
+
         <div class="form-row" style="justify-content:flex-end;">
           <div class="form-actions">
             <button type="button" class="btn-ghost" id="np-cancel">Cancel</button>
@@ -60,6 +76,53 @@
         </div>
       </div>
     </div>
+
+    <div class="modal-backdrop" id="if-backdrop" hidden>
+      <div class="modal-panel" role="dialog" aria-modal="true" aria-labelledby="if-title">
+        <div class="modal-header">
+          <h2 id="if-title">New interface</h2>
+          <button type="button" class="modal-close" id="if-close" aria-label="Close">&times;</button>
+        </div>
+        <label class="field-label" for="if-other-project">Interfaces with</label>
+        <select id="if-other-project"></select>
+        <label class="field-label" for="if-name-input">Interface name</label>
+        <input type="text" id="if-name-input" maxlength="120" placeholder="e.g. Live Visitor Profile ↔ Experience Templates">
+        <label class="field-label" for="if-content-input">Contract</label>
+        <textarea id="if-content-input" rows="12" placeholder="What crosses this boundary, owned by which side, versioning rules..."></textarea>
+        <p class="field-hint">Visible and editable from both projects' Docs pages — this is the shared, maintained contract between them.</p>
+        <div class="form-row" style="justify-content:flex-end;">
+          <div class="form-actions">
+            <button type="button" class="btn-ghost" id="if-cancel">Cancel</button>
+            <button type="button" class="btn-primary" id="if-submit">Save interface</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <section class="docs-page" id="docs-page" hidden>
+      <div class="docs-page-header">
+        <button type="button" class="btn-ghost" id="docs-back-btn">&larr; Back to board</button>
+        <h2>Docs — <span id="docs-page-project-name"></span></h2>
+      </div>
+
+      <div class="docs-block">
+        <h3>Requirements</h3>
+        <p class="field-hint">This project's own requirements — maintained here so it travels with the board, not only as a file in the repo.</p>
+        <textarea id="docs-requirements-input" rows="16" placeholder="No requirements written yet — paste or write them here."></textarea>
+        <div class="form-row" style="justify-content:flex-end;">
+          <button type="button" class="btn-primary" id="docs-requirements-save">Save requirements</button>
+        </div>
+      </div>
+
+      <div class="docs-block">
+        <div class="docs-block-header">
+          <h3>Interfaces with other projects</h3>
+          <button type="button" class="btn-ghost" id="docs-add-interface-btn">+ New interface</button>
+        </div>
+        <p class="field-hint">A maintained contract document shared with one other project — either side can edit it.</p>
+        <div id="docs-interfaces-list"></div>
+      </div>
+    </section>
 
     <section class="archive-page" id="archive-page" hidden>
       <div class="archive-page-header">
