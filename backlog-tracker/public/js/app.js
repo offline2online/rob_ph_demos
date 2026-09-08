@@ -194,11 +194,22 @@ function optionsMenuHTML(project) {
 // Moved out of the "⋮" options menu into its own header CTA, before
 // + New backlog item — buried in the menu, people weren't finding it once
 // they'd actually added several items and wanted to send them off.
+//
+// Hidden entirely (not just dimmed) when Backlog is empty — there's
+// nothing for it to do until an item exists, so a dimmed-but-clickable
+// button was just a dead click waiting to happen. When there IS something
+// to notify about, it uses the platform's AI-gradient treatment (see the
+// ph-designer skill's "AI action button" recipe — the same teal→violet
+// gradient as "Launch a New Campaign") to read as the prominent, AI-driven
+// action it actually is, rather than a plain ghost button.
 function notifyClaudeButtonHTML(project) {
   const pid = project.id;
   const backlogCount = backlogCountForProject(pid);
-  return `<button type="button" class="btn-ghost notify-claude-btn project-notify-btn${backlogCount ? "" : " options-menu-item-empty"}" data-project-id="${escapeHTML(pid)}">
-    Notify Claude <span class="options-menu-count">${backlogCount}</span>
+  if (!backlogCount) return "";
+  return `<button type="button" class="notify-claude-btn project-notify-btn" data-project-id="${escapeHTML(pid)}">
+    <span class="material-symbols-outlined notify-claude-icon">auto_awesome</span>
+    <span class="notify-claude-label">Notify Claude</span>
+    <span class="notify-claude-count-pill">${backlogCount}</span>
   </button>`;
 }
 
