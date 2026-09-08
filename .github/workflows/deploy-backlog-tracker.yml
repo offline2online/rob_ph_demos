@@ -80,10 +80,18 @@ jobs:
           GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/firebase-sa.json
         run: node seed-faq-data.js
 
+      # --force is required here, not optional: removing a Cloud Function
+      # from source (as happened when notifyOnBacklogItemCreated was
+      # deleted) makes the CLI stop and ask "delete this function too?" —
+      # a prompt --non-interactive can't answer, so without --force this
+      # step aborts outright ("Aborting because deletion cannot proceed in
+      # non-interactive mode") on every deploy after a function removal,
+      # taking every other change in the same push down with it. --force
+      # skips that (and every other) confirmation prompt.
       - name: Deploy to Firebase (hosting, functions, firestore rules)
         env:
           GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/firebase-sa.json
-        run: npx firebase-tools@13 deploy --only hosting,functions,firestore:rules --project backlog-tracker-e4ed2 --non-interactive
+        run: npx firebase-tools@13 deploy --only hosting,functions,firestore:rules --project backlog-tracker-e4ed2 --non-interactive --force
 
       - name: Set Artifact Registry cleanup policy for gcf-artifacts
         continue-on-error: true
