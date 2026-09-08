@@ -235,3 +235,60 @@ exports.notifyOnProjectReadyForReview = onDocumentUpdated(
     }
   }
 );
+
+// A shipped feature can leave the FAQ articles that document it stale.
+// Opt-in per project (Docs page → "FAQ review automation", projects/{id}
+// .faqAutoFlagOnLive) — when on, the moment one of that project's backlog
+// items is actually merged to main (status flips to "published-live", the
+// one irreversible transition of the three — ready-for-testing and
+// ready-to-publish can still be reverted), every faqArticles doc whose own
+// optional `projectId` link points at this project gets needsReview:true,
+// the same flag the FAQ Center's own manual toggle sets.
+exports.onBacklogItemPublishedLive = onDocumentUpdated(
+  "backlogItems/{itemId}",
+  async (event) => {
+    const before = event.data?.before?.data();
+    const after = event.data?.after?.data();
+    if (!before || !after) {
+      return;
+    }
+    if (before.status === "published-live" || after.status !== "published-live") {
+      return;
+    }
+    if (!after.projectId) {
+      return;
+    }
+
+    const db = getFirestore();
+    const projectSnap = await db.collection("projects").doc(after.projectId).get();
+    if (!projectSnap.exists || !projectSnap.data().faqAutoFlagOnLive) {
+      return;
+    }
+
+    const articlesSnap = await db.collection("faqArticles")
+      .where("projectId", "==", after.projectId)
+      .get();
+    if (articlesSnap.empty) {
+      logger.info("FAQ auto-flag enabled but no linked articles for this project", {
+        itemId: event.params.itemId,
+        projectId: after.projectId,
+      });
+      return;
+    }
+
+    const batch = db.batch();
+    articlesSnap.docs.forEach((articleDoc) => {
+      batch.set(articleDoc.ref, {
+        needsReview: true,
+        updatedAt: new Date(),
+      }, { merge: true });
+    });
+    await batch.commit();
+
+    logger.info("Flagged linked FAQ articles for review after merge to main", {
+      itemId: event.params.itemId,
+      projectId: after.projectId,
+      articleCount: articlesSnap.size,
+    });
+  }
+);

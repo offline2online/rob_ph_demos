@@ -163,12 +163,7 @@ function optionsMenuHTML(project) {
   const hasReq = !!(project.requirementsMd && project.requirementsMd.trim());
   const ifaces = interfacesForProject(pid);
 
-  const backlogCount = backlogCountForProject(pid);
   let html = `
-    <button type="button" class="options-menu-item project-notify-btn${backlogCount ? "" : " options-menu-item-empty"}" data-project-id="${escapeHTML(pid)}">
-      Notify Claude <span class="options-menu-count">${backlogCount}</span>
-      <span class="options-menu-sub">sends everything currently in Backlog</span>
-    </button>
     <button type="button" class="options-menu-item project-archive-btn" data-project-id="${escapeHTML(pid)}">
       Archived tickets <span class="options-menu-count">${archivedCount}</span>
     </button>
@@ -190,6 +185,17 @@ function optionsMenuHTML(project) {
     </button>`;
   }
   return html;
+}
+
+// Moved out of the "⋮" options menu into its own header CTA, before
+// + New backlog item — buried in the menu, people weren't finding it once
+// they'd actually added several items and wanted to send them off.
+function notifyClaudeButtonHTML(project) {
+  const pid = project.id;
+  const backlogCount = backlogCountForProject(pid);
+  return `<button type="button" class="btn-ghost notify-claude-btn project-notify-btn${backlogCount ? "" : " options-menu-item-empty"}" data-project-id="${escapeHTML(pid)}">
+    Notify Claude <span class="options-menu-count">${backlogCount}</span>
+  </button>`;
 }
 
 function projectSectionHTML(project) {
@@ -223,6 +229,7 @@ function projectSectionHTML(project) {
           ${nameRow}
         </div>
         <div class="project-header-actions">
+          ${notifyClaudeButtonHTML(project)}
           <button class="btn-primary new-item-btn" data-project-id="${escapeHTML(project.id)}" type="button">+ New backlog item</button>
           <div class="project-options">
             <button type="button" class="icon-btn project-options-btn" data-project-id="${escapeHTML(project.id)}" aria-haspopup="true" aria-label="More options for this project">&#8942;</button>
@@ -409,6 +416,10 @@ async function setProjectRequirements(id, md) {
 // the generic workflow wouldn't know) without editing the Routine itself.
 async function setProjectRoutinePrompt(id, md) {
   await setDoc(doc(db, "projects", id), { routinePromptMd: md, updatedAt: serverTimestamp() }, { merge: true });
+}
+
+async function setProjectFaqAutoFlag(id, enabled) {
+  await setDoc(doc(db, "projects", id), { faqAutoFlagOnLive: enabled, updatedAt: serverTimestamp() }, { merge: true });
 }
 
 // An interface is a maintained contract document shared between exactly
@@ -732,6 +743,7 @@ document.getElementById("archive-table-body").addEventListener("click", (e) => {
 const docsPage = document.getElementById("docs-page");
 const docsRequirementsInput = document.getElementById("docs-requirements-input");
 const docsRoutinePromptInput = document.getElementById("docs-routine-prompt-input");
+const docsFaqAutoFlagInput = document.getElementById("docs-faq-auto-flag");
 
 function openDocsPage(pid) {
   docsProjectId = pid;
@@ -777,6 +789,7 @@ function renderDocsPage() {
   if (document.activeElement !== docsRoutinePromptInput) {
     docsRoutinePromptInput.value = (project && project.routinePromptMd) || "";
   }
+  docsFaqAutoFlagInput.checked = !!(project && project.faqAutoFlagOnLive);
   const rows = interfacesForProject(docsProjectId);
   document.getElementById("docs-interfaces-list").innerHTML = rows.length
     ? rows.map(interfaceRowHTML).join("")
@@ -791,6 +804,10 @@ document.getElementById("docs-requirements-save").addEventListener("click", () =
 document.getElementById("docs-routine-prompt-save").addEventListener("click", () => {
   if (!docsProjectId) return;
   setProjectRoutinePrompt(docsProjectId, docsRoutinePromptInput.value);
+});
+docsFaqAutoFlagInput.addEventListener("change", () => {
+  if (!docsProjectId) return;
+  setProjectFaqAutoFlag(docsProjectId, docsFaqAutoFlagInput.checked);
 });
 document.getElementById("docs-interfaces-list").addEventListener("click", (e) => {
   const editBtn = e.target.closest(".interface-edit-btn");
