@@ -1,5 +1,13 @@
 # backlog-tracker
 
+See [`REQUIREMENTS.md`](./REQUIREMENTS.md) for the full functional
+specification — data model, board behavior, the notify/automation Cloud
+Functions, and the FAQ / Help Center surface. This README covers setup and
+deploy; that file covers what the system is actually for and why it's
+built the way it is. Keep both in sync with the live copy on this
+project's own Docs page (`requirementsMd`) — treat a divergence between
+any of the three as a bug in whichever is stale.
+
 A real, Firestore-backed version of the Prototype Pipeline board (the
 Claude Artifact at the root `CLAUDE.md`'s "Prototype Backlog" link), built
 to answer one specific question: **can a web app tell Claude the moment a
