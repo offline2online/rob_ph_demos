@@ -402,6 +402,10 @@ async function setProjectRequirements(id, md) {
   await setDoc(doc(db, "projects", id), { requirementsMd: md, updatedAt: serverTimestamp() }, { merge: true });
 }
 
+async function setProjectFaqAutoFlag(id, enabled) {
+  await setDoc(doc(db, "projects", id), { faqAutoFlagOnLive: enabled, updatedAt: serverTimestamp() }, { merge: true });
+}
+
 // An interface is a maintained contract document shared between exactly
 // two projects — the backlog-tracker-native equivalent of a shared
 // markdown file, so it survives independently of either project's repo
@@ -722,6 +726,7 @@ document.getElementById("archive-table-body").addEventListener("click", (e) => {
 // ── Docs page (per-project requirements + interfaces with other projects) ─
 const docsPage = document.getElementById("docs-page");
 const docsRequirementsInput = document.getElementById("docs-requirements-input");
+const docsFaqAutoFlagInput = document.getElementById("docs-faq-auto-flag");
 
 function openDocsPage(pid) {
   docsProjectId = pid;
@@ -764,6 +769,7 @@ function renderDocsPage() {
   if (document.activeElement !== docsRequirementsInput) {
     docsRequirementsInput.value = (project && project.requirementsMd) || "";
   }
+  docsFaqAutoFlagInput.checked = !!(project && project.faqAutoFlagOnLive);
   const rows = interfacesForProject(docsProjectId);
   document.getElementById("docs-interfaces-list").innerHTML = rows.length
     ? rows.map(interfaceRowHTML).join("")
@@ -774,6 +780,10 @@ document.getElementById("docs-back-btn").addEventListener("click", closeDocsPage
 document.getElementById("docs-requirements-save").addEventListener("click", () => {
   if (!docsProjectId) return;
   setProjectRequirements(docsProjectId, docsRequirementsInput.value);
+});
+docsFaqAutoFlagInput.addEventListener("change", () => {
+  if (!docsProjectId) return;
+  setProjectFaqAutoFlag(docsProjectId, docsFaqAutoFlagInput.checked);
 });
 document.getElementById("docs-interfaces-list").addEventListener("click", (e) => {
   const editBtn = e.target.closest(".interface-edit-btn");

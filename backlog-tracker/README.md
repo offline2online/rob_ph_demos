@@ -351,16 +351,21 @@ sharing this same Firestore project:
 - **Why `projectId` exists on an article**: this is the "categorization by
   project" piece — an article can be linked to whichever `projects`
   collection doc (Live Visitor Profile, Experience Templates, Products
-  Pricing & Asset Management, etc.) it documents. That's what would let a
-  future automation flag the right FAQs the moment that project's own
-  feature work ships, the same way `notifyOnBacklogItemCreated` already
-  reacts to a new backlog item with no button to click. **That automation
-  isn't built yet** — `needsReview` today is a manual toggle on each
-  article in FAQ Center, not something a deploy sets for you. A natural
-  next step (not implemented here) would be a Cloud Function trigger on
-  `backlogItems` moving to `status: "published-live"` that sets
-  `needsReview: true` on every `faqArticles` doc sharing that item's
-  `projectId`.
+  Pricing & Asset Management, etc.) it documents. This is what the
+  auto-review automation below uses to find which articles a shipped
+  feature might have made stale.
+- **Auto-flagging FAQs for review on merge to main** — opt-in per project,
+  toggled from that project's Docs page (**⋮ → Requirements (MD file)**
+  opens the Docs page; "FAQ review automation" is the block below
+  Requirements) as `projects/{id}.faqAutoFlagOnLive`. When on, the Cloud
+  Function `onBacklogItemPublishedLive` (an `onDocumentUpdated` trigger on
+  `backlogItems`) fires the moment one of that project's items transitions
+  to `status: "published-live"` — merge-to-main specifically, since that's
+  the one irreversible transition of the three (ready-for-testing and
+  ready-to-publish can still be reverted) — and sets `needsReview: true` on
+  every `faqArticles` doc sharing that item's `projectId`, the same flag
+  FAQ Center's own manual toggle sets. `needsReview` otherwise stays a
+  manual toggle for projects that leave this off.
 - **Seeding**: `scripts/seed-faq-data.js` (same insert-only `create()`
   pattern as `migrate-artifact-data.js`) seeds the **real** Help Center
   content — 9 categories and 108 articles — run automatically on every
