@@ -28,11 +28,16 @@ reads live from the **same Firestore project `backlog-tracker` uses**
 (`backlog-tracker-e4ed2`, collections `faqCategories`/`faqArticles`), so
 editing is done entirely from backlog-tracker's own **FAQ Center** admin
 page, not by editing files in `faq/`. See `backlog-tracker/README.md` →
-"FAQ / Help Center" for the data model, why articles can optionally link
-to a `projects` doc (the categorization-by-project hook meant for a future
-"flag FAQs when a feature ships" automation), and the placeholder seed
-content currently in place (the real help center's articles couldn't be
-fetched — that domain is blocked by sandbox network egress policy).
+"FAQ / Help Center" for the data model and why articles can optionally
+link to a `projects` doc (the categorization-by-project hook meant for a
+future "flag FAQs when a feature ships" automation). The seeded content
+(`backlog-tracker/scripts/seed-faq-data.js`) is the **real** Personalisation
+Hub Help Center — 9 categories, 108 articles, imported verbatim from a
+Freshdesk export found in Google Drive ("Personalisation Hub" › "Freshdesk
+FAQs - June 2026") — not placeholder text; the live
+help.personalisationhub.com site itself is still unreachable from this
+sandbox (blocked by network egress policy), so that Drive export, not the
+live site, is the source of truth for this data going forward.
 
 ## Live Visitor Profile & Experience Templates — two separate projects, one repo
 

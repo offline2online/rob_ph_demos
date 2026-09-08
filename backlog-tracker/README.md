@@ -268,10 +268,10 @@ sharing this same Firestore project:
   `rob_ph_demos`, not Firebase Hosting). Front page with search + category
   grid, a category page listing its articles, an article page, and a full
   search-results page — modeled on
-  <https://help.personalisationhub.com/support/home> (that URL is blocked
-  by this sandbox's network egress policy, so the exact real categories/
-  articles could not be read and copied; what's seeded is a plausible
-  placeholder structure, clearly marked as such in every article body).
+  <https://help.personalisationhub.com/support/home> (that URL is itself
+  blocked by this sandbox's network egress policy, so it couldn't be read
+  directly — the real content was instead sourced from a Freshdesk export
+  already sitting in Google Drive, see "Seeding" below).
 - **Admin**: this app's own **FAQ Center** page (button next to "+ New
   project" in the header — global, not per-project, since an article can
   span or link to any one project). Lets you manage categories (name,
@@ -296,11 +296,25 @@ sharing this same Firestore project:
   `needsReview: true` on every `faqArticles` doc sharing that item's
   `projectId`.
 - **Seeding**: `scripts/seed-faq-data.js` (same insert-only `create()`
-  pattern as `migrate-artifact-data.js`) seeds six starting categories and
-  a couple of placeholder articles each, run automatically on every
-  deploy. Every seeded article body says plainly that it's a placeholder —
-  replace them from FAQ Center once the real Help Center content is
-  available to copy in.
+  pattern as `migrate-artifact-data.js`) seeds the **real** Help Center
+  content — 9 categories and 108 articles — run automatically on every
+  deploy. This is a verbatim import from Freshdesk Solutions
+  (`personalisationhub.freshdesk.com/a/solutions`), pulled from a Google
+  Drive folder ("Personalisation Hub" › "Freshdesk FAQs - June 2026") that
+  already had the full export saved as one file per category plus a
+  combined export and a gap-analysis summary. Each imported article body
+  ends with a line naming its original Freshdesk Article ID and
+  last-updated date. Draft/Published status was preserved exactly as it
+  was in Freshdesk (98 published, 10 draft) — the 10 drafts start hidden
+  from the public site, same as any draft created from FAQ Center, so this
+  data is also a live test of that flow. Article bodies are imported as
+  plain prose paragraphs (Freshdesk's own export had no markdown
+  structure to carry over), not reformatted into the "## heading" / "-
+  bullet" style FAQ Center's editor supports — reformatting any of them is
+  now just an edit away from FAQ Center. `categoryId`/`title`/`slug`/
+  `summary`/`keywords` were derived mechanically from that export by a
+  one-off script (not checked into this repo); the article text itself is
+  untouched.
 - **Cross-site config**: `faq/js/firebase-config.js` deliberately
   duplicates `backlog-tracker/public/js/firebase-config.js` byte-for-byte
   (same project, two static sites on two different hosts reading the same
