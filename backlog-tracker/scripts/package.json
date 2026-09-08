@@ -1,0 +1,11 @@
+{
+  "name": "backlog-tracker-scripts",
+  "description": "One-off maintenance scripts for backlog-tracker's Firestore data — isolated from functions/ so they never affect the deployed Cloud Function's own dependencies.",
+  "private": true,
+  "scripts": {
+    "migrate-artifact-data": "node migrate-artifact-data.js"
+  },
+  "dependencies": {
+    "firebase-admin": "^12.6.0"
+  }
+}

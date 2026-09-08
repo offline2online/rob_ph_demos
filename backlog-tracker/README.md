@@ -264,7 +264,27 @@ What `NOTIFY_WEBHOOK_URL` points at determines how automatic this really is:
   starting posture the rest of this repo's prototypes use — fine for an
   internal team tool, not for anything public. Add Firebase Auth + rules
   scoped to signed-in users before that changes.
-- **No drag-and-drop, no archive page, no multi-project.** The Artifact
-  board grew those over time; this scaffold only builds what's needed to
-  demonstrate the auto-notify path. Worth porting over if this becomes the
-  primary board instead of a proof of concept.
+- **No drag-and-drop.** Multi-project and an archive page (per-project
+  "Archived (N)" button → sortable/filterable table, with a Restore
+  action) have both since been ported over from the Artifact board;
+  drag-and-drop between columns hasn't — cards move via the existing
+  arrow/approve/merge buttons only.
+
+## Historical data migrated from the Artifact board
+
+The "Products and Pricing Prototype" project and its 30 already-shipped
+tickets — everything that used to live only in the Claude Artifact
+"Prototype Pipeline" board (see the root `CLAUDE.md`) — have been
+migrated into this app's own Firestore, so the real board's Archive isn't
+starting empty. `scripts/migrate-artifact-data.js` does this: it reads
+`scripts/artifact-export.json` (a one-time export of that artifact's
+data) and seeds matching `projects`/`backlogItems` documents using the
+same ids the artifact used, via Firestore's `create()` (insert-only —
+skips any doc that already exists). The deploy workflow runs it on every
+deploy, but past the first successful run it's a no-op: it can never
+overwrite a later edit made from the live app (a restore, a rename, a
+category change), since it only ever creates documents that are missing,
+never updates ones that already exist. Safe to delete
+`scripts/artifact-export.json` and this step once you're confident the
+migration has landed and won't need re-running (e.g. against a fresh
+Firebase project).

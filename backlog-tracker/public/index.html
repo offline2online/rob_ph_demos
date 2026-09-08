@@ -64,6 +64,42 @@
       </div>
     </div>
 
+    <section class="archive-page" id="archive-page" hidden>
+      <div class="archive-page-header">
+        <button type="button" class="btn-ghost" id="archive-back-btn">&larr; Back to board</button>
+        <h2>Archived — <span id="archive-page-project-name"></span></h2>
+        <span class="archive-page-count" id="archive-page-count">0 tickets</span>
+      </div>
+      <div class="archive-table-wrap">
+        <table class="archive-table">
+          <thead>
+            <tr>
+              <th data-sort="type">Type</th>
+              <th data-sort="category">Area</th>
+              <th data-sort="title">Ticket</th>
+              <th data-sort="date">Date</th>
+              <th></th>
+            </tr>
+            <tr class="archive-filter-row">
+              <th>
+                <select id="archive-filter-type" aria-label="Filter by type">
+                  <option value="">All types</option>
+                  <option value="feature">Feature</option>
+                  <option value="bug">Bug</option>
+                </select>
+              </th>
+              <th><select id="archive-filter-category" aria-label="Filter by area"><option value="">All areas</option></select></th>
+              <th><input type="search" id="archive-filter-search" placeholder="Title or description…" aria-label="Search title or description"></th>
+              <th></th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="archive-table-body"></tbody>
+        </table>
+        <p class="empty-hint" id="archive-table-empty" hidden>No archived tickets match these filters.</p>
+      </div>
+    </section>
+
     <div id="projects-root"></div>
   </div>
 

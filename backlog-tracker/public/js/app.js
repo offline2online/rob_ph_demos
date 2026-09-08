@@ -43,9 +43,15 @@ function escapeHTML(s) {
     .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 }
 
+let allItems = [];
 let items = [];
 let projects = [];
 let editingProjectId = null;
+
+// ── Archive page state ─────────────────────────────────────────────────
+let archiveProjectId = null;
+let archiveSort = { field: "date", dir: "desc" };
+let archiveFilters = { type: "", category: "", search: "" };
 
 function colListId(pid, colKey) { return `col-${pid}-${colKey}`; }
 
@@ -83,6 +89,10 @@ function cardHTML(item) {
   const mergeBtn = isLiveBranch
     ? `<button type="button" class="merge-btn move-btn" data-id="${item.id}" data-dir="1">Merge to main</button>`
     : "";
+  const isPublished = item.status === "published-live";
+  const archiveBtn = isPublished
+    ? `<button type="button" class="icon-btn archive-btn" data-id="${item.id}" title="Archive">&#128451;</button>`
+    : "";
   const canRight = idx < COL_KEYS.length - 1 && !isTesting && !isLiveBranch;
   const rightBtn = canRight
     ? `<button type="button" class="icon-btn move-btn" data-id="${item.id}" data-dir="1" title="Move forward">&rarr;</button>`
@@ -98,10 +108,14 @@ function cardHTML(item) {
       <p class="card-desc">${escapeHTML(item.desc)}</p>
       <div class="card-footer">
         <span class="card-cat">${escapeHTML(item.category || "Uncategorised")}</span>
-        ${deleteBtn}
+        <div class="card-move">${archiveBtn}${deleteBtn}</div>
       </div>
       ${approveBtn}${mergeBtn}
     </article>`;
+}
+
+function archivedCountForProject(pid) {
+  return allItems.filter((i) => (i.projectId || GENERAL_PROJECT_ID) === pid && i.status === "archived").length;
 }
 
 function projectSectionHTML(project) {
@@ -110,6 +124,7 @@ function projectSectionHTML(project) {
   const cardsByCol = {};
   COLUMNS.forEach((col) => { cardsByCol[col.key] = projectItems.filter((i) => i.status === col.key); });
   const total = COL_KEYS.reduce((sum, k) => sum + cardsByCol[k].length, 0);
+  const archivedCount = archivedCountForProject(project.id);
 
   const board = `<div class="board">` + COLUMNS.map((col) => {
     const listItems = cardsByCol[col.key];
@@ -135,6 +150,7 @@ function projectSectionHTML(project) {
           ${nameRow}
           <p class="subtitle"><b>${total}</b> item${total === 1 ? "" : "s"} in the pipeline</p>
         </div>
+        <button type="button" class="btn-ghost project-archive-btn" data-project-id="${escapeHTML(project.id)}">Archived (${archivedCount})</button>
         <button class="btn-primary new-item-btn" data-project-id="${escapeHTML(project.id)}" type="button">+ New item</button>
       </div>
       <div class="project-body">${board}</div>
@@ -196,10 +212,10 @@ function render() {
 }
 
 onSnapshot(query(itemsRef, orderBy("createdAt", "desc")), (snap) => {
-  items = snap.docs
-    .map((d) => ({ id: d.id, ...d.data() }))
-    .filter((i) => i.status !== "archived");
+  allItems = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  items = allItems.filter((i) => i.status !== "archived");
   render();
+  if (archiveProjectId) renderArchivePage();
 }, (err) => {
   console.error("backlog-tracker: items listener error", err);
 });
@@ -207,6 +223,7 @@ onSnapshot(query(itemsRef, orderBy("createdAt", "desc")), (snap) => {
 onSnapshot(query(projectsRef, orderBy("createdAt", "asc")), (snap) => {
   projects = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
   render();
+  if (archiveProjectId) renderArchivePage();
 }, (err) => {
   console.error("backlog-tracker: projects listener error", err);
 });
@@ -233,6 +250,20 @@ async function moveItem(id, dir) {
 
 async function removeItem(id) {
   await deleteDoc(doc(db, "backlogItems", id));
+}
+
+async function archiveItem(id) {
+  await updateDoc(doc(db, "backlogItems", id), {
+    status: "archived",
+    archivedAt: serverTimestamp(),
+  });
+}
+
+async function restoreItem(id) {
+  await updateDoc(doc(db, "backlogItems", id), {
+    status: "published-live",
+    updatedAt: serverTimestamp(),
+  });
 }
 
 async function addProject(name) {
@@ -268,12 +299,16 @@ projectsRoot.addEventListener("click", (e) => {
   if (moveBtn) { moveItem(moveBtn.dataset.id, parseInt(moveBtn.dataset.dir, 10)); return; }
   const delBtn = e.target.closest(".delete-btn");
   if (delBtn) { removeItem(delBtn.dataset.id); return; }
+  const archBtn = e.target.closest(".archive-btn");
+  if (archBtn) { archiveItem(archBtn.dataset.id); return; }
   const collapseBtn = e.target.closest(".project-collapse-btn");
   if (collapseBtn) { toggleProjectCollapsed(collapseBtn.dataset.projectId); return; }
   const renameBtn = e.target.closest(".project-rename-btn");
   if (renameBtn) { startEditingProjectName(renameBtn.dataset.projectId); return; }
   const newItemBtn = e.target.closest(".new-item-btn");
   if (newItemBtn) { openForm(newItemBtn.dataset.projectId); return; }
+  const archiveNavBtn = e.target.closest(".project-archive-btn");
+  if (archiveNavBtn) { openArchivePage(archiveNavBtn.dataset.projectId); return; }
 });
 projectsRoot.addEventListener("keydown", (e) => {
   if (!e.target.classList.contains("project-name-input")) return;
@@ -360,6 +395,130 @@ document.getElementById("np-submit").addEventListener("click", async () => {
   if (!name) { nameEl.focus(); return; }
   await addProject(name);
   closeProjectModal();
+});
+
+// ── Archive page ────────────────────────────────────────────────────────
+const archivePage = document.getElementById("archive-page");
+const archiveFilterType = document.getElementById("archive-filter-type");
+const archiveFilterCategory = document.getElementById("archive-filter-category");
+const archiveFilterSearch = document.getElementById("archive-filter-search");
+archiveFilterCategory.innerHTML =
+  '<option value="">All areas</option>' +
+  CATEGORIES.map((c) => `<option value="${escapeHTML(c)}">${escapeHTML(c)}</option>`).join("");
+
+function projectName(pid) {
+  const p = projects.find((p) => p.id === pid);
+  if (p) return p.name;
+  return pid === GENERAL_PROJECT_ID ? "General" : pid;
+}
+
+function openArchivePage(pid) {
+  archiveProjectId = pid;
+  archiveFilters = { type: "", category: "", search: "" };
+  archiveFilterType.value = "";
+  archiveFilterCategory.value = "";
+  archiveFilterSearch.value = "";
+  document.getElementById("projects-root").hidden = true;
+  archivePage.hidden = false;
+  renderArchivePage();
+}
+
+function closeArchivePage() {
+  archiveProjectId = null;
+  archivePage.hidden = true;
+  document.getElementById("projects-root").hidden = false;
+}
+
+function archiveRowHTML(item) {
+  const date = item.archivedAt && item.archivedAt.toDate ? item.archivedAt.toDate() : null;
+  const dateStr = date ? date.toLocaleDateString() : "—";
+  return `
+    <tr data-id="${item.id}">
+      <td><span class="badge badge-${item.type}">${item.type === "bug" ? "Bug" : "Feature"}</span></td>
+      <td><span class="card-cat">${escapeHTML(item.category || "Uncategorised")}</span></td>
+      <td>
+        <p class="archive-row-title">${escapeHTML(item.title)}</p>
+        <p class="archive-row-desc">${escapeHTML(item.desc)}</p>
+      </td>
+      <td class="archive-row-date">${dateStr}</td>
+      <td><button type="button" class="restore-btn" data-id="${item.id}">Restore</button></td>
+    </tr>`;
+}
+
+function renderArchivePage() {
+  if (!archiveProjectId) return;
+  document.getElementById("archive-page-project-name").textContent = projectName(archiveProjectId);
+
+  let rows = allItems.filter(
+    (i) => (i.projectId || GENERAL_PROJECT_ID) === archiveProjectId && i.status === "archived"
+  );
+  if (archiveFilters.type) rows = rows.filter((i) => i.type === archiveFilters.type);
+  if (archiveFilters.category) rows = rows.filter((i) => i.category === archiveFilters.category);
+  if (archiveFilters.search) {
+    const q = archiveFilters.search.toLowerCase();
+    rows = rows.filter(
+      (i) => (i.title || "").toLowerCase().includes(q) || (i.desc || "").toLowerCase().includes(q)
+    );
+  }
+
+  const dir = archiveSort.dir === "asc" ? 1 : -1;
+  rows.sort((a, b) => {
+    let av, bv;
+    if (archiveSort.field === "date") {
+      av = a.archivedAt && a.archivedAt.toMillis ? a.archivedAt.toMillis() : 0;
+      bv = b.archivedAt && b.archivedAt.toMillis ? b.archivedAt.toMillis() : 0;
+    } else if (archiveSort.field === "title") {
+      av = (a.title || "").toLowerCase(); bv = (b.title || "").toLowerCase();
+    } else if (archiveSort.field === "category") {
+      av = (a.category || ""); bv = (b.category || "");
+    } else {
+      av = (a.type || ""); bv = (b.type || "");
+    }
+    if (av < bv) return -1 * dir;
+    if (av > bv) return 1 * dir;
+    return 0;
+  });
+
+  document.getElementById("archive-page-count").textContent =
+    `${rows.length} ticket${rows.length === 1 ? "" : "s"}`;
+  document.getElementById("archive-table-body").innerHTML = rows.map(archiveRowHTML).join("");
+  document.getElementById("archive-table-empty").hidden = rows.length !== 0;
+
+  document.querySelectorAll(".archive-table th[data-sort]").forEach((th) => {
+    th.toggleAttribute("data-sort-active", th.dataset.sort === archiveSort.field);
+  });
+}
+
+document.getElementById("archive-back-btn").addEventListener("click", closeArchivePage);
+
+document.querySelectorAll(".archive-table th[data-sort]").forEach((th) => {
+  th.addEventListener("click", () => {
+    const field = th.dataset.sort;
+    if (archiveSort.field === field) {
+      archiveSort.dir = archiveSort.dir === "asc" ? "desc" : "asc";
+    } else {
+      archiveSort = { field, dir: "asc" };
+    }
+    renderArchivePage();
+  });
+});
+
+archiveFilterType.addEventListener("change", () => {
+  archiveFilters.type = archiveFilterType.value;
+  renderArchivePage();
+});
+archiveFilterCategory.addEventListener("change", () => {
+  archiveFilters.category = archiveFilterCategory.value;
+  renderArchivePage();
+});
+archiveFilterSearch.addEventListener("input", () => {
+  archiveFilters.search = archiveFilterSearch.value;
+  renderArchivePage();
+});
+
+document.getElementById("archive-table-body").addEventListener("click", (e) => {
+  const btn = e.target.closest(".restore-btn");
+  if (btn) restoreItem(btn.dataset.id);
 });
 
 // ── VOICE DICTATION (New Item description) ──────────────────────────────

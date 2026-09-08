@@ -38,6 +38,16 @@ jobs:
           fi
           printf '%s' "$NOTIFY_WEBHOOK_URL" | npx firebase-tools@13 functions:secrets:set NOTIFY_WEBHOOK_URL --project backlog-tracker-e4ed2 --data-file - --force
 
+      - name: Install migration script dependencies
+        working-directory: backlog-tracker/scripts
+        run: npm install
+
+      - name: Seed historical backlog data from artifact export
+        working-directory: backlog-tracker/scripts
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/firebase-sa.json
+        run: node migrate-artifact-data.js
+
       - name: Deploy to Firebase (hosting, functions, firestore rules)
         env:
           GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/firebase-sa.json

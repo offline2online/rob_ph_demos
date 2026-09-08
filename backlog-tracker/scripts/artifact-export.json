@@ -1,0 +1,718 @@
+{
+  "project": {
+    "id": "products-and-pricing",
+    "name": "Products and Pricing Prototype",
+    "createdAt": "2026-08-31T09:56:41.920443Z"
+  },
+  "items": [
+    {
+      "id": "cmtjp0qxe81ubz",
+      "projectId": "products-and-pricing",
+      "title": "When editing image images or assets and I select request changes CTA…",
+      "desc": "When editing image images or assets and I select request changes CTA currently the pop-up model what changes would you like me to make a shows right at the bottom? Please can it show just underneath the image and hide the delete replaced duplicate CTAs while this model is active. A user must be able to see the image that they talking about so that they can see all the adjustments that they want to make once this model is active obviously once they then select request changes then show those other icons again as well as the updating state.",
+      "type": "feature",
+      "category": "Product Assets",
+      "status": "archived",
+      "createdAt": "2026-09-02T06:06:20.498Z",
+      "updatedAt": "2026-09-02T10:15:56.387Z",
+      "archivedAt": "2026-09-02T10:15:56.387Z",
+      "notes": [
+        {
+          "author": "claude",
+          "text": "The Request Changes panel already opens directly under the image (that part was already live) — what wasn't done was hiding Delete/Replace/Duplicate while it's open. Fixed: that whole row now hides along with the panel's own trigger the moment you click Request Changes, so the image and prompt box have the full attention. They all come back automatically the instant the panel closes — Cancel, or submitting a request (which already drops straight into the \"Applying changes…\" in-progress state over the image itself). Pushed to the feature branch (commit b68e452); ready to test.",
+          "at": "2026-09-02T09:00:00.000Z"
+        },
+        {
+          "author": "claude",
+          "text": "Pushed to main as commit `b68e452`. Live now.",
+          "at": "2026-09-02T09:20:00.000Z"
+        }
+      ]
+    },
+    {
+      "id": "cmtjozaghq0byl",
+      "projectId": "products-and-pricing",
+      "title": "For the magic edit feature in editing assets please can you make…",
+      "desc": "For the magic edit feature in editing assets please can you make sure that the brush size instead of showing just a basic cursor show the actual circle brush size for both restore and raise and as you increase the brush size the circle should expand so you can see exactly what is gonna be restored or er. Also make sure that when you crop and you commit to a crop that the undo button still works.",
+      "type": "feature",
+      "category": "Product Assets",
+      "status": "archived",
+      "createdAt": "2026-09-02T06:05:12.497Z",
+      "updatedAt": "2026-09-02T10:06:25.298Z",
+      "archivedAt": "2026-09-02T10:06:25.298Z",
+      "notes": [
+        {
+          "author": "claude",
+          "text": "Two separate fixes in Magic Edit:\n\n1. Restore and Erase now show an actual circle sized to the real brush diameter (scaled for the current zoom level) instead of a plain crosshair — it moves with the pointer and grows/shrinks live as you drag the Brush size slider, so you can see exactly what a stroke will cover before you paint it.\n\n2. Undo after committing a crop: previously, applying a crop wiped the undo history entirely, so Undo stayed disabled right after cropping with nothing to revert. Committing a crop now pushes the pre-crop photo onto the undo stack first, so Undo right after a crop correctly reverts back to the full uncropped photo. Verified both directly against the real component (a standalone render, not just reading the code): cropped a 200×200 test image down to 160×160, clicked Undo, confirmed it returned to 200×200; also confirmed the brush circle overlay grows on screen as the size slider is dragged.\n\nPushed to the feature branch (commit b68e452); ready to test.",
+          "at": "2026-09-02T09:00:00.000Z"
+        },
+        {
+          "author": "claude",
+          "text": "Pushed to main as commit `b68e452`. Live now.",
+          "at": "2026-09-02T09:20:00.000Z"
+        }
+      ]
+    },
+    {
+      "id": "c-gridresize-1",
+      "projectId": "products-and-pricing",
+      "title": "[HQ Admin] Products & Pricing grid picks up wrong column widths on first load",
+      "desc": "Reported live: on page load the frame doesn't pick up the correct dimensions for the HQ Admin product table — it only picks up the correct dimensions once you expand/contract the (platform's) side menu.",
+      "type": "bug",
+      "category": "HQ Admin",
+      "status": "archived",
+      "createdAt": "2026-09-01T09:15:00.000Z",
+      "updatedAt": "2026-09-02T10:15:53.262Z",
+      "archivedAt": "2026-09-02T10:15:53.262Z",
+      "notes": [
+        {
+          "author": "claude",
+          "text": "Root cause: `initGrids()` only sizes the grid's columns once, via a single `requestAnimationFrame` call right at boot, plus a `window` 'resize' listener for later changes. If the Personalisation Hub platform's own iframe hasn't settled to its true final width by that one moment (it can still be finishing its own shell layout — sidebar animating in, other panels still loading), the grid sizes itself against the wrong width and nothing re-checks until an actual 'resize' event happens later. Expanding/collapsing the platform's own sidebar is exactly that — the first thing to genuinely fire 'resize' — which is why it \"fixed\" it, but only as a side effect.\n\nFixed by adding a ResizeObserver on `document.body` that runs the same re-fit logic the moment the frame's real size becomes known, instead of relying on one fixed-timing guess at boot. Verified the mechanism in isolation with a Playwright test: after an initial size, changing the container's width via plain CSS (no `resize` event dispatched at all, matching how a platform layout settles) still triggers the re-fit — confirmed by the exact widths recorded across calls, going from 300 to 900 without a resize event in between.\n\nCommit c53cd7c on the feature branch; ready to test.",
+          "at": "2026-09-01T09:15:00.000Z"
+        },
+        {
+          "author": "claude",
+          "text": "Pushed to main as commit `c53cd7c`. Live now.",
+          "at": "2026-09-02T09:00:00.000Z"
+        }
+      ]
+    },
+    {
+      "id": "c-clearoverride-zbug-1",
+      "projectId": "products-and-pricing",
+      "title": "[Retail Admin] \"Clear local override\" does nothing — confirm dialog hidden behind the pricing modal",
+      "desc": "Reported live: 10 Hot Wings at AWS-001 has HQ RRP £6.49 with a corrupted local override at £5.99. Clicking \"Clear local override\" in the Pricing tab and confirming did nothing — the price stayed at £5.99.",
+      "type": "bug",
+      "category": "Pricing & Offers",
+      "status": "archived",
+      "createdAt": "2026-09-01T08:45:00.000Z",
+      "updatedAt": "2026-09-01T08:13:23.354Z",
+      "archivedAt": "2026-09-01T08:13:23.354Z",
+      "notes": [
+        {
+          "author": "claude",
+          "text": "Found it: the confirm dialog (#confirmOverlay) has z-index 200, but the item detail modal it opens on top of has z-index 300. So when “Clear local override” is clicked from inside the Pricing tab (the modal is still open), the confirm dialog renders *behind* the modal — invisible. A real mouse click on “Clear override” just hits the modal underneath and does nothing, which matches exactly what you saw. (My first reproduction attempt used a scripted `.click()` call, which bypasses real hit-testing and doesn't see stacking-order bugs like this — that's why it looked fine to me at first; a real Playwright mouse click reproduced the failure immediately once I tried it that way, and confirmed the fix.)\n\nFixed by raising the confirm dialog to z-index 400, above the modal. Verified with a real (non-scripted) mouse click end-to-end: your exact numbers (RRP £6.49, corrupted local override £5.99) now correctly resolve to £6.49 after clicking Clear override and confirming.\n\nSeparately: you mentioned a “Targeted” pill under “Badge for External Displays” for this product — that's the real Personalisation Hub platform's own per-product editor, not this repo's code (confirmed earlier — that phrase doesn't exist anywhere in this codebase), so it's an unrelated platform feature and doesn't affect this pricing bug or its fix.\n\nCommit 11e1a67 on the feature branch; ready to test.",
+          "at": "2026-09-01T08:45:00.000Z"
+        },
+        {
+          "author": "viewer",
+          "text": "The clear local override confirmation model is appearing underneath the standard product model so you can't see it",
+          "at": "2026-09-01T08:10:44.436Z"
+        },
+        {
+          "author": "claude",
+          "text": "Confirms it — \"appearing underneath the standard product model\" is exactly the z-index bug (confirm dialog at 200, pricing modal at 300) I found and fixed above. Same root cause, same fix (commit 11e1a67).",
+          "at": "2026-09-01T08:50:00.000Z"
+        },
+        {
+          "author": "claude",
+          "text": "Pushed to main as commit `11e1a67`. Live now.",
+          "at": "2026-09-01T09:00:00.000Z"
+        }
+      ]
+    },
+    {
+      "id": "c-videourl-1",
+      "projectId": "products-and-pricing",
+      "title": "[Backend] Generate Video's hero videos go dead after some time (8 PC Boneless Banquet, Family Fish Bucket, 10 Hot Wings)",
+      "desc": "Reported live: several products' primary-tile videos on the menu board stopped working — showing a broken-media placeholder instead — while others (10 pc Bucket, 6 pc Bucket) kept working fine. Confirmed this was not caused by the two pricing commits just published (they only touch retail-admin.html's pricing pane).",
+      "type": "bug",
+      "category": "Backend / Infrastructure",
+      "status": "archived",
+      "createdAt": "2026-09-01T07:55:00.000Z",
+      "updatedAt": "2026-09-01T07:56:07.807Z",
+      "archivedAt": "2026-09-01T07:56:07.807Z",
+      "notes": [
+        {
+          "author": "claude",
+          "text": "Found the real cause, and it's a backend one: the generateProductVideo Cloud Function (Product Assets → Generate Video) returns the AI video provider's own result URL directly — and that URL is only hosted temporarily by the provider. So a hero video that worked perfectly the day it was generated quietly goes dead some time later with no code or data change anywhere near it, while a directly-uploaded photo/video (stored as a permanent data: URI in Firestore itself) never has this problem. That matches exactly what you're seeing: the broken items are the ones with an AI-generated hero video; 10 pc Bucket/6 pc Bucket are presumably using an uploaded asset instead.\n\nFixed by having the function download the generated video the moment it's ready and re-host it in this project's own Cloud Storage bucket, returning a signed URL with a far-future expiry instead of the provider's own link — permanent, the same guarantee an upload already has. If re-hosting fails for any reason it falls back to today's behaviour (the provider's own URL) rather than breaking video generation outright. Commit d5a9896 on this branch (not yet on main).\n\nTwo important things this does NOT do on its own:\n1. It doesn't retroactively fix the videos already broken — 8 PC Boneless Banquet, Family Fish Bucket, 10 Hot Wings (and possibly others using Generate Video) will need their hero video regenerated (or the affected asset re-uploaded) once this fix is live, so the new generation gets a permanent URL this time.\n2. This is a Cloud Functions change, not a static-site one — pushing it to `main` does NOT deploy it. Someone with Firebase deploy access needs to run `firebase deploy --only functions` (or `npm run deploy` inside menu-board-demo/functions) — this sandbox has no Firebase CLI or credentials, so I can't run that step myself.\n\nReady to test (after deploying): use Generate Video on a product, confirm the resulting hero video plays, then check the saved src is a storage.googleapis.com URL rather than the video provider's own domain — that's the signal it's now permanently hosted.",
+          "at": "2026-09-01T07:55:00.000Z"
+        },
+        {
+          "author": "claude",
+          "text": "Pushed to main as commit `d5a9896` (carried onto main by the same push as commit `45d679b`). Live for the *code*, but this touches menu-board-demo/functions/ (a Cloud Function), which GitHub Pages does not serve — main being updated does NOT make this fix active. Whoever has Firebase deploy access still needs to run `firebase deploy --only functions` (or `npm run deploy` inside menu-board-demo/functions) before new videos actually get re-hosted permanently. This also doesn't retroactively fix the three videos already broken (8 PC Boneless Banquet, Family Fish Bucket, 10 Hot Wings) — those need to be regenerated again after the functions deploy goes out.",
+          "at": "2026-09-01T08:30:00.000Z"
+        }
+      ]
+    },
+    {
+      "id": "c-clearoverride-1",
+      "projectId": "products-and-pricing",
+      "title": "[Retail Admin] Add a real \"Clear local override\" action for a corrupted local price",
+      "desc": "Investigated a live report: 10 Hot Wings at store AWS-001 showed a plain £5.99 with no offer badge on both the Retail Admin table and the store's menu board. Root cause: the store's own price override had RRP itself overwritten to match the intended offer price (both landed on £5.99), so there was genuinely nothing to discount — confirmed the display logic already treats a local offer identically to an HQ offer everywhere (same struck-through/badge treatment, verified directly). \"Return to RRP\" couldn't fix this on its own since it only neutralizes an override (sets offer = whatever RRP field currently shows) — it can't correct a corrupted RRP.",
+      "type": "bug",
+      "category": "Pricing & Offers",
+      "status": "archived",
+      "createdAt": "2026-09-01T07:30:00.000Z",
+      "updatedAt": "2026-09-01T08:00:25.829Z",
+      "archivedAt": "2026-09-01T08:00:25.829Z",
+      "notes": [
+        {
+          "author": "claude",
+          "text": "Added a genuine \"Clear local override\" action (Retail Admin → open the product → Pricing) that fully deletes this store's price record for that SKU via Firestore's deleteField() — not just neutralizing it like Return to RRP, but removing it outright so the item falls back 100% to HQ's own price/offer, with zero local record left. Only shown when this store actually has an override on file. Verified end-to-end in a stubbed-Firebase browser test: before clearing the grid showed a corrupted £5.99; after, it correctly falls back to HQ's real RRP with no override remaining in storePricing at all. Commit ad986f7 on this branch (not yet on main).\n\nFor 10 Hot Wings specifically at store AWS-001: once this ships, open it in Retail Admin, use \"Clear local override\" to wipe the corrupted record, then (if a local offer is still wanted there) re-enter it fresh — RRP left alone at HQ's £6.49, Offer price set to £5.99, and a Show on Menu Board note if you want the badge.\n\nReady to test: open a product with a store override, confirm \"Clear local override\" appears and is absent when there's no override, confirm the confirmation dialog reads correctly, and confirm clearing it removes the override entirely (price/badge revert to HQ's own everywhere — the table, the pricing pane, and the menu board).",
+          "at": "2026-09-01T07:30:00.000Z"
+        }
+      ],
+      "claudeNote": "Pushed to main as commit ad986f7. Live now."
+    },
+    {
+      "id": "cmtia692s5tcj8",
+      "projectId": "products-and-pricing",
+      "title": "For retail admin product table when I return the price to RRP…",
+      "desc": "For retail admin product table when I return the price to RRP that feature doesn't work please can you make the CTA more prominent place it at the top of the model and also only activate it when local promotion is running please test that it works into end",
+      "type": "feature",
+      "category": "Pricing & Offers",
+      "status": "archived",
+      "createdAt": "2026-09-01T06:22:56.884Z",
+      "updatedAt": "2026-09-01T08:00:16.998Z",
+      "archivedAt": "2026-09-01T08:00:16.998Z",
+      "notes": [
+        {
+          "author": "claude",
+          "text": "Fixed and moved. Return to RRP was a small ghost button sitting inline next to the Offer price field, shown regardless of whether there was actually anything live to revert — that's the \"doesn't work\" part: click it with the offer already at RRP (or with no offer at all) and nothing visibly happens, since there was nothing to change. Now it's a prominent banner CTA at the very top of the Pricing pane, and it only appears while a local promotion is genuinely live and discounting (same \"is this actually running\" check the price cell itself uses) — no more clicking a button that quietly does nothing. Pressing it still fills in the RRP/offer/schedule fields for you as before; Save Changes below still needs a reason and a click, same two-step flow every other pricing edit here uses (no silent auto-save). Commit 6782b14 on this branch (not yet on main). Ready to test: open a product with a genuinely live local offer at this store and confirm the banner appears at the top of Pricing with the live discount amount, Return to RRP fills the fields, and the banner disappears afterward since there's nothing left to revert; also open a product with no local offer and confirm the banner never appears.",
+          "at": "2026-09-01T07:30:00.000Z"
+        }
+      ],
+      "claudeNote": "Pushed to main as commit 6782b14. Live now."
+    },
+    {
+      "id": "cmti9ymgrdo5uf",
+      "projectId": "products-and-pricing",
+      "title": "On the stock tab for the products underneath the stores drop-down where…",
+      "desc": "On the stock tab for the products underneath the stores drop-down where you can add new stores please also add a basic table that shows the store name store code and the any details on the offer pricing so the offer price and also offer details just so you can clearly see which stores are running local promotions and you can clearly see the pricing that those stores are running at",
+      "type": "feature",
+      "category": "Pricing & Offers",
+      "status": "archived",
+      "createdAt": "2026-09-01T06:17:00.987Z",
+      "updatedAt": "2026-09-01T07:59:57.685Z",
+      "archivedAt": "2026-09-01T07:59:57.685Z",
+      "notes": [
+        {
+          "author": "viewer",
+          "text": "On the product details tab there's a distribution section with a which stores carry this product. Also this must be deleted as this is covered under the separate tab that I've just discussed within this ticket.",
+          "at": "2026-09-01T06:18:34.008Z"
+        },
+        {
+          "author": "claude",
+          "text": "Added a “Local Store Pricing” table to the Stock tab, right below the store-availability picker — it reads every store’s storePricing record for this SKU and shows Store (code), Offer price, RRP override, Schedule, and Show on Menu Board, so you can see at a glance which stores are running their own price and what it is. Note: there’s no “store name” registry anywhere in this app (Retail Admin itself never populates one), so the Store column shows the store code only — that’s the only real identifier that exists today. Also removed Product Details’ old “Distribution — which stores carry this product” section per your follow-up note — that’s now fully covered by the Stock tab’s own store picker, so having both was redundant. Pushed to the feature branch (commit 45d679b); ready to test.",
+          "at": "2026-09-01T08:10:00.000Z"
+        },
+        {
+          "author": "claude",
+          "text": "Pushed to main as commit `45d679b`. Live now.",
+          "at": "2026-09-01T08:30:00.000Z"
+        }
+      ]
+    },
+    {
+      "id": "cmti9w9ju7wuxz",
+      "projectId": "products-and-pricing",
+      "title": "On the asset tab and please can you make the magic edit…",
+      "desc": "On the asset tab and please can you make the magic edit icon look the same as the other icons. Not sure why this is got a different looking fuel to the other icons. Please make it the same.",
+      "type": "feature",
+      "category": "Product Assets",
+      "status": "archived",
+      "createdAt": "2026-09-01T06:15:10.938Z",
+      "updatedAt": "2026-09-01T08:00:42.747Z",
+      "archivedAt": "2026-09-01T08:00:42.747Z",
+      "notes": [
+        {
+          "author": "claude",
+          "text": "Magic Edit was missing the `ai` styling prop its Enhance/Background/Video siblings all carry — that's the \"different fuel\" (gradient) you were seeing. Added it so all four toolbar icons on Product Assets now render identically. Pushed to the feature branch (commit 45d679b); ready to test.",
+          "at": "2026-09-01T08:10:00.000Z"
+        },
+        {
+          "author": "claude",
+          "text": "Pushed to main as commit `45d679b`. Live now.",
+          "at": "2026-09-01T08:30:00.000Z"
+        }
+      ]
+    },
+    {
+      "id": "cmti9uj4vgklmt",
+      "projectId": "products-and-pricing",
+      "title": "For the HK admin acid scheduling and targeting rules let's place the…",
+      "desc": "For the HK admin acid scheduling and targeting rules let's place the repeat drop-down menu as the last item in the row so schedule from first then schedule and then show the repeat drop-down after those fields",
+      "type": "feature",
+      "category": "HQ Admin",
+      "status": "archived",
+      "createdAt": "2026-09-01T06:13:50.047Z",
+      "updatedAt": "2026-09-01T08:01:14.945Z",
+      "archivedAt": "2026-09-01T08:01:14.945Z",
+      "notes": [
+        {
+          "author": "viewer",
+          "text": "Also, can you make the filters wider so that they take up the full width together? They take up the full width and it matches the width of the other variables underneath?",
+          "at": "2026-09-01T06:14:26.630Z"
+        },
+        {
+          "author": "claude",
+          "text": "Repeat now sits last in the row (after Schedule from / Schedule until), and all three fields stretch to fill the row's full width — matching the width of the targeting condition row underneath, per your follow-up note. This is the shared ScheduleRepeatFields component, so it applies identically to both Asset Scheduling & Targeting Rules and Pricing offers' own schedule/targeting. Pushed to the feature branch (commit 45d679b); ready to test.",
+          "at": "2026-09-01T08:10:00.000Z"
+        },
+        {
+          "author": "claude",
+          "text": "Pushed to main as commit `45d679b`. Live now.",
+          "at": "2026-09-01T08:30:00.000Z"
+        }
+      ]
+    },
+    {
+      "id": "cmti9rtcrhgh8a",
+      "projectId": "products-and-pricing",
+      "title": "For both the HQ admin and retail admin please reduce the column…",
+      "desc": "For both the HQ admin and retail admin please reduce the column width for price category and menu types. We need to ensure that you can see the stock level and also the featured items in the table in both the expanded and the condensed menu view.",
+      "type": "feature",
+      "category": "HQ Admin",
+      "status": "archived",
+      "createdAt": "2026-09-01T06:11:43.323Z",
+      "updatedAt": "2026-09-01T08:01:57.927Z",
+      "archivedAt": "2026-09-01T08:01:57.927Z",
+      "notes": [
+        {
+          "author": "claude",
+          "text": "Trimmed the Price / Category / Menu Types column widths in both HQ Admin's and Retail Admin's product tables so the Status column (HQ Admin — shows Active/Inactive plus the Featured star) and Stock Level column (Retail Admin — shows stock status plus the Locally Featured star) stay visible without needing to scroll, at both wide and narrow window sizes. Retail Admin's own preview needs a store code, e.g. add `?store=AWS-001` to the URL. Pushed to the feature branch (commit 45d679b); ready to test.",
+          "at": "2026-09-01T08:10:00.000Z"
+        },
+        {
+          "author": "claude",
+          "text": "Pushed to main as commit `45d679b`. Live now.",
+          "at": "2026-09-01T08:30:00.000Z"
+        }
+      ]
+    },
+    {
+      "id": "cmti9lodta4k3d",
+      "projectId": "products-and-pricing",
+      "title": "For retail admin and there's three tabs that run all three summaries…",
+      "desc": "For retail admin and there's three tabs that run all three summaries that run across the top active items in stock out of stock please include a new one which shows the number of items that are featured locally by the store",
+      "type": "feature",
+      "category": "Retail Admin",
+      "status": "archived",
+      "createdAt": "2026-09-01T06:06:56.945Z",
+      "updatedAt": "2026-09-01T08:06:40.070Z",
+      "archivedAt": "2026-09-01T08:06:40.070Z",
+      "notes": [
+        {
+          "author": "claude",
+          "text": "Added a fourth “Locally Featured” tile to Retail Admin's summary bar, alongside Active Items / In Stock / Out of Stock — counts how many active items this store currently has locally featured. Pushed to the feature branch (commit 45d679b); ready to test.",
+          "at": "2026-09-01T08:10:00.000Z"
+        },
+        {
+          "author": "claude",
+          "text": "Pushed to main as commit `45d679b`. Live now.",
+          "at": "2026-09-01T08:30:00.000Z"
+        }
+      ]
+    },
+    {
+      "id": "c-schedrepeat-1",
+      "projectId": "products-and-pricing",
+      "title": "[HQ Admin] Put Repeat next to Schedule from/until, and give Pricing offers the same layout as Assets",
+      "desc": "Within the asset scheduling and targeting rules, position the Repeat drop-down to the left of Schedule from and Schedule until so all three are in the same row, and make them narrower (a date/time doesn't need that much width). Then update the Pricing offers so they follow exactly the same scheduling + targeting + repeat approach as assets, and move the non-targeting elements to the top of that modal.",
+      "type": "feature",
+      "category": "HQ Admin",
+      "status": "archived",
+      "createdAt": "2026-09-01T05:10:00.000Z",
+      "updatedAt": "2026-09-01T08:06:45.583Z",
+      "archivedAt": "2026-09-01T08:06:45.583Z",
+      "notes": [
+        {
+          "author": "claude",
+          "text": "Done. The per-rule Schedule from / Schedule until / Repeat row (used by every “AND” targeting group, on both Product Assets and Pricing offers) is now one narrower row — Repeat first, then Schedule from, then Schedule until — instead of two wide date fields with Repeat spanning its own row underneath. Extracted it into one shared ScheduleRepeatFields component so Assets and Offers render pixel-identical UI, not two copies that could drift apart.\n\nFor Pricing offers specifically: the offer’s own Schedule offer from/until + Repeat (previously a separate block above Offer Targeting Rules) now lives inside one combined “Offer Scheduling & Targeting Rules” section at the bottom of the Add/Edit Offer modal, using that same shared row — matching Product Assets’ “Asset Scheduling & Targeting Rules” layout exactly. “Show on Menu Board” (not a targeting/scheduling field) moved up to sit with Offer description and Offer price at the top of the modal instead of being sandwiched in the middle.\n\nI deliberately left the underlying offer-level offerFrom/offerUntil/recurrence fields as the ones that actually gate whether an offer is live (read by getOfferState/pickEffectiveOffer, the menu board, and the backend expiry sweep) — this was a layout/grouping change, not a data-model migration, so nothing that already depends on those fields elsewhere needed touching. Verified the new row doesn’t overflow at both the Asset modal’s 680px width and the Offer modal’s 640px width (rendered both in an isolated React+antd harness and measured for horizontal overflow — none), and ran a full `vite build` to confirm everything still compiles. Commit 21fd5ad on this branch (not yet on main).\n\nReady to test: open any product’s Asset Scheduling & Targeting Rules (Product Assets tab) and an Offer’s Scheduling & Targeting Rules (Pricing tab → Add/Edit Offer) and confirm Repeat sits to the left of Schedule from/until in one compact row on both, and that the Offer modal now shows Description/Price/Show on Menu Board above one combined Scheduling & Targeting section.",
+          "at": "2026-09-01T05:10:00.000Z"
+        }
+      ],
+      "claudeNote": "Pushed to main as commit 21fd5ad. Live now."
+    },
+    {
+      "id": "c-tilelayout-1",
+      "projectId": "products-and-pricing",
+      "title": "[HQ Admin] Can't reorder Price/Description in Local Feature Highlight tile layout",
+      "desc": "Editing the Local Feature Highlight (Feature Hero Spotlight) board's Tile Layout, unable to move items on the right (Secondary/Promo tile) up and down to reorder price and description — doesn't fit the model any more.",
+      "type": "bug",
+      "category": "HQ Admin",
+      "status": "archived",
+      "createdAt": "2026-09-01T03:20:00.000Z",
+      "updatedAt": "2026-09-01T08:07:03.651Z",
+      "archivedAt": "2026-09-01T08:07:03.651Z",
+      "notes": [
+        {
+          "author": "claude",
+          "text": "Found it — this is a side effect of the Price + Offer Badge combining work from earlier today. A Local Feature Highlight template saved before that change still carries Price and the Offer Badge as two separate entries in its Tile Layout. The editor's own element list no longer has a listing for either of those on their own (only the combined \"Pricing (Price + Offer Badge)\" item), so a legacy template showed up as two raw, unrecognised rows there instead of one clean \"Pricing\" row — and \"Pricing\" still looked available to add on top, so adding it left three pricing-shaped rows tangled together in that zone. Trying to move Price or Description around that mess is what broke. Fixed by migrating a legacy Price+Badge pair into one \"Pricing\" row automatically the moment a template like this is opened for editing, matching what a template built today already looks like. Commit 2c93386 on this branch (not yet on main). Ready to test: open the Local Feature Highlight template's Tile Layout editor, check the Secondary (right-hand) tile's section, and confirm Price now shows as a single row you can freely reorder against Description and everything else.",
+          "at": "2026-09-01T03:20:00.000Z"
+        },
+        {
+          "author": "claude",
+          "text": "Fixed the test link itself — it was pointing at the published site on main, which obviously doesn't have an unpublished fix on it yet. Switched it to raw.githack.com, a free proxy that serves a file straight from a specific GitHub branch with the right content-type so it actually renders as a page instead of raw text — pointed at this fix's branch specifically, so it reflects exactly what's pending, not what's live. I can't reach raw.githack.com myself to confirm it loads (this sandbox's network is locked down to a short allowlist) — if it doesn't work for you, tell me and I'll switch to a plain 'here's the branch and file path, please pull it locally' note instead.",
+          "at": "2026-09-01T03:40:00.000Z"
+        },
+        {
+          "author": "claude",
+          "text": "Found the real cause of the cut-off controls, thanks to your screenshot — it let me measure the exact overflow. This editor lives in the same shared brand-edit dialog every tab uses, which is fixed at 680px wide regardless of your screen or the iframe around it. The two-column layout had a responsive breakpoint meant to stack into one column on a narrow screen — but it was checking the outer window's width, not the 680px dialog's own width, and the outer window is almost always well above that breakpoint even though the dialog itself never was. So it stayed two columns, each squeezed into barely 300px, and the align/reorder/delete controls got pushed off the edge. Reproduced it precisely (a 636px-wide container overflowed by 103px, matching your screenshot almost exactly) and fixed it by just always stacking Primary above Secondary — there's no real screen size where two columns would ever fit in this dialog anyway, so the conditional layout was never buying anything. Commit fc67ed3 on this branch (not yet on main; same test link as before, now updated). Ready to test: open the Local Feature Highlight template's Tile Layout editor and confirm every row's align/up/down/delete controls are now fully visible and clickable, with Secondary Tile stacked below Primary instead of beside it.",
+          "at": "2026-09-01T04:00:00.000Z"
+        }
+      ],
+      "claudeNote": "Pushed to main as commit fc67ed3. Live now."
+    },
+    {
+      "id": "cmthx9j7aufs92",
+      "projectId": "products-and-pricing",
+      "title": "On HQ admin for the products and pricing table, please remove actions…",
+      "desc": "On HQ admin for the products and pricing table, please remove actions as the column header for the final final final column. And also please make sure that it's in view for both. I'm non-expanded and expanded menu state as within the iframe currently it gets cut off the right side of the screen",
+      "type": "feature",
+      "category": "HQ Admin",
+      "status": "archived",
+      "createdAt": "2026-09-01T00:21:34.966Z",
+      "updatedAt": "2026-09-01T08:07:15.166Z",
+      "archivedAt": "2026-09-01T08:07:15.166Z",
+      "notes": [
+        {
+          "author": "claude",
+          "text": "Fixed: dropped the “Actions” header text (blank header, matching the row-select column's own convention) and pinned the column to the right edge of the grid, so it always stays visible instead of scrolling off with the rest of the table when the iframe is narrower — whether that's from Personalisation Hub's own nav sidebar being collapsed or expanded. Commit 1504d21. Ready to test: open the Products & Pricing items table in a narrow iframe (both with the platform's sidebar expanded and collapsed) and confirm the ⋯ actions button for each row is always reachable without scrolling, and that the column header shows no text.",
+          "at": "2026-09-01T01:20:00.000Z"
+        }
+      ],
+      "claudeNote": "Pushed to main as commit 1504d21. Live now."
+    },
+    {
+      "id": "cmthx7iyfxlu4v",
+      "projectId": "products-and-pricing",
+      "title": "On the pricing modal where you control the look and feel of…",
+      "desc": "On the pricing modal where you control the look and feel of the pricing for HQ admin admin, there's a gap between badge and price that fine control setting doesn't seem to adjust the distance between the badge and the price",
+      "type": "feature",
+      "category": "Pricing & Offers",
+      "status": "archived",
+      "createdAt": "2026-09-01T00:20:01.335Z",
+      "updatedAt": "2026-09-01T08:07:37.015Z",
+      "archivedAt": "2026-09-01T08:07:37.015Z",
+      "notes": [
+        {
+          "author": "claude",
+          "text": "Investigated — couldn't reproduce a bug, and wanted to say what I actually checked rather than guess a fix blind. Read through the full wiring: the Gap number field → _renderPricingPreview() → an inline flex `gap` style on the preview span, and the same value → savePricingDisplay() → Firestore → pricingBlockHtml() on the real board, which applies it the same way. No margin or CSS rule anywhere overrides that inline gap. I then actually drove it live in a real browser (this sandbox can't reach Firebase/AG Grid's CDN, so I stubbed those two out to let the rest of the page run for real) and measured the rendered preview: setting the field to 38 produced an exact 38px gap between the badge and price, pixel for pixel. So the control itself is working as coded. If you're still seeing it not move on your end, it'd help to know exactly where — the Settings→Pricing preview panel itself, or the real menu board after Save — and roughly what value you tried, so I can chase the right place next.",
+          "at": "2026-09-01T01:20:00.000Z"
+        },
+        {
+          "author": "viewer",
+          "text": "On the menu board, the setting is not having any impact on the actual board itself between the Price and the alpha badge",
+          "at": "2026-09-01T01:04:05.440Z"
+        },
+        {
+          "author": "claude",
+          "text": "Found it, thanks to the extra detail — that pointed me at the real board specifically, not the Settings preview I'd already checked. The bug: templates whose Feature Hero Spotlight layout still has Price and the Offer Badge as two separate Tile Layout elements (saved before an earlier update combined them into one) render the badge with its own fixed CSS spacing — the Settings → Pricing gap control has nothing shared to apply to, so it's genuinely inert there, exactly as you're seeing. Newer templates using the combined \"Pricing (Price + Offer Badge)\" element were never affected. Fixed by making that legacy badge element read the same configured gap instead of its old fixed spacing. Verified directly: before the fix it stayed at a fixed ~8px regardless of the setting; after, it tracks the configured value exactly (checked 6px and 30px). Commit 2906395 on this branch (not yet on main). Ready to test: on the menu board using your existing Feature Hero Spotlight template, change Settings → Pricing's gap value and confirm the badge-to-price distance now actually changes.",
+          "at": "2026-09-01T01:45:00.000Z"
+        },
+        {
+          "author": "claude",
+          "text": "Reopening this — your report that it's still not right on the Featured menu board and the Personalised Featured menu board (\"the Local [Feature Highlight]\") pointed at something my first fix only partly addressed. The real problem: on those boards, when a template's layout still has Price and the Offer Badge as two separate elements (from before an earlier update combined them), they're two independent children of the hero panel's own layout box — which has its own small fixed spacing between its children. My first fix just added extra margin to the badge, which stacked on top of that fixed spacing rather than replacing it, so the setting still wasn't the true distance. Proper fix now: that adjacent pair renders through the exact same combined element a new template's \"Pricing (Price + Offer Badge)\" uses, so the whole account-wide setting — gap and placement both — genuinely governs it, on the Featured and Personalised Featured boards specifically, same as everywhere else. Verified directly in both saved orders (badge-before-price and price-before-badge, both still in use on older templates) — both now match the configured gap exactly. Commit 31de55e on this branch (not yet on main). Ready to test: on the Featured menu board (and the Personalised Featured menu board if you have a separate campaign driving it), change Settings → Pricing's gap and confirm the badge now actually moves relative to the price.",
+          "at": "2026-09-01T02:20:00.000Z"
+        },
+        {
+          "author": "claude",
+          "text": "Found the actual bug from your photo — thank you for that, it made this reproducible instead of guesswork. The \"10 PC Bucket\" tile's saved layout is category → name → Offer Badge → Location Badge → price. This item has no location text set, so the Location Badge renders nothing — but it's still sitting between the badge and price in the template's own saved order. My previous fix only checked whether the two were next to each other in that raw saved order, so it missed this: badge and price look adjacent on screen, but with the (invisible) Location Badge between them in the data, they weren't adjacent by that check, so it kept falling back to the old fixed spacing exactly as your screenshot showed. Fixed properly now: it resolves every element to what it actually renders first, drops anything that renders nothing, and only then looks for the badge/price pair — matching what's actually on screen rather than the raw saved order. Rebuilt your exact tile (category/name/badge/empty-location-badge/price) in a test and confirmed the gap now matches the configured value precisely. Commit b9f7201 on this branch (not yet on main). Ready to test: check the 10 PC Bucket tile (and any other item using this same layout) on the Featured/Personalised Featured board again.",
+          "at": "2026-09-01T02:50:00.000Z"
+        }
+      ],
+      "claudeNote": "Pushed to main as commit b9f7201. Live now."
+    },
+    {
+      "id": "cmthx6obthzo8t",
+      "projectId": "products-and-pricing",
+      "title": "On retail admin on the table where you search for products in…",
+      "desc": "On retail admin on the table where you search for products in the top row for searching products and Retail admin. When there's copy entered, please show little X to clear the copy from that search box",
+      "type": "feature",
+      "category": "Retail Admin",
+      "status": "archived",
+      "createdAt": "2026-09-01T00:19:21.640Z",
+      "updatedAt": "2026-09-01T08:07:47.632Z",
+      "archivedAt": "2026-09-01T08:07:47.632Z",
+      "notes": [
+        {
+          "author": "claude",
+          "text": "Added: the Product column's search header now shows a small × once you've typed something, which clears the search box and resets the table filter in one click (and refocuses the box so you can keep typing). Hidden the rest of the time, same as the ask. Commit 1504d21, verified in a headless-browser test of the header component (typing shows the ×, clicking it clears the filter and empties the box). Ready to test: on Retail Admin's product table, type into the search box, confirm the × appears, and confirm clicking it clears both the box and the filtered results.",
+          "at": "2026-09-01T01:20:00.000Z"
+        }
+      ],
+      "claudeNote": "Pushed to main as commit 1504d21. Live now."
+    },
+    {
+      "id": "c-sheet-1-z98t",
+      "projectId": "products-and-pricing",
+      "title": "[HQ Admin] Offer tile size relative to tile",
+      "desc": "On the featured menu board, the OFFER tile's size should scale relative to the tile it sits in — currently it doesn't track the tile size correctly. (Source: backlog sheet #1)",
+      "type": "bug",
+      "category": "Pricing & Offers",
+      "status": "archived",
+      "createdAt": "2026-08-31T09:56:41.920443Z",
+      "updatedAt": "2026-09-01T08:07:52.377Z",
+      "archivedAt": "2026-09-01T08:07:52.377Z",
+      "notes": [
+        {
+          "author": "claude",
+          "text": "Found it: the Offer Badge (\"Show on Menu Board\" note) always rendered at one fixed size everywhere — correct next to a regular item tile's price, but visibly undersized next to the Feature Hero Spotlight's much bigger price (and a bit small next to a promo tile's), because only the price text itself had per-tile size clamps — the badge never did. Now scales the badge's font-size/padding by the same tile-to-tile ratio the price already uses (item ×1, promo ×1.68, hero ×2.4). Commit 8ef3a27 on claude/ph-prototype-odqyzs. Ready to test: check the Offer Badge next to a regular item tile, a promo tile, and the Feature Hero Spotlight and confirm it now looks proportionate to the price beside it in each, not the same fixed size everywhere.",
+          "at": "2026-08-31T11:25:00.000Z"
+        }
+      ],
+      "claudeNote": "Pushed to main as commit 674f205. Live now."
+    },
+    {
+      "id": "c-sheet-2-gda4",
+      "projectId": "products-and-pricing",
+      "title": "[HQ Admin] Targeted / scheduled / AB-test icons on table",
+      "desc": "Add icons to the assets/campaigns table indicating when an item is targeted, scheduled, or part of an AB test, so staff can see this status at a glance in the table view. (Source: backlog sheet #2)",
+      "type": "feature",
+      "category": "HQ Admin",
+      "status": "archived",
+      "createdAt": "2026-08-31T09:56:41.920443Z",
+      "updatedAt": "2026-09-01T08:07:57.216Z",
+      "archivedAt": "2026-09-01T08:07:57.216Z",
+      "notes": [
+        {
+          "author": "claude",
+          "text": "Fixed: the items table now shows small targeted / scheduled / A-B-testing icons next to the item name (aggregated across the product's assets), matching what Product Assets already showed per-asset. Commit a3bcf2e on claude/ph-prototype-odqyzs. Ready to test: give a product an asset with real targeting, a scheduling window, and one marked available for testing, and confirm all three icons show up in the items table.",
+          "at": "2026-08-31T10:41:03.213609Z"
+        },
+        {
+          "author": "claude",
+          "text": "Pushed live: cherry-picked commit a3bcf2e onto main as 0f350b2 and pushed to origin/main. The targeted/scheduled/A-B-testing indicators are now live on the HQ Admin items table.",
+          "at": "2026-08-31T10:47:51.196Z"
+        }
+      ]
+    },
+    {
+      "id": "c-sheet-3-ev80",
+      "projectId": "products-and-pricing",
+      "title": "[HQ Admin] Personalised offers should follow SKU order on menu board",
+      "desc": "When a personalised offer is built from a provided list of SKUs, the featured menu board should present the offers in the same order as the SKU list was supplied. (Source: backlog sheet #3)",
+      "type": "bug",
+      "category": "Menu Board",
+      "status": "archived",
+      "createdAt": "2026-08-31T09:56:41.920443Z",
+      "updatedAt": "2026-09-01T08:08:02.151Z",
+      "archivedAt": "2026-09-01T08:08:02.151Z",
+      "notes": [
+        {
+          "author": "claude",
+          "text": "Fixed: the personalised-offer SKU filter used Array.filter(), which kept the underlying item catalog's own order instead of the order Personalisation Hub sent the SKU list in. Now re-sorted to follow _campaignSkus's order. Commit 2da65d7 on claude/ph-prototype-odqyzs. Ready to test: on the Feature Menu Board, drive a campaign with a specific SKU order via the PH API/device UDID and confirm the tiles render in that same order.",
+          "at": "2026-08-31T10:53:36.249291Z"
+        }
+      ],
+      "claudeNote": "Pushed to main as commit c595853. Live now."
+    },
+    {
+      "id": "c-sheet-4-0mfz",
+      "projectId": "products-and-pricing",
+      "title": "[HQ Admin] Expired-license icon on assets",
+      "desc": "When an asset's license has expired, show a clear “expired” icon over the asset wherever it's in use by default, so staff know it needs replacing. (Source: backlog sheet #4)",
+      "type": "feature",
+      "category": "Product Assets",
+      "status": "archived",
+      "createdAt": "2026-08-31T09:56:41.920443Z",
+      "updatedAt": "2026-09-01T08:08:06.759Z",
+      "archivedAt": "2026-09-01T08:08:06.759Z",
+      "notes": [
+        {
+          "author": "claude",
+          "text": "Held for clarification rather than guessing: this already exists in two places — Product Assets' own tile view shows an EXPIRED badge per-asset, and the HQ Admin items table already shows a red/amber rights badge on the thumbnail (worst state across every asset on the product, not just the default one). If what's wanted is narrower — e.g. only flag it when the DEFAULT asset specifically is the expired one, rather than any asset — let me know and I'll scope it down; otherwise let me know where you're still seeing it missing (which screen) and I'll take another look.",
+          "at": "2026-08-31T10:41:03.213609Z"
+        },
+        {
+          "author": "viewer",
+          "text": "If there's any assets that are actually still running on a menu board, then we need to show a very explicit expired stamp across the assets. That needs to be a lot clearer within the product table that that acid is expired. You, you shouldn't be able to scroll past it that asset without seeing the expired stamp across it within the product table",
+          "at": "2026-08-31T20:28:21.802Z"
+        },
+        {
+          "author": "claude",
+          "text": "Built the louder version you asked for. Rather than another small badge, the product table's thumbnail now gets a full diagonal “EXPIRED” ribbon stamped across it — same visual language as an e-commerce “Sold Out” ribbon — specifically when the asset the thumbnail is actually showing (the one that's actually live on the board) has an expired licence. That's deliberately narrower than \"any asset on the product\": an unused, never-shown asset sitting expired in the library still just gets the small dot it always did, since that's not urgent the way a live, expired asset is. Commit 1504d21, verified with a rendered screenshot of the ribbon over a thumbnail. Ready to test: on a product whose default/live image has an expired rights date, confirm the red diagonal EXPIRED ribbon shows across its thumbnail in the items table and is impossible to miss while scrolling.",
+          "at": "2026-09-01T01:20:00.000Z"
+        }
+      ],
+      "claudeNote": "Pushed to main as commit 1504d21. Live now."
+    },
+    {
+      "id": "c-sheet-5-jbnx",
+      "projectId": "products-and-pricing",
+      "title": "[Shared] Performance pass: table loads, personalised offers, product tables",
+      "desc": "Performance pass across HQ Admin table load, Retail Admin table load, personalised offer loading, and product table loading. Remove unused code and optimise page loading; personalised offers should update immediately when the underlying data changes via the PH API. Touches both HQ Admin and Retail Admin. (Source: backlog sheet #5)",
+      "type": "feature",
+      "category": "Menu Board",
+      "status": "archived",
+      "createdAt": "2026-08-31T09:56:41.920443Z",
+      "updatedAt": "2026-09-01T08:08:13.023Z",
+      "archivedAt": "2026-09-01T08:08:13.023Z",
+      "notes": [
+        {
+          "author": "claude",
+          "text": "Found and fixed one concrete issue: renderItems() in Retail Admin computed its visible-items list (which includes a per-item brand lookup) and then immediately called updateSummaryBar(), which recomputed that exact same list with its own separate brand scan — so every items/stock/localFeatured/pricing change scanned every item against the brand list twice. updateSummaryBar() now reuses the list renderItems() already built instead of redoing that work. Commit f7d26fc on claude/ph-prototype-odqyzs.\n\nAlso checked and ruled out, so I don't re-tread this ground: the earlier brand-lookup Map cache (already live) is being used correctly everywhere else I could find; Firestore listeners are each registered exactly once in HQ Admin, Retail Admin, and the menu board — no duplicate subscriptions; the menu board's own snapshot handlers already skip re-rendering when nothing actually changed; and both admin grids already use AG Grid's own recommended getRowId-based diffing rather than a full rebuild on every snapshot, so that's not a bug either. One small, low-priority item I did NOT fix: HQ/Retail Admin's Menu Types column cellRenderer does the same shape of per-tag .find() the brand lookup used to, but against a list of HQ-configured menu types that's realistically a handful of entries, not hundreds — not worth the churn on its own. I didn't find anything to support \"remove unused code\" specifically — nothing genuinely dead turned up in the time I spent looking, and I'd rather say that than invent something to remove.\n\nReady to test: this is a background performance fix with no visible behaviour change — Retail Admin's summary bar (Active/In Stock/Out of Stock counts) should look and update exactly as before, just doing less duplicate work underneath.",
+          "at": 1788176810763
+        }
+      ],
+      "claudeNote": "Pushed to main as commit c40ba3d. Live now.\n\nPre-deploy checks run before this push: full JS syntax validation (node --check) on every changed inline script, and for the React/JSX changes here, a clean `vite build` — that fails loudly on any real compile error, so a successful build is a genuine signal, not a formality. I also diffed the pushed file against the exact commit it came from to confirm byte-identical content reached main. What I could NOT do: check the actual live page after deploy — this sandbox's network policy blocks outbound access to offline2online.github.io entirely (confirmed via direct fetch, and separately via the GitHub API's own Pages endpoints, both refused by the egress proxy), so there's no path from here to load the real deployed page or its GitHub Pages build status. If you'd like a true live-page smoke check after every push, that needs either this environment's network policy opened for that domain, or a quick manual glance from you after a push lands."
+    },
+    {
+      "id": "c-sheet-10-qwa1",
+      "projectId": "products-and-pricing",
+      "title": "[Retail Admin] One-click revert to RRP + stuck bucket offer",
+      "desc": "At store level, add a one-click “Return to RRP” CTA for when a store is running a special promotion — pressing it plus Save Changes should revert pricing to RRP once stock is sold out. Also: the current store has a 10-piece bucket offer stuck and unable to be cleared — fix that specific stuck state, and test that stores can still set a special offer and quickly revert to RRP afterwards. (Source: backlog sheet #10)",
+      "type": "bug",
+      "category": "Pricing & Offers",
+      "status": "archived",
+      "createdAt": "2026-08-31T09:56:41.920443Z",
+      "updatedAt": "2026-09-01T08:08:17.317Z",
+      "archivedAt": "2026-09-01T08:08:17.317Z",
+      "notes": [
+        {
+          "author": "claude",
+          "text": "The actual bug: a blank offer price does NOT mean \"no offer\" in this data model — this store's own override only takes effect once it carries its OWN priced offerPrice; a blank one falls straight through to whatever HQ has configured, recurring offers included. That's why the bucket offer was stuck — clearing the field looked like it worked but the HQ recurring offer just kept coming back on its own schedule. Added a \"Return to RRP\" button that instead sets this store's offer price equal to RRP itself (a valid, priced override that wins outright, forces the recurrence off, and clears the schedule/promo copy) — the existing offerPrice===RRP check already suppresses any strikethrough/discount display everywhere it's read, so this store just shows plain RRP. Commit 665af92 on claude/ph-prototype-odqyzs. Ready to test: on the store carrying the stuck 10-piece bucket offer, open its pricing, hit Return to RRP, Save, and confirm it actually stops discounting (including after the page reloads) — then confirm you can still set a fresh special offer afterwards.",
+          "at": "2026-08-31T11:07:47.962039Z"
+        }
+      ],
+      "claudeNote": "Pushed to main as commit 23664b9. Live now."
+    },
+    {
+      "id": "c-sheet-11-vfzx",
+      "projectId": "products-and-pricing",
+      "title": "[HQ Admin] Magic Edit icon + crop/zoom + magic eraser on product assets",
+      "desc": "On the product assets page, replace the touch-up icon with a “Magic Edit” AI-style icon, always clickable. In the edit modal, add crop and zoom in/out, and a magic eraser similar to the existing touch-up tool but closer to how Canva's magic eraser behaves. (Source: backlog sheet #11)",
+      "type": "feature",
+      "category": "Product Assets",
+      "status": "archived",
+      "createdAt": "2026-08-31T09:56:41.920443Z",
+      "updatedAt": "2026-09-01T03:34:21.272Z",
+      "archivedAt": "2026-09-01T03:34:21.272Z",
+      "notes": [
+        {
+          "author": "claude",
+          "text": "Shipped as \"Magic Edit\" — the old Touch Up icon/tool, renamed and expanded, and no longer gated behind Background removal having run first (it's now always clickable on any non-video image, per the ask). Added: Crop (drag a corner to resize the selection, drag inside to move it, Apply Crop trims the photo) and Zoom in/out for precise brush work on a large photo. The Restore/Erase brush from before is unchanged.\n\nOne deliberate scope call: I kept Crop/Restore/Erase non-AI, same reasoning Remove Background and Enhance moved AWAY from Gemini's generative edit for (see that code's own comment on why) — a deterministic tool can't behave unpredictably the way a generative call can. \"Closer to Canva's Magic Eraser\" specifically usually means AI object removal + inpainting (paint over something, it vanishes and the background fills in around it) — genuinely different from this Erase mode, which paints transparency rather than filling in content. I didn't build that: it would mean a second AI call with exactly the reliability risk this codebase already backed away from once. Happy to build it if you do want that specific AI behavior — just flag it and I'll scope it as its own item rather than guess.\n\nCommit 70e2c2a on claude/ph-prototype-odqyzs. Ready to test: open Magic Edit on a fresh, untreated image (confirm it's no longer greyed out), try Crop (drag corners, drag to move, Apply), try Zoom in/out while painting, and confirm Restore/Erase still work as before.",
+          "at": 1788176810763
+        }
+      ],
+      "claudeNote": "Pushed to main as commit a0ffd4a. Live now.\n\nPre-deploy checks run before this push: full JS syntax validation (node --check) on every changed inline script, and for the React/JSX changes here, a clean `vite build` — that fails loudly on any real compile error, so a successful build is a genuine signal, not a formality. I also diffed the pushed file against the exact commit it came from to confirm byte-identical content reached main. What I could NOT do: check the actual live page after deploy — this sandbox's network policy blocks outbound access to offline2online.github.io entirely (confirmed via direct fetch, and separately via the GitHub API's own Pages endpoints, both refused by the egress proxy), so there's no path from here to load the real deployed page or its GitHub Pages build status. If you'd like a true live-page smoke check after every push, that needs either this environment's network policy opened for that domain, or a quick manual glance from you after a push lands."
+    },
+    {
+      "id": "c-sheet-12-gq4j",
+      "projectId": "products-and-pricing",
+      "title": "[Retail Admin] Replace image/name columns with product search",
+      "desc": "On the Retail Admin product table, replace the image and product name column headings with a search field (matching the HQ Admin pattern) so staff can quickly search for a product instead of scanning image/name columns. (Source: backlog sheet #12)",
+      "type": "feature",
+      "category": "Retail Admin",
+      "status": "archived",
+      "createdAt": "2026-08-31T09:56:41.920443Z",
+      "updatedAt": "2026-09-01T03:34:10.630Z",
+      "archivedAt": "2026-09-01T03:34:10.630Z",
+      "notes": [
+        {
+          "author": "claude",
+          "text": "Fixed: merged the Image and Product Name columns into one Product column and replaced the static header text with a live search box — type to filter the table (AG Grid's quick filter, matches across name/SKU/etc.) instead of scanning two plain-labelled columns. Commit 665af92 on claude/ph-prototype-odqyzs. Ready to test: open the Retail Admin product table and confirm typing in the header search narrows the list, with the product thumbnail + name still shown in the row.",
+          "at": "2026-08-31T11:07:47.962039Z"
+        }
+      ],
+      "claudeNote": "Pushed to main as commit e853309. Live now."
+    },
+    {
+      "id": "c-sheet-13-izjz",
+      "projectId": "products-and-pricing",
+      "title": "[HQ Admin] Mic button doesn't work inside iframe",
+      "desc": "On the digital assets page, the microphone/voice button doesn't work when the prototype is iframed into Personalisation Hub. Ensure microphone access works correctly within the iframe context. (Source: backlog sheet #13)",
+      "type": "bug",
+      "category": "HQ Admin",
+      "status": "archived",
+      "createdAt": "2026-08-31T09:56:41.920443Z",
+      "updatedAt": "2026-09-01T03:34:02.614Z",
+      "archivedAt": "2026-09-01T03:34:02.614Z",
+      "notes": [
+        {
+          "author": "claude",
+          "text": "Partly fixed, one caveat: the actual missing piece is a Permissions Policy (allow=\"microphone\") on the <iframe> tag on the live Personalisation Hub platform that embeds this page — that lives outside this repo, so I can't push that fix myself. What I could fix here: the mic button used to fail completely silently when blocked, which is what \"doesn't work\" looks like from the outside. It now shows a clear message explaining whether it's an iframe permissions gap or a browser/OS block, and reminds you that typing still works. Commit 2439327 on claude/ph-prototype-odqyzs. Ready to test: try the mic on Product Assets → Request changes inside an iframe without the allow attribute and confirm you get a clear message instead of silence — and flag to whoever owns the platform embed that the iframe tag needs allow=\"microphone\" for the mic to actually work.",
+          "at": "2026-08-31T10:41:03.213609Z"
+        }
+      ],
+      "claudeNote": "Pushed to main as commit 8265d42 (same push as the generating-overlay fix — both touch ProductAssetsTab.jsx). Live now."
+    },
+    {
+      "id": "c-sheet-14-1ixc",
+      "projectId": "products-and-pricing",
+      "title": "[HQ Admin] Recurring schedule support on asset scheduling/targeting",
+      "desc": "On the product assets tab's scheduling & targeting rules, add a recurrence dropdown (daily / weekly / fortnightly / custom) with start and end date fields that update based on the selection. Finalise this approach in the consolidated asset scheduling/targeting UI first, then roll the same pattern out to pricing offer targeting. (Source: backlog sheet #14)",
+      "type": "feature",
+      "category": "HQ Admin",
+      "status": "archived",
+      "createdAt": "2026-08-31T09:56:41.920443Z",
+      "updatedAt": "2026-09-01T03:32:42.987Z",
+      "archivedAt": "2026-09-01T03:32:42.987Z",
+      "notes": [
+        {
+          "author": "claude",
+          "text": "Built this on top of what already existed rather than from scratch — Offer pricing already had a full recurrence system (RecurrenceControl.jsx, recurrence.js: daily / weekly / monthly / yearly / every weekday / custom with an Ends bound), so I reused it here instead of inventing a second one. Each targeting group on a product image/video (Asset Scheduling & Targeting Rules) now has a Repeat control next to its Schedule from/until fields — pick a repeat and those dates become the rule's recurring daily time-of-day window (e.g. \"every day, 11:00-14:00\" for a lunch-only asset) instead of one fixed start/end. The board's own evaluation (_inSchedule in menu-board.html) now honours that recurrence using the exact same day-part logic offers already use; every existing asset without a repeat rule set evaluates exactly as before — verified with a standalone test covering the no-recurrence case plus daily and weekly-on-one-day recurring windows. Commit f7cc43d on claude/ph-prototype-odqyzs. Ready to test: on a product asset, add a targeting rule, set Schedule from + Repeat → Daily with a lunch window, and confirm that asset only shows on the menu board during that window each day.",
+          "at": "2026-08-31T11:35:00.000Z"
+        }
+      ],
+      "claudeNote": "Pushed to main as commit c16fe3b. Live now."
+    },
+    {
+      "id": "c-sheet-6-qm43",
+      "projectId": "products-and-pricing",
+      "title": "[HQ Admin] Inline generating state instead of modal (AI video/image)",
+      "desc": "When a user presses Generate Video or Request Changes from the AI modal on a product asset, close the modal and show the “generating” visual state directly over the image itself, matching the Canva-style pattern previously shared, instead of keeping the modal open. (Source: backlog sheet #6)",
+      "type": "feature",
+      "category": "Product Assets",
+      "status": "archived",
+      "createdAt": "2026-08-31T09:56:41.920443Z",
+      "updatedAt": "2026-09-01T03:32:25.138Z",
+      "archivedAt": "2026-09-01T03:32:25.138Z",
+      "notes": [
+        {
+          "author": "claude",
+          "text": "Fixed: Generate Video and Request Changes now close their modal/panel immediately on submit and show a Canva-style generating overlay directly over the asset preview instead of a busy button in the modal. Commit c40a552 on claude/ph-prototype-odqyzs. Ready to test: on a product asset, try Generate Video and Request Changes and confirm the overlay appears over the image/video while the rest of the panel stays usable.",
+          "at": "2026-08-31T10:10:12.601904Z"
+        }
+      ],
+      "claudeNote": "Pushed to main as commit 8265d42. Live now."
+    },
+    {
+      "id": "c-sheet-7-dqfs",
+      "projectId": "products-and-pricing",
+      "title": "[HQ Admin] Video prompt not cleared between generations",
+      "desc": "The previously used video-generation prompt is being reused when starting a new video generation for the same product with a different prompt. Clear the prompt field when starting a new generation. (Source: backlog sheet #7)",
+      "type": "bug",
+      "category": "Product Assets",
+      "status": "archived",
+      "createdAt": "2026-08-31T09:56:41.920443Z",
+      "updatedAt": "2026-09-01T03:31:33.763Z",
+      "archivedAt": "2026-09-01T03:31:33.763Z",
+      "notes": [
+        {
+          "author": "claude",
+          "text": "Fixed: openVideoModal() now resets the prompt field to the configured/default prompt every time the modal opens, instead of only once ever. Commit c40a552 on claude/ph-prototype-odqyzs. Ready to test: generate a video with a custom prompt, then open Generate Video again (same or different product) and confirm the field shows the default prompt, not the previous custom one.",
+          "at": "2026-08-31T10:10:12.601904Z"
+        },
+        {
+          "author": "claude",
+          "text": "Checked the full path for this — I don't think there's a code bug left here. confirmGenerateVideo() reads videoPrompt fresh at click time (not a stale closure), threads it straight through generateProductVideo() → the generateProductVideo Cloud Function (functions/index.js) → the video provider's POST body's own `prompt` field on every call, and each call gets a brand-new job id from the provider and polls that job specifically. So a different prompt is genuinely being sent, and a genuinely new video comes back each time — nothing here reuses or caches a previous result.\n\nWhat's left is outside this repo: a single fixed source photo plus a short, camera_motion:'static' turntable-style clip gives an image-to-video model very little to work with, and for a small prompt tweak (an adjective, a mood word) some providers barely vary the output — the source image dominates far more than the text does. Two things would help me dig further rather than guess: (1) does the AI Providers → Video provider dashboard show two separate job ids for the two generations, and (2) how different was the prompt wording — a small tweak vs. a completely different scene/action? If it's the latter and still barely changes, that points at the provider/model itself rather than anything fixable here.",
+          "at": "2026-08-31T11:20:00.000Z"
+        }
+      ],
+      "claudeNote": "Pushed to main as commit c16fe3b (same push as the recurring-schedule feature — both touch product-app). Live now."
+    },
+    {
+      "id": "c-sheet-8-2obp",
+      "projectId": "products-and-pricing",
+      "title": "[HQ Admin] Save Changes CTA state + save speed on Admin Settings",
+      "desc": "On the admin settings page, the Save Changes CTA should only become active once an actual change has been made to a model — it currently doesn't gate correctly. Also investigate and speed up save time. (Source: backlog sheet #8)",
+      "type": "bug",
+      "category": "HQ Admin",
+      "status": "archived",
+      "createdAt": "2026-08-31T09:56:41.920443Z",
+      "updatedAt": "2026-09-01T03:31:21.546Z",
+      "archivedAt": "2026-09-01T03:31:21.546Z",
+      "notes": [
+        {
+          "author": "claude",
+          "text": "Fixed: the Stock API, PH API, AI Providers, Brand, and Template Save Changes buttons were missing the disabled attribute their dirty-state tracker expects, so they were briefly clickable before being gated. Also cached the PBKDF2-derived encryption key (was being re-derived per endpoint row on every PH API save) and parallelised per-row token encryption. Commit 065432e on claude/ph-prototype-odqyzs. Ready to test: open Settings, confirm each Save Changes button starts disabled and only enables after an edit, and confirm PH API save with multiple endpoints feels faster.",
+          "at": "2026-08-31T10:01:26.048625Z"
+        }
+      ],
+      "claudeNote": "Pushed to main as commit d4e6710. Live now."
+    }
+  ]
+}
