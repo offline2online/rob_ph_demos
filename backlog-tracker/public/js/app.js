@@ -1032,3 +1032,378 @@ wireMicButton();
 document.getElementById("ni-desc-input").addEventListener("input", (e) => {
   autoGrow(e.target);
 });
+
+// ── FAQ / Help Center admin ────────────────────────────────────────────
+// Global, not per-project — the consumer-facing Help Center (repo root
+// `faq/`, published via GitHub Pages) reads faqCategories/faqArticles
+// straight from this same Firestore project, so saving here is what keeps
+// that public page current. `projectId` on an article is optional and
+// exists so a project's own feature work can eventually flag the FAQs
+// that need updating when it ships (see backlog-tracker/README.md) — that
+// automation isn't built yet, so "Needs review" here is a manual flag for
+// now, same spirit as the rest of this app's prototype-stage features.
+const faqCategoriesRef = collection(db, "faqCategories");
+const faqArticlesRef = collection(db, "faqArticles");
+const FAQ_PUBLIC_BASE_URL = "https://offline2online.github.io/rob_ph_demos/faq/";
+
+let faqCategories = [];
+let faqArticles = [];
+let editingFaqArticleId = null; // null while adding, an id while editing
+let faqSlugManuallyEdited = false;
+
+function faqCategoryName(id) {
+  const c = faqCategories.find((c) => c.id === id);
+  return c ? c.name : "Uncategorised";
+}
+
+function slugify(s) {
+  return String(s || "").trim().toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+}
+
+// Mirrors faq/js/faq-data.js's renderBodyMd exactly (kept as two small
+// copies rather than a shared import, same isolation-by-design choice
+// this repo already makes between backlog-tracker and menu-board-demo —
+// the admin preview and the public render must produce the same output,
+// so if one changes, change the other too).
+function renderFaqBodyMd(md) {
+  const lines = escapeHTML(md || "").split(/\r?\n/);
+  let html = "";
+  let inList = false;
+  const closeList = () => { if (inList) { html += "</ul>"; inList = false; } };
+  for (const raw of lines) {
+    const line = raw.trim();
+    if (!line) { closeList(); continue; }
+    if (line.startsWith("## ")) { closeList(); html += `<h3>${line.slice(3)}</h3>`; continue; }
+    if (line.startsWith("- ")) {
+      if (!inList) { html += "<ul>"; inList = true; }
+      html += `<li>${line.slice(2).replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")}</li>`;
+      continue;
+    }
+    closeList();
+    html += `<p>${line.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")}</p>`;
+  }
+  closeList();
+  return html;
+}
+
+async function addFaqCategory(name, icon) {
+  const order = faqCategories.length ? Math.max(...faqCategories.map((c) => c.order || 0)) + 1 : 0;
+  await addDoc(faqCategoriesRef, {
+    name: name.trim(), icon: (icon || "help").trim(), description: "", order,
+    createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
+  });
+}
+
+async function saveFaqCategory(id, name, icon, description) {
+  await setDoc(doc(db, "faqCategories", id), {
+    name: name.trim(), icon: (icon || "help").trim(), description: (description || "").trim(),
+    updatedAt: serverTimestamp(),
+  }, { merge: true });
+}
+
+async function deleteFaqCategoryIfEmpty(id) {
+  if (faqArticles.some((a) => a.categoryId === id)) {
+    alert("This category still has articles in it — move or delete those first.");
+    return;
+  }
+  await deleteDoc(doc(db, "faqCategories", id));
+}
+
+async function moveFaqCategory(id, dir) {
+  const idx = faqCategories.findIndex((c) => c.id === id);
+  const swapIdx = idx + dir;
+  if (idx < 0 || swapIdx < 0 || swapIdx >= faqCategories.length) return;
+  const a = faqCategories[idx], b = faqCategories[swapIdx];
+  await Promise.all([
+    setDoc(doc(db, "faqCategories", a.id), { order: b.order || 0 }, { merge: true }),
+    setDoc(doc(db, "faqCategories", b.id), { order: a.order || 0 }, { merge: true }),
+  ]);
+}
+
+async function saveFaqArticle(id, data) {
+  if (id) {
+    await setDoc(doc(db, "faqArticles", id), { ...data, updatedAt: serverTimestamp() }, { merge: true });
+  } else {
+    const order = faqArticles.length ? Math.max(...faqArticles.map((a) => a.order || 0)) + 1 : 0;
+    await addDoc(faqArticlesRef, { ...data, order, createdAt: serverTimestamp(), updatedAt: serverTimestamp() });
+  }
+}
+
+async function deleteFaqArticle(id) {
+  await deleteDoc(doc(db, "faqArticles", id));
+}
+
+async function toggleFaqArticleStatus(id) {
+  const a = faqArticles.find((a) => a.id === id);
+  if (!a) return;
+  const next = a.status === "published" ? "draft" : "published";
+  await setDoc(doc(db, "faqArticles", id), {
+    status: next, updatedAt: serverTimestamp(),
+    ...(next === "published" ? { publishedAt: serverTimestamp() } : {}),
+  }, { merge: true });
+}
+
+async function toggleFaqArticleReview(id) {
+  const a = faqArticles.find((a) => a.id === id);
+  if (!a) return;
+  await setDoc(doc(db, "faqArticles", id), { needsReview: !a.needsReview, updatedAt: serverTimestamp() }, { merge: true });
+}
+
+onSnapshot(query(faqCategoriesRef, orderBy("order", "asc")), (snap) => {
+  faqCategories = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  if (!faqAdminPage.hidden) renderFaqAdminPage();
+}, (err) => {
+  console.error("backlog-tracker: faqCategories listener error", err);
+});
+
+onSnapshot(query(faqArticlesRef, orderBy("order", "asc")), (snap) => {
+  faqArticles = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  if (!faqAdminPage.hidden) renderFaqAdminPage();
+}, (err) => {
+  console.error("backlog-tracker: faqArticles listener error", err);
+});
+
+const faqAdminPage = document.getElementById("faq-admin-page");
+const faCategorySelect = document.getElementById("fa-category-select");
+const faProjectSelect = document.getElementById("fa-project-select");
+const faFilterCategory = document.getElementById("fa-filter-category");
+const faFilterStatus = document.getElementById("fa-filter-status");
+const faFilterNeedsReview = document.getElementById("fa-filter-needs-review");
+const faFilterSearch = document.getElementById("fa-filter-search");
+
+function openFaqAdminPage() {
+  document.getElementById("projects-root").hidden = true;
+  faqAdminPage.hidden = false;
+  renderFaqAdminPage();
+}
+function closeFaqAdminPage() {
+  faqAdminPage.hidden = true;
+  document.getElementById("projects-root").hidden = false;
+}
+
+function renderFaqAdminPage() {
+  const catOptionsHTML = faqCategories
+    .map((c) => `<option value="${escapeHTML(c.id)}">${escapeHTML(c.name)}</option>`).join("");
+  faCategorySelect.innerHTML = catOptionsHTML || '<option value="">Add a category first</option>';
+
+  const prevFilterCat = faFilterCategory.value;
+  faFilterCategory.innerHTML = '<option value="">All categories</option>' + catOptionsHTML;
+  faFilterCategory.value = prevFilterCat;
+
+  const prevProjVal = faProjectSelect.value;
+  faProjectSelect.innerHTML = '<option value="">None — general article</option>' +
+    projects.map((p) => `<option value="${escapeHTML(p.id)}">${escapeHTML(p.name)}</option>`).join("");
+  faProjectSelect.value = prevProjVal;
+
+  const catListEl = document.getElementById("faq-category-list");
+  if (faqCategories.length === 0) {
+    catListEl.innerHTML = '<p class="empty-hint">No categories yet — add one below.</p>';
+  } else {
+    catListEl.innerHTML = faqCategories.map((c, idx) => {
+      const count = faqArticles.filter((a) => a.categoryId === c.id).length;
+      return `
+        <div class="faq-cat-row" data-id="${escapeHTML(c.id)}">
+          <span class="material-symbols-outlined">${escapeHTML(c.icon || "help")}</span>
+          <input type="text" class="faq-cat-name-input" value="${escapeHTML(c.name)}" aria-label="Category name">
+          <input type="text" class="faq-cat-icon-input" value="${escapeHTML(c.icon || "help")}" placeholder="Material icon" aria-label="Category icon">
+          <input type="text" class="faq-cat-desc-input" value="${escapeHTML(c.description || "")}" placeholder="Short description" aria-label="Category description">
+          <span class="faq-cat-count">${count} article${count === 1 ? "" : "s"}</span>
+          <div class="faq-cat-actions">
+            <button type="button" class="icon-btn faq-cat-up" ${idx === 0 ? "disabled" : ""} title="Move up">&uarr;</button>
+            <button type="button" class="icon-btn faq-cat-down" ${idx === faqCategories.length - 1 ? "disabled" : ""} title="Move down">&darr;</button>
+            <button type="button" class="icon-btn faq-cat-save" title="Save changes">&#10003;</button>
+            <button type="button" class="icon-btn faq-cat-delete" title="Delete category">&#128465;</button>
+          </div>
+        </div>`;
+    }).join("");
+  }
+
+  renderFaqArticleList();
+
+  const publishedCount = faqArticles.filter((a) => a.status === "published").length;
+  const draftCount = faqArticles.filter((a) => a.status === "draft").length;
+  document.getElementById("faq-admin-count").textContent = `${publishedCount} published, ${draftCount} draft`;
+}
+
+function renderFaqArticleList() {
+  let list = faqArticles.slice();
+  if (faFilterCategory.value) list = list.filter((a) => a.categoryId === faFilterCategory.value);
+  if (faFilterStatus.value) list = list.filter((a) => a.status === faFilterStatus.value);
+  if (faFilterNeedsReview.value === "yes") list = list.filter((a) => a.needsReview);
+  const q = faFilterSearch.value.trim().toLowerCase();
+  if (q) {
+    list = list.filter((a) =>
+      (a.title || "").toLowerCase().includes(q) || (a.summary || "").toLowerCase().includes(q));
+  }
+
+  const listEl = document.getElementById("faq-article-list");
+  const emptyEl = document.getElementById("faq-article-empty");
+  if (list.length === 0) {
+    listEl.innerHTML = "";
+    emptyEl.hidden = false;
+    return;
+  }
+  emptyEl.hidden = true;
+  listEl.innerHTML = list.map((a) => {
+    const liveUrl = `${FAQ_PUBLIC_BASE_URL}article.html?id=${encodeURIComponent(a.id)}`;
+    return `
+      <div class="faq-article-row" data-id="${escapeHTML(a.id)}">
+        <div class="faq-article-row-main">
+          <span class="badge badge-status-${a.status}">${a.status === "published" ? "Published" : "Draft"}</span>
+          ${a.needsReview ? '<span class="badge badge-needs-review">Needs review</span>' : ""}
+          <h4>${escapeHTML(a.title)}</h4>
+          <p class="faq-article-row-meta">${escapeHTML(faqCategoryName(a.categoryId))}${a.projectId ? " &middot; " + escapeHTML(projectName(a.projectId)) : ""}</p>
+        </div>
+        <div class="faq-article-row-actions">
+          ${a.status === "published" ? `<a href="${liveUrl}" target="_blank" rel="noopener">View live &#8599;</a>` : ""}
+          <button type="button" class="icon-btn faq-article-edit" title="Edit">Edit</button>
+          <button type="button" class="icon-btn faq-article-toggle-status" title="Toggle published state">${a.status === "published" ? "Unpublish" : "Publish"}</button>
+          <button type="button" class="icon-btn faq-article-toggle-review" title="Toggle needs-review flag">${a.needsReview ? "Clear flag" : "Flag"}</button>
+          <button type="button" class="icon-btn faq-article-delete" title="Delete">&#128465;</button>
+        </div>
+      </div>`;
+  }).join("");
+}
+
+document.getElementById("faq-center-btn").addEventListener("click", openFaqAdminPage);
+document.getElementById("faq-admin-back-btn").addEventListener("click", closeFaqAdminPage);
+
+document.getElementById("fa-new-category-submit").addEventListener("click", async () => {
+  const nameEl = document.getElementById("fa-new-category-name");
+  const iconEl = document.getElementById("fa-new-category-icon");
+  if (!nameEl.value.trim()) { nameEl.focus(); return; }
+  await addFaqCategory(nameEl.value, iconEl.value);
+  nameEl.value = "";
+  iconEl.value = "help";
+});
+
+document.getElementById("faq-category-list").addEventListener("click", (e) => {
+  const row = e.target.closest(".faq-cat-row");
+  if (!row) return;
+  const id = row.dataset.id;
+  if (e.target.closest(".faq-cat-up")) { moveFaqCategory(id, -1); return; }
+  if (e.target.closest(".faq-cat-down")) { moveFaqCategory(id, 1); return; }
+  if (e.target.closest(".faq-cat-save")) {
+    saveFaqCategory(
+      id,
+      row.querySelector(".faq-cat-name-input").value,
+      row.querySelector(".faq-cat-icon-input").value,
+      row.querySelector(".faq-cat-desc-input").value,
+    );
+    return;
+  }
+  if (e.target.closest(".faq-cat-delete")) { deleteFaqCategoryIfEmpty(id); return; }
+});
+
+[faFilterCategory, faFilterStatus, faFilterNeedsReview].forEach((el) => {
+  el.addEventListener("change", renderFaqArticleList);
+});
+faFilterSearch.addEventListener("input", renderFaqArticleList);
+
+// ── FAQ article editor modal ────────────────────────────────────────────
+const faBackdrop = document.getElementById("fa-backdrop");
+const faTitleInput = document.getElementById("fa-title-input");
+const faSlugInput = document.getElementById("fa-slug-input");
+const faSummaryInput = document.getElementById("fa-summary-input");
+const faKeywordsInput = document.getElementById("fa-keywords-input");
+const faBodyInput = document.getElementById("fa-body-input");
+const faPreview = document.getElementById("fa-preview");
+const faNeedsReview = document.getElementById("fa-needs-review");
+let faStatus = "draft";
+
+function setFaStatusToggle(status) {
+  faStatus = status;
+  document.querySelectorAll("#fa-backdrop .type-opt").forEach((btn) => {
+    btn.classList.toggle("active", btn.dataset.status === status);
+  });
+}
+
+function openFaqArticleModal(articleId) {
+  editingFaqArticleId = articleId || null;
+  faqSlugManuallyEdited = !!articleId;
+  const article = articleId ? faqArticles.find((a) => a.id === articleId) : null;
+
+  document.getElementById("fa-title").textContent = article ? "Edit article" : "New article";
+  faTitleInput.value = article ? article.title : "";
+  faSlugInput.value = article ? article.slug || "" : "";
+  faSummaryInput.value = article ? article.summary || "" : "";
+  faKeywordsInput.value = article ? (article.keywords || []).join(", ") : "";
+  faBodyInput.value = article ? article.bodyMd || "" : "";
+  faNeedsReview.checked = article ? !!article.needsReview : false;
+  setFaStatusToggle(article ? article.status : "draft");
+  faPreview.innerHTML = renderFaqBodyMd(faBodyInput.value);
+
+  if (faCategorySelect.options.length && faCategorySelect.options[0].value !== "") {
+    faCategorySelect.value = article ? article.categoryId : faCategorySelect.options[0].value;
+  }
+  faProjectSelect.value = article && article.projectId ? article.projectId : "";
+
+  const liveHint = document.getElementById("fa-live-link-hint");
+  if (article && article.status === "published") {
+    liveHint.hidden = false;
+    liveHint.innerHTML = `Live at <a href="${FAQ_PUBLIC_BASE_URL}article.html?id=${encodeURIComponent(article.id)}" target="_blank" rel="noopener">${FAQ_PUBLIC_BASE_URL}article.html?id=${encodeURIComponent(article.id)}</a>`;
+  } else {
+    liveHint.hidden = true;
+  }
+
+  faBackdrop.hidden = false;
+  faTitleInput.focus();
+}
+function closeFaqArticleModal() { faBackdrop.hidden = true; }
+
+document.getElementById("fa-new-article-btn").addEventListener("click", () => {
+  if (faqCategories.length === 0) { alert("Add a category first."); return; }
+  openFaqArticleModal(null);
+});
+document.getElementById("fa-cancel").addEventListener("click", closeFaqArticleModal);
+document.getElementById("fa-close").addEventListener("click", closeFaqArticleModal);
+faBackdrop.addEventListener("click", (e) => { if (e.target === faBackdrop) closeFaqArticleModal(); });
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && !faBackdrop.hidden) closeFaqArticleModal();
+});
+
+document.querySelectorAll("#fa-backdrop .type-opt").forEach((btn) => {
+  btn.addEventListener("click", () => setFaStatusToggle(btn.dataset.status));
+});
+
+faTitleInput.addEventListener("input", () => {
+  if (!faqSlugManuallyEdited) faSlugInput.value = slugify(faTitleInput.value);
+});
+faSlugInput.addEventListener("input", () => { faqSlugManuallyEdited = true; });
+faBodyInput.addEventListener("input", () => {
+  faPreview.innerHTML = renderFaqBodyMd(faBodyInput.value);
+});
+
+document.getElementById("fa-submit").addEventListener("click", async () => {
+  const title = faTitleInput.value.trim();
+  const categoryId = faCategorySelect.value;
+  if (!title) { faTitleInput.focus(); return; }
+  if (!categoryId) { alert("Add a category first."); return; }
+
+  const data = {
+    categoryId,
+    projectId: faProjectSelect.value || null,
+    title,
+    slug: faSlugInput.value.trim() || slugify(title),
+    summary: faSummaryInput.value.trim(),
+    bodyMd: faBodyInput.value,
+    keywords: faKeywordsInput.value.split(",").map((k) => k.trim()).filter(Boolean),
+    status: faStatus,
+    needsReview: faNeedsReview.checked,
+  };
+  await saveFaqArticle(editingFaqArticleId, data);
+  closeFaqArticleModal();
+});
+
+document.getElementById("faq-article-list").addEventListener("click", (e) => {
+  const row = e.target.closest(".faq-article-row");
+  if (!row) return;
+  const id = row.dataset.id;
+  if (e.target.closest(".faq-article-edit")) { openFaqArticleModal(id); return; }
+  if (e.target.closest(".faq-article-toggle-status")) { toggleFaqArticleStatus(id); return; }
+  if (e.target.closest(".faq-article-toggle-review")) { toggleFaqArticleReview(id); return; }
+  if (e.target.closest(".faq-article-delete")) {
+    if (confirm("Delete this article? This can't be undone.")) deleteFaqArticle(id);
+  }
+});

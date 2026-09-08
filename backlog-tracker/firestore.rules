@@ -56,5 +56,34 @@ service cloud.firestore {
 
       allow delete: if true;
     }
+
+    // FAQ / Help Center — the consumer-facing site at repo-root `faq/`
+    // (published via GitHub Pages) reads these two collections directly;
+    // this app's "FAQ Center" admin page is the only writer. Same
+    // prototype-stage open posture as everything else here.
+    match /faqCategories/{categoryId} {
+      allow read: if true;
+
+      allow create, update: if
+        isNonEmptyBoundedString(incoming().name, 80) &&
+        isNonEmptyBoundedString(incoming().icon, 40) &&
+        incoming().order is number;
+
+      allow delete: if true;
+    }
+
+    match /faqArticles/{articleId} {
+      allow read: if true;
+
+      allow create, update: if
+        isNonEmptyBoundedString(incoming().categoryId, 100) &&
+        isNonEmptyBoundedString(incoming().title, 200) &&
+        isNonEmptyBoundedString(incoming().slug, 200) &&
+        incoming().bodyMd is string && incoming().bodyMd.size() <= 20000 &&
+        incoming().status in ["draft", "published"] &&
+        incoming().order is number;
+
+      allow delete: if true;
+    }
   }
 }

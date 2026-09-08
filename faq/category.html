@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title id="page-title">Category — Personalisation Hub Help Center</title>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&display=swap">
+  <link rel="stylesheet" href="css/faq.css">
+</head>
+<body>
+  <header class="ph-header">
+    <a class="brand" href="index.html"><span class="dot"></span> Personalisation Hub <span class="help-label">Help Center</span></a>
+  </header>
+
+  <section class="hero" style="padding:28px 24px 40px;">
+    <div class="search-wrap">
+      <span class="material-symbols-outlined search-icon">search</span>
+      <input type="search" id="faq-search" class="search-box" placeholder="Search for articles..." autocomplete="off">
+      <div class="search-results" id="faq-search-results" hidden></div>
+    </div>
+  </section>
+
+  <main class="wrap">
+    <p class="breadcrumb"><a href="index.html">Help Center</a> &rsaquo; <span id="crumb-cat"></span></p>
+    <div class="page-title">
+      <div class="cat-icon"><span class="material-symbols-outlined" id="cat-icon">help</span></div>
+      <h1 id="cat-name">Loading…</h1>
+    </div>
+    <p class="page-desc" id="cat-desc"></p>
+    <div class="article-list" id="article-list"></div>
+    <p class="empty-hint" id="article-empty" hidden>No published articles in this category yet.</p>
+  </main>
+
+  <footer class="ph-footer">Personalisation Hub Help Center &middot; content managed from <a href="https://backlog-tracker-e4ed2.web.app/">backlog-tracker</a></footer>
+
+  <script type="module">
+    import { fetchCategories, fetchPublishedArticles, escapeHTML, categoryIcon } from "./js/faq-data.js";
+    import { initSearchBox } from "./js/search-box.js";
+
+    initSearchBox();
+
+    const id = new URLSearchParams(window.location.search).get("id");
+    const [categories, articles] = await Promise.all([fetchCategories(), fetchPublishedArticles()]);
+    const category = categories.find((c) => c.id === id);
+
+    if (!category) {
+      document.getElementById("cat-name").textContent = "Category not found";
+      document.getElementById("article-empty").hidden = false;
+      document.getElementById("article-empty").textContent = "This category doesn't exist or hasn't been published.";
+    } else {
+      document.title = `${category.name} — Personalisation Hub Help Center`;
+      document.getElementById("crumb-cat").textContent = category.name;
+      document.getElementById("cat-name").textContent = category.name;
+      document.getElementById("cat-desc").textContent = category.description || "";
+      document.getElementById("cat-icon").textContent = categoryIcon(category);
+
+      const catArticles = articles.filter((a) => a.categoryId === category.id);
+      const list = document.getElementById("article-list");
+      if (catArticles.length === 0) {
+        document.getElementById("article-empty").hidden = false;
+      } else {
+        list.innerHTML = catArticles.map((a) => `
+          <a class="article-row" href="article.html?id=${encodeURIComponent(a.id)}">
+            <h3>${escapeHTML(a.title)}</h3>
+            <p>${escapeHTML(a.summary || "")}</p>
+          </a>
+        `).join("");
+      }
+    }
+  </script>
+</body>
+</html>

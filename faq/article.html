@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title id="page-title">Article — Personalisation Hub Help Center</title>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&display=swap">
+  <link rel="stylesheet" href="css/faq.css">
+</head>
+<body>
+  <header class="ph-header">
+    <a class="brand" href="index.html"><span class="dot"></span> Personalisation Hub <span class="help-label">Help Center</span></a>
+  </header>
+
+  <section class="hero" style="padding:28px 24px 40px;">
+    <div class="search-wrap">
+      <span class="material-symbols-outlined search-icon">search</span>
+      <input type="search" id="faq-search" class="search-box" placeholder="Search for articles..." autocomplete="off">
+      <div class="search-results" id="faq-search-results" hidden></div>
+    </div>
+  </section>
+
+  <main class="wrap" style="max-width:760px;">
+    <p class="breadcrumb">
+      <a href="index.html">Help Center</a> &rsaquo;
+      <a id="crumb-cat-link" href="index.html"><span id="crumb-cat"></span></a> &rsaquo;
+      <span id="crumb-article"></span>
+    </p>
+    <article id="article-content">
+      <div class="article-header">
+        <span class="article-cat-badge" id="cat-badge" hidden>
+          <span class="material-symbols-outlined" style="font-size:14px;" id="cat-badge-icon">help</span>
+          <span id="cat-badge-name"></span>
+        </span>
+        <h1 id="article-title">Loading…</h1>
+      </div>
+      <div class="article-body" id="article-body"></div>
+    </article>
+    <p class="empty-hint" id="article-empty" hidden>This article doesn't exist or hasn't been published yet.</p>
+
+    <div class="related-block" id="related-block" hidden>
+      <h4>Related articles</h4>
+      <div class="article-list" id="related-list"></div>
+    </div>
+  </main>
+
+  <footer class="ph-footer">Personalisation Hub Help Center &middot; content managed from <a href="https://backlog-tracker-e4ed2.web.app/">backlog-tracker</a></footer>
+
+  <script type="module">
+    import { fetchCategories, fetchPublishedArticles, escapeHTML, categoryIcon, renderBodyMd } from "./js/faq-data.js";
+    import { initSearchBox } from "./js/search-box.js";
+
+    initSearchBox();
+
+    const id = new URLSearchParams(window.location.search).get("id");
+    const [categories, articles] = await Promise.all([fetchCategories(), fetchPublishedArticles()]);
+    const article = articles.find((a) => a.id === id);
+
+    if (!article) {
+      document.getElementById("article-title").textContent = "Article not found";
+      document.getElementById("article-empty").hidden = false;
+      document.getElementById("crumb-article").textContent = "Not found";
+    } else {
+      const category = categories.find((c) => c.id === article.categoryId);
+      document.title = `${article.title} — Personalisation Hub Help Center`;
+      document.getElementById("article-title").textContent = article.title;
+      document.getElementById("article-body").innerHTML = renderBodyMd(article.bodyMd);
+      document.getElementById("crumb-article").textContent = article.title;
+
+      if (category) {
+        document.getElementById("crumb-cat").textContent = category.name;
+        document.getElementById("crumb-cat-link").href = `category.html?id=${encodeURIComponent(category.id)}`;
+        const badge = document.getElementById("cat-badge");
+        badge.hidden = false;
+        document.getElementById("cat-badge-icon").textContent = categoryIcon(category);
+        document.getElementById("cat-badge-name").textContent = category.name;
+
+        const related = articles.filter((a) => a.categoryId === category.id && a.id !== article.id).slice(0, 4);
+        if (related.length) {
+          document.getElementById("related-block").hidden = false;
+          document.getElementById("related-list").innerHTML = related.map((a) => `
+            <a class="article-row" href="article.html?id=${encodeURIComponent(a.id)}">
+              <h3>${escapeHTML(a.title)}</h3>
+              <p>${escapeHTML(a.summary || "")}</p>
+            </a>
+          `).join("");
+        }
+      }
+    }
+  </script>
+</body>
+</html>

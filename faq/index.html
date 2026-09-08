@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Help Center — Personalisation Hub</title>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&display=swap">
+  <link rel="stylesheet" href="css/faq.css">
+</head>
+<body>
+  <header class="ph-header">
+    <a class="brand" href="index.html"><span class="dot"></span> Personalisation Hub <span class="help-label">Help Center</span></a>
+  </header>
+
+  <section class="hero">
+    <h1>How can we help?</h1>
+    <p>Search our articles or browse by category below.</p>
+    <div class="search-wrap">
+      <span class="material-symbols-outlined search-icon">search</span>
+      <input type="search" id="faq-search" class="search-box" placeholder="Search for articles..." autocomplete="off">
+      <div class="search-results" id="faq-search-results" hidden></div>
+    </div>
+  </section>
+
+  <main class="wrap">
+    <div class="cat-grid" id="cat-grid"></div>
+    <p class="empty-hint" id="cat-empty" hidden>No categories published yet — add one from backlog-tracker's FAQ Center.</p>
+  </main>
+
+  <footer class="ph-footer">Personalisation Hub Help Center &middot; content managed from <a href="https://backlog-tracker-e4ed2.web.app/">backlog-tracker</a></footer>
+
+  <script type="module">
+    import { fetchCategories, fetchPublishedArticles, escapeHTML, categoryIcon } from "./js/faq-data.js";
+    import { initSearchBox } from "./js/search-box.js";
+
+    initSearchBox();
+
+    const [categories, articles] = await Promise.all([fetchCategories(), fetchPublishedArticles()]);
+    const grid = document.getElementById("cat-grid");
+    if (categories.length === 0) {
+      document.getElementById("cat-empty").hidden = false;
+    } else {
+      grid.innerHTML = categories.map((c) => {
+        const count = articles.filter((a) => a.categoryId === c.id).length;
+        return `
+          <a class="cat-card" href="category.html?id=${encodeURIComponent(c.id)}">
+            <div class="cat-icon"><span class="material-symbols-outlined">${escapeHTML(categoryIcon(c))}</span></div>
+            <h3>${escapeHTML(c.name)}</h3>
+            <p>${escapeHTML(c.description || "")}</p>
+            <div class="cat-count">${count} article${count === 1 ? "" : "s"}</div>
+          </a>
+        `;
+      }).join("");
+    }
+  </script>
+</body>
+</html>

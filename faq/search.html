@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Search results — Personalisation Hub Help Center</title>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&display=swap">
+  <link rel="stylesheet" href="css/faq.css">
+</head>
+<body>
+  <header class="ph-header">
+    <a class="brand" href="index.html"><span class="dot"></span> Personalisation Hub <span class="help-label">Help Center</span></a>
+  </header>
+
+  <section class="hero" style="padding:28px 24px 40px;">
+    <div class="search-wrap">
+      <span class="material-symbols-outlined search-icon">search</span>
+      <input type="search" id="faq-search" class="search-box" placeholder="Search for articles..." autocomplete="off">
+      <div class="search-results" id="faq-search-results" hidden></div>
+    </div>
+  </section>
+
+  <main class="wrap">
+    <p class="breadcrumb"><a href="index.html">Help Center</a> &rsaquo; Search results</p>
+    <h1 id="results-heading" style="font-size:19px;">Search results</h1>
+    <div class="article-list" id="results-list"></div>
+    <p class="empty-hint" id="results-empty" hidden>No articles matched your search.</p>
+  </main>
+
+  <footer class="ph-footer">Personalisation Hub Help Center &middot; content managed from <a href="https://backlog-tracker-e4ed2.web.app/">backlog-tracker</a></footer>
+
+  <script type="module">
+    import { fetchCategories, fetchPublishedArticles, escapeHTML, matchesQuery } from "./js/faq-data.js";
+    import { initSearchBox } from "./js/search-box.js";
+
+    initSearchBox();
+
+    const q = new URLSearchParams(window.location.search).get("q") || "";
+    document.getElementById("faq-search").value = q;
+    const [categories, articles] = await Promise.all([fetchCategories(), fetchPublishedArticles()]);
+    const catName = (id) => (categories.find((c) => c.id === id) || {}).name || "";
+    const matches = articles.filter((a) => matchesQuery(a, q));
+
+    document.getElementById("results-heading").textContent =
+      q ? `${matches.length} result${matches.length === 1 ? "" : "s"} for "${q}"` : "Search results";
+
+    if (matches.length === 0) {
+      document.getElementById("results-empty").hidden = false;
+    } else {
+      document.getElementById("results-list").innerHTML = matches.map((a) => `
+        <a class="article-row" href="article.html?id=${encodeURIComponent(a.id)}">
+          <h3>${escapeHTML(a.title)}</h3>
+          <p>${escapeHTML(catName(a.categoryId))} &middot; ${escapeHTML(a.summary || "")}</p>
+        </a>
+      `).join("");
+    }
+  </script>
+</body>
+</html>
