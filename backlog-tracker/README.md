@@ -15,9 +15,19 @@ There's also a manual, batched counterpart for "I want to add several
 items first, then say the project's ready" instead of one notification per
 card: each project's **⋮ → Notify Claude** button writes a
 `notifyRequestedAt` timestamp onto that project's doc, which a second
-function (`functions/notifyOnProjectReadyForReview`) watches for — it fires
-once and sends everything currently sitting in that project's Backlog
-column, rather than each item separately.
+function (`functions/notifyOnProjectReadyForReview`) watches for.
+
+Unlike the per-item notify (which just posts to a webhook — a Slack
+message someone still has to relay into a Claude conversation, or a
+session's `watch_url`, which only works for the narrow signed protocol the
+Artifact publishing service uses, not a generic receiver), this one closes
+the loop for real: it fires a **Claude Code Routine's API trigger**
+directly (`POST` to `https://api.anthropic.com/v1/claude_code/routines/{id}/fire`
+with a bearer token), which starts a brand new Claude Code session
+immediately — no human needed in between. The Routine itself is created
+and owns its own prompt from `claude.ai/code/routines`, not from this
+repo; this function's only job is to tell it which project and what's
+currently sitting in that project's Backlog column.
 
 ## Isolation from menu-board-demo — by design, not just by folder
 
@@ -48,11 +58,12 @@ backlogItems doc created, status: "backlog"          project doc's notifyRequest
         │  onDocumentCreated                                  │  onDocumentUpdated
         ▼                                                      ▼
 functions/notifyOnBacklogItemCreated          functions/notifyOnProjectReadyForReview
-   (one POST per new item)                       (one POST per project, whole Backlog column)
+   (one POST per new item)                     (one POST per project, whole Backlog column)
         │                                                      │
-        └───────────────────────┬──────────────────────────────┘
-                                 ▼
-                  NOTIFY_WEBHOOK_URL   (Firebase secret — you decide what this points at)
+        ▼                                                      ▼
+  NOTIFY_WEBHOOK_URL                          CLAUDE_ROUTINE_FIRE_URL + CLAUDE_ROUTINE_TOKEN
+  (Slack, a session's watch_url, etc. —       (a Claude Code Routine's API trigger — POSTing
+   still needs a human to relay it)            here starts a real Claude Code session directly)
 ```
 
 Frontend (`public/`) is a plain Firestore-backed board — vanilla JS,
@@ -264,9 +275,50 @@ What `NOTIFY_WEBHOOK_URL` points at determines how automatic this really is:
   Wakes that specific session directly with no human in the loop, but the
   URL is tied to one running session and needs re-registering (a fresh
   `watch_url` call) whenever that session ends.
-- **Your own small relay** that calls the Claude API directly, or fires a
-  Routine — the most durable option (survives any one session ending),
-  but it's code you'd write and host yourself; not included here.
+- **Firing a Claude Code Routine's API trigger directly** — the most
+  durable, no-human-relay option. `notifyOnProjectReadyForReview` already
+  does this (see below); point `notifyOnBacklogItemCreated`'s
+  `NOTIFY_WEBHOOK_URL` at the same fire URL too if you want every single
+  new item, not just a manual "Notify Claude" click, to trigger a fresh
+  session on its own.
+
+### The `CLAUDE_ROUTINE_FIRE_URL` / `CLAUDE_ROUTINE_TOKEN` secrets
+
+`functions/index.js`'s `notifyOnProjectReadyForReview` (the **⋮ → Notify
+Claude** button's function) reads two Firebase secrets instead of a plain
+webhook URL, because firing a Routine needs an authenticated `POST`, not
+just a URL:
+
+- `CLAUDE_ROUTINE_FIRE_URL` — `https://api.anthropic.com/v1/claude_code/routines/{routine_id}/fire`,
+  where `{routine_id}` is the Routine's own trigger id (starts `trig_`).
+- `CLAUDE_ROUTINE_TOKEN` — the bearer token that Routine's API trigger
+  generated. **Treat this exactly like a password** — anyone holding it can
+  fire a real Claude Code session against this repo. Never commit it,
+  paste it somewhere public, or log it.
+
+To set this up:
+
+1. Go to `claude.ai/code/routines` and create a Routine whose prompt does
+   what you want run — e.g. "investigate and fix every item in this
+   project's Backlog column, note what changed, move each to Ready for
+   Testing, then report back" (this is what the Routine backing this
+   feature was actually given).
+2. Add an **API trigger** to that Routine and generate its token. Copy the
+   fire URL (it includes the Routine's own trigger id) and the token.
+3. Add both as GitHub repo secrets named exactly `CLAUDE_ROUTINE_FIRE_URL`
+   and `CLAUDE_ROUTINE_TOKEN` (Settings → Secrets and variables → Actions →
+   New repository secret). The workflow syncs both into Firebase Secret
+   Manager on every deploy, same pattern as `NOTIFY_WEBHOOK_URL`.
+4. If either secret isn't set, the function logs a warning and does
+   nothing — clicking the button still writes `notifyRequestedAt` to
+   Firestore, it just won't fire anything until both secrets exist.
+
+This is a **research-preview API** (Anthropic's own description of it) —
+the exact endpoint path and the `anthropic-beta` header
+(`experimental-cc-routine-2026-04-01`) the function sends may change. If
+firing starts failing with an auth or version-related error after
+previously working, check Anthropic's current Claude Code Routines docs
+for what changed.
 
 ## FAQ / Help Center
 

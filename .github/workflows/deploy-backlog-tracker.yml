@@ -38,6 +38,19 @@ jobs:
           fi
           printf '%s' "$NOTIFY_WEBHOOK_URL" | npx firebase-tools@13 functions:secrets:set NOTIFY_WEBHOOK_URL --project backlog-tracker-e4ed2 --data-file - --force
 
+      - name: Sync CLAUDE_ROUTINE_FIRE_URL / CLAUDE_ROUTINE_TOKEN into Firebase Secret Manager
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/firebase-sa.json
+          CLAUDE_ROUTINE_FIRE_URL: ${{ secrets.CLAUDE_ROUTINE_FIRE_URL }}
+          CLAUDE_ROUTINE_TOKEN: ${{ secrets.CLAUDE_ROUTINE_TOKEN }}
+        run: |
+          if [ -z "$CLAUDE_ROUTINE_FIRE_URL" ] || [ -z "$CLAUDE_ROUTINE_TOKEN" ]; then
+            echo "CLAUDE_ROUTINE_FIRE_URL/CLAUDE_ROUTINE_TOKEN repo secrets not set, skipping"
+            exit 0
+          fi
+          printf '%s' "$CLAUDE_ROUTINE_FIRE_URL" | npx firebase-tools@13 functions:secrets:set CLAUDE_ROUTINE_FIRE_URL --project backlog-tracker-e4ed2 --data-file - --force
+          printf '%s' "$CLAUDE_ROUTINE_TOKEN" | npx firebase-tools@13 functions:secrets:set CLAUDE_ROUTINE_TOKEN --project backlog-tracker-e4ed2 --data-file - --force
+
       - name: Install migration script dependencies
         working-directory: backlog-tracker/scripts
         run: npm install
