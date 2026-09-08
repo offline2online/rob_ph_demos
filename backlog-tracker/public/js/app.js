@@ -163,12 +163,7 @@ function optionsMenuHTML(project) {
   const hasReq = !!(project.requirementsMd && project.requirementsMd.trim());
   const ifaces = interfacesForProject(pid);
 
-  const backlogCount = backlogCountForProject(pid);
   let html = `
-    <button type="button" class="options-menu-item project-notify-btn${backlogCount ? "" : " options-menu-item-empty"}" data-project-id="${escapeHTML(pid)}">
-      Notify Claude <span class="options-menu-count">${backlogCount}</span>
-      <span class="options-menu-sub">sends everything currently in Backlog</span>
-    </button>
     <button type="button" class="options-menu-item project-archive-btn" data-project-id="${escapeHTML(pid)}">
       Archived tickets <span class="options-menu-count">${archivedCount}</span>
     </button>
@@ -190,6 +185,17 @@ function optionsMenuHTML(project) {
     </button>`;
   }
   return html;
+}
+
+// Moved out of the "⋮" options menu into its own header CTA, before
+// + New backlog item — buried in the menu, people weren't finding it once
+// they'd actually added several items and wanted to send them off.
+function notifyClaudeButtonHTML(project) {
+  const pid = project.id;
+  const backlogCount = backlogCountForProject(pid);
+  return `<button type="button" class="btn-ghost notify-claude-btn project-notify-btn${backlogCount ? "" : " options-menu-item-empty"}" data-project-id="${escapeHTML(pid)}">
+    Notify Claude <span class="options-menu-count">${backlogCount}</span>
+  </button>`;
 }
 
 function projectSectionHTML(project) {
@@ -223,6 +229,7 @@ function projectSectionHTML(project) {
           ${nameRow}
         </div>
         <div class="project-header-actions">
+          ${notifyClaudeButtonHTML(project)}
           <button class="btn-primary new-item-btn" data-project-id="${escapeHTML(project.id)}" type="button">+ New backlog item</button>
           <div class="project-options">
             <button type="button" class="icon-btn project-options-btn" data-project-id="${escapeHTML(project.id)}" aria-haspopup="true" aria-label="More options for this project">&#8942;</button>
