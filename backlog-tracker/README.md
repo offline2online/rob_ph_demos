@@ -11,6 +11,14 @@ tell Claude in chat to go look. This app closes that gap: a Cloud Function
 (`functions/notifyOnBacklogItemCreated`) fires automatically the instant a
 document is created in Firestore with `status: "backlog"`.
 
+There's also a manual, batched counterpart for "I want to add several
+items first, then say the project's ready" instead of one notification per
+card: each project's **⋮ → Notify Claude** button writes a
+`notifyRequestedAt` timestamp onto that project's doc, which a second
+function (`functions/notifyOnProjectReadyForReview`) watches for — it fires
+once and sends everything currently sitting in that project's Backlog
+column, rather than each item separately.
+
 ## Isolation from menu-board-demo — by design, not just by folder
 
 This is a genuinely separate project, not a subfolder sharing infrastructure:
@@ -36,13 +44,15 @@ itself — plain files, no build coupling, no shared runtime.
 ## Architecture
 
 ```
-backlogItems (Firestore, this project's own database)
-        │  onDocumentCreated
-        ▼
-functions/notifyOnBacklogItemCreated
-        │  POST (JSON)
-        ▼
-NOTIFY_WEBHOOK_URL   (Firebase secret — you decide what this points at)
+backlogItems doc created, status: "backlog"          project doc's notifyRequestedAt bumped
+        │  onDocumentCreated                                  │  onDocumentUpdated
+        ▼                                                      ▼
+functions/notifyOnBacklogItemCreated          functions/notifyOnProjectReadyForReview
+   (one POST per new item)                       (one POST per project, whole Backlog column)
+        │                                                      │
+        └───────────────────────┬──────────────────────────────┘
+                                 ▼
+                  NOTIFY_WEBHOOK_URL   (Firebase secret — you decide what this points at)
 ```
 
 Frontend (`public/`) is a plain Firestore-backed board — vanilla JS,

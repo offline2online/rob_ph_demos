@@ -145,6 +145,10 @@ function archivedCountForProject(pid) {
   return allItems.filter((i) => (i.projectId || GENERAL_PROJECT_ID) === pid && i.status === "archived").length;
 }
 
+function backlogCountForProject(pid) {
+  return items.filter((i) => (i.projectId || GENERAL_PROJECT_ID) === pid && i.status === "backlog").length;
+}
+
 function interfacesForProject(pid) {
   return interfaces.filter((f) => Array.isArray(f.projectIds) && f.projectIds.includes(pid));
 }
@@ -159,7 +163,12 @@ function optionsMenuHTML(project) {
   const hasReq = !!(project.requirementsMd && project.requirementsMd.trim());
   const ifaces = interfacesForProject(pid);
 
+  const backlogCount = backlogCountForProject(pid);
   let html = `
+    <button type="button" class="options-menu-item project-notify-btn${backlogCount ? "" : " options-menu-item-empty"}" data-project-id="${escapeHTML(pid)}">
+      Notify Claude <span class="options-menu-count">${backlogCount}</span>
+      <span class="options-menu-sub">sends everything currently in Backlog</span>
+    </button>
     <button type="button" class="options-menu-item project-archive-btn" data-project-id="${escapeHTML(pid)}">
       Archived tickets <span class="options-menu-count">${archivedCount}</span>
     </button>
@@ -367,6 +376,21 @@ async function addProject(name) {
   return ref.id;
 }
 
+// Manual, batched counterpart to the automatic per-item notify: writes a
+// fresh timestamp the notifyOnProjectReadyForReview Cloud Function watches
+// for (see ../functions/index.js), which then sends everything currently
+// in this project's Backlog column in one message — for "I've added
+// several items, now go look" instead of one notification per card.
+async function requestNotify(pid) {
+  const count = backlogCountForProject(pid);
+  if (count === 0) {
+    alert("Nothing in Backlog for this project yet — add an item first.");
+    return;
+  }
+  await setDoc(doc(db, "projects", pid), { notifyRequestedAt: serverTimestamp() }, { merge: true });
+  alert(`Notify requested for ${count} backlog item${count === 1 ? "" : "s"}. This only takes effect once NOTIFY_WEBHOOK_URL is deployed for backlog-tracker's Cloud Functions (see backlog-tracker/README.md) — until then this just records the request.`);
+}
+
 async function setProjectName(id, name) {
   const trimmed = (name || "").trim();
   if (!trimmed) return false;
@@ -428,6 +452,8 @@ projectsRoot.addEventListener("click", (e) => {
   if (renameBtn) { startEditingProjectName(renameBtn.dataset.projectId); return; }
   const newItemBtn = e.target.closest(".new-item-btn");
   if (newItemBtn) { openForm(newItemBtn.dataset.projectId); return; }
+  const notifyBtn = e.target.closest(".project-notify-btn");
+  if (notifyBtn) { closeAllOptionMenus(); requestNotify(notifyBtn.dataset.projectId); return; }
   const archiveNavBtn = e.target.closest(".project-archive-btn");
   if (archiveNavBtn) { closeAllOptionMenus(); openArchivePage(archiveNavBtn.dataset.projectId); return; }
   const docsNavBtn = e.target.closest(".project-docs-btn");
