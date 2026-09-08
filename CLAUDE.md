@@ -33,9 +33,20 @@ tied to the other project's release cadence.
   between the two. It lives outside both project folders on purpose: it's
   shared space neither project owns unilaterally. Any change to the contract
   (not just to one project's own internals) should be made with both areas in
-  mind. See that file for the actual contract (attribute keys, token syntax,
-  versioning rules).
-- Each has its own `REQUIREMENTS.md` in its own folder.
+  mind. See that file for the actual contract (attribute envelope, deadline
+  model, trust zones, versioning rules), grounded in the *Real-Time
+  Personalised Surface Architecture Specification v1.2*.
+- Each has its own `REQUIREMENTS.md` in its own folder, also grounded in
+  that spec (visitor-profile = spec System One; experience-templates =
+  spec Systems Two/Three).
+- **The backlog tracker itself now also carries this** (see
+  `backlog-tracker/` below): each project's `REQUIREMENTS.md` content is
+  mirrored into that project's Firestore doc (`requirementsMd` field,
+  editable from its Docs page), and the interface contract is additionally
+  maintained as a live `interfaces` collection record spanning both
+  projects — editable from either project's Docs page, not just as a repo
+  file. Keep the repo file and the live record in sync; treat a divergence
+  as a bug in whichever is stale.
 
 **On the Prototype Backlog board** (the live `backlog-tracker` app, not the
 retired Artifact — see "Prototype Backlog" below), these are two separate
@@ -158,6 +169,31 @@ instant, so there's no excuse for the board drifting from reality.
 - New items no longer take a title or category up front — just a
   description (typed or dictated); a short title is auto-generated and the
   category best-guessed (`suggestCategory()`), same spirit as before.
+
+### Docs page: per-project requirements + interfaces between projects
+
+Each project header has a **Docs (N)** button (N = its interface count).
+It opens a page with two blocks:
+
+- **Requirements** — free-text markdown, stored on that project's own
+  Firestore doc (`requirementsMd`). This is the board-native home for a
+  project's `REQUIREMENTS.md` — keep both in sync when either changes.
+- **Interfaces with other projects** — a top-level `interfaces` Firestore
+  collection, independent of any one project: each doc is
+  `{name, projectIds: [idA, idB], contentMd, createdAt, updatedAt}`, visible
+  and editable from **either** project's Docs page. Use this for any
+  maintained contract between two projects on the board (not just Live
+  Visitor Profile ↔ Experience Templates) — e.g. attribute/token contracts,
+  shared data shapes, anything one project's changes could silently break
+  for the other.
+- **New project** can optionally define one interface with an existing
+  project at creation time (a checkbox in the New Project modal) — skip it
+  and add interfaces later from the Docs page instead; neither path is more
+  "correct."
+
+When a project's `shared/interface-contract.md`-style repo file changes,
+mirror the change into its `interfaces` doc here (via the Docs page or a
+direct Firestore write), and vice versa — don't let the two drift.
 
 ### Archiving Merged to Main (Live) cards
 
