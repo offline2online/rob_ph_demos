@@ -7,6 +7,19 @@ on:
       - 'backlog-tracker/**'
   workflow_dispatch: {}
 
+# Several PRs merging within seconds of each other (a common shape for this
+# repo — the Notify Claude Routine and its human reimplementations both
+# tend to land a batch of small fixes back to back) used to fire one deploy
+# run per push, all racing to update the same Cloud Functions at once and
+# failing with GCP's "409 unable to queue the operation". Grouping runs by
+# workflow+branch and cancelling a still-running/queued one when a newer
+# push arrives means a burst of N merges now completes exactly one deploy —
+# for the last commit, which already contains every change in the burst —
+# instead of N racing runs where only one (not necessarily the last) wins.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
@@ -67,10 +80,18 @@ jobs:
           GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/firebase-sa.json
         run: node seed-faq-data.js
 
+      # --force is required here, not optional: removing a Cloud Function
+      # from source (as happened when notifyOnBacklogItemCreated was
+      # deleted) makes the CLI stop and ask "delete this function too?" —
+      # a prompt --non-interactive can't answer, so without --force this
+      # step aborts outright ("Aborting because deletion cannot proceed in
+      # non-interactive mode") on every deploy after a function removal,
+      # taking every other change in the same push down with it. --force
+      # skips that (and every other) confirmation prompt.
       - name: Deploy to Firebase (hosting, functions, firestore rules)
         env:
           GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/firebase-sa.json
-        run: npx firebase-tools@13 deploy --only hosting,functions,firestore:rules --project backlog-tracker-e4ed2 --non-interactive
+        run: npx firebase-tools@13 deploy --only hosting,functions,firestore:rules --project backlog-tracker-e4ed2 --non-interactive --force
 
       - name: Set Artifact Registry cleanup policy for gcf-artifacts
         continue-on-error: true
