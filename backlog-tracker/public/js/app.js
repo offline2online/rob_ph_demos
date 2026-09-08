@@ -13,7 +13,7 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-app.js";
 import {
   getFirestore, collection, addDoc, updateDoc, deleteDoc, setDoc, doc,
-  onSnapshot, query, orderBy, serverTimestamp,
+  onSnapshot, query, orderBy, serverTimestamp, writeBatch,
 } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore.js";
 import { firebaseConfig } from "./firebase-config.js";
 
@@ -22,6 +22,7 @@ const db = getFirestore(app);
 const itemsRef = collection(db, "backlogItems");
 const projectsRef = collection(db, "projects");
 const interfacesRef = collection(db, "interfaces");
+const deploymentsRef = collection(db, "deployments");
 
 const COLUMNS = [
   { key: "backlog", label: "Backlog", headClass: "backlog" },
@@ -49,6 +50,7 @@ let items = [];
 let projects = [];
 let projectsLoaded = false;
 let interfaces = [];
+let deployments = [];
 let editingProjectId = null;
 
 // ── Docs page state (per-project requirements + interfaces with other
@@ -62,6 +64,17 @@ let editingInterfaceId = null; // null while adding, an id while editing
 let archiveProjectId = null;
 let archiveSort = { field: "date", dir: "desc" };
 let archiveFilters = { type: "", category: "", search: "" };
+
+// ── Deployments page state ─────────────────────────────────────────────
+// A deployment groups several backlogItems meant to ship to main together
+// — usually all fixed in one Notify Claude Routine fire, but can also be
+// hand-picked from the board. Members carry a deploymentId pointing at a
+// "deployments" doc; the batch "Merge all to main" action only unlocks
+// once every member has individually reached ready-to-publish (Live on
+// Feature Branch) — it's board bookkeeping (flips every member's status at
+// once), not something that drives the underlying GitHub PR merges itself.
+let deploymentsProjectId = null;
+let editingDeploymentId = null; // null while creating, an id while editing membership
 
 function colListId(pid, colKey) { return `col-${pid}-${colKey}`; }
 
@@ -124,6 +137,11 @@ function cardHTML(item) {
   const rightBtn = canRight
     ? `<button type="button" class="icon-btn move-btn" data-id="${item.id}" data-dir="1" title="Move forward">&rarr;</button>`
     : "";
+  // Ties this card back to whichever other tickets are meant to ship
+  // alongside it — see the Deployments page for the full group + progress.
+  const deploymentBadge = item.deploymentId
+    ? `<span class="deployment-badge" title="Ships together with the rest of this deployment">&#128640; ${escapeHTML(deploymentLabel(item.deploymentId))}</span>`
+    : "";
 
   return `
     <article class="card" data-id="${item.id}">
@@ -133,6 +151,7 @@ function cardHTML(item) {
       </div>
       <h3 class="card-title">${escapeHTML(item.title)}</h3>
       <p class="card-desc">${escapeHTML(item.desc)}</p>
+      ${deploymentBadge}
       <div class="card-footer">
         <span class="card-cat">${escapeHTML(item.category || "Uncategorised")}</span>
         <div class="card-move">${archiveBtn}${deleteBtn}</div>
@@ -162,8 +181,12 @@ function optionsMenuHTML(project) {
   const archivedCount = archivedCountForProject(pid);
   const hasReq = !!(project.requirementsMd && project.requirementsMd.trim());
   const ifaces = interfacesForProject(pid);
+  const deploymentCount = deploymentsForProject(pid).length;
 
   let html = `
+    <button type="button" class="options-menu-item project-deployments-btn" data-project-id="${escapeHTML(pid)}">
+      Deployments <span class="options-menu-count">${deploymentCount}</span>
+    </button>
     <button type="button" class="options-menu-item project-archive-btn" data-project-id="${escapeHTML(pid)}">
       Archived tickets <span class="options-menu-count">${archivedCount}</span>
     </button>
@@ -339,6 +362,7 @@ onSnapshot(query(itemsRef, orderBy("createdAt", "desc")), (snap) => {
   render();
   if (archiveProjectId) renderArchivePage();
   if (archivedProjectsPage && !archivedProjectsPage.hidden) renderArchivedProjectsPage();
+  if (deploymentsProjectId) renderDeploymentsPage();
 }, (err) => {
   console.error("backlog-tracker: items listener error", err);
 });
@@ -360,6 +384,14 @@ onSnapshot(interfacesRef, (snap) => {
   if (docsProjectId) renderDocsPage();
 }, (err) => {
   console.error("backlog-tracker: interfaces listener error", err);
+});
+
+onSnapshot(deploymentsRef, (snap) => {
+  deployments = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  render();
+  if (deploymentsProjectId) renderDeploymentsPage();
+}, (err) => {
+  console.error("backlog-tracker: deployments listener error", err);
 });
 
 async function addItem(projectId, title, desc, type, category) {
@@ -463,6 +495,82 @@ async function setProjectFaqAutoFlag(id, enabled) {
   await setDoc(doc(db, "projects", id), { faqAutoFlagOnLive: enabled, updatedAt: serverTimestamp() }, { merge: true });
 }
 
+// ── Deployments — grouping several backlogItems to ship to main together ──
+function deploymentsForProject(pid) {
+  return deployments.filter((d) => d.projectId === pid);
+}
+function itemsForDeployment(deploymentId) {
+  return allItems.filter((i) => i.deploymentId === deploymentId && i.status !== "archived");
+}
+function deploymentLabel(deploymentId) {
+  const d = deployments.find((d) => d.id === deploymentId);
+  return d ? d.label : "";
+}
+// Grouping candidates: anything actually in flight, not already spoken for
+// by another deployment, and not yet done — a project's whole point is
+// "ship these together," so a card already merged/archived, or already in
+// a different group, doesn't belong in the picker for a new one.
+function groupableItemsForProject(pid) {
+  return items.filter((i) =>
+    (i.projectId || GENERAL_PROJECT_ID) === pid &&
+    i.status !== "published-live" &&
+    !i.deploymentId
+  );
+}
+
+async function createDeployment(projectId, label, itemIds) {
+  const trimmed = (label || "").trim();
+  if (!trimmed || itemIds.length === 0) return;
+  const ref = await addDoc(deploymentsRef, {
+    projectId, label: trimmed, createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
+  });
+  const batch = writeBatch(db);
+  itemIds.forEach((id) => batch.update(doc(db, "backlogItems", id), { deploymentId: ref.id }));
+  await batch.commit();
+}
+
+async function renameDeployment(id, label) {
+  const trimmed = (label || "").trim();
+  if (!trimmed) return;
+  await setDoc(doc(db, "deployments", id), { label: trimmed, updatedAt: serverTimestamp() }, { merge: true });
+}
+
+// Add/remove membership in one call so the edit modal's Save button is a
+// single round trip regardless of how many checkboxes changed.
+async function setDeploymentMembership(deploymentId, addIds, removeIds) {
+  const batch = writeBatch(db);
+  addIds.forEach((id) => batch.update(doc(db, "backlogItems", id), { deploymentId }));
+  removeIds.forEach((id) => batch.update(doc(db, "backlogItems", id), { deploymentId: null }));
+  await batch.commit();
+}
+
+// Deleting a group is just ungrouping — its tickets aren't touched beyond
+// clearing the link back to it, never deleted or moved.
+async function deleteDeployment(id) {
+  const memberIds = itemsForDeployment(id).map((i) => i.id);
+  const batch = writeBatch(db);
+  memberIds.forEach((itemId) => batch.update(doc(db, "backlogItems", itemId), { deploymentId: null }));
+  batch.delete(doc(db, "deployments", id));
+  await batch.commit();
+}
+
+// The batch action this whole feature exists for: once every member has
+// individually been confirmed "Live on Feature Branch" (ready-to-publish —
+// the same "someone actually tested it" gate a single card's own "Confirm
+// live on branch" button already enforces), flip them all to
+// published-live together in one write. This is board bookkeeping only —
+// it does not itself merge the underlying GitHub PRs; whoever's driving
+// the actual merges still does that (ideally back-to-back, now that they
+// know from this page exactly which PRs are meant to land together).
+async function mergeDeployment(id) {
+  const members = itemsForDeployment(id);
+  if (members.length === 0 || !members.every((i) => i.status === "ready-to-publish")) return;
+  const batch = writeBatch(db);
+  members.forEach((i) => batch.update(doc(db, "backlogItems", i.id), { status: "published-live", updatedAt: serverTimestamp() }));
+  batch.update(doc(db, "deployments", id), { mergedAt: serverTimestamp(), updatedAt: serverTimestamp() });
+  await batch.commit();
+}
+
 // An interface is a maintained contract document shared between exactly
 // two projects — the backlog-tracker-native equivalent of a shared
 // markdown file, so it survives independently of either project's repo
@@ -519,6 +627,8 @@ projectsRoot.addEventListener("click", (e) => {
   if (archiveNavBtn) { closeAllOptionMenus(); openArchivePage(archiveNavBtn.dataset.projectId); return; }
   const docsNavBtn = e.target.closest(".project-docs-btn");
   if (docsNavBtn) { closeAllOptionMenus(); openDocsPage(docsNavBtn.dataset.projectId); return; }
+  const deploymentsNavBtn = e.target.closest(".project-deployments-btn");
+  if (deploymentsNavBtn) { closeAllOptionMenus(); openDeploymentsPage(deploymentsNavBtn.dataset.projectId); return; }
   const ifaceOpenBtn = e.target.closest(".interface-open-btn");
   if (ifaceOpenBtn) { closeAllOptionMenus(); openInterfaceModal(ifaceOpenBtn.dataset.interfaceId); return; }
   const ifaceAddBtn = e.target.closest(".interface-add-btn");
@@ -830,6 +940,145 @@ document.getElementById("archived-projects-back-btn").addEventListener("click", 
 document.getElementById("archived-projects-table-body").addEventListener("click", (e) => {
   const btn = e.target.closest(".restore-project-btn");
   if (btn) restoreProject(btn.dataset.projectId);
+});
+
+// ── Deployments page (per-project — grouping tickets meant to ship together,
+// with a progress checklist and a batch "Merge all to main" that only
+// unlocks once every member is individually confirmed Live on Feature
+// Branch) ──────────────────────────────────────────────────────────────
+const deploymentsPage = document.getElementById("deployments-page");
+
+function openDeploymentsPage(pid) {
+  deploymentsProjectId = pid;
+  document.getElementById("projects-root").hidden = true;
+  deploymentsPage.hidden = false;
+  renderDeploymentsPage();
+}
+function closeDeploymentsPage() {
+  deploymentsProjectId = null;
+  deploymentsPage.hidden = true;
+  document.getElementById("projects-root").hidden = false;
+}
+
+function columnLabel(statusKey) {
+  const col = COLUMNS.find((c) => c.key === statusKey);
+  return col ? col.label : statusKey;
+}
+
+function deploymentMemberRowHTML(item) {
+  return `<li class="deployment-member">
+    <span class="deployment-member-title">${escapeHTML(item.title)}</span>
+    <span class="deployment-member-status">${escapeHTML(columnLabel(item.status))}</span>
+  </li>`;
+}
+
+function deploymentRowHTML(dep) {
+  const members = itemsForDeployment(dep.id);
+  const confirmedCount = members.filter((i) => i.status === "ready-to-publish" || i.status === "published-live").length;
+  const allReady = members.length > 0 && members.every((i) => i.status === "ready-to-publish");
+  const isMerged = !!dep.mergedAt;
+  const mergedDate = isMerged && dep.mergedAt.toDate ? dep.mergedAt.toDate().toLocaleDateString() : "";
+
+  const actionHTML = isMerged
+    ? `<span class="deployment-merged-badge">&#10003; Merged${mergedDate ? ` ${mergedDate}` : ""}</span>`
+    : `<button type="button" class="btn-primary deployment-merge-btn" data-id="${dep.id}" ${allReady ? "" : "disabled"}>Merge all to main</button>`;
+
+  return `
+    <div class="deployment-card" data-id="${dep.id}">
+      <div class="deployment-card-header">
+        <h3>${escapeHTML(dep.label)}</h3>
+        <div class="deployment-card-actions">
+          <button type="button" class="icon-btn deployment-edit-btn" data-id="${dep.id}" title="Edit">&#9998;</button>
+          <button type="button" class="icon-btn deployment-delete-btn" data-id="${dep.id}" title="Ungroup">&times;</button>
+        </div>
+      </div>
+      <p class="deployment-progress">${confirmedCount}/${members.length} confirmed Live on Feature Branch</p>
+      <ul class="deployment-member-list">${members.map(deploymentMemberRowHTML).join("") || '<li class="deployment-member-empty">No tickets in this group.</li>'}</ul>
+      ${actionHTML}
+    </div>`;
+}
+
+function renderDeploymentsPage() {
+  if (!deploymentsProjectId) return;
+  document.getElementById("deployments-page-project-name").textContent = projectName(deploymentsProjectId);
+  const rows = deploymentsForProject(deploymentsProjectId);
+  document.getElementById("deployments-list").innerHTML = rows.length
+    ? rows.map(deploymentRowHTML).join("")
+    : '<p class="interface-row-empty">No deployments grouped yet — use "+ New deployment" to link tickets that should ship together.</p>';
+}
+
+document.getElementById("deployments-back-btn").addEventListener("click", closeDeploymentsPage);
+document.getElementById("deployments-add-btn").addEventListener("click", () => openDeploymentModal(null));
+document.getElementById("deployments-list").addEventListener("click", (e) => {
+  const mergeBtn = e.target.closest(".deployment-merge-btn");
+  if (mergeBtn && !mergeBtn.disabled) { mergeDeployment(mergeBtn.dataset.id); return; }
+  const editBtn = e.target.closest(".deployment-edit-btn");
+  if (editBtn) { openDeploymentModal(editBtn.dataset.id); return; }
+  const delBtn = e.target.closest(".deployment-delete-btn");
+  if (delBtn) {
+    if (confirm("Ungroup this deployment? Its tickets stay exactly as they are, just no longer linked together.")) {
+      deleteDeployment(delBtn.dataset.id);
+    }
+  }
+});
+
+// ── Deployment create/edit modal — shared by "+ New deployment" and each
+// group's own edit icon; Save renames (if needed) and reconciles
+// membership in one round trip regardless of what changed. ─────────────
+const dpBackdrop = document.getElementById("dp-backdrop");
+const dpLabelInput = document.getElementById("dp-label-input");
+const dpItemsList = document.getElementById("dp-items-list");
+
+function openDeploymentModal(deploymentId) {
+  editingDeploymentId = deploymentId;
+  const dep = deploymentId ? deployments.find((d) => d.id === deploymentId) : null;
+  document.getElementById("dp-title").textContent = dep ? "Edit deployment" : "New deployment";
+  dpLabelInput.value = dep ? dep.label : `Deploy #${deploymentsForProject(deploymentsProjectId).length + 1}`;
+
+  const currentMembers = dep ? itemsForDeployment(dep.id) : [];
+  const currentMemberIds = currentMembers.map((i) => i.id);
+  // Eligible = groupable tickets in this project, plus whatever's already
+  // in this group (so editing a group never silently drops a member just
+  // because some other field changed underneath it).
+  const eligible = groupableItemsForProject(deploymentsProjectId)
+    .concat(currentMembers)
+    .filter((item, idx, arr) => arr.findIndex((i) => i.id === item.id) === idx);
+
+  dpItemsList.innerHTML = eligible.length
+    ? eligible.map((item) => `
+        <label class="dp-item-row">
+          <input type="checkbox" class="dp-item-checkbox" value="${escapeHTML(item.id)}" ${currentMemberIds.includes(item.id) ? "checked" : ""}>
+          <span>${escapeHTML(item.title)} <span class="options-menu-sub">(${escapeHTML(columnLabel(item.status))})</span></span>
+        </label>`).join("")
+    : '<p class="interface-row-empty">No eligible tickets — everything in this project is either already Merged to Main or already in another deployment.</p>';
+
+  dpBackdrop.hidden = false;
+  dpLabelInput.focus();
+}
+function closeDeploymentModal() {
+  dpBackdrop.hidden = true;
+  editingDeploymentId = null;
+}
+
+document.getElementById("dp-close").addEventListener("click", closeDeploymentModal);
+document.getElementById("dp-cancel").addEventListener("click", closeDeploymentModal);
+document.getElementById("dp-submit").addEventListener("click", async () => {
+  const label = dpLabelInput.value;
+  const checked = Array.from(dpItemsList.querySelectorAll(".dp-item-checkbox:checked")).map((c) => c.value);
+  if (!label.trim() || checked.length === 0) {
+    alert("Give the deployment a name and select at least one ticket.");
+    return;
+  }
+  if (editingDeploymentId) {
+    const currentMemberIds = itemsForDeployment(editingDeploymentId).map((i) => i.id);
+    const addIds = checked.filter((id) => !currentMemberIds.includes(id));
+    const removeIds = currentMemberIds.filter((id) => !checked.includes(id));
+    await renameDeployment(editingDeploymentId, label);
+    if (addIds.length || removeIds.length) await setDeploymentMembership(editingDeploymentId, addIds, removeIds);
+  } else {
+    await createDeployment(deploymentsProjectId, label, checked);
+  }
+  closeDeploymentModal();
 });
 
 // ── Docs page (per-project requirements + interfaces with other projects) ─

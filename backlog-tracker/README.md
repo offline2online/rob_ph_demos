@@ -247,6 +247,32 @@ deploy each piece — at minimum:
 If the workflow's deploy step fails with a permissions/IAM error, that's
 almost always a role missing here, not a bug in the workflow itself.
 
+### Merging several PRs at once — the deploy concurrency group, and the board's Deployments page
+
+Merging multiple PRs within seconds of each other used to fire one deploy
+run per push, all racing to update the same Cloud Functions at once — GCP
+rejects the losers with `409 unable to queue the operation`. The workflow's
+`concurrency` block (keyed on `${{ github.workflow }}-${{ github.ref }}`,
+`cancel-in-progress: true`) fixes the mechanical race: a burst of N merges
+now completes exactly one deploy, for the newest commit, instead of N
+racing runs.
+
+That only fixes the deploy pipeline, though — it doesn't tell you *which*
+PRs were meant to land together in the first place, especially when the
+Notify Claude Routine fixes several backlog items in one fire and opens
+several PRs at once. For that, see the board's own **Deployments** page
+(per project, via **⋮ → Deployments** — full behavior in `REQUIREMENTS.md`
+under "Functional requirements — the board"): it groups those tickets,
+shows a live checklist of which ones have actually been confirmed "Live on
+Feature Branch," and only unlocks a single "Merge all to main" button once
+every one of them is ready — so the person actually merging the PRs on
+GitHub has one place to see the whole batch and merge it together, rather
+than merging each PR the moment its own card looks ready with no idea
+whether the rest of its batch is done. That button is board bookkeeping
+only (it flips Firestore status, it doesn't call the GitHub API) — you
+still merge the actual PRs yourself, this just tells you when the whole
+batch is truly ready to.
+
 ### Cleaning up old Cloud Build/Artifact Registry images
 
 Every functions deploy leaves a build image behind in the `gcf-artifacts`

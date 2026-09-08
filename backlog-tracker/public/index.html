@@ -205,6 +205,37 @@
       </div>
     </section>
 
+    <section class="docs-page" id="deployments-page" hidden>
+      <div class="docs-page-header">
+        <button type="button" class="btn-ghost" id="deployments-back-btn">&larr; Back to board</button>
+        <h2>Deployments — <span id="deployments-page-project-name"></span></h2>
+      </div>
+      <p class="field-hint">Group tickets that should ship to main together — usually everything the Notify Claude Routine fixed in one fire. Once every ticket in a group is individually confirmed "Live on Feature Branch", the group's own Merge all to main button unlocks.</p>
+      <div class="form-row" style="justify-content:flex-end;">
+        <button type="button" class="btn-primary" id="deployments-add-btn">+ New deployment</button>
+      </div>
+      <div id="deployments-list"></div>
+    </section>
+
+    <div class="modal-backdrop" id="dp-backdrop" hidden>
+      <div class="modal-panel" role="dialog" aria-modal="true" aria-labelledby="dp-title">
+        <div class="modal-header">
+          <h2 id="dp-title">New deployment</h2>
+          <button type="button" class="modal-close" id="dp-close" aria-label="Close">&times;</button>
+        </div>
+        <label class="field-label" for="dp-label-input">Name</label>
+        <input type="text" id="dp-label-input" maxlength="120" placeholder="e.g. Deploy #1">
+        <label class="field-label">Tickets in this deployment</label>
+        <div id="dp-items-list" class="dp-items-list"></div>
+        <div class="form-row" style="justify-content:flex-end;">
+          <div class="form-actions">
+            <button type="button" class="btn-ghost" id="dp-cancel">Cancel</button>
+            <button type="button" class="btn-primary" id="dp-submit">Save deployment</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <div class="modal-backdrop" id="fa-backdrop" hidden>
       <div class="modal-panel modal-panel-wide" role="dialog" aria-modal="true" aria-labelledby="fa-title">
         <div class="modal-header">
