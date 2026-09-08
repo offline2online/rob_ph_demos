@@ -810,6 +810,15 @@ let listening = false;
 // asked for (clicking the mic again, closing the form, or submitting), so
 // onend below knows whether to silently restart or really stop.
 let stopRequested = false;
+// Counts consecutive auto-restarts (see onend below) that produced not one
+// onresult callback — i.e. the mic looks like it's listening but nothing is
+// ever actually being heard, as opposed to a normal pause between sentences
+// (which still restarts, but onresult fires again once speech resumes and
+// clears this back to 0). Without this, a genuinely broken capture would
+// now restart silently forever with zero feedback, which is worse than the
+// old ~10s cutoff — at least that was visible. After a few silent restarts
+// in a row this gives up for real and says so.
+let silentRestartStreak = 0;
 
 function showMicError(msg) {
   const el = document.getElementById("ni-mic-error");
@@ -874,7 +883,14 @@ function requestMicAndListen() {
   if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { startListening(); return; }
   navigator.mediaDevices.getUserMedia({ audio: true }).then((stream) => {
     stream.getTracks().forEach((t) => t.stop());
-    startListening();
+    // Reported live on Android Chrome: the mic visibly starts "listening"
+    // (button goes red/pulsing) but never transcribes a word — consistent
+    // with SpeechRecognition silently failing to (re-)open the microphone
+    // when it's asked to grab it again immediately after this probe
+    // stream's tracks are stopped, before the OS has actually released the
+    // hardware. A short delay here gives that teardown time to finish
+    // before recognition.start() tries to claim the mic itself.
+    setTimeout(() => startListening(false), 250);
   }).catch((err) => {
     const name = err && err.name;
     let msg = "Microphone access didn't start — you can still type instead.";
@@ -889,10 +905,11 @@ function requestMicAndListen() {
   });
 }
 
-function startListening() {
+function startListening(isRestart) {
   if (!SpeechRecognitionCtor) return;
   if (listening && recognition) { try { recognition.stop(); } catch (err) {} }
   stopRequested = false;
+  if (!isRestart) silentRestartStreak = 0;
   const desc = document.getElementById("ni-desc-input");
   const micBtn = document.getElementById("ni-mic-btn");
   const hint = document.getElementById("ni-listening-hint");
@@ -903,6 +920,9 @@ function startListening() {
   recognition.continuous = true;
   recognition.interimResults = true;
   recognition.onresult = (e) => {
+    // Any result at all — even an interim one — proves audio is actually
+    // reaching the recognizer, so clear the "hearing nothing" streak.
+    silentRestartStreak = 0;
     let finalText = "", interimText = "";
     for (let i = 0; i < e.results.length; i++) {
       const chunk = e.results[i][0].transcript;
@@ -948,12 +968,22 @@ function startListening() {
     const finished = recognition;
     if (finished) { finished.onend = null; finished.onerror = null; finished.onresult = null; }
     if (stopRequested) { stopListening(); return; }
+    silentRestartStreak++;
+    if (silentRestartStreak >= 4) {
+      // Several restarts in a row with not one word heard — this isn't a
+      // normal pause between sentences (onresult would have cleared the
+      // streak), it's the mic not actually being captured. Say so instead
+      // of silently spinning forever.
+      showMicError("Not picking up any speech from the microphone — check the mic is working and permitted, or just type instead.");
+      stopListening();
+      return;
+    }
     // The browser ended this recognition session on its own (silence
     // timeout is the common case) but nobody asked to stop — restart
     // immediately so dictation feels continuous. desc.value already holds
     // everything transcribed so far, and startListening() re-reads it as
     // the new baseline, so nothing is lost across the restart.
-    try { startListening(); } catch (err) { stopListening(); }
+    try { startListening(true); } catch (err) { stopListening(); }
   };
   listening = true;
   micBtn.classList.add("listening");
