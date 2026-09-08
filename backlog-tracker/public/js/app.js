@@ -47,6 +47,7 @@ function escapeHTML(s) {
 let allItems = [];
 let items = [];
 let projects = [];
+let projectsLoaded = false;
 let interfaces = [];
 let editingProjectId = null;
 
@@ -144,6 +145,10 @@ function archivedCountForProject(pid) {
   return allItems.filter((i) => (i.projectId || GENERAL_PROJECT_ID) === pid && i.status === "archived").length;
 }
 
+function backlogCountForProject(pid) {
+  return items.filter((i) => (i.projectId || GENERAL_PROJECT_ID) === pid && i.status === "backlog").length;
+}
+
 function interfacesForProject(pid) {
   return interfaces.filter((f) => Array.isArray(f.projectIds) && f.projectIds.includes(pid));
 }
@@ -158,7 +163,12 @@ function optionsMenuHTML(project) {
   const hasReq = !!(project.requirementsMd && project.requirementsMd.trim());
   const ifaces = interfacesForProject(pid);
 
+  const backlogCount = backlogCountForProject(pid);
   let html = `
+    <button type="button" class="options-menu-item project-notify-btn${backlogCount ? "" : " options-menu-item-empty"}" data-project-id="${escapeHTML(pid)}">
+      Notify Claude <span class="options-menu-count">${backlogCount}</span>
+      <span class="options-menu-sub">sends everything currently in Backlog</span>
+    </button>
     <button type="button" class="options-menu-item project-archive-btn" data-project-id="${escapeHTML(pid)}">
       Archived tickets <span class="options-menu-count">${archivedCount}</span>
     </button>
@@ -201,7 +211,7 @@ function projectSectionHTML(project) {
 
   const nameRow = editingProjectId === project.id
     ? `<div class="project-name-row"><input type="text" class="project-name-input" id="pname-input-${escapeHTML(project.id)}" data-project-id="${escapeHTML(project.id)}" value="${escapeHTML(project.name)}" maxlength="80"></div>`
-    : `<div class="project-name-row"><h2 class="project-name">${escapeHTML(project.name)}</h2>
+    : `<div class="project-name-row"><h2 class="project-name">${escapeHTML(project.name)} <span class="project-item-count">(${total})</span></h2>
          <button type="button" class="project-rename-btn" data-project-id="${escapeHTML(project.id)}" title="Rename project">&#9998;</button>
        </div>`;
 
@@ -211,7 +221,6 @@ function projectSectionHTML(project) {
         <button type="button" class="project-collapse-btn" data-project-id="${escapeHTML(project.id)}" title="${collapsed ? "Expand" : "Collapse"}">${collapsed ? "&#9656;" : "&#9662;"}</button>
         <div class="project-title-wrap">
           ${nameRow}
-          <p class="subtitle"><b>${total}</b> item${total === 1 ? "" : "s"} in the pipeline</p>
         </div>
         <div class="project-header-actions">
           <button class="btn-primary new-item-btn" data-project-id="${escapeHTML(project.id)}" type="button">+ New backlog item</button>
@@ -230,14 +239,32 @@ function projectSectionHTML(project) {
 // without a projectId (or pointing at a project that no longer exists)
 // is grouped under a synthesized "General" project, rendered immediately
 // on the client even before its Firestore doc exists.
+// Most-recently-active project first — "active" meaning any of its items
+// was created/touched/archived most recently, not just when the project
+// itself was created. Falls back to the project's own createdAt when it
+// has no items yet (a freshly created empty project).
+function tsMillis(ts) { return ts && ts.toMillis ? ts.toMillis() : 0; }
+function projectLastActivityMs(project) {
+  const projectItems = allItems.filter((i) => (i.projectId || GENERAL_PROJECT_ID) === project.id);
+  const latest = projectItems.reduce((max, i) => {
+    return Math.max(max, tsMillis(i.updatedAt), tsMillis(i.createdAt), tsMillis(i.archivedAt));
+  }, 0);
+  return latest || tsMillis(project.createdAt);
+}
+
 function getRenderedProjects() {
   const known = projects.slice();
   const knownIds = new Set(known.map((p) => p.id));
-  const hasOrphans = items.some((i) => !i.projectId || !knownIds.has(i.projectId));
+  // Only treat an item as a genuine orphan once the projects listener has
+  // actually delivered its first snapshot — otherwise, if the items
+  // listener happens to resolve first, every item transiently looks
+  // orphaned (knownIds is still empty) and ensureGeneralProjectDoc() below
+  // would permanently create a real "General" project doc for no reason.
+  const hasOrphans = projectsLoaded && items.some((i) => !i.projectId || !knownIds.has(i.projectId));
   if (hasOrphans && !knownIds.has(GENERAL_PROJECT_ID)) {
     known.push({ id: GENERAL_PROJECT_ID, name: "General" });
   }
-  return known;
+  return known.sort((a, b) => projectLastActivityMs(b) - projectLastActivityMs(a));
 }
 
 let ensuredGeneralDoc = false;
@@ -290,6 +317,7 @@ onSnapshot(query(itemsRef, orderBy("createdAt", "desc")), (snap) => {
 
 onSnapshot(query(projectsRef, orderBy("createdAt", "asc")), (snap) => {
   projects = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  projectsLoaded = true;
   render();
   if (archiveProjectId) renderArchivePage();
   if (docsProjectId) renderDocsPage();
@@ -346,6 +374,21 @@ async function restoreItem(id) {
 async function addProject(name) {
   const ref = await addDoc(projectsRef, { name: name.trim(), createdAt: serverTimestamp() });
   return ref.id;
+}
+
+// Manual, batched counterpart to the automatic per-item notify: writes a
+// fresh timestamp the notifyOnProjectReadyForReview Cloud Function watches
+// for (see ../functions/index.js), which then sends everything currently
+// in this project's Backlog column in one message — for "I've added
+// several items, now go look" instead of one notification per card.
+async function requestNotify(pid) {
+  const count = backlogCountForProject(pid);
+  if (count === 0) {
+    alert("Nothing in Backlog for this project yet — add an item first.");
+    return;
+  }
+  await setDoc(doc(db, "projects", pid), { notifyRequestedAt: serverTimestamp() }, { merge: true });
+  alert(`Notify requested for ${count} backlog item${count === 1 ? "" : "s"}. This only takes effect once NOTIFY_WEBHOOK_URL is deployed for backlog-tracker's Cloud Functions (see backlog-tracker/README.md) — until then this just records the request.`);
 }
 
 async function setProjectName(id, name) {
@@ -409,6 +452,8 @@ projectsRoot.addEventListener("click", (e) => {
   if (renameBtn) { startEditingProjectName(renameBtn.dataset.projectId); return; }
   const newItemBtn = e.target.closest(".new-item-btn");
   if (newItemBtn) { openForm(newItemBtn.dataset.projectId); return; }
+  const notifyBtn = e.target.closest(".project-notify-btn");
+  if (notifyBtn) { closeAllOptionMenus(); requestNotify(notifyBtn.dataset.projectId); return; }
   const archiveNavBtn = e.target.closest(".project-archive-btn");
   if (archiveNavBtn) { closeAllOptionMenus(); openArchivePage(archiveNavBtn.dataset.projectId); return; }
   const docsNavBtn = e.target.closest(".project-docs-btn");

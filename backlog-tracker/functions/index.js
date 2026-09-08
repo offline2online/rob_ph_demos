@@ -9,7 +9,7 @@
 // A real backend can skip the person — the moment a document lands in
 // Firestore with status "backlog", this function fires automatically.
 
-const { onDocumentCreated } = require("firebase-functions/v2/firestore");
+const { onDocumentCreated, onDocumentUpdated } = require("firebase-functions/v2/firestore");
 const { defineSecret } = require("firebase-functions/params");
 const logger = require("firebase-functions/logger");
 const { initializeApp } = require("firebase-admin/app");
@@ -109,6 +109,82 @@ exports.notifyOnBacklogItemCreated = onDocumentCreated(
     } catch (err) {
       logger.error("Failed to call notify webhook", {
         itemId: event.params.itemId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+);
+
+// The per-item notify above fires immediately on every new card, which is
+// the wrong shape when someone wants to add several backlog items first and
+// only then say "this project is ready to look at" — this is the manual,
+// batched counterpart: the board's "Notify Claude" button (per-project ⋮
+// menu) writes projects/{id}.notifyRequestedAt, and this fires once on that
+// write with everything currently sitting in that project's Backlog column.
+exports.notifyOnProjectReadyForReview = onDocumentUpdated(
+  { document: "projects/{projectId}", secrets: [NOTIFY_WEBHOOK_URL] },
+  async (event) => {
+    const before = event.data?.before?.data();
+    const after = event.data?.after?.data();
+    if (!after?.notifyRequestedAt) {
+      return;
+    }
+    // Any other field on the project doc (rename, requirementsMd edit) also
+    // triggers this update handler — only a genuinely new notifyRequestedAt
+    // value (not just re-saved unchanged) should actually notify.
+    const beforeMs = before?.notifyRequestedAt?.toMillis?.() ?? 0;
+    const afterMs = after.notifyRequestedAt?.toMillis?.() ?? 0;
+    if (afterMs <= beforeMs) {
+      return;
+    }
+
+    const webhookUrl = NOTIFY_WEBHOOK_URL.value();
+    if (!webhookUrl) {
+      logger.warn(
+        "NOTIFY_WEBHOOK_URL is not set — skipping manual project notify request",
+        { projectId: event.params.projectId }
+      );
+      return;
+    }
+
+    // Two equality filters ("==" on projectId and status) — this needs no
+    // composite index, unlike an equality + range/order combination would.
+    const itemsSnap = await getFirestore().collection("backlogItems")
+      .where("projectId", "==", event.params.projectId)
+      .where("status", "==", "backlog")
+      .get();
+    const items = itemsSnap.docs.map((d) => d.data());
+
+    const payload = {
+      text: `${after.name || "A project"} has ${items.length} item${items.length === 1 ? "" : "s"} in Backlog ready for review.`,
+      projectId: event.params.projectId,
+      projectName: after.name || null,
+      items: items.map((i) => ({
+        title: i.title, desc: i.desc, type: i.type, category: i.category || "Uncategorised",
+      })),
+    };
+
+    try {
+      const res = await fetch(webhookUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) {
+        logger.error("Notify webhook responded with a non-2xx status for manual notify", {
+          projectId: event.params.projectId,
+          status: res.status,
+          body: await res.text().catch(() => "<unreadable>"),
+        });
+        return;
+      }
+      logger.info("Notified webhook of manual project notify request", {
+        projectId: event.params.projectId,
+        itemCount: items.length,
+      });
+    } catch (err) {
+      logger.error("Failed to call notify webhook for manual notify", {
+        projectId: event.params.projectId,
         error: err instanceof Error ? err.message : String(err),
       });
     }

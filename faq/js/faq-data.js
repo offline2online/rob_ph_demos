@@ -16,6 +16,19 @@ const db = getFirestore(app);
 const categoriesRef = collection(db, "faqCategories");
 const articlesRef = collection(db, "faqArticles");
 
+// This site is both a standalone, bookmarkable public Help Center AND
+// content that gets iframed into personalisationhub.com itself (the public
+// WordPress/Elementor marketing site — NOT the HQ Admin/Retail Admin
+// platform app, a separate design system this site has nothing to do
+// with). On that embed, only the very top of the page is WordPress's own
+// Elementor-managed header; everything below it, footer included, is this
+// iframe's content and still ours to render. So: suppress just our own
+// .ph-header when embedded (it would otherwise duplicate WordPress's), but
+// always keep our own footer — nothing else replaces it.
+export function isEmbedded() {
+  try { return window.self !== window.top; } catch { return true; }
+}
+
 export function escapeHTML(s) {
   return String(s == null ? "" : s)
     .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
