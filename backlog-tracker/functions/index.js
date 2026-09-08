@@ -26,9 +26,12 @@ initializeApp();
 //      same mechanism this session used to watch this artifact) — wakes
 //      that specific session directly, but the URL is session-scoped and
 //      needs re-registering whenever the session it points at ends.
-//   3. Your own small relay service that calls the Claude API / triggers a
-//      Routine — the most durable option, but code you'd write and host
-//      yourself; out of scope for this scaffold.
+//   3. Firing a Claude Code Routine's API trigger directly — see
+//      notifyOnProjectReadyForReview below, which does exactly this for the
+//      manual/batched notify path. This per-item notify still just posts a
+//      plain webhook; point it at the same Routine's fire URL too if you
+//      want every single new item to trigger a fresh session on its own,
+//      not only a manual "Notify Claude" click.
 const NOTIFY_WEBHOOK_URL = defineSecret("NOTIFY_WEBHOOK_URL");
 
 exports.notifyOnBacklogItemCreated = onDocumentCreated(
@@ -120,9 +123,26 @@ exports.notifyOnBacklogItemCreated = onDocumentCreated(
 // only then say "this project is ready to look at" — this is the manual,
 // batched counterpart: the board's "Notify Claude" button (per-project ⋮
 // menu) writes projects/{id}.notifyRequestedAt, and this fires once on that
-// write with everything currently sitting in that project's Backlog column.
+// write.
+//
+// Unlike the per-item notify (a plain webhook someone still has to relay
+// into a conversation), this one actually closes the loop end to end: it
+// calls a Claude Code Routine's API-trigger "fire" endpoint directly, which
+// starts a fresh Claude Code session immediately, no human relay required.
+// The Routine (see Anthropic's claude.ai/code/routines) owns its own prompt
+// — this function's job is only to hand it which project and what's
+// currently in that project's Backlog column, as the fire request's `text`.
+//
+// CLAUDE_ROUTINE_FIRE_URL and CLAUDE_ROUTINE_TOKEN are both per-Routine and
+// both secret in effect (the URL embeds the Routine's trigger id; the token
+// is the bearer credential that can fire it) — both are Firebase secrets,
+// synced from GitHub Actions repo secrets of the same name exactly like
+// NOTIFY_WEBHOOK_URL already is. Never commit either value directly.
+const CLAUDE_ROUTINE_FIRE_URL = defineSecret("CLAUDE_ROUTINE_FIRE_URL");
+const CLAUDE_ROUTINE_TOKEN = defineSecret("CLAUDE_ROUTINE_TOKEN");
+
 exports.notifyOnProjectReadyForReview = onDocumentUpdated(
-  { document: "projects/{projectId}", secrets: [NOTIFY_WEBHOOK_URL] },
+  { document: "projects/{projectId}", secrets: [CLAUDE_ROUTINE_FIRE_URL, CLAUDE_ROUTINE_TOKEN] },
   async (event) => {
     const before = event.data?.before?.data();
     const after = event.data?.after?.data();
@@ -138,10 +158,11 @@ exports.notifyOnProjectReadyForReview = onDocumentUpdated(
       return;
     }
 
-    const webhookUrl = NOTIFY_WEBHOOK_URL.value();
-    if (!webhookUrl) {
+    const fireUrl = CLAUDE_ROUTINE_FIRE_URL.value();
+    const token = CLAUDE_ROUTINE_TOKEN.value();
+    if (!fireUrl || !token) {
       logger.warn(
-        "NOTIFY_WEBHOOK_URL is not set — skipping manual project notify request",
+        "CLAUDE_ROUTINE_FIRE_URL/CLAUDE_ROUTINE_TOKEN not set — skipping manual project notify request",
         { projectId: event.params.projectId }
       );
       return;
@@ -155,35 +176,46 @@ exports.notifyOnProjectReadyForReview = onDocumentUpdated(
       .get();
     const items = itemsSnap.docs.map((d) => d.data());
 
-    const payload = {
-      text: `${after.name || "A project"} has ${items.length} item${items.length === 1 ? "" : "s"} in Backlog ready for review.`,
-      projectId: event.params.projectId,
-      projectName: after.name || null,
-      items: items.map((i) => ({
-        title: i.title, desc: i.desc, type: i.type, category: i.category || "Uncategorised",
-      })),
-    };
+    if (items.length === 0) {
+      logger.info("Notify requested but Backlog is empty — nothing to fire the Routine for", {
+        projectId: event.params.projectId,
+      });
+      return;
+    }
+
+    const projectName = after.name || "A project";
+    const itemLines = items
+      .map((i, idx) => `${idx + 1}. [${i.type === "bug" ? "Bug" : "Feature"}] ${i.title} — ${i.desc}`)
+      .join("\n");
+    const text = `Project: "${projectName}" (projectId: ${event.params.projectId}) on the Backlog Tracker & FAQs board has ${items.length} item${items.length === 1 ? "" : "s"} in Backlog:\n\n${itemLines}`;
 
     try {
-      const res = await fetch(webhookUrl, {
+      const res = await fetch(fireUrl, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`,
+          // Research-preview API trigger feature — this header name may
+          // change; if firing starts failing with an auth/version error,
+          // check Anthropic's current docs for the routine-fire beta header.
+          "anthropic-beta": "experimental-cc-routine-2026-04-01",
+        },
+        body: JSON.stringify({ text }),
       });
       if (!res.ok) {
-        logger.error("Notify webhook responded with a non-2xx status for manual notify", {
+        logger.error("Routine fire endpoint responded with a non-2xx status", {
           projectId: event.params.projectId,
           status: res.status,
           body: await res.text().catch(() => "<unreadable>"),
         });
         return;
       }
-      logger.info("Notified webhook of manual project notify request", {
+      logger.info("Fired Claude Code Routine for manual project notify request", {
         projectId: event.params.projectId,
         itemCount: items.length,
       });
     } catch (err) {
-      logger.error("Failed to call notify webhook for manual notify", {
+      logger.error("Failed to call Routine fire endpoint for manual notify", {
         projectId: event.params.projectId,
         error: err instanceof Error ? err.message : String(err),
       });
