@@ -22,17 +22,14 @@
           <h2 id="ni-title">New item</h2>
           <button type="button" class="modal-close" id="ni-close" aria-label="Close">&times;</button>
         </div>
-        <label class="field-label" for="ni-title-input">Title</label>
-        <input type="text" id="ni-title-input" maxlength="200" placeholder="Short title">
         <label class="field-label" for="ni-desc-input">Description</label>
         <div class="desc-wrap">
-          <textarea id="ni-desc-input" rows="4" maxlength="2000" placeholder="What's the feature or bug? Type, or tap the mic and just talk."></textarea>
+          <textarea id="ni-desc-input" rows="6" maxlength="2000" placeholder="Describe the feature or bug — type, or tap the mic and just talk. A title and area are set for you automatically."></textarea>
           <button type="button" class="mic-btn" id="ni-mic-btn" hidden title="Dictate" aria-label="Dictate">&#127908;</button>
         </div>
         <p class="listening-hint" id="ni-listening-hint">&#127908; Listening — tap the mic again when you're done.</p>
         <p class="mic-error" id="ni-mic-error"></p>
-        <label class="field-label" for="ni-category-input">Area impacted</label>
-        <select id="ni-category-input"></select>
+        <p class="field-hint">A short title and best-guess area are generated from what you write — Claude sets the final ones once this ticket is actually looked at.</p>
         <div class="form-row">
           <div class="type-toggle" role="radiogroup" aria-label="Item type">
             <button type="button" class="type-opt active" data-type="feature">Feature</button>

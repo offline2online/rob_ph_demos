@@ -321,25 +321,34 @@ projectsRoot.addEventListener("focusout", (e) => {
 });
 
 // ── New Item modal ─────────────────────────────────────────────────────
+// Title and category aren't asked for here — just a single description
+// (typed or dictated). A short title is generated from it and the area
+// is best-guessed the same way suggestCategory() already worked in the
+// background before; both are placeholders Claude corrects with the real
+// answer during its backlog sweep, not something worth interrupting quick
+// capture to get right up front.
 const niBackdrop = document.getElementById("ni-backdrop");
-const categorySelect = document.getElementById("ni-category-input");
-categorySelect.innerHTML = CATEGORIES.map((c) => `<option value="${escapeHTML(c)}">${escapeHTML(c)}</option>`).join("");
 
 let activeNewItemProjectId = null;
-let categoryTouched = false;
+
+const TITLE_MAX = 70;
+function generateTitle(desc) {
+  const text = (desc || "").trim().replace(/\s+/g, " ");
+  if (text.length <= TITLE_MAX) return text;
+  const cut = text.slice(0, TITLE_MAX);
+  const lastSpace = cut.lastIndexOf(" ");
+  return (lastSpace > 0 ? cut.slice(0, lastSpace) : cut) + "…";
+}
 
 function openForm(projectId) {
   activeNewItemProjectId = projectId;
-  categoryTouched = false;
-  categorySelect.value = "Uncategorised";
   niBackdrop.hidden = false;
-  document.getElementById("ni-title-input").focus();
+  document.getElementById("ni-desc-input").focus();
 }
 function closeForm() {
   niBackdrop.hidden = true;
   activeNewItemProjectId = null;
   if (listening) { try { recognition.stop(); } catch (err) {} }
-  document.getElementById("ni-title-input").value = "";
   const descEl = document.getElementById("ni-desc-input");
   descEl.value = "";
   descEl.style.height = "";
@@ -361,14 +370,13 @@ document.querySelectorAll(".type-opt").forEach((btn) => {
     btn.classList.add("active");
   });
 });
-categorySelect.addEventListener("change", () => { categoryTouched = true; });
 
 document.getElementById("ni-submit").addEventListener("click", async () => {
-  const title = document.getElementById("ni-title-input").value.trim();
   const desc = document.getElementById("ni-desc-input").value.trim();
   const type = document.querySelector(".type-opt.active").dataset.type;
-  const category = categorySelect.value;
-  if (!title || !desc || !activeNewItemProjectId) return;
+  const category = suggestCategory(desc);
+  const title = generateTitle(desc);
+  if (!desc || !activeNewItemProjectId) return;
   await addItem(activeNewItemProjectId, title, desc, type, category);
   closeForm();
 });
@@ -663,12 +671,10 @@ function stopListening() {
   const descEl = document.getElementById("ni-desc-input");
   if (descEl && descEl.value.trim()) {
     setTypeToggle(suggestType(descEl.value));
-    if (!categoryTouched) categorySelect.value = suggestCategory(descEl.value);
   }
 }
 
 wireMicButton();
 document.getElementById("ni-desc-input").addEventListener("input", (e) => {
   autoGrow(e.target);
-  if (!categoryTouched) categorySelect.value = suggestCategory(e.target.value);
 });
