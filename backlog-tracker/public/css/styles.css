@@ -140,6 +140,8 @@ body {
 .options-menu-item-empty { color: var(--text-muted); font-style: italic; }
 .options-menu-count { font-size: 11px; color: var(--text-muted); font-style: normal; }
 .options-menu-sub { font-size: 11px; color: var(--text-muted); }
+.options-menu-item-danger { color: var(--danger); }
+.options-menu-item-danger:hover { background: var(--danger-tint); }
 
 /* ── Archive page ────────────────────────────────────────────────────── */
 .archive-page { margin-bottom: 20px; }

@@ -184,6 +184,10 @@ function optionsMenuHTML(project) {
       No interface contract yet
     </button>`;
   }
+
+  html += `<button type="button" class="options-menu-item options-menu-item-danger project-archive-project-btn" data-project-id="${escapeHTML(pid)}">
+    Archive project
+  </button>`;
   return html;
 }
 
@@ -260,8 +264,13 @@ function projectLastActivityMs(project) {
 }
 
 function getRenderedProjects() {
-  const known = projects.slice();
-  const knownIds = new Set(known.map((p) => p.id));
+  // knownIds is built from the unfiltered list — a real "General" doc that
+  // now happens to be archived still counts as "known" here, so it's never
+  // re-synthesized; it's simply filtered out of `known` below, same as any
+  // other archived project. Restoring it (Archived projects page) is the
+  // only way to bring it, and any orphan items still pointing at it, back.
+  const knownIds = new Set(projects.map((p) => p.id));
+  const known = projects.filter((p) => !p.archived);
   // Only treat an item as a genuine orphan once the projects listener has
   // actually delivered its first snapshot — otherwise, if the items
   // listener happens to resolve first, every item transiently looks
@@ -318,6 +327,7 @@ onSnapshot(query(itemsRef, orderBy("createdAt", "desc")), (snap) => {
   items = allItems.filter((i) => i.status !== "archived");
   render();
   if (archiveProjectId) renderArchivePage();
+  if (archivedProjectsPage && !archivedProjectsPage.hidden) renderArchivedProjectsPage();
 }, (err) => {
   console.error("backlog-tracker: items listener error", err);
 });
@@ -328,6 +338,7 @@ onSnapshot(query(projectsRef, orderBy("createdAt", "asc")), (snap) => {
   render();
   if (archiveProjectId) renderArchivePage();
   if (docsProjectId) renderDocsPage();
+  if (archivedProjectsPage && !archivedProjectsPage.hidden) renderArchivedProjectsPage();
 }, (err) => {
   console.error("backlog-tracker: projects listener error", err);
 });
@@ -403,6 +414,25 @@ async function setProjectName(id, name) {
   if (!trimmed) return false;
   await setDoc(doc(db, "projects", id), { name: trimmed }, { merge: true });
   return true;
+}
+
+// Archiving a whole project (as opposed to one Merged-to-Main ticket) is
+// for a project that's no longer active at all — most concretely, getting
+// the stray synthesized "General" project off the board. A project with
+// items still moving through the pipeline gets a confirm prompt first
+// (see the click handler below); archived projects just drop out of
+// getRenderedProjects() rather than being deleted, same "keep the data,
+// hide it from the main board" pattern the per-ticket archive already uses.
+async function archiveProject(id) {
+  await setDoc(doc(db, "projects", id), { archived: true, archivedAt: serverTimestamp() }, { merge: true });
+}
+
+async function restoreProject(id) {
+  await setDoc(doc(db, "projects", id), { archived: false, archivedAt: null }, { merge: true });
+}
+
+function activeItemCountForProject(pid) {
+  return allItems.filter((i) => (i.projectId || GENERAL_PROJECT_ID) === pid && i.status !== "archived").length;
 }
 
 async function setProjectRequirements(id, md) {
@@ -482,6 +512,17 @@ projectsRoot.addEventListener("click", (e) => {
   if (ifaceOpenBtn) { closeAllOptionMenus(); openInterfaceModal(ifaceOpenBtn.dataset.interfaceId); return; }
   const ifaceAddBtn = e.target.closest(".interface-add-btn");
   if (ifaceAddBtn) { closeAllOptionMenus(); openInterfaceModal(null, ifaceAddBtn.dataset.projectId); return; }
+  const archiveProjectBtn = e.target.closest(".project-archive-project-btn");
+  if (archiveProjectBtn) {
+    closeAllOptionMenus();
+    const pid = archiveProjectBtn.dataset.projectId;
+    const activeCount = activeItemCountForProject(pid);
+    const warning = activeCount
+      ? `"${projectName(pid)}" still has ${activeCount} active item${activeCount === 1 ? "" : "s"} (not yet Merged to Main). Archive it anyway? You can restore it later from Archived projects.`
+      : `Archive "${projectName(pid)}"? You can restore it later from Archived projects.`;
+    if (confirm(warning)) archiveProject(pid);
+    return;
+  }
   const optionsBtn = e.target.closest(".project-options-btn");
   if (optionsBtn) { toggleOptionMenu(optionsBtn); return; }
   // Any other click inside the board closes an open options menu — the
@@ -737,6 +778,47 @@ archiveFilterSearch.addEventListener("input", () => {
 document.getElementById("archive-table-body").addEventListener("click", (e) => {
   const btn = e.target.closest(".restore-btn");
   if (btn) restoreItem(btn.dataset.id);
+});
+
+// ── Archived projects page (top-level — a whole project, not one ticket) ──
+const archivedProjectsPage = document.getElementById("archived-projects-page");
+
+function openArchivedProjectsPage() {
+  document.getElementById("projects-root").hidden = true;
+  archivedProjectsPage.hidden = false;
+  renderArchivedProjectsPage();
+}
+function closeArchivedProjectsPage() {
+  archivedProjectsPage.hidden = true;
+  document.getElementById("projects-root").hidden = false;
+}
+
+function archivedProjectRowHTML(p) {
+  const activeCount = activeItemCountForProject(p.id);
+  const date = p.archivedAt && p.archivedAt.toDate ? p.archivedAt.toDate() : null;
+  const dateStr = date ? date.toLocaleDateString() : "—";
+  return `
+    <tr data-project-id="${escapeHTML(p.id)}">
+      <td>${escapeHTML(p.name)}</td>
+      <td>${activeCount} active item${activeCount === 1 ? "" : "s"}</td>
+      <td>${dateStr}</td>
+      <td><button type="button" class="restore-btn restore-project-btn" data-project-id="${escapeHTML(p.id)}">Restore</button></td>
+    </tr>`;
+}
+
+function renderArchivedProjectsPage() {
+  const rows = projects.filter((p) => p.archived);
+  document.getElementById("archived-projects-count").textContent =
+    `${rows.length} project${rows.length === 1 ? "" : "s"}`;
+  document.getElementById("archived-projects-table-body").innerHTML = rows.map(archivedProjectRowHTML).join("");
+  document.getElementById("archived-projects-empty").hidden = rows.length !== 0;
+}
+
+document.getElementById("archived-projects-btn").addEventListener("click", openArchivedProjectsPage);
+document.getElementById("archived-projects-back-btn").addEventListener("click", closeArchivedProjectsPage);
+document.getElementById("archived-projects-table-body").addEventListener("click", (e) => {
+  const btn = e.target.closest(".restore-project-btn");
+  if (btn) restoreProject(btn.dataset.projectId);
 });
 
 // ── Docs page (per-project requirements + interfaces with other projects) ─
