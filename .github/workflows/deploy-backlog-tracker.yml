@@ -48,6 +48,12 @@ jobs:
           GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/firebase-sa.json
         run: node migrate-artifact-data.js
 
+      - name: Seed starting FAQ / Help Center content
+        working-directory: backlog-tracker/scripts
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/firebase-sa.json
+        run: node seed-faq-data.js
+
       - name: Deploy to Firebase (hosting, functions, firestore rules)
         env:
           GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/firebase-sa.json

@@ -258,6 +258,54 @@ What `NOTIFY_WEBHOOK_URL` points at determines how automatic this really is:
   Routine — the most durable option (survives any one session ending),
   but it's code you'd write and host yourself; not included here.
 
+## FAQ / Help Center
+
+A second consumer-facing surface lives alongside the backlog board itself,
+sharing this same Firestore project:
+
+- **Public site**: repo-root `faq/` (outside `backlog-tracker/` entirely —
+  it's a plain static site published via GitHub Pages like the rest of
+  `rob_ph_demos`, not Firebase Hosting). Front page with search + category
+  grid, a category page listing its articles, an article page, and a full
+  search-results page — modeled on
+  <https://help.personalisationhub.com/support/home> (that URL is blocked
+  by this sandbox's network egress policy, so the exact real categories/
+  articles could not be read and copied; what's seeded is a plausible
+  placeholder structure, clearly marked as such in every article body).
+- **Admin**: this app's own **FAQ Center** page (button next to "+ New
+  project" in the header — global, not per-project, since an article can
+  span or link to any one project). Lets you manage categories (name,
+  Material Symbols icon, description, display order) and articles (title,
+  slug, category, an optional linked project, summary, a small
+  markdown-ish body with a live preview, search keywords, draft/published
+  status, and a "needs review" flag).
+- **Data model** — two new top-level collections:
+  - `faqCategories/{id}`: `{name, icon, description, order, createdAt, updatedAt}`
+  - `faqArticles/{id}`: `{categoryId, projectId (nullable), title, slug, summary, bodyMd, keywords[], status: "draft"|"published", needsReview, order, createdAt, updatedAt, publishedAt}`
+- **Why `projectId` exists on an article**: this is the "categorization by
+  project" piece — an article can be linked to whichever `projects`
+  collection doc (Live Visitor Profile, Experience Templates, Products
+  Pricing & Asset Management, etc.) it documents. That's what would let a
+  future automation flag the right FAQs the moment that project's own
+  feature work ships, the same way `notifyOnBacklogItemCreated` already
+  reacts to a new backlog item with no button to click. **That automation
+  isn't built yet** — `needsReview` today is a manual toggle on each
+  article in FAQ Center, not something a deploy sets for you. A natural
+  next step (not implemented here) would be a Cloud Function trigger on
+  `backlogItems` moving to `status: "published-live"` that sets
+  `needsReview: true` on every `faqArticles` doc sharing that item's
+  `projectId`.
+- **Seeding**: `scripts/seed-faq-data.js` (same insert-only `create()`
+  pattern as `migrate-artifact-data.js`) seeds six starting categories and
+  a couple of placeholder articles each, run automatically on every
+  deploy. Every seeded article body says plainly that it's a placeholder —
+  replace them from FAQ Center once the real Help Center content is
+  available to copy in.
+- **Cross-site config**: `faq/js/firebase-config.js` deliberately
+  duplicates `backlog-tracker/public/js/firebase-config.js` byte-for-byte
+  (same project, two static sites on two different hosts reading the same
+  Firestore) — if the Firebase project config ever changes, update both.
+
 ## What's deliberately not built yet
 
 - **No auth.** `firestore.rules` is open read/write, same permissive

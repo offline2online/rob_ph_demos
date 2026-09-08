@@ -4,6 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Backlog Tracker</title>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&display=swap">
   <link rel="stylesheet" href="css/styles.css">
 </head>
 <body>
@@ -13,7 +14,10 @@
         <h1>Backlog Tracker</h1>
         <p class="subtitle"><span id="total-summary">0 items</span> &middot; a new Backlog item notifies automatically — no button to click</p>
       </div>
-      <button class="btn-primary" id="new-project-btn" type="button">+ New project</button>
+      <div class="topbar-actions">
+        <button class="btn-ghost" id="faq-center-btn" type="button">FAQ Center</button>
+        <button class="btn-primary" id="new-project-btn" type="button">+ New project</button>
+      </div>
     </header>
 
     <div class="modal-backdrop" id="ni-backdrop" hidden>
@@ -157,6 +161,111 @@
           <tbody id="archive-table-body"></tbody>
         </table>
         <p class="empty-hint" id="archive-table-empty" hidden>No archived tickets match these filters.</p>
+      </div>
+    </section>
+
+    <div class="modal-backdrop" id="fa-backdrop" hidden>
+      <div class="modal-panel modal-panel-wide" role="dialog" aria-modal="true" aria-labelledby="fa-title">
+        <div class="modal-header">
+          <h2 id="fa-title">New article</h2>
+          <button type="button" class="modal-close" id="fa-close" aria-label="Close">&times;</button>
+        </div>
+        <label class="field-label" for="fa-title-input">Title</label>
+        <input type="text" id="fa-title-input" maxlength="200" placeholder="e.g. How do I set up a targeted offer?">
+        <label class="field-label" for="fa-slug-input">Slug</label>
+        <input type="text" id="fa-slug-input" maxlength="200" placeholder="auto-generated-from-title">
+        <div class="form-row-grid">
+          <div>
+            <label class="field-label" for="fa-category-select">Category</label>
+            <select id="fa-category-select"></select>
+          </div>
+          <div>
+            <label class="field-label" for="fa-project-select">Linked project (optional)</label>
+            <select id="fa-project-select">
+              <option value="">None — general article</option>
+            </select>
+          </div>
+        </div>
+        <p class="field-hint">Linking a project is what lets a future feature launch flag its own FAQs for review — see "Needs review" below.</p>
+        <label class="field-label" for="fa-summary-input">Summary (shown in lists and search)</label>
+        <textarea id="fa-summary-input" rows="2" maxlength="300"></textarea>
+        <label class="field-label" for="fa-keywords-input">Search keywords (comma separated, optional)</label>
+        <input type="text" id="fa-keywords-input" placeholder="e.g. offer, targeting, pricing">
+        <div class="fa-body-grid">
+          <div>
+            <label class="field-label" for="fa-body-input">Body (markdown-ish: "## Heading", "- bullet", **bold**)</label>
+            <textarea id="fa-body-input" rows="14"></textarea>
+          </div>
+          <div>
+            <span class="field-label">Live preview</span>
+            <div class="fa-preview" id="fa-preview"></div>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="type-toggle" role="radiogroup" aria-label="Status">
+            <button type="button" class="type-opt active" data-status="draft">Draft</button>
+            <button type="button" class="type-opt" data-status="published">Published</button>
+          </div>
+          <label class="fa-needs-review-toggle">
+            <input type="checkbox" id="fa-needs-review">
+            Needs review
+          </label>
+        </div>
+        <p class="field-hint" id="fa-live-link-hint" hidden></p>
+        <div class="form-row" style="justify-content:flex-end;">
+          <div class="form-actions">
+            <button type="button" class="btn-ghost" id="fa-cancel">Cancel</button>
+            <button type="button" class="btn-primary" id="fa-submit">Save article</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <section class="faq-admin-page" id="faq-admin-page" hidden>
+      <div class="docs-page-header">
+        <button type="button" class="btn-ghost" id="faq-admin-back-btn">&larr; Back to board</button>
+        <h2>FAQ / Help Center — <span id="faq-admin-count">0 published</span></h2>
+      </div>
+      <p class="field-hint">
+        Consumer-facing site: <code>faq/</code> at the repo root (published via GitHub Pages once
+        merged to <code>main</code>). Only <strong>Published</strong> articles appear there —
+        everything here (categories, articles, search) reads/writes this same Firestore project,
+        so a save here is what keeps that page current.
+      </p>
+
+      <div class="docs-block">
+        <div class="docs-block-header">
+          <h3>Categories</h3>
+        </div>
+        <p class="field-hint">Shown on the public site's front page and category filter — order controls display order.</p>
+        <div id="faq-category-list"></div>
+        <div class="fa-new-category-row">
+          <input type="text" id="fa-new-category-name" maxlength="80" placeholder="New category name">
+          <input type="text" id="fa-new-category-icon" maxlength="40" placeholder="Material icon (e.g. storefront)" value="help">
+          <button type="button" class="btn-ghost" id="fa-new-category-submit">+ Add category</button>
+        </div>
+      </div>
+
+      <div class="docs-block">
+        <div class="docs-block-header">
+          <h3>Articles</h3>
+          <button type="button" class="btn-primary" id="fa-new-article-btn">+ New article</button>
+        </div>
+        <div class="fa-filter-row">
+          <select id="fa-filter-category"><option value="">All categories</option></select>
+          <select id="fa-filter-status">
+            <option value="">All statuses</option>
+            <option value="published">Published</option>
+            <option value="draft">Draft</option>
+          </select>
+          <select id="fa-filter-needs-review">
+            <option value="">Needs review: any</option>
+            <option value="yes">Needs review</option>
+          </select>
+          <input type="search" id="fa-filter-search" placeholder="Title or summary…">
+        </div>
+        <div id="faq-article-list"></div>
+        <p class="empty-hint" id="faq-article-empty" hidden>No articles match these filters.</p>
       </div>
     </section>
 

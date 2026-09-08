@@ -17,6 +17,23 @@ This is a static site repository used to publish HTML and static resources (CSS,
 
 `menu-board-demo/functions/` (Cloud Functions for Firebase — the scheduled offer-expiry sweep, the AI provider calls) is **not** part of the static site. Pushing a change there to `main` does **not** make it live — GitHub Pages only serves the static HTML/JS/CSS, and this sandbox has no `firebase` CLI or deploy credentials, so **Claude cannot deploy a functions change itself**. Whoever owns Firebase deploy access needs to separately run `firebase deploy --only functions` (or `npm run deploy` inside `menu-board-demo/functions`) before a functions fix actually takes effect. Always say this explicitly when committing a functions/ change — don't imply "pushed to main" means "live" the way it does for everything else in this repo.
 
+## FAQ / Help Center (`faq/`) — public site, edited from backlog-tracker
+
+`faq/` at the repo root is a consumer-facing FAQ/Help Center site (front
+page + search, category pages, article pages), styled after
+<https://help.personalisationhub.com/support/home>. It's a plain static
+site published via GitHub Pages like everything else at the repo root —
+but its content (categories + articles) isn't stored as files here. It
+reads live from the **same Firestore project `backlog-tracker` uses**
+(`backlog-tracker-e4ed2`, collections `faqCategories`/`faqArticles`), so
+editing is done entirely from backlog-tracker's own **FAQ Center** admin
+page, not by editing files in `faq/`. See `backlog-tracker/README.md` →
+"FAQ / Help Center" for the data model, why articles can optionally link
+to a `projects` doc (the categorization-by-project hook meant for a future
+"flag FAQs when a feature ships" automation), and the placeholder seed
+content currently in place (the real help center's articles couldn't be
+fetched — that domain is blocked by sandbox network egress policy).
+
 ## Live Visitor Profile & Experience Templates — two separate projects, one repo
 
 `visitor-profile/` and `experience-templates/` were split out as two
