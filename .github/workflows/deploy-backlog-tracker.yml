@@ -42,3 +42,25 @@ jobs:
         env:
           GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/firebase-sa.json
         run: npx firebase-tools@13 deploy --only hosting,functions,firestore:rules --project backlog-tracker-e4ed2 --non-interactive
+
+      - name: Set Artifact Registry cleanup policy for gcf-artifacts
+        continue-on-error: true
+        run: |
+          gcloud auth activate-service-account --key-file="$RUNNER_TEMP/firebase-sa.json"
+          cat > "$RUNNER_TEMP/cleanup-policy.json" <<'POLICY'
+          [
+            {
+              "name": "delete-untagged-after-3-days",
+              "action": {"type": "Delete"},
+              "condition": {
+                "tagState": "untagged",
+                "olderThan": "259200s"
+              }
+            }
+          ]
+          POLICY
+          gcloud artifacts repositories set-cleanup-policies gcf-artifacts \
+            --project=backlog-tracker-e4ed2 \
+            --location=us-central1 \
+            --policy="$RUNNER_TEMP/cleanup-policy.json" \
+            --quiet

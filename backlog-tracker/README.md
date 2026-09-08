@@ -197,9 +197,28 @@ deploy each piece — at minimum:
 - **Secret Manager Admin** (`roles/secretmanager.admin`) — the notify
   function reads a `NOTIFY_WEBHOOK_URL` secret (see below); creating and
   reading it needs this.
+- **Artifact Registry Repository Administrator**
+  (`roles/artifactregistry.repoAdmin`) — each functions deploy builds a
+  container image via Cloud Build and pushes it to the `gcf-artifacts`
+  Artifact Registry repo; without this role the CLI can push new images
+  but not delete old ones, which is harmless to the deploy itself (it
+  still succeeds) but leaves orphaned images accumulating a small storage
+  cost over time. This role also lets the workflow's cleanup-policy step
+  (below) configure automatic deletion.
 
 If the workflow's deploy step fails with a permissions/IAM error, that's
 almost always a role missing here, not a bug in the workflow itself.
+
+### Cleaning up old Cloud Build/Artifact Registry images
+
+Every functions deploy leaves a build image behind in the `gcf-artifacts`
+repo. The workflow's last step, "Set Artifact Registry cleanup policy for
+gcf-artifacts", configures that repo to auto-delete untagged images older
+than 3 days — a one-time-effective setting that gets (harmlessly)
+reapplied on every deploy. It's marked `continue-on-error: true` since
+this is pure housekeeping: if it fails (e.g. the Artifact Registry
+Repository Administrator role above isn't granted yet), the deploy itself
+still succeeds, only the automatic cleanup doesn't happen that run.
 
 ### The `NOTIFY_WEBHOOK_URL` secret
 
