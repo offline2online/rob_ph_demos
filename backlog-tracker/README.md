@@ -10,32 +10,36 @@ any of the three as a bug in whichever is stale.
 
 A real, Firestore-backed version of the Prototype Pipeline board (the
 Claude Artifact at the root `CLAUDE.md`'s "Prototype Backlog" link), built
-to answer one specific question: **can a web app tell Claude the moment a
-new item lands in the Backlog, with no one clicking a button?**
+to answer one specific question: **can a web app tell Claude a project's
+Backlog is ready, with no person relaying the message?**
 
 The Artifact board can't — it has no server of its own, so "Notify Claude"
 there is a manual flag someone has to click, and a person still has to
-tell Claude in chat to go look. This app closes that gap: a Cloud Function
-(`functions/notifyOnBacklogItemCreated`) fires automatically the instant a
-document is created in Firestore with `status: "backlog"`.
+tell Claude in chat to go look. This app closes that gap: each project's
+**Notify Claude** header button writes a `notifyRequestedAt` timestamp onto
+that project's doc, which a Cloud Function
+(`functions/notifyOnProjectReadyForReview`) watches for and fires once per
+click — not once per item. (An earlier version also posted automatically
+on every single new backlog item, which was noisy — one Slack message per
+line typed or dictated, long before a project was actually ready for
+anyone to look at. Removed in favor of the one-post-per-click below.)
 
-There's also a manual, batched counterpart for "I want to add several
-items first, then say the project's ready" instead of one notification per
-card: each project's **⋮ → Notify Claude** button writes a
-`notifyRequestedAt` timestamp onto that project's doc, which a second
-function (`functions/notifyOnProjectReadyForReview`) watches for.
+That one function does two things, both scoped to the project and item
+count at the moment of the click, and independent of each other (either
+no-ops on its own if its secret(s) aren't set):
 
-Unlike the per-item notify (which just posts to a webhook — a Slack
-message someone still has to relay into a Claude conversation, or a
-session's `watch_url`, which only works for the narrow signed protocol the
-Artifact publishing service uses, not a generic receiver), this one closes
-the loop for real: it fires a **Claude Code Routine's API trigger**
-directly (`POST` to `https://api.anthropic.com/v1/claude_code/routines/{id}/fire`
-with a bearer token), which starts a brand new Claude Code session
-immediately — no human needed in between. The Routine itself is created
-and owns its own prompt from `claude.ai/code/routines`, not from this
-repo; this function's only job is to tell it which project and what's
-currently sitting in that project's Backlog column.
+1. Posts to `NOTIFY_WEBHOOK_URL` — a plain webhook (Slack's "Incoming
+   Webhook" is the simplest target) naming the project and exactly how
+   many Backlog items will be actioned. Whoever's listening still has to
+   relay this into a Claude conversation by hand, same as a plain webhook
+   always would.
+2. Fires a **Claude Code Routine's API trigger** directly (`POST` to
+   `https://api.anthropic.com/v1/claude_code/routines/{id}/fire` with a
+   bearer token), which starts a brand new Claude Code session immediately
+   — no human needed in between. The Routine itself is created and owns
+   its own prompt from `claude.ai/code/routines`, not from this repo; this
+   function's only job is to tell it which project and what's currently
+   sitting in that project's Backlog column.
 
 ## Isolation from menu-board-demo — by design, not just by folder
 
@@ -62,18 +66,18 @@ itself — plain files, no build coupling, no shared runtime.
 ## Architecture
 
 ```
-backlogItems doc created, status: "backlog"          project doc's notifyRequestedAt bumped
-        │  onDocumentCreated                                  │  onDocumentUpdated
-        ▼                                                      ▼
-functions/notifyOnBacklogItemCreated          functions/notifyOnProjectReadyForReview
-   (one POST per new item)                     (one POST per project, whole Backlog column)
-        │                                                      │
-        ▼                                                      ▼
-  NOTIFY_WEBHOOK_URL                          CLAUDE_ROUTINE_FIRE_URL + CLAUDE_ROUTINE_TOKEN
-  (Slack, a session's watch_url, etc. —       (a Claude Code Routine's API trigger — POSTing
-   still needs a human to relay it)            here starts a real Claude Code session directly,
-                                                `text` = project's own routinePromptMd, if any,
-                                                + that project's current Backlog items)
+                    "Notify Claude" clicked → project doc's notifyRequestedAt bumped
+                                        │  onDocumentUpdated
+                                        ▼
+                      functions/notifyOnProjectReadyForReview
+                   (fires once per click, not once per backlog item)
+                            │                         │
+                            ▼                         ▼
+                  NOTIFY_WEBHOOK_URL      CLAUDE_ROUTINE_FIRE_URL + CLAUDE_ROUTINE_TOKEN
+                  (Slack — names the      (a Claude Code Routine's API trigger — POSTing
+                   project + item count,   here starts a real Claude Code session directly,
+                   still needs a human     `text` = project's own routinePromptMd, if any,
+                   to relay it further)    + that project's current Backlog items)
 ```
 
 Frontend (`public/`) is a plain Firestore-backed board — vanilla JS,
@@ -190,11 +194,14 @@ Firebase prints a live URL, e.g. `https://backlog-tracker-a1b2c.web.app`.
 1. Open the hosting URL (or `public/index.html` locally — Firestore and
    the function are cloud-hosted either way, only the static files would
    be local).
-2. Click **+ New item**, fill in a title and description, submit.
-3. Check the Slack channel from step 7 — a message should land within a
-   few seconds.
-4. If nothing shows up: `firebase functions:log` — look for "Notified
-   webhook of new backlog item" (success) or the logged error.
+2. Click **+ New backlog item** on a project, fill in a description, submit.
+3. Click that same project's **Notify Claude** header button.
+4. Check the Slack channel from step 7 — a message naming the project and
+   item count should land within a few seconds (and, if
+   `CLAUDE_ROUTINE_FIRE_URL`/`CLAUDE_ROUTINE_TOKEN` are also set, a fresh
+   Claude Code session starts on the Routine).
+5. If nothing shows up: `firebase functions:log` — look for "Notified
+   webhook of Notify Claude click" (success) or the logged error.
 
 ### Ongoing: redeploying after a code change
 
@@ -253,7 +260,7 @@ still succeeds, only the automatic cleanup doesn't happen that run.
 
 ### The `NOTIFY_WEBHOOK_URL` secret
 
-`functions/index.js`'s `notifyOnBacklogItemCreated` reads a Firebase
+`functions/index.js`'s `notifyOnProjectReadyForReview` reads a Firebase
 secret called `NOTIFY_WEBHOOK_URL` (see step 7 above for creating a Slack
 incoming webhook, or an alternative target). The workflow keeps this in
 sync automatically from a GitHub Actions secret of the same name — add a
@@ -276,21 +283,22 @@ inside `backlog-tracker/`:
 
 ### Alternatives to the Slack webhook
 
-What `NOTIFY_WEBHOOK_URL` points at determines how automatic this really is:
+`notifyOnProjectReadyForReview` already does the no-human-relay thing on
+every Notify Claude click — it fires a Claude Code Routine's API trigger
+directly (see below), independently of whatever `NOTIFY_WEBHOOK_URL`
+points at. So `NOTIFY_WEBHOOK_URL` itself is just the "someone should
+also see this in chat" side-channel, not the thing that gets Claude's
+attention — pick whatever's convenient for that:
 
-- **Slack incoming webhook** (above) — easiest, but a person still
-  relays the message into a Claude conversation.
+- **Slack incoming webhook** (above) — easiest, and what step 7 sets up.
 - **A live Claude Code Remote session's `watch_url` webhook** — the same
   kind of URL this session used to watch the Prototype Pipeline Artifact.
   Wakes that specific session directly with no human in the loop, but the
   URL is tied to one running session and needs re-registering (a fresh
   `watch_url` call) whenever that session ends.
-- **Firing a Claude Code Routine's API trigger directly** — the most
-  durable, no-human-relay option. `notifyOnProjectReadyForReview` already
-  does this (see below); point `notifyOnBacklogItemCreated`'s
-  `NOTIFY_WEBHOOK_URL` at the same fire URL too if you want every single
-  new item, not just a manual "Notify Claude" click, to trigger a fresh
-  session on its own.
+- Leave it unset entirely — the Routine still fires on every Notify Claude
+  click either way; `notifyOnProjectReadyForReview` just skips the webhook
+  POST and logs a warning if `NOTIFY_WEBHOOK_URL` isn't set.
 
 ### The `CLAUDE_ROUTINE_FIRE_URL` / `CLAUDE_ROUTINE_TOKEN` secrets
 
