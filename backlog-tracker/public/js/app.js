@@ -79,6 +79,23 @@ function toggleProjectCollapsed(pid) {
   render();
 }
 
+// ── Per-project "⋮" options menu — plain show/hide, one open at a time.
+// Rebuilt on every render() along with everything else in #projects-root,
+// so there's no stale-DOM-node bookkeeping to worry about; it just starts
+// closed again after any state change, which is the safe default anyway.
+function closeAllOptionMenus() {
+  document.querySelectorAll(".project-options-menu").forEach((m) => { m.hidden = true; });
+}
+function toggleOptionMenu(btn) {
+  const menu = btn.nextElementSibling;
+  const wasHidden = menu.hidden;
+  closeAllOptionMenus();
+  menu.hidden = !wasHidden;
+}
+document.addEventListener("click", (e) => {
+  if (!e.target.closest(".project-options")) closeAllOptionMenus();
+});
+
 function cardHTML(item) {
   const idx = COL_KEYS.indexOf(item.status);
   const canLeft = idx > 0;
@@ -131,13 +148,46 @@ function interfacesForProject(pid) {
   return interfaces.filter((f) => Array.isArray(f.projectIds) && f.projectIds.includes(pid));
 }
 
+// The "⋮" options menu is the one place Archived/Requirements/Interfaces
+// live now — on mobile especially, a row of 3-4 ghost buttons next to the
+// primary Add button was the actual "CTAs don't work on mobile" complaint,
+// so everything but the primary action moves in here.
+function optionsMenuHTML(project) {
+  const pid = project.id;
+  const archivedCount = archivedCountForProject(pid);
+  const hasReq = !!(project.requirementsMd && project.requirementsMd.trim());
+  const ifaces = interfacesForProject(pid);
+
+  let html = `
+    <button type="button" class="options-menu-item project-archive-btn" data-project-id="${escapeHTML(pid)}">
+      Archived tickets <span class="options-menu-count">${archivedCount}</span>
+    </button>
+    <button type="button" class="options-menu-item project-docs-btn${hasReq ? "" : " options-menu-item-empty"}" data-project-id="${escapeHTML(pid)}">
+      ${hasReq ? "Requirements (MD file)" : "Requirements (MD file) — not set yet"}
+    </button>`;
+
+  if (ifaces.length) {
+    html += ifaces.map((f) => {
+      const otherId = f.projectIds.find((id) => id !== pid);
+      return `<button type="button" class="options-menu-item interface-open-btn" data-interface-id="${escapeHTML(f.id)}">
+        ${escapeHTML(f.name)}
+        <span class="options-menu-sub">interface with ${escapeHTML(projectName(otherId))}</span>
+      </button>`;
+    }).join("");
+  } else {
+    html += `<button type="button" class="options-menu-item options-menu-item-empty interface-add-btn" data-project-id="${escapeHTML(pid)}">
+      No interface contract yet
+    </button>`;
+  }
+  return html;
+}
+
 function projectSectionHTML(project) {
   const collapsed = isProjectCollapsed(project.id);
   const projectItems = items.filter((i) => (i.projectId || GENERAL_PROJECT_ID) === project.id);
   const cardsByCol = {};
   COLUMNS.forEach((col) => { cardsByCol[col.key] = projectItems.filter((i) => i.status === col.key); });
   const total = COL_KEYS.reduce((sum, k) => sum + cardsByCol[k].length, 0);
-  const archivedCount = archivedCountForProject(project.id);
 
   const board = `<div class="board">` + COLUMNS.map((col) => {
     const listItems = cardsByCol[col.key];
@@ -163,9 +213,13 @@ function projectSectionHTML(project) {
           ${nameRow}
           <p class="subtitle"><b>${total}</b> item${total === 1 ? "" : "s"} in the pipeline</p>
         </div>
-        <button type="button" class="btn-ghost project-docs-btn" data-project-id="${escapeHTML(project.id)}">Docs (${interfacesForProject(project.id).length})</button>
-        <button type="button" class="btn-ghost project-archive-btn" data-project-id="${escapeHTML(project.id)}">Archived (${archivedCount})</button>
-        <button class="btn-primary new-item-btn" data-project-id="${escapeHTML(project.id)}" type="button">+ New item</button>
+        <div class="project-header-actions">
+          <button class="btn-primary new-item-btn" data-project-id="${escapeHTML(project.id)}" type="button">+ New backlog item</button>
+          <div class="project-options">
+            <button type="button" class="icon-btn project-options-btn" data-project-id="${escapeHTML(project.id)}" aria-haspopup="true" aria-label="More options for this project">&#8942;</button>
+            <div class="project-options-menu" data-project-id="${escapeHTML(project.id)}" hidden>${optionsMenuHTML(project)}</div>
+          </div>
+        </div>
       </div>
       <div class="project-body">${board}</div>
     </section>`;
@@ -356,9 +410,19 @@ projectsRoot.addEventListener("click", (e) => {
   const newItemBtn = e.target.closest(".new-item-btn");
   if (newItemBtn) { openForm(newItemBtn.dataset.projectId); return; }
   const archiveNavBtn = e.target.closest(".project-archive-btn");
-  if (archiveNavBtn) { openArchivePage(archiveNavBtn.dataset.projectId); return; }
+  if (archiveNavBtn) { closeAllOptionMenus(); openArchivePage(archiveNavBtn.dataset.projectId); return; }
   const docsNavBtn = e.target.closest(".project-docs-btn");
-  if (docsNavBtn) { openDocsPage(docsNavBtn.dataset.projectId); return; }
+  if (docsNavBtn) { closeAllOptionMenus(); openDocsPage(docsNavBtn.dataset.projectId); return; }
+  const ifaceOpenBtn = e.target.closest(".interface-open-btn");
+  if (ifaceOpenBtn) { closeAllOptionMenus(); openInterfaceModal(ifaceOpenBtn.dataset.interfaceId); return; }
+  const ifaceAddBtn = e.target.closest(".interface-add-btn");
+  if (ifaceAddBtn) { closeAllOptionMenus(); openInterfaceModal(null, ifaceAddBtn.dataset.projectId); return; }
+  const optionsBtn = e.target.closest(".project-options-btn");
+  if (optionsBtn) { toggleOptionMenu(optionsBtn); return; }
+  // Any other click inside the board closes an open options menu — the
+  // options-btn case above already returned, so reaching here means the
+  // click landed elsewhere (a card, a column, empty space).
+  closeAllOptionMenus();
 });
 projectsRoot.addEventListener("keydown", (e) => {
   if (!e.target.classList.contains("project-name-input")) return;
@@ -679,28 +743,38 @@ const ifOtherProject = document.getElementById("if-other-project");
 const ifNameInput = document.getElementById("if-name-input");
 const ifContentInput = document.getElementById("if-content-input");
 
-function openInterfaceModal(interfaceId) {
+// `anchorProjectId` is only used in "new" mode (no interfaceId) — it's
+// whichever project the modal was launched from (the Docs page's own
+// project, or a project's "⋮" menu directly), independent of whether the
+// Docs page itself happens to be open. Kept as its own variable rather
+// than reusing docsProjectId so launching this from the options menu never
+// has to first open (or silently mutate the state of) the Docs page.
+let ifAnchorProjectId = null;
+
+function openInterfaceModal(interfaceId, anchorProjectId) {
   editingInterfaceId = interfaceId || null;
+  ifAnchorProjectId = anchorProjectId || null;
   ifBackdrop.hidden = false;
   if (editingInterfaceId) {
     const f = interfaces.find((x) => x.id === editingInterfaceId);
     document.getElementById("if-title").textContent = "Edit interface";
-    ifOtherProject.parentElement.querySelectorAll("select#if-other-project, label[for='if-other-project']").forEach((el) => { el.hidden = true; });
+    document.querySelector("label[for='if-other-project']").hidden = true;
+    ifOtherProject.hidden = true;
     ifNameInput.value = f ? f.name : "";
     ifContentInput.value = f ? f.contentMd || "" : "";
   } else {
     document.getElementById("if-title").textContent = "New interface";
     document.querySelector("label[for='if-other-project']").hidden = false;
     ifOtherProject.hidden = false;
-    populateProjectSelect(ifOtherProject, docsProjectId);
+    populateProjectSelect(ifOtherProject, ifAnchorProjectId);
     ifNameInput.value = "";
     ifContentInput.value = "";
   }
   ifNameInput.focus();
 }
-function closeInterfaceModal() { ifBackdrop.hidden = true; editingInterfaceId = null; }
+function closeInterfaceModal() { ifBackdrop.hidden = true; editingInterfaceId = null; ifAnchorProjectId = null; }
 
-document.getElementById("docs-add-interface-btn").addEventListener("click", () => openInterfaceModal(null));
+document.getElementById("docs-add-interface-btn").addEventListener("click", () => openInterfaceModal(null, docsProjectId));
 document.getElementById("if-cancel").addEventListener("click", closeInterfaceModal);
 document.getElementById("if-close").addEventListener("click", closeInterfaceModal);
 ifBackdrop.addEventListener("click", (e) => { if (e.target === ifBackdrop) closeInterfaceModal(); });
@@ -714,8 +788,8 @@ document.getElementById("if-submit").addEventListener("click", async () => {
     await updateInterface(editingInterfaceId, name, ifContentInput.value);
   } else {
     const otherId = ifOtherProject.value;
-    if (!otherId || !docsProjectId) return;
-    await addInterface(name, [docsProjectId, otherId], ifContentInput.value);
+    if (!otherId || !ifAnchorProjectId) return;
+    await addInterface(name, [ifAnchorProjectId, otherId], ifContentInput.value);
   }
   closeInterfaceModal();
 });

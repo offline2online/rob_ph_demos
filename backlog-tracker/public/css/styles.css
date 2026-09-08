@@ -109,7 +109,31 @@ body {
 }
 .project-header .subtitle { margin: 4px 0 0; }
 .project.collapsed .project-body { display: none; }
-.project-archive-btn { flex-shrink: 0; }
+
+/* ── Header actions: one primary CTA + one "⋮" options menu ─────────────
+   Everything that isn't "add a backlog item" (archive, requirements,
+   interfaces) lives behind the options menu now, on both desktop and
+   mobile — this is what used to be 2-3 separate ghost buttons competing
+   with the primary Add button for space, especially on a phone screen. */
+.project-header-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.new-item-btn { white-space: nowrap; }
+.project-options { position: relative; flex-shrink: 0; }
+.project-options-btn { font-size: 18px; line-height: 1; padding: 7px 11px; }
+.project-options-menu {
+  position: absolute; top: calc(100% + 6px); right: 0; z-index: 15;
+  background: var(--bg); border: 1px solid var(--border); border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, .14); min-width: 250px; max-width: 88vw;
+  overflow: hidden; display: flex; flex-direction: column; padding: 6px;
+}
+.options-menu-item {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 2px;
+  width: 100%; text-align: left; background: transparent; border: none; border-radius: 6px;
+  padding: 10px 11px; font-size: 13px; font-family: inherit; color: var(--text); cursor: pointer;
+}
+.options-menu-item:hover { background: var(--surface-2); }
+.options-menu-item-empty { color: var(--text-muted); font-style: italic; }
+.options-menu-count { font-size: 11px; color: var(--text-muted); font-style: normal; }
+.options-menu-sub { font-size: 11px; color: var(--text-muted); }
 
 /* ── Archive page ────────────────────────────────────────────────────── */
 .archive-page { margin-bottom: 20px; }
@@ -172,6 +196,39 @@ body {
 .interface-row-actions { display: flex; gap: 4px; }
 .interface-row-content { margin-top: 8px; font-size: 12.5px; color: var(--text); white-space: pre-wrap; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; max-height: 160px; overflow-y: auto; background: var(--surface); border-radius: 6px; padding: 8px 10px; }
 .interface-row-empty { color: var(--text-muted); font-style: italic; }
-.project-docs-btn { flex-shrink: 0; }
+
+/* ── Mobile ──────────────────────────────────────────────────────────────
+   Two real problems on a phone before this: (1) the board's 4 columns were
+   forced side by side (`repeat(4, minmax(260px,1fr))`), so most of the
+   board — including the "Confirm live on branch"/"Merge to main" buttons —
+   only existed off-screen behind a sideways scroll nobody found; (2) the
+   header crammed the primary Add button in among 2-3 ghost buttons with no
+   size floor, so on a narrow screen they wrapped small and mis-tappable.
+   Below 640px: columns stack vertically (no horizontal scroll at all), and
+   the header becomes one big full-width Add button plus a small "⋮" next
+   to it — everything else already moved into that menu above. */
+@media (max-width: 640px) {
+  .app { padding: 16px 12px 32px; }
+  .topbar { gap: 12px; }
+  .topbar h1 { font-size: 19px; }
+  .btn-primary, .btn-ghost { min-height: 40px; }
+
+  .board { grid-template-columns: 1fr; overflow-x: visible; }
+  .column { max-height: none; }
+
+  .project { padding: 14px 12px 16px; }
+  .project-header { flex-wrap: wrap; }
+  .project-title-wrap { flex-basis: 100%; }
+  .project-header-actions { flex-basis: 100%; }
+  .new-item-btn { flex: 1; min-height: 46px; font-size: 14px; justify-content: center; }
+  .project-options-btn { min-width: 46px; min-height: 46px; }
+  .project-options-menu { left: auto; right: 0; max-width: calc(100vw - 24px); }
+
+  .modal-panel { max-width: 94vw; max-height: 90vh; overflow-y: auto; }
+  .mic-btn { width: 42px; height: 42px; font-size: 18px; }
+  .type-opt { padding: 10px 16px; font-size: 13px; }
+  .form-row { gap: 10px; }
+  .icon-btn { padding: 7px 10px; font-size: 15px; }
+}
 
 [hidden] { display: none !important; }
