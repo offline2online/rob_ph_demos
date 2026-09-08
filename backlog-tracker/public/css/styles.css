@@ -67,7 +67,7 @@ body {
 .modal-header h2 { margin: 0; font-size: 17px; }
 .modal-close { border: none; background: transparent; font-size: 20px; cursor: pointer; color: var(--text-muted); }
 .field-label { display: block; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: var(--text-muted); margin: 10px 0 4px; }
-#ni-title-input, #ni-desc-input, #ni-category-input {
+#ni-desc-input {
   width: 100%; font-family: inherit; font-size: 14px; color: var(--text); background: var(--surface);
   border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px;
 }
