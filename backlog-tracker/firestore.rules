@@ -57,6 +57,23 @@ service cloud.firestore {
       allow delete: if true;
     }
 
+    // A deployment groups several backlogItems (usually all fixed together
+    // in one Notify Claude Routine fire, or hand-picked from the board)
+    // that are meant to ship to main together — see backlogItems.deploymentId
+    // above and the board's own Deployments page for the per-project view,
+    // progress checklist, and the "batch merge" action that flips every
+    // member item to published-live at once, once every one of them has
+    // individually reached ready-to-publish (Live on Feature Branch).
+    match /deployments/{deploymentId} {
+      allow read: if true;
+
+      allow create, update: if
+        isNonEmptyBoundedString(incoming().projectId, 100) &&
+        isNonEmptyBoundedString(incoming().label, 120);
+
+      allow delete: if true;
+    }
+
     // FAQ / Help Center — the consumer-facing site at repo-root `faq/`
     // (published via GitHub Pages) reads these two collections directly;
     // this app's "FAQ Center" admin page is the only writer. Same
