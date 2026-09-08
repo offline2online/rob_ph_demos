@@ -170,10 +170,41 @@ instant, so there's no excuse for the board drifting from reality.
   description (typed or dictated); a short title is auto-generated and the
   category best-guessed (`suggestCategory()`), same spirit as before.
 
+### Project header: one primary CTA, everything else in "⋮"
+
+Each project header shows exactly two controls now: the primary
+**+ New backlog item** button, and a small **⋮** options menu holding
+everything else — Archived tickets, Requirements (MD file), and every
+interface contract this project has with another one (see below). This
+replaced three competing header buttons (Add / Archived / Docs), which was
+the real "CTAs don't work on mobile" problem: on a narrow screen they wrapped
+small and mis-tappable, and the board's 4 columns forced a sideways scroll
+that hid most of the pipeline (including the Confirm/Merge buttons)
+off-screen with no indication it was there. Below 640px width the board
+stacks columns vertically instead (no horizontal scroll at all), and the
+header becomes one big full-width Add button plus the ⋮ beside it. A project
+with no interface yet shows a greyed-out "No interface contract yet" line in
+the menu — click it to create one, same flow as the Docs page's own
+"+ New interface" button.
+
+Verifying this kind of change in this sandbox needs a workaround: the egress
+policy here blocks `gstatic.com` (confirmed via
+`$HTTPS_PROXY/__agentproxy/status` — "gateway answered 403 to CONNECT"),
+which is where the real app loads the Firebase SDK from, so `app.js` never
+executes against a plain `curl`/static check. To actually see it render,
+stand up a local static server over `backlog-tracker/public/`, and use
+Playwright's `page.route()` to intercept just the two `gstatic.com` script
+URLs and fulfill them with a small in-memory Firestore stub (mirroring the
+real collections' shapes) — the real, unmodified `app.js`/`index.html`/
+`styles.css` then render exactly as they would in production, screenshot-able
+at any viewport including mobile, with zero changes to any real file. Only
+do this against a local stub, never point it at the real
+`backlog-tracker-e4ed2` project from an automated test.
+
 ### Docs page: per-project requirements + interfaces between projects
 
-Each project header has a **Docs (N)** button (N = its interface count).
-It opens a page with two blocks:
+Reached via a project's **⋮** menu (or directly, for a specific interface —
+see above). It opens a page with two blocks:
 
 - **Requirements** — free-text markdown, stored on that project's own
   Firestore doc (`requirementsMd`). This is the board-native home for a
@@ -200,8 +231,9 @@ direct Firestore write), and vice versa — don't let the two drift.
 Merged to Main (Live) cards have an **Archive** action. Archiving sets
 `status: "archived"` and `archivedAt` — archived cards keep their data but
 drop off all four columns rather than being deleted. Each project's own
-**Archived (N)** button opens a dedicated full-page table scoped to that
-project, sortable by Type / Area / Ticket / Date and filterable by area,
+**Archived tickets** entry (in its **⋮** options menu) opens a dedicated
+full-page table scoped to that project, sortable by Type / Area / Ticket
+/ Date and filterable by area,
 type, and free-text search, each row with a **Restore** button that sets
 `status` back to `"published-live"`. Deletion (the trash icon on a card) is
 reserved for Backlog cards only.
