@@ -314,11 +314,15 @@ To set this up:
    Firestore, it just won't fire anything until both secrets exist.
 
 This is a **research-preview API** (Anthropic's own description of it) —
-the exact endpoint path and the `anthropic-beta` header
-(`experimental-cc-routine-2026-04-01`) the function sends may change. If
-firing starts failing with an auth or version-related error after
-previously working, check Anthropic's current Claude Code Routines docs
-for what changed.
+the exact endpoint path and the two headers the function sends
+(`anthropic-beta: experimental-cc-routine-2026-04-01` and
+`anthropic-version: 2023-06-01` — the latter is required or the endpoint
+returns 400 with `"anthropic-version: header is required"`, confirmed by
+testing the fire endpoint directly with `curl`) may change. If firing
+starts failing with an auth or version-related error after previously
+working, check Anthropic's current Claude Code Routines docs for what
+changed, and re-test with `curl` before re-patching the function — see
+the request shape in `functions/index.js`'s `notifyOnProjectReadyForReview`.
 
 ## FAQ / Help Center
 
