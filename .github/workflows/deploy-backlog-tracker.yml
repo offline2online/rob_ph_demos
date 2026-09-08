@@ -7,6 +7,19 @@ on:
       - 'backlog-tracker/**'
   workflow_dispatch: {}
 
+# Several PRs merging within seconds of each other (a common shape for this
+# repo — the Notify Claude Routine and its human reimplementations both
+# tend to land a batch of small fixes back to back) used to fire one deploy
+# run per push, all racing to update the same Cloud Functions at once and
+# failing with GCP's "409 unable to queue the operation". Grouping runs by
+# workflow+branch and cancelling a still-running/queued one when a newer
+# push arrives means a burst of N merges now completes exactly one deploy —
+# for the last commit, which already contains every change in the burst —
+# instead of N racing runs where only one (not necessarily the last) wins.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
