@@ -119,6 +119,15 @@
       </div>
 
       <div class="docs-block">
+        <h3>Routine instructions</h3>
+        <p class="field-hint">Extra instructions for this project only, included automatically at the top of what "Notify Claude" sends the Routine — a different branch convention, which part of the repo this project owns, anything the generic workflow wouldn't know. Leave blank to just use the Routine's own default instructions.</p>
+        <textarea id="docs-routine-prompt-input" rows="8" placeholder="No project-specific instructions yet — optional."></textarea>
+        <div class="form-row" style="justify-content:flex-end;">
+          <button type="button" class="btn-primary" id="docs-routine-prompt-save">Save instructions</button>
+        </div>
+      </div>
+
+      <div class="docs-block">
         <h3>FAQ review automation</h3>
         <p class="field-hint">When on, any FAQ article linked to this project (via its own "Linked project" field) is automatically marked "Needs review" the moment a backlog item for this project is merged to main — a live feature shipped, so anything documenting it might now be stale.</p>
         <label class="np-interface-toggle">

@@ -409,6 +409,15 @@ async function setProjectRequirements(id, md) {
   await setDoc(doc(db, "projects", id), { requirementsMd: md, updatedAt: serverTimestamp() }, { merge: true });
 }
 
+// Per-project addendum to the Notify Claude Routine's own fixed prompt —
+// prepended to the fire request's `text` by notifyOnProjectReadyForReview
+// (see functions/index.js) so one project can hand the Routine extra
+// context (a branch convention, which part of the repo it owns, anything
+// the generic workflow wouldn't know) without editing the Routine itself.
+async function setProjectRoutinePrompt(id, md) {
+  await setDoc(doc(db, "projects", id), { routinePromptMd: md, updatedAt: serverTimestamp() }, { merge: true });
+}
+
 async function setProjectFaqAutoFlag(id, enabled) {
   await setDoc(doc(db, "projects", id), { faqAutoFlagOnLive: enabled, updatedAt: serverTimestamp() }, { merge: true });
 }
@@ -733,6 +742,7 @@ document.getElementById("archive-table-body").addEventListener("click", (e) => {
 // ── Docs page (per-project requirements + interfaces with other projects) ─
 const docsPage = document.getElementById("docs-page");
 const docsRequirementsInput = document.getElementById("docs-requirements-input");
+const docsRoutinePromptInput = document.getElementById("docs-routine-prompt-input");
 const docsFaqAutoFlagInput = document.getElementById("docs-faq-auto-flag");
 
 function openDocsPage(pid) {
@@ -776,6 +786,9 @@ function renderDocsPage() {
   if (document.activeElement !== docsRequirementsInput) {
     docsRequirementsInput.value = (project && project.requirementsMd) || "";
   }
+  if (document.activeElement !== docsRoutinePromptInput) {
+    docsRoutinePromptInput.value = (project && project.routinePromptMd) || "";
+  }
   docsFaqAutoFlagInput.checked = !!(project && project.faqAutoFlagOnLive);
   const rows = interfacesForProject(docsProjectId);
   document.getElementById("docs-interfaces-list").innerHTML = rows.length
@@ -787,6 +800,10 @@ document.getElementById("docs-back-btn").addEventListener("click", closeDocsPage
 document.getElementById("docs-requirements-save").addEventListener("click", () => {
   if (!docsProjectId) return;
   setProjectRequirements(docsProjectId, docsRequirementsInput.value);
+});
+document.getElementById("docs-routine-prompt-save").addEventListener("click", () => {
+  if (!docsProjectId) return;
+  setProjectRoutinePrompt(docsProjectId, docsRoutinePromptInput.value);
 });
 docsFaqAutoFlagInput.addEventListener("change", () => {
   if (!docsProjectId) return;

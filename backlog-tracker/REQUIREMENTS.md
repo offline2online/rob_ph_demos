@@ -59,6 +59,7 @@ Cloud Functions, own Hosting site, own IAM/billing; see
   createdAt: timestamp,
   requirementsMd?: string,        // this file's own live counterpart
   notifyRequestedAt?: timestamp,  // bumped by the "Notify Claude" button
+  routinePromptMd?: string,       // see "Per-project Routine instructions" below
   faqAutoFlagOnLive?: boolean,    // see "FAQ auto-review" below
 }
 ```
@@ -254,6 +255,9 @@ run, so its prompt must be fully self-contained. It is instructed to:
    collection for any contracts involving that project, and cross-check
    against any repo-native requirements file for that project — full
    context before writing code, not just the repo's root `CLAUDE.md`.
+   Also check the fire request's `text` (or the project's own
+   `routinePromptMd` directly) for a project-specific instructions block —
+   see "Per-project Routine instructions" below.
 4. For each Backlog item: rewrite its title to a proper short subject line,
    investigate for real, implement on a feature branch, push, open a PR,
    and PATCH the item's status/category/title/notes — never fabricating a
@@ -269,6 +273,24 @@ that case is exactly what shipped: leave the item in `backlog`, write a
 detailed note naming the exact blocker and the local branch/commit, and
 say so in the summary rather than falsely marking anything
 `ready-for-testing`.
+
+### Per-project Routine instructions (`routinePromptMd`)
+
+The Routine's own prompt above is shared across every project on the
+board — it can't hold project-specific detail (a different branch
+convention, which slice of the repo a project owns) without becoming
+unreadable. Each project's Docs page has its own **Routine instructions**
+field (`projects/{id}.routinePromptMd`, plain markdown, optional and blank
+by default) for exactly that. When **Notify Claude** fires,
+`notifyOnProjectReadyForReview` prepends this field's content — if
+non-blank — to the fire request's `text`, wrapped in
+`=== PROJECT-SPECIFIC INSTRUCTIONS FOR "<project>" ===` /
+`=== END PROJECT-SPECIFIC INSTRUCTIONS ===` markers, ahead of the usual
+"Project X has N items in Backlog" list. The Routine's own prompt is
+instructed to treat a present block as authoritative additional context
+that supplements — never replaces — the required steps above (still PATCH
+the same fields, still open a PR the same way). Most projects leave this
+blank; that's the expected default, not a gap.
 
 ## Functional requirements — FAQ / Help Center
 

@@ -187,7 +187,19 @@ exports.notifyOnProjectReadyForReview = onDocumentUpdated(
     const itemLines = items
       .map((i, idx) => `${idx + 1}. [${i.type === "bug" ? "Bug" : "Feature"}] ${i.title} — ${i.desc}`)
       .join("\n");
-    const text = `Project: "${projectName}" (projectId: ${event.params.projectId}) on the Backlog Tracker & FAQs board has ${items.length} item${items.length === 1 ? "" : "s"} in Backlog:\n\n${itemLines}`;
+
+    // Per-project override/addendum to the Routine's own fixed prompt (see
+    // the Docs page's "Routine instructions" block, projects/{id}
+    // .routinePromptMd) — lets one project hand the Routine extra
+    // instructions specific to it (a different branch convention, a note
+    // about which parts of the repo it owns, anything the generic workflow
+    // wouldn't know) without needing a second Routine or editing the
+    // Routine's own prompt for every project that wants something custom.
+    const projectPromptBlock = (after.routinePromptMd || "").trim()
+      ? `=== PROJECT-SPECIFIC INSTRUCTIONS FOR "${projectName}" (from this project's Docs page) ===\n${after.routinePromptMd.trim()}\n=== END PROJECT-SPECIFIC INSTRUCTIONS ===\n\n`
+      : "";
+
+    const text = `${projectPromptBlock}Project: "${projectName}" (projectId: ${event.params.projectId}) on the Backlog Tracker & FAQs board has ${items.length} item${items.length === 1 ? "" : "s"} in Backlog:\n\n${itemLines}`;
 
     try {
       const res = await fetch(fireUrl, {
