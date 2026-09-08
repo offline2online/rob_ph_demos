@@ -2,4 +2,4 @@
 // backlog-tracker/public. No build step exists here to derive it from git,
 // so this is the source of truth for "what's actually live" alongside the
 // footer it's rendered into.
-export const APP_VERSION = "1.0.0";
+export const APP_VERSION = "1.1.0";
