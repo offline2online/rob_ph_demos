@@ -17,6 +17,35 @@ This is a static site repository used to publish HTML and static resources (CSS,
 
 `menu-board-demo/functions/` (Cloud Functions for Firebase — the scheduled offer-expiry sweep, the AI provider calls) is **not** part of the static site. Pushing a change there to `main` does **not** make it live — GitHub Pages only serves the static HTML/JS/CSS, and this sandbox has no `firebase` CLI or deploy credentials, so **Claude cannot deploy a functions change itself**. Whoever owns Firebase deploy access needs to separately run `firebase deploy --only functions` (or `npm run deploy` inside `menu-board-demo/functions`) before a functions fix actually takes effect. Always say this explicitly when committing a functions/ change — don't imply "pushed to main" means "live" the way it does for everything else in this repo.
 
+## Live Visitor Profile & Experience Templates — two separate projects, one repo
+
+`visitor-profile/` and `experience-templates/` were split out as two
+independently-managed projects, following the same pattern as
+`menu-board-demo/`: each is its own subfolder in this same repo, developed on
+its own feature branch(es), and merged to `main` on its own schedule — not
+tied to the other project's release cadence.
+
+- **`visitor-profile/`** — managing personalisation attributes in
+  Personalisation Hub, and the source systems that populate them.
+- **`experience-templates/`** — managing display types, elements, layouts,
+  and templates.
+- **`shared/interface-contract.md`** — the maintained interface contract
+  between the two. It lives outside both project folders on purpose: it's
+  shared space neither project owns unilaterally. Any change to the contract
+  (not just to one project's own internals) should be made with both areas in
+  mind. See that file for the actual contract (attribute keys, token syntax,
+  versioning rules).
+- Each has its own `REQUIREMENTS.md` in its own folder.
+
+**On the Prototype Backlog board**, these are two separate entries in
+`STATE.projects[]` — `live-visitor-profile` ("Live Visitor Profile") and
+`experience-templates` ("Experience Templates") — each with its own
+Backlog → Ready for Testing → Live on Feature Branch → Merged to Main (Live)
+pipeline and its own Archive, fully independent of each other and of the
+original "Products and Pricing" project. Treat backlog sweeps, Notify Claude
+handling, and publish workflows for each project exactly as described in the
+"Prototype Backlog" section above — per-project, not shared.
+
 ## Common Workflows
 
 ### Publish changes
