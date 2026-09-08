@@ -199,37 +199,43 @@ REST API is reachable with a plain `curl`, no service account needed.
 
 ## Functional requirements — notification & automation (Cloud Functions)
 
-Three Cloud Functions, all in `backlog-tracker/functions/index.js`:
+Two Cloud Functions, both in `backlog-tracker/functions/index.js`:
 
-1. **`notifyOnBacklogItemCreated`** (`onDocumentCreated` on `backlogItems`)
-   — fires the instant a new item lands with `status: "backlog"`. Posts a
-   plain webhook (`NOTIFY_WEBHOOK_URL` secret) — a Slack message, or
-   whatever else the secret points at. This still needs a human (or a
-   separately-configured relay) to actually act on the notification; it is
-   the "tell someone something happened" primitive, not a work-execution
-   mechanism.
+1. **`notifyOnProjectReadyForReview`** (`onDocumentUpdated` on `projects`)
+   — the **Notify Claude** button's function, and the only notify path
+   left. Fires once when `notifyRequestedAt` is bumped to a genuinely new
+   value (guards against re-firing on an unrelated project edit like a
+   rename) — not once per backlog item. An earlier version had a second
+   function, `notifyOnBacklogItemCreated`, that posted automatically on
+   every single new item; removed because it was noisy — one Slack message
+   per line typed or dictated, long before a project was actually ready
+   for anyone to look at. This function does two independent things on
+   each click (either no-ops on its own if its secret(s) aren't set, never
+   blocking the other):
+   - Posts a plain webhook (`NOTIFY_WEBHOOK_URL` secret) — a Slack message
+     naming the project and exactly how many Backlog items will be
+     actioned, or whatever else the secret points at. Still needs a human
+     (or a separately-configured relay) to actually act on it; it's the
+     "tell someone something happened" side-channel, not the mechanism
+     that gets Claude's attention.
+   - Fetches everything currently in that project's Backlog column and
+     fires a **Claude Code Routine's API trigger** directly — `POST` to
+     `https://api.anthropic.com/v1/claude_code/routines/{id}/fire` with a
+     bearer token and the required `anthropic-version: 2023-06-01` and
+     `anthropic-beta: experimental-cc-routine-2026-04-01` headers (the
+     version header is not optional — its absence is the single most
+     likely cause if this ever silently stops working; reproduce with
+     `curl` directly against the fire endpoint before re-patching this
+     function). Configured via two Firebase secrets,
+     `CLAUDE_ROUTINE_FIRE_URL` and `CLAUDE_ROUTINE_TOKEN`, synced from
+     GitHub Actions repo secrets the same way `NOTIFY_WEBHOOK_URL` already
+     is. The Routine's own prompt (owned at claude.ai/code/routines, not in
+     this repo) carries the actual investigate → fix → note →
+     move-to-Ready-for-Testing workflow; this function's only job is
+     telling it which project and what's in Backlog. This is the half that
+     closes the loop without a human relaying anything.
 
-2. **`notifyOnProjectReadyForReview`** (`onDocumentUpdated` on `projects`)
-   — the **Notify Claude** button's function. Fires when
-   `notifyRequestedAt` is bumped to a genuinely new value (guards against
-   re-firing on an unrelated project edit like a rename). Unlike function
-   1, this one closes the loop without a human relaying anything: it
-   fetches everything currently in that project's Backlog column and fires
-   a **Claude Code Routine's API trigger** directly — `POST` to
-   `https://api.anthropic.com/v1/claude_code/routines/{id}/fire` with a
-   bearer token and the required `anthropic-version: 2023-06-01` and
-   `anthropic-beta: experimental-cc-routine-2026-04-01` headers (the
-   version header is not optional — its absence is the single most likely
-   cause if this ever silently stops working; reproduce with `curl`
-   directly against the fire endpoint before re-patching this function).
-   Configured via two Firebase secrets, `CLAUDE_ROUTINE_FIRE_URL` and
-   `CLAUDE_ROUTINE_TOKEN`, synced from GitHub Actions repo secrets the same
-   way `NOTIFY_WEBHOOK_URL` already is. The Routine's own prompt (owned at
-   claude.ai/code/routines, not in this repo) carries the actual
-   investigate → fix → note → move-to-Ready-for-Testing workflow; this
-   function's only job is telling it which project and what's in Backlog.
-
-3. **`onBacklogItemPublishedLive`** (`onDocumentUpdated` on `backlogItems`)
+2. **`onBacklogItemPublishedLive`** (`onDocumentUpdated` on `backlogItems`)
    — opt-in per project via the Docs page's **FAQ review automation**
    toggle (`projects/{id}.faqAutoFlagOnLive`). Fires specifically on the
    transition to `status: "published-live"` — the one irreversible status
@@ -350,11 +356,14 @@ Two surfaces sharing this same Firestore project:
    Claude does nothing" report as an API-shape question first — reproduce
    with a direct `curl` against the fire endpoint before assuming the bug
    is in this repo's code.
-2. `notifyOnBacklogItemCreated`'s webhook target is whatever
-   `NOTIFY_WEBHOOK_URL` happens to point at — unlike the Routine-fire path,
-   this still fundamentally depends on a human (or a separately-built
-   relay) to act on it. Consider whether every new item should also fire
-   the Routine directly, not just a manual per-project batch.
+2. `NOTIFY_WEBHOOK_URL`'s target is still whatever it happens to point at
+   (Slack, by default) — unlike the Routine-fire half of the same click,
+   the webhook post still fundamentally depends on a human (or a
+   separately-built relay) to act on it. This was previously also fired
+   per-item automatically; removed as too noisy (see "notification &
+   automation" above) — resolved, not left open, but noting the tradeoff:
+   a project that wants Claude's attention on every single new item, not
+   just a batched Notify Claude click, has no built-in way to get that now.
 3. No automated check keeps a project's repo-native `REQUIREMENTS.md` (this
    file, for this project) and its Firestore `requirementsMd` field in
    sync beyond "whoever edits one remembers to update the other." Treat a

@@ -6,10 +6,10 @@
 // This is the piece the Claude Artifact board can't do on its own: an
 // Artifact page has no server of its own, so getting Claude's attention
 // needs a person to click "Notify Claude" and then tell Claude in chat.
-// A real backend can skip the person — the moment a document lands in
-// Firestore with status "backlog", this function fires automatically.
+// A real backend can skip the person — clicking the board's own Notify
+// Claude button (per-project) fires this automatically.
 
-const { onDocumentCreated, onDocumentUpdated } = require("firebase-functions/v2/firestore");
+const { onDocumentUpdated } = require("firebase-functions/v2/firestore");
 const { defineSecret } = require("firebase-functions/params");
 const logger = require("firebase-functions/logger");
 const { initializeApp } = require("firebase-admin/app");
@@ -19,119 +19,27 @@ initializeApp();
 
 // Stored as a Firebase secret, never committed — set it with:
 //   firebase functions:secrets:set NOTIFY_WEBHOOK_URL
-// What you point it at is up to you; a few real options, roughly in order
-// of how much extra plumbing they need (see README.md "Wiring up NOTIFY_WEBHOOK_URL"):
-//   1. A Slack "Incoming Webhook" URL — simplest, a human relays it to Claude.
-//   2. A `watch_url` webhook from a live Claude Code Remote session (the
-//      same mechanism this session used to watch this artifact) — wakes
-//      that specific session directly, but the URL is session-scoped and
-//      needs re-registering whenever the session it points at ends.
-//   3. Firing a Claude Code Routine's API trigger directly — see
-//      notifyOnProjectReadyForReview below, which does exactly this for the
-//      manual/batched notify path. This per-item notify still just posts a
-//      plain webhook; point it at the same Routine's fire URL too if you
-//      want every single new item to trigger a fresh session on its own,
-//      not only a manual "Notify Claude" click.
+// A Slack "Incoming Webhook" URL is the simplest target; point it wherever
+// you like (see README.md "Wiring up NOTIFY_WEBHOOK_URL"). Used below,
+// once per Notify Claude click — not per backlog item. An earlier version
+// of this function also posted here automatically on every single new
+// backlogItems doc, which was noisy (one Slack message per item typed or
+// dictated, long before a project was actually "ready" for anyone to look
+// at) — removed in favor of the single per-click post below, alongside the
+// Routine fire that click already triggers.
 const NOTIFY_WEBHOOK_URL = defineSecret("NOTIFY_WEBHOOK_URL");
 
-exports.notifyOnBacklogItemCreated = onDocumentCreated(
-  { document: "backlogItems/{itemId}", secrets: [NOTIFY_WEBHOOK_URL] },
-  async (event) => {
-    const item = event.data?.data();
-    if (!item) {
-      return;
-    }
-    // Only the actual "landed in Backlog" moment should notify — a card
-    // created directly into some other status (shouldn't normally happen,
-    // but the UI shouldn't be the only thing enforcing that) stays quiet.
-    if (item.status !== "backlog") {
-      return;
-    }
-
-    const webhookUrl = NOTIFY_WEBHOOK_URL.value();
-    if (!webhookUrl) {
-      logger.warn(
-        "NOTIFY_WEBHOOK_URL is not set — skipping notification for new backlog item",
-        { itemId: event.params.itemId }
-      );
-      return;
-    }
-
-    // Multi-project items carry a projectId rather than embedding the
-    // project's own name — one extra read here keeps the notification
-    // readable ("New item in Products and Pricing: ...") instead of
-    // surfacing an opaque id, and this only runs once per new item, not
-    // once per page view.
-    let projectName = item.projectId || "Unknown project";
-    if (item.projectId) {
-      try {
-        const projectSnap = await getFirestore().collection("projects").doc(item.projectId).get();
-        if (projectSnap.exists && projectSnap.data().name) {
-          projectName = projectSnap.data().name;
-        }
-      } catch (err) {
-        logger.warn("Could not look up project name for notification", {
-          itemId: event.params.itemId,
-          projectId: item.projectId,
-          error: err instanceof Error ? err.message : String(err),
-        });
-      }
-    }
-
-    const payload = {
-      text: `New backlog item in ${projectName}: "${item.title}" (${item.type === "bug" ? "Bug" : "Feature"}, ${item.category || "Uncategorised"})`,
-      itemId: event.params.itemId,
-      projectId: item.projectId || null,
-      projectName,
-      title: item.title,
-      desc: item.desc,
-      type: item.type,
-      category: item.category || "Uncategorised",
-      createdAt: item.createdAt || null,
-    };
-
-    try {
-      const res = await fetch(webhookUrl, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-      if (!res.ok) {
-        // Logged, not thrown — a bad webhook target shouldn't retry-loop
-        // this function forever, it should just show up in Cloud Logging.
-        logger.error("Notify webhook responded with a non-2xx status", {
-          itemId: event.params.itemId,
-          status: res.status,
-          body: await res.text().catch(() => "<unreadable>"),
-        });
-        return;
-      }
-      logger.info("Notified webhook of new backlog item", {
-        itemId: event.params.itemId,
-      });
-    } catch (err) {
-      logger.error("Failed to call notify webhook", {
-        itemId: event.params.itemId,
-        error: err instanceof Error ? err.message : String(err),
-      });
-    }
-  }
-);
-
-// The per-item notify above fires immediately on every new card, which is
-// the wrong shape when someone wants to add several backlog items first and
-// only then say "this project is ready to look at" — this is the manual,
-// batched counterpart: the board's "Notify Claude" button (per-project ⋮
-// menu) writes projects/{id}.notifyRequestedAt, and this fires once on that
-// write.
-//
-// Unlike the per-item notify (a plain webhook someone still has to relay
-// into a conversation), this one actually closes the loop end to end: it
-// calls a Claude Code Routine's API-trigger "fire" endpoint directly, which
-// starts a fresh Claude Code session immediately, no human relay required.
-// The Routine (see Anthropic's claude.ai/code/routines) owns its own prompt
-// — this function's job is only to hand it which project and what's
-// currently in that project's Backlog column, as the fire request's `text`.
+// The board's "Notify Claude" button (per-project ⋮ menu) writes
+// projects/{id}.notifyRequestedAt, and this fires once on that write —
+// posting one Slack message (naming the project and exactly how many
+// Backlog items will be actioned) and firing a Claude Code Routine's
+// API-trigger "fire" endpoint directly, which starts a fresh Claude Code
+// session immediately, no human relay required. The Routine (see
+// Anthropic's claude.ai/code/routines) owns its own prompt — this
+// function's job is only to hand it which project and what's currently in
+// that project's Backlog column, as the fire request's `text`. The Slack
+// post and the Routine fire are independent: either one no-ops on its own
+// if its secret(s) aren't set, without blocking the other.
 //
 // CLAUDE_ROUTINE_FIRE_URL and CLAUDE_ROUTINE_TOKEN are both per-Routine and
 // both secret in effect (the URL embeds the Routine's trigger id; the token
@@ -142,7 +50,7 @@ const CLAUDE_ROUTINE_FIRE_URL = defineSecret("CLAUDE_ROUTINE_FIRE_URL");
 const CLAUDE_ROUTINE_TOKEN = defineSecret("CLAUDE_ROUTINE_TOKEN");
 
 exports.notifyOnProjectReadyForReview = onDocumentUpdated(
-  { document: "projects/{projectId}", secrets: [CLAUDE_ROUTINE_FIRE_URL, CLAUDE_ROUTINE_TOKEN] },
+  { document: "projects/{projectId}", secrets: [NOTIFY_WEBHOOK_URL, CLAUDE_ROUTINE_FIRE_URL, CLAUDE_ROUTINE_TOKEN] },
   async (event) => {
     const before = event.data?.before?.data();
     const after = event.data?.after?.data();
@@ -158,16 +66,6 @@ exports.notifyOnProjectReadyForReview = onDocumentUpdated(
       return;
     }
 
-    const fireUrl = CLAUDE_ROUTINE_FIRE_URL.value();
-    const token = CLAUDE_ROUTINE_TOKEN.value();
-    if (!fireUrl || !token) {
-      logger.warn(
-        "CLAUDE_ROUTINE_FIRE_URL/CLAUDE_ROUTINE_TOKEN not set — skipping manual project notify request",
-        { projectId: event.params.projectId }
-      );
-      return;
-    }
-
     // Two equality filters ("==" on projectId and status) — this needs no
     // composite index, unlike an equality + range/order combination would.
     const itemsSnap = await getFirestore().collection("backlogItems")
@@ -177,13 +75,64 @@ exports.notifyOnProjectReadyForReview = onDocumentUpdated(
     const items = itemsSnap.docs.map((d) => d.data());
 
     if (items.length === 0) {
-      logger.info("Notify requested but Backlog is empty — nothing to fire the Routine for", {
+      logger.info("Notify requested but Backlog is empty — nothing to notify or fire the Routine for", {
         projectId: event.params.projectId,
       });
       return;
     }
 
     const projectName = after.name || "A project";
+
+    // Slack (or whatever NOTIFY_WEBHOOK_URL points at) and the Routine fire
+    // below are independent — each posts only if its own secret(s) are set,
+    // and one being unset never blocks the other.
+    const webhookUrl = NOTIFY_WEBHOOK_URL.value();
+    if (webhookUrl) {
+      try {
+        const res = await fetch(webhookUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            text: `Notify Claude clicked for ${projectName}: ${items.length} item${items.length === 1 ? "" : "s"} in Backlog will be actioned.`,
+            projectId: event.params.projectId,
+            projectName,
+            itemCount: items.length,
+          }),
+        });
+        if (!res.ok) {
+          logger.error("Notify webhook responded with a non-2xx status", {
+            projectId: event.params.projectId,
+            status: res.status,
+            body: await res.text().catch(() => "<unreadable>"),
+          });
+        } else {
+          logger.info("Notified webhook of Notify Claude click", {
+            projectId: event.params.projectId,
+            itemCount: items.length,
+          });
+        }
+      } catch (err) {
+        logger.error("Failed to call notify webhook", {
+          projectId: event.params.projectId,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    } else {
+      logger.warn("NOTIFY_WEBHOOK_URL is not set — skipping Slack notification for Notify Claude click", {
+        projectId: event.params.projectId,
+      });
+    }
+
+    const fireUrl = CLAUDE_ROUTINE_FIRE_URL.value();
+    const token = CLAUDE_ROUTINE_TOKEN.value();
+    if (!fireUrl || !token) {
+      logger.warn(
+        "CLAUDE_ROUTINE_FIRE_URL/CLAUDE_ROUTINE_TOKEN not set — skipping Routine fire for manual project notify request",
+        { projectId: event.params.projectId }
+      );
+      return;
+    }
+
     const itemLines = items
       .map((i, idx) => `${idx + 1}. [${i.type === "bug" ? "Bug" : "Feature"}] ${i.title} — ${i.desc}`)
       .join("\n");

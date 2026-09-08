@@ -406,7 +406,7 @@ async function requestNotify(pid) {
     return;
   }
   await setDoc(doc(db, "projects", pid), { notifyRequestedAt: serverTimestamp() }, { merge: true });
-  alert(`Notify requested for ${count} backlog item${count === 1 ? "" : "s"}. This only takes effect once CLAUDE_ROUTINE_FIRE_URL and CLAUDE_ROUTINE_TOKEN are deployed for backlog-tracker's Cloud Functions (see backlog-tracker/README.md) — until then this just records the request.`);
+  alert(`Notify requested for ${count} backlog item${count === 1 ? "" : "s"}. A Slack message goes out and a Claude Code session starts working through them (see backlog-tracker/README.md for the Cloud Functions this depends on if either isn't happening).`);
 }
 
 async function setProjectName(id, name) {
