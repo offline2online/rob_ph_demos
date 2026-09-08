@@ -15,6 +15,7 @@
         <p class="subtitle"><span id="total-summary">0 items</span> &middot; a new Backlog item notifies automatically — no button to click</p>
       </div>
       <div class="topbar-actions">
+        <button class="btn-ghost" id="archived-projects-btn" type="button">Archived projects</button>
         <button class="btn-ghost" id="faq-center-btn" type="button">FAQ Center</button>
         <button class="btn-primary" id="new-project-btn" type="button">+ New project</button>
       </div>
@@ -179,6 +180,28 @@
           <tbody id="archive-table-body"></tbody>
         </table>
         <p class="empty-hint" id="archive-table-empty" hidden>No archived tickets match these filters.</p>
+      </div>
+    </section>
+
+    <section class="archive-page" id="archived-projects-page" hidden>
+      <div class="archive-page-header">
+        <button type="button" class="btn-ghost" id="archived-projects-back-btn">&larr; Back to board</button>
+        <h2>Archived projects</h2>
+        <span class="archive-page-count" id="archived-projects-count">0 projects</span>
+      </div>
+      <div class="archive-table-wrap">
+        <table class="archive-table">
+          <thead>
+            <tr>
+              <th>Project</th>
+              <th>Active items</th>
+              <th>Archived</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="archived-projects-table-body"></tbody>
+        </table>
+        <p class="empty-hint" id="archived-projects-empty" hidden>No archived projects.</p>
       </div>
     </section>
 
