@@ -163,6 +163,10 @@
             <label class="field-label" for="ei-category-select" style="margin:0 0 4px;">Category</label>
             <select id="ei-category-select"></select>
           </div>
+          <div>
+            <label class="field-label" for="ei-release-select" style="margin:0 0 4px;">Release</label>
+            <select id="ei-release-select"></select>
+          </div>
         </div>
         <div class="form-row" style="justify-content:flex-end;">
           <div class="form-actions">
@@ -334,6 +338,64 @@
       </div>
     </div>
 
+    <section class="docs-page" id="releases-page" hidden>
+      <div class="docs-page-header">
+        <h2>Releases — <span id="releases-page-project-name"></span></h2>
+      </div>
+      <p class="field-hint">
+        Customer-facing groupings tickets (and, from the FAQ article editor, FAQ content) ship
+        under. A new backlog ticket is assigned automatically to whichever release below is
+        currently Planned or In progress (the most recently created one, if there's more than
+        one) — reassign any ticket from its own Edit modal.
+      </p>
+      <div class="form-row" style="justify-content:flex-end;">
+        <button type="button" class="btn-primary" id="releases-add-btn">+ New release</button>
+      </div>
+      <div id="releases-list"></div>
+      <p class="empty-hint" id="releases-empty" hidden>No releases yet — add one to start grouping tickets.</p>
+    </section>
+
+    <div class="modal-backdrop" id="rp-backdrop" hidden>
+      <div class="modal-panel" role="dialog" aria-modal="true" aria-labelledby="rp-title">
+        <div class="modal-header">
+          <h2 id="rp-title">New release</h2>
+          <button type="button" class="modal-close" id="rp-close" aria-label="Close">&times;</button>
+        </div>
+        <div class="form-row-grid">
+          <div>
+            <label class="field-label" for="rp-name-input">Name</label>
+            <input type="text" id="rp-name-input" maxlength="120" placeholder="e.g. Autumn Retail Refresh">
+          </div>
+          <div>
+            <label class="field-label" for="rp-version-input">Version</label>
+            <input type="text" id="rp-version-input" maxlength="40" placeholder="e.g. v1.3">
+          </div>
+        </div>
+        <div class="form-row-grid">
+          <div>
+            <label class="field-label" for="rp-status-select">Status</label>
+            <select id="rp-status-select">
+              <option value="planned">Planned</option>
+              <option value="in-progress">In progress</option>
+              <option value="released">Released</option>
+            </select>
+          </div>
+          <div>
+            <label class="field-label" for="rp-date-input">Release date</label>
+            <input type="date" id="rp-date-input">
+          </div>
+        </div>
+        <label class="field-label" for="rp-notes-input">Notes</label>
+        <textarea id="rp-notes-input" rows="3" maxlength="1000" placeholder="What's in this release, for whoever's reading the board…"></textarea>
+        <div class="form-row" style="justify-content:flex-end;">
+          <div class="form-actions">
+            <button type="button" class="btn-ghost" id="rp-cancel">Cancel</button>
+            <button type="button" class="btn-primary" id="rp-submit">Save release</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <div class="modal-backdrop" id="fa-backdrop" hidden>
       <div class="modal-panel modal-panel-wide" role="dialog" aria-modal="true" aria-labelledby="fa-title">
         <div class="modal-header">
@@ -356,7 +418,15 @@
             </select>
           </div>
         </div>
-        <p class="field-hint">Linking a project is what lets a future feature launch flag its own FAQs for review — see "Needs review" below.</p>
+        <div class="form-row-grid" id="fa-release-row" hidden>
+          <div>
+            <label class="field-label" for="fa-release-select">Release (optional)</label>
+            <select id="fa-release-select">
+              <option value="">No release</option>
+            </select>
+          </div>
+        </div>
+        <p class="field-hint">Linking a project is what lets a future feature launch flag its own FAQs for review — see "Needs review" below. Once a project's linked, you can also tag this article with one of that project's releases, for a customer-facing "what's new in v1.3" view.</p>
         <label class="field-label" for="fa-summary-input">Summary (shown in lists and search)</label>
         <textarea id="fa-summary-input" rows="2" maxlength="300"></textarea>
         <label class="field-label" for="fa-keywords-input">Search keywords (comma separated, optional)</label>
@@ -400,7 +470,9 @@
         Consumer-facing site: <code>faq/</code> at the repo root (published via GitHub Pages once
         merged to <code>main</code>). Categories are shown on that site's front page and category
         filter — everything here reads/writes this same Firestore project, so a save here is what
-        keeps that page current.
+        keeps that page current. Category name/icon/description and drag-to-reorder are also
+        available directly from <strong>FAQ Management</strong>'s Categories column now, if you'd
+        rather manage them right where you're already browsing.
       </p>
 
       <div class="docs-block">
@@ -427,29 +499,52 @@
       <p class="field-hint">
         Consumer-facing site: <code>faq/</code> at the repo root (published via GitHub Pages once
         merged to <code>main</code>). Only <strong>Published</strong> articles appear there.
-        Manage categories from <strong>Settings</strong> in the hamburger menu.
+        Drill down Projects &rarr; Categories &rarr; Articles below — categories can also be
+        edited (name/icon/description) or reordered right here, no need to go to
+        <strong>Settings</strong> separately. Drag any row by its handle to change its
+        display order on the public site.
       </p>
 
-      <div class="docs-block">
-        <div class="docs-block-header">
-          <h3>Articles</h3>
-          <button type="button" class="btn-primary" id="fa-new-article-btn">+ New article</button>
+      <div class="faq-drill">
+        <div class="faq-drill-col faq-drill-col-projects">
+          <div class="faq-drill-col-header"><h3>Projects</h3></div>
+          <div id="faq-drill-projects-list" class="faq-drill-list"></div>
         </div>
-        <div class="fa-filter-row">
-          <select id="fa-filter-category"><option value="">All categories</option></select>
-          <select id="fa-filter-status">
-            <option value="">All statuses</option>
-            <option value="published">Published</option>
-            <option value="draft">Draft</option>
-          </select>
-          <select id="fa-filter-needs-review">
-            <option value="">Needs review: any</option>
-            <option value="yes">Needs review</option>
-          </select>
-          <input type="search" id="fa-filter-search" placeholder="Title or summary…">
+
+        <div class="faq-drill-col faq-drill-col-categories">
+          <div class="faq-drill-col-header"><h3>Categories</h3></div>
+          <div id="faq-drill-categories-list" class="faq-drill-list"></div>
+          <div class="fa-new-category-row">
+            <input type="text" id="fad-new-category-name" maxlength="80" placeholder="New category name">
+            <div class="fa-icon-picker">
+              <span class="material-symbols-outlined fa-icon-preview" id="fad-new-category-icon-preview">help</span>
+              <select id="fad-new-category-icon"></select>
+            </div>
+            <button type="button" class="btn-ghost" id="fad-new-category-submit">+ Add category</button>
+          </div>
         </div>
-        <div id="faq-article-list"></div>
-        <p class="empty-hint" id="faq-article-empty" hidden>No articles match these filters.</p>
+
+        <div class="faq-drill-col faq-drill-col-articles">
+          <div class="faq-drill-col-header">
+            <h3 id="faq-drill-articles-title">Articles</h3>
+            <button type="button" class="btn-primary" id="fa-new-article-btn">+ New article</button>
+          </div>
+          <div class="fa-filter-row">
+            <select id="fa-filter-status">
+              <option value="">All statuses</option>
+              <option value="published">Published</option>
+              <option value="draft">Draft</option>
+            </select>
+            <select id="fa-filter-needs-review">
+              <option value="">Needs review: any</option>
+              <option value="yes">Needs review</option>
+            </select>
+            <input type="search" id="fa-filter-search" placeholder="Title or summary…">
+          </div>
+          <div id="faq-article-list" class="faq-drill-list"></div>
+          <p class="empty-hint" id="faq-article-empty" hidden>No articles match these filters.</p>
+          <p class="empty-hint" id="faq-drill-no-category" hidden>Select a category on the left to see its articles.</p>
+        </div>
       </div>
     </section>
 
