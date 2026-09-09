@@ -25,6 +25,17 @@ service cloud.firestore {
       allow delete: if true;
     }
 
+    // Programs/Products — a purely organizational grouping above Projects
+    // (see backlog-tracker/public/js/app.js groupProjectsByProgram); a
+    // project's optional programId just points at a doc here, validated on
+    // the projects rule above only insofar as `name` still has to be
+    // present on any project write.
+    match /programs/{programId} {
+      allow read: if true;
+      allow create, update: if isNonEmptyBoundedString(incoming().name, 80);
+      allow delete: if true;
+    }
+
     match /backlogItems/{itemId} {
       allow read: if true;
 

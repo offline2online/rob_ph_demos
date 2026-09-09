@@ -115,6 +115,16 @@ body {
 .project-header .subtitle { margin: 4px 0 0; }
 .project.collapsed .project-body { display: none; }
 
+/* Program/Product grouping — a heading above a set of projects, only
+   rendered at all once at least one program exists (see app.js render()).
+   No board/columns of its own, just a label; each project inside still
+   renders exactly as it does ungrouped. */
+.program-group { display: flex; flex-direction: column; gap: 20px; }
+.program-heading {
+  margin: 0; font-size: 13px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: .05em; color: var(--text-muted);
+}
+
 /* ── Header actions: one primary CTA + one "⋮" options menu ─────────────
    Everything that isn't "add a backlog item" (archive, requirements,
    interfaces) lives behind the options menu now, on both desktop and

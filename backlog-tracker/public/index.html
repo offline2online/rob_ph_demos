@@ -58,6 +58,10 @@
         <input type="text" id="np-name-input" maxlength="80" placeholder="e.g. Loyalty App">
         <p class="field-hint">Creates a new, independent Backlog → Ready for Testing → Live on Feature Branch → Merged to Main (Live) pipeline, same as any other project here.</p>
 
+        <label class="field-label" for="np-program-select">Program / Product (optional)</label>
+        <select id="np-program-select"></select>
+        <p class="field-hint">Purely organizational — groups this project under a heading on the board alongside others in the same program. Skip it and add one later from the Docs page if you'd rather.</p>
+
         <div class="np-interface-block">
           <label class="np-interface-toggle">
             <input type="checkbox" id="np-if-enable">
@@ -108,6 +112,12 @@
       <div class="docs-page-header">
         <button type="button" class="btn-ghost" id="docs-back-btn">&larr; Back to board</button>
         <h2>Docs — <span id="docs-page-project-name"></span></h2>
+      </div>
+
+      <div class="docs-block">
+        <h3>Program / Product</h3>
+        <p class="field-hint">Purely organizational — groups this project under a heading on the board alongside others in the same program. Changing it takes effect immediately, same as everything else here.</p>
+        <select id="docs-program-select"></select>
       </div>
 
       <div class="docs-block">

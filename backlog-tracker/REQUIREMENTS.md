@@ -61,6 +61,7 @@ Cloud Functions, own Hosting site, own IAM/billing; see
   notifyRequestedAt?: timestamp,  // bumped by the "Notify Claude" button
   routinePromptMd?: string,       // see "Per-project Routine instructions" below
   faqAutoFlagOnLive?: boolean,    // see "FAQ auto-review" below
+  programId?: string,             // see "programs/{programId}" below
 }
 ```
 One doc per tracked project. A project with no doc but whose items
@@ -110,6 +111,25 @@ Status pipeline and what each transition means:
 four for automation purposes (see "FAQ auto-review" below) — the other
 three can still be reverted or corrected without anything external having
 already happened.
+
+### `programs/{programId}`
+```
+{
+  name: string,
+  createdAt: timestamp,
+}
+```
+A purely organizational grouping *above* projects — a program/product has
+no columns, status, or pipeline of its own; it only exists to group related
+projects under a shared heading on the board (a client can have several
+concurrent prototypes/projects under one program, e.g. several menu-board
+variants under "Menu Board"). A project's own `programId` (see above) is
+optional and points here. Created either inline from the New Project
+modal's "+ New program…" option, or from an existing project's Docs page —
+both offer the same "pick an existing program, or create one on the spot"
+picker. Deleting a program isn't wired up from either UI yet; a project
+whose `programId` points at a since-deleted program doc is treated exactly
+like one with no `programId` at all (falls into "Ungrouped").
 
 ### `deployments/{deploymentId}`
 ```
@@ -174,6 +194,16 @@ REST API is reachable with a plain `curl`, no service account needed.
   with its own four-column pipeline and its own Archive. Projects sort by
   most-recent item activity (created/updated/archived), not creation order,
   so adding an item to a project brings it to the top.
+- **Program/Product grouping (optional).** A project can optionally belong
+  to a `programs` doc (see Data model above) purely for display — no
+  columns/status of its own. While zero programs exist, the board renders
+  exactly as it always has, flat, with no visual change at all. Once at
+  least one program exists, projects render under named-program headings
+  (alphabetical), followed by an "Ungrouped" section — only shown if it has
+  members — for anything with no `programId`. Set from the New Project
+  modal at creation time, or from an existing project's Docs page at any
+  time; both offer "+ New program…" to create one inline without leaving
+  the flow.
 - **New item capture is description-only.** No title or category field up
   front — just typed or dictated text. A short title and a best-guess
   category (`suggestCategory()`) are generated automatically; correcting
@@ -203,10 +233,12 @@ REST API is reachable with a plain `curl`, no service account needed.
   New item / ⋮ row rather than squeezing three controls onto one line; the
   board's four columns stack vertically instead of forcing horizontal
   scroll.
-- **Docs page** (per project, via ⋮): free-text **Requirements**
-  (`requirementsMd` — this document's own live counterpart), **FAQ review
-  automation** toggle (see below), and **Interfaces with other projects**
-  (list + add/edit, backed by the `interfaces` collection).
+- **Docs page** (per project, via ⋮): a **Program / Product** picker
+  (`programId`, see "Program/Product grouping" above), free-text
+  **Requirements** (`requirementsMd` — this document's own live
+  counterpart), **FAQ review automation** toggle (see below), and
+  **Interfaces with other projects** (list + add/edit, backed by the
+  `interfaces` collection).
 - **Archive**: a Merged-to-Main card can be archived (sets `status:
   "archived"` + `archivedAt`, not deleted); each project's own Archived
   page is sortable/filterable by type, area, and free text, with a Restore

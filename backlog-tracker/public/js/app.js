@@ -23,6 +23,7 @@ const itemsRef = collection(db, "backlogItems");
 const projectsRef = collection(db, "projects");
 const interfacesRef = collection(db, "interfaces");
 const deploymentsRef = collection(db, "deployments");
+const programsRef = collection(db, "programs");
 
 const COLUMNS = [
   { key: "backlog", label: "Backlog", headClass: "backlog" },
@@ -51,6 +52,7 @@ let projects = [];
 let projectsLoaded = false;
 let interfaces = [];
 let deployments = [];
+let programs = [];
 let editingProjectId = null;
 
 // ── Docs page state (per-project requirements + interfaces with other
@@ -339,10 +341,50 @@ function migrateOrphanItems() {
   });
 }
 
+// Program/Product grouping — purely a display grouping above Projects, not
+// a new pipeline of its own (programs have no columns/status). Only kicks
+// in once at least one program actually exists: a board that never adopts
+// this feature renders exactly as it always has, flat, with zero visual
+// change. Once a program exists, projects render under a heading per
+// program (alphabetical by name) followed by an "Ungrouped" section — only
+// shown if it actually has members — for projects with no programId or one
+// pointing at a program that's since been deleted.
+function programName(id) {
+  const p = programs.find((p) => p.id === id);
+  return p ? p.name : "";
+}
+
+function groupProjectsByProgram(renderedProjects) {
+  const knownProgramIds = new Set(programs.map((p) => p.id));
+  const byProgramId = new Map();
+  renderedProjects.forEach((project) => {
+    const pid = project.programId && knownProgramIds.has(project.programId) ? project.programId : null;
+    if (!byProgramId.has(pid)) byProgramId.set(pid, []);
+    byProgramId.get(pid).push(project);
+  });
+  const groups = programs
+    .filter((p) => byProgramId.has(p.id))
+    .sort((a, b) => a.name.localeCompare(b.name))
+    .map((p) => ({ id: p.id, name: p.name, projects: byProgramId.get(p.id) }));
+  const ungrouped = byProgramId.get(null) || [];
+  if (ungrouped.length) groups.push({ id: null, name: "Ungrouped", projects: ungrouped });
+  return groups;
+}
+
+function programGroupHTML(group) {
+  return `
+    <section class="program-group" data-program-id="${escapeHTML(group.id || "")}">
+      <h2 class="program-heading">${escapeHTML(group.name)}</h2>
+      ${group.projects.map(projectSectionHTML).join("")}
+    </section>`;
+}
+
 function render() {
   migrateOrphanItems();
   const renderedProjects = getRenderedProjects();
-  document.getElementById("projects-root").innerHTML = renderedProjects.map(projectSectionHTML).join("");
+  document.getElementById("projects-root").innerHTML = programs.length
+    ? groupProjectsByProgram(renderedProjects).map(programGroupHTML).join("")
+    : renderedProjects.map(projectSectionHTML).join("");
 
   const total = items.filter((i) => COL_KEYS.includes(i.status)).length;
   document.getElementById("total-summary").textContent =
@@ -394,6 +436,14 @@ onSnapshot(deploymentsRef, (snap) => {
   console.error("backlog-tracker: deployments listener error", err);
 });
 
+onSnapshot(programsRef, (snap) => {
+  programs = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  render();
+  if (docsProjectId) renderDocsPage();
+}, (err) => {
+  console.error("backlog-tracker: programs listener error", err);
+});
+
 async function addItem(projectId, title, desc, type, category) {
   await addDoc(itemsRef, {
     projectId, title, desc, type, category,
@@ -432,8 +482,10 @@ async function restoreItem(id) {
   });
 }
 
-async function addProject(name) {
-  const ref = await addDoc(projectsRef, { name: name.trim(), createdAt: serverTimestamp() });
+async function addProject(name, programId) {
+  const data = { name: name.trim(), createdAt: serverTimestamp() };
+  if (programId) data.programId = programId;
+  const ref = await addDoc(projectsRef, data);
   return ref.id;
 }
 
@@ -493,6 +545,31 @@ async function setProjectRoutinePrompt(id, md) {
 
 async function setProjectFaqAutoFlag(id, enabled) {
   await setDoc(doc(db, "projects", id), { faqAutoFlagOnLive: enabled, updatedAt: serverTimestamp() }, { merge: true });
+}
+
+// ── Programs/Products — a purely organizational grouping above Projects,
+// with no columns/status of its own. A project's programId is optional and
+// only affects how it's grouped on the board (see groupProjectsByProgram).
+async function createProgram(name) {
+  const trimmed = (name || "").trim();
+  if (!trimmed) return null;
+  const ref = await addDoc(programsRef, { name: trimmed, createdAt: serverTimestamp() });
+  return ref.id;
+}
+
+async function setProjectProgram(id, programId) {
+  await setDoc(doc(db, "projects", id), { programId: programId || null }, { merge: true });
+}
+
+// Shared by the New Project modal and the Docs page — both offer the same
+// "pick an existing program, or create one inline" affordance via a
+// trailing "+ New program…" option (handled by the caller's change
+// listener, same pattern as populateProjectSelect above).
+function populateProgramSelect(selectEl, selectedId) {
+  const opts = programs.slice().sort((a, b) => a.name.localeCompare(b.name));
+  selectEl.innerHTML = '<option value="">No program</option>' +
+    opts.map((p) => `<option value="${escapeHTML(p.id)}"${p.id === selectedId ? " selected" : ""}>${escapeHTML(p.name)}</option>`).join("") +
+    '<option value="__new__">+ New program…</option>';
 }
 
 // ── Deployments — grouping several backlogItems to ship to main together ──
@@ -731,6 +808,22 @@ const npBackdrop = document.getElementById("np-backdrop");
 const npIfEnable = document.getElementById("np-if-enable");
 const npIfFields = document.getElementById("np-if-fields");
 const npIfProject = document.getElementById("np-if-project");
+const npProgramSelect = document.getElementById("np-program-select");
+
+// Shared by the New Project modal and the Docs page: handles the trailing
+// "+ New program…" option by prompting for a name, creating it, then
+// re-populating the select with the new program selected — or reverting to
+// "No program" if the prompt is cancelled/left blank.
+function wireProgramSelect(selectEl) {
+  selectEl.addEventListener("change", async () => {
+    if (selectEl.value !== "__new__") return;
+    const name = (prompt("New program/product name:") || "").trim();
+    if (!name) { populateProgramSelect(selectEl, ""); return; }
+    const newId = await createProgram(name);
+    populateProgramSelect(selectEl, newId || "");
+  });
+}
+wireProgramSelect(npProgramSelect);
 
 function populateProjectSelect(selectEl, excludeId) {
   const opts = projects.filter((p) => p.id !== excludeId);
@@ -747,6 +840,7 @@ function openProjectModal() {
   document.getElementById("np-if-name").value = "";
   document.getElementById("np-if-content").value = "";
   populateProjectSelect(npIfProject, null);
+  populateProgramSelect(npProgramSelect, "");
   document.getElementById("np-name-input").focus();
 }
 function closeProjectModal() { npBackdrop.hidden = true; }
@@ -764,7 +858,8 @@ document.getElementById("np-submit").addEventListener("click", async () => {
   const nameEl = document.getElementById("np-name-input");
   const name = nameEl.value.trim();
   if (!name) { nameEl.focus(); return; }
-  const newId = await addProject(name);
+  const programId = npProgramSelect.value !== "__new__" ? npProgramSelect.value : "";
+  const newId = await addProject(name, programId);
 
   if (npIfEnable.checked) {
     const otherId = npIfProject.value;
@@ -1086,6 +1181,23 @@ const docsPage = document.getElementById("docs-page");
 const docsRequirementsInput = document.getElementById("docs-requirements-input");
 const docsRoutinePromptInput = document.getElementById("docs-routine-prompt-input");
 const docsFaqAutoFlagInput = document.getElementById("docs-faq-auto-flag");
+const docsProgramSelect = document.getElementById("docs-program-select");
+// Not wireProgramSelect() — unlike the New Project modal (where the choice
+// isn't persisted until "Create project"), a program picked here needs to
+// be saved onto the existing project doc immediately, including one
+// created inline via "+ New program…".
+docsProgramSelect.addEventListener("change", async () => {
+  if (!docsProjectId) return;
+  if (docsProgramSelect.value === "__new__") {
+    const name = (prompt("New program/product name:") || "").trim();
+    if (!name) { populateProgramSelect(docsProgramSelect, ""); return; }
+    const newId = await createProgram(name);
+    populateProgramSelect(docsProgramSelect, newId || "");
+    if (newId) await setProjectProgram(docsProjectId, newId);
+    return;
+  }
+  setProjectProgram(docsProjectId, docsProgramSelect.value);
+});
 
 function openDocsPage(pid) {
   docsProjectId = pid;
@@ -1125,6 +1237,9 @@ function renderDocsPage() {
   if (!docsProjectId) return;
   const project = projects.find((p) => p.id === docsProjectId);
   document.getElementById("docs-page-project-name").textContent = project ? project.name : projectName(docsProjectId);
+  if (document.activeElement !== docsProgramSelect) {
+    populateProgramSelect(docsProgramSelect, project ? project.programId || "" : "");
+  }
   if (document.activeElement !== docsRequirementsInput) {
     docsRequirementsInput.value = (project && project.requirementsMd) || "";
   }
