@@ -41,6 +41,17 @@ no-ops on its own if its secret(s) aren't set):
    function's only job is to tell it which project and what's currently
    sitting in that project's Backlog column.
 
+A second header button, **Notify Claude — Deploy**, closes the same gap at
+the *other* end of the pipeline: it appears only when a project has items
+Live on Feature Branch (already tested and confirmed, just waiting for
+someone to merge their PRs), and its own Cloud Function
+(`functions/notifyOnProjectReadyToDeploy`) fires the same Routine — but
+with fire text that explicitly says "these are done, don't re-implement
+them, just merge and mark published-live," since the Routine's own shared
+prompt only knows how to interpret a "N items in Backlog" request. See
+`REQUIREMENTS.md` → "Functional requirements — notification & automation"
+for the full shape of both functions.
+
 ## Isolation from menu-board-demo — by design, not just by folder
 
 This is a genuinely separate project, not a subfolder sharing infrastructure:
@@ -85,6 +96,12 @@ Firebase's modular Web SDK loaded from the `gstatic.com` CDN, no build
 step. Every open tab gets realtime updates via `onSnapshot()`, so (unlike
 the Artifact board) other viewers never need a full page reload to see a
 change.
+
+Projects can optionally be grouped under a **Program/Product** heading (a
+new `programs` collection — see `REQUIREMENTS.md` → "Data model") purely
+for display; a board with no programs looks exactly as it always has. Set
+it from the New Project modal at creation, or from a project's Docs page
+any time — both offer "+ New program…" to create one on the spot.
 
 ## Setup (all manual — this sandbox has no Firebase CLI/deploy access)
 
@@ -433,10 +450,15 @@ sharing this same Firestore project:
 - **Admin**: two separate hamburger-menu destinations, **Settings**
   (categories — name, icon picked from a curated dropdown with a live
   preview, description, display order) and **FAQ Management** (articles —
-  title, slug, category, an optional linked project, summary, a small
-  markdown-ish body with a live preview, search keywords, draft/published
-  status, and a "needs review" flag). Global, not per-project, since an
-  article can span or link to any one project.
+  title, slug, category, an optional linked project, summary, a rich-text
+  body via a real editor (Quill) with an Edit/View-live toggle, search
+  keywords, draft/published status, and a "needs review" flag). Global,
+  not per-project, since an article can span or link to any one project.
+  See `REQUIREMENTS.md` → "Rich-text article body" for the format-
+  migration and sanitization details — this is real HTML now, not
+  markdown, and it's sanitized (DOMPurify) at render time on both the
+  admin preview and the public site since `faqArticles`' write rules are
+  wide open.
 - **Data model** — two new top-level collections:
   - `faqCategories/{id}`: `{name, icon, description, order, createdAt, updatedAt}`
   - `faqArticles/{id}`: `{categoryId, projectId (nullable), title, slug, summary, bodyMd, keywords[], status: "draft"|"published", needsReview, order, createdAt, updatedAt, publishedAt}`

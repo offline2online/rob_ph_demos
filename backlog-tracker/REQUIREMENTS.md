@@ -60,8 +60,10 @@ Cloud Functions, own Hosting site, own IAM/billing; see
   readmeMd?: string,              // this project's primary tracking doc, shown atop its Docs page
   requirementsMd?: string,        // this file's own live counterpart
   notifyRequestedAt?: timestamp,  // bumped by the "Notify Claude" button
+  deployNotifyRequestedAt?: timestamp, // bumped by "Notify Claude — Deploy" — see below
   routinePromptMd?: string,       // see "Per-project Routine instructions" below
   faqAutoFlagOnLive?: boolean,    // see "FAQ auto-review" below
+  programId?: string,             // see "programs/{programId}" below
   notifyRoutine?: {                // set by notifyOnProjectReadyForReview on each fire
     status: "in-progress" | "done" | "error",
     firedAt: timestamp,
@@ -122,6 +124,25 @@ Status pipeline and what each transition means:
 four for automation purposes (see "FAQ auto-review" below) — the other
 three can still be reverted or corrected without anything external having
 already happened.
+
+### `programs/{programId}`
+```
+{
+  name: string,
+  createdAt: timestamp,
+}
+```
+A purely organizational grouping *above* projects — a program/product has
+no columns, status, or pipeline of its own; it only exists to group related
+projects under a shared heading on the board (a client can have several
+concurrent prototypes/projects under one program, e.g. several menu-board
+variants under "Menu Board"). A project's own `programId` (see above) is
+optional and points here. Created either inline from the New Project
+modal's "+ New program…" option, or from an existing project's Docs page —
+both offer the same "pick an existing program, or create one on the spot"
+picker. Deleting a program isn't wired up from either UI yet; a project
+whose `programId` points at a since-deleted program doc is treated exactly
+like one with no `programId` at all (falls into "Ungrouped").
 
 ### `deployments/{deploymentId}`
 ```
@@ -184,6 +205,10 @@ faqArticles/{id}: {
 }
 ```
 Consumer-facing content for the FAQ / Help Center — see that section below.
+`bodyMd` (the field name predates this and is kept for compatibility) now
+holds one of two shapes, told apart by a leading `<`: real HTML from the
+FAQ admin's rich-text (Quill) editor, or legacy markdown-ish text from
+before that editor existed — see "Rich-text article body" below.
 
 ### Firestore rules
 
@@ -205,6 +230,16 @@ REST API is reachable with a plain `curl`, no service account needed.
   with its own four-column pipeline and its own Archive. Projects sort by
   most-recent item activity (created/updated/archived), not creation order,
   so adding an item to a project brings it to the top.
+- **Program/Product grouping (optional).** A project can optionally belong
+  to a `programs` doc (see Data model above) purely for display — no
+  columns/status of its own. While zero programs exist, the board renders
+  exactly as it always has, flat, with no visual change at all. Once at
+  least one program exists, projects render under named-program headings
+  (alphabetical), followed by an "Ungrouped" section — only shown if it has
+  members — for anything with no `programId`. Set from the New Project
+  modal at creation time, or from an existing project's Docs page at any
+  time; both offer "+ New program…" to create one inline without leaving
+  the flow.
 - **New item capture is description-only.** No title or category field up
   front — just typed or dictated text. A short title and a best-guess
   category (`suggestCategory()`) are generated automatically; correcting
@@ -248,12 +283,14 @@ REST API is reachable with a plain `curl`, no service account needed.
   per-project header below already collapsed to one primary CTA + a menu.
 - **Header actions**, in order: **Notify Claude** (own button, shows the
   live Backlog count; not buried in a menu — see "Notify Claude" below),
-  **+ New backlog item**, then a **⋮** options menu holding everything else
-  (Deployments, Archived tickets, Requirements/Docs, interface contracts).
-  Mobile (<640px) stacks Notify Claude as its own full-width row above the
-  New item / ⋮ row rather than squeezing three controls onto one line; the
-  board's four columns stack vertically instead of forcing horizontal
-  scroll.
+  **Notify Claude — Deploy** (same gradient treatment, shown only when the
+  project has items Live on Feature Branch — see "Notify Claude — Deploy"
+  below), **+ New backlog item**, then a **⋮** options menu holding
+  everything else (Deployments, Archived tickets, Requirements/Docs,
+  interface contracts). Mobile (<640px) stacks each Notify Claude button as
+  its own full-width row above the New item / ⋮ row rather than squeezing
+  controls onto one line; the board's four columns stack vertically instead
+  of forcing horizontal scroll.
 - **Notify Claude progress**: while `projects/{id}.notifyRoutine.status`
   is `"in-progress"`, the button itself reflects that instead of looking
   idle — a disabled, muted, spinning state sized to the batch actually
@@ -269,14 +306,16 @@ REST API is reachable with a plain `curl`, no service account needed.
   instruction — or one that crashes — can never wedge the button in a
   permanent spinning state.
 - **Docs page** (per project, via ⋮) is the single-page home for
-  everything documenting that project, in this order: the project's
-  **README** (`readmeMd` — its primary tracking document, shown first),
-  free-text **Requirements** (`requirementsMd` — this document's own live
-  counterpart), an **Additional documents** list (any other technical or
-  architectural document, backed by the `projectDocs` collection — see Data
-  model above), **Routine instructions**, **FAQ review automation** toggle
-  (see below), and **Interfaces with other projects** (list + add/edit,
-  backed by the `interfaces` collection). All of it lives here rather than
+  everything documenting that project, in this order: a **Program /
+  Product** picker (`programId`, see "Program/Product grouping" above),
+  the project's **README** (`readmeMd` — its primary tracking document,
+  shown first among the documents themselves), free-text **Requirements**
+  (`requirementsMd` — this document's own live counterpart), an
+  **Additional documents** list (any other technical or architectural
+  document, backed by the `projectDocs` collection — see Data model
+  above), **Routine instructions**, **FAQ review automation** toggle (see
+  below), and **Interfaces with other projects** (list + add/edit, backed
+  by the `interfaces` collection). All of it lives here rather than
   scattered across repo files, so a project's complete documentation is one
   page away from its board.
 - **Archive**: a Merged-to-Main card can be archived (sets `status:
@@ -344,7 +383,7 @@ REST API is reachable with a plain `curl`, no service account needed.
 
 ## Functional requirements — notification & automation (Cloud Functions)
 
-Two Cloud Functions, both in `backlog-tracker/functions/index.js`:
+Three Cloud Functions, all in `backlog-tracker/functions/index.js`:
 
 1. **`notifyOnProjectReadyForReview`** (`onDocumentUpdated` on `projects`)
    — the **Notify Claude** button's function, and the only notify path
@@ -403,7 +442,31 @@ Two Cloud Functions, both in `backlog-tracker/functions/index.js`:
      for the client-side staleness fallback that covers a session running
      an older prompt without that instruction, or one that crashes.
 
-2. **`onBacklogItemPublishedLive`** (`onDocumentUpdated` on `backlogItems`)
+2. **`notifyOnProjectReadyToDeploy`** (`onDocumentUpdated` on `projects`) —
+   the **Notify Claude — Deploy** button's function. Same trigger shape as
+   `notifyOnProjectReadyForReview` above (fires once on a genuinely new
+   `deployNotifyRequestedAt`, posts to `NOTIFY_WEBHOOK_URL` if set, fires
+   the same Routine via `CLAUDE_ROUTINE_FIRE_URL`/`CLAUDE_ROUTINE_TOKEN` if
+   set — either independent of the other), but for the opposite end of the
+   pipeline: it queries `status == "ready-to-publish"` (Live on Feature
+   Branch) instead of `backlog`. **The fire `text` is a self-contained
+   "DEPLOY REQUEST" block, not the usual "N items in Backlog" shape** —
+   it explicitly states these items are already implemented, tested, and
+   confirmed on their feature branches, tells the fired session not to
+   investigate or re-implement them, and asks it to find each one's PR,
+   merge it to `main` if CI is green and mergeable, and PATCH its status to
+   `published-live` — or leave it as `ready-to-publish` with a note if it
+   can't. This was a deliberate design choice over relying on the Routine's
+   own shared prompt (see "The Notify Claude Routine" below) to infer a
+   deploy request from a differently-shaped fire, since that prompt is
+   written and tested only for the Backlog-investigation shape — editing it
+   is outside this repo's reach anyway (it lives at claude.ai/code/routines),
+   so the fire `text` itself carries the full self-contained instructions
+   instead. Same per-project `routinePromptMd` addendum mechanism as
+   `notifyOnProjectReadyForReview` (see "Per-project Routine instructions"
+   below) — prepended the same way, ahead of the DEPLOY REQUEST block.
+
+3. **`onBacklogItemPublishedLive`** (`onDocumentUpdated` on `backlogItems`)
    — opt-in per project via the Docs page's **FAQ review automation**
    toggle (`projects/{id}.faqAutoFlagOnLive`). Fires specifically on the
    transition to `status: "published-live"` — the one irreversible status
@@ -455,16 +518,18 @@ board — it can't hold project-specific detail (a different branch
 convention, which slice of the repo a project owns) without becoming
 unreadable. Each project's Docs page has its own **Routine instructions**
 field (`projects/{id}.routinePromptMd`, plain markdown, optional and blank
-by default) for exactly that. When **Notify Claude** fires,
-`notifyOnProjectReadyForReview` prepends this field's content — if
-non-blank — to the fire request's `text`, wrapped in
+by default) for exactly that. Both **Notify Claude** and **Notify Claude —
+Deploy** prepend this same field's content — if non-blank — to their fire
+request's `text`, wrapped in
 `=== PROJECT-SPECIFIC INSTRUCTIONS FOR "<project>" ===` /
 `=== END PROJECT-SPECIFIC INSTRUCTIONS ===` markers, ahead of the usual
-"Project X has N items in Backlog" list. The Routine's own prompt is
-instructed to treat a present block as authoritative additional context
-that supplements — never replaces — the required steps above (still PATCH
-the same fields, still open a PR the same way). Most projects leave this
-blank; that's the expected default, not a gap.
+"Project X has N items in Backlog" list (or, for a deploy fire, ahead of
+the DEPLOY REQUEST block — see `notifyOnProjectReadyToDeploy` above). The
+Routine's own prompt is instructed to treat a present block as
+authoritative additional context that supplements — never replaces — the
+required steps above (still PATCH the same fields, still open a PR the
+same way). Most projects leave this blank; that's the expected default,
+not a gap.
 
 ## Functional requirements — FAQ / Help Center
 
@@ -497,8 +562,39 @@ Two surfaces sharing this same Firestore project:
     if it falls outside the curated list, so nothing silently changes on
     save just because it predates this picker.
   - **FAQ Management** — articles only (title, slug, category, optional
-    linked project, summary, a small markdown-ish body with live preview,
-    search keywords, draft/published status, `needsReview`).
+    linked project, summary, a rich-text body — see "Rich-text article
+    body" below, search keywords, draft/published status, `needsReview`).
+- **Rich-text article body**: the article editor's body field is a real
+  rich-text editor (Quill, loaded via CDN — headers, bold/italic/
+  underline/strike, alignment, ordered/bullet lists, link, image, video,
+  clear formatting), not a plain textarea. An "Edit" / "View live" toggle
+  replaces the old always-visible side-by-side textarea + preview — "View
+  live" renders through the exact same `renderFaqBodyMd()`/CSS the public
+  site uses, since Quill's own editing chrome doesn't look like the real
+  article page. **Images insert via a URL prompt, not a file picker** —
+  Quill's default embeds a file as base64, which can push a single article
+  well past Firestore's 1MiB document limit.
+  - **Format migration is lazy, not a one-time script.** `bodyMd` (kept as
+    the field name for compatibility) holds either real HTML (new) or
+    legacy markdown-ish text (everything written before this editor
+    existed) — told apart by a leading `<`. Opening a legacy article runs
+    it through the old markdown-ish renderer once to load it into Quill as
+    proper rich text; saving from there writes real HTML back, upgrading
+    that one article in place. Nothing forces every existing article
+    through this at once.
+  - **Sanitized at render time, not trusted at write time.** `bodyMd` is
+    real HTML now, and this app's `faqArticles` Firestore rules are wide
+    open (see "Firestore rules" above) — a rewritten field can't assume it
+    only ever came from this editor's toolbar. Both the admin's own "View
+    live" preview and the public site's article page run any HTML-shaped
+    body through DOMPurify (CDN) before it ever touches `innerHTML`; if
+    DOMPurify fails to load, the fallback is to escape the whole thing
+    (inert, visible-but-not-live) rather than inject it unsanitized. The
+    one intentional gap: DOMPurify's default tag allowlist excludes
+    `<iframe>` (needed for Quill's video embeds), added back via
+    `ADD_TAGS` — its `src` isn't restricted to a known-safe host list, an
+    accepted prototype-stage tradeoff, same posture as this repo's open
+    Firestore rules elsewhere.
 - **Why `projectId` on an article**: the categorization-by-project hook
   that the auto-review automation (above) actually uses — an article
   documents a specific project's feature, so that project's own shipped

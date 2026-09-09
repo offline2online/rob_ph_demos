@@ -23,6 +23,7 @@ const itemsRef = collection(db, "backlogItems");
 const projectsRef = collection(db, "projects");
 const interfacesRef = collection(db, "interfaces");
 const deploymentsRef = collection(db, "deployments");
+const programsRef = collection(db, "programs");
 const projectDocsRef = collection(db, "projectDocs");
 
 const COLUMNS = [
@@ -66,6 +67,7 @@ let projects = [];
 let projectsLoaded = false;
 let interfaces = [];
 let deployments = [];
+let programs = [];
 let projectDocs = [];
 let editingProjectId = null;
 
@@ -233,6 +235,10 @@ function backlogCountForProject(pid) {
   return items.filter((i) => (i.projectId || GENERAL_PROJECT_ID) === pid && i.status === "backlog").length;
 }
 
+function deployReadyCountForProject(pid) {
+  return items.filter((i) => (i.projectId || GENERAL_PROJECT_ID) === pid && i.status === "ready-to-publish").length;
+}
+
 function interfacesForProject(pid) {
   return interfaces.filter((f) => Array.isArray(f.projectIds) && f.projectIds.includes(pid));
 }
@@ -345,6 +351,23 @@ function notifyClaudeButtonHTML(project) {
   return mainBtn + newBtn;
 }
 
+// Same "Notify Claude" gradient action, but for the opposite end of the
+// pipeline: items already tested and confirmed "Live on Feature Branch"
+// (ready-to-publish) that are just waiting for someone to actually merge
+// their PRs to main. Same hidden-when-nothing-to-do rule as the Backlog
+// button above — there's nothing for this to do until a card reaches that
+// column.
+function deployNotifyButtonHTML(project) {
+  const pid = project.id;
+  const deployCount = deployReadyCountForProject(pid);
+  if (!deployCount) return "";
+  return `<button type="button" class="notify-claude-btn deploy-notify-btn" data-project-id="${escapeHTML(pid)}">
+    <span class="material-symbols-outlined notify-claude-icon">rocket_launch</span>
+    <span class="notify-claude-label">Notify Claude — Deploy</span>
+    <span class="notify-claude-count-pill">${deployCount}</span>
+  </button>`;
+}
+
 function projectSectionHTML(project) {
   const collapsed = isProjectCollapsed(project.id);
   const projectItems = items.filter((i) => (i.projectId || GENERAL_PROJECT_ID) === project.id);
@@ -377,6 +400,7 @@ function projectSectionHTML(project) {
         </div>
         <div class="project-header-actions">
           ${notifyClaudeButtonHTML(project)}
+          ${deployNotifyButtonHTML(project)}
           <button class="btn-primary new-item-btn" data-project-id="${escapeHTML(project.id)}" type="button">+ New backlog item</button>
           <div class="project-options">
             <button type="button" class="icon-btn project-options-btn" data-project-id="${escapeHTML(project.id)}" aria-haspopup="true" aria-label="More options for this project">&#8942;</button>
@@ -448,10 +472,50 @@ function migrateOrphanItems() {
   });
 }
 
+// Program/Product grouping — purely a display grouping above Projects, not
+// a new pipeline of its own (programs have no columns/status). Only kicks
+// in once at least one program actually exists: a board that never adopts
+// this feature renders exactly as it always has, flat, with zero visual
+// change. Once a program exists, projects render under a heading per
+// program (alphabetical by name) followed by an "Ungrouped" section — only
+// shown if it actually has members — for projects with no programId or one
+// pointing at a program that's since been deleted.
+function programName(id) {
+  const p = programs.find((p) => p.id === id);
+  return p ? p.name : "";
+}
+
+function groupProjectsByProgram(renderedProjects) {
+  const knownProgramIds = new Set(programs.map((p) => p.id));
+  const byProgramId = new Map();
+  renderedProjects.forEach((project) => {
+    const pid = project.programId && knownProgramIds.has(project.programId) ? project.programId : null;
+    if (!byProgramId.has(pid)) byProgramId.set(pid, []);
+    byProgramId.get(pid).push(project);
+  });
+  const groups = programs
+    .filter((p) => byProgramId.has(p.id))
+    .sort((a, b) => a.name.localeCompare(b.name))
+    .map((p) => ({ id: p.id, name: p.name, projects: byProgramId.get(p.id) }));
+  const ungrouped = byProgramId.get(null) || [];
+  if (ungrouped.length) groups.push({ id: null, name: "Ungrouped", projects: ungrouped });
+  return groups;
+}
+
+function programGroupHTML(group) {
+  return `
+    <section class="program-group" data-program-id="${escapeHTML(group.id || "")}">
+      <h2 class="program-heading">${escapeHTML(group.name)}</h2>
+      ${group.projects.map(projectSectionHTML).join("")}
+    </section>`;
+}
+
 function render() {
   migrateOrphanItems();
   const renderedProjects = getRenderedProjects();
-  document.getElementById("projects-root").innerHTML = renderedProjects.map(projectSectionHTML).join("");
+  document.getElementById("projects-root").innerHTML = programs.length
+    ? groupProjectsByProgram(renderedProjects).map(programGroupHTML).join("")
+    : renderedProjects.map(projectSectionHTML).join("");
 
   const total = items.filter((i) => COL_KEYS.includes(i.status)).length;
   document.getElementById("total-summary").textContent =
@@ -502,6 +566,14 @@ onSnapshot(deploymentsRef, (snap) => {
   if (deploymentsProjectId) renderDeploymentsPage();
 }, (err) => {
   console.error("backlog-tracker: deployments listener error", err);
+});
+
+onSnapshot(programsRef, (snap) => {
+  programs = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  render();
+  if (docsProjectId) renderDocsPage();
+}, (err) => {
+  console.error("backlog-tracker: programs listener error", err);
 });
 
 onSnapshot(projectDocsRef, (snap) => {
@@ -573,8 +645,10 @@ async function setItemPreviewUrl(id, url) {
   await updateDoc(doc(db, "backlogItems", id), { previewUrl: trimmed || null, updatedAt: serverTimestamp() });
 }
 
-async function addProject(name) {
-  const ref = await addDoc(projectsRef, { name: name.trim(), createdAt: serverTimestamp() });
+async function addProject(name, programId) {
+  const data = { name: name.trim(), createdAt: serverTimestamp() };
+  if (programId) data.programId = programId;
+  const ref = await addDoc(projectsRef, data);
   return ref.id;
 }
 
@@ -594,6 +668,22 @@ async function requestNotify(pid) {
     return;
   }
   await setDoc(doc(db, "projects", pid), { notifyRequestedAt: serverTimestamp() }, { merge: true });
+}
+
+// Same idea as requestNotify() above, but for the "Live on Feature Branch"
+// (ready-to-publish) column — a deploy request, not an investigate-and-fix
+// request. Writes deployNotifyRequestedAt, watched by
+// notifyOnProjectReadyToDeploy (see ../functions/index.js), which fires the
+// same Routine but with fire text that explicitly says these items are
+// already tested and just need their PRs merged to main.
+async function requestDeployNotify(pid) {
+  const count = deployReadyCountForProject(pid);
+  if (count === 0) {
+    alert("Nothing Live on Feature Branch for this project yet — confirm an item's testing first.");
+    return;
+  }
+  await setDoc(doc(db, "projects", pid), { deployNotifyRequestedAt: serverTimestamp() }, { merge: true });
+  alert(`Deploy requested for ${count} item${count === 1 ? "" : "s"} Live on Feature Branch. A Claude Code session starts merging them to main (see backlog-tracker/README.md for the Cloud Functions this depends on if this isn't happening).`);
 }
 
 async function setProjectName(id, name) {
@@ -669,6 +759,31 @@ async function setProjectRoutinePrompt(id, md) {
 
 async function setProjectFaqAutoFlag(id, enabled) {
   await setDoc(doc(db, "projects", id), { faqAutoFlagOnLive: enabled, updatedAt: serverTimestamp() }, { merge: true });
+}
+
+// ── Programs/Products — a purely organizational grouping above Projects,
+// with no columns/status of its own. A project's programId is optional and
+// only affects how it's grouped on the board (see groupProjectsByProgram).
+async function createProgram(name) {
+  const trimmed = (name || "").trim();
+  if (!trimmed) return null;
+  const ref = await addDoc(programsRef, { name: trimmed, createdAt: serverTimestamp() });
+  return ref.id;
+}
+
+async function setProjectProgram(id, programId) {
+  await setDoc(doc(db, "projects", id), { programId: programId || null }, { merge: true });
+}
+
+// Shared by the New Project modal and the Docs page — both offer the same
+// "pick an existing program, or create one inline" affordance via a
+// trailing "+ New program…" option (handled by the caller's change
+// listener, same pattern as populateProjectSelect above).
+function populateProgramSelect(selectEl, selectedId) {
+  const opts = programs.slice().sort((a, b) => a.name.localeCompare(b.name));
+  selectEl.innerHTML = '<option value="">No program</option>' +
+    opts.map((p) => `<option value="${escapeHTML(p.id)}"${p.id === selectedId ? " selected" : ""}>${escapeHTML(p.name)}</option>`).join("") +
+    '<option value="__new__">+ New program…</option>';
 }
 
 // ── Deployments — grouping several backlogItems to ship to main together ──
@@ -809,6 +924,8 @@ projectsRoot.addEventListener("click", (e) => {
   if (newItemBtn) { openForm(newItemBtn.dataset.projectId); return; }
   const notifyBtn = e.target.closest(".project-notify-btn");
   if (notifyBtn) { closeAllOptionMenus(); requestNotify(notifyBtn.dataset.projectId); return; }
+  const deployNotifyBtn = e.target.closest(".deploy-notify-btn");
+  if (deployNotifyBtn) { closeAllOptionMenus(); requestDeployNotify(deployNotifyBtn.dataset.projectId); return; }
   const archiveNavBtn = e.target.closest(".project-archive-btn");
   if (archiveNavBtn) { closeAllOptionMenus(); openArchivePage(archiveNavBtn.dataset.projectId); return; }
   const docsNavBtn = e.target.closest(".project-docs-btn");
@@ -1003,6 +1120,22 @@ const npBackdrop = document.getElementById("np-backdrop");
 const npIfEnable = document.getElementById("np-if-enable");
 const npIfFields = document.getElementById("np-if-fields");
 const npIfProject = document.getElementById("np-if-project");
+const npProgramSelect = document.getElementById("np-program-select");
+
+// Shared by the New Project modal and the Docs page: handles the trailing
+// "+ New program…" option by prompting for a name, creating it, then
+// re-populating the select with the new program selected — or reverting to
+// "No program" if the prompt is cancelled/left blank.
+function wireProgramSelect(selectEl) {
+  selectEl.addEventListener("change", async () => {
+    if (selectEl.value !== "__new__") return;
+    const name = (prompt("New program/product name:") || "").trim();
+    if (!name) { populateProgramSelect(selectEl, ""); return; }
+    const newId = await createProgram(name);
+    populateProgramSelect(selectEl, newId || "");
+  });
+}
+wireProgramSelect(npProgramSelect);
 
 function populateProjectSelect(selectEl, excludeId) {
   const opts = projects.filter((p) => p.id !== excludeId);
@@ -1019,6 +1152,7 @@ function openProjectModal() {
   document.getElementById("np-if-name").value = "";
   document.getElementById("np-if-content").value = "";
   populateProjectSelect(npIfProject, null);
+  populateProgramSelect(npProgramSelect, "");
   document.getElementById("np-name-input").focus();
 }
 function closeProjectModal() { npBackdrop.hidden = true; }
@@ -1036,7 +1170,8 @@ document.getElementById("np-submit").addEventListener("click", async () => {
   const nameEl = document.getElementById("np-name-input");
   const name = nameEl.value.trim();
   if (!name) { nameEl.focus(); return; }
-  const newId = await addProject(name);
+  const programId = npProgramSelect.value !== "__new__" ? npProgramSelect.value : "";
+  const newId = await addProject(name, programId);
 
   if (npIfEnable.checked) {
     const otherId = npIfProject.value;
@@ -1356,6 +1491,23 @@ const docsReadmeInput = document.getElementById("docs-readme-input");
 const docsRequirementsInput = document.getElementById("docs-requirements-input");
 const docsRoutinePromptInput = document.getElementById("docs-routine-prompt-input");
 const docsFaqAutoFlagInput = document.getElementById("docs-faq-auto-flag");
+const docsProgramSelect = document.getElementById("docs-program-select");
+// Not wireProgramSelect() — unlike the New Project modal (where the choice
+// isn't persisted until "Create project"), a program picked here needs to
+// be saved onto the existing project doc immediately, including one
+// created inline via "+ New program…".
+docsProgramSelect.addEventListener("change", async () => {
+  if (!docsProjectId) return;
+  if (docsProgramSelect.value === "__new__") {
+    const name = (prompt("New program/product name:") || "").trim();
+    if (!name) { populateProgramSelect(docsProgramSelect, ""); return; }
+    const newId = await createProgram(name);
+    populateProgramSelect(docsProgramSelect, newId || "");
+    if (newId) await setProjectProgram(docsProjectId, newId);
+    return;
+  }
+  setProjectProgram(docsProjectId, docsProgramSelect.value);
+});
 
 function openDocsPage(pid) {
   docsProjectId = pid;
@@ -1414,6 +1566,9 @@ function renderDocsPage() {
   if (!docsProjectId) return;
   const project = projects.find((p) => p.id === docsProjectId);
   document.getElementById("docs-page-project-name").textContent = project ? project.name : projectName(docsProjectId);
+  if (document.activeElement !== docsProgramSelect) {
+    populateProgramSelect(docsProgramSelect, project ? project.programId || "" : "");
+  }
   if (document.activeElement !== docsReadmeInput) {
     docsReadmeInput.value = (project && project.readmeMd) || "";
   }
@@ -1844,9 +1999,24 @@ function slugify(s) {
 // Mirrors faq/js/faq-data.js's renderBodyMd exactly (kept as two small
 // copies rather than a shared import, same isolation-by-design choice
 // this repo already makes between backlog-tracker and menu-board-demo —
-// the admin preview and the public render must produce the same output,
-// so if one changes, change the other too).
-function renderFaqBodyMd(md) {
+// the admin's "View live" preview and the public render must produce the
+// same output, so if one changes, change the other too). Article bodies
+// come in one of two shapes, told apart by a leading "<": legacy
+// markdown-ish text (from before this editor existed) or real HTML from
+// the rich-text (Quill) editor below. Real HTML is sanitized with
+// DOMPurify before ever touching innerHTML — Firestore's write rules on
+// faqArticles are wide open, so this field is never trusted just because
+// it "should" have come through this editor.
+function renderFaqBodyMd(content) {
+  const trimmed = (content || "").trim();
+  if (trimmed.startsWith("<")) {
+    if (!window.DOMPurify) return escapeHTML(trimmed);
+    return window.DOMPurify.sanitize(trimmed, { ADD_TAGS: ["iframe"], ADD_ATTR: ["allowfullscreen", "frameborder"] });
+  }
+  return renderLegacyFaqMarkdown(content);
+}
+
+function renderLegacyFaqMarkdown(md) {
   const lines = escapeHTML(md || "").split(/\r?\n/);
   let html = "";
   let inList = false;
@@ -2120,10 +2290,63 @@ const faTitleInput = document.getElementById("fa-title-input");
 const faSlugInput = document.getElementById("fa-slug-input");
 const faSummaryInput = document.getElementById("fa-summary-input");
 const faKeywordsInput = document.getElementById("fa-keywords-input");
-const faBodyInput = document.getElementById("fa-body-input");
-const faPreview = document.getElementById("fa-preview");
+const faBodyViewer = document.getElementById("fa-body-viewer");
 const faNeedsReview = document.getElementById("fa-needs-review");
 let faStatus = "draft";
+
+// Rich-text body editor (Quill, loaded via CDN — see index.html <head>).
+// One instance bound to #fa-body-editor for the life of the page, same as
+// every other modal's inputs; openFaqArticleModal() below resets its
+// content on each open rather than recreating it. Toolbar covers exactly
+// what the ticket asked for: headers, bold/italic/underline/strike,
+// alignment, ordered/bullet lists, link, image (a URL prompt rather than
+// letting Quill embed a base64 data URI, to stay well under Firestore's
+// 1MiB document limit), video, and a "clear formatting" button.
+const faQuill = new Quill("#fa-body-editor", {
+  theme: "snow",
+  modules: {
+    toolbar: {
+      container: [
+        [{ header: [1, 2, 3, false] }],
+        ["bold", "italic", "underline", "strike"],
+        [{ align: [] }],
+        [{ list: "ordered" }, { list: "bullet" }],
+        ["link", "image", "video"],
+        ["clean"],
+      ],
+      handlers: {
+        // Quill's default image button embeds the file as a base64 data
+        // URI — fine for a couple of small images, but a real photo or
+        // two pushes an article well past Firestore's 1MiB document
+        // limit. A plain URL prompt keeps images external (e.g. hosted
+        // wherever this repo's other assets already live) at zero storage
+        // cost here.
+        image() {
+          const url = prompt("Image URL:");
+          if (!url) return;
+          const range = faQuill.getSelection(true);
+          faQuill.insertEmbed(range.index, "image", url, "user");
+          faQuill.setSelection(range.index + 1);
+        },
+      },
+    },
+  },
+});
+
+// "Edit" shows the live Quill toolbar/editor; "View live" renders exactly
+// what the public FAQ site would (same renderFaqBodyMd()/CSS classes),
+// since Quill's own editing chrome doesn't look like the real article
+// page. Replaces the old always-visible side-by-side textarea + preview.
+function setFaBodyMode(mode) {
+  const isView = mode === "view";
+  document.getElementById("fa-body-mode-edit").classList.toggle("active", !isView);
+  document.getElementById("fa-body-mode-view").classList.toggle("active", isView);
+  document.getElementById("fa-body-editor-wrap").hidden = isView;
+  faBodyViewer.hidden = !isView;
+  if (isView) faBodyViewer.innerHTML = renderFaqBodyMd(faQuill.root.innerHTML);
+}
+document.getElementById("fa-body-mode-edit").addEventListener("click", () => setFaBodyMode("edit"));
+document.getElementById("fa-body-mode-view").addEventListener("click", () => setFaBodyMode("view"));
 
 function setFaStatusToggle(status) {
   faStatus = status;
@@ -2142,10 +2365,15 @@ function openFaqArticleModal(articleId) {
   faSlugInput.value = article ? article.slug || "" : "";
   faSummaryInput.value = article ? article.summary || "" : "";
   faKeywordsInput.value = article ? (article.keywords || []).join(", ") : "";
-  faBodyInput.value = article ? article.bodyMd || "" : "";
+  // Legacy (pre-editor) articles hold markdown-ish plain text, not HTML —
+  // run those through the existing renderer once on load so they open
+  // as properly formatted rich text; saving then upgrades that article to
+  // real HTML in place. A brand-new article, or one already saved from
+  // this editor, loads as-is (sanitized either way — see renderFaqBodyMd).
+  faQuill.root.innerHTML = article ? renderFaqBodyMd(article.bodyMd || "") : "";
   faNeedsReview.checked = article ? !!article.needsReview : false;
   setFaStatusToggle(article ? article.status : "draft");
-  faPreview.innerHTML = renderFaqBodyMd(faBodyInput.value);
+  setFaBodyMode("edit");
 
   if (faCategorySelect.options.length && faCategorySelect.options[0].value !== "") {
     faCategorySelect.value = article ? article.categoryId : faCategorySelect.options[0].value;
@@ -2184,9 +2412,6 @@ faTitleInput.addEventListener("input", () => {
   if (!faqSlugManuallyEdited) faSlugInput.value = slugify(faTitleInput.value);
 });
 faSlugInput.addEventListener("input", () => { faqSlugManuallyEdited = true; });
-faBodyInput.addEventListener("input", () => {
-  faPreview.innerHTML = renderFaqBodyMd(faBodyInput.value);
-});
 
 document.getElementById("fa-submit").addEventListener("click", async () => {
   const title = faTitleInput.value.trim();
@@ -2200,7 +2425,7 @@ document.getElementById("fa-submit").addEventListener("click", async () => {
     title,
     slug: faSlugInput.value.trim() || slugify(title),
     summary: faSummaryInput.value.trim(),
-    bodyMd: faBodyInput.value,
+    bodyMd: faQuill.root.innerHTML,
     keywords: faKeywordsInput.value.split(",").map((k) => k.trim()).filter(Boolean),
     status: faStatus,
     needsReview: faNeedsReview.checked,
