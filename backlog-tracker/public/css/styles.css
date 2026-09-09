@@ -359,14 +359,23 @@ body {
   width: 100%; font-family: inherit; font-size: 13px; color: var(--text); background: var(--surface);
   border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; box-sizing: border-box; resize: vertical;
 }
-.fa-body-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 10px; }
-#fa-body-input { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px; line-height: 1.5; height: 100%; min-height: 220px; }
-.fa-preview {
-  border: 1px solid var(--border); border-radius: 6px; padding: 10px 12px; background: var(--surface);
-  font-size: 13px; line-height: 1.6; min-height: 220px; max-height: 320px; overflow-y: auto;
+.fa-body-header { display: flex; align-items: center; justify-content: space-between; margin-top: 10px; }
+#fa-body-editor-wrap { border-radius: 6px; overflow: hidden; }
+#fa-body-editor { background: var(--bg); font-size: 13px; }
+#fa-body-editor .ql-editor { min-height: 220px; max-height: 380px; overflow-y: auto; }
+/* View-live preview — a small, backlog-tracker-local copy of faq/css/faq.css's
+   .article-body rules (see renderFaqBodyMd's own comment: two small copies
+   kept in sync rather than a shared import across the two static sites). */
+.fa-body-viewer {
+  border: 1px solid var(--border); border-radius: 6px; padding: 12px 14px; background: var(--surface);
+  font-size: 14px; line-height: 1.7; min-height: 220px; max-height: 380px; overflow-y: auto;
 }
-.fa-preview h3 { font-size: 14px; margin: 10px 0 4px; }
-.fa-preview p { margin: 0 0 8px; }
+.fa-body-viewer h1, .fa-body-viewer h2, .fa-body-viewer h3 { font-weight: 700; margin: 16px 0 6px; }
+.fa-body-viewer h1 { font-size: 19px; } .fa-body-viewer h2 { font-size: 17px; } .fa-body-viewer h3 { font-size: 15px; }
+.fa-body-viewer p { margin: 0 0 10px; }
+.fa-body-viewer ul, .fa-body-viewer ol { margin: 0 0 10px; padding-left: 20px; }
+.fa-body-viewer img { max-width: 100%; border-radius: 6px; }
+.fa-body-viewer iframe { max-width: 100%; aspect-ratio: 16 / 9; width: 100%; height: auto; border: none; border-radius: 6px; }
 
 /* ── Edit item modal (title/desc/type/category + comments) ─────────────── */
 #ei-backdrop input[type="text"], #ei-backdrop textarea, #ei-backdrop select {

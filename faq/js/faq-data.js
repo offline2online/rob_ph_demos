@@ -55,12 +55,33 @@ export async function fetchPublishedArticles() {
     .filter((a) => a.status === "published");
 }
 
-// Very small markdown-ish renderer for article bodies (## headings, blank
-// lines as paragraph breaks, "- " bullet lists, **bold**) — keeps this
-// site dependency-free rather than pulling in a full markdown library for
-// a handful of formatting needs. Escaped first, so article bodies can
-// never inject markup.
-export function renderBodyMd(md) {
+// Article bodies come in one of two shapes, told apart by a leading "<":
+// legacy markdown-ish text (## headings, "- " bullets, **bold**, from
+// before the FAQ admin had a real editor) or real HTML from the rich-text
+// (Quill) editor backlog-tracker's FAQ admin now uses. Legacy content is
+// escaped-then-rendered by renderLegacyMarkdown below, same as always.
+// Real HTML is sanitized with DOMPurify before ever touching innerHTML —
+// Firestore's write rules on faqArticles are wide open (see root
+// CLAUDE.md's documented prototype-stage posture), so this field is never
+// trusted just because it "should" have come through the admin's editor;
+// sanitizing here, at render time, is what actually keeps a stored-XSS
+// payload from running for every visitor of this public site.
+export function renderBodyMd(content) {
+  const trimmed = (content || "").trim();
+  if (trimmed.startsWith("<")) {
+    if (!window.DOMPurify) return escapeHTML(trimmed);
+    // Quill's own video embed wraps a URL in an <iframe> — DOMPurify's
+    // default allowlist excludes iframe (and doesn't restrict `src` by
+    // domain for tags it does allow), so an iframe here can point
+    // anywhere. Accepted prototype-stage tradeoff, same posture as this
+    // repo's open Firestore rules elsewhere — tighten (e.g. an allowed-host
+    // check on the src) before this is exposed beyond an internal team.
+    return window.DOMPurify.sanitize(trimmed, { ADD_TAGS: ["iframe"], ADD_ATTR: ["allowfullscreen", "frameborder"] });
+  }
+  return renderLegacyMarkdown(content);
+}
+
+function renderLegacyMarkdown(md) {
   const lines = escapeHTML(md || "").split(/\r?\n/);
   let html = "";
   let inList = false;

@@ -434,9 +434,13 @@ sharing this same Firestore project:
   hamburger menu — global, not per-project, since an article can span or
   link to any one project). Lets you manage categories (name,
   Material Symbols icon, description, display order) and articles (title,
-  slug, category, an optional linked project, summary, a small
-  markdown-ish body with a live preview, search keywords, draft/published
-  status, and a "needs review" flag).
+  slug, category, an optional linked project, summary, a rich-text body
+  via a real editor (Quill) with an Edit/View-live toggle, search
+  keywords, draft/published status, and a "needs review" flag). See
+  `REQUIREMENTS.md` → "Rich-text article body" for the format-migration
+  and sanitization details — this is real HTML now, not markdown, and
+  it's sanitized (DOMPurify) at render time on both the admin preview and
+  the public site since `faqArticles`' write rules are wide open.
 - **Data model** — two new top-level collections:
   - `faqCategories/{id}`: `{name, icon, description, order, createdAt, updatedAt}`
   - `faqArticles/{id}`: `{categoryId, projectId (nullable), title, slug, summary, bodyMd, keywords[], status: "draft"|"published", needsReview, order, createdAt, updatedAt, publishedAt}`
