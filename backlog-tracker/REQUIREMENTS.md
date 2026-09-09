@@ -505,43 +505,39 @@ Three Cloud Functions, all in `backlog-tracker/functions/index.js`:
    sets. A project with the toggle on but no linked FAQ articles is a
    harmless no-op.
 
-### The Notify Claude Routine
+### The Notify Claude Routine — a thin bootstrap, not the source of truth
 
 The Routine itself (name "Backlog tracker investigation", owned at
 claude.ai/code/routines, id `trig_01R9N68hfzqQCF8RUssQYE8b` as of this
 writing) is a **fire-on-demand, non-persistent** Routine — each fire spins
 up a completely fresh Claude Code session with no memory of any previous
-run, so its prompt must be fully self-contained. It is instructed to:
+run.
 
-1. Recognize this board as a real Firestore-backed web app (not a Claude
-   Artifact — an earlier version of the prompt lacked this and the fired
-   session correctly, safely refused to fabricate work against a board it
-   couldn't find).
-2. Query the board directly via the open Firestore REST API.
-3. Read the target project's own `requirementsMd`, check the `interfaces`
-   collection for any contracts involving that project, and cross-check
-   against any repo-native requirements file for that project — full
-   context before writing code, not just the repo's root `CLAUDE.md`.
-   Also check the fire request's `text` (or the project's own
-   `routinePromptMd` directly) for a project-specific instructions block —
-   see "Per-project Routine instructions" below.
-4. For each Backlog item: rewrite its title to a proper short subject line,
-   investigate for real, implement the fix in its own local checkout — then,
-   since it has no GitHub credential and cannot push or open a PR itself
-   (see "Notify Claude can't push" in README.md), PATCH the item with
-   `patchFiles` (full new content per changed/created file), `patchBranch`,
-   `patchCommitMessage`, `patchPrTitle`, `patchPrBody`, and `patchReady:
-   true` — plus corrected `category`/`notes` — rather than fabricating a
-   fix for something it can't actually locate in the codebase. It does
-   **not** set `status` to `ready-for-testing` itself;
-   `run-backlog-automation.js` does that once a PR actually exists.
-5. Report a summary; state plainly (not silently) when a project or item
-   can't be found rather than inventing work.
+Its own stored prompt is deliberately kept **short and nearly static**: it
+just identifies the board, then tells the fired session to fetch
+`backlog-tracker/ROUTINE_INSTRUCTIONS.md` from this repo's `main` branch
+(a plain, unauthenticated `GET` against
+`raw.githubusercontent.com/offline2online/rob_ph_demos/main/backlog-tracker/ROUTINE_INSTRUCTIONS.md`)
+and follow that file exactly. **That file, not the Routine's own prompt,
+is the real, versioned, PR-reviewable specification of what a fired
+session does** — investigate, package a fix as `patchFiles`/`patchReady`
+(or `mergeReady`/`mergePrNumber` for the Deploy flow), report a summary,
+never push or call a GitHub write API itself. See that file for the full
+current behavior rather than duplicating it here — this section only
+documents *why the split exists*.
 
-If a fired session genuinely can't express a fix as full file contents (or
-its environment lacks even that much), it leaves the item in `backlog`
-with a detailed note explaining why, rather than setting `patchReady` on
-an incomplete fix.
+This split exists because a Routine's own prompt can only be edited by
+someone with UI/API access at claude.ai/code/routines — an agent session
+without that access (which is the normal case; a session working in this
+repo cannot call `update_trigger` on a routine it didn't itself create via
+that same tool) is stuck asking a human to paste in every change by hand.
+Moving the actual behavior into a repo file means changing it is an
+ordinary PR, reviewed and merged like anything else, and it takes effect
+on the very next fire — no manual step, no waiting on someone to visit
+claude.ai. **To change how the Routine behaves, edit
+`ROUTINE_INSTRUCTIONS.md` and open a PR — do not try to edit the Routine's
+own stored prompt** for anything other than the bootstrap mechanism itself
+(e.g. if that file's URL or path ever moves).
 
 ### Per-project Routine instructions (`routinePromptMd`)
 
