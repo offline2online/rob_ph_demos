@@ -192,15 +192,20 @@ exports.notifyOnProjectReadyForReview = onDocumentUpdated(
     // requested" is itself useful information even when the fire failed.
     const webhookUrl = NOTIFY_WEBHOOK_URL.value();
     if (webhookUrl) {
-      const sessionLine = sessionUrl
-        ? ` Session: ${sessionUrl}`
-        : (fireUrl && token ? " (session link unavailable)" : "");
+      // "Claude was assigned N items..." rather than "Notify Claude clicked
+      // for..." — reads as a status report on what's happening, not a log
+      // line about the click itself. Leads with the session link when one
+      // resolved (the whole point of firing before posting, above); falls
+      // back to a plain explanation when it didn't.
+      const trackLine = sessionUrl
+        ? `Click here to track their progress: ${sessionUrl}`
+        : (fireUrl && token ? "(session link unavailable)" : "(Routine fire not configured — no Claude session started)");
       try {
         const res = await fetch(webhookUrl, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            text: `Notify Claude clicked for ${projectName}: ${items.length} item${items.length === 1 ? "" : "s"} in Backlog will be actioned.${sessionLine}`,
+            text: `Claude was assigned ${items.length} item${items.length === 1 ? "" : "s"} from the Backlog for "${projectName}". ${trackLine}`,
             projectId: event.params.projectId,
             projectName,
             itemCount: items.length,
