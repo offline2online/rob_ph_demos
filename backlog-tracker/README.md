@@ -86,6 +86,12 @@ step. Every open tab gets realtime updates via `onSnapshot()`, so (unlike
 the Artifact board) other viewers never need a full page reload to see a
 change.
 
+Projects can optionally be grouped under a **Program/Product** heading (a
+new `programs` collection — see `REQUIREMENTS.md` → "Data model") purely
+for display; a board with no programs looks exactly as it always has. Set
+it from the New Project modal at creation, or from a project's Docs page
+any time — both offer "+ New program…" to create one on the spot.
+
 ## Setup (all manual — this sandbox has no Firebase CLI/deploy access)
 
 Same caveat as `menu-board-demo/functions` in the root `CLAUDE.md`:
