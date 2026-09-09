@@ -66,8 +66,18 @@ secret it had been handed. Handing a fired session a scoped token doesn't
 remove that risk, it just bounds it — so instead, no session fired this
 way is ever given a GitHub credential of any kind.
 
-Instead, the Routine's own prompt asks it to package a finished fix as
-**plain file contents**, not a push:
+Instead, the fired session packages a finished fix as **plain file
+contents**, not a push. The exact rules for how a fired session behaves —
+what to investigate, what to write to Firestore, when to leave an item
+blocked instead of guessing — live in
+[`ROUTINE_INSTRUCTIONS.md`](./ROUTINE_INSTRUCTIONS.md), not in the
+Routine's own stored prompt: the Routine's prompt (owned at
+claude.ai/code/routines, editable only there) is kept to a short bootstrap
+that fetches that file fresh from this repo's `main` branch on every fire
+and follows it exactly. **This means the actual workflow is controlled
+here, in git, via normal PRs — update `ROUTINE_INSTRUCTIONS.md` to change
+what a "Notify Claude" click does, not the Routine's config.** The short
+version of what that file currently specifies:
 
 - `backlogItems/{id}.patchFiles` — `[{path, content}]` for every
   changed/created file (full new content, not a diff — `content: null`
