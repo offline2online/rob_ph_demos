@@ -196,10 +196,16 @@ function cardHTML(item) {
   const commentCount = (item.notes || []).length;
   const editBtn = `<button type="button" class="icon-btn edit-item-btn" data-id="${item.id}" title="Edit / comments">&#9998;${commentCount ? ` <span class="options-menu-count">${commentCount}</span>` : ""}</button>`;
   // Only relevant once a ticket is actually up on a feature branch — a
-  // raw.githack.com link (or a PR URL when the page can't be raw.githack'd
-  // directly) to click through and confirm before hitting "Confirm live on
-  // branch". Set/changed via a plain prompt() rather than a full modal —
-  // this is a one-off paste, not a form worth its own dialog.
+  // rawcdn.githack.com link (or a PR URL when the page can't be
+  // rawcdn.githack'd directly) to click through and confirm before hitting
+  // "Confirm live on branch". rawcdn.githack.com, not raw.githack.com —
+  // the latter proxies through jsDelivr's CDN cache (up to ~7 days), so a
+  // link set right after one push can keep showing that first commit even
+  // after later pushes update the file, with no visible error.
+  // rawcdn.githack.com is githack's own always-uncached host, meant
+  // specifically for testing an in-progress branch like this one. Set/
+  // changed via a plain prompt() rather than a full modal — this is a
+  // one-off paste, not a form worth its own dialog.
   const testLinkHTML = isTesting
     ? (item.previewUrl
         ? `<div class="test-link-row">
@@ -912,7 +918,11 @@ projectsRoot.addEventListener("click", (e) => {
   if (testLinkBtn) {
     const id = testLinkBtn.dataset.id;
     const current = items.find((i) => i.id === id)?.previewUrl || "";
-    const url = prompt("Preview/test URL for this ticket (e.g. a raw.githack.com link, or the PR URL):", current);
+    // Prefill an editable rawcdn.githack.com template (not raw.githack.com
+    // — that host is CDN-cached and can silently keep showing a stale
+    // commit) when there's nothing set yet, so the field isn't just blank.
+    const defaultValue = current || "https://rawcdn.githack.com/offline2online/rob_ph_demos/<branch>/<path>";
+    const url = prompt("Preview/test URL for this ticket (e.g. a rawcdn.githack.com link, or the PR URL):", defaultValue);
     if (url !== null) setItemPreviewUrl(id, url);
     return;
   }
