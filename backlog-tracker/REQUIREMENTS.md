@@ -90,6 +90,7 @@ deleted by hand).
   claudeNote?: string,          // short one-line status, shown nowhere but kept for history
   notes?: [{ author: "claude" | "viewer", text: string, at: timestamp }],
   deploymentId?: string,        // see "deployments/{deploymentId}" below
+  previewUrl?: string,          // a Ready for Testing card's own "Test this" link
 }
 ```
 `CATEGORIES` (fixed set, `backlog-tracker/public/js/app.js`): `Pricing &
@@ -221,6 +222,17 @@ REST API is reachable with a plain `curl`, no service account needed.
   is `{author: "viewer", text, at}` appended via `arrayUnion` — `at` is a
   plain client `Date`, not `serverTimestamp()`, since Firestore rejects a
   server-timestamp sentinel inside an array element.
+- **Test/preview link**: a Ready for Testing card gets a "Set test link"
+  button; once set (a plain `prompt()`, not a modal — this is a one-off
+  paste), it becomes a "Test this →" button opening `previewUrl` in a new
+  tab, with a pencil icon to change it. The convention is a
+  `raw.githack.com/offline2online/rob_ph_demos/<branch>/<path>` link for a
+  static page (see root `CLAUDE.md`), falling back to the PR URL for
+  anything that can't be raw.githack'd directly (e.g. a Cloud Function
+  change). This restores what the old Claude Artifact board's per-card
+  quick-launch link used to do, closing the gap `CLAUDE.md`'s "Prototype
+  Backlog" section had documented ("No `testUrl` field or quick-launch icon
+  on cards") since the migration off the Artifact.
 - **Deployments** (per project, via ⋮): groups tickets meant to ship to
   `main` together, backed by the `deployments` collection. Exists because
   merging several PRs within seconds of each other used to race the
