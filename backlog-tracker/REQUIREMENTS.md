@@ -60,6 +60,7 @@ Cloud Functions, own Hosting site, own IAM/billing; see
   readmeMd?: string,              // this project's primary tracking doc, shown atop its Docs page
   requirementsMd?: string,        // this file's own live counterpart
   notifyRequestedAt?: timestamp,  // bumped by the "Notify Claude" button
+  deployNotifyRequestedAt?: timestamp, // bumped by "Notify Claude — Deploy" — see below
   routinePromptMd?: string,       // see "Per-project Routine instructions" below
   faqAutoFlagOnLive?: boolean,    // see "FAQ auto-review" below
   programId?: string,             // see "programs/{programId}" below
@@ -269,12 +270,14 @@ REST API is reachable with a plain `curl`, no service account needed.
   primary CTA + a menu.
 - **Header actions**, in order: **Notify Claude** (own button, shows the
   live Backlog count; not buried in a menu — see "Notify Claude" below),
-  **+ New backlog item**, then a **⋮** options menu holding everything else
-  (Deployments, Archived tickets, Requirements/Docs, interface contracts).
-  Mobile (<640px) stacks Notify Claude as its own full-width row above the
-  New item / ⋮ row rather than squeezing three controls onto one line; the
-  board's four columns stack vertically instead of forcing horizontal
-  scroll.
+  **Notify Claude — Deploy** (same gradient treatment, shown only when the
+  project has items Live on Feature Branch — see "Notify Claude — Deploy"
+  below), **+ New backlog item**, then a **⋮** options menu holding
+  everything else (Deployments, Archived tickets, Requirements/Docs,
+  interface contracts). Mobile (<640px) stacks each Notify Claude button as
+  its own full-width row above the New item / ⋮ row rather than squeezing
+  controls onto one line; the board's four columns stack vertically instead
+  of forcing horizontal scroll.
 - **Notify Claude progress**: while `projects/{id}.notifyRoutine.status`
   is `"in-progress"`, the button itself reflects that instead of looking
   idle — a disabled, muted, spinning state sized to the batch actually
@@ -367,7 +370,7 @@ REST API is reachable with a plain `curl`, no service account needed.
 
 ## Functional requirements — notification & automation (Cloud Functions)
 
-Two Cloud Functions, both in `backlog-tracker/functions/index.js`:
+Three Cloud Functions, all in `backlog-tracker/functions/index.js`:
 
 1. **`notifyOnProjectReadyForReview`** (`onDocumentUpdated` on `projects`)
    — the **Notify Claude** button's function, and the only notify path
@@ -426,7 +429,31 @@ Two Cloud Functions, both in `backlog-tracker/functions/index.js`:
      for the client-side staleness fallback that covers a session running
      an older prompt without that instruction, or one that crashes.
 
-2. **`onBacklogItemPublishedLive`** (`onDocumentUpdated` on `backlogItems`)
+2. **`notifyOnProjectReadyToDeploy`** (`onDocumentUpdated` on `projects`) —
+   the **Notify Claude — Deploy** button's function. Same trigger shape as
+   `notifyOnProjectReadyForReview` above (fires once on a genuinely new
+   `deployNotifyRequestedAt`, posts to `NOTIFY_WEBHOOK_URL` if set, fires
+   the same Routine via `CLAUDE_ROUTINE_FIRE_URL`/`CLAUDE_ROUTINE_TOKEN` if
+   set — either independent of the other), but for the opposite end of the
+   pipeline: it queries `status == "ready-to-publish"` (Live on Feature
+   Branch) instead of `backlog`. **The fire `text` is a self-contained
+   "DEPLOY REQUEST" block, not the usual "N items in Backlog" shape** —
+   it explicitly states these items are already implemented, tested, and
+   confirmed on their feature branches, tells the fired session not to
+   investigate or re-implement them, and asks it to find each one's PR,
+   merge it to `main` if CI is green and mergeable, and PATCH its status to
+   `published-live` — or leave it as `ready-to-publish` with a note if it
+   can't. This was a deliberate design choice over relying on the Routine's
+   own shared prompt (see "The Notify Claude Routine" below) to infer a
+   deploy request from a differently-shaped fire, since that prompt is
+   written and tested only for the Backlog-investigation shape — editing it
+   is outside this repo's reach anyway (it lives at claude.ai/code/routines),
+   so the fire `text` itself carries the full self-contained instructions
+   instead. Same per-project `routinePromptMd` addendum mechanism as
+   `notifyOnProjectReadyForReview` (see "Per-project Routine instructions"
+   below) — prepended the same way, ahead of the DEPLOY REQUEST block.
+
+3. **`onBacklogItemPublishedLive`** (`onDocumentUpdated` on `backlogItems`)
    — opt-in per project via the Docs page's **FAQ review automation**
    toggle (`projects/{id}.faqAutoFlagOnLive`). Fires specifically on the
    transition to `status: "published-live"` — the one irreversible status
@@ -478,16 +505,18 @@ board — it can't hold project-specific detail (a different branch
 convention, which slice of the repo a project owns) without becoming
 unreadable. Each project's Docs page has its own **Routine instructions**
 field (`projects/{id}.routinePromptMd`, plain markdown, optional and blank
-by default) for exactly that. When **Notify Claude** fires,
-`notifyOnProjectReadyForReview` prepends this field's content — if
-non-blank — to the fire request's `text`, wrapped in
+by default) for exactly that. Both **Notify Claude** and **Notify Claude —
+Deploy** prepend this same field's content — if non-blank — to their fire
+request's `text`, wrapped in
 `=== PROJECT-SPECIFIC INSTRUCTIONS FOR "<project>" ===` /
 `=== END PROJECT-SPECIFIC INSTRUCTIONS ===` markers, ahead of the usual
-"Project X has N items in Backlog" list. The Routine's own prompt is
-instructed to treat a present block as authoritative additional context
-that supplements — never replaces — the required steps above (still PATCH
-the same fields, still open a PR the same way). Most projects leave this
-blank; that's the expected default, not a gap.
+"Project X has N items in Backlog" list (or, for a deploy fire, ahead of
+the DEPLOY REQUEST block — see `notifyOnProjectReadyToDeploy` above). The
+Routine's own prompt is instructed to treat a present block as
+authoritative additional context that supplements — never replaces — the
+required steps above (still PATCH the same fields, still open a PR the
+same way). Most projects leave this blank; that's the expected default,
+not a gap.
 
 ## Functional requirements — FAQ / Help Center
 

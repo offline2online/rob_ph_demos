@@ -238,6 +238,144 @@ exports.notifyOnProjectReadyForReview = onDocumentUpdated(
   }
 );
 
+// The board's "Notify Claude — Deploy" button (per-project header, shown
+// only when a project has items Live on Feature Branch) writes
+// projects/{id}.deployNotifyRequestedAt, and this fires once on that write
+// — same Slack-post-plus-Routine-fire shape as notifyOnProjectReadyForReview
+// above, but for the opposite end of the pipeline: these items are already
+// implemented, tested, and confirmed on their feature branches — nothing
+// here should be investigated or re-implemented, only merged to main. See
+// backlog-tracker/README.md for why the fire `text` says so explicitly
+// rather than relying on the Routine's own shared prompt (which is written
+// for a Backlog-shaped request) to infer that on its own.
+exports.notifyOnProjectReadyToDeploy = onDocumentUpdated(
+  { document: "projects/{projectId}", secrets: [NOTIFY_WEBHOOK_URL, CLAUDE_ROUTINE_FIRE_URL, CLAUDE_ROUTINE_TOKEN] },
+  async (event) => {
+    const before = event.data?.before?.data();
+    const after = event.data?.after?.data();
+    if (!after?.deployNotifyRequestedAt) {
+      return;
+    }
+    const beforeMs = before?.deployNotifyRequestedAt?.toMillis?.() ?? 0;
+    const afterMs = after.deployNotifyRequestedAt?.toMillis?.() ?? 0;
+    if (afterMs <= beforeMs) {
+      return;
+    }
+
+    const itemsSnap = await getFirestore().collection("backlogItems")
+      .where("projectId", "==", event.params.projectId)
+      .where("status", "==", "ready-to-publish")
+      .get();
+    const items = itemsSnap.docs.map((d) => d.data());
+
+    if (items.length === 0) {
+      logger.info("Deploy notify requested but nothing is Live on Feature Branch — nothing to notify or fire the Routine for", {
+        projectId: event.params.projectId,
+      });
+      return;
+    }
+
+    const projectName = after.name || "A project";
+
+    const webhookUrl = NOTIFY_WEBHOOK_URL.value();
+    if (webhookUrl) {
+      try {
+        const res = await fetch(webhookUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            text: `Notify Claude — Deploy clicked for ${projectName}: ${items.length} item${items.length === 1 ? "" : "s"} Live on Feature Branch will be merged to main.`,
+            projectId: event.params.projectId,
+            projectName,
+            itemCount: items.length,
+          }),
+        });
+        if (!res.ok) {
+          logger.error("Deploy notify webhook responded with a non-2xx status", {
+            projectId: event.params.projectId,
+            status: res.status,
+            body: await res.text().catch(() => "<unreadable>"),
+          });
+        } else {
+          logger.info("Notified webhook of Notify Claude — Deploy click", {
+            projectId: event.params.projectId,
+            itemCount: items.length,
+          });
+        }
+      } catch (err) {
+        logger.error("Failed to call notify webhook for deploy request", {
+          projectId: event.params.projectId,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    } else {
+      logger.warn("NOTIFY_WEBHOOK_URL is not set — skipping Slack notification for Notify Claude — Deploy click", {
+        projectId: event.params.projectId,
+      });
+    }
+
+    const fireUrl = CLAUDE_ROUTINE_FIRE_URL.value();
+    const token = CLAUDE_ROUTINE_TOKEN.value();
+    if (!fireUrl || !token) {
+      logger.warn(
+        "CLAUDE_ROUTINE_FIRE_URL/CLAUDE_ROUTINE_TOKEN not set — skipping Routine fire for deploy notify request",
+        { projectId: event.params.projectId }
+      );
+      return;
+    }
+
+    const itemLines = items
+      .map((i, idx) => `${idx + 1}. [${i.type === "bug" ? "Bug" : "Feature"}] ${i.title} — ${i.desc}`)
+      .join("\n");
+
+    // Same per-project addendum mechanism as the Backlog notify fire above
+    // (a project's own Docs page can hand the Routine extra context either
+    // request should know, e.g. which branch/PR naming convention to expect).
+    const projectPromptBlock = (after.routinePromptMd || "").trim()
+      ? `=== PROJECT-SPECIFIC INSTRUCTIONS FOR "${projectName}" (from this project's Docs page) ===\n${after.routinePromptMd.trim()}\n=== END PROJECT-SPECIFIC INSTRUCTIONS ===\n\n`
+      : "";
+
+    const text = `${projectPromptBlock}=== DEPLOY REQUEST for "${projectName}" (projectId: ${event.params.projectId}) on the Backlog Tracker & FAQs board ===\n` +
+      `These ${items.length} item${items.length === 1 ? "" : "s"} are already implemented, tested, and confirmed "Live on Feature Branch" (ready-to-publish). Do NOT investigate, re-implement, or re-test them.\n\n` +
+      `For each item below:\n` +
+      `1. Find its pull request in offline2online/rob_ph_demos (check the item's own notes for a branch/PR reference, or search open PRs referencing its title).\n` +
+      `2. If its CI is green and it's mergeable, merge that PR to main.\n` +
+      `3. PATCH its backlogItems doc: status -> "published-live", updatedAt -> now.\n` +
+      `If a PR can't be found, or its CI is red, or it's not mergeable, leave its status as ready-to-publish and add a note explaining why instead of guessing.\n\n` +
+      `Items:\n${itemLines}`;
+
+    try {
+      const res = await fetch(fireUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`,
+          "anthropic-beta": "experimental-cc-routine-2026-04-01",
+          "anthropic-version": "2023-06-01",
+        },
+        body: JSON.stringify({ text }),
+      });
+      if (!res.ok) {
+        logger.error("Routine fire endpoint responded with a non-2xx status for deploy request", {
+          projectId: event.params.projectId,
+          status: res.status,
+          body: await res.text().catch(() => "<unreadable>"),
+        });
+        return;
+      }
+      logger.info("Fired Claude Code Routine for deploy notify request", {
+        projectId: event.params.projectId,
+        itemCount: items.length,
+      });
+    } catch (err) {
+      logger.error("Failed to call Routine fire endpoint for deploy notify request", {
+        projectId: event.params.projectId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+);
+
 // A shipped feature can leave the FAQ articles that document it stale.
 // Opt-in per project (Docs page → "FAQ review automation", projects/{id}
 // .faqAutoFlagOnLive) — when on, the moment one of that project's backlog
