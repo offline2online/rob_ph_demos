@@ -23,6 +23,7 @@ const itemsRef = collection(db, "backlogItems");
 const projectsRef = collection(db, "projects");
 const interfacesRef = collection(db, "interfaces");
 const deploymentsRef = collection(db, "deployments");
+const releasesRef = collection(db, "releases");
 const programsRef = collection(db, "programs");
 const projectDocsRef = collection(db, "projectDocs");
 
@@ -67,6 +68,7 @@ let projects = [];
 let projectsLoaded = false;
 let interfaces = [];
 let deployments = [];
+let releases = [];
 let programs = [];
 let projectDocs = [];
 let editingProjectId = null;
@@ -94,6 +96,8 @@ let archiveFilters = { type: "", category: "", search: "" };
 // once), not something that drives the underlying GitHub PR merges itself.
 let deploymentsProjectId = null;
 let editingDeploymentId = null; // null while creating, an id while editing membership
+let releasesProjectId = null;
+let editingReleaseId = null; // null while creating, an id while editing
 
 function colListId(pid, colKey) { return `col-${pid}-${colKey}`; }
 
@@ -155,6 +159,7 @@ function returnToBoard() {
   closeArchivePage();
   closeArchivedProjectsPage();
   closeDeploymentsPage();
+  closeReleasesPage();
   closeDocsPage();
   closeFaqSettingsPage();
   closeFaqArticlesPage();
@@ -193,6 +198,9 @@ function cardHTML(item) {
   const deploymentBadge = item.deploymentId
     ? `<span class="deployment-badge" title="Ships together with the rest of this deployment">&#128640; ${escapeHTML(deploymentLabel(item.deploymentId))}</span>`
     : "";
+  const releaseBadge = item.releaseId
+    ? `<span class="release-badge" title="Assigned to this release — change it from Edit">&#127991; ${escapeHTML(releaseLabel(item.releaseId))}</span>`
+    : "";
   const commentCount = (item.notes || []).length;
   const editBtn = `<button type="button" class="icon-btn edit-item-btn" data-id="${item.id}" title="Edit / comments">&#9998;${commentCount ? ` <span class="options-menu-count">${commentCount}</span>` : ""}</button>`;
   // Only relevant once a ticket is actually up on a feature branch — a
@@ -223,7 +231,7 @@ function cardHTML(item) {
       </div>
       <h3 class="card-title">${escapeHTML(item.title)}</h3>
       <p class="card-desc">${escapeHTML(item.desc)}</p>
-      ${deploymentBadge}
+      ${deploymentBadge}${releaseBadge}
       <div class="card-footer">
         <span class="card-cat">${escapeHTML(item.category || "Uncategorised")}</span>
         <div class="card-move">${archiveBtn}${deleteBtn}</div>
@@ -259,8 +267,12 @@ function optionsMenuHTML(project) {
   const hasReq = !!(project.requirementsMd && project.requirementsMd.trim());
   const ifaces = interfacesForProject(pid);
   const deploymentCount = deploymentsForProject(pid).length;
+  const releaseCount = releasesForProject(pid).length;
 
   let html = `
+    <button type="button" class="options-menu-item project-releases-btn" data-project-id="${escapeHTML(pid)}">
+      Releases <span class="options-menu-count">${releaseCount}</span>
+    </button>
     <button type="button" class="options-menu-item project-deployments-btn" data-project-id="${escapeHTML(pid)}">
       Deployments <span class="options-menu-count">${deploymentCount}</span>
     </button>
@@ -341,11 +353,18 @@ function notifyClaudeButtonHTML(project) {
   const sessionLink = routine.sessionUrl
     ? `<a href="${escapeHTML(routine.sessionUrl)}" target="_blank" rel="noopener" class="notify-claude-session-link">View session &rarr;</a>`
     : "";
-  const mainBtn = `<button type="button" class="notify-claude-btn notify-claude-btn-working" disabled title="A Claude Code session is working through the ${routine.itemCount || sentIds.size} item(s) sent">
-    <span class="notify-claude-spinner"></span>
-    <span class="notify-claude-label">Working&hellip;</span>
-    <span class="notify-claude-count-pill">${routine.itemCount || sentIds.size}</span>
-  </button>${sessionLink}`;
+  // Wrapped together in one `.notify-claude-cta` group (not just adjacent
+  // siblings) so the working button and its session link visibly read as
+  // one associated unit rather than two unrelated controls, and the
+  // spinner keeps the same teal→violet AI-gradient treatment as the
+  // active button instead of dropping to a plain grey ring.
+  const mainBtn = `<span class="notify-claude-cta">
+    <button type="button" class="notify-claude-btn notify-claude-btn-working" disabled title="A Claude Code session is working through the ${routine.itemCount || sentIds.size} item(s) sent">
+      <span class="notify-claude-spinner"></span>
+      <span class="notify-claude-label">Working&hellip;</span>
+      <span class="notify-claude-count-pill">${routine.itemCount || sentIds.size}</span>
+    </button>${sessionLink}
+  </span>`;
 
   const newBtn = newCount
     ? `<button type="button" class="notify-claude-btn project-notify-btn" data-project-id="${escapeHTML(pid)}">
@@ -574,6 +593,14 @@ onSnapshot(deploymentsRef, (snap) => {
   console.error("backlog-tracker: deployments listener error", err);
 });
 
+onSnapshot(query(releasesRef, orderBy("createdAt", "asc")), (snap) => {
+  releases = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  render();
+  if (releasesProjectId) renderReleasesPage();
+}, (err) => {
+  console.error("backlog-tracker: releases listener error", err);
+});
+
 onSnapshot(programsRef, (snap) => {
   programs = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
   render();
@@ -590,9 +617,15 @@ onSnapshot(projectDocsRef, (snap) => {
 });
 
 async function addItem(projectId, title, desc, type, category) {
+  // Auto-assign to this project's current open release, if it has one —
+  // see currentOpenReleaseFor's own comment for what "current" means.
+  // Never blocks item creation: a project with no releases configured yet
+  // just creates the item unassigned, exactly as before this feature.
+  const openRelease = currentOpenReleaseFor(projectId);
   await addDoc(itemsRef, {
     projectId, title, desc, type, category,
     status: "backlog",
+    releaseId: openRelease ? openRelease.id : null,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   });
@@ -868,6 +901,81 @@ async function mergeDeployment(id) {
   await batch.commit();
 }
 
+// ── Releases — grouping backlog tickets (and, via faqArticles.releaseId,
+// FAQ/help-center content) under a customer-facing release, so both sides
+// of "what shipped in v1.2" can be tracked from the same place. Distinct
+// from Deployments above: a deployment is an internal "these PRs land
+// together" batch that disappears into git history once merged; a release
+// is the longer-lived, customer-facing grouping tickets (and docs) stay
+// tagged with indefinitely, tracked through planned → in-progress →
+// released. A ticket's release is normally set automatically (see
+// currentOpenReleaseFor/addItem) but can be reassigned any time from the
+// Edit Item modal.
+const RELEASE_STATUSES = ["planned", "in-progress", "released"];
+function releasesForProject(pid) {
+  return releases.filter((r) => r.projectId === pid);
+}
+function itemsForRelease(releaseId) {
+  return allItems.filter((i) => i.releaseId === releaseId && i.status !== "archived");
+}
+function releaseById(id) {
+  return releases.find((r) => r.id === id);
+}
+function releaseLabel(releaseId) {
+  const r = releaseById(releaseId);
+  if (!r) return "";
+  return r.version ? `${r.version} — ${r.name}` : r.name;
+}
+// "Current" = the most recently created release for this project that
+// hasn't shipped yet (planned or in-progress) — new tickets, and new FAQ
+// articles once a project is picked for them, land here automatically.
+// No release ever gets auto-created; a project with none configured just
+// leaves new tickets unassigned, same as before this feature existed.
+function currentOpenReleaseFor(pid) {
+  const open = releasesForProject(pid)
+    .filter((r) => r.status !== "released")
+    .sort((a, b) => tsMillis(b.createdAt) - tsMillis(a.createdAt));
+  return open[0] || null;
+}
+
+async function addRelease(projectId, name, version, status, releaseDate, notes) {
+  const trimmedName = (name || "").trim();
+  if (!trimmedName) return;
+  await addDoc(releasesRef, {
+    projectId, name: trimmedName, version: (version || "").trim(),
+    status: RELEASE_STATUSES.includes(status) ? status : "planned",
+    releaseDate: releaseDate || null, notes: (notes || "").trim(),
+    createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
+  });
+}
+
+async function saveRelease(id, { name, version, status, releaseDate, notes }) {
+  const trimmedName = (name || "").trim();
+  if (!trimmedName) return;
+  await setDoc(doc(db, "releases", id), {
+    name: trimmedName, version: (version || "").trim(),
+    status: RELEASE_STATUSES.includes(status) ? status : "planned",
+    releaseDate: releaseDate || null, notes: (notes || "").trim(),
+    updatedAt: serverTimestamp(),
+  }, { merge: true });
+}
+
+// Deleting a release un-tags its tickets/articles rather than touching them,
+// same "delete the group, not the members" behavior as deleteDeployment.
+async function deleteRelease(id) {
+  const memberIds = itemsForRelease(id).map((i) => i.id);
+  const memberArticleIds = faqArticles.filter((a) => a.releaseId === id).map((a) => a.id);
+  const batch = writeBatch(db);
+  memberIds.forEach((itemId) => batch.update(doc(db, "backlogItems", itemId), { releaseId: null }));
+  memberArticleIds.forEach((articleId) => batch.update(doc(db, "faqArticles", articleId), { releaseId: null }));
+  batch.delete(doc(db, "releases", id));
+  await batch.commit();
+}
+
+async function setItemRelease(id, releaseId) {
+  await updateDoc(doc(db, "backlogItems", id), { releaseId: releaseId || null, updatedAt: serverTimestamp() });
+}
+
 // An interface is a maintained contract document shared between exactly
 // two projects — the backlog-tracker-native equivalent of a shared
 // markdown file, so it survives independently of either project's repo
@@ -942,6 +1050,8 @@ projectsRoot.addEventListener("click", (e) => {
   if (docsNavBtn) { closeAllOptionMenus(); openDocsPage(docsNavBtn.dataset.projectId); return; }
   const deploymentsNavBtn = e.target.closest(".project-deployments-btn");
   if (deploymentsNavBtn) { closeAllOptionMenus(); openDeploymentsPage(deploymentsNavBtn.dataset.projectId); return; }
+  const releasesNavBtn = e.target.closest(".project-releases-btn");
+  if (releasesNavBtn) { closeAllOptionMenus(); openReleasesPage(releasesNavBtn.dataset.projectId); return; }
   const ifaceOpenBtn = e.target.closest(".interface-open-btn");
   if (ifaceOpenBtn) { closeAllOptionMenus(); openInterfaceModal(ifaceOpenBtn.dataset.interfaceId); return; }
   const ifaceAddBtn = e.target.closest(".interface-add-btn");
@@ -983,6 +1093,7 @@ const eiBackdrop = document.getElementById("ei-backdrop");
 const eiTitleInput = document.getElementById("ei-title-input");
 const eiDescInput = document.getElementById("ei-desc-input");
 const eiCategorySelect = document.getElementById("ei-category-select");
+const eiReleaseSelect = document.getElementById("ei-release-select");
 const eiNotesList = document.getElementById("ei-notes-list");
 const eiCommentInput = document.getElementById("ei-comment-input");
 
@@ -1024,6 +1135,11 @@ function openEditItemModal(id) {
   eiDescInput.value = item.desc || "";
   setEiTypeToggle(item.type === "bug" ? "bug" : "feature");
   eiCategorySelect.value = item.category || CATEGORIES[0];
+  const pid = item.projectId || GENERAL_PROJECT_ID;
+  const releaseOptions = releasesForProject(pid);
+  eiReleaseSelect.innerHTML = '<option value="">No release</option>' +
+    releaseOptions.map((r) => `<option value="${escapeHTML(r.id)}">${escapeHTML(releaseLabel(r.id))}</option>`).join("");
+  eiReleaseSelect.value = item.releaseId || "";
   eiCommentInput.value = "";
   renderEiNotes();
   eiBackdrop.hidden = false;
@@ -1050,6 +1166,7 @@ document.getElementById("ei-save").addEventListener("click", () => {
   updateItemDetails(editingItemId, {
     title: eiTitleInput.value, desc: eiDescInput.value, type, category: eiCategorySelect.value,
   });
+  setItemRelease(editingItemId, eiReleaseSelect.value);
   closeEditItemModal();
 });
 document.getElementById("ei-comment-submit").addEventListener("click", () => {
@@ -1493,6 +1610,123 @@ document.getElementById("dp-submit").addEventListener("click", async () => {
     await createDeployment(deploymentsProjectId, label, checked);
   }
   closeDeploymentModal();
+});
+
+// ── Releases page (per-project — customer-facing groupings tickets, and
+// FAQ articles via their own releaseId, ship under; see the Releases
+// helper functions above for how auto-assignment picks the "current" one)
+const releasesPage = document.getElementById("releases-page");
+
+function openReleasesPage(pid) {
+  releasesProjectId = pid;
+  document.getElementById("projects-root").hidden = true;
+  releasesPage.hidden = false;
+  renderReleasesPage();
+}
+function closeReleasesPage() {
+  releasesProjectId = null;
+  releasesPage.hidden = true;
+  document.getElementById("projects-root").hidden = false;
+}
+
+function releaseMemberRowHTML(item) {
+  return `<li class="release-member">
+    <span class="deployment-member-title">${escapeHTML(item.title)}</span>
+    <span class="deployment-member-status">${escapeHTML(columnLabel(item.status))}</span>
+  </li>`;
+}
+
+function releaseRowHTML(rel) {
+  const members = itemsForRelease(rel.id);
+  const byStatus = COLUMNS.map((c) => ({ label: c.label, count: members.filter((i) => i.status === c.key).length }))
+    .filter((c) => c.count > 0);
+  const dateStr = rel.releaseDate ? new Date(rel.releaseDate + "T00:00:00").toLocaleDateString() : "";
+  const statusLabel = rel.status === "in-progress" ? "In progress" : rel.status === "released" ? "Released" : "Planned";
+
+  return `
+    <div class="release-card" data-id="${escapeHTML(rel.id)}">
+      <div class="release-card-header">
+        <h3>${rel.version ? `${escapeHTML(rel.version)} — ` : ""}${escapeHTML(rel.name)}</h3>
+        <div class="release-card-actions">
+          <span class="release-status-badge release-status-${rel.status}">${statusLabel}</span>
+          <button type="button" class="icon-btn release-edit-btn" data-id="${escapeHTML(rel.id)}" title="Edit">&#9998;</button>
+          <button type="button" class="icon-btn release-delete-btn" data-id="${escapeHTML(rel.id)}" title="Delete release">&times;</button>
+        </div>
+      </div>
+      <p class="release-meta">${dateStr ? `Target date ${dateStr} &middot; ` : ""}${members.length} ticket${members.length === 1 ? "" : "s"}${rel.notes ? ` &middot; ${escapeHTML(rel.notes)}` : ""}</p>
+      ${byStatus.length ? `<p class="release-progress">${byStatus.map((c) => `<span>${c.count} ${escapeHTML(c.label)}</span>`).join("")}</p>` : ""}
+      <ul class="release-member-list">${members.map(releaseMemberRowHTML).join("") || '<li class="release-member-empty">No tickets assigned to this release yet.</li>'}</ul>
+    </div>`;
+}
+
+function renderReleasesPage() {
+  if (!releasesProjectId) return;
+  document.getElementById("releases-page-project-name").textContent = projectName(releasesProjectId);
+  const rows = releasesForProject(releasesProjectId)
+    .slice()
+    .sort((a, b) => tsMillis(b.createdAt) - tsMillis(a.createdAt));
+  const listEl = document.getElementById("releases-list");
+  const emptyEl = document.getElementById("releases-empty");
+  if (rows.length === 0) {
+    listEl.innerHTML = "";
+    emptyEl.hidden = false;
+    return;
+  }
+  emptyEl.hidden = true;
+  listEl.innerHTML = rows.map(releaseRowHTML).join("");
+}
+
+document.getElementById("releases-add-btn").addEventListener("click", () => openReleaseModal(null));
+document.getElementById("releases-list").addEventListener("click", (e) => {
+  const editBtn = e.target.closest(".release-edit-btn");
+  if (editBtn) { openReleaseModal(editBtn.dataset.id); return; }
+  const delBtn = e.target.closest(".release-delete-btn");
+  if (delBtn) {
+    if (confirm("Delete this release? Its tickets and any linked FAQ articles stay exactly as they are, just no longer tagged with it.")) {
+      deleteRelease(delBtn.dataset.id);
+    }
+  }
+});
+
+const rpBackdrop = document.getElementById("rp-backdrop");
+const rpNameInput = document.getElementById("rp-name-input");
+const rpVersionInput = document.getElementById("rp-version-input");
+const rpStatusSelect = document.getElementById("rp-status-select");
+const rpDateInput = document.getElementById("rp-date-input");
+const rpNotesInput = document.getElementById("rp-notes-input");
+
+function openReleaseModal(releaseId) {
+  editingReleaseId = releaseId;
+  const rel = releaseId ? releaseById(releaseId) : null;
+  document.getElementById("rp-title").textContent = rel ? "Edit release" : "New release";
+  rpNameInput.value = rel ? rel.name : "";
+  rpVersionInput.value = rel ? rel.version || "" : "";
+  rpStatusSelect.value = rel ? rel.status : "planned";
+  rpDateInput.value = rel ? rel.releaseDate || "" : "";
+  rpNotesInput.value = rel ? rel.notes || "" : "";
+  rpBackdrop.hidden = false;
+  rpNameInput.focus();
+}
+function closeReleaseModal() {
+  rpBackdrop.hidden = true;
+  editingReleaseId = null;
+}
+
+document.getElementById("rp-close").addEventListener("click", closeReleaseModal);
+document.getElementById("rp-cancel").addEventListener("click", closeReleaseModal);
+rpBackdrop.addEventListener("click", (e) => { if (e.target === rpBackdrop) closeReleaseModal(); });
+document.getElementById("rp-submit").addEventListener("click", async () => {
+  if (!rpNameInput.value.trim()) { rpNameInput.focus(); return; }
+  const fields = {
+    name: rpNameInput.value, version: rpVersionInput.value, status: rpStatusSelect.value,
+    releaseDate: rpDateInput.value || null, notes: rpNotesInput.value,
+  };
+  if (editingReleaseId) {
+    await saveRelease(editingReleaseId, fields);
+  } else {
+    await addRelease(releasesProjectId, fields.name, fields.version, fields.status, fields.releaseDate, fields.notes);
+  }
+  closeReleaseModal();
 });
 
 // ── Docs page (per-project requirements + interfaces with other projects) ─
@@ -2081,6 +2315,74 @@ async function moveFaqCategory(id, dir) {
   ]);
 }
 
+// Generic drag-and-drop reorder for any Firestore collection whose docs
+// carry a single-field `order` used for display sequencing (faqCategories,
+// faqArticles — same pattern as moveFaqCategory above, just for an
+// arbitrary drop position instead of a fixed swap-with-neighbour).
+// `items` is the *currently visible* list, already sorted by `order` —
+// only the order values already in use by this visible subset are
+// reassigned (permuted into the new sequence), so reordering a filtered
+// view (e.g. one category's articles among many) never touches items
+// outside that view.
+async function reorderByDrag(collectionName, items, draggedId, targetId) {
+  if (!draggedId || !targetId || draggedId === targetId) return;
+  const origOrders = items.map((i) => i.order || 0).sort((x, y) => x - y);
+  const ids = items.map((i) => i.id);
+  const from = ids.indexOf(draggedId);
+  if (from < 0) return;
+  ids.splice(from, 1);
+  const to = ids.indexOf(targetId);
+  if (to < 0) return;
+  ids.splice(to, 0, draggedId);
+  await Promise.all(ids.map((id, i) =>
+    setDoc(doc(db, collectionName, id), { order: origOrders[i], updatedAt: serverTimestamp() }, { merge: true })
+  ));
+}
+
+// Wires native HTML5 drag-and-drop onto a delegated container: any element
+// matching `rowSelector` with `draggable="true"` and a `data-id` can be
+// picked up and dropped onto another row of the same kind to reorder.
+// `getItems()` is called at drop time so it always reflects the list as
+// currently filtered/rendered, not a stale snapshot from when the listener
+// was attached.
+function wireDragReorder(containerEl, rowSelector, getItems, collectionName) {
+  let draggedId = null;
+  const clearDragOver = () => containerEl.querySelectorAll(".faq-drag-over").forEach((el) => el.classList.remove("faq-drag-over"));
+  containerEl.addEventListener("dragstart", (e) => {
+    const row = e.target.closest(rowSelector);
+    if (!row) return;
+    draggedId = row.dataset.id;
+    e.dataTransfer.effectAllowed = "move";
+    row.classList.add("faq-dragging");
+  });
+  containerEl.addEventListener("dragend", (e) => {
+    const row = e.target.closest(rowSelector);
+    if (row) row.classList.remove("faq-dragging");
+    draggedId = null;
+    clearDragOver();
+  });
+  containerEl.addEventListener("dragover", (e) => {
+    if (!draggedId) return;
+    const row = e.target.closest(rowSelector);
+    if (!row) return;
+    e.preventDefault();
+    if (row.dataset.id === draggedId) return;
+    clearDragOver();
+    row.classList.add("faq-drag-over");
+  });
+  containerEl.addEventListener("drop", async (e) => {
+    const row = e.target.closest(rowSelector);
+    clearDragOver();
+    if (!row || !draggedId) return;
+    e.preventDefault();
+    const targetId = row.dataset.id;
+    const dId = draggedId;
+    draggedId = null;
+    if (targetId === dId) return;
+    await reorderByDrag(collectionName, getItems(), dId, targetId);
+  });
+}
+
 async function saveFaqArticle(id, data) {
   if (id) {
     await setDoc(doc(db, "faqArticles", id), { ...data, updatedAt: serverTimestamp() }, { merge: true });
@@ -2135,12 +2437,57 @@ const faqSettingsPage = document.getElementById("faq-settings-page");
 const faqArticlesPage = document.getElementById("faq-articles-page");
 const faCategorySelect = document.getElementById("fa-category-select");
 const faProjectSelect = document.getElementById("fa-project-select");
-const faFilterCategory = document.getElementById("fa-filter-category");
+const faReleaseSelect = document.getElementById("fa-release-select");
+const faReleaseRow = document.getElementById("fa-release-row");
+
+// A release only makes sense once a project's linked (releases belong to a
+// project) — refreshes the dropdown's options and hides the whole row when
+// there's no project selected, rather than showing an always-empty select.
+function refreshFaReleaseOptions(selectedReleaseId) {
+  const pid = faProjectSelect.value;
+  const opts = pid ? releasesForProject(pid) : [];
+  faReleaseRow.hidden = opts.length === 0;
+  faReleaseSelect.innerHTML = '<option value="">No release</option>' +
+    opts.map((r) => `<option value="${escapeHTML(r.id)}">${escapeHTML(releaseLabel(r.id))}</option>`).join("");
+  faReleaseSelect.value = (selectedReleaseId && opts.some((r) => r.id === selectedReleaseId)) ? selectedReleaseId : "";
+}
+faProjectSelect.addEventListener("change", () => refreshFaReleaseOptions());
 const faFilterStatus = document.getElementById("fa-filter-status");
 const faFilterNeedsReview = document.getElementById("fa-filter-needs-review");
 const faFilterSearch = document.getElementById("fa-filter-search");
 const faNewCategoryIconSelect = document.getElementById("fa-new-category-icon");
 faNewCategoryIconSelect.innerHTML = faqCategoryIconOptionsHTML("help");
+const fadNewCategoryIconSelect = document.getElementById("fad-new-category-icon");
+fadNewCategoryIconSelect.innerHTML = faqCategoryIconOptionsHTML("help");
+
+// ── FAQ Management drill-down state (Projects → Categories → Articles) ──
+// null projectId = "All projects" (no project filter); null categoryId =
+// nothing selected yet (articles column shows a hint instead of a list).
+let faqDrillProjectId = null;
+let faqDrillCategoryId = null;
+let faqDrillExpandedCategoryId = null; // which category row's inline editor is open, if any
+
+// Categories aren't directly linked to a project (only articles are, via
+// faqArticles.projectId) — "this project's categories" means "categories
+// that have at least one article linked to this project."
+function faqCategoriesForDrillProject(projectId) {
+  if (!projectId) return faqCategories.slice();
+  const catIds = new Set(faqArticles.filter((a) => a.projectId === projectId).map((a) => a.categoryId));
+  return faqCategories.filter((c) => catIds.has(c.id));
+}
+function faqArticleCountFor(categoryId, projectId) {
+  return faqArticles.filter((a) => a.categoryId === categoryId && (!projectId || a.projectId === projectId)).length;
+}
+function faqDrillVisibleArticles() {
+  if (!faqDrillCategoryId) return [];
+  let list = faqArticles.filter((a) => a.categoryId === faqDrillCategoryId);
+  if (faqDrillProjectId) list = list.filter((a) => a.projectId === faqDrillProjectId);
+  if (faFilterStatus.value) list = list.filter((a) => a.status === faFilterStatus.value);
+  if (faFilterNeedsReview.value === "yes") list = list.filter((a) => a.needsReview);
+  const q = faFilterSearch.value.trim().toLowerCase();
+  if (q) list = list.filter((a) => (a.title || "").toLowerCase().includes(q) || (a.summary || "").toLowerCase().includes(q));
+  return list;
+}
 
 function openFaqSettingsPage() {
   document.getElementById("projects-root").hidden = true;
@@ -2170,7 +2517,8 @@ function renderFaqSettingsPage() {
     catListEl.innerHTML = faqCategories.map((c, idx) => {
       const count = faqArticles.filter((a) => a.categoryId === c.id).length;
       return `
-        <div class="faq-cat-row" data-id="${escapeHTML(c.id)}">
+        <div class="faq-cat-row" draggable="true" data-id="${escapeHTML(c.id)}">
+          <span class="drag-handle material-symbols-outlined" title="Drag to reorder">drag_indicator</span>
           <span class="material-symbols-outlined">${escapeHTML(c.icon || "help")}</span>
           <input type="text" class="faq-cat-name-input" value="${escapeHTML(c.name)}" aria-label="Category name">
           <div class="fa-icon-picker">
@@ -2195,35 +2543,98 @@ function renderFaqArticlesPage() {
     .map((c) => `<option value="${escapeHTML(c.id)}">${escapeHTML(c.name)}</option>`).join("");
   faCategorySelect.innerHTML = catOptionsHTML || '<option value="">Add a category first</option>';
 
-  const prevFilterCat = faFilterCategory.value;
-  faFilterCategory.innerHTML = '<option value="">All categories</option>' + catOptionsHTML;
-  faFilterCategory.value = prevFilterCat;
-
   const prevProjVal = faProjectSelect.value;
   faProjectSelect.innerHTML = '<option value="">None — general article</option>' +
     projects.map((p) => `<option value="${escapeHTML(p.id)}">${escapeHTML(p.name)}</option>`).join("");
   faProjectSelect.value = prevProjVal;
 
-  renderFaqArticleList();
+  // A project or category that no longer qualifies (e.g. its last linked
+  // article was moved/deleted) quietly falls back to "All"/"none selected"
+  // rather than showing a selected-but-empty column.
+  if (faqDrillProjectId && !projects.some((p) => p.id === faqDrillProjectId)) faqDrillProjectId = null;
+  if (faqDrillCategoryId && !faqCategories.some((c) => c.id === faqDrillCategoryId)) faqDrillCategoryId = null;
+
+  renderFaqDrillProjects();
+  renderFaqDrillCategories();
+  renderFaqDrillArticles();
 
   const publishedCount = faqArticles.filter((a) => a.status === "published").length;
   const draftCount = faqArticles.filter((a) => a.status === "draft").length;
   document.getElementById("faq-admin-count").textContent = `${publishedCount} published, ${draftCount} draft`;
 }
 
-function renderFaqArticleList() {
-  let list = faqArticles.slice();
-  if (faFilterCategory.value) list = list.filter((a) => a.categoryId === faFilterCategory.value);
-  if (faFilterStatus.value) list = list.filter((a) => a.status === faFilterStatus.value);
-  if (faFilterNeedsReview.value === "yes") list = list.filter((a) => a.needsReview);
-  const q = faFilterSearch.value.trim().toLowerCase();
-  if (q) {
-    list = list.filter((a) =>
-      (a.title || "").toLowerCase().includes(q) || (a.summary || "").toLowerCase().includes(q));
-  }
+function renderFaqDrillProjects() {
+  const projectIdsWithArticles = new Set(faqArticles.filter((a) => a.projectId).map((a) => a.projectId));
+  const projectRows = projects
+    .filter((p) => projectIdsWithArticles.has(p.id))
+    .sort((a, b) => a.name.localeCompare(b.name));
 
+  const allCount = faqArticles.length;
+  const rowsHTML = [
+    `<div class="faq-drill-proj-row${faqDrillProjectId ? "" : " selected"}" data-project-id="">
+       <span>All projects</span><span class="faq-cat-count">${allCount}</span>
+     </div>`,
+    ...projectRows.map((p) => `
+      <div class="faq-drill-proj-row${faqDrillProjectId === p.id ? " selected" : ""}" data-project-id="${escapeHTML(p.id)}">
+        <span>${escapeHTML(p.name)}</span><span class="faq-cat-count">${faqArticles.filter((a) => a.projectId === p.id).length}</span>
+      </div>`),
+  ];
+  document.getElementById("faq-drill-projects-list").innerHTML = rowsHTML.join("");
+}
+
+function renderFaqDrillCategories() {
+  const cats = faqCategoriesForDrillProject(faqDrillProjectId);
+  const listEl = document.getElementById("faq-drill-categories-list");
+  if (cats.length === 0) {
+    listEl.innerHTML = '<p class="empty-hint">No categories yet — add one below.</p>';
+    return;
+  }
+  listEl.innerHTML = cats.map((c) => {
+    const count = faqArticleCountFor(c.id, faqDrillProjectId);
+    const expanded = faqDrillExpandedCategoryId === c.id;
+    return `
+      <div class="faq-drill-cat-row${faqDrillCategoryId === c.id ? " selected" : ""}" draggable="true" data-id="${escapeHTML(c.id)}">
+        <div class="faq-drill-cat-row-main" data-select-id="${escapeHTML(c.id)}">
+          <span class="drag-handle material-symbols-outlined" title="Drag to reorder">drag_indicator</span>
+          <span class="material-symbols-outlined">${escapeHTML(c.icon || "help")}</span>
+          <span class="faq-drill-cat-name">${escapeHTML(c.name)}</span>
+          <span class="faq-cat-count">${count}</span>
+          <button type="button" class="icon-btn faq-drill-cat-expand" data-id="${escapeHTML(c.id)}" title="Edit category name, icon &amp; description">&#9998;</button>
+        </div>
+        ${expanded ? `
+          <div class="faq-drill-cat-edit" data-id="${escapeHTML(c.id)}">
+            <input type="text" class="faq-cat-name-input" value="${escapeHTML(c.name)}" aria-label="Category name">
+            <div class="fa-icon-picker">
+              <span class="material-symbols-outlined fa-icon-preview">${escapeHTML(c.icon || "help")}</span>
+              <select class="faq-cat-icon-select" aria-label="Category icon">${faqCategoryIconOptionsHTML(c.icon || "help")}</select>
+            </div>
+            <input type="text" class="faq-cat-desc-input" value="${escapeHTML(c.description || "")}" placeholder="Short description" aria-label="Category description">
+            <div class="faq-drill-cat-edit-actions">
+              <button type="button" class="icon-btn faq-drill-cat-delete" data-id="${escapeHTML(c.id)}" title="Delete category">&#128465; Delete</button>
+              <button type="button" class="icon-btn faq-drill-cat-save" data-id="${escapeHTML(c.id)}" title="Save changes">&#10003; Save</button>
+            </div>
+          </div>` : ""}
+      </div>`;
+  }).join("");
+}
+
+function renderFaqDrillArticles() {
+  const titleEl = document.getElementById("faq-drill-articles-title");
   const listEl = document.getElementById("faq-article-list");
   const emptyEl = document.getElementById("faq-article-empty");
+  const noCatEl = document.getElementById("faq-drill-no-category");
+
+  if (!faqDrillCategoryId) {
+    titleEl.textContent = "Articles";
+    listEl.innerHTML = "";
+    emptyEl.hidden = true;
+    noCatEl.hidden = false;
+    return;
+  }
+  noCatEl.hidden = true;
+  titleEl.textContent = `Articles — ${faqCategoryName(faqDrillCategoryId)}`;
+
+  const list = faqDrillVisibleArticles();
   if (list.length === 0) {
     listEl.innerHTML = "";
     emptyEl.hidden = false;
@@ -2233,12 +2644,13 @@ function renderFaqArticleList() {
   listEl.innerHTML = list.map((a) => {
     const liveUrl = `${FAQ_PUBLIC_BASE_URL}article.html?id=${encodeURIComponent(a.id)}`;
     return `
-      <div class="faq-article-row" data-id="${escapeHTML(a.id)}">
+      <div class="faq-drill-article-row" draggable="true" data-id="${escapeHTML(a.id)}">
+        <span class="drag-handle material-symbols-outlined" title="Drag to reorder">drag_indicator</span>
         <div class="faq-article-row-main">
           <span class="badge badge-status-${a.status}">${a.status === "published" ? "Published" : "Draft"}</span>
           ${a.needsReview ? '<span class="badge badge-needs-review">Needs review</span>' : ""}
           <h4>${escapeHTML(a.title)}</h4>
-          <p class="faq-article-row-meta">${escapeHTML(faqCategoryName(a.categoryId))}${a.projectId ? " &middot; " + escapeHTML(projectName(a.projectId)) : ""}</p>
+          <p class="faq-article-row-meta">${a.projectId ? escapeHTML(projectName(a.projectId)) : "General"}</p>
         </div>
         <div class="faq-article-row-actions">
           ${a.status === "published" ? `<a href="${liveUrl}" target="_blank" rel="noopener">View live &#8599;</a>` : ""}
@@ -2288,11 +2700,79 @@ document.getElementById("faq-category-list").addEventListener("change", (e) => {
   if (!select) return;
   select.closest(".fa-icon-picker").querySelector(".fa-icon-preview").textContent = select.value;
 });
+wireDragReorder(document.getElementById("faq-category-list"), ".faq-cat-row", () => faqCategories.slice(), "faqCategories");
 
-[faFilterCategory, faFilterStatus, faFilterNeedsReview].forEach((el) => {
-  el.addEventListener("change", renderFaqArticleList);
+// ── FAQ Management drill-down wiring (Projects → Categories → Articles) ──
+document.getElementById("fad-new-category-submit").addEventListener("click", async () => {
+  const nameEl = document.getElementById("fad-new-category-name");
+  if (!nameEl.value.trim()) { nameEl.focus(); return; }
+  await addFaqCategory(nameEl.value, fadNewCategoryIconSelect.value);
+  nameEl.value = "";
+  fadNewCategoryIconSelect.value = "help";
+  document.getElementById("fad-new-category-icon-preview").textContent = "help";
 });
-faFilterSearch.addEventListener("input", renderFaqArticleList);
+fadNewCategoryIconSelect.addEventListener("change", () => {
+  document.getElementById("fad-new-category-icon-preview").textContent = fadNewCategoryIconSelect.value;
+});
+
+document.getElementById("faq-drill-projects-list").addEventListener("click", (e) => {
+  const row = e.target.closest(".faq-drill-proj-row");
+  if (!row) return;
+  faqDrillProjectId = row.dataset.projectId || null;
+  // The selected category may not belong to the newly-selected project —
+  // drop the selection rather than show articles that don't match.
+  if (faqDrillCategoryId && !faqCategoriesForDrillProject(faqDrillProjectId).some((c) => c.id === faqDrillCategoryId)) {
+    faqDrillCategoryId = null;
+  }
+  renderFaqDrillProjects();
+  renderFaqDrillCategories();
+  renderFaqDrillArticles();
+});
+
+document.getElementById("faq-drill-categories-list").addEventListener("click", (e) => {
+  const expandBtn = e.target.closest(".faq-drill-cat-expand");
+  if (expandBtn) {
+    faqDrillExpandedCategoryId = faqDrillExpandedCategoryId === expandBtn.dataset.id ? null : expandBtn.dataset.id;
+    renderFaqDrillCategories();
+    return;
+  }
+  const saveBtn = e.target.closest(".faq-drill-cat-save");
+  if (saveBtn) {
+    const editRow = saveBtn.closest(".faq-drill-cat-edit");
+    saveFaqCategory(
+      saveBtn.dataset.id,
+      editRow.querySelector(".faq-cat-name-input").value,
+      editRow.querySelector(".faq-cat-icon-select").value,
+      editRow.querySelector(".faq-cat-desc-input").value,
+    );
+    faqDrillExpandedCategoryId = null;
+    return;
+  }
+  const deleteBtn = e.target.closest(".faq-drill-cat-delete");
+  if (deleteBtn) { deleteFaqCategoryIfEmpty(deleteBtn.dataset.id); return; }
+
+  const selectTarget = e.target.closest(".faq-drill-cat-row-main");
+  if (selectTarget) {
+    faqDrillCategoryId = selectTarget.dataset.selectId;
+    renderFaqDrillCategories();
+    renderFaqDrillArticles();
+  }
+});
+document.getElementById("faq-drill-categories-list").addEventListener("change", (e) => {
+  const select = e.target.closest(".faq-cat-icon-select");
+  if (!select) return;
+  select.closest(".fa-icon-picker").querySelector(".fa-icon-preview").textContent = select.value;
+});
+wireDragReorder(
+  document.getElementById("faq-drill-categories-list"), ".faq-drill-cat-row",
+  () => faqCategoriesForDrillProject(faqDrillProjectId), "faqCategories",
+);
+
+[faFilterStatus, faFilterNeedsReview].forEach((el) => {
+  el.addEventListener("change", renderFaqDrillArticles);
+});
+faFilterSearch.addEventListener("input", renderFaqDrillArticles);
+wireDragReorder(document.getElementById("faq-article-list"), ".faq-drill-article-row", () => faqDrillVisibleArticles(), "faqArticles");
 
 // ── FAQ article editor modal ────────────────────────────────────────────
 const faBackdrop = document.getElementById("fa-backdrop");
@@ -2365,7 +2845,7 @@ function setFaStatusToggle(status) {
   });
 }
 
-function openFaqArticleModal(articleId) {
+function openFaqArticleModal(articleId, defaultCategoryId) {
   editingFaqArticleId = articleId || null;
   faqSlugManuallyEdited = !!articleId;
   const article = articleId ? faqArticles.find((a) => a.id === articleId) : null;
@@ -2386,9 +2866,11 @@ function openFaqArticleModal(articleId) {
   setFaBodyMode("edit");
 
   if (faCategorySelect.options.length && faCategorySelect.options[0].value !== "") {
-    faCategorySelect.value = article ? article.categoryId : faCategorySelect.options[0].value;
+    faCategorySelect.value = article ? article.categoryId : (defaultCategoryId || faCategorySelect.options[0].value);
   }
-  faProjectSelect.value = article && article.projectId ? article.projectId : "";
+  faProjectSelect.value = (article && article.projectId) ? article.projectId
+    : (!article && faqDrillProjectId) ? faqDrillProjectId : "";
+  refreshFaReleaseOptions(article ? article.releaseId : null);
 
   const liveHint = document.getElementById("fa-live-link-hint");
   if (article && article.status === "published") {
@@ -2405,7 +2887,7 @@ function closeFaqArticleModal() { faBackdrop.hidden = true; }
 
 document.getElementById("fa-new-article-btn").addEventListener("click", () => {
   if (faqCategories.length === 0) { alert("Add a category first."); return; }
-  openFaqArticleModal(null);
+  openFaqArticleModal(null, faqDrillCategoryId);
 });
 document.getElementById("fa-cancel").addEventListener("click", closeFaqArticleModal);
 document.getElementById("fa-close").addEventListener("click", closeFaqArticleModal);
@@ -2432,6 +2914,7 @@ document.getElementById("fa-submit").addEventListener("click", async () => {
   const data = {
     categoryId,
     projectId: faProjectSelect.value || null,
+    releaseId: faReleaseSelect.value || null,
     title,
     slug: faSlugInput.value.trim() || slugify(title),
     summary: faSummaryInput.value.trim(),
@@ -2445,7 +2928,7 @@ document.getElementById("fa-submit").addEventListener("click", async () => {
 });
 
 document.getElementById("faq-article-list").addEventListener("click", (e) => {
-  const row = e.target.closest(".faq-article-row");
+  const row = e.target.closest(".faq-drill-article-row");
   if (!row) return;
   const id = row.dataset.id;
   if (e.target.closest(".faq-article-edit")) { openFaqArticleModal(id); return; }

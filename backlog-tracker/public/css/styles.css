@@ -195,23 +195,38 @@ body {
   background: linear-gradient(135deg, var(--primary), var(--violet)); color: #fff;
   font-size: 11px; font-weight: 700; border-radius: 9999px; padding: 1px 8px;
 }
-/* Muted/disabled variant while a fired session is still working — visually
-   distinct from the actionable gradient state above, not just non-clickable. */
+/* Muted/disabled variant while a fired session is still working — still
+   non-clickable (cursor: default, no hover affordance) but keeps a faint
+   wash of the same teal→violet gradient rather than going flat grey, so
+   "working" reads as "the AI action is in flight" and not "disabled." */
 .notify-claude-btn-working {
-  background: var(--surface-2); cursor: default;
+  background: linear-gradient(135deg, rgba(22, 155, 194, .08), rgba(151, 71, 255, .08)); cursor: default;
 }
 .notify-claude-btn-working .notify-claude-icon,
 .notify-claude-btn-working .notify-claude-label {
   background: none; -webkit-background-clip: unset; background-clip: unset; color: var(--text-muted);
 }
 .notify-claude-btn-working .notify-claude-count-pill { background: var(--text-muted); }
+/* Gradient ring instead of a plain single-colour spinner — a conic
+   teal→violet sweep masked down to a ring, matching the same AI-gradient
+   family used everywhere else on this button. */
 .notify-claude-spinner {
-  width: 13px; height: 13px; border-radius: 50%; flex-shrink: 0;
-  border: 2px solid var(--border); border-top-color: var(--primary);
+  width: 14px; height: 14px; border-radius: 50%; flex-shrink: 0;
+  background: conic-gradient(from 0deg, rgba(22, 155, 194, 0) 0deg, var(--primary) 100deg, var(--violet) 260deg, rgba(151, 71, 255, 0) 360deg);
+  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 2px), #000 calc(100% - 2px));
+  mask: radial-gradient(farthest-side, transparent calc(100% - 2px), #000 calc(100% - 2px));
   animation: notify-claude-spin .8s linear infinite;
 }
 @keyframes notify-claude-spin { to { transform: rotate(360deg); } }
-.notify-claude-session-link { font-size: 12px; color: var(--primary); text-decoration: none; white-space: nowrap; margin-left: 2px; }
+/* Groups the working button with its "View session →" link into one visual
+   unit (a shared pill) instead of two loose siblings, so it's obvious
+   they're associated with the same in-flight run. */
+.notify-claude-cta {
+  display: inline-flex; align-items: center; gap: 8px;
+  background: var(--surface-2); border-radius: 6px; padding: 0 4px 0 0;
+}
+.notify-claude-cta .notify-claude-btn-working { background: none; padding-right: 6px; }
+.notify-claude-session-link { font-size: 12px; color: var(--primary); text-decoration: none; white-space: nowrap; }
 .notify-claude-session-link:hover { text-decoration: underline; }
 .project-options { position: relative; flex-shrink: 0; }
 .project-options-btn { font-size: 18px; line-height: 1; padding: 7px 11px; }
@@ -319,6 +334,31 @@ body {
 .dp-items-list { display: flex; flex-direction: column; gap: 4px; max-height: 260px; overflow-y: auto; margin-top: 4px; border: 1px solid var(--border); border-radius: 6px; padding: 8px; }
 .dp-item-row { display: flex; align-items: center; gap: 8px; font-size: 13px; padding: 4px 2px; }
 
+/* ── Releases — customer-facing grouping for tickets + FAQ articles ────── */
+.release-badge {
+  display: inline-flex; align-items: center; gap: 4px; font-size: 10.5px; font-weight: 600;
+  color: var(--violet); background: rgba(151, 71, 255, .12); border-radius: 9999px;
+  padding: 2px 8px; margin: 6px 0 0;
+}
+.release-card { border: 1px solid var(--border); border-radius: 8px; padding: 14px; margin-bottom: 12px; background: var(--surface); }
+.release-card-header { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.release-card-header h3 { margin: 0; font-size: 15px; }
+.release-card-actions { display: flex; gap: 4px; flex-shrink: 0; }
+.release-meta { font-size: 12px; color: var(--text-muted); margin: 4px 0 10px; }
+.release-status-badge { font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .03em; border-radius: 9999px; padding: 2px 9px; }
+.release-status-planned { background: var(--surface-2); color: var(--text-muted); }
+.release-status-in-progress { background: rgba(22, 155, 194, .14); color: var(--primary); }
+.release-status-released { background: rgba(82, 196, 26, .12); color: var(--success); }
+.release-progress { display: flex; gap: 6px; flex-wrap: wrap; font-size: 11px; color: var(--text-muted); margin: 0 0 10px; }
+.release-progress span { background: var(--surface-2); border-radius: 9999px; padding: 1px 8px; }
+.release-member-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.release-member {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 7px 10px; font-size: 12.5px;
+}
+.release-member-empty { color: var(--text-muted); font-style: italic; font-size: 12.5px; }
+#rp-backdrop textarea { width: 100%; }
+
 /* ── Mobile ──────────────────────────────────────────────────────────────
    Two real problems on a phone before this: (1) the board's 4 columns were
    forced side by side (`repeat(4, minmax(260px,1fr))`), so most of the
@@ -345,8 +385,14 @@ body {
   .new-item-btn { flex: 1; min-height: 46px; font-size: 14px; justify-content: center; }
   /* Its own full-width row above New backlog item + ⋮ (order in the DOM
      already puts it first) — three buttons crammed onto one row would
-     otherwise squeeze each other into unreadable widths on a phone. */
-  .notify-claude-btn { flex-basis: 100%; min-height: 46px; font-size: 14px; justify-content: center; }
+     otherwise squeeze each other into unreadable widths on a phone. Applies
+     to the plain gradient button and, for the in-progress state, to the
+     whole .notify-claude-cta group (button + session link) so that group
+     still gets its own full-width row instead of being squeezed. */
+  .notify-claude-btn, .notify-claude-cta { flex-basis: 100%; }
+  .notify-claude-btn { min-height: 46px; font-size: 14px; justify-content: center; }
+  .notify-claude-cta .notify-claude-btn-working { flex: 1; min-height: 46px; font-size: 14px; justify-content: center; }
+  .notify-claude-cta { justify-content: space-between; padding-right: 10px; }
   .project-options-btn { min-width: 46px; min-height: 46px; }
   .project-options-menu { left: auto; right: 0; max-width: calc(100vw - 24px); }
 
@@ -450,6 +496,63 @@ body {
 .badge-needs-review { background: rgba(201, 138, 10, .12); color: var(--warning); margin-left: 6px; }
 .faq-article-row-actions { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
 .faq-article-row-actions a { font-size: 12px; }
+
+/* ── FAQ Management drill-down (Projects → Categories → Articles) ──────── */
+.faq-drill {
+  display: grid; grid-template-columns: minmax(140px, 180px) minmax(200px, 260px) minmax(0, 1fr);
+  gap: 14px; align-items: start;
+}
+.faq-drill-col {
+  border: 1px solid var(--border); border-radius: 8px; background: var(--surface);
+  padding: 10px 12px 12px; min-width: 0;
+}
+.faq-drill-col-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
+.faq-drill-col-header h3 { margin: 0; font-size: 13px; text-transform: uppercase; letter-spacing: .03em; color: var(--text-muted); }
+.faq-drill-list { display: flex; flex-direction: column; max-height: 480px; overflow-y: auto; }
+
+/* Projects column rows */
+.faq-drill-proj-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  padding: 8px 8px; border-radius: 6px; cursor: pointer; font-size: 13px;
+}
+.faq-drill-proj-row:hover { background: var(--surface-2); }
+.faq-drill-proj-row.selected { background: rgba(22, 155, 194, .12); font-weight: 600; }
+.faq-drill-proj-row .faq-cat-count { flex-shrink: 0; }
+
+/* Shared drag handle look, used by category and article rows below */
+.drag-handle { cursor: grab; color: var(--text-muted); font-size: 16px; flex-shrink: 0; touch-action: none; }
+.drag-handle:active { cursor: grabbing; }
+.faq-drag-over { outline: 2px dashed var(--primary); outline-offset: -2px; }
+.faq-dragging { opacity: .4; }
+
+/* Categories column rows — collapsed row + optional inline edit panel */
+.faq-drill-cat-row { border-bottom: 1px solid var(--divider, var(--border)); }
+.faq-drill-cat-row:last-child { border-bottom: none; }
+.faq-drill-cat-row-main {
+  display: flex; align-items: center; gap: 6px; padding: 8px 4px; border-radius: 6px; cursor: pointer;
+}
+.faq-drill-cat-row-main:hover { background: var(--surface-2); }
+.faq-drill-cat-row.selected .faq-drill-cat-row-main { background: rgba(22, 155, 194, .12); }
+.faq-drill-cat-row-main > .material-symbols-outlined:not(.drag-handle) { color: var(--primary); font-size: 17px; flex-shrink: 0; }
+.faq-drill-cat-name { flex: 1; min-width: 0; font-size: 12.5px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.faq-drill-cat-row-main .faq-cat-count { flex-shrink: 0; }
+.faq-drill-cat-edit { padding: 4px 4px 10px 26px; display: flex; flex-direction: column; gap: 6px; }
+.faq-drill-cat-edit input, .faq-drill-cat-edit select {
+  font-family: inherit; font-size: 12.5px; padding: 6px 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg);
+}
+.faq-drill-cat-edit-actions { display: flex; gap: 4px; justify-content: flex-end; }
+
+/* Articles column rows */
+.faq-drill-article-row {
+  display: flex; align-items: flex-start; gap: 8px; padding: 10px 4px; border-bottom: 1px solid var(--divider, var(--border));
+}
+.faq-drill-article-row:last-child { border-bottom: none; }
+.faq-drill-article-row .drag-handle { margin-top: 2px; }
+
+@media (max-width: 900px) {
+  .faq-drill { grid-template-columns: 1fr; }
+  .faq-drill-list { max-height: 260px; }
+}
 
 /* ── Footer / version ────────────────────────────────────────────────── */
 .app-footer { margin-top: 24px; padding-top: 14px; border-top: 1px solid var(--border); font-size: 11.5px; color: var(--text-muted); text-align: center; }
