@@ -336,10 +336,12 @@ Two Cloud Functions, both in `backlog-tracker/functions/index.js`:
      board's own spinner/link UI (see "Notify Claude progress" above) and
      included in the Slack message below.
    - Posts a plain webhook (`NOTIFY_WEBHOOK_URL` secret) — a Slack message
-     naming the project, exactly how many Backlog items will be actioned,
-     and the session link if one resolved (`" (session link unavailable)"`
-     if the Routine secrets are configured but no id came back), or
-     whatever else the secret points at. Still needs a human (or a
+     reading "Claude was assigned N items from the Backlog for
+     '\<project\>'. Click here to track their progress: \<sessionUrl\>"
+     (falls back to `"(session link unavailable)"` if the Routine secrets
+     are configured but no id came back, or `"(Routine fire not
+     configured — no Claude session started)"` if they aren't set at all),
+     or whatever else the secret points at. Still needs a human (or a
      separately-configured relay) to actually act on it; it's the "tell
      someone something happened" side-channel, not the mechanism that gets
      Claude's attention.
