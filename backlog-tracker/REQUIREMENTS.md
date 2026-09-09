@@ -212,6 +212,15 @@ REST API is reachable with a plain `curl`, no service account needed.
   page is sortable/filterable by type, area, and free text, with a Restore
   action back to `published-live`. Deletion is reserved for Backlog cards
   only.
+- **Edit + comments**: every non-archived card has an edit icon (with a
+  comment-count badge once it has any) opening a modal to change
+  title/description/type/category, plus a comments thread. `notes` existed
+  in the schema from the start but was previously write-only from the
+  board's own UI — only the Routine ever wrote to it, via direct Firestore
+  PATCHes; this is the first UI to read or write it. A viewer's own comment
+  is `{author: "viewer", text, at}` appended via `arrayUnion` — `at` is a
+  plain client `Date`, not `serverTimestamp()`, since Firestore rejects a
+  server-timestamp sentinel inside an array element.
 - **Deployments** (per project, via ⋮): groups tickets meant to ship to
   `main` together, backed by the `deployments` collection. Exists because
   merging several PRs within seconds of each other used to race the

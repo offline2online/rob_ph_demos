@@ -312,6 +312,19 @@ body {
 }
 .fa-preview h3 { font-size: 14px; margin: 10px 0 4px; }
 .fa-preview p { margin: 0 0 8px; }
+
+/* ── Edit item modal (title/desc/type/category + comments) ─────────────── */
+#ei-backdrop input[type="text"], #ei-backdrop textarea, #ei-backdrop select {
+  width: 100%; font-family: inherit; font-size: 13px; color: var(--text); background: var(--surface);
+  border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; box-sizing: border-box; resize: vertical;
+}
+.ei-comments-block { border-top: 1px solid var(--border); margin-top: 16px; padding-top: 14px; }
+.ei-comments-block h3 { margin: 0 0 8px; font-size: 14px; }
+.ei-comments-block textarea { margin-top: 8px; }
+.ei-notes-list { display: flex; flex-direction: column; gap: 8px; max-height: 220px; overflow-y: auto; }
+.ei-note-row { background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; }
+.ei-note-meta { display: flex; justify-content: space-between; gap: 10px; font-size: 11px; color: var(--text-muted); margin-bottom: 4px; }
+.ei-note-text { margin: 0; font-size: 12.5px; white-space: pre-wrap; }
 .fa-preview ul { margin: 0 0 8px; padding-left: 20px; }
 .fa-needs-review-toggle { display: flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--text-muted); cursor: pointer; }
 .fa-needs-review-toggle input { width: 14px; height: 14px; }
