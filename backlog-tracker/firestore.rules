@@ -74,6 +74,23 @@ service cloud.firestore {
       allow delete: if true;
     }
 
+    // A project doc is a generic, named document belonging to exactly one
+    // project (an API spec, an architecture decision record, anything that
+    // isn't Requirements or the README fields on projects/{projectId}
+    // itself) — the "Additional documents" list on that project's Docs
+    // page. Unlike an interface, never shared between two projects.
+    match /projectDocs/{docId} {
+      allow read: if true;
+
+      allow create, update: if
+        isNonEmptyBoundedString(incoming().projectId, 100) &&
+        isNonEmptyBoundedString(incoming().name, 120) &&
+        incoming().contentMd is string &&
+        incoming().contentMd.size() <= 20000;
+
+      allow delete: if true;
+    }
+
     // FAQ / Help Center — the consumer-facing site at repo-root `faq/`
     // (published via GitHub Pages) reads these two collections directly;
     // this app's "FAQ Center" admin page is the only writer. Same

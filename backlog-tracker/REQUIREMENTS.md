@@ -57,6 +57,7 @@ Cloud Functions, own Hosting site, own IAM/billing; see
 {
   name: string,
   createdAt: timestamp,
+  readmeMd?: string,              // this project's primary tracking doc, shown atop its Docs page
   requirementsMd?: string,        // this file's own live counterpart
   notifyRequestedAt?: timestamp,  // bumped by the "Notify Claude" button
   routinePromptMd?: string,       // see "Per-project Routine instructions" below
@@ -154,6 +155,25 @@ counterpart to a shared markdown file in the repo (e.g.
 Templates). Keep both in sync; treat a divergence as a bug in whichever is
 stale.
 
+### `projectDocs/{docId}`
+```
+{
+  projectId: string,
+  name: string,
+  contentMd: string,
+  createdAt: timestamp,
+  updatedAt: timestamp,
+}
+```
+A generic, named document belonging to exactly one project — an API spec,
+an architecture decision record, any technical or architectural document
+that isn't the project's own `requirementsMd` or `readmeMd` fields. Listed
+under "Additional documents" on that project's Docs page, add/edit/delete
+inline via a modal, same UI pattern as Interfaces but anchored to a single
+project rather than shared between two. Exists so a project's *complete*
+documentation lives on one page instead of scattered across the repo,
+per-project Firestore fields, and this collection.
+
 ### `faqCategories/{id}` and `faqArticles/{id}`
 ```
 faqCategories/{id}: { name, icon, description, order, createdAt, updatedAt }
@@ -228,10 +248,17 @@ REST API is reachable with a plain `curl`, no service account needed.
   initiative, so a session running an older Routine prompt without that
   instruction — or one that crashes — can never wedge the button in a
   permanent spinning state.
-- **Docs page** (per project, via ⋮): free-text **Requirements**
-  (`requirementsMd` — this document's own live counterpart), **FAQ review
-  automation** toggle (see below), and **Interfaces with other projects**
-  (list + add/edit, backed by the `interfaces` collection).
+- **Docs page** (per project, via ⋮) is the single-page home for
+  everything documenting that project, in this order: the project's
+  **README** (`readmeMd` — its primary tracking document, shown first),
+  free-text **Requirements** (`requirementsMd` — this document's own live
+  counterpart), an **Additional documents** list (any other technical or
+  architectural document, backed by the `projectDocs` collection — see Data
+  model above), **Routine instructions**, **FAQ review automation** toggle
+  (see below), and **Interfaces with other projects** (list + add/edit,
+  backed by the `interfaces` collection). All of it lives here rather than
+  scattered across repo files, so a project's complete documentation is one
+  page away from its board.
 - **Archive**: a Merged-to-Main card can be archived (sets `status:
   "archived"` + `archivedAt`, not deleted); each project's own Archived
   page is sortable/filterable by type, area, and free text, with a Restore
