@@ -13,7 +13,7 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-app.js";
 import {
   getFirestore, collection, addDoc, updateDoc, deleteDoc, setDoc, doc,
-  onSnapshot, query, orderBy, serverTimestamp, writeBatch,
+  onSnapshot, query, orderBy, serverTimestamp, writeBatch, arrayUnion,
 } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore.js";
 import { firebaseConfig } from "./firebase-config.js";
 
@@ -142,6 +142,8 @@ function cardHTML(item) {
   const deploymentBadge = item.deploymentId
     ? `<span class="deployment-badge" title="Ships together with the rest of this deployment">&#128640; ${escapeHTML(deploymentLabel(item.deploymentId))}</span>`
     : "";
+  const commentCount = (item.notes || []).length;
+  const editBtn = `<button type="button" class="icon-btn edit-item-btn" data-id="${item.id}" title="Edit / comments">&#9998;${commentCount ? ` <span class="options-menu-count">${commentCount}</span>` : ""}</button>`;
   // Only relevant once a ticket is actually up on a feature branch — a
   // raw.githack.com link (or a PR URL when the page can't be raw.githack'd
   // directly) to click through and confirm before hitting "Confirm live on
@@ -160,7 +162,7 @@ function cardHTML(item) {
     <article class="card" data-id="${item.id}">
       <div class="card-top">
         <span class="badge badge-${item.type}">${item.type === "bug" ? "Bug" : "Feature"}</span>
-        <div class="card-move">${leftBtn}${rightBtn}</div>
+        <div class="card-move">${editBtn}${leftBtn}${rightBtn}</div>
       </div>
       <h3 class="card-title">${escapeHTML(item.title)}</h3>
       <p class="card-desc">${escapeHTML(item.desc)}</p>
@@ -377,6 +379,7 @@ onSnapshot(query(itemsRef, orderBy("createdAt", "desc")), (snap) => {
   if (archiveProjectId) renderArchivePage();
   if (archivedProjectsPage && !archivedProjectsPage.hidden) renderArchivedProjectsPage();
   if (deploymentsProjectId) renderDeploymentsPage();
+  if (editingItemId) renderEiNotes();
 }, (err) => {
   console.error("backlog-tracker: items listener error", err);
 });
@@ -442,6 +445,25 @@ async function archiveItem(id) {
 async function restoreItem(id) {
   await updateDoc(doc(db, "backlogItems", id), {
     status: "published-live",
+    updatedAt: serverTimestamp(),
+  });
+}
+
+async function updateItemDetails(id, { title, desc, type, category }) {
+  await updateDoc(doc(db, "backlogItems", id), {
+    title: title.trim(), desc: desc.trim(), type, category, updatedAt: serverTimestamp(),
+  });
+}
+
+// `at` is a plain client Date, not serverTimestamp() — Firestore rejects a
+// serverTimestamp() sentinel inside an array (arrayUnion here), the same
+// reason the Routine's own note-appending curl calls always send a literal
+// ISO8601 string instead of asking Firestore to fill it in server-side.
+async function addItemComment(id, text) {
+  const trimmed = (text || "").trim();
+  if (!trimmed) return;
+  await updateDoc(doc(db, "backlogItems", id), {
+    notes: arrayUnion({ author: "viewer", text: trimmed, at: new Date() }),
     updatedAt: serverTimestamp(),
   });
 }
@@ -634,6 +656,8 @@ projectsRoot.addEventListener("click", (e) => {
   if (delBtn) { removeItem(delBtn.dataset.id); return; }
   const archBtn = e.target.closest(".archive-btn");
   if (archBtn) { archiveItem(archBtn.dataset.id); return; }
+  const editItemBtn = e.target.closest(".edit-item-btn");
+  if (editItemBtn) { openEditItemModal(editItemBtn.dataset.id); return; }
   const testLinkBtn = e.target.closest(".test-link-set-btn, .test-link-edit-btn");
   if (testLinkBtn) {
     const id = testLinkBtn.dataset.id;
@@ -686,6 +710,92 @@ projectsRoot.addEventListener("keydown", (e) => {
 projectsRoot.addEventListener("focusout", (e) => {
   if (!e.target.classList.contains("project-name-input")) return;
   commitProjectNameEdit(e.target.dataset.projectId, e.target.value);
+});
+
+// ── Edit item modal — title/desc/type/category plus comments. Comments
+// were schema-only until now (`notes`, written only by the Routine via
+// direct Firestore writes) — this is the first UI to actually read/write
+// them from the board itself. ───────────────────────────────────────────
+let editingItemId = null;
+const eiBackdrop = document.getElementById("ei-backdrop");
+const eiTitleInput = document.getElementById("ei-title-input");
+const eiDescInput = document.getElementById("ei-desc-input");
+const eiCategorySelect = document.getElementById("ei-category-select");
+const eiNotesList = document.getElementById("ei-notes-list");
+const eiCommentInput = document.getElementById("ei-comment-input");
+
+eiCategorySelect.innerHTML = CATEGORIES.map((c) => `<option value="${escapeHTML(c)}">${escapeHTML(c)}</option>`).join("");
+
+function setEiTypeToggle(type) {
+  document.querySelectorAll("#ei-backdrop .type-opt").forEach((btn) => {
+    btn.classList.toggle("active", btn.dataset.type === type);
+  });
+}
+
+function formatNoteAt(at) {
+  const d = at && at.toDate ? at.toDate() : (at instanceof Date ? at : null);
+  return d ? d.toLocaleString() : "";
+}
+
+function eiNoteRowHTML(note) {
+  const who = note.author === "claude" ? "Claude" : "Comment";
+  return `<div class="ei-note-row">
+    <div class="ei-note-meta"><b>${escapeHTML(who)}</b><span>${escapeHTML(formatNoteAt(note.at))}</span></div>
+    <p class="ei-note-text">${escapeHTML(note.text)}</p>
+  </div>`;
+}
+
+function renderEiNotes() {
+  if (!editingItemId) return;
+  const item = allItems.find((i) => i.id === editingItemId);
+  const notes = (item && item.notes) || [];
+  eiNotesList.innerHTML = notes.length
+    ? notes.slice().reverse().map(eiNoteRowHTML).join("")
+    : '<p class="interface-row-empty">No comments yet.</p>';
+}
+
+function openEditItemModal(id) {
+  editingItemId = id;
+  const item = allItems.find((i) => i.id === id);
+  if (!item) return;
+  eiTitleInput.value = item.title || "";
+  eiDescInput.value = item.desc || "";
+  setEiTypeToggle(item.type === "bug" ? "bug" : "feature");
+  eiCategorySelect.value = item.category || CATEGORIES[0];
+  eiCommentInput.value = "";
+  renderEiNotes();
+  eiBackdrop.hidden = false;
+  eiTitleInput.focus();
+}
+function closeEditItemModal() {
+  eiBackdrop.hidden = true;
+  editingItemId = null;
+}
+
+document.getElementById("ei-close").addEventListener("click", closeEditItemModal);
+document.getElementById("ei-cancel").addEventListener("click", closeEditItemModal);
+eiBackdrop.addEventListener("click", (e) => { if (e.target === eiBackdrop) closeEditItemModal(); });
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && !eiBackdrop.hidden) closeEditItemModal();
+});
+document.querySelectorAll("#ei-backdrop .type-opt").forEach((btn) => {
+  btn.addEventListener("click", () => setEiTypeToggle(btn.dataset.type));
+});
+document.getElementById("ei-save").addEventListener("click", () => {
+  if (!editingItemId) return;
+  if (!eiTitleInput.value.trim()) { alert("Title can't be empty."); return; }
+  const type = document.querySelector("#ei-backdrop .type-opt.active")?.dataset.type || "feature";
+  updateItemDetails(editingItemId, {
+    title: eiTitleInput.value, desc: eiDescInput.value, type, category: eiCategorySelect.value,
+  });
+  closeEditItemModal();
+});
+document.getElementById("ei-comment-submit").addEventListener("click", () => {
+  if (!editingItemId) return;
+  const text = eiCommentInput.value;
+  if (!text.trim()) return;
+  addItemComment(editingItemId, text);
+  eiCommentInput.value = "";
 });
 
 // ── New Item modal ─────────────────────────────────────────────────────
