@@ -430,9 +430,9 @@ sharing this same Firestore project:
   blocked by this sandbox's network egress policy, so it couldn't be read
   directly — the real content was instead sourced from a Freshdesk export
   already sitting in Google Drive, see "Seeding" below).
-- **Admin**: this app's own **FAQ Center** page (button next to "+ New
-  project" in the header — global, not per-project, since an article can
-  span or link to any one project). Lets you manage categories (name,
+- **Admin**: this app's own **FAQ Center** page (reached from the header's
+  hamburger menu — global, not per-project, since an article can span or
+  link to any one project). Lets you manage categories (name,
   Material Symbols icon, description, display order) and articles (title,
   slug, category, an optional linked project, summary, a small
   markdown-ish body with a live preview, search keywords, draft/published
