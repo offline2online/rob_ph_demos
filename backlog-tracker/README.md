@@ -368,6 +368,29 @@ working, check Anthropic's current Claude Code Routines docs for what
 changed, and re-test with `curl` before re-patching the function — see
 the request shape in `functions/index.js`'s `notifyOnProjectReadyForReview`.
 
+### Notify Claude progress (`notifyRoutine`) — session id, spinner, split count
+
+The fire endpoint's success response includes a `claude_code_session_id`
+field — confirmed by a live `curl` test against the real endpoint (also a
+research-preview surface, so re-confirm this with `curl` if session links
+ever silently stop appearing, same caution as the header gotcha above).
+`notifyOnProjectReadyForReview` reads it, builds
+`https://claude.ai/code/<id>`, and writes the whole outcome to
+`projects/{id}.notifyRoutine` (`status`, `firedAt`, `sessionId`/
+`sessionUrl`, `itemCount`, `sentItemIds`) — the board's Notify Claude
+button reads this to show a spinner + "View session →" link while a fire
+is in flight, and a separate small CTA for anything added to Backlog since
+that click (`sentItemIds` is how it knows what's "new").
+
+The Routine is asked, in the fire request's own `text`, to PATCH
+`notifyRoutine.status` to `"done"`/`"error"` (with `finishedAt`) when it
+stops — but nothing enforces that a fired session actually does this
+(an older Routine prompt won't know to, and a crashed session can't). The
+frontend's own fallback — treating any `"in-progress"` older than 20
+minutes as done — is what actually keeps the button from getting stuck
+forever, not the self-report; treat the self-report as a nice-to-have for
+faster feedback, not the safety mechanism.
+
 ### Per-project Routine instructions (`routinePromptMd`)
 
 The Routine itself has one fixed prompt shared by every project on the

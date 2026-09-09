@@ -66,13 +66,15 @@ exports.notifyOnProjectReadyForReview = onDocumentUpdated(
       return;
     }
 
+    const db = getFirestore();
+
     // Two equality filters ("==" on projectId and status) — this needs no
     // composite index, unlike an equality + range/order combination would.
-    const itemsSnap = await getFirestore().collection("backlogItems")
+    const itemsSnap = await db.collection("backlogItems")
       .where("projectId", "==", event.params.projectId)
       .where("status", "==", "backlog")
       .get();
-    const items = itemsSnap.docs.map((d) => d.data());
+    const items = itemsSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
 
     if (items.length === 0) {
       logger.info("Notify requested but Backlog is empty — nothing to notify or fire the Routine for", {
@@ -82,21 +84,127 @@ exports.notifyOnProjectReadyForReview = onDocumentUpdated(
     }
 
     const projectName = after.name || "A project";
+    const sentItemIds = items.map((i) => i.id);
 
-    // Slack (or whatever NOTIFY_WEBHOOK_URL points at) and the Routine fire
-    // below are independent — each posts only if its own secret(s) are set,
-    // and one being unset never blocks the other.
+    // Fire the Routine BEFORE posting to Slack (reversed from the original
+    // order) so a resolved session id/url can ride along in the Slack
+    // message, and so projects/{id}.notifyRoutine — which the board's
+    // Notify Claude button reads to show a spinner + "View session" link —
+    // reflects the real outcome of this specific click.
+    const fireUrl = CLAUDE_ROUTINE_FIRE_URL.value();
+    const token = CLAUDE_ROUTINE_TOKEN.value();
+    let sessionId = null;
+    let sessionUrl = null;
+    let fireError = null;
+
+    if (fireUrl && token) {
+      const itemLines = items
+        .map((i, idx) => `${idx + 1}. [${i.type === "bug" ? "Bug" : "Feature"}] ${i.title} — ${i.desc}`)
+        .join("\n");
+
+      // Per-project override/addendum to the Routine's own fixed prompt (see
+      // the Docs page's "Routine instructions" block, projects/{id}
+      // .routinePromptMd) — lets one project hand the Routine extra
+      // instructions specific to it (a different branch convention, a note
+      // about which parts of the repo it owns, anything the generic workflow
+      // wouldn't know) without needing a second Routine or editing the
+      // Routine's own prompt for every project that wants something custom.
+      const projectPromptBlock = (after.routinePromptMd || "").trim()
+        ? `=== PROJECT-SPECIFIC INSTRUCTIONS FOR "${projectName}" (from this project's Docs page) ===\n${after.routinePromptMd.trim()}\n=== END PROJECT-SPECIFIC INSTRUCTIONS ===\n\n`
+        : "";
+
+      const selfReportHint = `\n\nWhen you finish this run (whether you completed everything or stopped early on a blocker), PATCH projects/${event.params.projectId} with notifyRoutine.status set to "done" (or "error" with an errorMessage, if you stopped early) and notifyRoutine.finishedAt set to now — the board shows a working/spinning state on its Notify Claude button until it sees this.`;
+
+      const text = `${projectPromptBlock}Project: "${projectName}" (projectId: ${event.params.projectId}) on the Backlog Tracker & FAQs board has ${items.length} item${items.length === 1 ? "" : "s"} in Backlog:\n\n${itemLines}${selfReportHint}`;
+
+      try {
+        const res = await fetch(fireUrl, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${token}`,
+            // Research-preview API trigger feature — these header names/values
+            // may change; if firing starts failing with an auth/version error,
+            // check Anthropic's current docs for the routine-fire headers.
+            "anthropic-beta": "experimental-cc-routine-2026-04-01",
+            "anthropic-version": "2023-06-01",
+          },
+          body: JSON.stringify({ text }),
+        });
+        if (!res.ok) {
+          fireError = `Routine fire endpoint responded with status ${res.status}`;
+          logger.error("Routine fire endpoint responded with a non-2xx status", {
+            projectId: event.params.projectId,
+            status: res.status,
+            body: await res.text().catch(() => "<unreadable>"),
+          });
+        } else {
+          // `claude_code_session_id` is the field name confirmed by a live
+          // curl test against the real fire endpoint (see README.md) —
+          // this is a research-preview API, so if session links stop
+          // showing up, re-confirm the response shape with curl before
+          // assuming the board's code is wrong.
+          const body = await res.json().catch(() => null);
+          sessionId = body?.claude_code_session_id || null;
+          sessionUrl = sessionId ? `https://claude.ai/code/${sessionId}` : null;
+          logger.info("Fired Claude Code Routine for manual project notify request", {
+            projectId: event.params.projectId,
+            itemCount: items.length,
+            sessionId,
+          });
+        }
+      } catch (err) {
+        fireError = err instanceof Error ? err.message : String(err);
+        logger.error("Failed to call Routine fire endpoint for manual notify", {
+          projectId: event.params.projectId,
+          error: fireError,
+        });
+      }
+
+      // Lets the board show a spinner (or a visible error) instead of the
+      // button just looking idle after a click. A fired session is asked
+      // (see selfReportHint above) to flip this to "done"/"error" itself;
+      // the frontend also treats a stale "in-progress" — older than the
+      // typical run length — as done on its own, so a session running an
+      // older prompt without that instruction, or one that crashes, can't
+      // wedge the button permanently.
+      await db.collection("projects").doc(event.params.projectId).set({
+        notifyRoutine: {
+          status: fireError ? "error" : "in-progress",
+          firedAt: new Date(),
+          sessionId,
+          sessionUrl,
+          itemCount: items.length,
+          sentItemIds,
+          errorMessage: fireError,
+        },
+      }, { merge: true });
+    } else {
+      logger.warn(
+        "CLAUDE_ROUTINE_FIRE_URL/CLAUDE_ROUTINE_TOKEN not set — skipping Routine fire for manual project notify request",
+        { projectId: event.params.projectId }
+      );
+    }
+
+    // Slack (or whatever NOTIFY_WEBHOOK_URL points at) is independent of
+    // the fire above — posts (with a session link if one was resolved)
+    // regardless of whether the fire succeeded, since "notify was
+    // requested" is itself useful information even when the fire failed.
     const webhookUrl = NOTIFY_WEBHOOK_URL.value();
     if (webhookUrl) {
+      const sessionLine = sessionUrl
+        ? ` Session: ${sessionUrl}`
+        : (fireUrl && token ? " (session link unavailable)" : "");
       try {
         const res = await fetch(webhookUrl, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            text: `Notify Claude clicked for ${projectName}: ${items.length} item${items.length === 1 ? "" : "s"} in Backlog will be actioned.`,
+            text: `Notify Claude clicked for ${projectName}: ${items.length} item${items.length === 1 ? "" : "s"} in Backlog will be actioned.${sessionLine}`,
             projectId: event.params.projectId,
             projectName,
             itemCount: items.length,
+            sessionUrl,
           }),
         });
         if (!res.ok) {
@@ -120,66 +228,6 @@ exports.notifyOnProjectReadyForReview = onDocumentUpdated(
     } else {
       logger.warn("NOTIFY_WEBHOOK_URL is not set — skipping Slack notification for Notify Claude click", {
         projectId: event.params.projectId,
-      });
-    }
-
-    const fireUrl = CLAUDE_ROUTINE_FIRE_URL.value();
-    const token = CLAUDE_ROUTINE_TOKEN.value();
-    if (!fireUrl || !token) {
-      logger.warn(
-        "CLAUDE_ROUTINE_FIRE_URL/CLAUDE_ROUTINE_TOKEN not set — skipping Routine fire for manual project notify request",
-        { projectId: event.params.projectId }
-      );
-      return;
-    }
-
-    const itemLines = items
-      .map((i, idx) => `${idx + 1}. [${i.type === "bug" ? "Bug" : "Feature"}] ${i.title} — ${i.desc}`)
-      .join("\n");
-
-    // Per-project override/addendum to the Routine's own fixed prompt (see
-    // the Docs page's "Routine instructions" block, projects/{id}
-    // .routinePromptMd) — lets one project hand the Routine extra
-    // instructions specific to it (a different branch convention, a note
-    // about which parts of the repo it owns, anything the generic workflow
-    // wouldn't know) without needing a second Routine or editing the
-    // Routine's own prompt for every project that wants something custom.
-    const projectPromptBlock = (after.routinePromptMd || "").trim()
-      ? `=== PROJECT-SPECIFIC INSTRUCTIONS FOR "${projectName}" (from this project's Docs page) ===\n${after.routinePromptMd.trim()}\n=== END PROJECT-SPECIFIC INSTRUCTIONS ===\n\n`
-      : "";
-
-    const text = `${projectPromptBlock}Project: "${projectName}" (projectId: ${event.params.projectId}) on the Backlog Tracker & FAQs board has ${items.length} item${items.length === 1 ? "" : "s"} in Backlog:\n\n${itemLines}`;
-
-    try {
-      const res = await fetch(fireUrl, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${token}`,
-          // Research-preview API trigger feature — these header names/values
-          // may change; if firing starts failing with an auth/version error,
-          // check Anthropic's current docs for the routine-fire headers.
-          "anthropic-beta": "experimental-cc-routine-2026-04-01",
-          "anthropic-version": "2023-06-01",
-        },
-        body: JSON.stringify({ text }),
-      });
-      if (!res.ok) {
-        logger.error("Routine fire endpoint responded with a non-2xx status", {
-          projectId: event.params.projectId,
-          status: res.status,
-          body: await res.text().catch(() => "<unreadable>"),
-        });
-        return;
-      }
-      logger.info("Fired Claude Code Routine for manual project notify request", {
-        projectId: event.params.projectId,
-        itemCount: items.length,
-      });
-    } catch (err) {
-      logger.error("Failed to call Routine fire endpoint for manual notify", {
-        projectId: event.params.projectId,
-        error: err instanceof Error ? err.message : String(err),
       });
     }
   }

@@ -61,6 +61,16 @@ Cloud Functions, own Hosting site, own IAM/billing; see
   notifyRequestedAt?: timestamp,  // bumped by the "Notify Claude" button
   routinePromptMd?: string,       // see "Per-project Routine instructions" below
   faqAutoFlagOnLive?: boolean,    // see "FAQ auto-review" below
+  notifyRoutine?: {                // set by notifyOnProjectReadyForReview on each fire
+    status: "in-progress" | "done" | "error",
+    firedAt: timestamp,
+    sessionId?: string,
+    sessionUrl?: string,
+    itemCount: number,
+    sentItemIds: string[],
+    finishedAt?: timestamp,        // set by the fired session itself, if it follows the hint
+    errorMessage?: string,
+  },
 }
 ```
 One doc per tracked project. A project with no doc but whose items
@@ -204,6 +214,20 @@ REST API is reachable with a plain `curl`, no service account needed.
   New item / ⋮ row rather than squeezing three controls onto one line; the
   board's four columns stack vertically instead of forcing horizontal
   scroll.
+- **Notify Claude progress**: while `projects/{id}.notifyRoutine.status`
+  is `"in-progress"`, the button itself reflects that instead of looking
+  idle — a disabled, muted, spinning state sized to the batch actually
+  sent, plus a **View session →** link when a session id was resolved from
+  the Routine fire response. Anything added to Backlog after that click
+  surfaces as its own small, still-clickable **Notify Claude — N new** CTA
+  next to it, rather than being folded into a count that would otherwise
+  conflate "already being worked" with "brand new." A fired session is
+  asked (in the fire request's own `text`) to flip `notifyRoutine.status`
+  to `"done"`/`"error"` itself when it finishes; the client additionally
+  treats any `"in-progress"` older than 20 minutes as done on its own
+  initiative, so a session running an older Routine prompt without that
+  instruction — or one that crashes — can never wedge the button in a
+  permanent spinning state.
 - **Docs page** (per project, via ⋮): free-text **Requirements**
   (`requirementsMd` — this document's own live counterpart), **FAQ review
   automation** toggle (see below), and **Interfaces with other projects**
@@ -283,17 +307,13 @@ Two Cloud Functions, both in `backlog-tracker/functions/index.js`:
    function, `notifyOnBacklogItemCreated`, that posted automatically on
    every single new item; removed because it was noisy — one Slack message
    per line typed or dictated, long before a project was actually ready
-   for anyone to look at. This function does two independent things on
-   each click (either no-ops on its own if its secret(s) aren't set, never
-   blocking the other):
-   - Posts a plain webhook (`NOTIFY_WEBHOOK_URL` secret) — a Slack message
-     naming the project and exactly how many Backlog items will be
-     actioned, or whatever else the secret points at. Still needs a human
-     (or a separately-configured relay) to actually act on it; it's the
-     "tell someone something happened" side-channel, not the mechanism
-     that gets Claude's attention.
-   - Fetches everything currently in that project's Backlog column and
-     fires a **Claude Code Routine's API trigger** directly — `POST` to
+   for anyone to look at. Fetches everything currently in that project's
+   Backlog column, **fires the Routine first, then posts to Slack** (order
+   matters — reversed from an earlier version — so a resolved session link
+   can ride along in the Slack message), each independently (either
+   no-ops on its own if its secret(s) aren't set, never blocking the
+   other):
+   - Fires a **Claude Code Routine's API trigger** directly — `POST` to
      `https://api.anthropic.com/v1/claude_code/routines/{id}/fire` with a
      bearer token and the required `anthropic-version: 2023-06-01` and
      `anthropic-beta: experimental-cc-routine-2026-04-01` headers (the
@@ -307,7 +327,32 @@ Two Cloud Functions, both in `backlog-tracker/functions/index.js`:
      this repo) carries the actual investigate → fix → note →
      move-to-Ready-for-Testing workflow; this function's only job is
      telling it which project and what's in Backlog. This is the half that
-     closes the loop without a human relaying anything.
+     closes the loop without a human relaying anything. The fire response's
+     `claude_code_session_id` field (confirmed by a live `curl` test
+     against the real endpoint — a research-preview API, so re-confirm the
+     response shape with `curl` if session links ever stop appearing
+     before assuming the code is wrong) becomes `https://claude.ai/code/
+     <id>`, stored on `projects/{id}.notifyRoutine.sessionUrl` for the
+     board's own spinner/link UI (see "Notify Claude progress" above) and
+     included in the Slack message below.
+   - Posts a plain webhook (`NOTIFY_WEBHOOK_URL` secret) — a Slack message
+     naming the project, exactly how many Backlog items will be actioned,
+     and the session link if one resolved (`" (session link unavailable)"`
+     if the Routine secrets are configured but no id came back), or
+     whatever else the secret points at. Still needs a human (or a
+     separately-configured relay) to actually act on it; it's the "tell
+     someone something happened" side-channel, not the mechanism that gets
+     Claude's attention.
+   - Writes `projects/{id}.notifyRoutine` (`status: "in-progress"` on a
+     successful fire, `"error"` with `errorMessage` otherwise; `firedAt`,
+     `sessionId`/`sessionUrl`, `itemCount`, and `sentItemIds` — the exact
+     item ids this click sent, used to compute "new since last notify" on
+     the client) so the board's Notify Claude button can show real
+     progress instead of going silent after the click. The fire request's
+     `text` asks the fired session to PATCH this back to `"done"`/`"error"`
+     with a `finishedAt` when it stops; see "Notify Claude progress" above
+     for the client-side staleness fallback that covers a session running
+     an older prompt without that instruction, or one that crashes.
 
 2. **`onBacklogItemPublishedLive`** (`onDocumentUpdated` on `backlogItems`)
    — opt-in per project via the Docs page's **FAQ review automation**

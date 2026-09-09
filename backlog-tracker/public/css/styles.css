@@ -150,6 +150,24 @@ body {
   background: linear-gradient(135deg, var(--primary), var(--violet)); color: #fff;
   font-size: 11px; font-weight: 700; border-radius: 9999px; padding: 1px 8px;
 }
+/* Muted/disabled variant while a fired session is still working — visually
+   distinct from the actionable gradient state above, not just non-clickable. */
+.notify-claude-btn-working {
+  background: var(--surface-2); cursor: default;
+}
+.notify-claude-btn-working .notify-claude-icon,
+.notify-claude-btn-working .notify-claude-label {
+  background: none; -webkit-background-clip: unset; background-clip: unset; color: var(--text-muted);
+}
+.notify-claude-btn-working .notify-claude-count-pill { background: var(--text-muted); }
+.notify-claude-spinner {
+  width: 13px; height: 13px; border-radius: 50%; flex-shrink: 0;
+  border: 2px solid var(--border); border-top-color: var(--primary);
+  animation: notify-claude-spin .8s linear infinite;
+}
+@keyframes notify-claude-spin { to { transform: rotate(360deg); } }
+.notify-claude-session-link { font-size: 12px; color: var(--primary); text-decoration: none; white-space: nowrap; margin-left: 2px; }
+.notify-claude-session-link:hover { text-decoration: underline; }
 .project-options { position: relative; flex-shrink: 0; }
 .project-options-btn { font-size: 18px; line-height: 1; padding: 7px 11px; }
 .project-options-menu {
