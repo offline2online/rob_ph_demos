@@ -104,6 +104,25 @@
       </div>
     </div>
 
+    <div class="modal-backdrop" id="doc-backdrop" hidden>
+      <div class="modal-panel" role="dialog" aria-modal="true" aria-labelledby="doc-title">
+        <div class="modal-header">
+          <h2 id="doc-title">New document</h2>
+          <button type="button" class="modal-close" id="doc-close" aria-label="Close">&times;</button>
+        </div>
+        <label class="field-label" for="doc-name-input">Document name</label>
+        <input type="text" id="doc-name-input" maxlength="120" placeholder="e.g. API spec, Architecture decision record">
+        <label class="field-label" for="doc-content-input">Content</label>
+        <textarea id="doc-content-input" rows="14" placeholder="Paste or write the document here..."></textarea>
+        <div class="form-row" style="justify-content:flex-end;">
+          <div class="form-actions">
+            <button type="button" class="btn-ghost" id="doc-cancel">Cancel</button>
+            <button type="button" class="btn-primary" id="doc-submit">Save document</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <div class="modal-backdrop" id="ei-backdrop" hidden>
       <div class="modal-panel modal-panel-wide" role="dialog" aria-modal="true" aria-labelledby="ei-title">
         <div class="modal-header">
@@ -149,12 +168,30 @@
       </div>
 
       <div class="docs-block">
+        <h3>README</h3>
+        <p class="field-hint">The primary document used to track this project — shown first on this page so it's the first thing anyone visiting reads. This is a live copy, same pattern as Requirements below; keep any repo-native README.md for this project in sync with it.</p>
+        <textarea id="docs-readme-input" rows="12" placeholder="No README written yet — paste or write it here."></textarea>
+        <div class="form-row" style="justify-content:flex-end;">
+          <button type="button" class="btn-primary" id="docs-readme-save">Save README</button>
+        </div>
+      </div>
+
+      <div class="docs-block">
         <h3>Requirements</h3>
         <p class="field-hint">This project's own requirements — maintained here so it travels with the board, not only as a file in the repo.</p>
         <textarea id="docs-requirements-input" rows="16" placeholder="No requirements written yet — paste or write them here."></textarea>
         <div class="form-row" style="justify-content:flex-end;">
           <button type="button" class="btn-primary" id="docs-requirements-save">Save requirements</button>
         </div>
+      </div>
+
+      <div class="docs-block">
+        <div class="docs-block-header">
+          <h3>Additional documents</h3>
+          <button type="button" class="btn-ghost" id="docs-add-doc-btn">+ New document</button>
+        </div>
+        <p class="field-hint">Any other technical or architectural document for this project — an API spec, a design doc, anything that isn't Requirements or the README above — kept on this same page instead of scattered across the repo.</p>
+        <div id="docs-extra-docs-list"></div>
       </div>
 
       <div class="docs-block">

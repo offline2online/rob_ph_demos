@@ -23,6 +23,7 @@ const itemsRef = collection(db, "backlogItems");
 const projectsRef = collection(db, "projects");
 const interfacesRef = collection(db, "interfaces");
 const deploymentsRef = collection(db, "deployments");
+const projectDocsRef = collection(db, "projectDocs");
 
 const COLUMNS = [
   { key: "backlog", label: "Backlog", headClass: "backlog" },
@@ -51,6 +52,7 @@ let projects = [];
 let projectsLoaded = false;
 let interfaces = [];
 let deployments = [];
+let projectDocs = [];
 let editingProjectId = null;
 
 // ── Docs page state (per-project requirements + interfaces with other
@@ -59,6 +61,7 @@ let editingProjectId = null;
 // from either side. ──────────────────────────────────────────────────────
 let docsProjectId = null;
 let editingInterfaceId = null; // null while adding, an id while editing
+let editingDocId = null; // null while adding, an id while editing (Additional documents)
 
 // ── Archive page state ─────────────────────────────────────────────────
 let archiveProjectId = null;
@@ -455,6 +458,13 @@ onSnapshot(deploymentsRef, (snap) => {
   console.error("backlog-tracker: deployments listener error", err);
 });
 
+onSnapshot(projectDocsRef, (snap) => {
+  projectDocs = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  if (docsProjectId) renderDocsPage();
+}, (err) => {
+  console.error("backlog-tracker: projectDocs listener error", err);
+});
+
 async function addItem(projectId, title, desc, type, category) {
   await addDoc(itemsRef, {
     projectId, title, desc, type, category,
@@ -568,6 +578,38 @@ function activeItemCountForProject(pid) {
 
 async function setProjectRequirements(id, md) {
   await setDoc(doc(db, "projects", id), { requirementsMd: md, updatedAt: serverTimestamp() }, { merge: true });
+}
+
+// The project's own primary tracking document — shown first on the Docs
+// page, above Requirements, same live-doc pattern.
+async function setProjectReadme(id, md) {
+  await setDoc(doc(db, "projects", id), { readmeMd: md, updatedAt: serverTimestamp() }, { merge: true });
+}
+
+// ── Additional documents — a generic, named-document library per project
+// (an API spec, an architecture decision record, anything that isn't
+// Requirements or the README) so a project's full documentation lives on
+// this one page instead of scattered across the repo. Unlike an interface,
+// a project doc belongs to exactly one project — no second projectId. ────
+function docsForProject(pid) {
+  return projectDocs.filter((d) => d.projectId === pid);
+}
+
+async function addProjectDoc(projectId, name, contentMd) {
+  await addDoc(projectDocsRef, {
+    projectId, name: name.trim(), contentMd: contentMd || "",
+    createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
+  });
+}
+
+async function updateProjectDoc(id, name, contentMd) {
+  await setDoc(doc(db, "projectDocs", id), {
+    name: name.trim(), contentMd: contentMd || "", updatedAt: serverTimestamp(),
+  }, { merge: true });
+}
+
+async function deleteProjectDoc(id) {
+  await deleteDoc(doc(db, "projectDocs", id));
 }
 
 // Per-project addendum to the Notify Claude Routine's own fixed prompt —
@@ -1267,6 +1309,7 @@ document.getElementById("dp-submit").addEventListener("click", async () => {
 
 // ── Docs page (per-project requirements + interfaces with other projects) ─
 const docsPage = document.getElementById("docs-page");
+const docsReadmeInput = document.getElementById("docs-readme-input");
 const docsRequirementsInput = document.getElementById("docs-requirements-input");
 const docsRoutinePromptInput = document.getElementById("docs-routine-prompt-input");
 const docsFaqAutoFlagInput = document.getElementById("docs-faq-auto-flag");
@@ -1305,10 +1348,32 @@ function interfaceRowHTML(f) {
     </div>`;
 }
 
+function projectDocRowHTML(d) {
+  const contentPreview = d.contentMd
+    ? `<div class="interface-row-content">${escapeHTML(d.contentMd)}</div>`
+    : `<p class="interface-row-empty" style="margin:8px 0 0;">No content written yet.</p>`;
+  return `
+    <div class="interface-row" data-id="${d.id}">
+      <div class="interface-row-top">
+        <div>
+          <div class="interface-row-title">${escapeHTML(d.name)}</div>
+        </div>
+        <div class="interface-row-actions">
+          <button type="button" class="icon-btn doc-edit-btn" data-id="${d.id}" title="Edit">&#9998;</button>
+          <button type="button" class="icon-btn doc-delete-btn" data-id="${d.id}" title="Remove">&times;</button>
+        </div>
+      </div>
+      ${contentPreview}
+    </div>`;
+}
+
 function renderDocsPage() {
   if (!docsProjectId) return;
   const project = projects.find((p) => p.id === docsProjectId);
   document.getElementById("docs-page-project-name").textContent = project ? project.name : projectName(docsProjectId);
+  if (document.activeElement !== docsReadmeInput) {
+    docsReadmeInput.value = (project && project.readmeMd) || "";
+  }
   if (document.activeElement !== docsRequirementsInput) {
     docsRequirementsInput.value = (project && project.requirementsMd) || "";
   }
@@ -1320,9 +1385,17 @@ function renderDocsPage() {
   document.getElementById("docs-interfaces-list").innerHTML = rows.length
     ? rows.map(interfaceRowHTML).join("")
     : '<p class="interface-row-empty">No interfaces defined with another project yet.</p>';
+  const docRows = docsForProject(docsProjectId);
+  document.getElementById("docs-extra-docs-list").innerHTML = docRows.length
+    ? docRows.map(projectDocRowHTML).join("")
+    : '<p class="interface-row-empty">No additional documents yet.</p>';
 }
 
 document.getElementById("docs-back-btn").addEventListener("click", closeDocsPage);
+document.getElementById("docs-readme-save").addEventListener("click", () => {
+  if (!docsProjectId) return;
+  setProjectReadme(docsProjectId, docsReadmeInput.value);
+});
 document.getElementById("docs-requirements-save").addEventListener("click", () => {
   if (!docsProjectId) return;
   setProjectRequirements(docsProjectId, docsRequirementsInput.value);
@@ -1340,6 +1413,55 @@ document.getElementById("docs-interfaces-list").addEventListener("click", (e) =>
   if (editBtn) { openInterfaceModal(editBtn.dataset.id); return; }
   const delBtn = e.target.closest(".interface-delete-btn");
   if (delBtn) { deleteInterface(delBtn.dataset.id); return; }
+});
+document.getElementById("docs-extra-docs-list").addEventListener("click", (e) => {
+  const editBtn = e.target.closest(".doc-edit-btn");
+  if (editBtn) { openDocModal(editBtn.dataset.id); return; }
+  const delBtn = e.target.closest(".doc-delete-btn");
+  if (delBtn) { deleteProjectDoc(delBtn.dataset.id); return; }
+});
+
+// ── Additional document modal — shared "add" and "edit" flow, anchored to
+// whichever project's Docs page it was opened from (a project doc, unlike
+// an interface, only ever belongs to one project). ─────────────────────
+const docBackdrop = document.getElementById("doc-backdrop");
+const docNameInput = document.getElementById("doc-name-input");
+const docContentInput = document.getElementById("doc-content-input");
+
+function openDocModal(docId) {
+  editingDocId = docId || null;
+  docBackdrop.hidden = false;
+  if (editingDocId) {
+    const d = projectDocs.find((x) => x.id === editingDocId);
+    document.getElementById("doc-title").textContent = "Edit document";
+    docNameInput.value = d ? d.name : "";
+    docContentInput.value = d ? d.contentMd || "" : "";
+  } else {
+    document.getElementById("doc-title").textContent = "New document";
+    docNameInput.value = "";
+    docContentInput.value = "";
+  }
+  docNameInput.focus();
+}
+function closeDocModal() { docBackdrop.hidden = true; editingDocId = null; }
+
+document.getElementById("docs-add-doc-btn").addEventListener("click", () => openDocModal(null));
+document.getElementById("doc-cancel").addEventListener("click", closeDocModal);
+document.getElementById("doc-close").addEventListener("click", closeDocModal);
+docBackdrop.addEventListener("click", (e) => { if (e.target === docBackdrop) closeDocModal(); });
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && !docBackdrop.hidden) closeDocModal();
+});
+document.getElementById("doc-submit").addEventListener("click", async () => {
+  const name = docNameInput.value.trim();
+  if (!name) { docNameInput.focus(); return; }
+  if (editingDocId) {
+    await updateProjectDoc(editingDocId, name, docContentInput.value);
+  } else {
+    if (!docsProjectId) return;
+    await addProjectDoc(docsProjectId, name, docContentInput.value);
+  }
+  closeDocModal();
 });
 
 // ── Interface modal — shared "add" (from Docs page) and "edit" flow ──────
