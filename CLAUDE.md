@@ -178,10 +178,13 @@ instant, so there's no excuse for the board drifting from reality.
   human in the loop, and neither is set up by default. **Until you're told
   otherwise, treat this exactly like the old board: the user tells Claude in
   chat when to go check it.**
-- **No `testUrl` field or quick-launch icon on cards.** When a fix is ready
-  to test on a feature branch, say the branch/preview URL in chat (e.g.
-  `https://raw.githack.com/offline2online/rob_ph_demos/<branch>/<path>`) —
-  there's nowhere on the card itself to put it yet.
+- ~~No `testUrl` field or quick-launch icon on cards.~~ **Fixed**: a Ready
+  for Testing card now has its own "Set test link" → "Test this →" button
+  (`backlogItems.previewUrl`), using the same
+  `https://raw.githack.com/offline2online/rob_ph_demos/<branch>/<path>`
+  convention (PR URL as fallback for anything that can't be raw.githack'd
+  directly, e.g. a Cloud Function change) — no need to say the link in chat
+  separately anymore.
 - **No per-card notes/`claudeNote` field, and no GitHub commit badge.** The
   schema is just `{projectId, title, desc, type, category, status,
   createdAt, updatedAt, archivedAt}` — there's nowhere on a card to record

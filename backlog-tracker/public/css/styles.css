@@ -29,8 +29,38 @@ body {
 }
 .app { max-width: 1400px; margin: 0 auto; padding: 24px 20px 40px; }
 .topbar { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 18px; }
+.topbar-left { display: flex; align-items: flex-start; gap: 10px; }
 .topbar h1 { margin: 0; font-size: 22px; font-weight: 700; }
 .subtitle { margin: 4px 0 0; font-size: 13px; color: var(--text-muted); }
+.hamburger-btn { font-size: 20px; margin-top: 1px; }
+
+/* ── Left nav drawer — hamburger-opened, slides in over the board. Kept in
+   the DOM at all times (not [hidden]) so the transform transition actually
+   animates; off-screen + non-interactive while closed. ────────────────── */
+.nav-drawer-backdrop {
+  position: fixed; inset: 0; background: rgba(10, 12, 13, .4); z-index: 20;
+  opacity: 0; pointer-events: none; transition: opacity .2s ease;
+}
+.nav-drawer-backdrop.open { opacity: 1; pointer-events: auto; }
+.nav-drawer {
+  position: fixed; top: 0; left: 0; bottom: 0; width: 260px; max-width: 80vw;
+  background: var(--bg); border-right: 1px solid var(--border); z-index: 21;
+  box-shadow: 2px 0 16px rgba(0, 0, 0, .15);
+  transform: translateX(-100%); transition: transform .22s ease;
+  display: flex; flex-direction: column; padding: 10px 0;
+  visibility: hidden;
+}
+.nav-drawer.open { transform: translateX(0); visibility: visible; }
+.nav-drawer-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 8px 16px 14px; border-bottom: 1px solid var(--border); margin-bottom: 6px;
+}
+.nav-drawer-title { font-weight: 700; font-size: 15px; }
+.nav-drawer-item {
+  display: block; width: 100%; text-align: left; background: transparent; border: none;
+  padding: 12px 16px; font-size: 14px; color: var(--text); cursor: pointer; font-family: inherit;
+}
+.nav-drawer-item:hover { background: var(--surface-2); }
 .btn-primary {
   background: var(--primary); color: #fff; border: none; border-radius: 6px;
   padding: 9px 16px; font-size: 13px; font-weight: 600; cursor: pointer; font-family: inherit;
@@ -64,6 +94,13 @@ body {
 .card-cat { font-size: 10.5px; color: var(--text-muted); background: var(--surface-2); border-radius: 9999px; padding: 2px 8px; }
 .merge-btn { width: 100%; margin-top: 10px; background: var(--success); color: #fff; border: none; border-radius: 6px; padding: 8px 10px; font-size: 12.5px; font-weight: 600; cursor: pointer; }
 .approve-btn { width: 100%; margin-top: 10px; background: var(--primary); color: #fff; border: none; border-radius: 6px; padding: 8px 10px; font-size: 12.5px; font-weight: 600; cursor: pointer; }
+.test-link-row { display: flex; align-items: center; gap: 4px; margin-top: 10px; }
+.test-link-btn {
+  flex: 1; text-align: center; background: var(--primary-tint); color: var(--primary); text-decoration: none;
+  border-radius: 6px; padding: 7px 10px; font-size: 12.5px; font-weight: 600;
+}
+.test-link-btn:hover { opacity: .85; }
+.btn-ghost.test-link-set-btn { width: 100%; margin-top: 10px; padding: 7px 10px; font-size: 12.5px; }
 
 .modal-backdrop { position: fixed; inset: 0; background: rgba(10, 12, 13, .5); display: flex; align-items: center; justify-content: center; padding: 20px; z-index: 10; }
 .modal-panel { background: var(--bg); border-radius: 12px; box-shadow: 0 8px 40px rgba(0, 0, 0, .25); width: 100%; max-width: 440px; padding: 20px; }
@@ -115,6 +152,16 @@ body {
 .project-header .subtitle { margin: 4px 0 0; }
 .project.collapsed .project-body { display: none; }
 
+/* Program/Product grouping — a heading above a set of projects, only
+   rendered at all once at least one program exists (see app.js render()).
+   No board/columns of its own, just a label; each project inside still
+   renders exactly as it does ungrouped. */
+.program-group { display: flex; flex-direction: column; gap: 20px; }
+.program-heading {
+  margin: 0; font-size: 13px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: .05em; color: var(--text-muted);
+}
+
 /* ── Header actions: one primary CTA + one "⋮" options menu ─────────────
    Everything that isn't "add a backlog item" (archive, requirements,
    interfaces) lives behind the options menu now, on both desktop and
@@ -143,6 +190,24 @@ body {
   background: linear-gradient(135deg, var(--primary), var(--violet)); color: #fff;
   font-size: 11px; font-weight: 700; border-radius: 9999px; padding: 1px 8px;
 }
+/* Muted/disabled variant while a fired session is still working — visually
+   distinct from the actionable gradient state above, not just non-clickable. */
+.notify-claude-btn-working {
+  background: var(--surface-2); cursor: default;
+}
+.notify-claude-btn-working .notify-claude-icon,
+.notify-claude-btn-working .notify-claude-label {
+  background: none; -webkit-background-clip: unset; background-clip: unset; color: var(--text-muted);
+}
+.notify-claude-btn-working .notify-claude-count-pill { background: var(--text-muted); }
+.notify-claude-spinner {
+  width: 13px; height: 13px; border-radius: 50%; flex-shrink: 0;
+  border: 2px solid var(--border); border-top-color: var(--primary);
+  animation: notify-claude-spin .8s linear infinite;
+}
+@keyframes notify-claude-spin { to { transform: rotate(360deg); } }
+.notify-claude-session-link { font-size: 12px; color: var(--primary); text-decoration: none; white-space: nowrap; margin-left: 2px; }
+.notify-claude-session-link:hover { text-decoration: underline; }
 .project-options { position: relative; flex-shrink: 0; }
 .project-options-btn { font-size: 18px; line-height: 1; padding: 7px 11px; }
 .project-options-menu {
@@ -312,6 +377,19 @@ body {
 }
 .fa-preview h3 { font-size: 14px; margin: 10px 0 4px; }
 .fa-preview p { margin: 0 0 8px; }
+
+/* ── Edit item modal (title/desc/type/category + comments) ─────────────── */
+#ei-backdrop input[type="text"], #ei-backdrop textarea, #ei-backdrop select {
+  width: 100%; font-family: inherit; font-size: 13px; color: var(--text); background: var(--surface);
+  border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; box-sizing: border-box; resize: vertical;
+}
+.ei-comments-block { border-top: 1px solid var(--border); margin-top: 16px; padding-top: 14px; }
+.ei-comments-block h3 { margin: 0 0 8px; font-size: 14px; }
+.ei-comments-block textarea { margin-top: 8px; }
+.ei-notes-list { display: flex; flex-direction: column; gap: 8px; max-height: 220px; overflow-y: auto; }
+.ei-note-row { background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; }
+.ei-note-meta { display: flex; justify-content: space-between; gap: 10px; font-size: 11px; color: var(--text-muted); margin-bottom: 4px; }
+.ei-note-text { margin: 0; font-size: 12.5px; white-space: pre-wrap; }
 .fa-preview ul { margin: 0 0 8px; padding-left: 20px; }
 .fa-needs-review-toggle { display: flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--text-muted); cursor: pointer; }
 .fa-needs-review-toggle input { width: 14px; height: 14px; }

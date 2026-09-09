@@ -97,6 +97,12 @@ step. Every open tab gets realtime updates via `onSnapshot()`, so (unlike
 the Artifact board) other viewers never need a full page reload to see a
 change.
 
+Projects can optionally be grouped under a **Program/Product** heading (a
+new `programs` collection — see `REQUIREMENTS.md` → "Data model") purely
+for display; a board with no programs looks exactly as it always has. Set
+it from the New Project modal at creation, or from a project's Docs page
+any time — both offer "+ New program…" to create one on the spot.
+
 ## Setup (all manual — this sandbox has no Firebase CLI/deploy access)
 
 Same caveat as `menu-board-demo/functions` in the root `CLAUDE.md`:
@@ -379,6 +385,29 @@ working, check Anthropic's current Claude Code Routines docs for what
 changed, and re-test with `curl` before re-patching the function — see
 the request shape in `functions/index.js`'s `notifyOnProjectReadyForReview`.
 
+### Notify Claude progress (`notifyRoutine`) — session id, spinner, split count
+
+The fire endpoint's success response includes a `claude_code_session_id`
+field — confirmed by a live `curl` test against the real endpoint (also a
+research-preview surface, so re-confirm this with `curl` if session links
+ever silently stop appearing, same caution as the header gotcha above).
+`notifyOnProjectReadyForReview` reads it, builds
+`https://claude.ai/code/<id>`, and writes the whole outcome to
+`projects/{id}.notifyRoutine` (`status`, `firedAt`, `sessionId`/
+`sessionUrl`, `itemCount`, `sentItemIds`) — the board's Notify Claude
+button reads this to show a spinner + "View session →" link while a fire
+is in flight, and a separate small CTA for anything added to Backlog since
+that click (`sentItemIds` is how it knows what's "new").
+
+The Routine is asked, in the fire request's own `text`, to PATCH
+`notifyRoutine.status` to `"done"`/`"error"` (with `finishedAt`) when it
+stops — but nothing enforces that a fired session actually does this
+(an older Routine prompt won't know to, and a crashed session can't). The
+frontend's own fallback — treating any `"in-progress"` older than 20
+minutes as done — is what actually keeps the button from getting stuck
+forever, not the self-report; treat the self-report as a nice-to-have for
+faster feedback, not the safety mechanism.
+
 ### Per-project Routine instructions (`routinePromptMd`)
 
 The Routine itself has one fixed prompt shared by every project on the
@@ -418,9 +447,9 @@ sharing this same Firestore project:
   blocked by this sandbox's network egress policy, so it couldn't be read
   directly — the real content was instead sourced from a Freshdesk export
   already sitting in Google Drive, see "Seeding" below).
-- **Admin**: this app's own **FAQ Center** page (button next to "+ New
-  project" in the header — global, not per-project, since an article can
-  span or link to any one project). Lets you manage categories (name,
+- **Admin**: this app's own **FAQ Center** page (reached from the header's
+  hamburger menu — global, not per-project, since an article can span or
+  link to any one project). Lets you manage categories (name,
   Material Symbols icon, description, display order) and articles (title,
   slug, category, an optional linked project, summary, a small
   markdown-ish body with a live preview, search keywords, draft/published

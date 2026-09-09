@@ -3,23 +3,34 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Backlog Tracker</title>
+  <title>PH Agent Console</title>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&display=swap">
   <link rel="stylesheet" href="css/styles.css">
 </head>
 <body>
   <div class="app">
     <header class="topbar">
-      <div>
-        <h1>Backlog Tracker</h1>
-        <p class="subtitle"><span id="total-summary">0 items</span> &middot; click a project's Notify Claude when its Backlog is ready to be actioned</p>
+      <div class="topbar-left">
+        <button type="button" class="icon-btn hamburger-btn" id="nav-open-btn" aria-haspopup="true" aria-label="Open menu">&#9776;</button>
+        <div>
+          <h1>PH Agent Console</h1>
+          <p class="subtitle"><span id="total-summary">0 items</span> &middot; click a project's Notify Claude when its Backlog is ready to be actioned</p>
+        </div>
       </div>
       <div class="topbar-actions">
-        <button class="btn-ghost" id="archived-projects-btn" type="button">Archived projects</button>
-        <button class="btn-ghost" id="faq-center-btn" type="button">FAQ Center</button>
         <button class="btn-primary" id="new-project-btn" type="button">+ New project</button>
       </div>
     </header>
+
+    <div class="nav-drawer-backdrop" id="nav-drawer-backdrop"></div>
+    <nav class="nav-drawer" id="nav-drawer" aria-label="Main menu">
+      <div class="nav-drawer-header">
+        <span class="nav-drawer-title">Menu</span>
+        <button type="button" class="modal-close" id="nav-close-btn" aria-label="Close menu">&times;</button>
+      </div>
+      <button type="button" class="nav-drawer-item" id="archived-projects-btn">Archived projects</button>
+      <button type="button" class="nav-drawer-item" id="faq-center-btn">FAQ Center</button>
+    </nav>
 
     <div class="modal-backdrop" id="ni-backdrop" hidden>
       <div class="modal-panel" role="dialog" aria-modal="true" aria-labelledby="ni-title">
@@ -57,6 +68,10 @@
         <label class="field-label" for="np-name-input">Project name</label>
         <input type="text" id="np-name-input" maxlength="80" placeholder="e.g. Loyalty App">
         <p class="field-hint">Creates a new, independent Backlog → Ready for Testing → Live on Feature Branch → Merged to Main (Live) pipeline, same as any other project here.</p>
+
+        <label class="field-label" for="np-program-select">Program / Product (optional)</label>
+        <select id="np-program-select"></select>
+        <p class="field-hint">Purely organizational — groups this project under a heading on the board alongside others in the same program. Skip it and add one later from the Docs page if you'd rather.</p>
 
         <div class="np-interface-block">
           <label class="np-interface-toggle">
@@ -104,10 +119,82 @@
       </div>
     </div>
 
+    <div class="modal-backdrop" id="doc-backdrop" hidden>
+      <div class="modal-panel" role="dialog" aria-modal="true" aria-labelledby="doc-title">
+        <div class="modal-header">
+          <h2 id="doc-title">New document</h2>
+          <button type="button" class="modal-close" id="doc-close" aria-label="Close">&times;</button>
+        </div>
+        <label class="field-label" for="doc-name-input">Document name</label>
+        <input type="text" id="doc-name-input" maxlength="120" placeholder="e.g. API spec, Architecture decision record">
+        <label class="field-label" for="doc-content-input">Content</label>
+        <textarea id="doc-content-input" rows="14" placeholder="Paste or write the document here..."></textarea>
+        <div class="form-row" style="justify-content:flex-end;">
+          <div class="form-actions">
+            <button type="button" class="btn-ghost" id="doc-cancel">Cancel</button>
+            <button type="button" class="btn-primary" id="doc-submit">Save document</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="modal-backdrop" id="ei-backdrop" hidden>
+      <div class="modal-panel modal-panel-wide" role="dialog" aria-modal="true" aria-labelledby="ei-title">
+        <div class="modal-header">
+          <h2 id="ei-title">Edit item</h2>
+          <button type="button" class="modal-close" id="ei-close" aria-label="Close">&times;</button>
+        </div>
+        <label class="field-label" for="ei-title-input">Title</label>
+        <input type="text" id="ei-title-input" maxlength="200">
+        <label class="field-label" for="ei-desc-input">Description</label>
+        <textarea id="ei-desc-input" rows="5" maxlength="2000"></textarea>
+        <div class="form-row">
+          <div class="type-toggle" role="radiogroup" aria-label="Item type" id="ei-type-toggle">
+            <button type="button" class="type-opt" data-type="feature">Feature</button>
+            <button type="button" class="type-opt" data-type="bug">Bug</button>
+          </div>
+          <div>
+            <label class="field-label" for="ei-category-select" style="margin:0 0 4px;">Category</label>
+            <select id="ei-category-select"></select>
+          </div>
+        </div>
+        <div class="form-row" style="justify-content:flex-end;">
+          <div class="form-actions">
+            <button type="button" class="btn-ghost" id="ei-cancel">Cancel</button>
+            <button type="button" class="btn-primary" id="ei-save">Save changes</button>
+          </div>
+        </div>
+
+        <div class="ei-comments-block">
+          <h3>Comments</h3>
+          <div id="ei-notes-list" class="ei-notes-list"></div>
+          <textarea id="ei-comment-input" rows="2" maxlength="1000" placeholder="Add a comment for more context..."></textarea>
+          <div class="form-row" style="justify-content:flex-end;">
+            <button type="button" class="btn-primary" id="ei-comment-submit">Add comment</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <section class="docs-page" id="docs-page" hidden>
       <div class="docs-page-header">
         <button type="button" class="btn-ghost" id="docs-back-btn">&larr; Back to board</button>
         <h2>Docs — <span id="docs-page-project-name"></span></h2>
+      </div>
+
+      <div class="docs-block">
+        <h3>Program / Product</h3>
+        <p class="field-hint">Purely organizational — groups this project under a heading on the board alongside others in the same program. Changing it takes effect immediately, same as everything else here.</p>
+        <select id="docs-program-select"></select>
+      </div>
+
+      <div class="docs-block">
+        <h3>README</h3>
+        <p class="field-hint">The primary document used to track this project — shown first on this page so it's the first thing anyone visiting reads. This is a live copy, same pattern as Requirements below; keep any repo-native README.md for this project in sync with it.</p>
+        <textarea id="docs-readme-input" rows="12" placeholder="No README written yet — paste or write it here."></textarea>
+        <div class="form-row" style="justify-content:flex-end;">
+          <button type="button" class="btn-primary" id="docs-readme-save">Save README</button>
+        </div>
       </div>
 
       <div class="docs-block">
@@ -117,6 +204,15 @@
         <div class="form-row" style="justify-content:flex-end;">
           <button type="button" class="btn-primary" id="docs-requirements-save">Save requirements</button>
         </div>
+      </div>
+
+      <div class="docs-block">
+        <div class="docs-block-header">
+          <h3>Additional documents</h3>
+          <button type="button" class="btn-ghost" id="docs-add-doc-btn">+ New document</button>
+        </div>
+        <p class="field-hint">Any other technical or architectural document for this project — an API spec, a design doc, anything that isn't Requirements or the README above — kept on this same page instead of scattered across the repo.</p>
+        <div id="docs-extra-docs-list"></div>
       </div>
 
       <div class="docs-block">
@@ -343,7 +439,7 @@
 
     <div id="projects-root"></div>
 
-    <footer class="app-footer">Backlog Tracker <span id="app-version"></span></footer>
+    <footer class="app-footer">PH Agent Console <span id="app-version"></span></footer>
   </div>
 
   <script type="module">

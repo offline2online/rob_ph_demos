@@ -57,11 +57,23 @@ Cloud Functions, own Hosting site, own IAM/billing; see
 {
   name: string,
   createdAt: timestamp,
+  readmeMd?: string,              // this project's primary tracking doc, shown atop its Docs page
   requirementsMd?: string,        // this file's own live counterpart
   notifyRequestedAt?: timestamp,  // bumped by the "Notify Claude" button
   deployNotifyRequestedAt?: timestamp, // bumped by "Notify Claude — Deploy" — see below
   routinePromptMd?: string,       // see "Per-project Routine instructions" below
   faqAutoFlagOnLive?: boolean,    // see "FAQ auto-review" below
+  programId?: string,             // see "programs/{programId}" below
+  notifyRoutine?: {                // set by notifyOnProjectReadyForReview on each fire
+    status: "in-progress" | "done" | "error",
+    firedAt: timestamp,
+    sessionId?: string,
+    sessionUrl?: string,
+    itemCount: number,
+    sentItemIds: string[],
+    finishedAt?: timestamp,        // set by the fired session itself, if it follows the hint
+    errorMessage?: string,
+  },
 }
 ```
 One doc per tracked project. A project with no doc but whose items
@@ -91,6 +103,7 @@ deleted by hand).
   claudeNote?: string,          // short one-line status, shown nowhere but kept for history
   notes?: [{ author: "claude" | "viewer", text: string, at: timestamp }],
   deploymentId?: string,        // see "deployments/{deploymentId}" below
+  previewUrl?: string,          // a Ready for Testing card's own "Test this" link
 }
 ```
 `CATEGORIES` (fixed set, `backlog-tracker/public/js/app.js`): `Pricing &
@@ -111,6 +124,25 @@ Status pipeline and what each transition means:
 four for automation purposes (see "FAQ auto-review" below) — the other
 three can still be reverted or corrected without anything external having
 already happened.
+
+### `programs/{programId}`
+```
+{
+  name: string,
+  createdAt: timestamp,
+}
+```
+A purely organizational grouping *above* projects — a program/product has
+no columns, status, or pipeline of its own; it only exists to group related
+projects under a shared heading on the board (a client can have several
+concurrent prototypes/projects under one program, e.g. several menu-board
+variants under "Menu Board"). A project's own `programId` (see above) is
+optional and points here. Created either inline from the New Project
+modal's "+ New program…" option, or from an existing project's Docs page —
+both offer the same "pick an existing program, or create one on the spot"
+picker. Deleting a program isn't wired up from either UI yet; a project
+whose `programId` points at a since-deleted program doc is treated exactly
+like one with no `programId` at all (falls into "Ungrouped").
 
 ### `deployments/{deploymentId}`
 ```
@@ -144,6 +176,25 @@ counterpart to a shared markdown file in the repo (e.g.
 Templates). Keep both in sync; treat a divergence as a bug in whichever is
 stale.
 
+### `projectDocs/{docId}`
+```
+{
+  projectId: string,
+  name: string,
+  contentMd: string,
+  createdAt: timestamp,
+  updatedAt: timestamp,
+}
+```
+A generic, named document belonging to exactly one project — an API spec,
+an architecture decision record, any technical or architectural document
+that isn't the project's own `requirementsMd` or `readmeMd` fields. Listed
+under "Additional documents" on that project's Docs page, add/edit/delete
+inline via a modal, same UI pattern as Interfaces but anchored to a single
+project rather than shared between two. Exists so a project's *complete*
+documentation lives on one page instead of scattered across the repo,
+per-project Firestore fields, and this collection.
+
 ### `faqCategories/{id}` and `faqArticles/{id}`
 ```
 faqCategories/{id}: { name, icon, description, order, createdAt, updatedAt }
@@ -175,6 +226,16 @@ REST API is reachable with a plain `curl`, no service account needed.
   with its own four-column pipeline and its own Archive. Projects sort by
   most-recent item activity (created/updated/archived), not creation order,
   so adding an item to a project brings it to the top.
+- **Program/Product grouping (optional).** A project can optionally belong
+  to a `programs` doc (see Data model above) purely for display — no
+  columns/status of its own. While zero programs exist, the board renders
+  exactly as it always has, flat, with no visual change at all. Once at
+  least one program exists, projects render under named-program headings
+  (alphabetical), followed by an "Ungrouped" section — only shown if it has
+  members — for anything with no `programId`. Set from the New Project
+  modal at creation time, or from an existing project's Docs page at any
+  time; both offer "+ New program…" to create one inline without leaving
+  the flow.
 - **New item capture is description-only.** No title or category field up
   front — just typed or dictated text. A short title and a best-guess
   category (`suggestCategory()`) are generated automatically; correcting
@@ -196,6 +257,17 @@ REST API is reachable with a plain `curl`, no service account needed.
   Continuous-mode quirks on Android Chrome are worked around by restarting
   a fresh non-continuous recognition session per utterance rather than
   relying on the browser's own long-running continuous mode.
+- **App name and global navigation.** The app itself (browser tab, `<h1>`,
+  footer) is titled **"PH Agent Console"** — distinct from any one
+  project's own name on the board (e.g. the "Backlog Tracker & FAQs"
+  project this very document tracks). The topbar carries only the
+  hamburger menu button and the primary **+ New project** action; the two
+  global (not per-project) links — **Archived projects** and **FAQ
+  Center** — live in a left-hand nav drawer opened by that hamburger,
+  which slides in over the board and closes on a backdrop click, Escape,
+  or picking an item. This replaced three competing topbar buttons for the
+  same reason the per-project header below already collapsed to one
+  primary CTA + a menu.
 - **Header actions**, in order: **Notify Claude** (own button, shows the
   live Backlog count; not buried in a menu — see "Notify Claude" below),
   **Notify Claude — Deploy** (same gradient treatment, shown only when the
@@ -206,15 +278,58 @@ REST API is reachable with a plain `curl`, no service account needed.
   its own full-width row above the New item / ⋮ row rather than squeezing
   controls onto one line; the board's four columns stack vertically instead
   of forcing horizontal scroll.
-- **Docs page** (per project, via ⋮): free-text **Requirements**
-  (`requirementsMd` — this document's own live counterpart), **FAQ review
-  automation** toggle (see below), and **Interfaces with other projects**
-  (list + add/edit, backed by the `interfaces` collection).
+- **Notify Claude progress**: while `projects/{id}.notifyRoutine.status`
+  is `"in-progress"`, the button itself reflects that instead of looking
+  idle — a disabled, muted, spinning state sized to the batch actually
+  sent, plus a **View session →** link when a session id was resolved from
+  the Routine fire response. Anything added to Backlog after that click
+  surfaces as its own small, still-clickable **Notify Claude — N new** CTA
+  next to it, rather than being folded into a count that would otherwise
+  conflate "already being worked" with "brand new." A fired session is
+  asked (in the fire request's own `text`) to flip `notifyRoutine.status`
+  to `"done"`/`"error"` itself when it finishes; the client additionally
+  treats any `"in-progress"` older than 20 minutes as done on its own
+  initiative, so a session running an older Routine prompt without that
+  instruction — or one that crashes — can never wedge the button in a
+  permanent spinning state.
+- **Docs page** (per project, via ⋮) is the single-page home for
+  everything documenting that project, in this order: a **Program /
+  Product** picker (`programId`, see "Program/Product grouping" above),
+  the project's **README** (`readmeMd` — its primary tracking document,
+  shown first among the documents themselves), free-text **Requirements**
+  (`requirementsMd` — this document's own live counterpart), an
+  **Additional documents** list (any other technical or architectural
+  document, backed by the `projectDocs` collection — see Data model
+  above), **Routine instructions**, **FAQ review automation** toggle (see
+  below), and **Interfaces with other projects** (list + add/edit, backed
+  by the `interfaces` collection). All of it lives here rather than
+  scattered across repo files, so a project's complete documentation is one
+  page away from its board.
 - **Archive**: a Merged-to-Main card can be archived (sets `status:
   "archived"` + `archivedAt`, not deleted); each project's own Archived
   page is sortable/filterable by type, area, and free text, with a Restore
   action back to `published-live`. Deletion is reserved for Backlog cards
   only.
+- **Edit + comments**: every non-archived card has an edit icon (with a
+  comment-count badge once it has any) opening a modal to change
+  title/description/type/category, plus a comments thread. `notes` existed
+  in the schema from the start but was previously write-only from the
+  board's own UI — only the Routine ever wrote to it, via direct Firestore
+  PATCHes; this is the first UI to read or write it. A viewer's own comment
+  is `{author: "viewer", text, at}` appended via `arrayUnion` — `at` is a
+  plain client `Date`, not `serverTimestamp()`, since Firestore rejects a
+  server-timestamp sentinel inside an array element.
+- **Test/preview link**: a Ready for Testing card gets a "Set test link"
+  button; once set (a plain `prompt()`, not a modal — this is a one-off
+  paste), it becomes a "Test this →" button opening `previewUrl` in a new
+  tab, with a pencil icon to change it. The convention is a
+  `raw.githack.com/offline2online/rob_ph_demos/<branch>/<path>` link for a
+  static page (see root `CLAUDE.md`), falling back to the PR URL for
+  anything that can't be raw.githack'd directly (e.g. a Cloud Function
+  change). This restores what the old Claude Artifact board's per-card
+  quick-launch link used to do, closing the gap `CLAUDE.md`'s "Prototype
+  Backlog" section had documented ("No `testUrl` field or quick-launch icon
+  on cards") since the migration off the Artifact.
 - **Deployments** (per project, via ⋮): groups tickets meant to ship to
   `main` together, backed by the `deployments` collection. Exists because
   merging several PRs within seconds of each other used to race the
@@ -265,17 +380,13 @@ Three Cloud Functions, all in `backlog-tracker/functions/index.js`:
    function, `notifyOnBacklogItemCreated`, that posted automatically on
    every single new item; removed because it was noisy — one Slack message
    per line typed or dictated, long before a project was actually ready
-   for anyone to look at. This function does two independent things on
-   each click (either no-ops on its own if its secret(s) aren't set, never
-   blocking the other):
-   - Posts a plain webhook (`NOTIFY_WEBHOOK_URL` secret) — a Slack message
-     naming the project and exactly how many Backlog items will be
-     actioned, or whatever else the secret points at. Still needs a human
-     (or a separately-configured relay) to actually act on it; it's the
-     "tell someone something happened" side-channel, not the mechanism
-     that gets Claude's attention.
-   - Fetches everything currently in that project's Backlog column and
-     fires a **Claude Code Routine's API trigger** directly — `POST` to
+   for anyone to look at. Fetches everything currently in that project's
+   Backlog column, **fires the Routine first, then posts to Slack** (order
+   matters — reversed from an earlier version — so a resolved session link
+   can ride along in the Slack message), each independently (either
+   no-ops on its own if its secret(s) aren't set, never blocking the
+   other):
+   - Fires a **Claude Code Routine's API trigger** directly — `POST` to
      `https://api.anthropic.com/v1/claude_code/routines/{id}/fire` with a
      bearer token and the required `anthropic-version: 2023-06-01` and
      `anthropic-beta: experimental-cc-routine-2026-04-01` headers (the
@@ -289,7 +400,34 @@ Three Cloud Functions, all in `backlog-tracker/functions/index.js`:
      this repo) carries the actual investigate → fix → note →
      move-to-Ready-for-Testing workflow; this function's only job is
      telling it which project and what's in Backlog. This is the half that
-     closes the loop without a human relaying anything.
+     closes the loop without a human relaying anything. The fire response's
+     `claude_code_session_id` field (confirmed by a live `curl` test
+     against the real endpoint — a research-preview API, so re-confirm the
+     response shape with `curl` if session links ever stop appearing
+     before assuming the code is wrong) becomes `https://claude.ai/code/
+     <id>`, stored on `projects/{id}.notifyRoutine.sessionUrl` for the
+     board's own spinner/link UI (see "Notify Claude progress" above) and
+     included in the Slack message below.
+   - Posts a plain webhook (`NOTIFY_WEBHOOK_URL` secret) — a Slack message
+     reading "Claude was assigned N items from the Backlog for
+     '\<project\>'. Click here to track their progress: \<sessionUrl\>"
+     (falls back to `"(session link unavailable)"` if the Routine secrets
+     are configured but no id came back, or `"(Routine fire not
+     configured — no Claude session started)"` if they aren't set at all),
+     or whatever else the secret points at. Still needs a human (or a
+     separately-configured relay) to actually act on it; it's the "tell
+     someone something happened" side-channel, not the mechanism that gets
+     Claude's attention.
+   - Writes `projects/{id}.notifyRoutine` (`status: "in-progress"` on a
+     successful fire, `"error"` with `errorMessage` otherwise; `firedAt`,
+     `sessionId`/`sessionUrl`, `itemCount`, and `sentItemIds` — the exact
+     item ids this click sent, used to compute "new since last notify" on
+     the client) so the board's Notify Claude button can show real
+     progress instead of going silent after the click. The fire request's
+     `text` asks the fired session to PATCH this back to `"done"`/`"error"`
+     with a `finishedAt` when it stops; see "Notify Claude progress" above
+     for the client-side staleness fallback that covers a session running
+     an older prompt without that instruction, or one that crashes.
 
 2. **`notifyOnProjectReadyToDeploy`** (`onDocumentUpdated` on `projects`) —
    the **Notify Claude — Deploy** button's function. Same trigger shape as
