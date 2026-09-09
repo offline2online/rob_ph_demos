@@ -31,8 +31,11 @@
         <span class="nav-drawer-title">Menu</span>
         <button type="button" class="modal-close" id="nav-close-btn" aria-label="Close menu">&times;</button>
       </div>
+      <button type="button" class="nav-drawer-item nav-drawer-item-home" id="nav-ph-console-btn">PH Console</button>
       <button type="button" class="nav-drawer-item" id="archived-projects-btn">Archived projects</button>
-      <button type="button" class="nav-drawer-item" id="faq-center-btn">FAQ Center</button>
+      <div class="nav-drawer-section">FAQ / Help Center</div>
+      <button type="button" class="nav-drawer-item" id="faq-settings-btn">Settings</button>
+      <button type="button" class="nav-drawer-item" id="faq-articles-btn">FAQ Management</button>
     </nav>
 
     <div class="modal-backdrop" id="ni-backdrop" hidden>
@@ -181,7 +184,6 @@
 
     <section class="docs-page" id="docs-page" hidden>
       <div class="docs-page-header">
-        <button type="button" class="btn-ghost" id="docs-back-btn">&larr; Back to board</button>
         <h2>Docs — <span id="docs-page-project-name"></span></h2>
       </div>
 
@@ -248,7 +250,6 @@
 
     <section class="archive-page" id="archive-page" hidden>
       <div class="archive-page-header">
-        <button type="button" class="btn-ghost" id="archive-back-btn">&larr; Back to board</button>
         <h2>Archived — <span id="archive-page-project-name"></span></h2>
         <span class="archive-page-count" id="archive-page-count">0 tickets</span>
       </div>
@@ -284,7 +285,6 @@
 
     <section class="archive-page" id="archived-projects-page" hidden>
       <div class="archive-page-header">
-        <button type="button" class="btn-ghost" id="archived-projects-back-btn">&larr; Back to board</button>
         <h2>Archived projects</h2>
         <span class="archive-page-count" id="archived-projects-count">0 projects</span>
       </div>
@@ -306,7 +306,6 @@
 
     <section class="docs-page" id="deployments-page" hidden>
       <div class="docs-page-header">
-        <button type="button" class="btn-ghost" id="deployments-back-btn">&larr; Back to board</button>
         <h2>Deployments — <span id="deployments-page-project-name"></span></h2>
       </div>
       <p class="field-hint">Group tickets that should ship to main together — usually everything the Notify Claude Routine fixed in one fire. Once every ticket in a group is individually confirmed "Live on Feature Branch", the group's own Merge all to main button unlocks.</p>
@@ -393,30 +392,43 @@
       </div>
     </div>
 
-    <section class="faq-admin-page" id="faq-admin-page" hidden>
+    <section class="faq-admin-page" id="faq-settings-page" hidden>
       <div class="docs-page-header">
-        <button type="button" class="btn-ghost" id="faq-admin-back-btn">&larr; Back to board</button>
-        <h2>FAQ / Help Center — <span id="faq-admin-count">0 published</span></h2>
+        <h2>Settings — FAQ / Help Center</h2>
       </div>
       <p class="field-hint">
         Consumer-facing site: <code>faq/</code> at the repo root (published via GitHub Pages once
-        merged to <code>main</code>). Only <strong>Published</strong> articles appear there —
-        everything here (categories, articles, search) reads/writes this same Firestore project,
-        so a save here is what keeps that page current.
+        merged to <code>main</code>). Categories are shown on that site's front page and category
+        filter — everything here reads/writes this same Firestore project, so a save here is what
+        keeps that page current.
       </p>
 
       <div class="docs-block">
         <div class="docs-block-header">
           <h3>Categories</h3>
         </div>
-        <p class="field-hint">Shown on the public site's front page and category filter — order controls display order.</p>
+        <p class="field-hint">Order controls display order on the public site.</p>
         <div id="faq-category-list"></div>
         <div class="fa-new-category-row">
           <input type="text" id="fa-new-category-name" maxlength="80" placeholder="New category name">
-          <input type="text" id="fa-new-category-icon" maxlength="40" placeholder="Material icon (e.g. storefront)" value="help">
+          <div class="fa-icon-picker">
+            <span class="material-symbols-outlined fa-icon-preview" id="fa-new-category-icon-preview">help</span>
+            <select id="fa-new-category-icon"></select>
+          </div>
           <button type="button" class="btn-ghost" id="fa-new-category-submit">+ Add category</button>
         </div>
       </div>
+    </section>
+
+    <section class="faq-admin-page" id="faq-articles-page" hidden>
+      <div class="docs-page-header">
+        <h2>FAQ Management — <span id="faq-admin-count">0 published</span></h2>
+      </div>
+      <p class="field-hint">
+        Consumer-facing site: <code>faq/</code> at the repo root (published via GitHub Pages once
+        merged to <code>main</code>). Only <strong>Published</strong> articles appear there.
+        Manage categories from <strong>Settings</strong> in the hamburger menu.
+      </p>
 
       <div class="docs-block">
         <div class="docs-block-header">
