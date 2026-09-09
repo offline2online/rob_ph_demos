@@ -225,15 +225,59 @@ function optionsMenuHTML(project) {
 // ph-designer skill's "AI action button" recipe — the same teal→violet
 // gradient as "Launch a New Campaign") to read as the prominent, AI-driven
 // action it actually is, rather than a plain ghost button.
+// A fired session is asked (functions/index.js's selfReportHint) to flip
+// notifyRoutine.status to "done"/"error" itself when it finishes. A run
+// older than this is treated as done on the client's own initiative
+// regardless — comfortably above every observed run length so far (the
+// longest seen in practice was ~14 minutes) — so a session running an
+// older Routine prompt without that instruction, or one that crashes
+// mid-run, can never wedge the button in a permanent spinning state.
+const NOTIFY_ROUTINE_STALE_MS = 20 * 60 * 1000;
+
 function notifyClaudeButtonHTML(project) {
   const pid = project.id;
-  const backlogCount = backlogCountForProject(pid);
-  if (!backlogCount) return "";
-  return `<button type="button" class="notify-claude-btn project-notify-btn" data-project-id="${escapeHTML(pid)}">
-    <span class="material-symbols-outlined notify-claude-icon">auto_awesome</span>
-    <span class="notify-claude-label">Notify Claude</span>
-    <span class="notify-claude-count-pill">${backlogCount}</span>
-  </button>`;
+  const routine = project.notifyRoutine;
+  const firedMs = routine ? tsMillis(routine.firedAt) : 0;
+  const isStale = routine?.status === "in-progress" && firedMs && (Date.now() - firedMs) > NOTIFY_ROUTINE_STALE_MS;
+  const inProgress = routine?.status === "in-progress" && !isStale;
+
+  if (!inProgress) {
+    const backlogCount = backlogCountForProject(pid);
+    if (!backlogCount) return "";
+    return `<button type="button" class="notify-claude-btn project-notify-btn" data-project-id="${escapeHTML(pid)}">
+      <span class="material-symbols-outlined notify-claude-icon">auto_awesome</span>
+      <span class="notify-claude-label">Notify Claude</span>
+      <span class="notify-claude-count-pill">${backlogCount}</span>
+    </button>`;
+  }
+
+  // In progress: the main button reflects the batch already sent (fixed
+  // count, disabled, spinning) with a link to the live session if one
+  // resolved; anything added to Backlog since that click surfaces as its
+  // own small, still-clickable CTA rather than being folded into a count
+  // that would otherwise conflate "already being worked" with "brand new."
+  const sentIds = new Set(routine.sentItemIds || []);
+  const newCount = items.filter((i) =>
+    (i.projectId || GENERAL_PROJECT_ID) === pid && i.status === "backlog" && !sentIds.has(i.id)
+  ).length;
+
+  const sessionLink = routine.sessionUrl
+    ? `<a href="${escapeHTML(routine.sessionUrl)}" target="_blank" rel="noopener" class="notify-claude-session-link">View session &rarr;</a>`
+    : "";
+  const mainBtn = `<button type="button" class="notify-claude-btn notify-claude-btn-working" disabled title="A Claude Code session is working through the ${routine.itemCount || sentIds.size} item(s) sent">
+    <span class="notify-claude-spinner"></span>
+    <span class="notify-claude-label">Working&hellip;</span>
+    <span class="notify-claude-count-pill">${routine.itemCount || sentIds.size}</span>
+  </button>${sessionLink}`;
+
+  const newBtn = newCount
+    ? `<button type="button" class="notify-claude-btn project-notify-btn" data-project-id="${escapeHTML(pid)}">
+        <span class="material-symbols-outlined notify-claude-icon">auto_awesome</span>
+        <span class="notify-claude-label">Notify Claude — ${newCount} new</span>
+      </button>`
+    : "";
+
+  return mainBtn + newBtn;
 }
 
 function projectSectionHTML(project) {
@@ -442,6 +486,10 @@ async function addProject(name) {
 // for (see ../functions/index.js), which then sends everything currently
 // in this project's Backlog column in one message — for "I've added
 // several items, now go look" instead of one notification per card.
+// No confirmation alert() here anymore — the Notify Claude button itself
+// now shows a persistent working/spinner state (see notifyClaudeButtonHTML)
+// once projects/{id}.notifyRoutine reflects the click, which is a better
+// signal than a one-time dismissable dialog ever was.
 async function requestNotify(pid) {
   const count = backlogCountForProject(pid);
   if (count === 0) {
@@ -449,7 +497,6 @@ async function requestNotify(pid) {
     return;
   }
   await setDoc(doc(db, "projects", pid), { notifyRequestedAt: serverTimestamp() }, { merge: true });
-  alert(`Notify requested for ${count} backlog item${count === 1 ? "" : "s"}. A Slack message goes out and a Claude Code session starts working through them (see backlog-tracker/README.md for the Cloud Functions this depends on if either isn't happening).`);
 }
 
 async function setProjectName(id, name) {
