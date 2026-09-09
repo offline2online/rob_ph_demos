@@ -110,6 +110,21 @@ document.addEventListener("click", (e) => {
   if (!e.target.closest(".project-options")) closeAllOptionMenus();
 });
 
+// ── Left nav drawer (hamburger) — the header's own "Archived projects" and
+// "FAQ Center" links moved in here, leaving only "+ New project" in the
+// topbar. Kept in the DOM at all times (never [hidden]) so the CSS
+// transform transition on .nav-drawer actually animates open/closed. ────
+const navDrawer = document.getElementById("nav-drawer");
+const navDrawerBackdrop = document.getElementById("nav-drawer-backdrop");
+function openNavDrawer() { navDrawer.classList.add("open"); navDrawerBackdrop.classList.add("open"); }
+function closeNavDrawer() { navDrawer.classList.remove("open"); navDrawerBackdrop.classList.remove("open"); }
+document.getElementById("nav-open-btn").addEventListener("click", openNavDrawer);
+document.getElementById("nav-close-btn").addEventListener("click", closeNavDrawer);
+navDrawerBackdrop.addEventListener("click", closeNavDrawer);
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && navDrawer.classList.contains("open")) closeNavDrawer();
+});
+
 function cardHTML(item) {
   const idx = COL_KEYS.indexOf(item.status);
   const canLeft = idx > 0;
@@ -1119,7 +1134,7 @@ function renderArchivedProjectsPage() {
   document.getElementById("archived-projects-empty").hidden = rows.length !== 0;
 }
 
-document.getElementById("archived-projects-btn").addEventListener("click", openArchivedProjectsPage);
+document.getElementById("archived-projects-btn").addEventListener("click", () => { closeNavDrawer(); openArchivedProjectsPage(); });
 document.getElementById("archived-projects-back-btn").addEventListener("click", closeArchivedProjectsPage);
 document.getElementById("archived-projects-table-body").addEventListener("click", (e) => {
   const btn = e.target.closest(".restore-project-btn");
@@ -1871,7 +1886,7 @@ function renderFaqArticleList() {
   }).join("");
 }
 
-document.getElementById("faq-center-btn").addEventListener("click", openFaqAdminPage);
+document.getElementById("faq-center-btn").addEventListener("click", () => { closeNavDrawer(); openFaqAdminPage(); });
 document.getElementById("faq-admin-back-btn").addEventListener("click", closeFaqAdminPage);
 
 document.getElementById("fa-new-category-submit").addEventListener("click", async () => {

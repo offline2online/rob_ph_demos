@@ -206,6 +206,17 @@ REST API is reachable with a plain `curl`, no service account needed.
   Continuous-mode quirks on Android Chrome are worked around by restarting
   a fresh non-continuous recognition session per utterance rather than
   relying on the browser's own long-running continuous mode.
+- **App name and global navigation.** The app itself (browser tab, `<h1>`,
+  footer) is titled **"PH Agent Console"** — distinct from any one
+  project's own name on the board (e.g. the "Backlog Tracker & FAQs"
+  project this very document tracks). The topbar carries only the
+  hamburger menu button and the primary **+ New project** action; the two
+  global (not per-project) links — **Archived projects** and **FAQ
+  Center** — live in a left-hand nav drawer opened by that hamburger,
+  which slides in over the board and closes on a backdrop click, Escape,
+  or picking an item. This replaced three competing topbar buttons for the
+  same reason the per-project header below already collapsed to one
+  primary CTA + a menu.
 - **Header actions**, in order: **Notify Claude** (own button, shows the
   live Backlog count; not buried in a menu — see "Notify Claude" below),
   **+ New backlog item**, then a **⋮** options menu holding everything else
