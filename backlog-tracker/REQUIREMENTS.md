@@ -230,13 +230,22 @@ REST API is reachable with a plain `curl`, no service account needed.
   footer) is titled **"PH Agent Console"** — distinct from any one
   project's own name on the board (e.g. the "Backlog Tracker & FAQs"
   project this very document tracks). The topbar carries only the
-  hamburger menu button and the primary **+ New project** action; the two
-  global (not per-project) links — **Archived projects** and **FAQ
-  Center** — live in a left-hand nav drawer opened by that hamburger,
-  which slides in over the board and closes on a backdrop click, Escape,
-  or picking an item. This replaced three competing topbar buttons for the
-  same reason the per-project header below already collapsed to one
-  primary CTA + a menu.
+  hamburger menu button and the primary **+ New project** action; every
+  global (not per-project) destination lives in a left-hand nav drawer
+  opened by that hamburger (320px wide), which slides in over the board
+  and closes on a backdrop click, Escape, or picking an item:
+  - **PH Console** — the drawer's own "home" link, closing whichever
+    sub-page is currently open and returning to the board. Replaces the
+    "← Back to board" button every sub-page (Docs, Archive, Archived
+    projects, Deployments, the two FAQ pages below) used to carry
+    individually — the drawer itself stays reachable from any sub-page
+    already (it's part of the fixed topbar, not `#projects-root`), so one
+    shared way back covers all of them.
+  - **Archived projects**.
+  - **Settings** and **FAQ Management** — see "FAQ / Help Center" below;
+    this replaced a single combined "FAQ Center" destination.
+  This replaced three competing topbar buttons for the same reason the
+  per-project header below already collapsed to one primary CTA + a menu.
 - **Header actions**, in order: **Notify Claude** (own button, shows the
   live Backlog count; not buried in a menu — see "Notify Claude" below),
   **+ New backlog item**, then a **⋮** options menu holding everything else
@@ -477,12 +486,19 @@ Two surfaces sharing this same Firestore project:
   (`faq/js/faq-data.js`, checks `window.self !== window.top`) suppresses
   only this site's own header bar when actually framed, while a direct/
   standalone visit keeps full branding.
-- **Admin**: this app's own **FAQ Center** page (global, not per-project —
-  an article can link to any one project or none). Manages categories
-  (name, Material Symbols icon, description, display order) and articles
-  (title, slug, category, optional linked project, summary, a small
-  markdown-ish body with live preview, search keywords, draft/published
-  status, `needsReview`).
+- **Admin**: two nav-drawer destinations (global, not per-project — an
+  article can link to any one project or none), replacing a single
+  combined "FAQ Center" page:
+  - **Settings** — category management (name, icon, description, display
+    order). A category's icon is picked from a curated `<select>` of
+    Material Symbols names (`FAQ_CATEGORY_ICONS` in `app.js`) with a live
+    preview swatch, rather than typing a raw icon name from memory — a
+    category's *current* icon is always included in its own dropdown even
+    if it falls outside the curated list, so nothing silently changes on
+    save just because it predates this picker.
+  - **FAQ Management** — articles only (title, slug, category, optional
+    linked project, summary, a small markdown-ish body with live preview,
+    search keywords, draft/published status, `needsReview`).
 - **Why `projectId` on an article**: the categorization-by-project hook
   that the auto-review automation (above) actually uses — an article
   documents a specific project's feature, so that project's own shipped

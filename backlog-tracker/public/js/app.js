@@ -40,6 +40,20 @@ const CATEGORIES = [
 
 const GENERAL_PROJECT_ID = "general";
 
+// Curated Material Symbols names for FAQ category icons — a starting set
+// covering common Help Center topics, not an exhaustive icon-library pick.
+// A category's current icon is always included in its own dropdown (see
+// faqCategoryIconOptionsHTML) even if it falls outside this list, so
+// nothing silently changes on save just because someone typed a valid but
+// uncurated icon name before this picker existed.
+const FAQ_CATEGORY_ICONS = [
+  "help", "rocket_launch", "storefront", "payments", "local_offer",
+  "inventory_2", "storage", "settings", "tune", "group",
+  "security", "campaign", "dashboard", "description", "build",
+  "support_agent", "info", "warning", "category", "list_alt",
+  "devices", "cloud", "lock", "notifications",
+];
+
 function escapeHTML(s) {
   return String(s == null ? "" : s)
     .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
@@ -127,6 +141,23 @@ navDrawerBackdrop.addEventListener("click", closeNavDrawer);
 document.addEventListener("keydown", (e) => {
   if (e.key === "Escape" && navDrawer.classList.contains("open")) closeNavDrawer();
 });
+
+// "PH Console" — the nav drawer's own way back to the board, replacing the
+// "← Back to board" button every sub-page used to carry individually. The
+// drawer stays visible on every sub-page (it's part of the fixed topbar,
+// not projects-root), so a single "you are here" home link in the drawer
+// covers all of them; each close*Page() below is safe to call even when
+// that particular page isn't the one currently open (it just re-hides an
+// already-hidden section and re-shows projects-root, a no-op either way).
+function returnToBoard() {
+  closeArchivePage();
+  closeArchivedProjectsPage();
+  closeDeploymentsPage();
+  closeDocsPage();
+  closeFaqSettingsPage();
+  closeFaqArticlesPage();
+}
+document.getElementById("nav-ph-console-btn").addEventListener("click", () => { closeNavDrawer(); returnToBoard(); });
 
 function cardHTML(item) {
   const idx = COL_KEYS.indexOf(item.status);
@@ -1110,7 +1141,6 @@ function renderArchivePage() {
   });
 }
 
-document.getElementById("archive-back-btn").addEventListener("click", closeArchivePage);
 
 document.querySelectorAll(".archive-table th[data-sort]").forEach((th) => {
   th.addEventListener("click", () => {
@@ -1177,7 +1207,6 @@ function renderArchivedProjectsPage() {
 }
 
 document.getElementById("archived-projects-btn").addEventListener("click", () => { closeNavDrawer(); openArchivedProjectsPage(); });
-document.getElementById("archived-projects-back-btn").addEventListener("click", closeArchivedProjectsPage);
 document.getElementById("archived-projects-table-body").addEventListener("click", (e) => {
   const btn = e.target.closest(".restore-project-btn");
   if (btn) restoreProject(btn.dataset.projectId);
@@ -1248,7 +1277,6 @@ function renderDeploymentsPage() {
     : '<p class="interface-row-empty">No deployments grouped yet — use "+ New deployment" to link tickets that should ship together.</p>';
 }
 
-document.getElementById("deployments-back-btn").addEventListener("click", closeDeploymentsPage);
 document.getElementById("deployments-add-btn").addEventListener("click", () => openDeploymentModal(null));
 document.getElementById("deployments-list").addEventListener("click", (e) => {
   const mergeBtn = e.target.closest(".deployment-merge-btn");
@@ -1406,7 +1434,6 @@ function renderDocsPage() {
     : '<p class="interface-row-empty">No additional documents yet.</p>';
 }
 
-document.getElementById("docs-back-btn").addEventListener("click", closeDocsPage);
 document.getElementById("docs-readme-save").addEventListener("click", () => {
   if (!docsProjectId) return;
   setProjectReadme(docsProjectId, docsReadmeInput.value);
@@ -1798,6 +1825,17 @@ function faqCategoryName(id) {
   return c ? c.name : "Uncategorised";
 }
 
+// The current icon is always included even if it falls outside
+// FAQ_CATEGORY_ICONS — see that constant's own comment for why.
+function faqCategoryIconOptionsHTML(selectedIcon) {
+  const icons = (selectedIcon && !FAQ_CATEGORY_ICONS.includes(selectedIcon))
+    ? [selectedIcon, ...FAQ_CATEGORY_ICONS]
+    : FAQ_CATEGORY_ICONS;
+  return icons.map((icon) =>
+    `<option value="${escapeHTML(icon)}"${icon === selectedIcon ? " selected" : ""}>${escapeHTML(icon)}</option>`
+  ).join("");
+}
+
 function slugify(s) {
   return String(s || "").trim().toLowerCase()
     .replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
@@ -1894,37 +1932,85 @@ async function toggleFaqArticleReview(id) {
 
 onSnapshot(query(faqCategoriesRef, orderBy("order", "asc")), (snap) => {
   faqCategories = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-  if (!faqAdminPage.hidden) renderFaqAdminPage();
+  if (!faqSettingsPage.hidden) renderFaqSettingsPage();
+  if (!faqArticlesPage.hidden) renderFaqArticlesPage();
 }, (err) => {
   console.error("backlog-tracker: faqCategories listener error", err);
 });
 
 onSnapshot(query(faqArticlesRef, orderBy("order", "asc")), (snap) => {
   faqArticles = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-  if (!faqAdminPage.hidden) renderFaqAdminPage();
+  // Settings also shows each category's article count, so both pages
+  // depend on this collection, not just the one named "articles."
+  if (!faqSettingsPage.hidden) renderFaqSettingsPage();
+  if (!faqArticlesPage.hidden) renderFaqArticlesPage();
 }, (err) => {
   console.error("backlog-tracker: faqArticles listener error", err);
 });
 
-const faqAdminPage = document.getElementById("faq-admin-page");
+// Split into "Settings" (categories) and "FAQ Management" (articles) — two
+// separate hamburger-menu destinations, each its own page — rather than
+// one combined "FAQ Center" page.
+const faqSettingsPage = document.getElementById("faq-settings-page");
+const faqArticlesPage = document.getElementById("faq-articles-page");
 const faCategorySelect = document.getElementById("fa-category-select");
 const faProjectSelect = document.getElementById("fa-project-select");
 const faFilterCategory = document.getElementById("fa-filter-category");
 const faFilterStatus = document.getElementById("fa-filter-status");
 const faFilterNeedsReview = document.getElementById("fa-filter-needs-review");
 const faFilterSearch = document.getElementById("fa-filter-search");
+const faNewCategoryIconSelect = document.getElementById("fa-new-category-icon");
+faNewCategoryIconSelect.innerHTML = faqCategoryIconOptionsHTML("help");
 
-function openFaqAdminPage() {
+function openFaqSettingsPage() {
   document.getElementById("projects-root").hidden = true;
-  faqAdminPage.hidden = false;
-  renderFaqAdminPage();
+  faqSettingsPage.hidden = false;
+  renderFaqSettingsPage();
 }
-function closeFaqAdminPage() {
-  faqAdminPage.hidden = true;
+function closeFaqSettingsPage() {
+  faqSettingsPage.hidden = true;
   document.getElementById("projects-root").hidden = false;
 }
 
-function renderFaqAdminPage() {
+function openFaqArticlesPage() {
+  document.getElementById("projects-root").hidden = true;
+  faqArticlesPage.hidden = false;
+  renderFaqArticlesPage();
+}
+function closeFaqArticlesPage() {
+  faqArticlesPage.hidden = true;
+  document.getElementById("projects-root").hidden = false;
+}
+
+function renderFaqSettingsPage() {
+  const catListEl = document.getElementById("faq-category-list");
+  if (faqCategories.length === 0) {
+    catListEl.innerHTML = '<p class="empty-hint">No categories yet — add one below.</p>';
+  } else {
+    catListEl.innerHTML = faqCategories.map((c, idx) => {
+      const count = faqArticles.filter((a) => a.categoryId === c.id).length;
+      return `
+        <div class="faq-cat-row" data-id="${escapeHTML(c.id)}">
+          <span class="material-symbols-outlined">${escapeHTML(c.icon || "help")}</span>
+          <input type="text" class="faq-cat-name-input" value="${escapeHTML(c.name)}" aria-label="Category name">
+          <div class="fa-icon-picker">
+            <span class="material-symbols-outlined fa-icon-preview">${escapeHTML(c.icon || "help")}</span>
+            <select class="faq-cat-icon-select" aria-label="Category icon">${faqCategoryIconOptionsHTML(c.icon || "help")}</select>
+          </div>
+          <input type="text" class="faq-cat-desc-input" value="${escapeHTML(c.description || "")}" placeholder="Short description" aria-label="Category description">
+          <span class="faq-cat-count">${count} article${count === 1 ? "" : "s"}</span>
+          <div class="faq-cat-actions">
+            <button type="button" class="icon-btn faq-cat-up" ${idx === 0 ? "disabled" : ""} title="Move up">&uarr;</button>
+            <button type="button" class="icon-btn faq-cat-down" ${idx === faqCategories.length - 1 ? "disabled" : ""} title="Move down">&darr;</button>
+            <button type="button" class="icon-btn faq-cat-save" title="Save changes">&#10003;</button>
+            <button type="button" class="icon-btn faq-cat-delete" title="Delete category">&#128465;</button>
+          </div>
+        </div>`;
+    }).join("");
+  }
+}
+
+function renderFaqArticlesPage() {
   const catOptionsHTML = faqCategories
     .map((c) => `<option value="${escapeHTML(c.id)}">${escapeHTML(c.name)}</option>`).join("");
   faCategorySelect.innerHTML = catOptionsHTML || '<option value="">Add a category first</option>';
@@ -1937,29 +2023,6 @@ function renderFaqAdminPage() {
   faProjectSelect.innerHTML = '<option value="">None — general article</option>' +
     projects.map((p) => `<option value="${escapeHTML(p.id)}">${escapeHTML(p.name)}</option>`).join("");
   faProjectSelect.value = prevProjVal;
-
-  const catListEl = document.getElementById("faq-category-list");
-  if (faqCategories.length === 0) {
-    catListEl.innerHTML = '<p class="empty-hint">No categories yet — add one below.</p>';
-  } else {
-    catListEl.innerHTML = faqCategories.map((c, idx) => {
-      const count = faqArticles.filter((a) => a.categoryId === c.id).length;
-      return `
-        <div class="faq-cat-row" data-id="${escapeHTML(c.id)}">
-          <span class="material-symbols-outlined">${escapeHTML(c.icon || "help")}</span>
-          <input type="text" class="faq-cat-name-input" value="${escapeHTML(c.name)}" aria-label="Category name">
-          <input type="text" class="faq-cat-icon-input" value="${escapeHTML(c.icon || "help")}" placeholder="Material icon" aria-label="Category icon">
-          <input type="text" class="faq-cat-desc-input" value="${escapeHTML(c.description || "")}" placeholder="Short description" aria-label="Category description">
-          <span class="faq-cat-count">${count} article${count === 1 ? "" : "s"}</span>
-          <div class="faq-cat-actions">
-            <button type="button" class="icon-btn faq-cat-up" ${idx === 0 ? "disabled" : ""} title="Move up">&uarr;</button>
-            <button type="button" class="icon-btn faq-cat-down" ${idx === faqCategories.length - 1 ? "disabled" : ""} title="Move down">&darr;</button>
-            <button type="button" class="icon-btn faq-cat-save" title="Save changes">&#10003;</button>
-            <button type="button" class="icon-btn faq-cat-delete" title="Delete category">&#128465;</button>
-          </div>
-        </div>`;
-    }).join("");
-  }
 
   renderFaqArticleList();
 
@@ -2008,16 +2071,19 @@ function renderFaqArticleList() {
   }).join("");
 }
 
-document.getElementById("faq-center-btn").addEventListener("click", () => { closeNavDrawer(); openFaqAdminPage(); });
-document.getElementById("faq-admin-back-btn").addEventListener("click", closeFaqAdminPage);
+document.getElementById("faq-settings-btn").addEventListener("click", () => { closeNavDrawer(); openFaqSettingsPage(); });
+document.getElementById("faq-articles-btn").addEventListener("click", () => { closeNavDrawer(); openFaqArticlesPage(); });
 
 document.getElementById("fa-new-category-submit").addEventListener("click", async () => {
   const nameEl = document.getElementById("fa-new-category-name");
-  const iconEl = document.getElementById("fa-new-category-icon");
   if (!nameEl.value.trim()) { nameEl.focus(); return; }
-  await addFaqCategory(nameEl.value, iconEl.value);
+  await addFaqCategory(nameEl.value, faNewCategoryIconSelect.value);
   nameEl.value = "";
-  iconEl.value = "help";
+  faNewCategoryIconSelect.value = "help";
+  document.getElementById("fa-new-category-icon-preview").textContent = "help";
+});
+faNewCategoryIconSelect.addEventListener("change", () => {
+  document.getElementById("fa-new-category-icon-preview").textContent = faNewCategoryIconSelect.value;
 });
 
 document.getElementById("faq-category-list").addEventListener("click", (e) => {
@@ -2030,12 +2096,17 @@ document.getElementById("faq-category-list").addEventListener("click", (e) => {
     saveFaqCategory(
       id,
       row.querySelector(".faq-cat-name-input").value,
-      row.querySelector(".faq-cat-icon-input").value,
+      row.querySelector(".faq-cat-icon-select").value,
       row.querySelector(".faq-cat-desc-input").value,
     );
     return;
   }
   if (e.target.closest(".faq-cat-delete")) { deleteFaqCategoryIfEmpty(id); return; }
+});
+document.getElementById("faq-category-list").addEventListener("change", (e) => {
+  const select = e.target.closest(".faq-cat-icon-select");
+  if (!select) return;
+  select.closest(".fa-icon-picker").querySelector(".fa-icon-preview").textContent = select.value;
 });
 
 [faFilterCategory, faFilterStatus, faFilterNeedsReview].forEach((el) => {

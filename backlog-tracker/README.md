@@ -430,13 +430,13 @@ sharing this same Firestore project:
   blocked by this sandbox's network egress policy, so it couldn't be read
   directly — the real content was instead sourced from a Freshdesk export
   already sitting in Google Drive, see "Seeding" below).
-- **Admin**: this app's own **FAQ Center** page (reached from the header's
-  hamburger menu — global, not per-project, since an article can span or
-  link to any one project). Lets you manage categories (name,
-  Material Symbols icon, description, display order) and articles (title,
-  slug, category, an optional linked project, summary, a small
+- **Admin**: two separate hamburger-menu destinations, **Settings**
+  (categories — name, icon picked from a curated dropdown with a live
+  preview, description, display order) and **FAQ Management** (articles —
+  title, slug, category, an optional linked project, summary, a small
   markdown-ish body with a live preview, search keywords, draft/published
-  status, and a "needs review" flag).
+  status, and a "needs review" flag). Global, not per-project, since an
+  article can span or link to any one project.
 - **Data model** — two new top-level collections:
   - `faqCategories/{id}`: `{name, icon, description, order, createdAt, updatedAt}`
   - `faqArticles/{id}`: `{categoryId, projectId (nullable), title, slug, summary, bodyMd, keywords[], status: "draft"|"published", needsReview, order, createdAt, updatedAt, publishedAt}`
