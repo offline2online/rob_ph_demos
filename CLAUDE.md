@@ -180,11 +180,16 @@ instant, so there's no excuse for the board drifting from reality.
   chat when to go check it.**
 - ~~No `testUrl` field or quick-launch icon on cards.~~ **Fixed**: a Ready
   for Testing card now has its own "Set test link" → "Test this →" button
-  (`backlogItems.previewUrl`), using the same
-  `https://raw.githack.com/offline2online/rob_ph_demos/<branch>/<path>`
-  convention (PR URL as fallback for anything that can't be raw.githack'd
-  directly, e.g. a Cloud Function change) — no need to say the link in chat
-  separately anymore.
+  (`backlogItems.previewUrl`), using the
+  `https://rawcdn.githack.com/offline2online/rob_ph_demos/<branch>/<path>`
+  convention — **`rawcdn.githack.com`, not `raw.githack.com`**: the latter
+  proxies through jsDelivr's CDN cache (up to ~7 days), so a link set right
+  after one push can keep showing that first commit even after later
+  pushes update the file, with no visible error; `rawcdn.githack.com` is
+  githack's own always-uncached host, meant specifically for testing an
+  in-progress branch like this (PR URL as fallback for anything that can't
+  be githack'd directly, e.g. a Cloud Function change) — no need to say the
+  link in chat separately anymore.
 - **No per-card notes/`claudeNote` field, and no GitHub commit badge.** The
   schema is just `{projectId, title, desc, type, category, status,
   createdAt, updatedAt, archivedAt}` — there's nowhere on a card to record

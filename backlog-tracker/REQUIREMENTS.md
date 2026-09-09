@@ -351,12 +351,18 @@ REST API is reachable with a plain `curl`, no service account needed.
   server-timestamp sentinel inside an array element.
 - **Test/preview link**: a Ready for Testing card gets a "Set test link"
   button; once set (a plain `prompt()`, not a modal — this is a one-off
-  paste), it becomes a "Test this →" button opening `previewUrl` in a new
+  paste, prefilled with an editable template when nothing's set yet),
+  it becomes a "Test this →" button opening `previewUrl` in a new
   tab, with a pencil icon to change it. The convention is a
-  `raw.githack.com/offline2online/rob_ph_demos/<branch>/<path>` link for a
-  static page (see root `CLAUDE.md`), falling back to the PR URL for
-  anything that can't be raw.githack'd directly (e.g. a Cloud Function
-  change). This restores what the old Claude Artifact board's per-card
+  `rawcdn.githack.com/offline2online/rob_ph_demos/<branch>/<path>` link for
+  a static page (see root `CLAUDE.md`) — **`rawcdn.githack.com`, not
+  `raw.githack.com`**: the latter proxies through jsDelivr's CDN cache (up
+  to ~7 days), so a link set right after one push can keep showing that
+  first commit even after later pushes update the file, with no visible
+  error; `rawcdn.githack.com` is githack's own always-uncached host, meant
+  specifically for testing an in-progress branch like this — falling back
+  to the PR URL for anything that can't be githack'd directly (e.g. a
+  Cloud Function change). This restores what the old Claude Artifact board's per-card
   quick-launch link used to do, closing the gap `CLAUDE.md`'s "Prototype
   Backlog" section had documented ("No `testUrl` field or quick-launch icon
   on cards") since the migration off the Artifact.
