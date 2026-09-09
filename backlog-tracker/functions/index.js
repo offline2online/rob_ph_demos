@@ -337,11 +337,11 @@ exports.notifyOnProjectReadyToDeploy = onDocumentUpdated(
 
     const text = `${projectPromptBlock}=== DEPLOY REQUEST for "${projectName}" (projectId: ${event.params.projectId}) on the Backlog Tracker & FAQs board ===\n` +
       `These ${items.length} item${items.length === 1 ? "" : "s"} are already implemented, tested, and confirmed "Live on Feature Branch" (ready-to-publish). Do NOT investigate, re-implement, or re-test them.\n\n` +
-      `For each item below:\n` +
-      `1. Find its pull request in offline2online/rob_ph_demos (check the item's own notes for a branch/PR reference, or search open PRs referencing its title).\n` +
-      `2. If its CI is green and it's mergeable, merge that PR to main.\n` +
-      `3. PATCH its backlogItems doc: status -> "published-live", updatedAt -> now.\n` +
-      `If a PR can't be found, or its CI is red, or it's not mergeable, leave its status as ready-to-publish and add a note explaining why instead of guessing.\n\n` +
+      `Your session has no GitHub-authenticated tooling and can't merge a PR itself — don't try. Instead, for each item below:\n` +
+      `1. Find its pull request in offline2online/rob_ph_demos (check the item's own notes for a branch/PR reference, or search open PRs referencing its title) using the public, unauthenticated GitHub REST API (e.g. \`curl https://api.github.com/repos/offline2online/rob_ph_demos/pulls?state=open\`) — no credential needed for reads on a public repo.\n` +
+      `2. Check its CI status and mergeability the same read-only way (\`GET /repos/offline2online/rob_ph_demos/pulls/{number}\` — look at \`mergeable\` and the associated check runs/statuses).\n` +
+      `3. If it's green and mergeable, PATCH its backlogItems doc: mergeReady -> true (boolean), mergePrNumber -> <the PR number, as a number>, updatedAt -> now. A separate scheduled job (not you, not any AI) — backlog-tracker/scripts/run-backlog-automation.js, running as a trusted GitHub Actions job with its own repo-native credentials — picks this up within about 10 minutes, actually merges the PR, and flips status to "published-live" once it succeeds. Do not set status to "published-live" yourself — you have no way to confirm the merge actually happened.\n` +
+      `If a PR can't be found, or its CI is red, or it's not mergeable, leave its status as ready-to-publish (and mergeReady unset/false) and add a note explaining why instead of guessing.\n\n` +
       `Items:\n${itemLines}`;
 
     try {

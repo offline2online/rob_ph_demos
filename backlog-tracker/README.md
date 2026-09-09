@@ -52,6 +52,55 @@ prompt only knows how to interpret a "N items in Backlog" request. See
 `REQUIREMENTS.md` → "Functional requirements — notification & automation"
 for the full shape of both functions.
 
+## Notify Claude can't push — how a fix actually reaches GitHub
+
+The Claude Code session a Routine fire starts is a brand-new, bare
+sandbox: no repo checked out, no git credentials, no GitHub-aware tools —
+just generic shell/file/web access. It can genuinely investigate a Backlog
+item and write the fix, but it has no way to `git push` a branch or open a
+PR itself. We deliberately did **not** hand it a real GitHub credential to
+close that gap: `backlogItems` is publicly, unauthenticatedly writable
+(see `firestore.rules`), so anyone can write a `desc` — a malicious one
+could try to prompt-inject the fired session into leaking a push-capable
+secret it had been handed. Handing a fired session a scoped token doesn't
+remove that risk, it just bounds it — so instead, no session fired this
+way is ever given a GitHub credential of any kind.
+
+Instead, the Routine's own prompt asks it to package a finished fix as
+**plain file contents**, not a push:
+
+- `backlogItems/{id}.patchFiles` — `[{path, content}]` for every
+  changed/created file (full new content, not a diff — `content: null`
+  means delete that path), plus `patchBranch`, `patchCommitMessage`,
+  `patchPrTitle`, `patchPrBody`.
+- Setting `patchReady: true` on the same PATCH is the signal — the item
+  stays visually in Backlog (status doesn't change yet) until the step
+  below actually gets a PR open.
+
+`.github/workflows/backlog-automation.yml` — a normal scheduled GitHub
+Actions job (every 10 minutes, plus manual `workflow_dispatch`), running
+on a trusted GitHub-hosted runner with its own per-run `GITHUB_TOKEN` —
+picks up every `patchReady` item via
+`backlog-tracker/scripts/run-backlog-automation.js`: creates a branch off
+the current `main`, writes out `patchFiles` verbatim (so there's no diff
+to conflict — it's just "this is the final content of these files, on top
+of whatever `main` is right now"), commits, pushes, opens a PR with `gh`,
+then PATCHes the item to `status: "ready-for-testing"` with a note linking
+the PR. No AI is involved in this step at all, and no long-lived GitHub
+secret exists anywhere in this pipeline — the runner's `GITHUB_TOKEN` is
+minted and revoked by GitHub itself, per run.
+
+The same script also handles the mirror case for **Notify Claude —
+Deploy**: that Routine fire asks the session to find its item's PR and
+check CI/mergeability using GitHub's public, unauthenticated REST API
+(reads on a public repo need no credential), then PATCH
+`mergeReady: true` + `mergePrNumber` instead of merging itself. The same
+scheduled job merges the PR and flips `status` to `"published-live"`.
+
+If a fired session genuinely can't express its fix as full file contents,
+it leaves the item in `backlog` with a note explaining why, same as
+before — a human picks it up from there.
+
 ## Isolation from menu-board-demo — by design, not just by folder
 
 This is a genuinely separate project, not a subfolder sharing infrastructure:

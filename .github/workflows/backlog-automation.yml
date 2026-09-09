@@ -1,0 +1,37 @@
+name: Backlog automation (apply patches / merge approved PRs)
+
+# Turns work the "Notify Claude" Routine has already finished into a real
+# branch + PR (backlogItems.patchReady), and merges a PR the Routine has
+# already confirmed is green (backlogItems.mergeReady) — see
+# backlog-tracker/scripts/run-backlog-automation.js for the full story of
+# why this exists as a separate, scheduled, non-AI job rather than having
+# the Routine's own Claude Code session push/merge directly: that session
+# is fired from data (backlogItems.desc) anyone can write to Firestore
+# unauthenticated, so it never gets a real GitHub credential — this job,
+# running on a normal trusted GitHub-hosted runner with its own per-run
+# GITHUB_TOKEN, does the actual pushing/merging instead.
+on:
+  schedule:
+    - cron: '*/10 * * * *'
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Apply patch-ready items / merge merge-ready items
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node backlog-tracker/scripts/run-backlog-automation.js

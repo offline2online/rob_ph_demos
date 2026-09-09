@@ -104,6 +104,23 @@ deleted by hand).
   notes?: [{ author: "claude" | "viewer", text: string, at: timestamp }],
   deploymentId?: string,        // see "deployments/{deploymentId}" below
   previewUrl?: string,          // a Ready for Testing card's own "Test this" link
+
+  // Notify Claude automation hand-off — see README.md "Notify Claude can't
+  // push — how a fix actually reaches GitHub". A fired Routine session has
+  // no GitHub credential (deliberately — backlogItems.desc is publicly
+  // writable, so a malicious item could otherwise prompt-inject a fired
+  // session into leaking one), so it writes what it built here instead of
+  // pushing/merging itself; backlog-tracker/scripts/run-backlog-automation.js
+  // (a scheduled GitHub Actions job with its own repo-native credentials,
+  // no AI involved) does the actual push/PR/merge and clears these flags.
+  patchFiles?: [{ path: string, content: string | null }],  // null content = delete that path
+  patchBranch?: string,
+  patchCommitMessage?: string,
+  patchPrTitle?: string,
+  patchPrBody?: string,
+  patchReady?: boolean,         // set true once patchFiles etc. are ready; cleared to false once a PR is opened
+  mergeReady?: boolean,         // Deploy-notify flow: set true once a fired session confirms a PR is green/mergeable
+  mergePrNumber?: number,       // which PR mergeReady refers to
 }
 ```
 `CATEGORIES` (fixed set, `backlog-tracker/public/js/app.js`): `Pricing &
@@ -453,10 +470,17 @@ Three Cloud Functions, all in `backlog-tracker/functions/index.js`:
    "DEPLOY REQUEST" block, not the usual "N items in Backlog" shape** —
    it explicitly states these items are already implemented, tested, and
    confirmed on their feature branches, tells the fired session not to
-   investigate or re-implement them, and asks it to find each one's PR,
-   merge it to `main` if CI is green and mergeable, and PATCH its status to
-   `published-live` — or leave it as `ready-to-publish` with a note if it
-   can't. This was a deliberate design choice over relying on the Routine's
+   investigate or re-implement them, and — since the fired session has no
+   GitHub-authenticated tooling and can't merge a PR itself (see "Notify
+   Claude can't push" in README.md) — asks it to find each one's PR and
+   check its mergeability via GitHub's public, unauthenticated REST API,
+   then PATCH `mergeReady: true` + `mergePrNumber` if it's green and
+   mergeable, or leave it as `ready-to-publish` with a note if it can't.
+   `backlog-tracker/scripts/run-backlog-automation.js` (via
+   `.github/workflows/backlog-automation.yml`, a scheduled job with its own
+   GitHub Actions-native credentials, no AI involved) is what actually
+   merges the PR and flips status to `published-live`. This was a
+   deliberate design choice over relying on the Routine's
    own shared prompt (see "The Notify Claude Routine" below) to infer a
    deploy request from a differently-shaped fire, since that prompt is
    written and tested only for the Backlog-investigation shape — editing it
@@ -496,20 +520,22 @@ run, so its prompt must be fully self-contained. It is instructed to:
    `routinePromptMd` directly) for a project-specific instructions block —
    see "Per-project Routine instructions" below.
 4. For each Backlog item: rewrite its title to a proper short subject line,
-   investigate for real, implement on a feature branch, push, open a PR,
-   and PATCH the item's status/category/title/notes — never fabricating a
-   fix for something it can't actually locate in the codebase.
+   investigate for real, implement the fix in its own local checkout — then,
+   since it has no GitHub credential and cannot push or open a PR itself
+   (see "Notify Claude can't push" in README.md), PATCH the item with
+   `patchFiles` (full new content per changed/created file), `patchBranch`,
+   `patchCommitMessage`, `patchPrTitle`, `patchPrBody`, and `patchReady:
+   true` — plus corrected `category`/`notes` — rather than fabricating a
+   fix for something it can't actually locate in the codebase. It does
+   **not** set `status` to `ready-for-testing` itself;
+   `run-backlog-automation.js` does that once a PR actually exists.
 5. Report a summary; state plainly (not silently) when a project or item
    can't be found rather than inventing work.
 
-**Known constraint**: the Routine's session environment needs real GitHub
-push/API authorization for `offline2online/rob_ph_demos`, or it can
-investigate and implement locally but cannot push a branch or open a PR —
-this has happened at least once in practice, and the correct behavior in
-that case is exactly what shipped: leave the item in `backlog`, write a
-detailed note naming the exact blocker and the local branch/commit, and
-say so in the summary rather than falsely marking anything
-`ready-for-testing`.
+If a fired session genuinely can't express a fix as full file contents (or
+its environment lacks even that much), it leaves the item in `backlog`
+with a detailed note explaining why, rather than setting `patchReady` on
+an incomplete fix.
 
 ### Per-project Routine instructions (`routinePromptMd`)
 
