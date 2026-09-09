@@ -303,6 +303,21 @@ or dictated (capped near half the viewport).
   - **hq-admin.html's grid deliberately shows only HQ's own RRP/offer in its Price column, never a store's override** — a "Local offer ×N" pill flags that a store-level price exists (click it to jump to the per-product pricing page) without picking one store's price to display in an aggregate, all-stores view. That's intentional design, not a bug — don't try to make this specific grid show the discounted local price inline.
   - Bottom line: verify per-screen against copy/markup you can `grep` in this repo before deciding whether a pricing bug is fixable here or belongs to the real platform.
 
+## Keep each project's README current
+
+Every project folder has its own `README.md` — a short orientation doc
+(what's in the folder, what each file does, where the fuller spec lives),
+not a full spec dump. At the end of any session that touches a project
+(adds/removes/renames files, changes what a script does, changes the
+deploy story), update that project's `README.md` to match before finishing
+— don't let it silently drift stale the way this repo's READMEs did before
+this section existed. For a project also tracked on the Prototype Backlog
+board (`backlog-tracker/` — see "Prototype Backlog" below), also update
+that project's own `readmeMd` Docs field to match (`backlog-tracker`'s own
+Docs page → README block); treat a divergence between the repo file and
+the live field as a bug in whichever is stale, same as `REQUIREMENTS.md`
+vs. `requirementsMd` already works.
+
 ## Guidelines
 
 - Always push to `main` branch
