@@ -13,7 +13,7 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-app.js";
 import {
   getFirestore, collection, addDoc, updateDoc, deleteDoc, setDoc, doc,
-  onSnapshot, query, orderBy, serverTimestamp, writeBatch,
+  onSnapshot, query, orderBy, serverTimestamp, writeBatch, arrayUnion,
 } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore.js";
 import { firebaseConfig } from "./firebase-config.js";
 
@@ -24,6 +24,7 @@ const projectsRef = collection(db, "projects");
 const interfacesRef = collection(db, "interfaces");
 const deploymentsRef = collection(db, "deployments");
 const programsRef = collection(db, "programs");
+const projectDocsRef = collection(db, "projectDocs");
 
 const COLUMNS = [
   { key: "backlog", label: "Backlog", headClass: "backlog" },
@@ -53,6 +54,7 @@ let projectsLoaded = false;
 let interfaces = [];
 let deployments = [];
 let programs = [];
+let projectDocs = [];
 let editingProjectId = null;
 
 // ── Docs page state (per-project requirements + interfaces with other
@@ -61,6 +63,7 @@ let editingProjectId = null;
 // from either side. ──────────────────────────────────────────────────────
 let docsProjectId = null;
 let editingInterfaceId = null; // null while adding, an id while editing
+let editingDocId = null; // null while adding, an id while editing (Additional documents)
 
 // ── Archive page state ─────────────────────────────────────────────────
 let archiveProjectId = null;
@@ -112,6 +115,21 @@ document.addEventListener("click", (e) => {
   if (!e.target.closest(".project-options")) closeAllOptionMenus();
 });
 
+// ── Left nav drawer (hamburger) — the header's own "Archived projects" and
+// "FAQ Center" links moved in here, leaving only "+ New project" in the
+// topbar. Kept in the DOM at all times (never [hidden]) so the CSS
+// transform transition on .nav-drawer actually animates open/closed. ────
+const navDrawer = document.getElementById("nav-drawer");
+const navDrawerBackdrop = document.getElementById("nav-drawer-backdrop");
+function openNavDrawer() { navDrawer.classList.add("open"); navDrawerBackdrop.classList.add("open"); }
+function closeNavDrawer() { navDrawer.classList.remove("open"); navDrawerBackdrop.classList.remove("open"); }
+document.getElementById("nav-open-btn").addEventListener("click", openNavDrawer);
+document.getElementById("nav-close-btn").addEventListener("click", closeNavDrawer);
+navDrawerBackdrop.addEventListener("click", closeNavDrawer);
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && navDrawer.classList.contains("open")) closeNavDrawer();
+});
+
 function cardHTML(item) {
   const idx = COL_KEYS.indexOf(item.status);
   const canLeft = idx > 0;
@@ -144,12 +162,27 @@ function cardHTML(item) {
   const deploymentBadge = item.deploymentId
     ? `<span class="deployment-badge" title="Ships together with the rest of this deployment">&#128640; ${escapeHTML(deploymentLabel(item.deploymentId))}</span>`
     : "";
+  const commentCount = (item.notes || []).length;
+  const editBtn = `<button type="button" class="icon-btn edit-item-btn" data-id="${item.id}" title="Edit / comments">&#9998;${commentCount ? ` <span class="options-menu-count">${commentCount}</span>` : ""}</button>`;
+  // Only relevant once a ticket is actually up on a feature branch — a
+  // raw.githack.com link (or a PR URL when the page can't be raw.githack'd
+  // directly) to click through and confirm before hitting "Confirm live on
+  // branch". Set/changed via a plain prompt() rather than a full modal —
+  // this is a one-off paste, not a form worth its own dialog.
+  const testLinkHTML = isTesting
+    ? (item.previewUrl
+        ? `<div class="test-link-row">
+            <a href="${escapeHTML(item.previewUrl)}" target="_blank" rel="noopener" class="test-link-btn">Test this &rarr;</a>
+            <button type="button" class="icon-btn test-link-edit-btn" data-id="${item.id}" title="Change test link">&#9998;</button>
+          </div>`
+        : `<button type="button" class="btn-ghost test-link-set-btn" data-id="${item.id}">Set test link</button>`)
+    : "";
 
   return `
     <article class="card" data-id="${item.id}">
       <div class="card-top">
         <span class="badge badge-${item.type}">${item.type === "bug" ? "Bug" : "Feature"}</span>
-        <div class="card-move">${leftBtn}${rightBtn}</div>
+        <div class="card-move">${editBtn}${leftBtn}${rightBtn}</div>
       </div>
       <h3 class="card-title">${escapeHTML(item.title)}</h3>
       <p class="card-desc">${escapeHTML(item.desc)}</p>
@@ -158,6 +191,7 @@ function cardHTML(item) {
         <span class="card-cat">${escapeHTML(item.category || "Uncategorised")}</span>
         <div class="card-move">${archiveBtn}${deleteBtn}</div>
       </div>
+      ${testLinkHTML}
       ${approveBtn}${mergeBtn}
     </article>`;
 }
@@ -227,15 +261,59 @@ function optionsMenuHTML(project) {
 // ph-designer skill's "AI action button" recipe — the same teal→violet
 // gradient as "Launch a New Campaign") to read as the prominent, AI-driven
 // action it actually is, rather than a plain ghost button.
+// A fired session is asked (functions/index.js's selfReportHint) to flip
+// notifyRoutine.status to "done"/"error" itself when it finishes. A run
+// older than this is treated as done on the client's own initiative
+// regardless — comfortably above every observed run length so far (the
+// longest seen in practice was ~14 minutes) — so a session running an
+// older Routine prompt without that instruction, or one that crashes
+// mid-run, can never wedge the button in a permanent spinning state.
+const NOTIFY_ROUTINE_STALE_MS = 20 * 60 * 1000;
+
 function notifyClaudeButtonHTML(project) {
   const pid = project.id;
-  const backlogCount = backlogCountForProject(pid);
-  if (!backlogCount) return "";
-  return `<button type="button" class="notify-claude-btn project-notify-btn" data-project-id="${escapeHTML(pid)}">
-    <span class="material-symbols-outlined notify-claude-icon">auto_awesome</span>
-    <span class="notify-claude-label">Notify Claude</span>
-    <span class="notify-claude-count-pill">${backlogCount}</span>
-  </button>`;
+  const routine = project.notifyRoutine;
+  const firedMs = routine ? tsMillis(routine.firedAt) : 0;
+  const isStale = routine?.status === "in-progress" && firedMs && (Date.now() - firedMs) > NOTIFY_ROUTINE_STALE_MS;
+  const inProgress = routine?.status === "in-progress" && !isStale;
+
+  if (!inProgress) {
+    const backlogCount = backlogCountForProject(pid);
+    if (!backlogCount) return "";
+    return `<button type="button" class="notify-claude-btn project-notify-btn" data-project-id="${escapeHTML(pid)}">
+      <span class="material-symbols-outlined notify-claude-icon">auto_awesome</span>
+      <span class="notify-claude-label">Notify Claude</span>
+      <span class="notify-claude-count-pill">${backlogCount}</span>
+    </button>`;
+  }
+
+  // In progress: the main button reflects the batch already sent (fixed
+  // count, disabled, spinning) with a link to the live session if one
+  // resolved; anything added to Backlog since that click surfaces as its
+  // own small, still-clickable CTA rather than being folded into a count
+  // that would otherwise conflate "already being worked" with "brand new."
+  const sentIds = new Set(routine.sentItemIds || []);
+  const newCount = items.filter((i) =>
+    (i.projectId || GENERAL_PROJECT_ID) === pid && i.status === "backlog" && !sentIds.has(i.id)
+  ).length;
+
+  const sessionLink = routine.sessionUrl
+    ? `<a href="${escapeHTML(routine.sessionUrl)}" target="_blank" rel="noopener" class="notify-claude-session-link">View session &rarr;</a>`
+    : "";
+  const mainBtn = `<button type="button" class="notify-claude-btn notify-claude-btn-working" disabled title="A Claude Code session is working through the ${routine.itemCount || sentIds.size} item(s) sent">
+    <span class="notify-claude-spinner"></span>
+    <span class="notify-claude-label">Working&hellip;</span>
+    <span class="notify-claude-count-pill">${routine.itemCount || sentIds.size}</span>
+  </button>${sessionLink}`;
+
+  const newBtn = newCount
+    ? `<button type="button" class="notify-claude-btn project-notify-btn" data-project-id="${escapeHTML(pid)}">
+        <span class="material-symbols-outlined notify-claude-icon">auto_awesome</span>
+        <span class="notify-claude-label">Notify Claude — ${newCount} new</span>
+      </button>`
+    : "";
+
+  return mainBtn + newBtn;
 }
 
 function projectSectionHTML(project) {
@@ -405,6 +483,7 @@ onSnapshot(query(itemsRef, orderBy("createdAt", "desc")), (snap) => {
   if (archiveProjectId) renderArchivePage();
   if (archivedProjectsPage && !archivedProjectsPage.hidden) renderArchivedProjectsPage();
   if (deploymentsProjectId) renderDeploymentsPage();
+  if (editingItemId) renderEiNotes();
 }, (err) => {
   console.error("backlog-tracker: items listener error", err);
 });
@@ -442,6 +521,13 @@ onSnapshot(programsRef, (snap) => {
   if (docsProjectId) renderDocsPage();
 }, (err) => {
   console.error("backlog-tracker: programs listener error", err);
+});
+
+onSnapshot(projectDocsRef, (snap) => {
+  projectDocs = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  if (docsProjectId) renderDocsPage();
+}, (err) => {
+  console.error("backlog-tracker: projectDocs listener error", err);
 });
 
 async function addItem(projectId, title, desc, type, category) {
@@ -482,6 +568,30 @@ async function restoreItem(id) {
   });
 }
 
+async function updateItemDetails(id, { title, desc, type, category }) {
+  await updateDoc(doc(db, "backlogItems", id), {
+    title: title.trim(), desc: desc.trim(), type, category, updatedAt: serverTimestamp(),
+  });
+}
+
+// `at` is a plain client Date, not serverTimestamp() — Firestore rejects a
+// serverTimestamp() sentinel inside an array (arrayUnion here), the same
+// reason the Routine's own note-appending curl calls always send a literal
+// ISO8601 string instead of asking Firestore to fill it in server-side.
+async function addItemComment(id, text) {
+  const trimmed = (text || "").trim();
+  if (!trimmed) return;
+  await updateDoc(doc(db, "backlogItems", id), {
+    notes: arrayUnion({ author: "viewer", text: trimmed, at: new Date() }),
+    updatedAt: serverTimestamp(),
+  });
+}
+
+async function setItemPreviewUrl(id, url) {
+  const trimmed = (url || "").trim();
+  await updateDoc(doc(db, "backlogItems", id), { previewUrl: trimmed || null, updatedAt: serverTimestamp() });
+}
+
 async function addProject(name, programId) {
   const data = { name: name.trim(), createdAt: serverTimestamp() };
   if (programId) data.programId = programId;
@@ -494,6 +604,10 @@ async function addProject(name, programId) {
 // for (see ../functions/index.js), which then sends everything currently
 // in this project's Backlog column in one message — for "I've added
 // several items, now go look" instead of one notification per card.
+// No confirmation alert() here anymore — the Notify Claude button itself
+// now shows a persistent working/spinner state (see notifyClaudeButtonHTML)
+// once projects/{id}.notifyRoutine reflects the click, which is a better
+// signal than a one-time dismissable dialog ever was.
 async function requestNotify(pid) {
   const count = backlogCountForProject(pid);
   if (count === 0) {
@@ -501,7 +615,6 @@ async function requestNotify(pid) {
     return;
   }
   await setDoc(doc(db, "projects", pid), { notifyRequestedAt: serverTimestamp() }, { merge: true });
-  alert(`Notify requested for ${count} backlog item${count === 1 ? "" : "s"}. A Slack message goes out and a Claude Code session starts working through them (see backlog-tracker/README.md for the Cloud Functions this depends on if either isn't happening).`);
 }
 
 async function setProjectName(id, name) {
@@ -532,6 +645,38 @@ function activeItemCountForProject(pid) {
 
 async function setProjectRequirements(id, md) {
   await setDoc(doc(db, "projects", id), { requirementsMd: md, updatedAt: serverTimestamp() }, { merge: true });
+}
+
+// The project's own primary tracking document — shown first on the Docs
+// page, above Requirements, same live-doc pattern.
+async function setProjectReadme(id, md) {
+  await setDoc(doc(db, "projects", id), { readmeMd: md, updatedAt: serverTimestamp() }, { merge: true });
+}
+
+// ── Additional documents — a generic, named-document library per project
+// (an API spec, an architecture decision record, anything that isn't
+// Requirements or the README) so a project's full documentation lives on
+// this one page instead of scattered across the repo. Unlike an interface,
+// a project doc belongs to exactly one project — no second projectId. ────
+function docsForProject(pid) {
+  return projectDocs.filter((d) => d.projectId === pid);
+}
+
+async function addProjectDoc(projectId, name, contentMd) {
+  await addDoc(projectDocsRef, {
+    projectId, name: name.trim(), contentMd: contentMd || "",
+    createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
+  });
+}
+
+async function updateProjectDoc(id, name, contentMd) {
+  await setDoc(doc(db, "projectDocs", id), {
+    name: name.trim(), contentMd: contentMd || "", updatedAt: serverTimestamp(),
+  }, { merge: true });
+}
+
+async function deleteProjectDoc(id) {
+  await deleteDoc(doc(db, "projectDocs", id));
 }
 
 // Per-project addendum to the Notify Claude Routine's own fixed prompt —
@@ -692,6 +837,16 @@ projectsRoot.addEventListener("click", (e) => {
   if (delBtn) { removeItem(delBtn.dataset.id); return; }
   const archBtn = e.target.closest(".archive-btn");
   if (archBtn) { archiveItem(archBtn.dataset.id); return; }
+  const editItemBtn = e.target.closest(".edit-item-btn");
+  if (editItemBtn) { openEditItemModal(editItemBtn.dataset.id); return; }
+  const testLinkBtn = e.target.closest(".test-link-set-btn, .test-link-edit-btn");
+  if (testLinkBtn) {
+    const id = testLinkBtn.dataset.id;
+    const current = items.find((i) => i.id === id)?.previewUrl || "";
+    const url = prompt("Preview/test URL for this ticket (e.g. a raw.githack.com link, or the PR URL):", current);
+    if (url !== null) setItemPreviewUrl(id, url);
+    return;
+  }
   const collapseBtn = e.target.closest(".project-collapse-btn");
   if (collapseBtn) { toggleProjectCollapsed(collapseBtn.dataset.projectId); return; }
   const renameBtn = e.target.closest(".project-rename-btn");
@@ -736,6 +891,92 @@ projectsRoot.addEventListener("keydown", (e) => {
 projectsRoot.addEventListener("focusout", (e) => {
   if (!e.target.classList.contains("project-name-input")) return;
   commitProjectNameEdit(e.target.dataset.projectId, e.target.value);
+});
+
+// ── Edit item modal — title/desc/type/category plus comments. Comments
+// were schema-only until now (`notes`, written only by the Routine via
+// direct Firestore writes) — this is the first UI to actually read/write
+// them from the board itself. ───────────────────────────────────────────
+let editingItemId = null;
+const eiBackdrop = document.getElementById("ei-backdrop");
+const eiTitleInput = document.getElementById("ei-title-input");
+const eiDescInput = document.getElementById("ei-desc-input");
+const eiCategorySelect = document.getElementById("ei-category-select");
+const eiNotesList = document.getElementById("ei-notes-list");
+const eiCommentInput = document.getElementById("ei-comment-input");
+
+eiCategorySelect.innerHTML = CATEGORIES.map((c) => `<option value="${escapeHTML(c)}">${escapeHTML(c)}</option>`).join("");
+
+function setEiTypeToggle(type) {
+  document.querySelectorAll("#ei-backdrop .type-opt").forEach((btn) => {
+    btn.classList.toggle("active", btn.dataset.type === type);
+  });
+}
+
+function formatNoteAt(at) {
+  const d = at && at.toDate ? at.toDate() : (at instanceof Date ? at : null);
+  return d ? d.toLocaleString() : "";
+}
+
+function eiNoteRowHTML(note) {
+  const who = note.author === "claude" ? "Claude" : "Comment";
+  return `<div class="ei-note-row">
+    <div class="ei-note-meta"><b>${escapeHTML(who)}</b><span>${escapeHTML(formatNoteAt(note.at))}</span></div>
+    <p class="ei-note-text">${escapeHTML(note.text)}</p>
+  </div>`;
+}
+
+function renderEiNotes() {
+  if (!editingItemId) return;
+  const item = allItems.find((i) => i.id === editingItemId);
+  const notes = (item && item.notes) || [];
+  eiNotesList.innerHTML = notes.length
+    ? notes.slice().reverse().map(eiNoteRowHTML).join("")
+    : '<p class="interface-row-empty">No comments yet.</p>';
+}
+
+function openEditItemModal(id) {
+  editingItemId = id;
+  const item = allItems.find((i) => i.id === id);
+  if (!item) return;
+  eiTitleInput.value = item.title || "";
+  eiDescInput.value = item.desc || "";
+  setEiTypeToggle(item.type === "bug" ? "bug" : "feature");
+  eiCategorySelect.value = item.category || CATEGORIES[0];
+  eiCommentInput.value = "";
+  renderEiNotes();
+  eiBackdrop.hidden = false;
+  eiTitleInput.focus();
+}
+function closeEditItemModal() {
+  eiBackdrop.hidden = true;
+  editingItemId = null;
+}
+
+document.getElementById("ei-close").addEventListener("click", closeEditItemModal);
+document.getElementById("ei-cancel").addEventListener("click", closeEditItemModal);
+eiBackdrop.addEventListener("click", (e) => { if (e.target === eiBackdrop) closeEditItemModal(); });
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && !eiBackdrop.hidden) closeEditItemModal();
+});
+document.querySelectorAll("#ei-backdrop .type-opt").forEach((btn) => {
+  btn.addEventListener("click", () => setEiTypeToggle(btn.dataset.type));
+});
+document.getElementById("ei-save").addEventListener("click", () => {
+  if (!editingItemId) return;
+  if (!eiTitleInput.value.trim()) { alert("Title can't be empty."); return; }
+  const type = document.querySelector("#ei-backdrop .type-opt.active")?.dataset.type || "feature";
+  updateItemDetails(editingItemId, {
+    title: eiTitleInput.value, desc: eiDescInput.value, type, category: eiCategorySelect.value,
+  });
+  closeEditItemModal();
+});
+document.getElementById("ei-comment-submit").addEventListener("click", () => {
+  if (!editingItemId) return;
+  const text = eiCommentInput.value;
+  if (!text.trim()) return;
+  addItemComment(editingItemId, text);
+  eiCommentInput.value = "";
 });
 
 // ── New Item modal ─────────────────────────────────────────────────────
@@ -1030,7 +1271,7 @@ function renderArchivedProjectsPage() {
   document.getElementById("archived-projects-empty").hidden = rows.length !== 0;
 }
 
-document.getElementById("archived-projects-btn").addEventListener("click", openArchivedProjectsPage);
+document.getElementById("archived-projects-btn").addEventListener("click", () => { closeNavDrawer(); openArchivedProjectsPage(); });
 document.getElementById("archived-projects-back-btn").addEventListener("click", closeArchivedProjectsPage);
 document.getElementById("archived-projects-table-body").addEventListener("click", (e) => {
   const btn = e.target.closest(".restore-project-btn");
@@ -1178,6 +1419,7 @@ document.getElementById("dp-submit").addEventListener("click", async () => {
 
 // ── Docs page (per-project requirements + interfaces with other projects) ─
 const docsPage = document.getElementById("docs-page");
+const docsReadmeInput = document.getElementById("docs-readme-input");
 const docsRequirementsInput = document.getElementById("docs-requirements-input");
 const docsRoutinePromptInput = document.getElementById("docs-routine-prompt-input");
 const docsFaqAutoFlagInput = document.getElementById("docs-faq-auto-flag");
@@ -1233,12 +1475,34 @@ function interfaceRowHTML(f) {
     </div>`;
 }
 
+function projectDocRowHTML(d) {
+  const contentPreview = d.contentMd
+    ? `<div class="interface-row-content">${escapeHTML(d.contentMd)}</div>`
+    : `<p class="interface-row-empty" style="margin:8px 0 0;">No content written yet.</p>`;
+  return `
+    <div class="interface-row" data-id="${d.id}">
+      <div class="interface-row-top">
+        <div>
+          <div class="interface-row-title">${escapeHTML(d.name)}</div>
+        </div>
+        <div class="interface-row-actions">
+          <button type="button" class="icon-btn doc-edit-btn" data-id="${d.id}" title="Edit">&#9998;</button>
+          <button type="button" class="icon-btn doc-delete-btn" data-id="${d.id}" title="Remove">&times;</button>
+        </div>
+      </div>
+      ${contentPreview}
+    </div>`;
+}
+
 function renderDocsPage() {
   if (!docsProjectId) return;
   const project = projects.find((p) => p.id === docsProjectId);
   document.getElementById("docs-page-project-name").textContent = project ? project.name : projectName(docsProjectId);
   if (document.activeElement !== docsProgramSelect) {
     populateProgramSelect(docsProgramSelect, project ? project.programId || "" : "");
+  }
+  if (document.activeElement !== docsReadmeInput) {
+    docsReadmeInput.value = (project && project.readmeMd) || "";
   }
   if (document.activeElement !== docsRequirementsInput) {
     docsRequirementsInput.value = (project && project.requirementsMd) || "";
@@ -1251,9 +1515,17 @@ function renderDocsPage() {
   document.getElementById("docs-interfaces-list").innerHTML = rows.length
     ? rows.map(interfaceRowHTML).join("")
     : '<p class="interface-row-empty">No interfaces defined with another project yet.</p>';
+  const docRows = docsForProject(docsProjectId);
+  document.getElementById("docs-extra-docs-list").innerHTML = docRows.length
+    ? docRows.map(projectDocRowHTML).join("")
+    : '<p class="interface-row-empty">No additional documents yet.</p>';
 }
 
 document.getElementById("docs-back-btn").addEventListener("click", closeDocsPage);
+document.getElementById("docs-readme-save").addEventListener("click", () => {
+  if (!docsProjectId) return;
+  setProjectReadme(docsProjectId, docsReadmeInput.value);
+});
 document.getElementById("docs-requirements-save").addEventListener("click", () => {
   if (!docsProjectId) return;
   setProjectRequirements(docsProjectId, docsRequirementsInput.value);
@@ -1271,6 +1543,55 @@ document.getElementById("docs-interfaces-list").addEventListener("click", (e) =>
   if (editBtn) { openInterfaceModal(editBtn.dataset.id); return; }
   const delBtn = e.target.closest(".interface-delete-btn");
   if (delBtn) { deleteInterface(delBtn.dataset.id); return; }
+});
+document.getElementById("docs-extra-docs-list").addEventListener("click", (e) => {
+  const editBtn = e.target.closest(".doc-edit-btn");
+  if (editBtn) { openDocModal(editBtn.dataset.id); return; }
+  const delBtn = e.target.closest(".doc-delete-btn");
+  if (delBtn) { deleteProjectDoc(delBtn.dataset.id); return; }
+});
+
+// ── Additional document modal — shared "add" and "edit" flow, anchored to
+// whichever project's Docs page it was opened from (a project doc, unlike
+// an interface, only ever belongs to one project). ─────────────────────
+const docBackdrop = document.getElementById("doc-backdrop");
+const docNameInput = document.getElementById("doc-name-input");
+const docContentInput = document.getElementById("doc-content-input");
+
+function openDocModal(docId) {
+  editingDocId = docId || null;
+  docBackdrop.hidden = false;
+  if (editingDocId) {
+    const d = projectDocs.find((x) => x.id === editingDocId);
+    document.getElementById("doc-title").textContent = "Edit document";
+    docNameInput.value = d ? d.name : "";
+    docContentInput.value = d ? d.contentMd || "" : "";
+  } else {
+    document.getElementById("doc-title").textContent = "New document";
+    docNameInput.value = "";
+    docContentInput.value = "";
+  }
+  docNameInput.focus();
+}
+function closeDocModal() { docBackdrop.hidden = true; editingDocId = null; }
+
+document.getElementById("docs-add-doc-btn").addEventListener("click", () => openDocModal(null));
+document.getElementById("doc-cancel").addEventListener("click", closeDocModal);
+document.getElementById("doc-close").addEventListener("click", closeDocModal);
+docBackdrop.addEventListener("click", (e) => { if (e.target === docBackdrop) closeDocModal(); });
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && !docBackdrop.hidden) closeDocModal();
+});
+document.getElementById("doc-submit").addEventListener("click", async () => {
+  const name = docNameInput.value.trim();
+  if (!name) { docNameInput.focus(); return; }
+  if (editingDocId) {
+    await updateProjectDoc(editingDocId, name, docContentInput.value);
+  } else {
+    if (!docsProjectId) return;
+    await addProjectDoc(docsProjectId, name, docContentInput.value);
+  }
+  closeDocModal();
 });
 
 // ── Interface modal — shared "add" (from Docs page) and "edit" flow ──────
@@ -1802,7 +2123,7 @@ function renderFaqArticleList() {
   }).join("");
 }
 
-document.getElementById("faq-center-btn").addEventListener("click", openFaqAdminPage);
+document.getElementById("faq-center-btn").addEventListener("click", () => { closeNavDrawer(); openFaqAdminPage(); });
 document.getElementById("faq-admin-back-btn").addEventListener("click", closeFaqAdminPage);
 
 document.getElementById("fa-new-category-submit").addEventListener("click", async () => {
