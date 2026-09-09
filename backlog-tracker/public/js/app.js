@@ -168,6 +168,10 @@ function backlogCountForProject(pid) {
   return items.filter((i) => (i.projectId || GENERAL_PROJECT_ID) === pid && i.status === "backlog").length;
 }
 
+function deployReadyCountForProject(pid) {
+  return items.filter((i) => (i.projectId || GENERAL_PROJECT_ID) === pid && i.status === "ready-to-publish").length;
+}
+
 function interfacesForProject(pid) {
   return interfaces.filter((f) => Array.isArray(f.projectIds) && f.projectIds.includes(pid));
 }
@@ -236,6 +240,23 @@ function notifyClaudeButtonHTML(project) {
   </button>`;
 }
 
+// Same "Notify Claude" gradient action, but for the opposite end of the
+// pipeline: items already tested and confirmed "Live on Feature Branch"
+// (ready-to-publish) that are just waiting for someone to actually merge
+// their PRs to main. Same hidden-when-nothing-to-do rule as the Backlog
+// button above — there's nothing for this to do until a card reaches that
+// column.
+function deployNotifyButtonHTML(project) {
+  const pid = project.id;
+  const deployCount = deployReadyCountForProject(pid);
+  if (!deployCount) return "";
+  return `<button type="button" class="notify-claude-btn deploy-notify-btn" data-project-id="${escapeHTML(pid)}">
+    <span class="material-symbols-outlined notify-claude-icon">rocket_launch</span>
+    <span class="notify-claude-label">Notify Claude — Deploy</span>
+    <span class="notify-claude-count-pill">${deployCount}</span>
+  </button>`;
+}
+
 function projectSectionHTML(project) {
   const collapsed = isProjectCollapsed(project.id);
   const projectItems = items.filter((i) => (i.projectId || GENERAL_PROJECT_ID) === project.id);
@@ -268,6 +289,7 @@ function projectSectionHTML(project) {
         </div>
         <div class="project-header-actions">
           ${notifyClaudeButtonHTML(project)}
+          ${deployNotifyButtonHTML(project)}
           <button class="btn-primary new-item-btn" data-project-id="${escapeHTML(project.id)}" type="button">+ New backlog item</button>
           <div class="project-options">
             <button type="button" class="icon-btn project-options-btn" data-project-id="${escapeHTML(project.id)}" aria-haspopup="true" aria-label="More options for this project">&#8942;</button>
@@ -452,6 +474,22 @@ async function requestNotify(pid) {
   alert(`Notify requested for ${count} backlog item${count === 1 ? "" : "s"}. A Slack message goes out and a Claude Code session starts working through them (see backlog-tracker/README.md for the Cloud Functions this depends on if either isn't happening).`);
 }
 
+// Same idea as requestNotify() above, but for the "Live on Feature Branch"
+// (ready-to-publish) column — a deploy request, not an investigate-and-fix
+// request. Writes deployNotifyRequestedAt, watched by
+// notifyOnProjectReadyToDeploy (see ../functions/index.js), which fires the
+// same Routine but with fire text that explicitly says these items are
+// already tested and just need their PRs merged to main.
+async function requestDeployNotify(pid) {
+  const count = deployReadyCountForProject(pid);
+  if (count === 0) {
+    alert("Nothing Live on Feature Branch for this project yet — confirm an item's testing first.");
+    return;
+  }
+  await setDoc(doc(db, "projects", pid), { deployNotifyRequestedAt: serverTimestamp() }, { merge: true });
+  alert(`Deploy requested for ${count} item${count === 1 ? "" : "s"} Live on Feature Branch. A Claude Code session starts merging them to main (see backlog-tracker/README.md for the Cloud Functions this depends on if this isn't happening).`);
+}
+
 async function setProjectName(id, name) {
   const trimmed = (name || "").trim();
   if (!trimmed) return false;
@@ -623,6 +661,8 @@ projectsRoot.addEventListener("click", (e) => {
   if (newItemBtn) { openForm(newItemBtn.dataset.projectId); return; }
   const notifyBtn = e.target.closest(".project-notify-btn");
   if (notifyBtn) { closeAllOptionMenus(); requestNotify(notifyBtn.dataset.projectId); return; }
+  const deployNotifyBtn = e.target.closest(".deploy-notify-btn");
+  if (deployNotifyBtn) { closeAllOptionMenus(); requestDeployNotify(deployNotifyBtn.dataset.projectId); return; }
   const archiveNavBtn = e.target.closest(".project-archive-btn");
   if (archiveNavBtn) { closeAllOptionMenus(); openArchivePage(archiveNavBtn.dataset.projectId); return; }
   const docsNavBtn = e.target.closest(".project-docs-btn");

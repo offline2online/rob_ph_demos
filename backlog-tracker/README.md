@@ -41,6 +41,17 @@ no-ops on its own if its secret(s) aren't set):
    function's only job is to tell it which project and what's currently
    sitting in that project's Backlog column.
 
+A second header button, **Notify Claude — Deploy**, closes the same gap at
+the *other* end of the pipeline: it appears only when a project has items
+Live on Feature Branch (already tested and confirmed, just waiting for
+someone to merge their PRs), and its own Cloud Function
+(`functions/notifyOnProjectReadyToDeploy`) fires the same Routine — but
+with fire text that explicitly says "these are done, don't re-implement
+them, just merge and mark published-live," since the Routine's own shared
+prompt only knows how to interpret a "N items in Backlog" request. See
+`REQUIREMENTS.md` → "Functional requirements — notification & automation"
+for the full shape of both functions.
+
 ## Isolation from menu-board-demo — by design, not just by folder
 
 This is a genuinely separate project, not a subfolder sharing infrastructure:
