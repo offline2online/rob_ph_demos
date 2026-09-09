@@ -142,6 +142,19 @@ function cardHTML(item) {
   const deploymentBadge = item.deploymentId
     ? `<span class="deployment-badge" title="Ships together with the rest of this deployment">&#128640; ${escapeHTML(deploymentLabel(item.deploymentId))}</span>`
     : "";
+  // Only relevant once a ticket is actually up on a feature branch — a
+  // raw.githack.com link (or a PR URL when the page can't be raw.githack'd
+  // directly) to click through and confirm before hitting "Confirm live on
+  // branch". Set/changed via a plain prompt() rather than a full modal —
+  // this is a one-off paste, not a form worth its own dialog.
+  const testLinkHTML = isTesting
+    ? (item.previewUrl
+        ? `<div class="test-link-row">
+            <a href="${escapeHTML(item.previewUrl)}" target="_blank" rel="noopener" class="test-link-btn">Test this &rarr;</a>
+            <button type="button" class="icon-btn test-link-edit-btn" data-id="${item.id}" title="Change test link">&#9998;</button>
+          </div>`
+        : `<button type="button" class="btn-ghost test-link-set-btn" data-id="${item.id}">Set test link</button>`)
+    : "";
 
   return `
     <article class="card" data-id="${item.id}">
@@ -156,6 +169,7 @@ function cardHTML(item) {
         <span class="card-cat">${escapeHTML(item.category || "Uncategorised")}</span>
         <div class="card-move">${archiveBtn}${deleteBtn}</div>
       </div>
+      ${testLinkHTML}
       ${approveBtn}${mergeBtn}
     </article>`;
 }
@@ -432,6 +446,11 @@ async function restoreItem(id) {
   });
 }
 
+async function setItemPreviewUrl(id, url) {
+  const trimmed = (url || "").trim();
+  await updateDoc(doc(db, "backlogItems", id), { previewUrl: trimmed || null, updatedAt: serverTimestamp() });
+}
+
 async function addProject(name) {
   const ref = await addDoc(projectsRef, { name: name.trim(), createdAt: serverTimestamp() });
   return ref.id;
@@ -615,6 +634,14 @@ projectsRoot.addEventListener("click", (e) => {
   if (delBtn) { removeItem(delBtn.dataset.id); return; }
   const archBtn = e.target.closest(".archive-btn");
   if (archBtn) { archiveItem(archBtn.dataset.id); return; }
+  const testLinkBtn = e.target.closest(".test-link-set-btn, .test-link-edit-btn");
+  if (testLinkBtn) {
+    const id = testLinkBtn.dataset.id;
+    const current = items.find((i) => i.id === id)?.previewUrl || "";
+    const url = prompt("Preview/test URL for this ticket (e.g. a raw.githack.com link, or the PR URL):", current);
+    if (url !== null) setItemPreviewUrl(id, url);
+    return;
+  }
   const collapseBtn = e.target.closest(".project-collapse-btn");
   if (collapseBtn) { toggleProjectCollapsed(collapseBtn.dataset.projectId); return; }
   const renameBtn = e.target.closest(".project-rename-btn");
