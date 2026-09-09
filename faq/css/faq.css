@@ -117,10 +117,19 @@ a:hover { text-decoration: underline; }
   color: var(--primary); background: var(--primary-tint); border-radius: 9999px; padding: 3px 10px; margin-bottom: 14px;
 }
 .article-body { font-size: 15px; line-height: 1.75; color: var(--text); margin-top: 20px; }
-.article-body h3 { font-size: 16.5px; font-weight: 700; margin: 24px 0 8px; }
+.article-body h1, .article-body h2, .article-body h3, .article-body h4, .article-body h5, .article-body h6 { font-weight: 700; margin: 24px 0 8px; }
+.article-body h3 { font-size: 16.5px; }
 .article-body p { margin: 0 0 14px; }
-.article-body ul { margin: 0 0 14px; padding-left: 22px; }
+.article-body ul, .article-body ol { margin: 0 0 14px; padding-left: 22px; }
 .article-body li { margin-bottom: 6px; }
+.article-body img { max-width: 100%; height: auto; border-radius: 6px; margin: 0 0 14px; }
+.article-body iframe { max-width: 100%; aspect-ratio: 16 / 9; width: 100%; height: auto; border: none; border-radius: 6px; margin: 0 0 14px; }
+.article-body blockquote { margin: 0 0 14px; padding: 4px 16px; border-left: 3px solid var(--border, #d9d9d9); color: var(--text-muted, #666); }
+.article-body a { color: inherit; text-decoration: underline; }
+/* Quill's own alignment/indent classes — rendered content keeps them as-is */
+.article-body .ql-align-center { text-align: center; }
+.article-body .ql-align-right { text-align: right; }
+.article-body .ql-align-justify { text-align: justify; }
 .related-block { margin-top: 40px; padding-top: 24px; border-top: 1px solid var(--divider); }
 .related-block h4 { margin: 0 0 10px; font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: var(--text-muted); }
 

@@ -205,6 +205,10 @@ faqArticles/{id}: {
 }
 ```
 Consumer-facing content for the FAQ / Help Center — see that section below.
+`bodyMd` (the field name predates this and is kept for compatibility) now
+holds one of two shapes, told apart by a leading `<`: real HTML from the
+FAQ admin's rich-text (Quill) editor, or legacy markdown-ish text from
+before that editor existed — see "Rich-text article body" below.
 
 ### Firestore rules
 
@@ -541,9 +545,40 @@ Two surfaces sharing this same Firestore project:
 - **Admin**: this app's own **FAQ Center** page (global, not per-project —
   an article can link to any one project or none). Manages categories
   (name, Material Symbols icon, description, display order) and articles
-  (title, slug, category, optional linked project, summary, a small
-  markdown-ish body with live preview, search keywords, draft/published
-  status, `needsReview`).
+  (title, slug, category, optional linked project, summary, a rich-text
+  body — see "Rich-text article body" below, search keywords,
+  draft/published status, `needsReview`).
+- **Rich-text article body**: the article editor's body field is a real
+  rich-text editor (Quill, loaded via CDN — headers, bold/italic/
+  underline/strike, alignment, ordered/bullet lists, link, image, video,
+  clear formatting), not a plain textarea. An "Edit" / "View live" toggle
+  replaces the old always-visible side-by-side textarea + preview — "View
+  live" renders through the exact same `renderFaqBodyMd()`/CSS the public
+  site uses, since Quill's own editing chrome doesn't look like the real
+  article page. **Images insert via a URL prompt, not a file picker** —
+  Quill's default embeds a file as base64, which can push a single article
+  well past Firestore's 1MiB document limit.
+  - **Format migration is lazy, not a one-time script.** `bodyMd` (kept as
+    the field name for compatibility) holds either real HTML (new) or
+    legacy markdown-ish text (everything written before this editor
+    existed) — told apart by a leading `<`. Opening a legacy article runs
+    it through the old markdown-ish renderer once to load it into Quill as
+    proper rich text; saving from there writes real HTML back, upgrading
+    that one article in place. Nothing forces every existing article
+    through this at once.
+  - **Sanitized at render time, not trusted at write time.** `bodyMd` is
+    real HTML now, and this app's `faqArticles` Firestore rules are wide
+    open (see "Firestore rules" above) — a rewritten field can't assume it
+    only ever came from this editor's toolbar. Both the admin's own "View
+    live" preview and the public site's article page run any HTML-shaped
+    body through DOMPurify (CDN) before it ever touches `innerHTML`; if
+    DOMPurify fails to load, the fallback is to escape the whole thing
+    (inert, visible-but-not-live) rather than inject it unsanitized. The
+    one intentional gap: DOMPurify's default tag allowlist excludes
+    `<iframe>` (needed for Quill's video embeds), added back via
+    `ADD_TAGS` — its `src` isn't restricted to a known-safe host list, an
+    accepted prototype-stage tradeoff, same posture as this repo's open
+    Firestore rules elsewhere.
 - **Why `projectId` on an article**: the categorization-by-project hook
   that the auto-review automation (above) actually uses — an article
   documents a specific project's feature, so that project's own shipped

@@ -1961,9 +1961,24 @@ function slugify(s) {
 // Mirrors faq/js/faq-data.js's renderBodyMd exactly (kept as two small
 // copies rather than a shared import, same isolation-by-design choice
 // this repo already makes between backlog-tracker and menu-board-demo —
-// the admin preview and the public render must produce the same output,
-// so if one changes, change the other too).
-function renderFaqBodyMd(md) {
+// the admin's "View live" preview and the public render must produce the
+// same output, so if one changes, change the other too). Article bodies
+// come in one of two shapes, told apart by a leading "<": legacy
+// markdown-ish text (from before this editor existed) or real HTML from
+// the rich-text (Quill) editor below. Real HTML is sanitized with
+// DOMPurify before ever touching innerHTML — Firestore's write rules on
+// faqArticles are wide open, so this field is never trusted just because
+// it "should" have come through this editor.
+function renderFaqBodyMd(content) {
+  const trimmed = (content || "").trim();
+  if (trimmed.startsWith("<")) {
+    if (!window.DOMPurify) return escapeHTML(trimmed);
+    return window.DOMPurify.sanitize(trimmed, { ADD_TAGS: ["iframe"], ADD_ATTR: ["allowfullscreen", "frameborder"] });
+  }
+  return renderLegacyFaqMarkdown(content);
+}
+
+function renderLegacyFaqMarkdown(md) {
   const lines = escapeHTML(md || "").split(/\r?\n/);
   let html = "";
   let inList = false;
@@ -2204,10 +2219,63 @@ const faTitleInput = document.getElementById("fa-title-input");
 const faSlugInput = document.getElementById("fa-slug-input");
 const faSummaryInput = document.getElementById("fa-summary-input");
 const faKeywordsInput = document.getElementById("fa-keywords-input");
-const faBodyInput = document.getElementById("fa-body-input");
-const faPreview = document.getElementById("fa-preview");
+const faBodyViewer = document.getElementById("fa-body-viewer");
 const faNeedsReview = document.getElementById("fa-needs-review");
 let faStatus = "draft";
+
+// Rich-text body editor (Quill, loaded via CDN — see index.html <head>).
+// One instance bound to #fa-body-editor for the life of the page, same as
+// every other modal's inputs; openFaqArticleModal() below resets its
+// content on each open rather than recreating it. Toolbar covers exactly
+// what the ticket asked for: headers, bold/italic/underline/strike,
+// alignment, ordered/bullet lists, link, image (a URL prompt rather than
+// letting Quill embed a base64 data URI, to stay well under Firestore's
+// 1MiB document limit), video, and a "clear formatting" button.
+const faQuill = new Quill("#fa-body-editor", {
+  theme: "snow",
+  modules: {
+    toolbar: {
+      container: [
+        [{ header: [1, 2, 3, false] }],
+        ["bold", "italic", "underline", "strike"],
+        [{ align: [] }],
+        [{ list: "ordered" }, { list: "bullet" }],
+        ["link", "image", "video"],
+        ["clean"],
+      ],
+      handlers: {
+        // Quill's default image button embeds the file as a base64 data
+        // URI — fine for a couple of small images, but a real photo or
+        // two pushes an article well past Firestore's 1MiB document
+        // limit. A plain URL prompt keeps images external (e.g. hosted
+        // wherever this repo's other assets already live) at zero storage
+        // cost here.
+        image() {
+          const url = prompt("Image URL:");
+          if (!url) return;
+          const range = faQuill.getSelection(true);
+          faQuill.insertEmbed(range.index, "image", url, "user");
+          faQuill.setSelection(range.index + 1);
+        },
+      },
+    },
+  },
+});
+
+// "Edit" shows the live Quill toolbar/editor; "View live" renders exactly
+// what the public FAQ site would (same renderFaqBodyMd()/CSS classes),
+// since Quill's own editing chrome doesn't look like the real article
+// page. Replaces the old always-visible side-by-side textarea + preview.
+function setFaBodyMode(mode) {
+  const isView = mode === "view";
+  document.getElementById("fa-body-mode-edit").classList.toggle("active", !isView);
+  document.getElementById("fa-body-mode-view").classList.toggle("active", isView);
+  document.getElementById("fa-body-editor-wrap").hidden = isView;
+  faBodyViewer.hidden = !isView;
+  if (isView) faBodyViewer.innerHTML = renderFaqBodyMd(faQuill.root.innerHTML);
+}
+document.getElementById("fa-body-mode-edit").addEventListener("click", () => setFaBodyMode("edit"));
+document.getElementById("fa-body-mode-view").addEventListener("click", () => setFaBodyMode("view"));
 
 function setFaStatusToggle(status) {
   faStatus = status;
@@ -2226,10 +2294,15 @@ function openFaqArticleModal(articleId) {
   faSlugInput.value = article ? article.slug || "" : "";
   faSummaryInput.value = article ? article.summary || "" : "";
   faKeywordsInput.value = article ? (article.keywords || []).join(", ") : "";
-  faBodyInput.value = article ? article.bodyMd || "" : "";
+  // Legacy (pre-editor) articles hold markdown-ish plain text, not HTML —
+  // run those through the existing renderer once on load so they open
+  // as properly formatted rich text; saving then upgrades that article to
+  // real HTML in place. A brand-new article, or one already saved from
+  // this editor, loads as-is (sanitized either way — see renderFaqBodyMd).
+  faQuill.root.innerHTML = article ? renderFaqBodyMd(article.bodyMd || "") : "";
   faNeedsReview.checked = article ? !!article.needsReview : false;
   setFaStatusToggle(article ? article.status : "draft");
-  faPreview.innerHTML = renderFaqBodyMd(faBodyInput.value);
+  setFaBodyMode("edit");
 
   if (faCategorySelect.options.length && faCategorySelect.options[0].value !== "") {
     faCategorySelect.value = article ? article.categoryId : faCategorySelect.options[0].value;
@@ -2268,9 +2341,6 @@ faTitleInput.addEventListener("input", () => {
   if (!faqSlugManuallyEdited) faSlugInput.value = slugify(faTitleInput.value);
 });
 faSlugInput.addEventListener("input", () => { faqSlugManuallyEdited = true; });
-faBodyInput.addEventListener("input", () => {
-  faPreview.innerHTML = renderFaqBodyMd(faBodyInput.value);
-});
 
 document.getElementById("fa-submit").addEventListener("click", async () => {
   const title = faTitleInput.value.trim();
@@ -2284,7 +2354,7 @@ document.getElementById("fa-submit").addEventListener("click", async () => {
     title,
     slug: faSlugInput.value.trim() || slugify(title),
     summary: faSummaryInput.value.trim(),
-    bodyMd: faBodyInput.value,
+    bodyMd: faQuill.root.innerHTML,
     keywords: faKeywordsInput.value.split(",").map((k) => k.trim()).filter(Boolean),
     status: faStatus,
     needsReview: faNeedsReview.checked,
