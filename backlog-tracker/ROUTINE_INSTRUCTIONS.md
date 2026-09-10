@@ -130,6 +130,23 @@ rest of this file.
    as you would if you could push it. When you're done and it's actually
    correct, read back the FULL final content of every file you created or
    changed (not a diff).
+
+   **Immediately before you PATCH `patchFiles` in step 4, re-`git pull`
+   and diff each touched file against the current tip of `main` one more
+   time** — don't rely on the copy you read at the start of this
+   investigation. `patchFiles` is a full-file overwrite, applied by
+   `run-backlog-automation.js` against whatever `main` looks like at the
+   moment the scheduled job actually runs (which can be up to ~10 minutes
+   after you set `patchReady`, longer if other items are queued ahead of
+   yours). If an unrelated change lands on `main` for the same shared file
+   (`app.js` and `index.html` are the two nearly every item touches) in
+   that window, and your `patchFiles` content was built from an earlier,
+   now-stale copy, applying it silently **reverts that unrelated change**
+   — no conflict, no error, no PR review would obviously catch it, since
+   the diff just looks like "removed someone else's recent lines." If your
+   fix and a plausible concurrent change could plausibly touch the same
+   region of the same file, say so explicitly in your note as a risk, so a
+   human reviewing the resulting PR knows to check for it.
 4. Update the item's Firestore doc in one PATCH: set the corrected `title`
    (step 1), correct `category` if it's wrong (see `CATEGORIES` in
    `backlog-tracker/public/js/app.js` for the fixed list), bump
@@ -227,26 +244,62 @@ land together.
 
 ## The "Notify Claude — Deploy" flow (a differently-shaped fire)
 
+**This is the stage that actually merges code to `main` — get the PR match
+wrong here and you merge the wrong thing to production, not just leave
+debris like a wrong match in the Backlog flow would.** Treat every step
+below as required, not a suggestion to shortcut once you've found
+something that looks plausible.
+
 A fire whose `text` starts with `=== DEPLOY REQUEST for "<project>" ===`
 is the *other* end of the pipeline: these items are already implemented,
 tested, and confirmed "Live on Feature Branch" (`ready-to-publish`). Do
 NOT investigate, re-implement, or re-test them. For each item:
 
-1. Find its pull request in `offline2online/rob_ph_demos` (check the
-   item's own notes for a branch/PR reference, or search open PRs
-   referencing its title) using GitHub's public, unauthenticated REST API
-   (e.g. `curl https://api.github.com/repos/offline2online/rob_ph_demos/pulls?state=open`)
-   — no credential needed for reads on a public repo.
-2. Check its CI status and mergeability the same read-only way (`GET
-   /repos/offline2online/rob_ph_demos/pulls/{number}` — look at
-   `mergeable` and the associated check runs/statuses).
-3. If it's green and mergeable, PATCH its backlogItems doc: `mergeReady
-   -> true` (boolean), `mergePrNumber -> <the PR number, as a number>`,
-   `updatedAt -> now`. The same scheduled `backlog-automation.yml` job
-   picks this up, actually merges the PR, and flips `status` to
-   `"published-live"` once it succeeds. Do not set `status` to
-   `"published-live"` yourself — you have no way to confirm the merge
-   actually happened.
+1. **Find its pull request by exact id match, not by title.** Every PR
+   this pipeline opens carries the literal line `Backlog item: <id>` in
+   its body (see `patchPrBody` in the Backlog flow above, and
+   `run-backlog-automation.js`'s own `findExistingPrForItem`, which uses
+   this same match to guard against duplicates) — search for that exact
+   string, not a fuzzy title match, which can and will collide across
+   items with similar-sounding requests (e.g. the batch of column/button
+   **rename** tickets from one sweep all have near-identical titles):
+   `curl -sS "https://api.github.com/search/issues?q=repo:offline2online/rob_ph_demos+type:pr+%22Backlog+item%3A+<ITEM_ID>%22+in:body"`
+   Cross-check against the item's own `notes` for a previously-recorded PR
+   link/number too, and confirm they agree. **If you cannot find an exact
+   `Backlog item: <id>` match — not a "close enough" title — stop and
+   leave this item alone with a note saying so; do not fall back to
+   guessing from a title search.** A wrong match here isn't a stray PR
+   someone can close later, it's the wrong code merged to `main`.
+2. Once you have the confirmed PR number, check its CI status and
+   mergeability read-only: `GET /repos/offline2online/rob_ph_demos/pulls/{number}`
+   for `mergeable`/`mergeable_state`, and
+   `GET /repos/offline2online/rob_ph_demos/commits/{sha}/status` (or
+   `/check-runs`) for the actual CI result on its head commit — don't rely
+   on `mergeable_state` alone, it can read `"unknown"`/`"blocked"` for
+   reasons unrelated to CI (GitHub simply hasn't computed it yet, or a
+   branch protection rule). Treat `mergeable: null` as "not yet computed,
+   not as red" — re-`GET` once more a few seconds later rather than
+   treating it as a failure. Only proceed on an explicit `mergeable: true`
+   with every check run in a genuinely passed/success state — a pending,
+   queued, or errored check is not "close enough."
+3. If it's green and mergeable **and step 1's exact id match held**, PATCH
+   its backlogItems doc: `mergeReady -> true` (boolean), `mergePrNumber ->
+   <the PR number, as a number>`, `updatedAt -> now`. The same scheduled
+   `backlog-automation.yml` job picks this up, actually merges the PR, and
+   (when the merge touches `backlog-tracker/`) explicitly triggers the
+   Firebase deploy workflow itself — you don't need to do anything further
+   for that part. It flips `status` to `"published-live"` once the merge
+   succeeds. Do not set `status` to `"published-live"` yourself — you have
+   no way to confirm the merge actually happened, and the same rule from
+   the Backlog flow above applies here too: never set `mergeReady: true`
+   with a `mergePrNumber` you haven't fully confirmed via step 1 — a wrong
+   or placeholder PR number picked up by the next scheduled run merges
+   whatever that number actually points to.
+4. This is asynchronous, same as the Backlog flow: your session ends
+   before the scheduled job's next run, so you won't see the merge or the
+   resulting deploy complete yourself. That's expected — say what you set
+   `mergeReady` on in your final report (see "When done" below), not what
+   you watched happen.
 
 If a PR can't be found, or its CI is red, or it's not mergeable, leave its
 status as `ready-to-publish` (and `mergeReady` unset/false) and add a note
