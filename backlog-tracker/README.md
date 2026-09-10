@@ -137,7 +137,7 @@ version of what that file currently specifies:
   below actually gets a PR open.
 
 `.github/workflows/backlog-automation.yml` — a normal scheduled GitHub
-Actions job (every 10 minutes, plus manual `workflow_dispatch`), running
+Actions job (every 2 minutes, plus manual `workflow_dispatch`), running
 on a trusted GitHub-hosted runner with its own per-run `GITHUB_TOKEN` —
 picks up every `patchReady` item via
 `backlog-tracker/scripts/run-backlog-automation.js`: creates a branch off

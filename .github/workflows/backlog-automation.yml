@@ -12,10 +12,19 @@ name: Backlog automation (apply patches / merge approved PRs)
 # GITHUB_TOKEN, does the actual pushing/merging instead.
 on:
   schedule:
-    - cron: '*/10 * * * *'
+    # Every 2 minutes, not every 10 — a patch-ready item previously sat in
+    # Backlog for up to ~10 minutes (average ~5) after the Notify Claude
+    # Routine had already finished and set patchReady:true, purely waiting
+    # on this schedule to actually open its PR and flip status to
+    # ready-for-testing; the Routine session itself was never the slow
+    # part. This job is cheap when idle (a few seconds — "Found 0
+    # patch-ready item(s)" and done), and the concurrency group below
+    # already makes a busier run safe to overlap with the next tick, so
+    # there's no real cost to polling this often.
+    - cron: '*/2 * * * *'
   workflow_dispatch: {}
 
-# Without this, a run that takes longer than 10 minutes (several
+# Without this, a run that takes longer than 2 minutes (several
 # patch-ready items in one pass: git fetch/push, gh pr create, gh pr merge
 # each has real network latency) overlaps with the next scheduled run, and
 # both processes can query Firestore for the same patchReady/mergeReady
