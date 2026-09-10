@@ -266,10 +266,10 @@ see above). It opens a page with two blocks:
   Visitor Profile ↔ Experience Templates) — e.g. attribute/token contracts,
   shared data shapes, anything one project's changes could silently break
   for the other.
-- **New project** can optionally define one interface with an existing
-  project at creation time (a checkbox in the New Project modal) — skip it
-  and add interfaces later from the Docs page instead; neither path is more
-  "correct."
+- **Adding an interface** is done from a project's own Docs page (either
+  side) — the New Project modal itself no longer offers an inline "define
+  an interface with an existing project" option; it only ever creates a
+  plain project, keeping that one modal to a single quick step.
 
 When a project's `shared/interface-contract.md`-style repo file changes,
 mirror the change into its `interfaces` doc here (via the Docs page or a

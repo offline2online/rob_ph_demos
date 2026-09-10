@@ -60,6 +60,7 @@ Cloud Functions, own Hosting site, own IAM/billing; see
   readmeMd?: string,              // this project's primary tracking doc, shown atop its Docs page
   requirementsMd?: string,        // this file's own live counterpart
   notifyRequestedAt?: timestamp,  // bumped by the "Notify Claude" button
+  notifyItemIds?: string[] | null, // optional subset picked via the Backlog column's own checkboxes — see below
   deployNotifyRequestedAt?: timestamp, // bumped by "Notify Claude — Deploy" — see below
   routinePromptMd?: string,       // see "Per-project Routine instructions" below
   faqAutoFlagOnLive?: boolean,    // see "FAQ auto-review" below
@@ -104,6 +105,7 @@ deleted by hand).
   notes?: [{ author: "claude" | "viewer", text: string, at: timestamp }],
   deploymentId?: string,        // see "deployments/{deploymentId}" below
   previewUrl?: string,          // a Ready for Testing card's own "Test this" link
+  testSummary?: string,         // Ready for Testing card's primary text — see below
 
   // Notify Claude automation hand-off — see README.md "Notify Claude can't
   // push — how a fix actually reaches GitHub". A fired Routine session has
@@ -158,6 +160,19 @@ every member's actual `status`, not a separate stored flag.
 four for automation purposes (see "FAQ auto-review" below) — the other
 three can still be reverted or corrected without anything external having
 already happened.
+
+**Ready for Testing card text (`testSummary`)**: a card's raw `desc` — the
+original, often unpolished, typed-or-dictated request that started the
+ticket — is what a Backlog card shows, but it stops being the most useful
+thing to read once the ticket is actually implemented. Whoever opens the
+PR for a ticket (in practice, the Notify Claude Routine) is expected to
+also set `testSummary`: a clear, standalone description of what changed,
+plus concrete steps to test it. Once a card reaches Ready for Testing, the
+board shows `testSummary` (when set) as its primary text, with a "Show
+original request" toggle that expands `desc` underneath rather than
+discarding it. A card with no `testSummary` set (an older ticket, or one
+worked outside this flow) just keeps showing `desc` as before — this is a
+progressive enhancement, not a required field.
 
 ### `programs/{programId}`
 ```
@@ -299,6 +314,25 @@ REST API is reachable with a plain `curl`, no service account needed.
   as an actual subject line at a glance, on every item touched, even if the
   placeholder already looks reasonable — consistency across the board
   matters more than skipping an occasional no-op rewrite.
+- **Selecting a subset of Backlog for Notify Claude.** Every Backlog card
+  carries its own checkbox, and the Backlog column header carries a
+  "select all" checkbox for that project — purely viewer-local, in-memory
+  UI state (see `selectedNotifyIds` in `app.js`), not written to Firestore
+  until a Notify Claude click actually happens. With nothing checked,
+  Notify Claude behaves exactly as before (sends the whole column,
+  `notifyItemIds` cleared); with one or more checked, the button's own
+  label/count reflect the selection and the click narrows the fire to just
+  those items (see `notifyItemIds` above and "Notify Claude" below) — for
+  sending only some of what's typed/dictated so far without waiting to
+  clear the rest of the column out first. The selection clears itself once
+  the click is sent.
+- **Quick comment, separate from editing.** Each card carries a small
+  comment-bubble icon (bottom row, next to its category badge) that opens
+  a comment-only modal — just the same `notes`-array write the Edit item
+  modal's own Comments block already does (`addItemComment()`), without
+  pulling in title/desc/type/category editing at all. The pencil icon
+  (`edit-item-btn`) still opens the full Edit item modal, comments section
+  included, for anyone who wants both in one place.
 - **Mic dictation** requests microphone permission before starting Web
   Speech recognition, with specific, visible error states (blocked
   permission, no device, no browser support, network needed, silent
@@ -310,22 +344,30 @@ REST API is reachable with a plain `curl`, no service account needed.
   footer) is titled **"PH Agent Console"** — distinct from any one
   project's own name on the board (e.g. the "Backlog Tracker & FAQs"
   project this very document tracks). The topbar carries only the
-  hamburger menu button and the primary **+ New project** action; every
-  global (not per-project) destination lives in a left-hand nav drawer
-  opened by that hamburger (320px wide), which slides in over the board
-  and closes on a backdrop click, Escape, or picking an item:
-  - **PH Console** — the drawer's own "home" link, closing whichever
-    sub-page is currently open and returning to the board. Replaces the
-    "← Back to board" button every sub-page (Docs, Archive, Archived
-    projects, Deployments, the two FAQ pages below) used to carry
+  hamburger menu button, the "PH Agent Console" logo/title itself (a text
+  placeholder until a real logo image ships), and the primary
+  **+ New project** action; every global (not per-project) destination
+  lives in a left-hand nav drawer opened by that hamburger (320px wide),
+  which slides in over the board and closes on a backdrop click, Escape,
+  or picking an item. The logo/title is itself also clickable, from any
+  page in the app, to the same destination as the drawer's own home
+  link — a second, always-visible way back that doesn't require opening
+  the drawer first.
+  - **Agent console** (the drawer's own "home" link, first item) — closes
+    whichever sub-page is currently open and returns to the board.
+    Replaces the "← Back to board" button every sub-page (Docs, Archive,
+    Archived projects, Deployments, the two FAQ pages below) used to carry
     individually — the drawer itself stays reachable from any sub-page
     already (it's part of the fixed topbar, not `#projects-root`), so one
     shared way back covers all of them.
-  - **Archived projects**.
-  - **Settings** and **FAQ Management** — see "FAQ / Help Center" below;
-    this replaced a single combined "FAQ Center" destination.
-  This replaced three competing topbar buttons for the same reason the
-  per-project header below already collapsed to one primary CTA + a menu.
+  - **FAQ Management**, then **Settings** — see "FAQ / Help Center" below.
+  - **Archived projects** (last item).
+  All four sit flat, in that order, as plain sibling items — no section
+  heading grouping Settings/FAQ Management apart from the rest, since that
+  grouping previously read as "FAQ Management lives under Settings" even
+  though the two are independent destinations. This replaced three
+  competing topbar buttons for the same reason the per-project header
+  below already collapsed to one primary CTA + a menu.
 - **Header actions**, in order: **Notify Claude** (own button, shows the
   live Backlog count; not buried in a menu — see "Notify Claude" below),
   **Notify Claude — Deploy** (same gradient treatment, shown only when the
@@ -449,7 +491,13 @@ Three Cloud Functions, all in `backlog-tracker/functions/index.js`:
    every single new item; removed because it was noisy — one Slack message
    per line typed or dictated, long before a project was actually ready
    for anyone to look at. Fetches everything currently in that project's
-   Backlog column, **fires the Routine first, then posts to Slack** (order
+   Backlog column — or, when `projects/{id}.notifyItemIds` is a non-empty
+   array (set alongside `notifyRequestedAt` by the Backlog column's own
+   per-card checkboxes and its column-header "select all"), just that
+   hand-picked subset instead, re-checked against what's actually still in
+   Backlog at fire time. An unset/null/empty `notifyItemIds` means "send
+   everything", the original default — **fires the Routine first, then
+   posts to Slack** (order
    matters — reversed from an earlier version — so a resolved session link
    can ride along in the Slack message), each independently (either
    no-ops on its own if its secret(s) aren't set, never blocking the

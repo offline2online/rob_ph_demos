@@ -71,6 +71,19 @@ let programs = [];
 let projectDocs = [];
 let editingProjectId = null;
 
+// ── Backlog selection state (per project) — lets "Notify Claude" be
+// pointed at just a hand-picked subset of a project's Backlog column
+// instead of always sweeping everything in it. Purely a viewer-local,
+// in-memory selection (not persisted anywhere) — it only matters for the
+// next click of that project's own Notify Claude button, and clears once
+// that click is sent. Keyed by projectId (using GENERAL_PROJECT_ID for
+// items with no projectId, same fallback used everywhere else).
+const selectedNotifyIds = {};
+function getSelectedSet(pid) {
+  if (!selectedNotifyIds[pid]) selectedNotifyIds[pid] = new Set();
+  return selectedNotifyIds[pid];
+}
+
 // ── Docs page state (per-project requirements + interfaces with other
 // projects) — an interface is a maintained contract doc shared between
 // exactly two projects, stored once in "interfaces" and shown identically
@@ -118,7 +131,7 @@ function toggleProjectCollapsed(pid) {
 // so there's no stale-DOM-node bookkeeping to worry about; it just starts
 // closed again after any state change, which is the safe default anyway.
 function closeAllOptionMenus() {
-  document.querySelectorAll(".project-options-menu").forEach((m) => { m.hidden = true; });
+  document.querySelectorAll(".project-options-menu, .faq-article-options-menu").forEach((m) => { m.hidden = true; });
 }
 function toggleOptionMenu(btn) {
   const menu = btn.nextElementSibling;
@@ -127,7 +140,7 @@ function toggleOptionMenu(btn) {
   menu.hidden = !wasHidden;
 }
 document.addEventListener("click", (e) => {
-  if (!e.target.closest(".project-options")) closeAllOptionMenus();
+  if (!e.target.closest(".project-options, .faq-article-options")) closeAllOptionMenus();
 });
 
 // ── Left nav drawer (hamburger) — the header's own "Archived projects" and
@@ -161,13 +174,26 @@ function returnToBoard() {
   closeFaqArticlesPage();
 }
 document.getElementById("nav-ph-console-btn").addEventListener("click", () => { closeNavDrawer(); returnToBoard(); });
+// The logo/title in the top-left corner (a text placeholder until a real
+// logo image ships) is clickable from anywhere in the app, same
+// destination as the drawer's own "Agent console" home link above.
+document.getElementById("topbar-logo-btn").addEventListener("click", () => { closeNavDrawer(); returnToBoard(); });
 
 function cardHTML(item) {
   const idx = COL_KEYS.indexOf(item.status);
   const canLeft = idx > 0;
   const isTesting = item.status === "ready-for-testing";
   const isLiveBranch = item.status === "ready-to-publish";
-  const canDelete = item.status === "backlog";
+  const isBacklog = item.status === "backlog";
+  const canDelete = isBacklog;
+
+  // Only Backlog cards get a select checkbox — selecting cards elsewhere
+  // in the pipeline wouldn't mean anything, since Notify Claude only ever
+  // acts on the Backlog column.
+  const pid = item.projectId || GENERAL_PROJECT_ID;
+  const selectCb = isBacklog
+    ? `<input type="checkbox" class="card-select-cb" data-id="${item.id}" data-project-id="${escapeHTML(pid)}" title="Select for Notify Claude" ${getSelectedSet(pid).has(item.id) ? "checked" : ""}>`
+    : "";
 
   const leftBtn = canLeft
     ? `<button type="button" class="icon-btn move-btn" data-id="${item.id}" data-dir="-1" title="Move back">&larr;</button>`
@@ -223,17 +249,38 @@ function cardHTML(item) {
         : `<button type="button" class="btn-ghost test-link-set-btn" data-id="${item.id}">Set test link</button>`)
     : "";
 
+  // Once a ticket reaches Ready for Testing, the raw typed/dictated
+  // description that started it is no longer the most useful thing to
+  // read first — testSummary (set by whoever actually implemented and
+  // opened a PR for it, e.g. the Notify Claude Routine) is a clear,
+  // standalone description of what changed plus concrete steps to test it.
+  // The original request is still one click away, not deleted.
+  const hasTestSummary = isTesting && (item.testSummary || "").trim();
+  const descHTML = hasTestSummary
+    ? `<div class="card-desc-wrap">
+        <p class="card-desc">${escapeHTML(item.testSummary)}</p>
+        <button type="button" class="card-desc-toggle-btn" data-id="${item.id}">Show original request</button>
+        <p class="card-desc card-desc-original" hidden>${escapeHTML(item.desc)}</p>
+      </div>`
+    : `<p class="card-desc">${escapeHTML(item.desc)}</p>`;
+
   return `
     <article class="card" data-id="${item.id}">
       <div class="card-top">
-        <span class="badge badge-${item.type}">${item.type === "bug" ? "Bug" : "Feature"}</span>
+        <div class="card-top-left">
+          ${selectCb}
+          <span class="badge badge-${item.type}">${item.type === "bug" ? "Bug" : "Feature"}</span>
+        </div>
         <div class="card-move">${editBtn}${leftBtn}${rightBtn}</div>
       </div>
       <h3 class="card-title">${escapeHTML(item.title)}</h3>
-      <p class="card-desc">${escapeHTML(item.desc)}</p>
+      ${descHTML}
       ${deploymentBadge}
       <div class="card-footer">
-        <span class="card-cat">${escapeHTML(item.category || "Uncategorised")}</span>
+        <div class="card-footer-left">
+          <span class="card-cat">${escapeHTML(item.category || "Uncategorised")}</span>
+          <button type="button" class="icon-btn quick-comment-btn" data-id="${item.id}" title="Add a quick comment">&#128172;</button>
+        </div>
         <div class="card-move">${archiveBtn}${deleteBtn}</div>
       </div>
       ${testLinkHTML}
@@ -329,10 +376,17 @@ function notifyClaudeButtonHTML(project) {
   if (!inProgress) {
     const backlogCount = backlogCountForProject(pid);
     if (!backlogCount) return "";
+    // A non-empty selection (see the Backlog column's own checkboxes)
+    // narrows this click to just those items instead of the whole column —
+    // reflected here so it's clear before clicking what's about to be sent.
+    const selectedCount = items.filter((i) =>
+      (i.projectId || GENERAL_PROJECT_ID) === pid && i.status === "backlog" && getSelectedSet(pid).has(i.id)
+    ).length;
+    const label = selectedCount ? `Notify Claude — ${selectedCount} selected` : "Notify Claude";
     return `<button type="button" class="notify-claude-btn project-notify-btn" data-project-id="${escapeHTML(pid)}">
       <span class="material-symbols-outlined notify-claude-icon">auto_awesome</span>
-      <span class="notify-claude-label">Notify Claude</span>
-      <span class="notify-claude-count-pill">${backlogCount}</span>
+      <span class="notify-claude-label">${label}</span>
+      <span class="notify-claude-count-pill">${selectedCount || backlogCount}</span>
     </button>`;
   }
 
@@ -391,8 +445,19 @@ function projectSectionHTML(project) {
 
   const board = `<div class="board">` + COLUMNS.map((col) => {
     const listItems = cardsByCol[col.key];
+    // "Select all" only makes sense in Backlog — it's the only column
+    // Notify Claude ever acts on (see requestNotify/notifyItemIds below).
+    const selectAllHTML = col.key === "backlog" && listItems.length
+      ? (() => {
+          const sel = getSelectedSet(project.id);
+          const allSelected = listItems.every((i) => sel.has(i.id));
+          return `<label class="col-select-all" title="Select all">
+            <input type="checkbox" class="col-select-all-cb" data-project-id="${escapeHTML(project.id)}" ${allSelected ? "checked" : ""}>
+          </label>`;
+        })()
+      : "";
     return `<section class="column" data-col="${col.key}">
-      <div class="col-head col-head-${col.headClass}"><span>${col.label}</span><span class="col-count">${listItems.length}</span></div>
+      <div class="col-head col-head-${col.headClass}"><span>${selectAllHTML}${col.label}</span><span class="col-count">${listItems.length}</span></div>
       <div class="col-list" id="${colListId(project.id, col.key)}" data-col="${col.key}" data-project-id="${escapeHTML(project.id)}">
         ${listItems.length ? listItems.map(cardHTML).join("") : '<div class="empty-hint">No items yet</div>'}
       </div>
@@ -681,7 +746,25 @@ async function requestNotify(pid) {
     alert("Nothing in Backlog for this project yet — add an item first.");
     return;
   }
-  await setDoc(doc(db, "projects", pid), { notifyRequestedAt: serverTimestamp() }, { merge: true });
+  // A non-empty selection (this project's own Backlog checkboxes) narrows
+  // the fire to just those items — notifyItemIds — instead of everything
+  // currently in Backlog. Cross-check against the live backlog list rather
+  // than trusting the selection set as-is, in case a selected card moved
+  // or was deleted since it was checked. An empty selection means "send
+  // everything", the original default behavior — notifyItemIds is cleared
+  // (not just left unset) so a stale array from an earlier partial send
+  // can never silently narrow a later full sweep.
+  const backlogIds = new Set(
+    items.filter((i) => (i.projectId || GENERAL_PROJECT_ID) === pid && i.status === "backlog").map((i) => i.id)
+  );
+  const selected = [...getSelectedSet(pid)].filter((id) => backlogIds.has(id));
+
+  await setDoc(doc(db, "projects", pid), {
+    notifyRequestedAt: serverTimestamp(),
+    notifyItemIds: selected.length ? selected : null,
+  }, { merge: true });
+
+  getSelectedSet(pid).clear();
 }
 
 // Same idea as requestNotify() above, but for the "Live on Feature Branch"
@@ -916,6 +999,25 @@ async function commitProjectNameEdit(pid, value) {
 // parent instead of individual cards/buttons. ──────────────────────────
 const projectsRoot = document.getElementById("projects-root");
 projectsRoot.addEventListener("click", (e) => {
+  const selectCb = e.target.closest(".card-select-cb");
+  if (selectCb) {
+    const sel = getSelectedSet(selectCb.dataset.projectId);
+    if (selectCb.checked) sel.add(selectCb.dataset.id); else sel.delete(selectCb.dataset.id);
+    render();
+    return;
+  }
+  const selectAllCb = e.target.closest(".col-select-all-cb");
+  if (selectAllCb) {
+    const pid = selectAllCb.dataset.projectId;
+    const sel = getSelectedSet(pid);
+    const backlogIds = items
+      .filter((i) => (i.projectId || GENERAL_PROJECT_ID) === pid && i.status === "backlog")
+      .map((i) => i.id);
+    if (selectAllCb.checked) backlogIds.forEach((id) => sel.add(id));
+    else backlogIds.forEach((id) => sel.delete(id));
+    render();
+    return;
+  }
   const moveBtn = e.target.closest(".move-btn");
   if (moveBtn) { moveItem(moveBtn.dataset.id, parseInt(moveBtn.dataset.dir, 10)); return; }
   const delBtn = e.target.closest(".delete-btn");
@@ -924,6 +1026,17 @@ projectsRoot.addEventListener("click", (e) => {
   if (archBtn) { archiveItem(archBtn.dataset.id); return; }
   const editItemBtn = e.target.closest(".edit-item-btn");
   if (editItemBtn) { openEditItemModal(editItemBtn.dataset.id); return; }
+  const quickCommentBtn = e.target.closest(".quick-comment-btn");
+  if (quickCommentBtn) { openQuickCommentModal(quickCommentBtn.dataset.id); return; }
+  const descToggleBtn = e.target.closest(".card-desc-toggle-btn");
+  if (descToggleBtn) {
+    const wrap = descToggleBtn.closest(".card-desc-wrap");
+    const original = wrap.querySelector(".card-desc-original");
+    const wasHidden = original.hidden;
+    original.hidden = !wasHidden;
+    descToggleBtn.textContent = wasHidden ? "Hide original request" : "Show original request";
+    return;
+  }
   const testLinkBtn = e.target.closest(".test-link-set-btn, .test-link-edit-btn");
   if (testLinkBtn) {
     const id = testLinkBtn.dataset.id;
@@ -1070,6 +1183,38 @@ document.getElementById("ei-comment-submit").addEventListener("click", () => {
   eiCommentInput.value = "";
 });
 
+// ── Quick comment modal — comment-only, reached from the card's own small
+// icon (bottom row, next to the category badge) instead of the pencil icon
+// that opens the full Edit item modal above. Same addItemComment() write,
+// just without pulling in title/desc/type/category editing at all.
+let quickCommentItemId = null;
+const qcBackdrop = document.getElementById("qc-backdrop");
+const qcCommentInput = document.getElementById("qc-comment-input");
+
+function openQuickCommentModal(id) {
+  quickCommentItemId = id;
+  qcCommentInput.value = "";
+  qcBackdrop.hidden = false;
+  qcCommentInput.focus();
+}
+function closeQuickCommentModal() {
+  qcBackdrop.hidden = true;
+  quickCommentItemId = null;
+}
+document.getElementById("qc-close").addEventListener("click", closeQuickCommentModal);
+document.getElementById("qc-cancel").addEventListener("click", closeQuickCommentModal);
+qcBackdrop.addEventListener("click", (e) => { if (e.target === qcBackdrop) closeQuickCommentModal(); });
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && !qcBackdrop.hidden) closeQuickCommentModal();
+});
+document.getElementById("qc-submit").addEventListener("click", () => {
+  if (!quickCommentItemId) return;
+  const text = qcCommentInput.value;
+  if (!text.trim()) return;
+  addItemComment(quickCommentItemId, text);
+  closeQuickCommentModal();
+});
+
 // ── New Item modal ─────────────────────────────────────────────────────
 // Title and category aren't asked for here — just a single description
 // (typed or dictated). A short title is generated from it and the area
@@ -1132,14 +1277,13 @@ document.getElementById("ni-submit").addEventListener("click", async () => {
 });
 
 // ── New Project modal ───────────────────────────────────────────────────
-// Optionally defines one interface with an existing project in the same
-// step — the "when adding a new project, also define its interfaces with
-// other projects" path. Fully optional; skipping it just creates a plain
-// project, same as before.
+// Defining an interface with another project used to be an option in this
+// same modal (a checkbox that expanded a whole extra sub-form) — removed
+// as an unnecessary step here: a project's interfaces are just as easily
+// added later, one at a time, from its own Docs page, and Claude can wire
+// one up on its own once both projects actually exist. This modal now only
+// ever creates a plain project.
 const npBackdrop = document.getElementById("np-backdrop");
-const npIfEnable = document.getElementById("np-if-enable");
-const npIfFields = document.getElementById("np-if-fields");
-const npIfProject = document.getElementById("np-if-project");
 const npProgramSelect = document.getElementById("np-program-select");
 
 // Shared by the New Project modal and the Docs page: handles the trailing
@@ -1167,17 +1311,10 @@ function populateProjectSelect(selectEl, excludeId) {
 function openProjectModal() {
   npBackdrop.hidden = false;
   document.getElementById("np-name-input").value = "";
-  npIfEnable.checked = false;
-  npIfFields.hidden = true;
-  document.getElementById("np-if-name").value = "";
-  document.getElementById("np-if-content").value = "";
-  populateProjectSelect(npIfProject, null);
   populateProgramSelect(npProgramSelect, "");
   document.getElementById("np-name-input").focus();
 }
 function closeProjectModal() { npBackdrop.hidden = true; }
-
-npIfEnable.addEventListener("change", () => { npIfFields.hidden = !npIfEnable.checked; });
 
 document.getElementById("new-project-btn").addEventListener("click", openProjectModal);
 document.getElementById("np-cancel").addEventListener("click", closeProjectModal);
@@ -1191,16 +1328,7 @@ document.getElementById("np-submit").addEventListener("click", async () => {
   const name = nameEl.value.trim();
   if (!name) { nameEl.focus(); return; }
   const programId = npProgramSelect.value !== "__new__" ? npProgramSelect.value : "";
-  const newId = await addProject(name, programId);
-
-  if (npIfEnable.checked) {
-    const otherId = npIfProject.value;
-    const ifName = document.getElementById("np-if-name").value.trim();
-    const ifContent = document.getElementById("np-if-content").value.trim();
-    if (otherId && ifName) {
-      await addInterface(ifName, [newId, otherId], ifContent);
-    }
-  }
+  await addProject(name, programId);
   closeProjectModal();
 });
 
@@ -2244,19 +2372,31 @@ function renderFaqArticleList() {
   emptyEl.hidden = true;
   listEl.innerHTML = list.map((a) => {
     const liveUrl = `${FAQ_PUBLIC_BASE_URL}article.html?id=${encodeURIComponent(a.id)}`;
+    // Clicking the title itself opens the edit modal (see the delegated
+    // click handler below) — there's no separate "Edit" button in the
+    // primary row anymore. Everything else that used to sit as its own
+    // button in the row now lives in one "⋮" options menu, same
+    // show/hide-one-at-a-time pattern as the per-project options menu
+    // (toggleOptionMenu/closeAllOptionMenus, extended below to also close
+    // an open .faq-article-options-menu).
     return `
       <div class="faq-article-row" data-id="${escapeHTML(a.id)}">
         <div class="faq-article-row-main">
           <span class="badge badge-status-${a.status}">${a.status === "published" ? "Published" : "Draft"}</span>
           ${a.needsReview ? '<span class="badge badge-needs-review">Needs review</span>' : ""}
-          <h4>${escapeHTML(a.title)}</h4>
+          <h4 class="faq-article-title" role="button" tabindex="0" title="Edit article">${escapeHTML(a.title)}</h4>
           <p class="faq-article-row-meta">${escapeHTML(faqCategoryName(a.categoryId))}${a.projectId ? " &middot; " + escapeHTML(projectName(a.projectId)) : ""}</p>
         </div>
         <div class="faq-article-row-actions">
-          ${a.status === "published" ? `<a href="${liveUrl}" target="_blank" rel="noopener">View live &#8599;</a>` : ""}
-          <button type="button" class="icon-btn faq-article-edit" title="Edit">Edit</button>
-          <button type="button" class="icon-btn faq-article-toggle-status" title="Toggle published state">${a.status === "published" ? "Unpublish" : "Publish"}</button>
-          <button type="button" class="icon-btn faq-article-toggle-review" title="Toggle needs-review flag">${a.needsReview ? "Clear flag" : "Flag"}</button>
+          <div class="faq-article-options">
+            <button type="button" class="icon-btn faq-article-options-btn" aria-haspopup="true" aria-label="More options for this article">&#8942;</button>
+            <div class="faq-article-options-menu" hidden>
+              <button type="button" class="options-menu-item faq-article-edit">Edit article</button>
+              <button type="button" class="options-menu-item faq-article-toggle-status">${a.status === "published" ? "Unpublish article" : "Publish article"}</button>
+              <button type="button" class="options-menu-item faq-article-toggle-review">${a.needsReview ? "Clear flag" : "Flag"}</button>
+              ${a.status === "published" ? `<a class="options-menu-item" href="${liveUrl}" target="_blank" rel="noopener">View live &#8599;</a>` : ""}
+            </div>
+          </div>
           <button type="button" class="icon-btn faq-article-delete" title="Delete">&#128465;</button>
         </div>
       </div>`;
@@ -2473,10 +2613,24 @@ document.getElementById("faq-article-list").addEventListener("click", (e) => {
   const row = e.target.closest(".faq-article-row");
   if (!row) return;
   const id = row.dataset.id;
-  if (e.target.closest(".faq-article-edit")) { openFaqArticleModal(id); return; }
-  if (e.target.closest(".faq-article-toggle-status")) { toggleFaqArticleStatus(id); return; }
-  if (e.target.closest(".faq-article-toggle-review")) { toggleFaqArticleReview(id); return; }
+  const optionsBtn = e.target.closest(".faq-article-options-btn");
+  if (optionsBtn) { toggleOptionMenu(optionsBtn); return; }
+  if (e.target.closest(".faq-article-title") || e.target.closest(".faq-article-edit")) {
+    closeAllOptionMenus();
+    openFaqArticleModal(id);
+    return;
+  }
+  if (e.target.closest(".faq-article-toggle-status")) { closeAllOptionMenus(); toggleFaqArticleStatus(id); return; }
+  if (e.target.closest(".faq-article-toggle-review")) { closeAllOptionMenus(); toggleFaqArticleReview(id); return; }
   if (e.target.closest(".faq-article-delete")) {
     if (confirm("Delete this article? This can't be undone.")) deleteFaqArticle(id);
   }
+});
+document.getElementById("faq-article-list").addEventListener("keydown", (e) => {
+  if (e.key !== "Enter" && e.key !== " ") return;
+  const title = e.target.closest(".faq-article-title");
+  if (!title) return;
+  e.preventDefault();
+  const row = title.closest(".faq-article-row");
+  if (row) { closeAllOptionMenus(); openFaqArticleModal(row.dataset.id); }
 });

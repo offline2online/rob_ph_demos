@@ -16,7 +16,7 @@
       <div class="topbar-left">
         <button type="button" class="icon-btn hamburger-btn" id="nav-open-btn" aria-haspopup="true" aria-label="Open menu">&#9776;</button>
         <div>
-          <h1>PH Agent Console</h1>
+          <h1><button type="button" class="logo-link" id="topbar-logo-btn" title="Back to Agent Console home">PH Agent Console</button></h1>
           <p class="subtitle"><span id="total-summary">0 items</span> &middot; click a project's Notify Claude when its Backlog is ready to be actioned</p>
         </div>
       </div>
@@ -31,11 +31,10 @@
         <span class="nav-drawer-title">Menu</span>
         <button type="button" class="modal-close" id="nav-close-btn" aria-label="Close menu">&times;</button>
       </div>
-      <button type="button" class="nav-drawer-item nav-drawer-item-home" id="nav-ph-console-btn">PH Console</button>
-      <button type="button" class="nav-drawer-item" id="archived-projects-btn">Archived projects</button>
-      <div class="nav-drawer-section">FAQ / Help Center</div>
-      <button type="button" class="nav-drawer-item" id="faq-settings-btn">Settings</button>
+      <button type="button" class="nav-drawer-item nav-drawer-item-home" id="nav-ph-console-btn">Agent console</button>
       <button type="button" class="nav-drawer-item" id="faq-articles-btn">FAQ Management</button>
+      <button type="button" class="nav-drawer-item" id="faq-settings-btn">Settings</button>
+      <button type="button" class="nav-drawer-item" id="archived-projects-btn">Archived projects</button>
     </nav>
 
     <div class="modal-backdrop" id="ni-backdrop" hidden>
@@ -66,38 +65,22 @@
     </div>
 
     <div class="modal-backdrop" id="np-backdrop" hidden>
-      <div class="modal-panel" role="dialog" aria-modal="true" aria-labelledby="np-title">
+      <div class="modal-panel np-panel" role="dialog" aria-modal="true" aria-labelledby="np-title">
         <div class="modal-header">
-          <h2 id="np-title">New project</h2>
+          <h2 id="np-title">Add new project/program</h2>
           <button type="button" class="modal-close" id="np-close" aria-label="Close">&times;</button>
         </div>
-        <label class="field-label" for="np-name-input">Project name</label>
+        <label class="field-label" for="np-name-input">Name</label>
         <input type="text" id="np-name-input" maxlength="80" placeholder="e.g. Loyalty App">
-        <p class="field-hint">Creates a new, independent Backlog → Ready for Testing → Live on Feature Branch → Merged to Main (Live) pipeline, same as any other project here.</p>
 
-        <label class="field-label" for="np-program-select">Program / Product (optional)</label>
+        <label class="field-label" for="np-program-select">Program / Product</label>
         <select id="np-program-select"></select>
-        <p class="field-hint">Purely organizational — groups this project under a heading on the board alongside others in the same program. Skip it and add one later from the Docs page if you'd rather.</p>
-
-        <div class="np-interface-block">
-          <label class="np-interface-toggle">
-            <input type="checkbox" id="np-if-enable">
-            Define an interface with an existing project
-          </label>
-          <div id="np-if-fields" hidden>
-            <label class="field-label" for="np-if-project">Interfaces with</label>
-            <select id="np-if-project"></select>
-            <label class="field-label" for="np-if-name">Interface name</label>
-            <input type="text" id="np-if-name" maxlength="120" placeholder="e.g. Live Visitor Profile ↔ Experience Templates">
-            <label class="field-label" for="np-if-content">Contract (optional — can be filled in later)</label>
-            <textarea id="np-if-content" rows="4" placeholder="What crosses this boundary, owned by which side..."></textarea>
-          </div>
-        </div>
+        <p class="field-hint">Optional — groups this under a shared heading on the board.</p>
 
         <div class="form-row" style="justify-content:flex-end;">
           <div class="form-actions">
             <button type="button" class="btn-ghost" id="np-cancel">Cancel</button>
-            <button type="button" class="btn-primary" id="np-submit">Create project</button>
+            <button type="button" class="btn-primary" id="np-submit">Create</button>
           </div>
         </div>
       </div>
@@ -177,6 +160,29 @@
           <textarea id="ei-comment-input" rows="2" maxlength="1000" placeholder="Add a comment for more context..."></textarea>
           <div class="form-row" style="justify-content:flex-end;">
             <button type="button" class="btn-primary" id="ei-comment-submit">Add comment</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Quick comment — a lightweight, comment-only alternative to the full
+         Edit item modal above, reached from a small icon on the card itself
+         (bottom row, next to the category badge) rather than the pencil
+         icon that opens the whole editor. Keeps "just leave a quick note"
+         separate from "edit the ticket's fields", so adding a comment never
+         requires opening (and risking an accidental edit to) the rest of
+         the form. -->
+    <div class="modal-backdrop" id="qc-backdrop" hidden>
+      <div class="modal-panel" role="dialog" aria-modal="true" aria-labelledby="qc-title">
+        <div class="modal-header">
+          <h2 id="qc-title">Add comment</h2>
+          <button type="button" class="modal-close" id="qc-close" aria-label="Close">&times;</button>
+        </div>
+        <textarea id="qc-comment-input" rows="4" maxlength="1000" placeholder="Add a comment for more context..."></textarea>
+        <div class="form-row" style="justify-content:flex-end;">
+          <div class="form-actions">
+            <button type="button" class="btn-ghost" id="qc-cancel">Cancel</button>
+            <button type="button" class="btn-primary" id="qc-submit">Add comment</button>
           </div>
         </div>
       </div>
