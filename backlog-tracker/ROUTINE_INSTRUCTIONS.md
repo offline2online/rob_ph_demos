@@ -147,6 +147,32 @@ rest of this file.
    fix and a plausible concurrent change could plausibly touch the same
    region of the same file, say so explicitly in your note as a risk, so a
    human reviewing the resulting PR knows to check for it.
+
+   **If any `patchFiles` path is under `backlog-tracker/public/`, also
+   bump the version — always, not just for changes that feel big enough
+   to warrant one.** Read the current value of
+   `backlog-tracker/public/js/version.js`'s `APP_VERSION` fresh (same
+   re-fetch-immediately-before-finalizing rule as above — don't reuse a
+   value you read earlier in this investigation) and include an updated
+   copy of that file in `patchFiles`, incrementing **only the third
+   number** — `"1.4.0"` → `"1.4.1"` — never the first two; a release
+   bump (the middle number) is a deliberate, separate decision, not
+   something a routine fix makes on its own. This is the footer's own "is
+   this actually live" signal (see that file's own comment) — a shipped
+   `public/` change with no version bump is invisible even once merged
+   and deployed, which is exactly the gap #57 and #75 each already had to
+   fix, twice. Skip this only when nothing in `patchFiles` touches
+   `backlog-tracker/public/` (e.g. a fix confined to `functions/` or
+   `scripts/`, which the footer doesn't reflect anyway).
+
+   Packaging more than one item together (see "Group multi-item fixes
+   into one deployment" below)? Bump it **once for the whole batch**, not
+   once per item — same as `app.js`/`index.html`'s own "full combined
+   result in every item's `patchFiles`" pattern for a shared file. Each
+   item independently reading "current is 1.4.0" and independently
+   writing "1.4.1" would collide instead of stacking; compute the new
+   number once, and give every item in the batch that same final
+   `version.js` content.
 4. Update the item's Firestore doc in one PATCH: set the corrected `title`
    (step 1), correct `category` if it's wrong (see `CATEGORIES` in
    `backlog-tracker/public/js/app.js` for the fixed list), bump
