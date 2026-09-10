@@ -8,6 +8,55 @@ built the way it is. Keep both in sync with the live copy on this
 project's own Docs page (`requirementsMd`) — treat a divergence between
 any of the three as a bug in whichever is stale.
 
+## Deployment — the one correct way to ship a change (read this first)
+
+There is exactly **one** thing that makes a code change live: a push to
+`main` that touches anything under `backlog-tracker/` triggers
+`.github/workflows/deploy-backlog-tracker.yml`, which runs
+`firebase deploy --only hosting,functions,firestore:rules` for you. There
+is no separate manual deploy step in the normal flow. **If a change hasn't
+reached `main` through one of the two paths below, it is not live — a
+card's status column is never proof, a green run in the Actions tab is.**
+
+**Path A — a human, or a Claude session with a real git/GitHub credential,
+pushes or merges normally.** Committing and pushing to `main` directly, or
+merging a PR through the GitHub UI / `gh pr merge` with a real user or
+GitHub App token, fires GitHub's native `push` webhook — the deploy
+workflow starts automatically. Nothing further to do beyond confirming the
+run appears (see "Verifying a deploy actually happened" below).
+
+**Path B — the automated backlog pipeline
+(`scripts/run-backlog-automation.js`, driven by
+`.github/workflows/backlog-automation.yml`) merges a PR using its own
+`GITHUB_TOKEN`.** GitHub deliberately suppresses `push` triggers for a
+workflow's own `GITHUB_TOKEN` (anti-recursion protection) — a PR merged
+this way does **not** auto-fire the deploy the way a human's merge does.
+`processMergePr` in `run-backlog-automation.js` already knows this and
+explicitly runs `gh workflow run deploy-backlog-tracker.yml` right after
+every merge that touches `backlog-tracker/` (needs `actions: write` in
+that workflow's own `permissions:` block — already set). **If you ever
+touch `processMergePr`, or write any other code path that merges a PR
+with `GITHUB_TOKEN`, you must keep or add that explicit dispatch.** A
+merge with no explicit trigger silently never deploys, even though the PR
+is on `main` and the board says "Merged to Main (Live)." This was hit in
+production once already — see "Notify Claude can't push" below for the
+full incident — don't reintroduce it.
+
+**Verifying a deploy actually happened** — do this whenever a fix is
+"supposed" to be live, every time, not just when something looks wrong:
+check `.github/workflows/deploy-backlog-tracker.yml`'s runs in the Actions
+tab (or `gh run list --workflow=deploy-backlog-tracker.yml`) for one tied
+to the merge/push commit, and confirm its "Deploy to Firebase" step
+succeeded. Only that is real evidence a change is live.
+
+**There is no separate manual deploy step to remember for the normal
+flow.** The `firebase deploy --only ...` commands under "Ongoing:
+redeploying after a code change" further down are a fallback for
+deploying from a local machine (e.g. before the GitHub secret/IAM setup
+below exists yet), not something to run routinely — every real deploy
+should go through GitHub Actions so it's reproducible and never depends on
+someone's local Firebase CLI state.
+
 A real, Firestore-backed version of the Prototype Pipeline board (the
 Claude Artifact at the root `CLAUDE.md`'s "Prototype Backlog" link), built
 to answer one specific question: **can a web app tell Claude a project's
