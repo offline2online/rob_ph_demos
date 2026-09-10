@@ -33,7 +33,7 @@
         <button type="button" class="icon-btn hamburger-btn" id="nav-open-btn" aria-haspopup="true" aria-label="Open menu">&#9776;</button>
         <div>
           <h1><button type="button" class="logo-link" id="topbar-logo-btn" title="Back to Agent Console home">PH Agent Console</button></h1>
-          <p class="subtitle"><span id="total-summary">0 items</span> &middot; click a project's Notify Claude when its Backlog is ready to be actioned</p>
+          <p class="subtitle"><span id="total-summary">0 items</span></p>
         </div>
       </div>
       <div class="topbar-actions">
@@ -167,7 +167,7 @@
           <input type="checkbox" id="ei-no-deploy-checkbox">
           No deployment required
         </label>
-        <p class="field-hint">For a fix that's just a live data/config change with no code to push — e.g. a Firestore-only edit — nothing ever needs to reach GitHub. Check this and, once tested, the card can move straight from Ready for Testing to Merged to Main (Live), skipping Live on Feature Branch and Notify Claude — Deploy entirely.</p>
+        <p class="field-hint">For a fix that's just a live data/config change with no code to push — e.g. a Firestore-only edit — nothing ever needs to reach GitHub. Check this and, once tested, the card can move straight from Ready for Testing to Deployed / Main Branch (Live), skipping Feature Branch (Live) and Deploy to Main entirely.</p>
         <div class="form-row" style="justify-content:flex-end;">
           <div class="form-actions">
             <button type="button" class="btn-ghost" id="ei-cancel">Cancel</button>
@@ -335,7 +335,7 @@
       <div class="docs-page-header">
         <h2>Deployments — <span id="deployments-page-project-name"></span></h2>
       </div>
-      <p class="field-hint">Group tickets that should ship to main together — usually everything the Notify Claude Routine fixed in one fire. Once every ticket in a group is individually confirmed "Live on Feature Branch", the group's own "Notify Claude to merge" button unlocks — it asks Claude to verify and merge each PR for real, the same as the project header's own Notify Claude — Deploy button.</p>
+      <p class="field-hint">Group tickets that should ship to main together — usually everything the Notify Claude Routine fixed in one fire. Once every ticket in a group is individually confirmed "Feature Branch (Live)", the group's own "Notify Claude to merge" button unlocks — it asks Claude to verify and merge each PR for real, the same as the project header's own Deploy to Main button.</p>
       <div class="form-row" style="justify-content:flex-end;">
         <button type="button" class="btn-primary" id="deployments-add-btn">+ New deployment</button>
       </div>

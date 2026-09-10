@@ -29,8 +29,8 @@ const projectDocsRef = collection(db, "projectDocs");
 const COLUMNS = [
   { key: "backlog", label: "Backlog", headClass: "backlog" },
   { key: "ready-for-testing", label: "Ready for Testing", headClass: "testing" },
-  { key: "ready-to-publish", label: "Live on Feature Branch", headClass: "publish" },
-  { key: "published-live", label: "Merged to Main (Live)", headClass: "live" },
+  { key: "ready-to-publish", label: "Feature Branch (Live)", headClass: "publish" },
+  { key: "published-live", label: "Deployed / Main Branch (Live)", headClass: "live" },
 ];
 const COL_KEYS = COLUMNS.map((c) => c.key);
 
@@ -192,7 +192,7 @@ function cardHTML(item) {
   // acts on the Backlog column.
   const pid = item.projectId || GENERAL_PROJECT_ID;
   const selectCb = isBacklog
-    ? `<input type="checkbox" class="card-select-cb" data-id="${item.id}" data-project-id="${escapeHTML(pid)}" title="Select for Notify Claude" ${getSelectedSet(pid).has(item.id) ? "checked" : ""}>`
+    ? `<input type="checkbox" class="card-select-cb" data-id="${item.id}" data-project-id="${escapeHTML(pid)}" title="Select for Ready for Dev" ${getSelectedSet(pid).has(item.id) ? "checked" : ""}>`
     : "";
 
   const leftBtn = canLeft
@@ -210,7 +210,7 @@ function cardHTML(item) {
   const approveBtn = isTesting
     ? (item.noDeploymentRequired
         ? `<button type="button" class="approve-btn confirm-no-deploy-btn" data-id="${item.id}">Confirm tested — mark Merged to Main</button>`
-        : `<button type="button" class="approve-btn move-btn" data-id="${item.id}" data-dir="1">Confirm live on branch</button>`)
+        : `<button type="button" class="approve-btn move-btn" data-id="${item.id}" data-dir="1">Ready to Deploy</button>`)
     : "";
   // Deliberately not a button: there used to be a "Merge to main" button
   // here that just wrote status: "published-live" directly, with zero
@@ -220,7 +220,7 @@ function cardHTML(item) {
   // Deploy" action (see deployNotifyButtonHTML), which only advances a
   // card once backlog-automation.yml has actually merged its PR.
   const mergeBtn = isLiveBranch
-    ? `<span class="merge-pending-hint" title="Only this project's own Notify Claude — Deploy button actually merges this to main">Waiting for Notify Claude — Deploy</span>`
+    ? `<span class="merge-pending-hint" title="Only this project's own Deploy to Main button actually merges this to main">Waiting for Deploy to Main</span>`
     : "";
   const isPublished = item.status === "published-live";
   const archiveBtn = isPublished
@@ -393,7 +393,7 @@ function notifyClaudeButtonHTML(project) {
     const selectedCount = items.filter((i) =>
       (i.projectId || GENERAL_PROJECT_ID) === pid && i.status === "backlog" && getSelectedSet(pid).has(i.id)
     ).length;
-    const label = selectedCount ? `Notify Claude — ${selectedCount} selected` : "Notify Claude";
+    const label = selectedCount ? `Ready for Dev — ${selectedCount} selected` : "Ready for Dev";
     return `<button type="button" class="notify-claude-btn project-notify-btn" data-project-id="${escapeHTML(pid)}">
       <span class="material-symbols-outlined notify-claude-icon">auto_awesome</span>
       <span class="notify-claude-label">${label}</span>
@@ -423,7 +423,7 @@ function notifyClaudeButtonHTML(project) {
   const newBtn = newCount
     ? `<button type="button" class="notify-claude-btn project-notify-btn" data-project-id="${escapeHTML(pid)}">
         <span class="material-symbols-outlined notify-claude-icon">auto_awesome</span>
-        <span class="notify-claude-label">Notify Claude — ${newCount} new</span>
+        <span class="notify-claude-label">Ready for Dev — ${newCount} new</span>
       </button>`
     : "";
 
@@ -442,7 +442,7 @@ function deployNotifyButtonHTML(project) {
   if (!deployCount) return "";
   return `<button type="button" class="notify-claude-btn deploy-notify-btn" data-project-id="${escapeHTML(pid)}">
     <span class="material-symbols-outlined notify-claude-icon">rocket_launch</span>
-    <span class="notify-claude-label">Notify Claude — Deploy</span>
+    <span class="notify-claude-label">Deploy to Main</span>
     <span class="notify-claude-count-pill">${deployCount}</span>
   </button>`;
 }
@@ -827,11 +827,11 @@ async function requestNotify(pid) {
 async function requestDeployNotify(pid) {
   const count = deployReadyCountForProject(pid);
   if (count === 0) {
-    alert("Nothing Live on Feature Branch for this project yet — confirm an item's testing first.");
+    alert("Nothing in Feature Branch (Live) for this project yet — confirm an item's testing first.");
     return;
   }
   await setDoc(doc(db, "projects", pid), { deployNotifyRequestedAt: serverTimestamp() }, { merge: true });
-  alert(`Deploy requested for ${count} item${count === 1 ? "" : "s"} Live on Feature Branch. A Claude Code session starts merging them to main (see backlog-tracker/README.md for the Cloud Functions this depends on if this isn't happening).`);
+  alert(`Deploy requested for ${count} item${count === 1 ? "" : "s"} in Feature Branch (Live). A Claude Code session starts merging them to main (see backlog-tracker/README.md for the Cloud Functions this depends on if this isn't happening).`);
 }
 
 async function setProjectName(id, name) {
@@ -1603,7 +1603,7 @@ function deploymentRowHTML(dep) {
           <button type="button" class="icon-btn deployment-delete-btn" data-id="${dep.id}" title="Ungroup">&times;</button>
         </div>
       </div>
-      <p class="deployment-progress">${confirmedCount}/${members.length} confirmed Live on Feature Branch</p>
+      <p class="deployment-progress">${confirmedCount}/${members.length} confirmed Feature Branch (Live)</p>
       <ul class="deployment-member-list">${members.map(deploymentMemberRowHTML).join("") || '<li class="deployment-member-empty">No tickets in this group.</li>'}</ul>
       ${actionHTML}
     </div>`;
