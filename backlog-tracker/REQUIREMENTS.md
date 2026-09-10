@@ -136,8 +136,25 @@ Status pipeline and what each transition means:
 | `backlog` | Backlog | Captured, not yet worked |
 | `ready-for-testing` | Ready for Testing | Implemented, PR open, awaiting human test |
 | `ready-to-publish` | Live on Feature Branch | Tested and confirmed on the feature branch (its own "Confirm live on branch" button) |
-| `published-live` | Merged to Main (Live) | Its own "Merge to main" button — the one click that corresponds to an actual `git merge`/push to `main` |
+| `published-live` | Merged to Main (Live) | Set only by `run-backlog-automation.js` after it actually merges the item's PR — see below, no manual button sets this |
 | `archived` | (hidden from the board) | Set via the Archive action on a Merged-to-Main card; reversible via Restore |
+
+**No manual way to reach `published-live` exists** — a "Live on Feature
+Branch" card shows a passive "Waiting for Notify Claude — Deploy" hint
+instead of a button. There used to be a per-card "Merge to main" button
+and a bulk "Merge all to main" on the Deployments page, both of which
+wrote `status: "published-live"` directly with no connection to whether
+the PR was actually merged on GitHub — removed after that let cards read
+"Merged to Main" while their PRs sat open. The project's own "Notify
+Claude — Deploy" header action (`requestDeployNotify` in `app.js`) is now
+the only trigger; it fires the Routine, which sets `mergeReady` +
+`mergePrNumber` once it's confirmed the PR is actually green and
+mergeable, and only `run-backlog-automation.js` (see "Notify Claude can't
+push" in README.md) flips `status` to `published-live`, after the real
+merge succeeds. The Deployments page's "Notify Claude to merge" button
+(`requestDeploymentMerge`) is the same action, just scoped to a
+deployment group's project; its own "✓ Merged" badge is derived live from
+every member's actual `status`, not a separate stored flag.
 
 `published-live` is treated as the one **irreversible** transition of the
 four for automation purposes (see "FAQ auto-review" below) — the other
@@ -183,13 +200,14 @@ like one with no `programId` at all (falls into "Ungrouped").
   label: string,
   createdAt: timestamp,
   updatedAt: timestamp,
-  mergedAt?: timestamp,   // set by the batch "Merge all to main" action
 }
 ```
 A deployment groups several `backlogItems` (via their own `deploymentId`)
 that are meant to ship to `main` together — see "Deployments" under
-Functional requirements below for why this exists and exactly what its
-batch action does and doesn't do.
+Functional requirements below for why this exists. No `mergedAt` field
+any more: whether a deployment is "Merged" is derived live from whether
+every member's own `status` is `published-live`, not a separate stored
+flag that a manual batch action used to set directly.
 
 ### `interfaces/{interfaceId}`
 ```
@@ -438,20 +456,24 @@ REST API is reachable with a plain `curl`, no service account needed.
     and the Routine's own base prompt. Anyone can also create a group by
     hand from this page ("+ New deployment"), or edit an existing group's
     name/membership at any time.
-  - **"Merge all to main" is board bookkeeping, not a GitHub action.** It
-    stays disabled until every member ticket has individually reached
-    `ready-to-publish` (Live on Feature Branch — the same "someone actually
-    tested it" gate a single card's own "Confirm live on branch" button
-    already enforces). Once unlocked, clicking it flips every member to
-    `published-live` in one Firestore batch write and stamps the
-    deployment's own `mergedAt`. It does **not** call the GitHub API or
-    merge any PR itself — whoever is actually driving the merges (a person,
-    or a Claude session with push access) still does that, ideally
-    back-to-back now that this page tells them exactly which PRs are meant
-    to land together. This was a deliberate scope decision, not a
-    limitation to fix later: automating the actual GitHub merge would need
-    every item to carry its PR link/number (not tracked today) and a new
-    Cloud Function or session action with GitHub write access.
+  - **"Notify Claude to merge" requests the real merge — it doesn't
+    perform one itself.** It stays disabled until every member ticket has
+    individually reached `ready-to-publish` (Live on Feature Branch — the
+    same "someone actually tested it" gate a single card's own "Confirm
+    live on branch" button already enforces). Clicking it calls
+    `requestDeployNotify()` for the group's project — the exact same
+    "Notify Claude — Deploy" flow the project header button fires — which
+    asks the Routine to verify each item's PR and set `mergeReady` +
+    `mergePrNumber`; only `run-backlog-automation.js` (see "Notify Claude
+    can't push" in README.md) actually merges the PR and flips `status` to
+    `published-live`. The deployment card's own "✓ Merged" badge is
+    derived live from every member's real `status`, not a separate stored
+    flag, so it can never show "Merged" for a PR that's still open. An
+    earlier version of this button (and a since-removed per-card "Merge to
+    main" button) wrote `published-live` directly with no connection to
+    GitHub at all — removed after that let cards read "Merged to Main"
+    while their PRs sat open and unmerged; see "No manual way to reach
+    `published-live` exists" above for the full story.
   - Deleting a group ("ungroup") only clears `deploymentId` on its member
     tickets — it never touches the tickets themselves, and a member is
     immediately eligible to join a different group afterward.

@@ -175,11 +175,43 @@ async function processMergePr(item) {
     console.log(`[merge-pr] ${item.id}: no mergePrNumber set, skipping`);
     return;
   }
+
+  // Needed before merging (the PR's file list is still queryable after
+  // merge too, but fetching it up front keeps the "did this touch
+  // backlog-tracker/" check independent of merge timing).
+  let touchesBacklogTracker = false;
+  try {
+    const filesJson = run("gh", ["pr", "view", String(prNumber), "--repo", REPO, "--json", "files"]);
+    const files = JSON.parse(filesJson).files || [];
+    touchesBacklogTracker = files.some((f) => f.path.startsWith("backlog-tracker/"));
+  } catch (err) {
+    console.log(`[merge-pr] ${item.id}: couldn't read PR #${prNumber}'s file list (${err.message}) — will trigger the backlog-tracker deploy anyway to be safe`);
+    touchesBacklogTracker = true;
+  }
+
   try {
     run("gh", ["pr", "merge", String(prNumber), "--merge", "--repo", REPO]);
   } catch (err) {
     console.log(`[merge-pr] ${item.id}: gh pr merge #${prNumber} failed (will retry on next scheduled run): ${err.message}`);
     return;
+  }
+
+  // A merge performed with this workflow's own GITHUB_TOKEN does NOT
+  // trigger other workflows' `on: push` — GitHub deliberately suppresses
+  // that to prevent infinite loops (see deploy-backlog-tracker.yml's own
+  // `on: push` for backlog-tracker/**). Without this, every PR merged by
+  // this pipeline lands on main but Cloud Functions/Hosting/Firestore
+  // rules silently never redeploy, even though the board shows
+  // "published-live". `gh workflow run` (an explicit API dispatch, not a
+  // push event) is exempt from that suppression, so trigger the deploy
+  // directly whenever the merge actually touched backlog-tracker/.
+  if (touchesBacklogTracker) {
+    try {
+      run("gh", ["workflow", "run", "deploy-backlog-tracker.yml", "--repo", REPO, "--ref", "main"]);
+      console.log(`[merge-pr] ${item.id}: triggered deploy-backlog-tracker.yml`);
+    } catch (err) {
+      console.log(`[merge-pr] ${item.id}: failed to trigger deploy-backlog-tracker.yml (${err.message}) — merge still succeeded, but the live site may be stale until the next deploy`);
+    }
   }
 
   const notes = await appendNote(item, `Merged PR #${prNumber} to main from the automated backlog pipeline.`);
