@@ -600,7 +600,29 @@ function programGroupHTML(group) {
     </section>`;
 }
 
+// render() itself just schedules the real work on the next animation
+// frame and coalesces any further calls until that frame runs. On a cold
+// load, five independent onSnapshot listeners below (items, projects,
+// interfaces, deployments, programs) each call render() the moment their
+// own first snapshot arrives — without this, that meant up to five full
+// innerHTML rebuilds of the entire board (every project, every column,
+// every card) in quick succession before things settled, which is real,
+// wasted work on every page load, worse on a slower/lower-power device.
+// Coalescing to one rebuild per frame also smooths out the several other
+// call sites that fire render() synchronously off rapid UI interaction
+// (collapsing a project, selecting cards, etc.) — a one-frame (~16ms)
+// delay there is imperceptible.
+let renderScheduled = false;
 function render() {
+  if (renderScheduled) return;
+  renderScheduled = true;
+  requestAnimationFrame(() => {
+    renderScheduled = false;
+    renderNow();
+  });
+}
+
+function renderNow() {
   migrateOrphanItems();
   const renderedProjects = getRenderedProjects();
   document.getElementById("projects-root").innerHTML = programs.length
