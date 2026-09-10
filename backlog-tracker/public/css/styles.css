@@ -237,8 +237,12 @@ body {
   animation: notify-claude-spin .8s linear infinite;
 }
 @keyframes notify-claude-spin { to { transform: rotate(360deg); } }
-.notify-claude-session-link { font-size: 12px; color: var(--primary); text-decoration: none; white-space: nowrap; margin-left: 2px; }
-.notify-claude-session-link:hover { text-decoration: underline; }
+/* Once a session id has resolved, the working button itself becomes the
+   "View session" link (see notifyClaudeButtonHTML) instead of a separate
+   link next to a disabled button — this just restores the pointer cursor
+   and kills the default <a> underline that .notify-claude-btn-working's
+   cursor:default would otherwise leave in place. */
+.notify-claude-btn-clickable { cursor: pointer; text-decoration: none; }
 .project-options { position: relative; flex-shrink: 0; }
 .project-options-btn { font-size: 18px; line-height: 1; padding: 7px 11px; }
 .project-options-menu {

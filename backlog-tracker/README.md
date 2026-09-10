@@ -524,9 +524,16 @@ ever silently stop appearing, same caution as the header gotcha above).
 `https://claude.ai/code/<id>`, and writes the whole outcome to
 `projects/{id}.notifyRoutine` (`status`, `firedAt`, `sessionId`/
 `sessionUrl`, `itemCount`, `sentItemIds`) — the board's Notify Claude
-button reads this to show a spinner + "View session →" link while a fire
-is in flight, and a separate small CTA for anything added to Backlog since
-that click (`sentItemIds` is how it knows what's "new").
+button reads this to show a spinner while a fire is in flight, plus a
+separate small CTA for anything added to Backlog since that click
+(`sentItemIds` is how it knows what's "new"). The button shows the spinner
+the instant it's clicked (a client-local optimistic state — see
+`notifyOptimisticClicks` in `app.js`), before this doc even exists yet, so
+there's no dead-looking gap while the Cloud Function round-trips. Once the
+doc lands with `status: "in-progress"` but no `sessionUrl` yet, it reads
+"Working…"; once a session id has resolved, the button itself becomes the
+session link (copy flips to "Deving…", `target="_blank"` to
+`sessionUrl`) — there's no separate "View session" link anymore.
 
 The Routine is asked, in the fire request's own `text`, to PATCH
 `notifyRoutine.status` to `"done"`/`"error"` (with `finishedAt`) when it
