@@ -253,7 +253,7 @@ exports.notifyOnProjectReadyForReview = onDocumentUpdated(
 );
 
 // The board's "Notify Claude — Deploy" button (per-project header, shown
-// only when a project has items Live on Feature Branch) writes
+// only when a project has items Approved for Deployment) writes
 // projects/{id}.deployNotifyRequestedAt, and this fires once on that write
 // — same Slack-post-plus-Routine-fire shape as notifyOnProjectReadyForReview
 // above, but for the opposite end of the pipeline: these items are already
@@ -283,7 +283,7 @@ exports.notifyOnProjectReadyToDeploy = onDocumentUpdated(
     const items = itemsSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
 
     if (items.length === 0) {
-      logger.info("Deploy notify requested but nothing is Live on Feature Branch — nothing to notify or fire the Routine for", {
+      logger.info("Deploy notify requested but nothing is Approved for Deployment — nothing to notify or fire the Routine for", {
         projectId: event.params.projectId,
       });
       return;
@@ -298,7 +298,7 @@ exports.notifyOnProjectReadyToDeploy = onDocumentUpdated(
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            text: `Notify Claude — Deploy clicked for ${projectName}: ${items.length} item${items.length === 1 ? "" : "s"} Live on Feature Branch will be merged to main.`,
+            text: `Notify Claude — Deploy clicked for ${projectName}: ${items.length} item${items.length === 1 ? "" : "s"} Approved for Deployment will be merged to main.`,
             projectId: event.params.projectId,
             projectName,
             itemCount: items.length,
@@ -361,7 +361,7 @@ exports.notifyOnProjectReadyToDeploy = onDocumentUpdated(
       : "";
 
     const text = `${projectPromptBlock}=== DEPLOY REQUEST for "${projectName}" (projectId: ${event.params.projectId}) on the Backlog Tracker & FAQs board ===\n` +
-      `These ${items.length} item${items.length === 1 ? "" : "s"} are already implemented, tested, and confirmed "Live on Feature Branch" (ready-to-publish). Do NOT investigate, re-implement, or re-test them — follow ROUTINE_INSTRUCTIONS.md's "Notify Claude — Deploy" flow section for exactly what to do with each one.\n\n` +
+      `These ${items.length} item${items.length === 1 ? "" : "s"} are already implemented, tested, and confirmed "Approved for Deployment" (ready-to-publish). Do NOT investigate, re-implement, or re-test them — follow ROUTINE_INSTRUCTIONS.md's "Notify Claude — Deploy" flow section for exactly what to do with each one.\n\n` +
       `Items:\n${itemLines}`;
 
     try {
@@ -396,7 +396,7 @@ exports.notifyOnProjectReadyToDeploy = onDocumentUpdated(
   }
 );
 
-// The board's "Deploy to Feature" project action (see deployToFeature() in
+// The board's "Approved for Deployment" project action (see deployToFeature() in
 // public/js/app.js) writes projects/{id}.deployToFeatureRequestedAt (plus
 // deployToFeatureItemTitles), and this fires once on that write to post a
 // Slack confirmation. Deliberately the odd one out among the three notify
@@ -426,7 +426,7 @@ exports.notifyOnItemsDeployedToFeature = onDocumentUpdated(
     const webhookUrl = NOTIFY_WEBHOOK_URL.value();
     if (!webhookUrl) {
       logger.warn(
-        "NOTIFY_WEBHOOK_URL is not set — skipping Slack notification for Deploy to Feature",
+        "NOTIFY_WEBHOOK_URL is not set — skipping Slack notification for Approved for Deployment",
         { projectId: event.params.projectId }
       );
       return;
@@ -434,7 +434,7 @@ exports.notifyOnItemsDeployedToFeature = onDocumentUpdated(
 
     const projectName = after.name || "A project";
     const titles = Array.isArray(after.deployToFeatureItemTitles) ? after.deployToFeatureItemTitles : [];
-    const text = `Deploy to Feature clicked for ${projectName}: ${titles.length} item${titles.length === 1 ? "" : "s"} moved to Feature Branch (Live)` +
+    const text = `${projectName}: ${titles.length} item${titles.length === 1 ? "" : "s"} approved for deployment` +
       (titles.length ? `:\n${titles.map((t) => `• ${t}`).join("\n")}` : ".") +
       ` No new GitHub push happened — each item's code was already on its own feature branch from the Backlog stage.`;
 
@@ -445,19 +445,19 @@ exports.notifyOnItemsDeployedToFeature = onDocumentUpdated(
         body: JSON.stringify({ text, projectId: event.params.projectId, projectName, itemTitles: titles }),
       });
       if (!res.ok) {
-        logger.error("Deploy to Feature notify webhook responded with a non-2xx status", {
+        logger.error("Approved for Deployment notify webhook responded with a non-2xx status", {
           projectId: event.params.projectId,
           status: res.status,
           body: await res.text().catch(() => "<unreadable>"),
         });
         return;
       }
-      logger.info("Notified webhook of Deploy to Feature click", {
+      logger.info("Notified webhook of Approved for Deployment click", {
         projectId: event.params.projectId,
         itemCount: titles.length,
       });
     } catch (err) {
-      logger.error("Failed to call notify webhook for Deploy to Feature", {
+      logger.error("Failed to call notify webhook for Approved for Deployment", {
         projectId: event.params.projectId,
         error: err instanceof Error ? err.message : String(err),
       });
