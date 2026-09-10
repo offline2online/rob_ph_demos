@@ -253,8 +253,26 @@ something that looks plausible.
 A fire whose `text` starts with `=== DEPLOY REQUEST for "<project>" ===`
 is the *other* end of the pipeline: these items are already implemented,
 tested, and confirmed "Live on Feature Branch" (`ready-to-publish`). Do
-NOT investigate, re-implement, or re-test them. For each item:
+NOT investigate, re-implement, or re-test them. Each item in the fire
+`text` includes its Firestore doc id and, when known, its `patchBranch` —
+use those, don't re-derive them from the title. For each item:
 
+0. **Known current limitation, check this first:** this Routine's fired
+   sessions have hit `api.github.com`/`github.com` returning "GitHub
+   access to this repository is not enabled for this session" on every
+   read in this flow, confirmed across multiple runs — a session-scoping
+   issue in how this Routine is configured (it fires with no repo
+   attached), not a per-request fluke, and not something you can fix from
+   inside the run. **Try one real request first** (e.g. the search call in
+   step 1) rather than assuming it's still broken — if it works, proceed
+   normally with steps 1-3 below. If you get that exact
+   access-not-enabled error (or any 403 from `api.github.com`/
+   `github.com`), don't keep retrying it — switch immediately to the
+   git-protocol fallback in step 1 for PR discovery, and go straight to
+   "can't confirm CI" for step 2 (see below) rather than burning the rest
+   of this run on a blocked endpoint. Say plainly in your note that this
+   hit the known access issue, not a fix-specific problem — that
+   distinction matters for whoever triages it later.
 1. **Find its pull request by exact id match, not by title.** Every PR
    this pipeline opens carries the literal line `Backlog item: <id>` in
    its body (see `patchPrBody` in the Backlog flow above, and
@@ -270,6 +288,25 @@ NOT investigate, re-implement, or re-test them. For each item:
    leave this item alone with a note saying so; do not fall back to
    guessing from a title search.** A wrong match here isn't a stray PR
    someone can close later, it's the wrong code merged to `main`.
+
+   **If `api.github.com` is blocked (see step 0), find the PR number
+   without it, still by exact match, never by title:** the plain git
+   protocol (`git ls-remote`/`git fetch`, not blocked) is enough, because
+   `run-backlog-automation.js` names branches deterministically —
+   `claude/<slug-of-patchBranch>-<first 6 chars of item id, lowercase>`.
+   Given the item's `patchBranch` (in this fire's `text`) and its id:
+   ```
+   git ls-remote https://github.com/offline2online/rob_ph_demos.git "refs/heads/claude/<slug>-<id6>"
+   ```
+   confirms the exact branch exists and gives its head SHA. Then:
+   ```
+   git ls-remote https://github.com/offline2online/rob_ph_demos.git "refs/pull/*/head"
+   ```
+   lists every open PR's number and head SHA — match the SHA from the
+   first command to get the PR number, exactly, with no title involved at
+   all. If the branch ref from the first command doesn't exist, there is
+   no PR for this item yet (regardless of what the board shows) — leave it
+   alone with a note, same as any other "can't find it" case.
 2. Once you have the confirmed PR number, check its CI status and
    mergeability read-only: `GET /repos/offline2online/rob_ph_demos/pulls/{number}`
    for `mergeable`/`mergeable_state`, and
@@ -282,6 +319,16 @@ NOT investigate, re-implement, or re-test them. For each item:
    treating it as a failure. Only proceed on an explicit `mergeable: true`
    with every check run in a genuinely passed/success state — a pending,
    queued, or errored check is not "close enough."
+
+   **There is no git-protocol fallback for this step** — CI/check-run
+   results aren't git objects, only the REST API has them. If step 0's
+   access issue is blocking `api.github.com`, you can identify the PR
+   (step 1's fallback) but you cannot confirm it's safe to merge — leave
+   `mergeReady` unset and say exactly that in your note ("found PR #N via
+   git ls-remote, but couldn't confirm CI — api.github.com blocked").
+   That's the correct, expected outcome for as long as step 0's access
+   issue persists; it is not something to work around by proceeding
+   without the check.
 3. If it's green and mergeable **and step 1's exact id match held**, PATCH
    its backlogItems doc: `mergeReady -> true` (boolean), `mergePrNumber ->
    <the PR number, as a number>`, `updatedAt -> now`. The same scheduled

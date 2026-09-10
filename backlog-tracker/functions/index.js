@@ -279,7 +279,7 @@ exports.notifyOnProjectReadyToDeploy = onDocumentUpdated(
       .where("projectId", "==", event.params.projectId)
       .where("status", "==", "ready-to-publish")
       .get();
-    const items = itemsSnap.docs.map((d) => d.data());
+    const items = itemsSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
 
     if (items.length === 0) {
       logger.info("Deploy notify requested but nothing is Live on Feature Branch — nothing to notify or fire the Routine for", {
@@ -337,8 +337,19 @@ exports.notifyOnProjectReadyToDeploy = onDocumentUpdated(
       return;
     }
 
+    // Deliberately data-only, same philosophy as notifyOnProjectReadyForReview
+    // above: this used to also embed a full step-by-step "how to find/verify/
+    // merge a PR" procedure directly in this string, duplicating (and, once
+    // ROUTINE_INSTRUCTIONS.md was updated to fix a real bug in that
+    // procedure, silently diverging from) the Deploy flow section of
+    // ROUTINE_INSTRUCTIONS.md — the file every fired session's own bootstrap
+    // prompt already fetches and is told to follow exactly. Two copies of
+    // "how" can only ever go stale relative to each other; this function's
+    // only job is "what" (which project, which items) and the `=== DEPLOY
+    // REQUEST ===` marker ROUTINE_INSTRUCTIONS.md's own Deploy flow section
+    // keys off of.
     const itemLines = items
-      .map((i, idx) => `${idx + 1}. [${i.type === "bug" ? "Bug" : "Feature"}] ${i.title} — ${i.desc}`)
+      .map((i, idx) => `${idx + 1}. [id: ${i.id}] [${i.type === "bug" ? "Bug" : "Feature"}] ${i.title} — ${i.desc}${i.patchBranch ? ` (patchBranch: ${i.patchBranch})` : ""}`)
       .join("\n");
 
     // Same per-project addendum mechanism as the Backlog notify fire above
@@ -349,12 +360,7 @@ exports.notifyOnProjectReadyToDeploy = onDocumentUpdated(
       : "";
 
     const text = `${projectPromptBlock}=== DEPLOY REQUEST for "${projectName}" (projectId: ${event.params.projectId}) on the Backlog Tracker & FAQs board ===\n` +
-      `These ${items.length} item${items.length === 1 ? "" : "s"} are already implemented, tested, and confirmed "Live on Feature Branch" (ready-to-publish). Do NOT investigate, re-implement, or re-test them.\n\n` +
-      `Your session has no GitHub-authenticated tooling and can't merge a PR itself — don't try. Instead, for each item below:\n` +
-      `1. Find its pull request in offline2online/rob_ph_demos (check the item's own notes for a branch/PR reference, or search open PRs referencing its title) using the public, unauthenticated GitHub REST API (e.g. \`curl https://api.github.com/repos/offline2online/rob_ph_demos/pulls?state=open\`) — no credential needed for reads on a public repo.\n` +
-      `2. Check its CI status and mergeability the same read-only way (\`GET /repos/offline2online/rob_ph_demos/pulls/{number}\` — look at \`mergeable\` and the associated check runs/statuses).\n` +
-      `3. If it's green and mergeable, PATCH its backlogItems doc: mergeReady -> true (boolean), mergePrNumber -> <the PR number, as a number>, updatedAt -> now. A separate scheduled job (not you, not any AI) — backlog-tracker/scripts/run-backlog-automation.js, running as a trusted GitHub Actions job with its own repo-native credentials — picks this up within about 10 minutes, actually merges the PR, and flips status to "published-live" once it succeeds. Do not set status to "published-live" yourself — you have no way to confirm the merge actually happened.\n` +
-      `If a PR can't be found, or its CI is red, or it's not mergeable, leave its status as ready-to-publish (and mergeReady unset/false) and add a note explaining why instead of guessing.\n\n` +
+      `These ${items.length} item${items.length === 1 ? "" : "s"} are already implemented, tested, and confirmed "Live on Feature Branch" (ready-to-publish). Do NOT investigate, re-implement, or re-test them — follow ROUTINE_INSTRUCTIONS.md's "Notify Claude — Deploy" flow section for exactly what to do with each one.\n\n` +
       `Items:\n${itemLines}`;
 
     try {
