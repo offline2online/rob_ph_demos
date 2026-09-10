@@ -220,7 +220,7 @@ function cardHTML(item) {
   // Deploy" action (see deployNotifyButtonHTML), which only advances a
   // card once backlog-automation.yml has actually merged its PR.
   const mergeBtn = isLiveBranch
-    ? `<span class="merge-pending-hint" title="Only this project's own Deploy to Feature Branch button actually merges this to main">Waiting for Deploy to Feature Branch</span>`
+    ? `<span class="merge-pending-hint" title="Only this project's own Deploy to Main button actually merges this to main">Waiting for Deploy to Main</span>`
     : "";
   const isPublished = item.status === "published-live";
   const archiveBtn = isPublished
@@ -442,7 +442,7 @@ function deployNotifyButtonHTML(project) {
   if (!deployCount) return "";
   return `<button type="button" class="notify-claude-btn deploy-notify-btn" data-project-id="${escapeHTML(pid)}">
     <span class="material-symbols-outlined notify-claude-icon">rocket_launch</span>
-    <span class="notify-claude-label">Deploy to Feature Branch</span>
+    <span class="notify-claude-label">Deploy to Main</span>
     <span class="notify-claude-count-pill">${deployCount}</span>
   </button>`;
 }
