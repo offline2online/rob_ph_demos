@@ -968,21 +968,31 @@ async function requestNotify(pid) {
 // (see run-backlog-automation.js's processApplyPatch), so there's no GitHub
 // action to take here, only the board's own status to advance once a human
 // has actually confirmed testing on the items they're choosing to release.
+//
+// This has no async, watchable in-progress state the way Ready for Dev/
+// Deploy to Main do (no Routine session to spin on) — the whole thing
+// completes in one round trip. Without any feedback at all, that read as
+// "the button did nothing": confirmed with an immediate alert() (works
+// with zero external config, unlike Slack) AND a Slack post via
+// notifyOnItemsDeployedToFeature (../functions/index.js), which watches
+// deployToFeatureRequestedAt the same way requestNotify/requestDeployNotify
+// below already watch their own timestamps — for consistency, not because
+// this needs a Routine fire too.
 async function deployToFeature(pid) {
-  const passedIds = new Set(
-    items
-      .filter((i) => (i.projectId || GENERAL_PROJECT_ID) === pid && i.status === "ready-for-testing" && i.testPassed && !i.noDeploymentRequired)
-      .map((i) => i.id)
+  const passedItems = items.filter((i) =>
+    (i.projectId || GENERAL_PROJECT_ID) === pid && i.status === "ready-for-testing" && i.testPassed && !i.noDeploymentRequired
   );
-  if (passedIds.size === 0) {
+  if (passedItems.length === 0) {
     alert("Nothing has passed testing for this project yet — confirm an item's testing first.");
     return;
   }
   // Same "a non-empty selection narrows the action" pattern as
   // requestNotify — an empty selection means "every passed item", not
   // "nothing".
+  const passedIds = new Set(passedItems.map((i) => i.id));
   const selected = [...getDeploySelectedSet(pid)].filter((id) => passedIds.has(id));
   const idsToMove = selected.length ? selected : [...passedIds];
+  const itemsToMove = passedItems.filter((i) => idsToMove.includes(i.id));
 
   const batch = writeBatch(db);
   idsToMove.forEach((id) => {
@@ -995,6 +1005,17 @@ async function deployToFeature(pid) {
   await batch.commit();
 
   getDeploySelectedSet(pid).clear();
+
+  await setDoc(doc(db, "projects", pid), {
+    deployToFeatureRequestedAt: serverTimestamp(),
+    deployToFeatureItemTitles: itemsToMove.map((i) => i.title),
+  }, { merge: true });
+
+  alert(
+    `${itemsToMove.length} item${itemsToMove.length === 1 ? "" : "s"} moved to Feature Branch (Live):\n` +
+    itemsToMove.map((i) => `• ${i.title}`).join("\n") +
+    `\n\nNo new GitHub push happens at this step — each item's code was already pushed to its own feature branch back when it left Backlog. This just advances the board's own status now that testing is confirmed.`
+  );
 }
 
 // Same idea as requestNotify() above, but for the "Live on Feature Branch"
