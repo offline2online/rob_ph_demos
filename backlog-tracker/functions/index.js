@@ -396,6 +396,75 @@ exports.notifyOnProjectReadyToDeploy = onDocumentUpdated(
   }
 );
 
+// The board's "Deploy to Feature" project action (see deployToFeature() in
+// public/js/app.js) writes projects/{id}.deployToFeatureRequestedAt (plus
+// deployToFeatureItemTitles), and this fires once on that write to post a
+// Slack confirmation. Deliberately the odd one out among the three notify
+// functions in this file: it never fires the Routine, because there's no
+// AI work to do here — the feature branch and PR for every item involved
+// already exist (created automatically back at the Backlog stage); this
+// action only advances the board's own status once a human has confirmed
+// testing. But deployToFeature() is a silent, one-round-trip client write
+// with no in-progress state to watch (unlike Ready for Dev/Deploy to Main,
+// which both spin on a Routine session) — without this, a click could
+// easily look like it did nothing at all, which is exactly what happened
+// in production before this existed.
+exports.notifyOnItemsDeployedToFeature = onDocumentUpdated(
+  { document: "projects/{projectId}", secrets: [NOTIFY_WEBHOOK_URL] },
+  async (event) => {
+    const before = event.data?.before?.data();
+    const after = event.data?.after?.data();
+    if (!after?.deployToFeatureRequestedAt) {
+      return;
+    }
+    const beforeMs = before?.deployToFeatureRequestedAt?.toMillis?.() ?? 0;
+    const afterMs = after.deployToFeatureRequestedAt?.toMillis?.() ?? 0;
+    if (afterMs <= beforeMs) {
+      return;
+    }
+
+    const webhookUrl = NOTIFY_WEBHOOK_URL.value();
+    if (!webhookUrl) {
+      logger.warn(
+        "NOTIFY_WEBHOOK_URL is not set — skipping Slack notification for Deploy to Feature",
+        { projectId: event.params.projectId }
+      );
+      return;
+    }
+
+    const projectName = after.name || "A project";
+    const titles = Array.isArray(after.deployToFeatureItemTitles) ? after.deployToFeatureItemTitles : [];
+    const text = `Deploy to Feature clicked for ${projectName}: ${titles.length} item${titles.length === 1 ? "" : "s"} moved to Feature Branch (Live)` +
+      (titles.length ? `:\n${titles.map((t) => `• ${t}`).join("\n")}` : ".") +
+      ` No new GitHub push happened — each item's code was already on its own feature branch from the Backlog stage.`;
+
+    try {
+      const res = await fetch(webhookUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text, projectId: event.params.projectId, projectName, itemTitles: titles }),
+      });
+      if (!res.ok) {
+        logger.error("Deploy to Feature notify webhook responded with a non-2xx status", {
+          projectId: event.params.projectId,
+          status: res.status,
+          body: await res.text().catch(() => "<unreadable>"),
+        });
+        return;
+      }
+      logger.info("Notified webhook of Deploy to Feature click", {
+        projectId: event.params.projectId,
+        itemCount: titles.length,
+      });
+    } catch (err) {
+      logger.error("Failed to call notify webhook for Deploy to Feature", {
+        projectId: event.params.projectId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+);
+
 // A shipped feature can leave the FAQ articles that document it stale.
 // Opt-in per project (Docs page → "FAQ review automation", projects/{id}
 // .faqAutoFlagOnLive) — when on, the moment one of that project's backlog

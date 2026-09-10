@@ -166,6 +166,15 @@ chance to also confirm the rest first. It's now two separate actions:
    already exist from the Backlog stage (`run-backlog-automation.js`'s
    `processApplyPatch`); this step only advances the board's own status
    once a human has actually looked at (a batch of) what's already there.
+   Unlike Ready for Dev/Deploy to Main, there's no Routine session to spin
+   on, so feedback is immediate instead: an `alert()` naming exactly what
+   moved (and stating plainly that no new GitHub push happened — the code
+   was already pushed earlier), plus a Slack post via
+   `notifyOnItemsDeployedToFeature` (`functions/index.js`, watching
+   `projects/{id}.deployToFeatureRequestedAt` the same way
+   `notifyOnProjectReadyForReview`/`notifyOnProjectReadyToDeploy` watch
+   their own timestamps — it just never fires the Routine, since there's
+   nothing for it to do).
 
 Sending a card back — the existing left-arrow "move back" button, already
 present on any card past Backlog — from Feature Branch (Live) into Ready
