@@ -74,7 +74,20 @@ exports.notifyOnProjectReadyForReview = onDocumentUpdated(
       .where("projectId", "==", event.params.projectId)
       .where("status", "==", "backlog")
       .get();
-    const items = itemsSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    let items = itemsSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+
+    // The board's own Backlog checkboxes (see public/js/app.js
+    // requestNotify) can narrow a click to a hand-picked subset instead of
+    // the whole column — written alongside notifyRequestedAt as
+    // notifyItemIds. A present, non-empty array filters down to just those
+    // ids (still re-checked against what's actually in Backlog right now,
+    // in case one was moved/deleted since it was selected); anything else
+    // (unset, null, or an empty array) keeps the original "notify
+    // everything currently in Backlog" behavior.
+    if (Array.isArray(after.notifyItemIds) && after.notifyItemIds.length > 0) {
+      const wantedIds = new Set(after.notifyItemIds);
+      items = items.filter((i) => wantedIds.has(i.id));
+    }
 
     if (items.length === 0) {
       logger.info("Notify requested but Backlog is empty — nothing to notify or fire the Routine for", {
