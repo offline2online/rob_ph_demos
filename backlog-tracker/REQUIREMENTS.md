@@ -107,6 +107,7 @@ deleted by hand).
   previewUrl?: string,          // a Ready for Testing card's own "Test this" link
   testSummary?: string,         // Ready for Testing card's primary text — see below
   noDeploymentRequired?: boolean, // set from the Edit item modal — see "No manual way to reach published-live exists" below for the one exception it carves out
+  testPassed?: boolean,         // Ready for Testing card's own "Confirm tested" flag — see "Ready for Testing has two stages" below; never true outside that status, cleared once it advances or is sent back
 
   // Notify Claude automation hand-off — see README.md "Notify Claude can't
   // push — how a fix actually reaches GitHub". A fired Routine session has
@@ -135,43 +136,78 @@ Status pipeline and what each transition means:
 | Status | Column | Meaning |
 |---|---|---|
 | `backlog` | Backlog | Captured, not yet worked |
-| `ready-for-testing` | Ready for Testing | Implemented, PR open, awaiting human test |
-| `ready-to-publish` | Live on Feature Branch | Tested and confirmed on the feature branch (its own "Confirm live on branch" button) |
-| `published-live` | Merged to Main (Live) | Set only by `run-backlog-automation.js` after it actually merges the item's PR — see below, no manual button sets this |
-| `archived` | (hidden from the board) | Set via the Archive action on a Merged-to-Main card; reversible via Restore |
+| `ready-for-testing` | Ready for Testing | Implemented, PR open, awaiting human test — see "Ready for Testing has two stages" below |
+| `ready-to-publish` | Feature Branch (Live) | Released from Ready for Testing via the project's own "Deploy to Feature" action |
+| `published-live` | Deployed / Main Branch (Live) | Set only by `run-backlog-automation.js` after it actually merges the item's PR — see below, no manual button sets this |
+| `archived` | (hidden from the board) | Set via the Archive action on a Deployed/Main-Branch card; reversible via Restore |
+
+**Ready for Testing has two stages, not one — confirming a card is tested
+does not by itself advance it.** This used to be a single click: the
+card's own button both flagged it tested *and* moved it straight to
+Feature Branch (Live) in the same action, which meant testing one card in
+a batch of several put that one card alone on the feature branch with no
+chance to also confirm the rest first. It's now two separate actions:
+
+1. **Per-card, in place**: a Ready for Testing card's "Confirm tested"
+   button (`toggleTestPassed()` in `app.js`) sets `testPassed: true` —
+   the card stays in Ready for Testing, showing "✓ Passed testing"
+   (click again to un-mark). A checkbox on each card (mirroring the
+   Backlog column's own "Ready for Dev" selection, a separate selection
+   set — see `getDeploySelectedSet`) lets several be hand-picked instead
+   of acted on individually.
+2. **Batched, project-level**: the project header's own **"Deploy to
+   Feature"** action (`deployToFeature()`) appears once at least one
+   Ready for Testing card has `testPassed: true`, showing that count (or
+   a narrower "N selected" count if any checkboxes are checked). Clicking
+   it advances every `testPassed` (and, if any are checked, only the
+   checked-and-passed) item straight to `ready-to-publish` in one
+   Firestore batch write, clearing `testPassed` on each as it goes. This
+   never touches the Routine or GitHub — the feature branch and PR
+   already exist from the Backlog stage (`run-backlog-automation.js`'s
+   `processApplyPatch`); this step only advances the board's own status
+   once a human has actually looked at (a batch of) what's already there.
+
+Sending a card back — the existing left-arrow "move back" button, already
+present on any card past Backlog — from Feature Branch (Live) into Ready
+for Testing (`moveItem()`) resets `testPassed` to `false`: a stale flag
+from a previous round would otherwise let it slip back onto the feature
+branch on the next "Deploy to Feature" click with nobody having
+re-confirmed the new round of work.
 
 **No manual way to reach `published-live` exists — except for a card with
-nothing to actually deploy.** A "Live on Feature Branch" card normally
-shows a passive "Waiting for Notify Claude — Deploy" hint instead of a
-button. There used to be a per-card "Merge to main" button and a bulk
-"Merge all to main" on the Deployments page, both of which wrote `status:
+nothing to actually deploy.** A "Feature Branch (Live)" card normally
+shows a passive "Waiting for Deploy to Main" hint instead of a button.
+There used to be a per-card "Merge to main" button and a bulk "Merge all
+to main" on the Deployments page, both of which wrote `status:
 "published-live"` directly with no connection to whether the PR was
 actually merged on GitHub — removed after that let cards read "Merged to
-Main" while their PRs sat open. The project's own "Notify Claude —
-Deploy" header action (`requestDeployNotify` in `app.js`) is now the only
-trigger for an ordinary card; it fires the Routine, which sets
-`mergeReady` + `mergePrNumber` once it's confirmed the PR is actually
-green and mergeable, and only `run-backlog-automation.js` (see "Notify
-Claude can't push" in README.md) flips `status` to `published-live`,
-after the real merge succeeds. The Deployments page's "Notify Claude to
-merge" button (`requestDeploymentMerge`) is the same action, just scoped
-to a deployment group's project; its own "✓ Merged" badge is derived live
-from every member's actual `status`, not a separate stored flag.
+Main" while their PRs sat open. The project's own "Deploy to Main" header
+action (`requestDeployNotify` in `app.js`) is now the only trigger for an
+ordinary card; it fires the Routine, which sets `mergeReady` +
+`mergePrNumber` once it's confirmed the PR is actually green and
+mergeable, and only `run-backlog-automation.js` (see "Notify Claude can't
+push" in README.md) flips `status` to `published-live`, after the real
+merge succeeds. The Deployments page's "Notify Claude to merge" button
+(`requestDeploymentMerge`) is the same action, just scoped to a
+deployment group's project; its own "✓ Merged" badge is derived live from
+every member's actual `status`, not a separate stored flag.
 
 The one deliberate exception is `noDeploymentRequired` (set from the Edit
 item modal — a plain checkbox, self-service, not something only the
 Routine can flip): a card whose fix is a live data/config change only —
 nothing that ever touches GitHub — genuinely has no PR for the deploy gate
-to check in the first place, so gating it on "Notify Claude — Deploy"
-would just wait forever on a merge that will never happen. A Ready for
-Testing card carrying this flag shows "Confirm tested — mark Merged to
-Main" instead of the normal "Confirm live on branch" button;
-`confirmTestedNoDeploy()` writes `status: "published-live"` directly, the
-same way the old, removed "Merge to main" button used to — the difference
-being this is only ever offered on a card that has already told the board
-there's no PR to fake being merged. Any card without the flag still goes
-through the full PR/deploy pipeline exactly as before; this does not
-change behavior for the common case.
+to check in the first place, so gating it on "Deploy to Main" would just
+wait forever on a merge that will never happen, and it never has anything
+to gain from the Feature Branch stage either. Such a card is excluded from
+the `testPassed`/"Deploy to Feature" pool entirely (no checkbox, no
+"Confirm tested" button) and instead shows its own separate "Confirm
+tested — mark Merged to Main" button; `confirmTestedNoDeploy()` writes
+`status: "published-live"` directly, the same way the old, removed "Merge
+to main" button used to — the difference being this is only ever offered
+on a card that has already told the board there's no PR to fake being
+merged. Any card without the flag still goes through the full two-stage
+Ready for Testing → Feature Branch → Main pipeline exactly as described
+above; this does not change behavior for the common case.
 
 `published-live` is treated as the one **irreversible** transition of the
 four for automation purposes (see "FAQ auto-review" below) — the other
@@ -385,16 +421,22 @@ REST API is reachable with a plain `curl`, no service account needed.
   though the two are independent destinations. This replaced three
   competing topbar buttons for the same reason the per-project header
   below already collapsed to one primary CTA + a menu.
-- **Header actions**, in order: **Notify Claude** (own button, shows the
-  live Backlog count; not buried in a menu — see "Notify Claude" below),
-  **Notify Claude — Deploy** (same gradient treatment, shown only when the
-  project has items Live on Feature Branch — see "Notify Claude — Deploy"
-  below), **+ New backlog item**, then a **⋮** options menu holding
-  everything else (Deployments, Archived tickets, Requirements/Docs,
-  interface contracts). Mobile (<640px) stacks each Notify Claude button as
-  its own full-width row above the New item / ⋮ row rather than squeezing
-  controls onto one line; the board's four columns stack vertically instead
-  of forcing horizontal scroll.
+- **Header actions**, in order: **Ready for Dev** (own button, shows the
+  live Backlog count; not buried in a menu — fires the Routine's
+  investigate-and-fix flow, see "Notify Claude" below — the function/doc
+  names kept their original "notify" naming even after the button itself
+  was relabeled), **Deploy to Feature** (shown only once at least one
+  Ready for Testing card has been individually confirmed tested — see
+  "Ready for Testing has two stages" above; a pure board status batch
+  write, no Routine involved), **Deploy to Main** (same gradient
+  treatment as Ready for Dev, shown only when the project has items on
+  Feature Branch (Live) — see "Notify Claude — Deploy" below), **+ New
+  backlog item**, then a **⋮** options menu holding everything else
+  (Deployments, Archived tickets, Requirements/Docs, interface contracts).
+  Mobile (<640px) stacks each gradient button as its own full-width row
+  above the New item / ⋮ row rather than squeezing controls onto one line;
+  the board's four columns stack vertically instead of forcing horizontal
+  scroll.
 - **Notify Claude progress**: the button shows a spinning "Working…" state
   the instant it's clicked — a client-local optimistic state, since
   `projects/{id}.notifyRoutine` (written by the Cloud Function reacting to
@@ -437,13 +479,14 @@ REST API is reachable with a plain `curl`, no service account needed.
   that's a live data/config change only — nothing that ever needs a code
   push or a deploy, e.g. a Firestore-only edit. Any card carrying it shows
   a small "No deployment required" badge; once it reaches Ready for
-  Testing, its "Confirm live on branch" button is replaced with "Confirm
-  tested — mark Merged to Main", which moves it straight to `published-live`
-  — see "No manual way to reach `published-live` exists" above for why
-  this one case is safe to bypass the deploy gate. Self-service, not
-  something only the Notify Claude Routine sets — anyone can check it from
-  the Edit item modal on any non-archived card, same as title/description/
-  type/category.
+  Testing, it's excluded from the checkbox/"Confirm tested" testPassed
+  pool entirely (see "Ready for Testing has two stages" above) and instead
+  shows its own separate "Confirm tested — mark Merged to Main" button,
+  which moves it straight to `published-live` — see "No manual way to
+  reach `published-live` exists" above for why this one case is safe to
+  bypass the deploy gate. Self-service, not something only the Notify
+  Claude Routine sets — anyone can check it from the Edit item modal on
+  any non-archived card, same as title/description/type/category.
 - **Edit + comments**: every non-archived card has an edit icon (with a
   comment-count badge once it has any) opening a modal to change
   title/description/type/category, plus a comments thread. `notes` existed
@@ -492,11 +535,12 @@ REST API is reachable with a plain `curl`, no service account needed.
     name/membership at any time.
   - **"Notify Claude to merge" requests the real merge — it doesn't
     perform one itself.** It stays disabled until every member ticket has
-    individually reached `ready-to-publish` (Live on Feature Branch — the
-    same "someone actually tested it" gate a single card's own "Confirm
-    live on branch" button already enforces). Clicking it calls
-    `requestDeployNotify()` for the group's project — the exact same
-    "Notify Claude — Deploy" flow the project header button fires — which
+    individually reached `ready-to-publish` (Feature Branch (Live) — the
+    same "someone actually tested it, then a Deploy to Feature click
+    released it" path every card goes through, per "Ready for Testing has
+    two stages" above). Clicking it calls `requestDeployNotify()` for the
+    group's project — the exact same "Deploy to Main" flow the project
+    header button fires — which
     asks the Routine to verify each item's PR and set `mergeReady` +
     `mergePrNumber`; only `run-backlog-automation.js` (see "Notify Claude
     can't push" in README.md) actually merges the PR and flips `status` to

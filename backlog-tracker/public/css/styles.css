@@ -115,6 +115,11 @@ body {
 .card-cat { font-size: 10.5px; color: var(--text-muted); background: var(--surface-2); border-radius: 9999px; padding: 2px 8px; }
 .quick-comment-btn { font-size: 13px; padding: 3px 6px; }
 .approve-btn { width: 100%; margin-top: 10px; background: var(--primary); color: #fff; border: none; border-radius: 6px; padding: 8px 10px; font-size: 12.5px; font-weight: 600; cursor: pointer; }
+/* A Ready for Testing card that's been individually confirmed tested —
+   still sits in the same column (advancing is the separate, batchable
+   "Deploy to Feature" project action), so this reads as a flag, not a
+   "this is now done" terminal state. Click again to un-mark. */
+.test-passed-btn-active { background: var(--success); }
 /* Not a button — a passive status line for a "Live on Feature Branch"
    card. There is deliberately no manual way to merge from here; only the
    project's own Notify Claude — Deploy action can move a card past this
