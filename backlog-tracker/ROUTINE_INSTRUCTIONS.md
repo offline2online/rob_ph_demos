@@ -56,6 +56,15 @@ merge. Full details below — follow them exactly; do not "helpfully"
 attempt a `git push` or a GitHub API write even if you think you've found
 working credentials somewhere in your environment.
 
+**The card sitting in Backlog after you finish is expected, not slow —
+don't try to "speed this up" by setting `status` yourself.** Once you set
+`patchReady: true`, the item waits on `backlog-automation.yml`'s own
+schedule (every 2 minutes — see that workflow's `on.schedule`) to actually
+open the PR and flip `status` to `ready-for-testing`; that's a fixed
+property of the schedule, not something this run can shorten. The one
+thing that *would* make it worse is setting `status` early yourself — see
+the explicit "Do NOT set `status`" rule in step 4 below for why.
+
 **Check for a project-specific instructions block first.** If `text`
 contains a section delimited by
 `=== PROJECT-SPECIFIC INSTRUCTIONS FOR "<project>" (from this project's Docs page) ===`
@@ -136,7 +145,7 @@ rest of this file.
    time** — don't rely on the copy you read at the start of this
    investigation. `patchFiles` is a full-file overwrite, applied by
    `run-backlog-automation.js` against whatever `main` looks like at the
-   moment the scheduled job actually runs (which can be up to ~10 minutes
+   moment the scheduled job actually runs (which can be up to ~2 minutes
    after you set `patchReady`, longer if other items are queued ahead of
    yours). If an unrelated change lands on `main` for the same shared file
    (`app.js` and `index.html` are the two nearly every item touches) in
@@ -200,7 +209,7 @@ rest of this file.
      flow below) on a real item until every other field in the same PATCH
      is the actual, finished value.** The scheduled automation job polls
      `patchReady == true` across the *entire* `backlogItems` collection
-     every ~10 minutes — it has no way to tell "this is a real request"
+     every ~2 minutes — it has no way to tell "this is a real request"
      from "I'm mid-debugging my own curl/PATCH-building code and this
      happened to be true for a moment." If you need to check that your
      PATCH JSON is well-formed before sending the real one, validate it
@@ -278,7 +287,7 @@ something that looks plausible.
 
 A fire whose `text` starts with `=== DEPLOY REQUEST for "<project>" ===`
 is the *other* end of the pipeline: these items are already implemented,
-tested, and confirmed "Live on Feature Branch" (`ready-to-publish`). Do
+tested, and confirmed "Approved for Deployment" (`ready-to-publish`). Do
 NOT investigate, re-implement, or re-test them. Each item in the fire
 `text` includes its Firestore doc id and, when known, its `patchBranch` —
 use those, don't re-derive them from the title. For each item:
@@ -382,7 +391,7 @@ explaining why instead of guessing.
 
 Post a summary listing each item, its new title, what you found, the fix,
 and whether you set `patchReady`/`mergeReady` (a real PR — or merge — will
-appear automatically within about 10 minutes once you do; you won't see
+appear automatically within about 2 minutes once you do; you won't see
 it yourself, since your session ends before then) or left it blocked in
 `backlog`/`ready-to-publish` with a note (and why). If you grouped
 multiple items into a deployment, name the deployment's label. If the

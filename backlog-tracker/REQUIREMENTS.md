@@ -108,6 +108,7 @@ deleted by hand).
   testSummary?: string,         // Ready for Testing card's primary text — see below
   noDeploymentRequired?: boolean, // set from the Edit item modal — see "No manual way to reach published-live exists" below for the one exception it carves out
   testPassed?: boolean,         // Ready for Testing card's own "Confirm tested" flag — see "Ready for Testing has two stages" below; never true outside that status, cleared once it advances or is sent back
+  testVersion?: string,         // backlog-tracker's own APP_VERSION, stamped once on first entry to Ready for Testing and carried unchanged through Approved for Deployment, Deployed/Main Branch (Live), and Archived — see "Test version" below
 
   // Notify Claude automation hand-off — see README.md "Notify Claude can't
   // push — how a fix actually reaches GitHub". A fired Routine session has
@@ -137,14 +138,14 @@ Status pipeline and what each transition means:
 |---|---|---|
 | `backlog` | Backlog | Captured, not yet worked |
 | `ready-for-testing` | Ready for Testing | Implemented, PR open, awaiting human test — see "Ready for Testing has two stages" below |
-| `ready-to-publish` | Feature Branch (Live) | Released from Ready for Testing via the project's own "Deploy to Feature" action |
+| `ready-to-publish` | Approved for Deployment | Released from Ready for Testing via the project's own "Approved for Deployment" action |
 | `published-live` | Deployed / Main Branch (Live) | Set only by `run-backlog-automation.js` after it actually merges the item's PR — see below, no manual button sets this |
 | `archived` | (hidden from the board) | Set via the Archive action on a Deployed/Main-Branch card; reversible via Restore |
 
 **Ready for Testing has two stages, not one — confirming a card is tested
 does not by itself advance it.** This used to be a single click: the
 card's own button both flagged it tested *and* moved it straight to
-Feature Branch (Live) in the same action, which meant testing one card in
+Approved for Deployment in the same action, which meant testing one card in
 a batch of several put that one card alone on the feature branch with no
 chance to also confirm the rest first. It's now two separate actions:
 
@@ -155,8 +156,8 @@ chance to also confirm the rest first. It's now two separate actions:
    Backlog column's own "Ready for Dev" selection, a separate selection
    set — see `getDeploySelectedSet`) lets several be hand-picked instead
    of acted on individually.
-2. **Batched, project-level**: the project header's own **"Deploy to
-   Feature"** action (`deployToFeature()`) appears once at least one
+2. **Batched, project-level**: the project header's own **"Approved for
+   Deployment"** action (`deployToFeature()`) appears once at least one
    Ready for Testing card has `testPassed: true`, showing that count (or
    a narrower "N selected" count if any checkboxes are checked). Clicking
    it advances every `testPassed` (and, if any are checked, only the
@@ -166,16 +167,57 @@ chance to also confirm the rest first. It's now two separate actions:
    already exist from the Backlog stage (`run-backlog-automation.js`'s
    `processApplyPatch`); this step only advances the board's own status
    once a human has actually looked at (a batch of) what's already there.
+   Unlike Ready for Dev/Deploy to Main, there's no Routine session to spin
+   on, so feedback is immediate instead: an `alert()` naming exactly what
+   moved (and stating plainly that no new GitHub push happened — the code
+   was already pushed earlier), plus a Slack post via
+   `notifyOnItemsDeployedToFeature` (`functions/index.js`, watching
+   `projects/{id}.deployToFeatureRequestedAt` the same way
+   `notifyOnProjectReadyForReview`/`notifyOnProjectReadyToDeploy` watch
+   their own timestamps — it just never fires the Routine, since there's
+   nothing for it to do).
 
 Sending a card back — the existing left-arrow "move back" button, already
-present on any card past Backlog — from Feature Branch (Live) into Ready
+present on any card past Backlog — from Approved for Deployment into Ready
 for Testing (`moveItem()`) resets `testPassed` to `false`: a stale flag
 from a previous round would otherwise let it slip back onto the feature
-branch on the next "Deploy to Feature" click with nobody having
+branch on the next "Approved for Deployment" click with nobody having
 re-confirmed the new round of work.
 
+**Test version (`testVersion`)** — a small badge on the card ("Test
+version: v1.5.2") naming backlog-tracker's own `APP_VERSION`
+(`public/js/version.js`) at the moment the card first reached Ready for
+Testing. Since a `public/` change with no version bump is otherwise
+invisible even once merged and deployed (see "always bump the version"
+in `ROUTINE_INSTRUCTIONS.md`), this gives whoever's testing a concrete
+number to check against the live footer before they start — the same
+purpose the footer's own version string already serves, just carried onto
+the ticket itself.
+
+- **Set once, then carried through unchanged** — never recomputed on
+  later moves. The normal automated path
+  (`run-backlog-automation.js`'s `processApplyPatch`) reads
+  `public/js/version.js` straight off disk right after applying
+  `patchFiles` (so it reflects a version bump the same patch carries) and
+  stamps it alongside the `ready-for-testing` status write. The rarer
+  manual path — a Backlog card moved straight to Ready for Testing via
+  the right-arrow button, bypassing the Routine/PR pipeline entirely —
+  stamps the frontend's own currently-loaded `APP_VERSION` the same way
+  (`moveItem()`, only on the forward direction; sending a card back from
+  Approved for Deployment leaves an existing `testVersion` untouched, same
+  as `testPassed` is reset but the version stamp isn't).
+- Carries through Approved for Deployment and Deployed/Main Branch (Live)
+  unmodified, and appears as its own **Version** column in the Archived
+  table (`archiveRowHTML()`) once a card is archived — so the version a
+  ticket was tested against stays visible for the life of the card, not
+  just while it's on the active board.
+- A card stamped before this feature shipped (or one whose entry to Ready
+  for Testing predates it) simply has no `testVersion` — the badge and
+  the Archive column both render nothing (`—` in the table) rather than a
+  placeholder.
+
 **No manual way to reach `published-live` exists — except for a card with
-nothing to actually deploy.** A "Feature Branch (Live)" card normally
+nothing to actually deploy.** An "Approved for Deployment" card normally
 shows a passive "Waiting for Deploy to Main" hint instead of a button.
 There used to be a per-card "Merge to main" button and a bulk "Merge all
 to main" on the Deployments page, both of which wrote `status:
@@ -199,7 +241,7 @@ nothing that ever touches GitHub — genuinely has no PR for the deploy gate
 to check in the first place, so gating it on "Deploy to Main" would just
 wait forever on a merge that will never happen, and it never has anything
 to gain from the Feature Branch stage either. Such a card is excluded from
-the `testPassed`/"Deploy to Feature" pool entirely (no checkbox, no
+the `testPassed`/"Approved for Deployment" pool entirely (no checkbox, no
 "Confirm tested" button) and instead shows its own separate "Confirm
 tested — mark Merged to Main" button; `confirmTestedNoDeploy()` writes
 `status: "published-live"` directly, the same way the old, removed "Merge
@@ -425,12 +467,12 @@ REST API is reachable with a plain `curl`, no service account needed.
   live Backlog count; not buried in a menu — fires the Routine's
   investigate-and-fix flow, see "Notify Claude" below — the function/doc
   names kept their original "notify" naming even after the button itself
-  was relabeled), **Deploy to Feature** (shown only once at least one
+  was relabeled), **Approved for Deployment** (shown only once at least one
   Ready for Testing card has been individually confirmed tested — see
   "Ready for Testing has two stages" above; a pure board status batch
   write, no Routine involved), **Deploy to Main** (same gradient
   treatment as Ready for Dev, shown only when the project has items on
-  Feature Branch (Live) — see "Notify Claude — Deploy" below), **+ New
+  Approved for Deployment — see "Notify Claude — Deploy" below), **+ New
   backlog item**, then a **⋮** options menu holding everything else
   (Deployments, Archived tickets, Requirements/Docs, interface contracts).
   Mobile (<640px) stacks each gradient button as its own full-width row
@@ -535,8 +577,8 @@ REST API is reachable with a plain `curl`, no service account needed.
     name/membership at any time.
   - **"Notify Claude to merge" requests the real merge — it doesn't
     perform one itself.** It stays disabled until every member ticket has
-    individually reached `ready-to-publish` (Feature Branch (Live) — the
-    same "someone actually tested it, then a Deploy to Feature click
+    individually reached `ready-to-publish` (Approved for Deployment — the
+    same "someone actually tested it, then an Approved for Deployment click
     released it" path every card goes through, per "Ready for Testing has
     two stages" above). Clicking it calls `requestDeployNotify()` for the
     group's project — the exact same "Deploy to Main" flow the project
@@ -629,8 +671,8 @@ Three Cloud Functions, all in `backlog-tracker/functions/index.js`:
    `deployNotifyRequestedAt`, posts to `NOTIFY_WEBHOOK_URL` if set, fires
    the same Routine via `CLAUDE_ROUTINE_FIRE_URL`/`CLAUDE_ROUTINE_TOKEN` if
    set — either independent of the other), but for the opposite end of the
-   pipeline: it queries `status == "ready-to-publish"` (Live on Feature
-   Branch) instead of `backlog`. **The fire `text` is a self-contained
+   pipeline: it queries `status == "ready-to-publish"` (Approved for
+   Deployment) instead of `backlog`. **The fire `text` is a self-contained
    "DEPLOY REQUEST" block, not the usual "N items in Backlog" shape** —
    it explicitly states these items are already implemented, tested, and
    confirmed on their feature branches, tells the fired session not to

@@ -253,7 +253,7 @@ exports.notifyOnProjectReadyForReview = onDocumentUpdated(
 );
 
 // The board's "Notify Claude — Deploy" button (per-project header, shown
-// only when a project has items Live on Feature Branch) writes
+// only when a project has items Approved for Deployment) writes
 // projects/{id}.deployNotifyRequestedAt, and this fires once on that write
 // — same Slack-post-plus-Routine-fire shape as notifyOnProjectReadyForReview
 // above, but for the opposite end of the pipeline: these items are already
@@ -283,7 +283,7 @@ exports.notifyOnProjectReadyToDeploy = onDocumentUpdated(
     const items = itemsSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
 
     if (items.length === 0) {
-      logger.info("Deploy notify requested but nothing is Live on Feature Branch — nothing to notify or fire the Routine for", {
+      logger.info("Deploy notify requested but nothing is Approved for Deployment — nothing to notify or fire the Routine for", {
         projectId: event.params.projectId,
       });
       return;
@@ -298,7 +298,7 @@ exports.notifyOnProjectReadyToDeploy = onDocumentUpdated(
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            text: `Notify Claude — Deploy clicked for ${projectName}: ${items.length} item${items.length === 1 ? "" : "s"} Live on Feature Branch will be merged to main.`,
+            text: `Notify Claude — Deploy clicked for ${projectName}: ${items.length} item${items.length === 1 ? "" : "s"} Approved for Deployment will be merged to main.`,
             projectId: event.params.projectId,
             projectName,
             itemCount: items.length,
@@ -361,7 +361,7 @@ exports.notifyOnProjectReadyToDeploy = onDocumentUpdated(
       : "";
 
     const text = `${projectPromptBlock}=== DEPLOY REQUEST for "${projectName}" (projectId: ${event.params.projectId}) on the Backlog Tracker & FAQs board ===\n` +
-      `These ${items.length} item${items.length === 1 ? "" : "s"} are already implemented, tested, and confirmed "Live on Feature Branch" (ready-to-publish). Do NOT investigate, re-implement, or re-test them — follow ROUTINE_INSTRUCTIONS.md's "Notify Claude — Deploy" flow section for exactly what to do with each one.\n\n` +
+      `These ${items.length} item${items.length === 1 ? "" : "s"} are already implemented, tested, and confirmed "Approved for Deployment" (ready-to-publish). Do NOT investigate, re-implement, or re-test them — follow ROUTINE_INSTRUCTIONS.md's "Notify Claude — Deploy" flow section for exactly what to do with each one.\n\n` +
       `Items:\n${itemLines}`;
 
     try {
@@ -389,6 +389,75 @@ exports.notifyOnProjectReadyToDeploy = onDocumentUpdated(
       });
     } catch (err) {
       logger.error("Failed to call Routine fire endpoint for deploy notify request", {
+        projectId: event.params.projectId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+);
+
+// The board's "Approved for Deployment" project action (see deployToFeature() in
+// public/js/app.js) writes projects/{id}.deployToFeatureRequestedAt (plus
+// deployToFeatureItemTitles), and this fires once on that write to post a
+// Slack confirmation. Deliberately the odd one out among the three notify
+// functions in this file: it never fires the Routine, because there's no
+// AI work to do here — the feature branch and PR for every item involved
+// already exist (created automatically back at the Backlog stage); this
+// action only advances the board's own status once a human has confirmed
+// testing. But deployToFeature() is a silent, one-round-trip client write
+// with no in-progress state to watch (unlike Ready for Dev/Deploy to Main,
+// which both spin on a Routine session) — without this, a click could
+// easily look like it did nothing at all, which is exactly what happened
+// in production before this existed.
+exports.notifyOnItemsDeployedToFeature = onDocumentUpdated(
+  { document: "projects/{projectId}", secrets: [NOTIFY_WEBHOOK_URL] },
+  async (event) => {
+    const before = event.data?.before?.data();
+    const after = event.data?.after?.data();
+    if (!after?.deployToFeatureRequestedAt) {
+      return;
+    }
+    const beforeMs = before?.deployToFeatureRequestedAt?.toMillis?.() ?? 0;
+    const afterMs = after.deployToFeatureRequestedAt?.toMillis?.() ?? 0;
+    if (afterMs <= beforeMs) {
+      return;
+    }
+
+    const webhookUrl = NOTIFY_WEBHOOK_URL.value();
+    if (!webhookUrl) {
+      logger.warn(
+        "NOTIFY_WEBHOOK_URL is not set — skipping Slack notification for Approved for Deployment",
+        { projectId: event.params.projectId }
+      );
+      return;
+    }
+
+    const projectName = after.name || "A project";
+    const titles = Array.isArray(after.deployToFeatureItemTitles) ? after.deployToFeatureItemTitles : [];
+    const text = `${projectName}: ${titles.length} item${titles.length === 1 ? "" : "s"} approved for deployment` +
+      (titles.length ? `:\n${titles.map((t) => `• ${t}`).join("\n")}` : ".") +
+      ` No new GitHub push happened — each item's code was already on its own feature branch from the Backlog stage.`;
+
+    try {
+      const res = await fetch(webhookUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text, projectId: event.params.projectId, projectName, itemTitles: titles }),
+      });
+      if (!res.ok) {
+        logger.error("Approved for Deployment notify webhook responded with a non-2xx status", {
+          projectId: event.params.projectId,
+          status: res.status,
+          body: await res.text().catch(() => "<unreadable>"),
+        });
+        return;
+      }
+      logger.info("Notified webhook of Approved for Deployment click", {
+        projectId: event.params.projectId,
+        itemCount: titles.length,
+      });
+    } catch (err) {
+      logger.error("Failed to call notify webhook for Approved for Deployment", {
         projectId: event.params.projectId,
         error: err instanceof Error ? err.message : String(err),
       });
