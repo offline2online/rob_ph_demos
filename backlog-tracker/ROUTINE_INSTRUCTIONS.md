@@ -364,6 +364,44 @@ use those, don't re-derive them from the title. For each item:
    That's the correct, expected outcome for as long as step 0's access
    issue persists; it is not something to work around by proceeding
    without the check.
+
+   **A `mergeable_state` of `"dirty"` is a real merge conflict against
+   `main`, not a "not yet computed" state — treat it completely
+   differently from `"unknown"`.** `"unknown"` means "ask again in a few
+   seconds," and a pending/queued CI check means "ask again once it
+   finishes" — both are transient and can resolve on their own by your
+   next check. `"dirty"` never resolves on its own, no matter how many
+   times you re-check it or how many separate Deploy-flow fires come
+   through: the PR's branch and `main` have diverged in a way that needs
+   an actual `git merge` + conflict resolution + push, and you have no
+   push credential in this run (same restriction as everywhere else in
+   this file) — nothing you do inside this session can fix it. Do not set
+   `mergeReady`. Instead:
+   - Fetch the item's current `notes` first. If the most recent note
+     already reports this exact PR number as conflicted and nothing else
+     has changed, don't add another near-identical note — a fresh
+     re-diagnosis of an unchanged, permanent blocker on every single
+     fire is noise, not progress; two separate fires doing exactly this
+     (re-confirming the same `dirty` state, 29 minutes apart, with no new
+     information either time) is what let PR #77 sit blocked for hours
+     with nothing actually able to move it forward.
+   - If this is the first time you're flagging it (or the PR number or
+     state has changed since the last note), append one clear note
+     naming the PR and stating plainly that it has a real merge conflict
+     against `main` (`mergeable_state: dirty`) that needs someone with
+     git push access — a human, or a Claude Code session with a real
+     repo credential — to merge `main` into the PR's branch and resolve
+     it; this Routine cannot do that itself. That note is what makes the
+     blocker visible and actionable outside this run, the same way
+     naming a stray `patchReady` elsewhere in this file is what makes
+     that visible.
+   - This exact scenario already happened in production: PR #77 (item
+     `sxETMRCnxzoBhzlQLSUI`) went conflicted after later merges moved
+     `main` forward, two separate Deploy-flow fires each independently
+     re-confirmed the identical `dirty` state without escalating it any
+     further, and it only got resolved once a Claude Code session with
+     real repo access noticed it separately, merged `main` into the
+     branch by hand, and pushed the resolution.
 3. If it's green and mergeable **and step 1's exact id match held**, PATCH
    its backlogItems doc: `mergeReady -> true` (boolean), `mergePrNumber ->
    <the PR number, as a number>`, `updatedAt -> now`. The same scheduled
