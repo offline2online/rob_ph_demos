@@ -167,7 +167,7 @@
           <input type="checkbox" id="ei-no-deploy-checkbox">
           No deployment required
         </label>
-        <p class="field-hint">For a fix that's just a live data/config change with no code to push — e.g. a Firestore-only edit — nothing ever needs to reach GitHub. Check this and, once tested, the card can move straight from Ready for Testing to Deployed / Main Branch (Live), skipping Feature Branch (Live) and Deploy to Feature Branch entirely.</p>
+        <p class="field-hint">For a fix that's just a live data/config change with no code to push — e.g. a Firestore-only edit — nothing ever needs to reach GitHub. Check this and, once tested, the card can move straight from Ready for Testing to Deployed / Main Branch (Live), skipping Feature Branch (Live) and Deploy to Main entirely.</p>
         <div class="form-row" style="justify-content:flex-end;">
           <div class="form-actions">
             <button type="button" class="btn-ghost" id="ei-cancel">Cancel</button>
@@ -335,7 +335,7 @@
       <div class="docs-page-header">
         <h2>Deployments — <span id="deployments-page-project-name"></span></h2>
       </div>
-      <p class="field-hint">Group tickets that should ship to main together — usually everything the Notify Claude Routine fixed in one fire. Once every ticket in a group is individually confirmed "Feature Branch (Live)", the group's own "Notify Claude to merge" button unlocks — it asks Claude to verify and merge each PR for real, the same as the project header's own Deploy to Feature Branch button.</p>
+      <p class="field-hint">Group tickets that should ship to main together — usually everything the Notify Claude Routine fixed in one fire. Once every ticket in a group is individually confirmed "Feature Branch (Live)", the group's own "Notify Claude to merge" button unlocks — it asks Claude to verify and merge each PR for real, the same as the project header's own Deploy to Main button.</p>
       <div class="form-row" style="justify-content:flex-end;">
         <button type="button" class="btn-primary" id="deployments-add-btn">+ New deployment</button>
       </div>
