@@ -495,7 +495,13 @@ trigger" flow can only be edited there, not via `update_trigger`).
 ## FAQ / Help Center
 
 A second consumer-facing surface lives alongside the backlog board itself,
-sharing this same Firestore project:
+sharing this same Firestore project. **All content and structure here
+follows [`../docs/CONTRIBUTING-docs.md`](../docs/CONTRIBUTING-docs.md)**
+— the governing documentation standard (Diátaxis document types, FAQ
+writing rules, formatting/accessibility conventions). Read it before
+writing or editing an article; every article's `docType` (see "Data
+model" below) should be set honestly per that file's §2, not left at its
+default.
 
 - **Public site**: repo-root `faq/` (outside `backlog-tracker/` entirely —
   it's a plain static site published via GitHub Pages like the rest of
@@ -509,18 +515,29 @@ sharing this same Firestore project:
 - **Admin**: two separate hamburger-menu destinations, **Settings**
   (categories — name, icon picked from a curated dropdown with a live
   preview, description, display order) and **FAQ Management** (articles —
-  title, slug, category, an optional linked project, summary, a rich-text
-  body via a real editor (Quill) with an Edit/View-live toggle, search
-  keywords, draft/published status, and a "needs review" flag). Global,
-  not per-project, since an article can span or link to any one project.
-  See `REQUIREMENTS.md` → "Rich-text article body" for the format-
-  migration and sanitization details — this is real HTML now, not
-  markdown, and it's sanitized (DOMPurify) at render time on both the
-  admin preview and the public site since `faqArticles`' write rules are
-  wide open.
+  title, slug, category, a **document type** select (FAQ / How-to guide /
+  Reference / Explanation — see "Data model" below), an optional linked
+  project, summary, a rich-text body via a real editor (Quill) with an
+  Edit/View-live toggle, search keywords, draft/published status, and a
+  "needs review" flag). Global, not per-project, since an article can span
+  or link to any one project. Inserting an image via the editor's toolbar
+  prompts for alt text as well as a URL — `docs/CONTRIBUTING-docs.md` §6/
+  §5.6 makes alt text mandatory on every informative image, enforced here
+  at authoring time rather than by a later audit. See `REQUIREMENTS.md` →
+  "Rich-text article body" for the format-migration and sanitization
+  details — this is real HTML now, not markdown, and it's sanitized
+  (DOMPurify) at render time on both the admin preview and the public site
+  since `faqArticles`' write rules are wide open.
 - **Data model** — two new top-level collections:
   - `faqCategories/{id}`: `{name, icon, description, order, createdAt, updatedAt}`
-  - `faqArticles/{id}`: `{categoryId, projectId (nullable), title, slug, summary, bodyMd, keywords[], status: "draft"|"published", needsReview, order, createdAt, updatedAt, publishedAt}`
+  - `faqArticles/{id}`: `{categoryId, projectId (nullable), title, slug, summary, bodyMd, docType: "faq"|"how-to"|"reference"|"explanation", keywords[], status: "draft"|"published", needsReview, order, createdAt, updatedAt, publishedAt}`
+  - **`docType`** — which of `docs/CONTRIBUTING-docs.md` §2's four
+    Diátaxis types this article actually is. Defaults to `"faq"` for a
+    new article (most of the 108 seeded ones genuinely are short FAQ
+    entries) but should be corrected on any article that's really a
+    how-to guide, reference page, or explanation — the public site shows
+    it as a small type badge next to the article title and in category
+    listings, so readers (and future editors) can tell at a glance.
 - **Why `projectId` exists on an article**: this is the "categorization by
   project" piece — an article can be linked to whichever `projects`
   collection doc (Live Visitor Profile, Experience Templates, Products

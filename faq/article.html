@@ -33,6 +33,7 @@
           <span class="material-symbols-outlined" style="font-size:14px;" id="cat-badge-icon">help</span>
           <span id="cat-badge-name"></span>
         </span>
+        <span class="doctype-badge" id="doctype-badge" hidden></span>
         <h1 id="article-title">Loading…</h1>
       </div>
       <div class="article-body" id="article-body"></div>
@@ -48,7 +49,7 @@
   <footer class="ph-footer">Personalisation Hub Help Center &middot; content managed from <a href="https://backlog-tracker-e4ed2.web.app/">backlog-tracker</a> &middot; <span id="app-version"></span></footer>
 
   <script type="module">
-    import { fetchCategories, fetchPublishedArticles, escapeHTML, categoryIcon, renderBodyMd, isEmbedded } from "./js/faq-data.js";
+    import { fetchCategories, fetchPublishedArticles, escapeHTML, categoryIcon, renderBodyMd, docTypeLabel, isEmbedded } from "./js/faq-data.js";
     import { APP_VERSION } from "./js/version.js";
     import { initSearchBox } from "./js/search-box.js";
 
@@ -70,6 +71,9 @@
       document.getElementById("article-title").textContent = article.title;
       document.getElementById("article-body").innerHTML = renderBodyMd(article.bodyMd);
       document.getElementById("crumb-article").textContent = article.title;
+      const doctypeBadge = document.getElementById("doctype-badge");
+      doctypeBadge.textContent = docTypeLabel(article);
+      doctypeBadge.hidden = false;
 
       if (category) {
         document.getElementById("crumb-cat").textContent = category.name;

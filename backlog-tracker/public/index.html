@@ -350,6 +350,18 @@
             <select id="fa-category-select"></select>
           </div>
           <div>
+            <label class="field-label" for="fa-doctype-select">Document type</label>
+            <select id="fa-doctype-select">
+              <option value="faq">FAQ</option>
+              <option value="how-to">How-to guide</option>
+              <option value="reference">Reference</option>
+              <option value="explanation">Explanation</option>
+            </select>
+          </div>
+        </div>
+        <p class="field-hint">Document type per <a href="../docs/CONTRIBUTING-docs.md" target="_blank" rel="noopener">docs/CONTRIBUTING-docs.md</a> §2 — a short reassurance (FAQ), a task to complete (How-to), facts to look up (Reference), or context on why (Explanation). Shown to readers as a small badge.</p>
+        <div class="form-row-grid">
+          <div>
             <label class="field-label" for="fa-project-select">Linked project (optional)</label>
             <select id="fa-project-select">
               <option value="">None — general article</option>

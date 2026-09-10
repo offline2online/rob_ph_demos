@@ -110,6 +110,19 @@ export function categoryIcon(cat) {
   return cat && cat.icon ? cat.icon : "help";
 }
 
+// Diátaxis document type (docs/CONTRIBUTING-docs.md §2) — defaults to
+// "faq" for articles saved before this field existed, same default the
+// admin editor uses for a brand-new article.
+const DOC_TYPE_LABELS = {
+  faq: "FAQ",
+  "how-to": "How-to guide",
+  reference: "Reference",
+  explanation: "Explanation",
+};
+export function docTypeLabel(article) {
+  return DOC_TYPE_LABELS[article && article.docType] || DOC_TYPE_LABELS.faq;
+}
+
 export function matchesQuery(article, q) {
   const needle = q.trim().toLowerCase();
   if (!needle) return false;

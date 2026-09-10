@@ -39,6 +39,15 @@ help.personalisationhub.com site itself is still unreachable from this
 sandbox (blocked by network egress policy), so that Drive export, not the
 live site, is the source of truth for this data going forward.
 
+**All FAQ/user-guide content and structure must follow
+[`docs/CONTRIBUTING-docs.md`](./docs/CONTRIBUTING-docs.md)** — the
+governing documentation standard (Diátaxis document types, FAQ writing
+rules, formatting/accessibility conventions). Read it in full before
+writing or editing any article, and classify every article's `docType`
+(`faq` | `how-to` | `reference` | `explanation`) per that file's §2 —
+see `backlog-tracker/REQUIREMENTS.md` → "FAQ / Help Center" for the
+field's exact shape.
+
 ## Live Visitor Profile & Experience Templates — two separate projects, one repo
 
 `visitor-profile/` and `experience-templates/` were split out as two
