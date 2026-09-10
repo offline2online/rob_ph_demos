@@ -31,6 +31,11 @@ body {
 .topbar { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 18px; }
 .topbar-left { display: flex; align-items: flex-start; gap: 10px; }
 .topbar h1 { margin: 0; font-size: 22px; font-weight: 700; }
+.logo-link {
+  font: inherit; font-size: inherit; font-weight: inherit; color: inherit;
+  background: none; border: none; padding: 0; margin: 0; cursor: pointer;
+}
+.logo-link:hover { color: var(--primary); }
 .subtitle { margin: 4px 0 0; font-size: 13px; color: var(--text-muted); }
 .hamburger-btn { font-size: 20px; margin-top: 1px; }
 
@@ -87,6 +92,10 @@ body {
 .empty-hint { color: var(--text-muted); font-size: 12.5px; font-style: italic; padding: 10px 6px; text-align: center; }
 .card { background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 12px; box-shadow: 0 1px 2px rgba(20, 20, 20, .05); }
 .card-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
+.card-top-left { display: flex; align-items: center; gap: 8px; }
+.card-select-cb { width: 15px; height: 15px; margin: 0; cursor: pointer; flex-shrink: 0; }
+.col-select-all { display: inline-flex; align-items: center; margin-right: 6px; cursor: pointer; }
+.col-select-all input { width: 13px; height: 13px; margin: 0; cursor: pointer; }
 .badge { font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; border-radius: 9999px; padding: 2px 9px; }
 .badge-feature { background: var(--primary-tint); color: var(--primary); }
 .badge-bug { background: var(--danger-tint); color: var(--danger); }
@@ -95,8 +104,16 @@ body {
 .icon-btn:hover { background: var(--surface-2); color: var(--text); }
 .card-title { margin: 0 0 4px; font-size: 14px; font-weight: 600; }
 .card-desc { margin: 0; font-size: 12.5px; color: var(--text-muted); }
+.card-desc-wrap .card-desc-original { margin-top: 6px; padding-top: 6px; border-top: 1px dashed var(--border); }
+.card-desc-toggle-btn {
+  display: block; margin: 4px 0 0; padding: 0; border: none; background: none; cursor: pointer;
+  font-family: inherit; font-size: 11px; font-weight: 600; color: var(--primary);
+}
+.card-desc-toggle-btn:hover { text-decoration: underline; }
 .card-footer { display: flex; align-items: center; justify-content: space-between; margin-top: 10px; }
+.card-footer-left { display: flex; align-items: center; gap: 4px; }
 .card-cat { font-size: 10.5px; color: var(--text-muted); background: var(--surface-2); border-radius: 9999px; padding: 2px 8px; }
+.quick-comment-btn { font-size: 13px; padding: 3px 6px; }
 .merge-btn { width: 100%; margin-top: 10px; background: var(--success); color: #fff; border: none; border-radius: 6px; padding: 8px 10px; font-size: 12.5px; font-weight: 600; cursor: pointer; }
 .approve-btn { width: 100%; margin-top: 10px; background: var(--primary); color: #fff; border: none; border-radius: 6px; padding: 8px 10px; font-size: 12.5px; font-weight: 600; cursor: pointer; }
 .test-link-row { display: flex; align-items: center; gap: 4px; margin-top: 10px; }
@@ -259,16 +276,26 @@ body {
 .restore-btn { background: var(--primary-tint); color: var(--primary); border: none; border-radius: 6px; padding: 6px 10px; font-size: 12px; font-weight: 600; cursor: pointer; font-family: inherit; white-space: nowrap; }
 .restore-btn:hover { background: var(--primary); color: #fff; }
 
-/* ── New Project modal — optional interface block ───────────────────── */
-.np-interface-block { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--border); }
-.np-interface-toggle { display: flex; align-items: center; gap: 8px; font-size: 13px; cursor: pointer; }
-.np-interface-toggle input { width: 15px; height: 15px; }
-#np-if-fields { margin-top: 10px; }
-#np-if-fields select, #np-if-fields input, #np-if-fields textarea {
-  width: 100%; font-family: inherit; font-size: 13px; color: var(--text); background: var(--surface);
-  border: 1px solid var(--border); border-radius: 6px; padding: 7px 9px; box-sizing: border-box;
+/* ── New Project modal — a plainer, more minimal treatment than the base
+   .modal-panel: bigger radius, more breathing room, borderless inputs on a
+   soft fill (the closer-to-native look of a macOS/iOS sheet) instead of the
+   denser, bordered form styling shared by every other modal in this app.
+   Scoped to .np-panel only — every other modal keeps the original look. ── */
+.np-panel { max-width: 400px; padding: 28px 26px; border-radius: 20px; }
+.np-panel .modal-header { margin-bottom: 18px; }
+.np-panel .modal-header h2 { font-size: 19px; font-weight: 700; letter-spacing: -.01em; }
+.np-panel .field-label { margin: 16px 0 6px; font-size: 12px; }
+.np-panel .field-label:first-of-type { margin-top: 0; }
+.np-panel #np-name-input, .np-panel #np-program-select {
+  width: 100%; font-family: inherit; font-size: 15px; color: var(--text); background: var(--surface-2);
+  border: 1px solid transparent; border-radius: 10px; padding: 11px 13px; box-sizing: border-box;
 }
-#np-if-fields textarea { resize: vertical; }
+.np-panel #np-name-input:focus, .np-panel #np-program-select:focus {
+  outline: none; border-color: var(--primary); background: var(--bg);
+}
+.np-panel .field-hint { font-size: 12px; }
+.np-panel .form-row { margin-top: 22px; }
+.np-panel .btn-primary, .np-panel .btn-ghost { border-radius: 10px; padding: 10px 18px; font-size: 14px; }
 
 /* ── Interface modal (shared with New Project's inline fields) ─────────── */
 #if-backdrop select, #if-backdrop input, #if-backdrop textarea,
@@ -443,13 +470,24 @@ body {
   padding: 12px 0; border-bottom: 1px solid var(--divider, var(--border)); flex-wrap: wrap;
 }
 .faq-article-row:last-child { border-bottom: none; }
-.faq-article-row-main h4 { margin: 4px 0 3px; font-size: 13.5px; font-weight: 600; }
+.faq-article-row-main h4.faq-article-title {
+  margin: 4px 0 3px; font-size: 13.5px; font-weight: 600; cursor: pointer;
+}
+.faq-article-title:hover, .faq-article-title:focus-visible { color: var(--primary); outline: none; }
 .faq-article-row-meta { margin: 0; font-size: 11.5px; color: var(--text-muted); }
 .badge-status-draft { background: var(--surface-2); color: var(--text-muted); }
 .badge-status-published { background: rgba(82, 196, 26, .12); color: var(--success); }
 .badge-needs-review { background: rgba(201, 138, 10, .12); color: var(--warning); margin-left: 6px; }
 .faq-article-row-actions { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
-.faq-article-row-actions a { font-size: 12px; }
+.faq-article-options { position: relative; }
+.faq-article-options-btn { font-size: 18px; line-height: 1; padding: 7px 11px; }
+.faq-article-options-menu {
+  position: absolute; top: calc(100% + 6px); right: 0; z-index: 15;
+  background: var(--bg); border: 1px solid var(--border); border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, .14); min-width: 180px; max-width: 88vw;
+  overflow: hidden; display: flex; flex-direction: column; padding: 6px;
+}
+.faq-article-options-menu a.options-menu-item { text-decoration: none; }
 
 /* ── Footer / version ────────────────────────────────────────────────── */
 .app-footer { margin-top: 24px; padding-top: 14px; border-top: 1px solid var(--border); font-size: 11.5px; color: var(--text-muted); text-align: center; }
