@@ -282,10 +282,13 @@ Merged to Main (Live) cards have an **Archive** action. Archiving sets
 drop off all four columns rather than being deleted. Each project's own
 **Archived tickets** entry (in its **⋮** options menu) opens a dedicated
 full-page table scoped to that project, sortable by Type / Area / Ticket
-/ Date and filterable by area,
-type, and free-text search, each row with a **Restore** button that sets
-`status` back to `"published-live"`. Deletion (the trash icon on a card) is
-reserved for Backlog cards only.
+/ Date and filterable by area, type, and free-text search, each row with a
+**Restore** button that sets `status` back to `"published-live"`. Deletion
+(the trash icon on a card) is reserved for Backlog cards only. The table
+also carries a **Version** column — the `testVersion` (backlog-tracker's
+own `APP_VERSION`) the card was stamped with when it first reached Ready
+for Testing, kept visible through archiving; see
+`backlog-tracker/REQUIREMENTS.md` → "Test version (`testVersion`)".
 
 ### Every card carries a `category` (area impacted)
 

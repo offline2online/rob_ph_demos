@@ -16,6 +16,7 @@ import {
   onSnapshot, query, orderBy, serverTimestamp, writeBatch, arrayUnion,
 } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore.js";
 import { firebaseConfig } from "./firebase-config.js";
+import { APP_VERSION } from "./version.js";
 
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
@@ -283,6 +284,15 @@ function cardHTML(item) {
   const noDeployBadge = item.noDeploymentRequired
     ? `<span class="no-deploy-badge" title="Live data/config change only — no code to push or deploy">No deployment required</span>`
     : "";
+  // The backlog-tracker APP_VERSION stamped the moment this card first
+  // reached Ready for Testing (see moveItem/processApplyPatch) — the same
+  // number shown in the app's own footer, so it's clear which build to
+  // check before testing. Carries through Approved for Deployment and
+  // Deployed/Main Branch (Live) unchanged; see the Archive table for the
+  // same value once archived.
+  const testVersionBadge = item.testVersion
+    ? `<span class="test-version-badge" title="backlog-tracker's own version when this was marked Ready for Testing — check the live footer shows at least this version">Test version: v${escapeHTML(item.testVersion)}</span>`
+    : "";
   const commentCount = (item.notes || []).length;
   const editBtn = `<button type="button" class="icon-btn edit-item-btn" data-id="${item.id}" title="Edit / comments">&#9998;${commentCount ? ` <span class="options-menu-count">${commentCount}</span>` : ""}</button>`;
   // Only relevant once a ticket is actually up on a feature branch — a
@@ -331,7 +341,7 @@ function cardHTML(item) {
       </div>
       <h3 class="card-title">${escapeHTML(item.title)}</h3>
       ${descHTML}
-      ${deploymentBadge}${noDeployBadge}
+      ${deploymentBadge}${noDeployBadge}${testVersionBadge}
       <div class="card-footer">
         <div class="card-footer-left">
           <span class="card-cat">${escapeHTML(item.category || "Uncategorised")}</span>
@@ -827,14 +837,25 @@ async function moveItem(id, dir) {
   const next = COL_KEYS.indexOf(item.status) + dir;
   if (next < 0 || next >= COL_KEYS.length) return;
   const fields = { status: COL_KEYS[next], updatedAt: serverTimestamp() };
-  // The only way this can land a card back in Ready for Testing is the
-  // left-arrow "move back" from Approved for Deployment — sending it back for
-  // more work. Clear a stale testPassed from its previous round: otherwise
-  // it would already look "passed" again with nobody having actually
-  // re-confirmed the new round of work, and the next "Approved for Deployment"
-  // click could sweep it back onto the feature branch unreviewed.
+  // Landing on Ready for Testing happens two ways: the left-arrow "move
+  // back" from Approved for Deployment (sending it back for more work), or
+  // — rarer, a manual override rather than the usual automated path — the
+  // right-arrow moving a Backlog card straight there. Either way, clear a
+  // stale testPassed from any previous round: otherwise it would already
+  // look "passed" again with nobody having actually re-confirmed the new
+  // round of work, and the next "Approved for Deployment" click could
+  // sweep it back onto the feature branch unreviewed.
   if (COL_KEYS[next] === "ready-for-testing") {
     fields.testPassed = false;
+    // Stamp the version fresh only on a genuine new entry from Backlog
+    // (dir === 1) — this is the same one-time-stamp-then-carry-through
+    // rule processApplyPatch() follows for the normal automated path (see
+    // its own comment). A send-back from Approved for Deployment (dir ===
+    // -1) leaves testVersion untouched — it's still the same round of
+    // testing the ticket was already stamped for.
+    if (dir === 1) {
+      fields.testVersion = APP_VERSION;
+    }
   }
   await updateDoc(doc(db, "backlogItems", id), fields);
 }
@@ -1656,6 +1677,7 @@ function archiveRowHTML(item) {
         <p class="archive-row-title">${escapeHTML(item.title)}</p>
         <p class="archive-row-desc">${escapeHTML(item.desc)}</p>
       </td>
+      <td class="archive-row-version">${item.testVersion ? `v${escapeHTML(item.testVersion)}` : "—"}</td>
       <td class="archive-row-date">${dateStr}</td>
       <td><button type="button" class="restore-btn" data-id="${item.id}">Restore</button></td>
     </tr>`;
