@@ -40,6 +40,21 @@ jobs:
       - name: Write Firebase service account key
         run: echo '${{ secrets.FIREBASE_SERVICE_ACCOUNT_BACKLOG_TRACKER }}' > "$RUNNER_TEMP/firebase-sa.json"
 
+      # `functions:secrets:set` updates the secret version and both
+      # functions successfully (visible in the run's own log output —
+      # "Updated function ...") but then makes an internal trailing call
+      # to list functions to verify propagation, and that specific call
+      # has failed with GCP's generic "Failed to list functions for
+      # backlog-tracker-e4ed2" twice in a row in production, always right
+      # after the LAST secrets:set invocation in the job (i.e. after 2-3
+      # rapid update+list cycles against the Cloud Functions API within a
+      # few minutes) — consistent with a transient rate/propagation issue
+      # on GCP's side rather than anything wrong with the secret or
+      # function update itself, which had already succeeded by the time
+      # the error surfaces. `bash -e` turns that one failing call into an
+      # aborted job before the real "Deploy to Firebase" step below ever
+      # runs, so retrying just this command (not the whole job) is enough
+      # to ride out the flake.
       - name: Sync NOTIFY_WEBHOOK_URL into Firebase Secret Manager
         env:
           GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/firebase-sa.json
@@ -49,7 +64,14 @@ jobs:
             echo "NOTIFY_WEBHOOK_URL repo secret not set, skipping"
             exit 0
           fi
-          printf '%s' "$NOTIFY_WEBHOOK_URL" | npx firebase-tools@13 functions:secrets:set NOTIFY_WEBHOOK_URL --project backlog-tracker-e4ed2 --data-file - --force
+          for attempt in 1 2 3; do
+            if printf '%s' "$NOTIFY_WEBHOOK_URL" | npx firebase-tools@13 functions:secrets:set NOTIFY_WEBHOOK_URL --project backlog-tracker-e4ed2 --data-file - --force; then
+              break
+            fi
+            [ "$attempt" = "3" ] && { echo "functions:secrets:set NOTIFY_WEBHOOK_URL failed after 3 attempts"; exit 1; }
+            echo "functions:secrets:set NOTIFY_WEBHOOK_URL failed (attempt $attempt/3), retrying in 20s..."
+            sleep 20
+          done
 
       - name: Sync CLAUDE_ROUTINE_FIRE_URL / CLAUDE_ROUTINE_TOKEN into Firebase Secret Manager
         env:
@@ -61,8 +83,22 @@ jobs:
             echo "CLAUDE_ROUTINE_FIRE_URL/CLAUDE_ROUTINE_TOKEN repo secrets not set, skipping"
             exit 0
           fi
-          printf '%s' "$CLAUDE_ROUTINE_FIRE_URL" | npx firebase-tools@13 functions:secrets:set CLAUDE_ROUTINE_FIRE_URL --project backlog-tracker-e4ed2 --data-file - --force
-          printf '%s' "$CLAUDE_ROUTINE_TOKEN" | npx firebase-tools@13 functions:secrets:set CLAUDE_ROUTINE_TOKEN --project backlog-tracker-e4ed2 --data-file - --force
+          for attempt in 1 2 3; do
+            if printf '%s' "$CLAUDE_ROUTINE_FIRE_URL" | npx firebase-tools@13 functions:secrets:set CLAUDE_ROUTINE_FIRE_URL --project backlog-tracker-e4ed2 --data-file - --force; then
+              break
+            fi
+            [ "$attempt" = "3" ] && { echo "functions:secrets:set CLAUDE_ROUTINE_FIRE_URL failed after 3 attempts"; exit 1; }
+            echo "functions:secrets:set CLAUDE_ROUTINE_FIRE_URL failed (attempt $attempt/3), retrying in 20s..."
+            sleep 20
+          done
+          for attempt in 1 2 3; do
+            if printf '%s' "$CLAUDE_ROUTINE_TOKEN" | npx firebase-tools@13 functions:secrets:set CLAUDE_ROUTINE_TOKEN --project backlog-tracker-e4ed2 --data-file - --force; then
+              break
+            fi
+            [ "$attempt" = "3" ] && { echo "functions:secrets:set CLAUDE_ROUTINE_TOKEN failed after 3 attempts"; exit 1; }
+            echo "functions:secrets:set CLAUDE_ROUTINE_TOKEN failed (attempt $attempt/3), retrying in 20s..."
+            sleep 20
+          done
 
       - name: Install migration script dependencies
         working-directory: backlog-tracker/scripts
