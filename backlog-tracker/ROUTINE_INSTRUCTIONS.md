@@ -152,6 +152,26 @@ rest of this file.
      you have no way to confirm a PR actually got opened; leave `status`
      as `backlog` and the automation flips it once the PR genuinely
      exists.
+
+     **Never set `patchReady: true` (or `mergeReady: true`, see the Deploy
+     flow below) on a real item until every other field in the same PATCH
+     is the actual, finished value.** The scheduled automation job polls
+     `patchReady == true` across the *entire* `backlogItems` collection
+     every ~10 minutes — it has no way to tell "this is a real request"
+     from "I'm mid-debugging my own curl/PATCH-building code and this
+     happened to be true for a moment." If you need to check that your
+     PATCH JSON is well-formed before sending the real one, validate it
+     locally first (e.g. pipe the JSON body through `python3 -m json.tool`
+     or `jq .`) rather than sending trial PATCHes with placeholder data to
+     a live item — a stray `patchReady: true` with garbage `title`/
+     `patchFiles` becomes a **real GitHub PR** the moment the job next
+     runs, and you have no GitHub credential to close it afterward (see
+     "Setup" above) — it just sits there as permanent debris. This is not
+     hypothetical: it happened in production (item `Pj9asuFpMVUTUHKQpsJO`,
+     PR #61 closed as a stray duplicate of the item's real PR, #62) and
+     `run-backlog-automation.js` now guards against it re-opening a
+     duplicate PR for the same item — but that guard only stops the
+     *symptom*; avoid causing it in the first place.
    - `testSummary` (optional but strongly encouraged, string): a clear,
      standalone description of what you actually changed, plus concrete
      steps to test it. Once the automation flips this item to
@@ -244,6 +264,19 @@ named project isn't in the `projects` collection, or its Backlog column
 is empty, say that plainly instead of fabricating work. If a
 PROJECT-SPECIFIC INSTRUCTIONS block was present, note in the summary that
 you followed it and briefly how.
+
+If at any point in this run you set `patchReady`/`mergeReady` on an item
+with placeholder or not-yet-finished data (even briefly, even if you then
+set it back to `false`) — say so explicitly in your summary and name the
+item id. You can check, read-only and without any credential, whether it
+already produced a real PR: `curl -sS
+"https://api.github.com/search/issues?q=repo:offline2online/rob_ph_demos+type:pr+%22Backlog+item%3A+<ITEM_ID>%22+in:body"`.
+`run-backlog-automation.js` now refuses to open a *second* PR for an item
+that already has one, but it still can't close a stray one that's already
+open — only a human, or a Claude session with real repo access, can. Naming
+it in your summary is what makes that possible; a silent "I think I might
+have caused a stray PR" that never gets said out loud is how #61 sat open
+for hours.
 
 **Never attempt to `git push`, call any GitHub write API, or otherwise get
 code onto GitHub yourself in this or any other run of this Routine — you

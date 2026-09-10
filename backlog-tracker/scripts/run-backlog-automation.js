@@ -118,10 +118,47 @@ function applyPatchFiles(patchFiles) {
   }
 }
 
+// Guards against the same item producing a second, duplicate GitHub PR —
+// this has happened for real: a Routine-fired session debugging its own
+// PATCH-payload code against a live production item left patchReady:true
+// mid-debug with placeholder data, this job picked it up and opened a PR
+// from that, and the item was later re-finished and re-submitted properly,
+// producing a second PR for the same item (see PR #61, closed as a
+// duplicate of #62). Fired sessions have no GitHub credential, so nothing
+// in the pipeline could ever clean up a stray PR like that on its own —
+// the fix is to never open a second one in the first place.
+function findExistingPrForItem(itemId) {
+  let json;
+  try {
+    json = run("gh", [
+      "pr", "list", "--repo", REPO, "--state", "all",
+      "--search", `"Backlog item: ${itemId}" in:body`,
+      "--json", "number,state,url",
+    ]);
+  } catch (err) {
+    console.log(`[apply-patch] ${itemId}: couldn't check for an existing PR (${err.message}) — proceeding without the duplicate check`);
+    return null;
+  }
+  const prs = JSON.parse(json);
+  return prs.length ? prs[0] : null;
+}
+
 async function processApplyPatch(item) {
   console.log(`[apply-patch] ${item.id}: ${item.title || item.desc}`);
   if (!Array.isArray(item.patchFiles) || item.patchFiles.length === 0) {
     console.log(`[apply-patch] ${item.id}: no patchFiles present, leaving patchReady set for a human to check`);
+    return;
+  }
+
+  const existingPr = findExistingPrForItem(item.id);
+  if (existingPr) {
+    console.log(`[apply-patch] ${item.id}: PR #${existingPr.number} (${existingPr.state}) already references this item — not opening a duplicate`);
+    const notes = await appendNote(
+      item,
+      `Skipped opening a new PR: #${existingPr.number} (${existingPr.url}, ${existingPr.state}) already exists for this item. ` +
+      `If that PR is stale or wrong, close it manually before setting patchReady again.`
+    );
+    await patchItem(item.id, { patchReady: false, updatedAt: new Date().toISOString(), notes });
     return;
   }
 
