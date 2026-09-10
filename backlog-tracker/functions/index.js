@@ -102,8 +102,9 @@ exports.notifyOnProjectReadyForReview = onDocumentUpdated(
     // Fire the Routine BEFORE posting to Slack (reversed from the original
     // order) so a resolved session id/url can ride along in the Slack
     // message, and so projects/{id}.notifyRoutine — which the board's
-    // Notify Claude button reads to show a spinner + "View session" link —
-    // reflects the real outcome of this specific click.
+    // Notify Claude button reads to show a spinner, then itself becomes the
+    // session link once a session id resolves — reflects the real outcome
+    // of this specific click.
     const fireUrl = CLAUDE_ROUTINE_FIRE_URL.value();
     const token = CLAUDE_ROUTINE_TOKEN.value();
     let sessionId = null;

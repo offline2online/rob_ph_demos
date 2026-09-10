@@ -84,6 +84,19 @@ function getSelectedSet(pid) {
   return selectedNotifyIds[pid];
 }
 
+// ── Optimistic "just clicked Notify Claude" state (per project) — the real
+// spinning state lives in projects/{id}.notifyRoutine, but that's written by
+// notifyOnProjectReadyForReview (see ../functions/index.js) reacting to
+// notifyRequestedAt, which can lag the actual click by a second or more.
+// Without this, the button looks like a dead click for that whole gap.
+// Purely client-local; cleared the instant the real notifyRoutine doc takes
+// over (see notifyClaudeButtonHTML), or after NOTIFY_OPTIMISTIC_STALE_MS if
+// it never does (e.g. the Cloud Function's Routine secrets aren't set) —
+// same "never wedge the button spinning forever" guarantee the real
+// in-progress state already has.
+const notifyOptimisticClicks = {};
+const NOTIFY_OPTIMISTIC_STALE_MS = 45 * 1000;
+
 // ── Docs page state (per-project requirements + interfaces with other
 // projects) — an interface is a maintained contract doc shared between
 // exactly two projects, stored once in "interfaces" and shown identically
@@ -384,7 +397,13 @@ function notifyClaudeButtonHTML(project) {
   const isStale = routine?.status === "in-progress" && firedMs && (Date.now() - firedMs) > NOTIFY_ROUTINE_STALE_MS;
   const inProgress = routine?.status === "in-progress" && !isStale;
 
-  if (!inProgress) {
+  // The real notifyRoutine doc always wins the moment it arrives; this only
+  // covers the gap between the click and that Cloud Function write landing.
+  const clickedAt = notifyOptimisticClicks[pid];
+  const optimisticPending = !inProgress && clickedAt && (Date.now() - clickedAt) < NOTIFY_OPTIMISTIC_STALE_MS;
+  if (clickedAt && !optimisticPending) delete notifyOptimisticClicks[pid];
+
+  if (!inProgress && !optimisticPending) {
     const backlogCount = backlogCountForProject(pid);
     if (!backlogCount) return "";
     // A non-empty selection (see the Backlog column's own checkboxes)
@@ -401,24 +420,40 @@ function notifyClaudeButtonHTML(project) {
     </button>`;
   }
 
+  if (optimisticPending) {
+    // Pressed, but notifyRoutine hasn't landed yet — no item count, no
+    // session to link to. Same spinner treatment as the real "Working…"
+    // state below so pressing the button visibly does something at once.
+    return `<button type="button" class="notify-claude-btn notify-claude-btn-working" disabled title="Sending to Claude&hellip;">
+      <span class="notify-claude-spinner"></span>
+      <span class="notify-claude-label">Working&hellip;</span>
+    </button>`;
+  }
+
   // In progress: the main button reflects the batch already sent (fixed
-  // count, disabled, spinning) with a link to the live session if one
-  // resolved; anything added to Backlog since that click surfaces as its
-  // own small, still-clickable CTA rather than being folded into a count
-  // that would otherwise conflate "already being worked" with "brand new."
+  // count, disabled, spinning); anything added to Backlog since that click
+  // surfaces as its own small, still-clickable CTA rather than being folded
+  // into a count that would otherwise conflate "already being worked" with
+  // "brand new."
   const sentIds = new Set(routine.sentItemIds || []);
   const newCount = items.filter((i) =>
     (i.projectId || GENERAL_PROJECT_ID) === pid && i.status === "backlog" && !sentIds.has(i.id)
   ).length;
 
-  const sessionLink = routine.sessionUrl
-    ? `<a href="${escapeHTML(routine.sessionUrl)}" target="_blank" rel="noopener" class="notify-claude-session-link">View session &rarr;</a>`
-    : "";
-  const mainBtn = `<button type="button" class="notify-claude-btn notify-claude-btn-working" disabled title="A Claude Code session is working through the ${routine.itemCount || sentIds.size} item(s) sent">
+  // "Confirmation from Claude" = the Routine fire actually resolved with a
+  // session — before that, there's nothing to link to yet, so the button
+  // stays a disabled "Working…". Once a session exists, the button itself
+  // becomes the "View session" link (copy flips to "Deving…") instead of a
+  // separate link sitting next to a disabled button.
+  const itemCountLabel = routine.itemCount || sentIds.size;
+  const confirmed = !!routine.sessionUrl;
+  const mainBtnInner = `
     <span class="notify-claude-spinner"></span>
-    <span class="notify-claude-label">Working&hellip;</span>
-    <span class="notify-claude-count-pill">${routine.itemCount || sentIds.size}</span>
-  </button>${sessionLink}`;
+    <span class="notify-claude-label">${confirmed ? "Deving&hellip;" : "Working&hellip;"}</span>
+    <span class="notify-claude-count-pill">${itemCountLabel}</span>`;
+  const mainBtn = confirmed
+    ? `<a href="${escapeHTML(routine.sessionUrl)}" target="_blank" rel="noopener" class="notify-claude-btn notify-claude-btn-working notify-claude-btn-clickable" title="View the Claude Code session working through the ${itemCountLabel} item(s) sent">${mainBtnInner}</a>`
+    : `<button type="button" class="notify-claude-btn notify-claude-btn-working" disabled title="A Claude Code session is working through the ${itemCountLabel} item(s) sent">${mainBtnInner}</button>`;
 
   const newBtn = newCount
     ? `<button type="button" class="notify-claude-btn project-notify-btn" data-project-id="${escapeHTML(pid)}">
@@ -809,6 +844,11 @@ async function requestNotify(pid) {
     items.filter((i) => (i.projectId || GENERAL_PROJECT_ID) === pid && i.status === "backlog").map((i) => i.id)
   );
   const selected = [...getSelectedSet(pid)].filter((id) => backlogIds.has(id));
+
+  // Show the spinning state immediately, without waiting on the
+  // notifyOnProjectReadyForReview round-trip — see notifyOptimisticClicks.
+  notifyOptimisticClicks[pid] = Date.now();
+  render();
 
   await setDoc(doc(db, "projects", pid), {
     notifyRequestedAt: serverTimestamp(),

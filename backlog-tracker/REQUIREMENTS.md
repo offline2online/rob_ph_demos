@@ -395,14 +395,20 @@ REST API is reachable with a plain `curl`, no service account needed.
   its own full-width row above the New item / ⋮ row rather than squeezing
   controls onto one line; the board's four columns stack vertically instead
   of forcing horizontal scroll.
-- **Notify Claude progress**: while `projects/{id}.notifyRoutine.status`
-  is `"in-progress"`, the button itself reflects that instead of looking
-  idle — a disabled, muted, spinning state sized to the batch actually
-  sent, plus a **View session →** link when a session id was resolved from
-  the Routine fire response. Anything added to Backlog after that click
-  surfaces as its own small, still-clickable **Notify Claude — N new** CTA
-  next to it, rather than being folded into a count that would otherwise
-  conflate "already being worked" with "brand new." A fired session is
+- **Notify Claude progress**: the button shows a spinning "Working…" state
+  the instant it's clicked — a client-local optimistic state, since
+  `projects/{id}.notifyRoutine` (written by the Cloud Function reacting to
+  the click) can lag the click itself by a second or more. Once that doc
+  lands with `status: "in-progress"`, the real state takes over: still
+  spinning, sized to the batch actually sent, copy still "Working…" until
+  a session id has resolved from the Routine fire response — once it has,
+  the button's own copy flips to **"Deving…"** and the button itself
+  becomes the click target for `sessionUrl` (`target="_blank"`), rather
+  than a separate "View session" link next to a disabled button. Anything
+  added to Backlog after that click surfaces as its own small,
+  still-clickable **Notify Claude — N new** CTA next to it, rather than
+  being folded into a count that would otherwise conflate "already being
+  worked" with "brand new." A fired session is
   asked (in the fire request's own `text`) to flip `notifyRoutine.status`
   to `"done"`/`"error"` itself when it finishes; the client additionally
   treats any `"in-progress"` older than 20 minutes as done on its own
