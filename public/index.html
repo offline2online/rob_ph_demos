@@ -1,0 +1,512 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>PH Agent Console</title>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&display=swap">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/quill/1.3.7/quill.snow.min.css">
+  <link rel="stylesheet" href="css/styles.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/quill/1.3.7/quill.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.0.6/purify.min.js"></script>
+</head>
+<body>
+  <div class="app">
+    <header class="topbar">
+      <div class="topbar-left">
+        <button type="button" class="icon-btn hamburger-btn" id="nav-open-btn" aria-haspopup="true" aria-label="Open menu">&#9776;</button>
+        <div>
+          <h1><button type="button" class="logo-link" id="topbar-logo-btn" title="Back to Agent Console home">PH Agent Console</button></h1>
+          <p class="subtitle"><span id="total-summary">0 items</span> &middot; click a project's Notify Claude when its Backlog is ready to be actioned</p>
+        </div>
+      </div>
+      <div class="topbar-actions">
+        <button class="btn-primary" id="new-project-btn" type="button">+ New project</button>
+      </div>
+    </header>
+
+    <div class="nav-drawer-backdrop" id="nav-drawer-backdrop"></div>
+    <nav class="nav-drawer" id="nav-drawer" aria-label="Main menu">
+      <div class="nav-drawer-header">
+        <span class="nav-drawer-title">Menu</span>
+        <button type="button" class="modal-close" id="nav-close-btn" aria-label="Close menu">&times;</button>
+      </div>
+      <button type="button" class="nav-drawer-item nav-drawer-item-home" id="nav-ph-console-btn">Agent console</button>
+      <button type="button" class="nav-drawer-item" id="faq-articles-btn">FAQ Management</button>
+      <button type="button" class="nav-drawer-item" id="faq-settings-btn">Settings</button>
+      <button type="button" class="nav-drawer-item" id="archived-projects-btn">Archived projects</button>
+    </nav>
+
+    <div class="modal-backdrop" id="ni-backdrop" hidden>
+      <div class="modal-panel" role="dialog" aria-modal="true" aria-labelledby="ni-title">
+        <div class="modal-header">
+          <h2 id="ni-title">New item</h2>
+          <button type="button" class="modal-close" id="ni-close" aria-label="Close">&times;</button>
+        </div>
+        <label class="field-label" for="ni-desc-input">Description</label>
+        <div class="desc-wrap">
+          <textarea id="ni-desc-input" rows="6" maxlength="2000" placeholder="Describe the feature or bug — type, or tap the mic and just talk. A title and area are set for you automatically."></textarea>
+          <button type="button" class="mic-btn" id="ni-mic-btn" hidden title="Dictate" aria-label="Dictate">&#127908;</button>
+        </div>
+        <p class="listening-hint" id="ni-listening-hint">&#127908; Listening — tap the mic again when you're done.</p>
+        <p class="mic-error" id="ni-mic-error"></p>
+        <p class="field-hint">A short title and best-guess area are generated from what you write — Claude sets the final ones once this ticket is actually looked at.</p>
+        <div class="form-row">
+          <div class="type-toggle" role="radiogroup" aria-label="Item type">
+            <button type="button" class="type-opt active" data-type="feature">Feature</button>
+            <button type="button" class="type-opt" data-type="bug">Bug</button>
+          </div>
+          <div class="form-actions">
+            <button type="button" class="btn-ghost" id="ni-cancel">Cancel</button>
+            <button type="button" class="btn-primary" id="ni-submit">Add to backlog</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="modal-backdrop" id="np-backdrop" hidden>
+      <div class="modal-panel np-panel" role="dialog" aria-modal="true" aria-labelledby="np-title">
+        <div class="modal-header">
+          <h2 id="np-title">Add new project/program</h2>
+          <button type="button" class="modal-close" id="np-close" aria-label="Close">&times;</button>
+        </div>
+        <label class="field-label" for="np-program-select">Program / Product</label>
+        <select id="np-program-select"></select>
+        <p class="field-hint">Optional — groups this under a shared heading on the board.</p>
+
+        <label class="field-label" for="np-name-input">Name</label>
+        <input type="text" id="np-name-input" maxlength="80" placeholder="e.g. Loyalty App">
+
+        <div class="form-row" style="justify-content:flex-end;">
+          <div class="form-actions">
+            <button type="button" class="btn-ghost" id="np-cancel">Cancel</button>
+            <button type="button" class="btn-primary" id="np-submit">Create</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="modal-backdrop" id="ep-backdrop" hidden>
+      <div class="modal-panel np-panel" role="dialog" aria-modal="true" aria-labelledby="ep-title">
+        <div class="modal-header">
+          <h2 id="ep-title">Edit project</h2>
+          <button type="button" class="modal-close" id="ep-close" aria-label="Close">&times;</button>
+        </div>
+        <label class="field-label" for="ep-program-select">Program / Product</label>
+        <select id="ep-program-select"></select>
+        <p class="field-hint">Optional — groups this under a shared heading on the board.</p>
+
+        <label class="field-label" for="ep-name-input">Name</label>
+        <input type="text" id="ep-name-input" maxlength="80" placeholder="e.g. Loyalty App">
+
+        <div class="form-row" style="justify-content:flex-end;">
+          <div class="form-actions">
+            <button type="button" class="btn-ghost" id="ep-cancel">Cancel</button>
+            <button type="button" class="btn-primary" id="ep-submit">Save</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="modal-backdrop" id="if-backdrop" hidden>
+      <div class="modal-panel" role="dialog" aria-modal="true" aria-labelledby="if-title">
+        <div class="modal-header">
+          <h2 id="if-title">New interface</h2>
+          <button type="button" class="modal-close" id="if-close" aria-label="Close">&times;</button>
+        </div>
+        <label class="field-label" for="if-other-project">Interfaces with</label>
+        <select id="if-other-project"></select>
+        <label class="field-label" for="if-name-input">Interface name</label>
+        <input type="text" id="if-name-input" maxlength="120" placeholder="e.g. Live Visitor Profile ↔ Experience Templates">
+        <label class="field-label" for="if-content-input">Contract</label>
+        <textarea id="if-content-input" rows="12" placeholder="What crosses this boundary, owned by which side, versioning rules..."></textarea>
+        <p class="field-hint">Visible and editable from both projects' Docs pages — this is the shared, maintained contract between them.</p>
+        <div class="form-row" style="justify-content:flex-end;">
+          <div class="form-actions">
+            <button type="button" class="btn-ghost" id="if-cancel">Cancel</button>
+            <button type="button" class="btn-primary" id="if-submit">Save interface</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="modal-backdrop" id="doc-backdrop" hidden>
+      <div class="modal-panel" role="dialog" aria-modal="true" aria-labelledby="doc-title">
+        <div class="modal-header">
+          <h2 id="doc-title">New document</h2>
+          <button type="button" class="modal-close" id="doc-close" aria-label="Close">&times;</button>
+        </div>
+        <label class="field-label" for="doc-name-input">Document name</label>
+        <input type="text" id="doc-name-input" maxlength="120" placeholder="e.g. API spec, Architecture decision record">
+        <label class="field-label" for="doc-content-input">Content</label>
+        <textarea id="doc-content-input" rows="14" placeholder="Paste or write the document here..."></textarea>
+        <div class="form-row" style="justify-content:flex-end;">
+          <div class="form-actions">
+            <button type="button" class="btn-ghost" id="doc-cancel">Cancel</button>
+            <button type="button" class="btn-primary" id="doc-submit">Save document</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="modal-backdrop" id="ei-backdrop" hidden>
+      <div class="modal-panel modal-panel-wide" role="dialog" aria-modal="true" aria-labelledby="ei-title">
+        <div class="modal-header">
+          <h2 id="ei-title">Edit item</h2>
+          <button type="button" class="modal-close" id="ei-close" aria-label="Close">&times;</button>
+        </div>
+        <label class="field-label" for="ei-title-input">Title</label>
+        <input type="text" id="ei-title-input" maxlength="200">
+        <label class="field-label" for="ei-desc-input">Description</label>
+        <textarea id="ei-desc-input" rows="5" maxlength="2000"></textarea>
+        <div class="form-row">
+          <div class="type-toggle" role="radiogroup" aria-label="Item type" id="ei-type-toggle">
+            <button type="button" class="type-opt" data-type="feature">Feature</button>
+            <button type="button" class="type-opt" data-type="bug">Bug</button>
+          </div>
+          <div>
+            <label class="field-label" for="ei-category-select" style="margin:0 0 4px;">Category</label>
+            <select id="ei-category-select"></select>
+          </div>
+        </div>
+        <label class="np-interface-toggle">
+          <input type="checkbox" id="ei-no-deploy-checkbox">
+          No deployment required
+        </label>
+        <p class="field-hint">For a fix that's just a live data/config change with no code to push — e.g. a Firestore-only edit — nothing ever needs to reach GitHub. Check this and, once tested, the card can move straight from Ready for Testing to Merged to Main (Live), skipping Live on Feature Branch and Notify Claude — Deploy entirely.</p>
+        <div class="form-row" style="justify-content:flex-end;">
+          <div class="form-actions">
+            <button type="button" class="btn-ghost" id="ei-cancel">Cancel</button>
+            <button type="button" class="btn-primary" id="ei-save">Save changes</button>
+          </div>
+        </div>
+
+        <div class="ei-comments-block">
+          <h3>Comments</h3>
+          <div id="ei-notes-list" class="ei-notes-list"></div>
+          <textarea id="ei-comment-input" rows="2" maxlength="1000" placeholder="Add a comment for more context..."></textarea>
+          <div class="form-row" style="justify-content:flex-end;">
+            <button type="button" class="btn-primary" id="ei-comment-submit">Add comment</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Quick comment — a lightweight, comment-only alternative to the full
+         Edit item modal above, reached from a small icon on the card itself
+         (bottom row, next to the category badge) rather than the pencil
+         icon that opens the whole editor. Keeps "just leave a quick note"
+         separate from "edit the ticket's fields", so adding a comment never
+         requires opening (and risking an accidental edit to) the rest of
+         the form. -->
+    <div class="modal-backdrop" id="qc-backdrop" hidden>
+      <div class="modal-panel" role="dialog" aria-modal="true" aria-labelledby="qc-title">
+        <div class="modal-header">
+          <h2 id="qc-title">Add comment</h2>
+          <button type="button" class="modal-close" id="qc-close" aria-label="Close">&times;</button>
+        </div>
+        <textarea id="qc-comment-input" rows="4" maxlength="1000" placeholder="Add a comment for more context..."></textarea>
+        <div class="form-row" style="justify-content:flex-end;">
+          <div class="form-actions">
+            <button type="button" class="btn-ghost" id="qc-cancel">Cancel</button>
+            <button type="button" class="btn-primary" id="qc-submit">Add comment</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <section class="docs-page" id="docs-page" hidden>
+      <div class="docs-page-header">
+        <h2>Docs — <span id="docs-page-project-name"></span></h2>
+      </div>
+
+      <div class="docs-block">
+        <h3>Program / Product</h3>
+        <p class="field-hint">Purely organizational — groups this project under a heading on the board alongside others in the same program. Changing it takes effect immediately, same as everything else here.</p>
+        <select id="docs-program-select"></select>
+      </div>
+
+      <div class="docs-block">
+        <h3>README</h3>
+        <p class="field-hint">The primary document used to track this project — shown first on this page so it's the first thing anyone visiting reads. This is a live copy, same pattern as Requirements below; keep any repo-native README.md for this project in sync with it.</p>
+        <textarea id="docs-readme-input" rows="12" placeholder="No README written yet — paste or write it here."></textarea>
+        <div class="form-row" style="justify-content:flex-end;">
+          <button type="button" class="btn-primary" id="docs-readme-save">Save README</button>
+        </div>
+      </div>
+
+      <div class="docs-block">
+        <h3>Requirements</h3>
+        <p class="field-hint">This project's own requirements — maintained here so it travels with the board, not only as a file in the repo.</p>
+        <textarea id="docs-requirements-input" rows="16" placeholder="No requirements written yet — paste or write them here."></textarea>
+        <div class="form-row" style="justify-content:flex-end;">
+          <button type="button" class="btn-primary" id="docs-requirements-save">Save requirements</button>
+        </div>
+      </div>
+
+      <div class="docs-block">
+        <div class="docs-block-header">
+          <h3>Additional documents</h3>
+          <button type="button" class="btn-ghost" id="docs-add-doc-btn">+ New document</button>
+        </div>
+        <p class="field-hint">Any other technical or architectural document for this project — an API spec, a design doc, anything that isn't Requirements or the README above — kept on this same page instead of scattered across the repo.</p>
+        <div id="docs-extra-docs-list"></div>
+      </div>
+
+      <div class="docs-block">
+        <h3>Routine instructions</h3>
+        <p class="field-hint">Extra instructions for this project only, included automatically at the top of what "Notify Claude" sends the Routine — a different branch convention, which part of the repo this project owns, anything the generic workflow wouldn't know. Leave blank to just use the Routine's own default instructions.</p>
+        <textarea id="docs-routine-prompt-input" rows="8" placeholder="No project-specific instructions yet — optional."></textarea>
+        <div class="form-row" style="justify-content:flex-end;">
+          <button type="button" class="btn-primary" id="docs-routine-prompt-save">Save instructions</button>
+        </div>
+      </div>
+
+      <div class="docs-block">
+        <h3>FAQ review automation</h3>
+        <p class="field-hint">When on, any FAQ article linked to this project (via its own "Linked project" field) is automatically marked "Needs review" the moment a backlog item for this project is merged to main — a live feature shipped, so anything documenting it might now be stale.</p>
+        <label class="np-interface-toggle">
+          <input type="checkbox" id="docs-faq-auto-flag">
+          Auto-flag linked FAQ articles for review on merge to main
+        </label>
+      </div>
+
+      <div class="docs-block">
+        <div class="docs-block-header">
+          <h3>Interfaces with other projects</h3>
+          <button type="button" class="btn-ghost" id="docs-add-interface-btn">+ New interface</button>
+        </div>
+        <p class="field-hint">A maintained contract document shared with one other project — either side can edit it.</p>
+        <div id="docs-interfaces-list"></div>
+      </div>
+    </section>
+
+    <section class="archive-page" id="archive-page" hidden>
+      <div class="archive-page-header">
+        <h2>Archived — <span id="archive-page-project-name"></span></h2>
+        <span class="archive-page-count" id="archive-page-count">0 tickets</span>
+      </div>
+      <div class="archive-table-wrap">
+        <table class="archive-table">
+          <thead>
+            <tr>
+              <th data-sort="type">Type</th>
+              <th data-sort="category">Area</th>
+              <th data-sort="title">Ticket</th>
+              <th data-sort="date">Date</th>
+              <th></th>
+            </tr>
+            <tr class="archive-filter-row">
+              <th>
+                <select id="archive-filter-type" aria-label="Filter by type">
+                  <option value="">All types</option>
+                  <option value="feature">Feature</option>
+                  <option value="bug">Bug</option>
+                </select>
+              </th>
+              <th><select id="archive-filter-category" aria-label="Filter by area"><option value="">All areas</option></select></th>
+              <th><input type="search" id="archive-filter-search" placeholder="Title or description…" aria-label="Search title or description"></th>
+              <th></th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="archive-table-body"></tbody>
+        </table>
+        <p class="empty-hint" id="archive-table-empty" hidden>No archived tickets match these filters.</p>
+      </div>
+    </section>
+
+    <section class="archive-page" id="archived-projects-page" hidden>
+      <div class="archive-page-header">
+        <h2>Archived projects</h2>
+        <span class="archive-page-count" id="archived-projects-count">0 projects</span>
+      </div>
+      <div class="archive-table-wrap">
+        <table class="archive-table">
+          <thead>
+            <tr>
+              <th>Project</th>
+              <th>Active items</th>
+              <th>Archived</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="archived-projects-table-body"></tbody>
+        </table>
+        <p class="empty-hint" id="archived-projects-empty" hidden>No archived projects.</p>
+      </div>
+    </section>
+
+    <section class="docs-page" id="deployments-page" hidden>
+      <div class="docs-page-header">
+        <h2>Deployments — <span id="deployments-page-project-name"></span></h2>
+      </div>
+      <p class="field-hint">Group tickets that should ship to main together — usually everything the Notify Claude Routine fixed in one fire. Once every ticket in a group is individually confirmed "Live on Feature Branch", the group's own "Notify Claude to merge" button unlocks — it asks Claude to verify and merge each PR for real, the same as the project header's own Notify Claude — Deploy button.</p>
+      <div class="form-row" style="justify-content:flex-end;">
+        <button type="button" class="btn-primary" id="deployments-add-btn">+ New deployment</button>
+      </div>
+      <div id="deployments-list"></div>
+    </section>
+
+    <div class="modal-backdrop" id="dp-backdrop" hidden>
+      <div class="modal-panel" role="dialog" aria-modal="true" aria-labelledby="dp-title">
+        <div class="modal-header">
+          <h2 id="dp-title">New deployment</h2>
+          <button type="button" class="modal-close" id="dp-close" aria-label="Close">&times;</button>
+        </div>
+        <label class="field-label" for="dp-label-input">Name</label>
+        <input type="text" id="dp-label-input" maxlength="120" placeholder="e.g. Deploy #1">
+        <label class="field-label">Tickets in this deployment</label>
+        <div id="dp-items-list" class="dp-items-list"></div>
+        <div class="form-row" style="justify-content:flex-end;">
+          <div class="form-actions">
+            <button type="button" class="btn-ghost" id="dp-cancel">Cancel</button>
+            <button type="button" class="btn-primary" id="dp-submit">Save deployment</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="modal-backdrop" id="fa-backdrop" hidden>
+      <div class="modal-panel modal-panel-wide" role="dialog" aria-modal="true" aria-labelledby="fa-title">
+        <div class="modal-header">
+          <h2 id="fa-title">New article</h2>
+          <button type="button" class="modal-close" id="fa-close" aria-label="Close">&times;</button>
+        </div>
+        <label class="field-label" for="fa-title-input">Title</label>
+        <input type="text" id="fa-title-input" maxlength="200" placeholder="e.g. How do I set up a targeted offer?">
+        <label class="field-label" for="fa-slug-input">Slug</label>
+        <input type="text" id="fa-slug-input" maxlength="200" placeholder="auto-generated-from-title">
+        <div class="form-row-grid">
+          <div>
+            <label class="field-label" for="fa-category-select">Category</label>
+            <select id="fa-category-select"></select>
+          </div>
+          <div>
+            <label class="field-label" for="fa-doctype-select">Document type</label>
+            <select id="fa-doctype-select">
+              <option value="faq">FAQ</option>
+              <option value="how-to">How-to guide</option>
+              <option value="reference">Reference</option>
+              <option value="explanation">Explanation</option>
+            </select>
+          </div>
+        </div>
+        <p class="field-hint">Document type per <a href="../docs/CONTRIBUTING-docs.md" target="_blank" rel="noopener">docs/CONTRIBUTING-docs.md</a> §2 — a short reassurance (FAQ), a task to complete (How-to), facts to look up (Reference), or context on why (Explanation). Shown to readers as a small badge.</p>
+        <div class="form-row-grid">
+          <div>
+            <label class="field-label" for="fa-project-select">Linked project (optional)</label>
+            <select id="fa-project-select">
+              <option value="">None — general article</option>
+            </select>
+          </div>
+        </div>
+        <p class="field-hint">Linking a project is what lets a future feature launch flag its own FAQs for review — see "Needs review" below.</p>
+        <label class="field-label" for="fa-summary-input">Summary (shown in lists and search)</label>
+        <textarea id="fa-summary-input" rows="2" maxlength="300"></textarea>
+        <label class="field-label" for="fa-keywords-input">Search keywords (comma separated, optional)</label>
+        <input type="text" id="fa-keywords-input" placeholder="e.g. offer, targeting, pricing">
+        <div class="fa-body-header">
+          <label class="field-label" style="margin:10px 0 4px;">Body</label>
+          <div class="type-toggle" role="radiogroup" aria-label="Body view">
+            <button type="button" class="type-opt active" id="fa-body-mode-edit" data-mode="edit">Edit</button>
+            <button type="button" class="type-opt" id="fa-body-mode-view" data-mode="view">View live</button>
+          </div>
+        </div>
+        <div id="fa-body-editor-wrap">
+          <div id="fa-body-editor"></div>
+        </div>
+        <div class="fa-body-viewer" id="fa-body-viewer" hidden></div>
+        <div class="form-row">
+          <div class="type-toggle" role="radiogroup" aria-label="Status">
+            <button type="button" class="type-opt active" data-status="draft">Draft</button>
+            <button type="button" class="type-opt" data-status="published">Published</button>
+          </div>
+          <label class="fa-needs-review-toggle">
+            <input type="checkbox" id="fa-needs-review">
+            Needs review
+          </label>
+        </div>
+        <p class="field-hint" id="fa-live-link-hint" hidden></p>
+        <div class="form-row" style="justify-content:flex-end;">
+          <div class="form-actions">
+            <button type="button" class="btn-ghost" id="fa-cancel">Cancel</button>
+            <button type="button" class="btn-primary" id="fa-submit">Save article</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <section class="faq-admin-page" id="faq-settings-page" hidden>
+      <div class="docs-page-header">
+        <h2>Settings — FAQ / Help Center</h2>
+      </div>
+      <p class="field-hint">
+        Consumer-facing site: <code>faq/</code> at the repo root (published via GitHub Pages once
+        merged to <code>main</code>). Categories are shown on that site's front page and category
+        filter — everything here reads/writes this same Firestore project, so a save here is what
+        keeps that page current.
+      </p>
+
+      <div class="docs-block">
+        <div class="docs-block-header">
+          <h3>Categories</h3>
+        </div>
+        <p class="field-hint">Order controls display order on the public site.</p>
+        <div id="faq-category-list"></div>
+        <div class="fa-new-category-row">
+          <input type="text" id="fa-new-category-name" maxlength="80" placeholder="New category name">
+          <div class="fa-icon-picker">
+            <span class="material-symbols-outlined fa-icon-preview" id="fa-new-category-icon-preview">help</span>
+            <select id="fa-new-category-icon"></select>
+          </div>
+          <button type="button" class="btn-ghost" id="fa-new-category-submit">+ Add category</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="faq-admin-page" id="faq-articles-page" hidden>
+      <div class="docs-page-header">
+        <h2>FAQ Management — <span id="faq-admin-count">0 published</span></h2>
+      </div>
+      <p class="field-hint">
+        Consumer-facing site: <code>faq/</code> at the repo root (published via GitHub Pages once
+        merged to <code>main</code>). Only <strong>Published</strong> articles appear there.
+        Manage categories from <strong>Settings</strong> in the hamburger menu.
+      </p>
+
+      <div class="docs-block">
+        <div class="docs-block-header">
+          <h3>Articles</h3>
+          <button type="button" class="btn-primary" id="fa-new-article-btn">+ New article</button>
+        </div>
+        <div class="fa-filter-row">
+          <select id="fa-filter-category"><option value="">All categories</option></select>
+          <select id="fa-filter-status">
+            <option value="">All statuses</option>
+            <option value="published">Published</option>
+            <option value="draft">Draft</option>
+          </select>
+          <select id="fa-filter-needs-review">
+            <option value="">Needs review: any</option>
+            <option value="yes">Needs review</option>
+          </select>
+          <input type="search" id="fa-filter-search" placeholder="Title or summary…">
+        </div>
+        <div id="faq-article-list"></div>
+        <p class="empty-hint" id="faq-article-empty" hidden>No articles match these filters.</p>
+      </div>
+    </section>
+
+    <div id="projects-root"></div>
+
+    <footer class="app-footer">PH Agent Console <span id="app-version"></span></footer>
+  </div>
+
+  <script type="module">
+    import { APP_VERSION } from "./js/version.js";
+    document.getElementById("app-version").textContent = `v${APP_VERSION}`;
+  </script>
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>
