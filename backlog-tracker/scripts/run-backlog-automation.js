@@ -103,6 +103,24 @@ function sanitizeBranchName(name, itemId) {
   return `claude/${slug}-${itemId.slice(0, 6).toLowerCase()}`;
 }
 
+// The backlog-tracker APP_VERSION a Ready for Testing item gets stamped
+// with (see the item's own testVersion field, set just below in
+// processApplyPatch) — read straight off disk *after* applyPatchFiles has
+// run, so this reflects whatever version.js will actually end up on `main`
+// once this PR merges (including a version bump this same patchFiles
+// carries, per ROUTINE_INSTRUCTIONS.md's "always bump the version" rule),
+// not a value read before the patch was applied.
+function readAppVersion() {
+  try {
+    const content = fs.readFileSync(path.join(process.cwd(), "backlog-tracker/public/js/version.js"), "utf8");
+    const match = content.match(/APP_VERSION\s*=\s*"([^"]+)"/);
+    return match ? match[1] : null;
+  } catch (err) {
+    console.log(`[apply-patch] couldn't read APP_VERSION off disk (${err.message}) — leaving testVersion unset`);
+    return null;
+  }
+}
+
 function applyPatchFiles(patchFiles) {
   for (const f of patchFiles || []) {
     if (!f || typeof f.path !== "string" || f.path.includes("..")) {
@@ -194,13 +212,15 @@ async function processApplyPatch(item) {
   const prUrl = run("gh", ["pr", "create", "--base", "main", "--head", branch, "--title", prTitle, "--body", prBody]);
 
   const notes = await appendNote(item, `Opened ${prUrl} from the automated backlog pipeline.`);
+  const testVersion = readAppVersion();
   await patchItem(item.id, {
     status: "ready-for-testing",
     patchReady: false,
     updatedAt: new Date().toISOString(),
     notes,
+    ...(testVersion ? { testVersion } : {}),
   });
-  console.log(`[apply-patch] ${item.id}: opened ${prUrl}, moved to ready-for-testing`);
+  console.log(`[apply-patch] ${item.id}: opened ${prUrl}, moved to ready-for-testing${testVersion ? ` (testVersion ${testVersion})` : ""}`);
 
   run("git", ["checkout", "main", "--quiet"]);
 }

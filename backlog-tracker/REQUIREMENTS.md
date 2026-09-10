@@ -108,6 +108,7 @@ deleted by hand).
   testSummary?: string,         // Ready for Testing card's primary text — see below
   noDeploymentRequired?: boolean, // set from the Edit item modal — see "No manual way to reach published-live exists" below for the one exception it carves out
   testPassed?: boolean,         // Ready for Testing card's own "Confirm tested" flag — see "Ready for Testing has two stages" below; never true outside that status, cleared once it advances or is sent back
+  testVersion?: string,         // backlog-tracker's own APP_VERSION, stamped once on first entry to Ready for Testing and carried unchanged through Approved for Deployment, Deployed/Main Branch (Live), and Archived — see "Test version" below
 
   // Notify Claude automation hand-off — see README.md "Notify Claude can't
   // push — how a fix actually reaches GitHub". A fired Routine session has
@@ -182,6 +183,38 @@ for Testing (`moveItem()`) resets `testPassed` to `false`: a stale flag
 from a previous round would otherwise let it slip back onto the feature
 branch on the next "Approved for Deployment" click with nobody having
 re-confirmed the new round of work.
+
+**Test version (`testVersion`)** — a small badge on the card ("Test
+version: v1.5.2") naming backlog-tracker's own `APP_VERSION`
+(`public/js/version.js`) at the moment the card first reached Ready for
+Testing. Since a `public/` change with no version bump is otherwise
+invisible even once merged and deployed (see "always bump the version"
+in `ROUTINE_INSTRUCTIONS.md`), this gives whoever's testing a concrete
+number to check against the live footer before they start — the same
+purpose the footer's own version string already serves, just carried onto
+the ticket itself.
+
+- **Set once, then carried through unchanged** — never recomputed on
+  later moves. The normal automated path
+  (`run-backlog-automation.js`'s `processApplyPatch`) reads
+  `public/js/version.js` straight off disk right after applying
+  `patchFiles` (so it reflects a version bump the same patch carries) and
+  stamps it alongside the `ready-for-testing` status write. The rarer
+  manual path — a Backlog card moved straight to Ready for Testing via
+  the right-arrow button, bypassing the Routine/PR pipeline entirely —
+  stamps the frontend's own currently-loaded `APP_VERSION` the same way
+  (`moveItem()`, only on the forward direction; sending a card back from
+  Approved for Deployment leaves an existing `testVersion` untouched, same
+  as `testPassed` is reset but the version stamp isn't).
+- Carries through Approved for Deployment and Deployed/Main Branch (Live)
+  unmodified, and appears as its own **Version** column in the Archived
+  table (`archiveRowHTML()`) once a card is archived — so the version a
+  ticket was tested against stays visible for the life of the card, not
+  just while it's on the active board.
+- A card stamped before this feature shipped (or one whose entry to Ready
+  for Testing predates it) simply has no `testVersion` — the badge and
+  the Archive column both render nothing (`—` in the table) rather than a
+  placeholder.
 
 **No manual way to reach `published-live` exists — except for a card with
 nothing to actually deploy.** An "Approved for Deployment" card normally

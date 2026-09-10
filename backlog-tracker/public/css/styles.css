@@ -349,11 +349,24 @@ body {
 
 /* A card with no code to push (a live data/config-only fix) — see the Edit
    item modal's "No deployment required" checkbox and cardHTML's own
-   confirm-no-deploy-btn, which skips Live on Feature Branch/Notify Claude —
+   confirm-no-deploy-btn, which skips Approved for Deployment/Notify Claude —
    Deploy entirely for a card carrying this flag. */
 .no-deploy-badge {
   display: inline-block; font-size: 10.5px; font-weight: 600;
   color: var(--success); background: rgba(82, 196, 26, .12); border-radius: 9999px;
+  padding: 2px 8px; margin: 6px 0 0 6px;
+}
+/* The backlog-tracker APP_VERSION (see public/js/version.js) captured the
+   moment a card first enters Ready for Testing — the same number the app's
+   own footer shows, so a tester can compare "ticket says v1.5.2" against
+   the live footer to confirm they're looking at the right build. Carries
+   through Approved for Deployment and Deployed/Main Branch (Live)
+   unchanged (see moveItem/processApplyPatch — it's stamped once, not
+   recomputed on every move), and into the Archived table's own Version
+   column. */
+.test-version-badge {
+  display: inline-block; font-size: 10.5px; font-weight: 600;
+  color: var(--text-muted); background: var(--surface-2); border-radius: 9999px;
   padding: 2px 8px; margin: 6px 0 0 6px;
 }
 .deployment-card { border: 1px solid var(--border); border-radius: 8px; padding: 14px; margin-bottom: 12px; background: var(--surface); }
