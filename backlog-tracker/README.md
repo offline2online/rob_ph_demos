@@ -355,16 +355,20 @@ PRs were meant to land together in the first place, especially when the
 Notify Claude Routine fixes several backlog items in one fire and opens
 several PRs at once. For that, see the board's own **Deployments** page
 (per project, via **⋮ → Deployments** — full behavior in `REQUIREMENTS.md`
-under "Functional requirements — the board"): it groups those tickets,
+under "Functional requirements — the board"): it groups those tickets and
 shows a live checklist of which ones have actually been confirmed "Live on
-Feature Branch," and only unlocks a single "Merge all to main" button once
-every one of them is ready — so the person actually merging the PRs on
-GitHub has one place to see the whole batch and merge it together, rather
-than merging each PR the moment its own card looks ready with no idea
-whether the rest of its batch is done. That button is board bookkeeping
-only (it flips Firestore status, it doesn't call the GitHub API) — you
-still merge the actual PRs yourself, this just tells you when the whole
-batch is truly ready to.
+Feature Branch." Its "Notify Claude to merge" button (enabled once every
+member is ready) fires the same "Notify Claude — Deploy" flow as the
+project header button, scoped to that group's project — it does not merge
+anything itself; only `run-backlog-automation.js` does, after the Routine
+has confirmed each PR is actually green and mergeable. The card's own "✓
+Merged" badge is derived live from every member's real status, never a
+separate flag, so it can't say "Merged" while a PR is still open. (An
+earlier version of this button, and a since-removed per-card "Merge to
+main" button, wrote `published-live` directly with zero connection to
+GitHub — removed after that let cards claim to be merged while their PRs
+sat open; see `REQUIREMENTS.md`'s "No manual way to reach `published-live`
+exists" for the full story.)
 
 ### Cleaning up old Cloud Build/Artifact Registry images
 

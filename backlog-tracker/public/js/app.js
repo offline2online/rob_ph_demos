@@ -88,10 +88,11 @@ let archiveFilters = { type: "", category: "", search: "" };
 // A deployment groups several backlogItems meant to ship to main together
 // — usually all fixed in one Notify Claude Routine fire, but can also be
 // hand-picked from the board. Members carry a deploymentId pointing at a
-// "deployments" doc; the batch "Merge all to main" action only unlocks
+// "deployments" doc; its "Notify Claude to merge" action only unlocks
 // once every member has individually reached ready-to-publish (Live on
-// Feature Branch) — it's board bookkeeping (flips every member's status at
-// once), not something that drives the underlying GitHub PR merges itself.
+// Feature Branch), and just requests the same Notify Claude — Deploy flow
+// scoped to that project — run-backlog-automation.js is what actually
+// merges each PR and flips status, never this button directly.
 let deploymentsProjectId = null;
 let editingDeploymentId = null; // null while creating, an id while editing membership
 
@@ -177,8 +178,15 @@ function cardHTML(item) {
   const approveBtn = isTesting
     ? `<button type="button" class="approve-btn move-btn" data-id="${item.id}" data-dir="1">Confirm live on branch</button>`
     : "";
+  // Deliberately not a button: there used to be a "Merge to main" button
+  // here that just wrote status: "published-live" directly, with zero
+  // connection to whether the PR was actually merged on GitHub — a card
+  // could say "Merged to Main" while its PR sat open. The only honest way
+  // to reach published-live now is the project's own "Notify Claude —
+  // Deploy" action (see deployNotifyButtonHTML), which only advances a
+  // card once backlog-automation.yml has actually merged its PR.
   const mergeBtn = isLiveBranch
-    ? `<button type="button" class="merge-btn move-btn" data-id="${item.id}" data-dir="1">Merge to main</button>`
+    ? `<span class="merge-pending-hint" title="Only this project's own Notify Claude — Deploy button actually merges this to main">Waiting for Notify Claude — Deploy</span>`
     : "";
   const isPublished = item.status === "published-live";
   const archiveBtn = isPublished
@@ -851,21 +859,23 @@ async function deleteDeployment(id) {
   await batch.commit();
 }
 
-// The batch action this whole feature exists for: once every member has
-// individually been confirmed "Live on Feature Branch" (ready-to-publish —
-// the same "someone actually tested it" gate a single card's own "Confirm
-// live on branch" button already enforces), flip them all to
-// published-live together in one write. This is board bookkeeping only —
-// it does not itself merge the underlying GitHub PRs; whoever's driving
-// the actual merges still does that (ideally back-to-back, now that they
-// know from this page exactly which PRs are meant to land together).
-async function mergeDeployment(id) {
+// Once every member has individually been confirmed "Live on Feature
+// Branch" (ready-to-publish — the same "someone actually tested it" gate
+// a single card's own "Confirm live on branch" button already enforces),
+// this used to flip them all straight to published-live in one Firestore
+// write — board bookkeeping only, since it never touched the underlying
+// GitHub PRs. That let a whole deployment group show "Merged to Main"
+// while every one of its PRs sat open and unmerged. It now does the same
+// thing a single card's removed "Merge to main" button used to do wrong:
+// request the project's real Notify Claude — Deploy flow instead, which
+// only advances a card once backlog-automation.yml has actually merged
+// its PR. `isMerged` below is derived from real member status, not a
+// separate stored flag, so the deployment card's own "Merged" badge only
+// ever reflects reality.
+async function requestDeploymentMerge(id) {
   const members = itemsForDeployment(id);
   if (members.length === 0 || !members.every((i) => i.status === "ready-to-publish")) return;
-  const batch = writeBatch(db);
-  members.forEach((i) => batch.update(doc(db, "backlogItems", i.id), { status: "published-live", updatedAt: serverTimestamp() }));
-  batch.update(doc(db, "deployments", id), { mergedAt: serverTimestamp(), updatedAt: serverTimestamp() });
-  await batch.commit();
+  await requestDeployNotify(members[0].projectId || GENERAL_PROJECT_ID);
 }
 
 // An interface is a maintained contract document shared between exactly
@@ -1358,7 +1368,7 @@ document.getElementById("archived-projects-table-body").addEventListener("click"
 });
 
 // ── Deployments page (per-project — grouping tickets meant to ship together,
-// with a progress checklist and a batch "Merge all to main" that only
+// with a progress checklist and a "Notify Claude to merge" action that only
 // unlocks once every member is individually confirmed Live on Feature
 // Branch) ──────────────────────────────────────────────────────────────
 const deploymentsPage = document.getElementById("deployments-page");
@@ -1391,12 +1401,14 @@ function deploymentRowHTML(dep) {
   const members = itemsForDeployment(dep.id);
   const confirmedCount = members.filter((i) => i.status === "ready-to-publish" || i.status === "published-live").length;
   const allReady = members.length > 0 && members.every((i) => i.status === "ready-to-publish");
-  const isMerged = !!dep.mergedAt;
-  const mergedDate = isMerged && dep.mergedAt.toDate ? dep.mergedAt.toDate().toLocaleDateString() : "";
+  // Derived from the members' own real status, not a separate stored
+  // flag — this badge only ever reflects an actual completed merge (see
+  // requestDeploymentMerge's own comment for why that matters here).
+  const isMerged = members.length > 0 && members.every((i) => i.status === "published-live");
 
   const actionHTML = isMerged
-    ? `<span class="deployment-merged-badge">&#10003; Merged${mergedDate ? ` ${mergedDate}` : ""}</span>`
-    : `<button type="button" class="btn-primary deployment-merge-btn" data-id="${dep.id}" ${allReady ? "" : "disabled"}>Merge all to main</button>`;
+    ? `<span class="deployment-merged-badge">&#10003; Merged</span>`
+    : `<button type="button" class="btn-primary deployment-merge-btn" data-id="${dep.id}" ${allReady ? "" : "disabled"}>Notify Claude to merge</button>`;
 
   return `
     <div class="deployment-card" data-id="${dep.id}">
@@ -1425,7 +1437,7 @@ function renderDeploymentsPage() {
 document.getElementById("deployments-add-btn").addEventListener("click", () => openDeploymentModal(null));
 document.getElementById("deployments-list").addEventListener("click", (e) => {
   const mergeBtn = e.target.closest(".deployment-merge-btn");
-  if (mergeBtn && !mergeBtn.disabled) { mergeDeployment(mergeBtn.dataset.id); return; }
+  if (mergeBtn && !mergeBtn.disabled) { requestDeploymentMerge(mergeBtn.dataset.id); return; }
   const editBtn = e.target.closest(".deployment-edit-btn");
   if (editBtn) { openDeploymentModal(editBtn.dataset.id); return; }
   const delBtn = e.target.closest(".deployment-delete-btn");
