@@ -107,6 +107,23 @@ check CI/mergeability using GitHub's public, unauthenticated REST API
 `mergeReady: true` + `mergePrNumber` instead of merging itself. The same
 scheduled job merges the PR and flips `status` to `"published-live"`.
 
+**A merge here must explicitly re-trigger the deploy — it doesn't happen
+for free.** GitHub deliberately suppresses `on: push` triggers for pushes
+made with a workflow's own `GITHUB_TOKEN` (anti-recursion protection), so
+a PR merged by `gh pr merge` here does **not** fire
+`deploy-backlog-tracker.yml`'s own `push`-to-`main` trigger the way a
+human's (or an app's own token's) merge does. Found the hard way: PRs
+merged by this pipeline landed on `main` and flipped their card to
+"published-live" while Cloud Functions/Hosting/Firestore rules silently
+never redeployed — the board said live, the site wasn't. Fixed by having
+`processMergePr` explicitly run `gh workflow run deploy-backlog-tracker.yml`
+right after a successful merge that touched `backlog-tracker/` (an
+explicit API dispatch, unlike a push event, isn't subject to that
+suppression) — needs `actions: write` in this workflow's own
+`permissions:` block. If a future edit to this script or workflow ever
+looks like it doesn't need that explicit trigger, it's wrong — this is
+the whole reason it exists.
+
 If a fired session genuinely can't express its fix as full file contents,
 it leaves the item in `backlog` with a note explaining why, same as
 before — a human picks it up from there.

@@ -18,6 +18,12 @@ on:
 permissions:
   contents: write
   pull-requests: write
+  # Needed so a merge done here can explicitly dispatch
+  # deploy-backlog-tracker.yml — a push made with this workflow's own
+  # GITHUB_TOKEN does not trigger other workflows' `on: push` (GitHub's
+  # anti-recursion protection), so the deploy would otherwise silently
+  # never run. See run-backlog-automation.js's processMergePr.
+  actions: write
 
 jobs:
   run:
