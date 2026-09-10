@@ -92,7 +92,7 @@ no-ops on its own if its secret(s) aren't set):
 
 A second header button, **Notify Claude — Deploy**, closes the same gap at
 the *other* end of the pipeline: it appears only when a project has items
-Live on Feature Branch (already tested and confirmed, just waiting for
+Approved for Deployment (already tested and confirmed, just waiting for
 someone to merge their PRs), and its own Cloud Function
 (`functions/notifyOnProjectReadyToDeploy`) fires the same Routine — but
 with fire text that explicitly says "these are done, don't re-implement
@@ -405,8 +405,8 @@ Notify Claude Routine fixes several backlog items in one fire and opens
 several PRs at once. For that, see the board's own **Deployments** page
 (per project, via **⋮ → Deployments** — full behavior in `REQUIREMENTS.md`
 under "Functional requirements — the board"): it groups those tickets and
-shows a live checklist of which ones have actually been confirmed "Live on
-Feature Branch." Its "Notify Claude to merge" button (enabled once every
+shows a live checklist of which ones have actually been confirmed
+"Approved for Deployment." Its "Notify Claude to merge" button (enabled once every
 member is ready) fires the same "Notify Claude — Deploy" flow as the
 project header button, scoped to that group's project — it does not merge
 anything itself; only `run-backlog-automation.js` does, after the Routine

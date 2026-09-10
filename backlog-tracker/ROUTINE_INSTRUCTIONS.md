@@ -287,7 +287,7 @@ something that looks plausible.
 
 A fire whose `text` starts with `=== DEPLOY REQUEST for "<project>" ===`
 is the *other* end of the pipeline: these items are already implemented,
-tested, and confirmed "Live on Feature Branch" (`ready-to-publish`). Do
+tested, and confirmed "Approved for Deployment" (`ready-to-publish`). Do
 NOT investigate, re-implement, or re-test them. Each item in the fire
 `text` includes its Firestore doc id and, when known, its `patchBranch` —
 use those, don't re-derive them from the title. For each item:
