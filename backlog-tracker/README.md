@@ -19,6 +19,31 @@ function (`functions/notifyOnProjectReadyForReview`) watches for — it fires
 once and sends everything currently sitting in that project's Backlog
 column, rather than each item separately.
 
+### Four stages, four different prompts
+
+The webhook payload's `text` field (and a `stage` field for anything
+downstream that wants to branch on it programmatically rather than parse
+the sentence) is deliberately **not** the same message reused everywhere —
+what Claude should actually do next is different at each point in the
+pipeline, so each trigger below builds its own prompt:
+
+| Trigger | `stage` | What the prompt asks for |
+|---|---|---|
+| A card lands in Backlog | `new-backlog-item` | investigate this one item |
+| **⋮ → Notify Claude** clicked | `backlog-ready-for-review` | investigate/fix every item currently in that project's Backlog, `git push` each fix to its feature branch, move the card to Ready for Testing |
+| **Confirm live on branch** clicked | `confirmed-live-on-branch` | merge the feature branch into `main` and `git push origin main` — this is the "ready to deploy" moment |
+| **Merge to main** clicked | `merged-to-main` | verify the merge landed on GitHub (and, if it touched `menu-board-demo/functions`, that Cloud Functions still need a separate manual deploy) and report back |
+
+Every prompt also repeats one explicit line: moving a card on *this* board
+never deploys the underlying product code — that only happens via a real
+`git push`/merge to GitHub (`functions/index.js`'s `GITHUB_DEPLOY_REMINDER`
+constant). This board's own "a Firestore write is live immediately, no
+publish step" behavior (see repo root `CLAUDE.md`) is about the board's
+*own* data — the projects/backlogItems/etc. documents — not about the
+actual site or app code those cards track, and the prompts say so
+explicitly so a stage notification is never mistaken for "this already
+shipped."
+
 ## Isolation from menu-board-demo — by design, not just by folder
 
 This is a genuinely separate project, not a subfolder sharing infrastructure:
@@ -44,16 +69,20 @@ itself — plain files, no build coupling, no shared runtime.
 ## Architecture
 
 ```
-backlogItems doc created, status: "backlog"          project doc's notifyRequestedAt bumped
-        │  onDocumentCreated                                  │  onDocumentUpdated
-        ▼                                                      ▼
-functions/notifyOnBacklogItemCreated          functions/notifyOnProjectReadyForReview
-   (one POST per new item)                       (one POST per project, whole Backlog column)
-        │                                                      │
-        └───────────────────────┬──────────────────────────────┘
-                                 ▼
+backlogItems doc          project doc's          card status flips           card status flips
+created, status:           notifyRequestedAt       ready-for-testing            ready-to-publish
+"backlog"                  bumped                  → ready-to-publish          → published-live
+   │ onDocumentCreated        │ onDocumentUpdated      │ onDocumentUpdated         │ onDocumentUpdated
+   ▼                          ▼                        ▼                          ▼
+notifyOnBacklogItemCreated notifyOnProjectReadyForReview notifyOnItemConfirmedLiveOnBranch notifyOnItemMergedToMain
+   │                          │                        │                          │
+   └──────────────────────────┴────────────┬───────────┴──────────────────────────┘
+                                            ▼
                   NOTIFY_WEBHOOK_URL   (Firebase secret — you decide what this points at)
 ```
+
+Each function sends its own stage-specific prompt — see "Four stages, four
+different prompts" above; they don't all POST the same text.
 
 Frontend (`public/`) is a plain Firestore-backed board — vanilla JS,
 Firebase's modular Web SDK loaded from the `gstatic.com` CDN, no build
@@ -232,14 +261,17 @@ still succeeds, only the automatic cleanup doesn't happen that run.
 
 ### The `NOTIFY_WEBHOOK_URL` secret
 
-`functions/index.js`'s `notifyOnBacklogItemCreated` reads a Firebase
-secret called `NOTIFY_WEBHOOK_URL` (see step 7 above for creating a Slack
-incoming webhook, or an alternative target). The workflow keeps this in
+All four notify functions in `functions/index.js` (`notifyOnBacklogItemCreated`,
+`notifyOnProjectReadyForReview`, `notifyOnItemConfirmedLiveOnBranch`,
+`notifyOnItemMergedToMain`) read the same Firebase secret,
+`NOTIFY_WEBHOOK_URL` (see step 7 above for creating a Slack incoming
+webhook, or an alternative target) — one secret, one webhook target, four
+different stage-specific messages sent to it. The workflow keeps this in
 sync automatically from a GitHub Actions secret of the same name — add a
 repo secret named `NOTIFY_WEBHOOK_URL` (Settings → Secrets and variables →
 Actions → New repository secret) with the webhook URL as its value, and
 every deploy pushes that value into Firebase Secret Manager before
-deploying the function. If that GitHub secret isn't set, this step is
+deploying the functions. If that GitHub secret isn't set, this step is
 skipped and the manual `firebase functions:secrets:set NOTIFY_WEBHOOK_URL`
 command still works as a one-off alternative.
 

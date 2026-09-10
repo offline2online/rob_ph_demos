@@ -31,6 +31,65 @@ initializeApp();
 //      yourself; out of scope for this scaffold.
 const NOTIFY_WEBHOOK_URL = defineSecret("NOTIFY_WEBHOOK_URL");
 
+// The one line every stage prompt below repeats: the board's own "no
+// publish step, a Firestore write is live immediately" behavior (see repo
+// root CLAUDE.md) applies to the BOARD's own data only. It does not apply
+// to the actual product code these cards track — that only ships via a
+// real `git push`/merge to GitHub, same as everywhere else in this repo.
+// Called out explicitly on every payload below so a stage notification is
+// never mistaken for "this is already live."
+const GITHUB_DEPLOY_REMINDER =
+  "Reminder: moving a card on this board never deploys anything by itself " +
+  "— it only records progress. The real deployment step is always a " +
+  "`git push`/merge on GitHub (to the project's feature branch, then to " +
+  "`main`). Cloud Functions changes additionally need a separate manual " +
+  "`firebase deploy --only functions` — see repo root CLAUDE.md.";
+
+// Shared send + error handling so each stage below only has to build its
+// own payload, not repeat the fetch/log/swallow boilerplate four times.
+async function sendNotify(webhookUrl, payload, logCtx) {
+  try {
+    const res = await fetch(webhookUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) {
+      // Logged, not thrown — a bad webhook target shouldn't retry-loop
+      // this function forever, it should just show up in Cloud Logging.
+      logger.error("Notify webhook responded with a non-2xx status", {
+        ...logCtx,
+        status: res.status,
+        body: await res.text().catch(() => "<unreadable>"),
+      });
+      return;
+    }
+    logger.info("Notified webhook", logCtx);
+  } catch (err) {
+    logger.error("Failed to call notify webhook", {
+      ...logCtx,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+}
+
+// Multi-project items carry a projectId rather than embedding the
+// project's own name — one lookup here keeps every notification readable
+// ("... in Products and Pricing") instead of surfacing an opaque id.
+async function lookupProjectName(projectId) {
+  if (!projectId) return "Unknown project";
+  try {
+    const snap = await getFirestore().collection("projects").doc(projectId).get();
+    if (snap.exists && snap.data().name) return snap.data().name;
+  } catch (err) {
+    logger.warn("Could not look up project name for notification", {
+      projectId,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+  return projectId;
+}
+
 exports.notifyOnBacklogItemCreated = onDocumentCreated(
   { document: "backlogItems/{itemId}", secrets: [NOTIFY_WEBHOOK_URL] },
   async (event) => {
@@ -54,29 +113,11 @@ exports.notifyOnBacklogItemCreated = onDocumentCreated(
       return;
     }
 
-    // Multi-project items carry a projectId rather than embedding the
-    // project's own name — one extra read here keeps the notification
-    // readable ("New item in Products and Pricing: ...") instead of
-    // surfacing an opaque id, and this only runs once per new item, not
-    // once per page view.
-    let projectName = item.projectId || "Unknown project";
-    if (item.projectId) {
-      try {
-        const projectSnap = await getFirestore().collection("projects").doc(item.projectId).get();
-        if (projectSnap.exists && projectSnap.data().name) {
-          projectName = projectSnap.data().name;
-        }
-      } catch (err) {
-        logger.warn("Could not look up project name for notification", {
-          itemId: event.params.itemId,
-          projectId: item.projectId,
-          error: err instanceof Error ? err.message : String(err),
-        });
-      }
-    }
+    const projectName = await lookupProjectName(item.projectId);
 
     const payload = {
-      text: `New backlog item in ${projectName}: "${item.title}" (${item.type === "bug" ? "Bug" : "Feature"}, ${item.category || "Uncategorised"})`,
+      stage: "new-backlog-item",
+      text: `New backlog item in ${projectName}: "${item.title}" (${item.type === "bug" ? "Bug" : "Feature"}, ${item.category || "Uncategorised"}). ${GITHUB_DEPLOY_REMINDER}`,
       itemId: event.params.itemId,
       projectId: item.projectId || null,
       projectName,
@@ -87,31 +128,7 @@ exports.notifyOnBacklogItemCreated = onDocumentCreated(
       createdAt: item.createdAt || null,
     };
 
-    try {
-      const res = await fetch(webhookUrl, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-      if (!res.ok) {
-        // Logged, not thrown — a bad webhook target shouldn't retry-loop
-        // this function forever, it should just show up in Cloud Logging.
-        logger.error("Notify webhook responded with a non-2xx status", {
-          itemId: event.params.itemId,
-          status: res.status,
-          body: await res.text().catch(() => "<unreadable>"),
-        });
-        return;
-      }
-      logger.info("Notified webhook of new backlog item", {
-        itemId: event.params.itemId,
-      });
-    } catch (err) {
-      logger.error("Failed to call notify webhook", {
-        itemId: event.params.itemId,
-        error: err instanceof Error ? err.message : String(err),
-      });
-    }
+    await sendNotify(webhookUrl, payload, { itemId: event.params.itemId, stage: "new-backlog-item" });
   }
 );
 
@@ -156,7 +173,8 @@ exports.notifyOnProjectReadyForReview = onDocumentUpdated(
     const items = itemsSnap.docs.map((d) => d.data());
 
     const payload = {
-      text: `${after.name || "A project"} has ${items.length} item${items.length === 1 ? "" : "s"} in Backlog ready for review.`,
+      stage: "backlog-ready-for-review",
+      text: `${after.name || "A project"} has ${items.length} item${items.length === 1 ? "" : "s"} in Backlog ready for you to investigate. For each item: find the root cause, implement the fix, and \`git push\` your commit(s) to the project's feature branch on GitHub. Then move that card from Backlog to Ready for Testing on the board so it's queued for testing on the branch. ${GITHUB_DEPLOY_REMINDER}`,
       projectId: event.params.projectId,
       projectName: after.name || null,
       items: items.map((i) => ({
@@ -164,29 +182,91 @@ exports.notifyOnProjectReadyForReview = onDocumentUpdated(
       })),
     };
 
-    try {
-      const res = await fetch(webhookUrl, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-      if (!res.ok) {
-        logger.error("Notify webhook responded with a non-2xx status for manual notify", {
-          projectId: event.params.projectId,
-          status: res.status,
-          body: await res.text().catch(() => "<unreadable>"),
-        });
-        return;
-      }
-      logger.info("Notified webhook of manual project notify request", {
-        projectId: event.params.projectId,
-        itemCount: items.length,
-      });
-    } catch (err) {
-      logger.error("Failed to call notify webhook for manual notify", {
-        projectId: event.params.projectId,
-        error: err instanceof Error ? err.message : String(err),
-      });
+    await sendNotify(webhookUrl, payload, {
+      projectId: event.params.projectId,
+      stage: "backlog-ready-for-review",
+      itemCount: items.length,
+    });
+  }
+);
+
+// Fires the instant a card is confirmed working on its feature branch (the
+// "Confirm live on branch" button — ready-for-testing → ready-to-publish).
+// The prompt at this stage is deliberately different from the Backlog one
+// above: there's no more investigating to do, the next real-world action is
+// merging that feature branch into `main` and pushing on GitHub.
+exports.notifyOnItemConfirmedLiveOnBranch = onDocumentUpdated(
+  { document: "backlogItems/{itemId}", secrets: [NOTIFY_WEBHOOK_URL] },
+  async (event) => {
+    const before = event.data?.before?.data();
+    const after = event.data?.after?.data();
+    if (!before || !after) return;
+    if (!(before.status === "ready-for-testing" && after.status === "ready-to-publish")) {
+      return;
     }
+
+    const webhookUrl = NOTIFY_WEBHOOK_URL.value();
+    if (!webhookUrl) {
+      logger.warn(
+        "NOTIFY_WEBHOOK_URL is not set — skipping confirmed-live-on-branch notification",
+        { itemId: event.params.itemId }
+      );
+      return;
+    }
+
+    const projectName = await lookupProjectName(after.projectId);
+    const payload = {
+      stage: "confirmed-live-on-branch",
+      text: `"${after.title}" (${projectName}) has been confirmed working on its feature branch and is ready to ship. Merge that feature branch into \`main\` and \`git push origin main\` on GitHub — that push is what actually deploys it. Once pushed, click "Merge to main" on the card to move it to Merged to Main (Live). ${GITHUB_DEPLOY_REMINDER}`,
+      itemId: event.params.itemId,
+      projectId: after.projectId || null,
+      projectName,
+      title: after.title,
+      desc: after.desc,
+      type: after.type,
+      category: after.category || "Uncategorised",
+    };
+
+    await sendNotify(webhookUrl, payload, { itemId: event.params.itemId, stage: "confirmed-live-on-branch" });
+  }
+);
+
+// Fires the instant a card is marked merged to main (the "Merge to main"
+// button — ready-to-publish → published-live). By this point the GitHub
+// push has already happened (per the previous stage's prompt); this one is
+// a completion/verification prompt, not a work request to push code again.
+exports.notifyOnItemMergedToMain = onDocumentUpdated(
+  { document: "backlogItems/{itemId}", secrets: [NOTIFY_WEBHOOK_URL] },
+  async (event) => {
+    const before = event.data?.before?.data();
+    const after = event.data?.after?.data();
+    if (!before || !after) return;
+    if (!(before.status === "ready-to-publish" && after.status === "published-live")) {
+      return;
+    }
+
+    const webhookUrl = NOTIFY_WEBHOOK_URL.value();
+    if (!webhookUrl) {
+      logger.warn(
+        "NOTIFY_WEBHOOK_URL is not set — skipping merged-to-main notification",
+        { itemId: event.params.itemId }
+      );
+      return;
+    }
+
+    const projectName = await lookupProjectName(after.projectId);
+    const payload = {
+      stage: "merged-to-main",
+      text: `"${after.title}" (${projectName}) is marked Merged to Main (Live) — confirm the \`main\` branch on GitHub actually has the merge commit, and that the change is visible wherever it publishes to (GitHub Pages, etc). If this touched \`menu-board-demo/functions\`, remember pushing to \`main\` alone does NOT make a Cloud Functions change live — someone with Firebase deploy access still has to run \`firebase deploy --only functions\` separately (see repo root CLAUDE.md). Once confirmed, report back that it's done.`,
+      itemId: event.params.itemId,
+      projectId: after.projectId || null,
+      projectName,
+      title: after.title,
+      desc: after.desc,
+      type: after.type,
+      category: after.category || "Uncategorised",
+    };
+
+    await sendNotify(webhookUrl, payload, { itemId: event.params.itemId, stage: "merged-to-main" });
   }
 );
