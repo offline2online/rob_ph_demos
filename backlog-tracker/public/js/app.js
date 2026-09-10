@@ -84,6 +84,19 @@ function getSelectedSet(pid) {
   return selectedNotifyIds[pid];
 }
 
+// ── Same idea, separate namespace, for the Ready for Testing column's own
+// selection — which items a "Deploy to Feature" click should act on. Kept
+// distinct from selectedNotifyIds/getSelectedSet above rather than reusing
+// it: the two columns' selections are unrelated (a card can't be in both at
+// once anyway, but conflating the storage would make that an assumption
+// instead of a guarantee) and each clears independently once its own CTA
+// fires. ─────────────────────────────────────────────────────────────────
+const selectedDeployToFeatureIds = {};
+function getDeploySelectedSet(pid) {
+  if (!selectedDeployToFeatureIds[pid]) selectedDeployToFeatureIds[pid] = new Set();
+  return selectedDeployToFeatureIds[pid];
+}
+
 // ── Optimistic "just clicked Notify Claude" state (per project) — the real
 // spinning state lives in projects/{id}.notifyRoutine, but that's written by
 // notifyOnProjectReadyForReview (see ../functions/index.js) reacting to
@@ -200,13 +213,18 @@ function cardHTML(item) {
   const isBacklog = item.status === "backlog";
   const canDelete = isBacklog;
 
-  // Only Backlog cards get a select checkbox — selecting cards elsewhere
-  // in the pipeline wouldn't mean anything, since Notify Claude only ever
-  // acts on the Backlog column.
+  // Backlog cards select for "Ready for Dev"; Ready for Testing cards
+  // (except noDeploymentRequired ones, which skip the feature-branch step
+  // entirely) select for "Deploy to Feature" — two different pools, two
+  // different checkbox classes/selection sets (see getSelectedSet vs.
+  // getDeploySelectedSet). No other column gets a checkbox — nothing else
+  // in the pipeline acts on a hand-picked subset.
   const pid = item.projectId || GENERAL_PROJECT_ID;
   const selectCb = isBacklog
     ? `<input type="checkbox" class="card-select-cb" data-id="${item.id}" data-project-id="${escapeHTML(pid)}" title="Select for Ready for Dev" ${getSelectedSet(pid).has(item.id) ? "checked" : ""}>`
-    : "";
+    : (isTesting && !item.noDeploymentRequired
+        ? `<input type="checkbox" class="card-deploy-select-cb" data-id="${item.id}" data-project-id="${escapeHTML(pid)}" title="Select for Deploy to Feature" ${getDeploySelectedSet(pid).has(item.id) ? "checked" : ""}>`
+        : "");
 
   const leftBtn = canLeft
     ? `<button type="button" class="icon-btn move-btn" data-id="${item.id}" data-dir="-1" title="Move back">&larr;</button>`
@@ -216,14 +234,26 @@ function cardHTML(item) {
     : "";
   // A card flagged noDeploymentRequired (see the Edit item modal) has no
   // code to push — e.g. a Firestore-only data/config change — so there's
-  // nothing for "Live on Feature Branch"/Notify Claude — Deploy to gate.
-  // Once tested it goes straight to published-live via confirmTestedNoDeploy()
-  // instead of the normal move-btn (which would only advance it to
-  // ready-to-publish, still waiting on a merge that will never happen).
+  // nothing for "Feature Branch (Live)"/Deploy to Feature to gate. Once
+  // tested it goes straight to published-live via confirmTestedNoDeploy(),
+  // its own separate one-click path — it never enters the testPassed pool
+  // at all.
+  //
+  // A normal item's "confirm tested" click does NOT advance the column by
+  // itself (a single click used to move it straight to Feature Branch
+  // (Live), which is exactly the behavior this replaced — one click testing
+  // one item shouldn't silently put that item on the feature branch with no
+  // chance to also confirm the others in the same batch). It only flags
+  // testPassed and stays in Ready for Testing; advancing is the separate,
+  // explicit "Deploy to Feature" project action below, which can act on
+  // several passed items at once. Clicking again un-marks it (toggle), in
+  // case it was flagged by mistake before "Deploy to Feature" is clicked.
   const approveBtn = isTesting
     ? (item.noDeploymentRequired
         ? `<button type="button" class="approve-btn confirm-no-deploy-btn" data-id="${item.id}">Confirm tested — mark Merged to Main</button>`
-        : `<button type="button" class="approve-btn move-btn" data-id="${item.id}" data-dir="1">Ready to Deploy</button>`)
+        : (item.testPassed
+            ? `<button type="button" class="approve-btn test-passed-btn test-passed-btn-active" data-id="${item.id}" title="Click to un-mark">&#10003; Passed testing</button>`
+            : `<button type="button" class="approve-btn test-passed-btn" data-id="${item.id}">Confirm tested</button>`))
     : "";
   // Deliberately not a button: there used to be a "Merge to main" button
   // here that just wrote status: "published-live" directly, with zero
@@ -322,6 +352,18 @@ function backlogCountForProject(pid) {
 
 function deployReadyCountForProject(pid) {
   return items.filter((i) => (i.projectId || GENERAL_PROJECT_ID) === pid && i.status === "ready-to-publish").length;
+}
+
+// Ready for Testing items an individual "Confirm tested" click has already
+// flagged — the pool "Deploy to Feature" draws from. A noDeploymentRequired
+// item never enters this pool (see cardHTML): it has its own separate,
+// immediate confirmTestedNoDeploy() path straight to published-live, since
+// there's no feature branch step for it to go through at all.
+function testPassedCountForProject(pid) {
+  return items.filter((i) =>
+    (i.projectId || GENERAL_PROJECT_ID) === pid && i.status === "ready-for-testing" &&
+    i.testPassed && !i.noDeploymentRequired
+  ).length;
 }
 
 function interfacesForProject(pid) {
@@ -482,6 +524,33 @@ function deployNotifyButtonHTML(project) {
   </button>`;
 }
 
+// The middle stage, between "Ready for Dev" and "Deploy to Main": moves
+// individually-confirmed-tested items from Ready for Testing onto their
+// feature branch (ready-to-publish) in one batch click, instead of each
+// "Confirm tested" click advancing its own card immediately — see cardHTML's
+// own comment on why that one-at-a-time behavior was wrong. Purely a client
+// Firestore batch write (deployToFeature() below), no Routine/Cloud
+// Function involved — the feature branch/PR already exists from the
+// Backlog stage, this just advances the board's own status once a human
+// has actually looked at (a batch of) it.
+function deployToFeatureButtonHTML(project) {
+  const pid = project.id;
+  const passedCount = testPassedCountForProject(pid);
+  if (!passedCount) return "";
+  // Same "selection narrows the count" pattern as the Backlog/Ready for Dev
+  // button above.
+  const selectedCount = items.filter((i) =>
+    (i.projectId || GENERAL_PROJECT_ID) === pid && i.status === "ready-for-testing" &&
+    i.testPassed && getDeploySelectedSet(pid).has(i.id)
+  ).length;
+  const label = selectedCount ? `Deploy to Feature — ${selectedCount} selected` : "Deploy to Feature";
+  return `<button type="button" class="notify-claude-btn deploy-to-feature-btn" data-project-id="${escapeHTML(pid)}">
+    <span class="material-symbols-outlined notify-claude-icon">merge_type</span>
+    <span class="notify-claude-label">${label}</span>
+    <span class="notify-claude-count-pill">${selectedCount || passedCount}</span>
+  </button>`;
+}
+
 function projectSectionHTML(project) {
   const collapsed = isProjectCollapsed(project.id);
   const projectItems = items.filter((i) => (i.projectId || GENERAL_PROJECT_ID) === project.id);
@@ -491,17 +560,27 @@ function projectSectionHTML(project) {
 
   const board = `<div class="board">` + COLUMNS.map((col) => {
     const listItems = cardsByCol[col.key];
-    // "Select all" only makes sense in Backlog — it's the only column
-    // Notify Claude ever acts on (see requestNotify/notifyItemIds below).
-    const selectAllHTML = col.key === "backlog" && listItems.length
-      ? (() => {
-          const sel = getSelectedSet(project.id);
-          const allSelected = listItems.every((i) => sel.has(i.id));
-          return `<label class="col-select-all" title="Select all">
-            <input type="checkbox" class="col-select-all-cb" data-project-id="${escapeHTML(project.id)}" ${allSelected ? "checked" : ""}>
-          </label>`;
-        })()
-      : "";
+    // "Select all" makes sense in two columns now: Backlog (what "Ready for
+    // Dev" acts on) and Ready for Testing (what "Deploy to Feature" acts
+    // on, restricted to the noDeploymentRequired-excluded, checkbox-eligible
+    // subset — see cardHTML's own selectCb).
+    let selectAllHTML = "";
+    if (col.key === "backlog" && listItems.length) {
+      const sel = getSelectedSet(project.id);
+      const allSelected = listItems.every((i) => sel.has(i.id));
+      selectAllHTML = `<label class="col-select-all" title="Select all">
+        <input type="checkbox" class="col-select-all-cb" data-project-id="${escapeHTML(project.id)}" ${allSelected ? "checked" : ""}>
+      </label>`;
+    } else if (col.key === "ready-for-testing") {
+      const selectable = listItems.filter((i) => !i.noDeploymentRequired);
+      if (selectable.length) {
+        const sel = getDeploySelectedSet(project.id);
+        const allSelected = selectable.every((i) => sel.has(i.id));
+        selectAllHTML = `<label class="col-select-all" title="Select all">
+          <input type="checkbox" class="col-deploy-select-all-cb" data-project-id="${escapeHTML(project.id)}" ${allSelected ? "checked" : ""}>
+        </label>`;
+      }
+    }
     return `<section class="column" data-col="${col.key}">
       <div class="col-head col-head-${col.headClass}"><span>${selectAllHTML}${col.label}</span><span class="col-count">${listItems.length}</span></div>
       <div class="col-list" id="${colListId(project.id, col.key)}" data-col="${col.key}" data-project-id="${escapeHTML(project.id)}">
@@ -525,6 +604,7 @@ function projectSectionHTML(project) {
         </div>
         <div class="project-header-actions">
           ${notifyClaudeButtonHTML(project)}
+          ${deployToFeatureButtonHTML(project)}
           ${deployNotifyButtonHTML(project)}
           <button class="btn-primary new-item-btn" data-project-id="${escapeHTML(project.id)}" type="button">+ New backlog item</button>
           <div class="project-options">
@@ -744,8 +824,30 @@ async function moveItem(id, dir) {
   if (!item) return;
   const next = COL_KEYS.indexOf(item.status) + dir;
   if (next < 0 || next >= COL_KEYS.length) return;
+  const fields = { status: COL_KEYS[next], updatedAt: serverTimestamp() };
+  // The only way this can land a card back in Ready for Testing is the
+  // left-arrow "move back" from Feature Branch (Live) — sending it back for
+  // more work. Clear a stale testPassed from its previous round: otherwise
+  // it would already look "passed" again with nobody having actually
+  // re-confirmed the new round of work, and the next "Deploy to Feature"
+  // click could sweep it back onto the feature branch unreviewed.
+  if (COL_KEYS[next] === "ready-for-testing") {
+    fields.testPassed = false;
+  }
+  await updateDoc(doc(db, "backlogItems", id), fields);
+}
+
+// Per-card toggle in Ready for Testing — flags (or un-flags) testPassed
+// without moving the card. Deliberately does NOT advance status itself
+// (that used to be exactly what this button did, one card at a time, which
+// was the actual complaint this replaced — see cardHTML's own comment).
+// Advancing is the separate, explicit, batchable "Deploy to Feature"
+// project action (deployToFeature() below).
+async function toggleTestPassed(id) {
+  const item = items.find((i) => i.id === id);
+  if (!item || item.status !== "ready-for-testing" || item.noDeploymentRequired) return;
   await updateDoc(doc(db, "backlogItems", id), {
-    status: COL_KEYS[next],
+    testPassed: !item.testPassed,
     updatedAt: serverTimestamp(),
   });
 }
@@ -856,6 +958,43 @@ async function requestNotify(pid) {
   }, { merge: true });
 
   getSelectedSet(pid).clear();
+}
+
+// The middle stage: batch-advances every testPassed (and, if any are
+// checked, selected) Ready for Testing item straight to ready-to-publish
+// (Feature Branch (Live)) in one Firestore batch write. Unlike
+// requestNotify/requestDeployNotify above and below, this never touches the
+// Routine — the feature branch and PR already exist from the Backlog stage
+// (see run-backlog-automation.js's processApplyPatch), so there's no GitHub
+// action to take here, only the board's own status to advance once a human
+// has actually confirmed testing on the items they're choosing to release.
+async function deployToFeature(pid) {
+  const passedIds = new Set(
+    items
+      .filter((i) => (i.projectId || GENERAL_PROJECT_ID) === pid && i.status === "ready-for-testing" && i.testPassed && !i.noDeploymentRequired)
+      .map((i) => i.id)
+  );
+  if (passedIds.size === 0) {
+    alert("Nothing has passed testing for this project yet — confirm an item's testing first.");
+    return;
+  }
+  // Same "a non-empty selection narrows the action" pattern as
+  // requestNotify — an empty selection means "every passed item", not
+  // "nothing".
+  const selected = [...getDeploySelectedSet(pid)].filter((id) => passedIds.has(id));
+  const idsToMove = selected.length ? selected : [...passedIds];
+
+  const batch = writeBatch(db);
+  idsToMove.forEach((id) => {
+    batch.update(doc(db, "backlogItems", id), {
+      status: "ready-to-publish",
+      testPassed: false,
+      updatedAt: serverTimestamp(),
+    });
+  });
+  await batch.commit();
+
+  getDeploySelectedSet(pid).clear();
 }
 
 // Same idea as requestNotify() above, but for the "Live on Feature Branch"
@@ -1109,8 +1248,29 @@ projectsRoot.addEventListener("click", (e) => {
     render();
     return;
   }
+  const deploySelectCb = e.target.closest(".card-deploy-select-cb");
+  if (deploySelectCb) {
+    const sel = getDeploySelectedSet(deploySelectCb.dataset.projectId);
+    if (deploySelectCb.checked) sel.add(deploySelectCb.dataset.id); else sel.delete(deploySelectCb.dataset.id);
+    render();
+    return;
+  }
+  const deploySelectAllCb = e.target.closest(".col-deploy-select-all-cb");
+  if (deploySelectAllCb) {
+    const pid = deploySelectAllCb.dataset.projectId;
+    const sel = getDeploySelectedSet(pid);
+    const testingIds = items
+      .filter((i) => (i.projectId || GENERAL_PROJECT_ID) === pid && i.status === "ready-for-testing" && !i.noDeploymentRequired)
+      .map((i) => i.id);
+    if (deploySelectAllCb.checked) testingIds.forEach((id) => sel.add(id));
+    else testingIds.forEach((id) => sel.delete(id));
+    render();
+    return;
+  }
   const moveBtn = e.target.closest(".move-btn");
   if (moveBtn) { moveItem(moveBtn.dataset.id, parseInt(moveBtn.dataset.dir, 10)); return; }
+  const testPassedBtn = e.target.closest(".test-passed-btn");
+  if (testPassedBtn) { toggleTestPassed(testPassedBtn.dataset.id); return; }
   const confirmNoDeployBtn = e.target.closest(".confirm-no-deploy-btn");
   if (confirmNoDeployBtn) { confirmTestedNoDeploy(confirmNoDeployBtn.dataset.id); return; }
   const delBtn = e.target.closest(".delete-btn");
@@ -1150,6 +1310,8 @@ projectsRoot.addEventListener("click", (e) => {
   if (newItemBtn) { openForm(newItemBtn.dataset.projectId); return; }
   const notifyBtn = e.target.closest(".project-notify-btn");
   if (notifyBtn) { closeAllOptionMenus(); requestNotify(notifyBtn.dataset.projectId); return; }
+  const deployToFeatureBtn = e.target.closest(".deploy-to-feature-btn");
+  if (deployToFeatureBtn) { closeAllOptionMenus(); deployToFeature(deployToFeatureBtn.dataset.projectId); return; }
   const deployNotifyBtn = e.target.closest(".deploy-notify-btn");
   if (deployNotifyBtn) { closeAllOptionMenus(); requestDeployNotify(deployNotifyBtn.dataset.projectId); return; }
   const archiveNavBtn = e.target.closest(".project-archive-btn");
