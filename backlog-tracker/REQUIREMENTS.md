@@ -106,6 +106,7 @@ deleted by hand).
   deploymentId?: string,        // see "deployments/{deploymentId}" below
   previewUrl?: string,          // a Ready for Testing card's own "Test this" link
   testSummary?: string,         // Ready for Testing card's primary text — see below
+  noDeploymentRequired?: boolean, // set from the Edit item modal — see "No manual way to reach published-live exists" below for the one exception it carves out
 
   // Notify Claude automation hand-off — see README.md "Notify Claude can't
   // push — how a fix actually reaches GitHub". A fired Routine session has
@@ -139,22 +140,38 @@ Status pipeline and what each transition means:
 | `published-live` | Merged to Main (Live) | Set only by `run-backlog-automation.js` after it actually merges the item's PR — see below, no manual button sets this |
 | `archived` | (hidden from the board) | Set via the Archive action on a Merged-to-Main card; reversible via Restore |
 
-**No manual way to reach `published-live` exists** — a "Live on Feature
-Branch" card shows a passive "Waiting for Notify Claude — Deploy" hint
-instead of a button. There used to be a per-card "Merge to main" button
-and a bulk "Merge all to main" on the Deployments page, both of which
-wrote `status: "published-live"` directly with no connection to whether
-the PR was actually merged on GitHub — removed after that let cards read
-"Merged to Main" while their PRs sat open. The project's own "Notify
-Claude — Deploy" header action (`requestDeployNotify` in `app.js`) is now
-the only trigger; it fires the Routine, which sets `mergeReady` +
-`mergePrNumber` once it's confirmed the PR is actually green and
-mergeable, and only `run-backlog-automation.js` (see "Notify Claude can't
-push" in README.md) flips `status` to `published-live`, after the real
-merge succeeds. The Deployments page's "Notify Claude to merge" button
-(`requestDeploymentMerge`) is the same action, just scoped to a
-deployment group's project; its own "✓ Merged" badge is derived live from
-every member's actual `status`, not a separate stored flag.
+**No manual way to reach `published-live` exists — except for a card with
+nothing to actually deploy.** A "Live on Feature Branch" card normally
+shows a passive "Waiting for Notify Claude — Deploy" hint instead of a
+button. There used to be a per-card "Merge to main" button and a bulk
+"Merge all to main" on the Deployments page, both of which wrote `status:
+"published-live"` directly with no connection to whether the PR was
+actually merged on GitHub — removed after that let cards read "Merged to
+Main" while their PRs sat open. The project's own "Notify Claude —
+Deploy" header action (`requestDeployNotify` in `app.js`) is now the only
+trigger for an ordinary card; it fires the Routine, which sets
+`mergeReady` + `mergePrNumber` once it's confirmed the PR is actually
+green and mergeable, and only `run-backlog-automation.js` (see "Notify
+Claude can't push" in README.md) flips `status` to `published-live`,
+after the real merge succeeds. The Deployments page's "Notify Claude to
+merge" button (`requestDeploymentMerge`) is the same action, just scoped
+to a deployment group's project; its own "✓ Merged" badge is derived live
+from every member's actual `status`, not a separate stored flag.
+
+The one deliberate exception is `noDeploymentRequired` (set from the Edit
+item modal — a plain checkbox, self-service, not something only the
+Routine can flip): a card whose fix is a live data/config change only —
+nothing that ever touches GitHub — genuinely has no PR for the deploy gate
+to check in the first place, so gating it on "Notify Claude — Deploy"
+would just wait forever on a merge that will never happen. A Ready for
+Testing card carrying this flag shows "Confirm tested — mark Merged to
+Main" instead of the normal "Confirm live on branch" button;
+`confirmTestedNoDeploy()` writes `status: "published-live"` directly, the
+same way the old, removed "Merge to main" button used to — the difference
+being this is only ever offered on a card that has already told the board
+there's no PR to fake being merged. Any card without the flag still goes
+through the full PR/deploy pipeline exactly as before; this does not
+change behavior for the common case.
 
 `published-live` is treated as the one **irreversible** transition of the
 four for automation purposes (see "FAQ auto-review" below) — the other
@@ -410,6 +427,17 @@ REST API is reachable with a plain `curl`, no service account needed.
   page is sortable/filterable by type, area, and free text, with a Restore
   action back to `published-live`. Deletion is reserved for Backlog cards
   only.
+- **"No deployment required"** (Edit item modal): a checkbox for a fix
+  that's a live data/config change only — nothing that ever needs a code
+  push or a deploy, e.g. a Firestore-only edit. Any card carrying it shows
+  a small "No deployment required" badge; once it reaches Ready for
+  Testing, its "Confirm live on branch" button is replaced with "Confirm
+  tested — mark Merged to Main", which moves it straight to `published-live`
+  — see "No manual way to reach `published-live` exists" above for why
+  this one case is safe to bypass the deploy gate. Self-service, not
+  something only the Notify Claude Routine sets — anyone can check it from
+  the Edit item modal on any non-archived card, same as title/description/
+  type/category.
 - **Edit + comments**: every non-archived card has an edit icon (with a
   comment-count badge once it has any) opening a modal to change
   title/description/type/category, plus a comments thread. `notes` existed

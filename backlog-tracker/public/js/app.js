@@ -201,8 +201,16 @@ function cardHTML(item) {
   const deleteBtn = canDelete
     ? `<button type="button" class="icon-btn delete-btn" data-id="${item.id}" title="Remove">&times;</button>`
     : "";
+  // A card flagged noDeploymentRequired (see the Edit item modal) has no
+  // code to push — e.g. a Firestore-only data/config change — so there's
+  // nothing for "Live on Feature Branch"/Notify Claude — Deploy to gate.
+  // Once tested it goes straight to published-live via confirmTestedNoDeploy()
+  // instead of the normal move-btn (which would only advance it to
+  // ready-to-publish, still waiting on a merge that will never happen).
   const approveBtn = isTesting
-    ? `<button type="button" class="approve-btn move-btn" data-id="${item.id}" data-dir="1">Confirm live on branch</button>`
+    ? (item.noDeploymentRequired
+        ? `<button type="button" class="approve-btn confirm-no-deploy-btn" data-id="${item.id}">Confirm tested — mark Merged to Main</button>`
+        : `<button type="button" class="approve-btn move-btn" data-id="${item.id}" data-dir="1">Confirm live on branch</button>`)
     : "";
   // Deliberately not a button: there used to be a "Merge to main" button
   // here that just wrote status: "published-live" directly, with zero
@@ -226,6 +234,9 @@ function cardHTML(item) {
   // alongside it — see the Deployments page for the full group + progress.
   const deploymentBadge = item.deploymentId
     ? `<span class="deployment-badge" title="Ships together with the rest of this deployment">&#128640; ${escapeHTML(deploymentLabel(item.deploymentId))}</span>`
+    : "";
+  const noDeployBadge = item.noDeploymentRequired
+    ? `<span class="no-deploy-badge" title="Live data/config change only — no code to push or deploy">No deployment required</span>`
     : "";
   const commentCount = (item.notes || []).length;
   const editBtn = `<button type="button" class="icon-btn edit-item-btn" data-id="${item.id}" title="Edit / comments">&#9998;${commentCount ? ` <span class="options-menu-count">${commentCount}</span>` : ""}</button>`;
@@ -275,7 +286,7 @@ function cardHTML(item) {
       </div>
       <h3 class="card-title">${escapeHTML(item.title)}</h3>
       ${descHTML}
-      ${deploymentBadge}
+      ${deploymentBadge}${noDeployBadge}
       <div class="card-footer">
         <div class="card-footer-left">
           <span class="card-cat">${escapeHTML(item.category || "Uncategorised")}</span>
@@ -682,6 +693,22 @@ async function moveItem(id, dir) {
   });
 }
 
+// The one other legitimate way to reach published-live besides
+// run-backlog-automation.js actually merging a PR (see moveItem's own
+// COL_KEYS-driven path and "No manual way to reach published-live exists"
+// in REQUIREMENTS.md): a card flagged noDeploymentRequired has no PR to
+// merge in the first place — its fix was a live data/config change only —
+// so a human confirming it's tested is the real, complete signal, with
+// nothing left for Notify Claude — Deploy to gate.
+async function confirmTestedNoDeploy(id) {
+  const item = items.find((i) => i.id === id);
+  if (!item || !item.noDeploymentRequired) return;
+  await updateDoc(doc(db, "backlogItems", id), {
+    status: "published-live",
+    updatedAt: serverTimestamp(),
+  });
+}
+
 async function removeItem(id) {
   await deleteDoc(doc(db, "backlogItems", id));
 }
@@ -700,9 +727,11 @@ async function restoreItem(id) {
   });
 }
 
-async function updateItemDetails(id, { title, desc, type, category }) {
+async function updateItemDetails(id, { title, desc, type, category, noDeploymentRequired }) {
   await updateDoc(doc(db, "backlogItems", id), {
-    title: title.trim(), desc: desc.trim(), type, category, updatedAt: serverTimestamp(),
+    title: title.trim(), desc: desc.trim(), type, category,
+    noDeploymentRequired: !!noDeploymentRequired,
+    updatedAt: serverTimestamp(),
   });
 }
 
@@ -1020,6 +1049,8 @@ projectsRoot.addEventListener("click", (e) => {
   }
   const moveBtn = e.target.closest(".move-btn");
   if (moveBtn) { moveItem(moveBtn.dataset.id, parseInt(moveBtn.dataset.dir, 10)); return; }
+  const confirmNoDeployBtn = e.target.closest(".confirm-no-deploy-btn");
+  if (confirmNoDeployBtn) { confirmTestedNoDeploy(confirmNoDeployBtn.dataset.id); return; }
   const delBtn = e.target.closest(".delete-btn");
   if (delBtn) { removeItem(delBtn.dataset.id); return; }
   const archBtn = e.target.closest(".archive-btn");
@@ -1106,6 +1137,7 @@ const eiBackdrop = document.getElementById("ei-backdrop");
 const eiTitleInput = document.getElementById("ei-title-input");
 const eiDescInput = document.getElementById("ei-desc-input");
 const eiCategorySelect = document.getElementById("ei-category-select");
+const eiNoDeployCheckbox = document.getElementById("ei-no-deploy-checkbox");
 const eiNotesList = document.getElementById("ei-notes-list");
 const eiCommentInput = document.getElementById("ei-comment-input");
 
@@ -1147,6 +1179,7 @@ function openEditItemModal(id) {
   eiDescInput.value = item.desc || "";
   setEiTypeToggle(item.type === "bug" ? "bug" : "feature");
   eiCategorySelect.value = item.category || CATEGORIES[0];
+  eiNoDeployCheckbox.checked = !!item.noDeploymentRequired;
   eiCommentInput.value = "";
   renderEiNotes();
   eiBackdrop.hidden = false;
@@ -1172,6 +1205,7 @@ document.getElementById("ei-save").addEventListener("click", () => {
   const type = document.querySelector("#ei-backdrop .type-opt.active")?.dataset.type || "feature";
   updateItemDetails(editingItemId, {
     title: eiTitleInput.value, desc: eiDescInput.value, type, category: eiCategorySelect.value,
+    noDeploymentRequired: eiNoDeployCheckbox.checked,
   });
   closeEditItemModal();
 });
