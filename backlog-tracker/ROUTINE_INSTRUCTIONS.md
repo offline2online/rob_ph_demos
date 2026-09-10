@@ -152,6 +152,13 @@ rest of this file.
      you have no way to confirm a PR actually got opened; leave `status`
      as `backlog` and the automation flips it once the PR genuinely
      exists.
+   - `testSummary` (optional but strongly encouraged, string): a clear,
+     standalone description of what you actually changed, plus concrete
+     steps to test it. Once the automation flips this item to
+     `ready-for-testing`, the board shows `testSummary` (when set) as the
+     card's primary text instead of the raw original `desc` — the original
+     request is still one click away via a "Show original request" toggle,
+     not discarded. Write this from scratch; don't just copy `desc` into it.
 
    Example PATCH shape (add more `updateMask.fieldPaths` entries and
    fields as needed):
