@@ -116,6 +116,20 @@ a:hover { text-decoration: underline; }
   display: inline-flex; align-items: center; gap: 4px; font-size: 11.5px; font-weight: 600;
   color: var(--primary); background: var(--primary-tint); border-radius: 9999px; padding: 3px 10px; margin-bottom: 14px;
 }
+/* Diátaxis document type (docs/CONTRIBUTING-docs.md §2) — outlined rather
+   than filled like .article-cat-badge, so the two badges read as
+   distinct kinds of label (category vs. type) without relying on color
+   alone to tell them apart; the text itself ("How-to guide", etc.) is
+   the actual signal. */
+.doctype-badge {
+  display: inline-flex; align-items: center; font-size: 11px; font-weight: 600;
+  color: var(--text-muted); border: 1px solid var(--border); border-radius: 9999px;
+  padding: 2px 9px; margin: 0 0 14px 8px; text-transform: uppercase; letter-spacing: .02em;
+}
+.doctype-badge-inline {
+  margin: 0 0 0 8px; vertical-align: middle; text-transform: none; letter-spacing: normal;
+  font-size: 10.5px; font-weight: 600;
+}
 .article-body { font-size: 15px; line-height: 1.75; color: var(--text); margin-top: 20px; }
 .article-body h1, .article-body h2, .article-body h3, .article-body h4, .article-body h5, .article-body h6 { font-weight: 700; margin: 24px 0 8px; }
 .article-body h3 { font-size: 16.5px; }

@@ -217,6 +217,7 @@ per-project Firestore fields, and this collection.
 faqCategories/{id}: { name, icon, description, order, createdAt, updatedAt }
 faqArticles/{id}: {
   categoryId, projectId (nullable), title, slug, summary, bodyMd,
+  docType: "faq" | "how-to" | "reference" | "explanation",
   keywords: string[], status: "draft" | "published", needsReview: boolean,
   order, createdAt, updatedAt, publishedAt,
 }
@@ -226,6 +227,15 @@ Consumer-facing content for the FAQ / Help Center — see that section below.
 holds one of two shapes, told apart by a leading `<`: real HTML from the
 FAQ admin's rich-text (Quill) editor, or legacy markdown-ish text from
 before that editor existed — see "Rich-text article body" below.
+
+`docType` is this article's Diátaxis classification per
+[`../docs/CONTRIBUTING-docs.md`](../docs/CONTRIBUTING-docs.md) §2 — set
+from a select in the FAQ admin's article editor, defaulting to `"faq"`
+for a new article (missing on any article written before this field
+existed; treated as `"faq"` client-side in that case, same default).
+Rendered as a small type badge on the public article page and in
+category article-listing rows (`faq/js/faq-data.js`'s `docTypeLabel()`)
+so the distinction is visible to readers, not just an internal tag.
 
 ### Firestore rules
 
@@ -601,7 +611,12 @@ Two surfaces sharing this same Firestore project:
   site uses, since Quill's own editing chrome doesn't look like the real
   article page. **Images insert via a URL prompt, not a file picker** —
   Quill's default embeds a file as base64, which can push a single article
-  well past Firestore's 1MiB document limit.
+  well past Firestore's 1MiB document limit. **The image toolbar button
+  also prompts for alt text** and sets it on the inserted `<img>` —
+  `docs/CONTRIBUTING-docs.md` §6/§5.6 makes alt text mandatory on every
+  informative image; capturing it at insertion time (rather than relying
+  on an editor to remember to add it, or a later audit to catch its
+  absence) is how that rule is actually enforced here.
   - **Format migration is lazy, not a one-time script.** `bodyMd` (kept as
     the field name for compatibility) holds either real HTML (new) or
     legacy markdown-ish text (everything written before this editor

@@ -2298,6 +2298,7 @@ faFilterSearch.addEventListener("input", renderFaqArticleList);
 const faBackdrop = document.getElementById("fa-backdrop");
 const faTitleInput = document.getElementById("fa-title-input");
 const faSlugInput = document.getElementById("fa-slug-input");
+const faDocTypeSelect = document.getElementById("fa-doctype-select");
 const faSummaryInput = document.getElementById("fa-summary-input");
 const faKeywordsInput = document.getElementById("fa-keywords-input");
 const faBodyViewer = document.getElementById("fa-body-viewer");
@@ -2331,12 +2332,22 @@ const faQuill = new Quill("#fa-body-editor", {
         // limit. A plain URL prompt keeps images external (e.g. hosted
         // wherever this repo's other assets already live) at zero storage
         // cost here.
+        //
+        // Also prompts for alt text — docs/CONTRIBUTING-docs.md §6/§5.6
+        // makes alt text mandatory on every informative image ("describes
+        // the information, not the picture"), so this is captured at the
+        // point of authoring rather than left to a later audit that would
+        // likely never happen. An empty answer is stored as alt="" (a
+        // deliberate "decorative image" per the same rule), not skipped.
         image() {
           const url = prompt("Image URL:");
           if (!url) return;
+          const alt = prompt("Alt text (describes the image's content for screen readers — leave blank only if it's purely decorative):", "") || "";
           const range = faQuill.getSelection(true);
           faQuill.insertEmbed(range.index, "image", url, "user");
           faQuill.setSelection(range.index + 1);
+          const img = faQuill.root.querySelector(`img[src="${CSS.escape(url)}"]:not([alt])`);
+          if (img) img.setAttribute("alt", alt);
         },
       },
     },
@@ -2381,6 +2392,7 @@ function openFaqArticleModal(articleId) {
   // real HTML in place. A brand-new article, or one already saved from
   // this editor, loads as-is (sanitized either way — see renderFaqBodyMd).
   faQuill.root.innerHTML = article ? renderFaqBodyMd(article.bodyMd || "") : "";
+  faDocTypeSelect.value = article && article.docType ? article.docType : "faq";
   faNeedsReview.checked = article ? !!article.needsReview : false;
   setFaStatusToggle(article ? article.status : "draft");
   setFaBodyMode("edit");
@@ -2435,6 +2447,7 @@ document.getElementById("fa-submit").addEventListener("click", async () => {
     title,
     slug: faSlugInput.value.trim() || slugify(title),
     summary: faSummaryInput.value.trim(),
+    docType: faDocTypeSelect.value || "faq",
     bodyMd: faQuill.root.innerHTML,
     keywords: faKeywordsInput.value.split(",").map((k) => k.trim()).filter(Boolean),
     status: faStatus,
