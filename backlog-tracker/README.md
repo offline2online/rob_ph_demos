@@ -584,9 +584,14 @@ default.
   (`personalisationhub.freshdesk.com/a/solutions`), pulled from a Google
   Drive folder ("Personalisation Hub" › "Freshdesk FAQs - June 2026") that
   already had the full export saved as one file per category plus a
-  combined export and a gap-analysis summary. Each imported article body
-  ends with a line naming its original Freshdesk Article ID and
-  last-updated date. Draft/Published status was preserved exactly as it
+  combined export and a gap-analysis summary. Article bodies no longer
+  carry a trailing "Imported from Freshdesk Solutions (Article ID ...,
+  last updated ...)" provenance line — it was stripped from every seeded
+  body and from the live `faqArticles` docs (backlog item, 2026-09-10),
+  since it's internal import metadata, not something a reader of the
+  public FAQ / user guide should see; the doc id itself (e.g.
+  `faq-art-51000290582`) still carries the original Freshdesk Article ID
+  for traceability. Draft/Published status was preserved exactly as it
   was in Freshdesk (98 published, 10 draft) — the 10 drafts start hidden
   from the public site, same as any draft created from FAQ Center, so this
   data is also a live test of that flow. Article bodies are imported as
