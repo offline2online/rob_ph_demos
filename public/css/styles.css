@@ -1,0 +1,513 @@
+:root {
+  --bg: #ffffff;
+  --surface: #fafbfb;
+  --surface-2: #f2f4f5;
+  --text: #232628;
+  --text-muted: rgba(35, 38, 40, .55);
+  --border: #d9d9d9;
+  --primary: #169bc2;
+  --primary-tint: rgba(22, 155, 194, .1);
+  --success: #52c41a;
+  --danger: #d4433f;
+  --danger-tint: rgba(255, 77, 79, .1);
+  --warning: #c98a0a;
+  --accent-backlog: #8c9196;
+  --violet: #9747ff;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+}
+.material-symbols-outlined {
+  font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+  vertical-align: middle; line-height: 1;
+}
+.app { max-width: 1400px; margin: 0 auto; padding: 24px 20px 40px; }
+.topbar { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 18px; }
+.topbar-left { display: flex; align-items: flex-start; gap: 10px; }
+.topbar h1 { margin: 0; font-size: 22px; font-weight: 700; }
+.logo-link {
+  font: inherit; font-size: inherit; font-weight: inherit; color: inherit;
+  background: none; border: none; padding: 0; margin: 0; cursor: pointer;
+}
+.logo-link:hover { color: var(--primary); }
+.subtitle { margin: 4px 0 0; font-size: 13px; color: var(--text-muted); }
+.hamburger-btn { font-size: 20px; margin-top: 1px; }
+
+/* ── Left nav drawer — hamburger-opened, slides in over the board. Kept in
+   the DOM at all times (not [hidden]) so the transform transition actually
+   animates; off-screen + non-interactive while closed. ────────────────── */
+.nav-drawer-backdrop {
+  position: fixed; inset: 0; background: rgba(10, 12, 13, .4); z-index: 20;
+  opacity: 0; pointer-events: none; transition: opacity .2s ease;
+}
+.nav-drawer-backdrop.open { opacity: 1; pointer-events: auto; }
+.nav-drawer {
+  position: fixed; top: 0; left: 0; bottom: 0; width: 320px; max-width: 85vw;
+  background: var(--bg); border-right: 1px solid var(--border); z-index: 21;
+  box-shadow: 2px 0 16px rgba(0, 0, 0, .15);
+  transform: translateX(-100%); transition: transform .22s ease;
+  display: flex; flex-direction: column; padding: 12px 0;
+  visibility: hidden;
+}
+.nav-drawer.open { transform: translateX(0); visibility: visible; }
+.nav-drawer-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 8px 18px 16px; border-bottom: 1px solid var(--border); margin-bottom: 6px;
+}
+.nav-drawer-title { font-weight: 700; font-size: 16px; }
+.nav-drawer-item {
+  display: block; width: 100%; text-align: left; background: transparent; border: none;
+  padding: 15px 18px; font-size: 15px; color: var(--text); cursor: pointer; font-family: inherit;
+}
+.nav-drawer-item:hover { background: var(--surface-2); }
+.nav-drawer-item-home { font-weight: 700; color: var(--primary); border-bottom: 1px solid var(--border); }
+.nav-drawer-section {
+  padding: 14px 18px 4px; font-size: 11px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: .04em; color: var(--text-muted);
+}
+.btn-primary {
+  background: var(--primary); color: #fff; border: none; border-radius: 6px;
+  padding: 9px 16px; font-size: 13px; font-weight: 600; cursor: pointer; font-family: inherit;
+}
+.btn-primary:hover { opacity: .92; }
+.btn-ghost {
+  background: transparent; color: var(--text-muted); border: 1px solid var(--border);
+  border-radius: 6px; padding: 9px 16px; font-size: 13px; cursor: pointer; font-family: inherit;
+}
+.board { display: grid; grid-template-columns: repeat(4, minmax(260px, 1fr)); gap: 14px; align-items: start; overflow-x: auto; }
+.column { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; min-width: 260px; display: flex; flex-direction: column; max-height: calc(100vh - 200px); }
+.col-head { display: flex; align-items: center; justify-content: space-between; padding: 12px 14px; border-bottom: 2px solid var(--border); border-radius: 8px 8px 0 0; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--text-muted); }
+.col-head-backlog { border-top: 3px solid var(--accent-backlog); }
+.col-head-testing { border-top: 3px solid var(--warning); }
+.col-head-publish { border-top: 3px solid var(--primary); }
+.col-head-live { border-top: 3px solid var(--success); }
+.col-count { background: var(--surface-2); border-radius: 9999px; padding: 1px 8px; }
+.col-list { padding: 10px; display: flex; flex-direction: column; gap: 10px; overflow-y: auto; }
+.empty-hint { color: var(--text-muted); font-size: 12.5px; font-style: italic; padding: 10px 6px; text-align: center; }
+.card { background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 12px; box-shadow: 0 1px 2px rgba(20, 20, 20, .05); }
+.card-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
+.card-top-left { display: flex; align-items: center; gap: 8px; }
+.card-select-cb { width: 15px; height: 15px; margin: 0; cursor: pointer; flex-shrink: 0; }
+.col-select-all { display: inline-flex; align-items: center; margin-right: 6px; cursor: pointer; }
+.col-select-all input { width: 13px; height: 13px; margin: 0; cursor: pointer; }
+.badge { font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; border-radius: 9999px; padding: 2px 9px; }
+.badge-feature { background: var(--primary-tint); color: var(--primary); }
+.badge-bug { background: var(--danger-tint); color: var(--danger); }
+.card-move { display: flex; gap: 2px; }
+.icon-btn { border: none; background: transparent; color: var(--text-muted); border-radius: 6px; cursor: pointer; padding: 4px 7px; font-size: 14px; }
+.icon-btn:hover { background: var(--surface-2); color: var(--text); }
+.card-title { margin: 0 0 4px; font-size: 14px; font-weight: 600; }
+.card-desc { margin: 0; font-size: 12.5px; color: var(--text-muted); }
+.card-desc-wrap .card-desc-original { margin-top: 6px; padding-top: 6px; border-top: 1px dashed var(--border); }
+.card-desc-toggle-btn {
+  display: block; margin: 4px 0 0; padding: 0; border: none; background: none; cursor: pointer;
+  font-family: inherit; font-size: 11px; font-weight: 600; color: var(--primary);
+}
+.card-desc-toggle-btn:hover { text-decoration: underline; }
+.card-footer { display: flex; align-items: center; justify-content: space-between; margin-top: 10px; }
+.card-footer-left { display: flex; align-items: center; gap: 4px; }
+.card-cat { font-size: 10.5px; color: var(--text-muted); background: var(--surface-2); border-radius: 9999px; padding: 2px 8px; }
+.quick-comment-btn { font-size: 13px; padding: 3px 6px; }
+.approve-btn { width: 100%; margin-top: 10px; background: var(--primary); color: #fff; border: none; border-radius: 6px; padding: 8px 10px; font-size: 12.5px; font-weight: 600; cursor: pointer; }
+/* Not a button — a passive status line for a "Live on Feature Branch"
+   card. There is deliberately no manual way to merge from here; only the
+   project's own Notify Claude — Deploy action can move a card past this
+   point, since only that path actually merges the PR before advancing
+   the status (see cardHTML's own comment in js/app.js). */
+.merge-pending-hint {
+  display: block; width: 100%; margin-top: 10px; text-align: center; box-sizing: border-box;
+  background: var(--surface-2); color: var(--text-muted); border: 1px dashed var(--border); border-radius: 6px;
+  padding: 8px 10px; font-size: 11.5px; font-style: italic;
+}
+.test-link-row { display: flex; align-items: center; gap: 4px; margin-top: 10px; }
+.test-link-btn {
+  flex: 1; text-align: center; background: var(--primary-tint); color: var(--primary); text-decoration: none;
+  border-radius: 6px; padding: 7px 10px; font-size: 12.5px; font-weight: 600;
+}
+.test-link-btn:hover { opacity: .85; }
+.btn-ghost.test-link-set-btn { width: 100%; margin-top: 10px; padding: 7px 10px; font-size: 12.5px; }
+
+.modal-backdrop { position: fixed; inset: 0; background: rgba(10, 12, 13, .5); display: flex; align-items: center; justify-content: center; padding: 20px; z-index: 10; }
+.modal-panel { background: var(--bg); border-radius: 12px; box-shadow: 0 8px 40px rgba(0, 0, 0, .25); width: 100%; max-width: 440px; padding: 20px; }
+.modal-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+.modal-header h2 { margin: 0; font-size: 17px; }
+.modal-close { border: none; background: transparent; font-size: 20px; cursor: pointer; color: var(--text-muted); }
+.field-label { display: block; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: var(--text-muted); margin: 10px 0 4px; }
+#ni-desc-input {
+  width: 100%; font-family: inherit; font-size: 14px; color: var(--text); background: var(--surface);
+  border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px;
+}
+.form-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 14px; flex-wrap: wrap; }
+.type-toggle { display: inline-flex; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
+.type-opt { font-family: inherit; font-size: 12px; font-weight: 500; color: var(--text-muted); background: var(--bg); border: none; padding: 7px 14px; cursor: pointer; }
+.type-opt + .type-opt { border-left: 1px solid var(--border); }
+.type-opt.active { background: var(--primary-tint); color: var(--primary); }
+.form-actions { display: flex; gap: 8px; }
+.field-hint { margin: 6px 0 0; font-size: 11.5px; color: var(--text-muted); }
+
+.desc-wrap { position: relative; }
+.mic-btn {
+  position: absolute; right: 7px; bottom: 7px; width: 30px; height: 30px; border-radius: 50%;
+  border: none; background: var(--primary-tint); cursor: pointer; font-size: 15px; line-height: 1;
+}
+.mic-btn:hover { background: var(--primary); }
+.mic-btn.listening { background: var(--danger); color: #fff; animation: mic-pulse 1.4s ease-in-out infinite; }
+@keyframes mic-pulse { 0%, 100% { box-shadow: 0 0 0 0 var(--danger-tint); } 50% { box-shadow: 0 0 0 8px transparent; } }
+.listening-hint { margin: 6px 0 0; font-size: 11.5px; color: var(--danger); display: none; }
+.listening-hint.on { display: block; }
+.mic-error { margin: 6px 0 0; font-size: 11.5px; color: var(--danger); display: none; }
+.mic-error.on { display: block; }
+
+/* ── Multi-project sections ─────────────────────────────────────────── */
+#projects-root { display: flex; flex-direction: column; gap: 20px; }
+.project { border: 1px solid var(--border); border-radius: 10px; padding: 16px 16px 18px; background: var(--bg); }
+.project-header { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
+.project-collapse-btn { border: none; background: transparent; cursor: pointer; font-size: 16px; color: var(--text-muted); padding: 2px 6px; flex-shrink: 0; }
+.project-collapse-btn:hover { color: var(--text); }
+.project-title-wrap { flex: 1; min-width: 180px; }
+.project-name-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.project-name { margin: 0; font-size: 18px; font-weight: 700; }
+.project-item-count { font-size: 13px; font-weight: 500; color: var(--text-muted); }
+.project-rename-btn { border: none; background: transparent; cursor: pointer; font-size: 13px; color: var(--text-muted); padding: 2px 6px; }
+.project-rename-btn:hover { color: var(--text); }
+.project-header .subtitle { margin: 4px 0 0; }
+.project.collapsed .project-body { display: none; }
+
+/* Program/Product grouping — a heading above a set of projects, only
+   rendered at all once at least one program exists (see app.js render()).
+   No board/columns of its own, just a label; each project inside still
+   renders exactly as it does ungrouped. */
+.program-group { display: flex; flex-direction: column; gap: 20px; }
+.program-heading {
+  margin: 0; font-size: 13px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: .05em; color: var(--text-muted);
+}
+
+/* ── Header actions: one primary CTA + one "⋮" options menu ─────────────
+   Everything that isn't "add a backlog item" (archive, requirements,
+   interfaces) lives behind the options menu now, on both desktop and
+   mobile — this is what used to be 2-3 separate ghost buttons competing
+   with the primary Add button for space, especially on a phone screen. */
+.project-header-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.new-item-btn { white-space: nowrap; }
+/* AI-driven action — same teal→violet gradient family as the platform's
+   own "Launch a New Campaign" (see the ph-designer skill's "AI action
+   button" recipe): a 20%-opacity gradient fill, no border, a sparkle icon,
+   and gradient-clipped label text. The count pill uses the solid (100%)
+   version of the same gradient so it reads as the "loud" part of the
+   control. Only ever rendered when there's actually something to notify
+   about — notifyClaudeButtonHTML() returns nothing at all otherwise. */
+.notify-claude-btn {
+  white-space: nowrap; display: inline-flex; align-items: center; gap: 6px;
+  border: none; border-radius: 6px; padding: 9px 14px; font-size: 13px; font-family: inherit;
+  cursor: pointer; background: linear-gradient(135deg, rgba(22, 155, 194, .2), rgba(151, 71, 255, .2));
+}
+.notify-claude-icon { font-size: 17px; background: linear-gradient(135deg, var(--primary), var(--violet)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.notify-claude-label {
+  background: linear-gradient(135deg, var(--primary), var(--violet));
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+}
+.notify-claude-count-pill {
+  background: linear-gradient(135deg, var(--primary), var(--violet)); color: #fff;
+  font-size: 11px; font-weight: 700; border-radius: 9999px; padding: 1px 8px;
+}
+/* Muted/disabled variant while a fired session is still working — visually
+   distinct from the actionable gradient state above, not just non-clickable. */
+.notify-claude-btn-working {
+  background: var(--surface-2); cursor: default;
+}
+.notify-claude-btn-working .notify-claude-icon,
+.notify-claude-btn-working .notify-claude-label {
+  background: none; -webkit-background-clip: unset; background-clip: unset; color: var(--text-muted);
+}
+.notify-claude-btn-working .notify-claude-count-pill { background: var(--text-muted); }
+.notify-claude-spinner {
+  width: 13px; height: 13px; border-radius: 50%; flex-shrink: 0;
+  border: 2px solid var(--border); border-top-color: var(--primary);
+  animation: notify-claude-spin .8s linear infinite;
+}
+@keyframes notify-claude-spin { to { transform: rotate(360deg); } }
+.notify-claude-session-link { font-size: 12px; color: var(--primary); text-decoration: none; white-space: nowrap; margin-left: 2px; }
+.notify-claude-session-link:hover { text-decoration: underline; }
+.project-options { position: relative; flex-shrink: 0; }
+.project-options-btn { font-size: 18px; line-height: 1; padding: 7px 11px; }
+.project-options-menu {
+  position: absolute; top: calc(100% + 6px); right: 0; z-index: 15;
+  background: var(--bg); border: 1px solid var(--border); border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, .14); min-width: 250px; max-width: 88vw;
+  overflow: hidden; display: flex; flex-direction: column; padding: 6px;
+}
+.options-menu-item {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 2px;
+  width: 100%; text-align: left; background: transparent; border: none; border-radius: 6px;
+  padding: 10px 11px; font-size: 13px; font-family: inherit; color: var(--text); cursor: pointer;
+}
+.options-menu-item:hover { background: var(--surface-2); }
+.options-menu-item-empty { color: var(--text-muted); font-style: italic; }
+.options-menu-count { font-size: 11px; color: var(--text-muted); font-style: normal; }
+.options-menu-sub { font-size: 11px; color: var(--text-muted); }
+.options-menu-item-danger { color: var(--danger); }
+.options-menu-item-danger:hover { background: var(--danger-tint); }
+
+/* ── Archive page ────────────────────────────────────────────────────── */
+.archive-page { margin-bottom: 20px; }
+.archive-page-header { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 4px; }
+.archive-page-header h2 { margin: 0; font-size: 18px; font-weight: 700; }
+.archive-page-count { font-size: 12px; font-weight: 700; color: var(--text-muted); background: var(--surface-2); border-radius: 9999px; padding: 2px 10px; }
+.archive-table-wrap { border: 1px solid var(--border); border-radius: 8px; overflow: auto; background: var(--surface); margin-top: 12px; }
+.archive-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.archive-table th, .archive-table td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--border); vertical-align: top; }
+.archive-table th { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--text-muted); cursor: pointer; user-select: none; white-space: nowrap; }
+.archive-table th:hover { color: var(--text); }
+.archive-table th[data-sort-active] { color: var(--primary); }
+.archive-filter-row th { padding: 6px 12px 10px; cursor: default; }
+.archive-filter-row th:hover { color: var(--text-muted); }
+.archive-filter-row select, .archive-filter-row input {
+  width: 100%; font-family: inherit; font-size: 12.5px; font-weight: 400; text-transform: none;
+  letter-spacing: normal; color: var(--text); background: var(--bg); border: 1px solid var(--border);
+  border-radius: 6px; padding: 6px 8px; box-sizing: border-box;
+}
+.archive-table tbody tr:last-child td { border-bottom: none; }
+.archive-table tbody tr:hover { background: var(--surface-2); }
+.archive-row-title { font-weight: 600; margin: 0 0 2px; }
+.archive-row-desc { margin: 0; font-size: 12px; color: var(--text-muted); max-width: 46ch; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.archive-row-date { white-space: nowrap; color: var(--text-muted); }
+.restore-btn { background: var(--primary-tint); color: var(--primary); border: none; border-radius: 6px; padding: 6px 10px; font-size: 12px; font-weight: 600; cursor: pointer; font-family: inherit; white-space: nowrap; }
+.restore-btn:hover { background: var(--primary); color: #fff; }
+
+/* ── New Project / Edit Project modals — a plainer, more minimal treatment
+   than the base .modal-panel: bigger radius, more breathing room, borderless
+   inputs on a soft fill (the closer-to-native look of a macOS/iOS sheet)
+   instead of the denser, bordered form styling shared by every other modal
+   in this app. Scoped to .np-panel only — every other modal keeps the
+   original look. Both #np-backdrop (create) and #ep-backdrop (edit) share
+   this class, so the input/select styling below targets them generically
+   rather than by id. ── */
+.np-panel { max-width: 400px; padding: 28px 26px; border-radius: 20px; }
+.np-panel .modal-header { margin-bottom: 18px; }
+.np-panel .modal-header h2 { font-size: 19px; font-weight: 700; letter-spacing: -.01em; }
+.np-panel .field-label { margin: 16px 0 6px; font-size: 12px; }
+.np-panel .field-label:first-of-type { margin-top: 0; }
+.np-panel input[type="text"], .np-panel select {
+  width: 100%; font-family: inherit; font-size: 15px; color: var(--text); background: var(--surface-2);
+  border: 1px solid transparent; border-radius: 10px; padding: 11px 13px; box-sizing: border-box;
+}
+.np-panel input[type="text"]:focus, .np-panel select:focus {
+  outline: none; border-color: var(--primary); background: var(--bg);
+}
+.np-panel .field-hint { font-size: 12px; }
+.np-panel .form-row { margin-top: 22px; }
+.np-panel .btn-primary, .np-panel .btn-ghost { border-radius: 10px; padding: 10px 18px; font-size: 14px; }
+
+/* ── Interface modal (shared with New Project's inline fields) ─────────── */
+#if-backdrop select, #if-backdrop input, #if-backdrop textarea,
+#docs-requirements-input {
+  width: 100%; font-family: inherit; font-size: 13px; color: var(--text); background: var(--surface);
+  border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; box-sizing: border-box; resize: vertical;
+}
+#if-content-input { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px; line-height: 1.5; }
+#docs-requirements-input { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px; line-height: 1.5; }
+
+/* ── Docs page ───────────────────────────────────────────────────────── */
+.docs-page { margin-bottom: 20px; }
+.docs-page-header { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
+.docs-page-header h2 { margin: 0; font-size: 18px; font-weight: 700; }
+.docs-block { border: 1px solid var(--border); border-radius: 8px; padding: 16px; background: var(--surface); margin-bottom: 16px; }
+.docs-block h3 { margin: 0 0 4px; font-size: 15px; }
+.docs-block-header { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.docs-block-header h3 { margin: 0; }
+.interface-row { border: 1px solid var(--border); border-radius: 8px; padding: 12px; margin-top: 10px; background: var(--bg); }
+.interface-row-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.interface-row-title { font-weight: 600; font-size: 13.5px; }
+.interface-row-with { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+.interface-row-actions { display: flex; gap: 4px; }
+.interface-row-content { margin-top: 8px; font-size: 12.5px; color: var(--text); white-space: pre-wrap; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; max-height: 160px; overflow-y: auto; background: var(--surface); border-radius: 6px; padding: 8px 10px; }
+.interface-row-empty { color: var(--text-muted); font-style: italic; }
+
+/* ── Deployments — grouping tickets meant to ship to main together ─────── */
+.deployment-badge {
+  display: inline-flex; align-items: center; gap: 4px; font-size: 10.5px; font-weight: 600;
+  color: var(--primary); background: var(--primary-tint); border-radius: 9999px;
+  padding: 2px 8px; margin: 6px 0 0;
+}
+
+/* A card with no code to push (a live data/config-only fix) — see the Edit
+   item modal's "No deployment required" checkbox and cardHTML's own
+   confirm-no-deploy-btn, which skips Live on Feature Branch/Notify Claude —
+   Deploy entirely for a card carrying this flag. */
+.no-deploy-badge {
+  display: inline-block; font-size: 10.5px; font-weight: 600;
+  color: var(--success); background: rgba(82, 196, 26, .12); border-radius: 9999px;
+  padding: 2px 8px; margin: 6px 0 0 6px;
+}
+.deployment-card { border: 1px solid var(--border); border-radius: 8px; padding: 14px; margin-bottom: 12px; background: var(--surface); }
+.deployment-card-header { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.deployment-card-header h3 { margin: 0; font-size: 15px; }
+.deployment-card-actions { display: flex; gap: 4px; flex-shrink: 0; }
+.deployment-progress { font-size: 12px; color: var(--text-muted); margin: 6px 0 10px; }
+.deployment-member-list { list-style: none; margin: 0 0 12px; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.deployment-member {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 7px 10px; font-size: 12.5px;
+}
+.deployment-member-status { font-size: 11px; color: var(--text-muted); background: var(--surface-2); border-radius: 9999px; padding: 1px 8px; white-space: nowrap; }
+.deployment-member-empty { color: var(--text-muted); font-style: italic; font-size: 12.5px; }
+.deployment-merged-badge { color: var(--success); font-weight: 600; font-size: 13px; }
+.deployment-merge-btn:disabled { opacity: .45; cursor: not-allowed; }
+
+.dp-items-list { display: flex; flex-direction: column; gap: 4px; max-height: 260px; overflow-y: auto; margin-top: 4px; border: 1px solid var(--border); border-radius: 6px; padding: 8px; }
+.dp-item-row { display: flex; align-items: center; gap: 8px; font-size: 13px; padding: 4px 2px; }
+
+/* ── Mobile ──────────────────────────────────────────────────────────────
+   Two real problems on a phone before this: (1) the board's 4 columns were
+   forced side by side (`repeat(4, minmax(260px,1fr))`), so most of the
+   board — including the "Confirm live on branch"/"Merge to main" buttons —
+   only existed off-screen behind a sideways scroll nobody found; (2) the
+   header crammed the primary Add button in among 2-3 ghost buttons with no
+   size floor, so on a narrow screen they wrapped small and mis-tappable.
+   Below 640px: columns stack vertically (no horizontal scroll at all), and
+   the header becomes one big full-width Add button plus a small "⋮" next
+   to it — everything else already moved into that menu above. */
+@media (max-width: 640px) {
+  .app { padding: 16px 12px 32px; }
+  .topbar { gap: 12px; }
+  .topbar h1 { font-size: 19px; }
+  .btn-primary, .btn-ghost { min-height: 40px; }
+
+  .board { grid-template-columns: 1fr; overflow-x: visible; }
+  .column { max-height: none; }
+
+  .project { padding: 14px 12px 16px; }
+  .project-header { flex-wrap: wrap; }
+  .project-title-wrap { flex-basis: 100%; }
+  .project-header-actions { flex-basis: 100%; flex-wrap: wrap; }
+  .new-item-btn { flex: 1; min-height: 46px; font-size: 14px; justify-content: center; }
+  /* Its own full-width row above New backlog item + ⋮ (order in the DOM
+     already puts it first) — three buttons crammed onto one row would
+     otherwise squeeze each other into unreadable widths on a phone. */
+  .notify-claude-btn { flex-basis: 100%; min-height: 46px; font-size: 14px; justify-content: center; }
+  .project-options-btn { min-width: 46px; min-height: 46px; }
+  .project-options-menu { left: auto; right: 0; max-width: calc(100vw - 24px); }
+
+  .modal-panel { max-width: 94vw; max-height: 90vh; overflow-y: auto; }
+  /* New item modal anchors near the top instead of centering — centered on
+     a phone, the on-screen keyboard opening for the description textarea
+     pushes the Add-to-backlog button down under the keyboard. */
+  #ni-backdrop { align-items: flex-start; padding-top: 14px; }
+  .mic-btn { width: 42px; height: 42px; font-size: 18px; }
+  .type-opt { padding: 10px 16px; font-size: 13px; }
+  .form-row { gap: 10px; }
+  .icon-btn { padding: 7px 10px; font-size: 15px; }
+}
+
+/* ── Topbar actions (FAQ Center + New project) ──────────────────────── */
+.topbar-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+
+/* ── FAQ Center admin page ──────────────────────────────────────────── */
+.faq-admin-page { margin-bottom: 20px; }
+.faq-admin-page code { background: var(--surface-2); border-radius: 4px; padding: 1px 5px; font-size: 12px; }
+.modal-panel-wide { max-width: 720px; }
+.form-row-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 10px; }
+.form-row-grid select { width: 100%; }
+#fa-backdrop input[type="text"], #fa-backdrop textarea, #fa-backdrop select {
+  width: 100%; font-family: inherit; font-size: 13px; color: var(--text); background: var(--surface);
+  border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; box-sizing: border-box; resize: vertical;
+}
+.fa-body-header { display: flex; align-items: center; justify-content: space-between; margin-top: 10px; }
+#fa-body-editor-wrap { border-radius: 6px; overflow: hidden; }
+#fa-body-editor { background: var(--bg); font-size: 13px; }
+#fa-body-editor .ql-editor { min-height: 220px; max-height: 380px; overflow-y: auto; }
+/* View-live preview — a small, backlog-tracker-local copy of faq/css/faq.css's
+   .article-body rules (see renderFaqBodyMd's own comment: two small copies
+   kept in sync rather than a shared import across the two static sites). */
+.fa-body-viewer {
+  border: 1px solid var(--border); border-radius: 6px; padding: 12px 14px; background: var(--surface);
+  font-size: 14px; line-height: 1.7; min-height: 220px; max-height: 380px; overflow-y: auto;
+}
+.fa-body-viewer h1, .fa-body-viewer h2, .fa-body-viewer h3 { font-weight: 700; margin: 16px 0 6px; }
+.fa-body-viewer h1 { font-size: 19px; } .fa-body-viewer h2 { font-size: 17px; } .fa-body-viewer h3 { font-size: 15px; }
+.fa-body-viewer p { margin: 0 0 10px; }
+.fa-body-viewer ul, .fa-body-viewer ol { margin: 0 0 10px; padding-left: 20px; }
+.fa-body-viewer img { max-width: 100%; border-radius: 6px; }
+.fa-body-viewer iframe { max-width: 100%; aspect-ratio: 16 / 9; width: 100%; height: auto; border: none; border-radius: 6px; }
+
+/* ── Edit item modal (title/desc/type/category + comments) ─────────────── */
+#ei-backdrop input[type="text"], #ei-backdrop textarea, #ei-backdrop select {
+  width: 100%; font-family: inherit; font-size: 13px; color: var(--text); background: var(--surface);
+  border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; box-sizing: border-box; resize: vertical;
+}
+.ei-comments-block { border-top: 1px solid var(--border); margin-top: 16px; padding-top: 14px; }
+.ei-comments-block h3 { margin: 0 0 8px; font-size: 14px; }
+.ei-comments-block textarea { margin-top: 8px; }
+.ei-notes-list { display: flex; flex-direction: column; gap: 8px; max-height: 220px; overflow-y: auto; }
+.ei-note-row { background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; }
+.ei-note-meta { display: flex; justify-content: space-between; gap: 10px; font-size: 11px; color: var(--text-muted); margin-bottom: 4px; }
+.ei-note-text { margin: 0; font-size: 12.5px; white-space: pre-wrap; }
+.fa-preview ul { margin: 0 0 8px; padding-left: 20px; }
+.fa-needs-review-toggle { display: flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--text-muted); cursor: pointer; }
+.fa-needs-review-toggle input { width: 14px; height: 14px; }
+
+.fa-new-category-row { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; align-items: center; }
+.fa-new-category-row input, .fa-new-category-row select { font-family: inherit; font-size: 13px; padding: 7px 9px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); }
+#fa-new-category-name { flex: 2; min-width: 160px; }
+
+/* Icon dropdown + a live preview swatch — used both in the "new category"
+   row and per-row when editing an existing category's icon. */
+.fa-icon-picker { display: flex; align-items: center; gap: 6px; flex: 0.8; min-width: 130px; }
+.fa-icon-preview { color: var(--primary); font-size: 18px; flex-shrink: 0; }
+.fa-icon-picker select { flex: 1; min-width: 0; }
+
+.faq-cat-row {
+  display: flex; align-items: center; gap: 8px; padding: 8px 0; border-bottom: 1px solid var(--divider, var(--border));
+  flex-wrap: wrap;
+}
+.faq-cat-row:last-child { border-bottom: none; }
+.faq-cat-row > .material-symbols-outlined { color: var(--primary); font-size: 18px; flex-shrink: 0; }
+.faq-cat-row input, .faq-cat-row select {
+  font-family: inherit; font-size: 12.5px; padding: 6px 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg);
+}
+.faq-cat-name-input { flex: 1.2; min-width: 120px; font-weight: 600; }
+.faq-cat-desc-input { flex: 2; min-width: 160px; }
+.faq-cat-count { font-size: 11px; color: var(--text-muted); white-space: nowrap; }
+.faq-cat-actions { display: flex; gap: 2px; flex-shrink: 0; }
+
+.fa-filter-row { display: flex; gap: 8px; margin: 10px 0 14px; flex-wrap: wrap; }
+.fa-filter-row select, .fa-filter-row input {
+  font-family: inherit; font-size: 12.5px; padding: 7px 9px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg);
+}
+.fa-filter-row input[type="search"] { flex: 1; min-width: 160px; }
+
+.faq-article-row {
+  display: flex; align-items: flex-start; justify-content: space-between; gap: 12px;
+  padding: 12px 0; border-bottom: 1px solid var(--divider, var(--border)); flex-wrap: wrap;
+}
+.faq-article-row:last-child { border-bottom: none; }
+.faq-article-row-main h4.faq-article-title {
+  margin: 4px 0 3px; font-size: 13.5px; font-weight: 600; cursor: pointer;
+}
+.faq-article-title:hover, .faq-article-title:focus-visible { color: var(--primary); outline: none; }
+.faq-article-row-meta { margin: 0; font-size: 11.5px; color: var(--text-muted); }
+.badge-status-draft { background: var(--surface-2); color: var(--text-muted); }
+.badge-status-published { background: rgba(82, 196, 26, .12); color: var(--success); }
+.badge-needs-review { background: rgba(201, 138, 10, .12); color: var(--warning); margin-left: 6px; }
+.faq-article-row-actions { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
+.faq-article-options { position: relative; }
+.faq-article-options-btn { font-size: 18px; line-height: 1; padding: 7px 11px; }
+.faq-article-options-menu {
+  position: absolute; top: calc(100% + 6px); right: 0; z-index: 15;
+  background: var(--bg); border: 1px solid var(--border); border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, .14); min-width: 180px; max-width: 88vw;
+  overflow: hidden; display: flex; flex-direction: column; padding: 6px;
+}
+.faq-article-options-menu a.options-menu-item { text-decoration: none; }
+
+/* ── Footer / version ────────────────────────────────────────────────── */
+.app-footer { margin-top: 24px; padding-top: 14px; border-top: 1px solid var(--border); font-size: 11.5px; color: var(--text-muted); text-align: center; }
+
+[hidden] { display: none !important; }
