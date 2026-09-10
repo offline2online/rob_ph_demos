@@ -15,6 +15,22 @@ on:
     - cron: '*/10 * * * *'
   workflow_dispatch: {}
 
+# Without this, a run that takes longer than 10 minutes (several
+# patch-ready items in one pass: git fetch/push, gh pr create, gh pr merge
+# each has real network latency) overlaps with the next scheduled run, and
+# both processes can query Firestore for the same patchReady/mergeReady
+# item before either has cleared its flag — both see it as unprocessed and
+# both act on it. This is the structural version of the duplicate-PR bug
+# fixed in run-backlog-automation.js's findExistingPrForItem() guard: that
+# guard closes the gap for a *single* run re-processing a stray flag left
+# over from earlier, this closes the gap for *two runs racing each other*
+# in the first place. `cancel-in-progress: false` queues an overlapping
+# run instead of killing one mid-push/mid-merge, which could otherwise
+# leave a branch pushed with no PR, or a merge half-done.
+concurrency:
+  group: backlog-automation
+  cancel-in-progress: false
+
 permissions:
   contents: write
   pull-requests: write
