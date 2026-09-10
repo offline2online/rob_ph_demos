@@ -103,6 +103,22 @@ function sanitizeBranchName(name, itemId) {
   return `claude/${slug}-${itemId.slice(0, 6).toLowerCase()}`;
 }
 
+function pickPreviewUrl(branch, patchFiles, prUrl) {
+  // Best-effort "Test this ->" target for a Ready for Testing card, so a
+  // reviewer never has to fall back to the manual "Set test link" prompt
+  // for a normal static-file fix. Prefer the first changed/created HTML
+  // page outside functions/ (githack can only ever serve a raw static
+  // file, never run a Cloud Function), rawcdn.githack.com'd against the
+  // branch we just pushed; fall back to the PR URL when nothing in the
+  // patch is a plain static page (e.g. a functions-only or JS/CSS-only
+  // change) rather than leaving the card untested.
+  const htmlFile = (patchFiles || []).find(
+    (f) => f && typeof f.path === "string" && f.content != null && /\.html?$/i.test(f.path) && !f.path.split("/").includes("functions")
+  );
+  if (htmlFile) return `https://rawcdn.githack.com/${REPO}/${branch}/${htmlFile.path}`;
+  return prUrl || null;
+}
+
 function applyPatchFiles(patchFiles) {
   for (const f of patchFiles || []) {
     if (!f || typeof f.path !== "string" || f.path.includes("..")) {
@@ -156,14 +172,16 @@ async function processApplyPatch(item) {
     `\n\nBacklog item: ${item.id}`;
   const prUrl = run("gh", ["pr", "create", "--base", "main", "--head", branch, "--title", prTitle, "--body", prBody]);
 
+  const previewUrl = pickPreviewUrl(branch, item.patchFiles, prUrl);
   const notes = await appendNote(item, `Opened ${prUrl} from the automated backlog pipeline.`);
   await patchItem(item.id, {
     status: "ready-for-testing",
     patchReady: false,
+    previewUrl,
     updatedAt: new Date().toISOString(),
     notes,
   });
-  console.log(`[apply-patch] ${item.id}: opened ${prUrl}, moved to ready-for-testing`);
+  console.log(`[apply-patch] ${item.id}: opened ${prUrl}, moved to ready-for-testing, previewUrl=${previewUrl}`);
 
   run("git", ["checkout", "main", "--quiet"]);
 }

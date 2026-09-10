@@ -359,23 +359,31 @@ REST API is reachable with a plain `curl`, no service account needed.
   is `{author: "viewer", text, at}` appended via `arrayUnion` — `at` is a
   plain client `Date`, not `serverTimestamp()`, since Firestore rejects a
   server-timestamp sentinel inside an array element.
-- **Test/preview link**: a Ready for Testing card gets a "Set test link"
-  button; once set (a plain `prompt()`, not a modal — this is a one-off
-  paste, prefilled with an editable template when nothing's set yet),
-  it becomes a "Test this →" button opening `previewUrl` in a new
-  tab, with a pencil icon to change it. The convention is a
-  `rawcdn.githack.com/offline2online/rob_ph_demos/<branch>/<path>` link for
-  a static page (see root `CLAUDE.md`) — **`rawcdn.githack.com`, not
+- **Test/preview link**: a Ready for Testing card shows a "Test this →"
+  button opening `previewUrl` in a new tab, with a pencil icon to change
+  it. **`previewUrl` is set automatically** by
+  `backlog-tracker/scripts/run-backlog-automation.js` the moment it opens
+  a `patchFiles` item's PR and flips it to `ready-for-testing`
+  (`pickPreviewUrl()`): it picks the first changed/created HTML page
+  outside any `functions/` folder and builds a
+  `rawcdn.githack.com/offline2online/rob_ph_demos/<branch>/<path>` link
+  for it (see root `CLAUDE.md`) — **`rawcdn.githack.com`, not
   `raw.githack.com`**: the latter proxies through jsDelivr's CDN cache (up
   to ~7 days), so a link set right after one push can keep showing that
   first commit even after later pushes update the file, with no visible
   error; `rawcdn.githack.com` is githack's own always-uncached host, meant
   specifically for testing an in-progress branch like this — falling back
-  to the PR URL for anything that can't be githack'd directly (e.g. a
-  Cloud Function change). This restores what the old Claude Artifact board's per-card
-  quick-launch link used to do, closing the gap `CLAUDE.md`'s "Prototype
-  Backlog" section had documented ("No `testUrl` field or quick-launch icon
-  on cards") since the migration off the Artifact.
+  to the PR URL when nothing in the patch is a plain static page (e.g. a
+  Cloud-Function-only or JS/CSS-only change). A card that reached Ready
+  for Testing some other way (no matching static page, or a fix applied
+  outside the automated pipeline) still shows the manual "Set test link"
+  button — a plain `prompt()`, not a modal, prefilled with an editable
+  template — as a fallback so the card is never stuck untestable. This
+  restores what the old Claude Artifact board's per-card quick-launch link
+  used to do, closing the gap `CLAUDE.md`'s "Prototype Backlog" section
+  had documented ("No `testUrl` field or quick-launch icon on cards")
+  since the migration off the Artifact — and removes the extra manual step
+  the first version of this fix still left in place.
 - **Deployments** (per project, via ⋮): groups tickets meant to ship to
   `main` together, backed by the `deployments` collection. Exists because
   merging several PRs within seconds of each other used to race the
