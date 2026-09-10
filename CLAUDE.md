@@ -141,12 +141,22 @@ Within each project, the columns are: **Backlog → Ready for Testing → Live o
 Feature Branch → Merged to Main (Live)** (status keys: `backlog`,
 `ready-for-testing`, `ready-to-publish`, `published-live`). A card does
 **not** move itself from "Live on Feature Branch" into "Merged to Main
-(Live)" — that's its own distinct **"Merge to main"** button, separate from
-the **"Confirm live on branch"** button that clears Ready for Testing, so
-there's always one deliberate click that corresponds to the actual
-`git merge`/fast-forward push to `main`. New feature/bug requests land in a
-project's Backlog; once tested and confirmed "Live on Feature Branch", push
-the change and click that card's own "Merge to main" button.
+(Live)" — and, as of the automated `patchFiles`/`mergeReady` pipeline (see
+`backlog-tracker/README.md` → "Notify Claude can't push"), there is no
+manual button that does either. A "Live on Feature Branch" card shows a
+passive "Waiting for Notify Claude — Deploy" hint, not a button — clicking
+that project's own **"Notify Claude — Deploy"** header action is the only
+way a card reaches "Merged to Main (Live)" now, since that's the only path
+that actually merges the underlying PR (via
+`backlog-tracker/scripts/run-backlog-automation.js`) before flipping the
+status. There used to be a per-card "Merge to main" button (and a bulk
+"Merge all to main" on the Deployments page) that just wrote
+`published-live` directly with no connection to whether the PR was
+actually merged — removed for exactly that reason, after it let cards
+say "Merged to Main" while their PRs sat open and unmerged on GitHub. New
+feature/bug requests land in a project's Backlog; once tested and
+confirmed "Live on Feature Branch", click that project's **"Notify Claude
+— Deploy"** button to have Claude verify and merge it for real.
 
 **There's no separate "publish" step anymore — a write to Firestore is
 live immediately**, for every open tab, via `onSnapshot()`. Check/update the

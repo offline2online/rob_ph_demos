@@ -97,8 +97,17 @@ body {
 .card-desc { margin: 0; font-size: 12.5px; color: var(--text-muted); }
 .card-footer { display: flex; align-items: center; justify-content: space-between; margin-top: 10px; }
 .card-cat { font-size: 10.5px; color: var(--text-muted); background: var(--surface-2); border-radius: 9999px; padding: 2px 8px; }
-.merge-btn { width: 100%; margin-top: 10px; background: var(--success); color: #fff; border: none; border-radius: 6px; padding: 8px 10px; font-size: 12.5px; font-weight: 600; cursor: pointer; }
 .approve-btn { width: 100%; margin-top: 10px; background: var(--primary); color: #fff; border: none; border-radius: 6px; padding: 8px 10px; font-size: 12.5px; font-weight: 600; cursor: pointer; }
+/* Not a button — a passive status line for a "Live on Feature Branch"
+   card. There is deliberately no manual way to merge from here; only the
+   project's own Notify Claude — Deploy action can move a card past this
+   point, since only that path actually merges the PR before advancing
+   the status (see cardHTML's own comment in js/app.js). */
+.merge-pending-hint {
+  display: block; width: 100%; margin-top: 10px; text-align: center; box-sizing: border-box;
+  background: var(--surface-2); color: var(--text-muted); border: 1px dashed var(--border); border-radius: 6px;
+  padding: 8px 10px; font-size: 11.5px; font-style: italic;
+}
 .test-link-row { display: flex; align-items: center; gap: 4px; margin-top: 10px; }
 .test-link-btn {
   flex: 1; text-align: center; background: var(--primary-tint); color: var(--primary); text-decoration: none;
