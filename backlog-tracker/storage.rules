@@ -1,0 +1,24 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    // Backs the Edit item modal's Attachments block (screenshots & screen
+    // recordings — see public/js/app.js uploadItemAttachment). Same
+    // prototype-stage open posture as firestore.rules (no auth yet — see
+    // that file's own comment), with a size/content-type check instead of
+    // wide-open write, since Storage has no per-field validation the way
+    // Firestore rules can express against document data.
+    //
+    // Path shape: attachments/{itemId}/{fileName} — itemId is a
+    // backlogItems doc id, not validated against Firestore itself (rules
+    // can't cross-reference across products), so this only bounds what
+    // kind/size of file can land here, not which item it's "for".
+    match /attachments/{itemId}/{fileName} {
+      allow read: if true;
+      allow write: if request.resource.size < 100 * 1024 * 1024 &&
+        (request.resource.contentType.matches('image/.*') ||
+         request.resource.contentType.matches('video/.*'));
+      allow delete: if true;
+    }
+  }
+}

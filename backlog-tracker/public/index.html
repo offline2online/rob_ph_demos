@@ -177,10 +177,31 @@
         <div class="ei-comments-block">
           <h3>Comments</h3>
           <div id="ei-notes-list" class="ei-notes-list"></div>
-          <textarea id="ei-comment-input" rows="2" maxlength="1000" placeholder="Add a comment for more context..."></textarea>
+          <div class="desc-wrap">
+            <textarea id="ei-comment-input" rows="2" maxlength="1000" placeholder="Add a comment for more context, or tap the mic and just talk..."></textarea>
+            <button type="button" class="mic-btn" id="ei-mic-btn" hidden title="Dictate" aria-label="Dictate">&#127908;</button>
+          </div>
+          <p class="listening-hint" id="ei-listening-hint">&#127908; Listening — tap the mic again when you're done.</p>
+          <p class="mic-error" id="ei-mic-error"></p>
           <div class="form-row" style="justify-content:flex-end;">
             <button type="button" class="btn-primary" id="ei-comment-submit">Add comment</button>
           </div>
+        </div>
+
+        <!-- Attachments — a screenshot (plain file picker) or a screen
+             recording (captured in-browser via getDisplayMedia +
+             MediaRecorder, no separate app needed), both uploaded to
+             Firebase Storage the moment they're ready. See app.js's
+             uploadItemAttachment/startScreenRecording. -->
+        <div class="ei-attachments-block">
+          <h3>Attachments</h3>
+          <div id="ei-attachments-list" class="ei-attachments-list"></div>
+          <div class="ei-attachments-actions">
+            <label class="btn-ghost ei-attach-screenshot-label" for="ei-attach-screenshot-input">&#128206; Attach screenshot</label>
+            <input type="file" id="ei-attach-screenshot-input" accept="image/*" hidden>
+            <button type="button" class="btn-ghost" id="ei-record-screen-btn">&#9210; Record screen</button>
+          </div>
+          <p class="field-hint" id="ei-attach-hint" hidden></p>
         </div>
       </div>
     </div>
@@ -193,12 +214,17 @@
          requires opening (and risking an accidental edit to) the rest of
          the form. -->
     <div class="modal-backdrop" id="qc-backdrop" hidden>
-      <div class="modal-panel" role="dialog" aria-modal="true" aria-labelledby="qc-title">
+      <div class="modal-panel qc-panel" role="dialog" aria-modal="true" aria-labelledby="qc-title">
         <div class="modal-header">
           <h2 id="qc-title">Add comment</h2>
           <button type="button" class="modal-close" id="qc-close" aria-label="Close">&times;</button>
         </div>
-        <textarea id="qc-comment-input" rows="4" maxlength="1000" placeholder="Add a comment for more context..."></textarea>
+        <div class="desc-wrap">
+          <textarea id="qc-comment-input" rows="4" maxlength="1000" placeholder="Add a comment for more context, or tap the mic and just talk..."></textarea>
+          <button type="button" class="mic-btn" id="qc-mic-btn" hidden title="Dictate" aria-label="Dictate">&#127908;</button>
+        </div>
+        <p class="listening-hint" id="qc-listening-hint">&#127908; Listening — tap the mic again when you're done.</p>
+        <p class="mic-error" id="qc-mic-error"></p>
         <div class="form-row" style="justify-content:flex-end;">
           <div class="form-actions">
             <button type="button" class="btn-ghost" id="qc-cancel">Cancel</button>
