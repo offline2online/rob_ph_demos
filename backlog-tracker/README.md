@@ -167,6 +167,33 @@ the PR. No AI is involved in this step at all, and no long-lived GitHub
 secret exists anywhere in this pipeline — the runner's `GITHUB_TOKEN` is
 minted and revoked by GitHub itself, per run.
 
+**The duplicate-PR guard (`findExistingPrForItem`) only blocks a still-OPEN
+PR, not a merged or closed one.** It used to search `--state all`, which
+seemed harmless until a real case surfaced it (item `dWJtVKC310qgMevZ3XPl`,
+2026-09-11): that item's first fix merged as PR #84, then a genuinely new,
+separate follow-up fix was packaged for it later — the guard found the
+already-merged #84 via its still-matching `Backlog item: <id>` body marker
+and silently refused to open a second PR, leaving the item stuck in
+`backlog` with `patchReady` reset to `false` and no path forward. A merged
+or closed PR is finished/dead work, not an in-flight duplicate, so it
+should never block a fresh patch for a new round of work on the same item
+— fixed by restricting the search to `--state open`. Two genuinely open
+PRs for the same item is still blocked exactly as before (that's the
+actual bug — see PR #61/#62 above — this guard exists for).
+
+**`patchFiles` producing no diff against `main` no longer leaves an item
+stuck silently either.** This is the expected outcome for one half of a
+multi-item batch sharing identical file content (see
+`ROUTINE_INSTRUCTIONS.md` → "Group multi-item fixes into one deployment")
+once its sibling's PR merges first — the content is already on `main`, so
+there's nothing to open a PR for. `processApplyPatch` used to just log and
+return here, leaving `patchReady`/`status` untouched and the item silently
+retried every scheduled run forever. It now advances the item to
+`ready-for-testing` directly (no PR of its own — check the item's
+deployment group / sibling item's notes for which PR actually carried the
+fix) with a note explaining why, so it still gets tested instead of rotting
+in Backlog.
+
 The same script also handles the mirror case for **Notify Claude —
 Deploy**: that Routine fire asks the session to find its item's PR and
 check CI/mergeability using GitHub's public, unauthenticated REST API
