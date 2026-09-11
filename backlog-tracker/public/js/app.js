@@ -3128,27 +3128,164 @@ const faBodyViewer = document.getElementById("fa-body-viewer");
 const faNeedsReview = document.getElementById("fa-needs-review");
 let faStatus = "draft";
 
+// ── Rich formatting the docs standard requires ───────────────────────
+// docs/CONTRIBUTING-docs.md §5.4 mandates three things Quill 1.3.7's stock
+// toolbar has no answer for: tables ("for comparing three or more things
+// across two or more attributes"), code font for literal input/filenames/
+// values, and the three callout levels (Note / Important / Warning). Until
+// these existed, an article needing any of them either lost the formatting
+// on save or was written as flat prose, which is exactly what the standard
+// exists to prevent. Registered as real Quill blots (not raw HTML pasted
+// into the body) so the content survives a later edit: an unregistered
+// <table> or <div class="callout"> in the body is silently normalised away
+// the first time Quill re-parses the DOM.
+const FAQ_CALLOUT_LEVELS = ["note", "important", "warning"];
+
+// A table's stored value is a plain array of rows (first row = header) so
+// it round-trips through a Delta as JSON; the DOM shape it renders to is
+// the same <div class="faq-table"><table>…</table></div> the public site's
+// CSS styles, and the same shape DOMPurify passes through untouched.
+function faqTableRowsToHtml(rows) {
+  const safe = (s) => escapeHTML(String(s == null ? "" : s));
+  const [head, ...body] = rows.length ? rows : [[""]];
+  const headHtml = "<thead><tr>" + head.map((c) => "<th>" + safe(c) + "</th>").join("") + "</tr></thead>";
+  const bodyHtml = body.length
+    ? "<tbody>" + body.map((r) => "<tr>" + r.map((c) => "<td>" + safe(c) + "</td>").join("") + "</tr>").join("") + "</tbody>"
+    : "";
+  return "<table>" + headHtml + bodyHtml + "</table>";
+}
+
+function faqTableRowsFromNode(node) {
+  return [...node.querySelectorAll("tr")].map((tr) =>
+    [...tr.children].map((cell) => cell.textContent.trim())
+  );
+}
+
+// Authoring format for the table dialog: one row per line, cells separated
+// by "|", first line the header row. Chosen over an inline grid editor
+// because it is editable, pasteable and diff-able as plain text, and it is
+// the same shape a writer already uses in the markdown tables of
+// docs/CONTRIBUTING-docs.md itself.
+function faqTableRowsFromText(text) {
+  return String(text || "")
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line && !/^\|?\s*:?-{2,}/.test(line.replace(/\|/g, "")))
+    .map((line) => line.replace(/^\||\|$/g, "").split("|").map((cell) => cell.trim()));
+}
+
+function faqTableRowsToText(rows) {
+  return rows.map((r) => r.join(" | ")).join("\n");
+}
+
+function registerFaqEditorFormats() {
+  const Block = Quill.import("blots/block");
+  const BlockEmbed = Quill.import("blots/block/embed");
+
+  class FaqCalloutBlot extends Block {
+    static create(value) {
+      const level = FAQ_CALLOUT_LEVELS.includes(value) ? value : "note";
+      const node = super.create();
+      node.setAttribute("class", "callout callout-" + level);
+      return node;
+    }
+    // Read back off the class rather than a data-* attribute: DOMPurify
+    // keeps class by default but strips unknown data attributes, so an
+    // article that has been through the sanitiser on its way to the
+    // public site and back into this editor still knows its own level.
+    static formats(node) {
+      const match = /callout-(note|important|warning)/.exec(node.getAttribute("class") || "");
+      return match ? match[1] : "note";
+    }
+  }
+  FaqCalloutBlot.blotName = "callout";
+  FaqCalloutBlot.tagName = "DIV";
+  FaqCalloutBlot.className = "callout";
+
+  class FaqTableBlot extends BlockEmbed {
+    static create(value) {
+      const node = super.create();
+      node.setAttribute("class", "faq-table");
+      // Atomic as far as Quill is concerned — cell text is edited through
+      // the table dialog, not by typing into the DOM, which is what keeps
+      // the <table> structurally intact through arbitrary editing around
+      // it (Quill has no table model of its own in 1.x).
+      node.setAttribute("contenteditable", "false");
+      node.innerHTML = faqTableRowsToHtml(Array.isArray(value) ? value : faqTableRowsFromText(value));
+      return node;
+    }
+    static value(node) {
+      return faqTableRowsFromNode(node);
+    }
+  }
+  FaqTableBlot.blotName = "faqtable";
+  FaqTableBlot.tagName = "DIV";
+  FaqTableBlot.className = "faq-table";
+
+  Quill.register(FaqCalloutBlot, true);
+  Quill.register(FaqTableBlot, true);
+
+  const icons = Quill.import("ui/icons");
+  icons.faqtable = '<svg viewBox="0 0 18 18"><rect class="ql-stroke" height="12" width="14" x="2" y="3"></rect><line class="ql-stroke" x1="2" x2="16" y1="7" y2="7"></line><line class="ql-stroke" x1="7" x2="7" y1="7" y2="15"></line></svg>';
+}
+
+// Insert or edit the table under the cursor. One dialog for both, so the
+// author edits a table the same way they created it.
+function openFaqTableDialog() {
+  const range = faQuill.getSelection(true);
+  const [blot] = range ? faQuill.scroll.descendant(Quill.import("blots/block/embed"), range.index) : [null];
+  const existing = blot && blot.statics.blotName === "faqtable" ? blot : null;
+  const current = existing
+    ? faqTableRowsToText(existing.statics.value(existing.domNode))
+    : "Parameter | Value | Notes\nExample | value | what it does";
+  const text = prompt(
+    "Table rows — one row per line, cells separated by \"|\". The first line is the header row.",
+    current
+  );
+  if (text === null) return;
+  const rows = faqTableRowsFromText(text);
+  if (!rows.length) return;
+  if (existing) {
+    const index = faQuill.getIndex(existing);
+    faQuill.deleteText(index, 1, "user");
+    faQuill.insertEmbed(index, "faqtable", rows, "user");
+    faQuill.setSelection(index + 1, 0);
+  } else {
+    faQuill.insertEmbed(range.index, "faqtable", rows, "user");
+    faQuill.setSelection(range.index + 1, 0);
+  }
+}
+
+registerFaqEditorFormats();
+
 // Rich-text body editor (Quill, loaded via CDN — see index.html <head>).
 // One instance bound to #fa-body-editor for the life of the page, same as
 // every other modal's inputs; openFaqArticleModal() below resets its
-// content on each open rather than recreating it. Toolbar covers exactly
-// what the ticket asked for: headers, bold/italic/underline/strike,
-// alignment, ordered/bullet lists, link, image (a URL prompt rather than
-// letting Quill embed a base64 data URI, to stay well under Firestore's
-// 1MiB document limit), video, and a "clear formatting" button.
+// content on each open rather than recreating it. Toolbar covers headings
+// (H1-H4 — docs/CONTRIBUTING-docs.md §3 stops at H4), bold/italic/
+// underline/strike, alignment, ordered/bullet lists, blockquote, inline
+// code and code blocks, the three callout levels, link, image (a URL
+// prompt rather than letting Quill embed a base64 data URI, to stay well
+// under Firestore's 1MiB document limit), video, tables, and a "clear
+// formatting" button.
 const faQuill = new Quill("#fa-body-editor", {
   theme: "snow",
   modules: {
     toolbar: {
       container: [
-        [{ header: [1, 2, 3, false] }],
+        [{ header: [1, 2, 3, 4, false] }],
         ["bold", "italic", "underline", "strike"],
         [{ align: [] }],
         [{ list: "ordered" }, { list: "bullet" }],
-        ["link", "image", "video"],
+        ["blockquote", "code", "code-block"],
+        [{ callout: FAQ_CALLOUT_LEVELS }],
+        ["link", "image", "video", "faqtable"],
         ["clean"],
       ],
       handlers: {
+        faqtable() {
+          openFaqTableDialog();
+        },
         // Quill's default image button embeds the file as a base64 data
         // URI — fine for a couple of small images, but a real photo or
         // two pushes an article well past Firestore's 1MiB document
@@ -3175,6 +3312,17 @@ const faQuill = new Quill("#fa-body-editor", {
       },
     },
   },
+});
+
+// A table is an atomic embed, so clicking one opens the same dialog that
+// created it rather than dropping a caret into a cell Quill can't model.
+faQuill.root.addEventListener("click", (event) => {
+  const embed = event.target.closest(".faq-table");
+  if (!embed) return;
+  const blot = Quill.find(embed);
+  if (!blot) return;
+  faQuill.setSelection(faQuill.getIndex(blot), 1, "user");
+  openFaqTableDialog();
 });
 
 // "Edit" shows the live Quill toolbar/editor; "View live" renders exactly

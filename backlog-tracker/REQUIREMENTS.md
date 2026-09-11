@@ -375,6 +375,33 @@ Rendered as a small type badge on the public article page and in
 category article-listing rows (`faq/js/faq-data.js`'s `docTypeLabel()`)
 so the distinction is visible to readers, not just an internal tag.
 
+### Rich formatting in article bodies
+
+The FAQ Center's Quill editor registers three formats beyond Quill 1.3.7's
+stock set, because `docs/CONTRIBUTING-docs.md` §5.4 requires all three of
+them in customer-facing documentation and none of them survived being typed
+into the editor before this existed:
+
+| Format | Authored as | Stored as | Styled by |
+|---|---|---|---|
+| Table | Toolbar table button → one row per line, cells split on `\|`, first line the header | `<div class="faq-table"><table><thead>…</tbody></table></div>` | `faq/css/faq.css`, `.article-body table` |
+| Code | Toolbar inline-code and code-block buttons (Quill built-ins) | `<code>` / `<pre class="ql-syntax">` | same file, `.article-body code` / `pre` |
+| Callout | Toolbar "Callout" picker — Note / Important / Warning | `<div class="callout callout-note">` | same file, `.article-body .callout` |
+
+They are registered as real Quill blots (`FaqCalloutBlot`, `FaqTableBlot` in
+`app.js`) rather than raw HTML pasted into the body, because Quill silently
+normalises away any element it has no blot for the first time it re-parses
+the DOM — an article written with a hand-pasted `<table>` would lose it on
+the next edit. A table is a `BlockEmbed` (atomic, `contenteditable="false"`,
+edited through its own dialog) for the same reason: Quill 1.x has no table
+model, so letting a caret into a cell is what breaks the structure.
+
+The class names are a contract between the editor and both renderers (the
+public site's `.article-body` CSS and the admin's own "View live" preview) —
+change one, change all three. Headings also run to H4 (§3's floor), and
+`blockquote` is exposed in the toolbar since the public CSS already styled
+it.
+
 ### Firestore rules
 
 Prototype-stage: open, unauthenticated read/write on every collection
