@@ -444,10 +444,14 @@ body {
   .project-title-wrap { flex-basis: 100%; }
   .project-header-actions { flex-basis: 100%; flex-wrap: wrap; }
   .new-item-btn { flex: 1; min-height: 46px; font-size: 14px; justify-content: center; }
-  /* Its own full-width row above New backlog item + ⋮ (order in the DOM
-     already puts it first) — three buttons crammed onto one row would
-     otherwise squeeze each other into unreadable widths on a phone. */
-  .notify-claude-btn { flex-basis: 100%; min-height: 46px; font-size: 14px; justify-content: center; }
+  /* Its own row above New backlog item + ⋮ (order in the DOM already puts
+     it first) — three buttons crammed onto one row would otherwise squeeze
+     each other into unreadable widths on a phone. Width is the row width
+     minus the ⋮ button (46px) and the row's own gap (8px), not a flat
+     100%, so it lines up with New backlog item's own width on the row
+     below (that button is flex:1 sharing its row with the same ⋮ button) —
+     a flat 100% here made the Gen AI CTA visibly wider than Add to backlog. */
+  .notify-claude-btn { flex-basis: calc(100% - 54px); min-height: 46px; font-size: 14px; justify-content: center; }
   .project-options-btn { min-width: 46px; min-height: 46px; }
   .project-options-menu { left: auto; right: 0; max-width: calc(100vw - 24px); }
 
