@@ -342,7 +342,23 @@ use those, don't re-derive them from the title. For each item:
    all. If the branch ref from the first command doesn't exist, there is
    no PR for this item yet (regardless of what the board shows) — leave it
    alone with a note, same as any other "can't find it" case.
-2. Once you have the confirmed PR number, check its CI status and
+2. **If the PR you found is already in `MERGED` state** (its own `state`
+   field from step 1's search/lookup, or `merged: true`), skip straight to
+   step 3 — don't run the CI/mergeability checks below, they don't apply
+   to something already merged. This is a real, expected case, not an
+   error: the item can reach this flow with a PR that was already merged
+   through some other path (e.g. a human, or a Claude Code session with
+   real repo access, merging it directly on GitHub rather than waiting for
+   this pipeline). `run-backlog-automation.js`'s `processMergePr` checks
+   the PR's state before attempting `gh pr merge` and treats an
+   already-merged PR as success rather than retrying a merge that will
+   fail forever (fixed 2026-09-11, after item `RR68JuZDRHtZncsfwyKl` hit
+   exactly this) — so setting `mergeReady`/`mergePrNumber` here is safe
+   and correct, not redundant. If instead the PR is `CLOSED` without being
+   merged, that's a real problem, not a no-op: leave `mergeReady` unset
+   and say so in your note (same as "can't find it" below) rather than
+   setting it on a PR that can never actually merge.
+3. Once you have the confirmed PR number, check its CI status and
    mergeability read-only: `GET /repos/offline2online/rob_ph_demos/pulls/{number}`
    for `mergeable`/`mergeable_state`, and
    `GET /repos/offline2online/rob_ph_demos/commits/{sha}/status` (or
@@ -402,7 +418,7 @@ use those, don't re-derive them from the title. For each item:
      further, and it only got resolved once a Claude Code session with
      real repo access noticed it separately, merged `main` into the
      branch by hand, and pushed the resolution.
-3. If it's green and mergeable **and step 1's exact id match held**, PATCH
+4. If it's green and mergeable **and step 1's exact id match held**, PATCH
    its backlogItems doc: `mergeReady -> true` (boolean), `mergePrNumber ->
    <the PR number, as a number>`, `updatedAt -> now`. The same scheduled
    `backlog-automation.yml` job picks this up, actually merges the PR, and
@@ -415,7 +431,7 @@ use those, don't re-derive them from the title. For each item:
    with a `mergePrNumber` you haven't fully confirmed via step 1 — a wrong
    or placeholder PR number picked up by the next scheduled run merges
    whatever that number actually points to.
-4. This is asynchronous, same as the Backlog flow: your session ends
+5. This is asynchronous, same as the Backlog flow: your session ends
    before the scheduled job's next run, so you won't see the merge or the
    resulting deploy complete yourself. That's expected — say what you set
    `mergeReady` on in your final report (see "When done" below), not what

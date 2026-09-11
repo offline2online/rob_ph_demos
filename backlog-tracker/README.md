@@ -218,6 +218,23 @@ suppression) — needs `actions: write` in this workflow's own
 looks like it doesn't need that explicit trigger, it's wrong — this is
 the whole reason it exists.
 
+**`processMergePr` checks the PR's state before attempting `gh pr merge`,
+and treats an already-`MERGED` PR as success rather than a failure to
+retry forever.** An item can legitimately reach `mergeReady: true` with a
+`mergePrNumber` that's already merged through some other path — e.g. an
+interactive Claude Code session with real repo access merging it directly
+via the GitHub API rather than waiting for this pipeline (this happened
+for real on item `RR68JuZDRHtZncsfwyKl`, 2026-09-11). `gh pr merge` on an
+already-merged PR fails, and the old code treated any merge failure the
+same way ("will retry on next scheduled run") — which is never going to
+stop being true for a PR that's already merged, so the item sat at
+`ready-to-publish` forever with no way to reach `published-live` short of
+a human editing the item by hand. Fixed by checking `state` first: `MERGED`
+skips straight to the success path (deploy trigger + `published-live`),
+`CLOSED` (without merging) leaves `mergeReady` as-is with a note instead
+of retrying a merge that can never succeed, and `OPEN` behaves exactly as
+before.
+
 If a fired session genuinely can't express its fix as full file contents,
 it leaves the item in `backlog` with a note explaining why, same as
 before — a human picks it up from there.

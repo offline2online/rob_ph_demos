@@ -274,24 +274,55 @@ async function processMergePr(item) {
     return;
   }
 
-  // Needed before merging (the PR's file list is still queryable after
-  // merge too, but fetching it up front keeps the "did this touch
-  // backlog-tracker/" check independent of merge timing).
+  // Fetch state alongside the file list in one call — needed before
+  // merging either way. Same class of "already-done treated as stuck"
+  // bug as findExistingPrForItem/the no-diff branch above (see their own
+  // comments, both fixed 2026-09-11): an item can legitimately reach here
+  // with mergeReady:true pointing at a PR that's already been merged by
+  // some other path (e.g. an interactive session merging it directly —
+  // see item RR68JuZDRHtZncsfwyKl the same day, merged via GitHub's API
+  // rather than this script). `gh pr merge` on an already-merged PR fails
+  // ("Pull request is already merged"), and the old code treated any
+  // merge failure as "retry next run" — which never stops being true for
+  // an already-merged PR, so the item sat at ready-to-publish forever.
+  // Checking state up front and skipping straight to the success path
+  // when it's already MERGED makes this idempotent instead.
   let touchesBacklogTracker = false;
+  let prState = null;
   try {
-    const filesJson = run("gh", ["pr", "view", String(prNumber), "--repo", REPO, "--json", "files"]);
-    const files = JSON.parse(filesJson).files || [];
-    touchesBacklogTracker = files.some((f) => f.path.startsWith("backlog-tracker/"));
+    const viewJson = run("gh", ["pr", "view", String(prNumber), "--repo", REPO, "--json", "files,state"]);
+    const parsed = JSON.parse(viewJson);
+    touchesBacklogTracker = (parsed.files || []).some((f) => f.path.startsWith("backlog-tracker/"));
+    prState = parsed.state; // "OPEN" | "CLOSED" | "MERGED"
   } catch (err) {
-    console.log(`[merge-pr] ${item.id}: couldn't read PR #${prNumber}'s file list (${err.message}) — will trigger the backlog-tracker deploy anyway to be safe`);
+    console.log(`[merge-pr] ${item.id}: couldn't read PR #${prNumber}'s file list/state (${err.message}) — will trigger the backlog-tracker deploy anyway to be safe, and still attempt the merge below`);
     touchesBacklogTracker = true;
   }
 
-  try {
-    run("gh", ["pr", "merge", String(prNumber), "--merge", "--repo", REPO]);
-  } catch (err) {
-    console.log(`[merge-pr] ${item.id}: gh pr merge #${prNumber} failed (will retry on next scheduled run): ${err.message}`);
+  if (prState === "CLOSED") {
+    // Closed WITHOUT merging is a genuinely different problem from either
+    // "still open" or "already merged" — retrying a merge on it would
+    // fail forever exactly like the already-merged case, but silently
+    // advancing to published-live here would be actively wrong (nothing
+    // was actually merged). Leave a clear note instead of looping.
+    console.log(`[merge-pr] ${item.id}: PR #${prNumber} is CLOSED (not merged) — leaving mergeReady set for a human to check, not retrying`);
+    const notes = await appendNote(
+      item,
+      `PR #${prNumber} was closed without merging. mergeReady is left as-is (not cleared) so this doesn't silently disappear, but the automation won't keep retrying a merge that will never succeed — a human needs to look at why it was closed and either reopen/re-point mergePrNumber, or move this item back manually.`
+    );
+    await patchItem(item.id, { updatedAt: new Date().toISOString(), notes });
     return;
+  }
+
+  if (prState !== "MERGED") {
+    try {
+      run("gh", ["pr", "merge", String(prNumber), "--merge", "--repo", REPO]);
+    } catch (err) {
+      console.log(`[merge-pr] ${item.id}: gh pr merge #${prNumber} failed (will retry on next scheduled run): ${err.message}`);
+      return;
+    }
+  } else {
+    console.log(`[merge-pr] ${item.id}: PR #${prNumber} is already MERGED — skipping the merge attempt, proceeding straight to the success path`);
   }
 
   // A merge performed with this workflow's own GITHUB_TOKEN does NOT
@@ -312,7 +343,12 @@ async function processMergePr(item) {
     }
   }
 
-  const notes = await appendNote(item, `Merged PR #${prNumber} to main from the automated backlog pipeline.`);
+  const notes = await appendNote(
+    item,
+    prState === "MERGED"
+      ? `PR #${prNumber} was already merged (not by this script) — confirming that here and moving to published-live rather than treating it as unmerged work still to do.`
+      : `Merged PR #${prNumber} to main from the automated backlog pipeline.`
+  );
   await patchItem(item.id, {
     status: "published-live",
     mergeReady: false,
