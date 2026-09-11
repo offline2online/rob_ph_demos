@@ -120,6 +120,12 @@ function getDeploySelectedSet(pid) {
 const notifyOptimisticClicks = {};
 const NOTIFY_OPTIMISTIC_STALE_MS = 45 * 1000;
 
+// Same optimistic-click bridge as above, for the "Deploy to Main" button —
+// the real spinning state lives in projects/{id}.deployRoutine, written by
+// notifyOnProjectReadyToDeploy reacting to deployNotifyRequestedAt.
+const deployOptimisticClicks = {};
+const DEPLOY_OPTIMISTIC_STALE_MS = 45 * 1000;
+
 // ── Docs page state (per-project requirements + interfaces with other
 // projects) — an interface is a maintained contract doc shared between
 // exactly two projects, stored once in "interfaces" and shown identically
@@ -237,6 +243,16 @@ function cardHTML(item) {
   // below. It naturally unlocks itself the moment the automation flips
   // status to ready-for-testing, since isBacklog goes false then too.
   const isInDevelopment = isBacklog && !!item.patchReady;
+  // Mirrors isInDevelopment above but for the opposite end of the pipeline:
+  // once the Routine has confirmed a ready-to-publish item's PR is green
+  // and mergeable and written mergeReady (see ROUTINE_INSTRUCTIONS.md's
+  // "Notify Claude — Deploy" flow), backlog-automation.yml will merge it on
+  // its own next poll — editing or moving it in that window is exactly as
+  // unsafe as touching an isInDevelopment card, so it gets the same lock
+  // treatment. It naturally unlocks the instant status moves off
+  // ready-to-publish, since isLiveBranch goes false then too.
+  const isDeploying = isLiveBranch && !!item.mergeReady;
+  const isLocked = isInDevelopment || isDeploying;
   const canDelete = isBacklog && !isInDevelopment;
 
   // Backlog cards select for "Ready for Dev"; Ready for Testing cards
@@ -291,7 +307,9 @@ function cardHTML(item) {
   // Deploy" action (see deployNotifyButtonHTML), which only advances a
   // card once backlog-automation.yml has actually merged its PR.
   const mergeBtn = isLiveBranch
-    ? `<span class="merge-pending-hint" title="Only this project's own Deploy to Main button actually merges this to main">Waiting for Deploy to Main</span>`
+    ? (isDeploying
+        ? `<span class="in-development-hint" title="Claude has confirmed this PR is green and mergeable and told backlog-automation.yml to merge it — it's locked until that merge actually lands and this card moves to Merged to Main (Live)">Deploying — locked</span>`
+        : `<span class="merge-pending-hint" title="Only this project's own Deploy to Main button actually merges this to main">Waiting for Deploy to Main</span>`)
     : "";
   const isPublished = item.status === "published-live";
   const archiveBtn = isPublished
@@ -326,7 +344,7 @@ function cardHTML(item) {
     ? `<span class="test-version-badge" title="backlog-tracker's own version when this was marked Ready for Testing — check the live footer shows at least this version">Test version: v${escapeHTML(item.testVersion)}</span>`
     : "";
   const commentCount = (item.notes || []).length;
-  const editBtn = isInDevelopment
+  const editBtn = isLocked
     ? ""
     : `<button type="button" class="icon-btn edit-item-btn" data-id="${item.id}" title="Edit / comments">&#9998;${commentCount ? ` <span class="options-menu-count">${commentCount}</span>` : ""}</button>`;
   // Only relevant once a ticket is actually up on a feature branch — a
@@ -372,12 +390,12 @@ function cardHTML(item) {
   const attachmentBadge = attachmentCount
     ? `<span class="attachment-count-badge" title="${attachmentCount} attachment${attachmentCount === 1 ? "" : "s"}">&#128206; ${attachmentCount}</span>`
     : "";
-  const quickCommentBtn = isInDevelopment
+  const quickCommentBtn = isLocked
     ? ""
     : `<button type="button" class="icon-btn quick-comment-btn" data-id="${item.id}" title="Add a quick comment">&#128172;</button>`;
 
   return `
-    <article class="card${isInDevelopment ? " card-in-development" : ""}" data-id="${item.id}">
+    <article class="card${isLocked ? " card-in-development" : ""}" data-id="${item.id}">
       <div class="card-top">
         <div class="card-top-left">
           ${selectCb}
@@ -566,21 +584,60 @@ function notifyClaudeButtonHTML(project) {
   return mainBtn + newBtn;
 }
 
+// Same as NOTIFY_ROUTINE_STALE_MS above, but for the "Deploy to Main"
+// button's own project.deployRoutine.
+const DEPLOY_ROUTINE_STALE_MS = 20 * 60 * 1000;
+
 // Same "Notify Claude" gradient action, but for the opposite end of the
 // pipeline: items already tested and confirmed "Approved for Deployment"
 // (ready-to-publish) that are just waiting for someone to actually merge
 // their PRs to main. Same hidden-when-nothing-to-do rule as the Backlog
 // button above — there's nothing for this to do until a card reaches that
-// column.
+// column. Mirrors notifyClaudeButtonHTML's spinner/session-link treatment
+// via project.deployRoutine (written by notifyOnProjectReadyToDeploy) —
+// before this, clicking "Deploy to Main" gave no ongoing feedback at all
+// (a one-time alert(), then the button looked exactly like it hadn't been
+// clicked), so an in-flight deploy was indistinguishable from an unclicked
+// one. See cardHTML's own isDeploying for the matching per-item card lock.
 function deployNotifyButtonHTML(project) {
   const pid = project.id;
-  const deployCount = deployReadyCountForProject(pid);
-  if (!deployCount) return "";
-  return `<button type="button" class="notify-claude-btn deploy-notify-btn" data-project-id="${escapeHTML(pid)}">
-    <span class="material-symbols-outlined notify-claude-icon">rocket_launch</span>
-    <span class="notify-claude-label">Deploy to Main</span>
-    <span class="notify-claude-count-pill">${deployCount}</span>
-  </button>`;
+  const routine = project.deployRoutine;
+  const firedMs = routine ? tsMillis(routine.firedAt) : 0;
+  const isStale = routine?.status === "in-progress" && firedMs && (Date.now() - firedMs) > DEPLOY_ROUTINE_STALE_MS;
+  const inProgress = routine?.status === "in-progress" && !isStale;
+
+  // Same click-to-doc-write bridge as notifyClaudeButtonHTML's
+  // notifyOptimisticClicks — covers the gap before deployRoutine lands.
+  const clickedAt = deployOptimisticClicks[pid];
+  const optimisticPending = !inProgress && clickedAt && (Date.now() - clickedAt) < DEPLOY_OPTIMISTIC_STALE_MS;
+  if (clickedAt && !optimisticPending) delete deployOptimisticClicks[pid];
+
+  if (!inProgress && !optimisticPending) {
+    const deployCount = deployReadyCountForProject(pid);
+    if (!deployCount) return "";
+    return `<button type="button" class="notify-claude-btn deploy-notify-btn" data-project-id="${escapeHTML(pid)}">
+      <span class="material-symbols-outlined notify-claude-icon">rocket_launch</span>
+      <span class="notify-claude-label">Deploy to Main</span>
+      <span class="notify-claude-count-pill">${deployCount}</span>
+    </button>`;
+  }
+
+  if (optimisticPending) {
+    return `<button type="button" class="notify-claude-btn notify-claude-btn-working" disabled title="Sending to Claude&hellip;">
+      <span class="notify-claude-spinner"></span>
+      <span class="notify-claude-label">Working&hellip;</span>
+    </button>`;
+  }
+
+  const itemCountLabel = routine.itemCount || deployReadyCountForProject(pid);
+  const confirmed = !!routine.sessionUrl;
+  const mainBtnInner = `
+    <span class="notify-claude-spinner"></span>
+    <span class="notify-claude-label">${confirmed ? "Deploying&hellip;" : "Working&hellip;"}</span>
+    <span class="notify-claude-count-pill">${itemCountLabel}</span>`;
+  return confirmed
+    ? `<a href="${escapeHTML(routine.sessionUrl)}" target="_blank" rel="noopener" class="notify-claude-btn notify-claude-btn-working notify-claude-btn-clickable" title="View the Claude Code session merging the ${itemCountLabel} item(s) sent">${mainBtnInner}</a>`
+    : `<button type="button" class="notify-claude-btn notify-claude-btn-working" disabled title="A Claude Code session is merging the ${itemCountLabel} item(s) sent">${mainBtnInner}</button>`;
 }
 
 // The middle stage, between "Ready for Dev" and "Deploy to Main": moves
@@ -1143,14 +1200,25 @@ async function deployToFeature(pid) {
 // notifyOnProjectReadyToDeploy (see ../functions/index.js), which fires the
 // same Routine but with fire text that explicitly says these items are
 // already tested and just need their PRs merged to main.
+//
+// No confirmation alert() here anymore, same reasoning as requestNotify:
+// the Deploy to Main button itself now shows a persistent working/spinner
+// state (see deployNotifyButtonHTML) once projects/{id}.deployRoutine
+// reflects the click — a better, ongoing signal than a one-time dismissable
+// dialog that told you nothing about whether the deploy was still running.
 async function requestDeployNotify(pid) {
   const count = deployReadyCountForProject(pid);
   if (count === 0) {
     alert("Nothing in Approved for Deployment for this project yet — confirm an item's testing first.");
     return;
   }
+
+  // Show the spinning state immediately, without waiting on the
+  // notifyOnProjectReadyToDeploy round-trip — see deployOptimisticClicks.
+  deployOptimisticClicks[pid] = Date.now();
+  render();
+
   await setDoc(doc(db, "projects", pid), { deployNotifyRequestedAt: serverTimestamp() }, { merge: true });
-  alert(`Deploy requested for ${count} item${count === 1 ? "" : "s"} in Approved for Deployment. A Claude Code session starts merging them to main (see backlog-tracker/README.md for the Cloud Functions this depends on if this isn't happening).`);
 }
 
 async function setProjectName(id, name) {
