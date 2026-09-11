@@ -15,11 +15,20 @@ import {
   getFirestore, collection, addDoc, updateDoc, deleteDoc, setDoc, doc,
   onSnapshot, query, orderBy, serverTimestamp, writeBatch, arrayUnion,
 } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore.js";
+import {
+  getStorage, ref as storageRef, uploadBytes, getDownloadURL, deleteObject,
+} from "https://www.gstatic.com/firebasejs/10.13.2/firebase-storage.js";
 import { firebaseConfig } from "./firebase-config.js";
 import { APP_VERSION } from "./version.js";
 
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
+// Backs the Edit item modal's Attachments block (screenshots/screen
+// recordings — see uploadItemAttachment) — needs storage.rules deployed
+// (part of the deploy workflow's --only list) and Firebase Storage enabled
+// for backlog-tracker-e4ed2, same one-time manual step Cloud Functions
+// needed; see README.md "Attachments (screenshots & screen recordings)".
+const storage = getStorage(app);
 const itemsRef = collection(db, "backlogItems");
 const projectsRef = collection(db, "projects");
 const interfacesRef = collection(db, "interfaces");
@@ -216,7 +225,19 @@ function cardHTML(item) {
   const isTesting = item.status === "ready-for-testing";
   const isLiveBranch = item.status === "ready-to-publish";
   const isBacklog = item.status === "backlog";
-  const canDelete = isBacklog;
+  // A Backlog card the Routine has already packaged a fix for (patchFiles +
+  // patchReady written, see ROUTINE_INSTRUCTIONS.md) but that
+  // backlog-automation.yml hasn't picked up yet (it polls patchReady every
+  // ~2 minutes) sits in this column for a short window with real,
+  // in-flight work behind it. Editing, moving, or deleting it in that
+  // window would silently orphan whatever the Routine just wrote — so it
+  // locks: no checkbox, no edit/comment/move/delete, just a passive hint,
+  // the same "show a status line instead of a live control" treatment
+  // already used for a Live-on-Feature-Branch card's own merge-pending-hint
+  // below. It naturally unlocks itself the moment the automation flips
+  // status to ready-for-testing, since isBacklog goes false then too.
+  const isInDevelopment = isBacklog && !!item.patchReady;
+  const canDelete = isBacklog && !isInDevelopment;
 
   // Backlog cards select for "Ready for Dev"; Ready for Testing cards
   // (except noDeploymentRequired ones, which skip the feature-branch step
@@ -225,7 +246,7 @@ function cardHTML(item) {
   // getDeploySelectedSet). No other column gets a checkbox — nothing else
   // in the pipeline acts on a hand-picked subset.
   const pid = item.projectId || GENERAL_PROJECT_ID;
-  const selectCb = isBacklog
+  const selectCb = (isBacklog && !isInDevelopment)
     ? `<input type="checkbox" class="card-select-cb" data-id="${item.id}" data-project-id="${escapeHTML(pid)}" title="Select for Ready for Dev" ${getSelectedSet(pid).has(item.id) ? "checked" : ""}>`
     : (isTesting && !item.noDeploymentRequired
         ? `<input type="checkbox" class="card-deploy-select-cb" data-id="${item.id}" data-project-id="${escapeHTML(pid)}" title="Select for Approved for Deployment" ${getDeploySelectedSet(pid).has(item.id) ? "checked" : ""}>`
@@ -276,9 +297,16 @@ function cardHTML(item) {
   const archiveBtn = isPublished
     ? `<button type="button" class="icon-btn archive-btn" data-id="${item.id}" title="Archive">&#128451;</button>`
     : "";
-  const canRight = idx < COL_KEYS.length - 1 && !isTesting && !isLiveBranch;
+  const canRight = idx < COL_KEYS.length - 1 && !isTesting && !isLiveBranch && !isInDevelopment;
   const rightBtn = canRight
     ? `<button type="button" class="icon-btn move-btn" data-id="${item.id}" data-dir="1" title="Move forward">&rarr;</button>`
+    : "";
+  // Passive, not a button — same "show a status line instead of a live
+  // control" treatment as mergeBtn above, for the short window between the
+  // Routine setting patchReady and backlog-automation.yml actually picking
+  // it up (see isInDevelopment above).
+  const inDevelopmentHint = isInDevelopment
+    ? `<span class="in-development-hint" title="Claude has already packaged a fix for this — it's locked until backlog-automation.yml opens the PR and moves it to Ready for Testing">In development — locked</span>`
     : "";
   // Ties this card back to whichever other tickets are meant to ship
   // alongside it — see the Deployments page for the full group + progress.
@@ -298,7 +326,9 @@ function cardHTML(item) {
     ? `<span class="test-version-badge" title="backlog-tracker's own version when this was marked Ready for Testing — check the live footer shows at least this version">Test version: v${escapeHTML(item.testVersion)}</span>`
     : "";
   const commentCount = (item.notes || []).length;
-  const editBtn = `<button type="button" class="icon-btn edit-item-btn" data-id="${item.id}" title="Edit / comments">&#9998;${commentCount ? ` <span class="options-menu-count">${commentCount}</span>` : ""}</button>`;
+  const editBtn = isInDevelopment
+    ? ""
+    : `<button type="button" class="icon-btn edit-item-btn" data-id="${item.id}" title="Edit / comments">&#9998;${commentCount ? ` <span class="options-menu-count">${commentCount}</span>` : ""}</button>`;
   // Only relevant once a ticket is actually up on a feature branch — a
   // rawcdn.githack.com link (or a PR URL when the page can't be
   // rawcdn.githack'd directly) to click through and confirm before hitting
@@ -334,8 +364,20 @@ function cardHTML(item) {
       </div>`
     : `<p class="card-desc">${escapeHTML(item.desc)}</p>`;
 
+  // A screenshot or screen recording attached from the Edit item modal (see
+  // uploadItemAttachment) — same "small icon-adjacent count" treatment as
+  // commentCount/editBtn above, just non-interactive here since attaching
+  // only happens from the full modal, not the card itself.
+  const attachmentCount = (item.attachments || []).length;
+  const attachmentBadge = attachmentCount
+    ? `<span class="attachment-count-badge" title="${attachmentCount} attachment${attachmentCount === 1 ? "" : "s"}">&#128206; ${attachmentCount}</span>`
+    : "";
+  const quickCommentBtn = isInDevelopment
+    ? ""
+    : `<button type="button" class="icon-btn quick-comment-btn" data-id="${item.id}" title="Add a quick comment">&#128172;</button>`;
+
   return `
-    <article class="card" data-id="${item.id}">
+    <article class="card${isInDevelopment ? " card-in-development" : ""}" data-id="${item.id}">
       <div class="card-top">
         <div class="card-top-left">
           ${selectCb}
@@ -349,12 +391,13 @@ function cardHTML(item) {
       <div class="card-footer">
         <div class="card-footer-left">
           <span class="card-cat">${escapeHTML(item.category || "Uncategorised")}</span>
-          <button type="button" class="icon-btn quick-comment-btn" data-id="${item.id}" title="Add a quick comment">&#128172;</button>
+          ${attachmentBadge}
+          ${quickCommentBtn}
         </div>
         <div class="card-move">${archiveBtn}${deleteBtn}</div>
       </div>
       ${testLinkHTML}
-      ${approveBtn}${mergeBtn}
+      ${approveBtn}${mergeBtn}${inDevelopmentHint}
     </article>`;
 }
 
@@ -779,7 +822,7 @@ onSnapshot(query(itemsRef, orderBy("createdAt", "desc")), (snap) => {
   if (archiveProjectId) renderArchivePage();
   if (archivedProjectsPage && !archivedProjectsPage.hidden) renderArchivedProjectsPage();
   if (deploymentsProjectId) renderDeploymentsPage();
-  if (editingItemId) renderEiNotes();
+  if (editingItemId) { renderEiNotes(); renderEiAttachments(); }
 }, (err) => {
   console.error("backlog-tracker: items listener error", err);
 });
@@ -937,6 +980,55 @@ async function addItemComment(id, text) {
 async function setItemPreviewUrl(id, url) {
   const trimmed = (url || "").trim();
   await updateDoc(doc(db, "backlogItems", id), { previewUrl: trimmed || null, updatedAt: serverTimestamp() });
+}
+
+// Attachments (screenshots & screen recordings) — see the Edit item
+// modal's own Attachments block below. Stored in Firebase Storage under
+// attachments/{itemId}/{fileName}, with only the resulting metadata (not
+// the file itself) written onto the backlogItems doc, same "small,
+// bounded value on the doc, real payload elsewhere" split Firestore
+// already forces for anything past a few hundred KB. storage.rules caps
+// size/content-type at the Storage layer, matching firestore.rules'
+// existing open-but-validated posture — see that file's own comments.
+const MAX_SCREENSHOT_BYTES = 15 * 1024 * 1024;
+const MAX_RECORDING_BYTES = 100 * 1024 * 1024;
+
+function sanitizeAttachmentFileName(name) {
+  return String(name || "attachment").replace(/[^a-zA-Z0-9.\-_]/g, "_").slice(-120);
+}
+
+// `uploadedAt` is a plain client Date, not serverTimestamp(), for the same
+// reason addItemComment's `at` is — see that function's own comment.
+async function uploadItemAttachment(id, file, type) {
+  const path = `attachments/${id}/${Date.now()}-${sanitizeAttachmentFileName(file.name)}`;
+  const fileRef = storageRef(storage, path);
+  await uploadBytes(fileRef, file, { contentType: file.type || undefined });
+  const url = await getDownloadURL(fileRef);
+  await updateDoc(doc(db, "backlogItems", id), {
+    attachments: arrayUnion({
+      type, url, path, name: file.name || sanitizeAttachmentFileName(file.name), size: file.size || 0, uploadedAt: new Date(),
+    }),
+    updatedAt: serverTimestamp(),
+  });
+}
+
+// Filters the array down rather than arrayRemove(), which needs an
+// exact-match object (including the `uploadedAt` Date, which doesn't
+// round-trip identically) — same reasoning as any other "remove one entry
+// from a stored array of objects" write in this app.
+async function removeItemAttachment(id, attachment) {
+  const item = allItems.find((i) => i.id === id);
+  if (!item) return;
+  const remaining = (item.attachments || []).filter((a) => a.path !== attachment.path);
+  await updateDoc(doc(db, "backlogItems", id), { attachments: remaining, updatedAt: serverTimestamp() });
+  try {
+    await deleteObject(storageRef(storage, attachment.path));
+  } catch (err) {
+    // The Firestore write above is what the UI reflects; a failure here
+    // just leaves an orphaned file in Storage (harmless, not user-visible)
+    // rather than something worth surfacing as an error.
+    console.warn("backlog-tracker: couldn't delete attachment from Storage", err);
+  }
 }
 
 async function addProject(name, programId) {
@@ -1412,6 +1504,10 @@ const eiCategorySelect = document.getElementById("ei-category-select");
 const eiNoDeployCheckbox = document.getElementById("ei-no-deploy-checkbox");
 const eiNotesList = document.getElementById("ei-notes-list");
 const eiCommentInput = document.getElementById("ei-comment-input");
+const eiAttachmentsList = document.getElementById("ei-attachments-list");
+const eiAttachScreenshotInput = document.getElementById("ei-attach-screenshot-input");
+const eiRecordScreenBtn = document.getElementById("ei-record-screen-btn");
+const eiAttachHint = document.getElementById("ei-attach-hint");
 
 eiCategorySelect.innerHTML = CATEGORIES.map((c) => `<option value="${escapeHTML(c)}">${escapeHTML(c)}</option>`).join("");
 
@@ -1443,6 +1539,41 @@ function renderEiNotes() {
     : '<p class="interface-row-empty">No comments yet.</p>';
 }
 
+// Attachments (screenshots & screen recordings) — see uploadItemAttachment/
+// removeItemAttachment above. Image attachments render as a clickable
+// thumbnail (opens the full-size file in a new tab); a video attachment
+// gets an inline <video> with native controls instead, since a still
+// thumbnail wouldn't convey much for a screen recording.
+function eiAttachmentItemHTML(att, idx) {
+  const label = escapeHTML(att.name || (att.type === "video" ? "Screen recording" : "Screenshot"));
+  const preview = att.type === "video"
+    ? `<video src="${escapeHTML(att.url)}" class="ei-attachment-thumb" controls muted></video>`
+    : `<a href="${escapeHTML(att.url)}" target="_blank" rel="noopener"><img src="${escapeHTML(att.url)}" alt="${label}" class="ei-attachment-thumb"></a>`;
+  return `<div class="ei-attachment-item">
+    ${preview}
+    <div class="ei-attachment-meta">
+      <span class="ei-attachment-name" title="${label}">${label}</span>
+      <a href="${escapeHTML(att.url)}" target="_blank" rel="noopener" class="ei-attachment-open-link">Open</a>
+    </div>
+    <button type="button" class="icon-btn ei-attachment-remove-btn" data-idx="${idx}" title="Remove attachment">&times;</button>
+  </div>`;
+}
+
+function renderEiAttachments() {
+  if (!editingItemId) return;
+  const item = allItems.find((i) => i.id === editingItemId);
+  const attachments = (item && item.attachments) || [];
+  eiAttachmentsList.innerHTML = attachments.length
+    ? attachments.map((a, idx) => eiAttachmentItemHTML(a, idx)).join("")
+    : '<p class="interface-row-empty">No attachments yet.</p>';
+}
+
+function setEiAttachHint(text) {
+  if (!eiAttachHint) return;
+  eiAttachHint.textContent = text || "";
+  eiAttachHint.hidden = !text;
+}
+
 function openEditItemModal(id) {
   editingItemId = id;
   const item = allItems.find((i) => i.id === id);
@@ -1454,10 +1585,17 @@ function openEditItemModal(id) {
   eiNoDeployCheckbox.checked = !!item.noDeploymentRequired;
   eiCommentInput.value = "";
   renderEiNotes();
+  renderEiAttachments();
+  setEiAttachHint("");
   eiBackdrop.hidden = false;
   eiTitleInput.focus();
 }
 function closeEditItemModal() {
+  // Closing mid-recording doesn't lose the recording — stopScreenRecording
+  // captures the target item id in its own closure at start time (see
+  // startScreenRecording), so the upload still lands on the right item
+  // even after editingItemId below goes back to null.
+  if (eiScreenRecorder && eiScreenRecorder.state === "recording") stopScreenRecording();
   eiBackdrop.hidden = true;
   editingItemId = null;
 }
@@ -1487,6 +1625,113 @@ document.getElementById("ei-comment-submit").addEventListener("click", () => {
   if (!text.trim()) return;
   addItemComment(editingItemId, text);
   eiCommentInput.value = "";
+});
+
+// ── Attachments — a picked screenshot uploads immediately on selection
+// (no separate "Attach" click to remember), same one-step feel as the
+// comment box's own submit-on-click. See uploadItemAttachment above for
+// the Storage write itself. ────────────────────────────────────────────
+eiAttachmentsList.addEventListener("click", (e) => {
+  const btn = e.target.closest(".ei-attachment-remove-btn");
+  if (!btn || !editingItemId) return;
+  const item = allItems.find((i) => i.id === editingItemId);
+  const att = item && (item.attachments || [])[Number(btn.dataset.idx)];
+  if (!att) return;
+  if (!confirm(`Remove "${att.name || "this attachment"}"?`)) return;
+  removeItemAttachment(editingItemId, att);
+});
+
+eiAttachScreenshotInput.addEventListener("change", async () => {
+  const file = eiAttachScreenshotInput.files[0];
+  eiAttachScreenshotInput.value = "";
+  if (!file || !editingItemId) return;
+  if (!file.type.startsWith("image/")) { alert("Please choose an image file."); return; }
+  if (file.size > MAX_SCREENSHOT_BYTES) { alert("That screenshot is too large (max 15MB)."); return; }
+  const id = editingItemId;
+  setEiAttachHint("Uploading screenshot…");
+  try {
+    await uploadItemAttachment(id, file, "image");
+    setEiAttachHint("");
+  } catch (err) {
+    setEiAttachHint("");
+    alert("Couldn't upload that screenshot: " + (err && err.message ? err.message : err));
+  }
+});
+
+// Screen recording — captured with the browser's own getDisplayMedia +
+// MediaRecorder, no third-party library. `targetItemId`/`chunks`/`stream`
+// are captured in this closure rather than read from the (possibly by-then
+// null) editingItemId global, so a recording started against one item
+// still uploads correctly even if the modal is closed (or, in principle,
+// reopened on a different item) before the user hits Stop — see
+// closeEditItemModal's own call into stopScreenRecording.
+let eiScreenRecorder = null;
+
+function setEiRecordButtonState(recording) {
+  eiRecordScreenBtn.classList.toggle("recording", recording);
+  eiRecordScreenBtn.textContent = recording ? "⏹ Stop recording" : "⏺ Record screen";
+}
+
+async function startScreenRecording() {
+  if (!editingItemId) return;
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) {
+    alert("Screen recording isn't supported in this browser.");
+    return;
+  }
+  const targetItemId = editingItemId;
+  let stream;
+  try {
+    stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
+  } catch (err) {
+    // The user cancelled the browser's own share-picker — not an error.
+    return;
+  }
+  const chunks = [];
+  const mimeType = (window.MediaRecorder && MediaRecorder.isTypeSupported("video/webm;codecs=vp9"))
+    ? "video/webm;codecs=vp9" : "video/webm";
+  const recorder = new MediaRecorder(stream, { mimeType });
+  recorder.ondataavailable = (e) => { if (e.data && e.data.size) chunks.push(e.data); };
+  recorder.onstop = async () => {
+    stream.getTracks().forEach((t) => t.stop());
+    setEiRecordButtonState(false);
+    const blob = new Blob(chunks, { type: mimeType });
+    if (blob.size > MAX_RECORDING_BYTES) {
+      setEiAttachHint("");
+      alert("That recording is too large (max 100MB) — try a shorter one.");
+      return;
+    }
+    const file = new File([blob], `screen-recording-${Date.now()}.webm`, { type: mimeType });
+    setEiAttachHint("Uploading screen recording…");
+    try {
+      await uploadItemAttachment(targetItemId, file, "video");
+    } catch (err) {
+      alert("Couldn't upload that screen recording: " + (err && err.message ? err.message : err));
+    } finally {
+      setEiAttachHint("");
+    }
+  };
+  // The user can also end the capture from the browser's own "Stop
+  // sharing" bar instead of this button — react the same way either path.
+  stream.getVideoTracks()[0].addEventListener("ended", () => {
+    if (recorder.state !== "inactive") recorder.stop();
+  });
+  eiScreenRecorder = recorder;
+  recorder.start();
+  setEiRecordButtonState(true);
+  setEiAttachHint("Recording your screen — click Stop recording when done.");
+}
+
+function stopScreenRecording() {
+  if (eiScreenRecorder && eiScreenRecorder.state !== "inactive") eiScreenRecorder.stop();
+  eiScreenRecorder = null;
+}
+
+eiRecordScreenBtn.addEventListener("click", () => {
+  if (eiScreenRecorder && eiScreenRecorder.state === "recording") {
+    stopScreenRecording();
+  } else {
+    startScreenRecording();
+  }
 });
 
 // ── Quick comment modal — comment-only, reached from the card's own small
@@ -1549,13 +1794,13 @@ function openForm(projectId) {
 function closeForm() {
   niBackdrop.hidden = true;
   activeNewItemProjectId = null;
-  if (listening) { stopRequested = true; try { recognition.stop(); } catch (err) {} }
+  niDictation.stop();
   const descEl = document.getElementById("ni-desc-input");
   descEl.value = "";
   descEl.style.height = "";
   document.querySelectorAll(".type-opt").forEach((b) => b.classList.remove("active"));
   document.querySelector('.type-opt[data-type="feature"]').classList.add("active");
-  showMicError("");
+  niDictation.clearError();
 }
 
 document.getElementById("ni-cancel").addEventListener("click", closeForm);
@@ -2177,38 +2422,16 @@ document.getElementById("if-submit").addEventListener("click", async () => {
   closeInterfaceModal();
 });
 
-// ── VOICE DICTATION (New Item description) ──────────────────────────────
+// ── VOICE DICTATION — New Item description, and (per a viewer request on
+// the comment-modal-restyle ticket, "support the ability to record ... as
+// we do with all the other fields") every comment box too: quick comment
+// and the Edit item modal's own comment field. ──────────────────────────
 // Same approach as the Claude Artifact Prototype Pipeline board: the Web
 // Speech API runs entirely in the browser, feature-detected and hidden
-// where unsupported. suggestType()/suggestCategory() are plain keyword
-// heuristics — a starting point, not a final answer, same as manually
-// picking the toggle/dropdown.
+// where unsupported. suggestType()/suggestCategory() (used only for the
+// New Item field) are plain keyword heuristics — a starting point, not a
+// final answer, same as manually picking the toggle/dropdown.
 const SpeechRecognitionCtor = window.SpeechRecognition || window.webkitSpeechRecognition;
-let recognition = null;
-let listening = false;
-// Chrome/Android's SpeechRecognition ends itself after a few seconds of
-// silence even with continuous:true (surfaces as a "no-speech" error, then
-// "end") — that's the "mic cuts out after ~10s" behaviour. stopRequested
-// distinguishes that automatic, unwanted end from one the user actually
-// asked for (clicking the mic again, closing the form, or submitting), so
-// onend below knows whether to silently restart or really stop.
-let stopRequested = false;
-// Counts consecutive auto-restarts (see onend below) that produced not one
-// onresult callback — i.e. the mic looks like it's listening but nothing is
-// ever actually being heard, as opposed to a normal pause between sentences
-// (which still restarts, but onresult fires again once speech resumes and
-// clears this back to 0). Without this, a genuinely broken capture would
-// now restart silently forever with zero feedback, which is worse than the
-// old ~10s cutoff — at least that was visible. After a few silent restarts
-// in a row this gives up for real and says so.
-let silentRestartStreak = 0;
-
-function showMicError(msg) {
-  const el = document.getElementById("ni-mic-error");
-  if (!msg) { el.textContent = ""; el.classList.remove("on"); return; }
-  el.textContent = msg;
-  el.classList.add("on");
-}
 
 function autoGrow(el) {
   el.style.height = "auto";
@@ -2244,174 +2467,228 @@ function setTypeToggle(type) {
   if (btn) btn.classList.add("active");
 }
 
-function wireMicButton() {
-  const micBtn = document.getElementById("ni-mic-btn");
-  if (!SpeechRecognitionCtor) {
-    micBtn.hidden = true;
-    showMicError("Dictation isn't supported in this browser — Chrome or Edge support it, or you can just type instead.");
-    return;
+// One instance of this per dictated field (New Item description, quick
+// comment, Edit item comment) — each gets its own independent
+// recognition/listening/stopRequested/silentRestartStreak state via this
+// closure, instead of one shared set of module-level variables that only
+// one field at a time could use. Behavior/comments below are otherwise
+// unchanged from the original New-Item-only implementation.
+function createDictationController({ textareaEl, micBtn, hintEl, errorEl, onStop }) {
+  let recognition = null;
+  let listening = false;
+  // Chrome/Android's SpeechRecognition ends itself after a few seconds of
+  // silence even with continuous:true (surfaces as a "no-speech" error,
+  // then "end") — that's the "mic cuts out after ~10s" behaviour.
+  // stopRequested distinguishes that automatic, unwanted end from one the
+  // user actually asked for (clicking the mic again, closing the form, or
+  // submitting), so onend below knows whether to silently restart or
+  // really stop.
+  let stopRequested = false;
+  // Counts consecutive auto-restarts (see onend below) that produced not
+  // one onresult callback — i.e. the mic looks like it's listening but
+  // nothing is ever actually being heard, as opposed to a normal pause
+  // between sentences (which still restarts, but onresult fires again once
+  // speech resumes and clears this back to 0). Without this, a genuinely
+  // broken capture would restart silently forever with zero feedback,
+  // which is worse than the old ~10s cutoff — at least that was visible.
+  // After a few silent restarts in a row this gives up for real and says so.
+  let silentRestartStreak = 0;
+
+  function showError(msg) {
+    if (!errorEl) return;
+    if (!msg) { errorEl.textContent = ""; errorEl.classList.remove("on"); return; }
+    errorEl.textContent = msg;
+    errorEl.classList.add("on");
   }
-  micBtn.hidden = false;
-  micBtn.addEventListener("click", () => {
-    if (listening) { stopRequested = true; recognition && recognition.stop(); return; }
-    requestMicAndListen();
-  });
-}
 
-// Chrome won't reliably prompt for microphone permission from inside
-// SpeechRecognition alone — asking via getUserMedia first forces a real
-// permission prompt (or a real, specific error) before handing off.
-function requestMicAndListen() {
-  showMicError("");
-  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { startListening(); return; }
-  navigator.mediaDevices.getUserMedia({ audio: true }).then((stream) => {
-    stream.getTracks().forEach((t) => t.stop());
-    // Reported live on Android Chrome: the mic visibly starts "listening"
-    // (button goes red/pulsing) but never transcribes a word — consistent
-    // with SpeechRecognition silently failing to (re-)open the microphone
-    // when it's asked to grab it again immediately after this probe
-    // stream's tracks are stopped, before the OS has actually released the
-    // hardware. A short delay here gives that teardown time to finish
-    // before recognition.start() tries to claim the mic itself.
-    setTimeout(() => startListening(false), 250);
-  }).catch((err) => {
-    const name = err && err.name;
-    let msg = "Microphone access didn't start — you can still type instead.";
-    if (name === "NotAllowedError" || name === "PermissionDeniedError") {
-      msg = "Microphone access is blocked for this page — check your browser's site permissions, then try again.";
-    } else if (name === "NotFoundError" || name === "DevicesNotFoundError") {
-      msg = "No microphone was found on this device.";
-    } else if (name === "SecurityError") {
-      msg = "Microphone access needs a secure (https) page — it isn't available here.";
-    }
-    showMicError(msg);
-  });
-}
-
-function startListening(isRestart) {
-  if (!SpeechRecognitionCtor) return;
-  if (listening && recognition) { try { recognition.stop(); } catch (err) {} }
-  stopRequested = false;
-  if (!isRestart) silentRestartStreak = 0;
-  const desc = document.getElementById("ni-desc-input");
-  const micBtn = document.getElementById("ni-mic-btn");
-  const hint = document.getElementById("ni-listening-hint");
-  let baseline = desc.value.trim();
-  if (baseline) baseline += " ";
-  recognition = new SpeechRecognitionCtor();
-  recognition.lang = "en-US";
-  // continuous:true is a known bad actor on Android Chrome — reported live:
-  // speech gets tripled/repeated 10x over, then it dies anyway around 10s.
-  // Android's continuous-mode implementation is documented to redeliver or
-  // duplicate prior results across its own internal keep-alive restarts,
-  // which then compounds with this file's own baseline-carrying restart
-  // logic (baseline already has the old text, and if the native results
-  // array ALSO still contains it, it doubles up every cycle). continuous:
-  // false makes each session a single short utterance with a clean, fresh
-  // results array every time — onend below already restarts immediately
-  // after every session end regardless, so dictation still reads as
-  // continuous to the user; it's just genuinely fresh state underneath
-  // instead of relying on Android's own long-running continuous handling.
-  recognition.continuous = false;
-  recognition.interimResults = true;
-  recognition.onresult = (e) => {
-    // Any result at all — even an interim one — proves audio is actually
-    // reaching the recognizer, so clear the "hearing nothing" streak.
-    silentRestartStreak = 0;
-    let finalText = "", interimText = "";
-    for (let i = 0; i < e.results.length; i++) {
-      const chunk = e.results[i][0].transcript;
-      if (e.results[i].isFinal) finalText += chunk + " "; else interimText += chunk;
-    }
-    desc.value = (baseline + finalText + interimText).replace(/\s+/g, " ").replace(/^\s+/, "");
-    autoGrow(desc);
-  };
-  recognition.onerror = (e) => {
-    const code = e && e.error;
-    if (code === "not-allowed" || code === "service-not-allowed") {
-      showMicError("Microphone access is blocked for this page — check your browser's site permissions and try again.");
-      stopRequested = true;
-    } else if (code === "audio-capture") {
-      showMicError("No microphone could be accessed.");
-      stopRequested = true;
-    } else if (code === "network") {
-      showMicError("Dictation needs an internet connection to convert speech to text — check your connection and try again.");
-      stopRequested = true;
-    } else if (code === "no-speech" || code === "aborted") {
-      // Expected/transient, not a real failure: "no-speech" is exactly the
-      // browser's own silence timeout (the "cuts out after ~10s" report),
-      // and "aborted" fires when we stop it ourselves. Leave stopRequested
-      // as-is so onend below restarts through a silence and only really
-      // stops when the user (or closeForm/submit) actually asked it to.
-    } else if (code) {
-      showMicError(`Dictation stopped (${code}) — you can keep typing instead.`);
-      stopRequested = true;
-    }
-  };
-  recognition.onend = () => {
-    // Detach this now-finished instance's own handlers before doing
-    // anything else. Both branches below end up calling something that
-    // may call .stop() on this same (already-ended) instance again — the
-    // restart branch's startListening() re-enters its own guard against
-    // "already listening", and the stop branch's stopListening() calls
-    // recognition.stop() unconditionally — and without this, that second
-    // .stop() re-fires this exact onend closure while it's still on the
-    // stack, which re-reads `recognition`/`stopRequested` mid-flight and
-    // recurses (verified: an unguarded version of this spun into thousands
-    // of recognition instances off a single simulated restart in testing).
-    // Nulling the handlers first makes any such re-entrant call inert.
-    const finished = recognition;
-    if (finished) { finished.onend = null; finished.onerror = null; finished.onresult = null; }
-    if (stopRequested) { stopListening(); return; }
-    silentRestartStreak++;
-    if (silentRestartStreak >= 4) {
-      // Several restarts in a row with not one word heard — this isn't a
-      // normal pause between sentences (onresult would have cleared the
-      // streak), it's the mic not actually being captured. Say so instead
-      // of silently spinning forever.
-      showMicError("Not picking up any speech from the microphone — check the mic is working and permitted, or just type instead.");
+  function startListening(isRestart) {
+    if (!SpeechRecognitionCtor) return;
+    if (listening && recognition) { try { recognition.stop(); } catch (err) {} }
+    stopRequested = false;
+    if (!isRestart) silentRestartStreak = 0;
+    let baseline = textareaEl.value.trim();
+    if (baseline) baseline += " ";
+    recognition = new SpeechRecognitionCtor();
+    recognition.lang = "en-US";
+    // continuous:true is a known bad actor on Android Chrome — reported
+    // live: speech gets tripled/repeated 10x over, then it dies anyway
+    // around 10s. Android's continuous-mode implementation is documented
+    // to redeliver or duplicate prior results across its own internal
+    // keep-alive restarts, which then compounds with this file's own
+    // baseline-carrying restart logic (baseline already has the old text,
+    // and if the native results array ALSO still contains it, it doubles
+    // up every cycle). continuous:false makes each session a single short
+    // utterance with a clean, fresh results array every time — onend below
+    // already restarts immediately after every session end regardless, so
+    // dictation still reads as continuous to the user; it's just genuinely
+    // fresh state underneath instead of relying on Android's own
+    // long-running continuous handling.
+    recognition.continuous = false;
+    recognition.interimResults = true;
+    recognition.onresult = (e) => {
+      // Any result at all — even an interim one — proves audio is
+      // actually reaching the recognizer, so clear the "hearing nothing"
+      // streak.
+      silentRestartStreak = 0;
+      let finalText = "", interimText = "";
+      for (let i = 0; i < e.results.length; i++) {
+        const chunk = e.results[i][0].transcript;
+        if (e.results[i].isFinal) finalText += chunk + " "; else interimText += chunk;
+      }
+      textareaEl.value = (baseline + finalText + interimText).replace(/\s+/g, " ").replace(/^\s+/, "");
+      autoGrow(textareaEl);
+    };
+    recognition.onerror = (e) => {
+      const code = e && e.error;
+      if (code === "not-allowed" || code === "service-not-allowed") {
+        showError("Microphone access is blocked for this page — check your browser's site permissions and try again.");
+        stopRequested = true;
+      } else if (code === "audio-capture") {
+        showError("No microphone could be accessed.");
+        stopRequested = true;
+      } else if (code === "network") {
+        showError("Dictation needs an internet connection to convert speech to text — check your connection and try again.");
+        stopRequested = true;
+      } else if (code === "no-speech" || code === "aborted") {
+        // Expected/transient, not a real failure: "no-speech" is exactly
+        // the browser's own silence timeout (the "cuts out after ~10s"
+        // report), and "aborted" fires when we stop it ourselves. Leave
+        // stopRequested as-is so onend below restarts through a silence
+        // and only really stops when the user (or closeForm/submit)
+        // actually asked it to.
+      } else if (code) {
+        showError(`Dictation stopped (${code}) — you can keep typing instead.`);
+        stopRequested = true;
+      }
+    };
+    recognition.onend = () => {
+      // Detach this now-finished instance's own handlers before doing
+      // anything else. Both branches below end up calling something that
+      // may call .stop() on this same (already-ended) instance again — the
+      // restart branch's startListening() re-enters its own guard against
+      // "already listening", and the stop branch's stopListening() calls
+      // recognition.stop() unconditionally — and without this, that second
+      // .stop() re-fires this exact onend closure while it's still on the
+      // stack, which re-reads `recognition`/`stopRequested` mid-flight and
+      // recurses (verified: an unguarded version of this spun into
+      // thousands of recognition instances off a single simulated restart
+      // in testing). Nulling the handlers first makes any such re-entrant
+      // call inert.
+      const finished = recognition;
+      if (finished) { finished.onend = null; finished.onerror = null; finished.onresult = null; }
+      if (stopRequested) { stopListening(); return; }
+      silentRestartStreak++;
+      if (silentRestartStreak >= 4) {
+        // Several restarts in a row with not one word heard — this isn't a
+        // normal pause between sentences (onresult would have cleared the
+        // streak), it's the mic not actually being captured. Say so
+        // instead of silently spinning forever.
+        showError("Not picking up any speech from the microphone — check the mic is working and permitted, or just type instead.");
+        stopListening();
+        return;
+      }
+      // The browser ended this recognition session on its own (silence
+      // timeout is the common case) but nobody asked to stop — restart
+      // immediately so dictation feels continuous. textareaEl.value
+      // already holds everything transcribed so far, and startListening()
+      // re-reads it as the new baseline, so nothing is lost across the
+      // restart.
+      try { startListening(true); } catch (err) { stopListening(); }
+    };
+    listening = true;
+    micBtn.classList.add("listening");
+    micBtn.innerHTML = "&#9209;"; // ⏹ — unambiguous "tap to stop", not just a color change
+    micBtn.title = "Stop dictation";
+    micBtn.setAttribute("aria-label", "Stop dictation");
+    if (hintEl) hintEl.classList.add("on");
+    try { recognition.start(); } catch (err) {
+      showError("Dictation didn't start — you can keep typing instead.");
       stopListening();
-      return;
     }
-    // The browser ended this recognition session on its own (silence
-    // timeout is the common case) but nobody asked to stop — restart
-    // immediately so dictation feels continuous. desc.value already holds
-    // everything transcribed so far, and startListening() re-reads it as
-    // the new baseline, so nothing is lost across the restart.
-    try { startListening(true); } catch (err) { stopListening(); }
-  };
-  listening = true;
-  micBtn.classList.add("listening");
-  micBtn.innerHTML = "&#9209;"; // ⏹ — unambiguous "tap to stop", not just a color change
-  micBtn.title = "Stop dictation";
-  micBtn.setAttribute("aria-label", "Stop dictation");
-  hint.classList.add("on");
-  try { recognition.start(); } catch (err) {
-    showMicError("Dictation didn't start — you can keep typing instead.");
-    stopListening();
   }
-}
 
-function stopListening() {
-  listening = false;
-  stopRequested = false;
-  const micBtn = document.getElementById("ni-mic-btn");
-  const hint = document.getElementById("ni-listening-hint");
-  if (micBtn) {
+  function stopListening() {
+    listening = false;
+    stopRequested = false;
     micBtn.classList.remove("listening");
     micBtn.innerHTML = "&#127908;"; // 🎤
     micBtn.title = "Dictate";
     micBtn.setAttribute("aria-label", "Dictate");
+    if (hintEl) hintEl.classList.remove("on");
+    if (recognition) { try { recognition.stop(); } catch (err) {} }
+    if (onStop && textareaEl.value.trim()) onStop(textareaEl.value);
   }
-  if (hint) hint.classList.remove("on");
-  if (recognition) { try { recognition.stop(); } catch (err) {} }
-  const descEl = document.getElementById("ni-desc-input");
-  if (descEl && descEl.value.trim()) {
-    setTypeToggle(suggestType(descEl.value));
+
+  // Chrome won't reliably prompt for microphone permission from inside
+  // SpeechRecognition alone — asking via getUserMedia first forces a real
+  // permission prompt (or a real, specific error) before handing off.
+  function requestMicAndListen() {
+    showError("");
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { startListening(); return; }
+    navigator.mediaDevices.getUserMedia({ audio: true }).then((stream) => {
+      stream.getTracks().forEach((t) => t.stop());
+      // Reported live on Android Chrome: the mic visibly starts
+      // "listening" (button goes red/pulsing) but never transcribes a
+      // word — consistent with SpeechRecognition silently failing to
+      // (re-)open the microphone when it's asked to grab it again
+      // immediately after this probe stream's tracks are stopped, before
+      // the OS has actually released the hardware. A short delay here
+      // gives that teardown time to finish before recognition.start()
+      // tries to claim the mic itself.
+      setTimeout(() => startListening(false), 250);
+    }).catch((err) => {
+      const name = err && err.name;
+      let msg = "Microphone access didn't start — you can still type instead.";
+      if (name === "NotAllowedError" || name === "PermissionDeniedError") {
+        msg = "Microphone access is blocked for this page — check your browser's site permissions, then try again.";
+      } else if (name === "NotFoundError" || name === "DevicesNotFoundError") {
+        msg = "No microphone was found on this device.";
+      } else if (name === "SecurityError") {
+        msg = "Microphone access needs a secure (https) page — it isn't available here.";
+      }
+      showError(msg);
+    });
   }
+
+  // A handle the field's own owner (e.g. the New Item form's closeForm())
+  // can use to force dictation off and clear any error line without
+  // reaching into this closure's private state directly.
+  function stop() {
+    if (listening) { stopRequested = true; try { recognition.stop(); } catch (err) {} }
+  }
+
+  if (!SpeechRecognitionCtor) {
+    micBtn.hidden = true;
+    showError("Dictation isn't supported in this browser — Chrome or Edge support it, or you can just type instead.");
+    return { stop, clearError: () => showError("") };
+  }
+  micBtn.hidden = false;
+  micBtn.addEventListener("click", () => {
+    if (listening) { stop(); return; }
+    requestMicAndListen();
+  });
+  return { stop, clearError: () => showError("") };
 }
 
-wireMicButton();
+const niDictation = createDictationController({
+  textareaEl: document.getElementById("ni-desc-input"),
+  micBtn: document.getElementById("ni-mic-btn"),
+  hintEl: document.getElementById("ni-listening-hint"),
+  errorEl: document.getElementById("ni-mic-error"),
+  onStop: (text) => setTypeToggle(suggestType(text)),
+});
+createDictationController({
+  textareaEl: qcCommentInput,
+  micBtn: document.getElementById("qc-mic-btn"),
+  hintEl: document.getElementById("qc-listening-hint"),
+  errorEl: document.getElementById("qc-mic-error"),
+});
+createDictationController({
+  textareaEl: eiCommentInput,
+  micBtn: document.getElementById("ei-mic-btn"),
+  hintEl: document.getElementById("ei-listening-hint"),
+  errorEl: document.getElementById("ei-mic-error"),
+});
 document.getElementById("ni-desc-input").addEventListener("input", (e) => {
   autoGrow(e.target);
 });

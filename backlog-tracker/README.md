@@ -177,6 +177,19 @@ If a fired session genuinely can't express its fix as full file contents,
 it leaves the item in `backlog` with a note explaining why, same as
 before — a human picks it up from there.
 
+**A Backlog card locks itself the moment `patchReady` goes true.** Between
+the Routine writing `patchFiles`/`patchReady: true` and
+`backlog-automation.yml` actually picking it up (its own schedule polls
+every ~2 minutes) a card sits in Backlog with real, in-flight work already
+behind it — editing, moving, or deleting it in that window would silently
+orphan whatever was just written. `cardHTML`'s own `isInDevelopment` check
+(`isBacklog && item.patchReady`) greys the card out and drops every control
+down to a passive "In development — locked" hint instead, the same
+"show a status line instead of a live control" treatment
+`merge-pending-hint` already used for a Live-on-Feature-Branch card. It
+unlocks on its own the moment the automation flips `status` to
+`ready-for-testing` — no separate cleanup needed.
+
 ## Isolation from menu-board-demo — by design, not just by folder
 
 This is a genuinely separate project, not a subfolder sharing infrastructure:
@@ -198,6 +211,40 @@ This is a genuinely separate project, not a subfolder sharing infrastructure:
 
 The only thing shared with the rest of `rob_ph_demos` is the git repo
 itself — plain files, no build coupling, no shared runtime.
+
+## Attachments (screenshots & screen recordings)
+
+The Edit item modal has its own **Attachments** block, below Comments:
+**Attach screenshot** (a plain image file picker) and **Record screen**
+(captures the browser's own screen-share picker via `getDisplayMedia` +
+`MediaRecorder`, no third-party library or separate app) — both upload
+straight to Firebase Storage the moment a file is ready
+(`uploadItemAttachment` in `public/js/app.js`) and append
+`{type, url, path, name, size, uploadedAt}` onto the item's own
+`attachments` array. A card with at least one attachment shows a small
+📎N count next to its comment icon on the board itself.
+
+**This needs Firebase Storage enabled for `backlog-tracker-e4ed2`, the
+same one-time manual step Cloud Functions needed** (see "Setup" above) —
+if Storage was never explicitly enabled for this project (Firebase Console
+→ Build → Storage → **Get started**, default rules/location are fine,
+`storage.rules` overrides them on the next deploy), uploads fail outright
+until it is. `storage.rules` mirrors `firestore.rules`' own open-but-
+validated posture (no auth yet — same prototype-stage caveat) — open read,
+and write gated on size (< 100MB) and content-type (`image/*` or
+`video/*`) rather than by who's writing. The deploy workflow's `--only`
+list includes `storage:rules` alongside `firestore:rules`; if you ever see
+an upload fail with a permissions error after a deploy, check that flag is
+still there before assuming the rules file itself is wrong — a `storage`
+key with no matching `--only storage:rules` (or `storage`) in the deploy
+step silently never ships the rules the same way `firestore.rules` would
+silently never ship without `firestore:rules` in that same flag.
+
+Removing an attachment (the × on its row) deletes both the Storage object
+and the array entry; a failure to delete the Storage object itself (e.g.
+rules not deployed yet) is logged to the console but doesn't block removing
+it from the item — an orphaned file left behind is harmless clutter, not a
+user-visible error.
 
 ## Architecture
 
@@ -452,6 +499,7 @@ inside `backlog-tracker/`:
 | `public/**` | `firebase deploy --only hosting` |
 | `functions/**` | `firebase deploy --only functions` |
 | `firestore.rules` | `firebase deploy --only firestore:rules` |
+| `storage.rules` | `firebase deploy --only storage:rules` |
 
 ### Alternatives to the Slack webhook
 
