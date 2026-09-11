@@ -18,7 +18,10 @@
       {
         "source": "**/*.@(html|js|css)",
         "headers": [
-          { "key": "Cache-Control", "value": "no-cache, must-revalidate" }
+          {
+            "key": "Cache-Control",
+            "value": "no-cache, must-revalidate"
+          }
         ]
       }
     ]

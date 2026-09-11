@@ -146,21 +146,19 @@ function applyPatchFiles(patchFiles) {
 // in the pipeline could ever clean up a stray PR like that on its own —
 // the fix is to never open a second one in the first place.
 //
-// Deliberately OPEN-only, not "all" (state used to be "all" — see
-// dWJtVKC310qgMevZ3XPl, 2026-09-11: that item's PR #84 merged, the item
-// was legitimately re-patched afterward with a genuinely new, separate
-// fix, and this check found the already-merged #84 via its still-matching
-// "Backlog item: <id>" body marker and silently refused to open a second
-// PR for the new work — leaving the item stuck in Backlog with
-// patchReady reset to false and no path forward, since a merged-then-
-// re-patched item never produces "no actual diff" (which is the only
-// other branch that would have surfaced the problem). A MERGED or CLOSED
-// PR represents finished/dead work, not an in-flight duplicate — it
-// should never block a fresh patch for a new round of work on the same
-// item. Restricting this to state=open keeps the original guard intact
-// (two genuinely open PRs for the same item is still exactly the bug
-// this was built to prevent) while letting a legitimate follow-up fix
-// get its own PR.
+// Only an OPEN PR counts as a duplicate. This used to search `--state all`,
+// which also matched an item's own already-MERGED PR — so once an item's
+// first fix shipped, every later follow-up fix for that same item (a viewer
+// reports a real remaining bug, Claude re-investigates, packages a new
+// patch) got silently skipped forever, with no way to unstick it short of
+// a human editing this item by hand. Hit in production on item
+// dWJtVKC310qgMevZ3XPl: PR #84 merged, a genuine follow-up fix was packaged
+// (Firebase Hosting cache headers), and this guard skipped opening its PR
+// because #84 "already existed for this item" — even though #84 was done
+// and unrelated to the new fix. Scoping the search to open PRs preserves
+// the original stray-duplicate protection (a second patchReady:true while
+// the first PR is still open still gets skipped) without blocking
+// legitimate iteration on an item whose earlier PR already merged or closed.
 function findExistingPrForItem(itemId) {
   let json;
   try {
@@ -213,33 +211,8 @@ async function processApplyPatch(item) {
     hasChanges = true;
   }
   if (!hasChanges) {
-    // Same class of "stuck forever, no record of why" bug as the
-    // existingPr guard above (see its own comment) — this branch used to
-    // just log and return, leaving patchReady/status untouched, so an
-    // item whose patchFiles turn out to already be on main (the expected
-    // outcome for one half of a multi-item "shared, full combined
-    // content" batch — see "Group multi-item fixes into one deployment"
-    // in ROUTINE_INSTRUCTIONS.md — once its sibling's PR merges first)
-    // would silently retry every scheduled run forever with nothing to
-    // show for it. The content genuinely IS on main at this point (that's
-    // what "no diff" means), so treat it the same as a successful patch
-    // that just didn't need its own PR: advance to ready-for-testing with
-    // a note explaining why, so a human still gets a chance to test it
-    // and the item doesn't rot in Backlog indefinitely.
-    console.log(`[apply-patch] ${item.id}: patchFiles produced no actual diff against main — already present, advancing without a new PR`);
+    console.log(`[apply-patch] ${item.id}: patchFiles produced no actual diff against main, skipping`);
     run("git", ["checkout", "main", "--quiet"]);
-    const notes = await appendNote(
-      item,
-      `No PR opened: patchFiles produced no diff against main — this content is already there, most likely delivered by a sibling item's shared-file patch in the same batch (see "Group multi-item fixes into one deployment"). Moved to Ready for Testing directly since the fix is genuinely live; check this item's notes/deployment group for which PR actually carried it.`
-    );
-    const testVersion = readAppVersion();
-    await patchItem(item.id, {
-      status: "ready-for-testing",
-      patchReady: false,
-      updatedAt: new Date().toISOString(),
-      notes,
-      ...(testVersion ? { testVersion } : {}),
-    });
     return;
   }
 

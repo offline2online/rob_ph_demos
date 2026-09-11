@@ -49,24 +49,6 @@ tab (or `gh run list --workflow=deploy-backlog-tracker.yml`) for one tied
 to the merge/push commit, and confirm its "Deploy to Firebase" step
 succeeded. Only that is real evidence a change is live.
 
-**A green deploy run is real evidence the *server* has the new files —
-it does not mean a given browser is showing them yet.** Firebase Hosting
-was serving `index.html`/`js/**`/`css/**` with no explicit `Cache-Control`
-header, which meant its documented default (`max-age=3600`) applied: a
-browser that loaded the board any time in the hour before a deploy can
-keep serving its own locally-cached copy of `app.js` on a plain reload,
-with no error and no visible sign it's stale — the exact shape of the bug
-report on item `dWJtVKC310qgMevZ3XPl` ("locked/greyed-out Backlog card"
-merged and deployed successfully, then reported as "not working" ~14
-minutes later, well inside that window). `firebase.json`'s `hosting.headers`
-now pins `html`/`js`/`css` to `Cache-Control: no-cache, must-revalidate` —
-the browser still caches them, but must revalidate with the server (a
-conditional GET, cheap on a 304) before using the cached copy, so a fresh
-deploy is visible on the very next full page load, no hard-refresh
-required. Don't loosen this back to a bare `max-age` for these paths
-without solving the staleness problem some other way (e.g. fingerprinted
-filenames), since there's no build step here to make that safe.
-
 **There is no separate manual deploy step to remember for the normal
 flow.** The `firebase deploy --only ...` commands under "Ongoing:
 redeploying after a code change" further down are a fallback for
@@ -167,32 +149,21 @@ the PR. No AI is involved in this step at all, and no long-lived GitHub
 secret exists anywhere in this pipeline — the runner's `GITHUB_TOKEN` is
 minted and revoked by GitHub itself, per run.
 
-**The duplicate-PR guard (`findExistingPrForItem`) only blocks a still-OPEN
-PR, not a merged or closed one.** It used to search `--state all`, which
-seemed harmless until a real case surfaced it (item `dWJtVKC310qgMevZ3XPl`,
-2026-09-11): that item's first fix merged as PR #84, then a genuinely new,
-separate follow-up fix was packaged for it later — the guard found the
-already-merged #84 via its still-matching `Backlog item: <id>` body marker
-and silently refused to open a second PR, leaving the item stuck in
-`backlog` with `patchReady` reset to `false` and no path forward. A merged
-or closed PR is finished/dead work, not an in-flight duplicate, so it
-should never block a fresh patch for a new round of work on the same item
-— fixed by restricting the search to `--state open`. Two genuinely open
-PRs for the same item is still blocked exactly as before (that's the
-actual bug — see PR #61/#62 above — this guard exists for).
-
-**`patchFiles` producing no diff against `main` no longer leaves an item
-stuck silently either.** This is the expected outcome for one half of a
-multi-item batch sharing identical file content (see
-`ROUTINE_INSTRUCTIONS.md` → "Group multi-item fixes into one deployment")
-once its sibling's PR merges first — the content is already on `main`, so
-there's nothing to open a PR for. `processApplyPatch` used to just log and
-return here, leaving `patchReady`/`status` untouched and the item silently
-retried every scheduled run forever. It now advances the item to
-`ready-for-testing` directly (no PR of its own — check the item's
-deployment group / sibling item's notes for which PR actually carried the
-fix) with a note explaining why, so it still gets tested instead of rotting
-in Backlog.
+**The duplicate-PR guard (`findExistingPrForItem`) only blocks on a
+currently-open PR, not any PR that ever existed for the item.** It
+originally searched `--state all`, which also matched an item's own
+already-*merged* PR — so once an item's first fix shipped, every later
+legitimate follow-up (a viewer reports a real remaining bug, Claude
+re-investigates, packages a new patch) got silently skipped forever, with
+`patchReady` reset to `false` and no way to unstick it short of a human
+editing the item by hand. Hit in production on item `dWJtVKC310qgMevZ3XPl`:
+PR #84 merged the original Backlog-card lock feature, a genuine follow-up
+fix was packaged (the Cache-Control fix described below), and the guard
+skipped opening its PR because #84 "already existed for this item," even
+though #84 was done and unrelated. Scoping the search to `--state open`
+keeps the original protection (a stray second `patchReady: true` while the
+first PR for that item is still open still gets skipped) without blocking
+iteration once that PR has merged or closed.
 
 The same script also handles the mirror case for **Notify Claude —
 Deploy**: that Routine fire asks the session to find its item's PR and
@@ -234,6 +205,18 @@ down to a passive "In development — locked" hint instead, the same
 `merge-pending-hint` already used for a Live-on-Feature-Branch card. It
 unlocks on its own the moment the automation flips `status` to
 `ready-for-testing` — no separate cleanup needed.
+
+**Firebase Hosting pins `Cache-Control: no-cache, must-revalidate` on
+every `html`/`js`/`css` file (`firebase.json`'s `hosting.headers`).**
+Without it, Firebase's own default (`max-age=3600`) let a browser that had
+loaded the board any time in the hour before a deploy keep serving its own
+stale cached `app.js`/`index.html` on a plain reload — a shipped fix (the
+Backlog-card lock above, in this exact case) could be live on `main` and
+still look broken to a viewer for up to an hour, with no error and nothing
+in the deploy logs to suggest anything was wrong. `no-cache` doesn't
+disable caching outright, it just forces the browser to revalidate with the
+server on every load, so a fresh deploy is visible on the very next full
+page load — no hard refresh needed.
 
 ## Isolation from menu-board-demo — by design, not just by folder
 
@@ -636,23 +619,6 @@ frontend's own fallback — treating any `"in-progress"` older than 20
 minutes as done — is what actually keeps the button from getting stuck
 forever, not the self-report; treat the self-report as a nice-to-have for
 faster feedback, not the safety mechanism.
-
-**The "Deploy to Main" button now has the identical mechanism**,
-`projects/{id}.deployRoutine`, written by `notifyOnProjectReadyToDeploy`
-and read by `deployNotifyButtonHTML`/`deployOptimisticClicks` in `app.js` —
-same fields (`status`, `firedAt`, `sessionId`/`sessionUrl`, `itemCount`),
-same 20-minute stale fallback, same self-report hint embedded in the fire
-`text` (targeting `deployRoutine` instead of `notifyRoutine`), same
-optimistic click-to-spinner bridge. Before this existed, clicking "Deploy
-to Main" gave no ongoing feedback at all — a one-time `alert()`, then the
-button looked exactly as it had before the click — so a deploy that was
-still genuinely in flight was indistinguishable from one that had never
-been requested. The matching per-item signal is `backlogItems.mergeReady`:
-a ready-to-publish card the Routine has confirmed is green/mergeable and
-handed to `backlog-automation.yml` renders locked (greyed out, no
-controls) exactly like an `isInDevelopment` Backlog card — see
-`cardHTML`'s `isDeploying` and REQUIREMENTS.md → "A Backlog card locks
-while a fix is in flight".
 
 ### Per-project Routine instructions (`routinePromptMd`)
 
