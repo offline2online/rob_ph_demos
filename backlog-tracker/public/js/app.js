@@ -170,10 +170,14 @@ document.addEventListener("click", (e) => {
   if (!e.target.closest(".project-options, .faq-article-options")) closeAllOptionMenus();
 });
 
-// ── Left nav drawer (hamburger) — the header's own "Archived projects" and
-// "FAQ Center" links moved in here, leaving only "+ New project" in the
-// topbar. Kept in the DOM at all times (never [hidden]) so the CSS
-// transform transition on .nav-drawer actually animates open/closed. ────
+// ── Left nav drawer (hamburger) — the header's own "FAQ Center" links moved
+// in here, leaving only "+ New project" in the topbar. "Archived projects"
+// lives inside the Settings page now, not as its own drawer entry (see
+// "fa-open-archived-projects-btn" below), so the two FAQ admin pages never
+// list anything beyond their own subject and the drawer always shows the
+// same fixed three destinations. Kept in the DOM at all times (never
+// [hidden]) so the CSS transform transition on .nav-drawer actually
+// animates open/closed. ──────────────────────────────────────────────────
 const navDrawer = document.getElementById("nav-drawer");
 const navDrawerBackdrop = document.getElementById("nav-drawer-backdrop");
 function openNavDrawer() { navDrawer.classList.add("open"); navDrawerBackdrop.classList.add("open"); }
@@ -1792,7 +1796,9 @@ function renderArchivedProjectsPage() {
   document.getElementById("archived-projects-empty").hidden = rows.length !== 0;
 }
 
-document.getElementById("archived-projects-btn").addEventListener("click", () => { closeNavDrawer(); openArchivedProjectsPage(); });
+// Reached from the Settings page now, not the nav drawer — see the
+// "Archived projects" docs-block in faq-settings-page.
+document.getElementById("fa-open-archived-projects-btn").addEventListener("click", () => { closeFaqSettingsPage(); openArchivedProjectsPage(); });
 document.getElementById("archived-projects-table-body").addEventListener("click", (e) => {
   const btn = e.target.closest(".restore-project-btn");
   if (btn) restoreProject(btn.dataset.projectId);
