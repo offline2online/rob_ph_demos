@@ -49,6 +49,24 @@ tab (or `gh run list --workflow=deploy-backlog-tracker.yml`) for one tied
 to the merge/push commit, and confirm its "Deploy to Firebase" step
 succeeded. Only that is real evidence a change is live.
 
+**A green deploy run is real evidence the *server* has the new files —
+it does not mean a given browser is showing them yet.** Firebase Hosting
+was serving `index.html`/`js/**`/`css/**` with no explicit `Cache-Control`
+header, which meant its documented default (`max-age=3600`) applied: a
+browser that loaded the board any time in the hour before a deploy can
+keep serving its own locally-cached copy of `app.js` on a plain reload,
+with no error and no visible sign it's stale — the exact shape of the bug
+report on item `dWJtVKC310qgMevZ3XPl` ("locked/greyed-out Backlog card"
+merged and deployed successfully, then reported as "not working" ~14
+minutes later, well inside that window). `firebase.json`'s `hosting.headers`
+now pins `html`/`js`/`css` to `Cache-Control: no-cache, must-revalidate` —
+the browser still caches them, but must revalidate with the server (a
+conditional GET, cheap on a 304) before using the cached copy, so a fresh
+deploy is visible on the very next full page load, no hard-refresh
+required. Don't loosen this back to a bare `max-age` for these paths
+without solving the staleness problem some other way (e.g. fingerprinted
+filenames), since there's no build step here to make that safe.
+
 **There is no separate manual deploy step to remember for the normal
 flow.** The `firebase deploy --only ...` commands under "Ongoing:
 redeploying after a code change" further down are a fallback for
@@ -591,6 +609,23 @@ frontend's own fallback — treating any `"in-progress"` older than 20
 minutes as done — is what actually keeps the button from getting stuck
 forever, not the self-report; treat the self-report as a nice-to-have for
 faster feedback, not the safety mechanism.
+
+**The "Deploy to Main" button now has the identical mechanism**,
+`projects/{id}.deployRoutine`, written by `notifyOnProjectReadyToDeploy`
+and read by `deployNotifyButtonHTML`/`deployOptimisticClicks` in `app.js` —
+same fields (`status`, `firedAt`, `sessionId`/`sessionUrl`, `itemCount`),
+same 20-minute stale fallback, same self-report hint embedded in the fire
+`text` (targeting `deployRoutine` instead of `notifyRoutine`), same
+optimistic click-to-spinner bridge. Before this existed, clicking "Deploy
+to Main" gave no ongoing feedback at all — a one-time `alert()`, then the
+button looked exactly as it had before the click — so a deploy that was
+still genuinely in flight was indistinguishable from one that had never
+been requested. The matching per-item signal is `backlogItems.mergeReady`:
+a ready-to-publish card the Routine has confirmed is green/mergeable and
+handed to `backlog-automation.yml` renders locked (greyed out, no
+controls) exactly like an `isInDevelopment` Backlog card — see
+`cardHTML`'s `isDeploying` and REQUIREMENTS.md → "A Backlog card locks
+while a fix is in flight".
 
 ### Per-project Routine instructions (`routinePromptMd`)
 

@@ -75,6 +75,15 @@ Cloud Functions, own Hosting site, own IAM/billing; see
     finishedAt?: timestamp,        // set by the fired session itself, if it follows the hint
     errorMessage?: string,
   },
+  deployRoutine?: {                // same shape as notifyRoutine, set by notifyOnProjectReadyToDeploy — see README.md
+    status: "in-progress" | "done" | "error",
+    firedAt: timestamp,
+    sessionId?: string,
+    sessionUrl?: string,
+    itemCount: number,
+    finishedAt?: timestamp,
+    errorMessage?: string,
+  },
 }
 ```
 One doc per tracked project. A project with no doc but whose items
@@ -627,6 +636,30 @@ already-written work behind the card. In that window the card:
 A card with `patchReady` false (the normal case — not yet picked up, or
 already past this stage) is unaffected; this only ever applies to a
 Backlog card mid-handoff.
+
+This logic itself was already correct and live on `main` (verified by
+diffing the deployed commit's `app.js`/`styles.css` against what's
+described here) when it was reported as "not working on Board" — the
+actual defect was Firebase Hosting caching (see README.md → "Deployment"),
+not this feature. Re-verify against the live footer's version badge before
+assuming a change like this one isn't live; a browser can hide a real
+deploy for up to an hour without `Cache-Control` pinned on `html`/`js`/`css`.
+
+**The mirror-image case, `isDeploying` (`isLiveBranch && item.mergeReady`),
+covers the same kind of window at the *other* end of the pipeline**: once
+the Deploy flow (see README.md → "Notify Claude progress") has confirmed a
+ready-to-publish item's PR is green/mergeable and written `mergeReady:
+true`, the card is genuinely mid-merge — `backlog-automation.yml` will pick
+it up on its next poll and merge it, moving `status` to `published-live`.
+Until then the card gets the identical treatment as an `isInDevelopment`
+one (same `.card-in-development` class, same dropped controls), with its
+usual `merge-pending-hint` ("Waiting for Deploy to Main") replaced by a
+"Deploying — locked" line. It unlocks the instant `status` moves off
+`ready-to-publish`, the same derived-not-stored way `isInDevelopment` does.
+Pairs with the project-level "Deploy to Main" button's own spinner
+(`projects/{id}.deployRoutine` — see README.md), so both the button that
+triggered the deploy and the specific card(s) it's deploying now show it's
+actually in flight, where before neither did.
 
 ### Attachments (screenshots & screen recordings)
 

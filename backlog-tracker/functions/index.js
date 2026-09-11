@@ -360,10 +360,20 @@ exports.notifyOnProjectReadyToDeploy = onDocumentUpdated(
       ? `=== PROJECT-SPECIFIC INSTRUCTIONS FOR "${projectName}" (from this project's Docs page) ===\n${after.routinePromptMd.trim()}\n=== END PROJECT-SPECIFIC INSTRUCTIONS ===\n\n`
       : "";
 
+    // Same self-report mechanism as notifyOnProjectReadyForReview's own
+    // selfReportHint above, targeting deployRoutine instead of notifyRoutine
+    // — until this existed, the "Deploy to Main" button had nothing to read
+    // an in-progress state from at all, so it looked identical whether a
+    // deploy was actually running or hadn't been requested yet.
+    const selfReportHint = `\n\nWhen you finish this run (whether you completed everything or stopped early on a blocker), PATCH projects/${event.params.projectId} with deployRoutine.status set to "done" (or "error" with an errorMessage, if you stopped early) and deployRoutine.finishedAt set to now — the board shows a working/spinning state on its Deploy to Main button until it sees this.`;
+
     const text = `${projectPromptBlock}=== DEPLOY REQUEST for "${projectName}" (projectId: ${event.params.projectId}) on the Backlog Tracker & FAQs board ===\n` +
       `These ${items.length} item${items.length === 1 ? "" : "s"} are already implemented, tested, and confirmed "Approved for Deployment" (ready-to-publish). Do NOT investigate, re-implement, or re-test them — follow ROUTINE_INSTRUCTIONS.md's "Notify Claude — Deploy" flow section for exactly what to do with each one.\n\n` +
-      `Items:\n${itemLines}`;
+      `Items:\n${itemLines}${selfReportHint}`;
 
+    let sessionId = null;
+    let sessionUrl = null;
+    let fireError = null;
     try {
       const res = await fetch(fireUrl, {
         method: "POST",
@@ -376,23 +386,47 @@ exports.notifyOnProjectReadyToDeploy = onDocumentUpdated(
         body: JSON.stringify({ text }),
       });
       if (!res.ok) {
+        fireError = `Routine fire endpoint responded with status ${res.status}`;
         logger.error("Routine fire endpoint responded with a non-2xx status for deploy request", {
           projectId: event.params.projectId,
           status: res.status,
           body: await res.text().catch(() => "<unreadable>"),
         });
-        return;
+      } else {
+        // Same response shape as notifyOnProjectReadyForReview's own fire
+        // call above — see that function's comment for the research-preview
+        // caveat on this field name.
+        const body = await res.json().catch(() => null);
+        sessionId = body?.claude_code_session_id || null;
+        sessionUrl = sessionId ? `https://claude.ai/code/${sessionId}` : null;
+        logger.info("Fired Claude Code Routine for deploy notify request", {
+          projectId: event.params.projectId,
+          itemCount: items.length,
+          sessionId,
+        });
       }
-      logger.info("Fired Claude Code Routine for deploy notify request", {
-        projectId: event.params.projectId,
-        itemCount: items.length,
-      });
     } catch (err) {
+      fireError = err instanceof Error ? err.message : String(err);
       logger.error("Failed to call Routine fire endpoint for deploy notify request", {
         projectId: event.params.projectId,
-        error: err instanceof Error ? err.message : String(err),
+        error: fireError,
       });
     }
+
+    // Lets the board show a spinner (or a visible error) instead of the
+    // Deploy to Main button just looking idle after a click — see
+    // deployNotifyButtonHTML in public/js/app.js. Same stale-after-20-minutes
+    // client fallback as notifyRoutine protects this from ever wedging.
+    await getFirestore().collection("projects").doc(event.params.projectId).set({
+      deployRoutine: {
+        status: fireError ? "error" : "in-progress",
+        firedAt: new Date(),
+        sessionId,
+        sessionUrl,
+        itemCount: items.length,
+        errorMessage: fireError,
+      },
+    }, { merge: true });
   }
 );
 
