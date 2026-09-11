@@ -211,13 +211,24 @@ document.addEventListener("keydown", (e) => {
 // covers all of them; each close*Page() below is safe to call even when
 // that particular page isn't the one currently open (it just re-hides an
 // already-hidden section and re-shows projects-root, a no-op either way).
-function returnToBoard() {
+//
+// closeAllSubPages() is also called at the top of every openXPage()
+// below, for the same reason: the nav drawer's "Settings"/"FAQ
+// Management" items are reachable from any sub-page, so without this,
+// opening one while another was already open left both showing at once
+// instead of replacing it — most visibly when jumping straight from
+// "Settings" to "FAQ Management" (or back), which rendered both blocks
+// stacked on screen simultaneously.
+function closeAllSubPages() {
   closeArchivePage();
   closeArchivedProjectsPage();
   closeDeploymentsPage();
   closeDocsPage();
   closeFaqSettingsPage();
   closeFaqArticlesPage();
+}
+function returnToBoard() {
+  closeAllSubPages();
 }
 document.getElementById("nav-ph-console-btn").addEventListener("click", () => { closeNavDrawer(); returnToBoard(); });
 // The logo/title in the top-left corner (a text placeholder until a real
@@ -1967,6 +1978,7 @@ function projectName(pid) {
 }
 
 function openArchivePage(pid) {
+  closeAllSubPages();
   archiveProjectId = pid;
   archiveFilters = { type: "", category: "", search: "" };
   archiveFilterType.value = "";
@@ -2079,6 +2091,7 @@ document.getElementById("archive-table-body").addEventListener("click", (e) => {
 const archivedProjectsPage = document.getElementById("archived-projects-page");
 
 function openArchivedProjectsPage() {
+  closeAllSubPages();
   document.getElementById("projects-root").hidden = true;
   archivedProjectsPage.hidden = false;
   renderArchivedProjectsPage();
@@ -2124,6 +2137,7 @@ document.getElementById("archived-projects-table-body").addEventListener("click"
 const deploymentsPage = document.getElementById("deployments-page");
 
 function openDeploymentsPage(pid) {
+  closeAllSubPages();
   deploymentsProjectId = pid;
   document.getElementById("projects-root").hidden = true;
   deploymentsPage.hidden = false;
@@ -2282,6 +2296,7 @@ docsProgramSelect.addEventListener("change", async () => {
 });
 
 function openDocsPage(pid) {
+  closeAllSubPages();
   docsProjectId = pid;
   document.getElementById("projects-root").hidden = true;
   docsPage.hidden = false;
@@ -2937,6 +2952,7 @@ const faNewCategoryIconSelect = document.getElementById("fa-new-category-icon");
 faNewCategoryIconSelect.innerHTML = faqCategoryIconOptionsHTML("help");
 
 function openFaqSettingsPage() {
+  closeAllSubPages();
   document.getElementById("projects-root").hidden = true;
   faqSettingsPage.hidden = false;
   renderFaqSettingsPage();
@@ -2947,6 +2963,7 @@ function closeFaqSettingsPage() {
 }
 
 function openFaqArticlesPage() {
+  closeAllSubPages();
   document.getElementById("projects-root").hidden = true;
   faqArticlesPage.hidden = false;
   renderFaqArticlesPage();
