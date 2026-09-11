@@ -305,16 +305,21 @@ Archived page's Area column/filter/badge are keyed on.
 - Can also be corrected any time via direct Firestore write (no in-app
   select on the card itself in this build, unlike the old Artifact board).
 
-### Mic dictation (New Item form)
+### Mic dictation (New Item form, and every comment box)
 
-The mic button requests microphone permission (`getUserMedia`) before
-starting Web Speech dictation, with a specific visible error (blocked
-permission, no device, no browser support, network needed, etc.) instead of
-failing silently — not verifiable end-to-end from this sandbox (no real mic,
-no live path to the speech-recognition backend), so if a user reports the
-mic doing nothing, ask what error text appeared rather than assuming it's
-still silent. The description textarea auto-grows to fit what's been typed
-or dictated (capped near half the viewport).
+Originally New Item's description field only; a `createDictationController`
+factory in `app.js` now backs three independent mic buttons — New Item's
+description, the quick-comment modal, and the Edit item modal's own
+comment box — each with its own dictation state, so starting/stopping one
+never affects another. Every instance requests microphone permission
+(`getUserMedia`) before starting Web Speech dictation, with a specific
+visible error (blocked permission, no device, no browser support, network
+needed, etc.) instead of failing silently — not verifiable end-to-end from
+this sandbox (no real mic, no live path to the speech-recognition backend),
+so if a user reports the mic doing nothing, ask what error text appeared
+and on which field, rather than assuming it's still silent. Each textarea
+auto-grows to fit what's been typed or dictated (capped near half the
+viewport).
 
 ## These prototypes run iframed inside the real Personalisation Hub platform
 

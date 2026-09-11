@@ -103,6 +103,7 @@ deleted by hand).
   archivedAt?: timestamp,
   claudeNote?: string,          // short one-line status, shown nowhere but kept for history
   notes?: [{ author: "claude" | "viewer", text: string, at: timestamp }],
+  attachments?: [{ type: "image" | "video", url: string, path: string, name: string, size: number, uploadedAt: timestamp }], // see "Attachments" below
   deploymentId?: string,        // see "deployments/{deploymentId}" below
   previewUrl?: string,          // a Ready for Testing card's own "Test this" link
   testSummary?: string,         // Ready for Testing card's primary text — see below
@@ -434,7 +435,13 @@ REST API is reachable with a plain `curl`, no service account needed.
   restart give-up after repeated no-speech) rather than failing silently.
   Continuous-mode quirks on Android Chrome are worked around by restarting
   a fresh non-continuous recognition session per utterance rather than
-  relying on the browser's own long-running continuous mode.
+  relying on the browser's own long-running continuous mode. Originally
+  New Item's description field only; `createDictationController()` in
+  `app.js` factors this into a reusable per-field controller (its own
+  independent recognition/listening/error state via closure, not shared
+  module globals) so the quick-comment modal and the Edit item modal's own
+  comment box each get an identical mic button too — starting or stopping
+  dictation on one field never touches another's state.
 - **App name and global navigation.** The app itself (browser tab, `<h1>`,
   footer) is titled **"PH Agent Console"** — distinct from any one
   project's own name on the board (e.g. the "Backlog Tracker & FAQs"
@@ -597,6 +604,66 @@ REST API is reachable with a plain `curl`, no service account needed.
   - Deleting a group ("ungroup") only clears `deploymentId` on its member
     tickets — it never touches the tickets themselves, and a member is
     immediately eligible to join a different group afterward.
+
+### A Backlog card locks while a fix is in flight
+
+`cardHTML`'s `isInDevelopment` (`isBacklog && item.patchReady`) covers the
+window between the Routine writing `patchFiles`/`patchReady: true` (see
+"Notify Claude can't push" in README.md) and `backlog-automation.yml`
+actually opening the PR and flipping `status` to `ready-for-testing` — a
+short window (the workflow polls every ~2 minutes) but one with real,
+already-written work behind the card. In that window the card:
+
+- Drops its checkbox, edit/comment pencil, quick-comment icon, move-forward
+  arrow, and delete button entirely — nothing on it is a live control.
+- Renders greyed out (`.card-in-development`) with a passive "In
+  development — locked" line where the move-forward arrow would be,
+  the same "status line instead of a live control" treatment
+  `merge-pending-hint` already used for a Live-on-Feature-Branch card.
+- Unlocks itself automatically the instant `status` moves off `backlog` —
+  no separate flag to clear, since `isInDevelopment` is derived, not
+  stored.
+
+A card with `patchReady` false (the normal case — not yet picked up, or
+already past this stage) is unaffected; this only ever applies to a
+Backlog card mid-handoff.
+
+### Attachments (screenshots & screen recordings)
+
+The Edit item modal's own **Attachments** block (below Comments) lets
+anyone attach a screenshot or a screen recording directly to a ticket:
+
+- **Attach screenshot** — a plain `<input type="file" accept="image/*">`,
+  uploaded to Firebase Storage the instant a file is chosen.
+- **Record screen** — captures the browser's own share-picker via
+  `navigator.mediaDevices.getDisplayMedia` and records it with
+  `MediaRecorder` (webm/vp9, falling back to plain webm); clicking **Stop
+  recording** (or ending the share from the browser's own "Stop sharing"
+  bar) finalizes and uploads the clip the same way. No third-party
+  recording library or separate screen-capture tool needed.
+
+Both write to Storage under `attachments/{itemId}/{fileName}` and append
+`{type, url, path, name, size, uploadedAt}` (see the `backlogItems` schema
+above) onto the item — the file itself never touches Firestore, only its
+resulting metadata does, the same "small bounded value on the doc, real
+payload elsewhere" split every Firestore-backed app needs past a few
+hundred KB. Removing an attachment deletes both the Storage object and its
+array entry; a Storage-delete failure (e.g. `storage.rules` not deployed
+yet) is logged, not surfaced, since an orphaned file is harmless and the
+board's own state is what the array entry actually governs.
+
+A card with at least one attachment shows a small 📎N count on the board
+next to its comment icon — the same "count badge next to the icon that
+opens the thing" pattern the pencil's own comment count already used.
+
+**Requires Firebase Storage enabled for `backlog-tracker-e4ed2`** (a
+one-time manual step, same as Cloud Functions needed — see README.md's
+"Attachments" section) and `storage.rules` in the deploy workflow's
+`--only` list alongside `firestore:rules`; without either, uploads fail
+until fixed. `storage.rules` mirrors `firestore.rules`' open-but-validated
+posture: open read, write gated on size (< 100MB) and content-type
+(`image/*`/`video/*`) rather than by who's writing — same prototype-stage,
+no-auth caveat as everything else in this app.
 
 ## Functional requirements — notification & automation (Cloud Functions)
 
