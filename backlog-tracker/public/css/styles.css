@@ -602,3 +602,34 @@ body {
 .app-footer { margin-top: 24px; padding-top: 14px; border-top: 1px solid var(--border); font-size: 11.5px; color: var(--text-muted); text-align: center; }
 
 [hidden] { display: none !important; }
+
+/* ── FAQ editor: rich formatting (docs/CONTRIBUTING-docs.md §5.4) ─────
+   The same tables/code/callout rules the public site uses (faq/css/faq.css),
+   applied to both the "View live" preview and the Quill editing surface so
+   what an author sees while writing matches what a reader gets. */
+.fa-body-viewer h4 { font-size: 14px; }
+.fa-body-viewer .faq-table, .ql-editor .faq-table { overflow-x: auto; margin: 0 0 12px; }
+.fa-body-viewer table, .ql-editor table { border-collapse: collapse; width: 100%; font-size: 13px; }
+.fa-body-viewer th, .fa-body-viewer td, .ql-editor th, .ql-editor td { border: 1px solid #d9d9d9; padding: 6px 8px; text-align: left; vertical-align: top; }
+.fa-body-viewer thead th, .ql-editor thead th { background: #f2f4f5; font-weight: 700; }
+.ql-editor .faq-table { cursor: pointer; }
+.fa-body-viewer code, .ql-editor code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12.5px; background: #f2f4f5; border: 1px solid rgba(5, 5, 5, .06); border-radius: 4px; padding: 1px 5px; }
+.fa-body-viewer pre, .fa-body-viewer pre.ql-syntax { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12.5px; background: #1f2429; color: #f2f4f5; padding: 10px 12px; border-radius: 6px; overflow-x: auto; margin: 0 0 12px; white-space: pre-wrap; }
+.fa-body-viewer .callout, .ql-editor .callout { border-left: 4px solid; border-radius: 4px; padding: 8px 12px; margin: 0 0 12px; }
+.fa-body-viewer .callout::before, .ql-editor .callout::before { display: block; font-weight: 700; font-size: 10.5px; letter-spacing: .06em; text-transform: uppercase; margin-bottom: 3px; }
+.fa-body-viewer .callout-note, .ql-editor .callout-note { background: rgba(22, 155, 194, .1); border-color: #169bc2; }
+.fa-body-viewer .callout-note::before, .ql-editor .callout-note::before { content: "Note"; color: #0f7ea1; }
+.fa-body-viewer .callout-important, .ql-editor .callout-important { background: #fff7e6; border-color: #faad14; }
+.fa-body-viewer .callout-important::before, .ql-editor .callout-important::before { content: "Important"; color: #a86a00; }
+.fa-body-viewer .callout-warning, .ql-editor .callout-warning { background: #fff1f0; border-color: #ff4d4f; }
+.fa-body-viewer .callout-warning::before, .ql-editor .callout-warning::before { content: "Warning"; color: #c0272a; }
+/* The callout picker is a custom format, so Quill has no label for it. */
+.ql-snow .ql-picker.ql-callout { width: 96px; }
+.ql-snow .ql-picker.ql-callout .ql-picker-label::before { content: "Callout"; }
+.ql-snow .ql-picker.ql-callout .ql-picker-item::before { content: "None"; }
+.ql-snow .ql-picker.ql-callout .ql-picker-item[data-value="note"]::before { content: "Note"; }
+.ql-snow .ql-picker.ql-callout .ql-picker-item[data-value="important"]::before { content: "Important"; }
+.ql-snow .ql-picker.ql-callout .ql-picker-item[data-value="warning"]::before { content: "Warning"; }
+.ql-snow .ql-picker.ql-callout .ql-picker-label[data-value="note"]::before { content: "Note"; }
+.ql-snow .ql-picker.ql-callout .ql-picker-label[data-value="important"]::before { content: "Important"; }
+.ql-snow .ql-picker.ql-callout .ql-picker-label[data-value="warning"]::before { content: "Warning"; }
