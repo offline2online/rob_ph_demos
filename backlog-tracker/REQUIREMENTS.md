@@ -113,7 +113,6 @@ deleted by hand).
   claudeNote?: string,          // short one-line status, shown nowhere but kept for history
   notes?: [{ author: "claude" | "viewer", text: string, at: timestamp }],
   attachments?: [{ type: "image" | "video", url: string, path: string, name: string, size: number, uploadedAt: timestamp }], // see "Attachments" below
-  deploymentId?: string,        // see "deployments/{deploymentId}" below
   previewUrl?: string,          // a Ready for Testing card's own "Test this" link
   testSummary?: string,         // Ready for Testing card's primary text — see below
   noDeploymentRequired?: boolean, // set from the Edit item modal — see "No manual way to reach published-live exists" below for the one exception it carves out
@@ -178,8 +177,9 @@ chance to also confirm the rest first. It's now two separate actions:
    `processApplyPatch`); this step only advances the board's own status
    once a human has actually looked at (a batch of) what's already there.
    Unlike Ready for Dev/Deploy to Main, there's no Routine session to spin
-   on, so feedback is immediate instead: an `alert()` naming exactly what
-   moved (and stating plainly that no new GitHub push happened — the code
+   on, so feedback is immediate instead: an in-app alert dialog (`showAlert()`
+   — see "In-app dialogs replace window.confirm/prompt/alert" below) naming
+   exactly what moved (and stating plainly that no new GitHub push happened — the code
    was already pushed earlier), plus a Slack post via
    `notifyOnItemsDeployedToFeature` (`functions/index.js`, watching
    `projects/{id}.deployToFeatureRequestedAt` the same way
@@ -229,8 +229,7 @@ the ticket itself.
 **No manual way to reach `published-live` exists — except for a card with
 nothing to actually deploy.** An "Approved for Deployment" card normally
 shows a passive "Waiting for Deploy to Main" hint instead of a button.
-There used to be a per-card "Merge to main" button and a bulk "Merge all
-to main" on the Deployments page, both of which wrote `status:
+There used to be a per-card "Merge to main" button, which wrote `status:
 "published-live"` directly with no connection to whether the PR was
 actually merged on GitHub — removed after that let cards read "Merged to
 Main" while their PRs sat open. The project's own "Deploy to Main" header
@@ -239,10 +238,7 @@ ordinary card; it fires the Routine, which sets `mergeReady` +
 `mergePrNumber` once it's confirmed the PR is actually green and
 mergeable, and only `run-backlog-automation.js` (see "Notify Claude can't
 push" in README.md) flips `status` to `published-live`, after the real
-merge succeeds. The Deployments page's "Notify Claude to merge" button
-(`requestDeploymentMerge`) is the same action, just scoped to a
-deployment group's project; its own "✓ Merged" badge is derived live from
-every member's actual `status`, not a separate stored flag.
+merge succeeds.
 
 The one deliberate exception is `noDeploymentRequired` (set from the Edit
 item modal — a plain checkbox, self-service, not something only the
@@ -297,22 +293,6 @@ both offer the same "pick an existing program, or create one on the spot"
 picker. Deleting a program isn't wired up from either UI yet; a project
 whose `programId` points at a since-deleted program doc is treated exactly
 like one with no `programId` at all (falls into "Ungrouped").
-
-### `deployments/{deploymentId}`
-```
-{
-  projectId: string,
-  label: string,
-  createdAt: timestamp,
-  updatedAt: timestamp,
-}
-```
-A deployment groups several `backlogItems` (via their own `deploymentId`)
-that are meant to ship to `main` together — see "Deployments" under
-Functional requirements below for why this exists. No `mergedAt` field
-any more: whether a deployment is "Merged" is derived live from whether
-every member's own `status` is `published-live`, not a separate stored
-flag that a manual batch action used to set directly.
 
 ### `interfaces/{interfaceId}`
 ```
@@ -484,12 +464,17 @@ REST API is reachable with a plain `curl`, no service account needed.
   clear the rest of the column out first. The selection clears itself once
   the click is sent.
 - **Quick comment, separate from editing.** Each card carries a small
-  comment-bubble icon (bottom row, next to its category badge) that opens
-  a comment-only modal — just the same `notes`-array write the Edit item
-  modal's own Comments block already does (`addItemComment()`), without
-  pulling in title/desc/type/category editing at all. The pencil icon
-  (`edit-item-btn`) still opens the full Edit item modal, comments section
-  included, for anyone who wants both in one place.
+  comment-bubble icon that opens a comment-only modal — just the same
+  `notes`-array write the Edit item modal's own Comments block already does
+  (`addItemComment()`), without pulling in title/desc/type/category editing
+  at all. It sits in the card's bottom-right corner now (in `.card-move`,
+  alongside archive/delete), not the bottom-left row next to the category
+  badge where it used to blend into the row of muted utility icons — styled
+  as its own filled, rounded pill (`.quick-comment-btn`) with a soft shadow
+  and a gentle hover/press scale, carrying its own comment count so its
+  purpose (and that there's already a comment or two) reads at a glance.
+  The pencil icon (`edit-item-btn`) still opens the full Edit item modal,
+  comments section included, for anyone who wants both in one place.
 - **Mic dictation** requests microphone permission before starting Web
   Speech recognition, with specific, visible error states (blocked
   permission, no device, no browser support, network needed, silent
@@ -519,7 +504,7 @@ REST API is reachable with a plain `curl`, no service account needed.
   - **Agent console** (the drawer's own "home" link, first item) — closes
     whichever sub-page is currently open and returns to the board.
     Replaces the "← Back to board" button every sub-page (Docs, Archive,
-    Archived projects, Deployments, the two FAQ pages below) used to carry
+    Archived projects, the two FAQ pages below) used to carry
     individually — the drawer itself stays reachable from any sub-page
     already (it's part of the fixed topbar, not `#projects-root`), so one
     shared way back covers all of them.
@@ -542,7 +527,7 @@ REST API is reachable with a plain `curl`, no service account needed.
   treatment as Ready for Dev, shown only when the project has items on
   Approved for Deployment — see "Notify Claude — Deploy" below), **+ New
   backlog item**, then a **⋮** options menu holding everything else
-  (Deployments, Archived tickets, Requirements/Docs, interface contracts).
+  (Archived tickets, Requirements/Docs, interface contracts).
   Mobile (<640px) stacks each gradient button as its own full-width row
   above the New item / ⋮ row rather than squeezing controls onto one line;
   the board's four columns stack vertically instead of forcing horizontal
@@ -607,9 +592,9 @@ REST API is reachable with a plain `curl`, no service account needed.
   plain client `Date`, not `serverTimestamp()`, since Firestore rejects a
   server-timestamp sentinel inside an array element.
 - **Test/preview link**: a Ready for Testing card gets a "Set test link"
-  button; once set (a plain `prompt()`, not a modal — this is a one-off
-  paste, prefilled with an editable template when nothing's set yet),
-  it becomes a "Test this →" button opening `previewUrl` in a new
+  button; once set (via `showPromptDialog()` — see "In-app dialogs replace
+  window.confirm/prompt/alert" below — prefilled with an editable template
+  when nothing's set yet), it becomes a "Test this →" button opening `previewUrl` in a new
   tab, with a pencil icon to change it. The convention is a
   `rawcdn.githack.com/offline2online/rob_ph_demos/<branch>/<path>` link for
   a static page (see root `CLAUDE.md`) — **`rawcdn.githack.com`, not
@@ -623,48 +608,16 @@ REST API is reachable with a plain `curl`, no service account needed.
   quick-launch link used to do, closing the gap `CLAUDE.md`'s "Prototype
   Backlog" section had documented ("No `testUrl` field or quick-launch icon
   on cards") since the migration off the Artifact.
-- **Deployments** (per project, via ⋮): groups tickets meant to ship to
-  `main` together, backed by the `deployments` collection. Exists because
-  merging several PRs within seconds of each other used to race the
-  deploy workflow's Cloud Functions update (see
-  `.github/workflows/deploy-backlog-tracker.yml`'s concurrency group) —
-  this page gives whoever's actually driving the GitHub merges a single
-  place to see which tickets are meant to land together and whether every
-  one of them has actually been confirmed ready yet, instead of merging
-  each PR the moment its own card says "Ready for Testing" with no
-  visibility into whether the rest of its batch is also done.
-  - Each card carries an optional `deploymentId`; a small badge on the
-    board (🚀 + the deployment's label) shows which group a card belongs
-    to, if any.
-  - **Grouping is both automatic and manual.** The Notify Claude Routine
-    is instructed to create one deployment automatically whenever it
-    successfully fixes more than one item in a single fire (the common
-    case this page was built for) — see "Per-project Routine instructions"
-    and the Routine's own base prompt. Anyone can also create a group by
-    hand from this page ("+ New deployment"), or edit an existing group's
-    name/membership at any time.
-  - **"Notify Claude to merge" requests the real merge — it doesn't
-    perform one itself.** It stays disabled until every member ticket has
-    individually reached `ready-to-publish` (Approved for Deployment — the
-    same "someone actually tested it, then an Approved for Deployment click
-    released it" path every card goes through, per "Ready for Testing has
-    two stages" above). Clicking it calls `requestDeployNotify()` for the
-    group's project — the exact same "Deploy to Main" flow the project
-    header button fires — which
-    asks the Routine to verify each item's PR and set `mergeReady` +
-    `mergePrNumber`; only `run-backlog-automation.js` (see "Notify Claude
-    can't push" in README.md) actually merges the PR and flips `status` to
-    `published-live`. The deployment card's own "✓ Merged" badge is
-    derived live from every member's real `status`, not a separate stored
-    flag, so it can never show "Merged" for a PR that's still open. An
-    earlier version of this button (and a since-removed per-card "Merge to
-    main" button) wrote `published-live` directly with no connection to
-    GitHub at all — removed after that let cards read "Merged to Main"
-    while their PRs sat open and unmerged; see "No manual way to reach
-    `published-live` exists" above for the full story.
-  - Deleting a group ("ungroup") only clears `deploymentId` on its member
-    tickets — it never touches the tickets themselves, and a member is
-    immediately eligible to join a different group afterward.
+**Removed: the per-project "Deployments" page and its `deployments`
+collection.** Grouped tickets meant to ship together with a live checklist
+of which had reached "Approved for Deployment", plus a "Notify Claude to
+merge" action scoped to the group. Removed by explicit request (its owner
+found the ⋮ menu entry confusing and wasn't using it) — nothing else
+depended on the `deployments` collection or `deploymentId` field, and
+`patchFiles`' own "give every item in a shared-file batch the same full
+combined content" convention (`ROUTINE_INSTRUCTIONS.md` → "Group
+multi-item fixes into one deployment") is a separate, code-level mechanism
+in `run-backlog-automation.js` that never depended on this page either.
 
 ### A Backlog card locks while a fix is in flight
 
@@ -697,6 +650,26 @@ not this feature. Re-verify against the live footer's version badge before
 assuming a change like this one isn't live; a browser can hide a real
 deploy for up to an hour without `Cache-Control` pinned on `html`/`js`/`css`.
 
+**A real gap this left uncovered: the window between "Notify Claude" being
+clicked and the Routine actually writing `patchFiles`/`patchReady`.**
+`isInDevelopment` needs `patchReady`, which the Routine only sets once it's
+fully finished investigating and packaging a fix — for however long that
+session is still running (a few minutes, sometimes longer), a card it was
+sent doesn't have `patchReady` yet and was, until this was noticed and
+fixed, still a fully live control: editable, movable, deletable, exactly as
+if nothing were happening to it. `cardHTML`'s `isSentToClaude` closes this:
+`isBacklog && !isInDevelopment && project.notifyRoutine.status ===
+"in-progress" && !isStale && project.notifyRoutine.sentItemIds.includes(item.id)`
+(same 20-minute staleness guard as the Notify Claude button's own spinner,
+so a crashed or ancient run can't wedge a card locked forever). It gets the
+identical treatment — no checkbox/edit/comment/move/delete, greyed out via
+`.card-in-development`, a passive "Sent to Claude — locked" line — and
+folds into `isLocked` alongside `isInDevelopment`/`isDeploying`, so every
+control that already checked `isLocked` (the quick-comment icon, the edit
+pencil) picked this up for free; only the checkbox/delete/move-forward
+conditions, which checked `isInDevelopment` directly rather than
+`isLocked`, needed their own explicit `&& !isSentToClaude`.
+
 **The mirror-image case, `isDeploying` (`isLiveBranch && item.mergeReady`),
 covers the same kind of window at the *other* end of the pipeline**: once
 the Deploy flow (see README.md → "Notify Claude progress") has confirmed a
@@ -712,6 +685,40 @@ Pairs with the project-level "Deploy to Main" button's own spinner
 (`projects/{id}.deployRoutine` — see README.md), so both the button that
 triggered the deploy and the specific card(s) it's deploying now show it's
 actually in flight, where before neither did.
+
+### In-app dialogs replace window.confirm/prompt/alert
+
+`backlog-tracker/public` has no native `confirm()`/`prompt()`/`alert()` call
+left anywhere (verified by `grep`). A native dialog blocks every script on
+the page for as long as it's open — including anything driving the board
+programmatically, like a Claude Code session — which is what froze the tab
+mid-deploy on 12 September (the project header's own "Approved for
+Deployment" confirm), and it can't be styled, validated, or dismissed
+except through its own OK/Cancel. One small modal (`#dialog-backdrop` in
+`index.html`) plus four thin Promise-returning wrappers in `app.js` now
+cover every shape the native calls did:
+
+- `showAlert(message, opts?)` — OK only, no Cancel. Replaces `alert()`.
+- `showConfirmDialog(message, opts?)` — resolves `true` (OK) or `false`
+  (Cancel/Escape/backdrop click/✕). Replaces `confirm()`; `opts.danger`
+  renders the OK button in `--danger` red for a destructive action.
+- `showPromptDialog(message, defaultValue?, opts?)` — resolves the typed
+  string, or `null` if cancelled, matching `prompt()`'s own contract.
+  `opts.multiline`/`opts.rows` renders a `<textarea>` instead of a single
+  `<input>` (used by the FAQ table editor's row-text field).
+- `showFieldDialog({title, fields, ...})` — for more than one field at
+  once (the FAQ image-insert dialog's URL + alt text); resolves an object
+  keyed by each field's `id`, or `null` if cancelled.
+
+All four drive the same one panel/state (`openDialog()`/`closeDialogWith()`
+in `app.js`) — only one can be open at a time, matching how the native
+versions behaved too. Every call site that used to be a plain synchronous
+`if (confirm(...))`/`const x = prompt(...)` is now `await`ed, which meant
+promoting several previously-synchronous event handlers (the projects-root
+delegated click handler, a few modal button handlers) to `async` — nothing
+else about their control flow changed, since each wrapper's resolved value
+matches its native counterpart's return contract exactly (`showConfirmDialog`
+→ boolean, `showPromptDialog` → string-or-null).
 
 ### Attachments (screenshots & screen recordings)
 
@@ -974,12 +981,25 @@ Two surfaces sharing this same Firestore project:
     live" preview and the public site's article page run any HTML-shaped
     body through DOMPurify (CDN) before it ever touches `innerHTML`; if
     DOMPurify fails to load, the fallback is to escape the whole thing
-    (inert, visible-but-not-live) rather than inject it unsanitized. The
-    one intentional gap: DOMPurify's default tag allowlist excludes
-    `<iframe>` (needed for Quill's video embeds), added back via
-    `ADD_TAGS` — its `src` isn't restricted to a known-safe host list, an
-    accepted prototype-stage tradeoff, same posture as this repo's open
-    Firestore rules elsewhere.
+    (inert, visible-but-not-live) rather than inject it unsanitized.
+    DOMPurify's default tag allowlist excludes `<iframe>` (needed for
+    Quill's video embeds), added back via `ADD_TAGS` — but its `src` isn't
+    restricted to a known-safe host by DOMPurify itself for tags it allows,
+    so both `renderBodyMd` (`faq/js/faq-data.js`) and its admin-preview
+    mirror `renderFaqBodyMd` (`app.js`) install a `uponSanitizeElement` hook
+    (`installIframeAllowlist`/`ALLOWED_IFRAME_HOSTS`) that strips any
+    `<iframe>` whose `src` host isn't `www.youtube.com`,
+    `www.youtube-nocookie.com`, or `player.vimeo.com` — the only hosts
+    Quill's own video format ever normalizes a pasted link to. This closed
+    a real gap once the FAQ site went public (`faq/`, on GitHub Pages,
+    world-readable) on top of `faqArticles`' already-open write rules: an
+    iframe pasted straight into Firestore could otherwise point at any
+    host. Moving `faqArticles` writes behind real auth (so this stops being
+    reachable by an anonymous write at all) is a separate, larger change —
+    see "Firestore rules" above — that needs a decision on the auth model
+    (this pipeline's own automation currently authenticates via the open
+    REST API, per README.md's "Notify Claude can't push") before anyone
+    starts on it.
 - **Why `projectId` on an article**: the categorization-by-project hook
   that the auto-review automation (above) actually uses — an article
   documents a specific project's feature, so that project's own shipped
