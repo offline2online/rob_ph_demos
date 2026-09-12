@@ -32,7 +32,6 @@ const storage = getStorage(app);
 const itemsRef = collection(db, "backlogItems");
 const projectsRef = collection(db, "projects");
 const interfacesRef = collection(db, "interfaces");
-const deploymentsRef = collection(db, "deployments");
 const programsRef = collection(db, "programs");
 const projectDocsRef = collection(db, "projectDocs");
 
@@ -71,12 +70,120 @@ function escapeHTML(s) {
     .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 }
 
+// ── Generic in-app dialog — the one thing every window.confirm/window.prompt/
+// window.alert call in this app now goes through. A native dialog blocks
+// every script running on the page for as long as it's open — including
+// whatever's driving the board programmatically — which is exactly what
+// froze the tab mid-deploy on 12 September (the project's own "Approved for
+// Deployment" confirm dialog), and it can't be styled, validated, or
+// dismissed except through its own OK/Cancel. This one small modal (see
+// #dialog-backdrop in index.html) plus four thin wrappers below cover every
+// shape the old native calls did: an OK-only message, an OK/Cancel
+// question, a single labeled text field, and (for the FAQ image-insert
+// dialog) more than one field at once. Only one can be open at a time,
+// which matches how the native versions behaved too (they were modal).
+let dialogResolve = null;
+const dialogBackdrop = document.getElementById("dialog-backdrop");
+const dialogTitleEl = document.getElementById("dialog-title");
+const dialogMessageEl = document.getElementById("dialog-message");
+const dialogFieldsEl = document.getElementById("dialog-fields");
+const dialogCancelBtn = document.getElementById("dialog-cancel");
+const dialogOkBtn = document.getElementById("dialog-ok");
+
+function closeDialogWith(result) {
+  dialogBackdrop.hidden = true;
+  dialogFieldsEl.innerHTML = "";
+  const resolve = dialogResolve;
+  dialogResolve = null;
+  if (resolve) resolve(result);
+}
+
+// Low-level opener all four wrappers below funnel through.
+// fields: [{ id, label, value, multiline, rows, placeholder, type }]
+// Resolves with `true` (OK, no fields), `null` (cancelled/closed), or an
+// object keyed by each field's `id` (OK, with fields).
+function openDialog({ title, message, fields, okLabel, cancelLabel, danger, showCancel }) {
+  return new Promise((resolve) => {
+    dialogResolve = resolve;
+    dialogTitleEl.textContent = title || "";
+    dialogMessageEl.textContent = message || "";
+    dialogMessageEl.hidden = !message;
+    dialogFieldsEl.innerHTML = (fields || []).map((f, i) => `
+      <div>
+        ${f.label ? `<label class="dialog-field-label" for="dialog-field-${i}">${escapeHTML(f.label)}</label>` : ""}
+        ${f.multiline
+          ? `<textarea id="dialog-field-${i}" class="dialog-field-input" rows="${f.rows || 4}" placeholder="${escapeHTML(f.placeholder || "")}"></textarea>`
+          : `<input id="dialog-field-${i}" class="dialog-field-input" type="${f.type || "text"}" placeholder="${escapeHTML(f.placeholder || "")}">`}
+      </div>`).join("");
+    (fields || []).forEach((f, i) => {
+      const el = document.getElementById(`dialog-field-${i}`);
+      el.value = f.value || "";
+      el.dataset.fieldId = f.id;
+    });
+    dialogCancelBtn.hidden = showCancel === false;
+    dialogOkBtn.textContent = okLabel || "OK";
+    dialogCancelBtn.textContent = cancelLabel || "Cancel";
+    dialogOkBtn.classList.toggle("btn-danger", !!danger);
+    dialogOkBtn.classList.toggle("btn-primary", !danger);
+    dialogBackdrop.hidden = false;
+    const firstField = dialogFieldsEl.querySelector("input, textarea");
+    (firstField || dialogOkBtn).focus();
+  });
+}
+
+function submitDialog() {
+  if (!dialogResolve) return;
+  const fieldEls = Array.from(dialogFieldsEl.querySelectorAll(".dialog-field-input"));
+  if (!fieldEls.length) { closeDialogWith(true); return; }
+  const result = {};
+  fieldEls.forEach((el) => { result[el.dataset.fieldId] = el.value; });
+  closeDialogWith(result);
+}
+dialogOkBtn.addEventListener("click", submitDialog);
+dialogCancelBtn.addEventListener("click", () => closeDialogWith(null));
+dialogBackdrop.addEventListener("click", (e) => { if (e.target === dialogBackdrop) closeDialogWith(null); });
+document.getElementById("dialog-close").addEventListener("click", () => closeDialogWith(null));
+document.addEventListener("keydown", (e) => {
+  if (dialogBackdrop.hidden) return;
+  if (e.key === "Escape") { closeDialogWith(null); return; }
+  if (e.key === "Enter" && document.activeElement && document.activeElement.tagName !== "TEXTAREA") {
+    e.preventDefault();
+    submitDialog();
+  }
+});
+
+// window.alert replacement — OK only, no cancel, nothing to type.
+function showAlert(message, opts = {}) {
+  return openDialog({ title: opts.title || "", message, showCancel: false, okLabel: opts.okLabel || "OK" });
+}
+// window.confirm replacement — resolves true (OK) or false (cancelled/closed).
+function showConfirmDialog(message, opts = {}) {
+  return openDialog({
+    title: opts.title || "", message, showCancel: true,
+    okLabel: opts.okLabel || "OK", cancelLabel: opts.cancelLabel || "Cancel", danger: opts.danger,
+  }).then((v) => v === true);
+}
+// window.prompt replacement — resolves the typed string, or null if
+// cancelled/closed, matching window.prompt's own return contract.
+function showPromptDialog(message, defaultValue = "", opts = {}) {
+  return openDialog({
+    title: opts.title || "", message: opts.label ? "" : message,
+    fields: [{ id: "value", label: opts.label || "", value: defaultValue, multiline: opts.multiline, rows: opts.rows, placeholder: opts.placeholder }],
+    okLabel: opts.okLabel, cancelLabel: opts.cancelLabel,
+  }).then((v) => (v ? v.value : null));
+}
+// For more than one field at once (the FAQ image-insert dialog's URL + alt
+// text) — resolves an object keyed by each field's `id`, or null if
+// cancelled/closed.
+function showFieldDialog({ title, message, fields, okLabel, cancelLabel }) {
+  return openDialog({ title, message, fields, okLabel, cancelLabel, showCancel: true });
+}
+
 let allItems = [];
 let items = [];
 let projects = [];
 let projectsLoaded = false;
 let interfaces = [];
-let deployments = [];
 let programs = [];
 let projectDocs = [];
 let editingProjectId = null;
@@ -138,18 +245,6 @@ let editingDocId = null; // null while adding, an id while editing (Additional d
 let archiveProjectId = null;
 let archiveSort = { field: "date", dir: "desc" };
 let archiveFilters = { type: "", category: "", search: "" };
-
-// ── Deployments page state ─────────────────────────────────────────────
-// A deployment groups several backlogItems meant to ship to main together
-// — usually all fixed in one Notify Claude Routine fire, but can also be
-// hand-picked from the board. Members carry a deploymentId pointing at a
-// "deployments" doc; its "Notify Claude to merge" action only unlocks
-// once every member has individually reached ready-to-publish (Live on
-// Feature Branch), and just requests the same Notify Claude — Deploy flow
-// scoped to that project — run-backlog-automation.js is what actually
-// merges each PR and flips status, never this button directly.
-let deploymentsProjectId = null;
-let editingDeploymentId = null; // null while creating, an id while editing membership
 
 function colListId(pid, colKey) { return `col-${pid}-${colKey}`; }
 
@@ -222,7 +317,6 @@ document.addEventListener("keydown", (e) => {
 function closeAllSubPages() {
   closeArchivePage();
   closeArchivedProjectsPage();
-  closeDeploymentsPage();
   closeDocsPage();
   closeFaqSettingsPage();
   closeFaqArticlesPage();
@@ -242,6 +336,7 @@ function cardHTML(item) {
   const isTesting = item.status === "ready-for-testing";
   const isLiveBranch = item.status === "ready-to-publish";
   const isBacklog = item.status === "backlog";
+  const pid = item.projectId || GENERAL_PROJECT_ID;
   // A Backlog card the Routine has already packaged a fix for (patchFiles +
   // patchReady written, see ROUTINE_INSTRUCTIONS.md) but that
   // backlog-automation.yml hasn't picked up yet (it polls patchReady every
@@ -254,6 +349,24 @@ function cardHTML(item) {
   // below. It naturally unlocks itself the moment the automation flips
   // status to ready-for-testing, since isBacklog goes false then too.
   const isInDevelopment = isBacklog && !!item.patchReady;
+  // A Backlog card the project's own "Notify Claude" button has already
+  // sent off (its id is in that project's notifyRoutine.sentItemIds while
+  // notifyRoutine.status is still "in-progress") but that the Routine
+  // hasn't packaged a fix for yet (isInDevelopment above, which needs
+  // patchReady, is still false) — the reported bug: a ticket "selected to
+  // go to development" stayed fully editable/movable/deletable for the
+  // entire time Claude was actually investigating it, which is exactly the
+  // window a person is most likely to accidentally step on it. Same stale
+  // check as notifyClaudeButtonHTML's own isStale, so this unlocks on its
+  // own if a fired session never reports back, rather than staying locked
+  // forever on a crashed run.
+  const routineForCard = projects.find((p) => p.id === pid);
+  const cardRoutine = routineForCard && routineForCard.notifyRoutine;
+  const cardRoutineFiredMs = cardRoutine ? tsMillis(cardRoutine.firedAt) : 0;
+  const cardRoutineStale = cardRoutine?.status === "in-progress" && cardRoutineFiredMs && (Date.now() - cardRoutineFiredMs) > NOTIFY_ROUTINE_STALE_MS;
+  const isSentToClaude = isBacklog && !isInDevelopment
+    && cardRoutine?.status === "in-progress" && !cardRoutineStale
+    && (cardRoutine.sentItemIds || []).includes(item.id);
   // Mirrors isInDevelopment above but for the opposite end of the pipeline:
   // once the Routine has confirmed a ready-to-publish item's PR is green
   // and mergeable and written mergeReady (see ROUTINE_INSTRUCTIONS.md's
@@ -263,7 +376,7 @@ function cardHTML(item) {
   // treatment. It naturally unlocks the instant status moves off
   // ready-to-publish, since isLiveBranch goes false then too.
   const isDeploying = isLiveBranch && !!item.mergeReady;
-  const isLocked = isInDevelopment || isDeploying;
+  const isLocked = isInDevelopment || isDeploying || isSentToClaude;
   // A card flagged noDeploymentRequired has no PR for Deploy to Main to
   // merge — the automation's own no-diff path creates exactly this shape
   // (see run-backlog-automation.js) — so it gets the one-click completion
@@ -272,7 +385,7 @@ function cardHTML(item) {
   // Approved for Deployment had no path forward except being moved back a
   // column first.
   const noDeployPending = !!item.noDeploymentRequired && (isTesting || isLiveBranch);
-  const canDelete = isBacklog && !isInDevelopment;
+  const canDelete = isBacklog && !isInDevelopment && !isSentToClaude;
 
   // Backlog cards select for "Ready for Dev"; Ready for Testing cards
   // (except noDeploymentRequired ones, which skip the feature-branch step
@@ -280,8 +393,7 @@ function cardHTML(item) {
   // different checkbox classes/selection sets (see getSelectedSet vs.
   // getDeploySelectedSet). No other column gets a checkbox — nothing else
   // in the pipeline acts on a hand-picked subset.
-  const pid = item.projectId || GENERAL_PROJECT_ID;
-  const selectCb = (isBacklog && !isInDevelopment)
+  const selectCb = (isBacklog && !isInDevelopment && !isSentToClaude)
     ? `<input type="checkbox" class="card-select-cb" data-id="${item.id}" data-project-id="${escapeHTML(pid)}" title="Select for Ready for Dev" ${getSelectedSet(pid).has(item.id) ? "checked" : ""}>`
     : (isTesting && !item.noDeploymentRequired
         ? `<input type="checkbox" class="card-deploy-select-cb" data-id="${item.id}" data-project-id="${escapeHTML(pid)}" title="Select for Approved for Deployment" ${getDeploySelectedSet(pid).has(item.id) ? "checked" : ""}>`
@@ -334,7 +446,7 @@ function cardHTML(item) {
   const archiveBtn = isPublished
     ? `<button type="button" class="icon-btn archive-btn" data-id="${item.id}" title="Archive">&#128451;</button>`
     : "";
-  const canRight = idx < COL_KEYS.length - 1 && !isTesting && !isLiveBranch && !isInDevelopment;
+  const canRight = idx < COL_KEYS.length - 1 && !isTesting && !isLiveBranch && !isInDevelopment && !isSentToClaude;
   const rightBtn = canRight
     ? `<button type="button" class="icon-btn move-btn" data-id="${item.id}" data-dir="1" title="Move forward">&rarr;</button>`
     : "";
@@ -344,12 +456,9 @@ function cardHTML(item) {
   // it up (see isInDevelopment above).
   const inDevelopmentHint = isInDevelopment
     ? `<span class="in-development-hint" title="Claude has already packaged a fix for this — it's locked until backlog-automation.yml opens the PR and moves it to Ready for Testing">In development — locked</span>`
-    : "";
-  // Ties this card back to whichever other tickets are meant to ship
-  // alongside it — see the Deployments page for the full group + progress.
-  const deploymentBadge = item.deploymentId
-    ? `<span class="deployment-badge" title="Ships together with the rest of this deployment">&#128640; ${escapeHTML(deploymentLabel(item.deploymentId))}</span>`
-    : "";
+    : (isSentToClaude
+        ? `<span class="in-development-hint" title="This item was sent to Claude via Ready for Dev and is still being investigated — it's locked until a fix is packaged (or the Notify Claude session finishes)">Sent to Claude — locked</span>`
+        : "");
   const noDeployBadge = item.noDeploymentRequired
     ? `<span class="no-deploy-badge" title="Live data/config change only — no code to push or deploy">No deployment required</span>`
     : "";
@@ -389,8 +498,9 @@ function cardHTML(item) {
   // after later pushes update the file, with no visible error.
   // rawcdn.githack.com is githack's own always-uncached host, meant
   // specifically for testing an in-progress branch like this one. Set/
-  // changed via a plain prompt() rather than a full modal — this is a
-  // one-off paste, not a form worth its own dialog.
+  // changed via the generic showPromptDialog() (a single-field in-app
+  // dialog) rather than a bespoke modal — this is a one-off paste, not a
+  // form worth its own dedicated markup.
   const testLinkHTML = isTesting
     ? (item.previewUrl
         ? `<div class="test-link-row">
@@ -423,9 +533,14 @@ function cardHTML(item) {
   const attachmentBadge = attachmentCount
     ? `<span class="attachment-count-badge" title="${attachmentCount} attachment${attachmentCount === 1 ? "" : "s"}">&#128206; ${attachmentCount}</span>`
     : "";
+  // Bottom-right of the tile, alongside archive/delete — not the plain
+  // left-aligned icon-row spot it used to share with the category badge,
+  // which read as just another muted utility icon. A filled, rounded pill
+  // (see .quick-comment-btn) with its own comment count reads as its own
+  // distinct, clickable affordance instead.
   const quickCommentBtn = isLocked
     ? ""
-    : `<button type="button" class="icon-btn quick-comment-btn" data-id="${item.id}" title="Add a quick comment">&#128172;</button>`;
+    : `<button type="button" class="icon-btn quick-comment-btn" data-id="${item.id}" title="Add a quick comment${commentCount ? ` — ${commentCount} so far` : ""}">&#128172;${commentCount ? ` <span class="options-menu-count">${commentCount}</span>` : ""}</button>`;
 
   return `
     <article class="card${isLocked ? " card-in-development" : ""}" data-id="${item.id}">
@@ -438,14 +553,13 @@ function cardHTML(item) {
       </div>
       <h3 class="card-title">${escapeHTML(item.title)}</h3>
       ${descHTML}
-      ${deploymentBadge}${noDeployBadge}${testVersionBadge}${prBadge}
+      ${noDeployBadge}${testVersionBadge}${prBadge}
       <div class="card-footer">
         <div class="card-footer-left">
           <span class="card-cat">${escapeHTML(item.category || "Uncategorised")}</span>
           ${attachmentBadge}
-          ${quickCommentBtn}
         </div>
-        <div class="card-move">${archiveBtn}${deleteBtn}</div>
+        <div class="card-move">${quickCommentBtn}${archiveBtn}${deleteBtn}</div>
       </div>
       ${testLinkHTML}
       ${approveBtn}${mergeBtn}${inDevelopmentHint}
@@ -492,12 +606,8 @@ function optionsMenuHTML(project) {
   const archivedCount = archivedCountForProject(pid);
   const hasReq = !!(project.requirementsMd && project.requirementsMd.trim());
   const ifaces = interfacesForProject(pid);
-  const deploymentCount = deploymentsForProject(pid).length;
 
   let html = `
-    <button type="button" class="options-menu-item project-deployments-btn" data-project-id="${escapeHTML(pid)}">
-      Deployments <span class="options-menu-count">${deploymentCount}</span>
-    </button>
     <button type="button" class="options-menu-item project-archive-btn" data-project-id="${escapeHTML(pid)}">
       Archived tickets <span class="options-menu-count">${archivedCount}</span>
     </button>
@@ -632,7 +742,7 @@ const DEPLOY_ROUTINE_STALE_MS = 20 * 60 * 1000;
 // column. Mirrors notifyClaudeButtonHTML's spinner/session-link treatment
 // via project.deployRoutine (written by notifyOnProjectReadyToDeploy) —
 // before this, clicking "Deploy to Main" gave no ongoing feedback at all
-// (a one-time alert(), then the button looked exactly like it hadn't been
+// (a one-time alert dialog, then the button looked exactly like it hadn't been
 // clicked), so an in-flight deploy was indistinguishable from an unclicked
 // one. See cardHTML's own isDeploying for the matching per-item card lock.
 function deployNotifyButtonHTML(project) {
@@ -869,12 +979,12 @@ function programGroupHTML(group) {
 
 // render() itself just schedules the real work on the next animation
 // frame and coalesces any further calls until that frame runs. On a cold
-// load, five independent onSnapshot listeners below (items, projects,
-// interfaces, deployments, programs) each call render() the moment their
-// own first snapshot arrives — without this, that meant up to five full
-// innerHTML rebuilds of the entire board (every project, every column,
-// every card) in quick succession before things settled, which is real,
-// wasted work on every page load, worse on a slower/lower-power device.
+// load, four independent onSnapshot listeners below (items, projects,
+// interfaces, programs) each call render() the moment their own first
+// snapshot arrives — without this, that meant up to four full innerHTML
+// rebuilds of the entire board (every project, every column, every card)
+// in quick succession before things settled, which is real, wasted work
+// on every page load, worse on a slower/lower-power device.
 // Coalescing to one rebuild per frame also smooths out the several other
 // call sites that fire render() synchronously off rapid UI interaction
 // (collapsing a project, selecting cards, etc.) — a one-frame (~16ms)
@@ -914,7 +1024,6 @@ onSnapshot(query(itemsRef, orderBy("createdAt", "desc")), (snap) => {
   render();
   if (archiveProjectId) renderArchivePage();
   if (archivedProjectsPage && !archivedProjectsPage.hidden) renderArchivedProjectsPage();
-  if (deploymentsProjectId) renderDeploymentsPage();
   if (editingItemId) { renderEiNotes(); renderEiAttachments(); }
 }, (err) => {
   console.error("backlog-tracker: items listener error", err);
@@ -937,14 +1046,6 @@ onSnapshot(interfacesRef, (snap) => {
   if (docsProjectId) renderDocsPage();
 }, (err) => {
   console.error("backlog-tracker: interfaces listener error", err);
-});
-
-onSnapshot(deploymentsRef, (snap) => {
-  deployments = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-  render();
-  if (deploymentsProjectId) renderDeploymentsPage();
-}, (err) => {
-  console.error("backlog-tracker: deployments listener error", err);
 });
 
 onSnapshot(programsRef, (snap) => {
@@ -1136,14 +1237,14 @@ async function addProject(name, programId) {
 // for (see ../functions/index.js), which then sends everything currently
 // in this project's Backlog column in one message — for "I've added
 // several items, now go look" instead of one notification per card.
-// No confirmation alert() here anymore — the Notify Claude button itself
+// No confirmation dialog here anymore — the Notify Claude button itself
 // now shows a persistent working/spinner state (see notifyClaudeButtonHTML)
 // once projects/{id}.notifyRoutine reflects the click, which is a better
 // signal than a one-time dismissable dialog ever was.
 async function requestNotify(pid) {
   const count = backlogCountForProject(pid);
   if (count === 0) {
-    alert("Nothing in Backlog for this project yet — add an item first.");
+    await showAlert("Nothing in Backlog for this project yet — add an item first.");
     return;
   }
   // A non-empty selection (this project's own Backlog checkboxes) narrows
@@ -1184,8 +1285,8 @@ async function requestNotify(pid) {
 // This has no async, watchable in-progress state the way Ready for Dev/
 // Deploy to Main do (no Routine session to spin on) — the whole thing
 // completes in one round trip. Without any feedback at all, that read as
-// "the button did nothing": confirmed with an immediate alert() (works
-// with zero external config, unlike Slack) AND a Slack post via
+// "the button did nothing": confirmed with an immediate in-app alert dialog
+// (works with zero external config, unlike Slack) AND a Slack post via
 // notifyOnItemsDeployedToFeature (../functions/index.js), which watches
 // deployToFeatureRequestedAt the same way requestNotify/requestDeployNotify
 // below already watch their own timestamps — for consistency, not because
@@ -1195,7 +1296,7 @@ async function deployToFeature(pid) {
     (i.projectId || GENERAL_PROJECT_ID) === pid && i.status === "ready-for-testing" && i.testPassed && !i.noDeploymentRequired
   );
   if (passedItems.length === 0) {
-    alert("Nothing has passed testing for this project yet — confirm an item's testing first.");
+    await showAlert("Nothing has passed testing for this project yet — confirm an item's testing first.");
     return;
   }
   // Same "a non-empty selection narrows the action" pattern as
@@ -1223,7 +1324,7 @@ async function deployToFeature(pid) {
     deployToFeatureItemTitles: itemsToMove.map((i) => i.title),
   }, { merge: true });
 
-  alert(
+  await showAlert(
     `${itemsToMove.length} item${itemsToMove.length === 1 ? "" : "s"} moved to Approved for Deployment:\n` +
     itemsToMove.map((i) => `• ${i.title}`).join("\n") +
     `\n\nNo new GitHub push happens at this step — each item's code was already pushed to its own feature branch back when it left Backlog. This just advances the board's own status now that testing is confirmed.`
@@ -1237,7 +1338,7 @@ async function deployToFeature(pid) {
 // same Routine but with fire text that explicitly says these items are
 // already tested and just need their PRs merged to main.
 //
-// No confirmation alert() here anymore, same reasoning as requestNotify:
+// No confirmation dialog here anymore, same reasoning as requestNotify:
 // the Deploy to Main button itself now shows a persistent working/spinner
 // state (see deployNotifyButtonHTML) once projects/{id}.deployRoutine
 // reflects the click — a better, ongoing signal than a one-time dismissable
@@ -1245,7 +1346,7 @@ async function deployToFeature(pid) {
 async function requestDeployNotify(pid) {
   const count = deployReadyCountForProject(pid);
   if (count === 0) {
-    alert("Nothing in Approved for Deployment for this project yet — confirm an item's testing first.");
+    await showAlert("Nothing in Approved for Deployment for this project yet — confirm an item's testing first.");
     return;
   }
 
@@ -1357,84 +1458,6 @@ function populateProgramSelect(selectEl, selectedId) {
     '<option value="__new__">+ New program…</option>';
 }
 
-// ── Deployments — grouping several backlogItems to ship to main together ──
-function deploymentsForProject(pid) {
-  return deployments.filter((d) => d.projectId === pid);
-}
-function itemsForDeployment(deploymentId) {
-  return allItems.filter((i) => i.deploymentId === deploymentId && i.status !== "archived");
-}
-function deploymentLabel(deploymentId) {
-  const d = deployments.find((d) => d.id === deploymentId);
-  return d ? d.label : "";
-}
-// Grouping candidates: anything actually in flight, not already spoken for
-// by another deployment, and not yet done — a project's whole point is
-// "ship these together," so a card already merged/archived, or already in
-// a different group, doesn't belong in the picker for a new one.
-function groupableItemsForProject(pid) {
-  return items.filter((i) =>
-    (i.projectId || GENERAL_PROJECT_ID) === pid &&
-    i.status !== "published-live" &&
-    !i.deploymentId
-  );
-}
-
-async function createDeployment(projectId, label, itemIds) {
-  const trimmed = (label || "").trim();
-  if (!trimmed || itemIds.length === 0) return;
-  const ref = await addDoc(deploymentsRef, {
-    projectId, label: trimmed, createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
-  });
-  const batch = writeBatch(db);
-  itemIds.forEach((id) => batch.update(doc(db, "backlogItems", id), { deploymentId: ref.id }));
-  await batch.commit();
-}
-
-async function renameDeployment(id, label) {
-  const trimmed = (label || "").trim();
-  if (!trimmed) return;
-  await setDoc(doc(db, "deployments", id), { label: trimmed, updatedAt: serverTimestamp() }, { merge: true });
-}
-
-// Add/remove membership in one call so the edit modal's Save button is a
-// single round trip regardless of how many checkboxes changed.
-async function setDeploymentMembership(deploymentId, addIds, removeIds) {
-  const batch = writeBatch(db);
-  addIds.forEach((id) => batch.update(doc(db, "backlogItems", id), { deploymentId }));
-  removeIds.forEach((id) => batch.update(doc(db, "backlogItems", id), { deploymentId: null }));
-  await batch.commit();
-}
-
-// Deleting a group is just ungrouping — its tickets aren't touched beyond
-// clearing the link back to it, never deleted or moved.
-async function deleteDeployment(id) {
-  const memberIds = itemsForDeployment(id).map((i) => i.id);
-  const batch = writeBatch(db);
-  memberIds.forEach((itemId) => batch.update(doc(db, "backlogItems", itemId), { deploymentId: null }));
-  batch.delete(doc(db, "deployments", id));
-  await batch.commit();
-}
-
-// Once every member has individually been confirmed "Approved for
-// Deployment" (ready-to-publish — the same "someone actually tested it" gate
-// a single card's own "Confirm live on branch" button already enforces),
-// this used to flip them all straight to published-live in one Firestore
-// write — board bookkeeping only, since it never touched the underlying
-// GitHub PRs. That let a whole deployment group show "Merged to Main"
-// while every one of its PRs sat open and unmerged. It now does the same
-// thing a single card's removed "Merge to main" button used to do wrong:
-// request the project's real Notify Claude — Deploy flow instead, which
-// only advances a card once backlog-automation.yml has actually merged
-// its PR. `isMerged` below is derived from real member status, not a
-// separate stored flag, so the deployment card's own "Merged" badge only
-// ever reflects reality.
-async function requestDeploymentMerge(id) {
-  const members = itemsForDeployment(id);
-  if (members.length === 0 || !members.every((i) => i.status === "ready-to-publish")) return;
-  await requestDeployNotify(members[0].projectId || GENERAL_PROJECT_ID);
-}
-
 // An interface is a maintained contract document shared between exactly
 // two projects — the backlog-tracker-native equivalent of a shared
 // markdown file, so it survives independently of either project's repo
@@ -1472,7 +1495,7 @@ async function commitProjectNameEdit(pid, value) {
 // regenerated on every render(), so listeners live on the never-replaced
 // parent instead of individual cards/buttons. ──────────────────────────
 const projectsRoot = document.getElementById("projects-root");
-projectsRoot.addEventListener("click", (e) => {
+projectsRoot.addEventListener("click", async (e) => {
   const selectCb = e.target.closest(".card-select-cb");
   if (selectCb) {
     const sel = getSelectedSet(selectCb.dataset.projectId);
@@ -1542,7 +1565,7 @@ projectsRoot.addEventListener("click", (e) => {
     // — that host is CDN-cached and can silently keep showing a stale
     // commit) when there's nothing set yet, so the field isn't just blank.
     const defaultValue = current || "https://rawcdn.githack.com/offline2online/rob_ph_demos/<branch>/<path>";
-    const url = prompt("Preview/test URL for this ticket (e.g. a rawcdn.githack.com link, or the PR URL):", defaultValue);
+    const url = await showPromptDialog("Preview/test URL for this ticket (e.g. a rawcdn.githack.com link, or the PR URL):", defaultValue, { title: "Set test link" });
     if (url !== null) setItemPreviewUrl(id, url);
     return;
   }
@@ -1562,8 +1585,6 @@ projectsRoot.addEventListener("click", (e) => {
   if (archiveNavBtn) { closeAllOptionMenus(); openArchivePage(archiveNavBtn.dataset.projectId); return; }
   const docsNavBtn = e.target.closest(".project-docs-btn");
   if (docsNavBtn) { closeAllOptionMenus(); openDocsPage(docsNavBtn.dataset.projectId); return; }
-  const deploymentsNavBtn = e.target.closest(".project-deployments-btn");
-  if (deploymentsNavBtn) { closeAllOptionMenus(); openDeploymentsPage(deploymentsNavBtn.dataset.projectId); return; }
   const ifaceOpenBtn = e.target.closest(".interface-open-btn");
   if (ifaceOpenBtn) { closeAllOptionMenus(); openInterfaceModal(ifaceOpenBtn.dataset.interfaceId); return; }
   const ifaceAddBtn = e.target.closest(".interface-add-btn");
@@ -1576,7 +1597,7 @@ projectsRoot.addEventListener("click", (e) => {
     const warning = activeCount
       ? `"${projectName(pid)}" still has ${activeCount} active item${activeCount === 1 ? "" : "s"} (not yet Merged to Main). Archive it anyway? You can restore it later from Archived projects.`
       : `Archive "${projectName(pid)}"? You can restore it later from Archived projects.`;
-    if (confirm(warning)) archiveProject(pid);
+    if (await showConfirmDialog(warning, { title: "Archive project", okLabel: "Archive" })) archiveProject(pid);
     return;
   }
   const optionsBtn = e.target.closest(".project-options-btn");
@@ -1713,9 +1734,9 @@ document.addEventListener("keydown", (e) => {
 document.querySelectorAll("#ei-backdrop .type-opt").forEach((btn) => {
   btn.addEventListener("click", () => setEiTypeToggle(btn.dataset.type));
 });
-document.getElementById("ei-save").addEventListener("click", () => {
+document.getElementById("ei-save").addEventListener("click", async () => {
   if (!editingItemId) return;
-  if (!eiTitleInput.value.trim()) { alert("Title can't be empty."); return; }
+  if (!eiTitleInput.value.trim()) { await showAlert("Title can't be empty."); return; }
   const type = document.querySelector("#ei-backdrop .type-opt.active")?.dataset.type || "feature";
   updateItemDetails(editingItemId, {
     title: eiTitleInput.value, desc: eiDescInput.value, type, category: eiCategorySelect.value,
@@ -1735,13 +1756,13 @@ document.getElementById("ei-comment-submit").addEventListener("click", () => {
 // (no separate "Attach" click to remember), same one-step feel as the
 // comment box's own submit-on-click. See uploadItemAttachment above for
 // the Storage write itself. ────────────────────────────────────────────
-eiAttachmentsList.addEventListener("click", (e) => {
+eiAttachmentsList.addEventListener("click", async (e) => {
   const btn = e.target.closest(".ei-attachment-remove-btn");
   if (!btn || !editingItemId) return;
   const item = allItems.find((i) => i.id === editingItemId);
   const att = item && (item.attachments || [])[Number(btn.dataset.idx)];
   if (!att) return;
-  if (!confirm(`Remove "${att.name || "this attachment"}"?`)) return;
+  if (!(await showConfirmDialog(`Remove "${att.name || "this attachment"}"?`, { title: "Remove attachment", okLabel: "Remove", danger: true }))) return;
   removeItemAttachment(editingItemId, att);
 });
 
@@ -1749,8 +1770,8 @@ eiAttachScreenshotInput.addEventListener("change", async () => {
   const file = eiAttachScreenshotInput.files[0];
   eiAttachScreenshotInput.value = "";
   if (!file || !editingItemId) return;
-  if (!file.type.startsWith("image/")) { alert("Please choose an image file."); return; }
-  if (file.size > MAX_SCREENSHOT_BYTES) { alert("That screenshot is too large (max 15MB)."); return; }
+  if (!file.type.startsWith("image/")) { await showAlert("Please choose an image file."); return; }
+  if (file.size > MAX_SCREENSHOT_BYTES) { await showAlert("That screenshot is too large (max 15MB)."); return; }
   const id = editingItemId;
   setEiAttachHint("Uploading screenshot…");
   try {
@@ -1758,7 +1779,7 @@ eiAttachScreenshotInput.addEventListener("change", async () => {
     setEiAttachHint("");
   } catch (err) {
     setEiAttachHint("");
-    alert("Couldn't upload that screenshot: " + (err && err.message ? err.message : err));
+    await showAlert("Couldn't upload that screenshot: " + (err && err.message ? err.message : err));
   }
 });
 
@@ -1779,7 +1800,7 @@ function setEiRecordButtonState(recording) {
 async function startScreenRecording() {
   if (!editingItemId) return;
   if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) {
-    alert("Screen recording isn't supported in this browser.");
+    await showAlert("Screen recording isn't supported in this browser.");
     return;
   }
   const targetItemId = editingItemId;
@@ -1801,7 +1822,7 @@ async function startScreenRecording() {
     const blob = new Blob(chunks, { type: mimeType });
     if (blob.size > MAX_RECORDING_BYTES) {
       setEiAttachHint("");
-      alert("That recording is too large (max 100MB) — try a shorter one.");
+      await showAlert("That recording is too large (max 100MB) — try a shorter one.");
       return;
     }
     const file = new File([blob], `screen-recording-${Date.now()}.webm`, { type: mimeType });
@@ -1809,7 +1830,7 @@ async function startScreenRecording() {
     try {
       await uploadItemAttachment(targetItemId, file, "video");
     } catch (err) {
-      alert("Couldn't upload that screen recording: " + (err && err.message ? err.message : err));
+      await showAlert("Couldn't upload that screen recording: " + (err && err.message ? err.message : err));
     } finally {
       setEiAttachHint("");
     }
@@ -1948,7 +1969,7 @@ const npProgramSelect = document.getElementById("np-program-select");
 function wireProgramSelect(selectEl) {
   selectEl.addEventListener("change", async () => {
     if (selectEl.value !== "__new__") return;
-    const name = (prompt("New program/product name:") || "").trim();
+    const name = ((await showPromptDialog("New program/product name:")) || "").trim();
     if (!name) { populateProgramSelect(selectEl, ""); return; }
     const newId = await createProgram(name);
     populateProgramSelect(selectEl, newId || "");
@@ -2155,147 +2176,6 @@ document.getElementById("archived-projects-table-body").addEventListener("click"
   if (btn) restoreProject(btn.dataset.projectId);
 });
 
-// ── Deployments page (per-project — grouping tickets meant to ship together,
-// with a progress checklist and a "Notify Claude to merge" action that only
-// unlocks once every member is individually confirmed Approved for
-// Deployment) ──────────────────────────────────────────────────────────
-const deploymentsPage = document.getElementById("deployments-page");
-
-function openDeploymentsPage(pid) {
-  closeAllSubPages();
-  deploymentsProjectId = pid;
-  document.getElementById("projects-root").hidden = true;
-  deploymentsPage.hidden = false;
-  renderDeploymentsPage();
-}
-function closeDeploymentsPage() {
-  deploymentsProjectId = null;
-  deploymentsPage.hidden = true;
-  document.getElementById("projects-root").hidden = false;
-}
-
-function columnLabel(statusKey) {
-  const col = COLUMNS.find((c) => c.key === statusKey);
-  return col ? col.label : statusKey;
-}
-
-function deploymentMemberRowHTML(item) {
-  return `<li class="deployment-member">
-    <span class="deployment-member-title">${escapeHTML(item.title)}</span>
-    <span class="deployment-member-status">${escapeHTML(columnLabel(item.status))}</span>
-  </li>`;
-}
-
-function deploymentRowHTML(dep) {
-  const members = itemsForDeployment(dep.id);
-  const confirmedCount = members.filter((i) => i.status === "ready-to-publish" || i.status === "published-live").length;
-  const allReady = members.length > 0 && members.every((i) => i.status === "ready-to-publish");
-  // Derived from the members' own real status, not a separate stored
-  // flag — this badge only ever reflects an actual completed merge (see
-  // requestDeploymentMerge's own comment for why that matters here).
-  const isMerged = members.length > 0 && members.every((i) => i.status === "published-live");
-
-  const actionHTML = isMerged
-    ? `<span class="deployment-merged-badge">&#10003; Merged</span>`
-    : `<button type="button" class="btn-primary deployment-merge-btn" data-id="${dep.id}" ${allReady ? "" : "disabled"}>Notify Claude to merge</button>`;
-
-  return `
-    <div class="deployment-card" data-id="${dep.id}">
-      <div class="deployment-card-header">
-        <h3>${escapeHTML(dep.label)}</h3>
-        <div class="deployment-card-actions">
-          <button type="button" class="icon-btn deployment-edit-btn" data-id="${dep.id}" title="Edit">&#9998;</button>
-          <button type="button" class="icon-btn deployment-delete-btn" data-id="${dep.id}" title="Ungroup">&times;</button>
-        </div>
-      </div>
-      <p class="deployment-progress">${confirmedCount}/${members.length} confirmed Approved for Deployment</p>
-      <ul class="deployment-member-list">${members.map(deploymentMemberRowHTML).join("") || '<li class="deployment-member-empty">No tickets in this group.</li>'}</ul>
-      ${actionHTML}
-    </div>`;
-}
-
-function renderDeploymentsPage() {
-  if (!deploymentsProjectId) return;
-  document.getElementById("deployments-page-project-name").textContent = projectName(deploymentsProjectId);
-  const rows = deploymentsForProject(deploymentsProjectId);
-  document.getElementById("deployments-list").innerHTML = rows.length
-    ? rows.map(deploymentRowHTML).join("")
-    : '<p class="interface-row-empty">No deployments grouped yet — use "+ New deployment" to link tickets that should ship together.</p>';
-}
-
-document.getElementById("deployments-add-btn").addEventListener("click", () => openDeploymentModal(null));
-document.getElementById("deployments-list").addEventListener("click", (e) => {
-  const mergeBtn = e.target.closest(".deployment-merge-btn");
-  if (mergeBtn && !mergeBtn.disabled) { requestDeploymentMerge(mergeBtn.dataset.id); return; }
-  const editBtn = e.target.closest(".deployment-edit-btn");
-  if (editBtn) { openDeploymentModal(editBtn.dataset.id); return; }
-  const delBtn = e.target.closest(".deployment-delete-btn");
-  if (delBtn) {
-    if (confirm("Ungroup this deployment? Its tickets stay exactly as they are, just no longer linked together.")) {
-      deleteDeployment(delBtn.dataset.id);
-    }
-  }
-});
-
-// ── Deployment create/edit modal — shared by "+ New deployment" and each
-// group's own edit icon; Save renames (if needed) and reconciles
-// membership in one round trip regardless of what changed. ─────────────
-const dpBackdrop = document.getElementById("dp-backdrop");
-const dpLabelInput = document.getElementById("dp-label-input");
-const dpItemsList = document.getElementById("dp-items-list");
-
-function openDeploymentModal(deploymentId) {
-  editingDeploymentId = deploymentId;
-  const dep = deploymentId ? deployments.find((d) => d.id === deploymentId) : null;
-  document.getElementById("dp-title").textContent = dep ? "Edit deployment" : "New deployment";
-  dpLabelInput.value = dep ? dep.label : `Deploy #${deploymentsForProject(deploymentsProjectId).length + 1}`;
-
-  const currentMembers = dep ? itemsForDeployment(dep.id) : [];
-  const currentMemberIds = currentMembers.map((i) => i.id);
-  // Eligible = groupable tickets in this project, plus whatever's already
-  // in this group (so editing a group never silently drops a member just
-  // because some other field changed underneath it).
-  const eligible = groupableItemsForProject(deploymentsProjectId)
-    .concat(currentMembers)
-    .filter((item, idx, arr) => arr.findIndex((i) => i.id === item.id) === idx);
-
-  dpItemsList.innerHTML = eligible.length
-    ? eligible.map((item) => `
-        <label class="dp-item-row">
-          <input type="checkbox" class="dp-item-checkbox" value="${escapeHTML(item.id)}" ${currentMemberIds.includes(item.id) ? "checked" : ""}>
-          <span>${escapeHTML(item.title)} <span class="options-menu-sub">(${escapeHTML(columnLabel(item.status))})</span></span>
-        </label>`).join("")
-    : '<p class="interface-row-empty">No eligible tickets — everything in this project is either already Merged to Main or already in another deployment.</p>';
-
-  dpBackdrop.hidden = false;
-  dpLabelInput.focus();
-}
-function closeDeploymentModal() {
-  dpBackdrop.hidden = true;
-  editingDeploymentId = null;
-}
-
-document.getElementById("dp-close").addEventListener("click", closeDeploymentModal);
-document.getElementById("dp-cancel").addEventListener("click", closeDeploymentModal);
-document.getElementById("dp-submit").addEventListener("click", async () => {
-  const label = dpLabelInput.value;
-  const checked = Array.from(dpItemsList.querySelectorAll(".dp-item-checkbox:checked")).map((c) => c.value);
-  if (!label.trim() || checked.length === 0) {
-    alert("Give the deployment a name and select at least one ticket.");
-    return;
-  }
-  if (editingDeploymentId) {
-    const currentMemberIds = itemsForDeployment(editingDeploymentId).map((i) => i.id);
-    const addIds = checked.filter((id) => !currentMemberIds.includes(id));
-    const removeIds = currentMemberIds.filter((id) => !checked.includes(id));
-    await renameDeployment(editingDeploymentId, label);
-    if (addIds.length || removeIds.length) await setDeploymentMembership(editingDeploymentId, addIds, removeIds);
-  } else {
-    await createDeployment(deploymentsProjectId, label, checked);
-  }
-  closeDeploymentModal();
-});
-
 // ── Docs page (per-project requirements + interfaces with other projects) ─
 const docsPage = document.getElementById("docs-page");
 const docsReadmeInput = document.getElementById("docs-readme-input");
@@ -2310,7 +2190,7 @@ const docsProgramSelect = document.getElementById("docs-program-select");
 docsProgramSelect.addEventListener("change", async () => {
   if (!docsProjectId) return;
   if (docsProgramSelect.value === "__new__") {
-    const name = (prompt("New program/product name:") || "").trim();
+    const name = ((await showPromptDialog("New program/product name:")) || "").trim();
     if (!name) { populateProgramSelect(docsProgramSelect, ""); return; }
     const newId = await createProgram(name);
     populateProgramSelect(docsProgramSelect, newId || "");
@@ -2851,10 +2731,32 @@ function slugify(s) {
 // DOMPurify before ever touching innerHTML — Firestore's write rules on
 // faqArticles are wide open, so this field is never trusted just because
 // it "should" have come through this editor.
+// Mirrors faq/js/faq-data.js's own ALLOWED_IFRAME_HOSTS/installIframeAllowlist
+// exactly — see that file's comment for why: without this, an iframe pasted
+// straight into Firestore (faqArticles' write rules are wide open) could
+// point at any host, since DOMPurify's default allowlist excludes iframe
+// entirely and doesn't restrict `src` by domain for tags it does allow.
+// Quill's built-in video format only ever normalizes a pasted link to a
+// youtube.com/vimeo.com embed URL, so those are the only hosts this admin
+// preview legitimately needs to render either.
+const ALLOWED_IFRAME_HOSTS = ["www.youtube.com", "www.youtube-nocookie.com", "player.vimeo.com"];
+let iframeAllowlistInstalled = false;
+function installIframeAllowlist(purify) {
+  if (iframeAllowlistInstalled) return;
+  iframeAllowlistInstalled = true;
+  purify.addHook("uponSanitizeElement", (node, data) => {
+    if (data.tagName !== "iframe") return;
+    let host = "";
+    try { host = new URL(node.getAttribute("src") || "", window.location.href).hostname; } catch { host = ""; }
+    if (!ALLOWED_IFRAME_HOSTS.includes(host)) node.remove();
+  });
+}
+
 function renderFaqBodyMd(content) {
   const trimmed = (content || "").trim();
   if (trimmed.startsWith("<")) {
     if (!window.DOMPurify) return escapeHTML(trimmed);
+    installIframeAllowlist(window.DOMPurify);
     return window.DOMPurify.sanitize(trimmed, { ADD_TAGS: ["iframe"], ADD_ATTR: ["allowfullscreen", "frameborder"] });
   }
   return renderLegacyFaqMarkdown(content);
@@ -2898,7 +2800,7 @@ async function saveFaqCategory(id, name, icon, description) {
 
 async function deleteFaqCategoryIfEmpty(id) {
   if (faqArticles.some((a) => a.categoryId === id)) {
-    alert("This category still has articles in it — move or delete those first.");
+    await showAlert("This category still has articles in it — move or delete those first.");
     return;
   }
   await deleteDoc(doc(db, "faqCategories", id));
@@ -3256,16 +3158,17 @@ function registerFaqEditorFormats() {
 
 // Insert or edit the table under the cursor. One dialog for both, so the
 // author edits a table the same way they created it.
-function openFaqTableDialog() {
+async function openFaqTableDialog() {
   const range = faQuill.getSelection(true);
   const [blot] = range ? faQuill.scroll.descendant(Quill.import("blots/block/embed"), range.index) : [null];
   const existing = blot && blot.statics.blotName === "faqtable" ? blot : null;
   const current = existing
     ? faqTableRowsToText(existing.statics.value(existing.domNode))
     : "Parameter | Value | Notes\nExample | value | what it does";
-  const text = prompt(
+  const text = await showPromptDialog(
     "Table rows — one row per line, cells separated by \"|\". The first line is the header row.",
-    current
+    current,
+    { title: "Edit table", multiline: true, rows: 8 }
   );
   if (text === null) return;
   const rows = faqTableRowsFromText(text);
@@ -3324,15 +3227,22 @@ const faQuill = new Quill("#fa-body-editor", {
         // point of authoring rather than left to a later audit that would
         // likely never happen. An empty answer is stored as alt="" (a
         // deliberate "decorative image" per the same rule), not skipped.
-        image() {
-          const url = prompt("Image URL:");
-          if (!url) return;
-          const alt = prompt("Alt text (describes the image's content for screen readers — leave blank only if it's purely decorative):", "") || "";
+        async image() {
+          const result = await showFieldDialog({
+            title: "Insert image",
+            fields: [
+              { id: "url", label: "Image URL", type: "url" },
+              { id: "alt", label: "Alt text (describes the image's content for screen readers — leave blank only if it's purely decorative)" },
+            ],
+            okLabel: "Insert",
+          });
+          if (!result || !result.url) return;
+          const { url, alt } = result;
           const range = faQuill.getSelection(true);
           faQuill.insertEmbed(range.index, "image", url, "user");
           faQuill.setSelection(range.index + 1);
           const img = faQuill.root.querySelector(`img[src="${CSS.escape(url)}"]:not([alt])`);
-          if (img) img.setAttribute("alt", alt);
+          if (img) img.setAttribute("alt", alt || "");
         },
       },
     },
@@ -3411,8 +3321,8 @@ function openFaqArticleModal(articleId) {
 }
 function closeFaqArticleModal() { faBackdrop.hidden = true; }
 
-document.getElementById("fa-new-article-btn").addEventListener("click", () => {
-  if (faqCategories.length === 0) { alert("Add a category first."); return; }
+document.getElementById("fa-new-article-btn").addEventListener("click", async () => {
+  if (faqCategories.length === 0) { await showAlert("Add a category first."); return; }
   openFaqArticleModal(null);
 });
 document.getElementById("fa-cancel").addEventListener("click", closeFaqArticleModal);
@@ -3435,7 +3345,7 @@ document.getElementById("fa-submit").addEventListener("click", async () => {
   const title = faTitleInput.value.trim();
   const categoryId = faCategorySelect.value;
   if (!title) { faTitleInput.focus(); return; }
-  if (!categoryId) { alert("Add a category first."); return; }
+  if (!categoryId) { await showAlert("Add a category first."); return; }
 
   const data = {
     categoryId,
@@ -3453,7 +3363,7 @@ document.getElementById("fa-submit").addEventListener("click", async () => {
   closeFaqArticleModal();
 });
 
-document.getElementById("faq-article-list").addEventListener("click", (e) => {
+document.getElementById("faq-article-list").addEventListener("click", async (e) => {
   const row = e.target.closest(".faq-article-row");
   if (!row) return;
   const id = row.dataset.id;
@@ -3467,7 +3377,7 @@ document.getElementById("faq-article-list").addEventListener("click", (e) => {
   if (e.target.closest(".faq-article-toggle-status")) { closeAllOptionMenus(); toggleFaqArticleStatus(id); return; }
   if (e.target.closest(".faq-article-toggle-review")) { closeAllOptionMenus(); toggleFaqArticleReview(id); return; }
   if (e.target.closest(".faq-article-delete")) {
-    if (confirm("Delete this article? This can't be undone.")) deleteFaqArticle(id);
+    if (await showConfirmDialog("Delete this article? This can't be undone.", { title: "Delete article", okLabel: "Delete", danger: true })) deleteFaqArticle(id);
   }
 });
 document.getElementById("faq-article-list").addEventListener("keydown", (e) => {

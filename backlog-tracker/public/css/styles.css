@@ -80,6 +80,11 @@ body {
   background: transparent; color: var(--text-muted); border: 1px solid var(--border);
   border-radius: 6px; padding: 9px 16px; font-size: 13px; cursor: pointer; font-family: inherit;
 }
+.btn-danger {
+  background: var(--danger); color: #fff; border: none; border-radius: 6px;
+  padding: 9px 16px; font-size: 13px; font-weight: 600; cursor: pointer; font-family: inherit;
+}
+.btn-danger:hover { opacity: .92; }
 .board { display: grid; grid-template-columns: repeat(4, minmax(260px, 1fr)); gap: 14px; align-items: start; overflow-x: auto; }
 .column { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; min-width: 260px; display: flex; flex-direction: column; max-height: calc(100vh - 200px); }
 .col-head { display: flex; align-items: center; justify-content: space-between; padding: 12px 14px; border-bottom: 2px solid var(--border); border-radius: 8px 8px 0 0; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--text-muted); }
@@ -113,7 +118,21 @@ body {
 .card-footer { display: flex; align-items: center; justify-content: space-between; margin-top: 10px; }
 .card-footer-left { display: flex; align-items: center; gap: 4px; }
 .card-cat { font-size: 10.5px; color: var(--text-muted); background: var(--surface-2); border-radius: 9999px; padding: 2px 8px; }
-.quick-comment-btn { font-size: 13px; padding: 3px 6px; }
+/* Bottom-right of the tile (in .card-move, alongside archive/delete), not
+   a plain muted icon-row entry anymore — a filled, rounded pill with a
+   soft shadow and a gentle hover/press scale, so it reads as its own
+   distinct "you can comment here" affordance rather than blending into
+   the row of housekeeping icons next to it. */
+.quick-comment-btn {
+  font-size: 14px; padding: 5px 9px; border-radius: 9999px;
+  background: var(--primary-tint); color: var(--primary);
+  display: inline-flex; align-items: center; gap: 4px;
+  box-shadow: 0 1px 3px rgba(20, 20, 20, .12);
+  transition: transform .12s ease, background-color .12s ease, color .12s ease;
+}
+.quick-comment-btn:hover { background: var(--primary); color: #fff; transform: scale(1.08); box-shadow: 0 2px 6px rgba(20, 20, 20, .18); }
+.quick-comment-btn:active { transform: scale(.97); }
+.quick-comment-btn .options-menu-count { color: inherit; font-weight: 600; }
 .approve-btn { width: 100%; margin-top: 10px; background: var(--primary); color: #fff; border: none; border-radius: 6px; padding: 8px 10px; font-size: 12.5px; font-weight: 600; cursor: pointer; }
 /* A Ready for Testing card that's been individually confirmed tested —
    still sits in the same column (advancing is the separate, batchable
@@ -166,6 +185,16 @@ body {
 .modal-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
 .modal-header h2 { margin: 0; font-size: 17px; }
 .modal-close { border: none; background: transparent; font-size: 20px; cursor: pointer; color: var(--text-muted); }
+.dialog-panel { max-width: 420px; }
+.dialog-message { margin: 0 0 14px; font-size: 13.5px; color: var(--text); white-space: pre-line; }
+.dialog-fields { display: flex; flex-direction: column; gap: 12px; }
+.dialog-field-label { display: block; font-size: 12.5px; font-weight: 600; color: var(--text-muted); margin-bottom: 5px; }
+.dialog-field-input {
+  width: 100%; box-sizing: border-box; border: 1px solid var(--border); border-radius: 6px;
+  padding: 8px 10px; font-size: 13.5px; font-family: inherit; background: var(--bg); color: var(--text);
+}
+textarea.dialog-field-input { resize: vertical; min-height: 70px; }
+.dialog-fields:not(:empty) { margin-bottom: 14px; }
 .field-label { display: block; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: var(--text-muted); margin: 10px 0 4px; }
 #ni-desc-input {
   width: 100%; font-family: inherit; font-size: 14px; color: var(--text); background: var(--surface);
@@ -380,13 +409,6 @@ body {
 .interface-row-content { margin-top: 8px; font-size: 12.5px; color: var(--text); white-space: pre-wrap; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; max-height: 160px; overflow-y: auto; background: var(--surface); border-radius: 6px; padding: 8px 10px; }
 .interface-row-empty { color: var(--text-muted); font-style: italic; }
 
-/* ── Deployments — grouping tickets meant to ship to main together ─────── */
-.deployment-badge {
-  display: inline-flex; align-items: center; gap: 4px; font-size: 10.5px; font-weight: 600;
-  color: var(--primary); background: var(--primary-tint); border-radius: 9999px;
-  padding: 2px 8px; margin: 6px 0 0;
-}
-
 /* A card with no code to push (a live data/config-only fix) — see the Edit
    item modal's "No deployment required" checkbox and cardHTML's own
    confirm-no-deploy-btn, which skips Approved for Deployment/Notify Claude —
@@ -419,23 +441,6 @@ body {
 }
 .pr-badge:hover { text-decoration: underline; }
 .pr-badge-merged { color: var(--success); background: rgba(82, 196, 26, .12); }
-.deployment-card { border: 1px solid var(--border); border-radius: 8px; padding: 14px; margin-bottom: 12px; background: var(--surface); }
-.deployment-card-header { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
-.deployment-card-header h3 { margin: 0; font-size: 15px; }
-.deployment-card-actions { display: flex; gap: 4px; flex-shrink: 0; }
-.deployment-progress { font-size: 12px; color: var(--text-muted); margin: 6px 0 10px; }
-.deployment-member-list { list-style: none; margin: 0 0 12px; padding: 0; display: flex; flex-direction: column; gap: 6px; }
-.deployment-member {
-  display: flex; align-items: center; justify-content: space-between; gap: 10px;
-  background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 7px 10px; font-size: 12.5px;
-}
-.deployment-member-status { font-size: 11px; color: var(--text-muted); background: var(--surface-2); border-radius: 9999px; padding: 1px 8px; white-space: nowrap; }
-.deployment-member-empty { color: var(--text-muted); font-style: italic; font-size: 12.5px; }
-.deployment-merged-badge { color: var(--success); font-weight: 600; font-size: 13px; }
-.deployment-merge-btn:disabled { opacity: .45; cursor: not-allowed; }
-
-.dp-items-list { display: flex; flex-direction: column; gap: 4px; max-height: 260px; overflow-y: auto; margin-top: 4px; border: 1px solid var(--border); border-radius: 6px; padding: 8px; }
-.dp-item-row { display: flex; align-items: center; gap: 8px; font-size: 13px; padding: 4px 2px; }
 
 /* ── Mobile ──────────────────────────────────────────────────────────────
    Two real problems on a phone before this: (1) the board's 4 columns were
