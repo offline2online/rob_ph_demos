@@ -358,36 +358,6 @@
       </div>
     </section>
 
-    <section class="docs-page" id="deployments-page" hidden>
-      <div class="docs-page-header">
-        <h2>Deployments — <span id="deployments-page-project-name"></span></h2>
-      </div>
-      <p class="field-hint">Group tickets that should ship to main together — usually everything the Notify Claude Routine fixed in one fire. Once every ticket in a group is individually confirmed "Approved for Deployment", the group's own "Notify Claude to merge" button unlocks — it asks Claude to verify and merge each PR for real, the same as the project header's own Deploy to Main button.</p>
-      <div class="form-row" style="justify-content:flex-end;">
-        <button type="button" class="btn-primary" id="deployments-add-btn">+ New deployment</button>
-      </div>
-      <div id="deployments-list"></div>
-    </section>
-
-    <div class="modal-backdrop" id="dp-backdrop" hidden>
-      <div class="modal-panel" role="dialog" aria-modal="true" aria-labelledby="dp-title">
-        <div class="modal-header">
-          <h2 id="dp-title">New deployment</h2>
-          <button type="button" class="modal-close" id="dp-close" aria-label="Close">&times;</button>
-        </div>
-        <label class="field-label" for="dp-label-input">Name</label>
-        <input type="text" id="dp-label-input" maxlength="120" placeholder="e.g. Deploy #1">
-        <label class="field-label">Tickets in this deployment</label>
-        <div id="dp-items-list" class="dp-items-list"></div>
-        <div class="form-row" style="justify-content:flex-end;">
-          <div class="form-actions">
-            <button type="button" class="btn-ghost" id="dp-cancel">Cancel</button>
-            <button type="button" class="btn-primary" id="dp-submit">Save deployment</button>
-          </div>
-        </div>
-      </div>
-    </div>
-
     <div class="modal-backdrop" id="fa-backdrop" hidden>
       <div class="modal-panel modal-panel-wide" role="dialog" aria-modal="true" aria-labelledby="fa-title">
         <div class="modal-header">
@@ -530,6 +500,30 @@
     <div id="projects-root"></div>
 
     <footer class="app-footer">PH Agent Console <span id="app-version"></span></footer>
+  </div>
+
+  <!-- Generic in-app dialog — replaces window.confirm/prompt/alert
+       everywhere in this app. A native dialog blocks every script on the
+       page while it's open (including anything driving the board
+       programmatically, like the Notify Claude Routine's own session) and
+       can't be styled, validated, or dismissed except through its own
+       OK/Cancel — see showAlert/showConfirm/showPrompt/showFieldDialog in
+       app.js, which all drive this one panel. -->
+  <div class="modal-backdrop" id="dialog-backdrop" hidden>
+    <div class="modal-panel dialog-panel" role="alertdialog" aria-modal="true" aria-labelledby="dialog-title">
+      <div class="modal-header">
+        <h2 id="dialog-title"></h2>
+        <button type="button" class="modal-close" id="dialog-close" aria-label="Close">&times;</button>
+      </div>
+      <p class="dialog-message" id="dialog-message" hidden></p>
+      <div class="dialog-fields" id="dialog-fields"></div>
+      <div class="form-row" style="justify-content:flex-end;">
+        <div class="form-actions">
+          <button type="button" class="btn-ghost" id="dialog-cancel">Cancel</button>
+          <button type="button" class="btn-primary" id="dialog-ok">OK</button>
+        </div>
+      </div>
+    </div>
   </div>
 
   <script type="module">
