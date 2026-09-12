@@ -264,6 +264,14 @@ function cardHTML(item) {
   // ready-to-publish, since isLiveBranch goes false then too.
   const isDeploying = isLiveBranch && !!item.mergeReady;
   const isLocked = isInDevelopment || isDeploying;
+  // A card flagged noDeploymentRequired has no PR for Deploy to Main to
+  // merge — the automation's own no-diff path creates exactly this shape
+  // (see run-backlog-automation.js) — so it gets the one-click completion
+  // (approveBtn below) at either stage, rather than a hint pointing at a
+  // button that can never finish it. Without this, such a card sitting in
+  // Approved for Deployment had no path forward except being moved back a
+  // column first.
+  const noDeployPending = !!item.noDeploymentRequired && (isTesting || isLiveBranch);
   const canDelete = isBacklog && !isInDevelopment;
 
   // Backlog cards select for "Ready for Dev"; Ready for Testing cards
@@ -303,7 +311,7 @@ function cardHTML(item) {
   // explicit "Approved for Deployment" project action below, which can act on
   // several passed items at once. Clicking again un-marks it (toggle), in
   // case it was flagged by mistake before "Approved for Deployment" is clicked.
-  const approveBtn = isTesting
+  const approveBtn = (isTesting || noDeployPending)
     ? (item.noDeploymentRequired
         ? `<button type="button" class="approve-btn confirm-no-deploy-btn" data-id="${item.id}">Confirm tested — mark Merged to Main</button>`
         : (item.testPassed
@@ -317,7 +325,7 @@ function cardHTML(item) {
   // to reach published-live now is the project's own "Notify Claude —
   // Deploy" action (see deployNotifyButtonHTML), which only advances a
   // card once backlog-automation.yml has actually merged its PR.
-  const mergeBtn = isLiveBranch
+  const mergeBtn = isLiveBranch && !noDeployPending
     ? (isDeploying
         ? `<span class="in-development-hint" title="Claude has confirmed this PR is green and mergeable and told backlog-automation.yml to merge it — it's locked until that merge actually lands and this card moves to Merged to Main (Live)">Deploying — locked</span>`
         : `<span class="merge-pending-hint" title="Only this project's own Deploy to Main button actually merges this to main">Waiting for Deploy to Main</span>`)
@@ -353,6 +361,20 @@ function cardHTML(item) {
   // same value once archived.
   const testVersionBadge = item.testVersion
     ? `<span class="test-version-badge" title="backlog-tracker's own version when this was marked Ready for Testing — check the live footer shows at least this version">Test version: v${escapeHTML(item.testVersion)}</span>`
+    : "";
+  // The pull request this card's work actually landed in, recorded by
+  // run-backlog-automation.js when it opens the PR and again when it
+  // merges. Before this, a card's PR number existed only as free text
+  // inside a notes entry, so finding it meant reading the notes or
+  // searching GitHub by hand — and a card in Approved for Deployment gave
+  // no sign of whether its PR was even open. Built by concatenation
+  // rather than a template literal purely so this block stays easy to
+  // transplant between checkouts.
+  const prBadge = item.prUrl
+    ? '<a class="pr-badge' + (item.mergedAt ? ' pr-badge-merged' : '') + '" href="' + escapeHTML(item.prUrl) +
+      '" target="_blank" rel="noopener" title="' +
+      (item.mergedAt ? 'Merged to main by the backlog automation' : 'Open on GitHub — not merged yet') +
+      '">PR #' + escapeHTML(String(item.prNumber || '?')) + (item.mergedAt ? ' &middot; merged' : ' &middot; open') + '</a>'
     : "";
   const commentCount = (item.notes || []).length;
   const editBtn = isLocked
@@ -416,7 +438,7 @@ function cardHTML(item) {
       </div>
       <h3 class="card-title">${escapeHTML(item.title)}</h3>
       ${descHTML}
-      ${deploymentBadge}${noDeployBadge}${testVersionBadge}
+      ${deploymentBadge}${noDeployBadge}${testVersionBadge}${prBadge}
       <div class="card-footer">
         <div class="card-footer-left">
           <span class="card-cat">${escapeHTML(item.category || "Uncategorised")}</span>
@@ -439,7 +461,10 @@ function backlogCountForProject(pid) {
 }
 
 function deployReadyCountForProject(pid) {
-  return items.filter((i) => (i.projectId || GENERAL_PROJECT_ID) === pid && i.status === "ready-to-publish").length;
+  // noDeploymentRequired cards are excluded: Deploy to Main merges PRs,
+  // and these have none, so counting them promised a deploy that would
+  // find nothing to merge.
+  return items.filter((i) => (i.projectId || GENERAL_PROJECT_ID) === pid && i.status === "ready-to-publish" && !i.noDeploymentRequired).length;
 }
 
 // Ready for Testing items an individual "Confirm tested" click has already
