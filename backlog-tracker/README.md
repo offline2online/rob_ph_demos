@@ -498,7 +498,7 @@ deploy each piece — at minimum:
 If the workflow's deploy step fails with a permissions/IAM error, that's
 almost always a role missing here, not a bug in the workflow itself.
 
-### Merging several PRs at once — the deploy concurrency group, and the board's Deployments page
+### Merging several PRs at once — the deploy concurrency group
 
 Merging multiple PRs within seconds of each other used to fire one deploy
 run per push, all racing to update the same Cloud Functions at once — GCP
@@ -508,25 +508,17 @@ rejects the losers with `409 unable to queue the operation`. The workflow's
 now completes exactly one deploy, for the newest commit, instead of N
 racing runs.
 
-That only fixes the deploy pipeline, though — it doesn't tell you *which*
-PRs were meant to land together in the first place, especially when the
-Notify Claude Routine fixes several backlog items in one fire and opens
-several PRs at once. For that, see the board's own **Deployments** page
-(per project, via **⋮ → Deployments** — full behavior in `REQUIREMENTS.md`
-under "Functional requirements — the board"): it groups those tickets and
-shows a live checklist of which ones have actually been confirmed
-"Approved for Deployment." Its "Notify Claude to merge" button (enabled once every
-member is ready) fires the same "Notify Claude — Deploy" flow as the
-project header button, scoped to that group's project — it does not merge
-anything itself; only `run-backlog-automation.js` does, after the Routine
-has confirmed each PR is actually green and mergeable. The card's own "✓
-Merged" badge is derived live from every member's real status, never a
-separate flag, so it can't say "Merged" while a PR is still open. (An
-earlier version of this button, and a since-removed per-card "Merge to
-main" button, wrote `published-live` directly with zero connection to
-GitHub — removed after that let cards claim to be merged while their PRs
-sat open; see `REQUIREMENTS.md`'s "No manual way to reach `published-live`
-exists" for the full story.)
+There used to also be a per-project **Deployments** page (⋮ → Deployments)
+that grouped tickets meant to ship together and showed a checklist of which
+were confirmed "Approved for Deployment" — removed by request (its owner
+found the ⋮ menu entry confusing and wasn't relying on it). Nothing about
+`patchFiles`/`patchReady`'s own "give every item in a shared-file batch the
+same full combined content" convention (see `ROUTINE_INSTRUCTIONS.md` →
+"Group multi-item fixes into one deployment") depended on that page or the
+`deployments` collection — that's a separate, code-level mechanism in
+`run-backlog-automation.js` and is unaffected. What's gone is only the
+human-facing "which PRs were meant to land together" grouping view; nothing
+now tells a person that at a glance beyond reading each item's own notes.
 
 ### Cleaning up old Cloud Build/Artifact Registry images
 
@@ -623,6 +615,37 @@ starts failing with an auth or version-related error after previously
 working, check Anthropic's current Claude Code Routines docs for what
 changed, and re-test with `curl` before re-patching the function — see
 the request shape in `functions/index.js`'s `notifyOnProjectReadyForReview`.
+
+### The `GITHUB_DISPATCH_TOKEN` secret — waking `backlog-automation.yml` immediately
+
+`backlog-automation.yml` polls every 2 minutes, but GitHub throttles a
+scheduled workflow well past its nominal interval under load — measured
+gaps as wide as 10-12 minutes in practice (see `ROUTINE_INSTRUCTIONS.md`),
+almost all of the wall-clock time between the Notify Claude Routine
+finishing and a fix actually reaching Ready for Testing. `functions/index.js`'s
+`onBacklogItemReadyForAutomation` closes that gap: the instant a
+`backlogItems` doc's `patchReady` or `mergeReady` flips to `true`, it calls
+GitHub's `repository_dispatch` API directly (`POST
+/repos/offline2online/rob_ph_demos/dispatches` with `event_type:
+"backlog-automation"`), which `backlog-automation.yml`'s own
+`repository_dispatch` trigger picks up within seconds — the schedule stays
+as the safety net for whenever this secret isn't configured, or the
+dispatch call itself fails.
+
+This needs a GitHub Personal Access Token (classic, or fine-grained scoped
+to this repo) with the repo's Actions read/write scope, stored as a
+Firebase secret:
+
+```bash
+firebase functions:secrets:set GITHUB_DISPATCH_TOKEN
+#   ↳ paste the token when prompted
+```
+
+Same "just no-ops with a logged warning" behavior as `NOTIFY_WEBHOOK_URL`/
+`CLAUDE_ROUTINE_FIRE_URL` above if this isn't set yet — nothing breaks,
+`backlog-automation.yml` just keeps relying on its own schedule until the
+token exists. Creating the token itself is a human, one-time step — an
+agent session has no way to mint a GitHub token for itself.
 
 ### Notify Claude progress (`notifyRoutine`) — session id, spinner, split count
 
