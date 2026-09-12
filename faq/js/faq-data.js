@@ -66,16 +66,36 @@ export async function fetchPublishedArticles() {
 // trusted just because it "should" have come through the admin's editor;
 // sanitizing here, at render time, is what actually keeps a stored-XSS
 // payload from running for every visitor of this public site.
+// Quill's own video embed wraps a URL in an <iframe> — DOMPurify's default
+// allowlist excludes iframe entirely (and, for tags it does allow, doesn't
+// restrict `src` by domain), so without this an iframe pasted straight into
+// Firestore (faqArticles' write rules are wide open — see root CLAUDE.md's
+// documented prototype-stage posture) could point at any host and this was
+// the one thing standing between that and a stored-XSS/clickjacking payload
+// served to every visitor of this now-public site. Quill's built-in video
+// format only ever normalizes a pasted link to a youtube.com/vimeo.com
+// embed URL, so those are the only hosts an iframe legitimately needs to
+// point at here — everything else is stripped outright rather than
+// rendered inert-but-present, since a same-origin-adjacent iframe pointed
+// at an attacker's page is dangerous even with its own src otherwise inert.
+const ALLOWED_IFRAME_HOSTS = ["www.youtube.com", "www.youtube-nocookie.com", "player.vimeo.com"];
+let iframeAllowlistInstalled = false;
+function installIframeAllowlist(purify) {
+  if (iframeAllowlistInstalled) return;
+  iframeAllowlistInstalled = true;
+  purify.addHook("uponSanitizeElement", (node, data) => {
+    if (data.tagName !== "iframe") return;
+    let host = "";
+    try { host = new URL(node.getAttribute("src") || "", window.location.href).hostname; } catch { host = ""; }
+    if (!ALLOWED_IFRAME_HOSTS.includes(host)) node.remove();
+  });
+}
+
 export function renderBodyMd(content) {
   const trimmed = (content || "").trim();
   if (trimmed.startsWith("<")) {
     if (!window.DOMPurify) return escapeHTML(trimmed);
-    // Quill's own video embed wraps a URL in an <iframe> — DOMPurify's
-    // default allowlist excludes iframe (and doesn't restrict `src` by
-    // domain for tags it does allow), so an iframe here can point
-    // anywhere. Accepted prototype-stage tradeoff, same posture as this
-    // repo's open Firestore rules elsewhere — tighten (e.g. an allowed-host
-    // check on the src) before this is exposed beyond an internal team.
+    installIframeAllowlist(window.DOMPurify);
     return window.DOMPurify.sanitize(trimmed, { ADD_TAGS: ["iframe"], ADD_ATTR: ["allowfullscreen", "frameborder"] });
   }
   return renderLegacyMarkdown(content);
