@@ -402,6 +402,31 @@ change one, change all three. Headings also run to H4 (§3's floor), and
 `blockquote` is exposed in the toolbar since the public CSS already styled
 it.
 
+### Pipeline state on the card (`prUrl` / `prNumber` / `mergedAt`)
+
+`run-backlog-automation.js` records the pull request on the item as it
+goes: `prUrl` + `prNumber` when it opens the PR, and both of those plus
+`mergedAt` when it merges. The board renders them as a link on the card
+itself (`prBadge` in `app.js`), reading *open* or *merged*.
+
+This exists because the PR number used to live only inside a `notes`
+entry's free text — finding a card's PR meant reading its notes or
+searching GitHub, and a card in Approved for Deployment gave no sign of
+whether its PR was open, green or already merged.
+
+### `noDeploymentRequired` is set by the no-diff path
+
+The same script sets `noDeploymentRequired: true` when `patchFiles`
+produce no diff against `main` — the expected outcome for the second half
+of a shared-file batch, where a sibling's PR already carried the change.
+Nothing was pushed and nothing will be, so there is no PR for Deploy to
+Main to merge. The card's one-click completion
+(`confirmTestedNoDeploy`) is therefore offered in **both** Ready for
+Testing and Approved for Deployment (`noDeployPending` in `app.js`);
+before that it appeared only in Ready for Testing, so such a card sitting
+in Approved for Deployment could only be finished by moving it backwards
+a column first.
+
 ### Firestore rules
 
 Prototype-stage: open, unauthenticated read/write on every collection

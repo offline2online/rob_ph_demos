@@ -233,9 +233,14 @@ async function processApplyPatch(item) {
       `No PR opened: patchFiles produced no diff against main — this content is already there, most likely delivered by a sibling item's shared-file patch in the same batch (see "Group multi-item fixes into one deployment"). Moved to Ready for Testing directly since the fix is genuinely live; check this item's notes/deployment group for which PR actually carried it.`
     );
     const testVersion = readAppVersion();
+    // Nothing was pushed for this item and nothing will be, so flag it as
+    // needing no deployment. Otherwise it reaches Approved for Deployment
+    // and waits on a Deploy to Main that has no PR to merge — a dead end
+    // whoever tests it has to escape by moving the card backwards.
     await patchItem(item.id, {
       status: "ready-for-testing",
       patchReady: false,
+      noDeploymentRequired: true,
       updatedAt: new Date().toISOString(),
       notes,
       ...(testVersion ? { testVersion } : {}),
@@ -254,11 +259,18 @@ async function processApplyPatch(item) {
 
   const notes = await appendNote(item, `Opened ${prUrl} from the automated backlog pipeline.`);
   const testVersion = readAppVersion();
+  // Record the PR on the item itself, not only in the note text above:
+  // the board renders these as a link on the card (see app.js's prBadge),
+  // so "which PR is this card" stops being a question you answer by
+  // reading notes or searching GitHub.
+  const prNumber = Number((String(prUrl).match(/\/pull\/(\d+)/) || [])[1]) || null;
   await patchItem(item.id, {
     status: "ready-for-testing",
     patchReady: false,
     updatedAt: new Date().toISOString(),
     notes,
+    prUrl: String(prUrl).trim(),
+    ...(prNumber ? { prNumber } : {}),
     ...(testVersion ? { testVersion } : {}),
   });
   console.log(`[apply-patch] ${item.id}: opened ${prUrl}, moved to ready-for-testing${testVersion ? ` (testVersion ${testVersion})` : ""}`);
@@ -353,6 +365,9 @@ async function processMergePr(item) {
     status: "published-live",
     mergeReady: false,
     updatedAt: new Date().toISOString(),
+    mergedAt: new Date().toISOString(),
+    prUrl: `https://github.com/${REPO}/pull/${prNumber}`,
+    prNumber: Number(prNumber),
     notes,
   });
   console.log(`[merge-pr] ${item.id}: merged PR #${prNumber}, moved to published-live`);
