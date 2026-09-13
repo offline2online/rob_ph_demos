@@ -58,10 +58,13 @@ working credentials somewhere in your environment.
 
 **The card sitting in Backlog after you finish is expected, not slow —
 don't try to "speed this up" by setting `status` yourself.** Once you set
-`patchReady: true`, the item waits on `backlog-automation.yml`'s own
-schedule (every 2 minutes — see that workflow's `on.schedule`) to actually
-open the PR and flip `status` to `ready-for-testing`; that's a fixed
-property of the schedule, not something this run can shorten. The one
+`patchReady: true`, the item waits on `backlog-automation.yml` to actually
+open the PR and flip `status` to `ready-for-testing`. That write normally
+dispatches the workflow within seconds (`onBacklogItemReadyForAutomation`
+in `functions/index.js`); if its GitHub token isn't configured or the
+dispatch fails, the workflow's own schedule picks the item up instead —
+nominally every 2 minutes, in practice up to ~12. Either way the wait is
+not something this run can shorten. The one
 thing that *would* make it worse is setting `status` early yourself — see
 the explicit "Do NOT set `status`" rule in step 4 below for why.
 

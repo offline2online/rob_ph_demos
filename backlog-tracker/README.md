@@ -616,7 +616,7 @@ working, check Anthropic's current Claude Code Routines docs for what
 changed, and re-test with `curl` before re-patching the function — see
 the request shape in `functions/index.js`'s `notifyOnProjectReadyForReview`.
 
-### The `GITHUB_DISPATCH_TOKEN` secret — waking `backlog-automation.yml` immediately
+### The `GH_DISPATCH_TOKEN` secret — waking `backlog-automation.yml` immediately
 
 `backlog-automation.yml` polls every 2 minutes, but GitHub throttles a
 scheduled workflow well past its nominal interval under load — measured
@@ -630,22 +630,40 @@ GitHub's `repository_dispatch` API directly (`POST
 "backlog-automation"`), which `backlog-automation.yml`'s own
 `repository_dispatch` trigger picks up within seconds — the schedule stays
 as the safety net for whenever this secret isn't configured, or the
-dispatch call itself fails.
+dispatch call itself fails. The dispatch only ever makes the job run
+*sooner*, never instead, and the job still re-reads every flagged item from
+Firestore itself rather than trusting the dispatch payload.
 
-This needs a GitHub Personal Access Token (classic, or fine-grained scoped
-to this repo) with the repo's Actions read/write scope, stored as a
-Firebase secret:
+This needs a GitHub Personal Access Token — fine-grained, resource owner
+`offline2online`, this repository only, **Actions: Read and write** (plus
+the Metadata read it includes automatically). A classic token with the
+`repo` scope also works but grants far more than this needs. Add it as a
+**GitHub repo secret named exactly `GH_DISPATCH_TOKEN`** (Settings →
+Secrets and variables → Actions → New repository secret); every deploy
+syncs it into Firebase Secret Manager, same pattern as
+`NOTIFY_WEBHOOK_URL` and the two `CLAUDE_ROUTINE_*` secrets.
 
-```bash
-firebase functions:secrets:set GITHUB_DISPATCH_TOKEN
-#   ↳ paste the token when prompted
-```
+**`GH_`, not `GITHUB_`** — GitHub refuses to create any repo secret whose
+name begins with `GITHUB_`, that prefix being reserved for the variables it
+injects itself. An earlier draft of this section documented
+`GITHUB_DISPATCH_TOKEN`, which cannot exist.
 
-Same "just no-ops with a logged warning" behavior as `NOTIFY_WEBHOOK_URL`/
-`CLAUDE_ROUTINE_FIRE_URL` above if this isn't set yet — nothing breaks,
-`backlog-automation.yml` just keeps relying on its own schedule until the
-token exists. Creating the token itself is a human, one-time step — an
-agent session has no way to mint a GitHub token for itself.
+Unlike the other secrets, the deploy workflow writes this one on **every**
+deploy, falling back to the literal value `unset` when the repo secret
+isn't there. That's deliberate: `functions/index.js` declares it with
+`defineSecret()`, and `firebase deploy --only functions` fails outright if
+a declared secret is missing from Secret Manager entirely — which would
+take hosting and the Firestore rules down with it, over a feature nobody
+had configured yet. The function treats `unset` exactly like a missing
+value: it logs a warning, dispatches nothing, and leaves
+`backlog-automation.yml` to its schedule. Creating the token itself is a
+human, one-time step — an agent session has no way to mint a GitHub token
+for itself.
+
+Once the token is in place, the acceptance check is simply that setting
+`patchReady` on an item produces its PR within about a minute rather than
+~10, and that the triggering run shows **repository_dispatch** (not
+`schedule`) as its event on the Actions tab.
 
 ### Notify Claude progress (`notifyRoutine`) — session id, spinner, split count
 
