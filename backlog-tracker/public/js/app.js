@@ -12,7 +12,7 @@
 
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-app.js";
 import {
-  getFirestore, collection, addDoc, updateDoc, deleteDoc, setDoc, doc,
+  getFirestore, initializeFirestore, collection, addDoc, updateDoc, deleteDoc, setDoc, doc,
   onSnapshot, query, orderBy, serverTimestamp, writeBatch, arrayUnion,
 } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore.js";
 import {
@@ -22,7 +22,27 @@ import { firebaseConfig } from "./firebase-config.js";
 import { APP_VERSION } from "./version.js";
 
 const app = initializeApp(firebaseConfig);
-const db = getFirestore(app);
+// Long-polling, not the SDK's default streaming transport.
+//
+// Measured on a cold load of the live board (13 September 2026): the
+// first Listen request errors after 219ms, the SDK opens a second one at
+// 1.7s, and that one hangs for 45 seconds delivering nothing before it
+// gives up — so the board sat on "0 items" for about a minute on every
+// single load, on two different browsers, while the data itself was 200ms
+// away. Long enough that it reads as broken rather than slow.
+//
+// experimentalAutoDetectLongPolling has been the default since v9.22 and
+// does not save us here: it catches a stream that fails outright, not one
+// that connects and then silently delivers nothing, which is this failure.
+// Forcing the transport skips the attempt altogether — the same cold load,
+// same network, first snapshot in 2.9s instead of ~60s.
+//
+// The cost is that updates arrive on a hanging GET rather than a live
+// stream, which is a little less immediate; for a board whose realtime
+// need is "a card moved column", that is a trade worth making many times
+// over. initializeFirestore must be called before anything touches the
+// instance, which is why it is here rather than beside the listeners.
+const db = initializeFirestore(app, { experimentalForceLongPolling: true });
 // Backs the Edit item modal's Attachments block (screenshots/screen
 // recordings — see uploadItemAttachment) — needs storage.rules deployed
 // (part of the deploy workflow's --only list) and Firebase Storage enabled
