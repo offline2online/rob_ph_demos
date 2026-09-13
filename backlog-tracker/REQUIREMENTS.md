@@ -470,6 +470,31 @@ run can't bury the card. After `MAX_PATCH_ATTEMPTS` (5) the job clears
 `patchReady` and says so, leaving the packaged work on the card untouched.
 Every path that finishes successfully resets the counter to 0.
 
+### Firestore uses the long-polling transport (`experimentalForceLongPolling`)
+
+`app.js` creates its Firestore instance with
+`initializeFirestore(app, { experimentalForceLongPolling: true })` rather
+than plain `getFirestore(app)`.
+
+Measured on a cold load of the live board (13 September 2026): the first
+`Listen` request errors after 219ms, the SDK opens a second at 1.7s, and
+that one hangs for **45 seconds** delivering nothing before giving up. The
+board showed *0 items* for about a minute on every load, in two different
+browsers, while the same data over plain REST came back in ~200ms — long
+enough to read as broken rather than slow.
+
+`experimentalAutoDetectLongPolling` has been the default since v9.22 and
+does not help: it detects a stream that fails outright, not one that
+connects and then delivers nothing. Forcing the transport skips the
+doomed attempt — first snapshot in **2.9s** on the same cold page and
+network.
+
+The trade-off is that updates arrive on a hanging GET instead of a live
+stream, so they are marginally less immediate. For a board whose realtime
+requirement is "a card moved column", that is worth it. If the board is
+ever served to users on a network where streaming works well, re-measure
+before reverting — the numbers above are the bar to beat.
+
 ### Firestore rules
 
 Prototype-stage: open, unauthenticated read/write on every collection
