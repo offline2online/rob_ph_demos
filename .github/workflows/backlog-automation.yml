@@ -22,6 +22,18 @@ on:
     # already makes a busier run safe to overlap with the next tick, so
     # there's no real cost to polling this often.
     - cron: '*/2 * * * *'
+  # Fired by backlog-tracker/functions/index.js's
+  # onBacklogItemReadyForAutomation the moment an item's patchReady or
+  # mergeReady flips to true, so a ready item waits seconds instead of
+  # however long GitHub decides the schedule above should actually take
+  # (measured: up to 12 minutes). The schedule stays as the safety net for
+  # whenever that function's token is missing or its call fails — this is
+  # strictly an earlier start, never a replacement. The job re-reads every
+  # flagged item from Firestore itself, so the dispatch payload is
+  # diagnostic only and can't aim this trusted job at an item that isn't
+  # genuinely ready.
+  repository_dispatch:
+    types: [backlog-automation]
   workflow_dispatch: {}
 
 # Without this, a run that takes longer than 2 minutes (several

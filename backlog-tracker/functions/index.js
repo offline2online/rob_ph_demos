@@ -9,7 +9,7 @@
 // A real backend can skip the person — clicking the board's own Notify
 // Claude button (per-project) fires this automatically.
 
-const { onDocumentUpdated } = require("firebase-functions/v2/firestore");
+const { onDocumentUpdated, onDocumentWritten } = require("firebase-functions/v2/firestore");
 const { defineSecret } = require("firebase-functions/params");
 const logger = require("firebase-functions/logger");
 const { initializeApp } = require("firebase-admin/app");
@@ -48,6 +48,27 @@ const NOTIFY_WEBHOOK_URL = defineSecret("NOTIFY_WEBHOOK_URL");
 // NOTIFY_WEBHOOK_URL already is. Never commit either value directly.
 const CLAUDE_ROUTINE_FIRE_URL = defineSecret("CLAUDE_ROUTINE_FIRE_URL");
 const CLAUDE_ROUTINE_TOKEN = defineSecret("CLAUDE_ROUTINE_TOKEN");
+
+// The GitHub token onBacklogItemReadyForAutomation (bottom of this file)
+// uses to dispatch backlog-automation.yml the moment an item is ready for
+// it, instead of that item waiting out the workflow's own schedule. Needs
+// only this repo's Actions read/write scope — it can start a workflow and
+// nothing else.
+//
+// Named GH_ and not GITHUB_ because the value reaches Firebase Secret
+// Manager from a GitHub Actions repo secret of the same name (see
+// ../../.github/workflows/deploy-backlog-tracker.yml), and GitHub refuses
+// to create any repo secret whose name starts with GITHUB_ — that prefix is
+// reserved for the variables it injects itself.
+const GH_DISPATCH_TOKEN = defineSecret("GH_DISPATCH_TOKEN");
+
+// The repo backlog-automation.yml lives in, and the event_type its
+// repository_dispatch trigger listens for. Hard-coded rather than
+// configurable: this function exists to start one specific workflow in one
+// specific repo, and a dispatch target worth making configurable would be a
+// dispatch target worth authenticating differently.
+const AUTOMATION_REPO = "offline2online/rob_ph_demos";
+const AUTOMATION_DISPATCH_EVENT = "backlog-automation";
 
 exports.notifyOnProjectReadyForReview = onDocumentUpdated(
   { document: "projects/{projectId}", secrets: [NOTIFY_WEBHOOK_URL, CLAUDE_ROUTINE_FIRE_URL, CLAUDE_ROUTINE_TOKEN] },
@@ -553,5 +574,110 @@ exports.onBacklogItemPublishedLive = onDocumentUpdated(
       projectId: after.projectId,
       articleCount: articlesSnap.size,
     });
+  }
+);
+
+// ── Wake backlog-automation.yml immediately ──────────────────────────────
+// backlog-automation.yml is what turns a Routine's finished work into a
+// real branch + PR (backlogItems.patchReady) and merges a PR it has
+// confirmed green (backlogItems.mergeReady). It polls every 2 minutes —
+// except GitHub throttles scheduled workflows well past their nominal
+// interval under load: the gaps measured on 12 September 2026 were 07:36,
+// 07:42, 07:49, 07:55, 08:06, 08:25. One patch-ready item waited about 10
+// minutes for its PR and one merge-ready item about 12 for its merge, which
+// was most of the wall-clock time in the entire workflow — the Claude
+// session that did the actual work was never the slow part.
+//
+// So: the instant either flag turns true, dispatch the workflow directly.
+// The schedule stays exactly as it is, as the safety net for whenever this
+// token is missing or the dispatch call fails — this only ever makes the
+// job run sooner, never instead.
+//
+// onDocumentWritten rather than onDocumentUpdated because an item can be
+// created with patchReady already set (a Routine writing a finished patch
+// straight onto a new card), and an update trigger never sees that.
+exports.onBacklogItemReadyForAutomation = onDocumentWritten(
+  { document: "backlogItems/{itemId}", secrets: [GH_DISPATCH_TOKEN] },
+  async (event) => {
+    const before = event.data?.before?.data();
+    const after = event.data?.after?.data();
+    if (!after) {
+      return;
+    }
+    // Only a false/absent -> true transition. Every other write to the item
+    // lands here too, including the automation's own write clearing the flag
+    // again once it has acted — which is also what stops this from looping:
+    // that write takes the flag true -> false, which is not a transition
+    // this reacts to.
+    const turnedOn = (field) => after[field] === true && before?.[field] !== true;
+    const reasons = ["patchReady", "mergeReady"].filter(turnedOn);
+    if (reasons.length === 0) {
+      return;
+    }
+
+    // "unset" is the placeholder the deploy workflow writes when no repo
+    // secret supplies a real token, so that the secret this function
+    // declares always exists in Secret Manager — see that workflow's
+    // "Sync GH_DISPATCH_TOKEN" step for why a missing secret would
+    // otherwise fail the whole deploy, hosting and Firestore rules
+    // included. Treated as not configured.
+    const token = (GH_DISPATCH_TOKEN.value() || "").trim();
+    if (!token || token === "unset") {
+      logger.warn(
+        "GH_DISPATCH_TOKEN is not set — not dispatching backlog-automation.yml; " +
+        "the workflow's own schedule will pick this item up within a few minutes",
+        { itemId: event.params.itemId, reasons }
+      );
+      return;
+    }
+
+    try {
+      const res = await fetch(`https://api.github.com/repos/${AUTOMATION_REPO}/dispatches`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          Accept: "application/vnd.github+json",
+          "X-GitHub-Api-Version": "2022-11-28",
+          "Content-Type": "application/json",
+          // GitHub's API rejects a request with no User-Agent outright.
+          "User-Agent": "backlog-tracker-functions",
+        },
+        // client_payload is diagnostic only — the workflow re-reads every
+        // flagged item from Firestore itself rather than trusting what
+        // arrives here, so a dispatch can never aim the trusted job at an
+        // item that is not actually ready.
+        body: JSON.stringify({
+          event_type: AUTOMATION_DISPATCH_EVENT,
+          client_payload: {
+            itemId: event.params.itemId,
+            reasons,
+            title: typeof after.title === "string" ? after.title : null,
+          },
+        }),
+      });
+      // A successful repository_dispatch is 204 No Content.
+      if (res.status !== 204) {
+        logger.error("GitHub repository_dispatch returned an unexpected status", {
+          itemId: event.params.itemId,
+          reasons,
+          status: res.status,
+          body: await res.text().catch(() => "<unreadable>"),
+        });
+        return;
+      }
+      logger.info("Dispatched backlog-automation.yml", {
+        itemId: event.params.itemId,
+        reasons,
+      });
+    } catch (err) {
+      // Swallowed on purpose: a thrown error would have Cloud Functions
+      // retry this write, and a retried dispatch is pure noise when the
+      // workflow's schedule is already the fallback.
+      logger.error("Failed to dispatch backlog-automation.yml", {
+        itemId: event.params.itemId,
+        reasons,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
   }
 );

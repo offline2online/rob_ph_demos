@@ -100,6 +100,35 @@ jobs:
             sleep 20
           done
 
+      # Written on every deploy whether or not a repo secret supplies a
+      # value, which is the opposite of the two steps above — because
+      # functions/index.js declares GH_DISPATCH_TOKEN with defineSecret(),
+      # and `firebase deploy --only functions` fails outright if a declared
+      # secret does not exist in Secret Manager at all. That failure would
+      # take hosting and the Firestore rules down with it, so an
+      # unconfigured optional feature must not be able to cause it. The
+      # placeholder keeps the secret present and the function correctly
+      # inert: it treats "unset" exactly like a missing value, logs a
+      # warning, and leaves backlog-automation.yml to its own schedule.
+      - name: Sync GH_DISPATCH_TOKEN into Firebase Secret Manager
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/firebase-sa.json
+          GH_DISPATCH_TOKEN: ${{ secrets.GH_DISPATCH_TOKEN }}
+        run: |
+          VALUE="$GH_DISPATCH_TOKEN"
+          if [ -z "$VALUE" ]; then
+            echo "GH_DISPATCH_TOKEN repo secret not set — writing the 'unset' placeholder so the functions deploy still has a secret to bind to"
+            VALUE=unset
+          fi
+          for attempt in 1 2 3; do
+            if printf '%s' "$VALUE" | npx firebase-tools@13 functions:secrets:set GH_DISPATCH_TOKEN --project backlog-tracker-e4ed2 --data-file - --force; then
+              break
+            fi
+            [ "$attempt" = "3" ] && { echo "functions:secrets:set GH_DISPATCH_TOKEN failed after 3 attempts"; exit 1; }
+            echo "functions:secrets:set GH_DISPATCH_TOKEN failed (attempt $attempt/3), retrying in 20s..."
+            sleep 20
+          done
+
       - name: Install migration script dependencies
         working-directory: backlog-tracker/scripts
         run: npm install
