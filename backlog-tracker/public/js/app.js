@@ -1063,7 +1063,121 @@ function renderNow() {
   ensureGeneralProjectDoc(renderedProjects);
 }
 
+// ── First paint without waiting on the realtime channel ──────────────────
+// onSnapshot is the source of truth and nothing below changes that. The
+// problem it solves is that the realtime channel does not always arrive
+// promptly: measured on the live board (13 September 2026, reproduced in
+// two different browsers on two different profiles), the Listen requests
+// connect and then deliver nothing for about a minute, while the board sits
+// on "0 items". Forcing the long-polling transport (see initializeFirestore
+// above) removed one 45-second stall and simply exposed others — the
+// transport was never the real problem.
+//
+// What IS reliable on the same network, measured in the same page while the
+// board was still empty: plain REST. projects came back in 600ms,
+// backlogItems in 1.7s, an ordered query over all 110 documents in 3.2s. So
+// the data was always seconds away; only the channel carrying it was slow.
+//
+// Hence: fire one REST read per collection at startup, render whatever it
+// returns, and let onSnapshot quietly replace it whenever it connects. The
+// board is usable in about a second instead of a minute, and nothing about
+// the realtime behaviour afterwards changes.
+//
+// The one thing this must never do is overwrite fresher data with its own
+// stale answer, so each collection is claimed by its listener the first time
+// a real snapshot lands, and a REST response for an already-claimed
+// collection is dropped on the floor.
+const REST_BASE = `https://firestore.googleapis.com/v1/projects/${firebaseConfig.projectId}/databases/(default)/documents`;
+const liveCollections = new Set();
+
+// REST returns Firestore's wire format; the app expects what the SDK hands
+// back. Timestamps in particular are read through tsMillis()/toDate()
+// elsewhere in this file, so they have to arrive as objects with those
+// methods rather than as ISO strings.
+function restValue(v) {
+  if (!v || typeof v !== "object") return null;
+  if ("stringValue" in v) return v.stringValue;
+  if ("booleanValue" in v) return v.booleanValue;
+  if ("integerValue" in v) return Number(v.integerValue);
+  if ("doubleValue" in v) return v.doubleValue;
+  if ("nullValue" in v) return null;
+  if ("timestampValue" in v) {
+    const ms = Date.parse(v.timestampValue);
+    return { toMillis: () => ms, toDate: () => new Date(ms), seconds: Math.floor(ms / 1000) };
+  }
+  if ("arrayValue" in v) return (v.arrayValue.values || []).map(restValue);
+  if ("mapValue" in v) return restFields(v.mapValue.fields || {});
+  return null;
+}
+
+function restFields(fields) {
+  const out = {};
+  for (const [k, v] of Object.entries(fields || {})) out[k] = restValue(v);
+  return out;
+}
+
+async function primeFromRest(collectionName, apply, sort) {
+  try {
+    let documents = [];
+    let pageToken = null;
+    let guard = 0;
+    do {
+      const url = `${REST_BASE}/${collectionName}?pageSize=300` +
+        (pageToken ? `&pageToken=${encodeURIComponent(pageToken)}` : "");
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+      const json = await res.json();
+      documents = documents.concat(json.documents || []);
+      pageToken = json.nextPageToken;
+      guard += 1;
+    } while (pageToken && guard < 10);
+
+    // The listener won the race — its data is newer by definition.
+    if (liveCollections.has(collectionName)) return;
+
+    const rows = documents.map((d) => ({ id: d.name.split("/").pop(), ...restFields(d.fields) }));
+    if (sort) rows.sort(sort);
+    apply(rows);
+  } catch (err) {
+    // Best-effort by design: if this fails the board simply waits for
+    // onSnapshot exactly as it did before, so a warning is the right level.
+    console.warn(`backlog-tracker: couldn't prime ${collectionName} over REST`, err);
+  }
+}
+
+const byMillis = (field, dir) => (a, b) => {
+  const av = a[field] && a[field].toMillis ? a[field].toMillis() : 0;
+  const bv = b[field] && b[field].toMillis ? b[field].toMillis() : 0;
+  return dir === "desc" ? bv - av : av - bv;
+};
+const byNumber = (field) => (a, b) => (Number(a[field]) || 0) - (Number(b[field]) || 0);
+
+// Kick these off immediately — before the listeners below have had a chance
+// to connect — so the board has something on screen within a second or two
+// even when the realtime channel is slow to deliver. Each is a no-op if its
+// listener gets there first.
+primeFromRest("projects", (rows) => { projects = rows; render(); }, byMillis("createdAt", "asc"));
+primeFromRest("backlogItems", (rows) => {
+  allItems = rows;
+  items = allItems.filter((i) => i.status !== "archived");
+  render();
+}, byMillis("createdAt", "desc"));
+primeFromRest("programs", (rows) => { programs = rows; render(); });
+primeFromRest("interfaces", (rows) => { interfaces = rows; render(); });
+primeFromRest("projectDocs", (rows) => { projectDocs = rows; });
+primeFromRest("faqCategories", (rows) => {
+  faqCategories = rows;
+  if (faqSettingsPage && !faqSettingsPage.hidden) renderFaqSettingsPage();
+  if (faqArticlesPage && !faqArticlesPage.hidden) renderFaqArticlesPage();
+}, byNumber("order"));
+primeFromRest("faqArticles", (rows) => {
+  faqArticles = rows;
+  if (faqSettingsPage && !faqSettingsPage.hidden) renderFaqSettingsPage();
+  if (faqArticlesPage && !faqArticlesPage.hidden) renderFaqArticlesPage();
+}, byNumber("order"));
+
 onSnapshot(query(itemsRef, orderBy("createdAt", "desc")), (snap) => {
+  liveCollections.add("backlogItems");
   allItems = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
   items = allItems.filter((i) => i.status !== "archived");
   render();
@@ -1075,6 +1189,7 @@ onSnapshot(query(itemsRef, orderBy("createdAt", "desc")), (snap) => {
 });
 
 onSnapshot(query(projectsRef, orderBy("createdAt", "asc")), (snap) => {
+  liveCollections.add("projects");
   projects = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
   projectsLoaded = true;
   render();
@@ -1086,6 +1201,7 @@ onSnapshot(query(projectsRef, orderBy("createdAt", "asc")), (snap) => {
 });
 
 onSnapshot(interfacesRef, (snap) => {
+  liveCollections.add("interfaces");
   interfaces = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
   render();
   if (docsProjectId) renderDocsPage();
@@ -1094,6 +1210,7 @@ onSnapshot(interfacesRef, (snap) => {
 });
 
 onSnapshot(programsRef, (snap) => {
+  liveCollections.add("programs");
   programs = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
   render();
   if (docsProjectId) renderDocsPage();
@@ -1102,6 +1219,7 @@ onSnapshot(programsRef, (snap) => {
 });
 
 onSnapshot(projectDocsRef, (snap) => {
+  liveCollections.add("projectDocs");
   projectDocs = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
   if (docsProjectId) renderDocsPage();
 }, (err) => {
@@ -2892,6 +3010,7 @@ async function toggleFaqArticleReview(id) {
 }
 
 onSnapshot(query(faqCategoriesRef, orderBy("order", "asc")), (snap) => {
+  liveCollections.add("faqCategories");
   faqCategories = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
   if (!faqSettingsPage.hidden) renderFaqSettingsPage();
   if (!faqArticlesPage.hidden) renderFaqArticlesPage();
@@ -2900,6 +3019,7 @@ onSnapshot(query(faqCategoriesRef, orderBy("order", "asc")), (snap) => {
 });
 
 onSnapshot(query(faqArticlesRef, orderBy("order", "asc")), (snap) => {
+  liveCollections.add("faqArticles");
   faqArticles = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
   // Settings also shows each category's article count, so both pages
   // depend on this collection, not just the one named "articles."
