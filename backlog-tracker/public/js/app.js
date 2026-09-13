@@ -1116,13 +1116,41 @@ function restFields(fields) {
   return out;
 }
 
-async function primeFromRest(collectionName, apply, sort) {
+// The fields the board actually draws for a card. Everything else on a
+// backlogItems document is pipeline machinery — patchFiles above all, which
+// carries entire file contents (180KB at a time) that nothing here renders.
+//
+// This matters because the REST list endpoint pages by payload size, not by
+// document count: priming backlogItems unmasked took 7 round trips and about
+// 12 seconds, almost all of it spent transferring patch blobs straight to the
+// floor. With the mask it is one small page.
+//
+// It is an inclusion list, so a field added later and not listed here is
+// simply absent until the listener delivers — a self-healing gap of a second
+// or two, not a permanent one, but add new rendered fields here too.
+//
+// Only backlogItems is masked. faqArticles carries the other big payload
+// (bodyMd, up to 20KB an article) and is deliberately left whole: the editor
+// populates itself from bodyMd when an article is opened, so priming without
+// it would let someone open an article before the listener arrives, see an
+// empty body, and save that emptiness over the real one.
+const BACKLOG_ITEM_RENDER_FIELDS = [
+  "projectId", "title", "desc", "type", "category", "status",
+  "createdAt", "updatedAt", "archivedAt",
+  "patchReady", "mergeReady", "noDeploymentRequired", "testPassed",
+  "testVersion", "testSummary", "previewUrl",
+  "prUrl", "prNumber", "mergedAt",
+  "notes", "attachments",
+];
+
+async function primeFromRest(collectionName, apply, sort, fields) {
   try {
     let documents = [];
     let pageToken = null;
     let guard = 0;
     do {
-      const url = `${REST_BASE}/${collectionName}?pageSize=300` +
+      const mask = (fields || []).map((f) => `&mask.fieldPaths=${encodeURIComponent(f)}`).join("");
+      const url = `${REST_BASE}/${collectionName}?pageSize=300` + mask +
         (pageToken ? `&pageToken=${encodeURIComponent(pageToken)}` : "");
       const res = await fetch(url);
       if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
@@ -1161,7 +1189,7 @@ primeFromRest("backlogItems", (rows) => {
   allItems = rows;
   items = allItems.filter((i) => i.status !== "archived");
   render();
-}, byMillis("createdAt", "desc"));
+}, byMillis("createdAt", "desc"), BACKLOG_ITEM_RENDER_FIELDS);
 primeFromRest("programs", (rows) => { programs = rows; render(); });
 primeFromRest("interfaces", (rows) => { interfaces = rows; render(); });
 primeFromRest("projectDocs", (rows) => { projectDocs = rows; });
@@ -3601,7 +3629,18 @@ function setFaAdvancedPanelOpen(open) {
 }
 document.getElementById("fa-advanced-toggle").addEventListener("click", () => setFaAdvancedPanelOpen(!faAdvancedPanel.classList.contains("open")));
 document.getElementById("fa-advanced-close").addEventListener("click", () => setFaAdvancedPanelOpen(false));
-faAdvancedBackdrop.addEventListener("click", () => setFaAdvancedPanelOpen(false));
+// Click-outside-to-close, from the document rather than from the backdrop.
+// The backdrop is pointer-events: none now (see styles.css): while the panel
+// was open it covered the whole page including the editor's own Save button,
+// so the first click on a plainly visible Save did nothing except dismiss the
+// panel, and the article only saved on a second click. Same "the button did
+// nothing" shape as the modal-scroll bug and the silent deployToFeature click
+// before it. The dimming stays; only the click-swallowing goes.
+document.addEventListener("click", (e) => {
+  if (!faAdvancedPanel.classList.contains("open")) return;
+  if (e.target.closest("#fa-advanced-panel, #fa-advanced-toggle")) return;
+  setFaAdvancedPanelOpen(false);
+});
 
 function openFaqArticleEditorPage(articleId) {
   closeAllSubPages();
