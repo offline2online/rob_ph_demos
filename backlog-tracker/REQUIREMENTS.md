@@ -433,6 +433,19 @@ before that it appeared only in Ready for Testing, so such a card sitting
 in Approved for Deployment could only be finished by moving it backwards
 a column first.
 
+### The FAQ editor's Advanced panel does not swallow clicks
+
+`.faq-advanced-backdrop` is `pointer-events: none`, and closing the panel
+on an outside click is handled by a document-level listener in `app.js`
+rather than by a click on the backdrop itself.
+
+As a click-catching modal backdrop it covered the entire page including
+the editor's own **Save article** button, so the first click on a visible,
+enabled Save did nothing except dismiss the panel and the article only
+saved on a second click — the same "the button did nothing" failure as the
+modal-scroll bug and the silent `deployToFeature` click before it. The
+dimming is unchanged; only the click-swallowing is gone.
+
 ### A patch touching `.github/workflows/` cannot be delivered by the board
 
 `backlog-automation.yml` pushes with its own run's `GITHUB_TOKEN`, and
@@ -469,6 +482,30 @@ again on the attempt that gives up; in between it only counts, so a flaky
 run can't bury the card. After `MAX_PATCH_ATTEMPTS` (5) the job clears
 `patchReady` and says so, leaving the packaged work on the card untouched.
 Every path that finishes successfully resets the counter to 0.
+
+### The REST prime asks only for the fields the board draws
+
+`primeFromRest("backlogItems", …)` passes `BACKLOG_ITEM_RENDER_FIELDS` as a
+`mask.fieldPaths` projection. Firestore's REST list endpoint pages by
+payload size rather than document count, and a `backlogItems` document
+carries `patchFiles` — entire file contents, 180KB at a time — that
+nothing in the UI renders. Unmasked, priming that one collection took 7
+round trips and about 12 seconds; masked it is a single small page.
+
+It is an **inclusion** list: a field added later and not listed is absent
+until the listener delivers. That is a self-healing gap of a second or
+two rather than a permanent bug, but a new rendered field belongs in that
+array too.
+
+**`faqArticles` is deliberately not masked**, even though `bodyMd` is the
+other big payload (up to 20KB an article). The editor fills itself from
+`bodyMd` when an article is opened, so priming without it would let
+someone open an article before the listener arrives, see an empty body,
+and save that emptiness over the real one. Masking it would need the
+editor to refuse to open until `liveCollections.has("faqArticles")`.
+
+The listener cannot be projected this way at all — the web SDK has no
+`select()` — so it still pulls the full documents.
 
 ### First paint comes from REST, not from the realtime channel
 

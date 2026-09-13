@@ -511,7 +511,16 @@ textarea.dialog-field-input { resize: vertical; min-height: 70px; }
    ROUTINE_INSTRUCTIONS.md item "dedicated page for every article" and
    app.js's openFaqArticleEditorPage/setFaAdvancedPanelOpen. */
 .faq-editor-main { max-width: 820px; }
-.faq-advanced-backdrop { position: fixed; inset: 0; background: rgba(10, 12, 13, .35); z-index: 24; }
+/* pointer-events: none is the point of this rule. The panel is a settings
+   drawer, not a modal that owns the page: with the backdrop catching clicks
+   it also covered the editor's Save button, so the first click on a visible,
+   enabled Save silently just closed the panel. Closing on an outside click
+   is handled from the document instead (app.js), which keeps that behaviour
+   while letting the click through to whatever was actually aimed at. */
+.faq-advanced-backdrop {
+  position: fixed; inset: 0; background: rgba(10, 12, 13, .35);
+  z-index: 24; pointer-events: none;
+}
 .faq-advanced-panel {
   position: fixed; top: 0; right: 0; bottom: 0; width: min(400px, 92vw);
   background: var(--bg); border-left: 1px solid var(--border); box-shadow: -10px 0 30px rgba(0, 0, 0, .18);
