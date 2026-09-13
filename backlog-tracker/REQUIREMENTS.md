@@ -470,6 +470,30 @@ run can't bury the card. After `MAX_PATCH_ATTEMPTS` (5) the job clears
 `patchReady` and says so, leaving the packaged work on the card untouched.
 Every path that finishes successfully resets the counter to 0.
 
+### First paint comes from REST, not from the realtime channel
+
+`app.js` fires one REST read per collection at startup (`primeFromRest`)
+and renders whatever comes back; `onSnapshot` then replaces it silently
+once it connects. Realtime remains the source of truth.
+
+This exists because the realtime channel is not reliably prompt.
+Measured on the live board (13 September 2026, reproduced in two
+browsers on two profiles): the `Listen` requests connect and then
+deliver nothing for about a minute while the board shows *0 items*.
+Forcing the long-polling transport removed one 45-second stall and
+exposed others (30s, 11s) — the transport was never the real problem.
+
+Plain REST on the same network, measured in the same page while the
+board was still empty: `projects` in 600ms, `backlogItems` in 1.7s, an
+ordered query over all 110 documents in 3.2s. The data was always
+seconds away; only the channel carrying it was slow.
+
+The invariant: a REST response must never overwrite fresher listener
+data. Each listener calls `liveCollections.add(<name>)` the first time
+it delivers, and a REST response for an already-claimed collection is
+discarded. A failed REST read is a `console.warn` and nothing more —
+the board then waits for `onSnapshot` exactly as it used to.
+
 ### Firestore uses the long-polling transport (`experimentalForceLongPolling`)
 
 `app.js` creates its Firestore instance with
