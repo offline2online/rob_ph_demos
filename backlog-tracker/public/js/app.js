@@ -332,7 +332,22 @@ document.getElementById("topbar-logo-btn").addEventListener("click", () => { clo
 
 function cardHTML(item) {
   const idx = COL_KEYS.indexOf(item.status);
-  const canLeft = idx > 0;
+  // Moving back is a designed, documented flow from ready-to-publish
+  // (send back for more work — see moveItem()'s own testPassed-reset
+  // comment) but NOT from ready-for-testing straight to Backlog: a Ready
+  // for Testing card always has a real, already-open PR behind it
+  // (patchBranch) that this move does nothing to close, reconnect, or
+  // even leave a visible trace of — patchReady stays false, so
+  // backlog-automation.yml never looks at the item again, and nothing on
+  // the resulting Backlog card hints it already has a PR. Re-investigating
+  // it from Backlog then either silently duplicates that PR's work or, if
+  // findExistingPrForItem finds the still-open original, gets skipped with
+  // no path forward either — the exact "tickets taken from Backlog go back
+  // to Backlog" report this was fixed for (2026-09-13). Excluding
+  // "ready-for-testing" from canLeft removes the only code path capable of
+  // producing that transition at all (no automation step ever moves a card
+  // backward on its own — see run-backlog-automation.js).
+  const canLeft = idx > 0 && item.status !== "ready-for-testing";
   const isTesting = item.status === "ready-for-testing";
   const isLiveBranch = item.status === "ready-to-publish";
   const isBacklog = item.status === "backlog";
@@ -399,7 +414,16 @@ function cardHTML(item) {
         ? `<input type="checkbox" class="card-deploy-select-cb" data-id="${item.id}" data-project-id="${escapeHTML(pid)}" title="Select for Approved for Deployment" ${getDeploySelectedSet(pid).has(item.id) ? "checked" : ""}>`
         : "");
 
-  const leftBtn = canLeft
+  // isLocked (isInDevelopment/isSentToClaude) can never coincide with
+  // canLeft anyway (both require isBacklog, where canLeft is already
+  // false), but isDeploying can: a ready-to-publish card the Routine has
+  // confirmed mergeable and handed to backlog-automation.yml is genuinely
+  // mid-merge, and moving it back to Ready for Testing in that window (its
+  // own dir===-1 case in moveItem() resets testPassed) races the
+  // automation's own status write — whichever lands last wins, which looks
+  // exactly like a card "reverting on its own" even though a person's
+  // click caused it.
+  const leftBtn = (canLeft && !isLocked)
     ? `<button type="button" class="icon-btn move-btn" data-id="${item.id}" data-dir="-1" title="Move back">&larr;</button>`
     : "";
   const deleteBtn = canDelete

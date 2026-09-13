@@ -187,12 +187,38 @@ chance to also confirm the rest first. It's now two separate actions:
    their own timestamps — it just never fires the Routine, since there's
    nothing for it to do).
 
-Sending a card back — the existing left-arrow "move back" button, already
-present on any card past Backlog — from Approved for Deployment into Ready
-for Testing (`moveItem()`) resets `testPassed` to `false`: a stale flag
-from a previous round would otherwise let it slip back onto the feature
-branch on the next "Approved for Deployment" click with nobody having
-re-confirmed the new round of work.
+Sending a card back — the left-arrow "move back" button — from Approved
+for Deployment into Ready for Testing (`moveItem()`) resets `testPassed`
+to `false`: a stale flag from a previous round would otherwise let it
+slip back onto the feature branch on the next "Approved for Deployment"
+click with nobody having re-confirmed the new round of work.
+
+**The left-arrow does NOT exist on every card past Backlog — two cases
+deliberately have no "move back" at all**, both fixed 2026-09-13 after a
+report that tickets taken from Backlog were "going back to Backlog":
+
+- **A Ready for Testing card can never move back to Backlog.** Unlike
+  Approved-for-Deployment→Ready-for-Testing above, this transition has no
+  safe semantics: a Ready for Testing card always has a real, already-open
+  PR behind it (`patchBranch`), and moving it to Backlog does nothing to
+  close, reconnect, or even leave a visible trace of that PR —
+  `patchReady` stays `false`, so `run-backlog-automation.js` never looks
+  at the item again, and nothing on the resulting Backlog card hints it
+  already has one. Re-investigating it fresh from Backlog then either
+  silently duplicates that PR's work, or — if `findExistingPrForItem`
+  finds the still-open original — gets skipped with no path forward
+  either. No automation step ever moves a card backward on its own (see
+  `run-backlog-automation.js`'s `processApplyPatch`/`processMergePr`), so
+  this was always a manual click; `cardHTML`'s `canLeft` now excludes
+  `ready-for-testing` outright, removing the only path capable of
+  producing it.
+- **A locked card's left-arrow is suppressed too** (`canLeft && !isLocked`
+  in `cardHTML`) — concretely, an Approved-for-Deployment card the Routine
+  has confirmed mergeable (`isDeploying`, `mergeReady: true`) is genuinely
+  mid-merge; moving it back to Ready for Testing in that window races
+  `backlog-automation.yml`'s own status write to `published-live` —
+  whichever lands last wins, which looks exactly like the card "reverting
+  on its own" even though a click caused it.
 
 **Test version (`testVersion`)** — a small badge on the card ("Test
 version: v1.5.2") naming backlog-tracker's own `APP_VERSION`
