@@ -3070,10 +3070,6 @@ const faProjectSelect = document.getElementById("fa-project-select");
 // a second, parallel product/program taxonomy just for articles.
 const faProgramSelect = document.getElementById("fa-program-select");
 wireProgramSelect(faProgramSelect);
-const faFilterCategory = document.getElementById("fa-filter-category");
-const faFilterStatus = document.getElementById("fa-filter-status");
-const faFilterNeedsReview = document.getElementById("fa-filter-needs-review");
-const faFilterSearch = document.getElementById("fa-filter-search");
 const faNewCategoryIconSelect = document.getElementById("fa-new-category-icon");
 faNewCategoryIconSelect.innerHTML = faqCategoryIconOptionsHTML("help");
 
@@ -3127,53 +3123,345 @@ function renderFaqSettingsPage() {
   }
 }
 
-function renderFaqArticlesPage() {
-  const catOptionsHTML = faqCategories
-    .map((c) => `<option value="${escapeHTML(c.id)}">${escapeHTML(c.name)}</option>`).join("");
-  faCategorySelect.innerHTML = catOptionsHTML || '<option value="">Add a category first</option>';
 
-  const prevFilterCat = faFilterCategory.value;
-  faFilterCategory.innerHTML = '<option value="">All categories</option>' + catOptionsHTML;
-  faFilterCategory.value = prevFilterCat;
+// ── Categories and folders: the tree, and what it means ──────────────────
+// A faqCategories document with no parentId is a top-level category. One
+// WITH a parentId is a sub-category — a "folder" in help-centre language —
+// living inside that category. Articles carry categoryId pointing at
+// either level, so a sub-category is optional: an article filed straight
+// into a category still shows there, which is how all 110 existing
+// articles keep working without a migration.
+//
+// The tree itself is Product/Program -> Category -> Sub-category. Programs
+// come from the articles (faqArticles.programId), so a category appears
+// under whichever programs its articles belong to.
+function faqOrderOf(d) { return Number.isFinite(Number(d && d.order)) ? Number(d.order) : 0; }
+function byFaqOrder(a, b) { return faqOrderOf(a) - faqOrderOf(b) || String(a.name || a.title || "").localeCompare(String(b.name || b.title || "")); }
+
+function faqTopCategories() { return faqCategories.filter((c) => !c.parentId).slice().sort(byFaqOrder); }
+function faqSubCategories(parentId) { return faqCategories.filter((c) => c.parentId === parentId).slice().sort(byFaqOrder); }
+function faqArticlesIn(categoryId) { return faqArticles.filter((a) => a.categoryId === categoryId).slice().sort(byFaqOrder); }
+// A category's own articles plus everything in its sub-categories — what
+// the counts in the tree show, so a collapsed category still tells you how
+// much is under it.
+function faqArticlesUnder(categoryId) {
+  const subIds = faqSubCategories(categoryId).map((c) => c.id);
+  return faqArticles.filter((a) => a.categoryId === categoryId || subIds.includes(a.categoryId));
+}
+
+// Which program a set of articles belongs to; "" is the catch-all for
+// articles with no product/program assigned yet.
+function faqProgramKeys() {
+  const keys = new Set(faqArticles.map((a) => a.programId || ""));
+  if (keys.size === 0) keys.add("");
+  return [...keys].sort((a, b) => {
+    if (!a) return 1;           // unassigned always last — it is a gap, not a product
+    if (!b) return -1;
+    return String(programName(a) || "").localeCompare(String(programName(b) || ""));
+  });
+}
+function faqProgramLabel(key) {
+  return key ? (programName(key) || "Unknown product/program") : "No product/program assigned";
+}
+
+// Selection + which branches are open. Both are view state, never written to
+// Firestore: two people looking at the same board should be able to be in
+// different folders.
+let faqTreeSelection = null;          // { programKey, categoryId }
+const faqTreeOpen = new Set();        // "prog:<key>" / "cat:<id>"
+
+function faqTreeKeyOpen(key) { return faqTreeOpen.has(key); }
+function toggleFaqTreeOpen(key) {
+  if (faqTreeOpen.has(key)) faqTreeOpen.delete(key); else faqTreeOpen.add(key);
+  renderFaqTree();
+}
+
+function faqCategoriesForProgram(programKey) {
+  return faqTopCategories().filter((c) =>
+    faqArticlesUnder(c.id).some((a) => (a.programId || "") === programKey));
+}
+
+function faqTreeRowHTML({ depth, icon, name, count, selected, open, dragKind, dragId, nodeAttrs, addLabel }) {
+  const caret = open === undefined ? ""
+    : `<span class="material-symbols-outlined faq-tree-caret">${open ? "expand_less" : "expand_more"}</span>`;
+  const add = addLabel
+    ? `<button type="button" class="faq-tree-add" data-add-sub="${escapeHTML(dragId)}" title="${escapeHTML(addLabel)}">+</button>`
+    : "";
+  return `<button type="button" class="faq-tree-row${selected ? " selected" : ""}" data-depth="${depth}"` +
+    (dragKind ? ` draggable="true" data-drag-kind="${dragKind}" data-drag-id="${escapeHTML(dragId)}"` : "") +
+    ` ${nodeAttrs}>` +
+    `<span class="material-symbols-outlined faq-tree-icon">${escapeHTML(icon)}</span>` +
+    `<span class="faq-tree-name">${escapeHTML(name)}</span>` +
+    `<span class="faq-tree-count">${count}</span>${add}${caret}</button>`;
+}
+
+function renderFaqTree() {
+  const root = document.getElementById("faq-tree");
+  if (!root) return;
+  const parts = [];
+  for (const programKey of faqProgramKeys()) {
+    const openKey = `prog:${programKey}`;
+    const cats = faqCategoriesForProgram(programKey);
+    const total = faqArticles.filter((a) => (a.programId || "") === programKey).length;
+    const isOpen = faqTreeKeyOpen(openKey);
+    parts.push('<div class="faq-tree-group">');
+    parts.push(faqTreeRowHTML({
+      depth: 0, icon: "inventory_2", name: faqProgramLabel(programKey),
+      count: `${total} article${total === 1 ? "" : "s"}`, selected: false, open: isOpen,
+      nodeAttrs: `data-node="program" data-program="${escapeHTML(programKey)}"`,
+    }));
+    if (isOpen) {
+      for (const cat of cats) {
+        const catOpenKey = `cat:${programKey}:${cat.id}`;
+        const catOpen = faqTreeKeyOpen(catOpenKey);
+        const subs = faqSubCategories(cat.id);
+        const n = faqArticlesUnder(cat.id).filter((a) => (a.programId || "") === programKey).length;
+        parts.push(faqTreeRowHTML({
+          depth: 1, icon: "folder_copy", name: cat.name || "(untitled)",
+          count: `${n}`, open: subs.length ? catOpen : undefined,
+          selected: !!faqTreeSelection && faqTreeSelection.categoryId === cat.id && faqTreeSelection.programKey === programKey,
+          dragKind: "category", dragId: cat.id,
+          addLabel: "Add a sub-category here",
+          nodeAttrs: `data-node="category" data-program="${escapeHTML(programKey)}" data-category="${escapeHTML(cat.id)}"`,
+        }));
+        if (catOpen) {
+          for (const sub of subs) {
+            const sn = faqArticlesIn(sub.id).filter((a) => (a.programId || "") === programKey).length;
+            parts.push(faqTreeRowHTML({
+              depth: 2, icon: "folder", name: sub.name || "(untitled)", count: `${sn}`,
+              selected: !!faqTreeSelection && faqTreeSelection.categoryId === sub.id && faqTreeSelection.programKey === programKey,
+              dragKind: "subcategory", dragId: sub.id,
+              nodeAttrs: `data-node="category" data-program="${escapeHTML(programKey)}" data-category="${escapeHTML(sub.id)}"`,
+            }));
+          }
+        }
+      }
+      if (cats.length === 0) {
+        parts.push('<p class="empty-hint" style="margin:2px 0 6px 22px;">No articles in this product/program yet.</p>');
+      }
+    }
+    parts.push("</div>");
+  }
+  root.innerHTML = parts.join("") || '<p class="empty-hint">No articles yet.</p>';
+}
+
+// ── The right-hand pane ──────────────────────────────────────────────────
+function faqSelectedArticles() {
+  if (!faqTreeSelection) return [];
+  const { programKey, categoryId } = faqTreeSelection;
+  return faqArticlesIn(categoryId).filter((a) => (a.programId || "") === programKey);
+}
+
+function renderFaqArticleList() {
+  const listEl = document.getElementById("faq-article-list");
+  const emptyEl = document.getElementById("faq-article-empty");
+  const heading = document.getElementById("faq-articles-heading");
+  if (!listEl) return;
+
+  let list = faqSelectedArticles();
+  const searchEl = document.getElementById("fa-tree-search");
+  const q = (searchEl ? searchEl.value : "").trim().toLowerCase();
+  if (q) {
+    // Searching looks across everything, not just the open folder — when you
+    // are hunting for an article you generally do not know which folder it
+    // is in, which is the whole reason for searching.
+    list = faqArticles.filter((a) =>
+      (a.title || "").toLowerCase().includes(q) || (a.summary || "").toLowerCase().includes(q)).sort(byFaqOrder);
+  }
+
+  if (heading) {
+    const cat = faqTreeSelection && faqCategories.find((c) => c.id === faqTreeSelection.categoryId);
+    heading.textContent = q ? `Search results (${list.length})`
+      : cat ? `${cat.name} (${list.length})` : "Articles";
+  }
+  if (list.length === 0) {
+    listEl.innerHTML = "";
+    emptyEl.hidden = false;
+    emptyEl.textContent = q ? "No articles match that search."
+      : faqTreeSelection ? "Nothing in this folder yet."
+      : "Pick a category or folder on the left.";
+    return;
+  }
+  emptyEl.hidden = true;
+  // Only re-orderable when showing a real folder: dragging inside a search
+  // result would be re-ordering a list that isn't a real sequence.
+  listEl.innerHTML = list.map((a) => faqArticleRowHTML(a, !q)).join("");
+}
+
+// ── Re-ordering ──────────────────────────────────────────────────────────
+// Always renumbers the FULL set of siblings 0..n-1, not just the rows on
+// screen. The tree filters categories by program, so the visible rows can be
+// a subset; renumbering only those would quietly reshuffle the ones hidden
+// behind another program. Renumbering everything is both simpler and the
+// only version that is actually correct.
+async function applyFaqReorder(collectionName, siblings, draggedId, targetId, placeAfter) {
+  const ids = siblings.map((d) => d.id);
+  const from = ids.indexOf(draggedId);
+  if (from < 0) return;
+  ids.splice(from, 1);
+  let to = ids.indexOf(targetId);
+  if (to < 0) return;
+  if (placeAfter) to += 1;
+  ids.splice(to, 0, draggedId);
+
+  const batch = writeBatch(db);
+  ids.forEach((id, index) => {
+    batch.update(doc(db, collectionName, id), { order: index, updatedAt: serverTimestamp() });
+  });
+  await batch.commit();
+}
+
+function faqSiblingsFor(kind, id) {
+  if (kind === "category") return faqTopCategories();
+  if (kind === "subcategory") {
+    const sub = faqCategories.find((c) => c.id === id);
+    return sub ? faqSubCategories(sub.parentId) : [];
+  }
+  const article = faqArticles.find((a) => a.id === id);
+  return article ? faqArticlesIn(article.categoryId) : [];
+}
+
+// One delegated set of drag handlers for both panes — the rows are rebuilt
+// on every render, so per-row listeners would have to be re-attached each
+// time and would leak the ones belonging to rows that no longer exist.
+let faqDrag = null;
+function faqDraggableFrom(el) {
+  const row = el && el.closest ? el.closest('[data-drag-kind], .faq-article-row[data-order-id]') : null;
+  if (!row) return null;
+  if (row.dataset.dragKind) return { kind: row.dataset.dragKind, id: row.dataset.dragId, row };
+  return { kind: "article", id: row.dataset.orderId, row };
+}
+function clearFaqDropMarkers() {
+  document.querySelectorAll(".faq-drop-before, .faq-drop-after")
+    .forEach((el) => el.classList.remove("faq-drop-before", "faq-drop-after"));
+}
+
+document.addEventListener("dragstart", (e) => {
+  const target = faqDraggableFrom(e.target);
+  if (!target) return;
+  faqDrag = target;
+  target.row.classList.add("dragging");
+  if (e.dataTransfer) { e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", target.id); }
+});
+
+document.addEventListener("dragover", (e) => {
+  if (!faqDrag) return;
+  const over = faqDraggableFrom(e.target);
+  clearFaqDropMarkers();
+  // Only ever drop onto a sibling of the same kind: this re-orders, it does
+  // not re-file. Moving an article into a different folder is the editor's
+  // Category field, which is explicit about what it changes.
+  if (!over || over.kind !== faqDrag.kind || over.id === faqDrag.id) return;
+  if (!faqSiblingsFor(faqDrag.kind, faqDrag.id).some((d) => d.id === over.id)) return;
+  e.preventDefault();
+  if (e.dataTransfer) e.dataTransfer.dropEffect = "move";
+  const box = over.row.getBoundingClientRect();
+  over.row.classList.add(e.clientY > box.top + box.height / 2 ? "faq-drop-after" : "faq-drop-before");
+});
+
+document.addEventListener("drop", async (e) => {
+  if (!faqDrag) return;
+  const over = faqDraggableFrom(e.target);
+  const placeAfter = over && over.row.classList.contains("faq-drop-after");
+  clearFaqDropMarkers();
+  const dragged = faqDrag;
+  faqDrag = null;
+  dragged.row.classList.remove("dragging");
+  if (!over || over.kind !== dragged.kind || over.id === dragged.id) return;
+  const siblings = faqSiblingsFor(dragged.kind, dragged.id);
+  if (!siblings.some((d) => d.id === over.id)) return;
+  e.preventDefault();
+  const collectionName = dragged.kind === "article" ? "faqArticles" : "faqCategories";
+  try {
+    await applyFaqReorder(collectionName, siblings, dragged.id, over.id, placeAfter);
+  } catch (err) {
+    await showAlert("Couldn't save that new order: " + (err && err.message ? err.message : err),
+      { title: "Re-order failed" });
+  }
+});
+
+document.addEventListener("dragend", () => {
+  if (faqDrag) faqDrag.row.classList.remove("dragging");
+  faqDrag = null;
+  clearFaqDropMarkers();
+});
+
+// ── Tree interactions ────────────────────────────────────────────────────
+document.addEventListener("click", async (e) => {
+  const addBtn = e.target.closest("[data-add-sub]");
+  if (addBtn) {
+    e.stopPropagation();
+    const parentId = addBtn.dataset.addSub;
+    const name = ((await showPromptDialog("Name this sub-category", "", {
+      title: "New sub-category", okLabel: "Create",
+    })) || "").trim();
+    if (!name) return;
+    const siblings = faqSubCategories(parentId);
+    await addDoc(faqCategoriesRef, {
+      name, parentId, icon: "folder", description: "",
+      order: siblings.length, createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
+    });
+    faqTreeOpen.add(`cat:${faqTreeSelection ? faqTreeSelection.programKey : ""}:${parentId}`);
+    return;
+  }
+  const row = e.target.closest(".faq-tree-row");
+  if (!row) return;
+  if (row.dataset.node === "program") {
+    toggleFaqTreeOpen(`prog:${row.dataset.program}`);
+    return;
+  }
+  if (row.dataset.node === "category") {
+    const programKey = row.dataset.program;
+    const categoryId = row.dataset.category;
+    const already = faqTreeSelection && faqTreeSelection.categoryId === categoryId
+      && faqTreeSelection.programKey === programKey;
+    faqTreeSelection = { programKey, categoryId };
+    // Selecting a category also opens it, so its folders appear; clicking an
+    // already-selected one toggles, which is how a tree is expected to work.
+    if (faqSubCategories(categoryId).length) {
+      const key = `cat:${programKey}:${categoryId}`;
+      if (already) { if (faqTreeOpen.has(key)) faqTreeOpen.delete(key); else faqTreeOpen.add(key); }
+      else faqTreeOpen.add(key);
+    }
+    renderFaqTree();
+    renderFaqArticleList();
+  }
+});
+
+function renderFaqArticlesPage() {
+  // The editor's Category select offers both levels, sub-categories indented
+  // under their parent, so filing an article is one choice rather than two.
+  const catOptionsHTML = faqTopCategories().map((c) => {
+    const subs = faqSubCategories(c.id)
+      .map((s) => `<option value="${escapeHTML(s.id)}">\u00a0\u00a0\u00a0\u2014 ${escapeHTML(s.name)}</option>`).join("");
+    return `<option value="${escapeHTML(c.id)}">${escapeHTML(c.name)}</option>` + subs;
+  }).join("");
+  faCategorySelect.innerHTML = catOptionsHTML || '<option value="">Add a category first</option>';
 
   const prevProjVal = faProjectSelect.value;
   faProjectSelect.innerHTML = '<option value="">None — general article</option>' +
     projects.map((p) => `<option value="${escapeHTML(p.id)}">${escapeHTML(p.name)}</option>`).join("");
   faProjectSelect.value = prevProjVal;
 
+  // Land somewhere useful on first open rather than on an empty pane.
+  if (!faqTreeSelection) {
+    const firstProgram = faqProgramKeys()[0];
+    const firstCat = firstProgram !== undefined ? faqCategoriesForProgram(firstProgram)[0] : null;
+    if (firstProgram !== undefined) faqTreeOpen.add(`prog:${firstProgram}`);
+    if (firstCat) faqTreeSelection = { programKey: firstProgram, categoryId: firstCat.id };
+  }
+
+  renderFaqTree();
   renderFaqArticleList();
-  if (faViewMode === "folders") renderFaqArticleFolders();
 
   const publishedCount = faqArticles.filter((a) => a.status === "published").length;
   const draftCount = faqArticles.filter((a) => a.status === "draft").length;
   document.getElementById("faq-admin-count").textContent = `${publishedCount} published, ${draftCount} draft`;
 }
 
-function renderFaqArticleList() {
-  let list = faqArticles.slice();
-  if (faFilterCategory.value) list = list.filter((a) => a.categoryId === faFilterCategory.value);
-  if (faFilterStatus.value) list = list.filter((a) => a.status === faFilterStatus.value);
-  if (faFilterNeedsReview.value === "yes") list = list.filter((a) => a.needsReview);
-  const q = faFilterSearch.value.trim().toLowerCase();
-  if (q) {
-    list = list.filter((a) =>
-      (a.title || "").toLowerCase().includes(q) || (a.summary || "").toLowerCase().includes(q));
-  }
-
-  const listEl = document.getElementById("faq-article-list");
-  const emptyEl = document.getElementById("faq-article-empty");
-  if (list.length === 0) {
-    listEl.innerHTML = "";
-    emptyEl.hidden = false;
-    return;
-  }
-  emptyEl.hidden = true;
-  listEl.innerHTML = list.map(faqArticleRowHTML).join("");
-}
-
-// Shared by the flat List view above and the Folders view below (see
-// renderFaqArticleFolders) — same row, same "⋮" options menu, same
-// interactions either way; only how articles are grouped/reached differs.
+// One row shape for the articles pane. `orderable` is false while a
+// search is showing results from across every folder — dragging there
+// would be re-ordering something that isn't a real sequence.
 // Clicking the title itself opens the editor page (see
 // wireFaqArticleRowInteractions below) — there's no separate "Edit" button
 // in the primary row. Everything else that used to sit as its own button in
@@ -3181,10 +3469,11 @@ function renderFaqArticleList() {
 // pattern as the per-project options menu (toggleOptionMenu/
 // closeAllOptionMenus, extended below to also close an open
 // .faq-article-options-menu).
-function faqArticleRowHTML(a) {
+function faqArticleRowHTML(a, orderable) {
   const liveUrl = `${FAQ_PUBLIC_BASE_URL}article.html?id=${encodeURIComponent(a.id)}`;
+  const drag = orderable ? ` draggable="true" data-order-id="${escapeHTML(a.id)}"` : "";
   return `
-      <div class="faq-article-row" data-id="${escapeHTML(a.id)}">
+      <div class="faq-article-row" data-id="${escapeHTML(a.id)}"${drag}>
         <div class="faq-article-row-main">
           <span class="badge badge-status-${a.status}">${a.status === "published" ? "Published" : "Draft"}</span>
           ${a.needsReview ? '<span class="badge badge-needs-review">Needs review</span>' : ""}
@@ -3213,94 +3502,11 @@ function faqArticleRowHTML(a) {
 // articles"). Expand/collapse state is plain in-memory (not persisted) —
 // there's no expectation this survives a reload, same as the List view's
 // own filters don't either.
-let faViewMode = "list";
-const faFolderState = { programs: new Set(), categories: new Set() };
-
-function setFaViewMode(mode) {
-  faViewMode = mode;
-  document.getElementById("fa-view-list-btn").classList.toggle("active", mode === "list");
-  document.getElementById("fa-view-folders-btn").classList.toggle("active", mode === "folders");
-  document.getElementById("faq-article-list-view").hidden = mode !== "list";
-  document.getElementById("faq-article-folders-view").hidden = mode !== "folders";
-  if (mode === "folders") renderFaqArticleFolders();
-}
-document.getElementById("fa-view-list-btn").addEventListener("click", () => setFaViewMode("list"));
-document.getElementById("fa-view-folders-btn").addEventListener("click", () => setFaViewMode("folders"));
-
-function faqSubfolderRowHTML(programKey, categoryKey, name, articles) {
-  const key = `${programKey}::${categoryKey}`;
-  const isOpen = faFolderState.categories.has(key);
-  const sorted = articles.slice().sort((a, b) => (a.order || 0) - (b.order || 0));
-  return `
-    <div class="faq-folder faq-subfolder">
-      <button type="button" class="faq-folder-row" data-folder-toggle="category" data-key="${escapeHTML(key)}" aria-expanded="${isOpen}">
-        <span class="material-symbols-outlined faq-folder-icon">${isOpen ? "folder_open" : "folder"}</span>
-        <span class="faq-folder-name">${escapeHTML(name)}</span>
-        <span class="faq-folder-count">${sorted.length} article${sorted.length === 1 ? "" : "s"}</span>
-      </button>
-      ${isOpen ? `<div class="faq-folder-articles">${sorted.map(faqArticleRowHTML).join("")}</div>` : ""}
-    </div>`;
-}
-
-function faqProgramFolderHTML(programKey, name, articles) {
-  const isOpen = faFolderState.programs.has(programKey);
-  const catGroups = new Map();
-  for (const a of articles) {
-    const catKey = a.categoryId || "";
-    if (!catGroups.has(catKey)) {
-      catGroups.set(catKey, { name: catKey ? (faqCategoryName(catKey) || "Unknown category") : "No category assigned", articles: [] });
-    }
-    catGroups.get(catKey).articles.push(a);
-  }
-  const cats = [...catGroups.entries()].sort((a, b) => a[1].name.localeCompare(b[1].name));
-  return `
-    <div class="faq-folder">
-      <button type="button" class="faq-folder-row" data-folder-toggle="program" data-key="${escapeHTML(programKey)}" aria-expanded="${isOpen}">
-        <span class="material-symbols-outlined faq-folder-icon">${isOpen ? "folder_open" : "folder"}</span>
-        <span class="faq-folder-name">${escapeHTML(name)}</span>
-        <span class="faq-folder-count">${articles.length} article${articles.length === 1 ? "" : "s"}</span>
-      </button>
-      ${isOpen ? `<div class="faq-folder-children">${cats.map(([catKey, cg]) => faqSubfolderRowHTML(programKey, catKey, cg.name, cg.articles)).join("")}</div>` : ""}
-    </div>`;
-}
-
-function renderFaqArticleFolders() {
-  const root = document.getElementById("faq-article-folders");
-  if (faqArticles.length === 0) {
-    root.innerHTML = '<p class="empty-hint">No articles yet.</p>';
-    return;
-  }
-  const groups = new Map();
-  for (const a of faqArticles) {
-    const key = a.programId || "";
-    if (!groups.has(key)) {
-      groups.set(key, { name: key ? (programName(key) || "Unknown product/program") : "No product/program assigned", articles: [] });
-    }
-    groups.get(key).articles.push(a);
-  }
-  // Sort by name, but keep "no product/program" (empty key) last regardless
-  // of what it alphabetizes to — it's a catch-all, not a real folder.
-  const ordered = [...groups.entries()].sort(([keyA, a], [keyB, b]) => {
-    if (!keyA) return 1;
-    if (!keyB) return -1;
-    return a.name.localeCompare(b.name);
-  });
-  root.innerHTML = ordered.map(([key, g]) => faqProgramFolderHTML(key, g.name, g.articles)).join("");
-}
-
-// Shared by both the List view's #faq-article-list and the Folders view's
-// #faq-article-folders — same row markup (faqArticleRowHTML), same actions.
+// Row actions for the articles pane. The tree pane has its own delegated
+// handler (see renderFaqTree above); this one only deals with articles.
 function wireFaqArticleRowInteractions(containerId) {
   const container = document.getElementById(containerId);
   container.addEventListener("click", async (e) => {
-    const folderToggle = e.target.closest("[data-folder-toggle]");
-    if (folderToggle) {
-      const set = folderToggle.dataset.folderToggle === "program" ? faFolderState.programs : faFolderState.categories;
-      const key = folderToggle.dataset.key;
-      if (set.has(key)) set.delete(key); else set.add(key);
-      renderFaqArticleFolders();
-      return;
-    }
     const row = e.target.closest(".faq-article-row");
     if (!row) return;
     const id = row.dataset.id;
@@ -3365,10 +3571,7 @@ document.getElementById("faq-category-list").addEventListener("change", (e) => {
   select.closest(".fa-icon-picker").querySelector(".fa-icon-preview").textContent = select.value;
 });
 
-[faFilterCategory, faFilterStatus, faFilterNeedsReview].forEach((el) => {
-  el.addEventListener("change", renderFaqArticleList);
-});
-faFilterSearch.addEventListener("input", renderFaqArticleList);
+document.getElementById("fa-tree-search").addEventListener("input", renderFaqArticleList);
 
 // ── FAQ article editor page ──────────────────────────────────────────────
 // A dedicated full-page editor, not a modal: the primary focus (title,
@@ -3739,4 +3942,3 @@ document.getElementById("fa-submit").addEventListener("click", async () => {
 });
 
 wireFaqArticleRowInteractions("faq-article-list");
-wireFaqArticleRowInteractions("faq-article-folders");

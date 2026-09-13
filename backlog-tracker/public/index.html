@@ -479,43 +479,30 @@
         Manage categories from <strong>Settings</strong> in the hamburger menu.
       </p>
 
-      <div class="docs-block">
-        <div class="docs-block-header">
-          <h3>Articles</h3>
-          <button type="button" class="btn-primary" id="fa-new-article-btn">+ New article</button>
-        </div>
-        <div class="type-toggle" role="radiogroup" aria-label="Articles view" style="margin:2px 0 12px;">
-          <button type="button" class="type-opt active" id="fa-view-list-btn" data-view="list">List</button>
-          <button type="button" class="type-opt" id="fa-view-folders-btn" data-view="folders">Folders</button>
+      <!-- Two panes: the structure on the left, the articles of whatever is
+           selected on the right. This replaced a flat filtered list plus a
+           separate "Folders" toggle — two views of the same thing, neither
+           of which could express where an article actually sits. There is
+           only one view now, and it is the structure itself. -->
+      <div class="docs-block faq-browser">
+        <div class="faq-browser-pane faq-browser-tree">
+          <div class="faq-browser-pane-head">
+            <h3>Categories and folders</h3>
+          </div>
+          <p class="field-hint faq-tree-hint">Drag any row to re-order it. That order is what visitors see on the help centre.</p>
+          <div id="faq-tree"></div>
         </div>
 
-        <div id="faq-article-list-view">
+        <div class="faq-browser-pane faq-browser-articles">
+          <div class="faq-browser-pane-head">
+            <h3 id="faq-articles-heading">Articles</h3>
+            <button type="button" class="btn-primary" id="fa-new-article-btn">+ New article</button>
+          </div>
           <div class="fa-filter-row">
-            <select id="fa-filter-category"><option value="">All categories</option></select>
-            <select id="fa-filter-status">
-              <option value="">All statuses</option>
-              <option value="published">Published</option>
-              <option value="draft">Draft</option>
-            </select>
-            <select id="fa-filter-needs-review">
-              <option value="">Needs review: any</option>
-              <option value="yes">Needs review</option>
-            </select>
-            <input type="search" id="fa-filter-search" placeholder="Title or summary…">
+            <input type="search" id="fa-tree-search" placeholder="Search articles in this folder…">
           </div>
           <div id="faq-article-list"></div>
-          <p class="empty-hint" id="faq-article-empty" hidden>No articles match these filters.</p>
-        </div>
-
-        <!-- "Folders" view: drill down Product/Program -> Category -> Articles,
-             instead of one flat filtered list — see app.js's
-             renderFaqArticleFolders(). Ignores the List view's own filters
-             (category/status/needs-review/search) entirely; it's a
-             navigation structure, not another filtered view of the same
-             list. -->
-        <div id="faq-article-folders-view" hidden>
-          <p class="field-hint">Click a folder to open it. Product/Program at the top, then Category, then the articles themselves.</p>
-          <div id="faq-article-folders"></div>
+          <p class="empty-hint" id="faq-article-empty" hidden>Nothing here yet.</p>
         </div>
       </div>
     </section>
