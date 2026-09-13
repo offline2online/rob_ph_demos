@@ -136,6 +136,63 @@ function applyPatchFiles(patchFiles) {
   }
 }
 
+// GitHub will not let this job push a change to its own workflows. The push
+// is made with the run's own GITHUB_TOKEN (see the workflow's
+// `permissions:` block and actions/checkout's persisted credential), and
+// GitHub refuses any push from an App credential that creates or updates a
+// file under .github/workflows/ — there is no `workflows` permission
+// available to a GITHUB_TOKEN to grant, so this is not a configuration
+// mistake that can be fixed from here.
+//
+// Before this check, such an item failed the only way it could: `git push`
+// threw deep inside processApplyPatch, main()'s per-item catch logged it,
+// the step still exited 0, and the item kept patchReady:true — so the board
+// showed a greyed, locked "In development" card retrying every two minutes,
+// for hours, with nothing on the card to say why. Two real items sat like
+// that (e30o8m7yeEU3aE5sOPxF, VSeC6QxmYa9UYctFiRSn, 2026-09-12/13).
+//
+// Refusing the whole item rather than pushing the other files: a patch is
+// one change, and half of one is worse than none. The item that prompted
+// this added a Cloud Function declaring a new secret in the same breath as
+// the workflow step that creates it — shipping only the function would have
+// broken every subsequent deploy.
+const WORKFLOW_PATH_PREFIX = ".github/workflows/";
+
+function workflowPathsIn(patchFiles) {
+  return (patchFiles || [])
+    .map((f) => (f && typeof f.path === "string" ? f.path : ""))
+    .filter((p) => p.startsWith(WORKFLOW_PATH_PREFIX));
+}
+
+// How many consecutive failed attempts an item gets before this job stops
+// retrying it and hands it back to a human. Transient failures (a network
+// blip, a GitHub 5xx, a runner hiccup) genuinely do succeed on the next
+// tick, so retrying is right; retrying *forever* is what turned a permanent
+// failure into an invisible one.
+const MAX_PATCH_ATTEMPTS = 5;
+
+// Records a failed attempt on the item itself. The note is written on the
+// first failure (so the reason is visible immediately, not after 5 more
+// minutes) and again on the attempt that gives up; in between it just
+// counts, so a flaky run can't bury the card under a note per tick.
+async function recordAttemptFailure(item, err) {
+  const attempts = (Number(item.patchAttempts) || 0) + 1;
+  const reason = err instanceof Error ? (err.message || String(err)) : String(err);
+  const giveUp = attempts >= MAX_PATCH_ATTEMPTS;
+  const fields = { patchAttempts: attempts, updatedAt: new Date().toISOString() };
+
+  if (attempts === 1 || giveUp) {
+    const text = giveUp
+      ? `Gave up after ${attempts} failed attempts to open a PR for this item. patchReady has been cleared so the job stops retrying; the work packaged on the card is untouched. Last error:\n\n${reason}`
+      : `Attempt ${attempts} to open a PR for this item failed; it will be retried on the next run (up to ${MAX_PATCH_ATTEMPTS}). Error:\n\n${reason}`;
+    fields.notes = await appendNote(item, text);
+  }
+  if (giveUp) fields.patchReady = false;
+
+  await patchItem(item.id, fields);
+  console.error(`[apply-patch] ${item.id}: attempt ${attempts}/${MAX_PATCH_ATTEMPTS} failed${giveUp ? " — giving up, patchReady cleared" : ""}: ${reason}`);
+}
+
 // Guards against the same item producing a second, duplicate GitHub PR —
 // this has happened for real: a Routine-fired session debugging its own
 // PATCH-payload code against a live production item left patchReady:true
@@ -181,6 +238,31 @@ async function processApplyPatch(item) {
   console.log(`[apply-patch] ${item.id}: ${item.title || item.desc}`);
   if (!Array.isArray(item.patchFiles) || item.patchFiles.length === 0) {
     console.log(`[apply-patch] ${item.id}: no patchFiles present, leaving patchReady set for a human to check`);
+    return;
+  }
+
+  // Checked before the duplicate-PR lookup and before any git work: this
+  // can never succeed, so there is nothing to gain by getting further in.
+  const workflowPaths = workflowPathsIn(item.patchFiles);
+  if (workflowPaths.length) {
+    console.log(`[apply-patch] ${item.id}: refusing — patchFiles touch ${workflowPaths.length} workflow file(s)`);
+    const notes = await appendNote(
+      item,
+      `Cannot be delivered by backlog-automation.yml: patchFiles include ${workflowPaths.length} file(s) under ` +
+      `${WORKFLOW_PATH_PREFIX} (${workflowPaths.join(", ")}). This job pushes with its run's own ` +
+      `GITHUB_TOKEN, and GitHub refuses any push from that credential that creates or updates a workflow ` +
+      `file — there is no permission that can be granted here to allow it. patchReady has been cleared so ` +
+      `the job stops retrying; everything packaged on this card is untouched and still correct.\n\n` +
+      `To land it: apply the card's patchFiles on a branch and open the PR with a human credential (or one ` +
+      `with workflow scope). To make the pipeline capable of it, backlog-automation.yml itself has to be ` +
+      `changed by hand once to push with a workflow-scoped token — which it cannot do to itself either.`
+    );
+    await patchItem(item.id, {
+      patchReady: false,
+      patchAttempts: 0,
+      updatedAt: new Date().toISOString(),
+      notes,
+    });
     return;
   }
 
@@ -240,6 +322,7 @@ async function processApplyPatch(item) {
     await patchItem(item.id, {
       status: "ready-for-testing",
       patchReady: false,
+      patchAttempts: 0,
       noDeploymentRequired: true,
       updatedAt: new Date().toISOString(),
       notes,
@@ -267,6 +350,7 @@ async function processApplyPatch(item) {
   await patchItem(item.id, {
     status: "ready-for-testing",
     patchReady: false,
+    patchAttempts: 0,
     updatedAt: new Date().toISOString(),
     notes,
     prUrl: String(prUrl).trim(),
@@ -390,6 +474,14 @@ async function main() {
       await processApplyPatch(item);
     } catch (err) {
       console.error(`[apply-patch] ${item.id} failed: ${err.stack || err.message}`);
+      // The log alone was the bug: a failure here left the item patchReady
+      // and greyed out on the board with no explanation anywhere a person
+      // looks. Put the reason on the card, and stop retrying eventually.
+      try {
+        await recordAttemptFailure(item, err);
+      } catch (noteErr) {
+        console.error(`[apply-patch] ${item.id}: couldn't record the failure on the item either: ${noteErr.message}`);
+      }
     }
   }
   for (const item of mergeReadyItems) {

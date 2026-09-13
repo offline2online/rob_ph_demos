@@ -433,6 +433,43 @@ before that it appeared only in Ready for Testing, so such a card sitting
 in Approved for Deployment could only be finished by moving it backwards
 a column first.
 
+### A patch touching `.github/workflows/` cannot be delivered by the board
+
+`backlog-automation.yml` pushes with its own run's `GITHUB_TOKEN`, and
+GitHub refuses any push from that credential that creates or updates a
+file under `.github/workflows/`. There is no `permissions:` key that
+grants it — `workflows` exists for GitHub Apps, not for the Actions
+token — so this is a hard limit, not a misconfiguration.
+
+`run-backlog-automation.js` therefore checks `patchFiles` for that prefix
+before doing any git work and refuses the item outright, writing the
+reason onto the card and clearing `patchReady`. It refuses the **whole**
+item rather than pushing the rest: a patch is one change, and half of one
+is worse than none — the item that prompted this added a Cloud Function
+declaring a new secret in the same breath as the workflow step that
+creates it, so shipping only the function would have broken every later
+deploy.
+
+Landing such a change needs a human credential (or a workflow-scoped
+token) to open the PR. Making the pipeline capable of it means editing
+`backlog-automation.yml` to push with such a token — which the pipeline
+cannot do to itself either, so that one edit is always manual.
+
+### Failed automation attempts are recorded on the card (`patchAttempts`)
+
+A failure inside `processApplyPatch` used to be logged by `main()`'s
+per-item catch and nothing more: the step still exited 0, the item kept
+`patchReady: true`, and the board showed a greyed, locked *In development*
+card retrying every two minutes indefinitely with no visible reason. Two
+real items sat like that for hours (2026-09-12/13).
+
+Now each failure increments `backlogItems.patchAttempts` and appends a
+note — on the first failure, so the reason is visible immediately, and
+again on the attempt that gives up; in between it only counts, so a flaky
+run can't bury the card. After `MAX_PATCH_ATTEMPTS` (5) the job clears
+`patchReady` and says so, leaving the packaged work on the card untouched.
+Every path that finishes successfully resets the counter to 0.
+
 ### Firestore rules
 
 Prototype-stage: open, unauthenticated read/write on every collection
