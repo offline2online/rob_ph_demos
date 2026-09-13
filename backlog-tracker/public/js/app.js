@@ -320,6 +320,7 @@ function closeAllSubPages() {
   closeDocsPage();
   closeFaqSettingsPage();
   closeFaqArticlesPage();
+  closeFaqArticleEditorPage();
 }
 function returnToBoard() {
   closeAllSubPages();
@@ -2895,6 +2896,12 @@ const faqSettingsPage = document.getElementById("faq-settings-page");
 const faqArticlesPage = document.getElementById("faq-articles-page");
 const faCategorySelect = document.getElementById("fa-category-select");
 const faProjectSelect = document.getElementById("fa-project-select");
+// Reuses the same programs collection/helpers a project's own "Program/
+// Product" grouping already uses (populateProgramSelect, createProgram,
+// wireProgramSelect — see "Programs/Products" above) rather than inventing
+// a second, parallel product/program taxonomy just for articles.
+const faProgramSelect = document.getElementById("fa-program-select");
+wireProgramSelect(faProgramSelect);
 const faFilterCategory = document.getElementById("fa-filter-category");
 const faFilterStatus = document.getElementById("fa-filter-status");
 const faFilterNeedsReview = document.getElementById("fa-filter-needs-review");
@@ -2967,6 +2974,7 @@ function renderFaqArticlesPage() {
   faProjectSelect.value = prevProjVal;
 
   renderFaqArticleList();
+  if (faViewMode === "folders") renderFaqArticleFolders();
 
   const publishedCount = faqArticles.filter((a) => a.status === "published").length;
   const draftCount = faqArticles.filter((a) => a.status === "draft").length;
@@ -2992,22 +3000,28 @@ function renderFaqArticleList() {
     return;
   }
   emptyEl.hidden = true;
-  listEl.innerHTML = list.map((a) => {
-    const liveUrl = `${FAQ_PUBLIC_BASE_URL}article.html?id=${encodeURIComponent(a.id)}`;
-    // Clicking the title itself opens the edit modal (see the delegated
-    // click handler below) — there's no separate "Edit" button in the
-    // primary row anymore. Everything else that used to sit as its own
-    // button in the row now lives in one "⋮" options menu, same
-    // show/hide-one-at-a-time pattern as the per-project options menu
-    // (toggleOptionMenu/closeAllOptionMenus, extended below to also close
-    // an open .faq-article-options-menu).
-    return `
+  listEl.innerHTML = list.map(faqArticleRowHTML).join("");
+}
+
+// Shared by the flat List view above and the Folders view below (see
+// renderFaqArticleFolders) — same row, same "⋮" options menu, same
+// interactions either way; only how articles are grouped/reached differs.
+// Clicking the title itself opens the editor page (see
+// wireFaqArticleRowInteractions below) — there's no separate "Edit" button
+// in the primary row. Everything else that used to sit as its own button in
+// the row now lives in one "⋮" options menu, same show/hide-one-at-a-time
+// pattern as the per-project options menu (toggleOptionMenu/
+// closeAllOptionMenus, extended below to also close an open
+// .faq-article-options-menu).
+function faqArticleRowHTML(a) {
+  const liveUrl = `${FAQ_PUBLIC_BASE_URL}article.html?id=${encodeURIComponent(a.id)}`;
+  return `
       <div class="faq-article-row" data-id="${escapeHTML(a.id)}">
         <div class="faq-article-row-main">
           <span class="badge badge-status-${a.status}">${a.status === "published" ? "Published" : "Draft"}</span>
           ${a.needsReview ? '<span class="badge badge-needs-review">Needs review</span>' : ""}
           <h4 class="faq-article-title" role="button" tabindex="0" title="Edit article">${escapeHTML(a.title)}</h4>
-          <p class="faq-article-row-meta">${escapeHTML(faqCategoryName(a.categoryId))}${a.projectId ? " &middot; " + escapeHTML(projectName(a.projectId)) : ""}</p>
+          <p class="faq-article-row-meta">${escapeHTML(faqCategoryName(a.categoryId))}${a.programId && programName(a.programId) ? " &middot; " + escapeHTML(programName(a.programId)) : ""}${a.projectId ? " &middot; " + escapeHTML(projectName(a.projectId)) : ""}</p>
         </div>
         <div class="faq-article-row-actions">
           <div class="faq-article-options">
@@ -3022,7 +3036,127 @@ function renderFaqArticleList() {
           <button type="button" class="icon-btn faq-article-delete" title="Delete">&#128465;</button>
         </div>
       </div>`;
-  }).join("");
+}
+
+// ── FAQ Management "Folders" view ────────────────────────────────────────
+// Drills down Product/Program -> Category -> Articles instead of showing
+// one flat, filtered list — see the backlog item this implements ("click
+// Personalisation Hub, see its categories, click a category, see its
+// articles"). Expand/collapse state is plain in-memory (not persisted) —
+// there's no expectation this survives a reload, same as the List view's
+// own filters don't either.
+let faViewMode = "list";
+const faFolderState = { programs: new Set(), categories: new Set() };
+
+function setFaViewMode(mode) {
+  faViewMode = mode;
+  document.getElementById("fa-view-list-btn").classList.toggle("active", mode === "list");
+  document.getElementById("fa-view-folders-btn").classList.toggle("active", mode === "folders");
+  document.getElementById("faq-article-list-view").hidden = mode !== "list";
+  document.getElementById("faq-article-folders-view").hidden = mode !== "folders";
+  if (mode === "folders") renderFaqArticleFolders();
+}
+document.getElementById("fa-view-list-btn").addEventListener("click", () => setFaViewMode("list"));
+document.getElementById("fa-view-folders-btn").addEventListener("click", () => setFaViewMode("folders"));
+
+function faqSubfolderRowHTML(programKey, categoryKey, name, articles) {
+  const key = `${programKey}::${categoryKey}`;
+  const isOpen = faFolderState.categories.has(key);
+  const sorted = articles.slice().sort((a, b) => (a.order || 0) - (b.order || 0));
+  return `
+    <div class="faq-folder faq-subfolder">
+      <button type="button" class="faq-folder-row" data-folder-toggle="category" data-key="${escapeHTML(key)}" aria-expanded="${isOpen}">
+        <span class="material-symbols-outlined faq-folder-icon">${isOpen ? "folder_open" : "folder"}</span>
+        <span class="faq-folder-name">${escapeHTML(name)}</span>
+        <span class="faq-folder-count">${sorted.length} article${sorted.length === 1 ? "" : "s"}</span>
+      </button>
+      ${isOpen ? `<div class="faq-folder-articles">${sorted.map(faqArticleRowHTML).join("")}</div>` : ""}
+    </div>`;
+}
+
+function faqProgramFolderHTML(programKey, name, articles) {
+  const isOpen = faFolderState.programs.has(programKey);
+  const catGroups = new Map();
+  for (const a of articles) {
+    const catKey = a.categoryId || "";
+    if (!catGroups.has(catKey)) {
+      catGroups.set(catKey, { name: catKey ? (faqCategoryName(catKey) || "Unknown category") : "No category assigned", articles: [] });
+    }
+    catGroups.get(catKey).articles.push(a);
+  }
+  const cats = [...catGroups.entries()].sort((a, b) => a[1].name.localeCompare(b[1].name));
+  return `
+    <div class="faq-folder">
+      <button type="button" class="faq-folder-row" data-folder-toggle="program" data-key="${escapeHTML(programKey)}" aria-expanded="${isOpen}">
+        <span class="material-symbols-outlined faq-folder-icon">${isOpen ? "folder_open" : "folder"}</span>
+        <span class="faq-folder-name">${escapeHTML(name)}</span>
+        <span class="faq-folder-count">${articles.length} article${articles.length === 1 ? "" : "s"}</span>
+      </button>
+      ${isOpen ? `<div class="faq-folder-children">${cats.map(([catKey, cg]) => faqSubfolderRowHTML(programKey, catKey, cg.name, cg.articles)).join("")}</div>` : ""}
+    </div>`;
+}
+
+function renderFaqArticleFolders() {
+  const root = document.getElementById("faq-article-folders");
+  if (faqArticles.length === 0) {
+    root.innerHTML = '<p class="empty-hint">No articles yet.</p>';
+    return;
+  }
+  const groups = new Map();
+  for (const a of faqArticles) {
+    const key = a.programId || "";
+    if (!groups.has(key)) {
+      groups.set(key, { name: key ? (programName(key) || "Unknown product/program") : "No product/program assigned", articles: [] });
+    }
+    groups.get(key).articles.push(a);
+  }
+  // Sort by name, but keep "no product/program" (empty key) last regardless
+  // of what it alphabetizes to — it's a catch-all, not a real folder.
+  const ordered = [...groups.entries()].sort(([keyA, a], [keyB, b]) => {
+    if (!keyA) return 1;
+    if (!keyB) return -1;
+    return a.name.localeCompare(b.name);
+  });
+  root.innerHTML = ordered.map(([key, g]) => faqProgramFolderHTML(key, g.name, g.articles)).join("");
+}
+
+// Shared by both the List view's #faq-article-list and the Folders view's
+// #faq-article-folders — same row markup (faqArticleRowHTML), same actions.
+function wireFaqArticleRowInteractions(containerId) {
+  const container = document.getElementById(containerId);
+  container.addEventListener("click", async (e) => {
+    const folderToggle = e.target.closest("[data-folder-toggle]");
+    if (folderToggle) {
+      const set = folderToggle.dataset.folderToggle === "program" ? faFolderState.programs : faFolderState.categories;
+      const key = folderToggle.dataset.key;
+      if (set.has(key)) set.delete(key); else set.add(key);
+      renderFaqArticleFolders();
+      return;
+    }
+    const row = e.target.closest(".faq-article-row");
+    if (!row) return;
+    const id = row.dataset.id;
+    const optionsBtn = e.target.closest(".faq-article-options-btn");
+    if (optionsBtn) { toggleOptionMenu(optionsBtn); return; }
+    if (e.target.closest(".faq-article-title") || e.target.closest(".faq-article-edit")) {
+      closeAllOptionMenus();
+      openFaqArticleEditorPage(id);
+      return;
+    }
+    if (e.target.closest(".faq-article-toggle-status")) { closeAllOptionMenus(); toggleFaqArticleStatus(id); return; }
+    if (e.target.closest(".faq-article-toggle-review")) { closeAllOptionMenus(); toggleFaqArticleReview(id); return; }
+    if (e.target.closest(".faq-article-delete")) {
+      if (await showConfirmDialog("Delete this article? This can't be undone.", { title: "Delete article", okLabel: "Delete", danger: true })) deleteFaqArticle(id);
+    }
+  });
+  container.addEventListener("keydown", (e) => {
+    if (e.key !== "Enter" && e.key !== " ") return;
+    const title = e.target.closest(".faq-article-title");
+    if (!title) return;
+    e.preventDefault();
+    const row = title.closest(".faq-article-row");
+    if (row) { closeAllOptionMenus(); openFaqArticleEditorPage(row.dataset.id); }
+  });
 }
 
 document.getElementById("faq-settings-btn").addEventListener("click", () => { closeNavDrawer(); openFaqSettingsPage(); });
@@ -3068,8 +3202,17 @@ document.getElementById("faq-category-list").addEventListener("change", (e) => {
 });
 faFilterSearch.addEventListener("input", renderFaqArticleList);
 
-// ── FAQ article editor modal ────────────────────────────────────────────
-const faBackdrop = document.getElementById("fa-backdrop");
+// ── FAQ article editor page ──────────────────────────────────────────────
+// A dedicated full-page editor, not a modal: the primary focus (title,
+// summary, body) takes the full page, and everything else about an article
+// (slug, category, doc type, linked project, keywords, status, needs
+// review) lives in a slide-out panel from the right, hidden until the
+// "Advanced settings" button is clicked. Replaces the old #fa-backdrop
+// modal, which gave equal visual weight to a dozen fields most edits never
+// touch.
+const faqArticleEditorPage = document.getElementById("faq-article-editor-page");
+const faAdvancedPanel = document.getElementById("fa-advanced-panel");
+const faAdvancedBackdrop = document.getElementById("fa-advanced-backdrop");
 const faTitleInput = document.getElementById("fa-title-input");
 const faSlugInput = document.getElementById("fa-slug-input");
 const faDocTypeSelect = document.getElementById("fa-doctype-select");
@@ -3212,7 +3355,7 @@ registerFaqEditorFormats();
 
 // Rich-text body editor (Quill, loaded via CDN — see index.html <head>).
 // One instance bound to #fa-body-editor for the life of the page, same as
-// every other modal's inputs; openFaqArticleModal() below resets its
+// every other modal's inputs; openFaqArticleEditorPage() below resets its
 // content on each open rather than recreating it. Toolbar covers headings
 // (H1-H4 — docs/CONTRIBUTING-docs.md §3 stops at H4), bold/italic/
 // underline/strike, alignment, ordered/bullet lists, blockquote, inline
@@ -3301,12 +3444,27 @@ document.getElementById("fa-body-mode-view").addEventListener("click", () => set
 
 function setFaStatusToggle(status) {
   faStatus = status;
-  document.querySelectorAll("#fa-backdrop .type-opt").forEach((btn) => {
+  document.querySelectorAll("#faq-article-editor-page .type-opt").forEach((btn) => {
     btn.classList.toggle("active", btn.dataset.status === status);
   });
 }
 
-function openFaqArticleModal(articleId) {
+// The slide-out panel holding everything besides title/summary/body — see
+// the comment above faqArticleEditorPage. Closed by default every time the
+// editor opens (openFaqArticleEditorPage below), regardless of whether it
+// was left open on a previous article.
+function setFaAdvancedPanelOpen(open) {
+  faAdvancedPanel.classList.toggle("open", open);
+  faAdvancedPanel.setAttribute("aria-hidden", open ? "false" : "true");
+  faAdvancedBackdrop.hidden = !open;
+  document.getElementById("fa-advanced-toggle").setAttribute("aria-expanded", open ? "true" : "false");
+}
+document.getElementById("fa-advanced-toggle").addEventListener("click", () => setFaAdvancedPanelOpen(!faAdvancedPanel.classList.contains("open")));
+document.getElementById("fa-advanced-close").addEventListener("click", () => setFaAdvancedPanelOpen(false));
+faAdvancedBackdrop.addEventListener("click", () => setFaAdvancedPanelOpen(false));
+
+function openFaqArticleEditorPage(articleId) {
+  closeAllSubPages();
   editingFaqArticleId = articleId || null;
   faqSlugManuallyEdited = !!articleId;
   const article = articleId ? faqArticles.find((a) => a.id === articleId) : null;
@@ -3326,11 +3484,13 @@ function openFaqArticleModal(articleId) {
   faNeedsReview.checked = article ? !!article.needsReview : false;
   setFaStatusToggle(article ? article.status : "draft");
   setFaBodyMode("edit");
+  setFaAdvancedPanelOpen(false);
 
   if (faCategorySelect.options.length && faCategorySelect.options[0].value !== "") {
     faCategorySelect.value = article ? article.categoryId : faCategorySelect.options[0].value;
   }
   faProjectSelect.value = article && article.projectId ? article.projectId : "";
+  populateProgramSelect(faProgramSelect, article && article.programId ? article.programId : "");
 
   const liveHint = document.getElementById("fa-live-link-hint");
   if (article && article.status === "published") {
@@ -3340,23 +3500,34 @@ function openFaqArticleModal(articleId) {
     liveHint.hidden = true;
   }
 
-  faBackdrop.hidden = false;
+  document.getElementById("projects-root").hidden = true;
+  faqArticleEditorPage.hidden = false;
   faTitleInput.focus();
 }
-function closeFaqArticleModal() { faBackdrop.hidden = true; }
+// Just hides the page — used by closeAllSubPages() (e.g. navigating away
+// via the hamburger menu while mid-edit). Cancelling or saving instead call
+// backToFaqArticleList() below, which actually returns to the list.
+function closeFaqArticleEditorPage() {
+  faqArticleEditorPage.hidden = true;
+  document.getElementById("projects-root").hidden = false;
+  setFaAdvancedPanelOpen(false);
+}
+function backToFaqArticleList() { openFaqArticlesPage(); }
 
 document.getElementById("fa-new-article-btn").addEventListener("click", async () => {
   if (faqCategories.length === 0) { await showAlert("Add a category first."); return; }
-  openFaqArticleModal(null);
+  openFaqArticleEditorPage(null);
 });
-document.getElementById("fa-cancel").addEventListener("click", closeFaqArticleModal);
-document.getElementById("fa-close").addEventListener("click", closeFaqArticleModal);
-faBackdrop.addEventListener("click", (e) => { if (e.target === faBackdrop) closeFaqArticleModal(); });
+document.getElementById("fa-cancel").addEventListener("click", backToFaqArticleList);
 document.addEventListener("keydown", (e) => {
-  if (e.key === "Escape" && !faBackdrop.hidden) closeFaqArticleModal();
+  if (e.key !== "Escape" || faqArticleEditorPage.hidden) return;
+  // Escape closes the slide-out panel first, same as it would any other
+  // overlay — a second Escape (panel already closed) leaves the editor.
+  if (faAdvancedPanel.classList.contains("open")) setFaAdvancedPanelOpen(false);
+  else backToFaqArticleList();
 });
 
-document.querySelectorAll("#fa-backdrop .type-opt").forEach((btn) => {
+document.querySelectorAll("#faq-article-editor-page .type-opt").forEach((btn) => {
   btn.addEventListener("click", () => setFaStatusToggle(btn.dataset.status));
 });
 
@@ -3374,6 +3545,7 @@ document.getElementById("fa-submit").addEventListener("click", async () => {
   const data = {
     categoryId,
     projectId: faProjectSelect.value || null,
+    programId: (faProgramSelect.value && faProgramSelect.value !== "__new__") ? faProgramSelect.value : null,
     title,
     slug: faSlugInput.value.trim() || slugify(title),
     summary: faSummaryInput.value.trim(),
@@ -3384,31 +3556,8 @@ document.getElementById("fa-submit").addEventListener("click", async () => {
     needsReview: faNeedsReview.checked,
   };
   await saveFaqArticle(editingFaqArticleId, data);
-  closeFaqArticleModal();
+  backToFaqArticleList();
 });
 
-document.getElementById("faq-article-list").addEventListener("click", async (e) => {
-  const row = e.target.closest(".faq-article-row");
-  if (!row) return;
-  const id = row.dataset.id;
-  const optionsBtn = e.target.closest(".faq-article-options-btn");
-  if (optionsBtn) { toggleOptionMenu(optionsBtn); return; }
-  if (e.target.closest(".faq-article-title") || e.target.closest(".faq-article-edit")) {
-    closeAllOptionMenus();
-    openFaqArticleModal(id);
-    return;
-  }
-  if (e.target.closest(".faq-article-toggle-status")) { closeAllOptionMenus(); toggleFaqArticleStatus(id); return; }
-  if (e.target.closest(".faq-article-toggle-review")) { closeAllOptionMenus(); toggleFaqArticleReview(id); return; }
-  if (e.target.closest(".faq-article-delete")) {
-    if (await showConfirmDialog("Delete this article? This can't be undone.", { title: "Delete article", okLabel: "Delete", danger: true })) deleteFaqArticle(id);
-  }
-});
-document.getElementById("faq-article-list").addEventListener("keydown", (e) => {
-  if (e.key !== "Enter" && e.key !== " ") return;
-  const title = e.target.closest(".faq-article-title");
-  if (!title) return;
-  e.preventDefault();
-  const row = title.closest(".faq-article-row");
-  if (row) { closeAllOptionMenus(); openFaqArticleModal(row.dataset.id); }
-});
+wireFaqArticleRowInteractions("faq-article-list");
+wireFaqArticleRowInteractions("faq-article-folders");

@@ -744,20 +744,35 @@ default.
   preview, description, display order) and **FAQ Management** (articles —
   title, slug, category, a **document type** select (FAQ / How-to guide /
   Reference / Explanation — see "Data model" below), an optional linked
-  project, summary, a rich-text body via a real editor (Quill) with an
-  Edit/View-live toggle, search keywords, draft/published status, and a
-  "needs review" flag). Global, not per-project, since an article can span
-  or link to any one project. Inserting an image via the editor's toolbar
-  prompts for alt text as well as a URL — `docs/CONTRIBUTING-docs.md` §6/
-  §5.6 makes alt text mandatory on every informative image, enforced here
-  at authoring time rather than by a later audit. See `REQUIREMENTS.md` →
-  "Rich-text article body" for the format-migration and sanitization
-  details — this is real HTML now, not markdown, and it's sanitized
-  (DOMPurify) at render time on both the admin preview and the public site
-  since `faqArticles`' write rules are wide open.
+  project, an optional product/program, summary, a rich-text body via a real
+  editor (Quill) with an Edit/View-live toggle, search keywords,
+  draft/published status, and a "needs review" flag). Global, not
+  per-project, since an article can span or link to any one project.
+  Clicking an article opens a **dedicated full-page editor**, not a modal —
+  title/summary/body (the primary focus) take the full page, and everything
+  else above lives in an "Advanced settings" panel that slides in from the
+  right, hidden until asked for (`public/js/app.js`'s
+  `openFaqArticleEditorPage`/`setFaAdvancedPanelOpen`). Inserting an image
+  via the editor's toolbar prompts for alt text as well as a URL —
+  `docs/CONTRIBUTING-docs.md` §6/§5.6 makes alt text mandatory on every
+  informative image, enforced here at authoring time rather than by a later
+  audit. See `REQUIREMENTS.md` → "Rich-text article body" for the
+  format-migration and sanitization details — this is real HTML now, not
+  markdown, and it's sanitized (DOMPurify) at render time on both the admin
+  preview and the public site since `faqArticles`' write rules are wide
+  open.
+  - **List vs. Folders**: FAQ Management's Articles block offers both — the
+    original flat, filterable **List** (category/status/needs-review/search)
+    stays the default, and a **Folders** toggle switches to a drill-down
+    tree grouped by Product/Program (the top-level `programs` collection —
+    see `programId` below) and then Category, so a large article set can be
+    navigated by "click Personalisation Hub, click a category, see its
+    articles" instead of only ever scanning/filtering one flat list.
+    Expand/collapse state is in-memory only (`public/js/app.js`'s
+    `faFolderState`), same as the List view's own filters not persisting.
 - **Data model** — two new top-level collections:
   - `faqCategories/{id}`: `{name, icon, description, order, createdAt, updatedAt}`
-  - `faqArticles/{id}`: `{categoryId, projectId (nullable), title, slug, summary, bodyMd, docType: "faq"|"how-to"|"reference"|"explanation", keywords[], status: "draft"|"published", needsReview, order, createdAt, updatedAt, publishedAt}`
+  - `faqArticles/{id}`: `{categoryId, projectId (nullable), programId (nullable), title, slug, summary, bodyMd, docType: "faq"|"how-to"|"reference"|"explanation", keywords[], status: "draft"|"published", needsReview, order, createdAt, updatedAt, publishedAt}`
   - **`docType`** — which of `docs/CONTRIBUTING-docs.md` §2's four
     Diátaxis types this article actually is. Defaults to `"faq"` for a
     new article (most of the 108 seeded ones genuinely are short FAQ
@@ -771,6 +786,27 @@ default.
   Pricing & Asset Management, etc.) it documents. This is what the
   auto-review automation below uses to find which articles a shipped
   feature might have made stale.
+- **`programId`** — which product/program (the same top-level `programs`
+  collection a project can optionally be grouped under — see the board's
+  own "Program/Product" heading, `public/js/app.js`'s `createProgram`/
+  `populateProgramSelect`) this article belongs to. Reuses that existing
+  collection rather than a second, parallel taxonomy just for articles —
+  set from the article editor's "Advanced settings" panel (with the same
+  inline "+ New program…" affordance the New Project modal already has),
+  and it's what FAQ Management's folder view (see below) groups by at the
+  top level. `scripts/backfill-faq-program.js` (a one-off, idempotent
+  "set only if missing" pass — deliberately NOT wired into the deploy
+  workflow: the backlog automation pushes with its run's own GITHUB_TOKEN,
+  which GitHub forbids from creating or updating anything under
+  `.github/workflows/`, so wiring it in there is what made this whole
+  change undeliverable by the board in the first place. It has already been
+  run once against the live data; re-run it by hand if articles ever arrive
+  without a `programId`)
+  find-or-creates a "Personalisation Hub" program and assigns it to every
+  `faqArticles` doc that doesn't already have a `programId` — the 108
+  seeded articles are all genuinely Personalisation Hub content, so this
+  is what gets them all correctly categorized without a one-off manual
+  pass through FAQ Management.
 - **Auto-flagging FAQs for review on merge to main** — opt-in per project,
   toggled from that project's Docs page (**⋮ → Requirements (MD file)**
   opens the Docs page; "FAQ review automation" is the block below
