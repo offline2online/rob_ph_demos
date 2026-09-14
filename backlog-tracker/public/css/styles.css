@@ -80,6 +80,18 @@ body {
   background: transparent; color: var(--text-muted); border: 1px solid var(--border);
   border-radius: 6px; padding: 9px 16px; font-size: 13px; cursor: pointer; font-family: inherit;
 }
+/* Filled/outlined, not muted-grey-on-transparent like .btn-ghost — used for
+   Attach screenshot/Record screen. These used to be plain .btn-ghost, which
+   next to the filled blue Save/Add comment buttons read as disabled
+   (DrIEsKsdi3WrwXbUdMH6 and its duplicates: "it's not possible to attach
+   anything to a ticket" was this look, not a real bug). */
+.btn-attach {
+  background: var(--primary-tint); color: var(--primary); border: 1px solid var(--primary);
+  border-radius: 6px; padding: 9px 16px; font-size: 13px; font-weight: 600; cursor: pointer;
+  font-family: inherit; display: inline-flex; align-items: center; gap: 6px;
+}
+.btn-attach:hover { background: var(--primary); color: #fff; }
+.btn-attach.recording { background: var(--danger); color: #fff; border-color: var(--danger); }
 .btn-danger {
   background: var(--danger); color: #fff; border: none; border-radius: 6px;
   padding: 9px 16px; font-size: 13px; font-weight: 600; cursor: pointer; font-family: inherit;
@@ -95,7 +107,12 @@ body {
 .col-count { background: var(--surface-2); border-radius: 9999px; padding: 1px 8px; }
 .col-list { padding: 10px; display: flex; flex-direction: column; gap: 10px; overflow-y: auto; }
 .empty-hint { color: var(--text-muted); font-size: 12.5px; font-style: italic; padding: 10px 6px; text-align: center; }
-.card { background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 12px; box-shadow: 0 1px 2px rgba(20, 20, 20, .05); }
+/* cursor:pointer signals the whole tile opens for editing on click now
+   (Vz3OY3vWkOYs3M8BFhiK) — see the delegated click handler's own .card
+   fallback in app.js, which excludes the card's buttons/inputs/links so
+   their own actions still work normally. */
+.card { background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 12px; box-shadow: 0 1px 2px rgba(20, 20, 20, .05); cursor: pointer; }
+.card-in-development { cursor: default; }
 .card-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
 .card-top-left { display: flex; align-items: center; gap: 8px; }
 .card-select-cb { width: 15px; height: 15px; margin: 0; cursor: pointer; flex-shrink: 0; }
@@ -186,7 +203,9 @@ body {
   background: var(--surface); color: var(--text-muted); border: 1px dashed var(--border); border-radius: 6px;
   padding: 8px 10px; font-size: 11.5px; font-style: italic; font-weight: 600;
 }
-.attachment-count-badge { font-size: 11px; color: var(--text-muted); padding: 3px 4px; }
+/* .attachment-btn (an .icon-btn) replaced the old, non-interactive,
+   zero-hidden .attachment-count-badge span — see cardHTML in app.js — so
+   it needs no styling of its own beyond .icon-btn's existing rule. */
 .test-link-row { display: flex; align-items: center; gap: 4px; margin-top: 10px; }
 .test-link-btn {
   flex: 1; text-align: center; background: var(--primary-tint); color: var(--primary); text-decoration: none;
@@ -234,6 +253,7 @@ textarea.dialog-field-input { resize: vertical; min-height: 70px; }
 .mic-btn {
   position: absolute; right: 7px; bottom: 7px; width: 30px; height: 30px; border-radius: 50%;
   border: none; background: var(--primary-tint); cursor: pointer; font-size: 15px; line-height: 1;
+  display: flex; align-items: center; justify-content: center; color: var(--primary);
 }
 .mic-btn:hover { background: var(--primary); }
 .mic-btn.listening { background: var(--danger); color: #fff; animation: mic-pulse 1.4s ease-in-out infinite; }
@@ -482,6 +502,13 @@ textarea.dialog-field-input { resize: vertical; min-height: 70px; }
 
   .board { grid-template-columns: 1fr; overflow-x: visible; }
   .column { max-height: none; }
+  /* Tap-to-collapse a single column (eQOIaEcF4xMSVmZt1rnA) — mobile only,
+     since this is where 4 stacked columns actually means scrolling past a
+     long Backlog to reach Approved for Deployment below it; side-by-side
+     desktop columns don't have that problem, so .column-collapsed does
+     nothing outside this media query. See isColumnCollapsed in app.js. */
+  .col-head { cursor: pointer; }
+  .column-collapsed .col-list { display: none; }
 
   .project { padding: 14px 12px 16px; }
   .project-header { flex-wrap: wrap; }
@@ -671,8 +698,9 @@ textarea.dialog-field-input { resize: vertical; min-height: 70px; }
    room, and a gap before the composer underneath it. */
 .qc-notes-list { max-height: 340px; margin-bottom: 12px; }
 
-/* ── Attachments block (Edit item modal) — screenshots & screen
-   recordings, see app.js uploadItemAttachment/startScreenRecording. ───── */
+/* ── Attachments block (Edit item modal, and the quick-comment modal's own
+   compact version) — screenshots & screen recordings, see app.js
+   uploadItemAttachment/createAttachmentController. ───────────────────── */
 .ei-attachments-block { border-top: 1px solid var(--border); margin-top: 16px; padding-top: 14px; }
 .ei-attachments-block h3 { margin: 0 0 8px; font-size: 14px; }
 .ei-attachments-list { display: flex; flex-direction: column; gap: 8px; max-height: 260px; overflow-y: auto; margin-bottom: 10px; }
@@ -688,15 +716,19 @@ textarea.dialog-field-input { resize: vertical; min-height: 70px; }
 .ei-attachment-remove-btn { flex-shrink: 0; }
 .ei-attachments-actions { display: flex; gap: 8px; flex-wrap: wrap; }
 .ei-attach-screenshot-label { display: inline-flex; align-items: center; }
-/* A recording in progress — the pulsing red dot mirrors the browser's own
+.qc-attachments-actions { margin: 10px 0 4px; }
+/* A recording in progress — the pulsing white dot mirrors the browser's own
    "you're sharing your screen" indicator, so the state reads at a glance
-   even before the attach-hint text below the buttons is noticed. */
-#ei-record-screen-btn.recording {
-  color: var(--danger); border-color: var(--danger); position: relative; padding-left: 26px;
+   even before the attach-hint text below the buttons is noticed. Generic
+   over .btn-attach (not #ei-record-screen-btn specifically) now that the
+   quick-comment modal's own Record screen button shares the same styling
+   and behavior — see createAttachmentController in app.js. */
+.btn-attach.recording {
+  position: relative; padding-left: 26px;
 }
-#ei-record-screen-btn.recording::before {
+.btn-attach.recording::before {
   content: ""; position: absolute; left: 10px; top: 50%; width: 8px; height: 8px; margin-top: -4px;
-  border-radius: 50%; background: var(--danger); animation: ei-recording-pulse 1.2s ease-in-out infinite;
+  border-radius: 50%; background: #fff; animation: ei-recording-pulse 1.2s ease-in-out infinite;
 }
 @keyframes ei-recording-pulse {
   0%, 100% { opacity: 1; } 50% { opacity: .25; }
