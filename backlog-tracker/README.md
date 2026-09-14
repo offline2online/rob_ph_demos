@@ -252,6 +252,33 @@ down to a passive "In development — locked" hint instead, the same
 unlocks on its own the moment the automation flips `status` to
 `ready-for-testing` — no separate cleanup needed.
 
+### Cards that ship together are grouped on the board
+
+Two or more cards packaged into the same deployment are drawn bracketed
+together — a light `.card-group` wrapper with a "Ships together" header and
+a count — in place, inside whichever column they're already in. There is no
+separate page, menu entry or section for this, and nothing is stored: an
+earlier attempt built a dedicated Deployments page, which was the wrong
+shape and was removed in PR #98.
+
+`deploymentGroupKey(item)` derives a group's identity on every render from
+what already makes two cards one deployment: the `patchBranch` they were
+packaged on, or the `prNumber` that branch became — both written by the
+existing automation. Branch wins over PR number when both are present, so a
+group doesn't momentarily split and re-form as the PR number lands on each
+card in turn. It returns `null` — meaning "shares no deployment" — for a
+plain Backlog card that has no branch yet, and for a `noDeploymentRequired`
+card, which has no deployment to share at all. `columnCardsHTML()` then
+draws each group at the position of its first member, leaving card order,
+column counts and every per-card control untouched; a key held by only one
+card in a column is not a group.
+
+In practice that means the brackets appear exactly from the greyed-out
+"In development — locked" stage onward, and carry through Ready for Testing
+and beyond. `patchBranch` is in `BACKLOG_ITEM_RENDER_FIELDS` for this
+reason, so the groups are there on the REST-primed first paint rather than
+popping in when the realtime listener lands.
+
 ## Isolation from menu-board-demo — by design, not just by folder
 
 This is a genuinely separate project, not a subfolder sharing infrastructure:

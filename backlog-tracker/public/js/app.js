@@ -858,6 +858,75 @@ function deployToFeatureButtonHTML(project) {
   </button>`;
 }
 
+// ── Deployment grouping ─────────────────────────────────────────────────────
+// Cards that will ship in one deployment are drawn bracketed together, in
+// place in the column they're already in. That's the whole feature: a UI
+// grouping of existing cards, with no separate page, no menu entry, nothing
+// to manage and nothing extra stored.
+//
+// A group's identity is the thing that already makes two cards one
+// deployment — the patch branch they were packaged on, or the PR that branch
+// became. Both are written by the existing pipeline (see ROUTINE_INSTRUCTIONS
+// .md and run-backlog-automation.js), so the grouping is derived on every
+// render and appears the moment a second card joins: there is no grouping
+// state to create, edit, or keep in sync, and nothing to undo if a card moves.
+//
+// Returns null for a card that shares no deployment with anything:
+//   - an ordinary Backlog card, which has no branch yet (so the grouping
+//     starts exactly where Rob asked — at the greyed-out "In development —
+//     locked" stage, which is what having a branch plus patchReady means),
+//   - a noDeploymentRequired card, which has no deployment to share at all.
+function deploymentGroupKey(item) {
+  if (item.noDeploymentRequired) return null;
+  const branch = (item.patchBranch || "").trim();
+  // Prefer the branch over the PR number: they always agree once the PR
+  // exists, but the branch is set first, so keying on it means a group
+  // doesn't momentarily split and re-form as the PR number lands on each
+  // card in turn.
+  if (branch && (item.patchReady || item.prNumber || item.status !== "backlog")) {
+    return "branch:" + branch;
+  }
+  if (item.prNumber) return "pr:" + item.prNumber;
+  return null;
+}
+
+// One column's worth of cards, with same-deployment cards wrapped together.
+// Card order inside the column is untouched: a group is drawn at the
+// position of its first member, and its members keep the order they had.
+// A key with only one card in this column is not a group — a bracket round
+// a single card would say "ships together" about nothing.
+function columnCardsHTML(listItems) {
+  const counts = new Map();
+  listItems.forEach((i) => {
+    const key = deploymentGroupKey(i);
+    if (key) counts.set(key, (counts.get(key) || 0) + 1);
+  });
+  const drawn = new Set();
+  return listItems.map((item) => {
+    const key = deploymentGroupKey(item);
+    if (!key || counts.get(key) < 2) return cardHTML(item);
+    if (drawn.has(key)) return "";
+    drawn.add(key);
+    const members = listItems.filter((i) => deploymentGroupKey(i) === key);
+    // Once there's a PR, its number is the one useful handle on the group —
+    // it's what's on each card's own PR badge and what gets merged. Before
+    // that the only name available is the branch, which in a 260px column
+    // truncates to nothing readable, so the label just says what it means.
+    const withPr = members.find((i) => i.prNumber);
+    const label = withPr
+      ? `Ships together &middot; PR #${escapeHTML(String(withPr.prNumber))}`
+      : `Ships together`;
+    return `<div class="card-group" data-group-key="${escapeHTML(key)}" title="Packaged into the same deployment: ${escapeHTML(key.replace(/^branch:/, "").replace(/^pr:/, "PR #"))}">
+      <div class="card-group-head" title="These ${members.length} items are packaged into the same deployment, so they move through the board and go live together">
+        <span class="material-symbols-outlined card-group-icon">link</span>
+        <span class="card-group-label">${label}</span>
+        <span class="card-group-count">${members.length}</span>
+      </div>
+      ${members.map(cardHTML).join("")}
+    </div>`;
+  }).join("");
+}
+
 function projectSectionHTML(project) {
   const collapsed = isProjectCollapsed(project.id);
   const projectItems = items.filter((i) => (i.projectId || GENERAL_PROJECT_ID) === project.id);
@@ -891,7 +960,7 @@ function projectSectionHTML(project) {
     return `<section class="column" data-col="${col.key}">
       <div class="col-head col-head-${col.headClass}"><span>${selectAllHTML}${col.label}</span><span class="col-count">${listItems.length}</span></div>
       <div class="col-list" id="${colListId(project.id, col.key)}" data-col="${col.key}" data-project-id="${escapeHTML(project.id)}">
-        ${listItems.length ? listItems.map(cardHTML).join("") : '<div class="empty-hint">No items yet</div>'}
+        ${listItems.length ? columnCardsHTML(listItems) : '<div class="empty-hint">No items yet</div>'}
       </div>
     </section>`;
   }).join("") + `</div>`;
@@ -1140,6 +1209,11 @@ const BACKLOG_ITEM_RENDER_FIELDS = [
   "patchReady", "mergeReady", "noDeploymentRequired", "testPassed",
   "testVersion", "testSummary", "previewUrl",
   "prUrl", "prNumber", "mergedAt",
+  // Not drawn on a card itself, but read by deploymentGroupKey() — without
+  // it the same-deployment brackets wouldn't be there on the REST-primed
+  // first paint and would pop in a second later when the listener landed.
+  // It's a short branch name, unlike the patch* fields below it.
+  "patchBranch",
   "notes", "attachments",
 ];
 

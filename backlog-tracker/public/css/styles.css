@@ -159,6 +159,28 @@ body {
    editable card; its own hint line below replaces every other card's
    move/edit/delete controls, same pattern as .merge-pending-hint above. */
 .card.card-in-development { background: var(--surface-2); opacity: .65; filter: grayscale(55%); }
+
+/* Same-deployment grouping (see deploymentGroupKey/columnCardsHTML). A
+   bracket around cards that already sit in this column, not a container for
+   anything new: the cards inside keep their own styling untouched, including
+   the greyed .card-in-development treatment above, so the group reads as
+   "these ones travel together" and nothing else changes. The gap matches
+   .col-list's own 10px so grouped and ungrouped cards stay on one rhythm. */
+.card-group {
+  display: flex; flex-direction: column; gap: 10px;
+  padding: 8px; border: 1px dashed var(--border); border-left: 3px solid var(--primary);
+  border-radius: 8px; background: var(--primary-tint);
+}
+.card-group-head {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em;
+  color: var(--primary); padding: 0 2px;
+}
+.card-group-icon { font-size: 15px; }
+.card-group-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.card-group-count {
+  background: var(--bg); border-radius: 9999px; padding: 1px 8px; flex-shrink: 0;
+}
 .in-development-hint {
   display: block; width: 100%; margin-top: 10px; text-align: center; box-sizing: border-box;
   background: var(--surface); color: var(--text-muted); border: 1px dashed var(--border); border-radius: 6px;
