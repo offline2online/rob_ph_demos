@@ -88,6 +88,26 @@
             <button type="button" class="btn-primary" id="ni-submit">Add to backlog</button>
           </div>
         </div>
+
+        <!-- Attachments — same screenshot/screen-recording flow as the Edit
+             item modal below (see app.js's createAttachmentController), but
+             this item has no Firestore doc yet at this point in the flow: a
+             picked screenshot or finished recording is held here as a
+             pending attachment (shown below, removable with its own ×)
+             instead of uploading immediately, and only actually uploaded —
+             via the same uploadItemAttachment() every other attachment flow
+             in this app uses — once "Add to backlog" succeeds and a real
+             item id comes back. -->
+        <div class="ei-attachments-block">
+          <h3>Attachments</h3>
+          <div id="ni-pending-attachments-list" class="ei-attachments-list"></div>
+          <div class="ei-attachments-actions">
+            <label class="btn-attach ei-attach-screenshot-label" for="ni-attach-screenshot-input">&#128206; Attach screenshot</label>
+            <input type="file" id="ni-attach-screenshot-input" accept="image/*" hidden>
+            <button type="button" class="btn-attach" id="ni-record-screen-btn">&#9210; Record screen</button>
+          </div>
+          <p class="field-hint" id="ni-attach-hint" hidden></p>
+        </div>
       </div>
     </div>
 
@@ -322,7 +342,7 @@
 
       <div class="docs-block">
         <h3>Routine instructions</h3>
-        <p class="field-hint">Extra instructions for this project only, included automatically at the top of what "Notify Claude" sends the Routine — a different branch convention, which part of the repo this project owns, anything the generic workflow wouldn't know. Leave blank to just use the Routine's own default instructions.</p>
+        <p class="field-hint">Extra instructions for this project only, included automatically at the top of what every Routine-firing action sends (Ready for Dev, Deploy to Main, Groom Backlog) — a different branch convention, which part of the repo this project owns, anything the generic workflow wouldn't know. Leave blank to just use the Routine's own default instructions.</p>
         <textarea id="docs-routine-prompt-input" rows="8" placeholder="No project-specific instructions yet — optional."></textarea>
         <div class="form-row" style="justify-content:flex-end;">
           <button type="button" class="btn-primary" id="docs-routine-prompt-save">Save instructions</button>
@@ -408,78 +428,103 @@
 
     <section class="faq-admin-page faq-editor-page" id="faq-article-editor-page" hidden>
       <div class="faq-auth-bar" data-faq-auth></div>
+      <!-- Action row stays at the very top of the page (Cancel / Save draft /
+           Publish) rather than buried at the bottom — matches the redesign
+           mockup's own Cancel/Save/Publish toolbar. Save draft and Publish
+           are two distinct actions now (see submitFaqArticleFromEditor in
+           app.js), not one "Save article" button with a separate status
+           toggle to remember to flip first. -->
       <div class="docs-page-header">
         <h2 id="fa-title">New article</h2>
         <div class="form-actions">
-          <button type="button" class="btn-ghost" id="fa-advanced-toggle" aria-expanded="false" aria-controls="fa-advanced-panel">Advanced settings</button>
           <button type="button" class="btn-ghost" id="fa-cancel">Cancel</button>
-          <button type="button" class="btn-primary" id="fa-submit">Save article</button>
+          <button type="button" class="btn-ghost" id="fa-save-draft">Save draft</button>
+          <button type="button" class="btn-primary" id="fa-publish">Publish</button>
         </div>
       </div>
 
-      <!-- Primary focus, full width: subject (title), summary, and the body
-           itself — everything else about an article (slug, category, doc
-           type, linked project, keywords, status, needs-review) is
-           secondary/occasional-edit metadata that used to compete for the
-           same amount of visual weight in the old modal. It now lives in
-           the slide-out panel below, hidden until asked for. -->
-      <div class="faq-editor-main">
-        <label class="field-label" for="fa-title-input">Title</label>
-        <input type="text" id="fa-title-input" maxlength="200" placeholder="e.g. How do I set up a targeted offer?">
-        <label class="field-label" for="fa-summary-input">Summary (shown in lists and search)</label>
-        <textarea id="fa-summary-input" rows="2" maxlength="300"></textarea>
-        <div class="fa-body-header">
-          <label class="field-label" style="margin:10px 0 4px;">Body</label>
-          <div class="type-toggle" role="radiogroup" aria-label="Body view">
-            <button type="button" class="type-opt active" id="fa-body-mode-edit" data-mode="edit">Edit</button>
-            <button type="button" class="type-opt" id="fa-body-mode-view" data-mode="view">View live</button>
+      <!-- Primary focus, full width: title, summary, and the body itself —
+           everything else about an article (category, doc type, linked
+           project/program, needs-review, slug, keywords, status) is
+           secondary/occasional-edit metadata. It now lives in a sidebar of
+           independently expand/collapsible named groups to the right,
+           instead of one flat "Advanced settings" slide-out panel — matches
+           the redesign mockup's grouped-sections sidebar (see
+           setFaGroupOpen/resetFaGroups in app.js). -->
+      <div class="faq-editor-layout">
+        <div class="faq-editor-main">
+          <label class="field-label" for="fa-title-input">Title</label>
+          <input type="text" id="fa-title-input" maxlength="200" placeholder="e.g. How do I set up a targeted offer?">
+          <label class="field-label" for="fa-summary-input">Summary (shown in lists and search)</label>
+          <textarea id="fa-summary-input" rows="2" maxlength="300"></textarea>
+          <div class="fa-body-header">
+            <label class="field-label" style="margin:10px 0 4px;">Body</label>
+            <div class="type-toggle" role="radiogroup" aria-label="Body view">
+              <button type="button" class="type-opt active" id="fa-body-mode-edit" data-mode="edit">Edit</button>
+              <button type="button" class="type-opt" id="fa-body-mode-view" data-mode="view">View live</button>
+            </div>
           </div>
+          <div id="fa-body-editor-wrap">
+            <div id="fa-body-editor"></div>
+          </div>
+          <div class="fa-body-viewer" id="fa-body-viewer" hidden></div>
         </div>
-        <div id="fa-body-editor-wrap">
-          <div id="fa-body-editor"></div>
-        </div>
-        <div class="fa-body-viewer" id="fa-body-viewer" hidden></div>
-      </div>
 
-      <div class="faq-advanced-backdrop" id="fa-advanced-backdrop" hidden></div>
-      <aside class="faq-advanced-panel" id="fa-advanced-panel" aria-label="Advanced article settings" aria-hidden="true">
-        <div class="faq-advanced-panel-header">
-          <h3>Advanced settings</h3>
-          <button type="button" class="modal-close" id="fa-advanced-close" aria-label="Close advanced settings">&times;</button>
-        </div>
-        <label class="field-label" for="fa-slug-input">Slug</label>
-        <input type="text" id="fa-slug-input" maxlength="200" placeholder="auto-generated-from-title">
-        <label class="field-label" for="fa-category-select">Category</label>
-        <select id="fa-category-select"></select>
-        <label class="field-label" for="fa-doctype-select">Document type</label>
-        <select id="fa-doctype-select">
-          <option value="faq">FAQ</option>
-          <option value="how-to">How-to guide</option>
-          <option value="reference">Reference</option>
-          <option value="explanation">Explanation</option>
-        </select>
-        <p class="field-hint">Document type per <a href="../docs/CONTRIBUTING-docs.md" target="_blank" rel="noopener">docs/CONTRIBUTING-docs.md</a> §2 — a short reassurance (FAQ), a task to complete (How-to), facts to look up (Reference), or context on why (Explanation). Shown to readers as a small badge.</p>
-        <label class="field-label" for="fa-project-select">Linked project (optional)</label>
-        <select id="fa-project-select">
-          <option value="">None — general article</option>
-        </select>
-        <p class="field-hint">Linking a project is what lets a future feature launch flag its own FAQs for review — see "Needs review" below.</p>
-        <label class="field-label" for="fa-program-select">Product / Program (optional)</label>
-        <select id="fa-program-select"></select>
-        <p class="field-hint">Which product/program this article belongs to — the same Programs/Products used to group projects on the board. This is what the FAQ Management folder view groups by.</p>
-        <label class="field-label" for="fa-keywords-input">Search keywords (comma separated, optional)</label>
-        <input type="text" id="fa-keywords-input" placeholder="e.g. offer, targeting, pricing">
-        <label class="field-label">Status</label>
-        <div class="type-toggle" role="radiogroup" aria-label="Status">
-          <button type="button" class="type-opt active" data-status="draft">Draft</button>
-          <button type="button" class="type-opt" data-status="published">Published</button>
-        </div>
-        <label class="fa-needs-review-toggle">
-          <input type="checkbox" id="fa-needs-review">
-          Needs review
-        </label>
-        <p class="field-hint" id="fa-live-link-hint" hidden></p>
-      </aside>
+        <aside class="faq-editor-sidebar" aria-label="Article properties">
+          <div class="fa-group">
+            <button type="button" class="fa-group-header" id="fa-group-properties-toggle" aria-expanded="true" aria-controls="fa-group-properties">
+              <span>Article properties</span><span class="fa-group-caret" aria-hidden="true">&#9662;</span>
+            </button>
+            <div class="fa-group-body" id="fa-group-properties">
+              <label class="field-label" for="fa-category-select">Category</label>
+              <select id="fa-category-select"></select>
+              <label class="field-label" for="fa-doctype-select">Document type</label>
+              <select id="fa-doctype-select">
+                <option value="faq">FAQ</option>
+                <option value="how-to">How-to guide</option>
+                <option value="reference">Reference</option>
+                <option value="explanation">Explanation</option>
+              </select>
+              <p class="field-hint">Document type per <a href="../docs/CONTRIBUTING-docs.md" target="_blank" rel="noopener">docs/CONTRIBUTING-docs.md</a> §2 — a short reassurance (FAQ), a task to complete (How-to), facts to look up (Reference), or context on why (Explanation). Shown to readers as a small badge.</p>
+              <label class="field-label" for="fa-project-select">Linked project (optional)</label>
+              <select id="fa-project-select">
+                <option value="">None — general article</option>
+              </select>
+              <p class="field-hint">Linking a project is what lets a future feature launch flag its own FAQs for review — see "Needs review" below.</p>
+              <label class="field-label" for="fa-program-select">Product / Program (optional)</label>
+              <select id="fa-program-select"></select>
+              <p class="field-hint">Which product/program this article belongs to — the same Programs/Products used to group projects on the board. This is what the FAQ Management folder view groups by.</p>
+              <label class="fa-needs-review-toggle">
+                <input type="checkbox" id="fa-needs-review">
+                Needs review
+              </label>
+            </div>
+          </div>
+
+          <div class="fa-group">
+            <button type="button" class="fa-group-header" id="fa-group-discovery-toggle" aria-expanded="false" aria-controls="fa-group-discovery">
+              <span>Search &amp; keywords</span><span class="fa-group-caret" aria-hidden="true">&#9662;</span>
+            </button>
+            <div class="fa-group-body" id="fa-group-discovery" hidden>
+              <label class="field-label" for="fa-slug-input">Slug</label>
+              <input type="text" id="fa-slug-input" maxlength="200" placeholder="auto-generated-from-title">
+              <label class="field-label" for="fa-keywords-input">Search keywords (comma separated, optional)</label>
+              <input type="text" id="fa-keywords-input" placeholder="e.g. offer, targeting, pricing">
+            </div>
+          </div>
+
+          <div class="fa-group">
+            <button type="button" class="fa-group-header" id="fa-group-status-toggle" aria-expanded="false" aria-controls="fa-group-status">
+              <span>Status &amp; publishing</span><span class="fa-group-caret" aria-hidden="true">&#9662;</span>
+            </button>
+            <div class="fa-group-body" id="fa-group-status" hidden>
+              <span class="fa-status-badge" id="fa-status-badge">Draft</span>
+              <p class="field-hint">Use <strong>Save draft</strong> or <strong>Publish</strong> at the top of the page to change this.</p>
+              <p class="field-hint" id="fa-live-link-hint" hidden></p>
+            </div>
+          </div>
+        </aside>
+      </div>
     </section>
 
     <section class="faq-admin-page" id="faq-settings-page" hidden>

@@ -119,6 +119,20 @@ prompt only knows how to interpret a "N items in Backlog" request. See
 `REQUIREMENTS.md` → "Functional requirements — notification & automation"
 for the full shape of both functions.
 
+A third, narrower CTA — **Groom Backlog** — lives in the Backlog column's
+own header (not the project-wide header row) and appears only when that
+column is non-empty. Its Cloud Function (`functions/notifyOnProjectReadyForGrooming`,
+watching `projects/{id}.groomRequestedAt`) fires the same Routine a third
+way: fire text starting `=== GROOM REQUEST for "<project>" ===` asks it to
+only classify (`category`) and summarize (`groomedSummary`/
+`groomRequiredNotes`) every current Backlog item — explicitly no code, no
+`patchFiles`, no `patchReady`, no `status` change — so someone can get an
+AI read on what's sitting in Backlog without it turning into an
+unrequested investigate-and-fix run. Progress shows the same way as the
+other two, via `projects/{id}.groomRoutine`. See
+`ROUTINE_INSTRUCTIONS.md`'s own "The 'Groom Backlog' flow" section for
+exactly what a fired session does with this.
+
 ## Notify Claude can't push — how a fix actually reaches GitHub
 
 The Claude Code session a Routine fire starts is a brand-new, bare
@@ -909,10 +923,19 @@ default.
   draft/published status, and a "needs review" flag). Global, not
   per-project, since an article can span or link to any one project.
   Clicking an article opens a **dedicated full-page editor**, not a modal —
-  title/summary/body (the primary focus) take the full page, and everything
-  else above lives in an "Advanced settings" panel that slides in from the
-  right, hidden until asked for (`public/js/app.js`'s
-  `openFaqArticleEditorPage`/`setFaAdvancedPanelOpen`). Inserting an image
+  title/summary/body (the primary focus) take the full page, with a
+  Cancel / Save draft / Publish action row fixed at the top of the page
+  (never buried at the bottom), and everything else above lives in a
+  right-hand sidebar of independently expand/collapsible named groups
+  ("Article properties", "Search & keywords", "Status & publishing")
+  instead of one flat "Advanced settings" panel (`public/js/app.js`'s
+  `openFaqArticleEditorPage`/`setFaGroupOpen`/`resetFaGroups`). **Save
+  draft** and **Publish** are two explicit actions, not one "Save" button
+  plus a separate status toggle: Save draft writes the current fields and
+  never promotes an already-draft article to published on its own; Publish
+  writes the current fields, sets `status: "published"`, and stamps
+  `publishedAt` the first time an article goes live
+  (`submitFaqArticleFromEditor` in `app.js`). Inserting an image
   via the editor's toolbar prompts for alt text as well as a URL —
   `docs/CONTRIBUTING-docs.md` §6/§5.6 makes alt text mandatory on every
   informative image, enforced here at authoring time rather than by a later
@@ -951,8 +974,9 @@ default.
   own "Program/Product" heading, `public/js/app.js`'s `createProgram`/
   `populateProgramSelect`) this article belongs to. Reuses that existing
   collection rather than a second, parallel taxonomy just for articles —
-  set from the article editor's "Advanced settings" panel (with the same
-  inline "+ New program…" affordance the New Project modal already has),
+  set from the article editor sidebar's "Article properties" group (with
+  the same inline "+ New program…" affordance the New Project modal
+  already has),
   and it's what FAQ Management's folder view (see below) groups by at the
   top level. `scripts/backfill-faq-program.js` (a one-off, idempotent
   "set only if missing" pass — deliberately NOT wired into the deploy

@@ -473,6 +473,186 @@ exports.notifyOnProjectReadyToDeploy = onDocumentUpdated(
   }
 );
 
+// The board's "Groom Backlog" column-header CTA (Backlog column, shown only
+// when that project's Backlog is non-empty — see groomNotifyButtonHTML in
+// public/js/app.js) writes projects/{id}.groomRequestedAt, and this fires
+// once on that write — same webhook-post + Routine-fire shape as
+// notifyOnProjectReadyForReview above (fire the Routine before posting, so a
+// resolved session id/url can ride along in the Slack message), but for a
+// narrower, read-mostly request: classify and summarize every item currently
+// in Backlog (correct `category`, write a plain-language summary of what the
+// ticket is asking for and what's still missing before it could be built) —
+// it must NOT investigate code, write patchFiles, set patchReady, or change
+// status on anything. See ROUTINE_INSTRUCTIONS.md's own "Groom Backlog" flow
+// section (keyed off the `=== GROOM REQUEST ===` marker in the fire text
+// below) for exactly what a fired session does with this.
+exports.notifyOnProjectReadyForGrooming = onDocumentUpdated(
+  { document: "projects/{projectId}", secrets: [NOTIFY_WEBHOOK_URL, CLAUDE_ROUTINE_FIRE_URL, CLAUDE_ROUTINE_TOKEN, BOARD_API_KEY] },
+  async (event) => {
+    const before = event.data?.before?.data();
+    const after = event.data?.after?.data();
+    if (!after?.groomRequestedAt) {
+      return;
+    }
+    // Same "only a genuinely new timestamp fires this" guard as
+    // notifyOnProjectReadyForReview above — any other write to the project
+    // doc also lands on this update handler.
+    const beforeMs = before?.groomRequestedAt?.toMillis?.() ?? 0;
+    const afterMs = after.groomRequestedAt?.toMillis?.() ?? 0;
+    if (afterMs <= beforeMs) {
+      return;
+    }
+
+    const db = getFirestore();
+
+    // Same two-equality-filter query (needs no composite index) as
+    // notifyOnProjectReadyForReview's own Backlog count above — the ticket's
+    // own "when there's items in the backlog" gate.
+    const itemsSnap = await db.collection("backlogItems")
+      .where("projectId", "==", event.params.projectId)
+      .where("status", "==", "backlog")
+      .get();
+    const items = itemsSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+
+    if (items.length === 0) {
+      logger.info("Groom requested but Backlog is empty — nothing to groom or fire the Routine for", {
+        projectId: event.params.projectId,
+      });
+      return;
+    }
+
+    const projectName = after.name || "A project";
+
+    const fireUrl = CLAUDE_ROUTINE_FIRE_URL.value();
+    const token = CLAUDE_ROUTINE_TOKEN.value();
+    let sessionId = null;
+    let sessionUrl = null;
+    let fireError = null;
+
+    if (fireUrl && token) {
+      // Full id/title/desc per item — model on notifyOnProjectReadyForReview's
+      // own itemLines above — so the fired session has everything it needs to
+      // classify/summarize without a second Firestore round-trip.
+      const itemLines = items
+        .map((i, idx) => `${idx + 1}. [id: ${i.id}] [${i.type === "bug" ? "Bug" : "Feature"}] ${i.title} — ${i.desc}`)
+        .join("\n");
+
+      // Same per-project override/addendum mechanism as the other two Routine
+      // fires (see their own comments above) — a project's Docs page can hand
+      // the Routine extra context this generic request wouldn't otherwise know.
+      const projectPromptBlock = (after.routinePromptMd || "").trim()
+        ? `=== PROJECT-SPECIFIC INSTRUCTIONS FOR "${projectName}" (from this project's Docs page) ===\n${after.routinePromptMd.trim()}\n=== END PROJECT-SPECIFIC INSTRUCTIONS ===\n\n`
+        : "";
+
+      const selfReportHint = `\n\nWhen you finish this run (whether you groomed every item or stopped early on a blocker), PATCH projects/${event.params.projectId} with groomRoutine.status set to "done" (or "error" with an errorMessage, if you stopped early) and groomRoutine.finishedAt set to now — the board shows a working/spinning state on its Groom Backlog button until it sees this.`;
+
+      const text = `${projectPromptBlock}=== GROOM REQUEST for "${projectName}" (projectId: ${event.params.projectId}) on the Backlog Tracker & FAQs board ===\n` +
+        `This is a classify-and-summarize-only request, not an investigate-and-fix one. Do NOT investigate code, do NOT write patchFiles, do NOT set patchReady, do NOT change status on any item — follow ROUTINE_INSTRUCTIONS.md's own "Groom Backlog" flow section for exactly what to write on each item instead.\n\n` +
+        `${items.length} item${items.length === 1 ? "" : "s"} in Backlog:\n${itemLines}${selfReportHint}${boardAccessBlock()}`;
+
+      try {
+        const res = await fetch(fireUrl, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${token}`,
+            "anthropic-beta": "experimental-cc-routine-2026-04-01",
+            "anthropic-version": "2023-06-01",
+          },
+          body: JSON.stringify({ text }),
+        });
+        if (!res.ok) {
+          fireError = `Routine fire endpoint responded with status ${res.status}`;
+          logger.error("Routine fire endpoint responded with a non-2xx status for groom request", {
+            projectId: event.params.projectId,
+            status: res.status,
+            body: await res.text().catch(() => "<unreadable>"),
+          });
+        } else {
+          // Same response shape as the other two fires above — see
+          // notifyOnProjectReadyForReview's own comment for the
+          // research-preview caveat on this field name.
+          const body = await res.json().catch(() => null);
+          sessionId = body?.claude_code_session_id || null;
+          sessionUrl = sessionId ? `https://claude.ai/code/${sessionId}` : null;
+          logger.info("Fired Claude Code Routine for groom request", {
+            projectId: event.params.projectId,
+            itemCount: items.length,
+            sessionId,
+          });
+        }
+      } catch (err) {
+        fireError = err instanceof Error ? err.message : String(err);
+        logger.error("Failed to call Routine fire endpoint for groom request", {
+          projectId: event.params.projectId,
+          error: fireError,
+        });
+      }
+
+      // Lets the board show a spinner (or a visible error) on its Groom
+      // Backlog button instead of the click looking like a no-op — same
+      // shape as notifyRoutine/deployRoutine above, read by
+      // groomNotifyButtonHTML in public/js/app.js.
+      await db.collection("projects").doc(event.params.projectId).set({
+        groomRoutine: {
+          status: fireError ? "error" : "in-progress",
+          firedAt: new Date(),
+          sessionId,
+          sessionUrl,
+          itemCount: items.length,
+          errorMessage: fireError,
+        },
+      }, { merge: true });
+    } else {
+      logger.warn(
+        "CLAUDE_ROUTINE_FIRE_URL/CLAUDE_ROUTINE_TOKEN not set — skipping Routine fire for groom request",
+        { projectId: event.params.projectId }
+      );
+    }
+
+    const webhookUrl = NOTIFY_WEBHOOK_URL.value();
+    if (webhookUrl) {
+      const trackLine = sessionUrl
+        ? `Click here to track their progress: ${sessionUrl}`
+        : (fireUrl && token ? "(session link unavailable)" : "(Routine fire not configured — no Claude session started)");
+      try {
+        const res = await fetch(webhookUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            text: `Claude was asked to groom ${items.length} item${items.length === 1 ? "" : "s"} in the Backlog for "${projectName}" — classifying and summarizing only, no fixes. ${trackLine}`,
+            projectId: event.params.projectId,
+            projectName,
+            itemCount: items.length,
+            sessionUrl,
+          }),
+        });
+        if (!res.ok) {
+          logger.error("Groom notify webhook responded with a non-2xx status", {
+            projectId: event.params.projectId,
+            status: res.status,
+            body: await res.text().catch(() => "<unreadable>"),
+          });
+        } else {
+          logger.info("Notified webhook of Groom Backlog click", {
+            projectId: event.params.projectId,
+            itemCount: items.length,
+          });
+        }
+      } catch (err) {
+        logger.error("Failed to call notify webhook for groom request", {
+          projectId: event.params.projectId,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    } else {
+      logger.warn("NOTIFY_WEBHOOK_URL is not set — skipping Slack notification for Groom Backlog click", {
+        projectId: event.params.projectId,
+      });
+    }
+  }
+);
+
 // The board's "Approved for Deployment" project action (see deployToFeature() in
 // public/js/app.js) writes projects/{id}.deployToFeatureRequestedAt (plus
 // deployToFeatureItemTitles), and this fires once on that write to post a

@@ -68,6 +68,28 @@ not something this run can shorten. The one
 thing that *would* make it worse is setting `status` early yourself — see
 the explicit "Do NOT set `status`" rule in step 4 below for why.
 
+**First, check which flow this fire actually is — `text` starts differently
+for each.** This file covers three differently-shaped fires from the same
+board, and reading past this paragraph as if only one exists is how a
+grooming-only request would get silently turned into a real (unwanted)
+investigate-and-fix run, or vice versa:
+
+- `text` starts with `=== DEPLOY REQUEST for "<project>"` → this is the
+  merge-only shape. Do the Setup steps below (board access, project
+  context) as normal, then skip straight to **"The 'Notify Claude — Deploy'
+  flow (a differently-shaped fire)"** further down and follow only that
+  section for each item — do not also run "For each Backlog item found"
+  below on these items.
+- `text` starts with `=== GROOM REQUEST for "<project>"` → this is the
+  classify-and-summarize-only shape. Do the Setup steps below as normal,
+  then skip straight to **"The 'Groom Backlog' flow (a differently-shaped
+  fire)"** further down and follow only that section for each item — do
+  not also run "For each Backlog item found" below on these items, and
+  never treat a GROOM REQUEST as license to investigate code or write a fix.
+- Anything else (the plain "Project X has N items in Backlog" shape) → this
+  is the default, investigate-and-fix request. Continue reading this file
+  top to bottom from Setup below.
+
 **Check for a project-specific instructions block first.** If `text`
 contains a section delimited by
 `=== PROJECT-SPECIFIC INSTRUCTIONS FOR "<project>" (from this project's Docs page) ===`
@@ -507,6 +529,75 @@ If a PR can't be found, or its CI is red, or it's not mergeable, leave its
 status as `ready-to-publish` (and `mergeReady` unset/false) and add a note
 explaining why instead of guessing.
 
+## The "Groom Backlog" flow (a differently-shaped fire)
+
+A fire whose `text` starts with `=== GROOM REQUEST for "<project>" ===` is
+the third shape: someone clicked that project's own **Groom Backlog**
+button (in the Backlog column's own header, board UI — see
+`backlog-tracker/README.md`'s architecture diagram and
+`functions/index.js`'s `notifyOnProjectReadyForGrooming` for where this
+fire comes from). This is deliberately the narrowest of the three flows —
+**classify and summarize every item currently in Backlog, and nothing
+more.** It exists so someone can get a plain-language read on what's
+sitting in Backlog, and make sure each ticket carries what a future
+investigation will actually need, without that being a side effect of
+someone clicking "Ready for Dev" first.
+
+**Do NOT investigate code, do NOT read or search this repo's source to
+figure out how something would be built, do NOT write `patchFiles`, do NOT
+set `patchReady`, and do NOT change `status` on anything in this flow.** A
+groomed item stays exactly where it is — in Backlog, fully visible and
+actionable by "Ready for Dev" or a human, same as before — this flow only
+adds information to it. If you catch yourself about to open a file in the
+repo to understand a ticket's implementation, stop: that's the default
+Backlog flow's job (see "For each Backlog item found" above), not this
+one's, and it is explicitly out of scope here even if it would be quick.
+
+Do the Setup steps above first (board access, project context — you don't
+need the "read `requirementsMd`/interfaces before touching code" depth
+this flow implies, but board access is still required to write anything
+back). Then, for every Backlog item named in the fire `text` (re-verify
+against Firestore first, same caution as the default flow — the list may
+be stale by the time you run):
+
+1. Read the item's `desc` and any existing `notes`. Correct its `category`
+   to whatever it's actually about, from the same fixed list the default
+   Backlog flow uses (`CATEGORIES` in `backlog-tracker/public/js/app.js`):
+   `Pricing & Offers`, `Product Assets`, `HQ Admin`, `Retail Admin`,
+   `Menu Board`, `Backend / Infrastructure`, `Uncategorised`.
+2. Write two plain string fields on the item — this is the "provides a
+   summary and sets what's required" the button exists for:
+   - `groomedSummary` — a short (roughly 1-3 sentences), plain-language
+     restatement of what the ticket is actually asking for, written for
+     someone deciding what to prioritize next — not a copy-paste of `desc`.
+   - `groomRequiredNotes` — what information or decision is still missing
+     before this could actually be built (a not-yet-made product/design
+     decision, an API key or credential that doesn't exist yet, a
+     screenshot the description references but nothing was attached,
+     which of two possible interpretations is intended, etc.). If nothing
+     is genuinely missing, write that plainly — e.g. "Nothing outstanding
+     — ready to build as described" — rather than leaving the field blank
+     or inventing a gap that isn't real.
+3. Bump `updatedAt`. Unlike the default Backlog flow's step 1, this flow
+   does **not** require rewriting `title` on every item — grooming isn't
+   obligated to touch it — but it's fine to tidy an obviously wrong or
+   auto-generated-looking title in passing if you're already looking at
+   the item closely.
+4. PATCH the item's Firestore doc in one call with the corrected
+   `category`, `groomedSummary`, `groomRequiredNotes`, `updatedAt` (and
+   `title` only if you changed it) — same PATCH/`updateMask` shape as the
+   default flow's step 4 above (add each written field to
+   `updateMask.fieldPaths`), just a different set of fields and no
+   `patchFiles`/`patchBranch`/`patchReady` anywhere in the call.
+
+If an item already carries a `groomedSummary` from an earlier grooming run
+and nothing about it looks like it's changed since (`desc`/`notes` read the
+same), it's fine to leave it rather than reprocessing pointlessly — but
+re-groom it if `desc` or `notes` look like they've changed since (there's
+no separate "last groomed at" timestamp to check this precisely against, so
+use judgment: if the existing summary still accurately describes the
+current `desc`, leave it as-is).
+
 ## When done
 
 Post a summary listing each item, its new title, what you found, the fix,
@@ -523,6 +614,14 @@ in the `projects` collection, or its Backlog column is empty, say that
 plainly instead of fabricating work. If a PROJECT-SPECIFIC INSTRUCTIONS
 block was present, note in the summary that you followed it and briefly
 how.
+
+**For a Groom Backlog run (`=== GROOM REQUEST ===`), report differently:**
+list each item groomed, its corrected `category`, and a one-line version of
+its `groomedSummary` (plus a note on any item whose `groomRequiredNotes`
+flagged something genuinely missing) — do not mention `patchReady`,
+`mergeReady`, PRs, or GitHub anywhere in this report, since this flow never
+touches any of that and nothing about it depends on the scheduled
+automation job picking anything up afterward.
 
 If at any point in this run you set `patchReady`/`mergeReady` on an item
 with placeholder or not-yet-finished data (even briefly, even if you then
