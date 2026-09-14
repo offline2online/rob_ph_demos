@@ -439,6 +439,17 @@ textarea.dialog-field-input { resize: vertical; min-height: 70px; }
 .docs-page { margin-bottom: 20px; }
 .docs-page-header { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
 .docs-page-header h2 { margin: 0; font-size: 18px; font-weight: 700; }
+/* FAQ Management / Settings each carry a small switcher so you can jump
+   straight to the other one instead of detouring through the hamburger
+   menu — see setRouteHash()/applyRouteFromHash() in app.js. */
+.page-switcher { display: flex; align-items: center; gap: 8px; margin-left: auto; font-size: 13px; }
+.page-switcher-current { color: var(--text-muted); font-weight: 600; }
+.page-switcher-link {
+  background: var(--surface-2); border: 1px solid var(--border); border-radius: 14px;
+  padding: 5px 12px; font-size: 13px; font-family: inherit; color: var(--primary);
+  cursor: pointer;
+}
+.page-switcher-link:hover { background: var(--primary-tint); border-color: var(--primary); }
 .docs-block { border: 1px solid var(--border); border-radius: 8px; padding: 16px; background: var(--surface); margin-bottom: 16px; }
 .docs-block h3 { margin: 0 0 4px; font-size: 15px; }
 .docs-block-header { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
