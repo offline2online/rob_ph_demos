@@ -283,6 +283,20 @@ function toggleProjectCollapsed(pid) {
   render();
 }
 
+// Per-column collapse (eQOIaEcF4xMSVmZt1rnA) — mobile-only, see
+// projectSectionHTML's own comment. Deliberately in-memory only, not
+// localStorage: this is a "get it out of my way while I scroll" toggle for
+// the session at hand, not a durable per-viewer preference worth persisting
+// (same reasoning FAQ Management's own faFolderState already uses).
+const collapsedColumns = new Set();
+function columnCollapseKey(pid, colKey) { return pid + ":" + colKey; }
+function isColumnCollapsed(pid, colKey) { return collapsedColumns.has(columnCollapseKey(pid, colKey)); }
+function toggleColumnCollapsed(pid, colKey) {
+  const key = columnCollapseKey(pid, colKey);
+  if (collapsedColumns.has(key)) collapsedColumns.delete(key); else collapsedColumns.add(key);
+  render();
+}
+
 // ── Per-project "⋮" options menu — plain show/hide, one open at a time.
 // Rebuilt on every render() along with everything else in #projects-root,
 // so there's no stale-DOM-node bookkeeping to worry about; it just starts
@@ -570,14 +584,19 @@ function cardHTML(item) {
       </div>`
     : `<p class="card-desc">${escapeHTML(item.desc)}</p>`;
 
-  // A screenshot or screen recording attached from the Edit item modal (see
-  // uploadItemAttachment) — same "small icon-adjacent count" treatment as
-  // commentCount/editBtn above, just non-interactive here since attaching
-  // only happens from the full modal, not the card itself.
+  // A screenshot or screen recording attached via uploadItemAttachment.
+  // Always rendered now, even at zero — it used to only appear once a card
+  // already had an attachment, which meant nothing on the card itself
+  // hinted that attaching was even possible (DrIEsKsdi3WrwXbUdMH6 and its
+  // duplicates: "it's not possible to attach anything to a ticket" was a
+  // findability problem, not a real bug). Clicking it opens the same
+  // quick-comment modal the comment icon does, which now has its own
+  // Attach screenshot / Record screen controls.
   const attachmentCount = (item.attachments || []).length;
-  const attachmentBadge = attachmentCount
-    ? `<span class="attachment-count-badge" title="${attachmentCount} attachment${attachmentCount === 1 ? "" : "s"}">&#128206; ${attachmentCount}</span>`
-    : "";
+  const attachmentBadge =
+    `<button type="button" class="icon-btn attachment-btn" data-id="${item.id}"${isLocked ? ' data-readonly="1"' : ""} title="${
+      attachmentCount ? `${attachmentCount} attachment${attachmentCount === 1 ? "" : "s"}` : "Attach a screenshot or screen recording"
+    }">&#128206;${attachmentCount ? ` <span class="options-menu-count">${attachmentCount}</span>` : ""}</button>`;
   // Bottom-right of the tile, alongside archive/delete — not the plain
   // left-aligned icon-row spot it used to share with the category badge,
   // which read as just another muted utility icon. A filled, rounded pill
@@ -667,7 +686,7 @@ function optionsMenuHTML(project) {
       Archived tickets <span class="options-menu-count">${archivedCount}</span>
     </button>
     <button type="button" class="options-menu-item project-docs-btn${hasReq ? "" : " options-menu-item-empty"}" data-project-id="${escapeHTML(pid)}">
-      ${hasReq ? "Requirements (MD file)" : "Requirements (MD file) — not set yet"}
+      ${hasReq ? "Project Settings" : "Project Settings — not set yet"}
     </button>`;
 
   if (ifaces.length) {
@@ -967,8 +986,16 @@ function projectSectionHTML(project) {
         </label>`;
       }
     }
-    return `<section class="column" data-col="${col.key}">
-      <div class="col-head col-head-${col.headClass}"><span>${selectAllHTML}${col.label}</span><span class="col-count">${listItems.length}</span></div>
+    // Mobile-only tap-to-collapse (eQOIaEcF4xMSVmZt1rnA): on a phone the
+    // board already stacks all 4 columns vertically (see the 640px media
+    // query), which means scrolling past a long Backlog just to reach
+    // Approved for Deployment below it. Collapsing is purely a per-viewer,
+    // in-memory convenience — same "not persisted" precedent as this app's
+    // own faFolderState — and the class only does anything inside that same
+    // 640px media query, so desktop is completely unaffected.
+    const colCollapsed = isColumnCollapsed(project.id, col.key);
+    return `<section class="column${colCollapsed ? " column-collapsed" : ""}" data-col="${col.key}">
+      <div class="col-head col-head-${col.headClass}" data-project-id="${escapeHTML(project.id)}" data-col="${col.key}"><span>${selectAllHTML}${col.label}</span><span class="col-count">${listItems.length}</span></div>
       <div class="col-list" id="${colListId(project.id, col.key)}" data-col="${col.key}" data-project-id="${escapeHTML(project.id)}">
         ${listItems.length ? columnCardsHTML(listItems) : '<div class="empty-hint">No items yet</div>'}
       </div>
@@ -1084,12 +1111,19 @@ function groupProjectsByProgram(renderedProjects) {
     if (!byProgramId.has(pid)) byProgramId.set(pid, []);
     byProgramId.get(pid).push(project);
   });
-  const groups = programs
-    .filter((p) => byProgramId.has(p.id))
-    .sort((a, b) => a.name.localeCompare(b.name))
-    .map((p) => ({ id: p.id, name: p.name, projects: byProgramId.get(p.id) }));
-  const ungrouped = byProgramId.get(null) || [];
-  if (ungrouped.length) groups.push({ id: null, name: "Ungrouped", projects: ungrouped });
+  const groups = [...byProgramId.entries()].map(([pid, groupProjects]) => ({
+    id: pid,
+    name: pid ? programName(pid) : "Ungrouped",
+    projects: groupProjects,
+  }));
+  // renderedProjects arrives already ordered most-recently-active project
+  // first (see getRenderedProjects), so a group's own first member is its
+  // most recently active project — sort the groups (programs/boards) the
+  // same way instead of alphabetically-with-Ungrouped-always-last, so
+  // whichever board was actually touched most recently surfaces at the top
+  // of the page (otRMV4CDkzIIFoYWeynY) rather than only its projects being
+  // ordered correctly within a fixed group position.
+  groups.sort((a, b) => projectLastActivityMs(b.projects[0]) - projectLastActivityMs(a.projects[0]));
   return groups;
 }
 
@@ -1573,12 +1607,44 @@ function sanitizeAttachmentFileName(name) {
   return String(name || "attachment").replace(/[^a-zA-Z0-9.\-_]/g, "_").slice(-120);
 }
 
+// Firebase Storage's own SDK error message for almost any real problem is
+// the same unhelpful "Firebase Storage: An unknown error occurred"
+// (storage/unknown) — that's what a project where Storage was never
+// enabled produces (see JEdnBmPbNODJri5vBxpX: there's no bucket at all, so
+// every uploadBytes call fails before it starts), and it gives no hint the
+// real fix is a one-time Console step, not a bug in this code. Map the
+// codes that actually tell a person something actionable
+// (FdqvQlOD4I3G6SHfzcn1) instead of surfacing the SDK's own message as-is.
+function describeAttachmentUploadError(err) {
+  const code = err && err.code;
+  if (code === "storage/unknown" || code === "storage/retry-limit-exceeded") {
+    return "Storage isn't enabled for this project yet (Firebase Console → Build → Storage → Get started) — ask whoever owns Firebase deploy access to turn it on.";
+  }
+  if (code === "storage/unauthorized") {
+    return "Upload rejected by Storage's security rules — storage.rules likely hasn't been deployed to this project yet.";
+  }
+  if (code === "storage/quota-exceeded") {
+    return "This project's Storage quota has been used up.";
+  }
+  if (code === "storage/canceled") {
+    return "Upload was canceled.";
+  }
+  if (code === "storage/invalid-argument" || code === "storage/invalid-format" || code === "storage/invalid-checksum") {
+    return "This file couldn't be uploaded — check it's a valid image or video and try again.";
+  }
+  return (err && err.message) || String(err);
+}
+
 // `uploadedAt` is a plain client Date, not serverTimestamp(), for the same
 // reason addItemComment's `at` is — see that function's own comment.
 async function uploadItemAttachment(id, file, type) {
   const path = `attachments/${id}/${Date.now()}-${sanitizeAttachmentFileName(file.name)}`;
   const fileRef = storageRef(storage, path);
-  await uploadBytes(fileRef, file, { contentType: file.type || undefined });
+  try {
+    await uploadBytes(fileRef, file, { contentType: file.type || undefined });
+  } catch (err) {
+    throw new Error(describeAttachmentUploadError(err));
+  }
   const url = await getDownloadURL(fileRef);
   await updateDoc(doc(db, "backlogItems", id), {
     attachments: arrayUnion({
@@ -1666,13 +1732,16 @@ async function requestNotify(pid) {
 //
 // This has no async, watchable in-progress state the way Ready for Dev/
 // Deploy to Main do (no Routine session to spin on) — the whole thing
-// completes in one round trip. Without any feedback at all, that read as
-// "the button did nothing": confirmed with an immediate in-app alert dialog
-// (works with zero external config, unlike Slack) AND a Slack post via
-// notifyOnItemsDeployedToFeature (../functions/index.js), which watches
-// deployToFeatureRequestedAt the same way requestNotify/requestDeployNotify
-// below already watch their own timestamps — for consistency, not because
-// this needs a Routine fire too.
+// completes in one round trip. This used to also fire an immediate in-app
+// alert dialog AND a Slack post via notifyOnItemsDeployedToFeature
+// (../functions/index.js, watching deployToFeatureRequestedAt) as feedback
+// that the click did something — removed by request (SqPFGfMvuiQ5hRdsUb2W):
+// both were reported as unwanted noise on every Ready for Testing →
+// Approved for Deployment move. The board's own column counts already show
+// the result immediately, so deployToFeatureRequestedAt/
+// deployToFeatureItemTitles are deliberately not written here anymore —
+// notifyOnItemsDeployedToFeature is now dead code (harmless, just never
+// triggered) until a future cleanup removes it from functions/index.js too.
 async function deployToFeature(pid) {
   const passedItems = items.filter((i) =>
     (i.projectId || GENERAL_PROJECT_ID) === pid && i.status === "ready-for-testing" && i.testPassed && !i.noDeploymentRequired
@@ -1700,17 +1769,6 @@ async function deployToFeature(pid) {
   await batch.commit();
 
   getDeploySelectedSet(pid).clear();
-
-  await setDoc(doc(db, "projects", pid), {
-    deployToFeatureRequestedAt: serverTimestamp(),
-    deployToFeatureItemTitles: itemsToMove.map((i) => i.title),
-  }, { merge: true });
-
-  await showAlert(
-    `${itemsToMove.length} item${itemsToMove.length === 1 ? "" : "s"} moved to Approved for Deployment:\n` +
-    itemsToMove.map((i) => `• ${i.title}`).join("\n") +
-    `\n\nNo new GitHub push happens at this step — each item's code was already pushed to its own feature branch back when it left Backlog. This just advances the board's own status now that testing is confirmed.`
-  );
 }
 
 // Same idea as requestNotify() above, but for the "Approved for Deployment"
@@ -1916,6 +1974,15 @@ projectsRoot.addEventListener("click", async (e) => {
     render();
     return;
   }
+  // Column-header tap-to-collapse — mobile only (see projectSectionHTML/
+  // isColumnCollapsed's own comments); on a wider viewport where columns
+  // sit side by side this is a no-op click, same as tapping any other
+  // static heading.
+  const colHead = e.target.closest(".col-head");
+  if (colHead && !e.target.closest("label, input") && window.matchMedia("(max-width: 640px)").matches) {
+    toggleColumnCollapsed(colHead.dataset.projectId, colHead.dataset.col);
+    return;
+  }
   const moveBtn = e.target.closest(".move-btn");
   if (moveBtn) { moveItem(moveBtn.dataset.id, parseInt(moveBtn.dataset.dir, 10)); return; }
   const testPassedBtn = e.target.closest(".test-passed-btn");
@@ -1930,6 +1997,8 @@ projectsRoot.addEventListener("click", async (e) => {
   if (editItemBtn) { openEditItemModal(editItemBtn.dataset.id); return; }
   const quickCommentBtn = e.target.closest(".quick-comment-btn");
   if (quickCommentBtn) { openQuickCommentModal(quickCommentBtn.dataset.id, quickCommentBtn.dataset.readonly === "1"); return; }
+  const attachmentBtn = e.target.closest(".attachment-btn");
+  if (attachmentBtn) { openQuickCommentModal(attachmentBtn.dataset.id, attachmentBtn.dataset.readonly === "1"); return; }
   const descToggleBtn = e.target.closest(".card-desc-toggle-btn");
   if (descToggleBtn) {
     const wrap = descToggleBtn.closest(".card-desc-wrap");
@@ -1984,9 +2053,22 @@ projectsRoot.addEventListener("click", async (e) => {
   }
   const optionsBtn = e.target.closest(".project-options-btn");
   if (optionsBtn) { toggleOptionMenu(optionsBtn); return; }
+  // Clicking anywhere on a card's own body (not one of its buttons/inputs/
+  // links, all already handled above) opens it for editing — the same
+  // action as its small pencil icon. Reported as a real bug
+  // (Vz3OY3vWkOYs3M8BFhiK): the pencil icon was the *only* way in, and
+  // people expected the ticket itself to be clickable. Skipped on a locked
+  // card (card-in-development, applied whenever cardHTML's isLocked is
+  // true) since editBtn isn't rendered there either — there's nothing to
+  // open into.
+  const cardEl = e.target.closest(".card");
+  if (cardEl && !cardEl.classList.contains("card-in-development") && !e.target.closest("a, button, input, label")) {
+    openEditItemModal(cardEl.dataset.id);
+    return;
+  }
   // Any other click inside the board closes an open options menu — the
   // options-btn case above already returned, so reaching here means the
-  // click landed elsewhere (a card, a column, empty space).
+  // click landed elsewhere (a column, empty space).
   closeAllOptionMenus();
 });
 projectsRoot.addEventListener("keydown", (e) => {
@@ -2098,11 +2180,11 @@ function openEditItemModal(id) {
   eiTitleInput.focus();
 }
 function closeEditItemModal() {
-  // Closing mid-recording doesn't lose the recording — stopScreenRecording
-  // captures the target item id in its own closure at start time (see
-  // startScreenRecording), so the upload still lands on the right item
-  // even after editingItemId below goes back to null.
-  if (eiScreenRecorder && eiScreenRecorder.state === "recording") stopScreenRecording();
+  // Closing mid-recording doesn't lose the recording — createAttachmentController
+  // captures the target item id in its own closure at start time, so the
+  // upload still lands on the right item even after editingItemId below
+  // goes back to null.
+  eiAttachments.stopRecording();
   eiBackdrop.hidden = true;
   editingItemId = null;
 }
@@ -2148,97 +2230,124 @@ eiAttachmentsList.addEventListener("click", async (e) => {
   removeItemAttachment(editingItemId, att);
 });
 
-eiAttachScreenshotInput.addEventListener("change", async () => {
-  const file = eiAttachScreenshotInput.files[0];
-  eiAttachScreenshotInput.value = "";
-  if (!file || !editingItemId) return;
-  if (!file.type.startsWith("image/")) { await showAlert("Please choose an image file."); return; }
-  if (file.size > MAX_SCREENSHOT_BYTES) { await showAlert("That screenshot is too large (max 15MB)."); return; }
-  const id = editingItemId;
-  setEiAttachHint("Uploading screenshot…");
-  try {
-    await uploadItemAttachment(id, file, "image");
-    setEiAttachHint("");
-  } catch (err) {
-    setEiAttachHint("");
-    await showAlert("Couldn't upload that screenshot: " + (err && err.message ? err.message : err));
-  }
-});
+// Screenshot-picker + screen-recording (getDisplayMedia + MediaRecorder, no
+// third-party library) wiring, factored into one controller so it can be
+// instantiated independently for both the Edit item modal and the
+// quick-comment modal (see the qc instance below) — same "one factory, N
+// independent instances" pattern createDictationController already uses
+// for its three mic buttons, added here so attaching works from wherever a
+// person actually taps (DrIEsKsdi3WrwXbUdMH6 and its duplicates: the old
+// single Edit-modal-only Attachments block was too easy to miss entirely).
+// `getItemId` is read fresh on every action (not captured once at
+// construction) so each instance always targets whichever item its own
+// modal currently has open; a recording in progress captures its own
+// target id in `targetItemId` at start time so it still uploads to the
+// right item even if the modal is closed (or reopened on a different item)
+// before the user hits Stop.
+function createAttachmentController({ getItemId, screenshotInput, recordBtn, hintEl }) {
+  let recorder = null;
 
-// Screen recording — captured with the browser's own getDisplayMedia +
-// MediaRecorder, no third-party library. `targetItemId`/`chunks`/`stream`
-// are captured in this closure rather than read from the (possibly by-then
-// null) editingItemId global, so a recording started against one item
-// still uploads correctly even if the modal is closed (or, in principle,
-// reopened on a different item) before the user hits Stop — see
-// closeEditItemModal's own call into stopScreenRecording.
-let eiScreenRecorder = null;
-
-function setEiRecordButtonState(recording) {
-  eiRecordScreenBtn.classList.toggle("recording", recording);
-  eiRecordScreenBtn.textContent = recording ? "⏹ Stop recording" : "⏺ Record screen";
-}
-
-async function startScreenRecording() {
-  if (!editingItemId) return;
-  if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) {
-    await showAlert("Screen recording isn't supported in this browser.");
-    return;
+  function setHint(msg) {
+    if (!hintEl) return;
+    hintEl.hidden = !msg;
+    hintEl.textContent = msg || "";
   }
-  const targetItemId = editingItemId;
-  let stream;
-  try {
-    stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
-  } catch (err) {
-    // The user cancelled the browser's own share-picker — not an error.
-    return;
+  function setRecordButtonState(recording) {
+    recordBtn.classList.toggle("recording", recording);
+    recordBtn.textContent = recording ? "⏹ Stop recording" : "⏺ Record screen";
   }
-  const chunks = [];
-  const mimeType = (window.MediaRecorder && MediaRecorder.isTypeSupported("video/webm;codecs=vp9"))
-    ? "video/webm;codecs=vp9" : "video/webm";
-  const recorder = new MediaRecorder(stream, { mimeType });
-  recorder.ondataavailable = (e) => { if (e.data && e.data.size) chunks.push(e.data); };
-  recorder.onstop = async () => {
-    stream.getTracks().forEach((t) => t.stop());
-    setEiRecordButtonState(false);
-    const blob = new Blob(chunks, { type: mimeType });
-    if (blob.size > MAX_RECORDING_BYTES) {
-      setEiAttachHint("");
-      await showAlert("That recording is too large (max 100MB) — try a shorter one.");
+
+  screenshotInput.addEventListener("change", async () => {
+    const file = screenshotInput.files[0];
+    screenshotInput.value = "";
+    const id = getItemId();
+    if (!file || !id) return;
+    if (!file.type.startsWith("image/")) { await showAlert("Please choose an image file."); return; }
+    if (file.size > MAX_SCREENSHOT_BYTES) { await showAlert("That screenshot is too large (max 15MB)."); return; }
+    setHint("Uploading screenshot…");
+    try {
+      await uploadItemAttachment(id, file, "image");
+      setHint("");
+    } catch (err) {
+      setHint("");
+      await showAlert("Couldn't upload that screenshot: " + (err && err.message ? err.message : err));
+    }
+  });
+
+  async function startRecording() {
+    const id = getItemId();
+    if (!id) return;
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) {
+      await showAlert("Screen recording isn't supported in this browser.");
       return;
     }
-    const file = new File([blob], `screen-recording-${Date.now()}.webm`, { type: mimeType });
-    setEiAttachHint("Uploading screen recording…");
+    const targetItemId = id;
+    let stream;
     try {
-      await uploadItemAttachment(targetItemId, file, "video");
+      stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
     } catch (err) {
-      await showAlert("Couldn't upload that screen recording: " + (err && err.message ? err.message : err));
-    } finally {
-      setEiAttachHint("");
+      // The user cancelled the browser's own share-picker — not an error.
+      return;
     }
-  };
-  // The user can also end the capture from the browser's own "Stop
-  // sharing" bar instead of this button — react the same way either path.
-  stream.getVideoTracks()[0].addEventListener("ended", () => {
-    if (recorder.state !== "inactive") recorder.stop();
-  });
-  eiScreenRecorder = recorder;
-  recorder.start();
-  setEiRecordButtonState(true);
-  setEiAttachHint("Recording your screen — click Stop recording when done.");
-}
-
-function stopScreenRecording() {
-  if (eiScreenRecorder && eiScreenRecorder.state !== "inactive") eiScreenRecorder.stop();
-  eiScreenRecorder = null;
-}
-
-eiRecordScreenBtn.addEventListener("click", () => {
-  if (eiScreenRecorder && eiScreenRecorder.state === "recording") {
-    stopScreenRecording();
-  } else {
-    startScreenRecording();
+    const chunks = [];
+    const mimeType = (window.MediaRecorder && MediaRecorder.isTypeSupported("video/webm;codecs=vp9"))
+      ? "video/webm;codecs=vp9" : "video/webm";
+    const rec = new MediaRecorder(stream, { mimeType });
+    rec.ondataavailable = (e) => { if (e.data && e.data.size) chunks.push(e.data); };
+    rec.onstop = async () => {
+      stream.getTracks().forEach((t) => t.stop());
+      setRecordButtonState(false);
+      const blob = new Blob(chunks, { type: mimeType });
+      if (blob.size > MAX_RECORDING_BYTES) {
+        setHint("");
+        await showAlert("That recording is too large (max 100MB) — try a shorter one.");
+        return;
+      }
+      const file = new File([blob], `screen-recording-${Date.now()}.webm`, { type: mimeType });
+      setHint("Uploading screen recording…");
+      try {
+        await uploadItemAttachment(targetItemId, file, "video");
+      } catch (err) {
+        await showAlert("Couldn't upload that screen recording: " + (err && err.message ? err.message : err));
+      } finally {
+        setHint("");
+      }
+    };
+    // The user can also end the capture from the browser's own "Stop
+    // sharing" bar instead of this button — react the same way either path.
+    stream.getVideoTracks()[0].addEventListener("ended", () => {
+      if (rec.state !== "inactive") rec.stop();
+    });
+    recorder = rec;
+    rec.start();
+    setRecordButtonState(true);
+    setHint("Recording your screen — click Stop recording when done.");
   }
+
+  function stopRecording() {
+    if (recorder && recorder.state !== "inactive") recorder.stop();
+    recorder = null;
+  }
+
+  recordBtn.addEventListener("click", () => {
+    if (recorder && recorder.state === "recording") stopRecording();
+    else startRecording();
+  });
+
+  return { stopRecording };
+}
+
+const eiAttachments = createAttachmentController({
+  getItemId: () => editingItemId,
+  screenshotInput: eiAttachScreenshotInput,
+  recordBtn: eiRecordScreenBtn,
+  hintEl: eiAttachHint,
+});
+const qcAttachments = createAttachmentController({
+  getItemId: () => quickCommentItemId,
+  screenshotInput: document.getElementById("qc-attach-screenshot-input"),
+  recordBtn: document.getElementById("qc-record-screen-btn"),
+  hintEl: document.getElementById("qc-attach-hint"),
 });
 
 // ── Quick comment modal — comment-only, reached from the card's own small
@@ -2253,6 +2362,7 @@ const qcTitle = document.getElementById("qc-title");
 const qcComposer = document.getElementById("qc-composer");
 const qcReadonlyHint = document.getElementById("qc-readonly-hint");
 const qcSubmitBtn = document.getElementById("qc-submit");
+const qcAttachmentsActions = document.getElementById("qc-attachments-actions");
 
 // The card's comment icon carries a count, and tapping it used to open an
 // empty box — so the number told you a conversation existed and the click
@@ -2280,6 +2390,10 @@ function openQuickCommentModal(id, readOnly) {
   qcComposer.hidden = !!readOnly;
   qcSubmitBtn.hidden = !!readOnly;
   qcReadonlyHint.hidden = !readOnly;
+  // Attaching writes to the same locked-while-in-progress document the
+  // composer does, so it's gated the same way.
+  qcAttachmentsActions.hidden = !!readOnly;
+  document.getElementById("qc-attach-hint").hidden = true;
   // The mic button lives inside #qc-composer, so hiding the composer takes
   // it with it — don't touch its own `hidden`, which is owned by the
   // dictation controller's "is speech recognition available" check and
@@ -2288,6 +2402,7 @@ function openQuickCommentModal(id, readOnly) {
   if (!readOnly) qcCommentInput.focus();
 }
 function closeQuickCommentModal() {
+  qcAttachments.stopRecording();
   qcBackdrop.hidden = true;
   quickCommentItemId = null;
 }
@@ -2881,6 +2996,17 @@ function setTypeToggle(type) {
 // closure, instead of one shared set of module-level variables that only
 // one field at a time could use. Behavior/comments below are otherwise
 // unchanged from the original New-Item-only implementation.
+// Plain inline SVG rather than the 🎤/⏹ emoji this used to show — emoji
+// glyphs render as a different size/color/style per OS and font, which is
+// what made the mic button look inconsistent with everything else in the
+// app (and with the flat, monochrome stop-square most other AI products'
+// own voice input uses, including Claude's — RydDfOtFBQocQMsGSdsb). A
+// filled rounded square inside the button's own circular background (see
+// .mic-btn.listening's red fill) reads the same way theirs does: an
+// unambiguous "recording — tap to stop".
+const MIC_ICON_SVG = '<svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" aria-hidden="true" focusable="false"><path d="M12 15a3.5 3.5 0 0 0 3.5-3.5v-5a3.5 3.5 0 0 0-7 0v5A3.5 3.5 0 0 0 12 15z"/><path d="M18.5 11.5a1 1 0 0 0-2 0 4.5 4.5 0 0 1-9 0 1 1 0 0 0-2 0 6.5 6.5 0 0 0 5.5 6.42V20H9a1 1 0 0 0 0 2h6a1 1 0 0 0 0-2h-2v-2.08a6.5 6.5 0 0 0 5.5-6.42z"/></svg>';
+const STOP_ICON_SVG = '<svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor" aria-hidden="true" focusable="false"><rect x="6" y="6" width="12" height="12" rx="2.5"/></svg>';
+
 function createDictationController({ textareaEl, micBtn, hintEl, errorEl, onStop }) {
   let recognition = null;
   let listening = false;
@@ -3005,7 +3131,7 @@ function createDictationController({ textareaEl, micBtn, hintEl, errorEl, onStop
     };
     listening = true;
     micBtn.classList.add("listening");
-    micBtn.innerHTML = "&#9209;"; // ⏹ — unambiguous "tap to stop", not just a color change
+    micBtn.innerHTML = STOP_ICON_SVG; // unambiguous "tap to stop", not just a color change
     micBtn.title = "Stop dictation";
     micBtn.setAttribute("aria-label", "Stop dictation");
     if (hintEl) hintEl.classList.add("on");
@@ -3019,7 +3145,7 @@ function createDictationController({ textareaEl, micBtn, hintEl, errorEl, onStop
     listening = false;
     stopRequested = false;
     micBtn.classList.remove("listening");
-    micBtn.innerHTML = "&#127908;"; // 🎤
+    micBtn.innerHTML = MIC_ICON_SVG;
     micBtn.title = "Dictate";
     micBtn.setAttribute("aria-label", "Dictate");
     if (hintEl) hintEl.classList.remove("on");
@@ -3071,6 +3197,7 @@ function createDictationController({ textareaEl, micBtn, hintEl, errorEl, onStop
     return { stop, clearError: () => showError("") };
   }
   micBtn.hidden = false;
+  micBtn.innerHTML = MIC_ICON_SVG;
   micBtn.addEventListener("click", () => {
     if (listening) { stop(); return; }
     requestMicAndListen();
