@@ -174,6 +174,27 @@
           </div>
         </div>
 
+        <!-- Attachments — a screenshot (plain file picker) or a screen
+             recording (captured in-browser via getDisplayMedia +
+             MediaRecorder, no separate app needed), both uploaded to
+             Firebase Storage the moment they're ready. See app.js's
+             uploadItemAttachment/createAttachmentController. Placed above
+             Comments and styled as filled/outlined buttons (not the muted
+             btn-ghost treatment) — it used to sit below Comments and the
+             Save button, styled identically to disabled ghost text, which
+             is why almost nobody found it (see DrIEsKsdi3WrwXbUdMH6 and
+             its duplicates). -->
+        <div class="ei-attachments-block">
+          <h3>Attachments</h3>
+          <div id="ei-attachments-list" class="ei-attachments-list"></div>
+          <div class="ei-attachments-actions">
+            <label class="btn-attach ei-attach-screenshot-label" for="ei-attach-screenshot-input">&#128206; Attach screenshot</label>
+            <input type="file" id="ei-attach-screenshot-input" accept="image/*" hidden>
+            <button type="button" class="btn-attach" id="ei-record-screen-btn">&#9210; Record screen</button>
+          </div>
+          <p class="field-hint" id="ei-attach-hint" hidden></p>
+        </div>
+
         <div class="ei-comments-block">
           <h3>Comments</h3>
           <div id="ei-notes-list" class="ei-notes-list"></div>
@@ -186,22 +207,6 @@
           <div class="form-row" style="justify-content:flex-end;">
             <button type="button" class="btn-primary" id="ei-comment-submit">Add comment</button>
           </div>
-        </div>
-
-        <!-- Attachments — a screenshot (plain file picker) or a screen
-             recording (captured in-browser via getDisplayMedia +
-             MediaRecorder, no separate app needed), both uploaded to
-             Firebase Storage the moment they're ready. See app.js's
-             uploadItemAttachment/startScreenRecording. -->
-        <div class="ei-attachments-block">
-          <h3>Attachments</h3>
-          <div id="ei-attachments-list" class="ei-attachments-list"></div>
-          <div class="ei-attachments-actions">
-            <label class="btn-ghost ei-attach-screenshot-label" for="ei-attach-screenshot-input">&#128206; Attach screenshot</label>
-            <input type="file" id="ei-attach-screenshot-input" accept="image/*" hidden>
-            <button type="button" class="btn-ghost" id="ei-record-screen-btn">&#9210; Record screen</button>
-          </div>
-          <p class="field-hint" id="ei-attach-hint" hidden></p>
         </div>
       </div>
     </div>
@@ -232,6 +237,20 @@
         </div>
         <p class="listening-hint" id="qc-listening-hint">&#127908; Listening — tap the mic again when you're done.</p>
         <p class="mic-error" id="qc-mic-error"></p>
+        <!-- Attaching a screenshot/recording from here too — this comment
+             icon is the affordance most people actually tap on a card, and
+             it used to have no mention of attachments at all, so nobody
+             found the Attachments block buried at the bottom of the full
+             Edit item modal (see DrIEsKsdi3WrwXbUdMH6 and its duplicates).
+             Same upload flow as the Edit item modal's own controls, just
+             targeting whichever item this quick-comment dialog is open
+             for — see app.js's createAttachmentController. -->
+        <div class="ei-attachments-actions qc-attachments-actions" id="qc-attachments-actions">
+          <label class="btn-attach" for="qc-attach-screenshot-input">&#128206; Attach screenshot</label>
+          <input type="file" id="qc-attach-screenshot-input" accept="image/*" hidden>
+          <button type="button" class="btn-attach" id="qc-record-screen-btn">&#9210; Record screen</button>
+        </div>
+        <p class="field-hint" id="qc-attach-hint" hidden></p>
         <!-- Shown instead of the composer on a card that's locked mid-
              automation (see cardHTML's isLocked): reading the thread is
              always safe, adding to it while a job is writing the same
