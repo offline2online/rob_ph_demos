@@ -9,6 +9,7 @@
 import { initializeApp, getApps, getApp } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-app.js";
 import {
   getAuth, GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult, onAuthStateChanged, signOut,
+  setPersistence, browserLocalPersistence,
 } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-auth.js";
 import { firebaseConfig } from "./firebase-config.js";
 
@@ -19,6 +20,19 @@ export const ALLOWED_EDITORS = [
 
 const app = getApps().length ? getApp() : initializeApp(firebaseConfig);
 const auth = getAuth(app);
+// Keep the session across reloads and browser restarts (this is the SDK
+// default, made explicit so a reload never lands back on the sign-in card).
+setPersistence(auth, browserLocalPersistence).catch(() => { /* falls back to in-memory */ });
+
+// Firebase Auth restores the session asynchronously, so for the first few
+// hundred milliseconds of every load the user is unknown. Showing the
+// sign-in card during that window reads as "logged out again" on every
+// refresh. While auth is resolving we show a neutral "Loading…" state
+// instead, and only reveal the sign-in button once we KNOW there is no
+// session. A localStorage flag remembers that someone was signed in here
+// before, so even the loading state can say so.
+const REMEMBER_KEY = "ph-console-signed-in";
+let authResolved = false;
 
 const gate = document.getElementById("auth-gate");
 const status = document.getElementById("auth-gate-status");
@@ -34,6 +48,19 @@ function setStatus(text, kind) {
   status.textContent = text;
   status.dataset.kind = kind || "";
 }
+function showResolving() {
+  gate.hidden = false; appRoot.hidden = true;
+  signInBtn.hidden = true; signOutBtn.hidden = true;
+  let remembered = false;
+  try { remembered = localStorage.getItem(REMEMBER_KEY) === "1"; } catch { /* ignore */ }
+  setStatus(remembered ? "Restoring your session…" : "Checking sign-in…");
+}
+function showSignIn() {
+  gate.hidden = false; appRoot.hidden = true;
+  signInBtn.hidden = false; signOutBtn.hidden = true;
+  setStatus("");
+}
+showResolving();
 
 async function signIn() {
   const provider = new GoogleAuthProvider();
@@ -64,6 +91,7 @@ let started = false;
 async function startApp(user) {
   if (started) return;
   started = true;
+  try { localStorage.setItem(REMEMBER_KEY, "1"); } catch { /* ignore */ }
   gate.hidden = true;
   appRoot.hidden = false;
   document.documentElement.classList.add("signed-in");
@@ -73,20 +101,25 @@ async function startApp(user) {
 }
 
 signInBtn.addEventListener("click", signIn);
-signOutBtn.addEventListener("click", async () => { await signOut(auth); window.location.reload(); });
+async function doSignOut() {
+  try { localStorage.removeItem(REMEMBER_KEY); } catch { /* ignore */ }
+  await signOut(auth);
+  window.location.reload();
+}
+signOutBtn.addEventListener("click", doSignOut);
 document.addEventListener("click", (e) => {
-  if (e.target.closest("#topbar-signout")) signOut(auth).then(() => window.location.reload());
+  if (e.target.closest("#topbar-signout")) doSignOut();
 });
 
 getRedirectResult(auth).catch(() => { /* handled by onAuthStateChanged */ });
 onAuthStateChanged(auth, (user) => {
+  authResolved = true;
   if (!user) {
-    gate.hidden = false; appRoot.hidden = true; signOutBtn.hidden = true;
-    setStatus("");
+    showSignIn();
     return;
   }
   if (!isAllowed(user)) {
-    gate.hidden = false; appRoot.hidden = true; signOutBtn.hidden = false;
+    gate.hidden = false; appRoot.hidden = true; signInBtn.hidden = true; signOutBtn.hidden = false;
     setStatus(`${user.email} is not on the editor list for this console. Sign out and use an authorised account.`, "error");
     return;
   }
