@@ -455,6 +455,20 @@ textarea.dialog-field-input { resize: vertical; min-height: 70px; }
    item modal's "No deployment required" checkbox and cardHTML's own
    confirm-no-deploy-btn, which skips Approved for Deployment/Notify Claude —
    Deploy entirely for a card carrying this flag. */
+/* Live "X / max" readout for every bounded text field (see wireCharCount in
+   app.js). firestore.rules rejects a write over these caps with a bare 403
+   and no indication length was the problem — native maxlength already stops
+   typing/pasting past it, but said nothing to a viewer approaching the
+   limit, and did nothing at all against dictation setting .value directly
+   (see the dictation clamp in createDictationController). This is the
+   visible half of that fix: amber near the cap, red once actually at it. */
+.char-count {
+  display: block; font-size: 11px; color: var(--text-muted); text-align: right;
+  margin-top: 2px;
+}
+.char-count-warn { color: var(--warning); }
+.char-count-limit { color: var(--danger); font-weight: 600; }
+
 .no-deploy-badge {
   display: inline-block; font-size: 10.5px; font-weight: 600;
   color: var(--success); background: rgba(82, 196, 26, .12); border-radius: 9999px;
@@ -483,6 +497,29 @@ textarea.dialog-field-input { resize: vertical; min-height: 70px; }
 }
 .pr-badge:hover { text-decoration: underline; }
 .pr-badge-merged { color: var(--success); background: rgba(82, 196, 26, .12); }
+
+/* Per-card deploy provenance (backlogItems.mergeCommit/deployRunUrl/
+   deployConclusion, written by run-backlog-automation.js's processMergePr
+   and its own reconciliation pass — see cardHTML's own deployBadge
+   comment). Only shown on a Merged to Main (Live) card. Colored by
+   deployConclusion: amber while the dispatched run hasn't finished yet,
+   green once it reports success, red for anything else (failure,
+   cancelled, timed_out, ...) so a red card is immediately visible without
+   opening the run. */
+.deploy-badge {
+  display: flex; align-items: center; gap: 6px; font-size: 10.5px; font-weight: 600;
+  border-radius: 9999px; padding: 2px 8px; margin: 6px 0 0 6px; width: fit-content;
+}
+.deploy-badge a { color: inherit; text-decoration: none; }
+.deploy-badge a:hover { text-decoration: underline; }
+.deploy-badge-commit {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace; opacity: .75;
+}
+.deploy-badge-pending, .deploy-badge-unknown { color: var(--warning); background: rgba(201, 138, 10, .12); }
+.deploy-badge-success { color: var(--success); background: rgba(82, 196, 26, .12); }
+.deploy-badge-failure, .deploy-badge-cancelled, .deploy-badge-timed_out, .deploy-badge-startup_failure {
+  color: var(--danger); background: var(--danger-tint);
+}
 
 /* ── Mobile ──────────────────────────────────────────────────────────────
    Two real problems on a phone before this: (1) the board's 4 columns were
