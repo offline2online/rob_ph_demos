@@ -188,6 +188,9 @@ a:hover { text-decoration: underline; }
 [hidden] { display: none !important; }
 html.embedded .hero { padding-top: 20px; }
 html.embedded .ph-footer { padding: 14px; }
+html.embedded .footer-admin { display: none; }
+.ph-footer .footer-admin a { color: var(--text-muted); }
+.ph-footer .footer-admin a:hover { color: var(--primary); }
 @media print { .ph-header, .hero, .toc, .article-nav, .related-block, .ph-footer { display: none !important; } .wrap { padding: 0; } }
 
 @media (max-width: 640px) {

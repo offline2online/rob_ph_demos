@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - 'backlog-tracker/**'
+      - 'faq/**'
   workflow_dispatch: {}
 
 # Several PRs merging within seconds of each other (a common shape for this
@@ -186,6 +187,15 @@ jobs:
       # non-interactive mode") on every deploy after a function removal,
       # taking every other change in the same push down with it. --force
       # skips that (and every other) confirmation prompt.
+      # The public help centre is a second Hosting site in the same project
+      # (target "help" → site ph-help-centre, serving repo-root faq/ at its
+      # root, custom domain help.personalisationhub.com). Creating the site
+      # is idempotent: it already existing is the normal case.
+      - name: Ensure the help-centre Hosting site exists
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/firebase-sa.json
+        run: npx firebase-tools@13 hosting:sites:create ph-help-centre --project backlog-tracker-e4ed2 --non-interactive 2>&1 | tee /dev/stderr | grep -qiE "already exists|Site .* has been created" || true
+
       - name: Deploy to Firebase (hosting, functions, firestore rules)
         env:
           GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/firebase-sa.json

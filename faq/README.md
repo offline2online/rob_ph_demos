@@ -1,10 +1,16 @@
 # faq — Personalisation Hub Help Centre (public site)
 
 Consumer-facing help centre: front page + search, category pages (with
-folders), article pages, search results. Published by GitHub Pages like the
-rest of the repo root, and designed to be iframed into the support centre on
-personalisationhub.com as well as served standalone (help.personalisationhub.com
-can CNAME here).
+folders), article pages, search results. Served at the ROOT of its own
+Firebase Hosting site (`ph-help-centre` in project `backlog-tracker-e4ed2`,
+hosting target `help` in `backlog-tracker/firebase.json`, custom domain
+**help.personalisationhub.com**) and iframed into the support centre on
+personalisationhub.com. The same folder is also published by GitHub Pages
+at `/faq/` like the rest of the repo root, which is handy for previews.
+The footer's "Agent portal sign-in" link (hidden when embedded) and the
+`/console` redirect lead to the admin console at
+backlog-tracker-e4ed2.web.app. Old Freshdesk article URLs
+(`/support/solutions/articles/<id>…`) redirect to the matching article.
 
 ## How content flows
 
@@ -56,9 +62,10 @@ admin console (backlog-tracker → FAQ Management)  ──edits──▶  Firest
   Google account (`backlog-tracker/firestore.rules` → `isFaqEditor`).
 - When embedded, the site hides its own header and posts
   `{type: "ph-faq:height", height}` to the parent so the host page can size
-  the iframe. GitHub Pages cannot send `frame-ancestors`; if embedding must
-  be restricted to personalisationhub.com, host `faq/` behind a proxy/CDN
-  that adds that header.
+  the iframe. The Firebase Hosting site sends
+  `Content-Security-Policy: frame-ancestors 'self' https://personalisationhub.com https://www.personalisationhub.com`,
+  so only the marketing site can embed it (the GitHub Pages copy has no
+  such header).
 
 ## Content standard
 

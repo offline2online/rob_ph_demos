@@ -11,19 +11,115 @@
       "codebase": "default"
     }
   ],
-  "hosting": {
-    "public": "public",
-    "ignore": ["firebase.json", "**/.*", "**/node_modules/**"],
-    "rewrites": [
-      { "source": "/boardApi/**", "function": { "functionId": "boardApi", "region": "us-central1" } }
-    ],
-    "headers": [
-      {
-        "source": "**/*.@(html|js|css)",
-        "headers": [
-          { "key": "Cache-Control", "value": "no-cache, must-revalidate" }
-        ]
-      }
-    ]
-  }
+  "hosting": [
+    {
+      "public": "public",
+      "ignore": [
+        "firebase.json",
+        "**/.*",
+        "**/node_modules/**"
+      ],
+      "rewrites": [
+        {
+          "source": "/boardApi/**",
+          "function": {
+            "functionId": "boardApi",
+            "region": "us-central1"
+          }
+        }
+      ],
+      "headers": [
+        {
+          "source": "**/*.@(html|js|css)",
+          "headers": [
+            {
+              "key": "Cache-Control",
+              "value": "no-cache, must-revalidate"
+            }
+          ]
+        }
+      ],
+      "target": "console"
+    },
+    {
+      "target": "help",
+      "public": "../faq",
+      "ignore": [
+        "firebase.json",
+        "**/.*",
+        "**/node_modules/**",
+        "README.md"
+      ],
+      "cleanUrls": false,
+      "redirects": [
+        {
+          "source": "/console",
+          "destination": "https://backlog-tracker-e4ed2.web.app/",
+          "type": 302
+        },
+        {
+          "source": "/console/**",
+          "destination": "https://backlog-tracker-e4ed2.web.app/",
+          "type": 302
+        },
+        {
+          "regex": "^/support/solutions/articles/(?P<id>[0-9]+).*$",
+          "destination": "/article.html?id=faq-art-:id",
+          "type": 301
+        },
+        {
+          "source": "/support/home",
+          "destination": "/",
+          "type": 301
+        },
+        {
+          "source": "/support/solutions",
+          "destination": "/",
+          "type": 301
+        },
+        {
+          "source": "/support/solutions/**",
+          "destination": "/",
+          "type": 301
+        }
+      ],
+      "headers": [
+        {
+          "source": "**",
+          "headers": [
+            {
+              "key": "Content-Security-Policy",
+              "value": "frame-ancestors 'self' https://personalisationhub.com https://www.personalisationhub.com"
+            },
+            {
+              "key": "Referrer-Policy",
+              "value": "strict-origin-when-cross-origin"
+            },
+            {
+              "key": "X-Content-Type-Options",
+              "value": "nosniff"
+            }
+          ]
+        },
+        {
+          "source": "**/*.@(html|json)",
+          "headers": [
+            {
+              "key": "Cache-Control",
+              "value": "no-cache, must-revalidate"
+            }
+          ]
+        },
+        {
+          "source": "**/*.@(js|css)",
+          "headers": [
+            {
+              "key": "Cache-Control",
+              "value": "public, max-age=600, must-revalidate"
+            }
+          ]
+        }
+      ]
+    }
+  ]
 }

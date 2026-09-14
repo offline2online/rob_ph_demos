@@ -1,5 +1,17 @@
 {
   "projects": {
     "default": "backlog-tracker-e4ed2"
+  },
+  "targets": {
+    "backlog-tracker-e4ed2": {
+      "hosting": {
+        "console": [
+          "backlog-tracker-e4ed2"
+        ],
+        "help": [
+          "ph-help-centre"
+        ]
+      }
+    }
   }
 }

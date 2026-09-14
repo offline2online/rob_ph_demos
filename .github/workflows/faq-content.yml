@@ -89,3 +89,13 @@ jobs:
           git config user.email "faq-content@users.noreply.github.com"
           git commit -m "Export help-centre content from Firestore"
           git push
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+        id: commit
+      # A bot commit does not trigger the deploy workflow, so publish the
+      # refreshed snapshot to the help-centre Hosting site from here.
+      - name: Deploy help centre to Firebase Hosting
+        if: steps.commit.outputs.changed == 'true'
+        working-directory: backlog-tracker
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/firebase-sa.json
+        run: npx firebase-tools@13 deploy --only hosting:help --project backlog-tracker-e4ed2 --non-interactive --force
