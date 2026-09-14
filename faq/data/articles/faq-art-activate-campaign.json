@@ -1,0 +1,22 @@
+{
+"id": "faq-art-activate-campaign",
+"categoryId": "faq-cat-campaigns-run",
+"order": 6,
+"title": "Activate or deactivate a campaign",
+"slug": "activate-or-deactivate-a-campaign",
+"summary": "Turn a campaign on or off with the toggle on its detail page, or activate and deactivate several campaigns at once from the Campaigns list.",
+"keywords": [
+"activate campaign",
+"deactivate campaign",
+"campaign toggle",
+"turn off campaign",
+"stop campaign",
+"bulk activate",
+"campaign live"
+],
+"docType": "how-to",
+"status": "published",
+"updatedAt": "2026-09-14T12:12:16Z",
+"contentHash": "23fa2dbe723a1066",
+"bodyMd": "<p>Activation is the switch that makes a campaign eligible to play. Until it is on, nothing else &mdash; creative, schedules, targeting &mdash; has any effect. Deactivating stops the campaign everywhere while keeping everything configured for next time.</p>\n<h2>Before you begin</h2>\n<ul>\n<li>An HQ Admin account.</li>\n<li>For a campaign you are activating: creative uploaded or generated for every enabled playlist, and any schedules or targeting rules already saved.</li>\n</ul>\n<h2>Activate or deactivate 1 campaign</h2>\n<ol>\n<li>In the left navigation, select <strong>Campaigns</strong>.</li>\n<li>Select the campaign name to open it.</li>\n<li>At the top right, next to <strong>Status</strong>, turn the activation toggle on or off.</li>\n</ol>\n<p>To deactivate without opening the campaign, open the row's <strong>&hellip;</strong> menu on the Campaigns list and select <strong>Deactivate Campaign</strong>.</p>\n<h2>Activate or deactivate several campaigns</h2>\n<ol>\n<li>On the <strong>Campaigns</strong> list, tick the checkbox on each campaign. The checkbox in the header selects every row on the page.</li>\n<li>Select <strong>Activate / Deactivate Selected</strong>.\n\n</li>\n<li>Confirm the activation or deactivation.</li>\n</ol>\n<div class=\"callout callout-important\">An activated campaign with no schedule runs continuously, and with no targeting rules it plays on every display that carries one of its playlists, in every store. Check the <strong>Scheduling</strong> and <strong>Targeting</strong> tabs before you switch a campaign on nationwide.</div>\n<h2>Verify it worked</h2>\n<p>The <strong>Status</strong> text next to the toggle changes, for example from <strong>Not Activated</strong> to <strong>Activated - Not Running</strong> or <strong>Live</strong>. The status dot on the Campaigns list updates too. See <a href=\"article.html?id=faq-art-campaign-concepts\">How campaigns work: playback strategies, touch-points and status</a> for what each status means. A deactivated campaign drops out of every display's rotation and out of the campaign carousel on mobile store sites.</p>\n<h2>Next step</h2>\n<p><a href=\"article.html?id=faq-art-campaign-prioritisation\">Prioritise which campaigns play first</a></p>\n<h2>Related</h2>\n<ul>\n<li><a href=\"article.html?id=faq-art-51000359638\">Choose which campaigns appear in the campaign carousel</a></li>\n<li><a href=\"article.html?id=faq-art-51000359277\">Let retail staff activate triggered campaigns</a></li>\n<li><a href=\"article.html?id=faq-art-campaign-monitoring-settings\">Configure campaign playback monitoring</a></li>\n</ul>"
+}

@@ -18,6 +18,9 @@ import {
 import {
   getStorage, ref as storageRef, uploadBytes, getDownloadURL, deleteObject,
 } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-storage.js";
+import {
+  getAuth, GoogleAuthProvider, signInWithPopup, onAuthStateChanged, signOut,
+} from "https://www.gstatic.com/firebasejs/10.13.2/firebase-auth.js";
 import { firebaseConfig } from "./firebase-config.js";
 import { APP_VERSION } from "./version.js";
 
@@ -3554,7 +3557,56 @@ function renderLegacyFaqMarkdown(md) {
   return html;
 }
 
+
+// ── FAQ editor sign-in ──────────────────────────────────────────────────
+// faqCategories / faqArticles feed the PUBLIC help centre, so unlike every
+// other collection on this board their write rules require a signed-in
+// Google account on the editor allowlist (see firestore.rules →
+// isFaqEditor). The board itself stays open; only the FAQ pages ask for a
+// sign-in, and only when you try to change something. Requires the Google
+// provider to be enabled under Authentication → Sign-in method in the
+// Firebase console for backlog-tracker-e4ed2 (one-time manual step).
+const auth = getAuth(app);
+let faqUser = null;
+onAuthStateChanged(auth, (user) => {
+  faqUser = user && user.emailVerified ? user : null;
+  renderFaqAuthBars();
+});
+async function faqSignIn() {
+  const provider = new GoogleAuthProvider();
+  provider.setCustomParameters({ prompt: "select_account" });
+  try {
+    await signInWithPopup(auth, provider);
+  } catch (err) {
+    console.error("backlog-tracker: FAQ sign-in failed", err);
+    await showAlert(`Sign-in failed: ${err && err.code ? err.code : err}. If the code is auth/operation-not-allowed, enable the Google sign-in provider for backlog-tracker-e4ed2 in the Firebase console.`);
+  }
+}
+async function faqSignOut() { await signOut(auth); }
+// Every FAQ write goes through this. Returns true when a signed-in editor is
+// present; otherwise offers the sign-in and returns false so the caller
+// aborts instead of hitting a permission-denied error from Firestore.
+async function requireFaqEditor() {
+  if (faqUser) return true;
+  await faqSignIn();
+  if (faqUser) return true;
+  await showAlert("Sign in with an allowlisted Google account to edit help-centre content.");
+  return false;
+}
+function renderFaqAuthBars() {
+  document.querySelectorAll("[data-faq-auth]").forEach((bar) => {
+    bar.innerHTML = faqUser
+      ? `<span class="faq-auth-status">Editing as <strong>${escapeHTML(faqUser.email || "")}</strong></span> <button type="button" class="btn-ghost btn-small" data-faq-signout>Sign out</button>`
+      : `<span class="faq-auth-status">Read-only — sign in to edit the help centre.</span> <button type="button" class="btn-primary btn-small" data-faq-signin>Sign in with Google</button>`;
+  });
+}
+document.addEventListener("click", (e) => {
+  if (e.target.closest("[data-faq-signin]")) faqSignIn();
+  if (e.target.closest("[data-faq-signout]")) faqSignOut();
+});
+
 async function addFaqCategory(name, icon) {
+  if (!(await requireFaqEditor())) return;
   const order = faqCategories.length ? Math.max(...faqCategories.map((c) => c.order || 0)) + 1 : 0;
   await addDoc(faqCategoriesRef, {
     name: name.trim(), icon: (icon || "help").trim(), description: "", order,
@@ -3563,6 +3615,7 @@ async function addFaqCategory(name, icon) {
 }
 
 async function saveFaqCategory(id, name, icon, description) {
+  if (!(await requireFaqEditor())) return;
   await setDoc(doc(db, "faqCategories", id), {
     name: name.trim(), icon: (icon || "help").trim(), description: (description || "").trim(),
     updatedAt: serverTimestamp(),
@@ -3570,6 +3623,7 @@ async function saveFaqCategory(id, name, icon, description) {
 }
 
 async function deleteFaqCategoryIfEmpty(id) {
+  if (!(await requireFaqEditor())) return;
   if (faqArticles.some((a) => a.categoryId === id)) {
     await showAlert("This category still has articles in it — move or delete those first.");
     return;
@@ -3578,6 +3632,7 @@ async function deleteFaqCategoryIfEmpty(id) {
 }
 
 async function moveFaqCategory(id, dir) {
+  if (!(await requireFaqEditor())) return;
   const idx = faqCategories.findIndex((c) => c.id === id);
   const swapIdx = idx + dir;
   if (idx < 0 || swapIdx < 0 || swapIdx >= faqCategories.length) return;
@@ -3589,6 +3644,7 @@ async function moveFaqCategory(id, dir) {
 }
 
 async function saveFaqArticle(id, data) {
+  if (!(await requireFaqEditor())) return;
   if (id) {
     await setDoc(doc(db, "faqArticles", id), { ...data, updatedAt: serverTimestamp() }, { merge: true });
   } else {
@@ -3598,10 +3654,12 @@ async function saveFaqArticle(id, data) {
 }
 
 async function deleteFaqArticle(id) {
+  if (!(await requireFaqEditor())) return;
   await deleteDoc(doc(db, "faqArticles", id));
 }
 
 async function toggleFaqArticleStatus(id) {
+  if (!(await requireFaqEditor())) return;
   const a = faqArticles.find((a) => a.id === id);
   if (!a) return;
   const next = a.status === "published" ? "draft" : "published";
@@ -3612,6 +3670,7 @@ async function toggleFaqArticleStatus(id) {
 }
 
 async function toggleFaqArticleReview(id) {
+  if (!(await requireFaqEditor())) return;
   const a = faqArticles.find((a) => a.id === id);
   if (!a) return;
   await setDoc(doc(db, "faqArticles", id), { needsReview: !a.needsReview, updatedAt: serverTimestamp() }, { merge: true });
@@ -3952,6 +4011,7 @@ document.addEventListener("drop", async (e) => {
   if (!siblings.some((d) => d.id === over.id)) return;
   e.preventDefault();
   const collectionName = dragged.kind === "article" ? "faqArticles" : "faqCategories";
+  if (!(await requireFaqEditor())) return;
   try {
     await applyFaqReorder(collectionName, siblings, dragged.id, over.id, placeAfter);
   } catch (err) {
@@ -3976,6 +4036,7 @@ document.addEventListener("click", async (e) => {
       title: "New sub-category", okLabel: "Create",
     })) || "").trim();
     if (!name) return;
+    if (!(await requireFaqEditor())) return;
     const siblings = faqSubCategories(parentId);
     await addDoc(faqCategoriesRef, {
       name, parentId, icon: "folder", description: "",

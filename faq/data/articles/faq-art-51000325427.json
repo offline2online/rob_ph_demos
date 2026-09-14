@@ -1,0 +1,22 @@
+{
+"id": "faq-art-51000325427",
+"categoryId": "faq-cat-3rd-party-guides",
+"order": 7,
+"title": "Install the AEM Screens player on Mac or PC",
+"slug": "install-the-aem-screens-player-on-mac-or-pc",
+"summary": "Install the Adobe Experience Manager (AEM) Screens player on a Mac or Windows PC for local testing of digital signage.",
+"keywords": [
+"aem screens player",
+"install player",
+"mac",
+"windows pc",
+"local testing",
+"adobe experience manager",
+"digital signage player"
+],
+"docType": "how-to",
+"status": "draft",
+"updatedAt": "2026-09-14T12:12:16Z",
+"contentHash": "bf5f812a90a937a3",
+"bodyMd": "<p>The Adobe Experience Manager (AEM) Screens player can run on a Mac or Windows PC so you can test digital-signage playback locally before deploying to in-store devices.</p>\n\n<h2>Before you begin</h2>\n<ul><li>Access to your organisation's AEM instance.</li></ul>\n<h2>Steps</h2>\n<p>This procedure is still being written.</p>\n<h2>Verify it worked</h2>\n<p>The player runs on the computer and shows content from your AEM instance.</p>\n<h2>Related</h2>\n<ul><li><a href=\"article.html?id=faq-art-51000491524\">Enable digital signage</a></li><li><a href=\"article.html?id=faq-art-51000290749\">Create API authentication credentials for an integration</a></li><li><a href=\"article.html?id=faq-art-51000290789\">How displays and devices work in Personalisation Hub</a></li></ul>"
+}

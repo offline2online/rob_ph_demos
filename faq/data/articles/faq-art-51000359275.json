@@ -1,0 +1,22 @@
+{
+"id": "faq-art-51000359275",
+"categoryId": "faq-cat-personalisation-ai",
+"order": 2,
+"title": "Enable QR Control and set the default QR code settings",
+"slug": "enable-qr-control-and-set-the-default-qr-code-settings",
+"summary": "Turn on QR Control so every connected display shows a QR code that visitors scan to choose and play triggered campaigns.",
+"keywords": [
+"qr control",
+"enable qr control",
+"qr code",
+"default qr code settings",
+"triggered campaigns",
+"display qr code",
+"platform admin"
+],
+"docType": "how-to",
+"status": "published",
+"updatedAt": "2026-09-14T12:12:16Z",
+"contentHash": "dc628c48277d6498",
+"bodyMd": "<p>QR Control shows a unique QR code on every connected display. When a visitor scans it, their phone lists every active triggered campaign running on that display; selecting one plays it on the display. Enable QR Control once at platform level after you have created your first triggered campaign.</p>\n<h2>Before you begin</h2>\n<ul><li>An HQ Admin account with the Admin role.</li><li>At least 1 triggered campaign — see <a href=\"article.html?id=faq-art-51000359022\">What are triggered campaigns?</a></li><li>A mobile site template for the campaign list to open in — see <a href=\"article.html?id=faq-art-51000359492\">Define your default mobile site template</a>.</li></ul>\n<h2>Enable QR Control at platform level</h2>\n<ol>\n<li>In the left navigation, select <strong>Platform Admin</strong>.</li>\n<li>Under <strong>Enabled Features</strong>, select <strong>QR Control</strong>.</li>\n<li>Set <strong>Enable QR-Control on Connected Store Displays</strong> to on.</li>\n</ol>\n<h2>Enable the QR-Control touch-point on each triggered campaign</h2>\n<ol>\n<li>In the left navigation, select <strong>Campaigns</strong>, then select the campaign's name.</li>\n<li>On the <strong>Campaign Brief</strong> tab, under <strong>ENABLED TOUCH-POINT(S)</strong>, set <strong>QR-Control</strong> to on.</li>\n<li>Select <strong>Update Campaign Brief</strong>.</li>\n</ol>\n<h2>Set the default QR code settings</h2>\n<p>The default size, colour and position apply to every landscape and portrait display that does not have its own override.</p>\n\n<ol>\n<li>In the left navigation, select <strong>Displays &amp; Devices</strong>, then select <strong>Manage Display Types</strong>.</li>\n<li>In the row for the display type (for example <strong>Landscape</strong> or <strong>Portrait</strong>), open the <strong>…</strong> menu and select <strong>View/Edit</strong>.</li>\n<li>Set the default QR code size, colour and position for that display type, then save.</li>\n</ol>\n<p>Each store also has a <strong>QR Control - Mobile Site Template</strong> field on its <strong>Store Details</strong> tab. It chooses which mobile site template opens when a visitor scans a QR code in that store.</p>\n<h2>Verify it worked</h2>\n<p>Every connected display shows a QR code. Scan it with a phone: the mobile site opens with a carousel of the triggered campaigns active on that display, and selecting one starts it on the display.</p>\n<h2>Troubleshooting</h2>\n<h3>The QR code is missing on one display</h3>\n<p><strong>Cause.</strong> QR Control is switched off for that display.</p>\n<p><strong>Fix.</strong> Open the display in <strong>Displays &amp; Devices</strong>, select the <strong>Enabled Features</strong> tab and tick <strong>Enable QR Control</strong> — see <a href=\"article.html?id=faq-art-51000360798\">Enable QR Control on a display</a>.</p>\n<h3>The visitor sees no campaigns after scanning</h3>\n<p><strong>Cause.</strong> No triggered campaign is active with the <strong>QR-Control</strong> touch-point enabled for that display's playlist.</p>\n<p><strong>Fix.</strong> Activate the campaign and check its <strong>Campaign Brief</strong> has <strong>QR-Control</strong> on and the display's playlist under <strong>Digital Signage</strong>.</p>\n<h2>Next step</h2><p><a href=\"article.html?id=faq-art-51000359276\">Change the QR code size, colour or position on a display</a></p><h2>Related</h2><ul><li><a href=\"article.html?id=faq-art-51000360798\">Enable QR Control on a display</a></li><li><a href=\"article.html?id=faq-art-51000359234\">Update a campaign's interaction settings</a></li><li><a href=\"article.html?id=faq-art-51000359638\">Choose which campaigns appear in the campaign carousel</a></li><li><a href=\"article.html?id=faq-art-51000360012\">Let a visitor join the queue by scanning a QR code on a display</a></li></ul>"
+}

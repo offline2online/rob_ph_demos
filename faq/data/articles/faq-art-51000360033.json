@@ -1,0 +1,25 @@
+{
+"id": "faq-art-51000360033",
+"categoryId": "faq-cat-queue-setup",
+"order": 5,
+"title": "SMS and email messages sent to visitors",
+"slug": "sms-and-email-messages-sent-to-visitors",
+"summary": "The 13 SMS and 7 email templates the platform sends to queue and appointment visitors, when each is sent, and how to turn one on or off.",
+"keywords": [
+"sms",
+"text message",
+"email",
+"notifications",
+"templates",
+"join the queue",
+"it's your turn",
+"lost your spot",
+"shared settings",
+"enable sms"
+],
+"docType": "reference",
+"status": "published",
+"updatedAt": "2026-09-14T12:12:16Z",
+"contentHash": "f492ec13b8a5391b",
+"bodyMd": "<p>The platform sends SMS and email messages to visitors about their place in the queue and their appointments. Messages go out through AWS SES from the sender set in <a href=\"article.html?id=faq-art-51000360036\">Update the platform's SMS sender ID</a>. The templates are listed under <strong>Platform Admin → Enabled Features → Queueing / Appointments → Shared Settings</strong>, each with an <strong>SMS Enabled</strong> or <strong>Email Enabled</strong> toggle.</p>\n<h2>Queueing SMS messages</h2>\n<div class=\"faq-table\"><table><thead><tr><th>Template</th><th>Sent when</th><th>Default text</th></tr></thead><tbody>\n<tr><td><strong>Queueing - Join the Queue</strong></td><td>A visitor joins the queue with a mobile number and <strong>Send SMS to Visitor</strong> ticked</td><td>Hi ${VisitorFirstName}, You've joined the Queue at ${BrandName} ${StoreName}. To track your progress click the link below ${UniqueQueueURL}</td></tr>\n<tr><td><strong>Queueing- It's Your Turn</strong></td><td>A staff member picks the visitor up from the queue</td><td>Hi ${VisitorFirstName}, It's your turn! ${StaffFirstName} will be helping you today &amp; is currently looking for you. Your Ticket Number is ${QueueTicketNumber}</td></tr>\n<tr><td><strong>Queueing - Lost Your Spot</strong></td><td>The visitor is flagged as a no-show</td><td>Hi ${VisitorFirstName}, Unfortunately you've lost your spot in the Queue.</td></tr>\n</tbody></table></div>\n<h2>Appointment SMS messages</h2>\n<p>The 10 appointment SMS templates are <strong>Appointments - Click Link to Confirm</strong>, <strong>Confirmation</strong>, <strong>Reminder</strong>, <strong>Check In</strong>, <strong>Picked up by Staff</strong>, <strong>Updated by Staff</strong>, <strong>Rescheduled</strong>, <strong>No Show</strong>, <strong>Cancelled</strong> and <strong>Click &amp; Collect</strong>. When each is sent, and the settings that control timing (reminder hours, confirmation window, retries), are in <a href=\"article.html?id=faq-art-appointment-messages\">Appointment SMS and email notifications</a>.</p>\n<h2>Email messages</h2>\n<p>All 7 email templates relate to appointments: <strong>Appointments - Click Link to Confirm</strong>, <strong>Confirmation</strong>, <strong>Reminder</strong>, <strong>Updated by Staff</strong>, <strong>Rescheduled</strong>, <strong>Cancelled</strong> and <strong>Click &amp; Collect</strong>. No email is sent for queueing events. See <a href=\"article.html?id=faq-art-appointment-messages\">Appointment SMS and email notifications</a>.</p>\n<h2>Tokens</h2>\n<div class=\"faq-table\"><table><thead><tr><th>Token</th><th>Replaced with</th></tr></thead><tbody>\n<tr><td><code>${VisitorFirstName}</code></td><td>The visitor's first name as entered when joining</td></tr>\n<tr><td><code>${BrandName}</code></td><td>The <strong>Brand Name</strong> from <strong>Company Settings → Brand / Logo / Guidelines</strong></td></tr>\n<tr><td><code>${StoreName}</code></td><td>The store's name</td></tr>\n<tr><td><code>${UniqueQueueURL}</code></td><td>A link the visitor opens to track their place in the queue</td></tr>\n<tr><td><code>${StaffFirstName}</code></td><td>The first name of the staff member who picked the visitor up</td></tr>\n<tr><td><code>${QueueTicketNumber}</code></td><td>The visitor's ticket number</td></tr>\n</tbody></table></div>\n<h2>Turning a message on or off</h2>\n<p>On the <strong>Shared Settings</strong> tab, use the <strong>SMS Enabled</strong> toggle in the SMS template table, or <strong>Email Enabled</strong> in the email template table, for the template concerned. The tables also show <strong>Last Updated</strong> and <strong>Number of Characters</strong> for each template.</p>\n<div class=\"callout callout-note\">The message text itself cannot be edited in HQ Admin. To change the wording of any SMS or email, contact Personalisation Hub support — see <a href=\"article.html?id=faq-art-get-support\">How do I get support?</a>.</div>\n<h2>Related</h2><ul><li><a href=\"article.html?id=faq-art-51000360036\">Update the platform's SMS sender ID</a></li><li><a href=\"article.html?id=faq-art-51000483994\">SMS messages are not sent or arrive as UNVERIFIED</a></li><li><a href=\"article.html?id=faq-art-appointment-messages\">Appointment SMS and email notifications</a></li><li><a href=\"article.html?id=faq-art-51000358424\">Add a visitor to the queue manually</a></li><li><a href=\"article.html?id=faq-art-51000359918\">Pick up a visitor from the queue</a></li></ul>"
+}

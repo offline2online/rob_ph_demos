@@ -885,14 +885,21 @@ model" below) should be set honestly per that file's §2, not left at its
 default.
 
 - **Public site**: repo-root `faq/` (outside `backlog-tracker/` entirely —
-  it's a plain static site published via GitHub Pages like the rest of
-  `rob_ph_demos`, not Firebase Hosting). Front page with search + category
-  grid, a category page listing its articles, an article page, and a full
-  search-results page — modeled on
-  <https://help.personalisationhub.com/support/home> (that URL is itself
-  blocked by this sandbox's network egress policy, so it couldn't be read
-  directly — the real content was instead sourced from a Freshdesk export
-  already sitting in Google Drive, see "Seeding" below).
+  a plain static site published via GitHub Pages, not Firebase Hosting).
+  Since the September 2026 rewrite it renders a **static snapshot in
+  `faq/data/`** rather than reading Firestore with the SDK: front page +
+  category grid in new-customer order, category pages with folders,
+  article pages (table of contents, previous/next, freshness check against
+  Firestore's REST API), search. `.github/workflows/faq-content.yml`
+  exports Firestore → `faq/data` hourly/on demand and syncs `faq/data` →
+  Firestore on push (`scripts/faq-export.js`, `scripts/faq-sync.js`). See
+  `faq/README.md` and `docs/faq-audit-2026-09.md`.
+- **Sign-in to edit**: writes to `faqCategories`/`faqArticles` require a
+  signed-in Google account on the allowlist in `firestore.rules`
+  (`isFaqEditor`); the FAQ pages show a "Sign in with Google" bar and every
+  save/reorder/delete goes through `requireFaqEditor()` in `app.js`. The
+  Google provider must be enabled once under Authentication → Sign-in
+  method in the Firebase console. The rest of the board is unchanged.
 - **Admin**: two separate hamburger-menu destinations, **Settings**
   (categories — name, icon picked from a curated dropdown with a live
   preview, description, display order) and **FAQ Management** (articles —
@@ -1000,10 +1007,12 @@ default.
 
 ## What's deliberately not built yet
 
-- **No auth.** `firestore.rules` is open read/write, same permissive
-  starting posture the rest of this repo's prototypes use — fine for an
-  internal team tool, not for anything public. Add Firebase Auth + rules
-  scoped to signed-in users before that changes.
+- **No auth on the board itself.** `firestore.rules` is open read/write
+  for the backlog collections, same permissive starting posture the rest of
+  this repo's prototypes use — fine for an internal team tool. The two
+  public-facing FAQ collections are the exception (see "FAQ / Help Center"
+  → "Sign-in to edit"); extend the same `request.auth` gating to the rest
+  before the board itself is exposed beyond the team.
 - **No drag-and-drop.** Multi-project and an archive page (per-project
   "Archived (N)" button → sortable/filterable table, with a Restore
   action) have both since been ported over from the Artifact board;

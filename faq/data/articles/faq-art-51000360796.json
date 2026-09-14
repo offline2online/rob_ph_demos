@@ -1,0 +1,24 @@
+{
+"id": "faq-art-51000360796",
+"categoryId": "faq-cat-devices-manage",
+"order": 14,
+"title": "Find all the identifiers for a display",
+"slug": "find-all-the-identifiers-for-a-display",
+"summary": "Open a display's Display Details tab to copy its Asset ID, serial number, IP address, device ID, make and model for troubleshooting in other systems.",
+"keywords": [
+"asset id",
+"serial number",
+"unique device id",
+"public ip address",
+"device id",
+"identifiers",
+"mdm",
+"cdm",
+"display details"
+],
+"docType": "how-to",
+"status": "published",
+"updatedAt": "2026-09-14T12:12:16Z",
+"contentHash": "1cbae0af47eeac9c",
+"bodyMd": "<p>Personalisation Hub keeps every identifier you might need to troubleshoot a display in your MDM/CDM, your network allow-list or a third-party retail system, all on the display's <strong>Display Details</strong> tab. Allow about 1 minute.</p>\n<h2>Before you begin</h2>\n<ul><li>An HQ Admin account. In Retail Admin, store staff can see the <strong>Asset ID</strong> and <strong>Device Serial Number</strong> for their own store's displays.</li></ul>\n<h2>Steps</h2>\n<ol>\n<li>In the left navigation, select <strong>Displays &amp; Devices</strong>.</li>\n<li>Select the display's <strong>Name</strong>, for example <em>Branch Entrance</em>. The <strong>Display Details</strong> tab opens.</li>\n<li>Scroll down to the read-only identifier fields.</li>\n<li>Copy the value you need into the system you are troubleshooting.</li>\n</ol>\n<h2>Identifiers</h2>\n<div class=\"faq-table\"><table><thead><tr><th>Field</th><th>Meaning</th><th>Used in</th></tr></thead><tbody>\n<tr><td><strong>Asset ID</strong></td><td>The device's asset identifier</td><td>MDM/CDM, to manage the device remotely</td></tr>\n<tr><td><strong>Unique Device ID</strong></td><td>The identifier the platform assigns to the device</td><td>Third-party retail systems that authenticate devices, for example store music</td></tr>\n<tr><td><strong>Public IP Address</strong></td><td>The store's public IP address the device connects from</td><td>Validating IP allow-lists and diagnosing connectivity</td></tr>\n<tr><td><strong>Device Serial Number</strong></td><td>The hardware serial number</td><td>MDM/CDM and hardware support</td></tr>\n<tr><td><strong>Display Resolution</strong></td><td>Width x height in pixels, from the display type</td><td>Checking creative and display type match</td></tr>\n<tr><td><strong>Device Make</strong>, <strong>Device Model</strong></td><td>Reported by the device</td><td>Hardware support</td></tr>\n</tbody></table></div>\n<p></p>\n<h2>Verify it worked</h2>\n<p>The identifier you copied matches the device in the other system, for example the same serial number in your MDM/CDM device list.</p>\n<h2>Related</h2>\n<ul>\n<li><a href=\"article.html?id=faq-art-51000360577\">View a display's log history</a></li>\n<li><a href=\"article.html?id=faq-art-51000463209\">Step 7 — Restrict platform access by IP address</a></li>\n<li><a href=\"article.html?id=faq-art-51000343747\">ChromeOS: register a Chromebox with Google CDM and assign your kiosk app</a></li>\n</ul>"
+}

@@ -1,0 +1,91 @@
+name: FAQ content
+
+# Keeps the public help centre (repo-root faq/, served by GitHub Pages from
+# the static snapshot in faq/data/) and Firestore (where the admin console
+# edits content) in step, in both directions:
+#
+#   sync   — repo → Firestore. Runs when faq/data/** changes on main
+#            (content authored or bulk-edited in git). Safe upserts only;
+#            see backlog-tracker/scripts/faq-sync.js for the conflict rules.
+#   export — Firestore → repo. Runs hourly and on demand ("Run workflow").
+#            Regenerates faq/data from Firestore and commits it if anything
+#            changed, which is what publishes a console edit to the site.
+#            (Article pages also pull a newer revision live from Firestore,
+#            so a single edited article is visible before the export runs.)
+#
+# Both need the FIREBASE_SERVICE_ACCOUNT_BACKLOG_TRACKER repo secret the
+# deploy workflow already uses.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'faq/data/**'
+  schedule:
+    - cron: '17 * * * *'
+  workflow_dispatch:
+    inputs:
+      direction:
+        description: 'sync (repo → Firestore) or export (Firestore → repo)'
+        default: 'export'
+        type: choice
+        options: [export, sync]
+      force:
+        description: 'sync only: overwrite articles edited in the console since the last sync'
+        default: false
+        type: boolean
+
+concurrency:
+  group: faq-content
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.direction == 'sync')
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backlog-tracker/scripts
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm install
+      - name: Write Firebase service account key
+        run: echo '${{ secrets.FIREBASE_SERVICE_ACCOUNT_BACKLOG_TRACKER }}' > "$RUNNER_TEMP/firebase-sa.json"
+      - name: Sync faq/data → Firestore
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/firebase-sa.json
+        run: node faq-sync.js ${{ inputs.force && '--force' || '' }}
+
+  export:
+    if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.direction == 'export')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm install
+        working-directory: backlog-tracker/scripts
+      - name: Write Firebase service account key
+        run: echo '${{ secrets.FIREBASE_SERVICE_ACCOUNT_BACKLOG_TRACKER }}' > "$RUNNER_TEMP/firebase-sa.json"
+      - name: Export Firestore → faq/data
+        working-directory: backlog-tracker/scripts
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/firebase-sa.json
+        run: node faq-export.js
+      - name: Commit snapshot if it changed
+        run: |
+          git add faq/data
+          if git diff --cached --quiet; then
+            echo "No content changes."
+            exit 0
+          fi
+          git config user.name "faq-content bot"
+          git config user.email "faq-content@users.noreply.github.com"
+          git commit -m "Export help-centre content from Firestore"
+          git push

@@ -1,0 +1,24 @@
+{
+"id": "faq-art-51000326290",
+"categoryId": "faq-cat-company-setup",
+"order": 8,
+"title": "I see an Access Denied error",
+"slug": "i-see-an-access-denied-error",
+"summary": "An Access Denied page means your IP address is blocked, either by the platform's IP restrictions or by your organisation's CDN. Here is how to tell which and fix it.",
+"keywords": [
+"access denied",
+"blocked",
+"ip address",
+"ip restrictions",
+"whitelist",
+"cdn",
+"akamai",
+"cloudfront",
+"cannot access"
+],
+"docType": "faq",
+"status": "published",
+"updatedAt": "2026-09-14T12:12:16Z",
+"contentHash": "1abd8d87c7ffe062",
+"bodyMd": "<p>Access Denied means the network address you are connecting from is not allowed to reach the platform. There are 2 possible sources of the block, and the error page tells you which.</p>\n<h3>The error shows a reference number</h3>\n<p><strong>Cause.</strong> Your organisation's CDN (for example Akamai or CloudFront) blocked the request, typically through a geo-fencing or firewall rule.</p>\n<p><strong>Fix.</strong> Copy the reference number from the page and send it to your CDN team so they can identify the rule.</p>\n<h3>The error shows no reference number</h3>\n<p><strong>Cause.</strong> The platform's own IP restrictions under <strong>Platform Admin → Security (IP Restrictions)</strong> do not include your current IP address — for example you are working from home or on mobile data rather than the office network or VPN.</p>\n<p><strong>Fix.</strong> Search the web for \"what's my IP address\", copy the result and send it to your Platform Admin. They add it under <strong>Security (IP Restrictions)</strong> with <strong>Add New IP Address</strong>, in CIDR form.</p>\n<p>If you are the Platform Admin and have locked yourself out, connect from an address that is still allowed (such as the office network) to add the new one. See <a href=\"article.html?id=faq-art-51000463209\">Step 7 — Restrict platform access by IP address</a>.</p>\n<h2>Related</h2>\n<ul><li><a href=\"article.html?id=faq-art-51000363270\">I can't sign in to the platform</a></li><li><a href=\"article.html?id=faq-art-security-and-data\">Where is my data stored and how is the platform secured?</a></li><li><a href=\"article.html?id=faq-art-troubleshooting-index\">Troubleshooting index</a></li></ul>"
+}

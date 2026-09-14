@@ -396,6 +396,7 @@
     </section>
 
     <section class="faq-admin-page faq-editor-page" id="faq-article-editor-page" hidden>
+      <div class="faq-auth-bar" data-faq-auth></div>
       <div class="docs-page-header">
         <h2 id="fa-title">New article</h2>
         <div class="form-actions">
@@ -474,6 +475,7 @@
       <div class="docs-page-header">
         <h2>Settings — FAQ / Help Center</h2>
       </div>
+      <div class="faq-auth-bar" data-faq-auth></div>
       <p class="field-hint">
         Consumer-facing site: <code>faq/</code> at the repo root (published via GitHub Pages once
         merged to <code>main</code>). Categories are shown on that site's front page and category
@@ -510,9 +512,11 @@
       <div class="docs-page-header">
         <h2>FAQ Management — <span id="faq-admin-count">0 published</span></h2>
       </div>
+      <div class="faq-auth-bar" data-faq-auth></div>
       <p class="field-hint">
-        Consumer-facing site: <code>faq/</code> at the repo root (published via GitHub Pages once
-        merged to <code>main</code>). Only <strong>Published</strong> articles appear there.
+        Consumer-facing site: <code>faq/</code> at the repo root (GitHub Pages). Only <strong>Published</strong> articles appear there.
+        Edits save to Firestore immediately; the public site's static snapshot is refreshed by the
+        "FAQ content" GitHub Action (hourly, or run it on demand), and each article page also checks Firestore for a newer revision on load.
         Manage categories from <strong>Settings</strong> in the hamburger menu.
       </p>
 

@@ -1,0 +1,24 @@
+{
+"id": "faq-art-proximity-mist",
+"categoryId": "faq-cat-personalisation-ai",
+"order": 11,
+"title": "Enable proximity personalisation with MIST",
+"slug": "enable-proximity-personalisation-with-mist",
+"summary": "Connect your Juniper MIST account, map stores to MIST sites and displays to zones, so displays personalise as a visitor's phone enters a zone.",
+"keywords": [
+"mist",
+"proximity",
+"juniper mist",
+"virtual beacon",
+"vbeacon",
+"zone",
+"ble",
+"proximity personalisation",
+"enabled features"
+],
+"docType": "how-to",
+"status": "published",
+"updatedAt": "2026-09-14T12:12:16Z",
+"contentHash": "3e76429aa01c663d",
+"bodyMd": "<p>With MIST connected, a display changes what it plays as a known visitor's phone enters a zone or comes within range of a virtual beacon. Set-up has 3 parts: connect your MIST account at platform level, map each store to its MIST site, and map each display to a zone or virtual beacon.</p>\n<h2>Before you begin</h2>\n<ul><li>An HQ Admin account with the Admin role.</li><li>MIST (virtual BLE) access points deployed in the stores, with sites, zones or virtual beacons defined in your MIST organisation.</li><li>Your MIST organisation ID and an API token from your MIST account.</li></ul>\n<h2>Connect your MIST account</h2>\n<ol>\n<li>In the left navigation, select <strong>Platform Admin</strong>.</li>\n<li>Under <strong>Enabled Features</strong>, select <strong>MIST (Proximity)</strong>.</li>\n<li>Set <strong>Enabling MIST allows Brands to support Proximity based Personalisation in Stores / Locations</strong> to on.</li>\n<li>Under <strong>ADD YOUR MIST ACCOUNT CREDENTIALS BELOW</strong>, enter your <strong>MIST Organi&#122;ation ID</strong>.</li>\n<li>Enter your <strong>API Token</strong>.</li>\n<li>If you need to limit or extend what the platform pulls from MIST, expand <strong>Advanced Configuration</strong>.\n<p>Here you set the <strong>API Limit</strong>, choose the <strong>Topics</strong> to subscribe to (Zone, Virtual Beacon, RSSI Zone, Device Events, Alarms), choose which MIST objects to <strong>Whitelist</strong> (site clients, WLANs, detail, org sites, maps, zones, vBeacons, beacons, devices), and set <strong>Fetch Data Periodically</strong>.</p></li>\n<li>Select <strong>Save Changes</strong>.</li>\n</ol>\n<h2>Map each store to its MIST site</h2>\n<ol>\n<li>In the left navigation, select <strong>Stores / Branches</strong>, then select the store's name.</li>\n<li>On the <strong>Store Details</strong> tab, in <strong>MIST Site ID</strong>, choose the MIST site for that store.</li>\n<li>Select <strong>Save Changes</strong>.</li>\n</ol>\n<h2>Map each display to a zone or virtual beacon</h2>\n<ol>\n<li>In the left navigation, select <strong>Displays &amp; Devices</strong>, then select the display's name.</li>\n<li>Select the <strong>Enabled Features</strong> tab.</li>\n<li>Tick <strong>Enable Proximity based Personalisation (using MIST)</strong>.</li>\n<li>Choose <strong>Zone</strong> or <strong>vBeacon</strong>.</li>\n<li>In the select that appears, choose the zone or virtual beacon the display sits in, for example <code>Welcome Zone</code>.</li>\n<li>Select <strong>Save Changes</strong>.</li>\n</ol>\n<div class=\"callout callout-note\">The MIST site list only populates after the platform has fetched data from MIST. If <strong>MIST Site ID</strong> is empty, check the credentials on the <strong>MIST (Proximity)</strong> page and that <strong>Org Sites</strong> is whitelisted.</div>\n\n<h2>Verify it worked</h2>\n<p>In <strong>Displays &amp; Devices</strong>, the display's <strong>Enabled Features</strong> column shows the proximity icon. Walk into the zone with a phone that is known to the platform: the display switches from its rotation to the campaign personalised for that visitor, and returns to rotation when the phone leaves.</p>\n<h2>Next step</h2><p><a href=\"article.html?id=faq-art-cv-privacy\">Does computer vision store images of shoppers?</a></p><h2>Related</h2><ul><li><a href=\"article.html?id=faq-art-51000359022\">What are triggered campaigns?</a></li><li><a href=\"article.html?id=faq-art-51000359610\">Assign a different mobile site template to a store, display or zone</a></li><li><a href=\"article.html?id=faq-art-51000360798\">Enable QR Control on a display</a></li></ul>"
+}

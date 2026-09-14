@@ -1,0 +1,22 @@
+{
+"id": "faq-art-faq-install-overview",
+"categoryId": "faq-cat-install-steps",
+"order": 1,
+"title": "Install Personalisation Hub from AWS Marketplace",
+"slug": "install-personalisation-hub-from-aws-marketplace",
+"summary": "Deploy Personalisation Hub into your own AWS account in six stages — a little over an hour end to end, with about 7 minutes of hands-on set-up.",
+"keywords": [
+"install",
+"installation",
+"aws marketplace",
+"cloudformation",
+"deploy",
+"set-up",
+"getting started"
+],
+"docType": "how-to",
+"status": "published",
+"updatedAt": "2026-09-14T12:12:16Z",
+"contentHash": "ed81b568df7aedfd",
+"bodyMd": "<p>Personalisation Hub installs into your own AWS account from AWS Marketplace. The whole process takes a little over an hour, of which roughly 7 minutes is hands-on — the rest is AWS building the stack and installing the platform.</p>\n<p>This page is the map. Each stage has its own article with the detail.</p>\n<h2>Before you begin</h2>\n<ul><li>An AWS account, with permission to subscribe to Marketplace products and create CloudFormation stacks that include IAM resources.</li><li>The decisions and assets in the <a href=\"article.html?id=faq-art-51000290582\">pre-installation check-list</a>, agreed with your IT team.</li><li>Someone who can add DNS records for your domain within 3 days of installation finishing.</li></ul>\n<h2>The six stages</h2>\n<div class=\"faq-table\"><table><thead><tr><th>Stage</th><th>What happens</th><th>Hands-on</th><th>Waiting</th></tr></thead><tbody><tr><td>1. Subscribe</td><td>Subscribe in AWS Marketplace and launch the CloudFormation template</td><td>~1 min</td><td>&mdash;</td></tr><tr><td>2. Create the stack</td><td>Set the stack parameters and submit</td><td>~3 min</td><td>~4 min</td></tr><tr><td>3. Master Admin account</td><td>Open the Installation Wizard and create the account</td><td>~1 min</td><td>&mdash;</td></tr><tr><td>4. Install</td><td>Choose environment, size and platform domain, then install</td><td>~1 min</td><td>~55 min</td></tr><tr><td>5. DNS</td><td>Add 2 CNAME records and verify the domain</td><td>Your DNS team</td><td>Within 3 days</td></tr><tr><td>6. First login</td><td>Sign in and set a strong password</td><td>~1 min</td><td>&mdash;</td></tr></tbody></table></div>\n<h2>Follow the stages in order</h2>\n<ol><li><a href=\"article.html?id=faq-art-51000481977\">Step 1 — Deploy the platform through AWS Marketplace</a> — subscribe, launch, and create the CloudFormation stack.</li><li><a href=\"article.html?id=faq-art-51000462323\">Step 2 — Run the Installation Wizard</a> — create the Master Admin account and install the platform.</li><li><a href=\"article.html?id=faq-art-faq-dns-setup\">Step 3 — Set up DNS after installation</a> — add the CNAME records and verify your domain.</li><li><a href=\"article.html?id=faq-art-51000463143\">Step 4 — First login and platform set-up</a> — sign in and start configuring the platform.</li><li><a href=\"article.html?id=faq-art-51000360304\">Step 5 — Upload your brand, logos and icons</a>.</li><li><a href=\"article.html?id=faq-art-51000483547\">Step 6 — Add your stores from Google Places</a>.</li><li><a href=\"article.html?id=faq-art-51000463209\">Step 7 — Restrict platform access by IP address</a>.</li></ol>\n<div class=\"callout callout-important\">Two decisions in stage 4 are permanent: the platform domain, which must sit on your organisation's primary domain, and the AWS Region. Agree both before you start.</div>\n<h2>Verify it worked</h2>\n<p>Installation is complete when you can sign in at your platform domain (for example <code>ph.yourdomain.com</code>) with the Master Admin email address and your new password.</p>\n<h2>Next step</h2>\n<p><a href=\"article.html?id=faq-art-51000481977\">Step 1 — Deploy the platform through AWS Marketplace</a></p>\n<h2>Related</h2>\n<ul><li><a href=\"article.html?id=faq-art-51000290582\">Pre-installation checklist</a></li><li><a href=\"article.html?id=faq-art-51000496157\">AWS deployment: prerequisites</a></li><li><a href=\"article.html?id=faq-art-51000496158\">AWS deployment: architecture</a></li></ul>"
+}

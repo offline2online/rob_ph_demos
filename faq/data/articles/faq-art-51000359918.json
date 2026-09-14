@@ -1,0 +1,23 @@
+{
+"id": "faq-art-51000359918",
+"categoryId": "faq-cat-queue-manage",
+"order": 16,
+"title": "Pick up a visitor from the queue",
+"slug": "pick-up-a-visitor-from-the-queue",
+"summary": "Take the next visitor from the Waiting view, find them using the notes on their record, and start the visit so the timers and SMS fire.",
+"keywords": [
+"pick up",
+"next visitor",
+"waiting queue",
+"start serving",
+"looking for",
+"in progress",
+"retail admin",
+"serve visitor"
+],
+"docType": "how-to",
+"status": "published",
+"updatedAt": "2026-09-14T12:12:16Z",
+"contentHash": "3a29975491f21c87",
+"bodyMd": "<p>Any staff member can pick up any visitor from the <strong>Waiting</strong> view. Picking up sends the visitor an <em>It's your turn</em> SMS with your first name and their ticket number, sets your status to <strong>Serving Customers</strong>, and opens the visitor's details so you can find them.</p>\n<h2>Before you begin</h2>\n<ul><li>A Retail Admin sign-in for your store — see <a href=\"article.html?id=faq-art-51000358534\">Sign in to the Retail Admin site (no SAML/SSO)</a>, or use single sign-on if your organisation has <a href=\"article.html?id=faq-art-51000359801\">Integrate single sign-on (SAML) for store staff</a>.</li><li>Your status is <strong>Available</strong> — see <a href=\"article.html?id=faq-art-51000359879\">Manage your availability status</a>.</li></ul>\n<h2>Steps</h2>\n<ol>\n<li>In the left navigation of Retail Admin, select <strong>QUEUEING &amp; APPTS</strong>.</li>\n<li>In the <strong>Waiting</strong> view, on the visitor's card, select <strong>Pick up</strong>. The visitor's details page opens and the <em>Looking for</em> timer starts.</li>\n<li>Select the <em>Looking for</em> timer to read any additional information on the record, including the colour of the visitor's top.</li>\n<li>Find the visitor in the store.</li>\n<li>Select <strong>Start</strong>. The <em>In Progress</em> timer starts and the visitor moves to the <strong>In Progress</strong> view.</li>\n<li>Serve the visitor. Select any timer at any point to view the additional information again.</li>\n<li>When you have finished, complete the visit. </li>\n</ol>\n<div class=\"callout callout-note\">If <strong>Staff Max Visitor Wait Time</strong> passes before you find the visitor, they can be flagged as a no-show and receive the <em>Lost Your Spot</em> SMS — see <a href=\"article.html?id=faq-art-queue-settings-reference\">Queue settings reference</a>.</div>\n<h2>Verify it worked</h2>\n<p>Your chip in the STAFF row shows <strong>Serving Customers</strong> and the visitor's card sits in the <strong>In Progress</strong> view with a running timer. When you complete the visit, your status returns to <strong>Available</strong> and <strong>Total Served Today</strong> increases by 1.</p>\n<h2>Next step</h2><p><a href=\"article.html?id=faq-art-51000359919\">Place a visitor on hold</a></p>\n<h2>Related</h2><ul><li><a href=\"article.html?id=faq-art-51000360014\">Add additional information to a visitor in the queue</a></li><li><a href=\"article.html?id=faq-art-51000360017\">Copy a visitor's mobile number or email address</a></li><li><a href=\"article.html?id=faq-art-51000360027\">View a visitor's recent interactions and profile data</a></li><li><a href=\"article.html?id=faq-art-51000359919\">Place a visitor on hold</a></li><li><a href=\"article.html?id=faq-art-51000360033\">SMS and email messages sent to visitors</a></li></ul>"
+}

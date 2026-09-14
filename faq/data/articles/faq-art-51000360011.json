@@ -1,0 +1,22 @@
+{
+"id": "faq-art-51000360011",
+"categoryId": "faq-cat-queue-manage",
+"order": 14,
+"title": "Let a visitor join the queue by scanning the QR code on the staff tablet",
+"slug": "let-a-visitor-join-the-queue-by-scanning-the-qr-code-on-the-staff-tablet",
+"summary": "Show the join-the-queue QR code on the staff tablet so the visitor registers from their own phone, using their stored contact details.",
+"keywords": [
+"qr code",
+"scan",
+"staff tablet",
+"join the queue",
+"self registration",
+"visitor phone",
+"add visitor to queue"
+],
+"docType": "how-to",
+"status": "published",
+"updatedAt": "2026-09-14T12:12:16Z",
+"contentHash": "ff840d1b83169c23",
+"bodyMd": "<p>Instead of typing a visitor's details, show them the QR code on the staff tablet. They scan it and complete the join form on their own phone, using the contact details stored on their device. Because the visitor joins from their own device, later in-store interactions can be linked to their profile.</p>\n<h2>Before you begin</h2>\n<ul><li>A Retail Admin sign-in for your store — see <a href=\"article.html?id=faq-art-51000358534\">Sign in to the Retail Admin site (no SAML/SSO)</a>, or use single sign-on if your organisation has <a href=\"article.html?id=faq-art-51000359801\">Integrate single sign-on (SAML) for store staff</a>.</li><li>Virtual queueing is enabled for the platform and for your store — see <a href=\"article.html?id=faq-art-51000359765\">Enable virtual store queueing</a>.</li></ul>\n<h2>Steps</h2>\n<ol>\n<li>In the left navigation of Retail Admin, select <strong>QUEUEING &amp; APPTS</strong>.</li>\n<li>Select <strong>Add Visitor to Queue</strong>. A dialog opens with the text <em>Ask the Store Visitor to Scan the following QR Code &amp; fill in the required info using their own Mobile Device</em> and a QR code.</li>\n<li>Turn the tablet towards the visitor and ask them to scan the code with their phone camera.</li>\n<li>The visitor completes the join form on their phone, including their reason for visit.</li>\n<li>Select <strong>Close</strong> to dismiss the dialog.</li>\n<li>If useful, add context to the visitor's record — see <a href=\"article.html?id=faq-art-51000360014\">Add additional information to a visitor in the queue</a>.</li>\n</ol>\n<h2>Verify it worked</h2>\n<p>The visitor's card appears in the <strong>Waiting</strong> view, and the visitor's phone shows their place in the queue.</p>\n<h2>Troubleshooting</h2>\n<h3>The visitor's phone cannot open the link</h3>\n<p><strong>Cause.</strong> The phone has no mobile data or Wi-Fi connection.</p>\n<p><strong>Fix.</strong> Connect the visitor to store Wi-Fi, or add them with <a href=\"article.html?id=faq-art-51000358424\">Add a visitor to the queue manually</a>.</p>\n<h2>Next step</h2><p><a href=\"article.html?id=faq-art-51000360012\">Let a visitor join the queue by scanning a QR code on a display</a></p>\n<h2>Related</h2><ul><li><a href=\"article.html?id=faq-art-51000358424\">Add a visitor to the queue manually</a></li><li><a href=\"article.html?id=faq-art-51000360012\">Let a visitor join the queue by scanning a QR code on a display</a></li><li><a href=\"article.html?id=faq-art-51000359918\">Pick up a visitor from the queue</a></li><li><a href=\"article.html?id=faq-art-51000360027\">View a visitor's recent interactions and profile data</a></li></ul>"
+}

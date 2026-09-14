@@ -1,0 +1,24 @@
+{
+"id": "faq-art-51000290749",
+"categoryId": "faq-cat-3rd-party-guides",
+"order": 4,
+"title": "Create API authentication credentials for an integration",
+"slug": "create-api-authentication-credentials-for-an-integration",
+"summary": "Create a Secret/Token under Platform Admin → API Authentication for each third-party platform that connects to Personalisation Hub.",
+"keywords": [
+"api authentication",
+"secret token",
+"api key",
+"add new platform",
+"integration credentials",
+"connect third party",
+"aem",
+"kiosk player",
+"visitor api"
+],
+"docType": "how-to",
+"status": "published",
+"updatedAt": "2026-09-14T12:12:16Z",
+"contentHash": "fde8de168222ca99",
+"bodyMd": "<p>Every external platform or system that talks to Personalisation Hub — Google Business Profile, Adobe Experience Manager (AEM), kiosk players, your mobile app through the Visitor API — authenticates with its own Secret/Token. Create one per integration under <strong>API Authentication</strong>. Allow about 2 minutes per token.</p>\n<h2>Before you begin</h2>\n<ul><li>An HQ Admin account with the Admin role.</li><li>A list of the external platforms you plan to connect. If you intend to connect several, create all their tokens now.</li></ul>\n<h2>Steps</h2>\n<ol>\n<li>In the left navigation, select <strong>Platform Admin</strong>.</li>\n<li>Under <strong>Enabled Features</strong>, select <strong>API Authentication</strong>.</li>\n<li>Select <strong>Add New Platform</strong>.</li>\n<li>In <strong>Platform Name</strong>, enter a descriptive name — for example <code>Google Business Profile</code> or <code>AEM &amp; Kiosk Players</code>.</li>\n<li>Select the copy icon next to the generated <strong>Secret/Token</strong> and store the value somewhere secure, such as your organisation's password manager.</li>\n<li>Select <strong>Save</strong>.</li>\n</ol>\n<div class=\"callout callout-important\">Do not delete the row named <strong>Digital Signage (Do Not Delete)</strong>. The platform's own displays authenticate with it.</div>\n<h2>Verify it worked</h2>\n<p>The table lists your new <strong>Platform Name</strong> with its <strong>Secret/Token</strong> masked, the eye icon reveals the value, and the count of <strong>Connected Platforms / Systems</strong> at the top of the page has increased by 1.</p>\n<h2>Remove a token</h2>\n<p>To revoke an integration's access, select the trash icon on its row. Any system still using that token loses access immediately.</p>\n<h2>Next step</h2>\n<p><a href=\"article.html?id=faq-art-51000290793\">Back up your Google Business Profile data</a> — if you are connecting Google Business Profile.</p>\n<h2>Related</h2>\n<ul><li><a href=\"article.html?id=faq-art-51000290792\">Connect the platform to Google Business Profile</a></li><li><a href=\"article.html?id=faq-art-51000361042\">Connect your mobile app or third-party system to the Visitor API</a></li><li><a href=\"article.html?id=faq-art-company-settings-overview\">Company Settings and Platform Admin explained</a></li></ul>"
+}

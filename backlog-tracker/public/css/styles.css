@@ -883,3 +883,8 @@ textarea.dialog-field-input { resize: vertical; min-height: 70px; }
 .ql-snow .ql-picker.ql-callout .ql-picker-label[data-value="note"]::before { content: "Note"; }
 .ql-snow .ql-picker.ql-callout .ql-picker-label[data-value="important"]::before { content: "Important"; }
 .ql-snow .ql-picker.ql-callout .ql-picker-label[data-value="warning"]::before { content: "Warning"; }
+
+/* FAQ editor sign-in bar (faqCategories/faqArticles writes require a
+   signed-in allowlisted Google account — see firestore.rules isFaqEditor) */
+.faq-auth-bar { display: flex; align-items: center; justify-content: flex-end; gap: 10px; font-size: 12.5px; color: #5b6b7a; margin: 0 0 8px; }
+.faq-auth-bar .btn-small { padding: 4px 10px; font-size: 12px; }

@@ -1,0 +1,23 @@
+{
+"id": "faq-art-51000363519",
+"categoryId": "faq-cat-store-sites",
+"order": 9,
+"title": "Personalise a visitor's store experience",
+"slug": "personalise-a-visitors-store-experience",
+"summary": "Give visitors a different mobile site menu and campaigns in each zone of a store by creating zone templates and assigning them to the displays there.",
+"keywords": [
+"personalise",
+"store zones",
+"zone template",
+"in-store experience",
+"mobile site template",
+"qr control",
+"campaign carousel",
+"store entrance"
+],
+"docType": "how-to",
+"status": "published",
+"updatedAt": "2026-09-14T12:12:16Z",
+"contentHash": "c68bb416f2f9006f",
+"bodyMd": "<p>Visitors can get a different mobile site in each part of a store: one menu at the entrance, another in the gaming zone, another at the concierge. You do this by creating a template per zone, assigning it to the displays in that zone, and choosing which campaigns each template's carousel shows. Allow about 30 minutes for a store with 3 zones.</p>\n<h2>Before you begin</h2>\n<ul><li>Each zone has at least 1 display registered to the store, with QR Control enabled. See <a href=\"article.html?id=faq-art-51000360798\">Enable QR Control on a display</a>.</li><li>The default template is defined. See <a href=\"article.html?id=faq-art-51000359492\">Define your default mobile site template</a>.</li></ul>\n<h2>Steps</h2>\n<ol>\n<li>List the zones and what a visitor in each zone needs, for example <code>Store Entrance</code>: join the queue and store hours; <code>Gaming Zone</code>: product pages and offers.</li>\n<li>For each zone, create a template with those menu items, following <a href=\"article.html?id=faq-art-51000359590\">Create a mobile site template for a concierge kiosk</a>. Give a zone template more than 1 menu item unless you want visitors redirected straight to a single URL.</li>\n<li>For each display in the zone, assign the zone's template under <strong>Enabled Features &rarr; QR Control - Mobile Site Template</strong>, following <a href=\"article.html?id=faq-art-51000359610\">Assign a different mobile site template to a store, display or zone</a>. Rename the display after its zone so it is easy to find later.</li>\n<li>For each campaign that belongs in a zone, open its <strong>Campaign Brief</strong>, switch the <strong>Store Sites</strong> touch-point on and choose that zone's template in <strong>Mobile Site Template(s)</strong>. See <a href=\"article.html?id=faq-art-51000359638\">Choose which campaigns appear in the campaign carousel</a>.</li>\n<li>Give each campaign an onsite banner and call to action, following <a href=\"article.html?id=faq-art-51000359680\">Create a call to action for on-rotation campaigns</a>.</li>\n<li>Walk the store and scan the QR code on a display in each zone.</li>\n</ol>\n<div class=\"callout callout-note\">Triggered campaigns let the visitor control what plays on the display they scanned. See <a href=\"article.html?id=faq-art-51000359022\">What are triggered campaigns?</a></div>\n<h2>Verify it worked</h2>\n<p>Scanning a display in each zone opens a site with that zone's header, menu items and campaign carousel, and scanning the store's own QR code still opens the store's template. Staff can see what each visitor engaged with under <a href=\"article.html?id=faq-art-51000360027\">View recent interactions and customer profile data</a>.</p>\n<h2>Next step</h2>\n<p><a href=\"article.html?id=faq-art-51000359556\">Test your mobile site</a></p>\n<h2>Related</h2>\n<ul><li><a href=\"article.html?id=faq-art-51000359321\">Why create a mobile site for your stores?</a></li><li><a href=\"article.html?id=faq-art-51000360011\">Let a visitor join the queue by scanning the QR code on the staff tablet</a></li><li><a href=\"article.html?id=faq-art-51000363265\">Set up a dedicated concierge display or kiosk</a></li></ul>"
+}

@@ -1,0 +1,23 @@
+{
+"id": "faq-art-51000359610",
+"categoryId": "faq-cat-store-sites",
+"order": 5,
+"title": "Assign a different mobile site template to a store, display or zone",
+"slug": "assign-a-different-mobile-site-template-to-a-store-display-or-zone",
+"summary": "Give a store its own mobile site template, or assign a template to the displays in a zone so the menu changes with the visitor's location.",
+"keywords": [
+"assign template",
+"mobile site template",
+"store",
+"display",
+"zone",
+"qr control mobile site template",
+"enabled features",
+"store details"
+],
+"docType": "how-to",
+"status": "published",
+"updatedAt": "2026-09-14T12:12:16Z",
+"contentHash": "da756913b2471856",
+"bodyMd": "<p>Different stores, and different zones inside a store, can show different menus. Assign a template to a store to change what visitors see from that store's QR code, or assign a template to the displays in a zone to change what visitors see when they scan a display there.</p>\n<h2>Before you begin</h2>\n<ul><li>The template you want to assign exists. See <a href=\"article.html?id=faq-art-51000359590\">Create a mobile site template for a concierge kiosk</a> for how to create one.</li><li>For a display, QR Control is enabled on the platform. See <a href=\"article.html?id=faq-art-51000359275\">Enable QR Control and set the default QR code settings</a>.</li></ul>\n<h2>Assign a template to a store</h2>\n<ol>\n<li>In the left navigation, select <strong>Stores / Branches</strong>.</li>\n<li>Select the store's name, for example <strong>Sydney CBD</strong>.</li>\n<li>On the <strong>Store Details</strong> tab, in <strong>QR Control - Mobile Site Template</strong>, choose the template.</li>\n<li>Select <strong>Save Changes</strong>.</li>\n</ol>\n<h2>Assign a template to a display or zone</h2>\n<p>A zone is a set of displays. Repeat these steps for each display in the zone.</p>\n<ol>\n<li>In the left navigation, select <strong>Displays &amp; Devices</strong>.</li>\n<li>Select the display's name, for example <strong>Landscape-Single 2</strong>.</li>\n<li>If you want the name to reflect the zone, on the <strong>Display Details</strong> tab change <strong>Display Name</strong> to something like <code>Store Entrance</code>, then select <strong>Save Changes</strong>.</li>\n<li>Select the <strong>Enabled Features</strong> tab.</li>\n<li>Tick <strong>Enable QR Control</strong>, if it is not already ticked.</li>\n<li>In <strong>QR Control - Mobile Site Template</strong>, choose the template.</li>\n<li>Select <strong>Save Changes</strong>.</li>\n</ol>\n<h2>Verify it worked</h2>\n<p>The <strong>QR Control - Mobile Site Template</strong> field shows the new template after the page reloads. Scan the store's QR code or the display's QR code on a phone: the site shows the new template's header and menu items.</p>\n<h2>Next step</h2>\n<p><a href=\"article.html?id=faq-art-51000359638\">Choose which campaigns appear in the campaign carousel</a></p>\n<h2>Related</h2>\n<ul><li><a href=\"article.html?id=faq-art-51000363519\">Personalise a visitor's store experience</a></li><li><a href=\"article.html?id=faq-art-51000360798\">Enable QR Control on a display</a></li><li><a href=\"article.html?id=faq-art-51000359556\">Test your mobile site</a></li></ul>"
+}

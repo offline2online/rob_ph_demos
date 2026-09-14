@@ -85,33 +85,49 @@ service cloud.firestore {
       allow delete: if true;
     }
 
-    // FAQ / Help Center — the consumer-facing site at repo-root `faq/`
-    // (published via GitHub Pages) reads these two collections directly;
-    // this app's "FAQ Center" admin page is the only writer. Same
-    // prototype-stage open posture as everything else here.
+    // ── FAQ / Help Center content ─────────────────────────────────────────
+    // These two collections feed the PUBLIC help centre (repo-root faq/,
+    // iframed into personalisationhub.com), so unlike the rest of this
+    // prototype's collections they are NOT open for writing. Reads stay
+    // public (the site and its freshness check read them anonymously);
+    // every create/update/delete requires a signed-in Google account whose
+    // verified email is on the editor allowlist below — the "Sign in to
+    // edit" button on the FAQ pages of the admin console. The deploy
+    // workflow's sync/export scripts use the Admin SDK and bypass rules.
+    function isFaqEditor() {
+      return request.auth != null
+        && request.auth.token.email_verified == true
+        && request.auth.token.email in [
+          "rob@offline2online.com",
+          "rob@personalisationhub.com"
+        ];
+    }
+
     match /faqCategories/{categoryId} {
       allow read: if true;
-
-      allow create, update: if
-        isNonEmptyBoundedString(incoming().name, 80) &&
-        isNonEmptyBoundedString(incoming().icon, 40) &&
-        incoming().order is number;
-
-      allow delete: if true;
+      allow create, update: if isFaqEditor()
+        && isNonEmptyBoundedString(incoming().name, 80)
+        && isNonEmptyBoundedString(incoming().icon, 40)
+        && incoming().order is number
+        && (!("description" in incoming()) || incoming().description is string && incoming().description.size() <= 300)
+        && (!("parentId" in incoming()) || incoming().parentId == null || isNonEmptyBoundedString(incoming().parentId, 100));
+      allow delete: if isFaqEditor();
     }
 
     match /faqArticles/{articleId} {
       allow read: if true;
-
-      allow create, update: if
-        isNonEmptyBoundedString(incoming().categoryId, 100) &&
-        isNonEmptyBoundedString(incoming().title, 200) &&
-        isNonEmptyBoundedString(incoming().slug, 200) &&
-        incoming().bodyMd is string && incoming().bodyMd.size() <= 20000 &&
-        incoming().status in ["draft", "published"] &&
-        incoming().order is number;
-
-      allow delete: if true;
+      allow create, update: if isFaqEditor()
+        && incoming().size() <= 40
+        && isNonEmptyBoundedString(incoming().categoryId, 100)
+        && isNonEmptyBoundedString(incoming().title, 200)
+        && isNonEmptyBoundedString(incoming().slug, 200)
+        && incoming().bodyMd is string && incoming().bodyMd.size() <= 60000
+        && (!("summary" in incoming()) || incoming().summary is string && incoming().summary.size() <= 400)
+        && (!("keywords" in incoming()) || incoming().keywords is list && incoming().keywords.size() <= 30)
+        && (!("docType" in incoming()) || incoming().docType in ["faq", "how-to", "reference", "explanation"])
+        && incoming().status in ["draft", "published"]
+        && incoming().order is number;
+      allow delete: if isFaqEditor();
     }
   }
 }

@@ -1,0 +1,22 @@
+{
+"id": "faq-art-51000360017",
+"categoryId": "faq-cat-queue-manage",
+"order": 20,
+"title": "Copy a visitor's mobile number or email address",
+"slug": "copy-a-visitor-s-mobile-number-or-email-address",
+"summary": "Copy a picked-up visitor's mobile number or email address to the clipboard with one tap, to look them up in your CRM without retyping.",
+"keywords": [
+"copy mobile number",
+"copy email",
+"clipboard",
+"crm lookup",
+"visitor details",
+"contact details",
+"retail admin"
+],
+"docType": "how-to",
+"status": "published",
+"updatedAt": "2026-09-14T12:12:16Z",
+"contentHash": "32996d077d9b202f",
+"bodyMd": "<p>Once you have picked a visitor up, their mobile number and email address on the visitor details page are tap-to-copy. Paste the value into your CRM or another system to recall the customer's record without retyping it, which saves time and avoids errors.</p>\n<h2>Before you begin</h2>\n<ul><li>A Retail Admin sign-in for your store — see <a href=\"article.html?id=faq-art-51000358534\">Sign in to the Retail Admin site (no SAML/SSO)</a>, or use single sign-on if your organisation has <a href=\"article.html?id=faq-art-51000359801\">Integrate single sign-on (SAML) for store staff</a>.</li><li>You have picked the visitor up — see <a href=\"article.html?id=faq-art-51000359918\">Pick up a visitor from the queue</a>.</li></ul>\n<h2>Steps</h2>\n<ol>\n<li>On the visitor's details page, select the mobile number. It is copied to the clipboard.</li>\n<li>Or, select the email address to copy that instead.</li>\n<li>Switch to your CRM or other system and paste the value into its search field.</li>\n</ol>\n<h2>Verify it worked</h2>\n<p>Pasting produces the visitor's number or address exactly as entered on the queue record.</p>\n<h2>Next step</h2><p><a href=\"article.html?id=faq-art-51000360027\">View a visitor's recent interactions and profile data</a></p>\n<h2>Related</h2><ul><li><a href=\"article.html?id=faq-art-51000359918\">Pick up a visitor from the queue</a></li><li><a href=\"article.html?id=faq-art-51000360027\">View a visitor's recent interactions and profile data</a></li><li><a href=\"article.html?id=faq-art-51000361042\">Connect your mobile app or third-party system to the Visitor API</a></li></ul>"
+}

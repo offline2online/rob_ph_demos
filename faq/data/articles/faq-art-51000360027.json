@@ -1,0 +1,23 @@
+{
+"id": "faq-art-51000360027",
+"categoryId": "faq-cat-queue-manage",
+"order": 21,
+"title": "View a visitor's recent interactions and profile data",
+"slug": "view-a-visitor-s-recent-interactions-and-profile-data",
+"summary": "See where a queued visitor has been in the store and what they interacted with, plus any connected customer data, before and after you pick them up.",
+"keywords": [
+"recent interactions",
+"customer profile",
+"visitor context",
+"qr control",
+"chatbot",
+"crm data",
+"visitor details",
+"personalise"
+],
+"docType": "how-to",
+"status": "published",
+"updatedAt": "2026-09-14T12:12:16Z",
+"contentHash": "e6486a2f02cf53df",
+"bodyMd": "<p>When a visitor who is in the queue interacts with the store — scanning a display's QR code, talking to the chatbot — the platform surfaces that interaction to staff. You see a summary in the <strong>Waiting</strong> view and more detail on the visitor's details page once you pick them up, so you can start the conversation where the visitor left off.</p>\n<h2>Before you begin</h2>\n<ul><li>A Retail Admin sign-in for your store — see <a href=\"article.html?id=faq-art-51000358534\">Sign in to the Retail Admin site (no SAML/SSO)</a>, or use single sign-on if your organisation has <a href=\"article.html?id=faq-art-51000359801\">Integrate single sign-on (SAML) for store staff</a>.</li><li>The visitor joined the queue from their own phone, so their interactions can be linked to them — see <a href=\"article.html?id=faq-art-51000360011\">Let a visitor join the queue by scanning the QR code on the staff tablet</a>.</li></ul>\n<h2>See the most recent interaction while they wait</h2>\n<ol>\n<li>In the left navigation of Retail Admin, select <strong>QUEUEING &amp; APPTS</strong>.</li>\n<li>In the <strong>Waiting</strong> view, read the interaction line on the visitor's card. It shows the display name — which tells you roughly where they are in the store — and their most recent interaction, for example <em>Branch Entrance &gt; BUILD NEW HOME</em>.</li>\n</ol>\n<h2>See the full picture after pick-up</h2>\n<ol>\n<li>On the visitor's card, select <strong>Pick up</strong>.</li>\n<li>On the visitor's details page, review the customer summary. Out of the box it includes the visitor's device type; your organisation can add CRM, customer data platform or decisioning data to this summary through the Visitor API.</li>\n</ol>\n<div class=\"callout callout-note\">Once the mobile site is embedded in your organisation's mobile app, every customer attribute the app can access can be surfaced here — see <a href=\"article.html?id=faq-art-51000361015\">Use customer and decisioning data to personalise the store visit</a> and <a href=\"article.html?id=faq-art-51000361042\">Connect your mobile app or third-party system to the Visitor API</a>.</div>\n<h2>Verify it worked</h2>\n<p>A visitor who scanned a display before joining shows that display and interaction on their card in the <strong>Waiting</strong> view, and the details page after pick-up shows at least their device type.</p>\n<h2>Next step</h2><p><a href=\"article.html?id=faq-art-queue-history\">View queue and appointment history</a></p>\n<h2>Related</h2><ul><li><a href=\"article.html?id=faq-art-51000359918\">Pick up a visitor from the queue</a></li><li><a href=\"article.html?id=faq-art-51000360012\">Let a visitor join the queue by scanning a QR code on a display</a></li><li><a href=\"article.html?id=faq-art-51000361015\">Use customer and decisioning data to personalise the store visit</a></li><li><a href=\"article.html?id=faq-art-51000361042\">Connect your mobile app or third-party system to the Visitor API</a></li><li><a href=\"article.html?id=faq-art-51000359022\">What are triggered campaigns?</a></li></ul>"
+}

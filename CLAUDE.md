@@ -19,25 +19,25 @@ This is a static site repository used to publish HTML and static resources (CSS,
 
 ## FAQ / Help Center (`faq/`) — public site, edited from backlog-tracker
 
-`faq/` at the repo root is a consumer-facing FAQ/Help Center site (front
-page + search, category pages, article pages), styled after
-<https://help.personalisationhub.com/support/home>. It's a plain static
-site published via GitHub Pages like everything else at the repo root —
-but its content (categories + articles) isn't stored as files here. It
-reads live from the **same Firestore project `backlog-tracker` uses**
-(`backlog-tracker-e4ed2`, collections `faqCategories`/`faqArticles`), so
-editing is done entirely from backlog-tracker's own **FAQ Center** admin
-page, not by editing files in `faq/`. See `backlog-tracker/README.md` →
-"FAQ / Help Center" for the data model and why articles can optionally
-link to a `projects` doc (the categorization-by-project hook meant for a
-future "flag FAQs when a feature ships" automation). The seeded content
-(`backlog-tracker/scripts/seed-faq-data.js`) is the **real** Personalisation
-Hub Help Center — 9 categories, 108 articles, imported verbatim from a
-Freshdesk export found in Google Drive ("Personalisation Hub" › "Freshdesk
-FAQs - June 2026") — not placeholder text; the live
-help.personalisationhub.com site itself is still unreachable from this
-sandbox (blocked by network egress policy), so that Drive export, not the
-live site, is the source of truth for this data going forward.
+`faq/` at the repo root is the consumer-facing Help Centre (front page +
+search, category pages with folders, article pages). It replaces
+help.personalisationhub.com (Freshdesk) and is also iframed into the
+support centre on personalisationhub.com. Plain static site on GitHub
+Pages — **the site renders a static snapshot committed in `faq/data/`**
+(`index.json` + `articles/<id>.json`), not the Firebase SDK. Content is
+still EDITED from backlog-tracker's **FAQ Management** page (Firestore
+`faqCategories`/`faqArticles` in `backlog-tracker-e4ed2`); the
+`.github/workflows/faq-content.yml` workflow exports Firestore → `faq/data`
+hourly/on demand and syncs `faq/data` → Firestore when it changes on
+`main` (`backlog-tracker/scripts/faq-export.js` / `faq-sync.js`), and the
+article page pulls a newer revision straight from Firestore's REST API on
+load. Writes to the two FAQ collections require a signed-in allowlisted
+Google account (`backlog-tracker/firestore.rules` → `isFaqEditor`); the
+board's other collections stay open. See `faq/README.md` for the full flow
+and `docs/faq-audit-2026-09.md` for the September 2026 audit/rewrite (12
+categories, 140 articles, new-customer ordering). The original Freshdesk
+import (`backlog-tracker/scripts/seed-faq-data.js`, insert-only) is now
+historical — it cannot overwrite the rewritten articles.
 
 **All FAQ/user-guide content and structure must follow
 [`docs/CONTRIBUTING-docs.md`](./docs/CONTRIBUTING-docs.md)** — the

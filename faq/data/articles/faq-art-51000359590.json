@@ -1,0 +1,23 @@
+{
+"id": "faq-art-51000359590",
+"categoryId": "faq-cat-store-sites",
+"order": 4,
+"title": "Create a mobile site template for a concierge kiosk",
+"slug": "create-a-mobile-site-template-for-a-concierge-kiosk",
+"summary": "Create a template with a single Join the queue menu item so visitors who scan the concierge display are taken straight to the queue.",
+"keywords": [
+"concierge kiosk",
+"concierge display",
+"join the queue",
+"single menu item",
+"auto redirect",
+"mobile site template",
+"add new template",
+"kiosk"
+],
+"docType": "how-to",
+"status": "published",
+"updatedAt": "2026-09-14T12:12:16Z",
+"contentHash": "72122e829c1c8410",
+"bodyMd": "<p>A concierge kiosk template has 1 menu item: <strong>Join the queue</strong>. Because the template has a single item, a visitor who scans the kiosk's QR code is redirected to the queue page immediately, without seeing a menu. Allow about 5 minutes.</p>\n<h2>Before you begin</h2>\n<ul><li>An HQ Admin login with access to <strong>Platform Admin</strong>.</li><li>Store queueing is enabled for the store. See <a href=\"article.html?id=faq-art-51000363265\">Set up a dedicated concierge display or kiosk</a> for the full kiosk set-up.</li></ul>\n<h2>Steps</h2>\n<ol>\n<li>In the left navigation, select <strong>Platform Admin</strong>.</li>\n<li>Under <strong>Enabled Features</strong>, select <strong>Mobile Store Sites</strong>.</li>\n<li>Select <strong>Add New Template</strong>.</li>\n<li>In <strong>Template Name</strong>, enter a name such as <code>Concierge Kiosk</code>.</li>\n<li>In <strong>Mobile Header</strong>, enter the heading, using <strong>+ Add Token</strong> to insert <code>${StoreName}</code> if you want the store's name.</li>\n<li>Select <strong>Add Menu Item</strong>.</li>\n<li>Select the pre-configured <strong>Join the queue</strong> menu item.</li>\n<li>Check the item's settings, including the states it is shown in, then select <strong>Save</strong>.</li>\n<li>Select <strong>Save Changes</strong>.</li>\n</ol>\n<div class=\"callout callout-important\">The automatic redirect only happens when no campaigns are running on that display. If a campaign is active on the kiosk, visitors see the campaign carousel and the menu instead.</div>\n<h2>Verify it worked</h2>\n<p>The <strong>Mobile Store Sites</strong> page lists the new template and the template count increases by 1. The template is ready to assign to the kiosk display.</p>\n<h2>Next step</h2>\n<p><a href=\"article.html?id=faq-art-51000359610\">Assign a different mobile site template to a store, display or zone</a></p>\n<h2>Related</h2>\n<ul><li><a href=\"article.html?id=faq-art-51000363265\">Set up a dedicated concierge display or kiosk</a></li><li><a href=\"article.html?id=faq-art-51000360012\">Let a visitor join the queue by scanning a QR code on a display</a></li><li><a href=\"article.html?id=faq-art-51000359321\">Why create a mobile site for your stores?</a></li></ul>"
+}

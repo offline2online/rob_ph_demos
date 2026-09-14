@@ -1,0 +1,22 @@
+{
+"id": "faq-art-51000360574",
+"categoryId": "faq-cat-devices-manage",
+"order": 6,
+"title": "Identify campaign playback issues on a display",
+"slug": "identify-campaign-playback-issues-on-a-display",
+"summary": "Filter the Displays & Devices list to screens with playback issues and open the breakdown of when campaigns stopped playing.",
+"keywords": [
+"playback issue",
+"playback audit",
+"campaign not playing",
+"display not playing",
+"campaign playback",
+"troubleshoot display",
+"morning check"
+],
+"docType": "how-to",
+"status": "published",
+"updatedAt": "2026-09-14T12:12:16Z",
+"contentHash": "1918290b33420ad0",
+"bodyMd": "<p>The <strong>Playback Audit</strong> column flags every display where campaigns have stopped playing as expected. Review and resolve playback issues each morning before stores open: a display with a playback issue cannot deliver personalised experiences, and that costs revenue. Allow about 2 minutes for the check.</p>\n<h2>Before you begin</h2>\n<ul>\n<li>An HQ Admin account.</li>\n<li>Campaign playback monitoring is turned on. See <a href=\"article.html?id=faq-art-campaign-monitoring-settings\">Configure campaign playback monitoring</a>.</li>\n</ul>\n<h2>Steps</h2>\n<ol>\n<li>In the left navigation, select <strong>Displays &amp; Devices</strong>.</li>\n<li>In the <strong>Playback Audit</strong> column header, open the filter and tick <strong>Playback issues</strong>. The list now shows only displays with a playback issue.</li>\n<li>To work through the most urgent first, add a <strong>Status</strong> filter of <strong>Online</strong>. An online display with a playback issue is a content or configuration problem; an offline one is a connectivity problem.</li>\n<li>In a display's row, select the playback issue icon. A breakdown opens showing when campaigns stopped playing on that display.</li>\n<li>To see the full playback history, select the display's <strong>Name</strong> and then the <strong>Campaign Playback</strong> tab.</li>\n</ol>\n<div class=\"callout callout-note\">The <strong>KEY</strong> at the foot of the list explains each icon: <strong>On Rotation</strong>, <strong>Triggered Campaigns</strong>, <strong>Playback issues</strong>, <strong>Thermal Warning</strong> and <strong>Thermal Critical</strong>.</div>\n<h2>Verify it worked</h2>\n<p>The list shows only displays flagged with a playback issue, and the breakdown for any of them shows the date and time each campaign last played.</p>\n<h2>Troubleshooting</h2>\n<h3>Every display in a store shows a playback issue</h3>\n<p><strong>Cause.</strong> The store's internet connection dropped, or the campaigns on that playlist ended or were deactivated.</p>\n<p><strong>Fix.</strong> Check the store's status under <a href=\"article.html?id=faq-art-51000360500\">View a store's network and display status</a>, then check the campaign schedule with <a href=\"article.html?id=faq-art-51000500898\">Schedule a campaign</a>.</p>\n<h2>Next step</h2>\n<p><a href=\"article.html?id=faq-art-51000360736\">View the campaign playback audit for a display</a></p>\n<h2>Related</h2>\n<ul>\n<li><a href=\"article.html?id=faq-art-51000360571\">View a display's status and time offline</a></li>\n<li><a href=\"article.html?id=faq-art-51000360577\">View a display's log history</a></li>\n<li><a href=\"article.html?id=faq-art-51000359277\">Let retail staff activate triggered campaigns</a></li>\n</ul>"
+}

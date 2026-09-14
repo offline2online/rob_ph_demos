@@ -1,0 +1,22 @@
+{
+"id": "faq-art-51000359277",
+"categoryId": "faq-cat-personalisation-ai",
+"order": 4,
+"title": "Let retail staff activate triggered campaigns",
+"slug": "let-retail-staff-activate-triggered-campaigns",
+"summary": "Enable the Staff Tablet touch-point so store staff can play a triggered campaign on a display while talking to a visitor.",
+"keywords": [
+"staff tablet",
+"retail staff",
+"trigger campaign",
+"active campaign",
+"retail admin",
+"play campaign on display",
+"sales conversation"
+],
+"docType": "how-to",
+"status": "published",
+"updatedAt": "2026-09-14T12:12:16Z",
+"contentHash": "fb0534011e6f62a2",
+"bodyMd": "<p>When a triggered campaign has the <strong>Staff Tablet</strong> touch-point enabled, staff in a store can start it on any display in their store from Retail Admin. Staff use it to give a conversation context or to show a promotion while they talk to a visitor.</p>\n<h2>Before you begin</h2>\n<ul><li>An HQ Admin account to update the campaign.</li><li>A Retail Admin (staff tablet) login for the store — see <a href=\"article.html?id=faq-art-51000483613\">Upload Retail Admin users for your stores</a>.</li><li>A triggered campaign that is activated — see <a href=\"article.html?id=faq-art-51000359022\">What are triggered campaigns?</a></li></ul>\n<h2>Enable the Staff Tablet touch-point (HQ Admin)</h2>\n<ol>\n<li>In the left navigation, select <strong>Campaigns</strong>.</li>\n<li>Select the campaign's name.</li>\n<li>On the <strong>Campaign Brief</strong> tab, under <strong>ENABLED TOUCH-POINT(S)</strong>, set <strong>Staff Tablet</strong> to on.</li>\n<li>Select <strong>Update Campaign Brief</strong>.</li>\n</ol>\n<h2>Play the campaign on a display (Retail Admin)</h2>\n<ol>\n<li>Sign in to Retail Admin on the staff tablet.</li>\n<li>In the menu, select <strong>Displays &amp; Devices</strong>, then <strong>Manage Displays</strong>.</li>\n<li>In the display's row, open the <strong>…</strong> menu and select <strong>View Display Details</strong>.</li>\n<li>In <strong>Active Campaign</strong>, choose the triggered campaign.</li>\n<li>Select <strong>Save Changes</strong>.</li>\n</ol>\n\n<h2>Verify it worked</h2>\n<p>The display starts playing the campaign, and in <strong>Manage Displays</strong> the display's <strong>Active Campaign</strong> column shows the campaign name.</p>\n<h2>Next step</h2><p><a href=\"article.html?id=faq-art-51000359319\">Connect a triggered campaign to an AI agent interaction</a></p><h2>Related</h2><ul><li><a href=\"article.html?id=faq-art-51000359234\">Update a campaign's interaction settings</a></li><li><a href=\"article.html?id=faq-art-51000290789\">How displays and devices work in Personalisation Hub</a></li><li><a href=\"article.html?id=faq-art-51000358534\">Sign in to the Retail Admin site (no SAML/SSO)</a></li></ul>"
+}

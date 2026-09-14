@@ -1,0 +1,23 @@
+{
+"id": "faq-art-51000361042",
+"categoryId": "faq-cat-personalisation-ai",
+"order": 8,
+"title": "Connect your mobile app or third-party system to the Visitor API",
+"slug": "connect-your-mobile-app-or-third-party-system-to-the-visitor-api",
+"summary": "Authenticate your own app or a third-party site with the Visitor API, and pass Store Code and Display ID to it with tokens.",
+"keywords": [
+"visitor api",
+"mobile app",
+"third party",
+"tokens",
+"store code",
+"display id",
+"api authentication",
+"mobile site url"
+],
+"docType": "how-to",
+"status": "published",
+"updatedAt": "2026-09-14T12:12:16Z",
+"contentHash": "1d6e9d68c58bea29",
+"bodyMd": "<p>Any authorised mobile app, website or API can post to the platform's Visitor API, and the platform can pass store and display context back to it. When a visitor scans the QR code on a connected display, the Store Code and Display ID of that display can be appended to a mobile site menu URL as tokens, so your app or third-party site knows where the visitor is.</p>\n<h2>Before you begin</h2>\n<ul><li>An HQ Admin account with the Admin role.</li><li>You have run the phone test in <a href=\"article.html?id=faq-art-51000361014\">Trigger campaigns from customer or decisioning data</a>, so you know the feed works.</li></ul>\n<h2>Authenticate your app with the Visitor API</h2>\n<ol>\n<li>In the left navigation, select <strong>Platform Admin</strong>, then under <strong>Enabled Features</strong> select <strong>API Authentication</strong>.</li>\n<li>Select <strong>Add New Platform</strong> and name it after the app or system you are connecting.</li>\n<li>Copy the secret and store it in the app's secure configuration — see <a href=\"article.html?id=faq-art-51000290749\">Create API authentication credentials for an integration</a>.</li>\n<li>In your app, send the feed as a <code>POST</code> to <code>https://&lt;your-platform-domain&gt;/location-api/visitor/feed</code> with the <code>apikey</code> header set to that secret. The body fields are in <a href=\"article.html?id=faq-art-51000361015\">Use customer and decisioning data to personalise the store visit</a>.</li>\n</ol>\n<h2>Pass the Store Code and Display ID to your app or site</h2>\n<ol>\n<li>In <strong>Platform Admin</strong>, under <strong>Enabled Features</strong>, select <strong>Mobile Store Sites</strong>.</li>\n<li>Select the template assigned to your displays, for example <strong>Mobile App (DEFAULT)</strong>.</li>\n<li>Select <strong>Add Menu Item</strong>, or select an existing menu item's URL.</li>\n<li>In the URL, select <strong>+ Add Token</strong> and insert the Store Code and Display ID tokens where your app expects them as query parameters.\n</li>\n<li>Select <strong>Save Changes</strong>.</li>\n</ol>\n<div class=\"callout callout-note\">The footer of <strong>API Authentication</strong> shows <strong>Clear Visitor Data from Display after 2 minutes</strong>. Select its edit icon to change how long a visitor's context stays attached to a display after they scan.</div>\n<h2>Verify it worked</h2>\n<p>Scan a connected display's QR code and open the menu item. The URL your app or site receives contains that display's Store Code and Display ID. A feed your app posts with the same <code>uuid</code> and <code>display_id</code> triggers a matching campaign on that display.</p>\n<h2>Next step</h2><p><a href=\"article.html?id=faq-art-ai-models\">Connect AI models and providers</a></p><h2>Related</h2><ul><li><a href=\"article.html?id=faq-art-51000361015\">Use customer and decisioning data to personalise the store visit</a></li><li><a href=\"article.html?id=faq-art-51000359492\">Define your default mobile site template</a></li><li><a href=\"article.html?id=faq-art-51000496158\">AWS deployment: architecture</a></li><li><a href=\"article.html?id=faq-art-51000290749\">Create API authentication credentials for an integration</a></li></ul>"
+}

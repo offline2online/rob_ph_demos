@@ -1,0 +1,22 @@
+{
+"id": "faq-art-51000360693",
+"categoryId": "faq-cat-devices-manage",
+"order": 11,
+"title": "Rename a display",
+"slug": "rename-a-display",
+"summary": "Change a display's name from HQ Admin or from the Retail Admin staff tablet so it describes where the screen sits in the store.",
+"keywords": [
+"rename display",
+"display name",
+"update display name",
+"change display name",
+"manage displays",
+"retail admin",
+"staff tablet"
+],
+"docType": "how-to",
+"status": "published",
+"updatedAt": "2026-09-14T12:12:16Z",
+"contentHash": "7715266f58d6e86c",
+"bodyMd": "<p>The display name is what store staff see when a visitor interacts with a screen, so it must say where the screen is: <em>Branch Entrance</em>, <em>Concierge Kiosk</em>, <em>Window Left</em>. You can rename a display from HQ Admin or, for the staff's own store, from Retail Admin. Allow about 1 minute.</p>\n<h2>Before you begin</h2>\n<ul>\n<li>HQ Admin: an account with permission to manage displays and devices.</li>\n<li>Retail Admin: a staff login for the store the display is in. See <a href=\"article.html?id=faq-art-51000358534\">Sign in to the Retail Admin site (no SAML/SSO)</a>.</li>\n</ul>\n<h2>In HQ Admin</h2>\n<ol>\n<li>In the left navigation, select <strong>Displays &amp; Devices</strong>.</li>\n<li>Find the display, filtering by <strong>Store Name</strong> if the list is long.</li>\n<li>Select the display's <strong>Name</strong>. The <strong>Display Details</strong> tab opens.</li>\n<li>In <strong>Display Name</strong>, enter the new name.</li>\n<li>Select <strong>Save Changes</strong>.</li>\n</ol>\n<h2>In Retail Admin</h2>\n<ol>\n<li>In the left navigation, select <strong>Displays &amp; Devices → Manage Displays</strong>.</li>\n<li>Select <strong>Edit</strong>.</li>\n<li>In the display's row, open the <strong>…</strong> menu and select <strong>View Display Details</strong>.</li>\n<li>In <strong>Display Name</strong>, enter the new name.</li>\n<li>Select <strong>Save Changes</strong>.</li>\n</ol>\n<h2>Verify it worked</h2>\n<p>The new name appears in the <strong>Name</strong> column of <strong>Displays &amp; Devices</strong> in HQ Admin and in the <strong>Display</strong> column of <strong>Manage Displays</strong> in Retail Admin.</p>\n<h2>Related</h2>\n<ul>\n<li><a href=\"article.html?id=faq-art-51000363266\">Update a display's image or icon</a></li>\n<li><a href=\"article.html?id=faq-art-51000360730\">Change a display's screen orientation</a></li>\n<li><a href=\"article.html?id=faq-art-51000360912\">Target campaigns at specific displays with display tags</a></li>\n</ul>"
+}

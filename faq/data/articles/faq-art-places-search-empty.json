@@ -1,0 +1,23 @@
+{
+"id": "faq-art-places-search-empty",
+"categoryId": "faq-cat-troubleshooting",
+"order": 3,
+"title": "Adding a store finds nothing in Google Places",
+"slug": "adding-a-store-finds-nothing-in-google-places",
+"summary": "If searching for a store under Stores / Branches → Add New Store(s) returns no results, the platform has no working Google Maps API key.",
+"keywords": [
+"add store",
+"google places",
+"no results",
+"google maps api key",
+"store search",
+"places api",
+"stores branches",
+"api key"
+],
+"docType": "faq",
+"status": "published",
+"updatedAt": "2026-09-14T12:12:16Z",
+"contentHash": "5d442013dda50ee6",
+"bodyMd": "<p>If the search under <strong>Stores / Branches → Add New Store(s)</strong> returns nothing for a store you know exists, the platform cannot reach Google Places. The platform looks stores up with your own Google Maps API key, so the search returns nothing until a valid key is saved.</p>\n<h3>Every search returns no results</h3>\n<p><strong>Cause.</strong> No key is saved under <strong>Platform Admin → Enabled Features → Google Maps/Places</strong>, or the key was mistyped. The key is optional during installation, so it is often skipped.</p>\n<p><strong>Fix.</strong> Create a Google Maps API key in your Google Cloud project, paste it into <strong>Google Maps API Key</strong> on that page and select <strong>Save Changes</strong>. See <a href=\"article.html?id=faq-art-51000290754\">Connect the platform to Google Maps / Places</a>.</p>\n<h3>The key is saved but searches still return nothing</h3>\n<p><strong>Cause.</strong> The key is restricted in Google Cloud so that it cannot be used for the Places API, or billing is not enabled on the Google Cloud project.</p>\n<p><strong>Fix.</strong> In Google Cloud, check the key's API and application restrictions, then try the search again.</p>\n<h3>The store exists but is not on Google Maps</h3>\n<p><strong>Cause.</strong> New or unlisted locations are not in Google Places.</p>\n<p><strong>Fix.</strong> Add the store manually and enter the address yourself, then set a unique <strong>Store Code</strong>. See <a href=\"article.html?id=faq-art-add-a-store\">Add a store</a>.</p>\n<h2>Related</h2>\n<ul><li><a href=\"article.html?id=faq-art-51000483547\">Step 6 — Add your stores from Google Places</a></li><li><a href=\"article.html?id=faq-art-51000290792\">Connect the platform to Google Business Profile</a></li><li><a href=\"article.html?id=faq-art-troubleshooting-index\">Troubleshooting index</a></li></ul>"
+}

@@ -1,0 +1,22 @@
+{
+"id": "faq-art-special-holiday-hours",
+"categoryId": "faq-cat-stores-staff",
+"order": 10,
+"title": "Set special holiday opening hours (Retail Admin)",
+"slug": "set-special-holiday-opening-hours-retail-admin",
+"summary": "Store staff: set different opening times, or no appointment slots, for upcoming public holidays from the Special Holiday Hours tab on the staff tablet.",
+"keywords": [
+"public holiday",
+"holiday hours",
+"special hours",
+"closed on holiday",
+"retail admin",
+"store hours",
+"appointment slots"
+],
+"docType": "how-to",
+"status": "published",
+"updatedAt": "2026-09-14T12:12:16Z",
+"contentHash": "b38c52db3f40ca61",
+"bodyMd": "<p>Public holidays rarely follow your normal weekly hours. The platform lists the upcoming public holidays for your store's state so you can give each one its own opening and closing time and its own number of appointment slots. Set them from the staff tablet; HQ Admin can set the same values centrally.</p>\n<h2>Before you begin</h2>\n<ul>\n<li>A Retail Admin login for your store.</li>\n<li>The store's normal hours already correct — see <a href=\"article.html?id=faq-art-51000360506\">Update your store's opening hours (Retail Admin)</a>.</li>\n</ul>\n<h2>Steps</h2>\n<ol>\n<li>Sign in to your store's Retail Admin site.</li>\n<li>In the left navigation, select <strong>Store Info</strong>, then <strong>Store Hours</strong>.</li>\n<li>On the <strong>Opening Hours</strong> tab, select the <strong>Special Holiday Hours</strong> sub-tab. The <strong>Upcoming Public Holidays</strong> table lists each holiday with its date, for example <strong>King's Birthday (Western Australia) (Mon 28/09/2026)</strong>.</li>\n<li>For a holiday the store opens on, select its checkbox and set <strong>Store Opening</strong> and <strong>Store Closing</strong>.</li>\n<li>In <strong># of Appointment Slots</strong>, choose how many appointments to accept per timeslot that day. Choose <strong>0</strong> to take no appointments.</li>\n<li>For a holiday the store is closed on, leave its checkbox clear.\n\n</li>\n<li>Select <strong>Save Changes</strong>.</li>\n</ol>\n<h2>Setting holiday hours from HQ Admin</h2>\n<p>HQ Admin holds the same table under <strong>Stores / Branches → </strong>(store)<strong> → Store Hours → Holidays / Seasons</strong>, and 2 extra sections that Retail Admin does not have:</p>\n<ul>\n<li><strong>School Holidays</strong> — select <strong>Add Holiday</strong> to define your own period with a <strong>Name</strong>, <strong>Start Date</strong>, <strong>End Date</strong>, a <strong>Whole Day</strong> option and <strong>Open</strong> and <strong>Close</strong> times.</li>\n<li><strong>Store Season</strong> — <strong>Season Mode</strong> is <strong>Dynamic (based on store location)</strong> by default, which sets <strong>Current Season</strong> from the store's country; choose <strong>Fixed (manual selection)</strong> to set it yourself.</li>\n</ul>\n<h2>Verify it worked</h2>\n<p>The <strong>Upcoming Public Holidays</strong> table shows the saved times and slot count for each holiday you set. On the day, the queue and appointment calendar follow the holiday hours instead of the weekly hours.</p>\n<h2>Related</h2>\n<ul>\n<li><a href=\"article.html?id=faq-art-appointment-slots\">Set appointment slots per store and per day</a></li>\n<li><a href=\"article.html?id=faq-art-calendar-blocking\">Block out dates and times for appointments</a></li>\n<li><a href=\"article.html?id=faq-art-51000360506\">Update your store's opening hours (Retail Admin)</a></li>\n</ul>"
+}

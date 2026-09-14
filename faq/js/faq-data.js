@@ -1,32 +1,56 @@
-// Shared read-only Firestore access for the public FAQ / Help Center site.
-// This site never writes — all editing happens from backlog-tracker's own
-// "FAQ Center" admin page (backlog-tracker/public/index.html + js/app.js),
-// which writes to this exact same Firestore project. Only status:"published"
-// articles are ever shown here; "draft" is how an in-progress edit stays
-// invisible to visitors until someone flips it live.
-
-import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-app.js";
-import {
-  getFirestore, collection, getDocs, query, orderBy,
-} from "https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore.js";
+// Read-only data layer for the public FAQ / Help Center site.
+//
+// Content is served from a STATIC SNAPSHOT committed to this repo
+// (faq/data/index.json + faq/data/articles/<id>.json) and delivered by
+// GitHub Pages' CDN — one small cached request for the index on every page,
+// and one for the article body being read. Nothing here depends on the
+// Firebase SDK, and the site renders even if Firestore is unreachable.
+//
+// Firestore (project backlog-tracker-e4ed2, collections faqCategories /
+// faqArticles) is still where content is EDITED, from backlog-tracker's
+// FAQ Management page. Two things keep the snapshot current:
+//   1. `.github/workflows/faq-content.yml` exports Firestore → faq/data on a
+//      schedule and on demand (Actions → "FAQ content" → Run workflow).
+//   2. The article page additionally fetches the single article document
+//      straight from Firestore's REST API in the background and swaps the
+//      body in when Firestore holds a newer published revision — so an edit
+//      made in the console is visible on its article page within seconds,
+//      without waiting for the export. If that request fails or is slow the
+//      static copy simply stays.
+//
+// The site never writes. Editing lives entirely in the admin console.
 import { firebaseConfig } from "./firebase-config.js";
 
-const app = initializeApp(firebaseConfig);
-const db = getFirestore(app);
-const categoriesRef = collection(db, "faqCategories");
-const articlesRef = collection(db, "faqArticles");
+const INDEX_URL = "data/index.json";
+const ARTICLE_URL = (id) => `data/articles/${encodeURIComponent(id)}.json`;
+const REST_BASE = `https://firestore.googleapis.com/v1/projects/${firebaseConfig.projectId}/databases/(default)/documents`;
+const LIVE_TIMEOUT_MS = 2500;
+const SESSION_KEY = "ph-faq-index-v2";
 
-// This site is both a standalone, bookmarkable public Help Center AND
-// content that gets iframed into personalisationhub.com itself (the public
-// WordPress/Elementor marketing site — NOT the HQ Admin/Retail Admin
-// platform app, a separate design system this site has nothing to do
-// with). On that embed, only the very top of the page is WordPress's own
-// Elementor-managed header; everything below it, footer included, is this
-// iframe's content and still ours to render. So: suppress just our own
-// .ph-header when embedded (it would otherwise duplicate WordPress's), but
-// always keep our own footer — nothing else replaces it.
+// Article ids are Firestore document ids we generate ourselves; anything
+// else is rejected before it can reach a URL or a lookup.
+export const ID_RE = /^[a-zA-Z0-9_-]{1,120}$/;
+export function safeId(id) { return typeof id === "string" && ID_RE.test(id) ? id : null; }
+
+// ── Embedding ─────────────────────────────────────────────────────────────
+// This site is both a standalone public Help Center and content iframed
+// into personalisationhub.com's support centre. When embedded we hide our
+// own header (the host page has one) and tell the parent how tall we are
+// so it can size the iframe without a scrollbar.
 export function isEmbedded() {
   try { return window.self !== window.top; } catch { return true; }
+}
+export function initEmbedMode() {
+  if (!isEmbedded()) return;
+  document.documentElement.classList.add("embedded");
+  const header = document.querySelector(".ph-header");
+  if (header) header.hidden = true;
+  const post = () => {
+    try { window.parent.postMessage({ type: "ph-faq:height", height: document.documentElement.scrollHeight }, "*"); } catch { /* ignore */ }
+  };
+  post();
+  if ("ResizeObserver" in window) new ResizeObserver(post).observe(document.body);
+  window.addEventListener("load", post);
 }
 
 export function escapeHTML(s) {
@@ -35,152 +59,188 @@ export function escapeHTML(s) {
     .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 }
 
+// ── Index (categories + article metadata) ─────────────────────────────────
+let indexPromise = null;
+export function loadIndex() {
+  if (indexPromise) return indexPromise;
+  indexPromise = (async () => {
+    // sessionStorage keeps navigation between pages instant; the server
+    // copy is still re-validated by the browser's normal HTTP caching.
+    try {
+      const cached = sessionStorage.getItem(SESSION_KEY);
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (parsed && parsed.savedAt && Date.now() - parsed.savedAt < 5 * 60 * 1000) return parsed.data;
+      }
+    } catch { /* storage unavailable — fall through */ }
+    const res = await fetch(INDEX_URL, { cache: "default" });
+    if (!res.ok) throw new Error(`index ${res.status}`);
+    const data = await res.json();
+    try { sessionStorage.setItem(SESSION_KEY, JSON.stringify({ savedAt: Date.now(), data })); } catch { /* ignore */ }
+    return data;
+  })();
+  return indexPromise;
+}
+
 export async function fetchCategories() {
-  const snap = await getDocs(query(categoriesRef, orderBy("order", "asc")));
-  return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  const idx = await loadIndex();
+  return [...idx.categories].sort((a, b) => (a.order || 0) - (b.order || 0));
 }
-
-// Fetches ALL articles ordered by "order" (a single-field query — no
-// composite index needed) and filters to status:"published" client-side.
-// Deliberately not `where("status","==",...) + orderBy("order",...)`,
-// which is a compound query Firestore needs a composite index for; this
-// repo has no firestore.indexes.json and the deploy workflow doesn't
-// deploy one, so that query would fail at runtime with
-// FAILED_PRECONDITION. The article set is help-center-sized, not
-// backlogItems-scale, so fetching all of them is cheap either way.
 export async function fetchPublishedArticles() {
-  const snap = await getDocs(query(articlesRef, orderBy("order", "asc")));
-  return snap.docs
-    .map((d) => ({ id: d.id, ...d.data() }))
-    .filter((a) => a.status === "published");
+  const idx = await loadIndex();
+  return idx.articles.filter((a) => a.status === "published");
 }
 
-// ── Categories, sub-categories, and the order they're shown in ───────────
-// A category document with no parentId is a top-level category; one WITH a
-// parentId is a sub-category ("folder") inside it. Both live in the same
-// faqCategories collection, so the single orderBy("order") query above
-// already returns them correctly sequenced within their own level — which
-// is exactly the order someone set by dragging rows in the FAQ admin.
-//
-// Sub-categories are optional: an article filed straight into a category
-// still belongs there, and topLevelCategories/subCategoriesOf/articlesIn
-// below all take that case seriously rather than treating a missing folder
-// as an error.
-export function topLevelCategories(categories) {
-  return categories.filter((c) => !c.parentId);
+// ── Article bodies ────────────────────────────────────────────────────────
+export async function fetchArticleBody(id) {
+  const sid = safeId(id);
+  if (!sid) return null;
+  const res = await fetch(ARTICLE_URL(sid), { cache: "default" });
+  if (!res.ok) return null;
+  const a = await res.json();
+  return a && a.status === "published" ? a : null;
 }
 
-export function subCategoriesOf(categories, parentId) {
-  return categories.filter((c) => c.parentId === parentId);
+// Background freshness check against Firestore. Resolves to the live
+// article when it is published and newer than the static copy, else null.
+export async function fetchLiveArticleIfNewer(id, staticUpdatedAt) {
+  const sid = safeId(id);
+  if (!sid || !navigator.onLine) return null;
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), LIVE_TIMEOUT_MS);
+  try {
+    const res = await fetch(`${REST_BASE}/faqArticles/${encodeURIComponent(sid)}?key=${encodeURIComponent(firebaseConfig.apiKey)}`, { signal: ctrl.signal });
+    if (!res.ok) return null;
+    const doc = await res.json();
+    const f = doc.fields || {};
+    const str = (k) => (f[k] && f[k].stringValue) || "";
+    const live = {
+      id: sid, title: str("title"), bodyMd: str("bodyMd"), status: str("status"), docType: str("docType"),
+      updatedAt: (f.updatedAt && f.updatedAt.timestampValue) || "",
+    };
+    if (live.status !== "published" || !live.bodyMd) return null;
+    if (staticUpdatedAt && live.updatedAt && Date.parse(live.updatedAt) <= Date.parse(staticUpdatedAt)) return null;
+    return live;
+  } catch { return null; } finally { clearTimeout(timer); }
 }
 
-// Articles filed directly into this category — NOT including its
-// sub-categories, which are rendered as their own sections.
+// ── Categories, sub-categories, ordering ──────────────────────────────────
+export function topLevelCategories(categories) { return categories.filter((c) => !c.parentId); }
+export function subCategoriesOf(categories, parentId) { return categories.filter((c) => c.parentId === parentId); }
 export function articlesIn(articles, categoryId) {
-  return articles.filter((a) => a.categoryId === categoryId);
+  return articles.filter((a) => a.categoryId === categoryId).sort((a, b) => (a.order || 0) - (b.order || 0));
 }
-
-// Everything under a category, its sub-categories included. What a count
-// on the front page should say: a category with all its articles tucked
-// into folders is not an empty category.
+// Everything under a category, folders included, in reading order:
+// loose articles first, then each folder's articles in folder order.
 export function articlesUnder(articles, categories, categoryId) {
-  const subIds = subCategoriesOf(categories, categoryId).map((c) => c.id);
-  return articles.filter((a) => a.categoryId === categoryId || subIds.includes(a.categoryId));
+  const out = [...articlesIn(articles, categoryId)];
+  for (const sub of subCategoriesOf(categories, categoryId)) out.push(...articlesIn(articles, sub.id));
+  return out;
+}
+export function parentCategoryOf(categories, categoryId) {
+  const c = categories.find((x) => x.id === categoryId);
+  if (!c) return null;
+  return c.parentId ? categories.find((x) => x.id === c.parentId) || c : c;
 }
 
-// Article bodies come in one of two shapes, told apart by a leading "<":
-// legacy markdown-ish text (## headings, "- " bullets, **bold**, from
-// before the FAQ admin had a real editor) or real HTML from the rich-text
-// (Quill) editor backlog-tracker's FAQ admin now uses. Legacy content is
-// escaped-then-rendered by renderLegacyMarkdown below, same as always.
-// Real HTML is sanitized with DOMPurify before ever touching innerHTML —
-// Firestore's write rules on faqArticles are wide open (see root
-// CLAUDE.md's documented prototype-stage posture), so this field is never
-// trusted just because it "should" have come through the admin's editor;
-// sanitizing here, at render time, is what actually keeps a stored-XSS
-// payload from running for every visitor of this public site.
-// Quill's own video embed wraps a URL in an <iframe> — DOMPurify's default
-// allowlist excludes iframe entirely (and, for tags it does allow, doesn't
-// restrict `src` by domain), so without this an iframe pasted straight into
-// Firestore (faqArticles' write rules are wide open — see root CLAUDE.md's
-// documented prototype-stage posture) could point at any host and this was
-// the one thing standing between that and a stored-XSS/clickjacking payload
-// served to every visitor of this now-public site. Quill's built-in video
-// format only ever normalizes a pasted link to a youtube.com/vimeo.com
-// embed URL, so those are the only hosts an iframe legitimately needs to
-// point at here — everything else is stripped outright rather than
-// rendered inert-but-present, since a same-origin-adjacent iframe pointed
-// at an attacker's page is dangerous even with its own src otherwise inert.
+// ── Rendering ─────────────────────────────────────────────────────────────
+// Bodies are HTML authored in the admin's rich-text editor. They are
+// sanitised with DOMPurify at render time, every time — the snapshot is
+// generated from Firestore, and Firestore is an editable store, so the
+// body is data, not code, regardless of where it was loaded from.
+// Only YouTube/Vimeo player iframes are permitted (the editor's video
+// embed); every other iframe is removed outright.
 const ALLOWED_IFRAME_HOSTS = ["www.youtube.com", "www.youtube-nocookie.com", "player.vimeo.com"];
-let iframeAllowlistInstalled = false;
-function installIframeAllowlist(purify) {
-  if (iframeAllowlistInstalled) return;
-  iframeAllowlistInstalled = true;
+const ALLOWED_URI = /^(?:(?:https?|mailto|tel):|[^a-z]|[a-z+.-]+(?:[^a-z+.\-:]|$))/i;
+let hooksInstalled = false;
+function installHooks(purify) {
+  if (hooksInstalled) return;
+  hooksInstalled = true;
   purify.addHook("uponSanitizeElement", (node, data) => {
     if (data.tagName !== "iframe") return;
     let host = "";
     try { host = new URL(node.getAttribute("src") || "", window.location.href).hostname; } catch { host = ""; }
     if (!ALLOWED_IFRAME_HOSTS.includes(host)) node.remove();
+    else { node.setAttribute("loading", "lazy"); node.setAttribute("referrerpolicy", "strict-origin-when-cross-origin"); node.setAttribute("sandbox", "allow-scripts allow-same-origin allow-presentation"); }
+  });
+  purify.addHook("afterSanitizeAttributes", (node) => {
+    if (node.tagName === "A") {
+      const href = node.getAttribute("href") || "";
+      const external = /^https?:\/\//i.test(href) && !href.startsWith(window.location.origin);
+      if (external) { node.setAttribute("target", "_blank"); node.setAttribute("rel", "noopener noreferrer"); }
+      else if (node.getAttribute("target") === "_blank") node.setAttribute("rel", "noopener noreferrer");
+    }
   });
 }
 
-export function renderBodyMd(content) {
+export function renderBody(content) {
   const trimmed = (content || "").trim();
-  if (trimmed.startsWith("<")) {
-    if (!window.DOMPurify) return escapeHTML(trimmed);
-    installIframeAllowlist(window.DOMPurify);
-    return window.DOMPurify.sanitize(trimmed, { ADD_TAGS: ["iframe"], ADD_ATTR: ["allowfullscreen", "frameborder"] });
-  }
-  return renderLegacyMarkdown(content);
+  if (!trimmed) return "";
+  if (!trimmed.startsWith("<")) return renderLegacyMarkdown(trimmed);
+  const purify = window.DOMPurify;
+  if (!purify) return `<p>${escapeHTML(trimmed)}</p>`;
+  installHooks(purify);
+  return purify.sanitize(trimmed, {
+    ADD_TAGS: ["iframe"],
+    ADD_ATTR: ["allowfullscreen", "frameborder", "target", "loading", "referrerpolicy", "sandbox"],
+    ALLOWED_URI_REGEXP: ALLOWED_URI,
+    FORBID_TAGS: ["style", "form", "input", "button", "object", "embed", "svg", "math"],
+    FORBID_ATTR: ["style", "onerror", "onload"],
+  });
 }
+// Kept for any article saved before the rich-text editor existed.
+export const renderBodyMd = renderBody;
 
 function renderLegacyMarkdown(md) {
   const lines = escapeHTML(md || "").split(/\r?\n/);
-  let html = "";
-  let inList = false;
+  let html = ""; let inList = false;
   const closeList = () => { if (inList) { html += "</ul>"; inList = false; } };
   for (const raw of lines) {
     const line = raw.trim();
     if (!line) { closeList(); continue; }
-    if (line.startsWith("## ")) { closeList(); html += `<h3>${line.slice(3)}</h3>`; continue; }
-    if (line.startsWith("- ")) {
-      if (!inList) { html += "<ul>"; inList = true; }
-      html += `<li>${inlineMd(line.slice(2))}</li>`;
-      continue;
-    }
-    closeList();
-    html += `<p>${inlineMd(line)}</p>`;
+    if (line.startsWith("## ")) { closeList(); html += `<h2>${line.slice(3)}</h2>`; continue; }
+    if (line.startsWith("- ")) { if (!inList) { html += "<ul>"; inList = true; } html += `<li>${inlineMd(line.slice(2))}</li>`; continue; }
+    closeList(); html += `<p>${inlineMd(line)}</p>`;
   }
   closeList();
   return html;
 }
+function inlineMd(s) { return s.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>"); }
 
-function inlineMd(s) {
-  return s.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
+export function categoryIcon(cat) { return cat && cat.icon ? cat.icon : "help"; }
+
+const DOC_TYPE_LABELS = { faq: "FAQ", "how-to": "How-to guide", reference: "Reference", explanation: "Explanation" };
+export function docTypeLabel(article) { return DOC_TYPE_LABELS[article && article.docType] || DOC_TYPE_LABELS.faq; }
+
+// ── Search ────────────────────────────────────────────────────────────────
+// Word-based scoring over title, summary and keywords: every query term
+// must match somewhere; title matches rank first, then keyword, then summary.
+export function searchArticles(articles, q) {
+  const terms = String(q || "").toLowerCase().split(/\s+/).map((t) => t.trim()).filter((t) => t.length > 1);
+  if (!terms.length) return [];
+  const scored = [];
+  for (const a of articles) {
+    const title = (a.title || "").toLowerCase();
+    const summary = (a.summary || "").toLowerCase();
+    const kws = (a.keywords || []).map((k) => String(k).toLowerCase());
+    let score = 0; let all = true;
+    for (const t of terms) {
+      let s = 0;
+      if (title.includes(t)) s += title.startsWith(t) ? 12 : 8;
+      if (kws.some((k) => k.includes(t))) s += 5;
+      if (summary.includes(t)) s += 2;
+      if (!s) { all = false; break; }
+      score += s;
+    }
+    if (all) scored.push({ a, score });
+  }
+  return scored.sort((x, y) => y.score - x.score || (x.a.order || 0) - (y.a.order || 0)).map((x) => x.a);
 }
+export function matchesQuery(article, q) { return searchArticles([article], q).length > 0; }
 
-export function categoryIcon(cat) {
-  return cat && cat.icon ? cat.icon : "help";
-}
-
-// Diátaxis document type (docs/CONTRIBUTING-docs.md §2) — defaults to
-// "faq" for articles saved before this field existed, same default the
-// admin editor uses for a brand-new article.
-const DOC_TYPE_LABELS = {
-  faq: "FAQ",
-  "how-to": "How-to guide",
-  reference: "Reference",
-  explanation: "Explanation",
-};
-export function docTypeLabel(article) {
-  return DOC_TYPE_LABELS[article && article.docType] || DOC_TYPE_LABELS.faq;
-}
-
-export function matchesQuery(article, q) {
-  const needle = q.trim().toLowerCase();
-  if (!needle) return false;
-  const haystacks = [
-    article.title, article.summary, ...(article.keywords || []),
-  ].filter(Boolean).map((s) => s.toLowerCase());
-  return haystacks.some((h) => h.includes(needle));
+export function formatDate(iso) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  return d.toLocaleDateString("en-AU", { day: "numeric", month: "long", year: "numeric" });
 }

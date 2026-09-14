@@ -1,0 +1,22 @@
+{
+"id": "faq-art-51000462323",
+"categoryId": "faq-cat-install-steps",
+"order": 3,
+"title": "Step 2 — Run the Installation Wizard",
+"slug": "step-2-run-the-installation-wizard",
+"summary": "Create the Master Admin account in the Installation Wizard, choose your environment and platform domain, and install the platform — around 55 minutes.",
+"keywords": [
+"installation wizard",
+"master admin",
+"platform domain",
+"environment size",
+"google maps api key",
+"install",
+"step 2"
+],
+"docType": "how-to",
+"status": "published",
+"updatedAt": "2026-09-14T12:12:16Z",
+"contentHash": "8b7ba79fb797be72",
+"bodyMd": "<p>The Installation Wizard creates your Master Admin account and then installs the platform into the stack you created in Step 1. Installation itself takes a little under an hour, and you do not need to stay on the page — the platform emails the Master Admin when it finishes.</p>\n<h2>Before you begin</h2>\n<ul><li>The CloudFormation stack from <a href=\"article.html?id=faq-art-51000481977\">Step 1</a> shows <code>CREATE_COMPLETE</code>.</li><li>You have the platform domain, Master Admin email address and (ideally) a Google Maps API key from the <a href=\"article.html?id=faq-art-51000290582\">pre-installation check-list</a>.</li></ul>\n<h2>Create the Master Admin account</h2>\n<ol>\n<li>In CloudFormation, open your stack and select the <strong>Outputs</strong> tab.</li>\n<li>Select the <strong>EC2InstancePublicURL</strong> value. The Personalisation Hub Installation Wizard opens.</li>\n<li>Enter your <strong>Company / Brand Name</strong>. The platform uses it as the <code>${BrandName}</code> token in everything it sends to customers.</li>\n<li>Enter the <strong>Master Admin Email</strong>. This is the platform's primary admin login, and it receives the installation emails — use a shared mailbox such as <code>itadmin@yourdomain.com</code> rather than one person's address.</li>\n<li>Enter a <strong>Master Admin Password</strong>. It also opens the Cost Control Settings page later. A simple password is fine at this point: you are required to change it at your first login to the platform.</li>\n<li>Accept the <strong>Terms &amp; Conditions</strong> and select <strong>Create Master Account</strong>.</li>\n<li>Sign in to the Installation Wizard with the same email address and password.</li>\n</ol>\n<h2>Configure and install</h2>\n<ol>\n<li>Choose the <strong>Environment Type</strong>: Development, Staging or Production.</li>\n<li>Wait for <strong>Environment Size</strong> to load, then choose <strong>Medium</strong> or larger.</li>\n<li>Enter the <strong>Platform Domain</strong>, for example <code>ph.yourdomain.com</code>.</li>\n<li>Enter your <strong>Google Maps API Key</strong> if you have it. It is needed to add stores, locations and addresses, and can be added later under Integrations.</li>\n<li>Select <strong>Install Platform</strong>.</li>\n</ol>\n<div class=\"callout callout-important\">The platform domain cannot be changed once set, and it must sit on your organisation's primary domain. That is what lets the platform connect first-party cookies and experiences between a customer's online journey and their visit to a physical store.</div>\n<div class=\"callout callout-note\">Do not choose the Functional or Low environment sizes, particularly if you plan to use the AI features. Start at Medium or above; the size can be adjusted later.</div>\n<h2>Verify it worked</h2>\n<p>After roughly 55 minutes the Master Admin receives an email titled <strong>Personalisation Hub - Installation Complete &gt; Next Step: DNS Set-Up</strong>, containing the 2 CNAME records for your domain.</p>\n<h2>Next step</h2>\n<p>The certificate AWS issues for your platform domain lasts 3 days, so continue with <a href=\"article.html?id=faq-art-faq-dns-setup\">Step 3 — Set up DNS after installation</a> straight away.</p>\n<h2>Related</h2>\n<ul><li><a href=\"article.html?id=faq-art-51000463143\">Step 4 — First login and platform set-up</a></li><li><a href=\"article.html?id=faq-art-51000496164\">AWS deployment: resources provisioned</a></li></ul>"
+}

@@ -1,0 +1,22 @@
+{
+"id": "faq-art-51000360015",
+"categoryId": "faq-cat-queue-manage",
+"order": 19,
+"title": "See which languages staff on shift speak",
+"slug": "see-which-languages-staff-on-shift-speak",
+"summary": "Check the languages of an individual staff member, of everyone on shift, or of a store from HQ Admin, before routing a visitor who needs one.",
+"keywords": [
+"languages spoken",
+"staff on shift",
+"language",
+"store profile",
+"multilingual staff",
+"who speaks",
+"hq admin"
+],
+"docType": "how-to",
+"status": "published",
+"updatedAt": "2026-09-14T12:12:16Z",
+"contentHash": "a3cf6f9a956f1163",
+"bodyMd": "<p>Knowing who speaks what lets you route a visitor to a staff member who speaks their language, and lets HQ target campaigns by the languages of staff on shift. There are 3 places to look, depending on whether you want 1 person, the whole shift, or a store viewed from HQ Admin.</p>\n<h2>Before you begin</h2>\n<ul><li>Staff have added their languages to their profiles — see <a href=\"article.html?id=faq-art-51000359900\">Update the languages you speak</a>.</li></ul>\n<h2>For an individual staff member (Retail Admin)</h2>\n<ol>\n<li>In the left navigation of Retail Admin, select <strong>QUEUEING &amp; APPTS</strong>.</li>\n<li>In the STAFF row, select the staff member's chip. Their languages appear in square brackets, for example <em>[Spanish]</em>.</li>\n</ol>\n<h2>For all staff on shift (Retail Admin)</h2>\n<ol>\n<li>In the left navigation, select <strong>STORE INFO</strong>, then <strong>Store Profile</strong>.</li>\n<li>Read the <strong>Languages Spoken by Store Staff</strong> field.</li>\n</ol>\n<h2>For a store (HQ Admin)</h2>\n<ol>\n<li>In the left navigation of HQ Admin, select <strong>Stores / Branches</strong>.</li>\n<li>Search for the store by name and select it.</li>\n<li>On the <strong>Store Details</strong> tab, read the <strong>Languages Spoken by Store Staff</strong> field.</li>\n</ol>\n<h2>Verify it worked</h2>\n<p>The languages listed match what staff have set in <strong>Languages Spoken</strong> on their profiles. Only staff whose status is <strong>Available</strong> or <strong>Serving Customers</strong> count as on shift.</p>\n<h2>Next step</h2><p><a href=\"article.html?id=faq-art-51000360017\">Copy a visitor's mobile number or email address</a></p>\n<h2>Related</h2><ul><li><a href=\"article.html?id=faq-art-51000359900\">Update the languages you speak</a></li><li><a href=\"article.html?id=faq-art-51000360044\">Handle visitors with special requests (language or business customers)</a></li><li><a href=\"article.html?id=faq-art-51000508017\">Localise campaigns by the skills of staff on shift</a></li><li><a href=\"article.html?id=faq-art-51000359916\">View store queueing stats and the staff status widget</a></li></ul>"
+}

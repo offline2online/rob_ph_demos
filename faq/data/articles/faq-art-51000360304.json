@@ -1,0 +1,24 @@
+{
+"id": "faq-art-51000360304",
+"categoryId": "faq-cat-install-steps",
+"order": 6,
+"title": "Step 5 — Upload your brand, logos and icons",
+"slug": "step-5-upload-your-brand-logos-and-icons",
+"summary": "Confirm your brand name and business category, then upload logos and icons for dark and light backgrounds so the platform carries your branding.",
+"keywords": [
+"logo",
+"icon",
+"brand name",
+"branding",
+"business category",
+"brand guidelines",
+"png",
+"upload logo",
+"step 5"
+],
+"docType": "how-to",
+"status": "published",
+"updatedAt": "2026-09-14T12:12:16Z",
+"contentHash": "ddc1412166ac3c20",
+"bodyMd": "<p>Confirm your brand name, choose a primary business category, and upload your logos and icons so the platform shows your branding in HQ Admin, Retail Admin, mobile store sites and every email it sends. Allow about 5 minutes.</p>\n<h2>Before you begin</h2>\n<ul><li>An HQ Admin account with the Admin role (the Master Admin account from installation is fine).</li><li>Transparent PNG files of your company logo and icon, in versions for dark backgrounds and for light backgrounds. Logos must be 1MB or smaller; icons 512KB or smaller.</li><li>Optional: your brand guidelines as a PDF, for the platform's AI agents and skills to follow.</li></ul>\n<h2>Set the brand name and business category</h2>\n<ol>\n<li>In the left navigation, select <strong>Company Settings</strong>.</li>\n<li>In the sub-navigation, select <strong>Brand / Logo / Guidelines</strong>.</li>\n<li>Check <strong>Brand Name</strong> and correct it if needed.<p>This is the value the <code>${BrandName}</code> token inserts into emails and messages, and the name used to search for your stores in Step 6.</p></li>\n<li>In <strong>Primary Business Category</strong>, choose the category that best describes your stores, for example <strong>Mobile Phone Shop</strong>.</li>\n<li>Select <strong>Save Changes</strong>.</li>\n</ol>\n<h2>Upload logos and icons</h2>\n<ol>\n<li>Under <strong>COMPANY LOGO/ICON USED ON DARK BACKGROUNDS</strong>, select <strong>Update</strong> next to <strong>Company Logo</strong>.</li>\n<li>Choose the transparent PNG of your logo for dark backgrounds, position and resize it as needed, then confirm the upload.</li>\n<li>Select <strong>Update</strong> next to <strong>Company Icon</strong> and upload the transparent PNG icon for dark backgrounds.</li>\n<li>Under <strong>COMPANY LOGO/ICON USED ON LIGHT BACKGROUNDS</strong>, repeat the 2 uploads with the light-background versions.</li>\n<li>If you have brand guidelines, drag the PDF into <strong>BRAND GUIDELINES USED BY AI-AGENTS/SKILLS</strong>, or select <strong>Click to upload</strong> and choose the file. Only PDF documents are supported.</li>\n</ol>\n<div class=\"callout callout-note\">The first pair of assets is shown on dark backgrounds (for example the HQ Admin navigation) and the second pair on light backgrounds (for example emails and mobile store sites). Upload all 4 so every surface shows your brand correctly.</div>\n<h2>Verify it worked</h2>\n<p>Your logo appears at the top of the HQ Admin left navigation in place of the default, and <strong>Brand Name</strong> and <strong>Primary Business Category</strong> show the saved values when you reopen <strong>Brand / Logo / Guidelines</strong>.</p>\n<h2>Troubleshooting</h2>\n<h3>The upload is refused</h3>\n<p><strong>Cause.</strong> The file is over the size limit or is not a PNG.</p>\n<p><strong>Fix.</strong> Export a transparent PNG of 1MB or less for a logo, or 512KB or less for an icon, and upload again.</p>\n<h2>Next step</h2>\n<p><a href=\"article.html?id=faq-art-51000483547\">Step 6 — Add your stores from Google Places</a></p>\n<h2>Related</h2>\n<ul><li><a href=\"article.html?id=faq-art-51000290582\">Pre-installation checklist</a></li><li><a href=\"article.html?id=faq-art-51000463143\">Step 4 — First login and platform set-up</a></li><li><a href=\"article.html?id=faq-art-cta-settings\">Add custom menu links (CTA settings) to HQ Admin and Retail Admin</a></li></ul>"
+}

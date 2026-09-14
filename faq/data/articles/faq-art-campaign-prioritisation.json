@@ -1,0 +1,22 @@
+{
+"id": "faq-art-campaign-prioritisation",
+"categoryId": "faq-cat-campaigns-run",
+"order": 7,
+"title": "Prioritise which campaigns play first",
+"slug": "prioritise-which-campaigns-play-first",
+"summary": "Set the order in which active campaigns are presented for a display type from the Campaign Prioritisation button on the Campaigns list.",
+"keywords": [
+"campaign prioritisation",
+"campaign order",
+"priority",
+"which campaign plays first",
+"reorder campaigns",
+"campaign carousel order",
+"update priorities"
+],
+"docType": "how-to",
+"status": "published",
+"updatedAt": "2026-09-14T12:12:16Z",
+"contentHash": "8cb0294b0d5d3bf4",
+"bodyMd": "<p><strong>Campaign Prioritisation</strong> on the Campaigns list sets the order in which active campaigns are presented for a display type. The documented effect is on the campaign carousel of the mobile store site linked to that display type. The order is set per display type, so each screen size or channel can have its own.</p>\n\n<h2>Before you begin</h2>\n<ul>\n<li>An HQ Admin account.</li>\n<li>The campaigns you want to order are activated &mdash; see <a href=\"article.html?id=faq-art-activate-campaign\">Activate or deactivate a campaign</a>. Only active campaigns appear in the order.</li>\n</ul>\n<h2>Steps</h2>\n<ol>\n<li>In the left navigation, select <strong>Campaigns</strong>.</li>\n<li>At the top right, select <strong>Campaign Prioritisation</strong>.</li>\n<li>Find and select the display type you want to update.</li>\n<li>Select <strong>Update Priorities</strong>.</li>\n<li>Use the up and down arrows to re-order the campaigns.</li>\n<li>Select <strong>DONE</strong>.</li>\n</ol>\n<div class=\"callout callout-note\">The <strong>Creative &rarr; Campaign Assets</strong> tab of a campaign also shows a <strong>Priority</strong> number on each playlist card. </div>\n<h2>Verify it worked</h2>\n<p>Active campaigns are presented in the order you set within the campaign carousel on the mobile store site associated with the selected display type. Open the store site to check &mdash; see <a href=\"article.html?id=faq-art-51000359556\">Test your mobile site</a>.</p>\n<h2>Next step</h2>\n<p><a href=\"article.html?id=faq-art-campaign-insights\">Review campaign performance in Insights / Analytics</a></p>\n<h2>Related</h2>\n<ul>\n<li><a href=\"article.html?id=faq-art-51000359675\">Control the order campaigns are presented in</a></li>\n<li><a href=\"article.html?id=faq-art-51000359638\">Choose which campaigns appear in the campaign carousel</a></li>\n<li><a href=\"article.html?id=faq-art-campaign-monitoring-settings\">Configure campaign playback monitoring</a></li>\n</ul>"
+}

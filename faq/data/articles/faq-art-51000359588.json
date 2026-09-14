@@ -1,0 +1,23 @@
+{
+"id": "faq-art-51000359588",
+"categoryId": "faq-cat-store-sites",
+"order": 3,
+"title": "Add Google Maps directions to your mobile site",
+"slug": "add-google-maps-directions-to-your-mobile-site",
+"summary": "Add a Directions menu item that opens Google Maps navigation to the visitor's store, using a token so 1 template works for every store.",
+"keywords": [
+"directions",
+"google maps",
+"navigation",
+"menu item",
+"token",
+"away from store",
+"store address",
+"mobile site"
+],
+"docType": "how-to",
+"status": "published",
+"updatedAt": "2026-09-14T12:12:16Z",
+"contentHash": "bfe412f151edc0a9",
+"bodyMd": "<p>A Directions menu item sends visitors to Google Maps with the store already set as the destination. Because the URL uses a token, 1 menu item in the template works for every store. The same token approach works in campaign URLs.</p>\n<h2>Before you begin</h2>\n<ul><li>Each store has a complete address. See <a href=\"article.html?id=faq-art-51000360495\">Add or update a store's address</a>.</li><li>You know which template the item belongs in: the default, or a template for particular stores.</li></ul>\n<h2>Steps</h2>\n<ol>\n<li>In the left navigation, select <strong>Platform Admin</strong>.</li>\n<li>Under <strong>Enabled Features</strong>, select <strong>Mobile Store Sites</strong>, then select the template.</li>\n<li>Select <strong>Add Menu Item</strong>.</li>\n<li>Name the item, for example <code>Directions</code>, and choose an icon.</li>\n<li>For the URL, enter a Google Maps directions link with a store token as the destination, for example <code>https://www.google.com/maps/dir/?api=1&amp;destination=${StoreName}</code>.\n<p>The platform replaces the token with the store's own value when the site loads, so the destination is different for every store.</p></li>\n<li>Select <strong>Open in New Tab</strong>, so Google Maps opens in the visitor's maps app or browser rather than inside the site.</li>\n<li>Under the states, tick <strong>Show in Away from Store State</strong>. Untick the states in which directions are not useful.</li>\n<li>Select <strong>Save</strong>, then <strong>Save Changes</strong>.</li>\n</ol>\n<div class=\"callout callout-note\">The same directions URL, with the same token, can be used as a campaign's <strong>Campaign Landing Page URL</strong> on the <strong>Campaign Brief</strong> tab, which also offers <strong>+ Add Token</strong>.</div>\n<h2>Verify it worked</h2>\n<p>Scan the store's QR code on a phone. The <strong>Directions</strong> item appears in the menu, and selecting it opens Google Maps with that store as the destination.</p>\n<h2>Next step</h2>\n<p><a href=\"article.html?id=faq-art-51000359590\">Create a mobile site template for a concierge kiosk</a></p>\n<h2>Related</h2>\n<ul><li><a href=\"article.html?id=faq-art-51000359492\">Define your default mobile site template</a></li><li><a href=\"article.html?id=faq-art-51000359556\">Test your mobile site</a></li><li><a href=\"article.html?id=faq-art-51000290754\">Connect the platform to Google Maps / Places</a></li></ul>"
+}
