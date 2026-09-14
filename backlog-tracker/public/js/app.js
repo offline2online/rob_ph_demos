@@ -544,6 +544,26 @@ function cardHTML(item) {
       (item.mergedAt ? 'Merged to main by the backlog automation' : 'Open on GitHub — not merged yet') +
       '">PR #' + escapeHTML(String(item.prNumber || '?')) + (item.mergedAt ? ' &middot; merged' : ' &middot; open') + '</a>'
     : "";
+  // Per-card deploy provenance, written by run-backlog-automation.js's
+  // processMergePr at merge time (mergeCommit, deployRunUrl) and updated by
+  // its own reconciliation pass once the dispatched deploy run actually
+  // finishes (deployConclusion: "pending" -> "success"/"failure"/etc). Only
+  // meaningful once a card is actually Merged to Main (Live) — before that
+  // there's nothing to report yet. Pairs with the board's overall health
+  // strip: that shows the pipeline in aggregate, this shows it per ticket,
+  // closing the gap where confirming 13 cards were genuinely live meant
+  // fetching the deployed app.js and hashing it by hand.
+  const deployBadge = (item.status === "published-live" && (item.deployRunUrl || item.mergeCommit))
+    ? '<div class="deploy-badge deploy-badge-' + escapeHTML(item.deployConclusion || "unknown") + '">' +
+      (item.mergeCommit ? '<span class="deploy-badge-commit" title="Merge commit">' + escapeHTML(String(item.mergeCommit).slice(0, 7)) + '</span>' : "") +
+      (item.deployRunUrl
+        ? '<a href="' + escapeHTML(item.deployRunUrl) + '" target="_blank" rel="noopener">' +
+          (item.deployConclusion === "success" ? "Deploy succeeded"
+            : item.deployConclusion === "pending" || !item.deployConclusion ? "Deploy running&hellip;"
+            : "Deploy " + escapeHTML(item.deployConclusion)) + '</a>'
+        : '<span>Deploy status unknown</span>') +
+      '</div>'
+    : "";
   const commentCount = (item.notes || []).length;
   const editBtn = isLocked
     ? ""
@@ -627,7 +647,7 @@ function cardHTML(item) {
       </div>
       <h3 class="card-title">${escapeHTML(item.title)}</h3>
       ${descHTML}
-      ${noDeployBadge}${testVersionBadge}${prBadge}
+      ${noDeployBadge}${testVersionBadge}${prBadge}${deployBadge}
       <div class="card-footer">
         <div class="card-footer-left">
           <span class="card-cat">${escapeHTML(item.category || "Uncategorised")}</span>
@@ -1160,9 +1180,32 @@ function render() {
 function renderNow() {
   migrateOrphanItems();
   const renderedProjects = getRenderedProjects();
+
+  // Every render replaces #projects-root's entire innerHTML, which throws
+  // away and recreates every .col-list element — including whichever one
+  // you were scrolled down in. That snapped a column back to its top on
+  // every single re-render, not just the "Confirm tested" case it was
+  // first reported against (clicking it writes testPassed to Firestore,
+  // the onSnapshot listener fires, render() runs, and the column you were
+  // scrolling through jumps back to the first card). colListId() gives
+  // each column a stable id across renders even though the element itself
+  // isn't the same node, so capture scrollTop by that id before the
+  // rebuild and restore it after — cheap (only columns actually scrolled
+  // away from top do anything here) and fixes every render path at once
+  // rather than special-casing the one button that happened to surface it.
+  const scrollPositions = {};
+  document.querySelectorAll(".col-list").forEach((el) => {
+    if (el.scrollTop) scrollPositions[el.id] = el.scrollTop;
+  });
+
   document.getElementById("projects-root").innerHTML = programs.length
     ? groupProjectsByProgram(renderedProjects).map(programGroupHTML).join("")
     : renderedProjects.map(projectSectionHTML).join("");
+
+  Object.entries(scrollPositions).forEach(([id, top]) => {
+    const el = document.getElementById(id);
+    if (el) el.scrollTop = top;
+  });
 
   const total = items.filter((i) => COL_KEYS.includes(i.status)).length;
   document.getElementById("total-summary").textContent =
@@ -1359,6 +1402,12 @@ const BACKLOG_ITEM_RENDER_FIELDS = [
   "patchReady", "mergeReady", "noDeploymentRequired", "testPassed",
   "testVersion", "testSummary", "previewUrl",
   "prUrl", "prNumber", "mergedAt",
+  // Provenance for a card that's actually landed — which commit it merged
+  // as, and whether the deploy that was supposed to ship it actually
+  // succeeded (see run-backlog-automation.js's processMergePr). Drawn as
+  // deployBadge on a Merged to Main (Live) card, same "on the REST-primed
+  // first paint, not a second later" reasoning as prUrl/prNumber above.
+  "mergeCommit", "deployRunUrl", "deployConclusion",
   // Not drawn on a card itself, but read by deploymentGroupKey() — without
   // it the same-deployment brackets wouldn't be there on the REST-primed
   // first paint and would pop in a second later when the listener landed.
@@ -2163,12 +2212,17 @@ function setEiAttachHint(text) {
   eiAttachHint.hidden = !text;
 }
 
+const updateEiTitleCount = wireCharCount(eiTitleInput, document.getElementById("ei-title-count"));
+const updateEiDescCount = wireCharCount(eiDescInput, document.getElementById("ei-desc-count"));
+
 function openEditItemModal(id) {
   editingItemId = id;
   const item = allItems.find((i) => i.id === id);
   if (!item) return;
   eiTitleInput.value = item.title || "";
   eiDescInput.value = item.desc || "";
+  updateEiTitleCount();
+  updateEiDescCount();
   setEiTypeToggle(item.type === "bug" ? "bug" : "feature");
   eiCategorySelect.value = item.category || CATEGORIES[0];
   eiNoDeployCheckbox.checked = !!item.noDeploymentRequired;
@@ -2202,10 +2256,20 @@ document.getElementById("ei-save").addEventListener("click", async () => {
   if (!editingItemId) return;
   if (!eiTitleInput.value.trim()) { await showAlert("Title can't be empty."); return; }
   const type = document.querySelector("#ei-backdrop .type-opt.active")?.dataset.type || "feature";
-  updateItemDetails(editingItemId, {
-    title: eiTitleInput.value, desc: eiDescInput.value, type, category: eiCategorySelect.value,
-    noDeploymentRequired: eiNoDeployCheckbox.checked,
-  });
+  const title = eiTitleInput.value.trim();
+  const desc = eiDescInput.value.trim();
+  try {
+    await updateItemDetails(editingItemId, {
+      title, desc, type, category: eiCategorySelect.value,
+      noDeploymentRequired: eiNoDeployCheckbox.checked,
+    });
+  } catch (err) {
+    await showAlert(describeSaveError(err, [
+      { label: "Title", value: title, max: 200 },
+      { label: "Description", value: desc, max: 2000 },
+    ]));
+    return;
+  }
   closeEditItemModal();
 });
 document.getElementById("ei-comment-submit").addEventListener("click", () => {
@@ -2437,6 +2501,96 @@ const niBackdrop = document.getElementById("ni-backdrop");
 
 let activeNewItemProjectId = null;
 
+// Live "X / max" readout for a bounded field, driven off the element's own
+// maxLength (works for both <input maxlength> and <textarea maxlength>) —
+// see firestore.rules for the actual caps this mirrors (desc 2000, title
+// 200, project/interface/doc name 80-120, interface/doc contentMd 20000).
+// Returns an update() the caller can invoke after setting .value
+// programmatically (opening Edit item, opening a Docs modal, ...), since
+// that doesn't fire an "input" event on its own.
+function wireCharCount(el, counterEl) {
+  if (!el || !counterEl) return () => {};
+  const max = el.maxLength;
+  function update() {
+    const len = el.value.length;
+    counterEl.textContent = max > 0 ? `${len} / ${max}` : "";
+    counterEl.classList.toggle("char-count-warn", max > 0 && len >= max * 0.9 && len < max);
+    counterEl.classList.toggle("char-count-limit", max > 0 && len >= max);
+  }
+  el.addEventListener("input", update);
+  update();
+  return update;
+}
+
+// firestore.rules rejects a write over one of its bounded-string caps with
+// a bare 403 permission-denied — nothing in that error names the field or
+// the limit. maxlength (plus the dictation clamp below) stops most of this
+// at the source, but this is the last-resort net for whatever still gets
+// through: look at exactly the fields the write just tried to save and, if
+// one is actually over its own known cap, say so in plain language instead
+// of surfacing "permission-denied" to someone who typed a long ticket.
+function describeSaveError(err, checkedFields) {
+  const over = (checkedFields || []).find((f) => typeof f.value === "string" && f.value.length > f.max);
+  if (over) {
+    return `${over.label} is ${over.value.length} characters — the limit is ${over.max}. Trim it down and try again.`;
+  }
+  const msg = (err && err.message) || String(err);
+  return /permission[- ]denied/i.test(msg)
+    ? "Couldn't save — the server rejected this write (permission-denied). If a field looks unusually long, that's the most likely reason; otherwise this may need a developer to look at firestore.rules."
+    : `Couldn't save: ${msg}`;
+}
+
+// ── Duplicate-ticket check, New Item form only ───────────────────────────
+// Three cards asking for the same thing ("make ticket attachments easier
+// to find") were each independently investigated, built, PR'd, merged and
+// deployed as three separate PRs in one night — nothing between a card
+// being typed and it landing in Backlog ever compared what two cards were
+// actually asking for. This is the creation-time half of that fix (see
+// ROUTINE_INSTRUCTIONS.md for the packaging-time half, which re-checks
+// right before a batch of Backlog items is sent off to be built). Plain
+// keyword-overlap, not embeddings/AI — same spirit as suggestCategory()
+// just above: a cheap, local, good-enough signal, not a final answer.
+const SIMILARITY_STOPWORDS = new Set([
+  "the", "and", "for", "with", "that", "this", "from", "are", "was", "were",
+  "has", "have", "when", "then", "than", "into", "onto", "not", "but", "you",
+  "your", "can", "will", "would", "could", "should", "also", "just", "its",
+  "it's", "a", "an", "of", "to", "in", "on", "is", "it", "as", "be", "or",
+  "if", "so", "we", "i", "please", "make", "add",
+]);
+function significantWords(text) {
+  return (text || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, " ")
+    .split(/\s+/)
+    .filter((w) => w.length > 2 && !SIMILARITY_STOPWORDS.has(w));
+}
+// Overlap coefficient (shared / smaller set), not Jaccard — a short new
+// description that's entirely contained in a longer existing ticket should
+// still read as a strong match, and Jaccard would dilute that with all the
+// longer ticket's unrelated words.
+function descSimilarity(a, b) {
+  const wa = new Set(significantWords(a));
+  const wb = new Set(significantWords(b));
+  if (!wa.size || !wb.size) return 0;
+  let shared = 0;
+  wa.forEach((w) => { if (wb.has(w)) shared++; });
+  return shared / Math.min(wa.size, wb.size);
+}
+const DUPLICATE_SIMILARITY_THRESHOLD = 0.6;
+// "Open" here means still actively in play for this project — a ticket
+// already live or archived isn't a duplicate risk, it's just prior art.
+const OPEN_STATUSES_FOR_DUPLICATE_CHECK = ["backlog", "ready-for-testing", "ready-to-publish"];
+function findLikelyDuplicate(projectId, desc) {
+  let best = null, bestScore = 0;
+  items
+    .filter((i) => (i.projectId || GENERAL_PROJECT_ID) === projectId && OPEN_STATUSES_FOR_DUPLICATE_CHECK.includes(i.status))
+    .forEach((i) => {
+      const score = descSimilarity(desc, i.desc || "");
+      if (score > bestScore) { bestScore = score; best = i; }
+    });
+  return bestScore >= DUPLICATE_SIMILARITY_THRESHOLD ? { item: best, score: bestScore } : null;
+}
+
 const TITLE_MAX = 70;
 function generateTitle(desc) {
   const text = (desc || "").trim().replace(/\s+/g, " ");
@@ -2445,6 +2599,8 @@ function generateTitle(desc) {
   const lastSpace = cut.lastIndexOf(" ");
   return (lastSpace > 0 ? cut.slice(0, lastSpace) : cut) + "…";
 }
+
+const updateNiDescCount = wireCharCount(document.getElementById("ni-desc-input"), document.getElementById("ni-desc-count"));
 
 function openForm(projectId) {
   activeNewItemProjectId = projectId;
@@ -2458,6 +2614,7 @@ function closeForm() {
   const descEl = document.getElementById("ni-desc-input");
   descEl.value = "";
   descEl.style.height = "";
+  updateNiDescCount();
   document.querySelectorAll(".type-opt").forEach((b) => b.classList.remove("active"));
   document.querySelector('.type-opt[data-type="feature"]').classList.add("active");
   niDictation.clearError();
@@ -2483,7 +2640,29 @@ document.getElementById("ni-submit").addEventListener("click", async () => {
   const category = suggestCategory(desc);
   const title = generateTitle(desc);
   if (!desc || !activeNewItemProjectId) return;
-  await addItem(activeNewItemProjectId, title, desc, type, category);
+
+  const dup = findLikelyDuplicate(activeNewItemProjectId, desc);
+  if (dup) {
+    const addAsComment = await showConfirmDialog(
+      `This looks a lot like an existing open ticket: "${dup.item.title}". Add this as a comment on that ticket instead of creating a separate one?`,
+      { okLabel: "Add as comment", cancelLabel: "Create separate ticket anyway" }
+    );
+    if (addAsComment) {
+      await addItemComment(dup.item.id, desc);
+      closeForm();
+      return;
+    }
+    // "Create separate ticket anyway" falls through to the normal add below —
+    // the check is a nudge, not a block, since two cards can legitimately
+    // share a lot of wording and still be genuinely different work.
+  }
+
+  try {
+    await addItem(activeNewItemProjectId, title, desc, type, category);
+  } catch (err) {
+    await showAlert(describeSaveError(err, [{ label: "Description", value: desc, max: 2000 }]));
+    return;
+  }
   closeForm();
 });
 
@@ -2519,9 +2698,12 @@ function populateProjectSelect(selectEl, excludeId) {
     : '<option value="">No other projects yet</option>';
 }
 
+const updateNpNameCount = wireCharCount(document.getElementById("np-name-input"), document.getElementById("np-name-count"));
+
 function openProjectModal() {
   npBackdrop.hidden = false;
   document.getElementById("np-name-input").value = "";
+  updateNpNameCount();
   populateProgramSelect(npProgramSelect, "");
   document.getElementById("np-name-input").focus();
 }
@@ -2539,7 +2721,12 @@ document.getElementById("np-submit").addEventListener("click", async () => {
   const name = nameEl.value.trim();
   if (!name) { nameEl.focus(); return; }
   const programId = npProgramSelect.value !== "__new__" ? npProgramSelect.value : "";
-  await addProject(name, programId);
+  try {
+    await addProject(name, programId);
+  } catch (err) {
+    await showAlert(describeSaveError(err, [{ label: "Name", value: name, max: 80 }]));
+    return;
+  }
   closeProjectModal();
 });
 
@@ -2851,6 +3038,7 @@ document.getElementById("docs-extra-docs-list").addEventListener("click", (e) =>
 const docBackdrop = document.getElementById("doc-backdrop");
 const docNameInput = document.getElementById("doc-name-input");
 const docContentInput = document.getElementById("doc-content-input");
+const updateDocContentCount = wireCharCount(docContentInput, document.getElementById("doc-content-count"));
 
 function openDocModal(docId) {
   editingDocId = docId || null;
@@ -2865,6 +3053,7 @@ function openDocModal(docId) {
     docNameInput.value = "";
     docContentInput.value = "";
   }
+  updateDocContentCount();
   docNameInput.focus();
 }
 function closeDocModal() { docBackdrop.hidden = true; editingDocId = null; }
@@ -2879,11 +3068,20 @@ document.addEventListener("keydown", (e) => {
 document.getElementById("doc-submit").addEventListener("click", async () => {
   const name = docNameInput.value.trim();
   if (!name) { docNameInput.focus(); return; }
-  if (editingDocId) {
-    await updateProjectDoc(editingDocId, name, docContentInput.value);
-  } else {
-    if (!docsProjectId) return;
-    await addProjectDoc(docsProjectId, name, docContentInput.value);
+  const content = docContentInput.value;
+  try {
+    if (editingDocId) {
+      await updateProjectDoc(editingDocId, name, content);
+    } else {
+      if (!docsProjectId) return;
+      await addProjectDoc(docsProjectId, name, content);
+    }
+  } catch (err) {
+    await showAlert(describeSaveError(err, [
+      { label: "Name", value: name, max: 120 },
+      { label: "Content", value: content, max: 20000 },
+    ]));
+    return;
   }
   closeDocModal();
 });
@@ -2893,6 +3091,7 @@ const ifBackdrop = document.getElementById("if-backdrop");
 const ifOtherProject = document.getElementById("if-other-project");
 const ifNameInput = document.getElementById("if-name-input");
 const ifContentInput = document.getElementById("if-content-input");
+const updateIfContentCount = wireCharCount(ifContentInput, document.getElementById("if-content-count"));
 
 // `anchorProjectId` is only used in "new" mode (no interfaceId) — it's
 // whichever project the modal was launched from (the Docs page's own
@@ -2921,6 +3120,7 @@ function openInterfaceModal(interfaceId, anchorProjectId) {
     ifNameInput.value = "";
     ifContentInput.value = "";
   }
+  updateIfContentCount();
   ifNameInput.focus();
 }
 function closeInterfaceModal() { ifBackdrop.hidden = true; editingInterfaceId = null; ifAnchorProjectId = null; }
@@ -2935,12 +3135,21 @@ document.addEventListener("keydown", (e) => {
 document.getElementById("if-submit").addEventListener("click", async () => {
   const name = ifNameInput.value.trim();
   if (!name) { ifNameInput.focus(); return; }
-  if (editingInterfaceId) {
-    await updateInterface(editingInterfaceId, name, ifContentInput.value);
-  } else {
-    const otherId = ifOtherProject.value;
-    if (!otherId || !ifAnchorProjectId) return;
-    await addInterface(name, [ifAnchorProjectId, otherId], ifContentInput.value);
+  const content = ifContentInput.value;
+  try {
+    if (editingInterfaceId) {
+      await updateInterface(editingInterfaceId, name, content);
+    } else {
+      const otherId = ifOtherProject.value;
+      if (!otherId || !ifAnchorProjectId) return;
+      await addInterface(name, [ifAnchorProjectId, otherId], content);
+    }
+  } catch (err) {
+    await showAlert(describeSaveError(err, [
+      { label: "Name", value: name, max: 120 },
+      { label: "Contract content", value: content, max: 20000 },
+    ]));
+    return;
   }
   closeInterfaceModal();
 });
@@ -3007,7 +3216,7 @@ function setTypeToggle(type) {
 const MIC_ICON_SVG = '<svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" aria-hidden="true" focusable="false"><path d="M12 15a3.5 3.5 0 0 0 3.5-3.5v-5a3.5 3.5 0 0 0-7 0v5A3.5 3.5 0 0 0 12 15z"/><path d="M18.5 11.5a1 1 0 0 0-2 0 4.5 4.5 0 0 1-9 0 1 1 0 0 0-2 0 6.5 6.5 0 0 0 5.5 6.42V20H9a1 1 0 0 0 0 2h6a1 1 0 0 0 0-2h-2v-2.08a6.5 6.5 0 0 0 5.5-6.42z"/></svg>';
 const STOP_ICON_SVG = '<svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor" aria-hidden="true" focusable="false"><rect x="6" y="6" width="12" height="12" rx="2.5"/></svg>';
 
-function createDictationController({ textareaEl, micBtn, hintEl, errorEl, onStop }) {
+function createDictationController({ textareaEl, micBtn, hintEl, errorEl, onStop, charCountUpdate }) {
   let recognition = null;
   let listening = false;
   // Chrome/Android's SpeechRecognition ends itself after a few seconds of
@@ -3069,8 +3278,22 @@ function createDictationController({ textareaEl, micBtn, hintEl, errorEl, onStop
         const chunk = e.results[i][0].transcript;
         if (e.results[i].isFinal) finalText += chunk + " "; else interimText += chunk;
       }
-      textareaEl.value = (baseline + finalText + interimText).replace(/\s+/g, " ").replace(/^\s+/, "");
+      let next = (baseline + finalText + interimText).replace(/\s+/g, " ").replace(/^\s+/, "");
+      // Native maxlength on the textarea stops typing/pasting past a
+      // field's own bound (see firestore.rules), but assigning .value
+      // straight from script — exactly what this line does — bypasses
+      // maxlength entirely. Without this, dictating a long description ran
+      // straight past 2000 characters with nothing visible until the
+      // eventual Firestore write failed with a bare 403 permission-denied.
+      // Only clamps when the field actually declares a maxlength, so this
+      // never truncates an unbounded field.
+      if (textareaEl.maxLength > 0 && next.length > textareaEl.maxLength) {
+        next = next.slice(0, textareaEl.maxLength);
+        showError(`Reached the ${textareaEl.maxLength}-character limit for this field.`);
+      }
+      textareaEl.value = next;
       autoGrow(textareaEl);
+      if (charCountUpdate) charCountUpdate();
     };
     recognition.onerror = (e) => {
       const code = e && e.error;
@@ -3211,6 +3434,7 @@ const niDictation = createDictationController({
   hintEl: document.getElementById("ni-listening-hint"),
   errorEl: document.getElementById("ni-mic-error"),
   onStop: (text) => setTypeToggle(suggestType(text)),
+  charCountUpdate: updateNiDescCount,
 });
 createDictationController({
   textareaEl: qcCommentInput,
