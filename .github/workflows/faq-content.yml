@@ -98,4 +98,6 @@ jobs:
         working-directory: backlog-tracker
         env:
           GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/firebase-sa.json
-        run: npx firebase-tools@13 deploy --only hosting:help --project backlog-tracker-e4ed2 --non-interactive --force
+        run: |
+          rsync -a --delete --exclude README.md ../faq/ help-site/
+          npx firebase-tools@13 deploy --only hosting:help --project backlog-tracker-e4ed2 --non-interactive --force
