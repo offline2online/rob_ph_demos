@@ -973,6 +973,7 @@ function projectSectionHTML(project) {
 
   return `
     <section class="project${collapsed ? " collapsed" : ""}" data-project-id="${escapeHTML(project.id)}">
+      <div class="project-sticky-sentinel" aria-hidden="true"></div>
       <div class="project-header">
         <button type="button" class="project-collapse-btn" data-project-id="${escapeHTML(project.id)}" title="${collapsed ? "Expand" : "Collapse"}">${collapsed ? "&#9656;" : "&#9662;"}</button>
         <div class="project-title-wrap">
@@ -1130,6 +1131,67 @@ function renderNow() {
   }
 
   ensureGeneralProjectDoc(renderedProjects);
+  attachStickyProjectHeaders();
+}
+
+// ── Sticky project header on a phone ────────────────────────────────────
+// On a narrow screen the board stacks into one tall column, so a project's
+// own actions — Ready for Dev, Approved for Deployment, Notify Claude —
+// Deploy — scroll off the top long before you reach the cards those
+// actions apply to. Confirming a card tested in Ready for Testing and then
+// approving it meant scrolling back up, which is the whole reason the board
+// couldn't be driven from a phone.
+//
+// `position: sticky` does the work (see styles.css): each project's header
+// pins to the top of the screen while you are anywhere inside that project,
+// and the next project's header pushes it out of the way as you scroll into
+// it — exactly "the CTAs for the section you're currently looking at". The
+// column heads pin underneath it, so it's always clear which column the
+// cards under your thumb belong to.
+//
+// The only thing sticky can't do by itself is know that it's currently
+// stuck, which is what the compact one-row layout keys off (a full-height
+// header pinned to a phone screen would eat a third of it). A 1px sentinel
+// sits immediately above each header: once it's above the top of the
+// viewport, that header is pinned.
+//
+// Deliberately a scroll listener and not an IntersectionObserver on those
+// sentinels, which is the tidier-looking version and is wrong here. An
+// observer only fires when an element CROSSES a threshold, and a jump
+// between two projects (tapping a card, or a momentum flick on a phone)
+// takes a sentinel straight from "below the viewport, not intersecting" to
+// "above the viewport, not intersecting" without ever intersecting it — no
+// crossing, no callback, so the header you're now looking at never learns
+// it's pinned while the one you left never learns it isn't. Measured
+// directly: scrolling from project A into project B left A's header
+// compact and B's full-height. A rAF-throttled sweep of every sentinel
+// can't miss a transition, and the sweep is one getBoundingClientRect per
+// project.
+let stickyStateQueued = false;
+function syncStickyProjectHeaders() {
+  document.querySelectorAll(".project-sticky-sentinel").forEach((sentinel) => {
+    const header = sentinel.nextElementSibling;
+    if (!header || !header.classList.contains("project-header")) return;
+    // Set at every width; only the mobile media query gives it meaning, so
+    // there's nothing to undo when a desktop window is narrowed or widened.
+    header.classList.toggle("is-stuck", sentinel.getBoundingClientRect().top < 0);
+  });
+}
+function queueStickySync() {
+  if (stickyStateQueued) return;
+  stickyStateQueued = true;
+  requestAnimationFrame(() => { stickyStateQueued = false; syncStickyProjectHeaders(); });
+}
+let stickyListenersAttached = false;
+function attachStickyProjectHeaders() {
+  if (!stickyListenersAttached) {
+    stickyListenersAttached = true;
+    window.addEventListener("scroll", queueStickySync, { passive: true });
+    window.addEventListener("resize", queueStickySync);
+  }
+  // renderNow() replaces every project's markup wholesale, so the classes
+  // set on the old headers went with them — re-derive against the new DOM.
+  syncStickyProjectHeaders();
 }
 
 // ── First paint without waiting on the realtime channel ──────────────────
