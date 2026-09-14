@@ -32,8 +32,8 @@ hourly/on demand and syncs `faq/data` → Firestore when it changes on
 `main` (`backlog-tracker/scripts/faq-export.js` / `faq-sync.js`), and the
 article page pulls a newer revision straight from Firestore's REST API on
 load. Writes to the two FAQ collections require a signed-in allowlisted
-Google account (`backlog-tracker/firestore.rules` → `isFaqEditor`); the
-board's other collections stay open. See `faq/README.md` for the full flow
+Google account (`backlog-tracker/firestore.rules` → `isEditor`), as does
+the whole console (sign-in wall in `backlog-tracker/public/js/auth-gate.js`). See `faq/README.md` for the full flow
 and `docs/faq-audit-2026-09.md` for the September 2026 audit/rewrite (12
 categories, 140 articles, new-customer ordering). The original Freshdesk
 import (`backlog-tracker/scripts/seed-faq-data.js`, insert-only) is now
@@ -159,22 +159,29 @@ confirmed "Live on Feature Branch", click that project's **"Notify Claude
 — Deploy"** button to have Claude verify and merge it for real.
 
 **There's no separate "publish" step anymore — a write to Firestore is
-live immediately**, for every open tab, via `onSnapshot()`. Check/update the
-board with direct Firestore REST calls when working outside the browser UI
-(this sandbox has no Firebase CLI, but the REST API works over plain HTTPS
-since `firestore.rules` allows open, unauthenticated read/write on both
-collections — see `backlog-tracker/firestore.rules`):
+live immediately**, for every open tab, via `onSnapshot()`. **The board is
+behind Google sign-in**: `backlog-tracker/firestore.rules` requires an
+allowlisted signed-in editor for every read and write of the board's
+collections (only the two help-centre collections stay publicly readable),
+so anonymous REST calls to `firestore.googleapis.com` are denied. Outside
+the browser UI, use the `boardApi` Cloud Function — a transparent proxy onto
+the same REST API, authenticated with the `X-Board-Key` header (the value is
+the `BOARD_API_KEY` repo/Firebase secret; Routine-fired sessions receive it
+in their fire payload). Same paths, verbs and JSON as Firestore's REST API:
 
 ```bash
+BOARD="https://us-central1-backlog-tracker-e4ed2.cloudfunctions.net/boardApi/v1/projects/backlog-tracker-e4ed2/databases/(default)/documents"
+KEY="<X-Board-Key>"
+
 # List all projects
-curl -sS "https://firestore.googleapis.com/v1/projects/backlog-tracker-e4ed2/databases/(default)/documents/projects"
+curl -sS -H "X-Board-Key: $KEY" "$BOARD/projects"
 
 # List all backlog items
-curl -sS "https://firestore.googleapis.com/v1/projects/backlog-tracker-e4ed2/databases/(default)/documents/backlogItems"
+curl -sS -H "X-Board-Key: $KEY" "$BOARD/backlogItems"
 
 # Move a card (PATCH with updateMask; status/updatedAt shown, add more fields+mask entries as needed)
-curl -sS -X PATCH \
-  "https://firestore.googleapis.com/v1/projects/backlog-tracker-e4ed2/databases/(default)/documents/backlogItems/<ITEM_ID>?updateMask.fieldPaths=status&updateMask.fieldPaths=updatedAt" \
+curl -sS -X PATCH -H "X-Board-Key: $KEY" \
+  "$BOARD/backlogItems/<ITEM_ID>?updateMask.fieldPaths=status&updateMask.fieldPaths=updatedAt" \
   -H "Content-Type: application/json" \
   -d '{"fields":{"status":{"stringValue":"ready-for-testing"},"updatedAt":{"timestampValue":"<ISO8601>"}}}'
 ```

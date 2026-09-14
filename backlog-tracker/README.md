@@ -894,12 +894,11 @@ default.
   exports Firestore → `faq/data` hourly/on demand and syncs `faq/data` →
   Firestore on push (`scripts/faq-export.js`, `scripts/faq-sync.js`). See
   `faq/README.md` and `docs/faq-audit-2026-09.md`.
-- **Sign-in to edit**: writes to `faqCategories`/`faqArticles` require a
-  signed-in Google account on the allowlist in `firestore.rules`
-  (`isFaqEditor`); the FAQ pages show a "Sign in with Google" bar and every
-  save/reorder/delete goes through `requireFaqEditor()` in `app.js`. The
-  Google provider must be enabled once under Authentication → Sign-in
-  method in the Firebase console. The rest of the board is unchanged.
+- **Sign-in**: the whole console requires an allowlisted Google account
+  (see "What's deliberately not built yet" → sign-in, below); FAQ writes
+  are covered by the same `isEditor` rule. The FAQ pages additionally show
+  who is editing, and every save/reorder/delete goes through
+  `requireFaqEditor()` in `app.js`.
 - **Admin**: two separate hamburger-menu destinations, **Settings**
   (categories — name, icon picked from a curated dropdown with a live
   preview, description, display order) and **FAQ Management** (articles —
@@ -1007,12 +1006,20 @@ default.
 
 ## What's deliberately not built yet
 
-- **No auth on the board itself.** `firestore.rules` is open read/write
-  for the backlog collections, same permissive starting posture the rest of
-  this repo's prototypes use — fine for an internal team tool. The two
-  public-facing FAQ collections are the exception (see "FAQ / Help Center"
-  → "Sign-in to edit"); extend the same `request.auth` gating to the rest
-  before the board itself is exposed beyond the team.
+- ~~No auth.~~ **The whole console is behind Google sign-in** (September
+  2026): `public/js/auth-gate.js` shows a sign-in wall and only imports
+  `app.js` once an allowlisted, verified Google account is signed in;
+  `firestore.rules` (`isEditor`) and `storage.rules` require that same
+  allowlist for every read and write of the board's collections and
+  attachments. Only the two help-centre collections remain publicly
+  readable (the public FAQ site needs them). Automation that used to call
+  Firestore's REST API anonymously now authenticates: the GitHub Actions
+  automation uses the deploy service account, and Routine-fired Claude
+  sessions go through the `boardApi` Cloud Function proxy with the
+  `X-Board-Key` header (`BOARD_API_KEY` secret — set it as a GitHub repo
+  secret; the deploy workflow syncs it into Secret Manager). To add an
+  editor, add their email to the allowlist in all three files
+  (`auth-gate.js`, `firestore.rules`, `storage.rules`).
 - **No drag-and-drop.** Multi-project and an archive page (per-project
   "Archived (N)" button → sortable/filterable table, with a Restore
   action) have both since been ported over from the Artifact board;

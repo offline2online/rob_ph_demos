@@ -13,12 +13,24 @@ service firebase.storage {
     // backlogItems doc id, not validated against Firestore itself (rules
     // can't cross-reference across products), so this only bounds what
     // kind/size of file can land here, not which item it's "for".
+    // The console is behind Google sign-in (see firestore.rules isEditor);
+    // attachments follow the same rule — no anonymous access.
+    function isEditor() {
+      return request.auth != null
+        && request.auth.token.email_verified == true
+        && request.auth.token.email in [
+          "rob@offline2online.com",
+          "rob@personalisationhub.com"
+        ];
+    }
+
     match /attachments/{itemId}/{fileName} {
-      allow read: if true;
-      allow write: if request.resource.size < 100 * 1024 * 1024 &&
+      allow read: if isEditor();
+      allow write: if isEditor() &&
+        request.resource.size < 100 * 1024 * 1024 &&
         (request.resource.contentType.matches('image/.*') ||
          request.resource.contentType.matches('video/.*'));
-      allow delete: if true;
+      allow delete: if isEditor();
     }
   }
 }

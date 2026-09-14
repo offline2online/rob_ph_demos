@@ -62,6 +62,17 @@ const CLAUDE_ROUTINE_TOKEN = defineSecret("CLAUDE_ROUTINE_TOKEN");
 // reserved for the variables it injects itself.
 const GH_DISPATCH_TOKEN = defineSecret("GH_DISPATCH_TOKEN");
 
+// Shared key for the boardApi Firestore proxy (see the bottom of this file).
+// Handed to each Routine-fired session inside the fire text, because the
+// board's Firestore rules now require sign-in and a Claude session cannot
+// sign in with Google — the proxy is how it reads and updates the board.
+const BOARD_API_KEY = defineSecret("BOARD_API_KEY");
+function boardAccessBlock() {
+  const key = BOARD_API_KEY.value();
+  if (!key || key === "unset") return "\n\n(BOARD ACCESS: boardApi is not configured — BOARD_API_KEY is unset — so direct Firestore REST calls will be denied by the board's rules; report this and stop.)";
+  return `\n\nBOARD ACCESS: the board's Firestore requires sign-in, so use the boardApi proxy instead of firestore.googleapis.com — same paths, verbs and JSON, different host, plus one header:\n  base: https://us-central1-${process.env.GCLOUD_PROJECT || "backlog-tracker-e4ed2"}.cloudfunctions.net/boardApi/v1/projects/${process.env.GCLOUD_PROJECT || "backlog-tracker-e4ed2"}/databases/(default)/documents\n  header: X-Board-Key: ${key}\nSee backlog-tracker/ROUTINE_INSTRUCTIONS.md → "Board access".`;
+}
+
 // The repo backlog-automation.yml lives in, and the event_type its
 // repository_dispatch trigger listens for. Hard-coded rather than
 // configurable: this function exists to start one specific workflow in one
@@ -71,7 +82,7 @@ const AUTOMATION_REPO = "offline2online/rob_ph_demos";
 const AUTOMATION_DISPATCH_EVENT = "backlog-automation";
 
 exports.notifyOnProjectReadyForReview = onDocumentUpdated(
-  { document: "projects/{projectId}", secrets: [NOTIFY_WEBHOOK_URL, CLAUDE_ROUTINE_FIRE_URL, CLAUDE_ROUTINE_TOKEN] },
+  { document: "projects/{projectId}", secrets: [NOTIFY_WEBHOOK_URL, CLAUDE_ROUTINE_FIRE_URL, CLAUDE_ROUTINE_TOKEN, BOARD_API_KEY] },
   async (event) => {
     const before = event.data?.before?.data();
     const after = event.data?.after?.data();
@@ -150,7 +161,7 @@ exports.notifyOnProjectReadyForReview = onDocumentUpdated(
 
       const selfReportHint = `\n\nWhen you finish this run (whether you completed everything or stopped early on a blocker), PATCH projects/${event.params.projectId} with notifyRoutine.status set to "done" (or "error" with an errorMessage, if you stopped early) and notifyRoutine.finishedAt set to now — the board shows a working/spinning state on its Notify Claude button until it sees this.`;
 
-      const text = `${projectPromptBlock}Project: "${projectName}" (projectId: ${event.params.projectId}) on the Backlog Tracker & FAQs board has ${items.length} item${items.length === 1 ? "" : "s"} in Backlog:\n\n${itemLines}${selfReportHint}`;
+      const text = `${projectPromptBlock}Project: "${projectName}" (projectId: ${event.params.projectId}) on the Backlog Tracker & FAQs board has ${items.length} item${items.length === 1 ? "" : "s"} in Backlog:\n\n${itemLines}${selfReportHint}${boardAccessBlock()}`;
 
       try {
         const res = await fetch(fireUrl, {
@@ -284,7 +295,7 @@ exports.notifyOnProjectReadyForReview = onDocumentUpdated(
 // rather than relying on the Routine's own shared prompt (which is written
 // for a Backlog-shaped request) to infer that on its own.
 exports.notifyOnProjectReadyToDeploy = onDocumentUpdated(
-  { document: "projects/{projectId}", secrets: [NOTIFY_WEBHOOK_URL, CLAUDE_ROUTINE_FIRE_URL, CLAUDE_ROUTINE_TOKEN] },
+  { document: "projects/{projectId}", secrets: [NOTIFY_WEBHOOK_URL, CLAUDE_ROUTINE_FIRE_URL, CLAUDE_ROUTINE_TOKEN, BOARD_API_KEY] },
   async (event) => {
     const before = event.data?.before?.data();
     const after = event.data?.after?.data();
@@ -390,7 +401,7 @@ exports.notifyOnProjectReadyToDeploy = onDocumentUpdated(
 
     const text = `${projectPromptBlock}=== DEPLOY REQUEST for "${projectName}" (projectId: ${event.params.projectId}) on the Backlog Tracker & FAQs board ===\n` +
       `These ${items.length} item${items.length === 1 ? "" : "s"} are already implemented, tested, and confirmed "Approved for Deployment" (ready-to-publish). Do NOT investigate, re-implement, or re-test them — follow ROUTINE_INSTRUCTIONS.md's "Notify Claude — Deploy" flow section for exactly what to do with each one.\n\n` +
-      `Items:\n${itemLines}${selfReportHint}`;
+      `Items:\n${itemLines}${selfReportHint}${boardAccessBlock()}`;
 
     let sessionId = null;
     let sessionUrl = null;
@@ -681,3 +692,73 @@ exports.onBacklogItemReadyForAutomation = onDocumentWritten(
     }
   }
 );
+
+// ── boardApi: authenticated Firestore REST proxy for automation ───────────
+// The board's Firestore rules require a signed-in editor for every board
+// collection, so the Claude Code sessions the Notify Claude Routines fire
+// (which used to call Firestore's REST API anonymously — see
+// ROUTINE_INSTRUCTIONS.md) can no longer talk to Firestore directly. This
+// endpoint is their replacement: a transparent proxy onto the same REST API,
+// authenticated with a shared key instead of a Google sign-in.
+//
+//   https://<region>-backlog-tracker-e4ed2.cloudfunctions.net/boardApi/v1/projects/backlog-tracker-e4ed2/databases/(default)/documents/...
+//   header: X-Board-Key: <BOARD_API_KEY>
+//
+// Same paths, verbs, query strings and JSON bodies as
+// https://firestore.googleapis.com/v1/... — only the host changes and the
+// header is added — restricted to the board's own collections. The function
+// runs as the project's service account, which bypasses rules. The key
+// lives in Secret Manager (BOARD_API_KEY, synced from the GitHub repo secret
+// of the same name by the deploy workflow); an unset placeholder disables
+// the endpoint entirely.
+const { onRequest } = require("firebase-functions/v2/https");
+const { GoogleAuth } = require("google-auth-library");
+const BOARD_API_COLLECTIONS = ["projects", "programs", "backlogItems", "interfaces", "projectDocs", "faqCategories", "faqArticles"];
+const FIRESTORE_HOST = "https://firestore.googleapis.com";
+const FIRESTORE_DOCS = `/v1/projects/${process.env.GCLOUD_PROJECT || "backlog-tracker-e4ed2"}/databases/(default)/documents`;
+
+function timingSafeEqual(a, b) {
+  const crypto = require("crypto");
+  const ab = Buffer.from(String(a)); const bb = Buffer.from(String(b));
+  return ab.length === bb.length && crypto.timingSafeEqual(ab, bb);
+}
+function boardApiPathAllowed(pathname, body) {
+  if (!pathname.startsWith(FIRESTORE_DOCS)) return false;
+  const rest = pathname.slice(FIRESTORE_DOCS.length);
+  if (rest === ":runQuery" || rest === ":batchGet" || rest === ":commit") {
+    // Body must only reference allowed collections.
+    const text = JSON.stringify(body || {});
+    const ids = [...text.matchAll(/"collectionId"\s*:\s*"([^"]+)"/g)].map((m) => m[1]);
+    const names = [...text.matchAll(/documents\/([A-Za-z]+)\//g)].map((m) => m[1]);
+    return [...ids, ...names].every((c) => BOARD_API_COLLECTIONS.includes(c));
+  }
+  const first = rest.replace(/^\//, "").split("/")[0].split(":")[0];
+  return BOARD_API_COLLECTIONS.includes(first);
+}
+
+exports.boardApi = onRequest({ secrets: [BOARD_API_KEY], cors: false, timeoutSeconds: 60 }, async (req, res) => {
+  const configured = BOARD_API_KEY.value();
+  const presented = req.get("x-board-key") || "";
+  if (!configured || configured === "unset") { res.status(503).json({ error: "boardApi is not configured (BOARD_API_KEY unset)" }); return; }
+  if (!presented || !timingSafeEqual(presented, configured)) { res.status(401).json({ error: "missing or invalid X-Board-Key" }); return; }
+  if (!["GET", "POST", "PATCH", "DELETE"].includes(req.method)) { res.status(405).json({ error: "method not allowed" }); return; }
+  // Depending on which URL form invoked us the function name may or may not
+  // still be on the path; normalise so both work.
+  const url = new URL((req.originalUrl || req.url).replace(/^\/boardApi(?=\/|$)/, ""), FIRESTORE_HOST);
+  if (!boardApiPathAllowed(url.pathname, req.body)) { res.status(403).json({ error: "path or collection not allowed" }); return; }
+  try {
+    const auth = new GoogleAuth({ scopes: ["https://www.googleapis.com/auth/datastore"] });
+    const client = await auth.getClient();
+    const { token } = await client.getAccessToken();
+    const upstream = await fetch(FIRESTORE_HOST + url.pathname + url.search, {
+      method: req.method,
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: ["POST", "PATCH"].includes(req.method) ? JSON.stringify(req.body || {}) : undefined,
+    });
+    const text = await upstream.text();
+    res.status(upstream.status).set("Content-Type", "application/json").send(text);
+  } catch (err) {
+    logger.error("boardApi proxy failed", { error: err instanceof Error ? err.message : String(err) });
+    res.status(502).json({ error: "upstream request failed" });
+  }
+});

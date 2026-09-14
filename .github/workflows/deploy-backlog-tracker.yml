@@ -129,6 +129,30 @@ jobs:
             sleep 20
           done
 
+      # BOARD_API_KEY authenticates the boardApi Cloud Function — the
+      # Firestore REST proxy the Notify Claude Routine sessions use now that
+      # the board's rules require sign-in (see functions/index.js boardApi).
+      # Same placeholder pattern as GH_DISPATCH_TOKEN: "unset" keeps the
+      # deploy green and the endpoint disabled until the repo secret exists.
+      - name: Sync BOARD_API_KEY into Firebase Secret Manager
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/firebase-sa.json
+          BOARD_API_KEY: ${{ secrets.BOARD_API_KEY }}
+        run: |
+          VALUE="$BOARD_API_KEY"
+          if [ -z "$VALUE" ]; then
+            echo "BOARD_API_KEY repo secret not set — writing the 'unset' placeholder; boardApi answers 503 until it is set"
+            VALUE=unset
+          fi
+          for attempt in 1 2 3; do
+            if printf '%s' "$VALUE" | npx firebase-tools@13 functions:secrets:set BOARD_API_KEY --project backlog-tracker-e4ed2 --data-file - --force; then
+              break
+            fi
+            [ "$attempt" = "3" ] && { echo "functions:secrets:set BOARD_API_KEY failed after 3 attempts"; exit 1; }
+            echo "functions:secrets:set BOARD_API_KEY failed (attempt $attempt/3), retrying in 20s..."
+            sleep 20
+          done
+
       - name: Install migration script dependencies
         working-directory: backlog-tracker/scripts
         run: npm install

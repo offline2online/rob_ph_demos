@@ -74,7 +74,13 @@ jobs:
         with:
           node-version: 20
 
+      # The board's Firestore rules require a signed-in editor, so the script
+      # authenticates as the same service account the deploy workflow uses.
+      - name: Write Firebase service account key
+        run: echo '${{ secrets.FIREBASE_SERVICE_ACCOUNT_BACKLOG_TRACKER }}' > "$RUNNER_TEMP/firebase-sa.json"
+
       - name: Apply patch-ready items / merge merge-ready items
         env:
           GH_TOKEN: ${{ github.token }}
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/firebase-sa.json
         run: node backlog-tracker/scripts/run-backlog-automation.js

@@ -1,6 +1,6 @@
 {
   "name": "backlog-tracker-functions",
-  "description": "Cloud Functions for backlog-tracker — its own Firebase project, isolated from menu-board-demo/functions.",
+  "description": "Cloud Functions for backlog-tracker \u2014 its own Firebase project, isolated from menu-board-demo/functions.",
   "engines": {
     "node": "20"
   },
@@ -11,7 +11,8 @@
   },
   "dependencies": {
     "firebase-admin": "^12.6.0",
-    "firebase-functions": "^6.0.1"
+    "firebase-functions": "^6.0.1",
+    "google-auth-library": "^9.15.0"
   },
   "private": true
 }

@@ -15,14 +15,27 @@ service cloud.firestore {
       return v is string && v.size() > 0 && v.size() <= max;
     }
 
-    // Prototype-stage rules: open read/write, same permissive posture the
-    // rest of this repo's prototypes start with (see rob_ph_demos root
-    // firestore.rules for items/carts). Tighten with Firebase Auth before
-    // this is used for anything beyond an internal team tool.
+    // ── Who may use the board ──────────────────────────────────────────────
+    // The whole console is behind Google sign-in: every read and write of the
+    // board's collections requires a signed-in account whose verified email
+    // is on this allowlist (mirrored in public/js/auth-gate.js — keep the two
+    // in sync). Server-side jobs (Cloud Functions, the deploy workflow's
+    // scripts, the backlog automation) use a service account and bypass
+    // rules. The only anonymous access left is READ of the two help-centre
+    // collections, which feed the public FAQ site.
+    function isEditor() {
+      return request.auth != null
+        && request.auth.token.email_verified == true
+        && request.auth.token.email in [
+          "rob@offline2online.com",
+          "rob@personalisationhub.com"
+        ];
+    }
+
     match /projects/{projectId} {
-      allow read: if true;
-      allow create, update: if isNonEmptyBoundedString(incoming().name, 80);
-      allow delete: if true;
+      allow read: if isEditor();
+      allow create, update: if isEditor() && isNonEmptyBoundedString(incoming().name, 80);
+      allow delete: if isEditor();
     }
 
     // Programs/Products — a purely organizational grouping above Projects
@@ -31,22 +44,22 @@ service cloud.firestore {
     // the projects rule above only insofar as `name` still has to be
     // present on any project write.
     match /programs/{programId} {
-      allow read: if true;
-      allow create, update: if isNonEmptyBoundedString(incoming().name, 80);
-      allow delete: if true;
+      allow read: if isEditor();
+      allow create, update: if isEditor() && isNonEmptyBoundedString(incoming().name, 80);
+      allow delete: if isEditor();
     }
 
     match /backlogItems/{itemId} {
-      allow read: if true;
+      allow read: if isEditor();
 
-      allow create, update: if
+      allow create, update: if isEditor() &&
         isNonEmptyBoundedString(incoming().projectId, 100) &&
         isNonEmptyBoundedString(incoming().title, 200) &&
         isNonEmptyBoundedString(incoming().desc, 2000) &&
         incoming().type in ["feature", "bug"] &&
         incoming().status in ["backlog", "ready-for-testing", "ready-to-publish", "published-live", "archived"];
 
-      allow delete: if true;
+      allow delete: if isEditor();
     }
 
     // An interface is a maintained contract document shared between exactly
@@ -54,9 +67,9 @@ service cloud.firestore {
     // — the backlog-tracker-native equivalent of a shared markdown file in
     // the repo, editable by whoever is driving either project's board.
     match /interfaces/{interfaceId} {
-      allow read: if true;
+      allow read: if isEditor();
 
-      allow create, update: if
+      allow create, update: if isEditor() &&
         isNonEmptyBoundedString(incoming().name, 120) &&
         incoming().projectIds is list &&
         incoming().projectIds.size() == 2 &&
@@ -65,7 +78,7 @@ service cloud.firestore {
         incoming().contentMd is string &&
         incoming().contentMd.size() <= 20000;
 
-      allow delete: if true;
+      allow delete: if isEditor();
     }
 
     // A project doc is a generic, named document belonging to exactly one
@@ -74,34 +87,23 @@ service cloud.firestore {
     // itself) — the "Additional documents" list on that project's Docs
     // page. Unlike an interface, never shared between two projects.
     match /projectDocs/{docId} {
-      allow read: if true;
+      allow read: if isEditor();
 
-      allow create, update: if
+      allow create, update: if isEditor() &&
         isNonEmptyBoundedString(incoming().projectId, 100) &&
         isNonEmptyBoundedString(incoming().name, 120) &&
         incoming().contentMd is string &&
         incoming().contentMd.size() <= 20000;
 
-      allow delete: if true;
+      allow delete: if isEditor();
     }
 
     // ── FAQ / Help Center content ─────────────────────────────────────────
     // These two collections feed the PUBLIC help centre (repo-root faq/,
-    // iframed into personalisationhub.com), so unlike the rest of this
-    // prototype's collections they are NOT open for writing. Reads stay
-    // public (the site and its freshness check read them anonymously);
-    // every create/update/delete requires a signed-in Google account whose
-    // verified email is on the editor allowlist below — the "Sign in to
-    // edit" button on the FAQ pages of the admin console. The deploy
-    // workflow's sync/export scripts use the Admin SDK and bypass rules.
-    function isFaqEditor() {
-      return request.auth != null
-        && request.auth.token.email_verified == true
-        && request.auth.token.email in [
-          "rob@offline2online.com",
-          "rob@personalisationhub.com"
-        ];
-    }
+    // iframed into personalisationhub.com). Reads stay public — the site
+    // and its per-article freshness check read them anonymously — and
+    // writes require the same signed-in editor as the rest of the board.
+    function isFaqEditor() { return isEditor(); }
 
     match /faqCategories/{categoryId} {
       allow read: if true;

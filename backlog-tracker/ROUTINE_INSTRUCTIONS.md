@@ -92,14 +92,22 @@ rest of this file.
    actually reaches GitHub" section, which explains this whole mechanism
    in more depth. These describe the board's data model, categories, and
    per-project context — follow them, don't reinvent the workflow.
-2. The Firestore project id is `backlog-tracker-e4ed2`. Its REST API is
-   open (unauthenticated read/write, no credentials needed) — use it
-   directly:
+2. **Board access.** The Firestore project id is `backlog-tracker-e4ed2`.
+   Its rules require a signed-in editor, so do NOT call
+   `firestore.googleapis.com` directly — every call below goes through the
+   `boardApi` proxy (a Cloud Function that authenticates as the project's
+   service account). The fire payload's "BOARD ACCESS" block gives you the
+   base URL and the `X-Board-Key` value; set them once:
+   `BOARD="https://us-central1-backlog-tracker-e4ed2.cloudfunctions.net/boardApi/v1/projects/backlog-tracker-e4ed2/databases/(default)/documents"`
+   `KEY="<X-Board-Key from the fire payload>"`
+   Paths, verbs, query strings and JSON bodies are identical to Firestore's
+   REST API — only the host and the header differ. A 401 means the key is
+   wrong; a 503 means the proxy is not configured (report it and stop):
    - List all projects (to confirm the projectId from the fire payload
      actually exists):
-     `curl -sS "https://firestore.googleapis.com/v1/projects/backlog-tracker-e4ed2/databases/(default)/documents/projects"`
+     `curl -sS -H "X-Board-Key: $KEY" "$BOARD/projects"`
    - Query a specific project's current Backlog items:
-     `curl -sS -X POST "https://firestore.googleapis.com/v1/projects/backlog-tracker-e4ed2/databases/(default)/documents:runQuery" -H "Content-Type: application/json" -d '{"structuredQuery":{"from":[{"collectionId":"backlogItems"}],"where":{"compositeFilter":{"op":"AND","filters":[{"fieldFilter":{"field":{"fieldPath":"projectId"},"op":"EQUAL","value":{"stringValue":"<projectId>"}}},{"fieldFilter":{"field":{"fieldPath":"status"},"op":"EQUAL","value":{"stringValue":"backlog"}}}]}}}}'`
+     `curl -sS -X POST -H "X-Board-Key: $KEY" "$BOARD:runQuery" -H "Content-Type: application/json" -d '{"structuredQuery":{"from":[{"collectionId":"backlogItems"}],"where":{"compositeFilter":{"op":"AND","filters":[{"fieldFilter":{"field":{"fieldPath":"projectId"},"op":"EQUAL","value":{"stringValue":"<projectId>"}}},{"fieldFilter":{"field":{"fieldPath":"status"},"op":"EQUAL","value":{"stringValue":"backlog"}}}]}}}}'`
 3. Before implementing anything, get full context on this specific
    project — don't rely on the fire payload or the repo's general docs
    alone:
@@ -113,7 +121,7 @@ rest of this file.
      PROJECT-SPECIFIC INSTRUCTIONS block (see above), fetch it directly
      and treat it the same way.
    - Check for any interface contracts involving this project:
-     `curl -sS -X POST "https://firestore.googleapis.com/v1/projects/backlog-tracker-e4ed2/databases/(default)/documents:runQuery" -H "Content-Type: application/json" -d '{"structuredQuery":{"from":[{"collectionId":"interfaces"}],"where":{"fieldFilter":{"field":{"fieldPath":"projectIds"},"op":"ARRAY_CONTAINS","value":{"stringValue":"<projectId>"}}}}}'`
+     `curl -sS -X POST -H "X-Board-Key: $KEY" "$BOARD:runQuery" -H "Content-Type: application/json" -d '{"structuredQuery":{"from":[{"collectionId":"interfaces"}],"where":{"fieldFilter":{"field":{"fieldPath":"projectIds"},"op":"ARRAY_CONTAINS","value":{"stringValue":"<projectId>"}}}}}'`
      — each result's `contentMd` is a maintained contract with another
      project. If a backlog item touches anything crossing that boundary,
      respect the contract rather than guessing at the other side's
@@ -238,7 +246,7 @@ rest of this file.
    Example PATCH shape (add more `updateMask.fieldPaths` entries and
    fields as needed):
    ```
-   curl -sS -X PATCH "https://firestore.googleapis.com/v1/projects/backlog-tracker-e4ed2/databases/(default)/documents/backlogItems/<ITEM_ID>?updateMask.fieldPaths=title&updateMask.fieldPaths=category&updateMask.fieldPaths=updatedAt&updateMask.fieldPaths=notes&updateMask.fieldPaths=patchFiles&updateMask.fieldPaths=patchBranch&updateMask.fieldPaths=patchCommitMessage&updateMask.fieldPaths=patchPrTitle&updateMask.fieldPaths=patchPrBody&updateMask.fieldPaths=patchReady" \
+   curl -sS -X PATCH "$BOARD/backlogItems/<ITEM_ID>?updateMask.fieldPaths=title&updateMask.fieldPaths=category&updateMask.fieldPaths=updatedAt&updateMask.fieldPaths=notes&updateMask.fieldPaths=patchFiles&updateMask.fieldPaths=patchBranch&updateMask.fieldPaths=patchCommitMessage&updateMask.fieldPaths=patchPrTitle&updateMask.fieldPaths=patchPrBody&updateMask.fieldPaths=patchReady" \
      -H "Content-Type: application/json" \
      -d '{"fields":{"title":{"stringValue":"<short clear subject>"},"category":{"stringValue":"<corrected category>"},"updatedAt":{"timestampValue":"<ISO8601 now>"},"notes":{"arrayValue":{"values":[<existing notes, unchanged>, {"mapValue":{"fields":{"author":{"stringValue":"claude"},"text":{"stringValue":"<your summary>"},"at":{"timestampValue":"<ISO8601 now>"}}}}]}},"patchFiles":{"arrayValue":{"values":[{"mapValue":{"fields":{"path":{"stringValue":"<relative/path>"},"content":{"stringValue":"<full new file content>"}}}}]}},"patchBranch":{"stringValue":"<slug>"},"patchCommitMessage":{"stringValue":"<message>"},"patchPrTitle":{"stringValue":"<title>"},"patchPrBody":{"stringValue":"<body>"},"patchReady":{"booleanValue":true}}}'
    ```

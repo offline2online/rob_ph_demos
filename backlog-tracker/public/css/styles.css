@@ -888,3 +888,14 @@ textarea.dialog-field-input { resize: vertical; min-height: 70px; }
    signed-in allowlisted Google account — see firestore.rules isFaqEditor) */
 .faq-auth-bar { display: flex; align-items: center; justify-content: flex-end; gap: 10px; font-size: 12.5px; color: #5b6b7a; margin: 0 0 8px; }
 .faq-auth-bar .btn-small { padding: 4px 10px; font-size: 12px; }
+
+/* Sign-in wall (js/auth-gate.js) */
+.auth-gate { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 24px; background: #f5f7f9; }
+.auth-gate-card { background: #fff; border: 1px solid #d9d9d9; border-radius: 12px; padding: 32px 36px; max-width: 420px; width: 100%; text-align: center; box-shadow: 0 8px 30px rgba(0,0,0,.06); }
+.auth-gate-card h1 { margin: 0 0 8px; font-size: 22px; }
+.auth-gate-card p { margin: 0 0 20px; color: #5b6b7a; font-size: 14px; }
+.auth-gate-card .btn-primary { font-size: 15px; padding: 10px 22px; }
+.auth-gate-status { min-height: 1.4em; margin: 16px 0 0 !important; font-size: 13px; }
+.auth-gate-status[data-kind="error"] { color: #c0272a; }
+.topbar-user { font-size: 12.5px; color: #5b6b7a; margin-right: 4px; }
+@media (max-width: 640px) { .topbar-user { display: none; } }

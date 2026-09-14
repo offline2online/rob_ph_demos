@@ -10,7 +10,7 @@
 // "General" project (see migrateOrphanItems/ensureGeneralProjectDoc)
 // rather than silently disappearing.
 
-import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-app.js";
+import { initializeApp, getApps, getApp } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-app.js";
 import {
   getFirestore, initializeFirestore, collection, addDoc, updateDoc, deleteDoc, setDoc, doc,
   onSnapshot, query, orderBy, serverTimestamp, writeBatch, arrayUnion,
@@ -24,7 +24,9 @@ import {
 import { firebaseConfig } from "./firebase-config.js";
 import { APP_VERSION } from "./version.js";
 
-const app = initializeApp(firebaseConfig);
+// auth-gate.js has already initialised the app (and signed the user in)
+// by the time this module is imported; reuse it rather than double-init.
+const app = getApps().length ? getApp() : initializeApp(firebaseConfig);
 // Long-polling, not the SDK's default streaming transport.
 //
 // Measured on a cold load of the live board (13 September 2026): the
@@ -52,6 +54,8 @@ const db = initializeFirestore(app, { experimentalForceLongPolling: true });
 // for backlog-tracker-e4ed2, same one-time manual step Cloud Functions
 // needed; see README.md "Attachments (screenshots & screen recordings)".
 const storage = getStorage(app);
+// Shared with auth-gate.js (same Firebase app, same signed-in user).
+const auth = getAuth(app);
 const itemsRef = collection(db, "backlogItems");
 const projectsRef = collection(db, "projects");
 const interfacesRef = collection(db, "interfaces");
@@ -1428,7 +1432,10 @@ async function primeFromRest(collectionName, apply, sort, fields) {
       const mask = (fields || []).map((f) => `&mask.fieldPaths=${encodeURIComponent(f)}`).join("");
       const url = `${REST_BASE}/${collectionName}?pageSize=300` + mask +
         (pageToken ? `&pageToken=${encodeURIComponent(pageToken)}` : "");
-      const res = await fetch(url);
+      // Reads now require a signed-in editor (firestore.rules isEditor), so
+      // the REST prime sends the same Firebase ID token the SDK uses.
+      const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : null;
+      const res = await fetch(url, idToken ? { headers: { Authorization: `Bearer ${idToken}` } } : undefined);
       if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
       const json = await res.json();
       documents = documents.concat(json.documents || []);
@@ -3566,7 +3573,6 @@ function renderLegacyFaqMarkdown(md) {
 // sign-in, and only when you try to change something. Requires the Google
 // provider to be enabled under Authentication → Sign-in method in the
 // Firebase console for backlog-tracker-e4ed2 (one-time manual step).
-const auth = getAuth(app);
 let faqUser = null;
 onAuthStateChanged(auth, (user) => {
   faqUser = user && user.emailVerified ? user : null;

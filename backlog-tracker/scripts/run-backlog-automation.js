@@ -65,10 +65,42 @@ function tv(value) {
   return { stringValue: String(value) };
 }
 
+// firestore.rules requires a signed-in editor for every board collection, so
+// this script authenticates as the deploy service account (the workflow
+// writes the key to GOOGLE_APPLICATION_CREDENTIALS). Service accounts bypass
+// rules. Token minting is done by hand — a signed JWT exchanged at Google's
+// token endpoint — so scripts/ keeps zero runtime dependencies for this job.
+let cachedToken = null;
+async function getAccessToken() {
+  if (cachedToken && cachedToken.expires > Date.now() + 60000) return cachedToken.value;
+  const keyPath = process.env.GOOGLE_APPLICATION_CREDENTIALS;
+  if (!keyPath) throw new Error("GOOGLE_APPLICATION_CREDENTIALS is not set — the backlog automation needs the Firebase service account to read/write Firestore now that the board requires sign-in");
+  const key = JSON.parse(fs.readFileSync(keyPath, "utf8"));
+  const now = Math.floor(Date.now() / 1000);
+  const b64 = (o) => Buffer.from(JSON.stringify(o)).toString("base64url");
+  const unsigned = `${b64({ alg: "RS256", typ: "JWT" })}.${b64({
+    iss: key.client_email, scope: "https://www.googleapis.com/auth/datastore",
+    aud: "https://oauth2.googleapis.com/token", iat: now, exp: now + 3600,
+  })}`;
+  const signature = require("crypto").createSign("RSA-SHA256").update(unsigned).sign(key.private_key, "base64url");
+  const res = await fetch("https://oauth2.googleapis.com/token", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: `grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Ajwt-bearer&assertion=${unsigned}.${signature}`,
+  });
+  if (!res.ok) throw new Error(`token exchange failed: ${res.status} ${await res.text()}`);
+  const json = await res.json();
+  cachedToken = { value: json.access_token, expires: Date.now() + (json.expires_in || 3600) * 1000 };
+  return cachedToken.value;
+}
+async function firestoreHeaders() {
+  return { "Content-Type": "application/json", Authorization: `Bearer ${await getAccessToken()}` };
+}
+
 async function runQuery(structuredQuery) {
   const res = await fetch(`${FIRESTORE_BASE}:runQuery`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: await firestoreHeaders(),
     body: JSON.stringify({ structuredQuery }),
   });
   if (!res.ok) throw new Error(`runQuery failed: ${res.status} ${await res.text()}`);
@@ -82,7 +114,7 @@ async function patchItem(itemId, fields) {
   const fieldPaths = Object.keys(fields).map((k) => `updateMask.fieldPaths=${encodeURIComponent(k)}`).join("&");
   const res = await fetch(`${FIRESTORE_BASE}/backlogItems/${itemId}?${fieldPaths}`, {
     method: "PATCH",
-    headers: { "Content-Type": "application/json" },
+    headers: await firestoreHeaders(),
     body: JSON.stringify({ fields: Object.fromEntries(Object.entries(fields).map(([k, v]) => [k, tv(v)])) }),
   });
   if (!res.ok) throw new Error(`PATCH ${itemId} failed: ${res.status} ${await res.text()}`);
