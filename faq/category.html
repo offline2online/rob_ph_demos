@@ -34,7 +34,8 @@
   <footer class="ph-footer">Personalisation Hub Help Center &middot; content managed from <a href="https://backlog-tracker-e4ed2.web.app/">backlog-tracker</a> &middot; <span id="app-version"></span></footer>
 
   <script type="module">
-    import { fetchCategories, fetchPublishedArticles, escapeHTML, categoryIcon, docTypeLabel, isEmbedded } from "./js/faq-data.js";
+    import { fetchCategories, fetchPublishedArticles, escapeHTML, categoryIcon, docTypeLabel, isEmbedded,
+         subCategoriesOf, articlesIn, articlesUnder } from "./js/faq-data.js";
     import { APP_VERSION } from "./js/version.js";
     import { initSearchBox } from "./js/search-box.js";
 
@@ -57,17 +58,40 @@
       document.getElementById("cat-desc").textContent = category.description || "";
       document.getElementById("cat-icon").textContent = categoryIcon(category);
 
-      const catArticles = articles.filter((a) => a.categoryId === category.id);
+      // Loose articles first (filed straight into the category), then one
+      // section per sub-category. Both lists arrive already in the order
+      // someone set by dragging rows in the FAQ admin — fetchCategories and
+      // fetchPublishedArticles both order by "order" — so nothing is sorted
+      // again here.
+      const loose = articlesIn(articles, category.id);
+      const subs = subCategoriesOf(categories, category.id);
       const list = document.getElementById("article-list");
-      if (catArticles.length === 0) {
-        document.getElementById("article-empty").hidden = false;
-      } else {
-        list.innerHTML = catArticles.map((a) => `
+
+      const articleRow = (a) => `
           <a class="article-row" href="article.html?id=${encodeURIComponent(a.id)}">
             <h3>${escapeHTML(a.title)} <span class="doctype-badge doctype-badge-inline">${escapeHTML(docTypeLabel(a))}</span></h3>
             <p>${escapeHTML(a.summary || "")}</p>
-          </a>
-        `).join("");
+          </a>`;
+
+      if (articlesUnder(articles, categories, category.id).length === 0) {
+        document.getElementById("article-empty").hidden = false;
+      } else {
+        const sections = [];
+        if (loose.length) sections.push(loose.map(articleRow).join(""));
+        for (const sub of subs) {
+          const subArticles = articlesIn(articles, sub.id);
+          if (!subArticles.length) continue;   // an empty folder is noise, not structure
+          sections.push(`
+            <section class="folder-section">
+              <h2 class="folder-heading">
+                <span class="material-symbols-outlined folder-heading-icon">folder</span>
+                ${escapeHTML(sub.name)}
+              </h2>
+              ${sub.description ? `<p class="folder-desc">${escapeHTML(sub.description)}</p>` : ""}
+              ${subArticles.map(articleRow).join("")}
+            </section>`);
+        }
+        list.innerHTML = sections.join("");
       }
     }
   </script>

@@ -517,6 +517,57 @@ textarea.dialog-field-input { resize: vertical; min-height: 70px; }
    enabled Save silently just closed the panel. Closing on an outside click
    is handled from the document instead (app.js), which keeps that behaviour
    while letting the click through to whatever was actually aimed at. */
+/* ── FAQ Management's two-pane browser ────────────────────────────────────
+   Structure on the left, the selected folder's articles on the right —
+   modelled on the Freshdesk layout this content came from, and replacing a
+   flat list + "Folders" toggle that between them could never show where an
+   article actually sat. Collapses to one column on a narrow screen, tree
+   first, because picking a folder has to come before reading its contents. */
+.faq-browser { display: grid; grid-template-columns: minmax(240px, 320px) 1fr; gap: 0; padding: 0; overflow: hidden; }
+.faq-browser-pane { padding: 14px 16px 18px; min-width: 0; }
+.faq-browser-tree { border-right: 1px solid var(--border); background: var(--surface); }
+.faq-browser-pane-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 2px; }
+.faq-browser-pane-head h3 { margin: 0; font-size: 14px; text-transform: uppercase; letter-spacing: .04em; color: var(--text-muted); }
+.faq-tree-hint { margin: 2px 0 10px; }
+@media (max-width: 860px) {
+  .faq-browser { grid-template-columns: 1fr; }
+  .faq-browser-tree { border-right: none; border-bottom: 1px solid var(--border); }
+}
+
+/* One row per node, indented by depth. The whole row is the hit target and
+   the drag handle — a separate grip would be one more thing to aim at on a
+   list this long. */
+.faq-tree-row {
+  display: flex; align-items: center; gap: 8px; width: 100%;
+  background: transparent; border: none; border-radius: 6px;
+  padding: 7px 8px; font: inherit; font-size: 13px; color: var(--text);
+  cursor: pointer; text-align: left;
+}
+.faq-tree-row:hover { background: var(--surface-2); }
+.faq-tree-row.selected { background: var(--primary-tint); color: var(--primary); font-weight: 600; }
+.faq-tree-row[data-depth="1"] { padding-left: 22px; }
+.faq-tree-row[data-depth="2"] { padding-left: 40px; }
+.faq-tree-icon { font-size: 18px; color: var(--text-muted); flex-shrink: 0; }
+.faq-tree-row.selected .faq-tree-icon { color: var(--primary); }
+.faq-tree-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.faq-tree-count { font-size: 11px; color: var(--text-muted); flex-shrink: 0; }
+.faq-tree-row.selected .faq-tree-count { color: var(--primary); }
+.faq-tree-caret { font-size: 18px; color: var(--text-muted); flex-shrink: 0; }
+.faq-tree-add {
+  border: none; background: transparent; cursor: pointer; color: var(--text-muted);
+  font-size: 16px; line-height: 1; padding: 2px 4px; border-radius: 4px;
+}
+.faq-tree-add:hover { background: var(--surface-2); color: var(--primary); }
+.faq-tree-group { margin-bottom: 2px; }
+
+/* Drag feedback. The line shows where the row will land, which matters more
+   than styling the row being dragged — you are aiming at a gap, not a row. */
+.faq-tree-row.dragging, .faq-article-row.dragging { opacity: .45; }
+.faq-drop-before { box-shadow: inset 0 2px 0 0 var(--primary); }
+.faq-drop-after { box-shadow: inset 0 -2px 0 0 var(--primary); }
+.faq-article-row[draggable="true"], .faq-tree-row[draggable="true"] { cursor: grab; }
+.faq-article-row[draggable="true"]:active, .faq-tree-row[draggable="true"]:active { cursor: grabbing; }
+
 .faq-advanced-backdrop {
   position: fixed; inset: 0; background: rgba(10, 12, 13, .35);
   z-index: 24; pointer-events: none;

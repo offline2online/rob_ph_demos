@@ -55,6 +55,39 @@ export async function fetchPublishedArticles() {
     .filter((a) => a.status === "published");
 }
 
+// ── Categories, sub-categories, and the order they're shown in ───────────
+// A category document with no parentId is a top-level category; one WITH a
+// parentId is a sub-category ("folder") inside it. Both live in the same
+// faqCategories collection, so the single orderBy("order") query above
+// already returns them correctly sequenced within their own level — which
+// is exactly the order someone set by dragging rows in the FAQ admin.
+//
+// Sub-categories are optional: an article filed straight into a category
+// still belongs there, and topLevelCategories/subCategoriesOf/articlesIn
+// below all take that case seriously rather than treating a missing folder
+// as an error.
+export function topLevelCategories(categories) {
+  return categories.filter((c) => !c.parentId);
+}
+
+export function subCategoriesOf(categories, parentId) {
+  return categories.filter((c) => c.parentId === parentId);
+}
+
+// Articles filed directly into this category — NOT including its
+// sub-categories, which are rendered as their own sections.
+export function articlesIn(articles, categoryId) {
+  return articles.filter((a) => a.categoryId === categoryId);
+}
+
+// Everything under a category, its sub-categories included. What a count
+// on the front page should say: a category with all its articles tucked
+// into folders is not an empty category.
+export function articlesUnder(articles, categories, categoryId) {
+  const subIds = subCategoriesOf(categories, categoryId).map((c) => c.id);
+  return articles.filter((a) => a.categoryId === categoryId || subIds.includes(a.categoryId));
+}
+
 // Article bodies come in one of two shapes, told apart by a leading "<":
 // legacy markdown-ish text (## headings, "- " bullets, **bold**, from
 // before the FAQ admin had a real editor) or real HTML from the rich-text

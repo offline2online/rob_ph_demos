@@ -180,3 +180,18 @@ a:hover { text-decoration: underline; }
 .article-body .callout-important::before { content: "Important"; color: #a86a00; }
 .article-body .callout-warning { background: #fff1f0; border-color: #ff4d4f; }
 .article-body .callout-warning::before { content: "Warning"; color: #c0272a; }
+
+/* ── Sub-category ("folder") sections on a category page ──────────────────
+   A category can hold articles directly and/or group them into folders.
+   Loose articles render first with no heading — they are simply the
+   category's own articles — then one headed section per folder, in the
+   order set by dragging rows in the FAQ admin. */
+.folder-section { margin-top: 26px; }
+.folder-section:first-child { margin-top: 8px; }
+.folder-heading {
+  display: flex; align-items: center; gap: 8px;
+  margin: 0 0 10px; font-size: 15px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: .04em; color: #5b6b7a;
+}
+.folder-heading-icon { font-size: 20px; }
+.folder-desc { margin: -4px 0 10px; font-size: 14px; color: #5b6b7a; }
