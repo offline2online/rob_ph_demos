@@ -260,6 +260,13 @@ const NOTIFY_OPTIMISTIC_STALE_MS = 45 * 1000;
 const deployOptimisticClicks = {};
 const DEPLOY_OPTIMISTIC_STALE_MS = 45 * 1000;
 
+// Same optimistic-click bridge as above, for the Backlog column's own
+// "Groom Backlog" CTA — the real spinning state lives in
+// projects/{id}.groomRoutine, written by notifyOnProjectReadyForGrooming
+// reacting to groomRequestedAt.
+const groomOptimisticClicks = {};
+const GROOM_OPTIMISTIC_STALE_MS = 45 * 1000;
+
 // ── Docs page state (per-project requirements + interfaces with other
 // projects) — an interface is a maintained contract doc shared between
 // exactly two projects, stored once in "interfaces" and shown identically
@@ -897,6 +904,72 @@ function deployNotifyButtonHTML(project) {
     : `<button type="button" class="notify-claude-btn notify-claude-btn-working" disabled title="A Claude Code session is merging the ${itemCountLabel} item(s) sent">${mainBtnInner}</button>`;
 }
 
+// Same as NOTIFY_ROUTINE_STALE_MS/DEPLOY_ROUTINE_STALE_MS above, but for the
+// Backlog column's own "Groom Backlog" CTA and its project.groomRoutine.
+const GROOM_ROUTINE_STALE_MS = 20 * 60 * 1000;
+
+// "Groom Backlog" — lives in the Backlog column's own header (see
+// projectSectionHTML), not the project-wide header-actions row, since this
+// is scoped to that one column only. Same gradient AI-action treatment and
+// spinner/session-link mechanism as notifyClaudeButtonHTML/
+// deployNotifyButtonHTML above (project.groomRoutine, written by
+// notifyOnProjectReadyForGrooming reacting to groomRequestedAt) — reused
+// as-is rather than inventing a new look for a third variant. Unlike the
+// other two, there's no "selection" or "new items since the click" concept
+// here: a groom request is deliberately simple — classify and summarize
+// whatever's in Backlog right now, nothing more — see
+// ROUTINE_INSTRUCTIONS.md's own "Groom Backlog" flow section. Hidden
+// entirely when Backlog is empty, same "nothing to do yet" rule as the
+// other two CTAs.
+function groomNotifyButtonHTML(project) {
+  const pid = project.id;
+  const routine = project.groomRoutine;
+  const firedMs = routine ? tsMillis(routine.firedAt) : 0;
+  const isStale = routine?.status === "in-progress" && firedMs && (Date.now() - firedMs) > GROOM_ROUTINE_STALE_MS;
+  const inProgress = routine?.status === "in-progress" && !isStale;
+
+  // Same click-to-doc-write bridge as notifyClaudeButtonHTML's
+  // notifyOptimisticClicks — covers the gap before groomRoutine lands.
+  const clickedAt = groomOptimisticClicks[pid];
+  const optimisticPending = !inProgress && clickedAt && (Date.now() - clickedAt) < GROOM_OPTIMISTIC_STALE_MS;
+  if (clickedAt && !optimisticPending) delete groomOptimisticClicks[pid];
+
+  if (!inProgress && !optimisticPending) {
+    const backlogCount = backlogCountForProject(pid);
+    if (!backlogCount) return "";
+    return `<button type="button" class="notify-claude-btn groom-notify-btn" data-project-id="${escapeHTML(pid)}" title="Classify and summarize every item currently in Backlog — doesn't implement anything">
+      <span class="material-symbols-outlined notify-claude-icon">content_cut</span>
+      <span class="notify-claude-label">Groom Backlog</span>
+      <span class="notify-claude-count-pill">${backlogCount}</span>
+    </button>`;
+  }
+
+  if (optimisticPending) {
+    return `<button type="button" class="notify-claude-btn notify-claude-btn-working" disabled title="Sending to Claude&hellip;">
+      <span class="notify-claude-spinner"></span>
+      <span class="notify-claude-label">Working&hellip;</span>
+    </button>`;
+  }
+
+  const itemCountLabel = routine.itemCount || backlogCountForProject(pid);
+  const confirmed = !!routine.sessionUrl;
+  const mainBtnInner = `
+    <span class="notify-claude-spinner"></span>
+    <span class="notify-claude-label">${confirmed ? "Grooming&hellip;" : "Working&hellip;"}</span>
+    <span class="notify-claude-count-pill">${itemCountLabel}</span>`;
+  return confirmed
+    ? `<a href="${escapeHTML(routine.sessionUrl)}" target="_blank" rel="noopener" class="notify-claude-btn notify-claude-btn-working notify-claude-btn-clickable" title="View the Claude Code session grooming the ${itemCountLabel} item(s) in Backlog">${mainBtnInner}</a>`
+    : `<button type="button" class="notify-claude-btn notify-claude-btn-working" disabled title="A Claude Code session is grooming the ${itemCountLabel} item(s) in Backlog">${mainBtnInner}</button>`;
+}
+
+// Thin wrapper around groomNotifyButtonHTML so the Backlog column's own
+// render call (projectSectionHTML) can stay a one-liner and skip the row
+// entirely (not just render an empty one) when there's nothing to groom.
+function groomBacklogRowHTML(project) {
+  const btn = groomNotifyButtonHTML(project);
+  return btn ? `<div class="col-groom-row">${btn}</div>` : "";
+}
+
 // The middle stage, between "Ready for Dev" and "Deploy to Main": moves
 // individually-confirmed-tested items from Ready for Testing onto their
 // feature branch (ready-to-publish) in one batch click, instead of each
@@ -1033,6 +1106,7 @@ function projectSectionHTML(project) {
     const colCollapsed = isColumnCollapsed(project.id, col.key);
     return `<section class="column${colCollapsed ? " column-collapsed" : ""}" data-col="${col.key}">
       <div class="col-head col-head-${col.headClass}" data-project-id="${escapeHTML(project.id)}" data-col="${col.key}"><span>${selectAllHTML}${col.label}</span><span class="col-count">${listItems.length}</span></div>
+      ${col.key === "backlog" ? groomBacklogRowHTML(project) : ""}
       <div class="col-list" id="${colListId(project.id, col.key)}" data-col="${col.key}" data-project-id="${escapeHTML(project.id)}">
         ${listItems.length ? columnCardsHTML(listItems) : '<div class="empty-hint">No items yet</div>'}
       </div>
@@ -1548,13 +1622,17 @@ onSnapshot(projectDocsRef, (snap) => {
   console.error("backlog-tracker: projectDocs listener error", err);
 });
 
+// Returns the new doc's id — the New Item modal needs it back to upload any
+// pending attachments (see createAttachmentController's "pending" mode)
+// once the item actually exists to attach them to.
 async function addItem(projectId, title, desc, type, category) {
-  await addDoc(itemsRef, {
+  const ref = await addDoc(itemsRef, {
     projectId, title, desc, type, category,
     status: "backlog",
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   });
+  return ref.id;
 }
 
 async function moveItem(id, dir) {
@@ -1867,6 +1945,29 @@ async function requestDeployNotify(pid) {
   await setDoc(doc(db, "projects", pid), { deployNotifyRequestedAt: serverTimestamp() }, { merge: true });
 }
 
+// Same idea as requestNotify()/requestDeployNotify() above, but for the
+// Backlog column's own "Groom Backlog" CTA — a classify-and-summarize
+// request, not an investigate-and-fix or a deploy one. Writes
+// groomRequestedAt, watched by notifyOnProjectReadyForGrooming (see
+// ../functions/index.js), which fires the same Routine but with fire text
+// that explicitly says this is grooming only — no fixes, no patchReady, no
+// status changes. No selection concept here (unlike requestNotify): a groom
+// request always covers everything currently in Backlog.
+async function requestGroomNotify(pid) {
+  const count = backlogCountForProject(pid);
+  if (count === 0) {
+    await showAlert("Nothing in Backlog for this project yet — add an item first.");
+    return;
+  }
+
+  // Show the spinning state immediately, without waiting on the
+  // notifyOnProjectReadyForGrooming round-trip — see groomOptimisticClicks.
+  groomOptimisticClicks[pid] = Date.now();
+  render();
+
+  await setDoc(doc(db, "projects", pid), { groomRequestedAt: serverTimestamp() }, { merge: true });
+}
+
 async function setProjectName(id, name) {
   const trimmed = (name || "").trim();
   if (!trimmed) return false;
@@ -2101,6 +2202,8 @@ projectsRoot.addEventListener("click", async (e) => {
   if (deployToFeatureBtn) { closeAllOptionMenus(); deployToFeature(deployToFeatureBtn.dataset.projectId); return; }
   const deployNotifyBtn = e.target.closest(".deploy-notify-btn");
   if (deployNotifyBtn) { closeAllOptionMenus(); requestDeployNotify(deployNotifyBtn.dataset.projectId); return; }
+  const groomNotifyBtn = e.target.closest(".groom-notify-btn");
+  if (groomNotifyBtn) { closeAllOptionMenus(); requestGroomNotify(groomNotifyBtn.dataset.projectId); return; }
   const archiveNavBtn = e.target.closest(".project-archive-btn");
   if (archiveNavBtn) { closeAllOptionMenus(); openArchivePage(archiveNavBtn.dataset.projectId); return; }
   const docsNavBtn = e.target.closest(".project-docs-btn");
@@ -2316,19 +2419,30 @@ eiAttachmentsList.addEventListener("click", async (e) => {
 
 // Screenshot-picker + screen-recording (getDisplayMedia + MediaRecorder, no
 // third-party library) wiring, factored into one controller so it can be
-// instantiated independently for both the Edit item modal and the
-// quick-comment modal (see the qc instance below) — same "one factory, N
-// independent instances" pattern createDictationController already uses
-// for its three mic buttons, added here so attaching works from wherever a
-// person actually taps (DrIEsKsdi3WrwXbUdMH6 and its duplicates: the old
-// single Edit-modal-only Attachments block was too easy to miss entirely).
-// `getItemId` is read fresh on every action (not captured once at
-// construction) so each instance always targets whichever item its own
-// modal currently has open; a recording in progress captures its own
-// target id in `targetItemId` at start time so it still uploads to the
-// right item even if the modal is closed (or reopened on a different item)
-// before the user hits Stop.
-function createAttachmentController({ getItemId, screenshotInput, recordBtn, hintEl }) {
+// instantiated independently for the Edit item modal, the quick-comment
+// modal (see the qc instance below) and the New Item modal (see the ni
+// instance further down) — same "one factory, N independent instances"
+// pattern createDictationController already uses for its three mic buttons,
+// added here so attaching works from wherever a person actually taps
+// (DrIEsKsdi3WrwXbUdMH6 and its duplicates: the old single Edit-modal-only
+// Attachments block was too easy to miss entirely).
+//
+// Two modes:
+// - `mode: "upload"` (the default, used by the Edit and quick-comment
+//   modals) — `getItemId` is read fresh on every action (not captured once
+//   at construction) so the instance always targets whichever item its own
+//   modal currently has open, and a picked file/finished recording uploads
+//   straight to Storage via uploadItemAttachment() the moment it's ready. A
+//   recording in progress captures its own target id in `targetItemId` at
+//   start time so it still uploads to the right item even if the modal is
+//   closed (or reopened on a different item) before the user hits Stop.
+// - `mode: "pending"` (used by the New Item modal) — there's no item id yet
+//   at this point (the doc doesn't exist until the form is submitted), so
+//   instead of uploading, a picked file/finished recording is just handed
+//   to `onPendingFile(file, type)`, which the caller holds in local state
+//   and uploads for real (via the same uploadItemAttachment(), reused
+//   as-is) once it has a real item id back from creating the item.
+function createAttachmentController({ getItemId, screenshotInput, recordBtn, hintEl, mode = "upload", onPendingFile }) {
   let recorder = null;
 
   function setHint(msg) {
@@ -2341,31 +2455,45 @@ function createAttachmentController({ getItemId, screenshotInput, recordBtn, hin
     recordBtn.textContent = recording ? "⏹ Stop recording" : "⏺ Record screen";
   }
 
+  // Either hands the file off to the caller unuploaded (pending mode) or
+  // uploads it straight to Storage against a real item id (upload mode) —
+  // shared by both the screenshot picker and the recording's onstop below
+  // so neither duplicates the other's error handling/hint text.
+  async function handleFile(file, type, idOverride) {
+    if (mode === "pending") {
+      onPendingFile(file, type);
+      setHint("");
+      return;
+    }
+    const id = idOverride !== undefined ? idOverride : getItemId();
+    if (!id) return;
+    setHint(type === "video" ? "Uploading screen recording…" : "Uploading screenshot…");
+    try {
+      await uploadItemAttachment(id, file, type);
+    } catch (err) {
+      await showAlert(`Couldn't upload that ${type === "video" ? "screen recording" : "screenshot"}: ` + (err && err.message ? err.message : err));
+    } finally {
+      setHint("");
+    }
+  }
+
   screenshotInput.addEventListener("change", async () => {
     const file = screenshotInput.files[0];
     screenshotInput.value = "";
-    const id = getItemId();
-    if (!file || !id) return;
+    if (!file) return;
+    if (mode === "upload" && !getItemId()) return;
     if (!file.type.startsWith("image/")) { await showAlert("Please choose an image file."); return; }
     if (file.size > MAX_SCREENSHOT_BYTES) { await showAlert("That screenshot is too large (max 15MB)."); return; }
-    setHint("Uploading screenshot…");
-    try {
-      await uploadItemAttachment(id, file, "image");
-      setHint("");
-    } catch (err) {
-      setHint("");
-      await showAlert("Couldn't upload that screenshot: " + (err && err.message ? err.message : err));
-    }
+    await handleFile(file, "image");
   });
 
   async function startRecording() {
-    const id = getItemId();
-    if (!id) return;
+    if (mode === "upload" && !getItemId()) return;
     if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) {
       await showAlert("Screen recording isn't supported in this browser.");
       return;
     }
-    const targetItemId = id;
+    const targetItemId = mode === "upload" ? getItemId() : null;
     let stream;
     try {
       stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
@@ -2388,14 +2516,7 @@ function createAttachmentController({ getItemId, screenshotInput, recordBtn, hin
         return;
       }
       const file = new File([blob], `screen-recording-${Date.now()}.webm`, { type: mimeType });
-      setHint("Uploading screen recording…");
-      try {
-        await uploadItemAttachment(targetItemId, file, "video");
-      } catch (err) {
-        await showAlert("Couldn't upload that screen recording: " + (err && err.message ? err.message : err));
-      } finally {
-        setHint("");
-      }
+      await handleFile(file, "video", targetItemId);
     };
     // The user can also end the capture from the browser's own "Stop
     // sharing" bar instead of this button — react the same way either path.
@@ -2521,6 +2642,68 @@ const niBackdrop = document.getElementById("ni-backdrop");
 
 let activeNewItemProjectId = null;
 
+// ── New Item modal — pending attachments ─────────────────────────────────
+// This item has no Firestore doc yet while the modal is open, so a picked
+// screenshot/finished recording can't go straight to uploadItemAttachment()
+// the way the Edit and quick-comment modals do — see createAttachmentController's
+// "pending" mode above. Held here as a plain {id, file, type} list, shown as
+// its own small preview row (same ei-attachment-item classes/spirit as the
+// Edit modal's real attachment rows, just without a thumbnail since nothing's
+// uploaded yet), removable with its own × before saving. Actually uploaded,
+// one at a time via the same uploadItemAttachment() everyone else uses, from
+// the ni-submit handler below once item creation returns a real id.
+let niPendingAttachments = [];
+let niPendingIdSeq = 0;
+const niPendingAttachmentsList = document.getElementById("ni-pending-attachments-list");
+
+function formatAttachmentSize(bytes) {
+  if (!bytes) return "";
+  return bytes < 1024 * 1024 ? `${Math.round(bytes / 1024)} KB` : `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function niPendingAttachmentRowHTML(pending) {
+  const kind = pending.type === "video" ? "Screen recording" : "Screenshot";
+  const label = escapeHTML(pending.file.name || kind);
+  const size = formatAttachmentSize(pending.file.size);
+  return `<div class="ei-attachment-item">
+    <div class="ei-attachment-meta">
+      <span class="ei-attachment-name" title="${label}">${label}</span>
+      <span class="ei-attachment-open-link">${escapeHTML(kind)}${size ? " · " + escapeHTML(size) : ""} — uploads once you save</span>
+    </div>
+    <button type="button" class="icon-btn ni-pending-attachment-remove-btn" data-id="${pending.id}" title="Remove attachment">&times;</button>
+  </div>`;
+}
+
+function renderNiPendingAttachments() {
+  if (!niPendingAttachmentsList) return;
+  niPendingAttachmentsList.innerHTML = niPendingAttachments.map(niPendingAttachmentRowHTML).join("");
+}
+
+if (niPendingAttachmentsList) {
+  niPendingAttachmentsList.addEventListener("click", (e) => {
+    const btn = e.target.closest(".ni-pending-attachment-remove-btn");
+    if (!btn) return;
+    niPendingAttachments = niPendingAttachments.filter((p) => String(p.id) !== btn.dataset.id);
+    renderNiPendingAttachments();
+  });
+}
+
+const niAttachments = createAttachmentController({
+  mode: "pending",
+  screenshotInput: document.getElementById("ni-attach-screenshot-input"),
+  recordBtn: document.getElementById("ni-record-screen-btn"),
+  hintEl: document.getElementById("ni-attach-hint"),
+  // Guards against a recording finished (onstop is async) after the modal
+  // was already closed/cancelled — closeForm() hides the backdrop before
+  // stopping any in-progress recording, so this discards it rather than
+  // resurrecting a pending attachment for a form the user just cancelled.
+  onPendingFile: (file, type) => {
+    if (niBackdrop.hidden) return;
+    niPendingAttachments.push({ id: ++niPendingIdSeq, file, type });
+    renderNiPendingAttachments();
+  },
+});
+
 // Live "X / max" readout for a bounded field, driven off the element's own
 // maxLength (works for both <input maxlength> and <textarea maxlength>) —
 // see firestore.rules for the actual caps this mirrors (desc 2000, title
@@ -2628,8 +2811,12 @@ function openForm(projectId) {
   document.getElementById("ni-desc-input").focus();
 }
 function closeForm() {
+  // Hidden flips first — niAttachments' onPendingFile checks it, so a
+  // recording still finishing up (MediaRecorder's onstop is async) after
+  // Cancel/close gets discarded instead of reappearing in an emptied list.
   niBackdrop.hidden = true;
   activeNewItemProjectId = null;
+  niAttachments.stopRecording();
   niDictation.stop();
   const descEl = document.getElementById("ni-desc-input");
   descEl.value = "";
@@ -2638,6 +2825,8 @@ function closeForm() {
   document.querySelectorAll(".type-opt").forEach((b) => b.classList.remove("active"));
   document.querySelector('.type-opt[data-type="feature"]').classList.add("active");
   niDictation.clearError();
+  niPendingAttachments = [];
+  renderNiPendingAttachments();
 }
 
 document.getElementById("ni-cancel").addEventListener("click", closeForm);
@@ -2668,8 +2857,20 @@ document.getElementById("ni-submit").addEventListener("click", async () => {
       { okLabel: "Add as comment", cancelLabel: "Create separate ticket anyway" }
     );
     if (addAsComment) {
+      // Anything already picked/recorded goes to the existing ticket
+      // instead of being silently dropped — same upload, just targeting
+      // dup.item.id rather than a newly-created item's id below.
+      const pendingAttachments = niPendingAttachments.slice();
       await addItemComment(dup.item.id, desc);
       closeForm();
+      for (const pending of pendingAttachments) {
+        try {
+          await uploadItemAttachment(dup.item.id, pending.file, pending.type);
+        } catch (err) {
+          const label = pending.file.name || (pending.type === "video" ? "Screen recording" : "Screenshot");
+          await showAlert(`The comment was added, but "${label}" couldn't be uploaded: ${err && err.message ? err.message : err}`);
+        }
+      }
       return;
     }
     // "Create separate ticket anyway" falls through to the normal add below —
@@ -2677,13 +2878,40 @@ document.getElementById("ni-submit").addEventListener("click", async () => {
     // share a lot of wording and still be genuinely different work.
   }
 
+  // Captured before closeForm() resets niPendingAttachments back to [].
+  const pendingAttachments = niPendingAttachments.slice();
+  let newItemId;
   try {
-    await addItem(activeNewItemProjectId, title, desc, type, category);
+    newItemId = await addItem(activeNewItemProjectId, title, desc, type, category);
   } catch (err) {
     await showAlert(describeSaveError(err, [{ label: "Description", value: desc, max: 2000 }]));
     return;
   }
   closeForm();
+
+  // The item now exists for real — upload whatever was picked/recorded
+  // while the modal was still open, via the same uploadItemAttachment()
+  // the Edit and quick-comment modals already use. The item itself is
+  // already created and saved at this point regardless of what happens
+  // here: a failed upload is reported, not rolled back — see
+  // uploadItemAttachment/describeAttachmentUploadError for the mapped
+  // Storage error text each failure below carries.
+  if (pendingAttachments.length) {
+    const failures = [];
+    for (const pending of pendingAttachments) {
+      try {
+        await uploadItemAttachment(newItemId, pending.file, pending.type);
+      } catch (err) {
+        const label = pending.file.name || (pending.type === "video" ? "Screen recording" : "Screenshot");
+        failures.push(`${label}: ${err && err.message ? err.message : err}`);
+      }
+    }
+    if (failures.length) {
+      await showAlert(
+        `The ticket was created, but ${failures.length === 1 ? "this attachment" : "these attachments"} couldn't be uploaded:\n\n${failures.join("\n")}\n\nOpen the ticket's own Edit → Attachments to retry.`
+      );
+    }
+  }
 });
 
 // ── New Project modal ───────────────────────────────────────────────────
@@ -4284,13 +4512,13 @@ document.getElementById("fa-tree-search").addEventListener("input", renderFaqArt
 // A dedicated full-page editor, not a modal: the primary focus (title,
 // summary, body) takes the full page, and everything else about an article
 // (slug, category, doc type, linked project, keywords, status, needs
-// review) lives in a slide-out panel from the right, hidden until the
-// "Advanced settings" button is clicked. Replaces the old #fa-backdrop
-// modal, which gave equal visual weight to a dozen fields most edits never
-// touch.
+// review) lives in a sidebar of independently expand/collapsible named
+// groups to the right (Article properties / Search & keywords / Status &
+// publishing — see setFaGroupOpen/resetFaGroups below), replacing both the original
+// #fa-backdrop modal (equal visual weight for a dozen fields most edits
+// never touch) and the single flat "Advanced settings" slide-out panel that
+// replaced it in turn.
 const faqArticleEditorPage = document.getElementById("faq-article-editor-page");
-const faAdvancedPanel = document.getElementById("fa-advanced-panel");
-const faAdvancedBackdrop = document.getElementById("fa-advanced-backdrop");
 const faTitleInput = document.getElementById("fa-title-input");
 const faSlugInput = document.getElementById("fa-slug-input");
 const faDocTypeSelect = document.getElementById("fa-doctype-select");
@@ -4298,7 +4526,13 @@ const faSummaryInput = document.getElementById("fa-summary-input");
 const faKeywordsInput = document.getElementById("fa-keywords-input");
 const faBodyViewer = document.getElementById("fa-body-viewer");
 const faNeedsReview = document.getElementById("fa-needs-review");
-let faStatus = "draft";
+// Status of the article as last loaded/saved. Save draft (below) never
+// promotes this to "published" on its own — only Publish does; saving an
+// already-published article keeps it published rather than silently
+// unpublishing it. faLoadedHasPublishedAt tracks whether publishedAt is
+// already set, so Publish only stamps it the first time an article goes live.
+let faLoadedStatus = "draft";
+let faLoadedHasPublishedAt = false;
 
 // ── Rich formatting the docs standard requires ───────────────────────
 // docs/CONTRIBUTING-docs.md §5.4 mandates three things Quill 1.3.7's stock
@@ -4520,36 +4754,38 @@ function setFaBodyMode(mode) {
 document.getElementById("fa-body-mode-edit").addEventListener("click", () => setFaBodyMode("edit"));
 document.getElementById("fa-body-mode-view").addEventListener("click", () => setFaBodyMode("view"));
 
-function setFaStatusToggle(status) {
-  faStatus = status;
-  document.querySelectorAll("#faq-article-editor-page .type-opt").forEach((btn) => {
-    btn.classList.toggle("active", btn.dataset.status === status);
-  });
+function renderFaStatusBadge() {
+  const badge = document.getElementById("fa-status-badge");
+  const isPublished = faLoadedStatus === "published";
+  badge.textContent = isPublished ? "Published" : "Draft";
+  badge.classList.toggle("fa-status-badge-published", isPublished);
 }
 
-// The slide-out panel holding everything besides title/summary/body — see
-// the comment above faqArticleEditorPage. Closed by default every time the
-// editor opens (openFaqArticleEditorPage below), regardless of whether it
-// was left open on a previous article.
-function setFaAdvancedPanelOpen(open) {
-  faAdvancedPanel.classList.toggle("open", open);
-  faAdvancedPanel.setAttribute("aria-hidden", open ? "false" : "true");
-  faAdvancedBackdrop.hidden = !open;
-  document.getElementById("fa-advanced-toggle").setAttribute("aria-expanded", open ? "true" : "false");
+// Each sidebar group (Article properties / Search & keywords / Status &
+// publishing) expands and collapses independently of the others — replaces
+// the old single slide-out "Advanced settings" panel, which put every
+// secondary field behind one all-or-nothing open/closed toggle. Group state
+// resets to sensible defaults every time the editor opens (see
+// resetFaGroups, called from openFaqArticleEditorPage below), regardless of
+// what was left open/closed on a previous article.
+const FA_GROUP_TOGGLE_IDS = ["fa-group-properties-toggle", "fa-group-discovery-toggle", "fa-group-status-toggle"];
+function setFaGroupOpen(headerId, open) {
+  const header = document.getElementById(headerId);
+  const body = document.getElementById(header.getAttribute("aria-controls"));
+  header.setAttribute("aria-expanded", open ? "true" : "false");
+  body.hidden = !open;
 }
-document.getElementById("fa-advanced-toggle").addEventListener("click", () => setFaAdvancedPanelOpen(!faAdvancedPanel.classList.contains("open")));
-document.getElementById("fa-advanced-close").addEventListener("click", () => setFaAdvancedPanelOpen(false));
-// Click-outside-to-close, from the document rather than from the backdrop.
-// The backdrop is pointer-events: none now (see styles.css): while the panel
-// was open it covered the whole page including the editor's own Save button,
-// so the first click on a plainly visible Save did nothing except dismiss the
-// panel, and the article only saved on a second click. Same "the button did
-// nothing" shape as the modal-scroll bug and the silent deployToFeature click
-// before it. The dimming stays; only the click-swallowing goes.
-document.addEventListener("click", (e) => {
-  if (!faAdvancedPanel.classList.contains("open")) return;
-  if (e.target.closest("#fa-advanced-panel, #fa-advanced-toggle")) return;
-  setFaAdvancedPanelOpen(false);
+function resetFaGroups() {
+  // Article properties starts open (category is required for a new
+  // article); the other two start collapsed.
+  setFaGroupOpen("fa-group-properties-toggle", true);
+  setFaGroupOpen("fa-group-discovery-toggle", false);
+  setFaGroupOpen("fa-group-status-toggle", false);
+}
+FA_GROUP_TOGGLE_IDS.forEach((id) => {
+  document.getElementById(id).addEventListener("click", () => {
+    setFaGroupOpen(id, document.getElementById(id).getAttribute("aria-expanded") !== "true");
+  });
 });
 
 function openFaqArticleEditorPage(articleId) {
@@ -4571,9 +4807,11 @@ function openFaqArticleEditorPage(articleId) {
   faQuill.root.innerHTML = article ? renderFaqBodyMd(article.bodyMd || "") : "";
   faDocTypeSelect.value = article && article.docType ? article.docType : "faq";
   faNeedsReview.checked = article ? !!article.needsReview : false;
-  setFaStatusToggle(article ? article.status : "draft");
+  faLoadedStatus = article && article.status ? article.status : "draft";
+  faLoadedHasPublishedAt = !!(article && article.publishedAt);
+  renderFaStatusBadge();
   setFaBodyMode("edit");
-  setFaAdvancedPanelOpen(false);
+  resetFaGroups();
 
   if (faCategorySelect.options.length && faCategorySelect.options[0].value !== "") {
     faCategorySelect.value = article ? article.categoryId : faCategorySelect.options[0].value;
@@ -4599,7 +4837,6 @@ function openFaqArticleEditorPage(articleId) {
 function closeFaqArticleEditorPage() {
   faqArticleEditorPage.hidden = true;
   document.getElementById("projects-root").hidden = false;
-  setFaAdvancedPanelOpen(false);
 }
 function backToFaqArticleList() { openFaqArticlesPage(); }
 
@@ -4610,14 +4847,7 @@ document.getElementById("fa-new-article-btn").addEventListener("click", async ()
 document.getElementById("fa-cancel").addEventListener("click", backToFaqArticleList);
 document.addEventListener("keydown", (e) => {
   if (e.key !== "Escape" || faqArticleEditorPage.hidden) return;
-  // Escape closes the slide-out panel first, same as it would any other
-  // overlay — a second Escape (panel already closed) leaves the editor.
-  if (faAdvancedPanel.classList.contains("open")) setFaAdvancedPanelOpen(false);
-  else backToFaqArticleList();
-});
-
-document.querySelectorAll("#faq-article-editor-page .type-opt").forEach((btn) => {
-  btn.addEventListener("click", () => setFaStatusToggle(btn.dataset.status));
+  backToFaqArticleList();
 });
 
 faTitleInput.addEventListener("input", () => {
@@ -4625,12 +4855,18 @@ faTitleInput.addEventListener("input", () => {
 });
 faSlugInput.addEventListener("input", () => { faqSlugManuallyEdited = true; });
 
-document.getElementById("fa-submit").addEventListener("click", async () => {
+// Save draft and Publish share the same field-gathering logic, differing
+// only in what status (and whether publishedAt) gets written — see the
+// faLoadedStatus/faLoadedHasPublishedAt comment above. This replaces the
+// old single "Save article" button + separate Draft/Published toggle with
+// the two explicit actions from the redesign mockup's toolbar.
+async function submitFaqArticleFromEditor(publish) {
   const title = faTitleInput.value.trim();
   const categoryId = faCategorySelect.value;
   if (!title) { faTitleInput.focus(); return; }
   if (!categoryId) { await showAlert("Add a category first."); return; }
 
+  const status = publish ? "published" : (faLoadedStatus === "published" ? "published" : "draft");
   const data = {
     categoryId,
     projectId: faProjectSelect.value || null,
@@ -4641,12 +4877,15 @@ document.getElementById("fa-submit").addEventListener("click", async () => {
     docType: faDocTypeSelect.value || "faq",
     bodyMd: faQuill.root.innerHTML,
     keywords: faKeywordsInput.value.split(",").map((k) => k.trim()).filter(Boolean),
-    status: faStatus,
+    status,
     needsReview: faNeedsReview.checked,
+    ...(publish && !faLoadedHasPublishedAt ? { publishedAt: serverTimestamp() } : {}),
   };
   await saveFaqArticle(editingFaqArticleId, data);
   backToFaqArticleList();
-});
+}
+document.getElementById("fa-save-draft").addEventListener("click", () => submitFaqArticleFromEditor(false));
+document.getElementById("fa-publish").addEventListener("click", () => submitFaqArticleFromEditor(true));
 
 wireFaqArticleRowInteractions("faq-article-list");
 

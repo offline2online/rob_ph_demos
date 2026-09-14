@@ -105,6 +105,13 @@ body {
 .col-head-publish { border-top: 3px solid var(--primary); }
 .col-head-live { border-top: 3px solid var(--success); }
 .col-count { background: var(--surface-2); border-radius: 9999px; padding: 1px 8px; }
+/* Wraps groomNotifyButtonHTML's own .notify-claude-btn (reused as-is, no new
+   button skin) — its own row under the Backlog column's head rather than
+   squeezed onto the head's single label+count line. width:100% is layout
+   only: outside this wrapper .notify-claude-btn stays its natural
+   content-sized pill everywhere else it's used (project header, mobile bar). */
+.col-groom-row { padding: 0 10px 10px; }
+.col-groom-row .notify-claude-btn { width: 100%; justify-content: center; }
 .col-list { padding: 10px; display: flex; flex-direction: column; gap: 10px; overflow-y: auto; }
 .empty-hint { color: var(--text-muted); font-size: 12.5px; font-style: italic; padding: 10px 6px; text-align: center; }
 /* cursor:pointer signals the whole tile opens for editing on click now
@@ -635,17 +642,35 @@ textarea.dialog-field-input { resize: vertical; min-height: 70px; }
 
 /* Dedicated article editor page: title/summary/body take the full main
    column; everything else (slug, category, doc type, linked project,
-   keywords, status, needs review) lives in a panel that slides in from the
-   right and stays hidden until "Advanced settings" is clicked — see
+   keywords, status, needs review) lives in a sidebar of independently
+   expand/collapsible named groups to the right — see
    ROUTINE_INSTRUCTIONS.md item "dedicated page for every article" and
-   app.js's openFaqArticleEditorPage/setFaAdvancedPanelOpen. */
-.faq-editor-main { max-width: 820px; }
-/* pointer-events: none is the point of this rule. The panel is a settings
-   drawer, not a modal that owns the page: with the backdrop catching clicks
-   it also covered the editor's Save button, so the first click on a visible,
-   enabled Save silently just closed the panel. Closing on an outside click
-   is handled from the document instead (app.js), which keeps that behaviour
-   while letting the click through to whatever was actually aimed at. */
+   app.js's openFaqArticleEditorPage/setFaGroupOpen. Replaced the old
+   single slide-out "Advanced settings" panel per the redesign mockup, which
+   grouped the same kind of secondary fields into separate titled,
+   collapsible sections instead of one flat drawer. */
+.faq-editor-layout { display: flex; gap: 22px; align-items: flex-start; flex-wrap: wrap; }
+.faq-editor-main { max-width: 820px; flex: 1 1 480px; min-width: 0; }
+.faq-editor-sidebar { flex: 1 1 280px; min-width: 240px; max-width: 340px; display: flex; flex-direction: column; gap: 12px; }
+.fa-group { border: 1px solid var(--border); border-radius: 8px; background: var(--surface); overflow: hidden; }
+.fa-group-header {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%;
+  font-family: inherit; font-size: 11.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em;
+  color: var(--text); background: var(--surface-2); border: none; padding: 10px 14px; cursor: pointer; text-align: left;
+}
+.fa-group-header:hover { background: var(--border); }
+.fa-group-caret { color: var(--text-muted); font-size: 11px; transition: transform .15s ease; flex-shrink: 0; }
+.fa-group-header[aria-expanded="true"] .fa-group-caret { transform: rotate(180deg); }
+.fa-group-body { padding: 12px 14px 16px; }
+.fa-group-body > .field-label:first-child { margin-top: 0; }
+.fa-status-badge {
+  display: inline-block; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em;
+  padding: 4px 10px; border-radius: 20px; background: var(--surface-2); color: var(--text-muted);
+}
+.fa-status-badge-published { background: var(--primary-tint); color: var(--primary); }
+@media (max-width: 860px) {
+  .faq-editor-sidebar { max-width: none; }
+}
 /* ── FAQ Management's two-pane browser ────────────────────────────────────
    Structure on the left, the selected folder's articles on the right —
    modelled on the Freshdesk layout this content came from, and replacing a
@@ -697,20 +722,6 @@ textarea.dialog-field-input { resize: vertical; min-height: 70px; }
 .faq-article-row[draggable="true"], .faq-tree-row[draggable="true"] { cursor: grab; }
 .faq-article-row[draggable="true"]:active, .faq-tree-row[draggable="true"]:active { cursor: grabbing; }
 
-.faq-advanced-backdrop {
-  position: fixed; inset: 0; background: rgba(10, 12, 13, .35);
-  z-index: 24; pointer-events: none;
-}
-.faq-advanced-panel {
-  position: fixed; top: 0; right: 0; bottom: 0; width: min(400px, 92vw);
-  background: var(--bg); border-left: 1px solid var(--border); box-shadow: -10px 0 30px rgba(0, 0, 0, .18);
-  z-index: 25; overflow-y: auto; padding: 18px 20px 24px;
-  transform: translateX(100%); transition: transform .25s ease;
-}
-.faq-advanced-panel.open { transform: translateX(0); }
-.faq-advanced-panel-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px; }
-.faq-advanced-panel-header h3 { margin: 0; font-size: 15px; }
-.faq-advanced-panel .type-toggle { margin-top: 4px; }
 .fa-body-header { display: flex; align-items: center; justify-content: space-between; margin-top: 10px; }
 #fa-body-editor-wrap { border-radius: 6px; overflow: hidden; }
 #fa-body-editor { background: var(--bg); font-size: 13px; }
