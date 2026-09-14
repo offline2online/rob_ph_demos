@@ -184,7 +184,7 @@ actual bug — see PR #61/#62 above — this guard exists for).
 **`patchFiles` producing no diff against `main` no longer leaves an item
 stuck silently either.** This is the expected outcome for one half of a
 multi-item batch sharing identical file content (see
-`ROUTINE_INSTRUCTIONS.md` → "Group multi-item fixes into one deployment")
+`ROUTINE_INSTRUCTIONS.md` → "Cards that ship together are already grouped")
 once its sibling's PR merges first — the content is already on `main`, so
 there's nothing to open a PR for. `processApplyPatch` used to just log and
 return here, leaving `patchReady`/`status` untouched and the item silently
@@ -538,14 +538,123 @@ racing runs.
 There used to also be a per-project **Deployments** page (⋮ → Deployments)
 that grouped tickets meant to ship together and showed a checklist of which
 were confirmed "Approved for Deployment" — removed by request (its owner
-found the ⋮ menu entry confusing and wasn't relying on it). Nothing about
-`patchFiles`/`patchReady`'s own "give every item in a shared-file batch the
-same full combined content" convention (see `ROUTINE_INSTRUCTIONS.md` →
-"Group multi-item fixes into one deployment") depended on that page or the
-`deployments` collection — that's a separate, code-level mechanism in
-`run-backlog-automation.js` and is unaffected. What's gone is only the
-human-facing "which PRs were meant to land together" grouping view; nothing
-now tells a person that at a glance beyond reading each item's own notes.
+found the ⋮ menu entry confusing and wasn't relying on it), and later
+removed again in its second form (a dedicated grouping view built on a
+`deployments` Firestore collection, PR #98). Nothing about `patchFiles`/
+`patchReady`'s own "give every item in a shared-file batch the same full
+combined content" convention depended on either removed page — that's a
+separate, code-level mechanism in `run-backlog-automation.js`, unaffected
+either time. The human-facing "which PRs were meant to land together" view
+these pages provided isn't gone for good, though: `deploymentGroupKey()` in
+`app.js` now derives it for free from `patchBranch`/`prNumber` (branch wins
+when both are present) and the board draws matching cards bracketed
+together with a "Ships together" header, right where they already sit —
+no separate page, no `deployments` collection, no `deploymentId` field.
+`firestore.rules` has no `match` block for `deployments` any more, and
+`ROUTINE_INSTRUCTIONS.md` no longer tells a fired session to create one —
+see that file's own "Cards that ship together are already grouped" section.
+
+### backlog-automation.yml reconciles instead of failing forever on a cancelled run
+
+`cancel-in-progress: false` (see the workflow's own comment) means an
+in-progress run of this job is never killed by a newer trigger — but a
+burst of triggers (a wave of merges in a short window, each one dispatching
+this job via `onBacklogItemReadyForAutomation`) can still queue several
+runs back to back, and unlike `deploy-backlog-tracker.yml` this job isn't a
+pure, restartable build: it pushes a branch, opens a PR, then writes status
+back to Firestore, in that order, and a run genuinely can end (timeout,
+runner loss, a manual cancel) between any two of those steps. Before this
+fix, that left an item stuck `patchReady:true` with a branch on GitHub the
+board didn't know about — the next run's plain `git push` to that same
+deterministic branch name failed non-fast-forward against the leftover
+push, retrying every ~2 minutes until `MAX_PATCH_ATTEMPTS` gave up, with
+nothing on the card explaining why.
+
+`processApplyPatch` now reconciles against this item's own branch (its name
+embeds the item id, so it can never belong to any other item) before doing
+any fresh git work: `findPrForBranch()` checks whether that branch already
+has a PR in any state. A `MERGED` or still-`OPEN` match means an earlier,
+interrupted run already got further than the board knew — the item is
+moved straight to Ready for Testing with that PR attached instead of trying
+(and failing) to push again. A `CLOSED` match is treated as a human's
+deliberate rejection, not something to retry. And the actual push itself is
+now `--force` — safe specifically because the branch is this job's own,
+item-scoped, and the reconciliation check above already ruled out a PR
+existing for it, so overwriting whatever's there (a stale push from a
+cancelled run, most likely) can't lose real reviewed work.
+
+### Deploy provenance is now recorded per card, not just per version
+
+`testVersion` (backlog-tracker's own `APP_VERSION`, stamped once a card
+reaches Ready for Testing) answers "which build do I test this in" — but
+once several cards ship inside the same version, it can't answer "did
+*this* card's fix actually go live." `processMergePr` now also writes, at
+merge time: `mergeCommit` (the PR's actual merge commit sha), and
+`deployRunUrl`/`deployConclusion` for whichever `deploy-backlog-tracker.yml`
+run its own `gh workflow run` dispatch triggered (only when the merge
+touched `backlog-tracker/` at all — otherwise `deployConclusion` is
+`"not-applicable"`). The dispatched run usually hasn't finished by the time
+the merge itself completes, so `deployConclusion` starts `"pending"`;
+`reconcileDeployStatuses()`, run at the top of every scheduled tick, sweeps
+every card still `"pending"` and fills in the real `conclusion` (`success`,
+`failure`, ...) once GitHub has one. `cardHTML`'s `deployBadge` shows this
+on a Merged to Main (Live) card — the commit's short sha, and a link to the
+deploy run colored by its outcome. Before this, confirming a batch of cards
+were genuinely live meant fetching the deployed `app.js` and comparing its
+hash against `main` by hand.
+
+### The New Item form nudges toward folding in a likely duplicate
+
+Three cards asking for the same thing, reworded three ways, were each
+independently built and deployed as three separate PRs in one night — see
+`ROUTINE_INSTRUCTIONS.md`'s own "Check for duplicate open work before
+packaging" section for the packaging-time half of the fix. This is the
+creation-time half: before saving a new item, `findLikelyDuplicate()` does
+a cheap keyword-overlap check (an overlap coefficient over significant
+words, not embeddings — same spirit as `suggestCategory()` just above it in
+`app.js`) against every currently open item in the same project. A strong
+match offers "Add as comment on that ticket instead" as the default path,
+with "Create separate ticket anyway" always available for a false positive.
+It's a nudge, not a hard block — two genuinely different requests can share
+a lot of wording, and this only ever compares against *open* items, so it
+never second-guesses prior art that's already shipped or been archived.
+
+### A bounded text field now says so before the write fails
+
+`firestore.rules` caps several string fields (`backlogItems.desc` at 2000,
+`title` at 200, project/interface/doc `name` at 80-120, interface/doc
+`contentMd` at 20000) and rejects a write over the cap with a bare 403
+permission-denied — nothing in that error names the field or the limit.
+Native `maxlength` on the relevant `<textarea>`/`<input>` already stopped
+most of this at the source (and `if-content-input`/`doc-content-input` now
+carry one too, matching their 20000-character rule, which they didn't
+before), but said nothing to someone approaching a limit, and did nothing
+at all against dictation, which sets `.value` straight from script — a path
+that bypasses `maxlength` entirely, called out explicitly as a way to run
+past 2000 characters without noticing. Two fixes: `wireCharCount()` puts a
+live "X / max" readout under every bounded field, turning amber near the
+cap and red at it; and `createDictationController`'s `onresult` handler now
+clamps to the field's own `maxLength` the same way typing already was,
+surfacing a plain-language message when it does. `describeSaveError()` is
+the last-resort net for whatever still gets through: if a write is refused
+and a field the app just tried to save is actually over its known cap, the
+alert names which one and by how much, instead of surfacing the raw
+"permission-denied" wording.
+
+### A scrolled-down column no longer jumps back on every render
+
+`renderNow()` replaces `#projects-root`'s entire `innerHTML` on every
+render — cheap to reason about, but it recreates every `.col-list` element
+from scratch, including whichever one a viewer was scrolled down in. That
+snapped a column back to its top on *any* render, not just the "Confirm
+tested" click it was first reported against (that write flips `testPassed`
+in Firestore, the `onSnapshot` listener fires, `render()` runs, and the
+column you were scrolling through jumps back to the first card). `colListId()`
+already gives each column a stable id across renders even though the
+element itself isn't the same node, so `renderNow()` now captures each
+`.col-list`'s `scrollTop` by that id immediately before the rebuild and
+restores it immediately after — fixing every render path at once rather
+than special-casing the one button that happened to surface it.
 
 ### Cleaning up old Cloud Build/Artifact Registry images
 

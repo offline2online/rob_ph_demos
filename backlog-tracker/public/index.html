@@ -63,6 +63,7 @@
           <textarea id="ni-desc-input" rows="6" maxlength="2000" placeholder="Describe the feature or bug — type, or tap the mic and just talk. A title and area are set for you automatically."></textarea>
           <button type="button" class="mic-btn" id="ni-mic-btn" hidden title="Dictate" aria-label="Dictate">&#127908;</button>
         </div>
+        <span class="char-count" id="ni-desc-count"></span>
         <p class="listening-hint" id="ni-listening-hint">&#127908; Listening — tap the mic again when you're done.</p>
         <p class="mic-error" id="ni-mic-error"></p>
         <p class="field-hint">A short title and best-guess area are generated from what you write — Claude sets the final ones once this ticket is actually looked at.</p>
@@ -87,6 +88,7 @@
         </div>
         <label class="field-label" for="np-name-input">Name</label>
         <input type="text" id="np-name-input" maxlength="80" placeholder="e.g. Loyalty App">
+        <span class="char-count" id="np-name-count"></span>
 
         <label class="field-label" for="np-program-select">Program / Product</label>
         <select id="np-program-select"></select>
@@ -112,7 +114,8 @@
         <label class="field-label" for="if-name-input">Interface name</label>
         <input type="text" id="if-name-input" maxlength="120" placeholder="e.g. Live Visitor Profile ↔ Experience Templates">
         <label class="field-label" for="if-content-input">Contract</label>
-        <textarea id="if-content-input" rows="12" placeholder="What crosses this boundary, owned by which side, versioning rules..."></textarea>
+        <textarea id="if-content-input" rows="12" maxlength="20000" placeholder="What crosses this boundary, owned by which side, versioning rules..."></textarea>
+        <span class="char-count" id="if-content-count"></span>
         <p class="field-hint">Visible and editable from both projects' Docs pages — this is the shared, maintained contract between them.</p>
         <div class="form-row" style="justify-content:flex-end;">
           <div class="form-actions">
@@ -132,7 +135,8 @@
         <label class="field-label" for="doc-name-input">Document name</label>
         <input type="text" id="doc-name-input" maxlength="120" placeholder="e.g. API spec, Architecture decision record">
         <label class="field-label" for="doc-content-input">Content</label>
-        <textarea id="doc-content-input" rows="14" placeholder="Paste or write the document here..."></textarea>
+        <textarea id="doc-content-input" rows="14" maxlength="20000" placeholder="Paste or write the document here..."></textarea>
+        <span class="char-count" id="doc-content-count"></span>
         <div class="form-row" style="justify-content:flex-end;">
           <div class="form-actions">
             <button type="button" class="btn-ghost" id="doc-cancel">Cancel</button>
@@ -150,8 +154,10 @@
         </div>
         <label class="field-label" for="ei-title-input">Title</label>
         <input type="text" id="ei-title-input" maxlength="200">
+        <span class="char-count" id="ei-title-count"></span>
         <label class="field-label" for="ei-desc-input">Description</label>
         <textarea id="ei-desc-input" rows="5" maxlength="2000"></textarea>
+        <span class="char-count" id="ei-desc-count"></span>
         <div class="form-row">
           <div class="type-toggle" role="radiogroup" aria-label="Item type" id="ei-type-toggle">
             <button type="button" class="type-opt" data-type="feature">Feature</button>
