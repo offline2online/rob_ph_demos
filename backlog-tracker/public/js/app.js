@@ -362,6 +362,16 @@ function closeAllSubPages() {
   closeFaqSettingsPage();
   closeFaqArticlesPage();
   closeFaqArticleEditorPage();
+  // Every routed page (FAQ Management, Settings — see "URL routing" below)
+  // opens by calling this first, so clearing the hash here is the one
+  // choke point that keeps it in sync with whatever's actually on screen:
+  // a plain "go back to the board" (nav-ph-console-btn/topbar-logo-btn) or
+  // a jump into a non-routed sub-page (Docs, Archive, …) both leave the URL
+  // matching what a refresh would actually show. replaceState, not
+  // pushState — this is a "make the URL correct" cleanup, not a user-visible
+  // navigation of its own, so it shouldn't add a history entry.
+  setRouteHash("", { replace: true });
+  updateTopbarTitle();
 }
 function returnToBoard() {
   closeAllSubPages();
@@ -3722,6 +3732,8 @@ function openFaqSettingsPage() {
   closeAllSubPages();
   document.getElementById("projects-root").hidden = true;
   faqSettingsPage.hidden = false;
+  setRouteHash("#settings");
+  updateTopbarTitle();
   renderFaqSettingsPage();
 }
 function closeFaqSettingsPage() {
@@ -3733,6 +3745,8 @@ function openFaqArticlesPage() {
   closeAllSubPages();
   document.getElementById("projects-root").hidden = true;
   faqArticlesPage.hidden = false;
+  setRouteHash("#faq-management");
+  updateTopbarTitle();
   renderFaqArticlesPage();
 }
 function closeFaqArticlesPage() {
@@ -4183,6 +4197,52 @@ function wireFaqArticleRowInteractions(containerId) {
 document.getElementById("faq-settings-btn").addEventListener("click", () => { closeNavDrawer(); openFaqSettingsPage(); });
 document.getElementById("faq-articles-btn").addEventListener("click", () => { closeNavDrawer(); openFaqArticlesPage(); });
 
+// ── URL routing for FAQ Management / Settings ────────────────────────────
+// These two are the only sub-pages given a real, persistent URL: reloading
+// the browser while on either one reopens the same page instead of always
+// landing back on the board, and the topbar's own title copy (normally a
+// static "PH Agent Console") switches to name whichever of the two is open,
+// with a one-click link to jump straight to the other — see the
+// "page-switcher" nav rendered in each page's own header in index.html.
+// Every other sub-page (Docs, Archive, the article editor, …) is out of
+// scope here and keeps its existing behavior: closeAllSubPages() clears the
+// hash back to "" whenever one of those opens, so a refresh from there still
+// lands on the board, same as before this existed.
+const ROUTE_TITLES = {
+  "#faq-management": "FAQ Management",
+  "#settings": "Settings",
+};
+function setRouteHash(hash, { replace } = {}) {
+  const current = window.location.hash;
+  if (current === hash) return;
+  const url = hash || (window.location.pathname + window.location.search);
+  if (replace) history.replaceState(null, "", url);
+  else history.pushState(null, "", url);
+}
+function updateTopbarTitle() {
+  const label = ROUTE_TITLES[window.location.hash];
+  document.getElementById("topbar-logo-btn").textContent = label ? `PH Agent Console — ${label}` : "PH Agent Console";
+  document.title = label ? `${label} — PH Agent Console` : "PH Agent Console";
+}
+function applyRouteFromHash() {
+  const hash = window.location.hash;
+  if (hash === "#faq-management") openFaqArticlesPage();
+  else if (hash === "#settings") openFaqSettingsPage();
+  else if (!faqArticlesPage.hidden || !faqSettingsPage.hidden) closeAllSubPages();
+}
+// popstate (back/forward) and hashchange (a typed-in or pasted #hash) both
+// need to re-sync the visible page — pushState/replaceState above never
+// fire either on their own, so there's no risk of this looping back on the
+// calls this same code makes when opening a page.
+window.addEventListener("popstate", applyRouteFromHash);
+window.addEventListener("hashchange", applyRouteFromHash);
+document.addEventListener("click", (e) => {
+  const link = e.target.closest(".page-switcher-link");
+  if (!link) return;
+  if (link.dataset.route === "#faq-management") openFaqArticlesPage();
+  else if (link.dataset.route === "#settings") openFaqSettingsPage();
+});
+
 document.getElementById("fa-new-category-submit").addEventListener("click", async () => {
   const nameEl = document.getElementById("fa-new-category-name");
   if (!nameEl.value.trim()) { nameEl.focus(); return; }
@@ -4589,3 +4649,13 @@ document.getElementById("fa-submit").addEventListener("click", async () => {
 });
 
 wireFaqArticleRowInteractions("faq-article-list");
+
+// Apply whatever route the URL loaded with (including a refresh landing
+// directly on #faq-management or #settings) — deliberately the very last
+// thing this module does: closeAllSubPages(), which a matching route calls
+// into immediately, reaches every close*Page() function in the file
+// (closeFaqArticleEditorPage() among them), and those reference `const`s
+// declared throughout the file (e.g. faqArticleEditorPage). Running this
+// any earlier risks a "Cannot access before initialization" TDZ error the
+// moment a page is loaded straight into one of these two routes.
+applyRouteFromHash();
