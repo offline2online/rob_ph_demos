@@ -1130,7 +1130,113 @@ function renderNow() {
   }
 
   ensureGeneralProjectDoc(renderedProjects);
+  syncMobileActionBar();
 }
+
+// ── The current project's actions, held on screen on a phone ─────────────
+// On a narrow screen the board stacks into one tall column, so a project's
+// own actions — Ready for Dev, Approved for Deployment, Deploy to Main —
+// scroll off the top long before you reach the cards they apply to.
+// Confirming a card tested and then approving it meant scrolling back up,
+// which is the practical reason the board couldn't be driven from a phone.
+//
+// This is a `position: fixed` bar, and that is the whole design, not an
+// implementation detail. The obvious approach — make .project-header
+// `position: sticky` and collapse it to one row once it pins — was built
+// first and is unusable on a real phone: collapsing the header removes
+// ~180px of content from ABOVE the viewport, Chrome's scroll anchoring
+// compensates by scrolling up to keep the content under your thumb still,
+// that scroll un-pins the header, it grows back, and it pins again. Rob
+// reported it as "jumps up and down when trying to scroll"; measured here,
+// the page bounced 120 → 0 → 120 indefinitely and never got past the first
+// project. A fixed element is outside the flow, so it cannot change the
+// document's height or position at all, and the loop cannot exist.
+//
+// The bar shows only the actions themselves — the ⋮ menu stays in the real
+// header, because duplicating it would put two menus with the same
+// data-project-id in the document and the open/close handling keys off
+// exactly that. The buttons here are the same markup the header renders,
+// so the existing delegated click handlers act on them unchanged.
+const mobileActionBar = document.getElementById("mobile-action-bar");
+let mobileBarProjectId = null;
+let mobileBarQueued = false;
+
+// Which project is under the top of the screen right now: the last one
+// whose section has started, ignoring any whose own header is still
+// visible (no point repeating buttons that are already on screen).
+function projectAtTopOfScreen() {
+  let current = null;
+  document.querySelectorAll(".project").forEach((section) => {
+    const header = section.querySelector(".project-header");
+    if (!header) return;
+    const box = section.getBoundingClientRect();
+    const headerBox = header.getBoundingClientRect();
+    if (box.top <= 0 && box.bottom > 80 && headerBox.bottom <= 0) current = section;
+  });
+  return current;
+}
+
+function syncMobileActionBar() {
+  if (!mobileActionBar) return;
+  // The bar is display:none above 640px in CSS, but skip the work entirely
+  // on a desktop window rather than maintaining markup nobody can see.
+  if (window.innerWidth > 640) {
+    if (!mobileActionBar.hidden) { mobileActionBar.hidden = true; mobileBarProjectId = null; }
+    return;
+  }
+  const section = projectAtTopOfScreen();
+  if (!section) {
+    if (!mobileActionBar.hidden) { mobileActionBar.hidden = true; mobileBarProjectId = null; }
+    return;
+  }
+  const pid = section.dataset.projectId;
+  const actions = section.querySelector(".project-header-actions");
+  // Rebuild only when the project changes or its buttons did — this runs on
+  // every scroll frame, and re-parsing identical HTML would throw away the
+  // pressed state of a button mid-tap.
+  const signature = pid + "|" + (actions ? actions.innerHTML.length : 0) +
+    "|" + (actions ? actions.textContent.trim() : "");
+  if (signature !== mobileBarProjectId) {
+    mobileBarProjectId = signature;
+    const name = section.querySelector(".project-name");
+    const buttons = actions
+      ? [...actions.children].filter((el) => !el.classList.contains("project-options"))
+          .map((el) => el.outerHTML).join("")
+      : "";
+    mobileActionBar.innerHTML =
+      `<span class="mobile-action-bar-name">${escapeHTML(name ? name.childNodes[0].textContent.trim() : "")}</span>` +
+      `<div class="mobile-action-bar-actions">${buttons}</div>`;
+  }
+  if (mobileActionBar.hidden) mobileActionBar.hidden = false;
+}
+
+// The board's click handling is delegated from #projects-root, and this bar
+// deliberately sits outside it (a fixed element inside would be wiped by
+// renderNow's innerHTML rebuild). So a tap in the bar reaches no handler at
+// all. Rather than duplicate that dispatch here — two copies that drift the
+// moment either side changes — forward the tap to the real control in the
+// project's own header and let the existing handler run untouched.
+const MOBILE_BAR_ACTIONS = ["project-notify-btn", "deploy-to-feature-btn", "deploy-notify-btn", "new-item-btn"];
+mobileActionBar && mobileActionBar.addEventListener("click", (e) => {
+  const btn = e.target.closest("button, a");
+  if (!btn) return;
+  const action = MOBILE_BAR_ACTIONS.find((c) => btn.classList.contains(c));
+  const pid = btn.dataset.projectId;
+  if (!action || !pid) return;
+  const real = document.querySelector(
+    `.project[data-project-id="${CSS.escape(pid)}"] .project-header-actions .${action}`);
+  if (!real) return;
+  e.preventDefault();
+  real.click();
+});
+
+function queueMobileBarSync() {
+  if (mobileBarQueued) return;
+  mobileBarQueued = true;
+  requestAnimationFrame(() => { mobileBarQueued = false; syncMobileActionBar(); });
+}
+window.addEventListener("scroll", queueMobileBarSync, { passive: true });
+window.addEventListener("resize", queueMobileBarSync);
 
 // ── First paint without waiting on the realtime channel ──────────────────
 // onSnapshot is the source of truth and nothing below changes that. The

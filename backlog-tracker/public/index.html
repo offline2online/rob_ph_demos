@@ -507,6 +507,13 @@
       </div>
     </section>
 
+    <!-- Phone only: the actions of whichever project you're currently
+         scrolled inside, held at the top of the screen. Deliberately
+         position: fixed and therefore OUT of the document flow — see
+         syncMobileActionBar() in app.js for why an in-flow sticky header
+         that collapses cannot work here. -->
+    <div class="mobile-action-bar" id="mobile-action-bar" hidden aria-live="off"></div>
+
     <div id="projects-root"></div>
 
     <footer class="app-footer">PH Agent Console <span id="app-version"></span></footer>

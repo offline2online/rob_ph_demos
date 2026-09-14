@@ -510,7 +510,39 @@ textarea.dialog-field-input { resize: vertical; min-height: 70px; }
   .type-opt { padding: 10px 16px; font-size: 13px; }
   .form-row { gap: 10px; }
   .icon-btn { padding: 7px 10px; font-size: 15px; }
+
+  /* The fixed action bar (see syncMobileActionBar in app.js). Fixed, not
+     sticky, and never in the flow: an in-flow header that collapses when it
+     pins changes the document height mid-scroll, which Chrome's scroll
+     anchoring then tries to correct, which un-pins it — a loop that reads
+     on a real phone as the page juddering up and down. */
+  .mobile-action-bar {
+    position: fixed; top: 0; left: 0; right: 0; z-index: 15;
+    display: flex; align-items: center; gap: 8px;
+    padding: 6px 12px;
+    background: var(--bg); border-bottom: 1px solid var(--border);
+    box-shadow: 0 4px 10px -6px rgba(20, 20, 20, .35);
+  }
+  .mobile-action-bar-name {
+    flex: 1; min-width: 0; font-size: 13px; font-weight: 700;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .mobile-action-bar-actions { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+  /* Icon + count only: the labels don't fit beside a project name on a
+     390px screen, and the count is the part that tells you there's
+     something waiting. The full labels are still on the real header. */
+  .mobile-action-bar .notify-claude-btn {
+    flex-basis: auto; min-height: 38px; padding: 0 10px; font-size: 13px;
+  }
+  .mobile-action-bar .notify-claude-label { display: none; }
+  .mobile-action-bar .new-item-btn {
+    flex: 0 0 auto; min-height: 38px; padding: 0 14px; font-size: 0;
+  }
+  .mobile-action-bar .new-item-btn::after { content: "+"; font-size: 20px; font-weight: 700; }
 }
+/* Never on a desktop window — the bar is only built below 640px, but this
+   makes that true in CSS as well as in JS. */
+@media (min-width: 641px) { .mobile-action-bar { display: none; } }
 
 /* ── Topbar actions (FAQ Center + New project) ──────────────────────── */
 .topbar-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
