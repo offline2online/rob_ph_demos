@@ -258,6 +258,29 @@ function guessPreviewUrl(patchFiles, branch, prUrl) {
   return `https://rawcdn.githack.com/${REPO}/${branch}/${path}`;
 }
 
+// Finds a PR by exact head branch, in ANY state — deliberately different
+// from findExistingPrForItem's OPEN-only, body-text search just below.
+// That one is a broad duplicate guard across the whole repo; this one asks
+// a narrower, reconciliation-specific question: "does THIS item's own
+// branch (which nothing else could ever share, since the name embeds the
+// item id) already have a PR, left over from an earlier run of this same
+// job that didn't finish?" Because the branch is item-scoped, a CLOSED
+// match here is a genuine "a human already looked at and rejected this
+// round of work" signal, not the "different round of work, ignore it"
+// case findExistingPrForItem's own comment documents for the body-text
+// search.
+function findPrForBranch(branch) {
+  let json;
+  try {
+    json = run("gh", ["pr", "list", "--repo", REPO, "--head", branch, "--state", "all", "--json", "number,state,url"]);
+  } catch (err) {
+    console.log(`[apply-patch] couldn't check for an existing PR on branch ${branch} (${err.message}) — proceeding without this reconciliation check`);
+    return null;
+  }
+  const prs = JSON.parse(json);
+  return prs.length ? prs[0] : null;
+}
+
 function findExistingPrForItem(itemId) {
   let json;
   try {
@@ -306,6 +329,57 @@ async function processApplyPatch(item) {
     return;
   }
 
+  const branch = sanitizeBranchName(item.patchBranch, item.id);
+
+  // Reconcile against this item's own branch FIRST, before the broader
+  // body-text duplicate guard below. A run of this job that gets cancelled
+  // mid-item (backlog-automation.yml's own concurrency group queues
+  // instead of killing an in-progress run, but a burst of triggers can
+  // still queue several runs back to back — see its comment) can leave
+  // real GitHub state — a pushed branch, sometimes even an already-opened
+  // PR — with the item's own Firestore doc never updated to say so, since
+  // the write that would have recorded it never got to run. Before this
+  // check existed, the item just sat patchReady:true and the next run's
+  // fresh `git push` to this same deterministic branch name failed
+  // outright (non-fast-forward against the stale push), retried every ~2
+  // minutes until MAX_PATCH_ATTEMPTS gave up — a permanent failure with no
+  // record of the real cause. Checking by exact branch name (unlike the
+  // body-text search below, this branch can never belong to any other
+  // item) finds exactly that leftover state and reconciles instead of
+  // trying, and failing, to redo it.
+  const reconciledPr = findPrForBranch(branch);
+  if (reconciledPr) {
+    if (reconciledPr.state === "CLOSED") {
+      console.log(`[apply-patch] ${item.id}: branch ${branch} already has a CLOSED PR #${reconciledPr.number} — leaving patchReady cleared rather than retrying`);
+      const notes = await appendNote(
+        item,
+        `Found this item's own branch (${branch}) already carrying PR #${reconciledPr.number} (${reconciledPr.url}), but it's CLOSED without merging — most likely closed deliberately by a human. patchReady has been cleared so this stops retrying; to try again, either reopen that PR or clear patchBranch so a fresh branch gets used.`
+      );
+      await patchItem(item.id, { patchReady: false, updatedAt: new Date().toISOString(), notes });
+      return;
+    }
+    console.log(`[apply-patch] ${item.id}: branch ${branch} already has ${reconciledPr.state} PR #${reconciledPr.number} from an apparently-interrupted earlier run — reconciling instead of re-pushing`);
+    const notes = await appendNote(
+      item,
+      `Reconciled rather than re-pushed: this item's branch (${branch}) already had ${reconciledPr.state === "MERGED" ? "an already-merged" : "an already-open"} PR #${reconciledPr.number} (${reconciledPr.url}) — left behind by an earlier run of this job that was apparently interrupted before it could record the PR on this card. Moving to Ready for Testing now with that PR attached.`
+    );
+    const testVersion = readAppVersion();
+    const previewUrl = item.previewUrl || guessPreviewUrl(item.patchFiles, branch, reconciledPr.url);
+    await patchItem(item.id, {
+      status: "ready-for-testing",
+      patchReady: false,
+      patchAttempts: 0,
+      updatedAt: new Date().toISOString(),
+      notes,
+      prUrl: reconciledPr.url,
+      prNumber: reconciledPr.number,
+      previewUrl,
+      ...(reconciledPr.state === "MERGED" ? { noDeploymentRequired: true } : {}),
+      ...(testVersion ? { testVersion } : {}),
+    });
+    return;
+  }
+
   const existingPr = findExistingPrForItem(item.id);
   if (existingPr) {
     console.log(`[apply-patch] ${item.id}: PR #${existingPr.number} (${existingPr.state}) already references this item — not opening a duplicate`);
@@ -320,8 +394,6 @@ async function processApplyPatch(item) {
 
   run("git", ["fetch", "origin", "main", "--quiet"]);
   run("git", ["checkout", "-B", "main", "origin/main", "--quiet"]);
-
-  const branch = sanitizeBranchName(item.patchBranch, item.id);
   run("git", ["checkout", "-B", branch, "--quiet"]);
 
   applyPatchFiles(item.patchFiles);
@@ -373,7 +445,17 @@ async function processApplyPatch(item) {
 
   const commitMessage = item.patchCommitMessage || `Fix: ${item.title || item.desc || item.id}`;
   run("git", ["-c", "user.name=backlog-automation", "-c", "user.email=backlog-automation@users.noreply.github.com", "commit", "-m", commitMessage, "--quiet"]);
-  run("git", ["push", "-u", "origin", branch, "--quiet"]);
+  // --force, deliberately: branch is this item's own deterministic name
+  // (sanitizeBranchName embeds the item id), pushed only ever by this
+  // script for this one item, and the reconciliation check above already
+  // ruled out a PR existing for it. The one case a plain push would
+  // otherwise fail on — this exact branch already sitting on origin with
+  // different history, left by an earlier run of this job that got
+  // cancelled after pushing but before opening its PR (see the
+  // reconciliation comment above) — is exactly the case this needs to
+  // recover from automatically rather than failing non-fast-forward and
+  // retrying into MAX_PATCH_ATTEMPTS.
+  run("git", ["push", "-u", "origin", branch, "--force", "--quiet"]);
 
   const prTitle = item.patchPrTitle || commitMessage;
   const prBody = (item.patchPrBody || "Implemented by the Notify Claude backlog pipeline.") +
@@ -406,6 +488,40 @@ async function processApplyPatch(item) {
   console.log(`[apply-patch] ${item.id}: opened ${prUrl}, moved to ready-for-testing${testVersion ? ` (testVersion ${testVersion})` : ""}`);
 
   run("git", ["checkout", "main", "--quiet"]);
+}
+
+function sleepSync(ms) {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+
+// Finds the deploy-backlog-tracker.yml run this script's own `gh workflow
+// run` dispatch just started, so the merging item can carry a real link to
+// "the run that's supposed to ship this" rather than nothing at all.
+// workflow_dispatch is an explicit API call, not a webhook — there's no
+// run id handed back from triggering it, only from listing runs
+// afterward, and the new run can take a few seconds to even appear in
+// that list, hence the short retry loop. Matches on event type
+// (workflow_dispatch, not push — a human's own merge around the same time
+// would trigger a push-triggered run instead) and createdAt >= the moment
+// we dispatched, so a concurrent unrelated dispatch can't be mismatched
+// onto this item.
+function findDispatchedDeployRun(dispatchedAtISO) {
+  for (let attempt = 0; attempt < 5; attempt++) {
+    try {
+      const json = run("gh", [
+        "run", "list", "--repo", REPO, "--workflow", "deploy-backlog-tracker.yml",
+        "--branch", "main", "--limit", "5",
+        "--json", "databaseId,url,createdAt,status,conclusion,event",
+      ]);
+      const match = JSON.parse(json).find((r) => r.event === "workflow_dispatch" && r.createdAt >= dispatchedAtISO);
+      if (match) return match;
+    } catch (err) {
+      console.log(`[merge-pr] couldn't list deploy-backlog-tracker.yml runs (${err.message})`);
+      return null;
+    }
+    sleepSync(3000);
+  }
+  return null;
 }
 
 async function processMergePr(item) {
@@ -476,6 +592,21 @@ async function processMergePr(item) {
     console.log(`[merge-pr] ${item.id}: PR #${prNumber} is already MERGED — skipping the merge attempt, proceeding straight to the success path`);
   }
 
+  // The actual merge commit this PR landed as — recorded on the card so
+  // "which build do I check this in" has a real, per-ticket answer instead
+  // of only the shared testVersion several cards can carry at once (see
+  // cardHTML's own deployBadge comment). Only resolvable AFTER the merge
+  // (gh pr view's mergeCommit is null on a still-open PR), so this is a
+  // fresh lookup, not the state captured further up.
+  let mergeCommit = null;
+  try {
+    const mergedJson = run("gh", ["pr", "view", String(prNumber), "--repo", REPO, "--json", "mergeCommit"]);
+    const parsedMerged = JSON.parse(mergedJson);
+    mergeCommit = parsedMerged.mergeCommit && parsedMerged.mergeCommit.oid ? parsedMerged.mergeCommit.oid : null;
+  } catch (err) {
+    console.log(`[merge-pr] ${item.id}: couldn't read PR #${prNumber}'s merge commit (${err.message}) — leaving mergeCommit unset`);
+  }
+
   // A merge performed with this workflow's own GITHUB_TOKEN does NOT
   // trigger other workflows' `on: push` — GitHub deliberately suppresses
   // that to prevent infinite loops (see deploy-backlog-tracker.yml's own
@@ -485,13 +616,29 @@ async function processMergePr(item) {
   // "published-live". `gh workflow run` (an explicit API dispatch, not a
   // push event) is exempt from that suppression, so trigger the deploy
   // directly whenever the merge actually touched backlog-tracker/.
+  //
+  // deployRunUrl/deployConclusion below are this dispatch's own outcome,
+  // recorded on the card (see cardHTML's deployBadge) so confirming a
+  // batch of cards is genuinely live stops meaning "fetch the deployed
+  // app.js and compare its hash against main by hand" — the gap that
+  // required exactly that, by hand, the night this was written.
+  // deployConclusion starts "pending" whether or not the run was found
+  // yet; main()'s own reconcileDeployStatuses() sweep picks it up and
+  // fills in the real conclusion once the run actually finishes, since
+  // this job doesn't wait around for that itself.
+  let deployRunUrl = null;
+  let deployConclusion = "not-applicable";
   if (touchesBacklogTracker) {
+    const dispatchedAt = new Date().toISOString();
     try {
       run("gh", ["workflow", "run", "deploy-backlog-tracker.yml", "--repo", REPO, "--ref", "main"]);
       console.log(`[merge-pr] ${item.id}: triggered deploy-backlog-tracker.yml`);
     } catch (err) {
       console.log(`[merge-pr] ${item.id}: failed to trigger deploy-backlog-tracker.yml (${err.message}) — merge still succeeded, but the live site may be stale until the next deploy`);
     }
+    const deployRun = findDispatchedDeployRun(dispatchedAt);
+    deployRunUrl = deployRun ? deployRun.url : null;
+    deployConclusion = "pending";
   }
 
   const notes = await appendNote(
@@ -509,11 +656,56 @@ async function processMergePr(item) {
     prUrl: `https://github.com/${REPO}/pull/${prNumber}`,
     prNumber: Number(prNumber),
     notes,
+    ...(mergeCommit ? { mergeCommit } : {}),
+    ...(deployRunUrl ? { deployRunUrl } : {}),
+    deployConclusion,
   });
-  console.log(`[merge-pr] ${item.id}: merged PR #${prNumber}, moved to published-live`);
+  console.log(`[merge-pr] ${item.id}: merged PR #${prNumber}, moved to published-live${mergeCommit ? ` (${mergeCommit.slice(0, 7)})` : ""}`);
+}
+
+// Sweeps every card still showing deployConclusion:"pending" (set by
+// processMergePr the moment it dispatches deploy-backlog-tracker.yml,
+// before that run has necessarily finished — this job doesn't wait around
+// for it) and fills in the real conclusion once GitHub has one. Runs at
+// the top of every scheduled tick, so a card's deploy status catches up
+// within a couple of minutes of the run actually finishing even though
+// nothing pushes that update proactively.
+async function reconcileDeployStatuses() {
+  const pending = await runQuery({
+    from: [{ collectionId: "backlogItems" }],
+    where: { fieldFilter: { field: { fieldPath: "deployConclusion" }, op: "EQUAL", value: { stringValue: "pending" } } },
+  });
+  if (!pending.length) return;
+  console.log(`[deploy-status] ${pending.length} item(s) with a pending deploy to check`);
+  for (const item of pending) {
+    try {
+      let match = null;
+      const runId = item.deployRunUrl ? (String(item.deployRunUrl).match(/\/runs\/(\d+)/) || [])[1] : null;
+      if (runId) {
+        const json = run("gh", ["run", "view", runId, "--repo", REPO, "--json", "status,conclusion,url"]);
+        match = JSON.parse(json);
+      } else {
+        // processMergePr dispatched the deploy but hadn't found the run
+        // yet by the time it wrote the card — look again, broadly, using
+        // the merge time as the "dispatched no earlier than" bound.
+        match = findDispatchedDeployRun(item.mergedAt || item.updatedAt || new Date(0).toISOString());
+      }
+      if (!match || match.status !== "completed") continue; // still running (or genuinely not found yet) — leave "pending", try again next tick
+      await patchItem(item.id, {
+        deployConclusion: match.conclusion || "unknown",
+        ...(match.url ? { deployRunUrl: match.url } : {}),
+        updatedAt: new Date().toISOString(),
+      });
+      console.log(`[deploy-status] ${item.id}: deploy run finished — ${match.conclusion || "unknown"}`);
+    } catch (err) {
+      console.log(`[deploy-status] ${item.id}: couldn't refresh deploy status (${err.message}) — will retry next run`);
+    }
+  }
 }
 
 async function main() {
+  await reconcileDeployStatuses();
+
   const patchReadyItems = await runQuery({
     from: [{ collectionId: "backlogItems" }],
     where: { fieldFilter: { field: { fieldPath: "patchReady" }, op: "EQUAL", value: { booleanValue: true } } },

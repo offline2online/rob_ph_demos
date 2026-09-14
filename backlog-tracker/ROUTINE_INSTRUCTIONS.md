@@ -177,8 +177,8 @@ rest of this file.
    `backlog-tracker/public/` (e.g. a fix confined to `functions/` or
    `scripts/`, which the footer doesn't reflect anyway).
 
-   Packaging more than one item together (see "Group multi-item fixes
-   into one deployment" below)? Bump it **once for the whole batch**, not
+   Packaging more than one item together (see "Cards that ship together
+   are already grouped" below)? Bump it **once for the whole batch**, not
    once per item — same as `app.js`/`index.html`'s own "full combined
    result in every item's `patchFiles`" pattern for a shared file. Each
    item independently reading "current is 1.4.0" and independently
@@ -249,36 +249,80 @@ If you genuinely cannot express the finished fix as full file contents
 exactly what's blocking you, and say so plainly in your summary — this is
 the correct, expected outcome in that case, not a failure to fix silently.
 
-## Group multi-item fixes into one deployment
+## Cards that ship together are already grouped — don't stamp a deploymentId
 
-If you successfully packaged (`patchReady: true` — i.e. NOT left in
-`backlog` due to a blocker — see above) **more than one** item in this
-run, they were very likely all worked on together and are meant to ship
-to `main` together too. Link them:
+A batch of items packaged together in one run (same `patchBranch`, so they
+land as one PR) used to also get a `deploymentId` written onto each item,
+pointing at a doc in a `deployments` collection, so a dedicated Deployments
+page could show which tickets were meant to ship together. That page was
+removed (PR #98, then again by explicit request — see
+`backlog-tracker/README.md`/`REQUIREMENTS.md`'s own "Removed: the
+per-project Deployments page" notes) and nothing has read the `deployments`
+collection or `deploymentId` field since — `firestore.rules` no longer even
+has a `match` block for it. This routine kept creating those docs and
+stamping that field anyway for a while, for no consumer at all, which cost
+two Firestore writes a run and implied to whoever read this file that a
+grouping view still existed.
 
-1. Count this project's existing deployments to pick a readable label:
-   `curl -sS -X POST "https://firestore.googleapis.com/v1/projects/backlog-tracker-e4ed2/databases/(default)/documents:runQuery" -H "Content-Type: application/json" -d '{"structuredQuery":{"from":[{"collectionId":"deployments"}],"where":{"fieldFilter":{"field":{"fieldPath":"projectId"},"op":"EQUAL","value":{"stringValue":"<projectId>"}}}}}'`
-   — use `Deploy #<count+1>` as the label.
-2. Create the deployment doc:
-   `curl -sS -X POST "https://firestore.googleapis.com/v1/projects/backlog-tracker-e4ed2/databases/(default)/documents/deployments" -H "Content-Type: application/json" -d '{"fields":{"projectId":{"stringValue":"<projectId>"},"label":{"stringValue":"Deploy #<n>"},"createdAt":{"timestampValue":"<ISO8601 now>"},"updatedAt":{"timestampValue":"<ISO8601 now>"}}}'`
-   — the response's `name` field ends in the new doc's id; that's your
-   `<deploymentId>`.
-3. Add `deploymentId` to every successfully-packaged item's own PATCH in
-   step 4 above (same call, just add `updateMask.fieldPaths=deploymentId`
-   and `"deploymentId":{"stringValue":"<deploymentId>"}` to the fields) —
-   don't fire a second PATCH per item just for this, fold it into the one
-   you're already sending.
+**Same-deployment grouping now happens for free, automatically, from
+`patchBranch`/`prNumber` alone** — `deploymentGroupKey()` in
+`backlog-tracker/public/js/app.js` derives it straight from those (branch
+wins over PR number when both are present), and the board draws matching
+cards bracketed together with a "Ships together" header wherever they sit.
+Packaging more than one item in one run already gives every item the same
+`patchBranch` (see "For each Backlog item found" above), so the grouping
+shows up on the board with **no extra step from you** — do not create a
+`deployments` doc, do not set `deploymentId`, there is nothing left to do
+here.
 
-Skip this whole section for a single-item fix. Also skip it for any item
-you left in `backlog` due to a blocker — only successfully-packaged items
-belong in the group.
+## Check for duplicate open work before packaging
 
-This is purely board bookkeeping — it does not push or open anything on
-GitHub itself, and doesn't change anything about the
-`patchFiles`/`patchReady` mechanism above. It just lets whoever's driving
-the actual merges see, on the board's own Deployments page (⋮ →
-Deployments on that project), that these tickets are linked and meant to
-land together.
+Three cards asking for the same thing — reworded three different ways —
+were each independently investigated, built, PR'd, merged and deployed as
+three separate PRs in one night (#114, #118, #122), because nothing
+between "here's the Backlog list" and "here's what got packaged" ever
+compared what two cards were actually asking for. `findExistingPrForItem`
+only guards a second PR for the *same item id*; two different cards
+describing the same underlying work are two different item ids to it, so
+it never fires. Close this gap yourself, every run, before you set
+`patchReady` on anything:
+
+1. Before investigating each item from the fire payload's list, pull every
+   currently-open item in this project (`status` in `backlog`,
+   `ready-for-testing`, `ready-to-publish` — the same query as "List a
+   specific project's current Backlog items" in Setup above, minus the
+   `status` filter) and read their `desc`/`title`/notes, not just the
+   handful named in this fire.
+2. For each item you're about to package, check whether its request is
+   substantively the same as another open item's — same underlying
+   feature/bug, reworded or with different emphasis, not just superficially
+   similar wording. Use judgment, not a keyword match; the board's own
+   New Item form now does a cheap client-side keyword-overlap check at
+   creation time as a first line of defense (see app.js's
+   `findLikelyDuplicate`), but that's a nudge on typing, not a guarantee —
+   two people wording the same request very differently, or a request
+   filed before an earlier duplicate existed, both still slip through it.
+3. On a genuine match, consolidate rather than building each separately:
+   - Pick one item to be the surviving ticket (prefer whichever is
+     further along the pipeline already, or the one with the clearer
+     description).
+   - Fold every other matching item's original wording into the surviving
+     ticket — append each as its own line/paragraph in that item's `desc`
+     (or in a `notes` entry, clearly attributed to the folded-in item's
+     id) so nothing anyone actually asked for is lost, even the phrasing.
+   - Implement and package the surviving ticket once, normally (steps 1-4
+     under "For each Backlog item found" above).
+   - Close every folded-in duplicate: PATCH its `status` to `"archived"`,
+     `archivedAt` to now, and append a `notes` entry naming the surviving
+     item's id and explaining it was consolidated rather than built
+     separately. Do **not** leave a folded-in duplicate sitting in
+     `backlog` — an un-updated card there is exactly what let this happen
+     three times in one night.
+4. If you're honestly unsure whether two items are the same request or
+   two related-but-distinct pieces of work, don't guess either way —
+   package them separately as normal and say in your final report that
+   you considered them possible duplicates but packaged them independently,
+   so a human can make the call.
 
 ## The "Notify Claude — Deploy" flow (a differently-shaped fire)
 
@@ -450,12 +494,16 @@ Post a summary listing each item, its new title, what you found, the fix,
 and whether you set `patchReady`/`mergeReady` (a real PR — or merge — will
 appear automatically within about 2 minutes once you do; you won't see
 it yourself, since your session ends before then) or left it blocked in
-`backlog`/`ready-to-publish` with a note (and why). If you grouped
-multiple items into a deployment, name the deployment's label. If the
-named project isn't in the `projects` collection, or its Backlog column
-is empty, say that plainly instead of fabricating work. If a
-PROJECT-SPECIFIC INSTRUCTIONS block was present, note in the summary that
-you followed it and briefly how.
+`backlog`/`ready-to-publish` with a note (and why). If you packaged more
+than one item together (same `patchBranch`), say so — the board groups
+them on its own, nothing further to name (see "Cards that ship together
+are already grouped" above). If you consolidated any duplicate items
+(see "Check for duplicate open work before packaging" above), name which
+items were folded into which surviving ticket. If the named project isn't
+in the `projects` collection, or its Backlog column is empty, say that
+plainly instead of fabricating work. If a PROJECT-SPECIFIC INSTRUCTIONS
+block was present, note in the summary that you followed it and briefly
+how.
 
 If at any point in this run you set `patchReady`/`mergeReady` on an item
 with placeholder or not-yet-finished data (even briefly, even if you then
