@@ -164,23 +164,28 @@ behind Google sign-in**: `backlog-tracker/firestore.rules` requires an
 allowlisted signed-in editor for every read and write of the board's
 collections (only the two help-centre collections stay publicly readable),
 so anonymous REST calls to `firestore.googleapis.com` are denied. Outside
-the browser UI, use the `boardApi` Cloud Function — a transparent proxy onto
-the same REST API, authenticated with the `X-Board-Key` header (the value is
-the `BOARD_API_KEY` repo/Firebase secret; Routine-fired sessions receive it
-in their fire payload). Same paths, verbs and JSON as Firestore's REST API:
+the browser UI, sign in as the board automation user over Identity Toolkit
+(email `board-automation@backlog-tracker-e4ed2.firebaseapp.com`, password =
+the `BOARD_API_KEY` secret; Routine-fired sessions receive it in their fire
+payload) and send the ID token as a Bearer header — or use the `boardApi`
+proxy (`https://backlog-tracker-e4ed2.web.app/boardApi/v1/...`) with an
+`X-Board-Key` header. Same paths, verbs and JSON as Firestore's REST API:
 
 ```bash
-BOARD="https://us-central1-backlog-tracker-e4ed2.cloudfunctions.net/boardApi/v1/projects/backlog-tracker-e4ed2/databases/(default)/documents"
-KEY="<X-Board-Key>"
+IDTOKEN=$(curl -sS -X POST "https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=AIzaSyDzG5MzavLWyKU7NXfTPskuWbFYFlc5W3g" \
+  -H "Content-Type: application/json" \
+  -d '{"email":"board-automation@backlog-tracker-e4ed2.firebaseapp.com","password":"<BOARD_API_KEY>","returnSecureToken":true}' | jq -r .idToken)
+BOARD="https://firestore.googleapis.com/v1/projects/backlog-tracker-e4ed2/databases/(default)/documents"
+AUTH="Authorization: Bearer $IDTOKEN"
 
 # List all projects
-curl -sS -H "X-Board-Key: $KEY" "$BOARD/projects"
+curl -sS -H "$AUTH" "$BOARD/projects"
 
 # List all backlog items
-curl -sS -H "X-Board-Key: $KEY" "$BOARD/backlogItems"
+curl -sS -H "$AUTH" "$BOARD/backlogItems"
 
 # Move a card (PATCH with updateMask; status/updatedAt shown, add more fields+mask entries as needed)
-curl -sS -X PATCH -H "X-Board-Key: $KEY" \
+curl -sS -X PATCH -H "$AUTH" \
   "$BOARD/backlogItems/<ITEM_ID>?updateMask.fieldPaths=status&updateMask.fieldPaths=updatedAt" \
   -H "Content-Type: application/json" \
   -d '{"fields":{"status":{"stringValue":"ready-for-testing"},"updatedAt":{"timestampValue":"<ISO8601>"}}}'

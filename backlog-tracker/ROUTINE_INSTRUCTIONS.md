@@ -93,21 +93,32 @@ rest of this file.
    in more depth. These describe the board's data model, categories, and
    per-project context — follow them, don't reinvent the workflow.
 2. **Board access.** The Firestore project id is `backlog-tracker-e4ed2`.
-   Its rules require a signed-in editor, so do NOT call
-   `firestore.googleapis.com` directly — every call below goes through the
-   `boardApi` proxy (a Cloud Function that authenticates as the project's
-   service account). The fire payload's "BOARD ACCESS" block gives you the
-   base URL and the `X-Board-Key` value; set them once:
-   `BOARD="https://us-central1-backlog-tracker-e4ed2.cloudfunctions.net/boardApi/v1/projects/backlog-tracker-e4ed2/databases/(default)/documents"`
-   `KEY="<X-Board-Key from the fire payload>"`
-   Paths, verbs, query strings and JSON bodies are identical to Firestore's
-   REST API — only the host and the header differ. A 401 means the key is
-   wrong; a 503 means the proxy is not configured (report it and stop):
+   Its rules require a signed-in editor, so anonymous calls to Firestore
+   are denied. Sign in as the board automation user first — the fire
+   payload's "BOARD ACCESS" block carries the password — then call
+   Firestore's normal REST API with the ID token. Everything stays on
+   `*.googleapis.com`:
+   ```bash
+   IDTOKEN=$(curl -sS -X POST "https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=AIzaSyDzG5MzavLWyKU7NXfTPskuWbFYFlc5W3g" \
+     -H "Content-Type: application/json" \
+     -d '{"email":"board-automation@backlog-tracker-e4ed2.firebaseapp.com","password":"<from the fire payload>","returnSecureToken":true}' | jq -r .idToken)
+   BOARD="https://firestore.googleapis.com/v1/projects/backlog-tracker-e4ed2/databases/(default)/documents"
+   AUTH="Authorization: Bearer $IDTOKEN"
+   ```
+   The token lasts 1 hour — sign in again on a 401. Paths, verbs, query
+   strings and JSON bodies below are Firestore's standard REST API.
+   **Fallback** (only if `identitytoolkit.googleapis.com` is unreachable):
+   the `boardApi` proxy at
+   `https://backlog-tracker-e4ed2.web.app/boardApi/v1/projects/backlog-tracker-e4ed2/databases/(default)/documents`
+   (or `https://us-central1-backlog-tracker-e4ed2.cloudfunctions.net/boardApi/...`)
+   accepts the same calls with the header `X-Board-Key: <the same value>`
+   instead of `Authorization`. If neither host is reachable from your
+   environment, that is a stop-and-report condition:
    - List all projects (to confirm the projectId from the fire payload
      actually exists):
-     `curl -sS -H "X-Board-Key: $KEY" "$BOARD/projects"`
+     `curl -sS -H "$AUTH" "$BOARD/projects"`
    - Query a specific project's current Backlog items:
-     `curl -sS -X POST -H "X-Board-Key: $KEY" "$BOARD:runQuery" -H "Content-Type: application/json" -d '{"structuredQuery":{"from":[{"collectionId":"backlogItems"}],"where":{"compositeFilter":{"op":"AND","filters":[{"fieldFilter":{"field":{"fieldPath":"projectId"},"op":"EQUAL","value":{"stringValue":"<projectId>"}}},{"fieldFilter":{"field":{"fieldPath":"status"},"op":"EQUAL","value":{"stringValue":"backlog"}}}]}}}}'`
+     `curl -sS -X POST -H "$AUTH" "$BOARD:runQuery" -H "Content-Type: application/json" -d '{"structuredQuery":{"from":[{"collectionId":"backlogItems"}],"where":{"compositeFilter":{"op":"AND","filters":[{"fieldFilter":{"field":{"fieldPath":"projectId"},"op":"EQUAL","value":{"stringValue":"<projectId>"}}},{"fieldFilter":{"field":{"fieldPath":"status"},"op":"EQUAL","value":{"stringValue":"backlog"}}}]}}}}'`
 3. Before implementing anything, get full context on this specific
    project — don't rely on the fire payload or the repo's general docs
    alone:
@@ -121,7 +132,7 @@ rest of this file.
      PROJECT-SPECIFIC INSTRUCTIONS block (see above), fetch it directly
      and treat it the same way.
    - Check for any interface contracts involving this project:
-     `curl -sS -X POST -H "X-Board-Key: $KEY" "$BOARD:runQuery" -H "Content-Type: application/json" -d '{"structuredQuery":{"from":[{"collectionId":"interfaces"}],"where":{"fieldFilter":{"field":{"fieldPath":"projectIds"},"op":"ARRAY_CONTAINS","value":{"stringValue":"<projectId>"}}}}}'`
+     `curl -sS -X POST -H "$AUTH" "$BOARD:runQuery" -H "Content-Type: application/json" -d '{"structuredQuery":{"from":[{"collectionId":"interfaces"}],"where":{"fieldFilter":{"field":{"fieldPath":"projectIds"},"op":"ARRAY_CONTAINS","value":{"stringValue":"<projectId>"}}}}}'`
      — each result's `contentMd` is a maintained contract with another
      project. If a backlog item touches anything crossing that boundary,
      respect the contract rather than guessing at the other side's

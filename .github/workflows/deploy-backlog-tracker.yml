@@ -157,6 +157,15 @@ jobs:
         working-directory: backlog-tracker/scripts
         run: npm install
 
+      # The Firebase Auth user Routine-fired Claude sessions sign in as
+      # (password = BOARD_API_KEY). See scripts/ensure-automation-user.js.
+      - name: Ensure the board automation user exists
+        working-directory: backlog-tracker/scripts
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/firebase-sa.json
+          BOARD_API_KEY: ${{ secrets.BOARD_API_KEY }}
+        run: node ensure-automation-user.js
+
       - name: Seed historical backlog data from artifact export
         working-directory: backlog-tracker/scripts
         env:

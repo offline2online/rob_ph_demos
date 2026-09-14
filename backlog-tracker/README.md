@@ -1015,9 +1015,15 @@ default.
   readable (the public FAQ site needs them). Automation that used to call
   Firestore's REST API anonymously now authenticates: the GitHub Actions
   automation uses the deploy service account, and Routine-fired Claude
-  sessions go through the `boardApi` Cloud Function proxy with the
-  `X-Board-Key` header (`BOARD_API_KEY` secret — set it as a GitHub repo
-  secret; the deploy workflow syncs it into Secret Manager). To add an
+  sessions sign in as the `board-automation@backlog-tracker-e4ed2.firebaseapp.com`
+  Auth user (password = the `BOARD_API_KEY` GitHub secret; the deploy
+  workflow keeps the user in sync via `scripts/ensure-automation-user.js`,
+  and Email/Password sign-in must be enabled once in the Firebase console)
+  and call Firestore's REST API with the ID token — all on
+  `*.googleapis.com`, which their sandbox can reach. The `boardApi` Cloud
+  Function proxy (`X-Board-Key` header, also served at
+  `https://backlog-tracker-e4ed2.web.app/boardApi/...`) remains as a
+  fallback. To add an
   editor, add their email to the allowlist in all three files
   (`auth-gate.js`, `firestore.rules`, `storage.rules`).
 - **No drag-and-drop.** Multi-project and an archive page (per-project

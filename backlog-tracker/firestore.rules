@@ -28,7 +28,8 @@ service cloud.firestore {
         && request.auth.token.email_verified == true
         && request.auth.token.email in [
           "rob@offline2online.com",
-          "rob@personalisationhub.com"
+          "rob@personalisationhub.com",
+          "board-automation@backlog-tracker-e4ed2.firebaseapp.com"
         ];
     }
 

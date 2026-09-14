@@ -67,10 +67,21 @@ const GH_DISPATCH_TOKEN = defineSecret("GH_DISPATCH_TOKEN");
 // board's Firestore rules now require sign-in and a Claude session cannot
 // sign in with Google — the proxy is how it reads and updates the board.
 const BOARD_API_KEY = defineSecret("BOARD_API_KEY");
+// The project's public web API key (same value as public/js/firebase-config.js) —
+// identifies the project for Identity Toolkit sign-in; not a secret.
+const BOARD_WEB_API_KEY = "AIzaSyDzG5MzavLWyKU7NXfTPskuWbFYFlc5W3g";
 function boardAccessBlock() {
   const key = BOARD_API_KEY.value();
-  if (!key || key === "unset") return "\n\n(BOARD ACCESS: boardApi is not configured — BOARD_API_KEY is unset — so direct Firestore REST calls will be denied by the board's rules; report this and stop.)";
-  return `\n\nBOARD ACCESS: the board's Firestore requires sign-in, so use the boardApi proxy instead of firestore.googleapis.com — same paths, verbs and JSON, different host, plus one header:\n  base: https://us-central1-${process.env.GCLOUD_PROJECT || "backlog-tracker-e4ed2"}.cloudfunctions.net/boardApi/v1/projects/${process.env.GCLOUD_PROJECT || "backlog-tracker-e4ed2"}/databases/(default)/documents\n  header: X-Board-Key: ${key}\nSee backlog-tracker/ROUTINE_INSTRUCTIONS.md → "Board access".`;
+  const project = process.env.GCLOUD_PROJECT || "backlog-tracker-e4ed2";
+  if (!key || key === "unset") return "\n\n(BOARD ACCESS: not configured — BOARD_API_KEY is unset — so the board's Firestore rules will deny every call; report this and stop.)";
+  return `\n\nBOARD ACCESS: the board's Firestore requires sign-in. Sign in as the board automation user over Google's Identity Toolkit REST API, then call Firestore's normal REST API with the returned ID token (both on *.googleapis.com):\n` +
+    `  1. POST https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=${BOARD_WEB_API_KEY}\n` +
+    `     body: {"email":"board-automation@${project}.firebaseapp.com","password":"${key}","returnSecureToken":true}\n` +
+    `     → use the "idToken" field (valid 1 hour; sign in again if you get 401).\n` +
+    `  2. Every Firestore call: header  Authorization: Bearer <idToken>\n` +
+    `     base: https://firestore.googleapis.com/v1/projects/${project}/databases/(default)/documents\n` +
+    `Fallback if identitytoolkit is unreachable: the boardApi proxy at https://${project}.web.app/boardApi/v1/projects/${project}/databases/(default)/documents (or https://us-central1-${project}.cloudfunctions.net/boardApi/...) with header  X-Board-Key: ${key}  — same paths and JSON, no sign-in.\n` +
+    `See backlog-tracker/ROUTINE_INSTRUCTIONS.md → "Board access".`;
 }
 
 // The repo backlog-automation.yml lives in, and the event_type its
