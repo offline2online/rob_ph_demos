@@ -216,18 +216,30 @@
     <div class="modal-backdrop" id="qc-backdrop" hidden>
       <div class="modal-panel qc-panel" role="dialog" aria-modal="true" aria-labelledby="qc-title">
         <div class="modal-header">
-          <h2 id="qc-title">Add comment</h2>
+          <h2 id="qc-title">Comments</h2>
           <button type="button" class="modal-close" id="qc-close" aria-label="Close">&times;</button>
         </div>
-        <div class="desc-wrap">
+        <!-- The thread itself, above the composer: the comment icon on a
+             card is the only affordance most people ever tap, and it used
+             to open a blank box that threw away everything already said on
+             the ticket — including Claude's own notes, which are where the
+             reasoning for a change lives. Same row markup and styling as
+             the Edit item modal's own comments block. -->
+        <div id="qc-notes-list" class="ei-notes-list qc-notes-list"></div>
+        <div class="desc-wrap" id="qc-composer">
           <textarea id="qc-comment-input" rows="4" maxlength="1000" placeholder="Add a comment for more context, or tap the mic and just talk..."></textarea>
           <button type="button" class="mic-btn" id="qc-mic-btn" hidden title="Dictate" aria-label="Dictate">&#127908;</button>
         </div>
         <p class="listening-hint" id="qc-listening-hint">&#127908; Listening — tap the mic again when you're done.</p>
         <p class="mic-error" id="qc-mic-error"></p>
+        <!-- Shown instead of the composer on a card that's locked mid-
+             automation (see cardHTML's isLocked): reading the thread is
+             always safe, adding to it while a job is writing the same
+             document is the thing the lock exists to prevent. -->
+        <p class="field-hint" id="qc-readonly-hint" hidden>This ticket is locked while its work is in progress — you can read the thread, but not add to it yet.</p>
         <div class="form-row" style="justify-content:flex-end;">
           <div class="form-actions">
-            <button type="button" class="btn-ghost" id="qc-cancel">Cancel</button>
+            <button type="button" class="btn-ghost" id="qc-cancel">Close</button>
             <button type="button" class="btn-primary" id="qc-submit">Add comment</button>
           </div>
         </div>
