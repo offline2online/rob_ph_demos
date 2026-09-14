@@ -666,6 +666,10 @@ textarea.dialog-field-input { resize: vertical; min-height: 70px; }
 .ei-note-row { background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; }
 .ei-note-meta { display: flex; justify-content: space-between; gap: 10px; font-size: 11px; color: var(--text-muted); margin-bottom: 4px; }
 .ei-note-text { margin: 0; font-size: 12.5px; white-space: pre-wrap; }
+/* The same rows, in the comment-icon modal, where the thread is the point
+   of the dialog rather than one block among several — so it gets more
+   room, and a gap before the composer underneath it. */
+.qc-notes-list { max-height: 340px; margin-bottom: 12px; }
 
 /* ── Attachments block (Edit item modal) — screenshots & screen
    recordings, see app.js uploadItemAttachment/startScreenRecording. ───── */

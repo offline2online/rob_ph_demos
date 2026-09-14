@@ -583,9 +583,19 @@ function cardHTML(item) {
   // which read as just another muted utility icon. A filled, rounded pill
   // (see .quick-comment-btn) with its own comment count reads as its own
   // distinct, clickable affordance instead.
-  const quickCommentBtn = isLocked
-    ? ""
-    : `<button type="button" class="icon-btn quick-comment-btn" data-id="${item.id}" title="Add a quick comment${commentCount ? ` — ${commentCount} so far` : ""}">&#128172;${commentCount ? ` <span class="options-menu-count">${commentCount}</span>` : ""}</button>`;
+  //
+  // Present on a locked card too, where it used to be removed along with
+  // every other control. A locked card is precisely the one whose thread
+  // you want — it's mid-automation, and Claude's notes on it are the only
+  // account of what's happening — and reading can't race anything. It
+  // opens read-only there; the modal hides its composer (see
+  // openQuickCommentModal).
+  const quickCommentBtn =
+    `<button type="button" class="icon-btn quick-comment-btn" data-id="${item.id}"${isLocked ? ' data-readonly="1"' : ""} title="${
+      isLocked
+        ? `${commentCount || "No"} comment${commentCount === 1 ? "" : "s"} — read only while this ticket is locked`
+        : `Comments${commentCount ? ` — ${commentCount} so far` : ""}`
+    }">&#128172;${commentCount ? ` <span class="options-menu-count">${commentCount}</span>` : ""}</button>`;
 
   return `
     <article class="card${isLocked ? " card-in-development" : ""}" data-id="${item.id}">
@@ -1392,6 +1402,7 @@ onSnapshot(query(itemsRef, orderBy("createdAt", "desc")), (snap) => {
   if (archiveProjectId) renderArchivePage();
   if (archivedProjectsPage && !archivedProjectsPage.hidden) renderArchivedProjectsPage();
   if (editingItemId) { renderEiNotes(); renderEiAttachments(); }
+  if (quickCommentItemId) renderQcNotes();
 }, (err) => {
   console.error("backlog-tracker: items listener error", err);
 });
@@ -1918,7 +1929,7 @@ projectsRoot.addEventListener("click", async (e) => {
   const editItemBtn = e.target.closest(".edit-item-btn");
   if (editItemBtn) { openEditItemModal(editItemBtn.dataset.id); return; }
   const quickCommentBtn = e.target.closest(".quick-comment-btn");
-  if (quickCommentBtn) { openQuickCommentModal(quickCommentBtn.dataset.id); return; }
+  if (quickCommentBtn) { openQuickCommentModal(quickCommentBtn.dataset.id, quickCommentBtn.dataset.readonly === "1"); return; }
   const descToggleBtn = e.target.closest(".card-desc-toggle-btn");
   if (descToggleBtn) {
     const wrap = descToggleBtn.closest(".card-desc-wrap");
@@ -2237,12 +2248,44 @@ eiRecordScreenBtn.addEventListener("click", () => {
 let quickCommentItemId = null;
 const qcBackdrop = document.getElementById("qc-backdrop");
 const qcCommentInput = document.getElementById("qc-comment-input");
+const qcNotesList = document.getElementById("qc-notes-list");
+const qcTitle = document.getElementById("qc-title");
+const qcComposer = document.getElementById("qc-composer");
+const qcReadonlyHint = document.getElementById("qc-readonly-hint");
+const qcSubmitBtn = document.getElementById("qc-submit");
 
-function openQuickCommentModal(id) {
+// The card's comment icon carries a count, and tapping it used to open an
+// empty box — so the number told you a conversation existed and the click
+// then hid it. Everything already said on the ticket, Claude's notes
+// included (where the reasoning for a change is recorded), was only
+// reachable through the full Edit modal, which locked cards don't offer at
+// all. Now the icon opens the thread it's counting.
+function renderQcNotes() {
+  if (!quickCommentItemId) return;
+  const item = allItems.find((i) => i.id === quickCommentItemId);
+  const notes = (item && item.notes) || [];
+  // Newest first, same order as the Edit item modal's own list.
+  qcNotesList.innerHTML = notes.length
+    ? notes.slice().reverse().map(eiNoteRowHTML).join("")
+    : '<p class="interface-row-empty">No comments yet.</p>';
+  // The count in the title is read from the same array the card's badge
+  // counts, so the two can't disagree.
+  qcTitle.textContent = notes.length ? `Comments (${notes.length})` : "Comments";
+}
+
+function openQuickCommentModal(id, readOnly) {
   quickCommentItemId = id;
   qcCommentInput.value = "";
+  renderQcNotes();
+  qcComposer.hidden = !!readOnly;
+  qcSubmitBtn.hidden = !!readOnly;
+  qcReadonlyHint.hidden = !readOnly;
+  // The mic button lives inside #qc-composer, so hiding the composer takes
+  // it with it — don't touch its own `hidden`, which is owned by the
+  // dictation controller's "is speech recognition available" check and
+  // would stay stuck off for every later card if this reached in.
   qcBackdrop.hidden = false;
-  qcCommentInput.focus();
+  if (!readOnly) qcCommentInput.focus();
 }
 function closeQuickCommentModal() {
   qcBackdrop.hidden = true;
@@ -2254,12 +2297,18 @@ qcBackdrop.addEventListener("click", (e) => { if (e.target === qcBackdrop) close
 document.addEventListener("keydown", (e) => {
   if (e.key === "Escape" && !qcBackdrop.hidden) closeQuickCommentModal();
 });
-document.getElementById("qc-submit").addEventListener("click", () => {
+qcSubmitBtn.addEventListener("click", () => {
   if (!quickCommentItemId) return;
   const text = qcCommentInput.value;
   if (!text.trim()) return;
   addItemComment(quickCommentItemId, text);
-  closeQuickCommentModal();
+  // Stays open, unlike before: this is a thread now, and the comment you
+  // just wrote appears in it when the write comes back through the
+  // listener. Closing on submit hid your own comment the instant you made
+  // it, which is exactly the behaviour this card is about.
+  qcCommentInput.value = "";
+  qcCommentInput.dispatchEvent(new Event("input"));
+  qcCommentInput.focus();
 });
 
 // ── New Item modal ─────────────────────────────────────────────────────
