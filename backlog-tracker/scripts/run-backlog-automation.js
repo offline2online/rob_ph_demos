@@ -175,22 +175,32 @@ const MAX_PATCH_ATTEMPTS = 5;
 // first failure (so the reason is visible immediately, not after 5 more
 // minutes) and again on the attempt that gives up; in between it just
 // counts, so a flaky run can't bury the card under a note per tick.
-async function recordAttemptFailure(item, err) {
-  const attempts = (Number(item.patchAttempts) || 0) + 1;
+// Generalized over the patch-apply path (attemptsField: "patchAttempts",
+// readyField: "patchReady", the default) and the merge path (attemptsField:
+// "mergeAttempts", readyField: "mergeReady") — same shape of bug either
+// way: a transient failure (a network blip, a GitHub 5xx) genuinely does
+// succeed on a later run, but retrying it forever with nothing recorded on
+// the card is how a permanent failure hides for hours with no visible
+// reason. The merge path used to just console.error a failed `gh pr merge`
+// and leave the card at Approved for Deployment showing "Waiting for
+// Notify Claude — Deploy" forever (yLzaj00wwFI5qxjOGbRe) — this gives it
+// the exact same note-then-give-up treatment the patch path already had.
+async function recordAttemptFailure(item, err, { attemptsField = "patchAttempts", readyField = "patchReady", verb = "open a PR for" } = {}) {
+  const attempts = (Number(item[attemptsField]) || 0) + 1;
   const reason = err instanceof Error ? (err.message || String(err)) : String(err);
   const giveUp = attempts >= MAX_PATCH_ATTEMPTS;
-  const fields = { patchAttempts: attempts, updatedAt: new Date().toISOString() };
+  const fields = { [attemptsField]: attempts, updatedAt: new Date().toISOString() };
 
   if (attempts === 1 || giveUp) {
     const text = giveUp
-      ? `Gave up after ${attempts} failed attempts to open a PR for this item. patchReady has been cleared so the job stops retrying; the work packaged on the card is untouched. Last error:\n\n${reason}`
-      : `Attempt ${attempts} to open a PR for this item failed; it will be retried on the next run (up to ${MAX_PATCH_ATTEMPTS}). Error:\n\n${reason}`;
+      ? `Gave up after ${attempts} failed attempts to ${verb} this item. ${readyField} has been cleared so the job stops retrying; the work packaged on the card is untouched. Last error:\n\n${reason}`
+      : `Attempt ${attempts} to ${verb} this item failed; it will be retried on the next run (up to ${MAX_PATCH_ATTEMPTS}). Error:\n\n${reason}`;
     fields.notes = await appendNote(item, text);
   }
-  if (giveUp) fields.patchReady = false;
+  if (giveUp) fields[readyField] = false;
 
   await patchItem(item.id, fields);
-  console.error(`[apply-patch] ${item.id}: attempt ${attempts}/${MAX_PATCH_ATTEMPTS} failed${giveUp ? " — giving up, patchReady cleared" : ""}: ${reason}`);
+  console.error(`[${readyField}] ${item.id}: attempt ${attempts}/${MAX_PATCH_ATTEMPTS} failed${giveUp ? ` — giving up, ${readyField} cleared` : ""}: ${reason}`);
 }
 
 // Guards against the same item producing a second, duplicate GitHub PR —
@@ -218,6 +228,36 @@ async function recordAttemptFailure(item, err) {
 // (two genuinely open PRs for the same item is still exactly the bug
 // this was built to prevent) while letting a legitimate follow-up fix
 // get its own PR.
+// Builds a rawcdn.githack.com preview link for the branch a PR was just
+// opened from, so a Ready for Testing card is testable the moment it
+// arrives instead of sitting with no way to look at it until someone sets
+// previewUrl by hand (AfOWSFNfos2BZRpDeph1). rawcdn.githack.com
+// specifically, not raw.githack.com — the latter proxies through jsDelivr's
+// CDN cache (up to ~7 days), so a link set right after one push can keep
+// showing that first commit even after later pushes update the file, with
+// no visible error; rawcdn.githack.com is githack's own always-uncached
+// host, meant for exactly this "testing an in-progress branch" case (see
+// app.js's own testLinkHTML comment, which this mirrors).
+//
+// "Most relevant changed page" is necessarily a guess — there's no
+// metadata saying which patched file is the one to look at — so this picks
+// the shortest surviving .html path (a page nearer a project's own root is
+// more likely to be the thing that changed, and it's at least a stable,
+// deterministic choice) and excludes anything under functions/, which is
+// never directly viewable as a page. Falls back to the PR URL itself for
+// anything that can't be githack'd directly (no .html touched at all —
+// e.g. a Cloud Function-only change), same fallback the card's own manual
+// "Set test link" flow already documents.
+function guessPreviewUrl(patchFiles, branch, prUrl) {
+  const htmlPaths = (patchFiles || [])
+    .filter((f) => f && typeof f.path === "string" && f.content !== null && f.content !== undefined)
+    .map((f) => f.path)
+    .filter((p) => p.endsWith(".html") && !p.includes("/functions/"));
+  if (!htmlPaths.length) return prUrl;
+  const path = htmlPaths.sort((a, b) => a.length - b.length)[0];
+  return `https://rawcdn.githack.com/${REPO}/${branch}/${path}`;
+}
+
 function findExistingPrForItem(itemId) {
   let json;
   try {
@@ -347,6 +387,11 @@ async function processApplyPatch(item) {
   // so "which PR is this card" stops being a question you answer by
   // reading notes or searching GitHub.
   const prNumber = Number((String(prUrl).match(/\/pull\/(\d+)/) || [])[1]) || null;
+  // Only auto-set previewUrl when the item doesn't already have one — a
+  // human may have already set a link by hand (e.g. re-patching an item
+  // that was already in Ready for Testing once), and that manual choice
+  // shouldn't be silently clobbered by a guess.
+  const previewUrl = item.previewUrl || guessPreviewUrl(item.patchFiles, branch, String(prUrl).trim());
   await patchItem(item.id, {
     status: "ready-for-testing",
     patchReady: false,
@@ -354,6 +399,7 @@ async function processApplyPatch(item) {
     updatedAt: new Date().toISOString(),
     notes,
     prUrl: String(prUrl).trim(),
+    previewUrl,
     ...(prNumber ? { prNumber } : {}),
     ...(testVersion ? { testVersion } : {}),
   });
@@ -414,7 +460,16 @@ async function processMergePr(item) {
     try {
       run("gh", ["pr", "merge", String(prNumber), "--merge", "--repo", REPO]);
     } catch (err) {
-      console.log(`[merge-pr] ${item.id}: gh pr merge #${prNumber} failed (will retry on next scheduled run): ${err.message}`);
+      // Same treatment processApplyPatch's own failures already get: note
+      // it on the card immediately, count the attempt, and stop retrying
+      // (clearing mergeReady) after MAX_PATCH_ATTEMPTS rather than leaving
+      // this card "Waiting for Notify Claude — Deploy" forever with the
+      // reason visible only in the Actions log.
+      try {
+        await recordAttemptFailure(item, err, { attemptsField: "mergeAttempts", readyField: "mergeReady", verb: "merge the PR for" });
+      } catch (noteErr) {
+        console.error(`[merge-pr] ${item.id}: couldn't record the failure on the item either: ${noteErr.message}`);
+      }
       return;
     }
   } else {
@@ -448,6 +503,7 @@ async function processMergePr(item) {
   await patchItem(item.id, {
     status: "published-live",
     mergeReady: false,
+    mergeAttempts: 0,
     updatedAt: new Date().toISOString(),
     mergedAt: new Date().toISOString(),
     prUrl: `https://github.com/${REPO}/pull/${prNumber}`,
@@ -489,6 +545,16 @@ async function main() {
       await processMergePr(item);
     } catch (err) {
       console.error(`[merge-pr] ${item.id} failed: ${err.stack || err.message}`);
+      // Mirrors the patch-ready loop above: an uncaught exception here
+      // (processMergePr's own `gh pr merge` failure already records itself
+      // and returns cleanly — this is for anything else, e.g. the `gh pr
+      // view` call or a Firestore write throwing) must not leave the card
+      // silently stuck at Approved for Deployment either.
+      try {
+        await recordAttemptFailure(item, err, { attemptsField: "mergeAttempts", readyField: "mergeReady", verb: "merge the PR for" });
+      } catch (noteErr) {
+        console.error(`[merge-pr] ${item.id}: couldn't record the failure on the item either: ${noteErr.message}`);
+      }
     }
   }
 }
