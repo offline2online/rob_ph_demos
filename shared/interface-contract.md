@@ -38,7 +38,7 @@ display type renders a value — only the shape it's expected to consume.
 
 ## The attribute envelope
 
-Live Visitor Profile resolves and hands over attributes in three families
+Live Visitor Profile resolves and hands over attributes in four families
 (all available to Display Types as targeting variables):
 
 1. **Device/display context** — platform-supplied, one authoritative
@@ -55,6 +55,14 @@ Live Visitor Profile resolves and hands over attributes in three families
    `product_holdings`, `plan_types`, `plan_values`, `product_type`,
    `purchase_intent`, `SKUs`, `events`, `page_view`, `device_type`.
 
+4. **Environmental/contextual** — describes the *place and moment*, not the
+   person: `env.temp_c`, `env.condition`, `env.daypart`, `store_segments`
+   (fixed and variable), `display_tags`, `store_stock` / SKU availability,
+   `store_hours_state`. One authoritative source per signal, no precedence
+   chain. Added for advertiser targeting (see **Partner targeting
+   permissions** below) — an advertiser gating a campaign on "over 25°C"
+   needs this family and nothing from family 3.
+
 A real envelope is almost entirely blank — **this is normal, not an
 error.** Display Types must never treat a blank/absent attribute as
 a fault; it simply means default or localised content renders instead.
@@ -66,6 +74,7 @@ a fault; it simply means default or localised content renders instead.
 | Inbound | External systems, Visitor API, consumer agent, vision | **Yes** |
 | Derived | PH itself (i.e. Display Types' own targeting engine) | No |
 | Platform context | Player/session | No — single source |
+| Environmental | External sources (weather, stock, store/display config) | No — single source per signal |
 | Interaction | Session + tier-4 agent | Partial — writes are claims |
 
 Display Types must not expect or render a source-precedence UI for
@@ -115,6 +124,27 @@ PH-locked pricing path. This is enforced structurally by the trust-zone
 split below, not by trusting Display Types to check the level
 itself on every render.
 
+## Partner targeting permissions
+
+Attributes from this envelope are targetable by third-party advertisers and
+DSPs (see Display Types' `REQUIREMENTS.md` §6). That makes the registry the
+enforcement point, so the rules live here rather than on the sell side.
+
+- **Per-partner enablement, per attribute.** A trusted partner may be granted
+  a given visitor attribute; another may be granted none. Family 4 is on by
+  default; family 3 is off by default and enabled deliberately.
+- **Partners submit predicates; Personalisation Hub evaluates and decides.**
+  No attribute value is ever returned to a partner at targeting time.
+- **A partner sees only the vocabulary it may use** — permissioning surfaces
+  as a smaller attribute list, never as a rejected request. This keeps a
+  partner from discovering what exists by probing for errors.
+- **Matches resolve to matched / not-matched.** Playback analytics disclose
+  which campaign fired and which rule triggered it; they never disclose an
+  attribute value, and no PII crosses the boundary in either direction.
+- Live Visitor Profile owns the registry and therefore owns these grants.
+  Display Types consumes the permitted vocabulary and enforces nothing
+  itself — a permission bug must fail closed at the registry, not at render.
+
 ## Trust zones — the locked commercial region
 
 | Zone | Addressable by | Contains |
@@ -149,8 +179,13 @@ surface/store/moment — expired, out of stock, or never eligible.
 - **Volatile** — short TTL or re-resolved every interaction (`SKUs`,
   `purchase_intent`, session-derived fields).
 
-Live Visitor Profile owns setting/enforcing volatility; Display Types & DSP
-Integration just receives whatever is currently resolved at request time —
+The Environmental family spans the range and should not be treated as one
+class: weather tolerates a long TTL and must not be resolved per impression,
+`store_stock` is volatile and stale values mis-target, and `store_segments` /
+`display_tags` are effectively stable configuration. A targeted campaign is
+only as timely as the class behind the attribute it gates on.
+
+Live Visitor Profile owns setting/enforcing volatility; Display Types just receives whatever is currently resolved at request time —
 it never caches a value itself past what the resolver already decided.
 
 ## Connection state — a second axis Display Types alone owns
@@ -177,6 +212,14 @@ attributes).
 
 ## Changelog
 
+- 2026-09-15 — **Breaking.** Added a fourth attribute family,
+  **Environmental/contextual** (weather, store segments, display tags, store
+  stock, daypart, store-hours state), and a **Partner targeting permissions**
+  section governing third-party advertiser/DSP targeting against this
+  envelope. Driven by the advertiser interface in Display Types'
+  `REQUIREMENTS.md` §6. Per the versioning rule above this needs a heads-up
+  on the Live Visitor Profile board before merging: **which system populates
+  family 4 is not yet decided** (Display Types open question 28).
 - 2026-09-08 — Rewritten against the real *Real-Time Personalised Surface
   Architecture Specification v1.2* (attribute schema, writability classes,
   deadline/resolution model, trust zones, agent-driven selection). Also
@@ -194,3 +237,10 @@ attributes).
 - Ranking authority when an agent publishes multiple eligible SKUs but a
   template has one hero slot — agent order vs. Display Types'
   campaign `priority` (spec open question 8)?
+- Which system populates the Environmental family — Live Visitor Profile
+  connectors, or a direct integration on the Display Types side (Display
+  Types open question 28)?
+- Is there a minimum-volume floor on the playback analytics fed back to a
+  partner? Per-impression trigger disclosure is safe on its own; thin
+  segments queried repeatedly are an inference channel (Display Types open
+  question 30).

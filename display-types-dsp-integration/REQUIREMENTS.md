@@ -179,6 +179,169 @@ data — that's Live Visitor Profile. It consumes visitor attributes only
 through the token contract defined in the interface contract, and never
 computes or displays a price/offer itself outside the PH-locked zone.
 
+### 6. The sell side — advertiser & DSP interface
+
+How an advertiser finds inventory, takes it, and fills it. This is the API
+surface of the project, and the part a partner actually integrates against.
+
+#### Two API tiers
+
+- **Tier 1 — baseline, mandatory.** Conform to the **published interface of
+  Google DSP (Display & Video 360) and Amazon Ads DSP exactly**. We implement
+  their contract; we do not design it. What a tier-1 partner can express is
+  whatever their own spec carries, no more.
+- **Tier 2 — extended, per relationship.** A PH-native API for direct and
+  local partners (Blackmores is the worked example) where a bilateral
+  agreement exists. This is where granular targeting beyond the DSP specs
+  lives.
+
+**Tier 2 is strictly additive.** A tier-1 partner must work correctly with
+every tier-2 feature switched off, and no tier-2 feature may change tier-1
+semantics. Otherwise conformance with the DSPs rots the first time a bespoke
+partner needs something.
+
+#### Campaign model — baseline plus targeted overrides
+
+Every reservation carries **exactly one baseline campaign, mandatory**, and
+zero or more **targeted campaigns** that override it when their criteria are
+met.
+
+> Named *baseline*, not *default*, on purpose: `campaignCreativeSettings`
+> already uses `default` / `selected` / `unselected` for the device-pairing
+> axis (§3). Two unrelated things called "default" in one schema is a bug
+> waiting to happen.
+
+Each targeted campaign carries targeting rules over its partner's permitted
+vocabulary and an explicit integer `priority`.
+
+**Resolution, at the slot's visibility deadline:** evaluate targeted
+campaigns in priority order; the highest-priority campaign whose rules all
+evaluate true — against attributes that actually resolved *by that deadline*
+— wins. Otherwise the baseline renders.
+
+This is the render ladder (§1) applied inside a sold slot: the baseline is
+tier 1, a store/environment-targeted campaign is tier 2, a visitor-targeted
+one is tier 3. **A rule depending on an attribute that has not resolved by
+the deadline is false, not pending** — the existing deadline contract, not a
+second mechanism. The practical consequence for a partner is that a campaign
+gated on a slow source is likelier to lose to its baseline in slot 1 than in
+slot 5, and their UI has to say so.
+
+Precedence must be explicit. Mutually exclusive rules (over 25°C, under 15°C)
+are the easy case; overlapping ones are the normal case, and most-specific-
+wins is unpredictable and unarguable-with. Priority is set by the partner
+within their own campaign set for that slot; the baseline is pinned lowest.
+
+#### Never dark
+
+The fallback chain is **targeted → baseline → next eligible HQ campaign**. A
+slot never renders empty. This holds for programmatic wins too: where a
+winning advertiser has no usable baseline, the position falls back to HQ
+rather than going dark.
+
+#### Targeting vocabulary and per-partner permissions
+
+The vocabulary is the Live Visitor Profile attribute registry (see the
+interface contract), plus the environmental family added there for this work.
+**Visitor attributes are targetable**, not just environmental ones.
+
+- Every attribute carries a **per-partner enablement**. A trusted partner may
+  be allowed a given visitor attribute; another may be allowed none. Managed
+  partner by partner, against the same registry Live Visitor Profile owns.
+- A partner sees only what it may use, via `GET /v1/targeting/attributes` —
+  **permissioning shows up as a smaller vocabulary, never as a rejected
+  request**.
+- **Partners submit predicates; PH evaluates and decides.** No attribute
+  value is returned at targeting time. Blackmores says `temp_c >= 25`; it
+  never learns the temperature at a given store at a given moment, and never
+  learns anything about the person in front of the screen.
+- A match resolves to matched or not-matched. No PII crosses the boundary in
+  either direction, which is what makes visitor-attribute targeting
+  acceptable at all.
+
+#### Playback analytics — which campaign, and why
+
+Campaign playback analytics are fed back at **display and store level**. Each
+playback record carries the campaign that played and **the trigger that
+activated it**: which targeted campaign matched and on which rule, or that
+the baseline filled the position.
+
+So a partner has no control over evaluation but full visibility of outcome —
+they supply the data PH evaluates, and they get back what fired and why.
+Ideal end state: **associate transactions with campaign plays**, closing the
+loop from impression to sale.
+
+#### Programmatic on digital signage — a play window, not an impression
+
+Per-impression RTB does not work on signage. Creatives are frequently video,
+and in-store connectivity to screens is limited, so **assets must already be
+resident on the player before they can be triggered**. An auction that clears
+at impression time has nowhere to deliver the asset from.
+
+The model is therefore an auction for a **play window** (assume 24 hours) and
+not for an impression. The winner holds the position for that window.
+Consequences worth stating, because they differ from web programmatic:
+
+- The auction clears **ahead of** the window, which is what buys the time to
+  distribute and cache assets.
+- A win is **eligible on a given display only once that display confirms its
+  assets are cached**. Eligibility is therefore per display, partial estate
+  delivery is normal, and reporting has to express it.
+- **The advertiser is known at write time.** Every render event can be
+  stamped with both partner and advertiser as it is written — no second,
+  post-hoc attribution path. This closes open questions 19–20 for signage;
+  per-impression web/mobile programmatic may still need it.
+- Never-dark still applies inside the window: the winner's baseline campaign
+  fills any moment their targeted campaigns do not.
+
+#### Approval
+
+Each advertiser carries an **approval-required** flag.
+
+- **Set:** a campaign cannot publish until approved. It sits in a pending
+  state in the campaign table and is not eligible to render.
+- **Not set:** publish is immediate.
+
+The trust-zone rule applies either way. Advertiser creative may **never**
+contain price, offer terms or disclosures — those are PH-locked (§4, spec
+§7), and a price baked into supplied artwork is a compliance breach that an
+automated dimension check will not catch. Automate what can be automated;
+the flag is what puts a human in front of the rest.
+
+#### API surface
+
+Tier 1 follows each DSP's own specification. The tier-2 shape:
+
+```
+GET  /v1/inventory                 sellable: display type x slot x store set x window
+POST /v1/inventory/forecast        projected impressions for a spec + targeting
+POST /v1/reservations              reserve, or bid for a play window
+GET  /v1/targeting/attributes      the vocabulary THIS partner may target
+POST /v1/campaigns                 baseline (required) + targeted set
+POST /v1/campaigns/{id}/assets     creative upload, validation, distribution
+GET  /v1/campaigns/{id}/status     approval state, per-display cache state
+GET  /v1/delivery                  playback records: what played, and why
+```
+
+```json
+{
+  "reservationId": "res_8812",
+  "campaigns": [
+    { "role": "baseline", "assetSet": "as_brand_evergreen" },
+    { "role": "targeted", "priority": 10, "assetSet": "as_hot_day",
+      "rules": { "all": [{ "attr": "env.temp_c", "op": "gte", "value": 25 }] } },
+    { "role": "targeted", "priority": 20, "assetSet": "as_cold_day",
+      "rules": { "all": [{ "attr": "env.temp_c", "op": "lt", "value": 15 }] } }
+  ]
+}
+```
+
+**Availability is a forecast, and targeting changes it.** "Is slot 2 free
+across London for a fortnight" has no yes/no answer, and a campaign gated on
+over 25°C in October delivers a fraction of its baseline. The forecast
+endpoint takes the targeting rules as input for exactly this reason —
+otherwise we sell guarantees we cannot meet.
+
 ## Functional requirements
 
 - **Display type library**, browsable by touch point, with slot count and
@@ -200,6 +363,19 @@ computes or displays a price/offer itself outside the PH-locked zone.
   update, shown side by side.
 - **Channel preview**: the same surface rendered as web vs. email vs.
   messaging, showing where the ladder freezes.
+- **Partner/DSP connection management**: credentials per partner, connection
+  test, advertisers pulled on connect, and the positions sold through each.
+- **Per-partner targeting attribute enablement**: which registry attributes
+  this partner may target, visitor attributes off by default.
+- **Per-advertiser approval-required toggle**, and a campaign approval queue
+  for the advertisers it is set on.
+- **Campaign set editor** per reservation: one baseline, plus targeted
+  campaigns with rules and explicit priority, showing which would win for a
+  given set of attribute values.
+- **Asset distribution status per display** — a programmatic win is not
+  eligible on a display until that display has cached its assets.
+- **Playback analytics feed** at display and store level, disclosing the
+  campaign that played and the trigger that activated it.
 
 ## Open questions (from spec §11, scoped to this project)
 
@@ -208,17 +384,19 @@ computes or displays a price/offer itself outside the PH-locked zone.
 9. Catalogue exposure format for agent-readable publishing — MCP, Web MCP,
    or plain REST?
 11. UCP manifest generation: live per request, or per campaign at publish?
-12. Store-authored campaign approval: HQ review required, or immediate
+12. Campaign approval. **Resolved for advertisers** (§6): a per-advertiser
+    approval-required flag, pending campaigns held out of rotation. Still
+    open for store-authored campaigns — HQ review required, or immediate
     publish by default?
 14. Web multi-zone semantics: does responsive reflow need different
     rotation rules than a signage zone?
 18. Freeze duration on the slot in view — does it upgrade the instant the
     customer navigates away, or only on next scheduled rotation?
-19–20. RTB slot attribution/auction configuration — a reserved slot stamps
-    its advertiser at write time; an open RTB slot only knows the winner
-    once the auction clears, so render events need a second, post-hoc write
-    path. Needs its own floor price / permitted categories / competitive
-    exclusion design, likely a separate retail-media surface.
+19–20. RTB slot attribution/auction configuration. **Resolved for digital
+    signage** (§6): the auction clears for a play window rather than an
+    impression, so the advertiser is known at write time and a single write
+    path suffices. Still open for per-impression web/mobile programmatic,
+    where a post-hoc attribution write is still required.
 23. Per-template deadline warnings — since placement (not display type)
     sets an element's deadline, where does a "this source is too slow for
     this slot" warning actually surface: the layout composer, the display
@@ -230,3 +408,23 @@ computes or displays a price/offer itself outside the PH-locked zone.
 26. Template resolution on override — does an in-flight paired session keep
     the template it opened with when a display's override changes mid-
     session?
+
+### Raised by the sell-side design (§6), not carried from spec §11
+
+27. **Play-window length** for signage programmatic. 24 hours is the working
+    assumption; the real figure is a commercial decision crossed with how
+    long asset distribution across the estate actually takes.
+28. **Where environmental attributes are sourced and owned.** Weather and
+    store stock have no home in the attribute envelope today. The interface
+    contract now carries an environmental family, but which system populates
+    it — Live Visitor Profile connectors, or a direct integration on this
+    side — is undecided.
+29. **Partial-estate delivery.** If only part of the estate cached its assets
+    before the window opens, what was actually sold? Needs a guarantee model
+    and a reporting shape, not just a status field.
+30. **Minimum-volume floor on partner analytics.** Per-impression trigger
+    disclosure is safe individually, but thin segments repeatedly queried are
+    an inference channel. Is there a reporting floor, and at what N?
+31. **Transaction association.** The stated end state is tying transactions to
+    campaign plays. That needs an identity join this project does not own and
+    the interface contract does not currently describe.

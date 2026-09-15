@@ -85,6 +85,13 @@ currency, permitted categories, competitive exclusions), the advertisers pulled
 from it on connect, and a table of every display-type position currently sold
 through it.
 
+The **API and campaign model** a partner integrates against — two API tiers,
+baseline plus targeted campaigns, per-partner targeting permissions, the
+approval flag, playback analytics, and the play-window model for signage
+programmatic — is specified in [`REQUIREMENTS.md`](./REQUIREMENTS.md) §6. The
+prototype currently covers the connection and slot-assignment half of that;
+the campaign and inventory half is spec only.
+
 Design decisions worth keeping:
 
 - **Credentials live on the partner, never on a display type or a slot.**
