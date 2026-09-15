@@ -1818,12 +1818,10 @@ primeFromRest("interfaces", (rows) => { interfaces = rows; render(); });
 primeFromRest("projectDocs", (rows) => { projectDocs = rows; });
 primeFromRest("faqCategories", (rows) => {
   faqCategories = rows;
-  if (faqSettingsPage && !faqSettingsPage.hidden) renderFaqSettingsPage();
   if (faqArticlesPage && !faqArticlesPage.hidden) renderFaqArticlesPage();
 }, byNumber("order"));
 primeFromRest("faqArticles", (rows) => {
   faqArticles = rows;
-  if (faqSettingsPage && !faqSettingsPage.hidden) renderFaqSettingsPage();
   if (faqArticlesPage && !faqArticlesPage.hidden) renderFaqArticlesPage();
 }, byNumber("order"));
 
@@ -4211,18 +4209,6 @@ async function deleteFaqCategoryIfEmpty(id) {
   await deleteDoc(doc(db, "faqCategories", id));
 }
 
-async function moveFaqCategory(id, dir) {
-  if (!(await requireFaqEditor())) return;
-  const idx = faqCategories.findIndex((c) => c.id === id);
-  const swapIdx = idx + dir;
-  if (idx < 0 || swapIdx < 0 || swapIdx >= faqCategories.length) return;
-  const a = faqCategories[idx], b = faqCategories[swapIdx];
-  await Promise.all([
-    setDoc(doc(db, "faqCategories", a.id), { order: b.order || 0 }, { merge: true }),
-    setDoc(doc(db, "faqCategories", b.id), { order: a.order || 0 }, { merge: true }),
-  ]);
-}
-
 async function saveFaqArticle(id, data) {
   if (!(await requireFaqEditor())) return;
   if (id) {
@@ -4259,7 +4245,6 @@ async function toggleFaqArticleReview(id) {
 onSnapshot(query(faqCategoriesRef, orderBy("order", "asc")), (snap) => {
   liveCollections.add("faqCategories");
   faqCategories = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-  if (!faqSettingsPage.hidden) renderFaqSettingsPage();
   if (!faqArticlesPage.hidden) renderFaqArticlesPage();
 }, (err) => {
   console.error("backlog-tracker: faqCategories listener error", err);
@@ -4268,9 +4253,6 @@ onSnapshot(query(faqCategoriesRef, orderBy("order", "asc")), (snap) => {
 onSnapshot(query(faqArticlesRef, orderBy("order", "asc")), (snap) => {
   liveCollections.add("faqArticles");
   faqArticles = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-  // Settings also shows each category's article count, so both pages
-  // depend on this collection, not just the one named "articles."
-  if (!faqSettingsPage.hidden) renderFaqSettingsPage();
   if (!faqArticlesPage.hidden) renderFaqArticlesPage();
   if (!faqRevisionReviewPage.hidden) renderFaqRevisionReviewPage();
 }, (err) => {
@@ -4290,8 +4272,6 @@ const faProjectSelect = document.getElementById("fa-project-select");
 // a second, parallel product/program taxonomy just for articles.
 const faProgramSelect = document.getElementById("fa-program-select");
 wireProgramSelect(faProgramSelect);
-const faNewCategoryIconSelect = document.getElementById("fa-new-category-icon");
-faNewCategoryIconSelect.innerHTML = faqCategoryIconOptionsHTML("help");
 
 function openFaqSettingsPage() {
   closeAllSubPages();
@@ -4299,7 +4279,6 @@ function openFaqSettingsPage() {
   faqSettingsPage.hidden = false;
   setRouteHash("#settings");
   updateTopbarTitle();
-  renderFaqSettingsPage();
 }
 function closeFaqSettingsPage() {
   faqSettingsPage.hidden = true;
@@ -4318,34 +4297,6 @@ function closeFaqArticlesPage() {
   faqArticlesPage.hidden = true;
   document.getElementById("projects-root").hidden = false;
 }
-
-// Name, order and delete only — icon and description are edited from the
-// FAQ Management page's article-list header instead (renderFaqCategoryHeader
-// below), next to the category/sub-category they actually describe, rather
-// than from a flat list of every category at once with no visible content.
-function renderFaqSettingsPage() {
-  const catListEl = document.getElementById("faq-category-list");
-  if (faqCategories.length === 0) {
-    catListEl.innerHTML = '<p class="empty-hint">No categories yet — add one below.</p>';
-  } else {
-    catListEl.innerHTML = faqCategories.map((c, idx) => {
-      const count = faqArticles.filter((a) => a.categoryId === c.id).length;
-      return `
-        <div class="faq-cat-row" data-id="${escapeHTML(c.id)}">
-          <span class="material-symbols-outlined" title="Edit this icon from FAQ Management">${escapeHTML(c.icon || "help")}</span>
-          <input type="text" class="faq-cat-name-input" value="${escapeHTML(c.name)}" aria-label="Category name">
-          <span class="faq-cat-count">${count} article${count === 1 ? "" : "s"}</span>
-          <div class="faq-cat-actions">
-            <button type="button" class="icon-btn faq-cat-up" ${idx === 0 ? "disabled" : ""} title="Move up">&uarr;</button>
-            <button type="button" class="icon-btn faq-cat-down" ${idx === faqCategories.length - 1 ? "disabled" : ""} title="Move down">&darr;</button>
-            <button type="button" class="icon-btn faq-cat-save" title="Save changes">&#10003;</button>
-            <button type="button" class="icon-btn faq-cat-delete" title="Delete category">&#128465;</button>
-          </div>
-        </div>`;
-    }).join("");
-  }
-}
-
 
 // ── Categories and folders: the tree, and what it means ──────────────────
 // A faqCategories document with no parentId is a top-level category. One
@@ -4516,10 +4467,13 @@ function renderFaqArticleList() {
 
 // The selected category/sub-category's icon, an edit toggle, and its
 // description — shown right above the article list for whichever folder is
-// open, so you edit a category's icon/blurb while looking at its actual
-// content instead of from Settings' flat list of every category at once
-// (see renderFaqSettingsPage's own comment). `cat` is null when nothing's
-// selected or a search is showing, in which case everything here hides.
+// open, so you edit a category's name/icon/blurb (and delete it) while
+// looking at its actual content instead of from a flat list of every
+// category at once with no visible content. Settings no longer carries a
+// separate categories block at all — this is the only place a category or
+// sub-category's name, icon or description gets edited now. `cat` is null
+// when nothing's selected or a search is showing, in which case everything
+// here hides.
 function renderFaqCategoryHeader(cat) {
   const iconEl = document.getElementById("faq-cat-heading-icon");
   const editBtn = document.getElementById("faq-cat-edit-toggle");
@@ -4552,6 +4506,7 @@ document.getElementById("faq-cat-edit-toggle").addEventListener("click", () => {
   const cat = faqTreeSelection && faqCategories.find((c) => c.id === faqTreeSelection.categoryId);
   if (!cat) return;
   const formEl = document.getElementById("faq-cat-edit-form");
+  document.getElementById("faq-cat-edit-name-input").value = cat.name || "";
   document.getElementById("faq-cat-edit-icon-select").innerHTML = faqCategoryIconOptionsHTML(cat.icon || "help");
   document.getElementById("faq-cat-edit-icon-preview").textContent = cat.icon || "help";
   document.getElementById("faq-cat-edit-desc-input").value = cat.description || "";
@@ -4574,15 +4529,44 @@ document.getElementById("faq-cat-edit-save-btn").addEventListener("click", async
   const id = formEl.dataset.categoryId;
   const cat = faqCategories.find((c) => c.id === id);
   if (!cat) { formEl.hidden = true; return; }
+  const name = document.getElementById("faq-cat-edit-name-input").value.trim();
+  if (!name) { document.getElementById("faq-cat-edit-name-input").focus(); return; }
   await saveFaqCategory(
     id,
-    cat.name,
+    name,
     document.getElementById("faq-cat-edit-icon-select").value,
     document.getElementById("faq-cat-edit-desc-input").value,
   );
   if (!faqUser) return; // sign-in was declined — keep the form open so nothing typed is lost
   formEl.hidden = true;
   renderFaqArticleList();
+});
+
+document.getElementById("faq-cat-edit-delete-btn").addEventListener("click", async () => {
+  const formEl = document.getElementById("faq-cat-edit-form");
+  const id = formEl.dataset.categoryId;
+  if (!id) return;
+  const cat = faqCategories.find((c) => c.id === id);
+  if (!cat) { formEl.hidden = true; return; }
+  if (faqSubCategories(id).length) {
+    await showAlert("This category still has sub-categories in it — move or delete those first.");
+    return;
+  }
+  if (!(await showConfirmDialog(`Delete "${cat.name}"? This can't be undone.`, { title: "Delete category" }))) return;
+  await deleteFaqCategoryIfEmpty(id);
+  if (!faqUser) return; // sign-in was declined — nothing was deleted
+  formEl.hidden = true;
+  if (faqTreeSelection && faqTreeSelection.categoryId === id) faqTreeSelection = null;
+  renderFaqTree();
+  renderFaqArticleList();
+});
+
+document.getElementById("faq-new-category-btn").addEventListener("click", async () => {
+  const name = ((await showPromptDialog("Name this category", "", {
+    title: "New category", okLabel: "Create",
+  })) || "").trim();
+  if (!name) return;
+  await addFaqCategory(name, "help");
 });
 
 // ── Re-ordering ──────────────────────────────────────────────────────────
@@ -4884,41 +4868,6 @@ document.addEventListener("click", (e) => {
   if (!link) return;
   if (link.dataset.route === "#faq-management") openFaqArticlesPage();
   else if (link.dataset.route === "#settings") openFaqSettingsPage();
-});
-
-document.getElementById("fa-new-category-submit").addEventListener("click", async () => {
-  const nameEl = document.getElementById("fa-new-category-name");
-  if (!nameEl.value.trim()) { nameEl.focus(); return; }
-  await addFaqCategory(nameEl.value, faNewCategoryIconSelect.value);
-  nameEl.value = "";
-  faNewCategoryIconSelect.value = "help";
-  document.getElementById("fa-new-category-icon-preview").textContent = "help";
-});
-faNewCategoryIconSelect.addEventListener("change", () => {
-  document.getElementById("fa-new-category-icon-preview").textContent = faNewCategoryIconSelect.value;
-});
-
-document.getElementById("faq-category-list").addEventListener("click", (e) => {
-  const row = e.target.closest(".faq-cat-row");
-  if (!row) return;
-  const id = row.dataset.id;
-  if (e.target.closest(".faq-cat-up")) { moveFaqCategory(id, -1); return; }
-  if (e.target.closest(".faq-cat-down")) { moveFaqCategory(id, 1); return; }
-  if (e.target.closest(".faq-cat-save")) {
-    // Icon and description now live in FAQ Management's category header
-    // (renderFaqCategoryHeader) — this row only ever renames, so save the
-    // icon/description unchanged rather than clobbering them from inputs
-    // that no longer exist here.
-    const cat = faqCategories.find((c) => c.id === id);
-    saveFaqCategory(
-      id,
-      row.querySelector(".faq-cat-name-input").value,
-      cat ? cat.icon : "help",
-      cat ? cat.description : "",
-    );
-    return;
-  }
-  if (e.target.closest(".faq-cat-delete")) { deleteFaqCategoryIfEmpty(id); return; }
 });
 
 document.getElementById("fa-tree-search").addEventListener("input", renderFaqArticleList);

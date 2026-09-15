@@ -900,29 +900,11 @@ textarea.dialog-field-input { resize: vertical; min-height: 70px; }
 .fa-needs-review-toggle { display: flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--text-muted); cursor: pointer; }
 .fa-needs-review-toggle input { width: 14px; height: 14px; }
 
-.fa-new-category-row { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; align-items: center; }
-.fa-new-category-row input, .fa-new-category-row select { font-family: inherit; font-size: 13px; padding: 7px 9px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); }
-#fa-new-category-name { flex: 2; min-width: 160px; }
-
-/* Icon dropdown + a live preview swatch — used both in the "new category"
-   row and per-row when editing an existing category's icon. */
+/* Icon dropdown + a live preview swatch — used when editing an existing
+   category's icon from FAQ Management's category header. */
 .fa-icon-picker { display: flex; align-items: center; gap: 6px; flex: 0.8; min-width: 130px; }
 .fa-icon-preview { color: var(--primary); font-size: 18px; flex-shrink: 0; }
 .fa-icon-picker select { flex: 1; min-width: 0; }
-
-.faq-cat-row {
-  display: flex; align-items: center; gap: 8px; padding: 8px 0; border-bottom: 1px solid var(--divider, var(--border));
-  flex-wrap: wrap;
-}
-.faq-cat-row:last-child { border-bottom: none; }
-.faq-cat-row > .material-symbols-outlined { color: var(--primary); font-size: 18px; flex-shrink: 0; }
-.faq-cat-row input, .faq-cat-row select {
-  font-family: inherit; font-size: 12.5px; padding: 6px 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg);
-}
-.faq-cat-name-input { flex: 1.2; min-width: 120px; font-weight: 600; }
-.faq-cat-desc-input { flex: 2; min-width: 160px; }
-.faq-cat-count { font-size: 11px; color: var(--text-muted); white-space: nowrap; }
-.faq-cat-actions { display: flex; gap: 2px; flex-shrink: 0; }
 
 .fa-filter-row { display: flex; gap: 8px; margin: 10px 0 14px; flex-wrap: wrap; }
 .fa-filter-row select, .fa-filter-row input {
