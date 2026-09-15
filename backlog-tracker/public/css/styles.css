@@ -60,10 +60,6 @@ body {
 }
 .logo-link:hover { opacity: .75; }
 .topbar-logo-img { height: 58.5px; width: auto; max-width: 100%; display: block; flex-shrink: 0; }
-.topbar-logo-label {
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0;
-}
-.topbar-logo-label:empty { display: none; }
 .footer-logo-btn { vertical-align: middle; }
 .footer-logo-img { height: 42px; display: block; }
 .auth-gate-logo { height: 120px; max-width: 100%; width: auto; margin: 0 auto 4px; display: block; }
@@ -532,17 +528,10 @@ textarea.dialog-field-input { resize: vertical; min-height: 70px; }
 
 /* ── Docs page ───────────────────────────────────────────────────────── */
 .docs-page { margin-bottom: 20px; }
-/* FAQ Management / Settings each carry a small switcher so you can jump
-   straight to the other one instead of detouring through the hamburger
-   menu — see setRouteHash()/applyRouteFromHash() in app.js. */
-.page-switcher { display: flex; align-items: center; gap: 8px; margin-left: auto; font-size: 13px; }
-.page-switcher-current { color: var(--text-muted); font-weight: 600; }
-.page-switcher-link {
-  background: var(--surface-2); border: 1px solid var(--border); border-radius: 14px;
-  padding: 5px 12px; font-size: 13px; font-family: inherit; color: var(--primary);
-  cursor: pointer;
-}
-.page-switcher-link:hover { background: var(--primary-tint); border-color: var(--primary); }
+/* The FAQ Management / Settings page-switcher nav (jump straight to the
+   other page) was removed (hXR16fmKAq0f2pJAtwiq) so each page's header is
+   just its own <h2>, the same plain format the board and every other page
+   use — the switcher was extra chrome the request asked to drop. */
 .docs-block { border: 1px solid var(--border); border-radius: 8px; padding: 16px; background: var(--surface); margin-bottom: 16px; }
 .docs-block h3 { margin: 0 0 4px; font-size: 15px; }
 .docs-block-header { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
@@ -643,24 +632,35 @@ textarea.dialog-field-input { resize: vertical; min-height: 70px; }
      chrome lives here — the page's own title/count (.page-header) and the
      pipeline health strip are deliberately NOT inside .topbar, so they
      scroll away normally instead of eating into the pinned bar's height.
-     background is opaque (not transparent) so board content doesn't show
-     through while stuck; z-index sits above .mobile-action-bar (below,
-     z-index: 15) — see its own top offset just below for how the two stack
-     instead of overlapping. */
+     z-index sits above .mobile-action-bar (below, z-index: 15) — see its
+     own top offset just below for how the two stack instead of overlapping.
+     Background is a semi-transparent white with a blur (hXR16fmKAq0f2pJAtwiq)
+     rather than the fully opaque fill this used to be, so board content is
+     still faintly visible scrolling underneath the pinned bar instead of
+     being hidden by it; the blur keeps the hamburger/logo/button legible
+     over whatever's behind them. align-items: center (same ticket) keeps
+     the logo row and the + New project button vertically centered on the
+     row instead of top-aligned, and padding is trimmed so the pinned bar
+     eats less of a phone screen's height while scrolling. */
   .topbar {
     position: sticky; top: 0; z-index: 16;
-    background: var(--bg);
-    padding: 10px 0; margin: 0 0 16px;
+    align-items: center;
+    background: rgba(255, 255, 255, .88);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    padding: 6px 0; margin: 0 0 16px;
     gap: 12px;
   }
-  .topbar h1 { font-size: 19px; }
+  .topbar h1 { font-size: 18px; }
   /* Extra headroom on top of the 78px -> 58.5px global shrink above: the
      logo's fixed 4:1 aspect ratio still makes 58.5px tall ~234px wide,
      which is most of a phone's width once the hamburger, its gap and the
      .app side padding are subtracted. Shrinking further here is a width
      floor, not a redo of the resize — min-width:0 + overflow:hidden on
-     .topbar h1 (above) still applies if an even narrower screen needs it. */
-  .topbar-logo-img { height: 46px; }
+     .topbar h1 (above) still applies if an even narrower screen needs it.
+     Trimmed again, 46 -> 40px (hXR16fmKAq0f2pJAtwiq), as part of lowering
+     the sticky bar's overall height on a phone screen. */
+  .topbar-logo-img { height: 40px; }
   .btn-primary, .btn-ghost { min-height: 40px; }
 
   .board { grid-template-columns: 1fr; overflow-x: visible; }
