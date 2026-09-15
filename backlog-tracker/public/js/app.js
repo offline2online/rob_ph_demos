@@ -1676,6 +1676,24 @@ function queueMobileBarSync() {
 window.addEventListener("scroll", queueMobileBarSync, { passive: true });
 window.addEventListener("resize", queueMobileBarSync);
 
+// .topbar is sticky at the top of the screen on mobile now (qMJeQkmhYwcXFTjeOJw0-2),
+// so .mobile-action-bar (also fixed to the top, for whichever project is
+// scrolled into view) needs to sit just below it instead of underneath it.
+// The topbar's height isn't a fixed number — it can wrap to two rows on the
+// narrowest phones — so it's measured here rather than hard-coded, and
+// re-measured on resize/orientation change; scrolling itself never changes
+// the topbar's own height, so this doesn't need to run on every scroll frame
+// the way queueMobileBarSync above does.
+const topbarEl = document.querySelector(".topbar");
+function syncStickyTopbarOffset() {
+  if (!topbarEl) return;
+  document.documentElement.style.setProperty(
+    "--sticky-topbar-h", `${topbarEl.getBoundingClientRect().height}px`
+  );
+}
+window.addEventListener("resize", syncStickyTopbarOffset);
+syncStickyTopbarOffset();
+
 // ── First paint without waiting on the realtime channel ──────────────────
 // onSnapshot is the source of truth and nothing below changes that. The
 // problem it solves is that the realtime channel does not always arrive
@@ -3346,6 +3364,7 @@ function openArchivePage(pid) {
   archiveFilterCategory.value = "";
   archiveFilterSearch.value = "";
   document.getElementById("projects-root").hidden = true;
+  document.getElementById("board-page-header").hidden = true;
   archivePage.hidden = false;
   renderArchivePage();
 }
@@ -3354,6 +3373,7 @@ function closeArchivePage() {
   archiveProjectId = null;
   archivePage.hidden = true;
   document.getElementById("projects-root").hidden = false;
+  document.getElementById("board-page-header").hidden = false;
 }
 
 function archiveRowHTML(item) {
@@ -3454,12 +3474,14 @@ const archivedProjectsPage = document.getElementById("archived-projects-page");
 function openArchivedProjectsPage() {
   closeAllSubPages();
   document.getElementById("projects-root").hidden = true;
+  document.getElementById("board-page-header").hidden = true;
   archivedProjectsPage.hidden = false;
   renderArchivedProjectsPage();
 }
 function closeArchivedProjectsPage() {
   archivedProjectsPage.hidden = true;
   document.getElementById("projects-root").hidden = false;
+  document.getElementById("board-page-header").hidden = false;
 }
 
 function archivedProjectRowHTML(p) {
@@ -3519,6 +3541,7 @@ function openDocsPage(pid) {
   closeAllSubPages();
   docsProjectId = pid;
   document.getElementById("projects-root").hidden = true;
+  document.getElementById("board-page-header").hidden = true;
   docsPage.hidden = false;
   renderDocsPage();
 }
@@ -3527,6 +3550,7 @@ function closeDocsPage() {
   docsProjectId = null;
   docsPage.hidden = true;
   document.getElementById("projects-root").hidden = false;
+  document.getElementById("board-page-header").hidden = false;
 }
 
 function interfaceRowHTML(f) {
@@ -4287,6 +4311,7 @@ wireProgramSelect(faProgramSelect);
 function openFaqSettingsPage() {
   closeAllSubPages();
   document.getElementById("projects-root").hidden = true;
+  document.getElementById("board-page-header").hidden = true;
   faqSettingsPage.hidden = false;
   setRouteHash("#settings");
   updateTopbarTitle();
@@ -4294,11 +4319,13 @@ function openFaqSettingsPage() {
 function closeFaqSettingsPage() {
   faqSettingsPage.hidden = true;
   document.getElementById("projects-root").hidden = false;
+  document.getElementById("board-page-header").hidden = false;
 }
 
 function openFaqArticlesPage() {
   closeAllSubPages();
   document.getElementById("projects-root").hidden = true;
+  document.getElementById("board-page-header").hidden = true;
   faqArticlesPage.hidden = false;
   setRouteHash("#faq-management");
   updateTopbarTitle();
@@ -4307,6 +4334,7 @@ function openFaqArticlesPage() {
 function closeFaqArticlesPage() {
   faqArticlesPage.hidden = true;
   document.getElementById("projects-root").hidden = false;
+  document.getElementById("board-page-header").hidden = false;
 }
 
 // ── Categories and folders: the tree, and what it means ──────────────────
@@ -5214,6 +5242,7 @@ function openFaqArticleEditorPage(articleId, { pendingRevision = false } = {}) {
   }
 
   document.getElementById("projects-root").hidden = true;
+  document.getElementById("board-page-header").hidden = true;
   faqArticleEditorPage.hidden = false;
   faTitleInput.focus();
 }
@@ -5223,6 +5252,7 @@ function openFaqArticleEditorPage(articleId, { pendingRevision = false } = {}) {
 function closeFaqArticleEditorPage() {
   faqArticleEditorPage.hidden = true;
   document.getElementById("projects-root").hidden = false;
+  document.getElementById("board-page-header").hidden = false;
 }
 function backToFaqArticleList() { openFaqArticlesPage(); }
 
@@ -5539,12 +5569,14 @@ function openFaqRevisionReviewPage(articleId) {
   setFrMode("changes");
   renderFaqRevisionReviewPage();
   document.getElementById("projects-root").hidden = true;
+  document.getElementById("board-page-header").hidden = true;
   faqRevisionReviewPage.hidden = false;
 }
 function closeFaqRevisionReviewPage() {
   faqRevisionReviewPage.hidden = true;
   reviewingFaqArticleId = null;
   document.getElementById("projects-root").hidden = false;
+  document.getElementById("board-page-header").hidden = false;
 }
 
 async function approveFaqRevision(id) {

@@ -43,19 +43,24 @@
           <button type="button" class="icon-btn hamburger-btn" id="nav-open-btn" aria-haspopup="true" aria-label="Open menu">&#9776;</button>
           <h1><button type="button" class="logo-link" id="topbar-logo-btn" title="Back to Agent Console home"><img src="img/ph-agent-console-logo.svg" alt="PH Agent Console" class="topbar-logo-img" width="234" height="58"><span id="topbar-logo-label" class="topbar-logo-label"></span></button></h1>
         </div>
-        <p class="subtitle"><span id="total-summary">0 items</span></p>
       </div>
       <div class="topbar-actions">
-        <span class="topbar-user" id="topbar-user"></span>
-        <button class="btn-ghost btn-small" id="topbar-signout" type="button" title="Sign out">Sign out</button>
         <button class="btn-primary" id="new-project-btn" type="button">+ New project</button>
       </div>
     </header>
 
-    <!-- Pipeline health strip (YeCj7sNpHXFUZQhmAmEb) — hidden until the
-         systemStatus/pipeline doc's first snapshot arrives (see
-         renderHealthStrip in app.js); nothing here is static markup. -->
-    <div class="health-strip" id="health-strip" hidden></div>
+    <!-- The board's own page header — kept out of the sticky topbar above
+         (which only ever carries global chrome: hamburger, logo, + New
+         project) so a page's own title/summary scrolls away normally
+         instead of competing for space in the pinned bar. Same
+         `.page-header` format every other page below uses (Docs, Archive,
+         FAQ Management, …), toggled alongside #projects-root by each
+         open/close*Page() function so only one page-header is ever on
+         screen at a time. -->
+    <div class="page-header" id="board-page-header">
+      <h2>Board</h2>
+      <span class="page-header-count" id="total-summary">0 items</span>
+    </div>
 
     <div class="nav-drawer-backdrop" id="nav-drawer-backdrop"></div>
     <nav class="nav-drawer" id="nav-drawer" aria-label="Main menu">
@@ -66,6 +71,15 @@
       <button type="button" class="nav-drawer-item nav-drawer-item-home" id="nav-ph-console-btn">Agent console</button>
       <button type="button" class="nav-drawer-item" id="faq-articles-btn">FAQ Management</button>
       <button type="button" class="nav-drawer-item" id="faq-settings-btn">Settings</button>
+      <!-- Sign out moved in here from the topbar (qMJeQkmhYwcXFTjeOJw0-2):
+           needed rarely, not worth permanent space in the sticky mobile
+           header. Same ids as before (#topbar-user/#topbar-signout) —
+           auth-gate.js targets them by id/delegated click, so moving the
+           markup needs no JS change. -->
+      <div class="nav-drawer-footer">
+        <span class="topbar-user" id="topbar-user"></span>
+        <button class="btn-ghost btn-small" id="topbar-signout" type="button" title="Sign out">Sign out</button>
+      </div>
     </nav>
 
     <div class="modal-backdrop" id="ni-backdrop" hidden>
@@ -308,7 +322,7 @@
     </div>
 
     <section class="docs-page" id="docs-page" hidden>
-      <div class="docs-page-header">
+      <div class="page-header">
         <h2>Docs — <span id="docs-page-project-name"></span></h2>
       </div>
 
@@ -374,9 +388,9 @@
     </section>
 
     <section class="archive-page" id="archive-page" hidden>
-      <div class="archive-page-header">
+      <div class="page-header">
         <h2>Archived — <span id="archive-page-project-name"></span></h2>
-        <span class="archive-page-count" id="archive-page-count">0 tickets</span>
+        <span class="page-header-count" id="archive-page-count">0 tickets</span>
       </div>
       <div class="archive-table-wrap">
         <table class="archive-table">
@@ -411,9 +425,9 @@
     </section>
 
     <section class="archive-page" id="archived-projects-page" hidden>
-      <div class="archive-page-header">
+      <div class="page-header">
         <h2>Archived projects</h2>
-        <span class="archive-page-count" id="archived-projects-count">0 projects</span>
+        <span class="page-header-count" id="archived-projects-count">0 projects</span>
       </div>
       <div class="archive-table-wrap">
         <table class="archive-table">
@@ -439,7 +453,7 @@
            are two distinct actions now (see submitFaqArticleFromEditor in
            app.js), not one "Save article" button with a separate status
            toggle to remember to flip first. -->
-      <div class="docs-page-header">
+      <div class="page-header">
         <h2 id="fa-title">New article</h2>
         <div class="form-actions">
           <button type="button" class="btn-ghost" id="fa-cancel">Cancel</button>
@@ -539,7 +553,7 @@
          Main (functions/index.js promoteFaqRevisionIfReady). -->
     <section class="faq-admin-page faq-review-page" id="faq-revision-review-page" hidden>
       <div class="faq-auth-bar" data-faq-auth></div>
-      <div class="docs-page-header">
+      <div class="page-header">
         <h2 id="fr-title">Review proposed update</h2>
         <div class="form-actions">
           <button type="button" class="btn-ghost" id="fr-back">Back</button>
@@ -574,7 +588,7 @@
     </section>
 
     <section class="faq-admin-page" id="faq-settings-page" hidden>
-      <div class="docs-page-header">
+      <div class="page-header">
         <h2>Settings — FAQ / Help Center</h2>
         <nav class="page-switcher" aria-label="Jump to another section">
           <span class="page-switcher-current">Settings</span>
@@ -592,7 +606,7 @@
     </section>
 
     <section class="faq-admin-page" id="faq-articles-page" hidden>
-      <div class="docs-page-header">
+      <div class="page-header">
         <h2>FAQ Management — <span id="faq-admin-count">0 published</span></h2>
         <nav class="page-switcher" aria-label="Jump to another section">
           <span class="page-switcher-current">FAQ Management</span>
@@ -655,6 +669,14 @@
     <div class="mobile-action-bar" id="mobile-action-bar" hidden aria-live="off"></div>
 
     <div id="projects-root"></div>
+
+    <!-- Pipeline health strip (YeCj7sNpHXFUZQhmAmEb) — hidden until the
+         systemStatus/pipeline doc's first snapshot arrives (see
+         renderHealthStrip in app.js); nothing here is static markup. Lives
+         at the bottom of the page, not the top: it's a background-machinery
+         status glance, not something that needs to compete with the sticky
+         topbar or the page's own header for the first screenful. -->
+    <div class="health-strip" id="health-strip" hidden></div>
 
     <footer class="app-footer"><button type="button" class="logo-link footer-logo-btn" id="footer-logo-btn" title="Back to Agent Console home"><img src="img/ph-agent-console-logo.svg" alt="PH Agent Console" class="footer-logo-img"></button> <span id="app-version"></span></footer>
   </div>

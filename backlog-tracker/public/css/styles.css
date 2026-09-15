@@ -70,13 +70,24 @@ body {
 .subtitle { margin: 4px 0 0; font-size: 13px; color: var(--text-muted); }
 .hamburger-btn { font-size: 20px; flex-shrink: 0; }
 
+/* ── Page header — one shared format for every page's own title + summary
+   (the board itself, Docs, Archive, Archived projects, FAQ Management,
+   Settings, …). Deliberately kept out of .topbar: the topbar is global,
+   sticky chrome on mobile (see below), while a page header is per-page
+   content that scrolls away normally, same as the rest of that page. ───── */
+.page-header { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
+.page-header h2 { margin: 0; font-size: 18px; font-weight: 700; }
+.page-header-count { font-size: 12px; font-weight: 700; color: var(--text-muted); background: var(--surface-2); border-radius: 9999px; padding: 2px 10px; }
+
 /* ── Pipeline health strip (YeCj7sNpHXFUZQhmAmEb) ────────────────────────
    Compact by design — a "is the machinery alive" glance, not a dashboard.
    Hidden entirely until systemStatus/pipeline's first snapshot lands (see
-   renderHealthStrip in app.js). */
+   renderHealthStrip in app.js). Sits at the bottom of the page (just above
+   the footer, see index.html) rather than up top — background-machinery
+   status isn't worth pushing the actual page content down for. */
 .health-strip {
   display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center;
-  margin: -6px 0 18px; padding: 7px 12px;
+  margin: 18px 0 0; padding: 7px 12px;
   background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
   font-size: 12px; color: var(--text-muted);
 }
@@ -89,7 +100,7 @@ body {
 .health-dot-bad { background: var(--danger); }
 .health-dot-pending { background: var(--warning); }
 @media (max-width: 640px) {
-  .health-strip { font-size: 11px; padding: 6px 10px; margin-top: 0; }
+  .health-strip { font-size: 11px; padding: 6px 10px; }
 }
 
 /* ── Left nav drawer — hamburger-opened, slides in over the board. Kept in
@@ -127,6 +138,13 @@ body {
 .nav-drawer-section {
   padding: 14px 20px 4px; font-size: 11px; font-weight: 700; text-transform: uppercase;
   letter-spacing: .04em; color: var(--text-muted);
+}
+/* Signed-in email + Sign out — pushed to the bottom of the drawer
+   (margin-top: auto, .nav-drawer is a column flex) since it's used rarely,
+   not worth permanent space in the sticky mobile topbar it moved out of. */
+.nav-drawer-footer {
+  margin-top: auto; padding: 14px 20px; border-top: 1px solid var(--border);
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
 }
 .btn-primary {
   background: var(--primary); color: #fff; border: none; border-radius: 6px;
@@ -444,9 +462,6 @@ textarea.dialog-field-input { resize: vertical; min-height: 70px; }
 
 /* ── Archive page ────────────────────────────────────────────────────── */
 .archive-page { margin-bottom: 20px; }
-.archive-page-header { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 4px; }
-.archive-page-header h2 { margin: 0; font-size: 18px; font-weight: 700; }
-.archive-page-count { font-size: 12px; font-weight: 700; color: var(--text-muted); background: var(--surface-2); border-radius: 9999px; padding: 2px 10px; }
 .archive-table-wrap { border: 1px solid var(--border); border-radius: 8px; overflow: auto; background: var(--surface); margin-top: 12px; }
 .archive-table { width: 100%; border-collapse: collapse; font-size: 13px; }
 .archive-table th, .archive-table td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--border); vertical-align: top; }
@@ -517,8 +532,6 @@ textarea.dialog-field-input { resize: vertical; min-height: 70px; }
 
 /* ── Docs page ───────────────────────────────────────────────────────── */
 .docs-page { margin-bottom: 20px; }
-.docs-page-header { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
-.docs-page-header h2 { margin: 0; font-size: 18px; font-weight: 700; }
 /* FAQ Management / Settings each carry a small switcher so you can jump
    straight to the other one instead of detouring through the hamburger
    menu — see setRouteHash()/applyRouteFromHash() in app.js. */
@@ -624,7 +637,22 @@ textarea.dialog-field-input { resize: vertical; min-height: 70px; }
    to it — everything else already moved into that menu above. */
 @media (max-width: 640px) {
   .app { padding: 16px 12px 32px; }
-  .topbar { gap: 12px; }
+  /* Sticky header (qMJeQkmhYwcXFTjeOJw0-2): the hamburger, logo and
+     + New project CTA stay reachable while scrolled down a long board,
+     instead of only existing at the very top of the page. Only global
+     chrome lives here — the page's own title/count (.page-header) and the
+     pipeline health strip are deliberately NOT inside .topbar, so they
+     scroll away normally instead of eating into the pinned bar's height.
+     background is opaque (not transparent) so board content doesn't show
+     through while stuck; z-index sits above .mobile-action-bar (below,
+     z-index: 15) — see its own top offset just below for how the two stack
+     instead of overlapping. */
+  .topbar {
+    position: sticky; top: 0; z-index: 16;
+    background: var(--bg);
+    padding: 10px 0; margin: 0 0 16px;
+    gap: 12px;
+  }
   .topbar h1 { font-size: 19px; }
   /* Extra headroom on top of the 78px -> 58.5px global shrink above: the
      logo's fixed 4:1 aspect ratio still makes 58.5px tall ~234px wide,
@@ -692,9 +720,16 @@ textarea.dialog-field-input { resize: vertical; min-height: 70px; }
      sticky, and never in the flow: an in-flow header that collapses when it
      pins changes the document height mid-scroll, which Chrome's scroll
      anchoring then tries to correct, which un-pins it — a loop that reads
-     on a real phone as the page juddering up and down. */
+     on a real phone as the page juddering up and down.
+     top is --sticky-topbar-h, not a literal 0: .topbar above is now also
+     pinned to the very top of the screen (qMJeQkmhYwcXFTjeOJw0-2), so this
+     bar needs to sit directly below it rather than underneath/overlapping
+     it. syncStickyTopbarOffset() in app.js measures the real topbar height
+     on load/resize and sets that custom property — it can't be a fixed
+     number here since the topbar's height isn't fixed (it wraps to two
+     rows on the narrowest phones). */
   .mobile-action-bar {
-    position: fixed; top: 0; left: 0; right: 0; z-index: 15;
+    position: fixed; top: var(--sticky-topbar-h, 0px); left: 0; right: 0; z-index: 15;
     display: flex; align-items: center; gap: 8px;
     padding: 6px 12px;
     background: var(--bg); border-bottom: 1px solid var(--border);
@@ -1005,8 +1040,10 @@ textarea.dialog-field-input { resize: vertical; min-height: 70px; }
 .auth-gate-card .btn-primary { font-size: 15px; padding: 10px 22px; }
 .auth-gate-status { min-height: 1.4em; margin: 16px 0 0 !important; font-size: 13px; }
 .auth-gate-status[data-kind="error"] { color: #c0272a; }
-.topbar-user { font-size: 12.5px; color: #5b6b7a; margin-right: 4px; }
-@media (max-width: 640px) { .topbar-user { display: none; } }
+/* Lives in the nav-drawer footer now, not the topbar (qMJeQkmhYwcXFTjeOJw0-2)
+   — the drawer has room for the email on every viewport width, so this no
+   longer needs to hide on mobile the way it did next to the sticky topbar. */
+.topbar-user { font-size: 12.5px; color: #5b6b7a; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 
 /* ── Proposed FAQ revision review (faqArticles.pendingRevision) ───────── */
 .badge-proposed-update { background: var(--primary-tint); color: var(--primary); margin-left: 6px; }
