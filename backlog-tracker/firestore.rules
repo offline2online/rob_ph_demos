@@ -239,5 +239,21 @@ service cloud.firestore {
         && incoming().order is number;
       allow delete: if isFaqEditor();
     }
+
+    // Site-wide settings for the public FAQ / Help Center (kup9Zce13jyaXcIhxVkf)
+    // — currently just the analytics tag id appended to every customer-facing
+    // FAQ page (see faq/js/page-common.js). Read/write here is editor-only,
+    // from the console's Settings page; faq-export.js reads this doc as the
+    // service account (bypasses these rules, same as every other export
+    // step) and republishes it as a public static file
+    // (faq/data/settings.json) — the public site itself never talks to
+    // Firestore for this.
+    match /settings/{docId} {
+      allow read: if isEditor();
+      allow create, update: if isEditor()
+        && (!("analyticsTag" in incoming()) || incoming().analyticsTag == null
+          || (incoming().analyticsTag is string && incoming().analyticsTag.size() <= 40));
+      allow delete: if isEditor();
+    }
   }
 }

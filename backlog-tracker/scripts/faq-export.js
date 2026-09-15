@@ -70,6 +70,23 @@ async function main() {
   const same = previous && JSON.stringify({ ...previous, generatedAt: "" }) === JSON.stringify({ ...index, generatedAt: "" });
   if (!same) fs.writeFileSync(indexPath, JSON.stringify(index) + "\n");
   console.log(`faq-export: ${categories.length} categories, ${articles.length} articles (${articles.filter((a) => a.status === "published").length} published)${same ? " — index unchanged" : ""}`);
+
+  // Site-wide settings (kup9Zce13jyaXcIhxVkf) — currently just the
+  // analytics tag appended to every customer-facing FAQ page. Edited from
+  // the console's Settings page (settings/faqSite in Firestore); this is
+  // the only thing that carries it into a file the public site — which
+  // never talks to Firestore directly for anything but article content —
+  // can actually read. Same "only rewrite if it changed" treatment as
+  // index.json, so a no-op export produces no git diff here either.
+  const settingsDoc = await db.collection("settings").doc("faqSite").get();
+  const settings = { analyticsTag: (settingsDoc.exists && settingsDoc.data().analyticsTag) || null };
+  const settingsPath = path.join(DATA_DIR, "settings.json");
+  let previousSettings = null;
+  try { previousSettings = JSON.parse(fs.readFileSync(settingsPath, "utf8")); } catch { /* first export */ }
+  if (JSON.stringify(previousSettings) !== JSON.stringify(settings)) {
+    fs.writeFileSync(settingsPath, JSON.stringify(settings) + "\n");
+    console.log("faq-export: settings.json updated");
+  }
 }
 
 main().catch((err) => { console.error("faq-export failed:", err); process.exit(1); });
