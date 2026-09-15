@@ -206,7 +206,7 @@ jobs:
         id: deploy
         env:
           GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/firebase-sa.json
-        run: npx firebase-tools@13 deploy --only hosting,functions,firestore:rules --project backlog-tracker-e4ed2 --non-interactive --force
+        run: npx firebase-tools@13 deploy --only hosting,functions,firestore:rules,storage:rules --project backlog-tracker-e4ed2 --non-interactive --force
 
       - name: Set Artifact Registry cleanup policy for gcf-artifacts
         continue-on-error: true
