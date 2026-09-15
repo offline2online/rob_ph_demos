@@ -535,13 +535,6 @@
           <button type="button" class="page-switcher-link" data-route="#faq-management">FAQ Management →</button>
         </nav>
       </div>
-      <div class="faq-auth-bar" data-faq-auth></div>
-      <p class="field-hint">
-        Consumer-facing site: <code>faq/</code> at the repo root (published via GitHub Pages once
-        merged to <code>main</code>). Categories are shown on that site's front page and category
-        filter — everything here reads/writes this same Firestore project, so a save here is what
-        keeps that page current.
-      </p>
 
       <div class="docs-block">
         <div class="docs-block-header">
@@ -576,13 +569,6 @@
           <button type="button" class="page-switcher-link" data-route="#settings">Settings →</button>
         </nav>
       </div>
-      <div class="faq-auth-bar" data-faq-auth></div>
-      <p class="field-hint">
-        Consumer-facing site: <code>faq/</code> at the repo root (GitHub Pages). Only <strong>Published</strong> articles appear there.
-        Edits save to Firestore immediately; the public site's static snapshot is refreshed by the
-        "FAQ content" GitHub Action (hourly, or run it on demand), and each article page also checks Firestore for a newer revision on load.
-        Manage categories from <strong>Settings</strong> in the hamburger menu.
-      </p>
 
       <!-- Two panes: the structure on the left, the articles of whatever is
            selected on the right. This replaced a flat filtered list plus a
