@@ -1042,7 +1042,7 @@ default.
     `faFolderState`), same as the List view's own filters not persisting.
 - **Data model** — two new top-level collections:
   - `faqCategories/{id}`: `{name, icon, description, order, createdAt, updatedAt}`
-  - `faqArticles/{id}`: `{categoryId, projectId (nullable), programId (nullable), title, slug, summary, bodyMd, docType: "faq"|"how-to"|"reference"|"explanation", keywords[], status: "draft"|"published", needsReview, order, createdAt, updatedAt, publishedAt}`
+  - `faqArticles/{id}`: `{categoryId, projectId (nullable), programId (nullable), title, slug, summary, bodyMd, docType: "faq"|"how-to"|"reference"|"explanation", keywords[], status: "draft"|"published", needsReview, order, createdAt, updatedAt, publishedAt, pendingRevision?, previousRevision?, lastPromotedAt?}` (the last three: see "Proposed FAQ revisions" below)
   - **`docType`** — which of `docs/CONTRIBUTING-docs.md` §2's four
     Diátaxis types this article actually is. Defaults to `"faq"` for a
     new article (most of the 108 seeded ones genuinely are short FAQ
@@ -1088,8 +1088,30 @@ default.
   the one irreversible transition of the three (ready-for-testing and
   ready-to-publish can still be reverted) — and sets `needsReview: true` on
   every `faqArticles` doc sharing that item's `projectId`, the same flag
-  FAQ Center's own manual toggle sets. `needsReview` otherwise stays a
-  manual toggle for projects that leave this off.
+  FAQ Center's own manual toggle sets — but only on articles that don't
+  already carry a specific proposal from the mechanism below.
+  `needsReview` otherwise stays a manual toggle for projects that leave
+  this off.
+- **Proposed FAQ revisions from a Deploy (`pendingRevision`)** — the
+  precise version of the above, always on. When "Notify Claude — Deploy"
+  fires, the Routine's Deploy flow (`ROUTINE_INSTRUCTIONS.md` step 3b,
+  "FAQ impact review") reads each merging PR's actual diff and, for every
+  article of that project's **product/program** (`programId`, plus
+  `projectId`-linked articles) the change makes wrong or incomplete,
+  writes the corrected article as `faqArticles/{id}.pendingRevision`
+  (full proposed title/summary/body, a `reason`, the `sourceItemIds`) and
+  flags it. The live text is untouched. FAQ Management shows a **Proposed
+  update** badge and a **Review proposed update** action: reason, source
+  tickets with their pipeline status, a *Changes* diff (paragraph + word
+  level) and a *Before / After* rendering, with **Approve** / **Reject** /
+  **Edit proposal**. It goes live only once approved AND every source
+  ticket is `published-live` — `promoteFaqRevisionIfReady` in
+  `functions/index.js`, called from both `onBacklogItemPublishedLive` and
+  `onFaqArticleRevisionApproved`, whichever fires last — keeping the
+  replaced text as `previousRevision` for a **Revert last auto-update**
+  row action. Full spec: `REQUIREMENTS.md` → "FAQ revision review".
+  **A `functions/` change needs its own `firebase deploy --only
+  functions`** — the promotion never happens until it's deployed.
 - **Seeding**: `scripts/seed-faq-data.js` (same insert-only `create()`
   pattern as `migrate-artifact-data.js`) seeds the **real** Help Center
   content — 9 categories and 108 articles — run automatically on every

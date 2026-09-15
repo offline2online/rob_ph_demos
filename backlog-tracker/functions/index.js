@@ -378,8 +378,20 @@ exports.notifyOnProjectReadyToDeploy = onDocumentUpdated(
       // deploy was actually running or hadn't been requested yet.
       const selfReportHint = `\n\nWhen you finish this run (whether you completed everything or stopped early on a blocker), PATCH projects/${event.params.projectId} with deployRoutine.status set to "done" (or "error" with an errorMessage, if you stopped early) and deployRoutine.finishedAt set to now — the board shows a working/spinning state on its Deploy to Main button until it sees this.`;
 
+      // Which product/program this project belongs to — the Deploy flow's
+      // FAQ impact review (ROUTINE_INSTRUCTIONS.md step 3b) scopes the help
+      // centre articles it may propose changes to by this. A hint only: the
+      // Routine re-reads projects/{id}.programId itself as the authority.
+      let programLine = "Product/Program: (none set on this project — only articles linked directly to this projectId are in scope for the FAQ impact review)\n";
+      if (after.programId) {
+        const programSnap = await getFirestore().collection("programs").doc(after.programId).get().catch(() => null);
+        const pname = programSnap && programSnap.exists ? (programSnap.data().name || "") : "";
+        programLine = `Product/Program: "${pname || "(unnamed)"}" (programId: ${after.programId}) — FAQ impact review scope: faqArticles with this programId, plus any with projectId ${event.params.projectId}\n`;
+      }
+
       const text = `${projectPromptBlock}=== DEPLOY REQUEST for "${projectName}" (projectId: ${event.params.projectId}) on the Backlog Tracker & FAQs board ===\n` +
-        `These ${items.length} item${items.length === 1 ? "" : "s"} are already implemented, tested, and confirmed "Approved for Deployment" (ready-to-publish). Do NOT investigate, re-implement, or re-test them — follow ROUTINE_INSTRUCTIONS.md's "Notify Claude — Deploy" flow section for exactly what to do with each one.\n\n` +
+        programLine +
+        `These ${items.length} item${items.length === 1 ? "" : "s"} are already implemented, tested, and confirmed "Approved for Deployment" (ready-to-publish). Do NOT investigate, re-implement, or re-test them — follow ROUTINE_INSTRUCTIONS.md's "Notify Claude — Deploy" flow section for exactly what to do with each one, including its FAQ impact review step (3b), which proposes help-centre updates for a human to approve.\n\n` +
         `Items:\n${itemLines}${selfReportHint}${boardAccessBlock()}`;
 
       try {
@@ -766,11 +778,32 @@ exports.onBacklogItemPublishedLive = onDocumentUpdated(
     if (before.status === "published-live" || after.status !== "published-live") {
       return;
     }
+
+    const db = getFirestore();
+    const itemId = event.params.itemId;
+
+    // 1. Proposed FAQ revisions this ticket is a source of (written by the
+    //    Deploy-flow Routine — ROUTINE_INSTRUCTIONS.md "FAQ impact review").
+    //    Each goes live only once a person has approved it AND every source
+    //    ticket is live; this ticket going live may be the last thing it was
+    //    waiting on.
+    const pendingSnap = await db.collection("faqArticles")
+      .where("pendingRevision.sourceItemIds", "array-contains", itemId)
+      .get();
+    const handled = new Set();
+    for (const articleDoc of pendingSnap.docs) {
+      handled.add(articleDoc.id);
+      await promoteFaqRevisionIfReady(db, articleDoc.ref, `ticket ${itemId} reached published-live`);
+    }
+
+    // 2. The older, coarser per-project safety net: opt-in via the Docs
+    //    page's "FAQ review automation" toggle, flags every article linked
+    //    to the project for a human look. Skips articles that already carry
+    //    a specific proposal from step 1 — those have something concrete to
+    //    review; a bare flag on top would be noise.
     if (!after.projectId) {
       return;
     }
-
-    const db = getFirestore();
     const projectSnap = await db.collection("projects").doc(after.projectId).get();
     if (!projectSnap.exists || !projectSnap.data().faqAutoFlagOnLive) {
       return;
@@ -779,16 +812,17 @@ exports.onBacklogItemPublishedLive = onDocumentUpdated(
     const articlesSnap = await db.collection("faqArticles")
       .where("projectId", "==", after.projectId)
       .get();
-    if (articlesSnap.empty) {
-      logger.info("FAQ auto-flag enabled but no linked articles for this project", {
-        itemId: event.params.itemId,
+    const toFlag = articlesSnap.docs.filter((d) => !handled.has(d.id) && !d.data().pendingRevision);
+    if (!toFlag.length) {
+      logger.info("FAQ auto-flag enabled but nothing left to flag for this project", {
+        itemId,
         projectId: after.projectId,
       });
       return;
     }
 
     const batch = db.batch();
-    articlesSnap.docs.forEach((articleDoc) => {
+    toFlag.forEach((articleDoc) => {
       batch.set(articleDoc.ref, {
         needsReview: true,
         updatedAt: new Date(),
@@ -797,10 +831,85 @@ exports.onBacklogItemPublishedLive = onDocumentUpdated(
     await batch.commit();
 
     logger.info("Flagged linked FAQ articles for review after merge to main", {
-      itemId: event.params.itemId,
+      itemId,
       projectId: after.projectId,
-      articleCount: articlesSnap.size,
+      articleCount: toFlag.length,
     });
+  }
+);
+
+// ── Proposed FAQ revisions: approve + merge ⇒ go live ─────────────────────
+// The Deploy-flow Routine parks a corrected article as faqArticles/{id}.
+// pendingRevision {title, summary, bodyMd, keywords?, docType?, reason,
+// sourceItemIds, reviewStatus: "awaiting-review", isNew?} and sets
+// needsReview. A reviewer approves it in FAQ Management (reviewStatus ->
+// "approved"). Two events can be the last one to happen — the approval, or
+// the final source ticket reaching published-live — so both call this.
+// Promotion copies the proposal into the live fields, keeps what it replaced
+// under previousRevision (one-click revert in the console), clears the
+// proposal and the flag, and publishes a proposal-created draft. The
+// hourly FAQ export (faq-content.yml) then carries it to the static site.
+const LIVE_OR_LATER = new Set(["published-live", "archived"]);
+
+async function promoteFaqRevisionIfReady(db, articleRef, why) {
+  await db.runTransaction(async (tx) => {
+    const snap = await tx.get(articleRef);
+    if (!snap.exists) return;
+    const a = snap.data();
+    const rev = a.pendingRevision;
+    if (!rev || rev.reviewStatus !== "approved") return;
+
+    const ids = Array.isArray(rev.sourceItemIds) ? rev.sourceItemIds.filter((s) => typeof s === "string" && s) : [];
+    // Every source ticket must be live (or archived, which only happens
+    // after live). A ticket that no longer exists can't hold it up forever.
+    for (const id of ids) {
+      const itemSnap = await tx.get(db.collection("backlogItems").doc(id));
+      if (itemSnap.exists && !LIVE_OR_LATER.has(itemSnap.data().status)) {
+        logger.info("Approved FAQ revision still waiting on a source ticket", { articleId: articleRef.id, waitingOn: id, why });
+        return;
+      }
+    }
+
+    const now = new Date();
+    const update = {
+      title: typeof rev.title === "string" && rev.title.trim() ? rev.title : a.title,
+      summary: typeof rev.summary === "string" ? rev.summary : (a.summary || ""),
+      bodyMd: typeof rev.bodyMd === "string" ? rev.bodyMd : (a.bodyMd || ""),
+      ...(Array.isArray(rev.keywords) ? { keywords: rev.keywords } : {}),
+      ...(typeof rev.docType === "string" ? { docType: rev.docType } : {}),
+      previousRevision: {
+        title: a.title || "",
+        summary: a.summary || "",
+        bodyMd: a.bodyMd || "",
+        replacedAt: now,
+        sourceItemIds: ids,
+        wasNew: !!rev.isNew,
+      },
+      pendingRevision: null,
+      needsReview: false,
+      lastPromotedAt: now,
+      updatedAt: now,
+      ...(rev.isNew || a.status !== "published" ? { status: "published", publishedAt: a.publishedAt || now } : {}),
+    };
+    // Firestore's admin SDK deletes a field only via FieldValue.delete();
+    // a null pendingRevision is also what the console/rules treat as
+    // "none", so keep null (simpler to query against) and let the client
+    // read either.
+    tx.set(articleRef, update, { merge: true });
+    logger.info("Promoted approved FAQ revision to live", { articleId: articleRef.id, sourceItemIds: ids, why });
+  });
+}
+
+exports.onFaqArticleRevisionApproved = onDocumentUpdated(
+  "faqArticles/{articleId}",
+  async (event) => {
+    const before = event.data?.before?.data();
+    const after = event.data?.after?.data();
+    if (!before || !after) return;
+    const wasApproved = before.pendingRevision && before.pendingRevision.reviewStatus === "approved";
+    const isApproved = after.pendingRevision && after.pendingRevision.reviewStatus === "approved";
+    if (!isApproved || wasApproved) return;
+    await promoteFaqRevisionIfReady(getFirestore(), event.data.after.ref, "revision approved in FAQ Management");
   }
 );
 
