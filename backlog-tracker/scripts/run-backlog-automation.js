@@ -577,14 +577,52 @@ async function recordAttemptFailure(item, err, { attemptsField = "patchAttempts"
 // "Set test link" flow already documents — on the train that fallback is a
 // link to the integration branch itself (trainTreeUrl), since a ticket has
 // no PR of its own until the whole train's deploy PR opens.
-function guessPreviewUrl(patchFiles, branch, prUrl) {
-  const htmlPaths = (patchFiles || [])
+function guessPreviewUrl(patchFiles, branch, fallbackUrl) {
+  const changed = (patchFiles || [])
     .filter((f) => f && typeof f.path === "string" && f.content !== null && f.content !== undefined)
     .map((f) => f.path)
-    .filter((p) => p.endsWith(".html") && !p.includes("/functions/"));
-  if (!htmlPaths.length) return prUrl;
-  const path = htmlPaths.sort((a, b) => a.length - b.length)[0];
-  return `https://rawcdn.githack.com/${REPO}/${branch}/${path}`;
+    .filter((p) => !p.includes("/functions/"));
+
+  // A changed page is the best answer: it IS the thing to look at.
+  const htmlPaths = changed.filter((p) => p.endsWith(".html"));
+  if (htmlPaths.length) {
+    const page = htmlPaths.sort((a, b) => a.length - b.length)[0];
+    return `https://rawcdn.githack.com/${REPO}/${branch}/${page}`;
+  }
+
+  // No page changed, but a stylesheet or script did — so there IS a page
+  // that renders the change, it just isn't in patchFiles. Find the page
+  // those assets belong to: the nearest index.html above them.
+  //
+  // Without this, a CSS-only ticket got the bare fallback below — a GitHub
+  // source listing, which cannot show the change at all. That is not
+  // hypothetical: the first ticket to go through the train
+  // (iaX9egVd8k8gFOd27LCn, "Triple the PH Agent Console logo") touched only
+  // styles.css, so its "Test this ->" button opened a directory of files and
+  // there was no way to see whether the logo was actually bigger.
+  const pages = changed.map(nearestPageFor).filter(Boolean);
+  if (pages.length) {
+    const page = pages.sort((a, b) => a.length - b.length)[0];
+    return `https://rawcdn.githack.com/${REPO}/${branch}/${page}`;
+  }
+
+  return fallbackUrl;
+}
+
+// Walks up from a changed file looking for the index.html that renders it,
+// reading the branch as it is actually checked out (this runs after
+// applyPatchFiles, on the integration branch). Deliberately stops before the
+// repository root: a change under scripts/ or functions/ has no page, and
+// the repo-root index.html — an unrelated static site — would be a
+// confidently wrong answer rather than an honest "no preview".
+function nearestPageFor(filePath) {
+  let dir = path.dirname(filePath);
+  while (dir && dir !== "." && dir !== path.sep) {
+    const candidate = `${dir}/index.html`;
+    if (fs.existsSync(path.join(process.cwd(), candidate))) return candidate;
+    dir = path.dirname(dir);
+  }
+  return null;
 }
 
 // Finds a PR by exact head branch, in ANY state. Reconciliation-specific:
