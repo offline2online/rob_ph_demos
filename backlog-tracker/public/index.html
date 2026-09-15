@@ -540,7 +540,10 @@
         <div class="docs-block-header">
           <h3>Categories</h3>
         </div>
-        <p class="field-hint">Order controls display order on the public site.</p>
+        <p class="field-hint">
+          Order controls display order on the public site. Rename, reorder or delete a category
+          here — its icon and description are edited from FAQ Management, next to its articles.
+        </p>
         <div id="faq-category-list"></div>
         <div class="fa-new-category-row">
           <input type="text" id="fa-new-category-name" maxlength="80" placeholder="New category name">
@@ -586,8 +589,24 @@
 
         <div class="faq-browser-pane faq-browser-articles">
           <div class="faq-browser-pane-head">
-            <h3 id="faq-articles-heading">Articles</h3>
+            <div class="faq-cat-heading-group">
+              <span class="material-symbols-outlined faq-cat-heading-icon" id="faq-cat-heading-icon" hidden>help</span>
+              <h3 id="faq-articles-heading">Articles</h3>
+              <button type="button" class="icon-btn faq-cat-edit-toggle" id="faq-cat-edit-toggle" title="Edit this category's icon and description" hidden>
+                <span class="material-symbols-outlined">edit</span>
+              </button>
+            </div>
             <button type="button" class="btn-primary" id="fa-new-article-btn">+ New article</button>
+          </div>
+          <p class="faq-cat-heading-desc" id="faq-cat-heading-desc" hidden></p>
+          <div class="faq-cat-edit-form" id="faq-cat-edit-form" hidden>
+            <div class="fa-icon-picker">
+              <span class="material-symbols-outlined fa-icon-preview" id="faq-cat-edit-icon-preview">help</span>
+              <select id="faq-cat-edit-icon-select" aria-label="Category icon"></select>
+            </div>
+            <input type="text" id="faq-cat-edit-desc-input" maxlength="200" placeholder="Short description" aria-label="Category description">
+            <button type="button" class="icon-btn" id="faq-cat-edit-save-btn" title="Save">&#10003;</button>
+            <button type="button" class="icon-btn" id="faq-cat-edit-cancel-btn" title="Cancel">&times;</button>
           </div>
           <div class="fa-filter-row">
             <input type="search" id="fa-tree-search" placeholder="Search articles in this folder…">
