@@ -21,7 +21,7 @@ maintained boundary with `visitor-profile/`.
 | `REQUIREMENTS.md` | The functional spec — Systems Two & Three of the surface architecture spec v1.2 |
 | `README.md` | This orientation doc |
 | `app/` | Vite + React source for the Display Types & Playlist Management prototype |
-| `app/src/DisplayTypesAndPlaylists.jsx` | The whole prototype — display types, experience layout, playlists, partners/DSPs |
+| `app/src/DisplayTypesAndPlaylists.jsx` | The whole prototype — display types, playlists, partners/DSPs (plus experience layout, gated off) |
 | `prototype/` | **Built output, committed.** What GitHub Pages and a githack branch preview actually serve |
 
 `app/` builds into `prototype/` (`npm install && npm run build` inside `app/`),
@@ -30,15 +30,28 @@ uses, so the repo keeps its no-server-side-build story. **Rebuild and commit
 `prototype/` whenever `app/src` changes** — the committed bundle is the
 deliverable, and a stale one is the failure mode here.
 
-Four screens, in the left-hand nav:
+### Release scope
+
+The first release is **three** screens. Experience Layout — templates, the
+surface layer — is built and working but deliberately out of it, gated by
+`SHOW_EXPERIENCE_LAYOUT` at the top of `app/src/DisplayTypesAndPlaylists.jsx`.
+Set that to `true` and the nav item, the route and the template references come
+back with no other change; it is a scope decision, not deleted code. With the
+flag off the composer tree-shakes out of the bundle entirely.
+
+In the nav:
 
 - **Display Types / Elements** — the display type editor: canvas/resolution or
   responsive element config, playlist settings, phantom zone, enabled features,
   multi-zone layout, and **slot assignment** against the capped rotation.
-- **Experience Layout** — templates composed of display types, with the pairing
-  overlay and per-breakpoint preview.
 - **Playlist Management** — playlists, items and the display types using them.
 - **Partners / DSPs** — where advertiser demand comes from (see below).
+- ~~**Experience Layout**~~ — out of scope for the first release, per above.
+
+One consequence worth knowing: QR Control only appears on physical touch points
+(signage, kiosk), because on web the pairing overlay is configured on the Layout
+template. With Experience Layout out of scope, **web pairing has no home in the
+first release** — it arrives when the composer does.
 
 ### Partners / DSPs
 

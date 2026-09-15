@@ -8,6 +8,15 @@ import React, { useState, useEffect, useMemo } from "react";
         Playlist Management, ultra-wide display preview.
 ------------------------------------------------------------------- */
 
+/* ---------------------------- release scope -------------------------------
+   The first release is Display Types / Elements, Playlist Management and
+   Partners / DSPs. Experience Layout — templates, the surface layer — is built
+   and working but deliberately out of that release, so it is gated here rather
+   than deleted: set this to true to bring the nav item, the route and the
+   template references back with no other change.
+-------------------------------------------------------------------------- */
+const SHOW_EXPERIENCE_LAYOUT = false;
+
 const T = {
   primary: "#169bc2", primaryAccent: "#38b0cf", primaryTint: "rgba(22,155,194,0.10)",
   primarySoft: "#e8fdff", aiViolet: "#9747ff", text: "#333333", muted: "rgba(0,0,0,0.45)",
@@ -605,10 +614,10 @@ export default function App() {
 
   const NAV = [
     { key: "types", label: "Display Types / Elements", icon: "dashboard_customize" },
-    { key: "layout", label: "Experience Layout", icon: "space_dashboard" },
+    { key: "layout", label: "Experience Layout", icon: "space_dashboard", scope: SHOW_EXPERIENCE_LAYOUT },
     { key: "playlists", label: "Playlist Management", icon: "playlist_play" },
     { key: "partners", label: "Partners / DSPs", icon: "handshake" },
-  ];
+  ].filter((n) => n.scope !== false);
 
   const NAV_TITLES = {
     types: "Display Types Details",
@@ -633,7 +642,7 @@ export default function App() {
         </div>
         <div style={{ flex: 1, minWidth: 0, paddingLeft: 20 }}>
           {nav === "types" && <TypesView types={types} setTypes={setTypes} playlists={playlists} setPlaylists={setPlaylists} sel={selType} setSel={setSelType} templates={templates} partners={partners} goToPartners={() => setNav("partners")} />}
-          {nav === "layout" && <LayoutComposer types={types} templates={templates} setTemplates={setTemplates} playlists={playlists} />}
+          {nav === "layout" && SHOW_EXPERIENCE_LAYOUT && <LayoutComposer types={types} templates={templates} setTemplates={setTemplates} playlists={playlists} />}
           {nav === "playlists" && <PlaylistManagement playlists={playlists} setPlaylists={setPlaylists} types={types} goToType={(id) => { setSelType(id); setNav("types"); }} />}
           {nav === "partners" && <PartnersView partners={partners} setPartners={setPartners} types={types} goToType={(id) => { setSelType(id); setNav("types"); }} />}
         </div>
@@ -1092,7 +1101,7 @@ function TypesView({ types, setTypes, playlists, setPlaylists, sel, setSel, temp
                   <div style={{ marginTop: 5, color: T.muted }}>
                     Layout settings are specific to the element type. Slot count, columns, items shown, aspect ratio,
                     width mode and fold position will be reset to the defaults for {webEl(pendingEl).name}.
-                    {(tplUsage || []).length > 0 && <> This element is used in <b>{tplUsage.length}</b> template{tplUsage.length > 1 ? "s" : ""}, which will re-render.</>}
+                    {SHOW_EXPERIENCE_LAYOUT && (tplUsage || []).length > 0 && <> This element is used in <b>{tplUsage.length}</b> template{tplUsage.length > 1 ? "s" : ""}, which will re-render.</>}
                   </div>
                   <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
                     <Btn variant="primary" style={{ height: 28, fontSize: 12.5 }}
