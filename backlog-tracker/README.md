@@ -1092,6 +1092,13 @@ default.
   already carry a specific proposal from the mechanism below.
   `needsReview` otherwise stays a manual toggle for projects that leave
   this off.
+- **A PR merged by a person is recorded automatically.** Workflow-file PRs
+  (anything under `.github/workflows/`) are never merged by the pipeline —
+  a human merges them on GitHub. `run-backlog-automation.js` →
+  `reconcileHumanMergedPrs()` runs every pass and, for any Approved for
+  Deployment card whose PR GitHub reports as MERGED, sets `mergeReady` so
+  the normal already-merged success path flips it to Deployed in the same
+  run. No second "Deploy to Main" click is needed (it used to be).
 - **Proposed FAQ revisions from a Deploy (`pendingRevision`)** — the
   precise version of the above, always on. When "Notify Claude — Deploy"
   fires, the Routine's Deploy flow (`ROUTINE_INSTRUCTIONS.md` step 3b,

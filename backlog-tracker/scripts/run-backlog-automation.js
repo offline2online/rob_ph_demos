@@ -1131,17 +1131,57 @@ async function recordPipelineHealth(conclusion) {
   }
 }
 
+// A PR the pipeline refused to merge itself (it touches .github/workflows/
+// — see processMergePr's requiresHumanMerge guard) gets merged by a person
+// on GitHub. Until this existed, nothing noticed: the card sat at Approved
+// for Deployment until someone clicked Deploy to Main a second time purely
+// to have the Routine re-discover an already-merged PR (15 Sep 2026, PRs
+// #136 and #139). Now every run looks at ready-to-publish cards that carry
+// a PR number and, if GitHub says that PR is MERGED, sets mergeReady so the
+// normal processMergePr success path (already-merged branch, deploy
+// trigger, status flip, note) runs in this same pass — no Routine fire, no
+// human click, and no code path duplicated.
+async function reconcileHumanMergedPrs() {
+  const waiting = await runQuery({
+    from: [{ collectionId: "backlogItems" }],
+    where: { fieldFilter: { field: { fieldPath: "status" }, op: "EQUAL", value: { stringValue: "ready-to-publish" } } },
+  });
+  const picked = [];
+  for (const item of waiting) {
+    if (item.mergeReady) continue; // already queued for this run
+    const prNumber = item.mergePrNumber || item.prNumber || (item.prUrl ? (String(item.prUrl).match(/\/pull\/(\d+)/) || [])[1] : null);
+    if (!prNumber) continue;
+    try {
+      const parsed = JSON.parse(run("gh", ["pr", "view", String(prNumber), "--repo", REPO, "--json", "state"]));
+      if (parsed.state !== "MERGED") continue;
+    } catch (err) {
+      console.log(`[human-merge] ${item.id}: couldn't read PR #${prNumber} state (${err.message}) — skipping this run`);
+      continue;
+    }
+    console.log(`[human-merge] ${item.id}: PR #${prNumber} was merged outside the pipeline — recording it as live`);
+    await patchItem(item.id, { mergeReady: true, mergePrNumber: Number(prNumber), updatedAt: new Date().toISOString() });
+    picked.push({ ...item, mergeReady: true, mergePrNumber: Number(prNumber) });
+  }
+  return picked;
+}
+
 async function main() {
   await reconcileDeployStatuses();
+  const humanMerged = await reconcileHumanMergedPrs();
 
   const patchReadyItems = await runQuery({
     from: [{ collectionId: "backlogItems" }],
     where: { fieldFilter: { field: { fieldPath: "patchReady" }, op: "EQUAL", value: { booleanValue: true } } },
   });
-  const mergeReadyItems = await runQuery({
+  const mergeReadyQueried = await runQuery({
     from: [{ collectionId: "backlogItems" }],
     where: { fieldFilter: { field: { fieldPath: "mergeReady" }, op: "EQUAL", value: { booleanValue: true } } },
   });
+  // Items reconcileHumanMergedPrs just flagged may not be visible to the
+  // query above yet (Firestore read-after-write across REST calls is not
+  // guaranteed) — merge the two lists by id so they are processed now.
+  const seen = new Set(mergeReadyQueried.map((i) => i.id));
+  const mergeReadyItems = mergeReadyQueried.concat(humanMerged.filter((i) => !seen.has(i.id)));
   const revertReadyItems = await runQuery({
     from: [{ collectionId: "backlogItems" }],
     where: { fieldFilter: { field: { fieldPath: "revertReady" }, op: "EQUAL", value: { booleanValue: true } } },
