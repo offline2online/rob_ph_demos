@@ -61,6 +61,13 @@ const projectsRef = collection(db, "projects");
 const interfacesRef = collection(db, "interfaces");
 const programsRef = collection(db, "programs");
 const projectDocsRef = collection(db, "projectDocs");
+// Pipeline health strip (YeCj7sNpHXFUZQhmAmEb) — a single doc each workflow
+// (backlog-automation.yml, deploy-backlog-tracker.yml) writes at the end of
+// its own run, via the same service-account credential those workflows
+// already use for Firestore (see run-backlog-automation.js/
+// write-system-status.js) — never written from the browser, hence no
+// addDoc/updateDoc helper for it here, only the read below.
+const systemStatusRef = doc(db, "systemStatus", "pipeline");
 
 const COLUMNS = [
   { key: "backlog", label: "Backlog", headClass: "backlog" },
@@ -1151,6 +1158,99 @@ function projectSectionHTML(project) {
 // itself was created. Falls back to the project's own createdAt when it
 // has no items yet (a freshly created empty project).
 function tsMillis(ts) { return ts && ts.toMillis ? ts.toMillis() : 0; }
+
+// ── Pipeline health strip (YeCj7sNpHXFUZQhmAmEb) ────────────────────────────
+// "Is the machinery behind this board actually alive?" — nothing on the
+// board said this before; a stalled backlog-automation.yml or a red
+// deploy-backlog-tracker.yml run looked identical to "nobody clicked Notify
+// Claude yet" from in here. systemStatus below is written by the two
+// workflows themselves at the end of every run (see run-backlog-automation.js
+// and scripts/write-system-status.js) — nothing in the browser ever writes
+// it, only reads it.
+let systemStatus = null;
+
+// Plain three-part version compare ("1.5.9" < "1.5.10") — string comparison
+// alone gets that pair backwards, which matters here since the strip's whole
+// point is flagging "the board has a newer testVersion than what's deployed".
+function compareVersions(a, b) {
+  const pa = String(a || "0").split(".").map((n) => parseInt(n, 10) || 0);
+  const pb = String(b || "0").split(".").map((n) => parseInt(n, 10) || 0);
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    const diff = (pa[i] || 0) - (pb[i] || 0);
+    if (diff) return diff;
+  }
+  return 0;
+}
+
+// The newest testVersion stamped on any currently-loaded item (see
+// backlogItems.testVersion — set once an item first reaches Ready for
+// Testing). Compared against systemStatus.deployedAppVersion below to answer
+// the ticket's own "APP_VERSION actually being served versus the newest
+// testVersion on the board" — computed client-side from data the board
+// already has loaded, no new Firestore read needed.
+function newestTestVersion() {
+  return allItems.reduce((newest, i) => {
+    return i.testVersion && compareVersions(i.testVersion, newest) > 0 ? i.testVersion : newest;
+  }, "");
+}
+
+function describeAgo(ms) {
+  if (!ms) return "never";
+  const diff = Date.now() - ms;
+  if (diff < 0) return "just now";
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins}m ago`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}h ago`;
+  return `${Math.floor(hours / 24)}d ago`;
+}
+
+// One workflow's own last-run segment ("automation ✓ 3m ago"). `run` is the
+// {at, conclusion, runUrl} shape both workflows write; missing entirely
+// (neither workflow has ever finished a run since this shipped) reads as a
+// plain, non-alarming "not yet reported" rather than a red dot.
+function healthRunSegmentHTML(label, run) {
+  if (!run || !run.at) {
+    return `<span class="health-seg health-seg-unknown" title="${escapeHTML(label)}: no run recorded yet">${escapeHTML(label)}: not yet reported</span>`;
+  }
+  const ok = run.conclusion === "success";
+  const dotClass = ok ? "health-dot-ok" : (run.conclusion === "pending" ? "health-dot-pending" : "health-dot-bad");
+  const atMs = run.at && run.at.toMillis ? run.at.toMillis() : Date.parse(run.at) || 0;
+  const inner = `<span class="health-dot ${dotClass}"></span>${escapeHTML(label)}: ${escapeHTML(run.conclusion || "unknown")} · ${describeAgo(atMs)}`;
+  return run.runUrl
+    ? `<a class="health-seg health-seg-link" href="${escapeHTML(run.runUrl)}" target="_blank" rel="noopener" title="View the ${escapeHTML(label)} run">${inner}</a>`
+    : `<span class="health-seg">${inner}</span>`;
+}
+
+function renderHealthStrip() {
+  const el = document.getElementById("health-strip");
+  if (!el) return;
+  if (!systemStatus) { el.hidden = true; return; }
+  el.hidden = false;
+
+  const dispatchSeg = systemStatus.dispatchTokenPresent
+    ? `<span class="health-seg" title="GH_DISPATCH_TOKEN is configured — a patchReady/mergeReady item wakes backlog-automation.yml within seconds instead of waiting on its 2-minute poll"><span class="health-dot health-dot-ok"></span>dispatch: instant</span>`
+    : `<span class="health-seg health-seg-unknown" title="GH_DISPATCH_TOKEN isn't configured — a patchReady/mergeReady item waits on backlog-automation.yml's own 2-minute poll (measured up to ~12 minutes under load)"><span class="health-dot health-dot-pending"></span>dispatch: polling</span>`;
+
+  const deployedVersion = systemStatus.deployedAppVersion || null;
+  const newestTested = newestTestVersion();
+  let versionSeg;
+  if (!deployedVersion) {
+    versionSeg = `<span class="health-seg health-seg-unknown">version: not yet reported</span>`;
+  } else if (newestTested && compareVersions(newestTested, deployedVersion) > 0) {
+    versionSeg = `<span class="health-seg" title="A card on the board is stamped with a newer testVersion than what deploy-backlog-tracker.yml last reported serving — a deploy may still be pending"><span class="health-dot health-dot-pending"></span>v${escapeHTML(deployedVersion)} live (v${escapeHTML(newestTested)} on board)</span>`;
+  } else {
+    versionSeg = `<span class="health-seg"><span class="health-dot health-dot-ok"></span>v${escapeHTML(deployedVersion)} live</span>`;
+  }
+
+  el.innerHTML = [
+    healthRunSegmentHTML("automation", systemStatus.backlogAutomation),
+    healthRunSegmentHTML("deploy", systemStatus.deployBacklogTracker),
+    dispatchSeg,
+    versionSeg,
+  ].join("");
+}
 function projectLastActivityMs(project) {
   const projectItems = allItems.filter((i) => (i.projectId || GENERAL_PROJECT_ID) === project.id);
   const latest = projectItems.reduce((max, i) => {
@@ -1580,8 +1680,19 @@ onSnapshot(query(itemsRef, orderBy("createdAt", "desc")), (snap) => {
   if (archivedProjectsPage && !archivedProjectsPage.hidden) renderArchivedProjectsPage();
   if (editingItemId) { renderEiNotes(); renderEiAttachments(); }
   if (quickCommentItemId) renderQcNotes();
+  // The health strip's own "newest testVersion on the board" segment is
+  // derived from allItems, not from systemStatus itself — refresh it here
+  // too, not just from the systemStatus listener below.
+  renderHealthStrip();
 }, (err) => {
   console.error("backlog-tracker: items listener error", err);
+});
+
+onSnapshot(systemStatusRef, (snap) => {
+  systemStatus = snap.exists() ? snap.data() : null;
+  renderHealthStrip();
+}, (err) => {
+  console.error("backlog-tracker: systemStatus listener error", err);
 });
 
 onSnapshot(query(projectsRef, orderBy("createdAt", "asc")), (snap) => {
