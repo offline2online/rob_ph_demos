@@ -252,9 +252,15 @@ instant, so there's no excuse for the board drifting from reality.
   after one push can keep showing that first commit even after later
   pushes update the file, with no visible error; `rawcdn.githack.com` is
   githack's own always-uncached host, meant specifically for testing an
-  in-progress branch like this (PR URL as fallback for anything that can't
-  be githack'd directly, e.g. a Cloud Function change) — no need to say the
-  link in chat separately anymore.
+  in-progress branch like this — no need to say the link in chat separately
+  anymore. `guessPreviewUrl` links to a changed `.html` page, or, for a
+  ticket that changes only CSS/JS, to the nearest `index.html` above those
+  assets (the page that renders them); only a change with no page above it
+  at all — `scripts/`, `functions/` — falls back to a link to the branch.
+  Note that a githack preview is a different origin from the deployed app,
+  so for backlog-tracker's own UI, Firebase Auth sign-in may be refused
+  there: what renders before the sign-in wall is testable, the rest needs
+  the deployed board.
 - **No per-card notes/`claudeNote` field, and no GitHub commit badge.** The
   schema is just `{projectId, title, desc, type, category, status,
   createdAt, updatedAt, archivedAt}` — there's nowhere on a card to record

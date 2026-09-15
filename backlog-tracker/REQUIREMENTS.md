@@ -151,8 +151,12 @@ deleted by hand).
 ```
 
 ```
-projects/{projectId} — the train's own state (automation-written; see
-firestore.rules, where the browser may latch trainLocked true and nothing else)
+projects/{projectId} — the train's own state. Two different principals write
+here and firestore.rules treats them differently: run-backlog-automation.js
+writes as the Firebase SERVICE ACCOUNT (bypasses rules entirely), while the
+Notify Claude Routine writes trainReady as the board automation USER
+(board-automation@…, subject to rules — hence isBoardAutomation()). A human
+editor may only latch trainLocked true, nothing else.
 {
   deployBranch?: string,        // "deploy/<project-slug>", created from main on first use
   trainLocked?: boolean,        // a release is closing: no new ticket may join it, so the build CTAs hide
@@ -222,6 +226,14 @@ Requirements that follow from it:
   Deploy to Main stays hidden until it clears.
 - **Deploy merges the whole branch, so it is offered only when the whole
   branch is approved.** See "The single Deploy CTA" below.
+- **`trainReady` is written by the Routine, not by the service account.**
+  This distinction matters in `firestore.rules`: guarding every train field
+  as "only writable by something that bypasses rules" silently denied the
+  Routine's own `trainReady` PATCH, so Deploy to Main fired the Routine,
+  the Routine was refused, nothing was dispatched, and the card sat in
+  Approved for Deployment while the button spun and reverted. Fixed by
+  letting the board automation account through that guard; the two human
+  editor accounts are still held to it.
 - **The only conflict path left is `main` moving under the branch**, which
   takes someone pushing straight to `main` in this project's files. It is
   never resolved automatically: the merge aborts, `trainStatus` goes
@@ -900,9 +912,26 @@ REST API is reachable with a plain `curl`, no service account needed.
   to ~7 days), so a link set right after one push can keep showing that
   first commit even after later pushes update the file, with no visible
   error; `rawcdn.githack.com` is githack's own always-uncached host, meant
-  specifically for testing an in-progress branch like this — falling back
-  to the PR URL for anything that can't be githack'd directly (e.g. a
-  Cloud Function change). This restores what the old Claude Artifact board's per-card
+  specifically for testing an in-progress branch like this.
+
+  **`guessPreviewUrl` picks the page, not just a changed file.** A ticket
+  that changes an `.html` file links to that page. A ticket that changes
+  only a stylesheet or a script links to the nearest `index.html` above
+  those assets — the page that actually renders them — because otherwise
+  such a ticket got no usable link at all: the first ticket through the
+  deployment train (`iaX9egVd8k8gFOd27LCn`, tripling the console logo)
+  touched only `styles.css`, so "Test this →" opened a GitHub *source
+  listing* and there was no way to see whether the logo had changed. Only
+  a change with no page above it at all (`scripts/`, `functions/`) falls
+  back to a link to the branch itself.
+
+  One limit worth knowing for backlog-tracker's own UI: a githack preview
+  is served from a different origin than the board, so Firebase Auth
+  sign-in may be refused there unless that host is an authorised domain.
+  Whatever renders before the sign-in wall is still testable (the sign-in
+  card and its logo); anything behind it needs the deployed board.
+
+  This restores what the old Claude Artifact board's per-card
   quick-launch link used to do, closing the gap `CLAUDE.md`'s "Prototype
   Backlog" section had documented ("No `testUrl` field or quick-launch icon
   on cards") since the migration off the Artifact.
