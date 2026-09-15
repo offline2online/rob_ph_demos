@@ -12,7 +12,7 @@
 
 import { initializeApp, getApps, getApp } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-app.js";
 import {
-  getFirestore, initializeFirestore, collection, addDoc, updateDoc, deleteDoc, setDoc, doc,
+  getFirestore, initializeFirestore, collection, addDoc, updateDoc, deleteDoc, setDoc, doc, getDoc,
   onSnapshot, query, orderBy, serverTimestamp, writeBatch, arrayUnion, deleteField,
 } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore.js";
 import {
@@ -1109,27 +1109,13 @@ function groomNotifyButtonHTML(project) {
     : `<button type="button" class="notify-claude-btn notify-claude-btn-working" disabled title="A Claude Code session is grooming the ${itemCountLabel} item(s) in Backlog">${mainBtnInner}</button>`;
 }
 
-// Thin wrapper around groomNotifyButtonHTML so the Backlog column's own
-// render call (projectSectionHTML) can stay a one-liner and skip the row
-// entirely (not just render an empty one) when there's nothing to groom.
-function groomBacklogRowHTML(project) {
-  const btn = groomNotifyButtonHTML(project);
-  return btn ? `<div class="col-groom-row">${btn}</div>` : "";
-}
-
-// Mobile-only merge of the Groom Backlog CTA into the Backlog column's own
-// header row (JHY0F2AdMSjtL4WU8F2K): on a phone, .col-groom-row below the
-// header and the header's own .col-count both cost a full row of vertical
-// space for something that's really one action ("here's what's waiting,
-// tap to groom it"). This renders the *same* groomNotifyButtonHTML() button
-// a second time, wrapped so CSS (see .col-groom-inline in styles.css) can
-// show it in place of .col-count at <=640px and hide the separate
-// .col-groom-row there, while leaving both completely untouched at desktop
-// widths (.col-groom-inline stays display:none there). Two copies of the
-// same button in the DOM is deliberate, not a bug — only one is ever
-// visible/clickable at a given viewport width, and the click delegation
-// for .groom-notify-btn (see the projects-root handler) doesn't care which
-// instance was actually tapped.
+// Merges the Groom Backlog CTA into the Backlog column's own header row,
+// in place of the plain count (see .col-groom-inline in styles.css) — the
+// mobile-only treatment this started as (JHY0F2AdMSjtL4WU8F2K) is now how
+// it looks at every viewport width (eST3jOS85Mtl8KMgpOH0): a separate
+// .col-groom-row under the header cost a full extra row of vertical space
+// for something that's really one action ("here's what's waiting, tap to
+// groom it"), and there's no reason that was only worth fixing on a phone.
 function groomBacklogInlineHTML(project) {
   const btn = groomNotifyButtonHTML(project);
   return btn ? `<span class="col-groom-inline">${btn}</span>` : "";
@@ -1273,7 +1259,6 @@ function projectSectionHTML(project) {
     const colCollapsed = isColumnCollapsed(project.id, col.key);
     return `<section class="column${colCollapsed ? " column-collapsed" : ""}" data-col="${col.key}">
       <div class="col-head col-head-${col.headClass}" data-project-id="${escapeHTML(project.id)}" data-col="${col.key}"><span>${selectAllHTML}${col.label}</span><span class="col-count">${listItems.length}</span>${col.key === "backlog" ? groomBacklogInlineHTML(project) : ""}</div>
-      ${col.key === "backlog" ? groomBacklogRowHTML(project) : ""}
       <div class="col-list" id="${colListId(project.id, col.key)}" data-col="${col.key}" data-project-id="${escapeHTML(project.id)}">
         ${listItems.length ? columnCardsHTML(listItems) : '<div class="empty-hint">No items yet</div>'}
       </div>
@@ -4315,12 +4300,45 @@ function openFaqSettingsPage() {
   faqSettingsPage.hidden = false;
   setRouteHash("#settings");
   updateTopbarTitle();
+  loadFaqSiteSettings();
 }
 function closeFaqSettingsPage() {
   faqSettingsPage.hidden = true;
   document.getElementById("projects-root").hidden = false;
   document.getElementById("board-page-header").hidden = false;
 }
+
+// Site-wide settings for the public FAQ / Help Center (kup9Zce13jyaXcIhxVkf)
+// — currently just the analytics tag appended to every customer-facing FAQ
+// page. This console only ever writes the tag to Firestore
+// (settings/faqSite); faq-export.js is what carries it into
+// faq/data/settings.json, the static file the public site (which never
+// talks to Firestore directly for anything but article content) actually
+// reads — see faq/js/page-common.js.
+async function loadFaqSiteSettings() {
+  const input = document.getElementById("fa-analytics-tag-input");
+  input.value = "";
+  try {
+    const snap = await getDoc(doc(db, "settings", "faqSite"));
+    input.value = (snap.exists() && snap.data().analyticsTag) || "";
+  } catch (err) {
+    console.error("Failed to load FAQ site settings:", err);
+  }
+}
+document.getElementById("fa-analytics-tag-save").addEventListener("click", async () => {
+  if (!(await requireFaqEditor())) return;
+  const tag = document.getElementById("fa-analytics-tag-input").value.trim();
+  if (tag && !/^[A-Za-z0-9-]{1,40}$/.test(tag)) {
+    await showAlert("That doesn't look like a Google Analytics or Tag Manager ID — expected something like G-XXXXXXXXXX or GTM-XXXXXXX.");
+    return;
+  }
+  await setDoc(doc(db, "settings", "faqSite"), {
+    analyticsTag: tag || null,
+    updatedAt: serverTimestamp(),
+  }, { merge: true });
+  if (!faqUser) return; // sign-in was declined — nothing was saved
+  await showAlert(tag ? "Saved — it'll appear on the public FAQ site after the next export." : "Cleared — no analytics tag will be sent.");
+});
 
 function openFaqArticlesPage() {
   closeAllSubPages();
@@ -4982,6 +5000,40 @@ function faqTableRowsToText(rows) {
   return rows.map((r) => r.join(" | ")).join("\n");
 }
 
+// A small toolbar baked into every table's own markup (g2Xjt3XHXy27Psbd0dF0)
+// replaces the old "click the table, retype every row in a dialog" edit
+// path — see faqTableAddRow/faqTableRemoveRow/faqTableAddColumn/
+// faqTableRemoveColumn and their delegated click handler below FaqTableBlot.
+// It's marked contenteditable="false" (and stripped, along with every
+// cell's contenteditable, before anything is saved — see
+// faqBodySourceForSave) so it's editing-only chrome, never something a
+// visitor sees. Module-level (not nested in registerFaqEditorFormats) so
+// faqUpgradeTableEmbeds below can reuse it for tables that reach the editor
+// without ever going through FaqTableBlot.create — content saved before
+// this toolbar existed, or reloaded from the legacy-markdown upgrade path.
+function faqTableToolbarHtml() {
+  return '<div class="faq-table-toolbar" contenteditable="false">'
+    + '<button type="button" class="faq-table-btn" data-action="add-row">+ Row</button>'
+    + '<button type="button" class="faq-table-btn" data-action="remove-row">&minus; Row</button>'
+    + '<button type="button" class="faq-table-btn" data-action="add-col">+ Column</button>'
+    + '<button type="button" class="faq-table-btn" data-action="remove-col">&minus; Column</button>'
+    + '<button type="button" class="faq-table-btn faq-table-btn-danger" data-action="delete-table">Delete table</button>'
+    + '</div>';
+}
+// Adds that toolbar and contenteditable cells to any table already present
+// in a freshly-loaded editor body (openFaqArticleEditorPage below) that
+// doesn't already have them — a table blot only gets both from
+// FaqTableBlot.create() when it's inserted fresh in THIS session; Quill
+// adopts pre-existing DOM (including whatever was saved before this
+// feature existed) without ever calling create() on it.
+function faqUpgradeTableEmbeds(root) {
+  root.querySelectorAll(".faq-table").forEach((wrap) => {
+    wrap.setAttribute("contenteditable", "false");
+    if (!wrap.querySelector(":scope > .faq-table-toolbar")) wrap.insertAdjacentHTML("afterbegin", faqTableToolbarHtml());
+    wrap.querySelectorAll("th, td").forEach((cell) => cell.setAttribute("contenteditable", "true"));
+  });
+}
+
 function registerFaqEditorFormats() {
   const Block = Quill.import("blots/block");
   const BlockEmbed = Quill.import("blots/block/embed");
@@ -5010,12 +5062,15 @@ function registerFaqEditorFormats() {
     static create(value) {
       const node = super.create();
       node.setAttribute("class", "faq-table");
-      // Atomic as far as Quill is concerned — cell text is edited through
-      // the table dialog, not by typing into the DOM, which is what keeps
-      // the <table> structurally intact through arbitrary editing around
-      // it (Quill has no table model of its own in 1.x).
+      // The wrapper stays atomic to Quill (contenteditable="false" — Quill
+      // has no table model of its own in 1.x, so letting Quill's own text
+      // ops run loose inside it would corrupt the structure), but every
+      // cell overrides that back to true: a click drops a real caret
+      // straight into the cell and types normally, live on the page,
+      // instead of opening a separate dialog to retype the whole table.
       node.setAttribute("contenteditable", "false");
-      node.innerHTML = faqTableRowsToHtml(Array.isArray(value) ? value : faqTableRowsFromText(value));
+      node.innerHTML = faqTableToolbarHtml() + faqTableRowsToHtml(Array.isArray(value) ? value : faqTableRowsFromText(value));
+      node.querySelectorAll("th, td").forEach((cell) => cell.setAttribute("contenteditable", "true"));
       return node;
     }
     static value(node) {
@@ -5033,32 +5088,63 @@ function registerFaqEditorFormats() {
   icons.faqtable = '<svg viewBox="0 0 18 18"><rect class="ql-stroke" height="12" width="14" x="2" y="3"></rect><line class="ql-stroke" x1="2" x2="16" y1="7" y2="7"></line><line class="ql-stroke" x1="7" x2="7" y1="7" y2="15"></line></svg>';
 }
 
-// Insert or edit the table under the cursor. One dialog for both, so the
-// author edits a table the same way they created it.
+// Insert a brand-new table at the cursor — seeded via one short dialog
+// (still the quickest way to give a table its first few rows/columns at
+// once), after which every edit happens live in the table itself via its
+// own toolbar and directly-editable cells (see registerFaqEditorFormats'
+// FaqTableBlot above). There is no "edit an existing table" branch here any
+// more — g2Xjt3XHXy27Psbd0dF0 was specifically that a pop-up was the ONLY
+// way to change a table already on the page.
 async function openFaqTableDialog() {
   const range = faQuill.getSelection(true);
-  const [blot] = range ? faQuill.scroll.descendant(Quill.import("blots/block/embed"), range.index) : [null];
-  const existing = blot && blot.statics.blotName === "faqtable" ? blot : null;
-  const current = existing
-    ? faqTableRowsToText(existing.statics.value(existing.domNode))
-    : "Parameter | Value | Notes\nExample | value | what it does";
+  if (!range) return;
   const text = await showPromptDialog(
     "Table rows — one row per line, cells separated by \"|\". The first line is the header row.",
-    current,
-    { title: "Edit table", multiline: true, rows: 8 }
+    "Parameter | Value | Notes\nExample | value | what it does",
+    { title: "Insert table", multiline: true, rows: 8 }
   );
   if (text === null) return;
   const rows = faqTableRowsFromText(text);
   if (!rows.length) return;
-  if (existing) {
-    const index = faQuill.getIndex(existing);
-    faQuill.deleteText(index, 1, "user");
-    faQuill.insertEmbed(index, "faqtable", rows, "user");
-    faQuill.setSelection(index + 1, 0);
-  } else {
-    faQuill.insertEmbed(range.index, "faqtable", rows, "user");
-    faQuill.setSelection(range.index + 1, 0);
+  faQuill.insertEmbed(range.index, "faqtable", rows, "user");
+  faQuill.setSelection(range.index + 1, 0);
+  updateFaDirtyState();
+}
+
+// Row/column structure edits mutate the live DOM directly rather than going
+// through Quill's Delta APIs — safe here because FaqTableBlot.value() (and
+// faqBodySourceForSave, and the plain bodyMd save) all read a table's
+// current state straight off its DOM, not off anything Quill is tracking
+// internally for this atomic embed.
+function faqTableAddRow(table) {
+  const headCols = table.tHead && table.tHead.rows[0] ? table.tHead.rows[0].cells.length : 1;
+  const cols = table.rows[0] ? table.rows[0].cells.length : headCols;
+  let tbody = table.tBodies[0];
+  if (!tbody) { tbody = document.createElement("tbody"); table.appendChild(tbody); }
+  const tr = document.createElement("tr");
+  for (let i = 0; i < cols; i++) {
+    const td = document.createElement("td");
+    td.setAttribute("contenteditable", "true");
+    tr.appendChild(td);
   }
+  tbody.appendChild(tr);
+}
+function faqTableRemoveRow(table) {
+  const tbody = table.tBodies[0];
+  if (!tbody || !tbody.rows.length) return;
+  tbody.deleteRow(tbody.rows.length - 1);
+}
+function faqTableAddColumn(table) {
+  [...table.rows].forEach((row) => {
+    const cell = document.createElement(row.parentNode.tagName === "THEAD" ? "th" : "td");
+    cell.setAttribute("contenteditable", "true");
+    row.appendChild(cell);
+  });
+}
+function faqTableRemoveColumn(table) {
+  const cols = table.rows[0] ? table.rows[0].cells.length : 0;
+  if (cols <= 1) return;
+  [...table.rows].forEach((row) => { if (row.cells.length) row.deleteCell(row.cells.length - 1); });
 }
 
 registerFaqEditorFormats();
@@ -5126,16 +5212,46 @@ const faQuill = new Quill("#fa-body-editor", {
   },
 });
 
-// A table is an atomic embed, so clicking one opens the same dialog that
-// created it rather than dropping a caret into a cell Quill can't model.
+// Table cell TEXT needs no handler at all — contenteditable on each
+// <td>/<th> (set in FaqTableBlot.create above) already lets the browser
+// edit it directly, and the shared faQuill.root "input" listener further
+// below (see faSnapshotState/updateFaDirtyState) picks up the change. Only
+// the toolbar's structural buttons (add/remove row/column, delete the
+// whole table) need a click handler.
 faQuill.root.addEventListener("click", (event) => {
-  const embed = event.target.closest(".faq-table");
-  if (!embed) return;
-  const blot = Quill.find(embed);
-  if (!blot) return;
-  faQuill.setSelection(faQuill.getIndex(blot), 1, "user");
-  openFaqTableDialog();
+  const btn = event.target.closest(".faq-table-btn");
+  if (!btn) return;
+  event.preventDefault();
+  const wrap = btn.closest(".faq-table");
+  const action = btn.dataset.action;
+  if (action === "delete-table") {
+    const blot = Quill.find(wrap);
+    if (blot) faQuill.deleteText(faQuill.getIndex(blot), 1, "user");
+    updateFaDirtyState();
+    return;
+  }
+  const table = wrap.querySelector("table");
+  if (!table) return;
+  if (action === "add-row") faqTableAddRow(table);
+  else if (action === "remove-row") faqTableRemoveRow(table);
+  else if (action === "add-col") faqTableAddColumn(table);
+  else if (action === "remove-col") faqTableRemoveColumn(table);
+  updateFaDirtyState();
 });
+
+// Strips the two purely-editing affordances a table blot's DOM carries —
+// its add/remove row/column toolbar, and contenteditable="true" on every
+// cell (see FaqTableBlot.create above) — before any HTML is treated as
+// content to save or preview. Without this, a visitor's browser would
+// render actual buttons and an editable table on the live public site.
+// Reads off a clone so the live editor's own DOM (and whatever's selected
+// inside it) is never touched.
+function faqBodySourceForSave() {
+  const clone = faQuill.root.cloneNode(true);
+  clone.querySelectorAll(".faq-table-toolbar").forEach((el) => el.remove());
+  clone.querySelectorAll("[contenteditable]").forEach((el) => el.removeAttribute("contenteditable"));
+  return clone.innerHTML;
+}
 
 // "Edit" shows the live Quill toolbar/editor; "View live" renders exactly
 // what the public FAQ site would (same renderFaqBodyMd()/CSS classes),
@@ -5147,7 +5263,7 @@ function setFaBodyMode(mode) {
   document.getElementById("fa-body-mode-view").classList.toggle("active", isView);
   document.getElementById("fa-body-editor-wrap").hidden = isView;
   faBodyViewer.hidden = !isView;
-  if (isView) faBodyViewer.innerHTML = renderFaqBodyMd(faQuill.root.innerHTML);
+  if (isView) faBodyViewer.innerHTML = renderFaqBodyMd(faqBodySourceForSave());
 }
 document.getElementById("fa-body-mode-edit").addEventListener("click", () => setFaBodyMode("edit"));
 document.getElementById("fa-body-mode-view").addEventListener("click", () => setFaBodyMode("view"));
@@ -5186,6 +5302,37 @@ FA_GROUP_TOGGLE_IDS.forEach((id) => {
   });
 });
 
+// Save draft / Publish only make sense once something has actually changed
+// from what was loaded (e6vsSRDsjEdug0oRsCTK) — leaving them clickable from
+// the moment the page opens made a "look at an article, click Save" habit
+// silently re-save byte-identical content, with nothing on the page telling
+// you which of the three buttons was actually safe to click. Cancel is
+// deliberately NOT part of this: it must always stay active, so it moved
+// off .btn-ghost onto its own .btn-outline style (see styles.css) rather
+// than share a look that sometimes means "disabled" with buttons that
+// sometimes are (the exact confusion .btn-ghost's own comment above already
+// documents for a different pair of buttons).
+function faSnapshotState() {
+  return JSON.stringify({
+    title: faTitleInput.value,
+    slug: faSlugInput.value,
+    summary: faSummaryInput.value,
+    keywords: faKeywordsInput.value,
+    docType: faDocTypeSelect.value,
+    needsReview: faNeedsReview.checked,
+    categoryId: faCategorySelect.value,
+    projectId: faProjectSelect.value,
+    programId: faProgramSelect.value,
+    body: faqBodySourceForSave(),
+  });
+}
+let faLoadedSnapshot = "";
+function updateFaDirtyState() {
+  const dirty = faSnapshotState() !== faLoadedSnapshot;
+  document.getElementById("fa-save-draft").disabled = !dirty;
+  document.getElementById("fa-publish").disabled = !dirty;
+}
+
 // With { pendingRevision: true } the editor loads the article's PROPOSED
 // text (faqArticles.pendingRevision — see "Proposed article revisions"
 // above) instead of the live text, and saving writes back to the proposal,
@@ -5214,6 +5361,7 @@ function openFaqArticleEditorPage(articleId, { pendingRevision = false } = {}) {
   // real HTML in place. A brand-new article, or one already saved from
   // this editor, loads as-is (sanitized either way — see renderFaqBodyMd).
   faQuill.root.innerHTML = source ? renderFaqBodyMd(source.bodyMd || "") : "";
+  faqUpgradeTableEmbeds(faQuill.root);
   faDocTypeSelect.value = source && source.docType ? source.docType : "faq";
   faNeedsReview.checked = article ? !!article.needsReview : false;
   faLoadedStatus = article && article.status ? article.status : "draft";
@@ -5240,6 +5388,9 @@ function openFaqArticleEditorPage(articleId, { pendingRevision = false } = {}) {
   document.getElementById("board-page-header").hidden = true;
   faqArticleEditorPage.hidden = false;
   faTitleInput.focus();
+
+  faLoadedSnapshot = faSnapshotState();
+  updateFaDirtyState();
 }
 // Just hides the page — used by closeAllSubPages() (e.g. navigating away
 // via the hamburger menu while mid-edit). Cancelling or saving instead call
@@ -5266,6 +5417,17 @@ faTitleInput.addEventListener("input", () => {
 });
 faSlugInput.addEventListener("input", () => { faqSlugManuallyEdited = true; });
 
+// Anything that changes what would actually be saved re-checks Save
+// draft/Publish's disabled state — see faSnapshotState/updateFaDirtyState
+// above. faQuill's own "text-change" plus a plain DOM "input" listener
+// together cover both Quill-driven edits and the table cells' direct
+// contenteditable typing (registerFaqEditorFormats below), which never
+// goes through Quill's text APIs at all.
+[faTitleInput, faSlugInput, faSummaryInput, faKeywordsInput].forEach((el) => el.addEventListener("input", updateFaDirtyState));
+[faDocTypeSelect, faNeedsReview, faCategorySelect, faProjectSelect, faProgramSelect].forEach((el) => el.addEventListener("change", updateFaDirtyState));
+faQuill.on("text-change", updateFaDirtyState);
+faQuill.root.addEventListener("input", updateFaDirtyState);
+
 // Save draft and Publish share the same field-gathering logic, differing
 // only in what status (and whether publishedAt) gets written — see the
 // faLoadedStatus/faLoadedHasPublishedAt comment above. This replaces the
@@ -5287,7 +5449,7 @@ async function submitFaqArticleFromEditor(publish) {
         title,
         summary: faSummaryInput.value.trim(),
         docType: faDocTypeSelect.value || "faq",
-        bodyMd: faQuill.root.innerHTML,
+        bodyMd: faqBodySourceForSave(),
         keywords: faKeywordsInput.value.split(",").map((k) => k.trim()).filter(Boolean),
         // Any human edit resets an approval — what was approved is no longer what would go live.
         reviewStatus: "awaiting-review",
@@ -5309,7 +5471,7 @@ async function submitFaqArticleFromEditor(publish) {
     slug: faSlugInput.value.trim() || slugify(title),
     summary: faSummaryInput.value.trim(),
     docType: faDocTypeSelect.value || "faq",
-    bodyMd: faQuill.root.innerHTML,
+    bodyMd: faqBodySourceForSave(),
     keywords: faKeywordsInput.value.split(",").map((k) => k.trim()).filter(Boolean),
     status,
     needsReview: faNeedsReview.checked,
