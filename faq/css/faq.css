@@ -175,6 +175,21 @@ a:hover { text-decoration: underline; }
 .article-body a { color: var(--primary); text-decoration: underline; text-decoration-color: rgba(22,155,194,.4); text-underline-offset: 2px; }
 .article-body a:hover { text-decoration-color: var(--primary); }
 .article-body h2:target, .article-body h3:target { scroll-margin-top: 16px; }
+
+/* ── Article section picker (faqArticles.sectionPicker) ────────────────────
+   Editor-controlled: splits an article's body into one block per H2 and
+   lets a reader narrow to just one (e.g. their own industry) via a select,
+   right under the introduction. See page-article.js's initSectionPicker. */
+.faq-section-picker {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  margin: 8px 0 24px; padding: 14px 16px;
+  background: var(--surface-2); border-radius: 10px;
+}
+.faq-section-picker label { font-weight: 600; font-size: 14px; }
+.faq-section-picker select {
+  font: inherit; font-size: 14px; padding: 6px 10px; border-radius: 6px;
+  border: 1px solid var(--divider); background: var(--bg); color: var(--text);
+}
 /* Quill's own alignment/indent classes — rendered content keeps them as-is */
 .article-body .ql-align-center { text-align: center; }
 .article-body .ql-align-right { text-align: right; }
