@@ -196,6 +196,89 @@ function workflowPathsIn(patchFiles) {
     .filter((p) => p.startsWith(WORKFLOW_PATH_PREFIX));
 }
 
+// ── The approval gate ──────────────────────────────────────────────────
+// This script runs twice per trigger, as two jobs in backlog-automation.yml:
+//
+//   AUTOMATION_MODE=standard (default)
+//     The ordinary job. Holds the run's own GITHUB_TOKEN, which cannot push
+//     workflow files, so it processes every item that does NOT touch
+//     .github/workflows/ and defers the ones that do — leaving their
+//     patchReady set and reporting has_workflow_patches=true as a step
+//     output so the gated job below knows to run.
+//
+//   AUTOMATION_MODE=workflow
+//     The gated job. Runs only when the standard job deferred something,
+//     and only after a human approves it in the Actions UI (the job declares
+//     `environment: workflow-changes`, whose required reviewer is what makes
+//     the pause happen). It holds a GitHub App installation token with
+//     `workflows: write`, and processes ONLY the deferred items.
+//
+// Why a gate rather than simply giving the job a workflow-capable token:
+// patchFiles is the one field on a backlog item with real authority over
+// this repo, and firestore.rules does not validate it at all. Anything that
+// can write a backlog item can therefore propose arbitrary workflow YAML,
+// and BOARD_API_KEY — which authenticates as an allowlisted editor — is
+// handed to Routine-fired sessions that read content we do not fully
+// control. An unattended workflow-scoped credential would turn that into
+// self-modifying CI. A human approving each workflow-touching batch is what
+// makes the capability safe to have at all; do not remove the environment
+// from the job in backlog-automation.yml.
+const MODE = process.env.AUTOMATION_MODE === "workflow" ? "workflow" : "standard";
+
+function itemTouchesWorkflows(item) {
+  return workflowPathsIn(item.patchFiles).length > 0;
+}
+
+// Appends a step output for the workflow to branch on. GITHUB_OUTPUT is set
+// by the runner; absent when running by hand, where this is simply a no-op.
+function setStepOutput(name, value) {
+  const file = process.env.GITHUB_OUTPUT;
+  if (!file) return;
+  fs.appendFileSync(file, `${name}=${value}\n`);
+}
+
+// Marks an item as waiting on the gated job. Deliberately leaves patchReady
+// TRUE — the item is not failed and not finished, it is queued, and the
+// gated job selects on exactly that flag. awaitingApproval only exists to
+// keep the explanatory note from being written once every two minutes for
+// as long as the approval sits unclicked.
+async function deferToApprovalGate(item) {
+  const paths = workflowPathsIn(item.patchFiles);
+  console.log(`[apply-patch] ${item.id}: deferring — touches ${paths.length} workflow file(s), needs approval`);
+  setStepOutput("has_workflow_patches", "true");
+
+  if (item.awaitingApproval) return;
+
+  const notes = await appendNote(
+    item,
+    `Held for approval: this item's patchFiles include ${paths.length} file(s) under ${WORKFLOW_PATH_PREFIX} ` +
+    `(${paths.join(", ")}). The ordinary automation job pushes with its run's own GITHUB_TOKEN, which GitHub ` +
+    `refuses to let touch a workflow file, so this item is handled by the gated "Apply workflow-file patches" ` +
+    `job instead — it uses a GitHub App token with workflows: write and waits for a human to approve the run ` +
+    `in the Actions tab.\n\nNothing is wrong with this card and nothing has been retried or discarded: the ` +
+    `work packaged on it is untouched and it will land as soon as the run is approved.`
+  );
+  await patchItem(item.id, { awaitingApproval: true, updatedAt: new Date().toISOString(), notes });
+}
+
+// Whether the PR behind a merge-ready item carries workflow-file changes.
+// The same GITHUB_TOKEN restriction applies to a MERGE that brings workflow
+// changes onto main, not only to a direct push — so a merge-ready item whose
+// PR touches .github/workflows/ has to go through the gated job too. Any
+// failure to determine this is treated as "yes, gate it": the gated path is
+// always safe to take, it only costs an approval click, whereas guessing
+// "no" puts the merge back on the credential that cannot perform it.
+function prTouchesWorkflows(prNumber) {
+  try {
+    const json = run("gh", ["pr", "view", String(prNumber), "--repo", REPO, "--json", "files"]);
+    const files = JSON.parse(json).files || [];
+    return files.some((f) => String(f.path || "").startsWith(WORKFLOW_PATH_PREFIX));
+  } catch (err) {
+    console.error(`[merge-pr] couldn't read changed files for PR #${prNumber}, gating it to be safe: ${err.message}`);
+    return true;
+  }
+}
+
 // How many consecutive failed attempts an item gets before this job stops
 // retrying it and hands it back to a human. Transient failures (a network
 // blip, a GitHub 5xx, a runner hiccup) genuinely do succeed on the next
@@ -415,6 +498,7 @@ async function attachToExistingPr(item, pr) {
     status: "ready-for-testing",
     patchReady: false,
     patchAttempts: 0,
+    awaitingApproval: false,
     updatedAt: new Date().toISOString(),
     notes,
     prUrl: pr.url,
@@ -433,29 +517,19 @@ async function processApplyPatch(item) {
     return;
   }
 
-  // Checked before the duplicate-PR lookup and before any git work: this
-  // can never succeed, so there is nothing to gain by getting further in.
+  // Which job is allowed to handle this item. main() partitions the queue
+  // before calling here, so reaching the wrong branch of this means the two
+  // are out of step — fail loudly rather than attempt a push that GitHub
+  // will reject, which is what used to leave a card retrying invisibly.
   const workflowPaths = workflowPathsIn(item.patchFiles);
-  if (workflowPaths.length) {
-    console.log(`[apply-patch] ${item.id}: refusing — patchFiles touch ${workflowPaths.length} workflow file(s)`);
-    const notes = await appendNote(
-      item,
-      `Cannot be delivered by backlog-automation.yml: patchFiles include ${workflowPaths.length} file(s) under ` +
-      `${WORKFLOW_PATH_PREFIX} (${workflowPaths.join(", ")}). This job pushes with its run's own ` +
-      `GITHUB_TOKEN, and GitHub refuses any push from that credential that creates or updates a workflow ` +
-      `file — there is no permission that can be granted here to allow it. patchReady has been cleared so ` +
-      `the job stops retrying; everything packaged on this card is untouched and still correct.\n\n` +
-      `To land it: apply the card's patchFiles on a branch and open the PR with a human credential (or one ` +
-      `with workflow scope). To make the pipeline capable of it, backlog-automation.yml itself has to be ` +
-      `changed by hand once to push with a workflow-scoped token — which it cannot do to itself either.`
+  if (workflowPaths.length && MODE !== "workflow") {
+    throw new Error(
+      `Item touches ${workflowPaths.length} workflow file(s) (${workflowPaths.join(", ")}) but this is the ` +
+      `${MODE} job, whose GITHUB_TOKEN cannot push them. It should have been deferred to the gated job.`
     );
-    await patchItem(item.id, {
-      patchReady: false,
-      patchAttempts: 0,
-      updatedAt: new Date().toISOString(),
-      notes,
-    });
-    return;
+  }
+  if (!workflowPaths.length && MODE === "workflow") {
+    throw new Error(`Item touches no workflow files but reached the gated job, which exists only for those.`);
   }
 
   const branch = sanitizeBranchName(item.patchBranch, item.id);
@@ -544,6 +618,7 @@ async function processApplyPatch(item) {
       status: "ready-for-testing",
       patchReady: false,
       patchAttempts: 0,
+      awaitingApproval: false,
       noDeploymentRequired: true,
       updatedAt: new Date().toISOString(),
       notes,
@@ -592,6 +667,7 @@ async function processApplyPatch(item) {
     status: "ready-for-testing",
     patchReady: false,
     patchAttempts: 0,
+    awaitingApproval: false,
     updatedAt: new Date().toISOString(),
     notes,
     prUrl: String(prUrl).trim(),
@@ -831,7 +907,49 @@ async function main() {
 
   console.log(`Found ${patchReadyItems.length} patch-ready item(s) and ${mergeReadyItems.length} merge-ready item(s)`);
 
-  for (const item of patchReadyItems) {
+  // Split both queues by which job is allowed to handle them. The standard
+  // job takes everything that does not touch .github/workflows/ and defers
+  // the rest; the gated job takes exactly the deferred ones and nothing
+  // else. Always write has_workflow_patches, including "false" — an output
+  // the workflow reads must exist on every run, or the gated job's `if:`
+  // silently evaluates against an empty string on the runs that matter.
+  const patchNeedsGate = patchReadyItems.filter(itemTouchesWorkflows);
+  const patchPlain = patchReadyItems.filter((i) => !itemTouchesWorkflows(i));
+
+  // Merge-ready items are classified by their PR's changed files, so this
+  // costs one `gh pr view` per item; only done in the standard job, and
+  // only for items that actually have a PR recorded.
+  const mergeNeedsGate = [];
+  const mergePlain = [];
+  for (const item of mergeReadyItems) {
+    const prNumber = item.mergePrNumber;
+    if (prNumber && prTouchesWorkflows(prNumber)) mergeNeedsGate.push(item);
+    else mergePlain.push(item);
+  }
+
+  const gatedCount = patchNeedsGate.length + mergeNeedsGate.length;
+  setStepOutput("has_workflow_patches", gatedCount > 0 ? "true" : "false");
+  console.log(`[${MODE}] ${gatedCount} item(s) need the approval gate; ${patchPlain.length + mergePlain.length} can proceed normally`);
+
+  if (MODE === "standard") {
+    for (const item of patchNeedsGate) {
+      try {
+        await deferToApprovalGate(item);
+      } catch (err) {
+        console.error(`[apply-patch] ${item.id}: couldn't record the deferral: ${err.message}`);
+      }
+    }
+    for (const item of mergeNeedsGate) {
+      console.log(`[merge-pr] ${item.id}: deferring — its PR touches workflow files, needs approval`);
+    }
+  }
+
+  // In the gated job these two lists ARE the deferred items; in the
+  // standard job they are everything else. Same loops either way.
+  const patchQueue = MODE === "workflow" ? patchNeedsGate : patchPlain;
+  const mergeQueue = MODE === "workflow" ? mergeNeedsGate : mergePlain;
+
+  for (const item of patchQueue) {
     try {
       await processApplyPatch(item);
     } catch (err) {
@@ -846,7 +964,7 @@ async function main() {
       }
     }
   }
-  for (const item of mergeReadyItems) {
+  for (const item of mergeQueue) {
     try {
       await processMergePr(item);
     } catch (err) {

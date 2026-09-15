@@ -181,6 +181,69 @@ the PR. No AI is involved in this step at all, and no long-lived GitHub
 secret exists anywhere in this pipeline — the runner's `GITHUB_TOKEN` is
 minted and revoked by GitHub itself, per run.
 
+**Items that touch `.github/workflows/` go through an approval gate.**
+GitHub refuses any push made with a workflow's own `GITHUB_TOKEN` that
+creates or updates a file under `.github/workflows/` — that credential is
+an App installation token, and there is no `workflows` permission that can
+be granted to it in the `permissions:` block. So the ordinary job
+physically cannot deliver a patch that touches one, and for a while it
+didn't try: it refused such items outright, cleared `patchReady` and put
+them back in Backlog with a note. That was honest but a dead end — four
+items (the board health strip, the revert action, the `storage:rules`
+deploy fix, and the workflow-scoped token itself) accumulated there with
+no route to `main` at all, and the job still exited 0 so every Actions run
+looked green. The token item was the sharpest case: the fix for the
+blocker was itself blocked by the blocker.
+
+`backlog-automation.yml` now runs the script twice per trigger, as two
+jobs, selected by `AUTOMATION_MODE`:
+
+- **`run`** (`AUTOMATION_MODE: standard`) — the ordinary job, unchanged,
+  still on the per-run `GITHUB_TOKEN`. It processes every item that does
+  *not* touch `.github/workflows/`, and **defers** the ones that do:
+  `patchReady` stays `true` (the item is queued, not failed), an
+  `awaitingApproval` flag stops the explanatory note being rewritten every
+  two minutes, and the job reports `has_workflow_patches=true`.
+- **`workflow-patches`** (`AUTOMATION_MODE: workflow`) — runs only when
+  the standard job deferred something, and declares
+  `environment: workflow-changes`, whose **required reviewer** is what
+  makes GitHub pause the job until a human approves it in the Actions tab.
+  It mints a GitHub App installation token (`actions/create-github-app-token`)
+  carrying `workflows: write`, hands it to `actions/checkout` as `token:`
+  so the later `git push` uses it, and processes exactly the deferred
+  items.
+
+Merge-ready items are classified the same way, by whether their PR's
+changed files include a workflow path — the same restriction applies to a
+merge that brings workflow changes onto `main`, not only to a direct push.
+If that lookup fails for any reason the item is gated rather than
+attempted: taking the gated path only costs an approval click, whereas
+guessing wrong puts the merge back on a credential that cannot perform it.
+
+**The approval is a security control, not a formality.** `patchFiles` is
+the one field on a backlog item with real authority over this repo, and
+`firestore.rules` does not validate it at all — so anything that can write
+a backlog item can propose arbitrary workflow YAML, and `BOARD_API_KEY`
+(which authenticates as an allowlisted editor) is handed to Routine-fired
+sessions that read content we do not fully control. A workflows-capable
+token running unattended would turn that into self-modifying CI. **Read
+the diff on the PR before approving**, and don't remove the `environment:`
+from that job. A plain PAT with `workflow` scope would work mechanically
+but is the wrong shape: long-lived, tied to one person's account, and
+carrying broad `repo` scope alongside.
+
+Setup this depends on (one-time, by hand — see "GitHub App setup" below):
+the `workflow-changes` environment with a required reviewer, and the
+`AUTOMATION_APP_ID` / `AUTOMATION_APP_PRIVATE_KEY` secrets.
+
+Note also that `concurrency:` is declared **per job**, not for the whole
+workflow. It was workflow-level until the gate went in, and moving it is
+what makes the gate usable: a job waiting on a reviewer keeps its whole
+run in progress for as long as the approval sits unclicked, so a single
+workflow-level group would let one pending approval stall the ordinary
+every-2-minutes pipeline behind it — the exact class of bug the gate
+exists to remove.
+
 **An item whose PR is already open is attached to that PR, never bounced
 back to Backlog.** `run-backlog-automation.js` used to refuse the item
 ("Skipped opening a new PR: #N already exists… close it manually before
@@ -783,6 +846,59 @@ starts failing with an auth or version-related error after previously
 working, check Anthropic's current Claude Code Routines docs for what
 changed, and re-test with `curl` before re-patching the function — see
 the request shape in `functions/index.js`'s `notifyOnProjectReadyForReview`.
+
+### GitHub App setup — the `workflow-changes` approval gate
+
+One-time manual setup. Needed before `backlog-automation.yml`'s
+`workflow-patches` job can run at all; until it exists, items touching
+`.github/workflows/` sit deferred with `patchReady: true` and
+`awaitingApproval: true`, which is a visible queue rather than a silent
+loss, but still a queue nobody is draining.
+
+**1. Create the App.** Org settings → Developer settings → GitHub Apps →
+New GitHub App. Name it something like `rob-ph-demos backlog automation`.
+Homepage URL can be the repo. Uncheck **Webhook → Active** (this App is
+only ever used to mint tokens; it receives nothing). Repository
+permissions — exactly three, no more:
+
+| Permission | Access | Why |
+| --- | --- | --- |
+| Contents | Read and write | push the branch |
+| Pull requests | Read and write | open and merge the PR |
+| Workflows | Read and write | the whole point — write files under `.github/workflows/` |
+
+**2. Install it** on `offline2online/rob_ph_demos` only ("Only select
+repositories"), not across the org.
+
+**3. Generate a private key** (App settings → Private keys → Generate)
+and note the numeric **App ID** from the same page.
+
+**4. Store both as repo secrets** (Settings → Secrets and variables →
+Actions):
+
+- `AUTOMATION_APP_ID` — the numeric App ID.
+- `AUTOMATION_APP_PRIVATE_KEY` — the whole `.pem`, including the
+  `-----BEGIN RSA PRIVATE KEY-----` and `-----END-----` lines and the
+  trailing newline. Paste it verbatim; a key missing its header or
+  reflowed onto one line fails at token-minting with an opaque error.
+
+**5. Create the environment.** Settings → Environments → New environment,
+named exactly **`workflow-changes`** (the job's `environment:` value).
+Under **Deployment protection rules**, tick **Required reviewers** and add
+whoever should approve — this is the step that makes the job pause. An
+environment with no required reviewer is not a gate: the job would run
+straight through with a workflows-capable token and no human in the loop,
+which is worse than the blockage it replaced. Optionally restrict
+deployment branches to `main`.
+
+**How approving works day to day.** When an item needing the gate is
+deferred, the next run shows a `workflow-patches` job **Waiting**. Open it
+in the Actions tab, click **Review deployments**, read the diff on the PR
+it is about to push, then Approve. The job runs, opens or updates the PR,
+and the card moves to Ready for Testing like any other. Rejecting leaves
+the item deferred — `patchReady` stays true, so it re-offers on the next
+trigger rather than being lost; to actually drop it, clear `patchReady` on
+the card.
 
 ### The `GH_DISPATCH_TOKEN` secret — waking `backlog-automation.yml` immediately
 
