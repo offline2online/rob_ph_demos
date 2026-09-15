@@ -28,7 +28,23 @@ body {
   vertical-align: middle; line-height: 1;
 }
 .app { max-width: 1400px; margin: 0 auto; padding: 24px 20px 40px; }
-.topbar { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 18px; }
+/* Sticky at every width (qMJeQkmhYwcXFTjeOJw0-3): the hamburger, logo and
+   + New project CTA stay reachable while scrolled down a long board on
+   desktop/tablet too, not just on a phone — this used to be a mobile-only
+   rule (@media max-width:640px) with the exact same position/background/
+   z-index declarations; they're the base rule now so every viewport gets
+   them, and the mobile media query below only adds its own size/spacing
+   compaction on top. See --sticky-topbar-h below for why the offset this
+   feeds (.mobile-action-bar's own top, also no longer mobile-only) is
+   measured rather than hard-coded. */
+.topbar {
+  display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 18px;
+  position: sticky; top: 0; z-index: 16;
+  background: rgba(255, 255, 255, .88);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  padding: 10px 0;
+}
 /* qMJeQkmhYwcXFTjeOJw0: the hamburger and the topbar logo now live in their
    own row (.topbar-left-row), a direct flex row with nothing else sharing
    it, instead of one flex row that also had to hold the stacked
@@ -540,14 +556,25 @@ textarea.dialog-field-input { resize: vertical; min-height: 70px; }
 #if-content-input { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px; line-height: 1.5; }
 #docs-requirements-input { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px; line-height: 1.5; }
 
-/* ── Docs page ───────────────────────────────────────────────────────── */
-.docs-page { margin-bottom: 20px; }
+/* ── Project Settings page ────────────────────────────────────────────
+   Cleaner, quieter card style (fJ4kR2vTsWmXoP81nQeH): a hard 1px border
+   on every block read as busy/boxy once the page's copy was trimmed down
+   to just the essentials — a soft shadow instead of a border, more
+   internal padding, and a narrower reading column (720px) give it the
+   same "one setting per row, generous whitespace" feel as a native
+   Settings screen, without changing anything else on the board (this rule
+   is scoped to .docs-page only). */
+.docs-page { margin-bottom: 20px; max-width: 720px; }
 /* The FAQ Management / Settings page-switcher nav (jump straight to the
    other page) was removed (hXR16fmKAq0f2pJAtwiq) so each page's header is
    just its own <h2>, the same plain format the board and every other page
    use — the switcher was extra chrome the request asked to drop. */
-.docs-block { border: 1px solid var(--border); border-radius: 8px; padding: 16px; background: var(--surface); margin-bottom: 16px; }
-.docs-block h3 { margin: 0 0 4px; font-size: 15px; }
+.docs-block {
+  border: none; border-radius: 14px; padding: 20px 22px;
+  background: var(--surface); margin-bottom: 14px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, .05);
+}
+.docs-block h3 { margin: 0 0 6px; font-size: 15px; font-weight: 600; letter-spacing: -.01em; }
 .docs-block-header { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
 .docs-block-header h3 { margin: 0; }
 .interface-row { border: 1px solid var(--border); border-radius: 8px; padding: 12px; margin-top: 10px; background: var(--bg); }
@@ -628,6 +655,41 @@ textarea.dialog-field-input { resize: vertical; min-height: 70px; }
   color: var(--danger); background: var(--danger-tint);
 }
 
+/* ── Current-project floating bar (see syncMobileActionBar in app.js) ─────
+   Started phone-only (a scrolled-off project's own Ready for Dev/Approved
+   for Deployment/Deploy to Main actions were unreachable without scrolling
+   back up); now shown at every width (qMJeQkmhYwcXFTjeOJw0-3) so the same
+   "whichever project is scrolled into view keeps its actions on screen"
+   behaviour holds on desktop/tablet too. Fixed, not sticky, and never in
+   the flow, deliberately: an in-flow header that collapses when it pins
+   changes the document height mid-scroll, which Chrome's scroll anchoring
+   then tries to correct, which un-pins it — a loop that read on a real
+   phone as the page juddering up and down when a plain `.project-header {
+   position: sticky }` was tried first. A fixed element is outside the
+   flow, so it cannot change the document's height or position at all, and
+   that loop cannot exist — see the longer comment above
+   syncMobileActionBar in app.js.
+   top is --sticky-topbar-h, not a literal 0: .topbar is also pinned to the
+   very top of the screen (qMJeQkmhYwcXFTjeOJw0-3), so this bar needs to
+   sit directly below it rather than underneath/overlapping it.
+   syncStickyTopbarOffset() in app.js measures the real topbar height on
+   load/resize and sets that custom property — it can't be a fixed number
+   here since the topbar's height isn't fixed (it wraps to two rows on the
+   narrowest phones). Mobile-only compaction (icon-only buttons, hidden
+   labels) stays in the @media block below. */
+.mobile-action-bar {
+  position: fixed; top: var(--sticky-topbar-h, 0px); left: 0; right: 0; z-index: 15;
+  display: flex; align-items: center; gap: 8px;
+  padding: 6px 16px;
+  background: var(--bg); border-bottom: 1px solid var(--border);
+  box-shadow: 0 4px 10px -6px rgba(20, 20, 20, .35);
+}
+.mobile-action-bar-name {
+  flex: 1; min-width: 0; font-size: 13px; font-weight: 700;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.mobile-action-bar-actions { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+
 /* ── Mobile ──────────────────────────────────────────────────────────────
    Two real problems on a phone before this: (1) the board's 4 columns were
    forced side by side (`repeat(4, minmax(260px,1fr))`), so most of the
@@ -640,28 +702,18 @@ textarea.dialog-field-input { resize: vertical; min-height: 70px; }
    to it — everything else already moved into that menu above. */
 @media (max-width: 640px) {
   .app { padding: 16px 12px 32px; }
-  /* Sticky header (qMJeQkmhYwcXFTjeOJw0-2): the hamburger, logo and
-     + New project CTA stay reachable while scrolled down a long board,
-     instead of only existing at the very top of the page. Only global
-     chrome lives here — the page's own title/count (.page-header) and the
-     pipeline health strip are deliberately NOT inside .topbar, so they
-     scroll away normally instead of eating into the pinned bar's height.
+  /* Sticky header compaction (qMJeQkmhYwcXFTjeOJw0-2): the sticky/blur/
+     z-index declarations themselves now live on the base .topbar rule
+     above (qMJeQkmhYwcXFTjeOJw0-3) so desktop/tablet get them too — this
+     block only trims size/spacing further for a phone screen.
      z-index sits above .mobile-action-bar (below, z-index: 15) — see its
      own top offset just below for how the two stack instead of overlapping.
-     Background is a semi-transparent white with a blur (hXR16fmKAq0f2pJAtwiq)
-     rather than the fully opaque fill this used to be, so board content is
-     still faintly visible scrolling underneath the pinned bar instead of
-     being hidden by it; the blur keeps the hamburger/logo/button legible
-     over whatever's behind them. align-items: center (same ticket) keeps
-     the logo row and the + New project button vertically centered on the
-     row instead of top-aligned, and padding is trimmed so the pinned bar
-     eats less of a phone screen's height while scrolling. */
+     align-items: center (same ticket) keeps the logo row and the + New
+     project button vertically centered on the row instead of top-aligned,
+     and padding is trimmed further so the pinned bar eats less of a phone
+     screen's height while scrolling. */
   .topbar {
-    position: sticky; top: 0; z-index: 16;
     align-items: center;
-    background: rgba(255, 255, 255, .88);
-    backdrop-filter: blur(10px);
-    -webkit-backdrop-filter: blur(10px);
     padding: 6px 0; margin: 0 0 16px;
     gap: 12px;
   }
@@ -721,33 +773,12 @@ textarea.dialog-field-input { resize: vertical; min-height: 70px; }
   .form-row { gap: 10px; }
   .icon-btn { padding: 7px 10px; font-size: 15px; }
 
-  /* The fixed action bar (see syncMobileActionBar in app.js). Fixed, not
-     sticky, and never in the flow: an in-flow header that collapses when it
-     pins changes the document height mid-scroll, which Chrome's scroll
-     anchoring then tries to correct, which un-pins it — a loop that reads
-     on a real phone as the page juddering up and down.
-     top is --sticky-topbar-h, not a literal 0: .topbar above is now also
-     pinned to the very top of the screen (qMJeQkmhYwcXFTjeOJw0-2), so this
-     bar needs to sit directly below it rather than underneath/overlapping
-     it. syncStickyTopbarOffset() in app.js measures the real topbar height
-     on load/resize and sets that custom property — it can't be a fixed
-     number here since the topbar's height isn't fixed (it wraps to two
-     rows on the narrowest phones). */
-  .mobile-action-bar {
-    position: fixed; top: var(--sticky-topbar-h, 0px); left: 0; right: 0; z-index: 15;
-    display: flex; align-items: center; gap: 8px;
-    padding: 6px 12px;
-    background: var(--bg); border-bottom: 1px solid var(--border);
-    box-shadow: 0 4px 10px -6px rgba(20, 20, 20, .35);
-  }
-  .mobile-action-bar-name {
-    flex: 1; min-width: 0; font-size: 13px; font-weight: 700;
-    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-  }
-  .mobile-action-bar-actions { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
-  /* Icon + count only: the labels don't fit beside a project name on a
-     390px screen, and the count is the part that tells you there's
-     something waiting. The full labels are still on the real header. */
+  /* Compact-only overrides for the floating current-project bar — its own
+     position/layout now lives in the base .mobile-action-bar rule above
+     (qMJeQkmhYwcXFTjeOJw0-3, since the bar itself is no longer phone-only).
+     Icon + count only here: the labels don't fit beside a project name on
+     a 390px screen, and the count is the part that tells you there's
+     something waiting. Desktop/tablet keep the full labels (more room). */
   .mobile-action-bar .notify-claude-btn {
     flex-basis: auto; min-height: 38px; padding: 0 10px; font-size: 13px;
   }
@@ -757,9 +788,6 @@ textarea.dialog-field-input { resize: vertical; min-height: 70px; }
   }
   .mobile-action-bar .new-item-btn::after { content: "+"; font-size: 20px; font-weight: 700; }
 }
-/* Never on a desktop window — the bar is only built below 640px, but this
-   makes that true in CSS as well as in JS. */
-@media (min-width: 641px) { .mobile-action-bar { display: none; } }
 
 /* ── Topbar actions (FAQ Center + New project) ──────────────────────── */
 .topbar-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }

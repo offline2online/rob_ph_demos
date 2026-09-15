@@ -46,6 +46,12 @@ async function main() {
       id: d.id, categoryId: a.categoryId || "", order: a.order || 0, title: a.title || "", slug: a.slug || d.id,
       summary: a.summary || "", keywords: Array.isArray(a.keywords) ? a.keywords : [], docType: a.docType || "faq",
       status: a.status === "published" ? "published" : "draft",
+      // Editor-controlled topic/industry picker (fJ4kR2vTsWmXoP81nQeH) — splits
+      // the rendered body into one block per <h2> and lets a reader narrow to
+      // just one, right under the introduction. Off (the default) leaves every
+      // article rendering exactly as before.
+      sectionPicker: !!a.sectionPicker,
+      sectionPickerLabel: a.sectionPickerLabel || "",
       updatedAt: iso(a.updatedAt) || iso(a.publishedAt) || new Date().toISOString(),
       contentHash: hash(body),
     };

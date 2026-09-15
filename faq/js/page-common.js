@@ -45,6 +45,20 @@ async function injectAnalyticsTag() {
   document.head.appendChild(loader);
 }
 
+// Fires a custom analytics event through whichever tag injectAnalyticsTag
+// set up (or a no-op dataLayer if none is configured — same "missing tag is
+// a fine outcome, not an error" posture as everything else here). Used by
+// the article page's topic/industry picker (faqArticles.sectionPicker) to
+// report which section a reader chose. GA (gtag.js) reads its events from
+// calling gtag() directly; GTM reads them off a plain dataLayer.push() —
+// window.gtag only exists in the GA branch above, so checking for it picks
+// the right one without the caller needing to know which tag type is set.
+export function trackEvent(name, params) {
+  window.dataLayer = window.dataLayer || [];
+  if (typeof window.gtag === "function") window.gtag("event", name, params || {});
+  else window.dataLayer.push({ event: name, ...(params || {}) });
+}
+
 export function bootPage() {
   initEmbedMode();
   const v = document.getElementById("app-version");
