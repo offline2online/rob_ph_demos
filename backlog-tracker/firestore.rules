@@ -130,10 +130,37 @@ service cloud.firestore {
       allow read: if isEditor();
     }
 
+    // A proposed revision parked on an article by the Deploy-flow Routine
+    // (see ROUTINE_INSTRUCTIONS.md → "FAQ impact review") or edited from the
+    // console's review view. It never changes the live fields by itself —
+    // functions/index.js promotes it once approved AND its source tickets
+    // are published-live. Only the shape is validated here; the content is
+    // sanitised at render time like bodyMd.
+    function isValidPendingRevision(r) {
+      return r is map
+        && isNonEmptyBoundedString(r.title, 200)
+        && r.bodyMd is string && r.bodyMd.size() <= 60000
+        && (!("summary" in r) || r.summary is string && r.summary.size() <= 400)
+        && (!("keywords" in r) || r.keywords is list && r.keywords.size() <= 30)
+        && (!("docType" in r) || r.docType in ["faq", "how-to", "reference", "explanation"])
+        && (!("reason" in r) || r.reason is string && r.reason.size() <= 2000)
+        && r.sourceItemIds is list && r.sourceItemIds.size() > 0 && r.sourceItemIds.size() <= 50
+        && r.reviewStatus in ["awaiting-review", "approved"];
+    }
+    // The text a promotion replaced, kept so a reviewer can revert.
+    function isValidPreviousRevision(r) {
+      return r is map
+        && r.title is string && r.title.size() <= 200
+        && r.bodyMd is string && r.bodyMd.size() <= 60000
+        && (!("summary" in r) || r.summary is string && r.summary.size() <= 400);
+    }
+
     match /faqArticles/{articleId} {
       allow read: if true;
       allow create, update: if isFaqEditor()
         && incoming().size() <= 40
+        && (!("pendingRevision" in incoming()) || incoming().pendingRevision == null || isValidPendingRevision(incoming().pendingRevision))
+        && (!("previousRevision" in incoming()) || incoming().previousRevision == null || isValidPreviousRevision(incoming().previousRevision))
         && isNonEmptyBoundedString(incoming().categoryId, 100)
         && isNonEmptyBoundedString(incoming().title, 200)
         && isNonEmptyBoundedString(incoming().slug, 200)

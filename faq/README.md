@@ -37,6 +37,12 @@ admin console (backlog-tracker → FAQ Management)  ──edits──▶  Firest
 - Bulk content work done in git (like the rewrite) lands in `data/` and the
   same workflow syncs it repo → Firestore on push, without overwriting
   anything edited in the console since the last sync.
+- A "Notify Claude — Deploy" on the board proposes article updates for the
+  tickets merging (`faqArticles.pendingRevision`, scoped to the project's
+  product/program); they reach this site only after a person approves them
+  in the console's FAQ Management and the ticket is Merged to Main — see
+  `backlog-tracker/REQUIREMENTS.md` → "FAQ revision review". Neither
+  `faq-export.js` nor this site ever reads `pendingRevision`.
 
 ## Files
 

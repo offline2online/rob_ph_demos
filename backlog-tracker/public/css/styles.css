@@ -127,6 +127,12 @@ body {
 .col-head-publish { border-top: 3px solid var(--primary); }
 .col-head-live { border-top: 3px solid var(--success); }
 .col-count { background: var(--surface-2); border-radius: 9999px; padding: 1px 8px; }
+/* Second copy of the Groom Backlog button, merged into the Backlog header
+   itself on mobile (JHY0F2AdMSjtL4WU8F2K) — see groomBacklogInlineHTML in
+   app.js. Hidden here (desktop default); the <=640px block below both
+   reveals it in place of .col-count and hides the separate .col-groom-row,
+   so nothing changes above that width. */
+.col-groom-inline { display: none; }
 /* Wraps groomNotifyButtonHTML's own .notify-claude-btn (reused as-is, no new
    button skin) — its own row under the Backlog column's head rather than
    squeezed onto the head's single label+count line. width:100% is layout
@@ -153,6 +159,10 @@ body {
 .card-move { display: flex; gap: 2px; }
 .icon-btn { border: none; background: transparent; color: var(--text-muted); border-radius: 6px; cursor: pointer; padding: 4px 7px; font-size: 14px; }
 .icon-btn:hover { background: var(--surface-2); color: var(--text); }
+/* Revert (hfEmgPWmgrv5pxxcv8vE) — an .icon-btn like archive/delete beside
+   it, but its hover state hints "this undoes something live" rather than
+   reading as just another muted utility icon. */
+.revert-btn:hover { background: var(--danger-tint); color: var(--danger); }
 .card-title { margin: 0 0 4px; font-size: 14px; font-weight: 600; }
 .card-desc { margin: 0; font-size: 12.5px; color: var(--text-muted); }
 .card-desc-wrap .card-desc-original { margin-top: 6px; padding-top: 6px; border-top: 1px dashed var(--border); }
@@ -586,6 +596,21 @@ textarea.dialog-field-input { resize: vertical; min-height: 70px; }
      nothing outside this media query. See isColumnCollapsed in app.js. */
   .col-head { cursor: pointer; }
   .column-collapsed .col-list { display: none; }
+  /* Groom Backlog CTA merged into the Backlog column's own header
+     (JHY0F2AdMSjtL4WU8F2K): tapping the label/count side still collapses
+     the column (.col-head's own rule above); tapping this button — now
+     sitting where the plain count used to — grooms Backlog instead (see
+     the ", button" exclusion added to the col-head click handler in
+     app.js). :has() scopes the count hiding to only a header that actually
+     has the inline button rendered (an empty Backlog has nothing to groom —
+     see groomBacklogInlineHTML — so its header keeps the plain "0" count). */
+  .col-head:has(.col-groom-inline) .col-count { display: none; }
+  .col-groom-inline { display: inline-flex; }
+  .col-groom-inline .notify-claude-btn {
+    padding: 3px 10px; font-size: 11px; min-height: 0;
+  }
+  .col-groom-inline .notify-claude-icon { font-size: 14px; }
+  .col-groom-row { display: none; }
 
   .project { padding: 14px 12px 16px; }
   .project-header { flex-wrap: wrap; }
@@ -952,3 +977,36 @@ textarea.dialog-field-input { resize: vertical; min-height: 70px; }
 .auth-gate-status[data-kind="error"] { color: #c0272a; }
 .topbar-user { font-size: 12.5px; color: #5b6b7a; margin-right: 4px; }
 @media (max-width: 640px) { .topbar-user { display: none; } }
+
+/* ── Proposed FAQ revision review (faqArticles.pendingRevision) ───────── */
+.badge-proposed-update { background: var(--primary-tint); color: var(--primary); margin-left: 6px; }
+.badge-approved-update { background: rgba(82, 196, 26, .12); color: var(--success); margin-left: 6px; }
+.fr-meta {
+  border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; margin-bottom: 14px;
+  background: var(--surface-2, var(--bg)); font-size: 13px; display: grid; gap: 6px;
+}
+.fr-meta p { margin: 0; }
+.fr-meta .fr-reason { white-space: pre-wrap; }
+.fr-meta .fr-golive { font-weight: 600; }
+.fr-ticket { display: inline-flex; align-items: center; gap: 6px; margin: 2px 8px 2px 0; }
+.fr-ticket .badge { text-transform: none; letter-spacing: 0; }
+.badge-item-status-published-live, .badge-item-status-archived { background: rgba(82, 196, 26, .12); color: var(--success); }
+.badge-item-status-ready-to-publish { background: var(--primary-tint); color: var(--primary); }
+.badge-item-status-ready-for-testing { background: rgba(201, 138, 10, .12); color: var(--warning); }
+.badge-item-status-backlog, .badge-item-status-missing { background: var(--surface-2); color: var(--text-muted); }
+.fr-toolbar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 10px; }
+.fr-changes { border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; background: var(--bg); }
+.fr-change-block { padding: 6px 0; border-bottom: 1px dashed var(--divider, var(--border)); font-size: 13.5px; line-height: 1.55; }
+.fr-change-block:last-child { border-bottom: none; }
+.fr-change-block.fr-unchanged { color: var(--text-muted); }
+.fr-change-label { font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--text-muted); margin-right: 8px; }
+.fr-changes ins { background: rgba(82, 196, 26, .18); text-decoration: none; border-radius: 3px; padding: 0 2px; }
+.fr-changes del { background: rgba(212, 67, 63, .16); text-decoration: line-through; border-radius: 3px; padding: 0 2px; }
+.fr-skip { text-align: center; color: var(--text-muted); font-size: 12px; padding: 4px 0; }
+.fr-side { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.fr-pane { border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; min-width: 0; background: var(--bg); }
+.fr-pane h3 { margin: 0 0 8px; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--text-muted); }
+.fr-pane-title { font-size: 16px; font-weight: 700; margin-bottom: 4px; }
+.fr-pane-summary { margin: 0 0 10px; color: var(--text-muted); font-size: 13px; }
+.fr-body { display: block; }
+@media (max-width: 760px) { .fr-side { grid-template-columns: 1fr; } }
