@@ -147,10 +147,25 @@ body {
   padding: 9px 16px; font-size: 13px; font-weight: 600; cursor: pointer; font-family: inherit;
 }
 .btn-primary:hover { opacity: .92; }
+.btn-primary:disabled, .btn-ghost:disabled { opacity: .4; cursor: not-allowed; }
+.btn-primary:disabled:hover { opacity: .4; }
 .btn-ghost {
   background: transparent; color: var(--text-muted); border: 1px solid var(--border);
   border-radius: 6px; padding: 9px 16px; font-size: 13px; cursor: pointer; font-family: inherit;
 }
+/* Cancel must always read as active, never as "maybe disabled" the way
+   .btn-ghost already can (see its own :disabled rule just above, and the
+   .btn-attach comment below for the same look causing a real bug once
+   already) — e6vsSRDsjEdug0oRsCTK was exactly the Save/Publish pair right
+   next to it now genuinely being disabled until the page is dirty (see
+   updateFaDirtyState in app.js), which made a muted Cancel unreadable as
+   "the one that's always safe to click". Full-strength text color and a
+   heavier border, not a fill — it's a way out, not the primary action. */
+.btn-outline {
+  background: transparent; color: var(--text); border: 1.5px solid var(--text-muted);
+  border-radius: 6px; padding: 9px 16px; font-size: 13px; font-weight: 600; cursor: pointer; font-family: inherit;
+}
+.btn-outline:hover { background: var(--surface-2); border-color: var(--text); }
 /* Filled/outlined, not muted-grey-on-transparent like .btn-ghost — used for
    Attach screenshot/Record screen. These used to be plain .btn-ghost, which
    next to the filled blue Save/Add comment buttons read as disabled
@@ -176,19 +191,18 @@ body {
 .col-head-publish { border-top: 3px solid var(--primary); }
 .col-head-live { border-top: 3px solid var(--success); }
 .col-count { background: var(--surface-2); border-radius: 9999px; padding: 1px 8px; }
-/* Second copy of the Groom Backlog button, merged into the Backlog header
-   itself on mobile (JHY0F2AdMSjtL4WU8F2K) — see groomBacklogInlineHTML in
-   app.js. Hidden here (desktop default); the <=640px block below both
-   reveals it in place of .col-count and hides the separate .col-groom-row,
-   so nothing changes above that width. */
-.col-groom-inline { display: none; }
-/* Wraps groomNotifyButtonHTML's own .notify-claude-btn (reused as-is, no new
-   button skin) — its own row under the Backlog column's head rather than
-   squeezed onto the head's single label+count line. width:100% is layout
-   only: outside this wrapper .notify-claude-btn stays its natural
-   content-sized pill everywhere else it's used (project header, mobile bar). */
-.col-groom-row { padding: 0 10px 10px; }
-.col-groom-row .notify-claude-btn { width: 100%; justify-content: center; }
+/* Groom Backlog merged into the Backlog column's own header (originally
+   mobile-only — JHY0F2AdMSjtL4WU8F2K — now the only treatment, on every
+   viewport width: eST3jOS85Mtl8KMgpOH0 asked for the same "CTA replaces
+   the count, right in the header" look desktop already had a separate
+   .col-groom-row for). See groomBacklogInlineHTML in app.js. :has() scopes
+   the count-hiding to a header that actually has the inline button
+   rendered — an empty Backlog has nothing to groom (groomableCountForProject
+   in app.js), so its header keeps the plain "0" count. */
+.col-head:has(.col-groom-inline) .col-count { display: none; }
+.col-groom-inline { display: inline-flex; }
+.col-groom-inline .notify-claude-btn { padding: 3px 10px; font-size: 11px; min-height: 0; }
+.col-groom-inline .notify-claude-icon { font-size: 14px; }
 .col-list { padding: 10px; display: flex; flex-direction: column; gap: 10px; overflow-y: auto; }
 .empty-hint { color: var(--text-muted); font-size: 12.5px; font-style: italic; padding: 10px 6px; text-align: center; }
 /* cursor:pointer signals the whole tile opens for editing on click now
@@ -672,21 +686,12 @@ textarea.dialog-field-input { resize: vertical; min-height: 70px; }
      nothing outside this media query. See isColumnCollapsed in app.js. */
   .col-head { cursor: pointer; }
   .column-collapsed .col-list { display: none; }
-  /* Groom Backlog CTA merged into the Backlog column's own header
-     (JHY0F2AdMSjtL4WU8F2K): tapping the label/count side still collapses
-     the column (.col-head's own rule above); tapping this button — now
-     sitting where the plain count used to — grooms Backlog instead (see
-     the ", button" exclusion added to the col-head click handler in
-     app.js). :has() scopes the count hiding to only a header that actually
-     has the inline button rendered (an empty Backlog has nothing to groom —
-     see groomBacklogInlineHTML — so its header keeps the plain "0" count). */
-  .col-head:has(.col-groom-inline) .col-count { display: none; }
-  .col-groom-inline { display: inline-flex; }
-  .col-groom-inline .notify-claude-btn {
-    padding: 3px 10px; font-size: 11px; min-height: 0;
-  }
-  .col-groom-inline .notify-claude-icon { font-size: 14px; }
-  .col-groom-row { display: none; }
+  /* Groom Backlog's own header CTA (.col-groom-inline) is styled
+     unconditionally above now — nothing mobile-specific left to add here.
+     Tapping the label/count side still collapses the column (.col-head's
+     own rule just above); tapping the CTA button itself grooms Backlog
+     instead (see the ", button" exclusion in the col-head click handler in
+     app.js), on every viewport width. */
 
   .project { padding: 14px 12px 16px; }
   .project-header { flex-wrap: wrap; }
@@ -1005,7 +1010,23 @@ textarea.dialog-field-input { resize: vertical; min-height: 70px; }
 .fa-body-viewer table, .ql-editor table { border-collapse: collapse; width: 100%; font-size: 13px; }
 .fa-body-viewer th, .fa-body-viewer td, .ql-editor th, .ql-editor td { border: 1px solid #d9d9d9; padding: 6px 8px; text-align: left; vertical-align: top; }
 .fa-body-viewer thead th, .ql-editor thead th { background: #f2f4f5; font-weight: 700; }
-.ql-editor .faq-table { cursor: pointer; }
+/* A table's own add/remove row/column toolbar (g2Xjt3XHXy27Psbd0dF0) and
+   its directly-editable cells — see faqTableToolbarHtml/FaqTableBlot in
+   app.js. Both are stripped before saving (faqBodySourceForSave), so
+   neither this toolbar nor the cell-focus styling below ever reaches
+   .fa-body-viewer or the public site. */
+.faq-table-toolbar { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 6px; }
+.faq-table-btn {
+  background: var(--surface-2); color: var(--text); border: 1px solid var(--border);
+  border-radius: 4px; padding: 3px 9px; font-size: 11.5px; cursor: pointer; font-family: inherit;
+}
+.faq-table-btn:hover { background: var(--border); }
+.faq-table-btn-danger { color: var(--danger); border-color: var(--danger); }
+.faq-table-btn-danger:hover { background: var(--danger); color: #fff; }
+.ql-editor .faq-table th[contenteditable], .ql-editor .faq-table td[contenteditable] { cursor: text; }
+.ql-editor .faq-table th[contenteditable]:focus, .ql-editor .faq-table td[contenteditable]:focus {
+  outline: 2px solid var(--primary); outline-offset: -2px; background: var(--primary-tint);
+}
 .fa-body-viewer code, .ql-editor code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12.5px; background: #f2f4f5; border: 1px solid rgba(5, 5, 5, .06); border-radius: 4px; padding: 1px 5px; }
 .fa-body-viewer pre, .fa-body-viewer pre.ql-syntax { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12.5px; background: #1f2429; color: #f2f4f5; padding: 10px 12px; border-radius: 6px; overflow-x: auto; margin: 0 0 12px; white-space: pre-wrap; }
 .fa-body-viewer .callout, .ql-editor .callout { border-left: 4px solid; border-radius: 4px; padding: 8px 12px; margin: 0 0 12px; }

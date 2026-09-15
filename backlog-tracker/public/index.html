@@ -452,13 +452,17 @@
            mockup's own Cancel/Save/Publish toolbar. Save draft and Publish
            are two distinct actions now (see submitFaqArticleFromEditor in
            app.js), not one "Save article" button with a separate status
-           toggle to remember to flip first. -->
+           toggle to remember to flip first. Cancel uses .btn-outline, not
+           .btn-ghost, so it stays visibly active even while Save
+           draft/Publish are genuinely disabled (updateFaDirtyState in
+           app.js keeps both off until the page is actually changed) —
+           see .btn-outline's own comment in styles.css. -->
       <div class="page-header">
         <h2 id="fa-title">New article</h2>
         <div class="form-actions">
-          <button type="button" class="btn-ghost" id="fa-cancel">Cancel</button>
-          <button type="button" class="btn-ghost" id="fa-save-draft">Save draft</button>
-          <button type="button" class="btn-primary" id="fa-publish">Publish</button>
+          <button type="button" class="btn-outline" id="fa-cancel">Cancel</button>
+          <button type="button" class="btn-ghost" id="fa-save-draft" disabled>Save draft</button>
+          <button type="button" class="btn-primary" id="fa-publish" disabled>Publish</button>
         </div>
       </div>
 
@@ -590,6 +594,15 @@
     <section class="faq-admin-page" id="faq-settings-page" hidden>
       <div class="page-header">
         <h2>Settings — FAQ / Help Center</h2>
+      </div>
+
+      <div class="docs-block">
+        <h3>Analytics</h3>
+        <p class="field-hint">A Google Analytics measurement ID (e.g. <code>G-XXXXXXXXXX</code>) or a Google Tag Manager container ID (e.g. <code>GTM-XXXXXXX</code>) — set here once, it gets appended to every customer-facing FAQ page (the front page, category pages, article pages, and search), not just one. Leave blank to track nothing.</p>
+        <input type="text" id="fa-analytics-tag-input" maxlength="40" placeholder="G-XXXXXXXXXX or GTM-XXXXXXX">
+        <div class="form-row" style="justify-content:flex-end;">
+          <button type="button" class="btn-primary" id="fa-analytics-tag-save">Save</button>
+        </div>
       </div>
 
       <div class="docs-block">
