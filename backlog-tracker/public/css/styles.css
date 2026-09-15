@@ -137,6 +137,10 @@ body {
 .card-move { display: flex; gap: 2px; }
 .icon-btn { border: none; background: transparent; color: var(--text-muted); border-radius: 6px; cursor: pointer; padding: 4px 7px; font-size: 14px; }
 .icon-btn:hover { background: var(--surface-2); color: var(--text); }
+/* Revert (hfEmgPWmgrv5pxxcv8vE) — an .icon-btn like archive/delete beside
+   it, but its hover state hints "this undoes something live" rather than
+   reading as just another muted utility icon. */
+.revert-btn:hover { background: var(--danger-tint); color: var(--danger); }
 .card-title { margin: 0 0 4px; font-size: 14px; font-weight: 600; }
 .card-desc { margin: 0; font-size: 12.5px; color: var(--text-muted); }
 .card-desc-wrap .card-desc-original { margin-top: 6px; padding-top: 6px; border-top: 1px dashed var(--border); }

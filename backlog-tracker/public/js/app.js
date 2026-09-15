@@ -450,7 +450,14 @@ function cardHTML(item) {
   // treatment. It naturally unlocks the instant status moves off
   // ready-to-publish, since isLiveBranch goes false then too.
   const isDeploying = isLiveBranch && !!item.mergeReady;
-  const isLocked = isInDevelopment || isDeploying || isSentToClaude;
+  // A Deployed/Main Branch (Live) card's own Revert action (hfEmgPWmgrv5pxxcv8vE)
+  // writes revertReady; the automation then opens a revert PR and moves the
+  // card BACK to Ready for Testing (see run-backlog-automation.js's
+  // processRevertPr) — same "real, in-flight work behind this card" window
+  // as isInDevelopment/isDeploying, so it gets the identical lock treatment
+  // rather than staying editable while a revert branch is being pushed.
+  const isReverting = item.status === "published-live" && !!item.revertReady;
+  const isLocked = isInDevelopment || isDeploying || isSentToClaude || isReverting;
   // A card flagged noDeploymentRequired has no PR for Deploy to Main to
   // merge — the automation's own no-diff path creates exactly this shape
   // (see run-backlog-automation.js) — so it gets the one-click completion
@@ -526,8 +533,20 @@ function cardHTML(item) {
         : `<span class="merge-pending-hint" title="Only this project's own Deploy to Main button actually merges this to main">Waiting for Deploy to Main</span>`)
     : "";
   const isPublished = item.status === "published-live";
-  const archiveBtn = isPublished
+  const archiveBtn = isPublished && !isReverting
     ? `<button type="button" class="icon-btn archive-btn" data-id="${item.id}" title="Archive">&#128451;</button>`
+    : "";
+  // Revert (hfEmgPWmgrv5pxxcv8vE): only offered when there's an actual merge
+  // commit to undo (mergeCommit — see processMergePr) and nothing was
+  // already reverted mid-flight (isReverting). A noDeploymentRequired card
+  // never got a real merge in the first place (see its own "one deliberate
+  // exception" in REQUIREMENTS.md), so there's nothing here for a revert PR
+  // to be based on either.
+  const revertBtn = isPublished && !item.noDeploymentRequired && item.mergeCommit && !isReverting
+    ? `<button type="button" class="icon-btn revert-btn" data-id="${item.id}" title="Revert this deployment — opens a PR to undo it; still needs testing and Deploy to Main like any other fix">&#8630;</button>`
+    : "";
+  const revertingHint = isReverting
+    ? `<span class="in-development-hint" title="A revert PR is being opened for this card — it's locked until backlog-automation.yml pushes the branch and this card moves back to Ready for Testing">Revert requested &mdash; locked</span>`
     : "";
   const canRight = idx < COL_KEYS.length - 1 && !isTesting && !isLiveBranch && !isInDevelopment && !isSentToClaude;
   const rightBtn = canRight
@@ -677,10 +696,10 @@ function cardHTML(item) {
           <span class="card-cat">${escapeHTML(item.category || "Uncategorised")}</span>
           ${attachmentBadge}
         </div>
-        <div class="card-move">${quickCommentBtn}${archiveBtn}${deleteBtn}</div>
+        <div class="card-move">${quickCommentBtn}${revertBtn}${archiveBtn}${deleteBtn}</div>
       </div>
       ${testLinkHTML}
-      ${approveBtn}${mergeBtn}${inDevelopmentHint}
+      ${approveBtn}${mergeBtn}${inDevelopmentHint}${revertingHint}
     </article>`;
 }
 
@@ -1717,6 +1736,29 @@ async function removeItem(id) {
   await deleteDoc(doc(db, "backlogItems", id));
 }
 
+// Revert a live deployment (hfEmgPWmgrv5pxxcv8vE) — writes revertReady, the
+// same hand-off shape as patchReady/mergeReady: this never touches GitHub
+// itself (see ROUTINE_INSTRUCTIONS.md/README.md's "Notify Claude can't
+// push"), it only signals run-backlog-automation.js's own processRevertPr to
+// open a revert PR from mergeCommit and hand the card back to Ready for
+// Testing — nothing merges until a human tests and approves that PR exactly
+// like any other card's fix, via the same Approved for Deployment/Deploy to
+// Main flow. That's why this asks for confirmation: it's the one action on
+// this board that starts undoing something already in production.
+async function requestRevert(id) {
+  const item = items.find((i) => i.id === id);
+  if (!item || item.status !== "published-live" || !item.mergeCommit || item.revertReady) return;
+  const ok = await showConfirmDialog(
+    `Revert "${item.title}"? This opens a PR undoing merge commit ${String(item.mergeCommit).slice(0, 7)} and moves this card back to Ready for Testing — it still needs to be tested and approved again before Deploy to Main actually takes the change out of production.`,
+    { title: "Revert deployment", okLabel: "Revert", danger: true }
+  );
+  if (!ok) return;
+  await updateDoc(doc(db, "backlogItems", id), {
+    revertReady: true,
+    updatedAt: serverTimestamp(),
+  });
+}
+
 async function archiveItem(id) {
   await updateDoc(doc(db, "backlogItems", id), {
     status: "archived",
@@ -2186,6 +2228,8 @@ projectsRoot.addEventListener("click", async (e) => {
   if (delBtn) { removeItem(delBtn.dataset.id); return; }
   const archBtn = e.target.closest(".archive-btn");
   if (archBtn) { archiveItem(archBtn.dataset.id); return; }
+  const revertBtn = e.target.closest(".revert-btn");
+  if (revertBtn) { requestRevert(revertBtn.dataset.id); return; }
   const editItemBtn = e.target.closest(".edit-item-btn");
   if (editItemBtn) { openEditItemModal(editItemBtn.dataset.id); return; }
   const quickCommentBtn = e.target.closest(".quick-comment-btn");
