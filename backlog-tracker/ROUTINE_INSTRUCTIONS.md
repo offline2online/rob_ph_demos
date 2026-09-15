@@ -51,15 +51,17 @@ yourself, you package your finished work as plain data in Firestore, and
 a separate, fully trusted, non-AI GitHub Actions job
 (`.github/workflows/backlog-automation.yml`, running
 `backlog-tracker/scripts/run-backlog-automation.js` on a schedule with its
-own per-run credentials) turns that into a real branch, PR, and (later)
-merge. Full details below — follow them exactly; do not "helpfully"
+own per-run credentials) turns that into a real commit on the project's
+integration branch and, at deploy time, one PR and one merge for the whole
+train. Full details below — follow them exactly; do not "helpfully"
 attempt a `git push` or a GitHub API write even if you think you've found
 working credentials somewhere in your environment.
 
 **The card sitting in Backlog after you finish is expected, not slow —
 don't try to "speed this up" by setting `status` yourself.** Once you set
 `patchReady: true`, the item waits on `backlog-automation.yml` to actually
-open the PR and flip `status` to `ready-for-testing`. That write normally
+commit it on the project's integration branch and flip `status` to
+`ready-for-testing`. That write normally
 dispatches the workflow within seconds (`onBacklogItemReadyForAutomation`
 in `functions/index.js`); if its GitHub token isn't configured or the
 dispatch fails, the workflow's own schedule picks the item up instead —
@@ -78,8 +80,9 @@ investigate-and-fix run, or vice versa:
   merge-only shape. Do the Setup steps below (board access, project
   context) as normal, then skip straight to **"The 'Notify Claude — Deploy'
   flow (a differently-shaped fire)"** further down and follow only that
-  section for each item — do not also run "For each Backlog item found"
-  below on these items.
+  section — it is about the project's whole deployment train, not one item
+  at a time. Do not also run "For each Backlog item found" below on these
+  items.
 - `text` starts with `=== GROOM REQUEST for "<project>"` → this is the
   classify-and-summarize-only shape. Do the Setup steps below as normal,
   then skip straight to **"The 'Groom Backlog' flow (a differently-shaped
@@ -184,48 +187,44 @@ rest of this file.
    correct, read back the FULL final content of every file you created or
    changed (not a diff).
 
-   **Immediately before you PATCH `patchFiles` in step 4, re-`git pull`
-   and diff each touched file against the current tip of `main` one more
-   time** — don't rely on the copy you read at the start of this
-   investigation. `patchFiles` is a full-file overwrite, applied by
-   `run-backlog-automation.js` against whatever `main` looks like at the
-   moment the scheduled job actually runs (which can be up to ~2 minutes
+   **Base every `patchFiles` entry on the head of this project's
+   integration branch (its "deployment train"), never on `main`.** Read
+   the project's `deployBranch` off its Firestore doc
+   (`projects/{projectId}.deployBranch`, e.g. `deploy/backlog-tracker-faqs`)
+   and read each file you are about to overwrite from
+
+   ```
+   https://raw.githubusercontent.com/offline2online/rob_ph_demos/<deployBranch>/<path>
+   ```
+
+   falling back to `main` only if that branch doesn't exist yet (a project
+   that has never built a ticket). Every ticket this project builds becomes
+   one commit on that one branch — tickets stack on top of each other
+   instead of each getting a branch cut from `main` — so a file you read
+   from `main` may already be several tickets out of date.
+
+   **Do this re-read immediately before you PATCH `patchFiles` in step 4**,
+   not at the start of your investigation. `patchFiles` is a full-file
+   overwrite, applied by `run-backlog-automation.js` against whatever the
+   branch looks like at the moment the job actually runs (up to ~2 minutes
    after you set `patchReady`, longer if other items are queued ahead of
-   yours). If an unrelated change lands on `main` for the same shared file
+   yours). If another ticket lands on the branch for the same shared file
    (`app.js` and `index.html` are the two nearly every item touches) in
-   that window, and your `patchFiles` content was built from an earlier,
-   now-stale copy, applying it silently **reverts that unrelated change**
-   — no conflict, no error, no PR review would obviously catch it, since
-   the diff just looks like "removed someone else's recent lines." If your
-   fix and a plausible concurrent change could plausibly touch the same
-   region of the same file, say so explicitly in your note as a risk, so a
-   human reviewing the resulting PR knows to check for it.
+   that window, and your content was built from an earlier copy, applying
+   it silently **reverts that other ticket's change** — no conflict, no
+   error, and nothing in a PR review would obviously catch it, since the
+   diff just looks like "removed someone else's recent lines." If your fix
+   and a plausible concurrent one could touch the same region of the same
+   file, say so explicitly in your note as a risk.
 
-   **If any `patchFiles` path is under `backlog-tracker/public/`, also
-   bump the version — always, not just for changes that feel big enough
-   to warrant one.** Read the current value of
-   `backlog-tracker/public/js/version.js`'s `APP_VERSION` fresh (same
-   re-fetch-immediately-before-finalizing rule as above — don't reuse a
-   value you read earlier in this investigation) and include an updated
-   copy of that file in `patchFiles`, incrementing **only the third
-   number** — `"1.4.0"` → `"1.4.1"` — never the first two; a release
-   bump (the middle number) is a deliberate, separate decision, not
-   something a routine fix makes on its own. This is the footer's own "is
-   this actually live" signal (see that file's own comment) — a shipped
-   `public/` change with no version bump is invisible even once merged
-   and deployed, which is exactly the gap #57 and #75 each already had to
-   fix, twice. Skip this only when nothing in `patchFiles` touches
-   `backlog-tracker/public/` (e.g. a fix confined to `functions/` or
-   `scripts/`, which the footer doesn't reflect anyway).
-
-   Packaging more than one item together (see "Cards that ship together
-   are already grouped" below)? Bump it **once for the whole batch**, not
-   once per item — same as `app.js`/`index.html`'s own "full combined
-   result in every item's `patchFiles`" pattern for a shared file. Each
-   item independently reading "current is 1.4.0" and independently
-   writing "1.4.1" would collide instead of stacking; compute the new
-   number once, and give every item in the batch that same final
-   `version.js` content.
+   **Do NOT bump `backlog-tracker/public/js/version.js`.** This used to be
+   required on every ticket touching `backlog-tracker/public/`; it is now
+   forbidden. The automation owns the version: `processDeployTrain` reads
+   `APP_VERSION` off `main`, increments the third number once, and commits
+   that on the branch just before opening the train's PR — one bump per
+   deployment, however many tickets it carries. Every ticket bumping the
+   same line was precisely what made any two open PRs conflict on that file
+   alone. If `version.js` appears in your `patchFiles`, that is a bug.
 4. Update the item's Firestore doc in one PATCH: set the corrected `title`
    (step 1), correct `category` if it's wrong (see `CATEGORIES` in
    `backlog-tracker/public/js/app.js` for the fixed list), bump
@@ -238,9 +237,9 @@ rest of this file.
      (use `content: null` instead of a string to mean "delete this
      path"). Paths are relative to the repo root (e.g.
      `"menu-board-demo/hq-admin.html"`).
-   - `patchBranch`: a short slug for the branch name (e.g.
-     `"fix-hq-admin-price-badge"` — the automation job prefixes it with
-     `claude/` and a short id itself).
+   - `patchBranch`: no longer used. There is one branch per project, not
+     one per ticket, so there is nothing for this to name. It is still
+     accepted and ignored; don't bother setting it.
    - `patchCommitMessage`, `patchPrTitle`, `patchPrBody`: plain text for
      the eventual commit and PR.
    - `patchReady: true` (boolean) — this is the signal the automated job
@@ -249,9 +248,9 @@ rest of this file.
      as `backlog` and the automation flips it once the PR genuinely
      exists.
 
-     **Never set `patchReady: true` (or `mergeReady: true`, see the Deploy
-     flow below) on a real item until every other field in the same PATCH
-     is the actual, finished value.** The scheduled automation job polls
+     **Never set `patchReady: true` (or `trainReady: true` on a project,
+     see the Deploy flow below) on a real record until every other field in
+     the same PATCH is the actual, finished value.** The scheduled automation job polls
      `patchReady == true` across the *entire* `backlogItems` collection
      every ~2 minutes — it has no way to tell "this is a real request"
      from "I'm mid-debugging my own curl/PATCH-building code and this
@@ -260,24 +259,23 @@ rest of this file.
      locally first (e.g. pipe the JSON body through `python3 -m json.tool`
      or `jq .`) rather than sending trial PATCHes with placeholder data to
      a live item — a stray `patchReady: true` with garbage `title`/
-     `patchFiles` becomes a **real GitHub PR** the moment the job next
-     runs, and you have no GitHub credential to close it afterward (see
-     "Setup" above) — it just sits there as permanent debris. This is not
-     hypothetical: it happened in production (item `Pj9asuFpMVUTUHKQpsJO`,
-     PR #61 closed as a stray duplicate of the item's real PR, #62) and
-     `run-backlog-automation.js` now attaches a patch-ready item to its
-     still-open PR (adding the new files as a commit on that PR's branch)
-     rather than opening a second one — but that only limits the
-     *symptom*; avoid causing it in the first place.
-   - **Re-patching an item that already has an open PR** (a card sent
-     back from Ready for Testing with a follow-up ask, or a batch sibling
-     whose PR is still open): the automation commits your `patchFiles` on
-     top of that PR's branch, not on `main`. So base the new full-file
-     contents on the PR branch — read files from
-     `https://raw.githubusercontent.com/offline2online/rob_ph_demos/<PR head branch>/<path>`
-     (the branch is on the card's `prUrl`, or `claude/<patchBranch slug>-<first 6
-     chars of the id, lowercase>`) — otherwise the commit would drop every
-     change already on the PR. Keep the same `patchBranch` you used before.
+     `patchFiles` becomes a **real commit on the project's shared
+     integration branch** the moment the job next runs, and you have no
+     GitHub credential to take it back off (see "Setup" above). It is worse
+     than the stray PR it used to be: every ticket built after it inherits
+     it, and removing it needs a revert. This is not hypothetical — it
+     happened in production under the old per-ticket model (item
+     `Pj9asuFpMVUTUHKQpsJO`, PR #61 closed as a stray duplicate of the
+     item's real PR, #62); on a shared branch the same mistake is harder to
+     undo, not easier, so avoid causing it in the first place.
+   - **Re-patching an item** (a card sent back from Ready for Testing with
+     a follow-up ask) needs nothing special: it is simply another commit
+     on the same integration branch, and the "read every touched file from
+     `<deployBranch>`" rule in step 3 already covers it. The earlier
+     commit is not rewritten or removed — the card's `deployCommits` array
+     just grows. A card that was sent back with **Failed testing**,
+     though, has had its commits reverted off the branch (see below), so
+     read the files fresh: the branch no longer contains its earlier work.
    - `testSummary` (optional but strongly encouraged, string): a clear,
      standalone description of what you actually changed, plus concrete
      steps to test it. Once the automation flips this item to
@@ -289,9 +287,9 @@ rest of this file.
    Example PATCH shape (add more `updateMask.fieldPaths` entries and
    fields as needed):
    ```
-   curl -sS -X PATCH "$BOARD/backlogItems/<ITEM_ID>?updateMask.fieldPaths=title&updateMask.fieldPaths=category&updateMask.fieldPaths=updatedAt&updateMask.fieldPaths=notes&updateMask.fieldPaths=patchFiles&updateMask.fieldPaths=patchBranch&updateMask.fieldPaths=patchCommitMessage&updateMask.fieldPaths=patchPrTitle&updateMask.fieldPaths=patchPrBody&updateMask.fieldPaths=patchReady" \
+   curl -sS -X PATCH "$BOARD/backlogItems/<ITEM_ID>?updateMask.fieldPaths=title&updateMask.fieldPaths=category&updateMask.fieldPaths=updatedAt&updateMask.fieldPaths=notes&updateMask.fieldPaths=patchFiles&updateMask.fieldPaths=patchCommitMessage&updateMask.fieldPaths=patchPrTitle&updateMask.fieldPaths=patchPrBody&updateMask.fieldPaths=patchReady" \
      -H "Content-Type: application/json" \
-     -d '{"fields":{"title":{"stringValue":"<short clear subject>"},"category":{"stringValue":"<corrected category>"},"updatedAt":{"timestampValue":"<ISO8601 now>"},"notes":{"arrayValue":{"values":[<existing notes, unchanged>, {"mapValue":{"fields":{"author":{"stringValue":"claude"},"text":{"stringValue":"<your summary>"},"at":{"timestampValue":"<ISO8601 now>"}}}}]}},"patchFiles":{"arrayValue":{"values":[{"mapValue":{"fields":{"path":{"stringValue":"<relative/path>"},"content":{"stringValue":"<full new file content>"}}}}]}},"patchBranch":{"stringValue":"<slug>"},"patchCommitMessage":{"stringValue":"<message>"},"patchPrTitle":{"stringValue":"<title>"},"patchPrBody":{"stringValue":"<body>"},"patchReady":{"booleanValue":true}}}'
+     -d '{"fields":{"title":{"stringValue":"<short clear subject>"},"category":{"stringValue":"<corrected category>"},"updatedAt":{"timestampValue":"<ISO8601 now>"},"notes":{"arrayValue":{"values":[<existing notes, unchanged>, {"mapValue":{"fields":{"author":{"stringValue":"claude"},"text":{"stringValue":"<your summary>"},"at":{"timestampValue":"<ISO8601 now>"}}}}]}},"patchFiles":{"arrayValue":{"values":[{"mapValue":{"fields":{"path":{"stringValue":"<relative/path>"},"content":{"stringValue":"<full new file content>"}}}}]}},"patchCommitMessage":{"stringValue":"<message>"},"patchPrTitle":{"stringValue":"<title>"},"patchPrBody":{"stringValue":"<body>"},"patchReady":{"booleanValue":true}}}'
    ```
 
 **Fixes that edit a file under `.github/workflows/`** can be packaged like
@@ -312,8 +310,7 @@ the correct, expected outcome in that case, not a failure to fix silently.
 
 ## Cards that ship together are already grouped — don't stamp a deploymentId
 
-A batch of items packaged together in one run (same `patchBranch`, so they
-land as one PR) used to also get a `deploymentId` written onto each item,
+A batch of items packaged together in one run used to also get a `deploymentId` written onto each item,
 pointing at a doc in a `deployments` collection, so a dedicated Deployments
 page could show which tickets were meant to ship together. That page was
 removed (PR #98, then again by explicit request — see
@@ -325,16 +322,21 @@ stamping that field anyway for a while, for no consumer at all, which cost
 two Firestore writes a run and implied to whoever read this file that a
 grouping view still existed.
 
-**Same-deployment grouping now happens for free, automatically, from
-`patchBranch`/`prNumber` alone** — `deploymentGroupKey()` in
-`backlog-tracker/public/js/app.js` derives it straight from those (branch
-wins over PR number when both are present), and the board draws matching
-cards bracketed together with a "Ships together" header wherever they sit.
-Packaging more than one item in one run already gives every item the same
-`patchBranch` (see "For each Backlog item found" above), so the grouping
-shows up on the board with **no extra step from you** — do not create a
-`deployments` doc, do not set `deploymentId`, there is nothing left to do
-here.
+**Same-deployment grouping now happens for free, automatically** —
+`deploymentGroupKey()` in `backlog-tracker/public/js/app.js` derives it
+from the PR number the cards share, and the board draws matching cards
+bracketed together with a "Ships together" header wherever they sit. Under
+the deployment train every ticket a project builds is on the same branch
+and ships in the same PR anyway, so this needs **no extra step from you** —
+do not create a `deployments` doc, do not set `deploymentId`, there is
+nothing left to do here.
+
+Note that "packaging several items together" no longer means anything
+structural: each item still gets its own commit on the branch, in the order
+you package them. The one thing that still matters is the shared-file rule —
+if two items you are packaging in the same run both change `app.js`, give
+each of them the **full combined** content, since whichever commits second
+overwrites the file wholesale.
 
 ## Check for duplicate open work before packaging
 
@@ -342,11 +344,11 @@ Three cards asking for the same thing — reworded three different ways —
 were each independently investigated, built, PR'd, merged and deployed as
 three separate PRs in one night (#114, #118, #122), because nothing
 between "here's the Backlog list" and "here's what got packaged" ever
-compared what two cards were actually asking for. `findExistingPrForItem`
-only guards a second PR for the *same item id*; two different cards
-describing the same underlying work are two different item ids to it, so
-it never fires. Close this gap yourself, every run, before you set
-`patchReady` on anything:
+compared what two cards were actually asking for. Nothing in the pipeline
+closes this gap: two different cards describing the same underlying work
+are two different item ids, so they become two commits on the train, each
+overwriting the same files with its own idea of the fix. Close it
+yourself, every run, before you set `patchReady` on anything:
 
 1. Before investigating each item from the fire payload's list, pull every
    currently-open item in this project (`status` in `backlog`,
@@ -387,157 +389,71 @@ it never fires. Close this gap yourself, every run, before you set
 
 ## The "Notify Claude — Deploy" flow (a differently-shaped fire)
 
-**This is the stage that actually merges code to `main` — get the PR match
-wrong here and you merge the wrong thing to production, not just leave
-debris like a wrong match in the Backlog flow would.** Treat every step
-below as required, not a suggestion to shortcut once you've found
-something that looks plausible.
+**This is the stage that actually merges code to `main`.** Treat every step
+below as required, not a suggestion to shortcut once things look plausible.
 
 A fire whose `text` starts with `=== DEPLOY REQUEST for "<project>" ===`
 is the *other* end of the pipeline: these items are already implemented,
 tested, and confirmed "Approved for Deployment" (`ready-to-publish`). Do
-NOT investigate, re-implement, or re-test them. Each item in the fire
-`text` includes its Firestore doc id and, when known, its `patchBranch` —
-use those, don't re-derive them from the title. For each item:
+NOT investigate, re-implement, or re-test them.
+
+**There is no per-item PR to find any more.** Every ticket this project has
+built is a commit on ONE integration branch — its *deployment train* — and
+deploying means merging that branch once. The fire `text` names it on a
+`Integration branch (the deployment train):` line, and it is also on the
+project doc as `projects/{projectId}.deployBranch`. Your job is to verify
+the train, then hand it to the automation. All of it works over the plain
+git protocol, so none of it depends on `api.github.com` (see step 0).
 
 0. **Known current limitation, check this first:** this Routine's fired
    sessions have hit `api.github.com`/`github.com` returning "GitHub
    access to this repository is not enabled for this session" on every
-   read in this flow, confirmed across multiple runs — a session-scoping
-   issue in how this Routine is configured (it fires with no repo
-   attached), not a per-request fluke, and not something you can fix from
-   inside the run. **Try one real request first** (e.g. the search call in
-   step 1) rather than assuming it's still broken — if it works, proceed
-   normally with steps 1-3 below. If you get that exact
-   access-not-enabled error (or any 403 from `api.github.com`/
-   `github.com`), don't keep retrying it — switch immediately to the
-   git-protocol fallback in step 1 for PR discovery, and go straight to
-   "can't confirm CI" for step 2 (see below) rather than burning the rest
-   of this run on a blocked endpoint. Say plainly in your note that this
-   hit the known access issue, not a fix-specific problem — that
-   distinction matters for whoever triages it later.
-1. **Find its pull request by exact id match, not by title.** Every PR
-   this pipeline opens carries the literal line `Backlog item: <id>` in
-   its body (see `patchPrBody` in the Backlog flow above, and
-   `run-backlog-automation.js`'s own `findExistingPrForItem`, which uses
-   this same match to attach a re-patched item to its open PR) — search for that exact
-   string, not a fuzzy title match, which can and will collide across
-   items with similar-sounding requests (e.g. the batch of column/button
-   **rename** tickets from one sweep all have near-identical titles):
-   `curl -sS "https://api.github.com/search/issues?q=repo:offline2online/rob_ph_demos+type:pr+%22Backlog+item%3A+<ITEM_ID>%22+in:body"`
-   Cross-check against the item's own `notes` for a previously-recorded PR
-   link/number too, and confirm they agree. **If you cannot find an exact
-   `Backlog item: <id>` match — not a "close enough" title — stop and
-   leave this item alone with a note saying so; do not fall back to
-   guessing from a title search.** A wrong match here isn't a stray PR
-   someone can close later, it's the wrong code merged to `main`.
+   read, confirmed across multiple runs — a session-scoping issue in how
+   this Routine is configured (it fires with no repo attached), not a
+   per-request fluke, and not something you can fix from inside the run.
+   It no longer blocks this flow: steps 1 and 2 below are plain `git`, and
+   CI is checked by the automation itself rather than by you. If an
+   `api.github.com` call 403s, don't keep retrying it — say plainly in your
+   note that this hit the known access issue rather than a
+   deploy-specific problem, and carry on.
+1. **Verify every item in the DEPLOY REQUEST is actually on the branch.**
+   Clone or fetch over https and check each item's `deployCommit` (on its
+   Firestore doc, and echoed in the fire text) is an ancestor of the
+   branch head:
+   ```
+   git clone --filter=blob:none https://github.com/offline2online/rob_ph_demos.git repo
+   cd repo && git fetch origin <deployBranch>
+   git merge-base --is-ancestor <deployCommit> origin/<deployBranch> && echo ON-TRAIN
+   ```
+   Cross-check by marker too — every ticket's commit carries the same
+   `Backlog item: <id>` line PR bodies used to, so
+   `git log --grep "Backlog item: <ITEM_ID>" origin/<deployBranch>` finds
+   it by exact id, never by title.
 
-   **If `api.github.com` is blocked (see step 0), find the PR number
-   without it, still by exact match, never by title:** the plain git
-   protocol (`git ls-remote`/`git fetch`, not blocked) is enough, because
-   `run-backlog-automation.js` names branches deterministically —
-   `claude/<slug-of-patchBranch>-<first 6 chars of item id, lowercase>`.
-   Given the item's `patchBranch` (in this fire's `text`) and its id:
-   ```
-   git ls-remote https://github.com/offline2online/rob_ph_demos.git "refs/heads/claude/<slug>-<id6>"
-   ```
-   confirms the exact branch exists and gives its head SHA. Then:
-   ```
-   git ls-remote https://github.com/offline2online/rob_ph_demos.git "refs/pull/*/head"
-   ```
-   lists every open PR's number and head SHA — match the SHA from the
-   first command to get the PR number, exactly, with no title involved at
-   all. If the branch ref from the first command doesn't exist, there is
-   no PR for this item yet (regardless of what the board shows) — leave it
-   alone with a note, same as any other "can't find it" case.
-2. **If the PR you found is already in `MERGED` state** (its own `state`
-   field from step 1's search/lookup, or `merged: true`), skip straight to
-   step 3 — don't run the CI/mergeability checks below, they don't apply
-   to something already merged. This is a real, expected case, not an
-   error: the item can reach this flow with a PR that was already merged
-   through some other path (e.g. a human, or a Claude Code session with
-   real repo access, merging it directly on GitHub rather than waiting for
-   this pipeline). `run-backlog-automation.js`'s `processMergePr` checks
-   the PR's state before attempting `gh pr merge` and treats an
-   already-merged PR as success rather than retrying a merge that will
-   fail forever (fixed 2026-09-11, after item `RR68JuZDRHtZncsfwyKl` hit
-   exactly this) — so setting `mergeReady`/`mergePrNumber` here is safe
-   and correct, not redundant. If instead the PR is `CLOSED` without being
-   merged, that's a real problem, not a no-op: leave `mergeReady` unset
-   and say so in your note (same as "can't find it" below) rather than
-   setting it on a PR that can never actually merge.
-3. Once you have the confirmed PR number, check its CI status and
-   mergeability read-only: `GET /repos/offline2online/rob_ph_demos/pulls/{number}`
-   for `mergeable`/`mergeable_state`, and
-   `GET /repos/offline2online/rob_ph_demos/commits/{sha}/status` (or
-   `/check-runs`) for the actual CI result on its head commit — don't rely
-   on `mergeable_state` alone, it can read `"unknown"`/`"blocked"` for
-   reasons unrelated to CI (GitHub simply hasn't computed it yet, or a
-   branch protection rule). Treat `mergeable: null` as "not yet computed,
-   not as red" — re-`GET` once more a few seconds later rather than
-   treating it as a failure. Only proceed on an explicit `mergeable: true`
-   with every check run in a genuinely passed/success state — a pending,
-   queued, or errored check is not "close enough."
-
-   **There is no git-protocol fallback for this step** — CI/check-run
-   results aren't git objects, only the REST API has them. If step 0's
-   access issue is blocking `api.github.com`, you can identify the PR
-   (step 1's fallback) but you cannot confirm it's safe to merge — leave
-   `mergeReady` unset and say exactly that in your note ("found PR #N via
-   git ls-remote, but couldn't confirm CI — api.github.com blocked").
-   That's the correct, expected outcome for as long as step 0's access
-   issue persists; it is not something to work around by proceeding
-   without the check.
-
-   **A `mergeable_state` of `"dirty"` is a real merge conflict against
-   `main`, not a "not yet computed" state — treat it completely
-   differently from `"unknown"`.** `"unknown"` means "ask again in a few
-   seconds," and a pending/queued CI check means "ask again once it
-   finishes" — both are transient and can resolve on their own by your
-   next check. `"dirty"` never resolves on its own, no matter how many
-   times you re-check it or how many separate Deploy-flow fires come
-   through: the PR's branch and `main` have diverged in a way that needs
-   an actual `git merge` + conflict resolution + push, and you have no
-   push credential in this run (same restriction as everywhere else in
-   this file) — nothing you do inside this session can fix it. Do not set
-   `mergeReady`. Instead:
-   - Fetch the item's current `notes` first. If the most recent note
-     already reports this exact PR number as conflicted and nothing else
-     has changed, don't add another near-identical note — a fresh
-     re-diagnosis of an unchanged, permanent blocker on every single
-     fire is noise, not progress; two separate fires doing exactly this
-     (re-confirming the same `dirty` state, 29 minutes apart, with no new
-     information either time) is what let PR #77 sit blocked for hours
-     with nothing actually able to move it forward.
-   - If this is the first time you're flagging it (or the PR number or
-     state has changed since the last note), append one clear note
-     naming the PR and stating plainly that it has a real merge conflict
-     against `main` (`mergeable_state: dirty`) that needs someone with
-     git push access — a human, or a Claude Code session with a real
-     repo credential — to merge `main` into the PR's branch and resolve
-     it; this Routine cannot do that itself. That note is what makes the
-     blocker visible and actionable outside this run, the same way
-     naming a stray `patchReady` elsewhere in this file is what makes
-     that visible.
-   - This exact scenario already happened in production: PR #77 (item
-     `sxETMRCnxzoBhzlQLSUI`) went conflicted after later merges moved
-     `main` forward, two separate Deploy-flow fires each independently
-     re-confirmed the identical `dirty` state without escalating it any
-     further, and it only got resolved once a Claude Code session with
-     real repo access noticed it separately, merged `main` into the
-     branch by hand, and pushed the resolution.
-3b. **FAQ impact review — do this for every item whose PR you identified
-   in step 1, whether or not step 3 cleared it to merge.** The tickets in
-   a DEPLOY REQUEST are about to change what the product does, and the
-   public help centre (`faq/`, edited from the console's FAQ Management
-   page, Firestore `faqArticles`) describes what the product does — so
-   every deploy is exactly the moment an article silently goes stale.
-   Your job here is to find the articles the *code change* makes wrong or
-   incomplete, write the corrected text, and park it as a **proposed
-   revision** on the article for a human to approve. Nothing you write in
-   this step changes the live help centre by itself: the proposal only
-   goes live once a person approves it in FAQ Management **and** the
-   ticket that caused it has actually reached Merged to Main
+   **If an item's `deployCommit` is missing, or is not an ancestor of the
+   branch, stop and leave that item alone with a note saying so.** Do not
+   set `trainReady`. Either it was never built, or it was reverted off the
+   train (a Failed testing — check its notes), and merging would ship
+   something nobody approved.
+2. **Verify nothing on the branch is still in testing.** Read every item
+   for this project and confirm that none with a `deployCommit` is still
+   `ready-for-testing`. Merging the branch ships *everything on it*, so one
+   untested ticket riding along is the failure this whole design exists to
+   prevent. (The board already hides Deploy to Main in that state, so this
+   is a belt-and-braces check against a card that moved between the click
+   and your run.) If you find one, don't set `trainReady` — note it,
+   naming the item, and say it must be approved or rejected first.
+3b. **FAQ impact review — do this whether or not steps 1-2 cleared the
+   train.** The tickets in a DEPLOY REQUEST are about to change what the
+   product does, and the public help centre (`faq/`, edited from the
+   console's FAQ Management page, Firestore `faqArticles`) describes what
+   the product does — so every deploy is exactly the moment an article
+   silently goes stale. Your job here is to find the articles the *code
+   change* makes wrong or incomplete, write the corrected text, and park it
+   as a **proposed revision** on the article for a human to approve.
+   Nothing you write in this step changes the live help centre by itself:
+   the proposal only goes live once a person approves it in FAQ Management
+   **and** the ticket that caused it has actually reached Merged to Main
    (`published-live`) — whichever of those two happens last (a Cloud
    Function, `promoteFaqRevisionIfReady` in `functions/index.js`, does the
    promotion; see "FAQ revision review" in `backlog-tracker/REQUIREMENTS.md`).
@@ -554,9 +470,11 @@ use those, don't re-derive them from the title. For each item:
      that leaves zero candidates — it's a configuration gap for a human
      to fix on the project's Docs page, not something to work around by
      widening the net).
-   - **Work from the actual diff**, not the ticket title: `git fetch` the
-     PR's head branch and `git diff main...<branch>` — the plain git
-     protocol works even when `api.github.com` is blocked (step 0).
+   - **Work from the actual diff.** Review the train **once**, as one
+     combined diff — `git diff main...origin/<deployBranch>` — not N
+     separate per-ticket diffs. That is better input, not just less work:
+     it is exactly what is about to land on `main`. List every item id on
+     the train in each proposal's `sourceItemIds`.
    - For each candidate article, decide from the diff whether its current
      text (title/summary/body — read `bodyMd`, it's HTML) is now wrong,
      incomplete, or missing a new step/option/field the change introduces.
@@ -567,34 +485,66 @@ use those, don't re-derive them from the title. For each item:
      covers at all, you may propose a **new** draft article (see below) —
      but prefer revising an existing article over adding one.
    - Write the proposed revision onto the article (`pendingRevision` map +
-     `needsReview: true`), citing the ticket id(s) and PR number(s), with
-     a one-paragraph `reason` a reviewer can verify against the diff.
+     `needsReview: true`), citing the ticket id(s), with a one-paragraph
+     `reason` a reviewer can verify against the diff.
    - Then continue with step 4 as normal — a proposed revision never
      blocks the merge, and a blocked merge never cancels the proposal.
-4. If it's green and mergeable **and step 1's exact id match held**, PATCH
-   its backlogItems doc: `mergeReady -> true` (boolean), `mergePrNumber ->
-   <the PR number, as a number>`, `updatedAt -> now`. The same scheduled
-   `backlog-automation.yml` job picks this up, actually merges the PR, and
-   (when the merge touches `backlog-tracker/`) explicitly triggers the
-   Firebase deploy workflow itself — you don't need to do anything further
-   for that part. It flips `status` to `"published-live"` once the merge
-   succeeds. Do not set `status` to `"published-live"` yourself — you have
-   no way to confirm the merge actually happened, and the same rule from
-   the Backlog flow above applies here too: never set `mergeReady: true`
-   with a `mergePrNumber` you haven't fully confirmed via step 1 — a wrong
-   or placeholder PR number picked up by the next scheduled run merges
-   whatever that number actually points to.
-5. This is asynchronous, same as the Backlog flow: your session ends
-   before the scheduled job's next run, so you won't see the merge or the
-   resulting deploy complete yourself. That's expected — say what you set
-   `mergeReady` on in your final report (see "When done" below), not what
-   you watched happen.
+4. **If steps 1 and 2 both held, PATCH the PROJECT — not the items:**
+   `projects/{projectId}` with `trainReady -> true` (boolean) and
+   `updatedAt -> now`. That is the single signal that replaces the old
+   per-item `mergeReady`/`mergePrNumber` pair.
 
-If a PR can't be found, or its CI is red, or it's not mergeable, leave its
-status as `ready-to-publish` (and `mergeReady` unset/false) and add a note
-explaining why instead of guessing. (Step 3b's FAQ proposals still stand
-in that case — they simply wait until the ticket eventually reaches
-Merged to Main.)
+   ```
+   curl -sS -X PATCH "$BOARD/projects/<PROJECT_ID>?updateMask.fieldPaths=trainReady&updateMask.fieldPaths=updatedAt" \
+     -H "Content-Type: application/json" \
+     -d '{"fields":{"trainReady":{"booleanValue":true},"updatedAt":{"timestampValue":"<ISO8601 now>"}}}'
+   ```
+
+   `backlog-automation.yml` picks it up (within seconds — a Cloud Function
+   dispatches it), merges `main` into the branch, bumps `APP_VERSION`
+   once, opens ONE PR titled `Deploy <project> — N tickets` listing every
+   `Backlog item: <id>`, waits for CI, merges it with `--merge` (never
+   squash — the per-ticket commits are the history now), flips every
+   ticket on the train to `"published-live"`, triggers the Firebase deploy
+   when the merge touched `backlog-tracker/`, and resets the branch back to
+   `main` ready for the next train.
+
+   **Do not set `status` to `"published-live"` yourself, and do not set
+   `mergeReady`.** You have no way to confirm the merge happened, and the
+   same rule as the Backlog flow applies: never set `trainReady: true`
+   until steps 1 and 2 are genuinely finished and passed.
+
+   **You do not check CI here.** The automation does it right before
+   merging, which is the only moment the answer is meaningful anyway — a
+   green check now says nothing about the branch after `main` is merged
+   into it. This is a deliberate change from the old per-PR flow, where
+   "couldn't reach `api.github.com` to confirm CI" was itself a blocker.
+5. This is asynchronous, same as the Backlog flow: your session ends
+   before the job's next run, so you won't see the merge or the resulting
+   deploy complete yourself. That's expected — say that you set
+   `trainReady` and which tickets were on the train in your final report
+   (see "When done" below), not what you watched happen.
+
+**Outcomes that are not a merge**, all recorded on the project itself as
+`trainStatus` + `trainNote`, visible without re-running anything:
+
+- `conflict` — merging `main` into the branch conflicted (someone pushed
+  straight to `main` in this project's files), or GitHub reports the PR as
+  conflicting, or CI is red. Nothing is merged and no card moves. It needs
+  someone with push access to merge `main` into the branch and resolve it;
+  this Routine still cannot do that itself. Say so in your note rather
+  than re-diagnosing an unchanged blocker on every fire — the same
+  anti-noise rule that used to apply to a `dirty` PR (#77 sat blocked for
+  hours while two fires each re-confirmed the identical state).
+- `awaiting-human-merge` — the train carries a `.github/workflows/` change,
+  which the pipeline never merges on its own. The PR is left open for a
+  person; the board records every ticket as live on its own once it sees
+  the merge, with no second click.
+
+If you can't verify the train, leave every item's status as
+`ready-to-publish`, leave `trainReady` unset, and add a note explaining
+why instead of guessing. (Step 3b's FAQ proposals still stand in that case
+— they simply wait until the tickets eventually reach Merged to Main.)
 
 ## FAQ impact review (Deploy flow, step 3b) — exact procedure
 
@@ -810,7 +760,7 @@ be stale by the time you run):
    `title` only if you changed it) — same PATCH/`updateMask` shape as the
    default flow's step 4 above (add each written field to
    `updateMask.fieldPaths`), just a different set of fields and no
-   `patchFiles`/`patchBranch`/`patchReady` anywhere in the call.
+   `patchFiles`/`patchReady` anywhere in the call.
 
 If an item already carries a `groomedSummary` from an earlier grooming run
 and nothing about it looks like it's changed since (`desc`/`notes` read the
@@ -823,11 +773,12 @@ current `desc`, leave it as-is).
 ## When done
 
 Post a summary listing each item, its new title, what you found, the fix,
-and whether you set `patchReady`/`mergeReady` (a real PR — or merge — will
-appear automatically within about 2 minutes once you do; you won't see
-it yourself, since your session ends before then) or left it blocked in
-`backlog`/`ready-to-publish` with a note (and why). If you packaged more
-than one item together (same `patchBranch`), say so — the board groups
+and whether you set `patchReady` (its commit lands on the project's
+integration branch within a couple of minutes; you won't see it yourself,
+since your session ends before then) or left it blocked in `backlog` with a
+note (and why). For a Deploy run, say whether you set `trainReady` on the
+project and which tickets were on the train. If you packaged more
+than one item together, say so — the board groups
 them on its own, nothing further to name (see "Cards that ship together
 are already grouped" above). If you consolidated any duplicate items
 (see "Check for duplicate open work before packaging" above), name which
@@ -849,26 +800,26 @@ but did not touch.
 list each item groomed, its corrected `category`, and a one-line version of
 its `groomedSummary` (plus a note on any item whose `groomRequiredNotes`
 flagged something genuinely missing) — do not mention `patchReady`,
-`mergeReady`, PRs, or GitHub anywhere in this report, since this flow never
+`trainReady`, PRs, or GitHub anywhere in this report, since this flow never
 touches any of that and nothing about it depends on the scheduled
 automation job picking anything up afterward.
 
-If at any point in this run you set `patchReady`/`mergeReady` on an item
-with placeholder or not-yet-finished data (even briefly, even if you then
-set it back to `false`) — say so explicitly in your summary and name the
-item id. You can check, read-only and without any credential, whether it
-already produced a real PR: `curl -sS
-"https://api.github.com/search/issues?q=repo:offline2online/rob_ph_demos+type:pr+%22Backlog+item%3A+<ITEM_ID>%22+in:body"`.
-`run-backlog-automation.js` now refuses to open a *second* PR for an item
-that already has one, but it still can't close a stray one that's already
-open — only a human, or a Claude session with real repo access, can. Naming
-it in your summary is what makes that possible; a silent "I think I might
-have caused a stray PR" that never gets said out loud is how #61 sat open
-for hours.
+If at any point in this run you set `patchReady` on an item (or
+`trainReady` on a project) with placeholder or not-yet-finished data — even
+briefly, even if you then set it back to `false` — say so explicitly in
+your summary and name the id. A stray `patchReady` is now a real commit on
+a shared integration branch, which is worse than the stray PR it used to
+be: every ticket built after it inherits it, and taking it back off needs a
+revert (see Failed testing / `revertRequested`). You can check, read-only
+and without any credential, whether it already produced one:
+`git log --grep "Backlog item: <ITEM_ID>" origin/<deployBranch>`. Naming it
+in your summary is what makes a fix possible; a silent "I think I might
+have caused that" that never gets said out loud is how #61 sat open for
+hours.
 
 **Never attempt to `git push`, call any GitHub write API, or otherwise get
 code onto GitHub yourself in this or any other run of this Routine — you
 have no credential for it and are not meant to.** `patchFiles` +
-`patchReady` (Backlog flow) or `mergeReady` + `mergePrNumber` (Deploy
-flow) are the only mechanisms; a separate scheduled, non-AI GitHub
-Actions job does the actual push/PR/merge.
+`patchReady` on an item (Backlog flow) or `trainReady` on a project
+(Deploy flow) are the only mechanisms; a separate scheduled, non-AI GitHub
+Actions job does the actual commit/PR/merge.

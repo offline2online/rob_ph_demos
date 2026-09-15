@@ -116,7 +116,7 @@ deleted by hand).
   previewUrl?: string,          // a Ready for Testing card's own "Test this" link
   testSummary?: string,         // Ready for Testing card's primary text — see below
   noDeploymentRequired?: boolean, // set from the Edit item modal — see "No manual way to reach published-live exists" below for the one exception it carves out
-  testPassed?: boolean,         // Ready for Testing card's own "Confirm tested" flag — see "Ready for Testing has two stages" below; never true outside that status, cleared once it advances or is sent back
+  testPassed?: boolean,         // DEPRECATED — the old per-card "Confirm tested" flag. Approval is the checkbox now (see "Approving out of Ready for Testing"); read-only leftover on old cards, never written
   testVersion?: string,         // backlog-tracker's own APP_VERSION, stamped once on first entry to Ready for Testing and carried unchanged through Approved for Deployment, Deployed/Main Branch (Live), and Archived — see "Test version" below
 
   // Notify Claude automation hand-off — see README.md "Notify Claude can't
@@ -128,13 +128,39 @@ deleted by hand).
   // (a scheduled GitHub Actions job with its own repo-native credentials,
   // no AI involved) does the actual push/PR/merge and clears these flags.
   patchFiles?: [{ path: string, content: string | null }],  // null content = delete that path
-  patchBranch?: string,
   patchCommitMessage?: string,
-  patchPrTitle?: string,
-  patchPrBody?: string,
-  patchReady?: boolean,         // set true once patchFiles etc. are ready; cleared to false once a PR is opened
-  mergeReady?: boolean,         // Deploy-notify flow: set true once a fired session confirms a PR is green/mergeable
-  mergePrNumber?: number,       // which PR mergeReady refers to
+  patchReady?: boolean,         // set true once patchFiles etc. are ready; cleared to false once the commit lands on the train
+  patchBranch?: string,         // DEPRECATED — there is one branch per project now, not one per ticket. Still accepted from the Routine, ignored
+  patchPrTitle?: string,        // DEPRECATED — a ticket has no PR of its own; the train's PR title is generated
+  patchPrBody?: string,         // DEPRECATED — likewise
+  mergeReady?: boolean,         // DEPRECATED — pre-train per-ticket merge path (processMergePr), kept only for cards in flight when the train shipped
+  mergePrNumber?: number,       // DEPRECATED — which PR mergeReady refers to
+
+  // The deployment train — see "The deployment train" below and
+  // README.md → "The deployment train — one branch and one PR per project".
+  // Every ticket a project builds is one commit on that project's single
+  // integration branch, so tickets stack, are tested together, and ship as
+  // one PR.
+  deployBranch?: string,        // the integration branch this ticket was built on, e.g. "deploy/backlog-tracker-faqs"
+  deployCommit?: string,        // its latest commit on that branch — the sha the Deploy flow verifies is an ancestor of the branch head
+  deployCommits?: [string],     // every commit it has on the branch (a re-patch appends rather than rewriting)
+  revertRequested?: boolean,    // Failed testing wrote it: take this rejected ticket's commits back off the branch
+  revertBlockedBy?: [string],   // item ids whose later commits made that revert conflict; a human resolves, nothing is force-pushed
+  revertedCommits?: [string],   // the revert commits that took it off
+}
+```
+
+```
+projects/{projectId} — the train's own state (automation-written; see
+firestore.rules, where the browser may latch trainLocked true and nothing else)
+{
+  deployBranch?: string,        // "deploy/<project-slug>", created from main on first use
+  trainLocked?: boolean,        // a release is closing: no new ticket may join it, so the build CTAs hide
+  trainReady?: boolean,         // the Deploy flow verified the train; the automation merges it
+  trainPrNumber?: number,       // the train's single PR
+  trainStatus?: "idle" | "deploying" | "conflict" | "awaiting-human-merge",
+  trainNote?: string,           // why it isn't merged, when it isn't
+  needsHumanMerge?: boolean,    // the train carries a .github/workflows/ change, so a person merges it
 }
 ```
 `CATEGORIES` (fixed set, `backlog-tracker/public/js/app.js`): `Pricing &
@@ -146,52 +172,160 @@ Status pipeline and what each transition means:
 | Status | Column | Meaning |
 |---|---|---|
 | `backlog` | Backlog | Captured, not yet worked |
-| `ready-for-testing` | Ready for Testing | Implemented, PR open, awaiting human test — see "Ready for Testing has two stages" below |
-| `ready-to-publish` | Approved for Deployment | Released from Ready for Testing via the project's own "Approved for Deployment" action |
-| `published-live` | Deployed / Main Branch (Live) | Set only by `run-backlog-automation.js` after it actually merges the item's PR — see below, no manual button sets this |
+| `ready-for-testing` | Ready for Testing | Implemented and committed on the project's integration branch, awaiting human test |
+| `ready-to-publish` | Approved for Deployment | Approved out of Ready for Testing via the project's own "Approved for Deployment" action |
+| `published-live` | Deployed / Main Branch (Live) | Set only by `run-backlog-automation.js` after it actually merges the train's PR — see below, no manual button sets this |
 | `archived` | (hidden from the board) | Set via the Archive action on a Deployed/Main-Branch card; reversible via Restore |
 
-**Ready for Testing has two stages, not one — confirming a card is tested
-does not by itself advance it.** This used to be a single click: the
-card's own button both flagged it tested *and* moved it straight to
-Approved for Deployment in the same action, which meant testing one card in
-a batch of several put that one card alone on the feature branch with no
-chance to also confirm the rest first. It's now two separate actions:
+## The deployment train
 
-1. **Per-card, in place**: a Ready for Testing card's "Confirm tested"
-   button (`toggleTestPassed()` in `app.js`) sets `testPassed: true` —
-   the card stays in Ready for Testing, showing "✓ Passed testing"
-   (click again to un-mark). A checkbox on each card (mirroring the
-   Backlog column's own "Ready for Dev" selection, a separate selection
-   set — see `getDeploySelectedSet`) lets several be hand-picked instead
-   of acted on individually.
-2. **Batched, project-level**: the project header's own **"Approved for
-   Deployment"** action (`deployToFeature()`) appears once at least one
-   Ready for Testing card has `testPassed: true`, showing that count (or
-   a narrower "N selected" count if any checkboxes are checked). Clicking
-   it advances every `testPassed` (and, if any are checked, only the
-   checked-and-passed) item straight to `ready-to-publish` in one
-   Firestore batch write, clearing `testPassed` on each as it goes. This
-   never touches the Routine or GitHub — the feature branch and PR
-   already exist from the Backlog stage (`run-backlog-automation.js`'s
-   `processApplyPatch`); this step only advances the board's own status
-   once a human has actually looked at (a batch of) what's already there.
-   Unlike Ready for Dev/Deploy to Main, there's no Routine session to spin
-   on, so feedback is immediate instead: an in-app alert dialog (`showAlert()`
-   — see "In-app dialogs replace window.confirm/prompt/alert" below) naming
-   exactly what moved (and stating plainly that no new GitHub push happened — the code
-   was already pushed earlier), plus a Slack post via
-   `notifyOnItemsDeployedToFeature` (`functions/index.js`, watching
-   `projects/{id}.deployToFeatureRequestedAt` the same way
-   `notifyOnProjectReadyForReview`/`notifyOnProjectReadyToDeploy` watch
-   their own timestamps — it just never fires the Routine, since there's
-   nothing for it to do).
+**Every ticket a project builds is one commit on that project's single
+long-lived integration branch, `deploy/<project-slug>`** (on the project
+doc as `deployBranch`, created from `main` on first use). There is no
+per-ticket branch and no per-ticket PR.
 
-Sending a card back — the left-arrow "move back" button — from Approved
-for Deployment into Ready for Testing (`moveItem()`) resets `testPassed`
-to `false`: a stale flag from a previous round would otherwise let it
-slip back onto the feature branch on the next "Approved for Deployment"
-click with nobody having re-confirmed the new round of work.
+The old model gave each ticket its own branch cut from `main`, so two
+tickets alive at once drifted apart and nothing in the pipeline ever
+brought them back together — the Routine has no push credential by design,
+and the merge step only ran `gh pr merge`. The second PR to merge was
+therefore conflicted, the merge failed, the card sat in Approved for
+Deployment with a note, and a human resolved it by hand (PR #77, then #141
+and #139 on 15 Sep 2026). `version.js` made it structural rather than
+occasional: every PR bumped `APP_VERSION` on the same line, so *any* two
+open PRs conflicted on that file alone.
+
+Requirements that follow from it:
+
+- **Build on the branch head, never on `main`.** `patchFiles` are
+  full-file overwrites, so a fired session must read every file it
+  overwrites from `<deployBranch>`, not `main` (see
+  `ROUTINE_INSTRUCTIONS.md` step 3) — otherwise its commit silently
+  reverts whatever landed on the branch since. The commit message carries
+  a `Backlog item: <id>` line, so exact-id lookup works via
+  `git log --grep` and needs no GitHub API.
+- **A re-patch appends, never rewrites.** `deployCommits[]` grows;
+  `deployCommit` is the latest. History on a shared branch is never
+  rewritten and the branch is never force-pushed, except by the post-merge
+  reset (with `--force-with-lease`).
+- **One version bump per deployment, not per ticket.** `processDeployTrain`
+  reads `APP_VERSION` off `main`, increments the third number and commits
+  that on the branch just before opening the PR. Tickets must not include
+  `version.js` in `patchFiles`.
+- **Nothing leaves Ready for Testing rejected without coming off the
+  branch.** A card in Backlog must never have live commits on a train, or
+  a rejected ticket ships in the next deploy anyway. Failed testing writes
+  `revertRequested`; `processRevertFromTrain` reverts the card's commits,
+  newest first, and pushes. If a later ticket built on top of it the revert
+  conflicts: nothing is force-pushed, the card is still sent back, and
+  `revertBlockedBy` names the tickets a human must decide about (send them
+  back too, or fix the branch by hand). The card shows that state, and
+  Deploy to Main stays hidden until it clears.
+- **Deploy merges the whole branch, so it is offered only when the whole
+  branch is approved.** See "The single Deploy CTA" below.
+- **The only conflict path left is `main` moving under the branch**, which
+  takes someone pushing straight to `main` in this project's files. It is
+  never resolved automatically: the merge aborts, `trainStatus` goes
+  `conflict` with a `trainNote`, and nothing is merged or moved.
+- **A train carrying a `.github/workflows/` change is never merged by the
+  pipeline** (`needsHumanMerge`): the PR is left open at
+  `trainStatus: "awaiting-human-merge"`, and `reconcileMergedTrains` records
+  every ticket as live on its own once GitHub reports the merge — no second
+  click.
+
+## Approving out of Ready for Testing
+
+**The checkbox is the approval.** A Ready for Testing card has one CTA —
+**Failed testing** — and a checkbox; ticking it (or the column header's
+select-all) and clicking the project's **"Approved for Deployment — N
+selected"** is what advances it to `ready-to-publish`.
+
+This replaced two gates standing between a tested ticket and Approved for
+Deployment: a per-card `testPassed` flag set by a "Confirm tested" click,
+*and* the checkbox, which narrowed the batch but did nothing at all until
+the tick was there. Two controls for one decision. **No copy changed** —
+every column label, button label and hint reads exactly as it did; what
+changed is which control approves.
+
+- **Only ticked items are approved.** The "an empty selection means
+  everything" rule that Backlog's Ready for Dev button uses is deliberately
+  *not* shared here: with no tick and no `testPassed`, an empty selection
+  carries no signal that anyone looked at anything. Over-firing a build is
+  cheap; over-approving a release is not.
+- Nothing ticked → the button is hidden, per the same
+  hidden-when-nothing-to-do rule every CTA on this header follows (and
+  exactly what it did before when nothing was `testPassed`).
+- **Failed testing is always offered** on a Ready for Testing card (it used
+  to hide once "Confirm tested" had been clicked; there is no such click
+  now), and additionally writes `revertRequested` — see "The deployment
+  train" above.
+- A `noDeploymentRequired` card is untouched by all of this: no checkbox,
+  and it keeps its own separate "Confirm tested — mark Merged to Main"
+  button straight to `published-live`.
+- **Pulling a ticket back out after approval needs no new control.** The
+  **← back arrow** on an Approved for Deployment card sends it to Ready for
+  Testing exactly as it always has — its commit stays on the branch, which
+  is correct, since Ready for Testing is precisely where a ticket is meant
+  to have code on the branch — and **Failed testing** there does the revert
+  and the send-back. Two clicks, both existing, both keeping the meaning
+  they had.
+
+`testPassed` is never written anywhere now. Old cards carrying it are
+simply ignored; there was nothing to migrate.
+
+## The single Deploy CTA, and closing the train
+
+**Deploy to Main is shown only when every ticket on the train is
+approved** — i.e. Approved for Deployment has cards and Ready for Testing
+is empty for that project. The label, count pill and hidden-when-
+nothing-to-do rule are unchanged; only the condition is new.
+
+The reason it cannot simply merge what is approved: the whole project
+builds onto one branch, so merging it ships everything on it. With 8
+approved and 2 still in Ready for Testing, a merge would carry all 10. The
+2 must be approved or rejected first, and the button's absence is what
+enforces that.
+
+*Accepted trade-off:* in that state the button is absent and nothing on
+screen names the 2 as the blocker. Those 2 cards are sitting visibly in
+Ready for Testing with their own CTAs, which is the board telling the story
+without new copy. Revisit only if people actually get stuck.
+
+**The Backlog locks at first approval, not at first test** (`trainLocked`).
+While tickets sit only in Ready for Testing nothing has been committed to,
+so builds continue and new tickets may join the branch — everything on it
+is still under test. The moment the first ticket is approved the train is
+closing: **Ready for Dev** and **Groom Backlog** hide for that project, so
+no new ticket can join this release. Finish what's left in Ready for
+Testing (approve it, or reject it, which takes it off the branch), and
+Deploy to Main appears. On merge the branch is reset to `main`,
+`trainLocked` clears, and Ready for Dev returns.
+
+Without this the train never closes: an agent finishes ticket 11 while the
+first 10 are being tested, its card appears in Ready for Testing, and the
+Deploy button disappears again — a treadmill where a project with steady
+build throughput can never reach a deployable state.
+
+Backlog cards themselves stay fully usable while locked — add, edit,
+comment, delete all work. Only *starting a build* is held. `trainLocked` is
+the one train field the browser may write, and only in one direction: it
+latches true from `deployToFeature()`, and only a merged train clears it
+(`firestore.rules`).
+
+The result is that a project header shows exactly one CTA at a time, and it
+is the next thing to do:
+
+| State | CTA shown |
+|---|---|
+| Backlog has items, no release in flight | **Ready for Dev** |
+| Items ticked in Ready for Testing | **Approved for Deployment** |
+| Ready for Testing empty, items approved | **Deploy to Main** |
+| Deploy in flight | spinner / session link |
+
+*Known risk:* a slow-to-test ticket holds the whole project's Backlog while
+it sits there. The way out already exists and needs nothing new — Failed
+testing sends it back and off the branch, unblocking the deploy without
+unblocking the build. If that bites in practice, the next option is a
+per-project override on the lock; deliberately not built now.
 
 **The left-arrow does NOT exist on every card past Backlog — two cases
 deliberately have no "move back" at all**, both fixed 2026-09-13 after a
@@ -199,21 +333,16 @@ report that tickets taken from Backlog were "going back to Backlog":
 
 - **A Ready for Testing card can never move back to Backlog.** Unlike
   Approved-for-Deployment→Ready-for-Testing above, this transition has no
-  safe semantics: a Ready for Testing card always has a real, already-open
-  PR behind it (`patchBranch`), and moving it to Backlog does nothing to
-  close, reconnect, or even leave a visible trace of that PR —
-  `patchReady` stays `false`, so `run-backlog-automation.js` never looks
-  at the item again, and nothing on the resulting Backlog card hints it
-  already has one. Re-investigating it fresh from Backlog used to get the
-  item skipped with no path forward once `findExistingPrForItem` found
-  the still-open original; the automation now attaches a re-patched item
-  to its open PR instead (see `backlog-tracker/README.md`), but the
-  transition still hides the PR from whoever is looking at the card. No
-  automation step ever moves a card backward on its own (see
-  `run-backlog-automation.js`'s `processApplyPatch`/`processMergePr`), so
-  this was always a manual click; `cardHTML`'s `canLeft` now excludes
-  `ready-for-testing` outright, removing the only path capable of
-  producing it.
+  safe semantics: a Ready for Testing card always has real, live commits on
+  its project's integration branch, and a bare move to Backlog does nothing
+  to take them off it — the rejected ticket would still ship in the next
+  deploy, with nothing on the resulting Backlog card even hinting at it.
+  **Failed testing** is the supported way out, precisely because it does
+  that second half (`revertRequested` — see "The deployment train" above)
+  as well as recording why. No automation step ever moves a card backward
+  on its own (see `run-backlog-automation.js`), so this was always a manual
+  click; `cardHTML`'s `canLeft` excludes `ready-for-testing` outright,
+  removing the only path capable of producing it.
 - **A locked card's left-arrow is suppressed too** (`canLeft && !isLocked`
   in `cardHTML`) — concretely, an Approved-for-Deployment card the Routine
   has confirmed mergeable (`isDeploying`, `mergeReady: true`) is genuinely
@@ -236,14 +365,15 @@ the ticket itself.
   later moves. The normal automated path
   (`run-backlog-automation.js`'s `processApplyPatch`) reads
   `public/js/version.js` straight off disk right after applying
-  `patchFiles` (so it reflects a version bump the same patch carries) and
-  stamps it alongside the `ready-for-testing` status write. The rarer
-  manual path — a Backlog card moved straight to Ready for Testing via
-  the right-arrow button, bypassing the Routine/PR pipeline entirely —
-  stamps the frontend's own currently-loaded `APP_VERSION` the same way
+  `patchFiles` — i.e. the version on the integration branch the ticket is
+  actually testable at — and stamps it alongside the `ready-for-testing`
+  status write. (Tickets no longer bump the version themselves; the train
+  does it once at deploy time, so this is the version the branch already
+  carried.) The rarer manual path — a Backlog card moved straight to Ready
+  for Testing via the right-arrow button, bypassing the pipeline entirely
+  — stamps the frontend's own currently-loaded `APP_VERSION` the same way
   (`moveItem()`, only on the forward direction; sending a card back from
-  Approved for Deployment leaves an existing `testVersion` untouched, same
-  as `testPassed` is reset but the version stamp isn't).
+  Approved for Deployment leaves an existing `testVersion` untouched).
 - Carries through Approved for Deployment and Deployed/Main Branch (Live)
   unmodified, and appears as its own **Version** column in the Archived
   table (`archiveRowHTML()`) once a card is archived — so the version a
@@ -262,11 +392,11 @@ There used to be a per-card "Merge to main" button, which wrote `status:
 actually merged on GitHub — removed after that let cards read "Merged to
 Main" while their PRs sat open. The project's own "Deploy to Main" header
 action (`requestDeployNotify` in `app.js`) is now the only trigger for an
-ordinary card; it fires the Routine, which sets `mergeReady` +
-`mergePrNumber` once it's confirmed the PR is actually green and
-mergeable, and only `run-backlog-automation.js` (see "Notify Claude can't
-push" in README.md) flips `status` to `published-live`, after the real
-merge succeeds.
+ordinary card; it fires the Routine, which sets `projects/{id}.trainReady`
+once it has confirmed every ticket really is on the integration branch and
+nothing on that branch is still in testing, and only
+`run-backlog-automation.js` (see "Notify Claude can't push" in README.md)
+flips `status` to `published-live`, after the real merge succeeds.
 
 The one deliberate exception is `noDeploymentRequired` (set from the Edit
 item modal — a plain checkbox, self-service, not something only the
@@ -275,15 +405,16 @@ nothing that ever touches GitHub — genuinely has no PR for the deploy gate
 to check in the first place, so gating it on "Deploy to Main" would just
 wait forever on a merge that will never happen, and it never has anything
 to gain from the Feature Branch stage either. Such a card is excluded from
-the `testPassed`/"Approved for Deployment" pool entirely (no checkbox, no
-"Confirm tested" button) and instead shows its own separate "Confirm
-tested — mark Merged to Main" button; `confirmTestedNoDeploy()` writes
+the "Approved for Deployment" pool entirely (no checkbox, and it is the one
+Ready for Testing card that still has an approve button of its own) and
+instead shows its own separate "Confirm tested — mark Merged to Main"
+button; `confirmTestedNoDeploy()` writes
 `status: "published-live"` directly, the same way the old, removed "Merge
 to main" button used to — the difference being this is only ever offered
 on a card that has already told the board there's no PR to fake being
-merged. Any card without the flag still goes through the full two-stage
-Ready for Testing → Feature Branch → Main pipeline exactly as described
-above; this does not change behavior for the common case.
+merged. Any card without the flag still goes through the full
+Ready for Testing → Approved for Deployment → Main pipeline exactly as
+described above; this does not change behavior for the common case.
 
 `published-live` is treated as the one **irreversible** transition of the
 four for automation purposes (see "FAQ auto-review" below) — the other
@@ -686,12 +817,13 @@ REST API is reachable with a plain `curl`, no service account needed.
   live Backlog count; not buried in a menu — fires the Routine's
   investigate-and-fix flow, see "Notify Claude" below — the function/doc
   names kept their original "notify" naming even after the button itself
-  was relabeled), **Approved for Deployment** (shown only once at least one
-  Ready for Testing card has been individually confirmed tested — see
-  "Ready for Testing has two stages" above; a pure board status batch
-  write, no Routine involved), **Deploy to Main** (same gradient
-  treatment as Ready for Dev, shown only when the project has items on
-  Approved for Deployment — see "Notify Claude — Deploy" below), **+ New
+  was relabeled; hidden while the train is locked — see "The single Deploy
+  CTA, and closing the train" above), **Approved for Deployment** (shown
+  only once at least one Ready for Testing card is ticked — see "Approving
+  out of Ready for Testing" above; a pure board status batch write, no
+  Routine involved), **Deploy to Main** (same gradient
+  treatment as Ready for Dev, shown only when every ticket on the project's
+  train is approved — see "The single Deploy CTA" above), **+ New
   backlog item**, then a **⋮** options menu holding everything else
   (Archived tickets, Requirements/Docs, interface contracts).
   Mobile (<640px) stacks each gradient button as its own full-width row
@@ -740,8 +872,8 @@ REST API is reachable with a plain `curl`, no service account needed.
   that's a live data/config change only — nothing that ever needs a code
   push or a deploy, e.g. a Firestore-only edit. Any card carrying it shows
   a small "No deployment required" badge; once it reaches Ready for
-  Testing, it's excluded from the checkbox/"Confirm tested" testPassed
-  pool entirely (see "Ready for Testing has two stages" above) and instead
+  Testing, it's excluded from the checkbox approval pool entirely (see
+  "Approving out of Ready for Testing" above) and instead
   shows its own separate "Confirm tested — mark Merged to Main" button,
   which moves it straight to `published-live` — see "No manual way to
   reach `published-live` exists" above for why this one case is safe to
@@ -837,10 +969,9 @@ conditions, which checked `isInDevelopment` directly rather than
 `isLocked`, needed their own explicit `&& !isSentToClaude`.
 
 **The mirror-image case, `isDeploying` (`isLiveBranch && item.mergeReady`),
-covers the same kind of window at the *other* end of the pipeline**: once
-the Deploy flow (see README.md → "Notify Claude progress") has confirmed a
-ready-to-publish item's PR is green/mergeable and written `mergeReady:
-true`, the card is genuinely mid-merge — `backlog-automation.yml` will pick
+covers the same kind of window at the *other* end of the pipeline**: on a
+pre-train card whose own PR the Deploy flow confirmed green and wrote
+`mergeReady: true` for, the card is genuinely mid-merge — `backlog-automation.yml` will pick
 it up on its next poll and merge it, moving `status` to `published-live`.
 Until then the card gets the identical treatment as an `isInDevelopment`
 one (same `.card-in-development` class, same dropped controls), with its
@@ -1000,17 +1131,19 @@ Three Cloud Functions, all in `backlog-tracker/functions/index.js`:
    Deployment) instead of `backlog`. **The fire `text` is a self-contained
    "DEPLOY REQUEST" block, not the usual "N items in Backlog" shape** —
    it explicitly states these items are already implemented, tested, and
-   confirmed on their feature branches, tells the fired session not to
-   investigate or re-implement them, and — since the fired session has no
-   GitHub-authenticated tooling and can't merge a PR itself (see "Notify
-   Claude can't push" in README.md) — asks it to find each one's PR and
-   check its mergeability via GitHub's public, unauthenticated REST API,
-   then PATCH `mergeReady: true` + `mergePrNumber` if it's green and
-   mergeable, or leave it as `ready-to-publish` with a note if it can't.
+   confirmed, names the project's integration branch, tells the fired
+   session not to investigate or re-implement them, and — since the fired
+   session has no GitHub-authenticated tooling and can't merge anything
+   itself (see "Notify Claude can't push" in README.md) — asks it to verify
+   the train over plain git (every item's `deployCommit` is an ancestor of
+   the branch, nothing on the branch is still `ready-for-testing`), then
+   PATCH `projects/{id}.trainReady: true`, or leave the items as
+   `ready-to-publish` with a note if it can't.
    `backlog-tracker/scripts/run-backlog-automation.js` (via
    `.github/workflows/backlog-automation.yml`, a scheduled job with its own
    GitHub Actions-native credentials, no AI involved) is what actually
-   merges the PR and flips status to `published-live`. This was a
+   merges the train's single PR and flips every ticket on it to
+   `published-live`. This was a
    deliberate design choice over relying on the Routine's
    own shared prompt (see "The Notify Claude Routine" below) to infer a
    deploy request from a differently-shaped fire, since that prompt is
@@ -1128,7 +1261,7 @@ just identifies the board, then tells the fired session to fetch
 and follow that file exactly. **That file, not the Routine's own prompt,
 is the real, versioned, PR-reviewable specification of what a fired
 session does** — investigate, package a fix as `patchFiles`/`patchReady`
-(or `mergeReady`/`mergePrNumber` for the Deploy flow), report a summary,
+(or `projects/{id}.trainReady` for the Deploy flow), report a summary,
 never push or call a GitHub write API itself. See that file for the full
 current behavior rather than duplicating it here — this section only
 documents *why the split exists*.

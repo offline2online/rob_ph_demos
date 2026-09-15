@@ -196,15 +196,12 @@ body {
 .quick-comment-btn:active { transform: scale(.97); }
 .quick-comment-btn .options-menu-count { color: inherit; font-weight: 600; }
 .approve-btn { width: 100%; margin-top: 10px; background: var(--primary); color: #fff; border: none; border-radius: 6px; padding: 8px 10px; font-size: 12.5px; font-weight: 600; cursor: pointer; }
-/* A Ready for Testing card that's been individually confirmed tested —
-   still sits in the same column (advancing is the separate, batchable
-   "Deploy to Feature" project action), so this reads as a flag, not a
-   "this is now done" terminal state. Click again to un-mark. */
-.test-passed-btn-active { background: var(--success); }
-/* Failed testing (xYAk2oIFgbkvHikhufaT) — sits right below Confirm tested,
-   so an outline/muted treatment keeps it from reading as a second, equally
-   weighted primary action; margin-top drops to 6px so the pair reads as one
-   related group rather than two independent full-width buttons. */
+/* Failed testing (xYAk2oIFgbkvHikhufaT) — the only CTA on a Ready for
+   Testing card now that approving is the checkbox rather than a "Confirm
+   tested" button, so the outline/muted treatment is what keeps a reject
+   from reading as that card's primary action. (It used to sit directly
+   below Confirm tested, hence the smaller margin-top, which still reads
+   correctly against the test link above it.) */
 .fail-testing-btn {
   background: transparent; color: var(--danger); border: 1px solid var(--danger);
   margin-top: 6px;

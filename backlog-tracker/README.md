@@ -31,12 +31,13 @@ run appears (see "Verifying a deploy actually happened" below).
 `GITHUB_TOKEN`.** GitHub deliberately suppresses `push` triggers for a
 workflow's own `GITHUB_TOKEN` (anti-recursion protection) — a PR merged
 this way does **not** auto-fire the deploy the way a human's merge does.
-`processMergePr` in `run-backlog-automation.js` already knows this and
+`finishTrain` in `run-backlog-automation.js` already knows this and
 explicitly runs `gh workflow run deploy-backlog-tracker.yml` right after
 every merge that touches `backlog-tracker/` (needs `actions: write` in
 that workflow's own `permissions:` block — already set). **If you ever
-touch `processMergePr`, or write any other code path that merges a PR
-with `GITHUB_TOKEN`, you must keep or add that explicit dispatch.** A
+touch `finishTrain`/`processMergePr`, or write any other code path that
+merges a PR with `GITHUB_TOKEN`, you must keep or add that explicit
+dispatch.** A
 merge with no explicit trigger silently never deploys, even though the PR
 is on `main` and the board says "Merged to Main (Live)." This was hit in
 production once already — see "Notify Claude can't push" below for the
@@ -162,76 +163,116 @@ version of what that file currently specifies:
 
 - `backlogItems/{id}.patchFiles` — `[{path, content}]` for every
   changed/created file (full new content, not a diff — `content: null`
-  means delete that path), plus `patchBranch`, `patchCommitMessage`,
-  `patchPrTitle`, `patchPrBody`.
+  means delete that path), plus `patchCommitMessage`. (`patchBranch`,
+  `patchPrTitle` and `patchPrBody` are leftovers from the per-ticket-PR
+  era; still accepted, no longer used.)
 - Setting `patchReady: true` on the same PATCH is the signal — the item
   stays visually in Backlog (status doesn't change yet) until the step
-  below actually gets a PR open.
+  below actually gets the work onto the branch.
 
 `.github/workflows/backlog-automation.yml` — a normal scheduled GitHub
 Actions job (every 2 minutes, plus manual `workflow_dispatch`), running
 on a trusted GitHub-hosted runner with its own per-run `GITHUB_TOKEN` —
 picks up every `patchReady` item via
-`backlog-tracker/scripts/run-backlog-automation.js`: creates a branch off
-the current `main`, writes out `patchFiles` verbatim (so there's no diff
-to conflict — it's just "this is the final content of these files, on top
-of whatever `main` is right now"), commits, pushes, opens a PR with `gh`,
-then PATCHes the item to `status: "ready-for-testing"` with a note linking
-the PR. No AI is involved in this step at all, and no long-lived GitHub
+`backlog-tracker/scripts/run-backlog-automation.js`: checks out the
+project's integration branch (see "The deployment train" below), writes
+out `patchFiles` verbatim on top of it, commits, pushes, then PATCHes the
+item to `status: "ready-for-testing"` with its commit sha and a preview
+link. No AI is involved in this step at all, and no long-lived GitHub
 secret exists anywhere in this pipeline — the runner's `GITHUB_TOKEN` is
 minted and revoked by GitHub itself, per run.
 
-**An item whose PR is already open is attached to that PR, never bounced
-back to Backlog.** `run-backlog-automation.js` used to refuse the item
-("Skipped opening a new PR: #N already exists… close it manually before
-setting patchReady again"), clear `patchReady` and leave the card in
-Backlog. That was the wrong answer in both situations that actually
-produce it (PR #131, 14 Sep 2026, hit the first): a **batch** of items
-packaged together by one Notify Claude sweep (same `patchBranch`, one
-combined diff, one PR whose body lists every item — the first item's run
-opens the PR and every sibling then bounced off it), and a **re-patch** of
-an item whose earlier PR is still open (tested, sent back, fixed again —
-the follow-up fix had nowhere to go). `resolveReusablePr()` now looks for
-an OPEN PR in this order: the item's own recorded `prNumber`/`prUrl`, a
-PR on the item's own branch (which also covers a run interrupted between
-pushing and recording the PR), then any open PR carrying the item's
-`Backlog item: <id>` body marker. `attachToExistingPr()` then checks out
-that PR's branch, writes the item's `patchFiles` on top and: for the
-item's *own* PR, commits and pushes the difference as a new commit; for a
-*batch sibling's* PR, commits nothing (the sibling's copy is normally
-identical — no diff — and where it differs it is a partial view of a
-shared file that would undo the other items' changes, so the PR's version
-is kept and the differing paths are named on the card). Either way the
-item records `prNumber`/`prUrl`, gets a preview link on that branch and
-moves to Ready for Testing.
+### The deployment train — one branch and one PR per project
 
-A MERGED or CLOSED PR never counts as reusable — it is finished or
-rejected work from an earlier round (item `dWJtVKC310qgMevZ3XPl`,
-2026-09-11: a re-patch after PR #84 merged was refused because the marker
-search still found #84). A new `patchReady` after that is a deliberate new
-round: the branch is force-pushed fresh from `main` and a new PR opened,
-with the card's note pointing at the earlier PR. (If the new `patchFiles`
-turn out to already be on `main`, the no-diff path below applies instead.)
+**Every ticket a project builds is one commit on that project's single
+long-lived integration branch, `deploy/<project-slug>`** (recorded as
+`projects/{id}.deployBranch`, created from `main` on first use). There is
+no per-ticket branch and no per-ticket PR any more.
 
-**`patchFiles` producing no diff against `main` no longer leaves an item
-stuck silently either.** This is the expected outcome for one half of a
-multi-item batch sharing identical file content (see
-`ROUTINE_INSTRUCTIONS.md` → "Cards that ship together are already grouped")
-once its sibling's PR merges first — the content is already on `main`, so
-there's nothing to open a PR for. `processApplyPatch` used to just log and
-return here, leaving `patchReady`/`status` untouched and the item silently
-retried every scheduled run forever. It now advances the item to
-`ready-for-testing` directly (no PR of its own — check the item's
-deployment group / sibling item's notes for which PR actually carried the
-fix) with a note explaining why, so it still gets tested instead of rotting
-in Backlog.
+The reason is the problem the old model guaranteed rather than risked.
+Each ticket got its own branch cut from `main`, so two tickets alive at
+once drifted apart and nothing ever brought them back together: the
+Routine has no push credential by design, and the merge step only ever ran
+`gh pr merge`. The second PR to merge was therefore conflicted, the merge
+failed with "Pull Request has merge conflicts", the card sat in Approved
+for Deployment with a note, and a human resolved it by hand — PR #77,
+then #141 and #139 on 15 Sep 2026. `version.js` made it structural instead
+of occasional: every PR bumped `APP_VERSION` on the same line, so *any*
+two open PRs conflicted on that file alone.
+
+What the train changes:
+
+- **Build** (`processApplyPatch`) — commit on the branch head, message
+  `<title>` + a `Backlog item: <id>` line (the same marker PR bodies
+  carried, so exact-id lookups still work, now via `git log --grep`).
+  Tickets stack on each other, so they are tested in the combination they
+  will ship in; the card's test link points at the branch. A re-patch is
+  just another commit — `deployCommits[]` grows, history is never
+  rewritten. If the push is rejected because another ticket landed in
+  between, the patch is re-applied on the new head and retried once.
+- **Reject** (`processRevertFromTrain`) — Failed testing on a card writes
+  `revertRequested`, and the automation reverts that card's commits back
+  off the branch. **A card in Backlog must never have live commits on a
+  train**, or a "rejected" ticket would still ship in the next deploy. If
+  a later ticket built on top of it the revert conflicts: nothing is
+  force-pushed, the card is still sent back, and `revertBlockedBy` names
+  the tickets a human has to decide about (send them back too, or fix the
+  branch by hand). The board shows that state on the card.
+- **Deploy** (`processDeployTrain`, triggered by `projects/{id}.trainReady`)
+  — merge `main` in, bump `APP_VERSION` once, open ONE PR
+  (`Deploy <project> — N tickets`, body listing every `Backlog item:`
+  line), wait for CI, `gh pr merge --merge` (never squash — the per-ticket
+  commits are the history now), flip every ticket to `published-live`,
+  trigger the Firebase deploy, then reset the branch to `main` for the
+  next train. Progress and every non-merge outcome land on the project as
+  `trainStatus` (`idle` | `deploying` | `conflict` | `awaiting-human-merge`)
+  + `trainNote`.
+- **Merging `main` into the branch is the only conflict path left**, and it
+  takes someone pushing straight to `main` in this project's files. It is
+  never resolved automatically: the merge is aborted, `trainStatus` goes
+  `conflict`, and nothing is merged or moved.
+
+The board expresses one consequence of this in its CTAs: merging the
+branch ships *everything on it*, so **Deploy to Main is shown only when
+every ticket on the train is approved** — Approved for Deployment has
+cards and Ready for Testing is empty. And because a project that keeps
+building would never reach that state, the first approval **locks the
+Backlog** (`projects/{id}.trainLocked`): Ready for Dev and Groom Backlog
+hide until the train merges, so no new ticket can join a release that is
+already closing. Backlog cards stay fully editable throughout; only
+*starting a build* is held. See `REQUIREMENTS.md` → "The deployment
+train".
+
+**Superseded: the "attach an item to its already-open PR" machinery.**
+`resolveReusablePr`/`attachToExistingPr`/`findExistingPrForItem` existed
+because a second `patchReady` on an item with an open PR had nowhere to go
+(a re-patch after Failed testing, or a batch sibling bouncing off the PR
+the first item opened — PR #131, 14 Sep 2026). On the train all of that is
+one sentence: a re-patch is another commit on the same branch. Those three
+functions are gone; `findPrForBranch` remains, now used to reuse an
+already-open *train* PR rather than an item's.
+
+**`patchFiles` producing no diff still never leaves an item stuck
+silently**, but it now means one of two different things and is handled
+differently for each. If the item already has commits on the train, the
+re-patch simply matched what it had put there: the card goes back to Ready
+for Testing against its existing commits, untouched. If it has none, the
+content is genuinely already on the branch (a sibling's shared-file patch
+carried it), so there is nothing for a deploy to ship and the card is
+flagged `noDeploymentRequired` — otherwise it would reach Approved for
+Deployment and hold the train's Deploy gate open on a ticket with no
+commit to merge.
 
 The same script also handles the mirror case for **Notify Claude —
-Deploy**: that Routine fire asks the session to find its item's PR and
-check CI/mergeability using GitHub's public, unauthenticated REST API
-(reads on a public repo need no credential), then PATCH
-`mergeReady: true` + `mergePrNumber` instead of merging itself. The same
-scheduled job merges the PR and flips `status` to `"published-live"`.
+Deploy**: that Routine fire asks the session to verify the train — every
+item's `deployCommit` is an ancestor of the branch (`git merge-base
+--is-ancestor`, plain git, so it works even when `api.github.com` is
+blocked for that session) and nothing on the branch is still in testing —
+then PATCH `projects/{id}.trainReady: true` instead of merging itself. The
+same scheduled job merges the whole train and flips every ticket on it to
+`"published-live"`. CI is checked by the job right before merging, not by
+the fired session: a green check at verification time says nothing about
+the branch after `main` has been merged into it.
 
 **A merge here must explicitly re-trigger the deploy — it doesn't happen
 for free.** GitHub deliberately suppresses `on: push` triggers for pushes
@@ -250,9 +291,13 @@ suppression) — needs `actions: write` in this workflow's own
 looks like it doesn't need that explicit trigger, it's wrong — this is
 the whole reason it exists.
 
-**`processMergePr` checks the PR's state before attempting `gh pr merge`,
-and treats an already-`MERGED` PR as success rather than a failure to
-retry forever.** An item can legitimately reach `mergeReady: true` with a
+**`processMergePr`/`mergeReady` is the pre-train, per-ticket merge path.**
+It is kept only so cards that were already in flight when the train shipped
+can still finish; nothing writes `mergeReady` for new work, and the board
+only offers Deploy to Main for such cards when a project has no train
+items at all. It checks the PR's state before attempting `gh pr merge`, and
+treats an already-`MERGED` PR as success rather than a failure to retry
+forever. An item can legitimately reach `mergeReady: true` with a
 `mergePrNumber` that's already merged through some other path — e.g. an
 interactive Claude Code session with real repo access merging it directly
 via the GitHub API rather than waiting for this pipeline (this happened
@@ -294,22 +339,21 @@ earlier attempt built a dedicated Deployments page, which was the wrong
 shape and was removed in PR #98.
 
 `deploymentGroupKey(item)` derives a group's identity on every render from
-what already makes two cards one deployment: the `patchBranch` they were
-packaged on, or the `prNumber` that branch became — both written by the
-existing automation. Branch wins over PR number when both are present, so a
-group doesn't momentarily split and re-form as the PR number lands on each
-card in turn. It returns `null` — meaning "shares no deployment" — for a
-plain Backlog card that has no branch yet, and for a `noDeploymentRequired`
-card, which has no deployment to share at all. `columnCardsHTML()` then
-draws each group at the position of its first member, leaving card order,
-column counts and every per-card control untouched; a key held by only one
-card in a column is not a group.
+what already makes two cards one deployment: the `prNumber` they share
+(written by the automation when a train's PR opens), or, on a pre-train
+card, the `patchBranch` they were packaged on. It returns `null` — meaning
+"shares no deployment" — for a card with neither, and for a
+`noDeploymentRequired` card, which has no deployment to share at all.
+`columnCardsHTML()` then draws each group at the position of its first
+member, leaving card order, column counts and every per-card control
+untouched; a key held by only one card in a column is not a group.
 
-In practice that means the brackets appear exactly from the greyed-out
-"In development — locked" stage onward, and carry through Ready for Testing
-and beyond. `patchBranch` is in `BACKLOG_ITEM_RENDER_FIELDS` for this
-reason, so the groups are there on the REST-primed first paint rather than
-popping in when the realtime listener lands.
+Under the deployment train every ticket a project builds ships in the same
+PR anyway, so in practice the brackets appear once that PR opens and stay
+through Merged to Main (Live). Both fields are in
+`BACKLOG_ITEM_RENDER_FIELDS` for this reason, so the groups are there on
+the REST-primed first paint rather than popping in when the realtime
+listener lands.
 
 ## Isolation from menu-board-demo — by design, not just by folder
 

@@ -361,8 +361,14 @@ exports.notifyOnProjectReadyToDeploy = onDocumentUpdated(
       // REQUEST ===` marker ROUTINE_INSTRUCTIONS.md's own Deploy flow section
       // keys off of.
       const itemLines = items
-        .map((i, idx) => `${idx + 1}. [id: ${i.id}] [${i.type === "bug" ? "Bug" : "Feature"}] ${i.title} — ${i.desc}${i.patchBranch ? ` (patchBranch: ${i.patchBranch})` : ""}`)
+        .map((i, idx) => `${idx + 1}. [id: ${i.id}] [${i.type === "bug" ? "Bug" : "Feature"}] ${i.title} — ${i.desc}${i.deployCommit ? ` (commit ${i.deployCommit})` : ""}`)
         .join("\n");
+
+      // Since the deployment train there is no per-item branch or PR to
+      // find: every ticket this project has built is a commit on ONE
+      // integration branch, and deploying means merging that branch once.
+      // The Routine's job is to verify the train, not to match N PRs.
+      const trainLine = `Integration branch (the deployment train): ${after.deployBranch || "(not set yet — this project has never built a ticket)"}\n`;
 
       // Same per-project addendum mechanism as the Backlog notify fire above
       // (a project's own Docs page can hand the Routine extra context either
@@ -390,6 +396,7 @@ exports.notifyOnProjectReadyToDeploy = onDocumentUpdated(
       }
 
       const text = `${projectPromptBlock}=== DEPLOY REQUEST for "${projectName}" (projectId: ${event.params.projectId}) on the Backlog Tracker & FAQs board ===\n` +
+        trainLine +
         programLine +
         `These ${items.length} item${items.length === 1 ? "" : "s"} are already implemented, tested, and confirmed "Approved for Deployment" (ready-to-publish). Do NOT investigate, re-implement, or re-test them — follow ROUTINE_INSTRUCTIONS.md's "Notify Claude — Deploy" flow section for exactly what to do with each one, including its FAQ impact review step (3b), which proposes help-centre updates for a human to approve.\n\n` +
         `Items:\n${itemLines}${selfReportHint}${boardAccessBlock()}`;
@@ -915,8 +922,10 @@ exports.onFaqArticleRevisionApproved = onDocumentUpdated(
 
 // ── Wake backlog-automation.yml immediately ──────────────────────────────
 // backlog-automation.yml is what turns a Routine's finished work into a
-// real branch + PR (backlogItems.patchReady) and merges a PR it has
-// confirmed green (backlogItems.mergeReady). It polls every 2 minutes —
+// commit on its project's integration branch (backlogItems.patchReady),
+// takes a rejected ticket's commits back off it
+// (backlogItems.revertRequested), and merges the whole train to main
+// (projects.trainReady). It polls every 2 minutes —
 // except GitHub throttles scheduled workflows well past their nominal
 // interval under load: the gaps measured on 12 September 2026 were 07:36,
 // 07:42, 07:49, 07:55, 08:06, 08:25. One patch-ready item waited about 10
@@ -924,7 +933,9 @@ exports.onFaqArticleRevisionApproved = onDocumentUpdated(
 // was most of the wall-clock time in the entire workflow — the Claude
 // session that did the actual work was never the slow part.
 //
-// So: the instant either flag turns true, dispatch the workflow directly.
+// So: the instant any of those flags turns true, dispatch the workflow
+// directly (see dispatchBacklogAutomation below, shared with the
+// project-level trigger).
 // The schedule stays exactly as it is, as the safety net for whenever this
 // token is missing or the dispatch call fails — this only ever makes the
 // job run sooner, never instead.
@@ -946,77 +957,103 @@ exports.onBacklogItemReadyForAutomation = onDocumentWritten(
     // that write takes the flag true -> false, which is not a transition
     // this reacts to.
     const turnedOn = (field) => after[field] === true && before?.[field] !== true;
-    const reasons = ["patchReady", "mergeReady"].filter(turnedOn);
+    // revertRequested is the train's own "take this rejected ticket's
+    // commits back off the integration branch" signal (app.js's
+    // failTesting -> processRevertFromTrain). It waits on the same 2-minute
+    // schedule as everything else without this, and a rejected ticket
+    // sitting on the branch is exactly the state worth shortening.
+    const reasons = ["patchReady", "mergeReady", "revertRequested"].filter(turnedOn);
     if (reasons.length === 0) {
       return;
     }
 
-    // "unset" is the placeholder the deploy workflow writes when no repo
-    // secret supplies a real token, so that the secret this function
-    // declares always exists in Secret Manager — see that workflow's
-    // "Sync GH_DISPATCH_TOKEN" step for why a missing secret would
-    // otherwise fail the whole deploy, hosting and Firestore rules
-    // included. Treated as not configured.
-    const token = (GH_DISPATCH_TOKEN.value() || "").trim();
-    if (!token || token === "unset") {
-      logger.warn(
-        "GH_DISPATCH_TOKEN is not set — not dispatching backlog-automation.yml; " +
-        "the workflow's own schedule will pick this item up within a few minutes",
-        { itemId: event.params.itemId, reasons }
-      );
-      return;
-    }
-
-    try {
-      const res = await fetch(`https://api.github.com/repos/${AUTOMATION_REPO}/dispatches`, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          Accept: "application/vnd.github+json",
-          "X-GitHub-Api-Version": "2022-11-28",
-          "Content-Type": "application/json",
-          // GitHub's API rejects a request with no User-Agent outright.
-          "User-Agent": "backlog-tracker-functions",
-        },
-        // client_payload is diagnostic only — the workflow re-reads every
-        // flagged item from Firestore itself rather than trusting what
-        // arrives here, so a dispatch can never aim the trusted job at an
-        // item that is not actually ready.
-        body: JSON.stringify({
-          event_type: AUTOMATION_DISPATCH_EVENT,
-          client_payload: {
-            itemId: event.params.itemId,
-            reasons,
-            title: typeof after.title === "string" ? after.title : null,
-          },
-        }),
-      });
-      // A successful repository_dispatch is 204 No Content.
-      if (res.status !== 204) {
-        logger.error("GitHub repository_dispatch returned an unexpected status", {
-          itemId: event.params.itemId,
-          reasons,
-          status: res.status,
-          body: await res.text().catch(() => "<unreadable>"),
-        });
-        return;
-      }
-      logger.info("Dispatched backlog-automation.yml", {
-        itemId: event.params.itemId,
-        reasons,
-      });
-    } catch (err) {
-      // Swallowed on purpose: a thrown error would have Cloud Functions
-      // retry this write, and a retried dispatch is pure noise when the
-      // workflow's schedule is already the fallback.
-      logger.error("Failed to dispatch backlog-automation.yml", {
-        itemId: event.params.itemId,
-        reasons,
-        error: err instanceof Error ? err.message : String(err),
-      });
-    }
+    await dispatchBacklogAutomation({ itemId: event.params.itemId, reasons, title: typeof after.title === "string" ? after.title : null });
   }
 );
+
+// The train's other trigger, on the PROJECT rather than an item: the Deploy
+// CTA's Routine sets projects/{id}.trainReady once it has verified every
+// ticket in the DEPLOY REQUEST really is on the integration branch and
+// nothing on that branch is still in testing. Same "don't wait out the
+// 2-minute schedule" reasoning as onBacklogItemReadyForAutomation above —
+// this is the click a person is actually watching, so it is the worst one
+// to leave sitting.
+exports.onProjectReadyForAutomation = onDocumentWritten(
+  { document: "projects/{projectId}", secrets: [GH_DISPATCH_TOKEN] },
+  async (event) => {
+    const before = event.data?.before?.data();
+    const after = event.data?.after?.data();
+    if (!after) {
+      return;
+    }
+    if (after.trainReady !== true || before?.trainReady === true) {
+      return;
+    }
+    await dispatchBacklogAutomation({ projectId: event.params.projectId, reasons: ["trainReady"], title: typeof after.name === "string" ? after.name : null });
+  }
+);
+
+// Fires backlog-automation.yml immediately via repository_dispatch. Shared
+// by both triggers above; the workflow's own 2-minute schedule stays as the
+// safety net for whenever the token is missing or this call fails, so a
+// failure here is logged and swallowed rather than thrown (a thrown error
+// would have Cloud Functions retry the write, and a retried dispatch is
+// pure noise when the schedule already covers it).
+async function dispatchBacklogAutomation({ itemId = null, projectId = null, reasons, title }) {
+  const logCtx = { itemId, projectId, reasons };
+  // "unset" is the placeholder the deploy workflow writes when no repo
+  // secret supplies a real token, so that the secret these functions
+  // declare always exists in Secret Manager — see that workflow's
+  // "Sync GH_DISPATCH_TOKEN" step for why a missing secret would
+  // otherwise fail the whole deploy, hosting and Firestore rules
+  // included. Treated as not configured.
+  const token = (GH_DISPATCH_TOKEN.value() || "").trim();
+  if (!token || token === "unset") {
+    logger.warn(
+      "GH_DISPATCH_TOKEN is not set — not dispatching backlog-automation.yml; " +
+      "the workflow's own schedule will pick this up within a few minutes",
+      logCtx
+    );
+    return;
+  }
+
+  try {
+    const res = await fetch(`https://api.github.com/repos/${AUTOMATION_REPO}/dispatches`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+        "Content-Type": "application/json",
+        // GitHub's API rejects a request with no User-Agent outright.
+        "User-Agent": "backlog-tracker-functions",
+      },
+      // client_payload is diagnostic only — the workflow re-reads every
+      // flagged item and project from Firestore itself rather than trusting
+      // what arrives here, so a dispatch can never aim the trusted job at
+      // something that is not actually ready.
+      body: JSON.stringify({
+        event_type: AUTOMATION_DISPATCH_EVENT,
+        client_payload: { itemId, projectId, reasons, title },
+      }),
+    });
+    // A successful repository_dispatch is 204 No Content.
+    if (res.status !== 204) {
+      logger.error("GitHub repository_dispatch returned an unexpected status", {
+        ...logCtx,
+        status: res.status,
+        body: await res.text().catch(() => "<unreadable>"),
+      });
+      return;
+    }
+    logger.info("Dispatched backlog-automation.yml", logCtx);
+  } catch (err) {
+    logger.error("Failed to dispatch backlog-automation.yml", {
+      ...logCtx,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+}
 
 // ── boardApi: authenticated Firestore REST proxy for automation ───────────
 // The board's Firestore rules require a signed-in editor for every board
