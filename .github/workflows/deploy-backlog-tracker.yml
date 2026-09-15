@@ -202,10 +202,17 @@ jobs:
       - name: Stage the help centre for Hosting
         run: rsync -a --delete --exclude README.md ../faq/ help-site/
 
-      - name: Deploy to Firebase (hosting, functions, firestore rules)
+      # `storage` is in this list because backlog-tracker/storage.rules exists
+      # and firebase.json points at it, but it was never in --only, so it had
+      # never once been deployed: the rules protecting the attachments bucket
+      # lived in the repo while the live bucket ran on whatever was last
+      # applied out-of-band. Deploying rules is the same Firebase Rules API
+      # firestore:rules already uses, so the service account needs no new
+      # permission.
+      - name: Deploy to Firebase (hosting, functions, firestore + storage rules)
         env:
           GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/firebase-sa.json
-        run: npx firebase-tools@13 deploy --only hosting,functions,firestore:rules --project backlog-tracker-e4ed2 --non-interactive --force
+        run: npx firebase-tools@13 deploy --only hosting,functions,firestore:rules,storage --project backlog-tracker-e4ed2 --non-interactive --force
 
       - name: Set Artifact Registry cleanup policy for gcf-artifacts
         continue-on-error: true
