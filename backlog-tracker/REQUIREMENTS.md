@@ -151,8 +151,12 @@ deleted by hand).
 ```
 
 ```
-projects/{projectId} — the train's own state (automation-written; see
-firestore.rules, where the browser may latch trainLocked true and nothing else)
+projects/{projectId} — the train's own state. Two different principals write
+here and firestore.rules treats them differently: run-backlog-automation.js
+writes as the Firebase SERVICE ACCOUNT (bypasses rules entirely), while the
+Notify Claude Routine writes trainReady as the board automation USER
+(board-automation@…, subject to rules — hence isBoardAutomation()). A human
+editor may only latch trainLocked true, nothing else.
 {
   deployBranch?: string,        // "deploy/<project-slug>", created from main on first use
   trainLocked?: boolean,        // a release is closing: no new ticket may join it, so the build CTAs hide
@@ -222,6 +226,14 @@ Requirements that follow from it:
   Deploy to Main stays hidden until it clears.
 - **Deploy merges the whole branch, so it is offered only when the whole
   branch is approved.** See "The single Deploy CTA" below.
+- **`trainReady` is written by the Routine, not by the service account.**
+  This distinction matters in `firestore.rules`: guarding every train field
+  as "only writable by something that bypasses rules" silently denied the
+  Routine's own `trainReady` PATCH, so Deploy to Main fired the Routine,
+  the Routine was refused, nothing was dispatched, and the card sat in
+  Approved for Deployment while the button spun and reverted. Fixed by
+  letting the board automation account through that guard; the two human
+  editor accounts are still held to it.
 - **The only conflict path left is `main` moving under the branch**, which
   takes someone pushing straight to `main` in this project's files. It is
   never resolved automatically: the merge aborts, `trainStatus` goes
