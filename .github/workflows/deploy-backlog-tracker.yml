@@ -206,7 +206,21 @@ jobs:
         id: deploy
         env:
           GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/firebase-sa.json
-        run: npx firebase-tools@13 deploy --only hosting,functions,firestore:rules,storage:rules --project backlog-tracker-e4ed2 --non-interactive --force
+        run: npx firebase-tools@13 deploy --only hosting,functions,firestore:rules --project backlog-tracker-e4ed2 --non-interactive --force
+
+      # Storage rules go in their own, non-fatal step. `storage:rules` (PR
+      # #136) is not a valid --only target — the CLI read "rules" as a
+      # deploy-target name and failed every deploy with "Could not find
+      # rules for the following storage targets: rules" (runs #140-#142),
+      # which is what left the console stuck on 1.5.29. The correct spec is
+      # plain `storage`; and because Firebase Storage may not be set up on
+      # the project yet, a failure here must not take hosting/functions/
+      # firestore rules down with it.
+      - name: Deploy Storage rules (non-fatal until Storage is set up)
+        continue-on-error: true
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/firebase-sa.json
+        run: npx firebase-tools@13 deploy --only storage --project backlog-tracker-e4ed2 --non-interactive --force
 
       - name: Set Artifact Registry cleanup policy for gcf-artifacts
         continue-on-error: true

@@ -532,6 +532,47 @@
       </div>
     </section>
 
+    <!-- Review of a proposed article revision (faqArticles.pendingRevision),
+         written by the Deploy-flow Routine's FAQ impact review — see
+         backlog-tracker/ROUTINE_INSTRUCTIONS.md step 3b. Approve here; the
+         change goes live on its own once every source ticket is Merged to
+         Main (functions/index.js promoteFaqRevisionIfReady). -->
+    <section class="faq-admin-page faq-review-page" id="faq-revision-review-page" hidden>
+      <div class="faq-auth-bar" data-faq-auth></div>
+      <div class="docs-page-header">
+        <h2 id="fr-title">Review proposed update</h2>
+        <div class="form-actions">
+          <button type="button" class="btn-ghost" id="fr-back">Back</button>
+          <button type="button" class="btn-ghost" id="fr-edit">Edit proposal</button>
+          <button type="button" class="btn-danger" id="fr-reject">Reject</button>
+          <button type="button" class="btn-primary" id="fr-approve">Approve</button>
+        </div>
+      </div>
+      <div class="fr-meta" id="fr-meta"></div>
+      <div class="fr-toolbar">
+        <div class="type-toggle" role="radiogroup" aria-label="Comparison view">
+          <button type="button" class="type-opt active" data-fr-mode="changes">Changes</button>
+          <button type="button" class="type-opt" data-fr-mode="side">Before / After</button>
+        </div>
+        <span class="field-hint" id="fr-diff-summary"></span>
+      </div>
+      <div class="fr-changes" id="fr-changes"></div>
+      <div class="fr-side" id="fr-side" hidden>
+        <div class="fr-pane">
+          <h3>Current (live)</h3>
+          <div class="fr-pane-title" id="fr-old-title"></div>
+          <p class="fr-pane-summary" id="fr-old-summary"></p>
+          <div class="fa-body-viewer fr-body" id="fr-old-body"></div>
+        </div>
+        <div class="fr-pane">
+          <h3>Proposed</h3>
+          <div class="fr-pane-title" id="fr-new-title"></div>
+          <p class="fr-pane-summary" id="fr-new-summary"></p>
+          <div class="fa-body-viewer fr-body" id="fr-new-body"></div>
+        </div>
+      </div>
+    </section>
+
     <section class="faq-admin-page" id="faq-settings-page" hidden>
       <div class="docs-page-header">
         <h2>Settings — FAQ / Help Center</h2>
