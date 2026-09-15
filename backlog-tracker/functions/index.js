@@ -334,17 +334,154 @@ exports.notifyOnProjectReadyToDeploy = onDocumentUpdated(
 
     const projectName = after.name || "A project";
 
+    // Fire the Routine BEFORE posting to Slack — same reordering
+    // notifyOnProjectReadyForReview above already does, and for the same
+    // reason: post the Slack message after the session id has resolved so
+    // it can carry a real "track their progress" link instead of going out
+    // blind. This function used to post first (Slack, then fire), which
+    // meant sessionUrl was always null by the time the message was built —
+    // a "Notify Claude — Deploy clicked" line with no session link and no
+    // indication of which items, ever (FWHlgviqZxearPMvE9G2).
+    const fireUrl = CLAUDE_ROUTINE_FIRE_URL.value();
+    const token = CLAUDE_ROUTINE_TOKEN.value();
+    let sessionId = null;
+    let sessionUrl = null;
+    let fireError = null;
+
+    if (fireUrl && token) {
+      // Deliberately data-only, same philosophy as notifyOnProjectReadyForReview
+      // above: this used to also embed a full step-by-step "how to find/verify/
+      // merge a PR" procedure directly in this string, duplicating (and, once
+      // ROUTINE_INSTRUCTIONS.md was updated to fix a real bug in that
+      // procedure, silently diverging from) the Deploy flow section of
+      // ROUTINE_INSTRUCTIONS.md — the file every fired session's own bootstrap
+      // prompt already fetches and is told to follow exactly. Two copies of
+      // "how" can only ever go stale relative to each other; this function's
+      // only job is "what" (which project, which items) and the `=== DEPLOY
+      // REQUEST ===` marker ROUTINE_INSTRUCTIONS.md's own Deploy flow section
+      // keys off of.
+      const itemLines = items
+        .map((i, idx) => `${idx + 1}. [id: ${i.id}] [${i.type === "bug" ? "Bug" : "Feature"}] ${i.title} — ${i.desc}${i.patchBranch ? ` (patchBranch: ${i.patchBranch})` : ""}`)
+        .join("\n");
+
+      // Same per-project addendum mechanism as the Backlog notify fire above
+      // (a project's own Docs page can hand the Routine extra context either
+      // request should know, e.g. which branch/PR naming convention to expect).
+      const projectPromptBlock = (after.routinePromptMd || "").trim()
+        ? `=== PROJECT-SPECIFIC INSTRUCTIONS FOR "${projectName}" (from this project's Docs page) ===\n${after.routinePromptMd.trim()}\n=== END PROJECT-SPECIFIC INSTRUCTIONS ===\n\n`
+        : "";
+
+      // Same self-report mechanism as notifyOnProjectReadyForReview's own
+      // selfReportHint above, targeting deployRoutine instead of notifyRoutine
+      // — until this existed, the "Deploy to Main" button had nothing to read
+      // an in-progress state from at all, so it looked identical whether a
+      // deploy was actually running or hadn't been requested yet.
+      const selfReportHint = `\n\nWhen you finish this run (whether you completed everything or stopped early on a blocker), PATCH projects/${event.params.projectId} with deployRoutine.status set to "done" (or "error" with an errorMessage, if you stopped early) and deployRoutine.finishedAt set to now — the board shows a working/spinning state on its Deploy to Main button until it sees this.`;
+
+      // Which product/program this project belongs to — the Deploy flow's
+      // FAQ impact review (ROUTINE_INSTRUCTIONS.md step 3b) scopes the help
+      // centre articles it may propose changes to by this. A hint only: the
+      // Routine re-reads projects/{id}.programId itself as the authority.
+      let programLine = "Product/Program: (none set on this project — only articles linked directly to this projectId are in scope for the FAQ impact review)\n";
+      if (after.programId) {
+        const programSnap = await getFirestore().collection("programs").doc(after.programId).get().catch(() => null);
+        const pname = programSnap && programSnap.exists ? (programSnap.data().name || "") : "";
+        programLine = `Product/Program: "${pname || "(unnamed)"}" (programId: ${after.programId}) — FAQ impact review scope: faqArticles with this programId, plus any with projectId ${event.params.projectId}\n`;
+      }
+
+      const text = `${projectPromptBlock}=== DEPLOY REQUEST for "${projectName}" (projectId: ${event.params.projectId}) on the Backlog Tracker & FAQs board ===\n` +
+        programLine +
+        `These ${items.length} item${items.length === 1 ? "" : "s"} are already implemented, tested, and confirmed "Approved for Deployment" (ready-to-publish). Do NOT investigate, re-implement, or re-test them — follow ROUTINE_INSTRUCTIONS.md's "Notify Claude — Deploy" flow section for exactly what to do with each one, including its FAQ impact review step (3b), which proposes help-centre updates for a human to approve.\n\n` +
+        `Items:\n${itemLines}${selfReportHint}${boardAccessBlock()}`;
+
+      try {
+        const res = await fetch(fireUrl, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${token}`,
+            "anthropic-beta": "experimental-cc-routine-2026-04-01",
+            "anthropic-version": "2023-06-01",
+          },
+          body: JSON.stringify({ text }),
+        });
+        if (!res.ok) {
+          fireError = `Routine fire endpoint responded with status ${res.status}`;
+          logger.error("Routine fire endpoint responded with a non-2xx status for deploy request", {
+            projectId: event.params.projectId,
+            status: res.status,
+            body: await res.text().catch(() => "<unreadable>"),
+          });
+        } else {
+          // Same response shape as notifyOnProjectReadyForReview's own fire
+          // call above — see that function's comment for the research-preview
+          // caveat on this field name.
+          const body = await res.json().catch(() => null);
+          sessionId = body?.claude_code_session_id || null;
+          sessionUrl = sessionId ? `https://claude.ai/code/${sessionId}` : null;
+          logger.info("Fired Claude Code Routine for deploy notify request", {
+            projectId: event.params.projectId,
+            itemCount: items.length,
+            sessionId,
+          });
+        }
+      } catch (err) {
+        fireError = err instanceof Error ? err.message : String(err);
+        logger.error("Failed to call Routine fire endpoint for deploy notify request", {
+          projectId: event.params.projectId,
+          error: fireError,
+        });
+      }
+
+      // Lets the board show a spinner (or a visible error) instead of the
+      // Deploy to Main button just looking idle after a click — see
+      // deployNotifyButtonHTML in public/js/app.js. Same stale-after-20-minutes
+      // client fallback as notifyRoutine protects this from ever wedging.
+      await getFirestore().collection("projects").doc(event.params.projectId).set({
+        deployRoutine: {
+          status: fireError ? "error" : "in-progress",
+          firedAt: new Date(),
+          sessionId,
+          sessionUrl,
+          itemCount: items.length,
+          errorMessage: fireError,
+        },
+      }, { merge: true });
+    } else {
+      logger.warn(
+        "CLAUDE_ROUTINE_FIRE_URL/CLAUDE_ROUTINE_TOKEN not set — skipping Routine fire for deploy notify request",
+        { projectId: event.params.projectId }
+      );
+    }
+
+    // Slack (or whatever NOTIFY_WEBHOOK_URL points at) is independent of the
+    // fire above — posts (with a session link if one was resolved) regardless
+    // of whether the fire succeeded, same as notifyOnProjectReadyForReview's
+    // own webhook post. Previously posted BEFORE the fire (so sessionUrl was
+    // always null here) with a single bare "N items... will be merged" line
+    // and no indication of which items — enriched per FWHlgviqZxearPMvE9G2 to
+    // actually name each item (title, and its PR if one's already open, since
+    // an Approved for Deployment item's fix was already pushed back at the
+    // Backlog stage — see ROUTINE_INSTRUCTIONS.md) instead of only a count.
     const webhookUrl = NOTIFY_WEBHOOK_URL.value();
     if (webhookUrl) {
+      const itemBullets = items
+        .map((i) => `• ${i.title || i.desc || i.id}${i.prUrl ? ` (<${i.prUrl}|PR>)` : ""}`)
+        .join("\n");
+      const trackLine = sessionUrl
+        ? `Click here to track their progress: ${sessionUrl}`
+        : (fireUrl && token ? "(session link unavailable)" : "(Routine fire not configured — no Claude session started)");
       try {
         const res = await fetch(webhookUrl, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            text: `Notify Claude — Deploy clicked for ${projectName}: ${items.length} item${items.length === 1 ? "" : "s"} Approved for Deployment will be merged to main.`,
+            text: `Claude was asked to deploy ${items.length} item${items.length === 1 ? "" : "s"} Approved for Deployment for "${projectName}":\n${itemBullets}\n${trackLine}`,
             projectId: event.params.projectId,
             projectName,
             itemCount: items.length,
+            itemTitles: items.map((i) => i.title || i.desc || i.id),
+            sessionUrl,
           }),
         });
         if (!res.ok) {
@@ -370,106 +507,6 @@ exports.notifyOnProjectReadyToDeploy = onDocumentUpdated(
         projectId: event.params.projectId,
       });
     }
-
-    const fireUrl = CLAUDE_ROUTINE_FIRE_URL.value();
-    const token = CLAUDE_ROUTINE_TOKEN.value();
-    if (!fireUrl || !token) {
-      logger.warn(
-        "CLAUDE_ROUTINE_FIRE_URL/CLAUDE_ROUTINE_TOKEN not set — skipping Routine fire for deploy notify request",
-        { projectId: event.params.projectId }
-      );
-      return;
-    }
-
-    // Deliberately data-only, same philosophy as notifyOnProjectReadyForReview
-    // above: this used to also embed a full step-by-step "how to find/verify/
-    // merge a PR" procedure directly in this string, duplicating (and, once
-    // ROUTINE_INSTRUCTIONS.md was updated to fix a real bug in that
-    // procedure, silently diverging from) the Deploy flow section of
-    // ROUTINE_INSTRUCTIONS.md — the file every fired session's own bootstrap
-    // prompt already fetches and is told to follow exactly. Two copies of
-    // "how" can only ever go stale relative to each other; this function's
-    // only job is "what" (which project, which items) and the `=== DEPLOY
-    // REQUEST ===` marker ROUTINE_INSTRUCTIONS.md's own Deploy flow section
-    // keys off of.
-    const itemLines = items
-      .map((i, idx) => `${idx + 1}. [id: ${i.id}] [${i.type === "bug" ? "Bug" : "Feature"}] ${i.title} — ${i.desc}${i.patchBranch ? ` (patchBranch: ${i.patchBranch})` : ""}`)
-      .join("\n");
-
-    // Same per-project addendum mechanism as the Backlog notify fire above
-    // (a project's own Docs page can hand the Routine extra context either
-    // request should know, e.g. which branch/PR naming convention to expect).
-    const projectPromptBlock = (after.routinePromptMd || "").trim()
-      ? `=== PROJECT-SPECIFIC INSTRUCTIONS FOR "${projectName}" (from this project's Docs page) ===\n${after.routinePromptMd.trim()}\n=== END PROJECT-SPECIFIC INSTRUCTIONS ===\n\n`
-      : "";
-
-    // Same self-report mechanism as notifyOnProjectReadyForReview's own
-    // selfReportHint above, targeting deployRoutine instead of notifyRoutine
-    // — until this existed, the "Deploy to Main" button had nothing to read
-    // an in-progress state from at all, so it looked identical whether a
-    // deploy was actually running or hadn't been requested yet.
-    const selfReportHint = `\n\nWhen you finish this run (whether you completed everything or stopped early on a blocker), PATCH projects/${event.params.projectId} with deployRoutine.status set to "done" (or "error" with an errorMessage, if you stopped early) and deployRoutine.finishedAt set to now — the board shows a working/spinning state on its Deploy to Main button until it sees this.`;
-
-    const text = `${projectPromptBlock}=== DEPLOY REQUEST for "${projectName}" (projectId: ${event.params.projectId}) on the Backlog Tracker & FAQs board ===\n` +
-      `These ${items.length} item${items.length === 1 ? "" : "s"} are already implemented, tested, and confirmed "Approved for Deployment" (ready-to-publish). Do NOT investigate, re-implement, or re-test them — follow ROUTINE_INSTRUCTIONS.md's "Notify Claude — Deploy" flow section for exactly what to do with each one.\n\n` +
-      `Items:\n${itemLines}${selfReportHint}${boardAccessBlock()}`;
-
-    let sessionId = null;
-    let sessionUrl = null;
-    let fireError = null;
-    try {
-      const res = await fetch(fireUrl, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${token}`,
-          "anthropic-beta": "experimental-cc-routine-2026-04-01",
-          "anthropic-version": "2023-06-01",
-        },
-        body: JSON.stringify({ text }),
-      });
-      if (!res.ok) {
-        fireError = `Routine fire endpoint responded with status ${res.status}`;
-        logger.error("Routine fire endpoint responded with a non-2xx status for deploy request", {
-          projectId: event.params.projectId,
-          status: res.status,
-          body: await res.text().catch(() => "<unreadable>"),
-        });
-      } else {
-        // Same response shape as notifyOnProjectReadyForReview's own fire
-        // call above — see that function's comment for the research-preview
-        // caveat on this field name.
-        const body = await res.json().catch(() => null);
-        sessionId = body?.claude_code_session_id || null;
-        sessionUrl = sessionId ? `https://claude.ai/code/${sessionId}` : null;
-        logger.info("Fired Claude Code Routine for deploy notify request", {
-          projectId: event.params.projectId,
-          itemCount: items.length,
-          sessionId,
-        });
-      }
-    } catch (err) {
-      fireError = err instanceof Error ? err.message : String(err);
-      logger.error("Failed to call Routine fire endpoint for deploy notify request", {
-        projectId: event.params.projectId,
-        error: fireError,
-      });
-    }
-
-    // Lets the board show a spinner (or a visible error) instead of the
-    // Deploy to Main button just looking idle after a click — see
-    // deployNotifyButtonHTML in public/js/app.js. Same stale-after-20-minutes
-    // client fallback as notifyRoutine protects this from ever wedging.
-    await getFirestore().collection("projects").doc(event.params.projectId).set({
-      deployRoutine: {
-        status: fireError ? "error" : "in-progress",
-        firedAt: new Date(),
-        sessionId,
-        sessionUrl,
-        itemCount: items.length,
-        errorMessage: fireError,
-      },
-    }, { merge: true });
   }
 );
 
@@ -741,11 +778,32 @@ exports.onBacklogItemPublishedLive = onDocumentUpdated(
     if (before.status === "published-live" || after.status !== "published-live") {
       return;
     }
+
+    const db = getFirestore();
+    const itemId = event.params.itemId;
+
+    // 1. Proposed FAQ revisions this ticket is a source of (written by the
+    //    Deploy-flow Routine — ROUTINE_INSTRUCTIONS.md "FAQ impact review").
+    //    Each goes live only once a person has approved it AND every source
+    //    ticket is live; this ticket going live may be the last thing it was
+    //    waiting on.
+    const pendingSnap = await db.collection("faqArticles")
+      .where("pendingRevision.sourceItemIds", "array-contains", itemId)
+      .get();
+    const handled = new Set();
+    for (const articleDoc of pendingSnap.docs) {
+      handled.add(articleDoc.id);
+      await promoteFaqRevisionIfReady(db, articleDoc.ref, `ticket ${itemId} reached published-live`);
+    }
+
+    // 2. The older, coarser per-project safety net: opt-in via the Docs
+    //    page's "FAQ review automation" toggle, flags every article linked
+    //    to the project for a human look. Skips articles that already carry
+    //    a specific proposal from step 1 — those have something concrete to
+    //    review; a bare flag on top would be noise.
     if (!after.projectId) {
       return;
     }
-
-    const db = getFirestore();
     const projectSnap = await db.collection("projects").doc(after.projectId).get();
     if (!projectSnap.exists || !projectSnap.data().faqAutoFlagOnLive) {
       return;
@@ -754,16 +812,17 @@ exports.onBacklogItemPublishedLive = onDocumentUpdated(
     const articlesSnap = await db.collection("faqArticles")
       .where("projectId", "==", after.projectId)
       .get();
-    if (articlesSnap.empty) {
-      logger.info("FAQ auto-flag enabled but no linked articles for this project", {
-        itemId: event.params.itemId,
+    const toFlag = articlesSnap.docs.filter((d) => !handled.has(d.id) && !d.data().pendingRevision);
+    if (!toFlag.length) {
+      logger.info("FAQ auto-flag enabled but nothing left to flag for this project", {
+        itemId,
         projectId: after.projectId,
       });
       return;
     }
 
     const batch = db.batch();
-    articlesSnap.docs.forEach((articleDoc) => {
+    toFlag.forEach((articleDoc) => {
       batch.set(articleDoc.ref, {
         needsReview: true,
         updatedAt: new Date(),
@@ -772,10 +831,85 @@ exports.onBacklogItemPublishedLive = onDocumentUpdated(
     await batch.commit();
 
     logger.info("Flagged linked FAQ articles for review after merge to main", {
-      itemId: event.params.itemId,
+      itemId,
       projectId: after.projectId,
-      articleCount: articlesSnap.size,
+      articleCount: toFlag.length,
     });
+  }
+);
+
+// ── Proposed FAQ revisions: approve + merge ⇒ go live ─────────────────────
+// The Deploy-flow Routine parks a corrected article as faqArticles/{id}.
+// pendingRevision {title, summary, bodyMd, keywords?, docType?, reason,
+// sourceItemIds, reviewStatus: "awaiting-review", isNew?} and sets
+// needsReview. A reviewer approves it in FAQ Management (reviewStatus ->
+// "approved"). Two events can be the last one to happen — the approval, or
+// the final source ticket reaching published-live — so both call this.
+// Promotion copies the proposal into the live fields, keeps what it replaced
+// under previousRevision (one-click revert in the console), clears the
+// proposal and the flag, and publishes a proposal-created draft. The
+// hourly FAQ export (faq-content.yml) then carries it to the static site.
+const LIVE_OR_LATER = new Set(["published-live", "archived"]);
+
+async function promoteFaqRevisionIfReady(db, articleRef, why) {
+  await db.runTransaction(async (tx) => {
+    const snap = await tx.get(articleRef);
+    if (!snap.exists) return;
+    const a = snap.data();
+    const rev = a.pendingRevision;
+    if (!rev || rev.reviewStatus !== "approved") return;
+
+    const ids = Array.isArray(rev.sourceItemIds) ? rev.sourceItemIds.filter((s) => typeof s === "string" && s) : [];
+    // Every source ticket must be live (or archived, which only happens
+    // after live). A ticket that no longer exists can't hold it up forever.
+    for (const id of ids) {
+      const itemSnap = await tx.get(db.collection("backlogItems").doc(id));
+      if (itemSnap.exists && !LIVE_OR_LATER.has(itemSnap.data().status)) {
+        logger.info("Approved FAQ revision still waiting on a source ticket", { articleId: articleRef.id, waitingOn: id, why });
+        return;
+      }
+    }
+
+    const now = new Date();
+    const update = {
+      title: typeof rev.title === "string" && rev.title.trim() ? rev.title : a.title,
+      summary: typeof rev.summary === "string" ? rev.summary : (a.summary || ""),
+      bodyMd: typeof rev.bodyMd === "string" ? rev.bodyMd : (a.bodyMd || ""),
+      ...(Array.isArray(rev.keywords) ? { keywords: rev.keywords } : {}),
+      ...(typeof rev.docType === "string" ? { docType: rev.docType } : {}),
+      previousRevision: {
+        title: a.title || "",
+        summary: a.summary || "",
+        bodyMd: a.bodyMd || "",
+        replacedAt: now,
+        sourceItemIds: ids,
+        wasNew: !!rev.isNew,
+      },
+      pendingRevision: null,
+      needsReview: false,
+      lastPromotedAt: now,
+      updatedAt: now,
+      ...(rev.isNew || a.status !== "published" ? { status: "published", publishedAt: a.publishedAt || now } : {}),
+    };
+    // Firestore's admin SDK deletes a field only via FieldValue.delete();
+    // a null pendingRevision is also what the console/rules treat as
+    // "none", so keep null (simpler to query against) and let the client
+    // read either.
+    tx.set(articleRef, update, { merge: true });
+    logger.info("Promoted approved FAQ revision to live", { articleId: articleRef.id, sourceItemIds: ids, why });
+  });
+}
+
+exports.onFaqArticleRevisionApproved = onDocumentUpdated(
+  "faqArticles/{articleId}",
+  async (event) => {
+    const before = event.data?.before?.data();
+    const after = event.data?.after?.data();
+    if (!before || !after) return;
+    const wasApproved = before.pendingRevision && before.pendingRevision.reviewStatus === "approved";
+    const isApproved = after.pendingRevision && after.pendingRevision.reviewStatus === "approved";
+    if (!isApproved || wasApproved) return;
+    await promoteFaqRevisionIfReady(getFirestore(), event.data.after.ref, "revision approved in FAQ Management");
   }
 );
 

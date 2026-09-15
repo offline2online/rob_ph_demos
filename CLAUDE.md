@@ -31,7 +31,13 @@ still EDITED from backlog-tracker's **FAQ Management** page (Firestore
 hourly/on demand and syncs `faq/data` → Firestore when it changes on
 `main` (`backlog-tracker/scripts/faq-export.js` / `faq-sync.js`), and the
 article page pulls a newer revision straight from Firestore's REST API on
-load. Writes to the two FAQ collections require a signed-in allowlisted
+load. **A "Notify Claude — Deploy" run also reviews the help centre**: the
+Routine reads each merging PR's diff and parks corrected text on affected
+articles of that project's product/program as `faqArticles.pendingRevision`
+(never the live fields); a person approves it in FAQ Management (old vs
+new diff) and it goes live automatically once the ticket is Merged to
+Main — see `backlog-tracker/ROUTINE_INSTRUCTIONS.md` step 3b and
+`backlog-tracker/REQUIREMENTS.md` → "FAQ revision review". Writes to the two FAQ collections require a signed-in allowlisted
 Google account (`backlog-tracker/firestore.rules` → `isEditor`), as does
 the whole console (sign-in wall in `backlog-tracker/public/js/auth-gate.js`). See `faq/README.md` for the full flow
 and `docs/faq-audit-2026-09.md` for the September 2026 audit/rewrite (12

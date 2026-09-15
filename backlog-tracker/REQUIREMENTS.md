@@ -366,6 +366,15 @@ faqArticles/{id}: {
   docType: "faq" | "how-to" | "reference" | "explanation",
   keywords: string[], status: "draft" | "published", needsReview: boolean,
   order, createdAt, updatedAt, publishedAt,
+  pendingRevision?: {              // see "FAQ revision review" below
+    title, summary, bodyMd, keywords?: string[], docType?,
+    reason, sourceItemIds: string[], sourceProjectId?, sourcePrNumbers?: number[],
+    proposedBy: "claude" | string, proposedAt: ISO string,
+    reviewStatus: "awaiting-review" | "approved", approvedAt?, approvedBy?,
+    editedBy?, editedAt?, isNew?: boolean,
+  },
+  previousRevision?: { title, summary, bodyMd, replacedAt, sourceItemIds?, wasNew?, revertOf? },
+  lastPromotedAt?,
 }
 ```
 Consumer-facing content for the FAQ / Help Center — see that section below.
@@ -1013,13 +1022,95 @@ Three Cloud Functions, all in `backlog-tracker/functions/index.js`:
    below) — prepended the same way, ahead of the DEPLOY REQUEST block.
 
 3. **`onBacklogItemPublishedLive`** (`onDocumentUpdated` on `backlogItems`)
-   — opt-in per project via the Docs page's **FAQ review automation**
-   toggle (`projects/{id}.faqAutoFlagOnLive`). Fires specifically on the
-   transition to `status: "published-live"` — the one irreversible status
-   change — and sets `needsReview: true` on every `faqArticles` doc sharing
-   that item's `projectId`, the same flag FAQ Center's own manual toggle
-   sets. A project with the toggle on but no linked FAQ articles is a
-   harmless no-op.
+   — fires on the transition to `status: "published-live"` (the one
+   irreversible status change) and does two things, in order:
+   1. Promotes any **approved** proposed FAQ revision that names this
+      item in `pendingRevision.sourceItemIds`, provided every other source
+      item is also live — see "FAQ revision review" below. Always on; no
+      toggle.
+   2. The older, coarser safety net, still opt-in per project via the Docs
+      page's **FAQ review automation** toggle
+      (`projects/{id}.faqAutoFlagOnLive`): sets `needsReview: true` on
+      every `faqArticles` doc sharing that item's `projectId` that does
+      *not* already carry a specific proposal. A project with the toggle
+      on but no linked FAQ articles is a harmless no-op.
+4. **`onFaqArticleRevisionApproved`** (`onDocumentUpdated` on
+   `faqArticles`) — the other half of the same rule: when
+   `pendingRevision.reviewStatus` flips to `"approved"` it promotes the
+   revision immediately if every source ticket is already live, otherwise
+   it leaves it waiting for (3). Both share `promoteFaqRevisionIfReady`, a
+   transaction that re-reads the article and its tickets before writing.
+
+### FAQ revision review (Deploy → propose → approve → go live)
+
+**Why.** A ticket merging to `main` changes what the product does; the
+public help centre describes what the product does. The old
+`faqAutoFlagOnLive` toggle only ever said "something in this project
+changed, look at every article" — the reviewer then had to work out what,
+and nothing helped them write the fix. Now the Deploy flow itself does the
+reading and the writing, and the human only judges.
+
+**Who writes the proposal.** The "Notify Claude — Deploy" Routine, in the
+Deploy flow's step 3b (`ROUTINE_INSTRUCTIONS.md` → "FAQ impact review").
+For each item's confirmed PR it reads the real diff (`git diff
+main...<branch>`, plain git — works without `api.github.com`), reads the
+in-scope articles, and only where it can point at diff lines that make the
+current text wrong writes `pendingRevision` (the complete proposed title/
+summary/body, a `reason`, the `sourceItemIds`) and `needsReview: true`.
+The live fields are never touched by the Routine. It also appends a note to
+each ticket naming the articles it proposed for, so the person who clicked
+Deploy knows there's something waiting.
+
+**Scope is the product/program, not the whole help centre.** Candidate
+articles are those whose `programId` equals the project's `programId`,
+plus any whose `projectId` is the project itself. A project without a
+`programId` scopes to its `projectId`-linked articles only (the Routine
+says so in its note — fix it on the project's Docs page, don't widen the
+rule). Articles of other products/programs are never touched even when the
+diff clearly affects them; the Routine names them in its report for a
+human to handle. The deploy fire `text` carries a `Product/Program:` line
+as a hint; Firestore is the authority.
+
+**Review UI** (FAQ Management → row badge **Proposed update** → ⋮ →
+**Review proposed update**, `#faq-revision-review-page`): the reason, the
+source ticket(s) with their live pipeline status, and two views — *Changes*
+(paragraph-level diff of the rendered text, word-level highlighting inside
+a reworded paragraph, unchanged runs collapsed) and *Before / After*
+(both versions rendered through the same `renderFaqBodyMd()` as the public
+site). Actions:
+
+- **Approve** → `pendingRevision.reviewStatus: "approved"` (+
+  `approvedAt`/`approvedBy`). The badge becomes **Approved · awaiting
+  merge**; the page says exactly which tickets it is waiting on. If every
+  ticket is already live it publishes immediately.
+- **Reject** → deletes `pendingRevision`, clears `needsReview`. For a
+  proposal that created a new draft article (`isNew`), rejecting deletes
+  the draft. On an approved proposal the same button reads **Withdraw
+  approval**.
+- **Edit proposal** → opens the normal article editor loaded with the
+  *proposed* text; **Save proposal** writes back to `pendingRevision`
+  (never the live fields) and resets `reviewStatus` to `awaiting-review`,
+  because what was approved is no longer what would go live.
+
+**Go-live = approved AND every source ticket `published-live`** (or
+`archived`, which only follows live), whichever comes last;
+`promoteFaqRevisionIfReady` copies the proposal into the live fields,
+stores what it replaced as `previousRevision`, clears `pendingRevision`
+and `needsReview`, stamps `lastPromotedAt`, and publishes a proposal-
+created draft. The hourly `faq-content.yml` export then carries it into
+`faq/data/` for the static site (and the article page's own Firestore
+freshness check shows it sooner). A source ticket that no longer exists
+doesn't block promotion. **Revert last auto-update** (⋮ on a row with a
+`previousRevision`) swaps the previous text back and keeps the replaced
+text as the new `previousRevision`, so it can be undone again.
+
+**Rules.** `firestore.rules` → `isValidPendingRevision` /
+`isValidPreviousRevision` validate the shape (required `title`, `bodyMd`,
+non-empty `sourceItemIds`, `reviewStatus` in the two allowed values, size
+caps) for writes from the console and from the Routine's board-automation
+user; Cloud Functions bypass rules. `faq-sync.js` merges and never touches
+these fields; `faq-export.js` exports only the live fields, so a proposal
+never leaks onto the public site.
 
 ### The Notify Claude Routine — a thin bootstrap, not the source of truth
 

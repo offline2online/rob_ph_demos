@@ -526,6 +526,51 @@ use those, don't re-derive them from the title. For each item:
      further, and it only got resolved once a Claude Code session with
      real repo access noticed it separately, merged `main` into the
      branch by hand, and pushed the resolution.
+3b. **FAQ impact review — do this for every item whose PR you identified
+   in step 1, whether or not step 3 cleared it to merge.** The tickets in
+   a DEPLOY REQUEST are about to change what the product does, and the
+   public help centre (`faq/`, edited from the console's FAQ Management
+   page, Firestore `faqArticles`) describes what the product does — so
+   every deploy is exactly the moment an article silently goes stale.
+   Your job here is to find the articles the *code change* makes wrong or
+   incomplete, write the corrected text, and park it as a **proposed
+   revision** on the article for a human to approve. Nothing you write in
+   this step changes the live help centre by itself: the proposal only
+   goes live once a person approves it in FAQ Management **and** the
+   ticket that caused it has actually reached Merged to Main
+   (`published-live`) — whichever of those two happens last (a Cloud
+   Function, `promoteFaqRevisionIfReady` in `functions/index.js`, does the
+   promotion; see "FAQ revision review" in `backlog-tracker/REQUIREMENTS.md`).
+   Full detail in **"FAQ impact review (Deploy flow, step 3b)"** below —
+   read it before doing this step, it has the exact field shapes. In
+   short:
+   - **Scope by product/program, not by the whole help centre.** Read the
+     project doc's `programId` (and, if set, `programs/{programId}`'s
+     `name`). The candidate articles are only those whose `programId`
+     equals the project's `programId`, plus any whose `projectId` is this
+     project's id. Never touch an article belonging to a different
+     product/program, and if the project has no `programId` at all, only
+     the `projectId`-linked articles are in scope (say so in your note if
+     that leaves zero candidates — it's a configuration gap for a human
+     to fix on the project's Docs page, not something to work around by
+     widening the net).
+   - **Work from the actual diff**, not the ticket title: `git fetch` the
+     PR's head branch and `git diff main...<branch>` — the plain git
+     protocol works even when `api.github.com` is blocked (step 0).
+   - For each candidate article, decide from the diff whether its current
+     text (title/summary/body — read `bodyMd`, it's HTML) is now wrong,
+     incomplete, or missing a new step/option/field the change introduces.
+     Most articles will be unaffected — leave those completely untouched
+     (no flag, no note). Only propose a revision where you can point at
+     the specific line(s) in the diff that make the current text wrong.
+   - Where a change introduces something no existing candidate article
+     covers at all, you may propose a **new** draft article (see below) —
+     but prefer revising an existing article over adding one.
+   - Write the proposed revision onto the article (`pendingRevision` map +
+     `needsReview: true`), citing the ticket id(s) and PR number(s), with
+     a one-paragraph `reason` a reviewer can verify against the diff.
+   - Then continue with step 4 as normal — a proposed revision never
+     blocks the merge, and a blocked merge never cancels the proposal.
 4. If it's green and mergeable **and step 1's exact id match held**, PATCH
    its backlogItems doc: `mergeReady -> true` (boolean), `mergePrNumber ->
    <the PR number, as a number>`, `updatedAt -> now`. The same scheduled
@@ -547,7 +592,164 @@ use those, don't re-derive them from the title. For each item:
 
 If a PR can't be found, or its CI is red, or it's not mergeable, leave its
 status as `ready-to-publish` (and `mergeReady` unset/false) and add a note
-explaining why instead of guessing.
+explaining why instead of guessing. (Step 3b's FAQ proposals still stand
+in that case — they simply wait until the ticket eventually reaches
+Merged to Main.)
+
+## FAQ impact review (Deploy flow, step 3b) — exact procedure
+
+This is the detail behind step 3b of the Deploy flow above. It only ever
+runs inside a `=== DEPLOY REQUEST ===` fire; the Backlog and Groom flows
+never write to `faqArticles`.
+
+**What the reviewer will see, so you know what you're producing.** In the
+console's FAQ Management page an article with a `pendingRevision` shows a
+"Proposed update" badge and a **Review proposed update** action that opens
+a side-by-side old-vs-new comparison (with a word-level diff of the text),
+your `reason`, and the ticket(s) that caused it, with **Approve** /
+**Reject** / **Edit proposal** buttons. Approve marks it
+`reviewStatus: "approved"`; the moment every ticket in `sourceItemIds` is
+`published-live` (or already was), the Cloud Function swaps the proposal
+into the live article, keeps the previous text under `previousRevision`
+for a one-click revert, clears `needsReview`, and the hourly FAQ export
+carries it to the static site. Reject deletes the proposal and clears the
+flag. So: write the proposal as the finished, publishable article text —
+not notes about what should change.
+
+### 1. Establish scope (product/program)
+
+```bash
+PROJECT=$(curl -sS -H "$AUTH" "$BOARD/projects/<projectId>")
+# programId is on the project doc (fields.programId.stringValue); it may be absent
+curl -sS -H "$AUTH" "$BOARD/programs/<programId>"     # for its name, only if programId is set
+```
+
+Candidate articles — public read, no auth needed, but `$AUTH` works too:
+
+```bash
+curl -sS -X POST -H "$AUTH" "$BOARD:runQuery" -H "Content-Type: application/json" -d '{"structuredQuery":{"from":[{"collectionId":"faqArticles"}],"where":{"fieldFilter":{"field":{"fieldPath":"programId"},"op":"EQUAL","value":{"stringValue":"<programId>"}}}}}'
+curl -sS -X POST -H "$AUTH" "$BOARD:runQuery" -H "Content-Type: application/json" -d '{"structuredQuery":{"from":[{"collectionId":"faqArticles"}],"where":{"fieldFilter":{"field":{"fieldPath":"projectId"},"op":"EQUAL","value":{"stringValue":"<projectId>"}}}}}'
+```
+
+Union the two result sets (dedupe by doc id). **That union is the entire
+universe you may touch.** Articles for other products/programs are out of
+scope even if the diff obviously affects them — mention it in your note
+and final report instead, so a human can decide. The DEPLOY REQUEST
+`text` may also carry a `Product/Program:` line naming the program — treat
+it as a hint only; the Firestore `programId` is authoritative.
+
+Skip articles that have `retiredAt` set, and skip any article that
+already carries a `pendingRevision` whose `reviewStatus` is
+`"approved"` — a human has already signed that off; don't overwrite it.
+If an article already has an *awaiting-review* proposal (from an earlier
+deploy fire) and this deploy changes the same article again, base your
+new proposal on the existing proposal's text (not the live text) and
+append this fire's ticket ids/PR numbers to `sourceItemIds` /
+`sourcePrNumbers` rather than replacing them — that way it still waits
+for all of its tickets to be live.
+
+### 2. Read the change
+
+For each item's confirmed PR (step 1 of the Deploy flow — exact id match,
+never a title guess):
+
+```bash
+git fetch origin main "refs/pull/<PR>/head:pr-<PR>"        # or the claude/<slug>-<id6> branch ref
+git diff main...pr-<PR> --stat
+git diff main...pr-<PR>
+```
+
+Read the real diff. Then read `docs/CONTRIBUTING-docs.md` in full — every
+proposal must follow it (Diátaxis type, FAQ writing rules, formatting) —
+and the affected articles' current `bodyMd` (HTML from the Quill editor;
+legacy markdown-ish text if it doesn't start with `<`).
+
+### 3. Decide, conservatively
+
+An article needs a proposal only if you can tie the change to specific
+text: a step that no longer matches the UI, a field/option/button that
+was renamed, added or removed, a limit or default that changed, a
+described behaviour the diff alters, or a new capability that a how-to
+in scope should now include. "The feature area is related" is **not**
+enough. If the diff is pure refactoring, tests, tooling, or anything
+invisible to a customer, write no proposals at all and say so in the
+note — that's the common case and the correct outcome.
+
+### 4. Write the proposal onto the article
+
+One PATCH per affected article, setting `pendingRevision` (a map) and
+`needsReview: true`, plus `updatedAt`. Do **not** change `title`, `summary`,
+`bodyMd`, `status`, `keywords` or anything else on the live article —
+those are what the reviewer compares against.
+
+`pendingRevision` fields (all strings unless noted):
+
+- `title`, `summary`, `bodyMd` — the complete proposed values (all three,
+  even the ones you didn't change, copied verbatim from the live article
+  so the reviewer sees a full "after"). `bodyMd` must be the same HTML
+  shape the editor produces (`<p>`, `<h2>`/`<h3>`, `<ol>`/`<ul>`, `<strong>`,
+  `<code>`, `<div class="callout callout-note|important|warning">`,
+  `<div class="faq-table"><table>…</table></div>`) — no markdown, no
+  `<script>`/`<style>`, no inline event handlers; it is sanitised on
+  render either way. ≤ 60,000 characters.
+- `keywords` (array of strings, optional) — only if the change warrants
+  new search terms; otherwise omit and the live keywords are kept.
+- `docType` (optional) — only if the article's Diátaxis type was wrong.
+- `reason` — one short paragraph for the reviewer: which ticket/PR, which
+  file(s) in the diff, and what specifically became wrong or missing in
+  the current text. Plain text. ≤ 1,000 characters.
+- `sourceItemIds` (array of strings) — the backlog item id(s) from this
+  DEPLOY REQUEST that caused this proposal. **Required, non-empty** — this
+  is what the promotion function keys the go-live on.
+- `sourceProjectId` — the project id.
+- `sourcePrNumbers` (array of integers, optional) — the PR number(s).
+- `proposedBy` — the literal string `"claude"`.
+- `proposedAt` — ISO-8601 timestamp (string).
+- `reviewStatus` — the literal string `"awaiting-review"`. Never write
+  `"approved"` yourself.
+
+```bash
+curl -sS -X PATCH -H "$AUTH" "$BOARD/faqArticles/<ARTICLE_ID>?updateMask.fieldPaths=pendingRevision&updateMask.fieldPaths=needsReview&updateMask.fieldPaths=updatedAt" \
+  -H "Content-Type: application/json" \
+  -d '{"fields":{"needsReview":{"booleanValue":true},"updatedAt":{"timestampValue":"<ISO8601 now>"},"pendingRevision":{"mapValue":{"fields":{"title":{"stringValue":"…"},"summary":{"stringValue":"…"},"bodyMd":{"stringValue":"<p>…</p>"},"reason":{"stringValue":"…"},"sourceItemIds":{"arrayValue":{"values":[{"stringValue":"<ITEM_ID>"}]}},"sourceProjectId":{"stringValue":"<projectId>"},"sourcePrNumbers":{"arrayValue":{"values":[{"integerValue":"123"}]}},"proposedBy":{"stringValue":"claude"},"proposedAt":{"stringValue":"<ISO8601 now>"},"reviewStatus":{"stringValue":"awaiting-review"}}}}}}'
+```
+
+Validate the JSON locally (`jq .`) before sending — the Firestore rules
+reject a malformed `pendingRevision` outright, and a rejected PATCH means
+nothing was flagged.
+
+**A brand-new article** (only when nothing in scope covers a genuinely
+new customer-visible capability): create a `faqArticles` doc with
+`status: "draft"`, `needsReview: true`, the correct `categoryId` (pick
+from the existing `faqCategories`, never invent one), `programId` =
+the project's program, `projectId` = the project id, `docType`, a
+`slug`, `order` (max existing order + 1), `createdAt`/`updatedAt`, the
+live `title`/`summary`/`bodyMd` set to the same text as the proposal, and
+a `pendingRevision` as above with the extra boolean `isNew: true`. On
+approval + merge the function flips it to `published`; on rejection the
+console deletes the draft. Prefer revising an existing article; a new one
+is the exception.
+
+### 5. Tell the ticket
+
+Append a `notes` entry (`author: "claude"`, same fetch-then-append rule as
+everywhere else in this file) to each backlog item naming every article
+you proposed a revision for (title + `faqArticles` id) and, in one line
+each, why — or stating plainly that you reviewed N in-scope articles for
+program "<name>" and none needed a change. This note is how the person
+clicking Deploy learns there's something waiting in FAQ Management.
+
+### 6. What not to do
+
+- Don't set `needsReview` on articles you have no proposal for — the old
+  blanket "flag every article in the project" behaviour is exactly what
+  this replaces; a flag with nothing to review is noise.
+- Don't edit the live fields, don't flip `status`, don't touch articles
+  outside the program/project scope, don't write `reviewStatus:
+  "approved"`, don't touch `previousRevision`.
+- Don't let this step stop the merge: if you run out of time or hit an
+  error here, say so in the note and the final report and still complete
+  step 4 for items that are green.
 
 ## The "Groom Backlog" flow (a differently-shaped fire)
 
@@ -634,6 +836,14 @@ in the `projects` collection, or its Backlog column is empty, say that
 plainly instead of fabricating work. If a PROJECT-SPECIFIC INSTRUCTIONS
 block was present, note in the summary that you followed it and briefly
 how.
+
+**For a Deploy run, also report the FAQ impact review (step 3b):** the
+program/product you scoped to (or that the project has none), how many
+in-scope articles you checked, and for each proposed revision the article
+title, its `faqArticles` id, and the one-line reason — or "no FAQ changes
+needed" with a sentence on why (e.g. "internal refactor, nothing
+customer-visible"). Name any out-of-scope article you believe is affected
+but did not touch.
 
 **For a Groom Backlog run (`=== GROOM REQUEST ===`), report differently:**
 list each item groomed, its corrected `category`, and a one-line version of
