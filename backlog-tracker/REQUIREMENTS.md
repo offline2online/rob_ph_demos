@@ -65,6 +65,8 @@ Cloud Functions, own Hosting site, own IAM/billing; see
   routinePromptMd?: string,       // see "Per-project Routine instructions" below
   faqAutoFlagOnLive?: boolean,    // see "FAQ auto-review" below
   programId?: string,             // see "programs/{programId}" below
+  artifactUrl?: string,           // published Artifact link for this project — ⋮ → "View Artifact". Written directly (not via patchFiles/patchReady) by the Notify Claude Routine — see ROUTINE_INSTRUCTIONS.md → "Project Artifact"
+  artifactUpdatedAt?: timestamp,  // set alongside artifactUrl, shown as "updated <date>" under the menu link
   notifyRoutine?: {                // set by notifyOnProjectReadyForReview on each fire
     status: "in-progress" | "done" | "error",
     firedAt: timestamp,
@@ -837,7 +839,9 @@ REST API is reachable with a plain `curl`, no service account needed.
   treatment as Ready for Dev, shown only when every ticket on the project's
   train is approved — see "The single Deploy CTA" above), **+ New
   backlog item**, then a **⋮** options menu holding everything else
-  (Archived tickets, Requirements/Docs, interface contracts).
+  (Archived tickets, Requirements/Docs, interface contracts, and — when
+  the project has one — a **View Artifact** link, see "Project Artifact"
+  below).
   Mobile (<640px) stacks each gradient button as its own full-width row
   above the New item / ⋮ row rather than squeezing controls onto one line;
   the board's four columns stack vertically instead of forcing horizontal
@@ -875,6 +879,20 @@ REST API is reachable with a plain `curl`, no service account needed.
   by the `interfaces` collection). All of it lives here rather than
   scattered across repo files, so a project's complete documentation is one
   page away from its board.
+- **Project Artifact** (`artifactUrl`/`artifactUpdatedAt` on the project
+  doc): an optional link to a Claude-published Artifact for this project —
+  a live mockup, dashboard, or prototype the Notify Claude Routine builds
+  and keeps up to date across runs, republishing to the same URL rather
+  than a fresh one each time (see ROUTINE_INSTRUCTIONS.md → "Project
+  Artifact" for the exact mechanism). The board itself never creates or
+  edits this — it only reads the two fields. When `artifactUrl` is set,
+  the ⋮ menu shows **View Artifact ↗** (opens in a new tab, with an
+  "updated `<date>`" sub-line from `artifactUpdatedAt`); when unset, it
+  shows a plain, non-clickable "No artifact yet" row (unlike the interface
+  contract's empty state, there's no in-app action to create one — only
+  the Routine sets these fields, as a direct Firestore write like
+  `groomedSummary`, never via `patchFiles`/`patchReady` since it isn't a
+  code change to this repo).
 - **Archive**: a Merged-to-Main card can be archived (sets `status:
   "archived"` + `archivedAt`, not deleted); each project's own Archived
   page is sortable/filterable by type, area, and free text, with a Restore

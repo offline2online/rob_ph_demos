@@ -485,6 +485,11 @@ textarea.dialog-field-input { resize: vertical; min-height: 70px; }
 .options-menu-sub { font-size: 11px; color: var(--text-muted); }
 .options-menu-item-danger { color: var(--danger); }
 .options-menu-item-danger:hover { background: var(--danger-tint); }
+/* A menu row with nothing to click (e.g. "No artifact yet") — unlike the
+   other -empty item (interface-add-btn), it has no action, so it shouldn't
+   look clickable. */
+.options-menu-item-static { cursor: default; }
+.options-menu-item-static:hover { background: transparent; }
 
 /* ── Archive page ────────────────────────────────────────────────────── */
 .archive-page { margin-bottom: 20px; }

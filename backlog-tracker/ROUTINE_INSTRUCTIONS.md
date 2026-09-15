@@ -387,6 +387,63 @@ yourself, every run, before you set `patchReady` on anything:
    you considered them possible duplicates but packaged them independently,
    so a human can make the call.
 
+## Project Artifact — an optional, Claude-maintained preview link
+
+A project's Firestore doc can carry `artifactUrl` (string) and
+`artifactUpdatedAt` (timestamp) — a link to a Claude-published Artifact for
+that project, shown in the board's own ⋮ menu as **View Artifact ↗**
+(opens in a new tab, with an "updated `<date>`" sub-line; a plain,
+non-clickable "No artifact yet" row shows when unset). This is for a
+project where a live mockup, dashboard, status page, or interactive
+prototype is more useful to whoever runs it than reading tickets — the
+board only ever reads these two fields, it never creates or edits them.
+
+**This is not a step in every run — only act on it when something actually
+asks for it** (an explicit backlog item like this one, a project's
+`routinePromptMd`, or a DEPLOY/GROOM fire's own text saying so). Don't
+publish or refresh a project's Artifact unprompted just because the
+capability exists — most runs should never touch `artifactUrl` at all.
+
+When you are asked to create or update a project's Artifact:
+
+1. Use your own Artifact tool (the one available to this Claude Code
+   session, same as any other) to publish the page. An Artifact is
+   published HTML, which may embed an interactive React component the same
+   way any Artifact can — so "upload a .JSX file" is delivered as a
+   published Artifact page containing that component, not a bare,
+   unrendered `.jsx` file (which has nowhere to run on its own).
+2. **"Continually update" means the same URL every time, not a new
+   artifact per run.** The first time you publish for a project, keep note
+   of the artifact's URL (e.g. in a `notes` entry on whatever item asked
+   for it). On every later run that refreshes this project's Artifact,
+   republish to that same URL (the Artifact tool's own update path, by
+   passing the existing artifact's `url`) instead of creating a fresh one
+   — the link already in the ⋮ menu, and anything a human already opened
+   or bookmarked, should keep working across updates rather than going
+   stale or 404ing.
+3. Once published, PATCH the project's Firestore doc directly with
+   `artifactUrl` and `artifactUpdatedAt` (ISO-8601, now) — a plain
+   project-level field write, same shape as any other project PATCH in
+   this file (see `trainReady` below). **This is board data, not a code
+   change to this repo: set it directly, the same way you'd set
+   `groomedSummary` on an item. It never goes through
+   `patchFiles`/`patchReady`, and never needs `backlog-automation.yml` to
+   land** — it takes effect for every open tab the moment the write lands.
+   ```
+   curl -sS -X PATCH -H "$AUTH" "$BOARD/projects/<PROJECT_ID>?updateMask.fieldPaths=artifactUrl&updateMask.fieldPaths=artifactUpdatedAt" \
+     -H "Content-Type: application/json" \
+     -d '{"fields":{"artifactUrl":{"stringValue":"<artifact url>"},"artifactUpdatedAt":{"timestampValue":"<ISO8601 now>"}}}'
+   ```
+4. Say what you did in your final report — the artifact's URL, whether it
+   was newly created or republished to an existing one, and what it shows.
+
+A ticket that adds or changes the `artifactUrl` **feature itself** (the ⋮
+menu link, the field, this very section) is a normal code change — build
+it via `patchFiles`/`patchReady` like anything else in "For each Backlog
+item found" above. Don't read a ticket like that as a request to also
+publish a demo Artifact for that project; those are two different asks,
+and most feature tickets about this mechanism won't need one.
+
 ## The "Notify Claude — Deploy" flow (a differently-shaped fire)
 
 **This is the stage that actually merges code to `main`.** Treat every step
