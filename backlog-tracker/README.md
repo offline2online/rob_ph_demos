@@ -355,6 +355,48 @@ through Merged to Main (Live). Both fields are in
 the REST-primed first paint rather than popping in when the realtime
 listener lands.
 
+## Testing the Firestore rules
+
+`test/` runs `firestore.rules` — the real file — inside the Firestore
+emulator and asserts what each principal may and may not write:
+
+```bash
+cd backlog-tracker/test && npm install && npm test
+```
+
+`.github/workflows/firestore-rules-test.yml` runs it on every pull request
+that touches the rules or the tests, and on push to `main`. On a PR it is
+also the first real status check this repo has had, so it is what
+`processDeployTrain` actually waits on before merging a train — broken rules
+fail the check and the train refuses to merge.
+
+**Why it exists.** The deployment train shipped with a rules bug that took
+Deploy to Main out of service completely. Every train field was guarded as
+"unchanged unless the writer bypasses rules", assuming all train writes come
+from `run-backlog-automation.js` through the service account. They don't:
+`trainReady`, the single signal that starts a deploy, is written by the
+Notify Claude Routine, which signs in as the board automation **user** and is
+an ordinary account these rules apply to. It got `PERMISSION_DENIED`, nothing
+was dispatched, and cards sat in Approved for Deployment while the button
+spun and reverted.
+
+Nothing caught it because nothing tested rules: the pipeline's own
+end-to-end harness stubs Firestore, so it validates every stage against a
+database that permits everything. Re-breaking the rule and re-running this
+suite reproduces the failure on exactly one case — the Routine's `trainReady`
+write — and fails the build.
+
+**Three principals, which is the distinction the rules turn on:**
+
+| principal | authenticates as | rules apply? |
+|---|---|---|
+| `run-backlog-automation.js` | Firebase service account | no — bypasses entirely |
+| Notify Claude Routine | `board-automation@…` user (Identity Toolkit) | **yes** |
+| a person on the board | their own Google account | **yes** |
+
+Only the first bypasses rules. When adding a guard, be explicit about which
+of the other two it is meant to stop — and add a case here for both.
+
 ## Isolation from menu-board-demo — by design, not just by folder
 
 This is a genuinely separate project, not a subfolder sharing infrastructure:

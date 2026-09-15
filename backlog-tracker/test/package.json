@@ -1,0 +1,14 @@
+{
+  "name": "backlog-tracker-rules-tests",
+  "private": true,
+  "description": "Firestore security-rules tests, run against the real rules file in the Firebase emulator.",
+  "scripts": {
+    "test": "firebase emulators:exec --only firestore --project demo-backlog-tracker 'node firestore-rules.test.js'"
+  },
+  "devDependencies": {
+    "@firebase/rules-unit-testing": "^5.0.2",
+    "firebase": "^12.0.0",
+    "firebase-tools": "^13.0.0"
+  },
+  "//": "The firebase client version here is independent of the 10.13.2 SDK the app loads from gstatic: this one only drives the emulator, and the rules under test are evaluated server-side. It tracks whatever @firebase/rules-unit-testing peers against."
+}
