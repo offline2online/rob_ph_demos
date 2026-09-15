@@ -29,21 +29,39 @@ body {
 }
 .app { max-width: 1400px; margin: 0 auto; padding: 24px 20px 40px; }
 .topbar { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 18px; }
-.topbar-left { display: flex; align-items: flex-start; gap: 10px; }
-.topbar h1 { margin: 0; font-size: 22px; font-weight: 700; }
+/* qMJeQkmhYwcXFTjeOJw0: was one flex row of [hamburger, (logo+subtitle stacked)].
+   The stacked title block (h1 + subtitle) made align-items center/flex-start on the
+   outer row imprecise -- and on a narrow viewport the project-name label had so
+   little room next to the (previously 78px-tall, ~312px-wide) logo image that it
+   word-wrapped into a tall vertical column overflowing past the screen edge,
+   which is what actually broke "hamburger next to logo" on mobile testing (not
+   just vertical alignment -- confirmed with a Playwright render of the real
+   markup at 320-390px using an actual project name). Restructured so only the
+   hamburger+logo sit in one row (cleanly centered on each other), with the
+   subtitle now a sibling row below rather than nested inside that same flex item. */
+.topbar-left { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.topbar-left-row { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.topbar h1 { margin: 0; font-size: 22px; font-weight: 700; min-width: 0; overflow: hidden; }
 .logo-link {
   font: inherit; font-size: inherit; font-weight: inherit; color: inherit;
   background: none; border: none; padding: 0; margin: 0; cursor: pointer;
-  display: inline-flex; align-items: center; gap: 8px;
+  display: inline-flex; align-items: center; gap: 8px; max-width: 100%; min-width: 0;
 }
 .logo-link:hover { opacity: .75; }
-.topbar-logo-img { height: 78px; display: block; }
+.topbar-logo-img { height: 58.5px; display: block; flex-shrink: 0; }
+/* Truncate rather than word-wrap: the project name after "— " has no natural
+   break point next to the logo, and on a narrow viewport letting it wrap turned
+   into a tall column that pushed the hamburger visually away from the logo
+   (qMJeQkmhYwcXFTjeOJw0). */
+.topbar-logo-label {
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0;
+}
 .topbar-logo-label:empty { display: none; }
 .footer-logo-btn { vertical-align: middle; }
 .footer-logo-img { height: 42px; display: block; }
 .auth-gate-logo { height: 120px; max-width: 100%; width: auto; margin: 0 auto 4px; display: block; }
 .subtitle { margin: 4px 0 0; font-size: 13px; color: var(--text-muted); }
-.hamburger-btn { font-size: 20px; margin-top: 1px; }
+.hamburger-btn { font-size: 20px; flex-shrink: 0; }
 
 /* ── Pipeline health strip (YeCj7sNpHXFUZQhmAmEb) ────────────────────────
    Compact by design — a "is the machinery alive" glance, not a dashboard.
@@ -76,7 +94,9 @@ body {
 }
 .nav-drawer-backdrop.open { opacity: 1; pointer-events: auto; }
 .nav-drawer {
-  position: fixed; top: 0; left: 0; bottom: 0; width: 320px; max-width: 85vw;
+  /* Widened 320 -> 360px to read as proportionate with the topbar next to it
+     (qMJeQkmhYwcXFTjeOJw0); max-width: 85vw unchanged so it still caps on phones. */
+  position: fixed; top: 0; left: 0; bottom: 0; width: 360px; max-width: 85vw;
   background: var(--bg); border-right: 1px solid var(--border); z-index: 21;
   box-shadow: 2px 0 16px rgba(0, 0, 0, .15);
   transform: translateX(-100%); transition: transform .22s ease;
@@ -86,17 +106,17 @@ body {
 .nav-drawer.open { transform: translateX(0); visibility: visible; }
 .nav-drawer-header {
   display: flex; align-items: center; justify-content: space-between;
-  padding: 8px 18px 16px; border-bottom: 1px solid var(--border); margin-bottom: 6px;
+  padding: 8px 20px 16px; border-bottom: 1px solid var(--border); margin-bottom: 6px;
 }
-.nav-drawer-title { font-weight: 700; font-size: 16px; }
+.nav-drawer-title { font-weight: 700; font-size: 18px; }
 .nav-drawer-item {
   display: block; width: 100%; text-align: left; background: transparent; border: none;
-  padding: 15px 18px; font-size: 15px; color: var(--text); cursor: pointer; font-family: inherit;
+  padding: 17px 20px; font-size: 16px; color: var(--text); cursor: pointer; font-family: inherit;
 }
 .nav-drawer-item:hover { background: var(--surface-2); }
 .nav-drawer-item-home { font-weight: 700; color: var(--primary); border-bottom: 1px solid var(--border); }
 .nav-drawer-section {
-  padding: 14px 18px 4px; font-size: 11px; font-weight: 700; text-transform: uppercase;
+  padding: 14px 20px 4px; font-size: 11px; font-weight: 700; text-transform: uppercase;
   letter-spacing: .04em; color: var(--text-muted);
 }
 .btn-primary {
