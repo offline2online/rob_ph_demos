@@ -13,7 +13,7 @@
 import { initializeApp, getApps, getApp } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-app.js";
 import {
   getFirestore, initializeFirestore, collection, addDoc, updateDoc, deleteDoc, setDoc, doc,
-  onSnapshot, query, orderBy, serverTimestamp, writeBatch, arrayUnion, deleteField,
+  onSnapshot, query, orderBy, serverTimestamp, writeBatch, arrayUnion,
 } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore.js";
 import {
   getStorage, ref as storageRef, uploadBytes, getDownloadURL, deleteObject,
@@ -369,7 +369,6 @@ function closeAllSubPages() {
   closeFaqSettingsPage();
   closeFaqArticlesPage();
   closeFaqArticleEditorPage();
-  closeFaqRevisionReviewPage();
   // Every routed page (FAQ Management, Settings — see "URL routing" below)
   // opens by calling this first, so clearing the hash here is the one
   // choke point that keeps it in sync with whatever's actually on screen:
@@ -385,10 +384,11 @@ function returnToBoard() {
   closeAllSubPages();
 }
 document.getElementById("nav-ph-console-btn").addEventListener("click", () => { closeNavDrawer(); returnToBoard(); });
-// The logo/title in the top-left corner (a text placeholder until a real
-// logo image ships) is clickable from anywhere in the app, same
-// destination as the drawer's own "Agent console" home link above.
+// The logo in the top-left corner is clickable from anywhere in the app,
+// same destination as the drawer's own "Agent console" home link above.
 document.getElementById("topbar-logo-btn").addEventListener("click", () => { closeNavDrawer(); returnToBoard(); });
+// The footer logo is the same home link, repeated at the bottom of every page.
+document.getElementById("footer-logo-btn").addEventListener("click", () => { closeNavDrawer(); returnToBoard(); });
 
 function cardHTML(item) {
   const idx = COL_KEYS.indexOf(item.status);
@@ -1616,8 +1616,6 @@ onSnapshot(query(itemsRef, orderBy("createdAt", "desc")), (snap) => {
   render();
   if (archiveProjectId) renderArchivePage();
   if (archivedProjectsPage && !archivedProjectsPage.hidden) renderArchivedProjectsPage();
-  // The review page's "goes live when…" hint tracks the source tickets' status.
-  if (typeof faqRevisionReviewPage !== "undefined" && faqRevisionReviewPage && !faqRevisionReviewPage.hidden) renderFaqRevisionReviewPage();
   if (editingItemId) { renderEiNotes(); renderEiAttachments(); }
   if (quickCommentItemId) renderQcNotes();
 }, (err) => {
@@ -4006,7 +4004,6 @@ onSnapshot(query(faqArticlesRef, orderBy("order", "asc")), (snap) => {
   // depend on this collection, not just the one named "articles."
   if (!faqSettingsPage.hidden) renderFaqSettingsPage();
   if (!faqArticlesPage.hidden) renderFaqArticlesPage();
-  if (!faqRevisionReviewPage.hidden) renderFaqRevisionReviewPage();
 }, (err) => {
   console.error("backlog-tracker: faqArticles listener error", err);
 });
@@ -4509,7 +4506,7 @@ function faqArticleRowHTML(a, orderable) {
       <div class="faq-article-row" data-id="${escapeHTML(a.id)}"${drag}>
         <div class="faq-article-row-main">
           <span class="badge badge-status-${a.status}">${a.status === "published" ? "Published" : "Draft"}</span>
-          ${faqRevisionBadgeHTML(a)}
+          ${a.needsReview ? '<span class="badge badge-needs-review">Needs review</span>' : ""}
           <h4 class="faq-article-title" role="button" tabindex="0" title="Edit article">${escapeHTML(a.title)}</h4>
           <p class="faq-article-row-meta">${escapeHTML(faqCategoryName(a.categoryId))}${a.programId && programName(a.programId) ? " &middot; " + escapeHTML(programName(a.programId)) : ""}${a.projectId ? " &middot; " + escapeHTML(projectName(a.projectId)) : ""}</p>
         </div>
@@ -4519,8 +4516,6 @@ function faqArticleRowHTML(a, orderable) {
             <div class="faq-article-options-menu" hidden>
               <button type="button" class="options-menu-item faq-article-edit">Edit article</button>
               <button type="button" class="options-menu-item faq-article-toggle-status">${a.status === "published" ? "Unpublish article" : "Publish article"}</button>
-              ${a.pendingRevision ? '<button type="button" class="options-menu-item faq-article-review-revision">Review proposed update</button>' : ""}
-              ${a.previousRevision ? '<button type="button" class="options-menu-item faq-article-revert-revision">Revert last auto-update</button>' : ""}
               <button type="button" class="options-menu-item faq-article-toggle-review">${a.needsReview ? "Clear flag" : "Flag"}</button>
               ${a.status === "published" ? `<a class="options-menu-item" href="${liveUrl}" target="_blank" rel="noopener">View live &#8599;</a>` : ""}
             </div>
@@ -4554,8 +4549,6 @@ function wireFaqArticleRowInteractions(containerId) {
     }
     if (e.target.closest(".faq-article-toggle-status")) { closeAllOptionMenus(); toggleFaqArticleStatus(id); return; }
     if (e.target.closest(".faq-article-toggle-review")) { closeAllOptionMenus(); toggleFaqArticleReview(id); return; }
-    if (e.target.closest(".faq-article-review-revision")) { closeAllOptionMenus(); openFaqRevisionReviewPage(id); return; }
-    if (e.target.closest(".faq-article-revert-revision")) { closeAllOptionMenus(); revertFaqArticleRevision(id); return; }
     if (e.target.closest(".faq-article-delete")) {
       if (await showConfirmDialog("Delete this article? This can't be undone.", { title: "Delete article", okLabel: "Delete", danger: true })) deleteFaqArticle(id);
     }
@@ -4576,10 +4569,11 @@ document.getElementById("faq-articles-btn").addEventListener("click", () => { cl
 // ── URL routing for FAQ Management / Settings ────────────────────────────
 // These two are the only sub-pages given a real, persistent URL: reloading
 // the browser while on either one reopens the same page instead of always
-// landing back on the board, and the topbar's own title copy (normally a
-// static "PH Agent Console") switches to name whichever of the two is open,
-// with a one-click link to jump straight to the other — see the
-// "page-switcher" nav rendered in each page's own header in index.html.
+// landing back on the board, and the topbar logo's own label span (normally
+// empty, next to the static "PH Agent Console" logo image) names whichever
+// of the two is open, with a one-click link to jump straight to the other —
+// see the "page-switcher" nav rendered in each page's own header in
+// index.html.
 // Every other sub-page (Docs, Archive, the article editor, …) is out of
 // scope here and keeps its existing behavior: closeAllSubPages() clears the
 // hash back to "" whenever one of those opens, so a refresh from there still
@@ -4597,7 +4591,7 @@ function setRouteHash(hash, { replace } = {}) {
 }
 function updateTopbarTitle() {
   const label = ROUTE_TITLES[window.location.hash];
-  document.getElementById("topbar-logo-btn").textContent = label ? `PH Agent Console — ${label}` : "PH Agent Console";
+  document.getElementById("topbar-logo-label").textContent = label ? `— ${label}` : "";
   document.title = label ? `${label} — PH Agent Console` : "PH Agent Console";
 }
 function applyRouteFromHash() {
@@ -4936,35 +4930,24 @@ FA_GROUP_TOGGLE_IDS.forEach((id) => {
   });
 });
 
-// With { pendingRevision: true } the editor loads the article's PROPOSED
-// text (faqArticles.pendingRevision — see "Proposed article revisions"
-// above) instead of the live text, and saving writes back to the proposal,
-// never to the live fields; the live article is untouched until the
-// proposal is approved and its tickets merge. faEditingPendingRevision is
-// the flag submitFaqArticleFromEditor keys off.
-let faEditingPendingRevision = false;
-function openFaqArticleEditorPage(articleId, { pendingRevision = false } = {}) {
+function openFaqArticleEditorPage(articleId) {
   closeAllSubPages();
   editingFaqArticleId = articleId || null;
   faqSlugManuallyEdited = !!articleId;
   const article = articleId ? faqArticles.find((a) => a.id === articleId) : null;
-  faEditingPendingRevision = !!(pendingRevision && article && article.pendingRevision);
-  const source = faEditingPendingRevision ? { ...article, ...article.pendingRevision, slug: article.slug } : article;
 
-  document.getElementById("fa-title").textContent = faEditingPendingRevision ? "Edit proposed update" : (article ? "Edit article" : "New article");
-  document.getElementById("fa-save-draft").textContent = faEditingPendingRevision ? "Save proposal" : "Save draft";
-  document.getElementById("fa-publish").hidden = faEditingPendingRevision;
-  faTitleInput.value = source ? source.title : "";
+  document.getElementById("fa-title").textContent = article ? "Edit article" : "New article";
+  faTitleInput.value = article ? article.title : "";
   faSlugInput.value = article ? article.slug || "" : "";
-  faSummaryInput.value = source ? source.summary || "" : "";
-  faKeywordsInput.value = source ? (source.keywords || []).join(", ") : "";
+  faSummaryInput.value = article ? article.summary || "" : "";
+  faKeywordsInput.value = article ? (article.keywords || []).join(", ") : "";
   // Legacy (pre-editor) articles hold markdown-ish plain text, not HTML —
   // run those through the existing renderer once on load so they open
   // as properly formatted rich text; saving then upgrades that article to
   // real HTML in place. A brand-new article, or one already saved from
   // this editor, loads as-is (sanitized either way — see renderFaqBodyMd).
-  faQuill.root.innerHTML = source ? renderFaqBodyMd(source.bodyMd || "") : "";
-  faDocTypeSelect.value = source && source.docType ? source.docType : "faq";
+  faQuill.root.innerHTML = article ? renderFaqBodyMd(article.bodyMd || "") : "";
+  faDocTypeSelect.value = article && article.docType ? article.docType : "faq";
   faNeedsReview.checked = article ? !!article.needsReview : false;
   faLoadedStatus = article && article.status ? article.status : "draft";
   faLoadedHasPublishedAt = !!(article && article.publishedAt);
@@ -5025,29 +5008,6 @@ async function submitFaqArticleFromEditor(publish) {
   if (!title) { faTitleInput.focus(); return; }
   if (!categoryId) { await showAlert("Add a category first."); return; }
 
-  if (faEditingPendingRevision) {
-    const a = faqArticles.find((x) => x.id === editingFaqArticleId);
-    if (!a || !a.pendingRevision) { await showAlert("This proposal no longer exists — it was approved, rejected, or promoted while you were editing."); backToFaqArticleList(); return; }
-    if (!(await requireFaqEditor())) return;
-    await setDoc(doc(db, "faqArticles", editingFaqArticleId), {
-      pendingRevision: {
-        ...a.pendingRevision,
-        title,
-        summary: faSummaryInput.value.trim(),
-        docType: faDocTypeSelect.value || "faq",
-        bodyMd: faQuill.root.innerHTML,
-        keywords: faKeywordsInput.value.split(",").map((k) => k.trim()).filter(Boolean),
-        // Any human edit resets an approval — what was approved is no longer what would go live.
-        reviewStatus: "awaiting-review",
-        editedBy: (auth.currentUser && auth.currentUser.email) || "editor",
-        editedAt: new Date().toISOString(),
-      },
-      updatedAt: serverTimestamp(),
-    }, { merge: true });
-    openFaqRevisionReviewPage(editingFaqArticleId);
-    return;
-  }
-
   const status = publish ? "published" : (faLoadedStatus === "published" ? "published" : "draft");
   const data = {
     categoryId,
@@ -5068,311 +5028,6 @@ async function submitFaqArticleFromEditor(publish) {
 }
 document.getElementById("fa-save-draft").addEventListener("click", () => submitFaqArticleFromEditor(false));
 document.getElementById("fa-publish").addEventListener("click", () => submitFaqArticleFromEditor(true));
-
-// ── Proposed article revisions (faqArticles.pendingRevision) ─────────────
-// The Deploy-flow Routine (ROUTINE_INSTRUCTIONS.md → "FAQ impact review")
-// reads each merging PR's diff, and for every help-centre article the
-// change makes wrong — scoped to the project's product/program — parks the
-// corrected text as `pendingRevision` and flags the article. Nothing goes
-// live from that alone: a person reviews the old-vs-new comparison here and
-// approves (or rejects, or edits the proposal first), and the Cloud
-// Function promoteFaqRevisionIfReady (functions/index.js) swaps the text in
-// once BOTH the approval exists AND every source ticket is Merged to Main —
-// whichever happens last. previousRevision holds what a promotion replaced,
-// for the "Revert last auto-update" row action.
-const faqRevisionReviewPage = document.getElementById("faq-revision-review-page");
-let reviewingFaqArticleId = null;
-let frMode = "changes";
-
-function faqRevisionBadgeHTML(a) {
-  const rev = a.pendingRevision;
-  if (rev && rev.reviewStatus === "approved") return '<span class="badge badge-approved-update" title="Approved — goes live when its ticket(s) reach Merged to Main">Approved · awaiting merge</span>';
-  if (rev) return '<span class="badge badge-proposed-update" title="A proposed update is waiting for your review">Proposed update</span>';
-  if (a.needsReview) return '<span class="badge badge-needs-review">Needs review</span>';
-  return "";
-}
-
-const ITEM_STATUS_LABELS = {
-  "backlog": "Backlog", "ready-for-testing": "Ready for Testing", "ready-to-publish": "Approved for Deployment",
-  "published-live": "Merged to Main (Live)", "archived": "Archived (was live)",
-};
-function isItemLiveOrLater(status) { return status === "published-live" || status === "archived"; }
-
-// Plain-text blocks of an article body, one per block element, so the diff
-// compares paragraphs rather than raw HTML (a reviewer cares about the
-// words; markup churn from the editor round-trip is noise here).
-function faqBodyTextBlocks(html) {
-  const tpl = document.createElement("template");
-  tpl.innerHTML = renderFaqBodyMd(html || "");
-  const blocks = [];
-  const walk = (node) => {
-    for (const child of node.children) {
-      const tag = child.tagName;
-      if (/^(P|H[1-6]|LI|PRE|BLOCKQUOTE|TR|DIV)$/.test(tag) && !child.querySelector("p, li, h1, h2, h3, h4, tr")) {
-        const text = child.textContent.replace(/\s+/g, " ").trim();
-        if (text) blocks.push(text);
-      } else {
-        walk(child);
-      }
-    }
-  };
-  walk(tpl.content);
-  if (!blocks.length) {
-    const text = tpl.content.textContent.replace(/\s+/g, " ").trim();
-    if (text) blocks.push(text);
-  }
-  return blocks;
-}
-
-// Longest-common-subsequence diff over arrays of tokens (paragraphs first,
-// then words within a changed paragraph pair). Sizes here are small — a
-// few hundred paragraphs, a few hundred words each — so the O(n·m) table is
-// fine; anything bigger falls back to "all removed / all added".
-function lcsDiff(a, b) {
-  const n = a.length, m = b.length;
-  if (n * m > 4_000_000) return [...a.map((t) => ["del", t]), ...b.map((t) => ["ins", t])];
-  const dp = new Array((n + 1) * (m + 1)).fill(0);
-  const at = (i, j) => dp[i * (m + 1) + j];
-  for (let i = n - 1; i >= 0; i--) {
-    for (let j = m - 1; j >= 0; j--) {
-      dp[i * (m + 1) + j] = a[i] === b[j] ? at(i + 1, j + 1) + 1 : Math.max(at(i + 1, j), at(i, j + 1));
-    }
-  }
-  const out = [];
-  let i = 0, j = 0;
-  while (i < n && j < m) {
-    if (a[i] === b[j]) { out.push(["eq", a[i]]); i++; j++; }
-    else if (at(i + 1, j) >= at(i, j + 1)) { out.push(["del", a[i]]); i++; }
-    else { out.push(["ins", b[j]]); j++; }
-  }
-  while (i < n) out.push(["del", a[i++]]);
-  while (j < m) out.push(["ins", b[j++]]);
-  return out;
-}
-
-// Tokens are words; whitespace is re-inserted between them on output so a
-// changed word never drags a highlighted space along with it.
-function wordDiffHTML(oldText, newText) {
-  const tok = (s) => s.split(/\s+/).filter(Boolean);
-  const out = [];
-  let run = null;
-  const flush = () => { if (run) { out.push(run.op === "eq" ? run.words.join(" ") : `<${run.op}>${run.words.join(" ")}</${run.op}>`); run = null; } };
-  for (const [op, t] of lcsDiff(tok(oldText), tok(newText))) {
-    if (!run || run.op !== op) { flush(); run = { op, words: [] }; }
-    run.words.push(escapeHTML(t));
-  }
-  flush();
-  return out.join(" ");
-}
-
-// How alike two paragraphs are (Jaccard over their word sets) — used to
-// decide which removed paragraph a given added paragraph is a rewording of.
-function paragraphSimilarity(a, b) {
-  const wa = new Set(a.toLowerCase().split(/\W+/).filter(Boolean));
-  const wb = new Set(b.toLowerCase().split(/\W+/).filter(Boolean));
-  if (!wa.size || !wb.size) return 0;
-  let inter = 0;
-  wa.forEach((w) => { if (wb.has(w)) inter++; });
-  return inter / (wa.size + wb.size - inter);
-}
-
-// Paragraph-level diff, with a word-level diff inside each run of
-// "removed paragraph(s) immediately followed by added paragraph(s)" so a
-// reworded sentence shows as a few highlighted words rather than a whole
-// red block over a whole green block. Unchanged paragraphs collapse to a
-// "… n unchanged …" line unless adjacent to a change.
-function renderFaqRevisionChanges(oldBlocks, newBlocks) {
-  const ops = lcsDiff(oldBlocks, newBlocks);
-  const rows = [];
-  for (let k = 0; k < ops.length;) {
-    if (ops[k][0] === "eq") { rows.push({ kind: "eq", html: escapeHTML(ops[k][1]) }); k++; continue; }
-    const dels = [], inss = [];
-    while (k < ops.length && ops[k][0] === "del") dels.push(ops[k++][1]);
-    while (k < ops.length && ops[k][0] === "ins") inss.push(ops[k++][1]);
-    // Pair each added paragraph with the removed one it most resembles
-    // (greedy, best similarity first, one-to-one, above a floor) rather
-    // than by position — a new step inserted mid-list would otherwise be
-    // "diffed" against whichever old paragraph happened to sit at its index.
-    const cands = [];
-    dels.forEach((d, i) => inss.forEach((n, j) => { const sim = paragraphSimilarity(d, n); if (sim >= 0.3) cands.push([sim, i, j]); }));
-    cands.sort((x, y) => y[0] - x[0]);
-    const pairOfIns = new Map(), usedDel = new Set();
-    for (const [, i, j] of cands) { if (usedDel.has(i) || pairOfIns.has(j)) continue; usedDel.add(i); pairOfIns.set(j, i); }
-    dels.forEach((d, i) => { if (!usedDel.has(i)) rows.push({ kind: "del", html: `<del>${escapeHTML(d)}</del>` }); });
-    inss.forEach((n, j) => {
-      if (pairOfIns.has(j)) rows.push({ kind: "chg", html: wordDiffHTML(dels[pairOfIns.get(j)], n) });
-      else rows.push({ kind: "ins", html: `<ins>${escapeHTML(n)}</ins>` });
-    });
-  }
-  const changed = rows.filter((r) => r.kind !== "eq").length;
-  if (!changed) return { html: '<p class="fr-skip">The body text is identical — only the title, summary, keywords or formatting differ.</p>', changed };
-  const labels = { chg: "Changed", del: "Removed", ins: "Added" };
-  const html = [];
-  let hidden = 0;
-  const flush = () => { if (hidden > 0) { html.push(`<p class="fr-skip">… ${hidden} unchanged paragraph${hidden === 1 ? "" : "s"} …</p>`); hidden = 0; } };
-  rows.forEach((r, idx) => {
-    if (r.kind === "eq") {
-      const near = (rows[idx - 1] && rows[idx - 1].kind !== "eq") || (rows[idx + 1] && rows[idx + 1].kind !== "eq");
-      if (near) { flush(); html.push(`<div class="fr-change-block fr-unchanged">${r.html}</div>`); }
-      else hidden++;
-      return;
-    }
-    flush();
-    html.push(`<div class="fr-change-block"><span class="fr-change-label">${labels[r.kind]}</span>${r.html}</div>`);
-  });
-  flush();
-  return { html: html.join(""), changed };
-}
-
-function faqRevisionSourceItems(rev) {
-  return (Array.isArray(rev.sourceItemIds) ? rev.sourceItemIds : []).map((id) => {
-    const item = allItems.find((i) => i.id === id);
-    return { id, item, status: item ? item.status : "missing" };
-  });
-}
-
-function faqRevisionGoLiveHint(rev) {
-  const sources = faqRevisionSourceItems(rev);
-  const waiting = sources.filter((s) => s.item && !isItemLiveOrLater(s.status));
-  if (rev.reviewStatus === "approved") {
-    return waiting.length
-      ? `Approved. Goes live automatically once ${waiting.length === 1 ? "its ticket reaches" : `all ${waiting.length} tickets reach`} Merged to Main.`
-      : "Approved and every ticket is live — going live now (the page updates when it has).";
-  }
-  return waiting.length
-    ? `On approval this goes live automatically when ${waiting.length === 1 ? "its ticket reaches" : `all ${waiting.length} tickets reach`} Merged to Main — not before.`
-    : "Every ticket behind this is already live, so approving publishes it straight away.";
-}
-
-function setFrMode(mode) {
-  frMode = mode;
-  document.querySelectorAll("[data-fr-mode]").forEach((b) => b.classList.toggle("active", b.dataset.frMode === mode));
-  document.getElementById("fr-changes").hidden = mode !== "changes";
-  document.getElementById("fr-side").hidden = mode !== "side";
-}
-document.querySelectorAll("[data-fr-mode]").forEach((b) => b.addEventListener("click", () => setFrMode(b.dataset.frMode)));
-
-function renderFaqRevisionReviewPage() {
-  const a = faqArticles.find((x) => x.id === reviewingFaqArticleId);
-  const rev = a && a.pendingRevision;
-  if (!a || !rev) {
-    // Promoted, rejected, or deleted from another tab while open — nothing
-    // left to review, so drop back to the list rather than showing stale text.
-    if (!faqRevisionReviewPage.hidden) backToFaqArticleList();
-    return;
-  }
-  const approved = rev.reviewStatus === "approved";
-  document.getElementById("fr-title").textContent = approved ? "Approved update — awaiting merge" : "Review proposed update";
-  document.getElementById("fr-approve").hidden = approved;
-  document.getElementById("fr-edit").hidden = approved;
-  document.getElementById("fr-reject").textContent = approved ? "Withdraw approval" : "Reject";
-
-  const sources = faqRevisionSourceItems(rev);
-  const ticketsHtml = sources.length ? sources.map((s) => {
-    const label = s.item ? escapeHTML(s.item.title || s.id) : `${escapeHTML(s.id)} (ticket no longer exists)`;
-    const st = ITEM_STATUS_LABELS[s.status] || "Unknown";
-    return `<span class="fr-ticket">${label} <span class="badge badge-item-status-${escapeHTML(s.status)}">${escapeHTML(st)}</span></span>`;
-  }).join("") : "<em>none recorded</em>";
-  const prs = Array.isArray(rev.sourcePrNumbers) && rev.sourcePrNumbers.length
-    ? rev.sourcePrNumbers.map((n) => `<a href="https://github.com/offline2online/rob_ph_demos/pull/${encodeURIComponent(n)}" target="_blank" rel="noopener">#${escapeHTML(String(n))}</a>`).join(", ")
-    : "";
-  const when = rev.proposedAt ? new Date(rev.proposedAt) : null;
-  document.getElementById("fr-meta").innerHTML = `
-    <p><strong>${escapeHTML(a.title)}</strong> &middot; ${escapeHTML(faqCategoryName(a.categoryId))}${a.programId && programName(a.programId) ? " &middot; " + escapeHTML(programName(a.programId)) : ""}${rev.isNew ? ' &middot; <span class="badge badge-status-draft">New article</span>' : ""}</p>
-    <p><span class="fr-change-label">Why</span><span class="fr-reason">${escapeHTML(rev.reason || "(no reason given)")}</span></p>
-    <p><span class="fr-change-label">Tickets</span>${ticketsHtml}${prs ? ` <span class="fr-change-label" style="margin-left:6px">PR</span>${prs}` : ""}</p>
-    <p class="field-hint" style="margin:0">Proposed by ${escapeHTML(rev.proposedBy || "claude")}${when && !isNaN(when) ? " on " + escapeHTML(when.toLocaleString()) : ""}${rev.editedBy ? `, edited by ${escapeHTML(rev.editedBy)}` : ""}${approved && rev.approvedBy ? `, approved by ${escapeHTML(rev.approvedBy)}` : ""}</p>
-    <p class="fr-golive">${escapeHTML(faqRevisionGoLiveHint(rev))}</p>`;
-
-  const oldTitle = rev.isNew ? "" : (a.title || "");
-  const oldSummary = rev.isNew ? "" : (a.summary || "");
-  const oldBody = rev.isNew ? "" : (a.bodyMd || "");
-  const parts = [];
-  if (oldTitle !== (rev.title || "")) parts.push(`<div class="fr-change-block"><span class="fr-change-label">Title</span>${wordDiffHTML(oldTitle, rev.title || "")}</div>`);
-  if (oldSummary !== (rev.summary || "")) parts.push(`<div class="fr-change-block"><span class="fr-change-label">Summary</span>${wordDiffHTML(oldSummary, rev.summary || "")}</div>`);
-  if (Array.isArray(rev.keywords) && rev.keywords.join(",") !== (a.keywords || []).join(",")) {
-    parts.push(`<div class="fr-change-block"><span class="fr-change-label">Keywords</span>${wordDiffHTML((a.keywords || []).join(", "), rev.keywords.join(", "))}</div>`);
-  }
-  const body = renderFaqRevisionChanges(faqBodyTextBlocks(oldBody), faqBodyTextBlocks(rev.bodyMd || ""));
-  document.getElementById("fr-changes").innerHTML = parts.join("") + body.html;
-  document.getElementById("fr-diff-summary").textContent =
-    `${body.changed} body paragraph${body.changed === 1 ? "" : "s"} changed${parts.length ? ` · ${parts.length} metadata field${parts.length === 1 ? "" : "s"} changed` : ""}`;
-
-  document.getElementById("fr-old-title").textContent = oldTitle;
-  document.getElementById("fr-old-summary").textContent = oldSummary;
-  document.getElementById("fr-old-body").innerHTML = renderFaqBodyMd(oldBody);
-  document.getElementById("fr-new-title").textContent = rev.title || "";
-  document.getElementById("fr-new-summary").textContent = rev.summary || "";
-  document.getElementById("fr-new-body").innerHTML = renderFaqBodyMd(rev.bodyMd || "");
-}
-
-function openFaqRevisionReviewPage(articleId) {
-  closeAllSubPages();
-  reviewingFaqArticleId = articleId;
-  setFrMode("changes");
-  renderFaqRevisionReviewPage();
-  document.getElementById("projects-root").hidden = true;
-  faqRevisionReviewPage.hidden = false;
-}
-function closeFaqRevisionReviewPage() {
-  faqRevisionReviewPage.hidden = true;
-  reviewingFaqArticleId = null;
-  document.getElementById("projects-root").hidden = false;
-}
-
-async function approveFaqRevision(id) {
-  if (!(await requireFaqEditor())) return;
-  const a = faqArticles.find((x) => x.id === id);
-  if (!a || !a.pendingRevision) return;
-  const rev = a.pendingRevision;
-  const waiting = faqRevisionSourceItems(rev).filter((s) => s.item && !isItemLiveOrLater(s.status));
-  const msg = waiting.length
-    ? `Approve this update? It will go live automatically once ${waiting.length === 1 ? "its ticket reaches" : `all ${waiting.length} tickets reach`} Merged to Main.`
-    : "Approve this update? Every ticket behind it is already live, so it will be published straight away.";
-  if (!(await showConfirmDialog(msg, { title: "Approve proposed update", okLabel: "Approve" }))) return;
-  await setDoc(doc(db, "faqArticles", id), {
-    pendingRevision: { ...rev, reviewStatus: "approved", approvedAt: new Date().toISOString(), approvedBy: (auth.currentUser && auth.currentUser.email) || "editor" },
-    updatedAt: serverTimestamp(),
-  }, { merge: true });
-}
-
-async function rejectFaqRevision(id) {
-  if (!(await requireFaqEditor())) return;
-  const a = faqArticles.find((x) => x.id === id);
-  if (!a || !a.pendingRevision) return;
-  const rev = a.pendingRevision;
-  if (rev.isNew) {
-    if (!(await showConfirmDialog("This proposal created a brand-new draft article. Rejecting deletes the draft entirely. Continue?", { title: "Reject new article", okLabel: "Delete draft", danger: true }))) return;
-    await deleteDoc(doc(db, "faqArticles", id));
-    return;
-  }
-  const approved = rev.reviewStatus === "approved";
-  if (!(await showConfirmDialog(approved ? "Withdraw approval and discard this proposed update? The live article stays as it is." : "Reject this proposed update? The live article stays as it is.", { title: approved ? "Withdraw approval" : "Reject proposed update", okLabel: approved ? "Withdraw" : "Reject", danger: true }))) return;
-  await setDoc(doc(db, "faqArticles", id), { pendingRevision: deleteField(), needsReview: false, updatedAt: serverTimestamp() }, { merge: true });
-}
-
-// Swap a promoted revision back out: the live fields take previousRevision's
-// text, and previousRevision takes what was live, so a second revert re-applies.
-async function revertFaqArticleRevision(id) {
-  if (!(await requireFaqEditor())) return;
-  const a = faqArticles.find((x) => x.id === id);
-  if (!a || !a.previousRevision) return;
-  const prev = a.previousRevision;
-  if (!(await showConfirmDialog("Revert this article to the text it had before the last automatic update? You can revert back again afterwards.", { title: "Revert last auto-update", okLabel: "Revert" }))) return;
-  await setDoc(doc(db, "faqArticles", id), {
-    title: prev.title || a.title,
-    summary: prev.summary || "",
-    bodyMd: prev.bodyMd || "",
-    previousRevision: { title: a.title || "", summary: a.summary || "", bodyMd: a.bodyMd || "", replacedAt: new Date().toISOString(), revertOf: true },
-    ...(prev.wasNew ? { status: "draft" } : {}),
-    updatedAt: serverTimestamp(),
-  }, { merge: true });
-}
-
-document.getElementById("fr-back").addEventListener("click", backToFaqArticleList);
-document.getElementById("fr-approve").addEventListener("click", () => approveFaqRevision(reviewingFaqArticleId));
-document.getElementById("fr-reject").addEventListener("click", () => rejectFaqRevision(reviewingFaqArticleId));
-document.getElementById("fr-edit").addEventListener("click", () => openFaqArticleEditorPage(reviewingFaqArticleId, { pendingRevision: true }));
 
 wireFaqArticleRowInteractions("faq-article-list");
 
