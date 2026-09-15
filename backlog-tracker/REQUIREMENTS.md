@@ -204,10 +204,12 @@ report that tickets taken from Backlog were "going back to Backlog":
   close, reconnect, or even leave a visible trace of that PR —
   `patchReady` stays `false`, so `run-backlog-automation.js` never looks
   at the item again, and nothing on the resulting Backlog card hints it
-  already has one. Re-investigating it fresh from Backlog then either
-  silently duplicates that PR's work, or — if `findExistingPrForItem`
-  finds the still-open original — gets skipped with no path forward
-  either. No automation step ever moves a card backward on its own (see
+  already has one. Re-investigating it fresh from Backlog used to get the
+  item skipped with no path forward once `findExistingPrForItem` found
+  the still-open original; the automation now attaches a re-patched item
+  to its open PR instead (see `backlog-tracker/README.md`), but the
+  transition still hides the PR from whoever is looking at the card. No
+  automation step ever moves a card backward on its own (see
   `run-backlog-automation.js`'s `processApplyPatch`/`processMergePr`), so
   this was always a manual click; `cardHTML`'s `canLeft` now excludes
   `ready-for-testing` outright, removing the only path capable of

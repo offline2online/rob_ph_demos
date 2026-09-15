@@ -243,9 +243,19 @@ rest of this file.
      "Setup" above) — it just sits there as permanent debris. This is not
      hypothetical: it happened in production (item `Pj9asuFpMVUTUHKQpsJO`,
      PR #61 closed as a stray duplicate of the item's real PR, #62) and
-     `run-backlog-automation.js` now guards against it re-opening a
-     duplicate PR for the same item — but that guard only stops the
+     `run-backlog-automation.js` now attaches a patch-ready item to its
+     still-open PR (adding the new files as a commit on that PR's branch)
+     rather than opening a second one — but that only limits the
      *symptom*; avoid causing it in the first place.
+   - **Re-patching an item that already has an open PR** (a card sent
+     back from Ready for Testing with a follow-up ask, or a batch sibling
+     whose PR is still open): the automation commits your `patchFiles` on
+     top of that PR's branch, not on `main`. So base the new full-file
+     contents on the PR branch — read files from
+     `https://raw.githubusercontent.com/offline2online/rob_ph_demos/<PR head branch>/<path>`
+     (the branch is on the card's `prUrl`, or `claude/<patchBranch slug>-<first 6
+     chars of the id, lowercase>`) — otherwise the commit would drop every
+     change already on the PR. Keep the same `patchBranch` you used before.
    - `testSummary` (optional but strongly encouraged, string): a clear,
      standalone description of what you actually changed, plus concrete
      steps to test it. Once the automation flips this item to
@@ -378,7 +388,7 @@ use those, don't re-derive them from the title. For each item:
    this pipeline opens carries the literal line `Backlog item: <id>` in
    its body (see `patchPrBody` in the Backlog flow above, and
    `run-backlog-automation.js`'s own `findExistingPrForItem`, which uses
-   this same match to guard against duplicates) — search for that exact
+   this same match to attach a re-patched item to its open PR) — search for that exact
    string, not a fuzzy title match, which can and will collide across
    items with similar-sounding requests (e.g. the batch of column/button
    **rename** tickets from one sweep all have near-identical titles):

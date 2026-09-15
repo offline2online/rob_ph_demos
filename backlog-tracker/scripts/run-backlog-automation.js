@@ -235,31 +235,14 @@ async function recordAttemptFailure(item, err, { attemptsField = "patchAttempts"
   console.error(`[${readyField}] ${item.id}: attempt ${attempts}/${MAX_PATCH_ATTEMPTS} failed${giveUp ? ` — giving up, ${readyField} cleared` : ""}: ${reason}`);
 }
 
-// Guards against the same item producing a second, duplicate GitHub PR —
-// this has happened for real: a Routine-fired session debugging its own
-// PATCH-payload code against a live production item left patchReady:true
-// mid-debug with placeholder data, this job picked it up and opened a PR
-// from that, and the item was later re-finished and re-submitted properly,
-// producing a second PR for the same item (see PR #61, closed as a
-// duplicate of #62). Fired sessions have no GitHub credential, so nothing
-// in the pipeline could ever clean up a stray PR like that on its own —
-// the fix is to never open a second one in the first place.
-//
-// Deliberately OPEN-only, not "all" (state used to be "all" — see
-// dWJtVKC310qgMevZ3XPl, 2026-09-11: that item's PR #84 merged, the item
-// was legitimately re-patched afterward with a genuinely new, separate
-// fix, and this check found the already-merged #84 via its still-matching
-// "Backlog item: <id>" body marker and silently refused to open a second
-// PR for the new work — leaving the item stuck in Backlog with
-// patchReady reset to false and no path forward, since a merged-then-
-// re-patched item never produces "no actual diff" (which is the only
-// other branch that would have surfaced the problem). A MERGED or CLOSED
-// PR represents finished/dead work, not an in-flight duplicate — it
-// should never block a fresh patch for a new round of work on the same
-// item. Restricting this to state=open keeps the original guard intact
-// (two genuinely open PRs for the same item is still exactly the bug
-// this was built to prevent) while letting a legitimate follow-up fix
-// get its own PR.
+// findExistingPrForItem: finds an OPEN PR whose body carries this item's
+// "Backlog item: <id>" marker. Originally a duplicate guard (PR #61 was
+// opened from a half-finished item and closed as a duplicate of #62); now
+// it feeds resolveReusablePr, which attaches the item to that PR instead
+// of refusing to proceed. Deliberately OPEN-only (see dWJtVKC310qgMevZ3XPl,
+// 2026-09-11: a re-patch after PR #84 had merged found #84 via the marker
+// and refused to open the follow-up PR): a MERGED or CLOSED PR is finished
+// or dead work and must never block a fresh round on the same item.
 // Builds a rawcdn.githack.com preview link for the branch a PR was just
 // opened from, so a Ready for Testing card is testable the moment it
 // arrives instead of sitting with no way to look at it until someone sets
@@ -319,7 +302,7 @@ function findExistingPrForItem(itemId) {
     json = run("gh", [
       "pr", "list", "--repo", REPO, "--state", "open",
       "--search", `"Backlog item: ${itemId}" in:body`,
-      "--json", "number,state,url",
+      "--json", "number,state,url,headRefName",
     ]);
   } catch (err) {
     console.log(`[apply-patch] ${itemId}: couldn't check for an existing PR (${err.message}) — proceeding without the duplicate check`);
@@ -327,6 +310,120 @@ function findExistingPrForItem(itemId) {
   }
   const prs = JSON.parse(json);
   return prs.length ? prs[0] : null;
+}
+
+function viewPr(prNumber) {
+  try {
+    const json = run("gh", ["pr", "view", String(prNumber), "--repo", REPO, "--json", "number,state,url,headRefName"]);
+    return JSON.parse(json);
+  } catch (err) {
+    console.log(`[apply-patch] couldn't read PR #${prNumber} (${err.message})`);
+    return null;
+  }
+}
+
+// Picks the OPEN PR a patch-ready item should land on, if one exists —
+// the item's own recorded PR first, then a PR on the item's own branch,
+// then any open PR whose body carries this item's marker (a multi-item
+// batch opened from a sibling's branch). Returns null when there is no
+// open PR, in which case a fresh branch + PR is the right outcome.
+//
+// This replaced a hard stop. Before, an open PR referencing the item made
+// the job clear patchReady, leave the card in Backlog and ask a human to
+// "close it manually before setting patchReady again" — which is exactly
+// the wrong answer in the two cases that actually produce it: (1) a batch
+// of items packaged together (same patchBranch, one combined diff, one PR
+// listing every item — PR #131 carried three): the first item's run opens
+// the PR, and every sibling then bounced off it; (2) a re-patch of an item
+// whose PR is still open (tested, sent back, fixed again): the follow-up
+// fix had nowhere to go. In both cases the PR IS this item's PR, so the
+// item should be attached to it (adding the new work as a commit where
+// there is any) and move on to Ready for Testing, not backwards.
+function resolveReusablePr(item, branch) {
+  const recorded = Number(item.prNumber) || (String(item.prUrl || "").match(/\/pull\/(\d+)/) || [])[1];
+  if (recorded) {
+    const pr = viewPr(recorded);
+    if (pr && pr.state === "OPEN") return { ...pr, source: "recorded" };
+  }
+  const own = findPrForBranch(branch);
+  if (own && own.state === "OPEN") {
+    const pr = viewPr(own.number) || { ...own, headRefName: branch };
+    return { ...pr, source: "own-branch" };
+  }
+  const batch = findExistingPrForItem(item.id);
+  if (batch) return { ...batch, source: batch.headRefName === branch ? "own-branch" : "batch" };
+  return null;
+}
+
+// Restores a clean checkout of main after patchFiles were written on some
+// other branch and are not going to be committed there.
+function discardWorkingTree() {
+  try { run("git", ["reset", "--hard", "--quiet"]); } catch { /* nothing staged */ }
+  try { run("git", ["clean", "-fdq"]); } catch { /* nothing to clean */ }
+  run("git", ["checkout", "main", "--quiet"]);
+}
+
+// Lands a patch-ready item on an already-open PR (see resolveReusablePr).
+// The item's own PR (recorded on the card, or on its own branch) gets the
+// new patchFiles committed on top of the PR branch — that is the re-patch
+// case, and the branch is what the Routine's follow-up fix was meant to
+// update. A batch sibling's PR is only ever attached, never rewritten: the
+// PR was opened with the combined content for every item it lists, so the
+// sibling's own patchFiles are normally identical to what is already on
+// the branch (no diff). Where they do differ, the sibling's copy is by
+// definition a partial view of a shared file (see "Group multi-item fixes
+// into one deployment" in ROUTINE_INSTRUCTIONS.md) and committing it would
+// undo the other items' changes — so the branch is left as-is and the
+// difference is called out on the card for whoever tests it.
+async function attachToExistingPr(item, pr) {
+  const head = pr.headRefName;
+  console.log(`[apply-patch] ${item.id}: attaching to open PR #${pr.number} (${pr.source}, branch ${head})`);
+  run("git", ["fetch", "origin", head, "--quiet"]);
+  run("git", ["checkout", "-B", head, `origin/${head}`, "--quiet"]);
+
+  applyPatchFiles(item.patchFiles);
+  // Read while the patched files are still on disk (the batch case below
+  // discards them), so testVersion reflects the branch this PR will merge.
+  const testVersion = readAppVersion();
+  run("git", ["add", "-A"]);
+  let changedPaths = [];
+  try {
+    const out = run("git", ["diff", "--cached", "--name-only"]);
+    changedPaths = out ? out.split("\n").filter(Boolean) : [];
+  } catch { /* treat as no changes */ }
+
+  let noteText;
+  if (!changedPaths.length) {
+    noteText = `Attached to the already-open PR #${pr.number} (${pr.url}): this item's patchFiles are already on its branch (${head}), so nothing new was committed. Moving to Ready for Testing with that PR.`;
+  } else if (pr.source === "batch") {
+    // Not ours to rewrite — see the comment above.
+    noteText = `Attached to the already-open PR #${pr.number} (${pr.url}), which was opened for a batch that includes this item. ` +
+      `This item's own patchFiles differ from what is on that branch (${head}) in: ${changedPaths.join(", ")} — the PR's combined version has been kept and this copy was NOT committed, ` +
+      `so it can't undo the other items' changes to the same files. Test against the PR; if this item's fix is genuinely missing there, re-patch it on top of the PR branch.`;
+    discardWorkingTree();
+    changedPaths = [];
+  } else {
+    const commitMessage = item.patchCommitMessage || `Fix: ${item.title || item.desc || item.id}`;
+    run("git", ["-c", "user.name=backlog-automation", "-c", "user.email=backlog-automation@users.noreply.github.com", "commit", "-m", commitMessage, "--quiet"]);
+    run("git", ["push", "origin", head, "--quiet"]);
+    noteText = `Updated the already-open PR #${pr.number} (${pr.url}) with a new commit on its branch (${head}) carrying this round's patchFiles (${changedPaths.join(", ")}). Moving to Ready for Testing with that PR.`;
+  }
+
+  const notes = await appendNote(item, noteText);
+  const previewUrl = item.previewUrl || guessPreviewUrl(item.patchFiles, head, pr.url);
+  await patchItem(item.id, {
+    status: "ready-for-testing",
+    patchReady: false,
+    patchAttempts: 0,
+    updatedAt: new Date().toISOString(),
+    notes,
+    prUrl: pr.url,
+    prNumber: Number(pr.number),
+    previewUrl,
+    ...(testVersion ? { testVersion } : {}),
+  });
+  console.log(`[apply-patch] ${item.id}: attached to PR #${pr.number}${changedPaths.length ? ` (+1 commit)` : ""}, moved to ready-for-testing`);
+  run("git", ["checkout", "main", "--quiet"]);
 }
 
 async function processApplyPatch(item) {
@@ -379,49 +476,29 @@ async function processApplyPatch(item) {
   // body-text search below, this branch can never belong to any other
   // item) finds exactly that leftover state and reconciles instead of
   // trying, and failing, to redo it.
-  const reconciledPr = findPrForBranch(branch);
-  if (reconciledPr) {
-    if (reconciledPr.state === "CLOSED") {
-      console.log(`[apply-patch] ${item.id}: branch ${branch} already has a CLOSED PR #${reconciledPr.number} — leaving patchReady cleared rather than retrying`);
-      const notes = await appendNote(
-        item,
-        `Found this item's own branch (${branch}) already carrying PR #${reconciledPr.number} (${reconciledPr.url}), but it's CLOSED without merging — most likely closed deliberately by a human. patchReady has been cleared so this stops retrying; to try again, either reopen that PR or clear patchBranch so a fresh branch gets used.`
-      );
-      await patchItem(item.id, { patchReady: false, updatedAt: new Date().toISOString(), notes });
-      return;
-    }
-    console.log(`[apply-patch] ${item.id}: branch ${branch} already has ${reconciledPr.state} PR #${reconciledPr.number} from an apparently-interrupted earlier run — reconciling instead of re-pushing`);
-    const notes = await appendNote(
-      item,
-      `Reconciled rather than re-pushed: this item's branch (${branch}) already had ${reconciledPr.state === "MERGED" ? "an already-merged" : "an already-open"} PR #${reconciledPr.number} (${reconciledPr.url}) — left behind by an earlier run of this job that was apparently interrupted before it could record the PR on this card. Moving to Ready for Testing now with that PR attached.`
-    );
-    const testVersion = readAppVersion();
-    const previewUrl = item.previewUrl || guessPreviewUrl(item.patchFiles, branch, reconciledPr.url);
-    await patchItem(item.id, {
-      status: "ready-for-testing",
-      patchReady: false,
-      patchAttempts: 0,
-      updatedAt: new Date().toISOString(),
-      notes,
-      prUrl: reconciledPr.url,
-      prNumber: reconciledPr.number,
-      previewUrl,
-      ...(reconciledPr.state === "MERGED" ? { noDeploymentRequired: true } : {}),
-      ...(testVersion ? { testVersion } : {}),
-    });
+  // An OPEN PR for this item — its own (recorded on the card, or on its
+  // own branch, including one left by an interrupted earlier run that
+  // never got to record it) or a batch sibling's — is where this work
+  // lands. See resolveReusablePr/attachToExistingPr: the item is attached
+  // to that PR (with a new commit where it is the item's own PR and the
+  // patchFiles add anything) and moves to Ready for Testing. An open PR is
+  // never a reason to bounce the card back to Backlog any more.
+  const reusablePr = resolveReusablePr(item, branch);
+  if (reusablePr) {
+    await attachToExistingPr(item, reusablePr);
     return;
   }
 
-  const existingPr = findExistingPrForItem(item.id);
-  if (existingPr) {
-    console.log(`[apply-patch] ${item.id}: PR #${existingPr.number} (${existingPr.state}) already references this item — not opening a duplicate`);
-    const notes = await appendNote(
-      item,
-      `Skipped opening a new PR: #${existingPr.number} (${existingPr.url}, ${existingPr.state}) already exists for this item. ` +
-      `If that PR is stale or wrong, close it manually before setting patchReady again.`
-    );
-    await patchItem(item.id, { patchReady: false, updatedAt: new Date().toISOString(), notes });
-    return;
+  // No open PR. A MERGED or CLOSED PR on the item's own branch is finished
+  // or rejected work from an earlier round, not this one — patchReady was
+  // set again deliberately, so this round gets a fresh branch push (the
+  // --force below recreates the branch from main) and its own new PR. The
+  // one exception is handled further down: if the patchFiles turn out to
+  // already be on main (the merged case, or a sibling's PR having landed
+  // them), there is no diff and the item advances without a PR.
+  const priorPr = findPrForBranch(branch);
+  if (priorPr && priorPr.state !== "OPEN") {
+    console.log(`[apply-patch] ${item.id}: branch ${branch} previously carried ${priorPr.state} PR #${priorPr.number} — starting a fresh round on the same branch name`);
   }
 
   run("git", ["fetch", "origin", "main", "--quiet"]);
@@ -440,7 +517,7 @@ async function processApplyPatch(item) {
   }
   if (!hasChanges) {
     // Same class of "stuck forever, no record of why" bug as the
-    // existingPr guard above (see its own comment) — this branch used to
+    // old existing-PR guard (since replaced by attachToExistingPr) — this branch used to
     // just log and return, leaving patchReady/status untouched, so an
     // item whose patchFiles turn out to already be on main (the expected
     // outcome for one half of a multi-item "shared, full combined
@@ -479,14 +556,13 @@ async function processApplyPatch(item) {
   run("git", ["-c", "user.name=backlog-automation", "-c", "user.email=backlog-automation@users.noreply.github.com", "commit", "-m", commitMessage, "--quiet"]);
   // --force, deliberately: branch is this item's own deterministic name
   // (sanitizeBranchName embeds the item id), pushed only ever by this
-  // script for this one item, and the reconciliation check above already
-  // ruled out a PR existing for it. The one case a plain push would
-  // otherwise fail on — this exact branch already sitting on origin with
-  // different history, left by an earlier run of this job that got
-  // cancelled after pushing but before opening its PR (see the
-  // reconciliation comment above) — is exactly the case this needs to
-  // recover from automatically rather than failing non-fast-forward and
-  // retrying into MAX_PATCH_ATTEMPTS.
+  // script for this one item, and resolveReusablePr above already ruled
+  // out an OPEN PR on it. The cases a plain push would otherwise fail on —
+  // this exact branch already sitting on origin with different history,
+  // left by an earlier run cancelled after pushing but before opening its
+  // PR, or by an earlier round whose PR has since merged or been closed —
+  // are exactly what this needs to recover from automatically rather than
+  // failing non-fast-forward and retrying into MAX_PATCH_ATTEMPTS.
   run("git", ["push", "-u", "origin", branch, "--force", "--quiet"]);
 
   const prTitle = item.patchPrTitle || commitMessage;
@@ -494,7 +570,13 @@ async function processApplyPatch(item) {
     `\n\nBacklog item: ${item.id}`;
   const prUrl = run("gh", ["pr", "create", "--base", "main", "--head", branch, "--title", prTitle, "--body", prBody]);
 
-  const notes = await appendNote(item, `Opened ${prUrl} from the automated backlog pipeline.`);
+  const notes = await appendNote(
+    item,
+    `Opened ${prUrl} from the automated backlog pipeline.` +
+    (priorPr && priorPr.state !== "OPEN"
+      ? ` This is a new round of work: the item's earlier PR #${priorPr.number} (${priorPr.url}) was ${priorPr.state === "MERGED" ? "already merged" : "closed without merging"}, so the fresh patchFiles got their own PR.`
+      : "")
+  );
   const testVersion = readAppVersion();
   // Record the PR on the item itself, not only in the note text above:
   // the board renders these as a link on the card (see app.js's prBadge),

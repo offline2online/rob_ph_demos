@@ -167,19 +167,37 @@ the PR. No AI is involved in this step at all, and no long-lived GitHub
 secret exists anywhere in this pipeline — the runner's `GITHUB_TOKEN` is
 minted and revoked by GitHub itself, per run.
 
-**The duplicate-PR guard (`findExistingPrForItem`) only blocks a still-OPEN
-PR, not a merged or closed one.** It used to search `--state all`, which
-seemed harmless until a real case surfaced it (item `dWJtVKC310qgMevZ3XPl`,
-2026-09-11): that item's first fix merged as PR #84, then a genuinely new,
-separate follow-up fix was packaged for it later — the guard found the
-already-merged #84 via its still-matching `Backlog item: <id>` body marker
-and silently refused to open a second PR, leaving the item stuck in
-`backlog` with `patchReady` reset to `false` and no path forward. A merged
-or closed PR is finished/dead work, not an in-flight duplicate, so it
-should never block a fresh patch for a new round of work on the same item
-— fixed by restricting the search to `--state open`. Two genuinely open
-PRs for the same item is still blocked exactly as before (that's the
-actual bug — see PR #61/#62 above — this guard exists for).
+**An item whose PR is already open is attached to that PR, never bounced
+back to Backlog.** `run-backlog-automation.js` used to refuse the item
+("Skipped opening a new PR: #N already exists… close it manually before
+setting patchReady again"), clear `patchReady` and leave the card in
+Backlog. That was the wrong answer in both situations that actually
+produce it (PR #131, 14 Sep 2026, hit the first): a **batch** of items
+packaged together by one Notify Claude sweep (same `patchBranch`, one
+combined diff, one PR whose body lists every item — the first item's run
+opens the PR and every sibling then bounced off it), and a **re-patch** of
+an item whose earlier PR is still open (tested, sent back, fixed again —
+the follow-up fix had nowhere to go). `resolveReusablePr()` now looks for
+an OPEN PR in this order: the item's own recorded `prNumber`/`prUrl`, a
+PR on the item's own branch (which also covers a run interrupted between
+pushing and recording the PR), then any open PR carrying the item's
+`Backlog item: <id>` body marker. `attachToExistingPr()` then checks out
+that PR's branch, writes the item's `patchFiles` on top and: for the
+item's *own* PR, commits and pushes the difference as a new commit; for a
+*batch sibling's* PR, commits nothing (the sibling's copy is normally
+identical — no diff — and where it differs it is a partial view of a
+shared file that would undo the other items' changes, so the PR's version
+is kept and the differing paths are named on the card). Either way the
+item records `prNumber`/`prUrl`, gets a preview link on that branch and
+moves to Ready for Testing.
+
+A MERGED or CLOSED PR never counts as reusable — it is finished or
+rejected work from an earlier round (item `dWJtVKC310qgMevZ3XPl`,
+2026-09-11: a re-patch after PR #84 merged was refused because the marker
+search still found #84). A new `patchReady` after that is a deliberate new
+round: the branch is force-pushed fresh from `main` and a new PR opened,
+with the card's note pointing at the earlier PR. (If the new `patchFiles`
+turn out to already be on `main`, the no-diff path below applies instead.)
 
 **`patchFiles` producing no diff against `main` no longer leaves an item
 stuck silently either.** This is the expected outcome for one half of a
