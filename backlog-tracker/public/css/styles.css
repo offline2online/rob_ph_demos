@@ -29,21 +29,46 @@ body {
 }
 .app { max-width: 1400px; margin: 0 auto; padding: 24px 20px 40px; }
 .topbar { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 18px; }
-.topbar-left { display: flex; align-items: flex-start; gap: 10px; }
-.topbar h1 { margin: 0; font-size: 22px; font-weight: 700; }
+/* qMJeQkmhYwcXFTjeOJw0: the hamburger and the topbar logo now live in their
+   own row (.topbar-left-row), a direct flex row with nothing else sharing
+   it, instead of one flex row that also had to hold the stacked
+   title+subtitle block. That stacked block gave the row two very
+   differently-sized items to align (a tall title stack vs. a short button)
+   and nothing here constrained either from growing past the available
+   width, so on a narrow viewport the logo (previously 78px tall, ~312px
+   wide at this image's fixed 4:1 aspect ratio) had no room to shrink and
+   either overflowed past the screen edge or forced the row to break —
+   pushing the hamburger away from it, which is what mobile testing kept
+   catching. Fixed at the root instead of re-tuning sizes again:
+   - the logo is shrunk 25% (78px -> 58.5px, min-width:0 + overflow:hidden
+     on the <h1> so it can shrink further instead of overflowing if space
+     is still tight);
+   - the <img> now also carries HTML width/height attributes (234x58, the
+     same 4:1 ratio) so the browser reserves its box before the SVG has
+     loaded/decoded, instead of laying it out at 0 width and reflowing once
+     it arrives;
+   - the subtitle is now a sibling row below .topbar-left-row, not nested
+     inside the flex item that also holds the logo, so it can never affect
+     the logo/hamburger row's own sizing. */
+.topbar-left { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.topbar-left-row { display: flex; flex-direction: row; flex-wrap: nowrap; align-items: center; gap: 10px; min-width: 0; }
+.topbar h1 { margin: 0; font-size: 22px; font-weight: 700; min-width: 0; max-width: 100%; overflow: hidden; }
 .logo-link {
   font: inherit; font-size: inherit; font-weight: inherit; color: inherit;
   background: none; border: none; padding: 0; margin: 0; cursor: pointer;
-  display: inline-flex; align-items: center; gap: 8px;
+  display: inline-flex; align-items: center; gap: 8px; max-width: 100%; min-width: 0;
 }
 .logo-link:hover { opacity: .75; }
-.topbar-logo-img { height: 78px; display: block; }
+.topbar-logo-img { height: 58.5px; width: auto; max-width: 100%; display: block; flex-shrink: 0; }
+.topbar-logo-label {
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0;
+}
 .topbar-logo-label:empty { display: none; }
 .footer-logo-btn { vertical-align: middle; }
 .footer-logo-img { height: 42px; display: block; }
 .auth-gate-logo { height: 120px; max-width: 100%; width: auto; margin: 0 auto 4px; display: block; }
 .subtitle { margin: 4px 0 0; font-size: 13px; color: var(--text-muted); }
-.hamburger-btn { font-size: 20px; margin-top: 1px; }
+.hamburger-btn { font-size: 20px; flex-shrink: 0; }
 
 /* ── Pipeline health strip (YeCj7sNpHXFUZQhmAmEb) ────────────────────────
    Compact by design — a "is the machinery alive" glance, not a dashboard.
@@ -76,7 +101,11 @@ body {
 }
 .nav-drawer-backdrop.open { opacity: 1; pointer-events: auto; }
 .nav-drawer {
-  position: fixed; top: 0; left: 0; bottom: 0; width: 320px; max-width: 85vw;
+  /* Widened 320 -> 360px, with proportionally larger text below, so the
+     drawer reads as matching the topbar rather than undersized next to it
+     (qMJeQkmhYwcXFTjeOJw0); max-width: 85vw unchanged so it still caps on
+     the narrowest phones. */
+  position: fixed; top: 0; left: 0; bottom: 0; width: 360px; max-width: 85vw;
   background: var(--bg); border-right: 1px solid var(--border); z-index: 21;
   box-shadow: 2px 0 16px rgba(0, 0, 0, .15);
   transform: translateX(-100%); transition: transform .22s ease;
@@ -86,17 +115,17 @@ body {
 .nav-drawer.open { transform: translateX(0); visibility: visible; }
 .nav-drawer-header {
   display: flex; align-items: center; justify-content: space-between;
-  padding: 8px 18px 16px; border-bottom: 1px solid var(--border); margin-bottom: 6px;
+  padding: 8px 20px 16px; border-bottom: 1px solid var(--border); margin-bottom: 6px;
 }
-.nav-drawer-title { font-weight: 700; font-size: 16px; }
+.nav-drawer-title { font-weight: 700; font-size: 18px; }
 .nav-drawer-item {
   display: block; width: 100%; text-align: left; background: transparent; border: none;
-  padding: 15px 18px; font-size: 15px; color: var(--text); cursor: pointer; font-family: inherit;
+  padding: 17px 20px; font-size: 16px; color: var(--text); cursor: pointer; font-family: inherit;
 }
 .nav-drawer-item:hover { background: var(--surface-2); }
 .nav-drawer-item-home { font-weight: 700; color: var(--primary); border-bottom: 1px solid var(--border); }
 .nav-drawer-section {
-  padding: 14px 18px 4px; font-size: 11px; font-weight: 700; text-transform: uppercase;
+  padding: 14px 20px 4px; font-size: 11px; font-weight: 700; text-transform: uppercase;
   letter-spacing: .04em; color: var(--text-muted);
 }
 .btn-primary {
@@ -597,6 +626,13 @@ textarea.dialog-field-input { resize: vertical; min-height: 70px; }
   .app { padding: 16px 12px 32px; }
   .topbar { gap: 12px; }
   .topbar h1 { font-size: 19px; }
+  /* Extra headroom on top of the 78px -> 58.5px global shrink above: the
+     logo's fixed 4:1 aspect ratio still makes 58.5px tall ~234px wide,
+     which is most of a phone's width once the hamburger, its gap and the
+     .app side padding are subtracted. Shrinking further here is a width
+     floor, not a redo of the resize — min-width:0 + overflow:hidden on
+     .topbar h1 (above) still applies if an even narrower screen needs it. */
+  .topbar-logo-img { height: 46px; }
   .btn-primary, .btn-ghost { min-height: 40px; }
 
   .board { grid-template-columns: 1fr; overflow-x: visible; }
