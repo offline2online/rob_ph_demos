@@ -82,8 +82,11 @@ always present and not disconnectable.
 
 Each partner also carries its inventory rules (auction type, floor CPM and
 currency, permitted categories, competitive exclusions), the advertisers pulled
-from it on connect, and a table of every display-type position currently sold
-through it.
+from it on connect, a client-managed **advertiser whitelist and blacklist**,
+and a table of every display-type position currently sold through it.
+
+A position's **Assigned to** picker then offers open RTB, whitelist-only,
+any-except-blacklist, or one named advertiser.
 
 The **API and campaign model** a partner integrates against — two API tiers,
 baseline plus targeted campaigns, per-partner targeting permissions, the
@@ -104,6 +107,9 @@ Design decisions worth keeping:
   cannot serve.
 - **Disconnecting keeps the record.** Positions pointing at it go red and offer
   a "Fix connection" jump, rather than silently reverting to Headquarters.
+- **The two lists are mutually exclusive**, and both take free text — a DSP's
+  full advertiser universe is not enumerable from here, so a client must be
+  able to block a competitor we have never seen a bid from.
 - **Slot ownership cannot be backfilled.** An RTB position stamps the partner at
   write time and the winning advertiser at render time.
 
