@@ -37,11 +37,11 @@ body {
   display: inline-flex; align-items: center; gap: 8px;
 }
 .logo-link:hover { opacity: .75; }
-.topbar-logo-img { height: 26px; display: block; }
+.topbar-logo-img { height: 78px; display: block; }
 .topbar-logo-label:empty { display: none; }
 .footer-logo-btn { vertical-align: middle; }
-.footer-logo-img { height: 14px; display: block; }
-.auth-gate-logo { height: 40px; margin: 0 auto 4px; display: block; }
+.footer-logo-img { height: 42px; display: block; }
+.auth-gate-logo { height: 120px; max-width: 100%; width: auto; margin: 0 auto 4px; display: block; }
 .subtitle { margin: 4px 0 0; font-size: 13px; color: var(--text-muted); }
 .hamburger-btn { font-size: 20px; margin-top: 1px; }
 
