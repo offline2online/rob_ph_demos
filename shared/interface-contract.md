@@ -58,10 +58,17 @@ Live Visitor Profile resolves and hands over attributes in four families
 4. **Environmental/contextual** — describes the *place and moment*, not the
    person: `env.temp_c`, `env.condition`, `env.daypart`, `store_segments`
    (fixed and variable), `display_tags`, `store_stock` / SKU availability,
-   `store_hours_state`. One authoritative source per signal, no precedence
-   chain. Added for advertiser targeting (see **Partner targeting
-   permissions** below) — an advertiser gating a campaign on "over 25°C"
+   `store_hours_state`. **Inbound, so it carries a precedence chain like
+   family 3** — it is separated out by *subject*, not by writability,
+   because who may target it is a different decision (see **Partner
+   targeting permissions**). An advertiser gating a campaign on "over 25°C"
    needs this family and nothing from family 3.
+
+   Most of this family arrives today as a **partner-supplied attribute**
+   (below) rather than a platform feed. Weather and stock are both expected
+   to become PH defaults once PH runs the feeds itself — weather needs only
+   a feed, and `store_stock` is also coming from the Products & Assets
+   program. Until then a partner brings its own.
 
 A real envelope is almost entirely blank — **this is normal, not an
 error.** Display Types must never treat a blank/absent attribute as
@@ -74,8 +81,11 @@ a fault; it simply means default or localised content renders instead.
 | Inbound | External systems, Visitor API, consumer agent, vision | **Yes** |
 | Derived | PH itself (i.e. Display Types' own targeting engine) | No |
 | Platform context | Player/session | No — single source |
-| Environmental | External sources (weather, stock, store/display config) | No — single source per signal |
 | Interaction | Session + tier-4 agent | Partial — writes are claims |
+
+Families 3 and 4 are both Inbound; families 1 and 2 are not. The family says
+what an attribute is *about*; the class says who may write it and whether a
+chain applies.
 
 Display Types must not expect or render a source-precedence UI for
 anything outside the Inbound class — there's nothing there to configure.
@@ -123,6 +133,36 @@ creative/targeting purposes only, and must never let it reach the
 PH-locked pricing path. This is enforced structurally by the trust-zone
 split below, not by trusting Display Types to check the level
 itself on every render.
+
+## Partner-supplied attributes
+
+A partner may contribute its own attributes to the live profile — weather and
+stock are the worked examples. This is an **ownership property that cuts
+across the families above**, not a family of its own: a partner can just as
+well contribute something visitor-shaped as something environmental.
+
+Mechanically there is nothing new here. A partner feed enters as an ordinary
+**connector** in Live Visitor Profile's registry and ranks in a precedence
+chain like any other source, with the same `max_age_s` and `min_confidence`
+bounds. What is new is ownership:
+
+- **Every attribute has an owner** — Personalisation Hub, or the partner that
+  contributed it.
+- **Namespace partner-contributed attributes**, so two partners each
+  contributing "temperature" do not collide and neither can shadow a PH
+  default.
+- **Default scope is private to the contributing partner.** A partner's own
+  data is not targeting vocabulary for its competitors, and cross-partner
+  visibility must be a deliberate grant, not a side effect of contribution.
+- **Promotion is expected, not exceptional.** When PH runs its own feed for a
+  signal a partner already contributes, that attribute becomes a PH default
+  available to everyone. Both sources then coexist in one precedence chain,
+  which is what the chain is for — but whether the partner's own attribute is
+  superseded, aliased to the default, or left standing is an open question.
+- **A partner feed is a claim.** It carries the verification levels above, so
+  it may inform creative selection freely and must never reach a pricing or
+  entitlement decision. The trust-zone split enforces this structurally; it
+  does not depend on the partner being honest about its own data.
 
 ## Partner targeting permissions
 
@@ -185,8 +225,9 @@ class: weather tolerates a long TTL and must not be resolved per impression,
 `display_tags` are effectively stable configuration. A targeted campaign is
 only as timely as the class behind the attribute it gates on.
 
-Live Visitor Profile owns setting/enforcing volatility; Display Types just receives whatever is currently resolved at request time —
-it never caches a value itself past what the resolver already decided.
+Live Visitor Profile owns setting/enforcing volatility; Display Types just
+receives whatever is currently resolved at request time — it never caches a
+value itself past what the resolver already decided.
 
 ## Connection state — a second axis Display Types alone owns
 
@@ -212,6 +253,12 @@ attributes).
 
 ## Changelog
 
+- 2026-09-15 — Partner-supplied attributes: partners may contribute their own
+  attributes (weather, stock) as ordinary connectors ranked in a precedence
+  chain. Corrects the Environmental family, added earlier the same day, from
+  "single source per signal" to Inbound-with-a-chain — it is separated by
+  subject, not writability. Adds attribute ownership, namespacing, default
+  private scope, and the promotion path to a PH default.
 - 2026-09-15 — **Breaking.** Added a fourth attribute family,
   **Environmental/contextual** (weather, store segments, display tags, store
   stock, daypart, store-hours state), and a **Partner targeting permissions**
@@ -237,9 +284,12 @@ attributes).
 - Ranking authority when an agent publishes multiple eligible SKUs but a
   template has one hero slot — agent order vs. Display Types'
   campaign `priority` (spec open question 8)?
-- Which system populates the Environmental family — Live Visitor Profile
-  connectors, or a direct integration on the Display Types side (Display
-  Types open question 28)?
+- When a partner-contributed attribute is promoted to a PH default, is the
+  partner's own attribute superseded, aliased to the default, or left
+  standing alongside it? `store_stock` will hit this first, since the
+  Products & Assets program is bringing its own.
+- Can a partner ever target another partner's contributed attribute, and if
+  so by what grant? Default is private to the contributor.
 - Is there a minimum-volume floor on the playback analytics fed back to a
   partner? Per-impression trigger disclosure is safe on its own; thin
   segments queried repeatedly are an inference channel (Display Types open

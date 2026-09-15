@@ -245,6 +245,14 @@ The vocabulary is the Live Visitor Profile attribute registry (see the
 interface contract), plus the environmental family added there for this work.
 **Visitor attributes are targetable**, not just environmental ones.
 
+**A partner can also contribute the attribute it wants to target.** Weather
+and stock arrive this way today — the partner feeds them into the live
+profile as an ordinary connector, then gates campaigns on them. Both are
+expected to become PH defaults later (weather needs only a feed; `store_stock`
+is also coming from the Products & Assets program), at which point they are
+available to every partner rather than only the contributor. A contributed
+attribute is namespaced to its owner and private to it by default.
+
 - Every attribute carries a **per-partner enablement**. A trusted partner may
   be allowed a given visitor attribute; another may be allowed none. Managed
   partner by partner, against the same registry Live Visitor Profile owns.
@@ -414,17 +422,21 @@ otherwise we sell guarantees we cannot meet.
 27. **Play-window length** for signage programmatic. 24 hours is the working
     assumption; the real figure is a commercial decision crossed with how
     long asset distribution across the estate actually takes.
-28. **Where environmental attributes are sourced and owned.** Weather and
-    store stock have no home in the attribute envelope today. The interface
-    contract now carries an environmental family, but which system populates
-    it — Live Visitor Profile connectors, or a direct integration on this
-    side — is undecided.
+28. **Where environmental attributes are sourced and owned.** *Resolved:*
+    partners contribute them to Live Visitor Profile as ordinary connectors,
+    namespaced and private to the contributor. PH is expected to take weather
+    and stock over as defaults later — stock via the Products & Assets
+    program. What remains open is the promotion path: when PH's own feed
+    lands, is the partner's attribute superseded, aliased, or left standing?
 29. **Partial-estate delivery.** If only part of the estate cached its assets
     before the window opens, what was actually sold? Needs a guarantee model
     and a reporting shape, not just a status field.
 30. **Minimum-volume floor on partner analytics.** Per-impression trigger
     disclosure is safe individually, but thin segments repeatedly queried are
     an inference channel. Is there a reporting floor, and at what N?
-31. **Transaction association.** The stated end state is tying transactions to
+31. **Cross-partner visibility.** A contributed attribute is private to its
+    owner by default. Is there ever a case for one partner targeting
+    another's contributed data, and what grant would express it?
+32. **Transaction association.** The stated end state is tying transactions to
     campaign plays. That needs an identity join this project does not own and
     the interface contract does not currently describe.
