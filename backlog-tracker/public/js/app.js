@@ -970,6 +970,24 @@ function groomBacklogRowHTML(project) {
   return btn ? `<div class="col-groom-row">${btn}</div>` : "";
 }
 
+// Mobile-only merge of the Groom Backlog CTA into the Backlog column's own
+// header row (JHY0F2AdMSjtL4WU8F2K): on a phone, .col-groom-row below the
+// header and the header's own .col-count both cost a full row of vertical
+// space for something that's really one action ("here's what's waiting,
+// tap to groom it"). This renders the *same* groomNotifyButtonHTML() button
+// a second time, wrapped so CSS (see .col-groom-inline in styles.css) can
+// show it in place of .col-count at <=640px and hide the separate
+// .col-groom-row there, while leaving both completely untouched at desktop
+// widths (.col-groom-inline stays display:none there). Two copies of the
+// same button in the DOM is deliberate, not a bug — only one is ever
+// visible/clickable at a given viewport width, and the click delegation
+// for .groom-notify-btn (see the projects-root handler) doesn't care which
+// instance was actually tapped.
+function groomBacklogInlineHTML(project) {
+  const btn = groomNotifyButtonHTML(project);
+  return btn ? `<span class="col-groom-inline">${btn}</span>` : "";
+}
+
 // The middle stage, between "Ready for Dev" and "Deploy to Main": moves
 // individually-confirmed-tested items from Ready for Testing onto their
 // feature branch (ready-to-publish) in one batch click, instead of each
@@ -1105,7 +1123,7 @@ function projectSectionHTML(project) {
     // 640px media query, so desktop is completely unaffected.
     const colCollapsed = isColumnCollapsed(project.id, col.key);
     return `<section class="column${colCollapsed ? " column-collapsed" : ""}" data-col="${col.key}">
-      <div class="col-head col-head-${col.headClass}" data-project-id="${escapeHTML(project.id)}" data-col="${col.key}"><span>${selectAllHTML}${col.label}</span><span class="col-count">${listItems.length}</span></div>
+      <div class="col-head col-head-${col.headClass}" data-project-id="${escapeHTML(project.id)}" data-col="${col.key}"><span>${selectAllHTML}${col.label}</span><span class="col-count">${listItems.length}</span>${col.key === "backlog" ? groomBacklogInlineHTML(project) : ""}</div>
       ${col.key === "backlog" ? groomBacklogRowHTML(project) : ""}
       <div class="col-list" id="${colListId(project.id, col.key)}" data-col="${col.key}" data-project-id="${escapeHTML(project.id)}">
         ${listItems.length ? columnCardsHTML(listItems) : '<div class="empty-hint">No items yet</div>'}
@@ -2149,7 +2167,12 @@ projectsRoot.addEventListener("click", async (e) => {
   // sit side by side this is a no-op click, same as tapping any other
   // static heading.
   const colHead = e.target.closest(".col-head");
-  if (colHead && !e.target.closest("label, input") && window.matchMedia("(max-width: 640px)").matches) {
+  // ", button" added for the Backlog header's own mobile-only Groom Backlog
+  // CTA (see groomBacklogInlineHTML/.col-groom-inline): without it, tapping
+  // that button inside .col-head hit this branch first (col-head is its
+  // closest ancestor) and toggled the column collapsed instead of ever
+  // reaching the .groom-notify-btn handler below.
+  if (colHead && !e.target.closest("label, input, button") && window.matchMedia("(max-width: 640px)").matches) {
     toggleColumnCollapsed(colHead.dataset.projectId, colHead.dataset.col);
     return;
   }
