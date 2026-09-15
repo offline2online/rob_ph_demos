@@ -323,18 +323,18 @@
 
     <section class="docs-page" id="docs-page" hidden>
       <div class="page-header">
-        <h2>Docs — <span id="docs-page-project-name"></span></h2>
+        <h2>Project Settings — <span id="docs-page-project-name"></span></h2>
       </div>
 
       <div class="docs-block">
         <h3>Program / Product</h3>
-        <p class="field-hint">Purely organizational — groups this project under a heading on the board alongside others in the same program. Changing it takes effect immediately, same as everything else here.</p>
+        <p class="field-hint">Groups this project on the board.</p>
         <select id="docs-program-select"></select>
       </div>
 
       <div class="docs-block">
         <h3>README</h3>
-        <p class="field-hint">The primary document used to track this project — shown first on this page so it's the first thing anyone visiting reads. This is a live copy, same pattern as Requirements below; keep any repo-native README.md for this project in sync with it.</p>
+        <p class="field-hint">Keep in sync with this project's README.md in the repo.</p>
         <textarea id="docs-readme-input" rows="12" placeholder="No README written yet — paste or write it here."></textarea>
         <div class="form-row" style="justify-content:flex-end;">
           <button type="button" class="btn-primary" id="docs-readme-save">Save README</button>
@@ -343,7 +343,7 @@
 
       <div class="docs-block">
         <h3>Requirements</h3>
-        <p class="field-hint">This project's own requirements — maintained here so it travels with the board, not only as a file in the repo.</p>
+        <p class="field-hint">Keep in sync with this project's REQUIREMENTS.md in the repo.</p>
         <textarea id="docs-requirements-input" rows="16" placeholder="No requirements written yet — paste or write them here."></textarea>
         <div class="form-row" style="justify-content:flex-end;">
           <button type="button" class="btn-primary" id="docs-requirements-save">Save requirements</button>
@@ -355,13 +355,13 @@
           <h3>Additional documents</h3>
           <button type="button" class="btn-ghost" id="docs-add-doc-btn">+ New document</button>
         </div>
-        <p class="field-hint">Any other technical or architectural document for this project — an API spec, a design doc, anything that isn't Requirements or the README above — kept on this same page instead of scattered across the repo.</p>
+        <p class="field-hint">Any other technical document for this project — a spec, a design doc, etc.</p>
         <div id="docs-extra-docs-list"></div>
       </div>
 
       <div class="docs-block">
         <h3>Routine instructions</h3>
-        <p class="field-hint">Extra instructions for this project only, included automatically at the top of what every Routine-firing action sends (Ready for Dev, Deploy to Main, Groom Backlog) — a different branch convention, which part of the repo this project owns, anything the generic workflow wouldn't know. Leave blank to just use the Routine's own default instructions.</p>
+        <p class="field-hint">Extra context sent to Claude with every Routine run for this project. Optional.</p>
         <textarea id="docs-routine-prompt-input" rows="8" placeholder="No project-specific instructions yet — optional."></textarea>
         <div class="form-row" style="justify-content:flex-end;">
           <button type="button" class="btn-primary" id="docs-routine-prompt-save">Save instructions</button>
@@ -370,7 +370,7 @@
 
       <div class="docs-block">
         <h3>FAQ review automation</h3>
-        <p class="field-hint">When on, any FAQ article linked to this project (via its own "Linked project" field) is automatically marked "Needs review" the moment a backlog item for this project is merged to main — a live feature shipped, so anything documenting it might now be stale.</p>
+        <p class="field-hint">Flags linked FAQ articles for review when a ticket for this project merges to main.</p>
         <label class="np-interface-toggle">
           <input type="checkbox" id="docs-faq-auto-flag">
           Auto-flag linked FAQ articles for review on merge to main
@@ -382,7 +382,7 @@
           <h3>Interfaces with other projects</h3>
           <button type="button" class="btn-ghost" id="docs-add-interface-btn">+ New interface</button>
         </div>
-        <p class="field-hint">A maintained contract document shared with one other project — either side can edit it.</p>
+        <p class="field-hint">A shared contract document with another project.</p>
         <div id="docs-interfaces-list"></div>
       </div>
     </section>
@@ -537,6 +537,21 @@
           </div>
 
           <div class="fa-group">
+            <button type="button" class="fa-group-header" id="fa-group-reader-toggle" aria-expanded="false" aria-controls="fa-group-reader">
+              <span>Reader controls</span><span class="fa-group-caret" aria-hidden="true">&#9662;</span>
+            </button>
+            <div class="fa-group-body" id="fa-group-reader" hidden>
+              <label class="fa-needs-review-toggle">
+                <input type="checkbox" id="fa-section-picker-toggle">
+                Topic picker above the body
+              </label>
+              <p class="field-hint">Splits the body by its H2 headings and lets a reader pick one (e.g. their industry) instead of reading the whole page — "Related"/"Next step" always stay visible. Write the body as normal H2 sections.</p>
+              <label class="field-label" for="fa-section-picker-label-input">Picker label (optional)</label>
+              <input type="text" id="fa-section-picker-label-input" maxlength="80" placeholder="Choose your industry:">
+            </div>
+          </div>
+
+          <div class="fa-group">
             <button type="button" class="fa-group-header" id="fa-group-status-toggle" aria-expanded="false" aria-controls="fa-group-status">
               <span>Status &amp; publishing</span><span class="fa-group-caret" aria-hidden="true">&#9662;</span>
             </button>
@@ -616,7 +631,8 @@
 
     <section class="faq-admin-page" id="faq-articles-page" hidden>
       <div class="page-header">
-        <h2>FAQ Management — <span id="faq-admin-count">0 published</span></h2>
+        <h2>FAQ Management</h2>
+        <span class="page-header-count" id="faq-admin-count">0 published</span>
       </div>
 
       <!-- Two panes: the structure on the left, the articles of whatever is
@@ -628,7 +644,7 @@
         <div class="faq-browser-pane faq-browser-tree">
           <div class="faq-browser-pane-head">
             <h3>Categories and folders</h3>
-            <button type="button" class="btn-ghost" id="faq-new-category-btn">+ New category</button>
+            <button type="button" class="btn-primary" id="faq-new-category-btn">+ New category</button>
           </div>
           <p class="field-hint faq-tree-hint">Drag any row to re-order it. That order is what visitors see on the help centre.</p>
           <div id="faq-tree"></div>
