@@ -9,6 +9,12 @@ Folder: `display-types-dsp-integration/`. Renamed from
 `experience-templates/` when the first release narrowed to display types,
 playlists and DSP partners.
 
+**Call it "Display Types" in prose** — that is the agreed short form, and it
+is what the rest of this repo's docs use. The full name is kept for this
+file's title, the backlog board's project doc, and the interface contract's
+title. Capitalised it means the project; lower-case "display types" means
+the System Two object the project manages.
+
 Split out as its own independently-managed project, following the same
 pattern as `menu-board-demo/`: developed on its own feature branch(es),
 merged to `main` on its own schedule, not tied to `visitor-profile/`'s
@@ -99,8 +105,9 @@ renders no header, no sidebar, no breadcrumb and nothing `position: fixed`. It
 starts at the page title and fills whatever frame the parent gives it. See the
 `ph-designer` skill's `references/prototyping.md`.
 
-Tracked on the Prototype Backlog board as **"Display Types & DSP Integration"** (see
-root `CLAUDE.md` → "Prototype Backlog") — that project's own Docs page
+Tracked on the Prototype Backlog board as
+**"Display Types & DSP Integration"** (see root `CLAUDE.md` → "Prototype
+Backlog") — that project's own Docs page
 carries a live, board-native copy of `REQUIREMENTS.md`'s content
 (`requirementsMd` field) and the interface contract (as an `interfaces`
 collection record) — keep the repo files and those live records in sync.

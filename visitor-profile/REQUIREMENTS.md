@@ -6,7 +6,7 @@ Source: *Real-Time Personalised Surface Architecture Specification v1.2*
 This project owns **System One — The Attribute Layer** from that spec.
 
 See [`../shared/interface-contract.md`](../shared/interface-contract.md) for
-the maintained boundary with the Display Types & DSP Integration project — that file,
+the maintained boundary with the Display Types project — that file,
 not this one, is the source of truth for anything both projects depend on.
 It is also mirrored/maintained inside the live backlog tracker as an
 **interface** between the two projects — see that app.
@@ -97,7 +97,8 @@ This project owns:
 
 This project does **not** own display types, layouts, zones, playlists,
 templates, or how a resolved attribute value actually gets rendered — that's
-Display Types & DSP Integration. It publishes resolved attributes; Display Types & DSP Integration consumes them via the token contract (see the interface
+Display Types. It publishes resolved attributes; Display Types consumes
+them via the token contract (see the interface
 contract).
 
 ## Functional requirements

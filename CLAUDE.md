@@ -68,7 +68,9 @@ tied to the other project's release cadence.
   playlists, and the advertising partner/DSP connections that fill sold
   slots. Layouts and templates (the surface layer) belong to this project
   too but are held out of the first release — see its `README.md` →
-  "Release scope".
+  "Release scope". Full name **"Display Types & DSP Integration"** (as on
+  the backlog board); **refer to it as "Display Types"** in prose. Formerly
+  "Experience Templates".
 - **`shared/interface-contract.md`** — the maintained interface contract
   between the two. It lives outside both project folders on purpose: it's
   shared space neither project owns unilaterally. Any change to the contract
@@ -319,7 +321,7 @@ see above). It opens a page with two blocks:
   `{name, projectIds: [idA, idB], contentMd, createdAt, updatedAt}`, visible
   and editable from **either** project's Docs page. Use this for any
   maintained contract between two projects on the board (not just Live
-  Visitor Profile ↔ Display Types & DSP Integration) — e.g. attribute/token
+  Visitor Profile ↔ Display Types) — e.g. attribute/token
   contracts, shared data shapes, anything one project's changes could break
   for the other.
 - **Adding an interface** is done from a project's own Docs page (either
