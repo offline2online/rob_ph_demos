@@ -173,6 +173,15 @@ body {
    "Deploy to Feature" project action), so this reads as a flag, not a
    "this is now done" terminal state. Click again to un-mark. */
 .test-passed-btn-active { background: var(--success); }
+/* Failed testing (xYAk2oIFgbkvHikhufaT) — sits right below Confirm tested,
+   so an outline/muted treatment keeps it from reading as a second, equally
+   weighted primary action; margin-top drops to 6px so the pair reads as one
+   related group rather than two independent full-width buttons. */
+.fail-testing-btn {
+  background: transparent; color: var(--danger); border: 1px solid var(--danger);
+  margin-top: 6px;
+}
+.fail-testing-btn:hover { background: var(--danger-tint); }
 /* Not a button — a passive status line for a "Live on Feature Branch"
    card. There is deliberately no manual way to merge from here; only the
    project's own Notify Claude — Deploy action can move a card past this

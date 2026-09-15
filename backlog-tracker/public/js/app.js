@@ -521,6 +521,16 @@ function cardHTML(item) {
             ? `<button type="button" class="approve-btn test-passed-btn test-passed-btn-active" data-id="${item.id}" title="Click to un-mark">&#10003; Passed testing</button>`
             : `<button type="button" class="approve-btn test-passed-btn" data-id="${item.id}">Confirm tested</button>`))
     : "";
+  // The counterpart to "Confirm tested" (xYAk2oIFgbkvHikhufaT): not offered
+  // once it's already marked passed (un-mark it first — the two are
+  // mutually exclusive outcomes of the same test pass), and not on a
+  // noDeploymentRequired card, which has no PR/patchFiles pipeline for a
+  // "send back for a fix" to even mean anything. See failTesting() for what
+  // this actually does (records why, sends back to Backlog, keeps the
+  // existing PR linked).
+  const failBtn = (isTesting && !item.noDeploymentRequired && !item.testPassed)
+    ? `<button type="button" class="approve-btn fail-testing-btn" data-id="${item.id}">Failed testing</button>`
+    : "";
   // Deliberately not a button: there used to be a "Merge to main" button
   // here that just wrote status: "published-live" directly, with zero
   // connection to whether the PR was actually merged on GitHub — a card
@@ -700,7 +710,7 @@ function cardHTML(item) {
         <div class="card-move">${quickCommentBtn}${revertBtn}${archiveBtn}${deleteBtn}</div>
       </div>
       ${testLinkHTML}
-      ${approveBtn}${mergeBtn}${inDevelopmentHint}${revertingHint}
+      ${approveBtn}${failBtn}${mergeBtn}${inDevelopmentHint}${revertingHint}
     </article>`;
 }
 
@@ -1739,6 +1749,41 @@ async function removeItem(id) {
   await deleteDoc(doc(db, "backlogItems", id));
 }
 
+// "Failed testing" (xYAk2oIFgbkvHikhufaT) — the counterpart to "Confirm
+// tested" a Ready for Testing card didn't have: a way to flag exactly what's
+// wrong and get it sent back for a fix, instead of either silently ignoring
+// a failure or moving the card with nothing recording why. This does NOT
+// reuse the plain move-back arrow (cardHTML's canLeft deliberately excludes
+// ready-for-testing -> backlog — see its own comment) by editing that
+// exclusion — this is a distinct, narrower action that captures the failure
+// reason as a note before moving the card, and is safe for the exact reason
+// that old comment warned about a bare move-back: this item's prUrl/
+// prNumber/patchBranch are left untouched, so a later Ready for Dev sweep
+// investigating it again lands on its own already-open PR via
+// run-backlog-automation.js's resolveReusablePr/attachToExistingPr (a
+// re-patch, not a duplicate second PR) — the exact "sent back from Ready
+// for Testing with a follow-up ask" case ROUTINE_INSTRUCTIONS.md's own
+// "Re-patching an item that already has an open PR" section already
+// documents as supported, just never wired up from this side before.
+async function failTesting(id) {
+  const item = items.find((i) => i.id === id);
+  if (!item || item.status !== "ready-for-testing") return;
+  const reason = await showPromptDialog(
+    "What's wrong with this? This is added as a comment on the ticket and sent back to Backlog so it can be picked up again — the existing PR/branch stay linked, so a fresh Ready for Dev sweep re-patches it rather than starting over.",
+    "",
+    { title: "Failed testing", multiline: true, rows: 4 }
+  );
+  if (reason === null) return;
+  const trimmed = reason.trim();
+  if (!trimmed) return;
+  await updateDoc(doc(db, "backlogItems", id), {
+    status: "backlog",
+    testPassed: false,
+    notes: arrayUnion({ author: "viewer", text: `Failed testing: ${trimmed}`, at: new Date() }),
+    updatedAt: serverTimestamp(),
+  });
+}
+
 // Revert a live deployment (hfEmgPWmgrv5pxxcv8vE) — writes revertReady, the
 // same hand-off shape as patchReady/mergeReady: this never touches GitHub
 // itself (see ROUTINE_INSTRUCTIONS.md/README.md's "Notify Claude can't
@@ -2225,6 +2270,8 @@ projectsRoot.addEventListener("click", async (e) => {
   if (moveBtn) { moveItem(moveBtn.dataset.id, parseInt(moveBtn.dataset.dir, 10)); return; }
   const testPassedBtn = e.target.closest(".test-passed-btn");
   if (testPassedBtn) { toggleTestPassed(testPassedBtn.dataset.id); return; }
+  const failTestingBtn = e.target.closest(".fail-testing-btn");
+  if (failTestingBtn) { failTesting(failTestingBtn.dataset.id); return; }
   const confirmNoDeployBtn = e.target.closest(".confirm-no-deploy-btn");
   if (confirmNoDeployBtn) { confirmTestedNoDeploy(confirmNoDeployBtn.dataset.id); return; }
   const delBtn = e.target.closest(".delete-btn");
