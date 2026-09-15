@@ -3982,6 +3982,10 @@ function closeFaqArticlesPage() {
   document.getElementById("projects-root").hidden = false;
 }
 
+// Name, order and delete only — icon and description are edited from the
+// FAQ Management page's article-list header instead (renderFaqCategoryHeader
+// below), next to the category/sub-category they actually describe, rather
+// than from a flat list of every category at once with no visible content.
 function renderFaqSettingsPage() {
   const catListEl = document.getElementById("faq-category-list");
   if (faqCategories.length === 0) {
@@ -3991,13 +3995,8 @@ function renderFaqSettingsPage() {
       const count = faqArticles.filter((a) => a.categoryId === c.id).length;
       return `
         <div class="faq-cat-row" data-id="${escapeHTML(c.id)}">
-          <span class="material-symbols-outlined">${escapeHTML(c.icon || "help")}</span>
+          <span class="material-symbols-outlined" title="Edit this icon from FAQ Management">${escapeHTML(c.icon || "help")}</span>
           <input type="text" class="faq-cat-name-input" value="${escapeHTML(c.name)}" aria-label="Category name">
-          <div class="fa-icon-picker">
-            <span class="material-symbols-outlined fa-icon-preview">${escapeHTML(c.icon || "help")}</span>
-            <select class="faq-cat-icon-select" aria-label="Category icon">${faqCategoryIconOptionsHTML(c.icon || "help")}</select>
-          </div>
-          <input type="text" class="faq-cat-desc-input" value="${escapeHTML(c.description || "")}" placeholder="Short description" aria-label="Category description">
           <span class="faq-cat-count">${count} article${count === 1 ? "" : "s"}</span>
           <div class="faq-cat-actions">
             <button type="button" class="icon-btn faq-cat-up" ${idx === 0 ? "disabled" : ""} title="Move up">&uarr;</button>
@@ -4156,11 +4155,14 @@ function renderFaqArticleList() {
       (a.title || "").toLowerCase().includes(q) || (a.summary || "").toLowerCase().includes(q)).sort(byFaqOrder);
   }
 
+  const cat = faqTreeSelection && faqCategories.find((c) => c.id === faqTreeSelection.categoryId);
   if (heading) {
-    const cat = faqTreeSelection && faqCategories.find((c) => c.id === faqTreeSelection.categoryId);
     heading.textContent = q ? `Search results (${list.length})`
       : cat ? `${cat.name} (${list.length})` : "Articles";
   }
+  // Hidden during search too — "Search results" isn't a single category, so
+  // there's nothing here to show an icon/description/edit control for.
+  renderFaqCategoryHeader(q ? null : cat);
   if (list.length === 0) {
     listEl.innerHTML = "";
     emptyEl.hidden = false;
@@ -4174,6 +4176,77 @@ function renderFaqArticleList() {
   // result would be re-ordering a list that isn't a real sequence.
   listEl.innerHTML = list.map((a) => faqArticleRowHTML(a, !q)).join("");
 }
+
+// The selected category/sub-category's icon, an edit toggle, and its
+// description — shown right above the article list for whichever folder is
+// open, so you edit a category's icon/blurb while looking at its actual
+// content instead of from Settings' flat list of every category at once
+// (see renderFaqSettingsPage's own comment). `cat` is null when nothing's
+// selected or a search is showing, in which case everything here hides.
+function renderFaqCategoryHeader(cat) {
+  const iconEl = document.getElementById("faq-cat-heading-icon");
+  const editBtn = document.getElementById("faq-cat-edit-toggle");
+  const descEl = document.getElementById("faq-cat-heading-desc");
+  const formEl = document.getElementById("faq-cat-edit-form");
+  if (!iconEl || !editBtn || !descEl || !formEl) return;
+
+  if (!cat) {
+    iconEl.hidden = true;
+    editBtn.hidden = true;
+    descEl.hidden = true;
+    formEl.hidden = true;
+    return;
+  }
+
+  iconEl.hidden = false;
+  iconEl.textContent = cat.icon || "help";
+  editBtn.hidden = false;
+  editBtn.dataset.categoryId = cat.id;
+
+  // Switching folders while the edit form was open for a *different*
+  // category shouldn't leave it open silently editing the wrong one.
+  if (formEl.dataset.categoryId !== cat.id) formEl.hidden = true;
+
+  descEl.hidden = !formEl.hidden;
+  if (formEl.hidden) descEl.textContent = cat.description || "No description yet.";
+}
+
+document.getElementById("faq-cat-edit-toggle").addEventListener("click", () => {
+  const cat = faqTreeSelection && faqCategories.find((c) => c.id === faqTreeSelection.categoryId);
+  if (!cat) return;
+  const formEl = document.getElementById("faq-cat-edit-form");
+  document.getElementById("faq-cat-edit-icon-select").innerHTML = faqCategoryIconOptionsHTML(cat.icon || "help");
+  document.getElementById("faq-cat-edit-icon-preview").textContent = cat.icon || "help";
+  document.getElementById("faq-cat-edit-desc-input").value = cat.description || "";
+  formEl.dataset.categoryId = cat.id;
+  formEl.hidden = false;
+  document.getElementById("faq-cat-heading-desc").hidden = true;
+});
+
+document.getElementById("faq-cat-edit-icon-select").addEventListener("change", (e) => {
+  document.getElementById("faq-cat-edit-icon-preview").textContent = e.target.value;
+});
+
+document.getElementById("faq-cat-edit-cancel-btn").addEventListener("click", () => {
+  document.getElementById("faq-cat-edit-form").hidden = true;
+  renderFaqArticleList();
+});
+
+document.getElementById("faq-cat-edit-save-btn").addEventListener("click", async () => {
+  const formEl = document.getElementById("faq-cat-edit-form");
+  const id = formEl.dataset.categoryId;
+  const cat = faqCategories.find((c) => c.id === id);
+  if (!cat) { formEl.hidden = true; return; }
+  await saveFaqCategory(
+    id,
+    cat.name,
+    document.getElementById("faq-cat-edit-icon-select").value,
+    document.getElementById("faq-cat-edit-desc-input").value,
+  );
+  if (!faqUser) return; // sign-in was declined — keep the form open so nothing typed is lost
+  formEl.hidden = true;
+  renderFaqArticleList();
+});
 
 // ── Re-ordering ──────────────────────────────────────────────────────────
 // Always renumbers the FULL set of siblings 0..n-1, not just the rows on
@@ -4490,20 +4563,20 @@ document.getElementById("faq-category-list").addEventListener("click", (e) => {
   if (e.target.closest(".faq-cat-up")) { moveFaqCategory(id, -1); return; }
   if (e.target.closest(".faq-cat-down")) { moveFaqCategory(id, 1); return; }
   if (e.target.closest(".faq-cat-save")) {
+    // Icon and description now live in FAQ Management's category header
+    // (renderFaqCategoryHeader) — this row only ever renames, so save the
+    // icon/description unchanged rather than clobbering them from inputs
+    // that no longer exist here.
+    const cat = faqCategories.find((c) => c.id === id);
     saveFaqCategory(
       id,
       row.querySelector(".faq-cat-name-input").value,
-      row.querySelector(".faq-cat-icon-select").value,
-      row.querySelector(".faq-cat-desc-input").value,
+      cat ? cat.icon : "help",
+      cat ? cat.description : "",
     );
     return;
   }
   if (e.target.closest(".faq-cat-delete")) { deleteFaqCategoryIfEmpty(id); return; }
-});
-document.getElementById("faq-category-list").addEventListener("change", (e) => {
-  const select = e.target.closest(".faq-cat-icon-select");
-  if (!select) return;
-  select.closest(".fa-icon-picker").querySelector(".fa-icon-preview").textContent = select.value;
 });
 
 document.getElementById("fa-tree-search").addEventListener("input", renderFaqArticleList);
