@@ -1556,12 +1556,16 @@ function renderNow() {
   syncMobileActionBar();
 }
 
-// ── The current project's actions, held on screen on a phone ─────────────
-// On a narrow screen the board stacks into one tall column, so a project's
-// own actions — Ready for Dev, Approved for Deployment, Deploy to Main —
-// scroll off the top long before you reach the cards they apply to.
-// Confirming a card tested and then approving it meant scrolling back up,
-// which is the practical reason the board couldn't be driven from a phone.
+// ── The current project's actions, held on screen while scrolling ────────
+// Originally phone-only: on a narrow screen the board stacks into one tall
+// column, so a project's own actions — Ready for Dev, Approved for
+// Deployment, Deploy to Main — scroll off the top long before you reach
+// the cards they apply to. Confirming a card tested and then approving it
+// meant scrolling back up, which is the practical reason the board
+// couldn't be driven from a phone. Now shown at every width
+// (qMJeQkmhYwcXFTjeOJw0-3) — a board with several projects stacked
+// vertically has exactly the same problem on desktop/tablet once you've
+// scrolled past a project's own header.
 //
 // This is a `position: fixed` bar, and that is the whole design, not an
 // implementation detail. The obvious approach — make .project-header
@@ -1601,12 +1605,6 @@ function projectAtTopOfScreen() {
 
 function syncMobileActionBar() {
   if (!mobileActionBar) return;
-  // The bar is display:none above 640px in CSS, but skip the work entirely
-  // on a desktop window rather than maintaining markup nobody can see.
-  if (window.innerWidth > 640) {
-    if (!mobileActionBar.hidden) { mobileActionBar.hidden = true; mobileBarProjectId = null; }
-    return;
-  }
   const section = projectAtTopOfScreen();
   if (!section) {
     if (!mobileActionBar.hidden) { mobileActionBar.hidden = true; mobileBarProjectId = null; }
@@ -3287,25 +3285,56 @@ function wireProgramSelect(selectEl) {
 }
 wireProgramSelect(npProgramSelect);
 
-function populateProjectSelect(selectEl, excludeId) {
+// The trailing "+ New project…" option (fJ4kR2vTsWmXoP81nQeH) opens this
+// same New Project modal instead of a separate ad hoc flow, so creating an
+// interface with a project that doesn't exist yet no longer means
+// cancelling out, using the top nav's own "+ New project", and starting
+// the interface over. wireProjectSelectCreate below opens the modal with a
+// callback that re-populates and re-selects this select once the project
+// is actually created; a cancelled modal just leaves the select on
+// whatever it reverts to (see wireProjectSelectCreate).
+function populateProjectSelect(selectEl, excludeId, { offerCreate = false } = {}) {
   const opts = projects.filter((p) => p.id !== excludeId);
-  selectEl.innerHTML = opts.length
-    ? opts.map((p) => `<option value="${escapeHTML(p.id)}">${escapeHTML(p.name)}</option>`).join("")
-    : '<option value="">No other projects yet</option>';
+  selectEl.innerHTML =
+    (opts.length ? opts.map((p) => `<option value="${escapeHTML(p.id)}">${escapeHTML(p.name)}</option>`).join("")
+      : offerCreate ? "" : '<option value="">No other projects yet</option>') +
+    (offerCreate ? '<option value="__new_project__">+ New project…</option>' : "");
+}
+
+// Shared by any project select that offers the trailing "+ New project…"
+// option above: opens the real New Project modal, then re-populates and
+// selects the newly created project once it exists. Reverts to the first
+// real option (or blank) immediately, so the select never visibly sits on
+// "+ New project…" while that modal is open.
+function wireProjectSelectCreate(selectEl, excludeIdFn) {
+  selectEl.addEventListener("change", () => {
+    if (selectEl.value !== "__new_project__") return;
+    const fallback = [...selectEl.options].find((o) => o.value && o.value !== "__new_project__");
+    selectEl.value = fallback ? fallback.value : "";
+    openProjectModal((newId) => {
+      populateProjectSelect(selectEl, excludeIdFn(), { offerCreate: true });
+      selectEl.value = newId;
+    });
+  });
 }
 
 const updateNpNameCount = wireCharCount(document.getElementById("np-name-input"), document.getElementById("np-name-count"));
 
-function openProjectModal() {
+// onCreated, when given, is called with the new project's id right after
+// it's created — see wireProjectSelectCreate above. Not called if the
+// modal is cancelled.
+let npOnCreated = null;
+function openProjectModal(onCreated) {
+  npOnCreated = onCreated || null;
   npBackdrop.hidden = false;
   document.getElementById("np-name-input").value = "";
   updateNpNameCount();
   populateProgramSelect(npProgramSelect, "");
   document.getElementById("np-name-input").focus();
 }
-function closeProjectModal() { npBackdrop.hidden = true; }
+function closeProjectModal() { npBackdrop.hidden = true; npOnCreated = null; }
 
-document.getElementById("new-project-btn").addEventListener("click", openProjectModal);
+document.getElementById("new-project-btn").addEventListener("click", () => openProjectModal());
 document.getElementById("np-cancel").addEventListener("click", closeProjectModal);
 document.getElementById("np-close").addEventListener("click", closeProjectModal);
 npBackdrop.addEventListener("click", (e) => { if (e.target === npBackdrop) closeProjectModal(); });
@@ -3316,14 +3345,17 @@ document.getElementById("np-submit").addEventListener("click", async () => {
   const nameEl = document.getElementById("np-name-input");
   const name = nameEl.value.trim();
   if (!name) { nameEl.focus(); return; }
+  const onCreated = npOnCreated;
   const programId = npProgramSelect.value !== "__new__" ? npProgramSelect.value : "";
+  let newId;
   try {
-    await addProject(name, programId);
+    newId = await addProject(name, programId);
   } catch (err) {
     await showAlert(describeSaveError(err, [{ label: "Name", value: name, max: 80 }]));
     return;
   }
   closeProjectModal();
+  if (onCreated) onCreated(newId);
 });
 
 // ── Archive page ────────────────────────────────────────────────────────
@@ -3718,7 +3750,7 @@ function openInterfaceModal(interfaceId, anchorProjectId) {
     document.getElementById("if-title").textContent = "New interface";
     document.querySelector("label[for='if-other-project']").hidden = false;
     ifOtherProject.hidden = false;
-    populateProjectSelect(ifOtherProject, ifAnchorProjectId);
+    populateProjectSelect(ifOtherProject, ifAnchorProjectId, { offerCreate: true });
     ifNameInput.value = "";
     ifContentInput.value = "";
   }
@@ -3726,6 +3758,7 @@ function openInterfaceModal(interfaceId, anchorProjectId) {
   ifNameInput.focus();
 }
 function closeInterfaceModal() { ifBackdrop.hidden = true; editingInterfaceId = null; ifAnchorProjectId = null; }
+wireProjectSelectCreate(ifOtherProject, () => ifAnchorProjectId);
 
 document.getElementById("docs-add-interface-btn").addEventListener("click", () => openInterfaceModal(null, docsProjectId));
 document.getElementById("if-cancel").addEventListener("click", closeInterfaceModal);
@@ -4942,6 +4975,8 @@ const faSummaryInput = document.getElementById("fa-summary-input");
 const faKeywordsInput = document.getElementById("fa-keywords-input");
 const faBodyViewer = document.getElementById("fa-body-viewer");
 const faNeedsReview = document.getElementById("fa-needs-review");
+const faSectionPickerToggle = document.getElementById("fa-section-picker-toggle");
+const faSectionPickerLabelInput = document.getElementById("fa-section-picker-label-input");
 // Status of the article as last loaded/saved. Save draft (below) never
 // promotes this to "published" on its own — only Publish does; saving an
 // already-published article keeps it published rather than silently
@@ -5282,7 +5317,7 @@ function renderFaStatusBadge() {
 // resets to sensible defaults every time the editor opens (see
 // resetFaGroups, called from openFaqArticleEditorPage below), regardless of
 // what was left open/closed on a previous article.
-const FA_GROUP_TOGGLE_IDS = ["fa-group-properties-toggle", "fa-group-discovery-toggle", "fa-group-status-toggle"];
+const FA_GROUP_TOGGLE_IDS = ["fa-group-properties-toggle", "fa-group-discovery-toggle", "fa-group-reader-toggle", "fa-group-status-toggle"];
 function setFaGroupOpen(headerId, open) {
   const header = document.getElementById(headerId);
   const body = document.getElementById(header.getAttribute("aria-controls"));
@@ -5291,9 +5326,10 @@ function setFaGroupOpen(headerId, open) {
 }
 function resetFaGroups() {
   // Article properties starts open (category is required for a new
-  // article); the other two start collapsed.
+  // article); the rest start collapsed.
   setFaGroupOpen("fa-group-properties-toggle", true);
   setFaGroupOpen("fa-group-discovery-toggle", false);
+  setFaGroupOpen("fa-group-reader-toggle", false);
   setFaGroupOpen("fa-group-status-toggle", false);
 }
 FA_GROUP_TOGGLE_IDS.forEach((id) => {
@@ -5320,6 +5356,8 @@ function faSnapshotState() {
     keywords: faKeywordsInput.value,
     docType: faDocTypeSelect.value,
     needsReview: faNeedsReview.checked,
+    sectionPicker: faSectionPickerToggle.checked,
+    sectionPickerLabel: faSectionPickerLabelInput.value,
     categoryId: faCategorySelect.value,
     projectId: faProjectSelect.value,
     programId: faProgramSelect.value,
@@ -5364,6 +5402,8 @@ function openFaqArticleEditorPage(articleId, { pendingRevision = false } = {}) {
   faqUpgradeTableEmbeds(faQuill.root);
   faDocTypeSelect.value = source && source.docType ? source.docType : "faq";
   faNeedsReview.checked = article ? !!article.needsReview : false;
+  faSectionPickerToggle.checked = source ? !!source.sectionPicker : false;
+  faSectionPickerLabelInput.value = source && source.sectionPickerLabel ? source.sectionPickerLabel : "";
   faLoadedStatus = article && article.status ? article.status : "draft";
   faLoadedHasPublishedAt = !!(article && article.publishedAt);
   renderFaStatusBadge();
@@ -5423,8 +5463,8 @@ faSlugInput.addEventListener("input", () => { faqSlugManuallyEdited = true; });
 // together cover both Quill-driven edits and the table cells' direct
 // contenteditable typing (registerFaqEditorFormats below), which never
 // goes through Quill's text APIs at all.
-[faTitleInput, faSlugInput, faSummaryInput, faKeywordsInput].forEach((el) => el.addEventListener("input", updateFaDirtyState));
-[faDocTypeSelect, faNeedsReview, faCategorySelect, faProjectSelect, faProgramSelect].forEach((el) => el.addEventListener("change", updateFaDirtyState));
+[faTitleInput, faSlugInput, faSummaryInput, faKeywordsInput, faSectionPickerLabelInput].forEach((el) => el.addEventListener("input", updateFaDirtyState));
+[faDocTypeSelect, faNeedsReview, faSectionPickerToggle, faCategorySelect, faProjectSelect, faProgramSelect].forEach((el) => el.addEventListener("change", updateFaDirtyState));
 faQuill.on("text-change", updateFaDirtyState);
 faQuill.root.addEventListener("input", updateFaDirtyState);
 
@@ -5475,6 +5515,8 @@ async function submitFaqArticleFromEditor(publish) {
     keywords: faKeywordsInput.value.split(",").map((k) => k.trim()).filter(Boolean),
     status,
     needsReview: faNeedsReview.checked,
+    sectionPicker: faSectionPickerToggle.checked,
+    sectionPickerLabel: faSectionPickerLabelInput.value.trim() || null,
     ...(publish && !faLoadedHasPublishedAt ? { publishedAt: serverTimestamp() } : {}),
   };
   await saveFaqArticle(editingFaqArticleId, data);
