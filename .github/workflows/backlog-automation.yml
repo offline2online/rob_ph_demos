@@ -6,10 +6,14 @@ name: Backlog automation (apply patches / merge approved PRs)
 # backlog-tracker/scripts/run-backlog-automation.js for the full story of
 # why this exists as a separate, scheduled, non-AI job rather than having
 # the Routine's own Claude Code session push/merge directly: that session
-# is fired from data (backlogItems.desc) anyone can write to Firestore
-# unauthenticated, so it never gets a real GitHub credential — this job,
-# running on a normal trusted GitHub-hosted runner with its own per-run
-# GITHUB_TOKEN, does the actual pushing/merging instead.
+# is fired from data (backlogItems.desc) that it does not control, so it
+# never gets a real GitHub credential — this job, running on a normal
+# trusted GitHub-hosted runner with its own per-run GITHUB_TOKEN, does the
+# actual pushing/merging instead. (That reasoning predates the sign-in
+# wall, which narrowed the threat without removing it: board writes now
+# require an allowlisted editor, but patchFiles is not validated by
+# firestore.rules at all and BOARD_API_KEY — an allowlisted editor's
+# credential — is handed to Routine-fired sessions.)
 on:
   schedule:
     # Every 2 minutes, not every 10 — a patch-ready item previously sat in
@@ -36,21 +40,31 @@ on:
     types: [backlog-automation]
   workflow_dispatch: {}
 
-# Without this, a run that takes longer than 2 minutes (several
-# patch-ready items in one pass: git fetch/push, gh pr create, gh pr merge
-# each has real network latency) overlaps with the next scheduled run, and
-# both processes can query Firestore for the same patchReady/mergeReady
-# item before either has cleared its flag — both see it as unprocessed and
-# both act on it. This is the structural version of the duplicate-PR bug
-# fixed in run-backlog-automation.js's findExistingPrForItem() guard: that
-# guard closes the gap for a *single* run re-processing a stray flag left
-# over from earlier, this closes the gap for *two runs racing each other*
-# in the first place. `cancel-in-progress: false` queues an overlapping
-# run instead of killing one mid-push/mid-merge, which could otherwise
-# leave a branch pushed with no PR, or a merge half-done.
-concurrency:
-  group: backlog-automation
-  cancel-in-progress: false
+# Serialization is declared per JOB, not for the whole workflow, and that
+# is deliberate. Without it, a run that takes longer than 2 minutes
+# (several patch-ready items in one pass: git fetch/push, gh pr create, gh
+# pr merge each has real network latency) overlaps with the next scheduled
+# run, and both processes can query Firestore for the same
+# patchReady/mergeReady item before either has cleared its flag — both see
+# it as unprocessed and both act on it. This is the structural version of
+# the duplicate-PR bug fixed in run-backlog-automation.js's
+# findExistingPrForItem() guard: that guard closes the gap for a *single*
+# run re-processing a stray flag left over from earlier, this closes the
+# gap for *two runs racing each other* in the first place.
+# `cancel-in-progress: false` queues an overlapping run instead of killing
+# one mid-push/mid-merge, which could otherwise leave a branch pushed with
+# no PR, or a merge half-done.
+#
+# It was a workflow-level `concurrency:` block until the approval gate went
+# in, and moving it down to the jobs is what makes the gate usable: a job
+# waiting on a required reviewer keeps its whole RUN in progress, for as
+# long as the approval sits unclicked. With one group over the workflow,
+# that pending approval would hold the group and stall the ordinary
+# every-2-minutes pipeline behind it — an item waiting for a human would
+# stop every unrelated item from being processed at all, which is exactly
+# the class of bug this change exists to remove. Per-job groups keep the
+# standard job serialized against other standard jobs, and let the gated
+# job wait as long as it likes without blocking anything.
 
 permissions:
   contents: write
@@ -63,8 +77,19 @@ permissions:
   actions: write
 
 jobs:
+  # The ordinary path. Holds only the run's own GITHUB_TOKEN, so it can
+  # push anything EXCEPT a file under .github/workflows/ — GitHub refuses
+  # any push from an App installation credential (which is what
+  # GITHUB_TOKEN is) that creates or updates a workflow file, and there is
+  # no `workflows` permission available above to grant. Items that need one
+  # are deferred here and handled by the gated job below.
   run:
     runs-on: ubuntu-latest
+    concurrency:
+      group: backlog-automation
+      cancel-in-progress: false
+    outputs:
+      has_workflow_patches: ${{ steps.automation.outputs.has_workflow_patches }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -80,7 +105,67 @@ jobs:
         run: echo '${{ secrets.FIREBASE_SERVICE_ACCOUNT_BACKLOG_TRACKER }}' > "$RUNNER_TEMP/firebase-sa.json"
 
       - name: Apply patch-ready items / merge merge-ready items
+        id: automation
         env:
+          AUTOMATION_MODE: standard
           GH_TOKEN: ${{ github.token }}
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/firebase-sa.json
+        run: node backlog-tracker/scripts/run-backlog-automation.js
+
+  # The gated path, for items whose patchFiles touch .github/workflows/ (and
+  # for merge-ready items whose PR does). Runs only when the job above
+  # deferred something, and `environment: workflow-changes` is what makes it
+  # pause: that environment's required reviewers must approve the run in the
+  # Actions tab before these steps execute.
+  #
+  # The approval is the security control, not a formality. patchFiles is the
+  # one field on a backlog item with real authority over this repo, and
+  # firestore.rules does not validate it at all, so anything that can write a
+  # backlog item can propose arbitrary workflow YAML — and BOARD_API_KEY,
+  # which authenticates as an allowlisted editor, is handed to Routine-fired
+  # sessions that read content we do not fully control. Giving this job a
+  # workflows-capable token WITHOUT the environment would turn that path into
+  # self-modifying CI. Read the diff on the PR before approving.
+  workflow-patches:
+    needs: run
+    if: needs.run.outputs.has_workflow_patches == 'true'
+    runs-on: ubuntu-latest
+    environment: workflow-changes
+    concurrency:
+      group: backlog-automation-workflow-patches
+      cancel-in-progress: false
+    steps:
+      # A GitHub App installation token, minted for this run and expiring
+      # about an hour later — not a PAT. A PAT with `workflow` scope would
+      # work mechanically, but it is long-lived, tied to one person's
+      # account, and carries broad `repo` scope alongside; this is scoped to
+      # exactly the three permissions the App was installed with and cannot
+      # outlive the job by much.
+      - uses: actions/create-github-app-token@v2
+        id: app-token
+        with:
+          app-id: ${{ secrets.AUTOMATION_APP_ID }}
+          private-key: ${{ secrets.AUTOMATION_APP_PRIVATE_KEY }}
+
+      # `token:` here is load-bearing: actions/checkout persists whatever
+      # credential it is given for later `git push` calls in the job. Left
+      # at the default it would persist GITHUB_TOKEN, and the push would be
+      # refused for precisely the reason this job exists.
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ steps.app-token.outputs.token }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Write Firebase service account key
+        run: echo '${{ secrets.FIREBASE_SERVICE_ACCOUNT_BACKLOG_TRACKER }}' > "$RUNNER_TEMP/firebase-sa.json"
+
+      - name: Apply workflow-file patches
+        env:
+          AUTOMATION_MODE: workflow
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
           GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/firebase-sa.json
         run: node backlog-tracker/scripts/run-backlog-automation.js
