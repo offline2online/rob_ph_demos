@@ -1,14 +1,19 @@
-# experience-templates
+# Display Types & DSP Integration
 
-Managing display types, elements, layouts, and templates — **System Two
-(Display Types/Elements)** and **System Three (The Surface Layer)** from the
+Managing display types, elements, playlists, and the advertising
+partner/DSP connections that fill sold slots — **System Two (Display
+Types/Elements)** and **System Three (The Surface Layer)** from the
 *Real-Time Personalised Surface Architecture Specification v1.2*.
+
+Folder: `display-types-dsp-integration/`. Renamed from
+`experience-templates/` when the first release narrowed to display types,
+playlists and DSP partners.
 
 Split out as its own independently-managed project, following the same
 pattern as `menu-board-demo/`: developed on its own feature branch(es),
 merged to `main` on its own schedule, not tied to `visitor-profile/`'s
-release cadence. See root `CLAUDE.md` → "Live Visitor Profile & Experience
-Templates" for the full split rationale.
+release cadence. See root `CLAUDE.md` → "Live Visitor Profile and Display
+Types & DSP Integration" for the full split rationale.
 
 See [`REQUIREMENTS.md`](./REQUIREMENTS.md) for the actual functional spec, and
 [`../shared/interface-contract.md`](../shared/interface-contract.md) for the
@@ -94,7 +99,7 @@ renders no header, no sidebar, no breadcrumb and nothing `position: fixed`. It
 starts at the page title and fills whatever frame the parent gives it. See the
 `ph-designer` skill's `references/prototyping.md`.
 
-Tracked on the Prototype Backlog board as **"Experience Templates"** (see
+Tracked on the Prototype Backlog board as **"Display Types & DSP Integration"** (see
 root `CLAUDE.md` → "Prototype Backlog") — that project's own Docs page
 carries a live, board-native copy of `REQUIREMENTS.md`'s content
 (`requirementsMd` field) and the interface contract (as an `interfaces`

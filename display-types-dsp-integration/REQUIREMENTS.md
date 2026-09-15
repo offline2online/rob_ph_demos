@@ -1,4 +1,4 @@
-# Experience Templates — Requirements
+# Display Types & DSP Integration — Requirements
 
 Source: *Real-Time Personalised Surface Architecture Specification v1.2*
 (Personalisation Hub, 3 Sept 2026), §§4–10, plus the

@@ -54,9 +54,9 @@ writing or editing any article, and classify every article's `docType`
 see `backlog-tracker/REQUIREMENTS.md` → "FAQ / Help Center" for the
 field's exact shape.
 
-## Live Visitor Profile & Experience Templates — two separate projects, one repo
+## Live Visitor Profile and Display Types & DSP Integration — two separate projects, one repo
 
-`visitor-profile/` and `experience-templates/` were split out as two
+`visitor-profile/` and `display-types-dsp-integration/` were split out as two
 independently-managed projects, following the same pattern as
 `menu-board-demo/`: each is its own subfolder in this same repo, developed on
 its own feature branch(es), and merged to `main` on its own schedule — not
@@ -64,8 +64,11 @@ tied to the other project's release cadence.
 
 - **`visitor-profile/`** — managing personalisation attributes in
   Personalisation Hub, and the source systems that populate them.
-- **`experience-templates/`** — managing display types, elements, layouts,
-  and templates.
+- **`display-types-dsp-integration/`** — managing display types, elements,
+  playlists, and the advertising partner/DSP connections that fill sold
+  slots. Layouts and templates (the surface layer) belong to this project
+  too but are held out of the first release — see its `README.md` →
+  "Release scope".
 - **`shared/interface-contract.md`** — the maintained interface contract
   between the two. It lives outside both project folders on purpose: it's
   shared space neither project owns unilaterally. Any change to the contract
@@ -74,8 +77,8 @@ tied to the other project's release cadence.
   model, trust zones, versioning rules), grounded in the *Real-Time
   Personalised Surface Architecture Specification v1.2*.
 - Each has its own `REQUIREMENTS.md` in its own folder, also grounded in
-  that spec (visitor-profile = spec System One; experience-templates =
-  spec Systems Two/Three).
+  that spec (visitor-profile = spec System One;
+  display-types-dsp-integration = spec Systems Two/Three).
 - **The backlog tracker itself now also carries this** (see
   `backlog-tracker/` below): each project's `REQUIREMENTS.md` content is
   mirrored into that project's Firestore doc (`requirementsMd` field,
@@ -88,8 +91,9 @@ tied to the other project's release cadence.
 **On the Prototype Backlog board** (the live `backlog-tracker` app, not the
 retired Artifact — see "Prototype Backlog" below), these are two separate
 docs in the `projects` Firestore collection — **"Live Visitor Profile"** and
-**"Experience Templates"** — each with its own Backlog → Ready for Testing →
-Live on Feature Branch → Merged to Main (Live) pipeline and its own Archive,
+**"Display Types & DSP Integration"** — each with its own Backlog → Ready
+for Testing → Live on Feature Branch → Merged to Main (Live) pipeline and
+its own Archive,
 fully independent of each other and of "Products, Pricing & Asset
 Management". Treat backlog sweeps and publish workflows for each exactly as
 described in the "Prototype Backlog" section below — per-project, not
@@ -315,8 +319,8 @@ see above). It opens a page with two blocks:
   `{name, projectIds: [idA, idB], contentMd, createdAt, updatedAt}`, visible
   and editable from **either** project's Docs page. Use this for any
   maintained contract between two projects on the board (not just Live
-  Visitor Profile ↔ Experience Templates) — e.g. attribute/token contracts,
-  shared data shapes, anything one project's changes could silently break
+  Visitor Profile ↔ Display Types & DSP Integration) — e.g. attribute/token
+  contracts, shared data shapes, anything one project's changes could break
   for the other.
 - **Adding an interface** is done from a project's own Docs page (either
   side) — the New Project modal itself no longer offers an inline "define
