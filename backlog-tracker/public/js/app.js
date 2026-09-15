@@ -4865,11 +4865,13 @@ document.getElementById("faq-articles-btn").addEventListener("click", () => { cl
 // ── URL routing for FAQ Management / Settings ────────────────────────────
 // These two are the only sub-pages given a real, persistent URL: reloading
 // the browser while on either one reopens the same page instead of always
-// landing back on the board, and the topbar logo's own label span (normally
-// empty, next to the static "PH Agent Console" logo image) names whichever
-// of the two is open, with a one-click link to jump straight to the other —
-// see the "page-switcher" nav rendered in each page's own header in
-// index.html.
+// landing back on the board. The topbar logo used to also grow a text label
+// next to it naming whichever of the two was open (with a page-switcher nav
+// in each page's own header to jump straight to the other) — both removed
+// (hXR16fmKAq0f2pJAtwiq): the logo already identifies the app, so a text
+// label beside it in the sticky topbar was redundant copy, and each page's
+// header is now just its own plain <h2>. Only the browser tab title
+// (document.title) still names the open page.
 // Every other sub-page (Docs, Archive, the article editor, …) is out of
 // scope here and keeps its existing behavior: closeAllSubPages() clears the
 // hash back to "" whenever one of those opens, so a refresh from there still
@@ -4887,7 +4889,6 @@ function setRouteHash(hash, { replace } = {}) {
 }
 function updateTopbarTitle() {
   const label = ROUTE_TITLES[window.location.hash];
-  document.getElementById("topbar-logo-label").textContent = label ? `— ${label}` : "";
   document.title = label ? `${label} — PH Agent Console` : "PH Agent Console";
 }
 function applyRouteFromHash() {
@@ -4902,12 +4903,6 @@ function applyRouteFromHash() {
 // calls this same code makes when opening a page.
 window.addEventListener("popstate", applyRouteFromHash);
 window.addEventListener("hashchange", applyRouteFromHash);
-document.addEventListener("click", (e) => {
-  const link = e.target.closest(".page-switcher-link");
-  if (!link) return;
-  if (link.dataset.route === "#faq-management") openFaqArticlesPage();
-  else if (link.dataset.route === "#settings") openFaqSettingsPage();
-});
 
 document.getElementById("fa-tree-search").addEventListener("input", renderFaqArticleList);
 
