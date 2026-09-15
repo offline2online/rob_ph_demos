@@ -435,18 +435,24 @@ before that it appeared only in Ready for Testing, so such a card sitting
 in Approved for Deployment could only be finished by moving it backwards
 a column first.
 
-### The FAQ editor's Advanced panel does not swallow clicks
+### The FAQ editor's sidebar groups replaced the single Advanced panel
 
-`.faq-advanced-backdrop` is `pointer-events: none`, and closing the panel
-on an outside click is handled by a document-level listener in `app.js`
-rather than by a click on the backdrop itself.
-
-As a click-catching modal backdrop it covered the entire page including
-the editor's own **Save article** button, so the first click on a visible,
-enabled Save did nothing except dismiss the panel and the article only
-saved on a second click — the same "the button did nothing" failure as the
-modal-scroll bug and the silent `deployToFeature` click before it. The
-dimming is unchanged; only the click-swallowing is gone.
+The article editor used to keep every secondary field (category, doc
+type, linked project/program, slug, keywords, status, needs-review) in
+one slide-out "Advanced settings" panel with its own modal backdrop —
+which had previously needed a `pointer-events: none` fix
+(`.faq-advanced-backdrop`) after the backdrop was found to swallow the
+first click on the editor's own Save button, since it covered the whole
+page including that button. The panel is gone now: those fields live in
+a right-hand sidebar of three independently expand/collapsible named
+groups ("Article properties", "Search & keywords", "Status &
+publishing" — `setFaGroupOpen`/`resetFaGroups` in `app.js`) that sit
+alongside the main content rather than sliding over it, so there is no
+backdrop and no click-swallowing class of bug to guard against here
+anymore. Article properties opens by default (category is required for
+a new article); the other two groups start collapsed, reset every time
+the editor opens regardless of what was left open on a previous
+article.
 
 ### A patch touching `.github/workflows/` cannot be delivered by the board
 
