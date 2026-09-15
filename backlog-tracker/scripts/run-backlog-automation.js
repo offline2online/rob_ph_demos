@@ -135,6 +135,20 @@ function sanitizeBranchName(name, itemId) {
   return `claude/${slug}-${itemId.slice(0, 6).toLowerCase()}`;
 }
 
+// Same slugging as sanitizeBranchName above, "revert-" prefixed and kept as
+// its own function rather than a parameter on that one: this branch name
+// only ever needs to be item-scoped-and-distinguishable-from-the-original,
+// not configurable, and a shared helper with an optional prefix would make
+// every existing call site re-readable for a case that only this one needs.
+function sanitizeRevertBranchName(name, itemId) {
+  const slug = String(name || "revert")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 40) || "revert";
+  return `claude/revert-${slug}-${itemId.slice(0, 6).toLowerCase()}`;
+}
+
 // The backlog-tracker APP_VERSION a Ready for Testing item gets stamped
 // with (see the item's own testVersion field, set just below in
 // processApplyPatch) — read straight off disk *after* applyPatchFiles has
@@ -897,6 +911,149 @@ async function processMergePr(item) {
   console.log(`[merge-pr] ${item.id}: merged PR #${prNumber}, moved to published-live${mergeCommit ? ` (${mergeCommit.slice(0, 7)})` : ""}`);
 }
 
+// How many parents the commit at the tip of `ref` has — 2+ means a real
+// merge commit (`git revert` needs `-m 1`, "keep mainline's side"), exactly
+// 1 means a plain commit (e.g. a squash-merged PR), which `-m` would refuse
+// outright ("mainline was specified but commit is not a merge"). Every PR
+// this pipeline merges uses `gh pr merge --merge` (see processMergePr),
+// which always produces a real merge commit — but a mergeCommit set by some
+// other path (a human merging by hand with a different strategy) might not,
+// so this checks rather than assuming.
+function parentCount(sha) {
+  const parents = run("git", ["rev-list", "--parents", "-n", "1", sha]).split(" ").slice(1);
+  return parents.length;
+}
+
+// Reverting a live deployment (hfEmgPWmgrv5pxxcv8vE): a Deployed/Main Branch
+// (Live) card's own Revert action (public/js/app.js) writes revertReady on
+// top of the mergeCommit processMergePr already recorded for it. This
+// deliberately does the least new thing possible for something this
+// high-stakes: it only ever opens a PR (`git revert` on a fresh branch,
+// same shape as any other patch-ready item's PR) and hands the card back to
+// Ready for Testing — a human still has to test the revert branch, approve
+// it, and click Deploy to Main to actually merge it, exactly like any other
+// card's own fix. No new merge path, no auto-approval, nothing that skips
+// the review this pipeline already requires for everything else; the only
+// genuinely new capability is producing the revert commit itself.
+async function processRevertPr(item) {
+  console.log(`[revert] ${item.id}: ${item.title || item.desc}`);
+  if (!item.mergeCommit) {
+    console.log(`[revert] ${item.id}: no mergeCommit recorded on this card — nothing to revert`);
+    const notes = await appendNote(
+      item,
+      "Revert requested, but this card has no mergeCommit recorded (either it predates that field, or noDeploymentRequired — there was never a real merge to undo). revertReady has been cleared; nothing was done."
+    );
+    await patchItem(item.id, { revertReady: false, updatedAt: new Date().toISOString(), notes });
+    return;
+  }
+
+  const branch = sanitizeRevertBranchName(item.title, item.id);
+
+  // Same reconciliation as processApplyPatch's own branch check: an
+  // interrupted earlier attempt at this exact revert can leave a pushed
+  // branch/PR behind without the card having recorded it yet. The branch
+  // name embeds the item id, so an OPEN match here can only be this
+  // revert's own PR.
+  const existing = findPrForBranch(branch);
+  if (existing && existing.state === "OPEN") {
+    console.log(`[revert] ${item.id}: branch ${branch} already has open PR #${existing.number} — attaching instead of reverting again`);
+    const notes = await appendNote(item, `Revert PR #${existing.number} (${existing.url}) was already open for this card's own revert branch — attaching to it rather than reverting a second time.`);
+    await patchItem(item.id, {
+      status: "ready-for-testing",
+      revertReady: false,
+      revertAttempts: 0,
+      testPassed: false,
+      updatedAt: new Date().toISOString(),
+      notes,
+      prUrl: existing.url,
+      prNumber: Number(existing.number),
+    });
+    return;
+  }
+
+  run("git", ["fetch", "origin", "main", "--quiet"]);
+  run("git", ["checkout", "-B", "main", "origin/main", "--quiet"]);
+  run("git", ["checkout", "-B", branch, "--quiet"]);
+
+  const mainline = parentCount(item.mergeCommit) >= 2 ? ["-m", "1"] : [];
+  try {
+    run("git", ["-c", "user.name=backlog-automation", "-c", "user.email=backlog-automation@users.noreply.github.com",
+      "revert", "--no-edit", ...mainline, item.mergeCommit]);
+  } catch (err) {
+    // A real merge conflict — same class of "needs a human with push
+    // access" outcome as a `dirty` mergeable_state in the Deploy flow
+    // (see ROUTINE_INSTRUCTIONS.md). Abort cleanly rather than leaving a
+    // half-reverted working tree for the next run to trip over.
+    try { run("git", ["revert", "--abort"]); } catch { /* nothing in progress */ }
+    discardWorkingTree();
+    console.log(`[revert] ${item.id}: git revert conflicted (${err.message}) — needs a human to resolve`);
+    const notes = await appendNote(
+      item,
+      `Could not revert automatically: \`git revert\` of ${item.mergeCommit} conflicted (most likely because something later already changed the same lines). ` +
+      `revertReady has been cleared. A human with a real git credential needs to run the revert by hand, resolve the conflict, and open the PR themselves — this pipeline can't resolve a conflict on its own.\n\nDetails:\n${scrubSecrets(err.message)}`
+    );
+    await patchItem(item.id, { revertReady: false, updatedAt: new Date().toISOString(), notes });
+    return;
+  }
+
+  // Same guardrail as a normal patch: a revert of a change that itself
+  // touched .github/workflows/ needs the workflow-push App token (and the
+  // same on:-trigger-unchanged check), never the run's own GITHUB_TOKEN.
+  let changedPaths = [];
+  try {
+    changedPaths = run("git", ["diff", "--name-only", "HEAD~1", "HEAD"]).split("\n").filter(Boolean);
+  } catch { /* leave empty — the push below will fail loudly if something's actually wrong */ }
+  const workflowPaths = changedPaths.filter((p) => p.startsWith(WORKFLOW_PATH_PREFIX));
+  if (workflowPaths.length) {
+    const problems = WORKFLOW_PUSH_TOKEN
+      ? (() => { run("git", ["fetch", "origin", "main", "--quiet"]); return workflowChangeProblems(changedPaths.map((p) => ({ path: p, content: fs.readFileSync(path.join(process.cwd(), p), "utf8") }))); })()
+      : ["no WORKFLOW_PUSH_TOKEN configured"];
+    if (problems.length) {
+      discardWorkingTree();
+      console.log(`[revert] ${item.id}: refusing — revert touches ${workflowPaths.join(", ")}: ${problems.join("; ")}`);
+      const notes = await appendNote(
+        item,
+        `Could not push this revert: it touches ${workflowPaths.join(", ")}, and ${problems.join("; ")}. revertReady has been cleared — a human needs to run \`git revert -m 1 ${item.mergeCommit}\` (or plain \`git revert\` if it wasn't a merge commit) and push/PR it by hand.`
+      );
+      await patchItem(item.id, { revertReady: false, updatedAt: new Date().toISOString(), notes });
+      return;
+    }
+    pushWithWorkflowToken(branch);
+  } else {
+    run("git", ["push", "-u", "origin", branch, "--force", "--quiet"]);
+  }
+
+  const prTitle = `Revert: ${item.title || item.desc || item.id}`;
+  const originalPr = item.prNumber ? ` (originally shipped in PR #${item.prNumber})` : "";
+  const prBody = `Reverts commit ${item.mergeCommit}${originalPr}, requested via this card's own Revert action.\n\n` +
+    `This undoes a change already live on main — test the revert branch before approving it, same as any other Ready for Testing card. Merging it (via the normal Approved for Deployment → Deploy to Main flow, never automatically) is what actually takes the original change back out of production.\n\n` +
+    `Backlog item: ${item.id}`;
+  const prUrl = run("gh", ["pr", "create", "--base", "main", "--head", branch, "--title", prTitle, "--body", prBody]);
+  const prNumber = Number((String(prUrl).match(/\/pull\/(\d+)/) || [])[1]) || null;
+
+  const notes = await appendNote(
+    item,
+    `Opened ${prUrl} to revert ${item.mergeCommit}${originalPr} from the Revert action. This card's prUrl/prNumber now point at the revert PR (its earlier merged PR${item.prNumber ? ` #${item.prNumber}` : ""} is still on GitHub for history, just no longer what this card is tracking). Moved back to Ready for Testing — nothing merges until a human tests and approves the revert branch and clicks Deploy to Main, exactly like any other card.` +
+    (workflowPaths.length ? ` This PR changes ${workflowPaths.join(", ")}, so it was pushed with the workflow-push App token and will NOT be merged by the pipeline — a person has to review and merge it on GitHub.` : "")
+  );
+  const testVersion = readAppVersion();
+  await patchItem(item.id, {
+    status: "ready-for-testing",
+    revertReady: false,
+    revertAttempts: 0,
+    testPassed: false,
+    updatedAt: new Date().toISOString(),
+    notes,
+    prUrl: String(prUrl).trim(),
+    previewUrl: guessPreviewUrl(changedPaths.map((p) => ({ path: p, content: "" })), branch, String(prUrl).trim()),
+    ...(prNumber ? { prNumber } : {}),
+    ...(testVersion ? { testVersion } : {}),
+    ...(workflowPaths.length ? { requiresHumanMerge: true } : {}),
+  });
+  console.log(`[revert] ${item.id}: opened ${prUrl}, moved to ready-for-testing`);
+  run("git", ["checkout", "main", "--quiet"]);
+}
+
 // Sweeps every card still showing deployConclusion:"pending" (set by
 // processMergePr the moment it dispatches deploy-backlog-tracker.yml,
 // before that run has necessarily finished — this job doesn't wait around
@@ -948,8 +1105,12 @@ async function main() {
     from: [{ collectionId: "backlogItems" }],
     where: { fieldFilter: { field: { fieldPath: "mergeReady" }, op: "EQUAL", value: { booleanValue: true } } },
   });
+  const revertReadyItems = await runQuery({
+    from: [{ collectionId: "backlogItems" }],
+    where: { fieldFilter: { field: { fieldPath: "revertReady" }, op: "EQUAL", value: { booleanValue: true } } },
+  });
 
-  console.log(`Found ${patchReadyItems.length} patch-ready item(s) and ${mergeReadyItems.length} merge-ready item(s)`);
+  console.log(`Found ${patchReadyItems.length} patch-ready item(s), ${mergeReadyItems.length} merge-ready item(s), and ${revertReadyItems.length} revert-ready item(s)`);
 
   for (const item of patchReadyItems) {
     try {
@@ -980,6 +1141,18 @@ async function main() {
         await recordAttemptFailure(item, err, { attemptsField: "mergeAttempts", readyField: "mergeReady", verb: "merge the PR for" });
       } catch (noteErr) {
         console.error(`[merge-pr] ${item.id}: couldn't record the failure on the item either: ${noteErr.message}`);
+      }
+    }
+  }
+  for (const item of revertReadyItems) {
+    try {
+      await processRevertPr(item);
+    } catch (err) {
+      console.error(`[revert] ${item.id} failed: ${err.stack || err.message}`);
+      try {
+        await recordAttemptFailure(item, err, { attemptsField: "revertAttempts", readyField: "revertReady", verb: "revert" });
+      } catch (noteErr) {
+        console.error(`[revert] ${item.id}: couldn't record the failure on the item either: ${noteErr.message}`);
       }
     }
   }
