@@ -900,9 +900,26 @@ REST API is reachable with a plain `curl`, no service account needed.
   to ~7 days), so a link set right after one push can keep showing that
   first commit even after later pushes update the file, with no visible
   error; `rawcdn.githack.com` is githack's own always-uncached host, meant
-  specifically for testing an in-progress branch like this — falling back
-  to the PR URL for anything that can't be githack'd directly (e.g. a
-  Cloud Function change). This restores what the old Claude Artifact board's per-card
+  specifically for testing an in-progress branch like this.
+
+  **`guessPreviewUrl` picks the page, not just a changed file.** A ticket
+  that changes an `.html` file links to that page. A ticket that changes
+  only a stylesheet or a script links to the nearest `index.html` above
+  those assets — the page that actually renders them — because otherwise
+  such a ticket got no usable link at all: the first ticket through the
+  deployment train (`iaX9egVd8k8gFOd27LCn`, tripling the console logo)
+  touched only `styles.css`, so "Test this →" opened a GitHub *source
+  listing* and there was no way to see whether the logo had changed. Only
+  a change with no page above it at all (`scripts/`, `functions/`) falls
+  back to a link to the branch itself.
+
+  One limit worth knowing for backlog-tracker's own UI: a githack preview
+  is served from a different origin than the board, so Firebase Auth
+  sign-in may be refused there unless that host is an authorised domain.
+  Whatever renders before the sign-in wall is still testable (the sign-in
+  card and its logo); anything behind it needs the deployed board.
+
+  This restores what the old Claude Artifact board's per-card
   quick-launch link used to do, closing the gap `CLAUDE.md`'s "Prototype
   Backlog" section had documented ("No `testUrl` field or quick-launch icon
   on cards") since the migration off the Artifact.
