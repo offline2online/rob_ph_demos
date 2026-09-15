@@ -737,6 +737,15 @@ function backlogCountForProject(pid) {
   return items.filter((i) => (i.projectId || GENERAL_PROJECT_ID) === pid && i.status === "backlog").length;
 }
 
+// Backlog items actually available to groom — excludes any already locked
+// into development (patchReady already true, same flag cardHTML's own
+// isInDevelopment checks): those are mid-fix, not waiting to be classified
+// and summarized, so a Backlog column that's entirely made of those has
+// nothing left for "Groom Backlog" to do, the same as an empty column.
+function groomableCountForProject(pid) {
+  return items.filter((i) => (i.projectId || GENERAL_PROJECT_ID) === pid && i.status === "backlog" && !i.patchReady).length;
+}
+
 function deployReadyCountForProject(pid) {
   // noDeploymentRequired cards are excluded: Deploy to Main merges PRs,
   // and these have none, so counting them promised a deploy that would
@@ -1053,8 +1062,10 @@ const GROOM_ROUTINE_STALE_MS = 20 * 60 * 1000;
 // here: a groom request is deliberately simple — classify and summarize
 // whatever's in Backlog right now, nothing more — see
 // ROUTINE_INSTRUCTIONS.md's own "Groom Backlog" flow section. Hidden
-// entirely when Backlog is empty, same "nothing to do yet" rule as the
-// other two CTAs.
+// entirely when there's nothing left to groom — Backlog is empty, or every
+// remaining item is already locked into development (patchReady already
+// true, mid-fix rather than awaiting grooming) — same "nothing to do yet"
+// rule as the other two CTAs.
 function groomNotifyButtonHTML(project) {
   const pid = project.id;
   const routine = project.groomRoutine;
@@ -1071,12 +1082,12 @@ function groomNotifyButtonHTML(project) {
   if (!inProgress && !optimisticPending) {
     // Held for the same reason Ready for Dev is — see isTrainLocked.
     if (isTrainLocked(project)) return "";
-    const backlogCount = backlogCountForProject(pid);
-    if (!backlogCount) return "";
+    const groomableCount = groomableCountForProject(pid);
+    if (!groomableCount) return "";
     return `<button type="button" class="notify-claude-btn groom-notify-btn" data-project-id="${escapeHTML(pid)}" title="Classify and summarize every item currently in Backlog — doesn't implement anything">
       <span class="material-symbols-outlined notify-claude-icon">content_cut</span>
       <span class="notify-claude-label">Groom Backlog</span>
-      <span class="notify-claude-count-pill">${backlogCount}</span>
+      <span class="notify-claude-count-pill">${groomableCount}</span>
     </button>`;
   }
 
@@ -2281,7 +2292,7 @@ async function requestDeployNotify(pid) {
 // status changes. No selection concept here (unlike requestNotify): a groom
 // request always covers everything currently in Backlog.
 async function requestGroomNotify(pid) {
-  const count = backlogCountForProject(pid);
+  const count = groomableCountForProject(pid);
   if (count === 0) {
     await showAlert("Nothing in Backlog for this project yet — add an item first.");
     return;
