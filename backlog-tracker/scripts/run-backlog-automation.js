@@ -196,6 +196,75 @@ function workflowPathsIn(patchFiles) {
     .filter((p) => p.startsWith(WORKFLOW_PATH_PREFIX));
 }
 
+// Optional escape hatch for the restriction above: backlog-automation.yml
+// mints a short-lived GitHub App installation token (Contents + Workflows
+// write, installed on this one repository only — see backlog-tracker/
+// README.md → "The workflow-push GitHub App") and passes it in as
+// WORKFLOW_PUSH_TOKEN. When it is present, an item whose patchFiles touch
+// .github/workflows/ is pushed with THAT token instead of being refused.
+//
+// A workflow file runs with every repo secret, and patchFiles come from
+// the Notify Claude Routine, which builds them from card text anyone on
+// the editor list can write — a prompt-injection surface. So the token is
+// used for nothing but the branch push of such an item, and only after
+// workflowChangeProblems() has checked that the change can't run itself:
+// no new workflow files, no deletions, and each touched workflow's `on:`
+// trigger block identical (ignoring comments/blank lines) to main's.
+// Every workflow in this repo fires only on main, a schedule, or an
+// explicit dispatch, so a branch push — which, unlike a GITHUB_TOKEN push,
+// DOES trigger `on: push` workflows — can never execute the pushed file.
+// The merge is then a human's job (processMergePr refuses it), so nothing
+// under .github/workflows/ reaches main without a person reading the diff.
+const WORKFLOW_PUSH_TOKEN = (process.env.WORKFLOW_PUSH_TOKEN || "").trim();
+
+function triggerBlock(yamlText) {
+  const lines = String(yamlText).split("\n");
+  const out = [];
+  let inOn = false;
+  for (const raw of lines) {
+    const line = raw.replace(/\s+#.*$/, "").replace(/\r$/, "");
+    if (/^on:/.test(line)) { inOn = true; out.push(line.trim()); continue; }
+    if (inOn && /^[A-Za-z_][\w-]*:/.test(line)) break; // next top-level key
+    if (inOn && line.trim() && !line.trim().startsWith("#")) out.push(line.trimEnd());
+  }
+  return out.join("\n");
+}
+
+function workflowChangeProblems(patchFiles) {
+  const problems = [];
+  for (const f of patchFiles || []) {
+    if (!f || typeof f.path !== "string" || !f.path.startsWith(WORKFLOW_PATH_PREFIX)) continue;
+    let onMain = null;
+    try { onMain = run("git", ["show", `origin/main:${f.path}`]); } catch { onMain = null; }
+    if (onMain === null) { problems.push(`${f.path}: new workflow files can't be added by the pipeline`); continue; }
+    if (f.content === null || f.content === undefined) { problems.push(`${f.path}: workflow files can't be deleted by the pipeline`); continue; }
+    if (triggerBlock(onMain) !== triggerBlock(f.content)) problems.push(`${f.path}: its \`on:\` trigger block differs from main's`);
+  }
+  return problems;
+}
+
+// Pushes with the App token via git's own config environment rather than
+// a token-bearing URL or -c argument: execFileSync puts the full argument
+// list in its error message, and those messages end up on the card
+// (recordAttemptFailure), so the token must never be an argument.
+function pushWithWorkflowToken(branch) {
+  const basic = Buffer.from(`x-access-token:${WORKFLOW_PUSH_TOKEN}`).toString("base64");
+  run("git", ["push", "-u", "origin", branch, "--force", "--quiet"], {
+    env: {
+      ...process.env,
+      GIT_CONFIG_COUNT: "2",
+      GIT_CONFIG_KEY_0: "http.https://github.com/.extraheader", GIT_CONFIG_VALUE_0: "",
+      GIT_CONFIG_KEY_1: "http.https://github.com/.extraheader", GIT_CONFIG_VALUE_1: `AUTHORIZATION: basic ${basic}`,
+    },
+  });
+}
+
+function scrubSecrets(text) {
+  let out = String(text);
+  if (WORKFLOW_PUSH_TOKEN) out = out.split(WORKFLOW_PUSH_TOKEN).join("***");
+  return out;
+}
+
 // How many consecutive failed attempts an item gets before this job stops
 // retrying it and hands it back to a human. Transient failures (a network
 // blip, a GitHub 5xx, a runner hiccup) genuinely do succeed on the next
@@ -219,7 +288,7 @@ const MAX_PATCH_ATTEMPTS = 5;
 // the exact same note-then-give-up treatment the patch path already had.
 async function recordAttemptFailure(item, err, { attemptsField = "patchAttempts", readyField = "patchReady", verb = "open a PR for" } = {}) {
   const attempts = (Number(item[attemptsField]) || 0) + 1;
-  const reason = err instanceof Error ? (err.message || String(err)) : String(err);
+  const reason = scrubSecrets(err instanceof Error ? (err.message || String(err)) : String(err));
   const giveUp = attempts >= MAX_PATCH_ATTEMPTS;
   const fields = { [attemptsField]: attempts, updatedAt: new Date().toISOString() };
 
@@ -405,7 +474,20 @@ async function attachToExistingPr(item, pr) {
   } else {
     const commitMessage = item.patchCommitMessage || `Fix: ${item.title || item.desc || item.id}`;
     run("git", ["-c", "user.name=backlog-automation", "-c", "user.email=backlog-automation@users.noreply.github.com", "commit", "-m", commitMessage, "--quiet"]);
-    run("git", ["push", "origin", head, "--quiet"]);
+    const wf = workflowPathsIn(item.patchFiles);
+    if (wf.length) {
+      run("git", ["fetch", "origin", "main", "--quiet"]);
+      const problems = WORKFLOW_PUSH_TOKEN ? workflowChangeProblems(item.patchFiles) : ["no WORKFLOW_PUSH_TOKEN configured"];
+      if (problems.length) {
+        discardWorkingTree();
+        throw new Error(`patchFiles touch workflow file(s) (${wf.join(", ")}) that this job can't push: ${problems.join("; ")}`);
+      }
+      // Same branch, same token discipline as the fresh-PR path; the
+      // force is harmless here because the branch was just fetched.
+      pushWithWorkflowToken(head);
+    } else {
+      run("git", ["push", "origin", head, "--quiet"]);
+    }
     noteText = `Updated the already-open PR #${pr.number} (${pr.url}) with a new commit on its branch (${head}) carrying this round's patchFiles (${changedPaths.join(", ")}). Moving to Ready for Testing with that PR.`;
   }
 
@@ -436,18 +518,19 @@ async function processApplyPatch(item) {
   // Checked before the duplicate-PR lookup and before any git work: this
   // can never succeed, so there is nothing to gain by getting further in.
   const workflowPaths = workflowPathsIn(item.patchFiles);
-  if (workflowPaths.length) {
-    console.log(`[apply-patch] ${item.id}: refusing — patchFiles touch ${workflowPaths.length} workflow file(s)`);
+  if (workflowPaths.length && !WORKFLOW_PUSH_TOKEN) {
+    console.log(`[apply-patch] ${item.id}: refusing — patchFiles touch ${workflowPaths.length} workflow file(s) and no WORKFLOW_PUSH_TOKEN is configured`);
     const notes = await appendNote(
       item,
       `Cannot be delivered by backlog-automation.yml: patchFiles include ${workflowPaths.length} file(s) under ` +
       `${WORKFLOW_PATH_PREFIX} (${workflowPaths.join(", ")}). This job pushes with its run's own ` +
       `GITHUB_TOKEN, and GitHub refuses any push from that credential that creates or updates a workflow ` +
-      `file — there is no permission that can be granted here to allow it. patchReady has been cleared so ` +
-      `the job stops retrying; everything packaged on this card is untouched and still correct.\n\n` +
-      `To land it: apply the card's patchFiles on a branch and open the PR with a human credential (or one ` +
-      `with workflow scope). To make the pipeline capable of it, backlog-automation.yml itself has to be ` +
-      `changed by hand once to push with a workflow-scoped token — which it cannot do to itself either.`
+      `file. patchReady has been cleared so the job stops retrying; everything packaged on this card is ` +
+      `untouched and still correct.\n\n` +
+      `To let the pipeline deliver workflow changes, set up the workflow-push GitHub App (see ` +
+      `backlog-tracker/README.md → "The workflow-push GitHub App": two repo secrets, WORKFLOW_APP_ID and ` +
+      `WORKFLOW_APP_PRIVATE_KEY) and set patchReady again. Otherwise apply the card's patchFiles on a ` +
+      `branch and open the PR with a human credential.`
     );
     await patchItem(item.id, {
       patchReady: false,
@@ -456,6 +539,22 @@ async function processApplyPatch(item) {
       notes,
     });
     return;
+  }
+  if (workflowPaths.length) {
+    run("git", ["fetch", "origin", "main", "--quiet"]);
+    const problems = workflowChangeProblems(item.patchFiles);
+    if (problems.length) {
+      console.log(`[apply-patch] ${item.id}: refusing workflow change — ${problems.join("; ")}`);
+      const notes = await appendNote(
+        item,
+        `Refused to push this workflow change: ${problems.join("; ")}. The pipeline only pushes edits to ` +
+        `existing workflow files whose \`on:\` triggers are unchanged, so a pushed branch can never run ` +
+        `itself with the repository's secrets. patchReady has been cleared; a change that genuinely needs ` +
+        `a new workflow or new triggers has to be pushed by a person.`
+      );
+      await patchItem(item.id, { patchReady: false, patchAttempts: 0, updatedAt: new Date().toISOString(), notes });
+      return;
+    }
   }
 
   const branch = sanitizeBranchName(item.patchBranch, item.id);
@@ -563,7 +662,8 @@ async function processApplyPatch(item) {
   // PR, or by an earlier round whose PR has since merged or been closed —
   // are exactly what this needs to recover from automatically rather than
   // failing non-fast-forward and retrying into MAX_PATCH_ATTEMPTS.
-  run("git", ["push", "-u", "origin", branch, "--force", "--quiet"]);
+  if (workflowPaths.length) pushWithWorkflowToken(branch);
+  else run("git", ["push", "-u", "origin", branch, "--force", "--quiet"]);
 
   const prTitle = item.patchPrTitle || commitMessage;
   const prBody = (item.patchPrBody || "Implemented by the Notify Claude backlog pipeline.") +
@@ -573,6 +673,9 @@ async function processApplyPatch(item) {
   const notes = await appendNote(
     item,
     `Opened ${prUrl} from the automated backlog pipeline.` +
+    (workflowPaths.length
+      ? ` This PR changes ${workflowPaths.join(", ")}, so it was pushed with the workflow-push App token and will NOT be merged by the pipeline: a person has to review and merge it on GitHub, after which Notify Claude — Deploy records it as live.`
+      : "") +
     (priorPr && priorPr.state !== "OPEN"
       ? ` This is a new round of work: the item's earlier PR #${priorPr.number} (${priorPr.url}) was ${priorPr.state === "MERGED" ? "already merged" : "closed without merging"}, so the fresh patchFiles got their own PR.`
       : "")
@@ -598,6 +701,7 @@ async function processApplyPatch(item) {
     previewUrl,
     ...(prNumber ? { prNumber } : {}),
     ...(testVersion ? { testVersion } : {}),
+    ...(workflowPaths.length ? { requiresHumanMerge: true } : {}),
   });
   console.log(`[apply-patch] ${item.id}: opened ${prUrl}, moved to ready-for-testing${testVersion ? ` (testVersion ${testVersion})` : ""}`);
 
@@ -660,15 +764,31 @@ async function processMergePr(item) {
   // Checking state up front and skipping straight to the success path
   // when it's already MERGED makes this idempotent instead.
   let touchesBacklogTracker = false;
+  let touchesWorkflows = false;
   let prState = null;
   try {
     const viewJson = run("gh", ["pr", "view", String(prNumber), "--repo", REPO, "--json", "files,state"]);
     const parsed = JSON.parse(viewJson);
     touchesBacklogTracker = (parsed.files || []).some((f) => f.path.startsWith("backlog-tracker/"));
+    touchesWorkflows = (parsed.files || []).some((f) => f.path.startsWith(WORKFLOW_PATH_PREFIX));
     prState = parsed.state; // "OPEN" | "CLOSED" | "MERGED"
   } catch (err) {
     console.log(`[merge-pr] ${item.id}: couldn't read PR #${prNumber}'s file list/state (${err.message}) — will trigger the backlog-tracker deploy anyway to be safe, and still attempt the merge below`);
     touchesBacklogTracker = true;
+  }
+
+  if (prState === "OPEN" && touchesWorkflows) {
+    // Never merged by the pipeline: a workflow file runs with every repo
+    // secret, and the only review a mergeReady item has had is the
+    // Routine's CI check. A person merges it on GitHub; the next Deploy
+    // notify then finds it MERGED and records it below.
+    console.log(`[merge-pr] ${item.id}: PR #${prNumber} changes ${WORKFLOW_PATH_PREFIX} — leaving the merge to a human`);
+    const notes = await appendNote(
+      item,
+      `Not merged by the pipeline: PR #${prNumber} changes files under ${WORKFLOW_PATH_PREFIX}, which the automation never merges on its own. Review and merge it on GitHub, then click Notify Claude — Deploy again to record it as live. mergeReady has been cleared.`
+    );
+    await patchItem(item.id, { mergeReady: false, updatedAt: new Date().toISOString(), notes });
+    return;
   }
 
   if (prState === "CLOSED") {

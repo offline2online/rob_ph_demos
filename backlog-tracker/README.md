@@ -833,6 +833,75 @@ Once the token is in place, the acceptance check is simply that setting
 ~10, and that the triggering run shows **repository_dispatch** (not
 `schedule`) as its event on the Actions tab.
 
+### The workflow-push GitHub App — letting the pipeline change `.github/workflows/`
+
+GitHub refuses any push from a workflow's own `GITHUB_TOKEN` that creates
+or updates a file under `.github/workflows/`, whatever `permissions:` the
+job declares, so a card whose fix touches a workflow file used to be
+refused outright (`WORKFLOW_PATH_PREFIX` guard in
+`run-backlog-automation.js`). `backlog-automation.yml` can now mint a
+short-lived installation token from a GitHub App and push those branches
+with it — but only under strict guardrails, because a workflow file runs
+with every repository secret and `patchFiles` originate from the Notify
+Claude Routine, which builds them from card text (a prompt-injection
+surface):
+
+- The token is used for the **branch push of a workflow-touching item and
+  nothing else**. PR creation, merges and the deploy dispatch keep using
+  the run's `GITHUB_TOKEN`, so nothing else changes (in particular, a
+  merge still never fires other workflows' `on: push`, so the explicit
+  deploy dispatch is still the only deploy trigger — no double deploys).
+- Before pushing, `workflowChangeProblems()` refuses the item if it adds
+  a **new** workflow file, **deletes** one, or changes any touched
+  workflow's **`on:` trigger block** compared with `main`. Every workflow
+  in this repo fires only on `main`, on a schedule, or on an explicit
+  dispatch, so a pushed branch can never run its own modified file —
+  which matters because a push made with an App token, unlike one made
+  with `GITHUB_TOKEN`, does trigger `on: push` workflows.
+- `processMergePr` **never merges** a PR that touches
+  `.github/workflows/`: it clears `mergeReady`, notes the card, and a
+  person reviews and merges the PR on GitHub. Clicking Notify Claude —
+  Deploy afterwards finds the PR merged and records it as live. The card
+  carries `requiresHumanMerge: true` from the moment its PR is opened.
+- The token never appears in a git argument (it is passed through
+  `GIT_CONFIG_*` environment variables), and `recordAttemptFailure` scrubs
+  it from any error text before that text is written to a card.
+
+**One-time set-up (a human step — an agent session cannot create GitHub
+Apps or repo secrets):**
+
+1. GitHub → Settings → Developer settings → GitHub Apps → **New GitHub
+   App**, owned by `offline2online`. Name it something like
+   `ph-backlog-workflow-push`. Homepage URL can be the repo URL.
+   Untick **Webhook → Active** (no webhook is needed).
+2. **Repository permissions**: `Contents` → Read and write, `Workflows` →
+   Read and write. Nothing else; no organisation or account permissions.
+   **Where can this GitHub App be installed?** → *Only on this account*.
+3. Create the App, then on its page **Generate a private key** (a `.pem`
+   file downloads) and note the **App ID**.
+4. **Install App** → `offline2online` → **Only select repositories** →
+   `rob_ph_demos` → Install. This is what restricts every token the App
+   can mint to this one repository; `backlog-automation.yml` additionally
+   pins the minted token to `rob_ph_demos` via the action's
+   `repositories:` input, so the restriction holds even if the
+   installation is ever widened by mistake.
+5. Repo → Settings → Secrets and variables → Actions → two **repository
+   secrets**: `WORKFLOW_APP_ID` (the App ID) and `WORKFLOW_APP_PRIVATE_KEY`
+   (the full contents of the `.pem` file, including the BEGIN/END lines).
+   Delete the downloaded `.pem` afterwards.
+
+With both secrets absent the mint step is skipped and workflow-touching
+items are refused with a note, exactly as before — so adding the secrets
+is the only switch. Acceptance check: set `patchReady` on a card whose
+`patchFiles` edit an existing workflow (the `storage:rules` card is a
+one-liner); it should reach Ready for Testing with a PR opened by
+`github-actions[bot]` whose head commit was pushed by the App, and Notify
+Claude — Deploy on it should leave a "Not merged by the pipeline… review
+and merge it on GitHub" note rather than merging. Optional hardening on
+GitHub's side: a branch-protection rule on `main` with a CODEOWNERS entry
+for `/.github/workflows/` requiring your review, which enforces the
+human-merge rule even for pushes made outside this pipeline.
+
 ### Notify Claude progress (`notifyRoutine`) — session id, spinner, split count
 
 The fire endpoint's success response includes a `claude_code_session_id`

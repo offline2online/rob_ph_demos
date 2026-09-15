@@ -294,6 +294,16 @@ rest of this file.
      -d '{"fields":{"title":{"stringValue":"<short clear subject>"},"category":{"stringValue":"<corrected category>"},"updatedAt":{"timestampValue":"<ISO8601 now>"},"notes":{"arrayValue":{"values":[<existing notes, unchanged>, {"mapValue":{"fields":{"author":{"stringValue":"claude"},"text":{"stringValue":"<your summary>"},"at":{"timestampValue":"<ISO8601 now>"}}}}]}},"patchFiles":{"arrayValue":{"values":[{"mapValue":{"fields":{"path":{"stringValue":"<relative/path>"},"content":{"stringValue":"<full new file content>"}}}}]}},"patchBranch":{"stringValue":"<slug>"},"patchCommitMessage":{"stringValue":"<message>"},"patchPrTitle":{"stringValue":"<title>"},"patchPrBody":{"stringValue":"<body>"},"patchReady":{"booleanValue":true}}}'
    ```
 
+**Fixes that edit a file under `.github/workflows/`** can be packaged like
+any other, with two limits the automation enforces: only edits to
+workflow files that already exist on `main` (no new workflow files, no
+deletions), and the file's `on:` trigger block must stay exactly as it is
+on `main`. Such a PR is pushed with a separate workflow-scoped token and
+is never merged by the pipeline — a person reviews and merges it on
+GitHub (see `backlog-tracker/README.md` → "The workflow-push GitHub App").
+If that App is not configured, the item is refused with a note saying so.
+Say in your note that the PR needs a human merge.
+
 If you genuinely cannot express the finished fix as full file contents
 (very rare — e.g. it needs a binary asset you can't produce), do NOT set
 `patchReady`. Leave the item in `backlog` with a detailed note naming

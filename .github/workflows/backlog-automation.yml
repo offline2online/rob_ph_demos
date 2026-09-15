@@ -65,6 +65,11 @@ permissions:
 jobs:
   run:
     runs-on: ubuntu-latest
+    env:
+      # `secrets` can't be read in a step's `if`, so the presence check is
+      # evaluated here (job-level env may reference secrets) and the mint
+      # step below keys off it.
+      WORKFLOW_APP_CONFIGURED: ${{ secrets.WORKFLOW_APP_ID != '' && secrets.WORKFLOW_APP_PRIVATE_KEY != '' }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -79,8 +84,31 @@ jobs:
       - name: Write Firebase service account key
         run: echo '${{ secrets.FIREBASE_SERVICE_ACCOUNT_BACKLOG_TRACKER }}' > "$RUNNER_TEMP/firebase-sa.json"
 
+      # Optional: a short-lived installation token from the workflow-push
+      # GitHub App (see backlog-tracker/README.md → "The workflow-push
+      # GitHub App"). The run's own GITHUB_TOKEN can never push a file
+      # under .github/workflows/; this token can, and the script uses it
+      # for nothing else (see WORKFLOW_PUSH_TOKEN in
+      # run-backlog-automation.js for the guardrails). The App is installed
+      # on this one repository only, and `repositories:` below pins the
+      # minted token to it again regardless of how the App is installed.
+      # Skipped entirely when the two secrets are absent, in which case
+      # workflow-touching items are refused with a note, as before.
+      - name: Mint workflow-push token (only if the App is configured)
+        id: workflow-app
+        if: env.WORKFLOW_APP_CONFIGURED == 'true'
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ secrets.WORKFLOW_APP_ID }}
+          private-key: ${{ secrets.WORKFLOW_APP_PRIVATE_KEY }}
+          owner: offline2online
+          repositories: rob_ph_demos
+          permission-contents: write
+          permission-workflows: write
+
       - name: Apply patch-ready items / merge merge-ready items
         env:
           GH_TOKEN: ${{ github.token }}
+          WORKFLOW_PUSH_TOKEN: ${{ steps.workflow-app.outputs.token }}
           GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/firebase-sa.json
         run: node backlog-tracker/scripts/run-backlog-automation.js
