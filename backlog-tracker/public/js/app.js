@@ -400,12 +400,12 @@ document.getElementById("footer-logo-btn").addEventListener("click", () => { clo
 
 function cardHTML(item) {
   const idx = COL_KEYS.indexOf(item.status);
-  // Moving back is a designed, documented flow from ready-to-publish
-  // (send back for more work — see moveItem()'s own testPassed-reset
-  // comment) but NOT from ready-for-testing straight to Backlog: a Ready
-  // for Testing card always has a real, already-open PR behind it
-  // (patchBranch) that this move does nothing to close, reconnect, or
-  // even leave a visible trace of — patchReady stays false, so
+  // Moving back is a designed, documented flow from ready-to-publish (send
+  // back for more work — the first half of pulling a ticket off the train;
+  // Failed testing there is the second) but NOT from ready-for-testing
+  // straight to Backlog: a Ready for Testing card always has real, live
+  // commits on its project's integration branch that this move does nothing
+  // to take off it — patchReady stays false, so
   // backlog-automation.yml never looks at the item again, and nothing on
   // the resulting Backlog card hints it already has a PR. Re-investigating
   // it from Backlog then either silently duplicates that PR's work or, if
@@ -493,9 +493,8 @@ function cardHTML(item) {
   // canLeft anyway (both require isBacklog, where canLeft is already
   // false), but isDeploying can: a ready-to-publish card the Routine has
   // confirmed mergeable and handed to backlog-automation.yml is genuinely
-  // mid-merge, and moving it back to Ready for Testing in that window (its
-  // own dir===-1 case in moveItem() resets testPassed) races the
-  // automation's own status write — whichever lands last wins, which looks
+  // mid-merge, and moving it back to Ready for Testing in that window races
+  // the automation's own status write — whichever lands last wins, which looks
   // exactly like a card "reverting on its own" even though a person's
   // click caused it.
   const leftBtn = (canLeft && !isLocked)
@@ -508,35 +507,29 @@ function cardHTML(item) {
   // code to push — e.g. a Firestore-only data/config change — so there's
   // nothing for the "Approved for Deployment" step (column or CTA) to
   // gate. Once tested it goes straight to published-live via
-  // confirmTestedNoDeploy(),
-  // its own separate one-click path — it never enters the testPassed pool
-  // at all.
+  // confirmTestedNoDeploy(), its own separate one-click path — it never
+  // enters the approval pool at all, which is why it keeps a button here
+  // where every other Ready for Testing card no longer has one.
   //
-  // A normal item's "confirm tested" click does NOT advance the column by
-  // itself (a single click used to move it straight to Approved for
-  // Deployment, which is exactly the behavior this replaced — one click
-  // testing one item shouldn't silently put that item on the feature
-  // branch with no chance to also confirm the others in the same batch).
-  // It only flags
-  // testPassed and stays in Ready for Testing; advancing is the separate,
-  // explicit "Approved for Deployment" project action below, which can act on
-  // several passed items at once. Clicking again un-marks it (toggle), in
-  // case it was flagged by mistake before "Approved for Deployment" is clicked.
-  const approveBtn = (isTesting || noDeployPending)
-    ? (item.noDeploymentRequired
-        ? `<button type="button" class="approve-btn confirm-no-deploy-btn" data-id="${item.id}">Confirm tested — mark Merged to Main</button>`
-        : (item.testPassed
-            ? `<button type="button" class="approve-btn test-passed-btn test-passed-btn-active" data-id="${item.id}" title="Click to un-mark">&#10003; Passed testing</button>`
-            : `<button type="button" class="approve-btn test-passed-btn" data-id="${item.id}">Confirm tested</button>`))
+  // Every OTHER Ready for Testing card is approved by ticking its checkbox
+  // (see selectCb above) and clicking the project's own "Approved for
+  // Deployment". There used to be a second gate in front of that: a
+  // per-card "Confirm tested" button writing a testPassed flag, which the
+  // checkbox then narrowed. Two controls for one decision, and the
+  // checkbox did nothing at all until the tick was there. The checkbox is
+  // the approval now, and testPassed is gone.
+  const approveBtn = (item.noDeploymentRequired && (isTesting || noDeployPending))
+    ? `<button type="button" class="approve-btn confirm-no-deploy-btn" data-id="${item.id}">Confirm tested — mark Merged to Main</button>`
     : "";
-  // The counterpart to "Confirm tested" (xYAk2oIFgbkvHikhufaT): not offered
-  // once it's already marked passed (un-mark it first — the two are
-  // mutually exclusive outcomes of the same test pass), and not on a
-  // noDeploymentRequired card, which has no PR/patchFiles pipeline for a
-  // "send back for a fix" to even mean anything. See failTesting() for what
-  // this actually does (records why, sends back to Backlog, keeps the
-  // existing PR linked).
-  const failBtn = (isTesting && !item.noDeploymentRequired && !item.testPassed)
+  // The other outcome of a test pass (xYAk2oIFgbkvHikhufaT), and the only
+  // CTA left on a Ready for Testing card. Always offered there now: it used
+  // to be hidden once "Confirm tested" had been clicked, and there is no
+  // longer any such click to hide behind. Not on a noDeploymentRequired
+  // card, which has no patchFiles pipeline for a "send back for a fix" to
+  // even mean anything. See failTesting() for what it does — records why,
+  // sends the card back to Backlog, AND takes its commits back off the
+  // project's integration branch.
+  const failBtn = (isTesting && !item.noDeploymentRequired)
     ? `<button type="button" class="approve-btn fail-testing-btn" data-id="${item.id}">Failed testing</button>`
     : "";
   // Deliberately not a button: there used to be a "Merge to main" button
@@ -580,6 +573,20 @@ function cardHTML(item) {
     : (isSentToClaude
         ? `<span class="in-development-hint" title="This item was sent to Claude via Ready for Dev and is still being investigated — it's locked until a fix is packaged (or the Notify Claude session finishes)">Sent to Claude — locked</span>`
         : "");
+  // Failed testing sends a card back to Backlog AND asks the automation to
+  // revert its commits off the project's integration branch (see
+  // failTesting / processRevertFromTrain). Between those two things the
+  // card is in Backlog with live code still on the train, which is exactly
+  // the state the pipeline must never quietly leave standing — so it says
+  // so on the card. revertBlockedBy means the revert hit a conflict because
+  // a later ticket builds on this one: the board stays honest about it
+  // (and Deploy to Main stays hidden, since the ticket is still on the
+  // branch) until a human sends those tickets back too or fixes the branch.
+  const leavingTrainHint = (isBacklog && item.revertRequested)
+    ? (Array.isArray(item.revertBlockedBy) && item.revertBlockedBy.length
+        ? `<span class="in-development-hint" title="Reverting this ticket off ${escapeHTML(item.deployBranch || "the integration branch")} conflicted because ${escapeHTML(item.revertBlockedBy.join(", "))} build on top of it — send those back too, or fix the branch by hand">Still on the branch &mdash; blocked by ${item.revertBlockedBy.length} later ticket${item.revertBlockedBy.length === 1 ? "" : "s"}</span>`
+        : `<span class="in-development-hint" title="Its commits are being reverted off the project's integration branch so this rejected ticket can't ship in the next deployment">Coming off the branch&hellip;</span>`)
+    : "";
   const noDeployBadge = item.noDeploymentRequired
     ? `<span class="no-deploy-badge" title="Live data/config change only — no code to push or deploy">No deployment required</span>`
     : "";
@@ -718,7 +725,7 @@ function cardHTML(item) {
         <div class="card-move">${quickCommentBtn}${revertBtn}${archiveBtn}${deleteBtn}</div>
       </div>
       ${testLinkHTML}
-      ${approveBtn}${failBtn}${mergeBtn}${inDevelopmentHint}${revertingHint}
+      ${approveBtn}${failBtn}${mergeBtn}${inDevelopmentHint}${revertingHint}${leavingTrainHint}
     </article>`;
 }
 
@@ -737,16 +744,59 @@ function deployReadyCountForProject(pid) {
   return items.filter((i) => (i.projectId || GENERAL_PROJECT_ID) === pid && i.status === "ready-to-publish" && !i.noDeploymentRequired).length;
 }
 
-// Ready for Testing items an individual "Confirm tested" click has already
-// flagged — the pool "Approved for Deployment" draws from. A noDeploymentRequired
-// item never enters this pool (see cardHTML): it has its own separate,
-// immediate confirmTestedNoDeploy() path straight to published-live, since
-// there's no feature branch step for it to go through at all.
-function testPassedCountForProject(pid) {
+// Ready for Testing items someone has ticked — the pool "Approved for
+// Deployment" acts on, and now the only approval signal there is. A
+// noDeploymentRequired item never enters this pool (see cardHTML): it has
+// its own separate, immediate confirmTestedNoDeploy() path straight to
+// published-live, since there's no deployment step for it to go through.
+function deploySelectedCountForProject(pid) {
+  const sel = getDeploySelectedSet(pid);
   return items.filter((i) =>
     (i.projectId || GENERAL_PROJECT_ID) === pid && i.status === "ready-for-testing" &&
-    i.testPassed && !i.noDeploymentRequired
+    !i.noDeploymentRequired && sel.has(i.id)
   ).length;
+}
+
+// ── The deployment train, on the board ───────────────────────────────────
+// Every ticket a project builds lands as a commit on that project's ONE
+// integration branch (projects/{id}.deployBranch — see
+// run-backlog-automation.js's "The deployment train"), so tickets are
+// tested in the combination they will ship in and merge as a single PR.
+// The consequence the board has to express: merging that branch ships
+// EVERYTHING on it. With 8 tickets approved and 2 still in Ready for
+// Testing, a merge would carry all 10 — so Deploy to Main is only offered
+// once the branch holds nothing but approved work.
+function trainItemsForProject(pid) {
+  return items.filter((i) =>
+    (i.projectId || GENERAL_PROJECT_ID) === pid && i.deployCommit &&
+    (i.status === "ready-for-testing" || i.status === "ready-to-publish")
+  );
+}
+
+// Tickets that have been rejected but whose code is still on the branch —
+// either the revert hasn't run yet, or it conflicted and
+// run-backlog-automation.js recorded revertBlockedBy instead of
+// force-pushing. Either way the branch still carries work nobody approved,
+// so it is not safe to merge: Deploy to Main stays hidden until this is
+// empty. Card `a` in Backlog with revertRequested is invisible to
+// trainItemsForProject (its status isn't on the train any more), which is
+// exactly why it needs its own check rather than being folded into that one.
+function pendingTrainRevertsForProject(pid) {
+  return items.filter((i) =>
+    (i.projectId || GENERAL_PROJECT_ID) === pid && i.revertRequested && i.deployCommit
+  );
+}
+
+// Approved cards from before the train shipped: they carry their own
+// per-ticket PR (prNumber) and no deployCommit, and the old Deploy flow is
+// still what merges them (see processMergePr). Without this the button
+// would be hidden for a project whose only approved work predates the
+// train, stranding those cards with no way to release them.
+function legacyDeployItemsForProject(pid) {
+  return items.filter((i) =>
+    (i.projectId || GENERAL_PROJECT_ID) === pid && i.status === "ready-to-publish" &&
+    !i.deployCommit && !i.noDeploymentRequired
+  );
 }
 
 function interfacesForProject(pid) {
@@ -811,6 +861,34 @@ function optionsMenuHTML(project) {
 // mid-run, can never wedge the button in a permanent spinning state.
 const NOTIFY_ROUTINE_STALE_MS = 20 * 60 * 1000;
 
+// ── Closing the train (§2.8) ─────────────────────────────────────────────
+// Without a lock the train never closes. An agent finishes ticket 11 while
+// the first 10 are being tested, its commit lands on the branch, the card
+// appears in Ready for Testing, and Deploy to Main disappears again — a
+// treadmill where a project with steady build throughput can never reach a
+// deployable state.
+//
+// The lock fires at FIRST APPROVAL, not at first test. While tickets sit
+// only in Ready for Testing nothing has been committed to, so the Backlog
+// stays open and builds continue — everything joining the branch is still
+// under test. The moment the first ticket is approved, the train is
+// closing: no new ticket may join it. Finish what's left in Ready for
+// Testing (approve it, or reject it with Failed testing, which takes it off
+// the branch), deploy, and the lock clears with the merge.
+//
+// No new copy: the two build CTAs follow the same hidden-when-not-valid
+// rule every other button on this header follows. Backlog cards stay fully
+// usable — add, edit, comment, delete all work; only *starting a build* is
+// held.
+//
+// Known risk: a slow-to-test ticket holds the whole project's Backlog while
+// it sits there. The way out already exists and needs nothing new — Failed
+// testing sends it back and off the branch, unblocking the deploy without
+// unblocking the build.
+function isTrainLocked(project) {
+  return !!(project && project.trainLocked);
+}
+
 function notifyClaudeButtonHTML(project) {
   const pid = project.id;
   const routine = project.notifyRoutine;
@@ -825,6 +903,10 @@ function notifyClaudeButtonHTML(project) {
   if (clickedAt && !optimisticPending) delete notifyOptimisticClicks[pid];
 
   if (!inProgress && !optimisticPending) {
+    // A release is closing on this project's integration branch — see
+    // isTrainLocked. Same hidden-when-the-action-isn't-valid rule as the
+    // empty-Backlog case right below it.
+    if (isTrainLocked(project)) return "";
     const backlogCount = backlogCountForProject(pid);
     if (!backlogCount) return "";
     // A non-empty selection (see the Backlog column's own checkboxes)
@@ -915,7 +997,21 @@ function deployNotifyButtonHTML(project) {
   if (clickedAt && !optimisticPending) delete deployOptimisticClicks[pid];
 
   if (!inProgress && !optimisticPending) {
-    const deployCount = deployReadyCountForProject(pid);
+    // Same hidden-when-nothing-to-do rule as always; what changed is what
+    // counts as "something to do". The project builds onto one branch, so
+    // merging it ships everything on it — the button is offered only when
+    // every ticket on the train is approved, i.e. Approved for Deployment
+    // has cards and Ready for Testing is empty for this project.
+    //
+    // Accepted trade-off: with 8 approved and 2 still testing, the button is
+    // simply absent and nothing on screen names the 2 as the blocker. Those
+    // 2 cards are sitting visibly in Ready for Testing with their own CTAs,
+    // which is the board telling the story without new copy.
+    if (pendingTrainRevertsForProject(pid).length) return "";
+    const onTrain = trainItemsForProject(pid);
+    const deployCount = onTrain.length
+      ? (onTrain.every((i) => i.status === "ready-to-publish") ? onTrain.length : 0)
+      : legacyDeployItemsForProject(pid).length;
     if (!deployCount) return "";
     return `<button type="button" class="notify-claude-btn deploy-notify-btn" data-project-id="${escapeHTML(pid)}">
       <span class="material-symbols-outlined notify-claude-icon">rocket_launch</span>
@@ -973,6 +1069,8 @@ function groomNotifyButtonHTML(project) {
   if (clickedAt && !optimisticPending) delete groomOptimisticClicks[pid];
 
   if (!inProgress && !optimisticPending) {
+    // Held for the same reason Ready for Dev is — see isTrainLocked.
+    if (isTrainLocked(project)) return "";
     const backlogCount = backlogCountForProject(pid);
     if (!backlogCount) return "";
     return `<button type="button" class="notify-claude-btn groom-notify-btn" data-project-id="${escapeHTML(pid)}" title="Classify and summarize every item currently in Backlog — doesn't implement anything">
@@ -1037,19 +1135,19 @@ function groomBacklogInlineHTML(project) {
 // has actually looked at (a batch of) it.
 function deployToFeatureButtonHTML(project) {
   const pid = project.id;
-  const passedCount = testPassedCountForProject(pid);
-  if (!passedCount) return "";
-  // Same "selection narrows the count" pattern as the Backlog/Ready for Dev
-  // button above.
-  const selectedCount = items.filter((i) =>
-    (i.projectId || GENERAL_PROJECT_ID) === pid && i.status === "ready-for-testing" &&
-    i.testPassed && getDeploySelectedSet(pid).has(i.id)
-  ).length;
-  const label = selectedCount ? `Approved for Deployment — ${selectedCount} selected` : "Approved for Deployment";
+  // Ticked items only — no "an empty selection means everything" fallback
+  // here, unlike the Backlog column's own Ready for Dev button. That
+  // asymmetry is deliberate: over-firing a build is cheap, over-approving a
+  // release is not, and with no tick and no testPassed flag an empty
+  // selection carries no signal that anyone looked at anything at all.
+  // Nothing ticked therefore means nothing to do, so the button hides —
+  // exactly what it did before when nothing had been confirmed tested.
+  const count = deploySelectedCountForProject(pid);
+  if (!count) return "";
   return `<button type="button" class="notify-claude-btn deploy-to-feature-btn" data-project-id="${escapeHTML(pid)}">
     <span class="material-symbols-outlined notify-claude-icon">merge_type</span>
-    <span class="notify-claude-label">${label}</span>
-    <span class="notify-claude-count-pill">${selectedCount || passedCount}</span>
+    <span class="notify-claude-label">Approved for Deployment — ${count} selected</span>
+    <span class="notify-claude-count-pill">${count}</span>
   </button>`;
 }
 
@@ -1067,21 +1165,23 @@ function deployToFeatureButtonHTML(project) {
 // state to create, edit, or keep in sync, and nothing to undo if a card moves.
 //
 // Returns null for a card that shares no deployment with anything:
-//   - an ordinary Backlog card, which has no branch yet (so the grouping
-//     starts exactly where Rob asked — at the greyed-out "In development —
-//     locked" stage, which is what having a branch plus patchReady means),
+//   - a card with neither a PR nor a pre-train patch branch — an ordinary
+//     Backlog card, or one still building,
 //   - a noDeploymentRequired card, which has no deployment to share at all.
+//
+// Deliberately NOT keyed on deployBranch, even though every ticket a
+// project builds is on it: that would bracket a project's entire Ready for
+// Testing column as one group and say "ships together" about the column
+// itself, which is what the columns already say. The PR is the useful
+// grain — it is the thing that merges.
 function deploymentGroupKey(item) {
   if (item.noDeploymentRequired) return null;
+  if (item.prNumber) return "pr:" + item.prNumber;
+  // Pre-train cards, which had a branch of their own before they had a PR.
   const branch = (item.patchBranch || "").trim();
-  // Prefer the branch over the PR number: they always agree once the PR
-  // exists, but the branch is set first, so keying on it means a group
-  // doesn't momentarily split and re-form as the PR number lands on each
-  // card in turn.
-  if (branch && (item.patchReady || item.prNumber || item.status !== "backlog")) {
+  if (branch && (item.patchReady || item.status !== "backlog")) {
     return "branch:" + branch;
   }
-  if (item.prNumber) return "pr:" + item.prNumber;
   return null;
 }
 
@@ -1424,10 +1524,10 @@ function renderNow() {
   // Every render replaces #projects-root's entire innerHTML, which throws
   // away and recreates every .col-list element — including whichever one
   // you were scrolled down in. That snapped a column back to its top on
-  // every single re-render, not just the "Confirm tested" case it was
-  // first reported against (clicking it writes testPassed to Firestore,
-  // the onSnapshot listener fires, render() runs, and the column you were
-  // scrolling through jumps back to the first card). colListId() gives
+  // every single re-render, not just the card-click case it was first
+  // reported against (a click writes to Firestore, the onSnapshot listener
+  // fires, render() runs, and the column you were scrolling through jumps
+  // back to the first card). colListId() gives
   // each column a stable id across renders even though the element itself
   // isn't the same node, so capture scrollTop by that id before the
   // rebuild and restore it after — cheap (only columns actually scrolled
@@ -1639,8 +1739,15 @@ function restFields(fields) {
 const BACKLOG_ITEM_RENDER_FIELDS = [
   "projectId", "title", "desc", "type", "category", "status",
   "createdAt", "updatedAt", "archivedAt",
-  "patchReady", "mergeReady", "noDeploymentRequired", "testPassed",
+  "patchReady", "mergeReady", "noDeploymentRequired",
   "testVersion", "testSummary", "previewUrl",
+  // The deployment train: which integration branch a ticket is on, the
+  // commit(s) it put there, and whether it's on its way back off again.
+  // deployCommit is what the Deploy to Main gate counts (trainItemsForProject),
+  // so without it here the button would flicker on the REST-primed first
+  // paint and correct itself a second later when the listener landed.
+  "deployBranch", "deployCommit", "deployCommits",
+  "revertRequested", "revertBlockedBy", "revertedCommits",
   "prUrl", "prNumber", "mergedAt",
   // Provenance for a card that's actually landed — which commit it merged
   // as, and whether the deploy that was supposed to ship it actually
@@ -1804,15 +1911,18 @@ async function moveItem(id, dir) {
   if (next < 0 || next >= COL_KEYS.length) return;
   const fields = { status: COL_KEYS[next], updatedAt: serverTimestamp() };
   // Landing on Ready for Testing happens two ways: the left-arrow "move
-  // back" from Approved for Deployment (sending it back for more work), or
-  // — rarer, a manual override rather than the usual automated path — the
-  // right-arrow moving a Backlog card straight there. Either way, clear a
-  // stale testPassed from any previous round: otherwise it would already
-  // look "passed" again with nobody having actually re-confirmed the new
-  // round of work, and the next "Approved for Deployment" click could
-  // sweep it back onto the feature branch unreviewed.
+  // back" from Approved for Deployment (sending it back for more work — the
+  // first half of pulling a ticket off the train, see failTesting for the
+  // second), or — rarer, a manual override rather than the usual automated
+  // path — the right-arrow moving a Backlog card straight there.
+  //
+  // Neither clears an approval any more, because there is no longer a
+  // per-card approval flag to clear: approval is the checkbox, which lives
+  // in the browser and is cleared when the column re-renders around the
+  // moved card. A card sent back from Approved for Deployment keeps its
+  // commit on the integration branch, which is correct — Ready for Testing
+  // is precisely where a ticket is meant to have code on the branch.
   if (COL_KEYS[next] === "ready-for-testing") {
-    fields.testPassed = false;
     // Stamp the version fresh only on a genuine new entry from Backlog
     // (dir === 1) — this is the same one-time-stamp-then-carry-through
     // rule processApplyPatch() follows for the normal automated path (see
@@ -1824,21 +1934,6 @@ async function moveItem(id, dir) {
     }
   }
   await updateDoc(doc(db, "backlogItems", id), fields);
-}
-
-// Per-card toggle in Ready for Testing — flags (or un-flags) testPassed
-// without moving the card. Deliberately does NOT advance status itself
-// (that used to be exactly what this button did, one card at a time, which
-// was the actual complaint this replaced — see cardHTML's own comment).
-// Advancing is the separate, explicit, batchable "Approved for Deployment"
-// project action (deployToFeature() below).
-async function toggleTestPassed(id) {
-  const item = items.find((i) => i.id === id);
-  if (!item || item.status !== "ready-for-testing" || item.noDeploymentRequired) return;
-  await updateDoc(doc(db, "backlogItems", id), {
-    testPassed: !item.testPassed,
-    updatedAt: serverTimestamp(),
-  });
 }
 
 // The one other legitimate way to reach published-live besides
@@ -1861,22 +1956,21 @@ async function removeItem(id) {
   await deleteDoc(doc(db, "backlogItems", id));
 }
 
-// "Failed testing" (xYAk2oIFgbkvHikhufaT) — the counterpart to "Confirm
-// tested" a Ready for Testing card didn't have: a way to flag exactly what's
-// wrong and get it sent back for a fix, instead of either silently ignoring
-// a failure or moving the card with nothing recording why. This does NOT
-// reuse the plain move-back arrow (cardHTML's canLeft deliberately excludes
-// ready-for-testing -> backlog — see its own comment) by editing that
-// exclusion — this is a distinct, narrower action that captures the failure
-// reason as a note before moving the card, and is safe for the exact reason
-// that old comment warned about a bare move-back: this item's prUrl/
-// prNumber/patchBranch are left untouched, so a later Ready for Dev sweep
-// investigating it again lands on its own already-open PR via
-// run-backlog-automation.js's resolveReusablePr/attachToExistingPr (a
-// re-patch, not a duplicate second PR) — the exact "sent back from Ready
-// for Testing with a follow-up ask" case ROUTINE_INSTRUCTIONS.md's own
-// "Re-patching an item that already has an open PR" section already
-// documents as supported, just never wired up from this side before.
+// "Failed testing" (xYAk2oIFgbkvHikhufaT) — the reject half of a test pass,
+// and the only CTA on a Ready for Testing card: a way to flag exactly
+// what's wrong and get the ticket sent back for a fix, instead of either
+// silently ignoring a failure or moving the card with nothing recording
+// why. This does NOT reuse the plain move-back arrow (cardHTML's canLeft
+// deliberately excludes ready-for-testing -> backlog — see its own
+// comment) by editing that exclusion: this is a distinct, narrower action
+// that captures the failure reason as a note AND does the one thing a bare
+// move-back never could — takes the ticket's code back off the project's
+// integration branch (revertRequested, below).
+//
+// It is also the second click of "pull a ticket back out after approval":
+// the ← arrow sends an Approved for Deployment card to Ready for Testing
+// (its commit stays on the branch, which is correct), and Failed testing
+// there does the revert and the send-back. No third control, no new copy.
 async function failTesting(id) {
   const item = items.find((i) => i.id === id);
   if (!item || item.status !== "ready-for-testing") return;
@@ -1890,7 +1984,16 @@ async function failTesting(id) {
   if (!trimmed) return;
   await updateDoc(doc(db, "backlogItems", id), {
     status: "backlog",
-    testPassed: false,
+    // The rule this enforces: nothing leaves Ready for Testing rejected
+    // without coming off the branch. Every ticket builds onto its project's
+    // shared integration branch, so a card that just moved back to Backlog
+    // would otherwise still ship in the next train — a "rejected" ticket
+    // going live. run-backlog-automation.js's processRevertFromTrain picks
+    // this flag up and reverts the card's commits off the branch (and, if a
+    // later ticket built on top of it, records revertBlockedBy instead of
+    // force-pushing anything). A card in Backlog must never have live
+    // commits on a train.
+    revertRequested: true,
     notes: arrayUnion({ author: "viewer", text: `Failed testing: ${trimmed}`, at: new Date() }),
     updatedAt: serverTimestamp(),
   });
@@ -2088,9 +2191,9 @@ async function requestNotify(pid) {
   getSelectedSet(pid).clear();
 }
 
-// The middle stage: batch-advances every testPassed (and, if any are
-// checked, selected) Ready for Testing item straight to ready-to-publish
-// (Approved for Deployment) in one Firestore batch write. Unlike
+// The middle stage: batch-advances every TICKED Ready for Testing item
+// straight to ready-to-publish (Approved for Deployment) in one Firestore
+// batch write. Unlike
 // requestNotify/requestDeployNotify above and below, this never touches the
 // Routine — the feature branch and PR already exist from the Backlog stage
 // (see run-backlog-automation.js's processApplyPatch), so there's no GitHub
@@ -2110,30 +2213,36 @@ async function requestNotify(pid) {
 // notifyOnItemsDeployedToFeature is now dead code (harmless, just never
 // triggered) until a future cleanup removes it from functions/index.js too.
 async function deployToFeature(pid) {
-  const passedItems = items.filter((i) =>
-    (i.projectId || GENERAL_PROJECT_ID) === pid && i.status === "ready-for-testing" && i.testPassed && !i.noDeploymentRequired
+  // Ticked items only. requestNotify's "an empty selection means everything"
+  // rule is deliberately NOT shared here: over-firing a build is cheap,
+  // over-approving a release is not, and an empty selection is no longer
+  // paired with any other approval signal that could stand in for one. The
+  // button hides when nothing is ticked, so this is a guard, not a path
+  // anyone reaches from the UI.
+  const eligible = items.filter((i) =>
+    (i.projectId || GENERAL_PROJECT_ID) === pid && i.status === "ready-for-testing" && !i.noDeploymentRequired
   );
-  if (passedItems.length === 0) {
-    await showAlert("Nothing has passed testing for this project yet — confirm an item's testing first.");
-    return;
-  }
-  // Same "a non-empty selection narrows the action" pattern as
-  // requestNotify — an empty selection means "every passed item", not
-  // "nothing".
-  const passedIds = new Set(passedItems.map((i) => i.id));
-  const selected = [...getDeploySelectedSet(pid)].filter((id) => passedIds.has(id));
-  const idsToMove = selected.length ? selected : [...passedIds];
-  const itemsToMove = passedItems.filter((i) => idsToMove.includes(i.id));
+  const eligibleIds = new Set(eligible.map((i) => i.id));
+  const idsToMove = [...getDeploySelectedSet(pid)].filter((id) => eligibleIds.has(id));
+  if (idsToMove.length === 0) return;
 
   const batch = writeBatch(db);
   idsToMove.forEach((id) => {
     batch.update(doc(db, "backlogItems", id), {
       status: "ready-to-publish",
-      testPassed: false,
       updatedAt: serverTimestamp(),
     });
   });
   await batch.commit();
+
+  // First approval closes the train: from here no new ticket may join this
+  // release, so the project's build CTAs (Ready for Dev, Groom Backlog)
+  // hide until the deploy merges and run-backlog-automation.js clears this.
+  // See isTrainLocked above for the full reasoning. Written unconditionally
+  // rather than only on the genuinely-first approval: it's idempotent, and
+  // reading "is this the first" from a list the batch above just changed
+  // would race its own write.
+  await setDoc(doc(db, "projects", pid), { trainLocked: true }, { merge: true });
 
   getDeploySelectedSet(pid).clear();
 }
@@ -2380,8 +2489,6 @@ projectsRoot.addEventListener("click", async (e) => {
   }
   const moveBtn = e.target.closest(".move-btn");
   if (moveBtn) { moveItem(moveBtn.dataset.id, parseInt(moveBtn.dataset.dir, 10)); return; }
-  const testPassedBtn = e.target.closest(".test-passed-btn");
-  if (testPassedBtn) { toggleTestPassed(testPassedBtn.dataset.id); return; }
   const failTestingBtn = e.target.closest(".fail-testing-btn");
   if (failTestingBtn) { failTesting(failTestingBtn.dataset.id); return; }
   const confirmNoDeployBtn = e.target.closest(".confirm-no-deploy-btn");

@@ -147,22 +147,50 @@ Within each project, the columns are: **Backlog → Ready for Testing → Live o
 Feature Branch → Merged to Main (Live)** (status keys: `backlog`,
 `ready-for-testing`, `ready-to-publish`, `published-live`). A card does
 **not** move itself from "Live on Feature Branch" into "Merged to Main
-(Live)" — and, as of the automated `patchFiles`/`mergeReady` pipeline (see
-`backlog-tracker/README.md` → "Notify Claude can't push"), there is no
-manual button that does either. A "Live on Feature Branch" card shows a
-passive "Waiting for Notify Claude — Deploy" hint, not a button — clicking
-that project's own **"Notify Claude — Deploy"** header action is the only
-way a card reaches "Merged to Main (Live)" now, since that's the only path
-that actually merges the underlying PR (via
+(Live)", and there is no manual button that does either. A "Live on Feature
+Branch" card shows a passive "Waiting for Deploy to Main" hint — clicking
+that project's own **"Deploy to Main"** header action is the only way a
+card reaches "Merged to Main (Live)", since that's the only path that
+actually merges the code (via
 `backlog-tracker/scripts/run-backlog-automation.js`) before flipping the
 status. There used to be a per-card "Merge to main" button (and a bulk
 "Merge all to main" on the Deployments page) that just wrote
 `published-live` directly with no connection to whether the PR was
 actually merged — removed for exactly that reason, after it let cards
-say "Merged to Main" while their PRs sat open and unmerged on GitHub. New
-feature/bug requests land in a project's Backlog; once tested and
-confirmed "Live on Feature Branch", click that project's **"Notify Claude
-— Deploy"** button to have Claude verify and merge it for real.
+say "Merged to Main" while their PRs sat open and unmerged on GitHub.
+
+**Each project ships on a deployment train, not per ticket.** Every ticket
+a project builds is one commit on that project's single integration branch,
+`deploy/<project-slug>` (`projects/{id}.deployBranch`) — tickets stack on
+each other, are tested in the combination they will ship in, and merge to
+`main` as ONE PR with one `APP_VERSION` bump. This replaced a per-ticket
+branch-off-`main` model where two tickets alive at once were guaranteed to
+conflict on merge (and always conflicted on `version.js`, which every PR
+bumped on the same line). Consequences worth knowing before touching the
+board:
+
+- **Approving is the checkbox.** A Ready for Testing card has one CTA,
+  **Failed testing**; tick it (or the column select-all) and click
+  **"Approved for Deployment — N selected"**. The old per-card "Confirm
+  tested" button and its `testPassed` flag are gone.
+- **Failed testing also takes the ticket off the branch** — it writes
+  `revertRequested`, and the automation reverts that card's commits. A card
+  in Backlog must never have live commits on a train. If a later ticket
+  built on top of it the revert conflicts, nothing is force-pushed and
+  `revertBlockedBy` names who a human has to decide about.
+- **Deploy to Main appears only when the whole train is approved** —
+  merging the branch ships everything on it, so Ready for Testing has to be
+  empty for that project first.
+- **The first approval locks the Backlog** (`trainLocked`): Ready for Dev
+  and Groom Backlog hide until the train merges, so no new ticket joins a
+  release that is already closing. Backlog cards stay fully editable; only
+  starting a build is held.
+
+New feature/bug requests land in a project's Backlog; once tested and
+approved, click that project's **"Deploy to Main"** button to have Claude
+verify and merge the train for real. See `backlog-tracker/README.md` →
+"The deployment train — one branch and one PR per project" and
+`backlog-tracker/REQUIREMENTS.md` → "The deployment train".
 
 **There's no separate "publish" step anymore — a write to Firestore is
 live immediately**, for every open tab, via `onSnapshot()`. **The board is

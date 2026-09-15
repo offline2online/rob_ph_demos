@@ -33,9 +33,47 @@ service cloud.firestore {
         ];
     }
 
+    // ── Deployment train state on a project ────────────────────────────────
+    // A project's tickets all build onto one integration branch
+    // (deployBranch) and ship as one PR — see backlog-tracker/README.md →
+    // "The deployment train". The fields that drive that are written by
+    // run-backlog-automation.js through the service account, which bypasses
+    // these rules entirely; nothing in the browser is meant to move them,
+    // and a browser write that changed one could point a real merge at the
+    // wrong branch or PR.
+    function trainFieldUnchanged(f) {
+      return (f in incoming()) == (f in resource.data)
+        && (!(f in incoming()) || incoming()[f] == resource.data[f]);
+    }
+    function trainFieldsAreAutomationOnly() {
+      return trainFieldUnchanged("deployBranch")
+        && trainFieldUnchanged("trainReady")
+        && trainFieldUnchanged("trainStatus")
+        && trainFieldUnchanged("trainPrNumber")
+        && trainFieldUnchanged("trainNote")
+        && trainFieldUnchanged("needsHumanMerge");
+    }
+    // trainLocked is the one exception, and only in one direction: the
+    // board latches it true the moment a project's first ticket is approved
+    // (app.js's deployToFeature), which is what stops a new ticket joining a
+    // release that is already closing. CLEARING it is what lets builds start
+    // again, and only a merged train may do that — so the browser can set it
+    // and never unset it.
+    function trainLockOnlyLatches() {
+      return !("trainLocked" in incoming())
+        || incoming().trainLocked == true
+        || trainFieldUnchanged("trainLocked");
+    }
+
     match /projects/{projectId} {
       allow read: if isEditor();
-      allow create, update: if isEditor() && isNonEmptyBoundedString(incoming().name, 80);
+      allow create: if isEditor() && isNonEmptyBoundedString(incoming().name, 80)
+        && !("deployBranch" in incoming()) && !("trainReady" in incoming())
+        && !("trainStatus" in incoming()) && !("trainPrNumber" in incoming())
+        && !("trainNote" in incoming()) && !("needsHumanMerge" in incoming())
+        && !("trainLocked" in incoming());
+      allow update: if isEditor() && isNonEmptyBoundedString(incoming().name, 80)
+        && trainFieldsAreAutomationOnly() && trainLockOnlyLatches();
       allow delete: if isEditor();
     }
 

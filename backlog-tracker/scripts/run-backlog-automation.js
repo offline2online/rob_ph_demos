@@ -14,14 +14,33 @@
 // inject that session into leaking a push-capable secret). Instead, the
 // Routine packages its finished fix as plain file contents into Firestore
 // (`patchFiles` + `patchReady: true` on the item) and this script — running
-// with no AI involved at all, on a schedule — turns that into a real
-// branch, commit, and PR using the runner's own credentials. It also
-// handles the mirror case (`mergeReady: true`) for the Deploy-notify flow,
-// merging an already-reviewed PR once the Routine has confirmed it's green.
+// with no AI involved at all, on a schedule — turns that into real commits
+// using the runner's own credentials.
 //
-// Idempotent and safe to run on a schedule: an item only gets processed
-// while its own patchReady/mergeReady flag is still true, and both flags
-// are cleared as part of the same write that records success.
+// Since the deployment train (see "The deployment train" further down), a
+// ticket does NOT get its own branch and PR: it becomes one commit on its
+// project's single integration branch, `deploy/<project-slug>`. One project
+// therefore has one PR per release, not one per ticket, which is what
+// removed the merge conflicts two concurrent tickets used to guarantee.
+// The steps this script runs, each driven by one Firestore flag:
+//
+//   backlogItems.patchReady      -> processApplyPatch: commit on the train
+//   backlogItems.revertRequested -> processRevertFromTrain: take a rejected
+//                                   ticket's commits back off the train
+//   projects.trainReady          -> processDeployTrain: merge the whole
+//                                   train to main as one PR, one version
+//                                   bump, and reset the branch
+//   backlogItems.revertReady     -> processRevertPr: undo something already
+//                                   merged to main (still its own PR)
+//
+// `mergeReady`/`mergePrNumber` (processMergePr, reconcileHumanMergedPrs)
+// are the pre-train per-ticket merge path, kept only so cards that were
+// already in flight when the train shipped can still finish. Nothing
+// writes them for new work.
+//
+// Idempotent and safe to run on a schedule: a record only gets processed
+// while its own flag is still true, and the flag is cleared as part of the
+// same write that records success.
 
 const { execFileSync } = require("child_process");
 const fs = require("fs");
@@ -126,17 +145,219 @@ async function appendNote(item, text) {
   return notes;
 }
 
-function sanitizeBranchName(name, itemId) {
-  const slug = String(name || "backlog-fix")
+// ── The deployment train ─────────────────────────────────────────────────
+// Every ticket a project builds now lands as ONE COMMIT on that project's
+// single long-lived integration branch, `deploy/<project-slug>` — not on a
+// per-ticket `claude/<slug>-<id6>` branch cut fresh from `main`.
+//
+// Why: two tickets alive at once drifted apart and nothing in the pipeline
+// ever brought them back together (the Routine has no push credential by
+// design; processMergePr only ever ran `gh pr merge`), so the second PR to
+// merge was conflicted, `gh pr merge` failed with "Pull Request has merge
+// conflicts", and the card sat in Approved for Deployment until a human
+// resolved it by hand — PR #77, then #141 and #139 on 15 Sep 2026.
+// `version.js` made it structural rather than occasional: every PR bumped
+// APP_VERSION on the same line, so any two open PRs conflicted on that file
+// alone. Building onto one branch means tickets are written on top of each
+// other, tested in the combination they will actually ship in, and merged
+// as one PR with exactly one version bump (see processDeployTrain).
+function deployBranchForName(name) {
+  const slug = String(name || "project")
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "")
-    .slice(0, 40) || "backlog-fix";
-  return `claude/${slug}-${itemId.slice(0, 6).toLowerCase()}`;
+    .slice(0, 50) || "project";
+  return `deploy/${slug}`;
 }
 
-// Same slugging as sanitizeBranchName above, "revert-" prefixed and kept as
-// its own function rather than a parameter on that one: this branch name
+async function getProject(projectId) {
+  const res = await fetch(`${FIRESTORE_BASE}/projects/${projectId}`, { headers: await firestoreHeaders() });
+  if (!res.ok) throw new Error(`GET projects/${projectId} failed: ${res.status} ${await res.text()}`);
+  const json = await res.json();
+  return { id: projectId, ...fdoc(json.fields) };
+}
+
+async function patchProject(projectId, fields) {
+  const fieldPaths = Object.keys(fields).map((k) => `updateMask.fieldPaths=${encodeURIComponent(k)}`).join("&");
+  const res = await fetch(`${FIRESTORE_BASE}/projects/${projectId}?${fieldPaths}`, {
+    method: "PATCH",
+    headers: await firestoreHeaders(),
+    body: JSON.stringify({ fields: Object.fromEntries(Object.entries(fields).map(([k, v]) => [k, tv(v)])) }),
+  });
+  if (!res.ok) throw new Error(`PATCH projects/${projectId} failed: ${res.status} ${await res.text()}`);
+}
+
+async function itemsForProject(projectId) {
+  return runQuery({
+    from: [{ collectionId: "backlogItems" }],
+    where: { fieldFilter: { field: { fieldPath: "projectId" }, op: "EQUAL", value: { stringValue: projectId } } },
+  });
+}
+
+// Every card on a project's train right now: it has a commit on the
+// integration branch and hasn't shipped yet. This is the set §2.4's Deploy
+// gate reasons about on the board, and the set one merge carries — merging
+// the branch ships all of them, which is exactly why the board hides Deploy
+// to Main until every one of them is approved.
+const ON_TRAIN_STATUSES = new Set(["ready-for-testing", "ready-to-publish"]);
+function onTrainItems(items) {
+  return items.filter((i) => i.deployCommit && ON_TRAIN_STATUSES.has(i.status));
+}
+
+function remoteBranchExists(branch) {
+  try {
+    return !!run("git", ["ls-remote", "--heads", "origin", branch]);
+  } catch (err) {
+    console.log(`[train] couldn't ls-remote ${branch} (${err.message}) — assuming it doesn't exist yet`);
+    return false;
+  }
+}
+
+// Resolves (and, first time, creates and records) the project's integration
+// branch. Stored on the project doc so the board, the Routine and this
+// script all name the same branch without re-deriving a slug each time —
+// a later project rename must NOT silently move the train.
+async function ensureDeployBranch(project) {
+  const branch = project.deployBranch || deployBranchForName(project.name);
+  if (!remoteBranchExists(branch)) {
+    console.log(`[train] creating integration branch ${branch} from main`);
+    run("git", ["fetch", "origin", "main", "--quiet"]);
+    // An earlier item in this same run may have left files on disk; they
+    // must not ride along into a brand-new branch.
+    try { run("git", ["reset", "--hard", "--quiet"]); } catch { /* nothing staged */ }
+    try { run("git", ["clean", "-fdq"]); } catch { /* nothing to clean */ }
+    run("git", ["checkout", "-B", branch, "origin/main", "--quiet"]);
+    run("git", ["push", "-u", "origin", branch, "--quiet"]);
+  }
+  if (project.deployBranch !== branch) {
+    await patchProject(project.id, { deployBranch: branch, updatedAt: new Date().toISOString() });
+  }
+  return branch;
+}
+
+// A clean checkout of the integration branch exactly as it is on origin.
+// Deliberately destructive about the working tree: every caller is about to
+// write full-file patchFiles over it, and a leftover file from an earlier
+// item in the same run must never ride along into this item's commit.
+function checkoutTrain(branch) {
+  run("git", ["fetch", "origin", "main", branch, "--quiet"]);
+  try { run("git", ["reset", "--hard", "--quiet"]); } catch { /* nothing staged */ }
+  try { run("git", ["clean", "-fdq"]); } catch { /* nothing to clean */ }
+  run("git", ["checkout", "-B", branch, `origin/${branch}`, "--quiet"]);
+}
+
+// One push helper for every train write. The run's own GITHUB_TOKEN can
+// never push a file under .github/workflows/ (see WORKFLOW_PUSH_TOKEN
+// above), so a push that fails falls back to the App token when one is
+// configured rather than failing the item outright — the guardrails that
+// decide whether a workflow change may be pushed at all still run before
+// we get here, in processApplyPatch.
+function pushTrain(branch) {
+  try {
+    run("git", ["push", "origin", branch, "--quiet"]);
+    return;
+  } catch (err) {
+    if (!WORKFLOW_PUSH_TOKEN) throw err;
+    console.log(`[train] plain push of ${branch} failed (${scrubSecrets(err.message)}) — retrying with the workflow-push App token`);
+    pushWithWorkflowToken(branch);
+  }
+}
+
+function headSha() {
+  return run("git", ["rev-parse", "HEAD"]);
+}
+
+// The commit message every ticket's own commit on the train carries. The
+// `Backlog item: <id>` line is the same marker PR bodies have always
+// carried, so exact-id lookups keep working — now against `git log --grep`
+// as well as a PR body search.
+function trainCommitMessage(item) {
+  const subject = String(item.patchCommitMessage || item.title || item.desc || item.id).split("\n")[0].slice(0, 120);
+  return `${subject}\n\nBacklog item: ${item.id}`;
+}
+
+function commitOnTrain(message) {
+  run("git", ["-c", "user.name=backlog-automation", "-c", "user.email=backlog-automation@users.noreply.github.com",
+    "commit", "-m", message, "--quiet"]);
+  return headSha();
+}
+
+function stagedChangedPaths() {
+  try {
+    const out = run("git", ["diff", "--cached", "--name-only"]);
+    return out ? out.split("\n").filter(Boolean) : [];
+  } catch {
+    return [];
+  }
+}
+
+// The backlog items whose work is still LIVE on the commits in `range`.
+// Used to name the later tickets sitting on top of a ticket being reverted
+// off the train (§2.3) — the ones that make the revert conflict and that a
+// human has to decide about.
+//
+// Reverting doesn't rewrite history: a ticket taken off the train leaves
+// both its original commit and the revert of it in the log, so a naive scan
+// would keep naming an already-removed ticket as blocking the next one.
+// Each `Revert "..."` commit names the sha it undoes ("This reverts commit
+// <sha>"), so those shas are struck out before the ids are collected — a
+// ticket counts as live only while it has at least one un-reverted commit.
+function itemIdsInRange(range) {
+  let out = "";
+  try { out = run("git", ["log", "--format=%H%x1f%B%x1e", range]); } catch { return []; }
+  const commits = [];
+  const revertedShas = new Set();
+  for (const record of String(out).split("\x1e")) {
+    const [sha, body] = record.replace(/^\s+/, "").split("\x1f");
+    if (!sha) continue;
+    for (const m of String(body || "").matchAll(/This reverts commit ([0-9a-f]{7,40})/g)) revertedShas.add(m[1]);
+    commits.push({ sha, body: String(body || "") });
+  }
+  const live = new Set();
+  for (const c of commits) {
+    if (revertedShas.has(c.sha)) continue;
+    // A revert commit's own body carries no `Backlog item:` line, so it
+    // contributes nothing here beyond the strike-out above.
+    for (const m of c.body.matchAll(/Backlog item:\s*([A-Za-z0-9_-]+)/g)) live.add(m[1]);
+  }
+  return [...live];
+}
+
+// APP_VERSION as it stands on a given git ref (rather than readAppVersion()'s
+// "whatever is on disk right now"). The train's single version bump is
+// computed from `main`, so a train that has been open across several
+// deployments can't drift: it always lands exactly one patch ahead of what
+// is actually live.
+function readAppVersionFromRef(ref) {
+  try {
+    const content = run("git", ["show", `${ref}:backlog-tracker/public/js/version.js`]);
+    const match = content.match(/APP_VERSION\s*=\s*"([^"]+)"/);
+    return match ? match[1] : null;
+  } catch (err) {
+    console.log(`[train] couldn't read APP_VERSION from ${ref} (${err.message})`);
+    return null;
+  }
+}
+
+function bumpPatchVersion(version) {
+  const parts = String(version).split(".");
+  if (parts.length !== 3 || parts.some((p) => !/^\d+$/.test(p))) return null;
+  return `${parts[0]}.${parts[1]}.${Number(parts[2]) + 1}`;
+}
+
+// A link to the integration branch itself, for a ticket whose change has no
+// directly viewable .html page (a Cloud Function, a script) — the same role
+// the PR URL played as guessPreviewUrl's fallback before the train existed,
+// except a train ticket has no PR of its own until the deploy PR opens.
+function trainTreeUrl(branch) {
+  return `https://github.com/${REPO}/tree/${branch}`;
+}
+
+// A `claude/revert-<slug>-<id6>` branch name for processRevertPr's own
+// post-live revert PR — the one place this pipeline still cuts a branch of
+// its own, since undoing something already merged to main is not train work.
+// Kept as its own function rather than a parameter on a shared helper: this
+// branch name
 // only ever needs to be item-scoped-and-distinguishable-from-the-original,
 // not configurable, and a shared helper with an optional prefix would make
 // every existing call site re-readable for a case that only this one needs.
@@ -150,12 +371,15 @@ function sanitizeRevertBranchName(name, itemId) {
 }
 
 // The backlog-tracker APP_VERSION a Ready for Testing item gets stamped
-// with (see the item's own testVersion field, set just below in
-// processApplyPatch) — read straight off disk *after* applyPatchFiles has
-// run, so this reflects whatever version.js will actually end up on `main`
-// once this PR merges (including a version bump this same patchFiles
-// carries, per ROUTINE_INSTRUCTIONS.md's "always bump the version" rule),
-// not a value read before the patch was applied.
+// with (see the item's own testVersion field, set in processApplyPatch) —
+// read straight off disk *after* applyPatchFiles has run, i.e. the version
+// on the integration branch the ticket is actually testable at.
+//
+// patchFiles no longer carry a version bump of their own: every PR bumping
+// APP_VERSION on the same line is precisely what made any two open PRs
+// conflict on that file alone. The train bumps it once, at deploy time, in
+// processDeployTrain (see readAppVersionFromRef, which reads main's value
+// rather than disk).
 function readAppVersion() {
   try {
     const content = fs.readFileSync(path.join(process.cwd(), "backlog-tracker/public/js/version.js"), "utf8");
@@ -261,9 +485,13 @@ function workflowChangeProblems(patchFiles) {
 // a token-bearing URL or -c argument: execFileSync puts the full argument
 // list in its error message, and those messages end up on the card
 // (recordAttemptFailure), so the token must never be an argument.
-function pushWithWorkflowToken(branch) {
+//
+// `force` is opt-in and used only for a branch this script owns outright (a
+// per-item revert branch). The integration branch is shared history that
+// other tickets' commits live on, so its pushes are never forced.
+function pushWithWorkflowToken(branch, { force = false } = {}) {
   const basic = Buffer.from(`x-access-token:${WORKFLOW_PUSH_TOKEN}`).toString("base64");
-  run("git", ["push", "-u", "origin", branch, "--force", "--quiet"], {
+  run("git", ["push", "-u", "origin", branch, ...(force ? ["--force"] : []), "--quiet"], {
     env: {
       ...process.env,
       GIT_CONFIG_COUNT: "2",
@@ -290,42 +518,43 @@ const MAX_PATCH_ATTEMPTS = 5;
 // first failure (so the reason is visible immediately, not after 5 more
 // minutes) and again on the attempt that gives up; in between it just
 // counts, so a flaky run can't bury the card under a note per tick.
-// Generalized over the patch-apply path (attemptsField: "patchAttempts",
-// readyField: "patchReady", the default) and the merge path (attemptsField:
-// "mergeAttempts", readyField: "mergeReady") — same shape of bug either
-// way: a transient failure (a network blip, a GitHub 5xx) genuinely does
+// Generalized over every flag-driven step: the patch-apply path
+// (attemptsField: "patchAttempts", readyField: "patchReady", the default),
+// the legacy merge path ("mergeAttempts"/"mergeReady"), the post-live
+// revert ("revertAttempts"/"revertReady") and the train revert
+// ("trainRevertAttempts"/"revertRequested", the one that never clears its
+// flag — see clearReadyOnGiveUp) — same shape of bug every way:
+// a transient failure (a network blip, a GitHub 5xx) genuinely does
 // succeed on a later run, but retrying it forever with nothing recorded on
 // the card is how a permanent failure hides for hours with no visible
 // reason. The merge path used to just console.error a failed `gh pr merge`
 // and leave the card at Approved for Deployment showing "Waiting for
 // Notify Claude — Deploy" forever (yLzaj00wwFI5qxjOGbRe) — this gives it
 // the exact same note-then-give-up treatment the patch path already had.
-async function recordAttemptFailure(item, err, { attemptsField = "patchAttempts", readyField = "patchReady", verb = "open a PR for" } = {}) {
+async function recordAttemptFailure(item, err, { attemptsField = "patchAttempts", readyField = "patchReady", verb = "open a PR for", clearReadyOnGiveUp = true } = {}) {
   const attempts = (Number(item[attemptsField]) || 0) + 1;
   const reason = scrubSecrets(err instanceof Error ? (err.message || String(err)) : String(err));
   const giveUp = attempts >= MAX_PATCH_ATTEMPTS;
   const fields = { [attemptsField]: attempts, updatedAt: new Date().toISOString() };
 
-  if (attempts === 1 || giveUp) {
+  // Noted on the first failure (so the reason is visible immediately) and
+  // again on the attempt that gives up — `=== MAX`, not `>= MAX`, because a
+  // flag that is deliberately never cleared (see clearReadyOnGiveUp) would
+  // otherwise add a near-identical note on every tick forever.
+  if (attempts === 1 || attempts === MAX_PATCH_ATTEMPTS) {
     const text = giveUp
-      ? `Gave up after ${attempts} failed attempts to ${verb} this item. ${readyField} has been cleared so the job stops retrying; the work packaged on the card is untouched. Last error:\n\n${reason}`
+      ? (clearReadyOnGiveUp
+          ? `Gave up after ${attempts} failed attempts to ${verb} this item. ${readyField} has been cleared so the job stops retrying; the work packaged on the card is untouched. Last error:\n\n${reason}`
+          : `${attempts} failed attempts to ${verb} this item. ${readyField} is deliberately LEFT SET — clearing it would silently accept a state the pipeline treats as unsafe — so the job keeps retrying quietly, without adding another note. A human needs to look. Last error:\n\n${reason}`)
       : `Attempt ${attempts} to ${verb} this item failed; it will be retried on the next run (up to ${MAX_PATCH_ATTEMPTS}). Error:\n\n${reason}`;
     fields.notes = await appendNote(item, text);
   }
-  if (giveUp) fields[readyField] = false;
+  if (giveUp && clearReadyOnGiveUp) fields[readyField] = false;
 
   await patchItem(item.id, fields);
-  console.error(`[${readyField}] ${item.id}: attempt ${attempts}/${MAX_PATCH_ATTEMPTS} failed${giveUp ? ` — giving up, ${readyField} cleared` : ""}: ${reason}`);
+  console.error(`[${readyField}] ${item.id}: attempt ${attempts}/${MAX_PATCH_ATTEMPTS} failed${giveUp ? (clearReadyOnGiveUp ? ` — giving up, ${readyField} cleared` : ` — still retrying, ${readyField} left set`) : ""}: ${reason}`);
 }
 
-// findExistingPrForItem: finds an OPEN PR whose body carries this item's
-// "Backlog item: <id>" marker. Originally a duplicate guard (PR #61 was
-// opened from a half-finished item and closed as a duplicate of #62); now
-// it feeds resolveReusablePr, which attaches the item to that PR instead
-// of refusing to proceed. Deliberately OPEN-only (see dWJtVKC310qgMevZ3XPl,
-// 2026-09-11: a re-patch after PR #84 had merged found #84 via the marker
-// and refused to open the follow-up PR): a MERGED or CLOSED PR is finished
-// or dead work and must never block a fresh round on the same item.
 // Builds a rawcdn.githack.com preview link for the branch a PR was just
 // opened from, so a Ready for Testing card is testable the moment it
 // arrives instead of sitting with no way to look at it until someone sets
@@ -345,7 +574,9 @@ async function recordAttemptFailure(item, err, { attemptsField = "patchAttempts"
 // never directly viewable as a page. Falls back to the PR URL itself for
 // anything that can't be githack'd directly (no .html touched at all —
 // e.g. a Cloud Function-only change), same fallback the card's own manual
-// "Set test link" flow already documents.
+// "Set test link" flow already documents — on the train that fallback is a
+// link to the integration branch itself (trainTreeUrl), since a ticket has
+// no PR of its own until the whole train's deploy PR opens.
 function guessPreviewUrl(patchFiles, branch, prUrl) {
   const htmlPaths = (patchFiles || [])
     .filter((f) => f && typeof f.path === "string" && f.content !== null && f.content !== undefined)
@@ -356,39 +587,24 @@ function guessPreviewUrl(patchFiles, branch, prUrl) {
   return `https://rawcdn.githack.com/${REPO}/${branch}/${path}`;
 }
 
-// Finds a PR by exact head branch, in ANY state — deliberately different
-// from findExistingPrForItem's OPEN-only, body-text search just below.
-// That one is a broad duplicate guard across the whole repo; this one asks
-// a narrower, reconciliation-specific question: "does THIS item's own
-// branch (which nothing else could ever share, since the name embeds the
-// item id) already have a PR, left over from an earlier run of this same
-// job that didn't finish?" Because the branch is item-scoped, a CLOSED
-// match here is a genuine "a human already looked at and rejected this
-// round of work" signal, not the "different round of work, ignore it"
-// case findExistingPrForItem's own comment documents for the body-text
-// search.
+// Finds a PR by exact head branch, in ANY state. Reconciliation-specific:
+// "does this branch already have a PR, left over from an earlier run of
+// this same job that didn't finish?" Used for a project's integration
+// branch (processDeployTrain reusing an already-open train PR rather than
+// opening a second one) and for a post-live revert branch.
+//
+// It replaced a body-text search for the item's own `Backlog item: <id>`
+// marker across every open PR, which existed to stop a half-finished item
+// opening a duplicate PR (#61, closed as a duplicate of #62). That whole
+// class of bug is gone with per-ticket PRs: a re-patch is just another
+// commit on the train, and the marker now lives in commit messages, where
+// `git log --grep` finds it without api.github.com.
 function findPrForBranch(branch) {
   let json;
   try {
     json = run("gh", ["pr", "list", "--repo", REPO, "--head", branch, "--state", "all", "--json", "number,state,url"]);
   } catch (err) {
     console.log(`[apply-patch] couldn't check for an existing PR on branch ${branch} (${err.message}) — proceeding without this reconciliation check`);
-    return null;
-  }
-  const prs = JSON.parse(json);
-  return prs.length ? prs[0] : null;
-}
-
-function findExistingPrForItem(itemId) {
-  let json;
-  try {
-    json = run("gh", [
-      "pr", "list", "--repo", REPO, "--state", "open",
-      "--search", `"Backlog item: ${itemId}" in:body`,
-      "--json", "number,state,url,headRefName",
-    ]);
-  } catch (err) {
-    console.log(`[apply-patch] ${itemId}: couldn't check for an existing PR (${err.message}) — proceeding without the duplicate check`);
     return null;
   }
   const prs = JSON.parse(json);
@@ -405,120 +621,11 @@ function viewPr(prNumber) {
   }
 }
 
-// Picks the OPEN PR a patch-ready item should land on, if one exists —
-// the item's own recorded PR first, then a PR on the item's own branch,
-// then any open PR whose body carries this item's marker (a multi-item
-// batch opened from a sibling's branch). Returns null when there is no
-// open PR, in which case a fresh branch + PR is the right outcome.
-//
-// This replaced a hard stop. Before, an open PR referencing the item made
-// the job clear patchReady, leave the card in Backlog and ask a human to
-// "close it manually before setting patchReady again" — which is exactly
-// the wrong answer in the two cases that actually produce it: (1) a batch
-// of items packaged together (same patchBranch, one combined diff, one PR
-// listing every item — PR #131 carried three): the first item's run opens
-// the PR, and every sibling then bounced off it; (2) a re-patch of an item
-// whose PR is still open (tested, sent back, fixed again): the follow-up
-// fix had nowhere to go. In both cases the PR IS this item's PR, so the
-// item should be attached to it (adding the new work as a commit where
-// there is any) and move on to Ready for Testing, not backwards.
-function resolveReusablePr(item, branch) {
-  const recorded = Number(item.prNumber) || (String(item.prUrl || "").match(/\/pull\/(\d+)/) || [])[1];
-  if (recorded) {
-    const pr = viewPr(recorded);
-    if (pr && pr.state === "OPEN") return { ...pr, source: "recorded" };
-  }
-  const own = findPrForBranch(branch);
-  if (own && own.state === "OPEN") {
-    const pr = viewPr(own.number) || { ...own, headRefName: branch };
-    return { ...pr, source: "own-branch" };
-  }
-  const batch = findExistingPrForItem(item.id);
-  if (batch) return { ...batch, source: batch.headRefName === branch ? "own-branch" : "batch" };
-  return null;
-}
-
 // Restores a clean checkout of main after patchFiles were written on some
 // other branch and are not going to be committed there.
 function discardWorkingTree() {
   try { run("git", ["reset", "--hard", "--quiet"]); } catch { /* nothing staged */ }
   try { run("git", ["clean", "-fdq"]); } catch { /* nothing to clean */ }
-  run("git", ["checkout", "main", "--quiet"]);
-}
-
-// Lands a patch-ready item on an already-open PR (see resolveReusablePr).
-// The item's own PR (recorded on the card, or on its own branch) gets the
-// new patchFiles committed on top of the PR branch — that is the re-patch
-// case, and the branch is what the Routine's follow-up fix was meant to
-// update. A batch sibling's PR is only ever attached, never rewritten: the
-// PR was opened with the combined content for every item it lists, so the
-// sibling's own patchFiles are normally identical to what is already on
-// the branch (no diff). Where they do differ, the sibling's copy is by
-// definition a partial view of a shared file (see "Group multi-item fixes
-// into one deployment" in ROUTINE_INSTRUCTIONS.md) and committing it would
-// undo the other items' changes — so the branch is left as-is and the
-// difference is called out on the card for whoever tests it.
-async function attachToExistingPr(item, pr) {
-  const head = pr.headRefName;
-  console.log(`[apply-patch] ${item.id}: attaching to open PR #${pr.number} (${pr.source}, branch ${head})`);
-  run("git", ["fetch", "origin", head, "--quiet"]);
-  run("git", ["checkout", "-B", head, `origin/${head}`, "--quiet"]);
-
-  applyPatchFiles(item.patchFiles);
-  // Read while the patched files are still on disk (the batch case below
-  // discards them), so testVersion reflects the branch this PR will merge.
-  const testVersion = readAppVersion();
-  run("git", ["add", "-A"]);
-  let changedPaths = [];
-  try {
-    const out = run("git", ["diff", "--cached", "--name-only"]);
-    changedPaths = out ? out.split("\n").filter(Boolean) : [];
-  } catch { /* treat as no changes */ }
-
-  let noteText;
-  if (!changedPaths.length) {
-    noteText = `Attached to the already-open PR #${pr.number} (${pr.url}): this item's patchFiles are already on its branch (${head}), so nothing new was committed. Moving to Ready for Testing with that PR.`;
-  } else if (pr.source === "batch") {
-    // Not ours to rewrite — see the comment above.
-    noteText = `Attached to the already-open PR #${pr.number} (${pr.url}), which was opened for a batch that includes this item. ` +
-      `This item's own patchFiles differ from what is on that branch (${head}) in: ${changedPaths.join(", ")} — the PR's combined version has been kept and this copy was NOT committed, ` +
-      `so it can't undo the other items' changes to the same files. Test against the PR; if this item's fix is genuinely missing there, re-patch it on top of the PR branch.`;
-    discardWorkingTree();
-    changedPaths = [];
-  } else {
-    const commitMessage = item.patchCommitMessage || `Fix: ${item.title || item.desc || item.id}`;
-    run("git", ["-c", "user.name=backlog-automation", "-c", "user.email=backlog-automation@users.noreply.github.com", "commit", "-m", commitMessage, "--quiet"]);
-    const wf = workflowPathsIn(item.patchFiles);
-    if (wf.length) {
-      run("git", ["fetch", "origin", "main", "--quiet"]);
-      const problems = WORKFLOW_PUSH_TOKEN ? workflowChangeProblems(item.patchFiles) : ["no WORKFLOW_PUSH_TOKEN configured"];
-      if (problems.length) {
-        discardWorkingTree();
-        throw new Error(`patchFiles touch workflow file(s) (${wf.join(", ")}) that this job can't push: ${problems.join("; ")}`);
-      }
-      // Same branch, same token discipline as the fresh-PR path; the
-      // force is harmless here because the branch was just fetched.
-      pushWithWorkflowToken(head);
-    } else {
-      run("git", ["push", "origin", head, "--quiet"]);
-    }
-    noteText = `Updated the already-open PR #${pr.number} (${pr.url}) with a new commit on its branch (${head}) carrying this round's patchFiles (${changedPaths.join(", ")}). Moving to Ready for Testing with that PR.`;
-  }
-
-  const notes = await appendNote(item, noteText);
-  const previewUrl = item.previewUrl || guessPreviewUrl(item.patchFiles, head, pr.url);
-  await patchItem(item.id, {
-    status: "ready-for-testing",
-    patchReady: false,
-    patchAttempts: 0,
-    updatedAt: new Date().toISOString(),
-    notes,
-    prUrl: pr.url,
-    prNumber: Number(pr.number),
-    previewUrl,
-    ...(testVersion ? { testVersion } : {}),
-  });
-  console.log(`[apply-patch] ${item.id}: attached to PR #${pr.number}${changedPaths.length ? ` (+1 commit)` : ""}, moved to ready-for-testing`);
   run("git", ["checkout", "main", "--quiet"]);
 }
 
@@ -529,8 +636,8 @@ async function processApplyPatch(item) {
     return;
   }
 
-  // Checked before the duplicate-PR lookup and before any git work: this
-  // can never succeed, so there is nothing to gain by getting further in.
+  // Checked before any git work: this can never succeed, so there is
+  // nothing to gain by getting further in.
   const workflowPaths = workflowPathsIn(item.patchFiles);
   if (workflowPaths.length && !WORKFLOW_PUSH_TOKEN) {
     console.log(`[apply-patch] ${item.id}: refusing — patchFiles touch ${workflowPaths.length} workflow file(s) and no WORKFLOW_PUSH_TOKEN is configured`);
@@ -571,154 +678,270 @@ async function processApplyPatch(item) {
     }
   }
 
-  const branch = sanitizeBranchName(item.patchBranch, item.id);
-
-  // Reconcile against this item's own branch FIRST, before the broader
-  // body-text duplicate guard below. A run of this job that gets cancelled
-  // mid-item (backlog-automation.yml's own concurrency group queues
-  // instead of killing an in-progress run, but a burst of triggers can
-  // still queue several runs back to back — see its comment) can leave
-  // real GitHub state — a pushed branch, sometimes even an already-opened
-  // PR — with the item's own Firestore doc never updated to say so, since
-  // the write that would have recorded it never got to run. Before this
-  // check existed, the item just sat patchReady:true and the next run's
-  // fresh `git push` to this same deterministic branch name failed
-  // outright (non-fast-forward against the stale push), retried every ~2
-  // minutes until MAX_PATCH_ATTEMPTS gave up — a permanent failure with no
-  // record of the real cause. Checking by exact branch name (unlike the
-  // body-text search below, this branch can never belong to any other
-  // item) finds exactly that leftover state and reconciles instead of
-  // trying, and failing, to redo it.
-  // An OPEN PR for this item — its own (recorded on the card, or on its
-  // own branch, including one left by an interrupted earlier run that
-  // never got to record it) or a batch sibling's — is where this work
-  // lands. See resolveReusablePr/attachToExistingPr: the item is attached
-  // to that PR (with a new commit where it is the item's own PR and the
-  // patchFiles add anything) and moves to Ready for Testing. An open PR is
-  // never a reason to bounce the card back to Backlog any more.
-  const reusablePr = resolveReusablePr(item, branch);
-  if (reusablePr) {
-    await attachToExistingPr(item, reusablePr);
-    return;
-  }
-
-  // No open PR. A MERGED or CLOSED PR on the item's own branch is finished
-  // or rejected work from an earlier round, not this one — patchReady was
-  // set again deliberately, so this round gets a fresh branch push (the
-  // --force below recreates the branch from main) and its own new PR. The
-  // one exception is handled further down: if the patchFiles turn out to
-  // already be on main (the merged case, or a sibling's PR having landed
-  // them), there is no diff and the item advances without a PR.
-  const priorPr = findPrForBranch(branch);
-  if (priorPr && priorPr.state !== "OPEN") {
-    console.log(`[apply-patch] ${item.id}: branch ${branch} previously carried ${priorPr.state} PR #${priorPr.number} — starting a fresh round on the same branch name`);
-  }
-
-  run("git", ["fetch", "origin", "main", "--quiet"]);
-  run("git", ["checkout", "-B", "main", "origin/main", "--quiet"]);
-  run("git", ["checkout", "-B", branch, "--quiet"]);
-
-  applyPatchFiles(item.patchFiles);
-
-  run("git", ["add", "-A"]);
-  let hasChanges = true;
-  try {
-    run("git", ["diff", "--cached", "--quiet"]);
-    hasChanges = false;
-  } catch {
-    hasChanges = true;
-  }
-  if (!hasChanges) {
-    // Same class of "stuck forever, no record of why" bug as the
-    // old existing-PR guard (since replaced by attachToExistingPr) — this branch used to
-    // just log and return, leaving patchReady/status untouched, so an
-    // item whose patchFiles turn out to already be on main (the expected
-    // outcome for one half of a multi-item "shared, full combined
-    // content" batch — see "Group multi-item fixes into one deployment"
-    // in ROUTINE_INSTRUCTIONS.md — once its sibling's PR merges first)
-    // would silently retry every scheduled run forever with nothing to
-    // show for it. The content genuinely IS on main at this point (that's
-    // what "no diff" means), so treat it the same as a successful patch
-    // that just didn't need its own PR: advance to ready-for-testing with
-    // a note explaining why, so a human still gets a chance to test it
-    // and the item doesn't rot in Backlog indefinitely.
-    console.log(`[apply-patch] ${item.id}: patchFiles produced no actual diff against main — already present, advancing without a new PR`);
-    run("git", ["checkout", "main", "--quiet"]);
+  const projectId = item.projectId;
+  if (!projectId) {
+    // Nothing to build onto: the train is a per-project branch, and an item
+    // with no projectId belongs to the board's synthesized "General"
+    // grouping, which has no Firestore project doc to hang a branch off.
+    console.log(`[apply-patch] ${item.id}: no projectId — can't resolve an integration branch`);
     const notes = await appendNote(
       item,
-      `No PR opened: patchFiles produced no diff against main — this content is already there, most likely delivered by a sibling item's shared-file patch in the same batch (see "Group multi-item fixes into one deployment"). Moved to Ready for Testing directly since the fix is genuinely live; check this item's notes/deployment group for which PR actually carried it.`
+      "This item has no projectId, so there is no project integration branch (deploy/<project-slug>) to build it onto. " +
+      "patchReady has been cleared. Move the card into a real project on the board and set patchReady again."
     );
-    const testVersion = readAppVersion();
-    // Nothing was pushed for this item and nothing will be, so flag it as
-    // needing no deployment. Otherwise it reaches Approved for Deployment
-    // and waits on a Deploy to Main that has no PR to merge — a dead end
-    // whoever tests it has to escape by moving the card backwards.
-    await patchItem(item.id, {
-      status: "ready-for-testing",
-      patchReady: false,
-      patchAttempts: 0,
-      noDeploymentRequired: true,
-      updatedAt: new Date().toISOString(),
-      notes,
-      ...(testVersion ? { testVersion } : {}),
-    });
+    await patchItem(item.id, { patchReady: false, patchAttempts: 0, updatedAt: new Date().toISOString(), notes });
     return;
   }
+  const project = await getProject(projectId);
+  const deployBranch = await ensureDeployBranch(project);
 
-  const commitMessage = item.patchCommitMessage || `Fix: ${item.title || item.desc || item.id}`;
-  run("git", ["-c", "user.name=backlog-automation", "-c", "user.email=backlog-automation@users.noreply.github.com", "commit", "-m", commitMessage, "--quiet"]);
-  // --force, deliberately: branch is this item's own deterministic name
-  // (sanitizeBranchName embeds the item id), pushed only ever by this
-  // script for this one item, and resolveReusablePr above already ruled
-  // out an OPEN PR on it. The cases a plain push would otherwise fail on —
-  // this exact branch already sitting on origin with different history,
-  // left by an earlier run cancelled after pushing but before opening its
-  // PR, or by an earlier round whose PR has since merged or been closed —
-  // are exactly what this needs to recover from automatically rather than
-  // failing non-fast-forward and retrying into MAX_PATCH_ATTEMPTS.
-  if (workflowPaths.length) pushWithWorkflowToken(branch);
-  else run("git", ["push", "-u", "origin", branch, "--force", "--quiet"]);
+  // Build onto the head of the integration branch, retrying once if someone
+  // else pushed the train between our checkout and our push. checkoutTrain()
+  // re-fetches and hard-resets, so the retry genuinely re-applies this
+  // item's full-file patchFiles on top of the newer head rather than
+  // replaying a stale commit.
+  let sha = null;
+  let changedPaths = [];
+  let testVersion = null;
+  let attempt = 0;
+  for (;;) {
+    checkoutTrain(deployBranch);
+    applyPatchFiles(item.patchFiles);
+    // Read while the patched files are still on disk, so testVersion
+    // reflects the branch this item will actually be tested on.
+    testVersion = readAppVersion();
+    run("git", ["add", "-A"]);
+    changedPaths = stagedChangedPaths();
 
-  const prTitle = item.patchPrTitle || commitMessage;
-  const prBody = (item.patchPrBody || "Implemented by the Notify Claude backlog pipeline.") +
-    `\n\nBacklog item: ${item.id}`;
-  const prUrl = run("gh", ["pr", "create", "--base", "main", "--head", branch, "--title", prTitle, "--body", prBody]);
+    if (!changedPaths.length) {
+      // Same "stuck forever with no record of why" class of bug the old
+      // per-ticket path already had to fix: patchFiles that produce no diff
+      // used to just log and return, leaving patchReady set to retry every
+      // scheduled run forever. On a train there are two genuinely different
+      // reasons for no diff, and they need different outcomes.
+      run("git", ["checkout", "main", "--quiet"]);
+      const alreadyOnTrain = Array.isArray(item.deployCommits) && item.deployCommits.length > 0;
+      if (alreadyOnTrain) {
+        // A re-patch whose new content matches what this item already put on
+        // the branch — its work IS on the train, so it goes back to testing
+        // with its existing commits intact, NOT flagged noDeploymentRequired.
+        const notes = await appendNote(
+          item,
+          `Re-patched, but the new patchFiles are identical to what this item already has on ${deployBranch} — nothing new was committed. ` +
+          `Moved back to Ready for Testing against the same train commits (${item.deployCommits.join(", ")}).`
+        );
+        await patchItem(item.id, {
+          status: "ready-for-testing",
+          patchReady: false,
+          patchAttempts: 0,
+          updatedAt: new Date().toISOString(),
+          notes,
+          ...(testVersion ? { testVersion } : {}),
+        });
+        console.log(`[apply-patch] ${item.id}: no new diff against ${deployBranch} — already on the train, back to ready-for-testing`);
+        return;
+      }
+      // Never been on the train and produces no diff: the content is already
+      // there (a sibling's shared-file patch in the same batch, or it was
+      // already on main). There is nothing for a deploy to carry, so flag it
+      // as needing none — otherwise it reaches Approved for Deployment and
+      // blocks the train's Deploy gate on a ticket with no commit to ship.
+      const notes = await appendNote(
+        item,
+        `No commit made: patchFiles produced no diff against the project's integration branch ${deployBranch} — this content is already there, ` +
+        `most likely delivered by a sibling item's shared-file patch in the same batch (see "Group multi-item fixes into one deployment"). ` +
+        `Moved to Ready for Testing directly since the fix is genuinely present; flagged as needing no deployment of its own.`
+      );
+      await patchItem(item.id, {
+        status: "ready-for-testing",
+        patchReady: false,
+        patchAttempts: 0,
+        noDeploymentRequired: true,
+        deployBranch,
+        updatedAt: new Date().toISOString(),
+        notes,
+        ...(testVersion ? { testVersion } : {}),
+      });
+      console.log(`[apply-patch] ${item.id}: patchFiles produced no diff against ${deployBranch} — advancing without a commit`);
+      return;
+    }
+
+    const commitSha = commitOnTrain(trainCommitMessage(item));
+    try {
+      pushTrain(deployBranch);
+      sha = commitSha;
+      break;
+    } catch (err) {
+      if (attempt >= 1) throw err;
+      attempt += 1;
+      console.log(`[apply-patch] ${item.id}: push of ${deployBranch} was rejected (${scrubSecrets(err.message)}) — re-applying on the new head and retrying once`);
+    }
+  }
+
+  // A train carrying a workflow-file change can't be merged by the pipeline
+  // (see processDeployTrain): flag the project so the Deploy step leaves the
+  // PR open for a person instead of attempting a merge that would be refused.
+  if (workflowPaths.length && !project.needsHumanMerge) {
+    await patchProject(projectId, { needsHumanMerge: true, updatedAt: new Date().toISOString() });
+  }
+
+  const deployCommits = (Array.isArray(item.deployCommits) ? item.deployCommits.slice() : []).concat([sha]);
+  // A previewUrl already pointing at this train is a real choice (possibly a
+  // human's) and is kept; anything else — including a stale link to a
+  // pre-train `claude/...` branch — is regenerated against the train.
+  const previewUrl = (item.previewUrl && String(item.previewUrl).includes(`/${deployBranch}/`))
+    ? item.previewUrl
+    : guessPreviewUrl(item.patchFiles, deployBranch, trainTreeUrl(deployBranch));
 
   const notes = await appendNote(
     item,
-    `Opened ${prUrl} from the automated backlog pipeline.` +
+    `Committed to the project's integration branch \`${deployBranch}\` as ${sha.slice(0, 7)} (${changedPaths.join(", ")}). ` +
+    `It is built on top of every ticket already on that branch, so the test link shows this change in the combination it will ship in. ` +
+    `Nothing merges to main until every ticket on the train is approved and someone clicks Deploy to Main.` +
     (workflowPaths.length
-      ? ` This PR changes ${workflowPaths.join(", ")}, so it was pushed with the workflow-push App token and will NOT be merged by the pipeline: a person has to review and merge it on GitHub, after which Notify Claude — Deploy records it as live.`
-      : "") +
-    (priorPr && priorPr.state !== "OPEN"
-      ? ` This is a new round of work: the item's earlier PR #${priorPr.number} (${priorPr.url}) was ${priorPr.state === "MERGED" ? "already merged" : "closed without merging"}, so the fresh patchFiles got their own PR.`
+      ? ` This ticket changes ${workflowPaths.join(", ")}, so it was pushed with the workflow-push App token and the train's deploy PR will NOT be merged by the pipeline — a person has to review and merge it on GitHub.`
       : "")
   );
-  const testVersion = readAppVersion();
-  // Record the PR on the item itself, not only in the note text above:
-  // the board renders these as a link on the card (see app.js's prBadge),
-  // so "which PR is this card" stops being a question you answer by
-  // reading notes or searching GitHub.
-  const prNumber = Number((String(prUrl).match(/\/pull\/(\d+)/) || [])[1]) || null;
-  // Only auto-set previewUrl when the item doesn't already have one — a
-  // human may have already set a link by hand (e.g. re-patching an item
-  // that was already in Ready for Testing once), and that manual choice
-  // shouldn't be silently clobbered by a guess.
-  const previewUrl = item.previewUrl || guessPreviewUrl(item.patchFiles, branch, String(prUrl).trim());
+
   await patchItem(item.id, {
     status: "ready-for-testing",
     patchReady: false,
     patchAttempts: 0,
     updatedAt: new Date().toISOString(),
     notes,
-    prUrl: String(prUrl).trim(),
+    deployBranch,
+    deployCommit: sha,
+    deployCommits,
     previewUrl,
-    ...(prNumber ? { prNumber } : {}),
+    // A re-patch answers whatever Failed testing said, so a revert request
+    // (and any block it was stuck behind) from that round is spent.
+    revertRequested: false,
+    revertBlockedBy: [],
     ...(testVersion ? { testVersion } : {}),
     ...(workflowPaths.length ? { requiresHumanMerge: true } : {}),
   });
-  console.log(`[apply-patch] ${item.id}: opened ${prUrl}, moved to ready-for-testing${testVersion ? ` (testVersion ${testVersion})` : ""}`);
+  console.log(`[apply-patch] ${item.id}: committed ${sha.slice(0, 7)} on ${deployBranch}, moved to ready-for-testing${testVersion ? ` (testVersion ${testVersion})` : ""}`);
 
+  run("git", ["checkout", "main", "--quiet"]);
+}
+
+// Failed testing on a Ready for Testing card sends it back to Backlog — and,
+// because the card built onto a shared integration branch, its commit would
+// otherwise stay on that branch and ship in the next train anyway. The rule
+// this enforces: NOTHING LEAVES READY FOR TESTING REJECTED WITHOUT COMING
+// OFF THE BRANCH, i.e. a card in Backlog must never have live commits on a
+// train. app.js's failTesting() writes revertRequested; this reverts every
+// commit the item has on the branch, newest first, and pushes.
+//
+// Distinct from processRevertPr further down, which undoes something already
+// merged to main by opening a revert PR. This one never touches main — it
+// only rewinds work that has not shipped yet.
+async function processRevertFromTrain(item) {
+  console.log(`[train-revert] ${item.id}: ${item.title || item.desc}`);
+  const commits = Array.isArray(item.deployCommits) ? item.deployCommits.filter(Boolean) : [];
+  const deployBranch = item.deployBranch;
+  if (!deployBranch || !commits.length) {
+    console.log(`[train-revert] ${item.id}: nothing on a train to revert — clearing the flag`);
+    await patchItem(item.id, {
+      revertRequested: false,
+      revertBlockedBy: [],
+      updatedAt: new Date().toISOString(),
+    });
+    return;
+  }
+  if (!remoteBranchExists(deployBranch)) {
+    console.log(`[train-revert] ${item.id}: integration branch ${deployBranch} no longer exists — clearing the flag`);
+    const notes = await appendNote(item, `Nothing to revert off \`${deployBranch}\`: that integration branch no longer exists (the train it was on has already shipped and been reset). revertRequested has been cleared.`);
+    await patchItem(item.id, { revertRequested: false, revertBlockedBy: [], updatedAt: new Date().toISOString(), notes });
+    return;
+  }
+
+  checkoutTrain(deployBranch);
+
+  // Newest first — reverting an older commit before a newer one that builds
+  // on it is the guaranteed way to manufacture a conflict.
+  const ordered = commits.slice().reverse();
+  const reverted = [];
+  for (const sha of ordered) {
+    let onBranch = true;
+    try { run("git", ["merge-base", "--is-ancestor", sha, "HEAD"]); } catch { onBranch = false; }
+    if (!onBranch) {
+      console.log(`[train-revert] ${item.id}: ${sha.slice(0, 7)} isn't on ${deployBranch} any more — skipping it`);
+      continue;
+    }
+    const mainline = parentCount(sha) >= 2 ? ["-m", "1"] : [];
+    try {
+      run("git", ["-c", "user.name=backlog-automation", "-c", "user.email=backlog-automation@users.noreply.github.com",
+        "revert", "--no-edit", ...mainline, sha]);
+      reverted.push(headSha());
+    } catch (err) {
+      try { run("git", ["revert", "--abort"]); } catch { /* nothing in progress */ }
+      // Whose work sits on top of this commit — that's who a human has to
+      // decide about (send them back too, or fix the branch by hand).
+      const blockedBy = itemIdsInRange(`${sha}..HEAD`).filter((id) => id !== item.id);
+      discardWorkingTree();
+      const previousBlock = Array.isArray(item.revertBlockedBy) ? item.revertBlockedBy : [];
+      const sameBlock = previousBlock.length === blockedBy.length && previousBlock.every((id) => blockedBy.includes(id));
+      console.log(`[train-revert] ${item.id}: revert of ${sha.slice(0, 7)} conflicted — blocked by ${blockedBy.join(", ") || "(unidentified later work)"}`);
+      const fields = {
+        // Deliberately NOT cleared: the card is still on the branch, so the
+        // board must keep showing it as blocked rather than quietly
+        // pretending the rejection took effect.
+        revertRequested: true,
+        revertBlockedBy: blockedBy,
+        updatedAt: new Date().toISOString(),
+      };
+      // Re-diagnosing an unchanged permanent blocker on every 2-minute tick
+      // is noise, not progress (same rule ROUTINE_INSTRUCTIONS.md applies to
+      // a `dirty` PR) — note it when it first appears or when it changes.
+      if (!sameBlock) {
+        fields.notes = await appendNote(
+          item,
+          `Could not take this ticket off the train automatically: reverting ${sha.slice(0, 7)} from \`${deployBranch}\` conflicted, because ` +
+          (blockedBy.length
+            ? `later ticket(s) on the same branch build on top of it — ${blockedBy.join(", ")}. `
+            : `later work on the same branch touches the same lines. `) +
+          `The card has still been sent back, but its code is still on the branch, so Deploy to Main stays hidden until this is cleared. ` +
+          `Resolve it by sending the later ticket(s) back too (Failed testing on each), or by fixing \`${deployBranch}\` by hand. Nothing was force-pushed.\n\nDetails:\n${scrubSecrets(err.message)}`
+        );
+      }
+      await patchItem(item.id, fields);
+      return;
+    }
+  }
+
+  if (!reverted.length) {
+    const notes = await appendNote(item, `Nothing to revert off \`${deployBranch}\`: none of this card's recorded commits are still on that branch. revertRequested has been cleared.`);
+    await patchItem(item.id, {
+      revertRequested: false,
+      revertBlockedBy: [],
+      deployCommits: [],
+      deployCommit: null,
+      updatedAt: new Date().toISOString(),
+      notes,
+    });
+    run("git", ["checkout", "main", "--quiet"]);
+    return;
+  }
+
+  pushTrain(deployBranch);
+
+  const notes = await appendNote(
+    item,
+    `Taken off the train: reverted ${commits.length === 1 ? "its commit" : `its ${commits.length} commits`} (${commits.map((s) => s.slice(0, 7)).join(", ")}) off \`${deployBranch}\` ` +
+    `as ${reverted.map((s) => s.slice(0, 7)).join(", ")}. This card's change is no longer on the branch, so the next Deploy to Main will not carry it — ` +
+    `it's a plain Backlog ticket again, and a fresh Ready for Dev sweep will rebuild it on top of whatever the branch looks like then.`
+  );
+  await patchItem(item.id, {
+    revertRequested: false,
+    revertBlockedBy: [],
+    revertedCommits: (Array.isArray(item.revertedCommits) ? item.revertedCommits : []).concat(reverted),
+    deployCommits: [],
+    deployCommit: null,
+    updatedAt: new Date().toISOString(),
+    notes,
+  });
+  console.log(`[train-revert] ${item.id}: reverted ${reverted.length} commit(s) off ${deployBranch}`);
   run("git", ["checkout", "main", "--quiet"]);
 }
 
@@ -766,8 +989,8 @@ async function processMergePr(item) {
 
   // Fetch state alongside the file list in one call — needed before
   // merging either way. Same class of "already-done treated as stuck"
-  // bug as findExistingPrForItem/the no-diff branch above (see their own
-  // comments, both fixed 2026-09-11): an item can legitimately reach here
+  // bug as processApplyPatch's own no-diff branch above (see its comment):
+  // an item can legitimately reach here
   // with mergeReady:true pointing at a PR that's already been merged by
   // some other path (e.g. an interactive session merging it directly —
   // see item RR68JuZDRHtZncsfwyKl the same day, merged via GitHub's API
@@ -911,6 +1134,348 @@ async function processMergePr(item) {
   console.log(`[merge-pr] ${item.id}: merged PR #${prNumber}, moved to published-live${mergeCommit ? ` (${mergeCommit.slice(0, 7)})` : ""}`);
 }
 
+// How long processDeployTrain waits for a train PR's checks inside one run
+// before giving up and letting the next scheduled run pick it up. The job
+// polls every 2 minutes anyway, so there is nothing to gain by holding a
+// runner open longer than this — trainReady stays set and the wait simply
+// continues on the next tick.
+const TRAIN_CI_POLLS = 10;
+const TRAIN_CI_POLL_MS = 15000;
+
+// Collapses `gh pr view --json statusCheckRollup` into one word. The rollup
+// mixes two shapes — CheckRun (status + conclusion) and StatusContext
+// (state) — so both are handled; an empty rollup is "none" (this repo runs
+// no pull_request-triggered workflows today, so that is the normal case)
+// and is treated as nothing to wait for, not as a failure.
+function rollupState(rollup) {
+  if (!Array.isArray(rollup) || rollup.length === 0) return "none";
+  let pending = false;
+  for (const check of rollup) {
+    if (check.status && String(check.status).toUpperCase() !== "COMPLETED") { pending = true; continue; }
+    const verdict = String(check.conclusion || check.state || "").toUpperCase();
+    if (!verdict) { pending = true; continue; }
+    if (["SUCCESS", "NEUTRAL", "SKIPPED"].includes(verdict)) continue;
+    return "failure";
+  }
+  return pending ? "pending" : "success";
+}
+
+function viewTrainPr(prNumber) {
+  const json = run("gh", ["pr", "view", String(prNumber), "--repo", REPO,
+    "--json", "number,state,url,mergeable,statusCheckRollup,files"]);
+  return JSON.parse(json);
+}
+
+// Post-merge bookkeeping, shared by processDeployTrain (the pipeline merged
+// it) and reconcileMergedTrains (a person merged it — the workflow-file
+// case). Flips every ticket on the train to live, triggers the Firebase
+// deploy when the merge touched backlog-tracker/, and resets the branch back
+// to main so the next train starts from a clean base.
+async function finishTrain(project, deployBranch, prNumber, trainItems, { touchesBacklogTracker }) {
+  let mergeCommit = null;
+  try {
+    const parsed = JSON.parse(run("gh", ["pr", "view", String(prNumber), "--repo", REPO, "--json", "mergeCommit"]));
+    mergeCommit = parsed.mergeCommit && parsed.mergeCommit.oid ? parsed.mergeCommit.oid : null;
+  } catch (err) {
+    console.log(`[deploy-train] couldn't read PR #${prNumber}'s merge commit (${err.message}) — leaving mergeCommit unset`);
+  }
+
+  // A merge made with this workflow's own GITHUB_TOKEN does NOT trigger
+  // other workflows' `on: push` (GitHub's anti-recursion protection), so the
+  // Firebase deploy would silently never run. `gh workflow run` is an
+  // explicit API dispatch and is exempt — same mechanism processMergePr has
+  // always used for a per-ticket PR.
+  let deployRunUrl = null;
+  let deployConclusion = "not-applicable";
+  if (touchesBacklogTracker) {
+    const dispatchedAt = new Date().toISOString();
+    try {
+      run("gh", ["workflow", "run", "deploy-backlog-tracker.yml", "--repo", REPO, "--ref", "main"]);
+      console.log(`[deploy-train] triggered deploy-backlog-tracker.yml for PR #${prNumber}`);
+    } catch (err) {
+      console.log(`[deploy-train] failed to trigger deploy-backlog-tracker.yml (${err.message}) — the merge still succeeded, but the live site may be stale until the next deploy`);
+    }
+    const deployRun = findDispatchedDeployRun(dispatchedAt);
+    deployRunUrl = deployRun ? deployRun.url : null;
+    deployConclusion = "pending";
+  }
+
+  const mergedAt = new Date().toISOString();
+  for (const item of trainItems) {
+    const notes = await appendNote(
+      item,
+      `Shipped in the deployment train PR #${prNumber}, merged to main with ${trainItems.length === 1 ? "no other ticket" : `${trainItems.length - 1} other ticket(s)`} from \`${deployBranch}\`.`
+    );
+    await patchItem(item.id, {
+      status: "published-live",
+      updatedAt: mergedAt,
+      mergedAt,
+      prUrl: `https://github.com/${REPO}/pull/${prNumber}`,
+      prNumber: Number(prNumber),
+      notes,
+      ...(mergeCommit ? { mergeCommit } : {}),
+      ...(deployRunUrl ? { deployRunUrl } : {}),
+      deployConclusion,
+    });
+  }
+
+  // Reset the train. The branch's own commits are now on main, so resetting
+  // to main loses nothing and gives the next train a clean base — which is
+  // also what makes "one version bump per deploy" work. force-with-lease, so
+  // a commit pushed onto the branch since our fetch aborts the reset rather
+  // than being silently destroyed.
+  let resetOk = true;
+  try {
+    run("git", ["fetch", "origin", "main", deployBranch, "--quiet"]);
+    try { run("git", ["reset", "--hard", "--quiet"]); } catch { /* nothing staged */ }
+    try { run("git", ["clean", "-fdq"]); } catch { /* nothing to clean */ }
+    run("git", ["checkout", "-B", deployBranch, "origin/main", "--quiet"]);
+    run("git", ["push", "--force-with-lease", "origin", deployBranch, "--quiet"]);
+  } catch (err) {
+    resetOk = false;
+    console.log(`[deploy-train] couldn't reset ${deployBranch} to main (${scrubSecrets(err.message)}) — the next train will start from the old branch head`);
+  }
+  run("git", ["checkout", "main", "--quiet"]);
+
+  await patchProject(project.id, {
+    trainReady: false,
+    trainLocked: false,
+    trainStatus: "idle",
+    trainNote: resetOk
+      ? null
+      : `Shipped PR #${prNumber}, but ${deployBranch} could not be reset to main automatically — reset it by hand before the next train.`,
+    trainPrNumber: null,
+    needsHumanMerge: false,
+    updatedAt: new Date().toISOString(),
+  });
+  console.log(`[deploy-train] ${project.id}: PR #${prNumber} merged — ${trainItems.length} ticket(s) live, ${deployBranch} reset`);
+}
+
+// The single Deploy CTA's automation half. The Routine sets
+// projects/{id}.trainReady once it has verified every ticket in the DEPLOY
+// REQUEST really is on the branch and nothing on the branch is still in
+// testing; this merges the whole branch to main as ONE PR.
+async function processDeployTrain(project) {
+  console.log(`[deploy-train] ${project.id}: ${project.name}`);
+  const deployBranch = project.deployBranch || deployBranchForName(project.name);
+  const allItems = await itemsForProject(project.id);
+  const onTrain = onTrainItems(allItems);
+
+  if (!onTrain.length) {
+    console.log(`[deploy-train] ${project.id}: nothing on the train — clearing trainReady`);
+    await patchProject(project.id, {
+      trainReady: false, trainStatus: "idle",
+      trainNote: "Deploy requested, but no ticket currently has a commit on this project's integration branch — nothing to merge.",
+      updatedAt: new Date().toISOString(),
+    });
+    return;
+  }
+  const stillTesting = onTrain.filter((i) => i.status === "ready-for-testing");
+  if (stillTesting.length) {
+    // The board hides Deploy to Main in this state, so reaching here means
+    // something raced it (a card sent back between the click and this run).
+    // Merging anyway would ship untested work — refuse.
+    console.log(`[deploy-train] ${project.id}: ${stillTesting.length} ticket(s) still in Ready for Testing — refusing to merge the train`);
+    await patchProject(project.id, {
+      trainReady: false, trainStatus: "idle",
+      trainNote: `Not merged: ${stillTesting.length} ticket(s) on ${deployBranch} are still in Ready for Testing (${stillTesting.map((i) => i.id).join(", ")}). ` +
+        `Merging the branch would ship them too. Approve or reject them, then click Deploy to Main again.`,
+      updatedAt: new Date().toISOString(),
+    });
+    return;
+  }
+  if (!remoteBranchExists(deployBranch)) {
+    await patchProject(project.id, {
+      trainReady: false, trainStatus: "idle",
+      trainNote: `Not merged: the integration branch ${deployBranch} doesn't exist on origin.`,
+      updatedAt: new Date().toISOString(),
+    });
+    return;
+  }
+
+  await patchProject(project.id, { trainStatus: "deploying", trainNote: null, updatedAt: new Date().toISOString() });
+
+  // 1. Bring main in. This is the only remaining conflict path — it needs
+  //    someone to have pushed to main, in this project's files, outside the
+  //    pipeline — and it is deliberately never resolved automatically.
+  checkoutTrain(deployBranch);
+  try {
+    run("git", ["-c", "user.name=backlog-automation", "-c", "user.email=backlog-automation@users.noreply.github.com",
+      "merge", "origin/main", "--no-edit", "--quiet"]);
+  } catch (err) {
+    try { run("git", ["merge", "--abort"]); } catch { /* nothing in progress */ }
+    discardWorkingTree();
+    console.log(`[deploy-train] ${project.id}: merging main into ${deployBranch} conflicted`);
+    await patchProject(project.id, {
+      trainReady: false,
+      trainStatus: "conflict",
+      trainNote: `Merging main into ${deployBranch} conflicted, so nothing was merged and no card was moved. ` +
+        `Something changed the same lines straight on main. Resolve it by merging main into ${deployBranch} by hand, then click Deploy to Main again.\n\n${scrubSecrets(err.message)}`,
+      updatedAt: new Date().toISOString(),
+    });
+    return;
+  }
+
+  // 2. One version bump for the whole train, computed from main — so the
+  //    number always lands exactly one patch ahead of what is actually live,
+  //    however long the branch has been open. Individual patchFiles no
+  //    longer touch version.js at all (that per-PR bump was what made any
+  //    two open PRs conflict on the same line).
+  const liveVersion = readAppVersionFromRef("origin/main");
+  const nextVersion = liveVersion ? bumpPatchVersion(liveVersion) : null;
+  if (nextVersion) {
+    const versionPath = path.join(process.cwd(), "backlog-tracker/public/js/version.js");
+    const current = fs.readFileSync(versionPath, "utf8");
+    const updated = current.replace(/APP_VERSION\s*=\s*"[^"]+"/, `APP_VERSION = "${nextVersion}"`);
+    if (updated !== current) {
+      fs.writeFileSync(versionPath, updated);
+      run("git", ["add", "-A"]);
+      if (stagedChangedPaths().length) commitOnTrain(`Bump version to ${nextVersion} for deployment`);
+    }
+  } else {
+    console.log(`[deploy-train] ${project.id}: couldn't read a bumpable APP_VERSION off main — deploying without a version bump`);
+  }
+  pushTrain(deployBranch);
+
+  // 3. One PR for the whole train. Reused if an earlier run already opened
+  //    it (this job can be interrupted between opening and merging).
+  let prNumber = Number(project.trainPrNumber) || null;
+  if (prNumber) {
+    const existing = viewPr(prNumber);
+    if (!existing || existing.state !== "OPEN") prNumber = null;
+  }
+  if (!prNumber) {
+    const own = findPrForBranch(deployBranch);
+    if (own && own.state === "OPEN") prNumber = Number(own.number);
+  }
+  if (!prNumber) {
+    const body = `Deployment train for **${project.name}** — ${onTrain.length} ticket(s) built on top of each other on \`${deployBranch}\` and tested together.\n\n` +
+      onTrain.map((i) => `- ${i.title || i.desc || i.id}\n  Backlog item: ${i.id}`).join("\n") +
+      `\n\nOpened by the backlog automation. Merging this ships every ticket listed above.`;
+    const prUrl = run("gh", ["pr", "create", "--base", "main", "--head", deployBranch,
+      "--title", `Deploy ${project.name} — ${onTrain.length} ticket${onTrain.length === 1 ? "" : "s"}`,
+      "--body", body]);
+    prNumber = Number((String(prUrl).match(/\/pull\/(\d+)/) || [])[1]) || null;
+    if (!prNumber) throw new Error(`couldn't parse a PR number out of ${prUrl}`);
+    console.log(`[deploy-train] ${project.id}: opened ${String(prUrl).trim()}`);
+  }
+  await patchProject(project.id, { trainPrNumber: prNumber, updatedAt: new Date().toISOString() });
+  // Every card on the train gets the PR badge, same as a per-ticket PR used
+  // to give it — "which PR is this card" stays answerable from the board.
+  for (const item of onTrain) {
+    if (Number(item.prNumber) === prNumber) continue;
+    await patchItem(item.id, {
+      prUrl: `https://github.com/${REPO}/pull/${prNumber}`,
+      prNumber,
+      updatedAt: new Date().toISOString(),
+    });
+  }
+
+  // 4. Wait for CI, then merge. `--merge`, never `--squash`: the per-ticket
+  //    commits ARE the history now, and squashing them would lose the
+  //    `Backlog item: <id>` trail every other part of this pipeline reads.
+  let pr = null;
+  for (let poll = 0; poll < TRAIN_CI_POLLS; poll++) {
+    pr = viewTrainPr(prNumber);
+    if (pr.state === "MERGED") break;
+    const checks = rollupState(pr.statusCheckRollup);
+    if (checks === "failure") {
+      await patchProject(project.id, {
+        trainReady: false, trainStatus: "conflict",
+        trainNote: `Not merged: CI is red on the train PR #${prNumber}. Fix it (or send the ticket that broke it back with Failed testing), then click Deploy to Main again.`,
+        updatedAt: new Date().toISOString(),
+      });
+      console.log(`[deploy-train] ${project.id}: CI red on PR #${prNumber} — not merging`);
+      return;
+    }
+    if (String(pr.mergeable).toUpperCase() === "CONFLICTING") {
+      await patchProject(project.id, {
+        trainReady: false, trainStatus: "conflict",
+        trainNote: `Not merged: GitHub reports PR #${prNumber} as conflicting with main. Merge main into ${deployBranch} by hand, resolve it, then click Deploy to Main again.`,
+        updatedAt: new Date().toISOString(),
+      });
+      console.log(`[deploy-train] ${project.id}: PR #${prNumber} is CONFLICTING — not merging`);
+      return;
+    }
+    if (checks !== "pending") break;
+    if (poll < TRAIN_CI_POLLS - 1) sleepSync(TRAIN_CI_POLL_MS);
+  }
+  // An already-MERGED PR is never waiting on anything — a check still
+  // running on it must not send this back round the loop and leave the
+  // train's cards un-flipped.
+  if (pr && pr.state !== "MERGED" && rollupState(pr.statusCheckRollup) === "pending") {
+    // Leave trainReady set: the next scheduled run picks the wait back up
+    // rather than needing another click.
+    console.log(`[deploy-train] ${project.id}: PR #${prNumber}'s checks are still running — will retry on the next run`);
+    await patchProject(project.id, {
+      trainStatus: "deploying",
+      trainNote: `Waiting on CI for PR #${prNumber}.`,
+      updatedAt: new Date().toISOString(),
+    });
+    return;
+  }
+
+  const touchesBacklogTracker = !pr || !Array.isArray(pr.files)
+    ? true // couldn't read the file list — dispatch the deploy anyway, to be safe
+    : pr.files.some((f) => f.path.startsWith("backlog-tracker/"));
+
+  if (pr && pr.state !== "MERGED") {
+    if (project.needsHumanMerge || (Array.isArray(pr.files) && pr.files.some((f) => f.path.startsWith(WORKFLOW_PATH_PREFIX)))) {
+      // A workflow file runs with every repo secret and the only review this
+      // train has had is its own CI — a person merges it on GitHub, and
+      // reconcileMergedTrains records it as live on a later run.
+      console.log(`[deploy-train] ${project.id}: PR #${prNumber} changes ${WORKFLOW_PATH_PREFIX} — leaving the merge to a human`);
+      await patchProject(project.id, {
+        trainReady: false,
+        trainStatus: "awaiting-human-merge",
+        trainNote: `PR #${prNumber} changes files under ${WORKFLOW_PATH_PREFIX}, which the automation never merges on its own. ` +
+          `Review and merge it on GitHub — the board records every ticket on the train as live on its own once it sees the merge.`,
+        updatedAt: new Date().toISOString(),
+      });
+      return;
+    }
+    run("gh", ["pr", "merge", String(prNumber), "--merge", "--repo", REPO]);
+    console.log(`[deploy-train] ${project.id}: merged PR #${prNumber}`);
+  } else {
+    console.log(`[deploy-train] ${project.id}: PR #${prNumber} was already merged — recording it`);
+  }
+
+  await finishTrain(project, deployBranch, prNumber, onTrain, { touchesBacklogTracker });
+}
+
+// The train's equivalent of reconcileHumanMergedPrs: a train PR the pipeline
+// deliberately refused to merge (it touches .github/workflows/) gets merged
+// by a person, and nothing would otherwise notice. Every run checks each
+// project that is waiting on such a merge and finishes the bookkeeping the
+// moment GitHub says the PR is MERGED — no second click, no Routine fire.
+async function reconcileMergedTrains() {
+  const waiting = await runQuery({
+    from: [{ collectionId: "projects" }],
+    where: { fieldFilter: { field: { fieldPath: "trainStatus" }, op: "EQUAL", value: { stringValue: "awaiting-human-merge" } } },
+  });
+  for (const project of waiting) {
+    const prNumber = Number(project.trainPrNumber) || null;
+    if (!prNumber) continue;
+    let pr = null;
+    try {
+      pr = JSON.parse(run("gh", ["pr", "view", String(prNumber), "--repo", REPO, "--json", "state,files"]));
+    } catch (err) {
+      console.log(`[deploy-train] ${project.id}: couldn't read PR #${prNumber} state (${err.message}) — skipping this run`);
+      continue;
+    }
+    if (pr.state !== "MERGED") continue;
+    const deployBranch = project.deployBranch || deployBranchForName(project.name);
+    const onTrain = onTrainItems(await itemsForProject(project.id));
+    if (!onTrain.length) {
+      await patchProject(project.id, { trainStatus: "idle", trainReady: false, trainLocked: false, trainPrNumber: null, updatedAt: new Date().toISOString() });
+      continue;
+    }
+    console.log(`[deploy-train] ${project.id}: PR #${prNumber} was merged outside the pipeline — recording ${onTrain.length} ticket(s) as live`);
+    const touchesBacklogTracker = !Array.isArray(pr.files) || pr.files.some((f) => f.path.startsWith("backlog-tracker/"));
+    await finishTrain(project, deployBranch, prNumber, onTrain, { touchesBacklogTracker });
+  }
+}
+
 // How many parents the commit at the tip of `ref` has — 2+ means a real
 // merge commit (`git revert` needs `-m 1`, "keep mainline's side"), exactly
 // 1 means a plain commit (e.g. a squash-merged PR), which `-m` would refuse
@@ -962,7 +1527,6 @@ async function processRevertPr(item) {
       status: "ready-for-testing",
       revertReady: false,
       revertAttempts: 0,
-      testPassed: false,
       updatedAt: new Date().toISOString(),
       notes,
       prUrl: existing.url,
@@ -1041,7 +1605,6 @@ async function processRevertPr(item) {
     status: "ready-for-testing",
     revertReady: false,
     revertAttempts: 0,
-    testPassed: false,
     updatedAt: new Date().toISOString(),
     notes,
     prUrl: String(prUrl).trim(),
@@ -1167,6 +1730,7 @@ async function reconcileHumanMergedPrs() {
 
 async function main() {
   await reconcileDeployStatuses();
+  await reconcileMergedTrains();
   const humanMerged = await reconcileHumanMergedPrs();
 
   const patchReadyItems = await runQuery({
@@ -1186,8 +1750,21 @@ async function main() {
     from: [{ collectionId: "backlogItems" }],
     where: { fieldFilter: { field: { fieldPath: "revertReady" }, op: "EQUAL", value: { booleanValue: true } } },
   });
+  // Written by app.js's failTesting(): a rejected ticket has to come off the
+  // integration branch, or it would ship in the next train regardless of the
+  // card sitting back in Backlog (see processRevertFromTrain).
+  const trainRevertItems = await runQuery({
+    from: [{ collectionId: "backlogItems" }],
+    where: { fieldFilter: { field: { fieldPath: "revertRequested" }, op: "EQUAL", value: { booleanValue: true } } },
+  });
+  // The single Deploy CTA: the Routine sets trainReady on the PROJECT, not
+  // on each item — one branch, one PR, one merge (see processDeployTrain).
+  const trainReadyProjects = await runQuery({
+    from: [{ collectionId: "projects" }],
+    where: { fieldFilter: { field: { fieldPath: "trainReady" }, op: "EQUAL", value: { booleanValue: true } } },
+  });
 
-  console.log(`Found ${patchReadyItems.length} patch-ready item(s), ${mergeReadyItems.length} merge-ready item(s), and ${revertReadyItems.length} revert-ready item(s)`);
+  console.log(`Found ${patchReadyItems.length} patch-ready item(s), ${trainRevertItems.length} train-revert item(s), ${trainReadyProjects.length} ready train(s), ${mergeReadyItems.length} legacy merge-ready item(s), and ${revertReadyItems.length} revert-ready item(s)`);
 
   for (const item of patchReadyItems) {
     try {
@@ -1230,6 +1807,48 @@ async function main() {
         await recordAttemptFailure(item, err, { attemptsField: "revertAttempts", readyField: "revertReady", verb: "revert" });
       } catch (noteErr) {
         console.error(`[revert] ${item.id}: couldn't record the failure on the item either: ${noteErr.message}`);
+      }
+    }
+  }
+
+  for (const item of trainRevertItems) {
+    try {
+      await processRevertFromTrain(item);
+    } catch (err) {
+      console.error(`[train-revert] ${item.id} failed: ${err.stack || err.message}`);
+      try {
+        // clearReadyOnGiveUp: false — clearing revertRequested would leave a
+        // rejected ticket's commits live on the train with the board no
+        // longer showing it, and the next Deploy would ship exactly the
+        // change someone rejected. Better to retry quietly forever than to
+        // silently accept that.
+        await recordAttemptFailure(item, err, {
+          attemptsField: "trainRevertAttempts", readyField: "revertRequested",
+          verb: "take off the integration branch", clearReadyOnGiveUp: false,
+        });
+      } catch (noteErr) {
+        console.error(`[train-revert] ${item.id}: couldn't record the failure on the item either: ${noteErr.message}`);
+      }
+    }
+  }
+  for (const project of trainReadyProjects) {
+    try {
+      await processDeployTrain(project);
+    } catch (err) {
+      console.error(`[deploy-train] ${project.id} failed: ${err.stack || err.message}`);
+      // A project has no notes array to record onto, so the failure goes on
+      // the project's own trainNote — which is what the board reads — and
+      // trainReady is cleared so a permanent failure can't retry every two
+      // minutes with nothing visible anywhere.
+      try {
+        await patchProject(project.id, {
+          trainReady: false,
+          trainStatus: "conflict",
+          trainNote: `The deploy run failed and nothing was merged: ${scrubSecrets(err.message || String(err))}`,
+          updatedAt: new Date().toISOString(),
+        });
+      } catch (noteErr) {
+        console.error(`[deploy-train] ${project.id}: couldn't record the failure on the project either: ${noteErr.message}`);
       }
     }
   }
