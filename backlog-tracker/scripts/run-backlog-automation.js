@@ -1094,6 +1094,43 @@ async function reconcileDeployStatuses() {
   }
 }
 
+// Pipeline health strip (YeCj7sNpHXFUZQhmAmEb — see public/js/app.js's
+// renderHealthStrip): writes this run's own outcome into the single
+// systemStatus/pipeline doc so the board can show whether this job is
+// actually still running, not just whether someone happened to click
+// Notify Claude recently. Best-effort on purpose — a failure here must
+// never be why the real work above (which already succeeded or failed on
+// its own terms by the time this runs) gets reported wrong, so it only logs.
+async function recordPipelineHealth(conclusion) {
+  const runUrl = process.env.GITHUB_SERVER_URL && process.env.GITHUB_REPOSITORY && process.env.GITHUB_RUN_ID
+    ? `${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}`
+    : null;
+  const fields = {
+    backlogAutomation: {
+      at: new Date().toISOString(),
+      conclusion,
+      runUrl,
+      dispatched: process.env.GITHUB_EVENT_NAME === "repository_dispatch",
+    },
+    // Both booleans, not the secrets themselves — see backlog-tracker/README.md
+    // "The GH_DISPATCH_TOKEN secret" / "The workflow-push GitHub App".
+    dispatchTokenPresent: process.env.GH_DISPATCH_TOKEN_PRESENT === "true",
+    workflowAppConfigured: !!WORKFLOW_PUSH_TOKEN,
+    updatedAt: new Date().toISOString(),
+  };
+  try {
+    const fieldPaths = Object.keys(fields).map((k) => `updateMask.fieldPaths=${encodeURIComponent(k)}`).join("&");
+    const res = await fetch(`${FIRESTORE_BASE}/systemStatus/pipeline?${fieldPaths}`, {
+      method: "PATCH",
+      headers: await firestoreHeaders(),
+      body: JSON.stringify({ fields: Object.fromEntries(Object.entries(fields).map(([k, v]) => [k, tv(v)])) }),
+    });
+    if (!res.ok) console.log(`[health] couldn't record pipeline status: ${res.status} ${await res.text()}`);
+  } catch (err) {
+    console.log(`[health] couldn't record pipeline status: ${err.message}`);
+  }
+}
+
 async function main() {
   await reconcileDeployStatuses();
 
@@ -1156,9 +1193,17 @@ async function main() {
       }
     }
   }
+
+  // Per-item failures above are already caught and recorded on their own
+  // cards, so reaching here means this run itself completed rather than
+  // dying outright (a Firestore auth failure, a bad query, etc.) — that
+  // distinction is exactly what the health strip's "automation" segment is
+  // for. See the top-level catch below for the "run itself died" case.
+  await recordPipelineHealth("success");
 }
 
-main().catch((err) => {
+main().catch(async (err) => {
   console.error(err.stack || err.message);
+  await recordPipelineHealth("failure");
   process.exit(1);
 });

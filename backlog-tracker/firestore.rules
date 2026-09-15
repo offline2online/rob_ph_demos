@@ -117,6 +117,19 @@ service cloud.firestore {
       allow delete: if isFaqEditor();
     }
 
+    // ── Pipeline health strip (YeCj7sNpHXFUZQhmAmEb) ───────────────────────
+    // A single doc each workflow (backlog-automation.yml,
+    // deploy-backlog-tracker.yml) overwrites at the end of its own run, via
+    // the same service-account credential those workflows already use for
+    // every other Firestore write in this file's collections — that
+    // credential authenticates as a GCP IAM principal, not a signed-in
+    // Firebase Auth user, so it bypasses these rules entirely the same way
+    // every other write from run-backlog-automation.js already does.
+    // Nothing in the browser is ever meant to write this, only read it.
+    match /systemStatus/{docId} {
+      allow read: if isEditor();
+    }
+
     // A proposed revision parked on an article by the Deploy-flow Routine
     // (see ROUTINE_INSTRUCTIONS.md → "FAQ impact review") or edited from the
     // console's review view. It never changes the live fields by itself —

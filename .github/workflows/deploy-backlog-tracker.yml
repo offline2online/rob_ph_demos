@@ -203,6 +203,7 @@ jobs:
         run: rsync -a --delete --exclude README.md ../faq/ help-site/
 
       - name: Deploy to Firebase (hosting, functions, firestore rules)
+        id: deploy
         env:
           GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/firebase-sa.json
         run: npx firebase-tools@13 deploy --only hosting,functions,firestore:rules --project backlog-tracker-e4ed2 --non-interactive --force
@@ -228,3 +229,24 @@ jobs:
             --location=us-central1 \
             --policy="$RUNNER_TEMP/cleanup-policy.json" \
             --quiet
+
+      # Pipeline health strip (YeCj7sNpHXFUZQhmAmEb — see public/js/app.js's
+      # renderHealthStrip). `if: always()` so a failed deploy is recorded
+      # too, not just a successful one — that's the whole point of a health
+      # check. deployedAppVersion is only ever set on success: claiming a
+      # version is "live" off a deploy that didn't actually finish would be
+      # worse than the strip saying nothing at all.
+      - name: Record deploy status for the board's health strip
+        if: always()
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/firebase-sa.json
+        run: |
+          RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          CONCLUSION="${{ steps.deploy.outcome }}"
+          AT="$(date -u +%FT%TZ)"
+          if [ "$CONCLUSION" = "success" ]; then
+            VERSION=$(node -e "console.log(require('fs').readFileSync('public/js/version.js','utf8').match(/APP_VERSION\s*=\s*\"([^\"]+)\"/)[1])")
+            node scripts/write-system-status.js "$(node -e "console.log(JSON.stringify({deployBacklogTracker:{at:process.argv[1],conclusion:process.argv[2],runUrl:process.argv[3]},deployedAppVersion:process.argv[4]}))" "$AT" "$CONCLUSION" "$RUN_URL" "$VERSION")"
+          else
+            node scripts/write-system-status.js "$(node -e "console.log(JSON.stringify({deployBacklogTracker:{at:process.argv[1],conclusion:process.argv[2],runUrl:process.argv[3]}}))" "$AT" "$CONCLUSION" "$RUN_URL")"
+          fi

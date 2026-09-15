@@ -39,6 +39,28 @@ body {
 .subtitle { margin: 4px 0 0; font-size: 13px; color: var(--text-muted); }
 .hamburger-btn { font-size: 20px; margin-top: 1px; }
 
+/* ── Pipeline health strip (YeCj7sNpHXFUZQhmAmEb) ────────────────────────
+   Compact by design — a "is the machinery alive" glance, not a dashboard.
+   Hidden entirely until systemStatus/pipeline's first snapshot lands (see
+   renderHealthStrip in app.js). */
+.health-strip {
+  display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center;
+  margin: -6px 0 18px; padding: 7px 12px;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+  font-size: 12px; color: var(--text-muted);
+}
+.health-seg { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
+.health-seg-link { color: inherit; text-decoration: none; }
+.health-seg-link:hover { color: var(--primary); text-decoration: underline; }
+.health-seg-unknown { opacity: .7; }
+.health-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; background: var(--text-muted); }
+.health-dot-ok { background: var(--success); }
+.health-dot-bad { background: var(--danger); }
+.health-dot-pending { background: var(--warning); }
+@media (max-width: 640px) {
+  .health-strip { font-size: 11px; padding: 6px 10px; margin-top: 0; }
+}
+
 /* ── Left nav drawer — hamburger-opened, slides in over the board. Kept in
    the DOM at all times (not [hidden]) so the transform transition actually
    animates; off-screen + non-interactive while closed. ────────────────── */

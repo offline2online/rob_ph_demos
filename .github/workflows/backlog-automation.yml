@@ -111,4 +111,9 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           WORKFLOW_PUSH_TOKEN: ${{ steps.workflow-app.outputs.token }}
           GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/firebase-sa.json
+          # Read by recordPipelineHealth() in run-backlog-automation.js for
+          # the board's own health strip (YeCj7sNpHXFUZQhmAmEb) — `secrets`
+          # can't be referenced directly from Node, only from workflow YAML,
+          # so its mere presence (not the token itself) is passed through.
+          GH_DISPATCH_TOKEN_PRESENT: ${{ secrets.GH_DISPATCH_TOKEN != '' }}
         run: node backlog-tracker/scripts/run-backlog-automation.js
