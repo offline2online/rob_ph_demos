@@ -1,0 +1,588 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Experience Templates — Board Mock-up</title>
+<!--
+  Experience Templates board — visual mock-up.
+
+  Systems Two (display types / elements) and Three (the surface layer) of the
+  Real-Time Personalised Surface Architecture Specification v1.2. The spec this
+  renders is ../REQUIREMENTS.md; the React implementation of the same screens is
+  ./ExperienceTemplatesBoard.jsx, sharing ./boardData.js.
+
+  PROTOTYPE, not a platform page: it is iframed into HQ Admin, so it renders no
+  header, no sidebar, no breadcrumb and nothing position:fixed. It starts at the
+  page title and fills whatever frame the parent gives it.
+
+  Deliberately dependency-free — no bundler, no CDN JS — so it renders as-is from
+  GitHub Pages / githack and inside the platform iframe.
+-->
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;600;700&display=swap" />
+<style>
+  :root {
+    --ph-primary: #169bc2;
+    --ph-primary-accent: #38b0cf;
+    --ph-primary-tint: rgba(22,155,194,0.10);
+    --ph-primary-soft: #e8fdff;
+    --ph-surface: #ffffff;
+    --ph-surface-alt: #fafafa;
+    --ph-text: #333333;
+    --ph-text-muted: rgba(0,0,0,0.45);
+    --ph-text-micro: #9ca3af;
+    --ph-border: #d9d9d9;
+    --ph-border-subtle: #f0f0f0;
+    --ph-divider: rgba(5,5,5,0.06);
+    --ph-grid-text: #181d1f;
+    --ph-grid-border: rgba(24,29,31,0.15);
+    --ph-success: #52c41a;
+    --ph-warning: #faad14;
+    --ph-error: #ff4d4f;
+    --ph-radius-control: 6px;
+    --ph-radius-card: 8px;
+    --ph-font: Roboto, "Helvetica Neue", Helvetica, Arial, sans-serif;
+    --own-hq: #169bc2;
+    --own-adv: #38b0cf;
+    --own-store: #9ca3af;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    font-family: var(--ph-font);
+    font-size: 14px;
+    color: var(--ph-text);
+    background: var(--ph-surface);
+    -webkit-font-smoothing: antialiased;
+  }
+  /* Material Symbols (Outlined) as inline SVG — same glyphs react-icons/md emits,
+     with no webfont to fail. Sized in em so they track the adjacent text. */
+  .ic { width: 20px; height: 20px; fill: currentColor; vertical-align: middle; flex-shrink: 0; }
+  .ic-sm { width: 16px; height: 16px; }
+
+  /* ---- content frame: no header, no sidebar, no breadcrumb ---- */
+  .frame { padding: 20px; min-height: 100vh; width: 100%; }
+
+  .title-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+  .page-title { font-size: 20px; font-weight: 700; color: var(--ph-text); }
+  .title-meta { font-size: 14px; color: var(--ph-text-muted); }
+  .divider { height: 1px; background: var(--ph-divider); margin: 16px 0; }
+
+  /* ---- underline tabs: 46px, 2px teal ink bar ---- */
+  .tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--ph-border-subtle); overflow-x: auto; }
+  .tab {
+    appearance: none; background: none; border: 0; cursor: pointer;
+    font-family: inherit; font-size: 14px; font-weight: 400; color: var(--ph-text);
+    height: 46px; padding: 12px 16px; white-space: nowrap;
+    border-bottom: 2px solid transparent; margin-bottom: -1px;
+  }
+  .tab:hover { color: var(--ph-primary-accent); }
+  .tab[aria-selected="true"] {
+    font-weight: 500; color: var(--ph-primary);
+    background: var(--ph-primary-tint); border-bottom-color: var(--ph-primary);
+    border-radius: var(--ph-radius-card) var(--ph-radius-card) 0 0;
+  }
+  .panel { padding-top: 20px; }
+  .panel[hidden] { display: none; }
+
+  /* ---- controls ---- */
+  .seg { display: inline-flex; flex-wrap: wrap; gap: 4px; background: var(--ph-surface-alt); padding: 4px; border-radius: var(--ph-radius-control); }
+  .seg button {
+    appearance: none; border: 0; cursor: pointer; font-family: inherit; font-size: 14px;
+    color: var(--ph-text); background: transparent; border-radius: 4px;
+    padding: 5px 12px; display: inline-flex; align-items: center; gap: 6px; white-space: nowrap;
+  }
+  
+  .seg button[aria-pressed="true"] { background: #fff; font-weight: 500; box-shadow: 0 1px 2px rgba(0,0,0,.08); }
+
+  .btn-text {
+    appearance: none; border: 0; background: none; cursor: pointer; font-family: inherit;
+    font-size: 14px; color: var(--ph-text); padding: 0; height: 32px;
+  }
+  .btn-text:hover { color: var(--ph-primary); }
+
+  .count { font-size: 14px; }
+  .count b { font-weight: 700; }
+
+  .row-between { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+  .actions { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+
+  /* ---- pill: outlined, transparent fill ---- */
+  .pill {
+    display: inline-flex; align-items: center; height: 24px; padding: 4px 12px;
+    border-radius: 9999px; border: 1px solid var(--ph-border);
+    font-size: 13px; color: var(--ph-text); white-space: nowrap;
+  }
+  .pill.teal { border-color: var(--ph-primary); color: var(--ph-primary); }
+
+  .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; }
+  .inline { display: inline-flex; align-items: center; gap: 8px; }
+
+  /* ---- table: AG Grid Alpine metrics ---- */
+  .table-scroll { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; }
+  th {
+    font-size: 13px; font-weight: 700; color: var(--ph-grid-text); text-align: left;
+    padding: 0 15px; height: 40px; white-space: nowrap;
+    border-bottom: 1px solid var(--ph-grid-border);
+  }
+  td {
+    font-size: 14px; color: var(--ph-text); padding: 10px 15px;
+    border-bottom: 1px solid var(--ph-grid-border); vertical-align: middle;
+  }
+  tbody tr:hover { background: var(--ph-primary-soft); }
+  .num { text-align: right; }
+  .sub { font-size: 12px; color: var(--ph-text-micro); margin-top: 2px; }
+  .muted { color: var(--ph-text-muted); }
+  .name { font-weight: 500; }
+
+  /* ---- ownership bar ---- */
+  .own { display: flex; align-items: center; gap: 10px; }
+  .own-bar { display: flex; height: 6px; width: 96px; border-radius: 9999px; overflow: hidden; background: var(--ph-border-subtle); flex-shrink: 0; }
+  .own-bar span { display: block; height: 100%; }
+  .own-text { font-size: 13px; color: var(--ph-text-muted); white-space: nowrap; }
+  .hatch { background: repeating-linear-gradient(45deg,#e6e6e6,#e6e6e6 3px,#f7f7f7 3px,#f7f7f7 6px); }
+
+  /* ---- key legend ---- */
+  .key { display: flex; flex-wrap: wrap; gap: 20px; align-items: center; font-size: 13px; color: var(--ph-text-muted); margin-top: 16px; }
+  .key-label { font-size: 12px; letter-spacing: .5px; text-transform: uppercase; }
+
+  .section-label { font-size: 12px; letter-spacing: .5px; color: var(--ph-text-muted); text-transform: uppercase; margin: 24px 0 12px; }
+  .note { font-size: 13px; color: var(--ph-text-muted); max-width: 820px; }
+
+  /* ---- trust zones ---- */
+  .zone-locked { border: 2px solid var(--ph-text); background: rgba(51,51,51,0.04); }
+  .zone-agent { border: 1px dashed var(--ph-primary); background: var(--ph-primary-tint); }
+  .swatch { width: 16px; height: 16px; border-radius: 4px; display: inline-block; }
+
+  /* ---- cards ---- */
+  .grid-cards { display: grid; gap: 20px; margin-top: 12px; }
+  .cards-2 { grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); }
+  .cards-4 { grid-template-columns: repeat(auto-fit, minmax(255px, 1fr)); }
+  .card { border: 1px solid var(--ph-border-subtle); border-radius: var(--ph-radius-card); display: flex; flex-direction: column; }
+  .card-head { background: var(--ph-surface-alt); padding: 12px 16px; border-radius: var(--ph-radius-card) var(--ph-radius-card) 0 0; display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+  .card-title { font-weight: 500; }
+  .card-sub { font-size: 12px; color: var(--ph-text-muted); margin-top: 2px; }
+  .card-body { padding: 16px; }
+
+  /* ---- template composition ---- */
+  .el {
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    padding: 10px 12px; margin-bottom: 8px; border-radius: var(--ph-radius-control);
+    border: 1px solid var(--ph-border-subtle);
+  }
+  .el.zone-locked { border: 2px solid var(--ph-text); background: rgba(51,51,51,0.04); }
+  .el.zone-agent { border: 1px dashed var(--ph-primary); background: var(--ph-primary-tint); }
+  .el .meta { display: inline-flex; align-items: center; gap: 8px; }
+  .el .plays { font-size: 12px; color: var(--ph-text-micro); }
+  .fold { display: flex; align-items: center; gap: 10px; margin: 12px 0; color: var(--ph-warning); font-size: 12px; letter-spacing: .5px; text-transform: uppercase; }
+  .fold i { flex: 1; height: 1px; background: var(--ph-warning); opacity: .4; }
+  .overlay-box { margin-top: 16px; padding: 12px; border-radius: var(--ph-radius-control); border: 1px dashed var(--ph-border); background: var(--ph-surface-alt); }
+
+  /* ---- tier preview surfaces ---- */
+  .tier-head { background: var(--ph-surface-alt); padding: 12px 16px; border-radius: var(--ph-radius-card) var(--ph-radius-card) 0 0; }
+  .tier-n { font-size: 10px; font-weight: 500; letter-spacing: .5px; color: var(--ph-text-micro); }
+  .surface { background: #111; color: #fff; border-radius: var(--ph-radius-control); padding: 14px; height: 208px; display: flex; flex-direction: column; gap: 10px; }
+  .surface .headline { font-weight: 700; font-size: 15px; line-height: 1.25; }
+  .surface .subline { font-size: 12px; opacity: .75; margin-top: 4px; }
+  .surface .block-agent { border: 1px dashed #7fd4ea; background: rgba(22,155,194,.18); border-radius: 4px; padding: 8px; }
+  .surface .block-locked { border: 2px solid #fff; background: rgba(255,255,255,.08); border-radius: 4px; padding: 8px; margin-top: auto; }
+  .surface .price-label { font-size: 10px; letter-spacing: .5px; text-transform: uppercase; opacity: .7; }
+  .surface .price { font-size: 22px; font-weight: 700; }
+  .surface .terms { font-size: 10px; opacity: .65; margin-top: 4px; }
+  .surface .cta { border: 1px dashed #7fd4ea; background: rgba(22,155,194,.18); border-radius: 4px; padding: 6px 8px; font-size: 12px; }
+  .micro-label { font-size: 10px; font-weight: 500; letter-spacing: .5px; color: var(--ph-text-micro); text-transform: uppercase; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+  .tier-facts { padding: 16px; display: flex; flex-direction: column; gap: 10px; flex: 1; }
+  .tier-note { font-size: 12px; color: var(--ph-text-muted); margin-top: auto; padding-top: 8px; }
+
+  @media (max-width: 640px) {
+    .frame { padding: 12px; }
+    .tab { padding: 12px 10px; }
+  }
+</style>
+</head>
+<body>
+
+<!-- Material Symbols (Outlined) sprite — @material-design-icons/svg, 24x24 viewBox -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+  <symbol id="ic-tv" viewBox="0 0 24 24"><path d="M21 3H3c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h5v2h8v-2h5c1.1 0 1.99-.9 1.99-2L23 5c0-1.1-.9-2-2-2zm0 14H3V5h18v12z"/></symbol>
+  <symbol id="ic-point_of_sale" viewBox="0 0 24 24"><path d="M17 2H7c-1.1 0-2 .9-2 2v2c0 1.1.9 2 2 2h10c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm0 4H7V4h10v2zm3 16H4c-1.1 0-2-.9-2-2v-1h20v1c0 1.1-.9 2-2 2zm-1.47-11.81A2.008 2.008 0 0 0 16.7 9H7.3c-.79 0-1.51.47-1.83 1.19L2 18h20l-3.47-7.81zM9.5 16h-1c-.28 0-.5-.22-.5-.5s.22-.5.5-.5h1c.28 0 .5.22.5.5s-.22.5-.5.5zm0-2h-1c-.28 0-.5-.22-.5-.5s.22-.5.5-.5h1c.28 0 .5.22.5.5s-.22.5-.5.5zm0-2h-1c-.28 0-.5-.22-.5-.5s.22-.5.5-.5h1c.28 0 .5.22.5.5s-.22.5-.5.5zm3 4h-1c-.28 0-.5-.22-.5-.5s.22-.5.5-.5h1c.28 0 .5.22.5.5s-.22.5-.5.5zm0-2h-1c-.28 0-.5-.22-.5-.5s.22-.5.5-.5h1c.28 0 .5.22.5.5s-.22.5-.5.5zm0-2h-1c-.28 0-.5-.22-.5-.5s.22-.5.5-.5h1c.28 0 .5.22.5.5s-.22.5-.5.5zm3 4h-1c-.28 0-.5-.22-.5-.5s.22-.5.5-.5h1c.28 0 .5.22.5.5s-.22.5-.5.5zm0-2h-1c-.28 0-.5-.22-.5-.5s.22-.5.5-.5h1c.28 0 .5.22.5.5s-.22.5-.5.5zm0-2h-1c-.28 0-.5-.22-.5-.5s.22-.5.5-.5h1c.28 0 .5.22.5.5s-.22.5-.5.5z"/></symbol>
+  <symbol id="ic-desktop_windows" viewBox="0 0 24 24"><path d="M21 2H3c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h7v2H8v2h8v-2h-2v-2h7c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm0 14H3V4h18v12z"/></symbol>
+  <symbol id="ic-smartphone" viewBox="0 0 24 24"><path d="M17 1.01 7 1c-1.1 0-2 .9-2 2v18c0 1.1.9 2 2 2h10c1.1 0 2-.9 2-2V3c0-1.1-.9-1.99-2-1.99zM17 19H7V5h10v14z"/></symbol>
+  <symbol id="ic-more_horiz" viewBox="0 0 24 24"><path d="M6 10c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm12 0c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm-6 0c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z"/></symbol>
+  <symbol id="ic-qr_code_2" viewBox="0 0 24 24"><path d="M15 21h-2v-2h2v2zm-2-7h-2v5h2v-5zm8-2h-2v4h2v-4zm-2-2h-2v2h2v-2zM7 12H5v2h2v-2zm-2-2H3v2h2v-2zm7-5h2V3h-2v2zm-7.5-.5v3h3v-3h-3zM9 9H3V3h6v6zm-4.5 7.5v3h3v-3h-3zM9 21H3v-6h6v6zm7.5-16.5v3h3v-3h-3zM21 9h-6V3h6v6zm-2 10v-3h-4v2h2v3h4v-2h-2zm-2-7h-4v2h4v-2zm-4-2H7v2h2v2h2v-2h2v-2zm1-1V7h-2V5h-2v4h4zM6.75 5.25h-1.5v1.5h1.5v-1.5zm0 12h-1.5v1.5h1.5v-1.5zm12-12h-1.5v1.5h1.5v-1.5z"/></symbol>
+</svg>
+<div class="frame">
+
+  <div class="title-row">
+    <span class="page-title">Experience Templates</span>
+    <span class="title-meta">Surface Architecture <b style="color:var(--ph-text)">v1.2</b> &middot; Systems Two &amp; Three</span>
+  </div>
+  <div class="divider"></div>
+
+  <div class="tabs" role="tablist">
+    <button class="tab" role="tab" aria-selected="true"  data-panel="p-types">Display Types</button>
+    <button class="tab" role="tab" aria-selected="false" data-panel="p-playlists">Playlists</button>
+    <button class="tab" role="tab" aria-selected="false" data-panel="p-templates">Templates</button>
+    <button class="tab" role="tab" aria-selected="false" data-panel="p-tiers">Tier Preview</button>
+  </div>
+
+  <!-- ===================================================== Display Types -->
+  <section class="panel" id="p-types" role="tabpanel">
+    <div class="seg" id="tp-filter" style="margin-bottom:16px">
+      <button aria-pressed="true"  data-tp="all">All (9)</button>
+      <button aria-pressed="false" data-tp="signage"><svg class="ic ic-sm" aria-hidden="true"><use href="#ic-tv"/></svg>Digital Signage (3)</button>
+      <button aria-pressed="false" data-tp="kiosk"><svg class="ic ic-sm" aria-hidden="true"><use href="#ic-point_of_sale"/></svg>Kiosk (1)</button>
+      <button aria-pressed="false" data-tp="web"><svg class="ic ic-sm" aria-hidden="true"><use href="#ic-desktop_windows"/></svg>Responsive Web (3)</button>
+      <button aria-pressed="false" data-tp="mobile"><svg class="ic ic-sm" aria-hidden="true"><use href="#ic-smartphone"/></svg>Mobile Store Site (2)</button>
+    </div>
+
+    <div class="row-between" style="margin-bottom:8px">
+      <div class="count"><b id="dt-count">9</b> display types</div>
+      <div class="actions">
+        <button class="btn-text">Slot Ownership</button>
+        <button class="btn-text">Add Display Type</button>
+      </div>
+    </div>
+
+    <div class="table-scroll">
+      <table style="min-width:1312px">
+        <thead>
+          <tr>
+            <th style="width:44px"></th>
+            <th style="width:132px">Touch Point</th>
+            <th style="width:225px">Name</th>
+            <th style="width:185px">Resolution / Breakpoints</th>
+            <th style="width:120px">Plays</th>
+            <th style="width:80px" class="num">Slots</th>
+            <th style="width:215px">Slot Ownership</th>
+            <th style="width:155px">Default Playlist(s)</th>
+            <th style="width:140px">Inheritance</th>
+            <th style="width:56px"></th>
+          </tr>
+        </thead>
+        <tbody id="dt-body"></tbody>
+      </table>
+    </div>
+
+    <div class="key">
+      <span class="key-label">Key:</span>
+      <span class="inline"><span class="dot" style="background:var(--own-hq)"></span> HQ-owned slots</span>
+      <span class="inline"><span class="dot" style="background:var(--own-adv)"></span> Advertiser-owned slots</span>
+      <span class="inline"><span class="dot" style="background:var(--own-store)"></span> Store-delegated slots</span>
+      <span class="inline"><span class="swatch hatch" style="width:10px;height:10px;border-radius:2px"></span> Open RTB &mdash; advertiser stamped post-hoc, once the auction clears</span>
+    </div>
+    <p class="note" style="margin-top:16px">
+      Slot ownership stamps onto every render event for analytics partitioning and cannot be
+      backfilled. An amber inheritance marker means at least one display carries an override,
+      which always wins and is never reset by a later type-level edit.
+    </p>
+  </section>
+
+  <!-- ======================================================== Playlists -->
+  <section class="panel" id="p-playlists" role="tabpanel" hidden>
+    <div class="row-between" style="margin-bottom:12px">
+      <div>
+        <div style="font-size:16px;font-weight:500">Drive-Thru Day</div>
+        <div class="card-sub">Drive-Thru Canopy 3&times;1 &middot; Store opening hours, Mon&ndash;Sun &middot; first-paint budget 400ms &middot; loop 42s</div>
+      </div>
+      <div class="actions">
+        <button class="btn-text">Add Playlist Item</button>
+      </div>
+    </div>
+
+    <div class="count"><b>6</b> items</div>
+
+    <div class="table-scroll" style="margin-top:8px">
+      <table style="min-width:1000px">
+        <thead>
+          <tr>
+            <th style="width:70px" class="num">Slot</th>
+            <th style="width:230px">Campaign</th>
+            <th style="width:130px">Owner</th>
+            <th style="width:95px" class="num">Priority</th>
+            <th style="width:110px" class="num">Duration</th>
+            <th style="width:190px">Visibility deadline</th>
+            <th style="width:235px">Campaign type</th>
+            <th>Creative settings</th>
+          </tr>
+        </thead>
+        <tbody id="pl-body"></tbody>
+      </table>
+    </div>
+
+    <p class="note" style="margin-top:16px">
+      The deadline column is derived, never authored: <code>first_paint_budget</code> plus the
+      <code>playbackDuration</code> of every preceding slot. Deferred visibility buys time &mdash; a
+      source that can never make the 400ms first paint can still win slot 4 at +24,400ms, so dwell
+      time and rotation position are personalisation levers, not just layout settings. Manual
+      navigation collapses the deadline to the moment of navigation, never blocks the navigation
+      control, and freezes whatever is currently in view. A deadline shown in green sits beyond 10s — a slow, higher-value source can still win that slot.
+    </p>
+  </section>
+
+  <!-- ======================================================== Templates -->
+  <section class="panel" id="p-templates" role="tabpanel" hidden>
+    <div class="count"><b>2</b> templates</div>
+    <div class="grid-cards cards-2" id="tpl-cards"></div>
+    <div class="section-label">Trust zones</div>
+    <div class="key" style="margin-top:0">
+      <span class="key-label">Key:</span>
+      <span class="inline"><span class="swatch zone-locked"></span> PH-locked &mdash; price, offer terms, finance figures, disclosures</span>
+      <span class="inline"><span class="swatch zone-agent"></span> Agent-addressable &mdash; selection within PH&rsquo;s eligible set</span>
+      <span class="inline"><span class="swatch" style="border:1px solid var(--ph-border-subtle)"></span> Mixed &mdash; both zones present in one element</span>
+    </div>
+  </section>
+
+  <!-- ===================================================== Tier Preview -->
+  <section class="panel" id="p-tiers" role="tabpanel" hidden>
+    <p class="note" style="margin-bottom:16px">
+      The render ladder, side by side &mdash; the single most important screen in the spec. A surface
+      paints immediately with whatever is available and enhances in place; it never blocks waiting on
+      personalisation. Connection state is a second, orthogonal axis: campaigns resolve on the tier,
+      CTAs resolve on the connection.
+    </p>
+    <div class="grid-cards cards-4" id="tier-cards" style="margin-top:0"></div>
+    <div class="section-label">Trust zones</div>
+    <div class="key" style="margin-top:0">
+      <span class="key-label">Key:</span>
+      <span class="inline"><span class="swatch zone-locked"></span> PH-locked &mdash; only Personalisation Hub writes the number</span>
+      <span class="inline"><span class="swatch zone-agent"></span> Agent-addressable &mdash; the agent turns the dial, it never writes the number</span>
+    </div>
+  </section>
+
+</div>
+
+<script>
+/* Fixtures mirror ./boardData.js, which the JSX component imports. */
+var TOUCH_POINTS = {
+  signage: { label: 'Digital Signage', icon: 'tv' },
+  kiosk:   { label: 'Kiosk', icon: 'point_of_sale' },
+  web:     { label: 'Responsive Web', icon: 'desktop_windows' },
+  mobile:  { label: 'Mobile Store Site', icon: 'smartphone' }
+};
+var OWNERS = {
+  hq:         { label: 'HQ', colour: 'var(--own-hq)' },
+  advertiser: { label: 'Advertiser', colour: 'var(--own-adv)' },
+  stores:     { label: 'Stores', colour: 'var(--own-store)' }
+};
+
+var DISPLAY_TYPES = [
+  { id:'dt-drive-thru', touchPoint:'signage', name:'Drive-Thru Canopy 3×1', spec:'5760 × 1080', plays:'sequential', slots:6, ownership:{hq:4,advertiser:1,stores:1}, rtbOpen:1, playlists:'Drive-Thru Day, Drive-Thru Late', overrides:3, flags:'Multi-zone (3) · Phantom area · In-Store Radio' },
+  { id:'dt-menu-portrait', touchPoint:'signage', name:'In-Store Menu Board (Portrait)', spec:'1080 × 1920', plays:'sequential', slots:8, ownership:{hq:6,advertiser:0,stores:2}, rtbOpen:0, playlists:'Core Menu', overrides:11, flags:'Phantom area · MIST proximity' },
+  { id:'dt-window', touchPoint:'signage', name:'Window Display 16:9', spec:'1920 × 1080', plays:'sequential', slots:-1, ownership:{hq:0,advertiser:0,stores:0}, rtbOpen:0, playlists:'Window Promo', overrides:0, flags:'Unlimited rotation' },
+  { id:'dt-kiosk-attract', touchPoint:'kiosk', name:'Self-Order Kiosk — Attract Loop', spec:'1080 × 1920', plays:'sequential', slots:4, ownership:{hq:3,advertiser:1,stores:0}, rtbOpen:1, playlists:'Kiosk Attract', overrides:2, flags:'Phantom area · Vision / AI' },
+  { id:'dt-hero', touchPoint:'web', name:'Homepage Hero', spec:'Element · 1 col all breakpoints', plays:'single', slots:1, ownership:{hq:1,advertiser:0,stores:0}, rtbOpen:0, playlists:'—', overrides:0, flags:'Above fold' },
+  { id:'dt-carousel', touchPoint:'web', name:'Offer Carousel', spec:'Element · 1 / 1 / 1 col', plays:'sequential', slots:5, ownership:{hq:3,advertiser:2,stores:0}, rtbOpen:2, playlists:'Web Offers', overrides:0, flags:'Above fold' },
+  { id:'dt-tiles', touchPoint:'web', name:'Product Tiles Grid', spec:'Element · 4 / 3 / 2 col · 8 / 6 / 4 items', plays:'simultaneous', slots:8, ownership:{hq:6,advertiser:0,stores:2}, rtbOpen:0, playlists:'—', overrides:0, flags:'Below fold · Item count ≠ column count' },
+  { id:'dt-site-header', touchPoint:'mobile', name:'Store Site Header', spec:'Module · full width', plays:'static', slots:0, ownership:{hq:0,advertiser:0,stores:0}, rtbOpen:0, playlists:'—', overrides:0, flags:'Renders no campaigns' },
+  { id:'dt-site-ctas', touchPoint:'mobile', name:'Store Site CTA Menu', spec:'Module · 4 menu items', plays:'static', slots:0, ownership:{hq:0,advertiser:0,stores:0}, rtbOpen:0, playlists:'—', overrides:6, flags:'Connection-state gated · Store hours' }
+];
+
+var PLAYLIST_ITEMS = [
+  { slot:1, campaign:'Breakfast Meal Deal', owner:'hq', priority:10, duration:8000, campaignType:'LOCALISED, ON_ROTATION', creative:'default / selected / unselected' },
+  { slot:2, campaign:'Barista Coffee Range', owner:'hq', priority:20, duration:6000, campaignType:'LOCALISED, ON_ROTATION', creative:'default' },
+  { slot:3, campaign:'— open RTB —', owner:'advertiser', priority:null, duration:10000, campaignType:'RTB, ON_ROTATION', creative:'default' },
+  { slot:4, campaign:'Loyalty Double Points', owner:'hq', priority:30, duration:7000, campaignType:'PERSONALISED, ON_ROTATION', creative:'default / selected / unselected' },
+  { slot:5, campaign:'Store Manager’s Pick', owner:'stores', priority:40, duration:6000, campaignType:'LOCALISED, DELEGATED', creative:'default' },
+  { slot:6, campaign:'Join the Queue', owner:'hq', priority:50, duration:5000, campaignType:'TRIGGERED, CONNECTED_DISPLAY', creative:'default / selected' }
+];
+var FIRST_PAINT_BUDGET = 400;
+
+var TEMPLATES = [
+  { name:'Store Landing Page', type:'Responsive Web Page', widthMode:'Boxed · 1280px max', firstPaintBudget:400, foldPosition:2,
+    pairing:{ anchor:'Bottom right', offset:'24 / 24', state:'Unpaired — QR visible', icon:'qr_code_2' },
+    elements:[
+      { name:'Homepage Hero', plays:'single', deadline:'400ms', zone:'mixed' },
+      { name:'Offer Carousel', plays:'sequential', deadline:'400ms → rotating', zone:'mixed' },
+      { name:'Product Tiles Grid', plays:'simultaneous', deadline:'On scroll (unbounded)', zone:'mixed' },
+      { name:'FAQ Accordion', plays:'static', deadline:'—', zone:'agent' },
+      { name:'Site Footer', plays:'static', deadline:'—', zone:'locked' }
+    ] },
+  { name:'Connected Store Site', type:'Mobile Store Site', widthMode:'Fluid', firstPaintBudget:300, foldPosition:3,
+    pairing:{ anchor:'Phantom zone', offset:'Host display', state:'Paired — phone', icon:'smartphone' },
+    elements:[
+      { name:'Site Header', plays:'static', deadline:'—', zone:'agent' },
+      { name:'Carousel', plays:'sequential', deadline:'300ms → rotating', zone:'mixed' },
+      { name:'CTA Menu', plays:'static', deadline:'Connection state', zone:'agent' },
+      { name:'Content', plays:'single', deadline:'On scroll', zone:'mixed' },
+      { name:'Footer', plays:'static', deadline:'—', zone:'locked' }
+    ] }
+];
+
+var TIERS = [
+  { n:1, name:'Default', connection:'Away From Store', resolved:[], blank:['first_name','loyalty_tier','purchase_history'],
+    deadline:'First paint · 400ms', headline:'Today’s Menu', sub:'Freshly made, all day',
+    priceLabel:'RRP', price:'£4.95', terms:'Selected items. Subject to availability.', cta:null,
+    note:'Nothing resolved. This is the normal case, not an error — a real attribute envelope is almost entirely blank.' },
+  { n:2, name:'Localised', connection:'Connected Store', resolved:['mist_site_id','display_name','touch_point'], blank:['first_name','loyalty_tier'],
+    deadline:'First paint · 400ms', headline:'Kings Cross — Today’s Menu', sub:'Open until 23:00 · Collection in 4 min',
+    priceLabel:'Store price', price:'£4.50', terms:'Kings Cross pricing. Subject to availability.', cta:null,
+    note:'Store context only — no identity needed. Tiers 1–2 will carry most impressions.' },
+  { n:3, name:'Personalised', connection:'Connected Display', resolved:['mist_site_id','first_name','loyalty_tier','purchase_history'], blank:['plan_types'],
+    deadline:'Slot 4 · +24,400ms', headline:'Morning, Rob — the usual?', sub:'Flat white + almond croissant',
+    priceLabel:'Gold member', price:'£3.80', terms:'Gold tier pricing, server-resolved. Ends 30 Sep.', cta:null,
+    note:'loyalty_tier arrived as a server-side resolution, so it may reach the pricing path. A tier-1 claim never could.' },
+  { n:4, name:'Interactive', connection:'Connected Display · paired', resolved:['mist_site_id','first_name','loyalty_tier','SKUs','interaction_entities'], blank:[],
+    deadline:'Collapsed — moment of navigation', headline:'Your order · 2 items', sub:'Flat white · Almond croissant',
+    priceLabel:'Order total', price:'£6.40', terms:'Gold tier pricing applied. Pay in app.', cta:'Add a pastry · £2.60',
+    note:'Live socket. The agent selected the SKUs; PH validated them against the eligible set and wrote the price.' }
+];
+
+/* ------------------------------------------------------------ helpers */
+function el(tag, cls, html) {
+  var n = document.createElement(tag);
+  if (cls) n.className = cls;
+  if (html !== undefined) n.innerHTML = html;
+  return n;
+}
+function ownershipCell(d) {
+  if (d.slots === 0) return '<span class="muted">&mdash;</span>';
+  if (d.slots === -1) return '<span class="pill">Unlimited</span>';
+  var segs = [
+    { k:'hq', n:d.ownership.hq },
+    { k:'advertiser', n:d.ownership.advertiser },
+    { k:'stores', n:d.ownership.stores }
+  ].filter(function (s) { return s.n > 0; });
+  var assigned = segs.reduce(function (t, s) { return t + s.n; }, 0);
+  var unassigned = Math.max(0, d.slots - assigned);
+  var bar = segs.map(function (s) {
+    return '<span style="flex:' + s.n + ';background:' + OWNERS[s.k].colour + '"></span>';
+  }).join('');
+  if (unassigned > 0) bar += '<span class="hatch" style="flex:' + unassigned + '"></span>';
+  var text = segs.map(function (s) { return OWNERS[s.k].label + ' ' + s.n; }).join(' · ');
+  if (d.rtbOpen > 0) text += ' · RTB ' + d.rtbOpen;
+  return '<div class="own"><div class="own-bar">' + bar + '</div><span class="own-text">' + text + '</span></div>';
+}
+function inheritanceCell(d) {
+  if (d.overrides > 0) {
+    return '<span class="inline" style="color:var(--ph-warning)" title="A display-level override always wins and is never reset by a later type-level edit.">' +
+      '<span class="dot" style="background:var(--ph-warning)"></span>' + d.overrides + ' overridden</span>';
+  }
+  return '<span class="inline muted"><span class="dot" style="background:var(--ph-success)"></span>Type default</span>';
+}
+
+/* ------------------------------------------------- render: display types */
+function renderDisplayTypes(tp) {
+  var body = document.getElementById('dt-body');
+  var rows = DISPLAY_TYPES.filter(function (d) { return tp === 'all' || d.touchPoint === tp; });
+  document.getElementById('dt-count').textContent = rows.length;
+  body.innerHTML = rows.map(function (d) {
+    return '<tr>' +
+      '<td><input type="checkbox" aria-label="Select ' + d.name + '" /></td>' +
+      '<td><span class="inline muted"><svg class="ic" aria-hidden="true"><use href="#ic-' + TOUCH_POINTS[d.touchPoint].icon + '"/></svg>' + TOUCH_POINTS[d.touchPoint].label + '</span></td>' +
+      '<td><div class="name">' + d.name + '</div><div class="sub">' + d.flags + '</div></td>' +
+      '<td class="muted">' + d.spec + '</td>' +
+      '<td><span class="pill">' + d.plays.toUpperCase() + '</span></td>' +
+      '<td class="num">' + (d.slots === -1 ? '∞' : d.slots) + '</td>' +
+      '<td>' + ownershipCell(d) + '</td>' +
+      '<td' + (d.playlists === '—' ? ' class="muted"' : '') + '>' + d.playlists + '</td>' +
+      '<td>' + inheritanceCell(d) + '</td>' +
+      '<td class="num"><svg class="ic" aria-hidden="true" style="color:var(--ph-text-muted)"><use href="#ic-more_horiz"/></svg></td>' +
+      '</tr>';
+  }).join('');
+}
+
+/* ----------------------------------------------------- render: playlist */
+function renderPlaylist() {
+  var cursor = FIRST_PAINT_BUDGET;
+  document.getElementById('pl-body').innerHTML = PLAYLIST_ITEMS.map(function (i) {
+    var deadline = cursor;
+    cursor += i.duration;
+    return '<tr>' +
+      '<td class="num muted">' + i.slot + '</td>' +
+      '<td class="' + (i.campaign.charAt(0) === '—' ? 'muted' : 'name') + '">' + i.campaign + '</td>' +
+      '<td><span class="inline"><span class="dot" style="background:' + OWNERS[i.owner].colour + '"></span>' + OWNERS[i.owner].label + '</span></td>' +
+      '<td class="num' + (i.priority === null ? ' muted' : '') + '">' + (i.priority === null ? 'auction' : i.priority) + '</td>' +
+      '<td class="num">' + (i.duration / 1000) + 's</td>' +
+      '<td' + (deadline > 10000 ? ' style="color:var(--ph-success)"' : '') + ' title="first_paint_budget + Σ playbackDuration of every preceding slot">+' + deadline.toLocaleString() + 'ms</td>' +
+      '<td><span class="pill">' + i.campaignType + '</span></td>' +
+      '<td class="muted" style="font-size:13px">' + i.creative + '</td>' +
+      '</tr>';
+  }).join('');
+}
+
+/* ---------------------------------------------------- render: templates */
+function renderTemplates() {
+  document.getElementById('tpl-cards').innerHTML = TEMPLATES.map(function (t) {
+    var els = '';
+    t.elements.forEach(function (e, i) {
+      if (i === t.foldPosition) {
+        els += '<div class="fold"><i></i>Fold — position ' + t.foldPosition + '<i></i></div>';
+      }
+      var zoneCls = e.zone === 'locked' ? ' zone-locked' : (e.zone === 'agent' ? ' zone-agent' : '');
+      els += '<div class="el' + zoneCls + '"><span>' + e.name + '</span>' +
+             '<span class="meta"><span class="plays">' + e.plays + '</span><span class="pill">' + e.deadline + '</span></span></div>';
+    });
+    return '<div class="card">' +
+      '<div class="card-head"><div><div class="card-title">' + t.name + '</div>' +
+      '<div class="card-sub">' + t.type + ' · ' + t.widthMode + ' · first paint ' + t.firstPaintBudget + 'ms</div></div>' +
+      '<svg class="ic" aria-hidden="true" style="color:var(--ph-text-muted)"><use href="#ic-more_horiz"/></svg></div>' +
+      '<div class="card-body">' + els +
+      '<div class="overlay-box">' +
+      '<div class="micro-label" style="margin-bottom:6px">Pairing overlay — not part of page layout</div>' +
+      '<div class="inline" style="font-size:13px"><svg class="ic" aria-hidden="true"><use href="#ic-' + t.pairing.icon + '"/></svg>' +
+      t.pairing.state + ' · anchor ' + t.pairing.anchor + ' · offset ' + t.pairing.offset + '</div>' +
+      '<div class="sub" style="margin-top:6px">Holds position through scroll and campaign transitions, because the pairing affordance must survive whatever the surface underneath is doing.</div>' +
+      '</div></div></div>';
+  }).join('');
+}
+
+/* --------------------------------------------------- render: tier ladder */
+function renderTiers() {
+  document.getElementById('tier-cards').innerHTML = TIERS.map(function (t) {
+    var resolved = t.resolved.length
+      ? t.resolved.map(function (a) { return '<span class="pill teal">' + a + '</span>'; }).join('')
+      : '<span class="muted" style="font-size:13px">Nothing</span>';
+    var blank = t.blank.length
+      ? '<div><div class="micro-label">Blank — serves default</div><div class="chips">' +
+        t.blank.map(function (a) { return '<span class="pill">' + a + '</span>'; }).join('') + '</div></div>'
+      : '';
+    return '<div class="card">' +
+      '<div class="tier-head"><div class="inline"><span class="tier-n">TIER ' + t.n + '</span>' +
+      '<span class="card-title">' + t.name + '</span></div>' +
+      '<div class="card-sub">' + t.connection + '</div></div>' +
+      '<div style="padding:16px;border-bottom:1px solid var(--ph-border-subtle)">' +
+      '<div class="surface">' +
+      '<div class="block-agent"><div class="headline">' + t.headline + '</div><div class="subline">' + t.sub + '</div></div>' +
+      '<div class="block-locked"><div class="price-label">' + t.priceLabel + '</div>' +
+      '<div class="price">' + t.price + '</div><div class="terms">' + t.terms + '</div></div>' +
+      (t.cta ? '<div class="cta">' + t.cta + '</div>' : '') +
+      '</div></div>' +
+      '<div class="tier-facts">' +
+      '<div><div class="micro-label">Deadline</div><div style="font-size:13px;margin-top:2px">' + t.deadline + '</div></div>' +
+      '<div><div class="micro-label">Resolved</div><div class="chips">' + resolved + '</div></div>' +
+      blank +
+      '<div class="tier-note">' + t.note + '</div>' +
+      '</div></div>';
+  }).join('');
+}
+
+/* ---------------------------------------------------------- interactions */
+document.querySelectorAll('.tabs .tab').forEach(function (tab) {
+  tab.addEventListener('click', function () {
+    document.querySelectorAll('.tabs .tab').forEach(function (t) { t.setAttribute('aria-selected', 'false'); });
+    document.querySelectorAll('.panel').forEach(function (p) { p.hidden = true; });
+    tab.setAttribute('aria-selected', 'true');
+    document.getElementById(tab.dataset.panel).hidden = false;
+  });
+});
+document.querySelectorAll('#tp-filter button').forEach(function (b) {
+  b.addEventListener('click', function () {
+    document.querySelectorAll('#tp-filter button').forEach(function (x) { x.setAttribute('aria-pressed', 'false'); });
+    b.setAttribute('aria-pressed', 'true');
+    renderDisplayTypes(b.dataset.tp);
+  });
+});
+
+renderDisplayTypes('all');
+renderPlaylist();
+renderTemplates();
+renderTiers();
+</script>
+</body>
+</html>
