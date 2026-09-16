@@ -174,8 +174,13 @@ export default function PartnersView({ partners, setPartners, companyLists, setC
             )}
 
             {/* --------------------- targeting permissions */}
-            <SectionLabel>Targeting attributes this partner may use</SectionLabel>
-            <TargetingPermissions p={p} setP={setP} />
+            {/* Not shown for Google DSP / Amazon Ads DSP — removed by request. */}
+            {p.provider !== "google_dsp" && p.provider !== "amazon_dsp" && (
+              <>
+                <SectionLabel>Targeting attributes this partner may use</SectionLabel>
+                <TargetingPermissions p={p} setP={setP} />
+              </>
+            )}
 
             {/* --------------------- lists */}
             {isDsp(p) && (() => {
