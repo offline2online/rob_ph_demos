@@ -13,8 +13,13 @@
  *   BOARD_API_KEY=... node backlog-tracker/scripts/sync-project-docs.js \
  *     --project "Display Types & DSP Integration" \
  *     --folder display-types-dsp-integration \
- *     --interface "Live Visitor Profile ↔ Display Types" \
- *     --interface-file shared/interface-contract.md
+ *     --interface-file shared/interface-contract.md \
+ *     --artifact-url https://claude.ai/artifact/2cc25ZNLFP5AtQk2KmeY98 \
+ *     --rename-interface
+ *
+ * The interface record is matched by which projects it links, not by its name,
+ * so a project rename does not silently stop it syncing. --rename-interface
+ * also retitles the record from the contract's own H1.
  *
  * --dry-run prints exactly what would change and writes nothing.
  */
@@ -61,12 +66,15 @@ async function main() {
   const requirementsMd = read(`${folder}/REQUIREMENTS.md`);
   const interfaceName = arg('interface');
   const interfaceMd = arg('interface-file') ? read(arg('interface-file')) : null;
+  const renameInterface = has('rename-interface');
+  const artifactUrl = arg('artifact-url');
 
   console.log(`repo -> board`);
   console.log(`  project        ${projectName}`);
   console.log(`  README.md      ${readmeMd.length} chars`);
   console.log(`  REQUIREMENTS   ${requirementsMd.length} chars`);
-  if (interfaceMd) console.log(`  interface      ${interfaceName} (${interfaceMd.length} chars)`);
+  if (interfaceMd) console.log(`  interface      ${interfaceMd.length} chars`);
+  if (artifactUrl) console.log(`  artifactUrl    ${artifactUrl}`);
 
   const password = process.env.BOARD_API_KEY;
   if (!password) throw new Error('BOARD_API_KEY is not set — it is the board automation user password');
@@ -109,28 +117,59 @@ async function main() {
   if (!patch.ok) throw new Error(`patch project: ${(await patch.json()).error?.message}`);
   console.log('  project docs   written');
 
-  // --- the interface record, matched by name ----------------------------
-  if (interfaceMd && interfaceName) {
+  // --- the interface record --------------------------------------------
+  // Matched by PROJECT MEMBERSHIP, not by name. The record's name drifts
+  // whenever a project is renamed, so a name match silently finds nothing
+  // and the contract quietly stops being synced.
+  if (interfaceMd) {
     const ifRes = await fetch(`${BOARD}/interfaces`, { headers: auth });
     const ifBody = await ifRes.json();
     if (!ifRes.ok) throw new Error(`list interfaces: ${ifBody.error?.message}`);
-    const rec = (ifBody.documents || []).find((d) => d.fields?.name?.stringValue === interfaceName);
-    if (!rec) {
-      console.log(`  interface      no record named "${interfaceName}" — create it from the ` +
-        `project's Docs page first, then re-run. Existing: ` +
-        ((ifBody.documents || []).map((d) => d.fields?.name?.stringValue).join(', ') || 'none'));
+    const mine = (ifBody.documents || []).filter((d) =>
+      (d.fields?.projectIds?.arrayValue?.values || []).some((v) => v.stringValue === projectId));
+
+    if (mine.length === 0) {
+      console.log(`  interface      no record links this project — create it from the ` +
+        `project's Docs page first, then re-run.`);
+    } else if (mine.length > 1 && !interfaceName) {
+      console.log(`  interface      ${mine.length} records link this project; pass --interface ` +
+        `to choose: ` + mine.map((d) => d.fields?.name?.stringValue).join(' | '));
     } else {
+      const rec = interfaceName
+        ? mine.find((d) => d.fields?.name?.stringValue === interfaceName) || mine[0]
+        : mine[0];
       const ifId = rec.name.split('/').pop();
-      const r = await fetch(
-        `${BOARD}/interfaces/${ifId}?updateMask.fieldPaths=contentMd&updateMask.fieldPaths=updatedAt`,
-        { method: 'PATCH', headers: auth,
-          body: JSON.stringify({ fields: {
-            contentMd: { stringValue: interfaceMd },
-            updatedAt: { timestampValue: new Date().toISOString() },
-          } }) });
+      const currentName = rec.fields?.name?.stringValue || '';
+      const fields = {
+        contentMd: { stringValue: interfaceMd },
+        updatedAt: { timestampValue: new Date().toISOString() },
+      };
+      let mask = 'updateMask.fieldPaths=contentMd&updateMask.fieldPaths=updatedAt';
+      // Take the title from the contract's own H1, so a renamed project does
+      // not leave the record advertising the old name forever.
+      const h1 = (interfaceMd.match(/^#\s+Interface Contract\s+[—-]\s+(.+)$/m) || [])[1];
+      if (renameInterface && h1 && h1.trim() !== currentName) {
+        fields.name = { stringValue: h1.trim() };
+        mask += '&updateMask.fieldPaths=name';
+        console.log(`  interface      renaming "${currentName}" -> "${h1.trim()}"`);
+      } else if (h1 && h1.trim() !== currentName) {
+        console.log(`  interface      name is "${currentName}", contract says "${h1.trim()}" ` +
+          `— pass --rename-interface to update it`);
+      }
+      const r = await fetch(`${BOARD}/interfaces/${ifId}?${mask}`,
+        { method: 'PATCH', headers: auth, body: JSON.stringify({ fields }) });
       if (!r.ok) throw new Error(`patch interface: ${(await r.json()).error?.message}`);
       console.log(`  interface      written (${ifId})`);
     }
+  }
+
+  // --- the project's artifact link --------------------------------------
+  if (artifactUrl) {
+    const r = await fetch(`${BOARD}/projects/${projectId}?updateMask.fieldPaths=artifactUrl`,
+      { method: 'PATCH', headers: auth,
+        body: JSON.stringify({ fields: { artifactUrl: { stringValue: artifactUrl } } }) });
+    if (!r.ok) throw new Error(`patch artifactUrl: ${(await r.json()).error?.message}`);
+    console.log('  artifactUrl    written');
   }
 
   console.log('\ndone');

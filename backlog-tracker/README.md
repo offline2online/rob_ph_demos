@@ -367,14 +367,29 @@ direction that fixes a stale board.
 BOARD_API_KEY=... node backlog-tracker/scripts/sync-project-docs.js \
   --project "Display Types & DSP Integration" \
   --folder display-types-dsp-integration \
-  --interface "Live Visitor Profile ↔ Display Types" \
-  --interface-file shared/interface-contract.md
+  --interface-file shared/interface-contract.md \
+  --artifact-url https://claude.ai/artifact/2cc25ZNLFP5AtQk2KmeY98 \
+  --rename-interface
 ```
+
+The interface record is matched by **which projects it links**, not by its
+name. Names drift whenever a project is renamed — the record on the board is
+still called "Live Visitor Profile ↔ Experience Templates" months after that
+project was renamed — and a name match would silently find nothing and stop
+syncing the contract without erroring. `--rename-interface` also retitles the
+record from the contract's own H1.
+
+`--artifact-url` sets the project's `artifactUrl` field.
 
 `--dry-run` reads the board and prints what would change without writing.
 `BOARD_API_KEY` is the board automation user's password — the same secret the
 rest of this README uses, and **it is not present in a normal Claude sandbox**,
 so this is a command a person runs (or pastes the key into a session for).
+
+**The PH Agent Console MCP connector cannot do this.** It reads project docs
+(`get_project_docs`) but has no write tool for them — its only writes are
+backlog tickets and comments. Docs, interfaces and `artifactUrl` need this
+script, or the board's own Docs page.
 
 It never reads the board back into the repo. If the board is the fresher side,
 copy it down by hand — silently overwriting someone's Docs-page edit with a
