@@ -858,15 +858,36 @@ REST API is reachable with a plain `curl`, no service account needed.
   comments section included, for anyone who wants both in one place.
 - **Mic dictation** requests microphone permission before starting Web
   Speech recognition, with specific, visible error states (blocked
-  permission, no device, no browser support, network needed, silent
-  restart give-up after repeated no-speech) rather than failing silently.
-  Continuous-mode quirks on Android Chrome are worked around by restarting
-  a fresh non-continuous recognition session per utterance rather than
-  relying on the browser's own long-running continuous mode. Originally
-  New Item's description field only; `createDictationController()` in
-  `app.js` factors this into a reusable per-field controller (its own
-  independent recognition/listening/error state via closure, not shared
-  module globals) so the quick-comment modal and the Edit item modal's own
+  permission, no device, no browser support, no internet after repeated
+  network errors) rather than failing silently. **Once the mic is on it
+  stays on until the user stops it** (the mic button, closing the form, or
+  submitting): every session the browser ends on its own — silence
+  timeout, cloud-session limit, a transient network error — is restarted
+  immediately with the text so far carried across, and a long silence only
+  shows a soft "still listening, not hearing anything yet" hint, never a
+  stop (1.5.47 and earlier gave up after four silent restarts, which read
+  as dictation "pausing and cutting out"). Desktop and iOS run one real
+  `continuous` session — results walked from `e.resultIndex`, each final
+  committed once, a redelivered duplicate final dropped — while Android
+  Chrome, whose continuous mode duplicates text, runs a fresh
+  non-continuous session per utterance instead. The recogniser opens the
+  microphone itself; no `getUserMedia` track is fed in, since the
+  pre-processed audio (noise suppression / echo cancellation / AGC) 1.5.47
+  handed to `start(MediaStreamTrack)` made transcription worse, not
+  better. Language defaults to `en-GB` and the engine to Chrome's cloud
+  recogniser; Settings → Dictation holds per-browser (`localStorage`,
+  never Firestore) overrides for language (`bt-dictation-lang`) and engine
+  (`bt-dictation-engine`: auto / cloud / on-device — the last uses Chrome
+  139+'s `processLocally` model with Chrome 142+ phrase biasing toward this
+  board's own vocabulary). Final results get spoken-punctuation
+  replacement ("full stop", "comma", "new line", "new paragraph",
+  "question mark", "exclamation mark"), sentence-casing, and a small
+  correction map for product terms; text already in the field is preserved
+  verbatim, line breaks included. Originally New Item's description field
+  only; `createDictationController()` in `app.js` factors this into a
+  reusable per-field controller (its own independent
+  recognition/listening/error state via closure, not shared module
+  globals) so the quick-comment modal and the Edit item modal's own
   comment box each get an identical mic button too — starting or stopping
   dictation on one field never touches another's state.
 - **App name and global navigation.** The app itself (browser tab, `<h1>`,
