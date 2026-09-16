@@ -28,6 +28,11 @@ const MEMBER = { uid: "member", claims: { email: "sam@personalisationhub.com", e
 const VIEWER = { uid: "viewer", claims: { email: "kit@personalisationhub.com", email_verified: true } };
 const DISABLED = { uid: "disabled", claims: { email: "expat@personalisationhub.com", email_verified: true } };
 const TEAM_ADMIN = { uid: "teamadmin", claims: { email: "ada@personalisationhub.com", email_verified: true } };
+// A row carrying nothing but an email — no role, no disabled, no mcpEnabled.
+// Rules THROW on a property that isn't present rather than reading it as
+// null, so a bare property access here denies the member outright. That bug
+// shipped once and CI caught it; these cases are why.
+const SPARSE = { uid: "sparse", claims: { email: "min@personalisationhub.com", email_verified: true } };
 // Same address as MEMBER but signed in with an unverified email — the rules
 // require email_verified, which for an invited password account is what
 // completing Firebase's password-setup email establishes.
@@ -68,6 +73,7 @@ async function reset() {
     await setDoc(doc(db, "consoleUsers/kit@personalisationhub.com"), { email: "kit@personalisationhub.com", role: "viewer" });
     await setDoc(doc(db, "consoleUsers/expat@personalisationhub.com"), { email: "expat@personalisationhub.com", role: "editor", disabled: true });
     await setDoc(doc(db, "consoleUsers/ada@personalisationhub.com"), { email: "ada@personalisationhub.com", role: "admin" });
+    await setDoc(doc(db, "consoleUsers/min@personalisationhub.com"), { email: "min@personalisationhub.com" });
     await setDoc(doc(db, "mcpTokens/deadbeef"), { email: "sam@personalisationhub.com", type: "access" });
     await setDoc(doc(db, "mcpAuditLog/e1"), { email: "sam@personalisationhub.com", tool: "create_backlog_item" });
   });
@@ -144,6 +150,13 @@ async function main() {
   await check("A viewer CANNOT write the board", "deny", () =>
     setDoc(doc(as(VIEWER), "backlogItems/i1"), { desc: "Viewers don't get to" }, { merge: true }));
   await check("A disabled member cannot read the board", "deny", () => getDoc(doc(as(DISABLED), "projects/p1")));
+  // Optional fields absent entirely — the regression that broke every member
+  // whose row had no `disabled` field.
+  await check("A member row with no optional fields can read the board", "allow", () => getDoc(doc(as(SPARSE), "projects/p1")));
+  await check("A member row with no role defaults to editor and can write", "allow", () =>
+    setDoc(doc(as(SPARSE), "backlogItems/i1"), { desc: "Edited by a minimal member row" }, { merge: true }));
+  await check("A member row with no role is NOT an admin", "deny", () =>
+    setDoc(doc(as(SPARSE), "consoleUsers/newbie3@personalisationhub.com"), { email: "newbie3@personalisationhub.com", role: "editor" }));
   await check("A member with an unverified email cannot read the board", "deny", () => getDoc(doc(as(UNVERIFIED), "projects/p1")));
 
   // ── consoleUsers itself ────────────────────────────────────────────────

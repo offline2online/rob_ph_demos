@@ -58,10 +58,24 @@ service cloud.firestore {
     function memberDoc() {
       return get(/databases/$(database)/documents/consoleUsers/$(callerEmail())).data;
     }
+    // Every optional field is read through map.get(key, default), never as a
+    // bare property. Rules THROW on a property that isn't present — they do
+    // not evaluate it as null — so `memberDoc().disabled != true` denied every
+    // member whose row simply had no `disabled` field, which is most of them.
+    // Caught by the rules suite; don't reintroduce it.
+    function memberDisabled() {
+      return memberDoc().get("disabled", false) == true;
+    }
+    // A row with no role is treated as an editor, matching
+    // functions/mcp-server.js's resolveConsoleUser — the two defaults have to
+    // agree or the board and the agent would disagree about the same person.
+    function memberRole() {
+      return memberDoc().get("role", "editor");
+    }
     function isMember() {
       return signedIn()
         && exists(/databases/$(database)/documents/consoleUsers/$(callerEmail()))
-        && memberDoc().disabled != true;
+        && !memberDisabled();
     }
     // Read the board: any member, whatever their role.
     function isBoardReader() {
@@ -72,11 +86,11 @@ service cloud.firestore {
     // should see the board without being able to move anything on it.
     function isEditor() {
       return isOwnerAccount() || isAutomationAccount()
-        || (isMember() && memberDoc().role != "viewer");
+        || (isMember() && memberRole() != "viewer");
     }
     // Manage who else is on the console.
     function isAdmin() {
-      return isOwnerAccount() || (isMember() && memberDoc().role == "admin");
+      return isOwnerAccount() || (isMember() && memberRole() == "admin");
     }
 
     // ── Deployment train state on a project ────────────────────────────────
