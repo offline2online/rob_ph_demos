@@ -425,11 +425,12 @@ over 25°C in October delivers a fraction of its baseline. The forecast
 endpoint takes the targeting rules as input for exactly this reason —
 otherwise we sell guarantees we cannot meet.
 
-### 7. The supply side — exposing in-store inventory to programmatic demand
+### 7. Personalisation Hub as the supply-side platform
 
-§6 describes demand arriving through a partner. This section describes the
-other direction: how the retailer's in-store screens become *buyable* by the
-programmatic market at all.
+§6 describes demand arriving through a partner. This section describes what PH
+itself is: **the exchange that sells the retailer's in-store screens.** We are
+not integrating into someone else's supply platform — we are building the
+supply platform, and DSPs are the demand that connects to it.
 
 #### Which side each named platform sits on
 
@@ -438,141 +439,141 @@ shorthand suggests, and the difference decides what gets built:
 
 | Platform | Side | What it means for us |
 |---|---|---|
-| **The Trade Desk** | **DSP — demand** | The largest independent demand-side platform and a major DOOH buyer. A buyer of our inventory, never a route to market for it |
+| **The Trade Desk** | **DSP — demand** | The largest independent demand-side platform and a major DOOH buyer. A buyer that bids into our exchange, never a route to market for our inventory |
 | **Display & Video 360** | **DSP — demand** | Google's buy side. Already in scope as a demand partner (§6) |
-| **Google Ad Manager** | **SSP / ad server — supply** | Google's sell side. A different product from DV360 despite the shared brand, with narrower DOOH support than the DOOH specialists |
+| **Google Ad Manager** | **SSP / ad server — supply** | Google's sell side. The thing we are building an equivalent of, not something we connect into |
 
-So there is no such thing as "integrating to The Trade Desk as an SSP". We make
-our inventory *buyable by* The Trade Desk — by exposing an OpenRTB supply
-endpoint it can bid into, directly or through an exchange that already carries
-it as demand.
+So there is no such thing as "integrating to The Trade Desk as an SSP". The
+Trade Desk is a bidder. **Personalisation Hub is the publisher and the
+exchange**: the retailer owns the screens, PH operates them and sells them.
 
-**Personalisation Hub is the publisher.** The retailer owns the screens; PH is
-the media-owner platform that operates them. PH sits on the sell side, and the
-question this section answers is how PH's supply reaches buyers.
+#### What being the SSP means we build
 
-#### Three architectures
+1. **Bid request construction and the bidder integration.** PH generates an
+   OpenRTB bid request per sellable position and sends it to every connected
+   bidder, then runs the auction over the responses. Per bidder we hold an
+   endpoint, seat identifiers, QPS ceiling and timeout — not just the account
+   credentials §6 models today (see the correction below).
+2. **The auction.** Floor price, auction type, permitted categories and the
+   advertiser blocklist are applied **before** a bid can win, not after.
+3. **Creative retrieval and pre-distribution.** The winning creative is fetched,
+   validated against the display type's canvas or element spec, distributed to
+   the players, and only then is the win eligible to play.
+4. **Supply-chain transparency.** A published `sellers.json` and a
+   `SupplyChain` object on every bid request, declaring the seller of record.
+   Buyers will not spend at scale without it.
+5. **Deal management.** Deal IDs for preferred and programmatic-guaranteed
+   buys, alongside the open auction.
+6. **Proof of play and reconciliation** (below) — the billing record.
 
-| | What it is | Trade-off |
-|---|---|---|
-| **A. PH as its own SSP** | PH exposes OpenRTB supply endpoints and holds direct relationships with each DSP | Most control and margin; needs demand relationships, exchange ops, and supply-chain transparency infrastructure we do not have today |
-| **B. PH into an existing DOOH SSP** | PH becomes a supply source in a specialist DOOH SSP, which resells to many DSPs | Fastest route to broad demand including The Trade Desk; adds a fee layer and cedes some control over floors and buyer visibility |
-| **C. Hybrid** | Direct and reserved deals held by PH; open-exchange fill via an SSP | Recommended |
+#### Correction to the partner model in §6
 
-**C is recommended, and the partner model already built supports it.** Direct
-and named-advertiser demand is what §6 describes. An SSP becomes an additional
-partner that fills whatever direct demand does not.
+A DSP partner record currently holds credentials for PH to *call* that DSP's
+API — a DV360 service account, Amazon's LWA client and refresh token. If PH is
+the exchange, **the bidding runs the other way**: the DSP bids into us.
 
-Specialist DOOH SSPs to evaluate for (B)/(C): **VIOOH, Vistar Media, Hivestack,
-Broadsign Reach, Place Exchange, Magnite**. Google Ad Manager is a general SSP
-whose DOOH support is narrower than the specialists' — it should not be assumed
-equivalent just because DV360 is already in scope as demand.
+Both remain true, but for different purposes, and the spec should not imply the
+outbound credentials are how demand arrives:
 
-#### Partner kinds — the model needs a third
+- **Inbound (the bidding path)** — the DSP is configured with PH as a supply
+  source. We hold its seat IDs, bidder endpoint, QPS and timeout.
+- **Outbound (the account path)** — the existing credentials stay useful for
+  deal setup, seat discovery and reporting reconciliation.
 
-Today a partner is either **Direct/house** or a **DSP**. An SSP is a third kind,
-and it is not a variation on the second — the integration runs the other way:
+The prototype models only the outbound half today. That is not wrong, but it is
+half the picture, and the bidder fields are missing.
 
-| Kind | Direction | What a position sells to |
-|---|---|---|
-| Direct / house | PH holds the advertiser relationship | A named advertiser |
-| DSP (demand partner) | PH exposes inventory to one named buyer | That buyer's demand, filtered by our lists |
-| **SSP (supply partner)** | PH publishes inventory *into* an exchange | Whoever the exchange clears, within our rules |
-
-The consequence for the UI: an SSP position is not "assigned to an advertiser".
-It is **released to the exchange** under a floor, a category set and a
-blocklist. The advertiser is not knowable at assignment time and often not
-until the play has happened.
-
-**This is what makes the advertiser blacklist load-bearing rather than
-convenient.** With direct demand you choose who buys. With exchange demand you
-cannot, so the blocklist is the only pre-emptive brand-safety control there is —
-and it must be *transmitted to the SSP* as a buyer/advertiser block list, not
-merely applied inside PH after the auction has cleared. A block applied locally
-after a win is a credit note, not brand safety.
+**One consequence is not cosmetic.** The advertiser blocklist must be enforced
+**pre-auction, on the bid**, using the seat or advertiser identity in the bid
+response. Applying it after a win is a credit note, not brand safety — and with
+exchange demand the buyer is unknown until the bid arrives, so this is the only
+point at which the control can be applied.
 
 #### What a DOOH bid request carries, and why it differs
 
 Programmatic DOOH is not display with a bigger screen. The differences change
-the integration:
+what we have to hold and emit:
 
 - **No user identity.** DOOH is a one-to-many broadcast medium: no cookies, no
-  device graph, no user ID in the bid request. A bid request describes a
-  *venue and a moment*, not a person. Everything in §6 about visitor targeting
-  belongs to PH's own resolution, not to the exchange.
-- **Venue taxonomy.** SSPs require a standardised venue type (the OpenOOH venue
-  taxonomy — Retail → Grocery, Convenience, and so on) plus geo (lat/long and a
-  store identifier). This has to be modelled per store and per display, and it
-  is not something we currently hold.
+  device graph, no user ID in the bid request. A bid request describes a *venue
+  and a moment*, not a person. Everything in §6 about visitor targeting is PH's
+  own resolution and never crosses into the exchange.
+- **Venue taxonomy.** A standardised venue type (the OpenOOH venue taxonomy —
+  Retail → Grocery, Convenience, and so on) plus geo: lat/long and a store
+  identifier. Modelled per store and per display, and not something we hold
+  today.
 - **Screen and loop context.** Resolution, aspect, orientation, slot duration,
   loop length and share of voice. The display type already carries most of
   this (§2); `maximumCampaignsPlayedInRotation` *is* the share-of-voice
   denominator.
 - **Impression multiplier.** One play is not one impression — it is an
-  estimated audience. The bid request carries a quantity/multiplier and billing
-  runs on multiplied impressions. **This is where PH can measure rather than
-  model**: the Vision/AI passerby count and MIST proximity features already in
-  the display type are exactly the sensor inputs that produce a counted
-  multiplier, where most of the market estimates one.
-- **Supply-chain transparency.** Publishing supply means a `sellers.json`
-  equivalent and a `SupplyChain` object on the bid request, declaring whether
-  the retailer or PH is the seller of record. That is a commercial decision
-  before it is a technical one.
+  estimated audience, and billing runs on multiplied impressions. **This is
+  where PH can measure rather than model**: the Vision/AI passerby count and
+  MIST proximity features already in the display type are exactly the sensor
+  inputs that produce a counted multiplier, where most of the market estimates
+  one.
 
-#### Pre-caching is the constraint that shapes the whole integration
+#### Pre-caching is the constraint that shapes the exchange
 
-Restating §6 because it is the first qualifying question for any SSP: in-store
-connectivity is limited and DOOH creative is frequently video, so **assets must
-be resident on the player before they can be triggered**. An auction that
-clears at the moment of play has nowhere to deliver the asset from.
+In-store connectivity is limited and DOOH creative is frequently video, so
+**assets must be resident on the player before they can be triggered**. An
+auction that clears at the moment of play has nowhere to deliver the asset
+from.
 
-That rules out naive just-in-time RTB and drives the **play-window model** in
-§6 — the auction clears ahead of the window, which is what buys the time to
-distribute and cache. So when evaluating SSPs, ask first:
+This is why the auction clears for a **play window** rather than an impression
+(§6). As the exchange, we own that timing, which removes the usual problem of
+finding a partner whose clearing model fits ours. The sequence is:
 
-1. Does it support forward or window-based clearing, not only per-impression?
-2. Does it support creative pre-approval and pre-delivery to the player?
-3. Can a win be made conditional on a per-display cache confirmation?
+1. Auction clears ahead of the window.
+2. Winning creative is retrieved and validated.
+3. Creative is distributed to the players in scope.
+4. Each display confirms its cache.
+5. The window opens, and the win is eligible **only on displays that
+   confirmed**.
 
-An SSP that only clears at impression time is not usable for in-store video on
-current connectivity, whatever demand it carries.
+Partial estate delivery is therefore normal rather than exceptional, and the
+guarantee we sell has to be expressed in those terms (open question 29).
 
-#### Proof of play, and why it is the billing record
+#### Proof of play is the billing record
 
 DOOH bills on **proof of play**, not on the win notice. The player logs each
 actual play; PH reconciles wins against plays and bills the multiplied
 impressions that genuinely rendered. Plays that did not happen — screen
 offline, store closed, loop cut short — are reported and not billed. Store
 opening hours already gate availability (§2), and the §6 analytics feed is the
-same pipeline: one set of playback records, two consumers, the partner and
+same pipeline: one set of playback records, two consumers, the buyer and
 billing.
 
-#### Brand safety at exchange scale
+As the exchange we are the system of record for this, which is a heavier
+obligation than being a supply source in someone else's platform: disputes
+resolve against our logs.
 
-With exchange demand the buyer is unknown ahead of time, so the controls have
-to be structural rather than editorial:
+#### Brand safety, structurally
 
-- Venue and category exclusions, passed to the SSP.
-- The advertiser blocklist, transmitted as a block list (above).
+With open exchange demand the buyer is unknown ahead of time, so the controls
+have to be structural rather than editorial:
+
+- Venue and category exclusions, applied pre-auction.
+- The advertiser blocklist, enforced on the bid (above).
 - Creative approval, per the per-advertiser flag in §6.
 - **The PH-locked commercial zone** (§4, spec §7). No externally supplied
   creative may address the region carrying price, offer terms or disclosures.
   On signage this is enforced physically by the phantom area and zone layout,
-  which is a stronger guarantee than a policy — a programmatic creative cannot
-  render into a region it was never given.
+  which is a stronger guarantee than a policy — a bought creative cannot render
+  into a region it was never given.
 
 #### To confirm before building
 
-These need confirming against current vendor and IAB documentation rather than
+These need confirming against current IAB and DSP documentation rather than
 asserted — version numbers in this area move, and they were not verifiable from
 the environment this was written in:
 
-- The exact OpenRTB version and DOOH object support required by each candidate
-  SSP, and which version of the OpenOOH venue taxonomy they expect.
-- Which of the candidate SSPs support window-based clearing and creative
-  pre-delivery (the qualifying question above).
-- Whether the retailer or PH is the seller of record, and what that implies for
-  `sellers.json` and the supply chain declaration.
+- The OpenRTB version and DOOH object support each target DSP expects from an
+  exchange, and which version of the OpenOOH venue taxonomy.
+- What each DSP requires to onboard a new supply source: seat setup,
+  `sellers.json` validation, inventory authorisation, minimum QPS.
+- Whether the retailer or PH is the seller of record, and how that is expressed
+  in `sellers.json` and the supply chain declaration.
 - The audience measurement currency the market expects, and whether a
   sensor-derived multiplier is accepted for trading or only for reporting.
 
@@ -615,9 +616,13 @@ the environment this was written in:
   eligible on a display until that display has cached its assets.
 - **Playback analytics feed** at display and store level, disclosing the
   campaign that played and the trigger that activated it.
-- **SSP (supply) partner kind** alongside Direct and DSP: a position released
-  to an exchange under a floor, category set and transmitted blocklist rather
-  than assigned to a named advertiser.
+- **Bidder configuration per DSP partner**: endpoint, seat identifiers, QPS
+  ceiling and timeout, alongside the account credentials already modelled.
+- **Pre-auction enforcement**: floor, permitted categories and the advertiser
+  blocklist applied to bids before a win, keyed on the seat or advertiser
+  identity in the bid response.
+- **`sellers.json` and a `SupplyChain` declaration**, with the seller of record
+  configurable.
 - **Venue and screen metadata per store/display** — OpenOOH venue type, geo,
   resolution, orientation, loop length, share of voice — as required by a
   DOOH bid request.
@@ -678,10 +683,10 @@ the environment this was written in:
 31. **Cross-partner visibility.** A contributed attribute is private to its
     owner by default. Is there ever a case for one partner targeting
     another's contributed data, and what grant would express it?
-32. **Which supply architecture.** PH as its own SSP, PH into an existing DOOH
-    SSP, or the hybrid recommended in §7. This is a commercial decision about
-    demand relationships as much as a technical one, and it gates most of the
-    rest of §7.
+32. **Which supply architecture.** *Resolved:* **PH is the SSP** — we build the
+    exchange and DSPs bid into it. What follows from that and is still open:
+    which DSPs we onboard first, and in what order, since each has its own
+    supply-source onboarding requirements.
 33. **Seller of record** — the retailer or PH — and what that implies for
     `sellers.json` and the supply-chain declaration.
 34. **Is a sensor-derived audience multiplier tradeable**, or only reportable?

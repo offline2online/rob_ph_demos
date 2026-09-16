@@ -113,12 +113,14 @@ programmatic — is specified in [`REQUIREMENTS.md`](./REQUIREMENTS.md) §6. The
 prototype currently covers the connection and slot-assignment half of that;
 the campaign and inventory half is spec only.
 
-**The supply side** — how in-store screens become buyable by the programmatic
-market at all — is [`REQUIREMENTS.md`](./REQUIREMENTS.md) §7: the supply
-architecture, what a DOOH bid request has to carry, proof-of-play billing, and
-why pre-caching is the first qualifying question for any exchange. Note which
-side each platform sits on: **The Trade Desk and DV360 are DSPs (demand)**;
-Google Ad Manager is the SSP. PH is the publisher and sits on the sell side.
+**PH is the supply-side platform** — [`REQUIREMENTS.md`](./REQUIREMENTS.md) §7.
+We are not integrating into someone else's exchange; we are building the
+exchange that sells the retailer's in-store screens, and DSPs are the demand
+that bids into it. §7 covers the bidder integration, pre-auction enforcement,
+what a DOOH bid request must carry, proof-of-play billing, and why pre-caching
+drives the play-window auction. Note which side each platform sits on: **The
+Trade Desk and DV360 are DSPs (demand)**; Google Ad Manager is the sell-side
+product, i.e. the thing we are building an equivalent of.
 
 Design decisions worth keeping:
 
