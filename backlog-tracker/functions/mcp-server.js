@@ -825,6 +825,68 @@ const STATUS_LABELS = {
 const TITLE_MAX = 70;
 const MAX_READ_DOCS = 1500;
 
+// ── Documentation limits ─────────────────────────────────────────────────
+// A project's own Requirements and README live as fields on its projects/{id}
+// doc, so every one of them shares that doc's 1 MiB Firestore ceiling. The
+// real files today are ~95 KB (REQUIREMENTS.md) and ~80 KB (README.md), so
+// 200k characters each is generous headroom while keeping the worst case well
+// clear of the limit — which is also why a replaced version is written to
+// docRevisions rather than kept as a second copy on the project doc.
+const PROJECT_MD_MAX = 200000;
+// projectDocs and interfaces are capped at what firestore.rules already
+// allows the BROWSER to write (20000). Going higher here would let an agent
+// author a document a person could then never save an edit to from the Docs
+// page, because the rules would reject their write. Keep the two in step.
+const DOC_MD_MAX = 20000;
+const DOC_NAME_MAX = 120;
+
+// The ONLY fields on a projects/{id} doc that any tool here may write.
+//
+// Everything absent is absent deliberately. The train fields (deployBranch,
+// trainReady, trainStatus, trainPrNumber, trainNote, trainLocked,
+// needsHumanMerge) and the notify triggers (notifyRequestedAt,
+// deployNotifyRequestedAt) would each start or redirect a real deployment,
+// which is the one thing this server must never be able to do — and the
+// documentation tools below are the first tools that write to `projects` at
+// all, so the guarantee now needs enforcing rather than being a consequence
+// of never touching the collection. updateProjectFields is the only path to
+// a project write, and it refuses anything not on this list.
+const PROJECT_WRITABLE_FIELDS = new Set([
+  "requirementsMd", "requirementsUpdatedByEmail",
+  "readmeMd", "readmeUpdatedByEmail",
+  "artifactUrl", "artifactUpdatedAt",
+]);
+
+async function updateProjectFields(projectId, fields) {
+  for (const key of Object.keys(fields)) {
+    if (!PROJECT_WRITABLE_FIELDS.has(key)) {
+      throw new Error(`refusing to write projects.${key} — not a documentation field`);
+    }
+  }
+  await db().collection("projects").doc(String(projectId)).set(
+    Object.assign({}, fields, { updatedAt: FieldValue.serverTimestamp() }),
+    { merge: true },
+  );
+}
+
+// Every documentation write records what it replaced, so an agent that
+// truncates a 95 KB requirements doc at 3am has not destroyed it. This is
+// the whole reason delete_* tools are safe to offer at all: a delete writes
+// the content here first. Server-only — firestore.rules lets members read it
+// and nobody write it.
+async function recordDocRevision(session, target, meta, previousContentMd) {
+  if (previousContentMd === undefined || previousContentMd === null || previousContentMd === "") return null;
+  const ref = await db().collection("docRevisions").add(Object.assign({
+    target,
+    contentMd: String(previousContentMd),
+    chars: String(previousContentMd).length,
+    replacedAt: FieldValue.serverTimestamp(),
+    replacedByEmail: session.email,
+    via: "mcp",
+  }, meta || {}));
+  return ref.id;
+}
+
 // Ported from public/js/app.js so a ticket an agent files is indexed the
 // same way as one typed into the board — same title trimming, same
 // best-guess area. Keep the two in step.
@@ -1186,20 +1248,361 @@ const TOOLS = [
       const out = { projectId, name: p.name || "" };
       if (want.includes("requirements")) out.requirementsMd = p.requirementsMd || "";
       if (want.includes("readme")) out.readmeMd = p.readmeMd || "";
+      out.artifactUrl = p.artifactUrl || null;
+      out.artifactUpdatedAt = tsToISO(p.artifactUpdatedAt);
       if (want.includes("docs")) {
         out.documents = [];
         (await db().collection("projectDocs").where("projectId", "==", projectId).get())
-          .forEach((d) => out.documents.push({ id: d.id, name: (d.data() || {}).name || "", contentMd: (d.data() || {}).contentMd || "" }));
+          .forEach((d) => {
+            const v = d.data() || {};
+            out.documents.push({ id: d.id, name: v.name || "", contentMd: v.contentMd || "", updatedAt: tsToISO(v.updatedAt), updatedByEmail: v.updatedByEmail || null });
+          });
+        out.documents.sort((a, b) => a.name.localeCompare(b.name));
       }
       if (want.includes("interfaces")) {
         out.interfaces = [];
         (await db().collection("interfaces").where("projectIds", "array-contains", projectId).get())
           .forEach((d) => {
             const i = d.data() || {};
-            out.interfaces.push({ id: d.id, name: i.name || "", projectIds: i.projectIds || [], contentMd: i.contentMd || "" });
+            out.interfaces.push({ id: d.id, name: i.name || "", projectIds: i.projectIds || [], contentMd: i.contentMd || "", updatedAt: tsToISO(i.updatedAt), updatedByEmail: i.updatedByEmail || null });
           });
       }
       return textResult(out);
+    },
+  },
+  // ── Documentation: full read/write ──────────────────────────────────────
+  // A project's documentation is meant to be kept current by whoever is doing
+  // the work, including an agent — so these are real read/write tools, gated
+  // by the same per-person OAuth session as everything else. No separate
+  // token, no shared key.
+  //
+  // What they can reach: a project's Requirements and README, its additional
+  // documents (architecture notes, API specs, ADRs), the interface contracts
+  // it shares with another project, and its Artifact link. What they cannot
+  // reach, by construction rather than convention: anything to do with
+  // shipping — see PROJECT_WRITABLE_FIELDS above.
+  {
+    name: "set_project_requirements",
+    description: "Replace a project's Requirements markdown (the board-native home of its REQUIREMENTS.md). Send the COMPLETE new document — this overwrites, it does not append. The previous version is kept in the revision history, so a bad write is recoverable with list_doc_revisions.",
+    scope: "board.write",
+    inputSchema: {
+      type: "object",
+      properties: {
+        projectId: { type: "string", description: "From list_projects." },
+        contentMd: { type: "string", description: `The whole document, markdown. Up to ${PROJECT_MD_MAX} characters.` },
+      },
+      required: ["projectId", "contentMd"], additionalProperties: false,
+    },
+    async run(args, session) {
+      const projectId = String(args.projectId);
+      const md = String(args.contentMd == null ? "" : args.contentMd);
+      if (md.length > PROJECT_MD_MAX) return toolError(`Requirements are limited to ${PROJECT_MD_MAX} characters; that was ${md.length}.`);
+      const snap = await db().collection("projects").doc(projectId).get();
+      if (!snap.exists) return toolError(`No project with id ${projectId}. Call list_projects first.`);
+      const before = (snap.data() || {}).requirementsMd || "";
+      const revisionId = await recordDocRevision(session, "project.requirementsMd", { projectId, name: (snap.data() || {}).name || "" }, before);
+      await updateProjectFields(projectId, { requirementsMd: md, requirementsUpdatedByEmail: session.email });
+      await audit(session, "set_project_requirements", { projectId, chars: md.length, replacedChars: before.length, revisionId });
+      return textResult({ updated: true, projectId, chars: md.length, replacedChars: before.length, revisionId, note: "Keep the repo's REQUIREMENTS.md in sync — a divergence is a bug in whichever is stale." });
+    },
+  },
+  {
+    name: "set_project_readme",
+    description: "Replace a project's README markdown (the board-native counterpart of its README.md). Send the COMPLETE new document — this overwrites, it does not append. The previous version is kept in the revision history.",
+    scope: "board.write",
+    inputSchema: {
+      type: "object",
+      properties: {
+        projectId: { type: "string" },
+        contentMd: { type: "string", description: `The whole document, markdown. Up to ${PROJECT_MD_MAX} characters.` },
+      },
+      required: ["projectId", "contentMd"], additionalProperties: false,
+    },
+    async run(args, session) {
+      const projectId = String(args.projectId);
+      const md = String(args.contentMd == null ? "" : args.contentMd);
+      if (md.length > PROJECT_MD_MAX) return toolError(`A README is limited to ${PROJECT_MD_MAX} characters; that was ${md.length}.`);
+      const snap = await db().collection("projects").doc(projectId).get();
+      if (!snap.exists) return toolError(`No project with id ${projectId}. Call list_projects first.`);
+      const before = (snap.data() || {}).readmeMd || "";
+      const revisionId = await recordDocRevision(session, "project.readmeMd", { projectId, name: (snap.data() || {}).name || "" }, before);
+      await updateProjectFields(projectId, { readmeMd: md, readmeUpdatedByEmail: session.email });
+      await audit(session, "set_project_readme", { projectId, chars: md.length, replacedChars: before.length, revisionId });
+      return textResult({ updated: true, projectId, chars: md.length, replacedChars: before.length, revisionId, note: "Keep the repo's README.md in sync — a divergence is a bug in whichever is stale." });
+    },
+  },
+  {
+    name: "set_project_artifact",
+    description: "Set (or clear) a project's published Artifact link — the 'View Artifact' entry in its board menu. Pass artifactUrl: null to remove it.",
+    scope: "board.write",
+    inputSchema: {
+      type: "object",
+      properties: {
+        projectId: { type: "string" },
+        artifactUrl: { type: ["string", "null"], description: "An https URL to the published Artifact, or null to clear." },
+      },
+      required: ["projectId"], additionalProperties: false,
+    },
+    async run(args, session) {
+      const projectId = String(args.projectId);
+      const snap = await db().collection("projects").doc(projectId).get();
+      if (!snap.exists) return toolError(`No project with id ${projectId}.`);
+      const raw = args.artifactUrl == null ? null : String(args.artifactUrl).trim();
+      if (raw) {
+        let u;
+        try { u = new URL(raw); } catch { return toolError("artifactUrl must be a full URL, or null to clear it."); }
+        if (u.protocol !== "https:") return toolError("artifactUrl must be https.");
+        if (raw.length > 2000) return toolError("artifactUrl is too long.");
+      }
+      await updateProjectFields(projectId, { artifactUrl: raw, artifactUpdatedAt: raw ? FieldValue.serverTimestamp() : null });
+      await audit(session, "set_project_artifact", { projectId, artifactUrl: raw });
+      return textResult({ updated: true, projectId, artifactUrl: raw });
+    },
+  },
+  {
+    name: "create_project_document",
+    description: "Add a named document to a project — an architecture note, an API spec, a decision record, anything that isn't its Requirements or README. Appears under 'Additional documents' on that project's Docs page.",
+    scope: "board.write",
+    inputSchema: {
+      type: "object",
+      properties: {
+        projectId: { type: "string" },
+        name: { type: "string", description: `What it's called, e.g. "Event schema v2". Up to ${DOC_NAME_MAX} characters.` },
+        contentMd: { type: "string", description: `Markdown. Up to ${DOC_MD_MAX} characters — the same ceiling the board's own editor has, so a person can still edit what you write.` },
+      },
+      required: ["projectId", "name", "contentMd"], additionalProperties: false,
+    },
+    async run(args, session) {
+      const projectId = String(args.projectId);
+      const name = String(args.name || "").trim();
+      const md = String(args.contentMd == null ? "" : args.contentMd);
+      if (!name) return toolError("name is required.");
+      if (name.length > DOC_NAME_MAX) return toolError(`name is limited to ${DOC_NAME_MAX} characters.`);
+      if (md.length > DOC_MD_MAX) return toolError(`A project document is limited to ${DOC_MD_MAX} characters; that was ${md.length}. Split it, or put it in the project's Requirements instead.`);
+      const snap = await db().collection("projects").doc(projectId).get();
+      if (!snap.exists) return toolError(`No project with id ${projectId}.`);
+      const ref = await db().collection("projectDocs").add({
+        projectId, name, contentMd: md,
+        createdAt: FieldValue.serverTimestamp(),
+        updatedAt: FieldValue.serverTimestamp(),
+        createdByEmail: session.email,
+        updatedByEmail: session.email,
+        createdVia: "mcp",
+      });
+      await audit(session, "create_project_document", { projectId, docId: ref.id, name, chars: md.length });
+      return textResult({ created: true, docId: ref.id, projectId, name, chars: md.length });
+    },
+  },
+  {
+    name: "update_project_document",
+    description: "Rename a project document, replace its contents, or both. Sending contentMd overwrites the whole document; the previous version is kept in the revision history.",
+    scope: "board.write",
+    inputSchema: {
+      type: "object",
+      properties: {
+        docId: { type: "string", description: "From get_project_docs." },
+        name: { type: "string" },
+        contentMd: { type: "string", description: `The whole document. Up to ${DOC_MD_MAX} characters.` },
+      },
+      required: ["docId"], additionalProperties: false,
+    },
+    async run(args, session) {
+      const ref = db().collection("projectDocs").doc(String(args.docId));
+      const snap = await ref.get();
+      if (!snap.exists) return toolError(`No project document with id ${args.docId}. Call get_project_docs to list them.`);
+      const current = snap.data() || {};
+      const fields = { updatedAt: FieldValue.serverTimestamp(), updatedByEmail: session.email };
+      let revisionId = null;
+      if (args.name != null) {
+        const name = String(args.name).trim();
+        if (!name) return toolError("name cannot be emptied.");
+        if (name.length > DOC_NAME_MAX) return toolError(`name is limited to ${DOC_NAME_MAX} characters.`);
+        fields.name = name;
+      }
+      if (args.contentMd != null) {
+        const md = String(args.contentMd);
+        if (md.length > DOC_MD_MAX) return toolError(`A project document is limited to ${DOC_MD_MAX} characters; that was ${md.length}.`);
+        revisionId = await recordDocRevision(session, "projectDoc", { projectId: current.projectId || null, docId: snap.id, name: current.name || "" }, current.contentMd || "");
+        fields.contentMd = md;
+      }
+      if (!("name" in fields) && !("contentMd" in fields)) return toolError("Nothing to change — pass name, contentMd, or both.");
+      await ref.update(fields);
+      await audit(session, "update_project_document", { docId: snap.id, projectId: current.projectId || null, changed: Object.keys(fields), revisionId });
+      return textResult({ updated: true, docId: snap.id, changed: Object.keys(fields), revisionId });
+    },
+  },
+  {
+    name: "delete_project_document",
+    description: "Remove a project document from the board. Its contents are written to the revision history first, so this is recoverable with list_doc_revisions and create_project_document.",
+    scope: "board.write",
+    destructive: true,
+    inputSchema: {
+      type: "object",
+      properties: { docId: { type: "string" } },
+      required: ["docId"], additionalProperties: false,
+    },
+    async run(args, session) {
+      const ref = db().collection("projectDocs").doc(String(args.docId));
+      const snap = await ref.get();
+      if (!snap.exists) return toolError(`No project document with id ${args.docId}.`);
+      const current = snap.data() || {};
+      const revisionId = await recordDocRevision(session, "projectDoc.deleted", { projectId: current.projectId || null, docId: snap.id, name: current.name || "" }, current.contentMd || "");
+      await ref.delete();
+      await audit(session, "delete_project_document", { docId: snap.id, projectId: current.projectId || null, name: current.name || "", revisionId });
+      return textResult({ deleted: true, docId: snap.id, name: current.name || "", revisionId, note: revisionId ? "Contents saved to the revision history — get_doc_revision can bring them back." : "The document was empty; nothing to recover." });
+    },
+  },
+  {
+    name: "create_interface",
+    description: "Create a maintained contract document between exactly two projects — the board-native counterpart of a shared markdown file like shared/interface-contract.md. Visible and editable from either project's Docs page.",
+    scope: "board.write",
+    inputSchema: {
+      type: "object",
+      properties: {
+        projectIds: { type: "array", items: { type: "string" }, minItems: 2, maxItems: 2, description: "Exactly two project ids." },
+        name: { type: "string", description: 'e.g. "Live Visitor Profile ↔ Experience Templates".' },
+        contentMd: { type: "string", description: `Markdown. Up to ${DOC_MD_MAX} characters.` },
+      },
+      required: ["projectIds", "name", "contentMd"], additionalProperties: false,
+    },
+    async run(args, session) {
+      const ids = Array.isArray(args.projectIds) ? args.projectIds.map(String) : [];
+      if (ids.length !== 2) return toolError("projectIds must name exactly two projects — an interface is a contract between two.");
+      if (ids[0] === ids[1]) return toolError("An interface spans two different projects.");
+      const name = String(args.name || "").trim();
+      const md = String(args.contentMd == null ? "" : args.contentMd);
+      if (!name) return toolError("name is required.");
+      if (name.length > DOC_NAME_MAX) return toolError(`name is limited to ${DOC_NAME_MAX} characters.`);
+      if (md.length > DOC_MD_MAX) return toolError(`An interface document is limited to ${DOC_MD_MAX} characters; that was ${md.length}.`);
+      for (const id of ids) {
+        const snap = await db().collection("projects").doc(id).get();
+        if (!snap.exists) return toolError(`No project with id ${id}.`);
+      }
+      const ref = await db().collection("interfaces").add({
+        name, projectIds: ids, contentMd: md,
+        createdAt: FieldValue.serverTimestamp(),
+        updatedAt: FieldValue.serverTimestamp(),
+        createdByEmail: session.email,
+        updatedByEmail: session.email,
+        createdVia: "mcp",
+      });
+      await audit(session, "create_interface", { interfaceId: ref.id, projectIds: ids, name, chars: md.length });
+      return textResult({ created: true, interfaceId: ref.id, projectIds: ids, name, chars: md.length });
+    },
+  },
+  {
+    name: "update_interface",
+    description: "Rename an interface contract, replace its contents, or both. Sending contentMd overwrites the whole document; the previous version is kept in the revision history. Changing a contract affects BOTH projects — say so in the change.",
+    scope: "board.write",
+    inputSchema: {
+      type: "object",
+      properties: {
+        interfaceId: { type: "string", description: "From get_project_docs." },
+        name: { type: "string" },
+        contentMd: { type: "string", description: `The whole document. Up to ${DOC_MD_MAX} characters.` },
+      },
+      required: ["interfaceId"], additionalProperties: false,
+    },
+    async run(args, session) {
+      const ref = db().collection("interfaces").doc(String(args.interfaceId));
+      const snap = await ref.get();
+      if (!snap.exists) return toolError(`No interface with id ${args.interfaceId}.`);
+      const current = snap.data() || {};
+      const fields = { updatedAt: FieldValue.serverTimestamp(), updatedByEmail: session.email };
+      let revisionId = null;
+      if (args.name != null) {
+        const name = String(args.name).trim();
+        if (!name) return toolError("name cannot be emptied.");
+        if (name.length > DOC_NAME_MAX) return toolError(`name is limited to ${DOC_NAME_MAX} characters.`);
+        fields.name = name;
+      }
+      if (args.contentMd != null) {
+        const md = String(args.contentMd);
+        if (md.length > DOC_MD_MAX) return toolError(`An interface document is limited to ${DOC_MD_MAX} characters; that was ${md.length}.`);
+        revisionId = await recordDocRevision(session, "interface", { interfaceId: snap.id, projectIds: current.projectIds || [], name: current.name || "" }, current.contentMd || "");
+        fields.contentMd = md;
+      }
+      if (!("name" in fields) && !("contentMd" in fields)) return toolError("Nothing to change — pass name, contentMd, or both.");
+      await ref.update(fields);
+      await audit(session, "update_interface", { interfaceId: snap.id, projectIds: current.projectIds || [], changed: Object.keys(fields), revisionId });
+      return textResult({ updated: true, interfaceId: snap.id, projectIds: current.projectIds || [], changed: Object.keys(fields), revisionId });
+    },
+  },
+  {
+    name: "delete_interface",
+    description: "Remove an interface contract from the board. Its contents are written to the revision history first, so this is recoverable. It belongs to two projects — deleting it removes it from both.",
+    scope: "board.write",
+    destructive: true,
+    inputSchema: {
+      type: "object",
+      properties: { interfaceId: { type: "string" } },
+      required: ["interfaceId"], additionalProperties: false,
+    },
+    async run(args, session) {
+      const ref = db().collection("interfaces").doc(String(args.interfaceId));
+      const snap = await ref.get();
+      if (!snap.exists) return toolError(`No interface with id ${args.interfaceId}.`);
+      const current = snap.data() || {};
+      const revisionId = await recordDocRevision(session, "interface.deleted", { interfaceId: snap.id, projectIds: current.projectIds || [], name: current.name || "" }, current.contentMd || "");
+      await ref.delete();
+      await audit(session, "delete_interface", { interfaceId: snap.id, projectIds: current.projectIds || [], name: current.name || "", revisionId });
+      return textResult({ deleted: true, interfaceId: snap.id, name: current.name || "", revisionId });
+    },
+  },
+  {
+    name: "list_doc_revisions",
+    description: "Every previous version of a project's documentation that a write has replaced — newest first, metadata only. Use this to find what a change overwrote, then get_doc_revision to read it back.",
+    scope: "board.read",
+    inputSchema: {
+      type: "object",
+      properties: {
+        projectId: { type: "string", description: "Restrict to one project's documentation." },
+        docId: { type: "string", description: "Restrict to one project document." },
+        interfaceId: { type: "string", description: "Restrict to one interface contract." },
+        limit: { type: "integer", minimum: 1, maximum: 50, description: "Default 20." },
+      },
+      additionalProperties: false,
+    },
+    async run(args) {
+      const a = args || {};
+      let q = db().collection("docRevisions");
+      if (a.docId) q = q.where("docId", "==", String(a.docId));
+      else if (a.interfaceId) q = q.where("interfaceId", "==", String(a.interfaceId));
+      else if (a.projectId) q = q.where("projectId", "==", String(a.projectId));
+      const snap = await q.limit(MAX_READ_DOCS).get();
+      const rows = [];
+      snap.forEach((d) => {
+        const v = d.data() || {};
+        rows.push({
+          revisionId: d.id, target: v.target || null, name: v.name || null,
+          projectId: v.projectId || null, docId: v.docId || null, interfaceId: v.interfaceId || null,
+          chars: v.chars || 0, replacedAt: tsToISO(v.replacedAt), replacedByEmail: v.replacedByEmail || null,
+        });
+      });
+      rows.sort((x, y) => String(y.replacedAt || "").localeCompare(String(x.replacedAt || "")));
+      const limit = Math.min(Math.max(parseInt(a.limit, 10) || 20, 1), 50);
+      return textResult({ matched: rows.length, revisions: rows.slice(0, limit) });
+    },
+  },
+  {
+    name: "get_doc_revision",
+    description: "The full markdown of one replaced version, from list_doc_revisions. To restore it, pass this content back to whichever set_/update_ tool it came from.",
+    scope: "board.read",
+    inputSchema: {
+      type: "object",
+      properties: { revisionId: { type: "string" } },
+      required: ["revisionId"], additionalProperties: false,
+    },
+    async run(args) {
+      const snap = await db().collection("docRevisions").doc(String(args.revisionId)).get();
+      if (!snap.exists) return toolError(`No revision with id ${args.revisionId}.`);
+      const v = snap.data() || {};
+      return textResult({
+        revisionId: snap.id, target: v.target || null, name: v.name || null,
+        projectId: v.projectId || null, docId: v.docId || null, interfaceId: v.interfaceId || null,
+        replacedAt: tsToISO(v.replacedAt), replacedByEmail: v.replacedByEmail || null,
+        contentMd: v.contentMd || "",
+      });
     },
   },
   {
@@ -1292,6 +1695,9 @@ const SERVER_INSTRUCTIONS = [
   "This is the PH Agent Console — the Personalisation Hub prototype backlog board and help centre.",
   "You are connected as a specific team member; every ticket you file and comment you add is attributed to their email.",
   "Start with list_projects to get a projectId, then list_backlog_items / get_backlog_item to read work, or create_backlog_item to file new work into a project's Backlog column.",
+  "You have full read/write access to project DOCUMENTATION and are expected to keep it current as you work: get_project_docs to read a project's Requirements, README, additional documents and interface contracts, then set_project_requirements / set_project_readme / create_project_document / update_project_document / create_interface / update_interface to update them.",
+  "Documentation writes REPLACE the whole document, so read it first and send back the complete revised text — never a fragment. The version you replace is kept, and list_doc_revisions / get_doc_revision can recover it.",
+  "Where a project's documentation also exists as a file in the repo (REQUIREMENTS.md, README.md, shared/interface-contract.md), the two are meant to match: update both, and treat a divergence as a bug in whichever is stale.",
   "Use search_faq / get_faq_article to answer Personalisation Hub product questions from the published help centre instead of guessing.",
   "Deployment is out of scope on purpose: nothing here moves a ticket through testing, merges a train, or triggers a campaign. Those stay on the board's own buttons and its triggered Routine.",
 ].join(" ");
@@ -1323,7 +1729,7 @@ async function dispatchRpc(msg, session, ctx) {
         serverInfo: {
           name: "ph-agent-console",
           title: "PH Agent Console",
-          version: "1.1.0",
+          version: "1.2.0",
           websiteUrl: PUBLIC_ORIGIN,
           description: "The Personalisation Hub prototype backlog board and help centre.",
           icons: SERVER_ICONS,
@@ -1346,8 +1752,13 @@ async function dispatchRpc(msg, session, ctx) {
           inputSchema: t.inputSchema,
           annotations: {
             readOnlyHint: t.scope !== "board.write",
-            destructiveHint: false,
-            idempotentHint: t.name.startsWith("get_") || t.name.startsWith("list_") || t.name === "whoami",
+            // Only the two delete_* tools. A client that asks a person before
+            // running a destructive tool should ask before those and not
+            // before a documentation update.
+            destructiveHint: t.destructive === true,
+            // set_* replaces a whole document, so running it twice with the
+            // same input lands in the same place; create_*/add_* do not.
+            idempotentHint: t.name.startsWith("get_") || t.name.startsWith("list_") || t.name.startsWith("set_") || t.name === "whoami",
             openWorldHint: false,
           },
         })),
@@ -1600,4 +2011,5 @@ exports.__test = {
   routePath, redirectUriAllowed, generateTitle, suggestCategory, atLeast,
   sha256b64url, authorizationServerMetadata, protectedResourceMetadata,
   TOOLS, CATEGORIES, STATUS_LABELS, SUPPORTED_PROTOCOL_VERSIONS, SERVER_ICONS,
+  PROJECT_WRITABLE_FIELDS, PROJECT_MD_MAX, DOC_MD_MAX, updateProjectFields,
 };

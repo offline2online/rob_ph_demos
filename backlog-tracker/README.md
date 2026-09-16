@@ -531,10 +531,18 @@ password. Nobody types or sends a password on anyone's behalf.
 `https://backlog-tracker-e4ed2.web.app/mcp`) lets a member's agent use the
 board and the help centre as a tool, authenticating with that same account
 through a proper OAuth 2.1 flow — no key to mint, paste or rotate, and
-everything the agent writes is attributed to their email. It is deliberately
-read/file/comment only: **no tool deploys, merges, approves, moves a card's
-status, or triggers a campaign.** Those stay on the board's own buttons and
-the triggered Routine.
+everything the agent writes is attributed to their email.
+
+On tickets it is deliberately read/file/comment only. On **documentation**
+it is full read/write — a project's Requirements, README, additional
+documents, interface contracts and Artifact link — because keeping those
+current is part of doing the work. Every documentation write records what it
+replaced in `docRevisions`, so a bad write or a delete is recoverable.
+
+**No tool deploys, merges, approves, moves a card's status, or triggers a
+campaign.** Those stay on the board's own buttons and the triggered Routine.
+The documentation tools write to `projects`, so that is enforced by a single
+`updateProjectFields` allowlist rather than by never touching the collection.
 
 This is a different thing from `boardApi` (further down this file), which is
 ONE shared secret standing in for the Routine's own automation. The MCP

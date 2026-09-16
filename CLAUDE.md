@@ -294,17 +294,38 @@ the ticket and in `mcpAuditLog`.
   them, or switching their agent off cuts it immediately, not at token
   expiry. Roles: `admin` (manages the list) / `editor` (read + write) /
   `viewer` (read only; `board.write` is never issued to one).
-- **The tool surface is read/file/comment only, deliberately.** Read:
-  `whoami`, `list_projects`, `list_backlog_items`, `get_backlog_item`,
-  `get_project_docs`, `search_faq`, `get_faq_article`. Write:
-  `create_backlog_item` (always into Backlog), `update_backlog_item` (title,
-  desc, type, category — **no status**), `add_item_comment`.
+- **Tickets: read/file/comment only, deliberately.** Read: `whoami`,
+  `list_projects`, `list_backlog_items`, `get_backlog_item`, `search_faq`,
+  `get_faq_article`. Write: `create_backlog_item` (always into Backlog),
+  `update_backlog_item` (title, desc, type, category — **no status**),
+  `add_item_comment`.
+- **Documentation: full read/write, on purpose.** An agent is expected to
+  keep a project's docs current as it works. Read: `get_project_docs`,
+  `list_doc_revisions`, `get_doc_revision`. Write:
+  `set_project_requirements`, `set_project_readme`, `set_project_artifact`,
+  `create_project_document`/`update_project_document`/
+  `delete_project_document`, `create_interface`/`update_interface`/
+  `delete_interface`. **Writes replace the whole document** — read it first
+  and send the complete revised text, never a fragment. Every write records
+  what it replaced in `docRevisions` (append-only, server-only, member-
+  readable), so a bad write or a delete is recoverable via
+  `list_doc_revisions` → `get_doc_revision` → write it back. Ceilings:
+  200k chars for Requirements/README, 20k for project documents and
+  interfaces (matching what `firestore.rules` lets the board's own editor
+  save, so a person can always edit what an agent wrote). Keep the repo
+  files (`REQUIREMENTS.md`, `README.md`, `shared/interface-contract.md`) in
+  sync with these — a divergence is a bug in whichever is stale.
 - **Nothing there deploys, merges, approves a ticket out of Ready for
   Testing, moves a card, writes a train field, fires Notify Claude, or
   triggers a campaign.** Campaign triggering stays on the triggered Routine
-  and the release pipeline keeps its human gates. Don't add a tool that
-  changes that without saying so explicitly —
-  `backlog-tracker/test/mcp-server.test.js` asserts the surface.
+  and the release pipeline keeps its human gates. The documentation tools
+  DO write to `projects` (that's where `requirementsMd`/`readmeMd`/
+  `artifactUrl` live), so this is enforced rather than incidental:
+  `updateProjectFields` is the only path to a project write and refuses any
+  field outside `PROJECT_WRITABLE_FIELDS`. Don't add a tool that changes
+  that without saying so explicitly —
+  `backlog-tracker/test/mcp-server.test.js` asserts the allowlist, the
+  guard, and that no doc tool's schema can even express a train field.
 - **Not the same thing as `boardApi`/`BOARD_API_KEY`**, which is one shared
   secret standing in for the Routine's own automation and stays as it is.
   The MCP server is per-person, per-token and individually revocable.

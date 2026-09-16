@@ -148,9 +148,12 @@ await test("tools/list returns the whole surface", async () => {
   const { tools } = await client.listTools();
   const names = tools.map((t) => t.name).sort();
   assert.deepStrictEqual(names, [
-    "add_item_comment", "create_backlog_item", "get_backlog_item", "get_faq_article",
-    "get_project_docs", "list_backlog_items", "list_projects", "search_faq",
-    "update_backlog_item", "whoami",
+    "add_item_comment", "create_backlog_item", "create_interface", "create_project_document",
+    "delete_interface", "delete_project_document", "get_backlog_item", "get_doc_revision",
+    "get_faq_article", "get_project_docs", "list_backlog_items", "list_doc_revisions",
+    "list_projects", "search_faq", "set_project_artifact", "set_project_readme",
+    "set_project_requirements", "update_backlog_item", "update_interface",
+    "update_project_document", "whoami",
   ]);
 });
 
@@ -195,6 +198,43 @@ await test("search_faq finds a published help-centre article", async () => {
   const out = text(await client.callTool({ name: "search_faq", arguments: { query: "local offer rrp" } }));
   assert.strictEqual(out.results[0].title, "Setting a local offer in Retail Admin");
   assert.strictEqual(out.results[0].docType, "how-to");
+});
+
+await test("a real client can read a project's docs and write them back", async () => {
+  // The whole point of the documentation tools: read, revise, write, with no
+  // token beyond the OAuth session this client already holds.
+  const before = text(await client.callTool({ name: "get_project_docs", arguments: { projectId: "proj-lvp" } }));
+  assert.strictEqual(before.name, "Live Visitor Profile");
+
+  const written = text(await client.callTool({
+    name: "set_project_requirements",
+    arguments: { projectId: "proj-lvp", contentMd: "# Requirements\n\nAttribute envelope, deadline model, trust zones." },
+  }));
+  assert.strictEqual(written.updated, true);
+
+  const after = text(await client.callTool({ name: "get_project_docs", arguments: { projectId: "proj-lvp" } }));
+  assert.match(after.requirementsMd, /trust zones/);
+});
+
+await test("a replaced document is recoverable through the client", async () => {
+  await client.callTool({ name: "set_project_requirements", arguments: { projectId: "proj-lvp", contentMd: "# Requirements\n\nOops, truncated." } });
+  const list = text(await client.callTool({ name: "list_doc_revisions", arguments: { projectId: "proj-lvp" } }));
+  assert.ok(list.revisions.length >= 1);
+  const revision = text(await client.callTool({ name: "get_doc_revision", arguments: { revisionId: list.revisions[0].revisionId } }));
+  assert.match(revision.contentMd, /trust zones/, "the newest revision should hold the text that was just replaced");
+  // Restoring is just writing it back — no separate restore tool needed.
+  await client.callTool({ name: "set_project_requirements", arguments: { projectId: "proj-lvp", contentMd: revision.contentMd } });
+  const restored = text(await client.callTool({ name: "get_project_docs", arguments: { projectId: "proj-lvp" } }));
+  assert.match(restored.requirementsMd, /trust zones/);
+});
+
+await test("the client is told which tools are destructive", async () => {
+  const { tools } = await client.listTools();
+  const destructive = tools.filter((t) => t.annotations && t.annotations.destructiveHint).map((t) => t.name).sort();
+  assert.deepStrictEqual(destructive, ["delete_interface", "delete_project_document"]);
+  const docWrite = tools.find((t) => t.name === "set_project_requirements");
+  assert.strictEqual(docWrite.annotations.readOnlyHint, false);
+  assert.strictEqual(docWrite.annotations.destructiveHint, false);
 });
 
 await test("a tool error comes back as a tool error, not a transport failure", async () => {
