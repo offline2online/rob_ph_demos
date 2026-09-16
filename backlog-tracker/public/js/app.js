@@ -3878,7 +3878,6 @@ const DICTATION_PUNCTUATION = [
   [/\bnew paragraph\b/gi, "\n\n"],
   [/\bnew line\b/gi, "\n"],
   [/\bfull stop\b/gi, "."],
-  [/\bperiod\b/gi, "."],
   [/\bcomma\b/gi, ","],
   [/\bquestion mark\b/gi, "?"],
   [/\bexclamation mark\b/gi, "!"],
@@ -3921,12 +3920,15 @@ function capitalizeDictated(text, before) {
 }
 
 // Appends `addition` to `base`, inserting a separating space only when
-// `base` is non-empty and doesn't already end in whitespace. This is what
-// keeps a user's own typed line breaks intact across dictation restarts,
-// instead of the old baseline.replace(/\s+/g," ") that flattened them.
+// `base` is non-empty, doesn't already end in whitespace, and `addition`
+// doesn't itself open with closing punctuation (a spoken "full stop" that
+// arrived at the start of the next result must attach to the word before
+// it, not float as " ."). This is what keeps a user's own typed line
+// breaks intact across dictation restarts, instead of the old
+// baseline.replace(/\s+/g," ") that flattened them.
 function joinDictated(base, addition) {
   if (!addition) return base;
-  if (!base || /\s$/.test(base)) return base + addition;
+  if (!base || /\s$/.test(base) || /^[.,!?]/.test(addition)) return base + addition;
   return base + " " + addition;
 }
 
@@ -3984,33 +3986,41 @@ const STOP_ICON_SVG = '<svg viewBox="0 0 24 24" width="14" height="14" fill="cur
 function createDictationController({ textareaEl, micBtn, hintEl, errorEl, onStop, charCountUpdate }) {
   let recognition = null;
   let listening = false;
-  // Chrome/Android's SpeechRecognition ends itself after a few seconds of
-  // silence even with continuous:true (surfaces as a "no-speech" error,
-  // then "end") — that's the "mic cuts out after ~10s" behaviour.
-  // stopRequested distinguishes that automatic, unwanted end from one the
-  // user actually asked for (clicking the mic again, closing the form, or
-  // submitting), so onend below knows whether to silently restart or
-  // really stop.
+  // Distinguishes an automatic end (the browser closed the session on its
+  // own — silence timeout, cloud-session limit, a network hiccup) from one
+  // the user actually asked for (clicking the mic again, closing the form,
+  // submitting). ONLY the latter ends dictation: once the mic is on it stays
+  // on until the user says otherwise. Reported live (16 Sep 2026) after
+  // 1.5.47: dictation "keeps pausing and starting again and misses
+  // everything" — every path below that used to let the browser's own end
+  // become OUR end (the silent-restart give-up, a single network error, an
+  // untested start(MediaStreamTrack) hand-off) was exactly that bug.
   let stopRequested = false;
-  // Counts consecutive auto-restarts (see onend below) that produced not
-  // one onresult callback — i.e. the mic looks like it's listening but
-  // nothing is ever actually being heard, as opposed to a normal pause
-  // between sentences (which still restarts, but onresult fires again once
-  // speech resumes and clears this back to 0). Without this, a genuinely
-  // broken capture would restart silently forever with zero feedback,
-  // which is worse than the old ~10s cutoff — at least that was visible.
-  // After a few silent restarts in a row this gives up for real and says so.
+  // Consecutive automatic restarts that produced not one onresult. Used
+  // ONLY to surface a soft "not hearing anything" hint below — an earlier
+  // version stopped dictation outright after four of these, which on
+  // desktop Chrome meant a ~30s pause to think silently ended the session.
   let silentRestartStreak = 0;
-  // The getUserMedia stream backing the current dictation run (kept open,
-  // not stopped after a probe, so its track can be fed straight into
-  // recognition.start() below) and everything dictated so far in this run,
-  // carried across the automatic restarts in onend. baseline is whatever
-  // was already in the field the moment the user clicked the mic — fixed
-  // for the whole run, never re-read, so it can't pick up committed's own
-  // dictated text as if it were pre-existing content.
-  let micStream = null;
+  // Consecutive "network" errors. Chrome reports a real outage and a
+  // transient cloud-session hiccup with the same code, so a couple are
+  // ridden out via restart before it's treated as fatal.
+  let networkErrorStreak = 0;
+  let softHintOn = false;
+  // Everything dictated so far in this run, carried across the automatic
+  // restarts in onend. baseline is whatever was already in the field the
+  // moment the user clicked the mic — fixed for the whole run, never
+  // re-read, so it can't pick up committed's own dictated text as if it
+  // were pre-existing content.
   let baseline = "";
   let committed = "";
+  // The last finalized segment committed. Android's and iOS WebKit's
+  // continuous modes are both known to redeliver a prior final result after
+  // their own internal restarts — a final that is exactly the segment just
+  // committed is dropped rather than doubled.
+  let lastFinalKey = "";
+  let sessionStartedAt = 0;
+  let restartTimer = null;
+  let stopWatchdog = null;
   // Chrome 142+ rejects phrases on an engine that doesn't support them via
   // an async "phrases-not-supported" error rather than a thrown exception
   // — once seen, stop trying so every restart doesn't repeat the same
@@ -4018,11 +4028,15 @@ function createDictationController({ textareaEl, micBtn, hintEl, errorEl, onStop
   let phrasesUnsupported = false;
 
   function showError(msg) {
+    softHintOn = false;
     if (!errorEl) return;
     if (!msg) { errorEl.textContent = ""; errorEl.classList.remove("on"); return; }
     errorEl.textContent = msg;
     errorEl.classList.add("on");
   }
+  // Same line as showError, but flagged so the next real result clears it
+  // — informational only, never a stop.
+  function showSoftHint(msg) { showError(msg); softHintOn = true; }
 
   function render(liveText) {
     let next = joinDictated(joinDictated(baseline, committed), liveText || "");
@@ -4043,15 +4057,41 @@ function createDictationController({ textareaEl, micBtn, hintEl, errorEl, onStop
     if (charCountUpdate) charCountUpdate();
   }
 
+  // One finalized result → committed text, exactly once.
+  function commitFinal(rawTranscript) {
+    const processed = capitalizeDictated(postProcessFinalSegment(rawTranscript || ""), joinDictated(baseline, committed));
+    if (!processed) return;
+    const key = processed.toLowerCase();
+    if (key === lastFinalKey) return;
+    lastFinalKey = key;
+    committed = joinDictated(committed, processed);
+  }
+
+  // Detach an instance's handlers before anything else touches it. Both
+  // restart and stop end up calling .stop()/.abort() on an instance that
+  // may already have ended, and without this that second call re-fires
+  // the instance's own onend while the first is still on the stack and
+  // recurses (verified: an unguarded version spun into thousands of
+  // recognition instances off a single simulated restart in testing).
+  function detach(instance) {
+    if (!instance) return;
+    instance.onend = null; instance.onerror = null; instance.onresult = null;
+  }
+
   function startListening(isRestart) {
     if (!SpeechRecognitionCtor) return;
-    if (listening && recognition) { try { recognition.stop(); } catch (err) {} }
+    if (restartTimer) { clearTimeout(restartTimer); restartTimer = null; }
     stopRequested = false;
     if (!isRestart) {
       silentRestartStreak = 0;
+      networkErrorStreak = 0;
       baseline = textareaEl.value;
       committed = "";
+      lastFinalKey = "";
     }
+    const previous = recognition;
+    detach(previous);
+    if (previous) { try { previous.abort(); } catch (err) {} }
     const engine = dictationEnginePref();
     const useLocal = engine === "local";
     recognition = new SpeechRecognitionCtor();
@@ -4073,55 +4113,34 @@ function createDictationController({ textareaEl, micBtn, hintEl, errorEl, onStop
     }
     // continuous:true is a known bad actor on Android Chrome — reported
     // live: speech gets tripled/repeated 10x over, then it dies anyway
-    // around 10s. Android's continuous-mode implementation is documented
-    // to redeliver or duplicate prior results across its own internal
-    // keep-alive restarts. Everywhere else, continuous:false was the actual
-    // bug: it ended the session at the first pause, restarted, and lost
-    // context/the start of the next phrase every time — continuous:true
-    // plus incremental onresult handling below (via e.resultIndex, only
-    // ever consuming each result once) avoids Android's duplication
-    // failure mode in the first place, so it's safe to leave on.
+    // around 10s. Android's implementation is utterance-based underneath
+    // and redelivers prior results across its own keep-alive restarts.
+    // Everywhere else continuous:false was the actual bug: it ended the
+    // session at the first pause, restarted, and lost the start of the next
+    // phrase every time. This is the same result-handling pattern as
+    // Google's own Web Speech demo (walk from e.resultIndex, commit each
+    // final once) plus an unconditional restart in onend, so a session the
+    // browser ends on its own is a stutter, never a stop.
     recognition.continuous = !IS_ANDROID;
     recognition.interimResults = true;
-    // Only used on the Android branch below — holds this one utterance's
-    // finalized text until onend folds it into `committed`, since
-    // continuous:false means each SpeechRecognitionCtor instance only ever
-    // sees one short session's own results.
-    let androidSessionFinal = "";
+    recognition.maxAlternatives = 1;
+    let heardSomething = false;
     recognition.onresult = (e) => {
-      // Any result at all — even an interim one — proves audio is
-      // actually reaching the recognizer, so clear the "hearing nothing"
-      // streak.
+      heardSomething = true;
       silentRestartStreak = 0;
-      if (IS_ANDROID) {
-        let sessionFinalRaw = "", sessionInterimRaw = "";
-        for (let i = 0; i < e.results.length; i++) {
-          const chunk = e.results[i][0].transcript;
-          if (e.results[i].isFinal) sessionFinalRaw += chunk + " "; else sessionInterimRaw += chunk;
-        }
-        androidSessionFinal = sessionFinalRaw
-          ? capitalizeDictated(postProcessFinalSegment(sessionFinalRaw), joinDictated(baseline, committed))
-          : "";
-        render(joinDictated(androidSessionFinal, sessionInterimRaw));
-      } else {
-        // e.resultIndex is the first result that changed since the last
-        // event — walking from there instead of re-joining the whole
-        // results array means each finalized result is committed exactly
-        // once, instead of the old re-join-everything-against-baseline
-        // approach that only worked because continuous sessions were
-        // never allowed to run long enough to need it.
-        let interimText = "";
-        for (let i = e.resultIndex; i < e.results.length; i++) {
-          const result = e.results[i];
-          if (result.isFinal) {
-            const processed = capitalizeDictated(postProcessFinalSegment(result[0].transcript), joinDictated(baseline, committed));
-            committed = joinDictated(committed, processed);
-          } else {
-            interimText += result[0].transcript;
-          }
-        }
-        render(interimText);
+      networkErrorStreak = 0;
+      if (softHintOn) showError("");
+      // e.resultIndex is the first result that changed since the last
+      // event — walking from there means each finalized result is
+      // committed exactly once, on every platform, instead of re-joining
+      // the whole results array (which is what doubled text on Android).
+      let interimText = "";
+      for (let i = e.resultIndex; i < e.results.length; i++) {
+        const result = e.results[i];
+        const transcript = result[0] ? result[0].transcript : "";
+        if (result.isFinal) commitFinal(transcript); else interimText += transcript;
       }
+      render(interimText);
     };
     recognition.onerror = (e) => {
       const code = e && e.error;
@@ -4132,8 +4151,12 @@ function createDictationController({ textareaEl, micBtn, hintEl, errorEl, onStop
         showError("No microphone could be accessed.");
         stopRequested = true;
       } else if (code === "network") {
-        showError("Dictation needs an internet connection to convert speech to text — check your connection and try again.");
-        stopRequested = true;
+        networkErrorStreak++;
+        if (networkErrorStreak >= 3) {
+          showError("Dictation needs an internet connection to convert speech to text — check your connection and try again.");
+          stopRequested = true;
+        }
+        // Fewer than that: onend below restarts through it.
       } else if (code === "language-not-supported") {
         showError(`Dictation isn't available for ${recognition.lang} in this browser — switch the engine in Settings.`);
         stopRequested = true;
@@ -4142,57 +4165,42 @@ function createDictationController({ textareaEl, micBtn, hintEl, errorEl, onStop
         // on this and every later restart in this run.
         phrasesUnsupported = true;
       } else if (code === "no-speech" || code === "aborted") {
-        // Expected/transient, not a real failure: "no-speech" is exactly
-        // the browser's own silence timeout (the "cuts out after ~10s"
-        // report), and "aborted" fires when we stop it ourselves. Leave
-        // stopRequested as-is so onend below restarts through a silence
-        // and only really stops when the user (or closeForm/submit)
-        // actually asked it to.
+        // Expected/transient, not a real failure: "no-speech" is the
+        // browser's own silence timeout and "aborted" fires when we stop
+        // an instance ourselves. Leave stopRequested as-is so onend below
+        // restarts and only really stops when the user (or closeForm/
+        // submit) actually asked it to.
       } else if (code) {
         showError(`Dictation stopped (${code}) — you can keep typing instead.`);
         stopRequested = true;
       }
     };
     recognition.onend = () => {
-      // Detach this now-finished instance's own handlers before doing
-      // anything else. Both branches below end up calling something that
-      // may call .stop() on this same (already-ended) instance again — the
-      // restart branch's startListening() re-enters its own guard against
-      // "already listening", and the stop branch's stopListening() calls
-      // recognition.stop() unconditionally — and without this, that second
-      // .stop() re-fires this exact onend closure while it's still on the
-      // stack, which re-reads `recognition`/`stopRequested` mid-flight and
-      // recurses (verified: an unguarded version of this spun into
-      // thousands of recognition instances off a single simulated restart
-      // in testing). Nulling the handlers first makes any such re-entrant
-      // call inert.
       const finished = recognition;
-      if (finished) { finished.onend = null; finished.onerror = null; finished.onresult = null; }
-      // This session's finalized text (Android only — the desktop branch
-      // already folds each result into `committed` the moment it finalizes)
-      // is done changing now, so fold it in permanently before deciding
-      // whether to restart or really stop.
-      if (IS_ANDROID && androidSessionFinal) {
-        committed = joinDictated(committed, androidSessionFinal);
-        androidSessionFinal = "";
-      }
+      detach(finished);
       if (stopRequested) { stopListening(); return; }
-      silentRestartStreak++;
-      if (silentRestartStreak >= 4) {
-        // Several restarts in a row with not one word heard — this isn't a
-        // normal pause between sentences (onresult would have cleared the
-        // streak), it's the mic not actually being captured. Say so
-        // instead of silently spinning forever.
-        showError("Not picking up any speech from the microphone — check the mic is working and permitted, or just type instead.");
-        stopListening();
+      if (!heardSomething) {
+        silentRestartStreak++;
+        if (silentRestartStreak >= 3) showSoftHint("Still listening, but not hearing anything yet — check the mic isn't muted or in use by another app.");
+      }
+      // The browser ended this session on its own but nobody asked to stop
+      // — restart. Synchronously in the normal case: every millisecond
+      // between the browser's end and our start is speech nobody hears.
+      // Only a session that died almost instantly with nothing heard (a
+      // tight failure loop, not a pause) waits a beat first, so a broken
+      // engine can't spin flat out while the user reads the hint above.
+      // `baseline`/`committed` already hold everything transcribed so far
+      // and aren't reset on a restart, so nothing is lost.
+      const lived = Date.now() - sessionStartedAt;
+      if (heardSomething || lived >= 1000) {
+        try { startListening(true); } catch (err) { stopListening(); }
         return;
       }
-      // The browser ended this recognition session on its own (silence
-      // timeout is the common case) but nobody asked to stop — restart
-      // immediately so dictation feels continuous. `baseline`/`committed`
-      // already hold everything transcribed so far and aren't reset on a
-      // restart, so nothing is lost.
-      try { startListening(true); } catch (err) { stopListening(); }
+      restartTimer = setTimeout(() => {
+        restartTimer = null;
+        if (!listening) return;
+        try { startListening(true); } catch (err) { stopListening(); }
+      }, 600);
     };
     listening = true;
     micBtn.classList.add("listening");
@@ -4200,61 +4208,53 @@ function createDictationController({ textareaEl, micBtn, hintEl, errorEl, onStop
     micBtn.title = "Stop dictation";
     micBtn.setAttribute("aria-label", "Stop dictation");
     if (hintEl) hintEl.classList.add("on");
-    // Feed the live mic track straight into recognition where supported
-    // (start(MediaStreamTrack) shipped in 2024) so the noise
-    // suppression/echo cancellation/auto gain requested below actually
-    // reaches the recognizer, instead of SpeechRecognition silently
-    // re-opening its own default, unprocessed capture of the microphone.
-    // Feature-detected via try/catch, not a UA/version sniff.
-    const micTrack = micStream && micStream.getAudioTracks()[0];
-    try {
-      if (micTrack) recognition.start(micTrack); else recognition.start();
-    } catch (err) {
-      if (micTrack) {
-        if (micStream) { micStream.getTracks().forEach((t) => t.stop()); micStream = null; }
-        setTimeout(() => {
-          try { recognition.start(); } catch (err2) {
-            showError("Dictation didn't start — you can keep typing instead.");
-            stopListening();
-          }
-        }, 250);
-      } else {
-        showError("Dictation didn't start — you can keep typing instead.");
-        stopListening();
-      }
+    sessionStartedAt = Date.now();
+    // Plain start(): the browser opens and processes the microphone itself,
+    // the way every other Web Speech dictation does. 1.5.47 fed a
+    // getUserMedia track (noise suppression / echo cancellation / AGC on)
+    // via start(MediaStreamTrack) instead — an unverifiable path from this
+    // sandbox, and Google's own speech guidance is NOT to pre-process audio
+    // before its recogniser; it went live and dictation got worse, not
+    // better. Gone.
+    try { recognition.start(); } catch (err) {
+      showError("Dictation didn't start — you can keep typing instead.");
+      stopListening();
     }
   }
 
   function stopListening() {
     listening = false;
     stopRequested = false;
+    if (restartTimer) { clearTimeout(restartTimer); restartTimer = null; }
+    if (stopWatchdog) { clearTimeout(stopWatchdog); stopWatchdog = null; }
     micBtn.classList.remove("listening");
     micBtn.innerHTML = MIC_ICON_SVG;
     micBtn.title = "Dictate";
     micBtn.setAttribute("aria-label", "Dictate");
     if (hintEl) hintEl.classList.remove("on");
-    if (recognition) { try { recognition.stop(); } catch (err) {} }
-    if (micStream) { micStream.getTracks().forEach((t) => t.stop()); micStream = null; }
+    if (softHintOn) showError("");
+    if (recognition) { const r = recognition; detach(r); try { r.stop(); } catch (err) {} }
     if (onStop && textareaEl.value.trim()) onStop(textareaEl.value);
   }
 
   // Chrome won't reliably prompt for microphone permission from inside
   // SpeechRecognition alone — asking via getUserMedia first forces a real
   // permission prompt (or a real, specific error) before handing off. The
-  // resulting stream is kept open (not stopped after a probe) so its own
-  // processed track can be fed into recognition.start() in startListening.
+  // probe stream is released straight away; SpeechRecognition opens the
+  // microphone itself.
   function requestMicAndListen() {
     showError("");
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { startListening(false); return; }
-    navigator.mediaDevices.getUserMedia({
-      audio: { noiseSuppression: true, echoCancellation: true, autoGainControl: true },
-    }).then((stream) => {
-      micStream = stream;
+    navigator.mediaDevices.getUserMedia({ audio: true }).then((stream) => {
+      stream.getTracks().forEach((t) => t.stop());
       // Reported live on Android Chrome: the mic visibly starts
       // "listening" (button goes red/pulsing) but never transcribes a
-      // word — consistent with SpeechRecognition needing a beat after the
-      // mic is granted before it can actually claim it. A short delay
-      // here gives that time before recognition.start() tries to.
+      // word — consistent with SpeechRecognition silently failing to
+      // (re-)open the microphone when it's asked to grab it again
+      // immediately after this probe stream's tracks are stopped, before
+      // the OS has actually released the hardware. A short delay here
+      // gives that teardown time to finish before recognition.start()
+      // tries to claim the mic itself.
       setTimeout(() => startListening(false), 250);
     }).catch((err) => {
       const name = err && err.name;
@@ -4272,9 +4272,16 @@ function createDictationController({ textareaEl, micBtn, hintEl, errorEl, onStop
 
   // A handle the field's own owner (e.g. the New Item form's closeForm())
   // can use to force dictation off and clear any error line without
-  // reaching into this closure's private state directly.
+  // reaching into this closure's private state directly. Uses stop(), not
+  // abort(), so the utterance in flight is still finalized into the field.
   function stop() {
-    if (listening) { stopRequested = true; try { recognition.stop(); } catch (err) {} }
+    if (!listening) return;
+    if (restartTimer) { stopListening(); return; } // between sessions — nothing in flight
+    stopRequested = true;
+    try { recognition.stop(); } catch (err) { stopListening(); return; }
+    // If the browser never delivers that instance's end event, don't leave
+    // the button stuck on red.
+    stopWatchdog = setTimeout(() => { stopWatchdog = null; if (listening) stopListening(); }, 2000);
   }
 
   if (!SpeechRecognitionCtor) {
