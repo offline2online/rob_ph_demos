@@ -606,59 +606,166 @@ the environment this was written in:
 - The audience measurement currency the market expects, and whether a
   sensor-derived multiplier is accepted for trading or only for reporting.
 
+### 8. Data model — aligned to the existing display type and playlist records
+
+The prototype's records are the platform's **existing** display-type and
+playlist records, as spec §5.4 / §3 and the live HQ Admin *Display Types
+Details* form expose them, with this project's additions kept in one
+clearly separated sub-object. Field names the spec quotes are used
+verbatim. The canonical definition is `app/src/model/schema.js`; every
+screen shows the record it edits under a **Data (JSON)** panel or tab so it
+can be checked against the platform side by side.
+
+#### Display type
+
+```
+{
+  id, touchPoint,                  // Digital Signage | Kiosk | Responsive Web | Mobile Store Site
+  name, description, image,        // the form's Display Type Name / Description / Display Type Image
+  displayCanvasSize: { width, height },
+  backgroundColor,
+  defaultPlaylistId,
+  playlistSettings: {              // PLAYLIST SETTINGS panel — null = "Default (…)", inherit
+    assetPosition, assetFill,
+    maximumCampaignsPlayedInRotation,   // -1 = Unlimited; n = slot count = share-of-voice denominator
+    campaignTransition, campaignAutoRotation, campaignAutoPlay
+  },
+  qrControl: {                     // QR CONTROL (PHANTOM ZONE) panel
+    enabled,
+    phantomArea: { width, height, position, sizingMode },
+    qrCode: { size, colour, position },
+    connectedIconColour,
+    mobileSiteTemplate,            // which mobile experience the scan opens
+    connected: { icon, showPoweredBy, poweredByText }
+  },
+  enabledFeatures: { inStoreRadio, proximityMist, aiAgentPlayback, visionAi },   // each { enabled, …settings }
+  multiZone: { enabled, zones: [{ id, name, x, y, width, height, playlistId, trustZone }] },
+  element: { type, plays, itemAspect, gap, widthMode, maxWidth,           // Responsive Web only
+             breakpoints: { desktop|tablet|mobile: { viewportWidth, height, columns, items, peek } } },
+  phExtensions: {                  // THIS PROJECT's additions — the base record above stays byte-compatible
+    slots: [{ label, owner, partnerId, advertiser, storeScope, quota, trustZone }]
+  }
+}
+```
+
+- **`null` means inherit.** The platform's form renders an inherited value
+  as "Default (…)"; the prototype keeps exactly that convention so an
+  override is always distinguishable from an inherited value (§2,
+  configuration inheritance), and shows an "N overrides / all inherited"
+  badge per panel.
+- `maximumCampaignsPlayedInRotation` is stored as the integer the spec
+  uses (`-1` = unlimited) and is the one field that makes a rotation
+  sellable: `phExtensions.slots` is sized to it.
+- `trustZone` (`agent_addressable` | `ph_locked`) appears on zones, slots
+  and scene text elements — the layout-boundary form of spec §7.
+- `activeCampaignsByZone` is runtime state written by the player, not
+  stored on the type, and is not modelled here.
+
+#### Playlist, item, scene
+
+```
+playlist: { id, name, autoCreatedFor, schedule: { mode: store_hours|always|custom, from, to }, items: [...] }
+
+item:     { id, campaignId, priority, playbackDuration,          // seconds
+            campaignType: ["LOCALISED", "ON_ROTATION" | "TRIGGERED" | "TARGETED"],
+            campaignCreativeSettings: { default:    { sceneId },   // unpaired
+                                        selected:   { sceneId },   // paired customer engaging THIS item
+                                        unselected: { sceneId } }, // paired customer engaging another item
+            enabled }
+
+scene:    { id, name, background: { type: colour|image|video, value, assetId },
+            text: [{ id, content, x, y, width, height, font: { family, size, weight, colour, align },
+                     animation: { entrance, exit, delayMs, durationMs }, trustZone,
+                     variants: [{ id, when: { attr, op, value }, content }] }] }
+```
+
+- The **visibility deadline** of rotation position *n* is derived, not
+  stored: `first_paint_budget + Σ playbackDuration` of the positions before
+  it (§1). Playlist Management shows it against every item.
+- **`text[].variants` uses a working grammar** pending open question 2: an
+  ordered list of `{ when, content }`, first match wins at the element's
+  visibility deadline, falling back to the element's own content. A
+  variant on a PH-locked element can only be authored by PH.
+
+#### Sell side (this project's own records, no platform equivalent yet)
+
+`partner` (credentials, inbound bidder config, inventory rules, seats with
+`approvalRequired`, lists, `targeting.enabledAttributes`, deals);
+`reservation` (partner, advertiser, `positions[{displayTypeId, slotIndex}]`,
+store set, play window, exactly one `baseline` + targeted `campaigns[]` each
+with `rules.all[]` and integer `priority`, `assetSets[]`, per-display
+`distribution` cache state, clearing); `delivery` records (campaign +
+trigger + audience multiplier + played/reason + billable); and the
+company-level `exchange` settings (`sellers.json`, SupplyChain, OpenRTB
+options, pre-auction enforcement, play window, audience currency,
+reporting floor). All in `app/src/model/sellside.js`.
+
 ## Functional requirements
 
+Each item is annotated with where it lives in the prototype.
+
 - **Display type library**, browsable by touch point, with slot count and
-  ownership summary.
+  ownership summary. *(Display Types / Elements)*
 - **Display type editor** matching the schema in §5.4 above, with
   inheritance-aware editing (type-level default vs. per-display override,
-  visually distinguished).
+  visually distinguished). *(Display Types / Elements — the platform form, plus Data (JSON))*
 - **Slot ownership & quota editor**: internal / named advertiser / RTB /
-  store-level quota (percentage or count based).
+  store-level quota (percentage or count based). *(Display Types → Playlist Settings → Slot assignment)*
 - **Multi-zone layout designer** for signage (optionally Mist-zone-driven);
   web layout composer allowing display types to be dragged onto a page
-  canvas.
+  canvas. *(Display Types → Multi-Zone Layout; web composer gated with Experience Layout)*
 - **Trust zone assignment**, visibly distinct from agent-addressable
-  regions in any editor preview.
+  regions in any editor preview. *(zones, slots and scene text elements; red-locked in every preview)*
 - **Tier preview**: Default / Localised / Personalised (in-window and late)
   / Interactive, side by side — the single most important screen per the
-  spec.
+  spec. *(Render Preview → Tier preview, Deadlines & rotation)*
 - **Pairing simulation**: QR scan → profile sync → phone-driven page
-  update, shown side by side.
+  update, shown side by side. *(Render Preview → Pairing simulation; Idle / Connected on the type preview)*
 - **Channel preview**: the same surface rendered as web vs. email vs.
-  messaging, showing where the ladder freezes.
+  messaging, showing where the ladder freezes. *(Render Preview → Channel preview)*
 - **Partner/DSP connection management**: credentials per partner, connection
-  test, advertisers pulled on connect, and the positions sold through each.
+  test, advertisers pulled on connect, and the positions sold through each. *(Partners / DSPs)*
 - **Per-partner targeting attribute enablement**: which registry attributes
-  this partner may target, visitor attributes off by default.
+  this partner may target, visitor attributes off by default. *(Partners / DSPs → Targeting attributes this partner may use)*
 - **Company advertiser lists** — one central whitelist/blacklist, adopted by
-  every connected DSP, showing which partners adopt and which have unlinked.
+  every connected DSP, showing which partners adopt and which have unlinked. *(Partners / DSPs → Advertiser lists)*
 - **Per-DSP list override**: unlink (copying the inherited lists down) and
   relink (discarding the partner's own), with inherited lists shown read-only
-  and visually distinct from an override.
+  and visually distinct from an override. *(Partners / DSPs → partner → Advertiser whitelist / blacklist)*
 - **Per-advertiser approval-required toggle**, and a campaign approval queue
-  for the advertisers it is set on.
+  for the advertisers it is set on. *(Partners / DSPs → Advertisers on this partner; Campaigns → Approval queue)*
 - **Campaign set editor** per reservation: one baseline, plus targeted
   campaigns with rules and explicit priority, showing which would win for a
-  given set of attribute values.
+  given set of attribute values. *(Campaigns & Reservations → Campaign set, with "Which would win?")*
 - **Asset distribution status per display** — a programmatic win is not
-  eligible on a display until that display has cached its assets.
+  eligible on a display until that display has cached its assets. *(Campaigns & Reservations → Assets & distribution)*
 - **Playback analytics feed** at display and store level, disclosing the
-  campaign that played and the trigger that activated it.
+  campaign that played and the trigger that activated it. *(Delivery & Analytics → Playback records, Which campaign and why, Partner feed)*
 - **Bidder configuration per DSP partner**: endpoint, seat identifiers, QPS
-  ceiling and timeout, alongside the account credentials already modelled.
+  ceiling and timeout, alongside the account credentials already modelled. *(Partners / DSPs → Bidder integration)*
 - **Pre-auction enforcement**: floor, permitted categories and the advertiser
   blocklist applied to bids before a win, keyed on the seat or advertiser
-  identity in the bid response.
+  identity in the bid response. *(Partners / DSPs → Exchange settings → Pre-auction enforcement)*
 - **`sellers.json` and a `SupplyChain` declaration**, with the seller of record
-  configurable.
+  configurable. *(Partners / DSPs → Exchange settings)*
 - **Venue and screen metadata per store/display** — OpenOOH venue type, geo,
   resolution, orientation, loop length, share of voice — as required by a
-  DOOH bid request.
+  DOOH bid request. *(Inventory & Venues → Venues & screens, Bid request)*
 - **Proof-of-play reconciliation**: wins matched against actual plays, with
-  unrendered plays reported and excluded from billing.
+  unrendered plays reported and excluded from billing. *(Delivery & Analytics → Proof of play & billing)*
 - **Audience multiplier** per play, sensor-derived where Vision/AI or MIST is
-  enabled on the display type, modelled otherwise.
+  enabled on the display type, modelled otherwise. *(Delivery & Analytics; sensors per display under Inventory & Venues)*
+- **Playlist editor** — items with `priority`, `playbackDuration`,
+  `campaignType` and the three `campaignCreativeSettings` states, scheduled
+  against store hours, with each position's visibility deadline shown; scene
+  editor with positioned `text[]` elements, entrance/exit animation, trust
+  zone and `variants`. *(Playlist Management → Items, Scenes)*
+- **Inventory listing and forecast** — sellable positions as display type ×
+  slot × store set × window, and a forecast that takes targeting rules as
+  input. *(Inventory & Venues → Sellable inventory, Forecast)*
+- **Data view on every record** — the display type, playlist, campaign set,
+  bid request and partner feed as JSON, so the shape can be checked against
+  the platform. *(the Data panel/tab on each screen)*
 
 ## Open questions (from spec §11, scoped to this project)
 
