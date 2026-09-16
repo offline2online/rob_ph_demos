@@ -393,6 +393,32 @@ viewport).
   - **hq-admin.html's grid deliberately shows only HQ's own RRP/offer in its Price column, never a store's override** — a "Local offer ×N" pill flags that a store-level price exists (click it to jump to the per-product pricing page) without picking one store's price to display in an aggregate, all-stores view. That's intentional design, not a bug — don't try to make this specific grid show the discounted local price inline.
   - Bottom line: verify per-screen against copy/markup you can `grep` in this repo before deciding whether a pricing bug is fixable here or belongs to the real platform.
 
+## Every UI change goes through the `ph-designer` skill — no exceptions
+
+Anything that renders — a page, a screen, a component, a form, a table, an
+admin view, a prototype, a mock-up — **must be built against the
+`ph-designer` skill**, whether or not the request mentions Personalisation
+Hub. Read it *before* writing markup, not afterwards as a checking pass:
+it carries the measured tokens (colour, type, spacing, radius), the
+component recipes, and the two surface references (HQ Admin / Retail
+Admin). Guessing at these and correcting later produces screens that are
+subtly wrong in ways nobody can name.
+
+Two things in that skill are load-bearing and routinely got wrong:
+
+- **Read `references/prototyping.md` first.** Almost everything in this
+  repo is a *prototype iframed into HQ Admin*, which means you build the
+  content frame ONLY — no header, no sidebar, no breadcrumb, and nothing
+  `position: fixed` (it anchors to the iframe, not the viewport). Getting
+  this wrong means rebuilding the whole thing.
+- **Material Symbols (Outlined) is the platform's only icon set**, and the
+  font stack is Roboto — never a system stack, never another icon library.
+
+This applies to every route into development: a person asking in chat, a
+Routine-fired session working a Backlog card, or a Deploy run. If a change
+touches rendered output and the skill was not read, that is a defect in
+the change regardless of how the result looks.
+
 ## Keep each project's README current
 
 Every project folder has its own `README.md` — a short orientation doc

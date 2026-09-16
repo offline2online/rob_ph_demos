@@ -355,6 +355,33 @@ through Merged to Main (Live). Both fields are in
 the REST-primed first paint rather than popping in when the realtime
 listener lands.
 
+## Pushing a project's repo docs to its Docs page
+
+`scripts/sync-project-docs.js` copies a project folder's `README.md` and
+`REQUIREMENTS.md` up into that project's `readmeMd` / `requirementsMd` fields,
+and a repo interface-contract file into the matching `interfaces` record. The
+repo file and the Firestore field are meant to be identical; this is the
+direction that fixes a stale board.
+
+```bash
+BOARD_API_KEY=... node backlog-tracker/scripts/sync-project-docs.js \
+  --project "Display Types & DSP Integration" \
+  --folder display-types-dsp-integration \
+  --interface "Live Visitor Profile ↔ Display Types" \
+  --interface-file shared/interface-contract.md
+```
+
+`--dry-run` reads the board and prints what would change without writing.
+`BOARD_API_KEY` is the board automation user's password — the same secret the
+rest of this README uses, and **it is not present in a normal Claude sandbox**,
+so this is a command a person runs (or pastes the key into a session for).
+
+It never reads the board back into the repo. If the board is the fresher side,
+copy it down by hand — silently overwriting someone's Docs-page edit with a
+stale repo file is the one thing this script must not do. It only matches an
+existing `interfaces` record by name; create the record from the project's Docs
+page first.
+
 ## Testing the Firestore rules
 
 `test/` runs `firestore.rules` — the real file — inside the Firestore

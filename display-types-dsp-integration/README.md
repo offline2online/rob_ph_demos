@@ -25,6 +25,16 @@ See [`REQUIREMENTS.md`](./REQUIREMENTS.md) for the actual functional spec, and
 [`../shared/interface-contract.md`](../shared/interface-contract.md) for the
 maintained boundary with `visitor-profile/`.
 
+## Live prototype
+
+**https://claude.ai/artifact/2cc25ZNLFP5AtQk2KmeY98** — the running prototype,
+rebuilt from `prototype/` on each change. Private to its owner's account until
+shared from the page's own share menu.
+
+Also served from the repo itself, from whichever branch you want to look at:
+`https://rawcdn.githack.com/offline2online/rob_ph_demos/<branch>/display-types-dsp-integration/prototype/index.html`
+(`rawcdn`, not `raw` — see root `CLAUDE.md` for why).
+
 ## What's in this folder
 
 | Path | What it is |
