@@ -776,7 +776,7 @@ Each item is annotated with where it lives in the prototype, or marked
   slot × store set × window, and a forecast that takes targeting rules as
   input. *(spec only — not in the prototype)*
 - **Data view on every record** — the display type and playlist as JSON, so the shape can be checked against
-  the platform. *(the Data panel/tab on the Display Types and Playlist screens)*
+  the platform. *(spec only — not in the prototype; the "Data model — JSON sample records" document on the board's Docs page serves this purpose)*
 
 ## Open questions (from spec §11, scoped to this project)
 

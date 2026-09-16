@@ -4,7 +4,7 @@ Managing display types, elements, playlists, and the advertising
 partner/DSP connections that fill sold slots — **System Two (Display
 Types/Elements)** and **System Three (The Surface Layer)** from the
 *Real-Time Personalised Surface Architecture Specification v1.2* — and the
-exchange that sells the retailer's screens (REQUIREMENTS §6–§7).
+exchange through which the client running the platform sells its own screens (REQUIREMENTS §6–§7).
 
 Folder: `display-types-dsp-integration/`. Renamed from
 `experience-templates/` when the first release narrowed to display types,
