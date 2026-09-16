@@ -489,6 +489,35 @@ response. Applying it after a win is a credit note, not brand safety — and wit
 exchange demand the buyer is unknown until the bid arrives, so this is the only
 point at which the control can be applied.
 
+#### Demand onboarding order
+
+**Google DSP (DV360) first, then Amazon Ads DSP, then The Trade Desk.**
+
+Common to all three, and worth building once rather than three times:
+
+- A published `sellers.json` and a `SupplyChain` object on every bid request.
+  Each buyer validates these before it will spend; none of them is optional.
+- Seat and advertiser identity on the bid response, since that is what the
+  blocklist is enforced against (above).
+- OpenRTB with DOOH support, the OpenOOH venue taxonomy, and the impression
+  multiplier field.
+- A test or certification period against live traffic before real spend, and a
+  QPS ceiling the exchange must respect.
+- Deal ID support, for the preferred and guaranteed buys that will carry the
+  early revenue while open-auction fill is still thin.
+
+What differs is the onboarding process rather than the protocol, and the exact
+requirements need confirming against each buyer's current supply documentation
+— see "To confirm before building".
+
+**One thing worth knowing about this order.** The Trade Desk is the largest
+buyer of programmatic DOOH by spend, and it is third. That is a defensible
+sequence if the reasoning is integration effort — DV360 is already modelled in
+the prototype and Google's DOOH support is mature — but it does mean the
+deepest demand pool arrives last, and open-auction fill will look thin until it
+does. Worth being explicit about which of those two things is driving the
+order, because it changes what "success" looks like at each stage.
+
 #### What a DOOH bid request carries, and why it differs
 
 Programmatic DOOH is not display with a bigger screen. The differences change
@@ -684,9 +713,8 @@ the environment this was written in:
     owner by default. Is there ever a case for one partner targeting
     another's contributed data, and what grant would express it?
 32. **Which supply architecture.** *Resolved:* **PH is the SSP** — we build the
-    exchange and DSPs bid into it. What follows from that and is still open:
-    which DSPs we onboard first, and in what order, since each has its own
-    supply-source onboarding requirements.
+    exchange and DSPs bid into it. Onboarding order also resolved: Google DSP
+    (DV360), then Amazon Ads DSP, then The Trade Desk (§7).
 33. **Seller of record** — the retailer or PH — and what that implies for
     `sellers.json` and the supply-chain declaration.
 34. **Is a sensor-derived audience multiplier tradeable**, or only reportable?

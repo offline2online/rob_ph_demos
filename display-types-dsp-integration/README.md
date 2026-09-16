@@ -81,11 +81,22 @@ sellable if demand can actually reach it. That demand arrives through a partner
 DSP, so the DSP is the connection and the advertisers on it are what a position
 can be reserved to. Two providers are supported:
 
-- **Google DSP** (Display & Video 360) — partner ID, advertiser ID, and either a
-  service-account JSON key or an OAuth 2.0 client; optional Ad Manager network
-  code for the exchange side.
-- **Amazon Ads DSP** (Amazon Ads API) — region (which fixes the API endpoint),
-  LWA client ID/secret, refresh token, profile ID, advertiser ID and entity ID.
+Onboarding order, per `REQUIREMENTS.md` §7 and shown on the add list:
+
+1. **Google DSP** (Display & Video 360) — partner ID, advertiser ID, and either
+   a service-account JSON key or an OAuth 2.0 client; optional Ad Manager
+   network code.
+2. **Amazon Ads DSP** (Amazon Ads API) — region (which fixes the API endpoint),
+   LWA client ID/secret, refresh token, profile ID, advertiser ID and entity ID.
+3. **The Trade Desk** — supply source ID, TTD partner ID, API token, region.
+
+Each partner carries **two** integrations, because PH is the exchange:
+
+- **Outbound** (the credentials above) — deal setup, seat discovery, reporting.
+- **Inbound, the bidding path** — bidder endpoint, seat IDs, QPS ceiling and
+  bid timeout. We send the bid request; they bid back. Seat IDs are what the
+  advertiser blacklist is matched against **on the bid**, before a win rather
+  than after it. A partner missing these is flagged as unable to receive bids.
 
 Alongside **Direct / house** — advertisers sold direct, no DSP and no auction,
 always present and not disconnectable.

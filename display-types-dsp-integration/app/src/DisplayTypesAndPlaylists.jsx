@@ -106,7 +106,40 @@ const DSP_PROVIDERS = {
     ],
     defaults: { region: "Europe (EU)", currency: "GBP" },
   },
+  trade_desk: {
+    label: "The Trade Desk",
+    sub: "TTD supply integration",
+    icon: "candlestick_chart",
+    colour: "#1f7ae0",
+    blurb: "The largest independent buyer of programmatic DOOH. Onboarding is a supply-vendor process: seat and supply-source setup on TTD's side, sellers.json validation, then a certification period against live traffic before real spend.",
+    scope: "openrtb::dooh",
+    fields: [
+      { key: "supplySourceId", label: "Supply source ID", required: true,  placeholder: "Assigned by TTD on approval" },
+      { key: "partnerId",      label: "TTD partner ID",   required: true,  placeholder: "e.g. phub-retail" },
+      { key: "apiToken",       label: "API token",        required: true,  secret: true, hint: "For deal setup and reporting reconciliation." },
+      { key: "region",         label: "Region",           required: true,  type: "select", options: ["EMEA", "APAC", "North America"] },
+    ],
+    defaults: { region: "EMEA", currency: "GBP" },
+  },
 };
+
+/* Onboarding order, per REQUIREMENTS.md §7. Shown on the add list so the
+   sequence is visible where someone would otherwise pick arbitrarily. */
+const ONBOARDING_ORDER = ["google_dsp", "amazon_dsp", "trade_desk"];
+
+/* PH is the exchange (§7), so the bidding runs inbound: we send the bid
+   request to the buyer's endpoint and they respond. These fields are that
+   half — the credentials above are the outbound account path, used for deal
+   setup, seat discovery and reporting, not for bidding. */
+const BIDDER_FIELDS = [
+  { key: "bidderEndpoint", label: "Bidder endpoint", required: true,
+    placeholder: "https://\u2026/openrtb2/bid", hint: "Where we send the bid request." },
+  { key: "seatIds", label: "Seat IDs", required: true,
+    placeholder: "Comma separated",
+    hint: "What the advertiser blocklist is matched against on the bid response." },
+  { key: "qps", label: "QPS ceiling", required: false, placeholder: "e.g. 500" },
+  { key: "timeoutMs", label: "Bid timeout (ms)", required: false, placeholder: "e.g. 300" },
+];
 
 /* Slot table columns: #, Label, Owner, Assigned to. The form column this sits
    in is a fixed 400px, so the partner and the advertiser share the last cell,
@@ -129,6 +162,8 @@ const INITIAL_PARTNERS = [
     categories: ["Food & Drink", "Health & Fitness"], exclusions: ["Finance"],
     seats: [{ id: "g1", name: "Nestl\u00e9" }, { id: "g2", name: "Swisse" }],
     listsLinked: true, allowList: [], blockList: [],
+    bidder: { bidderEndpoint: "https://rtb.doubleclick.net/openrtb2/bid", seatIds: "884512, 884513",
+              qps: "500", timeoutMs: "300" },
     lastSync: "Today, 07:12" },
   { id: "p_amazon", provider: "amazon_dsp", name: "Amazon Ads DSP", status: "error",
     creds: { region: "Europe (EU)", clientId: "amzn1.application-oa2-client.7f3c", clientSecret: "\u2022".repeat(16),
@@ -139,6 +174,7 @@ const INITIAL_PARTNERS = [
     listsLinked: false,
     allowList: [{ id: "bl4", name: "L'Or\u00e9al" }],
     blockList: [{ id: "bl1", name: "Red Bull" }, { id: "bl3", name: "Chemist Warehouse" }],
+    bidder: { bidderEndpoint: "", seatIds: "", qps: "", timeoutMs: "" },
     lastSync: "Refresh token rejected \u2014 3 days ago" },
 ];
 
@@ -745,6 +781,8 @@ function PartnersView({ partners, setPartners, companyLists, setCompanyLists, ty
   }, [types, p.id]);
 
   const missing = p.system ? [] : missingCreds(p.provider, p.creds);
+  const missingBidder = p.system || !isDsp(p) ? [] :
+    BIDDER_FIELDS.filter((f) => f.required && !String((p.bidder || {})[f.key] || "").trim()).map((f) => f.label);
   const canConnect = missing.length === 0;
 
   const addPartner = (providerKey) => {
@@ -754,7 +792,8 @@ function PartnersView({ partners, setPartners, companyLists, setCompanyLists, ty
       id, provider: providerKey, name: def.label, status: "draft",
       creds: { ...(def.defaults || {}) }, floorCpm: null, currency: (def.defaults || {}).currency || "GBP",
       auctionType: "Open RTB", categories: [], exclusions: [], seats: [],
-      listsLinked: true, allowList: [], blockList: [], lastSync: null,
+      listsLinked: true, allowList: [], blockList: [],
+      bidder: { bidderEndpoint: "", seatIds: "", qps: "", timeoutMs: "" }, lastSync: null,
     }]);
     setSel(id);
     setAdding(null);
@@ -850,9 +889,15 @@ function PartnersView({ partners, setPartners, companyLists, setCompanyLists, ty
           })}
 
           <SectionLabel>Add a partner DSP</SectionLabel>
-          {Object.entries(DSP_PROVIDERS).map(([k, def]) => (
+          <div style={{ fontSize: 11.5, color: T.micro, marginBottom: 8, lineHeight: 1.5 }}>
+            Onboarding order per REQUIREMENTS &sect;7.
+          </div>
+          {ONBOARDING_ORDER.map((k) => [k, DSP_PROVIDERS[k]]).map(([k, def]) => (
             <div key={k} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", marginBottom: 6,
                                   border: `1px dashed ${T.border}`, borderRadius: 6, opacity: alreadyAdded(k) ? 0.5 : 1 }}>
+              <span style={{ width: 16, fontSize: 11, color: T.micro, textAlign: "center", flexShrink: 0 }}>
+                {ONBOARDING_ORDER.indexOf(k) + 1}
+              </span>
               <Icon name={def.icon} size={18} style={{ color: def.colour }} />
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ fontSize: 13 }}>{def.label}</div>
@@ -951,7 +996,33 @@ function PartnersView({ partners, setPartners, companyLists, setCompanyLists, ty
                   <Note>
                     Credentials are held once, on the partner. A display type never stores them — it only names
                     the partner a position sells through, so rotating a key here fixes every position at once.
+                    This is the <b>outbound</b> path: deal setup, seat discovery and reporting.
                   </Note>
+
+                  {/* The inbound half. PH is the exchange, so the bid request goes
+                      out to the buyer and the bid comes back. */}
+                  <SectionLabel>Bidder integration</SectionLabel>
+                  <div style={{ fontSize: 12, color: T.muted, lineHeight: 1.6, marginBottom: 12 }}>
+                    Personalisation Hub is the exchange, so bidding runs the other way to the credentials
+                    above: we send the bid request to {p.name} and they bid back. Seat IDs matter beyond
+                    reporting &mdash; they are what the advertiser blacklist is matched against on the bid,
+                    before a win rather than after it.
+                  </div>
+                  <Grid cols={2}>
+                    {BIDDER_FIELDS.map((f) => (
+                      <Fld key={f.key} label={<>{f.required && <span style={{ color: T.error }}>*</span>}{f.label}</>} hint={f.hint}>
+                        <input value={(p.bidder || {})[f.key] || ""}
+                          onChange={(e) => setP({ bidder: { ...(p.bidder || {}), [f.key]: e.target.value } })}
+                          placeholder={f.placeholder} style={ctl} />
+                      </Fld>
+                    ))}
+                  </Grid>
+                  {missingBidder.length > 0 && (
+                    <div style={{ marginTop: 10, fontSize: 12, color: T.warning, display: "inline-flex", alignItems: "center", gap: 5 }}>
+                      <Icon name="warning" size={14} />
+                      Cannot receive bids yet — missing {missingBidder.join(", ")}.
+                    </div>
+                  )}
 
                   {/* ------------------------------------ inventory rules */}
                   <SectionLabel>Inventory rules</SectionLabel>
