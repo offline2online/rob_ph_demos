@@ -19,6 +19,19 @@ const RULES = fs.readFileSync(path.join(__dirname, "..", "firestore.rules"), "ut
 const HUMAN = { uid: "human", claims: { email: "rob@offline2online.com", email_verified: true } };
 const BOT = { uid: "bot", claims: { email: "board-automation@backlog-tracker-e4ed2.firebaseapp.com", email_verified: true } };
 const STRANGER = { uid: "stranger", claims: { email: "someone@example.com", email_verified: true } };
+// Membership is a consoleUsers doc now, not a hard-coded list (see the
+// rules' own "Who may use the board"). These four are ordinary Google
+// accounts whose access comes entirely from the rows reset() seeds below —
+// which is the whole point: adding a row is the act of granting access, to
+// the board in a browser and to that person's AI agent over MCP alike.
+const MEMBER = { uid: "member", claims: { email: "sam@personalisationhub.com", email_verified: true } };
+const VIEWER = { uid: "viewer", claims: { email: "kit@personalisationhub.com", email_verified: true } };
+const DISABLED = { uid: "disabled", claims: { email: "expat@personalisationhub.com", email_verified: true } };
+const TEAM_ADMIN = { uid: "teamadmin", claims: { email: "ada@personalisationhub.com", email_verified: true } };
+// Same address as MEMBER but signed in with an unverified email — the rules
+// require email_verified, which for an invited password account is what
+// completing Firebase's password-setup email establishes.
+const UNVERIFIED = { uid: "unverified", claims: { email: "sam@personalisationhub.com", email_verified: false } };
 
 // A project mid-release: the automation has created the train branch and the
 // board has latched the lock, which is exactly the state the Deploy click
@@ -51,6 +64,12 @@ async function reset() {
     await setDoc(doc(db, "faqArticles/a1"), {
       categoryId: "c1", title: "T", slug: "t", bodyMd: "<p>x</p>", status: "published", order: 1,
     });
+    await setDoc(doc(db, "consoleUsers/sam@personalisationhub.com"), { email: "sam@personalisationhub.com", role: "editor" });
+    await setDoc(doc(db, "consoleUsers/kit@personalisationhub.com"), { email: "kit@personalisationhub.com", role: "viewer" });
+    await setDoc(doc(db, "consoleUsers/expat@personalisationhub.com"), { email: "expat@personalisationhub.com", role: "editor", disabled: true });
+    await setDoc(doc(db, "consoleUsers/ada@personalisationhub.com"), { email: "ada@personalisationhub.com", role: "admin" });
+    await setDoc(doc(db, "mcpTokens/deadbeef"), { email: "sam@personalisationhub.com", type: "access" });
+    await setDoc(doc(db, "mcpAuditLog/e1"), { email: "sam@personalisationhub.com", tool: "create_backlog_item" });
   });
 }
 
@@ -116,6 +135,48 @@ async function main() {
     getDoc(doc(as(null), "faqArticles/a1")));
   await check("Nobody may write a help-centre article signed out", "deny", () =>
     setDoc(doc(as(null), "faqArticles/a1"), { title: "Defaced" }, { merge: true }));
+
+  // ── Membership: a consoleUsers row is what grants access ────────────────
+  await check("A member added to consoleUsers can read the board", "allow", () => getDoc(doc(as(MEMBER), "projects/p1")));
+  await check("A member added to consoleUsers can write the board", "allow", () =>
+    setDoc(doc(as(MEMBER), "backlogItems/i1"), { desc: "Edited by a teammate" }, { merge: true }));
+  await check("A viewer can read the board", "allow", () => getDoc(doc(as(VIEWER), "projects/p1")));
+  await check("A viewer CANNOT write the board", "deny", () =>
+    setDoc(doc(as(VIEWER), "backlogItems/i1"), { desc: "Viewers don't get to" }, { merge: true }));
+  await check("A disabled member cannot read the board", "deny", () => getDoc(doc(as(DISABLED), "projects/p1")));
+  await check("A member with an unverified email cannot read the board", "deny", () => getDoc(doc(as(UNVERIFIED), "projects/p1")));
+
+  // ── consoleUsers itself ────────────────────────────────────────────────
+  await check("Anyone signed in may read their OWN membership row (the sign-in gate needs this)", "allow", () =>
+    getDoc(doc(as(STRANGER), "consoleUsers/someone@example.com")));
+  await check("A stranger cannot read someone else's membership row", "deny", () =>
+    getDoc(doc(as(STRANGER), "consoleUsers/sam@personalisationhub.com")));
+  await check("A non-admin member CANNOT add a user", "deny", () =>
+    setDoc(doc(as(MEMBER), "consoleUsers/newbie@personalisationhub.com"), { email: "newbie@personalisationhub.com", role: "editor" }));
+  await check("A non-admin member CANNOT promote themselves to admin", "deny", () =>
+    setDoc(doc(as(MEMBER), "consoleUsers/sam@personalisationhub.com"), { role: "admin" }, { merge: true }));
+  await check("An admin can add a user", "allow", () =>
+    setDoc(doc(as(TEAM_ADMIN), "consoleUsers/newbie@personalisationhub.com"), { email: "newbie@personalisationhub.com", role: "editor" }));
+  await check("An admin cannot file a user under an id that isn't their email", "deny", () =>
+    setDoc(doc(as(TEAM_ADMIN), "consoleUsers/not-the-email"), { email: "newbie@personalisationhub.com", role: "editor" }));
+  await check("An admin cannot invent a role", "deny", () =>
+    setDoc(doc(as(TEAM_ADMIN), "consoleUsers/newbie@personalisationhub.com"), { email: "newbie@personalisationhub.com", role: "superuser" }));
+  await check("An admin cannot delete their own row and strand themselves", "deny", () =>
+    deleteDoc(doc(as(TEAM_ADMIN), "consoleUsers/ada@personalisationhub.com")));
+  await check("An owner account works with no consoleUsers row at all", "allow", () =>
+    setDoc(doc(as(HUMAN), "consoleUsers/newbie2@personalisationhub.com"), { email: "newbie2@personalisationhub.com", role: "viewer" }));
+
+  // ── The MCP credential store is nobody's business but the server's ─────
+  await check("An admin CANNOT read stored MCP tokens", "deny", () => getDoc(doc(as(TEAM_ADMIN), "mcpTokens/deadbeef")));
+  await check("An owner CANNOT read stored MCP tokens", "deny", () => getDoc(doc(as(HUMAN), "mcpTokens/deadbeef")));
+  await check("Nobody can forge an MCP token", "deny", () =>
+    setDoc(doc(as(HUMAN), "mcpTokens/forged"), { email: "rob@offline2online.com", type: "access" }));
+  await check("Nobody can register an MCP client from the browser", "deny", () =>
+    setDoc(doc(as(TEAM_ADMIN), "mcpClients/c1"), { clientId: "c1" }));
+  await check("An admin may read the agent audit log", "allow", () => getDoc(doc(as(TEAM_ADMIN), "mcpAuditLog/e1")));
+  await check("A non-admin member may NOT read the agent audit log", "deny", () => getDoc(doc(as(MEMBER), "mcpAuditLog/e1")));
+  await check("Nobody can edit the agent audit log", "deny", () =>
+    setDoc(doc(as(TEAM_ADMIN), "mcpAuditLog/e1"), { tool: "something else" }, { merge: true }));
 
   await env.cleanup();
 

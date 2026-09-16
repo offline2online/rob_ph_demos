@@ -17,20 +17,66 @@ service cloud.firestore {
 
     // ── Who may use the board ──────────────────────────────────────────────
     // The whole console is behind Google sign-in: every read and write of the
-    // board's collections requires a signed-in account whose verified email
-    // is on this allowlist (mirrored in public/js/auth-gate.js — keep the two
-    // in sync). Server-side jobs (Cloud Functions, the deploy workflow's
-    // scripts, the backlog automation) use a service account and bypass
-    // rules. The only anonymous access left is READ of the two help-centre
+    // board's collections requires a signed-in account. WHO that can be is no
+    // longer a hard-coded list — it is the consoleUsers collection below, one
+    // doc per person keyed by their lowercased email, written from the
+    // console's Settings → Team & agent access. That is the single definition
+    // of "added as a user to the platform", and it gates BOTH halves of a
+    // person's access: their browser session (public/js/auth-gate.js reads
+    // their own doc) and their AI agent's MCP connection
+    // (functions/mcp-server.js resolves the same doc on every call, so
+    // removing someone cuts their agent off at once rather than whenever a
+    // token happens to expire).
+    //
+    // Two accounts stay hard-coded as owners so an empty or mis-edited
+    // consoleUsers collection can never lock everyone out of the thing that
+    // grants access, plus the board automation user the Routine signs in as.
+    // Server-side jobs (Cloud Functions, the deploy workflow's scripts, the
+    // backlog automation) use a service account and bypass rules entirely.
+    // The only anonymous access left is READ of the two help-centre
     // collections, which feed the public FAQ site.
-    function isEditor() {
+    function signedIn() {
+      // email_verified matters for a password account as much as a Google
+      // one: an invited member sets their password through Firebase's own
+      // reset email, and completing that is what verifies the address.
       return request.auth != null
         && request.auth.token.email_verified == true
-        && request.auth.token.email in [
-          "rob@offline2online.com",
-          "rob@personalisationhub.com",
-          "board-automation@backlog-tracker-e4ed2.firebaseapp.com"
-        ];
+        && request.auth.token.email is string;
+    }
+    function callerEmail() {
+      return signedIn() ? request.auth.token.email.lower() : "";
+    }
+    function isOwnerAccount() {
+      return callerEmail() in [
+        "rob@offline2online.com",
+        "rob@personalisationhub.com"
+      ];
+    }
+    function isAutomationAccount() {
+      return callerEmail() == "board-automation@backlog-tracker-e4ed2.firebaseapp.com";
+    }
+    function memberDoc() {
+      return get(/databases/$(database)/documents/consoleUsers/$(callerEmail())).data;
+    }
+    function isMember() {
+      return signedIn()
+        && exists(/databases/$(database)/documents/consoleUsers/$(callerEmail()))
+        && memberDoc().disabled != true;
+    }
+    // Read the board: any member, whatever their role.
+    function isBoardReader() {
+      return isOwnerAccount() || isAutomationAccount() || isMember();
+    }
+    // Change the board: everyone except an explicit "viewer". A viewer is
+    // the read-only role an admin picks when someone (or someone's agent)
+    // should see the board without being able to move anything on it.
+    function isEditor() {
+      return isOwnerAccount() || isAutomationAccount()
+        || (isMember() && memberDoc().role != "viewer");
+    }
+    // Manage who else is on the console.
+    function isAdmin() {
+      return isOwnerAccount() || (isMember() && memberDoc().role == "admin");
     }
 
     // ── Deployment train state on a project ────────────────────────────────
@@ -94,7 +140,7 @@ service cloud.firestore {
     }
 
     match /projects/{projectId} {
-      allow read: if isEditor();
+      allow read: if isBoardReader();
       allow create: if isEditor() && isNonEmptyBoundedString(incoming().name, 80)
         && (isBoardAutomation() || (
           !("deployBranch" in incoming()) && !("trainReady" in incoming())
@@ -112,13 +158,13 @@ service cloud.firestore {
     // the projects rule above only insofar as `name` still has to be
     // present on any project write.
     match /programs/{programId} {
-      allow read: if isEditor();
+      allow read: if isBoardReader();
       allow create, update: if isEditor() && isNonEmptyBoundedString(incoming().name, 80);
       allow delete: if isEditor();
     }
 
     match /backlogItems/{itemId} {
-      allow read: if isEditor();
+      allow read: if isBoardReader();
 
       allow create, update: if isEditor() &&
         isNonEmptyBoundedString(incoming().projectId, 100) &&
@@ -135,7 +181,7 @@ service cloud.firestore {
     // — the backlog-tracker-native equivalent of a shared markdown file in
     // the repo, editable by whoever is driving either project's board.
     match /interfaces/{interfaceId} {
-      allow read: if isEditor();
+      allow read: if isBoardReader();
 
       allow create, update: if isEditor() &&
         isNonEmptyBoundedString(incoming().name, 120) &&
@@ -155,7 +201,7 @@ service cloud.firestore {
     // itself) — the "Additional documents" list on that project's Docs
     // page. Unlike an interface, never shared between two projects.
     match /projectDocs/{docId} {
-      allow read: if isEditor();
+      allow read: if isBoardReader();
 
       allow create, update: if isEditor() &&
         isNonEmptyBoundedString(incoming().projectId, 100) &&
@@ -164,6 +210,52 @@ service cloud.firestore {
         incoming().contentMd.size() <= 20000;
 
       allow delete: if isEditor();
+    }
+
+    // ── People, and their agents ──────────────────────────────────────────
+    // One doc per person on the console, id = their lowercased email:
+    //   { email, displayName, role: "admin"|"editor"|"viewer",
+    //     disabled?: bool, mcpEnabled?: bool, createdAt, createdBy }
+    // This is what isBoardReader/isEditor/isAdmin above resolve against, so
+    // adding a row here is the whole act of giving someone access — to the
+    // board in a browser AND to the MCP server their AI agent connects to
+    // (backlog-tracker/MCP.md). mcpEnabled (default true when absent) turns
+    // just the agent half off without removing the person.
+    match /consoleUsers/{userEmail} {
+      // A signed-in person may always read their OWN row. auth-gate.js has
+      // to check membership before it can know whether the caller is a
+      // member — without this self-read that is a chicken-and-egg and every
+      // new member sees the "not on the editor list" screen forever.
+      allow read: if isBoardReader() || (signedIn() && userEmail == callerEmail());
+      allow create, update: if isAdmin()
+        && incoming().email is string
+        && userEmail == incoming().email.lower()
+        && isNonEmptyBoundedString(incoming().email, 200)
+        && incoming().role in ["admin", "editor", "viewer"]
+        && (!("displayName" in incoming()) || (incoming().displayName is string && incoming().displayName.size() <= 120))
+        && (!("disabled" in incoming()) || incoming().disabled is bool)
+        && (!("mcpEnabled" in incoming()) || incoming().mcpEnabled is bool);
+      // Removing yourself is the one way an admin could strand their own
+      // session mid-click; disable the row instead if that is really meant.
+      allow delete: if isAdmin() && userEmail != callerEmail();
+    }
+
+    // ── MCP server state (functions/mcp-server.js) ────────────────────────
+    // Registered OAuth clients, hashed authorization codes and hashed
+    // access/refresh tokens. Written only by the Cloud Function, which uses
+    // the admin SDK and bypasses these rules — so the correct rule for every
+    // browser, every signed-in person and the boardApi proxy alike is "no".
+    // Even hashed, this is the credential store standing behind every team
+    // member's agent, and nothing in the UI has any reason to read it.
+    match /mcpClients/{clientId} { allow read, write: if false; }
+    match /mcpAuthCodes/{codeHash} { allow read, write: if false; }
+    match /mcpTokens/{tokenHash} { allow read, write: if false; }
+    // The audit trail of what agents actually did. Admin-readable so a
+    // person can answer "who filed this ticket and from what"; append-only
+    // from the server.
+    match /mcpAuditLog/{entryId} {
+      allow read: if isAdmin();
+      allow write: if false;
     }
 
     // ── FAQ / Help Center content ─────────────────────────────────────────
@@ -194,7 +286,7 @@ service cloud.firestore {
     // every other write from run-backlog-automation.js already does.
     // Nothing in the browser is ever meant to write this, only read it.
     match /systemStatus/{docId} {
-      allow read: if isEditor();
+      allow read: if isBoardReader();
     }
 
     // A proposed revision parked on an article by the Deploy-flow Routine
@@ -249,7 +341,7 @@ service cloud.firestore {
     // (faq/data/settings.json) — the public site itself never talks to
     // Firestore for this.
     match /settings/{docId} {
-      allow read: if isEditor();
+      allow read: if isBoardReader();
       allow create, update: if isEditor()
         && (!("analyticsTag" in incoming()) || incoming().analyticsTag == null
           || (incoming().analyticsTag is string && incoming().analyticsTag.size() <= 40));

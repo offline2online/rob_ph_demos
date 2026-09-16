@@ -1124,3 +1124,16 @@ exports.boardApi = onRequest({ secrets: [BOARD_API_KEY], cors: false, timeoutSec
     res.status(502).json({ error: "upstream request failed" });
   }
 });
+
+// ── PH Agent Console MCP server ───────────────────────────────────────────
+// Lets a team member's own AI agent use this board as a tool, signing in
+// with the same Personalisation Hub / offline2online account they use for
+// the console itself — an OAuth 2.1 flow over Firebase Auth, not a shared
+// key. Deliberately separate from boardApi above: boardApi is ONE shared
+// secret for the Routine's own automation, this is per-person, per-token,
+// revocable access with the writer's email attached to everything it does.
+// Required after initializeApp() has run, since it uses the admin SDK.
+// See ../MCP.md for the full flow and the tool list.
+const mcp = require("./mcp-server");
+exports.mcpServer = mcp.mcpServer;
+exports.syncConsoleUserClaims = mcp.syncConsoleUserClaims;

@@ -355,17 +355,28 @@ through Merged to Main (Live). Both fields are in
 the REST-primed first paint rather than popping in when the realtime
 listener lands.
 
-## Testing the Firestore rules
+## Testing the rules and the MCP server
 
-`test/` runs `firestore.rules` — the real file — inside the Firestore
-emulator and asserts what each principal may and may not write:
+`test/` holds two suites:
+
+- **`firestore-rules.test.js`** runs `firestore.rules` — the real file —
+  inside the Firestore emulator and asserts what each principal may and may
+  not write, including the membership model (`consoleUsers`) and the fact
+  that nobody may read the MCP credential store.
+- **`mcp-server.test.js`** drives `functions/mcp-server.js` end to end —
+  client registration, sign-in, PKCE code exchange, `tools/list`,
+  `tools/call`, and every refusal that matters. It stubs the Firebase SDKs
+  (`mcp-stubs.js`), so it needs no emulator, no Java, no credentials and no
+  network.
 
 ```bash
-cd backlog-tracker/test && npm install && npm test
+cd backlog-tracker/test && npm install && npm test   # both
+npm run test:mcp     # just the MCP suite — runs anywhere, instantly
+npm run test:rules   # just the rules suite — needs the emulator
 ```
 
-`.github/workflows/firestore-rules-test.yml` runs it on every pull request
-that touches the rules or the tests, and on push to `main`. On a PR it is
+`.github/workflows/firestore-rules-test.yml` runs both on every pull request
+that touches the rules, the MCP server or the tests, and on push to `main`. On a PR it is
 also the first real status check this repo has had, so it is what
 `processDeployTrain` actually waits on before merging a train — broken rules
 fail the check and the train refuses to merge.
@@ -490,6 +501,41 @@ Firestore field, not a code change, so it never goes through
 `patchFiles`/`patchReady`) — see `REQUIREMENTS.md` → "Data model" and
 `ROUTINE_INSTRUCTIONS.md` → "Project Artifact" for the field shape and how
 a Routine run creates or updates one.
+
+## Who can use this, and their AI agents (MCP)
+
+Access is no longer a hard-coded list of two emails. **One Firestore doc per
+person — `consoleUsers/<lowercased email>` — decides both halves of their
+access**: whether they can open the console in a browser, and whether their
+own AI agent may connect to it. Admins manage the list from **Settings →
+Team & agent access**; `firestore.rules` and `functions/mcp-server.js`
+resolve the same doc, so adding or removing someone is a single act.
+
+Roles are `admin` (manages the list), `editor` (read + write) and `viewer`
+(read only — the board shows a read-only banner and the rules refuse their
+writes). Two owner accounts stay hard-coded in the rules so an empty or
+mis-edited collection can never lock everyone out.
+
+Sign-in is **Google or email + password**. For someone with no Google
+account, an admin presses *Send sign-in setup* on their row: that creates
+their Firebase Auth login and emails them a link to choose their own
+password. Nobody types or sends a password on anyone's behalf.
+
+**The MCP server** (`functions/mcp-server.js`, served at
+`https://backlog-tracker-e4ed2.web.app/mcp`) lets a member's agent use the
+board and the help centre as a tool, authenticating with that same account
+through a proper OAuth 2.1 flow — no key to mint, paste or rotate, and
+everything the agent writes is attributed to their email. It is deliberately
+read/file/comment only: **no tool deploys, merges, approves, moves a card's
+status, or triggers a campaign.** Those stay on the board's own buttons and
+the triggered Routine.
+
+This is a different thing from `boardApi` (further down this file), which is
+ONE shared secret standing in for the Routine's own automation. The MCP
+server is per-person, per-token and individually revocable.
+
+**Read [`MCP.md`](./MCP.md)** for how to connect a client, how an admin adds
+someone, the full tool list, and how the OAuth flow is built.
 
 ## Setup (all manual — this sandbox has no Firebase CLI/deploy access)
 
@@ -1090,9 +1136,9 @@ default.
   exports Firestore → `faq/data` hourly/on demand and syncs `faq/data` →
   Firestore on push (`scripts/faq-export.js`, `scripts/faq-sync.js`). See
   `faq/README.md` and `docs/faq-audit-2026-09.md`.
-- **Sign-in**: the whole console requires an allowlisted Google account
-  (see "What's deliberately not built yet" → sign-in, below); FAQ writes
-  are covered by the same `isEditor` rule. The FAQ pages additionally show
+- **Sign-in**: the whole console requires a signed-in member (see "Who can
+  use this, and their AI agents (MCP)" above); FAQ writes are covered by the
+  same `isEditor` rule. The FAQ pages additionally show
   who is editing, and every save/reorder/delete goes through
   `requireFaqEditor()` in `app.js`.
 - **Admin**: two separate hamburger-menu destinations, **Settings**
@@ -1241,12 +1287,16 @@ default.
 
 ## What's deliberately not built yet
 
-- ~~No auth.~~ **The whole console is behind Google sign-in** (September
-  2026): `public/js/auth-gate.js` shows a sign-in wall and only imports
-  `app.js` once an allowlisted, verified Google account is signed in;
-  `firestore.rules` (`isEditor`) and `storage.rules` require that same
-  allowlist for every read and write of the board's collections and
-  attachments. Only the two help-centre collections remain publicly
+- ~~No auth.~~ ~~**The whole console is behind Google sign-in** with a
+  hard-coded allowlist.~~ **It is behind a real, managed member list**
+  (September 2026): `public/js/auth-gate.js` shows a sign-in wall — Google
+  or email + password — and only imports `app.js` once the account resolves
+  to a `consoleUsers` membership doc; `firestore.rules` (`isBoardReader` /
+  `isEditor` / `isAdmin`) reads that same doc for every read and write of
+  the board's collections, and `storage.rules` checks the `consoleEditor`
+  custom claim kept in step with it. Admins add and remove people from
+  **Settings → Team & agent access**, and the same row governs whether that
+  person's AI agent may connect over MCP (see `MCP.md`). Only the two help-centre collections remain publicly
   readable (the public FAQ site needs them). Automation that used to call
   Firestore's REST API anonymously now authenticates: the GitHub Actions
   automation uses the deploy service account, and Routine-fired Claude
@@ -1258,9 +1308,10 @@ default.
   `*.googleapis.com`, which their sandbox can reach. The `boardApi` Cloud
   Function proxy (`X-Board-Key` header, also served at
   `https://backlog-tracker-e4ed2.web.app/boardApi/...`) remains as a
-  fallback. To add an
-  editor, add their email to the allowlist in all three files
-  (`auth-gate.js`, `firestore.rules`, `storage.rules`).
+  fallback. Adding an editor is now a
+  row in Settings → Team & agent access, not an edit to three files; only
+  the two owner accounts are still hard-coded, as the bootstrap that makes
+  an empty member list non-fatal.
 - **No drag-and-drop.** Multi-project and an archive page (per-project
   "Archived (N)" button → sortable/filterable table, with a Restore
   action) have both since been ported over from the Artifact board;

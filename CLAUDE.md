@@ -194,10 +194,15 @@ verify and merge the train for real. See `backlog-tracker/README.md` →
 
 **There's no separate "publish" step anymore — a write to Firestore is
 live immediately**, for every open tab, via `onSnapshot()`. **The board is
-behind Google sign-in**: `backlog-tracker/firestore.rules` requires an
-allowlisted signed-in editor for every read and write of the board's
-collections (only the two help-centre collections stay publicly readable),
-so anonymous REST calls to `firestore.googleapis.com` are denied. Outside
+behind sign-in** (Google, or an email and password): every read and write of
+the board's collections requires a signed-in **member** — a
+`consoleUsers/<lowercased email>` doc, managed from the console's
+**Settings → Team & agent access**, which `backlog-tracker/firestore.rules`
+resolves on every request (only the two help-centre collections stay
+publicly readable), so anonymous REST calls to `firestore.googleapis.com`
+are denied. That same row also decides whether that person's **AI agent**
+may connect to the console over MCP — see "The PH Agent Console is also an
+MCP server" below. Outside
 the browser UI, sign in as the board automation user over Identity Toolkit
 (email `board-automation@backlog-tracker-e4ed2.firebaseapp.com`, password =
 the `BOARD_API_KEY` secret; Routine-fired sessions receive it in their fire
@@ -270,6 +275,46 @@ instant, so there's no excuse for the board drifting from reality.
 - New items no longer take a title or category up front — just a
   description (typed or dictated); a short title is auto-generated and the
   category best-guessed (`suggestCategory()`), same spirit as before.
+
+### The PH Agent Console is also an MCP server
+
+`https://backlog-tracker-e4ed2.web.app/mcp` — a team member's own AI agent
+(Claude Desktop, Claude Code, a claude.ai custom connector, anything that
+speaks MCP) can use the board and the help centre as a tool, authenticating
+with the same Personalisation Hub / offline2online account they use for the
+console itself. **No API key to mint, paste, share or rotate**: the client
+runs a standard OAuth 2.1 flow (`backlog-tracker/functions/mcp-server.js` is
+its own authorization server — dynamic client registration, mandatory PKCE
+S256, rotating refresh tokens), the person signs in with Google or a
+password, and everything their agent writes is attributed to their email on
+the ticket and in `mcpAuditLog`.
+
+- **Who may connect is the same `consoleUsers` row as browser access** (see
+  above), re-checked on every single call — removing someone, disabling
+  them, or switching their agent off cuts it immediately, not at token
+  expiry. Roles: `admin` (manages the list) / `editor` (read + write) /
+  `viewer` (read only; `board.write` is never issued to one).
+- **The tool surface is read/file/comment only, deliberately.** Read:
+  `whoami`, `list_projects`, `list_backlog_items`, `get_backlog_item`,
+  `get_project_docs`, `search_faq`, `get_faq_article`. Write:
+  `create_backlog_item` (always into Backlog), `update_backlog_item` (title,
+  desc, type, category — **no status**), `add_item_comment`.
+- **Nothing there deploys, merges, approves a ticket out of Ready for
+  Testing, moves a card, writes a train field, fires Notify Claude, or
+  triggers a campaign.** Campaign triggering stays on the triggered Routine
+  and the release pipeline keeps its human gates. Don't add a tool that
+  changes that without saying so explicitly —
+  `backlog-tracker/test/mcp-server.test.js` asserts the surface.
+- **Not the same thing as `boardApi`/`BOARD_API_KEY`**, which is one shared
+  secret standing in for the Routine's own automation and stays as it is.
+  The MCP server is per-person, per-token and individually revocable.
+- Full detail — connecting a client, adding a member, provisioning a login
+  for someone with no Google account, the OAuth endpoints, what is and isn't
+  stored — is in **`backlog-tracker/MCP.md`**.
+- Tests: `cd backlog-tracker/test && npm run test:mcp` drives the whole flow
+  against stubbed Firebase SDKs — no emulator, no credentials, no network,
+  so it runs in this sandbox. The browser half of the sign-in page (a real
+  Google popup) is the part that can only be checked on the deployment.
 
 ### Project header: one primary CTA, everything else in "⋮"
 
