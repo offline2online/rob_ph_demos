@@ -2,10 +2,12 @@ name: Rules & MCP server tests
 
 # Runs backlog-tracker/firestore.rules — the real file — against the Firestore
 # emulator and asserts what each principal may and may not write, and runs
-# backlog-tracker/test/mcp-server.test.js, which drives the MCP server's OAuth
-# and tool surface end to end against stubbed Firebase SDKs (no emulator).
-# Same reasoning for both: they are the access-control layer, and the rest of
-# the pipeline's harness stubs the database in a way that permits everything.
+# backlog-tracker/test/mcp-server.test.js and mcp-client.test.mjs, which drive
+# the MCP server's OAuth and tool surface end to end — the first in-process
+# against stubbed Firebase SDKs, the second with the real MCP client SDK over
+# real HTTP. Same reasoning for all three: they are the access-control layer,
+# and the rest of the pipeline's harness stubs the database in a way that
+# permits everything.
 #
 # This exists because of a specific production failure. The deployment train
 # shipped with a rules bug that took Deploy to Main out of service: every
@@ -79,6 +81,12 @@ jobs:
       # emulator setup above is not the suspect.
       - name: Run MCP server tests
         run: npm run test:mcp
+
+      # The real @modelcontextprotocol/sdk client against the real server over
+      # HTTP — this is what catches a discovery document or a transport detail
+      # an in-process test would never exercise.
+      - name: Run MCP client integration test
+        run: npm run test:client
 
       - name: Run rules tests against the emulator
         run: npm run test:rules

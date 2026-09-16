@@ -363,16 +363,22 @@ listener lands.
   inside the Firestore emulator and asserts what each principal may and may
   not write, including the membership model (`consoleUsers`) and the fact
   that nobody may read the MCP credential store.
-- **`mcp-server.test.js`** drives `functions/mcp-server.js` end to end —
+- **`mcp-server.test.js`** drives `functions/mcp-server.js` in-process —
   client registration, sign-in, PKCE code exchange, `tools/list`,
   `tools/call`, and every refusal that matters. It stubs the Firebase SDKs
   (`mcp-stubs.js`), so it needs no emulator, no Java, no credentials and no
   network.
+- **`mcp-client.test.mjs`** points the real `@modelcontextprotocol/sdk`
+  client at the real server over HTTP (`mcp-live-server.js`), letting the SDK
+  do its own discovery, registration, PKCE and transport handling. That is
+  what catches anything a real client would reject but an in-process call
+  never would.
 
 ```bash
-cd backlog-tracker/test && npm install && npm test   # both
-npm run test:mcp     # just the MCP suite — runs anywhere, instantly
-npm run test:rules   # just the rules suite — needs the emulator
+cd backlog-tracker/test && npm install && npm test   # all three
+npm run test:mcp     # MCP logic — runs anywhere, instantly
+npm run test:client  # MCP over HTTP with a real client
+npm run test:rules   # rules — needs the emulator
 ```
 
 `.github/workflows/firestore-rules-test.yml` runs both on every pull request

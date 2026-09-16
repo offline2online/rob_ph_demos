@@ -182,8 +182,10 @@ read and by the MCP server's own per-call check, neither of which is cached.
 | `storage.rules` | the `consoleEditor` claim check |
 | `public/js/auth-gate.js` | the console's own sign-in wall, now membership-based, with password sign-in |
 | `public/js/app.js` | Settings → Team & agent access, and Connect your AI agent |
-| `test/mcp-server.test.js` | end-to-end test of the whole flow, no emulator needed (`npm run test:mcp` in `test/`) |
-| `test/mcp-stubs.js` | in-memory Firebase SDKs that test uses |
+| `test/mcp-server.test.js` | in-process test of the whole flow, no emulator needed (`npm run test:mcp` in `test/`) |
+| `test/mcp-client.test.mjs` | the real MCP client SDK against the real server over HTTP (`npm run test:client`) |
+| `test/mcp-live-server.js` | serves the real server on localhost for that test |
+| `test/mcp-stubs.js` | in-memory Firebase SDKs both tests use |
 
 ## Deploying it
 
@@ -204,15 +206,28 @@ Firebase console for `backlog-tracker-e4ed2`:
 
 ## Testing it here
 
-`test/mcp-server.test.js` drives registration → sign-in → PKCE exchange →
-`initialize` → `tools/list` → `tools/call` and the refusals that matter,
-against the stubbed SDKs in `test/mcp-stubs.js`. It needs no emulator, no
-credentials and no network:
+Two suites, neither needing the emulator, credentials or network access:
 
 ```bash
-cd backlog-tracker/test && npm run test:mcp
+cd backlog-tracker/test && npm install
+npm run test:mcp      # in-process: the logic
+npm run test:client   # over HTTP: a real MCP client
 ```
 
-What it cannot cover, and what to check on the real deployment: the browser
-half of `/mcp/authorize` (a real Google popup and a real Firebase sign-in),
-and a real MCP client's own discovery sequence.
+- **`mcp-server.test.js`** calls the request handler directly and drives
+  registration → sign-in → PKCE exchange → `initialize` → `tools/list` →
+  `tools/call`, plus every refusal that matters (wrong verifier, replayed
+  code, unregistered redirect, unknown member, viewer write, revoked access).
+- **`mcp-client.test.mjs`** points the real `@modelcontextprotocol/sdk`
+  client at the real server running on localhost (`mcp-live-server.js`). The
+  SDK does its own discovery, dynamic registration, PKCE and token handling —
+  none of it simulated — so this is what catches a metadata document a real
+  client won't accept, a redirect it won't follow, or a transport detail
+  (405 on `GET`, 202 on a notification, the `WWW-Authenticate` hint) that an
+  in-process test would never reach.
+
+Between them the only untested step is the human's click on the consent page,
+which both suites script by POSTing the signed-in Firebase ID token to
+`/mcp/authorize/complete` exactly as that page's own JavaScript does. **What
+to check on the real deployment:** a real Google popup and a real Firebase
+sign-in on `/mcp/authorize`.
