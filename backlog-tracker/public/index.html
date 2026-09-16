@@ -4,6 +4,13 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>PH Agent Console</title>
+  <!-- The PH mark on its own (img/ph-mark.svg, lifted from the wordmark) —
+       the browser tab, and the fallback some MCP clients use for a connector
+       that doesn't declare its own icon. functions/mcp-server.js also names
+       these files explicitly in the server's `icons`. -->
+  <link rel="icon" type="image/svg+xml" href="img/ph-mark.svg">
+  <link rel="icon" type="image/png" sizes="64x64" href="img/ph-mark-64.png">
+  <link rel="apple-touch-icon" href="img/ph-mark-192.png">
   <!-- Establish connections to the CDN origins up front — the stylesheets
        right below and the two deferred scripts near the bottom of <head>
        all come from these two hosts, so paying the DNS/TLS handshake cost
@@ -30,9 +37,22 @@
   <div class="auth-gate" id="auth-gate">
     <div class="auth-gate-card">
       <h1><img src="img/ph-agent-console-logo.svg" alt="PH Agent Console" class="auth-gate-logo"></h1>
-      <p>Sign in with an authorised Google account to open the board and the help-centre editor.</p>
+      <p>Sign in with your Personalisation Hub account to open the board and the help-centre editor.</p>
       <button type="button" class="btn-primary" id="auth-gate-signin" hidden>Sign in with Google</button>
+      <!-- The other half of "Google login or the login credentials": a
+           member invited by an admin who has no Google account signs in
+           with the password they set from Firebase's own setup email. -->
+      <div class="auth-gate-password" id="auth-gate-password" hidden>
+        <div class="auth-gate-divider"><span>or use your email and password</span></div>
+        <label class="field-label" for="auth-gate-email">Email</label>
+        <input type="email" id="auth-gate-email" autocomplete="username" placeholder="you@personalisationhub.com">
+        <label class="field-label" for="auth-gate-password-input">Password</label>
+        <input type="password" id="auth-gate-password-input" autocomplete="current-password">
+        <button type="button" class="btn-ghost" id="auth-gate-password-signin">Sign in</button>
+        <button type="button" class="link-btn" id="auth-gate-reset">Forgot your password?</button>
+      </div>
       <button type="button" class="btn-ghost" id="auth-gate-signout" hidden>Sign out</button>
+      <button type="button" class="btn-ghost" id="auth-gate-retry" hidden>Try again</button>
       <p class="auth-gate-status" id="auth-gate-status" aria-live="polite">Checking sign-in…</p>
     </div>
   </div>
@@ -608,11 +628,65 @@
 
     <section class="faq-admin-page" id="faq-settings-page" hidden>
       <div class="page-header">
-        <h2>Settings — FAQ / Help Center</h2>
+        <h2>Settings</h2>
+      </div>
+
+      <!-- Team & agent access. One list, two things at once: who can open
+           this console in a browser, and whose AI agent may connect to it
+           over MCP. Both resolve to the same consoleUsers Firestore doc, so
+           adding or removing someone is a single act — see ../MCP.md and
+           firestore.rules' isBoardReader/isEditor/isAdmin. -->
+      <div class="docs-block team-admin-block" data-admin-only>
+        <div class="docs-block-header">
+          <h3>Team &amp; agent access</h3>
+        </div>
+        <p class="field-hint">Anyone listed here can sign in to the PH Agent Console — with Google, or with an email and password — and connect their own AI agent to it. <strong>Editor</strong> can change the board; <strong>viewer</strong> can only read it; <strong>admin</strong> can also manage this list. Turning <em>Agent</em> off leaves someone's browser access untouched but disconnects their agent immediately.</p>
+
+        <div class="team-add-row">
+          <div style="flex:1 1 220px;">
+            <label class="field-label" for="team-add-email">Email</label>
+            <input type="email" id="team-add-email" maxlength="200" placeholder="teammate@personalisationhub.com">
+          </div>
+          <div style="flex:1 1 160px;">
+            <label class="field-label" for="team-add-name">Name (optional)</label>
+            <input type="text" id="team-add-name" maxlength="120" placeholder="Sam Patel">
+          </div>
+          <div>
+            <label class="field-label" for="team-add-role">Role</label>
+            <select id="team-add-role">
+              <option value="editor" selected>Editor</option>
+              <option value="viewer">Viewer</option>
+              <option value="admin">Admin</option>
+            </select>
+          </div>
+          <button type="button" class="btn-primary" id="team-add-btn">Add</button>
+        </div>
+        <p class="field-hint" id="team-add-hint">Google accounts work as soon as they're added. For someone without one, use <strong>Send sign-in setup</strong> on their row — it creates their login and emails them a link to choose a password.</p>
+
+        <div class="team-list" id="team-list"></div>
+      </div>
+
+      <!-- Every member sees this one: the address their own agent connects
+           to, and the connections they currently have. -->
+      <div class="docs-block">
+        <div class="docs-block-header">
+          <h3>Connect your AI agent</h3>
+        </div>
+        <p class="field-hint">Add the PH Agent Console to Claude (or any MCP client) as a remote MCP server. It will open a sign-in page — use the same account you're signed in with here. Your agent never sees your password, and everything it files or comments is recorded under your email.</p>
+        <div class="mcp-connect-box">
+          <span class="field-label" style="margin-top:0;">Server URL</span>
+          <code id="mcp-url">https://backlog-tracker-e4ed2.web.app/mcp</code>
+          <p class="field-hint">In Claude Code: <code style="display:inline;padding:2px 5px;">claude mcp add --transport http ph-console https://backlog-tracker-e4ed2.web.app/mcp</code></p>
+          <div class="form-row" style="justify-content:flex-start;gap:8px;">
+            <button type="button" class="btn-ghost" id="mcp-copy-btn">Copy URL</button>
+            <button type="button" class="btn-ghost" id="mcp-refresh-connections">Refresh connections</button>
+          </div>
+        </div>
+        <div class="mcp-connections" id="mcp-connections"></div>
       </div>
 
       <div class="docs-block">
-        <h3>Analytics</h3>
+        <h3>Analytics — FAQ / Help Center</h3>
         <p class="field-hint">A Google Analytics measurement ID (e.g. <code>G-XXXXXXXXXX</code>) or a Google Tag Manager container ID (e.g. <code>GTM-XXXXXXX</code>) — set here once, it gets appended to every customer-facing FAQ page (the front page, category pages, article pages, and search), not just one. Leave blank to track nothing.</p>
         <input type="text" id="fa-analytics-tag-input" maxlength="40" placeholder="G-XXXXXXXXXX or GTM-XXXXXXX">
         <div class="form-row" style="justify-content:flex-end;">
@@ -688,6 +762,11 @@
          syncMobileActionBar() in app.js for why an in-flow sticky header
          that collapses cannot work here. -->
     <div class="mobile-action-bar" id="mobile-action-bar" hidden aria-live="off"></div>
+
+    <!-- Shown only when auth-gate.js resolves the signed-in person as a
+         viewer (see styles.css "Roles"); firestore.rules refuses their
+         writes, so saying so up front beats letting clicks fail. -->
+    <div class="readonly-banner" id="readonly-banner">You have read-only access to this console. An admin can change your role in Settings &rarr; Team &amp; agent access.</div>
 
     <div id="projects-root"></div>
 

@@ -1,12 +1,16 @@
 {
   "name": "backlog-tracker-rules-tests",
   "private": true,
-  "description": "Firestore security-rules tests, run against the real rules file in the Firebase emulator.",
+  "description": "Tests for backlog-tracker's access-control layer: Firestore security rules (real rules file, Firebase emulator), the MCP server's logic (stubbed Firebase SDKs), and the MCP server over real HTTP driven by the official MCP client SDK.",
   "scripts": {
-    "test": "firebase emulators:exec --only firestore --project demo-backlog-tracker 'node firestore-rules.test.js'"
+    "test": "npm run test:mcp && npm run test:client && npm run test:rules",
+    "test:mcp": "node mcp-server.test.js",
+    "test:client": "node mcp-client.test.mjs",
+    "test:rules": "firebase emulators:exec --only firestore --project demo-backlog-tracker 'node firestore-rules.test.js'"
   },
   "devDependencies": {
     "@firebase/rules-unit-testing": "^5.0.2",
+    "@modelcontextprotocol/sdk": "^1.30.0",
     "firebase": "^12.0.0",
     "firebase-tools": "^13.0.0"
   },
