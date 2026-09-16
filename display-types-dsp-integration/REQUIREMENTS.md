@@ -279,6 +279,26 @@ allowed to clear into a position and are **enforced at auction time, not
 reconciled afterwards** — a blocked advertiser must never render, not render
 and get credited back.
 
+**Defined centrally, adopted by every connected DSP.** The lists live once, at
+company level. A newly connected partner adopts them automatically — brand
+safety should not depend on someone remembering to re-enter a blocklist on each
+integration.
+
+A partner can **unlink** and keep its own lists instead. This is the same
+inheritance rule the project already uses for display types (§2): the override
+wins, and a later edit to the company lists never reaches it. Two rules follow
+from that, and both matter more here than they do for a display setting:
+
+- **Unlinking copies the inherited lists down**, so the partner starts from what
+  it already had rather than from nothing. Unlinking must never be a moment
+  where a blacklist silently empties.
+- **Relinking discards the partner's own lists.** It is destructive and says so.
+
+Because an edit made centrally provably does not reach an unlinked partner, the
+central screen shows **which partners are adopting and which have their own**,
+with a count per partner. A change whose blast radius quietly misses two
+partners is the failure this view exists to prevent.
+
 An advertiser cannot sit on both; adding it to one removes it from the other.
 Approved-and-blocked has no meaning, and a UI that permits it just defers the
 argument to whoever reads the two lists later.
@@ -420,8 +440,11 @@ otherwise we sell guarantees we cannot meet.
   test, advertisers pulled on connect, and the positions sold through each.
 - **Per-partner targeting attribute enablement**: which registry attributes
   this partner may target, visitor attributes off by default.
-- **Advertiser whitelist/blacklist editor** per DSP partner, accepting free
-  text as well as connected seats, with the two lists mutually exclusive.
+- **Company advertiser lists** — one central whitelist/blacklist, adopted by
+  every connected DSP, showing which partners adopt and which have unlinked.
+- **Per-DSP list override**: unlink (copying the inherited lists down) and
+  relink (discarding the partner's own), with inherited lists shown read-only
+  and visually distinct from an override.
 - **Per-advertiser approval-required toggle**, and a campaign approval queue
   for the advertisers it is set on.
 - **Campaign set editor** per reservation: one baseline, plus targeted

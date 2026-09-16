@@ -113,15 +113,14 @@ const INITIAL_PARTNERS = [
   { id: DIRECT_PARTNER, provider: null, name: "Direct / house", status: "connected", system: true,
     seats: ADVERTISERS.map((a) => ({ id: a, name: a })), creds: {}, floorCpm: null, currency: "GBP",
     auctionType: "Preferred deal", categories: [], exclusions: [],
-    allowList: [], blockList: [], lastSync: null },
+    listsLinked: false, allowList: [], blockList: [], lastSync: null },
   { id: "p_google", provider: "google_dsp", name: "Google DSP", status: "connected",
     creds: { partnerId: "884512", advertiserId: "2201984", authMode: "Service account (JSON key)",
              saEmail: "ph-retail-media@ph-demo.iam.gserviceaccount.com", saKey: "\u2022".repeat(24), networkCode: "" },
     floorCpm: 4.5, currency: "GBP", auctionType: "Open RTB",
     categories: ["Food & Drink", "Health & Fitness"], exclusions: ["Finance"],
     seats: [{ id: "g1", name: "Nestl\u00e9" }, { id: "g2", name: "Swisse" }],
-    allowList: [{ id: "al1", name: "Nestl\u00e9" }, { id: "al2", name: "Swisse" }, { id: "al3", name: "Arnott\u2019s" }],
-    blockList: [{ id: "bl1", name: "Red Bull" }, { id: "bl2", name: "Monster Energy" }],
+    listsLinked: true, allowList: [], blockList: [],
     lastSync: "Today, 07:12" },
   { id: "p_amazon", provider: "amazon_dsp", name: "Amazon Ads DSP", status: "error",
     creds: { region: "Europe (EU)", clientId: "amzn1.application-oa2-client.7f3c", clientSecret: "\u2022".repeat(16),
@@ -129,10 +128,38 @@ const INITIAL_PARTNERS = [
     floorCpm: 5.2, currency: "GBP", auctionType: "Open RTB",
     categories: ["Beauty", "Retail"], exclusions: [],
     seats: [{ id: "a1", name: "L'Or\u00e9al" }],
-    allowList: [],
-    blockList: [{ id: "bl3", name: "Chemist Warehouse" }],
+    listsLinked: false,
+    allowList: [{ id: "bl4", name: "L'Or\u00e9al" }],
+    blockList: [{ id: "bl1", name: "Red Bull" }, { id: "bl3", name: "Chemist Warehouse" }],
     lastSync: "Refresh token rejected \u2014 3 days ago" },
 ];
+
+/* Company advertiser lists — defined once, adopted by every connected DSP.
+   A partner can unlink and keep its own, exactly like a display overriding a
+   display type: the override wins, and a later edit to the company lists
+   never reaches it. Same inheritance rule, same expectation. */
+const COMPANY_LISTS = "__company__";
+
+const INITIAL_COMPANY_LISTS = {
+  allowList: [
+    { id: "cal1", name: "Nestl\u00e9" },
+    { id: "cal2", name: "Swisse" },
+    { id: "cal3", name: "Arnott\u2019s" },
+  ],
+  blockList: [
+    { id: "cbl1", name: "Red Bull" },
+    { id: "cbl2", name: "Monster Energy" },
+  ],
+};
+
+/* What a partner's lists actually are right now — inherited or its own. */
+const effectiveLists = (p, company) => {
+  if (!p) return { allowList: [], blockList: [], linked: false };
+  const linked = p.listsLinked !== false;
+  return linked
+    ? { allowList: company.allowList, blockList: company.blockList, linked: true }
+    : { allowList: p.allowList || [], blockList: p.blockList || [], linked: false };
+};
 
 const partnerById = (partners, id) => (partners || []).find((p) => p.id === id) || null;
 const connectedPartners = (partners) => (partners || []).filter((p) => p.status === "connected");
@@ -150,18 +177,19 @@ const missingCreds = (provider, creds) => {
 };
 
 /* What a slot actually says it is assigned to, in one line. */
-const ownerAssignment = (sl, partners) => {
+const ownerAssignment = (sl, partners, company = INITIAL_COMPANY_LISTS) => {
   if (sl.owner === "retail") return sl.storeScope || "Store staff";
   if (sl.owner !== "advertiser") return "Based on priority";
   const pid = sl.partnerId || ANY_PARTNER;
   if (pid === ANY_PARTNER) return "RTB \u2014 any connected DSP";
   const p = partnerById(partners, pid);
   if (!p) return "Partner removed";
+  const eff = effectiveLists(p, company);
   if (sl.advertiser === ALLOW_LIST) {
-    return `RTB, whitelist (${(p.allowList || []).length}) \u00b7 ${p.name}`;
+    return `RTB, whitelist (${eff.allowList.length}) \u00b7 ${p.name}`;
   }
   if (sl.advertiser === BLOCK_LIST) {
-    return `RTB, minus blacklist (${(p.blockList || []).length}) \u00b7 ${p.name}`;
+    return `RTB, minus blacklist (${eff.blockList.length}) \u00b7 ${p.name}`;
   }
   if (!sl.advertiser || sl.advertiser === RTB) return `RTB \u2014 ${p.name}`;
   return `${sl.advertiser} \u00b7 ${p.name}`;
@@ -623,6 +651,7 @@ export default function App() {
   const [selType, setSelType] = useState("menu_board");
   const [templates, setTemplates] = useState(INITIAL_TEMPLATES);
   const [partners, setPartners] = useState(INITIAL_PARTNERS);
+  const [companyLists, setCompanyLists] = useState(INITIAL_COMPANY_LISTS);
 
   useEffect(() => {
     const l = document.createElement("link");
@@ -660,10 +689,10 @@ export default function App() {
           })}
         </div>
         <div style={{ flex: 1, minWidth: 0, paddingLeft: 20 }}>
-          {nav === "types" && <TypesView types={types} setTypes={setTypes} playlists={playlists} setPlaylists={setPlaylists} sel={selType} setSel={setSelType} templates={templates} partners={partners} goToPartners={() => setNav("partners")} />}
+          {nav === "types" && <TypesView types={types} setTypes={setTypes} playlists={playlists} setPlaylists={setPlaylists} sel={selType} setSel={setSelType} templates={templates} partners={partners} companyLists={companyLists} goToPartners={() => setNav("partners")} />}
           {nav === "layout" && SHOW_EXPERIENCE_LAYOUT && <LayoutComposer types={types} templates={templates} setTemplates={setTemplates} playlists={playlists} />}
           {nav === "playlists" && <PlaylistManagement playlists={playlists} setPlaylists={setPlaylists} types={types} goToType={(id) => { setSelType(id); setNav("types"); }} />}
-          {nav === "partners" && <PartnersView partners={partners} setPartners={setPartners} types={types} goToType={(id) => { setSelType(id); setNav("types"); }} />}
+          {nav === "partners" && <PartnersView partners={partners} setPartners={setPartners} companyLists={companyLists} setCompanyLists={setCompanyLists} types={types} goToType={(id) => { setSelType(id); setNav("types"); }} />}
         </div>
       </div>
     </div>
@@ -683,11 +712,12 @@ const STATUS_STYLE = {
   error:     { label: "Connection error", colour: T.error, icon: "error" },
 };
 
-function PartnersView({ partners, setPartners, types, goToType }) {
-  const [sel, setSel] = useState("p_google");
+function PartnersView({ partners, setPartners, companyLists, setCompanyLists, types, goToType }) {
+  const [sel, setSel] = useState(COMPANY_LISTS);
   const [adding, setAdding] = useState(null);   // provider key while adding
   const [reveal, setReveal] = useState({});
 
+  const onCompany = sel === COMPANY_LISTS;
   const p = partners.find((x) => x.id === sel) || partners[0];
   const prov = providerOf(p);
   const setP = (patch) => setPartners(partners.map((x) => (x.id === p.id ? { ...x, ...patch } : x)));
@@ -714,7 +744,7 @@ function PartnersView({ partners, setPartners, types, goToType }) {
       id, provider: providerKey, name: def.label, status: "draft",
       creds: { ...(def.defaults || {}) }, floorCpm: null, currency: (def.defaults || {}).currency || "GBP",
       auctionType: "Open RTB", categories: [], exclusions: [], seats: [],
-      allowList: [], blockList: [], lastSync: null,
+      listsLinked: true, allowList: [], blockList: [], lastSync: null,
     }]);
     setSel(id);
     setAdding(null);
@@ -725,17 +755,30 @@ function PartnersView({ partners, setPartners, types, goToType }) {
   /* Approved and blocked at once has no meaning, so adding to one list drops
      the name from the other — in a single write, or the second patch would
      clobber the first. */
-  const addToList = (listKey, otherKey, name) => {
-    const n = (name || "").trim();
-    if (!n) return;
-    const cur = p[listKey] || [];
-    if (cur.some((x) => x.name.toLowerCase() === n.toLowerCase())) return;
-    setP({
-      [listKey]: [...cur, { id: `l${Date.now().toString(36)}`, name: n }],
-      [otherKey]: (p[otherKey] || []).filter((x) => x.name.toLowerCase() !== n.toLowerCase()),
-    });
-  };
-  const removeFromList = (listKey, id) => setP({ [listKey]: (p[listKey] || []).filter((x) => x.id !== id) });
+  const listMutators = (src, write) => ({
+    add: (listKey, otherKey, name) => {
+      const n = (name || "").trim();
+      if (!n) return;
+      const cur = src[listKey] || [];
+      if (cur.some((x) => x.name.toLowerCase() === n.toLowerCase())) return;
+      write({
+        [listKey]: [...cur, { id: `l${Date.now().toString(36)}`, name: n }],
+        [otherKey]: (src[otherKey] || []).filter((x) => x.name.toLowerCase() !== n.toLowerCase()),
+      });
+    },
+    remove: (listKey, id) => write({ [listKey]: (src[listKey] || []).filter((x) => x.id !== id) }),
+  });
+  const companyMut = listMutators(companyLists, (patch) => setCompanyLists({ ...companyLists, ...patch }));
+  const partnerMut = listMutators(p || {}, setP);
+
+  /* Unlinking copies today's inherited lists down, so the partner starts from
+     what it already had rather than from nothing. Relinking discards them. */
+  const unlinkLists = () => setP({
+    listsLinked: false,
+    allowList: companyLists.allowList.map((x) => ({ ...x, id: `l${x.id}` })),
+    blockList: companyLists.blockList.map((x) => ({ ...x, id: `l${x.id}` })),
+  });
+  const relinkLists = () => setP({ listsLinked: true, allowList: [], blockList: [] });
 
   const disconnect = () => setP({ status: "draft", lastSync: null, seats: [] });
   const connect = () => setP({ status: "connected", lastSync: "Just now", seats: p.seats.length ? p.seats : [{ id: "s1", name: "New advertiser" }] });
@@ -747,11 +790,33 @@ function PartnersView({ partners, setPartners, types, goToType }) {
       <div style={{ display: "flex", gap: 20, alignItems: "flex-start" }}>
         {/* ------------------------------------------------ partner list */}
         <div style={{ width: 260, flexShrink: 0 }}>
-          <SectionLabel style={{ marginTop: 0 }}>Connected partners</SectionLabel>
+          <SectionLabel style={{ marginTop: 0 }}>Company</SectionLabel>
+          {(() => {
+            const a = onCompany;
+            const inheriting = partners.filter((x) => isDsp(x) && x.listsLinked !== false).length;
+            return (
+              <div onClick={() => { setSel(COMPANY_LISTS); setAdding(null); }}
+                style={{ padding: "10px 12px", marginBottom: 6, borderRadius: 6, cursor: "pointer",
+                         border: `1px solid ${a ? T.primary : T.borderSubtle}`, background: a ? T.primaryTint : "#fff" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <Icon name="rule" size={18} style={{ color: a ? T.primary : T.micro }} />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 13.5, fontWeight: 500 }}>Advertiser lists</div>
+                    <div style={{ fontSize: 11, color: T.micro }}>
+                      {companyLists.allowList.length} allowed &middot; {companyLists.blockList.length} blocked
+                      &middot; {inheriting} adopting
+                    </div>
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
+
+          <SectionLabel>Connected partners</SectionLabel>
           {partners.map((x) => {
             const st = STATUS_STYLE[x.status] || STATUS_STYLE.draft;
             const pr = providerOf(x);
-            const a = x.id === p.id;
+            const a = !onCompany && x.id === p.id;
             return (
               <div key={x.id} onClick={() => setSel(x.id)}
                 style={{ padding: "10px 12px", marginBottom: 6, borderRadius: 6, cursor: "pointer",
@@ -764,6 +829,12 @@ function PartnersView({ partners, setPartners, types, goToType }) {
                   </div>
                   <Icon name={st.icon} size={15} style={{ color: st.colour }} />
                 </div>
+                {isDsp(x) && (
+                  <div style={{ fontSize: 10.5, color: x.listsLinked !== false ? T.primary : T.warning, marginTop: 4, display: "flex", alignItems: "center", gap: 4 }}>
+                    <Icon name={x.listsLinked !== false ? "link" : "link_off"} size={12} />
+                    {x.listsLinked !== false ? "Adopts company lists" : "Own advertiser lists"}
+                  </div>
+                )}
               </div>
             );
           })}
@@ -788,7 +859,10 @@ function PartnersView({ partners, setPartners, types, goToType }) {
 
         {/* ------------------------------------------------ partner detail */}
         <div style={{ flex: 1, minWidth: 0 }}>
-          {adding ? (
+          {onCompany ? (
+            <CompanyListsPanel lists={companyLists} mut={companyMut} partners={partners}
+              onOpenPartner={(id) => setSel(id)} />
+          ) : adding ? (
             <AddPartnerCard providerKey={adding} onCancel={() => setAdding(null)} onAdd={() => addPartner(adding)} />
           ) : (
             <>
@@ -928,42 +1002,75 @@ function PartnersView({ partners, setPartners, types, goToType }) {
               )}
 
               {/* --------------------- advertiser whitelist / blacklist */}
-              {isDsp(p) && (
-                <>
-                  <SectionLabel>Advertiser whitelist / blacklist</SectionLabel>
-                  <div style={{ fontSize: 12, color: T.muted, lineHeight: 1.6, marginBottom: 12 }}>
-                    Which advertisers may buy through {p.name}. A position can then sell to this
-                    partner&rsquo;s open demand, to the whitelist only, or to everyone except the
-                    blacklist &mdash; chosen per position in the slot table. A DSP&rsquo;s full
-                    advertiser universe is not visible from here, so type any name; the connected
-                    seats are offered as suggestions.
-                  </div>
-                  <Grid cols={2}>
-                    <ListEditor
-                      label="Whitelist — only these may win"
-                      tone={T.success} icon="verified"
-                      items={p.allowList || []} suggestions={p.seats || []}
-                      onAdd={(n) => addToList("allowList", "blockList", n)}
-                      onRemove={(id) => removeFromList("allowList", id)}
-                      empty="Empty — a position set to whitelist-only would never fill."
-                    />
-                    <ListEditor
-                      label="Blacklist — these may never win"
-                      tone={T.error} icon="block"
-                      items={p.blockList || []} suggestions={p.seats || []}
-                      onAdd={(n) => addToList("blockList", "allowList", n)}
-                      onRemove={(id) => removeFromList("blockList", id)}
-                      empty="Empty — nothing is blocked on this partner."
-                    />
-                  </Grid>
-                  <Note>
-                    An advertiser cannot sit on both lists; adding it to one removes it from the
-                    other. These lists are the client&rsquo;s, not the DSP&rsquo;s &mdash; they
-                    filter what the exchange is allowed to clear into a position, and are enforced
-                    at auction time, not after the fact.
-                  </Note>
-                </>
-              )}
+              {isDsp(p) && (() => {
+                const eff = effectiveLists(p, companyLists);
+                return (
+                  <>
+                    <SectionLabel>Advertiser whitelist / blacklist</SectionLabel>
+
+                    {/* Inherited vs own, stated before the lists themselves —
+                        the same distinction a display makes against its type. */}
+                    <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap",
+                                  padding: "10px 12px", borderRadius: 6, marginBottom: 12,
+                                  border: `1px solid ${eff.linked ? T.primary : T.warning}`,
+                                  background: eff.linked ? T.primaryTint : "rgba(250,173,20,0.10)" }}>
+                      <Icon name={eff.linked ? "link" : "link_off"} size={17}
+                        style={{ color: eff.linked ? T.primary : T.warning }} />
+                      <div style={{ flex: 1, minWidth: 200, fontSize: 12.5, lineHeight: 1.5 }}>
+                        {eff.linked ? (
+                          <>
+                            <b>Adopting the company advertiser lists.</b> Edits made centrally reach
+                            this partner automatically. Unlink to keep a different set here.
+                          </>
+                        ) : (
+                          <>
+                            <b>Unlinked &mdash; this partner keeps its own lists.</b> Changes to the
+                            company lists no longer reach it. Relinking discards what is below.
+                          </>
+                        )}
+                      </div>
+                      {eff.linked
+                        ? <Btn variant="outline" style={{ height: 28, fontSize: 12.5 }} onClick={unlinkLists}>
+                            <Icon name="link_off" size={15} />Unlink and edit
+                          </Btn>
+                        : <Btn style={{ height: 28, fontSize: 12.5 }} onClick={relinkLists}>
+                            <Icon name="link" size={15} />Relink to company lists
+                          </Btn>}
+                    </div>
+
+                    <div style={{ fontSize: 12, color: T.muted, lineHeight: 1.6, marginBottom: 12 }}>
+                      Which advertisers may buy through {p.name}. A position can then sell to this
+                      partner&rsquo;s open demand, to the whitelist only, or to everyone except the
+                      blacklist &mdash; chosen per position in the slot table.
+                    </div>
+
+                    <Grid cols={2}>
+                      <ListEditor
+                        label="Whitelist — only these may win"
+                        tone={T.success} icon="verified" readOnly={eff.linked}
+                        items={eff.allowList} suggestions={p.seats || []}
+                        onAdd={(n) => partnerMut.add("allowList", "blockList", n)}
+                        onRemove={(id) => partnerMut.remove("allowList", id)}
+                        empty="Empty — a position set to whitelist-only would never fill."
+                      />
+                      <ListEditor
+                        label="Blacklist — these may never win"
+                        tone={T.error} icon="block" readOnly={eff.linked}
+                        items={eff.blockList} suggestions={p.seats || []}
+                        onAdd={(n) => partnerMut.add("blockList", "allowList", n)}
+                        onRemove={(id) => partnerMut.remove("blockList", id)}
+                        empty="Empty — nothing is blocked on this partner."
+                      />
+                    </Grid>
+                    <Note>
+                      An advertiser cannot sit on both lists; adding it to one removes it from the
+                      other. These lists are the client&rsquo;s, not the DSP&rsquo;s &mdash; they
+                      filter what the exchange is allowed to clear into a position, and are enforced
+                      at auction time, not after the fact.
+                    </Note>
+                  </>
+                );
+              })()}
 
               {/* ------------------------------------ seats */}
               <SectionLabel>Advertisers on this partner</SectionLabel>
@@ -1035,11 +1142,99 @@ function PartnersView({ partners, setPartners, types, goToType }) {
   );
 }
 
+/* The central definition. Everything connected adopts these unless it has
+   unlinked, so the panel also has to show who is actually listening — a change
+   here that silently misses two partners is the failure mode. */
+function CompanyListsPanel({ lists, mut, partners, onOpenPartner }) {
+  const dsps = partners.filter(isDsp);
+  const adopting = dsps.filter((x) => x.listsLinked !== false);
+  const own = dsps.filter((x) => x.listsLinked === false);
+
+  return (
+    <>
+      <div style={{ display: "flex", alignItems: "flex-start", gap: 12, flexWrap: "wrap" }}>
+        <Icon name="rule" size={26} style={{ color: T.primary, marginTop: 2 }} />
+        <div style={{ flex: 1, minWidth: 200 }}>
+          <div style={{ fontSize: 16, fontWeight: 600 }}>Company advertiser lists</div>
+          <div style={{ fontSize: 12, color: T.muted, marginTop: 4 }}>
+            Defined once and adopted by every connected DSP that has not unlinked.
+          </div>
+        </div>
+        <Pill color={T.primary} bg="#fff" border={T.primary}>
+          <Icon name="link" size={13} />{adopting.length} of {dsps.length} adopting
+        </Pill>
+      </div>
+
+      <SectionLabel>Lists</SectionLabel>
+      <Grid cols={2}>
+        <ListEditor
+          label="Whitelist — only these may win"
+          tone={T.success} icon="verified"
+          items={lists.allowList} suggestions={[]}
+          onAdd={(n) => mut.add("allowList", "blockList", n)}
+          onRemove={(id) => mut.remove("allowList", id)}
+          empty="Empty — a position set to whitelist-only would never fill."
+        />
+        <ListEditor
+          label="Blacklist — these may never win"
+          tone={T.error} icon="block"
+          items={lists.blockList} suggestions={[]}
+          onAdd={(n) => mut.add("blockList", "allowList", n)}
+          onRemove={(id) => mut.remove("blockList", id)}
+          empty="Empty — nothing is blocked anywhere by default."
+        />
+      </Grid>
+      <Note>
+        A DSP&rsquo;s advertiser universe is not enumerable from here, so type any name. An
+        advertiser cannot sit on both lists; adding it to one removes it from the other.
+      </Note>
+
+      <SectionLabel>Where these apply</SectionLabel>
+      {dsps.length === 0 ? (
+        <div style={{ padding: 12, borderRadius: 6, background: T.surfaceAlt, border: `1px solid ${T.borderSubtle}`, fontSize: 12.5, color: T.muted }}>
+          No DSP partner connected yet. A partner added later adopts these lists automatically.
+        </div>
+      ) : (
+        <div style={{ border: `1px solid ${T.borderSubtle}`, borderRadius: 6, overflow: "hidden" }}>
+          {dsps.map((x, i) => {
+            const linked = x.listsLinked !== false;
+            const eff = effectiveLists(x, lists);
+            return (
+              <div key={x.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", fontSize: 12.5,
+                                       borderBottom: i < dsps.length - 1 ? `1px solid ${T.borderSubtle}` : "none" }}>
+                <Icon name={providerOf(x).icon} size={17} style={{ color: providerOf(x).colour }} />
+                <span style={{ flex: 1, minWidth: 0 }}>{x.name}</span>
+                <span style={{ color: linked ? T.primary : T.warning, display: "inline-flex", alignItems: "center", gap: 5 }}>
+                  <Icon name={linked ? "link" : "link_off"} size={14} />
+                  {linked ? "Adopting" : "Own lists"}
+                </span>
+                <span style={{ color: T.micro, width: 128, textAlign: "right" }}>
+                  {eff.allowList.length} allowed &middot; {eff.blockList.length} blocked
+                </span>
+                <Btn variant="text" style={{ height: 26, fontSize: 12, padding: 0 }}
+                  onClick={() => onOpenPartner(x.id)}>Open</Btn>
+              </div>
+            );
+          })}
+        </div>
+      )}
+      {own.length > 0 && (
+        <Note>
+          {own.length === 1 ? `${own[0].name} has` : `${own.length} partners have`} unlinked, so
+          nothing edited here reaches {own.length === 1 ? "it" : "them"} until
+          {own.length === 1 ? " it is" : " they are"} relinked. That is the point of unlinking, but
+          it is also the easy thing to forget.
+        </Note>
+      )}
+    </>
+  );
+}
+
 /* One list of named advertisers. Free text, because a DSP's advertiser
    universe is not enumerable from our side; connected seats are offered as
    shortcuts. Adding to one list removes from the other, since "approved and
    blocked" has no sensible meaning. */
-function ListEditor({ label, tone, icon, items, suggestions, onAdd, onRemove, empty }) {
+function ListEditor({ label, tone, icon, items, suggestions, onAdd, onRemove, empty, readOnly }) {
   const [draft, setDraft] = useState("");
   const has = (n) => items.some((x) => x.name.toLowerCase() === n.trim().toLowerCase());
 
@@ -1055,7 +1250,8 @@ function ListEditor({ label, tone, icon, items, suggestions, onAdd, onRemove, em
   const unused = (suggestions || []).filter((sg) => !has(sg.name));
 
   return (
-    <div style={{ border: `1px solid ${T.borderSubtle}`, borderRadius: 6, padding: 12 }}>
+    <div style={{ border: `1px solid ${T.borderSubtle}`, borderRadius: 6, padding: 12,
+                  background: readOnly ? T.surfaceAlt : "#fff" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12.5, color: tone, marginBottom: 10 }}>
         <Icon name={icon} size={15} />{label}
         <span style={{ marginLeft: "auto", color: T.micro }}>{items.length}</span>
@@ -1066,12 +1262,17 @@ function ListEditor({ label, tone, icon, items, suggestions, onAdd, onRemove, em
           <span key={x.id} style={{ display: "inline-flex", alignItems: "center", gap: 5, height: 24, padding: "0 6px 0 10px",
                                     borderRadius: 9999, fontSize: 12, border: `1px solid ${tone}`, color: tone }}>
             {x.name}
-            <Icon name="close" size={13} onClick={() => remove(x.id)} style={{ cursor: "pointer", opacity: 0.7 }} />
+            {!readOnly && <Icon name="close" size={13} onClick={() => remove(x.id)} style={{ cursor: "pointer", opacity: 0.7 }} />}
           </span>
         ))}
         {items.length === 0 && <span style={{ fontSize: 11.5, color: T.micro }}>{empty}</span>}
       </div>
 
+      {readOnly ? (
+        <div style={{ fontSize: 11.5, color: T.micro, display: "flex", alignItems: "center", gap: 5 }}>
+          <Icon name="lock" size={13} />Inherited — unlink this partner to edit.
+        </div>
+      ) : (
       <div style={{ display: "flex", gap: 6 }}>
         <input value={draft} onChange={(e) => setDraft(e.target.value)}
           onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); add(draft); } }}
@@ -1079,8 +1280,9 @@ function ListEditor({ label, tone, icon, items, suggestions, onAdd, onRemove, em
         <Btn variant="outline" style={{ height: 28, fontSize: 12.5, padding: "0 10px" }}
           disabled={!draft.trim() || has(draft)} onClick={() => add(draft)}>Add</Btn>
       </div>
+      )}
 
-      {unused.length > 0 && (
+      {!readOnly && unused.length > 0 && (
         <div style={{ display: "flex", flexWrap: "wrap", gap: 5, marginTop: 8, alignItems: "center" }}>
           <span style={{ fontSize: 11, color: T.micro }}>Seats:</span>
           {unused.map((sg) => (
@@ -1132,7 +1334,7 @@ function AddPartnerCard({ providerKey, onCancel, onAdd }) {
 
 /* ------------------------------ display types ----------------------------- */
 
-function TypesView({ types, setTypes, playlists, setPlaylists, sel, setSel, templates, partners, goToPartners }) {
+function TypesView({ types, setTypes, playlists, setPlaylists, sel, setSel, templates, partners, companyLists, goToPartners }) {
   const [open, setOpen] = useState({ playlist: false, web: true, phantom: true, features: true, zones: true });
   const [pendingEl, setPendingEl] = useState(null);
   const d = types.find((t) => t.id === sel);
@@ -1326,7 +1528,7 @@ function TypesView({ types, setTypes, playlists, setPlaylists, sel, setSel, temp
                         <Icon name={p && providerOf(p) ? providerOf(p).icon : o.icon} size={13} />{o.label}
                       </div>
                       <div style={{ fontSize: 11, color: broken ? T.error : T.muted, marginTop: 2 }}>
-                        {ownerAssignment(sl, partners)}
+                        {ownerAssignment(sl, partners, companyLists)}
                       </div>
                       {broken && <div style={{ fontSize: 10, color: T.error, marginTop: 2, display: "flex", alignItems: "center", gap: 3 }}>
                         <Icon name="error" size={11} />Not connected
@@ -1345,8 +1547,9 @@ function TypesView({ types, setTypes, playlists, setPlaylists, sel, setSel, temp
                   const pid = sl.partnerId || ANY_PARTNER;
                   const p = pid === ANY_PARTNER ? null : partnerById(partners, pid);
                   const seats = p ? (p.seats || []) : [];
-                  const allowN = p ? (p.allowList || []).length : 0;
-                  const blockN = p ? (p.blockList || []).length : 0;
+                  const eff = effectiveLists(p, companyLists);
+                  const allowN = eff.allowList.length;
+                  const blockN = eff.blockList.length;
                   const broken = sl.owner === "advertiser" && p && p.status !== "connected";
                   return (
                     <div key={i} style={{ display: "grid", gridTemplateColumns: SLOT_GRID, alignItems: "center", borderBottom: i < d.slots.length - 1 ? `1px solid ${T.borderSubtle}` : "none" }}>
@@ -1375,9 +1578,10 @@ function TypesView({ types, setTypes, playlists, setPlaylists, sel, setSel, temp
                               const next = partnerById(partners, np);
                               /* A seat, and a list mode, belong to one partner — switching
                                  partner drops anything the new one cannot honour. */
+                              const nextEff = effectiveLists(next, companyLists);
                               const keep =
-                                (sl.advertiser === ALLOW_LIST && (next?.allowList || []).length > 0) ||
-                                (sl.advertiser === BLOCK_LIST && (next?.blockList || []).length > 0) ||
+                                (sl.advertiser === ALLOW_LIST && nextEff.allowList.length > 0) ||
+                                (sl.advertiser === BLOCK_LIST && nextEff.blockList.length > 0) ||
                                 (next && (next.seats || []).some((x) => x.name === sl.advertiser));
                               setSlot({ partnerId: np, advertiser: keep ? sl.advertiser : RTB });
                             }} title="Partner / DSP the demand for this position comes through"
@@ -1653,7 +1857,7 @@ function TypesView({ types, setTypes, playlists, setPlaylists, sel, setSel, temp
       </div>
 
       <div style={{ flex: 1, minWidth: 320 }}>
-        <Preview d={d} plName={plName} set={set} partners={partners} />
+        <Preview d={d} plName={plName} set={set} partners={partners} companyLists={companyLists} />
       </div>
     </div>
   );
@@ -1666,7 +1870,7 @@ const WIDE_THRESHOLD = 3;
 /* Web elements preview as a rendered element inside a browser frame, with a
    breakpoint switch — an element has no fixed canvas, so a resolution-scaled
    signage preview would be meaningless. */
-function WebPreview({ d, plName, set, partners }) {
+function WebPreview({ d, plName, set, partners, companyLists }) {
   const [bp, setBp] = useState("desktop");
   const [paired, setPaired] = useState(false);
   const [device, setDevice] = useState("phone");
@@ -1692,7 +1896,7 @@ function WebPreview({ d, plName, set, partners }) {
         alignItems: "center", justifyContent: "center", gap: 2, overflow: "hidden", padding: 2, boxSizing: "border-box" }}>
         <Icon name={el.icon} size={13} style={{ color: o ? o.color : T.primary }} />
         {h > 34 && <div style={{ fontSize: 8, color: o ? o.color : T.primary, textAlign: "center", lineHeight: 1.2 }}>
-          {sl ? ownerAssignment(sl, partners) : `Campaign ${i + 1}`}
+          {sl ? ownerAssignment(sl, partners, companyLists) : `Campaign ${i + 1}`}
         </div>}
       </div>
     );
@@ -1956,9 +2160,9 @@ function WebPreview({ d, plName, set, partners }) {
   );
 }
 
-function Preview({ d, plName, set, partners }) {
+function Preview({ d, plName, set, partners, companyLists }) {
   const [sigPaired, setSigPaired] = useState(false);
-  if (isWebTP(d.touchPoint)) return <WebPreview d={d} plName={plName} set={set} partners={partners} />;
+  if (isWebTP(d.touchPoint)) return <WebPreview d={d} plName={plName} set={set} partners={partners} companyLists={companyLists} />;
   const aspect = d.w / d.h;
   const boxW = 300;   // ~25-30% of the working area
   const boxH = 320;   // cap so tall/portrait canvases stay fully visible
