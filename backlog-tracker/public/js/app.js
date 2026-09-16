@@ -4026,6 +4026,20 @@ function createDictationController({ textareaEl, micBtn, hintEl, errorEl, onStop
   // — once seen, stop trying so every restart doesn't repeat the same
   // rejection.
   let phrasesUnsupported = false;
+  // Screen Wake Lock. A phone left to idle while someone dictates turns its
+  // screen off, and the moment it does the browser suspends the page and
+  // recognition dies with it ("the phone goes to sleep and it stops
+  // listening", reported live 16 Sep 2026). Holding a screen wake lock for
+  // as long as the mic is on keeps the device awake. The browser drops the
+  // lock on its own whenever the page is hidden (app switch, manual lock),
+  // so it is re-requested when the page comes back — see onVisibilityChange
+  // below. A browser without navigator.wakeLock just behaves as before.
+  let wakeLock = null;
+  let wakeWanted = false;
+  // Set when a session ended while the page was hidden: no restart is
+  // attempted against a suspended page (it would only fail the same way);
+  // the run resumes the moment the page is visible again.
+  let suspendedWhileHidden = false;
 
   function showError(msg) {
     softHintOn = false;
@@ -4076,6 +4090,24 @@ function createDictationController({ textareaEl, micBtn, hintEl, errorEl, onStop
   function detach(instance) {
     if (!instance) return;
     instance.onend = null; instance.onerror = null; instance.onresult = null;
+  }
+
+  async function acquireWakeLock() {
+    if (!wakeWanted || wakeLock || !navigator.wakeLock || typeof navigator.wakeLock.request !== "function") return;
+    try {
+      const lock = await navigator.wakeLock.request("screen");
+      if (!wakeWanted) { try { await lock.release(); } catch (err) {} return; }
+      wakeLock = lock;
+      lock.addEventListener("release", () => { if (wakeLock === lock) wakeLock = null; });
+    } catch (err) {
+      // Refused — page not visible, battery saver, or a policy. Dictation
+      // still works exactly as before; the screen just isn't held on.
+    }
+  }
+  function releaseWakeLock() {
+    const lock = wakeLock;
+    wakeLock = null;
+    if (lock) { try { lock.release(); } catch (err) {} }
   }
 
   function startListening(isRestart) {
@@ -4144,11 +4176,18 @@ function createDictationController({ textareaEl, micBtn, hintEl, errorEl, onStop
     };
     recognition.onerror = (e) => {
       const code = e && e.error;
-      if (code === "not-allowed" || code === "service-not-allowed") {
-        showError("Microphone access is blocked for this page — check your browser's site permissions and try again.");
-        stopRequested = true;
-      } else if (code === "audio-capture") {
-        showError("No microphone could be accessed.");
+      const hidden = typeof document !== "undefined" && document.visibilityState === "hidden";
+      if (code === "not-allowed" || code === "service-not-allowed" || code === "audio-capture") {
+        if (hidden) {
+          // A hidden page (screen off, app switched) loses the mic and
+          // Chrome reports it with these same codes — not a real denial.
+          // onend below parks the run until the page is visible again.
+          suspendedWhileHidden = true;
+          return;
+        }
+        showError(code === "audio-capture"
+          ? "No microphone could be accessed."
+          : "Microphone access is blocked for this page — check your browser's site permissions and try again.");
         stopRequested = true;
       } else if (code === "network") {
         networkErrorStreak++;
@@ -4179,6 +4218,14 @@ function createDictationController({ textareaEl, micBtn, hintEl, errorEl, onStop
       const finished = recognition;
       detach(finished);
       if (stopRequested) { stopListening(); return; }
+      if (suspendedWhileHidden || (typeof document !== "undefined" && document.visibilityState === "hidden")) {
+        // The page is hidden — the phone's screen went off or the user
+        // switched apps — which is why the browser ended this session, and
+        // a restart now would only fail the same way. Wait for the page to
+        // come back (onVisibilityChange below) and resume then.
+        suspendedWhileHidden = true;
+        return;
+      }
       if (!heardSomething) {
         silentRestartStreak++;
         if (silentRestartStreak >= 3) showSoftHint("Still listening, but not hearing anything yet — check the mic isn't muted or in use by another app.");
@@ -4225,6 +4272,9 @@ function createDictationController({ textareaEl, micBtn, hintEl, errorEl, onStop
   function stopListening() {
     listening = false;
     stopRequested = false;
+    wakeWanted = false;
+    suspendedWhileHidden = false;
+    releaseWakeLock();
     if (restartTimer) { clearTimeout(restartTimer); restartTimer = null; }
     if (stopWatchdog) { clearTimeout(stopWatchdog); stopWatchdog = null; }
     micBtn.classList.remove("listening");
@@ -4244,6 +4294,10 @@ function createDictationController({ textareaEl, micBtn, hintEl, errorEl, onStop
   // microphone itself.
   function requestMicAndListen() {
     showError("");
+    // Inside the click gesture, before anything async — the surest place
+    // for a wake-lock request to be honoured.
+    wakeWanted = true;
+    acquireWakeLock();
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { startListening(false); return; }
     navigator.mediaDevices.getUserMedia({ audio: true }).then((stream) => {
       stream.getTracks().forEach((t) => t.stop());
@@ -4257,6 +4311,8 @@ function createDictationController({ textareaEl, micBtn, hintEl, errorEl, onStop
       // tries to claim the mic itself.
       setTimeout(() => startListening(false), 250);
     }).catch((err) => {
+      wakeWanted = false;
+      releaseWakeLock();
       const name = err && err.name;
       let msg = "Microphone access didn't start — you can still type instead.";
       if (name === "NotAllowedError" || name === "PermissionDeniedError") {
@@ -4276,7 +4332,7 @@ function createDictationController({ textareaEl, micBtn, hintEl, errorEl, onStop
   // abort(), so the utterance in flight is still finalized into the field.
   function stop() {
     if (!listening) return;
-    if (restartTimer) { stopListening(); return; } // between sessions — nothing in flight
+    if (restartTimer || suspendedWhileHidden) { stopListening(); return; } // between sessions — nothing in flight
     stopRequested = true;
     try { recognition.stop(); } catch (err) { stopListening(); return; }
     // If the browser never delivers that instance's end event, don't leave
@@ -4295,6 +4351,21 @@ function createDictationController({ textareaEl, micBtn, hintEl, errorEl, onStop
     if (listening) { stop(); return; }
     requestMicAndListen();
   });
+  // Page hidden → visible again while the mic is on: take the wake lock
+  // back (the browser released it when the page went away) and, if the
+  // session died while hidden, resume it — the user never asked to stop.
+  // Deliberately does nothing on the way OUT (desktop Chrome keeps
+  // recognising in a background tab; only a session that actually ended is
+  // parked, by onend above).
+  function onVisibilityChange() {
+    if (!listening || document.visibilityState !== "visible") return;
+    acquireWakeLock();
+    if (suspendedWhileHidden) {
+      suspendedWhileHidden = false;
+      try { startListening(true); } catch (err) { stopListening(); }
+    }
+  }
+  if (typeof document !== "undefined") document.addEventListener("visibilitychange", onVisibilityChange);
   return { stop, clearError: () => showError("") };
 }
 
