@@ -108,6 +108,7 @@ Two groups in the nav. **Displays**:
   flag, positions sold and reservations. Tier 1 providers (Google DSP,
   Amazon Ads DSP, The Trade Desk, in onboarding order) and a tier-2
   **PH-native partner** (Blackmores is the worked example).
+
 **Removed on 16 Sep 2026, not asked for**: a Render Preview screen (tier,
 deadline, pairing and channel previews), a Campaigns & Reservations screen
 (campaign sets with a rule evaluator, positions, asset cache state, approval
