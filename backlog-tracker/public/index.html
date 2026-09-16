@@ -702,6 +702,36 @@
         </div>
       </div>
 
+      <!-- Per-browser only — localStorage, never Firestore (see
+           createDictationController / bt-dictation-lang / bt-dictation-engine
+           in app.js). Lets a viewer compare Chrome's cloud vs. on-device
+           dictation engines for accuracy on real dictation. -->
+      <div class="docs-block">
+        <div class="docs-block-header">
+          <h3>Dictation</h3>
+        </div>
+        <p class="field-hint">Settings for the mic button on New backlog item and every comment box. Kept in this browser only — nothing here is shared with teammates.</p>
+        <div class="dictation-settings-row">
+          <div>
+            <label class="field-label" for="dictation-lang-select">Language</label>
+            <select id="dictation-lang-select">
+              <option value="en-GB">English (UK)</option>
+              <option value="en-US">English (US)</option>
+            </select>
+          </div>
+          <div>
+            <label class="field-label" for="dictation-engine-select">Engine</label>
+            <select id="dictation-engine-select">
+              <option value="auto">Auto (cloud, English UK)</option>
+              <option value="cloud">Cloud</option>
+              <option value="local">On-device</option>
+            </select>
+          </div>
+          <button type="button" class="btn-ghost" id="dictation-install-btn">Install on-device pack</button>
+        </div>
+        <p class="field-hint" id="dictation-install-status"></p>
+      </div>
+
       <div class="docs-block">
         <div class="docs-block-header">
           <h3>Archived projects</h3>
