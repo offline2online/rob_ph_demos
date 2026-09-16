@@ -275,8 +275,14 @@ instant, so there's no excuse for the board drifting from reality.
 
 Each project header shows exactly two controls now: the primary
 **+ New backlog item** button, and a small **⋮** options menu holding
-everything else — Archived tickets, Requirements (MD file), and every
-interface contract this project has with another one (see below). This
+everything else — Archived tickets, Requirements (MD file), every
+interface contract this project has with another one (see below), and,
+when the project has one, a **View Artifact ↗** link to a Claude-published
+Artifact for that project (opens in a new tab; a plain, non-clickable
+"No artifact yet" row shows when unset). `artifactUrl`/`artifactUpdatedAt`
+are written directly to the project's Firestore doc by the Notify Claude
+Routine — see `backlog-tracker/ROUTINE_INSTRUCTIONS.md` → "Project
+Artifact" and `backlog-tracker/REQUIREMENTS.md` → "Data model". This
 replaced three competing header buttons (Add / Archived / Docs), which was
 the real "CTAs don't work on mobile" problem: on a narrow screen they wrapped
 small and mis-tappable, and the board's 4 columns forced a sideways scroll

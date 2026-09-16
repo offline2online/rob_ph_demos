@@ -482,6 +482,15 @@ for display; a board with no programs looks exactly as it always has. Set
 it from the New Project modal at creation, or from a project's Docs page
 any time — both offer "+ New program…" to create one on the spot.
 
+A project can also optionally carry a **Project Artifact** — a Claude-
+published Artifact link shown as **View Artifact ↗** in that project's ⋮
+menu, opening in a new tab. `artifactUrl`/`artifactUpdatedAt` on the
+project doc are written directly by the Notify Claude Routine (a plain
+Firestore field, not a code change, so it never goes through
+`patchFiles`/`patchReady`) — see `REQUIREMENTS.md` → "Data model" and
+`ROUTINE_INSTRUCTIONS.md` → "Project Artifact" for the field shape and how
+a Routine run creates or updates one.
+
 ## Setup (all manual — this sandbox has no Firebase CLI/deploy access)
 
 Same caveat as `menu-board-demo/functions` in the root `CLAUDE.md`:

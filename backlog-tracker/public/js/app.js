@@ -821,6 +821,7 @@ function optionsMenuHTML(project) {
   const archivedCount = archivedCountForProject(pid);
   const hasReq = !!(project.requirementsMd && project.requirementsMd.trim());
   const ifaces = interfacesForProject(pid);
+  const artifactUrl = project.artifactUrl && project.artifactUrl.trim();
 
   let html = `
     <button type="button" class="options-menu-item project-archive-btn" data-project-id="${escapeHTML(pid)}">
@@ -829,6 +830,18 @@ function optionsMenuHTML(project) {
     <button type="button" class="options-menu-item project-docs-btn${hasReq ? "" : " options-menu-item-empty"}" data-project-id="${escapeHTML(pid)}">
       ${hasReq ? "Project Settings" : "Project Settings — not set yet"}
     </button>`;
+
+  // artifactUrl/artifactUpdatedAt are written directly to the project doc
+  // (not via patchFiles) — see ROUTINE_INSTRUCTIONS.md → "Project Artifact".
+  // A plain link, same pattern as the FAQ article row's "View live" item
+  // (faqArticleRowHTML below) — no click handler needed since it's just an
+  // <a target="_blank">, not an app action.
+  html += artifactUrl
+    ? `<a class="options-menu-item" href="${escapeHTML(artifactUrl)}" target="_blank" rel="noopener">
+        View Artifact &#8599;
+        ${project.artifactUpdatedAt ? `<span class="options-menu-sub">updated ${escapeHTML(formatNoteAt(project.artifactUpdatedAt))}</span>` : ""}
+      </a>`
+    : `<div class="options-menu-item options-menu-item-empty options-menu-item-static">No artifact yet</div>`;
 
   if (ifaces.length) {
     html += ifaces.map((f) => {
