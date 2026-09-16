@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 
 /* ------------------------------------------------------------------
    Shared tokens and primitives.
@@ -293,6 +293,21 @@ export const JsonBlock = ({ value, maxHeight = 360 }) => (
     {JSON.stringify(value, null, 2)}
   </pre>
 );
+
+/* Tracks the iframe's own viewport width, so a prototype panel can react to
+   how much canvas the parent has actually given it (a CTA Experience frame
+   is resized by the parent and the user's own viewport, never a fixed size —
+   see the ph-designer skill's prototyping.md §3). `window` inside an iframe
+   measures that iframe's own browsing context, not the parent page's. */
+export function useViewportWidth() {
+  const [w, setW] = useState(typeof window !== "undefined" ? window.innerWidth : 1280);
+  useEffect(() => {
+    const onResize = () => setW(window.innerWidth);
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+  return w;
+}
 
 export const fmtInt = (n) => (n === null || n === undefined ? "—" : Math.round(n).toLocaleString("en-GB"));
 export const fmtMoney = (n, cur = "GBP") => (n === null || n === undefined ? "—" : new Intl.NumberFormat("en-GB", { style: "currency", currency: cur, maximumFractionDigits: 2 }).format(n));

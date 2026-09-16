@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from "react";
-import { T, MONO, FONT, Icon, Pill, Btn, SectionLabel, Note, Callout, Grid, Fld, ctl, small, inputStyle, Table, TRow, TCell, Toggle, ToggleRow, Chips, Segmented, JsonBlock, Empty, uid, ADVERTISER_COLOUR } from "../ui.jsx";
+import { T, MONO, FONT, Icon, Pill, Btn, SectionLabel, Note, Callout, Grid, Fld, ctl, small, inputStyle, Table, TRow, TCell, Toggle, ToggleRow, Chips, Segmented, JsonBlock, Empty, uid, ADVERTISER_COLOUR, useViewportWidth } from "../ui.jsx";
 import { tpIcon } from "../model/schema.js";
 import { DSP_PROVIDERS, ONBOARDING_ORDER, BIDDER_FIELDS, AUCTION_TYPES, CURRENCIES, IAB_CATEGORIES, COMPANY_LISTS, ANY_PARTNER, RTB, partner as mkPartner, partnerById, providerOf, partnerColour, isDsp, missingCreds, effectiveLists, isBlocked, ATTRIBUTE_REGISTRY, ATTRIBUTE_FAMILIES, permittedVocabulary } from "../model/sellside.js";
 
@@ -13,6 +13,8 @@ const EXCHANGE = "__exchange__";
 export default function PartnersView({ partners, setPartners, companyLists, setCompanyLists, exchange, setExchange, types, goToType, sel, setSel }) {
   const [adding, setAdding] = useState(null);
   const [reveal, setReveal] = useState({});
+  const canvasW = useViewportWidth();
+  const listCollapsed = canvasW < 900;
   const onCompany = sel === COMPANY_LISTS;
   const onExchange = sel === EXCHANGE;
   const p = partners.find((x) => x.id === sel) || partners[0];
@@ -57,15 +59,24 @@ export default function PartnersView({ partners, setPartners, companyLists, setC
   return (
     <div style={{ display: "flex", gap: 20, alignItems: "flex-start" }}>
       {/* ------------------------------------------------ partner list */}
-      <div style={{ width: 260, flexShrink: 0 }}>
-        <SectionLabel style={{ marginTop: 0 }}>Company</SectionLabel>
-        <ListCard active={onExchange} onClick={() => { setSel(EXCHANGE); setAdding(null); }} icon="storefront" title="Exchange settings" sub={`${(exchange.client && exchange.client.name) || "Client"} is seller of record · OpenRTB ${exchange.openRtb.version}`} />
-        <ListCard active={onCompany} onClick={() => { setSel(COMPANY_LISTS); setAdding(null); }} icon="rule" title="Advertiser lists" sub={`${companyLists.allowList.length} allowed · ${companyLists.blockList.length} blocked · ${partners.filter((x) => isDsp(x) && x.listsLinked !== false).length} adopting`} />
+      <div style={{ width: listCollapsed ? 64 : 260, flexShrink: 0, position: "sticky", top: 20, maxHeight: "calc(100vh - 40px)", overflowY: "auto", overflowX: "hidden", transition: "width .15s" }}>
+        {!listCollapsed && <SectionLabel style={{ marginTop: 0 }}>Company</SectionLabel>}
+        <ListCard collapsed={listCollapsed} active={onExchange} onClick={() => { setSel(EXCHANGE); setAdding(null); }} icon="storefront" title="Exchange settings" sub={`${(exchange.client && exchange.client.name) || "Client"} is seller of record · OpenRTB ${exchange.openRtb.version}`} />
+        <ListCard collapsed={listCollapsed} active={onCompany} onClick={() => { setSel(COMPANY_LISTS); setAdding(null); }} icon="rule" title="Advertiser lists" sub={`${companyLists.allowList.length} allowed · ${companyLists.blockList.length} blocked · ${partners.filter((x) => isDsp(x) && x.listsLinked !== false).length} adopting`} />
 
-        <SectionLabel>Connected partners</SectionLabel>
+        {!listCollapsed && <SectionLabel>Connected partners</SectionLabel>}
         {partners.map((x) => {
           const st = STATUS_STYLE[x.status] || STATUS_STYLE.draft; const pr = providerOf(x);
           const a = !onCompany && !onExchange && x.id === p.id;
+          if (listCollapsed) {
+            return (
+              <div key={x.id} onClick={() => { setSel(x.id); setAdding(null); }} title={x.name}
+                style={{ display: "flex", justifyContent: "center", padding: "10px 0", marginBottom: 6, borderRadius: 6, cursor: "pointer", border: `1px solid ${a ? T.primary : T.borderSubtle}`, background: a ? T.primaryTint : "#fff" }}>
+                <Icon name={pr ? pr.icon : "inventory_2"} size={18} style={{ color: pr ? pr.colour : T.micro }} />
+                <Icon name={st.icon} size={12} style={{ color: st.colour, marginLeft: 4 }} />
+              </div>
+            );
+          }
           return (
             <div key={x.id} onClick={() => { setSel(x.id); setAdding(null); }} style={{ padding: "10px 12px", marginBottom: 6, borderRadius: 6, cursor: "pointer", border: `1px solid ${a ? T.primary : T.borderSubtle}`, background: a ? T.primaryTint : "#fff" }}>
               <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -81,15 +92,26 @@ export default function PartnersView({ partners, setPartners, companyLists, setC
           );
         })}
 
-        <SectionLabel>Add a partner DSP</SectionLabel>
-        <div style={{ fontSize: 11.5, color: T.micro, marginBottom: 8, lineHeight: 1.5 }}>Tier 1 — the DSP's own published interface, in onboarding order (REQUIREMENTS §7).</div>
+        {!listCollapsed && (
+          <>
+            <SectionLabel>Add a partner DSP</SectionLabel>
+            <div style={{ fontSize: 11.5, color: T.micro, marginBottom: 8, lineHeight: 1.5 }}>Tier 1 — the DSP's own published interface, in onboarding order (REQUIREMENTS §7).</div>
+          </>
+        )}
         {ONBOARDING_ORDER.map((k) => [k, DSP_PROVIDERS[k]]).map(([k, def]) => (
-          <div key={k} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", marginBottom: 6, border: `1px dashed ${T.border}`, borderRadius: 6, opacity: alreadyAdded(k) ? 0.5 : 1 }}>
-            <span style={{ width: 16, fontSize: 11, color: T.micro, textAlign: "center", flexShrink: 0 }}>{ONBOARDING_ORDER.indexOf(k) + 1}</span>
-            <Icon name={def.icon} size={18} style={{ color: def.colour }} />
-            <div style={{ flex: 1, minWidth: 0 }}><div style={{ fontSize: 13 }}>{def.label}</div><div style={{ fontSize: 11, color: T.micro }}>{def.sub}</div></div>
-            <Btn variant="text" style={{ height: 26, fontSize: 12, padding: "0 8px" }} disabled={alreadyAdded(k)} onClick={() => setAdding(k)}>{alreadyAdded(k) ? "Added" : "Add"}</Btn>
-          </div>
+          listCollapsed ? (
+            <div key={k} title={alreadyAdded(k) ? `${def.label} — added` : `Add ${def.label}`} onClick={() => !alreadyAdded(k) && setAdding(k)}
+              style={{ display: "flex", justifyContent: "center", padding: "8px 0", marginBottom: 6, border: `1px dashed ${T.border}`, borderRadius: 6, opacity: alreadyAdded(k) ? 0.4 : 1, cursor: alreadyAdded(k) ? "default" : "pointer" }}>
+              <Icon name={def.icon} size={18} style={{ color: def.colour }} />
+            </div>
+          ) : (
+            <div key={k} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", marginBottom: 6, border: `1px dashed ${T.border}`, borderRadius: 6, opacity: alreadyAdded(k) ? 0.5 : 1 }}>
+              <span style={{ width: 16, fontSize: 11, color: T.micro, textAlign: "center", flexShrink: 0 }}>{ONBOARDING_ORDER.indexOf(k) + 1}</span>
+              <Icon name={def.icon} size={18} style={{ color: def.colour }} />
+              <div style={{ flex: 1, minWidth: 0 }}><div style={{ fontSize: 13 }}>{def.label}</div><div style={{ fontSize: 11, color: T.micro }}>{def.sub}</div></div>
+              <Btn variant="text" style={{ height: 26, fontSize: 12, padding: "0 8px" }} disabled={alreadyAdded(k)} onClick={() => setAdding(k)}>{alreadyAdded(k) ? "Added" : "Add"}</Btn>
+            </div>
+          )
         ))}
         {/* Direct/house and the PH-native (tier 2) partner type are removed
             from this page for now — will come back later. Only the three
@@ -243,11 +265,12 @@ export default function PartnersView({ partners, setPartners, companyLists, setC
   );
 }
 
-const ListCard = ({ active, onClick, icon, title, sub }) => (
-  <div onClick={onClick} style={{ padding: "10px 12px", marginBottom: 6, borderRadius: 6, cursor: "pointer", border: `1px solid ${active ? T.primary : T.borderSubtle}`, background: active ? T.primaryTint : "#fff" }}>
-    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+const ListCard = ({ active, onClick, icon, title, sub, collapsed }) => (
+  <div onClick={onClick} title={collapsed ? title : undefined}
+    style={{ padding: collapsed ? "10px 0" : "10px 12px", marginBottom: 6, borderRadius: 6, cursor: "pointer", border: `1px solid ${active ? T.primary : T.borderSubtle}`, background: active ? T.primaryTint : "#fff" }}>
+    <div style={{ display: "flex", alignItems: "center", gap: 8, justifyContent: collapsed ? "center" : "flex-start" }}>
       <Icon name={icon} size={18} style={{ color: active ? T.primary : T.micro }} />
-      <div style={{ flex: 1, minWidth: 0 }}><div style={{ fontSize: 13.5, fontWeight: 500 }}>{title}</div><div style={{ fontSize: 11, color: T.micro, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{sub}</div></div>
+      {!collapsed && <div style={{ flex: 1, minWidth: 0 }}><div style={{ fontSize: 13.5, fontWeight: 500 }}>{title}</div><div style={{ fontSize: 11, color: T.micro, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{sub}</div></div>}
     </div>
   </div>
 );
@@ -308,13 +331,11 @@ function ExchangePanel({ exchange, setExchange, partners, companyLists }) {
         <Icon name="storefront" size={26} style={{ color: T.primary, marginTop: 2 }} />
         <div style={{ flex: 1, minWidth: 200 }}>
           <div style={{ fontSize: 16, fontWeight: 600 }}>Exchange settings</div>
-          <div style={{ fontSize: 12, color: T.muted, marginTop: 4 }}>This instance of Personalisation Hub runs inside <b>{client.name || "your"}</b>'s own VPC. {client.name || "The client"} owns the screens, is the <b>seller of record</b> and operates the exchange that DSPs bid into. Personalisation Hub is the software, not a party to the sale — fill this in for the organisation running this instance.</div>
         </div>
         <Pill color={ready.length ? T.success : T.warning} bg="#fff" border={ready.length ? T.success : T.warning}><Icon name="ads_click" size={13} />{ready.length} of {bidders.length} bidders receiving requests</Pill>
       </div>
 
       <SectionLabel>Seller of record — this organisation</SectionLabel>
-      <div style={{ fontSize: 12, color: T.muted, lineHeight: 1.6, marginBottom: 12 }}>Buyers validate <code>sellers.json</code> and the <code>SupplyChain</code> object on every bid request before they will spend at scale; neither is optional. Both are generated from the details below and published under the client's own domain, so the buyer sees the client — not Personalisation Hub — as the seller.</div>
       {incomplete && <Callout tone="warning" icon="warning">Organisation name, domain and seller ID are needed before any bid request can carry a valid SupplyChain node. Until then bidders are not sent requests.</Callout>}
       <Grid cols={2}>
         <Fld label="Organisation (seller of record)" hint="The legal entity running this instance and receiving the media spend."><input value={client.name} onChange={(e) => setClient("name", e.target.value)} placeholder="e.g. Demo Retail Group" style={ctl} /></Fld>
