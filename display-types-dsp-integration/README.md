@@ -46,7 +46,7 @@ Also served from the repo itself, from whichever branch you want to look at:
 | `app/src/App.jsx` | The content frame: nav, top-level state, the `SHOW_EXPERIENCE_LAYOUT` gate |
 | `app/src/ui.jsx` | Design tokens and primitives, from the `ph-designer` skill's measured values |
 | `app/src/model/schema.js` | **The PH-aligned data model** — display type, playlist, item, scene factories with the spec's field names; deadline and slot helpers |
-| `app/src/model/sellside.js` | Partners/DSPs, targeting registry, reservations and campaign sets, the resolution rule, forecast, proof of play, exchange settings |
+| `app/src/model/sellside.js` | Partners/DSPs, targeting registry, exchange settings |
 | `app/src/model/data.js` | Sample data, built only through the factories |
 | `app/src/views/*.jsx` | One file per screen (below) |
 | `app/src/assets.js` | The connected-state image |
@@ -69,8 +69,8 @@ spec's own field names are used verbatim —
 `items[].priority` / `playbackDuration` / `campaignType` /
 `campaignCreativeSettings.{default,selected,unselected}`, `text[].variants`.
 `null` on a setting means "inherit the platform default", rendered as
-"Default (…)" exactly as the platform form does. Every screen has a **Data
-(JSON)** panel or tab showing the record it edits. Full shape in
+"Default (…)" exactly as the platform form does. The Display Types and Playlist
+screens have a **Data (JSON)** panel or tab showing the record they edit. Full shape in
 `REQUIREMENTS.md` §8; canonical definition in `app/src/model/schema.js`.
 
 ## Screens
@@ -88,12 +88,6 @@ Two groups in the nav. **Displays**:
   with priority, duration, campaign type and the three creative states,
   each showing its rotation position's visibility deadline; a scene editor
   (background, positioned text elements, animation, trust zone, variants).
-- **Render Preview** — the same surface at all four tiers side by side
-  (with "late" personalisation), a deadlines-and-rotation timeline showing
-  which source can make which slot and what manual navigation does, the
-  pairing simulation (Unpaired → Scanned → Paired → acting, display and
-  phone together, device class, connection state), and the channel preview
-  showing where the ladder freezes.
 - ~~**Experience Layout**~~ — templates, the surface layer. Built and
   working but **out of this release**, gated by `SHOW_EXPERIENCE_LAYOUT` in
   `app/src/App.jsx`; with the flag off `views/LayoutComposer.jsx`
@@ -114,25 +108,14 @@ Two groups in the nav. **Displays**:
   flag, positions sold and reservations. Tier 1 providers (Google DSP,
   Amazon Ads DSP, The Trade Desk, in onboarding order) and a tier-2
   **PH-native partner** (Blackmores is the worked example).
-- **Campaigns & Reservations** — a reservation per sold position set and
-  play window: the **campaign set** (one baseline, targeted overrides with
-  rules over the partner's vocabulary and explicit priority) with a
-  **"Which would win?"** evaluator against attribute values, resolution
-  latency and the position's visibility deadline (manual navigation
-  collapses it); positions, store set, window and clearing; **asset sets
-  and per-display cache state** (eligible only where cached, partial-estate
-  callout); the **approval queue**; the tier-2 JSON.
-- **Inventory & Venues** — per-store OpenOOH venue type, geo and hours;
-  per-display resolution, orientation, loop length, share of voice and
-  sensors; **sellable inventory** as display type × slot × store set ×
-  window; a **forecast** that takes targeting rules as input; and the
-  OpenRTB DOOH **bid request** PH would construct for a display.
-- **Delivery & Analytics** — playback records with the campaign and **the
-  trigger that activated it**; **proof of play & billing** (wins vs plays,
-  unrendered reasons, counted vs modelled impressions, billed at the
-  clearing CPM); triggers and per-store breakdown; and the **partner feed**
-  as delivered — outcome and trigger only, never an attribute value,
-  nothing below the reporting floor.
+**Removed on 16 Sep 2026, not asked for**: a Render Preview screen (tier,
+deadline, pairing and channel previews), a Campaigns & Reservations screen
+(campaign sets with a rule evaluator, positions, asset cache state, approval
+queue), an Inventory & Venues screen (venue/screen metadata, sellable
+inventory, forecast, bid request) and a Delivery & Analytics screen
+(playback records, proof of play, partner feed — analytics has its own
+section elsewhere). All recoverable from git history (commit `cd5e875`) if
+any of it is wanted later; the requirements still describe them as spec.
 
 Design decisions worth keeping:
 
@@ -149,8 +132,8 @@ Design decisions worth keeping:
 - **The blacklist is not a mode** — it subtracts from every outcome on the
   bid, no position can opt out, a blocked advertiser is withdrawn from the
   picker and a position already reserved to it is flagged in place.
-- **A rule on an unresolved attribute is false, not pending.** The
-  evaluator and the deadline timeline both show this.
+- **A rule on an unresolved attribute is false, not pending** (REQUIREMENTS
+  §6) — the resolution rule is spec only in this release.
 - **Never dark**: targeted → baseline → next eligible HQ campaign.
 - **Slot ownership cannot be backfilled.** Partner at write time, winning
   advertiser at render time.

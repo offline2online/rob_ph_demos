@@ -10,7 +10,7 @@ const STATUS_STYLE = {
 };
 const EXCHANGE = "__exchange__";
 
-export default function PartnersView({ partners, setPartners, companyLists, setCompanyLists, exchange, setExchange, types, reservations, goToType, goToReservation, sel, setSel }) {
+export default function PartnersView({ partners, setPartners, companyLists, setCompanyLists, exchange, setExchange, types, goToType, sel, setSel }) {
   const [adding, setAdding] = useState(null);
   const [reveal, setReveal] = useState({});
   const onCompany = sel === COMPANY_LISTS;
@@ -27,7 +27,6 @@ export default function PartnersView({ partners, setPartners, companyLists, setC
     }));
     return out;
   }, [types, p.id]);
-  const resFor = (reservations || []).filter((r) => r.partnerId === p.id);
 
   const missing = p.system ? [] : missingCreds(p.provider, p.creds);
   const missingBidder = p.system || !isDsp(p) || prov?.apiTier === 2 ? [] : BIDDER_FIELDS.filter((f) => f.required && !String((p.bidder || {})[f.key] || "").trim()).map((f) => f.label);
@@ -234,20 +233,6 @@ export default function PartnersView({ partners, setPartners, companyLists, setC
                   </TRow>
                 ))}
               </Table>
-            )}
-            {resFor.length > 0 && (
-              <>
-                <SectionLabel>Reservations</SectionLabel>
-                <Table cols="1fr 1fr 1.2fr 110px 70px" header={["Reservation", "Advertiser", "Window", "Status", ""]}>
-                  {resFor.map((r, i) => (
-                    <TRow key={r.id} cols="1fr 1fr 1.2fr 110px 70px" last={i === resFor.length - 1}>
-                      <TCell mono>{r.id}</TCell><TCell>{r.advertiser}</TCell><TCell muted>{r.window.from} → {r.window.to} · {r.window.hours}h</TCell>
-                      <TCell><Pill color={r.status === "active" ? T.success : T.warning} bg="#fff" border={r.status === "active" ? T.success : T.warning}>{r.status.replace("_", " ")}</Pill></TCell>
-                      <TCell><Btn variant="text" style={{ height: 26, fontSize: 12, padding: 0 }} onClick={() => goToReservation(r.id)}>Open</Btn></TCell>
-                    </TRow>
-                  ))}
-                </Table>
-              </>
             )}
           </>
         )}

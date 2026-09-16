@@ -4,7 +4,7 @@
 ------------------------------------------------------------------- */
 
 import { displayType, playlist, playlistItem, scene, textElement, textVariant, slot, elementConfig, blankFeatures, UNLIMITED } from "./schema.js";
-import { partner, reservation, campaign, DIRECT_PARTNER, ANY_PARTNER, RTB, DEFAULT_EXCHANGE } from "./sellside.js";
+import { partner, DIRECT_PARTNER, ANY_PARTNER, RTB, DEFAULT_EXCHANGE } from "./sellside.js";
 
 /* --------------------------------------------------------- campaigns */
 /* The HQ campaign catalogue playlist items reference. Playback strategy
@@ -230,95 +230,6 @@ export const DISPLAYS = [
   disp("d_111", "s_005", "portrait", "Departures totem", "portrait", "online", { vision: false, mist: true }, ["entrance"]),
   disp("d_112", "s_006", "menu_board", "Counter board", "landscape", "online", { vision: false, mist: false }, ["checkout"]),
 ];
-
-/* ------------------------------------------------------ reservations */
-export const INITIAL_RESERVATIONS = [
-  reservation({ id: "res_8812", partnerId: "p_ph_blackmores", advertiser: "Blackmores",
-    positions: [{ displayTypeId: "menu_board", slotIndex: 1 }, { displayTypeId: "web_carousel", slotIndex: 2 }],
-    storeSet: { mode: "all", storeIds: [] }, window: { from: "2026-09-16", to: "2026-09-17", hours: 24 }, status: "active",
-    campaigns: [
-      campaign({ id: "cmp_b0", role: "baseline", name: "Brand evergreen", assetSetId: "as_brand_evergreen", priority: 999, approval: "approved" }),
-      campaign({ id: "cmp_b1", role: "targeted", name: "Hot day — hydration", assetSetId: "as_hot_day", priority: 10, rules: { all: [{ attr: "env.temp_c", op: "gte", value: 25 }] }, approval: "approved" }),
-      campaign({ id: "cmp_b2", role: "targeted", name: "Cold day — immunity", assetSetId: "as_cold_day", priority: 20, rules: { all: [{ attr: "env.temp_c", op: "lt", value: 15 }] }, approval: "approved" }),
-      campaign({ id: "cmp_b3", role: "targeted", name: "Wellness segment", assetSetId: "as_wellness", priority: 30, rules: { all: [{ attr: "visitor.visitor_segments", op: "contains", value: "wellness" }, { attr: "env.store_stock", op: "eq", value: "in_stock" }] }, approval: "pending" }),
-    ],
-    assetSets: [
-      { id: "as_brand_evergreen", name: "Brand evergreen", kind: "video", sizeMb: 48, durationS: 10, validated: true },
-      { id: "as_hot_day", name: "Hot day", kind: "image", sizeMb: 2.1, durationS: 8, validated: true },
-      { id: "as_cold_day", name: "Cold day", kind: "image", sizeMb: 1.8, durationS: 8, validated: true },
-      { id: "as_wellness", name: "Wellness", kind: "video", sizeMb: 61, durationS: 10, validated: false, issue: "Price-like text detected in artwork — needs human approval (§6)" },
-    ],
-    distribution: { d_101: "cached", d_104: "cached", d_106: "pending", d_108: "cached", d_112: "failed" },
-    clearing: { kind: "Preferred deal", cpm: 7.5, dealId: "PH-BLK-PD-0003" } }),
-  reservation({ id: "res_9031", partnerId: "p_google", advertiser: "Nestlé",
-    positions: [{ displayTypeId: "menu_board", slotIndex: 1 }],
-    storeSet: { mode: "list", storeIds: ["s_001", "s_002", "s_005"] }, window: { from: "2026-09-16", to: "2026-09-17", hours: 24 }, status: "active",
-    campaigns: [
-      campaign({ id: "cmp_n0", role: "baseline", name: "KitKat — break", assetSetId: "as_kitkat", priority: 999, approval: "not_required" }),
-      campaign({ id: "cmp_n1", role: "targeted", name: "Morning — coffee pairing", assetSetId: "as_kitkat_am", priority: 10, rules: { all: [{ attr: "env.daypart", op: "eq", value: "morning" }] }, approval: "not_required" }),
-    ],
-    assetSets: [{ id: "as_kitkat", name: "KitKat break", kind: "video", sizeMb: 52, durationS: 10, validated: true }, { id: "as_kitkat_am", name: "Coffee pairing", kind: "image", sizeMb: 1.2, durationS: 8, validated: true }],
-    distribution: { d_101: "cached", d_104: "cached" },
-    clearing: { kind: "Programmatic guaranteed", cpm: 6.0, dealId: "PH-DV360-PG-0012" } }),
-  reservation({ id: "res_9044", partnerId: "p_google", advertiser: "Swisse",
-    positions: [{ displayTypeId: "landscape", slotIndex: 0 }],
-    storeSet: { mode: "all", storeIds: [] }, window: { from: "2026-09-18", to: "2026-09-19", hours: 24 }, status: "pending_approval",
-    campaigns: [campaign({ id: "cmp_s0", role: "baseline", name: "Swisse Ultivite", assetSetId: "as_swisse", priority: 999, approval: "pending" })],
-    assetSets: [{ id: "as_swisse", name: "Ultivite", kind: "video", sizeMb: 44, durationS: 10, validated: true }],
-    distribution: {}, clearing: { kind: "Open RTB", cpm: 5.1, dealId: null } }),
-];
-
-/* ------------------------------------------------- delivery records */
-/* Deterministic pseudo-random delivery for the last 24h. */
-const rnd = (() => { let s = 20260916; return () => { s = (s * 1103515245 + 12345) & 0x7fffffff; return s / 0x7fffffff; }; })();
-const pick = (arr) => arr[Math.floor(rnd() * arr.length)];
-
-export const DELIVERY_RECORDS = (() => {
-  const out = [];
-  let n = 0;
-  DISPLAYS.filter((d) => d.displayTypeId === "menu_board" || d.displayTypeId === "landscape").forEach((d) => {
-    const store = STORES.find((s) => s.id === d.storeId);
-    for (let h = store.hours.open; h < store.hours.close; h += 2) {
-      const daypart = h < 11 ? "morning" : h < 14 ? "midday" : h < 18 ? "afternoon" : "evening";
-      const temp = Math.round(12 + rnd() * 18);
-      const plays = 3;
-      for (let k = 0; k < plays; k++) {
-        n++;
-        const isRes = d.displayTypeId === "menu_board" && rnd() < 0.6;
-        const res = isRes ? (rnd() < 0.55 ? INITIAL_RESERVATIONS[0] : INITIAL_RESERVATIONS[1]) : null;
-        let campaignId, trigger, reservationId = null, partnerId = null, advertiser = null;
-        if (res && (res.storeSet.mode === "all" || res.storeSet.storeIds.includes(d.storeId))) {
-          reservationId = res.id; partnerId = res.partnerId; advertiser = res.advertiser;
-          const cached = res.distribution[d.id] === "cached";
-          if (!cached) { campaignId = "c_family"; trigger = { kind: "hq_fallback", ruleText: "Advertiser assets not cached on this display" }; reservationId = null; }
-          else if (res.id === "res_8812") {
-            if (temp >= 25) { campaignId = "cmp_b1"; trigger = { kind: "targeted", campaignId: "cmp_b1", ruleText: `Temperature (°C) ≥ 25 (actual ${temp})` }; }
-            else if (temp < 15) { campaignId = "cmp_b2"; trigger = { kind: "targeted", campaignId: "cmp_b2", ruleText: `Temperature (°C) < 15 (actual ${temp})` }; }
-            else { campaignId = "cmp_b0"; trigger = { kind: "baseline", campaignId: "cmp_b0", ruleText: "No targeted rule matched" }; }
-          } else {
-            if (daypart === "morning") { campaignId = "cmp_n1"; trigger = { kind: "targeted", campaignId: "cmp_n1", ruleText: "Daypart is morning" }; }
-            else { campaignId = "cmp_n0"; trigger = { kind: "baseline", campaignId: "cmp_n0", ruleText: "No targeted rule matched" }; }
-          }
-        } else {
-          campaignId = pick(["c_zinger", "c_wings", "c_family", "c_pepsi"]);
-          trigger = { kind: "hq", ruleText: "Headquarters campaign by priority" };
-        }
-        const offline = d.status === "offline";
-        const played = !offline && rnd() > 0.06;
-        const reason = offline ? "offline" : played ? null : pick(["loop_cut", "closed"]);
-        const sensor = d.sensors.vision;
-        const multiplier = sensor ? +(0.6 + rnd() * 3.2).toFixed(2) : +(1.2 + rnd() * 0.6).toFixed(2);
-        out.push({ id: `pb_${n}`, ts: `2026-09-16T${String(h).padStart(2, "0")}:${String(k * 17).padStart(2, "0")}:00Z`, storeId: d.storeId, displayId: d.id, displayTypeId: d.displayTypeId,
-          slotIndex: isRes ? 1 : 0, campaignId, reservationId, partnerId, advertiser, trigger, context: { temp_c: temp, daypart },
-          audience: { multiplier, source: sensor ? "sensor" : "modelled", passerby: sensor ? Math.round(multiplier * 4) : null },
-          playback: { played, reason }, billable: played && !!reservationId });
-      }
-    }
-  });
-  return out;
-})();
-
-export const MATCH_RATES = { "env.temp_c": 0.22, "env.condition": 0.35, "env.daypart": 0.25, "env.store_segments": 0.6, "env.store_stock": 0.8, "env.store_hours_state": 0.9, "visitor.visitor_segments": 0.08, "visitor.loyalty_tier": 0.12, "visitor.purchase_intent": 0.15, "visitor.age_band": 0.2, "display.touch_point": 1, "display.display_tags": 0.5 };
 
 export const INITIAL_EXCHANGE = { ...DEFAULT_EXCHANGE };
 

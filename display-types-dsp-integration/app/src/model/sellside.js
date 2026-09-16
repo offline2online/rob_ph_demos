@@ -1,11 +1,10 @@
 /* ------------------------------------------------------------------
    The sell side — partners / DSPs, advertiser lists, the targeting
-   vocabulary a partner may use, reservations and campaign sets, the
-   resolution rule, delivery records, proof of play, and the exchange
-   settings that make Personalisation Hub the SSP (REQUIREMENTS §6–§7).
+   vocabulary a partner may use, and the exchange settings that make
+   Personalisation Hub the SSP (REQUIREMENTS §6–§7). Reservations, campaign
+   sets and delivery records are spec only (§6) — not modelled here.
 ------------------------------------------------------------------- */
 
-import { visibilityDeadlineMs, slotCount, loopLengthSeconds, shareOfVoice, PLATFORM_DEFAULTS } from "./schema.js";
 
 /* ---------------------------------------------------------- partners */
 
@@ -174,152 +173,6 @@ export const permittedVocabulary = (p) => ATTRIBUTE_REGISTRY.filter((a) => {
   return (p.targeting?.enabledAttributes || []).includes(a.key);
 });
 
-/* -------------------------------------------- reservations & campaigns */
-
-export const campaign = (over = {}) => ({
-  id: null, role: "targeted", name: "", assetSetId: null, priority: 10,
-  rules: { all: [] },                          // [{ attr, op, value }]
-  approval: "approved",                        // approved | pending | not_required
-  ...over,
-});
-
-export const reservation = (over = {}) => ({
-  id: null, partnerId: null, advertiser: null,
-  positions: [],                               // [{ displayTypeId, slotIndex }]
-  storeSet: { mode: "all", storeIds: [] },
-  window: { from: null, to: null, hours: 24 }, // a play window, not an impression (§6)
-  status: "active",                            // active | pending_approval | scheduled | ended
-  campaigns: [],                               // exactly one baseline + targeted set
-  assetSets: [],                               // [{ id, name, kind, sizeMb, durationS }]
-  distribution: {},                            // displayId -> cached | pending | failed
-  clearing: { kind: "programmatic_guaranteed", cpm: null, dealId: null },
-  ...over,
-});
-
-const ruleText = (r) => {
-  const a = attrByKey(r.attr);
-  const op = Object.values(OPS).flat().find(([k]) => k === r.op);
-  return `${a ? a.label : r.attr} ${op ? op[1] : r.op} ${Array.isArray(r.value) ? r.value.join(", ") : r.value}`;
-};
-
-const test = (r, v) => {
-  switch (r.op) {
-    case "eq": return String(v) === String(r.value);
-    case "neq": return String(v) !== String(r.value);
-    case "gt": return Number(v) > Number(r.value);
-    case "gte": return Number(v) >= Number(r.value);
-    case "lt": return Number(v) < Number(r.value);
-    case "lte": return Number(v) <= Number(r.value);
-    case "in": return String(r.value).split(/,\s*/).includes(String(v));
-    case "contains": return (Array.isArray(v) ? v : String(v).split(/,\s*/)).includes(String(r.value));
-    case "not_contains": return !(Array.isArray(v) ? v : String(v).split(/,\s*/)).includes(String(r.value));
-    case "exists": return v !== undefined && v !== null && v !== "";
-    default: return false;
-  }
-};
-
-/* THE resolution rule (§6): at the slot's visibility deadline, evaluate the
-   targeted campaigns in priority order; the highest-priority one whose rules
-   all evaluate true — against attributes that resolved BY the deadline —
-   wins. A rule on an unresolved attribute is false, not pending. Otherwise
-   the baseline; and if the baseline is unusable, the next eligible HQ
-   campaign. Never dark.
-
-   ctx.attrs: { [key]: { value, resolvedAtMs } }   (resolvedAtMs null = never)
-   ctx.deadlineMs: the visibility deadline of the position being filled. */
-export function resolveReservation(res, ctx) {
-  const trace = [];
-  const targeted = (res.campaigns || []).filter((c) => c.role === "targeted").sort((a, b) => a.priority - b.priority);
-  const baseline = (res.campaigns || []).find((c) => c.role === "baseline");
-  let winner = null;
-  for (const c of targeted) {
-    if (c.approval === "pending") { trace.push({ campaign: c, outcome: "pending_approval", detail: "Held out of rotation until approved." }); continue; }
-    const rules = c.rules?.all || [];
-    let failed = null;
-    for (const r of rules) {
-      const a = ctx.attrs?.[r.attr];
-      const resolved = a && a.resolvedAtMs !== null && a.resolvedAtMs !== undefined && a.resolvedAtMs <= ctx.deadlineMs;
-      if (!a || !resolved) { failed = { kind: "unresolved", rule: r, detail: `${ruleText(r)} — ${a && a.resolvedAtMs != null ? `resolved at ${a.resolvedAtMs} ms, after the ${ctx.deadlineMs} ms deadline` : "attribute not resolved"} → false` }; break; }
-      if (!test(r, a.value)) { failed = { kind: "rule_false", rule: r, detail: `${ruleText(r)} — actual ${Array.isArray(a.value) ? a.value.join(", ") : a.value} → false` }; break; }
-    }
-    if (failed) { trace.push({ campaign: c, outcome: failed.kind, detail: failed.detail }); continue; }
-    if (!winner) { winner = c; trace.push({ campaign: c, outcome: "won", detail: rules.length ? rules.map(ruleText).join(" AND ") + " → true" : "No rules — always true" }); }
-    else trace.push({ campaign: c, outcome: "outranked", detail: `Rules true, but priority ${c.priority} loses to ${winner.priority}` });
-  }
-  let fallback = null;
-  if (!winner) {
-    if (baseline && baseline.approval !== "pending") { winner = baseline; fallback = "baseline"; trace.push({ campaign: baseline, outcome: "won", detail: "No targeted campaign matched — baseline renders." }); }
-    else { fallback = "hq"; trace.push({ campaign: baseline || { name: "(no baseline)" }, outcome: "unusable", detail: "No usable baseline — position falls back to the next eligible Headquarters campaign. Never dark." }); }
-  } else if (baseline) trace.push({ campaign: baseline, outcome: "not_needed", detail: "A targeted campaign won." });
-  return { winner, fallback, trace };
-}
-
-export const reservationProblems = (res) => {
-  const out = [];
-  const baselines = (res.campaigns || []).filter((c) => c.role === "baseline");
-  if (baselines.length !== 1) out.push(`Exactly one baseline campaign is mandatory (found ${baselines.length}).`);
-  const pr = (res.campaigns || []).filter((c) => c.role === "targeted").map((c) => c.priority);
-  if (new Set(pr).size !== pr.length) out.push("Targeted campaigns share a priority — precedence must be explicit.");
-  (res.campaigns || []).filter((c) => c.role === "targeted").forEach((c) => { if (!(c.rules?.all || []).length) out.push(`"${c.name}" has no rules — it would always override the baseline.`); });
-  return out;
-};
-
-/* Per-display eligibility inside the window (§7): a win is eligible on a
-   display only once that display has confirmed its cache. */
-export const eligibilitySummary = (res, displays) => {
-  const inScope = displays.filter((d) => res.storeSet.mode === "all" || res.storeSet.storeIds.includes(d.storeId))
-    .filter((d) => res.positions.some((p) => p.displayTypeId === d.displayTypeId));
-  const counts = { cached: 0, pending: 0, failed: 0, total: inScope.length };
-  inScope.forEach((d) => { counts[res.distribution?.[d.id] || "pending"]++; });
-  return { inScope, ...counts };
-};
-
-/* -------------------------------------------------------- forecasting */
-
-/* Availability is a forecast, and targeting changes it (§6). A deliberately
-   simple model: plays per open hour from loop length × share of voice, times
-   the estimated audience multiplier, times the fraction of moments the
-   targeting rules are expected to be true. */
-export function forecast({ displayType, playlist, storeIds, windowDays, rules, audienceMultiplier = 1.4 }, { stores, displays, matchRates }) {
-  const loop = Math.max(10, loopLengthSeconds(playlist) || 60);
-  const sov = shareOfVoice(displayType) || 1;
-  const inScope = displays.filter((d) => d.displayTypeId === displayType.id && (storeIds.length === 0 || storeIds.includes(d.storeId)));
-  let plays = 0;
-  inScope.forEach((d) => {
-    const s = stores.find((x) => x.id === d.storeId);
-    const hours = s ? s.hours.close - s.hours.open : 12;
-    plays += (hours * 3600 / loop) * sov * windowDays;
-  });
-  const match = (rules || []).reduce((acc, r) => acc * (matchRates[r.attr] ?? 0.5), 1);
-  return { displays: inScope.length, plays: Math.round(plays), impressions: Math.round(plays * audienceMultiplier), targetedPlays: Math.round(plays * match), targetedImpressions: Math.round(plays * match * audienceMultiplier), matchRate: match };
-}
-
-/* ---------------------------------------------- delivery / proof of play */
-
-export const TRIGGER_KINDS = {
-  targeted: { label: "Targeted rule matched", colour: "#9747ff" },
-  baseline: { label: "Baseline filled the position", colour: "#169bc2" },
-  hq_fallback: { label: "HQ fallback (never dark)", colour: "#faad14" },
-  hq: { label: "Headquarters priority", colour: "#169bc2" },
-  store: { label: "Store-activated", colour: "#faad14" },
-};
-export const UNPLAYED_REASONS = { offline: "Display offline", closed: "Store closed", loop_cut: "Loop cut short", not_cached: "Assets not cached" };
-
-/* Group delivery records into the billing view: wins vs plays, unrendered by
-   reason, billed impressions (played × multiplier). */
-export function proofOfPlay(records) {
-  const byRes = {};
-  records.forEach((r) => {
-    const k = r.reservationId || "hq";
-    byRes[k] = byRes[k] || { reservationId: r.reservationId, partnerId: r.partnerId, advertiser: r.advertiser, wins: 0, plays: 0, unplayed: {}, impressions: 0, measured: 0, modelled: 0 };
-    const b = byRes[k];
-    b.wins++;
-    if (r.playback.played) { b.plays++; b.impressions += r.audience.multiplier; if (r.audience.source === "sensor") b.measured++; else b.modelled++; }
-    else b.unplayed[r.playback.reason] = (b.unplayed[r.playback.reason] || 0) + 1;
-  });
-  return Object.values(byRes);
-}
-
 export const DEFAULT_EXCHANGE = {
   sellerOfRecord: "retailer",                 // retailer | ph  (open question 33)
   sellersJson: { sellerId: "ph-4471", name: "Personalisation Hub Demo Retail", domain: "personalisationhub.com", sellerType: "PUBLISHER", isConfidential: false, published: true },
@@ -332,4 +185,3 @@ export const DEFAULT_EXCHANGE = {
   venueExclusions: [],
 };
 
-export { visibilityDeadlineMs, slotCount, PLATFORM_DEFAULTS, ruleText };

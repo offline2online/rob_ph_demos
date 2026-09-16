@@ -702,7 +702,8 @@ reporting floor). All in `app/src/model/sellside.js`.
 
 ## Functional requirements
 
-Each item is annotated with where it lives in the prototype.
+Each item is annotated with where it lives in the prototype, or marked
+*spec only* where it is not built.
 
 - **Display type library**, browsable by touch point, with slot count and
   ownership summary. *(Display Types / Elements)*
@@ -718,11 +719,11 @@ Each item is annotated with where it lives in the prototype.
   regions in any editor preview. *(zones, slots and scene text elements; red-locked in every preview)*
 - **Tier preview**: Default / Localised / Personalised (in-window and late)
   / Interactive, side by side — the single most important screen per the
-  spec. *(Render Preview → Tier preview, Deadlines & rotation)*
+  spec. *(spec only — not in the prototype)*
 - **Pairing simulation**: QR scan → profile sync → phone-driven page
-  update, shown side by side. *(Render Preview → Pairing simulation; Idle / Connected on the type preview)*
+  update, shown side by side. *(Idle / Connected switch on the Display Types preview only)*
 - **Channel preview**: the same surface rendered as web vs. email vs.
-  messaging, showing where the ladder freezes. *(Render Preview → Channel preview)*
+  messaging, showing where the ladder freezes. *(spec only — not in the prototype)*
 - **Partner/DSP connection management**: credentials per partner, connection
   test, advertisers pulled on connect, and the positions sold through each. *(Partners / DSPs)*
 - **Per-partner targeting attribute enablement**: which registry attributes
@@ -733,14 +734,14 @@ Each item is annotated with where it lives in the prototype.
   relink (discarding the partner's own), with inherited lists shown read-only
   and visually distinct from an override. *(Partners / DSPs → partner → Advertiser whitelist / blacklist)*
 - **Per-advertiser approval-required toggle**, and a campaign approval queue
-  for the advertisers it is set on. *(Partners / DSPs → Advertisers on this partner; Campaigns → Approval queue)*
+  for the advertisers it is set on. *(Partners / DSPs → Advertisers on this partner; queue is spec only)*
 - **Campaign set editor** per reservation: one baseline, plus targeted
   campaigns with rules and explicit priority, showing which would win for a
-  given set of attribute values. *(Campaigns & Reservations → Campaign set, with "Which would win?")*
+  given set of attribute values. *(spec only — not in the prototype)*
 - **Asset distribution status per display** — a programmatic win is not
-  eligible on a display until that display has cached its assets. *(Campaigns & Reservations → Assets & distribution)*
+  eligible on a display until that display has cached its assets. *(spec only — not in the prototype)*
 - **Playback analytics feed** at display and store level, disclosing the
-  campaign that played and the trigger that activated it. *(Delivery & Analytics → Playback records, Which campaign and why, Partner feed)*
+  campaign that played and the trigger that activated it. *(spec only — not in the prototype)*
 - **Bidder configuration per DSP partner**: endpoint, seat identifiers, QPS
   ceiling and timeout, alongside the account credentials already modelled. *(Partners / DSPs → Bidder integration)*
 - **Pre-auction enforcement**: floor, permitted categories and the advertiser
@@ -750,11 +751,11 @@ Each item is annotated with where it lives in the prototype.
   configurable. *(Partners / DSPs → Exchange settings)*
 - **Venue and screen metadata per store/display** — OpenOOH venue type, geo,
   resolution, orientation, loop length, share of voice — as required by a
-  DOOH bid request. *(Inventory & Venues → Venues & screens, Bid request)*
+  DOOH bid request. *(spec only — not in the prototype)*
 - **Proof-of-play reconciliation**: wins matched against actual plays, with
-  unrendered plays reported and excluded from billing. *(Delivery & Analytics → Proof of play & billing)*
+  unrendered plays reported and excluded from billing. *(spec only — not in the prototype)*
 - **Audience multiplier** per play, sensor-derived where Vision/AI or MIST is
-  enabled on the display type, modelled otherwise. *(Delivery & Analytics; sensors per display under Inventory & Venues)*
+  enabled on the display type, modelled otherwise. *(spec only — not in the prototype)*
 - **Playlist editor** — items with `priority`, `playbackDuration`,
   `campaignType` and the three `campaignCreativeSettings` states, scheduled
   against store hours, with each position's visibility deadline shown; scene
@@ -762,10 +763,9 @@ Each item is annotated with where it lives in the prototype.
   zone and `variants`. *(Playlist Management → Items, Scenes)*
 - **Inventory listing and forecast** — sellable positions as display type ×
   slot × store set × window, and a forecast that takes targeting rules as
-  input. *(Inventory & Venues → Sellable inventory, Forecast)*
-- **Data view on every record** — the display type, playlist, campaign set,
-  bid request and partner feed as JSON, so the shape can be checked against
-  the platform. *(the Data panel/tab on each screen)*
+  input. *(spec only — not in the prototype)*
+- **Data view on every record** — the display type and playlist as JSON, so the shape can be checked against
+  the platform. *(the Data panel/tab on the Display Types and Playlist screens)*
 
 ## Open questions (from spec §11, scoped to this project)
 
