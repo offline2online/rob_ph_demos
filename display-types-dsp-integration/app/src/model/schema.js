@@ -42,10 +42,10 @@ export const tpIcon = (n) => (TOUCH_POINTS.find((t) => t.name === n) || TOUCH_PO
 
 /* Option lists exactly as the HQ Admin form offers them. */
 export const ASSET_POSITIONS = ["Top-Left", "Top-Right", "Center", "Bottom-Left", "Bottom-Right"];
-export const ASSET_FILLS = ["Fit to Display (Maintain Aspect Ratio)", "Fill Display (Crop)", "Stretch to Display", "Original Size"];
-export const CAMPAIGN_TRANSITIONS = ["None", "Fade", "Slide", "Wipe"];
-export const AUTO_ROTATION = ["Auto-Rotate", "Manual Rotation"];
-export const AUTO_PLAY = ["Auto-Play", "Manual Play"];
+export const ASSET_FILLS = ["Fit to Display", "Maintain Asset Property", "Fill", "Stretch"];
+export const CAMPAIGN_TRANSITIONS = ["None", "Fade", "Slide"];
+export const AUTO_ROTATION = ["Auto-Rotate On", "Auto-Rotate Off"];
+export const AUTO_PLAY = ["Auto-Play On", "Auto-Play Off"];
 export const ROTATION_CAPS = [UNLIMITED, 1, 2, 3, 4, 5, 6, 8, 10, 12];
 export const PHANTOM_POSITIONS = ["Top Left", "Top Right", "Bottom Left", "Bottom Right", "Center"];
 export const PHANTOM_SIZING_MODES = ["Fit to Display", "Fixed", "Scale to Content"];
@@ -55,11 +55,11 @@ export const QR_POSITIONS = ["Center", "Top Left", "Top Right", "Bottom Left", "
 export const PLATFORM_DEFAULTS = {
   playlistSettings: {
     assetPosition: "Top-Left",
-    assetFill: "Fit to Display (Maintain Aspect Ratio)",
+    assetFill: "Fit to Display",
     maximumCampaignsPlayedInRotation: UNLIMITED,
     campaignTransition: "None",
-    campaignAutoRotation: "Auto-Rotate",
-    campaignAutoPlay: "Auto-Play",
+    campaignAutoRotation: "Auto-Rotate On",
+    campaignAutoPlay: "Auto-Play On",
   },
   qrControl: { phantomArea: { position: "Bottom Right" }, qrCode: { position: "Center" } },
   firstPaintBudgetMs: 800,
@@ -131,7 +131,7 @@ export const BREAKPOINTS = [
 const BP = (w, h, cols, items, peek = 0) => ({ viewportWidth: w, height: h, columns: cols, items, peek });
 export const ELEMENT_DEFAULTS = {
   hero: { slots: 1, itemAspect: "16:9", gap: 0, widthMode: "full", desktop: BP(1200, 520, 1, 1), tablet: BP(834, 380, 1, 1), mobile: BP(390, 260, 1, 1) },
-  carousel: { slots: 4, itemAspect: "16:9", gap: 12, widthMode: "contained", desktop: BP(1200, 360, 1, 4, 10), tablet: BP(834, 300, 1, 4, 10), mobile: BP(390, 240, 1, 4, 15) },
+  carousel: { slots: 4, itemAspect: "16:9", gap: 12, widthMode: "contained", desktop: BP(1200, 360, 1, 4), tablet: BP(834, 300, 1, 4), mobile: BP(390, 240, 1, 4) },
   grid: { slots: 6, itemAspect: "4:3", gap: 16, widthMode: "contained", desktop: BP(1200, 640, 3, 6), tablet: BP(834, 520, 2, 4), mobile: BP(390, 600, 1, 3) },
   list: { slots: 4, itemAspect: "16:9", gap: 12, widthMode: "contained", desktop: BP(1200, 480, 1, 4), tablet: BP(834, 420, 1, 3), mobile: BP(390, 400, 1, 3) },
   product: { slots: 6, itemAspect: "1:1", gap: 12, widthMode: "contained", desktop: BP(1200, 560, 3, 6), tablet: BP(834, 480, 2, 4), mobile: BP(390, 440, 2, 4) },
@@ -140,7 +140,7 @@ export const ELEMENT_DEFAULTS = {
   faq: { slots: 5, itemAspect: "auto", gap: 6, widthMode: "contained", desktop: BP(1200, 420, 1, 5), tablet: BP(834, 400, 1, 5), mobile: BP(390, 380, 1, 4) },
   text: { slots: 1, itemAspect: "auto", gap: 8, widthMode: "contained", desktop: BP(1200, 300, 1, 1), tablet: BP(834, 280, 1, 1), mobile: BP(390, 260, 1, 1) },
   footer: { slots: 1, itemAspect: "auto", gap: 8, widthMode: "full", desktop: BP(1200, 180, 1, 1), tablet: BP(834, 200, 1, 1), mobile: BP(390, 260, 1, 1) },
-  qr_control: { slots: 1, itemAspect: "1:1", gap: 0, widthMode: "contained", aboveFold: true, desktop: BP(240, 240, 1, 1), tablet: BP(240, 240, 1, 1), mobile: BP(200, 200, 1, 1) },
+  qr_control: { slots: 1, itemAspect: "1:1", gap: 0, widthMode: "contained", aboveFold: true, desktop: BP(1200, 520, 1, 1), tablet: BP(834, 380, 1, 1), mobile: BP(390, 260, 1, 1) },
 };
 
 /* The element block of a Responsive Web display type. */
@@ -193,12 +193,15 @@ export const displayType = (over = {}) => {
       campaignTransition: null, campaignAutoRotation: null, campaignAutoPlay: null,
     },
     qrControl: {                                   // QR CONTROL (PHANTOM ZONE) panel
-      enabled: false,
-      phantomArea: { width: 250, height: 250, position: null, sizingMode: "Fit to Display" },
-      qrCode: { size: 120, colour: "#000000", position: null },
+      enabled: false,                              // the platform's "Enable QR Control (Phantom Zone)"
+      phantomArea: {                               // spec §5: the overlay region can exist without a QR in it
+        enabled: false, width: 250, height: 250, position: null, sizingMode: "Fit to Display",
+      },
+      qrCode: { size: 100, colour: "#000000", position: null },
       connectedIconColour: "#169bc2",
       mobileSiteTemplate: "Mobile App",
       connected: { icon: "smartphone", showPoweredBy: true, poweredByText: "Powered by Personalisation Hub" },
+      webOverlay: { position: "Bottom Right", offsetX: 24, offsetY: 24 },   // web pairing overlay anchor (template-level per spec §6)
     },
     enabledFeatures: blankFeatures(),
     multiZone: { enabled: false, zones: [] },      // zones[]: { id, name, x, y, width, height (% of canvas), playlistId, trustZone }

@@ -43,13 +43,12 @@ Also served from the repo itself, from whichever branch you want to look at:
 | `REQUIREMENTS.md` | The functional spec — Systems Two & Three of the surface architecture spec v1.2, the sell side, and the data model (§8) |
 | `README.md` | This orientation doc |
 | `app/` | Vite + React source |
-| `app/src/App.jsx` | The content frame: nav, top-level state, the `SHOW_EXPERIENCE_LAYOUT` gate |
-| `app/src/ui.jsx` | Design tokens and primitives, from the `ph-designer` skill's measured values |
-| `app/src/model/schema.js` | **The PH-aligned data model** — display type, playlist, item, scene factories with the spec's field names; deadline and slot helpers |
-| `app/src/model/sellside.js` | Partners/DSPs, targeting registry, exchange settings |
+| `app/src/DisplayTypesAndPlaylists.jsx` | **The artifact's UI, as provided** — the content frame (nav, `SHOW_EXPERIENCE_LAYOUT` gate), the Display Types / Elements screen, Playlist Management and the gated Experience Layout composer, with their own primitives. Only its data accessors were changed, to read the PH-aligned records below |
+| `app/src/views/PartnersView.jsx` | The Partners / DSPs screen, including Exchange settings |
+| `app/src/ui.jsx` | Primitives used by the Partners screen, from the `ph-designer` skill's measured values |
+| `app/src/model/schema.js` | **The PH-aligned data model** — display type, playlist, item, scene factories with the spec's field names; slot and inheritance helpers |
+| `app/src/model/sellside.js` | Partners/DSPs, targeting registry, the client-owned exchange settings |
 | `app/src/model/data.js` | Sample data, built only through the factories |
-| `app/src/views/*.jsx` | One file per screen (below) |
-| `app/src/assets.js` | The connected-state image |
 | `prototype/` | **Built output, committed.** What GitHub Pages, a githack branch preview and the Artifact actually serve |
 
 `app/` builds into `prototype/` (`npm install && npm run build` inside `app/`),
@@ -69,54 +68,57 @@ spec's own field names are used verbatim —
 `items[].priority` / `playbackDuration` / `campaignType` /
 `campaignCreativeSettings.{default,selected,unselected}`, `text[].variants`.
 `null` on a setting means "inherit the platform default", rendered as
-"Default (…)" exactly as the platform form does. The Display Types and Playlist
-screens have a **Data (JSON)** panel or tab showing the record they edit. Full shape in
+"Default (…)" exactly as the platform form does. Full shape in
 `REQUIREMENTS.md` §8; canonical definition in `app/src/model/schema.js`.
+
+**The Display Types / Elements and Playlist Management screens are the
+provided artifact's UI, like for like** — the original
+`DisplayTypesAndPlaylists.jsx` with only its record accessors ported to the
+aligned model. Every display type, the playlist list and an open playlist
+render pixel-identical to the artifact's original bundle; a rebuilt version
+that departed from it was reverted on 16 Sep 2026.
 
 ## Screens
 
-Two groups in the nav. **Displays**:
+Three nav items:
 
-- **Display Types / Elements** — the platform's Display Types Details form
-  (touch point, name, description, canvas size, background, default
-  playlist, Playlist Settings, QR Control (Phantom Zone), Display Type
-  Image) plus what this project adds: Enabled Features, Multi-Zone Layout
-  with a trust zone per zone, slot assignment against the capped rotation
-  (owner, partner/advertiser, store quota, trust zone), inheritance badges,
-  the displays using the type, and the JSON record.
-- **Playlist Management** — playlists scheduled against store hours; items
-  with priority, duration, campaign type and the three creative states,
-  each showing its rotation position's visibility deadline; a scene editor
-  (background, positioned text elements, animation, trust zone, variants).
-- ~~**Experience Layout**~~ — templates, the surface layer. Built and
-  working but **out of this release**, gated by `SHOW_EXPERIENCE_LAYOUT` in
-  `app/src/App.jsx`; with the flag off `views/LayoutComposer.jsx`
-  tree-shakes out of the bundle. One consequence: QR pairing on web is
-  configured on the Layout template, so **web pairing has no home in this
-  release**.
-
-**Sell side**:
-
-- **Partners / DSPs** — **Exchange settings** (seller of record,
-  `sellers.json`, SupplyChain, OpenRTB DOOH options, pre-auction
-  enforcement, play window, audience currency, reporting floor, bidder
-  readiness); **Advertiser lists** (company whitelist/blacklist, who adopts
-  and who has unlinked); per partner: outbound credentials, inbound bidder
-  config, deals, inventory rules, **targeting attributes the partner may
-  use** (visitor attributes off by default, contributed attributes marked),
-  lists with unlink/relink, advertisers with the **approval-required**
-  flag, positions sold and reservations. Tier 1 providers (Google DSP,
+- **Display Types / Elements** — as in the artifact: the display type list
+  with structural markers, the Display Types Details form (touch point,
+  name, description, canvas size, background, default playlist, Playlist
+  Settings with "Default (…)" inheritance, QR Control (Phantom Zone), Enabled
+  Features, Multi-Zone Layout, slot assignment against the capped rotation,
+  Display Preview / web element preview with breakpoints, Display Type
+  Image).
+- **Playlist Management** — as in the artifact: the playlist table with
+  assignment to display types and zones, create/rename/delete, and the open
+  playlist detail.
+- ~~**Experience Layout**~~ — templates, the surface layer. Present in the
+  source but **out of this release**, gated by `SHOW_EXPERIENCE_LAYOUT` in
+  `app/src/DisplayTypesAndPlaylists.jsx`. One consequence: QR pairing on
+  web is configured on the Layout template, so **web pairing has no home in
+  this release**.
+- **Partners / DSPs** — **Exchange settings** for **the client running this
+  instance**: Personalisation Hub runs inside the client's own VPC, so the
+  client is the seller of record and the exchange, not Personalisation Hub.
+  The panel takes the client's organisation name, domain, seller ID and
+  ad-ops contact, and generates `sellers.json` (published under the client's
+  domain) and the SupplyChain node from them; then OpenRTB DOOH options,
+  pre-auction enforcement, play window, audience currency, reporting floor,
+  bidder readiness. **Advertiser lists** (company whitelist/blacklist, who
+  adopts and who has unlinked); per partner: outbound credentials, inbound
+  bidder config, deals, inventory rules, **targeting attributes the partner
+  may use** (visitor attributes off by default, contributed attributes
+  marked), lists with unlink/relink, advertisers with the
+  **approval-required** flag, positions sold. Tier 1 providers (Google DSP,
   Amazon Ads DSP, The Trade Desk, in onboarding order) and a tier-2
   **PH-native partner** (Blackmores is the worked example).
 
-**Removed on 16 Sep 2026, not asked for**: a Render Preview screen (tier,
-deadline, pairing and channel previews), a Campaigns & Reservations screen
-(campaign sets with a rule evaluator, positions, asset cache state, approval
-queue), an Inventory & Venues screen (venue/screen metadata, sellable
-inventory, forecast, bid request) and a Delivery & Analytics screen
-(playback records, proof of play, partner feed — analytics has its own
-section elsewhere). All recoverable from git history (commit `cd5e875`) if
-any of it is wanted later; the requirements still describe them as spec.
+**Not in this release, and not asked for**: the Render Preview, Campaigns &
+Reservations, Inventory & Venues and Delivery & Analytics screens added on a
+rebuilt version of this prototype were removed on 16 Sep 2026, and the
+rebuilt Display Types and Playlist screens were reverted to the artifact's.
+All recoverable from git history (commit `cd5e875`) if any of it is wanted
+later; the requirements still describe that material as spec.
 
 Design decisions worth keeping:
 
@@ -155,7 +157,11 @@ then serve `../prototype/` statically and drive it with Playwright (the
 sandbox blocks `fonts.googleapis.com`, so Material Symbols render as their
 ligature names there — not a defect; intercept the font CSS request and
 fulfil it empty to keep the layout honest). Check every nav item and tab for
-page errors and for `scrollWidth > clientWidth` at 1163px.
+page errors and for `scrollWidth > clientWidth` at 1163px. For the Display
+Types and Playlist screens, also serve the artifact's original bundle
+(`git show ffee58d:display-types-dsp-integration/prototype/...`) beside the
+new one and compare full-page screenshots and rendered text of every display
+type and playlist — they are meant to be identical.
 
 Tracked on the Prototype Backlog board as
 **"Display Types & DSP Integration"** (see root `CLAUDE.md` → "Prototype

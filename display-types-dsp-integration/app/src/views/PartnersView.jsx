@@ -59,7 +59,7 @@ export default function PartnersView({ partners, setPartners, companyLists, setC
       {/* ------------------------------------------------ partner list */}
       <div style={{ width: 260, flexShrink: 0 }}>
         <SectionLabel style={{ marginTop: 0 }}>Company</SectionLabel>
-        <ListCard active={onExchange} onClick={() => { setSel(EXCHANGE); setAdding(null); }} icon="storefront" title="Exchange settings" sub={`${exchange.sellerOfRecord === "ph" ? "PH" : "Retailer"} is seller of record · OpenRTB ${exchange.openRtb.version}`} />
+        <ListCard active={onExchange} onClick={() => { setSel(EXCHANGE); setAdding(null); }} icon="storefront" title="Exchange settings" sub={`${(exchange.client && exchange.client.name) || "Client"} is seller of record · OpenRTB ${exchange.openRtb.version}`} />
         <ListCard active={onCompany} onClick={() => { setSel(COMPANY_LISTS); setAdding(null); }} icon="rule" title="Advertiser lists" sub={`${companyLists.allowList.length} allowed · ${companyLists.blockList.length} blocked · ${partners.filter((x) => isDsp(x) && x.listsLinked !== false).length} adopting`} />
 
         <SectionLabel>Connected partners</SectionLabel>
@@ -291,34 +291,39 @@ function TargetingPermissions({ p, setP }) {
 /* Company-level: the exchange itself (REQUIREMENTS §7). */
 function ExchangePanel({ exchange, setExchange, partners, companyLists }) {
   const set = (patch) => setExchange({ ...exchange, ...patch });
+  const setClient = (k, v) => set({ client: { ...exchange.client, [k]: v } });
   const setSj = (k, v) => set({ sellersJson: { ...exchange.sellersJson, [k]: v } });
+  const client = exchange.client || { name: "", domain: "", contactEmail: "" };
   const bidders = partners.filter((p) => isDsp(p) && providerOf(p)?.apiTier === 1);
   const ready = bidders.filter((p) => p.status === "connected" && BIDDER_FIELDS.filter((f) => f.required).every((f) => String((p.bidder || {})[f.key] || "").trim()));
-  const sellersJson = { contact_email: "adops@personalisationhub.com", version: "1.0", sellers: [{ seller_id: exchange.sellersJson.sellerId, name: exchange.sellersJson.isConfidential ? undefined : exchange.sellersJson.name, domain: exchange.sellersJson.isConfidential ? undefined : exchange.sellersJson.domain, seller_type: exchange.sellersJson.sellerType, is_confidential: exchange.sellersJson.isConfidential ? 1 : 0 }] };
-  const schain = { complete: 1, ver: "1.0", nodes: [{ asi: exchange.supplyChain.asi, sid: exchange.supplyChain.sid, hp: exchange.supplyChain.hp }] };
+  const domain = client.domain || "<client-domain>";
+  const sellersJson = { contact_email: client.contactEmail || undefined, version: "1.0", sellers: [{ seller_id: exchange.sellersJson.sellerId, name: exchange.sellersJson.isConfidential ? undefined : client.name, domain: exchange.sellersJson.isConfidential ? undefined : client.domain, seller_type: exchange.sellersJson.sellerType, is_confidential: exchange.sellersJson.isConfidential ? 1 : 0 }] };
+  const schain = { complete: 1, ver: "1.0", nodes: [{ asi: client.domain, sid: exchange.sellersJson.sellerId, hp: exchange.supplyChain.hp }] };
+  const incomplete = !client.name || !client.domain || !exchange.sellersJson.sellerId;
   return (
     <>
       <div style={{ display: "flex", alignItems: "flex-start", gap: 12, flexWrap: "wrap" }}>
         <Icon name="storefront" size={26} style={{ color: T.primary, marginTop: 2 }} />
         <div style={{ flex: 1, minWidth: 200 }}>
           <div style={{ fontSize: 16, fontWeight: 600 }}>Exchange settings</div>
-          <div style={{ fontSize: 12, color: T.muted, marginTop: 4 }}>Personalisation Hub is the supply-side platform: the retailer owns the screens, PH operates and sells them, and DSPs bid into it. This is what makes the exchange a real seller.</div>
+          <div style={{ fontSize: 12, color: T.muted, marginTop: 4 }}>This instance of Personalisation Hub runs inside <b>{client.name || "your"}</b>'s own VPC. {client.name || "The client"} owns the screens, is the <b>seller of record</b> and operates the exchange that DSPs bid into. Personalisation Hub is the software, not a party to the sale — fill this in for the organisation running this instance.</div>
         </div>
         <Pill color={ready.length ? T.success : T.warning} bg="#fff" border={ready.length ? T.success : T.warning}><Icon name="ads_click" size={13} />{ready.length} of {bidders.length} bidders receiving requests</Pill>
       </div>
 
-      <SectionLabel>Seller of record & sellers.json</SectionLabel>
-      <div style={{ fontSize: 12, color: T.muted, lineHeight: 1.6, marginBottom: 12 }}>Buyers validate <code>sellers.json</code> and the <code>SupplyChain</code> object on every bid request before they will spend at scale; neither is optional. Who the seller of record is — the retailer or PH — is open question 33; the declaration below follows whichever is chosen.</div>
+      <SectionLabel>Seller of record — this organisation</SectionLabel>
+      <div style={{ fontSize: 12, color: T.muted, lineHeight: 1.6, marginBottom: 12 }}>Buyers validate <code>sellers.json</code> and the <code>SupplyChain</code> object on every bid request before they will spend at scale; neither is optional. Both are generated from the details below and published under the client's own domain, so the buyer sees the client — not Personalisation Hub — as the seller.</div>
+      {incomplete && <Callout tone="warning" icon="warning">Organisation name, domain and seller ID are needed before any bid request can carry a valid SupplyChain node. Until then bidders are not sent requests.</Callout>}
       <Grid cols={2}>
-        <Fld label="Seller of record"><Segmented value={exchange.sellerOfRecord} onChange={(v) => set({ sellerOfRecord: v })} options={[{ value: "retailer", label: "The retailer" }, { value: "ph", label: "Personalisation Hub" }]} /></Fld>
+        <Fld label="Organisation (seller of record)" hint="The legal entity running this instance and receiving the media spend."><input value={client.name} onChange={(e) => setClient("name", e.target.value)} placeholder="e.g. Demo Retail Group" style={ctl} /></Fld>
+        <Fld label="Domain" hint="sellers.json is published here and becomes the SupplyChain asi."><input value={client.domain} onChange={(e) => setClient("domain", e.target.value)} placeholder="e.g. demoretail.example" style={{ ...ctl, fontFamily: MONO }} /></Fld>
+        <Fld label="Seller ID" hint="The client's own identifier for itself as a seller; becomes the SupplyChain sid."><input value={exchange.sellersJson.sellerId} onChange={(e) => setSj("sellerId", e.target.value)} style={{ ...ctl, fontFamily: MONO }} /></Fld>
+        <Fld label="Ad-ops contact email" hint="Published as contact_email in sellers.json."><input value={client.contactEmail} onChange={(e) => setClient("contactEmail", e.target.value)} placeholder="adops@…" style={ctl} /></Fld>
         <Fld label="Seller type"><select value={exchange.sellersJson.sellerType} onChange={(e) => setSj("sellerType", e.target.value)} style={ctl}>{["PUBLISHER", "INTERMEDIARY", "BOTH"].map((o) => <option key={o}>{o}</option>)}</select></Fld>
-        <Fld label="Seller ID"><input value={exchange.sellersJson.sellerId} onChange={(e) => { setSj("sellerId", e.target.value); set({ supplyChain: { ...exchange.supplyChain, sid: e.target.value } }); }} style={{ ...ctl, fontFamily: MONO }} /></Fld>
-        <Fld label="Seller name"><input value={exchange.sellersJson.name} onChange={(e) => setSj("name", e.target.value)} style={ctl} /></Fld>
-        <Fld label="Domain"><input value={exchange.sellersJson.domain} onChange={(e) => { setSj("domain", e.target.value); set({ supplyChain: { ...exchange.supplyChain, asi: e.target.value } }); }} style={{ ...ctl, fontFamily: MONO }} /></Fld>
         <Fld label="Confidential listing"><div style={{ display: "flex", alignItems: "center", gap: 8, height: 32 }}><Toggle on={exchange.sellersJson.isConfidential} onChange={(v) => setSj("isConfidential", v)} /><span style={{ fontSize: 12, color: T.muted }}>Hide name and domain in the published file</span></div></Fld>
       </Grid>
       <Grid cols={2}>
-        <Fld label={<span>Published at <code>https://{exchange.sellersJson.domain}/sellers.json</code></span>}><JsonBlock value={sellersJson} maxHeight={200} /></Fld>
+        <Fld label={<span>Published at <code>https://{domain}/sellers.json</code></span>}><JsonBlock value={sellersJson} maxHeight={200} /></Fld>
         <Fld label="SupplyChain object on every bid request"><JsonBlock value={schain} maxHeight={200} /></Fld>
       </Grid>
 
@@ -329,7 +334,7 @@ function ExchangePanel({ exchange, setExchange, partners, companyLists }) {
         <Fld label="Venue taxonomy"><select value={exchange.openRtb.venueTaxonomy} onChange={(e) => set({ openRtb: { ...exchange.openRtb, venueTaxonomy: e.target.value } })} style={ctl}>{["OpenOOH 1.1.0", "OpenOOH 1.2.0"].map((v) => <option key={v}>{v}</option>)}</select></Fld>
         <Fld label="Impression multiplier"><div style={{ display: "flex", alignItems: "center", gap: 8, height: 32 }}><Toggle on={exchange.openRtb.impressionMultiplier} onChange={(v) => set({ openRtb: { ...exchange.openRtb, impressionMultiplier: v } })} /><span style={{ fontSize: 12, color: T.muted }}><code>imp.qty</code> on requests</span></div></Fld>
       </Grid>
-      <Callout tone="info" icon="privacy_tip">A DOOH bid request describes a <b>venue and a moment</b>, not a person: no cookies, no device graph, no user ID. Everything the sell side evaluates about a visitor is PH's own resolution and never crosses into the exchange.</Callout>
+      <Callout tone="info" icon="privacy_tip">A DOOH bid request describes a <b>venue and a moment</b>, not a person: no cookies, no device graph, no user ID. Everything the sell side evaluates about a visitor is resolved inside the client's own instance and never crosses into the exchange.</Callout>
 
       <SectionLabel>Pre-auction enforcement — applied before a bid can win</SectionLabel>
       {[["floor", "Floor price", "Per partner. Bids below the floor are discarded."], ["categories", "Permitted categories & competitive exclusions", "Per partner. A creative outside the permitted set never wins."], ["blocklist", "Advertiser blacklist on the bid", `Company lists (${companyLists.blockList.length} blocked) matched against the seat / advertiser identity in the bid response. Applying it after a win is a credit note, not brand safety.`], ["venueExclusions", "Venue & category exclusions", "Positions in excluded venue types are never offered."]].map(([k, l, h]) => (

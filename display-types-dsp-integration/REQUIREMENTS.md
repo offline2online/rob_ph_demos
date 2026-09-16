@@ -427,10 +427,21 @@ otherwise we sell guarantees we cannot meet.
 
 ### 7. Personalisation Hub as the supply-side platform
 
-§6 describes demand arriving through a partner. This section describes what PH
-itself is: **the exchange that sells the retailer's in-store screens.** We are
-not integrating into someone else's supply platform — we are building the
-supply platform, and DSPs are the demand that connects to it.
+§6 describes demand arriving through a partner. This section describes what
+the platform is on the sell side: **the exchange that sells the client's
+in-store screens.** We are not integrating into someone else's supply
+platform — we are building the supply platform, and DSPs are the demand that
+connects to it.
+
+**Who the seller is.** Personalisation Hub runs as an instance inside each
+client's own VPC. The organisation running that instance owns the screens,
+is the **seller of record** and operates the exchange; Personalisation Hub
+is the software, not a party to the sale (open question 33, resolved). The
+Exchange settings are therefore filled in by, and describe, the client
+running the instance — its organisation name, domain, seller ID and ad-ops
+contact — and `sellers.json` is published under the client's domain, with
+the SupplyChain node carrying the client's domain as `asi` and its seller ID
+as `sid`.
 
 #### Which side each named platform sits on
 
@@ -444,8 +455,9 @@ shorthand suggests, and the difference decides what gets built:
 | **Google Ad Manager** | **SSP / ad server — supply** | Google's sell side. The thing we are building an equivalent of, not something we connect into |
 
 So there is no such thing as "integrating to The Trade Desk as an SSP". The
-Trade Desk is a bidder. **Personalisation Hub is the publisher and the
-exchange**: the retailer owns the screens, PH operates them and sells them.
+Trade Desk is a bidder. **The client running the instance is the publisher
+and the exchange**: it owns the screens and sells them through its own
+Personalisation Hub instance.
 
 #### What being the SSP means we build
 
@@ -460,8 +472,8 @@ exchange**: the retailer owns the screens, PH operates them and sells them.
    validated against the display type's canvas or element spec, distributed to
    the players, and only then is the win eligible to play.
 4. **Supply-chain transparency.** A published `sellers.json` and a
-   `SupplyChain` object on every bid request, declaring the seller of record.
-   Buyers will not spend at scale without it.
+   `SupplyChain` object on every bid request, declaring the client as the
+   seller of record. Buyers will not spend at scale without it.
 5. **Deal management.** Deal IDs for preferred and programmatic-guaranteed
    buys, alongside the open auction.
 6. **Proof of play and reconciliation** (below) — the billing record.
@@ -601,8 +613,6 @@ the environment this was written in:
   exchange, and which version of the OpenOOH venue taxonomy.
 - What each DSP requires to onboard a new supply source: seat setup,
   `sellers.json` validation, inventory authorisation, minimum QPS.
-- Whether the retailer or PH is the seller of record, and how that is expressed
-  in `sellers.json` and the supply chain declaration.
 - The audience measurement currency the market expects, and whether a
   sensor-derived multiplier is accepted for trading or only for reporting.
 
@@ -612,9 +622,9 @@ The prototype's records are the platform's **existing** display-type and
 playlist records, as spec §5.4 / §3 and the live HQ Admin *Display Types
 Details* form expose them, with this project's additions kept in one
 clearly separated sub-object. Field names the spec quotes are used
-verbatim. The canonical definition is `app/src/model/schema.js`; every
-screen shows the record it edits under a **Data (JSON)** panel or tab so it
-can be checked against the platform side by side.
+verbatim. The canonical definition is `app/src/model/schema.js`. The
+Display Types and Playlist Management screens are the artifact's UI,
+unchanged, running on these records.
 
 #### Display type
 
@@ -690,15 +700,15 @@ scene:    { id, name, background: { type: colour|image|video, value, assetId },
 #### Sell side (this project's own records, no platform equivalent yet)
 
 `partner` (credentials, inbound bidder config, inventory rules, seats with
-`approvalRequired`, lists, `targeting.enabledAttributes`, deals);
-`reservation` (partner, advertiser, `positions[{displayTypeId, slotIndex}]`,
-store set, play window, exactly one `baseline` + targeted `campaigns[]` each
-with `rules.all[]` and integer `priority`, `assetSets[]`, per-display
-`distribution` cache state, clearing); `delivery` records (campaign +
-trigger + audience multiplier + played/reason + billable); and the
-company-level `exchange` settings (`sellers.json`, SupplyChain, OpenRTB
-options, pre-auction enforcement, play window, audience currency,
-reporting floor). All in `app/src/model/sellside.js`.
+`approvalRequired`, lists, `targeting.enabledAttributes`, deals) and the
+company-level `exchange` settings — `client {name, domain, contactEmail}`
+(the organisation running this instance: the seller of record),
+`sellersJson {sellerId, sellerType, isConfidential, published}`,
+`supplyChain {hp}` (the node's `asi` and `sid` derive from the client's
+domain and seller ID), OpenRTB options, pre-auction enforcement, play
+window, audience currency, reporting floor. Both in
+`app/src/model/sellside.js`. The `reservation` and `delivery` records
+described in §6/§7 are spec only in this release.
 
 ## Functional requirements
 
@@ -709,7 +719,7 @@ Each item is annotated with where it lives in the prototype, or marked
   ownership summary. *(Display Types / Elements)*
 - **Display type editor** matching the schema in §5.4 above, with
   inheritance-aware editing (type-level default vs. per-display override,
-  visually distinguished). *(Display Types / Elements — the platform form, plus Data (JSON))*
+  visually distinguished). *(Display Types / Elements)*
 - **Slot ownership & quota editor**: internal / named advertiser / RTB /
   store-level quota (percentage or count based). *(Display Types → Playlist Settings → Slot assignment)*
 - **Multi-zone layout designer** for signage (optionally Mist-zone-driven);
@@ -747,8 +757,9 @@ Each item is annotated with where it lives in the prototype, or marked
 - **Pre-auction enforcement**: floor, permitted categories and the advertiser
   blocklist applied to bids before a win, keyed on the seat or advertiser
   identity in the bid response. *(Partners / DSPs → Exchange settings → Pre-auction enforcement)*
-- **`sellers.json` and a `SupplyChain` declaration**, with the seller of record
-  configurable. *(Partners / DSPs → Exchange settings)*
+- **`sellers.json` and a `SupplyChain` declaration**, generated from the
+  client organisation's details — the client running the instance is the
+  seller of record. *(Partners / DSPs → Exchange settings)*
 - **Venue and screen metadata per store/display** — OpenOOH venue type, geo,
   resolution, orientation, loop length, share of voice — as required by a
   DOOH bid request. *(spec only — not in the prototype)*
@@ -822,8 +833,11 @@ Each item is annotated with where it lives in the prototype, or marked
 32. **Which supply architecture.** *Resolved:* **PH is the SSP** — we build the
     exchange and DSPs bid into it. Onboarding order also resolved: Google DSP
     (DV360), then Amazon Ads DSP, then The Trade Desk (§7).
-33. **Seller of record** — the retailer or PH — and what that implies for
-    `sellers.json` and the supply-chain declaration.
+33. **Seller of record.** *Resolved:* **the client running the instance.**
+    Personalisation Hub runs inside the client's own VPC; the client owns
+    the screens, is the seller of record and the exchange. `sellers.json`
+    is published under the client's domain and the SupplyChain node carries
+    the client's domain and seller ID (§7).
 34. **Is a sensor-derived audience multiplier tradeable**, or only reportable?
     PH can measure rather than model it; whether the market will trade on that
     measurement is a different question.

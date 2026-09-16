@@ -115,7 +115,7 @@ export const isBlocked = (name, eff) => !!name && (eff.blockList || []).some((x)
 
 /* One line describing what a slot is assigned to. */
 export const ownerAssignment = (sl, partners, company) => {
-  if (sl.owner === "internal") return "By campaign priority";
+  if (sl.owner === "internal") return "Based on priority";
   if (sl.owner === "retail") return sl.storeScope || "Store staff";
   const pid = sl.partnerId || ANY_PARTNER;
   if (pid === ANY_PARTNER) return "Any connected DSP · RTB";
@@ -173,15 +173,18 @@ export const permittedVocabulary = (p) => ATTRIBUTE_REGISTRY.filter((a) => {
   return (p.targeting?.enabledAttributes || []).includes(a.key);
 });
 
+/* Exchange settings belong to the CLIENT running this instance. Personalisation
+   Hub runs inside the client's own VPC; the client owns the screens, is the
+   seller of record, and is the exchange DSPs bid into. Nothing here is
+   Personalisation Hub's own identity. */
 export const DEFAULT_EXCHANGE = {
-  sellerOfRecord: "retailer",                 // retailer | ph  (open question 33)
-  sellersJson: { sellerId: "ph-4471", name: "Personalisation Hub Demo Retail", domain: "personalisationhub.com", sellerType: "PUBLISHER", isConfidential: false, published: true },
-  supplyChain: { asi: "personalisationhub.com", sid: "ph-4471", hp: 1 },
+  client: { name: "", domain: "", contactEmail: "" },              // filled in by the client
+  sellersJson: { sellerId: "", sellerType: "PUBLISHER", isConfidential: false, published: false },
+  supplyChain: { hp: 1 },                                          // asi = client domain, sid = seller ID
   openRtb: { version: "2.6", dooh: true, venueTaxonomy: "OpenOOH 1.2.0", impressionMultiplier: true },
-  audienceCurrency: "sensor_where_available",  // sensor_where_available | modelled_only (open question 34)
-  reportingFloorN: 50,                         // open question 30
-  playWindowHours: 24,                         // open question 27
+  audienceCurrency: "sensor_where_available",                      // sensor_where_available | modelled_only (open question 34)
+  reportingFloorN: 50,                                             // open question 30
+  playWindowHours: 24,                                             // open question 27
   preAuction: { floor: true, categories: true, blocklist: true, venueExclusions: true },
   venueExclusions: [],
 };
-
