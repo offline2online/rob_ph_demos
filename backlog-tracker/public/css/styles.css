@@ -45,9 +45,18 @@ body {
    logo, and vertical padding is trimmed 10px -> 6px to lower the bar's
    overall height — the phone media query below already sets its own
    padding/align-items explicitly, so none of this changes the ≤640px
-   (mobile) rendering. */
+   (mobile) rendering.
+   jJh1TP9WSMlTiKmERHPj: switched from a 2-item flex row
+   (`justify-content: space-between`) to a 3-column grid so the hamburger
+   button — now a direct middle child, pulled out of .topbar-left-row — can
+   sit truly centred in the bar regardless of how wide the logo or the
+   actions button are, on mobile and web alike. The two outer tracks use
+   `minmax(0, 1fr)` (not a bare `1fr`) so the logo/actions can still shrink
+   below their content width on a narrow phone instead of forcing the
+   middle (hamburger) column off-centre or overflowing the bar. */
 .topbar {
-  display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 18px;
+  display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center; column-gap: 16px; margin-bottom: 18px;
   position: sticky; top: 0; z-index: 16;
   background: rgba(255, 255, 255, .88);
   backdrop-filter: blur(10px);
@@ -76,7 +85,7 @@ body {
    - the subtitle is now a sibling row below .topbar-left-row, not nested
      inside the flex item that also holds the logo, so it can never affect
      the logo/hamburger row's own sizing. */
-.topbar-left { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.topbar-left { display: flex; flex-direction: column; gap: 4px; min-width: 0; justify-self: start; }
 .topbar-left-row { display: flex; flex-direction: row; flex-wrap: nowrap; align-items: center; gap: 10px; min-width: 0; }
 .topbar h1 { margin: 0; font-size: 22px; font-weight: 700; min-width: 0; max-width: 100%; overflow: hidden; }
 .logo-link {
@@ -90,7 +99,7 @@ body {
 .footer-logo-img { height: 42px; display: block; }
 .auth-gate-logo { height: 120px; max-width: 100%; width: auto; margin: 0 auto 4px; display: block; }
 .subtitle { margin: 4px 0 0; font-size: 13px; color: var(--text-muted); }
-.hamburger-btn { font-size: 20px; flex-shrink: 0; }
+.hamburger-btn { font-size: 20px; flex-shrink: 0; justify-self: center; }
 
 /* ── Page header — one shared format for every page's own title + summary
    (the board itself, Docs, Archive, Archived projects, FAQ Management,
@@ -805,7 +814,7 @@ textarea.dialog-field-input { resize: vertical; min-height: 70px; }
 }
 
 /* ── Topbar actions (FAQ Center + New project) ──────────────────────── */
-.topbar-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.topbar-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; justify-self: end; }
 
 /* ── FAQ Center admin page ──────────────────────────────────────────── */
 .faq-admin-page { margin-bottom: 20px; }
