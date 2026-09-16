@@ -79,9 +79,10 @@ first release** — it arrives when the composer does.
 A capped rotation is what makes a position sellable, but a position is only
 sellable if demand can actually reach it. That demand arrives through a partner
 DSP, so the DSP is the connection and the advertisers on it are what a position
-can be reserved to. Two providers are supported:
+can be reserved to.
 
-Onboarding order, per `REQUIREMENTS.md` §7 and shown on the add list:
+Three providers, in the onboarding order recorded in `REQUIREMENTS.md` §7 and
+shown on the add list:
 
 1. **Google DSP** (Display & Video 360) — partner ID, advertiser ID, and either
    a service-account JSON key or an OAuth 2.0 client; optional Ad Manager
