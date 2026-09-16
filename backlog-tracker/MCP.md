@@ -83,11 +83,47 @@ empty or mis-edited collection can never lock everyone out.
 ## What the agent can and can't do
 
 **Can — read:** `whoami`, `list_projects`, `list_backlog_items`,
-`get_backlog_item`, `get_project_docs`, `search_faq`, `get_faq_article`.
+`get_backlog_item`, `get_project_docs`, `list_doc_revisions`,
+`get_doc_revision`, `search_faq`, `get_faq_article`.
 
-**Can — write (editor and admin only):** `create_backlog_item` (always into
-the Backlog column), `update_backlog_item` (title, description, type,
-area), `add_item_comment`.
+**Can — write (editor and admin only):**
+
+| Tickets | Documentation |
+| --- | --- |
+| `create_backlog_item` (always into the Backlog column) | `set_project_requirements` |
+| `update_backlog_item` (title, description, type, area) | `set_project_readme` |
+| `add_item_comment` | `set_project_artifact` |
+| | `create_project_document` / `update_project_document` / `delete_project_document` |
+| | `create_interface` / `update_interface` / `delete_interface` |
+
+**Documentation is meant to be kept current by whoever is doing the work,
+including an agent** — that is why these are full read/write, gated by the
+same per-person OAuth session as everything else. No separate token, no
+shared key, and every write is attributed to the person the agent is acting
+for.
+
+Three things worth knowing before pointing an agent at them:
+
+- **Writes replace the whole document.** Read it first with
+  `get_project_docs`, revise, send the complete text back. An agent that
+  sends a fragment overwrites the document with that fragment.
+- **Nothing is lost when that happens.** Every write records what it
+  replaced, and a delete records the whole document, in `docRevisions` —
+  `list_doc_revisions` then `get_doc_revision` reads it back, and restoring
+  is just writing that text back. This is the only reason the two `delete_`
+  tools are safe to offer at all; they are also the only tools flagged
+  `destructiveHint`, so a client that asks before destructive actions will
+  ask before those and not before an ordinary update.
+- **Size ceilings differ, on purpose.** Requirements and README allow 200k
+  characters (they live on the project doc, which shares Firestore's 1 MiB
+  limit). Project documents and interfaces allow 20k — the same ceiling
+  `firestore.rules` gives the board's own editor, because a longer document
+  would be one a person could never save an edit to from the Docs page.
+
+Where a project's documentation also exists as a repo file
+(`REQUIREMENTS.md`, `README.md`, `shared/interface-contract.md`), the two
+are meant to match. Update both; a divergence is a bug in whichever is
+stale.
 
 **Cannot, deliberately:** deploy, merge a train, approve a ticket out of
 Ready for Testing, move a card's status, write any train field
@@ -97,9 +133,16 @@ triggered Routine, and the release pipeline keeps its human gates** — an
 agent files, reads, enriches and comments; it does not ship.
 
 There is no tool for those and no field an existing tool could reach to get
-at them: `update_backlog_item`'s schema has no `status`, and the MCP server
-writes nothing to `projects` at all. `test/mcp-server.test.js` asserts this
-about the tool surface rather than leaving it to review.
+at them. `update_backlog_item`'s schema has no `status`. The documentation
+tools DO write to `projects` — that is where `requirementsMd`, `readmeMd`
+and `artifactUrl` live — so "it never touches that collection" stopped being
+the guarantee and had to become an enforced one: **`updateProjectFields` is
+the only path to a project write and refuses any field not on
+`PROJECT_WRITABLE_FIELDS`**, which holds documentation fields and nothing
+else. `test/mcp-server.test.js` asserts the allowlist's contents, that the
+guard throws on a train field, that no documentation tool's schema can even
+express one, and that a full pass of the documentation tools leaves the
+project's own `deployBranch` untouched.
 
 Every write records the person's email on the document (`createdByEmail`,
 `updatedByEmail`, and the comment's own `author`) and appends a row to

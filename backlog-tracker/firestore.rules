@@ -254,6 +254,21 @@ service cloud.firestore {
       allow delete: if isAdmin() && userEmail != callerEmail();
     }
 
+    // ── Documentation revision history (functions/mcp-server.js) ──────────
+    // Every documentation write through MCP records what it replaced here
+    // BEFORE overwriting it, and a delete records the whole document. That
+    // is what makes agent-driven documentation safe to hand out: an agent
+    // that truncates a 95 KB requirements doc has not destroyed it.
+    //
+    // Append-only, and only from the server (admin SDK, bypasses these
+    // rules). A browser must never be able to write — a forged or edited
+    // revision would make the history worse than not having one — but any
+    // member may read it, so the Docs page can show what changed.
+    match /docRevisions/{revisionId} {
+      allow read: if isBoardReader();
+      allow write: if false;
+    }
+
     // ── MCP server state (functions/mcp-server.js) ────────────────────────
     // Registered OAuth clients, hashed authorization codes and hashed
     // access/refresh tokens. Written only by the Cloud Function, which uses

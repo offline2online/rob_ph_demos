@@ -75,6 +75,7 @@ async function reset() {
     await setDoc(doc(db, "consoleUsers/ada@personalisationhub.com"), { email: "ada@personalisationhub.com", role: "admin" });
     await setDoc(doc(db, "consoleUsers/min@personalisationhub.com"), { email: "min@personalisationhub.com" });
     await setDoc(doc(db, "mcpTokens/deadbeef"), { email: "sam@personalisationhub.com", type: "access" });
+    await setDoc(doc(db, "docRevisions/r1"), { target: "project.requirementsMd", projectId: "p1", contentMd: "the text that was replaced", replacedByEmail: "sam@personalisationhub.com" });
     await setDoc(doc(db, "mcpAuditLog/e1"), { email: "sam@personalisationhub.com", tool: "create_backlog_item" });
   });
 }
@@ -186,6 +187,18 @@ async function main() {
     setDoc(doc(as(HUMAN), "mcpTokens/forged"), { email: "rob@offline2online.com", type: "access" }));
   await check("Nobody can register an MCP client from the browser", "deny", () =>
     setDoc(doc(as(TEAM_ADMIN), "mcpClients/c1"), { clientId: "c1" }));
+  // ── Documentation revision history ─────────────────────────────────────
+  // This is what makes agent-driven documentation recoverable, so it has to
+  // be readable by a member and forgeable by nobody.
+  await check("A member may read the documentation revision history", "allow", () => getDoc(doc(as(MEMBER), "docRevisions/r1")));
+  await check("A viewer may read the documentation revision history", "allow", () => getDoc(doc(as(VIEWER), "docRevisions/r1")));
+  await check("A stranger cannot read the documentation revision history", "deny", () => getDoc(doc(as(STRANGER), "docRevisions/r1")));
+  await check("Nobody can forge a documentation revision", "deny", () =>
+    setDoc(doc(as(TEAM_ADMIN), "docRevisions/forged"), { target: "project.requirementsMd", projectId: "p1", contentMd: "never happened" }));
+  await check("Not even an owner can rewrite a documentation revision", "deny", () =>
+    setDoc(doc(as(HUMAN), "docRevisions/r1"), { contentMd: "altered" }, { merge: true }));
+  await check("Nobody can delete a documentation revision", "deny", () => deleteDoc(doc(as(TEAM_ADMIN), "docRevisions/r1")));
+
   await check("An admin may read the agent audit log", "allow", () => getDoc(doc(as(TEAM_ADMIN), "mcpAuditLog/e1")));
   await check("A non-admin member may NOT read the agent audit log", "deny", () => getDoc(doc(as(MEMBER), "mcpAuditLog/e1")));
   await check("Nobody can edit the agent audit log", "deny", () =>

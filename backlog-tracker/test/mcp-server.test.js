@@ -343,6 +343,187 @@ async function rpc(token, method, params, id = 1) {
     assert.strictEqual(payload.interfaces[0].name, "LVP <-> Templates");
   });
 
+  // ── Documentation: full read/write ──────────────────────────────────────
+  await test("exposes the documentation tools", async () => {
+    const names = mcp.__test.TOOLS.map((t) => t.name);
+    for (const expected of [
+      "set_project_requirements", "set_project_readme", "set_project_artifact",
+      "create_project_document", "update_project_document", "delete_project_document",
+      "create_interface", "update_interface", "delete_interface",
+      "list_doc_revisions", "get_doc_revision",
+    ]) assert.ok(names.includes(expected), `missing tool ${expected}`);
+  });
+
+  await test("writes a project's Requirements", async () => {
+    const res = await rpc(tokens.access_token, "tools/call", {
+      name: "set_project_requirements",
+      arguments: { projectId: "proj1", desc: undefined, contentMd: "# Requirements\n\nThe deadline model is authoritative." },
+    });
+    const out = JSON.parse(res.body.result.content[0].text);
+    assert.strictEqual(out.updated, true);
+    assert.match(env.store.col("projects").get("proj1").requirementsMd, /deadline model is authoritative/);
+    assert.strictEqual(env.store.col("projects").get("proj1").requirementsUpdatedByEmail, TEAMMATE);
+  });
+
+  await test("keeps what a Requirements write replaced, and can read it back", async () => {
+    const res = await rpc(tokens.access_token, "tools/call", {
+      name: "set_project_requirements", arguments: { projectId: "proj1", contentMd: "# Requirements\n\nRewritten." },
+    });
+    const out = JSON.parse(res.body.result.content[0].text);
+    assert.ok(out.revisionId, "a replaced version should be recorded");
+    const back = JSON.parse((await rpc(tokens.access_token, "tools/call", {
+      name: "get_doc_revision", arguments: { revisionId: out.revisionId },
+    })).body.result.content[0].text);
+    assert.match(back.contentMd, /deadline model is authoritative/, "the revision should hold the PREVIOUS text");
+    assert.strictEqual(back.replacedByEmail, TEAMMATE);
+  });
+
+  await test("lists revisions newest-first for a project", async () => {
+    const out = JSON.parse((await rpc(tokens.access_token, "tools/call", {
+      name: "list_doc_revisions", arguments: { projectId: "proj1" },
+    })).body.result.content[0].text);
+    assert.ok(out.revisions.length >= 1);
+    assert.ok(out.revisions.every((r) => typeof r.chars === "number"));
+    // Metadata only — a list of 95 KB documents would be unusable.
+    assert.ok(!("contentMd" in out.revisions[0]), "list should not inline document bodies");
+  });
+
+  await test("writes a project's README", async () => {
+    await rpc(tokens.access_token, "tools/call", {
+      name: "set_project_readme", arguments: { projectId: "proj1", contentMd: "# Readme\n\nWhat's in this folder." },
+    });
+    assert.match(env.store.col("projects").get("proj1").readmeMd, /What's in this folder/);
+  });
+
+  await test("refuses a Requirements document past the size ceiling", async () => {
+    const res = await rpc(tokens.access_token, "tools/call", {
+      name: "set_project_requirements", arguments: { projectId: "proj1", contentMd: "x".repeat(mcp.__test.PROJECT_MD_MAX + 1) },
+    });
+    assert.strictEqual(res.body.result.isError, true);
+  });
+
+  await test("caps a project document at what the board's own editor can save", async () => {
+    // Higher here would let an agent author a document a person could never
+    // save an edit to, because firestore.rules would reject their write.
+    const res = await rpc(tokens.access_token, "tools/call", {
+      name: "create_project_document", arguments: { projectId: "proj1", name: "Too big", contentMd: "x".repeat(mcp.__test.DOC_MD_MAX + 1) },
+    });
+    assert.strictEqual(res.body.result.isError, true);
+  });
+
+  let createdDocId = null;
+  await test("creates, updates and deletes a project document, recoverably", async () => {
+    const made = JSON.parse((await rpc(tokens.access_token, "tools/call", {
+      name: "create_project_document", arguments: { projectId: "proj1", name: "Event schema", contentMd: "v1 shape" },
+    })).body.result.content[0].text);
+    createdDocId = made.docId;
+    assert.strictEqual(env.store.col("projectDocs").get(createdDocId).createdByEmail, TEAMMATE);
+
+    await rpc(tokens.access_token, "tools/call", {
+      name: "update_project_document", arguments: { docId: createdDocId, contentMd: "v2 shape" },
+    });
+    assert.strictEqual(env.store.col("projectDocs").get(createdDocId).contentMd, "v2 shape");
+
+    const gone = JSON.parse((await rpc(tokens.access_token, "tools/call", {
+      name: "delete_project_document", arguments: { docId: createdDocId },
+    })).body.result.content[0].text);
+    assert.strictEqual(gone.deleted, true);
+    assert.strictEqual(env.store.col("projectDocs").get(createdDocId), undefined);
+    const back = JSON.parse((await rpc(tokens.access_token, "tools/call", {
+      name: "get_doc_revision", arguments: { revisionId: gone.revisionId },
+    })).body.result.content[0].text);
+    assert.strictEqual(back.contentMd, "v2 shape", "a delete must be recoverable from the revision it wrote");
+  });
+
+  await test("creates and updates an interface contract between two projects", async () => {
+    const made = JSON.parse((await rpc(tokens.access_token, "tools/call", {
+      name: "create_interface", arguments: { projectIds: ["proj1", "proj2"], name: "LVP <-> Templates", contentMd: "attribute envelope v1" },
+    })).body.result.content[0].text);
+    assert.strictEqual(made.created, true);
+    await rpc(tokens.access_token, "tools/call", { name: "update_interface", arguments: { interfaceId: made.interfaceId, contentMd: "attribute envelope v2" } });
+    assert.strictEqual(env.store.col("interfaces").get(made.interfaceId).contentMd, "attribute envelope v2");
+  });
+
+  await test("refuses an interface that isn't between exactly two different projects", async () => {
+    for (const projectIds of [["proj1"], ["proj1", "proj1"], ["proj1", "proj2", "proj1"]]) {
+      const res = await rpc(tokens.access_token, "tools/call", { name: "create_interface", arguments: { projectIds, name: "n", contentMd: "c" } });
+      assert.strictEqual(res.body.result.isError, true, `should refuse projectIds ${JSON.stringify(projectIds)}`);
+    }
+  });
+
+  await test("sets and clears a project's Artifact link, https only", async () => {
+    await rpc(tokens.access_token, "tools/call", { name: "set_project_artifact", arguments: { projectId: "proj1", artifactUrl: "https://claude.ai/public/artifacts/abc" } });
+    assert.strictEqual(env.store.col("projects").get("proj1").artifactUrl, "https://claude.ai/public/artifacts/abc");
+    const bad = await rpc(tokens.access_token, "tools/call", { name: "set_project_artifact", arguments: { projectId: "proj1", artifactUrl: "http://insecure.example/x" } });
+    assert.strictEqual(bad.body.result.isError, true);
+    await rpc(tokens.access_token, "tools/call", { name: "set_project_artifact", arguments: { projectId: "proj1", artifactUrl: null } });
+    assert.strictEqual(env.store.col("projects").get("proj1").artifactUrl, null);
+  });
+
+  // ── The guarantee the documentation tools must not break ────────────────
+  // These are the first tools that write to `projects` at all, so "no tool
+  // can start a deploy" stops being a consequence of never touching the
+  // collection and starts needing enforcement.
+  await test("no documentation write touched a train field on the project", async () => {
+    const project = env.store.col("projects").get("proj1");
+    // proj1 is seeded as a project mid-release, so it legitimately HAS a
+    // deployBranch. The claim is that the documentation writes left it
+    // exactly as it was, and introduced none of the others.
+    assert.strictEqual(project.deployBranch, "deploy/live-visitor-profile", "deployBranch must be untouched by documentation writes");
+    for (const field of ["trainReady", "trainStatus", "trainPrNumber", "trainNote", "trainLocked", "needsHumanMerge", "notifyRequestedAt", "deployNotifyRequestedAt", "patchReady", "mergeReady"]) {
+      assert.ok(!(field in project), `documentation writes must never set projects.${field}, found it after the doc suite`);
+    }
+  });
+
+  await test("updateProjectFields refuses a train field even if a caller asks for one", async () => {
+    // The allowlist is the enforcement point, so prove it throws rather than
+    // trusting every future call site to pass only good keys.
+    await assert.rejects(
+      () => mcp.__test.updateProjectFields("proj1", { trainReady: true }),
+      (err) => /refusing to write projects\.trainReady/.test(String(err.message)),
+    );
+    assert.ok(!("trainReady" in env.store.col("projects").get("proj1")));
+  });
+
+  await test("the project write allowlist holds nothing that could ship code", async () => {
+    const allowed = [...mcp.__test.PROJECT_WRITABLE_FIELDS];
+    for (const field of allowed) {
+      assert.ok(/^(requirements|readme|artifact)/.test(field), `${field} is not a documentation field but is writable`);
+    }
+    for (const forbidden of ["deployBranch", "trainReady", "trainStatus", "trainPrNumber", "trainNote", "trainLocked", "needsHumanMerge", "notifyRequestedAt", "deployNotifyRequestedAt", "name", "programId"]) {
+      assert.ok(!mcp.__test.PROJECT_WRITABLE_FIELDS.has(forbidden), `${forbidden} must not be writable`);
+    }
+  });
+
+  await test("no documentation tool's schema can even express a train field", async () => {
+    const docTools = mcp.__test.TOOLS.filter((t) => /project|interface|doc/.test(t.name));
+    for (const tool of docTools) {
+      const schema = JSON.stringify(tool.inputSchema);
+      for (const forbidden of ["trainReady", "deployBranch", "trainLocked", "status", "patchReady", "mergeReady"]) {
+        assert.ok(!schema.includes(forbidden), `${tool.name}'s schema mentions ${forbidden}`);
+      }
+    }
+  });
+
+  await test("every documentation write is gated on board.write, so a viewer can't", async () => {
+    // Structural rather than per-tool: it catches a new doc tool added later
+    // with the scope left off, which a per-tool test would not.
+    const writeNames = ["set_project_requirements", "set_project_readme", "set_project_artifact",
+      "create_project_document", "update_project_document", "delete_project_document",
+      "create_interface", "update_interface", "delete_interface"];
+    for (const name of writeNames) {
+      assert.strictEqual(mcp.__test.TOOLS.find((t) => t.name === name).scope, "board.write", `${name} must require board.write`);
+    }
+    for (const name of ["list_doc_revisions", "get_doc_revision", "get_project_docs"]) {
+      assert.strictEqual(mcp.__test.TOOLS.find((t) => t.name === name).scope, "board.read");
+    }
+  });
+
+  await test("only the two delete tools are flagged destructive", async () => {
+    const destructive = mcp.__test.TOOLS.filter((t) => t.destructive).map((t) => t.name).sort();
+    assert.deepStrictEqual(destructive, ["delete_interface", "delete_project_document"]);
+  });
+
   await test("writes an audit row for every write", async () => {
     const rows = [...env.store.col("mcpAuditLog").values()];
     assert.ok(rows.length >= 3, `expected audit rows, got ${rows.length}`);
