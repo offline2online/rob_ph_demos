@@ -866,7 +866,16 @@ REST API is reachable with a plain `curl`, no service account needed.
   immediately with the text so far carried across, and a long silence only
   shows a soft "still listening, not hearing anything yet" hint, never a
   stop (1.5.47 and earlier gave up after four silent restarts, which read
-  as dictation "pausing and cutting out"). Desktop and iOS run one real
+  as dictation "pausing and cutting out"). **While the mic is on the page
+  holds a Screen Wake Lock** (`navigator.wakeLock`, Chrome Android and
+  iOS 16.4+; requested inside the mic click, released on stop) so an idle
+  phone doesn't turn its screen off and kill recognition with it; the
+  browser drops the lock whenever the page is hidden, so it is
+  re-requested when the page is visible again, and a session that ended
+  while hidden (screen off, app switch — Chrome reports the lost mic as
+  `not-allowed`/`audio-capture`, which is not treated as a denial then) is
+  parked rather than restarted and resumed on that same visibility change.
+  Desktop and iOS run one real
   `continuous` session — results walked from `e.resultIndex`, each final
   committed once, a redelivered duplicate final dropped — while Android
   Chrome, whose continuous mode duplicates text, runs a fresh
