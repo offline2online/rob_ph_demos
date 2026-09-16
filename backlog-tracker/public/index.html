@@ -59,15 +59,19 @@
   <div class="app" hidden>
     <header class="topbar">
       <div class="topbar-left">
+        <!-- Back on the left, logo to its right (H7NANhnIijj2yyGR8e8v):
+             jJh1TP9WSMlTiKmERHPj had pulled the hamburger out into its own
+             centred grid column; that read as the hamburger floating in
+             the middle of the bar with no clear relationship to the logo,
+             so it's back inside .topbar-left-row, first child, with the
+             logo directly to its right. See .topbar below — back to a
+             plain flex row instead of the 3-column grid that centring
+             needed. -->
         <div class="topbar-left-row">
+          <button type="button" class="icon-btn hamburger-btn" id="nav-open-btn" aria-haspopup="true" aria-label="Open menu">&#9776;</button>
           <h1><button type="button" class="logo-link" id="topbar-logo-btn" title="Back to Agent Console home"><img src="img/ph-agent-console-logo.svg" alt="PH Agent Console" class="topbar-logo-img" width="234" height="58"></button></h1>
         </div>
       </div>
-      <!-- Centred independently of the logo/actions (jJh1TP9WSMlTiKmERHPj):
-           a dedicated middle grid column so the hamburger sits in the
-           middle of the bar at every width instead of hugging the logo on
-           the left. See .topbar's grid-template-columns below. -->
-      <button type="button" class="icon-btn hamburger-btn" id="nav-open-btn" aria-haspopup="true" aria-label="Open menu">&#9776;</button>
       <div class="topbar-actions">
         <button class="btn-primary" id="new-project-btn" type="button">+ New project</button>
       </div>
