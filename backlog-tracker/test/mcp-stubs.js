@@ -63,6 +63,7 @@ function docRef(store, collection, id) {
       if (!store.col(collection).has(id)) throw new Error(`update on missing doc ${collection}/${id}`);
       store.col(collection).set(id, applyWrite(store.col(collection).get(id), data, true));
     },
+    async delete() { store.col(collection).delete(id); },
   };
 }
 

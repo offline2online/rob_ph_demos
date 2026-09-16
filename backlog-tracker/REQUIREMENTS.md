@@ -221,6 +221,28 @@ in three files to add anyone.
   auth claim (`consoleRole`, `consoleEditor`) kept in step by the
   `syncConsoleUserClaims` trigger and `POST /mcp/claims/sync`.
 
+### `docRevisions/{revisionId}`
+
+What a documentation write replaced, recorded BEFORE it overwrote anything.
+
+```
+{
+  target: "project.requirementsMd" | "project.readmeMd" | "projectDoc"
+        | "projectDoc.deleted" | "interface" | "interface.deleted",
+  projectId?: string, docId?: string, interfaceId?: string,
+  name?: string,                 // for display in a list
+  contentMd: string,             // the content as it was before the write
+  chars: number,
+  replacedAt: timestamp, replacedByEmail: string, via: "mcp",
+}
+```
+
+Append-only and written only by the server (admin SDK, bypasses rules);
+readable by any member so the Docs page can show what changed. This is what
+makes handing documentation write access to an agent safe — an agent that
+truncates a 95 KB requirements document has not destroyed it — and it is the
+reason the `delete_` tools exist at all.
+
 ### `mcpClients/{clientId}`, `mcpAuthCodes/{sha256}`, `mcpTokens/{sha256}`, `mcpAuditLog/{id}`
 
 MCP server state — registered OAuth clients, and the hashed authorization
@@ -1441,19 +1463,53 @@ Required properties, each covered by `test/mcp-server.test.js`:
    where to sign in.
 
 **Tool surface — and its hard limit.** Read: `whoami`, `list_projects`,
-`list_backlog_items`, `get_backlog_item`, `get_project_docs`, `search_faq`,
-`get_faq_article`. Write (editor/admin only): `create_backlog_item` (always
-into `backlog`), `update_backlog_item` (title, desc, type, category only),
-`add_item_comment`.
+`list_backlog_items`, `get_backlog_item`, `get_project_docs`,
+`list_doc_revisions`, `get_doc_revision`, `search_faq`, `get_faq_article`.
+Write (editor/admin only) — tickets: `create_backlog_item` (always into
+`backlog`), `update_backlog_item` (title, desc, type, category only),
+`add_item_comment`; documentation: `set_project_requirements`,
+`set_project_readme`, `set_project_artifact`, `create_project_document`,
+`update_project_document`, `delete_project_document`, `create_interface`,
+`update_interface`, `delete_interface`.
+
+**Documentation is full read/write by requirement.** A project's docs are
+meant to be kept current by whoever is doing the work, agents included, with
+no credential beyond the OAuth session. Consequences that are requirements,
+not implementation detail:
+
+1. **A write replaces the whole document.** No append/patch tool exists —
+   partial-update semantics over markdown invite an agent to mangle a
+   document it only half read.
+2. **Nothing a write replaces is lost.** The previous content goes to
+   `docRevisions` first (append-only, written only by the server, readable
+   by any member); a delete records the whole document the same way. This is
+   what makes the two `delete_` tools acceptable, and they are the only
+   tools carrying `destructiveHint`.
+3. **Ceilings differ by where the content lives.** Requirements/README are
+   fields on `projects/{id}` and share its 1 MiB document limit → 200k
+   characters. `projectDocs`/`interfaces` content is capped at 20k, matching
+   `firestore.rules`, so an agent can never author a document a person is
+   then unable to save an edit to from the Docs page.
 
 **No tool may deploy, merge, approve a ticket out of Ready for Testing,
 change a card's status, write a train field, fire the Notify Claude Routine,
 or trigger a campaign.** Campaign triggering stays on the triggered Routine
 and the release pipeline keeps its human gates — an agent files, reads,
-enriches and comments; it does not ship. This is a requirement about the
-surface, not a convention: `update_backlog_item`'s schema has no `status`,
-the server writes nothing to `projects`, and the test suite asserts the tool
-names themselves contain no deploy/merge/approve/trigger verb.
+enriches, documents and comments; it does not ship.
+
+This is a requirement about the surface, not a convention.
+`update_backlog_item`'s schema has no `status`. The documentation tools do
+write to `projects` — `requirementsMd`, `readmeMd` and `artifactUrl` live
+there — so the guarantee is enforced rather than incidental: a single
+`updateProjectFields` guard is the only path to a project write, and it
+throws on any field outside `PROJECT_WRITABLE_FIELDS` (documentation fields
+only; no `deployBranch`, `trainReady`, `trainStatus`, `trainPrNumber`,
+`trainNote`, `trainLocked`, `needsHumanMerge`, `notifyRequestedAt` or
+`deployNotifyRequestedAt`). The test suite asserts the allowlist's contents,
+that the guard throws when handed a train field, that no documentation
+tool's schema can even express one, that a full pass of the documentation
+tools leaves a project's `deployBranch` untouched, and that the tool names
+contain no deploy/merge/approve/trigger verb.
 
 **Attribution and audit.** Every write records the person's email on the
 document (`createdByEmail`, `updatedByEmail`, a comment's `author`) and
