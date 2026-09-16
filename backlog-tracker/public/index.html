@@ -4,6 +4,13 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>PH Agent Console</title>
+  <!-- The PH mark on its own (img/ph-mark.svg, lifted from the wordmark) —
+       the browser tab, and the fallback some MCP clients use for a connector
+       that doesn't declare its own icon. functions/mcp-server.js also names
+       these files explicitly in the server's `icons`. -->
+  <link rel="icon" type="image/svg+xml" href="img/ph-mark.svg">
+  <link rel="icon" type="image/png" sizes="64x64" href="img/ph-mark-64.png">
+  <link rel="apple-touch-icon" href="img/ph-mark-192.png">
   <!-- Establish connections to the CDN origins up front — the stylesheets
        right below and the two deferred scripts near the bottom of <head>
        all come from these two hosts, so paying the DNS/TLS handshake cost

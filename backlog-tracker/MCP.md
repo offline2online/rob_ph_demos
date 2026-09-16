@@ -107,6 +107,40 @@ Every write records the person's email on the document (`createdByEmail`,
 
 ---
 
+## How it appears in a client
+
+`initialize` answers with the server's identity, so a client shows the
+Personalisation Hub mark and a readable name rather than a placeholder and a
+slug:
+
+```json
+"serverInfo": {
+  "name": "ph-agent-console",
+  "title": "PH Agent Console",
+  "version": "1.1.0",
+  "websiteUrl": "https://backlog-tracker-e4ed2.web.app",
+  "icons": [
+    { "src": ".../img/ph-mark.svg", "mimeType": "image/svg+xml", "sizes": ["any"] },
+    { "src": ".../img/ph-mark-512.png", "mimeType": "image/png", "sizes": ["512x512"] }
+  ]
+}
+```
+
+The mark is `public/img/ph-mark.svg` — the four bars from
+`ph-agent-console-logo.svg`, lifted out of the wordmark and normalised to a
+square viewBox, with PNGs rendered from it for clients that won't draw SVG.
+Its centre is transparent rather than white, so it reads on a dark UI as well
+as a light one. The same files are the console's favicon and the consent
+page's, which is what a client falls back to if it ignores `icons`.
+
+**A client reads `serverInfo` once, at connect.** After this ships, an
+already-connected client keeps showing whatever it cached — reconnect it (or
+restart the client) to pick the icon up. No re-authentication needed; the
+token is unaffected.
+
+If the logo ever changes, re-extract the mark from the wordmark rather than
+re-keying the colours by eye, and re-render the PNGs from the SVG.
+
 ## How the authentication actually works
 
 An OAuth 2.1 authorization server, implemented in
@@ -186,6 +220,7 @@ read and by the MCP server's own per-call check, neither of which is cached.
 | `test/mcp-client.test.mjs` | the real MCP client SDK against the real server over HTTP (`npm run test:client`) |
 | `test/mcp-live-server.js` | serves the real server on localhost for that test |
 | `test/mcp-stubs.js` | in-memory Firebase SDKs both tests use |
+| `public/img/ph-mark.*` | the PH mark on its own — the server's icon and the console's favicon |
 
 ## Deploying it
 
