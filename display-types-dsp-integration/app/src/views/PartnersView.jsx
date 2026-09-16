@@ -91,12 +91,9 @@ export default function PartnersView({ partners, setPartners, companyLists, setC
             <Btn variant="text" style={{ height: 26, fontSize: 12, padding: "0 8px" }} disabled={alreadyAdded(k)} onClick={() => setAdding(k)}>{alreadyAdded(k) ? "Added" : "Add"}</Btn>
           </div>
         ))}
-        <div style={{ fontSize: 11.5, color: T.micro, margin: "10px 0 8px", lineHeight: 1.5 }}>Tier 2 — PH-native, per bilateral agreement. Strictly additive to tier 1.</div>
-        <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", border: `1px dashed ${T.aiViolet}`, borderRadius: 6 }}>
-          <Icon name="handshake" size={18} style={{ color: T.aiViolet }} />
-          <div style={{ flex: 1, minWidth: 0 }}><div style={{ fontSize: 13 }}>PH-native partner</div><div style={{ fontSize: 11, color: T.micro }}>Direct / local — e.g. Blackmores</div></div>
-          <Btn variant="text" style={{ height: 26, fontSize: 12, padding: "0 8px" }} onClick={() => setAdding("ph_native")}>Add</Btn>
-        </div>
+        {/* Direct/house and the PH-native (tier 2) partner type are removed
+            from this page for now — will come back later. Only the three
+            tier-1 DSPs above can be connected here in the meantime. */}
       </div>
 
       {/* ------------------------------------------------ detail */}
@@ -174,8 +171,13 @@ export default function PartnersView({ partners, setPartners, companyLists, setC
             )}
 
             {/* --------------------- targeting permissions */}
-            <SectionLabel>Targeting attributes this partner may use</SectionLabel>
-            <TargetingPermissions p={p} setP={setP} />
+            {/* Not shown for Google DSP / Amazon Ads DSP — removed by request. */}
+            {p.provider !== "google_dsp" && p.provider !== "amazon_dsp" && (
+              <>
+                <SectionLabel>Targeting attributes this partner may use</SectionLabel>
+                <TargetingPermissions p={p} setP={setP} />
+              </>
+            )}
 
             {/* --------------------- lists */}
             {isDsp(p) && (() => {

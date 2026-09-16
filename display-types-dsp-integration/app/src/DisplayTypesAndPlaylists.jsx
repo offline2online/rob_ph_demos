@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import {
   displayType, playlist as mkPlaylist, elementConfig, isCapped, slotCount, resizeSlots, setIn, UNLIMITED, PLATFORM_DEFAULTS,
 } from "./model/schema.js";
@@ -529,9 +529,24 @@ export default function App() {
 
 /* ------------------------------ display types ----------------------------- */
 
+/* Three columns (type list + form + preview) need this much room side by
+   side (widths + the two 20px gaps, §567). Below it the preview column
+   would wrap below the form — reflowed above Touch Point instead, since a
+   preview stranded beneath the whole form is easy to miss scrolling down. */
+const THREE_COLUMN_MIN_WIDTH = 215 + 20 + 400 + 20 + 320;
+
 function TypesView({ types, setTypes, playlists, setPlaylists, sel, setSel, templates, partners, companyLists, goToPartners }) {
   const [open, setOpen] = useState({ playlist: false, web: true, phantom: true, features: true, zones: true });
   const [pendingEl, setPendingEl] = useState(null);
+  const columnsRef = useRef(null);
+  const [fitsThreeColumns, setFitsThreeColumns] = useState(true);
+  useEffect(() => {
+    const el = columnsRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver((entries) => setFitsThreeColumns((entries[0]?.contentRect?.width ?? el.clientWidth) >= THREE_COLUMN_MIN_WIDTH));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
   const d = types.find((t) => t.id === sel) || types[0];
   const set = (patch) => setTypes(types.map((t) => (t.id === d.id ? { ...t, ...patch } : t)));
   const setPath = (path, value) => setTypes(types.map((t) => (t.id === d.id ? setIn(t, path, value) : t)));
@@ -566,7 +581,7 @@ function TypesView({ types, setTypes, playlists, setPlaylists, sel, setSel, temp
 
 
   return (
-    <div style={{ display: "flex", gap: 20, alignItems: "flex-start", flexWrap: "wrap" }}>
+    <div ref={columnsRef} style={{ display: "flex", gap: 20, alignItems: "flex-start", flexWrap: "wrap" }}>
       <div style={{ width: 215, flexShrink: 0 }}>
         <Btn variant="primary" style={{ width: "100%", justifyContent: "center", marginBottom: 10 }}
           onClick={() => {
@@ -609,6 +624,11 @@ function TypesView({ types, setTypes, playlists, setPlaylists, sel, setSel, temp
       </div>
 
       <div style={{ width: 400, flexShrink: 0 }}>
+        {!fitsThreeColumns && (
+          <div style={{ marginBottom: 16 }}>
+            <Preview d={d} plName={plName} setPath={setPath} partners={partners} companyLists={companyLists} />
+          </div>
+        )}
         <div style={{ marginBottom: 16 }}>
           <Label>Touch Point</Label>
           <IconSelect value={d.touchPoint} onChange={(v) => set({ touchPoint: v, element: isWebTP(v) ? (d.element || elementConfig("hero")) : d.element })} options={TOUCH_POINTS} />
@@ -1072,9 +1092,11 @@ function TypesView({ types, setTypes, playlists, setPlaylists, sel, setSel, temp
         </div>
       </div>
 
-      <div style={{ flex: 1, minWidth: 320 }}>
-        <Preview d={d} plName={plName} setPath={setPath} partners={partners} companyLists={companyLists} />
-      </div>
+      {fitsThreeColumns && (
+        <div style={{ flex: 1, minWidth: 320 }}>
+          <Preview d={d} plName={plName} setPath={setPath} partners={partners} companyLists={companyLists} />
+        </div>
+      )}
     </div>
   );
 }
