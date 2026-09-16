@@ -4,7 +4,7 @@
 ------------------------------------------------------------------- */
 
 import { displayType, playlist, playlistItem, scene, textElement, textVariant, slot, elementConfig, blankFeatures, UNLIMITED } from "./schema.js";
-import { partner, DIRECT_PARTNER, ANY_PARTNER, RTB, DEFAULT_EXCHANGE } from "./sellside.js";
+import { partner, ANY_PARTNER, RTB, DEFAULT_EXCHANGE } from "./sellside.js";
 
 /* --------------------------------------------------------- campaigns */
 /* The HQ campaign catalogue playlist items reference. Playback strategy
@@ -115,7 +115,7 @@ export const INITIAL_TYPES = [
     phExtensions: { slots: [
       slot({ label: "Priority 1", owner: "internal" }),
       slot({ label: "Supplier slot", owner: "advertiser", partnerId: ANY_PARTNER, advertiser: RTB }),
-      slot({ label: "Supplier slot", owner: "advertiser", partnerId: DIRECT_PARTNER, advertiser: "Blackmores" }),
+      slot({ label: "Supplier slot", owner: "advertiser", partnerId: "p_amazon", advertiser: "L'Oréal" }),
       slot({ label: "Store choice", owner: "retail", storeScope: "Store staff" }),
     ], nameAuto: true } }),
   displayType({ id: "web_grid", name: "Grid", touchPoint: "Responsive Web", displayCanvasSize: { width: 1200, height: 640 }, backgroundColor: "#000000", element: elementConfig("grid"), defaultPlaylistId: "pl_promo",
@@ -129,7 +129,6 @@ export const INITIAL_TYPES = [
 ];
 
 /* ---------------------------------------------- partners & lists */
-export const ADVERTISERS = ["Blackmores", "L'Oréal", "Cetaphil", "Swisse", "Nestlé"];
 export const INITIAL_COMPANY_LISTS = {
   allowList: [{ id: "cal1", name: "Nestlé" }, { id: "cal2", name: "Swisse" }, { id: "cal3", name: "Arnott’s" }],
   blockList: [{ id: "cbl1", name: "Red Bull" }, { id: "cbl2", name: "Monster Energy" }],
@@ -138,9 +137,6 @@ export const INITIAL_COMPANY_LISTS = {
 const ENV_ATTRS = ["env.daypart", "env.store_segments", "env.store_hours_state", "display.touch_point", "display.display_tags"];
 
 export const INITIAL_PARTNERS = [
-  partner({ id: DIRECT_PARTNER, provider: null, name: "Direct / house", status: "connected", system: true,
-    seats: ADVERTISERS.map((a) => ({ id: a, name: a, approvalRequired: a === "Blackmores" })), auctionType: "Preferred deal", listsLinked: false,
-    targeting: { enabledAttributes: [...ENV_ATTRS, "visitor.loyalty_tier"] } }),
   partner({ id: "p_google", provider: "google_dsp", name: "Google DSP", status: "connected",
     creds: { partnerId: "884512", advertiserId: "2201984", authMode: "Service account (JSON key)", saEmail: "ph-retail-media@ph-demo.iam.gserviceaccount.com", saKey: "•".repeat(24), networkCode: "" },
     bidder: { bidderEndpoint: "https://rtb.doubleclick.net/openrtb2/bid", seatIds: "884512, 884513", qps: "500", timeoutMs: "300" },
@@ -154,12 +150,6 @@ export const INITIAL_PARTNERS = [
     seats: [{ id: "a1", name: "L'Oréal", approvalRequired: false }],
     listsLinked: false, allowList: [{ id: "bl4", name: "L'Oréal" }], blockList: [{ id: "bl1", name: "Red Bull" }, { id: "bl3", name: "Chemist Warehouse" }],
     targeting: { enabledAttributes: ENV_ATTRS }, lastSync: "Refresh token rejected — 3 days ago" }),
-  partner({ id: "p_ph_blackmores", provider: "ph_native", name: "Blackmores (PH-native)", status: "connected",
-    creds: { orgName: "Blackmores", apiKeyId: "phk_blk_2201", apiSecret: "•".repeat(20), webhook: "https://ads.blackmores.example/ph/delivery" },
-    floorCpm: null, auctionType: "Preferred deal", categories: ["Health & Fitness"],
-    seats: [{ id: "b1", name: "Blackmores", approvalRequired: true }],
-    targeting: { enabledAttributes: [...ENV_ATTRS, "env.temp_c", "env.condition", "env.store_stock", "visitor.visitor_segments"] },
-    lastSync: "Today, 06:55" }),
 ];
 
 export const INITIAL_EXCHANGE = { ...DEFAULT_EXCHANGE,
