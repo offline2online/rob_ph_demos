@@ -488,6 +488,17 @@ export default function App() {
     document.head.appendChild(l);
   }, []);
 
+  /* Iframe canvas is fluid, set by the parent CTA frame (prototyping.md §3) —
+     below this width the nav rail contracts to icons-only so the content
+     column keeps enough room to be usable. */
+  const [canvasW, setCanvasW] = useState(typeof window !== "undefined" ? window.innerWidth : 1280);
+  useEffect(() => {
+    const onResize = () => setCanvasW(window.innerWidth);
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+  const navCollapsed = canvasW < 900;
+
   const NAV = [
     { key: "types", label: "Display Types / Elements", icon: "dashboard_customize" },
     { key: "layout", label: "Experience Layout", icon: "space_dashboard", scope: SHOW_EXPERIENCE_LAYOUT },
@@ -507,12 +518,12 @@ export default function App() {
       <div style={{ fontSize: 20, fontWeight: 700 }}>{NAV_TITLES[nav]}</div>
       <div style={{ height: 1, background: T.divider, margin: "16px 0" }} />
       <div style={{ display: "flex", alignItems: "flex-start" }}>
-        <div style={{ width: 230, flexShrink: 0, borderRight: `1px solid ${T.borderSubtle}` }}>
+        <div style={{ width: navCollapsed ? 56 : 230, flexShrink: 0, borderRight: `1px solid ${T.borderSubtle}`, position: "sticky", top: 20, maxHeight: "calc(100vh - 40px)", overflowY: "auto", overflowX: "hidden", transition: "width .15s" }}>
           {NAV.map((n) => {
             const a = nav === n.key;
-            return <div key={n.key} onClick={() => setNav(n.key)}
-              style={{ padding: "12px 16px", cursor: "pointer", fontSize: 14, display: "flex", alignItems: "center", gap: 8, color: a ? T.primary : T.text, background: a ? T.primaryTint : "transparent" }}>
-              <Icon name={n.icon} size={18} />{n.label}
+            return <div key={n.key} onClick={() => setNav(n.key)} title={navCollapsed ? n.label : undefined}
+              style={{ padding: navCollapsed ? "12px 0" : "12px 16px", cursor: "pointer", fontSize: 14, display: "flex", alignItems: "center", justifyContent: navCollapsed ? "center" : "flex-start", gap: 8, color: a ? T.primary : T.text, background: a ? T.primaryTint : "transparent" }}>
+              <Icon name={n.icon} size={18} />{!navCollapsed && n.label}
             </div>;
           })}
         </div>
