@@ -26,6 +26,48 @@
             "functionId": "boardApi",
             "region": "us-central1"
           }
+        },
+        {
+          "source": "/mcp",
+          "function": {
+            "functionId": "mcpServer",
+            "region": "us-central1"
+          }
+        },
+        {
+          "source": "/mcp/**",
+          "function": {
+            "functionId": "mcpServer",
+            "region": "us-central1"
+          }
+        },
+        {
+          "source": "/.well-known/oauth-protected-resource",
+          "function": {
+            "functionId": "mcpServer",
+            "region": "us-central1"
+          }
+        },
+        {
+          "source": "/.well-known/oauth-protected-resource/**",
+          "function": {
+            "functionId": "mcpServer",
+            "region": "us-central1"
+          }
+        },
+        {
+          "source": "/.well-known/oauth-authorization-server",
+          "function": {
+            "functionId": "mcpServer",
+            "region": "us-central1"
+          }
+        },
+        {
+          "source": "/.well-known/oauth-authorization-server/**",
+          "function": {
+            "functionId": "mcpServer",
+            "region": "us-central1"
+          }
         }
       ],
       "headers": [

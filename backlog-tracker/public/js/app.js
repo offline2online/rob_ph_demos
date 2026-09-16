@@ -12,14 +12,14 @@
 
 import { initializeApp, getApps, getApp } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-app.js";
 import {
-  getFirestore, initializeFirestore, collection, addDoc, updateDoc, deleteDoc, setDoc, doc, getDoc,
+  getFirestore, initializeFirestore, collection, addDoc, updateDoc, deleteDoc, setDoc, doc, getDoc, getDocs,
   onSnapshot, query, orderBy, serverTimestamp, writeBatch, arrayUnion, deleteField,
 } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore.js";
 import {
   getStorage, ref as storageRef, uploadBytes, getDownloadURL, deleteObject,
 } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-storage.js";
 import {
-  getAuth, GoogleAuthProvider, signInWithPopup, onAuthStateChanged, signOut,
+  getAuth, GoogleAuthProvider, signInWithPopup, onAuthStateChanged, signOut, sendPasswordResetEmail,
 } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-auth.js";
 import { firebaseConfig } from "./firebase-config.js";
 import { APP_VERSION } from "./version.js";
@@ -2642,8 +2642,18 @@ function formatNoteAt(at) {
   return d ? d.toLocaleString() : "";
 }
 
+// "claude" and "viewer" are the board's own two historical authors; anything
+// else is an email — a comment a team member's agent added over MCP on their
+// behalf (see ../../functions/mcp-server.js add_item_comment), which is worth
+// attributing rather than flattening to a generic "Comment".
+function noteAuthorLabel(author) {
+  if (author === "claude") return "Claude";
+  if (!author || author === "viewer") return "Comment";
+  return author;
+}
+
 function eiNoteRowHTML(note) {
-  const who = note.author === "claude" ? "Claude" : "Comment";
+  const who = noteAuthorLabel(note.author);
   return `<div class="ei-note-row">
     <div class="ei-note-meta"><b>${escapeHTML(who)}</b><span>${escapeHTML(formatNoteAt(note.at))}</span></div>
     <p class="ei-note-text">${escapeHTML(note.text)}</p>
@@ -4347,6 +4357,8 @@ function openFaqSettingsPage() {
   setRouteHash("#settings");
   updateTopbarTitle();
   loadFaqSiteSettings();
+  loadTeamMembers();
+  loadMyAgentConnections();
 }
 function closeFaqSettingsPage() {
   faqSettingsPage.hidden = true;
@@ -4384,6 +4396,225 @@ document.getElementById("fa-analytics-tag-save").addEventListener("click", async
   }, { merge: true });
   if (!faqUser) return; // sign-in was declined — nothing was saved
   await showAlert(tag ? "Saved — it'll appear on the public FAQ site after the next export." : "Cleared — no analytics tag will be sent.");
+});
+
+// ── Settings → Team & agent access ────────────────────────────────────────
+//
+// One list that decides two things at once: who may open this console in a
+// browser, and whose AI agent may connect to it over MCP. Both resolve to
+// the same consoleUsers doc (id = lowercased email) — firestore.rules reads
+// it for every browser read/write, and functions/mcp-server.js re-reads it
+// on every single agent call, so removing someone here cuts off both halves
+// at once rather than whenever a token happens to expire.
+//
+// Writing this collection needs the admin role (firestore.rules isAdmin);
+// the whole block is hidden for everyone else by [data-admin-only] in
+// styles.css, and the rules refuse it regardless if that markup is edited.
+const CONSOLE_ROLE_LABELS = { admin: "Admin", editor: "Editor", viewer: "Viewer" };
+const MCP_SERVER_URL = `${window.location.origin}/mcp`;
+
+function currentConsoleRole() { return document.documentElement.dataset.consoleRole || "editor"; }
+function isConsoleAdmin() { return currentConsoleRole() === "admin"; }
+
+// The console-side endpoints on mcp-server.js authenticate with a Firebase
+// ID token in a header of its own — deliberately NOT "Authorization", so a
+// sign-in token and an agent's MCP token can never be mistaken for each
+// other on the way in.
+async function consoleApiHeaders() {
+  const user = auth.currentUser;
+  if (!user) throw new Error("Not signed in.");
+  return { "X-Firebase-ID-Token": await user.getIdToken(), "Content-Type": "application/json" };
+}
+
+function teamRowHTML(member) {
+  const email = member.email || member.id;
+  const role = CONSOLE_ROLE_LABELS[member.role] ? member.role : "editor";
+  const agentOn = member.mcpEnabled !== false && member.disabled !== true;
+  const isSelf = email === (auth.currentUser && auth.currentUser.email || "").toLowerCase();
+  return `<div class="team-row" data-email="${escapeHTML(email)}">
+    <div class="team-row-main">
+      <div class="team-row-email">${escapeHTML(email)}${isSelf ? " (you)" : ""}</div>
+      <div class="team-row-name">${escapeHTML(member.displayName || "")}${member.disabled === true ? " · disabled" : ""}</div>
+    </div>
+    <select data-team-role aria-label="Role for ${escapeHTML(email)}">
+      ${Object.entries(CONSOLE_ROLE_LABELS).map(([v, l]) => `<option value="${v}"${v === role ? " selected" : ""}>${l}</option>`).join("")}
+    </select>
+    <span class="team-badge ${agentOn ? "team-badge-on" : "team-badge-off"}">Agent ${agentOn ? "on" : "off"}</span>
+    <button type="button" class="btn-ghost" data-team-toggle-agent="${agentOn ? "off" : "on"}">${agentOn ? "Turn agent off" : "Turn agent on"}</button>
+    <button type="button" class="btn-ghost" data-team-provision title="Creates their login and emails them a link to set a password — only needed for someone without a Google account.">Send sign-in setup</button>
+    <button type="button" class="btn-ghost" data-team-revoke title="Signs every agent this person has connected out of the console.">Disconnect agents</button>
+    ${isSelf ? "" : '<button type="button" class="btn-ghost" data-team-remove>Remove</button>'}
+  </div>`;
+}
+
+async function loadTeamMembers() {
+  const list = document.getElementById("team-list");
+  if (!list || !isConsoleAdmin()) return;
+  list.innerHTML = '<p class="interface-row-empty">Loading…</p>';
+  try {
+    const snap = await getDocs(collection(db, "consoleUsers"));
+    const rows = [];
+    snap.forEach((d) => rows.push(Object.assign({ id: d.id }, d.data())));
+    rows.sort((a, b) => String(a.email || a.id).localeCompare(String(b.email || b.id)));
+    list.innerHTML = rows.length
+      ? rows.map(teamRowHTML).join("")
+      : '<p class="interface-row-empty">Nobody added yet. The two owner accounts always have access whether or not they are listed here.</p>';
+  } catch (err) {
+    console.error("Failed to load console users:", err);
+    list.innerHTML = '<p class="interface-row-empty">Couldn\'t load the team list.</p>';
+  }
+}
+
+async function saveTeamMember(email, fields) {
+  await setDoc(doc(db, "consoleUsers", email), Object.assign({ email }, fields, {
+    updatedAt: serverTimestamp(),
+    updatedBy: (auth.currentUser && auth.currentUser.email) || null,
+  }), { merge: true });
+}
+
+document.getElementById("team-add-btn")?.addEventListener("click", async () => {
+  const emailEl = document.getElementById("team-add-email");
+  const nameEl = document.getElementById("team-add-name");
+  const roleEl = document.getElementById("team-add-role");
+  const email = (emailEl.value || "").trim().toLowerCase();
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) { await showAlert("Enter a valid email address."); return; }
+  try {
+    await saveTeamMember(email, {
+      displayName: (nameEl.value || "").trim(),
+      role: roleEl.value,
+      mcpEnabled: true,
+      createdAt: serverTimestamp(),
+      createdBy: (auth.currentUser && auth.currentUser.email) || null,
+    });
+    emailEl.value = ""; nameEl.value = "";
+    await loadTeamMembers();
+    await showAlert(`${email} can now sign in with Google and connect their agent. If they don't have a Google account, use "Send sign-in setup" on their row.`);
+  } catch (err) {
+    console.error("Failed to add console user:", err);
+    await showAlert(`Couldn't add them: ${err && err.message ? err.message : err}`);
+  }
+});
+
+document.getElementById("team-list")?.addEventListener("change", async (e) => {
+  const select = e.target.closest("[data-team-role]");
+  if (!select) return;
+  const email = select.closest(".team-row").dataset.email;
+  try {
+    await saveTeamMember(email, { role: select.value });
+    await loadTeamMembers();
+  } catch (err) {
+    await showAlert(`Couldn't change that role: ${err && err.message ? err.message : err}`);
+    await loadTeamMembers();
+  }
+});
+
+document.getElementById("team-list")?.addEventListener("click", async (e) => {
+  const row = e.target.closest(".team-row");
+  if (!row) return;
+  const email = row.dataset.email;
+
+  const toggle = e.target.closest("[data-team-toggle-agent]");
+  if (toggle) {
+    const turningOn = toggle.dataset.teamToggleAgent === "on";
+    await saveTeamMember(email, { mcpEnabled: turningOn });
+    // Turning it off only stops NEW calls being authorised at the next
+    // check; existing tokens are also killed so nothing keeps working on a
+    // cached credential.
+    if (!turningOn) await revokeAgentConnections(email, null, { quiet: true });
+    await loadTeamMembers();
+    return;
+  }
+
+  if (e.target.closest("[data-team-provision]")) {
+    const btn = e.target.closest("[data-team-provision]");
+    btn.disabled = true;
+    try {
+      const resp = await fetch("/mcp/admin/provision", {
+        method: "POST", headers: await consoleApiHeaders(), body: JSON.stringify({ email }),
+      });
+      const data = await resp.json().catch(() => ({}));
+      if (!resp.ok) throw new Error(data.error || `HTTP ${resp.status}`);
+      // Firebase's own reset email is the invite: we never set, see or send
+      // a password — they choose one, and completing that flow is also what
+      // verifies their address for firestore.rules.
+      await sendPasswordResetEmail(auth, email);
+      await showAlert(`${email} ${data.created ? "now has a login" : "already had a login"}. We've emailed them a link to set their password.`);
+    } catch (err) {
+      await showAlert(`Couldn't set that up: ${err && err.message ? err.message : err}`);
+    } finally {
+      btn.disabled = false;
+    }
+    return;
+  }
+
+  if (e.target.closest("[data-team-revoke]")) {
+    await revokeAgentConnections(email, null);
+    return;
+  }
+
+  if (e.target.closest("[data-team-remove]")) {
+    const ok = await showConfirmDialog(`Remove ${email} from the PH Agent Console? They lose access to the board and any agent they've connected, immediately.`);
+    if (!ok) return;
+    try {
+      await revokeAgentConnections(email, null, { quiet: true });
+      await deleteDoc(doc(db, "consoleUsers", email));
+      await loadTeamMembers();
+    } catch (err) {
+      await showAlert(`Couldn't remove them: ${err && err.message ? err.message : err}`);
+    }
+  }
+});
+
+async function revokeAgentConnections(email, clientId, { quiet = false } = {}) {
+  try {
+    const resp = await fetch("/mcp/me/connections", {
+      method: "POST", headers: await consoleApiHeaders(),
+      body: JSON.stringify(Object.assign({}, email ? { email } : {}, clientId ? { clientId } : {})),
+    });
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok) throw new Error(data.error || `HTTP ${resp.status}`);
+    if (!quiet) await showAlert(data.revoked ? `Disconnected ${data.revoked} agent token${data.revoked === 1 ? "" : "s"}. Reconnecting just means signing in again.` : "There were no active agent connections to disconnect.");
+    await loadMyAgentConnections();
+  } catch (err) {
+    if (!quiet) await showAlert(`Couldn't disconnect: ${err && err.message ? err.message : err}`);
+  }
+}
+
+// Every member's own view: which agents they have connected, and a way to
+// cut any of them off without involving an admin.
+async function loadMyAgentConnections() {
+  const box = document.getElementById("mcp-connections");
+  if (!box) return;
+  box.innerHTML = '<p class="interface-row-empty">Checking…</p>';
+  try {
+    const resp = await fetch("/mcp/me/connections", { method: "GET", headers: await consoleApiHeaders() });
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok) throw new Error(data.error || `HTTP ${resp.status}`);
+    box.innerHTML = (data.clients || []).length
+      ? data.clients.map((c) => `<div class="mcp-connection-row">
+          <span><strong>${escapeHTML(c.clientName || c.clientId)}</strong>${c.lastUsedAt ? ` · last used ${escapeHTML(new Date(c.lastUsedAt).toLocaleString())}` : " · not used yet"}</span>
+          <button type="button" class="btn-ghost" data-mcp-disconnect="${escapeHTML(c.clientId)}">Disconnect</button>
+        </div>`).join("")
+      : '<p class="interface-row-empty">No agent connected yet.</p>';
+  } catch (err) {
+    box.innerHTML = '<p class="interface-row-empty">Couldn\'t check your agent connections.</p>';
+  }
+}
+
+document.getElementById("mcp-connections")?.addEventListener("click", async (e) => {
+  const btn = e.target.closest("[data-mcp-disconnect]");
+  if (!btn) return;
+  await revokeAgentConnections(null, btn.dataset.mcpDisconnect);
+});
+
+document.getElementById("mcp-refresh-connections")?.addEventListener("click", loadMyAgentConnections);
+document.getElementById("mcp-copy-btn")?.addEventListener("click", async () => {
+  try {
+    await navigator.clipboard.writeText(MCP_SERVER_URL);
+    await showAlert("Copied. Paste it into your agent as a remote MCP server — it'll ask you to sign in.");
+  } catch {
+    await showAlert(`Copy didn't work in this browser — the URL is ${MCP_SERVER_URL}`);
+  }
 });
 
 function openFaqArticlesPage() {

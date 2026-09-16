@@ -4,10 +4,9 @@ service firebase.storage {
 
     // Backs the Edit item modal's Attachments block (screenshots & screen
     // recordings — see public/js/app.js uploadItemAttachment). Same
-    // prototype-stage open posture as firestore.rules (no auth yet — see
-    // that file's own comment), with a size/content-type check instead of
-    // wide-open write, since Storage has no per-field validation the way
-    // Firestore rules can express against document data.
+    // signed-in-member posture as firestore.rules, with a size/content-type
+    // check instead of per-field validation, since Storage has no way to
+    // express the document checks Firestore rules can.
     //
     // Path shape: attachments/{itemId}/{fileName} — itemId is a
     // backlogItems doc id, not validated against Firestore itself (rules
@@ -15,14 +14,32 @@ service firebase.storage {
     // kind/size of file can land here, not which item it's "for".
     // The console is behind Google sign-in (see firestore.rules isEditor);
     // attachments follow the same rule — no anonymous access.
+    //
+    // Who counts as an editor now lives in Firestore's consoleUsers
+    // collection, and STORAGE RULES CANNOT READ FIRESTORE. So membership
+    // reaches here as a custom auth claim instead: functions/mcp-server.js
+    // keeps `consoleEditor` on each member's Firebase Auth user in step with
+    // their consoleUsers doc (syncConsoleUserClaims on write, plus a
+    // self-heal at /mcp/claims/sync for someone added before their first
+    // sign-in). The two owner accounts and the automation user stay
+    // hard-coded for the same reason they do in firestore.rules — no claim
+    // to go stale, no way to lock everyone out.
+    //
+    // A claim rides in the ID token, so it can be up to an hour stale after
+    // a role change; auth-gate.js force-refreshes the token when it sees a
+    // membership that the claim doesn't reflect. Worst case, a newly added
+    // member briefly can't upload an attachment while the rest of the board
+    // already works — never the reverse, since removing someone also removes
+    // their Firestore membership, which every read and write checks live.
     function isEditor() {
       return request.auth != null
         && request.auth.token.email_verified == true
-        && request.auth.token.email in [
-          "rob@offline2online.com",
-          "rob@personalisationhub.com",
-          "board-automation@backlog-tracker-e4ed2.firebaseapp.com"
-        ];
+        && (request.auth.token.email.lower() in [
+              "rob@offline2online.com",
+              "rob@personalisationhub.com",
+              "board-automation@backlog-tracker-e4ed2.firebaseapp.com"
+            ]
+            || request.auth.token.consoleEditor == true);
     }
 
     match /attachments/{itemId}/{fileName} {

@@ -183,6 +183,54 @@ Status pipeline and what each transition means:
 | `published-live` | Deployed / Main Branch (Live) | Set only by `run-backlog-automation.js` after it actually merges the train's PR — see below, no manual button sets this |
 | `archived` | (hidden from the board) | Set via the Archive action on a Deployed/Main-Branch card; reversible via Restore |
 
+### `consoleUsers/{lowercasedEmail}`
+
+The member list. **One doc per person, and it governs both halves of their
+access**: opening the console in a browser, and connecting their own AI
+agent to it over MCP. Replaced a hard-coded allowlist that had to be edited
+in three files to add anyone.
+
+```
+{
+  email: string,               // lowercased; must equal the doc id
+  displayName?: string,
+  role: "admin" | "editor" | "viewer",
+  disabled?: boolean,          // keeps the row, removes all access
+  mcpEnabled?: boolean,        // default true — false turns off the agent half only
+  createdAt?: timestamp, createdBy?: string,
+  updatedAt?: timestamp, updatedBy?: string,
+}
+```
+
+| Role | Board | Manage members | Agent (MCP) |
+|---|---|---|---|
+| `admin` | read + write | yes | read + write |
+| `editor` | read + write | no | read + write |
+| `viewer` | read only | no | read only (`board.write` is never issued) |
+
+- `firestore.rules` resolves `isBoardReader` / `isEditor` / `isAdmin` by
+  reading this doc, so a change takes effect on the next request — no token
+  refresh, no cache.
+- `rob@offline2online.com` and `rob@personalisationhub.com` are hard-coded
+  admins in the rules, so an empty or mis-edited collection can never lock
+  everyone out. `board-automation@…` stays a hard-coded editor.
+- **A signed-in person may always read their OWN row.** `auth-gate.js` has
+  to check membership before it can know whether the caller is a member;
+  without that self-read every new member sees "not on the list" forever.
+- Storage rules cannot read Firestore, so membership also rides as a custom
+  auth claim (`consoleRole`, `consoleEditor`) kept in step by the
+  `syncConsoleUserClaims` trigger and `POST /mcp/claims/sync`.
+
+### `mcpClients/{clientId}`, `mcpAuthCodes/{sha256}`, `mcpTokens/{sha256}`, `mcpAuditLog/{id}`
+
+MCP server state — registered OAuth clients, and the hashed authorization
+codes and access/refresh tokens standing behind every team member's agent.
+Written only by the Cloud Function through the admin SDK. **`firestore.rules`
+denies every client read and write of the first three outright**, and the
+`boardApi` proxy's collection allowlist does not include them. `mcpAuditLog`
+(one row per agent write: `{at, email, clientId, tool, itemId?, …}`) is
+admin-readable and append-only from the server.
+
 ## The deployment train
 
 **Every ticket a project builds is one commit on that project's single
@@ -1346,6 +1394,77 @@ required steps above (still PATCH the same fields, still open a PR the
 same way). Most projects leave this blank; that's the expected default,
 not a gap.
 
+## Functional requirements — team access & the MCP server
+
+Full walkthrough in [`MCP.md`](./MCP.md); this is the requirement, not the
+manual.
+
+**The requirement.** A person added to the platform must be able to connect
+their own AI agent to the PH Agent Console and use it as a tool, signing in
+with the credentials they already have — Google, or an email and password —
+with no key to mint, paste, share or rotate, and with everything their agent
+does attributed to them.
+
+**Membership.** `Settings → Team & agent access` (admin-only) writes
+`consoleUsers` docs; that one row grants browser access and agent access
+together. Roles as in "Data model" above. A member with no Google account is
+provisioned with `POST /mcp/admin/provision` (creates their Firebase Auth
+login) and then Firebase's own password-reset email, which is also what
+verifies their address — no password is ever typed or sent on their behalf.
+
+**Transport and auth.** `functions/mcp-server.js`, served at
+`<console origin>/mcp` via hosting rewrites, is:
+
+- an **MCP server** speaking JSON-RPC over Streamable HTTP, stateless (no
+  session, no server-initiated SSE — `GET /mcp` answers `405`);
+- its own **OAuth 2.1 authorization server**: RFC 9728 + RFC 8414 discovery,
+  RFC 7591 dynamic client registration, mandatory PKCE `S256`, RFC 7009
+  revocation, 1-hour access tokens, 60-day rotating refresh tokens.
+
+Required properties, each covered by `test/mcp-server.test.js`:
+
+1. **The agent never holds a Firebase credential.** A Firebase ID token is
+   accepted at exactly one endpoint, from the browser, and traded
+   immediately for this server's own token.
+2. **Only hashes are stored.** Codes and tokens exist in Firestore as
+   SHA-256 doc ids; the raw secret only ever exists in the response that
+   issued it.
+3. **Codes are single-use**, enforced in a transaction.
+4. **Refresh tokens rotate** — using one revokes it.
+5. **Membership is re-checked on every call.** Removing someone, disabling
+   them, switching their agent off or demoting them to viewer takes effect
+   on the next request, not at token expiry.
+6. **`board.write` is never issued to a viewer**, whatever the client asks
+   for — filtered at issue time and again at use time.
+7. **An unauthenticated call answers `401` with a `WWW-Authenticate` header
+   pointing at the resource metadata**, which is how a client discovers
+   where to sign in.
+
+**Tool surface — and its hard limit.** Read: `whoami`, `list_projects`,
+`list_backlog_items`, `get_backlog_item`, `get_project_docs`, `search_faq`,
+`get_faq_article`. Write (editor/admin only): `create_backlog_item` (always
+into `backlog`), `update_backlog_item` (title, desc, type, category only),
+`add_item_comment`.
+
+**No tool may deploy, merge, approve a ticket out of Ready for Testing,
+change a card's status, write a train field, fire the Notify Claude Routine,
+or trigger a campaign.** Campaign triggering stays on the triggered Routine
+and the release pipeline keeps its human gates — an agent files, reads,
+enriches and comments; it does not ship. This is a requirement about the
+surface, not a convention: `update_backlog_item`'s schema has no `status`,
+the server writes nothing to `projects`, and the test suite asserts the tool
+names themselves contain no deploy/merge/approve/trigger verb.
+
+**Attribution and audit.** Every write records the person's email on the
+document (`createdByEmail`, `updatedByEmail`, a comment's `author`) and
+appends an `mcpAuditLog` row. The board's comment thread shows that email
+rather than a generic "Comment".
+
+**Self-service.** Every member sees `Settings → Connect your AI agent`: the
+server URL, how to add it to a client, the list of agents they have
+connected, and a per-client disconnect. An admin can additionally disconnect
+anyone else's.
+
 ## Functional requirements — FAQ / Help Center
 
 Two surfaces sharing this same Firestore project:
@@ -1444,8 +1563,12 @@ Two surfaces sharing this same Firestore project:
 
 ## Non-goals / explicitly out of scope
 
-- **Authentication/authorization.** Everything here is open by design at
-  this stage — see "Firestore rules" above.
+- ~~**Authentication/authorization.** Everything here is open by design at
+  this stage.~~ **Superseded.** The console is behind a managed member list
+  (`consoleUsers` above) with three roles, enforced in `firestore.rules`,
+  `storage.rules` and the MCP server alike. What remains out of scope is
+  anything richer: per-project permissions, groups, SSO/SAML, or an
+  approval workflow for adding someone.
 - **This project does not decide what other projects' backlog items should
   say or how they should be prioritized.** It only carries them.
 - **The FAQ site's own visual match to the real WordPress theme** is a
