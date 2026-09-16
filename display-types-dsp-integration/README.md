@@ -90,8 +90,11 @@ adopted by every connected DSP. A partner can unlink and keep its own —
 unlinking copies the inherited lists down, relinking discards them, and the
 central screen shows which partners adopt and which have their own.
 
-A position's **Assigned to** picker then offers open RTB, whitelist-only,
-any-except-blacklist, or one named advertiser.
+A position's **Assigned to** picker then offers open RTB, whitelist-only, or
+one named advertiser. **The blacklist is not a mode** — it subtracts from every
+outcome and no position can opt out, so a blocked advertiser is withdrawn from
+the picker and any position already reserved to it is flagged as unable to
+fill.
 
 The **API and campaign model** a partner integrates against — two API tiers,
 baseline plus targeted campaigns, per-partner targeting permissions, the

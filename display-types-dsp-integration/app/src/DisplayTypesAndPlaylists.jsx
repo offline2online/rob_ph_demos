@@ -58,7 +58,15 @@ const RTB = "__rtb__";
 /* Sell a position to a DSP's demand, filtered by the client's own lists
    rather than to one named advertiser. */
 const ALLOW_LIST = "__allow__";
+/* Retired: "any except blacklist" used to be a mode you could choose. The
+   blacklist now always subtracts, so open bidding already means that and the
+   two are the same thing. Still coerced on read so an older position does not
+   land on a value the picker no longer offers. */
 const BLOCK_LIST = "__block__";
+
+/* The blacklist is not a mode — it is subtracted from every outcome. */
+const isBlocked = (name, eff) =>
+  !!name && (eff.blockList || []).some((b) => b.name.toLowerCase() === String(name).toLowerCase());
 
 const DSP_PROVIDERS = {
   google_dsp: {
@@ -185,13 +193,15 @@ const ownerAssignment = (sl, partners, company = INITIAL_COMPANY_LISTS) => {
   const p = partnerById(partners, pid);
   if (!p) return "Partner removed";
   const eff = effectiveLists(p, company);
+  const minus = eff.blockList.length ? `, minus ${eff.blockList.length} blocked` : "";
   if (sl.advertiser === ALLOW_LIST) {
     return `RTB, whitelist (${eff.allowList.length}) \u00b7 ${p.name}`;
   }
-  if (sl.advertiser === BLOCK_LIST) {
-    return `RTB, minus blacklist (${eff.blockList.length}) \u00b7 ${p.name}`;
+  /* BLOCK_LIST is what open bidding already does. */
+  if (!sl.advertiser || sl.advertiser === RTB || sl.advertiser === BLOCK_LIST) {
+    return `RTB${minus} \u00b7 ${p.name}`;
   }
-  if (!sl.advertiser || sl.advertiser === RTB) return `RTB \u2014 ${p.name}`;
+  if (isBlocked(sl.advertiser, eff)) return `${sl.advertiser} \u2014 blocked \u00b7 ${p.name}`;
   return `${sl.advertiser} \u00b7 ${p.name}`;
 };
 
@@ -1039,9 +1049,10 @@ function PartnersView({ partners, setPartners, companyLists, setCompanyLists, ty
                     </div>
 
                     <div style={{ fontSize: 12, color: T.muted, lineHeight: 1.6, marginBottom: 12 }}>
-                      Which advertisers may buy through {p.name}. A position can then sell to this
-                      partner&rsquo;s open demand, to the whitelist only, or to everyone except the
-                      blacklist &mdash; chosen per position in the slot table.
+                      Which advertisers may buy through {p.name}. A position sells either to this
+                      partner&rsquo;s open demand or to the whitelist only, chosen per position in
+                      the slot table. <b>The blacklist always applies</b> &mdash; it is subtracted
+                      from every outcome and cannot be switched off per position.
                     </div>
 
                     <Grid cols={2}>
@@ -1066,7 +1077,8 @@ function PartnersView({ partners, setPartners, companyLists, setCompanyLists, ty
                       An advertiser cannot sit on both lists; adding it to one removes it from the
                       other. These lists are the client&rsquo;s, not the DSP&rsquo;s &mdash; they
                       filter what the exchange is allowed to clear into a position, and are enforced
-                      at auction time, not after the fact.
+                      at auction time, not after the fact. Blocking an advertiser withdraws it from
+                      every position at once, including ones already selling to open demand.
                     </Note>
                   </>
                 );
@@ -1187,6 +1199,9 @@ function CompanyListsPanel({ lists, mut, partners, onOpenPartner }) {
       <Note>
         A DSP&rsquo;s advertiser universe is not enumerable from here, so type any name. An
         advertiser cannot sit on both lists; adding it to one removes it from the other.
+        <b> The blacklist always applies</b> wherever these lists are adopted &mdash; it is
+        subtracted from open bidding and from the whitelist alike, and no position can opt out
+        of it. The whitelist is the part a position chooses to use.
       </Note>
 
       <SectionLabel>Where these apply</SectionLabel>
@@ -1550,6 +1565,13 @@ function TypesView({ types, setTypes, playlists, setPlaylists, sel, setSel, temp
                   const eff = effectiveLists(p, companyLists);
                   const allowN = eff.allowList.length;
                   const blockN = eff.blockList.length;
+                  /* The blacklist subtracts everywhere, so a blocked seat is not
+                     offered — picking it could only produce a dead position. */
+                  const sellableSeats = seats.filter((x) => !isBlocked(x.name, eff));
+                  const namedButBlocked =
+                    sl.owner === "advertiser" && sl.advertiser && sl.advertiser !== RTB &&
+                    sl.advertiser !== ALLOW_LIST && sl.advertiser !== BLOCK_LIST &&
+                    isBlocked(sl.advertiser, eff);
                   const broken = sl.owner === "advertiser" && p && p.status !== "connected";
                   return (
                     <div key={i} style={{ display: "grid", gridTemplateColumns: SLOT_GRID, alignItems: "center", borderBottom: i < d.slots.length - 1 ? `1px solid ${T.borderSubtle}` : "none" }}>
@@ -1581,8 +1603,8 @@ function TypesView({ types, setTypes, playlists, setPlaylists, sel, setSel, temp
                               const nextEff = effectiveLists(next, companyLists);
                               const keep =
                                 (sl.advertiser === ALLOW_LIST && nextEff.allowList.length > 0) ||
-                                (sl.advertiser === BLOCK_LIST && nextEff.blockList.length > 0) ||
-                                (next && (next.seats || []).some((x) => x.name === sl.advertiser));
+                                (next && (next.seats || []).some((x) => x.name === sl.advertiser) &&
+                                 !isBlocked(sl.advertiser, nextEff));
                               setSlot({ partnerId: np, advertiser: keep ? sl.advertiser : RTB });
                             }} title="Partner / DSP the demand for this position comes through"
                               style={{ ...inputStyle, height: 26, fontSize: 12, color: broken ? T.error : (p && !p.system ? partnerColour(p) : "#7c3aed") }}>
@@ -1598,19 +1620,21 @@ function TypesView({ types, setTypes, playlists, setPlaylists, sel, setSel, temp
                               title={pid === ANY_PARTNER ? "Name a partner first to reserve the position to one of its advertisers." : "Who this position may sell to"}
                               style={{ ...inputStyle, height: 26, fontSize: 12, background: pid === ANY_PARTNER ? T.surfaceAlt : "#fff",
                                        color: !sl.advertiser || sl.advertiser === RTB ? "#7c3aed" : T.text }}>
-                              <option value={RTB}>RTB bidding (open)</option>
+                              <option value={RTB}>
+                                {blockN ? `RTB bidding \u2014 any except ${blockN} blocked` : "RTB bidding (open)"}
+                              </option>
                               {isDsp(p) && <option value={ALLOW_LIST} disabled={allowN === 0}>
                                 {allowN ? `Whitelist only (${allowN})` : "Whitelist only \u2014 list empty"}
                               </option>}
-                              {isDsp(p) && <option value={BLOCK_LIST} disabled={blockN === 0}>
-                                {blockN ? `Any except blacklist (${blockN})` : "Any except blacklist \u2014 list empty"}
-                              </option>}
-                              {seats.map((a) => <option key={a.id} value={a.name}>{a.name}</option>)}
+                              {sellableSeats.map((a) => <option key={a.id} value={a.name}>{a.name}</option>)}
+                              {/* A named advertiser that has since been blocked stays selectable
+                                  only so the position does not silently change under the user. */}
+                              {namedButBlocked && <option value={sl.advertiser}>{sl.advertiser} — blocked</option>}
                             </select>
-                            {sl.advertiser === RTB && blockN > 0 && (
-                              <div style={{ fontSize: 10.5, color: T.warning, display: "flex", alignItems: "flex-start", gap: 3 }}>
-                                <Icon name="warning" size={11} style={{ marginTop: 1 }} />
-                                Open bidding ignores the {blockN}-advertiser blacklist.
+                            {namedButBlocked && (
+                              <div style={{ fontSize: 10.5, color: T.error, display: "flex", alignItems: "flex-start", gap: 3 }}>
+                                <Icon name="block" size={11} style={{ marginTop: 1 }} />
+                                On the blacklist — this position cannot fill.
                               </div>
                             )}
                             {broken && <div style={{ fontSize: 10.5, color: T.error, display: "flex", alignItems: "center", gap: 3 }}>

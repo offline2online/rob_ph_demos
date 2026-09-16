@@ -308,25 +308,35 @@ universe is not enumerable from our side, so a client must be able to block a
 competitor we have never seen a bid from. Seats pulled on connect are offered
 as shortcuts, not as the limit.
 
-A position's **Assigned to** picker then offers, for a DSP partner:
+**The blacklist is not a mode — it always subtracts.** It applies to every
+outcome on that partner and no position can opt out of it. Brand safety is not
+a per-position choice, and a blocklist that can be bypassed by picking the
+wrong dropdown value is not a control. The whitelist is the part a position
+chooses to use.
+
+A position's **Assigned to** picker therefore offers, for a DSP partner:
 
 | Option | What sells |
 |---|---|
-| RTB bidding (open) | Any advertiser the partner brings |
-| Whitelist only (n) | Only advertisers on the whitelist |
-| Any except blacklist (n) | Everything the partner brings, minus the blacklist |
+| RTB bidding — any except *n* blocked | Everything the partner brings, minus the blacklist |
+| Whitelist only (*n*) | Only advertisers on the whitelist (which cannot contain a blocked one) |
 | A named advertiser | Reserved to that one seat |
 
 Only for DSP partners. Direct/house has no auction to filter, so a position
 there names its advertiser outright.
 
-**Open bidding does not apply the blacklist.** That follows from the options
-being independent modes rather than layered filters, and it is a live risk: a
-position left on open bidding will happily serve an advertiser the client
-believes it has blocked. The editor warns on that combination. Whether a
-blacklist should instead *always* subtract — making "any" mean "any minus
-blocked", so brand safety cannot be switched off per position — is open
-question 33.
+Two consequences follow from subtraction being unconditional, and both are
+behaviours rather than warnings:
+
+- **A blocked advertiser is withdrawn from the picker.** Naming it could only
+  produce a position that never fills, so it is not offered.
+- **Blocking an advertiser reaches positions already sold.** A position
+  currently reserved to a name that is then blacklisted is flagged in place as
+  unable to fill, rather than quietly continuing to look valid. It is left
+  selected so the position does not change under whoever set it.
+
+Because the two lists are mutually exclusive, whitelist-only needs no separate
+subtraction — a name cannot be on both.
 
 A list mode belongs to the partner that owns the lists, so re-pointing a
 position at a different partner drops it back to open bidding rather than
@@ -507,11 +517,6 @@ otherwise we sell guarantees we cannot meet.
 31. **Cross-partner visibility.** A contributed attribute is private to its
     owner by default. Is there ever a case for one partner targeting
     another's contributed data, and what grant would express it?
-32. **Should a blacklist always subtract?** Today "RTB bidding (open)" is a
-    mode that ignores the blacklist, so brand safety can be switched off per
-    position by accident. The alternative is that the blacklist always
-    applies and "open" means "any minus blocked" — safer, but it makes the
-    blacklist invisible in the picker rather than a choice.
-33. **Transaction association.** The stated end state is tying transactions to
+32. **Transaction association.** The stated end state is tying transactions to
     campaign plays. That needs an identity join this project does not own and
     the interface contract does not currently describe.
