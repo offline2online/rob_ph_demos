@@ -113,6 +113,15 @@ programmatic — is specified in [`REQUIREMENTS.md`](./REQUIREMENTS.md) §6. The
 prototype currently covers the connection and slot-assignment half of that;
 the campaign and inventory half is spec only.
 
+**The supply side** — how in-store screens become buyable by the programmatic
+market at all — is [`REQUIREMENTS.md`](./REQUIREMENTS.md) §7: the three
+architectures (PH as its own SSP, PH into a DOOH SSP, or the recommended
+hybrid), what a DOOH bid request has to carry, proof-of-play billing, and why
+pre-caching is the first qualifying question for any SSP. It also corrects a
+common framing error worth getting right before it reaches a client document:
+**The Trade Desk is a DSP, not an SSP**, and Google runs both (DV360 is the
+DSP, Google Ad Manager the SSP).
+
 Design decisions worth keeping:
 
 - **Credentials live on the partner, never on a display type or a slot.**
