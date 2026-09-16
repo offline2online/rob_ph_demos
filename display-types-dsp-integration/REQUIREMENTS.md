@@ -429,26 +429,27 @@ otherwise we sell guarantees we cannot meet.
 
 §6 describes demand arriving through a partner. This section describes the
 other direction: how the retailer's in-store screens become *buyable* by the
-programmatic market at all. It is the part a POV has to answer, because it
-decides what we build.
+programmatic market at all.
 
-#### First, a correction the POV must not repeat
+#### Which side each named platform sits on
 
-The brief asks how PH will "integrate to Publisher Supply Side Platforms
-(e.g., TradeDesk, Google)". **The Trade Desk is a DSP, not an SSP** — it is the
-largest independent *demand*-side platform and one of the biggest buyers of
-programmatic DOOH, but it is a buyer, not a seller of inventory. Google runs
-both sides under one brand: **Display & Video 360 is the DSP**, **Google Ad
-Manager is the SSP / ad server**.
+The platforms usually named in this conversation do not all sit where the
+shorthand suggests, and the difference decides what gets built:
 
-This is not pedantry, it changes what gets built. We do not integrate *to* The
-Trade Desk as a supply platform. We make our inventory *buyable by* The Trade
-Desk — either by exposing our own OpenRTB supply endpoint, or by publishing
-into an SSP that already has The Trade Desk as demand.
+| Platform | Side | What it means for us |
+|---|---|---|
+| **The Trade Desk** | **DSP — demand** | The largest independent demand-side platform and a major DOOH buyer. A buyer of our inventory, never a route to market for it |
+| **Display & Video 360** | **DSP — demand** | Google's buy side. Already in scope as a demand partner (§6) |
+| **Google Ad Manager** | **SSP / ad server — supply** | Google's sell side. A different product from DV360 despite the shared brand, with narrower DOOH support than the DOOH specialists |
+
+So there is no such thing as "integrating to The Trade Desk as an SSP". We make
+our inventory *buyable by* The Trade Desk — by exposing an OpenRTB supply
+endpoint it can bid into, directly or through an exchange that already carries
+it as demand.
 
 **Personalisation Hub is the publisher.** The retailer owns the screens; PH is
-the media-owner platform that operates them. PH therefore sits on the sell
-side, and the real question is how PH's supply reaches buyers.
+the media-owner platform that operates them. PH sits on the sell side, and the
+question this section answers is how PH's supply reaches buyers.
 
 #### Three architectures
 
@@ -509,10 +510,10 @@ the integration:
   denominator.
 - **Impression multiplier.** One play is not one impression — it is an
   estimated audience. The bid request carries a quantity/multiplier and billing
-  runs on multiplied impressions. **This is where PH has a genuine advantage
-  worth putting in the POV**: the Vision/AI passerby count and MIST proximity
-  features already in the display type are exactly the sensor inputs that
-  produce a measured multiplier rather than a modelled one.
+  runs on multiplied impressions. **This is where PH can measure rather than
+  model**: the Vision/AI passerby count and MIST proximity features already in
+  the display type are exactly the sensor inputs that produce a counted
+  multiplier, where most of the market estimates one.
 - **Supply-chain transparency.** Publishing supply means a `sellers.json`
   equivalent and a `SupplyChain` object on the bid request, declaring whether
   the retailer or PH is the seller of record. That is a commercial decision
@@ -560,11 +561,11 @@ to be structural rather than editorial:
   which is a stronger guarantee than a policy — a programmatic creative cannot
   render into a region it was never given.
 
-#### Open before the POV is final
+#### To confirm before building
 
 These need confirming against current vendor and IAB documentation rather than
-asserted — this sandbox has no access to verify them, and version numbers in
-this area move:
+asserted — version numbers in this area move, and they were not verifiable from
+the environment this was written in:
 
 - The exact OpenRTB version and DOOH object support required by each candidate
   SSP, and which version of the OpenOOH venue taxonomy they expect.
