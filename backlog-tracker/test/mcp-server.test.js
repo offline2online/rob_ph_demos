@@ -206,6 +206,23 @@ async function rpc(token, method, params, id = 1) {
     assert.match(res.body.result.instructions, /PH Agent Console/);
   });
 
+  await test("advertises the PH mark, a display title and a website on serverInfo", async () => {
+    const res = await rpc(tokens.access_token, "initialize", { protocolVersion: "2025-06-18" });
+    const info = res.body.result.serverInfo;
+    assert.strictEqual(info.title, "PH Agent Console");
+    assert.strictEqual(info.websiteUrl, ORIGIN);
+    assert.ok(Array.isArray(info.icons) && info.icons.length, "serverInfo should carry icons");
+    // SVG first: crisp at whatever size a connector list renders at.
+    assert.strictEqual(info.icons[0].mimeType, "image/svg+xml");
+    assert.strictEqual(info.icons[0].src, `${ORIGIN}/img/ph-mark.svg`);
+    // PNG fallbacks for clients that won't render SVG.
+    const png = info.icons.filter((i) => i.mimeType === "image/png");
+    assert.ok(png.length >= 2, "expected PNG fallbacks alongside the SVG");
+    // Absolute URLs on this origin — a relative src is unresolvable to a
+    // client that only ever talks to the /mcp endpoint.
+    for (const icon of info.icons) assert.ok(icon.src.startsWith(`${ORIGIN}/`), `icon src must be absolute: ${icon.src}`);
+  });
+
   await test("falls back to its newest protocol version for an unknown one", async () => {
     const res = await rpc(tokens.access_token, "initialize", { protocolVersion: "1999-01-01" });
     assert.strictEqual(res.body.result.protocolVersion, mcp.__test.SUPPORTED_PROTOCOL_VERSIONS[0]);

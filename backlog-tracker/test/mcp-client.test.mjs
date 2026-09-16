@@ -117,6 +117,33 @@ await test("the client connects and the server identifies itself", async () => {
   assert.strictEqual(info.name, "ph-agent-console");
 });
 
+await test("a real client sees the PH mark on serverInfo", async () => {
+  const info = client.getServerVersion();
+  assert.strictEqual(info.title, "PH Agent Console");
+  assert.ok(Array.isArray(info.icons) && info.icons.length, "the SDK should surface icons");
+  assert.strictEqual(info.icons[0].mimeType, "image/svg+xml");
+  // The SDK validates serverInfo against ImplementationSchema, so this also
+  // proves the icon shape is one a real client will accept rather than drop.
+  assert.ok(info.icons.every((i) => typeof i.src === "string" && i.src.startsWith("http")));
+});
+
+await test("every advertised icon is actually served, not just named", async () => {
+  // A 404 here would show as a blank tile in the connector list — the exact
+  // failure this change exists to fix — and nothing else would catch it.
+  const info = client.getServerVersion();
+  const fs = await import("fs");
+  const path = await import("path");
+  const { fileURLToPath } = await import("url");
+  // Resolved from this file, not process.cwd(), so the check holds however
+  // the suite is invoked.
+  const publicDir = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "public");
+  for (const icon of info.icons) {
+    const file = path.join(publicDir, new URL(icon.src).pathname);
+    assert.ok(fs.existsSync(file), `${icon.src} has no file at ${file}`);
+    assert.ok(fs.statSync(file).size > 100, `${icon.src} is suspiciously small`);
+  }
+});
+
 await test("tools/list returns the whole surface", async () => {
   const { tools } = await client.listTools();
   const names = tools.map((t) => t.name).sort();

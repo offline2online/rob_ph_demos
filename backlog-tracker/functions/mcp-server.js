@@ -60,6 +60,21 @@ const PROJECT_ID = process.env.GCLOUD_PROJECT || "backlog-tracker-e4ed2";
 // or clients will discover endpoints they then can't redirect back through.
 const PUBLIC_ORIGIN = process.env.MCP_PUBLIC_ORIGIN || `https://${PROJECT_ID}.web.app`;
 const RESOURCE_URL = `${PUBLIC_ORIGIN}/mcp`;
+// The Personalisation Hub mark (public/img/ph-mark.*), served as static files
+// from this same origin. MCP's Implementation schema carries an `icons` array,
+// so a client can show the PH mark beside this server in its connector/tool
+// list instead of a generic placeholder. SVG first — crisp at any size and
+// under a kilobyte — with PNGs for clients that won't render SVG.
+//
+// No `theme` variants: the mark's centre is transparent rather than white, so
+// the four coloured bars read correctly on a light and a dark UI alike.
+const SERVER_ICONS = [
+  { src: `${PUBLIC_ORIGIN}/img/ph-mark.svg`, mimeType: "image/svg+xml", sizes: ["any"] },
+  { src: `${PUBLIC_ORIGIN}/img/ph-mark-512.png`, mimeType: "image/png", sizes: ["512x512"] },
+  { src: `${PUBLIC_ORIGIN}/img/ph-mark-192.png`, mimeType: "image/png", sizes: ["192x192"] },
+  { src: `${PUBLIC_ORIGIN}/img/ph-mark-64.png`, mimeType: "image/png", sizes: ["64x64"] },
+];
+
 // Same non-secret web config the console itself uses (public/js/firebase-config.js)
 // — the sign-in page below is a normal Firebase Auth client.
 const WEB_API_KEY = "AIzaSyDzG5MzavLWyKU7NXfTPskuWbFYFlc5W3g";
@@ -338,7 +353,8 @@ function redirectWithError(res, redirectUri, state, error, description) {
 function errorPage(res, status, title, detail) {
   res.status(status).set("Content-Type", "text/html; charset=utf-8").send(`<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>${escapeHTML(title)} — PH Agent Console</title>${CONNECT_PAGE_CSS}</head>
+<title>${escapeHTML(title)} — PH Agent Console</title>
+<link rel="icon" type="image/svg+xml" href="/img/ph-mark.svg">${CONNECT_PAGE_CSS}</head>
 <body><main class="card"><h1>${escapeHTML(title)}</h1><p class="muted">${escapeHTML(detail)}</p>
 <p class="muted small">If you were connecting an AI agent, start the connection again from the agent. If it keeps failing, send this message to whoever administers the PH Agent Console.</p>
 </main></body></html>`);
@@ -392,7 +408,9 @@ function authorizePageHTML(params, client) {
   const canWrite = String(params.scope || "").includes("board.write");
   return `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Connect to PH Agent Console</title>${CONNECT_PAGE_CSS}</head>
+<title>Connect to PH Agent Console</title>
+<link rel="icon" type="image/svg+xml" href="/img/ph-mark.svg">
+<link rel="icon" type="image/png" sizes="64x64" href="/img/ph-mark-64.png">${CONNECT_PAGE_CSS}</head>
 <body>
 <main class="card">
   <h1>Connect your agent</h1>
@@ -1302,7 +1320,14 @@ async function dispatchRpc(msg, session, ctx) {
       return rpcResult(msg.id, {
         protocolVersion: version,
         capabilities: { tools: { listChanged: false } },
-        serverInfo: { name: "ph-agent-console", title: "PH Agent Console", version: "1.0.0" },
+        serverInfo: {
+          name: "ph-agent-console",
+          title: "PH Agent Console",
+          version: "1.1.0",
+          websiteUrl: PUBLIC_ORIGIN,
+          description: "The Personalisation Hub prototype backlog board and help centre.",
+          icons: SERVER_ICONS,
+        },
         instructions: SERVER_INSTRUCTIONS,
       });
     }
@@ -1574,5 +1599,5 @@ exports.mcpServer = onRequest({ cors: false, timeoutSeconds: 120, memory: "256Mi
 exports.__test = {
   routePath, redirectUriAllowed, generateTitle, suggestCategory, atLeast,
   sha256b64url, authorizationServerMetadata, protectedResourceMetadata,
-  TOOLS, CATEGORIES, STATUS_LABELS, SUPPORTED_PROTOCOL_VERSIONS,
+  TOOLS, CATEGORIES, STATUS_LABELS, SUPPORTED_PROTOCOL_VERSIONS, SERVER_ICONS,
 };
