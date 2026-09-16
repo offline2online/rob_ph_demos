@@ -456,8 +456,18 @@ async function rpc(token, method, params, id = 1) {
     assert.strictEqual(env.store.col("projects").get("proj1").artifactUrl, "https://claude.ai/public/artifacts/abc");
     const bad = await rpc(tokens.access_token, "tools/call", { name: "set_project_artifact", arguments: { projectId: "proj1", artifactUrl: "http://insecure.example/x" } });
     assert.strictEqual(bad.body.result.isError, true);
-    await rpc(tokens.access_token, "tools/call", { name: "set_project_artifact", arguments: { projectId: "proj1", artifactUrl: null } });
+    await rpc(tokens.access_token, "tools/call", { name: "set_project_artifact", arguments: { projectId: "proj1", artifactUrl: "" } });
     assert.strictEqual(env.store.col("projects").get("proj1").artifactUrl, null);
+  });
+
+  await test("no tool schema uses a union type, which some clients reject outright", async () => {
+    // A tool whose schema a client won't validate silently disappears from its
+    // list, which is indistinguishable from the feature never shipping.
+    for (const tool of mcp.__test.TOOLS) {
+      const schema = JSON.stringify(tool.inputSchema);
+      assert.ok(!/"type":\[/.test(schema), `${tool.name}'s schema uses a union type`);
+      assert.ok(!/anyOf|oneOf|allOf|\$ref/.test(schema), `${tool.name}'s schema uses a combinator or $ref`);
+    }
   });
 
   // ── The guarantee the documentation tools must not break ────────────────

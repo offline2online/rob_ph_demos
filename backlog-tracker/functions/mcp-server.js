@@ -1339,7 +1339,12 @@ const TOOLS = [
       type: "object",
       properties: {
         projectId: { type: "string" },
-        artifactUrl: { type: ["string", "null"], description: "An https URL to the published Artifact, or null to clear." },
+        // A plain string, not type: ["string","null"]. A union type is legal
+        // JSON Schema but not every MCP client's validator accepts one, and a
+        // tool whose schema a client rejects silently vanishes from its list —
+        // which looks exactly like the feature never shipping. An empty string
+        // clears the link instead.
+        artifactUrl: { type: "string", description: "An https URL to the published Artifact. Pass an empty string to clear it." },
       },
       required: ["projectId"], additionalProperties: false,
     },
@@ -1347,7 +1352,7 @@ const TOOLS = [
       const projectId = String(args.projectId);
       const snap = await db().collection("projects").doc(projectId).get();
       if (!snap.exists) return toolError(`No project with id ${projectId}.`);
-      const raw = args.artifactUrl == null ? null : String(args.artifactUrl).trim();
+      const raw = args.artifactUrl == null ? null : String(args.artifactUrl).trim() || null;
       if (raw) {
         let u;
         try { u = new URL(raw); } catch { return toolError("artifactUrl must be a full URL, or null to clear it."); }
