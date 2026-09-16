@@ -3823,6 +3823,113 @@ document.getElementById("if-submit").addEventListener("click", async () => {
 // final answer, same as manually picking the toggle/dropdown.
 const SpeechRecognitionCtor = window.SpeechRecognition || window.webkitSpeechRecognition;
 
+// Android Chrome's SpeechRecognition duplicates/triples text under
+// continuous:true (see the restart-on-end comment inside
+// createDictationController below) — that workaround stays Android-only.
+// Everywhere else gets one real continuous session instead of chained
+// one-shot ones, which is what was dropping the start of the next phrase
+// on desktop Chrome.
+const IS_ANDROID = /Android/i.test(navigator.userAgent);
+
+// Per-viewer dictation preferences — plain localStorage, same spirit as
+// bt-collapsed-projects elsewhere in this file. Never written to
+// Firestore, so nothing here is shared between teammates.
+function dictationLangPref() {
+  try { return localStorage.getItem("bt-dictation-lang") || "en-GB"; } catch (err) { return "en-GB"; }
+}
+function dictationEnginePref() {
+  try {
+    const v = localStorage.getItem("bt-dictation-engine");
+    return v === "cloud" || v === "local" ? v : "auto";
+  } catch (err) { return "auto"; }
+}
+
+// Product vocabulary Chrome's on-device engine can be biased toward via
+// SpeechRecognitionPhrase (Chrome 142+) — the terms this console's own
+// users actually say that a general-purpose recognizer mangles, plus
+// whatever this board currently calls its own projects/categories so a
+// rename here keeps the list current with no separate maintenance.
+function buildDictationPhrases() {
+  const base = [
+    "Personalisation Hub", "HQ Admin", "Retail Admin", "menu board", "playlist",
+    "display type", "DSP", "Firestore", "Firebase", "backlog", "deploy train",
+    "Ready for Testing", "Merged to Main", "help centre", "FAQ", "Claude",
+  ];
+  const names = (typeof projects !== "undefined" ? projects : []).map((p) => p.name).filter(Boolean);
+  return Array.from(new Set([...base, ...names, ...CATEGORIES]));
+}
+
+// Cloud-engine misses on this team's own vocabulary that spoken-punctuation
+// and sentence-casing alone don't fix — matched case-insensitively,
+// replaced with the correctly-cased term.
+const DICTATION_CORRECTIONS = [
+  [/\bpersonalization\b/gi, "Personalisation"],
+  [/\bh\s*q\s*admin\b/gi, "HQ Admin"],
+  [/\bback\s*log\b/gi, "backlog"],
+  [/\bmenu\s*bored\b/gi, "menu board"],
+  [/\bfire\s*store\b/gi, "Firestore"],
+  [/\bd\s*s\s*p\b/gi, "DSP"],
+  [/\bplay\s*list\b/gi, "playlist"],
+];
+
+// Spoken punctuation Chrome's recognizer transcribes as literal words —
+// longest phrases first so "new paragraph" doesn't get eaten by "new line".
+const DICTATION_PUNCTUATION = [
+  [/\bnew paragraph\b/gi, "\n\n"],
+  [/\bnew line\b/gi, "\n"],
+  [/\bfull stop\b/gi, "."],
+  [/\bperiod\b/gi, "."],
+  [/\bcomma\b/gi, ","],
+  [/\bquestion mark\b/gi, "?"],
+  [/\bexclamation mark\b/gi, "!"],
+];
+
+// Turns one finalized SpeechRecognition result into text ready to append.
+// Applied to finalized speech only — interim text is left raw so it
+// doesn't visibly rewrite itself mid-utterance. Deliberately does NOT
+// capitalize anything yet — a continuous session finalizes one sentence
+// across several separate results, and capitalizing each result's own
+// start here would wrongly capitalize every mid-sentence continuation
+// ("Hello world" + "how are you" becoming "Hello world How are you").
+// Capitalization needs to know what precedes this segment, so it's
+// capitalizeDictated()'s job, applied by the caller once this segment is
+// actually being appended to committed/session text.
+function postProcessFinalSegment(raw) {
+  let text = raw;
+  for (const [pattern, replacement] of DICTATION_PUNCTUATION) text = text.replace(pattern, replacement);
+  for (const [pattern, replacement] of DICTATION_CORRECTIONS) text = text.replace(pattern, replacement);
+  text = text.replace(/[ \t]+/g, " ").replace(/ *\n */g, "\n").trim();
+  // Spoken punctuation words are naturally preceded by a space in speech
+  // ("admin full stop" → "admin ."), which the symbol swap above carries
+  // straight through — drop it so it reads "admin." rather than "admin .".
+  text = text.replace(/[ \t]+([.,!?])/g, "$1");
+  return text;
+}
+
+// Capitalizes `text`'s own internal sentence starts (after ".", "!", "?" or
+// a newline within it), plus its very first letter — but only when `before`
+// (whatever precedes it: baseline + committed so far) is empty or itself
+// ends a sentence. Keeps a mid-sentence continuation lowercase instead of
+// capitalizing it just because it happened to arrive as its own finalized
+// result.
+function capitalizeDictated(text, before) {
+  if (!text) return text;
+  let result = text.replace(/([.!?]\s+|\n+)([a-z])/g, (m, lead, letter) => lead + letter.toUpperCase());
+  const startsNewSentence = !before || /[.!?]\s*$/.test(before) || /\n$/.test(before);
+  if (startsNewSentence) result = result.charAt(0).toUpperCase() + result.slice(1);
+  return result;
+}
+
+// Appends `addition` to `base`, inserting a separating space only when
+// `base` is non-empty and doesn't already end in whitespace. This is what
+// keeps a user's own typed line breaks intact across dictation restarts,
+// instead of the old baseline.replace(/\s+/g," ") that flattened them.
+function joinDictated(base, addition) {
+  if (!addition) return base;
+  if (!base || /\s$/.test(base)) return base + addition;
+  return base + " " + addition;
+}
+
 function autoGrow(el) {
   el.style.height = "auto";
   const max = Math.max(120, Math.round(window.innerHeight * 0.55));
@@ -3894,6 +4001,21 @@ function createDictationController({ textareaEl, micBtn, hintEl, errorEl, onStop
   // which is worse than the old ~10s cutoff — at least that was visible.
   // After a few silent restarts in a row this gives up for real and says so.
   let silentRestartStreak = 0;
+  // The getUserMedia stream backing the current dictation run (kept open,
+  // not stopped after a probe, so its track can be fed straight into
+  // recognition.start() below) and everything dictated so far in this run,
+  // carried across the automatic restarts in onend. baseline is whatever
+  // was already in the field the moment the user clicked the mic — fixed
+  // for the whole run, never re-read, so it can't pick up committed's own
+  // dictated text as if it were pre-existing content.
+  let micStream = null;
+  let baseline = "";
+  let committed = "";
+  // Chrome 142+ rejects phrases on an engine that doesn't support them via
+  // an async "phrases-not-supported" error rather than a thrown exception
+  // — once seen, stop trying so every restart doesn't repeat the same
+  // rejection.
+  let phrasesUnsupported = false;
 
   function showError(msg) {
     if (!errorEl) return;
@@ -3902,56 +4024,104 @@ function createDictationController({ textareaEl, micBtn, hintEl, errorEl, onStop
     errorEl.classList.add("on");
   }
 
+  function render(liveText) {
+    let next = joinDictated(joinDictated(baseline, committed), liveText || "");
+    // Native maxlength on the textarea stops typing/pasting past a
+    // field's own bound (see firestore.rules), but assigning .value
+    // straight from script — exactly what this line does — bypasses
+    // maxlength entirely. Without this, dictating a long description ran
+    // straight past 2000 characters with nothing visible until the
+    // eventual Firestore write failed with a bare 403 permission-denied.
+    // Only clamps when the field actually declares a maxlength, so this
+    // never truncates an unbounded field.
+    if (textareaEl.maxLength > 0 && next.length > textareaEl.maxLength) {
+      next = next.slice(0, textareaEl.maxLength);
+      showError(`Reached the ${textareaEl.maxLength}-character limit for this field.`);
+    }
+    textareaEl.value = next;
+    autoGrow(textareaEl);
+    if (charCountUpdate) charCountUpdate();
+  }
+
   function startListening(isRestart) {
     if (!SpeechRecognitionCtor) return;
     if (listening && recognition) { try { recognition.stop(); } catch (err) {} }
     stopRequested = false;
-    if (!isRestart) silentRestartStreak = 0;
-    let baseline = textareaEl.value.trim();
-    if (baseline) baseline += " ";
+    if (!isRestart) {
+      silentRestartStreak = 0;
+      baseline = textareaEl.value;
+      committed = "";
+    }
+    const engine = dictationEnginePref();
+    const useLocal = engine === "local";
     recognition = new SpeechRecognitionCtor();
-    recognition.lang = "en-US";
+    // Chrome's on-device engine only ships an en-US model — asking for
+    // it in any other language just fails, so "On-device" always means
+    // en-US regardless of the language preference below (which only
+    // applies to the cloud engine). "Auto"/"cloud" use the per-viewer
+    // language, defaulting to en-GB rather than the old hard-coded en-US,
+    // since Chrome's cloud recogniser is measurably worse on British
+    // accents/spellings when told to expect US English.
+    recognition.lang = useLocal ? "en-US" : dictationLangPref();
+    if (useLocal && "processLocally" in recognition) {
+      recognition.processLocally = true;
+      if (!phrasesUnsupported && "phrases" in recognition && typeof window.SpeechRecognitionPhrase === "function") {
+        try {
+          recognition.phrases = buildDictationPhrases().map((p) => new SpeechRecognitionPhrase(p, 4));
+        } catch (err) { /* not supported here — recognition.onerror below catches the async case too */ }
+      }
+    }
     // continuous:true is a known bad actor on Android Chrome — reported
     // live: speech gets tripled/repeated 10x over, then it dies anyway
     // around 10s. Android's continuous-mode implementation is documented
     // to redeliver or duplicate prior results across its own internal
-    // keep-alive restarts, which then compounds with this file's own
-    // baseline-carrying restart logic (baseline already has the old text,
-    // and if the native results array ALSO still contains it, it doubles
-    // up every cycle). continuous:false makes each session a single short
-    // utterance with a clean, fresh results array every time — onend below
-    // already restarts immediately after every session end regardless, so
-    // dictation still reads as continuous to the user; it's just genuinely
-    // fresh state underneath instead of relying on Android's own
-    // long-running continuous handling.
-    recognition.continuous = false;
+    // keep-alive restarts. Everywhere else, continuous:false was the actual
+    // bug: it ended the session at the first pause, restarted, and lost
+    // context/the start of the next phrase every time — continuous:true
+    // plus incremental onresult handling below (via e.resultIndex, only
+    // ever consuming each result once) avoids Android's duplication
+    // failure mode in the first place, so it's safe to leave on.
+    recognition.continuous = !IS_ANDROID;
     recognition.interimResults = true;
+    // Only used on the Android branch below — holds this one utterance's
+    // finalized text until onend folds it into `committed`, since
+    // continuous:false means each SpeechRecognitionCtor instance only ever
+    // sees one short session's own results.
+    let androidSessionFinal = "";
     recognition.onresult = (e) => {
       // Any result at all — even an interim one — proves audio is
       // actually reaching the recognizer, so clear the "hearing nothing"
       // streak.
       silentRestartStreak = 0;
-      let finalText = "", interimText = "";
-      for (let i = 0; i < e.results.length; i++) {
-        const chunk = e.results[i][0].transcript;
-        if (e.results[i].isFinal) finalText += chunk + " "; else interimText += chunk;
+      if (IS_ANDROID) {
+        let sessionFinalRaw = "", sessionInterimRaw = "";
+        for (let i = 0; i < e.results.length; i++) {
+          const chunk = e.results[i][0].transcript;
+          if (e.results[i].isFinal) sessionFinalRaw += chunk + " "; else sessionInterimRaw += chunk;
+        }
+        androidSessionFinal = sessionFinalRaw
+          ? capitalizeDictated(postProcessFinalSegment(sessionFinalRaw), joinDictated(baseline, committed))
+          : "";
+        render(joinDictated(androidSessionFinal, sessionInterimRaw));
+      } else {
+        // e.resultIndex is the first result that changed since the last
+        // event — walking from there instead of re-joining the whole
+        // results array means each finalized result is committed exactly
+        // once, instead of the old re-join-everything-against-baseline
+        // approach that only worked because continuous sessions were
+        // never allowed to run long enough to need it.
+        let interimText = "";
+        for (let i = e.resultIndex; i < e.results.length; i++) {
+          const result = e.results[i];
+          if (result.isFinal) {
+            const processed = capitalizeDictated(postProcessFinalSegment(result[0].transcript), joinDictated(baseline, committed));
+            committed = joinDictated(committed, processed);
+          } else {
+            interimText += result[0].transcript;
+          }
+        }
+        render(interimText);
       }
-      let next = (baseline + finalText + interimText).replace(/\s+/g, " ").replace(/^\s+/, "");
-      // Native maxlength on the textarea stops typing/pasting past a
-      // field's own bound (see firestore.rules), but assigning .value
-      // straight from script — exactly what this line does — bypasses
-      // maxlength entirely. Without this, dictating a long description ran
-      // straight past 2000 characters with nothing visible until the
-      // eventual Firestore write failed with a bare 403 permission-denied.
-      // Only clamps when the field actually declares a maxlength, so this
-      // never truncates an unbounded field.
-      if (textareaEl.maxLength > 0 && next.length > textareaEl.maxLength) {
-        next = next.slice(0, textareaEl.maxLength);
-        showError(`Reached the ${textareaEl.maxLength}-character limit for this field.`);
-      }
-      textareaEl.value = next;
-      autoGrow(textareaEl);
-      if (charCountUpdate) charCountUpdate();
     };
     recognition.onerror = (e) => {
       const code = e && e.error;
@@ -3964,6 +4134,13 @@ function createDictationController({ textareaEl, micBtn, hintEl, errorEl, onStop
       } else if (code === "network") {
         showError("Dictation needs an internet connection to convert speech to text — check your connection and try again.");
         stopRequested = true;
+      } else if (code === "language-not-supported") {
+        showError(`Dictation isn't available for ${recognition.lang} in this browser — switch the engine in Settings.`);
+        stopRequested = true;
+      } else if (code === "phrases-not-supported") {
+        // Not fatal — drop phrase biasing and keep dictating without it,
+        // on this and every later restart in this run.
+        phrasesUnsupported = true;
       } else if (code === "no-speech" || code === "aborted") {
         // Expected/transient, not a real failure: "no-speech" is exactly
         // the browser's own silence timeout (the "cuts out after ~10s"
@@ -3991,6 +4168,14 @@ function createDictationController({ textareaEl, micBtn, hintEl, errorEl, onStop
       // call inert.
       const finished = recognition;
       if (finished) { finished.onend = null; finished.onerror = null; finished.onresult = null; }
+      // This session's finalized text (Android only — the desktop branch
+      // already folds each result into `committed` the moment it finalizes)
+      // is done changing now, so fold it in permanently before deciding
+      // whether to restart or really stop.
+      if (IS_ANDROID && androidSessionFinal) {
+        committed = joinDictated(committed, androidSessionFinal);
+        androidSessionFinal = "";
+      }
       if (stopRequested) { stopListening(); return; }
       silentRestartStreak++;
       if (silentRestartStreak >= 4) {
@@ -4004,10 +4189,9 @@ function createDictationController({ textareaEl, micBtn, hintEl, errorEl, onStop
       }
       // The browser ended this recognition session on its own (silence
       // timeout is the common case) but nobody asked to stop — restart
-      // immediately so dictation feels continuous. textareaEl.value
-      // already holds everything transcribed so far, and startListening()
-      // re-reads it as the new baseline, so nothing is lost across the
-      // restart.
+      // immediately so dictation feels continuous. `baseline`/`committed`
+      // already hold everything transcribed so far and aren't reset on a
+      // restart, so nothing is lost.
       try { startListening(true); } catch (err) { stopListening(); }
     };
     listening = true;
@@ -4016,9 +4200,28 @@ function createDictationController({ textareaEl, micBtn, hintEl, errorEl, onStop
     micBtn.title = "Stop dictation";
     micBtn.setAttribute("aria-label", "Stop dictation");
     if (hintEl) hintEl.classList.add("on");
-    try { recognition.start(); } catch (err) {
-      showError("Dictation didn't start — you can keep typing instead.");
-      stopListening();
+    // Feed the live mic track straight into recognition where supported
+    // (start(MediaStreamTrack) shipped in 2024) so the noise
+    // suppression/echo cancellation/auto gain requested below actually
+    // reaches the recognizer, instead of SpeechRecognition silently
+    // re-opening its own default, unprocessed capture of the microphone.
+    // Feature-detected via try/catch, not a UA/version sniff.
+    const micTrack = micStream && micStream.getAudioTracks()[0];
+    try {
+      if (micTrack) recognition.start(micTrack); else recognition.start();
+    } catch (err) {
+      if (micTrack) {
+        if (micStream) { micStream.getTracks().forEach((t) => t.stop()); micStream = null; }
+        setTimeout(() => {
+          try { recognition.start(); } catch (err2) {
+            showError("Dictation didn't start — you can keep typing instead.");
+            stopListening();
+          }
+        }, 250);
+      } else {
+        showError("Dictation didn't start — you can keep typing instead.");
+        stopListening();
+      }
     }
   }
 
@@ -4031,25 +4234,27 @@ function createDictationController({ textareaEl, micBtn, hintEl, errorEl, onStop
     micBtn.setAttribute("aria-label", "Dictate");
     if (hintEl) hintEl.classList.remove("on");
     if (recognition) { try { recognition.stop(); } catch (err) {} }
+    if (micStream) { micStream.getTracks().forEach((t) => t.stop()); micStream = null; }
     if (onStop && textareaEl.value.trim()) onStop(textareaEl.value);
   }
 
   // Chrome won't reliably prompt for microphone permission from inside
   // SpeechRecognition alone — asking via getUserMedia first forces a real
-  // permission prompt (or a real, specific error) before handing off.
+  // permission prompt (or a real, specific error) before handing off. The
+  // resulting stream is kept open (not stopped after a probe) so its own
+  // processed track can be fed into recognition.start() in startListening.
   function requestMicAndListen() {
     showError("");
-    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { startListening(); return; }
-    navigator.mediaDevices.getUserMedia({ audio: true }).then((stream) => {
-      stream.getTracks().forEach((t) => t.stop());
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { startListening(false); return; }
+    navigator.mediaDevices.getUserMedia({
+      audio: { noiseSuppression: true, echoCancellation: true, autoGainControl: true },
+    }).then((stream) => {
+      micStream = stream;
       // Reported live on Android Chrome: the mic visibly starts
       // "listening" (button goes red/pulsing) but never transcribes a
-      // word — consistent with SpeechRecognition silently failing to
-      // (re-)open the microphone when it's asked to grab it again
-      // immediately after this probe stream's tracks are stopped, before
-      // the OS has actually released the hardware. A short delay here
-      // gives that teardown time to finish before recognition.start()
-      // tries to claim the mic itself.
+      // word — consistent with SpeechRecognition needing a beat after the
+      // mic is granted before it can actually claim it. A short delay
+      // here gives that time before recognition.start() tries to.
       setTimeout(() => startListening(false), 250);
     }).catch((err) => {
       const name = err && err.name;
@@ -4397,6 +4602,50 @@ document.getElementById("fa-analytics-tag-save").addEventListener("click", async
   if (!faqUser) return; // sign-in was declined — nothing was saved
   await showAlert(tag ? "Saved — it'll appear on the public FAQ site after the next export." : "Cleared — no analytics tag will be sent.");
 });
+
+// ── Settings → Dictation ─────────────────────────────────────────────────
+// Per-browser only (bt-dictation-lang/bt-dictation-engine, read by
+// createDictationController above) — nothing here is written to Firestore
+// or shared between teammates.
+(function wireDictationSettings() {
+  const langSelect = document.getElementById("dictation-lang-select");
+  const engineSelect = document.getElementById("dictation-engine-select");
+  const installBtn = document.getElementById("dictation-install-btn");
+  const statusEl = document.getElementById("dictation-install-status");
+  if (!langSelect || !engineSelect) return;
+  langSelect.value = dictationLangPref();
+  engineSelect.value = dictationEnginePref();
+  langSelect.addEventListener("change", () => {
+    try { localStorage.setItem("bt-dictation-lang", langSelect.value); } catch (err) {}
+  });
+  engineSelect.addEventListener("change", () => {
+    try { localStorage.setItem("bt-dictation-engine", engineSelect.value); } catch (err) {}
+  });
+  if (!installBtn) return;
+  installBtn.addEventListener("click", async () => {
+    if (!SpeechRecognitionCtor || typeof SpeechRecognitionCtor.available !== "function") {
+      statusEl.textContent = "This browser doesn't support on-device dictation.";
+      return;
+    }
+    installBtn.disabled = true;
+    try {
+      const status = await SpeechRecognitionCtor.available({ langs: ["en-US"], processLocally: true });
+      if (status === "unavailable") {
+        statusEl.textContent = "On-device dictation isn't available for this browser.";
+      } else if (status === "available") {
+        statusEl.textContent = 'Already installed — pick "On-device" above to use it.';
+      } else {
+        statusEl.textContent = "Installing on-device pack…";
+        await SpeechRecognitionCtor.install({ langs: ["en-US"], processLocally: true });
+        statusEl.textContent = 'Installed — pick "On-device" above to use it.';
+      }
+    } catch (err) {
+      statusEl.textContent = `Couldn't install the on-device pack: ${err && err.message ? err.message : "unknown error"}`;
+    } finally {
+      installBtn.disabled = false;
+    }
+  });
+})();
 
 // ── Settings → Team & agent access ────────────────────────────────────────
 //
