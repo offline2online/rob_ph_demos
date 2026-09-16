@@ -163,10 +163,19 @@ rest of this file.
      respect the contract rather than guessing at the other side's
      expectations.
    - If the project also has a real requirements file in the repo (e.g.
-     `visitor-profile/REQUIREMENTS.md`, `experience-templates/REQUIREMENTS.md`,
-     or a project-specific README), read that too — the Firestore
-     `requirementsMd` and the repo file are meant to be kept in sync, but
-     check both in case one is stale.
+     `visitor-profile/REQUIREMENTS.md`,
+     `display-types-dsp-integration/REQUIREMENTS.md`, or a project-specific
+     README), read that too — the Firestore `requirementsMd` and the repo
+     file are meant to be kept in sync, but check both in case one is
+     stale.
+   - **If the item touches anything that renders, read the `ph-designer`
+     skill before writing any markup** — tokens, component recipes, and
+     `references/prototyping.md` (almost everything here is a prototype
+     iframed into HQ Admin: content frame only, no header/sidebar/
+     breadcrumb, nothing `position: fixed`). This is not an optional
+     polish step; a UI change made without it is a defective change. See
+     root `CLAUDE.md` → "Every UI change goes through the `ph-designer`
+     skill".
 
 ## For each Backlog item found
 
