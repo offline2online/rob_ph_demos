@@ -54,9 +54,9 @@ writing or editing any article, and classify every article's `docType`
 see `backlog-tracker/REQUIREMENTS.md` → "FAQ / Help Center" for the
 field's exact shape.
 
-## Live Visitor Profile & Experience Templates — two separate projects, one repo
+## Live Visitor Profile and Display Types & DSP Integration — two separate projects, one repo
 
-`visitor-profile/` and `experience-templates/` were split out as two
+`visitor-profile/` and `display-types-dsp-integration/` were split out as two
 independently-managed projects, following the same pattern as
 `menu-board-demo/`: each is its own subfolder in this same repo, developed on
 its own feature branch(es), and merged to `main` on its own schedule — not
@@ -64,8 +64,13 @@ tied to the other project's release cadence.
 
 - **`visitor-profile/`** — managing personalisation attributes in
   Personalisation Hub, and the source systems that populate them.
-- **`experience-templates/`** — managing display types, elements, layouts,
-  and templates.
+- **`display-types-dsp-integration/`** — managing display types, elements,
+  playlists, and the advertising partner/DSP connections that fill sold
+  slots. Layouts and templates (the surface layer) belong to this project
+  too but are held out of the first release — see its `README.md` →
+  "Release scope". Full name **"Display Types & DSP Integration"** (as on
+  the backlog board); **refer to it as "Display Types"** in prose. Formerly
+  "Experience Templates".
 - **`shared/interface-contract.md`** — the maintained interface contract
   between the two. It lives outside both project folders on purpose: it's
   shared space neither project owns unilaterally. Any change to the contract
@@ -74,8 +79,8 @@ tied to the other project's release cadence.
   model, trust zones, versioning rules), grounded in the *Real-Time
   Personalised Surface Architecture Specification v1.2*.
 - Each has its own `REQUIREMENTS.md` in its own folder, also grounded in
-  that spec (visitor-profile = spec System One; experience-templates =
-  spec Systems Two/Three).
+  that spec (visitor-profile = spec System One;
+  display-types-dsp-integration = spec Systems Two/Three).
 - **The backlog tracker itself now also carries this** (see
   `backlog-tracker/` below): each project's `REQUIREMENTS.md` content is
   mirrored into that project's Firestore doc (`requirementsMd` field,
@@ -88,8 +93,9 @@ tied to the other project's release cadence.
 **On the Prototype Backlog board** (the live `backlog-tracker` app, not the
 retired Artifact — see "Prototype Backlog" below), these are two separate
 docs in the `projects` Firestore collection — **"Live Visitor Profile"** and
-**"Experience Templates"** — each with its own Backlog → Ready for Testing →
-Live on Feature Branch → Merged to Main (Live) pipeline and its own Archive,
+**"Display Types & DSP Integration"** — each with its own Backlog → Ready
+for Testing → Live on Feature Branch → Merged to Main (Live) pipeline and
+its own Archive,
 fully independent of each other and of "Products, Pricing & Asset
 Management". Treat backlog sweeps and publish workflows for each exactly as
 described in the "Prototype Backlog" section below — per-project, not
@@ -387,8 +393,8 @@ see above). It opens a page with two blocks:
   `{name, projectIds: [idA, idB], contentMd, createdAt, updatedAt}`, visible
   and editable from **either** project's Docs page. Use this for any
   maintained contract between two projects on the board (not just Live
-  Visitor Profile ↔ Experience Templates) — e.g. attribute/token contracts,
-  shared data shapes, anything one project's changes could silently break
+  Visitor Profile ↔ Display Types) — e.g. attribute/token
+  contracts, shared data shapes, anything one project's changes could break
   for the other.
 - **Adding an interface** is done from a project's own Docs page (either
   side) — the New Project modal itself no longer offers an inline "define
@@ -458,6 +464,32 @@ viewport).
   - The store-level "Menu Boards" list (branded PersonalisationHub chrome, card-style rows, RRP shown as a plain secondary line) has similarly been confirmed as platform-native, not this repo's `retail-admin.html`.
   - **hq-admin.html's grid deliberately shows only HQ's own RRP/offer in its Price column, never a store's override** — a "Local offer ×N" pill flags that a store-level price exists (click it to jump to the per-product pricing page) without picking one store's price to display in an aggregate, all-stores view. That's intentional design, not a bug — don't try to make this specific grid show the discounted local price inline.
   - Bottom line: verify per-screen against copy/markup you can `grep` in this repo before deciding whether a pricing bug is fixable here or belongs to the real platform.
+
+## Every UI change goes through the `ph-designer` skill — no exceptions
+
+Anything that renders — a page, a screen, a component, a form, a table, an
+admin view, a prototype, a mock-up — **must be built against the
+`ph-designer` skill**, whether or not the request mentions Personalisation
+Hub. Read it *before* writing markup, not afterwards as a checking pass:
+it carries the measured tokens (colour, type, spacing, radius), the
+component recipes, and the two surface references (HQ Admin / Retail
+Admin). Guessing at these and correcting later produces screens that are
+subtly wrong in ways nobody can name.
+
+Two things in that skill are load-bearing and routinely got wrong:
+
+- **Read `references/prototyping.md` first.** Almost everything in this
+  repo is a *prototype iframed into HQ Admin*, which means you build the
+  content frame ONLY — no header, no sidebar, no breadcrumb, and nothing
+  `position: fixed` (it anchors to the iframe, not the viewport). Getting
+  this wrong means rebuilding the whole thing.
+- **Material Symbols (Outlined) is the platform's only icon set**, and the
+  font stack is Roboto — never a system stack, never another icon library.
+
+This applies to every route into development: a person asking in chat, a
+Routine-fired session working a Backlog card, or a Deploy run. If a change
+touches rendered output and the skill was not read, that is a defect in
+the change regardless of how the result looks.
 
 ## Keep each project's README current
 

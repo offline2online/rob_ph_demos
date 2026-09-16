@@ -6,7 +6,7 @@ Source: *Real-Time Personalised Surface Architecture Specification v1.2*
 This project owns **System One — The Attribute Layer** from that spec.
 
 See [`../shared/interface-contract.md`](../shared/interface-contract.md) for
-the maintained boundary with the Experience Templates project — that file,
+the maintained boundary with the Display Types project — that file,
 not this one, is the source of truth for anything both projects depend on.
 It is also mirrored/maintained inside the live backlog tracker as an
 **interface** between the two projects — see that app.
@@ -57,6 +57,14 @@ This project owns:
      each with transport, endpoint, auth token, identity-key mapping
      (`sends`/`resolvesFrom`), timeout, cache TTL, and whether it emits a
      confidence score.
+   - **Partner feeds** — an advertising partner contributing its own
+     attributes (weather and stock are the worked examples) so it can target
+     campaigns on them. Configured like any other connected system and
+     ranked in a precedence chain the same way. What differs is ownership:
+     the attribute belongs to the contributing partner, is namespaced to it,
+     and is private to it unless deliberately shared. Promotion to a PH
+     default is expected once PH runs the feed itself. See
+     `../shared/interface-contract.md` → "Partner-supplied attributes".
 5. **The agent-controlled on-device profile** (spec §3.5) — a source
    maintained entirely on the customer's own device by their personal AI
    agent, never held by the retailer, entering the resolver as an ordinary
@@ -97,8 +105,8 @@ This project owns:
 
 This project does **not** own display types, layouts, zones, playlists,
 templates, or how a resolved attribute value actually gets rendered — that's
-Experience Templates. It publishes resolved attributes; Experience
-Templates consumes them via the token contract (see the interface
+Display Types. It publishes resolved attributes; Display Types consumes
+them via the token contract (see the interface
 contract).
 
 ## Functional requirements
