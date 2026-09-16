@@ -36,14 +36,23 @@ body {
    them, and the mobile media query below only adds its own size/spacing
    compaction on top. See --sticky-topbar-h below for why the offset this
    feeds (.mobile-action-bar's own top, also no longer mobile-only) is
-   measured rather than hard-coded. */
+   measured rather than hard-coded.
+   qER8mO5v6ZX9FrMXuKYm: on web/tablet the bar had 0 horizontal padding
+   (the logo sat flush against the screen edge) and top-aligned its
+   content, so a shorter item like the + New project button sat noticeably
+   higher than the taller logo beside it. `padding` now has 10px either
+   side, `align-items` is `center` so shorter items sit level with the
+   logo, and vertical padding is trimmed 10px -> 6px to lower the bar's
+   overall height — the phone media query below already sets its own
+   padding/align-items explicitly, so none of this changes the ≤640px
+   (mobile) rendering. */
 .topbar {
-  display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 18px;
+  display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 18px;
   position: sticky; top: 0; z-index: 16;
   background: rgba(255, 255, 255, .88);
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
-  padding: 10px 0;
+  padding: 6px 10px;
 }
 /* qMJeQkmhYwcXFTjeOJw0: the hamburger and the topbar logo now live in their
    own row (.topbar-left-row), a direct flex row with nothing else sharing
@@ -58,7 +67,8 @@ body {
    catching. Fixed at the root instead of re-tuning sizes again:
    - the logo is shrunk 25% (78px -> 58.5px, min-width:0 + overflow:hidden
      on the <h1> so it can shrink further instead of overflowing if space
-     is still tight);
+     is still tight); shrunk again, 58.5px -> 46px, by qER8mO5v6ZX9FrMXuKYm
+     above, as part of lowering the sticky bar's height on web/tablet;
    - the <img> now also carries HTML width/height attributes (234x58, the
      same 4:1 ratio) so the browser reserves its box before the SVG has
      loaded/decoded, instead of laying it out at 0 width and reflowing once
@@ -75,7 +85,7 @@ body {
   display: inline-flex; align-items: center; gap: 8px; max-width: 100%; min-width: 0;
 }
 .logo-link:hover { opacity: .75; }
-.topbar-logo-img { height: 58.5px; width: auto; max-width: 100%; display: block; flex-shrink: 0; }
+.topbar-logo-img { height: 46px; width: auto; max-width: 100%; display: block; flex-shrink: 0; }
 .footer-logo-btn { vertical-align: middle; }
 .footer-logo-img { height: 42px; display: block; }
 .auth-gate-logo { height: 120px; max-width: 100%; width: auto; margin: 0 auto 4px; display: block; }
