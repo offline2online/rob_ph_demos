@@ -163,7 +163,8 @@ rest of this file.
      respect the contract rather than guessing at the other side's
      expectations.
    - If the project also has a real requirements file in the repo (e.g.
-     `visitor-profile/REQUIREMENTS.md`, `experience-templates/REQUIREMENTS.md`,
+     `visitor-profile/REQUIREMENTS.md`,
+     `display-types-dsp-integration/REQUIREMENTS.md`,
      or a project-specific README), read that too — the Firestore
      `requirementsMd` and the repo file are meant to be kept in sync, but
      check both in case one is stale.
