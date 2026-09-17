@@ -410,6 +410,12 @@ textarea.dialog-field-input { resize: vertical; min-height: 70px; }
 .fa-actions-delete { margin-right: auto; }
 .fa-actions-delete:hover { background: var(--danger-tint); color: var(--danger); }
 .fa-header-divider { border-top: 1px solid var(--border); margin: 0 0 16px; }
+/* Save draft/Publish confirmation (showFaSaveConfirmation) — the editor
+   stays open after either button now (5wN2bXqLd6ZoQxRnJcH4), so this is the
+   only feedback that the click actually did something. Fades in/out rather
+   than reflowing the header row when it appears/disappears. */
+.fa-save-status { font-size: 12px; font-weight: 600; color: var(--success); opacity: 0; transition: opacity .25s; }
+.fa-save-status.visible { opacity: 1; }
 
 .desc-wrap { position: relative; }
 .mic-btn {
