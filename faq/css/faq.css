@@ -169,6 +169,22 @@ a:hover { text-decoration: underline; }
 .article-body p { margin: 0 0 14px; }
 .article-body ul, .article-body ol { margin: 0 0 14px; padding-left: 22px; }
 .article-body li { margin-bottom: 6px; }
+/* Nested list items as the console's Quill editor saves them: a flat list
+   whose sub-items carry ql-indent-N (Quill 1.x has no nested <ul>/<ol>).
+   Ordered lists that contain one switch to CSS counters so an indented
+   item is lettered (a., b.) instead of taking the next number; every
+   other list keeps the browser's own markers. */
+.article-body li.ql-indent-1 { margin-left: 1.5em; }
+.article-body li.ql-indent-2 { margin-left: 3em; }
+.article-body li.ql-indent-3 { margin-left: 4.5em; }
+.article-body ol:has(> li.ql-indent-1) { list-style: none; counter-reset: faq-l0; }
+.article-body ol:has(> li.ql-indent-1) > li { position: relative; }
+.article-body ol:has(> li.ql-indent-1) > li:not(.ql-indent-1):not(.ql-indent-2):not(.ql-indent-3) { counter-increment: faq-l0; counter-reset: faq-l1; }
+.article-body ol:has(> li.ql-indent-1) > li:not(.ql-indent-1):not(.ql-indent-2):not(.ql-indent-3)::before { content: counter(faq-l0) ". "; }
+.article-body ol:has(> li.ql-indent-1) > li.ql-indent-1 { counter-increment: faq-l1; counter-reset: faq-l2; }
+.article-body ol:has(> li.ql-indent-1) > li.ql-indent-1::before { content: counter(faq-l1, lower-alpha) ". "; }
+.article-body ol:has(> li.ql-indent-1) > li.ql-indent-2 { counter-increment: faq-l2; }
+.article-body ol:has(> li.ql-indent-1) > li.ql-indent-2::before { content: counter(faq-l2, lower-roman) ". "; }
 .article-body img { max-width: 100%; height: auto; border-radius: 6px; margin: 0 0 14px; }
 .article-body iframe { max-width: 100%; aspect-ratio: 16 / 9; width: 100%; height: auto; border: none; border-radius: 6px; margin: 0 0 14px; }
 .article-body blockquote { margin: 0 0 14px; padding: 4px 16px; border-left: 3px solid var(--border, #d9d9d9); color: var(--text-muted, #666); }

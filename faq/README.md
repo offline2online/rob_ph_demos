@@ -70,7 +70,11 @@ admin console (backlog-tracker → FAQ Management)  ──edits──▶  Firest
 - `js/firebase-config.js` — project id + API key for the REST freshness
   check (public identifiers; access is governed by Firestore rules).
 - `css/faq.css` — styling (PH teal, Roboto). `.article-body` rules are the
-  rendering contract with the console's editor (tables, callouts, code).
+  rendering contract with the console's editor (tables, callouts, code,
+  and Quill's `ql-indent-N` list items — the editor saves a nested list as
+  a flat list whose sub-items carry that class; an `<ol>` containing one
+  switches to CSS counters so those sub-items are lettered instead of
+  taking the next number).
 
 ## Security / embedding notes
 
