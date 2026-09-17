@@ -40,6 +40,19 @@ export function safeId(id) { return typeof id === "string" && ID_RE.test(id) ? i
 export function isEmbedded() {
   try { return window.self !== window.top; } catch { return true; }
 }
+// "navigate" (a link was clicked/URL typed), "reload" (F5 / pull-to-refresh)
+// or "back_forward" — the one signal that tells us whether a reader is
+// arriving at a NEW page (should start at the top) or coming back to a page
+// they were already reading (should land back where they left off). Falls
+// back to "navigate" if the Navigation Timing API isn't available, which
+// keeps the pre-existing "always start at the top" behaviour in that case.
+function navigationType() {
+  try {
+    const [entry] = performance.getEntriesByType("navigation");
+    if (entry) return entry.type;
+  } catch { /* fall through */ }
+  return "navigate";
+}
 export function initEmbedMode() {
   if (!isEmbedded()) return;
   document.documentElement.classList.add("embedded");
@@ -58,13 +71,65 @@ export function initEmbedMode() {
   // is a one-time request per page load, never repeated from the
   // ResizeObserver below, so it never yanks a reader back to the top while
   // they're mid-scroll on the article they're already reading.
-  try { window.parent.postMessage({ type: "ph-faq:scrollTop" }, "*"); } catch { /* ignore */ }
+  //
+  // wIk1aL99zS8Oy6jAHvGI: this used to fire unconditionally, including on a
+  // plain browser refresh — which meant refreshing an embedded article
+  // always yanked the HOST page's own scroll back to the top of the iframe,
+  // fighting the browser's native (and otherwise correct) scroll
+  // restoration on a top-level reload. Only send it on a genuine forward
+  // navigation to a new page; leave a reload/back-forward alone so whatever
+  // scroll position the host was already at survives, same as it would for
+  // any other iframe on the page.
+  const navType = navigationType();
+  if (navType !== "reload" && navType !== "back_forward") {
+    try { window.parent.postMessage({ type: "ph-faq:scrollTop" }, "*"); } catch { /* ignore */ }
+  }
   const post = () => {
     try { window.parent.postMessage({ type: "ph-faq:height", height: document.documentElement.scrollHeight }, "*"); } catch { /* ignore */ }
   };
   post();
   if ("ResizeObserver" in window) new ResizeObserver(post).observe(document.body);
   window.addEventListener("load", post);
+}
+
+// ── Scroll memory (standalone mode) ─────────────────────────────────────
+// wIk1aL99zS8Oy6jAHvGI: refreshing a long article used to always drop the
+// reader back at the top. The browser's own scroll restoration can't be
+// relied on here — every page's real content (the bit worth being scrolled
+// into) is fetched and rendered asynchronously, well after the browser
+// already tried and failed to restore a scroll offset against the still-
+// empty/skeleton page. So this saves the reader's own scroll position (per
+// URL, including its query string — a different article/category id is a
+// different position to remember) and restores it explicitly, once, right
+// after that page's own content has actually finished rendering.
+const scrollKey = () => `ph-faq-scroll:${location.pathname}${location.search}`;
+export function initScrollMemory() {
+  let raf = 0;
+  const save = () => {
+    if (raf) return;
+    raf = requestAnimationFrame(() => {
+      raf = 0;
+      try { sessionStorage.setItem(scrollKey(), String(window.scrollY)); } catch { /* ignore */ }
+    });
+  };
+  window.addEventListener("scroll", save, { passive: true });
+  window.addEventListener("pagehide", save);
+}
+// Call once, after a page has finished rendering its real content. A
+// same-page anchor (the article TOC, a folder deep-link) always wins over a
+// remembered scroll position — those are an explicit "look here" request
+// for THIS load, not a stale position from a previous visit. Likewise, a
+// fresh forward navigation (clicking an article, "Next", a search result)
+// intentionally starts at the top, same as before this existed — only a
+// reload or back/forward restores where the reader actually was.
+export function restoreScrollMemory() {
+  if (location.hash) return;
+  const navType = navigationType();
+  if (navType !== "reload" && navType !== "back_forward") return;
+  let y;
+  try { y = Number(sessionStorage.getItem(scrollKey())); } catch { return; }
+  if (!Number.isFinite(y) || y <= 0) return;
+  requestAnimationFrame(() => requestAnimationFrame(() => window.scrollTo(0, y)));
 }
 
 export function escapeHTML(s) {

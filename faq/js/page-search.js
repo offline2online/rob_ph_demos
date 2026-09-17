@@ -1,6 +1,6 @@
 import { fetchCategories, fetchPublishedArticles, escapeHTML, searchArticles, docTypeLabel, parentCategoryOf } from "./faq-data.js";
 import { iconSvg } from "./icons.js";
-import { bootPage, showLoadError } from "./page-common.js";
+import { bootPage, showLoadError, restoreScrollMemory } from "./page-common.js";
 
 bootPage();
 
@@ -28,6 +28,7 @@ try {
       </a>`).join("");
   }
   list.removeAttribute("aria-busy");
+  restoreScrollMemory();
 } catch (err) {
   console.error("help centre: failed to load search", err);
   showLoadError();
