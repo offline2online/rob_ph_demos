@@ -61,6 +61,10 @@ admin console (backlog-tracker → FAQ Management)  ──edits──▶  Firest
   `<pre>` changes the button text. Clipboard API first, hidden-textarea
   `execCommand("copy")` fallback, and if both fail the block is selected
   for a keyboard copy.
+  Blocks taller than 4 rendered lines start collapsed behind a fade with a
+  **Show more** toggle (Copy still copies the whole block);
+  `data-collapse-lines="8"` changes the threshold and `data-collapse="false"`
+  switches collapsing off for that block.
 - `js/icons.js` — inline SVG Material Symbols (no icon web font is loaded).
 - `js/vendor/purify.min.js` — DOMPurify 3.4.15, vendored (no third-party CDN).
 - `js/firebase-config.js` — project id + API key for the REST freshness
