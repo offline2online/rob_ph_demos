@@ -93,6 +93,12 @@ investigate-and-fix run, or vice versa:
   is the default, investigate-and-fix request. Continue reading this file
   top to bottom from Setup below.
 
+Whichever of the three this is, **"Finishing a run — unlock the cards,
+whatever happened" near the end of this file applies to all of them** and is
+not optional — read it before you start, not after you have stopped. It is
+what takes the board out of its working state, and a run that skips it
+leaves cards locked and a button spinning behind it.
+
 **Check for a project-specific instructions block first.** If `text`
 contains a section delimited by
 `=== PROJECT-SPECIFIC INSTRUCTIONS FOR "<project>" (from this project's Docs page) ===`
@@ -171,6 +177,60 @@ rest of this file.
 
 ## For each Backlog item found
 
+**Post progress on the ticket as you go — a note at each stage, not one
+note at the end.** A person watching the board sees a card flip to "Sent to Claude —
+locked" the moment Ready for Dev fires, and that card's comment bubble
+stays readable (read-only) while it is locked precisely so that your notes
+are the account of what is happening to it. This file used to have you
+write a single note in the one PATCH at the very end, which left that
+bubble empty for the whole run — a card could sit locked for twenty minutes
+with nothing said on it. Write a note at each of the stages below, for each
+item, at the moment that item reaches the stage — never batched up at the
+end of a multi-item run, since the whole point is watching one card move.
+
+- **Assigned** — before you investigate anything, the moment you pick the
+  item up:
+  `Assigned — picked up from Backlog, starting investigation.`
+- **In development** — once you have found the root cause and before you
+  start writing the fix:
+  `In development — <root cause in a sentence>. Changing <the files or area>.`
+  If you looked and genuinely could not find it in the repo, say that here,
+  in this note, rather than skipping the stage.
+- **Resolved** — the note you were already writing in the numbered step 4
+  below, now labelled:
+  `Resolved — <what changed>. Packaged for the deployment train; this card moves to Ready for Testing once the automation opens the PR.`
+- **Blocked** — this one instead of Resolved, whenever you finish with the
+  item without setting `patchReady`:
+  `Blocked — <exactly what stopped you, and what a person would need to do about it>.`
+  This is a required outcome, not an admission of failure. An item you
+  could not finish must never be left sitting in Backlog with nothing on it
+  explaining why — and see "Finishing a run" below, because a blocked item
+  still has to be unlocked.
+
+Mechanics, which are where this goes wrong:
+
+- A stage note is its own small PATCH, and it writes **only** `notes` and
+  `updatedAt`:
+  `...?updateMask.fieldPaths=notes&updateMask.fieldPaths=updatedAt`.
+  Never set `patchReady`, `patchFiles`, `status`, `title` or `category` in
+  a stage-note PATCH. A stage note must not be able to trip the automation
+  into committing a fix you have not written yet.
+- `notes` has no server-side append — a PATCH replaces the whole array. So
+  **GET the item immediately before every note write**, append your entry
+  to the array you just read, and send that back. Building a write from a
+  copy of `notes` you read earlier in the run silently deletes both your
+  own earlier stage notes and anything a person commented on the card while
+  you worked. That includes the final step-4 PATCH: re-fetch there too.
+- Each entry is
+  `{author: "claude", text: "<the note>", at: <ISO8601 now>}` — the same
+  shape step 4 already uses. The board labels `claude` as "Claude" and
+  shows the thread newest-first.
+- Keep a stage note to a sentence or two. The detail belongs in the
+  Resolved note and in `testSummary`.
+- If your session dies part-way through an item, the stage notes you
+  already posted are the only account of how far it got, which is the other
+  reason they are written as you go rather than at the end.
+
 1. Give it a proper subject line: a short, specific, plain-English title
    (roughly 5-10 words) that makes it immediately obvious what the ticket
    is about at a glance — not the auto-generated title the board creates
@@ -229,10 +289,13 @@ rest of this file.
 4. Update the item's Firestore doc in one PATCH: set the corrected `title`
    (step 1), correct `category` if it's wrong (see `CATEGORIES` in
    `backlog-tracker/public/js/app.js` for the fixed list), bump
-   `updatedAt`, APPEND (don't overwrite — fetch the doc first to get its
-   existing `notes` array) a new entry to `notes` with `author: "claude"`
-   and a detailed `text` describing what you investigated and fixed, and —
-   this is the part that replaces "push + open a PR" — set:
+   `updatedAt`, APPEND (don't overwrite — re-fetch the doc right now to
+   get its current `notes` array, which by this point holds your own
+   Assigned and In development notes and anything a person added while you
+   worked) your **Resolved** note from the stage list above —
+   `author: "claude"`, and a `text` that opens `Resolved — ` and then
+   describes in detail what you investigated and fixed — and — this is the
+   part that replaces "push + open a PR" — set:
    - `patchFiles`: an array of `{path, content}` objects, one per
      changed/created file, `content` being that file's complete new text
      (use `content: null` instead of a string to mean "delete this
@@ -305,9 +368,15 @@ Say in your note that the PR needs a human merge.
 
 If you genuinely cannot express the finished fix as full file contents
 (very rare — e.g. it needs a binary asset you can't produce), do NOT set
-`patchReady`. Leave the item in `backlog` with a detailed note naming
-exactly what's blocking you, and say so plainly in your summary — this is
-the correct, expected outcome in that case, not a failure to fix silently.
+`patchReady`. Leave the item in `backlog` with the **Blocked** note from
+the stage list above naming exactly what's blocking you and what a person
+would have to do about it, and say so plainly in your summary — this is the
+correct, expected outcome in that case, not a failure to fix silently. The
+same applies to any other way an item ends unfinished: you ran out of room
+mid-investigation, the repo didn't contain what the `desc` describes, a
+tool you needed was unreachable. Post the Blocked note and move on to the
+next item — and whatever happened, still finish the run properly so the
+card comes unlocked (see "Finishing a run" below).
 
 ## Cards that ship together are already grouped — don't stamp a deploymentId
 
@@ -828,6 +897,62 @@ no separate "last groomed at" timestamp to check this precisely against, so
 use judgment: if the existing summary still accurately describes the
 current `desc`, leave it as-is).
 
+## Finishing a run — unlock the cards, whatever happened
+
+**Every card this fire sent you stays locked on the board until this run
+reports itself finished.** While `projects/{projectId}.notifyRoutine.status`
+is `"in-progress"`, every item id in that map's `sentItemIds` renders as
+"Sent to Claude — locked": no edit, no comment, no move, no delete, and the
+project's own button sits spinning on "Deving…". That lock is correct while
+you are working — it stops a person stepping on work in flight — but it is
+yours to release, and releasing it is **not** conditional on having
+succeeded at anything.
+
+So the last thing this run does, always, is one PATCH on the project:
+
+```bash
+curl -sS -X PATCH -H "$AUTH" \
+  "$BOARD/projects/<projectId>?updateMask.fieldPaths=notifyRoutine.status&updateMask.fieldPaths=notifyRoutine.finishedAt" \
+  -H "Content-Type: application/json" \
+  -d '{"fields":{"notifyRoutine":{"mapValue":{"fields":{"status":{"stringValue":"done"},"finishedAt":{"timestampValue":"<ISO8601 now>"}}}}}}'
+```
+
+- `status: "done"` means *this run finished*, not *every ticket got fixed*.
+  It is the right value even when some or all of the items came out
+  **Blocked** — each ticket's own outcome is already on its own card, as
+  its own Resolved or Blocked note.
+- `status: "error"` — plus `notifyRoutine.errorMessage`, adding
+  `&updateMask.fieldPaths=notifyRoutine.errorMessage` and the matching
+  field — is for when the **run itself** broke rather than a ticket: you
+  could not sign in to the board, the named project isn't in `projects`,
+  or you are stopping early with items you never looked at. Put in
+  `errorMessage` the one line a person needs in order to decide what to do
+  next, because that string is what the board shows them.
+- Send this **even if you did nothing at all** — an empty Backlog, a
+  project you couldn't find, a run you are abandoning half-way. A run that
+  stops without this write leaves real cards locked behind it with no
+  explanation.
+- Same field names one level down on `deployRoutine` for a Deploy run and
+  `groomRoutine` for a Groom run. Those two drive their own button's
+  spinner and the same 20-minute staleness guard; card locking itself is
+  `notifyRoutine`'s alone, since only the Ready for Dev flow sends
+  individual Backlog cards off to be worked.
+
+There is a backstop, and it is not a substitute for the write: the board
+treats any `in-progress` older than **20 minutes** as finished and unlocks
+the cards on its own, so a session that dies outright can't wedge the board
+permanently. Leaning on it means a person stares at a locked card and a
+spinning button for up to twenty minutes after you actually stopped. Send
+the PATCH.
+
+**Never leave `patchReady: true` on an item you did not finish.** That is
+the other lock ("In development — locked"), it has no 20-minute backstop
+because it is waiting on the automation rather than on you, and the
+automation will commit whatever `patchFiles` holds the next time it polls.
+If you set it and then found the work was wrong, set it back to `false` in
+the same run, post a **Blocked** note saying so, and name the item id in
+your summary (see "When done" below).
+
 ## When done
 
 Post a summary listing each item, its new title, what you found, the fix,
@@ -844,7 +969,10 @@ items were folded into which surviving ticket. If the named project isn't
 in the `projects` collection, or its Backlog column is empty, say that
 plainly instead of fabricating work. If a PROJECT-SPECIFIC INSTRUCTIONS
 block was present, note in the summary that you followed it and briefly
-how.
+how. Say which items came out **Blocked** and why, and confirm you sent the
+run-finished PATCH described in "Finishing a run" above (and with what
+`status`) — a summary that reports fixes but never says the cards were
+unlocked is the shape this workflow most often fails in.
 
 **For a Deploy run, also report the FAQ impact review (step 3b):** the
 program/product you scoped to (or that the project has none), how many

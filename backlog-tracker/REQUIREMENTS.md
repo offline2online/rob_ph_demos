@@ -1115,6 +1115,32 @@ pencil) picked this up for free; only the checkbox/delete/move-forward
 conditions, which checked `isInDevelopment` directly rather than
 `isLocked`, needed their own explicit `&& !isSentToClaude`.
 
+**What fills that locked window: the Routine's own stage notes.** A locked
+card keeps its quick-comment bubble (read-only), so `notes` is the only
+account a person gets of what is happening to a ticket while it is being
+worked. `ROUTINE_INSTRUCTIONS.md` → "For each Backlog item found"
+accordingly has the fired session append a note at each stage rather than
+one note at the end: **Assigned** when it picks the item up, **In
+development** once it has the root cause, and then either **Resolved** (in
+the same PATCH that sets `patchReady`) or **Blocked** when it finishes with
+the item without packaging a fix. Each stage note is its own PATCH writing
+only `notes` and `updatedAt`, read-modify-write against a freshly fetched
+`notes` array, since a PATCH replaces the array wholesale and would
+otherwise drop a comment a person added mid-run.
+
+**And what ends it: the run reporting itself finished.** The same file's
+"Finishing a run" section makes the closing PATCH of
+`notifyRoutine.status`/`finishedAt` (`deployRoutine`/`groomRoutine` for the
+other two flows) mandatory and unconditional — `"done"` describes the run
+having ended, not every ticket having been fixed, so a run whose items all
+came out Blocked still writes `"done"`, and `"error"` with an
+`errorMessage` is reserved for the run itself breaking (no board access, an
+unknown project, stopping early with items unexamined). This is what
+releases `isSentToClaude` on every card in `sentItemIds`; the 20-minute
+staleness guard above is a backstop for a session that dies outright, not
+the intended path, since leaning on it leaves a person looking at a locked
+card and a spinning "Deving…" button long after the session stopped.
+
 **The mirror-image case, `isDeploying` (`isLiveBranch && item.mergeReady`),
 covers the same kind of window at the *other* end of the pipeline**: on a
 pre-train card whose own PR the Deploy flow confirmed green and wrote

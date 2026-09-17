@@ -1080,12 +1080,20 @@ session link (copy flips to "Deving…", `target="_blank"` to
 
 The Routine is asked, in the fire request's own `text`, to PATCH
 `notifyRoutine.status` to `"done"`/`"error"` (with `finishedAt`) when it
-stops — but nothing enforces that a fired session actually does this
-(an older Routine prompt won't know to, and a crashed session can't). The
-frontend's own fallback — treating any `"in-progress"` older than 20
-minutes as done — is what actually keeps the button from getting stuck
-forever, not the self-report; treat the self-report as a nice-to-have for
-faster feedback, not the safety mechanism.
+stops, and `ROUTINE_INSTRUCTIONS.md` → "Finishing a run — unlock the cards,
+whatever happened" now requires the same write from its own side, so it
+applies to every fire regardless of what the injected `text` said: `"done"`
+means the run ended (including one whose tickets all came out blocked),
+`"error"` is for the run itself breaking. That matters beyond the spinner,
+because `notifyRoutine` is also what locks the individual cards a fire was
+sent (`isSentToClaude`) — a run that stops without reporting leaves them
+uneditable behind it.
+
+Still, nothing *enforces* the self-report — a crashed session can't send
+it. The frontend's own fallback — treating any `"in-progress"` older than
+20 minutes as done — is what actually keeps the button and those cards from
+getting stuck forever; treat the self-report as the intended path and the
+20-minute rule as the backstop, not the other way round.
 
 **The "Deploy to Main" button now has the identical mechanism**,
 `projects/{id}.deployRoutine`, written by `notifyOnProjectReadyToDeploy`
