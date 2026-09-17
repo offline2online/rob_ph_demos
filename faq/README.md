@@ -53,6 +53,18 @@ admin console (backlog-tracker → FAQ Management)  ──edits──▶  Firest
 - `js/page-*.js` — one module per page; `js/page-common.js` boots embed
   mode, version stamp and the search box.
 - `js/search-box.js` — live search dropdown with keyboard navigation.
+- `js/copy-block.js` — one-click **Copy** button on every `<pre><code>` block
+  in an article (prompts to paste into an AI assistant, commands, JSON).
+  Added at render time by `page-article.js`, because the sanitiser strips
+  `<button>` from article HTML — so nothing is authored per article: any
+  code block gets it. An optional `data-copy-label="Copy prompt"` on the
+  `<pre>` changes the button text. Clipboard API first, hidden-textarea
+  `execCommand("copy")` fallback, and if both fail the block is selected
+  for a keyboard copy.
+  Blocks taller than 4 rendered lines start collapsed behind a fade with a
+  **Show more** toggle (Copy still copies the whole block);
+  `data-collapse-lines="8"` changes the threshold and `data-collapse="false"`
+  switches collapsing off for that block.
 - `js/icons.js` — inline SVG Material Symbols (no icon web font is loaded).
 - `js/vendor/purify.min.js` — DOMPurify 3.4.15, vendored (no third-party CDN).
 - `js/firebase-config.js` — project id + API key for the REST freshness
@@ -66,6 +78,9 @@ admin console (backlog-tracker → FAQ Management)  ──edits──▶  Firest
   only YouTube/Vimeo iframes are allowed, links get `rel="noopener"`.
 - Firestore writes to the FAQ collections require a signed-in allowlisted
   Google account (`backlog-tracker/firestore.rules` → `isFaqEditor`).
+- The embedding `<iframe>` should carry `allow="clipboard-write"` so the
+  Copy buttons can use the Clipboard API inside the frame; without it they
+  fall back to `execCommand("copy")`, which still works in current browsers.
 - When embedded, the site hides its own header and posts
   `{type: "ph-faq:height", height}` to the parent so the host page can size
   the iframe. The Firebase Hosting site sends
