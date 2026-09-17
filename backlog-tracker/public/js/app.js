@@ -4570,14 +4570,18 @@ async function deleteFaqCategoryIfEmpty(id) {
   await deleteDoc(doc(db, "faqCategories", id));
 }
 
+// Returns the saved article's id (the one passed in, or the newly-created
+// doc's id) so a caller that stays on the editor page after saving — see
+// submitFaqArticleFromEditor — knows which article it's now editing.
 async function saveFaqArticle(id, data) {
-  if (!(await requireFaqEditor())) return;
+  if (!(await requireFaqEditor())) return null;
   if (id) {
     await setDoc(doc(db, "faqArticles", id), { ...data, updatedAt: serverTimestamp() }, { merge: true });
-  } else {
-    const order = faqArticles.length ? Math.max(...faqArticles.map((a) => a.order || 0)) + 1 : 0;
-    await addDoc(faqArticlesRef, { ...data, order, createdAt: serverTimestamp(), updatedAt: serverTimestamp() });
+    return id;
   }
+  const order = faqArticles.length ? Math.max(...faqArticles.map((a) => a.order || 0)) + 1 : 0;
+  const ref = await addDoc(faqArticlesRef, { ...data, order, createdAt: serverTimestamp(), updatedAt: serverTimestamp() });
+  return ref.id;
 }
 
 async function deleteFaqArticle(id) {
@@ -5717,6 +5721,53 @@ function faqUpgradeTableEmbeds(root) {
   });
 }
 
+// Loading a saved article into the editor via `.root.innerHTML = html`
+// (openFaqArticleEditorPage below, until wD9a8rN54MAFdVT5FEra) looks fine —
+// the browser renders it — but leaves Quill's own Delta model completely
+// unaware of what's now in the DOM; a freshly-constructed Quill instance's
+// model still says "empty". The next time Quill reconciles the DOM against
+// that stale model, which happens on the very next keystroke anywhere in
+// the editor (not necessarily one touching the affected block), whatever it
+// can't map back onto its own model gets silently collapsed — a multi-node
+// structure like an <ol> most reliably, right down to a single empty line.
+// This is exactly how two FAQ articles lost their "Steps" list (backlog
+// items j7sfENrtwF4qVDYdT11x / wD9a8rN54MAFdVT5FEra): the list displayed
+// fine right up until the next Save, which silently wrote back the
+// collapsed version — reproduced directly against quill@1.3.7 while
+// investigating this ticket.
+//
+// The fix is to go through Quill's own supported loading path instead:
+// clipboard.convert() parses HTML into a Delta the same way pasting it
+// would, and setContents() builds the real Parchment tree from that Delta,
+// so the DOM and the model agree from the start — no later reconciliation,
+// no collapse. This also correctly rebuilds our custom callout/table blots
+// (registerFaqEditorFormats below): clipboard.convert()'s generic element
+// matcher looks blots up in the same Parchment registry a
+// Quill.register(...) call adds to, so a <div class="faq-table">/
+// <div class="callout-*"> round-trips through FaqTableBlot.value()/
+// FaqCalloutBlot.formats() the same way any built-in format does.
+//
+// Two adjustments on top of a bare clipboard.convert():
+//  - Strip whitespace-only text between tags first. bodyMd is saved with a
+//    newline between top-level blocks (for readability in Firestore/diffs);
+//    convert() treats a bare newline sitting between block elements as an
+//    actual blank line and inserts an empty paragraph for it, which piles
+//    up into a visibly broken editor on any multi-section article.
+//  - Quill 1.3.7's clipboard conversion inserts one extra blank line
+//    immediately after our custom callout format specifically (confirmed
+//    against quill@1.3.7 directly, independent of the newline stripping
+//    above) — drop that one spurious op rather than leave every callout
+//    trailed by an empty paragraph.
+function faqSetEditorHtml(html) {
+  const delta = faQuill.clipboard.convert(String(html || "").replace(/>\s*\n\s*</g, "><"));
+  delta.ops = delta.ops.filter((op, i) => {
+    if (op.insert !== "\n" || (op.attributes && Object.keys(op.attributes).length)) return true;
+    const prev = delta.ops[i - 1];
+    return !(prev && prev.attributes && prev.attributes.callout);
+  });
+  faQuill.setContents(delta);
+}
+
 function registerFaqEditorFormats() {
   const Block = Quill.import("blots/block");
   const BlockEmbed = Quill.import("blots/block/embed");
@@ -5958,6 +6009,19 @@ function renderFaStatusBadge() {
   badge.classList.toggle("fa-status-badge-published", isPublished);
 }
 
+// Brief "Saved as draft."/"Published." confirmation next to the title, now
+// that Save draft/Publish keep you in the editor instead of navigating back
+// to the article list (see submitFaqArticleFromEditor) — without it, a
+// click on either button gave no feedback at all that anything happened.
+let faSaveStatusTimer = null;
+function showFaSaveConfirmation(text) {
+  const el = document.getElementById("fa-save-status");
+  el.textContent = text;
+  el.classList.add("visible");
+  clearTimeout(faSaveStatusTimer);
+  faSaveStatusTimer = setTimeout(() => el.classList.remove("visible"), 4000);
+}
+
 // Each sidebar group (Article properties / Search & keywords / Status &
 // publishing) expands and collapses independently of the others — replaces
 // the old single slide-out "Advanced settings" panel, which put every
@@ -6035,6 +6099,8 @@ function openFaqArticleEditorPage(articleId, { pendingRevision = false } = {}) {
   const source = faEditingPendingRevision ? { ...article, ...article.pendingRevision, slug: article.slug } : article;
 
   document.getElementById("fa-title").textContent = faEditingPendingRevision ? "Edit proposed update" : (article ? "Edit article" : "New article");
+  clearTimeout(faSaveStatusTimer);
+  document.getElementById("fa-save-status").classList.remove("visible");
   document.getElementById("fa-save-draft").textContent = faEditingPendingRevision ? "Save proposal" : "Save draft";
   document.getElementById("fa-publish").hidden = faEditingPendingRevision;
   // Nothing to delete yet on a brand-new article, and while editing a
@@ -6051,7 +6117,7 @@ function openFaqArticleEditorPage(articleId, { pendingRevision = false } = {}) {
   // as properly formatted rich text; saving then upgrades that article to
   // real HTML in place. A brand-new article, or one already saved from
   // this editor, loads as-is (sanitized either way — see renderFaqBodyMd).
-  faQuill.root.innerHTML = source ? renderFaqBodyMd(source.bodyMd || "") : "";
+  faqSetEditorHtml(source ? renderFaqBodyMd(source.bodyMd || "") : "");
   faqUpgradeTableEmbeds(faQuill.root);
   faDocTypeSelect.value = source && source.docType ? source.docType : "faq";
   faNeedsReview.checked = article ? !!article.needsReview : false;
@@ -6189,8 +6255,38 @@ async function submitFaqArticleFromEditor(publish) {
     sectionPickerLabel: faSectionPickerLabelInput.value.trim() || null,
     ...(publish && !faLoadedHasPublishedAt ? { publishedAt: serverTimestamp() } : {}),
   };
-  await saveFaqArticle(editingFaqArticleId, data);
-  backToFaqArticleList();
+  const savedId = await saveFaqArticle(editingFaqArticleId, data);
+  if (!savedId) return; // requireFaqEditor() declined the sign-in prompt
+
+  // Save draft / Publish used to always call backToFaqArticleList() here,
+  // which closed the article and dropped the editor back on the primary
+  // list the instant either button was clicked — reported as losing your
+  // place mid-review (5wN2bXqLd6ZoQxRnJcH4). Only Cancel/Escape/the list
+  // itself should navigate away now; saving just re-syncs the editor's
+  // "loaded" state to what was actually written, the same way opening the
+  // article fresh would, and reports back that Firestore now agrees so the
+  // Save draft/Publish buttons correctly go back to disabled (faSnapshotState/
+  // updateFaDirtyState) until the next real change.
+  editingFaqArticleId = savedId;
+  faqSlugManuallyEdited = true;
+  faDeleteBtn.hidden = false;
+  faSlugInput.value = data.slug;
+  faLoadedStatus = status;
+  faLoadedHasPublishedAt = faLoadedHasPublishedAt || !!publish;
+  renderFaStatusBadge();
+  const liveHint = document.getElementById("fa-live-link-hint");
+  if (status === "published") {
+    liveHint.hidden = false;
+    liveHint.innerHTML = `Live at <a href="${FAQ_PUBLIC_BASE_URL}article.html?id=${encodeURIComponent(savedId)}" target="_blank" rel="noopener">${FAQ_PUBLIC_BASE_URL}article.html?id=${encodeURIComponent(savedId)}</a>`;
+  } else {
+    liveHint.hidden = true;
+  }
+  document.getElementById("fa-title").textContent = "Edit article";
+  document.title = "Edit article — PH Agent Console";
+  setRouteHash(`#faq-article/${encodeURIComponent(savedId)}`);
+  faLoadedSnapshot = faSnapshotState();
+  updateFaDirtyState();
+  showFaSaveConfirmation(publish ? "Published." : "Saved as draft.");
 }
 document.getElementById("fa-save-draft").addEventListener("click", () => submitFaqArticleFromEditor(false));
 document.getElementById("fa-publish").addEventListener("click", () => submitFaqArticleFromEditor(true));
