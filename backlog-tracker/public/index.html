@@ -484,15 +484,29 @@
            .btn-ghost, so it stays visibly active even while Save
            draft/Publish are genuinely disabled (updateFaDirtyState in
            app.js keeps both off until the page is actually changed) —
-           see .btn-outline's own comment in styles.css. -->
+           see .btn-outline's own comment in styles.css.
+           fa-delete sits apart from the other three, pinned to the left of
+           this row (.fa-actions-delete in styles.css), so it never reads as
+           a fourth equally-weighted save/publish option — same separation
+           the list page's own .faq-article-delete icon-btn already uses
+           next to its options menu. Hidden for a brand-new article (no id
+           yet to delete) and while editing a proposed revision (that flow's
+           own Reject action, not this one, is what removes a draft
+           proposal — see openFaqRevisionReviewPage). Confirms before
+           deleting, same wording/pattern as the list page's own delete. -->
       <div class="page-header">
         <h2 id="fa-title">New article</h2>
         <div class="form-actions">
+          <button type="button" class="icon-btn fa-actions-delete" id="fa-delete" title="Delete article" hidden>&#128465;</button>
           <button type="button" class="btn-outline" id="fa-cancel">Cancel</button>
           <button type="button" class="btn-ghost" id="fa-save-draft" disabled>Save draft</button>
           <button type="button" class="btn-primary" id="fa-publish" disabled>Publish</button>
         </div>
       </div>
+      <!-- Divider between the title/action row and the form below — makes
+           the CTA row read as its own toolbar rather than blending into the
+           title fields immediately under it. -->
+      <div class="fa-header-divider" aria-hidden="true"></div>
 
       <!-- Primary focus, full width: title, summary, and the body itself —
            everything else about an article (category, doc type, linked

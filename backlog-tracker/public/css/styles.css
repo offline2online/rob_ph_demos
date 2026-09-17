@@ -391,6 +391,15 @@ textarea.dialog-field-input { resize: vertical; min-height: 70px; }
 .form-actions { display: flex; gap: 8px; }
 .field-hint { margin: 6px 0 0; font-size: 11.5px; color: var(--text-muted); }
 
+/* FAQ article editor: delete icon-btn pinned left of Cancel/Save draft/
+   Publish within the same .form-actions row (margin-right: auto pushes the
+   other three to the right instead of them all clustering together), plus
+   the divider under the whole title/action row — see the HTML comment
+   above #faq-article-editor-page's .page-header. */
+.fa-actions-delete { margin-right: auto; }
+.fa-actions-delete:hover { background: var(--danger-tint); color: var(--danger); }
+.fa-header-divider { border-top: 1px solid var(--border); margin: 0 0 16px; }
+
 .desc-wrap { position: relative; }
 .mic-btn {
   position: absolute; right: 7px; bottom: 7px; width: 30px; height: 30px; border-radius: 50%;
