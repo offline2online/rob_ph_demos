@@ -1,7 +1,7 @@
 import { fetchCategories, fetchPublishedArticles, fetchArticleBody, fetchLiveArticleIfNewer, escapeHTML, categoryIcon,
   renderBody, docTypeLabel, safeId, articlesUnder, parentCategoryOf, formatDate } from "./faq-data.js";
 import { iconSvg } from "./icons.js";
-import { bootPage, showLoadError, trackEvent } from "./page-common.js";
+import { bootPage, showLoadError, trackEvent, restoreScrollMemory } from "./page-common.js";
 import { enhanceCopyBlocks } from "./copy-block.js";
 
 bootPage();
@@ -142,6 +142,7 @@ try {
     else {
       const article = { ...meta, ...full };
       renderArticle(article, categories, articles);
+      restoreScrollMemory();
       // Freshness: swap in a newer published revision from Firestore if one exists.
       fetchLiveArticleIfNewer(id, article.updatedAt).then((live) => {
         if (!live) return;

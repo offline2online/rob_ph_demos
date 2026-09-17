@@ -377,8 +377,9 @@ function closeAllSubPages() {
   closeFaqArticlesPage();
   closeFaqArticleEditorPage();
   closeFaqRevisionReviewPage();
-  // Every routed page (FAQ Management, Settings — see "URL routing" below)
-  // opens by calling this first, so clearing the hash here is the one
+  // Every routed page (FAQ Management, Settings, the article editor — see
+  // "URL routing" below) opens by calling this first, so clearing the hash
+  // here is the one
   // choke point that keeps it in sync with whatever's actually on screen:
   // a plain "go back to the board" (nav-ph-console-btn/topbar-logo-btn) or
   // a jump into a non-routed sub-page (Docs, Archive, …) both leave the URL
@@ -1848,6 +1849,7 @@ primeFromRest("faqCategories", (rows) => {
 primeFromRest("faqArticles", (rows) => {
   faqArticles = rows;
   if (faqArticlesPage && !faqArticlesPage.hidden) renderFaqArticlesPage();
+  resolvePendingFaqArticleRoute();
 }, byNumber("order"));
 
 onSnapshot(query(itemsRef, orderBy("createdAt", "desc")), (snap) => {
@@ -4614,6 +4616,7 @@ onSnapshot(query(faqArticlesRef, orderBy("order", "asc")), (snap) => {
   faqArticles = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
   if (!faqArticlesPage.hidden) renderFaqArticlesPage();
   if (!faqRevisionReviewPage.hidden) renderFaqRevisionReviewPage();
+  resolvePendingFaqArticleRoute();
 }, (err) => {
   console.error("backlog-tracker: faqArticles listener error", err);
 });
@@ -4952,6 +4955,7 @@ function openFaqArticlesPage() {
   setRouteHash("#faq-management");
   updateTopbarTitle();
   renderFaqArticlesPage();
+  maybeRestoreInitialScroll();
 }
 function closeFaqArticlesPage() {
   faqArticlesPage.hidden = true;
@@ -5494,20 +5498,91 @@ document.getElementById("faq-articles-btn").addEventListener("click", () => { cl
 // label beside it in the sticky topbar was redundant copy, and each page's
 // header is now just its own plain <h2>. Only the browser tab title
 // (document.title) still names the open page.
-// Every other sub-page (Docs, Archive, the article editor, …) is out of
-// scope here and keeps its existing behavior: closeAllSubPages() clears the
-// hash back to "" whenever one of those opens, so a refresh from there still
-// lands on the board, same as before this existed.
+// The article editor (#faq-article/<id> or #faq-article/new, optionally
+// .../revision — see openFaqArticleEditorPage) is routed the same way, for
+// the same reason (wIk1aL99zS8Oy6jAHvGI). Every OTHER sub-page (Docs,
+// Archive, revision review, …) is still out of scope here and keeps its
+// existing behavior: closeAllSubPages() clears the hash back to "" whenever
+// one of those opens, so a refresh from there still lands on the board,
+// same as before this existed.
 const ROUTE_TITLES = {
   "#faq-management": "FAQ Management",
   "#settings": "Settings",
 };
+// Set when a #faq-article/<id> route is applied before that article has
+// actually arrived over the realtime channel yet (a cold reload straight
+// into the editor — faqArticles starts empty). Resolved exactly once, the
+// first time faqArticles actually contains that id (see primeFromRest and
+// the onSnapshot listener below) — never re-checked after that, so it can't
+// later clobber real in-progress edits sitting in an already-open editor.
+let pendingFaqArticleRoute = null;
+function resolvePendingFaqArticleRoute() {
+  if (!pendingFaqArticleRoute) return;
+  const { id, pendingRevision } = pendingFaqArticleRoute;
+  if (!faqArticles.some((a) => a.id === id)) return;
+  pendingFaqArticleRoute = null;
+  openFaqArticleEditorPage(id, { pendingRevision });
+}
+function openFaqArticleRouteFromHash(hash) {
+  const rest = hash.slice("#faq-article/".length);
+  if (rest === "new") { openFaqArticleEditorPage(null); return; }
+  const pendingRevision = rest.endsWith("/revision");
+  const id = decodeURIComponent(pendingRevision ? rest.slice(0, -"/revision".length) : rest);
+  if (!id) return;
+  if (faqArticles.some((a) => a.id === id)) openFaqArticleEditorPage(id, { pendingRevision });
+  else pendingFaqArticleRoute = { id, pendingRevision };
+}
 function setRouteHash(hash, { replace } = {}) {
   const current = window.location.hash;
   if (current === hash) return;
   const url = hash || (window.location.pathname + window.location.search);
   if (replace) history.replaceState(null, "", url);
   else history.pushState(null, "", url);
+}
+
+// ── Scroll memory for the FAQ Management routes ─────────────────────────
+// wIk1aL99zS8Oy6jAHvGI's other half ("also the correct position on the
+// page"): a plain refresh used to always drop back to the top, on the
+// article list AND the editor. Keyed by hash so the list and each article
+// remember their own position independently.
+//
+// This is a single long-lived document (a real SPA, not one fresh page load
+// per route like the consumer-facing faq/ site), so `performance
+// .getEntriesByType("navigation")[0].type` is constant for the entire
+// session — it can only ever tell us whether THIS PAGE LOAD was a reload,
+// not whether any one later in-session click was. Reading it fresh on every
+// open would restore a stale saved position onto a genuinely fresh click
+// (e.g. re-opening an article visited earlier this session should start at
+// the top, not jump back to where it was left last time). So the one-shot
+// flag below is consumed at most once per page load — the very first
+// #faq-management/#faq-article route this reload/back-forward resolves —
+// and never fires again for anything opened afterward in the same session.
+let pendingInitialScrollRestore = (() => {
+  try {
+    const [entry] = performance.getEntriesByType("navigation");
+    const type = entry ? entry.type : "navigate";
+    return type === "reload" || type === "back_forward";
+  } catch { return false; }
+})();
+function scrollMemoryKey() { return `bt-scroll:${window.location.hash || "#board"}`; }
+function saveScrollMemory() {
+  try { sessionStorage.setItem(scrollMemoryKey(), String(window.scrollY)); } catch { /* ignore */ }
+}
+(() => {
+  let raf = 0;
+  window.addEventListener("scroll", () => {
+    if (raf) return;
+    raf = requestAnimationFrame(() => { raf = 0; saveScrollMemory(); });
+  }, { passive: true });
+  window.addEventListener("pagehide", saveScrollMemory);
+})();
+function maybeRestoreInitialScroll() {
+  if (!pendingInitialScrollRestore) return;
+  pendingInitialScrollRestore = false;
+  let y;
+  try { y = Number(sessionStorage.getItem(scrollMemoryKey())); } catch { return; }
+  if (!Number.isFinite(y) || y <= 0) return;
+  requestAnimationFrame(() => requestAnimationFrame(() => window.scrollTo(0, y)));
 }
 function updateTopbarTitle() {
   const label = ROUTE_TITLES[window.location.hash];
@@ -5517,7 +5592,8 @@ function applyRouteFromHash() {
   const hash = window.location.hash;
   if (hash === "#faq-management") openFaqArticlesPage();
   else if (hash === "#settings") openFaqSettingsPage();
-  else if (!faqArticlesPage.hidden || !faqSettingsPage.hidden) closeAllSubPages();
+  else if (hash.startsWith("#faq-article/")) openFaqArticleRouteFromHash(hash);
+  else if (!faqArticlesPage.hidden || !faqSettingsPage.hidden || !faqArticleEditorPage.hidden) closeAllSubPages();
 }
 // popstate (back/forward) and hashchange (a typed-in or pasted #hash) both
 // need to re-sync the visible page — pushState/replaceState above never
@@ -6006,6 +6082,16 @@ function openFaqArticleEditorPage(articleId, { pendingRevision = false } = {}) {
   faqArticleEditorPage.hidden = false;
   faTitleInput.focus();
 
+  // wIk1aL99zS8Oy6jAHvGI: give the editor its own URL, same as FAQ
+  // Management/Settings already have (see "URL routing" above), so a
+  // refresh reopens the exact article being edited instead of always
+  // falling back to the board. A no-op when this call is itself the result
+  // of applying that same hash on load/hashchange (setRouteHash already
+  // skips re-pushing an unchanged hash).
+  setRouteHash(articleId ? `#faq-article/${encodeURIComponent(articleId)}${faEditingPendingRevision ? "/revision" : ""}` : "#faq-article/new");
+  document.title = `${document.getElementById("fa-title").textContent} — PH Agent Console`;
+  maybeRestoreInitialScroll();
+
   faLoadedSnapshot = faSnapshotState();
   updateFaDirtyState();
 }
@@ -6427,3 +6513,14 @@ wireFaqArticleRowInteractions("faq-article-list");
 // any earlier risks a "Cannot access before initialization" TDZ error the
 // moment a page is loaded straight into one of these two routes.
 applyRouteFromHash();
+// pendingInitialScrollRestore is consumed by openFaqArticlesPage/
+// openFaqArticleEditorPage themselves (including on the deferred path —
+// see resolvePendingFaqArticleRoute — for a #faq-article/<id> route whose
+// article hasn't arrived over the realtime channel yet). Any other initial
+// hash (the plain board, #settings, nothing recognized) never reaches
+// either of those, so nothing would ever consume the flag — left set, it
+// would wrongly fire on the next unrelated FAQ Management/editor click
+// later in this same session. Invalidate it immediately in that case.
+if (window.location.hash !== "#faq-management" && !window.location.hash.startsWith("#faq-article/")) {
+  pendingInitialScrollRestore = false;
+}

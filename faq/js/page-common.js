@@ -1,6 +1,6 @@
 // Boot shared by every page: embed mode, version stamp, search box, icons,
 // analytics.
-import { initEmbedMode } from "./faq-data.js";
+import { initEmbedMode, initScrollMemory, restoreScrollMemory } from "./faq-data.js";
 import { APP_VERSION } from "./version.js";
 import { initSearchBox } from "./search-box.js";
 import { iconSvg } from "./icons.js";
@@ -61,6 +61,7 @@ export function trackEvent(name, params) {
 
 export function bootPage() {
   initEmbedMode();
+  initScrollMemory();
   const v = document.getElementById("app-version");
   if (v) v.textContent = `v${APP_VERSION}`;
   const si = document.getElementById("search-icon");
@@ -68,6 +69,13 @@ export function bootPage() {
   initSearchBox().catch(() => { /* search is a progressive enhancement */ });
   injectAnalyticsTag();
 }
+
+// Re-exported so every page script only needs one import ("./page-common.js")
+// to both boot and, once its own content has rendered, restore scroll — see
+// initScrollMemory/restoreScrollMemory in faq-data.js for what this covers
+// and why (wIk1aL99zS8Oy6jAHvGI: refresh should keep a reader's place, both
+// standalone and embedded).
+export { restoreScrollMemory };
 
 export function showLoadError() {
   const el = document.getElementById("load-error");

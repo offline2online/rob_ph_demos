@@ -1,7 +1,7 @@
 import { fetchCategories, fetchPublishedArticles, escapeHTML, categoryIcon, docTypeLabel, safeId,
   subCategoriesOf, articlesIn, articlesUnder, topLevelCategories } from "./faq-data.js";
 import { iconSvg } from "./icons.js";
-import { bootPage, showLoadError } from "./page-common.js";
+import { bootPage, showLoadError, restoreScrollMemory } from "./page-common.js";
 
 bootPage();
 
@@ -68,6 +68,7 @@ try {
       (next ? `<a class="nav-next" href="category.html?id=${encodeURIComponent(next.id)}">${escapeHTML(next.name)} ${iconSvg("arrow_forward", 16)}</a>` : "");
   }
   list.removeAttribute("aria-busy");
+  restoreScrollMemory();
 } catch (err) {
   console.error("help centre: failed to load category", err);
   document.getElementById("cat-name").textContent = "Help Centre";
