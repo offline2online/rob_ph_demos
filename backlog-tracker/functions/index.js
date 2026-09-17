@@ -13,7 +13,8 @@ const { onDocumentUpdated, onDocumentWritten } = require("firebase-functions/v2/
 const { defineSecret } = require("firebase-functions/params");
 const logger = require("firebase-functions/logger");
 const { initializeApp } = require("firebase-admin/app");
-const { getFirestore } = require("firebase-admin/firestore");
+const { getFirestore, FieldValue } = require("firebase-admin/firestore");
+const { isTrainRelevantItem, trainLockShouldClear } = require("./train-lock");
 
 initializeApp();
 
@@ -968,6 +969,68 @@ exports.onBacklogItemReadyForAutomation = onDocumentWritten(
     }
 
     await dispatchBacklogAutomation({ itemId: event.params.itemId, reasons, title: typeof after.title === "string" ? after.title : null });
+  }
+);
+
+// Fixes "Ready for Dev CTA stays hidden after all train tickets are
+// deleted (stuck trainLocked)". projects/{id}.trainLocked only ever
+// LATCHES true from app.js's deployToFeature() — firestore.rules lets the
+// board write it in that one direction only — so clearing it again is
+// entirely this backend's job. Before this trigger existed, the only path
+// that ever cleared it was a successful merge
+// (run-backlog-automation.js's finishTrain()/reconcileMergedTrains()).
+// Deleting every ticket that had been approved for deployment, or
+// rejecting them all via "Failed testing" (which reverts their commits off
+// the branch — see processRevertFromTrain), empties the train without
+// ever going through a merge, so the lock got stuck forever with nothing
+// left in Ready for Testing or Approved for Deployment for Deploy to Main
+// to act on either.
+//
+// train-lock.js holds the actual "is this project's train empty" decision
+// (shared with run-backlog-automation.js's own reconcileLockedTrains(),
+// which is the safety net for this same trigger and additionally
+// archives/resets an orphaned integration branch — something only that
+// script, with real git credentials, can do). This trigger only decides
+// WHEN it's worth paying for a project + sibling-items read: a write that
+// didn't change whether this one item occupies the train (the vast
+// majority — a title edit, a note, a comment) is skipped outright, and an
+// item newly joining the train can only make it fuller, never trigger an
+// unlock.
+exports.onBacklogItemTrainLockRecompute = onDocumentWritten(
+  { document: "backlogItems/{itemId}" },
+  async (event) => {
+    const before = event.data?.before?.data();
+    const after = event.data?.after?.data();
+    const projectId = (after || before || {}).projectId;
+    if (!projectId) return;
+
+    const wasRelevant = isTrainRelevantItem(before);
+    const isRelevantNow = isTrainRelevantItem(after);
+    if (!wasRelevant || isRelevantNow) return; // relevance didn't just drop
+
+    const db = getFirestore();
+    const projectRef = db.collection("projects").doc(projectId);
+    const projectSnap = await projectRef.get();
+    if (!projectSnap.exists) return;
+    const project = projectSnap.data();
+    if (!project.trainLocked) return; // nothing to clear
+
+    const itemsSnap = await db.collection("backlogItems").where("projectId", "==", projectId).get();
+    const items = itemsSnap.docs.map((d) => d.data());
+    if (!trainLockShouldClear(project, items)) return;
+
+    logger.info("Train emptied by a backlogItems write — clearing trainLocked", {
+      projectId, itemId: event.params.itemId,
+    });
+    await projectRef.set({
+      trainLocked: false,
+      trainStatus: "idle",
+      // Whatever trainNote/trainStatus said before (including a stale
+      // "conflict" left over from before the tickets were removed) stops
+      // applying — there is nothing left on the train for it to describe.
+      trainNote: null,
+      updatedAt: FieldValue.serverTimestamp(),
+    }, { merge: true });
   }
 );
 

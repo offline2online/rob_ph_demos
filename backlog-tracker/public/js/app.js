@@ -912,6 +912,28 @@ function isTrainLocked(project) {
   return !!(project && project.trainLocked);
 }
 
+// Point 5 of "Ready for Dev CTA stays hidden after all train tickets are
+// deleted (stuck trainLocked)": before this, a locked project's Ready for
+// Dev / Groom Backlog buttons simply weren't there, with nothing on screen
+// saying why — which is exactly what made the underlying bug (the lock
+// getting stuck forever with nothing left to build or deploy) invisible
+// rather than obviously wrong. Shown any time isTrainLocked() is hiding
+// those CTAs, so the disappearance is never silent again. Uses the
+// project's own trainNote when run-backlog-automation.js has left one
+// (e.g. why a merge conflicted, or why Deploy to Main found nothing to
+// merge) — the same field the board already surfaces nowhere else once
+// Ready for Testing/Approved for Deployment are both empty — or a generic
+// explanation for the ordinary "still building/testing" case, which never
+// gets a trainNote of its own.
+function trainLockedNoteHTML(project) {
+  if (!isTrainLocked(project)) return "";
+  const note = (typeof project.trainNote === "string" && project.trainNote.trim())
+    || "Finish Ready for Testing and Deploy to Main to release this project's current build before starting new work on it.";
+  return `<div class="train-locked-hint" title="Ready for Dev and Groom Backlog are hidden while this project's integration branch is closing out a release">
+    <span class="material-symbols-outlined train-locked-icon">lock</span><span>Train locked: ${escapeHTML(note)}</span>
+  </div>`;
+}
+
 function notifyClaudeButtonHTML(project) {
   const pid = project.id;
   const routine = project.notifyRoutine;
@@ -1303,6 +1325,7 @@ function projectSectionHTML(project) {
           </div>
         </div>
       </div>
+      ${trainLockedNoteHTML(project)}
       <div class="project-body">${board}</div>
     </section>`;
 }

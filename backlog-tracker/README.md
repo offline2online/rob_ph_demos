@@ -243,6 +243,54 @@ already closing. Backlog cards stay fully editable throughout; only
 *starting a build* is held. See `REQUIREMENTS.md` → "The deployment
 train".
 
+**`trainLocked` clearing isn't only a successful-merge thing any more.**
+`firestore.rules` only ever lets the browser latch it *true*
+(`deployToFeature()`); before 17 Sep 2026 the only thing that ever cleared
+it again was `finishTrain()`/`reconcileMergedTrains()` after a real merge.
+Deleting every ticket that had been approved for deployment — or rejecting
+them all via Failed testing, which reverts their commits off the branch —
+emptied the train without ever merging anything, so the lock (and the
+Ready for Dev/Groom Backlog CTAs it hides) got stuck forever, with nothing
+left in Ready for Testing or Approved for Deployment for Deploy to Main to
+act on either. Happened for real on this project (Backlog Tracker & FAQs),
+17 Sep 2026. Fixed on two paths that share one pure predicate
+(`functions/train-lock.js`'s `trainLockShouldClear()` — no Firebase SDK, so
+it's plain-`node`-testable, see `test/train-lock.test.js`):
+
+- `functions/index.js`'s `onBacklogItemTrainLockRecompute` reacts the
+  moment a `backlogItems` write drops an item out of train-relevant
+  status (deleted, published-live, or a rejected card's revert finishing)
+  and clears `trainLocked`/resets `trainStatus`/`trainNote` the instant
+  nothing is left on the train — see `test/train-lock-trigger.test.js`,
+  which drives the real exported handler under a small stubbed-SDK
+  harness (index.js had no test of any kind before this).
+- `scripts/run-backlog-automation.js`'s `reconcileLockedTrains()` is the
+  safety net (same predicate) on every scheduled run, and the one place
+  that can also do the git side no Cloud Function can: if the integration
+  branch still holds commits that never reached `main` — a card deleted
+  outright, skipping `processRevertFromTrain` entirely, rather than
+  reverted — `archiveAndResetOrphanedBranch()` tags the branch's tip
+  `archive/<branch>-<date>` and pushes the tag before resetting the branch
+  to `main`, so nothing is silently lost even though no ticket on the
+  board points at it any more. Covers the "reverted-then-net-zero" case
+  too (real history, kept, even though the diff is empty). See
+  `test/train-lock-branch-archive.test.js`, which drives this against a
+  disposable local git repo pair — never the real `origin`.
+
+Either path also clears a stale `trainStatus: "conflict"` left over from
+before the tickets were removed, since there's nothing left on the train
+for that note to describe. Neither path touches a project mid-deploy
+(`trainStatus: "deploying"`) or awaiting a human PR merge
+(`"awaiting-human-merge"`) — those still only resolve through
+`finishTrain()`/`reconcileMergedTrains()`.
+
+The board itself no longer goes silent about this either:
+`trainLockedNoteHTML()` in `public/js/app.js` shows a "Train locked: …"
+line on a project's header (using the project's own `trainNote` when one
+exists) any time `isTrainLocked()` is hiding Ready for Dev/Groom Backlog,
+so a stuck lock reads as a stuck lock rather than as "nothing in Backlog
+yet".
+
 **Superseded: the "attach an item to its already-open PR" machinery.**
 `resolveReusablePr`/`attachToExistingPr`/`findExistingPrForItem` existed
 because a second `patchReady` on an item with an open PR had nowhere to go
