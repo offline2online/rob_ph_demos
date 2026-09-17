@@ -288,6 +288,7 @@ This is where most user guides fail. The rules are strict.
 - **Lists:** numbered for sequence, bulleted for unordered sets. Parallel grammatical structure across every item. Sentence case; full stops only if items are full sentences.
 - **Tables:** for comparing three or more things across two or more attributes. Never for layout. Header row always. Keep cells to a few words — long prose in a cell means it should be a list.
 - **Code blocks:** always language-tagged. Runnable and copy-pasteable as written. Show a realistic example response or output beneath. Use obviously fake but plausible sample data — never real keys, customer names, or internal hostnames.
+  In `faq/`, every `<pre><code>` block gets a one-click **Copy** button automatically at render time (`faq/js/copy-block.js`), so never write "select and copy the text" instructions; to name what is being copied, set `data-copy-label` on the `<pre>` (for example `data-copy-label="Copy prompt"` for a prompt the reader pastes into an AI assistant).
 - **Callouts:** three levels only, used sparingly. `Note` (useful aside), `Important` (will cause rework if ignored), `Warning` (data loss, cost, or irreversibility). More than two callouts on a page means the page is badly structured.
 - **Links:** descriptive text naming the destination. "See [Configuring SSO]" — never "click [here]" or "see [this page]". Relative links within the docs tree so they survive moves.
 

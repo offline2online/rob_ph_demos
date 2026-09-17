@@ -2,6 +2,7 @@ import { fetchCategories, fetchPublishedArticles, fetchArticleBody, fetchLiveArt
   renderBody, docTypeLabel, safeId, articlesUnder, parentCategoryOf, formatDate } from "./faq-data.js";
 import { iconSvg } from "./icons.js";
 import { bootPage, showLoadError, trackEvent } from "./page-common.js";
+import { enhanceCopyBlocks } from "./copy-block.js";
 
 bootPage();
 
@@ -89,6 +90,7 @@ function renderArticle(article, categories, articles) {
   $("crumb-article").textContent = article.title;
   const body = $("article-body");
   body.innerHTML = renderBody(article.bodyMd);
+  enhanceCopyBlocks(body, { onCopy: ({ ok, label }) => trackEvent("faq_copy_block", { article_id: article.id, label, ok }) });
   buildToc(body);
   initSectionPicker(body, article);
   const badge = $("doctype-badge");
