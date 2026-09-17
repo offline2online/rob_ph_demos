@@ -87,6 +87,19 @@ admin console (backlog-tracker → FAQ Management)  ──edits──▶  Firest
   `Content-Security-Policy: frame-ancestors 'self' https://personalisationhub.com https://www.personalisationhub.com`,
   so only the marketing site can embed it (the GitHub Pages copy has no
   such header).
+- It also posts `{type: "ph-faq:scrollTop"}` once, right when embed mode
+  boots on every page (not repeated from the height ResizeObserver). Since
+  the iframe is sized to fit its content with no scrollbar of its own, it's
+  the **host page** that actually scrolls, and a full navigation inside the
+  iframe (an article's Previous/Next/Related links, a category link, a
+  search result) doesn't reset the host's own scroll position on its own —
+  without this, a reader who scrolled down before clicking a link lands
+  mid-way or at the bottom of whatever loads next. **This message only does
+  something once the host's own JS listens for it and scrolls the iframe
+  back into view** (e.g. `iframe.scrollIntoView({block: "start"})` or
+  `window.scrollTo` to the iframe's offset) — that listener lives in the
+  personalisationhub.com support centre page, outside this repo, and isn't
+  wired up yet as of this note.
 
 ## Content standard
 
