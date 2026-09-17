@@ -45,6 +45,20 @@ export function initEmbedMode() {
   document.documentElement.classList.add("embedded");
   const header = document.querySelector(".ph-header");
   if (header) header.hidden = true;
+  // Every page here (including an article's own Previous/Next/Related
+  // links) is a plain full navigation, not a client-side route — the new
+  // document always starts scrolled to (0,0) *inside the iframe*. But
+  // because we hand our real height to the host so it can size the iframe
+  // with no scrollbar of its own (see the height postMessage below), it's
+  // the HOST page that actually scrolls, and its scroll position doesn't
+  // reset just because our content underneath it changed. Left alone, a
+  // reader who scrolled down to click "Next article" lands mid-way or at
+  // the bottom of the article that loads next. Ask the host to scroll back
+  // to the top of the iframe on every fresh load so it can't happen — this
+  // is a one-time request per page load, never repeated from the
+  // ResizeObserver below, so it never yanks a reader back to the top while
+  // they're mid-scroll on the article they're already reading.
+  try { window.parent.postMessage({ type: "ph-faq:scrollTop" }, "*"); } catch { /* ignore */ }
   const post = () => {
     try { window.parent.postMessage({ type: "ph-faq:height", height: document.documentElement.scrollHeight }, "*"); } catch { /* ignore */ }
   };
