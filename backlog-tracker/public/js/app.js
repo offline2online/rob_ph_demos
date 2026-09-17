@@ -5461,6 +5461,7 @@ document.getElementById("fa-tree-search").addEventListener("input", renderFaqArt
 // never touch) and the single flat "Advanced settings" slide-out panel that
 // replaced it in turn.
 const faqArticleEditorPage = document.getElementById("faq-article-editor-page");
+const faDeleteBtn = document.getElementById("fa-delete");
 const faTitleInput = document.getElementById("fa-title-input");
 const faSlugInput = document.getElementById("fa-slug-input");
 const faDocTypeSelect = document.getElementById("fa-doctype-select");
@@ -5882,6 +5883,11 @@ function openFaqArticleEditorPage(articleId, { pendingRevision = false } = {}) {
   document.getElementById("fa-title").textContent = faEditingPendingRevision ? "Edit proposed update" : (article ? "Edit article" : "New article");
   document.getElementById("fa-save-draft").textContent = faEditingPendingRevision ? "Save proposal" : "Save draft";
   document.getElementById("fa-publish").hidden = faEditingPendingRevision;
+  // Nothing to delete yet on a brand-new article, and while editing a
+  // proposed revision the article being deleted here would be the LIVE
+  // article, not the proposal — that flow's own Reject action is what
+  // removes a draft proposal instead (see openFaqRevisionReviewPage).
+  faDeleteBtn.hidden = !articleId || faEditingPendingRevision;
   faTitleInput.value = source ? source.title : "";
   faSlugInput.value = article ? article.slug || "" : "";
   faSummaryInput.value = source ? source.summary || "" : "";
@@ -5940,6 +5946,13 @@ document.getElementById("fa-new-article-btn").addEventListener("click", async ()
   openFaqArticleEditorPage(null);
 });
 document.getElementById("fa-cancel").addEventListener("click", backToFaqArticleList);
+faDeleteBtn.addEventListener("click", async () => {
+  if (!editingFaqArticleId) return;
+  if (await showConfirmDialog("Delete this article? This can't be undone.", { title: "Delete article", okLabel: "Delete", danger: true })) {
+    await deleteFaqArticle(editingFaqArticleId);
+    backToFaqArticleList();
+  }
+});
 document.addEventListener("keydown", (e) => {
   if (e.key !== "Escape" || faqArticleEditorPage.hidden) return;
   backToFaqArticleList();
