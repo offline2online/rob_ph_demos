@@ -40,11 +40,12 @@ body {
    qER8mO5v6ZX9FrMXuKYm: on web/tablet the bar had 0 horizontal padding
    (the logo sat flush against the screen edge) and top-aligned its
    content, so a shorter item like the + New project button sat noticeably
-   higher than the taller logo beside it. `align-items` is `center` so
-   shorter items sit level with the logo, and vertical padding was trimmed
-   10px -> 6px to lower the bar's overall height — the phone media query
-   below already sets its own padding/align-items explicitly, so none of
-   this changes the ≤640px (mobile) rendering.
+   higher than the taller logo beside it. `padding` now has 10px either
+   side, `align-items` is `center` so shorter items sit level with the
+   logo, and vertical padding is trimmed 10px -> 6px to lower the bar's
+   overall height — the phone media query below already sets its own
+   padding/align-items explicitly, so none of this changes the ≤640px
+   (mobile) rendering.
    jJh1TP9WSMlTiKmERHPj had switched this to a 3-column grid so the
    hamburger, pulled out as a direct middle child, could sit centred
    regardless of how wide the logo or actions button were. Reverted by
@@ -52,25 +53,14 @@ body {
    unconnected to the logo — it's back inside .topbar-left-row (first
    child, logo to its right), so a plain 2-item flex row with
    `justify-content: space-between` is enough again; no grid, no dedicated
-   middle column.
-   pCwVVAnERbK41aLFbsVP: qER8mO5v6ZX9FrMXuKYm's 10px horizontal padding
-   fixed the vertical alignment above but had a side effect nothing since
-   noticed — .page-header (and everything else .app renders below the
-   topbar) has no horizontal padding of its own, so it sits flush with
-   .app's own 20px side padding, while the hamburger button sat a further
-   10px in from that same edge. The hamburger read as not lined up with
-   the page title/content directly below it. Horizontal padding is back to
-   0 (flush with .app, same as .page-header) — align-items: center already
-   handles the vertical alignment qER8mO5v6ZX9FrMXuKYm needed, so nothing
-   is lost. Vertical padding is trimmed 6px -> 4px too, for a slightly
-   shorter bar. */
+   middle column. */
 .topbar {
   display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 18px;
   position: sticky; top: 0; z-index: 16;
   background: rgba(255, 255, 255, .88);
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
-  padding: 4px 0;
+  padding: 6px 10px;
 }
 /* qMJeQkmhYwcXFTjeOJw0: the hamburger and the topbar logo now live in their
    own row (.topbar-left-row), a direct flex row with nothing else sharing
