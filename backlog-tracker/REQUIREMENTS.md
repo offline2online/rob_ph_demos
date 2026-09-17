@@ -1599,6 +1599,35 @@ Two surfaces sharing this same Firestore project:
   informative image; capturing it at insertion time (rather than relying
   on an editor to remember to add it, or a later audit to catch its
   absence) is how that rule is actually enforced here.
+  - **Loading an article into Quill is a rewrite, not an `innerHTML`.**
+    Quill 1.3.7 only edits DOM it built itself, and both naive ways of
+    handing it a saved article lost content in production on 2026-09-17
+    (seven articles' Steps/Before-you-begin/Related lists collapsed to an
+    empty paragraph, then saved back that way): `root.innerHTML = html`
+    drops from Quill's model whatever it can't hold (whitespace text nodes
+    inside an `<ol>`, a `<p>` inside an `<li>`) while leaving it on screen
+    until the first keystroke wipes it; a bare `clipboard.convert()` is a
+    paste parser that adds layout-dependent blank lines, splits
+    `<li><p>` into extra items, and (via the table blot's `value()`)
+    reduced every table cell to plain text. `faqSetEditorHtml` in `app.js`
+    therefore (1) rewrites the sanitised HTML into the shape Quill can
+    represent first (`faqHtmlForQuill`: whitespace between blocks and
+    inside lists/tables removed, paragraphs inside a list item folded into
+    the item, a nested list lifted out as indented items of the parent
+    list's type), (2) loads it through `clipboard.convert()` +
+    `setContents()` with Quill's `matchSpacing` matcher removed so model
+    and DOM agree from the first moment, and (3) compares the characters
+    that came out with the characters that went in and shows
+    `#fa-load-notice` above the body if they differ — a lossy load is
+    visible before Save, never silent. Table cells hold HTML fragments,
+    not text, so links/bold/code inside tables round-trip. Two known
+    simplifications remain, both text-preserving: a paragraph break
+    inside a list item becomes a space, and a nested `<ul>` inside an
+    `<ol>` item becomes lettered sub-items (`ql-indent-1`; the public
+    site's `faq.css` numbers those correctly). `test/faq-editor-load.test.mjs`
+    opens every article in `faq/data/articles/` in the real editor code
+    against real quill@1.3.7 and fails on any lost word, list item, table,
+    callout, code block or heading.
   - **Format migration is lazy, not a one-time script.** `bodyMd` (kept as
     the field name for compatibility) holds either real HTML (new) or
     legacy markdown-ish text (everything written before this editor
