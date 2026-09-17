@@ -24,7 +24,29 @@ admin console (backlog-tracker → FAQ Management)  ──edits──▶  Firest
 
 - **`data/index.json`** — every category/folder and every article's metadata
   (title, summary, keywords, docType, status, order). One small cached
-  request per page; search runs client-side over it.
+  request per page; search runs client-side over it. Written with one
+  category/article per line inside an otherwise pretty-printed structure
+  (`backlog-tracker/scripts/faq-index-lib.js`'s `serializeIndex`), not a
+  single minified line — so two commits editing different articles land on
+  different lines and git merges them automatically instead of conflicting
+  on the one line the whole file used to be. It's always fully derivable
+  from `data/articles/*.json` plus the categories list; nothing should ever
+  hand-edit it directly.
+- **A `faq/data/index.json` merge conflict resolves itself, most of the
+  time.** Because it aggregates every article's metadata into one file, it
+  used to conflict whenever two different commits touched *any* two
+  articles between them — even on different lines, if the diffs were close
+  together — since it was written as a single JSON.stringify'd line (fixed
+  by the one-per-line format above, which handles most cases on its own
+  now). For whatever's left — e.g. the same article edited on both sides —
+  `run-backlog-automation.js`'s deployment-train merge step rebuilds
+  `index.json` from `data/articles/*.json` (which, being separate files,
+  merge on their own) plus a categories list taken from whichever side
+  exported more recently, whenever `index.json` is the *only* file that
+  conflicted; see `backlog-tracker/ROUTINE_INSTRUCTIONS.md`'s own note on
+  this under "Outcomes that are not a merge" for the exact mechanism, and
+  what still falls back to a human (a genuine same-article conflict, or a
+  conflict on some other file too).
 - **`data/articles/<id>.json`** — one file per article body (HTML). Fetched
   only for the article being read.
 - **`data/retired.json`** — ids the September 2026 rewrite retired
