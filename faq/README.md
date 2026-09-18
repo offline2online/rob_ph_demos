@@ -66,6 +66,35 @@ admin console (backlog-tracker → FAQ Management)  ──edits──▶  Firest
   `backlog-tracker/REQUIREMENTS.md` → "FAQ revision review". Neither
   `faq-export.js` nor this site ever reads `pendingRevision`.
 
+## Article scoping (`programId` / `projectId`)
+
+Every `faqArticles` document carries two optional scoping fields, both set
+in the console's article editor (or via the MCP `create_faq_article` tool):
+
+- **`programId`** — which product/program (`programs` collection, e.g.
+  "Personalisation Hub", "PH Agent Console") the article documents. This is
+  the field that matters for **FAQ impact review** (the Deploy flow's step
+  3b in `backlog-tracker/ROUTINE_INSTRUCTIONS.md`): when a project deploys,
+  the candidate articles it may propose a revision for are exactly those
+  whose `programId` equals that project's own `programId` (read off
+  `projects/{id}.programId`), unioned with any article whose `projectId`
+  names that project directly (below). An article with no `programId` and
+  no matching `projectId` is invisible to every project's deploy review —
+  it can drift arbitrarily out of date with no automated check ever
+  flagging it, which is exactly what happened to the console's own FAQ
+  impact review before every `faqArticles` doc had a `programId` set.
+- **`projectId`** — set only when an article documents one specific project
+  within a program rather than the whole product (e.g. Personalisation Hub
+  has more than one project on the backlog board). Leave it unset for an
+  article that applies to the whole program.
+
+The console's "New article"/"Edit article" page now requires a program to
+be chosen before saving, the same way it already requires a category —
+picking a project first auto-fills its program as a starting point (still
+overridable). `backlog-tracker/scripts/backfill-faq-program.js` is the
+one-off (repeatable) script that assigns a program to any pre-existing
+article that predates this requirement.
+
 ## Files
 
 - `index.html`, `category.html`, `article.html`, `search.html` — pages. No

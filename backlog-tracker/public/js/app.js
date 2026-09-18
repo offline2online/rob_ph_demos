@@ -4661,6 +4661,17 @@ const faProjectSelect = document.getElementById("fa-project-select");
 // a second, parallel product/program taxonomy just for articles.
 const faProgramSelect = document.getElementById("fa-program-select");
 wireProgramSelect(faProgramSelect);
+// Picking a project first is a free hint at the right program — default to
+// it (once) so an editor isn't left to look the program up separately, same
+// spirit as the "require a program" check in submitFaqArticleFromEditor.
+// Only fires when the program field is still unset, so it never clobbers a
+// program the editor already chose (including on load, before this listens
+// for further changes) or the article's own already-saved value.
+faProjectSelect.addEventListener("change", () => {
+  if (faProgramSelect.value) return;
+  const project = projects.find((p) => p.id === faProjectSelect.value);
+  if (project && project.programId) populateProgramSelect(faProgramSelect, project.programId);
+});
 
 function openFaqSettingsPage() {
   closeAllSubPages();
@@ -4974,12 +4985,20 @@ document.getElementById("mcp-copy-btn")?.addEventListener("click", async () => {
   }
 });
 
-function openFaqArticlesPage() {
+// `filter` is one of FAQ_STATUS_FILTERS or "all" — passed explicitly by the
+// nav button ("all", a fresh entry) and by route/hash handling and the
+// clickable header counts; omitted (undefined) by callers that just want to
+// reopen the page as it was, e.g. backToFaqArticleList(), which keeps
+// whatever filter was already active rather than resetting it.
+function openFaqArticlesPage(filter) {
   closeAllSubPages();
   document.getElementById("projects-root").hidden = true;
   document.getElementById("board-page-header").hidden = true;
   faqArticlesPage.hidden = false;
-  setRouteHash("#faq-management");
+  if (filter !== undefined) faqStatusFilter = FAQ_STATUS_FILTERS.includes(filter) ? filter : "all";
+  const filterSelect = document.getElementById("fa-status-filter");
+  if (filterSelect) filterSelect.value = faqStatusFilter;
+  setRouteHash(faqStatusFilter === "all" ? "#faq-management" : `#faq-management?filter=${faqStatusFilter}`);
   updateTopbarTitle();
   renderFaqArticlesPage();
   maybeRestoreInitialScroll();
@@ -5035,6 +5054,21 @@ function faqProgramLabel(key) {
 // different folders.
 let faqTreeSelection = null;          // { programKey, categoryId }
 const faqTreeOpen = new Set();        // "prog:<key>" / "cat:<id>"
+
+// Status filter on the articles pane — same "cross-folder" shape as a
+// search (see renderFaqArticleList below): a filter other than "all" shows
+// matching articles from every category, not just the selected folder, and
+// is reflected in the route hash so a filtered view can be linked to and
+// survives a reload (applyRouteFromHash / openFaqArticlesPage further down).
+const FAQ_STATUS_FILTERS = ["draft", "needs-review", "published"];
+const FAQ_STATUS_FILTER_LABELS = { draft: "Draft", "needs-review": "Needs review", published: "Published" };
+let faqStatusFilter = "all";
+function faqMatchesStatusFilter(a, filter) {
+  if (filter === "draft") return a.status === "draft";
+  if (filter === "needs-review") return !!a.pendingRevision || !!a.needsReview;
+  if (filter === "published") return a.status === "published";
+  return true;
+}
 
 function faqTreeKeyOpen(key) { return faqTreeOpen.has(key); }
 function toggleFaqTreeOpen(key) {
@@ -5124,37 +5158,43 @@ function renderFaqArticleList() {
   const heading = document.getElementById("faq-articles-heading");
   if (!listEl) return;
 
-  let list = faqSelectedArticles();
   const searchEl = document.getElementById("fa-tree-search");
   const q = (searchEl ? searchEl.value : "").trim().toLowerCase();
-  if (q) {
-    // Searching looks across everything, not just the open folder — when you
-    // are hunting for an article you generally do not know which folder it
-    // is in, which is the whole reason for searching.
-    list = faqArticles.filter((a) =>
-      (a.title || "").toLowerCase().includes(q) || (a.summary || "").toLowerCase().includes(q)).sort(byFaqOrder);
-  }
+  const filterActive = faqStatusFilter !== "all";
+  // A search, a status filter, or both together all mean the same thing for
+  // where results come from: everywhere, not just the open folder — when
+  // you're hunting for a draft or a proposed update you generally don't
+  // know (or care) which folder it's filed under.
+  const crossFolder = !!q || filterActive;
+  let list = crossFolder
+    ? faqArticles.filter((a) =>
+        (!q || (a.title || "").toLowerCase().includes(q) || (a.summary || "").toLowerCase().includes(q)) &&
+        faqMatchesStatusFilter(a, faqStatusFilter)).sort(byFaqOrder)
+    : faqSelectedArticles();
 
-  const cat = faqTreeSelection && faqCategories.find((c) => c.id === faqTreeSelection.categoryId);
+  const cat = !crossFolder && faqTreeSelection && faqCategories.find((c) => c.id === faqTreeSelection.categoryId);
   if (heading) {
     heading.textContent = q ? `Search results (${list.length})`
+      : filterActive ? `${FAQ_STATUS_FILTER_LABELS[faqStatusFilter]} (${list.length})`
       : cat ? `${cat.name} (${list.length})` : "Articles";
   }
-  // Hidden during search too — "Search results" isn't a single category, so
+  // Hidden during search/filter too — neither is a single category, so
   // there's nothing here to show an icon/description/edit control for.
-  renderFaqCategoryHeader(q ? null : cat);
+  renderFaqCategoryHeader(cat);
   if (list.length === 0) {
     listEl.innerHTML = "";
     emptyEl.hidden = false;
     emptyEl.textContent = q ? "No articles match that search."
+      : filterActive ? "No articles match this filter."
       : faqTreeSelection ? "Nothing in this folder yet."
       : "Pick a category or folder on the left.";
     return;
   }
   emptyEl.hidden = true;
-  // Only re-orderable when showing a real folder: dragging inside a search
-  // result would be re-ordering a list that isn't a real sequence.
-  listEl.innerHTML = list.map((a) => faqArticleRowHTML(a, !q)).join("");
+  // Only re-orderable when showing a real folder: dragging inside a
+  // search/filter result would be re-ordering a list that isn't a real
+  // sequence.
+  listEl.innerHTML = list.map((a) => faqArticleRowHTML(a, !crossFolder)).join("");
 }
 
 // The selected category/sub-category's icon, an edit toggle, and its
@@ -5428,10 +5468,39 @@ function renderFaqArticlesPage() {
 
   renderFaqTree();
   renderFaqArticleList();
+  renderFaqAdminCount();
+}
 
+// The header's "N published, N draft[, N awaiting review]" line — each part
+// with a nonzero count is a clickable shortcut that applies the matching
+// status filter (setFaqStatusFilter below); a zero count stays plain text,
+// and "awaiting review" is omitted entirely rather than shown as "0 awaiting
+// review". A real <button> gets keyboard focus and a button role for free.
+function renderFaqAdminCount() {
+  const countEl = document.getElementById("faq-admin-count");
+  if (!countEl) return;
   const publishedCount = faqArticles.filter((a) => a.status === "published").length;
   const draftCount = faqArticles.filter((a) => a.status === "draft").length;
-  document.getElementById("faq-admin-count").textContent = `${publishedCount} published, ${draftCount} draft`;
+  const needsReviewCount = faqArticles.filter((a) => a.pendingRevision || a.needsReview).length;
+
+  const countPartHTML = (n, label, filter) => n > 0
+    ? `<button type="button" class="faq-admin-count-link" data-filter="${filter}">${n} ${label}</button>`
+    : `<span>${n} ${label}</span>`;
+
+  const parts = [countPartHTML(publishedCount, "published", "published"), countPartHTML(draftCount, "draft", "draft")];
+  if (needsReviewCount > 0) parts.push(countPartHTML(needsReviewCount, "awaiting review", "needs-review"));
+  countEl.innerHTML = parts.join(", ");
+}
+
+// Changes the active status filter while already on the FAQ Management
+// page (the header count links, the filter <select>) — as opposed to
+// openFaqArticlesPage, which also handles opening the page itself.
+function setFaqStatusFilter(filter) {
+  faqStatusFilter = FAQ_STATUS_FILTERS.includes(filter) ? filter : "all";
+  const filterSelect = document.getElementById("fa-status-filter");
+  if (filterSelect) filterSelect.value = faqStatusFilter;
+  setRouteHash(faqStatusFilter === "all" ? "#faq-management" : `#faq-management?filter=${faqStatusFilter}`);
+  renderFaqArticleList();
 }
 
 // One row shape for the articles pane. `orderable` is false while a
@@ -5513,7 +5582,7 @@ function wireFaqArticleRowInteractions(containerId) {
 }
 
 document.getElementById("faq-settings-btn").addEventListener("click", () => { closeNavDrawer(); openFaqSettingsPage(); });
-document.getElementById("faq-articles-btn").addEventListener("click", () => { closeNavDrawer(); openFaqArticlesPage(); });
+document.getElementById("faq-articles-btn").addEventListener("click", () => { closeNavDrawer(); openFaqArticlesPage("all"); });
 
 // ── URL routing for FAQ Management / Settings ────────────────────────────
 // These two are the only sub-pages given a real, persistent URL: reloading
@@ -5612,12 +5681,24 @@ function maybeRestoreInitialScroll() {
   requestAnimationFrame(() => requestAnimationFrame(() => window.scrollTo(0, y)));
 }
 function updateTopbarTitle() {
-  const label = ROUTE_TITLES[window.location.hash];
+  // "#faq-management?filter=needs-review" is still the FAQ Management
+  // route — strip the query before the ROUTE_TITLES lookup.
+  const label = ROUTE_TITLES[window.location.hash.split("?")[0]];
   document.title = label ? `${label} — PH Agent Console` : "PH Agent Console";
+}
+// "#faq-management?filter=<value>" is how the status filter survives a
+// reload or a shared link (see setFaqStatusFilter/openFaqArticlesPage
+// above) — anything other than a recognized FAQ_STATUS_FILTERS value
+// (missing param, typo, stale link) falls back to "all".
+function faqFilterFromHash(hash) {
+  const qIndex = hash.indexOf("?");
+  if (qIndex === -1) return "all";
+  const value = new URLSearchParams(hash.slice(qIndex + 1)).get("filter");
+  return FAQ_STATUS_FILTERS.includes(value) ? value : "all";
 }
 function applyRouteFromHash() {
   const hash = window.location.hash;
-  if (hash === "#faq-management") openFaqArticlesPage();
+  if (hash === "#faq-management" || hash.startsWith("#faq-management?")) openFaqArticlesPage(faqFilterFromHash(hash));
   else if (hash === "#settings") openFaqSettingsPage();
   else if (hash.startsWith("#faq-article/")) openFaqArticleRouteFromHash(hash);
   else if (!faqArticlesPage.hidden || !faqSettingsPage.hidden || !faqArticleEditorPage.hidden) closeAllSubPages();
@@ -5630,6 +5711,11 @@ window.addEventListener("popstate", applyRouteFromHash);
 window.addEventListener("hashchange", applyRouteFromHash);
 
 document.getElementById("fa-tree-search").addEventListener("input", renderFaqArticleList);
+document.getElementById("fa-status-filter").addEventListener("change", (e) => setFaqStatusFilter(e.target.value));
+document.getElementById("faq-admin-count").addEventListener("click", (e) => {
+  const btn = e.target.closest(".faq-admin-count-link");
+  if (btn) setFaqStatusFilter(btn.dataset.filter);
+});
 
 // ── FAQ article editor page ──────────────────────────────────────────────
 // A dedicated full-page editor, not a modal: the primary focus (title,
@@ -6333,6 +6419,16 @@ async function submitFaqArticleFromEditor(publish) {
   const categoryId = faCategorySelect.value;
   if (!title) { faTitleInput.focus(); return; }
   if (!categoryId) { await showAlert("Add a category first."); return; }
+  // A program is required on every LIVE article (not the pendingRevision
+  // path below, which never carries programId/projectId at all) so it's
+  // always in scope for the right project's FAQ impact review — see
+  // faq/README.md "Article scoping" and backlog item
+  // GiceSVMWdEiETinAVLVM, where every console-related article having no
+  // programId is exactly what made that review silently review nothing.
+  if (!faEditingPendingRevision && !(faProgramSelect.value && faProgramSelect.value !== "__new__")) {
+    await showAlert("Add a program/product first — every article needs one so deploy's FAQ impact review and the help centre's product grouping can find it.");
+    return;
+  }
 
   if (faEditingPendingRevision) {
     const a = faqArticles.find((x) => x.id === editingFaqArticleId);

@@ -1,17 +1,27 @@
-// One-off (but safe-to-repeat) backfill: assigns every faqArticles doc that
-// doesn't already have a programId to a "Personalisation Hub" program doc
-// in the top-level `programs` collection — the same collection a project
-// can optionally be grouped under (see public/js/app.js's "Programs/
-// Products" section). The 108 articles seed-faq-data.js seeds are a
-// verbatim Freshdesk import of the real Personalisation Hub Help Center, so
-// they're all genuinely Personalisation Hub content; this is what gets
-// every one of them correctly categorized without a manual pass through
-// FAQ Management's article editor.
+// One-off (but safe-to-repeat) backfill for faqArticles.programId, plus an
+// always-useful audit report (run with --report-only to just print counts
+// and change nothing).
 //
-// Idempotent: find-or-creates the program by name (never creates a second
-// "Personalisation Hub" program on a repeat run), and only ever sets
+// This used to blanket-assign every unscoped article to "Personalisation
+// Hub" on the assumption that anything without a programId was Freshdesk-
+// imported Personalisation Hub content. That assumption stopped holding the
+// moment any article about a DIFFERENT product/program (e.g. the console
+// itself — the "PH Agent Console" program) went unscoped: it would have
+// been silently mis-assigned to Personalisation Hub right along with
+// everything else, hiding exactly the kind of gap that made FAQ impact
+// review (ROUTINE_INSTRUCTIONS.md -> "FAQ impact review (Deploy flow, step
+// 3b)") inert for the console's own project — see backlog item
+// GiceSVMWdEiETinAVLVM. So this script no longer assumes; it only
+// auto-assigns Personalisation Hub to an unscoped article when nothing
+// about its title/category suggests it's about a different product, and
+// reports (never silently assigns) anything that looks like it might
+// document the console/board/help-centre tooling itself, for a person to
+// route to the right program by hand in FAQ Management.
+//
+// Idempotent: find-or-creates the "Personalisation Hub" program by name
+// (never creates a second one on a repeat run), and only ever sets
 // programId on an article that doesn't already have one — a later manual
-// re-categorization from FAQ Center (moving an article to a different
+// re-categorization from FAQ Management (moving an article to a different
 // product/program) is never overwritten by a later deploy re-running this.
 
 const { initializeApp, applicationDefault } = require("firebase-admin/app");
@@ -22,6 +32,12 @@ const db = getFirestore();
 
 const PROGRAM_NAME = "Personalisation Hub";
 
+// Keyword signal that an unscoped article is plausibly about the board/help
+// -centre tooling itself (the "PH Agent Console" program) rather than the
+// Personalisation Hub product it defaults to — title and category name are
+// the only cheap signals available without reading the full body.
+const CONSOLE_SIGNAL_RE = /\b(backlog|mcp|agent console|help ?centre|help ?center|faq management|notify claude|prototype (backlog|pipeline))\b/i;
+
 async function findOrCreateProgram(name) {
   const existing = await db.collection("programs").where("name", "==", name).limit(1).get();
   if (!existing.empty) return existing.docs[0].id;
@@ -30,21 +46,43 @@ async function findOrCreateProgram(name) {
 }
 
 async function main() {
-  const programId = await findOrCreateProgram(PROGRAM_NAME);
+  const reportOnly = process.argv.includes("--report-only");
+  const programId = reportOnly ? null : await findOrCreateProgram(PROGRAM_NAME);
 
   const articlesSnap = await db.collection("faqArticles").get();
+  const categoriesSnap = await db.collection("faqCategories").get();
+  const categoryNameById = new Map(categoriesSnap.docs.map((d) => [d.id, (d.data() || {}).name || ""]));
+
+  const byProgram = new Map(); // programId or "(none)" -> count
   let assigned = 0;
-  let skipped = 0;
+  let flaggedForReview = 0;
+
   for (const articleDoc of articlesSnap.docs) {
-    if (articleDoc.data().programId) {
-      skipped++;
+    const a = articleDoc.data() || {};
+    const key = a.programId || "(none)";
+    byProgram.set(key, (byProgram.get(key) || 0) + 1);
+
+    if (a.programId) continue; // already scoped — never overwritten here
+
+    const categoryName = categoryNameById.get(a.categoryId) || "";
+    const looksLikeConsoleContent = CONSOLE_SIGNAL_RE.test(`${a.title || ""} ${categoryName}`);
+
+    if (looksLikeConsoleContent) {
+      flaggedForReview++;
+      console.log(`FLAGGED for manual review (looks console-related, not auto-assigned): ${articleDoc.id} — "${a.title || ""}" (category: ${categoryName || "none"})`);
       continue;
     }
-    await articleDoc.ref.set({ programId, updatedAt: Timestamp.now() }, { merge: true });
+
+    if (!reportOnly) {
+      await articleDoc.ref.set({ programId, updatedAt: Timestamp.now() }, { merge: true });
+    }
     assigned++;
   }
 
-  console.log(`FAQ program backfill: ${assigned} article(s) assigned to "${PROGRAM_NAME}" (${programId}), ${skipped} already had a program`);
+  console.log(`\nFAQ program audit (${reportOnly ? "report only, no writes" : "backfill applied"}):`);
+  for (const [key, count] of byProgram) console.log(`  ${key}: ${count}`);
+  console.log(`\n${assigned} previously-unscoped article(s) ${reportOnly ? "would be" : "were"} assigned to "${PROGRAM_NAME}"${programId ? ` (${programId})` : ""}.`);
+  console.log(`${flaggedForReview} previously-unscoped article(s) flagged as possibly console-related and left unassigned for a person to route in FAQ Management.`);
 }
 
 main().catch((err) => {

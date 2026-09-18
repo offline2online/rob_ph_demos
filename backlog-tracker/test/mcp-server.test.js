@@ -489,12 +489,14 @@ async function rpc(token, method, params, id = 1) {
     }
   });
 
+  env.store.col("programs").set("prog1", { name: "Personalisation Hub" });
+
   let faqCreatedId = null;
   await test("creates a brand-new FAQ article as a draft, never published", async () => {
     env.store.col("faqCategories").set("cat2", { name: "Displays", icon: "tv", order: 1 });
     const res = await rpc(tokens.access_token, "tools/call", {
       name: "create_faq_article",
-      arguments: { title: "How QR control works on a display", categoryId: "cat2", bodyMd: "<p>Point a phone camera at the QR code.</p>", summary: "Explains QR control.", keywords: ["qr", "control"] },
+      arguments: { title: "How QR control works on a display", categoryId: "cat2", bodyMd: "<p>Point a phone camera at the QR code.</p>", summary: "Explains QR control.", keywords: ["qr", "control"], programId: "prog1" },
     });
     const payload = JSON.parse(res.body.result.content[0].text);
     assert.strictEqual(payload.created, true);
@@ -506,16 +508,37 @@ async function rpc(token, method, params, id = 1) {
     assert.strictEqual(stored.createdByEmail, TEAMMATE);
     assert.strictEqual(stored.createdVia, "mcp");
     assert.strictEqual(stored.docType, "faq");
+    assert.strictEqual(stored.programId, "prog1");
     assert.ok(!stored.pendingRevision, "a brand-new article has nothing pending to review — it's just a draft");
   });
 
   await test("de-duplicates a slug that's already taken", async () => {
     const res = await rpc(tokens.access_token, "tools/call", {
       name: "create_faq_article",
-      arguments: { title: "How QR control works on a display", categoryId: "cat2", bodyMd: "<p>Second one.</p>" },
+      arguments: { title: "How QR control works on a display", categoryId: "cat2", bodyMd: "<p>Second one.</p>", programId: "prog1" },
     });
     const payload = JSON.parse(res.body.result.content[0].text);
     assert.strictEqual(payload.slug, "how-qr-control-works-on-a-display-2");
+  });
+
+  await test("refuses to create a FAQ article with no programId and no projectId to derive one from", async () => {
+    const res = await rpc(tokens.access_token, "tools/call", {
+      name: "create_faq_article",
+      arguments: { title: "Unscoped", categoryId: "cat2", bodyMd: "<p>x</p>" },
+    });
+    assert.strictEqual(res.body.result.isError, true);
+    assert.match(res.body.result.content[0].text, /programId is required/);
+  });
+
+  await test("defaults programId from projectId's own program when programId is omitted", async () => {
+    env.store.col("projects").set("proj1", Object.assign(env.store.col("projects").get("proj1"), { programId: "prog1" }));
+    const res = await rpc(tokens.access_token, "tools/call", {
+      name: "create_faq_article",
+      arguments: { title: "Scoped via project", categoryId: "cat2", bodyMd: "<p>x</p>", projectId: "proj1" },
+    });
+    const payload = JSON.parse(res.body.result.content[0].text);
+    assert.strictEqual(payload.created, true);
+    assert.strictEqual(env.store.col("faqArticles").get(payload.articleId).programId, "prog1");
   });
 
   await test("refuses to create a FAQ article against a categoryId that doesn't exist", async () => {

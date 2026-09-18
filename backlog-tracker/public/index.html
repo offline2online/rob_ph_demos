@@ -562,9 +562,9 @@
                 <option value="">None — general article</option>
               </select>
               <p class="field-hint">Linking a project is what lets a future feature launch flag its own FAQs for review — see "Needs review" below.</p>
-              <label class="field-label" for="fa-program-select">Product / Program (optional)</label>
+              <label class="field-label" for="fa-program-select">Product / Program</label>
               <select id="fa-program-select"></select>
-              <p class="field-hint">Which product/program this article belongs to — the same Programs/Products used to group projects on the board. This is what the FAQ Management folder view groups by.</p>
+              <p class="field-hint">Which product/program this article belongs to — the same Programs/Products used to group projects on the board. Required: this is what a deploy's FAQ impact review uses to find articles a shipped change might affect, so an unscoped article is invisible to it. Picking a linked project above fills this in automatically if that project has its own program set.</p>
               <label class="fa-needs-review-toggle">
                 <input type="checkbox" id="fa-needs-review">
                 Needs review
@@ -806,6 +806,12 @@
             <button type="button" class="icon-btn" id="faq-cat-edit-cancel-btn" title="Cancel">&times;</button>
           </div>
           <div class="fa-filter-row">
+            <select id="fa-status-filter" aria-label="Filter articles by status">
+              <option value="all">All</option>
+              <option value="draft">Draft</option>
+              <option value="needs-review">Needs review</option>
+              <option value="published">Published</option>
+            </select>
             <input type="search" id="fa-tree-search" placeholder="Search articles in this folder…">
           </div>
           <div id="faq-article-list"></div>

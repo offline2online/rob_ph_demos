@@ -672,6 +672,35 @@ and final report instead, so a human can decide. The DEPLOY REQUEST
 `text` may also carry a `Product/Program:` line naming the program — treat
 it as a hint only; the Firestore `programId` is authoritative.
 
+**If that union comes back empty, find out why before reporting "nothing in
+scope" — an empty union means one of two very different things, and
+conflating them is exactly what let step 3b silently do nothing for an
+entire project's whole lifetime** (backlog item
+`GiceSVMWdEiETinAVLVM` — zero `faqArticles` ever carried the "PH Agent
+Console" program's id, so every deploy on that project reported "nothing
+in scope" whatever shipped, and nobody could tell that from "genuinely
+nothing changed this train"). Distinguish the two cases explicitly in your
+report:
+
+- **"No article changed by this train"** — the union has members (articles
+  really are scoped to this program/project), you read the diff, and none
+  of those specific articles needed a change this time. This is the normal,
+  expected outcome most deploys should have.
+- **"No article is scoped to this program at all"** — the union came back
+  empty, AND the `programId`-only query above it (the first of the two
+  queries — every article carrying this program's id at all, dropping the
+  `projectId` filter) is *also* empty, project-wide, not just among
+  articles that happen to also match this project. That's a stronger check
+  than "the union was empty": it confirms no article anywhere carries this
+  program's id, rather than just no article of this program's happening to
+  match this train. A zero here — with a `programId` set on the project —
+  is a scoping gap that needs a human to fix (route existing articles to
+  this program in FAQ Management, or via
+  `backlog-tracker/scripts/backfill-faq-program.js`), not a quiet "nothing
+  to review." Say so explicitly in the note and final report, the same way
+  a project with no `programId` at all is already called out below — never
+  let this look identical to the routine case above.
+
 Skip articles that have `retiredAt` set, and skip any article that
 already carries a `pendingRevision` whose `reviewStatus` is
 `"approved"` — a human has already signed that off; don't overwrite it.
@@ -894,7 +923,11 @@ in-scope articles you checked, and for each proposed revision the article
 title, its `faqArticles` id, and the one-line reason — or "no FAQ changes
 needed" with a sentence on why (e.g. "internal refactor, nothing
 customer-visible"). Name any out-of-scope article you believe is affected
-but did not touch.
+but did not touch. **If the in-scope union came back empty, say plainly
+which of the two cases in step 3b's "Establish scope" section it was** —
+"no article changed by this train" (normal) vs. "no article is scoped to
+this program at all" (a gap needing a human) — never just "0 articles
+in scope" with no indication which one happened.
 
 **For a Groom Backlog run (`=== GROOM REQUEST ===`), report differently:**
 list each item groomed, its corrected `category`, and a one-line version of

@@ -614,7 +614,7 @@ per-project Firestore fields, and this collection.
 ```
 faqCategories/{id}: { name, icon, description, order, createdAt, updatedAt }
 faqArticles/{id}: {
-  categoryId, projectId (nullable), title, slug, summary, bodyMd,
+  categoryId, programId (nullable), projectId (nullable), title, slug, summary, bodyMd,
   docType: "faq" | "how-to" | "reference" | "explanation",
   keywords: string[], status: "draft" | "published", needsReview: boolean,
   order, createdAt, updatedAt, publishedAt,
@@ -1389,6 +1389,19 @@ diff clearly affects them; the Routine names them in its report for a
 human to handle. The deploy fire `text` carries a `Product/Program:` line
 as a hint; Firestore is the authority.
 
+**A program with zero scoped articles is a configuration gap, not "nothing
+to review".** Every `faqArticles` doc predating this requirement could sit
+with no `programId` at all, in which case the query above returns nothing
+for every project under that program on every deploy, forever, with no
+visible symptom — exactly what happened to "PH Agent Console" (backlog
+item `GiceSVMWdEiETinAVLVM`). The article editor (and `create_faq_article`
+over MCP) now requires a `programId` on every new/edited-and-saved article
+so this can't recur (see `faq/README.md` → "Article scoping"), and the
+Deploy flow's step 3b report distinguishes "0 articles changed by this
+train" from "0 articles scoped to this program at all" — see
+`ROUTINE_INSTRUCTIONS.md` → "FAQ impact review (Deploy flow, step 3b)" for
+the exact check.
+
 **Review UI** (FAQ Management → row badge **Proposed update** → ⋮ →
 **Review proposed update**, `#faq-revision-review-page`): the reason, the
 source ticket(s) with their live pipeline status, and two views — *Changes*
@@ -1444,8 +1457,13 @@ MCP server" above) reuse this exact mechanism rather than a second one:
   `slug` is derived from the title (or given explicitly) and de-duplicated
   with a `-2`, `-3`, … suffix rather than rejected; `docType` must be one of
   the four Diátaxis types (`docs/CONTRIBUTING-docs.md` §2), defaulting to
-  `"faq"`. A person still reviews and publishes it from FAQ Management like
-  any other draft — this tool never writes `status: "published"`.
+  `"faq"`. `programId` must resolve to one — either passed directly, or
+  derived from `projectId`'s own `programId` when `programId` is omitted —
+  refused otherwise, so an article can never be created invisible to every
+  project's FAQ impact review (see "FAQ / Help Center" → article scoping,
+  and `faq/README.md`). A person still reviews and publishes it from FAQ
+  Management like any other draft — this tool never writes
+  `status: "published"`.
 - `update_faq_article` proposes a change to an existing article the same
   way the Deploy flow's Routine does (step 3b), except: `proposedBy` carries
   the caller's real signed-in email rather than the literal `"claude"`, with
