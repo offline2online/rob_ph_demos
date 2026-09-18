@@ -1735,8 +1735,8 @@ const TOOLS = [
         keywords: { type: "array", items: { type: "string" }, description: `Search terms. Up to ${FAQ_KEYWORDS_MAX}.` },
         docType: { type: "string", enum: FAQ_DOC_TYPES, description: "This article's Diátaxis type per docs/CONTRIBUTING-docs.md §2. Defaults to 'faq'." },
         bodyMd: { type: "string", description: `The article body — the same HTML shape the console's rich-text editor saves (paragraphs, headings, lists, callouts; see REQUIREMENTS.md -> "Rich formatting in article bodies"). Up to ${FAQ_BODY_MAX} characters.` },
-        programId: { type: "string", description: "Optional — an existing programs doc id." },
-        projectId: { type: "string", description: "Optional — an existing project id, from list_projects." },
+        programId: { type: "string", description: "An existing programs doc id. Required unless projectId is given and that project itself has a programId set (used as the default) — every article needs to resolve to a program so FAQ impact review on a deploy can find it." },
+        projectId: { type: "string", description: "Optional — an existing project id, from list_projects. Also supplies the default programId (see above) when programId is omitted." },
       },
       required: ["title", "categoryId", "bodyMd"], additionalProperties: false,
     },
@@ -1762,14 +1762,27 @@ const TOOLS = [
       const docType = args.docType != null ? String(args.docType) : "faq";
       if (!FAQ_DOC_TYPES.includes(docType)) return toolError(`docType must be one of: ${FAQ_DOC_TYPES.join(", ")}.`);
       let projectId = null;
+      let projectData = null;
       if (args.projectId != null && String(args.projectId).trim()) {
         projectId = String(args.projectId).trim();
-        if (!(await db().collection("projects").doc(projectId).get()).exists) return toolError(`No project with id ${projectId}. Call list_projects first.`);
+        const projSnap = await db().collection("projects").doc(projectId).get();
+        if (!projSnap.exists) return toolError(`No project with id ${projectId}. Call list_projects first.`);
+        projectData = projSnap.data() || {};
       }
       let programId = null;
       if (args.programId != null && String(args.programId).trim()) {
         programId = String(args.programId).trim();
         if (!(await db().collection("programs").doc(programId).get()).exists) return toolError(`No program with id ${programId}.`);
+      } else if (projectData && projectData.programId) {
+        programId = projectData.programId;
+      }
+      // Every article needs to resolve to a program (see faq/README.md ->
+      // "Article scoping") so a deploy's FAQ impact review can ever find
+      // it — an unscoped article was exactly the gap that left every
+      // console-related article invisible to that review (backlog item
+      // GiceSVMWdEiETinAVLVM).
+      if (!programId) {
+        return toolError("programId is required (or pass projectId for a project whose own programId can be used as the default). Call list_projects to see each project's programId, or ask a person which program this article belongs to.");
       }
       const slugBase = slugifyFaq(String(args.slug || "").trim() || title);
       if (!slugBase) return toolError("Could not derive a slug — give a title with at least one letter or number, or pass slug explicitly.");

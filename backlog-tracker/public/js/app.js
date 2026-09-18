@@ -4661,6 +4661,17 @@ const faProjectSelect = document.getElementById("fa-project-select");
 // a second, parallel product/program taxonomy just for articles.
 const faProgramSelect = document.getElementById("fa-program-select");
 wireProgramSelect(faProgramSelect);
+// Picking a project first is a free hint at the right program — default to
+// it (once) so an editor isn't left to look the program up separately, same
+// spirit as the "require a program" check in submitFaqArticleFromEditor.
+// Only fires when the program field is still unset, so it never clobbers a
+// program the editor already chose (including on load, before this listens
+// for further changes) or the article's own already-saved value.
+faProjectSelect.addEventListener("change", () => {
+  if (faProgramSelect.value) return;
+  const project = projects.find((p) => p.id === faProjectSelect.value);
+  if (project && project.programId) populateProgramSelect(faProgramSelect, project.programId);
+});
 
 function openFaqSettingsPage() {
   closeAllSubPages();
@@ -6333,6 +6344,16 @@ async function submitFaqArticleFromEditor(publish) {
   const categoryId = faCategorySelect.value;
   if (!title) { faTitleInput.focus(); return; }
   if (!categoryId) { await showAlert("Add a category first."); return; }
+  // A program is required on every LIVE article (not the pendingRevision
+  // path below, which never carries programId/projectId at all) so it's
+  // always in scope for the right project's FAQ impact review — see
+  // faq/README.md "Article scoping" and backlog item
+  // GiceSVMWdEiETinAVLVM, where every console-related article having no
+  // programId is exactly what made that review silently review nothing.
+  if (!faEditingPendingRevision && !(faProgramSelect.value && faProgramSelect.value !== "__new__")) {
+    await showAlert("Add a program/product first — every article needs one so deploy's FAQ impact review and the help centre's product grouping can find it.");
+    return;
+  }
 
   if (faEditingPendingRevision) {
     const a = faqArticles.find((x) => x.id === editingFaqArticleId);
