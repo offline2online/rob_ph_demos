@@ -593,7 +593,7 @@ function TypesView({ types, setTypes, playlists, setPlaylists, sel, setSel, temp
 
   return (
     <div ref={columnsRef} style={{ display: "flex", gap: 20, alignItems: "flex-start", flexWrap: "wrap" }}>
-      <div style={{ width: 215, flexShrink: 0 }}>
+      <div style={{ width: 215, flexShrink: 0, position: "sticky", top: 20, maxHeight: "calc(100vh - 40px)", overflowY: "auto", overflowX: "hidden" }}>
         <Btn variant="primary" style={{ width: "100%", justifyContent: "center", marginBottom: 10 }}
           onClick={() => {
             const id = `dt_${Date.now()}`;
