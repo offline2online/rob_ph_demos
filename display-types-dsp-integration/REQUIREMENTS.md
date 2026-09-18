@@ -707,8 +707,14 @@ company-level `exchange` settings — `client {name, domain, contactEmail}`
 `supplyChain {hp}` (the node's `asi` and `sid` derive from the client's
 domain and seller ID), OpenRTB options, pre-auction enforcement, play
 window, audience currency, reporting floor. Both in
-`app/src/model/sellside.js`. The `reservation` and `delivery` records
-described in §6/§7 are spec only in this release.
+`app/src/model/sellside.js`. The company-level `companyLists` record also
+carries the pricing scalars (`floorCpm`, `personalisedMultiplier`,
+`interactiveMultiplier`) and the category lists (`categoryAllowList`,
+`categoryBlockList`) alongside the advertiser lists. `preAuction`,
+`playWindowHours`, `audienceCurrency` and `reportingFloorN` are retained on
+`exchange` but no longer surfaced anywhere in the UI (18 Sep 2026). The
+`reservation` and `delivery` records described in §6/§7 are spec only in
+this release.
 
 ## Functional requirements
 
@@ -739,7 +745,20 @@ Each item is annotated with where it lives in the prototype, or marked
 - **Per-partner targeting attribute enablement**: which registry attributes
   this partner may target, visitor attributes off by default. *(Partners / DSPs → Targeting attributes this partner may use)*
 - **Company advertiser lists** — one central whitelist/blacklist, adopted by
-  every connected DSP, showing which partners adopt and which have unlinked. *(Partners / DSPs → Advertiser lists)*
+  every connected DSP, showing which partners adopt and which have unlinked. *(Partners / DSPs → Advertiser settings → List management)*
+- **Company category lists** — an IAB-category whitelist/blacklist held in the
+  same module as the advertiser lists, so both are managed in one place. *(Partners / DSPs → Advertiser settings → List management)*
+- **Company pricing** — floor CPM plus a personalised and an interactive price
+  multiplier, compounding onto the floor. Google DSP and Amazon Ads DSP
+  inherit these rather than carrying their own. *(Partners / DSPs → Advertiser settings → Pricing)*
+- **Advertiser inventory** — every advertiser-owned position across the
+  estate, with its display type, playlist and slot, tagged *All advertisers*
+  for open RTB or with the advertiser it is reserved to. *(Partners / DSPs → Advertiser settings → Inventory)*
+- **Localisation vocabulary**, read-only: every attribute a campaign can be
+  localised on, grouped by the four families of the interface contract, with
+  type, permitted values and whether it is partner-contributed. Owned by Live
+  Visitor Profile; which of them a given partner may target stays on the
+  partner. *(Partners / DSPs → Advertiser settings → Localisation variables)*
 - **Per-DSP list override**: unlink (copying the inherited lists down) and
   relink (discarding the partner's own), with inherited lists shown read-only
   and visually distinct from an override. *(Partners / DSPs → partner → Advertiser whitelist / blacklist)*
@@ -756,7 +775,7 @@ Each item is annotated with where it lives in the prototype, or marked
   ceiling and timeout, alongside the account credentials already modelled. *(Partners / DSPs → Bidder integration)*
 - **Pre-auction enforcement**: floor, permitted categories and the advertiser
   blocklist applied to bids before a win, keyed on the seat or advertiser
-  identity in the bid response. *(Partners / DSPs → Exchange settings → Pre-auction enforcement)*
+  identity in the bid response. *(modelled in `DEFAULT_EXCHANGE.preAuction` and described on each partner; the Exchange settings toggles for it were removed on 18 Sep 2026 — the floor and category lists are now set once in Advertiser settings)*
 - **`sellers.json` and a `SupplyChain` declaration**, generated from the
   client organisation's details — the client running the instance is the
   seller of record. *(Partners / DSPs → Exchange settings)*

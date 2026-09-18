@@ -102,16 +102,32 @@ Three nav items:
   client is the seller of record and the exchange, not Personalisation Hub.
   The panel takes the client's organisation name, domain, seller ID and
   ad-ops contact, and generates `sellers.json` (published under the client's
-  domain) and the SupplyChain node from them; then OpenRTB DOOH options,
-  pre-auction enforcement, play window, audience currency, reporting floor,
-  bidder readiness. **Advertiser lists** (company whitelist/blacklist, who
-  adopts and who has unlinked); per partner: outbound credentials, inbound
-  bidder config, deals, inventory rules, **targeting attributes the partner
-  may use** (visitor attributes off by default, contributed attributes
-  marked), lists with unlink/relink, advertisers with the
-  **approval-required** flag, positions sold. Tier 1 providers (Google DSP,
-  Amazon Ads DSP, The Trade Desk, in onboarding order) and a tier-2
-  **PH-native partner** (Blackmores is the worked example).
+  domain) and the SupplyChain node from them; then OpenRTB DOOH options and
+  bidder readiness. Pre-auction enforcement, play window, audience currency
+  and reporting floor were taken off this panel on 18 Sep 2026 — the fields
+  survive in `DEFAULT_EXCHANGE` (nothing reads them), so reinstating any of
+  them is UI-only work.
+  **Advertiser settings** — the company-wide panel: **pricing** (floor CPM,
+  personalised and interactive price multipliers), **list management**
+  (advertiser *and* IAB-category whitelists/blacklists in the one module),
+  **inventory** (every advertiser-owned position across the estate, with an
+  *All advertisers* tag for open RTB or the named advertiser it is reserved
+  to), **localisation variables** (the Live Visitor Profile registry as this
+  project receives it, read-only — see `shared/interface-contract.md`), and
+  who adopts these settings vs. who has unlinked.
+  Per partner: outbound credentials, inbound bidder config, deals,
+  **targeting attributes the partner may use** (visitor attributes off by
+  default, contributed attributes marked), lists with unlink/relink,
+  advertisers with the **approval-required** flag, positions sold. Google
+  DSP and Amazon Ads DSP inherit floor, multipliers and categories from
+  Advertiser settings rather than carrying their own copy
+  (`INHERITS_COMPANY_INVENTORY` in `app/src/views/PartnersView.jsx`).
+  The left-hand column lists the three tier-1 providers (Google DSP, Amazon
+  Ads DSP, The Trade Desk, in onboarding order) **once each**, tagged
+  *Set up* / *Connection error* / *Not set up yet* — there is deliberately no
+  second "add a partner" list underneath, which is what previously made a
+  connected provider appear twice. A tier-2 **PH-native partner**
+  (Blackmores is the worked example) is modelled but not offered here.
 
 **Not in this release, and not asked for**: the Render Preview, Campaigns &
 Reservations, Inventory & Venues and Delivery & Analytics screens added on a
