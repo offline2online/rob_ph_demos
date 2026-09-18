@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from "react";
 import { T, MONO, FONT, Icon, Pill, Btn, SectionLabel, Note, Callout, Grid, Fld, ctl, small, inputStyle, Table, TRow, TCell, Toggle, Chips, Segmented, JsonBlock, Empty, uid, ADVERTISER_COLOUR, useViewportWidth } from "../ui.jsx";
 import { tpIcon } from "../model/schema.js";
-import { DSP_PROVIDERS, ONBOARDING_ORDER, BIDDER_FIELDS, AUCTION_TYPES, CURRENCIES, IAB_CATEGORIES, COMPANY_LISTS, ANY_PARTNER, RTB, partner as mkPartner, partnerById, providerOf, partnerColour, isDsp, missingCreds, effectiveLists, isBlocked, ATTRIBUTE_REGISTRY, ATTRIBUTE_FAMILIES, permittedVocabulary } from "../model/sellside.js";
+import { DSP_PROVIDERS, ONBOARDING_ORDER, BIDDER_FIELDS, AUCTION_TYPES, CURRENCIES, IAB_CATEGORIES, COMPANY_LISTS, ANY_PARTNER, RTB, ALLOW_LIST, partner as mkPartner, partnerById, providerOf, partnerColour, isDsp, missingCreds, effectiveLists, isBlocked, ATTRIBUTE_REGISTRY, ATTRIBUTE_FAMILIES, permittedVocabulary } from "../model/sellside.js";
 
 const STATUS_STYLE = {
   connected: { label: "Connected", colour: T.success, icon: "check_circle" },
@@ -9,8 +9,11 @@ const STATUS_STYLE = {
   error: { label: "Connection error", colour: T.error, icon: "error" },
 };
 const EXCHANGE = "__exchange__";
+/* These two take floor, multipliers and categories from Advertiser settings
+   rather than carrying their own copy of them. */
+const INHERITS_COMPANY_INVENTORY = ["google_dsp", "amazon_dsp"];
 
-export default function PartnersView({ partners, setPartners, companyLists, setCompanyLists, exchange, setExchange, types, goToType, sel, setSel }) {
+export default function PartnersView({ partners, setPartners, companyLists, setCompanyLists, exchange, setExchange, types, playlists, goToType, sel, setSel }) {
   const [adding, setAdding] = useState(null);
   const [reveal, setReveal] = useState({});
   const canvasW = useViewportWidth();
@@ -75,7 +78,7 @@ export default function PartnersView({ partners, setPartners, companyLists, setC
       <div style={{ width: listCollapsed ? 64 : 260, flexShrink: 0, position: "sticky", top: 20, maxHeight: "calc(100vh - 40px)", overflowY: "auto", overflowX: "hidden", transition: "width .15s" }}>
         {!listCollapsed && <SectionLabel style={{ marginTop: 0 }}>Company</SectionLabel>}
         <ListCard collapsed={listCollapsed} active={onExchange} onClick={() => { setSel(EXCHANGE); setAdding(null); }} icon="storefront" title="Exchange settings" sub={`${(exchange.client && exchange.client.name) || "Client"} is seller of record · OpenRTB ${exchange.openRtb.version}`} />
-        <ListCard collapsed={listCollapsed} active={onCompany} onClick={() => { setSel(COMPANY_LISTS); setAdding(null); }} icon="rule" title="Advertiser lists" sub={`${companyLists.allowList.length} allowed · ${companyLists.blockList.length} blocked · ${partners.filter((x) => isDsp(x) && x.listsLinked !== false).length} adopting`} />
+        <ListCard collapsed={listCollapsed} active={onCompany} onClick={() => { setSel(COMPANY_LISTS); setAdding(null); }} icon="rule" title="Advertiser settings" sub={`${companyLists.allowList.length} allowed · ${companyLists.blockList.length} blocked · ${partners.filter((x) => isDsp(x) && x.listsLinked !== false).length} adopting`} />
 
         {!listCollapsed && <SectionLabel>Partner DSPs</SectionLabel>}
         {!listCollapsed && <div style={{ fontSize: 11.5, color: T.micro, marginBottom: 8, lineHeight: 1.5 }}>Tier 1 — the DSP's own published interface, in onboarding order (REQUIREMENTS §7).</div>}
@@ -131,7 +134,7 @@ export default function PartnersView({ partners, setPartners, companyLists, setC
       {/* ------------------------------------------------ detail */}
       <div style={{ flex: 1, minWidth: 0 }}>
         {onExchange ? <ExchangePanel exchange={exchange} setExchange={setExchange} partners={partners} />
-        : onCompany ? <CompanyListsPanel lists={companyLists} mut={companyMut} partners={partners} onOpenPartner={(id) => setSel(id)} />
+        : onCompany ? <CompanyListsPanel lists={companyLists} setLists={setCompanyLists} mut={companyMut} partners={partners} types={types} playlists={playlists} onOpenPartner={(id) => setSel(id)} onOpenType={goToType} />
         : adding ? <AddPartnerCard providerKey={adding} onCancel={() => setAdding(null)} onAdd={() => addPartner(adding)} />
         : (
           <>
@@ -190,6 +193,12 @@ export default function PartnersView({ partners, setPartners, companyLists, setC
                   </>
                 )}
 
+                {INHERITS_COMPANY_INVENTORY.includes(p.provider) ? (
+                  <Callout tone="info" icon="south" style={{ marginTop: 16 }}>
+                    <b>Inventory rules are inherited from Advertiser settings.</b> Floor price, the price multipliers and the category whitelist / blacklist are set once for the company and apply here — there is nothing to set per partner.
+                  </Callout>
+                ) : (
+                <>
                 <SectionLabel>Inventory rules — applied pre-auction</SectionLabel>
                 <Grid cols={3}>
                   <Fld label="Auction type"><select value={p.auctionType} onChange={(e) => setP({ auctionType: e.target.value })} style={ctl}>{AUCTION_TYPES.map((a) => <option key={a}>{a}</option>)}</select></Fld>
@@ -199,6 +208,8 @@ export default function PartnersView({ partners, setPartners, companyLists, setC
                 <Fld label="Permitted categories" hint="Empty means every category this partner offers is eligible."><Chips options={IAB_CATEGORIES} value={p.categories} onChange={(v) => setP({ categories: v })} disabledSet={p.exclusions} /></Fld>
                 <div style={{ height: 14 }} />
                 <Fld label="Competitive exclusions" hint="Blocked outright, whatever the bid. Overrides the permitted list."><Chips options={IAB_CATEGORIES} value={p.exclusions} onChange={(v) => setP({ exclusions: v, categories: p.categories.filter((c) => !v.includes(c)) })} tone={T.error} /></Fld>
+                </>
+                )}
               </>
             )}
 
@@ -386,25 +397,119 @@ function ExchangePanel({ exchange, setExchange, partners }) {
   );
 }
 
-function CompanyListsPanel({ lists, mut, partners, onOpenPartner }) {
+/* The company-wide advertiser settings: pricing, the advertiser and category
+   lists every DSP adopts unless it unlinks, the inventory those advertisers
+   hold, and the localisation vocabulary a campaign can vary on. */
+function CompanyListsPanel({ lists, setLists, mut, partners, types, playlists, onOpenPartner, onOpenType }) {
   const dsps = partners.filter(isDsp);
   const adopting = dsps.filter((x) => x.listsLinked !== false);
   const own = dsps.filter((x) => x.listsLinked === false);
+  const setPricing = (k, v) => setLists({ ...lists, [k]: v });
+  const plName = (id) => (playlists || []).find((x) => x.id === id)?.name || "—";
+
+  /* Every advertiser-owned position across the estate, with the advertiser it
+     is assigned to. "All advertisers" is open RTB — no single name on it. */
+  const inventory = useMemo(() => {
+    const out = [];
+    (types || []).forEach((t) => (t.phExtensions?.slots || []).forEach((sl, i) => {
+      if (sl.owner !== "advertiser") return;
+      const pid = sl.partnerId || ANY_PARTNER;
+      const pr = pid === ANY_PARTNER ? null : partnerById(partners, pid);
+      const open = !sl.advertiser || sl.advertiser === RTB;
+      const allow = sl.advertiser === ALLOW_LIST;
+      out.push({
+        typeId: t.id, typeName: t.name, touchPoint: t.touchPoint, slot: i + 1, label: sl.label,
+        playlist: plName(t.defaultPlaylistId),
+        partnerName: pr ? pr.name : "Any connected DSP",
+        tags: open ? [{ text: "All advertisers", all: true }]
+          : allow ? [{ text: `Whitelist (${(lists.allowList || []).length})`, all: true }]
+          : [{ text: sl.advertiser, all: false }],
+      });
+    }));
+    return out;
+  }, [types, partners, playlists, lists.allowList]);
+
   return (
     <>
       <div style={{ display: "flex", alignItems: "flex-start", gap: 12, flexWrap: "wrap" }}>
         <Icon name="rule" size={26} style={{ color: T.primary, marginTop: 2 }} />
-        <div style={{ flex: 1, minWidth: 200 }}><div style={{ fontSize: 16, fontWeight: 600 }}>Company advertiser lists</div><div style={{ fontSize: 12, color: T.muted, marginTop: 4 }}>Defined once and adopted by every connected DSP that has not unlinked.</div></div>
+        <div style={{ flex: 1, minWidth: 200 }}><div style={{ fontSize: 16, fontWeight: 600 }}>Advertiser settings</div><div style={{ fontSize: 12, color: T.muted, marginTop: 4 }}>Set once here and adopted by every connected DSP that has not unlinked.</div></div>
         <Pill color={T.primary} bg="#fff" border={T.primary}><Icon name="link" size={13} />{adopting.length} of {dsps.length} adopting</Pill>
       </div>
-      <SectionLabel>Lists</SectionLabel>
-      <Grid cols={2}>
-        <ListEditor label="Whitelist — only these may win" tone={T.success} icon="verified" items={lists.allowList} suggestions={[]} onAdd={(n) => mut.add("allowList", "blockList", n)} onRemove={(id) => mut.remove("allowList", id)} empty="Empty — a position set to whitelist-only would never fill." />
-        <ListEditor label="Blacklist — these may never win" tone={T.error} icon="block" items={lists.blockList} suggestions={[]} onAdd={(n) => mut.add("blockList", "allowList", n)} onRemove={(id) => mut.remove("blockList", id)} empty="Empty — nothing is blocked anywhere by default." />
+
+      <SectionLabel>Pricing</SectionLabel>
+      <Grid cols={3}>
+        <Fld label="Floor price (CPM)" hint="The company floor. Bids below it never win a position.">
+          <input type="number" step="0.10" value={lists.floorCpm ?? ""} onChange={(e) => setPricing("floorCpm", e.target.value === "" ? null : Number(e.target.value))} placeholder="No floor" style={ctl} />
+        </Fld>
+        <Fld label="Personalised price multiplier" hint="Applied to the floor when a position renders against a visitor attribute rather than a plain rotation.">
+          <input type="number" step="0.05" value={lists.personalisedMultiplier ?? ""} onChange={(e) => setPricing("personalisedMultiplier", e.target.value === "" ? null : Number(e.target.value))} placeholder="1.00" style={ctl} />
+        </Fld>
+        <Fld label="Interactive price multiplier" hint="Applied when the position is interactive — QR control, kiosk touch or a paired phone.">
+          <input type="number" step="0.05" value={lists.interactiveMultiplier ?? ""} onChange={(e) => setPricing("interactiveMultiplier", e.target.value === "" ? null : Number(e.target.value))} placeholder="1.00" style={ctl} />
+        </Fld>
       </Grid>
-      <Note>A DSP's advertiser universe is not enumerable from here, so type any name. An advertiser cannot sit on both lists. <b>The blacklist always applies</b> wherever these lists are adopted — subtracted from open bidding and from the whitelist alike — and no position can opt out of it. The whitelist is the part a position chooses to use.</Note>
+      <Note>A multiplier of <b>1.00</b> leaves the floor as it is. Both multipliers compound onto the floor above, so an interactive position shown against a visitor attribute carries both.</Note>
+
+      <SectionLabel>List management</SectionLabel>
+      <div style={{ fontSize: 12, color: T.muted, marginBottom: 10 }}>Advertisers and IAB categories are whitelisted and blacklisted from here, in the same place.</div>
+      <Grid cols={2}>
+        <ListEditor label="Advertisers — whitelist" tone={T.success} icon="verified" items={lists.allowList} suggestions={[]} onAdd={(n) => mut.add("allowList", "blockList", n)} onRemove={(id) => mut.remove("allowList", id)} empty="Empty — a position set to whitelist-only would never fill." />
+        <ListEditor label="Advertisers — blacklist" tone={T.error} icon="block" items={lists.blockList} suggestions={[]} onAdd={(n) => mut.add("blockList", "allowList", n)} onRemove={(id) => mut.remove("blockList", id)} empty="Empty — nothing is blocked anywhere by default." />
+        <ListEditor label="Categories — whitelist" tone={T.success} icon="category" items={lists.categoryAllowList || []} suggestions={IAB_CATEGORIES.map((c) => ({ id: c, name: c }))} onAdd={(n) => mut.add("categoryAllowList", "categoryBlockList", n)} onRemove={(id) => mut.remove("categoryAllowList", id)} empty="Empty — every category a partner offers is eligible." addLabel="Add a category…" suggestLabel="Categories:" />
+        <ListEditor label="Categories — blacklist" tone={T.error} icon="block" items={lists.categoryBlockList || []} suggestions={IAB_CATEGORIES.map((c) => ({ id: c, name: c }))} onAdd={(n) => mut.add("categoryBlockList", "categoryAllowList", n)} onRemove={(id) => mut.remove("categoryBlockList", id)} empty="Empty — no category is blocked by default." addLabel="Add a category…" suggestLabel="Categories:" />
+      </Grid>
+      <Note>A DSP's advertiser universe is not enumerable from here, so type any name. Nothing can sit on both lists. <b>The blacklist always applies</b> wherever these lists are adopted — subtracted from open bidding and from the whitelist alike — and no position can opt out of it. The whitelist is the part a position chooses to use.</Note>
+
+      <SectionLabel>Inventory</SectionLabel>
+      {inventory.length === 0 ? <Empty icon="view_week">No advertiser position anywhere yet. Set a position's owner to <b>Advertiser</b> on a display type and it appears here.</Empty> : (
+        <Table cols="1.3fr 1.2fr 46px 1fr 1.1fr 62px" header={["Display type", "Playlist", "Slot", "Position", "Advertisers", ""]}>
+          {inventory.map((u, i) => (
+            <TRow key={`${u.typeId}-${u.slot}`} cols="1.3fr 1.2fr 46px 1fr 1.1fr 62px" last={i === inventory.length - 1}>
+              <TCell><span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}><Icon name={tpIcon(u.touchPoint)} size={14} style={{ color: T.muted }} />{u.typeName}</span></TCell>
+              <TCell muted>{u.playlist}</TCell>
+              <TCell muted>{u.slot}</TCell>
+              <TCell>{u.label}<div style={{ fontSize: 11, color: T.micro }}>{u.partnerName}</div></TCell>
+              <TCell style={{ whiteSpace: "normal" }}>
+                <span style={{ display: "inline-flex", flexWrap: "wrap", gap: 4 }}>
+                  {u.tags.map((tg) => <Pill key={tg.text} color={tg.all ? ADVERTISER_COLOUR : T.text} bg="#fff" border={tg.all ? ADVERTISER_COLOUR : T.border}>{tg.all && <Icon name="groups" size={12} />}{tg.text}</Pill>)}
+                </span>
+              </TCell>
+              <TCell><Btn variant="text" style={{ height: 26, fontSize: 12, padding: 0 }} onClick={() => onOpenType(u.typeId)}>Open</Btn></TCell>
+            </TRow>
+          ))}
+        </Table>
+      )}
+      <Note>An <b>All advertisers</b> tag is open RTB — the position is offered to every advertiser the partner can fill it with, minus the blacklist. A named tag is a position reserved to that advertiser, which is why blocking an advertiser flags anything already reserved to it.</Note>
+
+      <SectionLabel>Localisation variables</SectionLabel>
+      <div style={{ fontSize: 12, color: T.muted, lineHeight: 1.6, marginBottom: 10 }}>
+        Everything a campaign can be localised on. Owned by <b>Live Visitor Profile</b> and shared through the interface contract, so this is the vocabulary as Display Types receives it — which of these a given partner may target is set on that partner.
+      </div>
+      {Object.entries(ATTRIBUTE_FAMILIES).map(([fk, fam]) => {
+        const attrs = ATTRIBUTE_REGISTRY.filter((a) => a.family === fk);
+        if (attrs.length === 0) return null;
+        return (
+          <div key={fk} style={{ marginBottom: 12 }}>
+            <div style={{ fontSize: 12, display: "flex", alignItems: "center", gap: 6, marginBottom: 6 }}><Icon name={fam.icon} size={15} style={{ color: fk === "visitor" ? T.error : T.primary }} /><b>{fam.label}</b><span style={{ color: T.micro }}>— {fam.hint}</span></div>
+            <div style={{ border: `1px solid ${T.borderSubtle}`, borderRadius: 6, overflow: "hidden" }}>
+              {attrs.map((a, i) => (
+                <div key={a.key} style={{ display: "flex", alignItems: "baseline", gap: 10, padding: "8px 12px", fontSize: 12.5, borderBottom: i < attrs.length - 1 ? `1px solid ${T.borderSubtle}` : "none", flexWrap: "wrap" }}>
+                  <span style={{ width: 150, flexShrink: 0 }}>{a.label}</span>
+                  <span style={{ fontFamily: MONO, fontSize: 11.5, color: T.muted, width: 236, flexShrink: 0 }}>{a.key}</span>
+                  <Pill color={T.muted} bg="#fff" border={T.border}>{a.type}</Pill>
+                  <span style={{ flex: 1, minWidth: 120, color: T.micro, fontSize: 11.5 }}>{a.values ? a.values.join(" · ") : "any value"}</span>
+                  {a.contributedBy && <Pill color={T.aiViolet} bg="rgba(151,71,255,0.10)" title="Supplied by a partner, not by the platform"><Icon name="upload" size={11} />contributed</Pill>}
+                </div>
+              ))}
+            </div>
+          </div>
+        );
+      })}
+      <Note>A <b>set</b> variable holds several values at once and is matched with contains; an <b>enum</b> is one of a fixed list. Visitor variables are off for every partner by default — a partner submits a predicate and PH answers matched / not matched, never the value itself.</Note>
+
       <SectionLabel>Where these apply</SectionLabel>
-      {dsps.length === 0 ? <Empty>No DSP partner connected yet. A partner added later adopts these lists automatically.</Empty> : (
+      {dsps.length === 0 ? <Empty>No DSP partner connected yet. A partner added later adopts these settings automatically.</Empty> : (
         <div style={{ border: `1px solid ${T.borderSubtle}`, borderRadius: 6, overflow: "hidden" }}>
           {dsps.map((x, i) => {
             const linked = x.listsLinked !== false; const eff = effectiveLists(x, lists);
@@ -425,7 +530,7 @@ function CompanyListsPanel({ lists, mut, partners, onOpenPartner }) {
   );
 }
 
-function ListEditor({ label, tone, icon, items, suggestions, onAdd, onRemove, empty, readOnly }) {
+function ListEditor({ label, tone, icon, items, suggestions, onAdd, onRemove, empty, readOnly, addLabel = "Add an advertiser…", suggestLabel = "Seats:" }) {
   const [draft, setDraft] = useState("");
   const has = (n) => items.some((x) => x.name.toLowerCase() === n.trim().toLowerCase());
   const add = (name) => { const n = (name || "").trim(); if (!n || has(n)) return; onAdd(n); setDraft(""); };
@@ -439,11 +544,11 @@ function ListEditor({ label, tone, icon, items, suggestions, onAdd, onRemove, em
       </div>
       {readOnly ? <div style={{ fontSize: 11.5, color: T.micro, display: "flex", alignItems: "center", gap: 5 }}><Icon name="lock" size={13} />Inherited — unlink this partner to edit.</div> : (
         <div style={{ display: "flex", gap: 6 }}>
-          <input value={draft} onChange={(e) => setDraft(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); add(draft); } }} placeholder="Add an advertiser…" style={small} />
+          <input value={draft} onChange={(e) => setDraft(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); add(draft); } }} placeholder={addLabel} style={small} />
           <Btn variant="outline" style={{ height: 28, fontSize: 12.5, padding: "0 10px" }} disabled={!draft.trim() || has(draft)} onClick={() => add(draft)}>Add</Btn>
         </div>
       )}
-      {!readOnly && unused.length > 0 && <div style={{ display: "flex", flexWrap: "wrap", gap: 5, marginTop: 8, alignItems: "center" }}><span style={{ fontSize: 11, color: T.micro }}>Seats:</span>{unused.map((sg) => <span key={sg.id} onClick={() => add(sg.name)} style={{ cursor: "pointer", fontSize: 11.5, height: 20, padding: "0 8px", borderRadius: 9999, border: `1px dashed ${T.border}`, color: T.muted, display: "inline-flex", alignItems: "center" }}>+ {sg.name}</span>)}</div>}
+      {!readOnly && unused.length > 0 && <div style={{ display: "flex", flexWrap: "wrap", gap: 5, marginTop: 8, alignItems: "center" }}><span style={{ fontSize: 11, color: T.micro }}>{suggestLabel}</span>{unused.map((sg) => <span key={sg.id} onClick={() => add(sg.name)} style={{ cursor: "pointer", fontSize: 11.5, height: 20, padding: "0 8px", borderRadius: 9999, border: `1px dashed ${T.border}`, color: T.muted, display: "inline-flex", alignItems: "center" }}>+ {sg.name}</span>)}</div>}
     </div>
   );
 }

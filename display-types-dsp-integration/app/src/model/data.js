@@ -130,8 +130,13 @@ export const INITIAL_TYPES = [
 
 /* ---------------------------------------------- partners & lists */
 export const INITIAL_COMPANY_LISTS = {
+  floorCpm: 4.5,
+  personalisedMultiplier: 1.25,
+  interactiveMultiplier: 1.5,
   allowList: [{ id: "cal1", name: "Nestlé" }, { id: "cal2", name: "Swisse" }, { id: "cal3", name: "Arnott’s" }],
   blockList: [{ id: "cbl1", name: "Red Bull" }, { id: "cbl2", name: "Monster Energy" }],
+  categoryAllowList: [{ id: "ccal1", name: "Food & Drink" }, { id: "ccal2", name: "Health & Fitness" }],
+  categoryBlockList: [{ id: "ccbl1", name: "Finance" }],
 };
 
 const ENV_ATTRS = ["env.daypart", "env.store_segments", "env.store_hours_state", "display.touch_point", "display.display_tags"];

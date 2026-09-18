@@ -531,7 +531,7 @@ export default function App() {
           {nav === "types" && <TypesView types={types} setTypes={setTypes} playlists={playlists} setPlaylists={setPlaylists} sel={selType} setSel={setSelType} templates={templates} partners={partners} companyLists={companyLists} goToPartners={() => { setSelPartner(COMPANY_LISTS); setNav("partners"); }} />}
           {nav === "layout" && SHOW_EXPERIENCE_LAYOUT && <LayoutComposer types={types} templates={templates} setTemplates={setTemplates} playlists={playlists} />}
           {nav === "playlists" && <PlaylistManagement playlists={playlists} setPlaylists={setPlaylists} types={types} goToType={(id) => { setSelType(id); setNav("types"); }} />}
-          {nav === "partners" && <PartnersView partners={partners} setPartners={setPartners} companyLists={companyLists} setCompanyLists={setCompanyLists} exchange={exchange} setExchange={setExchange} types={types} goToType={(id) => { setSelType(id); setNav("types"); }} sel={selPartner} setSel={setSelPartner} />}
+          {nav === "partners" && <PartnersView partners={partners} setPartners={setPartners} companyLists={companyLists} setCompanyLists={setCompanyLists} exchange={exchange} setExchange={setExchange} types={types} playlists={playlists} goToType={(id) => { setSelType(id); setNav("types"); }} sel={selPartner} setSel={setSelPartner} />}
         </div>
       </div>
     </div>
