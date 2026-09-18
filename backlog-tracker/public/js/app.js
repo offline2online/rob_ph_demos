@@ -5677,19 +5677,30 @@ const FAQ_CALLOUT_LEVELS = ["note", "important", "warning"];
 // it round-trips through a Delta as JSON; the DOM shape it renders to is
 // the same <div class="faq-table"><table>…</table></div> the public site's
 // CSS styles, and the same shape DOMPurify passes through untouched.
+//
+// Each cell is an HTML fragment, not plain text. Cells routinely carry a
+// link, <strong> or <code> (the Troubleshooting index is a table whose
+// whole point is the link in every row), and FaqTableBlot.value() below is
+// what a saved table goes through on every editor load now that loading
+// goes via clipboard.convert() + setContents() (faqSetEditorHtml) — a
+// textContent-only value() silently stripped all of that on open, which
+// then saved back stripped. Fragments come from either the sanitised
+// article body (DOMPurify, renderFaqBodyMd) or the cell's own
+// contenteditable DOM; the one plain-text entry point, the Insert table
+// dialog, escapes in faqTableRowsFromText.
 function faqTableRowsToHtml(rows) {
-  const safe = (s) => escapeHTML(String(s == null ? "" : s));
+  const cell = (s) => String(s == null ? "" : s);
   const [head, ...body] = rows.length ? rows : [[""]];
-  const headHtml = "<thead><tr>" + head.map((c) => "<th>" + safe(c) + "</th>").join("") + "</tr></thead>";
+  const headHtml = "<thead><tr>" + head.map((c) => "<th>" + cell(c) + "</th>").join("") + "</tr></thead>";
   const bodyHtml = body.length
-    ? "<tbody>" + body.map((r) => "<tr>" + r.map((c) => "<td>" + safe(c) + "</td>").join("") + "</tr>").join("") + "</tbody>"
+    ? "<tbody>" + body.map((r) => "<tr>" + r.map((c) => "<td>" + cell(c) + "</td>").join("") + "</tr>").join("") + "</tbody>"
     : "";
   return "<table>" + headHtml + bodyHtml + "</table>";
 }
 
 function faqTableRowsFromNode(node) {
   return [...node.querySelectorAll("tr")].map((tr) =>
-    [...tr.children].map((cell) => cell.textContent.trim())
+    [...tr.children].map((cell) => cell.innerHTML.trim())
   );
 }
 
@@ -5697,13 +5708,14 @@ function faqTableRowsFromNode(node) {
 // by "|", first line the header row. Chosen over an inline grid editor
 // because it is editable, pasteable and diff-able as plain text, and it is
 // the same shape a writer already uses in the markdown tables of
-// docs/CONTRIBUTING-docs.md itself.
+// docs/CONTRIBUTING-docs.md itself. Cells are escaped here — this is the
+// only place plain text enters the (HTML-fragment) row model.
 function faqTableRowsFromText(text) {
   return String(text || "")
     .split(/\r?\n/)
     .map((line) => line.trim())
     .filter((line) => line && !/^\|?\s*:?-{2,}/.test(line.replace(/\|/g, "")))
-    .map((line) => line.replace(/^\||\|$/g, "").split("|").map((cell) => cell.trim()));
+    .map((line) => line.replace(/^\||\|$/g, "").split("|").map((cell) => escapeHTML(cell.trim())));
 }
 
 function faqTableRowsToText(rows) {
@@ -5744,51 +5756,125 @@ function faqUpgradeTableEmbeds(root) {
   });
 }
 
-// Loading a saved article into the editor via `.root.innerHTML = html`
-// (openFaqArticleEditorPage below, until wD9a8rN54MAFdVT5FEra) looks fine —
-// the browser renders it — but leaves Quill's own Delta model completely
-// unaware of what's now in the DOM; a freshly-constructed Quill instance's
-// model still says "empty". The next time Quill reconciles the DOM against
-// that stale model, which happens on the very next keystroke anywhere in
-// the editor (not necessarily one touching the affected block), whatever it
-// can't map back onto its own model gets silently collapsed — a multi-node
-// structure like an <ol> most reliably, right down to a single empty line.
-// This is exactly how two FAQ articles lost their "Steps" list (backlog
-// items j7sfENrtwF4qVDYdT11x / wD9a8rN54MAFdVT5FEra): the list displayed
-// fine right up until the next Save, which silently wrote back the
-// collapsed version — reproduced directly against quill@1.3.7 while
-// investigating this ticket.
+// ── Loading a saved article into the editor ──────────────────────────
+// Quill 1.3.7 only ever edits DOM it built itself. Two ways of handing it
+// somebody else's HTML have now each lost content in production:
 //
-// The fix is to go through Quill's own supported loading path instead:
-// clipboard.convert() parses HTML into a Delta the same way pasting it
-// would, and setContents() builds the real Parchment tree from that Delta,
-// so the DOM and the model agree from the start — no later reconciliation,
-// no collapse. This also correctly rebuilds our custom callout/table blots
-// (registerFaqEditorFormats below): clipboard.convert()'s generic element
-// matcher looks blots up in the same Parchment registry a
-// Quill.register(...) call adds to, so a <div class="faq-table">/
-// <div class="callout-*"> round-trips through FaqTableBlot.value()/
-// FaqCalloutBlot.formats() the same way any built-in format does.
+//  1. `faQuill.root.innerHTML = html` (until wD9a8rN54MAFdVT5FEra). Quill
+//     adopts the DOM through its mutation observer, and anything it can't
+//     model it drops from the model while leaving it on screen — an
+//     <ol> holding whitespace text nodes between its <li>s, or an <li>
+//     holding a <p>. The article LOOKS intact right up to the first
+//     keystroke, when Quill rebuilds the DOM from the model and the whole
+//     list vanishes; Save then writes the collapsed version back. That is
+//     exactly how "Step 3 — Set up DNS after installation" and six other
+//     articles lost their Steps lists on 2026-09-17.
+//  2. `clipboard.convert(html)` + `setContents()` (1.5.53's fix). The
+//     model is right from the start, but convert() is a PASTE parser: its
+//     matchSpacing heuristic inserts a blank line wherever the hidden
+//     clipboard container's layout shows a gap (so after most <p>s before
+//     an <h2>, and after every callout), <li><p>…</p></li> splits into
+//     extra list items, and the table blot's value() round-trip reduced
+//     every cell to plain text — links and bold gone from every table.
 //
-// Two adjustments on top of a bare clipboard.convert():
-//  - Strip whitespace-only text between tags first. bodyMd is saved with a
-//    newline between top-level blocks (for readability in Firestore/diffs);
-//    convert() treats a bare newline sitting between block elements as an
-//    actual blank line and inserts an empty paragraph for it, which piles
-//    up into a visibly broken editor on any multi-section article.
-//  - Quill 1.3.7's clipboard conversion inserts one extra blank line
-//    immediately after our custom callout format specifically (confirmed
-//    against quill@1.3.7 directly, independent of the newline stripping
-//    above) — drop that one spurious op rather than leave every callout
-//    trailed by an empty paragraph.
-function faqSetEditorHtml(html) {
-  const delta = faQuill.clipboard.convert(String(html || "").replace(/>\s*\n\s*</g, "><"));
-  delta.ops = delta.ops.filter((op, i) => {
-    if (op.insert !== "\n" || (op.attributes && Object.keys(op.attributes).length)) return true;
-    const prev = delta.ops[i - 1];
-    return !(prev && prev.attributes && prev.attributes.callout);
+// So the editor now (a) rewrites the HTML into the shape Quill can
+// represent BEFORE Quill sees it (faqHtmlForQuill), (b) loads it through
+// convert()/setContents() so model and DOM agree from the first moment,
+// with the layout-dependent spacing matcher removed (see the
+// faQuill.clipboard.matchers line after the Quill constructor), and (c)
+// checks that the words that came out are the words that went in, and
+// says so in the editor if not, instead of trusting either path silently.
+// Verified against every live article and the committed faq/data snapshot
+// with a real quill@1.3.7 in Playwright: text identical, block structure
+// preserved (lists, tables, callouts, code, headings), stable across
+// further typing.
+
+const FAQ_BLOCK_TAGS = new Set(["P", "H1", "H2", "H3", "H4", "H5", "H6", "UL", "OL", "LI", "DIV", "TABLE", "THEAD", "TBODY", "TFOOT", "TR", "TH", "TD", "BLOCKQUOTE", "PRE", "HR", "IFRAME", "FIGURE"]);
+// Elements whose children are all blocks/rows — a stray text node here is
+// never content, only the newline bodyMd is saved with for readability.
+const FAQ_CONTAINER_TAGS = new Set(["UL", "OL", "TABLE", "THEAD", "TBODY", "TFOOT", "TR"]);
+
+function faqHtmlForQuill(html) {
+  const tpl = document.createElement("template");
+  tpl.innerHTML = String(html || "");
+  const root = tpl.content;
+  const isBlock = (n) => !!n && n.nodeType === 1 && FAQ_BLOCK_TAGS.has(n.tagName);
+
+  // Whitespace-only text between blocks (and anywhere inside a list/table
+  // container) is layout noise from the saved HTML — Quill reads it as a
+  // real line, or (innerHTML path) as a child a list can't hold.
+  const stripWhitespace = (parent) => {
+    [...parent.childNodes].forEach((node) => {
+      if (node.nodeType === 3) {
+        if (node.nodeValue.trim()) return;
+        const inContainer = parent === root || FAQ_CONTAINER_TAGS.has(parent.tagName) || (parent.classList && parent.classList.contains("faq-table"));
+        const prev = node.previousSibling, next = node.nextSibling;
+        if (inContainer || ((!prev || isBlock(prev)) && (!next || isBlock(next)))) node.remove();
+        return;
+      }
+      if (node.nodeType !== 1) { node.remove(); return; }
+      stripWhitespace(node);
+    });
+  };
+  stripWhitespace(root);
+
+  // Quill 1.x has no block-inside-list-item: a list item is exactly one
+  // line. <li><p>a</p><p>b</p></li> becomes one item "a b" (the text
+  // survives, the paragraph break inside the step doesn't), and a nested
+  // <ul>/<ol> is lifted out to sit AFTER its item as the outer list's own
+  // type, which clipboard.convert() reads as indented items of the same
+  // list (ql-indent-1) — the one nested form Quill can represent and
+  // number correctly. Doing this before Quill sees the HTML is what keeps
+  // it deterministic; left to the paste parser, the item's own text
+  // merged into the first nested item.
+  root.querySelectorAll("li").forEach((li) => {
+    const list = li.parentNode;
+    const outerTag = list && list.nodeType === 1 && (list.tagName === "OL" || list.tagName === "UL") ? list.tagName : "UL";
+    let after = li;
+    [...li.childNodes].forEach((child) => {
+      if (child.nodeType !== 1) return;
+      if (child.tagName === "UL" || child.tagName === "OL") {
+        const lifted = document.createElement(outerTag.toLowerCase());
+        while (child.firstChild) lifted.appendChild(child.firstChild);
+        child.remove();
+        li.parentNode.insertBefore(lifted, after.nextSibling);
+        after = lifted;
+      } else if (FAQ_BLOCK_TAGS.has(child.tagName) && child.tagName !== "IFRAME") {
+        if (child.previousSibling && !/\s$/.test(child.previousSibling.textContent || "")) li.insertBefore(document.createTextNode(" "), child);
+        while (child.firstChild) li.insertBefore(child.firstChild, child);
+        child.remove();
+      }
+    });
   });
-  faQuill.setContents(delta);
+
+  const div = document.createElement("div");
+  div.appendChild(root);
+  return div.innerHTML;
+}
+
+// The article's characters with all whitespace removed — what
+// faqSetEditorHtml compares before and after handing content to Quill.
+// Whitespace is deliberately ignored: convert() trims the ends of text
+// nodes and collapses runs, which is never a loss worth warning about;
+// a missing word or list is.
+function faqPlainText(html) {
+  const tpl = document.createElement("template");
+  tpl.innerHTML = String(html || "");
+  return (tpl.content.textContent || "").replace(/\s+/g, "");
+}
+
+function faqSetEditorHtml(html) {
+  const prepared = faqHtmlForQuill(html);
+  faQuill.setContents(faQuill.clipboard.convert(prepared), "silent");
+  faqUpgradeTableEmbeds(faQuill.root);
+
+  const expected = faqPlainText(prepared);
+  const actual = faqPlainText(faqBodySourceForSave());
+  const notice = document.getElementById("fa-load-notice");
+  notice.hidden = expected === actual;
+  if (!notice.hidden) {
+    console.warn("backlog-tracker: FAQ editor could not load this article's body faithfully", { expected, actual });
+  }
 }
 
 function registerFaqEditorFormats() {
@@ -5969,6 +6055,17 @@ const faQuill = new Quill("#fa-body-editor", {
   },
 });
 
+// clipboard.convert() is also how a saved article is loaded now (see
+// faqSetEditorHtml), so Quill 1.3.7's matchSpacing paste heuristic — which
+// inserts a blank line wherever two blocks sit further apart in the hidden
+// clipboard container's LAYOUT than 1.5× the first block's height — would
+// put a blank paragraph after most paragraphs that precede a heading, and
+// after every callout, on every open. It is the one matcher that reads
+// offsetTop, which is how it's picked out of the minified build here; Quill
+// 2 dropped it altogether. Pasting simply keeps the blank lines the pasted
+// HTML actually contains.
+faQuill.clipboard.matchers = faQuill.clipboard.matchers.filter(([, fn]) => !/offsetTop/.test(String(fn)));
+
 // Table cell TEXT needs no handler at all — contenteditable on each
 // <td>/<th> (set in FaqTableBlot.create above) already lets the browser
 // edit it directly, and the shared faQuill.root "input" listener further
@@ -6141,7 +6238,6 @@ function openFaqArticleEditorPage(articleId, { pendingRevision = false } = {}) {
   // real HTML in place. A brand-new article, or one already saved from
   // this editor, loads as-is (sanitized either way — see renderFaqBodyMd).
   faqSetEditorHtml(source ? renderFaqBodyMd(source.bodyMd || "") : "");
-  faqUpgradeTableEmbeds(faQuill.root);
   faDocTypeSelect.value = source && source.docType ? source.docType : "faq";
   faNeedsReview.checked = article ? !!article.needsReview : false;
   faSectionPickerToggle.checked = source ? !!source.sectionPicker : false;

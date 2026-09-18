@@ -19,6 +19,15 @@ any more"). All three run on plain `node`, no emulator, no Java, no
 credentials, no network — only this file's own rules suite below needs the
 emulator.
 
+Also here, opt-in because it needs a Chromium on the machine:
+`npm run test:editor` (`faq-editor-load.test.mjs`) opens every article in
+`faq/data/articles/` in the console's real FAQ editor code against the
+real quill@1.3.7 build and fails if a word, list item, table, callout,
+code block or heading doesn't survive the load or the first keystroke —
+the class of bug that emptied seven articles' Steps lists on 2026-09-17.
+Set `PLAYWRIGHT_CHROMIUM=/path/to/chrome` if playwright-core can't find
+a browser itself.
+
 ## Why this exists
 
 The deployment train shipped with a rules bug that took the Deploy to Main

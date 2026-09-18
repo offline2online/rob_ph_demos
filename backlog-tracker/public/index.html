@@ -530,6 +530,11 @@
               <button type="button" class="type-opt" id="fa-body-mode-view" data-mode="view">View live</button>
             </div>
           </div>
+          <!-- Shown only when faqSetEditorHtml (app.js) finds that the words
+               Quill loaded are not the words the saved article holds —
+               formatting the editor genuinely can't represent — so a lossy
+               load is visible before Save, never silent. -->
+          <p class="fa-load-notice" id="fa-load-notice" role="status" hidden>Part of this article's formatting isn't supported by the editor and was simplified on load. Compare with <strong>View live</strong> before saving.</p>
           <div id="fa-body-editor-wrap">
             <div id="fa-body-editor"></div>
           </div>

@@ -1229,7 +1229,14 @@ default.
   via the editor's toolbar prompts for alt text as well as a URL —
   `docs/CONTRIBUTING-docs.md` §6/§5.6 makes alt text mandatory on every
   informative image, enforced here at authoring time rather than by a later
-  audit. See `REQUIREMENTS.md` → "Rich-text article body" for the
+  audit. Opening a saved article rewrites its HTML into the shape Quill
+  can represent before Quill sees it, loads it through Quill's own
+  Delta path, and warns above the body if any characters didn't survive
+  (`faqHtmlForQuill`/`faqSetEditorHtml` in `app.js`; regression test
+  `test/faq-editor-load.test.mjs`, opt-in `npm run test:editor`) — the
+  two naive load paths before it each silently lost whole lists, see
+  `REQUIREMENTS.md` → "Loading an article into Quill is a rewrite".
+  See `REQUIREMENTS.md` → "Rich-text article body" for the
   format-migration and sanitization details — this is real HTML now, not
   markdown, and it's sanitized (DOMPurify) at render time on both the admin
   preview and the public site since `faqArticles`' write rules are wide
