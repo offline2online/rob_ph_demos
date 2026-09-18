@@ -54,7 +54,20 @@ export default function PartnersView({ partners, setPartners, companyLists, setC
   const relinkLists = () => setP({ listsLinked: true, allowList: [], blockList: [] });
   const disconnect = () => setP({ status: "draft", lastSync: null, seats: [] });
   const connect = () => setP({ status: "connected", lastSync: "Just now", seats: p.seats.length ? p.seats : [{ id: uid("s"), name: "New advertiser", approvalRequired: true }] });
-  const alreadyAdded = (k) => partners.some((x) => x.provider === k);
+  /* One row per tier-1 DSP — set up, erroring, or not set up yet. The list
+     is the provider set, not the partner set, so a provider can never show
+     up twice (once as connected and again as still-addable). */
+  const dspRows = ONBOARDING_ORDER.map((key) => {
+    const def = DSP_PROVIDERS[key];
+    const x = partners.find((q) => q.provider === key) || null;
+    const setUp = !!x && x.status === "connected";
+    const errored = !!x && x.status === "error";
+    const state = setUp ? { icon: "check_circle", colour: T.success, label: "Set up", setUp: true }
+      : errored ? { icon: "error", colour: T.error, label: "Connection error", setUp: true }
+      : { icon: "add_circle", colour: T.micro, label: x ? "Not set up yet — finish credentials" : "Not set up yet", setUp: false };
+    return { key, def, partner: x, state };
+  });
+  const otherPartners = partners.filter((x) => !ONBOARDING_ORDER.includes(x.provider));
 
   return (
     <div style={{ display: "flex", gap: 20, alignItems: "flex-start" }}>
@@ -64,58 +77,55 @@ export default function PartnersView({ partners, setPartners, companyLists, setC
         <ListCard collapsed={listCollapsed} active={onExchange} onClick={() => { setSel(EXCHANGE); setAdding(null); }} icon="storefront" title="Exchange settings" sub={`${(exchange.client && exchange.client.name) || "Client"} is seller of record · OpenRTB ${exchange.openRtb.version}`} />
         <ListCard collapsed={listCollapsed} active={onCompany} onClick={() => { setSel(COMPANY_LISTS); setAdding(null); }} icon="rule" title="Advertiser lists" sub={`${companyLists.allowList.length} allowed · ${companyLists.blockList.length} blocked · ${partners.filter((x) => isDsp(x) && x.listsLinked !== false).length} adopting`} />
 
-        {!listCollapsed && <SectionLabel>Connected partners</SectionLabel>}
-        {partners.map((x) => {
-          const st = STATUS_STYLE[x.status] || STATUS_STYLE.draft; const pr = providerOf(x);
-          const a = !onCompany && !onExchange && x.id === p.id;
+        {!listCollapsed && <SectionLabel>Partner DSPs</SectionLabel>}
+        {!listCollapsed && <div style={{ fontSize: 11.5, color: T.micro, marginBottom: 8, lineHeight: 1.5 }}>Tier 1 — the DSP's own published interface, in onboarding order (REQUIREMENTS §7).</div>}
+        {/* One row per tier-1 DSP, set up or not. There is deliberately no
+            second "add a partner" list below: a provider appeared twice when
+            it was both connected and still offered for adding. */}
+        {dspRows.map(({ key, def, partner: x, state }) => {
+          const a = !onCompany && !onExchange && (x ? x.id === p.id && !adding : adding === key);
+          const onPick = () => { if (x) { setSel(x.id); setAdding(null); } else { setAdding(key); } };
           if (listCollapsed) {
             return (
-              <div key={x.id} onClick={() => { setSel(x.id); setAdding(null); }} title={x.name}
-                style={{ display: "flex", justifyContent: "center", padding: "10px 0", marginBottom: 6, borderRadius: 6, cursor: "pointer", border: `1px solid ${a ? T.primary : T.borderSubtle}`, background: a ? T.primaryTint : "#fff" }}>
-                <Icon name={pr ? pr.icon : "inventory_2"} size={18} style={{ color: pr ? pr.colour : T.micro }} />
-                <Icon name={st.icon} size={12} style={{ color: st.colour, marginLeft: 4 }} />
+              <div key={key} onClick={onPick} title={`${x ? x.name : def.label} — ${state.label}`}
+                style={{ display: "flex", justifyContent: "center", padding: "10px 0", marginBottom: 6, borderRadius: 6, cursor: "pointer", border: `1px ${x ? "solid" : "dashed"} ${a ? T.primary : x ? T.borderSubtle : T.border}`, background: a ? T.primaryTint : "#fff", opacity: x ? 1 : 0.75 }}>
+                <Icon name={def.icon} size={18} style={{ color: def.colour }} />
+                <Icon name={state.icon} size={12} style={{ color: state.colour, marginLeft: 4 }} />
               </div>
             );
           }
           return (
-            <div key={x.id} onClick={() => { setSel(x.id); setAdding(null); }} style={{ padding: "10px 12px", marginBottom: 6, borderRadius: 6, cursor: "pointer", border: `1px solid ${a ? T.primary : T.borderSubtle}`, background: a ? T.primaryTint : "#fff" }}>
+            <div key={key} onClick={onPick}
+              style={{ padding: "10px 12px", marginBottom: 6, borderRadius: 6, cursor: "pointer", border: `1px ${x ? "solid" : "dashed"} ${a ? T.primary : x ? T.borderSubtle : T.border}`, background: a ? T.primaryTint : "#fff" }}>
               <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <Icon name={pr ? pr.icon : "inventory_2"} size={18} style={{ color: pr ? pr.colour : T.micro }} />
+                <Icon name={def.icon} size={18} style={{ color: def.colour }} />
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 13.5, fontWeight: 500, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{x.name}</div>
-                  <div style={{ fontSize: 11, color: T.micro }}>{pr ? `${pr.sub} · tier ${pr.apiTier}` : "No DSP in the path"}</div>
+                  <div style={{ fontSize: 13.5, fontWeight: 500, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{x ? x.name : def.label}</div>
+                  <div style={{ fontSize: 11, color: state.colour === T.micro ? T.micro : state.colour }}>{state.label}</div>
                 </div>
-                <Icon name={st.icon} size={15} style={{ color: st.colour }} />
+                <Icon name={state.icon} size={state.icon === "add_circle" ? 17 : 15} style={{ color: state.colour }} />
               </div>
-              {isDsp(x) && <div style={{ fontSize: 10.5, color: x.listsLinked !== false ? T.primary : T.warning, marginTop: 4, display: "flex", alignItems: "center", gap: 4 }}><Icon name={x.listsLinked !== false ? "link" : "link_off"} size={12} />{x.listsLinked !== false ? "Adopts company lists" : "Own advertiser lists"}</div>}
+              {x && isDsp(x) && state.setUp && <div style={{ fontSize: 10.5, color: x.listsLinked !== false ? T.primary : T.warning, marginTop: 4, display: "flex", alignItems: "center", gap: 4 }}><Icon name={x.listsLinked !== false ? "link" : "link_off"} size={12} />{x.listsLinked !== false ? "Adopts company lists" : "Own advertiser lists"}</div>}
             </div>
           );
         })}
-
-        {!listCollapsed && (
-          <>
-            <SectionLabel>Add a partner DSP</SectionLabel>
-            <div style={{ fontSize: 11.5, color: T.micro, marginBottom: 8, lineHeight: 1.5 }}>Tier 1 — the DSP's own published interface, in onboarding order (REQUIREMENTS §7).</div>
-          </>
-        )}
-        {ONBOARDING_ORDER.map((k) => [k, DSP_PROVIDERS[k]]).map(([k, def]) => (
-          listCollapsed ? (
-            <div key={k} title={alreadyAdded(k) ? `${def.label} — added` : `Add ${def.label}`} onClick={() => !alreadyAdded(k) && setAdding(k)}
-              style={{ display: "flex", justifyContent: "center", padding: "8px 0", marginBottom: 6, border: `1px dashed ${T.border}`, borderRadius: 6, opacity: alreadyAdded(k) ? 0.4 : 1, cursor: alreadyAdded(k) ? "default" : "pointer" }}>
-              <Icon name={def.icon} size={18} style={{ color: def.colour }} />
+        {/* Anything connected that is not one of the three tier-1 DSPs above
+            (a partner type since withdrawn from this page) still has to be
+            reachable, or it would be stranded with no way back into it. */}
+        {otherPartners.map((x) => {
+          const st = STATUS_STYLE[x.status] || STATUS_STYLE.draft; const pr = providerOf(x);
+          const a = !onCompany && !onExchange && x.id === p.id && !adding;
+          return (
+            <div key={x.id} onClick={() => { setSel(x.id); setAdding(null); }} title={listCollapsed ? x.name : undefined}
+              style={{ padding: listCollapsed ? "10px 0" : "10px 12px", marginBottom: 6, borderRadius: 6, cursor: "pointer", border: `1px solid ${a ? T.primary : T.borderSubtle}`, background: a ? T.primaryTint : "#fff" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, justifyContent: listCollapsed ? "center" : "flex-start" }}>
+                <Icon name={pr ? pr.icon : "inventory_2"} size={18} style={{ color: pr ? pr.colour : T.micro }} />
+                {!listCollapsed && <div style={{ flex: 1, minWidth: 0 }}><div style={{ fontSize: 13.5, fontWeight: 500, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{x.name}</div><div style={{ fontSize: 11, color: T.micro }}>{pr ? `${pr.sub} · tier ${pr.apiTier}` : "No DSP in the path"}</div></div>}
+                <Icon name={st.icon} size={listCollapsed ? 12 : 15} style={{ color: st.colour }} />
+              </div>
             </div>
-          ) : (
-            <div key={k} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", marginBottom: 6, border: `1px dashed ${T.border}`, borderRadius: 6, opacity: alreadyAdded(k) ? 0.5 : 1 }}>
-              <span style={{ width: 16, fontSize: 11, color: T.micro, textAlign: "center", flexShrink: 0 }}>{ONBOARDING_ORDER.indexOf(k) + 1}</span>
-              <Icon name={def.icon} size={18} style={{ color: def.colour }} />
-              <div style={{ flex: 1, minWidth: 0 }}><div style={{ fontSize: 13 }}>{def.label}</div><div style={{ fontSize: 11, color: T.micro }}>{def.sub}</div></div>
-              <Btn variant="text" style={{ height: 26, fontSize: 12, padding: "0 8px" }} disabled={alreadyAdded(k)} onClick={() => setAdding(k)}>{alreadyAdded(k) ? "Added" : "Add"}</Btn>
-            </div>
-          )
-        ))}
-        {/* Direct/house and the PH-native (tier 2) partner type are removed
-            from this page for now — will come back later. Only the three
-            tier-1 DSPs above can be connected here in the meantime. */}
+          );
+        })}
       </div>
 
       {/* ------------------------------------------------ detail */}
