@@ -1046,6 +1046,18 @@ textarea.dialog-field-input { resize: vertical; min-height: 70px; }
   font-family: inherit; font-size: 12.5px; padding: 7px 9px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg);
 }
 .fa-filter-row input[type="search"] { flex: 1; min-width: 160px; }
+#fa-status-filter { min-width: 140px; }
+
+/* The header's "N published, N draft[, N awaiting review]" line, each part
+   a clickable filter shortcut (see setFaqStatusFilter in app.js) — styled
+   as an inline link within the existing page-header-count pill, not a
+   separate control. */
+.faq-admin-count-link {
+  background: none; border: none; padding: 0; margin: 0; font: inherit; color: inherit;
+  text-decoration: underline; text-underline-offset: 2px; cursor: pointer;
+}
+.faq-admin-count-link:hover { color: var(--accent, #2f6df6); }
+.faq-admin-count-link:focus-visible { outline: 2px solid var(--accent, #2f6df6); outline-offset: 2px; border-radius: 3px; }
 
 .faq-article-row {
   display: flex; align-items: flex-start; justify-content: space-between; gap: 12px;
