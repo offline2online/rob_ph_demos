@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from "react";
-import { T, MONO, FONT, Icon, Pill, Btn, SectionLabel, Note, Callout, Grid, Fld, ctl, small, inputStyle, Table, TRow, TCell, Toggle, ToggleRow, Chips, Segmented, JsonBlock, Empty, uid, ADVERTISER_COLOUR, useViewportWidth } from "../ui.jsx";
+import { T, MONO, FONT, Icon, Pill, Btn, SectionLabel, Note, Callout, Grid, Fld, ctl, small, inputStyle, Table, TRow, TCell, Toggle, Chips, Segmented, JsonBlock, Empty, uid, ADVERTISER_COLOUR, useViewportWidth } from "../ui.jsx";
 import { tpIcon } from "../model/schema.js";
 import { DSP_PROVIDERS, ONBOARDING_ORDER, BIDDER_FIELDS, AUCTION_TYPES, CURRENCIES, IAB_CATEGORIES, COMPANY_LISTS, ANY_PARTNER, RTB, partner as mkPartner, partnerById, providerOf, partnerColour, isDsp, missingCreds, effectiveLists, isBlocked, ATTRIBUTE_REGISTRY, ATTRIBUTE_FAMILIES, permittedVocabulary } from "../model/sellside.js";
 
@@ -120,7 +120,7 @@ export default function PartnersView({ partners, setPartners, companyLists, setC
 
       {/* ------------------------------------------------ detail */}
       <div style={{ flex: 1, minWidth: 0 }}>
-        {onExchange ? <ExchangePanel exchange={exchange} setExchange={setExchange} partners={partners} companyLists={companyLists} />
+        {onExchange ? <ExchangePanel exchange={exchange} setExchange={setExchange} partners={partners} />
         : onCompany ? <CompanyListsPanel lists={companyLists} mut={companyMut} partners={partners} onOpenPartner={(id) => setSel(id)} />
         : adding ? <AddPartnerCard providerKey={adding} onCancel={() => setAdding(null)} onAdd={() => addPartner(adding)} />
         : (
@@ -314,7 +314,7 @@ function TargetingPermissions({ p, setP }) {
 }
 
 /* Company-level: the exchange itself (REQUIREMENTS §7). */
-function ExchangePanel({ exchange, setExchange, partners, companyLists }) {
+function ExchangePanel({ exchange, setExchange, partners }) {
   const set = (patch) => setExchange({ ...exchange, ...patch });
   const setClient = (k, v) => set({ client: { ...exchange.client, [k]: v } });
   const setSj = (k, v) => set({ sellersJson: { ...exchange.sellersJson, [k]: v } });
@@ -358,20 +358,6 @@ function ExchangePanel({ exchange, setExchange, partners, companyLists }) {
         <Fld label="Impression multiplier"><div style={{ display: "flex", alignItems: "center", gap: 8, height: 32 }}><Toggle on={exchange.openRtb.impressionMultiplier} onChange={(v) => set({ openRtb: { ...exchange.openRtb, impressionMultiplier: v } })} /><span style={{ fontSize: 12, color: T.muted }}><code>imp.qty</code> on requests</span></div></Fld>
       </Grid>
       <Callout tone="info" icon="privacy_tip">A DOOH bid request describes a <b>venue and a moment</b>, not a person: no cookies, no device graph, no user ID. Everything the sell side evaluates about a visitor is resolved inside the client's own instance and never crosses into the exchange.</Callout>
-
-      <SectionLabel>Pre-auction enforcement — applied before a bid can win</SectionLabel>
-      {[["floor", "Floor price", "Per partner. Bids below the floor are discarded."], ["categories", "Permitted categories & competitive exclusions", "Per partner. A creative outside the permitted set never wins."], ["blocklist", "Advertiser blacklist on the bid", `Company lists (${companyLists.blockList.length} blocked) matched against the seat / advertiser identity in the bid response. Applying it after a win is a credit note, not brand safety.`], ["venueExclusions", "Venue & category exclusions", "Positions in excluded venue types are never offered."]].map(([k, l, h]) => (
-        <ToggleRow key={k} label={l} hint={h} on={exchange.preAuction[k]} onChange={(v) => set({ preAuction: { ...exchange.preAuction, [k]: v } })} icon={{ floor: "price_check", categories: "category", blocklist: "block", venueExclusions: "location_off" }[k]} />
-      ))}
-
-      <SectionLabel>Play window, audience and reporting</SectionLabel>
-      <Grid cols={3}>
-        <Fld label="Play window (hours)" hint="Open question 27. The auction clears ahead of the window so assets can be distributed and cached."><input type="number" value={exchange.playWindowHours} onChange={(e) => set({ playWindowHours: Number(e.target.value) })} style={ctl} /></Fld>
-        <Fld label="Audience currency" hint="Open question 34 — whether a sensor-derived multiplier is tradeable or only reportable.">
-          <select value={exchange.audienceCurrency} onChange={(e) => set({ audienceCurrency: e.target.value })} style={ctl}><option value="sensor_where_available">Counted (Vision/AI, MIST) where available, modelled otherwise</option><option value="modelled_only">Modelled only</option></select>
-        </Fld>
-        <Fld label="Partner reporting floor (N plays)" hint="Open question 30. Segments below N are not disclosed per trigger — thin segments repeatedly queried are an inference channel."><input type="number" value={exchange.reportingFloorN} onChange={(e) => set({ reportingFloorN: Number(e.target.value) })} style={ctl} /></Fld>
-      </Grid>
 
       <SectionLabel>Bidders</SectionLabel>
       <Table cols="1.4fr 1.6fr 90px 90px 110px" header={["Partner", "Endpoint", "QPS", "Timeout", "State"]}>
