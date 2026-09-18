@@ -335,6 +335,19 @@ the ticket and in `mcpAuditLog`.
 - **Not the same thing as `boardApi`/`BOARD_API_KEY`**, which is one shared
   secret standing in for the Routine's own automation and stays as it is.
   The MCP server is per-person, per-token and individually revocable.
+- **One sign-in, one permission rule — not 27 prompts.** The OAuth consent
+  is already a single step (60-day refresh token, both scopes granted at
+  once). The repeated approvals are Claude Code's own per-tool permission
+  prompt, which fires once per distinct tool name per session. Collapse them
+  with a single allow rule naming the server — `mcp__<server>` matches every
+  tool it provides — in `~/.claude/settings.json` (all projects) or
+  `.claude/settings.local.json` (one project); this repo's
+  `.claude/settings.local.json` already carries it. The server segment must
+  be the name *your* client uses or the rule matches nothing silently. See
+  `backlog-tracker/MCP.md` → "Stop Claude Code asking to approve every
+  tool". Safe to blanket-allow because the server is the boundary, not the
+  prompt — which is another reason not to add a tool here that ships,
+  merges or moves anything.
 - Full detail — connecting a client, adding a member, provisioning a login
   for someone with no Google account, the OAuth endpoints, what is and isn't
   stored — is in **`backlog-tracker/MCP.md`**.

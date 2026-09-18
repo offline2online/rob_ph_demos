@@ -48,6 +48,40 @@ disconnect any of them.
 **If you see "isn't on the PH Agent Console user list"** you have not been
 added yet — ask an admin (Settings → Team & agent access).
 
+### Stop Claude Code asking to approve every tool
+
+Signing in is one step and lasts (a 60-day refresh token, both `board.read`
+and `board.write` granted in that single consent). The repeated prompts are
+a separate thing: Claude Code asks once per *distinct tool name* per
+session, and there are 27 of them, so an unconfigured client can prompt 27
+times before it settles.
+
+Pre-approve the whole server with one permission rule. `mcp__<server>`
+matches every tool that server provides:
+
+```json
+{ "permissions": { "allow": ["mcp__ph-console"] } }
+```
+
+Put it in `~/.claude/settings.json` for every project, or a project's
+`.claude/settings.local.json` for just that one. This repo's
+`.claude/settings.local.json` already carries it.
+
+**Use the server name your client actually uses**, or the rule silently
+matches nothing — it is the middle segment of the tool name in the
+permission prompt (`mcp__ph-console__list_projects` → `ph-console`). It is
+whatever you passed to `claude mcp add` (the table above uses
+`ph-console`); a claude.ai connector that Claude Code fetches itself appears
+as `mcp__claude_ai_<server>__<tool>` instead. `/mcp` lists the names.
+
+Blanket-allowing this server is a smaller decision than it looks, because
+the server is the boundary rather than the prompt: nothing here deploys,
+merges, moves a card, or publishes an FAQ article live, and every
+documentation write records what it replaced in `docRevisions`, so even
+`delete_project_document` and `delete_interface` are recoverable. The one
+real consequence is that a tool added to the server *later* is pre-approved
+too — so keep the "nothing here ships anything" rule when adding tools.
+
 ---
 
 ## For an admin: add someone
