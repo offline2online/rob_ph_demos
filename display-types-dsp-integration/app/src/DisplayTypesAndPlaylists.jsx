@@ -540,24 +540,9 @@ export default function App() {
 
 /* ------------------------------ display types ----------------------------- */
 
-/* Three columns (type list + form + preview) need this much room side by
-   side (widths + the two 20px gaps, §567). Below it the preview column
-   would wrap below the form — reflowed above Touch Point instead, since a
-   preview stranded beneath the whole form is easy to miss scrolling down. */
-const THREE_COLUMN_MIN_WIDTH = 215 + 20 + 400 + 20 + 320;
-
 function TypesView({ types, setTypes, playlists, setPlaylists, sel, setSel, templates, partners, companyLists, goToPartners }) {
   const [open, setOpen] = useState({ playlist: false, web: true, phantom: true, features: true, zones: true });
   const [pendingEl, setPendingEl] = useState(null);
-  const columnsRef = useRef(null);
-  const [fitsThreeColumns, setFitsThreeColumns] = useState(true);
-  useEffect(() => {
-    const el = columnsRef.current;
-    if (!el || typeof ResizeObserver === "undefined") return;
-    const ro = new ResizeObserver((entries) => setFitsThreeColumns((entries[0]?.contentRect?.width ?? el.clientWidth) >= THREE_COLUMN_MIN_WIDTH));
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, []);
   const d = types.find((t) => t.id === sel) || types[0];
   const set = (patch) => setTypes(types.map((t) => (t.id === d.id ? { ...t, ...patch } : t)));
   const setPath = (path, value) => setTypes(types.map((t) => (t.id === d.id ? setIn(t, path, value) : t)));
@@ -591,19 +576,16 @@ function TypesView({ types, setTypes, playlists, setPlaylists, sel, setSel, temp
   };
 
 
-  /* The preview and the Touch Point / Element Type control travel together in
-     one column: the control that decides what the preview renders sits
-     directly under it, rather than at the top of the form column two columns
-     away. When there is no room for three columns the pair moves into the
-     form column, still in that order. */
+  /* The preview, then the control that decides what it renders. This leads
+     the single form column, so the whole screen reads top to bottom:
+     preview -> Touch Point -> Element Type -> name, canvas, background,
+     default playlist, the panels, Save / Cancel. */
   const previewColumn = (
     <>
       <div style={{ marginBottom: 16 }}>
         <Preview d={d} plName={plName} setPath={setPath} partners={partners} companyLists={companyLists} />
       </div>
-      {/* Capped to the form column's width so the control does not stretch to
-          the full third column and dwarf the preview it belongs to. */}
-      <div style={{ marginBottom: 16, maxWidth: 400 }}>
+      <div style={{ marginBottom: 16 }}>
         <Label>Touch Point</Label>
         <IconSelect value={d.touchPoint} onChange={(v) => set({ touchPoint: v, element: isWebTP(v) ? (d.element || elementConfig("hero")) : d.element })} options={TOUCH_POINTS} />
         {isWebTP(d.touchPoint) && (
@@ -658,7 +640,7 @@ function TypesView({ types, setTypes, playlists, setPlaylists, sel, setSel, temp
   );
 
   return (
-    <div ref={columnsRef} style={{ display: "flex", gap: 20, alignItems: "flex-start", flexWrap: "wrap" }}>
+    <div style={{ display: "flex", gap: 20, alignItems: "flex-start" }}>
       <div style={{ width: 215, flexShrink: 0, position: "sticky", top: 20, maxHeight: "calc(100vh - 40px)", overflowY: "auto", overflowX: "hidden" }}>
         <Btn variant="primary" style={{ width: "100%", justifyContent: "center", marginBottom: 10 }}
           onClick={() => {
@@ -700,8 +682,12 @@ function TypesView({ types, setTypes, playlists, setPlaylists, sel, setSel, temp
         </div>
       </div>
 
+      {/* ONE content column, in reading order: the preview and its details,
+          then Touch Point / Element Type, then the rest of the form and the
+          Save / Cancel actions. Do not split this back into a second column
+          — the whole form belongs in one, top to bottom. */}
       <div style={{ width: 400, flexShrink: 0 }}>
-        {!fitsThreeColumns && previewColumn}
+        {previewColumn}
         <div style={{ marginBottom: 16 }}>
           <Label required>Display Type / Element Name</Label>
           <input value={d.name} autoFocus={!d.name} placeholder="Name this display type / element"
@@ -1114,11 +1100,6 @@ function TypesView({ types, setTypes, playlists, setPlaylists, sel, setSel, temp
         </div>
       </div>
 
-      {fitsThreeColumns && (
-        <div style={{ flex: 1, minWidth: 320 }}>
-          {previewColumn}
-        </div>
-      )}
     </div>
   );
 }
