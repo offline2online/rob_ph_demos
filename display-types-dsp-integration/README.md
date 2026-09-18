@@ -88,7 +88,8 @@ Three nav items:
   Settings with "Default (…)" inheritance, QR Control (Phantom Zone), Enabled
   Features, Multi-Zone Layout, slot assignment against the capped rotation,
   Display Preview / web element preview with breakpoints, Display Type
-  Image).
+  Image). Touch Point and Element Type sit directly under the Display
+  Preview, in the same column, since they are what the preview renders.
 - **Playlist Management** — as in the artifact: the playlist table with
   assignment to display types and zones, create/rename/delete, and the open
   playlist detail.
@@ -156,6 +157,8 @@ Design decisions worth keeping:
 - **Never dark**: targeted → baseline → next eligible HQ campaign.
 - **Slot ownership cannot be backfilled.** Partner at write time, winning
   advertiser at render time.
+- **One list per provider.** The Partner DSPs column is keyed on the
+  provider set, not the partner set, so a provider cannot appear twice.
 
 It is a **prototype, not a platform page** — iframed into HQ Admin, so it
 renders no header, no sidebar, no breadcrumb and nothing `position: fixed`.
@@ -172,9 +175,10 @@ cd display-types-dsp-integration/app && npm install && npm run build
 then serve `../prototype/` statically and drive it with Playwright (the
 sandbox blocks `fonts.googleapis.com`, so Material Symbols render as their
 ligature names there — not a defect; intercept the font CSS request and
-fulfil it empty to keep the layout honest). Check every nav item and tab for
-page errors and for `scrollWidth > clientWidth` at 1163px. For the Display
-Types and Playlist screens, also serve the artifact's original bundle
+fulfil it with a stub that gives `.material-symbols-outlined` a `1em` square
+and transparent text, to keep the layout honest). Check every nav item and
+tab for page errors and for `scrollWidth > clientWidth` at 1163px. For the
+Display Types and Playlist screens, also serve the artifact's original bundle
 (`git show ffee58d:display-types-dsp-integration/prototype/...`) beside the
 new one and compare full-page screenshots and rendered text of every display
 type and playlist — they are meant to be identical.
