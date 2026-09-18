@@ -1,11 +1,13 @@
 {
   "name": "backlog-tracker-rules-tests",
   "private": true,
-  "description": "Tests for backlog-tracker's access-control layer: Firestore security rules (real rules file, Firebase emulator), the MCP server's logic (stubbed Firebase SDKs), and the MCP server over real HTTP driven by the official MCP client SDK.",
+  "description": "Tests for backlog-tracker's access-control layer (Firestore security rules, the MCP server's logic, the MCP server over real HTTP driven by the official MCP client SDK), for scripts/ helpers that are easiest to verify against a real disposable git repo (the faq/data/index.json merge-conflict resolver, and the deployment train's lock-recompute logic — pure predicate, the real Cloud Function trigger under stubbed SDKs, and the real branch-archive/reset git logic), and for the FAQ editor's content round-trip in a real browser (opt-in, needs Chromium).",
   "scripts": {
-    "test": "npm run test:mcp && npm run test:client && npm run test:rules",
+    "test": "npm run test:mcp && npm run test:client && npm run test:train-lock && npm run test:faq-index && npm run test:rules",
     "test:mcp": "node mcp-server.test.js",
     "test:client": "node mcp-client.test.mjs",
+    "test:train-lock": "node train-lock.test.js && node train-lock-trigger.test.js && node train-lock-branch-archive.test.js",
+    "test:faq-index": "node faq-index.test.js",
     "test:rules": "firebase emulators:exec --only firestore --project demo-backlog-tracker 'node firestore-rules.test.js'",
     "test:editor": "node faq-editor-load.test.mjs"
   },

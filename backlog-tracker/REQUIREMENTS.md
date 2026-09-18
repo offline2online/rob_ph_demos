@@ -392,8 +392,45 @@ build throughput can never reach a deployable state.
 Backlog cards themselves stay fully usable while locked — add, edit,
 comment, delete all work. Only *starting a build* is held. `trainLocked` is
 the one train field the browser may write, and only in one direction: it
-latches true from `deployToFeature()`, and only a merged train clears it
-(`firestore.rules`).
+latches true from `deployToFeature()`, and only the backend clears it
+(`firestore.rules`) — see below for what "the backend" now means.
+
+**Deleting or rejecting every ticket on a locked train also clears the
+lock, not only a successful merge.** Before 17 Sep 2026 the only thing
+that ever cleared `trainLocked` was a merge finishing
+(`finishTrain()`/`reconcileMergedTrains()` in
+`run-backlog-automation.js`) — so deleting every approved ticket (or
+sending them all back with Failed testing, which reverts their commits off
+the branch) emptied the train without ever merging, and the lock got stuck
+forever with nothing left in Ready for Testing or Approved for Deployment
+for Deploy to Main to act on either (this happened for real on this
+project, Backlog Tracker & FAQs). Fixed by a shared pure predicate,
+`functions/train-lock.js`'s `trainLockShouldClear(project, items)` — true
+when a project is locked, isn't mid-deploy or awaiting a human PR merge,
+and none of its items still occupy the train (a live commit and
+ready-for-testing/ready-to-publish status, or a rejected card whose revert
+hasn't finished/is blocked) — used from two places:
+
+- `functions/index.js`'s `onBacklogItemTrainLockRecompute` (a
+  `backlogItems` write trigger) reacts the instant a write drops the item
+  that was keeping the train non-empty.
+- `run-backlog-automation.js`'s `reconcileLockedTrains()` (every scheduled
+  run) is the safety net, and also does the git side a Cloud Function
+  can't: `archiveAndResetOrphanedBranch()` tags any commits the
+  integration branch holds that never reached `main` as
+  `archive/<branch>-<date>` (pushed before resetting), covering both a
+  card deleted outright with its commit still live on the branch, and
+  revert-then-reverted history that nets to zero content but is still real
+  history worth keeping a pointer to.
+
+Either path also resets a stale `trainStatus`/`trainNote` (e.g. a
+`"conflict"` left over from before the tickets were removed) back to
+`idle`/empty, and the project header shows a "Train locked: …" line
+(`trainLockedNoteHTML()` in `app.js`) any time the lock is actually hiding
+Ready for Dev/Groom Backlog, so this can't go silently stuck again without
+being visible on the board itself. See `README.md` → "trainLocked clearing
+isn't only a successful-merge thing any more" and
+`test/train-lock*.test.js`.
 
 The result is that a project header shows exactly one CTA at a time, and it
 is the next thing to do:
@@ -583,12 +620,13 @@ faqArticles/{id}: {
   order, createdAt, updatedAt, publishedAt,
   pendingRevision?: {              // see "FAQ revision review" below
     title, summary, bodyMd, keywords?: string[], docType?,
-    reason, sourceItemIds: string[], sourceProjectId?, sourcePrNumbers?: number[],
-    proposedBy: "claude" | string, proposedAt: ISO string,
+    reason, sourceItemIds?: string[], sourceProjectId?, sourcePrNumbers?: number[],
+    proposedBy: "claude" | string, proposedVia?: "mcp", proposedAt: ISO string,
     reviewStatus: "awaiting-review" | "approved", approvedAt?, approvedBy?,
     editedBy?, editedAt?, isNew?: boolean,
   },
   previousRevision?: { title, summary, bodyMd, replacedAt, sourceItemIds?, wasNew?, revertOf? },
+  reviewComments?: { author, text, at }[],   // via comment_on_faq_revision (MCP) — not yet rendered by the console
   lastPromotedAt?,
 }
 ```
@@ -1386,11 +1424,58 @@ text as the new `previousRevision`, so it can be undone again.
 
 **Rules.** `firestore.rules` → `isValidPendingRevision` /
 `isValidPreviousRevision` validate the shape (required `title`, `bodyMd`,
-non-empty `sourceItemIds`, `reviewStatus` in the two allowed values, size
-caps) for writes from the console and from the Routine's board-automation
-user; Cloud Functions bypass rules. `faq-sync.js` merges and never touches
-these fields; `faq-export.js` exports only the live fields, so a proposal
-never leaks onto the public site.
+`reviewStatus` in the two allowed values, size caps) for writes from the
+console, the Routine's board-automation user, and the MCP write tools
+below; Cloud Functions bypass rules. `sourceItemIds`, when present, must be
+non-empty (≤ 50 entries) — but the field itself is optional: the Deploy
+flow's own proposals always set it (it's what promotion keys go-live on),
+while an MCP-originated proposal (`update_faq_article`, below) omits it
+entirely, since no backlog ticket triggered it. `faq-sync.js` merges and
+never touches these fields; `faq-export.js` exports only the live fields,
+so a proposal never leaks onto the public site.
+
+**Also written by a person's own agent, via MCP.** Two write tools on
+`functions/mcp-server.js` (see "Functional requirements — team access & the
+MCP server" above) reuse this exact mechanism rather than a second one:
+
+- `create_faq_article` writes a brand-new `faqArticles` doc directly with
+  `status: "draft"` — no `pendingRevision` involved, since nothing is live
+  yet to protect. `categoryId` must name an existing `faqCategories` doc;
+  `slug` is derived from the title (or given explicitly) and de-duplicated
+  with a `-2`, `-3`, … suffix rather than rejected; `docType` must be one of
+  the four Diátaxis types (`docs/CONTRIBUTING-docs.md` §2), defaulting to
+  `"faq"`. A person still reviews and publishes it from FAQ Management like
+  any other draft — this tool never writes `status: "published"`.
+- `update_faq_article` proposes a change to an existing article the same
+  way the Deploy flow's Routine does (step 3b), except: `proposedBy` carries
+  the caller's real signed-in email rather than the literal `"claude"`, with
+  an additional `proposedVia: "mcp"` so the review page's "Proposed by" line
+  and any audit query can tell the two paths apart; `reason` is a required
+  parameter, stored verbatim; `sourceItemIds` is omitted, so approving it
+  promotes on the very next hourly export rather than waiting on a ticket's
+  train. Only `title`/`summary`/`bodyMd`/`keywords`/`docType` are revisable
+  this way — `categoryId`, `slug`, `projectId` and `programId` are live-only
+  fields `pendingRevision` was never built to carry (`promoteFaqRevisionIfReady`
+  doesn't apply them), so changing those stays a direct console edit. Calling
+  it again while a proposal is `awaiting-review` builds on that proposal's
+  text, not the stale live text — the same rule `ROUTINE_INSTRUCTIONS.md`
+  gives the Routine for a second deploy touching the same article. It
+  refuses outright if the existing proposal is already `reviewStatus:
+  "approved"`, the same "don't overwrite a human's sign-off" rule the
+  Routine follows.
+- `list_pending_faq_revisions` / `get_faq_revision` read the same
+  `pendingRevision` map regardless of which path wrote it, for a caller to
+  see what's awaiting review and diff old vs. new.
+- `comment_on_faq_revision` appends `{author, text, at}` to a new
+  `reviewComments` array on the article — the console's review page doesn't
+  render this thread yet, so treat it as an audit trail for now, not a live
+  conversation.
+
+No MCP tool can write `reviewStatus: "approved"`, `status: "published"`,
+touch `previousRevision`, or delete an article — approving and publishing
+stay human, in the console, exactly as for every other MCP write tool (see
+"Functional requirements — team access & the MCP server" for the
+`board.write` gate and attribution guarantees that apply here too).
 
 ### The Notify Claude Routine — a thin bootstrap, not the source of truth
 
@@ -1494,13 +1579,18 @@ Required properties, each covered by `test/mcp-server.test.js`:
 
 **Tool surface — and its hard limit.** Read: `whoami`, `list_projects`,
 `list_backlog_items`, `get_backlog_item`, `get_project_docs`,
-`list_doc_revisions`, `get_doc_revision`, `search_faq`, `get_faq_article`.
+`list_doc_revisions`, `get_doc_revision`, `search_faq`, `get_faq_article`,
+`list_pending_faq_revisions`, `get_faq_revision`.
 Write (editor/admin only) — tickets: `create_backlog_item` (always into
 `backlog`), `update_backlog_item` (title, desc, type, category only),
 `add_item_comment`; documentation: `set_project_requirements`,
 `set_project_readme`, `set_project_artifact`, `create_project_document`,
 `update_project_document`, `delete_project_document`, `create_interface`,
-`update_interface`, `delete_interface`.
+`update_interface`, `delete_interface`; help centre: `create_faq_article`
+(always `status: "draft"`), `update_faq_article` (always a `pendingRevision`,
+never the live fields), `comment_on_faq_revision` — see "FAQ revision
+review" under "Functional requirements — FAQ / Help Center" below for what
+these two collections' write tools do and don't do.
 
 **Documentation is full read/write by requirement.** A project's docs are
 meant to be kept current by whoever is doing the work, agents included, with
@@ -1523,9 +1613,12 @@ not implementation detail:
 
 **No tool may deploy, merge, approve a ticket out of Ready for Testing,
 change a card's status, write a train field, fire the Notify Claude Routine,
-or trigger a campaign.** Campaign triggering stays on the triggered Routine
-and the release pipeline keeps its human gates — an agent files, reads,
-enriches, documents and comments; it does not ship.
+publish or approve an FAQ article, or trigger a campaign.** Campaign
+triggering stays on the triggered Routine and the release pipeline keeps
+its human gates — an agent files, reads, enriches, documents and comments;
+it does not ship. `create_faq_article` only ever writes `status: "draft"`;
+`update_faq_article` only ever writes `pendingRevision`/`needsReview`, never
+`reviewStatus: "approved"` and never the live article fields.
 
 This is a requirement about the surface, not a convention.
 `update_backlog_item`'s schema has no `status`. The documentation tools do

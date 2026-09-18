@@ -84,17 +84,30 @@ empty or mis-edited collection can never lock everyone out.
 
 **Can — read:** `whoami`, `list_projects`, `list_backlog_items`,
 `get_backlog_item`, `get_project_docs`, `list_doc_revisions`,
-`get_doc_revision`, `search_faq`, `get_faq_article`.
+`get_doc_revision`, `search_faq`, `get_faq_article`,
+`list_pending_faq_revisions`, `get_faq_revision`.
 
 **Can — write (editor and admin only):**
 
-| Tickets | Documentation |
-| --- | --- |
-| `create_backlog_item` (always into the Backlog column) | `set_project_requirements` |
-| `update_backlog_item` (title, description, type, area) | `set_project_readme` |
-| `add_item_comment` | `set_project_artifact` |
-| | `create_project_document` / `update_project_document` / `delete_project_document` |
-| | `create_interface` / `update_interface` / `delete_interface` |
+| Tickets | Documentation | Help centre |
+| --- | --- | --- |
+| `create_backlog_item` (always into the Backlog column) | `set_project_requirements` | `create_faq_article` (always a draft) |
+| `update_backlog_item` (title, description, type, area) | `set_project_readme` | `update_faq_article` (always a pending revision) |
+| `add_item_comment` | `set_project_artifact` | `comment_on_faq_revision` |
+| | `create_project_document` / `update_project_document` / `delete_project_document` | |
+| | `create_interface` / `update_interface` / `delete_interface` | |
+
+**The help centre tools never publish anything.** `create_faq_article`
+always writes `status: "draft"`; `update_faq_article` always writes a
+`pendingRevision` + `needsReview: true` and never touches the live article
+fields — it's the exact same review mechanism the Deploy flow's own "FAQ
+impact review" already uses (see `ROUTINE_INSTRUCTIONS.md` and
+`REQUIREMENTS.md` → "FAQ revision review"), just with the caller's own email
+as `proposedBy` (plus `proposedVia: "mcp"` so FAQ Management can tell it
+apart from the Routine's `"claude"`) and no `sourceItemIds`, since no
+backlog ticket triggered it — approving it in FAQ Management is enough on
+its own, and the next hourly `faq-content.yml` export publishes it. A
+person still does that approving, in the console; no MCP tool can.
 
 **Documentation is meant to be kept current by whoever is doing the work,
 including an agent** — that is why these are full read/write, gated by the
@@ -128,9 +141,12 @@ stale.
 **Cannot, deliberately:** deploy, merge a train, approve a ticket out of
 Ready for Testing, move a card's status, write any train field
 (`trainReady`, `patchReady`, `mergeReady`, `revertReady`), fire the Notify
-Claude Routine, or trigger a campaign. **Campaign triggering stays on the
-triggered Routine, and the release pipeline keeps its human gates** — an
-agent files, reads, enriches and comments; it does not ship.
+Claude Routine, approve or publish an FAQ article, or trigger a campaign.
+**Campaign triggering stays on the triggered Routine, and the release
+pipeline keeps its human gates** — an agent files, reads, enriches and
+comments; it does not ship. The same is true of the help centre: an agent
+can draft or propose, never approve or publish — that stays a person,
+in FAQ Management.
 
 There is no tool for those and no field an existing tool could reach to get
 at them. `update_backlog_item`'s schema has no `status`. The documentation

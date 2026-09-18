@@ -594,6 +594,32 @@ git protocol, so none of it depends on `api.github.com` (see step 0).
   than re-diagnosing an unchanged blocker on every fire — the same
   anti-noise rule that used to apply to a `dirty` PR (#77 sat blocked for
   hours while two fires each re-confirmed the identical state).
+
+  **One specific conflict resolves itself and never reaches you as
+  `conflict` at all: `faq/data/index.json`.** The hourly FAQ content export
+  commits straight to `main` any time an article is edited in the console,
+  and `index.json` aggregates every article's metadata into one file — so a
+  train that has also touched any FAQ article used to conflict on
+  `index.json` even when the two sides touched completely different
+  articles (first hit in production 17 Sep 2026: main commit `a2d7740`
+  against this project's own train). `run-backlog-automation.js`'s merge
+  step (`tryAutoResolveFaqIndexConflict`) now checks, when the merge into
+  the branch conflicts, whether `faq/data/index.json` is the *only*
+  conflicted path — if so it rebuilds that file from
+  `faq/data/articles/*.json` (which, being separate files, already merged
+  cleanly) plus a categories list taken from whichever side's export is
+  newer, keeping `generatedAt` as the later of the two timestamps, and
+  validates every article file has a matching index entry and vice versa
+  before accepting it. If that validation fails, or anything other than
+  `index.json` also conflicted, it falls back to the manual `conflict`
+  path above exactly as before. Either way — resolved or not — the
+  merged/blocked ticket(s) get a note naming which file(s) conflicted and
+  whether the automatic resolver handled it, so "just showing conflict"
+  with no detail is no longer a thing that happens here. See
+  `faq/README.md`'s own note on this for the repo-format side of the fix
+  (the export now writes `index.json` with one category/article per line,
+  which on its own prevents most — but not all, e.g. two edits to the same
+  article — of these conflicts from happening in the first place).
 - `awaiting-human-merge` — the train carries a `.github/workflows/` change,
   which the pipeline never merges on its own. The PR is left open for a
   person; the board records every ticket as live on its own once it sees
@@ -656,6 +682,19 @@ append this fire's ticket ids/PR numbers to `sourceItemIds` /
 `sourcePrNumbers` rather than replacing them — that way it still waits
 for all of its tickets to be live.
 
+An existing awaiting-review proposal may instead have come from a person's
+own agent, via the MCP `update_faq_article` tool
+(`backlog-tracker/functions/mcp-server.js` — see REQUIREMENTS.md → "FAQ
+revision review") rather than an earlier deploy fire: recognisable by
+`pendingRevision.proposedVia: "mcp"` and no `sourceItemIds` at all (an
+MCP-originated proposal has no ticket behind it, so it never sets that
+field). Treat it exactly like an earlier deploy's proposal — build your new
+proposal on its text, not the live text — but since your proposal DOES have
+a ticket behind it, set `sourceItemIds`/`sourceProjectId` (and
+`sourcePrNumbers` if applicable) yourself rather than leaving the field
+absent; from that point the merged proposal waits on your ticket(s) the
+normal way.
+
 ### 2. Read the change
 
 For each item's confirmed PR (step 1 of the Deploy flow — exact id match,
@@ -713,6 +752,9 @@ those are what the reviewer compares against.
 - `sourcePrNumbers` (array of integers, optional) — the PR number(s).
 - `proposedBy` — the literal string `"claude"`.
 - `proposedAt` — ISO-8601 timestamp (string).
+- `proposedVia` — don't set this yourself; it's how an MCP-originated
+  proposal (`proposedVia: "mcp"`, see above) is told apart from yours. Leave
+  it absent on a proposal you write.
 - `reviewStatus` — the literal string `"awaiting-review"`. Never write
   `"approved"` yourself.
 

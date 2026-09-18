@@ -825,6 +825,37 @@ const STATUS_LABELS = {
 const TITLE_MAX = 70;
 const MAX_READ_DOCS = 1500;
 
+// ── FAQ / Help Center write limits ───────────────────────────────────────
+// Mirrors firestore.rules' isValidPendingRevision / the faqArticles create-
+// update rule exactly, so a write this server accepts is never one the
+// console's own client-side rules would then reject as oversized — see
+// REQUIREMENTS.md -> "FAQ revision review".
+const FAQ_TITLE_MAX = 200;
+const FAQ_SLUG_MAX = 200;
+const FAQ_SUMMARY_MAX = 400;
+const FAQ_BODY_MAX = 60000;
+const FAQ_KEYWORDS_MAX = 30;
+const FAQ_REASON_MAX = 2000;
+const FAQ_DOC_TYPES = ["faq", "how-to", "reference", "explanation"];
+
+function slugifyFaq(s) {
+  return String(s || "").trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+}
+// Appends -2, -3, … until a free slug is found, rather than rejecting the
+// call outright — an agent filing a draft has no reason to know what slugs
+// already exist, and the console's own editor doesn't enforce uniqueness
+// either, so this is a courtesy, not a rule the schema requires.
+async function uniqueFaqSlug(base) {
+  const wanted = base || "article";
+  let candidate = wanted;
+  for (let n = 2; n < 50; n += 1) {
+    const hit = await db().collection("faqArticles").where("slug", "==", candidate).limit(1).get();
+    if (hit.empty) return candidate;
+    candidate = `${wanted}-${n}`;
+  }
+  return `${wanted}-${Date.now()}`;
+}
+
 // ── Documentation limits ─────────────────────────────────────────────────
 // A project's own Requirements and README live as fields on its projects/{id}
 // doc, so every one of them shares that doc's 1 MiB Firestore ceiling. The
@@ -1677,6 +1708,295 @@ const TOOLS = [
       });
     },
   },
+  // ── FAQ / Help Center: write tools ───────────────────────────────────────
+  // Reuses the SAME pendingRevision/needsReview mechanism the Deploy flow's
+  // own "FAQ impact review" already writes (ROUTINE_INSTRUCTIONS.md ->
+  // "FAQ impact review (Deploy flow, step 3b)"; promotion logic in
+  // functions/index.js -> promoteFaqRevisionIfReady) rather than inventing a
+  // second one — that function is what makes "approve it and the hourly
+  // export publishes it" actually true. Only create_faq_article writes a
+  // faqArticles doc directly, and only ever with status "draft"; every
+  // other write here only ever touches pendingRevision/needsReview, never
+  // the live fields, never reviewStatus: "approved", never previousRevision,
+  // and never deletes anything — approval and publishing stay human, in the
+  // console. See REQUIREMENTS.md -> "FAQ revision review" for the full
+  // shape and why sourceItemIds is omitted for an MCP-originated proposal.
+  {
+    name: "create_faq_article",
+    description: "Create a new help-centre article as a draft. It is never published by this tool — a person reviews and publishes it from FAQ Management, exactly like an article typed there.",
+    scope: "board.write",
+    inputSchema: {
+      type: "object",
+      properties: {
+        title: { type: "string", description: `Up to ${FAQ_TITLE_MAX} characters.` },
+        categoryId: { type: "string", description: "An existing faqCategories doc id (the console's Settings page manages categories; there is no MCP tool to list them yet)." },
+        slug: { type: "string", description: "URL slug. Derived from the title when omitted; a slug already in use gets -2, -3, … appended." },
+        summary: { type: "string", description: `Shown in search results. Up to ${FAQ_SUMMARY_MAX} characters.` },
+        keywords: { type: "array", items: { type: "string" }, description: `Search terms. Up to ${FAQ_KEYWORDS_MAX}.` },
+        docType: { type: "string", enum: FAQ_DOC_TYPES, description: "This article's Diátaxis type per docs/CONTRIBUTING-docs.md §2. Defaults to 'faq'." },
+        bodyMd: { type: "string", description: `The article body — the same HTML shape the console's rich-text editor saves (paragraphs, headings, lists, callouts; see REQUIREMENTS.md -> "Rich formatting in article bodies"). Up to ${FAQ_BODY_MAX} characters.` },
+        programId: { type: "string", description: "Optional — an existing programs doc id." },
+        projectId: { type: "string", description: "Optional — an existing project id, from list_projects." },
+      },
+      required: ["title", "categoryId", "bodyMd"], additionalProperties: false,
+    },
+    async run(args, session) {
+      const title = String(args.title || "").trim();
+      if (!title) return toolError("title is required.");
+      if (title.length > FAQ_TITLE_MAX) return toolError(`title is limited to ${FAQ_TITLE_MAX} characters.`);
+      const bodyMd = String(args.bodyMd == null ? "" : args.bodyMd);
+      if (!bodyMd.trim()) return toolError("bodyMd is required.");
+      if (bodyMd.length > FAQ_BODY_MAX) return toolError(`bodyMd is limited to ${FAQ_BODY_MAX} characters (the same ceiling the console editor has); that was ${bodyMd.length}.`);
+      const categoryId = String(args.categoryId || "").trim();
+      if (!categoryId) return toolError("categoryId is required.");
+      const catSnap = await db().collection("faqCategories").doc(categoryId).get();
+      if (!catSnap.exists) return toolError(`No FAQ category with id ${categoryId}. categoryId must be an existing faqCategories doc — check the console's Settings page.`);
+      const summary = args.summary == null ? "" : String(args.summary).trim();
+      if (summary.length > FAQ_SUMMARY_MAX) return toolError(`summary is limited to ${FAQ_SUMMARY_MAX} characters.`);
+      let keywords = [];
+      if (args.keywords != null) {
+        if (!Array.isArray(args.keywords)) return toolError("keywords must be an array of strings.");
+        keywords = args.keywords.map((k) => String(k).trim()).filter(Boolean);
+        if (keywords.length > FAQ_KEYWORDS_MAX) return toolError(`keywords is limited to ${FAQ_KEYWORDS_MAX} entries.`);
+      }
+      const docType = args.docType != null ? String(args.docType) : "faq";
+      if (!FAQ_DOC_TYPES.includes(docType)) return toolError(`docType must be one of: ${FAQ_DOC_TYPES.join(", ")}.`);
+      let projectId = null;
+      if (args.projectId != null && String(args.projectId).trim()) {
+        projectId = String(args.projectId).trim();
+        if (!(await db().collection("projects").doc(projectId).get()).exists) return toolError(`No project with id ${projectId}. Call list_projects first.`);
+      }
+      let programId = null;
+      if (args.programId != null && String(args.programId).trim()) {
+        programId = String(args.programId).trim();
+        if (!(await db().collection("programs").doc(programId).get()).exists) return toolError(`No program with id ${programId}.`);
+      }
+      const slugBase = slugifyFaq(String(args.slug || "").trim() || title);
+      if (!slugBase) return toolError("Could not derive a slug — give a title with at least one letter or number, or pass slug explicitly.");
+      if (slugBase.length > FAQ_SLUG_MAX) return toolError(`slug is limited to ${FAQ_SLUG_MAX} characters.`);
+      const slug = await uniqueFaqSlug(slugBase);
+
+      // Same "max existing order + 1" rule the console's own saveFaqArticle
+      // uses (public/js/app.js), so a new draft sorts after everything else
+      // until a person deliberately reorders it.
+      let maxOrder = -1;
+      (await db().collection("faqArticles").limit(MAX_READ_DOCS).get()).forEach((d) => {
+        const o = (d.data() || {}).order;
+        if (typeof o === "number" && o > maxOrder) maxOrder = o;
+      });
+
+      const ref = await db().collection("faqArticles").add({
+        categoryId, projectId, programId,
+        title, slug, summary, bodyMd, docType, keywords,
+        status: "draft",
+        needsReview: false,
+        order: maxOrder + 1,
+        createdVia: "mcp",
+        createdByEmail: session.email,
+        createdAt: FieldValue.serverTimestamp(),
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+      await audit(session, "create_faq_article", { articleId: ref.id, title, slug, categoryId });
+      return textResult({
+        created: true, articleId: ref.id, title, slug, categoryId, docType, status: "draft",
+        note: "Created as a draft. Nothing is published until a person reviews and publishes it from FAQ Management.",
+      });
+    },
+  },
+  {
+    name: "update_faq_article",
+    description: "Propose a change to an existing article's title, summary, keywords, doc type and/or body. This never edits the live article — it parks the change as a pendingRevision for a person to review and approve in FAQ Management, the exact mechanism the Deploy flow's own FAQ impact review already uses. Only title/summary/bodyMd/keywords/docType are revisable this way; category, slug, project and program links are live-only fields this review mechanism doesn't carry, so changing those stays a direct console edit. Use create_faq_article for a brand-new article instead.",
+    scope: "board.write",
+    inputSchema: {
+      type: "object",
+      properties: {
+        articleId: { type: "string", description: "From search_faq, get_faq_article or list_pending_faq_revisions." },
+        reason: { type: "string", description: `Why this change is needed — shown to the person reviewing it. Required. Up to ${FAQ_REASON_MAX} characters.` },
+        title: { type: "string", description: `Up to ${FAQ_TITLE_MAX} characters.` },
+        summary: { type: "string", description: `Up to ${FAQ_SUMMARY_MAX} characters.` },
+        keywords: { type: "array", items: { type: "string" }, description: `Up to ${FAQ_KEYWORDS_MAX}.` },
+        docType: { type: "string", enum: FAQ_DOC_TYPES },
+        bodyMd: { type: "string", description: `Up to ${FAQ_BODY_MAX} characters.` },
+      },
+      required: ["articleId", "reason"], additionalProperties: false,
+    },
+    async run(args, session) {
+      const reason = String(args.reason || "").trim();
+      if (!reason) return toolError("reason is required — it's shown to whoever reviews this change.");
+      if (reason.length > FAQ_REASON_MAX) return toolError(`reason is limited to ${FAQ_REASON_MAX} characters.`);
+      const ref = db().collection("faqArticles").doc(String(args.articleId));
+      const snap = await ref.get();
+      if (!snap.exists) return toolError(`No FAQ article with id ${args.articleId}. Use search_faq to find one.`);
+      const a = snap.data() || {};
+      if (a.pendingRevision && a.pendingRevision.reviewStatus === "approved") {
+        return toolError("This article already has an approved update waiting to go live — a person has signed that off. Wait for it to be promoted, or have them withdraw it in FAQ Management, before proposing another change.");
+      }
+      // An existing awaiting-review proposal (from this tool, or from the
+      // Deploy flow's own FAQ impact review) is the base to build on, not
+      // the live text — same rule ROUTINE_INSTRUCTIONS.md gives the
+      // Routine itself, so two proposals in a row don't clobber each other.
+      const base = a.pendingRevision && a.pendingRevision.reviewStatus === "awaiting-review" ? a.pendingRevision : a;
+      const rev = {
+        title: base.title || a.title || "",
+        summary: typeof base.summary === "string" ? base.summary : (a.summary || ""),
+        bodyMd: typeof base.bodyMd === "string" ? base.bodyMd : (a.bodyMd || ""),
+      };
+      if (Array.isArray(base.keywords)) rev.keywords = base.keywords;
+      else if (Array.isArray(a.keywords)) rev.keywords = a.keywords;
+      if (base.docType || a.docType) rev.docType = base.docType || a.docType;
+
+      let changed = false;
+      if (args.title != null) {
+        const t = String(args.title).trim();
+        if (!t) return toolError("title cannot be emptied.");
+        if (t.length > FAQ_TITLE_MAX) return toolError(`title is limited to ${FAQ_TITLE_MAX} characters.`);
+        rev.title = t; changed = true;
+      }
+      if (args.summary != null) {
+        const s = String(args.summary).trim();
+        if (s.length > FAQ_SUMMARY_MAX) return toolError(`summary is limited to ${FAQ_SUMMARY_MAX} characters.`);
+        rev.summary = s; changed = true;
+      }
+      if (args.bodyMd != null) {
+        const b = String(args.bodyMd);
+        if (!b.trim()) return toolError("bodyMd cannot be emptied.");
+        if (b.length > FAQ_BODY_MAX) return toolError(`bodyMd is limited to ${FAQ_BODY_MAX} characters; that was ${b.length}.`);
+        rev.bodyMd = b; changed = true;
+      }
+      if (args.keywords != null) {
+        if (!Array.isArray(args.keywords)) return toolError("keywords must be an array of strings.");
+        const kw = args.keywords.map((k) => String(k).trim()).filter(Boolean);
+        if (kw.length > FAQ_KEYWORDS_MAX) return toolError(`keywords is limited to ${FAQ_KEYWORDS_MAX} entries.`);
+        rev.keywords = kw; changed = true;
+      }
+      if (args.docType != null) {
+        if (!FAQ_DOC_TYPES.includes(args.docType)) return toolError(`docType must be one of: ${FAQ_DOC_TYPES.join(", ")}.`);
+        rev.docType = args.docType; changed = true;
+      }
+      if (!changed) return toolError("Nothing to propose — pass at least one of title, summary, bodyMd, keywords, docType.");
+
+      // No sourceItemIds: no backlog ticket triggered this, unlike a Deploy-
+      // flow proposal. promoteFaqRevisionIfReady (functions/index.js) treats
+      // a missing/empty sourceItemIds as nothing left to wait on, so
+      // approval alone promotes it — see REQUIREMENTS.md -> "FAQ revision
+      // review". proposedBy carries the real signed-in email (not the
+      // literal "claude" the Routine uses) so FAQ Management's "Proposed
+      // by" line shows who actually asked for this; proposedVia is the
+      // explicit, machine-readable marker of which path wrote it, same
+      // "via: mcp" convention recordDocRevision already uses above.
+      const pendingRevision = Object.assign({}, rev, {
+        reason,
+        proposedBy: session.email,
+        proposedVia: "mcp",
+        proposedAt: new Date().toISOString(),
+        reviewStatus: "awaiting-review",
+      });
+      await ref.update({ pendingRevision, needsReview: true, updatedAt: FieldValue.serverTimestamp() });
+      await audit(session, "update_faq_article", { articleId: ref.id, reasonChars: reason.length });
+      return textResult({
+        proposed: true, articleId: ref.id, needsReview: true, reviewStatus: "awaiting-review",
+        note: "The live article is unchanged. A person reviews this in FAQ Management (Review proposed update); approving it publishes on the next hourly FAQ export — no ticket or deploy train needed, since no sourceItemIds are attached.",
+      });
+    },
+  },
+  {
+    name: "list_pending_faq_revisions",
+    description: "Every FAQ article with a proposed update waiting for a person's review — written by the Deploy flow's own FAQ impact review as well as by update_faq_article. Use get_faq_revision for the full old-vs-new comparison on one.",
+    scope: "board.read",
+    inputSchema: { type: "object", properties: {}, additionalProperties: false },
+    async run() {
+      const snap = await db().collection("faqArticles").where("needsReview", "==", true).limit(MAX_READ_DOCS).get();
+      const rows = [];
+      snap.forEach((doc) => {
+        const a = doc.data() || {};
+        const rev = a.pendingRevision;
+        // needsReview can also be set with no concrete proposal attached —
+        // the older, coarser per-project "something changed, go look"
+        // safety net (see onBacklogItemPublishedLive in functions/index.js).
+        // There's nothing to diff there, so it's out of scope for this tool.
+        if (!rev) return;
+        rows.push({
+          articleId: doc.id,
+          title: a.title || rev.title || "",
+          isNewArticle: !!rev.isNew,
+          reviewStatus: rev.reviewStatus || null,
+          proposedBy: rev.proposedBy || null,
+          proposedVia: rev.proposedVia || null,
+          proposedAt: rev.proposedAt || null,
+          reason: rev.reason || null,
+          sourceItemIds: Array.isArray(rev.sourceItemIds) ? rev.sourceItemIds : [],
+        });
+      });
+      rows.sort((x, y) => String(y.proposedAt || "").localeCompare(String(x.proposedAt || "")));
+      return textResult({ matched: rows.length, revisions: rows });
+    },
+  },
+  {
+    name: "get_faq_revision",
+    description: "The live text and the proposed pendingRevision for one article, side by side, so a caller can see exactly what a review would compare.",
+    scope: "board.read",
+    inputSchema: {
+      type: "object",
+      properties: { articleId: { type: "string" } },
+      required: ["articleId"], additionalProperties: false,
+    },
+    async run(args) {
+      const snap = await db().collection("faqArticles").doc(String(args.articleId)).get();
+      if (!snap.exists) return toolError(`No FAQ article with id ${args.articleId}.`);
+      const a = snap.data() || {};
+      const rev = a.pendingRevision;
+      if (!rev) return toolError("That article has no pending revision to compare.");
+      return textResult({
+        articleId: snap.id,
+        isNewArticle: !!rev.isNew,
+        // A proposal that creates a brand-new article has no live text yet.
+        live: rev.isNew ? null : {
+          title: a.title || "", summary: a.summary || "", bodyMd: a.bodyMd || "",
+          keywords: a.keywords || [], docType: a.docType || null, status: a.status || null,
+        },
+        proposed: {
+          title: rev.title || "", summary: rev.summary || "", bodyMd: rev.bodyMd || "",
+          keywords: rev.keywords || [], docType: rev.docType || null,
+        },
+        reason: rev.reason || null,
+        reviewStatus: rev.reviewStatus || null,
+        proposedBy: rev.proposedBy || null,
+        proposedVia: rev.proposedVia || null,
+        proposedAt: rev.proposedAt || null,
+        sourceItemIds: Array.isArray(rev.sourceItemIds) ? rev.sourceItemIds : [],
+      });
+    },
+  },
+  {
+    name: "comment_on_faq_revision",
+    description: "Add a comment about a proposed FAQ update, attributed to you. Recorded on the article as an audit trail — the console's FAQ Management review page does not render this thread yet, so treat it as a note for later rather than a live conversation.",
+    scope: "board.write",
+    inputSchema: {
+      type: "object",
+      properties: {
+        articleId: { type: "string" },
+        text: { type: "string", description: "The comment. Up to 4000 characters." },
+      },
+      required: ["articleId", "text"], additionalProperties: false,
+    },
+    async run(args, session) {
+      const text = String(args.text || "").trim();
+      if (!text) return toolError("text is required.");
+      if (text.length > 4000) return toolError("A comment is limited to 4000 characters.");
+      const ref = db().collection("faqArticles").doc(String(args.articleId));
+      const snap = await ref.get();
+      if (!snap.exists) return toolError(`No FAQ article with id ${args.articleId}.`);
+      if (!(snap.data() || {}).pendingRevision) return toolError("That article has no pending revision to comment on.");
+      // A plain Date, not serverTimestamp(): Firestore rejects the sentinel
+      // inside arrayUnion — same reason add_item_comment above uses one.
+      await ref.update({
+        reviewComments: FieldValue.arrayUnion({ author: session.email, text, at: new Date() }),
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+      await audit(session, "comment_on_faq_revision", { articleId: ref.id, chars: text.length });
+      return textResult({ added: true, articleId: ref.id, author: session.email });
+    },
+  },
 ];
 
 const TOOLS_BY_NAME = new Map(TOOLS.map((t) => [t.name, t]));
@@ -1699,6 +2019,7 @@ const SERVER_INSTRUCTIONS = [
   "Documentation writes REPLACE the whole document, so read it first and send back the complete revised text — never a fragment. The version you replace is kept, and list_doc_revisions / get_doc_revision can recover it.",
   "Where a project's documentation also exists as a file in the repo (REQUIREMENTS.md, README.md, shared/interface-contract.md), the two are meant to match: update both, and treat a divergence as a bug in whichever is stale.",
   "Use search_faq / get_faq_article to answer Personalisation Hub product questions from the published help centre instead of guessing.",
+  "You can also write to the help centre: create_faq_article files a brand-new draft, and update_faq_article proposes a change to an existing one as a pendingRevision — never live. Either way a person still reviews and approves it in FAQ Management before anything publishes; list_pending_faq_revisions and get_faq_revision let you check on a proposal's status.",
   "Deployment is out of scope on purpose: nothing here moves a ticket through testing, merges a train, or triggers a campaign. Those stay on the board's own buttons and its triggered Routine.",
 ].join(" ");
 
@@ -2012,4 +2333,5 @@ exports.__test = {
   sha256b64url, authorizationServerMetadata, protectedResourceMetadata,
   TOOLS, CATEGORIES, STATUS_LABELS, SUPPORTED_PROTOCOL_VERSIONS, SERVER_ICONS,
   PROJECT_WRITABLE_FIELDS, PROJECT_MD_MAX, DOC_MD_MAX, updateProjectFields,
+  FAQ_TITLE_MAX, FAQ_SUMMARY_MAX, FAQ_BODY_MAX, FAQ_KEYWORDS_MAX, FAQ_REASON_MAX, FAQ_DOC_TYPES,
 };

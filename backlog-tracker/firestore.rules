@@ -332,7 +332,15 @@ service cloud.firestore {
         && (!("keywords" in r) || r.keywords is list && r.keywords.size() <= 30)
         && (!("docType" in r) || r.docType in ["faq", "how-to", "reference", "explanation"])
         && (!("reason" in r) || r.reason is string && r.reason.size() <= 2000)
-        && r.sourceItemIds is list && r.sourceItemIds.size() > 0 && r.sourceItemIds.size() <= 50
+        // Required + non-empty for the Deploy flow's own proposals (the
+        // Routine — ROUTINE_INSTRUCTIONS.md "FAQ impact review"), which keys
+        // promotion on a ticket reaching Merged to Main. Optional for an
+        // MCP-originated proposal (functions/mcp-server.js's
+        // update_faq_article — see REQUIREMENTS.md "FAQ revision review"),
+        // which has no ticket to wait for: promoteFaqRevisionIfReady treats
+        // a missing/empty list as nothing left to wait on, so approval alone
+        // promotes it.
+        && (!("sourceItemIds" in r) || (r.sourceItemIds is list && r.sourceItemIds.size() <= 50))
         && r.reviewStatus in ["awaiting-review", "approved"];
     }
     // The text a promotion replaced, kept so a reviewer can revert.

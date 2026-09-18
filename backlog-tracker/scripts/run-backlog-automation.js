@@ -45,6 +45,14 @@
 const { execFileSync } = require("child_process");
 const fs = require("fs");
 const path = require("path");
+const { buildIndexFromArticleFiles, validateIndexAgainstArticleFiles, serializeIndex } = require("./faq-index-lib");
+// Shared with functions/index.js's onBacklogItemTrainLockRecompute — see
+// that file for the "why" (fixes the stuck-trainLocked bug). Kept as its
+// own dependency-free module specifically so it's unit-testable
+// (test/train-lock.test.js) without requiring this whole script, which
+// runs main() for real the moment it's required (see the bottom of this
+// file).
+const { trainLockShouldClear } = require("../functions/train-lock");
 
 const PROJECT_ID = "backlog-tracker-e4ed2";
 const REPO = "offline2online/rob_ph_demos";
@@ -667,6 +675,78 @@ function discardWorkingTree() {
   run("git", ["checkout", "main", "--quiet"]);
 }
 
+// The paths `git merge` left with unresolved conflict markers, mid-merge.
+function conflictedPaths() {
+  const out = run("git", ["diff", "--name-only", "--diff-filter=U"]);
+  return out ? out.split("\n").filter(Boolean) : [];
+}
+
+// Auto-resolving a faq/data/index.json merge conflict.
+//
+// The hourly "FAQ content" export (faq-export.js) commits straight to main
+// any time an article is edited in the console, and index.json aggregates
+// every article's metadata into one file — so merging main into a train
+// that has *also* touched any FAQ article (its own patchFiles, or an
+// earlier export commit already on the branch) conflicts on index.json
+// even when the two sides touched completely different articles, the
+// moment either side's edit lands on a line the other side's `generatedAt`
+// stamp or article ordering also touched. See ROUTINE_INSTRUCTIONS.md and
+// faq/README.md for the incident this fixes (main commit a2d7740 against
+// this project's own train, 17 Sep 2026).
+//
+// index.json is fully derivable from faq/data/articles/*.json plus the
+// categories list (see faq-index-lib.js) — so when index.json is the ONLY
+// conflicted path, there is nothing to actually merge by hand: git will
+// already have merged every non-conflicting article file cleanly into the
+// working tree (a merge only leaves conflict markers in the files that
+// actually collided), so rebuilding index.json from what's already on disk
+// after the attempted merge reconstructs exactly what the merge "should"
+// have produced, with no risk of silently dropping either side's article
+// edits. If anything OTHER than index.json also conflicted, this declines
+// to guess and leaves the merge for a human, same as before.
+//
+// Returns { resolved, detail } — `detail` is always set (whether resolved
+// or not) so the caller can report which file(s) conflicted and whether
+// this resolver handled it, per the ticket that added this function.
+function tryAutoResolveFaqIndexConflict(conflicted) {
+  if (conflicted.length !== 1 || conflicted[0] !== "faq/data/index.json") {
+    return { resolved: false, detail: `conflicted on ${conflicted.join(", ") || "(unknown files)"}` };
+  }
+  const indexPath = path.join(process.cwd(), "faq/data/index.json");
+  const articlesDir = path.join(process.cwd(), "faq/data/articles");
+  let ours, theirs;
+  try {
+    ours = JSON.parse(run("git", ["show", ":2:faq/data/index.json"]));
+    theirs = JSON.parse(run("git", ["show", ":3:faq/data/index.json"]));
+  } catch (err) {
+    return { resolved: false, detail: `conflicted on faq/data/index.json, and the automatic resolver couldn't read both sides to rebuild it (${err.message})` };
+  }
+  // The categories list rarely changes and isn't derivable from the article
+  // files alone — take it from whichever side's export ran more recently,
+  // and keep generatedAt as the later of the two, per the ticket.
+  const newerIsTheirs = new Date(theirs.generatedAt) > new Date(ours.generatedAt);
+  const categories = newerIsTheirs ? theirs.categories : ours.categories;
+  const generatedAt = newerIsTheirs ? theirs.generatedAt : ours.generatedAt;
+  let rebuilt;
+  try {
+    rebuilt = buildIndexFromArticleFiles(articlesDir, categories, generatedAt);
+    validateIndexAgainstArticleFiles(rebuilt, articlesDir);
+  } catch (err) {
+    return { resolved: false, detail: `conflicted on faq/data/index.json — tried the automatic resolver, but rebuilding it from faq/data/articles/*.json failed validation (${err.message})` };
+  }
+  fs.writeFileSync(indexPath, serializeIndex(rebuilt));
+  run("git", ["add", "faq/data/index.json"]);
+  if (conflictedPaths().length) {
+    // Shouldn't happen given the length-1 check above, but never commit a
+    // merge that still has other unresolved paths.
+    return { resolved: false, detail: "conflicted on faq/data/index.json and other path(s) that appeared after resolving it — leaving the merge for a human" };
+  }
+  return {
+    resolved: true,
+    detail: `conflicted on faq/data/index.json only — the automatic resolver rebuilt it from faq/data/articles/*.json (${rebuilt.articles.length} articles) and the categories list from the ${newerIsTheirs ? "incoming main" : "branch's own"} export, and the merge completed`,
+  };
+}
+
 async function processApplyPatch(item) {
   console.log(`[apply-patch] ${item.id}: ${item.title || item.desc}`);
   if (!Array.isArray(item.patchFiles) || item.patchFiles.length === 0) {
@@ -1209,7 +1289,7 @@ function viewTrainPr(prNumber) {
 // case). Flips every ticket on the train to live, triggers the Firebase
 // deploy when the merge touched backlog-tracker/, and resets the branch back
 // to main so the next train starts from a clean base.
-async function finishTrain(project, deployBranch, prNumber, trainItems, { touchesBacklogTracker }) {
+async function finishTrain(project, deployBranch, prNumber, trainItems, { touchesBacklogTracker, mergeNote }) {
   let mergeCommit = null;
   try {
     const parsed = JSON.parse(run("gh", ["pr", "view", String(prNumber), "--repo", REPO, "--json", "mergeCommit"]));
@@ -1242,7 +1322,8 @@ async function finishTrain(project, deployBranch, prNumber, trainItems, { touche
   for (const item of trainItems) {
     const notes = await appendNote(
       item,
-      `Shipped in the deployment train PR #${prNumber}, merged to main with ${trainItems.length === 1 ? "no other ticket" : `${trainItems.length - 1} other ticket(s)`} from \`${deployBranch}\`.`
+      `Shipped in the deployment train PR #${prNumber}, merged to main with ${trainItems.length === 1 ? "no other ticket" : `${trainItems.length - 1} other ticket(s)`} from \`${deployBranch}\`.` +
+        (mergeNote ? ` Note: merging main into ${deployBranch} for this deploy ${mergeNote}.` : "")
     );
     await patchItem(item.id, {
       status: "published-live",
@@ -1303,6 +1384,14 @@ async function processDeployTrain(project) {
     console.log(`[deploy-train] ${project.id}: nothing on the train — clearing trainReady`);
     await patchProject(project.id, {
       trainReady: false, trainStatus: "idle",
+      // Nothing left on the branch means nothing left to gate Backlog on
+      // either — without this, a Deploy to Main click on an already-empty
+      // train (every approved ticket deleted/reverted between the click
+      // and this run) left trainLocked stuck true forever, since a
+      // successful merge was the only other place that ever cleared it.
+      // See train-lock.js / "Ready for Dev CTA stays hidden after all
+      // train tickets are deleted (stuck trainLocked)".
+      trainLocked: false,
       trainNote: "Deploy requested, but no ticket currently has a commit on this project's integration branch — nothing to merge.",
       updatedAt: new Date().toISOString(),
     });
@@ -1333,25 +1422,40 @@ async function processDeployTrain(project) {
 
   await patchProject(project.id, { trainStatus: "deploying", trainNote: null, updatedAt: new Date().toISOString() });
 
-  // 1. Bring main in. This is the only remaining conflict path — it needs
+  // 1. Bring main in. This used to be the only remaining conflict path, and
+  //    still is for anything other than faq/data/index.json — it needs
   //    someone to have pushed to main, in this project's files, outside the
-  //    pipeline — and it is deliberately never resolved automatically.
+  //    pipeline, and a conflict there is deliberately never resolved
+  //    automatically. A conflict confined to index.json alone IS resolved
+  //    automatically (see tryAutoResolveFaqIndexConflict) because that file
+  //    is fully derivable from faq/data/articles/*.json — see that
+  //    function's own comment for why this specific file is safe to do this
+  //    for and no other.
   checkoutTrain(deployBranch);
+  let mergeNote = null;
   try {
     run("git", ["-c", "user.name=backlog-automation", "-c", "user.email=backlog-automation@users.noreply.github.com",
       "merge", "origin/main", "--no-edit", "--quiet"]);
   } catch (err) {
-    try { run("git", ["merge", "--abort"]); } catch { /* nothing in progress */ }
-    discardWorkingTree();
-    console.log(`[deploy-train] ${project.id}: merging main into ${deployBranch} conflicted`);
-    await patchProject(project.id, {
-      trainReady: false,
-      trainStatus: "conflict",
-      trainNote: `Merging main into ${deployBranch} conflicted, so nothing was merged and no card was moved. ` +
-        `Something changed the same lines straight on main. Resolve it by merging main into ${deployBranch} by hand, then click Deploy to Main again.\n\n${scrubSecrets(err.message)}`,
-      updatedAt: new Date().toISOString(),
-    });
-    return;
+    const conflicted = conflictedPaths();
+    const resolution = tryAutoResolveFaqIndexConflict(conflicted);
+    if (!resolution.resolved) {
+      try { run("git", ["merge", "--abort"]); } catch { /* nothing in progress */ }
+      discardWorkingTree();
+      console.log(`[deploy-train] ${project.id}: merging main into ${deployBranch} ${resolution.detail}`);
+      await patchProject(project.id, {
+        trainReady: false,
+        trainStatus: "conflict",
+        trainNote: `Merging main into ${deployBranch} ${resolution.detail}, so nothing was merged and no card was moved. ` +
+          `Resolve it by merging main into ${deployBranch} by hand, then click Deploy to Main again.\n\n${scrubSecrets(err.message)}`,
+        updatedAt: new Date().toISOString(),
+      });
+      return;
+    }
+    run("git", ["-c", "user.name=backlog-automation", "-c", "user.email=backlog-automation@users.noreply.github.com",
+      "commit", "--no-edit", "--quiet"]);
+    console.log(`[deploy-train] ${project.id}: merging main into ${deployBranch} ${resolution.detail}`);
+    mergeNote = resolution.detail;
   }
 
   // 2. One version bump for the whole train, computed from main — so the
@@ -1478,7 +1582,7 @@ async function processDeployTrain(project) {
     console.log(`[deploy-train] ${project.id}: PR #${prNumber} was already merged — recording it`);
   }
 
-  await finishTrain(project, deployBranch, prNumber, onTrain, { touchesBacklogTracker });
+  await finishTrain(project, deployBranch, prNumber, onTrain, { touchesBacklogTracker, mergeNote });
 }
 
 // The train's equivalent of reconcileHumanMergedPrs: a train PR the pipeline
@@ -1511,6 +1615,133 @@ async function reconcileMergedTrains() {
     console.log(`[deploy-train] ${project.id}: PR #${prNumber} was merged outside the pipeline — recording ${onTrain.length} ticket(s) as live`);
     const touchesBacklogTracker = !Array.isArray(pr.files) || pr.files.some((f) => f.path.startsWith("backlog-tracker/"));
     await finishTrain(project, deployBranch, prNumber, onTrain, { touchesBacklogTracker });
+  }
+}
+
+function dateStamp() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+// Point 3 of "Ready for Dev CTA stays hidden after all train tickets are
+// deleted (stuck trainLocked)": once reconcileLockedTrains (below) has
+// decided a project's train is empty with nothing merged, this decides
+// whether the integration branch itself still holds anything worth
+// preserving before it's reset back to main for the next train — the same
+// reset finishTrain does after a real merge, just reached without one.
+//
+// A card sent back through "Failed testing" already had its own commits
+// taken off the branch by processRevertFromTrain, so on its own that never
+// leaves anything orphaned (though it can leave revert commits ahead of
+// main that net to zero content change but are still real history). What
+// this actually protects against is a card DELETED outright while its
+// commit was still live on the branch — deleteDoc() has no idea a train
+// exists, so that commit would otherwise just vanish the next time this
+// branch gets reset with nothing to say it ever happened. Either way: if
+// the branch is ahead of main at all, tag its current tip as
+// archive/<branch>-<date> and push the tag BEFORE resetting, so the work
+// stays recoverable (`git checkout archive/...`) even though no ticket on
+// the board points at it any more.
+function archiveAndResetOrphanedBranch(deployBranch) {
+  if (!remoteBranchExists(deployBranch)) return { ok: true, tag: null };
+  run("git", ["fetch", "origin", "main", deployBranch, "--quiet"]);
+
+  let ahead = [];
+  try {
+    const out = run("git", ["rev-list", `origin/main..origin/${deployBranch}`]);
+    ahead = out ? out.split("\n").filter(Boolean) : [];
+  } catch (err) {
+    return { ok: false, error: err.message, tag: null };
+  }
+
+  let tag = null;
+  if (ahead.length) {
+    const base = `archive/${deployBranch}-${dateStamp()}`;
+    tag = base;
+    // Same-day reset of the same project's train more than once (unlikely,
+    // but not impossible) must not silently overwrite an earlier archive.
+    for (let n = 2; ; n += 1) {
+      try {
+        run("git", ["rev-parse", "--verify", "--quiet", `refs/tags/${tag}`]);
+        tag = `${base}-${n}`;
+      } catch {
+        break; // rev-parse failed to resolve it -> this tag name is free
+      }
+    }
+    try {
+      run("git", ["tag", tag, `origin/${deployBranch}`]);
+      run("git", ["push", "origin", tag, "--quiet"]);
+    } catch (err) {
+      return { ok: false, error: err.message, tag: null };
+    }
+  }
+
+  // Same reset finishTrain does post-merge: force-with-lease so a commit
+  // pushed onto the branch since our fetch aborts the reset instead of
+  // being silently destroyed.
+  try {
+    try { run("git", ["reset", "--hard", "--quiet"]); } catch { /* nothing staged */ }
+    try { run("git", ["clean", "-fdq"]); } catch { /* nothing to clean */ }
+    run("git", ["checkout", "-B", deployBranch, "origin/main", "--quiet"]);
+    run("git", ["push", "--force-with-lease", "origin", deployBranch, "--quiet"]);
+    run("git", ["checkout", "main", "--quiet"]);
+  } catch (err) {
+    // Whatever step failed, leave the working tree back on a clean main —
+    // same defensive convention processRevertFromTrain's own catch blocks
+    // use — so whatever this run does next never inherits a checkout stuck
+    // mid-reset on deployBranch.
+    try { discardWorkingTree(); } catch { /* best-effort only */ }
+    return { ok: false, error: err.message, tag };
+  }
+  return { ok: true, tag };
+}
+
+// The safety net for functions/index.js's onBacklogItemTrainLockRecompute
+// (see that file), and the only place that can also do the git side of
+// point 3 above — the Cloud Function has no git credential. Covers:
+//   - a race where the Cloud Function's write landed before this run
+//     started and somehow didn't clear the lock (defensive; not expected
+//     in practice)
+//   - a project whose train emptied through some path that never touches
+//     backlogItems at all (there isn't one today, but this is the sweep
+//     that would catch it if one appears)
+// trainLockShouldClear (train-lock.js) is the exact same predicate the
+// Cloud Function uses, so "empty" means the same thing in both places.
+async function reconcileLockedTrains() {
+  const locked = await runQuery({
+    from: [{ collectionId: "projects" }],
+    where: { fieldFilter: { field: { fieldPath: "trainLocked" }, op: "EQUAL", value: { booleanValue: true } } },
+  });
+  for (const project of locked) {
+    // Mid-deploy / awaiting a human merge are their own lifecycles (handled
+    // above by processDeployTrain / reconcileMergedTrains) — never race
+    // those by unlocking underneath them.
+    if (project.trainStatus === "deploying" || project.trainStatus === "awaiting-human-merge") continue;
+
+    const items = await itemsForProject(project.id);
+    if (!trainLockShouldClear(project, items)) continue;
+
+    const deployBranch = project.deployBranch || deployBranchForName(project.name);
+    let archiveResult;
+    try {
+      archiveResult = archiveAndResetOrphanedBranch(deployBranch);
+    } catch (err) {
+      archiveResult = { ok: false, error: err.message, tag: null };
+    }
+
+    console.log(`[deploy-train] ${project.id}: train emptied with nothing merged (every approved/testing ticket was deleted or reverted) — clearing trainLocked` +
+      (archiveResult.tag ? `, archived orphaned work as ${archiveResult.tag}` : ""));
+    await patchProject(project.id, {
+      trainLocked: false,
+      trainReady: false,
+      // Whatever trainStatus/trainNote said before — including a stale
+      // "conflict" left over from before the tickets were removed — stops
+      // applying: there is nothing left on the train for it to describe.
+      trainStatus: "idle",
+      trainNote: archiveResult.ok
+        ? null
+        : `Train emptied and unlocked, but ${deployBranch} could not be reset to main automatically: ${scrubSecrets(archiveResult.error)}. Reset it by hand.`,
+      updatedAt: new Date().toISOString(),
+    });
   }
 }
 
@@ -1769,6 +2000,7 @@ async function reconcileHumanMergedPrs() {
 async function main() {
   await reconcileDeployStatuses();
   await reconcileMergedTrains();
+  await reconcileLockedTrains();
   const humanMerged = await reconcileHumanMergedPrs();
 
   const patchReadyItems = await runQuery({
@@ -1899,8 +2131,23 @@ async function main() {
   await recordPipelineHealth("success");
 }
 
-main().catch(async (err) => {
-  console.error(err.stack || err.message);
-  await recordPipelineHealth("failure");
-  process.exit(1);
-});
+// Guarded so this file can be `require()`d (e.g. from a test that only
+// wants tryAutoResolveFaqIndexConflict or archiveAndResetOrphanedBranch
+// against a disposable local repo) without immediately running the real
+// thing against live Firestore and origin — `node
+// scripts/run-backlog-automation.js`, the only way the workflow ever
+// invokes this, still runs it exactly as before.
+if (require.main === module) {
+  main().catch(async (err) => {
+    console.error(err.stack || err.message);
+    await recordPipelineHealth("failure");
+    process.exit(1);
+  });
+}
+
+// Exported for backlog-tracker/test/faq-index.test.js and
+// test/train-lock-branch-archive.test.js, which drive these against a
+// disposable local git repo rather than requiring this whole automation
+// run (main(), above, has real Firestore/GitHub side effects the moment
+// this module loads if not guarded — see the require.main check).
+module.exports = { conflictedPaths, tryAutoResolveFaqIndexConflict, archiveAndResetOrphanedBranch, dateStamp };

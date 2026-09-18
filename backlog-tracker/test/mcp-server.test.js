@@ -460,6 +460,248 @@ async function rpc(token, method, params, id = 1) {
     assert.strictEqual(env.store.col("projects").get("proj1").artifactUrl, null);
   });
 
+  // ── FAQ write tools: create/update/review ────────────────────────────────
+  await test("exposes the FAQ write and review tools", async () => {
+    const names = mcp.__test.TOOLS.map((t) => t.name);
+    for (const expected of ["create_faq_article", "update_faq_article", "list_pending_faq_revisions", "get_faq_revision", "comment_on_faq_revision"]) {
+      assert.ok(names.includes(expected), `missing tool ${expected}`);
+    }
+  });
+
+  await test("every FAQ write tool requires board.write; the review reads don't", async () => {
+    for (const name of ["create_faq_article", "update_faq_article", "comment_on_faq_revision"]) {
+      assert.strictEqual(mcp.__test.TOOLS.find((t) => t.name === name).scope, "board.write", `${name} must require board.write`);
+    }
+    for (const name of ["list_pending_faq_revisions", "get_faq_revision"]) {
+      assert.strictEqual(mcp.__test.TOOLS.find((t) => t.name === name).scope, "board.read");
+    }
+  });
+
+  await test("no FAQ write tool's schema can express status, reviewStatus or a delete", async () => {
+    const faqWriteTools = mcp.__test.TOOLS.filter((t) => /faq/.test(t.name) && t.scope === "board.write");
+    assert.ok(faqWriteTools.length >= 3);
+    for (const tool of faqWriteTools) {
+      const schema = JSON.stringify(tool.inputSchema);
+      for (const forbidden of ["reviewStatus", "\"status\"", "approved", "publishedAt"]) {
+        assert.ok(!schema.includes(forbidden), `${tool.name}'s schema mentions ${forbidden}`);
+      }
+      assert.ok(!tool.destructive, `${tool.name} must not be flagged destructive — no FAQ write tool deletes anything`);
+    }
+  });
+
+  let faqCreatedId = null;
+  await test("creates a brand-new FAQ article as a draft, never published", async () => {
+    env.store.col("faqCategories").set("cat2", { name: "Displays", icon: "tv", order: 1 });
+    const res = await rpc(tokens.access_token, "tools/call", {
+      name: "create_faq_article",
+      arguments: { title: "How QR control works on a display", categoryId: "cat2", bodyMd: "<p>Point a phone camera at the QR code.</p>", summary: "Explains QR control.", keywords: ["qr", "control"] },
+    });
+    const payload = JSON.parse(res.body.result.content[0].text);
+    assert.strictEqual(payload.created, true);
+    assert.strictEqual(payload.status, "draft");
+    assert.strictEqual(payload.slug, "how-qr-control-works-on-a-display");
+    faqCreatedId = payload.articleId;
+    const stored = env.store.col("faqArticles").get(faqCreatedId);
+    assert.strictEqual(stored.status, "draft");
+    assert.strictEqual(stored.createdByEmail, TEAMMATE);
+    assert.strictEqual(stored.createdVia, "mcp");
+    assert.strictEqual(stored.docType, "faq");
+    assert.ok(!stored.pendingRevision, "a brand-new article has nothing pending to review — it's just a draft");
+  });
+
+  await test("de-duplicates a slug that's already taken", async () => {
+    const res = await rpc(tokens.access_token, "tools/call", {
+      name: "create_faq_article",
+      arguments: { title: "How QR control works on a display", categoryId: "cat2", bodyMd: "<p>Second one.</p>" },
+    });
+    const payload = JSON.parse(res.body.result.content[0].text);
+    assert.strictEqual(payload.slug, "how-qr-control-works-on-a-display-2");
+  });
+
+  await test("refuses to create a FAQ article against a categoryId that doesn't exist", async () => {
+    const res = await rpc(tokens.access_token, "tools/call", {
+      name: "create_faq_article", arguments: { title: "Orphan", categoryId: "nope", bodyMd: "<p>x</p>" },
+    });
+    assert.strictEqual(res.body.result.isError, true);
+    assert.match(res.body.result.content[0].text, /No FAQ category/);
+  });
+
+  await test("refuses a FAQ article body past the same ceiling firestore.rules enforces", async () => {
+    const res = await rpc(tokens.access_token, "tools/call", {
+      name: "create_faq_article",
+      arguments: { title: "Too big", categoryId: "cat2", bodyMd: "x".repeat(mcp.__test.FAQ_BODY_MAX + 1) },
+    });
+    assert.strictEqual(res.body.result.isError, true);
+  });
+
+  await test("refuses an invalid docType on create", async () => {
+    const res = await rpc(tokens.access_token, "tools/call", {
+      name: "create_faq_article", arguments: { title: "Bad type", categoryId: "cat2", bodyMd: "<p>x</p>", docType: "tutorial" },
+    });
+    assert.strictEqual(res.body.result.isError, true);
+  });
+
+  let liveArticleId = null;
+  await test("proposes an update to a live article as a pendingRevision, leaving the live fields untouched", async () => {
+    const ref = await env.db.collection("faqArticles").add({
+      categoryId: "cat1", title: "Setting a local offer", slug: "local-offer-2", summary: "How stores override the RRP", bodyMd: "<p>Old steps.</p>", keywords: ["offer"], docType: "how-to", status: "published",
+    });
+    liveArticleId = ref.id;
+    const res = await rpc(tokens.access_token, "tools/call", {
+      name: "update_faq_article",
+      arguments: { articleId: liveArticleId, reason: "The store override screen moved to a new tab.", bodyMd: "<p>New steps.</p>" },
+    });
+    const payload = JSON.parse(res.body.result.content[0].text);
+    assert.strictEqual(payload.proposed, true);
+    assert.strictEqual(payload.reviewStatus, "awaiting-review");
+    const stored = env.store.col("faqArticles").get(liveArticleId);
+    // The live fields must be exactly what they were before.
+    assert.strictEqual(stored.bodyMd, "<p>Old steps.</p>");
+    assert.strictEqual(stored.status, "published");
+    assert.strictEqual(stored.title, "Setting a local offer");
+    // The proposal carries the full text (title/summary copied verbatim,
+    // same "even the ones you didn't change" convention the Routine uses).
+    assert.strictEqual(stored.pendingRevision.bodyMd, "<p>New steps.</p>");
+    assert.strictEqual(stored.pendingRevision.title, "Setting a local offer");
+    assert.strictEqual(stored.pendingRevision.summary, "How stores override the RRP");
+    assert.strictEqual(stored.pendingRevision.reason, "The store override screen moved to a new tab.");
+    assert.strictEqual(stored.pendingRevision.reviewStatus, "awaiting-review");
+    assert.strictEqual(stored.needsReview, true);
+    // Recorded as the actual signed-in person, not a shared "claude" label —
+    // and distinguishably via a path marker, mirroring the Routine's own
+    // proposedBy: "claude" convention without colliding with it.
+    assert.strictEqual(stored.pendingRevision.proposedBy, TEAMMATE);
+    assert.strictEqual(stored.pendingRevision.proposedVia, "mcp");
+    // No backlog ticket triggered this — never invent one.
+    assert.ok(!("sourceItemIds" in stored.pendingRevision) || stored.pendingRevision.sourceItemIds.length === 0);
+  });
+
+  await test("a second update_faq_article call builds on the pending proposal, not the stale live text", async () => {
+    await rpc(tokens.access_token, "tools/call", {
+      name: "update_faq_article", arguments: { articleId: liveArticleId, reason: "Also fix the title.", title: "Setting a local price override" },
+    });
+    const stored = env.store.col("faqArticles").get(liveArticleId);
+    assert.strictEqual(stored.pendingRevision.title, "Setting a local price override");
+    // bodyMd from the FIRST proposal must have carried forward, not reverted
+    // to the original live text.
+    assert.strictEqual(stored.pendingRevision.bodyMd, "<p>New steps.</p>");
+  });
+
+  await test("refuses update_faq_article with no reason", async () => {
+    const res = await rpc(tokens.access_token, "tools/call", {
+      name: "update_faq_article", arguments: { articleId: liveArticleId, title: "No reason given" },
+    });
+    assert.strictEqual(res.body.result.isError, true);
+  });
+
+  await test("refuses update_faq_article on an unknown article", async () => {
+    const res = await rpc(tokens.access_token, "tools/call", {
+      name: "update_faq_article", arguments: { articleId: "does-not-exist", reason: "x", title: "y" },
+    });
+    assert.strictEqual(res.body.result.isError, true);
+    assert.match(res.body.result.content[0].text, /No FAQ article/);
+  });
+
+  await test("refuses update_faq_article once the proposal is already approved", async () => {
+    const stored = env.store.col("faqArticles").get(liveArticleId);
+    env.store.col("faqArticles").set(liveArticleId, Object.assign({}, stored, {
+      pendingRevision: Object.assign({}, stored.pendingRevision, { reviewStatus: "approved" }),
+    }));
+    const res = await rpc(tokens.access_token, "tools/call", {
+      name: "update_faq_article", arguments: { articleId: liveArticleId, reason: "one more tweak", title: "Should be refused" },
+    });
+    assert.strictEqual(res.body.result.isError, true);
+    assert.match(res.body.result.content[0].text, /already has an approved update/);
+    // Restore to awaiting-review for the tests below.
+    const cur = env.store.col("faqArticles").get(liveArticleId);
+    env.store.col("faqArticles").set(liveArticleId, Object.assign({}, cur, {
+      pendingRevision: Object.assign({}, cur.pendingRevision, { reviewStatus: "awaiting-review" }),
+    }));
+  });
+
+  await test("lists pending FAQ revisions, skipping bare needsReview flags with no proposal", async () => {
+    // The older, coarser per-project safety net: flagged, but nothing to diff.
+    env.store.col("faqArticles").set("bareFlag", { title: "Just flagged", needsReview: true, status: "published" });
+    const res = await rpc(tokens.access_token, "tools/call", { name: "list_pending_faq_revisions", arguments: {} });
+    const payload = JSON.parse(res.body.result.content[0].text);
+    const ids = payload.revisions.map((r) => r.articleId);
+    assert.ok(ids.includes(liveArticleId));
+    assert.ok(!ids.includes("bareFlag"), "a bare needsReview flag with no pendingRevision has nothing to review here");
+    const row = payload.revisions.find((r) => r.articleId === liveArticleId);
+    assert.strictEqual(row.proposedBy, TEAMMATE);
+    assert.strictEqual(row.proposedVia, "mcp");
+    assert.strictEqual(row.reviewStatus, "awaiting-review");
+    assert.ok(row.reason);
+  });
+
+  await test("gets old-vs-new for one pending FAQ revision", async () => {
+    const res = await rpc(tokens.access_token, "tools/call", { name: "get_faq_revision", arguments: { articleId: liveArticleId } });
+    const payload = JSON.parse(res.body.result.content[0].text);
+    assert.strictEqual(payload.live.bodyMd, "<p>Old steps.</p>");
+    assert.strictEqual(payload.proposed.bodyMd, "<p>New steps.</p>");
+    assert.strictEqual(payload.proposed.title, "Setting a local price override");
+    assert.strictEqual(payload.reason, "Also fix the title.");
+  });
+
+  await test("refuses get_faq_revision on an article with nothing pending", async () => {
+    const res = await rpc(tokens.access_token, "tools/call", { name: "get_faq_revision", arguments: { articleId: faqCreatedId } });
+    assert.strictEqual(res.body.result.isError, true);
+  });
+
+  await test("comments on a pending FAQ revision, attributed to the person", async () => {
+    const res = await rpc(tokens.access_token, "tools/call", {
+      name: "comment_on_faq_revision", arguments: { articleId: liveArticleId, text: "Confirmed against the current UI — looks right." },
+    });
+    const payload = JSON.parse(res.body.result.content[0].text);
+    assert.strictEqual(payload.added, true);
+    const stored = env.store.col("faqArticles").get(liveArticleId);
+    assert.strictEqual(stored.reviewComments.length, 1);
+    assert.strictEqual(stored.reviewComments[0].author, TEAMMATE);
+  });
+
+  await test("refuses to comment on an article with no pending revision", async () => {
+    const res = await rpc(tokens.access_token, "tools/call", {
+      name: "comment_on_faq_revision", arguments: { articleId: faqCreatedId, text: "nothing to review here" },
+    });
+    assert.strictEqual(res.body.result.isError, true);
+  });
+
+  await test("a viewer can read FAQ revisions but cannot create, update or comment", async () => {
+    const VIEWER2 = "faqviewer@personalisationhub.com";
+    const idToken = signIn(VIEWER2);
+    addConsoleUser(VIEWER2, { role: "viewer" });
+    const v = b64url(crypto.randomBytes(32));
+    const ch = b64url(crypto.createHash("sha256").update(v).digest());
+    const auth = await call({
+      method: "POST", path: "/mcp/authorize/complete",
+      body: { idToken, clientId, redirectUri: REDIRECT, codeChallenge: ch, codeChallengeMethod: "S256", scope: "board.read board.write" },
+    });
+    const vcode = new URL(auth.body.redirect).searchParams.get("code");
+    const tok = await call({
+      method: "POST", path: "/mcp/token",
+      body: { grant_type: "authorization_code", code: vcode, code_verifier: v, client_id: clientId, redirect_uri: REDIRECT },
+    });
+    const viewerToken = tok.body.access_token;
+
+    const listed = await rpc(viewerToken, "tools/call", { name: "list_pending_faq_revisions", arguments: {} });
+    assert.strictEqual(listed.body.result.isError, undefined, "a viewer can still read the review queue");
+
+    const create = await rpc(viewerToken, "tools/call", { name: "create_faq_article", arguments: { title: "Nope", categoryId: "cat2", bodyMd: "<p>x</p>" } });
+    assert.strictEqual(create.body.result.isError, true);
+    assert.match(create.body.result.content[0].text, /read-only/);
+
+    const update = await rpc(viewerToken, "tools/call", { name: "update_faq_article", arguments: { articleId: liveArticleId, reason: "x", title: "y" } });
+    assert.strictEqual(update.body.result.isError, true);
+    assert.match(update.body.result.content[0].text, /read-only/);
+
+    const comment = await rpc(viewerToken, "tools/call", { name: "comment_on_faq_revision", arguments: { articleId: liveArticleId, text: "x" } });
+    assert.strictEqual(comment.body.result.isError, true);
+    assert.match(comment.body.result.content[0].text, /read-only/);
+
+    // The live article must still be exactly as it was — no write leaked through.
+    assert.strictEqual(env.store.col("faqArticles").get(liveArticleId).bodyMd, "<p>Old steps.</p>");
+  });
+
   // ── The guarantee the documentation tools must not break ────────────────
   // These are the first tools that write to `projects` at all, so "no tool
   // can start a deploy" stops being a consequence of never touching the

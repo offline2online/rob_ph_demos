@@ -17,6 +17,7 @@ const fs = require("fs");
 const crypto = require("crypto");
 const { initializeApp, applicationDefault } = require("firebase-admin/app");
 const { getFirestore } = require("firebase-admin/firestore");
+const { buildIndexFromArticleFiles, validateIndexAgainstArticleFiles, serializeIndex } = require("./faq-index-lib");
 
 const DATA_DIR = path.resolve(__dirname, "../../faq/data");
 initializeApp({ credential: applicationDefault() });
@@ -31,10 +32,8 @@ async function main() {
     const c = d.data();
     return { id: d.id, name: c.name || "", icon: c.icon || "help", description: c.description || "", order: c.order || 0, parentId: c.parentId || null };
   });
-  const catOrder = new Map(categories.map((c) => [c.id, c.parentId ? (categories.find((p) => p.id === c.parentId) || {}).order || 0 : c.order]));
 
   const artsSnap = await db.collection("faqArticles").get();
-  const articles = [];
   const articlesDir = path.join(DATA_DIR, "articles");
   fs.mkdirSync(articlesDir, { recursive: true });
   const keep = new Set();
@@ -55,7 +54,6 @@ async function main() {
       updatedAt: iso(a.updatedAt) || iso(a.publishedAt) || new Date().toISOString(),
       contentHash: hash(body),
     };
-    articles.push(meta);
     keep.add(d.id);
     fs.writeFileSync(path.join(articlesDir, `${d.id}.json`), JSON.stringify({ ...meta, bodyMd: body }, null, 0) + "\n");
   }
@@ -64,17 +62,25 @@ async function main() {
     const id = f.replace(/\.json$/, "");
     if (!keep.has(id)) { fs.unlinkSync(path.join(articlesDir, f)); console.log(`removed stale ${f}`); }
   }
-  articles.sort((x, y) => (catOrder.get(x.categoryId) || 0) - (catOrder.get(y.categoryId) || 0) || (x.order - y.order) || x.id.localeCompare(y.id));
   categories.sort((x, y) => x.order - y.order || x.id.localeCompare(y.id));
 
-  const index = { generatedAt: new Date().toISOString().replace(/\.\d{3}Z$/, "Z"), categories, articles };
+  // Derive the "articles" list straight from the per-article files just
+  // written above, rather than a second hand-rolled sort kept in sync with
+  // this one — this is the exact same function the deploy train's merge
+  // conflict resolver uses to rebuild index.json from faq/data/articles/*.json
+  // alone (see run-backlog-automation.js), so the two can never disagree on
+  // what "the index" means.
+  const index = buildIndexFromArticleFiles(articlesDir, categories, new Date().toISOString().replace(/\.\d{3}Z$/, "Z"));
+  validateIndexAgainstArticleFiles(index, articlesDir);
+  const articles = index.articles;
+
   // Only rewrite index.json when something other than generatedAt changed,
   // so a no-op export produces no git diff.
   const indexPath = path.join(DATA_DIR, "index.json");
   let previous = null;
   try { previous = JSON.parse(fs.readFileSync(indexPath, "utf8")); } catch { /* first export */ }
   const same = previous && JSON.stringify({ ...previous, generatedAt: "" }) === JSON.stringify({ ...index, generatedAt: "" });
-  if (!same) fs.writeFileSync(indexPath, JSON.stringify(index) + "\n");
+  if (!same) fs.writeFileSync(indexPath, serializeIndex(index));
   console.log(`faq-export: ${categories.length} categories, ${articles.length} articles (${articles.filter((a) => a.status === "published").length} published)${same ? " — index unchanged" : ""}`);
 
   // Site-wide settings (kup9Zce13jyaXcIhxVkf) — currently just the

@@ -452,6 +452,22 @@ textarea.dialog-field-input { resize: vertical; min-height: 70px; }
 .project-header .subtitle { margin: 4px 0 0; }
 .project.collapsed .project-body { display: none; }
 
+/* Point 5 of "Ready for Dev CTA stays hidden after all train tickets are
+   deleted (stuck trainLocked)" — see trainLockedNoteHTML() in js/app.js.
+   Same dashed-box status-line family as .merge-pending-hint above, but a
+   project-wide line rather than a per-card one, and warning-toned (not
+   muted grey) since a locked train is a state worth noticing, not a
+   passive "nothing to do here" hint. Hidden by trainLockedNoteHTML()
+   itself whenever the project isn't locked, so this never appears
+   alongside a project that's just idle. */
+.project.collapsed .train-locked-hint { display: none; }
+.train-locked-hint {
+  display: flex; align-items: center; gap: 6px; margin: -2px 0 10px; box-sizing: border-box;
+  background: rgba(201, 138, 10, .1); color: var(--warning); border: 1px dashed var(--warning); border-radius: 6px;
+  padding: 6px 10px; font-size: 12px;
+}
+.train-locked-icon { font-size: 15px; flex-shrink: 0; }
+
 /* Program/Product grouping — a heading above a set of projects, only
    rendered at all once at least one program exists (see app.js render()).
    No board/columns of its own, just a label; each project inside still

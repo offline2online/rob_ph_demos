@@ -10,6 +10,15 @@ cd backlog-tracker/test && npm install && npm test
 CI runs this on every pull request and before every deploy
 (`.github/workflows/firestore-rules-test.yml`).
 
+This directory also holds the MCP server suite (`mcp-server.test.js`,
+`mcp-client.test.mjs` — see `../MCP.md`) and the deployment train's
+lock-recompute suite (`train-lock.test.js`, `train-lock-trigger.test.js`,
+`train-lock-branch-archive.test.js` — `npm run test:train-lock`; see
+`../README.md` → "trainLocked clearing isn't only a successful-merge thing
+any more"). All three run on plain `node`, no emulator, no Java, no
+credentials, no network — only this file's own rules suite below needs the
+emulator.
+
 Also here, opt-in because it needs a Chromium on the machine:
 `npm run test:editor` (`faq-editor-load.test.mjs`) opens every article in
 `faq/data/articles/` in the console's real FAQ editor code against the
