@@ -591,6 +591,72 @@ function TypesView({ types, setTypes, playlists, setPlaylists, sel, setSel, temp
   };
 
 
+  /* The preview and the Touch Point / Element Type control travel together in
+     one column: the control that decides what the preview renders sits
+     directly under it, rather than at the top of the form column two columns
+     away. When there is no room for three columns the pair moves into the
+     form column, still in that order. */
+  const previewColumn = (
+    <>
+      <div style={{ marginBottom: 16 }}>
+        <Preview d={d} plName={plName} setPath={setPath} partners={partners} companyLists={companyLists} />
+      </div>
+      {/* Capped to the form column's width so the control does not stretch to
+          the full third column and dwarf the preview it belongs to. */}
+      <div style={{ marginBottom: 16, maxWidth: 400 }}>
+        <Label>Touch Point</Label>
+        <IconSelect value={d.touchPoint} onChange={(v) => set({ touchPoint: v, element: isWebTP(v) ? (d.element || elementConfig("hero")) : d.element })} options={TOUCH_POINTS} />
+        {isWebTP(d.touchPoint) && (
+          <div style={{ marginTop: 14 }}>
+            <Label required>Element Type</Label>
+            <select value={d.element?.type}
+              onChange={(e) => askChangeElement(e.target.value)} style={{ ...inputStyle }}>
+              {WEB_ELEMENT_GROUPS.map((g) => (
+                <optgroup key={g} label={g}>
+                  {WEB_ELEMENTS.filter((x) => x.group === g).map((x) => <option key={x.key} value={x.key}>{x.name}</option>)}
+                </optgroup>
+              ))}
+            </select>
+            <div style={{ padding: 10, marginTop: 8, borderRadius: 6, background: T.surfaceAlt, border: `1px solid ${T.borderSubtle}`, fontSize: 11.5, color: T.muted, lineHeight: 1.5 }}>
+              {webEl(d.element?.type).desc}
+              <div style={{ marginTop: 5, color: T.micro }}>
+                Plays: <b style={{ color: T.text }}>{webEl(d.element?.type).plays}</b>
+                {" · "}
+                {caps(d).campaigns
+                  ? (caps(d).grid ? "all campaigns render together" : caps(d).rotation ? "one at a time, rotates" : "single campaign")
+                  : "renders no campaigns"}
+              </div>
+            </div>
+            {pendingEl && (
+              <div style={{ marginTop: 10, padding: 11, borderRadius: 6, background: "rgba(250,173,20,0.10)", border: `1px solid rgba(250,173,20,0.4)`, fontSize: 12.5, lineHeight: 1.5 }}>
+                <b>Change element type to {webEl(pendingEl).name}?</b>
+                <div style={{ marginTop: 5, color: T.muted }}>
+                  Layout settings are specific to the element type. Slot count, columns, items shown, aspect ratio,
+                  width mode and fold position will be reset to the defaults for {webEl(pendingEl).name}.
+                  {SHOW_EXPERIENCE_LAYOUT && (tplUsage || []).length > 0 && <> This element is used in <b>{tplUsage.length}</b> template{tplUsage.length > 1 ? "s" : ""}, which will re-render.</>}
+                </div>
+                <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+                  <Btn variant="primary" style={{ height: 28, fontSize: 12.5 }}
+                    onClick={() => {
+                      const n = ELEMENT_SLOTS[pendingEl] ?? UNLIMITED;
+                      update((t) => ({ ...t, element: elementConfig(pendingEl),
+                        playlistSettings: { ...t.playlistSettings, maximumCampaignsPlayedInRotation: n },
+                        phExtensions: { ...t.phExtensions, slots: n === UNLIMITED ? [] : resizeSlots([], n) },
+                        ...(t.phExtensions.nameAuto ? { name: webEl(pendingEl).name } : {}) }));
+                      setPendingEl(null);
+                    }}>
+                    Change and reset
+                  </Btn>
+                  <Btn style={{ height: 28, fontSize: 12.5 }} onClick={() => setPendingEl(null)}>Cancel</Btn>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </>
+  );
+
   return (
     <div ref={columnsRef} style={{ display: "flex", gap: 20, alignItems: "flex-start", flexWrap: "wrap" }}>
       <div style={{ width: 215, flexShrink: 0, position: "sticky", top: 20, maxHeight: "calc(100vh - 40px)", overflowY: "auto", overflowX: "hidden" }}>
@@ -635,62 +701,7 @@ function TypesView({ types, setTypes, playlists, setPlaylists, sel, setSel, temp
       </div>
 
       <div style={{ width: 400, flexShrink: 0 }}>
-        {!fitsThreeColumns && (
-          <div style={{ marginBottom: 16 }}>
-            <Preview d={d} plName={plName} setPath={setPath} partners={partners} companyLists={companyLists} />
-          </div>
-        )}
-        <div style={{ marginBottom: 16 }}>
-          <Label>Touch Point</Label>
-          <IconSelect value={d.touchPoint} onChange={(v) => set({ touchPoint: v, element: isWebTP(v) ? (d.element || elementConfig("hero")) : d.element })} options={TOUCH_POINTS} />
-          {isWebTP(d.touchPoint) && (
-            <div style={{ marginTop: 14 }}>
-              <Label required>Element Type</Label>
-              <select value={d.element?.type}
-                onChange={(e) => askChangeElement(e.target.value)} style={{ ...inputStyle }}>
-                {WEB_ELEMENT_GROUPS.map((g) => (
-                  <optgroup key={g} label={g}>
-                    {WEB_ELEMENTS.filter((x) => x.group === g).map((x) => <option key={x.key} value={x.key}>{x.name}</option>)}
-                  </optgroup>
-                ))}
-              </select>
-              <div style={{ padding: 10, marginTop: 8, borderRadius: 6, background: T.surfaceAlt, border: `1px solid ${T.borderSubtle}`, fontSize: 11.5, color: T.muted, lineHeight: 1.5 }}>
-                {webEl(d.element?.type).desc}
-                <div style={{ marginTop: 5, color: T.micro }}>
-                  Plays: <b style={{ color: T.text }}>{webEl(d.element?.type).plays}</b>
-                  {" · "}
-                  {caps(d).campaigns
-                    ? (caps(d).grid ? "all campaigns render together" : caps(d).rotation ? "one at a time, rotates" : "single campaign")
-                    : "renders no campaigns"}
-                </div>
-              </div>
-              {pendingEl && (
-                <div style={{ marginTop: 10, padding: 11, borderRadius: 6, background: "rgba(250,173,20,0.10)", border: `1px solid rgba(250,173,20,0.4)`, fontSize: 12.5, lineHeight: 1.5 }}>
-                  <b>Change element type to {webEl(pendingEl).name}?</b>
-                  <div style={{ marginTop: 5, color: T.muted }}>
-                    Layout settings are specific to the element type. Slot count, columns, items shown, aspect ratio,
-                    width mode and fold position will be reset to the defaults for {webEl(pendingEl).name}.
-                    {SHOW_EXPERIENCE_LAYOUT && (tplUsage || []).length > 0 && <> This element is used in <b>{tplUsage.length}</b> template{tplUsage.length > 1 ? "s" : ""}, which will re-render.</>}
-                  </div>
-                  <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
-                    <Btn variant="primary" style={{ height: 28, fontSize: 12.5 }}
-                      onClick={() => {
-                        const n = ELEMENT_SLOTS[pendingEl] ?? UNLIMITED;
-                        update((t) => ({ ...t, element: elementConfig(pendingEl),
-                          playlistSettings: { ...t.playlistSettings, maximumCampaignsPlayedInRotation: n },
-                          phExtensions: { ...t.phExtensions, slots: n === UNLIMITED ? [] : resizeSlots([], n) },
-                          ...(t.phExtensions.nameAuto ? { name: webEl(pendingEl).name } : {}) }));
-                        setPendingEl(null);
-                      }}>
-                      Change and reset
-                    </Btn>
-                    <Btn style={{ height: 28, fontSize: 12.5 }} onClick={() => setPendingEl(null)}>Cancel</Btn>
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-        </div>
+        {!fitsThreeColumns && previewColumn}
         <div style={{ marginBottom: 16 }}>
           <Label required>Display Type / Element Name</Label>
           <input value={d.name} autoFocus={!d.name} placeholder="Name this display type / element"
@@ -1105,7 +1116,7 @@ function TypesView({ types, setTypes, playlists, setPlaylists, sel, setSel, temp
 
       {fitsThreeColumns && (
         <div style={{ flex: 1, minWidth: 320 }}>
-          <Preview d={d} plName={plName} setPath={setPath} partners={partners} companyLists={companyLists} />
+          {previewColumn}
         </div>
       )}
     </div>
@@ -1489,19 +1500,9 @@ function Preview({ d, plName, setPath, partners, companyLists }) {
         {phantomOn ? (showQR ? "phantom zone with QR control" : "phantom zone defined, QR control off") : "no phantom zone"}
       </div>
 
-      {d.multiZone.enabled && (
-        <div style={{ marginTop: 14, maxWidth: boxW }}>
-          <div style={{ fontSize: 12, color: T.micro, textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 8 }}>Zones</div>
-          {d.multiZone.zones.map((z, i) => (
-            <div key={z.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 0", borderBottom: `1px solid ${T.borderSubtle}`, fontSize: 12.5 }}>
-              <span style={{ width: 10, height: 10, borderRadius: 2, background: ZONE_COLOURS[i % 6], flexShrink: 0 }} />
-              <span style={{ width: 74, flexShrink: 0 }}>{z.name}</span>
-              <span style={{ color: T.muted, flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{plName(z.playlistId)}</span>
-              <span style={{ color: T.micro, fontSize: 11.5 }}>{Math.round((z.width / 100) * W)}px</span>
-            </div>
-          ))}
-        </div>
-      )}
+      {/* No zone list here: the preview above already draws each zone, names
+          it and colour-codes it, and the geometry and playlist per zone are
+          edited in MULTI-ZONE LAYOUT. A third rendering was just noise. */}
     </div>
   );
 }
