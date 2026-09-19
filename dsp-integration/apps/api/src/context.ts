@@ -13,6 +13,8 @@ import { type PlaybackSource, sqlitePlaybackSource } from './platform/PlaybackSo
 import { type PartnerRepo, sqlitePartnerRepo } from './repos/PartnerRepo'
 import { type CompanySettingsRepo, sqliteCompanySettingsRepo } from './repos/CompanySettingsRepo'
 import { type ExchangeRepo, sqliteExchangeRepo } from './repos/ExchangeRepo'
+import type { Fetch } from './dsp/DspClient'
+import { dspClients } from './dsp/registry'
 
 export interface Context {
   config: Config
@@ -28,9 +30,10 @@ export interface Context {
   partners: PartnerRepo
   company: CompanySettingsRepo
   exchange: ExchangeRepo
+  dsp: ReturnType<typeof dspClients>
 }
 
-export function createContext(opts: { config?: Config; db?: Db; flags?: Flags; session?: SessionSource; secrets?: SecretsStore } = {}): Context {
+export function createContext(opts: { config?: Config; db?: Db; flags?: Flags; session?: SessionSource; secrets?: SecretsStore; dspFetch?: Fetch } = {}): Context {
   const config = opts.config ?? loadConfig()
   const db = opts.db ?? openDb(config.dbFile)
   migrateUp(db)
@@ -49,5 +52,6 @@ export function createContext(opts: { config?: Config; db?: Db; flags?: Flags; s
     partners: sqlitePartnerRepo(db, secrets),
     company: sqliteCompanySettingsRepo(db),
     exchange: sqliteExchangeRepo(db),
+    dsp: dspClients(config.dsp, opts.dspFetch),
   }
 }

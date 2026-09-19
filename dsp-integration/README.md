@@ -23,6 +23,7 @@ small interface.
 | `apps/api/src/platform/` | Stand-ins for the existing platform: `DisplayTypeSource`, `PlaylistSource`, `DisplaySource`, `CampaignSource`, `PlaybackSource` |
 | `apps/api/src/repos/` | This build's own records: partners (credentials encrypted), company advertiser settings, variable access, exchange |
 | `apps/api/src/seed/` | Seed data, taken from the prototype's `model/data.js` |
+| `apps/dsp-mocks/` | Mock Google DV360, Amazon Ads and The Trade Desk APIs for testing, with a control API and a test page at `/`. The POC's DSP clients call these instead of real DSPs. |
 | `apps/admin/` | Admin UI: React 18, Vite, Ant Design 5, Tailwind 4 and AG Grid (Alpine). It renders the content frame only, because it is iframed into HQ Admin. |
 | `apps/admin/src/shared/` | Shared UI: save bar, draft state, unsaved-changes guard, delete dialog, InfoTip, list layout, collapsible panel, summary chips, AG Grid wrapper |
 | `apps/admin/src/features/display-types/` | Display Types screen: list, form, panels, slot assignment, delete |
@@ -50,6 +51,10 @@ npm run dev:admin
 ```
 
 ```bash
+npm run dev:mocks
+```
+
+```bash
 npm test
 ```
 
@@ -60,6 +65,10 @@ npm test
 - The Partner API (`/api/v1`) takes one static bearer token per seeded
   partner: `poc-token-google-dv360` or `poc-token-amazon-dsp` by default, or
   set your own with `PARTNER_TOKENS`.
+- `npm run dev:mocks` starts the mock DSP service on port 4100, with its test
+  page at http://127.0.0.1:4100/. Use it to change each mock DSP's seats,
+  advertisers, auth failures and bidder behaviour, then press **Re-test
+  connection** on the DSP's page.
 - `POC_ROLE` sets the stand-in session: `hq_admin` (admin and approver) or
   `hq_user` (neither).
 - The API seeds an empty database on its first start. Delete

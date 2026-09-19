@@ -34,6 +34,7 @@ export interface PartnerRepo {
   insert(p: Omit<PartnerRecord, 'secretsSet'> & { secrets?: Record<string, string> }): PartnerRecord
   /* Decrypted secret values — for the DSP client only, never for a response. */
   secrets(id: string): Record<string, string>
+  update(id: string, patch: Partial<Omit<PartnerRecord, 'id' | 'provider' | 'secretsSet'>>, secrets?: Record<string, string>): PartnerRecord | null
 }
 
 export function sqlitePartnerRepo(db: Db, secrets: SecretsStore): PartnerRepo {
@@ -69,6 +70,21 @@ export function sqlitePartnerRepo(db: Db, secrets: SecretsStore): PartnerRepo {
     secrets(id) {
       const r = row(id)
       return r ? decode(r) : {}
+    },
+    update(id, patch, secretValues) {
+      const r = row(id)
+      if (!r) return null
+      const cur = toRecord(r)
+      const next = { ...cur, ...patch }
+      const secret = secretValues === undefined ? r.creds_secret : Object.keys(secretValues).length ? secrets.encrypt(JSON.stringify(secretValues)) : null
+      db.prepare(
+        `UPDATE partners SET name = ?, status = ?, last_sync = ?, mode = ?, creds_public = ?, creds_secret = ?, bidder = ?, seats = ?,
+           lists_linked = ?, allow_list = ?, block_list = ?, updated_at = ? WHERE id = ?`,
+      ).run(
+        next.name, next.status, next.lastSync, next.mode, toJson(next.credsPublic) ?? '{}', secret, toJson(next.bidder) ?? '{}', toJson(next.seats) ?? '[]',
+        next.listsLinked ? 1 : 0, toJson(next.allowList) ?? '[]', toJson(next.blockList) ?? '[]', new Date().toISOString(), id,
+      )
+      return toRecord(row(id) as Row)
     },
   }
 }

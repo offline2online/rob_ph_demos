@@ -443,6 +443,20 @@ All approved by Rob (decision 5). The reason for each change is given.
    *less than*. This is in `packages/types/src/catalog.ts`. Does it match the
    real Targeting tab?
 
+5. **When do Connect and Disconnect take effect?** The spec (*Saving
+   changes*) lists "connect / disconnect" among the edits held until Save
+   changes. The contract has `POST …/connect` "with the saved credentials",
+   which acts immediately. Options:
+   (a) Connect, Re-test and Disconnect act at once, as the contract says.
+       While the page has unsaved credential edits, Connect is disabled with
+       the tooltip "Save changes first". This is my recommendation: a
+       connection test only means something against the saved credentials.
+   (b) They are queued in the draft and run on Save changes (PUT, then
+       connect or disconnect). The page can't show the result until then.
+6. **Renaming a DSP.** The prototype's DSP page header is an editable name
+   field, but the contract's `PartnerInput` has no `name`. Should I add
+   `name` to `PartnerInput`, or show the name as a plain heading?
+
 ## 11. Defaults in use (brief, *Defaults for open questions*)
 
 - Q27: 24-hour window
@@ -469,7 +483,8 @@ Each is configurable in `apps/api/src/config.ts`.
 | 6 | DSP Integration nav + Exchange settings; sellers.json | Done | API: `GET/PUT /admin/v1/exchange` (all four fields required, bare domain, valid email; `published` and `sellersJsonUrl` once complete) and `GET /sellers.json` (PUBLISHER, not confidential; 404 until complete or with the flag off). UI: nav "DSP Integration" (flag-gated), a list column (COMPANY: Exchange settings, Advertiser settings, Shared Targeting Variables with their subtitles; PARTNER DSPS: DV360, Amazon Ads DSP and The Trade Desk with state and lists-link lines; contracts to icons below 900px), one draft and save bar for the whole section, a leave-page guard, and the Exchange settings page. Tests: API +7, admin +4. Browser-checked: edit, validation error, save, guard | The section opens on Exchange settings until package 7 adds Advertiser settings | — |
 | 7 | Advertiser settings | Done | API: `PUT /admin/v1/advertiser-settings` (any ISO 4217 currency, positive floor and multipliers; an entry on both lists is rejected (`validation_failed`), matching case-insensitively; entries trimmed and de-duplicated) and `GET /admin/v1/available-inventory` (every advertiser-owned slot, no advertisers column). Pricing maths in `domain/pricing.ts` with the brief's unit tests (floor × personalised × interactive × advertiser multiplier; 450 and 360 examples); the Advertisers endpoint now uses it. UI: the Advertiser settings page (Pricing with the ISO 4217 currency picker, four list editors (adding to one list removes the entry from the other; seat and category suggestions), Where these apply with Open, Available Inventory as an AG Grid table with Open). The DSP Integration section now opens on it, as the prototype does. Shared `ListEditor`. Tests: API +9, admin +1. Browser-checked: moving an advertiser between lists, suggestions, save | — | — |
 | 8 | Shared Targeting Variables | Done | API: `GET/PUT /admin/v1/targeting-variables` (24 default variables with tooltip text; access is `"all"` or DSP ids; unknown variables and unknown DSPs are rejected) and the Partner API's first endpoint, `GET /v1/targeting/attributes`. The caller gets only the variables enabled for it: `"all"` counts only if the DSP is connected, and a named DSP always does. Never values. Partner API auth: one static bearer token per seeded partner (`PARTNER_TOKENS`); 401 without one, 404 with the flag off. UI: the page (two groups, each an AG Grid Variable / DSPs table, example values as each variable's tooltip, header tooltip) and `DspPicker` (All connected DSPs or individual DSPs with connection state, shown as pills). Tests: API +6, admin +1. Browser-checked: picker, save | — | Q4 |
-| 9–17 | — | Not started | — | — | — |
+| 9 | DSP page + Google DSP (DV360) | In progress | **Part 1 (API and mocks):** `apps/dsp-mocks`, a mock DSP service (§14) with the DV360 token endpoint and API v4 (`/v4/partners/{id}`, `/v4/advertisers` with paging), a control API and a test page. A real DV360 client (`apps/api/src/dsp/googleDv360.ts`): it signs an RS256 service-account JWT, exchanges it at the token endpoint, checks partner access and pages through the advertisers, all against the mock by default (`DV360_TOKEN_URL`, `DV360_API_BASE_URL`). The seed now holds a real, freshly generated key file. Endpoints: `POST /admin/v1/partners` (Test, adopting the company lists, one per provider), `GET/PUT /admin/v1/partners/{id}` (secrets write-only; Live refused with 409 unless connected with the bidder integration complete; unlinking copies the company lists down and relinking discards the DSP's own; https bidder endpoint; Amazon region fixed once connected), and `POST …/connect` and `POST …/disconnect`. Tests: API +11 (run against the mock in-process), mocks +3 | The DSP page UI waits on Q5 and Q6 | Q5, Q6 |
+| 10–17 | — | Not started | — | — | — |
 
 ## 13. Prototype comparison (per screen)
 

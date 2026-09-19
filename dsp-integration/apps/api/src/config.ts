@@ -19,6 +19,8 @@ export interface Config {
   blockDeleteWithSoldPositions: boolean
   /* Partner API: one static bearer token per seeded partner (token → partner id). */
   partnerTokens: Record<string, string>
+  /* DSP API base URLs. Default: the local mock DSP service (apps/dsp-mocks). */
+  dsp: { dv360TokenUrl: string; dv360ApiBaseUrl: string }
 }
 
 const DEFAULT_PARTNER_TOKENS = { 'poc-token-google-dv360': 'p_google', 'poc-token-amazon-dsp': 'p_amazon' }
@@ -28,6 +30,7 @@ const ROOT = fileURLToPath(new URL('../../../', import.meta.url))
 const fromRoot = (p: string) => (p === ':memory:' || isAbsolute(p) ? p : resolve(ROOT, p))
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
+  const mocks = env.DSP_MOCKS_URL ?? 'http://127.0.0.1:4100'
   return {
     port: Number(env.API_PORT ?? 4000),
     dbFile: fromRoot(env.PH_DB_FILE ?? 'data/poc.sqlite'),
@@ -37,6 +40,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     maxValuesPerCondition: 100,
     oldVersionRunsDuringReview: false,
     blockDeleteWithSoldPositions: false,
+    dsp: {
+      dv360TokenUrl: env.DV360_TOKEN_URL ?? `${mocks}/dv360/token`,
+      dv360ApiBaseUrl: env.DV360_API_BASE_URL ?? `${mocks}/dv360`,
+    },
     partnerTokens: env.PARTNER_TOKENS ? (JSON.parse(env.PARTNER_TOKENS) as Record<string, string>) : DEFAULT_PARTNER_TOKENS,
   }
 }

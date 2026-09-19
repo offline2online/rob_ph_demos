@@ -2,6 +2,7 @@
    data.js), reshaped to the API contract. Decision 1: the prototype's four
    Responsive Web display types are not seeded. */
 import { advertiserSlug } from '@ph-dsp/types'
+import { generateKeyPairSync } from 'node:crypto'
 import type { Context } from '../context'
 import { tx } from '../db/db'
 
@@ -93,6 +94,12 @@ export const SEED_CAMPAIGNS = [
   ['c_menu_l', 'Menu — left panel'], ['c_menu_c', 'Menu — centre panel'], ['c_menu_r', 'Menu — right panel'], ['c_loyalty', 'Gold member double points'],
 ] as const
 
+const serviceAccountKeyFile = (clientEmail: string) =>
+  JSON.stringify({
+    type: 'service_account', project_id: 'ph-demo', client_email: clientEmail,
+    private_key: generateKeyPairSync('rsa', { modulusLength: 2048 }).privateKey.export({ type: 'pkcs8', format: 'pem' }).toString(),
+  })
+
 export function seed(ctx: Context) {
   if (ctx.displayTypes.list().length) return false
   tx(ctx.db, () => {
@@ -106,7 +113,8 @@ export function seed(ctx: Context) {
     ctx.partners.insert({
       id: 'p_google', provider: 'google_dv360', name: 'Google DSP', status: 'connected', mode: 'live', lastSync: 'Today, 07:12',
       credsPublic: { partnerId: '884512', serviceAccountEmail: 'ph-retail-media@ph-demo.iam.gserviceaccount.com' },
-      secrets: { privateKeyJson: '{"type":"service_account","private_key":"POC placeholder, not a real key"}' },
+      /* A freshly generated key in the real key-file format, so Connect works against the mock DV360. */
+      secrets: { privateKeyJson: serviceAccountKeyFile('ph-retail-media@ph-demo.iam.gserviceaccount.com') },
       bidder: { bidderEndpoint: 'https://rtb.doubleclick.net/openrtb2/bid', seatIds: ['884512', '884513'] },
       seats: [{ id: 'g1', name: 'Nestlé' }, { id: 'g2', name: 'Swisse' }], listsLinked: true, allowList: [], blockList: [],
     })
