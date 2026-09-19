@@ -29,7 +29,7 @@ export function mockDsps() {
 
 export const TEST_KEY = randomBytes(32).toString('base64')
 
-export async function testContext(opts: { flag?: boolean; role?: Role; seeded?: boolean; dspFetch?: Fetch } = {}) {
+export async function testContext(opts: { flag?: boolean; role?: Role; seeded?: boolean; dspFetch?: Fetch; clock?: () => Date } = {}) {
   const ctx = createContext({
     config: { ...loadConfig({ DSP_MOCKS_URL: 'http://mocks.test' }), dbFile: ':memory:', assetsDir: mkdtempSync(join(tmpdir(), 'ph-assets-')) },
     db: openDb(':memory:'),
@@ -37,6 +37,7 @@ export async function testContext(opts: { flag?: boolean; role?: Role; seeded?: 
     session: staticSession(opts.role ?? 'hq_admin'),
     secrets: aesGcmSecretsStore(TEST_KEY),
     dspFetch: opts.dspFetch,
+    clock: opts.clock,
   })
   if (opts.seeded !== false) await seed(ctx)
   return ctx

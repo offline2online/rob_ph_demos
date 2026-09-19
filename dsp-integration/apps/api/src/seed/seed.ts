@@ -140,6 +140,10 @@ export async function seed(ctx: Context) {
       'store.suburb': [], 'store.postcode': [], 'store.country': [], 'store.languages': [],
       'store.reason_for_visit': ['p_google'], 'visitor.purchase_intent': ['p_google'],
     })
+    /* Assumed views (VAC-d) per play window for each advertiser slot (AudienceSource
+       stand-in): 412 per display, as in API.md's example bid request, across the
+       three Menu Boards. Vision/AI is on for Menu Board, so the count is sensor-derived. */
+    ctx.db.prepare('INSERT INTO audience_vacd (display_type_id, slot, assumed_views_per_window, counted) VALUES (?, ?, ?, ?)').run('menu_board', 2, 1236, 1)
     ctx.exchange.save({ organisation: 'Demo Retail Group', domain: 'demoretail.example', sellerId: 'drg-4471', contactEmail: 'adops@demoretail.example' })
   })
   await seedCampaigns(ctx)

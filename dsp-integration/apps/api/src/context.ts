@@ -18,6 +18,8 @@ import { pocCampaignSource } from '@ph-dsp/campaign-approval/poc'
 import { type ApprovalService, createApprovalService } from '@ph-dsp/campaign-approval/server'
 import { advertiserSlug } from '@ph-dsp/types'
 import { type AssetStore, localAssetStore } from './platform/AssetStore'
+import { type AudienceSource, sqliteAudienceSource } from './platform/AudienceSource'
+import { type ReservationRepo, sqliteReservationRepo } from './repos/ReservationRepo'
 import { targetingSummary } from './domain/targetingSummary'
 import type { Fetch } from './dsp/DspClient'
 import { dspClients } from './dsp/registry'
@@ -38,12 +40,16 @@ export interface Context {
   exchange: ExchangeRepo
   dsp: ReturnType<typeof dspClients>
   assets: AssetStore
+  audience: AudienceSource
+  reservations: ReservationRepo
+  /* Now, for play windows (injectable for tests). */
+  clock: () => Date
   /* The approval module's view of the campaigns (its CampaignSource adapter). */
   approvalCampaigns: ApprovalCampaignSource
   approvals: ApprovalService
 }
 
-export function createContext(opts: { config?: Config; db?: Db; flags?: Flags; session?: SessionSource; secrets?: SecretsStore; dspFetch?: Fetch } = {}): Context {
+export function createContext(opts: { config?: Config; db?: Db; flags?: Flags; session?: SessionSource; secrets?: SecretsStore; dspFetch?: Fetch; clock?: () => Date } = {}): Context {
   const config = opts.config ?? loadConfig()
   const db = opts.db ?? openDb(config.dbFile)
   migrateUp(db)
@@ -63,6 +69,9 @@ export function createContext(opts: { config?: Config; db?: Db; flags?: Flags; s
     company: sqliteCompanySettingsRepo(db),
     exchange: sqliteExchangeRepo(db),
     dsp: dspClients(config.dsp, opts.dspFetch),
+    audience: sqliteAudienceSource(db),
+    reservations: sqliteReservationRepo(db),
+    clock: opts.clock ?? (() => new Date()),
     ...approvalParts(db, config),
   }
 }
