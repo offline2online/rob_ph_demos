@@ -457,7 +457,8 @@ Each is configurable in `apps/api/src/config.ts`.
 | 4 | Delete a display type | Done | `GET …/display-types/{id}/delete-check` and `DELETE …/display-types/{id}` (409 `has_dependents` listing each display and its store; the auto-created playlist is kept; Q47: the sold/reserved position count is logged, and reservations arrive in package 15). UI: a bin icon on each list row, and the delete dialog (blocked: warning, list of displays, Close, Delete disabled; allowed: permanent-delete text, Cancel, Delete). A confirmed delete applies immediately and leaves other unsaved edits as they were; an unsaved new type is removed from the draft only. Tests: API +3, admin +2. Browser-checked | — | — |
 | 5 | Playlist Management | Done | API: `PUT /admin/v1/playlists/{id}/record` (rename only; rejects assignment fields), `GET …/delete-check` and `DELETE` (409 `has_dependents` for a default or zone playlist). UI: nav "Playlist Management", count line, AG Grid table (rename inline, auto-created pill, expandable assignments with Open →, delete) and delete dialogs. Changes apply immediately, as in the prototype (the spec doesn't list this page under *Saving changes*). Shared `Grid` component (fit to width, auto height), now also used by Slot assignment. Tests: API +4, admin +1. Browser-checked: rename, both delete dialogs, Open → | New playlist and assignment editing (decision 4) | — |
 | 6 | DSP Integration nav + Exchange settings; sellers.json | Done | API: `GET/PUT /admin/v1/exchange` (all four fields required, bare domain, valid email; `published` and `sellersJsonUrl` once complete) and `GET /sellers.json` (PUBLISHER, not confidential; 404 until complete or with the flag off). UI: nav "DSP Integration" (flag-gated), a list column (COMPANY: Exchange settings, Advertiser settings, Shared Targeting Variables with their subtitles; PARTNER DSPS: DV360, Amazon Ads DSP and The Trade Desk with state and lists-link lines; contracts to icons below 900px), one draft and save bar for the whole section, a leave-page guard, and the Exchange settings page. Tests: API +7, admin +4. Browser-checked: edit, validation error, save, guard | The section opens on Exchange settings until package 7 adds Advertiser settings | — |
-| 7–17 | — | Not started | — | — | — |
+| 7 | Advertiser settings | Done | API: `PUT /admin/v1/advertiser-settings` (any ISO 4217 currency, positive floor and multipliers; an entry on both lists is rejected (`validation_failed`), matching case-insensitively; entries trimmed and de-duplicated) and `GET /admin/v1/available-inventory` (every advertiser-owned slot, no advertisers column). Pricing maths in `domain/pricing.ts` with the brief's unit tests (floor × personalised × interactive × advertiser multiplier; 450 and 360 examples); the Advertisers endpoint now uses it. UI: the Advertiser settings page (Pricing with the ISO 4217 currency picker, four list editors (adding to one list removes the entry from the other; seat and category suggestions), Where these apply with Open, Available Inventory as an AG Grid table with Open). The DSP Integration section now opens on it, as the prototype does. Shared `ListEditor`. Tests: API +9, admin +1. Browser-checked: moving an advertiser between lists, suggestions, save | — | — |
+| 8–17 | — | Not started | — | — | — |
 
 ## 13. Prototype comparison (per screen)
 
@@ -496,6 +497,21 @@ Kept on the page as status (decision 2): "Not enabled for this company —
 contact Platform Admin.", the broken-partner callout, "On the blacklist —
 this position cannot fill.", "Not connected", the preview caption, and the
 save bar message.
+
+### Advertiser settings (package 7)
+
+Compared against the prototype at 1163px. The heading tooltip, PRICING (four
+fields and every tooltip), LIST MANAGEMENT (four editors with labels, colours,
+counts, empty texts, placeholders and suggestion chips), WHERE THESE APPLY
+(Adopting / Own lists with its tooltip, Open) and AVAILABLE INVENTORY
+(Display type, Playlist, Slot, Position with the DSP beneath, Open; no
+advertisers column) all match.
+
+| Where | Prototype | Build | Why |
+|---|---|---|---|
+| Available Inventory | Three rows (two are Carousel, a web type) | One row (Menu Board) | Decision 1 (no web display types in the seed) |
+| Available Inventory | Built from the unsaved display types | Built from the saved display types (`GET /admin/v1/available-inventory`) | The contract's endpoint; the table is read-only |
+| Removable pills | Custom pills | AntD `Tag` | ph-designer components |
 
 ### Exchange settings (package 6)
 

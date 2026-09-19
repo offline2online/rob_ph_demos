@@ -8,6 +8,7 @@ import { type Flags, envFlags } from './flags'
 import { DisplayTypesPage } from './features/display-types/DisplayTypesPage'
 import { PlaylistManagementPage } from './features/playlist-management/PlaylistManagementPage'
 import { DspIntegrationLayout } from './features/dsp-integration/DspIntegrationLayout'
+import { AdvertiserSettings } from './features/dsp-integration/AdvertiserSettings'
 import { ExchangeSettings } from './features/dsp-integration/ExchangeSettings'
 import { AppShell, type NavItem } from './shared/AppShell'
 import { WithTip } from './shared/InfoTip'
@@ -43,9 +44,10 @@ function featureRoutes(flags: Flags): RouteObject[] {
           handle: { title: 'DSP Integration' } satisfies RouteHandle,
           element: <DspIntegrationLayout />,
           children: [
-            /* The prototype opens on Advertiser settings; until package 7 builds it, Exchange settings. */
-            { index: true, element: <Navigate to="exchange" replace /> },
+            /* The prototype opens on Advertiser settings. */
+            { index: true, element: <Navigate to="advertiser-settings" replace /> },
             { path: 'exchange', element: <ExchangeSettings /> },
+            { path: 'advertiser-settings', element: <AdvertiserSettings /> },
           ],
         }]
       : []),

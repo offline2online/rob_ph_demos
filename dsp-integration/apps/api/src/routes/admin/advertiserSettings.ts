@@ -1,16 +1,51 @@
-/* Advertiser settings (spec §4, §6). Package 3 needs the read side for the
-   slot picker's list counts; saving arrives with the screen (package 7). */
-import type { AdvertiserSettings } from '@ph-dsp/types'
+/* Advertiser settings (spec §4, §5, §6): pricing and the company lists, plus
+   the read-only Where these apply and Available Inventory. */
+import type { AdvertiserSettings, AdvertiserSettingsInput, AvailableInventoryRow } from '@ph-dsp/types'
 import type { FastifyPluginAsync } from 'fastify'
 import type { Context } from '../../context'
+import { cleanList, validateAdvertiserSettings } from '../../domain/advertiserSettings'
 import type { Guards } from '../../http/app'
+import { validationFailed } from '../../http/errors'
 
 export const advertiserSettingsRoutes = (ctx: Context, guards: Guards): FastifyPluginAsync => async (app) => {
-  app.get('/advertiser-settings', async (): Promise<AdvertiserSettings> => {
+  const view = (): AdvertiserSettings => ({
+    ...ctx.company.get(),
+    whereTheseApply: ctx.partners.list().map((p) => ({ partnerId: p.id, name: p.name, adopting: p.listsLinked })),
+  })
+
+  app.get('/advertiser-settings', async () => {
     guards.flagged()
-    return {
-      ...ctx.company.get(),
-      whereTheseApply: ctx.partners.list().map((p) => ({ partnerId: p.id, name: p.name, adopting: p.listsLinked })),
+    return view()
+  })
+
+  app.put<{ Body: Partial<AdvertiserSettingsInput> }>('/advertiser-settings', async (req) => {
+    guards.flagged()
+    const errors = validateAdvertiserSettings(req.body)
+    if (errors.length) throw validationFailed(errors, 'An entry can’t be on both lists, and pricing must be positive.')
+    const b = req.body as AdvertiserSettingsInput
+    ctx.company.save({
+      currency: b.currency, floorCpm: b.floorCpm, personalisedMultiplier: b.personalisedMultiplier, interactiveMultiplier: b.interactiveMultiplier,
+      advertiserWhitelist: cleanList(b.advertiserWhitelist), advertiserBlacklist: cleanList(b.advertiserBlacklist),
+      categoryWhitelist: cleanList(b.categoryWhitelist), categoryBlacklist: cleanList(b.categoryBlacklist),
+    })
+    return view()
+  })
+
+  /* Every advertiser-owned slot across the estate (spec §5 "Available Inventory"). No advertisers column. */
+  app.get('/available-inventory', async () => {
+    guards.flagged()
+    const partners = ctx.partners.list()
+    const items: AvailableInventoryRow[] = []
+    for (const t of ctx.displayTypes.list()) {
+      const playlistName = (t.defaultPlaylistId && ctx.playlists.get(t.defaultPlaylistId)?.name) || '—'
+      ;(t.phExtensions?.slots ?? []).forEach((s, i) => {
+        if (s.owner !== 'advertiser') return
+        items.push({
+          displayTypeId: t.id, displayTypeName: t.name, touchPoint: t.touchPoint, playlistName, slot: i + 1, position: s.label,
+          partnerName: s.partnerId ? partners.find((p) => p.id === s.partnerId)?.name ?? null : null,
+        })
+      })
     }
+    return { items }
   })
 }

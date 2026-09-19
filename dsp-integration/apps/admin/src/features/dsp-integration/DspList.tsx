@@ -46,13 +46,13 @@ function Row({ active, collapsed, dashed, title, onClick, children }: { active: 
 export function DspList() {
   const { pathname } = useLocation()
   const navigate = useNavigate()
-  const { draft, partners, settings } = useSection()
+  const { draft, partners } = useSection()
   const collapsed = useViewportWidth() < NAV_COLLAPSE_BELOW
   const advertisers = new Set(partners.flatMap((p) => (p.seats ?? []).map((s) => s.name.toLowerCase()))).size
 
   const company = [
     { to: PATHS.exchange, icon: 'storefront', title: 'Exchange settings', sub: `${draft.exchange.organisation || 'Client'} is seller of record` },
-    { to: PATHS.advertiserSettings, icon: 'rule', title: 'Advertiser settings', sub: `${advertisers} advertisers · floor ${settings.currency} ${settings.floorCpm} CPM` },
+    { to: PATHS.advertiserSettings, icon: 'rule', title: 'Advertiser settings', sub: `${advertisers} advertisers · floor ${draft.settings.currency || 'AUD'} ${draft.settings.floorCpm ?? '—'} CPM` },
     { to: PATHS.variables, icon: 'tune', title: 'Shared Targeting Variables', sub: `${TARGETING_VARIABLES.length} platform variables` },
   ]
 

@@ -48,3 +48,19 @@ describe('DSP Integration section', () => {
     expect(screen.queryByRole('link', { name: /DSP Integration/ })).not.toBeInTheDocument()
   })
 })
+
+describe('Advertiser settings page', () => {
+  it('shows Pricing, the four lists, Where these apply and Available Inventory, in that order', async () => {
+    vi.stubGlobal('fetch', vi.fn(fakeFetch({ '/api/admin/v1/available-inventory': { items: [{ displayTypeId: 'menu_board', displayTypeName: 'Menu Board — Long Format', touchPoint: 'Digital Signage', playlistName: 'Menu Board Playlist', slot: 2, position: 'Supplier slot', partnerName: 'Google DSP' }] } })))
+    renderAt('/dsp-integration')
+    expect(await screen.findByRole('heading', { name: /Advertiser settings/ })).toBeInTheDocument()
+    const text = document.body.textContent ?? ''
+    const order = ['Pricing', 'List management', 'Where these apply', 'Available Inventory'].map((h) => text.indexOf(h))
+    expect(order).toEqual([...order].sort((a, b) => a - b))
+    expect(screen.getByLabelText(/Currency/)).toBeInTheDocument()
+    for (const l of ['Advertisers — whitelist', 'Advertisers — blacklist', 'Categories — whitelist', 'Categories — blacklist']) expect(screen.getByRole('region', { name: l })).toBeInTheDocument()
+    const where = screen.getByRole('list', { name: 'Where these apply' })
+    expect(within(where).getAllByRole('listitem').map((li) => li.textContent)).toEqual([expect.stringContaining('Adopting'), expect.stringContaining('Own lists')])
+    expect(screen.queryByText('Advertisers', { selector: '.ag-header-cell-text' })).not.toBeInTheDocument()
+  })
+})

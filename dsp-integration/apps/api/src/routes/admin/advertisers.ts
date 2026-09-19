@@ -5,9 +5,10 @@ import { advertiserSlug, type Advertiser } from '@ph-dsp/types'
 import type { FastifyPluginAsync } from 'fastify'
 import type { Context } from '../../context'
 import type { Guards } from '../../http/app'
+import { effectiveFloorCpm } from '../../domain/pricing'
 
 export function listAdvertisers(ctx: Context): Advertiser[] {
-  const floor = ctx.company.get().floorCpm
+  const company = ctx.company.get()
   const byId = new Map<string, { name: string; via: string[] }>()
   for (const p of ctx.partners.list()) {
     for (const s of p.seats) {
@@ -21,7 +22,7 @@ export function listAdvertisers(ctx: Context): Advertiser[] {
     .sort((a, b) => a[1].name.localeCompare(b[1].name))
     .map(([advertiserId, a]) => {
       const s = ctx.company.advertiserSetting(advertiserId)
-      return { advertiserId, name: a.name, via: a.via, ...s, effectiveFloorCpm: Math.round(floor * s.floorMultiplier * 100) / 100 }
+      return { advertiserId, name: a.name, via: a.via, ...s, effectiveFloorCpm: effectiveFloorCpm(company, s.floorMultiplier) }
     })
 }
 

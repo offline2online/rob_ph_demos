@@ -99,7 +99,7 @@ function DetailRow({ data, context }: Params) {
               <span style={{ color: T.muted }}>·</span>
               <span className="whitespace-nowrap" style={{ color: T.muted }}>{where(a)}</span>
             </span>
-            <Button type="text" size="small" className="text-primary" onClick={() => c.open(a.displayTypeId)}>
+            <Button color="primary" variant="text" size="small" onClick={() => c.open(a.displayTypeId)}>
               Open<Icon name="arrow_forward" size={14} />
             </Button>
           </div>

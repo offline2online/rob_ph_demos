@@ -176,7 +176,7 @@ export function SlotAssignment({ slots, setSlots, partners, company, seatsOf, on
           type="error"
           showIcon
           message={`${broken.length} advertiser ${broken.length === 1 ? 'position is' : 'positions are'} assigned to a partner that is not connected. ${broken.length === 1 ? 'It' : 'They'} will fall back to the next eligible Headquarters campaign until the connection is fixed.`}
-          action={<Button size="small" className="border-primary text-primary" onClick={() => onFixConnection(broken[0].partnerId as string)}>Fix connection</Button>}
+          action={<Button color="primary" variant="outlined" size="small" onClick={() => onFixConnection(broken[0].partnerId as string)}>Fix connection</Button>}
         />
       )}
     </Field>

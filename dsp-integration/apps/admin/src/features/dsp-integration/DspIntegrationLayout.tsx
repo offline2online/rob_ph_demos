@@ -4,7 +4,7 @@
    unsaved changes asks first (prototype PartnersView). */
 import { useQueryClient } from '@tanstack/react-query'
 import { App, Spin } from 'antd'
-import type { AdvertiserSettings, ExchangeInput, Partner } from '@ph-dsp/types'
+import type { AdvertiserSettings, AdvertiserSettingsInput, ExchangeInput, Partner } from '@ph-dsp/types'
 import { createContext, useContext, useMemo, useState } from 'react'
 import { Outlet, useLocation } from 'react-router-dom'
 import { ApiRequestError } from '../../api/client'
@@ -13,12 +13,13 @@ import { SaveBar } from '../../shared/SaveBar'
 import { useReportDirty } from '../../shared/UnsavedChanges'
 import { deepEqual } from '../../shared/deepEqual'
 import { useDraft } from '../../shared/useDraft'
-import { saveExchange, useAdvertiserSettings, useExchange, usePartners } from './api'
+import { saveAdvertiserSettings, saveExchange, useAdvertiserSettings, useExchange, usePartners } from './api'
 import { DspList } from './DspList'
 
 /* The section's editable state. Later packages add their slices here. */
 export interface SectionDraft {
   exchange: ExchangeInput
+  settings: AdvertiserSettingsInput
 }
 
 interface Section {
@@ -38,12 +39,13 @@ export const useSection = () => {
   return s
 }
 
+const settingsInput = ({ whereTheseApply: _w, ...rest }: AdvertiserSettings): AdvertiserSettingsInput => rest
 const exchangeInput = ({ organisation, domain, sellerId, contactEmail }: ExchangeInput): ExchangeInput => ({ organisation, domain, sellerId, contactEmail })
 
 function Section({ partners, settings, exchange, published }: { partners: Partner[]; settings: AdvertiserSettings; exchange: ExchangeInput; published: boolean }) {
   const { message } = App.useApp()
   const qc = useQueryClient()
-  const saved = useMemo<SectionDraft>(() => ({ exchange }), [exchange])
+  const saved = useMemo<SectionDraft>(() => ({ exchange, settings: settingsInput(settings) }), [exchange, settings])
   const { draft, setDraft, dirty, reset, commitNext } = useDraft(saved)
   useReportDirty(dirty)
   const [saving, setSaving] = useState(false)
@@ -56,8 +58,9 @@ function Section({ partners, settings, exchange, published }: { partners: Partne
     setSaving(true)
     try {
       if (!deepEqual(draft.exchange, saved.exchange)) await saveExchange(draft.exchange)
+      if (!deepEqual(draft.settings, saved.settings)) await saveAdvertiserSettings(draft.settings)
       commitNext()
-      await qc.invalidateQueries({ queryKey: ['exchange'] })
+      await Promise.all(['exchange', 'advertiser-settings', 'available-inventory'].map((k) => qc.invalidateQueries({ queryKey: [k] })))
     } catch (e) {
       message.error(e instanceof ApiRequestError ? [e.message, ...(e.body?.error.details ?? []).map((d) => d.reason)].join(' ') : 'Could not save changes.')
     } finally {

@@ -70,7 +70,7 @@ export function MultiZonePanel({ d, update, open, onToggle, playlistOptions, zon
               <Select size="small" className="w-full" aria-label="Zone playlist" value={z.playlistId} onChange={(v) => setZone(i, { playlistId: v })} options={playlistOptions} />
             </div>
           ))}
-          <Button size="small" className="border-primary text-primary" icon={<Icon name="add" size={15} />}
+          <Button color="primary" variant="outlined" size="small" icon={<Icon name="add" size={15} />}
             onClick={() => setZones([...zones, { id: `z${Date.now()}`, name: `Zone ${zones.length + 1}`, x: 0, y: 0, width: 25, height: 100, playlistId: zonePlaylistId(zones.length + 1) }])}>
             Add zone
           </Button>
