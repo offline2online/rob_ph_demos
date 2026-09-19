@@ -130,7 +130,8 @@ campaign.
 
 Every endpoint requires an HQ Admin session. `admin` = admin users only;
 `approver` = may approve/reject (HQ Admin role by default, open question 39).
-In the POC the session is a stand-in (see *POC stand-ins* below).
+In the POC the session is a stand-in: the role comes from the `POC_ROLE`
+env var, with no switcher and no cookie (see *POC stand-ins* below).
 
 ### Exchange settings
 
@@ -197,7 +198,7 @@ Non-admin sessions get `403 forbidden`.
 | Method | Path | Purpose |
 |---|---|---|
 | GET | `/admin/v1/approvals?status=` | Campaigns by approval status, with `counts` for all four statuses (the table filter). |
-| GET | `/admin/v1/campaigns/{id}/approval` | State, checks, targeting summary and audit trail (review panel). |
+| GET | `/admin/v1/campaigns/{id}/approval` | State, checks, targeting summary, `creative` (`assetUrl`, `mimeType`, `width`, `height`) and target `canvas` (`width`, `height`) for rendering the creative on its canvas, and audit trail (review panel). |
 | POST | `/admin/v1/campaigns/{id}/approve` | Approve the reviewed `assetVersion` (`conflict` if it changed). |
 | POST | `/admin/v1/campaigns/{id}/reject` | Reject with `assetVersion` and a required `reason`. |
 
@@ -229,8 +230,19 @@ integration, and nothing else in the build may depend on their internals.
 | GET | `/admin/v1/display-types/{id}/record` | One display type. |
 | PUT | `/admin/v1/display-types/{id}/record` | Save changes to the existing display type fields. Slot ownership and venue are saved through `/extensions` (above). |
 | GET | `/admin/v1/playlists` | Playlists with their display type and zone assignments. |
-| PUT | `/admin/v1/playlists/{id}/record` | Edit a playlist: name and assignments (spec §2). |
-| GET | `/admin/v1/session` | The current user and role (`hq_admin` = admin + approver; `hq_user` = neither), set by the POC's user switcher. |
+| PUT | `/admin/v1/playlists/{id}/record` | Rename a playlist (`name` only). Assignments are made on the display type form (spec §2). |
+| GET | `/admin/v1/campaigns` | The existing campaign list, for the stand-in POC campaign table (`campaignId`, name, source, advertiser, partner, display type, pricing type, `activation`). Approval state comes from `/admin/v1/approvals`. |
+| PUT | `/admin/v1/campaigns/{id}/activation` | The existing activation toggle: `{enabled}`. `422 not_approved` unless the campaign is Approved. |
+| GET | `/admin/v1/session` | The current user and role (`hq_admin` = admin + approver; `hq_user` = neither). In the POC the role comes from the `POC_ROLE` env var: there is no switcher and no session cookie. |
+
+## Jobs with no API
+
+- **SSP auction**: a scheduled job in `apps/api` clears each play window
+  ahead of time (OpenRTB section below). For demos, `npm run auction:run`
+  runs one window. No UI and no endpoint.
+- **Billing**: billing line items (dynamic VAC-d, reconciled against
+  existing playback data) are stored only. `npm run billing:print` prints
+  them for testing. No UI, report or API.
 
 ## sellers.json
 

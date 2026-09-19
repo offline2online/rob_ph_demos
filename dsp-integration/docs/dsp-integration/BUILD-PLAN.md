@@ -1,7 +1,7 @@
 # Build plan — Display Types & DSP Integration
 
-Status: **plan only, nothing built.** Waiting on the *Questions* in §6
-before package 1 starts (brief, *How to work* step 1).
+Status: **plan approved 19 Sep 2026** (answers in §6). Building packages
+1–3, then stopping for Rob to compare Display Types against the prototype.
 
 ## 1. Setup and git
 
@@ -113,8 +113,8 @@ the spec are in §6.
   - Save bar.
   - Delete dialog, blocked (lists displays) and allowed.
 - **Playlist Management.**
-  - Count line "**n** Playlists · **m** unused". **New playlist** opens an
-    inline input.
+  - Count line "**n** Playlists · **m** unused". (The prototype's **New
+    playlist** is not built, per decision 4.)
   - Table: Playlist (inline rename pencil, "auto-created with …" pill),
     Assigned to (expandable list with **Open →**), bin.
   - Delete dialog, blocked and allowed.
@@ -151,15 +151,19 @@ the spec are in §6.
   - Table: Advertiser, Via, Campaign approval (Switch plus
     Required/Not required), Floor multiplier, Effective floor. All columns
     have tooltips except Advertiser.
-  - No save bar in the prototype (see Q4).
+  - The prototype had no save bar (a bug, since fixed). The standard save bar
+    is built (decision 4).
 
 **Seed data** (`model/data.js`, becomes `apps/api/src/seed/`):
 - Display types:
   - Landscape (Digital Signage, 1920×1080)
   - Portrait (Digital Signage, 1080×1920)
   - Menu Board — Long Format (Digital Signage, 5760×1080, 3 slots, 3 zones)
-  - 4 Responsive Web types (see Q1)
-- 12 playlists and 6 displays.
+  - The prototype's 4 Responsive Web types are **not seeded** (decision 1).
+    Their slots go too, so Available Inventory seeds one row: Menu Board —
+    Long Format, slot 2.
+- 12 playlists (kept as existing records; the web types' playlists become
+  unused) and 6 displays.
 - Partners: Google DSP (connected, Live) and Amazon Ads DSP (error, Test,
   own lists); The Trade Desk not set up.
 - Advertisers: L'Oréal, Nestlé, Swisse.
@@ -236,9 +240,8 @@ and ends with a `BUILD-PLAN.md` update.
 5. **Playlist Management.**
    - `features/playlist-management/`: `PlaylistManagementPage`,
      `PlaylistRow`, `DeletePlaylist`.
-   - API: `GET /admin/v1/playlists`, `PUT …/{id}/record`,
-     `GET …/delete-check`, `DELETE`.
-   - Creating a playlist needs an endpoint the contract lacks (Q6).
+   - API: `GET /admin/v1/playlists`, `PUT …/{id}/record` (name only),
+     `GET …/delete-check`, `DELETE`. Rename and delete only (decision 4).
 6. **DSP Integration nav and Exchange settings.**
    - `features/dsp-integration/`: `DspIntegrationPage`, `DspList`,
      `ExchangeSettings`.
@@ -309,131 +312,95 @@ and ends with a `BUILD-PLAN.md` update.
     - `dsp/amazonDsp.mock.ts` and `dsp/theTradeDesk.mock.ts`, with their
       credential forms.
 
-## 6. Questions (open — need an answer before building)
+## 6. Decisions (Rob, 19 Sep 2026)
 
-### Git
-- **G1.** *Resolved:* branch created from `main`; only `dsp-integration/`
-  is staged.
-- **G2.** The Definition of done says "A PR opened against main", but the
-  brief says to push only when you ask. I'll leave the PR until you ask.
-  Is that right?
+These override the prototype where they differ.
 
-### Prototype vs spec — which wins?
-1. **Out-of-scope UI in the prototype.** The prototype renders things the
-   spec removes:
-   - Responsive Web, Mobile App and Mobile Store Site touch points, and 4
-     seeded Responsive Web display types
-   - Element Type, the web preview and its settings
-   - the pairing *Idle / Connected* toggle on the signage preview
-   - The QR Control *Mobile site template* select is an existing schema field.
+1. **Touch points:** Digital Signage and Kiosk only. Not built: web touch
+   points, web display types, web element/preview controls, and the
+   Idle/Connected pairing toggle.
+2. **Copy:** status text stays on the page; explanations become tooltips on
+   the element they describe, per the spec's *Help text* rules.
+3. **Direct / house:** out of scope for this release. Not built, and not in
+   the slot picker.
+4. **Gaps against the spec:**
+   - Advertisers gets the standard save bar.
+   - No slot quota field.
+   - No **New playlist**.
+   - Playlist assignments are made on the Display Types form.
+   - Playlist Management renames and deletes only;
+     `PUT /admin/v1/playlists/{id}/record` takes `name` only.
+5. **Contract changes.** See §7.
+6. **Flag, structure and defects:**
+   - With `dspIntegration` off, DSP Integration, Advertisers, Campaigns
+     (POC) and *Slot assignment* are hidden (so are the owner chips in the
+     Playlist Settings summary). The Partner API (`/v1/*`) and every new
+     admin endpoint return 404.
+   - The POC stand-in endpoints and the display type/playlist delete
+     endpoints stay available.
+   - `packages/campaign-approval/` and slug advertiser IDs (e.g. `loreal`)
+     are confirmed.
+   - The 6 prototype defects are fixed (§8).
+- **G1** (branch) resolved. **G2**: the PR waits until Rob asks, since
+  pushing is on request only.
 
-   Proposal: Touch Point offers Digital Signage and Kiosk only; the web
-   types are left out of the seed; the Idle/Connected toggle is dropped; the
-   Mobile site template select stays. OK?
-2. **Explanatory copy on the page.** The spec says explanations are tooltips,
-   never paragraphs or hint lines. The prototype shows about 25 explanatory
-   sentences on the page. Examples:
-   - the hint under each Enabled Features toggle
-   - "Single zone — the display runs the Default Playlist…"
-   - the Playlist Management footer paragraph
-   - "Every advertiser using the platform, across all DSPs."
-   - the Add card description and "You will need" list
+## 7. Contract changes (openapi.yaml + API.md, one commit, 19 Sep 2026)
 
-   Proposal:
-   - Keep on the page what the spec calls status: issues, callouts about
-     state, the save bar message, delete-dialog warnings and empty states.
-   - Move each explanatory sentence into the tooltip of the element it
-     describes.
-   - Drop a sentence where no element fits.
+All approved by Rob (decision 5). The reason for each change is given.
 
-   Do you want that, or should I build the prototype's copy exactly?
-3. **Direct / house.** You've said it's in scope (spec §6). But in the
-   prototype it can't be reached: it isn't a slot owner, it isn't an option
-   in the partner picker, and no seed partner creates the "house book" page.
-   The contract also has no way to express it: `Provider` is
-   DV360/Amazon/TTD only, the slot `owner` is `internal`/`advertiser`/
-   `retail`, and `listMode` is `rtb`/`whitelist_only`. How should it work?
-   Proposal:
-   - The *Assigned to* partner select gets a **Direct / house** option. Its
-     advertiser select lists named advertisers only, with no RTB or
-     whitelist options.
-   - Stored as `partnerId: "house"` with `advertiser` set.
-   - No house page in the DSP list.
-   - It needs a contract note on `partnerId`. Where do house advertisers
-     come from, since they have no DSP seats? Free text?
-4. **Advertisers save bar.** The prototype has none, so edits can never be
-   saved. The spec requires Save changes on this screen and the contract has
-   `PUT /admin/v1/advertisers`. Proposal: add the standard save bar, as the
-   spec says.
-5. **Slot quota.** The spec's functional requirements list a "store quota"
-   in the slot editor, and the contract's slot has `quota`. The prototype
-   has no quota field. Should I build it (what does it look like?) or leave
-   it out?
-6. **Playlist Management.**
-   - The prototype saves immediately (no save bar), which matches the spec
-     not listing it under *Saving changes*.
-   - Its **New playlist** button has no endpoint in the contract (the POC
-     stand-in group has list, PUT record and delete only).
-   - Assignments are view-only. The spec (§2) says "edit… its assignment to
-     display types and zones", and `PUT …/record` takes `assignments`, but
-     the prototype has no editor for them.
+| Change | Why |
+|---|---|
+| `GET /admin/v1/campaigns` (POC stand-in), new `Campaign` schema | The stand-in POC campaign table needs the existing campaign list; `CampaignSource.listCampaigns` had no endpoint |
+| `PUT /admin/v1/campaigns/{id}/activation` (POC stand-in), `422 not_approved` unless Approved | The existing activation toggle (`CampaignSource.setActivation`, wrapped by `ApprovalActions`) had no endpoint |
+| `Approval.creative {assetUrl, mimeType, width, height}` and `Approval.canvas {width, height}` | The review panel must render the creative on the target canvas (spec §3); the schema had neither |
+| Session wording: role from `POC_ROLE`, no switcher, no cookie | The contract said "user switcher", contradicting the brief |
+| `PUT /admin/v1/playlists/{id}/record` takes `name` only | Decision 4: assignments are made on the Display Types form |
+| *Jobs with no API* note: auction job + `npm run auction:run`; billing line items only + `npm run billing:print` | Nothing in the contract triggered the auction or described billing output; no UI, report or endpoint |
 
-   Should I drop New playlist or add an endpoint? And build an assignment
-   editor (no design) or rename only?
-7. **Prototype defects.** Proposal:
-   - **Fix connection** opens the broken DSP, not Advertiser settings.
-   - Mask the private-key field (the guardrail says credentials are never
-     shown in full).
-   - Enforce QR Control needing a phantom zone. The spec tooltip says
-     defining the zone "makes Enable QR Control available".
-   - Relinking keeps the prototype's warning callout with no extra dialog.
-   - The two label info icons with no text (*Display Canvas Size*,
-     *Phantom Area(s) Size*) are dropped rather than given invented text.
-   - The empty Vision/AI note is dropped.
+## 8. Prototype defects fixed (decision 6)
 
-   OK?
+1. **Fix connection** (broken-slot callout) opens that DSP's page, not
+   Advertiser settings.
+2. The DV360 **Private key (JSON)** field is masked like every other secret.
+   Credentials are never shown in full.
+3. **Enable QR Control** needs a phantom zone. It is disabled until *Define
+   phantom zone* is on, as its tooltip says.
+4. **Relink to company lists** keeps the prototype's warning callout, which
+   says relinking discards the DSP's own lists, and adds no extra dialog.
+   The relink is held as an unsaved change like any other edit.
+5. The label info icons with no tooltip text (*Display Canvas Size
+   (Resolution)*, *Phantom Area(s) Size*) are removed rather than given
+   invented text.
+6. The always-empty Vision/AI preset note is not rendered.
 
-### Contract gaps
-8. **Activation.** `CampaignSource.setActivation` and the POC table's
-   activation toggle have no endpoint. The approval schema has no
-   activation state, and nothing lists campaigns with their activation.
-   Can I add a POC stand-in endpoint, for example
-   `GET /admin/v1/campaigns` and `PUT /admin/v1/campaigns/{id}/activation`,
-   rejecting with `not_approved` when the campaign isn't approved?
-9. **Review panel creative.** The spec says the panel shows "creative
-   rendered on the target display type's canvas". The `Approval` schema has
-   no display type, canvas size or asset URL, and no endpoint serves
-   uploaded assets. Can I add `displayTypeId` and `assets[]` (url, version)
-   to `Approval`, plus an asset read endpoint?
-10. **Session.** API.md and openapi say the session is "set by the POC's
-    user switcher", but the brief says no switcher and no UI. The contract
-    also requires a `ph_session` cookie, but nothing issues one. Proposal:
-    the API treats every admin request as the `POC_ROLE` user. The two
-    stale "user switcher" phrases are corrected in both contract files.
-11. **Running the auction.** Nothing in the contract triggers the OpenRTB
-    auction for a play window. Tier-2 `POST /v1/reservations` bids exist,
-    but they don't run DSP auctions. Proposal: an internal scheduler in
-    `apps/api` that clears each window ahead of time, plus an npm script to
-    run one window for the demo. No endpoint. OK?
-12. **Billing output.** No endpoint or screen is specified. Proposal: billing
-    lines written to a `billing_lines` table by a job, with tests and no
-    API. OK?
+## 9. Package notes and deviations
 
-### Behaviour and structure
-13. **Flag off.** What should `dspIntegration=false` show? Proposal:
-    - The DSP Integration, Advertisers and Campaigns (POC) nav items are
-      hidden.
-    - `/v1/*` and the DSP/advertiser/approval admin endpoints return 404.
-    - The slot owners Advertiser and Stores are hidden on Display Types.
-    - Display Types and Playlist Management otherwise work the same.
-14. **Where campaign-approval lives.** The brief says one module,
-    `campaign-approval/`, and `packages/` for shared code. I propose
-    `packages/campaign-approval/`, containing both server and UI code. OK?
-15. **Advertiser identity.** The prototype keys advertisers by lower-cased
-    name, but the contract uses `advertiserId`. Proposal: a stable slug id
-    per seat name (for example `loreal`), shared across DSPs. OK?
+- **Package 3 reads data from later packages.** The *Assigned to* picker
+  needs partners, their seats and the company lists. Package 3 therefore
+  implements the read side of `GET /admin/v1/partners` and
+  `GET /admin/v1/advertiser-settings` early (flag-gated, exactly as in the
+  contract). Their `PUT`s and screens stay in packages 7 and 9.
+- **Seats aren't in the contract.** The `Partner` schema has no `seats`
+  (spec §8 has `seats: [{id, name}]`). This is question Q1 below. Until it's
+  answered, package 3 reads each DSP's advertisers from
+  `GET /admin/v1/advertisers` (`via`), which is admin-only.
+- **Fix connection before package 6** links to the DSP page's route,
+  `/dsp-integration/partners/{id}`. That route renders once package 6 is
+  built.
+- **The feature flag reaches the admin UI** through the same env var,
+  `DSP_INTEGRATION_ENABLED`, exposed to Vite through the `Flags` interface.
+  No endpoint was added.
 
-## 7. Defaults in use (brief, *Defaults for open questions*)
+## 10. Questions (open)
+
+1. **Partner seats.** The spec (§8) gives a partner `seats: [{id, name}]`.
+   The slot picker lists each seat, and each DSP page offers them as list
+   suggestions. The contract's `Partner` schema has no `seats`. Can I add
+   `seats: [{id, name}]` to `Partner`? Until then the picker uses
+   `/admin/v1/advertisers`, so an `hq_user` session sees no named
+   advertisers there.
+
+## 11. Defaults in use (brief, *Defaults for open questions*)
 
 - Q27: 24-hour window
 - Q29: bill realised plays only
@@ -447,12 +414,15 @@ and ends with a `BUILD-PLAN.md` update.
 
 Each is configurable in `apps/api/src/config.ts`.
 
-## 8. Progress
+## 12. Progress
 
 | # | Package | Status | Done | Deferred | Questions hit |
 |---|---|---|---|---|---|
-| 1–17 | — | Not started | — | — | G2, 1–15 |
+| 1 | Data model and migrations | Not started | — | — | — |
+| 2 | Shared UI | Not started | — | — | — |
+| 3 | Display Types | Not started | — | — | Q1 |
+| 4–17 | — | Not started | — | — | — |
 
-## 9. Prototype comparison (per screen)
+## 13. Prototype comparison (per screen)
 
 Filled in as each package finishes. Differences are removed, not justified.

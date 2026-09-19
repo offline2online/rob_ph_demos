@@ -17,6 +17,11 @@ info:
     Out of scope (existing Personalisation Hub functionality, no endpoints
     here): playback, playlists' playback behaviour, targeting evaluation,
     distribution to players, playback logging, campaign playback analytics.
+
+    Jobs with no endpoint: the SSP auction runs as a scheduled job
+    (CLI for demos: npm run auction:run); billing line items are stored
+    only (CLI to print them: npm run billing:print). Neither has a UI,
+    report or API.
 servers:
   - url: https://{instance}/api
     variables:
@@ -729,7 +734,7 @@ paths:
     put:
       tags: [POC stand-in — existing platform]
       operationId: savePlaylist
-      summary: Edit a playlist — name and assignment to display types and zones (spec §2)
+      summary: Edit a playlist — name only (assignments are made on the display type form, spec §2)
       security: [{adminSession: []}]
       parameters: [{name: playlistId, in: path, required: true, schema: {type: string}}]
       requestBody:
@@ -741,24 +746,55 @@ paths:
               required: [name]
               properties:
                 name: {type: string, minLength: 1}
-                assignments:
-                  type: array
-                  items:
-                    type: object
-                    required: [displayTypeId]
-                    properties:
-                      displayTypeId: {type: string}
-                      zoneId: {type: [string, 'null'], description: null = the display type's default playlist}
       responses:
         '200': {description: Saved, content: {application/json: {schema: {$ref: '#/components/schemas/Playlist'}}}}
         '400': {$ref: '#/components/responses/ValidationFailed'}
         '401': {$ref: '#/components/responses/Unauthorised'}
         '404': {$ref: '#/components/responses/NotFound'}
+  /admin/v1/campaigns:
+    get:
+      tags: [POC stand-in — existing platform]
+      operationId: listCampaigns
+      summary: Campaigns for the stand-in POC campaign table (existing campaign list)
+      security: [{adminSession: []}]
+      responses:
+        '200':
+          description: Campaigns
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items: {type: array, items: {$ref: '#/components/schemas/Campaign'}}
+        '401': {$ref: '#/components/responses/Unauthorised'}
+  /admin/v1/campaigns/{campaignId}/activation:
+    put:
+      tags: [POC stand-in — existing platform]
+      operationId: setCampaignActivation
+      summary: Switch a campaign Active / Inactive (existing activation toggle); approved campaigns only
+      security: [{adminSession: []}]
+      parameters: [{$ref: '#/components/parameters/CampaignId'}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [enabled]
+              properties:
+                enabled: {type: boolean}
+      responses:
+        '200': {description: Saved, content: {application/json: {schema: {$ref: '#/components/schemas/Campaign'}}}}
+        '400': {$ref: '#/components/responses/ValidationFailed'}
+        '401': {$ref: '#/components/responses/Unauthorised'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '422': {$ref: '#/components/responses/NotEligible'}
   /admin/v1/session:
     get:
       tags: [POC stand-in — existing platform]
       operationId: getSession
-      summary: Current stand-in user and role (the POC user switcher)
+      summary: Current stand-in user and role (from the POC_ROLE env var; no switcher, no cookie)
       security: [{adminSession: []}]
       responses:
         '200':
@@ -799,7 +835,7 @@ components:
       type: apiKey
       in: cookie
       name: ph_session
-      description: Existing HQ Admin session. Scopes used here — admin (Advertisers screen), approver (approve/reject; HQ Admin role by default, open question 39).
+      description: Existing HQ Admin session. Scopes used here — admin (Advertisers screen), approver (approve/reject; HQ Admin role by default, open question 39). In the POC there is no cookie — the session is a stand-in whose role comes from the POC_ROLE env var (hq_admin | hq_user).
 
   parameters:
     PositionId: {name: positionId, in: path, required: true, schema: {type: string}}
@@ -1132,6 +1168,22 @@ components:
         reason: {type: [string, 'null']}
         checks: {type: array, items: {$ref: '#/components/schemas/Check'}}
         targetingSummary: {type: string}
+        creative:
+          type: [object, 'null']
+          description: The baseline creative under review, for rendering on the target canvas.
+          required: [assetUrl, mimeType, width, height]
+          properties:
+            assetUrl: {type: string}
+            mimeType: {type: string}
+            width: {type: integer}
+            height: {type: integer}
+        canvas:
+          type: [object, 'null']
+          description: The target display type's canvas.
+          required: [width, height]
+          properties:
+            width: {type: integer}
+            height: {type: integer}
         audit:
           type: array
           items:
@@ -1219,6 +1271,25 @@ components:
               displayTypeName: {type: string}
               zoneId: {type: [string, 'null']}
               zoneName: {type: [string, 'null']}
+    Campaign:
+      type: object
+      description: POC stand-in for the existing campaign record (spec §8 additions included). Approval state is read from /admin/v1/approvals.
+      required: [campaignId, name, source, activation]
+      properties:
+        campaignId: {type: string}
+        name: {type: string}
+        source: {type: string, enum: [hq, api, dsp]}
+        advertiserId: {type: [string, 'null']}
+        advertiserName: {type: [string, 'null']}
+        partnerId: {type: [string, 'null']}
+        partnerName: {type: [string, 'null']}
+        displayTypeId: {type: [string, 'null']}
+        pricingType: {type: [string, 'null'], enum: [baseline, localised, personalised, interactive, null]}
+        activation:
+          type: object
+          required: [enabled]
+          properties:
+            enabled: {type: boolean}
     SellersJson:
       type: object
       required: [version, sellers]
