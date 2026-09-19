@@ -1,6 +1,6 @@
 /* Advertiser settings (spec §4, §5, §6): pricing and the company lists, plus
    the read-only Where these apply and Available Inventory. */
-import type { AdvertiserSettings, AdvertiserSettingsInput, AvailableInventoryRow } from '@ph-dsp/types'
+import { TARGETING_MODES, supportedTargetingOf, type AdvertiserSettings, type AdvertiserSettingsInput, type AvailableInventoryRow, type TargetingMode } from '@ph-dsp/types'
 import type { FastifyPluginAsync } from 'fastify'
 import type { Context } from '../../context'
 import { cleanList, validateAdvertiserSettings } from '../../domain/advertiserSettings'
@@ -40,9 +40,7 @@ export const advertiserSettingsRoutes = (ctx: Context, guards: Guards): FastifyP
   })
 
   /* Every advertiser-owned slot across the estate (spec §5 "Available Inventory"). No advertisers column. */
-  app.get('/available-inventory', async (req) => {
-    guards.flagged()
-    guards.requireScope(req, 'sections')
+  const inventory = (): AvailableInventoryRow[] => {
     const partners = ctx.partners.list()
     const items: AvailableInventoryRow[] = []
     for (const t of ctx.displayTypes.list()) {
@@ -52,9 +50,53 @@ export const advertiserSettingsRoutes = (ctx: Context, guards: Guards): FastifyP
         items.push({
           displayTypeId: t.id, displayTypeName: t.name, touchPoint: t.touchPoint, playlistName, slot: i + 1, position: s.label,
           partnerName: s.partnerId ? partners.find((p) => p.id === s.partnerId)?.name ?? null : null,
+          supportedTargeting: supportedTargetingOf(s),
         })
       })
     }
-    return { items }
+    return items
+  }
+
+  app.get('/available-inventory', async (req) => {
+    guards.flagged()
+    guards.requireScope(req, 'sections')
+    return { items: inventory() }
+  })
+
+  /* What targeting each slot supports (Rob, 20 Sep). Everything else about a
+     slot is set on its display type, so only this field is writable here. */
+  app.put<{ Body: { items?: unknown } }>('/available-inventory', async (req) => {
+    guards.flagged()
+    guards.requireScope(req, 'admin')
+    const rows = Array.isArray(req.body?.items) ? (req.body.items as { displayTypeId?: unknown; slot?: unknown; supportedTargeting?: unknown }[]) : null
+    if (!rows) throw validationFailed([{ field: 'items', reason: 'An array of slots is required.' }])
+    const keys = TARGETING_MODES.map((m) => m.key) as string[]
+    const errors: { field: string; reason: string }[] = []
+    const wanted = new Map<string, Map<number, TargetingMode[]>>()
+    rows.forEach((r, i) => {
+      const f = (k: string) => `items[${i}].${k}`
+      const dt = typeof r.displayTypeId === 'string' ? ctx.displayTypes.get(r.displayTypeId) : null
+      const slot = typeof r.slot === 'number' ? r.slot : 0
+      const def = dt?.phExtensions?.slots?.[slot - 1]
+      if (!dt) errors.push({ field: f('displayTypeId'), reason: 'Unknown display type.' })
+      else if (!def) errors.push({ field: f('slot'), reason: `${dt.name} has no slot ${slot}.` })
+      else if (def.owner !== 'advertiser') errors.push({ field: f('slot'), reason: 'Only an Advertiser slot is sellable inventory.' })
+      const modes = Array.isArray(r.supportedTargeting) ? (r.supportedTargeting as unknown[]) : null
+      if (!modes?.length) errors.push({ field: f('supportedTargeting'), reason: 'Choose at least one type of targeting.' })
+      else if (modes.some((m) => typeof m !== 'string' || !keys.includes(m))) errors.push({ field: f('supportedTargeting'), reason: `One of: ${keys.join(', ')}.` })
+      else if (dt && def) {
+        const byType = wanted.get(dt.id) ?? new Map<number, TargetingMode[]>()
+        byType.set(slot, keys.filter((k) => modes.includes(k)) as TargetingMode[])
+        wanted.set(dt.id, byType)
+      }
+    })
+    if (errors.length) throw validationFailed(errors, 'A slot supports at least one type of targeting.')
+    for (const [displayTypeId, slots] of wanted) {
+      const dt = ctx.displayTypes.get(displayTypeId)!
+      const ext = { ...(dt.phExtensions ?? { slots: [] }) }
+      ext.slots = (ext.slots ?? []).map((s, i) => (slots.has(i + 1) ? { ...s, supportedTargeting: slots.get(i + 1)! } : s))
+      ctx.displayTypes.saveExtensions(displayTypeId, ext)
+    }
+    return { items: inventory() }
   })
 }

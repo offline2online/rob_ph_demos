@@ -611,13 +611,26 @@ region, date range, status.
 
 ### Available Inventory — the retailer's view
 
-The same positions are shown to the retailer in **Advertiser settings →
+The same positions are shown to the retailer on **Advertisers / Inventory →
 Available Inventory**: every advertiser-owned slot across the estate that
 connected DSPs can bid on, one row per slot, with columns **Display type**,
-**Playlist**, **Slot**, **Position** (with its DSP) and an **Open** link to
-the display type. There is **no advertisers column**. The table is
-read-only; slots are made available by setting their owner to *Advertiser*
-on a display type (explained in the section's tooltip).
+**Playlist**, **Slot**, **Position** (with its DSP), **Targeting supported**
+and an **Open** link to the display type. There is **no advertisers
+column**. Every column carries a filter, as the platform's tables do.
+
+Slots are made available by setting their owner to *Advertiser* on a display
+type (explained in the section's tooltip); that part is not editable here.
+**Targeting supported** is (Rob, 20 Sep): each slot says which kinds of
+campaign it will take — **localised**, **personalised**, **interactive** —
+ticked independently, with **localised only** as the default for a slot that
+has never been changed. A slot always supports at least one, so the last one
+ticked can't be unticked. What a slot supports is part of the contract with
+DSPs: it is on the position in `GET /v1/inventory`, and a bid or reservation
+for a campaign of any other type is refused with `targeting_not_supported`,
+alongside the floor and list checks. Personalised and interactive campaigns
+carry their own multipliers on the floor price (§4), so this is also the
+control over what a slot can be sold for. **Admin only**: a marketing user
+sees the ticks but can't change them.
 
 ## 6. DSP integration — the advertiser & DSP interface
 
@@ -1281,9 +1294,13 @@ playback analytics.**
 - **Inventory API**: list, detail, availability per play window and
   forecast, scoped to what the requester could buy. *(spec only)*
 - **Available Inventory**: every advertiser-owned slot across the estate
-  that connected DSPs can bid on (Display type, Playlist, Slot, Position, and
-  an Open link), read-only, with no advertisers column.
-  *(DSP Integration → Advertiser settings → Available Inventory)*
+  that connected DSPs can bid on (Display type, Playlist, Slot, Position,
+  Targeting supported, and an Open link), with no advertisers column and a
+  filter on every column. *(Advertisers / Inventory → Available Inventory)*
+- **Targeting supported per slot**: which kinds of campaign a slot takes —
+  localised, personalised, interactive — localised only by default, set by
+  an admin, published on the position and enforced on every bid.
+  *(Advertisers / Inventory → Available Inventory)*
 
 ### Shared targeting variables
 

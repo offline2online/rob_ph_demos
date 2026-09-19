@@ -321,7 +321,7 @@ paths:
     get:
       tags: [Admin — Advertiser settings]
       operationId: listAvailableInventory
-      summary: Read-only table of advertiser-owned slots (no advertisers column)
+      summary: Advertiser-owned slots (no advertisers column)
       security: [{adminSession: []}]
       responses:
         '200':
@@ -334,6 +334,47 @@ paths:
                 properties:
                   items: {type: array, items: {$ref: '#/components/schemas/AvailableInventoryRow'}}
         '401': {$ref: '#/components/responses/Unauthorised'}
+    put:
+      tags: [Admin — Advertiser settings]
+      operationId: saveAvailableInventory
+      summary: Save changes — what targeting each slot supports
+      description: |
+        Only supportedTargeting is editable here; everything else about a slot
+        is set on its display type. Admin only: marketing users read this table.
+      security: [{adminSession: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [items]
+              properties:
+                items:
+                  type: array
+                  items:
+                    type: object
+                    required: [displayTypeId, slot, supportedTargeting]
+                    properties:
+                      displayTypeId: {type: string}
+                      slot: {type: integer, minimum: 1}
+                      supportedTargeting:
+                        type: array
+                        minItems: 1
+                        items: {type: string, enum: [localised, personalised, interactive]}
+      responses:
+        '200':
+          description: Saved
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items: {type: array, items: {$ref: '#/components/schemas/AvailableInventoryRow'}}
+        '400': {$ref: '#/components/responses/ValidationFailed'}
+        '401': {$ref: '#/components/responses/Unauthorised'}
+        '403': {$ref: '#/components/responses/Forbidden'}
   /admin/v1/booking-schedule:
     get:
       tags: [Admin — Advertiser settings]
@@ -884,7 +925,7 @@ components:
     ValidationFailed: {description: 'error.code = validation_failed; details lists each field', content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
     VariableNotPermitted: {description: 'error.code = variable_not_permitted; details names each variable', content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
     ChecksFailed: {description: 'error.code = checks_failed; details lists each failed check with its reason', content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
-    NotEligible: {description: 'error.code = not_approved | below_floor | advertiser_blocked | category_blocked | not_on_whitelist', content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
+    NotEligible: {description: 'error.code = not_approved | below_floor | advertiser_blocked | category_blocked | not_on_whitelist | targeting_not_supported', content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
     Conflict: {description: 'error.code = conflict (e.g. version changed, already submitted, window sold, bidding not open or closed, live not allowed)', content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
     HasDependents: {description: 'error.code = has_dependents; details lists what depends on the item', content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
 
@@ -899,7 +940,7 @@ components:
           properties:
             code:
               type: string
-              enum: [validation_failed, variable_not_permitted, checks_failed, not_approved, below_floor, advertiser_blocked, category_blocked, not_on_whitelist, conflict, has_dependents, unauthorised, forbidden, not_found]
+              enum: [validation_failed, variable_not_permitted, checks_failed, not_approved, below_floor, advertiser_blocked, category_blocked, not_on_whitelist, targeting_not_supported, conflict, has_dependents, unauthorised, forbidden, not_found]
             message: {type: string}
             details:
               type: array
@@ -921,7 +962,7 @@ components:
         assumedViews: {type: integer}
     Position:
       type: object
-      required: [positionId, displayTypeId, displayTypeName, slot, slotLabel, storeCount, displayCount, screen, assignment, pricing]
+      required: [positionId, displayTypeId, displayTypeName, slot, slotLabel, storeCount, displayCount, screen, assignment, supportedTargeting, pricing]
       properties:
         positionId: {type: string}
         displayTypeId: {type: string}
@@ -943,6 +984,12 @@ components:
             shareOfVoice: {type: number, description: 1 / maximumCampaignsPlayedInRotation}
             openOohVenueType: {type: string}
         assignment: {type: string, enum: [rtb, whitelist_only, reserved]}
+        supportedTargeting:
+          type: array
+          description: |
+            What a campaign may use here. A bid or reservation for a campaign of
+            any other type is refused with targeting_not_supported.
+          items: {type: string, enum: [localised, personalised, interactive]}
         assumedViewsPerWindow: {type: integer}
         pricing: {$ref: '#/components/schemas/Pricing'}
     Pricing:
@@ -1113,7 +1160,7 @@ components:
                   adopting: {type: boolean}
     AvailableInventoryRow:
       type: object
-      required: [displayTypeId, displayTypeName, playlistName, slot, position]
+      required: [displayTypeId, displayTypeName, playlistName, slot, position, supportedTargeting]
       properties:
         displayTypeId: {type: string}
         displayTypeName: {type: string}
@@ -1122,6 +1169,10 @@ components:
         slot: {type: integer}
         position: {type: string}
         partnerName: {type: [string, 'null']}
+        supportedTargeting:
+          type: array
+          description: What a campaign may use on this slot; localised only by default.
+          items: {type: string, enum: [localised, personalised, interactive]}
 
     BookingSchedule:
       type: object
@@ -1381,6 +1432,14 @@ components:
               listMode: {type: [string, 'null'], enum: [rtb, whitelist_only, null]}
               storeScope: {type: [string, 'null']}
               quota: {type: [integer, 'null']}
+              supportedTargeting:
+                type: array
+                description: |
+                  What a campaign may use on this slot. Absent or empty means
+                  localised only, which is the default for a new slot. A bid or
+                  reservation whose campaign is of an unsupported type is refused
+                  (targeting_not_supported). Set from Advertisers / Inventory.
+                items: {type: string, enum: [localised, personalised, interactive]}
         venue:
           type: object
           properties:

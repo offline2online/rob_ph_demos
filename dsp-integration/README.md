@@ -27,12 +27,12 @@ small interface.
 | `apps/api/src/exchange/` | The exchange: OpenRTB 2.6 DOOH bid requests, pre-auction enforcement, the auction job, DSP creative queueing, hand-off to the campaign system, billing (dynamic VAC-d), and their CLIs |
 | `packages/campaign-approval/` | Campaign approval as a drop-in module for the existing Campaigns section: adapter, state machine, service, routes, UI components, contract tests. See [CAMPAIGN-APPROVAL-INTEGRATION.md](docs/dsp-integration/CAMPAIGN-APPROVAL-INTEGRATION.md) |
 | `apps/admin/` | Admin UI: React 18, Vite, Ant Design 5, Tailwind 4 and AG Grid (Alpine). It renders the content frame only, because it is iframed into HQ Admin. |
-| `apps/admin/src/shared/` | Shared UI: save bar, draft state, unsaved-changes guard, delete dialog, InfoTip, list layout, collapsible panel, summary chips, AG Grid wrapper |
+| `apps/admin/src/shared/` | Shared UI: save bar, draft state, unsaved-changes guard, delete dialog, InfoTip, list layout, collapsible panel, summary chips, AG Grid wrapper, column filters (`TableFilters.tsx` — the platform's search / funnel pattern; never hand-roll one) |
 | `apps/admin/src/features/display-types/` | Display Types screen: list, form, panels, slot assignment, delete |
 | `apps/admin/src/features/playlist-management/` | Playlist Management screen: rename and delete |
 | `apps/admin/src/features/dsp-integration/` | DSP Integration section: list, one shared draft, Exchange settings, Advertiser settings (with the Auction schedule), Shared Targeting Variables, DSP pages and Add DSP |
 | `apps/admin/src/features/booking-schedule/` | Booking schedule: its own page (opened in a new tab from Available Inventory or an advertiser), with filters, campaign-type summary and daily/weekly/monthly views |
-| `apps/admin/src/features/advertisers/` | Advertisers screen (admin only) |
+| `apps/admin/src/features/advertisers/` | Advertisers / Inventory: the advertisers table (admin edits approval and floor multipliers) and Available Inventory, where a slot's supported targeting is set. Marketing users read both |
 | `apps/admin/src/features/campaign-status/` | STAND-IN "Campaign Status" table and campaign page showing the approval components end to end; deleted on integration |
 
 ## Running it

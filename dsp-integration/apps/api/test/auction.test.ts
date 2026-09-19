@@ -183,6 +183,25 @@ describe('POST /v1/reservations and GET …/{id}', () => {
     expect(await refused({})).toEqual(['advertiser_blocked', 'Swisse is on the advertiser blacklist.'])
   })
 
+  /* A slot supports localised targeting only until it is opened up on
+     Advertisers / Inventory (Rob, 20 Sep). */
+  it('refuses a campaign of a type the position doesn’t support', async () => {
+    const { app, approve, activate, reserve } = await setup()
+    await approve('c_api_swisse')
+    await activate('c_api_swisse')
+    const support = (supportedTargeting: string[]) =>
+      app.inject({ method: 'PUT', url: '/api/admin/v1/available-inventory', payload: { items: [{ displayTypeId: 'menu_board', slot: 2, supportedTargeting }] } })
+
+    await support(['personalised', 'interactive'])
+    const res = await reserve(BID)
+    expect(res.statusCode).toBe(422)
+    expectMatchesContract('POST', '/v1/reservations', 422, res.json())
+    expect([res.json().error.code, res.json().error.message]).toEqual(['targeting_not_supported', 'This position supports personalised, interactive targeting only; the campaign is localised.'])
+    /* Opened back up to localised: the same bid is taken. */
+    await support(['localised', 'personalised'])
+    expect((await reserve(BID)).statusCode).toBe(201)
+  })
+
   it('reserves a position held for the advertiser at the price agreed through the DSP (Q11)', async () => {
     const { ctx, approve, activate, reserve, setSlot } = await setup()
     await approve('c_api_swisse')

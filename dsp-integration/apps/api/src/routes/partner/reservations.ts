@@ -7,7 +7,7 @@ import { randomUUID } from 'node:crypto'
 import type { FastifyPluginAsync } from 'fastify'
 import type { Context } from '../../context'
 import { assignmentOf, biddingClosesAt, biddingOpensAt, findPosition, windowStartOf } from '../../domain/positions'
-import { checkAdvertiser, checkCampaign, checkFloor } from '../../exchange/enforcement'
+import { checkAdvertiser, checkCampaign, checkFloor, checkTargeting } from '../../exchange/enforcement'
 import { handOff } from '../../exchange/handoff'
 import { HttpError, conflict, notFound, validationFailed } from '../../http/errors'
 import { type ReservationRecord, TAKEN } from '../../repos/ReservationRepo'
@@ -59,6 +59,7 @@ export const reservationRoutes = (ctx: Context): FastifyPluginAsync => async (ap
     const c = campaign!
     const refusal = (await checkCampaign(ctx, c.campaignId))
       ?? checkAdvertiser(ctx, pos, partner, seat!.name, seat!.domain ? [seat!.domain] : [])
+      ?? checkTargeting(pos, c.pricingType)
       ?? checkFloor(ctx, b.bidCpm as number, c.pricingType, c.advertiserId)
     if (refusal) throw new HttpError(422, refusal.code, refusal.reason)
 

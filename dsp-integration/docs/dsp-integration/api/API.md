@@ -40,8 +40,8 @@ All paths are served from the retailer's own instance
   ```
   Codes: `validation_failed`, `variable_not_permitted`, `checks_failed`,
   `not_approved`, `below_floor`, `advertiser_blocked`, `category_blocked`,
-  `not_on_whitelist`, `conflict`, `has_dependents`, `unauthorised`,
-  `forbidden`, `not_found`.
+  `not_on_whitelist`, `targeting_not_supported`, `conflict`,
+  `has_dependents`, `unauthorised`, `forbidden`, `not_found`.
 - **Visibility, not rejection.** Lists (inventory, targeting attributes) omit
   what a caller may not use; they never return an error for it.
 - **Pagination:** `cursor` + `limit` (default 50, max 200); responses return
@@ -123,7 +123,7 @@ evaluated by the existing platform. The API never evaluates targeting.
 
 | Method | Path | Purpose | Main errors |
 |---|---|---|---|
-| POST | `/v1/reservations` | `type: reserve` (named advertiser positions) at its agreed reservation price, or `type: bid`, both with `bidCpm` (the CPM; a reservation is booked at it), for a `positionId` and `windowStart`, with an approved and activated `campaignId` (`not_approved` otherwise). Only while the window's auction is open: from `auctionOpensHours` before the auction cutoff until the cutoff (`conflict` otherwise). | `not_approved`, `below_floor`, `advertiser_blocked`, `category_blocked`, `not_on_whitelist`, `conflict` |
+| POST | `/v1/reservations` | `type: reserve` (named advertiser positions) at its agreed reservation price, or `type: bid`, both with `bidCpm` (the CPM; a reservation is booked at it), for a `positionId` and `windowStart`, with an approved and activated `campaignId` (`not_approved` otherwise). Only while the window's auction is open: from `auctionOpensHours` before the auction cutoff until the cutoff (`conflict` otherwise). The campaign's type must be one the position supports (`supportedTargeting`; `targeting_not_supported` otherwise). | `not_approved`, `below_floor`, `advertiser_blocked`, `category_blocked`, `not_on_whitelist`, `targeting_not_supported`, `conflict` |
 | GET | `/v1/reservations/{id}` | Outcome: `pending`, `won`, `lost`, `reserved`, `rejected`, with clearing CPM and reason. | `not_found` |
 
 A won or reserved campaign is handed to the existing campaign system for
@@ -154,7 +154,8 @@ env var, with no switcher and no cookie (see *POC stand-ins* below).
 |---|---|---|
 | GET | `/admin/v1/advertiser-settings` | Currency, floor CPM, multipliers, the auction schedule (`auctionOpensHours`, `playWindowHours`, `auctionCutoffTime`), advertiser and category whitelists/blacklists, and read-only `whereTheseApply` (per DSP: adopting or own lists). |
 | PUT | `/admin/v1/advertiser-settings` | Save changes (pricing, auction schedule and lists). An entry can't be on both lists, and the play-window length can't change while future windows are bid on or booked (`validation_failed`). |
-| GET | `/admin/v1/available-inventory` | Read-only rows: display type, playlist, slot, position (with DSP). No advertisers column. |
+| GET | `/admin/v1/available-inventory` | Rows: display type, playlist, slot, position (with DSP) and `supportedTargeting`. No advertisers column. |
+| PUT | `/admin/v1/available-inventory` | Save changes — `supportedTargeting` per slot (at least one of `localised`, `personalised`, `interactive`). The only editable field here; everything else about a slot is set on its display type. Admin only. |
 | GET | `/admin/v1/booking-schedule?from=&to=` | Reached from Available Inventory. Every advertiser-owned slot across its play windows: booked (advertiser, DSP, reserve or bid, the CPM it was booked at, booked and billed revenue), available or unavailable; plus booking revenue per display type and in total. Live bookings only (never Test mode). Default: the current window and the next 13; at most 92 days. `campaignId`, `advertiserId` or `partnerId` narrow it; with `campaignId` the range covers all of that campaign's bookings. Each booking says which campaign type it is, and the response also totals the bookings by campaign type. |
 
 ### Shared targeting variables

@@ -35,6 +35,25 @@ export const SLOT_OWNERS: Record<SlotOwner, { label: string; colour: string; bg:
 }
 export const STORE_SCOPES = ['Store staff', 'Store manager only', 'Regional manager', 'Franchisee'] as const
 
+/* What a campaign may use on a slot (Rob, 20 Sep). A slot supports localised
+   targeting only until someone opens it up on Advertisers / Inventory; a bid
+   for a campaign of an unsupported type is refused. Same order and words as
+   the pricing multipliers in Advertiser settings. */
+export type TargetingMode = 'localised' | 'personalised' | 'interactive'
+export const TARGETING_MODES: { key: TargetingMode; label: string; tip: string }[] = [
+  { key: 'localised', label: 'Localised', tip: 'Store-level targeting only: the campaign varies by store, not by who is in front of the screen.' },
+  { key: 'personalised', label: 'Personalised', tip: 'The campaign may use Personalisation Variables about the visitor. Priced with the personalised multiplier.' },
+  { key: 'interactive', label: 'Interactive', tip: 'The campaign may respond to the visitor on screen. Priced with the interactive multiplier.' },
+]
+export const DEFAULT_TARGETING: TargetingMode[] = ['localised']
+/* Absent or empty on a slot means the default, so an existing slot keeps working. */
+export const supportedTargetingOf = (slot: { supportedTargeting?: readonly string[] | null }): TargetingMode[] => {
+  const chosen = TARGETING_MODES.filter((m) => slot.supportedTargeting?.includes(m.key)).map((m) => m.key)
+  return chosen.length ? chosen : [...DEFAULT_TARGETING]
+}
+export const targetingLabel = (modes: readonly string[]) =>
+  TARGETING_MODES.filter((m) => modes.includes(m.key)).map((m) => m.label).join(', ')
+
 /* ---------------------------------------------------------------- DSPs */
 
 export interface CredentialField {

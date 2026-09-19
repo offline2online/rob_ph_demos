@@ -30,7 +30,7 @@ describe('GET /v1/inventory', () => {
         positionId: 'menu_board.s2', displayTypeId: 'menu_board', displayTypeName: 'Menu Board — Long Format', slot: 2, slotLabel: 'Supplier slot', zone: null,
         storeCount: 3, displayCount: 3,
         screen: { width: 5760, height: 1080, orientation: 'landscape', slotDurationSec: 15, loopLengthSec: 45, shareOfVoice: 0.333, openOohVenueType: 'retail.grocery' },
-        assignment: 'rtb', assumedViewsPerWindow: 1236,
+        assignment: 'rtb', supportedTargeting: ['localised'], assumedViewsPerWindow: 1236,
         pricing: { currency: 'AUD', floorCpm: 100, effectiveFloorCpm: { localised: 100, personalised: 150, interactive: 300, personalisedInteractive: 450 } },
       }],
       nextCursor: null,

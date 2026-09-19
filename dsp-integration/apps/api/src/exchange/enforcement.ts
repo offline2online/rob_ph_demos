@@ -3,13 +3,14 @@
    and category lists, and creative approval, all applied before a bid can
    win. Used by POST /v1/reservations and by the auction for DSP bids. */
 import type { Context } from '../context'
+import { supportedTargetingOf, targetingLabel } from '@ph-dsp/types'
 import { type PositionRef, assignmentOf } from '../domain/positions'
 import { effectiveLists, isBlocked, isOn } from '../domain/lists'
 import { effectiveFloorCpm } from '../domain/pricing'
 import type { PartnerRecord } from '../repos/PartnerRepo'
 import { blockedDomains, categoryCodes } from './openrtb'
 
-export type RefusalCode = 'not_approved' | 'below_floor' | 'advertiser_blocked' | 'category_blocked' | 'not_on_whitelist'
+export type RefusalCode = 'not_approved' | 'below_floor' | 'advertiser_blocked' | 'category_blocked' | 'not_on_whitelist' | 'targeting_not_supported'
 export interface Refusal { code: RefusalCode; reason: string }
 
 /* The blacklist always subtracts; the advertiser whitelist is what a
@@ -44,6 +45,17 @@ export async function checkCampaign(ctx: Context, campaignId: string): Promise<R
   if (!(await ctx.approvals.isCampaignEligible(campaignId))) return { code: 'not_approved', reason: 'The campaign is not approved.' }
   if (!ctx.campaigns.getCampaign(campaignId)?.activation.enabled) return { code: 'not_approved', reason: 'The campaign is approved but not activated.' }
   return null
+}
+
+/* What the position was opened up to (Rob, 20 Sep): a slot supports
+   localised targeting until someone says otherwise on Advertisers /
+   Inventory, so a personalised or interactive campaign can't buy it by
+   default. A campaign with no type of its own counts as localised. */
+export function checkTargeting(p: PositionRef, pricingType: string | null | undefined): Refusal | null {
+  const supported = supportedTargetingOf(p.def)
+  const wanted = pricingType === 'personalised' || pricingType === 'interactive' ? pricingType : 'localised'
+  if (supported.includes(wanted)) return null
+  return { code: 'targeting_not_supported', reason: `This position supports ${targetingLabel(supported).toLowerCase()} targeting only; the campaign is ${wanted}.` }
 }
 
 /* The effective floor a bid must clear: floor × campaign-type multipliers ×

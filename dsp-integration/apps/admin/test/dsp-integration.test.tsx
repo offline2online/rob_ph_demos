@@ -7,6 +7,23 @@ import { exchange, fakeFetch } from './fixtures'
 beforeEach(() => vi.stubGlobal('fetch', vi.fn(fakeFetch())))
 afterEach(() => vi.unstubAllGlobals())
 
+/* Advertisers / Inventory: two advertisers, and two sellable slots — one
+   left at the default (localised only), one opened up. */
+const ADVERTISER_PAGE = {
+  '/api/admin/v1/advertisers': {
+    currency: 'AUD', floorCpm: 100,
+    items: [
+      { advertiserId: 'nestle', name: 'Nestlé', via: ['Google DSP'], approvalRequired: false, floorMultiplier: 0.8, effectiveFloorCpm: 80, campaigns: { draft: 0, awaiting_approval: 1, approved: 2, rejected: 0 } },
+      { advertiserId: 'swisse', name: 'Swisse', via: ['Google DSP', 'Amazon Ads DSP'], approvalRequired: true, floorMultiplier: 1, effectiveFloorCpm: 100, campaigns: { draft: 1, awaiting_approval: 0, approved: 0, rejected: 0 } },
+    ],
+  },
+  '/api/admin/v1/available-inventory': {
+    items: [
+      { displayTypeId: 'menu_board', displayTypeName: 'Menu Board — Long Format', touchPoint: 'Digital Signage', playlistName: 'Menu Board Playlist', slot: 2, position: 'Supplier slot', partnerName: 'Google DSP', supportedTargeting: ['localised', 'personalised'] },
+    ],
+  },
+}
+
 const renderAt = (path: string, dspIntegration = true) => {
   const router = createMemoryRouter(appRoutes({ dspIntegration }), { initialEntries: [path] })
   render(<Providers><RouterProvider router={router} /></Providers>)
@@ -222,8 +239,7 @@ describe('Booking schedule', () => {
   }
 
   it('is linked from Available Inventory, which now sits on Advertisers / Inventory', async () => {
-    const advertisers = { currency: 'AUD', floorCpm: 100, items: [{ advertiserId: 'nestle', name: 'Nestlé', via: ['Google DSP'], approvalRequired: false, floorMultiplier: 0.8, effectiveFloorCpm: 80, campaigns: { draft: 0, awaiting_approval: 1, approved: 2, rejected: 0 } }] }
-    vi.stubGlobal('fetch', vi.fn(fakeFetch({ '/api/admin/v1/advertisers': advertisers, '/api/admin/v1/available-inventory': { items: [{ displayTypeId: 'menu_board', displayTypeName: 'Menu Board — Long Format', touchPoint: 'Digital Signage', playlistName: 'Menu Board Playlist', slot: 2, position: 'Supplier slot', partnerName: 'Google DSP' }] } })))
+    vi.stubGlobal('fetch', vi.fn(fakeFetch(ADVERTISER_PAGE)))
     renderAt('/advertisers')
     expect(await screen.findByLabelText('Available Inventory')).toBeInTheDocument()
     expect(await screen.findByRole('button', { name: /Booking schedule/ })).toBeInTheDocument()
@@ -246,6 +262,54 @@ describe('Booking schedule', () => {
     expect([...grid.querySelectorAll('.ag-header-cell-text')].slice(0, 3).map((h) => h.textContent)).toEqual(['Position', 'DSP', 'Advertiser'])
     expect(within(grid).getByLabelText('DSP filter')).toBeInTheDocument()
     expect(within(grid).getByLabelText('Advertiser filter')).toBeInTheDocument()
+  })
+})
+
+describe('Advertisers / Inventory', () => {
+  it('filters both tables by column, and sets what targeting each slot supports', async () => {
+    const calls: { url: string; body: unknown }[] = []
+    const saved = () => calls.find((c) => c.url.includes('available-inventory'))?.body
+    vi.stubGlobal('fetch', vi.fn((url: string, init?: RequestInit) => {
+      if (init?.method === 'PUT') calls.push({ url, body: JSON.parse(String(init.body)) })
+      return fakeFetch(ADVERTISER_PAGE)(url)
+    }))
+    renderAt('/advertisers')
+    const advertisers = await screen.findByLabelText('Advertisers')
+    /* Column filters, as on every other table: search on the name, funnels on the value columns. */
+    expect(within(advertisers).getByLabelText('Advertiser search')).toBeInTheDocument()
+    expect(within(advertisers).getByLabelText('Via filter')).toBeInTheDocument()
+    expect(within(advertisers).getByLabelText('Campaign approval filter')).toBeInTheDocument()
+    expect(screen.getByText('2 advertisers')).toBeInTheDocument()
+
+    const inventory = await screen.findByLabelText('Available Inventory')
+    expect([...inventory.querySelectorAll('.ag-header-cell-text')].map((h) => h.textContent))
+      .toEqual(['Display type', 'Playlist', 'Slot', 'Position', 'Targeting supported', ''])
+    expect(within(inventory).getByLabelText('Display type search')).toBeInTheDocument()
+    expect(within(inventory).getByLabelText('Targeting supported filter')).toBeInTheDocument()
+    /* What the slot has been opened up to, ticked in place. Every type is
+       visible whether it is on or not; the last one on can't be unticked. */
+    const tick = (label: string) => within(inventory).getByLabelText(`Menu Board — Long Format slot 2: ${label}`) as HTMLInputElement
+    expect([tick('Localised').checked, tick('Personalised').checked, tick('Interactive').checked]).toEqual([true, true, false])
+    expect(screen.getByRole('button', { name: 'Save changes' })).toBeDisabled()
+
+    fireEvent.click(tick('Interactive'))
+    fireEvent.click(tick('Personalised'))
+    expect([tick('Localised').checked, tick('Personalised').checked, tick('Interactive').checked]).toEqual([true, false, true])
+    /* Editing the inventory is a change the page's own Save changes commits. */
+    expect(screen.getByRole('button', { name: 'Save changes' })).toBeEnabled()
+    fireEvent.click(screen.getByRole('button', { name: 'Save changes' }))
+    await waitFor(() => expect(saved()).toEqual({ items: [{ displayTypeId: 'menu_board', slot: 2, supportedTargeting: ['localised', 'interactive'] }] }))
+  })
+
+  it('shows a marketing user what each slot supports, without letting them change it', async () => {
+    vi.stubGlobal('fetch', vi.fn(fakeFetch({ ...ADVERTISER_PAGE, '/api/admin/v1/session': { role: 'hq_marketing', scopes: ['sections'] } })))
+    renderAt('/advertisers')
+    const inventory = await screen.findByLabelText('Available Inventory')
+    expect(within(inventory).getByLabelText('Menu Board — Long Format slot 2: Personalised')).toBeChecked()
+    for (const label of ['Localised', 'Personalised', 'Interactive']) {
+      expect(within(inventory).getByLabelText(`Menu Board — Long Format slot 2: ${label}`)).toBeDisabled()
+    }
+    expect(await screen.findByText('Read only')).toBeInTheDocument()
   })
 })
 

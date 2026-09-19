@@ -65,7 +65,38 @@ describe('Advertiser settings (spec §4, §6)', () => {
   it('Available Inventory lists every advertiser-owned slot, with no advertisers column', async () => {
     const res = await buildApp(await testContext()).inject({ method: 'GET', url: '/api/admin/v1/available-inventory' })
     expectMatchesContract('GET', '/admin/v1/available-inventory', 200, res.json())
-    expect(res.json().items).toEqual([{ displayTypeId: 'menu_board', displayTypeName: 'Menu Board — Long Format', touchPoint: 'Digital Signage', playlistName: 'Menu Board Playlist', slot: 2, position: 'Supplier slot', partnerName: 'Google DSP' }])
+    expect(res.json().items).toEqual([{ displayTypeId: 'menu_board', displayTypeName: 'Menu Board — Long Format', touchPoint: 'Digital Signage', playlistName: 'Menu Board Playlist', slot: 2, position: 'Supplier slot', partnerName: 'Google DSP', supportedTargeting: ['localised'] }])
+  })
+
+  /* What a slot supports is set here; localised only until someone changes it (Rob, 20 Sep). */
+  it('saves what targeting a slot supports, and validates it', async () => {
+    const ctx = await testContext()
+    const app = buildApp(ctx)
+    const res = await app.inject({ method: 'PUT', url: '/api/admin/v1/available-inventory', payload: { items: [{ displayTypeId: 'menu_board', slot: 2, supportedTargeting: ['interactive', 'localised'] }] } })
+    expect(res.statusCode).toBe(200)
+    expectMatchesContract('PUT', '/admin/v1/available-inventory', 200, res.json())
+    /* Kept in the catalogue's order, and on the slot itself. */
+    expect(res.json().items[0].supportedTargeting).toEqual(['localised', 'interactive'])
+    expect(ctx.displayTypes.get('menu_board')!.phExtensions!.slots[1].supportedTargeting).toEqual(['localised', 'interactive'])
+
+    const bad = await app.inject({ method: 'PUT', url: '/api/admin/v1/available-inventory', payload: { items: [
+      { displayTypeId: 'menu_board', slot: 2, supportedTargeting: [] },
+      { displayTypeId: 'menu_board', slot: 1, supportedTargeting: ['localised'] },
+      { displayTypeId: 'nope', slot: 1, supportedTargeting: ['sideways'] },
+    ] } })
+    expect(bad.statusCode).toBe(400)
+    expect(bad.json().error.details).toEqual([
+      { field: 'items[0].supportedTargeting', reason: 'Choose at least one type of targeting.' },
+      { field: 'items[1].slot', reason: 'Only an Advertiser slot is sellable inventory.' },
+      { field: 'items[2].displayTypeId', reason: 'Unknown display type.' },
+      { field: 'items[2].supportedTargeting', reason: 'One of: localised, personalised, interactive.' },
+    ])
+  })
+
+  it('lets a marketing user read the inventory but not change what it supports', async () => {
+    const app = buildApp(await testContext({ role: 'hq_marketing' }))
+    expect((await app.inject({ method: 'GET', url: '/api/admin/v1/available-inventory' })).statusCode).toBe(200)
+    expect((await app.inject({ method: 'PUT', url: '/api/admin/v1/available-inventory', payload: { items: [{ displayTypeId: 'menu_board', slot: 2, supportedTargeting: ['personalised'] }] } })).statusCode).toBe(403)
   })
 
   it.each([['PUT', '/advertiser-settings'], ['GET', '/available-inventory']] as const)('%s %s returns 404 with the flag off', async (method, path) => {

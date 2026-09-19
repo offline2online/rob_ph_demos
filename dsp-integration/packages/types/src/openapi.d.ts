@@ -248,9 +248,14 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Read-only table of advertiser-owned slots (no advertisers column) */
+        /** Advertiser-owned slots (no advertisers column) */
         get: operations["listAvailableInventory"];
-        put?: never;
+        /**
+         * Save changes — what targeting each slot supports
+         * @description Only supportedTargeting is editable here; everything else about a slot
+         *     is set on its display type. Admin only: marketing users read this table.
+         */
+        put: operations["saveAvailableInventory"];
         post?: never;
         delete?: never;
         options?: never;
@@ -687,7 +692,7 @@ export interface components {
         Error: {
             error: {
                 /** @enum {string} */
-                code: "validation_failed" | "variable_not_permitted" | "checks_failed" | "not_approved" | "below_floor" | "advertiser_blocked" | "category_blocked" | "not_on_whitelist" | "conflict" | "has_dependents" | "unauthorised" | "forbidden" | "not_found";
+                code: "validation_failed" | "variable_not_permitted" | "checks_failed" | "not_approved" | "below_floor" | "advertiser_blocked" | "category_blocked" | "not_on_whitelist" | "targeting_not_supported" | "conflict" | "has_dependents" | "unauthorised" | "forbidden" | "not_found";
                 message: string;
                 details?: {
                     field?: string;
@@ -728,6 +733,11 @@ export interface components {
             };
             /** @enum {string} */
             assignment: "rtb" | "whitelist_only" | "reserved";
+            /**
+             * @description What a campaign may use here. A bid or reservation for a campaign of
+             *     any other type is refused with targeting_not_supported.
+             */
+            supportedTargeting: ("localised" | "personalised" | "interactive")[];
             assumedViewsPerWindow?: number;
             pricing: components["schemas"]["Pricing"];
         };
@@ -889,6 +899,8 @@ export interface components {
             slot: number;
             position: string;
             partnerName?: string | null;
+            /** @description What a campaign may use on this slot; localised only by default. */
+            supportedTargeting: ("localised" | "personalised" | "interactive")[];
         };
         BookingSchedule: {
             /** @description ISO 4217 */
@@ -1105,6 +1117,13 @@ export interface components {
                 listMode?: "rtb" | "whitelist_only" | null;
                 storeScope?: string | null;
                 quota?: number | null;
+                /**
+                 * @description What a campaign may use on this slot. Absent or empty means
+                 *     localised only, which is the default for a new slot. A bid or
+                 *     reservation whose campaign is of an unsupported type is refused
+                 *     (targeting_not_supported). Set from Advertisers / Inventory.
+                 */
+                supportedTargeting?: ("localised" | "personalised" | "interactive")[];
             }[];
             venue?: {
                 openOohVenueType?: string;
@@ -1260,7 +1279,7 @@ export interface components {
                 "application/json": components["schemas"]["Error"];
             };
         };
-        /** @description error.code = not_approved | below_floor | advertiser_blocked | category_blocked | not_on_whitelist */
+        /** @description error.code = not_approved | below_floor | advertiser_blocked | category_blocked | not_on_whitelist | targeting_not_supported */
         NotEligible: {
             headers: {
                 [name: string]: unknown;
@@ -1746,6 +1765,41 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthorised"];
+        };
+    };
+    saveAvailableInventory: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    items: {
+                        displayTypeId: string;
+                        slot: number;
+                        supportedTargeting: ("localised" | "personalised" | "interactive")[];
+                    }[];
+                };
+            };
+        };
+        responses: {
+            /** @description Saved */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["AvailableInventoryRow"][];
+                    };
+                };
+            };
+            400: components["responses"]["ValidationFailed"];
+            401: components["responses"]["Unauthorised"];
+            403: components["responses"]["Forbidden"];
         };
     };
     getBookingSchedule: {

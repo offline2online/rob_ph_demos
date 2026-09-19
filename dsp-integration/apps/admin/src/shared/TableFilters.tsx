@@ -29,9 +29,12 @@ const parse = (text: string | null | undefined): string[] => {
     return []
   }
 }
+/* A cell can hold several values ("Google DSP, The Trade Desk"): the row
+   matches when it has any of the ticked ones. */
 const setMatcher = ({ filterText, value }: TextMatcherParams) => {
   const chosen = parse(filterText)
-  return chosen.length === 0 || chosen.includes(String(value ?? ''))
+  const has = String(value ?? '').split(', ').filter(Boolean)
+  return chosen.length === 0 || has.some((v) => chosen.includes(v))
 }
 
 interface Params extends IFloatingFilterParams {
