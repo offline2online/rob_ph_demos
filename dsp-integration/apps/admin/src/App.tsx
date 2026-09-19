@@ -34,7 +34,7 @@ export function navFor(flags: Flags, session: Session | undefined): NavItem[] {
     /* Flag off: DSP Integration is hidden (decision 6). */
     ...(flags.dspIntegration ? [{ to: '/dsp-integration', label: 'DSP Integration', icon: 'handshake' }] : []),
     /* Admin users only, directly below DSP Integration (spec §3). */
-    ...(flags.dspIntegration && session?.role === 'hq_admin' ? [{ to: '/advertisers', label: 'Advertisers', icon: 'sell' }] : []),
+    ...(flags.dspIntegration && session?.role === 'hq_admin' ? [{ to: '/advertisers', label: 'Advertisers / Inventory', icon: 'sell' }] : []),
     /* STAND-IN for the existing Campaigns section (package 11); removed on integration. */
     ...(flags.dspIntegration ? [{ to: '/campaign-status', label: 'Campaign Status', icon: 'campaign' }] : []),
   ]
@@ -67,7 +67,7 @@ function featureRoutes(flags: Flags): RouteObject[] {
         {
           path: 'advertisers',
           /* The prototype's intro line, as the page-title tooltip (decision 2). */
-          handle: { title: 'Advertisers', tip: 'Every advertiser using the platform, across all DSPs.' } satisfies RouteHandle,
+          handle: { title: 'Advertisers / Inventory', tip: 'Every advertiser using the platform, across all DSPs, and the inventory they can buy: every advertiser-owned slot across the estate.' } satisfies RouteHandle,
           element: <AdvertisersPage />,
         },
         /* Its own page, opened in a new tab from Available Inventory or an advertiser (Rob, 20 Sep). */

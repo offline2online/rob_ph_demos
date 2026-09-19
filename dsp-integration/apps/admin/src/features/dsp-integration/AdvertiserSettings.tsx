@@ -1,26 +1,22 @@
 /* Advertiser settings (spec §4, §5, §6): Pricing and List management are
-   edited here; Where these apply and Available Inventory are read-only. */
-import { useQuery } from '@tanstack/react-query'
+   edited here; Where these apply is read-only. The inventory table moved to
+   Advertisers / Inventory (Rob, 20 Sep). */
 import { Button, InputNumber, Select } from 'antd'
-import type { ColDef, ICellRendererParams } from 'ag-grid-community'
-import { IAB_CATEGORIES, PROVIDERS, touchPointIcon, type AdvertiserSettingsInput, type AvailableInventoryRow } from '@ph-dsp/types'
+import { IAB_CATEGORIES, PROVIDERS, type AdvertiserSettingsInput } from '@ph-dsp/types'
 import { type ReactNode, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { api } from '../../api/client'
 import { Field } from '../../shared/Field'
-import { Grid } from '../../shared/Grid'
 import { Icon } from '../../shared/Icon'
 import { InfoTip, WithTip } from '../../shared/InfoTip'
 import { ListEditor, addExclusive } from '../../shared/ListEditor'
 import { SectionLabel } from '../../shared/SectionLabel'
 import { T } from '../../theme/phTheme'
-import { BOOKING_SCHEDULE_PATH } from '../booking-schedule/path'
 import { useSection } from './DspIntegrationLayout'
 import { PATHS } from './DspList'
 import { SubPageHeader } from './SubPageHeader'
 
 export const ADVERTISER_SETTINGS_TIP =
-  "Company-wide advertiser settings, applied to every DSP. Configurable here: Pricing (currency, floor CPM, personalised and interactive multipliers), the Auction schedule (when bidding opens, play-window length, auction cutoff) and List management (advertiser and IAB category whitelists and blacklists). Read-only here: Where these apply (which DSPs use these lists or keep their own; unlink or relink on the DSP's page) and Available Inventory (advertiser-owned slots, set on Display Types). Per-advertiser campaign approval and floor multipliers are on the Advertisers screen."
+  "Company-wide advertiser settings, applied to every DSP. Configurable here: Pricing (currency, floor CPM, personalised and interactive multipliers), the Auction schedule (when bidding opens, play-window length, auction cutoff) and List management (advertiser and IAB category whitelists and blacklists). Read-only here: Where these apply (which DSPs use these lists or keep their own; unlink or relink on the DSP's page). Per-advertiser campaign approval and floor multipliers, and the inventory advertisers can buy, are on Advertisers / Inventory."
 
 /* Every ISO 4217 currency, listed by code and name (spec §4). */
 const CURRENCIES = (() => {
@@ -98,14 +94,6 @@ const OTHER: Record<ListKey, ListKey> = {
   categoryWhitelist: 'categoryBlacklist', categoryBlacklist: 'categoryWhitelist',
 }
 
-type Ctx = { current: { open: (displayTypeId: string) => void } }
-const TypeCell = ({ data }: ICellRendererParams<AvailableInventoryRow>) =>
-  data ? <span className="inline-flex min-w-0 items-center gap-[5px]"><Icon name={touchPointIcon(data.touchPoint ?? '')} size={14} style={{ color: T.muted }} /><span className="truncate">{data.displayTypeName}</span></span> : null
-const PositionCell = ({ data }: ICellRendererParams<AvailableInventoryRow>) =>
-  data ? <div className="min-w-0"><div className="truncate">{data.position}</div><div style={{ fontSize: 11, color: T.micro }}>{data.partnerName ?? 'Any connected DSP'}</div></div> : null
-const OpenCell = ({ data, context }: ICellRendererParams<AvailableInventoryRow, unknown, Ctx>) =>
-  data ? <Button color="primary" variant="text" size="small" className="px-0" onClick={() => context.current.open(data.displayTypeId)}>Open</Button> : null
-
 export function AdvertiserSettings() {
   const navigate = useNavigate()
   const { draft, update, settings: savedView, partners } = useSection()
@@ -116,14 +104,6 @@ export function AdvertiserSettings() {
     return { ...x, [k]: r.add, [OTHER[k]]: r.other }
   })
   const remove = (k: ListKey) => (name: string) => update('settings', (x) => ({ ...x, [k]: x[k].filter((y) => y !== name) }))
-  const inventory = useQuery({ queryKey: ['available-inventory'], queryFn: () => api<{ items: AvailableInventoryRow[] }>('GET', '/admin/v1/available-inventory').then((r) => r.items) })
-  const columns = useMemo<ColDef<AvailableInventoryRow>[]>(() => [
-    { headerName: 'Display type', width: 260, cellRenderer: TypeCell },
-    { headerName: 'Playlist', width: 170, field: 'playlistName', cellStyle: { color: T.muted } },
-    { headerName: 'Slot', width: 70, field: 'slot', suppressSizeToFit: true, cellStyle: { color: T.muted } },
-    { headerName: 'Position', width: 160, cellRenderer: PositionCell },
-    { headerName: '', width: 76, suppressSizeToFit: true, cellRenderer: OpenCell },
-  ], [])
   const num = (k: 'floorCpm' | 'personalisedMultiplier' | 'interactiveMultiplier', step: number, ph: string) => (
     <InputNumber id={k} className="w-full" step={step} min={0} placeholder={ph} formatter={(v) => (v === undefined || v === null ? '' : String(v))} parser={(v) => Number(v)} value={s[k]} onChange={(v) => set(k, (v === null ? null : Number(v)) as number)} />
   )
@@ -188,25 +168,6 @@ export function AdvertiserSettings() {
         </ul>
       )}
 
-      <div className="flex items-center justify-between gap-3">
-        <SectionLabel><WithTip tip="Every advertiser-owned slot across the estate that connected DSPs can bid on. Slots are made available by setting their owner to Advertiser on a display type.">Available Inventory</WithTip></SectionLabel>
-        <Button color="primary" variant="text" size="small" icon={<Icon name="calendar_month" size={16} />} style={{ marginTop: 12 }} onClick={() => window.open(BOOKING_SCHEDULE_PATH, '_blank', 'noopener')}>Booking schedule</Button>
-      </div>
-      {inventory.data && inventory.data.length === 0 ? (
-        <div className="flex items-center gap-2" style={{ fontSize: 12.5, color: T.muted }}>
-          <Icon name="view_week" size={18} />
-          <span>No advertiser positions yet. Set a slot's owner to <b>Advertiser</b> on a display type.</span>
-        </div>
-      ) : (
-        <Grid<AvailableInventoryRow>
-          label="Available Inventory"
-          rows={inventory.data ?? []}
-          columns={columns}
-          context={{ open: (id: string) => navigate(`/display-types?id=${encodeURIComponent(id)}`) }}
-          getRowId={(r) => `${r.displayTypeId}:${r.slot}`}
-          rowHeight={52}
-        />
-      )}
     </>
   )
 }

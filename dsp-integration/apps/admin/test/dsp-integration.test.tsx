@@ -50,12 +50,14 @@ describe('DSP Integration section', () => {
 })
 
 describe('Advertiser settings page', () => {
-  it('shows Pricing, the Auction schedule, the four lists, Where these apply and Available Inventory, in that order', async () => {
+  it('shows Pricing, the Auction schedule, the four lists and Where these apply, in that order', async () => {
     vi.stubGlobal('fetch', vi.fn(fakeFetch({ '/api/admin/v1/available-inventory': { items: [{ displayTypeId: 'menu_board', displayTypeName: 'Menu Board — Long Format', touchPoint: 'Digital Signage', playlistName: 'Menu Board Playlist', slot: 2, position: 'Supplier slot', partnerName: 'Google DSP' }] } })))
     renderAt('/dsp-integration')
     expect(await screen.findByRole('heading', { name: /Advertiser settings/ })).toBeInTheDocument()
     const text = document.body.textContent ?? ''
-    const order = ['Pricing', 'Auction schedule', 'Auction opens', 'Play-window length', 'Auction cutoff time', 'List management', 'Where these apply', 'Available Inventory'].map((h) => text.indexOf(h))
+    const order = ['Pricing', 'Auction schedule', 'Auction opens', 'Play-window length', 'Auction cutoff time', 'List management', 'Where these apply'].map((h) => text.indexOf(h))
+    /* Available Inventory moved to Advertisers / Inventory (Rob, 20 Sep). */
+    expect(text).not.toContain('Available Inventory')
     expect(order).toEqual([...order].sort((a, b) => a - b))
     expect(screen.getByLabelText(/Currency/)).toBeInTheDocument()
     /* Stored in hours, shown as days and hours: 168 h = 7 days, 24 h = 1 day. */
@@ -124,8 +126,8 @@ describe('Advertisers screen (admin only)', () => {
     renderAt('/advertisers')
     await screen.findByText('Admin only')
     const nav = screen.getByRole('navigation', { name: 'Display Types and DSP Integration' })
-    expect(within(nav).getAllByRole('link').map((l) => l.textContent?.replace(/^[a-z_]+/, ''))).toEqual(['Display Types', 'Playlist Management', 'DSP Integration', 'Advertisers', 'Campaign Status'])
-    expect(screen.getByRole('button', { name: 'Every advertiser using the platform, across all DSPs.' })).toBeInTheDocument()
+    expect(within(nav).getAllByRole('link').map((l) => l.textContent?.replace(/^[a-z_]+/, ''))).toEqual(['Display Types', 'Playlist Management', 'DSP Integration', 'Advertisers / Inventory', 'Campaign Status'])
+    expect(screen.getByRole('button', { name: /Every advertiser using the platform, across all DSPs, and the inventory they can buy/ })).toBeInTheDocument()
   })
 
   it('is not in the nav for a non-admin session', async () => {
@@ -199,8 +201,11 @@ describe('Booking schedule', () => {
     totals: { bookedWindows: 1, bookedRevenue: 216.3, billedRevenue: 0 },
   }
 
-  it('is linked from Available Inventory', async () => {
-    renderAt('/dsp-integration/advertiser-settings')
+  it('is linked from Available Inventory, which now sits on Advertisers / Inventory', async () => {
+    const advertisers = { currency: 'AUD', floorCpm: 100, items: [{ advertiserId: 'nestle', name: 'Nestlé', via: ['Google DSP'], approvalRequired: false, floorMultiplier: 0.8, effectiveFloorCpm: 80, campaigns: { draft: 0, awaiting_approval: 1, approved: 2, rejected: 0 } }] }
+    vi.stubGlobal('fetch', vi.fn(fakeFetch({ '/api/admin/v1/advertisers': advertisers, '/api/admin/v1/available-inventory': { items: [{ displayTypeId: 'menu_board', displayTypeName: 'Menu Board — Long Format', touchPoint: 'Digital Signage', playlistName: 'Menu Board Playlist', slot: 2, position: 'Supplier slot', partnerName: 'Google DSP' }] } })))
+    renderAt('/advertisers')
+    expect(await screen.findByLabelText('Available Inventory')).toBeInTheDocument()
     expect(await screen.findByRole('button', { name: /Booking schedule/ })).toBeInTheDocument()
   })
 

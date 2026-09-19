@@ -210,6 +210,20 @@ The display type form is one column: preview, Touch Point, name, canvas
 size, background, default playlist, then the panels. It is not split into a
 fixed-width form beside a second column.
 
+### Who sees each section (Rob, 20 Sep 2026)
+
+- **DSP Integration is admin only.** Exchange settings, Advertiser settings,
+  Shared Targeting Variables and the DSP pages are shown to admin users and
+  no one else.
+- **Display Types, Playlist Management, Advertisers / Inventory and Campaign
+  Status** are shown to admin users **and to marketing users**.
+- **Help desk users see none of it.**
+
+Enforced server-side as well as in the navigation, like everything else the
+UI restricts. The POC's stand-in session has two roles (`hq_admin`,
+`hq_user`), so it only distinguishes admin from non-admin; the marketing and
+help-desk roles come from the platform's own roles on integration.
+
 ## 1. Display types — updates to the existing section
 
 The navigation item and screen are called **Display Types**. This project
