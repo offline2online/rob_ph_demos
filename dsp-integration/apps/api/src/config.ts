@@ -17,7 +17,11 @@ export interface Config {
   oldVersionRunsDuringReview: boolean
   /* Q47 — block display type delete while positions are sold/reserved? */
   blockDeleteWithSoldPositions: boolean
+  /* Partner API: one static bearer token per seeded partner (token → partner id). */
+  partnerTokens: Record<string, string>
 }
+
+const DEFAULT_PARTNER_TOKENS = { 'poc-token-google-dv360': 'p_google', 'poc-token-amazon-dsp': 'p_amazon' }
 
 /* Relative paths are resolved from the POC root, whatever the working directory. */
 const ROOT = fileURLToPath(new URL('../../../', import.meta.url))
@@ -33,5 +37,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     maxValuesPerCondition: 100,
     oldVersionRunsDuringReview: false,
     blockDeleteWithSoldPositions: false,
+    partnerTokens: env.PARTNER_TOKENS ? (JSON.parse(env.PARTNER_TOKENS) as Record<string, string>) : DEFAULT_PARTNER_TOKENS,
   }
 }

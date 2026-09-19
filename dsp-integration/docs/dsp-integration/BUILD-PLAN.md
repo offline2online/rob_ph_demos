@@ -433,6 +433,16 @@ All approved by Rob (decision 5). The reason for each change is given.
    separately, outside this build. The admin UI keeps the prototype's values
    as a stand-in (§9), and no endpoint is added.
 
+4. **Operators per variable.** `GET /v1/targeting/attributes` returns each
+   variable's `operators`, but neither the spec nor the prototype says which
+   of the platform's operators each Targeting-tab variable takes. The build
+   uses list variables (segments, tags, locations, age bands, SKUs, events
+   and so on) → *includes selected* / *excludes selected*;
+   single-value variables (Store Open / Closed, genders, Purchase Intent,
+   Plan Type) → *equal* / *not equal*; Plan Value → *equal*, *greater than*,
+   *less than*. This is in `packages/types/src/catalog.ts`. Does it match the
+   real Targeting tab?
+
 ## 11. Defaults in use (brief, *Defaults for open questions*)
 
 - Q27: 24-hour window
@@ -458,7 +468,8 @@ Each is configurable in `apps/api/src/config.ts`.
 | 5 | Playlist Management | Done | API: `PUT /admin/v1/playlists/{id}/record` (rename only; rejects assignment fields), `GET …/delete-check` and `DELETE` (409 `has_dependents` for a default or zone playlist). UI: nav "Playlist Management", count line, AG Grid table (rename inline, auto-created pill, expandable assignments with Open →, delete) and delete dialogs. Changes apply immediately, as in the prototype (the spec doesn't list this page under *Saving changes*). Shared `Grid` component (fit to width, auto height), now also used by Slot assignment. Tests: API +4, admin +1. Browser-checked: rename, both delete dialogs, Open → | New playlist and assignment editing (decision 4) | — |
 | 6 | DSP Integration nav + Exchange settings; sellers.json | Done | API: `GET/PUT /admin/v1/exchange` (all four fields required, bare domain, valid email; `published` and `sellersJsonUrl` once complete) and `GET /sellers.json` (PUBLISHER, not confidential; 404 until complete or with the flag off). UI: nav "DSP Integration" (flag-gated), a list column (COMPANY: Exchange settings, Advertiser settings, Shared Targeting Variables with their subtitles; PARTNER DSPS: DV360, Amazon Ads DSP and The Trade Desk with state and lists-link lines; contracts to icons below 900px), one draft and save bar for the whole section, a leave-page guard, and the Exchange settings page. Tests: API +7, admin +4. Browser-checked: edit, validation error, save, guard | The section opens on Exchange settings until package 7 adds Advertiser settings | — |
 | 7 | Advertiser settings | Done | API: `PUT /admin/v1/advertiser-settings` (any ISO 4217 currency, positive floor and multipliers; an entry on both lists is rejected (`validation_failed`), matching case-insensitively; entries trimmed and de-duplicated) and `GET /admin/v1/available-inventory` (every advertiser-owned slot, no advertisers column). Pricing maths in `domain/pricing.ts` with the brief's unit tests (floor × personalised × interactive × advertiser multiplier; 450 and 360 examples); the Advertisers endpoint now uses it. UI: the Advertiser settings page (Pricing with the ISO 4217 currency picker, four list editors (adding to one list removes the entry from the other; seat and category suggestions), Where these apply with Open, Available Inventory as an AG Grid table with Open). The DSP Integration section now opens on it, as the prototype does. Shared `ListEditor`. Tests: API +9, admin +1. Browser-checked: moving an advertiser between lists, suggestions, save | — | — |
-| 8–17 | — | Not started | — | — | — |
+| 8 | Shared Targeting Variables | Done | API: `GET/PUT /admin/v1/targeting-variables` (24 default variables with tooltip text; access is `"all"` or DSP ids; unknown variables and unknown DSPs are rejected) and the Partner API's first endpoint, `GET /v1/targeting/attributes`. The caller gets only the variables enabled for it: `"all"` counts only if the DSP is connected, and a named DSP always does. Never values. Partner API auth: one static bearer token per seeded partner (`PARTNER_TOKENS`); 401 without one, 404 with the flag off. UI: the page (two groups, each an AG Grid Variable / DSPs table, example values as each variable's tooltip, header tooltip) and `DspPicker` (All connected DSPs or individual DSPs with connection state, shown as pills). Tests: API +6, admin +1. Browser-checked: picker, save | — | Q4 |
+| 9–17 | — | Not started | — | — | — |
 
 ## 13. Prototype comparison (per screen)
 
@@ -497,6 +508,20 @@ Kept on the page as status (decision 2): "Not enabled for this company —
 contact Platform Admin.", the broken-partner callout, "On the blacklist —
 this position cannot fill.", "Not connected", the preview caption, and the
 save bar message.
+
+### Shared Targeting Variables (package 8)
+
+Compared against the prototype at 1163px. The heading tooltip, both group
+headings with their icons and tooltips, the two-column tables (Variable with
+its example-values tooltip; DSPs that may target it with its header tooltip),
+the 24 variables in order, the pills ("All connected DSPs", a named DSP, or
+"None") and the picker (All connected DSPs with "Includes DSPs connected
+later", a divider, one checkbox per DSP with its connection state, disabled
+while All is ticked) all match.
+
+| Where | Prototype | Build | Why |
+|---|---|---|---|
+| Picker | Hand-made dropdown | AntD `Popover` with `Checkbox` rows | ph-designer components |
 
 ### Advertiser settings (package 7)
 

@@ -98,6 +98,7 @@ export const IAB_CATEGORIES = ['Food & Drink', 'Health & Fitness', 'Beauty', 'Re
 /* ------------------------------------------------ targeting variables */
 
 export type VariableGroup = 'localisation' | 'personalisation'
+export type Operator = 'includes_selected' | 'excludes_selected' | 'equal' | 'not_equal' | 'greater_than' | 'less_than'
 export interface TargetingVariableDef {
   key: string
   source: 'store' | 'visitor'
@@ -105,36 +106,42 @@ export interface TargetingVariableDef {
   label: string
   values: string
   tip?: string
+  operators: Operator[]
 }
-const loc = (key: string, label: string, values: string, tip?: string): TargetingVariableDef => ({ key, source: 'store', group: 'localisation', label, values, tip })
-const per = (key: string, label: string, values: string, tip?: string): TargetingVariableDef => ({ key, source: 'visitor', group: 'personalisation', label, values, tip })
+/* Operators per variable, from the platform's existing set (spec §6). Which
+   operator each Targeting-tab variable takes is an assumption (BUILD-PLAN Q4). */
+const LIST: Operator[] = ['includes_selected', 'excludes_selected']
+const ONE: Operator[] = ['equal', 'not_equal']
+const NUM: Operator[] = ['equal', 'greater_than', 'less_than']
+const loc = (key: string, label: string, values: string, operators: Operator[], tip?: string): TargetingVariableDef => ({ key, source: 'store', group: 'localisation', label, values, tip, operators })
+const per = (key: string, label: string, values: string, operators: Operator[], tip?: string): TargetingVariableDef => ({ key, source: 'visitor', group: 'personalisation', label, values, tip, operators })
 
 /* The platform's default variables, in display order (spec §6). */
 export const TARGETING_VARIABLES: TargetingVariableDef[] = [
-  loc('store.hours', 'Store Open / Closed', 'Open, Closed', 'Whether the store is open or closed at the time — e.g. Open, Closed'),
-  loc('store.fixed_segments', 'Fixed Store Segments', 'Airport, Metro, Regional'),
-  loc('store.variable_segments', 'Variable Store Segments', 'Cold Day, iPhone 17 – Out of Stock (switched on and off by store managers)'),
-  loc('store.display_tags', 'Display Tag(s)', 'Entrance, Checkout, Food Court'),
-  loc('store.suburb', 'Suburb', 'Surry Hills, Parramatta'),
-  loc('store.postcode', 'Postcode', '2000, 2150'),
-  loc('store.state', 'State', 'NSW, VIC, QLD'),
-  loc('store.country', 'Country', 'Australia, New Zealand'),
-  loc('store.languages', 'Languages Spoken by Store Staff', 'English, Mandarin, Arabic'),
-  loc('store.reason_for_visit', 'Reason for Visit (Aggregate)', 'Returns, New phone, Bill enquiry (share of the queue here for the same reason)'),
-  loc('store.cv_gender', 'Computer Vision Gender', 'Female, Male', 'Detected by Vision/AI for the person in front of the display — e.g. Female, Male'),
-  loc('store.cv_age', 'Computer Vision Estimated Age', '18–24, 25–34, 35–44', 'Estimated by Vision/AI for the person in front of the display — e.g. 18–24, 25–34, 35–44'),
-  per('visitor.age', 'Age', '18–24, 25–34, 35–44'),
-  per('visitor.gender', 'Gender', 'Female, Male'),
-  per('visitor.purchase_intent', 'Purchase Intent', 'Browse, Replenish, Gift'),
-  per('visitor.visitor_segments', 'Visitor Segments', 'New parent, Fitness, Value seeker'),
-  per('visitor.device_type', 'Device Type', 'iPhone, Pixel, Samsung', "The visitor's device in store — e.g. iPhone, Pixel, Samsung"),
-  per('visitor.product_holdings', 'Product Holdings', 'Mobile plan, Home broadband'),
-  per('visitor.product_type', 'Product Type', 'Handset, Accessory'),
-  per('visitor.plan_type', 'Plan Type', 'Postpaid, Prepaid'),
-  per('visitor.plan_value', 'Plan Value', '$45, $65 per month'),
-  per('visitor.purchase_history', 'Purchase History', 'Bought in the last 30 days'),
-  per('visitor.events', 'Events', 'Scanned QR code, Viewed product page, Added to cart', 'Events in store or from a previous web session — e.g. Scanned QR code, Viewed product page, Added to cart'),
-  per('visitor.skus', 'SKUs', 'SKU-10234, SKU-55871', 'SKUs the visitor has looked at before; target by listing SKUs — e.g. SKU-10234, SKU-55871'),
+  loc('store.hours', 'Store Open / Closed', 'Open, Closed', ONE, 'Whether the store is open or closed at the time — e.g. Open, Closed'),
+  loc('store.fixed_segments', 'Fixed Store Segments', 'Airport, Metro, Regional', LIST),
+  loc('store.variable_segments', 'Variable Store Segments', 'Cold Day, iPhone 17 – Out of Stock (switched on and off by store managers)', LIST),
+  loc('store.display_tags', 'Display Tag(s)', 'Entrance, Checkout, Food Court', LIST),
+  loc('store.suburb', 'Suburb', 'Surry Hills, Parramatta', LIST),
+  loc('store.postcode', 'Postcode', '2000, 2150', LIST),
+  loc('store.state', 'State', 'NSW, VIC, QLD', LIST),
+  loc('store.country', 'Country', 'Australia, New Zealand', LIST),
+  loc('store.languages', 'Languages Spoken by Store Staff', 'English, Mandarin, Arabic', LIST),
+  loc('store.reason_for_visit', 'Reason for Visit (Aggregate)', 'Returns, New phone, Bill enquiry (share of the queue here for the same reason)', LIST),
+  loc('store.cv_gender', 'Computer Vision Gender', 'Female, Male', ONE, 'Detected by Vision/AI for the person in front of the display — e.g. Female, Male'),
+  loc('store.cv_age', 'Computer Vision Estimated Age', '18–24, 25–34, 35–44', LIST, 'Estimated by Vision/AI for the person in front of the display — e.g. 18–24, 25–34, 35–44'),
+  per('visitor.age', 'Age', '18–24, 25–34, 35–44', LIST),
+  per('visitor.gender', 'Gender', 'Female, Male', ONE),
+  per('visitor.purchase_intent', 'Purchase Intent', 'Browse, Replenish, Gift', ONE),
+  per('visitor.visitor_segments', 'Visitor Segments', 'New parent, Fitness, Value seeker', LIST),
+  per('visitor.device_type', 'Device Type', 'iPhone, Pixel, Samsung', LIST, "The visitor's device in store — e.g. iPhone, Pixel, Samsung"),
+  per('visitor.product_holdings', 'Product Holdings', 'Mobile plan, Home broadband', LIST),
+  per('visitor.product_type', 'Product Type', 'Handset, Accessory', LIST),
+  per('visitor.plan_type', 'Plan Type', 'Postpaid, Prepaid', ONE),
+  per('visitor.plan_value', 'Plan Value', '$45, $65 per month', NUM),
+  per('visitor.purchase_history', 'Purchase History', 'Bought in the last 30 days', LIST),
+  per('visitor.events', 'Events', 'Scanned QR code, Viewed product page, Added to cart', LIST, 'Events in store or from a previous web session — e.g. Scanned QR code, Viewed product page, Added to cart'),
+  per('visitor.skus', 'SKUs', 'SKU-10234, SKU-55871', LIST, 'SKUs the visitor has looked at before; target by listing SKUs — e.g. SKU-10234, SKU-55871'),
 ]
 export const ALL_DSPS = 'all' as const
 /* Defaults (spec §6): Localisation → all connected DSPs; Personalisation → none. */

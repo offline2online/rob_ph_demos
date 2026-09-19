@@ -6,6 +6,7 @@ import { hasScope, type Scope } from '../auth/session'
 import type { Context } from '../context'
 import { HttpError, forbidden, notFound } from './errors'
 import { adminRoutes } from '../routes/admin'
+import { partnerRoutes } from '../routes/partner'
 import { sellersJsonRoutes } from '../routes/public/sellersJson'
 
 declare module 'fastify' {
@@ -55,6 +56,7 @@ export function buildApp(ctx: Context, opts: { logger?: boolean } = {}): Fastify
   app.setNotFoundHandler((_req, reply) => reply.status(404).send(notFound().body()))
 
   app.register(adminRoutes(ctx, guards), { prefix: '/api/admin/v1' })
+  app.register(partnerRoutes(ctx, guards), { prefix: '/api/v1' })
   app.register(sellersJsonRoutes(ctx))
   return app
 }

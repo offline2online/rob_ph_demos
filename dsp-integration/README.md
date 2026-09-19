@@ -57,6 +57,9 @@ npm test
   off by default. When it is off:
   - DSP Integration, Advertisers and Slot assignment are hidden.
   - The Partner API and the new admin endpoints return 404.
+- The Partner API (`/api/v1`) takes one static bearer token per seeded
+  partner: `poc-token-google-dv360` or `poc-token-amazon-dsp` by default, or
+  set your own with `PARTNER_TOKENS`.
 - `POC_ROLE` sets the stand-in session: `hq_admin` (admin and approver) or
   `hq_user` (neither).
 - The API seeds an empty database on its first start. Delete

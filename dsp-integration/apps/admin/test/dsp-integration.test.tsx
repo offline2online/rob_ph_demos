@@ -64,3 +64,13 @@ describe('Advertiser settings page', () => {
     expect(screen.queryByText('Advertisers', { selector: '.ag-header-cell-text' })).not.toBeInTheDocument()
   })
 })
+
+describe('Shared Targeting Variables page', () => {
+  it('has two groups, each a Variable / DSPs table, with access shown as pills', async () => {
+    renderAt('/dsp-integration/targeting-variables')
+    expect(await screen.findByRole('heading', { name: /Shared Targeting Variables/ })).toBeInTheDocument()
+    expect(screen.getByText('Localisation Variables')).toBeInTheDocument()
+    expect(screen.getByText('Personalisation Variables')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Variables shared through the API/ })).toBeInTheDocument()
+  })
+})

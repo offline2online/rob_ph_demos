@@ -4,7 +4,7 @@
    unsaved changes asks first (prototype PartnersView). */
 import { useQueryClient } from '@tanstack/react-query'
 import { App, Spin } from 'antd'
-import type { AdvertiserSettings, AdvertiserSettingsInput, ExchangeInput, Partner } from '@ph-dsp/types'
+import type { AdvertiserSettings, AdvertiserSettingsInput, ExchangeInput, Partner, SharedVariable, VariableAccess } from '@ph-dsp/types'
 import { createContext, useContext, useMemo, useState } from 'react'
 import { Outlet, useLocation } from 'react-router-dom'
 import { ApiRequestError } from '../../api/client'
@@ -13,13 +13,14 @@ import { SaveBar } from '../../shared/SaveBar'
 import { useReportDirty } from '../../shared/UnsavedChanges'
 import { deepEqual } from '../../shared/deepEqual'
 import { useDraft } from '../../shared/useDraft'
-import { saveAdvertiserSettings, saveExchange, useAdvertiserSettings, useExchange, usePartners } from './api'
+import { saveAdvertiserSettings, saveExchange, saveVariableAccess, useAdvertiserSettings, useExchange, usePartners, useTargetingVariables } from './api'
 import { DspList } from './DspList'
 
 /* The section's editable state. Later packages add their slices here. */
 export interface SectionDraft {
   exchange: ExchangeInput
   settings: AdvertiserSettingsInput
+  access: Record<string, VariableAccess>
 }
 
 interface Section {
@@ -28,6 +29,7 @@ interface Section {
   update: <K extends keyof SectionDraft>(key: K, fn: (v: SectionDraft[K]) => SectionDraft[K]) => void
   partners: Partner[]
   settings: AdvertiserSettings
+  variables: SharedVariable[]
   published: boolean
   /* Hide the save bar (the prototype hides it on the Add DSP card). */
   setShowSaveBar: (v: boolean) => void
@@ -42,10 +44,10 @@ export const useSection = () => {
 const settingsInput = ({ whereTheseApply: _w, ...rest }: AdvertiserSettings): AdvertiserSettingsInput => rest
 const exchangeInput = ({ organisation, domain, sellerId, contactEmail }: ExchangeInput): ExchangeInput => ({ organisation, domain, sellerId, contactEmail })
 
-function Section({ partners, settings, exchange, published }: { partners: Partner[]; settings: AdvertiserSettings; exchange: ExchangeInput; published: boolean }) {
+function Section({ partners, settings, exchange, published, variables }: { partners: Partner[]; settings: AdvertiserSettings; exchange: ExchangeInput; published: boolean; variables: SharedVariable[] }) {
   const { message } = App.useApp()
   const qc = useQueryClient()
-  const saved = useMemo<SectionDraft>(() => ({ exchange, settings: settingsInput(settings) }), [exchange, settings])
+  const saved = useMemo<SectionDraft>(() => ({ exchange, settings: settingsInput(settings), access: Object.fromEntries(variables.map((v) => [v.key, v.access])) }), [exchange, settings, variables])
   const { draft, setDraft, dirty, reset, commitNext } = useDraft(saved)
   useReportDirty(dirty)
   const [saving, setSaving] = useState(false)
@@ -59,8 +61,9 @@ function Section({ partners, settings, exchange, published }: { partners: Partne
     try {
       if (!deepEqual(draft.exchange, saved.exchange)) await saveExchange(draft.exchange)
       if (!deepEqual(draft.settings, saved.settings)) await saveAdvertiserSettings(draft.settings)
+      if (!deepEqual(draft.access, saved.access)) await saveVariableAccess(draft.access)
       commitNext()
-      await Promise.all(['exchange', 'advertiser-settings', 'available-inventory'].map((k) => qc.invalidateQueries({ queryKey: [k] })))
+      await Promise.all(['exchange', 'advertiser-settings', 'available-inventory', 'targeting-variables'].map((k) => qc.invalidateQueries({ queryKey: [k] })))
     } catch (e) {
       message.error(e instanceof ApiRequestError ? [e.message, ...(e.body?.error.details ?? []).map((d) => d.reason)].join(' ') : 'Could not save changes.')
     } finally {
@@ -69,7 +72,7 @@ function Section({ partners, settings, exchange, published }: { partners: Partne
   }
 
   return (
-    <SectionContext.Provider value={{ draft, saved, update, partners, settings, published, setShowSaveBar }}>
+    <SectionContext.Provider value={{ draft, saved, update, partners, settings, variables, published, setShowSaveBar }}>
       <ListPageLayout list={<DspList />}>
         <Outlet />
         {showSaveBar && <SaveBar dirty={dirty} saving={saving} onSave={onSave} onCancel={reset} />}
@@ -83,8 +86,9 @@ export function DspIntegrationLayout() {
   const partners = usePartners(true)
   const settings = useAdvertiserSettings(true)
   const exchange = useExchange()
+  const variables = useTargetingVariables()
   const ex = useMemo(() => (exchange.data ? exchangeInput(exchange.data) : undefined), [exchange.data])
-  if (!partners.data || !settings.data || !ex || !exchange.data) return <Spin />
+  if (!partners.data || !settings.data || !ex || !exchange.data || !variables.data) return <Spin />
   /* Keyed by page: leaving a page (after confirming) starts from the saved values. */
-  return <Section key={pathname} partners={partners.data} settings={settings.data} exchange={ex} published={exchange.data.published} />
+  return <Section key={pathname} partners={partners.data} settings={settings.data} exchange={ex} published={exchange.data.published} variables={variables.data} />
 }

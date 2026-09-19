@@ -10,6 +10,7 @@ import { PlaylistManagementPage } from './features/playlist-management/PlaylistM
 import { DspIntegrationLayout } from './features/dsp-integration/DspIntegrationLayout'
 import { AdvertiserSettings } from './features/dsp-integration/AdvertiserSettings'
 import { ExchangeSettings } from './features/dsp-integration/ExchangeSettings'
+import { SharedTargetingVariables } from './features/dsp-integration/SharedTargetingVariables'
 import { AppShell, type NavItem } from './shared/AppShell'
 import { WithTip } from './shared/InfoTip'
 import { UnsavedChangesProvider } from './shared/UnsavedChanges'
@@ -48,6 +49,7 @@ function featureRoutes(flags: Flags): RouteObject[] {
             { index: true, element: <Navigate to="advertiser-settings" replace /> },
             { path: 'exchange', element: <ExchangeSettings /> },
             { path: 'advertiser-settings', element: <AdvertiserSettings /> },
+            { path: 'targeting-variables', element: <SharedTargetingVariables /> },
           ],
         }]
       : []),
