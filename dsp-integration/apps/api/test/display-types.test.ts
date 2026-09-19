@@ -148,6 +148,7 @@ describe('read side used by the slot picker (flag-gated)', () => {
     const [google, amazon] = res.json().items
     expect(google.credentials).toEqual({ partnerId: '884512', serviceAccountEmail: 'ph-retail-media@ph-demo.iam.gserviceaccount.com', privateKeyJson: { set: true } })
     expect(google).not.toHaveProperty('advertiserBlacklist')
+    expect(google.seats).toEqual([{ id: 'g1', name: 'Nestlé' }, { id: 'g2', name: 'Swisse' }])
     expect(amazon.advertiserBlacklist).toEqual(['Red Bull', 'Chemist Warehouse'])
     expect(amazon.issues.map((i: { kind: string }) => i.kind)).toEqual(['connection_error', 'missing_bidder_fields'])
     expect(amazon.issues[0].message).toBe('Refresh token rejected — 3 days ago')

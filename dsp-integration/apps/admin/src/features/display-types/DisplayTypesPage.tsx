@@ -11,7 +11,7 @@ import { ListPageLayout } from '../../shared/ListPageLayout'
 import { SaveBar } from '../../shared/SaveBar'
 import { useReportDirty, useUnsavedGuard } from '../../shared/UnsavedChanges'
 import { useDraft } from '../../shared/useDraft'
-import { saveDisplayTypes, useAdvertiserSettings, useAdvertisers, useDisplayTypes, usePartners, usePlaylists } from './api'
+import { saveDisplayTypes, useAdvertiserSettings, useDisplayTypes, usePartners, usePlaylists } from './api'
 import { DisplayTypeForm, type PlaylistOption } from './DisplayTypeForm'
 import { DisplayTypeList } from './DisplayTypeList'
 import { newDisplayType, normaliseSlots } from './model'
@@ -30,7 +30,6 @@ export function DisplayTypesPage({ flags }: { flags: Flags }) {
   const playlists = usePlaylists()
   const partners = usePartners(slotAssignment)
   const company = useAdvertiserSettings(slotAssignment)
-  const advertisers = useAdvertisers(slotAssignment)
 
   /* Slots always match the rotation cap in the editor (flag on). */
   const saved = useMemo<Draft | undefined>(
@@ -101,8 +100,8 @@ export function DisplayTypesPage({ flags }: { flags: Flags }) {
     if (d && !types.data?.some((t) => t.id === d.id)) setParams({}, { replace: true })
   }
 
-  /* Seats per DSP, from the advertisers list (Q1). */
-  const seatsOf = (p: Partner) => (advertisers.data ?? []).filter((a) => a.via.includes(p.name)).map((a) => a.name)
+  /* The DSP's seats, pulled on connect. */
+  const seatsOf = (p: Partner) => (p.seats ?? []).map((s) => s.name)
 
   if (!draft || !d) return <Spin />
   return (

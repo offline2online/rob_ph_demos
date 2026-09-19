@@ -24,7 +24,7 @@ export function toApiPartner(p: PartnerRecord): Partner {
   if (p.bidder.seatIds?.length) bidder.seatIds = p.bidder.seatIds
   return {
     id: p.id, provider: p.provider as Partner['provider'], name: p.name, status: p.status, lastSync: p.lastSync, mode: p.mode,
-    credentials, bidder, issues: partnerIssues(p), listsLinked: p.listsLinked,
+    credentials, bidder, issues: partnerIssues(p), seats: p.seats, listsLinked: p.listsLinked,
     ...(p.listsLinked ? {} : { advertiserWhitelist: p.allowList, advertiserBlacklist: p.blockList }),
   }
 }

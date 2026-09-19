@@ -1111,6 +1111,15 @@ components:
               kind: {type: string, enum: [connection_error, missing_credentials, missing_bidder_fields]}
               message: {type: string}
               fields: {type: array, items: {type: string}}
+        seats:
+          type: array
+          description: The DSP's seats and advertisers, pulled on connect (spec §8). Offered in the slot picker and as list suggestions.
+          items:
+            type: object
+            required: [id, name]
+            properties:
+              id: {type: string}
+              name: {type: string}
         listsLinked: {type: boolean}
         advertiserWhitelist: {type: array, items: {type: string}, description: Own lists, only when listsLinked is false.}
         advertiserBlacklist: {type: array, items: {type: string}}

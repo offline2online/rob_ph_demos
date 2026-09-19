@@ -164,6 +164,8 @@ Defaults: Localisation Variables `"all"`, Personalisation Variables `[]`.
 | GET | `/admin/v1/partners` | Configured DSPs. |
 | POST | `/admin/v1/partners` | Add a DSP by `provider` (`google_dv360`, `amazon_dsp`, `the_trade_desk`). Starts in `test`, adopts company lists. |
 | GET | `/admin/v1/partners/{id}` | One DSP, including `issues[]` for the top of its page. |
+
+Every DSP response includes `seats` (`[{id, name}]`): the DSP's advertisers, pulled on connect. They're offered in the slot picker and as list suggestions.
 | PUT | `/admin/v1/partners/{id}` | Save changes: credentials, bidder endpoint + seat IDs, mode, lists link / own lists. |
 | POST | `/admin/v1/partners/{id}/connect` | Connect or re-test with saved credentials; pulls seats/advertisers. Error text from the DSP goes to `lastSync` and `issues`. |
 | POST | `/admin/v1/partners/{id}/disconnect` | Disconnect; mode returns to `test`. |

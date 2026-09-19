@@ -870,6 +870,11 @@ export interface components {
                 message: string;
                 fields?: string[];
             }[];
+            /** @description The DSP's seats and advertisers, pulled on connect (spec §8). Offered in the slot picker and as list suggestions. */
+            seats?: {
+                id: string;
+                name: string;
+            }[];
             listsLinked: boolean;
             /** @description Own lists */
             advertiserWhitelist?: string[];

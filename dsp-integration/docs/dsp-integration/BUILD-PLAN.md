@@ -355,6 +355,7 @@ All approved by Rob (decision 5). The reason for each change is given.
 | `Approval.creative {assetUrl, mimeType, width, height}` and `Approval.canvas {width, height}` | The review panel must render the creative on the target canvas (spec §3); the schema had neither |
 | Session wording: role from `POC_ROLE`, no switcher, no cookie | The contract said "user switcher", contradicting the brief |
 | `PUT /admin/v1/playlists/{id}/record` takes `name` only | Decision 4: assignments are made on the Display Types form |
+| `Partner.seats [{id, name}]` (19 Sep, Rob, Q1) | The slot picker and the DSP pages need each DSP's seats, which spec §8 has on the partner. They are filled from the DSP (mock) on connect |
 | *Jobs with no API* note: auction job + `npm run auction:run`; billing line items only + `npm run billing:print` | Nothing in the contract triggered the auction or described billing output; no UI, report or endpoint |
 
 ## 8. Prototype defects fixed (decision 6)
@@ -380,10 +381,8 @@ All approved by Rob (decision 5). The reason for each change is given.
   implements the read side of `GET /admin/v1/partners` and
   `GET /admin/v1/advertiser-settings` early (flag-gated, exactly as in the
   contract). Their `PUT`s and screens stay in packages 7 and 9.
-- **Seats aren't in the contract.** The `Partner` schema has no `seats`
-  (spec §8 has `seats: [{id, name}]`). This is question Q1 below. Until it's
-  answered, package 3 reads each DSP's advertisers from
-  `GET /admin/v1/advertisers` (`via`), which is admin-only.
+- **The slot picker reads `Partner.seats`** (added 19 Sep, Q1). It no
+  longer depends on the admin-only Advertisers endpoint.
 - **Fix connection before package 6** links to the DSP page's route,
   `/dsp-integration/partners/{id}`. That route renders once package 6 is
   built.
@@ -424,17 +423,10 @@ All approved by Rob (decision 5). The reason for each change is given.
 
 ## 10. Questions (open)
 
-1. **Partner seats: answered with mock DSP APIs (Rob, 19 Sep).** Rob asked
-   for mock APIs for Google DV360, The Trade Desk and Amazon Ads, modelled on
-   their real APIs, where testers can control the seats and advertisers that
-   trade through each DSP. The design and its open points are in §14. The
-   original question follows.
-   The spec (§8) gives a partner `seats: [{id, name}]`.
-   The slot picker lists each seat, and each DSP page offers them as list
-   suggestions. The contract's `Partner` schema has no `seats`. Can I add
-   `seats: [{id, name}]` to `Partner`? Until then the picker uses
-   `/admin/v1/advertisers`, so an `hq_user` session sees no named
-   advertisers there.
+1. ~~Partner seats~~ **Resolved (Rob, 19 Sep):** `seats` was added to
+   `Partner` in the contract. They are filled on connect from the mock DSP
+   APIs (§14), which Rob asked for so testers can control each DSP's seats
+   and advertisers.
 2. ~~Name field wording~~ **Resolved (Rob, 19 Sep):** the label is
    "Display Type Name", with the placeholder "Name this display type".
 3. ~~Company feature availability~~ **Resolved (Rob, 19 Sep):** it is managed
@@ -503,7 +495,14 @@ contact Platform Admin.", the broken-partner callout, "On the blacklist —
 this position cannot fill.", "Not connected", the preview caption, and the
 save bar message.
 
-## 14. Mock DSP APIs (Rob, 19 Sep 2026): proposed design
+## 14. Mock DSP APIs (Rob, 19 Sep 2026)
+
+Rob's answers:
+- Build it **with package 9**, the first package that calls it.
+- Seats and advertisers are controlled through the **control API plus a
+  small test page** served by the mock service. The page is separate from
+  the product screens and never shipped with them.
+- **`seats` is added to `Partner`.**
 
 A separate local service, `apps/dsp-mocks/` (Fastify, its own port, default
 4100). It serves mock versions of each DSP's real API, so the POC's DSP
@@ -532,7 +531,12 @@ The bidder answers OpenRTB 2.6 bid requests. Each bid comes from one of that
 DSP's seats (`seatbid[].seat`) and one of its advertisers (`adomain`, `crid`,
 `cat`, `price`).
 
-### Control API (for testers; not part of the product contract)
+### Control API and test page (for testers; not part of the product contract)
+
+The mock service also serves a plain page at `/` that edits the same state
+through the control API: seats, advertisers, auth failure and bidder
+behaviour for each DSP. It uses the same ph-designer look, but it's a test
+tool, not a product screen.
 
 `/_control/{dsp}` for `google_dv360`, `amazon_dsp` and `the_trade_desk`:
 
