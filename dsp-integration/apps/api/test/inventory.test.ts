@@ -2,12 +2,10 @@ import { describe, expect, it } from 'vitest'
 import type { Slot } from '@ph-dsp/types'
 import { buildApp } from '../src/http/app'
 import { expectMatchesContract } from './contract'
-import { testContext } from './helpers'
+import { NOW, testContext } from './helpers'
 
 const GOOGLE = { authorization: 'Bearer poc-token-google-dv360' }
 const AMAZON = { authorization: 'Bearer poc-token-amazon-dsp' }
-/* Saturday 20 Sep 2026, mid-morning UTC: the next window that can be sold starts 21 Sep. */
-export const NOW = new Date('2026-09-20T10:00:00.000Z')
 
 const setup = async () => {
   const ctx = await testContext({ clock: () => NOW })

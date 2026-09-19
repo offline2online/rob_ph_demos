@@ -11,7 +11,7 @@ import type { FastifyPluginAsync } from 'fastify'
 import type { Context } from '../../context'
 import { type Check, failed, failureDetails, fileChecks } from '../../domain/assetChecks'
 import { EXTENSION, isVideo, readMedia } from '../../domain/media'
-import { type Rules, validateRules } from '../../domain/targetingValidation'
+import { type Rules, throwIfRejected, validateRules } from '../../domain/targetingValidation'
 import type { StoredTargeting } from '../../domain/targetingSummary'
 import { HttpError, conflict, notFound, validationFailed } from '../../http/errors'
 import type { PartnerRecord } from '../../repos/PartnerRepo'
@@ -55,6 +55,7 @@ export const campaignRoutes = (ctx: Context): FastifyPluginAsync => async (app) 
     if (!Array.isArray(targeted)) invalid.push({ field: 'targeted', reason: 'Must be a list.' })
     const ids = new Set<string>()
     const notPermitted = new Map<string, { variable?: string; reason: string }>()
+    const ruleErrors: Detail[] = []
     const access = ctx.company.variableAccess()
     if (Array.isArray(targeted)) {
       targeted.forEach((t, i) => {
@@ -65,12 +66,11 @@ export const campaignRoutes = (ctx: Context): FastifyPluginAsync => async (app) 
         if (!Number.isInteger(t?.priority)) invalid.push({ field: f('priority'), reason: 'An integer.' })
         if (!PRICING_TYPES.includes(t?.pricingType as PricingType)) invalid.push({ field: f('pricingType'), reason: `One of ${PRICING_TYPES.join(', ')}.` })
         const r = validateRules(t?.rules, f('rules'), req.partner, access, ctx.config.maxValuesPerCondition)
-        invalid.push(...(r.invalid as Detail[]))
+        ruleErrors.push(...(r.invalid as Detail[]))
         r.notPermitted.forEach((d) => notPermitted.set(d.variable as string, d))
       })
     }
-    if (invalid.length) throw validationFailed(invalid)
-    if (notPermitted.size) throw new HttpError(422, 'variable_not_permitted', 'Targeting uses variables this DSP may not use.', [...notPermitted.values()])
+    throwIfRejected({ invalid: ruleErrors, notPermitted: [...notPermitted.values()] }, invalid)
 
     const targeting: StoredTargeting = {
       baseline: { pricingType: b.baseline!.pricingType as PricingType },

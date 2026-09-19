@@ -27,6 +27,9 @@ export function mockDsps() {
   return { ...mocks, fetchImpl }
 }
 
+/* Sunday 20 Sep 2026, mid-morning UTC: the next window that can be sold starts 21 Sep. */
+export const NOW = new Date('2026-09-20T10:00:00.000Z')
+
 export const TEST_KEY = randomBytes(32).toString('base64')
 
 export async function testContext(opts: { flag?: boolean; role?: Role; seeded?: boolean; dspFetch?: Fetch; clock?: () => Date } = {}) {

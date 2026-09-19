@@ -5,6 +5,7 @@
 import { OPERATOR_LABELS, TARGETING_VARIABLES, type Operator } from '@ph-dsp/types'
 import type { Access } from '../repos/CompanySettingsRepo'
 import type { PartnerRecord } from '../repos/PartnerRepo'
+import { HttpError, validationFailed } from '../http/errors'
 import { permittedFor } from './variables'
 
 export interface Condition { source: string; variable: string; op: string; values: string[] }
@@ -49,5 +50,10 @@ export function validateRules(rules: unknown, at: string, partner: PartnerRecord
   return { invalid, notPermitted: [...notPermitted.values()] }
 }
 
-/* Every rule set on a campaign (targeted versions only; the baseline has none). */
-export const rulesOf = (targeted: { rules?: unknown }[] | undefined) => (targeted ?? []).map((t) => t.rules)
+/* The contract's errors for a result: 400 validation_failed first, then
+   422 variable_not_permitted naming each variable. */
+export function throwIfRejected(r: TargetingResult, extraInvalid: { field: string; reason: string }[] = []) {
+  const invalid = [...extraInvalid, ...(r.invalid as { field: string; reason: string }[])]
+  if (invalid.length) throw validationFailed(invalid)
+  if (r.notPermitted.length) throw new HttpError(422, 'variable_not_permitted', 'Targeting uses variables this DSP may not use.', r.notPermitted)
+}

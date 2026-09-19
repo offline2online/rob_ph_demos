@@ -9,8 +9,8 @@ import type { FastifyPluginAsync } from 'fastify'
 import type { Context } from '../../context'
 import { type Caller, type PositionRef, type WindowStatus, allPositions, callerOf, isVisible, nextWindow, positionView, windowMs, windowStatus, windowsBetween } from '../../domain/positions'
 import { effectiveFloorCpm } from '../../domain/pricing'
-import { type Rules, validateRules } from '../../domain/targetingValidation'
-import { HttpError, notFound, validationFailed } from '../../http/errors'
+import { type Rules, throwIfRejected, validateRules } from '../../domain/targetingValidation'
+import { notFound, validationFailed } from '../../http/errors'
 
 const STATUSES: WindowStatus[] = ['available', 'reserved', 'sold', 'unavailable']
 const dateOf = (d: Date) => d.toISOString().slice(0, 10)
@@ -91,9 +91,7 @@ export const inventoryRoutes = (ctx: Context): FastifyPluginAsync => async (app)
       return p
     })
     const r = b.rules === undefined ? { invalid: [], notPermitted: [] } : validateRules(b.rules, 'rules', req.partner, ctx.company.variableAccess(), ctx.config.maxValuesPerCondition)
-    invalid.push(...(r.invalid as { field: string; reason: string }[]))
-    if (invalid.length) throw validationFailed(invalid)
-    if (r.notPermitted.length) throw new HttpError(422, 'variable_not_permitted', 'Targeting uses variables this DSP may not use.', r.notPermitted)
+    throwIfRejected(r, invalid)
 
     const rules = b.rules as Rules | undefined
     let views = 0
