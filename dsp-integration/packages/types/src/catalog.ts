@@ -143,7 +143,7 @@ export const TARGETING_VARIABLES: TargetingVariableDef[] = [
   loc('store.postcode', 'Postcode', '2000, 2150', LIST),
   loc('store.state', 'State', 'NSW, VIC, QLD', LIST),
   loc('store.country', 'Country', 'Australia, New Zealand', LIST),
-  loc('store.languages', 'Languages Spoken by Store Staff', 'English, Mandarin, Arabic', LIST),
+  loc('store.languages', 'Languages Spoken by Store Staff', 'English, Mandarin, Arabic', LIST, 'The languages spoken by the staff on shift right now — the ones signed into the staff tablet or Retail Admin, through virtual queue management and appointments — e.g. English, Mandarin, Arabic'),
   /* Computer Vision first, then the aggregates, then the rest (Rob, 20 Sep).
      Both are personalisation, so both default to no DSP (Q49 revisited). */
   per('store.cv_gender', 'Gender (Computer Vision)', 'Female, Male', COMPARE_EXACT, 'Read by Vision/AI running at the edge, for the person in front of the display — e.g. Female, Male. Nothing leaves the store.', 'store'),
@@ -154,7 +154,8 @@ export const TARGETING_VARIABLES: TargetingVariableDef[] = [
   per('visitor.gender', 'Gender', 'Female, Male', ONE, 'The identified visitor’s gender, from the systems that hold the customer record (CRM, CDP or loyalty) — e.g. Female, Male'),
   per('visitor.purchase_intent', 'Purchase Intent', 'Browse, Replenish, Gift', LIST),
   per('visitor.visitor_segments', 'Visitor Segments', 'New parent, Fitness, Value seeker', LIST),
-  per('visitor.device_type', 'Device Type', 'iPhone, Pixel, Samsung', LIST, "The visitor's device in store — e.g. iPhone, Pixel, Samsung"),
+  per('visitor.reason_for_visit', 'Reason for Visit', 'Returns, New phone, Bill enquiry', LIST, 'Why the visitor in front of the screen is here, for that one person — e.g. Returns, New phone, Bill enquiry. The aggregate version above is the whole queue.'),
+  per('visitor.device_type', 'Device Type', 'iPhone, Pixel, Samsung', LIST, 'The device the visitor in front of the screen is carrying — e.g. iPhone, Pixel, Samsung'),
   per('visitor.product_holdings', 'Product Holdings', 'Mobile plan, Home broadband', LIST),
   per('visitor.product_type', 'Product Type', 'Handset, Accessory', LIST),
   per('visitor.plan_type', 'Plan Type', 'Postpaid, Prepaid', LIST),
