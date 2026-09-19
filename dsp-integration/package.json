@@ -1,10 +1,15 @@
 {
   "name": "ph-dsp-integration-poc",
   "private": true,
-  "description": "Display Types & DSP Integration — standalone proof of concept (see docs/dsp-integration/).",
+  "description": "Display Types & DSP Integration \u2014 standalone proof of concept (see docs/dsp-integration/).",
   "type": "module",
-  "workspaces": ["packages/*", "apps/*"],
-  "engines": { "node": ">=22.13" },
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "engines": {
+    "node": ">=22.13"
+  },
   "scripts": {
     "gen:types": "npm run gen -w @ph-dsp/types",
     "dev:api": "npm run dev -w @ph-dsp/api",
@@ -15,5 +20,9 @@
   },
   "devDependencies": {
     "typescript": "~5.9.3"
+  },
+  "overrides": {
+    "react": "18.3.1",
+    "react-dom": "18.3.1"
   }
 }

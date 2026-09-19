@@ -400,6 +400,10 @@ All approved by Rob (decision 5). The reason for each change is given.
   The contract has no dedicated code for them, so they use
   `validation_failed`.
 
+- **React is pinned to 18.3 through root `overrides`.** Several dependencies'
+  peer ranges would otherwise hoist React 19 alongside it. AntD v5
+  officially supports React 18.
+
 ## 10. Questions (open)
 
 1. **Partner seats.** The spec (§8) gives a partner `seats: [{id, name}]`.
@@ -428,7 +432,7 @@ Each is configurable in `apps/api/src/config.ts`.
 | # | Package | Status | Done | Deferred | Questions hit |
 |---|---|---|---|---|---|
 | 1 | Data model and migrations | Done | Workspace (`apps/api`, `packages/types` generated from openapi.yaml), 7 reversible migrations (0001 = existing-platform stand-in; 0002–0007 additive), platform stand-in sources, partner/company/exchange repos, `SecretsStore` (AES-256-GCM), `Flags`, stand-in session + `GET /admin/v1/session`, seed, strict contract response validator. 18 tests: migration round-trip, existing records load unchanged, encryption at rest, seed | `AssetStore`, `AudienceSource`, reservations/billing tables, partner tokens: built with the packages that use them (12, 13, 15, 16) | — |
-| 2 | Shared UI | Not started | — | — | — |
+| 2 | Shared UI | Done | `apps/admin` (React 18.3, Vite 6, AntD 5 themed with `phTheme`, Tailwind 4 `@theme`, AG Grid 32 Alpine vars, Material Symbols, Roboto). `SaveBar` (sticky, never fixed), `useDraft`, `UnsavedChangesProvider` (router blocker + in-page `guard`, AntD confirm "You have unsaved changes. Discard them?"), `DeleteDialog`, `InfoTip` (AntD Tooltip, flips below when there's no room), `ListPageLayout` (260px sticky list + full-width column), `AppShell` (title, divider, 230px nav collapsing to 56px icons below 900px). 11 tests | `ListEditor`, summary chips and collapsible panels move to the first package that uses them (3, 7) | — |
 | 3 | Display Types | Not started | — | — | Q1 |
 | 4–17 | — | Not started | — | — | — |
 
