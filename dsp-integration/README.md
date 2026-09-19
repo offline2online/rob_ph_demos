@@ -69,6 +69,10 @@ npm test
 - The Partner API (`/api/v1`) takes one static bearer token per seeded
   partner: `poc-token-google-dv360` or `poc-token-amazon-dsp` by default, or
   set your own with `PARTNER_TOKENS`.
+- DSP connections: Google DSP (DV360), Amazon Ads DSP and The Trade Desk
+  each have a real-shaped client (`apps/api/src/dsp/`) pointed at the mock
+  DSP service. Amazon is seeded to reject its refresh token; accept it on the
+  mock's test page to connect.
 - `npm run dev:mocks` starts the mock DSP service on port 4100, with its test
   page at http://127.0.0.1:4100/. Use it to change each mock DSP's seats,
   advertisers, auth failures and bidder behaviour, then press **Re-test

@@ -17,6 +17,9 @@ export interface BidderBehaviour { mode: 'bid' | 'no_bid' | 'below_floor'; price
 export interface DspState {
   /* DV360 partner ID, Amazon Ads profile ID, or TTD partner ID the account lives under. */
   accountId: string
+  /* Amazon Ads only: the entity (DSP account) behind the profile, and its region (na | eu | fe). */
+  entityId?: string
+  region?: 'na' | 'eu' | 'fe'
   seats: Seat[]
   advertisers: MockAdvertiser[]
   auth: AuthBehaviour
@@ -39,6 +42,8 @@ export function seedState(): Record<DspKey, DspState> {
     },
     amazon_dsp: {
       accountId: '3390127745',
+      entityId: 'ENTITY8Q1R5T',
+      region: 'eu',
       seats: [{ seatId: 'amzn-seat-1', name: 'Amazon DSP seat' }],
       advertisers: [{ id: '588104411', name: "L'Oréal", seatId: 'amzn-seat-1', domain: 'loreal.com', categories: ['Beauty'], currency: 'AUD' }],
       /* Seeded to fail, like the prototype: "Refresh token rejected". */

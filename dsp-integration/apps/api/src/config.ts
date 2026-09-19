@@ -1,4 +1,5 @@
 import { isAbsolute, resolve } from 'node:path'
+import type { DspEndpoints } from './dsp/registry'
 import { fileURLToPath } from 'node:url'
 
 /* Runtime configuration. Open-question defaults (brief, "Defaults for open
@@ -27,7 +28,7 @@ export interface Config {
   /* Partner API: one static bearer token per seeded partner (token → partner id). */
   partnerTokens: Record<string, string>
   /* DSP API base URLs. Default: the local mock DSP service (apps/dsp-mocks). */
-  dsp: { dv360TokenUrl: string; dv360ApiBaseUrl: string }
+  dsp: DspEndpoints
   /* Where bid requests go, per provider, and the only base URL an unknown
      creative (a bid's iurl) may be fetched from. The POC points both at the
      mock DSP service and never at the partner's configured bidder endpoint;
@@ -58,6 +59,12 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     dsp: {
       dv360TokenUrl: env.DV360_TOKEN_URL ?? `${mocks}/dv360/token`,
       dv360ApiBaseUrl: env.DV360_API_BASE_URL ?? `${mocks}/dv360`,
+      /* Amazon Ads: one LWA host and one API host per region; the mock serves each under /amazon/<region>. */
+      amazon: Object.fromEntries((['na', 'eu', 'fe'] as const).map((r) => {
+        const root = env[`AMAZON_ADS_${r.toUpperCase()}_BASE_URL`] ?? (env.AMAZON_ADS_BASE_URL ? `${env.AMAZON_ADS_BASE_URL.replace(/\/$/, '')}/${r}` : `${mocks}/amazon/${r}`)
+        return [r, { tokenUrl: `${root}/auth/o2/token`, apiBaseUrl: root }]
+      })) as DspEndpoints['amazon'],
+      ttdApiBaseUrl: env.TTD_BASE_URL ?? `${mocks}/ttd`,
     },
     bidders: {
       google_dv360: { bidUrl: env.DV360_BIDDER_URL ?? `${mocks}/dv360/openrtb2/bid`, creativeBase: `${mocks}/dv360/creatives/` },

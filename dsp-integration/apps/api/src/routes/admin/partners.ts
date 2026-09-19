@@ -55,9 +55,7 @@ export const partnerRoutes = (ctx: Context, guards: Guards): FastifyPluginAsync 
     const client = ctx.dsp[p.provider as Provider]
     const result = missing
       ? { ok: false as const, reason: missing.message.replace(/\.$/, '') }
-      : client
-        ? await client.connect({ public: p.credsPublic, secrets: ctx.partners.secrets(p.id) })
-        : { ok: false as const, reason: `Connecting ${providerDef(p.provider)?.label} arrives with package 17` }
+      : await client.connect({ public: p.credsPublic, secrets: ctx.partners.secrets(p.id) })
     req.log.info({ partnerId: p.id, ok: result.ok }, 'dsp connect')
     const updated = result.ok
       ? ctx.partners.update(p.id, { status: 'connected', lastSync: new Date().toISOString(), seats: result.seats })

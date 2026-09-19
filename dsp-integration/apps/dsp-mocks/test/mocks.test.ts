@@ -63,3 +63,29 @@ describe('mock bidder (OpenRTB 2.6)', () => {
     expect((await app.inject({ method: 'PUT', url: '/_control/google_dv360/bidder', payload: { mode: 'sometimes' } })).statusCode).toBe(400)
   })
 })
+
+describe('mock Amazon Ads and The Trade Desk APIs', () => {
+  it('Amazon: LWA refresh-token grant, then profiles and DSP advertisers in the profile’s region', async () => {
+    const { app } = buildMocks()
+    const form = { 'content-type': 'application/x-www-form-urlencoded' }
+    const grant = 'grant_type=refresh_token&refresh_token=Atzr%7Cx&client_id=c&client_secret=s'
+    const rejected = await app.inject({ method: 'POST', url: '/amazon/eu/auth/o2/token', headers: form, payload: grant })
+    expect(rejected.json()).toEqual({ error: 'invalid_grant', error_description: 'The request has an invalid grant parameter : refresh_token' })
+    await app.inject({ method: 'PUT', url: '/_control/amazon_dsp/auth', payload: { accept: true } })
+    const token = (await app.inject({ method: 'POST', url: '/amazon/eu/auth/o2/token', headers: form, payload: grant })).json().access_token
+    const h = { authorization: `Bearer ${token}`, 'amazon-advertising-api-clientid': 'c' }
+    expect((await app.inject({ method: 'GET', url: '/amazon/eu/v2/profiles', headers: h })).json()[0]).toMatchObject({ profileId: 3390127745, accountInfo: { id: 'ENTITY8Q1R5T' } })
+    expect((await app.inject({ method: 'GET', url: '/amazon/na/v2/profiles', headers: h })).json()).toEqual([])
+    const advs = await app.inject({ method: 'GET', url: '/amazon/eu/dsp/advertisers', headers: { ...h, 'amazon-advertising-api-scope': '3390127745' } })
+    expect(advs.json()).toEqual({ totalResults: 1, response: [{ advertiserId: '588104411', name: "L'Oréal", currency: 'AUD', url: 'https://www.loreal.com', country: 'AU', timezone: 'Australia/Sydney' }] })
+  })
+
+  it('TTD: TTD-Auth header, partner-scoped advertiser query', async () => {
+    const { app } = buildMocks()
+    const body = { PartnerId: 'phub-retail', PageStartIndex: 0, PageSize: 10 }
+    expect((await app.inject({ method: 'POST', url: '/ttd/v3/advertiser/query/partner', payload: body })).statusCode).toBe(401)
+    const res = await app.inject({ method: 'POST', url: '/ttd/v3/advertiser/query/partner', headers: { 'ttd-auth': 't' }, payload: body })
+    expect(res.json()).toMatchObject({ Result: [{ AdvertiserId: 'ttd-adv-1', AdvertiserName: 'Arnott’s', DomainAddress: 'https://arnotts.com' }], TotalFilteredCount: 1 })
+    expect((await app.inject({ method: 'POST', url: '/ttd/v3/advertiser/query/partner', headers: { 'ttd-auth': 't' }, payload: { ...body, PartnerId: 'x' } })).statusCode).toBe(403)
+  })
+})

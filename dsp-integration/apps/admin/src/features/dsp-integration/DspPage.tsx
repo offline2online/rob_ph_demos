@@ -111,7 +111,8 @@ export function DspPage({ draftKey, partner }: { draftKey: string; partner: Part
         {def.fields.map((f) => (
           <Field key={f.key} label={f.label} required tip={f.hint} htmlFor={`cred-${f.key}`}>
             {f.options ? (
-              <Select id={`cred-${f.key}`} className="w-full" value={d.credentials[f.key] || undefined} onChange={(v) => setCred(f.key, v)} options={f.options.map((o) => ({ value: o, label: o }))} />
+              /* Amazon's region is fixed once connected (it sets the API hosts); the API refuses a change too. */
+              <Select id={`cred-${f.key}`} className="w-full" value={d.credentials[f.key] || undefined} disabled={f.key === 'region' && d.provider === 'amazon_dsp' && partner?.status === 'connected'} onChange={(v) => setCred(f.key, v)} options={f.options.map((o) => ({ value: o, label: o }))} />
             ) : f.secret ? (
               /* Secrets are masked, never shown in full (defect fix 2). */
               <Input.Password id={`cred-${f.key}`} value={d.credentials[f.key]} placeholder={secretSet(f.key) ? MASK : f.placeholder} autoComplete="off" style={{ fontFamily: MONO }} onChange={(e) => setCred(f.key, e.target.value)} />
