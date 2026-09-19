@@ -12,7 +12,8 @@
   },
   "dependencies": {
     "@ph-dsp/types": "*",
-    "fastify": "^5.12.5"
+    "fastify": "^5.12.5",
+    "@ph-dsp/campaign-approval": "*"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",

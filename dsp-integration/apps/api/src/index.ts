@@ -6,7 +6,7 @@ import { seed } from './seed/seed'
 
 loadEnv()
 const ctx = createContext()
-if (seed(ctx)) console.log('Seeded an empty database with the prototype sample data.')
+if (await seed(ctx)) console.log('Seeded an empty database with the prototype sample data.')
 const app = buildApp(ctx, { logger: true })
 app.listen({ port: ctx.config.port, host: '127.0.0.1' }).then(() => {
   console.log(`dspIntegration flag: ${ctx.flags.dspIntegration ? 'ON' : 'off'} · role: ${ctx.session.current().role}`)

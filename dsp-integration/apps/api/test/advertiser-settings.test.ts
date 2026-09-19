@@ -10,7 +10,7 @@ const input = {
 
 describe('Advertiser settings (spec §4, §6)', () => {
   it('saves pricing and lists, trimming and de-duplicating entries', async () => {
-    const app = buildApp(testContext())
+    const app = buildApp(await testContext())
     const res = await app.inject({ method: 'PUT', url: '/api/admin/v1/advertiser-settings', payload: input })
     expect(res.statusCode).toBe(200)
     expectMatchesContract('PUT', '/admin/v1/advertiser-settings', 200, res.json())
@@ -18,7 +18,7 @@ describe('Advertiser settings (spec §4, §6)', () => {
   })
 
   it('rejects an entry on both lists (case-insensitive), a non-ISO currency and a non-positive floor', async () => {
-    const app = buildApp(testContext())
+    const app = buildApp(await testContext())
     const res = await app.inject({ method: 'PUT', url: '/api/admin/v1/advertiser-settings', payload: { ...input, currency: 'XYZ1', floorCpm: 0, advertiserBlacklist: ['NESTLÉ'], categoryBlacklist: ['food & drink'] } })
     expect(res.statusCode).toBe(400)
     expectMatchesContract('PUT', '/admin/v1/advertiser-settings', 400, res.json())
@@ -26,12 +26,12 @@ describe('Advertiser settings (spec §4, §6)', () => {
   })
 
   it('Available Inventory lists every advertiser-owned slot, with no advertisers column', async () => {
-    const res = await buildApp(testContext()).inject({ method: 'GET', url: '/api/admin/v1/available-inventory' })
+    const res = await buildApp(await testContext()).inject({ method: 'GET', url: '/api/admin/v1/available-inventory' })
     expectMatchesContract('GET', '/admin/v1/available-inventory', 200, res.json())
     expect(res.json().items).toEqual([{ displayTypeId: 'menu_board', displayTypeName: 'Menu Board — Long Format', touchPoint: 'Digital Signage', playlistName: 'Menu Board Playlist', slot: 2, position: 'Supplier slot', partnerName: 'Google DSP' }])
   })
 
   it.each([['PUT', '/advertiser-settings'], ['GET', '/available-inventory']] as const)('%s %s returns 404 with the flag off', async (method, path) => {
-    expect((await buildApp(testContext({ flag: false })).inject({ method, url: `/api/admin/v1${path}`, payload: input })).statusCode).toBe(404)
+    expect((await buildApp(await testContext({ flag: false })).inject({ method, url: `/api/admin/v1${path}`, payload: input })).statusCode).toBe(404)
   })
 })

@@ -8,6 +8,7 @@ import { HttpError, forbidden, notFound } from './errors'
 import { adminRoutes } from '../routes/admin'
 import { partnerRoutes } from '../routes/partner'
 import { sellersJsonRoutes } from '../routes/public/sellersJson'
+import { mimeOf } from '../platform/AssetStore'
 
 declare module 'fastify' {
   interface FastifyRequest {
@@ -58,5 +59,11 @@ export function buildApp(ctx: Context, opts: { logger?: boolean } = {}): Fastify
   app.register(adminRoutes(ctx, guards), { prefix: '/api/admin/v1' })
   app.register(partnerRoutes(ctx, guards), { prefix: '/api/v1' })
   app.register(sellersJsonRoutes(ctx))
+  /* AssetStore files (stand-in for the platform's asset hosting). */
+  app.get<{ Params: { file: string } }>('/assets/:file', async (req, reply) => {
+    const bytes = ctx.assets.read(req.params.file)
+    if (!bytes) return reply.status(404).send(notFound().body())
+    return reply.type(mimeOf(req.params.file)).send(bytes)
+  })
   return app
 }

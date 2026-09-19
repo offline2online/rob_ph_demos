@@ -5,7 +5,7 @@ import { testContext } from './helpers'
 
 describe('GET /admin/v1/session (POC stand-in)', () => {
   it.each(['hq_admin', 'hq_user'] as const)('returns the POC_ROLE user (%s) with no cookie', async (role) => {
-    const app = buildApp(testContext({ role }))
+    const app = buildApp(await testContext({ role }))
     const res = await app.inject({ method: 'GET', url: '/api/admin/v1/session' })
     expect(res.statusCode).toBe(200)
     expect(res.json().role).toBe(role)
@@ -13,7 +13,7 @@ describe('GET /admin/v1/session (POC stand-in)', () => {
   })
 
   it('unknown paths return the contract error shape', async () => {
-    const app = buildApp(testContext())
+    const app = buildApp(await testContext())
     const res = await app.inject({ method: 'GET', url: '/api/admin/v1/nope' })
     expect(res.statusCode).toBe(404)
     expect(res.json()).toEqual({ error: { code: 'not_found', message: 'Not found.' } })

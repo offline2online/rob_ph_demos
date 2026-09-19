@@ -5,7 +5,7 @@ import { testContext } from './helpers'
 
 describe('Playlist Management API (spec §2)', () => {
   it('renames a playlist', async () => {
-    const app = buildApp(testContext())
+    const app = buildApp(await testContext())
     const res = await app.inject({ method: 'PUT', url: '/api/admin/v1/playlists/pl_seasonal/record', payload: { name: '  Summer Overflow ' } })
     expect(res.statusCode).toBe(200)
     expectMatchesContract('PUT', '/admin/v1/playlists/{playlistId}/record', 200, res.json())
@@ -13,7 +13,7 @@ describe('Playlist Management API (spec §2)', () => {
   })
 
   it('rejects an empty name and assignment changes (rename only)', async () => {
-    const app = buildApp(testContext())
+    const app = buildApp(await testContext())
     const empty = await app.inject({ method: 'PUT', url: '/api/admin/v1/playlists/pl_seasonal/record', payload: { name: ' ' } })
     expect(empty.statusCode).toBe(400)
     expectMatchesContract('PUT', '/admin/v1/playlists/{playlistId}/record', 400, empty.json())
@@ -22,7 +22,7 @@ describe('Playlist Management API (spec §2)', () => {
   })
 
   it('blocks deleting a default or zone playlist, listing where it is assigned', async () => {
-    const app = buildApp(testContext())
+    const app = buildApp(await testContext())
     const def = await app.inject({ method: 'GET', url: '/api/admin/v1/playlists/pl_menu/delete-check' })
     expectMatchesContract('GET', '/admin/v1/playlists/{playlistId}/delete-check', 200, def.json())
     expect(def.json()).toEqual({ canDelete: false, dependents: [{ kind: 'display_type_default', name: 'Menu Board — Long Format', detail: 'Default playlist' }] })
@@ -35,7 +35,7 @@ describe('Playlist Management API (spec §2)', () => {
   })
 
   it('deletes an unused playlist', async () => {
-    const ctx = testContext()
+    const ctx = await testContext()
     const app = buildApp(ctx)
     expect((await app.inject({ method: 'GET', url: '/api/admin/v1/playlists/pl_archive/delete-check' })).json()).toEqual({ canDelete: true, dependents: [] })
     const del = await app.inject({ method: 'DELETE', url: '/api/admin/v1/playlists/pl_archive' })

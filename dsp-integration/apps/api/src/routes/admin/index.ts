@@ -3,6 +3,7 @@ import type { Context } from '../../context'
 import type { Guards } from '../../http/app'
 import { advertiserRoutes } from './advertisers'
 import { advertiserSettingsRoutes } from './advertiserSettings'
+import { campaignRoutes } from './campaigns'
 import { displayTypeRoutes } from './displayTypes'
 import { exchangeRoutes } from './exchange'
 import { targetingVariableRoutes } from './targetingVariables'
@@ -19,4 +20,5 @@ export const adminRoutes = (ctx: Context, guards: Guards): FastifyPluginAsync =>
   await app.register(advertiserRoutes(ctx, guards))
   await app.register(exchangeRoutes(ctx, guards))
   await app.register(targetingVariableRoutes(ctx, guards))
+  await app.register(campaignRoutes(ctx, guards))
 }

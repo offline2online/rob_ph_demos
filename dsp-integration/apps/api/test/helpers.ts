@@ -1,4 +1,7 @@
 import { randomBytes } from 'node:crypto'
+import { mkdtempSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { staticSession } from '../src/auth/session'
 import { loadConfig } from '../src/config'
 import { createContext } from '../src/context'
@@ -26,15 +29,15 @@ export function mockDsps() {
 
 export const TEST_KEY = randomBytes(32).toString('base64')
 
-export function testContext(opts: { flag?: boolean; role?: Role; seeded?: boolean; dspFetch?: Fetch } = {}) {
+export async function testContext(opts: { flag?: boolean; role?: Role; seeded?: boolean; dspFetch?: Fetch } = {}) {
   const ctx = createContext({
-    config: { ...loadConfig({ DSP_MOCKS_URL: 'http://mocks.test' }), dbFile: ':memory:' },
+    config: { ...loadConfig({ DSP_MOCKS_URL: 'http://mocks.test' }), dbFile: ':memory:', assetsDir: mkdtempSync(join(tmpdir(), 'ph-assets-')) },
     db: openDb(':memory:'),
     flags: staticFlags(opts.flag ?? true),
     session: staticSession(opts.role ?? 'hq_admin'),
     secrets: aesGcmSecretsStore(TEST_KEY),
     dspFetch: opts.dspFetch,
   })
-  if (opts.seeded !== false) seed(ctx)
+  if (opts.seeded !== false) await seed(ctx)
   return ctx
 }

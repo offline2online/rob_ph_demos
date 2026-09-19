@@ -5,7 +5,7 @@ import { testContext } from './helpers'
 
 describe('delete a display type (spec §1)', () => {
   it('is blocked while displays are assigned, listing each display with its store', async () => {
-    const app = buildApp(testContext())
+    const app = buildApp(await testContext())
     const check = await app.inject({ method: 'GET', url: '/api/admin/v1/display-types/menu_board/delete-check' })
     expectMatchesContract('GET', '/admin/v1/display-types/{displayTypeId}/delete-check', 200, check.json())
     expect(check.json()).toEqual({
@@ -24,7 +24,7 @@ describe('delete a display type (spec §1)', () => {
   })
 
   it('deletes a display type with no displays, keeping its auto-created playlist', async () => {
-    const ctx = testContext()
+    const ctx = await testContext()
     const app = buildApp(ctx)
     ctx.db.prepare("DELETE FROM displays WHERE display_type_id = 'portrait'").run()
     const check = await app.inject({ method: 'GET', url: '/api/admin/v1/display-types/portrait/delete-check' })
@@ -37,7 +37,7 @@ describe('delete a display type (spec §1)', () => {
   })
 
   it('404s for an unknown display type', async () => {
-    const app = buildApp(testContext())
+    const app = buildApp(await testContext())
     for (const [method, url] of [['GET', '/api/admin/v1/display-types/nope/delete-check'], ['DELETE', '/api/admin/v1/display-types/nope']] as const) {
       const res = await app.inject({ method, url })
       expect(res.statusCode).toBe(404)

@@ -106,7 +106,7 @@ describe('Advertisers screen (admin only)', () => {
     renderAt('/advertisers')
     await screen.findByText('Admin only')
     const nav = screen.getByRole('navigation', { name: 'Display Types and DSP Integration' })
-    expect(within(nav).getAllByRole('link').map((l) => l.textContent?.replace(/^[a-z_]+/, ''))).toEqual(['Display Types', 'Playlist Management', 'DSP Integration', 'Advertisers'])
+    expect(within(nav).getAllByRole('link').map((l) => l.textContent?.replace(/^[a-z_]+/, ''))).toEqual(['Display Types', 'Playlist Management', 'DSP Integration', 'Advertisers', 'Campaigns (POC)'])
     expect(screen.getByRole('button', { name: 'Every advertiser using the platform, across all DSPs.' })).toBeInTheDocument()
   })
 
@@ -115,5 +115,18 @@ describe('Advertisers screen (admin only)', () => {
     renderAt('/display-types')
     await screen.findByRole('link', { name: /DSP Integration/ })
     expect(screen.queryByRole('link', { name: /Advertisers/ })).not.toBeInTheDocument()
+  })
+})
+
+describe('Campaigns (POC) stand-in', () => {
+  it('is labelled as a stand-in and shows the approval filter with counts', async () => {
+    vi.stubGlobal('fetch', vi.fn(fakeFetch({
+      '/api/admin/v1/campaigns': { items: [{ campaignId: 'c1', name: 'Swisse spring', source: 'api', advertiserId: 'swisse', advertiserName: 'Swisse', partnerId: 'p_google', partnerName: 'Google DSP', displayTypeId: 'portrait', pricingType: 'localised', activation: { enabled: false } }] },
+      '/api/admin/v1/approvals': { counts: { draft: 0, awaiting_approval: 1, approved: 0, rejected: 0 }, items: [], nextCursor: null },
+      '/api/admin/v1/campaigns/c1/approval': { campaignId: 'c1', status: 'awaiting_approval', mode: 'manual', assetVersion: 'v1', submittedAt: null, reviewedBy: null, reviewedAt: null, reason: null, checks: [] },
+    })))
+    renderAt('/campaigns-poc')
+    expect(await screen.findByText('Campaigns (POC)', { selector: 'div' })).toBeInTheDocument()
+    expect(await screen.findByRole('button', { name: /Awaiting approval 1/ })).toBeInTheDocument()
   })
 })

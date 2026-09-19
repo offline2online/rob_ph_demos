@@ -10,7 +10,7 @@ export default defineConfig({
   envPrefix: ['VITE_', 'DSP_INTEGRATION_ENABLED'],
   server: {
     port: 5173,
-    proxy: { '/api': 'http://127.0.0.1:4000' },
+    proxy: { '/api': 'http://127.0.0.1:4000', '/assets': 'http://127.0.0.1:4000' },
   },
   test: {
     environment: 'jsdom',

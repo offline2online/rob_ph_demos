@@ -3,7 +3,7 @@
    reverting this project's migrations leaves them intact. */
 import { describe, expect, it } from 'vitest'
 import { openDb } from '../src/db/db'
-import { migrateDown, migrateUp } from '../src/db/migrate'
+import { loadMigrations, migrateDown, migrateUp } from '../src/db/migrate'
 import { sqliteCampaignSource } from '../src/platform/CampaignSource'
 import { sqliteDisplayTypeSource } from '../src/platform/DisplayTypeSource'
 
@@ -54,7 +54,7 @@ describe('existing records after this project migrations', () => {
     const db = legacyDb()
     migrateUp(db)
     sqliteDisplayTypeSource(db).saveExtensions('legacy', { slots: [{ label: 'Slot 1', owner: 'internal' }] })
-    migrateDown(db, 6)
+    migrateDown(db, loadMigrations().length - 1)
     const row = db.prepare("SELECT * FROM display_types WHERE id = 'legacy'").get() as Record<string, unknown>
     expect(row).not.toHaveProperty('ph_extensions')
     expect(row.name).toBe('Legacy Kiosk')

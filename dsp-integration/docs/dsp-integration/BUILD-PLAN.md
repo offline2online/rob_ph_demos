@@ -1,7 +1,8 @@
 # Build plan — Display Types & DSP Integration
 
-Status: **packages 1–3 built** (19 Sep 2026). Stopped for Rob to compare
-Display Types against the prototype before package 4.
+Status: **packages 1–11 built** (19 Sep 2026): the admin experience is
+complete, behind the flag. Stopped for Rob's review before the exchange
+packages (12–17).
 
 ## 1. Setup and git
 
@@ -404,6 +405,15 @@ All approved by Rob (decision 5). The reason for each change is given.
   changing Maximum Campaigns Played In Rotation leaves `phExtensions.slots`
   alone, because that endpoint returns 404. With the flag on, the editor
   resizes the slots to the cap, and the next save stores them.
+- **Package 11 structure.** The module is `packages/campaign-approval/`
+  (decision 6). Its migration is numbered 0100+ so it can't collide with the
+  host's. `reviewedBy` records the session user's name. The stand-in screen
+  adds a "Campaigns (POC)" nav item after Advertisers (flag-gated, marked
+  STAND-IN in code), as the brief's *Package 11* asks.
+- **The review panel's compliance note.** Spec §3's reviewer check
+  ("advertiser artwork must not contain price, offer terms or disclosures")
+  is the tooltip on the panel's Creative heading. There's no separate page
+  text.
 - **The feature flag reaches the admin UI** through the same env var,
   `DSP_INTEGRATION_ENABLED`, exposed to Vite through the `Flags` interface.
   No endpoint was added.
@@ -449,6 +459,14 @@ All approved by Rob (decision 5). The reason for each change is given.
 6. ~~Renaming a DSP~~ **Resolved (Rob, 19 Sep):** the name is a plain
    heading, and the contract doesn't change.
 
+7. **Serving creative files.** The review panel's `creative.assetUrl` must be
+   fetchable, but the contract has no asset endpoint (the approved change was
+   the `creative` and `canvas` fields). The POC serves AssetStore files at
+   `/assets/{file}`, outside `/api`, as a stand-in for the platform's own
+   asset hosting (the way `/sellers.json` sits outside `/api`). On
+   integration, `assetUrl` becomes the platform's asset URL. Is that
+   acceptable, or should it be in the contract?
+
 ## 11. Defaults in use (brief, *Defaults for open questions*)
 
 - Q27: 24-hour window
@@ -477,7 +495,8 @@ Each is configurable in `apps/api/src/config.ts`.
 | 8 | Shared Targeting Variables | Done | API: `GET/PUT /admin/v1/targeting-variables` (24 default variables with tooltip text; access is `"all"` or DSP ids; unknown variables and unknown DSPs are rejected) and the Partner API's first endpoint, `GET /v1/targeting/attributes`. The caller gets only the variables enabled for it: `"all"` counts only if the DSP is connected, and a named DSP always does. Never values. Partner API auth: one static bearer token per seeded partner (`PARTNER_TOKENS`); 401 without one, 404 with the flag off. UI: the page (two groups, each an AG Grid Variable / DSPs table, example values as each variable's tooltip, header tooltip) and `DspPicker` (All connected DSPs or individual DSPs with connection state, shown as pills). Tests: API +6, admin +1. Browser-checked: picker, save | — | Q4 |
 | 9 | DSP page + Google DSP (DV360) | Done | **API and mocks:** `apps/dsp-mocks`, a mock DSP service (§14) with the DV360 token endpoint and API v4 (`/v4/partners/{id}`, `/v4/advertisers` with paging), a control API and a test page. A real DV360 client (`apps/api/src/dsp/googleDv360.ts`): it signs an RS256 service-account JWT, exchanges it at the token endpoint, checks partner access and pages through the advertisers, all against the mock by default (`DV360_TOKEN_URL`, `DV360_API_BASE_URL`). The seed now holds a real, freshly generated key file. Endpoints: `POST /admin/v1/partners` (Test, adopting the company lists, one per provider), `GET/PUT /admin/v1/partners/{id}` (secrets write-only; Live refused with 409 unless connected with the bidder integration complete; unlinking copies the company lists down and relinking discards the DSP's own; https bidder endpoint; Amazon region fixed once connected), and `POST …/connect` and `POST …/disconnect`. Tests: API +11 (run against the mock in-process), mocks +3 **UI:** the DSP page. In order: header (provider icon, the name as a plain heading (Q6), provider and last sync, status pill), issues at the top (connection error with the DSP's reason, missing credentials, missing bidder fields, or the green no-issues line), Mode (Test/Live, Live disabled until connected with the bidder integration complete), Connection credentials (per provider; every secret masked, including the DV360 key file), Connect / Re-test connection / Disconnect (immediate (Q5); Connect is disabled with "Save changes first" while credential edits are unsaved), Bidder integration, and Advertiser whitelist / blacklist (the linked callout with Unlink and edit, or the DSP's own lists with Relink and seat suggestions). The Add card (You will need, Add partner / Cancel) creates a draft DSP; Save changes creates it (`POST`, then `PUT`) and opens its page. Fixed a `useDraft` bug (a second refetch after a save could leave a stale draft) that affected every page. Tests: admin +5 | Connecting Amazon Ads DSP and The Trade Desk (package 17) | Q5, Q6 (answered) |
 | 10 | Advertisers screen (admin only) | Done | API: `PUT /admin/v1/advertisers` (admin scope, 403 otherwise; known advertiser ids only; boolean approval; multiplier > 0; applies to future submissions). UI: the Advertisers nav item directly below DSP Integration, for admins only (flag on). The screen: an Admin only pill, then an AG Grid table (Advertiser, Via, Campaign approval switch with Required / Not required, Floor multiplier, Effective floor that updates as you type, each column with its tooltip), the empty state, and the save bar (decision 4). The prototype's intro line is the page-title tooltip (decision 2). Tests: API +3, admin +2. Browser-checked | — | — |
-| 11–17 | — | Not started | — | — | — |
+| 11 | Campaign approval (drop-in module) | Done | `packages/campaign-approval/`, which imports nothing from the app. Contents: the `CampaignSource` adapter interface and a POC adapter over the stand-in campaign store; the state machine (Draft → Awaiting approval → Approved / Rejected; a change returns an approved campaign to Awaiting approval; auto-approve when the advertiser doesn't require approval); an approval store kept beside the campaign (keyed by campaign and asset version) with an append-only audit log; the service with `isCampaignEligible`, `submit`, `approve`, `reject`, `changed` and `setActivation`; Fastify routes for the four contract endpoints (approver-only approve/reject; stale asset version → 409); its own migration (0100); UI components (`ApprovalStatusBadge`, `ApprovalActions`, `ApprovalStatusFilter`, `ApprovalReviewPanel`, `useCampaignApprovals`); and contract suites written against the adapter. The API wires it in: stand-in `GET /admin/v1/campaigns` and `PUT …/activation` (422 `not_approved` unless approved), a creative store (migration 0008, `AssetStore` in `data/assets/`, files served at `/assets/{file}`), and seeded example campaigns (approved automatically, awaiting, rejected, draft). Admin: the stand-in "Campaigns (POC)" screen (flag-gated, own folder). `docs/dsp-integration/CAMPAIGN-APPROVAL-INTEGRATION.md` covers all six steps. Tests: module 29 (state machine, component contract tests, contract suites on a reference adapter), API +18 (the same contract suites on the POC adapter, endpoints, enforcement), admin +1. Browser-checked: filter, review panel, approve, activate | — | Q7 |
+| 12–17 | — | Not started | — | — | — |
 
 ## 13. Prototype comparison (per screen)
 

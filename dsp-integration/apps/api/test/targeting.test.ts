@@ -8,7 +8,7 @@ const AMAZON = { authorization: 'Bearer poc-token-amazon-dsp' }
 
 describe('Shared Targeting Variables (spec §6)', () => {
   it('lists the 24 default variables with example values and DSP access', async () => {
-    const res = await buildApp(testContext()).inject({ method: 'GET', url: '/api/admin/v1/targeting-variables' })
+    const res = await buildApp(await testContext()).inject({ method: 'GET', url: '/api/admin/v1/targeting-variables' })
     expectMatchesContract('GET', '/admin/v1/targeting-variables', 200, res.json())
     const items = res.json().items
     expect(items).toHaveLength(24)
@@ -18,7 +18,7 @@ describe('Shared Targeting Variables (spec §6)', () => {
   })
 
   it('saves access per variable, de-duplicating DSP ids', async () => {
-    const app = buildApp(testContext())
+    const app = buildApp(await testContext())
     const res = await app.inject({ method: 'PUT', url: '/api/admin/v1/targeting-variables', payload: { access: { 'visitor.skus': ['p_google', 'p_google', 'p_amazon'], 'store.suburb': 'all' } } })
     expect(res.statusCode).toBe(200)
     expectMatchesContract('PUT', '/admin/v1/targeting-variables', 200, res.json())
@@ -28,7 +28,7 @@ describe('Shared Targeting Variables (spec §6)', () => {
   })
 
   it('rejects unknown variables and unknown DSPs', async () => {
-    const res = await buildApp(testContext()).inject({ method: 'PUT', url: '/api/admin/v1/targeting-variables', payload: { access: { 'visitor.weather': 'all', 'visitor.age': ['p_nope'], 'visitor.gender': 'some' } } })
+    const res = await buildApp(await testContext()).inject({ method: 'PUT', url: '/api/admin/v1/targeting-variables', payload: { access: { 'visitor.weather': 'all', 'visitor.age': ['p_nope'], 'visitor.gender': 'some' } } })
     expect(res.statusCode).toBe(400)
     expectMatchesContract('PUT', '/admin/v1/targeting-variables', 400, res.json())
     expect(res.json().error.details.map((d: { field: string }) => d.field)).toEqual(['access.visitor.weather', 'access.visitor.age', 'access.visitor.gender'])
@@ -37,7 +37,7 @@ describe('Shared Targeting Variables (spec §6)', () => {
 
 describe('GET /v1/targeting/attributes', () => {
   it('returns only what the calling DSP may target, and never any values', async () => {
-    const res = await buildApp(testContext()).inject({ method: 'GET', url: '/api/v1/targeting/attributes', headers: GOOGLE })
+    const res = await buildApp(await testContext()).inject({ method: 'GET', url: '/api/v1/targeting/attributes', headers: GOOGLE })
     expect(res.statusCode).toBe(200)
     expectMatchesContract('GET', '/v1/targeting/attributes', 200, res.json())
     const keys = res.json().items.map((a: { key: string }) => a.key)
@@ -50,7 +50,7 @@ describe('GET /v1/targeting/attributes', () => {
   })
 
   it('a DSP that is not connected only gets variables it is named on: a smaller list, not an error', async () => {
-    const app = buildApp(testContext())
+    const app = buildApp(await testContext())
     const before = await app.inject({ method: 'GET', url: '/api/v1/targeting/attributes', headers: AMAZON })
     expect(before.statusCode).toBe(200)
     expect(before.json().items).toEqual([])
@@ -60,9 +60,9 @@ describe('GET /v1/targeting/attributes', () => {
   })
 
   it('requires a partner token (401) and is 404 with the flag off', async () => {
-    const res = await buildApp(testContext()).inject({ method: 'GET', url: '/api/v1/targeting/attributes', headers: { authorization: 'Bearer wrong' } })
+    const res = await buildApp(await testContext()).inject({ method: 'GET', url: '/api/v1/targeting/attributes', headers: { authorization: 'Bearer wrong' } })
     expect(res.statusCode).toBe(401)
     expectMatchesContract('GET', '/v1/targeting/attributes', 401, res.json())
-    expect((await buildApp(testContext({ flag: false })).inject({ method: 'GET', url: '/api/v1/targeting/attributes', headers: GOOGLE })).statusCode).toBe(404)
+    expect((await buildApp(await testContext({ flag: false })).inject({ method: 'GET', url: '/api/v1/targeting/attributes', headers: GOOGLE })).statusCode).toBe(404)
   })
 })

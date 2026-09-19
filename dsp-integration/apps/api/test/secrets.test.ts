@@ -26,8 +26,8 @@ describe('SecretsStore (AES-256-GCM)', () => {
     expect(() => aesGcmSecretsStore(randomBytes(16).toString('base64'))).toThrow()
   })
 
-  it('partner secret credentials are encrypted at rest', () => {
-    const ctx = testContext()
+  it('partner secret credentials are encrypted at rest', async () => {
+    const ctx = await testContext()
     const rows = ctx.db.prepare('SELECT creds_public, creds_secret FROM partners').all() as { creds_public: string; creds_secret: string }[]
     const raw = JSON.stringify(rows)
     expect(raw).not.toContain('Atzr|poc-placeholder')

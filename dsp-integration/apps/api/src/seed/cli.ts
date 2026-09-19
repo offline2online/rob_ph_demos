@@ -5,4 +5,4 @@ import { seed } from './seed'
 
 loadEnv()
 const ctx = createContext()
-console.log(seed(ctx) ? 'Seeded.' : 'Database already has data; nothing seeded.')
+console.log((await seed(ctx)) ? 'Seeded.' : 'Database already has data; nothing seeded.')

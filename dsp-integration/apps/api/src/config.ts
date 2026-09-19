@@ -6,6 +6,8 @@ import { fileURLToPath } from 'node:url'
 export interface Config {
   port: number
   dbFile: string
+  /* AssetStore folder (git-ignored). */
+  assetsDir: string
   /* Q27 — auction play-window length. */
   playWindowHours: number
   /* Q46 — per-DSP bidder defaults. */
@@ -34,6 +36,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   return {
     port: Number(env.API_PORT ?? 4000),
     dbFile: fromRoot(env.PH_DB_FILE ?? 'data/poc.sqlite'),
+    assetsDir: fromRoot(env.PH_ASSETS_DIR ?? 'data/assets'),
     playWindowHours: 24,
     bidderQps: 500,
     bidderTimeoutMs: 300,

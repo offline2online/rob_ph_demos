@@ -2,9 +2,12 @@
    NNNN_name.down.sql, applied in order and recorded in schema_migrations. */
 import { readdirSync, readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
+import { APPROVAL_MIGRATIONS_DIR } from '@ph-dsp/campaign-approval/server'
 import { type Db, tx } from './db'
 
 const DIR = fileURLToPath(new URL('./migrations/', import.meta.url))
+/* This app's migrations plus the campaign-approval module's (numbered 0100+). */
+const DIRS = [DIR, APPROVAL_MIGRATIONS_DIR]
 
 export interface Migration {
   version: string
@@ -13,7 +16,11 @@ export interface Migration {
   down: string
 }
 
-export function loadMigrations(dir = DIR): Migration[] {
+export function loadMigrations(dirs = DIRS): Migration[] {
+  return dirs.flatMap(loadDir).sort((a, b) => a.name.localeCompare(b.name))
+}
+
+function loadDir(dir: string): Migration[] {
   const files = readdirSync(dir)
   return files
     .filter((f) => f.endsWith('.up.sql'))

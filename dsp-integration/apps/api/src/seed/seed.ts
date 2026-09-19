@@ -4,6 +4,7 @@
 import { advertiserSlug } from '@ph-dsp/types'
 import { generateKeyPairSync } from 'node:crypto'
 import type { Context } from '../context'
+import { seedCampaigns } from './campaigns'
 import { tx } from '../db/db'
 
 const blankFeatures = () => ({
@@ -100,7 +101,7 @@ const serviceAccountKeyFile = (clientEmail: string) =>
     private_key: generateKeyPairSync('rsa', { modulusLength: 2048 }).privateKey.export({ type: 'pkcs8', format: 'pem' }).toString(),
   })
 
-export function seed(ctx: Context) {
+export async function seed(ctx: Context) {
   if (ctx.displayTypes.list().length) return false
   tx(ctx.db, () => {
     SEED_PLAYLISTS.forEach((p) => ctx.playlists.create(p))
@@ -141,6 +142,7 @@ export function seed(ctx: Context) {
     })
     ctx.exchange.save({ organisation: 'Demo Retail Group', domain: 'demoretail.example', sellerId: 'drg-4471', contactEmail: 'adops@demoretail.example' })
   })
+  await seedCampaigns(ctx)
   return true
 }
 

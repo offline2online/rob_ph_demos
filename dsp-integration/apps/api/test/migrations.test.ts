@@ -17,7 +17,7 @@ describe('migrations', () => {
     const db = openDb(':memory:')
     migrateUp(db)
     const full = tables(db)
-    expect(full).toEqual(expect.arrayContaining(['display_types', 'playlists', 'displays', 'campaigns', 'plays', 'partners', 'company_advertiser_settings', 'advertiser_settings', 'variable_access', 'exchange']))
+    expect(full).toEqual(expect.arrayContaining(['display_types', 'playlists', 'displays', 'campaigns', 'plays', 'partners', 'company_advertiser_settings', 'advertiser_settings', 'variable_access', 'exchange', 'campaign_assets', 'campaign_approvals', 'campaign_approval_audit']))
     migrateDown(db, loadMigrations().length)
     expect(tables(db)).toEqual([])
     expect(appliedVersions(db)).toEqual([])
