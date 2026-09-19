@@ -10,6 +10,8 @@ export interface Config {
   assetsDir: string
   /* Q27 — auction play-window length. */
   playWindowHours: number
+  /* Q13 — how long before a window starts the scheduled auction clears it. */
+  auctionLeadHours: number
   /* Q46 — per-DSP bidder defaults. */
   bidderQps: number
   bidderTimeoutMs: number
@@ -26,6 +28,11 @@ export interface Config {
   partnerTokens: Record<string, string>
   /* DSP API base URLs. Default: the local mock DSP service (apps/dsp-mocks). */
   dsp: { dv360TokenUrl: string; dv360ApiBaseUrl: string }
+  /* Where bid requests go, per provider, and the only base URL an unknown
+     creative (a bid's iurl) may be fetched from. The POC points both at the
+     mock DSP service and never at the partner's configured bidder endpoint;
+     on integration, requests go to that endpoint instead. */
+  bidders: Record<'google_dv360' | 'amazon_dsp' | 'the_trade_desk', { bidUrl: string; creativeBase: string }>
 }
 
 const DEFAULT_PARTNER_TOKENS = { 'poc-token-google-dv360': 'p_google', 'poc-token-amazon-dsp': 'p_amazon' }
@@ -41,6 +48,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     dbFile: fromRoot(env.PH_DB_FILE ?? 'data/poc.sqlite'),
     assetsDir: fromRoot(env.PH_ASSETS_DIR ?? 'data/assets'),
     playWindowHours: 24,
+    auctionLeadHours: 6,
     bidderQps: 500,
     bidderTimeoutMs: 300,
     maxValuesPerCondition: 100,
@@ -50,6 +58,11 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     dsp: {
       dv360TokenUrl: env.DV360_TOKEN_URL ?? `${mocks}/dv360/token`,
       dv360ApiBaseUrl: env.DV360_API_BASE_URL ?? `${mocks}/dv360`,
+    },
+    bidders: {
+      google_dv360: { bidUrl: env.DV360_BIDDER_URL ?? `${mocks}/dv360/openrtb2/bid`, creativeBase: `${mocks}/dv360/creatives/` },
+      amazon_dsp: { bidUrl: env.AMAZON_BIDDER_URL ?? `${mocks}/amazon/openrtb2/bid`, creativeBase: `${mocks}/amazon/creatives/` },
+      the_trade_desk: { bidUrl: env.TTD_BIDDER_URL ?? `${mocks}/ttd/openrtb2/bid`, creativeBase: `${mocks}/ttd/creatives/` },
     },
     partnerTokens: env.PARTNER_TOKENS ? (JSON.parse(env.PARTNER_TOKENS) as Record<string, string>) : DEFAULT_PARTNER_TOKENS,
   }

@@ -4,7 +4,8 @@ import { secretFields } from '@ph-dsp/types'
 import { type Db, fromJson, toJson } from '../db/db'
 import type { SecretsStore } from '../secrets/SecretsStore'
 
-export interface Seat { id: string; name: string }
+export type { Seat } from '../dsp/DspClient'
+import type { Seat } from '../dsp/DspClient'
 
 export interface PartnerRecord {
   id: string

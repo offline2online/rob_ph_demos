@@ -2,7 +2,7 @@
    advertisers, auth failure and bidder behaviour per mock DSP. */
 import { randomUUID } from 'node:crypto'
 import type { FastifyPluginAsync, FastifyReply } from 'fastify'
-import { DSPS, type DspKey, type MockAdvertiser, type MockStore } from './state'
+import { type BidderBehaviour, DSPS, type DspKey, type MockAdvertiser, type MockStore } from './state'
 
 const bad = (reply: FastifyReply, message: string, status = 400) => reply.status(status).send({ error: message })
 
@@ -84,10 +84,14 @@ export const controlRoutes = (store: MockStore): FastifyPluginAsync => async (ap
     if (b.accept === false) for (const [t, k] of store.tokens) if (k === d) store.tokens.delete(t)
     return store.state[d]
   })
-  app.put<{ Params: { dsp: string }; Body: Partial<{ mode: 'bid' | 'no_bid'; priceCpm: number }> }>('/:dsp/bidder', async (req, reply) => {
+  app.put<{ Params: { dsp: string }; Body: Partial<BidderBehaviour> }>('/:dsp/bidder', async (req, reply) => {
     const d = dspOf(req.params.dsp)
     if (!d) return bad(reply, 'Unknown DSP', 404)
-    store.state[d].bidder = { ...store.state[d].bidder, ...req.body }
+    const b = req.body ?? {}
+    if (b.mode && !['bid', 'no_bid', 'below_floor'].includes(b.mode)) return bad(reply, 'mode is bid, no_bid or below_floor')
+    if (b.priceCpm !== undefined && !(typeof b.priceCpm === 'number' && b.priceCpm >= 0)) return bad(reply, 'priceCpm is a number ≥ 0')
+    if (b.advertiserId && !store.state[d].advertisers.some((a) => a.id === b.advertiserId)) return bad(reply, 'advertiserId must be one of this DSP’s advertisers')
+    store.state[d].bidder = { ...store.state[d].bidder, ...b }
     return store.state[d]
   })
 }

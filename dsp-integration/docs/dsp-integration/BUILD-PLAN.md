@@ -443,6 +443,28 @@ All approved by Rob (decision 5). The reason for each change is given.
   version) is a new asset version of the campaign (`v1`, `v2`, …), which is
   what approval is keyed on.
 
+- **Package 15 decisions.**
+  - `imp` carries both `video` and `banner` at the canvas size. API.md's
+    example shows `video` only, but package 12 accepts image creative, which
+    a DSP can only return through `banner`. `minduration` is 1 and
+    `maxduration` the slot, matching the upload check (no longer than the
+    slot).
+  - No `device.geo`: stores have no location yet (spec open question 35).
+  - `badv` needs domains, but the lists hold names. A blacklist entry that
+    is a domain goes as is; a name goes as that advertiser's domain when the
+    DSP returned one on connect. To match bids, seats now keep the
+    advertiser's `domain` internally (the API still returns only `{id,
+    name}`).
+  - In the POC, bid requests always go to the mock DSP service (`bidders`
+    in `config.ts`), never to the partner's configured bidder endpoint, so
+    no real DSP is called. On integration they go to the partner's
+    endpoint.
+  - An unknown creative is fetched only from its DSP's own creative host,
+    never from an arbitrary URL in a bid.
+  - Reservations and every DSP bid are stored in `reservations` (migration
+    0010) with their outcome and reason; crid → campaign is in
+    `dsp_creatives` (migration 0011).
+
 ## 10. Questions (open)
 
 1. ~~Partner seats~~ **Resolved (Rob, 19 Sep):** `seats` was added to
@@ -515,6 +537,25 @@ All approved by Rob (decision 5). The reason for each change is given.
     stores carry no region (spec open question 35). The POC matches no
     position when a region is given. What should region be keyed on?
 
+11. **What a reservation costs.** A position held for a named advertiser is
+    booked with `type: reserve`, not auctioned, and neither the spec nor the
+    contract says at what price. The POC books it at the advertiser's
+    effective floor CPM for the campaign's type (`clearingCpm`). Is that
+    right, or is there a separate reservation price?
+12. **Category whitelist scope.** The advertiser whitelist is what a
+    whitelist-only position uses (spec §6); the spec doesn't say whether the
+    *category* whitelist applies everywhere or only there. The POC applies
+    the category blacklist to every bid, and the category whitelist only on
+    whitelist-only positions (every category on the bid must be on it). Is
+    that right?
+13. **When the auction runs.** The scheduled job clears each window once,
+    6 hours before it starts (`auctionLeadHours`), so the winner can be
+    distributed in time. Rob's backlog ticket "Add bidding play-window
+    length and auction cutoff to Advertiser settings → Pricing" would make
+    the window length and a daily cutoff retailer settings; that's a spec
+    change not built here (nothing extra). Until then, is 6 hours ahead
+    acceptable?
+
 ## 11. Defaults in use (brief, *Defaults for open questions*)
 
 - Q27: 24-hour window
@@ -547,7 +588,8 @@ Each is configurable in `apps/api/src/config.ts`.
 | 12 | Submission API | Done | Partner API `POST /v1/campaigns` (the advertiser must be one of the calling DSP's seats; baseline pricing type; targeted versions with unique ids, integer priority and rules in the Targeting-tab shape; rules checked against the variables the DSP may target → 422 `variable_not_permitted` naming each variable; stored through `CampaignSource.createCampaign` as `source: api`), `POST …/assets` (multipart, `@fastify/multipart`; the type is read from the bytes — PNG, JPEG or MP4 — never from the name; checks `file_type`, `file_size`, `bitrate`, `aspect_ratio`, `dimensions`, `duration` against the display type's canvas or a zone and the slot's share of the loop; any failure → 422 `checks_failed` with each reason, and nothing is stored; a pass writes a new asset version, and on a submitted campaign calls the approval module's `changed`, so it returns to Awaiting approval and stops — Q38), `POST …/submit` (adds `baseline_present` and `targeting_permitted`, re-checked against today's access; the eight checks are recorded for the reviewer; already awaiting/approved → 409; rejected → 409 until a new version is uploaded) and `GET …/status`. A partner sees only its own campaigns (others 404). Approval is enforced by the module's `isCampaignEligible` (activation now; reservation, auction and hand-off in 15–16). Tests: API +16 (contract-validated) | — | Q8 |
 | 13 | Inventory API | Done | `GET /v1/inventory` (filters: advertiser, display type, touch point, stores, region, date range, window status; cursor pagination), `GET …/{positionId}`, `GET …/{positionId}/availability` and `POST …/forecast`. A position is an Advertiser-owned slot (`<displayTypeId>.s<slot>`); HQ and Stores slots are never exposed. Visibility (`domain/positions.ts`): a DSP that isn't connected sees nothing; a slot tied to another DSP is hidden; the caller's advertiser (or, without one, any of the DSP's seats) must be able to buy it — not blacklisted, on the whitelist for whitelist-only, the named advertiser for a reserved position. Each position returns screen and loop context (slot duration = loop ÷ slots, share of voice = 1 ÷ slots, OpenOOH venue type), store/display counts, assignment, assumed views per window, and the four effective floors for the caller's advertiser. Windows are 24 h (Q27), aligned to UTC midnight; the current and past windows are *unavailable*, as is a display type with no displays; a won or reserved window is *sold*; a position held for a named advertiser is *reserved* unless that advertiser is asking. Forecast = assumed views of the windows still available × the targeted share, priced at the effective floor (personalised when the rules use a Personalisation Variable). New: `AudienceSource` stand-in (migration 0009, seeded VAC-d) and the `reservations` table and repo (migration 0010, written from package 15). Tests: API +10 | Zone per position: slots aren't tied to zones in the data model, so `zone` is always `null` | Q9, Q10 |
 | 14 | Targeting permission validation | Done | `domain/targetingValidation.ts` (from package 12) is the single check for submitted rules, used by `POST /v1/campaigns`, the submit re-check and now the forecast: every condition's variable must be enabled for the calling DSP ("All connected DSPs" only while it is connected) → 422 `variable_not_permitted` naming each variable once, including ones that aren't shared variables; the rules must be in the Targeting-tab shape (AND groups of OR conditions), with the variable's own source and one of its operators (Q4), and 1–100 values per condition (Q48) → 400. Rules are stored as submitted through `CampaignSource`; nothing evaluates them. `throwIfRejected` gives both routes the same errors. The forecast's rules now shrink it by `AudienceSource.targetedShare` (Q9). Tests: API +9 (unit tests for the validator, forecast with rules) | — | — |
-| 15–17 | — | Not started | — | — | — |
+| 15 | SSP auction | Done | `exchange/openrtb.ts`: an OpenRTB 2.6 request per position, window and DSP — `imp` (video and banner at the canvas size, `bidfloor` = the position's base effective floor in the company currency, `qty.multiplier` = assumed views with `sourcetype` 2 where Vision/AI or MIST counts them, `exp` = the window, screen and loop context in `imp.ext.ph`), `dooh` (OpenOOH venue type, publisher = the seller of record), `source.schain`, `cur`, `bcat` (IAB codes of the category blacklist), `badv` (blacklist domains), `tmax` 300, `at` 1; never a `user` or `device` object or any visitor data. `dsp/bidder.ts` sends it within 300 ms and paces each DSP to 500 QPS (Q46). `exchange/enforcement.ts` (shared with `POST /v1/reservations`): effective floor for the campaign's type and advertiser, blacklist (by name or `adomain`), whitelist-only positions, category lists, approval. `exchange/auction.ts` clears one window: DSP bids are checked against the bid's seat (one of the DSP's seat IDs) and advertiser identity (`adomain` → one of its advertisers); an unknown `crid` is fetched from the DSP's creative host only, checked like an upload, stored as a `dsp` campaign and submitted for approval (or approved automatically), and the bid is discarded; API bids are checked again at clearing; first price, highest bid wins, ties to the earlier bid; every bid is recorded with its outcome and reason. Test-mode DSPs receive requests and clear among themselves, but their wins never take the window. A position held for a named advertiser is booked by `type: reserve`, not auctioned. No DSP is sent requests until Exchange settings are complete. `POST /v1/reservations` and `GET …/{id}`. Scheduled job in `apps/api` plus `npm run auction:run [-- --window=YYYY-MM-DD]`. Mock DSPs: an OpenRTB bidder and creative host per DSP, with bidder behaviour (fixed price, no bid, below the floor, which advertiser bids, `crid` and `adomain` overrides) on the control API and test page. Tests: API +10 (including the OpenRTB 2.6/DOOH/SupplyChain/no-visitor-data contract test against a closed schema), mocks +2. Checked end to end with the CLI against the running mock service | Hand-off of the winner (package 16) | Q11, Q12, Q13 |
+| 16–17 | — | Not started | — | — | — |
 
 ## 13. Prototype comparison (per screen)
 

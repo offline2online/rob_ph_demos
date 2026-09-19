@@ -92,7 +92,8 @@ export type WindowStatus = 'available' | 'reserved' | 'sold' | 'unavailable'
 export function windowStatus(ctx: Context, p: PositionRef, c: Caller, start: Date): WindowStatus {
   if (start.getTime() < nextWindow(ctx).getTime()) return 'unavailable'
   if (!ctx.displays.listByDisplayType(p.displayType.id).length) return 'unavailable'
-  if (ctx.reservations.forWindow(p.positionId, start.toISOString()).some((r) => TAKEN.includes(r.status))) return 'sold'
+  /* A Test-mode win never takes the window (spec §7: no real spend). */
+  if (ctx.reservations.forWindow(p.positionId, start.toISOString()).some((r) => !r.testMode && TAKEN.includes(r.status))) return 'sold'
   /* Held for a named advertiser: available only to that advertiser. */
   if (assignmentOf(p.def) === 'reserved' && !c.advertiser) return 'reserved'
   return 'available'

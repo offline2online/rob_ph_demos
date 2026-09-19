@@ -44,7 +44,9 @@ function render(){
    '<div class="row" style="margin-top:8px"><input id="seatId" placeholder="Seat ID"><input id="seatName" placeholder="Name"><button class="btn primary" id="addSeat">Add seat</button></div>'+
    '<div class="label">Advertisers</div><table><thead><tr><th>ID</th><th>Name</th><th>Seat</th><th>Domain</th><th>Categories</th><th>Currency</th><th></th></tr></thead><tbody>'+s.advertisers.map(a=>'<tr><td>'+esc(a.id)+'</td><td>'+esc(a.name)+'</td><td>'+esc(a.seatId)+'</td><td>'+esc(a.domain)+'</td><td>'+esc(a.categories.join(', '))+'</td><td>'+esc(a.currency)+'</td><td><button class="btn danger" data-del-adv="'+esc(a.id)+'">Remove</button></td></tr>').join('')+'</tbody></table>'+
    '<div class="row" style="margin-top:8px"><input id="advName" placeholder="Name"><select id="advSeat">'+s.seats.map(x=>'<option>'+esc(x.seatId)+'</option>').join('')+'</select><input id="advDomain" placeholder="Domain (adomain)"><input id="advCats" placeholder="Categories, comma separated"><input id="advCur" placeholder="Currency" value="AUD" style="width:80px"><button class="btn primary" id="addAdv">Add advertiser</button></div>'+
-   '<div class="label">Bidder</div><div class="row"><select id="bidMode"><option value="bid"'+(s.bidder.mode==='bid'?' selected':'')+'>Bids</option><option value="no_bid"'+(s.bidder.mode==='no_bid'?' selected':'')+'>No bid</option></select><input id="bidPrice" type="number" step="1" value="'+esc(s.bidder.priceCpm)+'" style="width:110px"><span class="muted">CPM</span><button class="btn primary" id="saveBid">Save bidder</button></div>';
+   '<div class="label">Bidder</div><div class="row"><select id="bidMode">'+[['bid','Bids at a fixed price'],['no_bid','No bid'],['below_floor','Bids below the floor']].map(([v,l])=>'<option value="'+v+'"'+(s.bidder.mode===v?' selected':'')+'>'+l+'</option>').join('')+'</select><input id="bidPrice" type="number" step="1" value="'+esc(s.bidder.priceCpm)+'" style="width:110px"><span class="muted">CPM</span>'+
+     '<select id="bidAdv">'+s.advertisers.map(a=>'<option value="'+esc(a.id)+'"'+(a.id===(s.bidder.advertiserId||s.advertisers[0]?.id)?' selected':'')+'>'+esc(a.name)+'</option>').join('')+'</select>'+
+     '<input id="bidCrid" placeholder="crid (default crid-<advertiser id>)" value="'+esc(s.bidder.crid)+'" style="min-width:240px"><input id="bidDomain" placeholder="adomain override" value="'+esc(s.bidder.adomain)+'"><button class="btn primary" id="saveBid">Save bidder</button></div>';
   const upd=j=>{if(j){load()}};
   $('#addSeat').onclick=async()=>upd(await call('POST','/'+cur+'/seats',{seatId:$('#seatId').value,name:$('#seatName').value}));
   document.querySelectorAll('[data-del-seat]').forEach(b=>b.onclick=async()=>upd(await call('DELETE','/'+cur+'/seats/'+encodeURIComponent(b.dataset.delSeat))));
@@ -52,7 +54,7 @@ function render(){
   document.querySelectorAll('[data-del-adv]').forEach(b=>b.onclick=async()=>upd(await call('DELETE','/'+cur+'/advertisers/'+encodeURIComponent(b.dataset.delAdv))));
   if($('#authOff'))$('#authOff').onclick=async()=>upd(await call('PUT','/'+cur+'/auth',{accept:false,error:$('#authErr').value,description:$('#authDesc').value}));
   if($('#authOn'))$('#authOn').onclick=async()=>upd(await call('PUT','/'+cur+'/auth',{accept:true}));
-  $('#saveBid').onclick=async()=>upd(await call('PUT','/'+cur+'/bidder',{mode:$('#bidMode').value,priceCpm:Number($('#bidPrice').value)}));
+  $('#saveBid').onclick=async()=>upd(await call('PUT','/'+cur+'/bidder',{mode:$('#bidMode').value,priceCpm:Number($('#bidPrice').value),advertiserId:$('#bidAdv').value||undefined,crid:$('#bidCrid').value,adomain:$('#bidDomain').value}));
 }
 $('#reset').onclick=async()=>{await call('POST','/reset');load()};
 load();

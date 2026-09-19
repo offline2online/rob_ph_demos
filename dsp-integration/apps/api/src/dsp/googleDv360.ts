@@ -2,7 +2,7 @@
    JWT-bearer grant: sign a JWT with the key file's private key, exchange it
    at the token endpoint, then call the API with the access token. */
 import { createSign } from 'node:crypto'
-import { type ConnectResult, type DspClient, type Fetch, unreachable } from './DspClient'
+import { type ConnectResult, type DspClient, type Fetch, type Seat, domainOf, unreachable } from './DspClient'
 
 export interface Dv360Config { tokenUrl: string; apiBaseUrl: string }
 const SCOPE = 'https://www.googleapis.com/auth/display-video'
@@ -48,14 +48,14 @@ export function googleDv360Client(cfg: Dv360Config, fetchImpl: Fetch = fetch): D
         const auth = { Authorization: `Bearer ${access_token}` }
         const partnerRes = await fetchImpl(`${cfg.apiBaseUrl}/v4/partners/${encodeURIComponent(pub.partnerId)}`, { headers: auth, signal: AbortSignal.timeout(10_000) })
         if (!partnerRes.ok) return { ok: false, reason: `Partner ${pub.partnerId}: ${await googleMessage(partnerRes)}` }
-        const seats: { id: string; name: string }[] = []
+        const seats: Seat[] = []
         let pageToken: string | undefined
         do {
           const q = new URLSearchParams({ partnerId: pub.partnerId, pageSize: '200', ...(pageToken ? { pageToken } : {}) })
           const r = await fetchImpl(`${cfg.apiBaseUrl}/v4/advertisers?${q}`, { headers: auth, signal: AbortSignal.timeout(10_000) })
           if (!r.ok) return { ok: false, reason: await googleMessage(r) }
-          const page = (await r.json()) as { advertisers?: { advertiserId: string; displayName: string }[]; nextPageToken?: string }
-          for (const a of page.advertisers ?? []) seats.push({ id: a.advertiserId, name: a.displayName })
+          const page = (await r.json()) as { advertisers?: { advertiserId: string; displayName: string; generalConfig?: { domainUrl?: string } }[]; nextPageToken?: string }
+          for (const a of page.advertisers ?? []) seats.push({ id: a.advertiserId, name: a.displayName, ...domainOf(a.generalConfig?.domainUrl) })
           pageToken = page.nextPageToken
         } while (pageToken)
         return { ok: true, seats }

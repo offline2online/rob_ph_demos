@@ -33,3 +33,33 @@ describe('mock DV360 API', () => {
     expect(badGrant.json().error).toBe('unsupported_grant_type')
   })
 })
+
+describe('mock bidder (OpenRTB 2.6)', () => {
+  const req = { id: 'req_1', imp: [{ id: '1', bidfloor: 100, video: { w: 1920, h: 1080 } }], cur: ['AUD'] }
+
+  it('bids from one of the DSP’s seats and advertisers, with a retrievable creative', async () => {
+    const { app } = buildMocks()
+    const res = await app.inject({ method: 'POST', url: '/dv360/openrtb2/bid', headers: { host: 'mocks.test' }, payload: req })
+    expect(res.statusCode).toBe(200)
+    expect(res.json()).toMatchObject({
+      id: 'req_1', cur: 'AUD',
+      seatbid: [{ seat: '884512', bid: [{ impid: '1', price: 150, crid: 'crid-5130001', adomain: ['nestle.com'], cat: ['IAB8'], iurl: 'http://mocks.test/dv360/creatives/crid-5130001.png?w=1920&h=1080' }] }],
+    })
+    const png = await app.inject({ method: 'GET', url: '/dv360/creatives/crid-5130001.png?w=1920&h=1080' })
+    expect(png.headers['content-type']).toBe('image/png')
+    expect(png.rawPayload.readUInt32BE(16)).toBe(1920)
+  })
+
+  it('follows the tester’s behaviour: no bid, below the floor, another advertiser, crid and adomain overrides', async () => {
+    const { app } = buildMocks()
+    const bid = async (b: Record<string, unknown>) => {
+      expect((await app.inject({ method: 'PUT', url: '/_control/google_dv360/bidder', payload: b })).statusCode).toBe(200)
+      return app.inject({ method: 'POST', url: '/dv360/openrtb2/bid', payload: req })
+    }
+    expect((await bid({ mode: 'no_bid' })).statusCode).toBe(204)
+    expect((await bid({ mode: 'below_floor' })).json().seatbid[0].bid[0].price).toBe(50)
+    const other = (await bid({ mode: 'bid', advertiserId: '5130002', crid: 'unapproved-1', adomain: 'redbull.com' })).json().seatbid[0]
+    expect(other).toMatchObject({ seat: '884513', bid: [{ crid: 'unapproved-1', adomain: ['redbull.com'], cat: ['IAB7'] }] })
+    expect((await app.inject({ method: 'PUT', url: '/_control/google_dv360/bidder', payload: { mode: 'sometimes' } })).statusCode).toBe(400)
+  })
+})

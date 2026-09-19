@@ -23,6 +23,7 @@ import { type ReservationRepo, sqliteReservationRepo } from './repos/Reservation
 import { targetingSummary } from './domain/targetingSummary'
 import type { Fetch } from './dsp/DspClient'
 import { dspClients } from './dsp/registry'
+import { type Bidder, httpBidder } from './dsp/bidder'
 
 export interface Context {
   config: Config
@@ -42,6 +43,9 @@ export interface Context {
   assets: AssetStore
   audience: AudienceSource
   reservations: ReservationRepo
+  /* HTTP to the DSPs (the mock DSP service in the POC). */
+  fetch: Fetch
+  bidder: Bidder
   /* Now, for play windows (injectable for tests). */
   clock: () => Date
   /* The approval module's view of the campaigns (its CampaignSource adapter). */
@@ -69,6 +73,8 @@ export function createContext(opts: { config?: Config; db?: Db; flags?: Flags; s
     company: sqliteCompanySettingsRepo(db),
     exchange: sqliteExchangeRepo(db),
     dsp: dspClients(config.dsp, opts.dspFetch),
+    fetch: opts.dspFetch ?? ((url, init) => fetch(url, init)),
+    bidder: httpBidder(opts.dspFetch ?? ((url, init) => fetch(url, init)), { timeoutMs: config.bidderTimeoutMs, qps: config.bidderQps }),
     audience: sqliteAudienceSource(db),
     reservations: sqliteReservationRepo(db),
     clock: opts.clock ?? (() => new Date()),

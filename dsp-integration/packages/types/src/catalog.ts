@@ -94,6 +94,11 @@ export const providerDef = (key: string) => PROVIDERS.find((p) => p.key === key)
 export const secretFields = (provider: string) => (providerDef(provider)?.fields ?? []).filter((f) => f.secret).map((f) => f.key)
 
 export const IAB_CATEGORIES = ['Food & Drink', 'Health & Fitness', 'Beauty', 'Retail', 'Family & Parenting', 'Automotive', 'Finance', 'Travel'] as const
+/* IAB content taxonomy 1.0 codes, as OpenRTB carries them (bcat, bid.cat). */
+export const IAB_CATEGORY_CODES: Record<(typeof IAB_CATEGORIES)[number], string> = {
+  'Food & Drink': 'IAB8', 'Health & Fitness': 'IAB7', Beauty: 'IAB18-1', Retail: 'IAB22', 'Family & Parenting': 'IAB6',
+  Automotive: 'IAB2', Finance: 'IAB13', Travel: 'IAB20',
+}
 
 /* ------------------------------------------------ targeting variables */
 

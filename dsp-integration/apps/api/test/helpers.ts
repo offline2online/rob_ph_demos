@@ -20,9 +20,9 @@ export function mockDsps() {
     const u = new URL(url)
     const res = await mocks.app.inject({
       method: (init?.method ?? 'GET') as 'GET', url: u.pathname + u.search,
-      headers: init?.headers as Record<string, string> | undefined, payload: init?.body as string | undefined,
+      headers: { host: u.host, ...(init?.headers as Record<string, string> | undefined) }, payload: init?.body as string | undefined,
     })
-    return new Response(res.body, { status: res.statusCode, headers: { 'content-type': String(res.headers['content-type'] ?? 'application/json') } })
+    return new Response(new Uint8Array(res.rawPayload), { status: res.statusCode, headers: { 'content-type': String(res.headers['content-type'] ?? 'application/json') } })
   }
   return { ...mocks, fetchImpl }
 }

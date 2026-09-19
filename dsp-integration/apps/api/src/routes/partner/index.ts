@@ -8,6 +8,7 @@ import type { PartnerRecord } from '../../repos/PartnerRepo'
 import multipart from '@fastify/multipart'
 import { campaignRoutes } from './campaigns'
 import { inventoryRoutes } from './inventory'
+import { reservationRoutes } from './reservations'
 import { targetingRoutes } from './targeting'
 
 declare module 'fastify' {
@@ -26,4 +27,5 @@ export const partnerRoutes = (ctx: Context, guards: Guards): FastifyPluginAsync 
   await app.register(targetingRoutes(ctx))
   await app.register(campaignRoutes(ctx))
   await app.register(inventoryRoutes(ctx))
+  await app.register(reservationRoutes(ctx))
 }

@@ -9,7 +9,11 @@ export const DSPS: DspKey[] = ['google_dv360', 'amazon_dsp', 'the_trade_desk']
 export interface Seat { seatId: string; name: string }
 export interface MockAdvertiser { id: string; name: string; seatId: string; domain: string; categories: string[]; currency: string }
 export interface AuthBehaviour { accept: boolean; error: string; description: string }
-export interface BidderBehaviour { mode: 'bid' | 'no_bid'; priceCpm: number }
+/* bid: a bid at priceCpm; no_bid: 204; below_floor: half the request's bidfloor.
+   advertiserId picks who bids (default: the first advertiser); crid and adomain
+   override the creative ID and advertiser domain (e.g. an unapproved crid or a
+   blocked domain) to test pre-auction enforcement. */
+export interface BidderBehaviour { mode: 'bid' | 'no_bid' | 'below_floor'; priceCpm: number; advertiserId?: string; crid?: string; adomain?: string }
 export interface DspState {
   /* DV360 partner ID, Amazon Ads profile ID, or TTD partner ID the account lives under. */
   accountId: string

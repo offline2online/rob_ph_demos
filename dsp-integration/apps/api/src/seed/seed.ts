@@ -117,13 +117,13 @@ export async function seed(ctx: Context) {
       /* A freshly generated key in the real key-file format, so Connect works against the mock DV360. */
       secrets: { privateKeyJson: serviceAccountKeyFile('ph-retail-media@ph-demo.iam.gserviceaccount.com') },
       bidder: { bidderEndpoint: 'https://rtb.doubleclick.net/openrtb2/bid', seatIds: ['884512', '884513'] },
-      seats: [{ id: 'g1', name: 'Nestlé' }, { id: 'g2', name: 'Swisse' }], listsLinked: true, allowList: [], blockList: [],
+      seats: [{ id: '5130001', name: 'Nestlé', domain: 'nestle.com' }, { id: '5130002', name: 'Swisse', domain: 'swisse.com' }], listsLinked: true, allowList: [], blockList: [],
     })
     ctx.partners.insert({
       id: 'p_amazon', provider: 'amazon_dsp', name: 'Amazon Ads DSP', status: 'error', mode: 'test', lastSync: 'Refresh token rejected — 3 days ago',
       credsPublic: { region: 'Europe (EU)', lwaClientId: 'amzn1.application-oa2-client.7f3c', profileId: '3390127745', entityId: 'ENTITY8Q1R5T' },
       secrets: { lwaClientSecret: 'poc-placeholder-secret', refreshToken: 'Atzr|poc-placeholder' },
-      bidder: {}, seats: [{ id: 'a1', name: "L'Oréal" }], listsLinked: false, allowList: ["L'Oréal"], blockList: ['Red Bull', 'Chemist Warehouse'],
+      bidder: {}, seats: [{ id: '588104411', name: "L'Oréal", domain: 'loreal.com' }], listsLinked: false, allowList: ["L'Oréal"], blockList: ['Red Bull', 'Chemist Warehouse'],
     })
 
     ctx.company.save({
