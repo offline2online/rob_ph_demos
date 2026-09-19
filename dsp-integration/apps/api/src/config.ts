@@ -19,6 +19,9 @@ export interface Config {
   oldVersionRunsDuringReview: boolean
   /* Q47 — block display type delete while positions are sold/reserved? */
   blockDeleteWithSoldPositions: boolean
+  /* Automated asset checks (spec §3). The spec names the checks, not the
+     limits: these are POC defaults (BUILD-PLAN Q8). */
+  assetLimits: { maxImageBytes: number; maxVideoBytes: number; maxBitrateKbps: number }
   /* Partner API: one static bearer token per seeded partner (token → partner id). */
   partnerTokens: Record<string, string>
   /* DSP API base URLs. Default: the local mock DSP service (apps/dsp-mocks). */
@@ -43,6 +46,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     maxValuesPerCondition: 100,
     oldVersionRunsDuringReview: false,
     blockDeleteWithSoldPositions: false,
+    assetLimits: { maxImageBytes: 20 * 1024 * 1024, maxVideoBytes: 200 * 1024 * 1024, maxBitrateKbps: 20_000 },
     dsp: {
       dv360TokenUrl: env.DV360_TOKEN_URL ?? `${mocks}/dv360/token`,
       dv360ApiBaseUrl: env.DV360_API_BASE_URL ?? `${mocks}/dv360`,

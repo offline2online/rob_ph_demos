@@ -55,3 +55,11 @@ export function validateExtensions(
   })
   return out
 }
+
+/* A slot's share of the loop: loop length / slot count (e.g. 45s / 3 = 15s).
+   null when the display type has no slots or no loop length. */
+export const slotDurationSec = (dt: DisplayType) => {
+  const n = slotCountOf(dt)
+  const loop = dt.phExtensions?.venue?.loopLengthSec
+  return n > 0 && loop ? Math.round((loop / n) * 1000) / 1000 : null
+}

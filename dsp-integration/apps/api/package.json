@@ -11,9 +11,10 @@
     "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {
+    "@fastify/multipart": "^9.4.0",
+    "@ph-dsp/campaign-approval": "*",
     "@ph-dsp/types": "*",
-    "fastify": "^5.12.5",
-    "@ph-dsp/campaign-approval": "*"
+    "fastify": "^5.12.5"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",

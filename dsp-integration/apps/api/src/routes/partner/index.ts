@@ -5,6 +5,8 @@ import { partnerFromRequest } from '../../auth/partnerAuth'
 import type { Context } from '../../context'
 import type { Guards } from '../../http/app'
 import type { PartnerRecord } from '../../repos/PartnerRepo'
+import multipart from '@fastify/multipart'
+import { campaignRoutes } from './campaigns'
 import { targetingRoutes } from './targeting'
 
 declare module 'fastify' {
@@ -19,5 +21,7 @@ export const partnerRoutes = (ctx: Context, guards: Guards): FastifyPluginAsync 
     guards.flagged()
     req.partner = partnerFromRequest(ctx, req)
   })
+  await app.register(multipart)
   await app.register(targetingRoutes(ctx))
+  await app.register(campaignRoutes(ctx))
 }

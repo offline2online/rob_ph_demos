@@ -432,6 +432,17 @@ All approved by Rob (decision 5). The reason for each change is given.
   peer ranges would otherwise hoist React 19 alongside it. AntD v5
   officially supports React 18.
 
+- **Package 12 validates targeting permission already.** `POST
+  /v1/campaigns` has `422 variable_not_permitted` in the contract, so the
+  permission check (`domain/targetingValidation.ts`) arrives with package
+  12. Package 14 applies it to the forecast and adds its unit tests.
+- **`source` on submitted campaigns.** Campaigns created through `POST
+  /v1/campaigns` are `api`. `dsp` is kept for creative that arrives in a
+  bid response (package 15), which spec §3 says goes to the approval queue.
+- **An upload's version.** Every accepted upload (baseline or a targeted
+  version) is a new asset version of the campaign (`v1`, `v2`, …), which is
+  what approval is keyed on.
+
 ## 10. Questions (open)
 
 1. ~~Partner seats~~ **Resolved (Rob, 19 Sep):** `seats` was added to
@@ -482,6 +493,16 @@ All approved by Rob (decision 5). The reason for each change is given.
    the platform's asset hosting; on integration `assetUrl` becomes the
    platform's asset URL. No contract change. To be revisited later.
 
+8. **Asset check limits.** Spec §3 names the checks (file type, size,
+   bitrate, dimensions, aspect ratio, duration) but not the limits. The POC
+   uses, in `config.ts` (`assetLimits`): PNG, JPEG or MP4 only; images up
+   to 20 MB; video up to 200 MB and 20,000 kbps; dimensions at least the
+   canvas (or a zone) in the same shape within 1% (a larger file is scaled
+   down, never up); a video no longer than its slot (loop length ÷ slots,
+   e.g. 45 s ÷ 3 = 15 s). A campaign with no display type can't be checked
+   for size or duration, so those pass with a note. What should the real
+   limits be?
+
 ## 11. Defaults in use (brief, *Defaults for open questions*)
 
 - Q27: 24-hour window
@@ -511,7 +532,8 @@ Each is configurable in `apps/api/src/config.ts`.
 | 9 | DSP page + Google DSP (DV360) | Done | **API and mocks:** `apps/dsp-mocks`, a mock DSP service (§14) with the DV360 token endpoint and API v4 (`/v4/partners/{id}`, `/v4/advertisers` with paging), a control API and a test page. A real DV360 client (`apps/api/src/dsp/googleDv360.ts`): it signs an RS256 service-account JWT, exchanges it at the token endpoint, checks partner access and pages through the advertisers, all against the mock by default (`DV360_TOKEN_URL`, `DV360_API_BASE_URL`). The seed now holds a real, freshly generated key file. Endpoints: `POST /admin/v1/partners` (Test, adopting the company lists, one per provider), `GET/PUT /admin/v1/partners/{id}` (secrets write-only; Live refused with 409 unless connected with the bidder integration complete; unlinking copies the company lists down and relinking discards the DSP's own; https bidder endpoint; Amazon region fixed once connected), and `POST …/connect` and `POST …/disconnect`. Tests: API +11 (run against the mock in-process), mocks +3 **UI:** the DSP page. In order: header (provider icon, the name as a plain heading (Q6), provider and last sync, status pill), issues at the top (connection error with the DSP's reason, missing credentials, missing bidder fields, or the green no-issues line), Mode (Test/Live, Live disabled until connected with the bidder integration complete), Connection credentials (per provider; every secret masked, including the DV360 key file), Connect / Re-test connection / Disconnect (immediate (Q5); Connect is disabled with "Save changes first" while credential edits are unsaved), Bidder integration, and Advertiser whitelist / blacklist (the linked callout with Unlink and edit, or the DSP's own lists with Relink and seat suggestions). The Add card (You will need, Add partner / Cancel) creates a draft DSP; Save changes creates it (`POST`, then `PUT`) and opens its page. Fixed a `useDraft` bug (a second refetch after a save could leave a stale draft) that affected every page. Tests: admin +5 | Connecting Amazon Ads DSP and The Trade Desk (package 17) | Q5, Q6 (answered) |
 | 10 | Advertisers screen (admin only) | Done | API: `PUT /admin/v1/advertisers` (admin scope, 403 otherwise; known advertiser ids only; boolean approval; multiplier > 0; applies to future submissions). UI: the Advertisers nav item directly below DSP Integration, for admins only (flag on). The screen: an Admin only pill, then an AG Grid table (Advertiser, Via, Campaign approval switch with Required / Not required, Floor multiplier, Effective floor that updates as you type, each column with its tooltip), the empty state, and the save bar (decision 4). The prototype's intro line is the page-title tooltip (decision 2). Tests: API +3, admin +2. Browser-checked | — | — |
 | 11 | Campaign approval (drop-in module) | Done | `packages/campaign-approval/`, which imports nothing from the app. Contents: the `CampaignSource` adapter interface and a POC adapter over the stand-in campaign store; the state machine (Draft → Awaiting approval → Approved / Rejected; a change returns an approved campaign to Awaiting approval; auto-approve when the advertiser doesn't require approval); an approval store kept beside the campaign (keyed by campaign and asset version) with an append-only audit log; the service with `isCampaignEligible`, `submit`, `approve`, `reject`, `changed` and `setActivation`; Fastify routes for the four contract endpoints (approver-only approve/reject; stale asset version → 409); its own migration (0100); UI components (`ApprovalStatusBadge`, `ApprovalActions`, `ApprovalStatusFilter`, `ApprovalReviewPanel`, `useCampaignApprovals`); and contract suites written against the adapter. The API wires it in: stand-in `GET /admin/v1/campaigns` and `PUT …/activation` (422 `not_approved` unless approved), a creative store (migration 0008, `AssetStore` in `data/assets/`, files served at `/assets/{file}`), and seeded example campaigns (approved automatically, awaiting, rejected, draft). Admin: the stand-in "Campaigns (POC)" screen (flag-gated, own folder). `docs/dsp-integration/CAMPAIGN-APPROVAL-INTEGRATION.md` covers all six steps. Tests: module 29 (state machine, component contract tests, contract suites on a reference adapter), API +18 (the same contract suites on the POC adapter, endpoints, enforcement), admin +1. Browser-checked: filter, review panel, approve, activate | — | — |
-| 12–17 | — | Not started | — | — | — |
+| 12 | Submission API | Done | Partner API `POST /v1/campaigns` (the advertiser must be one of the calling DSP's seats; baseline pricing type; targeted versions with unique ids, integer priority and rules in the Targeting-tab shape; rules checked against the variables the DSP may target → 422 `variable_not_permitted` naming each variable; stored through `CampaignSource.createCampaign` as `source: api`), `POST …/assets` (multipart, `@fastify/multipart`; the type is read from the bytes — PNG, JPEG or MP4 — never from the name; checks `file_type`, `file_size`, `bitrate`, `aspect_ratio`, `dimensions`, `duration` against the display type's canvas or a zone and the slot's share of the loop; any failure → 422 `checks_failed` with each reason, and nothing is stored; a pass writes a new asset version, and on a submitted campaign calls the approval module's `changed`, so it returns to Awaiting approval and stops — Q38), `POST …/submit` (adds `baseline_present` and `targeting_permitted`, re-checked against today's access; the eight checks are recorded for the reviewer; already awaiting/approved → 409; rejected → 409 until a new version is uploaded) and `GET …/status`. A partner sees only its own campaigns (others 404). Approval is enforced by the module's `isCampaignEligible` (activation now; reservation, auction and hand-off in 15–16). Tests: API +16 (contract-validated) | — | Q8 |
+| 13–17 | — | Not started | — | — | — |
 
 ## 13. Prototype comparison (per screen)
 
