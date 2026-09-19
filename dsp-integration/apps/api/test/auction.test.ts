@@ -183,15 +183,19 @@ describe('POST /v1/reservations and GET …/{id}', () => {
     expect(await refused({})).toEqual(['advertiser_blocked', 'Swisse is on the advertiser blacklist.'])
   })
 
-  it('reserves a position held for the advertiser, at its effective floor (Q11)', async () => {
+  it('reserves a position held for the advertiser at the price agreed through the DSP (Q11)', async () => {
     const { ctx, approve, activate, reserve, setSlot } = await setup()
     await approve('c_api_swisse')
     await activate('c_api_swisse')
     setSlot({ listMode: null, advertiser: 'Swisse' })
     expect((await reserve(BID)).statusCode).toBe(409)
-    const res = await reserve({ ...BID, type: 'reserve', bidCpm: undefined })
+    const noPrice = await reserve({ ...BID, type: 'reserve', bidCpm: undefined })
+    expect(noPrice.json().error.details).toEqual([{ field: 'bidCpm', reason: 'The agreed reservation price (CPM) is required.' }])
+    const cheap = await reserve({ ...BID, type: 'reserve', bidCpm: 90 })
+    expect(cheap.json().error).toMatchObject({ code: 'below_floor', message: '90 is below the effective floor of 100 AUD CPM.' })
+    const res = await reserve({ ...BID, type: 'reserve', bidCpm: 175 })
     expect(res.statusCode).toBe(201)
-    expect(res.json()).toMatchObject({ status: 'reserved', clearingCpm: 100, currency: 'AUD' })
+    expect(res.json()).toMatchObject({ status: 'reserved', clearingCpm: 175, currency: 'AUD' })
     expect((await runAuction(ctx, W1)).positions[0].skipped).toBe('Held for a named advertiser: booked by reservation.')
     expect((await reserve({ ...BID, type: 'reserve' })).statusCode).toBe(409)
   })

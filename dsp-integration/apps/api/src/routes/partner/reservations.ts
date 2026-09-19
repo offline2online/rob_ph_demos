@@ -7,7 +7,7 @@ import { randomUUID } from 'node:crypto'
 import type { FastifyPluginAsync } from 'fastify'
 import type { Context } from '../../context'
 import { assignmentOf, biddingClosesAt, biddingOpensAt, findPosition, nextWindow, windowStartOf } from '../../domain/positions'
-import { checkAdvertiser, checkCampaign, checkFloor, floorFor } from '../../exchange/enforcement'
+import { checkAdvertiser, checkCampaign, checkFloor } from '../../exchange/enforcement'
 import { handOff } from '../../exchange/handoff'
 import { HttpError, conflict, notFound, validationFailed } from '../../http/errors'
 import { type ReservationRecord, TAKEN } from '../../repos/ReservationRepo'
@@ -27,7 +27,8 @@ export const reservationRoutes = (ctx: Context): FastifyPluginAsync => async (ap
     const seat = typeof b.advertiserId === 'string' ? partnerAdvertiser(partner, b.advertiserId) : null
     if (!seat) invalid.push({ field: 'advertiserId', reason: `Not an advertiser on ${partner.name}.` })
     if (b.type !== 'reserve' && b.type !== 'bid') invalid.push({ field: 'type', reason: 'reserve or bid.' })
-    if (b.type === 'bid' && !(typeof b.bidCpm === 'number' && Number.isFinite(b.bidCpm) && b.bidCpm > 0)) invalid.push({ field: 'bidCpm', reason: 'A CPM greater than 0 is required to bid.' })
+    /* The bid, or the reservation price agreed through the DSP (Q11). */
+    if (!(typeof b.bidCpm === 'number' && Number.isFinite(b.bidCpm) && b.bidCpm > 0)) invalid.push({ field: 'bidCpm', reason: b.type === 'reserve' ? 'The agreed reservation price (CPM) is required.' : 'A CPM greater than 0 is required to bid.' })
     const campaign = typeof b.campaignId === 'string' ? ctx.campaigns.getCampaign(b.campaignId) : null
     if (!campaign || campaign.partnerId !== partner.id || campaign.advertiserId !== b.advertiserId) invalid.push({ field: 'campaignId', reason: 'Not one of this advertiser’s campaigns.' })
     /* A position this caller can't use (another DSP's, or held for another advertiser) is unknown to it. */
@@ -59,16 +60,16 @@ export const reservationRoutes = (ctx: Context): FastifyPluginAsync => async (ap
     const c = campaign!
     const refusal = (await checkCampaign(ctx, c.campaignId))
       ?? checkAdvertiser(ctx, pos, partner, seat!.name, seat!.domain ? [seat!.domain] : [])
-      ?? (b.type === 'bid' ? checkFloor(ctx, b.bidCpm as number, c.pricingType, c.advertiserId) : null)
+      ?? checkFloor(ctx, b.bidCpm as number, c.pricingType, c.advertiserId)
     if (refusal) throw new HttpError(422, refusal.code, refusal.reason)
 
     const company = ctx.company.get()
     const reserved = b.type === 'reserve'
     const r = ctx.reservations.insert({
       id: `res_${randomUUID().slice(0, 12)}`, partnerId: partner.id, advertiserId: c.advertiserId ?? null, campaignId: c.campaignId, positionId: pos.positionId, windowStart,
-      type: b.type as 'reserve' | 'bid', channel: 'api', bidCpm: reserved ? null : (b.bidCpm as number), currency: company.currency,
-      /* A reservation is booked at the effective floor (Q11); a bid waits for the auction. */
-      status: reserved ? 'reserved' : 'pending', clearingCpm: reserved ? floorFor(ctx, c.pricingType, c.advertiserId) : null, reason: null,
+      type: b.type as 'reserve' | 'bid', channel: 'api', bidCpm: b.bidCpm as number, currency: company.currency,
+      /* A reservation is booked at its agreed price (Q11); a bid waits for the auction. */
+      status: reserved ? 'reserved' : 'pending', clearingCpm: reserved ? (b.bidCpm as number) : null, reason: null,
       testMode: !live, pricingType: c.pricingType ?? null, handedOffAt: null,
     })
     /* A reservation is booked now, so it is handed off now. */

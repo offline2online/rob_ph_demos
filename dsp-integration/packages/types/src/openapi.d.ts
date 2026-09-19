@@ -181,7 +181,7 @@ export interface paths {
         put?: never;
         /**
          * Reserve (named advertiser) or bid (CPM) for a play window
-         * @description Approved campaigns only. Pre-auction checks apply (floor, lists, categories, approval).
+         * @description Approved and activated campaigns only, while the window's auction is open (from 7 days before the window until its auction runs, 6 hours before). Pre-auction checks apply (floor, lists, categories, approval, activation).
          */
         post: operations["createReservation"];
         delete?: never;
@@ -775,8 +775,8 @@ export interface components {
             advertiserId: string;
             /** @enum {string} */
             type: "reserve" | "bid";
-            /** @description Required when type is bid. */
-            bidCpm?: number;
+            /** @description The CPM, in the company currency: the bid (type bid), or the reservation price agreed through the DSP (type reserve). Must clear the effective floor. A reservation is booked at this price. */
+            bidCpm: number;
         };
         Reservation: {
             reservationId: string;
@@ -1118,7 +1118,7 @@ export interface components {
                 "application/json": components["schemas"]["Error"];
             };
         };
-        /** @description error.code = conflict (e.g. version changed, already submitted, window sold, live not allowed) */
+        /** @description error.code = conflict (e.g. version changed, already submitted, window sold, bidding not open or closed, live not allowed) */
         Conflict: {
             headers: {
                 [name: string]: unknown;
@@ -1157,7 +1157,9 @@ export interface operations {
                 advertiserId?: string;
                 displayTypeId?: string;
                 touchPoint?: "Digital Signage" | "Kiosk";
+                /** @description Personalisation Hub store IDs (stores are managed by the platform). */
                 storeIds?: string[];
+                /** @description A store region from the platform's store records. */
                 region?: string;
                 from?: string;
                 to?: string;

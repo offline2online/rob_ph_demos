@@ -992,14 +992,14 @@ components:
 
     ReservationCreate:
       type: object
-      required: [positionId, windowStart, campaignId, advertiserId, type]
+      required: [positionId, windowStart, campaignId, advertiserId, type, bidCpm]
       properties:
         positionId: {type: string}
         windowStart: {type: string, format: date-time}
         campaignId: {type: string}
         advertiserId: {type: string}
         type: {type: string, enum: [reserve, bid]}
-        bidCpm: {type: number, description: Required when type is bid.}
+        bidCpm: {type: number, description: 'The CPM, in the company currency: the bid (type bid), or the reservation price agreed through the DSP (type reserve). Must clear the effective floor. A reservation is booked at this price.'}
     Reservation:
       type: object
       required: [reservationId, status]
