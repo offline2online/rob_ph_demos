@@ -11,15 +11,16 @@
     "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {
+    "@ph-dsp/campaign-approval": "*",
     "@ph-dsp/types": "*",
     "@tanstack/react-query": "^5.103.1",
     "ag-grid-community": "^32.3.9",
     "ag-grid-react": "^32.3.9",
     "antd": "^5.29.3",
+    "dayjs": "^1.11.23",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "react-router-dom": "^6.30.6",
-    "@ph-dsp/campaign-approval": "*"
+    "react-router-dom": "^6.30.6"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.3.3",

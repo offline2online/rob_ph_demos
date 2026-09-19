@@ -258,6 +258,31 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/v1/booking-schedule": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Every advertiser-owned slot across its play windows, with bookings and booking revenue
+         * @description Reached from Available Inventory. Per position and play window: booked
+         *     (reserved or won, live only, at the CPM it was booked at), available
+         *     (bidding not yet closed) or unavailable. Plus booking revenue per
+         *     display type: booked (CPM × assumed views ÷ 1000) and billed (billing
+         *     line items, once the window has played). Test-mode wins are never
+         *     counted. Without dates: the current window and the 13 after it.
+         */
+        get: operations["getBookingSchedule"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/v1/targeting-variables": {
         parameters: {
             query?: never;
@@ -846,6 +871,62 @@ export interface components {
             slot: number;
             position: string;
             partnerName?: string | null;
+        };
+        BookingSchedule: {
+            /** @description ISO 4217 */
+            currency: string;
+            windows: {
+                /** Format: date-time */
+                start: string;
+                /** Format: date-time */
+                end: string;
+            }[];
+            positions: {
+                positionId: string;
+                displayTypeId: string;
+                displayTypeName: string;
+                slot: number;
+                slotLabel: string;
+                /** @description The DSP the slot is tied to; null = any connected DSP. */
+                partnerName: string | null;
+                /** @enum {string} */
+                assignment: "rtb" | "whitelist_only" | "reserved";
+                /** @description One per schedule window, in the same order. */
+                windows: {
+                    /** Format: date-time */
+                    start: string;
+                    /** @enum {string} */
+                    status: "booked" | "available" | "unavailable";
+                    booking: {
+                        reservationId: string;
+                        /** @enum {string} */
+                        type: "reserve" | "bid";
+                        advertiserName: string;
+                        partnerName: string;
+                        /** @description The CPM it was booked at (the agreed reservation price */
+                        cpm: number;
+                        assumedViews: number;
+                        bookedRevenue: number;
+                        /** @description From billing once the window has played; null before. */
+                        billedRevenue: number | null;
+                    } | null;
+                }[];
+            }[];
+            /** @description Per display type with advertiser slots, over the schedule's windows. */
+            revenue: components["schemas"]["BookingRevenue"][];
+            totals: components["schemas"]["BookingRevenueTotals"];
+        };
+        BookingRevenueTotals: {
+            bookedWindows: number;
+            bookedRevenue: number;
+            billedRevenue: number;
+        };
+        BookingRevenue: {
+            displayTypeId: string;
+            displayTypeName: string;
+            bookedWindows: number;
+            bookedRevenue: number;
+            billedRevenue: number;
         };
         VariableAccess: "all" | string[];
         SharedVariable: {
@@ -1609,6 +1690,32 @@ export interface operations {
                     };
                 };
             };
+            401: components["responses"]["Unauthorised"];
+        };
+    };
+    getBookingSchedule: {
+        parameters: {
+            query?: {
+                from?: string;
+                /** @description At most 92 days after from. */
+                to?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Schedule */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BookingSchedule"];
+                };
+            };
+            400: components["responses"]["ValidationFailed"];
             401: components["responses"]["Unauthorised"];
         };
     };

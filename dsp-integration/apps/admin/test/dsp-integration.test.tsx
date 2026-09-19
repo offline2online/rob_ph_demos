@@ -134,3 +134,40 @@ describe('Campaigns (POC) stand-in', () => {
     expect(await screen.findByRole('button', { name: /Awaiting approval 1/ })).toBeInTheDocument()
   })
 })
+
+describe('Booking schedule', () => {
+  const schedule = {
+    currency: 'AUD',
+    windows: [
+      { start: '2026-09-21T00:00:00.000Z', end: '2026-09-22T00:00:00.000Z' },
+      { start: '2026-09-22T00:00:00.000Z', end: '2026-09-23T00:00:00.000Z' },
+    ],
+    positions: [{
+      positionId: 'menu_board.s2', displayTypeId: 'menu_board', displayTypeName: 'Menu Board — Long Format', slot: 2, slotLabel: 'Supplier slot', partnerName: 'Google DSP', assignment: 'rtb',
+      windows: [
+        { start: '2026-09-21T00:00:00.000Z', status: 'available', booking: null },
+        { start: '2026-09-22T00:00:00.000Z', status: 'booked', booking: { reservationId: 'r1', type: 'reserve', advertiserName: 'Swisse', partnerName: 'Google DSP', cpm: 175, assumedViews: 1236, bookedRevenue: 216.3, billedRevenue: null } },
+      ],
+    }],
+    revenue: [{ displayTypeId: 'menu_board', displayTypeName: 'Menu Board — Long Format', bookedWindows: 1, bookedRevenue: 216.3, billedRevenue: 0 }],
+    totals: { bookedWindows: 1, bookedRevenue: 216.3, billedRevenue: 0 },
+  }
+
+  it('is linked from Available Inventory', async () => {
+    renderAt('/dsp-integration/advertiser-settings')
+    expect(await screen.findByRole('button', { name: /Booking schedule/ })).toBeInTheDocument()
+  })
+
+  it('shows booking revenue per display type and each slot’s windows, booked at their price, with no save bar', async () => {
+    vi.stubGlobal('fetch', vi.fn(fakeFetch({ '/api/admin/v1/booking-schedule': schedule })))
+    renderAt('/dsp-integration/booking-schedule')
+    expect(await screen.findByRole('heading', { name: /Booking schedule/ })).toBeInTheDocument()
+    const revenue = await screen.findByLabelText('Booking revenue')
+    expect(await within(revenue).findAllByText('$216.30')).toHaveLength(2)
+    const grid = screen.getByLabelText('Booking schedule')
+    expect(await within(grid).findByText('Swisse')).toBeInTheDocument()
+    expect(within(grid).getByText(/175 CPM/)).toBeInTheDocument()
+    expect(within(grid).getByText('Available')).toBeInTheDocument()
+    expect(screen.queryByRole('region', { name: 'Save changes' })).not.toBeInTheDocument()
+  })
+})

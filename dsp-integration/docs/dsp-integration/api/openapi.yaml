@@ -334,6 +334,26 @@ paths:
                 properties:
                   items: {type: array, items: {$ref: '#/components/schemas/AvailableInventoryRow'}}
         '401': {$ref: '#/components/responses/Unauthorised'}
+  /admin/v1/booking-schedule:
+    get:
+      tags: [Admin — Advertiser settings]
+      operationId: getBookingSchedule
+      summary: Every advertiser-owned slot across its play windows, with bookings and booking revenue
+      description: |
+        Reached from Available Inventory. Per position and play window: booked
+        (reserved or won, live only, at the CPM it was booked at), available
+        (bidding not yet closed) or unavailable. Plus booking revenue per
+        display type: booked (CPM × assumed views ÷ 1000) and billed (billing
+        line items, once the window has played). Test-mode wins are never
+        counted. Without dates: the current window and the 13 after it.
+      security: [{adminSession: []}]
+      parameters:
+        - {name: from, in: query, schema: {type: string, format: date}}
+        - {name: to, in: query, schema: {type: string, format: date}, description: 'At most 92 days after from.'}
+      responses:
+        '200': {description: Schedule, content: {application/json: {schema: {$ref: '#/components/schemas/BookingSchedule'}}}}
+        '400': {$ref: '#/components/responses/ValidationFailed'}
+        '401': {$ref: '#/components/responses/Unauthorised'}
 
   /admin/v1/targeting-variables:
     get:
@@ -1070,6 +1090,69 @@ components:
         position: {type: string}
         partnerName: {type: [string, 'null']}
 
+    BookingSchedule:
+      type: object
+      required: [currency, windows, positions, revenue, totals]
+      properties:
+        currency: {type: string, description: ISO 4217}
+        windows:
+          type: array
+          items: {type: object, required: [start, end], properties: {start: {type: string, format: date-time}, end: {type: string, format: date-time}}}
+        positions:
+          type: array
+          items:
+            type: object
+            required: [positionId, displayTypeId, displayTypeName, slot, slotLabel, partnerName, assignment, windows]
+            properties:
+              positionId: {type: string}
+              displayTypeId: {type: string}
+              displayTypeName: {type: string}
+              slot: {type: integer, minimum: 1}
+              slotLabel: {type: string}
+              partnerName: {type: [string, 'null'], description: 'The DSP the slot is tied to; null = any connected DSP.'}
+              assignment: {type: string, enum: [rtb, whitelist_only, reserved]}
+              windows:
+                type: array
+                description: One per schedule window, in the same order.
+                items:
+                  type: object
+                  required: [start, status, booking]
+                  properties:
+                    start: {type: string, format: date-time}
+                    status: {type: string, enum: [booked, available, unavailable]}
+                    booking:
+                      type: [object, 'null']
+                      required: [reservationId, type, advertiserName, partnerName, cpm, assumedViews, bookedRevenue, billedRevenue]
+                      properties:
+                        reservationId: {type: string}
+                        type: {type: string, enum: [reserve, bid]}
+                        advertiserName: {type: string}
+                        partnerName: {type: string}
+                        cpm: {type: number, description: The CPM it was booked at (the agreed reservation price, or the clearing CPM).}
+                        assumedViews: {type: integer}
+                        bookedRevenue: {type: number}
+                        billedRevenue: {type: [number, 'null'], description: From billing once the window has played; null before.}
+        revenue:
+          type: array
+          description: Per display type with advertiser slots, over the schedule's windows.
+          items: {$ref: '#/components/schemas/BookingRevenue'}
+        totals: {$ref: '#/components/schemas/BookingRevenueTotals'}
+    BookingRevenueTotals:
+      type: object
+      required: [bookedWindows, bookedRevenue, billedRevenue]
+      properties:
+        bookedWindows: {type: integer}
+        bookedRevenue: {type: number}
+        billedRevenue: {type: number}
+    BookingRevenue:
+      type: object
+      required: [displayTypeId, displayTypeName, bookedWindows, bookedRevenue, billedRevenue]
+      properties:
+        displayTypeId: {type: string}
+        displayTypeName: {type: string}
+        bookedWindows: {type: integer}
+        bookedRevenue: {type: number}
+        billedRevenue: {type: number}
     VariableAccess:
       oneOf:
         - {type: string, const: all}

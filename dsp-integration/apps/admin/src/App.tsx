@@ -12,6 +12,7 @@ import { PlaylistManagementPage } from './features/playlist-management/PlaylistM
 import { DspIntegrationLayout } from './features/dsp-integration/DspIntegrationLayout'
 import { AddPartnerRoute, PartnerRoute } from './features/dsp-integration/AddPartner'
 import { AdvertiserSettings } from './features/dsp-integration/AdvertiserSettings'
+import { BookingSchedule } from './features/dsp-integration/BookingSchedule'
 import { ExchangeSettings } from './features/dsp-integration/ExchangeSettings'
 import { SharedTargetingVariables } from './features/dsp-integration/SharedTargetingVariables'
 import { AppShell, type NavItem } from './shared/AppShell'
@@ -56,6 +57,7 @@ function featureRoutes(flags: Flags): RouteObject[] {
             { index: true, element: <Navigate to="advertiser-settings" replace /> },
             { path: 'exchange', element: <ExchangeSettings /> },
             { path: 'advertiser-settings', element: <AdvertiserSettings /> },
+            { path: 'booking-schedule', element: <BookingSchedule /> },
             { path: 'targeting-variables', element: <SharedTargetingVariables /> },
             { path: 'partners/:id', element: <PartnerRoute /> },
             { path: 'add/:provider', element: <AddPartnerRoute /> },
