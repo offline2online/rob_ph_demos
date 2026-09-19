@@ -11,10 +11,17 @@ import { HttpError, notFound, validationFailed } from '../../http/errors'
 export const campaignRoutes = (ctx: Context, guards: Guards): FastifyPluginAsync => async (app) => {
   const toCampaign = (c: Awaited<ReturnType<typeof ctx.approvalCampaigns.listCampaigns>>[number], pricingType: Campaign['pricingType'], displayTypeId: string | null): Campaign => ({
     campaignId: c.campaignId, name: c.name, source: c.source, advertiserId: c.advertiserId, advertiserName: c.advertiserName,
-    partnerId: c.partnerId, partnerName: c.partnerName, displayTypeId, pricingType, activation: c.activation,
+    partnerId: c.partnerId, partnerName: c.partnerName, displayTypeId, pricingType, schedule: scheduleOf(c.campaignId), activation: c.activation,
     ...(raw(c.campaignId)?.brief ? { brief: raw(c.campaignId)!.brief } : {}),
   })
   const raw = (id: string) => ctx.campaigns.getCampaign(id)
+  /* What the advertiser booked: the next window it holds, and how many (Rob, 20 Sep). */
+  const scheduleOf = (campaignId: string): Campaign['schedule'] => {
+    const now = ctx.clock().toISOString()
+    const held = ctx.reservations.byStatus(['won', 'reserved']).filter((r) => r.campaignId === campaignId && !r.testMode)
+    const ahead = held.map((r) => r.windowStart).filter((w) => w >= now).sort()
+    return { nextWindowStart: ahead[0] ?? null, bookedWindows: held.length }
+  }
 
   app.get('/campaigns', async () => ({
     items: (await ctx.approvalCampaigns.listCampaigns()).map((c) => {

@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { RouterProvider, createMemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Providers, appRoutes } from '../src/App'
@@ -153,10 +153,10 @@ describe('Advertisers screen (admin only)', () => {
 describe('Campaign Status stand-in', () => {
   const campaign = {
     campaignId: 'c1', name: 'Swisse spring', source: 'api', advertiserId: 'swisse', advertiserName: 'Swisse', partnerId: 'p_google', partnerName: 'Google DSP',
-    displayTypeId: 'portrait', pricingType: 'localised', activation: { enabled: false },
+    displayTypeId: 'portrait', pricingType: 'localised', activation: { enabled: false }, schedule: { nextWindowStart: '2026-09-22T00:00:00.000Z', bookedWindows: 2 },
     brief: { details: 'Spring immunity range.', promotedProducts: ['Ultiboost Immune'], objective: 'Brand Awareness', touchPoints: ['Digital Signage'] },
   }
-  const hq = { campaignId: 'c_zinger', name: 'Zinger Box — hero', source: 'hq', advertiserId: null, advertiserName: null, partnerId: null, partnerName: null, displayTypeId: 'landscape', pricingType: null, activation: { enabled: true } }
+  const hq = { campaignId: 'c_zinger', name: 'Zinger Box — hero', source: 'hq', advertiserId: null, advertiserName: null, partnerId: null, partnerName: null, displayTypeId: 'landscape', pricingType: null, activation: { enabled: true }, schedule: { nextWindowStart: null, bookedWindows: 0 } }
   const approval = {
     campaignId: 'c1', campaignName: 'Swisse spring', status: 'awaiting_approval', mode: 'manual', assetVersion: 'v1', submittedAt: null, reviewedBy: null, reviewedAt: null, reason: null,
     checks: [{ name: 'dimensions', passed: true, detail: '1080×1920 for 1080×1920.' }], targetingSummary: 'Baseline (localised)', creative: null, canvas: null, audit: [],
@@ -170,7 +170,7 @@ describe('Campaign Status stand-in', () => {
   it('lists only advertiser and DSP campaigns, with the status filter in the column', async () => {
     vi.stubGlobal('fetch', vi.fn(fakeFetch(routes)))
     renderAt('/campaign-status')
-    expect(await screen.findByText(/campaigns submitted by advertisers and DSPs/)).toBeInTheDocument()
+    await waitFor(() => expect(document.body.textContent).toMatch(/submitted by advertisers and DSPs/))
     const grid = screen.getByLabelText('Campaign Status')
     await new Promise((r) => setTimeout(r, 300))
     expect(await within(grid).findByText('Swisse spring', {}, { timeout: 10000 })).toBeInTheDocument()
@@ -179,6 +179,14 @@ describe('Campaign Status stand-in', () => {
     /* The status filter is a column filter, not chips above the table. */
     expect(screen.queryByRole('button', { name: /Awaiting approval 1/ })).not.toBeInTheDocument()
     expect(grid.querySelectorAll('.ag-floating-filter').length).toBeGreaterThan(0)
+    /* The filters name themselves and list what is there (Rob, 20 Sep). */
+    expect(within(grid).getAllByLabelText('Advertiser filter').length).toBeGreaterThan(0)
+    expect(within(grid).getAllByLabelText('DSP filter').length).toBeGreaterThan(0)
+    /* Schedule first, sorted so what is up next is at the top. */
+    expect([...grid.querySelectorAll('.ag-header-cell-text')].map((h) => h.textContent)).toEqual(['Schedule', 'Status', 'Name', 'Advertiser', 'DSP', 'Activation', ''])
+    expect(within(grid).getByText('2 windows booked')).toBeInTheDocument()
+    /* And a row menu for approving, rejecting or switching a campaign on. */
+    expect(within(grid).getByLabelText('Swisse spring: options')).toBeInTheDocument()
   })
 
   it('opens the campaign laid out like the platform: brief, targeting, scheduling, storyboard, creative', async () => {

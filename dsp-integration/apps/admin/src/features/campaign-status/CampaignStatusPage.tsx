@@ -9,19 +9,22 @@
    lives in the column, as the design system's tables do, the header stays
    in view, and the campaign name opens the campaign (CampaignDetail). */
 import { useQuery } from '@tanstack/react-query'
-import { Button, Spin, Switch } from 'antd'
+import { Button, Dropdown, Input, Modal, Spin, Switch } from 'antd'
 import type { ColDef, ICellRendererParams } from 'ag-grid-community'
 import { ApprovalActions, ApprovalStatusBadge, STATUS_LABELS, type Approval, type ApprovalStatus } from '@ph-dsp/campaign-approval/ui'
 import type { Campaign } from '@ph-dsp/types'
-import { useMemo } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useMemo, useRef, useState } from 'react'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { api } from '../../api/client'
 import { Grid } from '../../shared/Grid'
+import { Icon } from '../../shared/Icon'
+import { SelectFilter } from '../../shared/SelectFilter'
 import { T } from '../../theme/phTheme'
 import { CAMPAIGN_STATUS_PATH, useCampaignActions } from './useCampaigns'
 
 interface Ctx {
   approvals: Record<string, Approval>
+  askReject: (a: Approval) => void
   canApprove: boolean
   busy: string | null
   open: (id: string) => void
@@ -37,6 +40,46 @@ const StatusCell = ({ data, context }: P) => {
 }
 const NameCell = ({ data, context }: P) =>
   data ? <Button type="link" className="px-0" style={{ color: T.text, fontWeight: 700 }} onClick={() => context.current.open(data.campaignId)}>{data.name}</Button> : null
+/* When the advertiser's booking starts, so what is up next sorts to the top. */
+const ScheduleCell = ({ data }: P) => {
+  if (!data) return null
+  const { nextWindowStart, bookedWindows } = data.schedule ?? { nextWindowStart: null, bookedWindows: 0 }
+  if (!nextWindowStart) return <span style={{ fontSize: 12, color: T.micro }}>{bookedWindows ? 'Finished' : 'Not booked'}</span>
+  return (
+    <div className="min-w-0 py-1.5">
+      <div className="truncate">{new Date(nextWindowStart).toLocaleDateString('en-GB', { timeZone: 'UTC', weekday: 'short', day: 'numeric', month: 'short' })}</div>
+      <div style={{ fontSize: 11, color: T.micro }}>{bookedWindows} window{bookedWindows === 1 ? '' : 's'} booked</div>
+    </div>
+  )
+}
+
+/* Approve, reject or switch a campaign on from the table (Rob, 20 Sep). */
+function RowMenu({ data, context }: P) {
+  if (!data) return null
+  const c = context.current
+  const a = c.approvals[data.campaignId]
+  const awaiting = a?.status === 'awaiting_approval'
+  const approved = a?.status === 'approved'
+  const items = [
+    { key: 'open', icon: <Icon name="open_in_new" size={15} />, label: 'Open campaign' },
+    { key: 'approve', icon: <Icon name="check_circle" size={15} />, label: 'Approve', disabled: !awaiting || !c.canApprove },
+    { key: 'reject', icon: <Icon name="cancel" size={15} />, label: 'Reject…', danger: true, disabled: !awaiting || !c.canApprove },
+    { type: 'divider' as const },
+    { key: 'activation', icon: <Icon name="power_settings_new" size={15} />, label: data.activation.enabled ? 'Deactivate' : 'Activate', disabled: !approved },
+  ]
+  const onClick = ({ key }: { key: string }) => {
+    if (key === 'open') c.open(data.campaignId)
+    if (key === 'approve') void c.approve(a!)
+    if (key === 'reject') c.askReject(a!)
+    if (key === 'activation') void c.activate(data, !data.activation.enabled)
+  }
+  return (
+    <Dropdown menu={{ items, onClick }} trigger={['click']} placement="bottomRight">
+      <Button type="text" size="small" aria-label={`${data.name}: options`} icon={<Icon name="more_vert" size={18} />} loading={c.busy === data.campaignId} />
+    </Dropdown>
+  )
+}
+
 const ActivationCell = ({ data, context }: P) => {
   if (!data) return null
   const c = context.current
@@ -51,28 +94,60 @@ const ActivationCell = ({ data, context }: P) => {
 
 export function CampaignStatusPage() {
   const navigate = useNavigate()
+  const [params, setParams] = useSearchParams()
+  /* Opened from an advertiser's campaign counts (Rob, 20 Sep). */
+  const advertiserId = params.get('advertiserId')
   const campaigns = useQuery({ queryKey: ['poc-campaigns'], queryFn: () => api<{ items: Campaign[] }>('GET', '/admin/v1/campaigns').then((r) => r.items) })
   /* Only what came in through a DSP or the Partner API. */
-  const rows = useMemo(() => (campaigns.data ?? []).filter((c) => c.source !== 'hq'), [campaigns.data])
-  const { approvals, canApprove, busy, approve, reject, activate } = useCampaignActions(rows.map((c) => c.campaignId))
+  const all = useMemo(() => (campaigns.data ?? []).filter((c) => c.source !== 'hq'), [campaigns.data])
+  const rows = useMemo(() => (advertiserId ? all.filter((c) => c.advertiserId === advertiserId) : all), [all, advertiserId])
+  const { approvals, canApprove, busy, approve, reject, activate } = useCampaignActions(all.map((c) => c.campaignId))
+  const [rejecting, setRejecting] = useState<Approval | null>(null)
+  const reason = useRef('')
 
-  const ctx: Ctx = { approvals, canApprove, busy, open: (id) => navigate(`${CAMPAIGN_STATUS_PATH}/${id}`), approve, reject, activate }
+  const ctx: Ctx = {
+    approvals, canApprove, busy, open: (id) => navigate(`${CAMPAIGN_STATUS_PATH}/${id}`), approve, reject, activate,
+    askReject: (a) => {
+      reason.current = ''
+      setRejecting(a)
+    },
+  }
+  const values = (of: (c: Campaign) => string) => () => all.map(of).filter((v) => v && v !== '—')
+  const listFilter = (label: string, of: (c: Campaign) => string) => ({
+    filter: true as const,
+    floatingFilter: true as const,
+    floatingFilterComponent: SelectFilter,
+    floatingFilterComponentParams: { label, values: values(of), suppressFilterButton: true },
+  })
   const columns = useMemo<ColDef<Campaign>[]>(() => [
     {
-      headerName: 'Status', width: 190, cellRenderer: StatusCell, filter: true, floatingFilter: true,
-      valueGetter: (p) => (p.data ? STATUS_LABELS[approvals[p.data.campaignId]?.status as ApprovalStatus] ?? '' : ''),
+      /* What the advertiser booked, earliest first, so what is up next is at the top. */
+      headerName: 'Schedule', width: 150, minWidth: 130, cellRenderer: ScheduleCell, sort: 'asc', comparator: (a, b) => (a || '9999').localeCompare(b || '9999'),
+      valueGetter: (p) => p.data?.schedule.nextWindowStart ?? '',
     },
-    { headerName: 'Name', width: 280, minWidth: 200, cellRenderer: NameCell, filter: true, floatingFilter: true, valueGetter: (p) => p.data?.name ?? '' },
-    { headerName: 'Advertiser', width: 150, filter: true, floatingFilter: true, valueGetter: (p) => p.data?.advertiserName ?? '—' },
-    { headerName: 'DSP', width: 150, filter: true, floatingFilter: true, valueGetter: (p) => p.data?.partnerName ?? '—' },
-    { headerName: 'Activation', width: 170, suppressSizeToFit: true, cellRenderer: ActivationCell },
-  ], [approvals])
+    {
+      headerName: 'Status', width: 180, minWidth: 150, cellRenderer: StatusCell,
+      valueGetter: (p) => (p.data ? STATUS_LABELS[approvals[p.data.campaignId]?.status as ApprovalStatus] ?? '' : ''),
+      ...listFilter('Status', (c) => STATUS_LABELS[approvals[c.campaignId]?.status as ApprovalStatus] ?? ''),
+    },
+    { headerName: 'Name', width: 260, minWidth: 180, cellRenderer: NameCell, filter: true, floatingFilter: true, valueGetter: (p) => p.data?.name ?? '' },
+    { headerName: 'Advertiser', width: 150, minWidth: 130, valueGetter: (p) => p.data?.advertiserName ?? '—', ...listFilter('Advertiser', (c) => c.advertiserName ?? '') },
+    { headerName: 'DSP', width: 150, minWidth: 130, valueGetter: (p) => p.data?.partnerName ?? '—', ...listFilter('DSP', (c) => c.partnerName ?? '') },
+    { headerName: 'Activation', width: 160, suppressSizeToFit: true, cellRenderer: ActivationCell },
+    { headerName: '', width: 56, suppressSizeToFit: true, pinned: 'right', cellRenderer: RowMenu },
+  ], [approvals, all])
 
   if (!campaigns.data) return <Spin />
+  const advertiserName = advertiserId ? all.find((c) => c.advertiserId === advertiserId)?.advertiserName ?? advertiserId : null
   return (
     <div>
-      <div className="mb-3" style={{ fontSize: 13 }}>
-        <b>{rows.length}</b> campaigns submitted by advertisers and DSPs
+      <div className="mb-3 flex flex-wrap items-center gap-2" style={{ fontSize: 13 }}>
+        <span><b>{rows.length}</b> campaign{rows.length === 1 ? '' : 's'} submitted by advertisers and DSPs</span>
+        {advertiserName && (
+          <Button size="small" icon={<Icon name="close" size={14} />} onClick={() => { const n = new URLSearchParams(params); n.delete('advertiserId'); setParams(n, { replace: true }) }}>
+            {advertiserName} only
+          </Button>
+        )}
       </div>
       <Grid<Campaign>
         label="Campaign Status"
@@ -84,7 +159,22 @@ export function CampaignStatusPage() {
         headerHeight={40}
         floatingFiltersHeight={40}
         stickyHeader
+        suppressHorizontalScroll={false}
       />
+      <Modal
+        open={!!rejecting}
+        title={`Reject ${rejecting?.campaignName ?? 'this campaign'}?`}
+        okText="Reject"
+        okButtonProps={{ danger: true }}
+        onCancel={() => setRejecting(null)}
+        onOk={async () => {
+          const a = rejecting!
+          setRejecting(null)
+          await reject(a, reason.current.trim() || 'No reason given.')
+        }}
+      >
+        <Input.TextArea aria-label="Reason" rows={3} placeholder="Why is it rejected? The advertiser sees this." onChange={(e) => (reason.current = e.target.value)} />
+      </Modal>
     </div>
   )
 }

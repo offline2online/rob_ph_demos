@@ -141,7 +141,7 @@ export function DisplayTypesPage({ flags }: { flags: Flags }) {
   return (
     <ListPageLayout list={<DisplayTypeList types={draft.types} selectedId={d.id} onSelect={onSelect} onNew={onNew} onDelete={onDelete} />}>
       <DisplayTypeForm
-        key={d.id}
+        key={`${d.id}:${params.get('panel') ?? ''}`}
         d={d}
         update={update}
         playlists={allPlaylists}
@@ -151,6 +151,7 @@ export function DisplayTypesPage({ flags }: { flags: Flags }) {
         company={company.data}
         seatsOf={seatsOf}
         onFixConnection={(partnerId) => navigate(`/dsp-integration/partners/${partnerId}`)}
+        openPanel={params.get('panel')}
       />
       <SaveBar dirty={dirty} saving={saving} onSave={onSave} onCancel={onCancel} saveOnEnter />
       {deleting && (

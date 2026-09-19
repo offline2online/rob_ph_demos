@@ -936,6 +936,15 @@ export interface components {
             }[];
             /** @description Per display type with advertiser slots, over the schedule's windows. */
             revenue: components["schemas"]["BookingRevenue"][];
+            /** @description The DSPs the filters offer, and the advertisers each one brings. */
+            dsps: {
+                partnerId: string;
+                name: string;
+                advertisers: {
+                    advertiserId: string;
+                    name: string;
+                }[];
+            }[];
             /** @description The same bookings by campaign type, so a retailer can see what is selling. */
             byPricingType: {
                 pricingType: components["schemas"]["PricingType"];
@@ -1167,6 +1176,16 @@ export interface components {
             /** @enum {string|null} */
             pricingType?: "baseline" | "localised" | "personalised" | "interactive" | null;
             brief?: components["schemas"]["CampaignBrief"];
+            /** @description What the advertiser booked, so the table can show what is up next. */
+            schedule: {
+                /**
+                 * Format: date-time
+                 * @description The next play window this campaign holds
+                 */
+                nextWindowStart: string | null;
+                /** @description Live windows won or reserved */
+                bookedWindows: number;
+            };
             activation: {
                 enabled: boolean;
             };

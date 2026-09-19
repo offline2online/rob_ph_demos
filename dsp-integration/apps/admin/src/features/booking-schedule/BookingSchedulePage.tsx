@@ -7,7 +7,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { Alert, DatePicker, Segmented, Select, Spin, Tooltip } from 'antd'
 import type { ColDef, ICellRendererParams } from 'ag-grid-community'
-import { SLOT_OWNERS, type Advertiser, type BookingSchedule as Schedule } from '@ph-dsp/types'
+import { SLOT_OWNERS, type BookingSchedule as Schedule } from '@ph-dsp/types'
 import dayjs, { type Dayjs } from 'dayjs'
 import { useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
@@ -112,7 +112,6 @@ export function BookingSchedulePage() {
   const to = (range?.[1] ?? dayjs().add(SPAN_DAYS[view], 'day')).format('YYYY-MM-DD')
   const q = `?from=${from}&to=${to}${advertiserId ? `&advertiserId=${encodeURIComponent(advertiserId)}` : ''}${partnerId ? `&partnerId=${encodeURIComponent(partnerId)}` : ''}`
   const schedule = useQuery({ queryKey: ['booking-schedule', q], queryFn: () => api<Schedule>('GET', `/admin/v1/booking-schedule${q}`) })
-  const advertisers = useQuery({ queryKey: ['advertisers'], queryFn: () => api<{ items: Advertiser[] }>('GET', '/admin/v1/advertisers').then((r) => r.items), retry: false })
   const data = schedule.data
   const currency = data?.currency ?? 'AUD'
   const money = useMemo(() => {
@@ -151,15 +150,23 @@ export function BookingSchedulePage() {
     { headerName: 'Booked revenue', field: 'bookedRevenue', width: 170, cellRenderer: NumberCell },
     { headerName: 'Billed revenue', field: 'billedRevenue', width: 170, cellRenderer: NumberCell },
   ], [])
-  const setFilter = (key: 'advertiserId' | 'partnerId', value?: string) => {
+  const setFilter = (key: 'advertiserId' | 'partnerId', value?: string, currentAdvertiser?: string) => {
     const next = new URLSearchParams(params)
     if (value) next.set(key, value)
     else next.delete(key)
+    /* Changing the DSP drops an advertiser it doesn't bring. */
+    if (key === 'partnerId' && currentAdvertiser && !(dsps.find((d) => d.partnerId === value)?.advertisers ?? []).some((a) => a.advertiserId === currentAdvertiser)) {
+      if (value) next.delete('advertiserId')
+    }
     setParams(next, { replace: true })
   }
-  const dsps = useMemo(() => [...new Map((data?.positions ?? []).flatMap((p) => p.windows).flatMap((w) => (w.booking ? [[w.booking.partnerId, w.booking.partnerName] as const] : [])).concat(
-    (data?.positions ?? []).flatMap((p) => (p.partnerName ? [[p.partnerName, p.partnerName] as const] : [])),
-  )).entries()], [data])
+  /* The DSP first, then its advertisers (Rob, 20 Sep): picking a DSP narrows the advertiser list. */
+  const dsps = data?.dsps ?? []
+  const advertiserOptions = useMemo(() => {
+    const chosen = partnerId ? dsps.filter((d) => d.partnerId === partnerId) : dsps
+    return [...new Map(chosen.flatMap((d) => d.advertisers.map((a) => [a.advertiserId, a.name] as const))).entries()]
+      .map(([value, label]) => ({ value, label }))
+  }, [dsps, partnerId])
   const ctx: Ctx['current'] = { money, view }
 
   return (
@@ -175,10 +182,10 @@ export function BookingSchedulePage() {
         <Segmented<View> value={view} onChange={(v) => { setView(v); setRange(null) }} options={['Daily', 'Weekly', 'Monthly']} />
         <DatePicker.RangePicker aria-label="Dates" value={[dayjs(from), dayjs(to)]} allowClear={false}
           onChange={(v) => setRange(v && v[0] && v[1] ? [v[0], v[1]] : null)} />
+        <Select allowClear placeholder="All DSPs" aria-label="DSP" style={{ minWidth: 170 }} value={partnerId}
+          onChange={(v) => setFilter('partnerId', v, advertiserId)} options={dsps.map((d) => ({ value: d.partnerId, label: d.name }))} />
         <Select allowClear placeholder="All advertisers" aria-label="Advertiser" style={{ minWidth: 180 }} value={advertiserId}
-          onChange={(v) => setFilter('advertiserId', v)} options={(advertisers.data ?? []).map((a) => ({ value: a.advertiserId, label: a.name }))} />
-        <Select allowClear placeholder="All DSPs" aria-label="DSP" style={{ minWidth: 160 }} value={partnerId}
-          onChange={(v) => setFilter('partnerId', v)} options={dsps.map(([id, name]) => ({ value: id, label: name }))} />
+          onChange={(v) => setFilter('advertiserId', v)} options={advertiserOptions} />
       </div>
 
       {schedule.isError && <Alert className="mb-4" type="error" showIcon message="The booking schedule couldn’t be loaded." />}

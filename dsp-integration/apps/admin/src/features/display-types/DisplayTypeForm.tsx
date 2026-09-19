@@ -15,7 +15,7 @@ import { Preview } from './Preview'
 
 export interface PlaylistOption { id: string; name: string; autoCreatedFor: string | null }
 
-export function DisplayTypeForm({ d, update, playlists, zonePlaylistId, slotAssignment, partners, company, seatsOf, onFixConnection }: {
+export function DisplayTypeForm({ d, update, playlists, zonePlaylistId, slotAssignment, partners, company, seatsOf, onFixConnection, openPanel }: {
   d: DisplayType
   update: (fn: (d: DisplayType) => DisplayType) => void
   playlists: PlaylistOption[]
@@ -25,8 +25,11 @@ export function DisplayTypeForm({ d, update, playlists, zonePlaylistId, slotAssi
   company: AdvertiserSettings | undefined
   seatsOf: (p: Partner) => string[]
   onFixConnection: (partnerId: string) => void
+  openPanel?: string | null
 }) {
-  const [open, setOpen] = useState({ playlist: false, phantom: false, features: false, zones: false })
+  /* Opening from Available Inventory's slot lands on Playlist Settings, where
+     slot assignment lives (Rob, 20 Sep): /display-types?id=…&panel=playlist. */
+  const [open, setOpen] = useState({ playlist: openPanel === 'playlist', phantom: false, features: false, zones: false })
   const toggle = (k: keyof typeof open) => setOpen((o) => ({ ...o, [k]: !o[k] }))
   const playlistName = (id: string | undefined) => playlists.find((p) => p.id === id)?.name ?? '—'
   const set = (patch: Partial<DisplayType>) => update((t) => ({ ...t, ...patch }))

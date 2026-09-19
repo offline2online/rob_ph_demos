@@ -4,7 +4,9 @@
 import type { Campaign, CampaignBrief } from '@ph-dsp/types'
 import { type Db, fromJson, toJson } from '../db/db'
 
-export interface CampaignRecord extends Campaign {
+/* The stored campaign. `schedule` isn't stored: the admin list derives it
+   from the windows the campaign holds. */
+export interface CampaignRecord extends Omit<Campaign, 'schedule'> {
   targeting: unknown
 }
 

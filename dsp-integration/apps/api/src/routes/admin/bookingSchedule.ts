@@ -69,6 +69,8 @@ export function bookingSchedule(ctx: Context, starts: Date[], f: ScheduleFilter 
     windows: starts.map((s) => ({ start: s.toISOString(), end: new Date(s.getTime() + len).toISOString() })),
     positions,
     revenue: rows,
+    /* What the filters offer: each DSP and the advertisers it brings (Rob, 20 Sep). */
+    dsps: partners.map((p) => ({ partnerId: p.id, name: p.name, advertisers: p.seats.map((s) => ({ advertiserId: advertiserSlug(s.name), name: s.name })) })),
     byPricingType: [...byType.values()],
     totals: {
       bookedWindows: rows.reduce((n, r) => n + r.bookedWindows, 0),

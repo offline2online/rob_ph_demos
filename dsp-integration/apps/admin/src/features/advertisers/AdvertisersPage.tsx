@@ -24,7 +24,7 @@ import { BOOKING_SCHEDULE_PATH } from '../booking-schedule/path'
 
 interface Data { currency: string; floorCpm: number; items: Advertiser[] }
 type Settings = Record<string, AdvertiserSetting>
-type Ctx = { current: { settings: Settings; data: Data; canEdit: boolean; set: (id: string, patch: Partial<AdvertiserSetting>) => void; openBookings: (advertiserId: string) => void } }
+type Ctx = { current: { settings: Settings; data: Data; canEdit: boolean; set: (id: string, patch: Partial<AdvertiserSetting>) => void; openBookings: (advertiserId: string) => void; openCampaigns: (advertiserId: string) => void } }
 type P = ICellRendererParams<Advertiser, unknown, Ctx>
 
 const effective = (floor: number, m: number) => Math.round(floor * (m || 0) * 100) / 100
@@ -64,20 +64,24 @@ const CAMPAIGN_STATES = [
   { key: 'draft', icon: 'edit_note', colour: T.micro, label: 'draft' },
 ] as const
 
-function CampaignsCell({ data }: P) {
+/* The counts open Campaign Status filtered to this advertiser (Rob, 20 Sep). */
+function CampaignsCell({ data, context }: P) {
   if (!data) return null
   const shown = CAMPAIGN_STATES.filter((s) => data.campaigns[s.key] > 0)
+  const open = () => context.current.openCampaigns(data.advertiserId)
   if (!shown.length) return <span style={{ fontSize: 12, color: T.micro }}>None yet</span>
   return (
-    <span className="inline-flex items-center gap-2.5">
-      {shown.map((s) => (
-        <Tooltip key={s.key} title={`${data.campaigns[s.key]} ${s.label}`}>
-          <span className="inline-flex items-center gap-[3px]" style={{ fontSize: 12.5, color: s.colour }}>
-            <Icon name={s.icon} size={15} />{data.campaigns[s.key]}
-          </span>
-        </Tooltip>
-      ))}
-    </span>
+    <Tooltip title={`${shown.map((s) => `${data.campaigns[s.key]} ${s.label}`).join(', ')} — open in Campaign Status`}>
+      <Button type="text" size="small" className="px-1" aria-label={`${data.name}: campaigns`} onClick={open}>
+        <span className="inline-flex items-center gap-2.5">
+          {shown.map((s) => (
+            <span key={s.key} className="inline-flex items-center gap-[3px]" style={{ fontSize: 12.5, color: s.colour }}>
+              <Icon name={s.icon} size={15} />{data.campaigns[s.key]}
+            </span>
+          ))}
+        </span>
+      </Button>
+    </Tooltip>
   )
 }
 const BookingsCell = ({ data, context }: P) =>
@@ -90,6 +94,8 @@ const TypeCell = ({ data }: ICellRendererParams<AvailableInventoryRow>) =>
   data ? <span className="inline-flex min-w-0 items-center gap-[5px]"><Icon name={touchPointIcon(data.touchPoint ?? '')} size={14} style={{ color: T.muted }} /><span className="truncate">{data.displayTypeName}</span></span> : null
 const SlotCell = ({ data }: ICellRendererParams<AvailableInventoryRow>) =>
   data ? <div className="min-w-0"><div className="truncate">{data.position}</div><div style={{ fontSize: 11, color: T.micro }}>{data.partnerName ?? 'Any connected DSP'}</div></div> : null
+/* Opens the display type with Playlist Settings — where slot assignment
+   lives — already expanded (Rob, 20 Sep). */
 const OpenCell = ({ data, context }: ICellRendererParams<AvailableInventoryRow, unknown, InvCtx>) =>
   data ? <Button color="primary" variant="text" size="small" className="px-0" onClick={() => context.current.open(data.displayTypeId)}>Open</Button> : null
 
@@ -145,6 +151,7 @@ export function AdvertisersPage() {
     settings: draft, data, canEdit,
     set: (id: string, patch: Partial<AdvertiserSetting>) => setDraft((cur) => (cur ? { ...cur, [id]: { ...cur[id], ...patch } } : cur)),
     openBookings: (advertiserId: string) => window.open(`${BOOKING_SCHEDULE_PATH}?advertiserId=${encodeURIComponent(advertiserId)}`, '_blank', 'noopener'),
+    openCampaigns: (advertiserId: string) => navigate(`/campaign-status?advertiserId=${encodeURIComponent(advertiserId)}`),
   }
 
   return (
@@ -171,7 +178,7 @@ export function AdvertisersPage() {
           label="Available Inventory"
           rows={inventory.data ?? []}
           columns={inventoryColumns}
-          context={{ open: (id: string) => navigate(`/display-types?id=${encodeURIComponent(id)}`) }}
+          context={{ open: (id: string) => navigate(`/display-types?id=${encodeURIComponent(id)}&panel=playlist`) }}
           getRowId={(r) => `${r.displayTypeId}:${r.slot}`}
           rowHeight={52}
         />

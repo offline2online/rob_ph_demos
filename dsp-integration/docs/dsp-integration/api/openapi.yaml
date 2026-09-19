@@ -1125,7 +1125,7 @@ components:
 
     BookingSchedule:
       type: object
-      required: [currency, windows, positions, revenue, byPricingType, totals]
+      required: [currency, windows, positions, revenue, dsps, byPricingType, totals]
       properties:
         currency: {type: string, description: ISO 4217}
         windows:
@@ -1173,6 +1173,23 @@ components:
           type: array
           description: Per display type with advertiser slots, over the schedule's windows.
           items: {$ref: '#/components/schemas/BookingRevenue'}
+        dsps:
+          type: array
+          description: The DSPs the filters offer, and the advertisers each one brings.
+          items:
+            type: object
+            required: [partnerId, name, advertisers]
+            properties:
+              partnerId: {type: string}
+              name: {type: string}
+              advertisers:
+                type: array
+                items:
+                  type: object
+                  required: [advertiserId, name]
+                  properties:
+                    advertiserId: {type: string}
+                    name: {type: string}
         byPricingType:
           type: array
           description: The same bookings by campaign type, so a retailer can see what is selling.
@@ -1425,7 +1442,7 @@ components:
     Campaign:
       type: object
       description: POC stand-in for the existing campaign record (spec §8 additions included). Approval state is read from /admin/v1/approvals.
-      required: [campaignId, name, source, activation]
+      required: [campaignId, name, source, schedule, activation]
       properties:
         campaignId: {type: string}
         name: {type: string}
@@ -1437,6 +1454,13 @@ components:
         displayTypeId: {type: [string, 'null']}
         pricingType: {type: [string, 'null'], enum: [baseline, localised, personalised, interactive, null]}
         brief: {$ref: '#/components/schemas/CampaignBrief'}
+        schedule:
+          type: object
+          description: What the advertiser booked, so the table can show what is up next.
+          required: [nextWindowStart, bookedWindows]
+          properties:
+            nextWindowStart: {type: [string, 'null'], format: date-time, description: The next play window this campaign holds, or null when none is ahead.}
+            bookedWindows: {type: integer, description: Live windows won or reserved, past and future.}
         activation:
           type: object
           required: [enabled]
