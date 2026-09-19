@@ -13,7 +13,8 @@ import { PlaylistManagementPage } from './features/playlist-management/PlaylistM
 import { DspIndex, DspIntegrationLayout } from './features/dsp-integration/DspIntegrationLayout'
 import { AddPartnerRoute, PartnerRoute } from './features/dsp-integration/AddPartner'
 import { AdvertiserSettings } from './features/dsp-integration/AdvertiserSettings'
-import { BookingSchedule } from './features/dsp-integration/BookingSchedule'
+import { BookingSchedulePage } from './features/booking-schedule/BookingSchedulePage'
+import { BOOKING_SCHEDULE_PATH } from './features/booking-schedule/path'
 import { ExchangeSettings } from './features/dsp-integration/ExchangeSettings'
 import { SharedTargetingVariables } from './features/dsp-integration/SharedTargetingVariables'
 import { AppShell, type NavItem } from './shared/AppShell'
@@ -58,7 +59,6 @@ function featureRoutes(flags: Flags): RouteObject[] {
             { index: true, element: <DspIndex /> },
             { path: 'exchange', element: <ExchangeSettings /> },
             { path: 'advertiser-settings', element: <AdvertiserSettings /> },
-            { path: 'booking-schedule', element: <BookingSchedule /> },
             { path: 'targeting-variables', element: <SharedTargetingVariables /> },
             { path: 'partners/:id', element: <PartnerRoute /> },
             { path: 'add/:provider', element: <AddPartnerRoute /> },
@@ -70,6 +70,8 @@ function featureRoutes(flags: Flags): RouteObject[] {
           handle: { title: 'Advertisers', tip: 'Every advertiser using the platform, across all DSPs.' } satisfies RouteHandle,
           element: <AdvertisersPage />,
         },
+        /* Its own page, opened in a new tab from Available Inventory or an advertiser (Rob, 20 Sep). */
+        { path: BOOKING_SCHEDULE_PATH.slice(1), handle: { title: 'Booking schedule' } satisfies RouteHandle, element: <BookingSchedulePage /> },
         {
           path: 'campaign-status',
           handle: { title: 'Campaign Status', tip: 'Every campaign advertisers and DSPs have submitted, with its approval status. Open one to see what was booked, or approve and reject from the table. HQ\u2019s own campaigns are not listed here.' } satisfies RouteHandle,

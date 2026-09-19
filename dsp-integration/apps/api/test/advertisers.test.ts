@@ -25,4 +25,13 @@ describe('Advertisers (admin only, spec §3)', () => {
     expect(res.statusCode).toBe(403)
     expectMatchesContract('PUT', '/admin/v1/advertisers', 403, res.json())
   })
+
+  it('counts each advertiser’s campaigns by approval status (Rob, 20 Sep)', async () => {
+    const res = await buildApp(await testContext()).inject({ method: 'GET', url: '/api/admin/v1/advertisers' })
+    const byId = Object.fromEntries(res.json().items.map((a: { advertiserId: string; campaigns: unknown }) => [a.advertiserId, a.campaigns]))
+    /* Seeded: Nestlé approved automatically, Swisse one awaiting and one draft, L'Oréal rejected. */
+    expect(byId.nestle).toEqual({ draft: 0, awaiting_approval: 0, approved: 1, rejected: 0 })
+    expect(byId.swisse).toEqual({ draft: 1, awaiting_approval: 1, approved: 0, rejected: 0 })
+    expect(byId.loreal).toEqual({ draft: 0, awaiting_approval: 0, approved: 0, rejected: 1 })
+  })
 })

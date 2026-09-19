@@ -351,6 +351,8 @@ paths:
         - {name: from, in: query, schema: {type: string, format: date}}
         - {name: to, in: query, schema: {type: string, format: date}, description: 'At most 92 days after from.'}
         - {name: campaignId, in: query, schema: {type: string}, description: 'Only this campaign''s bookings; without dates, the range covers all of them.'}
+        - {name: advertiserId, in: query, schema: {type: string}, description: Only this advertiser's bookings.}
+        - {name: partnerId, in: query, schema: {type: string}, description: Only this DSP's bookings.}
       responses:
         '200': {description: Schedule, content: {application/json: {schema: {$ref: '#/components/schemas/BookingSchedule'}}}}
         '400': {$ref: '#/components/responses/ValidationFailed'}
@@ -1113,7 +1115,7 @@ components:
 
     BookingSchedule:
       type: object
-      required: [currency, windows, positions, revenue, totals]
+      required: [currency, windows, positions, revenue, byPricingType, totals]
       properties:
         currency: {type: string, description: ISO 4217}
         windows:
@@ -1143,10 +1145,13 @@ components:
                     status: {type: string, enum: [booked, available, unavailable]}
                     booking:
                       type: [object, 'null']
-                      required: [reservationId, campaignId, type, advertiserName, partnerName, cpm, assumedViews, bookedRevenue, billedRevenue]
+                      required: [reservationId, campaignId, advertiserId, partnerId, pricingType, type, advertiserName, partnerName, cpm, assumedViews, bookedRevenue, billedRevenue]
                       properties:
                         reservationId: {type: string}
                         campaignId: {type: string}
+                        advertiserId: {type: [string, 'null']}
+                        partnerId: {type: string}
+                        pricingType: {$ref: '#/components/schemas/PricingType'}
                         type: {type: string, enum: [reserve, bid]}
                         advertiserName: {type: string}
                         partnerName: {type: string}
@@ -1158,6 +1163,16 @@ components:
           type: array
           description: Per display type with advertiser slots, over the schedule's windows.
           items: {$ref: '#/components/schemas/BookingRevenue'}
+        byPricingType:
+          type: array
+          description: The same bookings by campaign type, so a retailer can see what is selling.
+          items:
+            type: object
+            required: [pricingType, bookedWindows, bookedRevenue]
+            properties:
+              pricingType: {$ref: '#/components/schemas/PricingType'}
+              bookedWindows: {type: integer}
+              bookedRevenue: {type: number}
         totals: {$ref: '#/components/schemas/BookingRevenueTotals'}
     BookingRevenueTotals:
       type: object
@@ -1261,12 +1276,21 @@ components:
       allOf:
         - $ref: '#/components/schemas/AdvertiserSetting'
         - type: object
-          required: [advertiserId, name, via, effectiveFloorCpm]
+          required: [advertiserId, name, via, effectiveFloorCpm, campaigns]
           properties:
             advertiserId: {type: string}
             name: {type: string}
             via: {type: array, items: {type: string}, description: DSP names}
             effectiveFloorCpm: {type: number}
+            campaigns:
+              type: object
+              description: This advertiser's campaigns by approval status, so the retailer can see who is waiting.
+              required: [draft, awaiting_approval, approved, rejected]
+              properties:
+                draft: {type: integer}
+                awaiting_approval: {type: integer}
+                approved: {type: integer}
+                rejected: {type: integer}
 
     Approval:
       type: object

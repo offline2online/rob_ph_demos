@@ -42,7 +42,7 @@ describe('GET /admin/v1/booking-schedule', () => {
     const [pos] = res.json().positions
     const at = (d: string) => pos.windows.find((w: { start: string }) => w.start.startsWith(d))
     /* The seeded 15 Sep window: won at 120 CPM, 1,236 assumed views; billed on what played. */
-    expect(at('2026-09-15')).toEqual({ start: '2026-09-15T00:00:00.000Z', status: 'booked', booking: { reservationId: 'res_seed_nestle_0915', campaignId: 'c_dsp_nestle', type: 'bid', advertiserName: 'Nestlé', partnerName: 'Google DSP', cpm: 120, assumedViews: 1236, bookedRevenue: 148.32, billedRevenue: 74.16 } })
+    expect(at('2026-09-15')).toEqual({ start: '2026-09-15T00:00:00.000Z', status: 'booked', booking: { reservationId: 'res_seed_nestle_0915', campaignId: 'c_dsp_nestle', advertiserId: 'nestle', partnerId: 'p_google', pricingType: 'localised', type: 'bid', advertiserName: 'Nestlé', partnerName: 'Google DSP', cpm: 120, assumedViews: 1236, bookedRevenue: 148.32, billedRevenue: 74.16 } })
     /* Reserved at the price agreed through the DSP. */
     expect(at('2026-09-22')).toMatchObject({ status: 'booked', booking: { type: 'reserve', advertiserName: 'Swisse', cpm: 175, bookedRevenue: 216.3, billedRevenue: null } })
     /* A Test-mode win is not a booking. */
@@ -50,6 +50,8 @@ describe('GET /admin/v1/booking-schedule', () => {
     expect(at('2026-09-16').status).toBe('unavailable')
     expect(res.json().revenue).toEqual([{ displayTypeId: 'menu_board', displayTypeName: 'Menu Board — Long Format', bookedWindows: 2, bookedRevenue: 364.62, billedRevenue: 74.16 }])
     expect(res.json().totals).toEqual({ bookedWindows: 2, bookedRevenue: 364.62, billedRevenue: 74.16 })
+    /* Both bookings are localised campaigns (Rob, 20 Sep: show what type is selling). */
+    expect(res.json().byPricingType).toEqual([{ pricingType: 'localised', bookedWindows: 2, bookedRevenue: 364.62 }])
   })
 
   it('narrows to one campaign, over whatever range its bookings fall in', async () => {
@@ -62,6 +64,16 @@ describe('GET /admin/v1/booking-schedule', () => {
     expect(res.json().totals).toEqual({ bookedWindows: 1, bookedRevenue: 216.3, billedRevenue: 0 })
     /* The seeded Nestlé booking belongs to another campaign, so it isn't counted. */
     expect(res.json().windows[0].start).toBe('2026-09-20T00:00:00.000Z')
+  })
+
+  it('narrows to one advertiser or one DSP', async () => {
+    const { ctx, get } = await setup()
+    ctx.reservations.insert(booking({}))
+    const swisse = await get('?advertiserId=swisse&from=2026-09-15&to=2026-09-23')
+    expect(swisse.json().totals.bookedWindows).toBe(1)
+    expect(swisse.json().positions[0].windows.find((w: { start: string }) => w.start.startsWith('2026-09-15')).status).toBe('unavailable')
+    const amazon = await get('?partnerId=p_amazon&from=2026-09-15&to=2026-09-23')
+    expect(amazon.json().totals).toEqual({ bookedWindows: 0, bookedRevenue: 0, billedRevenue: 0 })
   })
 
   it('needs a valid range of at most 92 days, and is behind the flag', async () => {

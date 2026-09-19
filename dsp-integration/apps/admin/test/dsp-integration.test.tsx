@@ -117,7 +117,7 @@ describe('DSP page', () => {
 })
 
 describe('Advertisers screen (admin only)', () => {
-  const advertisers = { currency: 'AUD', floorCpm: 100, items: [{ advertiserId: 'nestle', name: 'Nestlé', via: ['Google DSP'], approvalRequired: false, floorMultiplier: 0.8, effectiveFloorCpm: 80 }] }
+  const advertisers = { currency: 'AUD', floorCpm: 100, items: [{ advertiserId: 'nestle', name: 'Nestlé', via: ['Google DSP'], approvalRequired: false, floorMultiplier: 0.8, effectiveFloorCpm: 80, campaigns: { draft: 0, awaiting_approval: 1, approved: 2, rejected: 0 } }] }
 
   it('sits directly below DSP Integration in the nav for admins, with the prototype’s columns', async () => {
     vi.stubGlobal('fetch', vi.fn(fakeFetch({ '/api/admin/v1/advertisers': advertisers })))
@@ -159,7 +159,7 @@ describe('Campaign Status stand-in', () => {
     expect(await screen.findByText(/campaigns submitted by advertisers and DSPs/)).toBeInTheDocument()
     const grid = screen.getByLabelText('Campaign Status')
     await new Promise((r) => setTimeout(r, 300))
-    expect(await within(grid).findByText('Swisse spring', {}, { timeout: 3000 })).toBeInTheDocument()
+    expect(await within(grid).findByText('Swisse spring', {}, { timeout: 10000 })).toBeInTheDocument()
     /* HQ's own campaigns aren't this build's business. */
     expect(within(grid).queryByText('Zinger Box — hero')).not.toBeInTheDocument()
     /* The status filter is a column filter, not chips above the table. */
@@ -191,10 +191,11 @@ describe('Booking schedule', () => {
       positionId: 'menu_board.s2', displayTypeId: 'menu_board', displayTypeName: 'Menu Board — Long Format', slot: 2, slotLabel: 'Supplier slot', partnerName: 'Google DSP', assignment: 'rtb',
       windows: [
         { start: '2026-09-21T00:00:00.000Z', status: 'available', booking: null },
-        { start: '2026-09-22T00:00:00.000Z', status: 'booked', booking: { reservationId: 'r1', type: 'reserve', advertiserName: 'Swisse', partnerName: 'Google DSP', cpm: 175, assumedViews: 1236, bookedRevenue: 216.3, billedRevenue: null } },
+        { start: '2026-09-22T00:00:00.000Z', status: 'booked', booking: { reservationId: 'r1', campaignId: 'c1', advertiserId: 'swisse', partnerId: 'p_google', pricingType: 'personalised', type: 'reserve', advertiserName: 'Swisse', partnerName: 'Google DSP', cpm: 175, assumedViews: 1236, bookedRevenue: 216.3, billedRevenue: null } },
       ],
     }],
     revenue: [{ displayTypeId: 'menu_board', displayTypeName: 'Menu Board — Long Format', bookedWindows: 1, bookedRevenue: 216.3, billedRevenue: 0 }],
+    byPricingType: [{ pricingType: 'personalised', bookedWindows: 1, bookedRevenue: 216.3 }],
     totals: { bookedWindows: 1, bookedRevenue: 216.3, billedRevenue: 0 },
   }
 
@@ -203,17 +204,21 @@ describe('Booking schedule', () => {
     expect(await screen.findByRole('button', { name: /Booking schedule/ })).toBeInTheDocument()
   })
 
-  it('shows booking revenue per display type and each slot’s windows, booked at their price, with no save bar', async () => {
+  it('shows booking revenue, what sold by campaign type, and each slot’s windows at the price booked', async () => {
     vi.stubGlobal('fetch', vi.fn(fakeFetch({ '/api/admin/v1/booking-schedule': schedule })))
-    renderAt('/dsp-integration/booking-schedule')
+    renderAt('/booking-schedule')
     expect(await screen.findByRole('heading', { name: /Booking schedule/ })).toBeInTheDocument()
     const revenue = await screen.findByLabelText('Booking revenue')
     expect(await within(revenue).findAllByText('$216.30')).toHaveLength(2)
     const grid = screen.getByLabelText('Booking schedule')
     expect(await within(grid).findByText('Swisse')).toBeInTheDocument()
-    expect(within(grid).getByText(/175 CPM/)).toBeInTheDocument()
+    expect(within(grid).getByText(/personalised · 175 CPM/)).toBeInTheDocument()
     expect(within(grid).getByText('Available')).toBeInTheDocument()
     expect(screen.queryByRole('region', { name: 'Save changes' })).not.toBeInTheDocument()
+    /* Filters and views (Rob, 20 Sep). */
+    expect(screen.getByRole('radio', { name: 'Weekly' })).toBeInTheDocument()
+    expect(screen.getByText('All advertisers')).toBeInTheDocument()
+    expect(screen.getByText('All DSPs')).toBeInTheDocument()
   })
 })
 

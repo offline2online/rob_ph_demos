@@ -10,18 +10,22 @@ import type { Guards } from '../../http/app'
 import { validationFailed } from '../../http/errors'
 import { allPositions, assignmentOf, nextWindow, windowMs, windowStartOf, windowsBetween } from '../../domain/positions'
 import { TAKEN } from '../../repos/ReservationRepo'
-import { listAdvertisers } from './advertisers'
+import { advertiserSlug } from '@ph-dsp/types'
 
 const DAY = 86_400_000
 const round2 = (n: number) => Math.round(n * 100) / 100
 
-export function bookingSchedule(ctx: Context, starts: Date[], campaignId?: string): BookingSchedule {
+export interface ScheduleFilter { campaignId?: string; advertiserId?: string; partnerId?: string }
+
+export function bookingSchedule(ctx: Context, starts: Date[], f: ScheduleFilter = {}): BookingSchedule {
   const len = windowMs(ctx)
   const partners = ctx.partners.list()
-  const advertiserName = new Map(listAdvertisers(ctx).map((a) => [a.advertiserId, a.name]))
+  /* Advertiser names come from the DSPs' seats, keyed by their slug. */
+  const advertiserName = new Map(partners.flatMap((p) => p.seats.map((s) => [advertiserSlug(s.name), s.name] as const)))
   const billed = new Map(lineItems(ctx).map((l) => [l.reservationId, l.amount]))
   const firstSellable = nextWindow(ctx).getTime()
   const revenue = new Map<string, BookingSchedule['revenue'][number]>()
+  const byType = new Map<string, BookingSchedule['byPricingType'][number]>()
 
   const positions = allPositions(ctx).map((p) => {
     const hasDisplays = ctx.displays.listByDisplayType(p.displayType.id).length > 0
@@ -29,17 +33,24 @@ export function bookingSchedule(ctx: Context, starts: Date[], campaignId?: strin
     const rev = revenue.get(p.displayType.id) ?? { displayTypeId: p.displayType.id, displayTypeName: p.displayType.name, bookedWindows: 0, bookedRevenue: 0, billedRevenue: 0 }
     revenue.set(p.displayType.id, rev)
     const windows = starts.map((start) => {
-      const r = ctx.reservations.forWindow(p.positionId, start.toISOString()).find((x) => !x.testMode && TAKEN.includes(x.status) && x.clearingCpm !== null && (!campaignId || x.campaignId === campaignId))
+      const r = ctx.reservations.forWindow(p.positionId, start.toISOString()).find((x) => !x.testMode && TAKEN.includes(x.status) && x.clearingCpm !== null
+        && (!f.campaignId || x.campaignId === f.campaignId) && (!f.advertiserId || x.advertiserId === f.advertiserId) && (!f.partnerId || x.partnerId === f.partnerId))
       if (r) {
         const bookedRevenue = round2((views / 1000) * (r.clearingCpm as number))
         const bill = billed.get(r.id) ?? null
         rev.bookedWindows++
         rev.bookedRevenue = round2(rev.bookedRevenue + bookedRevenue)
         rev.billedRevenue = round2(rev.billedRevenue + (bill ?? 0))
+        const type = (r.pricingType ?? 'baseline') as BookingSchedule['byPricingType'][number]['pricingType']
+        const t = byType.get(type) ?? { pricingType: type, bookedWindows: 0, bookedRevenue: 0 }
+        t.bookedWindows++
+        t.bookedRevenue = round2(t.bookedRevenue + bookedRevenue)
+        byType.set(type, t)
         return {
           start: start.toISOString(), status: 'booked' as const,
           booking: {
-            reservationId: r.id, campaignId: r.campaignId as string, type: r.type, advertiserName: (r.advertiserId && advertiserName.get(r.advertiserId)) || r.advertiserId || '—',
+            reservationId: r.id, campaignId: r.campaignId as string, advertiserId: r.advertiserId, partnerId: r.partnerId,
+            pricingType: (r.pricingType ?? 'baseline') as BookingSchedule['byPricingType'][number]['pricingType'], type: r.type, advertiserName: (r.advertiserId && advertiserName.get(r.advertiserId)) || r.advertiserId || '—',
             partnerName: partners.find((x) => x.id === r.partnerId)?.name ?? r.partnerId, cpm: r.clearingCpm as number, assumedViews: views, bookedRevenue, billedRevenue: bill,
           },
         }
@@ -58,6 +69,7 @@ export function bookingSchedule(ctx: Context, starts: Date[], campaignId?: strin
     windows: starts.map((s) => ({ start: s.toISOString(), end: new Date(s.getTime() + len).toISOString() })),
     positions,
     revenue: rows,
+    byPricingType: [...byType.values()],
     totals: {
       bookedWindows: rows.reduce((n, r) => n + r.bookedWindows, 0),
       bookedRevenue: round2(rows.reduce((n, r) => n + r.bookedRevenue, 0)),
@@ -67,9 +79,9 @@ export function bookingSchedule(ctx: Context, starts: Date[], campaignId?: strin
 }
 
 export const bookingScheduleRoutes = (ctx: Context, guards: Guards): FastifyPluginAsync => async (app) => {
-  app.get<{ Querystring: { from?: string; to?: string; campaignId?: string } }>('/booking-schedule', async (req) => {
+  app.get<{ Querystring: { from?: string; to?: string; campaignId?: string; advertiserId?: string; partnerId?: string } }>('/booking-schedule', async (req) => {
     guards.flagged()
-    const { from, to, campaignId } = req.query
+    const { from, to, campaignId, advertiserId, partnerId } = req.query
     let starts: Date[] | null
     if (!from && !to) {
       const len = windowMs(ctx)
@@ -89,6 +101,6 @@ export const bookingScheduleRoutes = (ctx: Context, guards: Guards): FastifyPlug
       }
     }
     if (!starts) throw validationFailed([{ field: 'from', reason: 'from and to are dates (YYYY-MM-DD), from ≤ to, at most 92 days apart.' }])
-    return bookingSchedule(ctx, starts, campaignId)
+    return bookingSchedule(ctx, starts, { campaignId, advertiserId, partnerId })
   })
 }

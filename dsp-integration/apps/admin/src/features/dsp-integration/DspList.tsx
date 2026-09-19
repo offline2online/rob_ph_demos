@@ -14,7 +14,6 @@ import { useSection } from './DspIntegrationLayout'
 export const PATHS = {
   exchange: '/dsp-integration/exchange',
   advertiserSettings: '/dsp-integration/advertiser-settings',
-  bookingSchedule: '/dsp-integration/booking-schedule',
   variables: '/dsp-integration/targeting-variables',
   partner: (id: string) => `/dsp-integration/partners/${id}`,
   add: (provider: string) => `/dsp-integration/add/${provider}`,

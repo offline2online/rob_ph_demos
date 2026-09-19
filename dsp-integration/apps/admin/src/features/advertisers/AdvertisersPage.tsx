@@ -2,7 +2,7 @@
    campaign approval and floor multiplier per advertiser. Campaigns are not
    approved here. Changes are applied with Save changes (decision 4). */
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { App, InputNumber, Spin, Switch } from 'antd'
+import { App, Button, InputNumber, Spin, Switch, Tooltip } from 'antd'
 import type { ColDef, ICellRendererParams } from 'ag-grid-community'
 import { SLOT_OWNERS, type Advertiser, type AdvertiserSetting } from '@ph-dsp/types'
 import { useMemo, useState } from 'react'
@@ -16,10 +16,11 @@ import { SaveBar } from '../../shared/SaveBar'
 import { useReportDirty } from '../../shared/UnsavedChanges'
 import { useDraft } from '../../shared/useDraft'
 import { T } from '../../theme/phTheme'
+import { BOOKING_SCHEDULE_PATH } from '../booking-schedule/path'
 
 interface Data { currency: string; floorCpm: number; items: Advertiser[] }
 type Settings = Record<string, AdvertiserSetting>
-type Ctx = { current: { settings: Settings; data: Data; set: (id: string, patch: Partial<AdvertiserSetting>) => void } }
+type Ctx = { current: { settings: Settings; data: Data; set: (id: string, patch: Partial<AdvertiserSetting>) => void; openBookings: (advertiserId: string) => void } }
 type P = ICellRendererParams<Advertiser, unknown, Ctx>
 
 const effective = (floor: number, m: number) => Math.round(floor * (m || 0) * 100) / 100
@@ -50,6 +51,34 @@ function EffectiveCell({ data, context }: P) {
   const { settings, data: d } = context.current
   return <span>{`${d.currency} ${effective(d.floorCpm, settings[data.advertiserId].floorMultiplier).toFixed(2)} CPM`}</span>
 }
+/* This advertiser's campaigns by approval status, and a way into its
+   bookings on the schedule (Rob, 20 Sep). */
+const CAMPAIGN_STATES = [
+  { key: 'approved', icon: 'check_circle', colour: T.success, label: 'approved' },
+  { key: 'awaiting_approval', icon: 'schedule', colour: T.warning, label: 'awaiting approval' },
+  { key: 'rejected', icon: 'cancel', colour: T.error, label: 'rejected' },
+  { key: 'draft', icon: 'edit_note', colour: T.micro, label: 'draft' },
+] as const
+
+function CampaignsCell({ data }: P) {
+  if (!data) return null
+  const shown = CAMPAIGN_STATES.filter((s) => data.campaigns[s.key] > 0)
+  if (!shown.length) return <span style={{ fontSize: 12, color: T.micro }}>None yet</span>
+  return (
+    <span className="inline-flex items-center gap-2.5">
+      {shown.map((s) => (
+        <Tooltip key={s.key} title={`${data.campaigns[s.key]} ${s.label}`}>
+          <span className="inline-flex items-center gap-[3px]" style={{ fontSize: 12.5, color: s.colour }}>
+            <Icon name={s.icon} size={15} />{data.campaigns[s.key]}
+          </span>
+        </Tooltip>
+      ))}
+    </span>
+  )
+}
+const BookingsCell = ({ data, context }: P) =>
+  data ? <Button color="primary" variant="text" size="small" className="px-0" icon={<Icon name="calendar_month" size={15} />} onClick={() => context.current.openBookings(data.advertiserId)}>Bookings</Button> : null
+
 const header = (label: string, tip: string) => () => <WithTip tip={tip}><span className="ag-header-cell-text">{label}</span></WithTip>
 
 export function AdvertisersPage() {
@@ -62,11 +91,13 @@ export function AdvertisersPage() {
   const [saving, setSaving] = useState(false)
   const data = q.data
   const columns = useMemo<ColDef<Advertiser>[]>(() => data ? [
-    { headerName: 'Advertiser', width: 200, cellRenderer: NameCell },
-    { headerName: 'Via', width: 200, cellRenderer: ViaCell, headerComponent: header('Via', "The DSP(s) this advertiser's campaigns come through.") },
+    { headerName: 'Advertiser', width: 200, minWidth: 150, cellRenderer: NameCell },
+    { headerName: 'Via', width: 170, minWidth: 120, cellRenderer: ViaCell, headerComponent: header('Via', "The DSP(s) this advertiser's campaigns come through.") },
     { headerName: 'Campaign approval', width: 170, suppressSizeToFit: true, cellRenderer: ApprovalCell, headerComponent: header('Campaign approval', 'Required: the advertiser’s campaigns wait for approval in the Campaigns section. Not required: they publish after automated checks.') },
     { headerName: 'Floor multiplier', width: 140, suppressSizeToFit: true, cellRenderer: MultiplierCell, headerComponent: header('Floor multiplier', 'Scales this advertiser’s floor. Default 1.0, e.g. 0.8 for a preferred supplier or 1.2 for a new one.') },
     { headerName: 'Effective floor', width: 150, cellRenderer: EffectiveCell, headerComponent: header('Effective floor', `Floor CPM (${data.currency} ${data.floorCpm}, set in DSP Integration → Advertiser settings) × this advertiser's floor multiplier.`) },
+    { headerName: 'Campaigns', width: 140, minWidth: 120, suppressSizeToFit: true, cellRenderer: CampaignsCell, headerComponent: header('Campaigns', 'This advertiser’s campaigns by approval status: approved, awaiting approval, rejected, draft. Open Campaign Status to act on them.') },
+    { headerName: '', width: 130, suppressSizeToFit: true, cellRenderer: BookingsCell, headerComponent: header('', 'Opens this advertiser’s upcoming bookings on the booking schedule.') },
   ] : [], [data])
 
   if (q.error) return <Callout tone="error" icon="block">{q.error instanceof ApiRequestError ? q.error.message : 'Could not load advertisers.'}</Callout>
@@ -84,7 +115,11 @@ export function AdvertisersPage() {
       setSaving(false)
     }
   }
-  const context = { settings: draft, data, set: (id: string, patch: Partial<AdvertiserSetting>) => setDraft((cur) => (cur ? { ...cur, [id]: { ...cur[id], ...patch } } : cur)) }
+  const context = {
+    settings: draft, data,
+    set: (id: string, patch: Partial<AdvertiserSetting>) => setDraft((cur) => (cur ? { ...cur, [id]: { ...cur[id], ...patch } } : cur)),
+    openBookings: (advertiserId: string) => window.open(`${BOOKING_SCHEDULE_PATH}?advertiserId=${encodeURIComponent(advertiserId)}`, '_blank', 'noopener'),
+  }
 
   return (
     <div>

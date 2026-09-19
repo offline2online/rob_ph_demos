@@ -151,7 +151,7 @@ env var, with no switcher and no cookie (see *POC stand-ins* below).
 | GET | `/admin/v1/advertiser-settings` | Currency, floor CPM, multipliers, the auction schedule (`auctionOpensHours`, `playWindowHours`, `auctionCutoffTime`), advertiser and category whitelists/blacklists, and read-only `whereTheseApply` (per DSP: adopting or own lists). |
 | PUT | `/admin/v1/advertiser-settings` | Save changes (pricing, auction schedule and lists). An entry can't be on both lists, and the play-window length can't change while future windows are bid on or booked (`validation_failed`). |
 | GET | `/admin/v1/available-inventory` | Read-only rows: display type, playlist, slot, position (with DSP). No advertisers column. |
-| GET | `/admin/v1/booking-schedule?from=&to=` | Reached from Available Inventory. Every advertiser-owned slot across its play windows: booked (advertiser, DSP, reserve or bid, the CPM it was booked at, booked and billed revenue), available or unavailable; plus booking revenue per display type and in total. Live bookings only (never Test mode). Default: the current window and the next 13; at most 92 days. `campaignId` narrows it to one campaign's bookings, over whatever range they fall in. |
+| GET | `/admin/v1/booking-schedule?from=&to=` | Reached from Available Inventory. Every advertiser-owned slot across its play windows: booked (advertiser, DSP, reserve or bid, the CPM it was booked at, booked and billed revenue), available or unavailable; plus booking revenue per display type and in total. Live bookings only (never Test mode). Default: the current window and the next 13; at most 92 days. `campaignId`, `advertiserId` or `partnerId` narrow it; with `campaignId` the range covers all of that campaign's bookings. Each booking says which campaign type it is, and the response also totals the bookings by campaign type. |
 
 ### Shared targeting variables
 
@@ -195,7 +195,7 @@ down; `listsLinked: true` discards the DSP's own lists.
 
 | Method | Path | Purpose |
 |---|---|---|
-| GET | `/admin/v1/advertisers` | Every advertiser across DSPs: name, via (DSPs), approval required, floor multiplier, effective floor CPM; plus company currency and floor. |
+| GET | `/admin/v1/advertisers` | Every advertiser across DSPs: name, via (DSPs), approval required, floor multiplier, effective floor CPM, and its campaigns by approval status; plus company currency and floor. |
 | PUT | `/admin/v1/advertisers` | Save changes: `settings` map of advertiser id → `{approvalRequired, floorMultiplier}`. |
 
 Non-admin sessions get `403 forbidden`.

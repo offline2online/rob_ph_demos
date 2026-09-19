@@ -918,6 +918,9 @@ export interface components {
                     booking: {
                         reservationId: string;
                         campaignId: string;
+                        advertiserId: string | null;
+                        partnerId: string;
+                        pricingType: components["schemas"]["PricingType"];
                         /** @enum {string} */
                         type: "reserve" | "bid";
                         advertiserName: string;
@@ -933,6 +936,12 @@ export interface components {
             }[];
             /** @description Per display type with advertiser slots, over the schedule's windows. */
             revenue: components["schemas"]["BookingRevenue"][];
+            /** @description The same bookings by campaign type, so a retailer can see what is selling. */
+            byPricingType: {
+                pricingType: components["schemas"]["PricingType"];
+                bookedWindows: number;
+                bookedRevenue: number;
+            }[];
             totals: components["schemas"]["BookingRevenueTotals"];
         };
         BookingRevenueTotals: {
@@ -1028,6 +1037,13 @@ export interface components {
             /** @description DSP names */
             via: string[];
             effectiveFloorCpm: number;
+            /** @description This advertiser's campaigns by approval status, so the retailer can see who is waiting. */
+            campaigns: {
+                draft: number;
+                awaiting_approval: number;
+                approved: number;
+                rejected: number;
+            };
         };
         Approval: {
             campaignId: string;
@@ -1721,6 +1737,10 @@ export interface operations {
                 to?: string;
                 /** @description Only this campaign's bookings; without dates, the range covers all of them. */
                 campaignId?: string;
+                /** @description Only this advertiser's bookings. */
+                advertiserId?: string;
+                /** @description Only this DSP's bookings. */
+                partnerId?: string;
             };
             header?: never;
             path?: never;

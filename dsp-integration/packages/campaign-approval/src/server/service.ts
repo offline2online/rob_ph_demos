@@ -82,6 +82,12 @@ export function createApprovalService(o: ApprovalServiceOptions) {
        (reservation, bidding, hand-off, activation). */
     isCampaignEligible: isEligible,
 
+    /* One campaign's approval status, for a host screen that only needs the word. */
+    async statusOf(id: string): Promise<ApprovalStatus> {
+      const c = await o.campaigns.getCampaign(id)
+      return c ? statusOf(c) : 'draft'
+    },
+
     async view(id: string) {
       return toView(await campaign(id), true)
     },
