@@ -6,8 +6,8 @@
 import { randomUUID } from 'node:crypto'
 import type { FastifyPluginAsync } from 'fastify'
 import type { Context } from '../../context'
-import { assignmentOf, findPosition, nextWindow, windowStartOf } from '../../domain/positions'
-import { checkAdvertiser, checkApproved, checkFloor, floorFor } from '../../exchange/enforcement'
+import { assignmentOf, biddingClosesAt, biddingOpensAt, findPosition, nextWindow, windowStartOf } from '../../domain/positions'
+import { checkAdvertiser, checkCampaign, checkFloor, floorFor } from '../../exchange/enforcement'
 import { handOff } from '../../exchange/handoff'
 import { HttpError, conflict, notFound, validationFailed } from '../../http/errors'
 import { type ReservationRecord, TAKEN } from '../../repos/ReservationRepo'
@@ -41,6 +41,9 @@ export const reservationRoutes = (ctx: Context): FastifyPluginAsync => async (ap
 
     const pos = p!
     const windowStart = start!.toISOString()
+    const now = ctx.clock().getTime()
+    if (now < biddingOpensAt(ctx, start!).getTime()) throw conflict(`Bidding for that window opens at ${biddingOpensAt(ctx, start!).toISOString()}.`)
+    if (now >= biddingClosesAt(ctx, start!).getTime()) throw conflict(`Bidding for that window closed at ${biddingClosesAt(ctx, start!).toISOString()}, when its auction ran.`)
     if (partner.status !== 'connected') throw conflict(`${partner.name} is not connected.`)
     if (!ctx.displays.listByDisplayType(pos.displayType.id).length) throw conflict('The position has no displays in that window.')
     const assignment = assignmentOf(pos.def)
@@ -54,7 +57,7 @@ export const reservationRoutes = (ctx: Context): FastifyPluginAsync => async (ap
 
     /* Pre-auction enforcement, in the order a bid would fail. */
     const c = campaign!
-    const refusal = (await checkApproved(ctx, c.campaignId))
+    const refusal = (await checkCampaign(ctx, c.campaignId))
       ?? checkAdvertiser(ctx, pos, partner, seat!.name, seat!.domain ? [seat!.domain] : [])
       ?? (b.type === 'bid' ? checkFloor(ctx, b.bidCpm as number, c.pricingType, c.advertiserId) : null)
     if (refusal) throw new HttpError(422, refusal.code, refusal.reason)

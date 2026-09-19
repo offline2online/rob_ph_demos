@@ -8,6 +8,7 @@ import type { Context } from '../context'
 import { failed, fileChecks } from '../domain/assetChecks'
 import { readMedia } from '../domain/media'
 import { findPosition, windowMs } from '../domain/positions'
+import { checkCampaign } from './enforcement'
 import type { ReservationRecord } from '../repos/ReservationRepo'
 
 export async function handOff(ctx: Context, r: ReservationRecord): Promise<ReservationRecord> {
@@ -16,7 +17,8 @@ export async function handOff(ctx: Context, r: ReservationRecord): Promise<Reser
   const p = findPosition(ctx, r.positionId)
   if (!p) return notHandedOff('the position no longer exists.')
   /* The enforcement hook, at the last point before the campaign system (brief, package 11). */
-  if (!(await ctx.approvals.isCampaignEligible(r.campaignId))) return notHandedOff('the campaign is not approved.')
+  const refused = await checkCampaign(ctx, r.campaignId)
+  if (refused) return notHandedOff(refused.reason.replace(/^The/, 'the'))
   const baseline = ctx.campaigns.latestAssets(r.campaignId).find((a) => a.role === 'baseline')
   const bytes = baseline ? ctx.assets.read(baseline.file) : null
   if (!baseline || !bytes) return notHandedOff('the campaign has no baseline creative.')

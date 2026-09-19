@@ -358,6 +358,7 @@ All approved by Rob (decision 5). The reason for each change is given.
 | `PUT /admin/v1/playlists/{id}/record` takes `name` only | Decision 4: assignments are made on the Display Types form |
 | `Partner.seats [{id, name}]` (19 Sep, Rob, Q1) | The slot picker and the DSP pages need each DSP's seats, which spec §8 has on the partner. They are filled from the DSP (mock) on connect |
 | Condition `op` enum → the platform's operator keys: `include`, `match_exactly`, `exclude_or`, `exclude_and`, `equal`, `not_equal`, `greater_than`, `less_than`, `greater_than_or_equal`, `less_than_or_equal` (19 Sep, Rob, Q4) | The six assumed operators didn't match the real Targeting tab (which has *matches exactly*, excludes [OR]/[AND] and ≥/≤); rules are stored in the platform's structure, so the keys must map 1:1 |
+| `POST /v1/reservations`: approved **and activated** campaigns only, and only while the window's auction is open (7 days before until the auction runs, 6 hours before); `Conflict` description names it (19 Sep, Rob, Q13/Q14). Wording only; no new fields or codes | Rob's answers to Q13 and Q14 |
 | *Jobs with no API* note: auction job + `npm run auction:run`; billing line items only + `npm run billing:print` | Nothing in the contract triggered the auction or described billing output; no UI, report or endpoint |
 
 ## 8. Prototype defects fixed (decision 6)
@@ -515,53 +516,48 @@ All approved by Rob (decision 5). The reason for each change is given.
    the platform's asset hosting; on integration `assetUrl` becomes the
    platform's asset URL. No contract change. To be revisited later.
 
-8. **Asset check limits.** Spec §3 names the checks (file type, size,
-   bitrate, dimensions, aspect ratio, duration) but not the limits. The POC
-   uses, in `config.ts` (`assetLimits`): PNG, JPEG or MP4 only; images up
-   to 20 MB; video up to 200 MB and 20,000 kbps; dimensions at least the
-   canvas (or a zone) in the same shape within 1% (a larger file is scaled
-   down, never up); a video no longer than its slot (loop length ÷ slots,
-   e.g. 45 s ÷ 3 = 15 s). A campaign with no display type can't be checked
-   for size or duration, so those pass with a note. What should the real
-   limits be?
-
-9. **How targeting shrinks a forecast.** Spec §5: "a campaign gated on a
-   single store segment delivers a fraction of an untargeted baseline". Only
-   the existing platform knows how many stores, displays or visitors match a
-   rule, and this build must not evaluate targeting. The forecast asks
-   `AudienceSource.targetedShare(displayType, rules)`; the POC stand-in halves
-   the audience for each AND group. Should the real answer come from the
-   platform's own targeting data, and is a forecast without it acceptable
-   until then?
-10. **Region filter.** `GET /v1/inventory?region=` is in the contract, but
-    stores carry no region (spec open question 35). The POC matches no
-    position when a region is given. What should region be keyed on?
-
-11. **What a reservation costs.** A position held for a named advertiser is
-    booked with `type: reserve`, not auctioned, and neither the spec nor the
-    contract says at what price. The POC books it at the advertiser's
-    effective floor CPM for the campaign's type (`clearingCpm`). Is that
-    right, or is there a separate reservation price?
-12. **Category whitelist scope.** The advertiser whitelist is what a
-    whitelist-only position uses (spec §6); the spec doesn't say whether the
-    *category* whitelist applies everywhere or only there. The POC applies
-    the category blacklist to every bid, and the category whitelist only on
-    whitelist-only positions (every category on the bid must be on it). Is
-    that right?
-13. **When the auction runs.** The scheduled job clears each window once,
-    6 hours before it starts (`auctionLeadHours`), so the winner can be
-    distributed in time. Rob's backlog ticket "Add bidding play-window
-    length and auction cutoff to Advertiser settings → Pricing" would make
-    the window length and a daily cutoff retailer settings; that's a spec
-    change not built here (nothing extra). Until then, is 6 hours ahead
-    acceptable?
-
-14. **Does the hand-off activate the campaign?** The hand-off books the
-    campaign into the slot and window; it doesn't switch on the campaign's
-    activation, which stays the retailer's toggle (spec §3: "The retailer
-    can switch it off at any time"). An approved DSP or API campaign that
-    nobody activates won't play, so it won't bill. Should winning (or
-    reserving) activate it automatically?
+8. ~~Asset check limits~~ **Resolved (Rob, 19 Sep):** images up to 10 MB,
+   video up to 100 MB (`assetLimits` in `config.ts`). The rest stays as
+   built: PNG, JPEG or MP4; 20,000 kbps; at least the canvas (or a zone) in
+   the same shape within 1%; a video no longer than its slot.
+9. ~~How targeting shrinks a forecast~~ **Accepted (Rob, 19 Sep):** the
+   `AudienceSource.targetedShare` seam, with the POC halving the audience per
+   AND group, stays until the platform's own targeting data answers it.
+10. **Stores in the design (open).** Rob: stores shouldn't be in this design;
+    Personalisation Hub handles them separately, unless it's for reporting.
+    Where they appear today, all from the spec or the approved contract:
+    - `GET /v1/inventory` filters `storeIds` and `region` (spec §5
+      "Endpoints": "store or store set, region"), and each position's
+      `storeCount` (spec §5 "What each position returns": "Store count and
+      display count in scope").
+    - The display type delete check lists each assigned display **with its
+      store** (spec §1 *Deleting a display type*).
+    - The stand-in `displays` table carries a store name for those two uses.
+    Nothing stores or manages stores. Should the `storeIds` and `region`
+    filters and `storeCount` come out of the contract?
+11. **What a reservation costs (open).** Rob: probably handled by the DSP,
+    not confirmed. Until confirmed the POC still books a reservation at the
+    advertiser's effective floor CPM for the campaign's type.
+12. ~~Category whitelist scope~~ **Accepted (Rob, 19 Sep):** the category
+    blacklist applies to every bid; the category whitelist only on
+    whitelist-only positions.
+13. ~~When the auction runs~~ **Resolved (Rob, 19 Sep):** the auction runs 6
+    hours before a window (`auctionLeadHours`), and there is now also an
+    auction **start** window: bidding for a window opens 7 days before it
+    (`auctionOpensHours`). `POST /v1/reservations` outside that span is a
+    409 `conflict` ("Bidding for that window opens at …" / "… closed at …,
+    when its auction ran"). Both are config for now; the backlog ticket
+    "Add bidding play-window length and auction cutoff to Advertiser
+    settings → Pricing" is where they would become retailer settings. The
+    7 days is my default; say if it should be different.
+14. ~~Does the hand-off activate the campaign?~~ **Resolved (Rob, 19 Sep):**
+    no — a campaign must already be approved **and activated** before it
+    can bid or be reserved, so a winning bid fits straight into the slot.
+    Reservation, the auction (API and DSP bids) and the hand-off all refuse a
+    campaign that isn't activated ("The campaign is approved but not
+    activated.", code `not_approved` — the contract has no separate code).
+    A DSP creative that is queued and approved still needs activating in the
+    Campaigns table before its bids can win.
 
 ## 11. Defaults in use (brief, *Defaults for open questions*)
 

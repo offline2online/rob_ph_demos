@@ -29,7 +29,10 @@ async function setup() {
   const reserve = (body: Record<string, unknown>) => app.inject({ method: 'POST', url: '/api/v1/reservations', headers: GOOGLE, payload: body })
   const approve = (id: string, assetVersion = 'v1') => app.inject({ method: 'POST', url: `/api/admin/v1/campaigns/${id}/approve`, payload: { assetVersion } })
   const rows = (start = W1) => ctx.reservations.forWindow('menu_board.s2', start.toISOString())
-  return { ctx, app, mocks, sent, bidder, setSlot, reserve, approve, rows }
+  /* Only an approved and activated campaign can bid or win (Q14). */
+  const activate = (id: string) => app.inject({ method: 'PUT', url: `/api/admin/v1/campaigns/${id}/activation`, payload: { enabled: true } })
+  const queued = async (name: string) => (await ctx.approvalCampaigns.listCampaigns({ sources: ['dsp'] })).find((c) => c.name === name)!.campaignId
+  return { ctx, app, mocks, sent, bidder, setSlot, reserve, approve, activate, queued, rows }
 }
 
 describe('OpenRTB 2.6 DOOH bid requests', () => {
@@ -69,7 +72,7 @@ describe('OpenRTB 2.6 DOOH bid requests', () => {
 
 describe('the auction', () => {
   it('discards a bid with an unknown creative and queues it; once approved it wins a later window, first price', async () => {
-    const { ctx, app, rows } = await setup()
+    const { ctx, app, rows, activate } = await setup()
     const first = await runAuction(ctx, W1)
     expect(first.positions).toEqual([{ positionId: 'menu_board.s2', bidRequests: 1, bids: 1, winner: null }])
     expect(rows()).toMatchObject([{ status: 'rejected', channel: 'openrtb', advertiserId: 'nestle', reason: 'New creative crid-5130001: approved automatically; it can compete from the next window.' }])
@@ -77,6 +80,10 @@ describe('the auction', () => {
     const queued = (await ctx.approvalCampaigns.listCampaigns({ sources: ['dsp'] })).find((c) => c.name === 'Nestlé — crid-5130001')!
     expect(await ctx.approvals.view(queued.campaignId)).toMatchObject({ status: 'approved', mode: 'auto' })
     expect(queued.creative).toMatchObject({ mimeType: 'image/png', width: 5760, height: 1080 })
+    /* Approved but not yet activated: it can't win. */
+    expect((await runAuction(ctx, new Date('2026-09-25T00:00:00.000Z'))).positions[0].winner).toBeNull()
+    expect(rows(new Date('2026-09-25T00:00:00.000Z'))[0].reason).toBe('The campaign is approved but not activated.')
+    await activate(queued.campaignId)
 
     const second = await runAuction(ctx, W2)
     expect(second.positions[0].winner).toMatchObject({ partnerId: 'p_google', advertiserId: 'nestle', clearingCpm: 150 })
@@ -86,7 +93,7 @@ describe('the auction', () => {
   })
 
   it('keeps an unapproved creative out until the retailer approves it', async () => {
-    const { ctx, bidder, approve, rows } = await setup()
+    const { ctx, bidder, approve, activate, rows } = await setup()
     await bidder({ advertiserId: '5130002' })
     await runAuction(ctx, W1)
     expect(rows()[0]).toMatchObject({ status: 'rejected', advertiserId: 'swisse', reason: 'New creative crid-5130002: queued for approval.' })
@@ -94,13 +101,15 @@ describe('the auction', () => {
     await runAuction(ctx, W2)
     expect(rows(W2)[0]).toMatchObject({ status: 'rejected', reason: 'The campaign is not approved.' })
     expect((await approve(queued.campaignId)).statusCode).toBe(200)
+    await activate(queued.campaignId)
     const third = await runAuction(ctx, new Date('2026-09-23T00:00:00.000Z'))
     expect(third.positions[0].winner).toMatchObject({ advertiserId: 'swisse', clearingCpm: 150 })
   })
 
   it('enforces the effective floor, the blacklist, whitelist-only and categories before a bid can win', async () => {
-    const { ctx, bidder, setSlot, rows } = await setup()
+    const { ctx, bidder, setSlot, rows, activate, queued } = await setup()
     await runAuction(ctx, W1)
+    await activate(await queued('Nestlé — crid-5130001'))
     const reason = async (start: Date) => {
       await runAuction(ctx, start)
       return rows(start)[0].reason
@@ -123,8 +132,9 @@ describe('the auction', () => {
   })
 
   it('never lets a Test-mode win take the window', async () => {
-    const { ctx, rows } = await setup()
+    const { ctx, rows, activate, queued } = await setup()
     await runAuction(ctx, W1)
+    await activate(await queued('Nestlé — crid-5130001'))
     ctx.partners.update('p_google', { mode: 'test' })
     const res = await runAuction(ctx, W2)
     expect(res.positions[0].winner).toBeNull()
@@ -138,9 +148,11 @@ describe('POST /v1/reservations and GET …/{id}', () => {
   const BID = { positionId: 'menu_board.s2', windowStart: '2026-09-21T00:00:00.000Z', campaignId: 'c_api_swisse', advertiserId: 'swisse', type: 'bid', bidCpm: 200 }
 
   it('takes a bid for an approved campaign, and the auction clears it against DSP bids', async () => {
-    const { ctx, app, approve, reserve } = await setup()
+    const { ctx, app, approve, activate, queued, reserve } = await setup()
     await runAuction(ctx, new Date('2026-09-25T00:00:00.000Z'))
+    await activate(await queued('Nestlé — crid-5130001'))
     await approve('c_api_swisse')
+    await activate('c_api_swisse')
     const res = await reserve(BID)
     expect(res.statusCode).toBe(201)
     expectMatchesContract('POST', '/v1/reservations', 201, res.json())
@@ -155,7 +167,7 @@ describe('POST /v1/reservations and GET …/{id}', () => {
   })
 
   it('refuses before the auction: not approved, below the floor, blacklisted', async () => {
-    const { ctx, approve, reserve } = await setup()
+    const { ctx, approve, activate, reserve } = await setup()
     const refused = async (body: Record<string, unknown>) => {
       const res = await reserve({ ...BID, ...body })
       expect(res.statusCode).toBe(422)
@@ -164,14 +176,17 @@ describe('POST /v1/reservations and GET …/{id}', () => {
     }
     expect(await refused({})).toEqual(['not_approved', 'The campaign is not approved.'])
     await approve('c_api_swisse')
+    expect(await refused({})).toEqual(['not_approved', 'The campaign is approved but not activated.'])
+    await activate('c_api_swisse')
     expect(await refused({ bidCpm: 99 })).toEqual(['below_floor', '99 is below the effective floor of 100 AUD CPM.'])
     ctx.company.save({ ...ctx.company.get(), advertiserBlacklist: ['Swisse'], advertiserWhitelist: [] })
     expect(await refused({})).toEqual(['advertiser_blocked', 'Swisse is on the advertiser blacklist.'])
   })
 
   it('reserves a position held for the advertiser, at its effective floor (Q11)', async () => {
-    const { ctx, approve, reserve, setSlot } = await setup()
+    const { ctx, approve, activate, reserve, setSlot } = await setup()
     await approve('c_api_swisse')
+    await activate('c_api_swisse')
     setSlot({ listMode: null, advertiser: 'Swisse' })
     expect((await reserve(BID)).statusCode).toBe(409)
     const res = await reserve({ ...BID, type: 'reserve', bidCpm: undefined })
@@ -179,6 +194,27 @@ describe('POST /v1/reservations and GET …/{id}', () => {
     expect(res.json()).toMatchObject({ status: 'reserved', clearingCpm: 100, currency: 'AUD' })
     expect((await runAuction(ctx, W1)).positions[0].skipped).toBe('Held for a named advertiser: booked by reservation.')
     expect((await reserve({ ...BID, type: 'reserve' })).statusCode).toBe(409)
+  })
+
+  it('only takes bids while the window’s auction is open (Q13): from 7 days before until the auction runs 6 hours before', async () => {
+    const { reserve, approve, activate } = await setup()
+    await approve('c_api_swisse')
+    await activate('c_api_swisse')
+    const early = await reserve({ ...BID, windowStart: '2026-09-28T00:00:00.000Z' })
+    expect(early.statusCode).toBe(409)
+    expectMatchesContract('POST', '/v1/reservations', 409, early.json())
+    expect(early.json().error.message).toBe('Bidding for that window opens at 2026-09-21T00:00:00.000Z.')
+    expect((await reserve({ ...BID, windowStart: '2026-09-27T00:00:00.000Z' })).statusCode).toBe(201)
+  })
+
+  it('refuses a bid once the window’s auction has run', async () => {
+    const ctx = await testContext({ clock: () => new Date('2026-09-20T18:00:00.000Z') })
+    const app = buildApp(ctx)
+    await app.inject({ method: 'POST', url: '/api/admin/v1/campaigns/c_api_swisse/approve', payload: { assetVersion: 'v1' } })
+    await app.inject({ method: 'PUT', url: '/api/admin/v1/campaigns/c_api_swisse/activation', payload: { enabled: true } })
+    const late = await app.inject({ method: 'POST', url: '/api/v1/reservations', headers: GOOGLE, payload: BID })
+    expect(late.statusCode).toBe(409)
+    expect(late.json().error.message).toBe('Bidding for that window closed at 2026-09-20T18:00:00.000Z, when its auction ran.')
   })
 
   it('validates the request, and hides other partners’ reservations', async () => {

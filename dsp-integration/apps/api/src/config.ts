@@ -11,7 +11,9 @@ export interface Config {
   assetsDir: string
   /* Q27 — auction play-window length. */
   playWindowHours: number
-  /* Q13 — how long before a window starts the scheduled auction clears it. */
+  /* Q13 — bidding for a window opens `auctionOpensHours` before it starts and
+     closes `auctionLeadHours` before, when the scheduled auction clears it. */
+  auctionOpensHours: number
   auctionLeadHours: number
   /* Q46 — per-DSP bidder defaults. */
   bidderQps: number
@@ -49,13 +51,14 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     dbFile: fromRoot(env.PH_DB_FILE ?? 'data/poc.sqlite'),
     assetsDir: fromRoot(env.PH_ASSETS_DIR ?? 'data/assets'),
     playWindowHours: 24,
+    auctionOpensHours: 7 * 24,
     auctionLeadHours: 6,
     bidderQps: 500,
     bidderTimeoutMs: 300,
     maxValuesPerCondition: 100,
     oldVersionRunsDuringReview: false,
     blockDeleteWithSoldPositions: false,
-    assetLimits: { maxImageBytes: 20 * 1024 * 1024, maxVideoBytes: 200 * 1024 * 1024, maxBitrateKbps: 20_000 },
+    assetLimits: { maxImageBytes: 10 * 1024 * 1024, maxVideoBytes: 100 * 1024 * 1024, maxBitrateKbps: 20_000 },
     dsp: {
       dv360TokenUrl: env.DV360_TOKEN_URL ?? `${mocks}/dv360/token`,
       dv360ApiBaseUrl: env.DV360_API_BASE_URL ?? `${mocks}/dv360`,

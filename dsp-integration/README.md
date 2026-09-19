@@ -78,7 +78,9 @@ npm test
   advertisers, auth failures and bidder behaviour, then press **Re-test
   connection** on the DSP's page.
 - The SSP auction runs as a scheduled job inside `npm run dev:api` (each
-  play window is cleared 6 hours before it starts). To clear one window
+  play window is cleared 6 hours before it starts; bids and reservations
+  for a window are taken from 7 days before it until then, for approved and
+  activated campaigns only). To clear one window
   now, with the mock DSP service running:
 
   ```bash

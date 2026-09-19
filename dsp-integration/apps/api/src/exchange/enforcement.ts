@@ -36,8 +36,14 @@ export function checkCategories(ctx: Context, p: PositionRef, cats: string[]): R
   return null
 }
 
-export async function checkApproved(ctx: Context, campaignId: string): Promise<Refusal | null> {
-  return (await ctx.approvals.isCampaignEligible(campaignId)) ? null : { code: 'not_approved', reason: 'The campaign is not approved.' }
+/* A campaign can only bid, be reserved, win or be handed off once it is
+   approved and activated (Rob, Q14): the winner then fits straight into
+   the slot. The contract has no separate code for "not activated", so it
+   is `not_approved` with its own message. */
+export async function checkCampaign(ctx: Context, campaignId: string): Promise<Refusal | null> {
+  if (!(await ctx.approvals.isCampaignEligible(campaignId))) return { code: 'not_approved', reason: 'The campaign is not approved.' }
+  if (!ctx.campaigns.getCampaign(campaignId)?.activation.enabled) return { code: 'not_approved', reason: 'The campaign is approved but not activated.' }
+  return null
 }
 
 /* The effective floor a bid must clear: floor × campaign-type multipliers ×

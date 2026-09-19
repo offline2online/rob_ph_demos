@@ -76,6 +76,12 @@ export function windowStartOf(ctx: Context, at: Date) {
 /* The first window that can still be sold: the one after the current one. */
 export const nextWindow = (ctx: Context) => new Date(windowStartOf(ctx, ctx.clock()).getTime() + windowMs(ctx))
 
+/* The auction's bidding window for a play window (Q13): it opens
+   `auctionOpensHours` before the play window starts and closes
+   `auctionLeadHours` before, when the scheduled auction clears it. */
+export const biddingOpensAt = (ctx: Context, start: Date) => new Date(start.getTime() - ctx.config.auctionOpensHours * 3_600_000)
+export const biddingClosesAt = (ctx: Context, start: Date) => new Date(start.getTime() - ctx.config.auctionLeadHours * 3_600_000)
+
 /* Every window starting within [from, to] (dates, inclusive). */
 export function windowsBetween(ctx: Context, from: string, to: string): Date[] | null {
   const a = Date.parse(`${from}T00:00:00Z`)

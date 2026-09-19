@@ -172,7 +172,10 @@ Call it wherever eligibility is decided:
 
 In this POC the activation check lives in `approvals.setActivation`, used by
 `PUT /admin/v1/campaigns/{id}/activation`. Reservation, bidding and hand-off
-call it in packages 12–16.
+call it (`apps/api/src/exchange/enforcement.ts` → `checkCampaign`), and they
+also require the campaign to be **activated**: an advertiser can only bid or
+reserve with an approved, activated campaign, so a winner fits straight into
+the slot (Rob, Q14).
 
 ## 4. Run the approval migration, or move the fields onto the campaign
 

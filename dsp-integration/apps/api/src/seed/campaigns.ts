@@ -13,7 +13,7 @@ const svg = (w: number, h: number, bg: string, brand: string, line: string) =>
 
 const PASSED = (w: number, h: number) => [
   { name: 'file_type' as const, passed: true, detail: 'SVG image' },
-  { name: 'file_size' as const, passed: true, detail: 'Under the 20 MB limit' },
+  { name: 'file_size' as const, passed: true, detail: 'Under the 10 MB limit' },
   { name: 'dimensions' as const, passed: true, detail: `${w}×${h} matches the canvas` },
   { name: 'aspect_ratio' as const, passed: true, detail: `${(w / h).toFixed(2)} matches the canvas` },
   { name: 'baseline_present' as const, passed: true },

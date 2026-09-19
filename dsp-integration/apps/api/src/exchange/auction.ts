@@ -17,7 +17,7 @@ import type { PartnerRecord } from '../repos/PartnerRepo'
 import { type ReservationRecord, TAKEN } from '../repos/ReservationRepo'
 import { advertiserSlug } from '@ph-dsp/types'
 import { campaignForCrid, queueCreative } from './creatives'
-import { checkAdvertiser, checkApproved, checkCategories, checkFloor } from './enforcement'
+import { checkAdvertiser, checkCampaign, checkCategories, checkFloor } from './enforcement'
 import { handOff } from './handoff'
 import { type Bid, type BidResponse, buildBidRequest } from './openrtb'
 
@@ -72,7 +72,7 @@ async function clearPosition(ctx: Context, p: PositionRef, start: string, exchan
     const seat = partner?.seats.find((s) => advertiserSlug(s.name) === r.advertiserId)
     const refusal = !partner || !seat
       ? { reason: 'The advertiser is no longer on this DSP.' }
-      : (await checkApproved(ctx, r.campaignId as string)) ?? checkAdvertiser(ctx, p, partner, seat.name, seat.domain ? [seat.domain] : []) ?? checkFloor(ctx, r.bidCpm as number, r.pricingType, r.advertiserId)
+      : (await checkCampaign(ctx, r.campaignId as string)) ?? checkAdvertiser(ctx, p, partner, seat.name, seat.domain ? [seat.domain] : []) ?? checkFloor(ctx, r.bidCpm as number, r.pricingType, r.advertiserId)
     if (refusal) ctx.reservations.update(r.id, { status: 'rejected', reason: refusal.reason })
     else candidates.push(r)
   }
@@ -123,7 +123,7 @@ async function recordDspBid(ctx: Context, p: PositionRef, dsp: PartnerRecord, st
   if (!campaignId) return reject(await queueCreative(ctx, dsp, { crid: bid.crid, iurl: bid.iurl }, { id: advertiserId, name: seat.name }, p), { advertiserId })
   const campaign = ctx.campaigns.getCampaign(campaignId)
   if (!campaign || campaign.advertiserId !== advertiserId) return reject(`Creative ${bid.crid} belongs to another advertiser.`, { advertiserId })
-  const late = (await checkApproved(ctx, campaignId)) ?? checkFloor(ctx, bid.price, campaign.pricingType, advertiserId)
+  const late = (await checkCampaign(ctx, campaignId)) ?? checkFloor(ctx, bid.price, campaign.pricingType, advertiserId)
   if (late) return reject(late.reason, { advertiserId, campaignId })
   return ctx.reservations.insert({ ...base, advertiserId, campaignId, pricingType: campaign.pricingType ?? null })
 }

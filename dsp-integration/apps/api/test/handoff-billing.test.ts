@@ -19,13 +19,16 @@ const won = (over: Partial<ReservationRecord>): ReservationRecord => ({
 async function setup(clock = () => NOW) {
   const mocks = mockDsps()
   const ctx = await testContext({ clock, dspFetch: mocks.fetchImpl })
-  return { ctx, app: buildApp(ctx), mocks }
+  const app = buildApp(ctx)
+  const activate = (id: string) => app.inject({ method: 'PUT', url: `/api/admin/v1/campaigns/${id}/activation`, payload: { enabled: true } })
+  return { ctx, app, mocks, activate }
 }
 
 describe('hand-off to the existing campaign system', () => {
   it('books the winning, approved campaign into the slot for its window', async () => {
-    const { ctx } = await setup()
+    const { ctx, activate } = await setup()
     await runAuction(ctx, W1)
+    await activate((await ctx.approvalCampaigns.listCampaigns({ sources: ['dsp'] })).find((c) => c.name === 'Nestlé — crid-5130001')!.campaignId)
     const res = await runAuction(ctx, W2)
     const r = ctx.reservations.get(res.positions[0].winner!.reservationId)!
     expect(r.handedOffAt).toBe(NOW.toISOString())
@@ -42,13 +45,14 @@ describe('hand-off to the existing campaign system', () => {
   })
 
   it('hands a reservation off as soon as it is booked', async () => {
-    const { ctx, app } = await setup()
+    const { ctx, app, activate } = await setup()
     const G = { authorization: 'Bearer poc-token-google-dv360' }
     const id = (await app.inject({ method: 'POST', url: '/api/v1/campaigns', headers: G, payload: { advertiserId: 'swisse', name: 'Swisse — Menu', displayTypeId: 'menu_board', baseline: { pricingType: 'localised' } } })).json().campaignId
     const m = multipart({ version: 'baseline' }, { name: 'menu.png', bytes: png(5760, 1080) })
     await app.inject({ method: 'POST', url: `/api/v1/campaigns/${id}/assets`, headers: { ...G, ...m.headers }, payload: m.payload })
     await app.inject({ method: 'POST', url: `/api/v1/campaigns/${id}/submit`, headers: G })
     await app.inject({ method: 'POST', url: `/api/admin/v1/campaigns/${id}/approve`, payload: { assetVersion: 'v1' } })
+    await activate(id)
     const ext = ctx.displayTypes.get('menu_board')!.phExtensions!
     ctx.displayTypes.saveExtensions('menu_board', { ...ext, slots: ext.slots.map((s, i) => (i === 1 ? { ...s, listMode: null, advertiser: 'Swisse' } : s)) })
     const res = await app.inject({ method: 'POST', url: '/api/v1/reservations', headers: G, payload: { positionId: 'menu_board.s2', windowStart: W1.toISOString(), campaignId: id, advertiserId: 'swisse', type: 'reserve' } })
@@ -58,10 +62,13 @@ describe('hand-off to the existing campaign system', () => {
   })
 
   it('refuses a campaign that is no longer approved, or whose creative doesn’t fit the display type', async () => {
-    const { ctx, app } = await setup()
+    const { ctx, app, activate } = await setup()
     const draft = await handOff(ctx, ctx.reservations.insert(won({ campaignId: 'c_api_swisse_kids' })))
     expect(draft).toMatchObject({ handedOffAt: null, reason: 'Not handed off: the campaign is not approved.' })
     await app.inject({ method: 'POST', url: '/api/admin/v1/campaigns/c_api_swisse/approve', payload: { assetVersion: 'v1' } })
+    const inactive = await handOff(ctx, ctx.reservations.insert(won({})))
+    expect(inactive.reason).toBe('Not handed off: the campaign is approved but not activated.')
+    await activate('c_api_swisse')
     /* Swisse's approved creative is 1080×1920 portrait; the Menu Board is 5760×1080. */
     const portrait = await handOff(ctx, ctx.reservations.insert(won({})))
     expect(portrait.handedOffAt).toBeNull()

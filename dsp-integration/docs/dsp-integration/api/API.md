@@ -123,7 +123,7 @@ evaluated by the existing platform. The API never evaluates targeting.
 
 | Method | Path | Purpose | Main errors |
 |---|---|---|---|
-| POST | `/v1/reservations` | `type: reserve` (named advertiser positions) or `type: bid` with `bidCpm`, for a `positionId` and `windowStart`, with an approved `campaignId`. | `not_approved`, `below_floor`, `advertiser_blocked`, `category_blocked`, `not_on_whitelist`, `conflict` |
+| POST | `/v1/reservations` | `type: reserve` (named advertiser positions) or `type: bid` with `bidCpm`, for a `positionId` and `windowStart`, with an approved and activated `campaignId` (`not_approved` otherwise). Only while the window's auction is open: from 7 days before the window until the auction runs, 6 hours before (`conflict` otherwise). | `not_approved`, `below_floor`, `advertiser_blocked`, `category_blocked`, `not_on_whitelist`, `conflict` |
 | GET | `/v1/reservations/{id}` | Outcome: `pending`, `won`, `lost`, `reserved`, `rejected`, with clearing CPM and reason. | `not_found` |
 
 A won or reserved campaign is handed to the existing campaign system for
