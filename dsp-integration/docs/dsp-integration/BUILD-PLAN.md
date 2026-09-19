@@ -391,6 +391,15 @@ All approved by Rob (decision 5). The reason for each change is given.
   `DSP_INTEGRATION_ENABLED`, exposed to Vite through the `Flags` interface.
   No endpoint was added.
 
+- **Seed assumptions.** Venue metadata (`openOohVenueType`, orientation,
+  loop length) isn't in the prototype. It is seeded per display type, using
+  `retail.grocery` from API.md's example bid request, and has no UI (the spec
+  marks it spec-only). The loop length is the default playlist's total
+  duration, except Menu Board, which uses API.md's example of 45s.
+- **Unexpected server errors** return 500 with the contract's error shape.
+  The contract has no dedicated code for them, so they use
+  `validation_failed`.
+
 ## 10. Questions (open)
 
 1. **Partner seats.** The spec (§8) gives a partner `seats: [{id, name}]`.
@@ -418,7 +427,7 @@ Each is configurable in `apps/api/src/config.ts`.
 
 | # | Package | Status | Done | Deferred | Questions hit |
 |---|---|---|---|---|---|
-| 1 | Data model and migrations | Not started | — | — | — |
+| 1 | Data model and migrations | Done | Workspace (`apps/api`, `packages/types` generated from openapi.yaml), 7 reversible migrations (0001 = existing-platform stand-in; 0002–0007 additive), platform stand-in sources, partner/company/exchange repos, `SecretsStore` (AES-256-GCM), `Flags`, stand-in session + `GET /admin/v1/session`, seed, strict contract response validator. 18 tests: migration round-trip, existing records load unchanged, encryption at rest, seed | `AssetStore`, `AudienceSource`, reservations/billing tables, partner tokens: built with the packages that use them (12, 13, 15, 16) | — |
 | 2 | Shared UI | Not started | — | — | — |
 | 3 | Display Types | Not started | — | — | Q1 |
 | 4–17 | — | Not started | — | — | — |

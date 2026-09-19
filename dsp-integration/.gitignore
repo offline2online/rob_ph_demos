@@ -2,3 +2,5 @@
 .env
 data/assets/
 node_modules/
+data/*.sqlite
+dist/

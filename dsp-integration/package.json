@@ -1,0 +1,19 @@
+{
+  "name": "ph-dsp-integration-poc",
+  "private": true,
+  "description": "Display Types & DSP Integration — standalone proof of concept (see docs/dsp-integration/).",
+  "type": "module",
+  "workspaces": ["packages/*", "apps/*"],
+  "engines": { "node": ">=22.13" },
+  "scripts": {
+    "gen:types": "npm run gen -w @ph-dsp/types",
+    "dev:api": "npm run dev -w @ph-dsp/api",
+    "dev:admin": "npm run dev -w @ph-dsp/admin",
+    "test": "npm run test --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "build": "npm run build --workspaces --if-present"
+  },
+  "devDependencies": {
+    "typescript": "~5.9.3"
+  }
+}
