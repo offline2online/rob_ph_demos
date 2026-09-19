@@ -142,3 +142,15 @@ describe('useDraft after a save', () => {
     expect(result.current.dirty).toBe(false)
   })
 })
+
+describe('useDraft after a save that refetches in several steps', () => {
+  it('ends on the final saved value when parts of it arrive one after another', () => {
+    const { result, rerender } = renderHook(({ saved }) => useDraft(saved), { initialProps: { saved: { a: 1, b: 1 } } })
+    act(() => result.current.setDraft({ a: 1, b: 2 }))
+    act(() => result.current.commitNext())
+    rerender({ saved: { a: 9, b: 1 } })
+    rerender({ saved: { a: 9, b: 2 } })
+    expect(result.current.draft).toEqual({ a: 9, b: 2 })
+    expect(result.current.dirty).toBe(false)
+  })
+})

@@ -74,3 +74,26 @@ describe('Shared Targeting Variables page', () => {
     expect(screen.getByRole('button', { name: /Variables shared through the API/ })).toBeInTheDocument()
   })
 })
+
+describe('DSP page', () => {
+  it('shows issues first, then Mode, Connection credentials, Bidder integration and the lists; secrets masked', async () => {
+    renderAt('/dsp-integration/partners/p_amazon')
+    expect(await screen.findByRole('heading', { name: 'Amazon Ads DSP' })).toBeInTheDocument()
+    const issues = screen.getByLabelText('Issues')
+    expect(issues.textContent).toContain('Connection error: Refresh token rejected — 3 days ago. Re-enter the credentials below and re-test the connection.')
+    const text = document.body.textContent ?? ''
+    const order = ['Mode', 'Connection credentials', 'Bidder integration', 'Advertiser whitelist / blacklist'].map((h) => text.indexOf(h))
+    expect(order).toEqual([...order].sort((a, b) => a - b))
+    expect(screen.getByLabelText(/Refresh token/)).toHaveAttribute('type', 'password')
+    expect(screen.getByText(/Unlinked — this DSP has its own lists./)).toBeInTheDocument()
+    expect(screen.queryByText(/floor|CPM|currency/i, { selector: 'label' })).not.toBeInTheDocument()
+  })
+
+  it('the Add card lists what you will need, then Add partner / Cancel', async () => {
+    renderAt('/dsp-integration/add/the_trade_desk')
+    const card = await screen.findByRole('region', { name: 'Add The Trade Desk' })
+    expect(within(card).getAllByRole('listitem').map((li) => li.textContent)).toEqual(['Supply source ID', 'TTD partner ID', 'API token', 'Region', 'Bidder endpoint and seat IDs'])
+    expect(within(card).getByRole('button', { name: /Add partner/ })).toBeInTheDocument()
+    expect(screen.queryByRole('region', { name: 'Save changes' })).not.toBeInTheDocument()
+  })
+})

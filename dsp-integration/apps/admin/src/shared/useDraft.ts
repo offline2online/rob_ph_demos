@@ -13,7 +13,10 @@ export function useDraft<T>(saved: T | undefined) {
     if (saved === undefined) return
     const replace = committing.current
     committing.current = false
-    setDraft((cur) => (replace || cur === undefined || deepEqual(cur, baseline.current) ? saved : cur))
+    /* Compare against the baseline as it was before this update: the updater
+       runs later, after the ref has moved on. */
+    const previous = baseline.current
+    setDraft((cur) => (replace || cur === undefined || deepEqual(cur, previous) ? saved : cur))
     baseline.current = saved
   }, [saved])
   /* Call once a save succeeded, before the saved value is refetched. */

@@ -8,6 +8,7 @@ import { type Flags, envFlags } from './flags'
 import { DisplayTypesPage } from './features/display-types/DisplayTypesPage'
 import { PlaylistManagementPage } from './features/playlist-management/PlaylistManagementPage'
 import { DspIntegrationLayout } from './features/dsp-integration/DspIntegrationLayout'
+import { AddPartnerRoute, PartnerRoute } from './features/dsp-integration/AddPartner'
 import { AdvertiserSettings } from './features/dsp-integration/AdvertiserSettings'
 import { ExchangeSettings } from './features/dsp-integration/ExchangeSettings'
 import { SharedTargetingVariables } from './features/dsp-integration/SharedTargetingVariables'
@@ -50,6 +51,8 @@ function featureRoutes(flags: Flags): RouteObject[] {
             { path: 'exchange', element: <ExchangeSettings /> },
             { path: 'advertiser-settings', element: <AdvertiserSettings /> },
             { path: 'targeting-variables', element: <SharedTargetingVariables /> },
+            { path: 'partners/:id', element: <PartnerRoute /> },
+            { path: 'add/:provider', element: <AddPartnerRoute /> },
           ],
         }]
       : []),

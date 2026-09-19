@@ -443,19 +443,11 @@ All approved by Rob (decision 5). The reason for each change is given.
    *less than*. This is in `packages/types/src/catalog.ts`. Does it match the
    real Targeting tab?
 
-5. **When do Connect and Disconnect take effect?** The spec (*Saving
-   changes*) lists "connect / disconnect" among the edits held until Save
-   changes. The contract has `POST …/connect` "with the saved credentials",
-   which acts immediately. Options:
-   (a) Connect, Re-test and Disconnect act at once, as the contract says.
-       While the page has unsaved credential edits, Connect is disabled with
-       the tooltip "Save changes first". This is my recommendation: a
-       connection test only means something against the saved credentials.
-   (b) They are queued in the draft and run on Save changes (PUT, then
-       connect or disconnect). The page can't show the result until then.
-6. **Renaming a DSP.** The prototype's DSP page header is an editable name
-   field, but the contract's `PartnerInput` has no `name`. Should I add
-   `name` to `PartnerInput`, or show the name as a plain heading?
+5. ~~When do Connect and Disconnect take effect?~~ **Resolved (Rob, 19
+   Sep):** immediately, as the contract says. While credential edits are
+   unsaved, Connect is disabled with the tooltip "Save changes first".
+6. ~~Renaming a DSP~~ **Resolved (Rob, 19 Sep):** the name is a plain
+   heading, and the contract doesn't change.
 
 ## 11. Defaults in use (brief, *Defaults for open questions*)
 
@@ -483,7 +475,7 @@ Each is configurable in `apps/api/src/config.ts`.
 | 6 | DSP Integration nav + Exchange settings; sellers.json | Done | API: `GET/PUT /admin/v1/exchange` (all four fields required, bare domain, valid email; `published` and `sellersJsonUrl` once complete) and `GET /sellers.json` (PUBLISHER, not confidential; 404 until complete or with the flag off). UI: nav "DSP Integration" (flag-gated), a list column (COMPANY: Exchange settings, Advertiser settings, Shared Targeting Variables with their subtitles; PARTNER DSPS: DV360, Amazon Ads DSP and The Trade Desk with state and lists-link lines; contracts to icons below 900px), one draft and save bar for the whole section, a leave-page guard, and the Exchange settings page. Tests: API +7, admin +4. Browser-checked: edit, validation error, save, guard | The section opens on Exchange settings until package 7 adds Advertiser settings | — |
 | 7 | Advertiser settings | Done | API: `PUT /admin/v1/advertiser-settings` (any ISO 4217 currency, positive floor and multipliers; an entry on both lists is rejected (`validation_failed`), matching case-insensitively; entries trimmed and de-duplicated) and `GET /admin/v1/available-inventory` (every advertiser-owned slot, no advertisers column). Pricing maths in `domain/pricing.ts` with the brief's unit tests (floor × personalised × interactive × advertiser multiplier; 450 and 360 examples); the Advertisers endpoint now uses it. UI: the Advertiser settings page (Pricing with the ISO 4217 currency picker, four list editors (adding to one list removes the entry from the other; seat and category suggestions), Where these apply with Open, Available Inventory as an AG Grid table with Open). The DSP Integration section now opens on it, as the prototype does. Shared `ListEditor`. Tests: API +9, admin +1. Browser-checked: moving an advertiser between lists, suggestions, save | — | — |
 | 8 | Shared Targeting Variables | Done | API: `GET/PUT /admin/v1/targeting-variables` (24 default variables with tooltip text; access is `"all"` or DSP ids; unknown variables and unknown DSPs are rejected) and the Partner API's first endpoint, `GET /v1/targeting/attributes`. The caller gets only the variables enabled for it: `"all"` counts only if the DSP is connected, and a named DSP always does. Never values. Partner API auth: one static bearer token per seeded partner (`PARTNER_TOKENS`); 401 without one, 404 with the flag off. UI: the page (two groups, each an AG Grid Variable / DSPs table, example values as each variable's tooltip, header tooltip) and `DspPicker` (All connected DSPs or individual DSPs with connection state, shown as pills). Tests: API +6, admin +1. Browser-checked: picker, save | — | Q4 |
-| 9 | DSP page + Google DSP (DV360) | In progress | **Part 1 (API and mocks):** `apps/dsp-mocks`, a mock DSP service (§14) with the DV360 token endpoint and API v4 (`/v4/partners/{id}`, `/v4/advertisers` with paging), a control API and a test page. A real DV360 client (`apps/api/src/dsp/googleDv360.ts`): it signs an RS256 service-account JWT, exchanges it at the token endpoint, checks partner access and pages through the advertisers, all against the mock by default (`DV360_TOKEN_URL`, `DV360_API_BASE_URL`). The seed now holds a real, freshly generated key file. Endpoints: `POST /admin/v1/partners` (Test, adopting the company lists, one per provider), `GET/PUT /admin/v1/partners/{id}` (secrets write-only; Live refused with 409 unless connected with the bidder integration complete; unlinking copies the company lists down and relinking discards the DSP's own; https bidder endpoint; Amazon region fixed once connected), and `POST …/connect` and `POST …/disconnect`. Tests: API +11 (run against the mock in-process), mocks +3 | The DSP page UI waits on Q5 and Q6 | Q5, Q6 |
+| 9 | DSP page + Google DSP (DV360) | Done | **API and mocks:** `apps/dsp-mocks`, a mock DSP service (§14) with the DV360 token endpoint and API v4 (`/v4/partners/{id}`, `/v4/advertisers` with paging), a control API and a test page. A real DV360 client (`apps/api/src/dsp/googleDv360.ts`): it signs an RS256 service-account JWT, exchanges it at the token endpoint, checks partner access and pages through the advertisers, all against the mock by default (`DV360_TOKEN_URL`, `DV360_API_BASE_URL`). The seed now holds a real, freshly generated key file. Endpoints: `POST /admin/v1/partners` (Test, adopting the company lists, one per provider), `GET/PUT /admin/v1/partners/{id}` (secrets write-only; Live refused with 409 unless connected with the bidder integration complete; unlinking copies the company lists down and relinking discards the DSP's own; https bidder endpoint; Amazon region fixed once connected), and `POST …/connect` and `POST …/disconnect`. Tests: API +11 (run against the mock in-process), mocks +3 **UI:** the DSP page. In order: header (provider icon, the name as a plain heading (Q6), provider and last sync, status pill), issues at the top (connection error with the DSP's reason, missing credentials, missing bidder fields, or the green no-issues line), Mode (Test/Live, Live disabled until connected with the bidder integration complete), Connection credentials (per provider; every secret masked, including the DV360 key file), Connect / Re-test connection / Disconnect (immediate (Q5); Connect is disabled with "Save changes first" while credential edits are unsaved), Bidder integration, and Advertiser whitelist / blacklist (the linked callout with Unlink and edit, or the DSP's own lists with Relink and seat suggestions). The Add card (You will need, Add partner / Cancel) creates a draft DSP; Save changes creates it (`POST`, then `PUT`) and opens its page. Fixed a `useDraft` bug (a second refetch after a save could leave a stale draft) that affected every page. Tests: admin +5 | Connecting Amazon Ads DSP and The Trade Desk (package 17) | Q5, Q6 (answered) |
 | 10–17 | — | Not started | — | — | — |
 
 ## 13. Prototype comparison (per screen)
@@ -523,6 +515,24 @@ Kept on the page as status (decision 2): "Not enabled for this company —
 contact Platform Admin.", the broken-partner callout, "On the blacklist —
 this position cannot fill.", "Not connected", the preview caption, and the
 save bar message.
+
+### DSP page and Add card (package 9)
+
+Compared against the prototype's Google DSP and Amazon Ads DSP pages and The
+Trade Desk Add card at 1163px. The section order and headings, every
+tooltip, the issue callouts (texts and tones), the Test/Live control with its
+disabled title, the credential fields per provider (labels, placeholders,
+tooltips, Region options), the Connect / Re-test connection / Disconnect
+buttons, the bidder fields, both list states with their actions and empty
+texts, and the Add card's You will need list and buttons all match.
+
+| Where | Prototype | Build | Why |
+|---|---|---|---|
+| Header | Editable name | The name as a heading | Q6 |
+| Connect, Re-test, Disconnect | Change the draft (fake result) | Act immediately against the DSP; Connect disabled with "Save changes first" while credentials are unsaved | Q5 |
+| Private key (JSON) | Plain textarea | Masked, like every secret | Defect fix 2 |
+| Add card | Provider description paragraph | Tooltip on "You will need" | Decision 2 |
+| Add partner | Draft partner | Draft partner, created on Save changes | Same; the spec: "kept only once saved" |
 
 ### Shared Targeting Variables (package 8)
 

@@ -19,10 +19,10 @@ export const PATHS = {
   add: (provider: string) => `/dsp-integration/add/${provider}`,
 }
 
-export function dspState(x: Partner | undefined) {
+export function dspState(x: Partner | undefined, drafted = false) {
   if (x?.status === 'connected') return { icon: 'check_circle', colour: T.success, label: x.mode === 'live' ? 'Live' : 'Set up · Test', setUp: true }
   if (x?.status === 'error') return { icon: 'error', colour: T.error, label: 'Connection error', setUp: true }
-  return { icon: 'add_circle', colour: T.micro, label: x ? 'Not set up yet — finish credentials' : 'Not set up yet', setUp: false }
+  return { icon: 'add_circle', colour: T.micro, label: x || drafted ? 'Not set up yet — finish credentials' : 'Not set up yet', setUp: false }
 }
 
 function Row({ active, collapsed, dashed, title, onClick, children }: { active: boolean; collapsed: boolean; dashed?: boolean; title: string; onClick: () => void; children: ReactNode }) {
@@ -79,12 +79,13 @@ export function DspList() {
       {!collapsed && <SectionLabel>Partner DSPs</SectionLabel>}
       {PROVIDERS.map((def) => {
         const x = partners.find((p) => p.provider === def.key)
-        const state = dspState(x)
+        const drafted = !!draft.partners[`new:${def.key}`]
+        const state = dspState(x, drafted)
         const to = x ? PATHS.partner(x.id) : PATHS.add(def.key)
         const active = pathname === to
         const name = x ? x.name : def.label
         return (
-          <Row key={def.key} active={active} collapsed={collapsed} dashed={!x} title={`${name} — ${state.label}`} onClick={() => navigate(to)}>
+          <Row key={def.key} active={active} collapsed={collapsed} dashed={!x && !drafted} title={`${name} — ${state.label}`} onClick={() => navigate(to)}>
             {collapsed ? (
               <div className="flex justify-center" style={{ opacity: x ? 1 : 0.75 }}>
                 <Icon name={def.icon} size={18} style={{ color: def.colour }} />

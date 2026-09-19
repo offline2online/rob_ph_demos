@@ -3,7 +3,7 @@
    Route changes are caught by the router's blocker; in-page switches go
    through guard(). */
 import { App } from 'antd'
-import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react'
+import { createContext, useCallback, useContext, useEffect, useRef, type ReactNode } from 'react'
 import { useBlocker } from 'react-router-dom'
 
 const MESSAGE = 'You have unsaved changes. Discard them?'
@@ -17,9 +17,12 @@ const UnsavedContext = createContext<Ctx>({ setDirty: () => {}, guard: async (a)
 
 export function UnsavedChangesProvider({ children }: { children: ReactNode }) {
   const { modal } = App.useApp()
-  const [dirty, setDirty] = useState(false)
-  const dirtyRef = useRef(dirty)
-  dirtyRef.current = dirty
+  /* Read synchronously at navigation time: a page that has just saved can
+     navigate in the same commit without being asked to discard. */
+  const dirtyRef = useRef(false)
+  const setDirty = useCallback((d: boolean) => {
+    dirtyRef.current = d
+  }, [])
   const confirmDiscard = useCallback(
     () => new Promise<boolean>((resolve) => modal.confirm({ title: MESSAGE, okText: 'OK', cancelText: 'Cancel', onOk: () => resolve(true), onCancel: () => resolve(false) })),
     [modal],
@@ -33,7 +36,7 @@ export function UnsavedChangesProvider({ children }: { children: ReactNode }) {
     [confirmDiscard],
   )
 
-  const blocker = useBlocker(({ currentLocation, nextLocation }) => dirty && currentLocation.pathname !== nextLocation.pathname)
+  const blocker = useBlocker(({ currentLocation, nextLocation }) => dirtyRef.current && currentLocation.pathname !== nextLocation.pathname)
   const asking = useRef(false)
   useEffect(() => {
     if (blocker.state !== 'blocked' || asking.current) return
