@@ -7,6 +7,8 @@ import { api } from './api/client'
 import { type Flags, envFlags } from './flags'
 import { DisplayTypesPage } from './features/display-types/DisplayTypesPage'
 import { PlaylistManagementPage } from './features/playlist-management/PlaylistManagementPage'
+import { DspIntegrationLayout } from './features/dsp-integration/DspIntegrationLayout'
+import { ExchangeSettings } from './features/dsp-integration/ExchangeSettings'
 import { AppShell, type NavItem } from './shared/AppShell'
 import { WithTip } from './shared/InfoTip'
 import { UnsavedChangesProvider } from './shared/UnsavedChanges'
@@ -17,10 +19,12 @@ export interface RouteHandle { title: string; tip?: string }
 
 /* Navigation in the prototype's order: Display Types, Playlist Management,
    DSP Integration, Advertisers. Items are added by the package that builds them. */
-export function navFor(_flags: Flags, _session: Session | undefined): NavItem[] {
+export function navFor(flags: Flags, _session: Session | undefined): NavItem[] {
   return [
     { to: '/display-types', label: 'Display Types', icon: 'dashboard_customize' },
     { to: '/playlists', label: 'Playlist Management', icon: 'playlist_play' },
+    /* Flag off: DSP Integration is hidden (decision 6). */
+    ...(flags.dspIntegration ? [{ to: '/dsp-integration', label: 'DSP Integration', icon: 'handshake' }] : []),
   ]
 }
 
@@ -33,6 +37,18 @@ function featureRoutes(flags: Flags): RouteObject[] {
       handle: { title: 'Playlist Management', tip: 'A playlist is created automatically whenever a display type is created. Auto-created playlists can be renamed, reassigned and deleted once nothing references them.' } satisfies RouteHandle,
       element: <PlaylistManagementPage />,
     },
+    ...(flags.dspIntegration
+      ? [{
+          path: 'dsp-integration',
+          handle: { title: 'DSP Integration' } satisfies RouteHandle,
+          element: <DspIntegrationLayout />,
+          children: [
+            /* The prototype opens on Advertiser settings; until package 7 builds it, Exchange settings. */
+            { index: true, element: <Navigate to="exchange" replace /> },
+            { path: 'exchange', element: <ExchangeSettings /> },
+          ],
+        }]
+      : []),
   ]
 }
 

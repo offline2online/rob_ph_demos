@@ -456,7 +456,8 @@ Each is configurable in `apps/api/src/config.ts`.
 | 3 | Display Types | Done | API: stand-in `GET/POST /admin/v1/display-types`, `GET/PUT …/{id}/record` (creates referenced auto/zone playlists), `GET /admin/v1/playlists`, and this build's `PUT …/{id}/extensions` with server-side slot validation (one slot per rotation position, owner rules, partner and seat exist, named blocked advertiser withdrawn unless already set, whitelist-only needs a non-empty whitelist). Early read side of `GET /admin/v1/partners`, `/advertiser-settings`, `/advertisers` (§9). UI: nav "Display Types", title "Display Types Details", list (New display type, touch point, W×H, structure and feature badges), one-column form (preview, Touch Point, name, canvas, background, default playlist), four collapsed panels with summary chips, Slot assignment (cards and AG Grid table), broken-partner callout with Fix connection, save bar and unsaved-changes guard. Tests: API 40 (strict contract checks on every endpoint above), admin 23 (summary chips, slot helpers, page structure, flag off). Browser-checked at 1163px: no horizontal scroll, save bar enables only on change, tooltips open above and flip below near the top | Delete (bin icon and dialog) is package 4 | Q1–Q3 |
 | 4 | Delete a display type | Done | `GET …/display-types/{id}/delete-check` and `DELETE …/display-types/{id}` (409 `has_dependents` listing each display and its store; the auto-created playlist is kept; Q47: the sold/reserved position count is logged, and reservations arrive in package 15). UI: a bin icon on each list row, and the delete dialog (blocked: warning, list of displays, Close, Delete disabled; allowed: permanent-delete text, Cancel, Delete). A confirmed delete applies immediately and leaves other unsaved edits as they were; an unsaved new type is removed from the draft only. Tests: API +3, admin +2. Browser-checked | — | — |
 | 5 | Playlist Management | Done | API: `PUT /admin/v1/playlists/{id}/record` (rename only; rejects assignment fields), `GET …/delete-check` and `DELETE` (409 `has_dependents` for a default or zone playlist). UI: nav "Playlist Management", count line, AG Grid table (rename inline, auto-created pill, expandable assignments with Open →, delete) and delete dialogs. Changes apply immediately, as in the prototype (the spec doesn't list this page under *Saving changes*). Shared `Grid` component (fit to width, auto height), now also used by Slot assignment. Tests: API +4, admin +1. Browser-checked: rename, both delete dialogs, Open → | New playlist and assignment editing (decision 4) | — |
-| 6–17 | — | Not started | — | — | — |
+| 6 | DSP Integration nav + Exchange settings; sellers.json | Done | API: `GET/PUT /admin/v1/exchange` (all four fields required, bare domain, valid email; `published` and `sellersJsonUrl` once complete) and `GET /sellers.json` (PUBLISHER, not confidential; 404 until complete or with the flag off). UI: nav "DSP Integration" (flag-gated), a list column (COMPANY: Exchange settings, Advertiser settings, Shared Targeting Variables with their subtitles; PARTNER DSPS: DV360, Amazon Ads DSP and The Trade Desk with state and lists-link lines; contracts to icons below 900px), one draft and save bar for the whole section, a leave-page guard, and the Exchange settings page. Tests: API +7, admin +4. Browser-checked: edit, validation error, save, guard | The section opens on Exchange settings until package 7 adds Advertiser settings | — |
+| 7–17 | — | Not started | — | — | — |
 
 ## 13. Prototype comparison (per screen)
 
@@ -495,6 +496,19 @@ Kept on the page as status (decision 2): "Not enabled for this company —
 contact Platform Admin.", the broken-partner callout, "On the blacklist —
 this position cannot fill.", "Not connected", the preview caption, and the
 save bar message.
+
+### Exchange settings (package 6)
+
+Compared against the prototype at 1163px. The list column (both section
+labels, three company rows with their subtitles, the three DSP rows with
+state and lists-link lines), the page heading and its tooltip, the
+Published/Incomplete pill, SELLER OF RECORD with its tooltip, the four
+required fields with their placeholders, the Domain tooltip and the
+sellers.json callouts all match.
+
+| Where | Prototype | Build | Why |
+|---|---|---|---|
+| Published pill and callout | Follow the unsaved fields as you type | Follow the saved settings | Spec §7: "once saved and complete, the screen shows where sellers.json is published and that it is live" |
 
 ### Delete a display type (package 4)
 
