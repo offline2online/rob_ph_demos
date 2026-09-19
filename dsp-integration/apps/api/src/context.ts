@@ -8,6 +8,7 @@ import { type SecretsStore, aesGcmSecretsStore } from './secrets/SecretsStore'
 import { type DisplayTypeSource, sqliteDisplayTypeSource } from './platform/DisplayTypeSource'
 import { type PlaylistSource, sqlitePlaylistSource } from './platform/PlaylistSource'
 import { type DisplaySource, sqliteDisplaySource } from './platform/DisplaySource'
+import { type StoreSource, sqliteStoreSource } from './platform/StoreSource'
 import { type CampaignSource, sqliteCampaignSource } from './platform/CampaignSource'
 import { type PlaybackSource, sqlitePlaybackSource } from './platform/PlaybackSource'
 import { type PartnerRepo, sqlitePartnerRepo } from './repos/PartnerRepo'
@@ -34,6 +35,7 @@ export interface Context {
   displayTypes: DisplayTypeSource
   playlists: PlaylistSource
   displays: DisplaySource
+  stores: StoreSource
   campaigns: CampaignSource
   playback: PlaybackSource
   partners: PartnerRepo
@@ -67,6 +69,7 @@ export function createContext(opts: { config?: Config; db?: Db; flags?: Flags; s
     displayTypes: sqliteDisplayTypeSource(db),
     playlists: sqlitePlaylistSource(db),
     displays: sqliteDisplaySource(db),
+    stores: sqliteStoreSource(db),
     campaigns: sqliteCampaignSource(db),
     playback: sqlitePlaybackSource(db),
     partners: sqlitePartnerRepo(db, secrets),

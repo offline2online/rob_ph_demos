@@ -523,18 +523,15 @@ All approved by Rob (decision 5). The reason for each change is given.
 9. ~~How targeting shrinks a forecast~~ **Accepted (Rob, 19 Sep):** the
    `AudienceSource.targetedShare` seam, with the POC halving the audience per
    AND group, stays until the platform's own targeting data answers it.
-10. **Stores in the design (open).** Rob: stores shouldn't be in this design;
-    Personalisation Hub handles them separately, unless it's for reporting.
-    Where they appear today, all from the spec or the approved contract:
-    - `GET /v1/inventory` filters `storeIds` and `region` (spec §5
-      "Endpoints": "store or store set, region"), and each position's
-      `storeCount` (spec §5 "What each position returns": "Store count and
-      display count in scope").
-    - The display type delete check lists each assigned display **with its
-      store** (spec §1 *Deleting a display type*).
-    - The stand-in `displays` table carries a store name for those two uses.
-    Nothing stores or manages stores. Should the `storeIds` and `region`
-    filters and `storeCount` come out of the contract?
+10. ~~Stores in the design~~ **Resolved (Rob, 19 Sep):** stores, like
+    display types, are managed by the primary Personalisation Hub platform;
+    this build only has to read them. New `StoreSource` stand-in
+    (`platform/StoreSource.ts`, migration 0014: a `stores` table with id,
+    name and region, and `displays.store_id`; existing displays are linked
+    from their store name). Store counts use unique platform store IDs, the
+    inventory's `storeIds` filter takes platform store IDs, `region` matches
+    the store's region, and the delete check names each display's store from
+    the store record. Engineering points `StoreSource` at the platform.
 11. **What a reservation costs (open).** Rob: probably handled by the DSP,
     not confirmed. Until confirmed the POC still books a reservation at the
     advertiser's effective floor CPM for the campaign's type.

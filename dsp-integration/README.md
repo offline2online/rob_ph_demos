@@ -20,7 +20,7 @@ small interface.
 | `packages/types/` | Shared TypeScript types generated from `openapi.yaml` (`npm run gen:types`), plus shared catalogues: providers, targeting variables, slot owners |
 | `apps/api/` | Node + Fastify + SQLite (`node:sqlite`). All paths are served under `/api`. |
 | `apps/api/src/db/migrations/` | Versioned, reversible SQL migrations. `0001` is the stand-in for the existing platform's records; `0002`+ are this build's additive changes. |
-| `apps/api/src/platform/` | Stand-ins for the existing platform: `DisplayTypeSource`, `PlaylistSource`, `DisplaySource`, `CampaignSource` (including slot bookings for the hand-off), `PlaybackSource`, `AssetStore`, `AudienceSource` |
+| `apps/api/src/platform/` | Stand-ins for the existing platform: `DisplayTypeSource`, `PlaylistSource`, `DisplaySource`, `StoreSource`, `CampaignSource` (including slot bookings for the hand-off), `PlaybackSource`, `AssetStore`, `AudienceSource` |
 | `apps/api/src/repos/` | This build's own records: partners (credentials encrypted), company advertiser settings, variable access, exchange |
 | `apps/api/src/seed/` | Seed data, taken from the prototype's `model/data.js` |
 | `apps/dsp-mocks/` | Mock Google DV360, Amazon Ads and The Trade Desk APIs and OpenRTB bidders for testing, with a control API and a test page at `/`. The POC's DSP clients and the auction call these instead of real DSPs. |

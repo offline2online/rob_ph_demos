@@ -65,8 +65,8 @@ paths:
         - {name: advertiserId, in: query, schema: {type: string}, description: Scope to one of the partner's advertisers (applies their lists and floor multiplier).}
         - {name: displayTypeId, in: query, schema: {type: string}}
         - {name: touchPoint, in: query, schema: {type: string, enum: [Digital Signage, Kiosk]}}
-        - {name: storeIds, in: query, schema: {type: array, items: {type: string}}, style: form, explode: false}
-        - {name: region, in: query, schema: {type: string}}
+        - {name: storeIds, in: query, schema: {type: array, items: {type: string}}, style: form, explode: false, description: Personalisation Hub store IDs (stores are managed by the platform).}
+        - {name: region, in: query, schema: {type: string}, description: A store region from the platform's store records.}
         - {name: from, in: query, schema: {type: string, format: date}}
         - {name: to, in: query, schema: {type: string, format: date}}
         - {name: status, in: query, schema: {$ref: '#/components/schemas/WindowStatus'}}

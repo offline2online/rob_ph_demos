@@ -46,9 +46,10 @@ export const inventoryRoutes = (ctx: Context): FastifyPluginAsync => async (app)
     const items = visible(c).filter((p) => {
       if (q.displayTypeId && p.displayType.id !== q.displayTypeId) return false
       if (q.touchPoint && p.displayType.touchPoint !== q.touchPoint) return false
-      if (stores.length && !ctx.displays.listByDisplayType(p.displayType.id).some((d) => stores.includes(d.store))) return false
-      /* Stores carry no region yet (spec open question 35), so no position matches one (Q10). */
-      if (q.region) return false
+      /* Store IDs and regions are the platform's (StoreSource, Q10). */
+      const displays = ctx.displays.listByDisplayType(p.displayType.id)
+      if (stores.length && !displays.some((d) => stores.includes(d.storeId))) return false
+      if (q.region && !displays.some((d) => ctx.stores.get(d.storeId)?.region?.toLowerCase() === q.region!.toLowerCase())) return false
       if (q.status && STATUSES.includes(q.status as WindowStatus)) return range.some((w) => windowStatus(ctx, p, c, w) === q.status)
       return true
     })

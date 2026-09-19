@@ -70,13 +70,13 @@ Localised and baseline campaigns use floor × advertiser multiplier only.
 
 | Method | Path | Purpose |
 |---|---|---|
-| GET | `/v1/inventory` | Sellable advertiser-owned positions this caller could buy. Filters: `advertiserId`, `displayTypeId`, `touchPoint`, `storeIds`, `region`, `from`, `to`, `status`. |
+| GET | `/v1/inventory` | Sellable advertiser-owned positions this caller could buy. Filters: `advertiserId`, `displayTypeId`, `touchPoint`, `storeIds` (Personalisation Hub store IDs), `region` (the platform's store region), `from`, `to`, `status`. |
 | GET | `/v1/inventory/{positionId}` | One position in full. |
 | GET | `/v1/inventory/{positionId}/availability?from=&to=` | Status per play window: `available`, `reserved`, `sold`, `unavailable`. |
 | POST | `/v1/inventory/forecast` | Projected assumed views and estimated cost for positions, dates and optional targeting rules. |
 
 A position returns: id, display type, slot and label, zone, store and
-display counts, screen (width, height, orientation, slot duration, loop
+display counts (unique platform store IDs and displays using the display type), screen (width, height, orientation, slot duration, loop
 length, share of voice, OpenOOH venue type), assignment (`rtb`,
 `whitelist_only`, `reserved`), assumed views per window, and pricing (floor
 and effective floors for localised, personalised, interactive, and

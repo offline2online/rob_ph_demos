@@ -129,7 +129,7 @@ export function positionView(ctx: Context, p: PositionRef, c: Caller) {
     slot: p.slot,
     slotLabel: p.def.label,
     zone: null,
-    storeCount: new Set(displays.map((d) => d.store)).size,
+    storeCount: new Set(displays.map((d) => d.storeId)).size,
     displayCount: displays.length,
     screen: {
       width: dt.displayCanvasSize.width,

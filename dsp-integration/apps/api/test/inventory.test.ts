@@ -80,9 +80,12 @@ describe('GET /v1/inventory', () => {
     expect(await n('displayTypeId=landscape')).toBe(0)
     expect(await n('displayTypeId=menu_board&touchPoint=Digital%20Signage')).toBe(1)
     expect(await n('touchPoint=Kiosk')).toBe(0)
-    expect(await n('storeIds=Chatswood,Parramatta')).toBe(1)
-    expect(await n('storeIds=Parramatta')).toBe(0)
-    expect(await n('region=NSW')).toBe(0)
+    /* Platform store IDs and regions (StoreSource). */
+    expect(await n('storeIds=st_chatswood,st_parramatta')).toBe(1)
+    expect(await n('storeIds=st_parramatta')).toBe(0)
+    expect(await n('storeIds=Chatswood')).toBe(0)
+    expect(await n('region=North%20Shore')).toBe(1)
+    expect(await n('region=Western%20Sydney')).toBe(0)
     expect(await n('status=available&from=2026-09-21&to=2026-09-22')).toBe(1)
     expect(await n('status=sold&from=2026-09-21&to=2026-09-22')).toBe(0)
     ctx.reservations.insert({

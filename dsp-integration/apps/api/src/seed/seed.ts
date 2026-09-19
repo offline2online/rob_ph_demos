@@ -79,6 +79,14 @@ export const SEED_DISPLAY_TYPES = [
   },
 ]
 
+/* The platform's stores (StoreSource stand-in), with their regions. */
+export const SEED_STORES = [
+  { id: 'st_sydney_cbd', name: 'Sydney CBD', region: 'Sydney Inner' },
+  { id: 'st_parramatta', name: 'Parramatta', region: 'Western Sydney' },
+  { id: 'st_chatswood', name: 'Chatswood', region: 'North Shore' },
+  { id: 'st_bondi_junction', name: 'Bondi Junction', region: 'Eastern Suburbs' },
+]
+
 export const SEED_DISPLAYS = [
   { id: 'd_1001', name: 'Entrance Screen', store: 'Sydney CBD', displayTypeId: 'landscape' },
   { id: 'd_1002', name: 'Checkout Screen', store: 'Sydney CBD', displayTypeId: 'landscape' },
@@ -106,8 +114,10 @@ export async function seed(ctx: Context) {
   tx(ctx.db, () => {
     SEED_PLAYLISTS.forEach((p) => ctx.playlists.create(p))
     SEED_DISPLAY_TYPES.forEach((d) => ctx.displayTypes.create(d))
-    const insDisplay = ctx.db.prepare('INSERT INTO displays (id, name, store, display_type_id) VALUES (?, ?, ?, ?)')
-    SEED_DISPLAYS.forEach((d) => insDisplay.run(d.id, d.name, d.store, d.displayTypeId))
+    const insStore = ctx.db.prepare('INSERT INTO stores (id, name, region) VALUES (?, ?, ?)')
+    SEED_STORES.forEach((s) => insStore.run(s.id, s.name, s.region))
+    const insDisplay = ctx.db.prepare('INSERT INTO displays (id, name, store, store_id, display_type_id) VALUES (?, ?, ?, ?, ?)')
+    SEED_DISPLAYS.forEach((d) => insDisplay.run(d.id, d.name, d.store, SEED_STORES.find((s) => s.name === d.store)!.id, d.displayTypeId))
     const insCampaign = ctx.db.prepare("INSERT INTO campaigns (id, name, targeting, created_at, source, activation_enabled) VALUES (?, ?, NULL, ?, 'hq', 1)")
     SEED_CAMPAIGNS.forEach(([id, name]) => insCampaign.run(id, name, '2026-09-01T00:00:00.000Z'))
 
