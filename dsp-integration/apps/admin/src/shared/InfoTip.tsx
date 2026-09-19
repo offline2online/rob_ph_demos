@@ -8,7 +8,7 @@ import { Icon } from './Icon'
 
 export function InfoTip({ text, size = 14 }: { text: ReactNode; size?: number }) {
   return (
-    <Tooltip title={text} placement="top" autoAdjustOverflow overlayStyle={{ maxWidth: 280 }} trigger={['hover', 'focus']}>
+    <Tooltip title={text} placement="top" autoAdjustOverflow styles={{ root: { maxWidth: 280 } }} trigger={['hover', 'focus']}>
       <span
         role="button"
         tabIndex={0}

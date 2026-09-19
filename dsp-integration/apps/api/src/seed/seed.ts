@@ -11,12 +11,12 @@ const blankFeatures = () => ({
   aiAgentPlayback: { enabled: false },
   visionAi: { enabled: false, mode: 'Monitor Passerby & Campaign Engagement Data', preset: 'Balanced', streamQuality: 640, fps: 15, frameSkip: 5, missThreshold: 15 },
 })
-const qrControl = (over: { phantom?: { width?: number; height?: number }; mobileSiteTemplate?: string } = {}) => ({
+const qrControl = (over: { phantom?: { width?: number; height?: number } } = {}) => ({
   enabled: true,
   phantomArea: { enabled: true, width: over.phantom?.width ?? 250, height: over.phantom?.height ?? 250, position: null, sizingMode: 'Fit to Display' },
   qrCode: { size: 100, colour: '#000000', position: null },
   connectedIconColour: '#169bc2',
-  mobileSiteTemplate: over.mobileSiteTemplate ?? 'Mobile App',
+  mobileSiteTemplate: 'Mobile App',
   connected: { icon: 'smartphone', showPoweredBy: true, poweredByText: 'Powered by Personalisation Hub' },
 })
 const playlistSettings = (cap: number | null = null) => ({
@@ -53,13 +53,13 @@ export const SEED_DISPLAY_TYPES = [
   },
   {
     id: 'portrait', name: 'Portrait', touchPoint: 'Digital Signage', description: null, displayCanvasSize: { width: 1080, height: 1920 }, backgroundColor: '#000000',
-    defaultPlaylistId: 'pl_portrait', playlistSettings: playlistSettings(), qrControl: qrControl({ phantom: { width: 220, height: 220 }, mobileSiteTemplate: 'Mobile Store Site' }),
+    defaultPlaylistId: 'pl_portrait', playlistSettings: playlistSettings(), qrControl: qrControl({ phantom: { width: 220, height: 220 } }),
     enabledFeatures: { ...blankFeatures(), proximityMist: { enabled: true, mode: 'zone', zone: 'Front of Store' } }, multiZone: { enabled: false, zones: [] },
     phExtensions: { slots: [], venue: { openOohVenueType: 'retail.grocery', orientation: 'portrait' as const, loopLengthSec: 20 } },
   },
   {
     id: 'menu_board', name: 'Menu Board — Long Format', touchPoint: 'Digital Signage', description: null, displayCanvasSize: { width: 5760, height: 1080 }, backgroundColor: '#111111',
-    defaultPlaylistId: 'pl_menu', playlistSettings: playlistSettings(3), qrControl: qrControl({ mobileSiteTemplate: 'Order & Pay' }),
+    defaultPlaylistId: 'pl_menu', playlistSettings: playlistSettings(3), qrControl: qrControl(),
     enabledFeatures: { ...blankFeatures(), visionAi: { ...blankFeatures().visionAi, enabled: true } },
     multiZone: { enabled: true, zones: [
       { id: 'z1', name: 'Zone 1', x: 0, y: 0, width: 33.3, height: 100, playlistId: 'pl_zone_menu_board_1' },

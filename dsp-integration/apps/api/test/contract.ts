@@ -26,7 +26,15 @@ function strictify(node: unknown, allOfMember = false): void {
   }
 }
 const doc = structuredClone(openapi)
-strictify(doc.components)
+/* Component schemas used as allOf members are opened too; the allOf parent closes them. */
+const allOfRefs = new Set<string>()
+JSON.stringify(doc, (k, v) => {
+  if (k === 'allOf' && Array.isArray(v)) v.forEach((m: Node) => typeof m.$ref === 'string' && allOfRefs.add(m.$ref.split('/').pop() as string))
+  return v
+})
+const schemas = (doc.components as Node).schemas as Node
+for (const [name, schema] of Object.entries(schemas)) strictify(schema, allOfRefs.has(name))
+strictify((doc.components as Node).responses)
 strictify(doc.paths)
 
 const ajv = new Ajv2020({ strict: false, allErrors: true })

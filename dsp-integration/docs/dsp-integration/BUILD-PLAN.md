@@ -1,7 +1,7 @@
 # Build plan — Display Types & DSP Integration
 
-Status: **plan approved 19 Sep 2026** (answers in §6). Building packages
-1–3, then stopping for Rob to compare Display Types against the prototype.
+Status: **packages 1–3 built** (19 Sep 2026). Stopped for Rob to compare
+Display Types against the prototype before package 4.
 
 ## 1. Setup and git
 
@@ -387,6 +387,24 @@ All approved by Rob (decision 5). The reason for each change is given.
 - **Fix connection before package 6** links to the DSP page's route,
   `/dsp-integration/partners/{id}`. That route renders once package 6 is
   built.
+- **Company feature availability is a stand-in.** It drives which Enabled
+  Features can be switched on (spec §1: Company → Display Type → Display).
+  The existing platform owns it and the contract doesn't expose it, so the
+  admin UI holds the prototype's values in `model.ts`
+  (`COMPANY_FEATURE_AVAILABILITY`). See Q3.
+- **Zone playlists created on demand.** When zones are enabled, a
+  "<Display Type> / Zone n" draft playlist is created. On Save, the stand-in
+  `PUT …/record` or `POST` creates any referenced playlist that doesn't exist
+  yet. This keeps "applied with Save changes" (spec §1) without a
+  playlist-create endpoint.
+- **Mobile site template seed.** The prototype seeds "Mobile Store Site" and
+  "Order & Pay", neither of which is one of the select's options, so the
+  prototype falls back to showing "Mobile App". The POC seeds "Mobile App",
+  so both render the same.
+- **Slot count follows the cap only with the flag on.** With the flag off,
+  changing Maximum Campaigns Played In Rotation leaves `phExtensions.slots`
+  alone, because that endpoint returns 404. With the flag on, the editor
+  resizes the slots to the cap, and the next save stores them.
 - **The feature flag reaches the admin UI** through the same env var,
   `DSP_INTEGRATION_ENABLED`, exposed to Vite through the `Flags` interface.
   No endpoint was added.
@@ -412,6 +430,16 @@ All approved by Rob (decision 5). The reason for each change is given.
    `seats: [{id, name}]` to `Partner`? Until then the picker uses
    `/admin/v1/advertisers`, so an `hq_user` session sees no named
    advertisers there.
+2. **"Display Type / Element Name".** The name field's label and placeholder
+   ("Name this display type / element") come from the prototype, where
+   "element" means a Responsive Web element. Web is out of scope
+   (decision 1). They're built verbatim for now. Should they read
+   "Display Type Name" and "Name this display type"?
+3. **Company feature availability.** Which Enabled Features the company may
+   use (In-Store Radio and AI Agents are off in the prototype) has no
+   endpoint in the contract. The admin UI holds the prototype's values as a
+   stand-in (§9). Is that acceptable, or should the POC stand-in group get a
+   read endpoint for it?
 
 ## 11. Defaults in use (brief, *Defaults for open questions*)
 
@@ -433,9 +461,43 @@ Each is configurable in `apps/api/src/config.ts`.
 |---|---|---|---|---|---|
 | 1 | Data model and migrations | Done | Workspace (`apps/api`, `packages/types` generated from openapi.yaml), 7 reversible migrations (0001 = existing-platform stand-in; 0002–0007 additive), platform stand-in sources, partner/company/exchange repos, `SecretsStore` (AES-256-GCM), `Flags`, stand-in session + `GET /admin/v1/session`, seed, strict contract response validator. 18 tests: migration round-trip, existing records load unchanged, encryption at rest, seed | `AssetStore`, `AudienceSource`, reservations/billing tables, partner tokens: built with the packages that use them (12, 13, 15, 16) | — |
 | 2 | Shared UI | Done | `apps/admin` (React 18.3, Vite 6, AntD 5 themed with `phTheme`, Tailwind 4 `@theme`, AG Grid 32 Alpine vars, Material Symbols, Roboto). `SaveBar` (sticky, never fixed), `useDraft`, `UnsavedChangesProvider` (router blocker + in-page `guard`, AntD confirm "You have unsaved changes. Discard them?"), `DeleteDialog`, `InfoTip` (AntD Tooltip, flips below when there's no room), `ListPageLayout` (260px sticky list + full-width column), `AppShell` (title, divider, 230px nav collapsing to 56px icons below 900px). 11 tests | `ListEditor`, summary chips and collapsible panels move to the first package that uses them (3, 7) | — |
-| 3 | Display Types | Not started | — | — | Q1 |
+| 3 | Display Types | Done | API: stand-in `GET/POST /admin/v1/display-types`, `GET/PUT …/{id}/record` (creates referenced auto/zone playlists), `GET /admin/v1/playlists`, and this build's `PUT …/{id}/extensions` with server-side slot validation (one slot per rotation position, owner rules, partner and seat exist, named blocked advertiser withdrawn unless already set, whitelist-only needs a non-empty whitelist). Early read side of `GET /admin/v1/partners`, `/advertiser-settings`, `/advertisers` (§9). UI: nav "Display Types", title "Display Types Details", list (New display type, touch point, W×H, structure and feature badges), one-column form (preview, Touch Point, name, canvas, background, default playlist), four collapsed panels with summary chips, Slot assignment (cards and AG Grid table), broken-partner callout with Fix connection, save bar and unsaved-changes guard. Tests: API 40 (strict contract checks on every endpoint above), admin 23 (summary chips, slot helpers, page structure, flag off). Browser-checked at 1163px: no horizontal scroll, save bar enables only on change, tooltips open above and flip below near the top | Delete (bin icon and dialog) is package 4 | Q1–Q3 |
 | 4–17 | — | Not started | — | — | — |
 
 ## 13. Prototype comparison (per screen)
 
 Filled in as each package finishes. Differences are removed, not justified.
+The items below are either Rob's decisions (§6), the defect fixes (§8), the
+ph-designer look (the skill decides how it looks), or later packages. None is
+a content difference.
+
+### Display Types (package 3)
+
+I compared it against `prototype-reference` running locally, with the
+Menu Board — Long Format type selected and every panel open, at 1163px.
+Title, list, form fields and order, panel titles, summary chips, every
+select's options, slot cards, the slot table columns and options, the
+broken-partner callout, the zone cards and the save bar all match.
+
+| Where | Prototype | Build | Why |
+|---|---|---|---|
+| Nav | Four items | Display Types only | Playlist Management, DSP Integration and Advertisers arrive with packages 5, 6 and 10 |
+| List | Bin icon per type | None yet | Package 4 |
+| List | 4 Responsive Web types | Not present | Decision 1 |
+| Touch Point | 5 options | Digital Signage, Kiosk | Decision 1 |
+| Preview | Idle / Connected toggle | None | Decision 1 |
+| Canvas size, Phantom Area(s) Size | Info icon with no tooltip | No icon | Defect fix 5 |
+| Enabled Features | Hint sentence under each feature | Tooltip beside the label | Decision 2 |
+| Enabled Features | Enable QR Control can be switched on without a phantom zone | Disabled until the zone is defined | Defect fix 3 |
+| Enabled Features | Empty Vision/AI note | None | Defect fix 6 |
+| Phantom Zone (off) | "No phantom zone on this display type. QR Control cannot be enabled without one." | Removed | Decision 2. The *Define phantom zone* tooltip already says this |
+| Multi-Zone Layout (off) | "Single zone — the display runs the Default Playlist across the full canvas." | Removed | Decision 2. The collapsed chip already reads *Single zone* |
+| Fix connection | Opens Advertiser settings | Opens that DSP's page | Defect fix 1 |
+| Colour fields | Native colour inputs | AntD `ColorPicker` | ph-designer components |
+| Field labels | `#333` | Muted `rgba(0,0,0,0.45)` | ph-designer `components.md` §13 |
+| Unsaved-changes prompt | `window.confirm` | AntD confirm with the same text, OK / Cancel | ph-designer components |
+
+Kept on the page as status (decision 2): "Not enabled for this company —
+contact Platform Admin.", the broken-partner callout, "On the blacklist —
+this position cannot fill.", "Not connected", the preview caption, and the
+save bar message.

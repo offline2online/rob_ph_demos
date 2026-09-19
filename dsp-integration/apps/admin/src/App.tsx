@@ -5,6 +5,7 @@ import { Navigate, Outlet, RouterProvider, createBrowserRouter, useMatches, type
 import type { Session } from '@ph-dsp/types'
 import { api } from './api/client'
 import { type Flags, envFlags } from './flags'
+import { DisplayTypesPage } from './features/display-types/DisplayTypesPage'
 import { AppShell, type NavItem } from './shared/AppShell'
 import { UnsavedChangesProvider } from './shared/UnsavedChanges'
 import { phTheme } from './theme/phTheme'
@@ -14,11 +15,11 @@ export interface RouteHandle { title: string }
 /* Navigation in the prototype's order: Display Types, Playlist Management,
    DSP Integration, Advertisers. Items are added by the package that builds them. */
 export function navFor(_flags: Flags, _session: Session | undefined): NavItem[] {
-  return []
+  return [{ to: '/display-types', label: 'Display Types', icon: 'dashboard_customize' }]
 }
 
-function featureRoutes(_flags: Flags): RouteObject[] {
-  return []
+function featureRoutes(flags: Flags): RouteObject[] {
+  return [{ path: 'display-types', handle: { title: 'Display Types Details' } satisfies RouteHandle, element: <DisplayTypesPage flags={flags} /> }]
 }
 
 function Root({ flags }: { flags: Flags }) {

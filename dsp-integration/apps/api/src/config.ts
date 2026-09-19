@@ -1,3 +1,6 @@
+import { isAbsolute, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
+
 /* Runtime configuration. Open-question defaults (brief, "Defaults for open
    questions") live here so each is configurable in one place. */
 export interface Config {
@@ -16,10 +19,14 @@ export interface Config {
   blockDeleteWithSoldPositions: boolean
 }
 
+/* Relative paths are resolved from the POC root, whatever the working directory. */
+const ROOT = fileURLToPath(new URL('../../../', import.meta.url))
+const fromRoot = (p: string) => (p === ':memory:' || isAbsolute(p) ? p : resolve(ROOT, p))
+
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   return {
     port: Number(env.API_PORT ?? 4000),
-    dbFile: env.PH_DB_FILE ?? 'data/poc.sqlite',
+    dbFile: fromRoot(env.PH_DB_FILE ?? 'data/poc.sqlite'),
     playWindowHours: 24,
     bidderQps: 500,
     bidderTimeoutMs: 300,

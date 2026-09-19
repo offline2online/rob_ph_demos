@@ -1,0 +1,126 @@
+/* Display Types (spec §1): the list beside one full-width form, edited as a
+   draft and applied with Save changes. */
+import { useQueryClient } from '@tanstack/react-query'
+import { App, Spin } from 'antd'
+import type { DisplayType, Partner } from '@ph-dsp/types'
+import { useMemo, useState } from 'react'
+import { useNavigate, useSearchParams } from 'react-router-dom'
+import { ApiRequestError } from '../../api/client'
+import type { Flags } from '../../flags'
+import { ListPageLayout } from '../../shared/ListPageLayout'
+import { SaveBar } from '../../shared/SaveBar'
+import { useReportDirty, useUnsavedGuard } from '../../shared/UnsavedChanges'
+import { useDraft } from '../../shared/useDraft'
+import { saveDisplayTypes, useAdvertiserSettings, useAdvertisers, useDisplayTypes, usePartners, usePlaylists } from './api'
+import { DisplayTypeForm, type PlaylistOption } from './DisplayTypeForm'
+import { DisplayTypeList } from './DisplayTypeList'
+import { newDisplayType, normaliseSlots } from './model'
+
+interface Draft { types: DisplayType[]; newPlaylists: PlaylistOption[] }
+
+export function DisplayTypesPage({ flags }: { flags: Flags }) {
+  const { message } = App.useApp()
+  const qc = useQueryClient()
+  const navigate = useNavigate()
+  const guard = useUnsavedGuard()
+  const [params, setParams] = useSearchParams()
+  const slotAssignment = flags.dspIntegration
+
+  const types = useDisplayTypes()
+  const playlists = usePlaylists()
+  const partners = usePartners(slotAssignment)
+  const company = useAdvertiserSettings(slotAssignment)
+  const advertisers = useAdvertisers(slotAssignment)
+
+  /* Slots always match the rotation cap in the editor (flag on). */
+  const saved = useMemo<Draft | undefined>(
+    () => (types.data ? { types: slotAssignment ? types.data.map(normaliseSlots) : types.data, newPlaylists: [] } : undefined),
+    [types.data, slotAssignment],
+  )
+  const { draft, setDraft, dirty, reset, commitNext } = useDraft(saved)
+  useReportDirty(dirty)
+  const [saving, setSaving] = useState(false)
+
+  const selectedId = params.get('id') ?? draft?.types[0]?.id
+  const d = draft?.types.find((t) => t.id === selectedId) ?? draft?.types[0]
+  const select = (id: string) => setParams({ id }, { replace: true })
+
+  const update = (fn: (t: DisplayType) => DisplayType) =>
+    setDraft((cur) => (cur && d ? { ...cur, types: cur.types.map((t) => (t.id === d.id ? fn(t) : t)) } : cur))
+
+  const allPlaylists: PlaylistOption[] = [
+    ...(playlists.data ?? []).map((p) => ({ id: p.id, name: p.name, autoCreatedFor: p.autoCreatedFor ?? null })),
+    ...(draft?.newPlaylists ?? []),
+  ]
+  /* Zone playlists are created on demand, named "<Display Type> / Zone n". */
+  const zonePlaylistId = (n: number) => {
+    if (!d) return ''
+    const name = `${d.name} / Zone ${n}`
+    const found = allPlaylists.find((p) => p.name === name)
+    if (found) return found.id
+    const id = `pl_zone_${d.id}_${n}`
+    setDraft((cur) => (cur && !cur.newPlaylists.some((p) => p.id === id) ? { ...cur, newPlaylists: [...cur.newPlaylists, { id, name, autoCreatedFor: d.id }] } : cur))
+    return id
+  }
+
+  const onNew = () =>
+    guard(() => {
+      reset()
+      const id = `dt_${Date.now()}`
+      setDraft((cur) => {
+        const base = saved ?? cur
+        if (!base) return cur
+        return { types: [...base.types, newDisplayType(id)], newPlaylists: [{ id: `pl_${id}`, name: 'New Display Type Playlist', autoCreatedFor: id }] }
+      })
+      select(id)
+    })
+
+  const onSelect = (id: string) => {
+    if (id === d?.id) return
+    guard(() => {
+      reset()
+      select(id)
+    })
+  }
+
+  const onSave = async () => {
+    if (!draft || !types.data) return
+    setSaving(true)
+    try {
+      await saveDisplayTypes(draft.types, types.data, { extensions: slotAssignment })
+      commitNext()
+      await Promise.all([qc.invalidateQueries({ queryKey: ['display-types'] }), qc.invalidateQueries({ queryKey: ['playlists'] })])
+    } catch (e) {
+      message.error(e instanceof ApiRequestError ? [e.message, ...(e.body?.error.details ?? []).map((x) => x.reason)].join(' ') : 'Could not save changes.')
+    } finally {
+      setSaving(false)
+    }
+  }
+  const onCancel = () => {
+    reset()
+    if (d && !types.data?.some((t) => t.id === d.id)) setParams({}, { replace: true })
+  }
+
+  /* Seats per DSP, from the advertisers list (Q1). */
+  const seatsOf = (p: Partner) => (advertisers.data ?? []).filter((a) => a.via.includes(p.name)).map((a) => a.name)
+
+  if (!draft || !d) return <Spin />
+  return (
+    <ListPageLayout list={<DisplayTypeList types={draft.types} selectedId={d.id} onSelect={onSelect} onNew={onNew} />}>
+      <DisplayTypeForm
+        key={d.id}
+        d={d}
+        update={update}
+        playlists={allPlaylists}
+        zonePlaylistId={zonePlaylistId}
+        slotAssignment={slotAssignment}
+        partners={partners.data ?? []}
+        company={company.data}
+        seatsOf={seatsOf}
+        onFixConnection={(partnerId) => navigate(`/dsp-integration/partners/${partnerId}`)}
+      />
+      <SaveBar dirty={dirty} saving={saving} onSave={onSave} onCancel={onCancel} />
+    </ListPageLayout>
+  )
+}
+

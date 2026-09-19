@@ -131,3 +131,14 @@ describe('unsaved-changes guard', () => {
     expect(await screen.findByText('other page')).toBeInTheDocument()
   })
 })
+
+describe('useDraft after a save', () => {
+  it('takes the refetched saved value even though the draft had edits', () => {
+    const { result, rerender } = renderHook(({ saved }) => useDraft(saved), { initialProps: { saved: { v: 1, extra: [] as number[] } } })
+    act(() => result.current.setDraft({ v: 2, extra: [9] }))
+    act(() => result.current.commitNext())
+    rerender({ saved: { v: 2, extra: [] } })
+    expect(result.current.draft).toEqual({ v: 2, extra: [] })
+    expect(result.current.dirty).toBe(false)
+  })
+})

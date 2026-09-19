@@ -6,13 +6,21 @@ import { deepEqual } from './deepEqual'
 export function useDraft<T>(saved: T | undefined) {
   const [draft, setDraft] = useState<T | undefined>(saved)
   const baseline = useRef(saved)
-  /* A fresh server value replaces the draft only when the page has no edits. */
+  const committing = useRef(false)
+  /* A fresh server value replaces the draft when the page has no edits, or
+     right after a save (commitNext). */
   useEffect(() => {
     if (saved === undefined) return
-    setDraft((cur) => (cur === undefined || deepEqual(cur, baseline.current) ? saved : cur))
+    const replace = committing.current
+    committing.current = false
+    setDraft((cur) => (replace || cur === undefined || deepEqual(cur, baseline.current) ? saved : cur))
     baseline.current = saved
   }, [saved])
+  /* Call once a save succeeded, before the saved value is refetched. */
+  const commitNext = useCallback(() => {
+    committing.current = true
+  }, [])
   const dirty = useMemo(() => draft !== undefined && saved !== undefined && !deepEqual(draft, saved), [draft, saved])
   const reset = useCallback(() => setDraft(baseline.current), [])
-  return { draft, setDraft, dirty, reset }
+  return { draft, setDraft, dirty, reset, commitNext }
 }

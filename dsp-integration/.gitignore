@@ -4,3 +4,4 @@ data/assets/
 node_modules/
 data/*.sqlite
 dist/
+.claude/launch.json
