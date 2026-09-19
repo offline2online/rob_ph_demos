@@ -28,6 +28,7 @@ export type SharedVariable = S['SharedVariable']
 export type TargetingAttribute = S['TargetingAttribute']
 export type VariableAccess = S['VariableAccess']
 export type Campaign = S['Campaign']
+export type CampaignBrief = S['CampaignBrief']
 export type Approval = S['Approval']
 export type ApprovalStatus = S['ApprovalStatus']
 

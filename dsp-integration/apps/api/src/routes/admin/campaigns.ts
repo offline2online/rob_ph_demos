@@ -12,6 +12,7 @@ export const campaignRoutes = (ctx: Context, guards: Guards): FastifyPluginAsync
   const toCampaign = (c: Awaited<ReturnType<typeof ctx.approvalCampaigns.listCampaigns>>[number], pricingType: Campaign['pricingType'], displayTypeId: string | null): Campaign => ({
     campaignId: c.campaignId, name: c.name, source: c.source, advertiserId: c.advertiserId, advertiserName: c.advertiserName,
     partnerId: c.partnerId, partnerName: c.partnerName, displayTypeId, pricingType, activation: c.activation,
+    ...(raw(c.campaignId)?.brief ? { brief: raw(c.campaignId)!.brief } : {}),
   })
   const raw = (id: string) => ctx.campaigns.getCampaign(id)
 

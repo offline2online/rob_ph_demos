@@ -210,3 +210,29 @@ describe('POST /v1/campaigns/{id}/submit and GET …/status', () => {
     expectMatchesContract('POST', '/v1/campaigns', 401, res.json())
   })
 })
+
+describe('the campaign brief an advertiser books with (Rob, 20 Sep)', () => {
+  const BRIEF = {
+    details: 'Spring range across metro stores.', landingPageUrl: 'https://swisse.com/spring',
+    promotedProducts: ['Ultiboost Immune'], skus: ['SKU-1', 'SKU-2'], targetAudiences: ['Health & fitness'],
+    objective: 'Increase Revenue / Sales', touchPoints: ['Digital Signage'],
+  }
+
+  it('is stored with the campaign and shown to the retailer', async () => {
+    const { app, ctx } = await newApp()
+    const id = (await create(app, { ...SWISSE, brief: { ...BRIEF, details: '  Spring range across metro stores.  ' } })).json().campaignId
+    expect(ctx.campaigns.getCampaign(id)?.brief).toEqual(BRIEF)
+    const listed = (await app.inject({ method: 'GET', url: '/api/admin/v1/campaigns' })).json().items.find((c: { campaignId: string }) => c.campaignId === id)
+    expect(listed.brief).toEqual(BRIEF)
+    expectMatchesContract('GET', '/admin/v1/campaigns', 200, (await app.inject({ method: 'GET', url: '/api/admin/v1/campaigns' })).json())
+  })
+
+  it('is optional, and what is sent has to be the right shape', async () => {
+    const { app, ctx } = await newApp()
+    const none = (await create(app, SWISSE)).json().campaignId
+    expect(ctx.campaigns.getCampaign(none)?.brief).toBeUndefined()
+    const bad = await create(app, { ...SWISSE, brief: { details: 42, skus: ['ok', ''], touchPoints: ['Website'], budget: 1000 } })
+    expect(bad.statusCode).toBe(400)
+    expect(bad.json().error.details.map((d: { field: string }) => d.field)).toEqual(['brief.budget', 'brief.details', 'brief.skus', 'brief.touchPoints'])
+  })
+})

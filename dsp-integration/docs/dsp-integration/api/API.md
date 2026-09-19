@@ -96,7 +96,7 @@ whitelisted for.
 
 | Method | Path | Purpose | Main errors |
 |---|---|---|---|
-| POST | `/v1/campaigns` | Create: `advertiserId`, `name`, `displayTypeId`, a `baseline` (pricing type) and optional `targeted` versions (id, priority, pricing type, rules). | `validation_failed`, `variable_not_permitted` |
+| POST | `/v1/campaigns` | Create: `advertiserId`, `name`, `displayTypeId`, a `baseline` (pricing type), optional `targeted` versions (id, priority, pricing type, rules) and an optional `brief` (the advertiser's own campaign details, landing page, promoted products, SKUs, target audiences, objective and touch points — Digital Signage for now). | `validation_failed`, `variable_not_permitted` |
 | POST | `/v1/campaigns/{id}/assets` | Upload creative for `baseline` or a targeted version; returns check results. | `checks_failed` |
 | POST | `/v1/campaigns/{id}/submit` | Submit. Becomes `awaiting_approval`, or `approved` with mode `auto` when the advertiser doesn't require approval. | `checks_failed`, `conflict` |
 | GET | `/v1/campaigns/{id}/status` | `draft` / `awaiting_approval` / `approved` / `rejected`, mode, reason, asset version. | `not_found` |

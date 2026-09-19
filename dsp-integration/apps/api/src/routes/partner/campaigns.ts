@@ -10,6 +10,7 @@ import { advertiserSlug } from '@ph-dsp/types'
 import type { FastifyPluginAsync } from 'fastify'
 import type { Context } from '../../context'
 import { type Check, failed, failureDetails, fileChecks } from '../../domain/assetChecks'
+import { validateBrief } from '../../domain/campaignBrief'
 import { EXTENSION, isVideo, readMedia } from '../../domain/media'
 import { type Rules, throwIfRejected, validateRules } from '../../domain/targetingValidation'
 import type { StoredTargeting } from '../../domain/targetingSummary'
@@ -21,7 +22,7 @@ type PricingType = (typeof PRICING_TYPES)[number]
 type Detail = { field: string; reason: string }
 
 interface CreateBody {
-  advertiserId?: unknown; name?: unknown; displayTypeId?: unknown
+  advertiserId?: unknown; name?: unknown; displayTypeId?: unknown; brief?: unknown
   baseline?: { pricingType?: unknown }
   targeted?: { id?: unknown; priority?: unknown; pricingType?: unknown; rules?: unknown }[]
 }
@@ -51,6 +52,8 @@ export const campaignRoutes = (ctx: Context): FastifyPluginAsync => async (app) 
     if (typeof b.name !== 'string' || !b.name.trim()) invalid.push({ field: 'name', reason: 'Required.' })
     if (b.displayTypeId !== undefined && (typeof b.displayTypeId !== 'string' || !ctx.displayTypes.get(b.displayTypeId))) invalid.push({ field: 'displayTypeId', reason: 'Unknown display type.' })
     if (!b.baseline || !PRICING_TYPES.includes(b.baseline.pricingType as PricingType)) invalid.push({ field: 'baseline.pricingType', reason: `One of ${PRICING_TYPES.join(', ')}.` })
+    const brief = validateBrief(b.brief)
+    invalid.push(...brief.errors)
     const targeted = b.targeted ?? []
     if (!Array.isArray(targeted)) invalid.push({ field: 'targeted', reason: 'Must be a list.' })
     const ids = new Set<string>()
@@ -80,6 +83,7 @@ export const campaignRoutes = (ctx: Context): FastifyPluginAsync => async (app) 
       id: `c_${randomUUID().slice(0, 12)}`, name: (b.name as string).trim(), targeting, source: 'api',
       advertiserId: b.advertiserId as string, partnerId: req.partner.id, displayTypeId: (b.displayTypeId as string | undefined) ?? null,
       pricingType: b.baseline!.pricingType as PricingType,
+      ...(brief.brief ? { brief: brief.brief } : {}),
     })
     return reply.status(201).send(statusView(await ctx.approvals.view(c.campaignId)))
   })

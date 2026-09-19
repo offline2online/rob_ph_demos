@@ -760,12 +760,30 @@ export interface components {
         };
         /** @description AND groups of OR conditions (existing Targeting tab structure). */
         TargetingRules: components["schemas"]["Condition"][][];
+        /**
+         * @description What the advertiser is booking, in the same shape as the platform's
+         *     Campaign Brief tab (Rob, 20 Sep). Every field is optional: an
+         *     advertiser supplies as much as it has. Stored with the campaign and
+         *     shown to the reviewer; nothing here targets or prices anything.
+         */
+        CampaignBrief: {
+            /** @description The campaign in the advertiser's own words. */
+            details?: string;
+            landingPageUrl?: string;
+            promotedProducts?: string[];
+            skus?: string[];
+            targetAudiences?: string[];
+            objective?: string;
+            /** @description Digital Signage only for now; Kiosk is accepted for later. */
+            touchPoints?: ("Digital Signage" | "Kiosk")[];
+        };
         /** @enum {string} */
         PricingType: "baseline" | "localised" | "personalised" | "interactive";
         CampaignCreate: {
             advertiserId: string;
             name: string;
             displayTypeId?: string;
+            brief?: components["schemas"]["CampaignBrief"];
             baseline: {
                 pricingType: components["schemas"]["PricingType"];
             };
@@ -1131,6 +1149,7 @@ export interface components {
             displayTypeId?: string | null;
             /** @enum {string|null} */
             pricingType?: "baseline" | "localised" | "personalised" | "interactive" | null;
+            brief?: components["schemas"]["CampaignBrief"];
             activation: {
                 enabled: boolean;
             };

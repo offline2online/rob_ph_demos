@@ -22,9 +22,12 @@ const PASSED = (w: number, h: number) => [
 
 export async function seedCampaigns(ctx: Context) {
   const insert = ctx.db.prepare(
-    `INSERT INTO campaigns (id, name, targeting, created_at, source, advertiser_id, partner_id, display_type_id, pricing_type, activation_enabled)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`,
+    `INSERT INTO campaigns (id, name, targeting, created_at, source, advertiser_id, partner_id, display_type_id, pricing_type, activation_enabled, brief)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)`,
   )
+  /* The brief each advertiser sent with its booking (Rob, 20 Sep). */
+  const brief = (details: string, over: Record<string, unknown> = {}) =>
+    JSON.stringify({ details, objective: 'Increase Revenue / Sales', touchPoints: ['Digital Signage'], ...over })
   const asset = (campaignId: string, w: number, h: number, bg: string, brand: string, line: string) => {
     const file = ctx.assets.put(svg(w, h, bg, brand, line), '.svg')
     ctx.db.prepare("INSERT INTO campaign_assets (id, campaign_id, version, role, file, mime_type, width, height, size_bytes, created_at) VALUES (?, ?, 1, 'baseline', ?, 'image/svg+xml', ?, ?, 1024, ?)")
@@ -36,13 +39,16 @@ export async function seedCampaigns(ctx: Context) {
   }
   const baseline: StoredTargeting = { baseline: { pricingType: 'localised' } }
 
-  insert.run('c_dsp_nestle', 'Nestlé — Winter warmers', JSON.stringify(targeting), '2026-09-15T09:00:00.000Z', 'dsp', 'nestle', 'p_google', 'landscape', 'localised')
+  insert.run('c_dsp_nestle', 'Nestlé — Winter warmers', JSON.stringify(targeting), '2026-09-15T09:00:00.000Z', 'dsp', 'nestle', 'p_google', 'landscape', 'localised',
+    brief('Drive winter hot-drink sales in metro stores while the weather is cold, with the hero pack shot on the entrance screens.', { promotedProducts: ['Nescafé Gold', 'Milo'], skus: ['SKU-10234', 'SKU-10235'], targetAudiences: ['Metro commuters'], landingPageUrl: 'https://nestle.com/au/winter' }))
   asset('c_dsp_nestle', 1920, 1080, '#b3261e', 'Nestlé', 'Winter warmers')
-  insert.run('c_api_swisse', 'Swisse — Spring immunity', JSON.stringify(baseline), '2026-09-16T09:00:00.000Z', 'api', 'swisse', 'p_google', 'portrait', 'localised')
+  insert.run('c_api_swisse', 'Swisse — Spring immunity', JSON.stringify(baseline), '2026-09-16T09:00:00.000Z', 'api', 'swisse', 'p_google', 'portrait', 'localised',
+    brief('Spring immunity range, aimed at shoppers already in the health aisle.', { promotedProducts: ['Ultiboost Immune'], targetAudiences: ['Health & fitness'], objective: 'Brand Awareness' }))
   asset('c_api_swisse', 1080, 1920, '#1b5e20', 'Swisse', 'Spring immunity')
-  insert.run('c_dsp_loreal', 'L’Oréal — Revitalift', JSON.stringify(baseline), '2026-09-17T09:00:00.000Z', 'dsp', 'loreal', 'p_amazon', 'landscape', 'localised')
+  insert.run('c_dsp_loreal', 'L’Oréal — Revitalift', JSON.stringify(baseline), '2026-09-17T09:00:00.000Z', 'dsp', 'loreal', 'p_amazon', 'landscape', 'localised',
+    brief('Revitalift launch across metro stores.', { promotedProducts: ['Revitalift Serum'] }))
   asset('c_dsp_loreal', 1920, 1080, '#212121', 'L’Oréal', 'Revitalift — A$29.95')
-  insert.run('c_api_swisse_kids', 'Swisse — Kids multivitamin', JSON.stringify(baseline), '2026-09-18T09:00:00.000Z', 'api', 'swisse', 'p_google', 'landscape', 'localised')
+  insert.run('c_api_swisse_kids', 'Swisse — Kids multivitamin', JSON.stringify(baseline), '2026-09-18T09:00:00.000Z', 'api', 'swisse', 'p_google', 'landscape', 'localised', null)
 
   /* Nestlé doesn't require approval: approved automatically. */
   await ctx.approvals.submit('c_dsp_nestle', PASSED(1920, 1080), 'Google DSP')

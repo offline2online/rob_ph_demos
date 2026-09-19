@@ -1,7 +1,7 @@
 /* Stand-in for the existing campaign service (the seam package 11's
    approval module plugs into). Stores targeting in the existing structure:
    AND groups of OR conditions. Evaluation stays with the existing platform. */
-import type { Campaign } from '@ph-dsp/types'
+import type { Campaign, CampaignBrief } from '@ph-dsp/types'
 import { type Db, fromJson, toJson } from '../db/db'
 
 export interface CampaignRecord extends Campaign {
@@ -13,6 +13,8 @@ export interface CampaignFilter { source?: Campaign['source']; advertiserId?: st
 export interface NewCampaign {
   id: string; name: string; targeting: unknown; source: Campaign['source']; advertiserId: string
   partnerId: string; displayTypeId: string | null; pricingType: NonNullable<Campaign['pricingType']>
+  /* The advertiser's campaign brief (Rob, 20 Sep); absent when it sent none. */
+  brief?: CampaignBrief
 }
 /* A campaign booked into a display type's slot for a play window: the
    existing campaign system's side of the hand-off (spec §6). */
@@ -40,7 +42,7 @@ export interface CampaignSource {
 
 interface Row {
   id: string; name: string; targeting: string | null; source: Campaign['source']; advertiser_id: string | null
-  partner_id: string | null; display_type_id: string | null; pricing_type: Campaign['pricingType']; activation_enabled: number
+  partner_id: string | null; display_type_id: string | null; pricing_type: Campaign['pricingType']; activation_enabled: number; brief: string | null
 }
 interface AssetRow {
   id: string; campaign_id: string; version: number; role: string; file: string; mime_type: string
@@ -54,6 +56,7 @@ const toRecord = (r: Row): CampaignRecord => ({
   campaignId: r.id, name: r.name, source: r.source, advertiserId: r.advertiser_id, advertiserName: null,
   partnerId: r.partner_id, partnerName: null, displayTypeId: r.display_type_id, pricingType: r.pricing_type,
   activation: { enabled: !!r.activation_enabled }, targeting: fromJson(r.targeting, null),
+  ...(r.brief ? { brief: fromJson<CampaignBrief>(r.brief, {}) } : {}),
 })
 
 export function sqliteCampaignSource(db: Db): CampaignSource {
@@ -83,6 +86,7 @@ export function sqliteCampaignSource(db: Db): CampaignSource {
         `INSERT INTO campaigns (id, name, targeting, created_at, source, advertiser_id, partner_id, display_type_id, pricing_type, activation_enabled)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`,
       ).run(c.id, c.name, toJson(c.targeting), new Date().toISOString(), c.source, c.advertiserId, c.partnerId, c.displayTypeId, c.pricingType)
+      if (c.brief) db.prepare('UPDATE campaigns SET brief = ? WHERE id = ?').run(toJson(c.brief), c.id)
       return get(c.id) as CampaignRecord
     },
     addAsset(a) {
