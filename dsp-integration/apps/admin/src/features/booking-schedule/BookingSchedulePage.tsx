@@ -5,7 +5,7 @@
    booking revenue per display type and per campaign type, filters for one
    advertiser or one DSP, and daily, weekly or monthly views. Read-only. */
 import { useQuery } from '@tanstack/react-query'
-import { Alert, DatePicker, Segmented, Select, Spin, Tooltip } from 'antd'
+import { Alert, DatePicker, Segmented, Spin, Tooltip } from 'antd'
 import type { ColDef, ICellRendererParams } from 'ag-grid-community'
 import { SLOT_OWNERS, type BookingSchedule as Schedule } from '@ph-dsp/types'
 import dayjs, { type Dayjs } from 'dayjs'
@@ -16,6 +16,7 @@ import { Grid } from '../../shared/Grid'
 import { Icon } from '../../shared/Icon'
 import { WithTip } from '../../shared/InfoTip'
 import { SectionLabel } from '../../shared/SectionLabel'
+import { externalSetColumn } from '../../shared/TableFilters'
 import { T } from '../../theme/phTheme'
 
 type Position = Schedule['positions'][number]
@@ -54,9 +55,12 @@ const PositionCell = ({ data }: ICellRendererParams<Row>) =>
   data ? (
     <div className="min-w-0 py-1.5">
       <div className="truncate">{data.position.displayTypeName}</div>
-      <div className="truncate" style={{ fontSize: 11, color: T.micro }}>Slot {data.position.slot} · {data.position.slotLabel} · {data.position.partnerName ?? 'Any connected DSP'}</div>
+      <div className="truncate" style={{ fontSize: 11, color: T.micro }}>Slot {data.position.slot} · {data.position.slotLabel}</div>
     </div>
   ) : null
+
+/* Who the row's bookings belong to, over the range on screen. */
+const advertisersIn = (p: Position) => [...new Set(p.windows.flatMap((w) => (w.booking ? [w.booking.advertiserName] : [])))]
 
 function WindowCell({ value, context }: ICellRendererParams<Row, Group, Ctx>) {
   if (!value?.cells.length) return null
@@ -137,19 +141,13 @@ export function BookingSchedulePage() {
     [data, groups],
   )
 
-  const columns = useMemo<ColDef<Row>[]>(() => [
-    { headerName: 'Position', width: 240, minWidth: 200, pinned: 'left', cellRenderer: PositionCell, autoHeight: true },
-    ...groups.map((g, i): ColDef<Row> => ({
-      headerName: g.label, colId: g.key, width: view === 'Daily' ? 156 : 170, suppressSizeToFit: true,
-      valueGetter: (p) => p.data?.groups[i], cellRenderer: WindowCell, cellStyle: { alignItems: 'center' },
-    })),
-  ], [groups, view])
-  const revenueColumns = useMemo<ColDef<RevenueRow>[]>(() => [
-    { headerName: 'Display type', field: 'displayTypeName', width: 260, cellStyle: (p) => (p.data?.total ? { fontWeight: 600 } : null) },
-    { headerName: 'Booked windows', field: 'bookedWindows', width: 150, cellRenderer: NumberCell },
-    { headerName: 'Booked revenue', field: 'bookedRevenue', width: 170, cellRenderer: NumberCell },
-    { headerName: 'Billed revenue', field: 'billedRevenue', width: 170, cellRenderer: NumberCell },
-  ], [])
+  /* The DSP first, then its advertisers (Rob, 20 Sep): picking a DSP narrows the advertiser list. */
+  const dsps = data?.dsps ?? []
+  const advertiserOptions = useMemo(() => {
+    const chosen = partnerId ? dsps.filter((d) => d.partnerId === partnerId) : dsps
+    return [...new Map(chosen.flatMap((d) => d.advertisers.map((a) => [a.advertiserId, a.name] as const))).entries()]
+      .map(([value, label]) => ({ value, label }))
+  }, [dsps, partnerId])
   const setFilter = (key: 'advertiserId' | 'partnerId', value?: string, currentAdvertiser?: string) => {
     const next = new URLSearchParams(params)
     if (value) next.set(key, value)
@@ -160,13 +158,34 @@ export function BookingSchedulePage() {
     }
     setParams(next, { replace: true })
   }
-  /* The DSP first, then its advertisers (Rob, 20 Sep): picking a DSP narrows the advertiser list. */
-  const dsps = data?.dsps ?? []
-  const advertiserOptions = useMemo(() => {
-    const chosen = partnerId ? dsps.filter((d) => d.partnerId === partnerId) : dsps
-    return [...new Map(chosen.flatMap((d) => d.advertisers.map((a) => [a.advertiserId, a.name] as const))).entries()]
-      .map(([value, label]) => ({ value, label }))
-  }, [dsps, partnerId])
+
+  const columns = useMemo<ColDef<Row>[]>(() => [
+    { headerName: 'Position', width: 230, minWidth: 190, pinned: 'left', cellRenderer: PositionCell, autoHeight: true },
+    /* Filtered like every other table: a funnel in the filter row. The server
+       applies these two, so they narrow every window, not only the rows here. */
+    {
+      headerName: 'DSP', width: 175, minWidth: 150, pinned: 'left', cellStyle: { color: T.muted },
+      valueGetter: (p) => p.data?.position.partnerName ?? 'Any connected DSP',
+      ...externalSetColumn<Row>('DSP', dsps.map((d) => d.name), dsps.find((d) => d.partnerId === partnerId)?.name,
+        (name) => setFilter('partnerId', dsps.find((d) => d.name === name)?.partnerId, advertiserId)),
+    },
+    {
+      headerName: 'Advertiser', width: 160, minWidth: 140, pinned: 'left', cellStyle: { color: T.muted },
+      valueGetter: (p) => (p.data ? advertisersIn(p.data.position).join(', ') || '—' : ''),
+      ...externalSetColumn<Row>('Advertiser', advertiserOptions.map((a) => a.label), advertiserOptions.find((a) => a.value === advertiserId)?.label,
+        (name) => setFilter('advertiserId', advertiserOptions.find((a) => a.label === name)?.value)),
+    },
+    ...groups.map((g, i): ColDef<Row> => ({
+      headerName: g.label, colId: g.key, width: view === 'Daily' ? 156 : 170, suppressSizeToFit: true,
+      valueGetter: (p) => p.data?.groups[i], cellRenderer: WindowCell, cellStyle: { alignItems: 'center' },
+    })),
+  ], [groups, view, dsps, advertiserOptions, partnerId, advertiserId])
+  const revenueColumns = useMemo<ColDef<RevenueRow>[]>(() => [
+    { headerName: 'Display type', field: 'displayTypeName', width: 260, cellStyle: (p) => (p.data?.total ? { fontWeight: 600 } : null) },
+    { headerName: 'Booked windows', field: 'bookedWindows', width: 150, cellRenderer: NumberCell },
+    { headerName: 'Booked revenue', field: 'bookedRevenue', width: 170, cellRenderer: NumberCell },
+    { headerName: 'Billed revenue', field: 'billedRevenue', width: 170, cellRenderer: NumberCell },
+  ], [])
   const ctx: Ctx['current'] = { money, view }
 
   return (
@@ -182,10 +201,6 @@ export function BookingSchedulePage() {
         <Segmented<View> value={view} onChange={(v) => { setView(v); setRange(null) }} options={['Daily', 'Weekly', 'Monthly']} />
         <DatePicker.RangePicker aria-label="Dates" value={[dayjs(from), dayjs(to)]} allowClear={false}
           onChange={(v) => setRange(v && v[0] && v[1] ? [v[0], v[1]] : null)} />
-        <Select allowClear placeholder="All DSPs" aria-label="DSP" style={{ minWidth: 170 }} value={partnerId}
-          onChange={(v) => setFilter('partnerId', v, advertiserId)} options={dsps.map((d) => ({ value: d.partnerId, label: d.name }))} />
-        <Select allowClear placeholder="All advertisers" aria-label="Advertiser" style={{ minWidth: 180 }} value={advertiserId}
-          onChange={(v) => setFilter('advertiserId', v)} options={advertiserOptions} />
       </div>
 
       {schedule.isError && <Alert className="mb-4" type="error" showIcon message="The booking schedule couldn’t be loaded." />}
@@ -232,6 +247,8 @@ export function BookingSchedulePage() {
               context={ctx}
               getRowId={(r) => r.position.positionId}
               rowHeight={56}
+              headerHeight={40}
+              floatingFiltersHeight={40}
               suppressHorizontalScroll={false}
               stickyHeader
             />

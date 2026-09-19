@@ -167,9 +167,15 @@ popup is the platform's pattern.
 `?search[0][field]=…&search[0][keyword]=…`), so a filtered table can be linked and
 reloaded.
 
+**A filter always lives in its column**, never as a select (or anything else) above the
+table — including when the server, not the grid, does the filtering. If a page must filter
+server-side, give the data its own column and put the funnel there: same icon, same popup,
+same states; the chosen value goes in the URL and the request.
+
 In this repo all of that is `apps/admin/src/shared/TableFilters.tsx`: `searchColumn(label)`,
-`setColumn(label, values)` and `showingCount(shown, total, noun)`. Spread one of the two
-into a column definition; never hand-roll a filter cell.
+`setColumn(label, values)`, `externalSetColumn(label, values, chosen, onChange)` for the
+server-applied case, and `showingCount(shown, total, noun)`. Spread one of them into a
+column definition; never hand-roll a filter cell and never lift a filter out of the table.
 
 A checkbox column comes first; a `⋯` actions column comes last.
 

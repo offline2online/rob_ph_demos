@@ -236,14 +236,16 @@ describe('Booking schedule', () => {
     const revenue = await screen.findByLabelText('Booking revenue')
     expect(await within(revenue).findAllByText('$216.30')).toHaveLength(2)
     const grid = screen.getByLabelText('Booking schedule')
-    expect(await within(grid).findByText('Swisse')).toBeInTheDocument()
+    /* The booked window, and the Advertiser column that now carries the filter. */
+    expect(await within(grid).findAllByText('Swisse')).toHaveLength(2)
     expect(within(grid).getByText(/personalised · 175 CPM/)).toBeInTheDocument()
     expect(within(grid).getByText('Available')).toBeInTheDocument()
     expect(screen.queryByRole('region', { name: 'Save changes' })).not.toBeInTheDocument()
-    /* Filters and views (Rob, 20 Sep). */
+    /* Views, and DSP/advertiser as column filters like every other table (Rob, 20 Sep). */
     expect(screen.getByRole('radio', { name: 'Weekly' })).toBeInTheDocument()
-    expect(screen.getByText('All advertisers')).toBeInTheDocument()
-    expect(screen.getByText('All DSPs')).toBeInTheDocument()
+    expect([...grid.querySelectorAll('.ag-header-cell-text')].slice(0, 3).map((h) => h.textContent)).toEqual(['Position', 'DSP', 'Advertiser'])
+    expect(within(grid).getByLabelText('DSP filter')).toBeInTheDocument()
+    expect(within(grid).getByLabelText('Advertiser filter')).toBeInTheDocument()
   })
 })
 
