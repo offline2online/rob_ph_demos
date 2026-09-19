@@ -32,7 +32,7 @@ small interface.
 | `apps/admin/src/features/playlist-management/` | Playlist Management screen: rename and delete |
 | `apps/admin/src/features/dsp-integration/` | DSP Integration section: list, one shared draft, Exchange settings, Advertiser settings (with the Auction schedule), Shared Targeting Variables, DSP pages and Add DSP, and the Booking schedule (linked from Available Inventory) |
 | `apps/admin/src/features/advertisers/` | Advertisers screen (admin only) |
-| `apps/admin/src/features/campaigns-poc/` | STAND-IN "Campaigns (POC)" table showing the approval components end to end; deleted on integration |
+| `apps/admin/src/features/campaign-status/` | STAND-IN "Campaign Status" table showing the approval components end to end; deleted on integration |
 
 ## Running it
 

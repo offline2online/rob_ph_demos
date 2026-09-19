@@ -7,13 +7,17 @@ import type { ColDef, GridApi, GridOptions } from 'ag-grid-community'
 import { AgGridReact } from 'ag-grid-react'
 import { useEffect, useRef } from 'react'
 
-export function Grid<Row>({ rows, columns, context, getRowId, label, ...options }: {
+export function Grid<Row>({ rows, columns, context, getRowId, label, height, stickyHeader, ...options }: {
   rows: Row[]
   columns: ColDef<Row>[]
   /* Latest values for cell renderers, read through params.context.current. */
   context?: unknown
   getRowId: (row: Row) => string
   label?: string
+  /* A fixed height scrolls the rows inside the grid, so the header stays put. */
+  height?: number
+  /* Keep the header in view while the page scrolls past a long table. */
+  stickyHeader?: boolean
 } & Omit<GridOptions<Row>, 'rowData' | 'columnDefs' | 'context' | 'getRowId'>) {
   const wrapper = useRef<HTMLDivElement>(null)
   const api = useRef<GridApi<Row> | null>(null)
@@ -30,13 +34,13 @@ export function Grid<Row>({ rows, columns, context, getRowId, label, ...options 
     return () => ro.disconnect()
   }, [])
   return (
-    <div ref={wrapper} className="ag-theme-alpine w-full" aria-label={label}>
+    <div ref={wrapper} className={`ag-theme-alpine w-full${stickyHeader ? ' ag-sticky-header' : ''}`} aria-label={label} style={height ? { height } : undefined}>
       <AgGridReact<Row>
         rowData={rows}
         columnDefs={columns}
         context={ctx}
         getRowId={(p) => getRowId(p.data)}
-        domLayout="autoHeight"
+        domLayout={height ? 'normal' : 'autoHeight'}
         headerHeight={40}
         rowHeight={42}
         suppressCellFocus

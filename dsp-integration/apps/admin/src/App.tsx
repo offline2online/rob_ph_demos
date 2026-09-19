@@ -6,7 +6,8 @@ import type { Session } from '@ph-dsp/types'
 import { api } from './api/client'
 import { type Flags, envFlags } from './flags'
 import { AdvertisersPage } from './features/advertisers/AdvertisersPage'
-import { CampaignsPocPage } from './features/campaigns-poc/CampaignsPocPage'
+import { CampaignDetail } from './features/campaign-status/CampaignDetail'
+import { CampaignStatusPage } from './features/campaign-status/CampaignStatusPage'
 import { DisplayTypesPage } from './features/display-types/DisplayTypesPage'
 import { PlaylistManagementPage } from './features/playlist-management/PlaylistManagementPage'
 import { DspIndex, DspIntegrationLayout } from './features/dsp-integration/DspIntegrationLayout'
@@ -34,7 +35,7 @@ export function navFor(flags: Flags, session: Session | undefined): NavItem[] {
     /* Admin users only, directly below DSP Integration (spec §3). */
     ...(flags.dspIntegration && session?.role === 'hq_admin' ? [{ to: '/advertisers', label: 'Advertisers', icon: 'sell' }] : []),
     /* STAND-IN for the existing Campaigns section (package 11); removed on integration. */
-    ...(flags.dspIntegration ? [{ to: '/campaigns-poc', label: 'Campaigns (POC)', icon: 'campaign' }] : []),
+    ...(flags.dspIntegration ? [{ to: '/campaign-status', label: 'Campaign Status', icon: 'campaign' }] : []),
   ]
 }
 
@@ -69,7 +70,11 @@ function featureRoutes(flags: Flags): RouteObject[] {
           handle: { title: 'Advertisers', tip: 'Every advertiser using the platform, across all DSPs.' } satisfies RouteHandle,
           element: <AdvertisersPage />,
         },
-        { path: 'campaigns-poc', handle: { title: 'Campaigns (POC)' } satisfies RouteHandle, element: <CampaignsPocPage /> }]
+        {
+          path: 'campaign-status',
+          handle: { title: 'Campaign Status', tip: 'Every campaign advertisers and DSPs have submitted, with its approval status. Open one to see what was booked, or approve and reject from the table. HQ\u2019s own campaigns are not listed here.' } satisfies RouteHandle,
+          children: [{ index: true, element: <CampaignStatusPage /> }, { path: ':id', element: <CampaignDetail /> }],
+        }]
       : []),
   ]
 }

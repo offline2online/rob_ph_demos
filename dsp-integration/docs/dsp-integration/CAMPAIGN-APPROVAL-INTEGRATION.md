@@ -192,7 +192,7 @@ the slot (Rob, Q14).
 
 ## 5. Delete the stand-in POC table
 
-Delete `apps/admin/src/features/campaigns-poc/`, and its nav item and route in
+Delete `apps/admin/src/features/campaign-status/`, and its nav item and route in
 `apps/admin/src/App.tsx` (marked *STAND-IN*). Nothing else imports from it.
 The POC-only campaign endpoints (`GET /admin/v1/campaigns`,
 `PUT /admin/v1/campaigns/{id}/activation`, tagged *POC stand-in*) are

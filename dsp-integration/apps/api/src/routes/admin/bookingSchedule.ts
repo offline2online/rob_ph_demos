@@ -15,7 +15,7 @@ import { listAdvertisers } from './advertisers'
 const DAY = 86_400_000
 const round2 = (n: number) => Math.round(n * 100) / 100
 
-export function bookingSchedule(ctx: Context, starts: Date[]): BookingSchedule {
+export function bookingSchedule(ctx: Context, starts: Date[], campaignId?: string): BookingSchedule {
   const len = windowMs(ctx)
   const partners = ctx.partners.list()
   const advertiserName = new Map(listAdvertisers(ctx).map((a) => [a.advertiserId, a.name]))
@@ -29,7 +29,7 @@ export function bookingSchedule(ctx: Context, starts: Date[]): BookingSchedule {
     const rev = revenue.get(p.displayType.id) ?? { displayTypeId: p.displayType.id, displayTypeName: p.displayType.name, bookedWindows: 0, bookedRevenue: 0, billedRevenue: 0 }
     revenue.set(p.displayType.id, rev)
     const windows = starts.map((start) => {
-      const r = ctx.reservations.forWindow(p.positionId, start.toISOString()).find((x) => !x.testMode && TAKEN.includes(x.status) && x.clearingCpm !== null)
+      const r = ctx.reservations.forWindow(p.positionId, start.toISOString()).find((x) => !x.testMode && TAKEN.includes(x.status) && x.clearingCpm !== null && (!campaignId || x.campaignId === campaignId))
       if (r) {
         const bookedRevenue = round2((views / 1000) * (r.clearingCpm as number))
         const bill = billed.get(r.id) ?? null
@@ -39,7 +39,7 @@ export function bookingSchedule(ctx: Context, starts: Date[]): BookingSchedule {
         return {
           start: start.toISOString(), status: 'booked' as const,
           booking: {
-            reservationId: r.id, type: r.type, advertiserName: (r.advertiserId && advertiserName.get(r.advertiserId)) || r.advertiserId || '—',
+            reservationId: r.id, campaignId: r.campaignId as string, type: r.type, advertiserName: (r.advertiserId && advertiserName.get(r.advertiserId)) || r.advertiserId || '—',
             partnerName: partners.find((x) => x.id === r.partnerId)?.name ?? r.partnerId, cpm: r.clearingCpm as number, assumedViews: views, bookedRevenue, billedRevenue: bill,
           },
         }
@@ -67,13 +67,17 @@ export function bookingSchedule(ctx: Context, starts: Date[]): BookingSchedule {
 }
 
 export const bookingScheduleRoutes = (ctx: Context, guards: Guards): FastifyPluginAsync => async (app) => {
-  app.get<{ Querystring: { from?: string; to?: string } }>('/booking-schedule', async (req) => {
+  app.get<{ Querystring: { from?: string; to?: string; campaignId?: string } }>('/booking-schedule', async (req) => {
     guards.flagged()
-    const { from, to } = req.query
+    const { from, to, campaignId } = req.query
     let starts: Date[] | null
     if (!from && !to) {
-      const first = windowStartOf(ctx, ctx.clock()).getTime()
-      starts = Array.from({ length: 14 }, (_, i) => new Date(first + i * windowMs(ctx)))
+      const len = windowMs(ctx)
+      /* For one campaign: every window it is booked in, however far out. */
+      const booked = campaignId ? ctx.reservations.byStatus(['won', 'reserved']).filter((r) => r.campaignId === campaignId && !r.testMode).map((r) => Date.parse(r.windowStart)) : []
+      const first = Math.min(windowStartOf(ctx, ctx.clock()).getTime(), ...booked)
+      const last = Math.max(windowStartOf(ctx, ctx.clock()).getTime() + 13 * len, ...booked)
+      starts = Array.from({ length: Math.floor((last - first) / len) + 1 }, (_, i) => new Date(first + i * len))
     } else {
       const a = Date.parse(`${from}T00:00:00Z`)
       const b = Date.parse(`${to}T00:00:00Z`)
@@ -85,6 +89,6 @@ export const bookingScheduleRoutes = (ctx: Context, guards: Guards): FastifyPlug
       }
     }
     if (!starts) throw validationFailed([{ field: 'from', reason: 'from and to are dates (YYYY-MM-DD), from ≤ to, at most 92 days apart.' }])
-    return bookingSchedule(ctx, starts)
+    return bookingSchedule(ctx, starts, campaignId)
   })
 }

@@ -917,6 +917,7 @@ export interface components {
                     status: "booked" | "available" | "unavailable";
                     booking: {
                         reservationId: string;
+                        campaignId: string;
                         /** @enum {string} */
                         type: "reserve" | "bid";
                         advertiserName: string;
@@ -1718,6 +1719,8 @@ export interface operations {
                 from?: string;
                 /** @description At most 92 days after from. */
                 to?: string;
+                /** @description Only this campaign's bookings; without dates, the range covers all of them. */
+                campaignId?: string;
             };
             header?: never;
             path?: never;

@@ -350,6 +350,7 @@ paths:
       parameters:
         - {name: from, in: query, schema: {type: string, format: date}}
         - {name: to, in: query, schema: {type: string, format: date}, description: 'At most 92 days after from.'}
+        - {name: campaignId, in: query, schema: {type: string}, description: 'Only this campaign''s bookings; without dates, the range covers all of them.'}
       responses:
         '200': {description: Schedule, content: {application/json: {schema: {$ref: '#/components/schemas/BookingSchedule'}}}}
         '400': {$ref: '#/components/responses/ValidationFailed'}
@@ -1142,9 +1143,10 @@ components:
                     status: {type: string, enum: [booked, available, unavailable]}
                     booking:
                       type: [object, 'null']
-                      required: [reservationId, type, advertiserName, partnerName, cpm, assumedViews, bookedRevenue, billedRevenue]
+                      required: [reservationId, campaignId, type, advertiserName, partnerName, cpm, assumedViews, bookedRevenue, billedRevenue]
                       properties:
                         reservationId: {type: string}
+                        campaignId: {type: string}
                         type: {type: string, enum: [reserve, bid]}
                         advertiserName: {type: string}
                         partnerName: {type: string}

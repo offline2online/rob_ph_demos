@@ -124,7 +124,7 @@ describe('Advertisers screen (admin only)', () => {
     renderAt('/advertisers')
     await screen.findByText('Admin only')
     const nav = screen.getByRole('navigation', { name: 'Display Types and DSP Integration' })
-    expect(within(nav).getAllByRole('link').map((l) => l.textContent?.replace(/^[a-z_]+/, ''))).toEqual(['Display Types', 'Playlist Management', 'DSP Integration', 'Advertisers', 'Campaigns (POC)'])
+    expect(within(nav).getAllByRole('link').map((l) => l.textContent?.replace(/^[a-z_]+/, ''))).toEqual(['Display Types', 'Playlist Management', 'DSP Integration', 'Advertisers', 'Campaign Status'])
     expect(screen.getByRole('button', { name: 'Every advertiser using the platform, across all DSPs.' })).toBeInTheDocument()
   })
 
@@ -136,16 +136,47 @@ describe('Advertisers screen (admin only)', () => {
   })
 })
 
-describe('Campaigns (POC) stand-in', () => {
-  it('is labelled as a stand-in and shows the approval filter with counts', async () => {
-    vi.stubGlobal('fetch', vi.fn(fakeFetch({
-      '/api/admin/v1/campaigns': { items: [{ campaignId: 'c1', name: 'Swisse spring', source: 'api', advertiserId: 'swisse', advertiserName: 'Swisse', partnerId: 'p_google', partnerName: 'Google DSP', displayTypeId: 'portrait', pricingType: 'localised', activation: { enabled: false } }] },
-      '/api/admin/v1/approvals': { counts: { draft: 0, awaiting_approval: 1, approved: 0, rejected: 0 }, items: [], nextCursor: null },
-      '/api/admin/v1/campaigns/c1/approval': { campaignId: 'c1', status: 'awaiting_approval', mode: 'manual', assetVersion: 'v1', submittedAt: null, reviewedBy: null, reviewedAt: null, reason: null, checks: [] },
-    })))
-    renderAt('/campaigns-poc')
-    expect(await screen.findByText('Campaigns (POC)', { selector: 'div' })).toBeInTheDocument()
-    expect(await screen.findByRole('button', { name: /Awaiting approval 1/ })).toBeInTheDocument()
+describe('Campaign Status stand-in', () => {
+  const campaign = {
+    campaignId: 'c1', name: 'Swisse spring', source: 'api', advertiserId: 'swisse', advertiserName: 'Swisse', partnerId: 'p_google', partnerName: 'Google DSP',
+    displayTypeId: 'portrait', pricingType: 'localised', activation: { enabled: false },
+    brief: { details: 'Spring immunity range.', promotedProducts: ['Ultiboost Immune'], objective: 'Brand Awareness', touchPoints: ['Digital Signage'] },
+  }
+  const hq = { campaignId: 'c_zinger', name: 'Zinger Box — hero', source: 'hq', advertiserId: null, advertiserName: null, partnerId: null, partnerName: null, displayTypeId: 'landscape', pricingType: null, activation: { enabled: true } }
+  const approval = {
+    campaignId: 'c1', campaignName: 'Swisse spring', status: 'awaiting_approval', mode: 'manual', assetVersion: 'v1', submittedAt: null, reviewedBy: null, reviewedAt: null, reason: null,
+    checks: [{ name: 'dimensions', passed: true, detail: '1080×1920 for 1080×1920.' }], targetingSummary: 'Baseline (localised)', creative: null, canvas: null, audit: [],
+  }
+  const routes = {
+    '/api/admin/v1/campaigns': { items: [campaign, hq] },
+    '/api/admin/v1/campaigns/c1/approval': approval,
+    '/api/admin/v1/booking-schedule': { currency: 'AUD', windows: [], positions: [], revenue: [], totals: { bookedWindows: 0, bookedRevenue: 0, billedRevenue: 0 } },
+  }
+
+  it('lists only advertiser and DSP campaigns, with the status filter in the column', async () => {
+    vi.stubGlobal('fetch', vi.fn(fakeFetch(routes)))
+    renderAt('/campaign-status')
+    expect(await screen.findByText(/campaigns submitted by advertisers and DSPs/)).toBeInTheDocument()
+    const grid = screen.getByLabelText('Campaign Status')
+    await new Promise((r) => setTimeout(r, 300))
+    expect(await within(grid).findByText('Swisse spring', {}, { timeout: 3000 })).toBeInTheDocument()
+    /* HQ's own campaigns aren't this build's business. */
+    expect(within(grid).queryByText('Zinger Box — hero')).not.toBeInTheDocument()
+    /* The status filter is a column filter, not chips above the table. */
+    expect(screen.queryByRole('button', { name: /Awaiting approval 1/ })).not.toBeInTheDocument()
+    expect(grid.querySelectorAll('.ag-floating-filter').length).toBeGreaterThan(0)
+  })
+
+  it('opens the campaign laid out like the platform: brief, targeting, scheduling, storyboard, creative', async () => {
+    vi.stubGlobal('fetch', vi.fn(fakeFetch(routes)))
+    renderAt('/campaign-status/c1')
+    expect(await screen.findByRole('heading', { name: 'Swisse spring' })).toBeInTheDocument()
+    expect(screen.getAllByRole('tab').map((t) => t.textContent)).toEqual(['Campaign Brief', 'Targeting', 'Scheduling', 'Storyboard & Copy', 'Creative'])
+    expect(screen.getByText('Spring immunity range.')).toBeInTheDocument()
+    expect(screen.getByText('Ultiboost Immune')).toBeInTheDocument()
+    expect(screen.getByText('Not provided', { exact: false })).toBeInTheDocument()
+    /* Approve and Reject are on the campaign too, not only in the table. */
+    expect(await screen.findByRole('button', { name: /Approve/ })).toBeInTheDocument()
   })
 })
 
