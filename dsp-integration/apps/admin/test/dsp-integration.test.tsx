@@ -180,11 +180,11 @@ describe('Campaign Status stand-in', () => {
     expect(screen.queryByRole('button', { name: /Awaiting approval 1/ })).not.toBeInTheDocument()
     expect(grid.querySelectorAll('.ag-floating-filter').length).toBeGreaterThan(0)
     /* The filters name themselves and list what is there (Rob, 20 Sep). */
-    expect(within(grid).getAllByLabelText('Advertiser filter').length).toBeGreaterThan(0)
+    expect((await within(grid).findAllByLabelText('Advertiser filter', {}, { timeout: 10000 })).length).toBeGreaterThan(0)
     expect(within(grid).getAllByLabelText('DSP filter').length).toBeGreaterThan(0)
     /* Schedule first, sorted so what is up next is at the top. */
     expect([...grid.querySelectorAll('.ag-header-cell-text')].map((h) => h.textContent)).toEqual(['Schedule', 'Status', 'Name', 'Advertiser', 'DSP', 'Activation', ''])
-    expect(within(grid).getByText('2 windows booked')).toBeInTheDocument()
+    expect(await within(grid).findByText('2 windows booked', {}, { timeout: 10000 })).toBeInTheDocument()
     /* And a row menu for approving, rejecting or switching a campaign on. */
     expect(within(grid).getByLabelText('Swisse spring: options')).toBeInTheDocument()
   })

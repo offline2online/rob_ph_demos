@@ -127,6 +127,52 @@ Row and header borders `1px solid rgba(24,29,31,0.15)`. Row hover `#e8fdff`.
 
 A checkbox column comes first; a `⋯` actions column comes last.
 
+### 3.1 Column filters — how HQ Admin does it
+
+Measured on **Displays & Devices → Assigned Devices**, 20 Sep 2026. Copy this exactly;
+it is the pattern for every table.
+
+**A column gets one filter, never two.** The label row shows only the column name — no
+funnel, not even when a filter is active. Everything lives in the filter row beneath it.
+
+**1. Search filter** — for open text (Name, Store Code, Store Name):
+
+- a plain input in the filter row, `32px`, radius `6px`, border `1px #d9d9d9`, primary
+  border and ring on focus. No funnel, no placeholder text;
+- filters as you type (contains, case-insensitive);
+- once it holds text, a small grey round **✕** appears inside it at the right. That ✕ is
+  how it is cleared — there is no other control.
+
+**2. Set filter** — for a column with a known set of values (Status, Type, State):
+
+- a **funnel icon alone** in the filter row, centred, no input;
+- **grey outline** (`#9ca3af`) when nothing is chosen, **solid primary** (`#169bc2`) when
+  something is;
+- clicking it opens a small popup (white, radius `6px`, shadow, `min-width 200px`):
+  - a `Search...` box at the top **only when the list is long** (roughly 8+ values);
+  - one **checkbox per value**, in the column's own order, each showing what the cell
+    shows (a status dot keeps its dot);
+  - **several values can be ticked** — they filter as OR;
+  - a primary **`Clear Filter`** button at the bottom right, disabled while nothing is
+    ticked. Unticking every box and Clear Filter do the same thing;
+- the popup stays open while values are ticked, so several can be set in one go.
+
+**Never** put a select straight into the filter row as the set filter; the funnel plus
+popup is the platform's pattern.
+
+**The count line above the table** reads `3 Displays & Devices` unfiltered, and
+`Showing 2 of 3 Displays & Devices` as soon as any filter is on.
+
+**Filter state belongs in the URL** (`?filter[0][field]=…&filter[0][values][0]=…`,
+`?search[0][field]=…&search[0][keyword]=…`), so a filtered table can be linked and
+reloaded.
+
+In this repo all of that is `apps/admin/src/shared/TableFilters.tsx`: `searchColumn(label)`,
+`setColumn(label, values)` and `showingCount(shown, total, noun)`. Spread one of the two
+into a column definition; never hand-roll a filter cell.
+
+A checkbox column comes first; a `⋯` actions column comes last.
+
 ```jsx
 const columns = [
   { field: 'select', headerCheckboxSelection: true, checkboxSelection: true, width: 60 },

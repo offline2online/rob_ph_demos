@@ -18,7 +18,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import { api } from '../../api/client'
 import { Grid } from '../../shared/Grid'
 import { Icon } from '../../shared/Icon'
-import { SelectFilter } from '../../shared/SelectFilter'
+import { searchColumn, setColumn, showingCount } from '../../shared/TableFilters'
 import { T } from '../../theme/phTheme'
 import { CAMPAIGN_STATUS_PATH, useCampaignActions } from './useCampaigns'
 
@@ -103,6 +103,8 @@ export function CampaignStatusPage() {
   const rows = useMemo(() => (advertiserId ? all.filter((c) => c.advertiserId === advertiserId) : all), [all, advertiserId])
   const { approvals, canApprove, busy, approve, reject, activate } = useCampaignActions(all.map((c) => c.campaignId))
   const [rejecting, setRejecting] = useState<Approval | null>(null)
+  /* What the column filters leave on screen, for the count line. */
+  const [shown, setShown] = useState<number | null>(null)
   const reason = useRef('')
 
   const ctx: Ctx = {
@@ -113,12 +115,6 @@ export function CampaignStatusPage() {
     },
   }
   const values = (of: (c: Campaign) => string) => () => all.map(of).filter((v) => v && v !== '—')
-  const listFilter = (label: string, of: (c: Campaign) => string) => ({
-    filter: true as const,
-    floatingFilter: true as const,
-    floatingFilterComponent: SelectFilter,
-    floatingFilterComponentParams: { label, values: values(of), suppressFilterButton: true },
-  })
   const columns = useMemo<ColDef<Campaign>[]>(() => [
     {
       /* What the advertiser booked, earliest first, so what is up next is at the top. */
@@ -128,11 +124,11 @@ export function CampaignStatusPage() {
     {
       headerName: 'Status', width: 180, minWidth: 150, cellRenderer: StatusCell,
       valueGetter: (p) => (p.data ? STATUS_LABELS[approvals[p.data.campaignId]?.status as ApprovalStatus] ?? '' : ''),
-      ...listFilter('Status', (c) => STATUS_LABELS[approvals[c.campaignId]?.status as ApprovalStatus] ?? ''),
+      ...setColumn<Campaign>('Status', values((c) => STATUS_LABELS[approvals[c.campaignId]?.status as ApprovalStatus] ?? '')),
     },
-    { headerName: 'Name', width: 260, minWidth: 180, cellRenderer: NameCell, filter: true, floatingFilter: true, valueGetter: (p) => p.data?.name ?? '' },
-    { headerName: 'Advertiser', width: 150, minWidth: 130, valueGetter: (p) => p.data?.advertiserName ?? '—', ...listFilter('Advertiser', (c) => c.advertiserName ?? '') },
-    { headerName: 'DSP', width: 150, minWidth: 130, valueGetter: (p) => p.data?.partnerName ?? '—', ...listFilter('DSP', (c) => c.partnerName ?? '') },
+    { headerName: 'Name', width: 260, minWidth: 180, cellRenderer: NameCell, valueGetter: (p) => p.data?.name ?? '', ...searchColumn<Campaign>('Name') },
+    { headerName: 'Advertiser', width: 150, minWidth: 130, valueGetter: (p) => p.data?.advertiserName ?? '—', ...setColumn<Campaign>('Advertiser', values((c) => c.advertiserName ?? '')) },
+    { headerName: 'DSP', width: 150, minWidth: 130, valueGetter: (p) => p.data?.partnerName ?? '—', ...setColumn<Campaign>('DSP', values((c) => c.partnerName ?? '')) },
     { headerName: 'Activation', width: 160, suppressSizeToFit: true, cellRenderer: ActivationCell },
     { headerName: '', width: 56, suppressSizeToFit: true, pinned: 'right', cellRenderer: RowMenu },
   ], [approvals, all])
@@ -142,7 +138,7 @@ export function CampaignStatusPage() {
   return (
     <div>
       <div className="mb-3 flex flex-wrap items-center gap-2" style={{ fontSize: 13 }}>
-        <span><b>{rows.length}</b> campaign{rows.length === 1 ? '' : 's'} submitted by advertisers and DSPs</span>
+        <span>{showingCount(shown ?? rows.length, rows.length, `campaign${rows.length === 1 ? '' : 's'} submitted by advertisers and DSPs`)}</span>
         {advertiserName && (
           <Button size="small" icon={<Icon name="close" size={14} />} onClick={() => { const n = new URLSearchParams(params); n.delete('advertiserId'); setParams(n, { replace: true }) }}>
             {advertiserName} only
@@ -160,6 +156,7 @@ export function CampaignStatusPage() {
         floatingFiltersHeight={40}
         stickyHeader
         suppressHorizontalScroll={false}
+        onFilterChanged={(e) => setShown(e.api.getDisplayedRowCount())}
       />
       <Modal
         open={!!rejecting}
