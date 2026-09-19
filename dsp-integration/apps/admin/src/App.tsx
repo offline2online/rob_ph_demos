@@ -9,7 +9,7 @@ import { AdvertisersPage } from './features/advertisers/AdvertisersPage'
 import { CampaignsPocPage } from './features/campaigns-poc/CampaignsPocPage'
 import { DisplayTypesPage } from './features/display-types/DisplayTypesPage'
 import { PlaylistManagementPage } from './features/playlist-management/PlaylistManagementPage'
-import { DspIntegrationLayout } from './features/dsp-integration/DspIntegrationLayout'
+import { DspIndex, DspIntegrationLayout } from './features/dsp-integration/DspIntegrationLayout'
 import { AddPartnerRoute, PartnerRoute } from './features/dsp-integration/AddPartner'
 import { AdvertiserSettings } from './features/dsp-integration/AdvertiserSettings'
 import { BookingSchedule } from './features/dsp-integration/BookingSchedule'
@@ -53,8 +53,8 @@ function featureRoutes(flags: Flags): RouteObject[] {
           handle: { title: 'DSP Integration' } satisfies RouteHandle,
           element: <DspIntegrationLayout />,
           children: [
-            /* The prototype opens on Advertiser settings. */
-            { index: true, element: <Navigate to="advertiser-settings" replace /> },
+            /* Exchange settings until the exchange is published, then Advertiser settings (Rob, 20 Sep). */
+            { index: true, element: <DspIndex /> },
             { path: 'exchange', element: <ExchangeSettings /> },
             { path: 'advertiser-settings', element: <AdvertiserSettings /> },
             { path: 'booking-schedule', element: <BookingSchedule /> },

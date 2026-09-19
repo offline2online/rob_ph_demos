@@ -6,9 +6,9 @@ import type { ReactNode } from 'react'
 import { T } from '../theme/phTheme'
 import { Icon } from './Icon'
 
-export function InfoTip({ text, size = 14 }: { text: ReactNode; size?: number }) {
+export function InfoTip({ text, size = 14, width = 280 }: { text: ReactNode; size?: number; width?: number }) {
   return (
-    <Tooltip title={text} placement="top" autoAdjustOverflow styles={{ root: { maxWidth: 280 } }} trigger={['hover', 'focus']}>
+    <Tooltip title={text} placement="top" autoAdjustOverflow styles={{ root: { maxWidth: width } }} trigger={['hover', 'focus']}>
       <span
         role="button"
         tabIndex={0}

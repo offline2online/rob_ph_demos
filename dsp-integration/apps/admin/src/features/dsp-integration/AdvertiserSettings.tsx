@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/react-query'
 import { Button, InputNumber, Select } from 'antd'
 import type { ColDef, ICellRendererParams } from 'ag-grid-community'
 import { IAB_CATEGORIES, PROVIDERS, touchPointIcon, type AdvertiserSettingsInput, type AvailableInventoryRow } from '@ph-dsp/types'
-import { useMemo } from 'react'
+import { type ReactNode, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { api } from '../../api/client'
 import { Field } from '../../shared/Field'
@@ -26,6 +26,51 @@ const CURRENCIES = (() => {
   const dn = new Intl.DisplayNames(['en-GB'], { type: 'currency' })
   return Intl.supportedValuesOf('currency').map((code) => ({ value: code, label: `${code} — ${dn.of(code) ?? code}` }))
 })()
+
+/* How a floor CPM turns into what an advertiser pays, in the floor and
+   multiplier tooltips (Rob's board ticket, 19 Sep). One screen over a
+   two-hour daypart, at a floor of 100 per thousand VAC-d. */
+const VACD_STEPS: [string, string, string][] = [
+  ['Footfall past the screen (entrance counter, 2 h)', '—', '1,200'],
+  ['× visibility (ROTS: size, angle, path, lighting)', '0.65', '780 viewable'],
+  ['× attention (VAC: the share who actually look)', '0.42', '328 viewed'],
+  ['× share of time (10 s ÷ 120 s loop)', '0.083', '27 VAC-d'],
+]
+const rule = '1px solid rgba(255,255,255,0.25)'
+const FloorExample = ({ children, rate }: { children: ReactNode; rate: ReactNode }) => (
+  <div style={{ fontSize: 12 }}>
+    <div className="mb-2">{children}</div>
+    <div className="mb-1" style={{ opacity: 0.75 }}>One screen over a two-hour daypart:</div>
+    <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+      <tbody>
+        {VACD_STEPS.map(([step, factor, result]) => (
+          <tr key={step}>
+            <td style={{ padding: '3px 6px 3px 0', borderBottom: rule }}>{step}</td>
+            <td style={{ padding: '3px 6px', borderBottom: rule, textAlign: 'right', opacity: 0.75 }}>{factor}</td>
+            <td style={{ padding: '3px 0 3px 6px', borderBottom: rule, textAlign: 'right', whiteSpace: 'nowrap' }}>{result}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+    <div className="mt-2">{rate}</div>
+  </div>
+)
+
+const FLOOR_TIP = (
+  <FloorExample rate={<>At a floor of <b>100</b> per thousand VAC-d: 100 × 27 ÷ 1,000 = <b>$2.70</b> for the daypart.</>}>
+    Cost per thousand assumed views (VAC-d). The minimum any bid must meet; bids below it never win.
+  </FloorExample>
+)
+const PERSONALISED_TIP = (
+  <FloorExample rate={<>The same daypart at 100 × 1.5 = <b>150</b> CPM: 150 × 27 ÷ 1,000 = <b>$4.05</b>, against $2.70 at the floor.</>}>
+    Applied when the visitor is checked in or otherwise identified, so the advert is one-to-one for that individual. Multiplies the floor CPM.
+  </FloorExample>
+)
+const INTERACTIVE_TIP = (
+  <FloorExample rate={<>The same daypart at 100 × 3 = <b>300</b> CPM: <b>$8.10</b>. Stacked with personalised, 100 × 1.5 × 3 = <b>450</b> CPM: <b>$12.15</b> — and the advertiser’s own floor multiplier scales that again (0.8 → $9.72).</>}>
+    Applied when the visitor interacts with the campaign and engages with the advertiser on that display, for example by scanning an interactive QR Control campaign. Multiplies the floor CPM.
+  </FloorExample>
+)
 
 /* The auction cutoff, every half hour (UTC). */
 const CUTOFF_TIMES = Array.from({ length: 48 }, (_, i) => {
@@ -92,9 +137,9 @@ export function AdvertiserSettings() {
         <Field label="Currency" htmlFor="currency" tip="Used for the floor CPM, every effective floor and billing. Bid requests carry it as the bid floor currency.">
           <Select id="currency" className="w-full" showSearch optionFilterProp="label" value={s.currency} onChange={(v) => set('currency', v)} options={CURRENCIES} popupMatchSelectWidth={280} />
         </Field>
-        <Field label="Floor price (CPM)" htmlFor="floorCpm" tip="Cost per thousand assumed views (VAC-d). The minimum any bid must meet; bids below it never win.">{num('floorCpm', 1, '100')}</Field>
-        <Field label="Personalised multiplier" htmlFor="personalisedMultiplier" tip="Applied when the visitor is checked in or otherwise identified, so the advert is one-to-one for that individual. Multiplies the floor CPM.">{num('personalisedMultiplier', 0.05, '1.5')}</Field>
-        <Field label="Interactive multiplier" htmlFor="interactiveMultiplier" tip="Applied when the visitor interacts with the campaign and engages with the advertiser on that display, for example by scanning an interactive QR Control campaign. Multiplies the floor CPM.">{num('interactiveMultiplier', 0.05, '3')}</Field>
+        <Field label="Floor price (CPM)" htmlFor="floorCpm" tip={FLOOR_TIP} tipWidth={400}>{num('floorCpm', 1, '100')}</Field>
+        <Field label="Personalised multiplier" htmlFor="personalisedMultiplier" tip={PERSONALISED_TIP} tipWidth={400}>{num('personalisedMultiplier', 0.05, '1.5')}</Field>
+        <Field label="Interactive multiplier" htmlFor="interactiveMultiplier" tip={INTERACTIVE_TIP} tipWidth={400}>{num('interactiveMultiplier', 0.05, '3')}</Field>
       </div>
 
       <SectionLabel><WithTip tip="In-store screens can't take a bid per play, so advertisers bid for a play window that clears ahead of time. Bidding for a window opens, closes at the auction cutoff (when the auction runs) and the winner holds the slot for the whole window. Times are UTC.">Auction schedule</WithTip></SectionLabel>

@@ -1,4 +1,4 @@
-import { render, screen, within } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { RouterProvider, createMemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Providers, appRoutes } from '../src/App'
@@ -66,6 +66,20 @@ describe('Advertiser settings page', () => {
     const where = screen.getByRole('list', { name: 'Where these apply' })
     expect(within(where).getAllByRole('listitem').map((li) => li.textContent)).toEqual([expect.stringContaining('Adopting'), expect.stringContaining('Own lists')])
     expect(screen.queryByText('Advertisers', { selector: '.ag-header-cell-text' })).not.toBeInTheDocument()
+  })
+})
+
+describe('Where DSP Integration opens', () => {
+  it('opens Exchange settings until the exchange is published, then Advertiser settings', async () => {
+    vi.stubGlobal('fetch', vi.fn(fakeFetch({ '/api/admin/v1/exchange': { ...exchange, organisation: '', published: false, sellersJsonUrl: null } })))
+    const unpublished = renderAt('/dsp-integration')
+    expect(await screen.findByRole('heading', { name: /Exchange settings/ })).toBeInTheDocument()
+    expect(unpublished.state.location.pathname).toBe('/dsp-integration/exchange')
+    cleanup()
+    vi.stubGlobal('fetch', vi.fn(fakeFetch()))
+    const published = renderAt('/dsp-integration')
+    expect(await screen.findByRole('heading', { name: /Advertiser settings/ })).toBeInTheDocument()
+    expect(published.state.location.pathname).toBe('/dsp-integration/advertiser-settings')
   })
 })
 
@@ -169,5 +183,20 @@ describe('Booking schedule', () => {
     expect(within(grid).getByText(/175 CPM/)).toBeInTheDocument()
     expect(within(grid).getByText('Available')).toBeInTheDocument()
     expect(screen.queryByRole('region', { name: 'Save changes' })).not.toBeInTheDocument()
+  })
+})
+
+describe('Pricing tooltips', () => {
+  it('explain how a floor CPM becomes what an advertiser pays, and how the multipliers stack', async () => {
+    renderAt('/dsp-integration/advertiser-settings')
+    await screen.findByRole('heading', { name: /Advertiser settings/ })
+    const tip = (label: string) => screen.getByText(label).closest('label')!.querySelector('[role="button"]') as HTMLElement
+    fireEvent.mouseEnter(tip('Floor price (CPM)'))
+    expect(await screen.findByText(/× attention \(VAC: the share who actually look\)/)).toBeInTheDocument()
+    expect(screen.getByText(/100 × 27 ÷ 1,000/)).toBeInTheDocument()
+    fireEvent.mouseEnter(tip('Personalised multiplier'))
+    expect(await screen.findByText(/100 × 1.5 = /)).toBeInTheDocument()
+    fireEvent.mouseEnter(tip('Interactive multiplier'))
+    expect(await screen.findByText(/100 × 1.5 × 3 = /)).toBeInTheDocument()
   })
 })

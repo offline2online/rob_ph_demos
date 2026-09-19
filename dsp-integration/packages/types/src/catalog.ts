@@ -129,7 +129,9 @@ const COMPARE: Operator[] = ['equal', 'not_equal', 'greater_than', 'less_than', 
 const COMPARE_EXACT: Operator[] = [...COMPARE, 'match_exactly']
 const ONE: Operator[] = ['equal', 'not_equal']
 const loc = (key: string, label: string, values: string, operators: Operator[], tip?: string): TargetingVariableDef => ({ key, source: 'store', group: 'localisation', label, values, tip, operators })
-const per = (key: string, label: string, values: string, operators: Operator[], tip?: string): TargetingVariableDef => ({ key, source: 'visitor', group: 'personalisation', label, values, tip, operators })
+/* Personalisation variables are mostly visitor data; the aggregates and the
+   Computer Vision ones are store data, in the same group (Rob, 20 Sep). */
+const per = (key: string, label: string, values: string, operators: Operator[], tip?: string, source: 'store' | 'visitor' = 'visitor'): TargetingVariableDef => ({ key, source, group: 'personalisation', label, values, tip, operators })
 
 /* The platform's default variables, in display order (spec §6). */
 export const TARGETING_VARIABLES: TargetingVariableDef[] = [
@@ -142,11 +144,14 @@ export const TARGETING_VARIABLES: TargetingVariableDef[] = [
   loc('store.state', 'State', 'NSW, VIC, QLD', LIST),
   loc('store.country', 'Country', 'Australia, New Zealand', LIST),
   loc('store.languages', 'Languages Spoken by Store Staff', 'English, Mandarin, Arabic', LIST),
-  loc('store.reason_for_visit', 'Reason for Visit (Aggregate)', 'Returns, New phone, Bill enquiry (share of the queue here for the same reason)', COMPARE),
-  loc('store.cv_gender', 'Computer Vision Gender', 'Female, Male', COMPARE_EXACT, 'Detected by Vision/AI for the person in front of the display — e.g. Female, Male'),
-  loc('store.cv_age', 'Computer Vision Estimated Age', '18–24, 25–34, 35–44', COMPARE, 'Estimated by Vision/AI for the person in front of the display — e.g. 18–24, 25–34, 35–44'),
-  per('visitor.age', 'Age', '18–24, 25–34, 35–44', COMPARE),
-  per('visitor.gender', 'Gender', 'Female, Male', ONE),
+  /* Computer Vision first, then the aggregates, then the rest (Rob, 20 Sep).
+     Both are personalisation, so both default to no DSP (Q49 revisited). */
+  per('store.cv_gender', 'Gender (Computer Vision)', 'Female, Male', COMPARE_EXACT, 'Read by Vision/AI running at the edge, for the person in front of the display — e.g. Female, Male. Nothing leaves the store.', 'store'),
+  per('store.cv_age', 'Estimated Age (Computer Vision)', '18–24, 25–34, 35–44', COMPARE, 'Estimated by Vision/AI running at the edge, for the person in front of the display — e.g. 18–24, 25–34, 35–44. Nothing leaves the store.', 'store'),
+  per('store.reason_for_visit', 'Reason for Visit (Aggregate)', 'Returns, New phone, Bill enquiry (share of the queue here for the same reason)', COMPARE, 'Everyone in the queue here right now, not one visitor: the share waiting for the same reason — e.g. Returns, New phone, Bill enquiry', 'store'),
+  per('store.device_type_aggregate', 'Device Type (Aggregate)', 'iPhone, Pixel, Samsung', COMPARE, 'Everyone in the store right now, not one visitor: the share carrying each device — e.g. iPhone, Pixel, Samsung', 'store'),
+  per('visitor.age', 'Age', '18–24, 25–34, 35–44', COMPARE, 'The identified visitor’s age, from the systems that hold the customer record (CRM, CDP or loyalty) — e.g. 18–24, 25–34, 35–44'),
+  per('visitor.gender', 'Gender', 'Female, Male', ONE, 'The identified visitor’s gender, from the systems that hold the customer record (CRM, CDP or loyalty) — e.g. Female, Male'),
   per('visitor.purchase_intent', 'Purchase Intent', 'Browse, Replenish, Gift', LIST),
   per('visitor.visitor_segments', 'Visitor Segments', 'New parent, Fitness, Value seeker', LIST),
   per('visitor.device_type', 'Device Type', 'iPhone, Pixel, Samsung', LIST, "The visitor's device in store — e.g. iPhone, Pixel, Samsung"),

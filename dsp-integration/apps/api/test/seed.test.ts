@@ -29,7 +29,9 @@ describe('seed data', () => {
   it('an unseeded database reports spec defaults', async () => {
     const ctx = await testContext({ seeded: false })
     expect(ctx.company.get()).toMatchObject({ currency: 'AUD', floorCpm: 100, personalisedMultiplier: 1.5, interactiveMultiplier: 3, advertiserBlacklist: [] })
-    expect(ctx.company.variableAccess()['store.cv_gender']).toBe('all')
+    expect(ctx.company.variableAccess()['store.display_tags']).toBe('all')
+    /* Computer Vision sits in Personalisation Variables now, so it defaults to no DSP. */
+    expect(ctx.company.variableAccess()['store.cv_gender']).toEqual([])
     expect(ctx.exchange.get()).toEqual({ organisation: '', domain: '', sellerId: '', contactEmail: '' })
   })
 })

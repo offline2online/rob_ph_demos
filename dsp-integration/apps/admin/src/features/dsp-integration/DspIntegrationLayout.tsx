@@ -6,7 +6,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { App, Spin } from 'antd'
 import { providerDef, type AdvertiserSettings, type AdvertiserSettingsInput, type ExchangeInput, type Partner, type Provider, type SharedVariable, type VariableAccess } from '@ph-dsp/types'
 import { createContext, useContext, useEffect, useMemo, useState } from 'react'
-import { Outlet, useLocation, useNavigate } from 'react-router-dom'
+import { Navigate, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { ApiRequestError } from '../../api/client'
 import { ListPageLayout } from '../../shared/ListPageLayout'
 import { SaveBar } from '../../shared/SaveBar'
@@ -149,6 +149,14 @@ function Section({ partners, settings, exchange, published, variables }: { partn
       </ListPageLayout>
     </SectionContext.Provider>
   )
+}
+
+/* Where DSP Integration opens (Rob, 20 Sep): Exchange settings until the
+   seller-of-record details are complete and sellers.json is published, then
+   Advertiser settings. */
+export function DspIndex() {
+  const { published } = useSection()
+  return <Navigate to={published ? 'advertiser-settings' : 'exchange'} replace />
 }
 
 export function DspIntegrationLayout() {

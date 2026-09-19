@@ -7,14 +7,20 @@ const GOOGLE = { authorization: 'Bearer poc-token-google-dv360' }
 const AMAZON = { authorization: 'Bearer poc-token-amazon-dsp' }
 
 describe('Shared Targeting Variables (spec §6)', () => {
-  it('lists the 24 default variables with example values and DSP access', async () => {
+  it('lists the 25 default variables with example values and DSP access', async () => {
     const res = await buildApp(await testContext()).inject({ method: 'GET', url: '/api/admin/v1/targeting-variables' })
     expectMatchesContract('GET', '/admin/v1/targeting-variables', 200, res.json())
     const items = res.json().items
-    expect(items).toHaveLength(24)
+    expect(items).toHaveLength(25)
     expect(items[0]).toEqual({ key: 'store.hours', label: 'Store Open / Closed', group: 'localisation', exampleValues: 'Whether the store is open or closed at the time — e.g. Open, Closed', access: 'all' })
     expect(items.find((v: { key: string }) => v.key === 'store.fixed_segments').exampleValues).toBe('e.g. Airport, Metro, Regional')
-    expect(items.filter((v: { group: string }) => v.group === 'personalisation').map((v: { access: unknown }) => v.access)).toEqual([[], [], ['p_google'], [], [], [], [], [], [], [], [], []])
+    /* Computer Vision first, then the aggregates, then the rest (Rob, 20 Sep). */
+    const personalisation = items.filter((v: { group: string }) => v.group === 'personalisation')
+    expect(personalisation.slice(0, 4).map((v: { label: string }) => v.label)).toEqual(['Gender (Computer Vision)', 'Estimated Age (Computer Vision)', 'Reason for Visit (Aggregate)', 'Device Type (Aggregate)'])
+    expect(personalisation[0].exampleValues).toMatch(/Vision\/AI running at the edge/)
+    expect(personalisation.find((v: { key: string }) => v.key === 'visitor.age').exampleValues).toMatch(/CRM, CDP or loyalty/)
+    /* They all default to no DSP; the seed names Google on two of them. */
+    expect(personalisation.map((v: { access: unknown }) => v.access)).toEqual([[], [], ['p_google'], [], [], [], ['p_google'], [], [], [], [], [], [], [], [], []])
   })
 
   it('saves access per variable, de-duplicating DSP ids', async () => {
@@ -43,7 +49,7 @@ describe('GET /v1/targeting/attributes', () => {
     const keys = res.json().items.map((a: { key: string }) => a.key)
     expect(keys).toEqual([
       'store.hours', 'store.fixed_segments', 'store.variable_segments', 'store.display_tags', 'store.state', 'store.reason_for_visit',
-      'store.cv_gender', 'store.cv_age', 'visitor.purchase_intent',
+      'visitor.purchase_intent',
     ])
     expect(res.json().items[0]).toEqual({ key: 'store.hours', source: 'store', label: 'Store Open / Closed', group: 'localisation', operators: ['equal', 'not_equal'] })
     expect(res.body).not.toMatch(/Airport|Metro|e\.g\./)
