@@ -455,7 +455,8 @@ Each is configurable in `apps/api/src/config.ts`.
 | 2 | Shared UI | Done | `apps/admin` (React 18.3, Vite 6, AntD 5 themed with `phTheme`, Tailwind 4 `@theme`, AG Grid 32 Alpine vars, Material Symbols, Roboto). `SaveBar` (sticky, never fixed), `useDraft`, `UnsavedChangesProvider` (router blocker + in-page `guard`, AntD confirm "You have unsaved changes. Discard them?"), `DeleteDialog`, `InfoTip` (AntD Tooltip, flips below when there's no room), `ListPageLayout` (260px sticky list + full-width column), `AppShell` (title, divider, 230px nav collapsing to 56px icons below 900px). 11 tests | `ListEditor`, summary chips and collapsible panels move to the first package that uses them (3, 7) | — |
 | 3 | Display Types | Done | API: stand-in `GET/POST /admin/v1/display-types`, `GET/PUT …/{id}/record` (creates referenced auto/zone playlists), `GET /admin/v1/playlists`, and this build's `PUT …/{id}/extensions` with server-side slot validation (one slot per rotation position, owner rules, partner and seat exist, named blocked advertiser withdrawn unless already set, whitelist-only needs a non-empty whitelist). Early read side of `GET /admin/v1/partners`, `/advertiser-settings`, `/advertisers` (§9). UI: nav "Display Types", title "Display Types Details", list (New display type, touch point, W×H, structure and feature badges), one-column form (preview, Touch Point, name, canvas, background, default playlist), four collapsed panels with summary chips, Slot assignment (cards and AG Grid table), broken-partner callout with Fix connection, save bar and unsaved-changes guard. Tests: API 40 (strict contract checks on every endpoint above), admin 23 (summary chips, slot helpers, page structure, flag off). Browser-checked at 1163px: no horizontal scroll, save bar enables only on change, tooltips open above and flip below near the top | Delete (bin icon and dialog) is package 4 | Q1–Q3 |
 | 4 | Delete a display type | Done | `GET …/display-types/{id}/delete-check` and `DELETE …/display-types/{id}` (409 `has_dependents` listing each display and its store; the auto-created playlist is kept; Q47: the sold/reserved position count is logged, and reservations arrive in package 15). UI: a bin icon on each list row, and the delete dialog (blocked: warning, list of displays, Close, Delete disabled; allowed: permanent-delete text, Cancel, Delete). A confirmed delete applies immediately and leaves other unsaved edits as they were; an unsaved new type is removed from the draft only. Tests: API +3, admin +2. Browser-checked | — | — |
-| 5–17 | — | Not started | — | — | — |
+| 5 | Playlist Management | Done | API: `PUT /admin/v1/playlists/{id}/record` (rename only; rejects assignment fields), `GET …/delete-check` and `DELETE` (409 `has_dependents` for a default or zone playlist). UI: nav "Playlist Management", count line, AG Grid table (rename inline, auto-created pill, expandable assignments with Open →, delete) and delete dialogs. Changes apply immediately, as in the prototype (the spec doesn't list this page under *Saving changes*). Shared `Grid` component (fit to width, auto height), now also used by Slot assignment. Tests: API +4, admin +1. Browser-checked: rename, both delete dialogs, Open → | New playlist and assignment editing (decision 4) | — |
+| 6–17 | — | Not started | — | — | — |
 
 ## 13. Prototype comparison (per screen)
 
@@ -490,6 +491,11 @@ broken-partner callout, the zone cards and the save bar all match.
 | Name field | "Display Type / Element Name" | "Display Type Name" | Rob, 19 Sep (Q2) |
 | Unsaved-changes prompt | `window.confirm` | AntD confirm with the same text, OK / Cancel | ph-designer components |
 
+Kept on the page as status (decision 2): "Not enabled for this company —
+contact Platform Admin.", the broken-partner callout, "On the blacklist —
+this position cannot fill.", "Not connected", the preview caption, and the
+save bar message.
+
 ### Delete a display type (package 4)
 
 Checked against the prototype in the browser. The dialog title, icon, both
@@ -497,10 +503,23 @@ body texts, the assigned-display list (tv icon, name, "· store") and the
 buttons (Close with Delete disabled; or Cancel and Delete) match. No
 differences.
 
-Kept on the page as status (decision 2): "Not enabled for this company —
-contact Platform Admin.", the broken-partner callout, "On the blacklist —
-this position cannot fill.", "Not connected", the preview caption, and the
-save bar message.
+### Playlist Management (package 5)
+
+Compared against the prototype's Playlist Management at 1163px. The count
+line ("**n** Playlists · **m** unused"), the table columns (Playlist,
+Assigned to, delete), the rename pencil with its inline input and
+check/close, the "auto-created with …" pill, the "n assignments" expander
+with its "Currently assigned to" list and **Open →**, the "unused" pill, and
+both delete dialogs match.
+
+| Where | Prototype | Build | Why |
+|---|---|---|---|
+| Header | **New playlist** | Not present | Decision 4 |
+| Expanded row | "Reassign every display type and zone above before this playlist can be deleted." as a footer line | Tooltip on "Currently assigned to" | Decision 2 |
+| Page | Footer paragraph "A playlist is created automatically …" | The page title's tooltip | Decision 2; spec *Help text*: page-title tooltips say what the page covers |
+| Rows | Assignments for the web types | Not present | Decision 1 (no web display types in the seed) |
+| Delete button | Outlined red button with a bin | AntD `danger` small button with a bin | ph-designer components |
+
 
 ## 14. Mock DSP APIs (Rob, 19 Sep 2026)
 

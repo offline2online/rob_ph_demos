@@ -2,11 +2,11 @@
    the three owners is the label's tooltip. Slot cards summarise each slot;
    the table (AG Grid) edits them. */
 import { Alert, Button, Input, Select } from 'antd'
-import type { ColDef, GridApi, ICellRendererParams } from 'ag-grid-community'
-import { AgGridReact } from 'ag-grid-react'
+import type { ColDef, ICellRendererParams } from 'ag-grid-community'
 import { SLOT_OWNERS, STORE_SCOPES, providerDef, type AdvertiserSettings, type Partner, type Slot, type SlotOwner } from '@ph-dsp/types'
-import { useEffect, useMemo, useRef } from 'react'
+import { useMemo } from 'react'
 import { Field } from '../../../shared/Field'
+import { Grid } from '../../../shared/Grid'
 import { Icon } from '../../../shared/Icon'
 import { T } from '../../../theme/phTheme'
 import { effectiveLists, isBlocked, ownerAssignment, ownerChange, partnerChange } from '../model'
@@ -135,8 +135,6 @@ export function SlotAssignment({ slots, setSlots, partners, company, seatsOf, on
   tip: string
 }) {
   const ctx: Ctx = { partners, company, seatsOf, setSlot: (i, patch) => setSlots(slots.map((s, k) => (k === i ? { ...s, ...patch } : s))) }
-  const gridCtx = useRef<Ctx>(ctx)
-  gridCtx.current = ctx
   const rows = useMemo(() => slots.map((slot, i) => ({ i, slot })), [slots])
   const columns = useMemo<ColDef<Row>[]>(
     () => [
@@ -148,22 +146,6 @@ export function SlotAssignment({ slots, setSlots, partners, company, seatsOf, on
     [],
   )
   const broken = slots.filter((s) => isBroken(ctx, s))
-  /* Fit the columns to the content column (no horizontal scroll at 1163px).
-     AG Grid's own resize detection doesn't fire inside the collapsible panel,
-     so the wrapper's width drives it. */
-  const wrapper = useRef<HTMLDivElement>(null)
-  const gridApi = useRef<GridApi<Row> | null>(null)
-  const fit = () => {
-    const w = wrapper.current?.clientWidth
-    if (w && gridApi.current) gridApi.current.sizeColumnsToFit(w - 2)
-  }
-  useEffect(() => {
-    if (!wrapper.current) return
-    const ro = new ResizeObserver(fit)
-    ro.observe(wrapper.current)
-    return () => ro.disconnect()
-  }, [])
-
   return (
     <Field label="Slot assignment" tip={tip} className="mb-4">
       <div className="mb-2.5 flex flex-wrap gap-1.5" aria-label="Slots">
@@ -186,27 +168,8 @@ export function SlotAssignment({ slots, setSlots, partners, company, seatsOf, on
           )
         })}
       </div>
-      <div ref={wrapper} className="ag-theme-alpine w-full">
-        {/* Remount once partners and company lists arrive so every cell re-reads them. */}
-        <AgGridReact<Row>
-          key={`${partners.length}-${company ? 1 : 0}`}
-          rowData={rows}
-          columnDefs={columns}
-          context={gridCtx}
-          getRowId={(p) => String(p.data.i)}
-          domLayout="autoHeight"
-          headerHeight={40}
-          rowHeight={42}
-          suppressCellFocus
-          suppressMovableColumns
-          suppressHorizontalScroll
-          onGridReady={(e) => {
-            gridApi.current = e.api
-            fit()
-          }}
-          defaultColDef={{ sortable: false, suppressKeyboardEvent: () => true }}
-        />
-      </div>
+      {/* Remount once partners and company lists arrive so every cell re-reads them. */}
+      <Grid<Row> key={`${partners.length}-${company ? 1 : 0}`} label="Slot assignment" rows={rows} columns={columns} context={ctx} getRowId={(r) => String(r.i)} />
       {broken.length > 0 && (
         <Alert
           className="mt-2.5"

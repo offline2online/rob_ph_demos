@@ -24,8 +24,9 @@ small interface.
 | `apps/api/src/repos/` | This build's own records: partners (credentials encrypted), company advertiser settings, variable access, exchange |
 | `apps/api/src/seed/` | Seed data, taken from the prototype's `model/data.js` |
 | `apps/admin/` | Admin UI: React 18, Vite, Ant Design 5, Tailwind 4 and AG Grid (Alpine). It renders the content frame only, because it is iframed into HQ Admin. |
-| `apps/admin/src/shared/` | Shared UI: save bar, draft state, unsaved-changes guard, delete dialog, InfoTip, list layout, collapsible panel, summary chips |
-| `apps/admin/src/features/display-types/` | Display Types screen: list, form, panels and slot assignment |
+| `apps/admin/src/shared/` | Shared UI: save bar, draft state, unsaved-changes guard, delete dialog, InfoTip, list layout, collapsible panel, summary chips, AG Grid wrapper |
+| `apps/admin/src/features/display-types/` | Display Types screen: list, form, panels, slot assignment, delete |
+| `apps/admin/src/features/playlist-management/` | Playlist Management screen: rename and delete |
 
 ## Running it
 
