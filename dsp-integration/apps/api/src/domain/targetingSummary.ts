@@ -1,6 +1,6 @@
 /* Human-readable summary of a content package's targeting (review panel):
    AND groups of OR conditions, labelled with the Targeting-tab names. */
-import { TARGETING_VARIABLES } from '@ph-dsp/types'
+import { OPERATOR_LABELS, TARGETING_VARIABLES } from '@ph-dsp/types'
 
 export interface Condition { source: string; variable: string; op: string; values: string[] }
 export interface StoredTargeting {
@@ -8,7 +8,7 @@ export interface StoredTargeting {
   targeted?: { id: string; priority: number; pricingType: string; rules: Condition[][] }[]
 }
 
-const OPS: Record<string, string> = { includes_selected: 'includes selected', excludes_selected: 'excludes selected', equal: 'equal', not_equal: 'not equal', greater_than: 'greater than', less_than: 'less than' }
+const OPS: Record<string, string> = OPERATOR_LABELS
 const label = (key: string) => TARGETING_VARIABLES.find((v) => v.key === key)?.label ?? key
 const condition = (c: Condition) => `${label(c.variable)} ${OPS[c.op] ?? c.op} ${c.values.join(', ')}`
 

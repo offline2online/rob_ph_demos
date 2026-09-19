@@ -942,7 +942,7 @@ components:
       properties:
         source: {type: string}
         variable: {type: string}
-        op: {type: string, enum: [includes_selected, excludes_selected, equal, not_equal, greater_than, less_than]}
+        op: {type: string, enum: [include, match_exactly, exclude_or, exclude_and, equal, not_equal, greater_than, less_than, greater_than_or_equal, less_than_or_equal]}
         values: {type: array, items: {type: string}, maxItems: 100}
     TargetingRules:
       description: AND groups of OR conditions (existing Targeting tab structure).

@@ -357,6 +357,7 @@ All approved by Rob (decision 5). The reason for each change is given.
 | Session wording: role from `POC_ROLE`, no switcher, no cookie | The contract said "user switcher", contradicting the brief |
 | `PUT /admin/v1/playlists/{id}/record` takes `name` only | Decision 4: assignments are made on the Display Types form |
 | `Partner.seats [{id, name}]` (19 Sep, Rob, Q1) | The slot picker and the DSP pages need each DSP's seats, which spec §8 has on the partner. They are filled from the DSP (mock) on connect |
+| Condition `op` enum → the platform's operator keys: `include`, `match_exactly`, `exclude_or`, `exclude_and`, `equal`, `not_equal`, `greater_than`, `less_than`, `greater_than_or_equal`, `less_than_or_equal` (19 Sep, Rob, Q4) | The six assumed operators didn't match the real Targeting tab (which has *matches exactly*, excludes [OR]/[AND] and ≥/≤); rules are stored in the platform's structure, so the keys must map 1:1 |
 | *Jobs with no API* note: auction job + `npm run auction:run`; billing line items only + `npm run billing:print` | Nothing in the contract triggered the auction or described billing output; no UI, report or endpoint |
 
 ## 8. Prototype defects fixed (decision 6)
@@ -443,15 +444,32 @@ All approved by Rob (decision 5). The reason for each change is given.
    separately, outside this build. The admin UI keeps the prototype's values
    as a stand-in (§9), and no endpoint is added.
 
-4. **Operators per variable.** `GET /v1/targeting/attributes` returns each
-   variable's `operators`, but neither the spec nor the prototype says which
-   of the platform's operators each Targeting-tab variable takes. The build
-   uses list variables (segments, tags, locations, age bands, SKUs, events
-   and so on) → *includes selected* / *excludes selected*;
-   single-value variables (Store Open / Closed, genders, Purchase Intent,
-   Plan Type) → *equal* / *not equal*; Plan Value → *equal*, *greater than*,
-   *less than*. This is in `packages/types/src/catalog.ts`. Does it match the
-   real Targeting tab?
+4. ~~Operators per variable~~ **Resolved (Rob, 19 Sep):** matched to the
+   real Targeting tab on demo.personalisationhub.com (campaign 7722; the
+   tab's `campaign-targetings/categories/{category}/operators` metadata, read
+   only, nothing saved). The platform has five operator sets, and the
+   contract's `op` enum now uses its keys (lower-cased) so stored rules map
+   1:1: `include`, `match_exactly`, `exclude_or`, `exclude_and`, `equal`,
+   `not_equal`, `greater_than`, `less_than`, `greater_than_or_equal`,
+   `less_than_or_equal` (§7).
+
+   | Our variable | Platform category | Operators |
+   |---|---|---|
+   | Fixed / Variable Store Segments, Display Tag(s), Suburb, State, Country, Languages | same names (Store / Location) | List: includes selected, matches exactly, excludes selected [OR], excludes selected [AND] |
+   | Reason for Visit (Aggregate) | Queueing / Aggregate | Compare: equal, not equal, greater than, less than, ≥, ≤ |
+   | Computer Vision Gender | CV Gender | Compare + matches exactly |
+   | Computer Vision Estimated Age | CV Age | Compare |
+   | Age | Visitor / Customer → Age | Compare |
+   | Gender | Gender | equal, not equal |
+   | Purchase Intent, Visitor Segments (Audience / Segments), Device Type (Individual), Product Holdings, Product Type, Plan Type, Plan Value, Purchase History, Events, SKUs | same (Visitor / Customer) | List |
+   | Store Open / Closed | *not on the platform* | kept as equal, not equal |
+   | Postcode | *not on the platform* | List, like Suburb |
+
+   Store Open / Closed and Postcode don't exist on the Targeting tab; they
+   are spec §6 defaults, so they stay with an assumed set. The fifth set
+   (*equal* only) is for CV Passerby / CV No Visitor Detected, which aren't
+   shared variables. REQUIREMENTS.md's example payloads still say
+   `includes_selected`; the contract (`include`) wins.
 
 5. ~~When do Connect and Disconnect take effect?~~ **Resolved (Rob, 19
    Sep):** immediately, as the contract says. While credential edits are
@@ -459,13 +477,10 @@ All approved by Rob (decision 5). The reason for each change is given.
 6. ~~Renaming a DSP~~ **Resolved (Rob, 19 Sep):** the name is a plain
    heading, and the contract doesn't change.
 
-7. **Serving creative files.** The review panel's `creative.assetUrl` must be
-   fetchable, but the contract has no asset endpoint (the approved change was
-   the `creative` and `canvas` fields). The POC serves AssetStore files at
-   `/assets/{file}`, outside `/api`, as a stand-in for the platform's own
-   asset hosting (the way `/sellers.json` sits outside `/api`). On
-   integration, `assetUrl` becomes the platform's asset URL. Is that
-   acceptable, or should it be in the contract?
+7. ~~Serving creative files~~ **Accepted (Rob, 19 Sep):** the POC serves
+   AssetStore files at `/assets/{file}`, outside `/api`, as a stand-in for
+   the platform's asset hosting; on integration `assetUrl` becomes the
+   platform's asset URL. No contract change. To be revisited later.
 
 ## 11. Defaults in use (brief, *Defaults for open questions*)
 
@@ -492,10 +507,10 @@ Each is configurable in `apps/api/src/config.ts`.
 | 5 | Playlist Management | Done | API: `PUT /admin/v1/playlists/{id}/record` (rename only; rejects assignment fields), `GET …/delete-check` and `DELETE` (409 `has_dependents` for a default or zone playlist). UI: nav "Playlist Management", count line, AG Grid table (rename inline, auto-created pill, expandable assignments with Open →, delete) and delete dialogs. Changes apply immediately, as in the prototype (the spec doesn't list this page under *Saving changes*). Shared `Grid` component (fit to width, auto height), now also used by Slot assignment. Tests: API +4, admin +1. Browser-checked: rename, both delete dialogs, Open → | New playlist and assignment editing (decision 4) | — |
 | 6 | DSP Integration nav + Exchange settings; sellers.json | Done | API: `GET/PUT /admin/v1/exchange` (all four fields required, bare domain, valid email; `published` and `sellersJsonUrl` once complete) and `GET /sellers.json` (PUBLISHER, not confidential; 404 until complete or with the flag off). UI: nav "DSP Integration" (flag-gated), a list column (COMPANY: Exchange settings, Advertiser settings, Shared Targeting Variables with their subtitles; PARTNER DSPS: DV360, Amazon Ads DSP and The Trade Desk with state and lists-link lines; contracts to icons below 900px), one draft and save bar for the whole section, a leave-page guard, and the Exchange settings page. Tests: API +7, admin +4. Browser-checked: edit, validation error, save, guard | The section opens on Exchange settings until package 7 adds Advertiser settings | — |
 | 7 | Advertiser settings | Done | API: `PUT /admin/v1/advertiser-settings` (any ISO 4217 currency, positive floor and multipliers; an entry on both lists is rejected (`validation_failed`), matching case-insensitively; entries trimmed and de-duplicated) and `GET /admin/v1/available-inventory` (every advertiser-owned slot, no advertisers column). Pricing maths in `domain/pricing.ts` with the brief's unit tests (floor × personalised × interactive × advertiser multiplier; 450 and 360 examples); the Advertisers endpoint now uses it. UI: the Advertiser settings page (Pricing with the ISO 4217 currency picker, four list editors (adding to one list removes the entry from the other; seat and category suggestions), Where these apply with Open, Available Inventory as an AG Grid table with Open). The DSP Integration section now opens on it, as the prototype does. Shared `ListEditor`. Tests: API +9, admin +1. Browser-checked: moving an advertiser between lists, suggestions, save | — | — |
-| 8 | Shared Targeting Variables | Done | API: `GET/PUT /admin/v1/targeting-variables` (24 default variables with tooltip text; access is `"all"` or DSP ids; unknown variables and unknown DSPs are rejected) and the Partner API's first endpoint, `GET /v1/targeting/attributes`. The caller gets only the variables enabled for it: `"all"` counts only if the DSP is connected, and a named DSP always does. Never values. Partner API auth: one static bearer token per seeded partner (`PARTNER_TOKENS`); 401 without one, 404 with the flag off. UI: the page (two groups, each an AG Grid Variable / DSPs table, example values as each variable's tooltip, header tooltip) and `DspPicker` (All connected DSPs or individual DSPs with connection state, shown as pills). Tests: API +6, admin +1. Browser-checked: picker, save | — | Q4 |
+| 8 | Shared Targeting Variables | Done | API: `GET/PUT /admin/v1/targeting-variables` (24 default variables with tooltip text; access is `"all"` or DSP ids; unknown variables and unknown DSPs are rejected) and the Partner API's first endpoint, `GET /v1/targeting/attributes`. The caller gets only the variables enabled for it: `"all"` counts only if the DSP is connected, and a named DSP always does. Never values. Partner API auth: one static bearer token per seeded partner (`PARTNER_TOKENS`); 401 without one, 404 with the flag off. UI: the page (two groups, each an AG Grid Variable / DSPs table, example values as each variable's tooltip, header tooltip) and `DspPicker` (All connected DSPs or individual DSPs with connection state, shown as pills). Tests: API +6, admin +1. Browser-checked: picker, save. Operators re-matched to the real Targeting tab (Q4 resolved) | — | — |
 | 9 | DSP page + Google DSP (DV360) | Done | **API and mocks:** `apps/dsp-mocks`, a mock DSP service (§14) with the DV360 token endpoint and API v4 (`/v4/partners/{id}`, `/v4/advertisers` with paging), a control API and a test page. A real DV360 client (`apps/api/src/dsp/googleDv360.ts`): it signs an RS256 service-account JWT, exchanges it at the token endpoint, checks partner access and pages through the advertisers, all against the mock by default (`DV360_TOKEN_URL`, `DV360_API_BASE_URL`). The seed now holds a real, freshly generated key file. Endpoints: `POST /admin/v1/partners` (Test, adopting the company lists, one per provider), `GET/PUT /admin/v1/partners/{id}` (secrets write-only; Live refused with 409 unless connected with the bidder integration complete; unlinking copies the company lists down and relinking discards the DSP's own; https bidder endpoint; Amazon region fixed once connected), and `POST …/connect` and `POST …/disconnect`. Tests: API +11 (run against the mock in-process), mocks +3 **UI:** the DSP page. In order: header (provider icon, the name as a plain heading (Q6), provider and last sync, status pill), issues at the top (connection error with the DSP's reason, missing credentials, missing bidder fields, or the green no-issues line), Mode (Test/Live, Live disabled until connected with the bidder integration complete), Connection credentials (per provider; every secret masked, including the DV360 key file), Connect / Re-test connection / Disconnect (immediate (Q5); Connect is disabled with "Save changes first" while credential edits are unsaved), Bidder integration, and Advertiser whitelist / blacklist (the linked callout with Unlink and edit, or the DSP's own lists with Relink and seat suggestions). The Add card (You will need, Add partner / Cancel) creates a draft DSP; Save changes creates it (`POST`, then `PUT`) and opens its page. Fixed a `useDraft` bug (a second refetch after a save could leave a stale draft) that affected every page. Tests: admin +5 | Connecting Amazon Ads DSP and The Trade Desk (package 17) | Q5, Q6 (answered) |
 | 10 | Advertisers screen (admin only) | Done | API: `PUT /admin/v1/advertisers` (admin scope, 403 otherwise; known advertiser ids only; boolean approval; multiplier > 0; applies to future submissions). UI: the Advertisers nav item directly below DSP Integration, for admins only (flag on). The screen: an Admin only pill, then an AG Grid table (Advertiser, Via, Campaign approval switch with Required / Not required, Floor multiplier, Effective floor that updates as you type, each column with its tooltip), the empty state, and the save bar (decision 4). The prototype's intro line is the page-title tooltip (decision 2). Tests: API +3, admin +2. Browser-checked | — | — |
-| 11 | Campaign approval (drop-in module) | Done | `packages/campaign-approval/`, which imports nothing from the app. Contents: the `CampaignSource` adapter interface and a POC adapter over the stand-in campaign store; the state machine (Draft → Awaiting approval → Approved / Rejected; a change returns an approved campaign to Awaiting approval; auto-approve when the advertiser doesn't require approval); an approval store kept beside the campaign (keyed by campaign and asset version) with an append-only audit log; the service with `isCampaignEligible`, `submit`, `approve`, `reject`, `changed` and `setActivation`; Fastify routes for the four contract endpoints (approver-only approve/reject; stale asset version → 409); its own migration (0100); UI components (`ApprovalStatusBadge`, `ApprovalActions`, `ApprovalStatusFilter`, `ApprovalReviewPanel`, `useCampaignApprovals`); and contract suites written against the adapter. The API wires it in: stand-in `GET /admin/v1/campaigns` and `PUT …/activation` (422 `not_approved` unless approved), a creative store (migration 0008, `AssetStore` in `data/assets/`, files served at `/assets/{file}`), and seeded example campaigns (approved automatically, awaiting, rejected, draft). Admin: the stand-in "Campaigns (POC)" screen (flag-gated, own folder). `docs/dsp-integration/CAMPAIGN-APPROVAL-INTEGRATION.md` covers all six steps. Tests: module 29 (state machine, component contract tests, contract suites on a reference adapter), API +18 (the same contract suites on the POC adapter, endpoints, enforcement), admin +1. Browser-checked: filter, review panel, approve, activate | — | Q7 |
+| 11 | Campaign approval (drop-in module) | Done | `packages/campaign-approval/`, which imports nothing from the app. Contents: the `CampaignSource` adapter interface and a POC adapter over the stand-in campaign store; the state machine (Draft → Awaiting approval → Approved / Rejected; a change returns an approved campaign to Awaiting approval; auto-approve when the advertiser doesn't require approval); an approval store kept beside the campaign (keyed by campaign and asset version) with an append-only audit log; the service with `isCampaignEligible`, `submit`, `approve`, `reject`, `changed` and `setActivation`; Fastify routes for the four contract endpoints (approver-only approve/reject; stale asset version → 409); its own migration (0100); UI components (`ApprovalStatusBadge`, `ApprovalActions`, `ApprovalStatusFilter`, `ApprovalReviewPanel`, `useCampaignApprovals`); and contract suites written against the adapter. The API wires it in: stand-in `GET /admin/v1/campaigns` and `PUT …/activation` (422 `not_approved` unless approved), a creative store (migration 0008, `AssetStore` in `data/assets/`, files served at `/assets/{file}`), and seeded example campaigns (approved automatically, awaiting, rejected, draft). Admin: the stand-in "Campaigns (POC)" screen (flag-gated, own folder). `docs/dsp-integration/CAMPAIGN-APPROVAL-INTEGRATION.md` covers all six steps. Tests: module 29 (state machine, component contract tests, contract suites on a reference adapter), API +18 (the same contract suites on the POC adapter, endpoints, enforcement), admin +1. Browser-checked: filter, review panel, approve, activate | — | — |
 | 12–17 | — | Not started | — | — | — |
 
 ## 13. Prototype comparison (per screen)

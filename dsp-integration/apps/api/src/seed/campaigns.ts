@@ -31,7 +31,7 @@ export async function seedCampaigns(ctx: Context) {
   }
   const targeting: StoredTargeting = {
     baseline: { pricingType: 'localised' },
-    targeted: [{ id: 'metro-open', priority: 10, pricingType: 'localised', rules: [[{ source: 'store', variable: 'store.fixed_segments', op: 'includes_selected', values: ['Metro'] }], [{ source: 'store', variable: 'store.hours', op: 'equal', values: ['Open'] }]] }],
+    targeted: [{ id: 'metro-open', priority: 10, pricingType: 'localised', rules: [[{ source: 'store', variable: 'store.fixed_segments', op: 'include', values: ['Metro'] }], [{ source: 'store', variable: 'store.hours', op: 'equal', values: ['Open'] }]] }],
   }
   const baseline: StoredTargeting = { baseline: { pricingType: 'localised' } }
 

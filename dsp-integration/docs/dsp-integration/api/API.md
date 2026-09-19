@@ -103,8 +103,12 @@ whitelisted for.
 
 **Targeting rules** use the existing Targeting-tab structure: a list of AND
 groups, each a list of OR conditions `{source, variable, op, values}`.
-Operators: `includes_selected`, `excludes_selected`, `equal`, `not_equal`,
-`greater_than`, `less_than`. At most 100 values per condition (SKU lists).
+Operators are the platform's Targeting-tab operators: `include` (includes
+selected), `match_exactly`, `exclude_or` (excludes selected [OR]),
+`exclude_and` (excludes selected [AND]), `equal`, `not_equal`,
+`greater_than`, `less_than`, `greater_than_or_equal`, `less_than_or_equal`.
+Which ones a variable takes is listed by `GET /v1/targeting/attributes`.
+At most 100 values per condition (SKU lists).
 
 **Validation only.** Every condition's variable must be enabled for the
 calling DSP, otherwise `422 variable_not_permitted` naming each variable.

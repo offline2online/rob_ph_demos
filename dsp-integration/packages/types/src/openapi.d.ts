@@ -730,7 +730,7 @@ export interface components {
             source: string;
             variable: string;
             /** @enum {string} */
-            op: "includes_selected" | "excludes_selected" | "equal" | "not_equal" | "greater_than" | "less_than";
+            op: "include" | "match_exactly" | "exclude_or" | "exclude_and" | "equal" | "not_equal" | "greater_than" | "less_than" | "greater_than_or_equal" | "less_than_or_equal";
             values: string[];
         };
         /** @description AND groups of OR conditions (existing Targeting tab structure). */

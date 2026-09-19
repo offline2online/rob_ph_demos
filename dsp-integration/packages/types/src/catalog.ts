@@ -98,7 +98,16 @@ export const IAB_CATEGORIES = ['Food & Drink', 'Health & Fitness', 'Beauty', 'Re
 /* ------------------------------------------------ targeting variables */
 
 export type VariableGroup = 'localisation' | 'personalisation'
-export type Operator = 'includes_selected' | 'excludes_selected' | 'equal' | 'not_equal' | 'greater_than' | 'less_than'
+/* The platform's own operator keys (Targeting tab, campaign-targetings
+   /categories/{category}/operators), lower-cased: INCLUDE → include. */
+export type Operator =
+  | 'include' | 'match_exactly' | 'exclude_or' | 'exclude_and'
+  | 'equal' | 'not_equal' | 'greater_than' | 'less_than' | 'greater_than_or_equal' | 'less_than_or_equal'
+export const OPERATOR_LABELS: Record<Operator, string> = {
+  include: 'includes selected', match_exactly: 'matches exactly', exclude_or: 'excludes selected [OR]', exclude_and: 'excludes selected [AND]',
+  equal: 'equal', not_equal: 'not equal', greater_than: 'greater than', less_than: 'less than',
+  greater_than_or_equal: 'greater than or equal', less_than_or_equal: 'less than or equal',
+}
 export interface TargetingVariableDef {
   key: string
   source: 'store' | 'visitor'
@@ -108,11 +117,12 @@ export interface TargetingVariableDef {
   tip?: string
   operators: Operator[]
 }
-/* Operators per variable, from the platform's existing set (spec §6). Which
-   operator each Targeting-tab variable takes is an assumption (BUILD-PLAN Q4). */
-const LIST: Operator[] = ['includes_selected', 'excludes_selected']
+/* Operators per variable, matched to the platform's Targeting tab (BUILD-PLAN
+   Q4, read from demo.personalisationhub.com). The platform has four sets. */
+const LIST: Operator[] = ['include', 'match_exactly', 'exclude_or', 'exclude_and']
+const COMPARE: Operator[] = ['equal', 'not_equal', 'greater_than', 'less_than', 'greater_than_or_equal', 'less_than_or_equal']
+const COMPARE_EXACT: Operator[] = [...COMPARE, 'match_exactly']
 const ONE: Operator[] = ['equal', 'not_equal']
-const NUM: Operator[] = ['equal', 'greater_than', 'less_than']
 const loc = (key: string, label: string, values: string, operators: Operator[], tip?: string): TargetingVariableDef => ({ key, source: 'store', group: 'localisation', label, values, tip, operators })
 const per = (key: string, label: string, values: string, operators: Operator[], tip?: string): TargetingVariableDef => ({ key, source: 'visitor', group: 'personalisation', label, values, tip, operators })
 
@@ -127,18 +137,18 @@ export const TARGETING_VARIABLES: TargetingVariableDef[] = [
   loc('store.state', 'State', 'NSW, VIC, QLD', LIST),
   loc('store.country', 'Country', 'Australia, New Zealand', LIST),
   loc('store.languages', 'Languages Spoken by Store Staff', 'English, Mandarin, Arabic', LIST),
-  loc('store.reason_for_visit', 'Reason for Visit (Aggregate)', 'Returns, New phone, Bill enquiry (share of the queue here for the same reason)', LIST),
-  loc('store.cv_gender', 'Computer Vision Gender', 'Female, Male', ONE, 'Detected by Vision/AI for the person in front of the display — e.g. Female, Male'),
-  loc('store.cv_age', 'Computer Vision Estimated Age', '18–24, 25–34, 35–44', LIST, 'Estimated by Vision/AI for the person in front of the display — e.g. 18–24, 25–34, 35–44'),
-  per('visitor.age', 'Age', '18–24, 25–34, 35–44', LIST),
+  loc('store.reason_for_visit', 'Reason for Visit (Aggregate)', 'Returns, New phone, Bill enquiry (share of the queue here for the same reason)', COMPARE),
+  loc('store.cv_gender', 'Computer Vision Gender', 'Female, Male', COMPARE_EXACT, 'Detected by Vision/AI for the person in front of the display — e.g. Female, Male'),
+  loc('store.cv_age', 'Computer Vision Estimated Age', '18–24, 25–34, 35–44', COMPARE, 'Estimated by Vision/AI for the person in front of the display — e.g. 18–24, 25–34, 35–44'),
+  per('visitor.age', 'Age', '18–24, 25–34, 35–44', COMPARE),
   per('visitor.gender', 'Gender', 'Female, Male', ONE),
-  per('visitor.purchase_intent', 'Purchase Intent', 'Browse, Replenish, Gift', ONE),
+  per('visitor.purchase_intent', 'Purchase Intent', 'Browse, Replenish, Gift', LIST),
   per('visitor.visitor_segments', 'Visitor Segments', 'New parent, Fitness, Value seeker', LIST),
   per('visitor.device_type', 'Device Type', 'iPhone, Pixel, Samsung', LIST, "The visitor's device in store — e.g. iPhone, Pixel, Samsung"),
   per('visitor.product_holdings', 'Product Holdings', 'Mobile plan, Home broadband', LIST),
   per('visitor.product_type', 'Product Type', 'Handset, Accessory', LIST),
-  per('visitor.plan_type', 'Plan Type', 'Postpaid, Prepaid', ONE),
-  per('visitor.plan_value', 'Plan Value', '$45, $65 per month', NUM),
+  per('visitor.plan_type', 'Plan Type', 'Postpaid, Prepaid', LIST),
+  per('visitor.plan_value', 'Plan Value', '$45, $65 per month', LIST),
   per('visitor.purchase_history', 'Purchase History', 'Bought in the last 30 days', LIST),
   per('visitor.events', 'Events', 'Scanned QR code, Viewed product page, Added to cart', LIST, 'Events in store or from a previous web session — e.g. Scanned QR code, Viewed product page, Added to cart'),
   per('visitor.skus', 'SKUs', 'SKU-10234, SKU-55871', LIST, 'SKUs the visitor has looked at before; target by listing SKUs — e.g. SKU-10234, SKU-55871'),
