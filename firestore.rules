@@ -2,224 +2,417 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // ── Helper functions ────────────────────────────────────────────────────
+    // This Firestore database belongs ONLY to backlog-tracker — it runs in
+    // its own Firebase project (see .firebaserc), never the "rob-ph-demos"
+    // project menu-board-demo uses, so there is no shared rules file and no
+    // way a change here can affect menu-board-demo's items/carts/etc rules.
 
     function incoming() {
       return request.resource.data;
     }
 
-    function isNonEmptyString(v) {
-      return v is string && v.size() > 0;
-    }
-
     function isNonEmptyBoundedString(v, max) {
-      return isNonEmptyString(v) && v.size() <= max;
+      return v is string && v.size() > 0 && v.size() <= max;
     }
 
-    // ── items ───────────────────────────────────────────────────────────────
-    // Product / menu-item catalogue.
-    // Read:   public (menu boards, ordering screens, location API)
-    // Write:  HQ admin batch imports — validate required fields and types.
-
-    match /items/{itemId} {
-      allow read: if true;
-
-      allow create, update: if
-        incoming().size() <= 100 &&
-        isNonEmptyBoundedString(incoming().id,       100) &&
-        isNonEmptyBoundedString(incoming().sku,      100) &&
-        isNonEmptyBoundedString(incoming().name,     200) &&
-        incoming().price is number &&
-        incoming().price >= 0 &&
-        isNonEmptyBoundedString(incoming().category, 100) &&
-        incoming().menuTypes is list;
-
-      allow delete: if true;
+    // ── Who may use the board ──────────────────────────────────────────────
+    // The whole console is behind Google sign-in: every read and write of the
+    // board's collections requires a signed-in account. WHO that can be is no
+    // longer a hard-coded list — it is the consoleUsers collection below, one
+    // doc per person keyed by their lowercased email, written from the
+    // console's Settings → Team & agent access. That is the single definition
+    // of "added as a user to the platform", and it gates BOTH halves of a
+    // person's access: their browser session (public/js/auth-gate.js reads
+    // their own doc) and their AI agent's MCP connection
+    // (functions/mcp-server.js resolves the same doc on every call, so
+    // removing someone cuts their agent off at once rather than whenever a
+    // token happens to expire).
+    //
+    // Two accounts stay hard-coded as owners so an empty or mis-edited
+    // consoleUsers collection can never lock everyone out of the thing that
+    // grants access, plus the board automation user the Routine signs in as.
+    // Server-side jobs (Cloud Functions, the deploy workflow's scripts, the
+    // backlog automation) use a service account and bypass rules entirely.
+    // The only anonymous access left is READ of the two help-centre
+    // collections, which feed the public FAQ site.
+    function signedIn() {
+      // email_verified matters for a password account as much as a Google
+      // one: an invited member sets their password through Firebase's own
+      // reset email, and completing that is what verifies the address.
+      return request.auth != null
+        && request.auth.token.email_verified == true
+        && request.auth.token.email is string;
+    }
+    function callerEmail() {
+      return signedIn() ? request.auth.token.email.lower() : "";
+    }
+    function isOwnerAccount() {
+      return callerEmail() in [
+        "rob@offline2online.com",
+        "rob@personalisationhub.com"
+      ];
+    }
+    function isAutomationAccount() {
+      return callerEmail() == "board-automation@backlog-tracker-e4ed2.firebaseapp.com";
+    }
+    function memberDoc() {
+      return get(/databases/$(database)/documents/consoleUsers/$(callerEmail())).data;
+    }
+    // Every optional field is read through map.get(key, default), never as a
+    // bare property. Rules THROW on a property that isn't present — they do
+    // not evaluate it as null — so `memberDoc().disabled != true` denied every
+    // member whose row simply had no `disabled` field, which is most of them.
+    // Caught by the rules suite; don't reintroduce it.
+    function memberDisabled() {
+      return memberDoc().get("disabled", false) == true;
+    }
+    // A row with no role is treated as an editor, matching
+    // functions/mcp-server.js's resolveConsoleUser — the two defaults have to
+    // agree or the board and the agent would disagree about the same person.
+    function memberRole() {
+      return memberDoc().get("role", "editor");
+    }
+    function isMember() {
+      return signedIn()
+        && exists(/databases/$(database)/documents/consoleUsers/$(callerEmail()))
+        && !memberDisabled();
+    }
+    // Read the board: any member, whatever their role.
+    function isBoardReader() {
+      return isOwnerAccount() || isAutomationAccount() || isMember();
+    }
+    // Change the board: everyone except an explicit "viewer". A viewer is
+    // the read-only role an admin picks when someone (or someone's agent)
+    // should see the board without being able to move anything on it.
+    function isEditor() {
+      return isOwnerAccount() || isAutomationAccount()
+        || (isMember() && memberRole() != "viewer");
+    }
+    // Manage who else is on the console.
+    function isAdmin() {
+      return isOwnerAccount() || (isMember() && memberRole() == "admin");
     }
 
-    // ── carts ───────────────────────────────────────────────────────────────
-    // Customer shopping carts.  Document ID = device UDID.
-    // Read:   public (order-progress queries carts by store)
-    // Create: ordering screen — full cart write, validate required fields.
-    // Update: ordering screen (full write) OR order-progress (queueStatus only).
-    //         request.resource.data is the merged post-update state, so
-    //         storeCode from the original document satisfies the check below.
-    // Delete: allowed (cleanup of old carts).
-
-    match /carts/{deviceId} {
-      allow read: if true;
-
-      allow create: if
-        incoming().storeCode is string &&
-        incoming().storeCode.size() <= 50 &&
-        incoming().items      is list   &&
-        incoming().total      is number &&
-        incoming().total      >= 0      &&
-        incoming().itemCount  is number &&
-        isNonEmptyString(incoming().status);
-
-      allow update: if
-        incoming().storeCode is string &&
-        incoming().storeCode.size() <= 50 &&
-        (
-          // queueStatus-only update from order-progress.html
-          incoming().queueStatus == null ||
-          incoming().queueStatus in ['waiting', 'in-progress', 'ready']
-        );
-
-      allow delete: if true;
+    // ── Deployment train state on a project ────────────────────────────────
+    // A project's tickets all build onto one integration branch
+    // (deployBranch) and ship as one PR — see backlog-tracker/README.md →
+    // "The deployment train". These fields decide which branch a real merge
+    // points at, so a person clicking around the board must not be able to
+    // move them.
+    //
+    // "Automation" here is TWO different principals, and conflating them is
+    // what broke the Deploy flow on its first real use:
+    //
+    //   * run-backlog-automation.js writes deployBranch/trainStatus/
+    //     trainPrNumber/trainNote as the Firebase SERVICE ACCOUNT, which
+    //     bypasses these rules entirely. Nothing here applies to it.
+    //   * the Notify Claude Routine writes trainReady — the single signal
+    //     that starts a deploy — as the board automation USER
+    //     (board-automation@…, Identity Toolkit, see ROUTINE_INSTRUCTIONS.md
+    //     "Board access"). That is an ordinary signed-in account and these
+    //     rules DO apply to it.
+    //
+    // Guarding every train field as "unchanged unless you bypass rules"
+    // therefore denied the Routine's own trainReady write. The Deploy to
+    // Main button fired the Routine, the Routine got PERMISSION_DENIED,
+    // nothing set trainReady, no automation run was dispatched, and the card
+    // sat in Approved for Deployment while the button spun and reverted —
+    // reported as "it just keeps going back to the ready for deployment
+    // column". So the automation user is let through; only the two human
+    // editor accounts are held to the unchanged-fields guard.
+    //
+    // This does not widen what a prompt-injected Routine session could do:
+    // that session can already set patchReady with arbitrary patchFiles,
+    // which puts arbitrary code on the branch in the first place. trainReady
+    // only merges what is already there, after the board's own approval gate.
+    function isBoardAutomation() {
+      return request.auth != null
+        && request.auth.token.email == "board-automation@backlog-tracker-e4ed2.firebaseapp.com";
+    }
+    function trainFieldUnchanged(f) {
+      return (f in incoming()) == (f in resource.data)
+        && (!(f in incoming()) || incoming()[f] == resource.data[f]);
+    }
+    function trainFieldsAreAutomationOnly() {
+      return trainFieldUnchanged("deployBranch")
+        && trainFieldUnchanged("trainReady")
+        && trainFieldUnchanged("trainStatus")
+        && trainFieldUnchanged("trainPrNumber")
+        && trainFieldUnchanged("trainNote")
+        && trainFieldUnchanged("needsHumanMerge");
+    }
+    // trainLocked is the one exception, and only in one direction: the
+    // board latches it true the moment a project's first ticket is approved
+    // (app.js's deployToFeature), which is what stops a new ticket joining a
+    // release that is already closing. CLEARING it is what lets builds start
+    // again, and only a merged train may do that — so the browser can set it
+    // and never unset it.
+    function trainLockOnlyLatches() {
+      return !("trainLocked" in incoming())
+        || incoming().trainLocked == true
+        || trainFieldUnchanged("trainLocked");
     }
 
-    // ── stock ───────────────────────────────────────────────────────────────
-    // Per-store inventory levels.  Document ID = store code.
-    // Keys are dynamic SKUs so field-level validation isn't practical;
-    // limit document size instead.
-    // Read:   public (location API, menu board, retail admin)
-    // Write:  retail admin (no server-side auth available)
-
-    match /stock/{storeCode} {
-      allow read: if true;
-
-      allow create, update: if
-        isNonEmptyBoundedString(storeCode, 50) &&
-        incoming().size() <= 500;
-
-      allow delete: if true;
+    match /projects/{projectId} {
+      allow read: if isBoardReader();
+      allow create: if isEditor() && isNonEmptyBoundedString(incoming().name, 80)
+        && (isBoardAutomation() || (
+          !("deployBranch" in incoming()) && !("trainReady" in incoming())
+          && !("trainStatus" in incoming()) && !("trainPrNumber" in incoming())
+          && !("trainNote" in incoming()) && !("needsHumanMerge" in incoming())
+          && !("trainLocked" in incoming())));
+      allow update: if isEditor() && isNonEmptyBoundedString(incoming().name, 80)
+        && (isBoardAutomation() || (trainFieldsAreAutomationOnly() && trainLockOnlyLatches()));
+      allow delete: if isEditor();
     }
 
-    // ── localFeatured ───────────────────────────────────────────────────────
-    // Per-store Local Feature Highlight override — a store manager's own
-    // Featured-item picks (Retail Admin), overriding HQ's Featured list once
-    // the store has 3+ starred. Document ID = store code, same shape/rules
-    // as `stock` above (dynamic SKU keys, so size-limited rather than
-    // field-validated).
-    // Read:   public (menu board, retail admin)
-    // Write:  retail admin (no server-side auth available)
-
-    match /localFeatured/{storeCode} {
-      allow read: if true;
-
-      allow create, update: if
-        isNonEmptyBoundedString(storeCode, 50) &&
-        incoming().size() <= 500;
-
-      allow delete: if true;
+    // Programs/Products — a purely organizational grouping above Projects
+    // (see backlog-tracker/public/js/app.js groupProjectsByProgram); a
+    // project's optional programId just points at a doc here, validated on
+    // the projects rule above only insofar as `name` still has to be
+    // present on any project write.
+    match /programs/{programId} {
+      allow read: if isBoardReader();
+      allow create, update: if isEditor() && isNonEmptyBoundedString(incoming().name, 80);
+      allow delete: if isEditor();
     }
 
-    // ── storePricing ─────────────────────────────────────────────────────────
-    // Per-store price override — a store manager's own RRP/offer price for
-    // an item (Retail Admin's Pricing tab, only shown when HQ Admin has
-    // switched it on for the item's brand). Document ID = store code, same
-    // shape/rules as `stock` above (dynamic SKU keys, so size-limited rather
-    // than field-validated). Scoped to one store's own doc — never touches
-    // the shared item or any other store's pricing.
-    // Read:   public (menu board, retail admin)
-    // Write:  retail admin (no server-side auth available)
+    match /backlogItems/{itemId} {
+      allow read: if isBoardReader();
 
-    match /storePricing/{storeCode} {
-      allow read: if true;
-
-      allow create, update: if
-        isNonEmptyBoundedString(storeCode, 50) &&
-        incoming().size() <= 500;
-
-      allow delete: if true;
-    }
-
-    // ── menuboard ───────────────────────────────────────────────────────────
-    // Global menu-board configuration: brands, types, categories, settings.
-    // Documents: menuboard/brands  menuboard/types  menuboard/categories
-    //            menuboard/settings
-    // Read:   public (all display screens)
-    // Write:  HQ admin (config management — no auth available)
-
-    match /menuboard/{docId} {
-      allow read:  if true;
-      allow write: if true;
-
-      // Allow any future sub-collections under menuboard
-      match /{rest=**} {
-        allow read:  if true;
-        allow write: if true;
-      }
-    }
-
-    // ── mbactivity ──────────────────────────────────────────────────────────
-    // Menu-board heartbeat / activity log.  Document ID = board key.
-    // Read:   public (HQ admin dashboard)
-    // Write:  menu-board devices — validate required heartbeat fields.
-
-    match /mbactivity/{boardKey} {
-      allow read: if true;
-
-      allow create, update: if
-        incoming().size() <= 30 &&
-        isNonEmptyBoundedString(incoming().boardKey,   100) &&
-        isNonEmptyBoundedString(incoming().brandId,    100) &&
-        isNonEmptyBoundedString(incoming().storeCode,   50) &&
-        isNonEmptyBoundedString(incoming().deviceUdid, 100) &&
-        isNonEmptyString(incoming().lastSeen);
-
-      allow delete: if true;
-    }
-
-    // ── helpCategories ──────────────────────────────────────────────────────
-    // Help Centre category & subcategory tree.
-    // Read:  public (help centre browsing)
-    // Write: authenticated admin users only
-
-    match /helpCategories/{catId} {
-      allow read: if true;
-      allow create, update: if
-        request.auth != null &&
-        incoming().size() <= 20 &&
-        isNonEmptyBoundedString(incoming().name, 60);
-      allow delete: if request.auth != null;
-    }
-
-    // ── helpArticles ─────────────────────────────────────────────────────────
-    // Help Centre articles / FAQs.
-    // Read:  published articles are public; drafts are auth-only
-    // Write: authenticated admin users only
-
-    match /helpArticles/{articleId} {
-      allow read: if
-        resource.data.status == 'published' ||
-        request.auth != null;
-      allow create: if
-        request.auth != null &&
-        incoming().size() <= 100 &&
+      allow create, update: if isEditor() &&
+        isNonEmptyBoundedString(incoming().projectId, 100) &&
         isNonEmptyBoundedString(incoming().title, 200) &&
-        incoming().status in ['draft', 'published'];
-      allow update: if
-        request.auth != null &&
-        incoming().size() <= 100 &&
-        isNonEmptyBoundedString(incoming().title, 200);
-      // Allow public increment of views and helpful counters
-      allow update: if
-        request.auth == null &&
-        incoming().diff(resource.data).affectedKeys()
-          .hasOnly(['views', 'helpfulYes', 'helpfulNo']);
-      allow delete: if request.auth != null;
+        isNonEmptyBoundedString(incoming().desc, 2000) &&
+        incoming().type in ["feature", "bug"] &&
+        incoming().status in ["backlog", "ready-for-testing", "ready-to-publish", "published-live", "archived"];
+
+      allow delete: if isEditor();
     }
 
-    // ── helpTemplates ────────────────────────────────────────────────────────
-    // Article CSS templates — admin-managed, referenced by articles.
-    // Read:  public (articles need to fetch template CSS to render)
-    // Write: authenticated admin users only
+    // An interface is a maintained contract document shared between exactly
+    // two projects (e.g. "Live Visitor Profile" <-> "Experience Templates")
+    // — the backlog-tracker-native equivalent of a shared markdown file in
+    // the repo, editable by whoever is driving either project's board.
+    match /interfaces/{interfaceId} {
+      allow read: if isBoardReader();
 
-    match /helpTemplates/{templateId} {
+      allow create, update: if isEditor() &&
+        isNonEmptyBoundedString(incoming().name, 120) &&
+        incoming().projectIds is list &&
+        incoming().projectIds.size() == 2 &&
+        isNonEmptyBoundedString(incoming().projectIds[0], 100) &&
+        isNonEmptyBoundedString(incoming().projectIds[1], 100) &&
+        incoming().contentMd is string &&
+        incoming().contentMd.size() <= 20000;
+
+      allow delete: if isEditor();
+    }
+
+    // A project doc is a generic, named document belonging to exactly one
+    // project (an API spec, an architecture decision record, anything that
+    // isn't Requirements or the README fields on projects/{projectId}
+    // itself) — the "Additional documents" list on that project's Docs
+    // page. Unlike an interface, never shared between two projects.
+    match /projectDocs/{docId} {
+      allow read: if isBoardReader();
+
+      allow create, update: if isEditor() &&
+        isNonEmptyBoundedString(incoming().projectId, 100) &&
+        isNonEmptyBoundedString(incoming().name, 120) &&
+        incoming().contentMd is string &&
+        incoming().contentMd.size() <= 20000;
+
+      allow delete: if isEditor();
+    }
+
+    // A skill is a packaged piece of shareable instructions (e.g. this
+    // repo's own ph-designer front-end skill) — organisation-wide, NOT
+    // scoped to any one project, unlike backlogItems/projectDocs above.
+    // Any signed-in member can read it (a viewer included: the whole point
+    // is "usable by anyone using the platform"); only an editor may add,
+    // replace or remove one. See functions/mcp-server.js's
+    // list_skills/get_skill/upload_skill/update_skill/delete_skill and
+    // public/js/app.js's Skills page.
+    //
+    // `files` (each `{path, content}`) is only checked here for its own
+    // shape and length — Firestore rules have no forEach/map to re-check
+    // every element's own size without unrolling every possible index, so
+    // the real per-file content cap (SKILL_FILE_MAX) lives in
+    // functions/mcp-server.js's validateSkillFiles, and the console's own
+    // Add/Edit skill modal enforces the same cap client-side. Keep the two
+    // caps in step if either changes.
+    match /skills/{skillId} {
+      allow read: if isBoardReader();
+
+      allow create, update: if isEditor() &&
+        isNonEmptyBoundedString(incoming().name, 120) &&
+        incoming().slug is string && incoming().slug.size() > 0 && incoming().slug.size() <= 60 &&
+        incoming().slug.matches('^[a-z0-9-]+$') &&
+        isNonEmptyBoundedString(incoming().summary, 400) &&
+        isNonEmptyBoundedString(incoming().version, 40) &&
+        incoming().files is list && incoming().files.size() > 0 && incoming().files.size() <= 20;
+
+      allow delete: if isEditor();
+    }
+
+    // ── People, and their agents ──────────────────────────────────────────
+    // One doc per person on the console, id = their lowercased email:
+    //   { email, displayName, role: "admin"|"editor"|"viewer",
+    //     disabled?: bool, mcpEnabled?: bool, createdAt, createdBy }
+    // This is what isBoardReader/isEditor/isAdmin above resolve against, so
+    // adding a row here is the whole act of giving someone access — to the
+    // board in a browser AND to the MCP server their AI agent connects to
+    // (backlog-tracker/MCP.md). mcpEnabled (default true when absent) turns
+    // just the agent half off without removing the person.
+    match /consoleUsers/{userEmail} {
+      // A signed-in person may always read their OWN row. auth-gate.js has
+      // to check membership before it can know whether the caller is a
+      // member — without this self-read that is a chicken-and-egg and every
+      // new member sees the "not on the editor list" screen forever.
+      allow read: if isBoardReader() || (signedIn() && userEmail == callerEmail());
+      allow create, update: if isAdmin()
+        && incoming().email is string
+        && userEmail == incoming().email.lower()
+        && isNonEmptyBoundedString(incoming().email, 200)
+        && incoming().role in ["admin", "editor", "viewer"]
+        && (!("displayName" in incoming()) || (incoming().displayName is string && incoming().displayName.size() <= 120))
+        && (!("disabled" in incoming()) || incoming().disabled is bool)
+        && (!("mcpEnabled" in incoming()) || incoming().mcpEnabled is bool);
+      // Removing yourself is the one way an admin could strand their own
+      // session mid-click; disable the row instead if that is really meant.
+      allow delete: if isAdmin() && userEmail != callerEmail();
+    }
+
+    // ── Documentation revision history (functions/mcp-server.js) ──────────
+    // Every documentation write through MCP records what it replaced here
+    // BEFORE overwriting it, and a delete records the whole document. That
+    // is what makes agent-driven documentation safe to hand out: an agent
+    // that truncates a 95 KB requirements doc has not destroyed it.
+    //
+    // Append-only, and only from the server (admin SDK, bypasses these
+    // rules). A browser must never be able to write — a forged or edited
+    // revision would make the history worse than not having one — but any
+    // member may read it, so the Docs page can show what changed.
+    match /docRevisions/{revisionId} {
+      allow read: if isBoardReader();
+      allow write: if false;
+    }
+
+    // ── MCP server state (functions/mcp-server.js) ────────────────────────
+    // Registered OAuth clients, hashed authorization codes and hashed
+    // access/refresh tokens. Written only by the Cloud Function, which uses
+    // the admin SDK and bypasses these rules — so the correct rule for every
+    // browser, every signed-in person and the boardApi proxy alike is "no".
+    // Even hashed, this is the credential store standing behind every team
+    // member's agent, and nothing in the UI has any reason to read it.
+    match /mcpClients/{clientId} { allow read, write: if false; }
+    match /mcpAuthCodes/{codeHash} { allow read, write: if false; }
+    match /mcpTokens/{tokenHash} { allow read, write: if false; }
+    // The audit trail of what agents actually did. Admin-readable so a
+    // person can answer "who filed this ticket and from what"; append-only
+    // from the server.
+    match /mcpAuditLog/{entryId} {
+      allow read: if isAdmin();
+      allow write: if false;
+    }
+
+    // ── FAQ / Help Center content ─────────────────────────────────────────
+    // These two collections feed the PUBLIC help centre (repo-root faq/,
+    // iframed into personalisationhub.com). Reads stay public — the site
+    // and its per-article freshness check read them anonymously — and
+    // writes require the same signed-in editor as the rest of the board.
+    function isFaqEditor() { return isEditor(); }
+
+    match /faqCategories/{categoryId} {
       allow read: if true;
-      allow create, update: if
-        request.auth != null &&
-        incoming().size() <= 20 &&
-        isNonEmptyBoundedString(incoming().name, 100);
-      allow delete: if request.auth != null;
+      allow create, update: if isFaqEditor()
+        && isNonEmptyBoundedString(incoming().name, 80)
+        && isNonEmptyBoundedString(incoming().icon, 40)
+        && incoming().order is number
+        && (!("description" in incoming()) || incoming().description is string && incoming().description.size() <= 300)
+        && (!("parentId" in incoming()) || incoming().parentId == null || isNonEmptyBoundedString(incoming().parentId, 100));
+      allow delete: if isFaqEditor();
     }
 
-    // ── deny everything else ────────────────────────────────────────────────
-    match /{document=**} {
-      allow read, write: if false;
+    // ── Pipeline health strip (YeCj7sNpHXFUZQhmAmEb) ───────────────────────
+    // A single doc each workflow (backlog-automation.yml,
+    // deploy-backlog-tracker.yml) overwrites at the end of its own run, via
+    // the same service-account credential those workflows already use for
+    // every other Firestore write in this file's collections — that
+    // credential authenticates as a GCP IAM principal, not a signed-in
+    // Firebase Auth user, so it bypasses these rules entirely the same way
+    // every other write from run-backlog-automation.js already does.
+    // Nothing in the browser is ever meant to write this, only read it.
+    match /systemStatus/{docId} {
+      allow read: if isBoardReader();
+    }
+
+    // A proposed revision parked on an article by the Deploy-flow Routine
+    // (see ROUTINE_INSTRUCTIONS.md → "FAQ impact review") or edited from the
+    // console's review view. It never changes the live fields by itself —
+    // functions/index.js promotes it once approved AND its source tickets
+    // are published-live. Only the shape is validated here; the content is
+    // sanitised at render time like bodyMd.
+    function isValidPendingRevision(r) {
+      return r is map
+        && isNonEmptyBoundedString(r.title, 200)
+        && r.bodyMd is string && r.bodyMd.size() <= 60000
+        && (!("summary" in r) || r.summary is string && r.summary.size() <= 400)
+        && (!("keywords" in r) || r.keywords is list && r.keywords.size() <= 30)
+        && (!("docType" in r) || r.docType in ["faq", "how-to", "reference", "explanation"])
+        && (!("reason" in r) || r.reason is string && r.reason.size() <= 2000)
+        // Required + non-empty for the Deploy flow's own proposals (the
+        // Routine — ROUTINE_INSTRUCTIONS.md "FAQ impact review"), which keys
+        // promotion on a ticket reaching Merged to Main. Optional for an
+        // MCP-originated proposal (functions/mcp-server.js's
+        // update_faq_article — see REQUIREMENTS.md "FAQ revision review"),
+        // which has no ticket to wait for: promoteFaqRevisionIfReady treats
+        // a missing/empty list as nothing left to wait on, so approval alone
+        // promotes it.
+        && (!("sourceItemIds" in r) || (r.sourceItemIds is list && r.sourceItemIds.size() <= 50))
+        && r.reviewStatus in ["awaiting-review", "approved"];
+    }
+    // The text a promotion replaced, kept so a reviewer can revert.
+    function isValidPreviousRevision(r) {
+      return r is map
+        && r.title is string && r.title.size() <= 200
+        && r.bodyMd is string && r.bodyMd.size() <= 60000
+        && (!("summary" in r) || r.summary is string && r.summary.size() <= 400);
+    }
+
+    match /faqArticles/{articleId} {
+      allow read: if true;
+      allow create, update: if isFaqEditor()
+        && incoming().size() <= 40
+        && (!("pendingRevision" in incoming()) || incoming().pendingRevision == null || isValidPendingRevision(incoming().pendingRevision))
+        && (!("previousRevision" in incoming()) || incoming().previousRevision == null || isValidPreviousRevision(incoming().previousRevision))
+        && isNonEmptyBoundedString(incoming().categoryId, 100)
+        && isNonEmptyBoundedString(incoming().title, 200)
+        && isNonEmptyBoundedString(incoming().slug, 200)
+        && incoming().bodyMd is string && incoming().bodyMd.size() <= 60000
+        && (!("summary" in incoming()) || incoming().summary is string && incoming().summary.size() <= 400)
+        && (!("keywords" in incoming()) || incoming().keywords is list && incoming().keywords.size() <= 30)
+        && (!("docType" in incoming()) || incoming().docType in ["faq", "how-to", "reference", "explanation"])
+        && incoming().status in ["draft", "published"]
+        && incoming().order is number;
+      allow delete: if isFaqEditor();
+    }
+
+    // Site-wide settings for the public FAQ / Help Center (kup9Zce13jyaXcIhxVkf)
+    // — currently just the analytics tag id appended to every customer-facing
+    // FAQ page (see faq/js/page-common.js). Read/write here is editor-only,
+    // from the console's Settings page; faq-export.js reads this doc as the
+    // service account (bypasses these rules, same as every other export
+    // step) and republishes it as a public static file
+    // (faq/data/settings.json) — the public site itself never talks to
+    // Firestore for this.
+    match /settings/{docId} {
+      allow read: if isBoardReader();
+      allow create, update: if isEditor()
+        && (!("analyticsTag" in incoming()) || incoming().analyticsTag == null
+          || (incoming().analyticsTag is string && incoming().analyticsTag.size() <= 40));
+      allow delete: if isEditor();
     }
   }
 }
