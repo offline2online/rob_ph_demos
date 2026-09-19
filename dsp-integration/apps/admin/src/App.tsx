@@ -18,23 +18,31 @@ import { BOOKING_SCHEDULE_PATH } from './features/booking-schedule/path'
 import { ExchangeSettings } from './features/dsp-integration/ExchangeSettings'
 import { SharedTargetingVariables } from './features/dsp-integration/SharedTargetingVariables'
 import { AppShell, type NavItem } from './shared/AppShell'
+import { Icon } from './shared/Icon'
 import { WithTip } from './shared/InfoTip'
 import { UnsavedChangesProvider } from './shared/UnsavedChanges'
-import { phTheme } from './theme/phTheme'
+import { T, phTheme } from './theme/phTheme'
 
 /* A page title may carry a tooltip saying what the page covers (spec Help text). */
 export interface RouteHandle { title: string; tip?: string }
 
 /* Navigation in the prototype's order: Display Types, Playlist Management,
-   DSP Integration, Advertisers. Items are added by the package that builds them. */
+   DSP Integration, Advertisers / Inventory. Items are added by the package
+   that builds them.
+
+   Who sees what (spec "Who sees each section"; Rob, 20 Sep): DSP Integration
+   is admin only; the rest is admin and marketing; a help desk user sees
+   nothing at all. The API enforces the same. */
 export function navFor(flags: Flags, session: Session | undefined): NavItem[] {
+  if (session && session.role === 'hq_helpdesk') return []
+  const admin = session?.role === 'hq_admin'
   return [
     { to: '/display-types', label: 'Display Types', icon: 'dashboard_customize' },
     { to: '/playlists', label: 'Playlist Management', icon: 'playlist_play' },
-    /* Flag off: DSP Integration is hidden (decision 6). */
-    ...(flags.dspIntegration ? [{ to: '/dsp-integration', label: 'DSP Integration', icon: 'handshake' }] : []),
-    /* Admin users only, directly below DSP Integration (spec §3). */
-    ...(flags.dspIntegration && session?.role === 'hq_admin' ? [{ to: '/advertisers', label: 'Advertisers / Inventory', icon: 'sell' }] : []),
+    /* Flag off: DSP Integration is hidden (decision 6). Admin users only. */
+    ...(flags.dspIntegration && admin ? [{ to: '/dsp-integration', label: 'DSP Integration', icon: 'handshake' }] : []),
+    /* Directly below DSP Integration (spec §3); marketing users read it too. */
+    ...(flags.dspIntegration ? [{ to: '/advertisers', label: 'Advertisers / Inventory', icon: 'sell' }] : []),
     /* STAND-IN for the existing Campaigns section (package 11); removed on integration. */
     ...(flags.dspIntegration ? [{ to: '/campaign-status', label: 'Campaign Status', icon: 'campaign' }] : []),
   ]
@@ -96,8 +104,16 @@ function Root({ flags }: { flags: Flags }) {
 }
 
 function Home({ flags }: { flags: Flags }) {
-  const first = navFor(flags, undefined)[0]
-  return first ? <Navigate to={first.to} replace /> : null
+  const session = useQuery({ queryKey: ['session'], queryFn: () => api<Session>('GET', '/admin/v1/session') })
+  if (!session.data) return null
+  const first = navFor(flags, session.data)[0]
+  /* A help desk user sees none of this (spec, "Who sees each section"). */
+  return first ? <Navigate to={first.to} replace /> : (
+    <div className="flex items-center gap-2" style={{ fontSize: 13, color: T.muted }}>
+      <Icon name="lock" size={18} />
+      <span>These pages are for admin and marketing users. Ask an administrator if you need access.</span>
+    </div>
+  )
 }
 
 export const appRoutes = (flags: Flags): RouteObject[] => [

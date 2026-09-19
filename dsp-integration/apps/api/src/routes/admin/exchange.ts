@@ -7,14 +7,16 @@ import type { Guards } from '../../http/app'
 import { validationFailed } from '../../http/errors'
 
 export const exchangeRoutes = (ctx: Context, guards: Guards): FastifyPluginAsync => async (app) => {
-  app.get('/exchange', async () => {
+  app.get('/exchange', async (req) => {
     guards.flagged()
+    guards.requireScope(req, 'admin')
     return toApiExchange(ctx.exchange.get())
   })
 
   /* Save changes. Republishes sellers.json as soon as all four are complete. */
   app.put<{ Body: Partial<ExchangeInput> }>('/exchange', async (req) => {
     guards.flagged()
+    guards.requireScope(req, 'admin')
     const errors = validateExchange(req.body)
     if (errors.length) throw validationFailed(errors)
     const b = req.body as ExchangeInput

@@ -2506,7 +2506,7 @@ export interface operations {
                         userId: string;
                         name: string;
                         /** @enum {string} */
-                        role: "hq_admin" | "hq_user";
+                        role: "hq_admin" | "hq_marketing" | "hq_helpdesk";
                     };
                 };
             };

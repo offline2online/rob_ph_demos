@@ -15,14 +15,16 @@ export const partnerRoutes = (ctx: Context, guards: Guards): FastifyPluginAsync 
     return p
   }
 
-  app.get('/partners', async () => {
+  app.get('/partners', async (req) => {
     guards.flagged()
+    guards.requireScope(req, 'admin')
     return { items: ctx.partners.list().map(toApiPartner) }
   })
 
   /* Starts in Test mode and adopts the company lists. One per provider. */
   app.post<{ Body: { provider?: string } }>('/partners', async (req, reply) => {
     guards.flagged()
+    guards.requireScope(req, 'admin')
     const def = PROVIDERS.find((p) => p.key === req.body?.provider)
     if (!def) throw validationFailed([{ field: 'provider', reason: `Must be one of: ${PROVIDERS.map((p) => p.key).join(', ')}.` }])
     if (ctx.partners.list().some((p) => p.provider === def.key)) throw conflict(`${def.label} is already set up.`)
@@ -35,11 +37,13 @@ export const partnerRoutes = (ctx: Context, guards: Guards): FastifyPluginAsync 
 
   app.get<{ Params: { id: string } }>('/partners/:id', async (req) => {
     guards.flagged()
+    guards.requireScope(req, 'admin')
     return toApiPartner(one(req.params.id))
   })
 
   app.put<{ Params: { id: string }; Body: PartnerInput }>('/partners/:id', async (req) => {
     guards.flagged()
+    guards.requireScope(req, 'admin')
     const p = one(req.params.id)
     const r = applyPartnerInput(p, ctx.partners.secrets(p.id), req.body ?? {}, ctx.company.get())
     if (r.errors.length) throw validationFailed(r.errors)
@@ -50,6 +54,7 @@ export const partnerRoutes = (ctx: Context, guards: Guards): FastifyPluginAsync 
   /* Connect or re-test with the saved credentials; pulls the DSP's advertisers. */
   app.post<{ Params: { id: string } }>('/partners/:id/connect', async (req) => {
     guards.flagged()
+    guards.requireScope(req, 'admin')
     const p = one(req.params.id)
     const missing = partnerIssues(p).find((i) => i.kind === 'missing_credentials')
     const client = ctx.dsp[p.provider as Provider]
@@ -66,6 +71,7 @@ export const partnerRoutes = (ctx: Context, guards: Guards): FastifyPluginAsync 
   /* Disconnect: back to Test, seats cleared. */
   app.post<{ Params: { id: string } }>('/partners/:id/disconnect', async (req) => {
     guards.flagged()
+    guards.requireScope(req, 'admin')
     const p = one(req.params.id)
     return toApiPartner(ctx.partners.update(p.id, { status: 'draft', mode: 'test', lastSync: null, seats: [] })!)
   })

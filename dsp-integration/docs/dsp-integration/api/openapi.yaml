@@ -830,7 +830,7 @@ paths:
                 properties:
                   userId: {type: string}
                   name: {type: string}
-                  role: {type: string, enum: [hq_admin, hq_user]}
+                  role: {type: string, enum: [hq_admin, hq_marketing, hq_helpdesk]}
         '401': {$ref: '#/components/responses/Unauthorised'}
 
   # ------------------------------------------------------------------ Public
@@ -858,7 +858,17 @@ components:
       type: apiKey
       in: cookie
       name: ph_session
-      description: Existing HQ Admin session. Scopes used here — admin (Advertisers screen), approver (approve/reject; HQ Admin role by default, open question 39). In the POC there is no cookie — the session is a stand-in whose role comes from the POC_ROLE env var (hq_admin | hq_user).
+      description: |
+        Existing HQ Admin session. Who sees what (spec, Who sees each section):
+        admin users get everything, including DSP Integration and editing
+        advertiser settings; marketing users get Display Types, Playlist
+        Management, Advertisers / Inventory (read-only on the per-advertiser
+        settings) and Campaign Status; help desk users get none of it.
+        Scopes: admin (DSP Integration, saving advertiser settings), approver
+        (approve/reject; HQ Admin role by default, open question 39),
+        sections (the four shared sections). In the POC there is no cookie —
+        the session is a stand-in whose role comes from the POC_ROLE env var
+        (hq_admin | hq_marketing | hq_helpdesk).
 
   parameters:
     PositionId: {name: positionId, in: path, required: true, schema: {type: string}}

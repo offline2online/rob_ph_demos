@@ -4,7 +4,7 @@ import { expectMatchesContract } from './contract'
 import { testContext } from './helpers'
 
 describe('GET /admin/v1/session (POC stand-in)', () => {
-  it.each(['hq_admin', 'hq_user'] as const)('returns the POC_ROLE user (%s) with no cookie', async (role) => {
+  it.each(['hq_admin', 'hq_marketing', 'hq_helpdesk'] as const)('returns the POC_ROLE user (%s) with no cookie', async (role) => {
     const app = buildApp(await testContext({ role }))
     const res = await app.inject({ method: 'GET', url: '/api/admin/v1/session' })
     expect(res.statusCode).toBe(200)
@@ -17,6 +17,29 @@ describe('GET /admin/v1/session (POC stand-in)', () => {
     const res = await app.inject({ method: 'GET', url: '/api/admin/v1/nope' })
     expect(res.statusCode).toBe(404)
     expect(res.json()).toEqual({ error: { code: 'not_found', message: 'Not found.' } })
+  })
+})
+
+describe('who sees each section (spec; Rob, 20 Sep)', () => {
+  const get = async (role: 'hq_admin' | 'hq_marketing' | 'hq_helpdesk', url: string, method: 'GET' | 'PUT' = 'GET') =>
+    (await buildApp(await testContext({ role })).inject({ method, url: `/api/admin/v1${url}`, payload: method === 'PUT' ? {} : undefined })).statusCode
+
+  it('gives a marketing user the four shared sections but not DSP Integration', async () => {
+    for (const url of ['/display-types', '/playlists', '/campaigns', '/advertisers', '/available-inventory', '/approvals']) {
+      expect([url, await get('hq_marketing', url)]).toEqual([url, 200])
+    }
+    for (const url of ['/exchange', '/advertiser-settings', '/targeting-variables', '/partners']) {
+      expect([url, await get('hq_marketing', url)]).toEqual([url, 403])
+    }
+    /* Read the advertisers, but an admin saves them. */
+    expect(await get('hq_marketing', '/advertisers', 'PUT')).toBe(403)
+  })
+
+  it('gives a help desk user none of it, but still says who they are', async () => {
+    expect(await get('hq_helpdesk', '/session')).toBe(200)
+    for (const url of ['/display-types', '/playlists', '/campaigns', '/advertisers', '/available-inventory', '/exchange', '/partners']) {
+      expect([url, await get('hq_helpdesk', url)]).toEqual([url, 403])
+    }
   })
 })
 

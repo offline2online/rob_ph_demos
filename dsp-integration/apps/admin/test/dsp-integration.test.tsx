@@ -130,11 +130,23 @@ describe('Advertisers screen (admin only)', () => {
     expect(screen.getByRole('button', { name: /Every advertiser using the platform, across all DSPs, and the inventory they can buy/ })).toBeInTheDocument()
   })
 
-  it('is not in the nav for a non-admin session', async () => {
-    vi.stubGlobal('fetch', vi.fn(fakeFetch({ '/api/admin/v1/session': { userId: 'u', name: 'HQ User (POC)', role: 'hq_user' } })))
-    renderAt('/display-types')
-    await screen.findByRole('link', { name: /DSP Integration/ })
-    expect(screen.queryByRole('link', { name: /Advertisers/ })).not.toBeInTheDocument()
+  it('is read-only for a marketing user, who doesn’t get DSP Integration at all', async () => {
+    const advertisers = { currency: 'AUD', floorCpm: 100, items: [{ advertiserId: 'nestle', name: 'Nestlé', via: ['Google DSP'], approvalRequired: false, floorMultiplier: 0.8, effectiveFloorCpm: 80, campaigns: { draft: 0, awaiting_approval: 1, approved: 2, rejected: 0 } }] }
+    vi.stubGlobal('fetch', vi.fn(fakeFetch({ '/api/admin/v1/session': { userId: 'u', name: 'HQ Marketing (POC)', role: 'hq_marketing' }, '/api/admin/v1/advertisers': advertisers })))
+    renderAt('/advertisers')
+    const nav = await screen.findByRole('navigation', { name: 'Display Types and DSP Integration' })
+    expect(within(nav).getAllByRole('link').map((l) => l.textContent?.replace(/^[a-z_]+/, ''))).toEqual(['Display Types', 'Playlist Management', 'Advertisers / Inventory', 'Campaign Status'])
+    expect(await screen.findByText('Read only')).toBeInTheDocument()
+    expect(await screen.findByLabelText('Nestlé: campaign approval')).toBeDisabled()
+    expect(screen.getByLabelText('Nestlé: floor multiplier')).toBeDisabled()
+    expect(screen.queryByRole('region', { name: 'Save changes' })).not.toBeInTheDocument()
+  })
+
+  it('shows a help desk user nothing at all', async () => {
+    vi.stubGlobal('fetch', vi.fn(fakeFetch({ '/api/admin/v1/session': { userId: 'u', name: 'HQ Help Desk (POC)', role: 'hq_helpdesk' } })))
+    renderAt('/')
+    expect(await screen.findByText(/These pages are for admin and marketing users/)).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: /Display Types/ })).not.toBeInTheDocument()
   })
 })
 

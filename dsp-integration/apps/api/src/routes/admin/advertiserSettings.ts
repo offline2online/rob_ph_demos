@@ -13,13 +13,15 @@ export const advertiserSettingsRoutes = (ctx: Context, guards: Guards): FastifyP
     whereTheseApply: ctx.partners.list().map((p) => ({ partnerId: p.id, name: p.name, adopting: p.listsLinked })),
   })
 
-  app.get('/advertiser-settings', async () => {
+  app.get('/advertiser-settings', async (req) => {
     guards.flagged()
+    guards.requireScope(req, 'admin')
     return view()
   })
 
   app.put<{ Body: Partial<AdvertiserSettingsInput> }>('/advertiser-settings', async (req) => {
     guards.flagged()
+    guards.requireScope(req, 'admin')
     const errors = validateAdvertiserSettings(req.body)
     if (errors.length) throw validationFailed(errors, 'An entry can’t be on both lists, and pricing must be positive.')
     const b = req.body as AdvertiserSettingsInput
@@ -38,8 +40,9 @@ export const advertiserSettingsRoutes = (ctx: Context, guards: Guards): FastifyP
   })
 
   /* Every advertiser-owned slot across the estate (spec §5 "Available Inventory"). No advertisers column. */
-  app.get('/available-inventory', async () => {
+  app.get('/available-inventory', async (req) => {
     guards.flagged()
+    guards.requireScope(req, 'sections')
     const partners = ctx.partners.list()
     const items: AvailableInventoryRow[] = []
     for (const t of ctx.displayTypes.list()) {

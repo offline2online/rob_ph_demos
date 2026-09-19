@@ -41,7 +41,7 @@ export async function listAdvertisers(ctx: Context): Promise<Advertiser[]> {
 export const advertiserRoutes = (ctx: Context, guards: Guards): FastifyPluginAsync => async (app) => {
   app.get('/advertisers', async (req) => {
     guards.flagged()
-    guards.requireScope(req, 'admin')
+    guards.requireScope(req, 'sections')
     const { currency, floorCpm } = ctx.company.get()
     return { currency, floorCpm, items: await listAdvertisers(ctx) }
   })

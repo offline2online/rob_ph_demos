@@ -21,7 +21,7 @@ describe('Advertisers (admin only, spec §3)', () => {
   })
 
   it('non-admin sessions get 403', async () => {
-    const res = await buildApp(await testContext({ role: 'hq_user' })).inject({ method: 'PUT', url: '/api/admin/v1/advertisers', payload: { settings: {} } })
+    const res = await buildApp(await testContext({ role: 'hq_marketing' })).inject({ method: 'PUT', url: '/api/admin/v1/advertisers', payload: { settings: {} } })
     expect(res.statusCode).toBe(403)
     expectMatchesContract('PUT', '/admin/v1/advertisers', 403, res.json())
   })

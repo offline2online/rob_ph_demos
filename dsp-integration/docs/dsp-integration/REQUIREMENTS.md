@@ -219,10 +219,14 @@ fixed-width form beside a second column.
   Status** are shown to admin users **and to marketing users**.
 - **Help desk users see none of it.**
 
+On **Advertisers / Inventory**, a marketing user reads the advertisers and
+the inventory but cannot change campaign approval or floor multipliers:
+approval policy and pricing stay with an admin.
+
 Enforced server-side as well as in the navigation, like everything else the
-UI restricts. The POC's stand-in session has two roles (`hq_admin`,
-`hq_user`), so it only distinguishes admin from non-admin; the marketing and
-help-desk roles come from the platform's own roles on integration.
+UI restricts. The POC's stand-in session carries the three roles
+(`POC_ROLE`: `hq_admin`, `hq_marketing`, `hq_helpdesk`); on integration they
+map to the platform's own roles.
 
 ## 1. Display types — updates to the existing section
 

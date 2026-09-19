@@ -7,13 +7,15 @@ import { validationFailed } from '../../http/errors'
 import type { Access } from '../../repos/CompanySettingsRepo'
 
 export const targetingVariableRoutes = (ctx: Context, guards: Guards): FastifyPluginAsync => async (app) => {
-  app.get('/targeting-variables', async () => {
+  app.get('/targeting-variables', async (req) => {
     guards.flagged()
+    guards.requireScope(req, 'admin')
     return { items: sharedVariables(ctx.company.variableAccess()) }
   })
 
   app.put<{ Body: { access?: unknown } }>('/targeting-variables', async (req) => {
     guards.flagged()
+    guards.requireScope(req, 'admin')
     const errors = validateAccess(req.body?.access, ctx.partners.list().map((p) => p.id))
     if (errors.length) throw validationFailed(errors)
     /* De-duplicate ids; an unset key keeps its default. */

@@ -78,7 +78,7 @@ describe('Campaign approval API (contract: Admin — Campaign approval)', () => 
     const noReason = await app.inject({ method: 'POST', url: '/api/admin/v1/campaigns/c_api_swisse/reject', payload: { assetVersion: 'v1', reason: ' ' } })
     expect(noReason.statusCode).toBe(400)
     expectMatchesContract('POST', '/admin/v1/campaigns/{campaignId}/reject', 400, noReason.json())
-    const user = buildApp(await testContext({ role: 'hq_user' }))
+    const user = buildApp(await testContext({ role: 'hq_marketing' }))
     const forbidden = await user.inject({ method: 'POST', url: '/api/admin/v1/campaigns/c_api_swisse/approve', payload: { assetVersion: 'v1' } })
     expect(forbidden.statusCode).toBe(403)
     expectMatchesContract('POST', '/admin/v1/campaigns/{campaignId}/approve', 403, forbidden.json())

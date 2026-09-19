@@ -29,8 +29,13 @@ export function buildApp(ctx: Context, opts: { logger?: boolean } = {}): Fastify
   })
   app.decorateRequest('session', null as unknown as Session)
   app.addHook('onRequest', async (req) => {
-    /* Stand-in HQ Admin session for every admin request (POC_ROLE). */
-    if (req.url.startsWith('/api/admin/')) req.session = ctx.session.current()
+    /* Stand-in HQ Admin session for every admin request (POC_ROLE). Help
+       desk users see none of this build (spec, "Who sees each section"). */
+    if (req.url.startsWith('/api/admin/')) {
+      req.session = ctx.session.current()
+      /* Everything but the session itself, which tells the UI who is asking. */
+      if (!req.url.startsWith('/api/admin/v1/session') && !hasScope(req.session, 'sections')) throw forbidden()
+    }
   })
 
   const guards: Guards = {

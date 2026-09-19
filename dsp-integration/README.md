@@ -102,7 +102,9 @@ npm test
   ```
 
   The seed includes one played window (15 Sep 2026).
-- `POC_ROLE` sets the stand-in session: `hq_admin` (admin and approver) or
-  `hq_user` (neither).
+- `POC_ROLE` sets the stand-in session: `hq_admin` (everything, including DSP
+  Integration, saving advertiser settings and approving), `hq_marketing`
+  (Display Types, Playlist Management, Advertisers / Inventory read-only, and
+  Campaign Status) or `hq_helpdesk` (none of it).
 - The API seeds an empty database on its first start. Delete
   `data/poc.sqlite` and `data/assets/` to reseed.

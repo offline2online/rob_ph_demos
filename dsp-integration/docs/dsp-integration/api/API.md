@@ -132,8 +132,12 @@ campaign.
 
 ## Admin API — `/admin/v1`
 
-Every endpoint requires an HQ Admin session. `admin` = admin users only;
-`approver` = may approve/reject (HQ Admin role by default, open question 39).
+Every endpoint requires an HQ Admin session. `admin` = admin users only (DSP
+Integration, and saving advertiser settings); `approver` = may approve/reject
+(HQ Admin role by default, open question 39); `sections` = admin or marketing
+users (Display Types, Playlist Management, Advertisers / Inventory, Campaign
+Status). Help desk users have none of these, so every admin endpoint returns
+403 for them.
 In the POC the session is a stand-in: the role comes from the `POC_ROLE`
 env var, with no switcher and no cookie (see *POC stand-ins* below).
 
@@ -240,7 +244,7 @@ integration, and nothing else in the build may depend on their internals.
 | PUT | `/admin/v1/playlists/{id}/record` | Rename a playlist (`name` only). Assignments are made on the display type form (spec §2). |
 | GET | `/admin/v1/campaigns` | The existing campaign list, for the stand-in POC campaign table (`campaignId`, name, source, advertiser, partner, display type, pricing type, `activation`). Approval state comes from `/admin/v1/approvals`. |
 | PUT | `/admin/v1/campaigns/{id}/activation` | The existing activation toggle: `{enabled}`. `422 not_approved` unless the campaign is Approved. |
-| GET | `/admin/v1/session` | The current user and role (`hq_admin` = admin + approver; `hq_user` = neither). In the POC the role comes from the `POC_ROLE` env var: there is no switcher and no session cookie. |
+| GET | `/admin/v1/session` | The current user and role: `hq_admin` (everything, including DSP Integration, saving advertiser settings and approving), `hq_marketing` (Display Types, Playlist Management, Advertisers / Inventory read-only, Campaign Status) or `hq_helpdesk` (none of it). In the POC the role comes from the `POC_ROLE` env var: there is no switcher and no session cookie. |
 
 ## Jobs with no API
 

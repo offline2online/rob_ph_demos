@@ -6,7 +6,7 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { App, Button, InputNumber, Spin, Switch, Tooltip } from 'antd'
 import type { ColDef, ICellRendererParams } from 'ag-grid-community'
-import { SLOT_OWNERS, touchPointIcon, type Advertiser, type AdvertiserSetting, type AvailableInventoryRow } from '@ph-dsp/types'
+import { SLOT_OWNERS, touchPointIcon, type Advertiser, type AdvertiserSetting, type AvailableInventoryRow, type Session } from '@ph-dsp/types'
 import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { api, ApiRequestError } from '../../api/client'
@@ -24,7 +24,7 @@ import { BOOKING_SCHEDULE_PATH } from '../booking-schedule/path'
 
 interface Data { currency: string; floorCpm: number; items: Advertiser[] }
 type Settings = Record<string, AdvertiserSetting>
-type Ctx = { current: { settings: Settings; data: Data; set: (id: string, patch: Partial<AdvertiserSetting>) => void; openBookings: (advertiserId: string) => void } }
+type Ctx = { current: { settings: Settings; data: Data; canEdit: boolean; set: (id: string, patch: Partial<AdvertiserSetting>) => void; openBookings: (advertiserId: string) => void } }
 type P = ICellRendererParams<Advertiser, unknown, Ctx>
 
 const effective = (floor: number, m: number) => Math.round(floor * (m || 0) * 100) / 100
@@ -36,7 +36,7 @@ function ApprovalCell({ data, context }: P) {
   const s = context.current.settings[data.advertiserId]
   return (
     <span className="inline-flex items-center gap-2">
-      <Switch size="small" aria-label={`${data.name}: campaign approval`} checked={s.approvalRequired} onChange={(v) => context.current.set(data.advertiserId, { approvalRequired: v })} />
+      <Switch size="small" aria-label={`${data.name}: campaign approval`} disabled={!context.current.canEdit} checked={s.approvalRequired} onChange={(v) => context.current.set(data.advertiserId, { approvalRequired: v })} />
       <span style={{ fontSize: 11.5, color: T.muted }}>{s.approvalRequired ? 'Required' : 'Not required'}</span>
     </span>
   )
@@ -44,7 +44,7 @@ function ApprovalCell({ data, context }: P) {
 function MultiplierCell({ data, context }: P) {
   if (!data) return null
   return (
-    <InputNumber size="small" aria-label={`${data.name}: floor multiplier`} step={0.05} min={0} style={{ width: 90 }}
+    <InputNumber size="small" aria-label={`${data.name}: floor multiplier`} disabled={!context.current.canEdit} step={0.05} min={0} style={{ width: 90 }}
       formatter={(v) => (v === undefined || v === null ? '' : String(v))} parser={(v) => Number(v)}
       value={context.current.settings[data.advertiserId].floorMultiplier}
       onChange={(v) => context.current.set(data.advertiserId, { floorMultiplier: v === null ? 1 : Number(v) })} />
@@ -99,6 +99,9 @@ export function AdvertisersPage() {
   const navigate = useNavigate()
   const { message } = App.useApp()
   const qc = useQueryClient()
+  const session = useQuery({ queryKey: ['session'], queryFn: () => api<Session>('GET', '/admin/v1/session') })
+  /* Marketing users read this screen; only an admin changes approval or pricing (Rob, 20 Sep). */
+  const canEdit = session.data?.role === 'hq_admin'
   const q = useQuery({ queryKey: ['advertisers'], queryFn: () => api<Data>('GET', '/admin/v1/advertisers'), retry: false })
   const inventory = useQuery({ queryKey: ['available-inventory'], queryFn: () => api<{ items: AvailableInventoryRow[] }>('GET', '/admin/v1/available-inventory').then((r) => r.items) })
   const inventoryColumns = useMemo<ColDef<AvailableInventoryRow>[]>(() => [
@@ -139,7 +142,7 @@ export function AdvertisersPage() {
     }
   }
   const context = {
-    settings: draft, data,
+    settings: draft, data, canEdit,
     set: (id: string, patch: Partial<AdvertiserSetting>) => setDraft((cur) => (cur ? { ...cur, [id]: { ...cur[id], ...patch } } : cur)),
     openBookings: (advertiserId: string) => window.open(`${BOOKING_SCHEDULE_PATH}?advertiserId=${encodeURIComponent(advertiserId)}`, '_blank', 'noopener'),
   }
@@ -147,7 +150,7 @@ export function AdvertisersPage() {
   return (
     <div>
       <div className="mb-3.5 flex justify-end">
-        <StatusPill colour={T.muted} icon="admin_panel_settings">Admin only</StatusPill>
+        <StatusPill colour={T.muted} icon={canEdit ? 'admin_panel_settings' : 'visibility'}>{canEdit ? 'Admin only' : 'Read only'}</StatusPill>
       </div>
       {data.items.length === 0 ? (
         <div className="flex items-center gap-2" style={{ fontSize: 12.5, color: T.muted }}><Icon name="sell" size={18} />No advertisers yet. They appear here once a DSP is connected.</div>
@@ -174,7 +177,7 @@ export function AdvertisersPage() {
         />
       )}
 
-      <SaveBar dirty={dirty} saving={saving} onSave={onSave} onCancel={reset} />
+      {canEdit && <SaveBar dirty={dirty} saving={saving} onSave={onSave} onCancel={reset} />}
     </div>
   )
 }
