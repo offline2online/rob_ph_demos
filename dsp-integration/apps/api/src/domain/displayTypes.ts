@@ -12,7 +12,7 @@ export const zonesOf = (dt: DisplayType): Zone[] => {
 
 export function validateRecord(dt: DisplayType): Detail[] {
   const out: Detail[] = []
-  if (!dt.name?.trim()) out.push({ field: 'name', reason: 'Display Type / Element Name is required.' })
+  if (!dt.name?.trim()) out.push({ field: 'name', reason: 'Display Type Name is required.' })
   if (!TOUCH_POINTS.some((t) => t.name === dt.touchPoint)) out.push({ field: 'touchPoint', reason: `Must be one of: ${TOUCH_POINTS.map((t) => t.name).join(', ')}.` })
   const { width, height } = dt.displayCanvasSize ?? {}
   if (!Number.isInteger(width) || width < 1) out.push({ field: 'displayCanvasSize.width', reason: 'Must be a positive whole number.' })

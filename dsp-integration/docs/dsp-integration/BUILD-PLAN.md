@@ -424,22 +424,22 @@ All approved by Rob (decision 5). The reason for each change is given.
 
 ## 10. Questions (open)
 
-1. **Partner seats.** The spec (§8) gives a partner `seats: [{id, name}]`.
+1. **Partner seats: answered with mock DSP APIs (Rob, 19 Sep).** Rob asked
+   for mock APIs for Google DV360, The Trade Desk and Amazon Ads, modelled on
+   their real APIs, where testers can control the seats and advertisers that
+   trade through each DSP. The design and its open points are in §14. The
+   original question follows.
+   The spec (§8) gives a partner `seats: [{id, name}]`.
    The slot picker lists each seat, and each DSP page offers them as list
    suggestions. The contract's `Partner` schema has no `seats`. Can I add
    `seats: [{id, name}]` to `Partner`? Until then the picker uses
    `/admin/v1/advertisers`, so an `hq_user` session sees no named
    advertisers there.
-2. **"Display Type / Element Name".** The name field's label and placeholder
-   ("Name this display type / element") come from the prototype, where
-   "element" means a Responsive Web element. Web is out of scope
-   (decision 1). They're built verbatim for now. Should they read
-   "Display Type Name" and "Name this display type"?
-3. **Company feature availability.** Which Enabled Features the company may
-   use (In-Store Radio and AI Agents are off in the prototype) has no
-   endpoint in the contract. The admin UI holds the prototype's values as a
-   stand-in (§9). Is that acceptable, or should the POC stand-in group get a
-   read endpoint for it?
+2. ~~Name field wording~~ **Resolved (Rob, 19 Sep):** the label is
+   "Display Type Name", with the placeholder "Name this display type".
+3. ~~Company feature availability~~ **Resolved (Rob, 19 Sep):** it is managed
+   separately, outside this build. The admin UI keeps the prototype's values
+   as a stand-in (§9), and no endpoint is added.
 
 ## 11. Defaults in use (brief, *Defaults for open questions*)
 
@@ -495,9 +495,70 @@ broken-partner callout, the zone cards and the save bar all match.
 | Fix connection | Opens Advertiser settings | Opens that DSP's page | Defect fix 1 |
 | Colour fields | Native colour inputs | AntD `ColorPicker` | ph-designer components |
 | Field labels | `#333` | Muted `rgba(0,0,0,0.45)` | ph-designer `components.md` §13 |
+| Name field | "Display Type / Element Name" | "Display Type Name" | Rob, 19 Sep (Q2) |
 | Unsaved-changes prompt | `window.confirm` | AntD confirm with the same text, OK / Cancel | ph-designer components |
 
 Kept on the page as status (decision 2): "Not enabled for this company —
 contact Platform Admin.", the broken-partner callout, "On the blacklist —
 this position cannot fill.", "Not connected", the preview caption, and the
 save bar message.
+
+## 14. Mock DSP APIs (Rob, 19 Sep 2026): proposed design
+
+A separate local service, `apps/dsp-mocks/` (Fastify, its own port, default
+4100). It serves mock versions of each DSP's real API, so the POC's DSP
+clients make real HTTP calls in the providers' own request and response
+shapes. It never calls a real DSP.
+
+**This changes the brief's DSP decision.** The brief put an in-process mock
+behind each `DspClient` interface. Instead, each `DspClient` becomes a real
+HTTP client for that provider, pointed at the mock's base URL
+(`DV360_BASE_URL`, `AMAZON_ADS_BASE_URL`, `TTD_BASE_URL`, all defaulting to
+the local mock). On integration, engineering only changes the base URLs to
+the real ones (sandbox first).
+
+### What each mock implements
+
+These are the endpoints that the connect and seat-pull flow (packages 9 and
+17) and the bid flow (package 15) need. Nothing else.
+
+| DSP | Auth, as the real API does it | Account and advertiser endpoints | Bidder |
+|---|---|---|---|
+| Google DV360 (Display & Video 360 API v4) | `POST /token`: OAuth 2.0 JWT-bearer grant, using the service account's signed assertion | `GET /v4/partners/{partnerId}`; `GET /v4/advertisers?partnerId=&pageSize=&pageToken=` returning `{advertisers:[{name, advertiserId, partnerId, displayName, entityStatus}], nextPageToken}` | `POST /openrtb2/bid` |
+| Amazon Ads (Ads API + Login with Amazon) | `POST /auth/o2/token`: refresh-token grant with the LWA client ID and secret. Failures use the real error shape, e.g. `invalid_grant` | `GET /v2/profiles`; `GET /dsp/advertisers` (`Amazon-Advertising-API-ClientId` and `-Scope` headers), returning `{totalResults, response:[{advertiserId, name, currency, url, country, timezone}]}`; one base path per region (NA/EU/FE) | `POST /openrtb2/bid` |
+| The Trade Desk (API v3) | `TTD-Auth` header carrying the API token | `POST /v3/advertiser/query/partner` `{PartnerId, PageStartIndex, PageSize}`, returning `{Result:[{AdvertiserId, AdvertiserName, PartnerId, CurrencyCode}], ResultCount, TotalFilteredCount, TotalUnfilteredCount}` | `POST /openrtb2/bid` |
+
+The bidder answers OpenRTB 2.6 bid requests. Each bid comes from one of that
+DSP's seats (`seatbid[].seat`) and one of its advertisers (`adomain`, `crid`,
+`cat`, `price`).
+
+### Control API (for testers; not part of the product contract)
+
+`/_control/{dsp}` for `google_dv360`, `amazon_dsp` and `the_trade_desk`:
+
+- **Seats:** `GET/POST/DELETE /_control/{dsp}/seats`. A seat is `{seatId, name}`.
+- **Advertisers:** `GET/POST/PATCH/DELETE /_control/{dsp}/advertisers`. An
+  advertiser is `{id, name, seatId, domain, categories, currency}`. These are
+  the advertisers the account API returns and the bidder bids as.
+- **Auth behaviour:** `PUT /_control/{dsp}/auth`, e.g. `{accept: false,
+  error: "invalid_grant"}` to reproduce "refresh token rejected".
+- **Bidder behaviour:** `PUT /_control/{dsp}/bidder`, e.g. no-bid, a fixed
+  price, bidding below the floor, an unapproved `crid`, or a blocked
+  `adomain`, to test pre-auction enforcement.
+- **Reset:** `POST /_control/reset` restores the seed state.
+
+The seed mirrors the prototype:
+- DV360 partner 884512 has seats 884512 and 884513, with Nestlé and Swisse.
+- Amazon has L'Oréal, and its auth is set to reject the refresh token.
+- The Trade Desk has one test advertiser.
+
+State is in memory, so a restart resets it.
+
+### How it reaches the product
+
+Package 9's **Connect / Re-test connection** calls the provider's auth and
+advertiser endpoints on the mock. It stores the seats and advertisers it gets
+back on the partner, which is spec §8's `seats`, "pulled on connect". A
+tester adds an advertiser through the control API, re-tests the connection,
+and the new advertiser appears on the Advertisers screen and in the slot
+picker.

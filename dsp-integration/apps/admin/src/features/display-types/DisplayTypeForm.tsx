@@ -46,8 +46,8 @@ export function DisplayTypeForm({ d, update, playlists, zonePlaylistId, slotAssi
           }))}
         />
       </Field>
-      <Field label="Display Type / Element Name" required htmlFor="dtName" className="mb-4">
-        <Input id="dtName" value={d.name} autoFocus={!d.name} placeholder="Name this display type / element" status={d.name ? undefined : 'warning'} onChange={(e) => set({ name: e.target.value })} />
+      <Field label="Display Type Name" required htmlFor="dtName" className="mb-4">
+        <Input id="dtName" value={d.name} autoFocus={!d.name} placeholder="Name this display type" status={d.name ? undefined : 'warning'} onChange={(e) => set({ name: e.target.value })} />
       </Field>
       <Field label="Display Canvas Size (Resolution)" required className="mb-4">
         <div className="flex items-center gap-2">

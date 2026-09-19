@@ -47,7 +47,7 @@ describe('Display Types page', () => {
     expect(within(list).getAllByRole('option').map((o) => o.textContent)).toEqual([expect.stringContaining('Landscape'), expect.stringContaining('Menu Board — Long Format')])
 
     const labels = Array.from(document.querySelectorAll('label')).map((l) => l.textContent)
-    expect(labels.slice(0, 5)).toEqual(['Touch Point', '*Display Type / Element Name', '*Display Canvas Size (Resolution)', 'Background Color', 'Default Playlist'])
+    expect(labels.slice(0, 5)).toEqual(['Touch Point', '*Display Type Name', '*Display Canvas Size (Resolution)', 'Background Color', 'Default Playlist'])
 
     const panels = ['Playlist Settings', 'Phantom Zone', 'Enabled Features', 'Multi-Zone Layout'].map((t) => screen.getByRole('region', { name: t }))
     panels.forEach((p) => expect(within(p).getByRole('button', { expanded: false })).toBeInTheDocument())
