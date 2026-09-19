@@ -152,7 +152,7 @@ export function DisplayTypesPage({ flags }: { flags: Flags }) {
         seatsOf={seatsOf}
         onFixConnection={(partnerId) => navigate(`/dsp-integration/partners/${partnerId}`)}
       />
-      <SaveBar dirty={dirty} saving={saving} onSave={onSave} onCancel={onCancel} />
+      <SaveBar dirty={dirty} saving={saving} onSave={onSave} onCancel={onCancel} saveOnEnter />
       {deleting && (
         <DeleteDisplayType name={deleting.name} check={deleting.check} deleting={deleting.busy} onDelete={confirmDelete} onClose={() => setDeleting(null)} />
       )}

@@ -154,3 +154,46 @@ describe('useDraft after a save that refetches in several steps', () => {
     expect(result.current.dirty).toBe(false)
   })
 })
+
+describe('SaveBar — Enter saves (saveOnEnter)', () => {
+  const setup = (props: { dirty?: boolean; saveOnEnter?: boolean } = {}) => {
+    const onSave = vi.fn()
+    render(
+      <div>
+        <input aria-label="Name" />
+        <textarea aria-label="Notes" />
+        <div className="ant-select"><input aria-label="Search" /></div>
+        <input aria-label="Add item" onKeyDown={(e) => e.key === 'Enter' && e.preventDefault()} />
+        <SaveBar dirty={props.dirty ?? true} onSave={onSave} onCancel={() => {}} saveOnEnter={props.saveOnEnter ?? true} />
+      </div>,
+    )
+    return onSave
+  }
+
+  it('saves when Enter is pressed in a field with unsaved changes', () => {
+    const onSave = setup()
+    fireEvent.keyDown(screen.getByLabelText('Name'), { key: 'Enter' })
+    expect(onSave).toHaveBeenCalledTimes(1)
+  })
+
+  it('leaves Enter alone in text areas, dropdowns, fields that use Enter themselves, and with nothing to save', () => {
+    const onSave = setup()
+    fireEvent.keyDown(screen.getByLabelText('Notes'), { key: 'Enter' })
+    fireEvent.keyDown(screen.getByLabelText('Search'), { key: 'Enter' })
+    fireEvent.keyDown(screen.getByLabelText('Add item'), { key: 'Enter' })
+    fireEvent.keyDown(screen.getByLabelText('Name'), { key: 'Enter', shiftKey: true })
+    expect(onSave).not.toHaveBeenCalled()
+  })
+
+  it('does nothing when there are no changes', () => {
+    const clean = setup({ dirty: false })
+    fireEvent.keyDown(screen.getByLabelText('Name'), { key: 'Enter' })
+    expect(clean).not.toHaveBeenCalled()
+  })
+
+  it('is off unless the page asks for it', () => {
+    const off = setup({ saveOnEnter: false })
+    fireEvent.keyDown(screen.getByLabelText('Name'), { key: 'Enter' })
+    expect(off).not.toHaveBeenCalled()
+  })
+})

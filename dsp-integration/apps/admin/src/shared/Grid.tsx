@@ -49,6 +49,12 @@ export function Grid<Row>({ rows, columns, context, getRowId, label, ...options 
           fit()
           options.onGridReady?.(e)
         }}
+        /* New column definitions reset the widths (e.g. a re-render while a
+           dialog opens), and the wrapper's size hasn't changed, so fit again. */
+        onNewColumnsLoaded={(e) => {
+          fit()
+          options.onNewColumnsLoaded?.(e)
+        }}
       />
     </div>
   )

@@ -1,11 +1,38 @@
 /* Save changes / Cancel bar (spec "Saving changes"). Always visible at the
    bottom of the content column: position sticky, never fixed (the page is
-   iframed into HQ Admin). Both actions are disabled until something changed. */
+   iframed into HQ Admin). Both actions are disabled until something changed.
+   With `saveOnEnter`, pressing Enter in a field on the page saves, the same
+   as Save changes (Rob's board ticket, for the Display Types pages). */
 import { Button } from 'antd'
+import { useEffect, useRef } from 'react'
 import { T } from '../theme/phTheme'
 import { Icon } from './Icon'
 
-export function SaveBar({ dirty, saving, onSave, onCancel }: { dirty: boolean; saving?: boolean; onSave: () => void; onCancel: () => void }) {
+/* Enter saves only from a plain field: not a text area, not a dropdown or
+   date picker (Enter picks there), not inside a dialog, and not when the
+   field already handled Enter itself (e.g. a list's "add" input). */
+export function savesOnEnter(e: KeyboardEvent) {
+  if (e.key !== 'Enter' || e.defaultPrevented || e.isComposing || e.shiftKey || e.altKey || e.ctrlKey || e.metaKey) return false
+  const t = e.target as HTMLElement | null
+  if (!(t instanceof HTMLInputElement) || ['checkbox', 'radio', 'button', 'submit', 'file'].includes(t.type)) return false
+  return !t.closest('.ant-select, .ant-picker, .ant-modal, [role="dialog"]')
+}
+
+export function SaveBar({ dirty, saving, onSave, onCancel, saveOnEnter }: { dirty: boolean; saving?: boolean; onSave: () => void; onCancel: () => void; saveOnEnter?: boolean }) {
+  const latest = useRef({ dirty, saving, onSave })
+  latest.current = { dirty, saving, onSave }
+  useEffect(() => {
+    if (!saveOnEnter) return
+    /* On the document, so a field's own Enter handling runs (and can prevent this) first. */
+    const onKey = (e: KeyboardEvent) => {
+      const { dirty: d, saving: busy, onSave: save } = latest.current
+      if (!d || busy || !savesOnEnter(e)) return
+      e.preventDefault()
+      save()
+    }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [saveOnEnter])
   return (
     <div
       role="region"
