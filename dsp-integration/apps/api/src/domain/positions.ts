@@ -66,21 +66,35 @@ export function isVisible(ctx: Context, p: PositionRef, c: Caller) {
 /* ------------------------------------------------------------ play windows */
 
 const DAY = 86_400_000
-export const windowMs = (ctx: Context) => ctx.config.playWindowHours * 3_600_000
+/* The play-window length (Advertiser settings → Auction schedule; Q27). */
+export const windowMs = (ctx: Context) => ctx.company.get().playWindowHours * 3_600_000
 
-/* Windows are aligned to UTC midnight (Q27: 24 hours). */
+/* Windows start at UTC midnight and follow each other back to back from a
+   fixed Monday, so a 24-hour window is a day and a 7-day window a week. */
+const ANCHOR = Date.UTC(1970, 0, 5)
 export function windowStartOf(ctx: Context, at: Date) {
   const len = windowMs(ctx)
-  return new Date(Math.floor(at.getTime() / len) * len)
+  return new Date(ANCHOR + Math.floor((at.getTime() - ANCHOR) / len) * len)
 }
-/* The first window that can still be sold: the one after the current one. */
-export const nextWindow = (ctx: Context) => new Date(windowStartOf(ctx, ctx.clock()).getTime() + windowMs(ctx))
 
-/* The auction's bidding window for a play window (Q13): it opens
-   `auctionOpensHours` before the play window starts and closes
-   `auctionLeadHours` before, when the scheduled auction clears it. */
-export const biddingOpensAt = (ctx: Context, start: Date) => new Date(start.getTime() - ctx.config.auctionOpensHours * 3_600_000)
-export const biddingClosesAt = (ctx: Context, start: Date) => new Date(start.getTime() - ctx.config.auctionLeadHours * 3_600_000)
+/* The auction for a play window (Auction schedule, Q13): bidding closes at
+   the last daily cutoff (UTC) at or before the window starts, when the
+   auction runs, and opens `auctionOpensHours` before that. */
+export function biddingClosesAt(ctx: Context, start: Date) {
+  const [h, m] = ctx.company.get().auctionCutoffTime.split(':').map(Number)
+  const d = new Date(start)
+  const cutoff = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), h, m)
+  return new Date(cutoff > start.getTime() ? cutoff - 86_400_000 : cutoff)
+}
+export const biddingOpensAt = (ctx: Context, start: Date) => new Date(biddingClosesAt(ctx, start).getTime() - ctx.company.get().auctionOpensHours * 3_600_000)
+
+/* The first window that can still be sold: its auction hasn't run yet. */
+export function nextWindow(ctx: Context) {
+  const now = ctx.clock().getTime()
+  let w = windowStartOf(ctx, ctx.clock())
+  while (now >= biddingClosesAt(ctx, w).getTime()) w = new Date(w.getTime() + windowMs(ctx))
+  return w
+}
 
 /* Every window starting within [from, to] (dates, inclusive). */
 export function windowsBetween(ctx: Context, from: string, to: string): Date[] | null {
@@ -96,10 +110,10 @@ export function windowsBetween(ctx: Context, from: string, to: string): Date[] |
 export type WindowStatus = 'available' | 'reserved' | 'sold' | 'unavailable'
 
 export function windowStatus(ctx: Context, p: PositionRef, c: Caller, start: Date): WindowStatus {
-  if (start.getTime() < nextWindow(ctx).getTime()) return 'unavailable'
-  if (!ctx.displays.listByDisplayType(p.displayType.id).length) return 'unavailable'
   /* A Test-mode win never takes the window (spec §7: no real spend). */
   if (ctx.reservations.forWindow(p.positionId, start.toISOString()).some((r) => !r.testMode && TAKEN.includes(r.status))) return 'sold'
+  if (start.getTime() < nextWindow(ctx).getTime()) return 'unavailable'
+  if (!ctx.displays.listByDisplayType(p.displayType.id).length) return 'unavailable'
   /* Held for a named advertiser: available only to that advertiser. */
   if (assignmentOf(p.def) === 'reserved' && !c.advertiser) return 'reserved'
   return 'available'

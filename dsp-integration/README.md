@@ -77,10 +77,11 @@ npm test
   page at http://127.0.0.1:4100/. Use it to change each mock DSP's seats,
   advertisers, auth failures and bidder behaviour, then press **Re-test
   connection** on the DSP's page.
-- The SSP auction runs as a scheduled job inside `npm run dev:api` (each
-  play window is cleared 6 hours before it starts; bids and reservations
-  for a window are taken from 7 days before it until then, for approved and
-  activated campaigns only). To clear one window
+- The SSP auction runs as a scheduled job inside `npm run dev:api`. Each
+  play window is cleared at its auction cutoff, and bids and reservations are
+  taken from when bidding opens until then, for approved and activated
+  campaigns only (Advertiser settings → Auction schedule; defaults 18:00 UTC,
+  opening 7 days before, 24-hour windows). To clear one window
   now, with the mock DSP service running:
 
   ```bash

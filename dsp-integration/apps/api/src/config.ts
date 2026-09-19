@@ -9,12 +9,6 @@ export interface Config {
   dbFile: string
   /* AssetStore folder (git-ignored). */
   assetsDir: string
-  /* Q27 — auction play-window length. */
-  playWindowHours: number
-  /* Q13 — bidding for a window opens `auctionOpensHours` before it starts and
-     closes `auctionLeadHours` before, when the scheduled auction clears it. */
-  auctionOpensHours: number
-  auctionLeadHours: number
   /* Q46 — per-DSP bidder defaults. */
   bidderQps: number
   bidderTimeoutMs: number
@@ -50,9 +44,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     port: Number(env.API_PORT ?? 4000),
     dbFile: fromRoot(env.PH_DB_FILE ?? 'data/poc.sqlite'),
     assetsDir: fromRoot(env.PH_ASSETS_DIR ?? 'data/assets'),
-    playWindowHours: 24,
-    auctionOpensHours: 7 * 24,
-    auctionLeadHours: 6,
     bidderQps: 500,
     bidderTimeoutMs: 300,
     maxValuesPerCondition: 100,

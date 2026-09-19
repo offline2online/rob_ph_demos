@@ -50,14 +50,18 @@ describe('DSP Integration section', () => {
 })
 
 describe('Advertiser settings page', () => {
-  it('shows Pricing, the four lists, Where these apply and Available Inventory, in that order', async () => {
+  it('shows Pricing, the Auction schedule, the four lists, Where these apply and Available Inventory, in that order', async () => {
     vi.stubGlobal('fetch', vi.fn(fakeFetch({ '/api/admin/v1/available-inventory': { items: [{ displayTypeId: 'menu_board', displayTypeName: 'Menu Board — Long Format', touchPoint: 'Digital Signage', playlistName: 'Menu Board Playlist', slot: 2, position: 'Supplier slot', partnerName: 'Google DSP' }] } })))
     renderAt('/dsp-integration')
     expect(await screen.findByRole('heading', { name: /Advertiser settings/ })).toBeInTheDocument()
     const text = document.body.textContent ?? ''
-    const order = ['Pricing', 'List management', 'Where these apply', 'Available Inventory'].map((h) => text.indexOf(h))
+    const order = ['Pricing', 'Auction schedule', 'Auction opens', 'Play-window length', 'Auction cutoff time', 'List management', 'Where these apply', 'Available Inventory'].map((h) => text.indexOf(h))
     expect(order).toEqual([...order].sort((a, b) => a - b))
     expect(screen.getByLabelText(/Currency/)).toBeInTheDocument()
+    /* Stored in hours, shown as days and hours: 168 h = 7 days, 24 h = 1 day. */
+    expect((document.getElementById('auctionOpensHours') as HTMLInputElement).value).toBe('7')
+    expect((document.getElementById('playWindowHours') as HTMLInputElement).value).toBe('1')
+    expect(screen.getByText('18:00 UTC')).toBeInTheDocument()
     for (const l of ['Advertisers — whitelist', 'Advertisers — blacklist', 'Categories — whitelist', 'Categories — blacklist']) expect(screen.getByRole('region', { name: l })).toBeInTheDocument()
     const where = screen.getByRole('list', { name: 'Where these apply' })
     expect(within(where).getAllByRole('listitem').map((li) => li.textContent)).toEqual([expect.stringContaining('Adopting'), expect.stringContaining('Own lists')])

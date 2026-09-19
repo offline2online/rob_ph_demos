@@ -19,13 +19,32 @@ import { PATHS } from './DspList'
 import { SubPageHeader } from './SubPageHeader'
 
 export const ADVERTISER_SETTINGS_TIP =
-  "Company-wide advertiser settings, applied to every DSP. Configurable here: Pricing (currency, floor CPM, personalised and interactive multipliers) and List management (advertiser and IAB category whitelists and blacklists). Read-only here: Where these apply (which DSPs use these lists or keep their own; unlink or relink on the DSP's page) and Available Inventory (advertiser-owned slots, set on Display Types). Per-advertiser campaign approval and floor multipliers are on the Advertisers screen."
+  "Company-wide advertiser settings, applied to every DSP. Configurable here: Pricing (currency, floor CPM, personalised and interactive multipliers), the Auction schedule (when bidding opens, play-window length, auction cutoff) and List management (advertiser and IAB category whitelists and blacklists). Read-only here: Where these apply (which DSPs use these lists or keep their own; unlink or relink on the DSP's page) and Available Inventory (advertiser-owned slots, set on Display Types). Per-advertiser campaign approval and floor multipliers are on the Advertisers screen."
 
 /* Every ISO 4217 currency, listed by code and name (spec §4). */
 const CURRENCIES = (() => {
   const dn = new Intl.DisplayNames(['en-GB'], { type: 'currency' })
   return Intl.supportedValuesOf('currency').map((code) => ({ value: code, label: `${code} — ${dn.of(code) ?? code}` }))
 })()
+
+/* The auction cutoff, every half hour (UTC). */
+const CUTOFF_TIMES = Array.from({ length: 48 }, (_, i) => {
+  const t = `${String(Math.floor(i / 2)).padStart(2, '0')}:${i % 2 ? '30' : '00'}`
+  return { value: t, label: `${t} UTC` }
+})
+
+/* A duration stored in hours, entered as days and hours. */
+function DaysHours({ id, hours, onChange }: { id: string; hours: number; onChange: (hours: number) => void }) {
+  const days = Math.floor((hours ?? 0) / 24)
+  const rest = (hours ?? 0) % 24
+  const whole = (v: number | string | null) => Math.max(0, Math.floor(Number(v) || 0))
+  return (
+    <div className="flex gap-2">
+      <InputNumber id={id} aria-label="Days" className="flex-1" min={0} precision={0} value={days} suffix="days" onChange={(v) => onChange(whole(v) * 24 + rest)} />
+      <InputNumber aria-label="Hours" className="flex-1" min={0} max={23} precision={0} value={rest} suffix="hours" onChange={(v) => onChange(days * 24 + Math.min(23, whole(v)))} />
+    </div>
+  )
+}
 
 type ListKey = 'advertiserWhitelist' | 'advertiserBlacklist' | 'categoryWhitelist' | 'categoryBlacklist'
 const OTHER: Record<ListKey, ListKey> = {
@@ -76,6 +95,19 @@ export function AdvertiserSettings() {
         <Field label="Floor price (CPM)" htmlFor="floorCpm" tip="Cost per thousand assumed views (VAC-d). The minimum any bid must meet; bids below it never win.">{num('floorCpm', 1, '100')}</Field>
         <Field label="Personalised multiplier" htmlFor="personalisedMultiplier" tip="Applied when the visitor is checked in or otherwise identified, so the advert is one-to-one for that individual. Multiplies the floor CPM.">{num('personalisedMultiplier', 0.05, '1.5')}</Field>
         <Field label="Interactive multiplier" htmlFor="interactiveMultiplier" tip="Applied when the visitor interacts with the campaign and engages with the advertiser on that display, for example by scanning an interactive QR Control campaign. Multiplies the floor CPM.">{num('interactiveMultiplier', 0.05, '3')}</Field>
+      </div>
+
+      <SectionLabel><WithTip tip="In-store screens can't take a bid per play, so advertisers bid for a play window that clears ahead of time. Bidding for a window opens, closes at the auction cutoff (when the auction runs) and the winner holds the slot for the whole window. Times are UTC.">Auction schedule</WithTip></SectionLabel>
+      <div className="grid grid-cols-3 gap-3.5">
+        <Field label="Auction opens" htmlFor="auctionOpensHours" tip="How long before the auction cutoff bidding for a play window opens, for example 7 days.">
+          <DaysHours id="auctionOpensHours" hours={s.auctionOpensHours} onChange={(v) => set('auctionOpensHours', v)} />
+        </Field>
+        <Field label="Play-window length" htmlFor="playWindowHours" tip="The minimum period a won slot is held, in days and hours, for example 24 hours or 7 days. It can't change while future windows are bid on or booked.">
+          <DaysHours id="playWindowHours" hours={s.playWindowHours} onChange={(v) => set('playWindowHours', v)} />
+        </Field>
+        <Field label="Auction cutoff time" htmlFor="auctionCutoffTime" tip="The daily time by which bids must be in. The auction for the next play window runs then; 18:00 gives six hours before a midnight window.">
+          <Select id="auctionCutoffTime" className="w-full" value={s.auctionCutoffTime} onChange={(v) => set('auctionCutoffTime', v)} options={CUTOFF_TIMES} />
+        </Field>
       </div>
 
       <SectionLabel><WithTip tip="Nothing can sit on both lists. The blacklist always applies and no position can opt out of it. The whitelist is only used by positions set to whitelist-only.">List management</WithTip></SectionLabel>

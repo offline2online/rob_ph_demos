@@ -6,7 +6,7 @@
 import { randomUUID } from 'node:crypto'
 import type { FastifyPluginAsync } from 'fastify'
 import type { Context } from '../../context'
-import { assignmentOf, biddingClosesAt, biddingOpensAt, findPosition, nextWindow, windowStartOf } from '../../domain/positions'
+import { assignmentOf, biddingClosesAt, biddingOpensAt, findPosition, windowStartOf } from '../../domain/positions'
 import { checkAdvertiser, checkCampaign, checkFloor } from '../../exchange/enforcement'
 import { handOff } from '../../exchange/handoff'
 import { HttpError, conflict, notFound, validationFailed } from '../../http/errors'
@@ -36,8 +36,7 @@ export const reservationRoutes = (ctx: Context): FastifyPluginAsync => async (ap
     const hidden = !p || (p.def.partnerId && p.def.partnerId !== partner.id) || (assignmentOf(p.def) === 'reserved' && seat && p.def.advertiser?.trim().toLowerCase() !== seat.name.trim().toLowerCase())
     if (hidden) invalid.push({ field: 'positionId', reason: 'Unknown position.' })
     const start = typeof b.windowStart === 'string' ? new Date(b.windowStart) : null
-    if (!start || Number.isNaN(start.getTime()) || windowStartOf(ctx, start).getTime() !== start.getTime()) invalid.push({ field: 'windowStart', reason: `The start of a ${ctx.config.playWindowHours}-hour play window (UTC).` })
-    else if (start.getTime() < nextWindow(ctx).getTime()) invalid.push({ field: 'windowStart', reason: 'That window can no longer be sold.' })
+    if (!start || Number.isNaN(start.getTime()) || windowStartOf(ctx, start).getTime() !== start.getTime()) invalid.push({ field: 'windowStart', reason: `The start of a ${ctx.company.get().playWindowHours}-hour play window (UTC).` })
     if (invalid.length) throw validationFailed(invalid)
 
     const pos = p!

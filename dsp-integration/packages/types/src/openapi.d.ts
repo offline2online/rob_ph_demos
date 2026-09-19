@@ -181,7 +181,7 @@ export interface paths {
         put?: never;
         /**
          * Reserve (named advertiser) or bid (CPM) for a play window
-         * @description Approved and activated campaigns only, while the window's auction is open (from 7 days before the window until its auction runs, 6 hours before). Pre-auction checks apply (floor, lists, categories, approval, activation).
+         * @description Approved and activated campaigns only, while the window's auction is open (from auctionOpensHours before the auction cutoff until the cutoff; Advertiser settings → Auction schedule). Pre-auction checks apply (floor, lists, categories, approval, activation).
          */
         post: operations["createReservation"];
         delete?: never;
@@ -803,6 +803,21 @@ export interface components {
              * @default AUD
              */
             currency: string;
+            /**
+             * @description Auction schedule: how long before the auction cutoff bidding for a play window opens, in hours (shown as days and hours).
+             * @default 168
+             */
+            auctionOpensHours: number;
+            /**
+             * @description Auction schedule: the minimum period a won slot is held, in hours (shown as days and hours). Cannot change while future windows are bid on or booked.
+             * @default 24
+             */
+            playWindowHours: number;
+            /**
+             * @description Auction schedule: the daily time (HH:MM, UTC) by which bids must be received; the auction for the next play window runs then.
+             * @default 18:00
+             */
+            auctionCutoffTime: string;
             /** @default 100 */
             floorCpm: number;
             /** @default 1.5 */

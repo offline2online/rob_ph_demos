@@ -19,6 +19,9 @@ export function validateAdvertiserSettings(b: Partial<AdvertiserSettingsInput> |
     const v = b?.[k]
     if (typeof v !== 'number' || !Number.isFinite(v) || v <= 0) out.push({ field: k, reason: `${label} must be greater than 0.` })
   }
+  if (!Number.isInteger(b?.auctionOpensHours) || (b?.auctionOpensHours as number) < 1) out.push({ field: 'auctionOpensHours', reason: 'Auction opens must be at least 1 hour before the cutoff.' })
+  if (!Number.isInteger(b?.playWindowHours) || (b?.playWindowHours as number) < 1 || (b?.playWindowHours as number) > 8760) out.push({ field: 'playWindowHours', reason: 'The play window is between 1 hour and 365 days.' })
+  if (typeof b?.auctionCutoffTime !== 'string' || !/^([01]\d|2[0-3]):[0-5]\d$/.test(b.auctionCutoffTime)) out.push({ field: 'auctionCutoffTime', reason: 'A time of day, HH:MM.' })
   for (const k of ['advertiserWhitelist', 'advertiserBlacklist', 'categoryWhitelist', 'categoryBlacklist'] as const) {
     if (!Array.isArray(b?.[k])) out.push({ field: k, reason: 'Required.' })
   }

@@ -123,7 +123,7 @@ evaluated by the existing platform. The API never evaluates targeting.
 
 | Method | Path | Purpose | Main errors |
 |---|---|---|---|
-| POST | `/v1/reservations` | `type: reserve` (named advertiser positions) at its agreed reservation price, or `type: bid`, both with `bidCpm` (the CPM; a reservation is booked at it), for a `positionId` and `windowStart`, with an approved and activated `campaignId` (`not_approved` otherwise). Only while the window's auction is open: from 7 days before the window until the auction runs, 6 hours before (`conflict` otherwise). | `not_approved`, `below_floor`, `advertiser_blocked`, `category_blocked`, `not_on_whitelist`, `conflict` |
+| POST | `/v1/reservations` | `type: reserve` (named advertiser positions) at its agreed reservation price, or `type: bid`, both with `bidCpm` (the CPM; a reservation is booked at it), for a `positionId` and `windowStart`, with an approved and activated `campaignId` (`not_approved` otherwise). Only while the window's auction is open: from `auctionOpensHours` before the auction cutoff until the cutoff (`conflict` otherwise). | `not_approved`, `below_floor`, `advertiser_blocked`, `category_blocked`, `not_on_whitelist`, `conflict` |
 | GET | `/v1/reservations/{id}` | Outcome: `pending`, `won`, `lost`, `reserved`, `rejected`, with clearing CPM and reason. | `not_found` |
 
 A won or reserved campaign is handed to the existing campaign system for
@@ -148,8 +148,8 @@ env var, with no switcher and no cookie (see *POC stand-ins* below).
 
 | Method | Path | Purpose |
 |---|---|---|
-| GET | `/admin/v1/advertiser-settings` | Currency, floor CPM, multipliers, advertiser and category whitelists/blacklists, and read-only `whereTheseApply` (per DSP: adopting or own lists). |
-| PUT | `/admin/v1/advertiser-settings` | Save changes (pricing and lists). An entry can't be on both lists (`validation_failed`). |
+| GET | `/admin/v1/advertiser-settings` | Currency, floor CPM, multipliers, the auction schedule (`auctionOpensHours`, `playWindowHours`, `auctionCutoffTime`), advertiser and category whitelists/blacklists, and read-only `whereTheseApply` (per DSP: adopting or own lists). |
+| PUT | `/admin/v1/advertiser-settings` | Save changes (pricing, auction schedule and lists). An entry can't be on both lists, and the play-window length can't change while future windows are bid on or booked (`validation_failed`). |
 | GET | `/admin/v1/available-inventory` | Read-only rows: display type, playlist, slot, position (with DSP). No advertisers column. |
 
 ### Shared targeting variables
@@ -244,7 +244,7 @@ integration, and nothing else in the build may depend on their internals.
 ## Jobs with no API
 
 - **SSP auction**: a scheduled job in `apps/api` clears each play window
-  ahead of time (OpenRTB section below). For demos, `npm run auction:run`
+  at its auction cutoff (Advertiser settings → Auction schedule), ahead of time (OpenRTB section below). For demos, `npm run auction:run`
   runs one window. No UI and no endpoint.
 - **Billing**: billing line items (dynamic VAC-d, reconciled against
   existing playback data) are stored only. `npm run billing:print` prints

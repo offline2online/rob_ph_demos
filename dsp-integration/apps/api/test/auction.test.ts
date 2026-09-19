@@ -200,14 +200,14 @@ describe('POST /v1/reservations and GET …/{id}', () => {
     expect((await reserve({ ...BID, type: 'reserve' })).statusCode).toBe(409)
   })
 
-  it('only takes bids while the window’s auction is open (Q13): from 7 days before until the auction runs 6 hours before', async () => {
+  it('only takes bids while the window’s auction is open (Auction schedule): from 7 days before the 18:00 cutoff until the cutoff', async () => {
     const { reserve, approve, activate } = await setup()
     await approve('c_api_swisse')
     await activate('c_api_swisse')
     const early = await reserve({ ...BID, windowStart: '2026-09-28T00:00:00.000Z' })
     expect(early.statusCode).toBe(409)
     expectMatchesContract('POST', '/v1/reservations', 409, early.json())
-    expect(early.json().error.message).toBe('Bidding for that window opens at 2026-09-21T00:00:00.000Z.')
+    expect(early.json().error.message).toBe('Bidding for that window opens at 2026-09-20T18:00:00.000Z.')
     expect((await reserve({ ...BID, windowStart: '2026-09-27T00:00:00.000Z' })).statusCode).toBe(201)
   })
 
@@ -228,7 +228,8 @@ describe('POST /v1/reservations and GET …/{id}', () => {
     expectMatchesContract('POST', '/v1/reservations', 400, res.json())
     expect(res.json().error.details.map((d: { field: string }) => d.field)).toEqual(['advertiserId', 'bidCpm', 'campaignId', 'positionId', 'windowStart'])
     const past = await reserve({ ...BID, windowStart: '2026-09-20T00:00:00.000Z' })
-    expect(past.json().error.details).toEqual([{ field: 'windowStart', reason: 'That window can no longer be sold.' }])
+    expect(past.statusCode).toBe(409)
+    expect(past.json().error.message).toBe('Bidding for that window closed at 2026-09-19T18:00:00.000Z, when its auction ran.')
     const other = await app.inject({ method: 'GET', url: '/api/v1/reservations/res_nope', headers: GOOGLE })
     expect(other.statusCode).toBe(404)
     expectMatchesContract('GET', '/v1/reservations/{reservationId}', 404, other.json())

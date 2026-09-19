@@ -359,6 +359,7 @@ All approved by Rob (decision 5). The reason for each change is given.
 | `Partner.seats [{id, name}]` (19 Sep, Rob, Q1) | The slot picker and the DSP pages need each DSP's seats, which spec §8 has on the partner. They are filled from the DSP (mock) on connect |
 | Condition `op` enum → the platform's operator keys: `include`, `match_exactly`, `exclude_or`, `exclude_and`, `equal`, `not_equal`, `greater_than`, `less_than`, `greater_than_or_equal`, `less_than_or_equal` (19 Sep, Rob, Q4) | The six assumed operators didn't match the real Targeting tab (which has *matches exactly*, excludes [OR]/[AND] and ≥/≤); rules are stored in the platform's structure, so the keys must map 1:1 |
 | `POST /v1/reservations`: approved **and activated** campaigns only, and only while the window's auction is open (7 days before until the auction runs, 6 hours before); `Conflict` description names it (19 Sep, Rob, Q13/Q14). Wording only; no new fields or codes | Rob's answers to Q13 and Q14 |
+| `AdvertiserSettingsInput` (and so `AdvertiserSettings`): `auctionOpensHours`, `playWindowHours`, `auctionCutoffTime` (19 Sep, Rob's board ticket and Q13) | The auction schedule becomes retailer settings, replacing the POC config values |
 | `ReservationCreate.bidCpm` required for both types: the bid, or the reservation price agreed through the DSP (19 Sep, Rob, Q11) | A reservation must record the price it was booked at |
 | *Jobs with no API* note: auction job + `npm run auction:run`; billing line items only + `npm run billing:print` | Nothing in the contract triggered the auction or described billing output; no UI, report or endpoint |
 
@@ -542,15 +543,20 @@ All approved by Rob (decision 5). The reason for each change is given.
 12. ~~Category whitelist scope~~ **Accepted (Rob, 19 Sep):** the category
     blacklist applies to every bid; the category whitelist only on
     whitelist-only positions.
-13. ~~When the auction runs~~ **Resolved (Rob, 19 Sep):** the auction runs 6
-    hours before a window (`auctionLeadHours`), and there is now also an
-    auction **start** window: bidding for a window opens 7 days before it
-    (`auctionOpensHours`). `POST /v1/reservations` outside that span is a
-    409 `conflict` ("Bidding for that window opens at …" / "… closed at …,
-    when its auction ran"). Both are config for now; the backlog ticket
-    "Add bidding play-window length and auction cutoff to Advertiser
-    settings → Pricing" is where they would become retailer settings. The
-    7 days is my default; say if it should be different.
+13. ~~When the auction runs~~ **Resolved (Rob, 19 Sep):** three retailer
+    settings in **Advertiser settings → Auction schedule**, directly under
+    Pricing, in this order: **Auction opens** (how long before the cutoff
+    bidding opens; days + hours; default 7 days), **Play-window length**
+    (days + hours; default 24 hours) and **Auction cutoff time** (daily,
+    UTC, every half hour; default 18:00, the six hours before a midnight
+    window Rob accepted). A window's auction closes at the last cutoff at or
+    before it starts — the scheduled job clears it then — and bidding opens
+    *Auction opens* before that. Windows start at UTC midnight and follow
+    each other back to back from a Monday, so 7-day windows run Monday to
+    Monday. The length can't change while future windows are bid on or
+    booked (400 `validation_failed`, since existing bookings are keyed on
+    it). Times are UTC because the platform's company time zone isn't
+    available to this build.
 14. ~~Does the hand-off activate the campaign?~~ **Resolved (Rob, 19 Sep):**
     no — a campaign must already be approved **and activated** before it
     can bid or be reserved, so a winning bid fits straight into the slot.
@@ -602,7 +608,7 @@ Each is configurable in `apps/api/src/config.ts`.
 |---|---|---|
 | Playlist page: the page behind the delete dialog "goes all weird" | Fixed | Opening a dialog re-rendered the table with new column definitions, which reset AG Grid's column widths to their defaults (the table shrank to half its width and cut off names); the wrapper's size didn't change, so nothing re-fitted it. `shared/Grid.tsx` now re-fits on `onNewColumnsLoaded`, which fixes every table. Browser-checked |
 | Display Types: Enter activates Save changes | Built | `SaveBar` takes `saveOnEnter`; the Display Types page turns it on. Enter in a plain field saves when there are unsaved changes; it is left alone in text areas, dropdowns and date pickers, inside dialogs, with a modifier key, and where the field uses Enter itself (e.g. a list's add input). Tests: admin +4. Browser-checked (typed a name, pressed Enter, saved) |
-| Bidding play-window length and auction cutoff in Advertiser settings → Pricing | Not built | Needs contract fields and a spec change; see Q13 for what exists as config |
+| Bidding play-window length and auction cutoff in Advertiser settings → Pricing | Built | The Auction schedule section (Q13): Auction opens, Play-window length, Auction cutoff time; contract fields added; migration 0015 |
 
 ## 13. Prototype comparison (per screen)
 

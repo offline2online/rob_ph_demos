@@ -138,6 +138,7 @@ export async function seed(ctx: Context) {
 
     ctx.company.save({
       currency: 'AUD', floorCpm: 100, personalisedMultiplier: 1.5, interactiveMultiplier: 3,
+      auctionOpensHours: 168, playWindowHours: 24, auctionCutoffTime: '18:00',
       advertiserWhitelist: ['Nestlé', 'Swisse', 'Arnott’s'], advertiserBlacklist: ['Red Bull', 'Monster Energy'],
       categoryWhitelist: ['Food & Drink', 'Health & Fitness'], categoryBlacklist: ['Finance'],
     })

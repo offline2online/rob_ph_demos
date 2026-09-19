@@ -250,7 +250,7 @@ paths:
       tags: [Partner — Reservations]
       operationId: createReservation
       summary: Reserve (named advertiser) or bid (CPM) for a play window
-      description: Approved and activated campaigns only, while the window's auction is open (from 7 days before the window until its auction runs, 6 hours before). Pre-auction checks apply (floor, lists, categories, approval, activation).
+      description: Approved and activated campaigns only, while the window's auction is open (from auctionOpensHours before the auction cutoff until the cutoff; Advertiser settings → Auction schedule). Pre-auction checks apply (floor, lists, categories, approval, activation).
       requestBody:
         required: true
         content:
@@ -1029,9 +1029,12 @@ components:
 
     AdvertiserSettingsInput:
       type: object
-      required: [currency, floorCpm, personalisedMultiplier, interactiveMultiplier, advertiserWhitelist, advertiserBlacklist, categoryWhitelist, categoryBlacklist]
+      required: [currency, floorCpm, personalisedMultiplier, interactiveMultiplier, auctionOpensHours, playWindowHours, auctionCutoffTime, advertiserWhitelist, advertiserBlacklist, categoryWhitelist, categoryBlacklist]
       properties:
         currency: {type: string, description: ISO 4217, default: AUD}
+        auctionOpensHours: {type: integer, minimum: 1, default: 168, description: 'Auction schedule: how long before the auction cutoff bidding for a play window opens, in hours (shown as days and hours).'}
+        playWindowHours: {type: integer, minimum: 1, maximum: 8760, default: 24, description: 'Auction schedule: the minimum period a won slot is held, in hours (shown as days and hours). Cannot change while future windows are bid on or booked.'}
+        auctionCutoffTime: {type: string, pattern: '^([01][0-9]|2[0-3]):[0-5][0-9]$', default: '18:00', description: 'Auction schedule: the daily time (HH:MM, UTC) by which bids must be received; the auction for the next play window runs then.'}
         floorCpm: {type: number, exclusiveMinimum: 0, default: 100}
         personalisedMultiplier: {type: number, exclusiveMinimum: 0, default: 1.5}
         interactiveMultiplier: {type: number, exclusiveMinimum: 0, default: 3}
