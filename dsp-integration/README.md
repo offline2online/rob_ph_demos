@@ -28,7 +28,8 @@ small interface.
 | `apps/admin/src/shared/` | Shared UI: save bar, draft state, unsaved-changes guard, delete dialog, InfoTip, list layout, collapsible panel, summary chips, AG Grid wrapper |
 | `apps/admin/src/features/display-types/` | Display Types screen: list, form, panels, slot assignment, delete |
 | `apps/admin/src/features/playlist-management/` | Playlist Management screen: rename and delete |
-| `apps/admin/src/features/dsp-integration/` | DSP Integration section: list, one shared draft, Exchange settings |
+| `apps/admin/src/features/dsp-integration/` | DSP Integration section: list, one shared draft, Exchange settings, Advertiser settings, Shared Targeting Variables, DSP pages and Add DSP |
+| `apps/admin/src/features/advertisers/` | Advertisers screen (admin only) |
 
 ## Running it
 

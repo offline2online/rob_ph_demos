@@ -5,6 +5,7 @@ import { Navigate, Outlet, RouterProvider, createBrowserRouter, useMatches, type
 import type { Session } from '@ph-dsp/types'
 import { api } from './api/client'
 import { type Flags, envFlags } from './flags'
+import { AdvertisersPage } from './features/advertisers/AdvertisersPage'
 import { DisplayTypesPage } from './features/display-types/DisplayTypesPage'
 import { PlaylistManagementPage } from './features/playlist-management/PlaylistManagementPage'
 import { DspIntegrationLayout } from './features/dsp-integration/DspIntegrationLayout'
@@ -22,12 +23,14 @@ export interface RouteHandle { title: string; tip?: string }
 
 /* Navigation in the prototype's order: Display Types, Playlist Management,
    DSP Integration, Advertisers. Items are added by the package that builds them. */
-export function navFor(flags: Flags, _session: Session | undefined): NavItem[] {
+export function navFor(flags: Flags, session: Session | undefined): NavItem[] {
   return [
     { to: '/display-types', label: 'Display Types', icon: 'dashboard_customize' },
     { to: '/playlists', label: 'Playlist Management', icon: 'playlist_play' },
     /* Flag off: DSP Integration is hidden (decision 6). */
     ...(flags.dspIntegration ? [{ to: '/dsp-integration', label: 'DSP Integration', icon: 'handshake' }] : []),
+    /* Admin users only, directly below DSP Integration (spec §3). */
+    ...(flags.dspIntegration && session?.role === 'hq_admin' ? [{ to: '/advertisers', label: 'Advertisers', icon: 'sell' }] : []),
   ]
 }
 
@@ -54,6 +57,12 @@ function featureRoutes(flags: Flags): RouteObject[] {
             { path: 'partners/:id', element: <PartnerRoute /> },
             { path: 'add/:provider', element: <AddPartnerRoute /> },
           ],
+        },
+        {
+          path: 'advertisers',
+          /* The prototype's intro line, as the page-title tooltip (decision 2). */
+          handle: { title: 'Advertisers', tip: 'Every advertiser using the platform, across all DSPs.' } satisfies RouteHandle,
+          element: <AdvertisersPage />,
         }]
       : []),
   ]

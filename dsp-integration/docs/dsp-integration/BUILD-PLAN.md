@@ -476,7 +476,8 @@ Each is configurable in `apps/api/src/config.ts`.
 | 7 | Advertiser settings | Done | API: `PUT /admin/v1/advertiser-settings` (any ISO 4217 currency, positive floor and multipliers; an entry on both lists is rejected (`validation_failed`), matching case-insensitively; entries trimmed and de-duplicated) and `GET /admin/v1/available-inventory` (every advertiser-owned slot, no advertisers column). Pricing maths in `domain/pricing.ts` with the brief's unit tests (floor × personalised × interactive × advertiser multiplier; 450 and 360 examples); the Advertisers endpoint now uses it. UI: the Advertiser settings page (Pricing with the ISO 4217 currency picker, four list editors (adding to one list removes the entry from the other; seat and category suggestions), Where these apply with Open, Available Inventory as an AG Grid table with Open). The DSP Integration section now opens on it, as the prototype does. Shared `ListEditor`. Tests: API +9, admin +1. Browser-checked: moving an advertiser between lists, suggestions, save | — | — |
 | 8 | Shared Targeting Variables | Done | API: `GET/PUT /admin/v1/targeting-variables` (24 default variables with tooltip text; access is `"all"` or DSP ids; unknown variables and unknown DSPs are rejected) and the Partner API's first endpoint, `GET /v1/targeting/attributes`. The caller gets only the variables enabled for it: `"all"` counts only if the DSP is connected, and a named DSP always does. Never values. Partner API auth: one static bearer token per seeded partner (`PARTNER_TOKENS`); 401 without one, 404 with the flag off. UI: the page (two groups, each an AG Grid Variable / DSPs table, example values as each variable's tooltip, header tooltip) and `DspPicker` (All connected DSPs or individual DSPs with connection state, shown as pills). Tests: API +6, admin +1. Browser-checked: picker, save | — | Q4 |
 | 9 | DSP page + Google DSP (DV360) | Done | **API and mocks:** `apps/dsp-mocks`, a mock DSP service (§14) with the DV360 token endpoint and API v4 (`/v4/partners/{id}`, `/v4/advertisers` with paging), a control API and a test page. A real DV360 client (`apps/api/src/dsp/googleDv360.ts`): it signs an RS256 service-account JWT, exchanges it at the token endpoint, checks partner access and pages through the advertisers, all against the mock by default (`DV360_TOKEN_URL`, `DV360_API_BASE_URL`). The seed now holds a real, freshly generated key file. Endpoints: `POST /admin/v1/partners` (Test, adopting the company lists, one per provider), `GET/PUT /admin/v1/partners/{id}` (secrets write-only; Live refused with 409 unless connected with the bidder integration complete; unlinking copies the company lists down and relinking discards the DSP's own; https bidder endpoint; Amazon region fixed once connected), and `POST …/connect` and `POST …/disconnect`. Tests: API +11 (run against the mock in-process), mocks +3 **UI:** the DSP page. In order: header (provider icon, the name as a plain heading (Q6), provider and last sync, status pill), issues at the top (connection error with the DSP's reason, missing credentials, missing bidder fields, or the green no-issues line), Mode (Test/Live, Live disabled until connected with the bidder integration complete), Connection credentials (per provider; every secret masked, including the DV360 key file), Connect / Re-test connection / Disconnect (immediate (Q5); Connect is disabled with "Save changes first" while credential edits are unsaved), Bidder integration, and Advertiser whitelist / blacklist (the linked callout with Unlink and edit, or the DSP's own lists with Relink and seat suggestions). The Add card (You will need, Add partner / Cancel) creates a draft DSP; Save changes creates it (`POST`, then `PUT`) and opens its page. Fixed a `useDraft` bug (a second refetch after a save could leave a stale draft) that affected every page. Tests: admin +5 | Connecting Amazon Ads DSP and The Trade Desk (package 17) | Q5, Q6 (answered) |
-| 10–17 | — | Not started | — | — | — |
+| 10 | Advertisers screen (admin only) | Done | API: `PUT /admin/v1/advertisers` (admin scope, 403 otherwise; known advertiser ids only; boolean approval; multiplier > 0; applies to future submissions). UI: the Advertisers nav item directly below DSP Integration, for admins only (flag on). The screen: an Admin only pill, then an AG Grid table (Advertiser, Via, Campaign approval switch with Required / Not required, Floor multiplier, Effective floor that updates as you type, each column with its tooltip), the empty state, and the save bar (decision 4). The prototype's intro line is the page-title tooltip (decision 2). Tests: API +3, admin +2. Browser-checked | — | — |
+| 11–17 | — | Not started | — | — | — |
 
 ## 13. Prototype comparison (per screen)
 
@@ -515,6 +516,18 @@ Kept on the page as status (decision 2): "Not enabled for this company —
 contact Platform Admin.", the broken-partner callout, "On the blacklist —
 this position cannot fill.", "Not connected", the preview caption, and the
 save bar message.
+
+### Advertisers (package 10)
+
+Compared against the prototype at 1163px. The Admin only pill, the columns
+and all four header tooltips, the violet sell icon, the approval switch with
+its label, the multiplier input (step 0.05), the effective floor text
+("AUD 80.00 CPM") and the empty state match.
+
+| Where | Prototype | Build | Why |
+|---|---|---|---|
+| Top line | "Every advertiser using the platform, across all DSPs." as page text | The page-title tooltip | Decision 2 |
+| Save | No save bar (bug) | The standard save bar | Decision 4 |
 
 ### DSP page and Add card (package 9)
 

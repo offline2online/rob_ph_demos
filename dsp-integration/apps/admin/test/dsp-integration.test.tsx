@@ -97,3 +97,23 @@ describe('DSP page', () => {
     expect(screen.queryByRole('region', { name: 'Save changes' })).not.toBeInTheDocument()
   })
 })
+
+describe('Advertisers screen (admin only)', () => {
+  const advertisers = { currency: 'AUD', floorCpm: 100, items: [{ advertiserId: 'nestle', name: 'Nestlé', via: ['Google DSP'], approvalRequired: false, floorMultiplier: 0.8, effectiveFloorCpm: 80 }] }
+
+  it('sits directly below DSP Integration in the nav for admins, with the prototype’s columns', async () => {
+    vi.stubGlobal('fetch', vi.fn(fakeFetch({ '/api/admin/v1/advertisers': advertisers })))
+    renderAt('/advertisers')
+    await screen.findByText('Admin only')
+    const nav = screen.getByRole('navigation', { name: 'Display Types and DSP Integration' })
+    expect(within(nav).getAllByRole('link').map((l) => l.textContent?.replace(/^[a-z_]+/, ''))).toEqual(['Display Types', 'Playlist Management', 'DSP Integration', 'Advertisers'])
+    expect(screen.getByRole('button', { name: 'Every advertiser using the platform, across all DSPs.' })).toBeInTheDocument()
+  })
+
+  it('is not in the nav for a non-admin session', async () => {
+    vi.stubGlobal('fetch', vi.fn(fakeFetch({ '/api/admin/v1/session': { userId: 'u', name: 'HQ User (POC)', role: 'hq_user' } })))
+    renderAt('/display-types')
+    await screen.findByRole('link', { name: /DSP Integration/ })
+    expect(screen.queryByRole('link', { name: /Advertisers/ })).not.toBeInTheDocument()
+  })
+})
