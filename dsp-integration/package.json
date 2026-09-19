@@ -18,7 +18,8 @@
     "typecheck": "npm run typecheck --workspaces --if-present",
     "build": "npm run build --workspaces --if-present",
     "dev:mocks": "npm run dev -w @ph-dsp/dsp-mocks",
-    "auction:run": "npm run auction:run -w @ph-dsp/api --"
+    "auction:run": "npm run auction:run -w @ph-dsp/api --",
+    "billing:print": "npm run billing:print -w @ph-dsp/api"
   },
   "devDependencies": {
     "typescript": "~5.9.3"

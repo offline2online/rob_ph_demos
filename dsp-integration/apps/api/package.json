@@ -9,7 +9,8 @@
     "db:seed": "tsx src/seed/cli.ts",
     "test": "vitest run",
     "typecheck": "tsc -p tsconfig.json",
-    "auction:run": "tsx src/exchange/cli.ts"
+    "auction:run": "tsx src/exchange/cli.ts",
+    "billing:print": "tsx src/exchange/billingCli.ts"
   },
   "dependencies": {
     "@fastify/multipart": "^9.4.0",

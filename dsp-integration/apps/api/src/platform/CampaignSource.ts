@@ -14,6 +14,9 @@ export interface NewCampaign {
   id: string; name: string; targeting: unknown; source: Campaign['source']; advertiserId: string
   partnerId: string; displayTypeId: string | null; pricingType: NonNullable<Campaign['pricingType']>
 }
+/* A campaign booked into a display type's slot for a play window: the
+   existing campaign system's side of the hand-off (spec §6). */
+export interface SlotBooking { id: string; campaignId: string; displayTypeId: string; slot: number; windowStart: string; windowEnd: string }
 /* One uploaded creative file. `version` increases with every upload to the campaign. */
 export interface CampaignAsset {
   id: string; campaignId: string; version: number; role: string; file: string; mimeType: string
@@ -30,6 +33,9 @@ export interface CampaignSource {
   addAsset(a: Omit<CampaignAsset, 'version'>): CampaignAsset
   /* The latest asset for each version role ("baseline" or a targeted version id). */
   latestAssets(campaignId: string): CampaignAsset[]
+  /* Hand-off (package 16): book a campaign into a slot for a window. */
+  bookSlot(b: SlotBooking): SlotBooking
+  bookings(campaignId?: string): SlotBooking[]
 }
 
 interface Row {
@@ -87,6 +93,18 @@ export function sqliteCampaignSource(db: Db): CampaignSource {
       ).run(a.id, a.campaignId, version, a.role, a.file, a.mimeType, a.width, a.height, a.durationSec, a.bitrateKbps, a.sizeBytes, new Date().toISOString())
       listeners.forEach((l) => l(a.campaignId))
       return { ...a, version }
+    },
+    bookSlot(b) {
+      db.prepare('INSERT INTO campaign_slot_bookings (id, campaign_id, display_type_id, slot, window_start, window_end, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
+        .run(b.id, b.campaignId, b.displayTypeId, b.slot, b.windowStart, b.windowEnd, new Date().toISOString())
+      listeners.forEach((l) => l(b.campaignId))
+      return b
+    },
+    bookings(campaignId) {
+      const rows = (campaignId
+        ? db.prepare('SELECT * FROM campaign_slot_bookings WHERE campaign_id = ? ORDER BY window_start').all(campaignId)
+        : db.prepare('SELECT * FROM campaign_slot_bookings ORDER BY window_start').all()) as { id: string; campaign_id: string; display_type_id: string; slot: number; window_start: string; window_end: string }[]
+      return rows.map((r) => ({ id: r.id, campaignId: r.campaign_id, displayTypeId: r.display_type_id, slot: r.slot, windowStart: r.window_start, windowEnd: r.window_end }))
     },
     latestAssets(campaignId) {
       const rows = (db.prepare('SELECT * FROM campaign_assets WHERE campaign_id = ? ORDER BY version').all(campaignId) as unknown as AssetRow[]).map(toAsset)

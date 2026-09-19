@@ -3,6 +3,7 @@
    canvas size, written to the AssetStore. */
 import { randomUUID } from 'node:crypto'
 import type { Context } from '../context'
+import { tx } from '../db/db'
 import type { StoredTargeting } from '../domain/targetingSummary'
 
 const svg = (w: number, h: number, bg: string, brand: string, line: string) =>
@@ -49,4 +50,27 @@ export async function seedCampaigns(ctx: Context) {
   await ctx.approvals.submit('c_api_swisse', PASSED(1080, 1920), 'Swisse')
   await ctx.approvals.submit('c_dsp_loreal', PASSED(1920, 1080), 'Amazon Ads DSP')
   await ctx.approvals.reject('c_dsp_loreal', 'v1', 'HQ Admin (POC)', 'Price shown in the artwork (A$29.95). Prices come from Personalisation Hub, not the creative.')
+
+  seedPastWindow(ctx)
+}
+
+/* A window that has already played, for billing: Nestlé won the Menu Board's
+   advertiser slot on 15 Sep at 120 CPM and it was handed off. The stand-in
+   playback data (read only) has one Menu Board playing the full day, one
+   half the day, and one offline. */
+function seedPastWindow(ctx: Context) {
+  const start = '2026-09-15T00:00:00.000Z'
+  ctx.reservations.insert({
+    id: 'res_seed_nestle_0915', partnerId: 'p_google', advertiserId: 'nestle', campaignId: 'c_dsp_nestle', positionId: 'menu_board.s2', windowStart: start,
+    type: 'bid', channel: 'openrtb', bidCpm: 120, currency: 'AUD', status: 'won', clearingCpm: 120, reason: null, testMode: false,
+    pricingType: 'localised', handedOffAt: '2026-09-14T18:00:00.000Z',
+  })
+  ctx.campaigns.bookSlot({ id: 'bk_seed_nestle_0915', campaignId: 'c_dsp_nestle', displayTypeId: 'menu_board', slot: 2, windowStart: start, windowEnd: '2026-09-16T00:00:00.000Z' })
+  /* A 45s loop with a 15s slot: 1,920 plays a day on a display that is on all day. */
+  const play = ctx.db.prepare('INSERT INTO plays (id, display_id, campaign_id, played_at, duration_sec) VALUES (?, ?, ?, ?, 15)')
+  const t0 = Date.parse(start)
+  tx(ctx.db, () => {
+    for (let i = 0; i < 1920; i++) play.run(`pl_1004_${i}`, 'd_1004', 'c_dsp_nestle', new Date(t0 + i * 45_000).toISOString())
+    for (let i = 0; i < 960; i++) play.run(`pl_1005_${i}`, 'd_1005', 'c_dsp_nestle', new Date(t0 + i * 45_000).toISOString())
+  })
 }

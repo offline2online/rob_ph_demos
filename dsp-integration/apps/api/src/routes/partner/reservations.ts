@@ -8,6 +8,7 @@ import type { FastifyPluginAsync } from 'fastify'
 import type { Context } from '../../context'
 import { assignmentOf, findPosition, nextWindow, windowStartOf } from '../../domain/positions'
 import { checkAdvertiser, checkApproved, checkFloor, floorFor } from '../../exchange/enforcement'
+import { handOff } from '../../exchange/handoff'
 import { HttpError, conflict, notFound, validationFailed } from '../../http/errors'
 import { type ReservationRecord, TAKEN } from '../../repos/ReservationRepo'
 import { partnerAdvertiser } from './campaigns'
@@ -67,7 +68,8 @@ export const reservationRoutes = (ctx: Context): FastifyPluginAsync => async (ap
       status: reserved ? 'reserved' : 'pending', clearingCpm: reserved ? floorFor(ctx, c.pricingType, c.advertiserId) : null, reason: null,
       testMode: !live, pricingType: c.pricingType ?? null, handedOffAt: null,
     })
-    return reply.status(201).send(reservationView(r))
+    /* A reservation is booked now, so it is handed off now. */
+    return reply.status(201).send(reservationView(reserved ? await handOff(ctx, r) : r))
   })
 
   app.get<{ Params: { id: string } }>('/reservations/:id', async (req) => {

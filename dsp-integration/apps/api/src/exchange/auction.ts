@@ -7,7 +7,8 @@
 
    Test-mode DSPs receive requests and their bids are cleared among
    themselves, but a Test-mode win never takes the window, is never billed
-   and is never handed off (spec §7). */
+   and is never handed off (spec §7). The live winner is handed off
+   (handoff.ts). */
 import { randomUUID } from 'node:crypto'
 import type { Context } from '../context'
 import { isComplete } from '../domain/exchange'
@@ -17,6 +18,7 @@ import { type ReservationRecord, TAKEN } from '../repos/ReservationRepo'
 import { advertiserSlug } from '@ph-dsp/types'
 import { campaignForCrid, queueCreative } from './creatives'
 import { checkAdvertiser, checkApproved, checkCategories, checkFloor } from './enforcement'
+import { handOff } from './handoff'
 import { type Bid, type BidResponse, buildBidRequest } from './openrtb'
 
 export interface PositionOutcome {
@@ -77,7 +79,10 @@ async function clearPosition(ctx: Context, p: PositionRef, start: string, exchan
 
   const live = clear(ctx, candidates.filter((c) => !c.testMode))
   clear(ctx, candidates.filter((c) => c.testMode))
-  if (live) out.winner = { reservationId: live.id, partnerId: live.partnerId, advertiserId: live.advertiserId, clearingCpm: live.bidCpm as number }
+  if (live) {
+    await handOff(ctx, live)
+    out.winner = { reservationId: live.id, partnerId: live.partnerId, advertiserId: live.advertiserId, clearingCpm: live.bidCpm as number }
+  }
   return out
 }
 

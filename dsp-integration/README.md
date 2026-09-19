@@ -20,11 +20,11 @@ small interface.
 | `packages/types/` | Shared TypeScript types generated from `openapi.yaml` (`npm run gen:types`), plus shared catalogues: providers, targeting variables, slot owners |
 | `apps/api/` | Node + Fastify + SQLite (`node:sqlite`). All paths are served under `/api`. |
 | `apps/api/src/db/migrations/` | Versioned, reversible SQL migrations. `0001` is the stand-in for the existing platform's records; `0002`+ are this build's additive changes. |
-| `apps/api/src/platform/` | Stand-ins for the existing platform: `DisplayTypeSource`, `PlaylistSource`, `DisplaySource`, `CampaignSource`, `PlaybackSource` |
+| `apps/api/src/platform/` | Stand-ins for the existing platform: `DisplayTypeSource`, `PlaylistSource`, `DisplaySource`, `CampaignSource` (including slot bookings for the hand-off), `PlaybackSource`, `AssetStore`, `AudienceSource` |
 | `apps/api/src/repos/` | This build's own records: partners (credentials encrypted), company advertiser settings, variable access, exchange |
 | `apps/api/src/seed/` | Seed data, taken from the prototype's `model/data.js` |
 | `apps/dsp-mocks/` | Mock Google DV360, Amazon Ads and The Trade Desk APIs and OpenRTB bidders for testing, with a control API and a test page at `/`. The POC's DSP clients and the auction call these instead of real DSPs. |
-| `apps/api/src/exchange/` | The exchange: OpenRTB 2.6 DOOH bid requests, pre-auction enforcement, the auction job and its CLI, DSP creative queueing |
+| `apps/api/src/exchange/` | The exchange: OpenRTB 2.6 DOOH bid requests, pre-auction enforcement, the auction job, DSP creative queueing, hand-off to the campaign system, billing (dynamic VAC-d), and their CLIs |
 | `packages/campaign-approval/` | Campaign approval as a drop-in module for the existing Campaigns section: adapter, state machine, service, routes, UI components, contract tests. See [CAMPAIGN-APPROVAL-INTEGRATION.md](docs/dsp-integration/CAMPAIGN-APPROVAL-INTEGRATION.md) |
 | `apps/admin/` | Admin UI: React 18, Vite, Ant Design 5, Tailwind 4 and AG Grid (Alpine). It renders the content frame only, because it is iframed into HQ Admin. |
 | `apps/admin/src/shared/` | Shared UI: save bar, draft state, unsaved-changes guard, delete dialog, InfoTip, list layout, collapsible panel, summary chips, AG Grid wrapper |
@@ -84,6 +84,16 @@ npm test
   Leave out `--window` for the next window that can be sold. A DSP's first
   bid with a new creative is discarded and the creative queued for
   approval; it competes from the next window once approved.
+- Winning and reserved windows are handed off to the stand-in campaign
+  system (booked into the slot for the window). After a window ends, it is
+  billed against the stand-in playback data. To bill any ended windows
+  and print every billing line item:
+
+  ```bash
+  npm run billing:print
+  ```
+
+  The seed includes one played window (15 Sep 2026).
 - `POC_ROLE` sets the stand-in session: `hq_admin` (admin and approver) or
   `hq_user` (neither).
 - The API seeds an empty database on its first start. Delete
