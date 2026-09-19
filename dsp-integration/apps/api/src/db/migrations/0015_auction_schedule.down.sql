@@ -1,0 +1,3 @@
+ALTER TABLE company_advertiser_settings DROP COLUMN auction_cutoff_time;
+ALTER TABLE company_advertiser_settings DROP COLUMN play_window_hours;
+ALTER TABLE company_advertiser_settings DROP COLUMN auction_opens_hours;

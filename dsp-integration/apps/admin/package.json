@@ -1,0 +1,38 @@
+{
+  "name": "@ph-dsp/admin",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@ph-dsp/campaign-approval": "*",
+    "@ph-dsp/types": "*",
+    "@tanstack/react-query": "^5.103.1",
+    "ag-grid-community": "^32.3.9",
+    "ag-grid-react": "^32.3.9",
+    "antd": "^5.29.3",
+    "dayjs": "^1.11.23",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-router-dom": "^6.30.6"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.3.3",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.3",
+    "@testing-library/user-event": "^14.6.7",
+    "@types/react": "^18.3.31",
+    "@types/react-dom": "^18.3.7",
+    "@vitejs/plugin-react": "^4.7.0",
+    "jsdom": "^26.1.0",
+    "tailwindcss": "^4.3.3",
+    "vite": "^6.4.3",
+    "vitest": "^3.2.7"
+  }
+}

@@ -1,0 +1,59 @@
+@import "tailwindcss";
+@import "ag-grid-community/styles/ag-grid.css";
+@import "ag-grid-community/styles/ag-theme-alpine.css";
+
+/* ph-designer references/tokens.md §7 */
+@theme {
+  --color-primary: #169bc2;
+  --color-primary-accent: #38b0cf;
+  --color-primary-active: #09759c;
+  --color-primary-soft: #e8fdff;
+  --color-primary-tint: rgba(22, 155, 194, 0.1);
+  --color-ink: #333333;
+  --color-muted: rgba(0, 0, 0, 0.45);
+  --color-micro: #9ca3af;
+  --color-subtle: #f0f0f0;
+  --color-surface-alt: #fafafa;
+  --color-grid-text: #181d1f;
+  --font-sans: Roboto, "Helvetica Neue", Helvetica, Arial, sans-serif;
+}
+
+/* Keep Tailwind's preflight from fighting Ant Design's own resets. */
+@layer base {
+  html, body { margin: 0; background: #ffffff; color: #333333; font-size: 14px; }
+}
+
+/* Material Symbols (Outlined) — SKILL.md §1.1 */
+.material-symbols-outlined {
+  font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+  font-size: 20px;
+  line-height: 1;
+  vertical-align: middle;
+  user-select: none;
+}
+
+/* AG Grid Alpine — tokens.md §8 */
+.ag-theme-alpine {
+  --ag-font-family: Roboto, "Helvetica Neue", Helvetica, Arial, sans-serif;
+  --ag-font-size: 14px;
+  --ag-foreground-color: #181d1f;
+  --ag-background-color: #ffffff;
+  --ag-header-background-color: #ffffff;
+  --ag-header-foreground-color: #181d1f;
+  --ag-border-color: rgba(24, 29, 31, 0.15);
+  --ag-row-hover-color: #e8fdff;
+  --ag-selected-row-background-color: #e8fdff;
+  --ag-cell-horizontal-padding: 15px;
+  --ag-header-height: 40px;
+  --ag-row-height: 42px;
+  --ag-checkbox-checked-color: #169bc2;
+}
+.ag-theme-alpine .ag-header-cell-text { font-size: 13px; font-weight: 700; }
+.ag-theme-alpine .ag-cell { display: flex; align-items: center; line-height: normal; }
+.ag-theme-alpine .ag-cell > .ag-cell-value, .ag-theme-alpine .ag-cell-wrapper { flex: 1; min-width: 0; }
+/* Auto-height grids grow with their rows and never scroll vertically. */
+.ag-theme-alpine .ag-layout-auto-height .ag-body-vertical-scroll { display: none; }
+/* Auto-height grids end at their last row (Alpine reserves 150px otherwise). */
+.ag-theme-alpine .ag-layout-auto-height .ag-center-cols-viewport,
+.ag-theme-alpine .ag-layout-auto-height .ag-center-cols-container,
+.ag-theme-alpine .ag-layout-auto-height .ag-center-cols-clipper { min-height: unset !important; }

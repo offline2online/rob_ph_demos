@@ -1,0 +1,22 @@
+{
+  "name": "@ph-dsp/dsp-mocks",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "Mock Google DV360, Amazon Ads and The Trade Desk APIs for testing (never real DSPs).",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "start": "tsx src/index.ts",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "fastify": "^5.12.5",
+    "@fastify/formbody": "^8.0.2"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "tsx": "^4.23.13",
+    "vitest": "^3.2.4"
+  }
+}
