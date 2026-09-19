@@ -4,10 +4,11 @@ import type { DisplayType, DisplayTypeExtensions } from '@ph-dsp/types'
 import type { FastifyPluginAsync } from 'fastify'
 import type { Context } from '../../context'
 import { tx } from '../../db/db'
+import { dependentDetails, displayTypeDeleteCheck, soldOrReservedPositions } from '../../domain/deleteChecks'
 import { ensureReferencedPlaylists, validateRecord } from '../../domain/displayTypes'
 import { validateExtensions } from '../../domain/slots'
 import type { Guards } from '../../http/app'
-import { notFound, validationFailed } from '../../http/errors'
+import { hasDependents, notFound, validationFailed } from '../../http/errors'
 
 /* Existing fields only: phExtensions is saved through /extensions. */
 const recordFields = (b: DisplayType): DisplayType => {
@@ -65,5 +66,22 @@ export const displayTypeRoutes = (ctx: Context, guards: Guards): FastifyPluginAs
       ...((body.venue ?? dt.phExtensions?.venue) ? { venue: body.venue ?? dt.phExtensions?.venue } : {}),
     }
     return ctx.displayTypes.saveExtensions(req.params.id, ext)
+  })
+
+  app.get<{ Params: { id: string } }>('/display-types/:id/delete-check', async (req) => {
+    if (!ctx.displayTypes.get(req.params.id)) throw notFound()
+    return displayTypeDeleteCheck(ctx, req.params.id)
+  })
+
+  /* Deletes the display type and its settings. Its auto-created playlist is
+     kept: it shows as unused in Playlist Management (spec §1). */
+  app.delete<{ Params: { id: string } }>('/display-types/:id', async (req, reply) => {
+    if (!ctx.displayTypes.get(req.params.id)) throw notFound()
+    const check = displayTypeDeleteCheck(ctx, req.params.id)
+    if (!check.canDelete) throw hasDependents("This display type can't be deleted while displays are assigned to it.", dependentDetails(check))
+    const positions = soldOrReservedPositions(ctx, req.params.id)
+    req.log.info({ displayTypeId: req.params.id, soldOrReservedPositions: positions }, 'display type deleted')
+    ctx.displayTypes.delete(req.params.id)
+    return reply.status(204).send()
   })
 }

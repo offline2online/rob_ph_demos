@@ -13,7 +13,7 @@ const Badge = ({ icon, title, tone }: { icon: string; title: string; tone: 'stru
   </span>
 )
 
-export function DisplayTypeList({ types, selectedId, onSelect, onNew }: { types: DisplayType[]; selectedId: string | undefined; onSelect: (id: string) => void; onNew: () => void }) {
+export function DisplayTypeList({ types, selectedId, onSelect, onNew, onDelete }: { types: DisplayType[]; selectedId: string | undefined; onSelect: (id: string) => void; onNew: () => void; onDelete: (id: string) => void }) {
   return (
     <>
       <Button type="primary" block className="mb-2.5" icon={<Icon name="add" size={16} />} onClick={onNew}>New display type</Button>
@@ -34,6 +34,17 @@ export function DisplayTypeList({ types, selectedId, onSelect, onNew }: { types:
               <div className="flex min-w-0 items-center gap-[7px]">
                 <Icon name={touchPointIcon(t.touchPoint)} size={17} style={{ color: active ? T.primary : T.muted, flexShrink: 0 }} />
                 <span className="min-w-0 flex-1 truncate" style={{ fontSize: 13, color: active ? T.primary : T.text }}>{t.name}</span>
+                <Button
+                  type="text"
+                  size="small"
+                  title="Delete display type"
+                  aria-label={`Delete ${t.name || 'display type'}`}
+                  icon={<Icon name="delete" size={16} style={{ color: T.micro }} />}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    onDelete(t.id)
+                  }}
+                />
               </div>
               <div className="mt-[3px] ml-6" style={{ fontSize: 11, color: T.muted }}>{t.displayCanvasSize.width}×{t.displayCanvasSize.height}</div>
               <div className="mt-[5px] ml-6 flex flex-wrap gap-[5px]">
