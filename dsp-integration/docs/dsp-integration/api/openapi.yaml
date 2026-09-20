@@ -325,22 +325,29 @@ paths:
       security: [{adminSession: []}]
       responses:
         '200':
-          description: Rows
+          description: Rows, and the DSPs (with their advertisers) a position can be assigned to
           content:
             application/json:
               schema:
                 type: object
-                required: [items]
+                required: [items, dsps]
                 properties:
                   items: {type: array, items: {$ref: '#/components/schemas/AvailableInventoryRow'}}
+                  dsps: {type: array, items: {$ref: '#/components/schemas/DspAdvertisers'}}
         '401': {$ref: '#/components/responses/Unauthorised'}
     put:
       tags: [Admin — Advertiser settings]
       operationId: saveAvailableInventory
-      summary: Save changes — what targeting each slot supports
+      summary: Save changes — who a slot is assigned to, and what targeting it supports
       description: |
-        Only supportedTargeting is editable here; everything else about a slot
-        is set on its display type. Admin only: marketing users read this table.
+        The two editable fields of a sellable slot. Everything else about it —
+        its label and owner — is set on its display type. Admin only:
+        marketing users read this table.
+
+        assignedTo: pick DSPs to say who may bid, advertisers to hold the
+        position for them (their DSPs are added automatically), or
+        whitelistOnly for the advertiser whitelist. Nothing chosen means any
+        connected DSP. Advertisers and whitelistOnly are mutually exclusive.
       security: [{adminSession: []}]
       requestBody:
         required: true
@@ -354,7 +361,7 @@ paths:
                   type: array
                   items:
                     type: object
-                    required: [displayTypeId, slot, supportedTargeting]
+                    required: [displayTypeId, slot, supportedTargeting, assignedTo]
                     properties:
                       displayTypeId: {type: string}
                       slot: {type: integer, minimum: 1}
@@ -362,6 +369,13 @@ paths:
                         type: array
                         minItems: 1
                         items: {type: string, enum: [localised, personalised, interactive]}
+                      assignedTo:
+                        type: object
+                        required: [partnerIds, advertisers, whitelistOnly]
+                        properties:
+                          partnerIds: {type: array, items: {type: string}}
+                          advertisers: {type: array, items: {type: string}}
+                          whitelistOnly: {type: boolean}
       responses:
         '200':
           description: Saved
@@ -369,9 +383,10 @@ paths:
             application/json:
               schema:
                 type: object
-                required: [items]
+                required: [items, dsps]
                 properties:
                   items: {type: array, items: {$ref: '#/components/schemas/AvailableInventoryRow'}}
+                  dsps: {type: array, items: {$ref: '#/components/schemas/DspAdvertisers'}}
         '400': {$ref: '#/components/responses/ValidationFailed'}
         '401': {$ref: '#/components/responses/Unauthorised'}
         '403': {$ref: '#/components/responses/Forbidden'}
@@ -1158,9 +1173,35 @@ components:
                   partnerId: {type: string}
                   name: {type: string}
                   adopting: {type: boolean}
+    DspAdvertisers:
+      type: object
+      description: A DSP and the advertisers it brings, for a picker or a filter.
+      required: [partnerId, name, advertisers]
+      properties:
+        partnerId: {type: string}
+        name: {type: string}
+        advertisers:
+          type: array
+          items:
+            type: object
+            required: [advertiserId, name]
+            properties:
+              advertiserId: {type: string}
+              name: {type: string}
+    AssignedTo:
+      type: object
+      description: |
+        Who may buy a position: DSPs, named advertisers, or the advertiser
+        whitelist. No DSPs and no advertisers means any connected DSP.
+      required: [partnerIds, partnerNames, advertisers, whitelistOnly]
+      properties:
+        partnerIds: {type: array, items: {type: string}}
+        partnerNames: {type: array, items: {type: string}, description: The same DSPs by name, for display.}
+        advertisers: {type: array, items: {type: string}, description: Named advertisers it is held for.}
+        whitelistOnly: {type: boolean, description: 'Only advertisers on the whitelist may bid; never true when advertisers is non-empty.'}
     AvailableInventoryRow:
       type: object
-      required: [displayTypeId, displayTypeName, playlistName, slot, position, supportedTargeting]
+      required: [displayTypeId, displayTypeName, playlistName, slot, position, assignedTo, supportedTargeting]
       properties:
         displayTypeId: {type: string}
         displayTypeName: {type: string}
@@ -1168,7 +1209,7 @@ components:
         playlistName: {type: string}
         slot: {type: integer}
         position: {type: string}
-        partnerName: {type: [string, 'null']}
+        assignedTo: {$ref: '#/components/schemas/AssignedTo'}
         supportedTargeting:
           type: array
           description: What a campaign may use on this slot; localised only by default.
@@ -1186,14 +1227,14 @@ components:
           type: array
           items:
             type: object
-            required: [positionId, displayTypeId, displayTypeName, slot, slotLabel, partnerName, assignment, windows]
+            required: [positionId, displayTypeId, displayTypeName, slot, slotLabel, partnerNames, assignment, windows]
             properties:
               positionId: {type: string}
               displayTypeId: {type: string}
               displayTypeName: {type: string}
               slot: {type: integer, minimum: 1}
               slotLabel: {type: string}
-              partnerName: {type: [string, 'null'], description: 'The DSP the slot is tied to; null = any connected DSP.'}
+              partnerNames: {type: array, items: {type: string}, description: 'The DSPs the slot is tied to; empty = any connected DSP.'}
               assignment: {type: string, enum: [rtb, whitelist_only, reserved]}
               windows:
                 type: array
@@ -1227,20 +1268,7 @@ components:
         dsps:
           type: array
           description: The DSPs the filters offer, and the advertisers each one brings.
-          items:
-            type: object
-            required: [partnerId, name, advertisers]
-            properties:
-              partnerId: {type: string}
-              name: {type: string}
-              advertisers:
-                type: array
-                items:
-                  type: object
-                  required: [advertiserId, name]
-                  properties:
-                    advertiserId: {type: string}
-                    name: {type: string}
+          items: {$ref: '#/components/schemas/DspAdvertisers'}
         byPricingType:
           type: array
           description: The same bookings by campaign type, so a retailer can see what is selling.
@@ -1427,8 +1455,19 @@ components:
             properties:
               label: {type: string}
               owner: {type: string, enum: [internal, advertiser, retail]}
-              partnerId: {type: [string, 'null']}
-              advertiser: {type: [string, 'null'], description: Named advertiser when reserved.}
+              partnerIds:
+                type: array
+                description: |
+                  The DSPs that may buy this position; empty or absent means any
+                  connected DSP. Set on Advertisers / Inventory, not on the
+                  display type: the slot editor only sets the label and owner.
+                items: {type: string}
+              advertisers:
+                type: array
+                description: |
+                  Named advertisers the position is held for; empty means it is
+                  not reserved. Their DSPs are always among partnerIds.
+                items: {type: string}
               listMode: {type: [string, 'null'], enum: [rtb, whitelist_only, null]}
               storeScope: {type: [string, 'null']}
               quota: {type: [integer, 'null']}

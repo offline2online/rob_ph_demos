@@ -56,13 +56,27 @@ export const displayTypeRoutes = (ctx: Context, guards: Guards): FastifyPluginAs
     if (!dt) throw notFound()
     const body = req.body ?? ({} as DisplayTypeExtensions)
     if (!Array.isArray(body.slots)) throw validationFailed([{ field: 'slots', reason: 'Required.' }])
-    const errors = validateExtensions(dt, body, ctx.partners.list(), ctx.company.get(), dt.phExtensions?.slots ?? [])
+    const errors = validateExtensions(dt, body)
     if (errors.length) throw validationFailed(errors)
+    /* The editor sets the label and the owner; who the position is assigned
+       to and what it supports are edited on Advertisers / Inventory, so they
+       are carried over here — and dropped when a slot stops being sellable
+       (Rob, 20 Sep). A Stores slot takes the default scope. */
+    const previous = dt.phExtensions?.slots ?? []
     const ext: DisplayTypeExtensions = {
-      slots: body.slots.map((s) => ({
-        label: s.label.trim(), owner: s.owner, partnerId: s.partnerId ?? null, advertiser: s.advertiser ?? null,
-        listMode: s.listMode ?? null, storeScope: s.storeScope ?? null, quota: s.quota ?? null,
-      })),
+      slots: body.slots.map((s, i) => {
+        const was = previous[i]
+        const kept = was?.owner === 'advertiser' && s.owner === 'advertiser'
+        return {
+          label: s.label.trim(), owner: s.owner,
+          partnerIds: kept ? was.partnerIds ?? [] : [],
+          advertisers: kept ? was.advertisers ?? [] : [],
+          listMode: s.owner === 'advertiser' ? (kept ? was.listMode ?? 'rtb' : 'rtb') : null,
+          storeScope: s.owner === 'retail' ? was?.storeScope ?? 'Store staff' : null,
+          quota: was?.quota ?? null,
+          ...(kept && was.supportedTargeting ? { supportedTargeting: was.supportedTargeting } : {}),
+        }
+      }),
       ...((body.venue ?? dt.phExtensions?.venue) ? { venue: body.venue ?? dt.phExtensions?.venue } : {}),
     }
     return ctx.displayTypes.saveExtensions(req.params.id, ext)

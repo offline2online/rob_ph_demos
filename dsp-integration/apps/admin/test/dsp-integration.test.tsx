@@ -19,7 +19,14 @@ const ADVERTISER_PAGE = {
   },
   '/api/admin/v1/available-inventory': {
     items: [
-      { displayTypeId: 'menu_board', displayTypeName: 'Menu Board — Long Format', touchPoint: 'Digital Signage', playlistName: 'Menu Board Playlist', slot: 2, position: 'Supplier slot', partnerName: 'Google DSP', supportedTargeting: ['localised', 'personalised'] },
+      {
+        displayTypeId: 'menu_board', displayTypeName: 'Menu Board — Long Format', touchPoint: 'Digital Signage', playlistName: 'Menu Board Playlist', slot: 2, position: 'Supplier slot',
+        assignedTo: { partnerIds: ['p_google'], partnerNames: ['Google DSP'], advertisers: [], whitelistOnly: false }, supportedTargeting: ['localised', 'personalised'],
+      },
+    ],
+    dsps: [
+      { partnerId: 'p_google', name: 'Google DSP', advertisers: [{ advertiserId: 'nestle', name: 'Nestlé' }, { advertiserId: 'swisse', name: 'Swisse' }] },
+      { partnerId: 'p_amazon', name: 'Amazon Ads DSP', advertisers: [{ advertiserId: 'loreal', name: "L'Oréal" }] },
     ],
   },
 }
@@ -227,7 +234,7 @@ describe('Booking schedule', () => {
       { start: '2026-09-22T00:00:00.000Z', end: '2026-09-23T00:00:00.000Z' },
     ],
     positions: [{
-      positionId: 'menu_board.s2', displayTypeId: 'menu_board', displayTypeName: 'Menu Board — Long Format', slot: 2, slotLabel: 'Supplier slot', partnerName: 'Google DSP', assignment: 'rtb',
+      positionId: 'menu_board.s2', displayTypeId: 'menu_board', displayTypeName: 'Menu Board — Long Format', slot: 2, slotLabel: 'Supplier slot', partnerNames: ['Google DSP'], assignment: 'rtb',
       windows: [
         { start: '2026-09-21T00:00:00.000Z', status: 'available', booking: null },
         { start: '2026-09-22T00:00:00.000Z', status: 'booked', booking: { reservationId: 'r1', campaignId: 'c1', advertiserId: 'swisse', partnerId: 'p_google', pricingType: 'personalised', type: 'reserve', advertiserName: 'Swisse', partnerName: 'Google DSP', cpm: 175, assumedViews: 1236, bookedRevenue: 216.3, billedRevenue: null } },
@@ -283,32 +290,35 @@ describe('Advertisers / Inventory', () => {
 
     const inventory = await screen.findByLabelText('Available Inventory')
     expect([...inventory.querySelectorAll('.ag-header-cell-text')].map((h) => h.textContent))
-      .toEqual(['Display type', 'Playlist', 'Slot', 'Position', 'Targeting supported', ''])
+      .toEqual(['Display type', 'Playlist', 'Slot', 'Position', 'Assigned to', 'Targeting supported', ''])
     expect(within(inventory).getByLabelText('Display type search')).toBeInTheDocument()
     expect(within(inventory).getByLabelText('Targeting supported filter')).toBeInTheDocument()
-    /* What the slot has been opened up to, ticked in place. Every type is
-       visible whether it is on or not; the last one on can't be unticked. */
-    const tick = (label: string) => within(inventory).getByLabelText(`Menu Board — Long Format slot 2: ${label}`) as HTMLInputElement
-    expect([tick('Localised').checked, tick('Personalised').checked, tick('Interactive').checked]).toEqual([true, true, false])
+    /* Both editable columns are pills: what the slot supports, and who may
+       buy it. Assigned to shows "All DSPs" only when nothing is chosen. */
+    const cellOf = (label: string) => within(inventory).getAllByLabelText(`Menu Board — Long Format slot 2: ${label}`)[0].closest('.ag-cell') as HTMLElement
+    expect([...cellOf('targeting supported').querySelectorAll('.ant-select-selection-item')].map((t) => t.textContent)).toEqual(['Localised', 'Personalised'])
+    expect([...cellOf('assigned to').querySelectorAll('.ant-select-selection-item')].map((t) => t.textContent)).toEqual(['Google DSP'])
     expect(screen.getByRole('button', { name: 'Save changes' })).toBeDisabled()
 
-    fireEvent.click(tick('Interactive'))
-    fireEvent.click(tick('Personalised'))
-    expect([tick('Localised').checked, tick('Personalised').checked, tick('Interactive').checked]).toEqual([true, false, true])
-    /* Editing the inventory is a change the page's own Save changes commits. */
+    /* Hold the position for an advertiser: a pill, and the DSP the API adds. */
+    fireEvent.mouseDown(within(cellOf('assigned to')).getByRole('combobox'))
+    fireEvent.click(await screen.findByTitle('Nestlé (Google DSP)'))
     expect(screen.getByRole('button', { name: 'Save changes' })).toBeEnabled()
     fireEvent.click(screen.getByRole('button', { name: 'Save changes' }))
-    await waitFor(() => expect(saved()).toEqual({ items: [{ displayTypeId: 'menu_board', slot: 2, supportedTargeting: ['localised', 'interactive'] }] }))
+    await waitFor(() => expect(saved()).toEqual({ items: [{
+      displayTypeId: 'menu_board', slot: 2, supportedTargeting: ['localised', 'personalised'],
+      assignedTo: { partnerIds: ['p_google'], advertisers: ['Nestlé'], whitelistOnly: false },
+    }] }))
   })
 
   it('shows a marketing user what each slot supports, without letting them change it', async () => {
     vi.stubGlobal('fetch', vi.fn(fakeFetch({ ...ADVERTISER_PAGE, '/api/admin/v1/session': { role: 'hq_marketing', scopes: ['sections'] } })))
     renderAt('/advertisers')
     const inventory = await screen.findByLabelText('Available Inventory')
-    expect(within(inventory).getByLabelText('Menu Board — Long Format slot 2: Personalised')).toBeChecked()
-    for (const label of ['Localised', 'Personalised', 'Interactive']) {
-      expect(within(inventory).getByLabelText(`Menu Board — Long Format slot 2: ${label}`)).toBeDisabled()
-    }
+    /* Read-only: the same values as plain text, with nothing to open. */
+    expect(within(inventory).getByText('Localised, Personalised')).toBeInTheDocument()
+    expect(within(inventory).getByText('Google DSP')).toBeInTheDocument()
+    expect(within(inventory).queryAllByRole('combobox')).toHaveLength(0)
     expect(await screen.findByText('Read only')).toBeInTheDocument()
   })
 })

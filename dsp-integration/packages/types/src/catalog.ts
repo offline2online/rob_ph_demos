@@ -35,6 +35,25 @@ export const SLOT_OWNERS: Record<SlotOwner, { label: string; colour: string; bg:
 }
 export const STORE_SCOPES = ['Store staff', 'Store manager only', 'Regional manager', 'Franchisee'] as const
 
+/* Who may buy a position (Rob, 20 Sep). One multi-select on Advertisers /
+   Inventory replaced the display type's "Assigned to" cell: DSPs say who may
+   bid, advertisers hold the position for them, and neither means any
+   connected DSP. Slots saved before this carried one partnerId and one
+   advertiser, so they are read as one-element lists. */
+export interface Assigned { partnerIds: string[]; advertisers: string[]; whitelistOnly: boolean }
+type SlotLike = { partnerIds?: readonly string[] | null; advertisers?: readonly string[] | null; listMode?: string | null; partnerId?: string | null; advertiser?: string | null }
+export const assignedOf = (slot: SlotLike): Assigned => {
+  const advertisers = [...(slot.advertisers ?? (slot.advertiser ? [slot.advertiser] : []))]
+  return {
+    partnerIds: [...(slot.partnerIds ?? (slot.partnerId ? [slot.partnerId] : []))],
+    advertisers,
+    whitelistOnly: !advertisers.length && slot.listMode === 'whitelist_only',
+  }
+}
+/* "Any connected DSP", or the pills in order: advertisers, then DSPs. */
+export const assignedLabels = (a: { advertisers: readonly string[]; partnerNames?: readonly string[]; whitelistOnly?: boolean }): string[] =>
+  [...a.advertisers, ...(a.whitelistOnly ? ['Whitelist only'] : []), ...(a.partnerNames ?? [])]
+
 /* What a campaign may use on a slot (Rob, 20 Sep). A slot supports localised
    targeting only until someone opens it up on Advertisers / Inventory; a bid
    for a campaign of an unsupported type is refused. Same order and words as

@@ -206,7 +206,7 @@ describe('POST /v1/reservations and GET …/{id}', () => {
     const { ctx, approve, activate, reserve, setSlot } = await setup()
     await approve('c_api_swisse')
     await activate('c_api_swisse')
-    setSlot({ listMode: null, advertiser: 'Swisse' })
+    setSlot({ listMode: null, advertisers: ['Swisse'] })
     expect((await reserve(BID)).statusCode).toBe(409)
     const noPrice = await reserve({ ...BID, type: 'reserve', bidCpm: undefined })
     expect(noPrice.json().error.details).toEqual([{ field: 'bidCpm', reason: 'The agreed reservation price (CPM) is required.' }])

@@ -262,6 +262,15 @@ not offered.
 
   The explanation of the three owners is a tooltip on the **Slot
   assignment** label.
+
+  **The slot editor sets the label and the owner, nothing else** (Rob,
+  20 Sep). Who a sellable position is assigned to — DSPs, named advertisers,
+  the whitelist — is managed on *Advertisers / Inventory* (§5), and appears
+  here read-only on the slot card. A Stores slot takes the default scope
+  (*Store staff*); its scope is no longer editable anywhere in this build.
+  Changing a slot's owner away from *Advertiser* drops the assignment and
+  the supported targeting with it, since the position is no longer sellable;
+  changing anything else keeps them.
 - **Multi-zone layouts** for signage (`zones`), each zone with its own
   playlist and, where sold, its own slots.
 - **Venue and screen metadata** (new), needed for DOOH bid requests (§7):
@@ -614,12 +623,14 @@ region, date range, status.
 The same positions are shown to the retailer on **Advertisers / Inventory →
 Available Inventory**: every advertiser-owned slot across the estate that
 connected DSPs can bid on, one row per slot, with columns **Display type**,
-**Playlist**, **Slot**, **Position** (with its DSP), **Targeting supported**
-and an **Open** link to the display type. There is **no advertisers
+**Playlist**, **Slot**, **Position**, **Assigned to**, **Targeting
+supported** and an **Open** link to the display type. There is **no advertisers
 column**. Every column carries a filter, as the platform's tables do.
 
 Slots are made available by setting their owner to *Advertiser* on a display
 type (explained in the section's tooltip); that part is not editable here.
+Two fields are: **Assigned to** (above) and **Targeting supported**, each a
+multi-select that drops a pill per choice into the cell.
 **Targeting supported** is (Rob, 20 Sep): each slot says which kinds of
 campaign it will take — **localised**, **personalised**, **interactive** —
 ticked independently, with **localised only** as the default for a slot that
@@ -819,23 +830,26 @@ outcome on that partner and no position can opt out of it. The whitelist is
 the part a position chooses to use. (Both points are in the *List
 management* tooltip.)
 
-A position's **Assigned to** picker offers, for a DSP partner:
+A position's **Assigned to** control is one multi-select on *Advertisers /
+Inventory* (Rob, 20 Sep), adding a pill per choice:
 
-| Option | What sells |
+| Pill | What sells |
 |---|---|
-| RTB bidding — any except *n* blocked | Everything the partner brings, minus the blacklist |
-| Whitelist only (*n*) | Only advertisers on the whitelist (which cannot contain a blocked one) |
-| A named advertiser | Reserved to that one seat |
+| Nothing chosen — *All DSPs* | Every connected DSP may bid, minus the blacklist |
+| One or more **DSPs** | Only those DSPs may bid, minus the blacklist |
+| One or more **advertisers** | Reserved to those seats; each one's DSP is added automatically |
+| **Whitelist only** | Only advertisers on the whitelist (which cannot contain a blocked one) |
 
-Only for DSP partners. Direct/house has no auction to filter, so a position
-there names its advertiser outright.
+Advertisers and *Whitelist only* are mutually exclusive — a position is
+either held for named advertisers or open to the whitelist — and the newer
+choice wins in the picker.
 
 - **A blocked advertiser is withdrawn from the picker.**
 - **Blocking an advertiser reaches positions already sold.** A position
-  reserved to a name that is then blacklisted is flagged in place as unable to
-  fill, and left selected so it does not change under whoever set it.
-- Re-pointing a position at a different partner drops it back to open bidding
-  rather than carrying a filter the new partner cannot apply.
+  reserved to a name that is then blacklisted keeps it, so the position does
+  not change under whoever set it; adding it again is rejected.
+- A DSP that is not connected is still offered, and the display type flags
+  the position as unable to fill until the connection is fixed.
 
 ### Campaign playback analytics — existing system
 
@@ -1214,8 +1228,9 @@ playback analytics.**
   showing chips for what is enabled or changed (slot count and slot
   assignment by owner, or *Default settings*; phantom size/position; enabled
   features; zone count). *(Display Types)*
-- **Slot ownership & quota editor**: HQ / named advertiser / RTB /
-  whitelist-only / store quota. *(Display Types → Playlist Settings → Slot assignment)*
+- **Slot ownership editor**: each slot's label and owner — Headquarters,
+  Advertiser or Stores — and nothing else.
+  *(Display Types → Playlist Settings → Slot assignment)*
 - **Multi-zone layout designer** for signage. *(Display Types → Multi-Zone Layout)*
 - **Venue and screen metadata** per store and display. *(spec only)*
 
@@ -1295,8 +1310,13 @@ playback analytics.**
   forecast, scoped to what the requester could buy. *(spec only)*
 - **Available Inventory**: every advertiser-owned slot across the estate
   that connected DSPs can bid on (Display type, Playlist, Slot, Position,
-  Targeting supported, and an Open link), with no advertisers column and a
-  filter on every column. *(Advertisers / Inventory → Available Inventory)*
+  Assigned to, Targeting supported, and an Open link), with no advertisers
+  column and a filter on every column.
+  *(Advertisers / Inventory → Available Inventory)*
+- **Assigned to per slot**: who may buy the position — any connected DSP by
+  default, or named DSPs, named advertisers (reserved) or the whitelist —
+  as a multi-select of pills, set by an admin and enforced on every bid.
+  *(Advertisers / Inventory → Available Inventory)*
 - **Targeting supported per slot**: which kinds of campaign a slot takes —
   localised, personalised, interactive — localised only by default, set by
   an admin, published on the position and enforced on every bid.

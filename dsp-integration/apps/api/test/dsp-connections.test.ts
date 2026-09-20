@@ -80,7 +80,7 @@ describe('The Trade Desk against the mock TTD API v3', () => {
     await call('PUT', '/partners/p_the_trade_desk', { bidder: { bidderEndpoint: 'https://bid.thetradedesk.example/openrtb2', seatIds: ['ttd-seat-1'] } })
     /* Tie the Menu Board's advertiser slot to TTD, so only TTD bids for it. */
     const ext = ctx.displayTypes.get('menu_board')!.phExtensions!
-    ctx.displayTypes.saveExtensions('menu_board', { ...ext, slots: ext.slots.map((s, i) => (i === 1 ? { ...s, partnerId: 'p_the_trade_desk' } : s)) })
+    ctx.displayTypes.saveExtensions('menu_board', { ...ext, slots: ext.slots.map((s, i) => (i === 1 ? { ...s, partnerIds: ['p_the_trade_desk'] } : s)) })
     await runAuction(ctx, new Date('2026-09-21T00:00:00.000Z'))
     const [first] = ctx.reservations.forWindow('menu_board.s2', '2026-09-21T00:00:00.000Z')
     expect(first).toMatchObject({ partnerId: 'p_the_trade_desk', advertiserId: 'arnotts', status: 'rejected', reason: 'New creative crid-ttd-adv-1: queued for approval.' })

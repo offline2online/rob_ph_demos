@@ -11,7 +11,7 @@ import { ListPageLayout } from '../../shared/ListPageLayout'
 import { SaveBar } from '../../shared/SaveBar'
 import { useReportDirty, useUnsavedGuard } from '../../shared/UnsavedChanges'
 import { useDraft } from '../../shared/useDraft'
-import { deleteCheck, deleteDisplayType, saveDisplayTypes, useAdvertiserSettings, useDisplayTypes, usePartners, usePlaylists } from './api'
+import { deleteCheck, deleteDisplayType, saveDisplayTypes, useDisplayTypes, usePartners, usePlaylists } from './api'
 import { DeleteDisplayType } from './DeleteDisplayType'
 import { DisplayTypeForm, type PlaylistOption } from './DisplayTypeForm'
 import { DisplayTypeList } from './DisplayTypeList'
@@ -30,7 +30,6 @@ export function DisplayTypesPage({ flags }: { flags: Flags }) {
   const types = useDisplayTypes()
   const playlists = usePlaylists()
   const partners = usePartners(slotAssignment)
-  const company = useAdvertiserSettings(slotAssignment)
 
   /* Slots always match the rotation cap in the editor (flag on). */
   const saved = useMemo<Draft | undefined>(
@@ -135,7 +134,6 @@ export function DisplayTypesPage({ flags }: { flags: Flags }) {
   }
 
   /* The DSP's seats, pulled on connect. */
-  const seatsOf = (p: Partner) => (p.seats ?? []).map((s) => s.name)
 
   if (!draft || !d) return <Spin />
   return (
@@ -148,8 +146,6 @@ export function DisplayTypesPage({ flags }: { flags: Flags }) {
         zonePlaylistId={zonePlaylistId}
         slotAssignment={slotAssignment}
         partners={partners.data ?? []}
-        company={company.data}
-        seatsOf={seatsOf}
         onFixConnection={(partnerId) => navigate(`/dsp-integration/partners/${partnerId}`)}
         openPanel={params.get('panel')}
       />

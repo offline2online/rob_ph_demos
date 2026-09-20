@@ -1,6 +1,6 @@
 /* PLAYLIST SETTINGS panel (spec §1). How these settings drive playback is
    unchanged; Slot assignment (flag-gated) decides who may fill each slot. */
-import type { AdvertiserSettings, DisplayType, Partner } from '@ph-dsp/types'
+import type { DisplayType, Partner } from '@ph-dsp/types'
 import { CollapsiblePanel } from '../../../shared/CollapsiblePanel'
 import { Field } from '../../../shared/Field'
 import { SummaryChip } from '../../../shared/SummaryChip'
@@ -12,15 +12,13 @@ import {
 import { TIPS } from '../tooltips'
 import { SlotAssignment } from './SlotAssignment'
 
-export function PlaylistSettingsPanel({ d, update, open, onToggle, slotAssignment, partners, company, seatsOf, onFixConnection }: {
+export function PlaylistSettingsPanel({ d, update, open, onToggle, slotAssignment, partners, onFixConnection }: {
   d: DisplayType
   update: (fn: (d: DisplayType) => DisplayType) => void
   open: boolean
   onToggle: () => void
   slotAssignment: boolean
   partners: Partner[]
-  company: AdvertiserSettings | undefined
-  seatsOf: (p: Partner) => string[]
   onFixConnection: (partnerId: string) => void
 }) {
   const s = ps(d)
@@ -63,8 +61,6 @@ export function PlaylistSettingsPanel({ d, update, open, onToggle, slotAssignmen
           slots={slotsOf(d)}
           setSlots={(slots) => update((t) => ({ ...t, phExtensions: { ...(t.phExtensions ?? {}), slots } }))}
           partners={partners}
-          company={company}
-          seatsOf={seatsOf}
           onFixConnection={onFixConnection}
           tip={TIPS.slotAssignment}
         />

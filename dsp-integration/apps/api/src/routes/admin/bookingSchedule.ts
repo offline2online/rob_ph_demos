@@ -10,7 +10,7 @@ import type { Guards } from '../../http/app'
 import { validationFailed } from '../../http/errors'
 import { allPositions, assignmentOf, nextWindow, windowMs, windowStartOf, windowsBetween } from '../../domain/positions'
 import { TAKEN } from '../../repos/ReservationRepo'
-import { advertiserSlug } from '@ph-dsp/types'
+import { advertiserSlug, assignedOf } from '@ph-dsp/types'
 
 const DAY = 86_400_000
 const round2 = (n: number) => Math.round(n * 100) / 100
@@ -60,7 +60,7 @@ export function bookingSchedule(ctx: Context, starts: Date[], f: ScheduleFilter 
     })
     return {
       positionId: p.positionId, displayTypeId: p.displayType.id, displayTypeName: p.displayType.name, slot: p.slot, slotLabel: p.def.label,
-      partnerName: p.def.partnerId ? partners.find((x) => x.id === p.def.partnerId)?.name ?? null : null, assignment: assignmentOf(p.def), windows,
+      partnerNames: assignedOf(p.def).partnerIds.map((id) => partners.find((x) => x.id === id)?.name ?? id), assignment: assignmentOf(p.def), windows,
     }
   })
   const rows = [...revenue.values()]

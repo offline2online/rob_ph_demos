@@ -26,7 +26,7 @@ describe('GET /admin/v1/booking-schedule', () => {
     expect(body.windows).toHaveLength(14)
     expect(body.windows[0]).toEqual({ start: '2026-09-20T00:00:00.000Z', end: '2026-09-21T00:00:00.000Z' })
     expect(body.positions.map((p: { positionId: string }) => p.positionId)).toEqual(['menu_board.s2'])
-    expect(body.positions[0]).toMatchObject({ displayTypeName: 'Menu Board — Long Format', slot: 2, slotLabel: 'Supplier slot', partnerName: 'Google DSP', assignment: 'rtb' })
+    expect(body.positions[0]).toMatchObject({ displayTypeName: 'Menu Board — Long Format', slot: 2, slotLabel: 'Supplier slot', partnerNames: ['Google DSP'], assignment: 'rtb' })
     /* The current window can no longer be sold; the next one can. */
     expect(body.positions[0].windows.slice(0, 2).map((w: { status: string }) => w.status)).toEqual(['unavailable', 'available'])
     expect(body.totals).toEqual({ bookedWindows: 0, bookedRevenue: 0, billedRevenue: 0 })

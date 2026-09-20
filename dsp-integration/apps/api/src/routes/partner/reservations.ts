@@ -6,7 +6,8 @@
 import { randomUUID } from 'node:crypto'
 import type { FastifyPluginAsync } from 'fastify'
 import type { Context } from '../../context'
-import { assignmentOf, biddingClosesAt, biddingOpensAt, findPosition, windowStartOf } from '../../domain/positions'
+import { assignmentOf, biddingClosesAt, biddingOpensAt, findPosition, heldFor, windowStartOf } from '../../domain/positions'
+import { assignedOf } from '@ph-dsp/types'
 import { checkAdvertiser, checkCampaign, checkFloor, checkTargeting } from '../../exchange/enforcement'
 import { handOff } from '../../exchange/handoff'
 import { HttpError, conflict, notFound, validationFailed } from '../../http/errors'
@@ -33,7 +34,8 @@ export const reservationRoutes = (ctx: Context): FastifyPluginAsync => async (ap
     if (!campaign || campaign.partnerId !== partner.id || campaign.advertiserId !== b.advertiserId) invalid.push({ field: 'campaignId', reason: 'Not one of this advertiser’s campaigns.' })
     /* A position this caller can't use (another DSP's, or held for another advertiser) is unknown to it. */
     const p = typeof b.positionId === 'string' ? findPosition(ctx, b.positionId) : null
-    const hidden = !p || (p.def.partnerId && p.def.partnerId !== partner.id) || (assignmentOf(p.def) === 'reserved' && seat && p.def.advertiser?.trim().toLowerCase() !== seat.name.trim().toLowerCase())
+    const allowed = p ? assignedOf(p.def).partnerIds : []
+    const hidden = !p || (allowed.length > 0 && !allowed.includes(partner.id)) || (assignmentOf(p.def) === 'reserved' && !!seat && !heldFor(p.def, seat.name))
     if (hidden) invalid.push({ field: 'positionId', reason: 'Unknown position.' })
     const start = typeof b.windowStart === 'string' ? new Date(b.windowStart) : null
     if (!start || Number.isNaN(start.getTime()) || windowStartOf(ctx, start).getTime() !== start.getTime()) invalid.push({ field: 'windowStart', reason: `The start of a ${ctx.company.get().playWindowHours}-hour play window (UTC).` })

@@ -2,7 +2,7 @@
    (prototype-reference/src/DisplayTypesAndPlaylists.jsx, model/schema.js,
    model/sellside.js), reshaped to the API contract. */
 import {
-  PLATFORM_DEFAULTS, SLOT_OWNERS, UNLIMITED,
+  PLATFORM_DEFAULTS, SLOT_OWNERS, UNLIMITED, assignedOf,
   type AdvertiserSettings, type DisplayType, type Partner, type Slot, type SlotOwner,
 } from '@ph-dsp/types'
 
@@ -95,7 +95,7 @@ export const capValue = (d: DisplayType): string | null => {
   const v = ps(d).maximumCampaignsPlayedInRotation
   return v === null || v === undefined ? null : v === UNLIMITED ? 'Unlimited' : String(v)
 }
-export const newSlot = (i: number): Slot => ({ label: `Slot ${i + 1}`, owner: 'internal', partnerId: null, advertiser: null, listMode: null, storeScope: null, quota: null })
+export const newSlot = (i: number): Slot => ({ label: `Slot ${i + 1}`, owner: 'internal', partnerIds: [], advertisers: [], listMode: null, storeScope: null, quota: null })
 /* Resize the slot list to a new cap, keeping what was there. */
 export const resizeSlots = (slots: Slot[], n: number): Slot[] => {
   const next = [...slots]
@@ -106,13 +106,10 @@ export const resizeSlots = (slots: Slot[], n: number): Slot[] => {
 export const normaliseSlots = (d: DisplayType): DisplayType =>
   slotsOf(d).length === slotCount(d) ? d : { ...d, phExtensions: { ...(d.phExtensions ?? {}), slots: resizeSlots(slotsOf(d), slotCount(d)) } }
 
-export const ownerChange = (owner: SlotOwner): Partial<Slot> => ({
-  owner,
-  partnerId: null,
-  advertiser: null,
-  listMode: owner === 'advertiser' ? 'rtb' : null,
-  storeScope: owner === 'retail' ? 'Store staff' : null,
-})
+/* Changing the owner only changes the owner: who a sellable position is
+   assigned to is set on Advertisers / Inventory, and the API keeps or drops
+   it with the owner (Rob, 20 Sep). */
+export const ownerChange = (owner: SlotOwner): Partial<Slot> => ({ owner })
 
 /* --------------------------------------------------------------- lists */
 
@@ -124,27 +121,16 @@ export const effectiveLists = (p: Partner | null | undefined, company: Advertise
     : { allowList: company?.advertiserWhitelist ?? [], blockList: company?.advertiserBlacklist ?? [] }
 export const isBlocked = (name: string, lists: Lists) => lists.blockList.some((x) => same(x, name))
 
-/* Switching partner keeps the choice only if the new partner can honour it. */
-export function partnerChange(sl: Slot, next: Partner | null, company: AdvertiserSettings | undefined, seatsOf: (p: Partner) => string[]): Partial<Slot> {
-  const eff = effectiveLists(next, company)
-  const keepWhitelist = sl.listMode === 'whitelist_only' && !!next && eff.allowList.length > 0
-  const keepNamed = !!sl.advertiser && !!next && seatsOf(next).includes(sl.advertiser) && !isBlocked(sl.advertiser, eff)
-  if (keepWhitelist) return { partnerId: next?.id ?? null, listMode: 'whitelist_only', advertiser: null }
-  if (keepNamed) return { partnerId: next?.id ?? null, listMode: null, advertiser: sl.advertiser }
-  return { partnerId: next?.id ?? null, listMode: 'rtb', advertiser: null }
-}
-
-/* One line describing what a slot is assigned to (sellside.js ownerAssignment). */
-export function ownerAssignment(sl: Slot, partners: Partner[], company: AdvertiserSettings | undefined): string {
+/* One line describing what a slot is assigned to (sellside.js
+   ownerAssignment). Read-only here: it is set on Advertisers / Inventory. */
+export function ownerAssignment(sl: Slot, partners: Partner[]): string {
   if (sl.owner === 'internal') return 'Based on priority'
   if (sl.owner === 'retail') return sl.storeScope || 'Store staff'
-  if (!sl.partnerId) return 'Any connected DSP · RTB'
-  const p = partners.find((x) => x.id === sl.partnerId)
-  if (!p) return 'Partner missing'
-  const eff = effectiveLists(p, company)
-  if (sl.listMode === 'whitelist_only') return `${p.name} · whitelist (${eff.allowList.length})`
-  if (!sl.advertiser) return `${p.name} · RTB${eff.blockList.length ? ` (−${eff.blockList.length} blocked)` : ''}`
-  return `${p.name} · ${sl.advertiser}`
+  const a = assignedOf(sl)
+  if (a.advertisers.length) return a.advertisers.join(', ')
+  const names = a.partnerIds.map((id) => partners.find((x) => x.id === id)?.name ?? id)
+  if (a.whitelistOnly) return `${names.join(', ') || 'Any connected DSP'} · whitelist`
+  return `${names.join(', ') || 'Any connected DSP'} · RTB`
 }
 
 /* ------------------------------------------------------------ features */

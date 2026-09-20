@@ -4,9 +4,9 @@
    the estate, which moved here from Advertiser settings (Rob, 20 Sep).
    Campaigns are not approved here. Changes are applied with Save changes. */
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { App, Button, Checkbox, InputNumber, Spin, Switch, Tooltip } from 'antd'
+import { App, Button, InputNumber, Select, Spin, Switch, Tooltip } from 'antd'
 import type { ColDef, ICellRendererParams } from 'ag-grid-community'
-import { SLOT_OWNERS, TARGETING_MODES, supportedTargetingOf, targetingLabel, touchPointIcon, type Advertiser, type AdvertiserSetting, type AvailableInventoryRow, type Session, type TargetingMode } from '@ph-dsp/types'
+import { SLOT_OWNERS, TARGETING_MODES, assignedLabels, supportedTargetingOf, targetingLabel, touchPointIcon, type Advertiser, type AdvertiserSetting, type AssignedTo, type AvailableInventoryRow, type DspAdvertisers, type Session, type TargetingMode } from '@ph-dsp/types'
 import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { api, ApiRequestError } from '../../api/client'
@@ -91,43 +91,104 @@ const BookingsCell = ({ data, context }: P) =>
 /* The inventory advertisers can buy: every Advertiser-owned slot on a
    display type (spec §5 "Available Inventory"). No advertisers column. */
 export const slotKey = (r: AvailableInventoryRow) => `${r.displayTypeId}:${r.slot}`
-type Targeting = Record<string, TargetingMode[]>
-type InvCtx = { current: { open: (displayTypeId: string) => void; canEdit: boolean; targeting: Targeting; setTargeting: (key: string, modes: TargetingMode[]) => void } }
+/* What Save changes sends for a slot: the two fields this table owns. */
+export interface SlotEdit { supportedTargeting: TargetingMode[]; assignedTo: Omit<AssignedTo, 'partnerNames'> }
+type Edits = Record<string, SlotEdit>
+type InvCtx = { current: {
+  open: (displayTypeId: string) => void
+  canEdit: boolean
+  edits: Edits
+  dsps: DspAdvertisers[]
+  set: (key: string, patch: Partial<SlotEdit>) => void
+} }
 type IP = ICellRendererParams<AvailableInventoryRow, unknown, InvCtx>
 const TypeCell = ({ data }: ICellRendererParams<AvailableInventoryRow>) =>
   data ? <span className="inline-flex min-w-0 items-center gap-[5px]"><Icon name={touchPointIcon(data.touchPoint ?? '')} size={14} style={{ color: T.muted }} /><span className="truncate">{data.displayTypeName}</span></span> : null
 const SlotCell = ({ data }: ICellRendererParams<AvailableInventoryRow>) =>
-  data ? <div className="min-w-0"><div className="truncate">{data.position}</div><div style={{ fontSize: 11, color: T.micro }}>{data.partnerName ?? 'Any connected DSP'}</div></div> : null
+  data ? <div className="min-w-0 truncate">{data.position}</div> : null
 /* Opens the display type with Playlist Settings — where slot assignment
    lives — already expanded (Rob, 20 Sep). */
 const OpenCell = ({ data, context }: IP) =>
   data ? <Button color="primary" variant="text" size="small" className="px-0" onClick={() => context.current.open(data.displayTypeId)}>Open</Button> : null
 
+/* Both editable columns are the same control (Rob, 20 Sep): a multi-select
+   that drops a pill per choice into the cell, read-only text for marketing. */
+function Pills({ label, value, options, canEdit, placeholder, onChange }: {
+  label: string
+  value: string[]
+  options: { label: string; options: { value: string; label: string }[] }[]
+  canEdit: boolean
+  placeholder?: string
+  onChange: (next: string[]) => void
+}) {
+  const all = options.flatMap((g) => g.options)
+  if (!canEdit) {
+    const chosen = value.map((v) => all.find((o) => o.value === v)?.label ?? v)
+    return <span className="truncate" style={{ color: chosen.length ? T.text : T.muted }}>{chosen.join(', ') || placeholder}</span>
+  }
+  return (
+    <Select<string[]>
+      mode="multiple" size="small" className="w-full" allowClear={false} showSearch optionFilterProp="label"
+      aria-label={label} placeholder={placeholder} value={value} onChange={onChange} options={options}
+    />
+  )
+}
+
+const edited = (c: InvCtx['current'], r: AvailableInventoryRow): SlotEdit =>
+  c.edits[slotKey(r)] ?? { supportedTargeting: supportedTargetingOf(r), assignedTo: r.assignedTo }
+
+/* Who may buy this position (Rob, 20 Sep): DSPs, named advertisers, or the
+   whitelist. Nothing chosen means any connected DSP. */
+const WHITELIST = '__whitelist__'
+const assignedValues = (a: Omit<AssignedTo, 'partnerNames'>) =>
+  [...a.partnerIds.map((id) => `dsp:${id}`), ...a.advertisers.map((n) => `adv:${n}`), ...(a.whitelistOnly ? [WHITELIST] : [])]
+
+function AssignedCell({ data, context }: IP) {
+  if (!data) return null
+  const c = context.current
+  const a = edited(c, data).assignedTo
+  const dspNames = new Map(c.dsps.map((d) => [d.partnerId, d.name]))
+  const options = [
+    { label: 'DSPs', options: c.dsps.map((d) => ({ value: `dsp:${d.partnerId}`, label: d.name })) },
+    { label: 'Advertisers', options: c.dsps.flatMap((d) => d.advertisers.map((x) => ({ value: `adv:${x.name}`, label: `${x.name} (${d.name})` }))) },
+    { label: 'Or', options: [{ value: WHITELIST, label: 'Whitelist only' }] },
+  ]
+  return (
+    <Pills
+      label={`${data.displayTypeName} slot ${data.slot}: assigned to`}
+      placeholder="All DSPs"
+      canEdit={c.canEdit}
+      value={assignedValues(a)}
+      options={options}
+      onChange={(next) => {
+        const was = assignedValues(a)
+        const added = next.filter((v) => !was.includes(v))
+        /* A position is either held for named advertisers or open to the
+           whitelist, never both: the newer choice wins. */
+        const advertisers = added.includes(WHITELIST) ? [] : next.filter((v) => v.startsWith('adv:')).map((v) => v.slice(4))
+        const whitelistOnly = advertisers.length ? false : next.includes(WHITELIST)
+        const partnerIds = next.filter((v) => v.startsWith('dsp:')).map((v) => v.slice(4)).filter((id) => dspNames.has(id))
+        c.set(slotKey(data), { assignedTo: { partnerIds, advertisers, whitelistOnly } })
+      }}
+    />
+  )
+}
+
 /* What a campaign may use on this slot (Rob, 20 Sep): localised only until
    someone opens it up, and a bid of an unsupported type is refused. */
-const targetingOf = (c: InvCtx['current'], r: AvailableInventoryRow) => c.targeting[slotKey(r)] ?? supportedTargetingOf(r)
 function TargetingCell({ data, context }: IP) {
   if (!data) return null
   const c = context.current
-  const value = targetingOf(c, data)
-  const set = (key: TargetingMode, on: boolean) =>
-    c.setTargeting(slotKey(data), TARGETING_MODES.filter((m) => (m.key === key ? on : value.includes(m.key))).map((m) => m.key))
+  const value = edited(c, data).supportedTargeting
   return (
-    <div className="flex items-center gap-3">
-      {TARGETING_MODES.map((m) => (
-        <Tooltip key={m.key} title={m.tip}>
-          <Checkbox
-            checked={value.includes(m.key)}
-            /* A slot always supports something: the last one can't be unticked. */
-            disabled={!c.canEdit || (value.length === 1 && value[0] === m.key)}
-            aria-label={`${data.displayTypeName} slot ${data.slot}: ${m.label}`}
-            onChange={(e) => set(m.key, e.target.checked)}
-          >
-            <span style={{ fontSize: 12.5, color: value.includes(m.key) ? T.text : T.muted }}>{m.label}</span>
-          </Checkbox>
-        </Tooltip>
-      ))}
-    </div>
+    <Pills
+      label={`${data.displayTypeName} slot ${data.slot}: targeting supported`}
+      canEdit={c.canEdit}
+      value={value}
+      options={[{ label: 'Targeting', options: TARGETING_MODES.map((m) => ({ value: m.key, label: m.label })) }]}
+      /* A slot always supports something: the last one can't be removed. */
+      onChange={(next) => next.length && c.set(slotKey(data), { supportedTargeting: TARGETING_MODES.filter((m) => next.includes(m.key)).map((m) => m.key) })}
+    />
   )
 }
 
@@ -141,27 +202,43 @@ export function AdvertisersPage() {
   /* Marketing users read this screen; only an admin changes approval or pricing (Rob, 20 Sep). */
   const canEdit = session.data?.role === 'hq_admin'
   const q = useQuery({ queryKey: ['advertisers'], queryFn: () => api<Data>('GET', '/admin/v1/advertisers'), retry: false })
-  const inventory = useQuery({ queryKey: ['available-inventory'], queryFn: () => api<{ items: AvailableInventoryRow[] }>('GET', '/admin/v1/available-inventory').then((r) => r.items) })
-  const invRows = inventory.data ?? []
+  const inventory = useQuery({ queryKey: ['available-inventory'], queryFn: () => api<{ items: AvailableInventoryRow[]; dsps: DspAdvertisers[] }>('GET', '/admin/v1/available-inventory') })
+  const invRows = inventory.data?.items ?? []
   const [invShown, setInvShown] = useState<number | null>(null)
   const invValues = (of: (r: AvailableInventoryRow) => string[]) => () => invRows.flatMap(of)
   const inventoryColumns = useMemo<ColDef<AvailableInventoryRow>[]>(() => [
     { headerName: 'Display type', width: 190, minWidth: 160, cellRenderer: TypeCell, valueGetter: (p) => p.data?.displayTypeName ?? '', ...searchColumn<AvailableInventoryRow>('Display type') },
     { headerName: 'Playlist', width: 150, field: 'playlistName', cellStyle: { color: T.muted }, ...setColumn<AvailableInventoryRow>('Playlist', invValues((r) => [r.playlistName])) },
     { headerName: 'Slot', width: 70, field: 'slot', suppressSizeToFit: true, cellStyle: { color: T.muted }, ...setColumn<AvailableInventoryRow>('Slot', invValues((r) => [String(r.slot)])) },
-    { headerName: 'Position', width: 150, cellRenderer: SlotCell, valueGetter: (p) => (p.data ? `${p.data.position} ${p.data.partnerName ?? 'Any connected DSP'}` : ''), ...searchColumn<AvailableInventoryRow>('Position') },
+    { headerName: 'Position', width: 130, minWidth: 110, cellRenderer: SlotCell, valueGetter: (p) => p.data?.position ?? '', ...searchColumn<AvailableInventoryRow>('Position') },
     {
-      headerName: 'Targeting supported', width: 300, minWidth: 270, cellRenderer: TargetingCell,
+      headerName: 'Assigned to', width: 240, minWidth: 200, cellRenderer: AssignedCell, autoHeight: true,
+      headerComponent: header('Assigned to', 'Who may buy this position: pick DSPs to say who may bid, advertisers to hold it for them (their DSP comes along), or the whitelist. Nothing chosen means any connected DSP.'),
+      valueGetter: (p) => {
+        if (!p.data) return ''
+        const a = edited((p.context as InvCtx).current, p.data).assignedTo
+        return assignedLabels({ ...a, partnerNames: a.partnerIds.map((id) => inventory.data?.dsps.find((d) => d.partnerId === id)?.name ?? id) }).join(', ') || 'All DSPs'
+      },
+      ...setColumn<AvailableInventoryRow>('Assigned to', () => [
+        'All DSPs', 'Whitelist only',
+        ...(inventory.data?.dsps ?? []).flatMap((d) => [d.name, ...d.advertisers.map((a) => a.name)]),
+      ]),
+    },
+    {
+      headerName: 'Targeting supported', width: 230, minWidth: 190, cellRenderer: TargetingCell, autoHeight: true,
       headerComponent: header('Targeting supported', 'What a campaign may use on this slot. Localised only unless you open it up; a bid for a campaign of any other type is refused. Personalised and interactive carry their own multipliers on the floor price.'),
-      valueGetter: (p) => (p.data ? targetingLabel(targetingOf((p.context as InvCtx).current, p.data)) : ''),
+      valueGetter: (p) => (p.data ? targetingLabel(edited((p.context as InvCtx).current, p.data).supportedTargeting) : ''),
       ...setColumn<AvailableInventoryRow>('Targeting supported', () => TARGETING_MODES.map((m) => m.label)),
     },
     { headerName: '', width: 76, suppressSizeToFit: true, cellRenderer: OpenCell },
-  ], [invRows])
+  ], [invRows, inventory.data])
   const saved = useMemo<Settings | undefined>(() => q.data && Object.fromEntries(q.data.items.map((a) => [a.advertiserId, { approvalRequired: a.approvalRequired, floorMultiplier: a.floorMultiplier }])), [q.data])
   const { draft, setDraft, dirty, reset, commitNext } = useDraft(saved)
-  const savedTargeting = useMemo<Targeting | undefined>(() => inventory.data && Object.fromEntries(inventory.data.map((r) => [slotKey(r), supportedTargetingOf(r)])), [inventory.data])
-  const inv = useDraft(savedTargeting)
+  const savedEdits = useMemo<Edits | undefined>(() => inventory.data && Object.fromEntries(invRows.map((r) => {
+    const { partnerNames: _names, ...assignedTo } = r.assignedTo
+    return [slotKey(r), { supportedTargeting: supportedTargetingOf(r), assignedTo }]
+  })), [invRows, inventory.data])
+  const inv = useDraft(savedEdits)
   useReportDirty(dirty || inv.dirty)
   const [saving, setSaving] = useState(false)
   const [shown, setShown] = useState<number | null>(null)
@@ -194,7 +271,7 @@ export function AdvertisersPage() {
       if (dirty) await api('PUT', '/admin/v1/advertisers', { settings: draft })
       /* The inventory's own field, saved by the same Save changes. */
       if (inv.dirty && inv.draft) {
-        const items = Object.entries(inv.draft).map(([key, supportedTargeting]) => ({ displayTypeId: key.slice(0, key.lastIndexOf(':')), slot: Number(key.slice(key.lastIndexOf(':') + 1)), supportedTargeting }))
+        const items = Object.entries(inv.draft).map(([key, edit]) => ({ displayTypeId: key.slice(0, key.lastIndexOf(':')), slot: Number(key.slice(key.lastIndexOf(':') + 1)), ...edit }))
         await api('PUT', '/admin/v1/available-inventory', { items })
         inv.commitNext()
         await qc.invalidateQueries({ queryKey: ['available-inventory'] })
@@ -209,8 +286,8 @@ export function AdvertisersPage() {
   }
   const invContext = {
     open: (id: string) => navigate(`/display-types?id=${encodeURIComponent(id)}&panel=playlist`),
-    canEdit, targeting: inv.draft ?? {},
-    setTargeting: (key: string, modes: TargetingMode[]) => inv.setDraft((cur) => ({ ...(cur ?? {}), [key]: modes })),
+    canEdit, edits: inv.draft ?? {}, dsps: inventory.data?.dsps ?? [],
+    set: (key: string, patch: Partial<SlotEdit>) => inv.setDraft((cur) => (cur ? { ...cur, [key]: { ...cur[key], ...patch } } : cur)),
   }
   const context = {
     settings: draft, data, canEdit,
@@ -239,7 +316,7 @@ export function AdvertisersPage() {
         <SectionLabel><WithTip tip="Every advertiser-owned slot across the estate that connected DSPs can bid on. Slots are made available by setting their owner to Advertiser on a display type.">Available Inventory</WithTip></SectionLabel>
         <Button color="primary" variant="text" size="small" icon={<Icon name="calendar_month" size={16} />} style={{ marginTop: 12 }} onClick={() => window.open(BOOKING_SCHEDULE_PATH, '_blank', 'noopener')}>Booking schedule</Button>
       </div>
-      {inventory.data && inventory.data.length === 0 ? (
+      {inventory.data && invRows.length === 0 ? (
         <div className="flex items-center gap-2" style={{ fontSize: 12.5, color: T.muted }}>
           <Icon name="view_week" size={18} />
           <span>No advertiser positions yet. Set a slot's owner to <b>Advertiser</b> on a display type.</span>

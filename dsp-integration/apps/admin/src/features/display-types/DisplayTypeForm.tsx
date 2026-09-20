@@ -2,7 +2,7 @@
    preview, Touch Point, name, canvas size, background, default playlist,
    then the four collapsed panels. */
 import { ColorPicker, Input, InputNumber, Select } from 'antd'
-import { TOUCH_POINTS, type AdvertiserSettings, type DisplayType, type Partner } from '@ph-dsp/types'
+import { TOUCH_POINTS, type DisplayType, type Partner } from '@ph-dsp/types'
 import { useState } from 'react'
 import { Field } from '../../shared/Field'
 import { Icon } from '../../shared/Icon'
@@ -15,15 +15,13 @@ import { Preview } from './Preview'
 
 export interface PlaylistOption { id: string; name: string; autoCreatedFor: string | null }
 
-export function DisplayTypeForm({ d, update, playlists, zonePlaylistId, slotAssignment, partners, company, seatsOf, onFixConnection, openPanel }: {
+export function DisplayTypeForm({ d, update, playlists, zonePlaylistId, slotAssignment, partners, onFixConnection, openPanel }: {
   d: DisplayType
   update: (fn: (d: DisplayType) => DisplayType) => void
   playlists: PlaylistOption[]
   zonePlaylistId: (n: number) => string
   slotAssignment: boolean
   partners: Partner[]
-  company: AdvertiserSettings | undefined
-  seatsOf: (p: Partner) => string[]
   onFixConnection: (partnerId: string) => void
   openPanel?: string | null
 }) {
@@ -76,7 +74,7 @@ export function DisplayTypeForm({ d, update, playlists, zonePlaylistId, slotAssi
       </Field>
 
       <PlaylistSettingsPanel d={d} update={update} open={open.playlist} onToggle={() => toggle('playlist')} slotAssignment={slotAssignment}
-        partners={partners} company={company} seatsOf={seatsOf} onFixConnection={onFixConnection} />
+        partners={partners} onFixConnection={onFixConnection} />
       <PhantomZonePanel d={d} update={update} open={open.phantom} onToggle={() => toggle('phantom')} />
       <EnabledFeaturesPanel d={d} update={update} open={open.features} onToggle={() => toggle('features')} />
       <MultiZonePanel d={d} update={update} open={open.zones} onToggle={() => toggle('zones')} zonePlaylistId={zonePlaylistId}

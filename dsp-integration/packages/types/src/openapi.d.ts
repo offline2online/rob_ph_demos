@@ -251,9 +251,15 @@ export interface paths {
         /** Advertiser-owned slots (no advertisers column) */
         get: operations["listAvailableInventory"];
         /**
-         * Save changes — what targeting each slot supports
-         * @description Only supportedTargeting is editable here; everything else about a slot
-         *     is set on its display type. Admin only: marketing users read this table.
+         * Save changes — who a slot is assigned to, and what targeting it supports
+         * @description The two editable fields of a sellable slot. Everything else about it —
+         *     its label and owner — is set on its display type. Admin only:
+         *     marketing users read this table.
+         *
+         *     assignedTo: pick DSPs to say who may bid, advertisers to hold the
+         *     position for them (their DSPs are added automatically), or
+         *     whitelistOnly for the advertiser whitelist. Nothing chosen means any
+         *     connected DSP. Advertisers and whitelistOnly are mutually exclusive.
          */
         put: operations["saveAvailableInventory"];
         post?: never;
@@ -891,6 +897,28 @@ export interface components {
                 adopting: boolean;
             }[];
         };
+        /** @description A DSP and the advertisers it brings, for a picker or a filter. */
+        DspAdvertisers: {
+            partnerId: string;
+            name: string;
+            advertisers: {
+                advertiserId: string;
+                name: string;
+            }[];
+        };
+        /**
+         * @description Who may buy a position: DSPs, named advertisers, or the advertiser
+         *     whitelist. No DSPs and no advertisers means any connected DSP.
+         */
+        AssignedTo: {
+            partnerIds: string[];
+            /** @description The same DSPs by name */
+            partnerNames: string[];
+            /** @description Named advertisers it is held for. */
+            advertisers: string[];
+            /** @description Only advertisers on the whitelist may bid; never true when advertisers is non-empty. */
+            whitelistOnly: boolean;
+        };
         AvailableInventoryRow: {
             displayTypeId: string;
             displayTypeName: string;
@@ -898,7 +926,7 @@ export interface components {
             playlistName: string;
             slot: number;
             position: string;
-            partnerName?: string | null;
+            assignedTo: components["schemas"]["AssignedTo"];
             /** @description What a campaign may use on this slot; localised only by default. */
             supportedTargeting: ("localised" | "personalised" | "interactive")[];
         };
@@ -917,8 +945,8 @@ export interface components {
                 displayTypeName: string;
                 slot: number;
                 slotLabel: string;
-                /** @description The DSP the slot is tied to; null = any connected DSP. */
-                partnerName: string | null;
+                /** @description The DSPs the slot is tied to; empty = any connected DSP. */
+                partnerNames: string[];
                 /** @enum {string} */
                 assignment: "rtb" | "whitelist_only" | "reserved";
                 /** @description One per schedule window, in the same order. */
@@ -949,14 +977,7 @@ export interface components {
             /** @description Per display type with advertiser slots, over the schedule's windows. */
             revenue: components["schemas"]["BookingRevenue"][];
             /** @description The DSPs the filters offer, and the advertisers each one brings. */
-            dsps: {
-                partnerId: string;
-                name: string;
-                advertisers: {
-                    advertiserId: string;
-                    name: string;
-                }[];
-            }[];
+            dsps: components["schemas"]["DspAdvertisers"][];
             /** @description The same bookings by campaign type, so a retailer can see what is selling. */
             byPricingType: {
                 pricingType: components["schemas"]["PricingType"];
@@ -1110,9 +1131,17 @@ export interface components {
                 label: string;
                 /** @enum {string} */
                 owner: "internal" | "advertiser" | "retail";
-                partnerId?: string | null;
-                /** @description Named advertiser when reserved. */
-                advertiser?: string | null;
+                /**
+                 * @description The DSPs that may buy this position; empty or absent means any
+                 *     connected DSP. Set on Advertisers / Inventory, not on the
+                 *     display type: the slot editor only sets the label and owner.
+                 */
+                partnerIds?: string[];
+                /**
+                 * @description Named advertisers the position is held for; empty means it is
+                 *     not reserved. Their DSPs are always among partnerIds.
+                 */
+                advertisers?: string[];
                 /** @enum {string|null} */
                 listMode?: "rtb" | "whitelist_only" | null;
                 storeScope?: string | null;
@@ -1753,7 +1782,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Rows */
+            /** @description Rows, and the DSPs (with their advertisers) a position can be assigned to */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -1761,6 +1790,7 @@ export interface operations {
                 content: {
                     "application/json": {
                         items: components["schemas"]["AvailableInventoryRow"][];
+                        dsps: components["schemas"]["DspAdvertisers"][];
                     };
                 };
             };
@@ -1781,6 +1811,11 @@ export interface operations {
                         displayTypeId: string;
                         slot: number;
                         supportedTargeting: ("localised" | "personalised" | "interactive")[];
+                        assignedTo: {
+                            partnerIds: string[];
+                            advertisers: string[];
+                            whitelistOnly: boolean;
+                        };
                     }[];
                 };
             };
@@ -1794,6 +1829,7 @@ export interface operations {
                 content: {
                     "application/json": {
                         items: components["schemas"]["AvailableInventoryRow"][];
+                        dsps: components["schemas"]["DspAdvertisers"][];
                     };
                 };
             };

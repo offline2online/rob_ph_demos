@@ -154,8 +154,8 @@ env var, with no switcher and no cookie (see *POC stand-ins* below).
 |---|---|---|
 | GET | `/admin/v1/advertiser-settings` | Currency, floor CPM, multipliers, the auction schedule (`auctionOpensHours`, `playWindowHours`, `auctionCutoffTime`), advertiser and category whitelists/blacklists, and read-only `whereTheseApply` (per DSP: adopting or own lists). |
 | PUT | `/admin/v1/advertiser-settings` | Save changes (pricing, auction schedule and lists). An entry can't be on both lists, and the play-window length can't change while future windows are bid on or booked (`validation_failed`). |
-| GET | `/admin/v1/available-inventory` | Rows: display type, playlist, slot, position (with DSP) and `supportedTargeting`. No advertisers column. |
-| PUT | `/admin/v1/available-inventory` | Save changes — `supportedTargeting` per slot (at least one of `localised`, `personalised`, `interactive`). The only editable field here; everything else about a slot is set on its display type. Admin only. |
+| GET | `/admin/v1/available-inventory` | Rows: display type, playlist, slot, position, `assignedTo` and `supportedTargeting`, plus `dsps` (each DSP and its advertisers) for the Assigned to picker. No advertisers column. |
+| PUT | `/admin/v1/available-inventory` | Save changes — per slot, `assignedTo` (`partnerIds`, `advertisers`, `whitelistOnly`; nothing chosen = any connected DSP, and an advertiser's DSP is added automatically) and `supportedTargeting` (at least one of `localised`, `personalised`, `interactive`). The only editable fields of a slot; its label and owner are set on its display type. Admin only. |
 | GET | `/admin/v1/booking-schedule?from=&to=` | Reached from Available Inventory. Every advertiser-owned slot across its play windows: booked (advertiser, DSP, reserve or bid, the CPM it was booked at, booked and billed revenue), available or unavailable; plus booking revenue per display type and in total. Live bookings only (never Test mode). Default: the current window and the next 13; at most 92 days. `campaignId`, `advertiserId` or `partnerId` narrow it; with `campaignId` the range covers all of that campaign's bookings. Each booking says which campaign type it is, and the response also totals the bookings by campaign type. |
 
 ### Shared targeting variables
@@ -222,7 +222,7 @@ into the existing campaign table (see `CAMPAIGN-APPROVAL-INTEGRATION.md`).
 
 | Method | Path | Purpose |
 |---|---|---|
-| PUT | `/admin/v1/display-types/{id}/extensions` | Save slot ownership (`slots[]`: label, owner `internal`/`advertiser`/`retail`, partner, named advertiser, list mode, store scope, quota) and venue metadata. Other display type fields keep using the existing API. |
+| PUT | `/admin/v1/display-types/{id}/extensions` | Save slot ownership (`slots[]`: label and owner `internal`/`advertiser`/`retail`) and venue metadata. Who a slot is assigned to and what targeting it supports are carried over from the stored slot — they are edited on `/admin/v1/available-inventory` — and dropped when a slot stops being an Advertiser slot. Other display type fields keep using the existing API. |
 | GET | `/admin/v1/display-types/{id}/delete-check` | `canDelete` and `dependents[]` (assigned displays with store). |
 | DELETE | `/admin/v1/display-types/{id}` | Delete; `409 has_dependents` listing displays if any remain. |
 | GET | `/admin/v1/playlists/{id}/delete-check` | `canDelete` and `dependents[]` (display type defaults and zones). |

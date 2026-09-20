@@ -15,7 +15,7 @@ import { isComplete } from '../domain/exchange'
 import { type PositionRef, allPositions, assignmentOf, nextWindow } from '../domain/positions'
 import type { PartnerRecord } from '../repos/PartnerRepo'
 import { type ReservationRecord, TAKEN } from '../repos/ReservationRepo'
-import { advertiserSlug } from '@ph-dsp/types'
+import { advertiserSlug, assignedOf } from '@ph-dsp/types'
 import { campaignForCrid, queueCreative } from './creatives'
 import { checkAdvertiser, checkCampaign, checkCategories, checkFloor, checkTargeting } from './enforcement'
 import { handOff } from './handoff'
@@ -51,7 +51,8 @@ async function clearPosition(ctx: Context, p: PositionRef, start: string, exchan
 
   const candidates: ReservationRecord[] = []
   /* Until Exchange settings are complete, no DSP is sent bid requests (spec §7). */
-  const dsps = exchangeLive ? ctx.partners.list().filter((d) => receivesBidRequests(d) && (!p.def.partnerId || p.def.partnerId === d.id)) : []
+  const allowed = assignedOf(p.def).partnerIds
+  const dsps = exchangeLive ? ctx.partners.list().filter((d) => receivesBidRequests(d) && (!allowed.length || allowed.includes(d.id))) : []
   for (const dsp of dsps) {
     const url = ctx.config.bidders[dsp.provider as keyof Context['config']['bidders']]?.bidUrl
     if (!url) continue

@@ -25,7 +25,7 @@ const playlistSettings = (cap: number | null = null) => ({
   assetPosition: null, assetFill: null, maximumCampaignsPlayedInRotation: cap, campaignTransition: null, campaignAutoRotation: null, campaignAutoPlay: null,
 })
 const slot = (label: string, owner: 'internal' | 'advertiser' | 'retail', over: Record<string, unknown> = {}) => ({
-  label, owner, partnerId: null, advertiser: null, listMode: null, storeScope: null, quota: null, ...over,
+  label, owner, partnerIds: [], advertisers: [], listMode: null, storeScope: null, quota: null, ...over,
 })
 
 type Item = [id: string, campaignId: string, priority: number, playbackDuration: number, campaignType: string[]]
@@ -71,7 +71,7 @@ export const SEED_DISPLAY_TYPES = [
     phExtensions: {
       slots: [
         slot('Priority 1', 'internal'),
-        slot('Supplier slot', 'advertiser', { partnerId: 'p_google', listMode: 'rtb' }),
+        slot('Supplier slot', 'advertiser', { partnerIds: ['p_google'], listMode: 'rtb' }),
         slot('Store choice', 'retail', { storeScope: 'Store staff' }),
       ],
       venue: { openOohVenueType: 'retail.grocery', orientation: 'landscape' as const, loopLengthSec: 45 },

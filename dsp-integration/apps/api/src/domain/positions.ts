@@ -6,7 +6,7 @@ import type { DisplayType, Slot } from '@ph-dsp/types'
 import type { Context } from '../context'
 import type { PartnerRecord } from '../repos/PartnerRepo'
 import { TAKEN } from '../repos/ReservationRepo'
-import { advertiserSlug, supportedTargetingOf } from '@ph-dsp/types'
+import { advertiserSlug, assignedOf, supportedTargetingOf } from '@ph-dsp/types'
 import { effectiveLists, isBlocked, isOn } from './lists'
 import { effectiveFloors } from './pricing'
 import { slotCountOf, slotDurationSec } from './slots'
@@ -29,7 +29,12 @@ export function allPositions(ctx: Context): PositionRef[] {
 export const findPosition = (ctx: Context, id: string) => allPositions(ctx).find((p) => p.positionId === id) ?? null
 
 export type Assignment = 'rtb' | 'whitelist_only' | 'reserved'
-export const assignmentOf = (def: Slot): Assignment => (def.advertiser ? 'reserved' : def.listMode === 'whitelist_only' ? 'whitelist_only' : 'rtb')
+export const assignmentOf = (def: Slot): Assignment => {
+  const a = assignedOf(def)
+  return a.advertisers.length ? 'reserved' : a.whitelistOnly ? 'whitelist_only' : 'rtb'
+}
+/* Held for one of these advertisers (case-insensitively). */
+export const heldFor = (def: Slot, name: string) => assignedOf(def).advertisers.some((a) => a.trim().toLowerCase() === name.trim().toLowerCase())
 
 /* Who is asking: the partner, and optionally one of its advertisers (seats). */
 export interface Caller {
@@ -51,14 +56,15 @@ export function advertiserMayBuy(ctx: Context, p: PositionRef, partner: PartnerR
   const eff = effectiveLists(partner, ctx.company.get())
   if (isBlocked(name, eff)) return false
   const a = assignmentOf(p.def)
-  if (a === 'reserved') return (p.def.advertiser as string).trim().toLowerCase() === name.trim().toLowerCase()
+  if (a === 'reserved') return heldFor(p.def, name)
   if (a === 'whitelist_only') return isOn(name, eff.allowList)
   return true
 }
 
 export function isVisible(ctx: Context, p: PositionRef, c: Caller) {
   if (c.partner.status !== 'connected' || c.unknownAdvertiser) return false
-  if (p.def.partnerId && p.def.partnerId !== c.partner.id) return false
+  const allowed = assignedOf(p.def).partnerIds
+  if (allowed.length && !allowed.includes(c.partner.id)) return false
   const names = c.advertiser ? [c.advertiser.name] : c.partner.seats.map((s) => s.name)
   return names.some((n) => advertiserMayBuy(ctx, p, c.partner, n))
 }

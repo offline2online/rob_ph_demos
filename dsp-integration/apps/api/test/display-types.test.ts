@@ -70,71 +70,63 @@ describe('display types — POC stand-in endpoints', () => {
   })
 })
 
+/* The slot editor sets the label and the owner only (Rob, 20 Sep): who a
+   position is assigned to moved to Advertisers / Inventory, which is also
+   where it is validated (advertiser-settings.test.ts). */
 describe('PUT /admin/v1/display-types/{id}/extensions — slot ownership', () => {
   const put = (app: ReturnType<typeof buildApp>, id: string, payload: unknown) =>
     app.inject({ method: 'PUT', url: `/api/admin/v1/display-types/${id}/extensions`, payload: payload as object })
-  const menuSlots = (second: Record<string, unknown>) => ({
+  const menuSlots = (second: Record<string, unknown> = {}) => ({
     slots: [
       { label: 'Priority 1', owner: 'internal' },
-      { label: 'Supplier slot', owner: 'advertiser', partnerId: null, advertiser: null, listMode: 'rtb', ...second },
-      { label: 'Store choice', owner: 'retail', storeScope: 'Store staff' },
+      { label: 'Supplier slot', owner: 'advertiser', ...second },
+      { label: 'Store choice', owner: 'retail' },
     ],
   })
 
   it('returns 404 with the flag off', async () => {
     const { app } = await setup({ flag: false })
-    expect((await put(app, 'menu_board', menuSlots({}))).statusCode).toBe(404)
+    expect((await put(app, 'menu_board', menuSlots())).statusCode).toBe(404)
   })
 
-  it('saves a valid assignment, keeping the existing venue', async () => {
+  it('saves labels and owners, keeping the existing venue', async () => {
     const { app, ctx } = await setup()
-    const res = await put(app, 'menu_board', menuSlots({ partnerId: 'p_google', listMode: null, advertiser: 'Nestlé' }))
+    const res = await put(app, 'menu_board', menuSlots({ label: 'Brand slot' }))
     expect(res.statusCode).toBe(200)
     expectMatchesContract('PUT', '/admin/v1/display-types/{displayTypeId}/extensions', 200, res.json())
-    expect(res.json().slots[1]).toMatchObject({ partnerId: 'p_google', advertiser: 'Nestlé', listMode: null })
+    expect(res.json().slots.map((s: { label: string; owner: string }) => [s.owner, s.label]))
+      .toEqual([['internal', 'Priority 1'], ['advertiser', 'Brand slot'], ['retail', 'Store choice']])
     expect(ctx.displayTypes.get('menu_board')?.phExtensions?.venue).toMatchObject({ orientation: 'landscape' })
   })
 
-  it('requires one slot per rotation position', async () => {
+  it('keeps what Advertisers / Inventory set while the slot stays sellable, and drops it when it doesn’t', async () => {
+    const { app, ctx } = await setup()
+    await app.inject({ method: 'PUT', url: '/api/admin/v1/available-inventory', payload: { items: [{ displayTypeId: 'menu_board', slot: 2, supportedTargeting: ['localised', 'personalised'], assignedTo: { partnerIds: [], advertisers: ['Nestlé'], whitelistOnly: false } }] } })
+    const kept = await put(app, 'menu_board', menuSlots({ label: 'Brand slot' }))
+    expect(kept.json().slots[1]).toMatchObject({ advertisers: ['Nestlé'], partnerIds: ['p_google'], supportedTargeting: ['localised', 'personalised'] })
+    /* Owner changed: it is no longer sellable inventory, so the assignment goes. */
+    const dropped = await put(app, 'menu_board', { slots: [{ label: 'Priority 1', owner: 'internal' }, { label: 'Brand slot', owner: 'internal' }, { label: 'Store choice', owner: 'retail' }] })
+    expect(dropped.json().slots[1]).toMatchObject({ advertisers: [], partnerIds: [], listMode: null })
+    expect(ctx.displayTypes.get('menu_board')?.phExtensions?.slots[1].supportedTargeting).toBeUndefined()
+  })
+
+  it('ignores an assignment sent with the slots, and gives a Stores slot the default scope', async () => {
+    const { app } = await setup()
+    const res = await put(app, 'menu_board', menuSlots({ partnerIds: ['p_amazon'], advertisers: ['Swisse'] }))
+    expect(res.statusCode).toBe(200)
+    expect(res.json().slots[1]).toMatchObject({ partnerIds: ['p_google'], advertisers: [] })
+    expect(res.json().slots[2]).toMatchObject({ storeScope: 'Store staff' })
+  })
+
+  it('requires one slot per rotation position, and a label on each', async () => {
     const { app } = await setup()
     const res = await put(app, 'menu_board', { slots: [{ label: 'Only one', owner: 'internal' }] })
     expect(res.statusCode).toBe(400)
     expectMatchesContract('PUT', '/admin/v1/display-types/{displayTypeId}/extensions', 400, res.json())
     expect(res.json().error.details[0]).toMatchObject({ field: 'slots' })
     expect((await put(app, 'landscape', { slots: [] })).statusCode).toBe(200)
-  })
-
-  it.each([
-    ['an advertiser that is not a seat of the partner', { partnerId: 'p_google', listMode: null, advertiser: "L'Oréal" }, 'slots[1].advertiser'],
-    ['a named advertiser with no partner', { partnerId: null, listMode: null, advertiser: 'Nestlé' }, 'slots[1].partnerId'],
-    ['an unknown partner', { partnerId: 'p_nope' }, 'slots[1].partnerId'],
-    ['whitelist-only with no partner', { listMode: 'whitelist_only' }, 'slots[1].partnerId'],
-    ['neither RTB, whitelist nor a name', { listMode: null }, 'slots[1].listMode'],
-  ])('rejects %s', async (_label, second, field) => {
-    const { app } = await setup()
-    const res = await put(app, 'menu_board', menuSlots(second))
-    expect(res.statusCode).toBe(400)
-    expect(res.json().error.details.map((d: { field: string }) => d.field)).toContain(field)
-  })
-
-  it('withdraws a blocked advertiser: naming one is rejected, but one already named stays', async () => {
-    const { app, ctx } = await setup()
-    expect((await put(app, 'menu_board', menuSlots({ partnerId: 'p_google', listMode: null, advertiser: 'Nestlé' }))).statusCode).toBe(200)
-    ctx.company.save({ ...ctx.company.get(), advertiserBlacklist: ['Nestlé'] })
-    expect((await put(app, 'menu_board', menuSlots({ partnerId: 'p_google', listMode: null, advertiser: 'Nestlé' }))).statusCode).toBe(200)
-    const res = await put(app, 'menu_board', menuSlots({ partnerId: 'p_google', listMode: null, advertiser: 'Swisse' }))
-    expect(res.statusCode).toBe(200)
-    const again = await put(app, 'menu_board', menuSlots({ partnerId: 'p_google', listMode: null, advertiser: 'Nestlé' }))
-    expect(again.statusCode).toBe(400)
-    expect(again.json().error.details[0].reason).toMatch(/blacklist/)
-  })
-
-  it('rejects a Stores slot with an unknown scope and a Headquarters slot with an assignment', async () => {
-    const { app } = await setup()
-    const res = await put(app, 'menu_board', {
-      slots: [{ label: 'P', owner: 'internal', partnerId: 'p_google' }, { label: 'S', owner: 'retail', storeScope: 'Everyone' }, { label: 'x', owner: 'internal' }],
-    })
-    expect(res.json().error.details.map((d: { field: string }) => d.field)).toEqual(['slots[0].owner', 'slots[1].storeScope'])
+    const blank = await put(app, 'menu_board', menuSlots({ label: '  ' }))
+    expect(blank.json().error.details.map((d: { field: string }) => d.field)).toEqual(['slots[1].label'])
   })
 })
 

@@ -1,9 +1,10 @@
 /* Advertiser settings (spec §4, §5, §6): pricing and the company lists, plus
    the read-only Where these apply and Available Inventory. */
-import { TARGETING_MODES, supportedTargetingOf, type AdvertiserSettings, type AdvertiserSettingsInput, type AvailableInventoryRow, type TargetingMode } from '@ph-dsp/types'
+import { TARGETING_MODES, advertiserSlug, assignedOf, supportedTargetingOf, type AdvertiserSettings, type AdvertiserSettingsInput, type Assigned, type AvailableInventoryRow, type DspAdvertisers, type TargetingMode } from '@ph-dsp/types'
 import type { FastifyPluginAsync } from 'fastify'
 import type { Context } from '../../context'
 import { cleanList, validateAdvertiserSettings } from '../../domain/advertiserSettings'
+import { assignedToSlot, validateAssigned } from '../../domain/slots'
 import type { Guards } from '../../http/app'
 import { validationFailed } from '../../http/errors'
 
@@ -40,39 +41,50 @@ export const advertiserSettingsRoutes = (ctx: Context, guards: Guards): FastifyP
   })
 
   /* Every advertiser-owned slot across the estate (spec §5 "Available Inventory"). No advertisers column. */
-  const inventory = (): AvailableInventoryRow[] => {
+  /* Every advertiser-owned slot, and the DSPs (with their advertisers) a
+     position can be assigned to — the options behind the Assigned to
+     multi-select (Rob, 20 Sep). */
+  const inventory = () => {
     const partners = ctx.partners.list()
     const items: AvailableInventoryRow[] = []
     for (const t of ctx.displayTypes.list()) {
       const playlistName = (t.defaultPlaylistId && ctx.playlists.get(t.defaultPlaylistId)?.name) || '—'
       ;(t.phExtensions?.slots ?? []).forEach((s, i) => {
         if (s.owner !== 'advertiser') return
+        const a = assignedOf(s)
         items.push({
           displayTypeId: t.id, displayTypeName: t.name, touchPoint: t.touchPoint, playlistName, slot: i + 1, position: s.label,
-          partnerName: s.partnerId ? partners.find((p) => p.id === s.partnerId)?.name ?? null : null,
+          assignedTo: { ...a, partnerNames: a.partnerIds.map((id) => partners.find((p) => p.id === id)?.name ?? id) },
           supportedTargeting: supportedTargetingOf(s),
         })
       })
     }
-    return items
+    const dsps: DspAdvertisers[] = partners.map((p) => ({ partnerId: p.id, name: p.name, advertisers: p.seats.map((s) => ({ advertiserId: advertiserSlug(s.name), name: s.name })) }))
+    return { items, dsps }
   }
 
   app.get('/available-inventory', async (req) => {
     guards.flagged()
     guards.requireScope(req, 'sections')
-    return { items: inventory() }
+    return inventory()
   })
 
-  /* What targeting each slot supports (Rob, 20 Sep). Everything else about a
-     slot is set on its display type, so only this field is writable here. */
+  /* Who a slot is assigned to, and what targeting it supports (Rob,
+     20 Sep): the two fields of a sellable slot that live here. Everything
+     else about it is set on its display type. */
   app.put<{ Body: { items?: unknown } }>('/available-inventory', async (req) => {
     guards.flagged()
     guards.requireScope(req, 'admin')
-    const rows = Array.isArray(req.body?.items) ? (req.body.items as { displayTypeId?: unknown; slot?: unknown; supportedTargeting?: unknown }[]) : null
+    const rows = Array.isArray(req.body?.items) ? (req.body.items as { displayTypeId?: unknown; slot?: unknown; supportedTargeting?: unknown; assignedTo?: unknown }[]) : null
     if (!rows) throw validationFailed([{ field: 'items', reason: 'An array of slots is required.' }])
     const keys = TARGETING_MODES.map((m) => m.key) as string[]
+    const partners = ctx.partners.list()
+    const company = ctx.company.get()
     const errors: { field: string; reason: string }[] = []
-    const wanted = new Map<string, Map<number, TargetingMode[]>>()
+    type Patch = { supportedTargeting: TargetingMode[]; assigned: Assigned }
+    const wanted = new Map<string, Map<number, Patch>>()
+    const names = (v: unknown) => (Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string').map((x) => x.trim()).filter(Boolean) : [])
+
     rows.forEach((r, i) => {
       const f = (k: string) => `items[${i}].${k}`
       const dt = typeof r.displayTypeId === 'string' ? ctx.displayTypes.get(r.displayTypeId) : null
@@ -81,22 +93,35 @@ export const advertiserSettingsRoutes = (ctx: Context, guards: Guards): FastifyP
       if (!dt) errors.push({ field: f('displayTypeId'), reason: 'Unknown display type.' })
       else if (!def) errors.push({ field: f('slot'), reason: `${dt.name} has no slot ${slot}.` })
       else if (def.owner !== 'advertiser') errors.push({ field: f('slot'), reason: 'Only an Advertiser slot is sellable inventory.' })
+
       const modes = Array.isArray(r.supportedTargeting) ? (r.supportedTargeting as unknown[]) : null
+      let targeting: TargetingMode[] | null = null
       if (!modes?.length) errors.push({ field: f('supportedTargeting'), reason: 'Choose at least one type of targeting.' })
       else if (modes.some((m) => typeof m !== 'string' || !keys.includes(m))) errors.push({ field: f('supportedTargeting'), reason: `One of: ${keys.join(', ')}.` })
-      else if (dt && def) {
-        const byType = wanted.get(dt.id) ?? new Map<number, TargetingMode[]>()
-        byType.set(slot, keys.filter((k) => modes.includes(k)) as TargetingMode[])
+      else targeting = keys.filter((k) => modes.includes(k)) as TargetingMode[]
+
+      const raw = (r.assignedTo ?? {}) as { partnerIds?: unknown; advertisers?: unknown; whitelistOnly?: unknown }
+      const assigned: Assigned = { partnerIds: names(raw.partnerIds), advertisers: names(raw.advertisers), whitelistOnly: raw.whitelistOnly === true }
+      const bad = validateAssigned(assigned, (k) => f(`assignedTo.${k}`), partners, company, def ? assignedOf(def) : { partnerIds: [], advertisers: [], whitelistOnly: false })
+      errors.push(...bad)
+
+      if (dt && def && targeting && !bad.length) {
+        const byType = wanted.get(dt.id) ?? new Map<number, Patch>()
+        byType.set(slot, { supportedTargeting: targeting, assigned })
         wanted.set(dt.id, byType)
       }
     })
-    if (errors.length) throw validationFailed(errors, 'A slot supports at least one type of targeting.')
+    if (errors.length) throw validationFailed(errors, 'A slot supports at least one type of targeting, and is assigned to DSPs or advertisers it can actually sell to.')
+
     for (const [displayTypeId, slots] of wanted) {
       const dt = ctx.displayTypes.get(displayTypeId)!
       const ext = { ...(dt.phExtensions ?? { slots: [] }) }
-      ext.slots = (ext.slots ?? []).map((s, i) => (slots.has(i + 1) ? { ...s, supportedTargeting: slots.get(i + 1)! } : s))
+      ext.slots = (ext.slots ?? []).map((s, i) => {
+        const patch = slots.get(i + 1)
+        return patch ? { ...s, supportedTargeting: patch.supportedTargeting, ...assignedToSlot(patch.assigned, partners) } : s
+      })
       ctx.displayTypes.saveExtensions(displayTypeId, ext)
     }
-    return { items: inventory() }
+    return inventory()
   })
 }

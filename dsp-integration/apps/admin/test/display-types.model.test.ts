@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import type { AdvertiserSettings, DisplayType, Partner, Slot } from '@ph-dsp/types'
 import {
-  featuresSummary, newDisplayType, normaliseSlots, ownerAssignment, partnerChange, phantomSummary, playlistSummary, resizeSlots, zonesSummary,
+  featuresSummary, newDisplayType, normaliseSlots, ownerAssignment, phantomSummary, playlistSummary, resizeSlots, zonesSummary,
 } from '../src/features/display-types/model'
 
 const base = (over: Partial<DisplayType> = {}): DisplayType => ({ ...newDisplayType('t'), playlistSettings: { assetPosition: null, assetFill: null, maximumCampaignsPlayedInRotation: null, campaignTransition: null, campaignAutoRotation: null, campaignAutoPlay: null }, ...over })
-const slot = (over: Partial<Slot>): Slot => ({ label: 'S', owner: 'internal', partnerId: null, advertiser: null, listMode: null, storeScope: null, quota: null, ...over })
+const slot = (over: Partial<Slot>): Slot => ({ label: 'S', owner: 'internal', partnerIds: [], advertisers: [], listMode: null, storeScope: null, quota: null, ...over })
 const labels = (chips: { label: string; tone: string }[]) => chips.map((c) => `${c.label}${c.tone === 'default' ? ' (grey)' : ''}`)
 
 describe('collapsed panel summaries (spec §1)', () => {
@@ -55,22 +55,20 @@ describe('slot ownership helpers', () => {
   const seatsOf = (p: Partner) => seats[p.id]
 
   it('describes each assignment as the prototype does', () => {
-    expect(ownerAssignment(slot({ owner: 'internal' }), partners, company)).toBe('Based on priority')
-    expect(ownerAssignment(slot({ owner: 'retail', storeScope: 'Franchisee' }), partners, company)).toBe('Franchisee')
-    expect(ownerAssignment(slot({ owner: 'advertiser', listMode: 'rtb' }), partners, company)).toBe('Any connected DSP · RTB')
-    expect(ownerAssignment(slot({ owner: 'advertiser', partnerId: 'p_google', listMode: 'rtb' }), partners, company)).toBe('Google DSP · RTB (−2 blocked)')
-    expect(ownerAssignment(slot({ owner: 'advertiser', partnerId: 'p_google', listMode: 'whitelist_only' }), partners, company)).toBe('Google DSP · whitelist (3)')
-    expect(ownerAssignment(slot({ owner: 'advertiser', partnerId: 'p_amazon', advertiser: "L'Oréal" }), partners, company)).toBe("Amazon Ads DSP · L'Oréal")
+    expect(ownerAssignment(slot({ owner: 'internal' }), partners)).toBe('Based on priority')
+    expect(ownerAssignment(slot({ owner: 'retail', storeScope: 'Franchisee' }), partners)).toBe('Franchisee')
+    expect(ownerAssignment(slot({ owner: 'advertiser', listMode: 'rtb' }), partners)).toBe('Any connected DSP · RTB')
+    expect(ownerAssignment(slot({ owner: 'advertiser', partnerIds: ['p_google', 'p_amazon'], listMode: 'rtb' }), partners)).toBe('Google DSP, Amazon Ads DSP · RTB')
+    expect(ownerAssignment(slot({ owner: 'advertiser', partnerIds: ['p_google'], listMode: 'whitelist_only' }), partners)).toBe('Google DSP · whitelist')
+    expect(ownerAssignment(slot({ owner: 'advertiser', partnerIds: ['p_amazon'], advertisers: ["L'Oréal", 'Nestlé'] }), partners)).toBe("L'Oréal, Nestlé")
   })
 
-  it('re-pointing a position keeps only what the new partner can honour', () => {
-    const named = slot({ owner: 'advertiser', partnerId: 'p_google', advertiser: 'Nestlé' })
-    /* Nestlé is a seat on Amazon too, but Amazon's own blacklist blocks it. */
-    expect(partnerChange(named, amazon, company, seatsOf)).toEqual({ partnerId: 'p_amazon', listMode: 'rtb', advertiser: null })
-    expect(partnerChange(named, google, company, seatsOf)).toEqual({ partnerId: 'p_google', listMode: null, advertiser: 'Nestlé' })
-    expect(partnerChange(slot({ owner: 'advertiser', partnerId: 'p_google', listMode: 'whitelist_only' }), amazon, company, seatsOf)).toEqual({ partnerId: 'p_amazon', listMode: 'whitelist_only', advertiser: null })
-    expect(partnerChange(named, null, company, seatsOf)).toEqual({ partnerId: null, listMode: 'rtb', advertiser: null })
+  /* A slot saved before the assignment moved to Advertisers / Inventory. */
+  it('reads a slot that still carries one partnerId and one advertiser', () => {
+    const legacy = { label: 'S', owner: 'advertiser', partnerId: 'p_google', advertiser: 'Nestlé' } as unknown as Slot
+    expect(ownerAssignment(legacy, partners)).toBe('Nestlé')
   })
+
 
   it('slots follow the rotation cap, keeping what was there', () => {
     const s = [slot({ label: 'Keep' })]

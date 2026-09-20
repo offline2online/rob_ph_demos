@@ -65,12 +65,12 @@ describe('GET /v1/inventory', () => {
     expect(await ids('?advertiserId=swisse')).toEqual([])
     expect(await ids('?advertiserId=nestle')).toEqual(['menu_board.s2'])
 
-    setSlot({ listMode: null, advertiser: 'Swisse' })
+    setSlot({ listMode: null, advertisers: ['Swisse'] })
     expect(await ids('?advertiserId=nestle')).toEqual([])
     const reserved = (await get('/inventory?advertiserId=swisse')).json().items[0]
     expect(reserved.assignment).toBe('reserved')
 
-    setSlot({ advertiser: null, listMode: 'rtb', partnerId: 'p_amazon' })
+    setSlot({ advertisers: [], listMode: 'rtb', partnerIds: ['p_amazon'] })
     expect(await ids()).toEqual([])
   })
 
@@ -128,7 +128,7 @@ describe('GET /v1/inventory/{positionId} and …/availability', () => {
       ],
     })
     /* Reserved to a named advertiser: "reserved" to its DSP, "available" to that advertiser. */
-    setSlot({ listMode: null, advertiser: 'Swisse' })
+    setSlot({ listMode: null, advertisers: ['Swisse'] })
     const statuses = async (q: string) => (await get(`/inventory/menu_board.s2/availability?from=2026-09-21&to=2026-09-21${q}`)).json().windows.map((w: { status: string }) => w.status)
     expect(await statuses('')).toEqual(['reserved'])
     expect(await statuses('&advertiserId=swisse')).toEqual(['available'])

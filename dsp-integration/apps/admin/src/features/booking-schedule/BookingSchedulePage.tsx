@@ -165,7 +165,7 @@ export function BookingSchedulePage() {
        applies these two, so they narrow every window, not only the rows here. */
     {
       headerName: 'DSP', width: 175, minWidth: 150, pinned: 'left', cellStyle: { color: T.muted },
-      valueGetter: (p) => p.data?.position.partnerName ?? 'Any connected DSP',
+      valueGetter: (p) => p.data?.position.partnerNames.join(', ') || 'Any connected DSP',
       ...externalSetColumn<Row>('DSP', dsps.map((d) => d.name), dsps.find((d) => d.partnerId === partnerId)?.name,
         (name) => setFilter('partnerId', dsps.find((d) => d.name === name)?.partnerId, advertiserId)),
     },
