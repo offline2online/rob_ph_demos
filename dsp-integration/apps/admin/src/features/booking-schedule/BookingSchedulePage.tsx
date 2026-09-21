@@ -206,6 +206,28 @@ export function BookingSchedulePage() {
       {schedule.isError && <Alert className="mb-4" type="error" showIcon message="The booking schedule couldn’t be loaded." />}
       {!data ? <Spin /> : (
         <>
+          <SectionLabel><WithTip tip="Booked windows show the advertiser (bookmark = reserved, gavel = won at auction), the campaign type, the CPM it was booked at and its booked revenue; hover for the DSP, assumed views and billed revenue. Weekly and monthly views count how much of each period is sold.">Schedule</WithTip></SectionLabel>
+          {data.positions.length === 0 ? (
+            <div className="flex items-center gap-2" style={{ fontSize: 12.5, color: T.muted }}>
+              <Icon name="view_week" size={18} />
+              <span>No advertiser positions yet. Set a slot's owner to <b>Advertiser</b> on a display type.</span>
+            </div>
+          ) : (
+            <Grid<Row>
+              key={`${view}-${q}`}
+              label="Booking schedule"
+              rows={rows}
+              columns={columns}
+              context={ctx}
+              getRowId={(r) => r.position.positionId}
+              rowHeight={56}
+              headerHeight={40}
+              floatingFiltersHeight={40}
+              suppressHorizontalScroll={false}
+              stickyHeader
+            />
+          )}
+
           <SectionLabel><WithTip tip="Per display type, over the play windows shown. Booked revenue = booked CPM × assumed views ÷ 1000; billed revenue comes from billing once a window has played.">Booking revenue</WithTip></SectionLabel>
           <Grid<RevenueRow>
             label="Booking revenue"
@@ -230,28 +252,6 @@ export function BookingSchedulePage() {
                 </div>
               ))}
             </div>
-          )}
-
-          <SectionLabel><WithTip tip="Booked windows show the advertiser (bookmark = reserved, gavel = won at auction), the campaign type, the CPM it was booked at and its booked revenue; hover for the DSP, assumed views and billed revenue. Weekly and monthly views count how much of each period is sold.">Schedule</WithTip></SectionLabel>
-          {data.positions.length === 0 ? (
-            <div className="flex items-center gap-2" style={{ fontSize: 12.5, color: T.muted }}>
-              <Icon name="view_week" size={18} />
-              <span>No advertiser positions yet. Set a slot's owner to <b>Advertiser</b> on a display type.</span>
-            </div>
-          ) : (
-            <Grid<Row>
-              key={`${view}-${q}`}
-              label="Booking schedule"
-              rows={rows}
-              columns={columns}
-              context={ctx}
-              getRowId={(r) => r.position.positionId}
-              rowHeight={56}
-              headerHeight={40}
-              floatingFiltersHeight={40}
-              suppressHorizontalScroll={false}
-              stickyHeader
-            />
           )}
         </>
       )}
