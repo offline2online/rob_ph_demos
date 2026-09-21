@@ -70,7 +70,7 @@ describe('Advertiser settings (spec §4, §6)', () => {
     expectMatchesContract('GET', '/admin/v1/available-inventory', 200, res.json())
     expect(res.json().items).toEqual([{
       displayTypeId: 'menu_board', displayTypeName: 'Menu Board — Long Format', touchPoint: 'Digital Signage', playlistName: 'Menu Board Playlist', slot: 2, position: 'Supplier slot',
-      assignedTo: { partnerIds: ['p_google'], partnerNames: ['Google DSP'], advertisers: [], whitelistOnly: false }, qrControl: true, supportedTargeting: ['localised'],
+      assignedTo: { partnerIds: ['p_google'], partnerNames: ['Google DSP'], advertisers: [], whitelistOnly: false }, qrControl: true, supportedTargeting: ['localised'], reservePrice: null,
     }])
     /* The picker behind Assigned to: every DSP and the advertisers it brings. */
     expect(res.json().dsps[0]).toMatchObject({ partnerId: 'p_google', name: 'Google DSP', advertisers: [{ advertiserId: 'nestle', name: 'Nestlé' }, { advertiserId: 'swisse', name: 'Swisse' }] })
@@ -99,6 +99,32 @@ describe('Advertiser settings (spec §4, §6)', () => {
       { field: 'items[2].displayTypeId', reason: 'Unknown display type.' },
       { field: 'items[2].supportedTargeting', reason: 'One of: localised, personalised, interactive.' },
     ])
+  })
+
+  /* A CPM premium to reserve the slot in advance (Rob, 22 Sep). No separate
+     stored default: whatever was last saved on a slot is simply its value. */
+  it('saves a reserve price per slot, and publishes it on the position', async () => {
+    const ctx = await testContext()
+    const app = buildApp(ctx)
+    const save = (items: { slot: number; reservePrice: number | null }[]) =>
+      app.inject({ method: 'PUT', url: '/api/admin/v1/available-inventory', payload: { items: items.map((i) => ({ displayTypeId: 'menu_board', supportedTargeting: ['localised'], assignedTo: KEEP, ...i })) } })
+
+    const res = await save([{ slot: 2, reservePrice: 250 }])
+    expect(res.statusCode).toBe(200)
+    expectMatchesContract('PUT', '/admin/v1/available-inventory', 200, res.json())
+    expect(res.json().items[0].reservePrice).toBe(250)
+    expect(ctx.displayTypes.get('menu_board')!.phExtensions!.slots[1].reservePrice).toBe(250)
+
+    /* Published on the position, for DSPs and advertisers. */
+    const inv = await app.inject({ method: 'GET', url: '/api/v1/inventory', headers: { authorization: 'Bearer poc-token-google-dv360' } })
+    expect(inv.json().items.find((i: { positionId: string }) => i.positionId === 'menu_board.s2').reservePrice).toBe(250)
+
+    /* null clears it back to no reserve; a negative one is refused. */
+    const cleared = await save([{ slot: 2, reservePrice: null }])
+    expect(cleared.json().items[0].reservePrice).toBeNull()
+    const bad = await save([{ slot: 2, reservePrice: -5 }])
+    expect(bad.statusCode).toBe(400)
+    expect(bad.json().error.details).toEqual([{ field: 'items[0].reservePrice', reason: 'A CPM of 0 or more, or null for no reserve.' }])
   })
 
   /* Who may buy a position, set here now that the display type's slot editor

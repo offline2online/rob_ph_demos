@@ -93,14 +93,16 @@ const BookingsCell = ({ data, context }: P) =>
 /* The inventory advertisers can buy: every Advertiser-owned slot on a
    display type (spec §5 "Available Inventory"). No advertisers column. */
 export const slotKey = (r: AvailableInventoryRow) => `${r.displayTypeId}:${r.slot}`
-/* What Save changes sends for a slot: the two fields this table owns. */
-export interface SlotEdit { supportedTargeting: TargetingMode[]; assignedTo: Omit<AssignedTo, 'partnerNames'> }
+/* What Save changes sends for a slot: the fields this table owns. */
+export interface SlotEdit { supportedTargeting: TargetingMode[]; assignedTo: Omit<AssignedTo, 'partnerNames'>; reservePrice: number | null }
 type Edits = Record<string, SlotEdit>
 type InvCtx = { current: {
   open: (displayTypeId: string) => void
   canEdit: boolean
+  currency: string
   edits: Edits
   dsps: DspAdvertisers[]
+  rows: AvailableInventoryRow[]
   set: (key: string, patch: Partial<SlotEdit>) => void
 } }
 type IP = ICellRendererParams<AvailableInventoryRow, unknown, InvCtx>
@@ -157,7 +159,7 @@ function Pills({ label, value, options, canEdit, placeholder, onChange }: {
 }
 
 const edited = (c: InvCtx['current'], r: AvailableInventoryRow): SlotEdit =>
-  c.edits[slotKey(r)] ?? { supportedTargeting: supportedTargetingOf(r), assignedTo: r.assignedTo }
+  c.edits[slotKey(r)] ?? { supportedTargeting: supportedTargetingOf(r), assignedTo: r.assignedTo, reservePrice: r.reservePrice }
 
 /* Who may buy this position (Rob, 20 Sep): DSPs, named advertisers, or the
    whitelist. Nothing chosen means any connected DSP. */
@@ -220,6 +222,36 @@ function TargetingCell({ data, context }: IP) {
   )
 }
 
+/* A CPM premium to reserve the slot in advance of the open auction (Rob,
+   22 Sep). No separate stored default: set one row, then "copy to every
+   slot" seeds the rest — each stays independently overridable, so whatever
+   was set last (by hand or by copy) is simply that slot's value. */
+function ReservePriceCell({ data, context }: IP) {
+  if (!data) return null
+  const c = context.current
+  const value = edited(c, data).reservePrice
+  if (!c.canEdit) return <span style={{ color: value === null ? T.muted : T.text }}>{value === null ? 'No reserve' : `${c.currency} ${value}`}</span>
+  const siblings = c.rows.filter((r) => r.displayTypeId === data.displayTypeId && r.slot !== data.slot)
+  return (
+    <div className="flex w-full min-w-0 items-center gap-1">
+      <InputNumber
+        size="small" aria-label={`${data.displayTypeName} slot ${data.slot}: reserve price`} min={0} step={1} style={{ width: 92 }}
+        placeholder="None" prefix={c.currency} value={value ?? undefined}
+        onChange={(v) => c.set(slotKey(data), { reservePrice: v === null || v === undefined ? null : Number(v) })}
+      />
+      {value !== null && siblings.length > 0 && (
+        <Tooltip title={`Copy ${c.currency} ${value} to every other slot on ${data.displayTypeName}`}>
+          <Button
+            type="text" size="small" className="px-1" aria-label={`Copy reserve price to every slot on ${data.displayTypeName}`}
+            icon={<Icon name="content_copy" size={13} />}
+            onClick={() => siblings.forEach((r) => c.set(slotKey(r), { reservePrice: value }))}
+          />
+        </Tooltip>
+      )}
+    </div>
+  )
+}
+
 const header = (label: string, tip: string) => () => <WithTip tip={tip}><span className="ag-header-cell-text">{label}</span></WithTip>
 
 export function AdvertisersPage() {
@@ -258,13 +290,18 @@ export function AdvertisersPage() {
       valueGetter: (p) => (p.data ? targetingLabel(edited((p.context as InvCtx).current, p.data).supportedTargeting) : ''),
       ...setColumn<AvailableInventoryRow>('Targeting supported', () => TARGETING_MODES.map((m) => m.label)),
     },
+    {
+      headerName: 'Reserve price', width: 190, minWidth: 170, cellRenderer: ReservePriceCell,
+      headerComponent: header('Reserve price', 'A CPM premium at which this slot can be reserved in advance of the open auction. Set one slot and use the copy icon to apply it to every slot on this display type — each stays independently overridable. Empty = no reserve.'),
+      valueGetter: (p) => (p.data ? edited((p.context as InvCtx).current, p.data).reservePrice ?? -1 : -1),
+    },
     { headerName: '', width: 76, suppressSizeToFit: true, cellRenderer: OpenCell },
   ], [invRows, inventory.data])
   const saved = useMemo<Settings | undefined>(() => q.data && Object.fromEntries(q.data.items.map((a) => [a.advertiserId, { approvalRequired: a.approvalRequired, floorMultiplier: a.floorMultiplier }])), [q.data])
   const { draft, setDraft, dirty, reset, commitNext } = useDraft(saved)
   const savedEdits = useMemo<Edits | undefined>(() => inventory.data && Object.fromEntries(invRows.map((r) => {
     const { partnerNames: _names, ...assignedTo } = r.assignedTo
-    return [slotKey(r), { supportedTargeting: supportedTargetingOf(r), assignedTo }]
+    return [slotKey(r), { supportedTargeting: supportedTargetingOf(r), assignedTo, reservePrice: r.reservePrice }]
   })), [invRows, inventory.data])
   const inv = useDraft(savedEdits)
   useReportDirty(dirty || inv.dirty)
@@ -317,7 +354,7 @@ export function AdvertisersPage() {
   }
   const invContext = {
     open: (id: string) => navigate(`/display-types?id=${encodeURIComponent(id)}&panel=playlist`),
-    canEdit, edits: inv.draft ?? {}, dsps: inventory.data?.dsps ?? [],
+    canEdit, currency: data.currency, edits: inv.draft ?? {}, dsps: inventory.data?.dsps ?? [], rows: invRows,
     set: (key: string, patch: Partial<SlotEdit>) => inv.setDraft((cur) => (cur ? { ...cur, [key]: { ...cur[key], ...patch } } : cur)),
   }
   const context = {
