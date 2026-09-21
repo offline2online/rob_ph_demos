@@ -11,8 +11,8 @@ Repo folder: `dsp-integration/` in `offline2online/rob_ph_demos`, merged to
 folder's history is on the tag `archive/display-types-dsp-integration`.
 
 - **Spec:** [docs/dsp-integration/REQUIREMENTS.md](docs/dsp-integration/REQUIREMENTS.md)
-  (mirrored into the Requirements block on the board's Docs page — keep the
-  two in step)
+  — the source of truth, mirrored into the board's Requirements block with
+  `npm run board:sync` (see *Keeping the board in step*)
 - **Brief:** [docs/dsp-integration/BUILD-BRIEF.md](docs/dsp-integration/BUILD-BRIEF.md)
 - **Plan and progress:** [docs/dsp-integration/BUILD-PLAN.md](docs/dsp-integration/BUILD-PLAN.md)
 - **API contract:** [openapi.yaml](docs/dsp-integration/api/openapi.yaml) and
@@ -39,6 +39,23 @@ cd apps/admin && VITE_DEMO=1 npx vite build --base=/rob_ph_demos/dsp-integration
 cp -R dist/. ../../prototype/
 ```
 
+## Keeping the board in step
+
+The project's card on the [Prototype Backlog board](https://backlog-tracker-e4ed2.web.app/)
+carries its own copy of `REQUIREMENTS.md` (`requirementsMd`) and `README.md`
+(`readmeMd`). **The files here are the source of truth**; the board follows
+them, in the same session a file changes:
+
+```bash
+npm run board:sync            # copy both files to the board, then verify
+npm run board:sync -- --check # report drift without writing (exit 1 if stale)
+```
+
+It reads the files off disk, PATCHes the board, reads them back and fails
+if they don't match byte for byte — so a spec never picks up errors from
+being retyped. Set `BOARD_API_KEY` (the board automation user's password) in
+`.env` first; without it the script stops and says so.
+
 ## Layout
 
 | Path | What it is |
@@ -62,6 +79,7 @@ cp -R dist/. ../../prototype/
 | `apps/admin/src/features/campaign-status/` | STAND-IN "Campaign Status" table and campaign page showing the approval components end to end; deleted on integration |
 | `apps/admin/src/demo/`, `apps/admin/scripts/capture-demo.mjs` | The hosted prototype: a snapshot of the API's read side, and the shim that answers from it and refuses writes. Built into `prototype/` (see above) |
 | `apps/admin/public/demo/` | That snapshot and the creatives it points at, committed so the demo can be rebuilt without a running API |
+| `scripts/sync-board-docs.mjs` | `npm run board:sync` — pushes `REQUIREMENTS.md` and `README.md` to the board's Docs page and verifies them (see above) |
 
 ## Running it
 

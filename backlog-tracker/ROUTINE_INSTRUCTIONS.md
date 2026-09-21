@@ -168,6 +168,16 @@ rest of this file.
      or a project-specific README), read that too — the Firestore
      `requirementsMd` and the repo file are meant to be kept in sync, but
      check both in case one is stale.
+   - **If your work changes what those documents say, update both before
+     you finish** (Rob, 21 Sep 2026) — the repo file first, since it is the
+     source of truth, then the board field so the two agree. Where the
+     project has a sync script (`npm run board:sync` in `dsp-integration/`)
+     run it: it copies the files byte for byte and verifies the result.
+     Otherwise use the board MCP tools (`set_project_requirements`,
+     `set_project_readme`), and only where the document is short enough to
+     reproduce exactly — never retype a long specification by hand. If you
+     can't complete the sync, say so in the ticket comment rather than
+     leaving the board quietly stale.
 
 ## For each Backlog item found
 
