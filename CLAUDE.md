@@ -552,6 +552,42 @@ Whichever route, **verify**: read the field back and compare it with the
 file. A sync that reports success without checking is worse than no sync,
 because it stops anyone looking again.
 
+### The board's key lives in GitHub, not on anyone's laptop — use it there
+
+**`BOARD_API_KEY` is a repository secret** (so are
+`FIREBASE_SERVICE_ACCOUNT_BACKLOG_TRACKER`, `GH_DISPATCH_TOKEN` and the
+rest — `grep -rh "secrets\." .github/workflows/` lists them). It is
+deliberately not in any `.env` on a developer machine, so an agent that
+needs to **write** to the board does not ask for the key and does not hand
+the job back: **it runs the work on a runner, where the key already is.**
+
+For this project that is `.github/workflows/dsp-board.yml`:
+
+```bash
+# sync the board's copy of REQUIREMENTS.md / README.md, move a card, set the deploy branch
+gh workflow run dsp-board.yml -f docs=sync
+gh workflow run dsp-board.yml -f ticket=<id> -f to=ready-for-testing -f preview=<url>
+gh workflow run dsp-board.yml -f deploy_branch=deploy/dsp-integration
+gh run watch "$(gh run list --workflow=dsp-board.yml --limit 1 --json databaseId -q '.[0].databaseId')"
+```
+
+The docs sync also runs **by itself** whenever `REQUIREMENTS.md` or
+`README.md` lands on `main`, which is what keeping the board in step should
+mean in practice.
+
+**The general rule, beyond this project: when a task is blocked on a
+credential, check whether the repository already holds it as an Actions
+secret and run the job there.** I spent several turns telling Rob I
+couldn't sync an 80 KB specification because the key wasn't on this machine
+— it had been in GitHub the whole time, and one workflow did the job in
+nine seconds, verified. Look before you declare a blocker.
+
+**One trap, learned the hard way**: a `workflow_dispatch` run checks out the
+**default branch**, not your feature branch. If the script the workflow
+calls was changed on a branch, that change is not there yet — land the
+script on `main` (the workflow is infrastructure), and keep only the
+ticket's own code on its train.
+
 **Without the write credential you can still report drift, and should.**
 Read the project's docs over the board's MCP connector (`get_project_docs`
 with `include: ["requirements", "readme"]`) and pass the saved result to
