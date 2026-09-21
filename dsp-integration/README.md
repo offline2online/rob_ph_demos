@@ -13,6 +13,25 @@ small interface.
 - **UI specification:** `prototype-reference/` (read-only). The look comes from
   the design skill in `.claude/skills/ph-designer/`.
 
+## The hosted prototype
+
+`prototype/` is a built, **read-only** copy of the admin UI, published at
+<https://offline2online.github.io/rob_ph_demos/dsp-integration/prototype/>
+so the screens can be opened from a URL and embedded in an iframe in HQ
+Admin. It has no server: `apps/admin/scripts/capture-demo.mjs` takes a
+snapshot of the API's read side, and `src/demo/staticApi.ts` answers from it
+and refuses writes, saying so, rather than pretending a Save worked. Routes
+live in the hash (`…/prototype/#/booking-schedule`) because a CDN has
+nothing to rewrite paths with.
+
+Refresh it after a change worth showing, with the dev API running:
+
+```bash
+npm run demo:capture -w @ph-dsp/admin
+cd apps/admin && VITE_DEMO=1 npx vite build --base=/rob_ph_demos/dsp-integration/prototype/
+cp -R dist/. ../../prototype/
+```
+
 ## Layout
 
 | Path | What it is |
