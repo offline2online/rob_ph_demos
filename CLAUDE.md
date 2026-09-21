@@ -56,7 +56,7 @@ field's exact shape.
 
 ## Live Visitor Profile and Display Types & DSP Integration — two separate projects, one repo
 
-`visitor-profile/` and `display-types-dsp-integration/` were split out as two
+`visitor-profile/` and `dsp-integration/` were split out as two
 independently-managed projects, following the same pattern as
 `menu-board-demo/`: each is its own subfolder in this same repo, developed on
 its own feature branch(es), and merged to `main` on its own schedule — not
@@ -64,13 +64,16 @@ tied to the other project's release cadence.
 
 - **`visitor-profile/`** — managing personalisation attributes in
   Personalisation Hub, and the source systems that populate them.
-- **`display-types-dsp-integration/`** — managing display types, elements,
-  playlists, and the advertising partner/DSP connections that fill sold
-  slots. Layouts and templates (the surface layer) belong to this project
-  too but are held out of the first release — see its `README.md` →
-  "Release scope". Full name **"Display Types & DSP Integration"** (as on
-  the backlog board); **refer to it as "Display Types"** in prose. Formerly
-  "Experience Templates".
+- **`dsp-integration/`** — managing display types, elements, playlists, and
+  the advertising partner/DSP connections that fill sold slots. Layouts and
+  templates (the surface layer) belong to this project too but are held out
+  of the first release. Full name **"Display Types & DSP Integration"** (as
+  on the backlog board); **refer to it as "Display Types"** in prose.
+  Formerly "Experience Templates", then `display-types-dsp-integration/`:
+  **that folder was removed on 21 Sep 2026 (Rob) and this one replaced it.**
+  Its history, including 8 commits that never reached `main`, is kept on the
+  tag `archive/display-types-dsp-integration`
+  (`git checkout -b restore archive/display-types-dsp-integration`).
 - **`shared/interface-contract.md`** — the maintained interface contract
   between the two. It lives outside both project folders on purpose: it's
   shared space neither project owns unilaterally. Any change to the contract
@@ -80,7 +83,7 @@ tied to the other project's release cadence.
   Personalised Surface Architecture Specification v1.2*.
 - Each has its own `REQUIREMENTS.md` in its own folder, also grounded in
   that spec (visitor-profile = spec System One;
-  display-types-dsp-integration = spec Systems Two/Three).
+  dsp-integration = spec Systems Two/Three).
 - **The backlog tracker itself now also carries this** (see
   `backlog-tracker/` below): each project's `REQUIREMENTS.md` content is
   mirrored into that project's Firestore doc (`requirementsMd` field,
@@ -97,9 +100,13 @@ auction job, all behind the `dspIntegration` flag. It therefore **cannot be
 opened from GitHub Pages like the other demos** — run it locally
 (`npm run dev:api` / `dev:mocks` / `dev:admin`, then `localhost:5173`).
 The static prototype it was built from is published at
-<https://offline2online.github.io/rob_ph_demos/display-types-dsp-integration/prototype/>.
-Note the POC folder is `dsp-integration/`, not the
-`display-types-dsp-integration/` named above.
+<https://offline2online.github.io/rob_ph_demos/dsp-integration/prototype/> —
+the admin UI built against a captured snapshot of its own API, so it opens
+from a URL and can be iframed into HQ Admin. It is **read-only**: a write
+answers with "changes aren't saved". Rebuild it with
+`npm run demo:capture -w @ph-dsp/admin` (dev API up) then
+`VITE_DEMO=1 npx vite build --base=/rob_ph_demos/dsp-integration/prototype/`,
+and copy `apps/admin/dist/.` over `dsp-integration/prototype/`.
 
 **On the Prototype Backlog board** (the live `backlog-tracker` app, not the
 retired Artifact — see "Prototype Backlog" below), these are two separate

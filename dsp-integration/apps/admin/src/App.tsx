@@ -1,7 +1,7 @@
 import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query'
 import { App as AntApp, ConfigProvider } from 'antd'
 import { useState, type ReactNode } from 'react'
-import { Navigate, Outlet, RouterProvider, createBrowserRouter, useMatches, type RouteObject } from 'react-router-dom'
+import { Navigate, Outlet, RouterProvider, createBrowserRouter, createHashRouter, useMatches, type RouteObject } from 'react-router-dom'
 import type { Session } from '@ph-dsp/types'
 import { api } from './api/client'
 import { type Flags, envFlags } from './flags'
@@ -132,7 +132,10 @@ export function Providers({ children }: { children: ReactNode }) {
 }
 
 export default function App({ flags = envFlags() }: { flags?: Flags }) {
-  const [router] = useState(() => createBrowserRouter(appRoutes(flags)))
+  /* The hosted demo is static files on a CDN, with no server to rewrite
+     paths, so its routes live in the hash: a deep link and a refresh both
+     work, which matters when it is embedded in an iframe. */
+  const [router] = useState(() => (import.meta.env.VITE_DEMO === '1' ? createHashRouter : createBrowserRouter)(appRoutes(flags)))
   return (
     <Providers>
       <RouterProvider router={router} />

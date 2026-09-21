@@ -31,7 +31,7 @@ The board's code lives in the GitHub repo
 https://github.com/offline2online/rob_ph_demos, in the `backlog-tracker/`
 folder — but the actual backlog items are usually about OTHER parts of
 that same repo (menu-board-demo/, faq/, visitor-profile/,
-experience-templates/, etc.), since "Backlog Tracker & FAQs" is just one
+dsp-integration/, etc.), since "Backlog Tracker & FAQs" is just one
 of several projects tracked on this shared multi-project board.
 
 The fire request's `text` field names the specific project (with its
@@ -164,7 +164,7 @@ rest of this file.
      expectations.
    - If the project also has a real requirements file in the repo (e.g.
      `visitor-profile/REQUIREMENTS.md`,
-     `display-types-dsp-integration/REQUIREMENTS.md`,
+     `dsp-integration/docs/dsp-integration/REQUIREMENTS.md`,
      or a project-specific README), read that too — the Firestore
      `requirementsMd` and the repo file are meant to be kept in sync, but
      check both in case one is stale.
