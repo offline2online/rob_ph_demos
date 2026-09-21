@@ -4,6 +4,7 @@
      npm run board:tickets -- --from backlog --to published-live
      npm run board:tickets -- --from backlog --to published-live --yes
      npm run board:tickets -- --ticket <id> --preview <url> --to ready-for-testing --yes
+     npm run board:tickets -- --ticket <id> --deploy-commit <sha> --yes
      npm run board:tickets -- --deploy-branch deploy/dsp-integration --yes
 
    Why this exists: the board's MCP connector deliberately refuses status
@@ -12,6 +13,16 @@
    That route merges the project's deployBranch — so when work reaches main
    another way, as the POC did through PR #176, the cards are left behind
    with nothing able to move them. This closes that gap, and only that gap.
+
+   --deploy-commit records which commit on the train branch belongs to a
+   ticket. The board decides a card is on the train by that field alone
+   (functions/train-lock.js, public/js/app.js's trainItemsForProject), and
+   the automation normally sets it when it applies a ticket's patch. A
+   commit pushed to the train by hand has nobody pointing at it, so the
+   periodic sweep reads the train as empty, tags the work as orphaned and
+   resets the branch to main — which is exactly what happened to
+   d5lCFNALmRvij1w1v7aI on 21 Sep. Set this whenever you put a commit on a
+   train yourself, or the board and the branch disagree and the board wins.
 
    It will not pretend: --yes is required to write, every change is verified
    by reading the ticket back, and the default run changes nothing at all.
@@ -84,7 +95,7 @@ async function tickets() {
   } while (pageToken)
   return out
     .filter((d) => field(d, 'projectId') === PROJECT_ID)
-    .map((d) => ({ id: d.name.split('/').pop(), name: d.name, title: field(d, 'title') ?? '(untitled)', status: field(d, 'status') ?? 'backlog', previewUrl: field(d, 'previewUrl') }))
+    .map((d) => ({ id: d.name.split('/').pop(), name: d.name, title: field(d, 'title') ?? '(untitled)', status: field(d, 'status') ?? 'backlog', previewUrl: field(d, 'previewUrl'), deployCommit: field(d, 'deployCommit') }))
 }
 
 const all = await tickets()
@@ -114,6 +125,7 @@ const from = value('--from')
 const to = value('--to')
 const one = value('--ticket')
 const preview = value('--preview')
+const deployCommit = value('--deploy-commit')
 
 if (!from && !to && !one) {
   if (!branch) console.log('\nNothing asked for. Use --from <status> --to <status>, or --ticket <id>, and --yes to write.')
@@ -133,8 +145,9 @@ if (one && !from) {
   console.log(`\n${t.title}`)
   if (to) console.log(`  status   ${STATUSES[t.status]} → ${STATUSES[to]}`)
   if (preview) console.log(`  preview  ${t.previewUrl ?? '(none)'} → ${preview}`)
-  if (!to && !preview) {
-    console.log('  nothing to change: pass --to <status> and/or --preview <url>')
+  if (deployCommit) console.log(`  commit   ${t.deployCommit ?? '(none)'} → ${deployCommit}`)
+  if (!to && !preview && !deployCommit) {
+    console.log('  nothing to change: pass --to <status>, --preview <url> and/or --deploy-commit <sha>')
     process.exit(0)
   }
   if (!flag('--yes')) {
@@ -145,6 +158,7 @@ if (one && !from) {
   const mask = []
   if (to) { fields.status = { stringValue: to }; mask.push('updateMask.fieldPaths=status') }
   if (preview) { fields.previewUrl = { stringValue: preview }; mask.push('updateMask.fieldPaths=previewUrl') }
+  if (deployCommit) { fields.deployCommit = { stringValue: deployCommit }; mask.push('updateMask.fieldPaths=deployCommit') }
   fields.updatedAt = { timestampValue: new Date().toISOString() }
   mask.push('updateMask.fieldPaths=updatedAt')
   const res = await fetch(`${BOARD}/backlogItems/${one}?${mask.join('&')}`, {
@@ -152,7 +166,11 @@ if (one && !from) {
   })
   if (!res.ok) throw new Error(`Writing failed (${res.status}): ${await res.text()}`)
   const after = (await tickets()).find((x) => x.id === one)
-  const wrong = [to && after.status !== to && 'status', preview && after.previewUrl !== preview && 'previewUrl'].filter(Boolean)
+  const wrong = [
+    to && after.status !== to && 'status',
+    preview && after.previewUrl !== preview && 'previewUrl',
+    deployCommit && after.deployCommit !== deployCommit && 'deployCommit',
+  ].filter(Boolean)
   if (wrong.length) {
     console.error(`\nWrote, but ${wrong.join(' and ')} did not land.`)
     process.exit(1)

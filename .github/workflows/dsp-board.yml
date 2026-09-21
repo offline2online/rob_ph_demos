@@ -42,6 +42,10 @@ on:
         description: 'Test link for that ticket'
         type: string
         default: ''
+      deploy_commit:
+        description: "That ticket's commit on the train branch (the board reads the train by this field)"
+        type: string
+        default: ''
 
 # One at a time: two runs writing the same fields would race, and the later
 # writer would silently win.
@@ -85,6 +89,7 @@ jobs:
             --ticket "${{ inputs.ticket }}" \
             ${{ inputs.to != '' && format('--to "{0}"', inputs.to) || '' }} \
             ${{ inputs.preview != '' && format('--preview "{0}"', inputs.preview) || '' }} \
+            ${{ inputs.deploy_commit != '' && format('--deploy-commit "{0}"', inputs.deploy_commit) || '' }} \
             --yes
 
       # Always say where things stand, so the run's log answers "is the
