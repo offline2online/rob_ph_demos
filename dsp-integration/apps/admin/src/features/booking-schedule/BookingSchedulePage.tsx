@@ -32,6 +32,8 @@ const BOOKED = SLOT_OWNERS.advertiser
 const DAY = 86_400_000
 /* The server allows 92 days at a time. */
 const SPAN_DAYS: Record<View, number> = { Daily: 13, Weekly: 83, Monthly: 91 }
+/* The hosted, read-only build (see src/demo/staticApi.ts). */
+const DEMO = import.meta.env.VITE_DEMO === '1'
 
 export const BOOKING_SCHEDULE_TIP =
   'Every advertiser-owned slot across its play windows: which are booked (reserved or won, at the CPM they were booked at), which can still be bid on, and which can no longer be sold. Booked revenue is the booked CPM × the slot’s assumed views; billed revenue is what billing charged once the window played. Test-mode wins are not counted.'
@@ -199,8 +201,12 @@ export function BookingSchedulePage() {
           </div>
         </div>
         <Segmented<View> value={view} onChange={(v) => { setView(v); setRange(null) }} options={['Daily', 'Weekly', 'Monthly']} />
-        <DatePicker.RangePicker aria-label="Dates" value={[dayjs(from), dayjs(to)]} allowClear={false}
-          onChange={(v) => setRange(v && v[0] && v[1] ? [v[0], v[1]] : null)} />
+        {/* The hosted demo holds a snapshot per view, not per arbitrary range,
+            so it fixes the dates rather than showing a range it doesn't have. */}
+        <Tooltip title={DEMO ? 'Fixed in the hosted demo: its data is a snapshot. Run the POC locally to pick a range.' : ''}>
+          <DatePicker.RangePicker aria-label="Dates" value={[dayjs(from), dayjs(to)]} allowClear={false} disabled={DEMO}
+            onChange={(v) => setRange(v && v[0] && v[1] ? [v[0], v[1]] : null)} />
+        </Tooltip>
       </div>
 
       {schedule.isError && <Alert className="mb-4" type="error" showIcon message="The booking schedule couldn’t be loaded." />}

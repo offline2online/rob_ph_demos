@@ -49,6 +49,24 @@ await Promise.all([
 /* Per-campaign schedules, as the campaign page asks for them. */
 await Promise.all(campaigns.map((c) => record(`/admin/v1/booking-schedule?campaignId=${encodeURIComponent(c.campaignId)}`)))
 
+/* The booking schedule asks for an explicit range, one per view, and again
+   for each filter the funnels offer. Capture every combination the page can
+   reach on its own, so Weekly and Monthly show their own windows rather
+   than falling back to the fortnight (Rob, 21 Sep). */
+const iso = (d) => d.toISOString().slice(0, 10)
+const plusDays = (days) => iso(new Date(Date.parse(CAPTURED_AT) + days * 86400000))
+const SPAN_DAYS = [13, 83, 91] // Daily, Weekly, Monthly — SPAN_DAYS in BookingSchedulePage
+const dsps = snapshot['/admin/v1/booking-schedule'].dsps
+const filters = [
+  '',
+  ...dsps.map((d) => `&partnerId=${encodeURIComponent(d.partnerId)}`),
+  ...dsps.flatMap((d) => d.advertisers.map((a) => `&advertiserId=${encodeURIComponent(a.advertiserId)}`)),
+]
+const from = iso(new Date(CAPTURED_AT))
+await Promise.all(
+  SPAN_DAYS.flatMap((span) => [...new Set(filters)].map((f) => record(`/admin/v1/booking-schedule?from=${from}&to=${plusDays(span)}${f}`))),
+)
+
 /* Creatives: copy the files and point the snapshot at them, relative to the
    page, so the demo works wherever it is published. */
 await rm(OUT, { recursive: true, force: true })
