@@ -102,6 +102,16 @@ npm test
   ```
 
   The seed includes one played window (15 Sep 2026).
+- **Sample bookings.** A fresh database is seeded with three booked windows
+  for every advertiser a connected DSP brings — some reserved at an agreed
+  price, some won at auction — each with its own approved and activated
+  campaign, so the booking schedule and its revenue tables have something in
+  them. To add them to a database that already exists (they are additive,
+  and skip any window that is taken):
+
+  ```bash
+  npm run db:bookings
+  ```
 - `POC_ROLE` sets the stand-in session: `hq_admin` (everything, including DSP
   Integration, saving advertiser settings and approving), `hq_marketing`
   (Display Types, Playlist Management, Advertisers / Inventory read-only, and

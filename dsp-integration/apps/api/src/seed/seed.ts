@@ -4,6 +4,7 @@
 import { advertiserSlug } from '@ph-dsp/types'
 import { generateKeyPairSync } from 'node:crypto'
 import type { Context } from '../context'
+import { seedBookings } from './bookings'
 import { seedCampaigns } from './campaigns'
 import { tx } from '../db/db'
 
@@ -109,7 +110,9 @@ const serviceAccountKeyFile = (clientEmail: string) =>
     private_key: generateKeyPairSync('rsa', { modulusLength: 2048 }).privateKey.export({ type: 'pkcs8', format: 'pem' }).toString(),
   })
 
-export async function seed(ctx: Context) {
+/* `bookings`: the sample bookings (a fresh database gets them, so the
+   schedule isn't empty; tests seed a clean forward schedule instead). */
+export async function seed(ctx: Context, opts: { bookings?: boolean } = {}) {
   if (ctx.displayTypes.list().length) return false
   tx(ctx.db, () => {
     SEED_PLAYLISTS.forEach((p) => ctx.playlists.create(p))
@@ -158,6 +161,7 @@ export async function seed(ctx: Context) {
     ctx.exchange.save({ organisation: 'Demo Retail Group', domain: 'demoretail.example', sellerId: 'drg-4471', contactEmail: 'adops@demoretail.example' })
   })
   await seedCampaigns(ctx)
+  if (opts.bookings !== false) await seedBookings(ctx)
   return true
 }
 

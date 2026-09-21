@@ -94,6 +94,27 @@ describe('GET /admin/v1/booking-schedule', () => {
     expect(swisse.json().positions.map((p: { positionId: string }) => p.positionId)).toEqual(['menu_board.s2'])
   })
 
+  /* The sample bookings a fresh database gets, so the schedule and the
+     revenue tables aren't empty when someone first opens them (Rob, 21 Sep). */
+  it('seeds a booking for every brand a connected DSP brings', async () => {
+    const ctx = await testContext({ clock: () => NOW, bookings: true })
+    const res = await buildApp(ctx).inject({ method: 'GET', url: '/api/admin/v1/booking-schedule' })
+    expect(res.statusCode).toBe(200)
+    expectMatchesContract('GET', '/admin/v1/booking-schedule', 200, res.json())
+    const bookings = res.json().positions.flatMap((p: { windows: { booking: { advertiserName: string; type: string } | null }[] }) => p.windows.flatMap((w) => (w.booking ? [w.booking] : [])))
+    /* Both seats Google brings, each with three windows. */
+    expect(new Set(bookings.map((b: { advertiserName: string }) => b.advertiserName))).toEqual(new Set(['Nestlé', 'Swisse']))
+    expect(bookings).toHaveLength(6)
+    /* A mix of reserved and won, and revenue to show for it. */
+    expect(new Set(bookings.map((b: { type: string }) => b.type))).toEqual(new Set(['reserve', 'bid']))
+    expect(res.json().totals.bookedRevenue).toBeGreaterThan(0)
+    /* Every booked campaign is approved and switched on, as a real one would be. */
+    const campaigns = (await buildApp(ctx).inject({ method: 'GET', url: '/api/admin/v1/campaigns' })).json().items
+    for (const b of bookings as { campaignId: string }[]) {
+      expect(campaigns.find((c: { campaignId: string }) => c.campaignId === b.campaignId).activation.enabled).toBe(true)
+    }
+  })
+
   it('needs a valid range of at most 92 days, and is behind the flag', async () => {
     const { get } = await setup()
     for (const q of ['?from=2026-09-20', '?from=2026-09-20&to=2026-12-31', '?from=2026-09-22&to=2026-09-21']) {
