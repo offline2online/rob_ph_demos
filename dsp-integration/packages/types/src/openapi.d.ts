@@ -251,8 +251,8 @@ export interface paths {
         /** Advertiser-owned slots (no advertisers column) */
         get: operations["listAvailableInventory"];
         /**
-         * Save changes — who a slot is assigned to, and what targeting it supports
-         * @description The two editable fields of a sellable slot. Everything else about it —
+         * Save changes — who a slot is assigned to, what targeting it supports, and its reserve price
+         * @description The editable fields of a sellable slot. Everything else about it —
          *     its label and owner — is set on its display type. Admin only:
          *     marketing users read this table.
          *
@@ -263,6 +263,16 @@ export interface paths {
          *
          *     supportedTargeting: interactive is only accepted on a display type
          *     with QR Control enabled.
+         *
+         *     reservePrice: a CPM premium at which this slot can be reserved in
+         *     advance of the open auction (decision, 22 Sep); null clears it (no
+         *     reserve). Set on one row and applied with "Copy to every slot on
+         *     this display type" to seed the rest, each still independently
+         *     overridable — there is no separate stored default, so whatever was
+         *     set last on a slot (individually or by copy) is simply its value.
+         *     Published on the position in `GET /v1/inventory` and
+         *     `/v1/inventory/{positionId}`; not yet wired to reservation or
+         *     billing logic (open question 55).
          */
         put: operations["saveAvailableInventory"];
         post?: never;
@@ -749,6 +759,14 @@ export interface components {
             supportedTargeting: ("localised" | "personalised" | "interactive")[];
             assumedViewsPerWindow?: number;
             pricing: components["schemas"]["Pricing"];
+            /**
+             * @description A CPM premium at which this position can be reserved in advance
+             *     of the open auction (decision, 22 Sep); null when no reserve is
+             *     set. Set on Advertisers / Inventory. Publishing this does not by
+             *     itself book a guaranteed slot — there is no reservation or
+             *     billing behaviour behind it yet (open question 55).
+             */
+            reservePrice?: number | null;
         };
         Pricing: {
             currency: string;
@@ -807,14 +825,22 @@ export interface components {
         };
         /** @enum {string} */
         PricingType: "baseline" | "localised" | "personalised" | "interactive";
+        /**
+         * @description baseline is optional (decision, 22 Sep): an advertiser may submit
+         *     only localised targeted versions, in which case the fallback for
+         *     stores none of them match is a property of the slot, not this
+         *     campaign — at least one targeted version is then required instead.
+         */
         CampaignCreate: {
             advertiserId: string;
             name: string;
             displayTypeId?: string;
             brief?: components["schemas"]["CampaignBrief"];
-            baseline: {
+            /** @description Omit to submit a fallback-free campaign; targeted must then carry at least one version. */
+            baseline?: {
                 pricingType: components["schemas"]["PricingType"];
             };
+            /** @description Required, non-empty, when baseline is omitted. */
             targeted?: {
                 id: string;
                 priority: number;
@@ -951,6 +977,12 @@ export interface components {
             qrControl: boolean;
             /** @description What a campaign may use on this slot; localised only by default. */
             supportedTargeting: ("localised" | "personalised" | "interactive")[];
+            /**
+             * @description A CPM premium at which this slot can be reserved in advance of
+             *     the open auction; null means no reserve is set. Admin-editable,
+             *     company currency, published on the position in `GET /v1/inventory`.
+             */
+            reservePrice: number | null;
         };
         BookingSchedule: {
             /** @description ISO 4217 */
@@ -971,6 +1003,15 @@ export interface components {
                 partnerNames: string[];
                 /** @enum {string} */
                 assignment: "rtb" | "whitelist_only" | "reserved";
+                /**
+                 * @description Displays using this display type across the whole retail
+                 *     footprint (interface contract "Booking schedule reach
+                 *     counts", family 1) — drives the Fallback layer (decision,
+                 *     22 Sep). This prototype has no narrower per-slot store
+                 *     scope for an advertiser position, so it is also what "the
+                 *     slot's store scope" resolves to here.
+                 */
+                displayCount: number;
                 /** @description One per schedule window, in the same order. */
                 windows: {
                     /** Format: date-time */
@@ -982,6 +1023,22 @@ export interface components {
                         campaignId: string;
                         advertiserId: string | null;
                         partnerId: string;
+                        /**
+                         * @description The Localised layer's match count (decision,
+                         *     22 Sep): present only for a localised or
+                         *     interactive booking, from the campaign's own
+                         *     targeted-version rules; null for a fallback
+                         *     (baseline) or personalised booking — personalised
+                         *     reach can't be predicted (interface contract
+                         *     "Booking schedule reach counts": "Localised
+                         *     only").
+                         */
+                        reach: {
+                            /** @description Of the position's displayCount. */
+                            matchedDisplays: number;
+                            /** Format: date-time */
+                            asOf: string;
+                        } | null;
                         pricingType: components["schemas"]["PricingType"];
                         /** @enum {string} */
                         type: "reserve" | "bid";
@@ -1181,6 +1238,12 @@ export interface components {
                  *     (targeting_not_supported). Set from Advertisers / Inventory.
                  */
                 supportedTargeting?: ("localised" | "personalised" | "interactive")[];
+                /**
+                 * @description A CPM premium at which this slot can be reserved in advance of
+                 *     the open auction (decision, 22 Sep). Absent or null means no
+                 *     reserve. Set from Advertisers / Inventory, not the slot editor.
+                 */
+                reservePrice?: number | null;
             }[];
             venue?: {
                 openOohVenueType?: string;
@@ -1844,6 +1907,8 @@ export interface operations {
                             advertisers: string[];
                             whitelistOnly: boolean;
                         };
+                        /** @description A CPM; null clears it (no reserve). Omitted = unchanged is not supported — always send the slot's current value. */
+                        reservePrice?: number | null;
                     }[];
                 };
             };

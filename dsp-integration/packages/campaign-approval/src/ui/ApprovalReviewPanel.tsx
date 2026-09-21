@@ -10,7 +10,10 @@ import { C } from './tokens'
 
 const CHECK_LABELS: Record<string, string> = {
   file_type: 'File type', file_size: 'File size', bitrate: 'Bitrate', dimensions: 'Dimensions', aspect_ratio: 'Aspect ratio',
-  duration: 'Duration', baseline_present: 'Baseline present', targeting_permitted: 'Targeting permitted',
+  /* "Baseline present" until 22 Sep; the check now also covers a
+     fallback-free submission (creative on at least one targeted version),
+     so the label reads correctly either way. */
+  duration: 'Duration', baseline_present: 'Creative present', targeting_permitted: 'Targeting permitted',
 }
 const COMPLIANCE_TIP = 'Advertiser artwork must not contain price, offer terms or disclosures. A price baked into supplied artwork is a compliance breach an automated dimension check will not catch.'
 const Label = ({ children }: { children: string }) => (

@@ -4,7 +4,10 @@ import { OPERATOR_LABELS, TARGETING_VARIABLES } from '@ph-dsp/types'
 
 export interface Condition { source: string; variable: string; op: string; values: string[] }
 export interface StoredTargeting {
-  baseline: { pricingType: string }
+  /* Absent when the advertiser submitted only localised targeted versions
+     and no fallback (decision, 22 Sep) — the fallback for unmatched stores
+     is then a property of the slot, not this campaign. */
+  baseline?: { pricingType: string }
   targeted?: { id: string; priority: number; pricingType: string; rules: Condition[][] }[]
 }
 
@@ -14,8 +17,8 @@ const condition = (c: Condition) => `${label(c.variable)} ${OPS[c.op] ?? c.op} $
 
 export function targetingSummary(t: unknown): string {
   const s = t as StoredTargeting | null
-  if (!s?.baseline) return ''
-  const lines = [`Baseline (${s.baseline.pricingType})`]
+  if (!s || (!s.baseline && !s.targeted?.length)) return ''
+  const lines = s.baseline ? [`Baseline (${s.baseline.pricingType})`] : []
   for (const v of s.targeted ?? []) {
     lines.push(`${v.id} (priority ${v.priority}, ${v.pricingType}): ${v.rules.map((g) => (g.length > 1 ? `(${g.map(condition).join(' OR ')})` : condition(g[0]))).join(' AND ')}`)
   }
