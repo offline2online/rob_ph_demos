@@ -12,6 +12,11 @@ small interface.
   [API.md](docs/dsp-integration/api/API.md)
 - **UI specification:** `prototype-reference/` (read-only). The look comes from
   the design skill in `.claude/skills/ph-designer/`.
+- **Front page:** [`index.html`](index.html), published at
+  <https://offline2online.github.io/rob_ph_demos/dsp-integration/> (short way
+  in: `/dsp/`). It explains the POC and how to run it — it is not the app
+  itself, which needs the API and its database, so it can't run on GitHub
+  Pages. Keep it in step with what the screens actually do.
 
 ## Layout
 
