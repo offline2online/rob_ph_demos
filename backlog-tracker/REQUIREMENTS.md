@@ -610,6 +610,37 @@ project rather than shared between two. Exists so a project's *complete*
 documentation lives on one page instead of scattered across the repo,
 per-project Firestore fields, and this collection.
 
+### `skills/{skillId}`
+```
+{
+  name: string,
+  slug: string,                   // lowercase [a-z0-9-]+, unique, immutable once created
+  summary: string,
+  version: string,
+  files: [ { path: string, content: string }, ... ],  // 1-20 entries, each content up to 100,000 chars
+  createdAt: timestamp,
+  updatedAt: timestamp,
+  createdByEmail: string | null,
+  updatedByEmail: string | null,
+  createdVia: "console" | "mcp",
+}
+```
+An organisation-wide, shared library of packaged instructions any team
+member's AI agent can pull in over MCP — deliberately **not** scoped to a
+project (no `projectId` field at all), unlike `projectDocs`/`interfaces`
+above. Reached from the hamburger menu's **Skills** entry. Read is any
+signed-in member including a viewer (`firestore.rules`' `isBoardReader()`);
+write is editor and up (`isEditor()`). `firestore.rules` only checks the
+`files` list's own shape/length (it has no way to iterate a variable-length
+list and re-check every element without unrolling every possible index);
+the real per-file content cap (`SKILL_FILE_MAX = 100000`) is enforced in
+`functions/mcp-server.js`'s `validateSkillFiles` and mirrored in the
+console's own Add/Edit skill modal. See "Functional requirements — team
+access & the MCP server" below for the five MCP tools, and
+`backlog-tracker/README.md` → "Skills library" for the seed script that
+inserts the starting "Personalisation Hub Front & Design" (`ph-designer`)
+skill.
+
 ### `faqCategories/{id}` and `faqArticles/{id}`
 ```
 faqCategories/{id}: { name, icon, description, order, createdAt, updatedAt }
@@ -957,8 +988,13 @@ REST API is reachable with a plain `curl`, no service account needed.
     individually — the drawer itself stays reachable from any sub-page
     already (it's part of the fixed topbar, not `#projects-root`), so one
     shared way back covers all of them.
-  - **FAQ Management**, then **Settings** — see "FAQ / Help Center" below.
-  - **Archived projects** (last item).
+  - **FAQ Management**, then **Skills** (the organisation-wide skills
+    library — see "Data model" → `skills/{skillId}` and "Functional
+    requirements — team access & the MCP server" above), then
+    **Settings** — see "FAQ / Help Center" below. (Archived projects is
+    not its own drawer entry — it's a "View archived projects" link inside
+    Settings, per the FAQ admin pages' own note that the drawer lists a
+    fixed, small set of destinations.)
   All four sit flat, in that order, as plain sibling items — no section
   heading grouping Settings/FAQ Management apart from the rest, since that
   grouping previously read as "FAQ Management lives under Settings" even
@@ -1598,7 +1634,7 @@ Required properties, each covered by `test/mcp-server.test.js`:
 **Tool surface — and its hard limit.** Read: `whoami`, `list_projects`,
 `list_backlog_items`, `get_backlog_item`, `get_project_docs`,
 `list_doc_revisions`, `get_doc_revision`, `search_faq`, `get_faq_article`,
-`list_pending_faq_revisions`, `get_faq_revision`.
+`list_pending_faq_revisions`, `get_faq_revision`, `list_skills`, `get_skill`.
 Write (editor/admin only) — tickets: `create_backlog_item` (always into
 `backlog`), `update_backlog_item` (title, desc, type, category only),
 `add_item_comment`; documentation: `set_project_requirements`,
@@ -1608,7 +1644,22 @@ Write (editor/admin only) — tickets: `create_backlog_item` (always into
 (always `status: "draft"`), `update_faq_article` (always a `pendingRevision`,
 never the live fields), `comment_on_faq_revision` — see "FAQ revision
 review" under "Functional requirements — FAQ / Help Center" below for what
-these two collections' write tools do and don't do.
+these two collections' write tools do and don't do; skills library:
+`upload_skill`, `update_skill`, `delete_skill`.
+
+**The skills library is organisation-wide, not per-project** — `list_skills`
+(light summaries) and `get_skill` (full file contents, by id or slug) need
+only `board.read`, so a viewer can read every skill the same as an editor
+can; `upload_skill` (new skill, slug must be unique), `update_skill`
+(rename/re-version/replace the whole file set — never a merge) and
+`delete_skill` need `board.write`. `update_skill`/`delete_skill` record the
+file set they replace to `docRevisions` first (`target: "skill"` /
+`"skill.deleted"`), same recoverability pattern as the documentation tools
+above, and `list_doc_revisions`/`get_doc_revision` take an optional
+`skillId` filter alongside `projectId`/`docId`/`interfaceId` to find one.
+Per-file content is capped at `SKILL_FILE_MAX` (100,000 characters), up to
+20 files per skill — generous enough for the seeded `ph-designer` skill
+(6 files, ~75 KB total, largest file ~17 KB) with headroom to spare.
 
 **Documentation is full read/write by requirement.** A project's docs are
 meant to be kept current by whoever is doing the work, agents included, with

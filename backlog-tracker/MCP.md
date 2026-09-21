@@ -85,17 +85,31 @@ empty or mis-edited collection can never lock everyone out.
 **Can — read:** `whoami`, `list_projects`, `list_backlog_items`,
 `get_backlog_item`, `get_project_docs`, `list_doc_revisions`,
 `get_doc_revision`, `search_faq`, `get_faq_article`,
-`list_pending_faq_revisions`, `get_faq_revision`.
+`list_pending_faq_revisions`, `get_faq_revision`, `list_skills`,
+`get_skill`.
 
 **Can — write (editor and admin only):**
 
-| Tickets | Documentation | Help centre |
-| --- | --- | --- |
-| `create_backlog_item` (always into the Backlog column) | `set_project_requirements` | `create_faq_article` (always a draft) |
-| `update_backlog_item` (title, description, type, area) | `set_project_readme` | `update_faq_article` (always a pending revision) |
-| `add_item_comment` | `set_project_artifact` | `comment_on_faq_revision` |
-| | `create_project_document` / `update_project_document` / `delete_project_document` | |
-| | `create_interface` / `update_interface` / `delete_interface` | |
+| Tickets | Documentation | Help centre | Skills library |
+| --- | --- | --- | --- |
+| `create_backlog_item` (always into the Backlog column) | `set_project_requirements` | `create_faq_article` (always a draft) | `upload_skill` (slug must be unique) |
+| `update_backlog_item` (title, description, type, area) | `set_project_readme` | `update_faq_article` (always a pending revision) | `update_skill` (rename/re-version/replace files) |
+| `add_item_comment` | `set_project_artifact` | `comment_on_faq_revision` | `delete_skill` |
+| | `create_project_document` / `update_project_document` / `delete_project_document` | | |
+| | `create_interface` / `update_interface` / `delete_interface` | | |
+
+**The skills library is organisation-wide, not per-project** — a shared
+place to publish packaged instructions (like this repo's own `ph-designer`
+front-end skill) that any team member's agent can pull in, listed in the
+console under **Skills**. Unlike documentation above, `list_skills` and
+`get_skill` need only `board.read`, so even a viewer's agent can read every
+skill; only `upload_skill`/`update_skill`/`delete_skill` need
+`board.write`. `update_skill`/`delete_skill` record the file set they
+replace to `docRevisions` first (`target: "skill"` / `"skill.deleted"`),
+recoverable the same way as a documentation write — `list_doc_revisions`
+takes an optional `skillId` filter alongside `projectId`/`docId`/
+`interfaceId`. Each file is `{path, content}`; a skill holds 1–20 files,
+each up to 100,000 characters (`SKILL_FILE_MAX`).
 
 **The help centre tools never publish anything.** `create_faq_article`
 always writes `status: "draft"`; `update_faq_article` always writes a
