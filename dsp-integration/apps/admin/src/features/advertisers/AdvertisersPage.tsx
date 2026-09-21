@@ -93,15 +93,24 @@ const BookingsCell = ({ data, context }: P) =>
 /* The inventory advertisers can buy: every Advertiser-owned slot on a
    display type (spec §5 "Available Inventory"). No advertisers column. */
 export const slotKey = (r: AvailableInventoryRow) => `${r.displayTypeId}:${r.slot}`
-/* What Save changes sends for a slot: the two fields this table owns. */
-export interface SlotEdit { supportedTargeting: TargetingMode[]; assignedTo: Omit<AssignedTo, 'partnerNames'> }
+/* What Save changes sends for a slot: the fields this table owns.
+   reservePrice is this slot's own override; null means it follows its
+   display type's shared default (below), not "no reserve" (Rob, 22 Sep;
+   spec §1 configuration inheritance — override always wins). */
+export interface SlotEdit { supportedTargeting: TargetingMode[]; assignedTo: Omit<AssignedTo, 'partnerNames'>; reservePrice: number | null }
 type Edits = Record<string, SlotEdit>
+/* A display type's reserve price default, edited from any of its slot
+   rows — every row for the same displayTypeId shares one value. */
+type Defaults = Record<string, number | null>
 type InvCtx = { current: {
   open: (displayTypeId: string) => void
   canEdit: boolean
+  currency: string
   edits: Edits
+  defaults: Defaults
   dsps: DspAdvertisers[]
   set: (key: string, patch: Partial<SlotEdit>) => void
+  setDefault: (displayTypeId: string, v: number | null) => void
 } }
 type IP = ICellRendererParams<AvailableInventoryRow, unknown, InvCtx>
 /* QR Control is flagged here because it is what makes interactive targeting
@@ -157,7 +166,14 @@ function Pills({ label, value, options, canEdit, placeholder, onChange }: {
 }
 
 const edited = (c: InvCtx['current'], r: AvailableInventoryRow): SlotEdit =>
-  c.edits[slotKey(r)] ?? { supportedTargeting: supportedTargetingOf(r), assignedTo: r.assignedTo }
+  c.edits[slotKey(r)] ?? { supportedTargeting: supportedTargetingOf(r), assignedTo: r.assignedTo, reservePrice: r.reservePriceOverride }
+/* The value this slot actually resolves to right now, following the draft
+   default when it has no override of its own — the same "override wins"
+   read as reservePriceOf, but against unsaved edits. */
+const effectiveReservePrice = (c: InvCtx['current'], r: AvailableInventoryRow): number | null => {
+  const override = edited(c, r).reservePrice
+  return override ?? c.defaults[r.displayTypeId] ?? null
+}
 
 /* Who may buy this position (Rob, 20 Sep): DSPs, named advertisers, or the
    whitelist. Nothing chosen means any connected DSP. */
@@ -220,6 +236,52 @@ function TargetingCell({ data, context }: IP) {
   )
 }
 
+/* A CPM premium to reserve the slot in advance of the open auction (Rob,
+   22 Sep; spec §1 configuration inheritance — real inheritance, not the
+   earlier "copy to every slot" design that failed testing). Following the
+   default (no override): the input edits every slot on this display type
+   at once, since they all read the same shared value. Override: this
+   slot's own input, independent from the others until reset. */
+function ReservePriceCell({ data, context }: IP) {
+  if (!data) return null
+  const c = context.current
+  const override = edited(c, data).reservePrice
+  const overridden = override !== null
+  const value = overridden ? override : c.defaults[data.displayTypeId] ?? null
+  if (!c.canEdit) {
+    const resolved = effectiveReservePrice(c, data)
+    return <span style={{ color: resolved === null ? T.muted : T.text }}>{resolved === null ? 'No reserve' : `${c.currency} ${resolved}`}</span>
+  }
+  return (
+    <div className="flex w-full min-w-0 items-center gap-1">
+      <InputNumber
+        size="small" aria-label={`${data.displayTypeName} slot ${data.slot}: reserve price${overridden ? ' (override)' : ''}`} min={0} step={1} style={{ width: 92 }}
+        placeholder="None" prefix={c.currency} value={value ?? undefined}
+        onChange={(v) => {
+          const next = v === null || v === undefined ? null : Number(v)
+          if (overridden) c.set(slotKey(data), { reservePrice: next })
+          else c.setDefault(data.displayTypeId, next)
+        }}
+      />
+      {overridden ? (
+        <Tooltip title={`Reset to ${data.displayTypeName}'s reserve price default`}>
+          <Button type="text" size="small" className="px-1" aria-label={`${data.displayTypeName} slot ${data.slot}: reset reserve price to the display type's default`}
+            icon={<Icon name="settings_backup_restore" size={13} />} onClick={() => c.set(slotKey(data), { reservePrice: null })} />
+        </Tooltip>
+      ) : value !== null && (
+        /* Nothing to diverge from until the display type has a default: a
+           slot can't explicitly override to "no reserve" (Rob, 22 Sep) — an
+           override is always a real premium, never a way to opt one slot
+           out while its siblings have one. */
+        <Tooltip title={`Override just this slot, independent of ${data.displayTypeName}'s other slots`}>
+          <Button type="text" size="small" className="px-1" aria-label={`${data.displayTypeName} slot ${data.slot}: override the reserve price for just this slot`}
+            icon={<Icon name="edit" size={13} />} onClick={() => c.set(slotKey(data), { reservePrice: value })} />
+        </Tooltip>
+      )}
+    </div>
+  )
+}
+
 const header = (label: string, tip: string) => () => <WithTip tip={tip}><span className="ag-header-cell-text">{label}</span></WithTip>
 
 export function AdvertisersPage() {
@@ -258,16 +320,25 @@ export function AdvertisersPage() {
       valueGetter: (p) => (p.data ? targetingLabel(edited((p.context as InvCtx).current, p.data).supportedTargeting) : ''),
       ...setColumn<AvailableInventoryRow>('Targeting supported', () => TARGETING_MODES.map((m) => m.label)),
     },
+    {
+      headerName: 'Reserve price', width: 190, minWidth: 170, cellRenderer: ReservePriceCell,
+      headerComponent: header('Reserve price', "A CPM premium to reserve this slot in advance of the open auction. Set once for the display type and inherited by every slot on it — override just one slot to give it its own value, independent of the others. Empty = no reserve."),
+      valueGetter: (p) => (p.data ? effectiveReservePrice((p.context as InvCtx).current, p.data) ?? -1 : -1),
+    },
     { headerName: '', width: 76, suppressSizeToFit: true, cellRenderer: OpenCell },
   ], [invRows, inventory.data])
   const saved = useMemo<Settings | undefined>(() => q.data && Object.fromEntries(q.data.items.map((a) => [a.advertiserId, { approvalRequired: a.approvalRequired, floorMultiplier: a.floorMultiplier }])), [q.data])
   const { draft, setDraft, dirty, reset, commitNext } = useDraft(saved)
   const savedEdits = useMemo<Edits | undefined>(() => inventory.data && Object.fromEntries(invRows.map((r) => {
     const { partnerNames: _names, ...assignedTo } = r.assignedTo
-    return [slotKey(r), { supportedTargeting: supportedTargetingOf(r), assignedTo }]
+    return [slotKey(r), { supportedTargeting: supportedTargetingOf(r), assignedTo, reservePrice: r.reservePriceOverride }]
   })), [invRows, inventory.data])
   const inv = useDraft(savedEdits)
-  useReportDirty(dirty || inv.dirty)
+  /* One reserve price default per display type, shared by every one of its
+     rows (Rob, 22 Sep) — a separate draft from the per-slot one above. */
+  const savedDefaults = useMemo<Defaults | undefined>(() => inventory.data && Object.fromEntries(invRows.map((r) => [r.displayTypeId, r.displayTypeReservePrice])), [invRows, inventory.data])
+  const defaults = useDraft(savedDefaults)
+  useReportDirty(dirty || inv.dirty || defaults.dirty)
   const [saving, setSaving] = useState(false)
   const [shown, setShown] = useState<number | null>(null)
   const data = q.data
@@ -298,13 +369,19 @@ export function AdvertisersPage() {
     try {
       if (dirty) await api('PUT', '/admin/v1/advertisers', { settings: draft })
       /* The inventory's own fields, saved by the same Save changes — only
-         the slots that changed, so an untouched one is never revalidated. */
-      if (inv.dirty && inv.draft) {
-        const items = Object.entries(inv.draft)
-          .filter(([key, edit]) => !deepEqual(edit, savedEdits?.[key]))
-          .map(([key, edit]) => ({ displayTypeId: key.slice(0, key.lastIndexOf(':')), slot: Number(key.slice(key.lastIndexOf(':') + 1)), ...edit }))
+         the slots that changed, plus every slot of a display type whose
+         reserve price default changed (Rob, 22 Sep), since that's a
+         display-type-level field an untouched slot's row still has to
+         carry so the server can apply it. */
+      if ((inv.dirty || defaults.dirty) && inv.draft && defaults.draft) {
+        const changedSlots = new Set(Object.keys(inv.draft).filter((key) => !deepEqual(inv.draft![key], savedEdits?.[key])))
+        const changedTypes = new Set(Object.keys(defaults.draft).filter((id) => defaults.draft![id] !== savedDefaults?.[id]))
+        const items = invRows
+          .filter((r) => changedSlots.has(slotKey(r)) || changedTypes.has(r.displayTypeId))
+          .map((r) => ({ displayTypeId: r.displayTypeId, slot: r.slot, ...(inv.draft![slotKey(r)] ?? savedEdits![slotKey(r)]), reservePriceDefault: defaults.draft![r.displayTypeId] ?? null }))
         await api('PUT', '/admin/v1/available-inventory', { items })
         inv.commitNext()
+        defaults.commitNext()
         await qc.invalidateQueries({ queryKey: ['available-inventory'] })
       }
       commitNext()
@@ -317,8 +394,9 @@ export function AdvertisersPage() {
   }
   const invContext = {
     open: (id: string) => navigate(`/display-types?id=${encodeURIComponent(id)}&panel=playlist`),
-    canEdit, edits: inv.draft ?? {}, dsps: inventory.data?.dsps ?? [],
+    canEdit, currency: data.currency, edits: inv.draft ?? {}, defaults: defaults.draft ?? {}, dsps: inventory.data?.dsps ?? [],
     set: (key: string, patch: Partial<SlotEdit>) => inv.setDraft((cur) => (cur ? { ...cur, [key]: { ...cur[key], ...patch } } : cur)),
+    setDefault: (displayTypeId: string, v: number | null) => defaults.setDraft((cur) => (cur ? { ...cur, [displayTypeId]: v } : cur)),
   }
   const context = {
     settings: draft, data, canEdit,
@@ -369,7 +447,7 @@ export function AdvertisersPage() {
         </>
       )}
 
-      {canEdit && <SaveBar dirty={dirty || inv.dirty} saving={saving} onSave={onSave} onCancel={() => { reset(); inv.reset() }} />}
+      {canEdit && <SaveBar dirty={dirty || inv.dirty || defaults.dirty} saving={saving} onSave={onSave} onCancel={() => { reset(); inv.reset(); defaults.reset() }} />}
     </div>
   )
 }

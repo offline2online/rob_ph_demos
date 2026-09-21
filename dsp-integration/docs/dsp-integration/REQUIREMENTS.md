@@ -387,7 +387,7 @@ Advertisers submit campaigns (content packages) and assets through the API
 (§6):
 
 ```
-POST /v1/campaigns                  create a campaign: baseline (required) + targeted versions
+POST /v1/campaigns                  create a campaign: baseline (optional) + targeted versions (at least one of the two)
 POST /v1/campaigns/{id}/assets      upload creative against the campaign
 POST /v1/campaigns/{id}/submit      submit for retailer approval
 GET  /v1/campaigns/{id}/status      approval status and rejection reason
@@ -408,7 +408,8 @@ immediately with reasons and never reach the review queue:
 - dimensions and aspect ratio against the target display type's canvas or
   zone;
 - duration against the slot's duration;
-- a baseline campaign is present;
+- creative is present — on the baseline campaign if one was submitted, or
+  on at least one targeted version if it wasn't (decision, 22 Sep);
 - targeting rules use only variables permitted for the advertiser's DSP (§6).
 
 ### Campaign statuses
@@ -620,11 +621,33 @@ region, date range, status.
 | **Available** | Open for this partner/advertiser to reserve or bid on |
 | **Reserved** | Held for a named advertiser (shown as available only to that advertiser) |
 | **Sold** | Won or booked for that window |
+| **Part-sold** | Some of the position's capacity is taken by one or more localised variants; the rest remains available (decision, 22 Sep — target model, not yet implemented: open question 50) |
 | **Unavailable** | Store closed, display offline, or otherwise not playable |
 
 - **Pricing** for the requester, in the company currency: the base floor CPM
   and the effective floor CPM for localised, personalised and interactive
   campaigns (§4), including the requester's own advertiser floor multiplier.
+- **Reserve price** (decision, Rob, 22 Sep; real inheritance, 22 Sep): a CPM
+  premium at which this position can be reserved in advance of the open
+  auction — a retailer lets an advertiser pay a premium up front to
+  guarantee the slot for a window, taking it out of the open auction for
+  that window (the advertiser then carries the delivery risk, not billed
+  against realised dynamic VAC-d; see §4 Billing). `null` when no reserve is
+  set. Genuine §1 configuration inheritance, not a copy action: a display
+  type carries its own reserve price default, and a slot's own reserve
+  price overrides it whenever one is set — a slot with none simply follows
+  its display type, and setting the default reaches every slot on it
+  automatically, with no per-slot action needed. **One simplification, kept
+  deliberately narrow**: a slot's own value can only be a real premium, never
+  an explicit "no reserve" while its display type has a default — clearing a
+  slot's override always means "follow the default," the same reading
+  `null` already carries everywhere else in this inheritance. An earlier
+  design (a plain per-slot value with a "copy to every other slot" action,
+  no stored default) failed testing for not actually running the
+  inheritance the ticket asked for. **Published on the position, resolved;
+  not yet wired to a booking flow** (the prototype ships the setting, the
+  inheritance and the publishing only, per the scope note on the ticket
+  that added it — see open question 52).
 
 ### Visibility rules
 
@@ -643,13 +666,25 @@ The same positions are shown to the retailer on **Advertisers / Inventory →
 Available Inventory**: every advertiser-owned slot across the estate that
 connected DSPs can bid on, one row per slot, with columns **Display type**,
 **Playlist**, **Slot**, **Position**, **Assigned to**, **Targeting
-supported** and an **Open** link to the display type. There is **no advertisers
-column**. Every column carries a filter, as the platform's tables do.
+supported**, **Reserve price** and an **Open** link to the display type.
+There is **no advertisers column**. Every column carries a filter, as the
+platform's tables do.
 
 Slots are made available by setting their owner to *Advertiser* on a display
 type (explained in the section's tooltip); that part is not editable here.
-Two fields are: **Assigned to** (above) and **Targeting supported**, each a
-multi-select that drops a pill per choice into the cell.
+Three fields are: **Assigned to** (above), **Targeting supported** — each a
+multi-select that drops a pill per choice into the cell — and **Reserve
+price**, a CPM input (blank = following the display type's default, or no
+reserve if it has none either). Editing a slot that has no override of its
+own edits its display type's shared default instead, reaching every other
+slot on that display type at once; an **Override** action next to the input
+lets one slot diverge with its own value (shown alongside a **reset to
+default** action once it has), independent from then on (decision, Rob,
+22 Sep; real inheritance, 22 Sep — see *Reserve price* under *What each
+position returns*, above, for the currency, the billing note, the "override
+always wins, no explicit opt-out" simplification, and what's not built yet).
+**Admin only**, same as the other two; a marketing user reads it as plain
+text — the resolved value, not which of the two levels it came from.
 **Targeting supported** is (Rob, 20 Sep): each slot says which kinds of
 campaign it will take — **localised**, **personalised**, **interactive** —
 ticked independently, with **localised only** as the default for a slot that
@@ -691,9 +726,41 @@ semantics.
 
 ### Campaigns and content packages — what an advertiser submits
 
-An advertiser submits a campaign (content package) for its slot: **exactly
-one baseline campaign, mandatory**, plus zero or more **targeted versions**,
-each with targeting rules and an integer `priority`.
+An advertiser submits a campaign (content package) for its slot: **at most
+one baseline campaign**, plus zero or more **targeted versions**, each with
+targeting rules and an integer `priority`. At least one of the two is
+required — an empty submission is rejected.
+
+**The baseline is optional per advertiser, not mandatory (decision, Rob,
+22 Sep).** An advertiser may not want to supply a fallback at all: it may
+want to grab a slot only for a localised variant that matches its
+targeting, leaving stores its criteria don't match unsold to it. This is a
+change from the original mandatory-baseline model:
+
+- **The fallback is a property of the slot, not the advertiser.** A slot's
+  own fallback content — what plays where no advertiser's localised
+  criteria match — is set independently of any one advertiser's submission
+  (mechanism: open question 50, below).
+- **A position can therefore be part-sold.** E.g. advertiser A's localised
+  variant matches 80 of a slot's 100 stores; the remaining 20 stay
+  available for another advertiser's fallback or localised variant through
+  the programmatic interface (§5, §6). Inventory and the auction need to
+  expose remaining capacity per position, not a single Available/Sold
+  status, to make this visible — see the new **Part-sold** row in the
+  position status table (§5) and open question 50.
+- **Not yet implemented**: the auction/reservation engine and billing still
+  treat a position as a single Available/Sold/Reserved/Unavailable unit
+  (§5, §7 Billing) — only the submission shape (this section), the
+  `baseline_present`/creative-upload checks (§3), and this section's
+  documentation of the target model have shipped so far. **How** the
+  auction should clear overlapping localised bids, and how a part-sold
+  position should be billed, are now decided (open questions 50 and 51 —
+  reserved slots first-come-first-served, real-time bids highest-bidder-
+  takes-the-overlap and pro rata billed on what was actually won); building
+  it still depends on the display-level localised match counts described
+  in the interface contract with Live Visitor Profile ("Booking schedule
+  reach counts"), which don't exist yet. **Still open**: how a slot gets
+  fallback content at all in the first place (open question 50).
 
 > Named *baseline*, not *default*, on purpose: `campaignCreativeSettings`
 > already uses `default` / `selected` / `unselected`. Two unrelated things
@@ -718,10 +785,15 @@ selected*, *equal*, *greater than*).
   campaign system** for that slot.
 
 **What this project does not do:** evaluate targeting, decide which version
-plays, order or time the rotation, handle fallbacks when nothing matches, or
-report on what played. All of that is existing Personalisation Hub behaviour
-and is unchanged; the submitted campaign is evaluated, played and reported on
-exactly like any other campaign.
+plays, order or time the rotation, or report on what played. All of that is
+existing Personalisation Hub behaviour and is unchanged; the submitted
+campaign is evaluated, played and reported on exactly like any other
+campaign. **Handling a fallback when nothing matches is now split**: which
+content plays is still the existing platform's targeting evaluation,
+unchanged, but *whether a slot has fallback content at all* — since it is
+now the slot's property, not bundled into every advertiser's submission —
+is this project's own concern (open question 50: the mechanism for setting
+it isn't built yet).
 
 ### Shared Targeting Variables — Localisation and Personalisation Variables
 
@@ -1141,7 +1213,9 @@ fields. The canonical definition is `app/src/model/schema.js` and
   enabledFeatures: { inStoreRadio, proximityMist, aiAgentPlayback, visionAi },
   multiZone: { enabled, zones: [{ id, name, x, y, width, height, playlistId }] },
   phExtensions: {                  // THIS PROJECT's additions
-    slots: [{ label, owner, partnerId, advertiser, listMode, storeScope, quota }],   // source of inventory (§5)
+    reservePrice,                  // the display type's own reserve price default; CPM or null (real inheritance, 22 Sep — §5)
+    slots: [{ label, owner, partnerId, advertiser, listMode, storeScope, quota,
+              reservePrice }],     // this slot's own override; CPM, or null = inherit the display type's reservePrice above (§5)
     venue: { openOohVenueType, orientation, loopLengthSec }
   }
 }
@@ -1189,6 +1263,10 @@ campaign: { …existing fields,
 Targeting rules use the campaign's existing targeting structure (AND groups
 of OR conditions, each *source → variable → operator → values*), evaluated
 by the existing platform. HQ-authored campaigns (`source: hq`) skip approval.
+
+`targeting.baseline` is optional (decision, 22 Sep — §3, §6): a fallback-free
+submission has `targeting: { targeted: [...] }` with no `baseline` key at
+all, and `pricingType` above is then taken from its first targeted version.
 
 ### Sell side
 
@@ -1342,8 +1420,15 @@ playback analytics.**
   forecast, scoped to what the requester could buy. *(spec only)*
 - **Available Inventory**: every advertiser-owned slot across the estate
   that connected DSPs can bid on (Display type, Playlist, Slot, Position,
-  Assigned to, Targeting supported, and an Open link), with no advertisers
-  column and a filter on every column.
+  Assigned to, Targeting supported, Reserve price, and an Open link), with
+  no advertisers column and a filter on every column.
+  *(Advertisers / Inventory → Available Inventory)*
+- **Reserve price, inherited from its display type** (decision, 22 Sep; real
+  inheritance, 22 Sep): a CPM premium to reserve the position in advance of
+  the open auction, or no reserve, set once on the display type and
+  automatically reaching every slot on it — override just one slot to give
+  it its own value, independent from then on; published on the position,
+  resolved — not yet wired to a booking flow (open question 52).
   *(Advertisers / Inventory → Available Inventory)*
 - **Targeting supported needs QR Control for interactive**: flagged on the
   display type, greyed out with the reason where it is off, refused by the
@@ -1367,6 +1452,21 @@ playback analytics.**
   20 Sep) — the filter exists to find a booking, not to prove one is
   missing. An advertiser with nothing booked from the current window on is
   not offered a **Bookings** link on the advertisers table either.
+  *(Advertisers / Inventory → Booking schedule)*
+- **Layered reach breakdown** (decision, Rob, 22 Sep): a Fallback /
+  Localised / Personalised tab, alongside the existing Daily / Weekly /
+  Monthly views, breaking every slot down by campaign layer. Fallback
+  shows the slot's own display count across the whole retail footprint (a
+  new **Displays** column); Localised shows each booking's reach — how
+  many of those displays its targeting matched, from the server's
+  `ReachCountSource` stand-in for the interface contract's "Booking
+  schedule reach counts" — with the remainder read as open for another
+  campaign; Personalised is an indicator only, with no reach count, since
+  a personalised match can't be predicted ahead of time. A window's single
+  booking belongs to exactly one layer — the reservation/auction engine
+  doesn't split a position's capacity between advertisers yet (open
+  question 50) — so a window booked by a different layer shows as **Sold
+  — other layer**, never as Available, on a tab it doesn't belong to.
   *(Advertisers / Inventory → Booking schedule)*
 
 ### Shared targeting variables
@@ -1490,3 +1590,45 @@ partner-contributed attributes have been removed with that scope.
     connected DSPs*. Should they instead default to *None*, like
     Personalisation Variables, given they describe the person in front of
     the screen?
+50. **Auction clearing for overlapping localised bids.** *Resolved
+    (decision, Rob, 22 Sep):*
+    - **Reserved slots**: first come, first served — the first advertiser
+      to purchase the reservation wins the overlapping displays outright.
+    - **Real-time bids**: the highest bidder wins the overlapping displays
+      outright; the next bidder only gets the remaining displays their own
+      criteria match that the winner didn't take.
+
+    Not yet implemented: this describes the target algorithm, not shipped
+    behaviour — it still depends on the display-level localised match
+    counts described in the interface contract with Live Visitor Profile
+    ("Booking schedule reach counts"), which the clearing algorithm would
+    need to run on and which don't exist yet (which system hosts that
+    endpoint is itself still open in that contract). **Still open**: since a
+    slot's fallback is no longer bundled into every advertiser's submission
+    (§6, decision 22 Sep), what actually assigns fallback content to a slot
+    in the first place — an admin setting on the slot, a separate
+    lower-priority auction, something else — isn't decided either.
+51. **Billing a part-sold position.** *Resolved (decision, Rob, 22 Sep):*
+    real-time bids are billed pro rata on the displays actually won,
+    following the Google Ad Manager / DV360 model where each impression or
+    play is priced independently — consistent with the existing dynamic
+    VAC-d billing against realised share (§4). No minimum-reach option: a
+    bidder can't set a threshold below which they decline a remainder: they
+    control reach through their bid, targeting and budget. Reserved slots
+    are unaffected — first to purchase wins the overlap outright at the
+    fixed premium.
+
+    Not yet implemented, same dependency as open question 50 above (§4
+    Billing still bills a whole position's realised VAC-d at one CPM).
+    **Still open**: what happens when the estate itself under-delivers on a
+    reserved slot (e.g. displays offline) — open question 29 (partial-estate
+    delivery) is the same shape of problem one level up.
+52. **Reserve price booking flow.** §5's reserve price (decision 22 Sep) is
+    published on the position but not wired to a booking flow: a "reserve"
+    reservation (`POST /v1/reservations`, `type: reserve`) still clears
+    against the ordinary floor, not the position's `reservePrice`, and
+    nothing takes the slot out of the open auction for the window it
+    covers. This is a form of programmatic guaranteed (open question 45,
+    "Deals" — deferred), so building the flow means either resolving that
+    deferral or treating a reserve-price booking as its own, narrower
+    mechanism.

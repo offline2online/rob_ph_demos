@@ -51,11 +51,18 @@ export const campaignRoutes = (ctx: Context): FastifyPluginAsync => async (app) 
     if (typeof b.advertiserId !== 'string' || !partnerAdvertiser(req.partner, b.advertiserId)) invalid.push({ field: 'advertiserId', reason: `Not an advertiser on ${req.partner.name}.` })
     if (typeof b.name !== 'string' || !b.name.trim()) invalid.push({ field: 'name', reason: 'Required.' })
     if (b.displayTypeId !== undefined && (typeof b.displayTypeId !== 'string' || !ctx.displayTypes.get(b.displayTypeId))) invalid.push({ field: 'displayTypeId', reason: 'Unknown display type.' })
-    if (!b.baseline || !PRICING_TYPES.includes(b.baseline.pricingType as PricingType)) invalid.push({ field: 'baseline.pricingType', reason: `One of ${PRICING_TYPES.join(', ')}.` })
+    /* The fallback is now optional per advertiser (decision, 22 Sep): an
+       advertiser may submit only localised targeted versions, in which case
+       the fallback for stores none of them match is a property of the slot,
+       not this submission. Omitting baseline still requires at least one
+       targeted version — see below, once targeted has been parsed. */
+    const hasBaseline = b.baseline !== undefined && b.baseline !== null
+    if (hasBaseline && !PRICING_TYPES.includes(b.baseline!.pricingType as PricingType)) invalid.push({ field: 'baseline.pricingType', reason: `One of ${PRICING_TYPES.join(', ')}.` })
     const brief = validateBrief(b.brief)
     invalid.push(...brief.errors)
     const targeted = b.targeted ?? []
     if (!Array.isArray(targeted)) invalid.push({ field: 'targeted', reason: 'Must be a list.' })
+    else if (!hasBaseline && !targeted.length) invalid.push({ field: 'baseline', reason: 'Required unless at least one targeted version is submitted.' })
     const ids = new Set<string>()
     const notPermitted = new Map<string, { variable?: string; reason: string }>()
     const ruleErrors: Detail[] = []
@@ -76,13 +83,17 @@ export const campaignRoutes = (ctx: Context): FastifyPluginAsync => async (app) 
     throwIfRejected({ invalid: ruleErrors, notPermitted: [...notPermitted.values()] }, invalid)
 
     const targeting: StoredTargeting = {
-      baseline: { pricingType: b.baseline!.pricingType as PricingType },
+      ...(hasBaseline ? { baseline: { pricingType: b.baseline!.pricingType as PricingType } } : {}),
       ...(targeted.length ? { targeted: targeted.map((t) => ({ id: t.id as string, priority: t.priority as number, pricingType: t.pricingType as PricingType, rules: t.rules as Rules })) } : {}),
     }
+    /* Enforcement (checkFloor/checkTargeting) reads one pricingType for the
+       whole campaign; with no baseline, the first targeted version stands
+       in for it (validated above, so targeted[0] exists). */
+    const pricingType = (hasBaseline ? b.baseline!.pricingType : targeted[0].pricingType) as PricingType
     const c = ctx.campaigns.createCampaign({
       id: `c_${randomUUID().slice(0, 12)}`, name: (b.name as string).trim(), targeting, source: 'api',
       advertiserId: b.advertiserId as string, partnerId: req.partner.id, displayTypeId: (b.displayTypeId as string | undefined) ?? null,
-      pricingType: b.baseline!.pricingType as PricingType,
+      pricingType,
       ...(brief.brief ? { brief: brief.brief } : {}),
     })
     return reply.status(201).send(statusView(await ctx.approvals.view(c.campaignId)))
@@ -105,7 +116,7 @@ export const campaignRoutes = (ctx: Context): FastifyPluginAsync => async (app) 
       } else if (part.fieldname === 'version') version = String(part.value)
     }
     const targeting = targetingOf(c.targeting)
-    const roles = ['baseline', ...(targeting.targeted ?? []).map((t) => t.id)]
+    const roles = [...(targeting.baseline ? ['baseline'] : []), ...(targeting.targeted ?? []).map((t) => t.id)]
     const invalid: Detail[] = []
     if (!version || !roles.includes(version)) invalid.push({ field: 'version', reason: `One of ${roles.join(', ')}.` })
     if (!bytes && !truncated) invalid.push({ field: 'file', reason: 'Required.' })
@@ -141,7 +152,12 @@ export const campaignRoutes = (ctx: Context): FastifyPluginAsync => async (app) 
 
     const targeting = targetingOf(c.targeting)
     const assets = ctx.campaigns.latestAssets(c.campaignId)
-    const baseline = assets.find((a) => a.role === 'baseline')
+    const hasBaseline = !!targeting.baseline
+    const baseline = hasBaseline ? assets.find((a) => a.role === 'baseline') : undefined
+    /* No baseline submitted (decision, 22 Sep): baseline_present instead
+       asks whether at least one targeted version has creative, since
+       nothing here can play with none at all. */
+    const anyTargetedAsset = (targeting.targeted ?? []).some((t) => assets.some((a) => a.role === t.id))
     const dt = c.displayTypeId ? ctx.displayTypes.get(c.displayTypeId) : null
     /* The file checks of the baseline's current file, recorded for the reviewer. */
     const file = baseline ? fileChecks(readMedia(ctx.assets.read(baseline.file) ?? Buffer.alloc(0)), baseline.sizeBytes, dt ?? null, ctx.config.assetLimits) : []
@@ -149,7 +165,9 @@ export const campaignRoutes = (ctx: Context): FastifyPluginAsync => async (app) 
     const refused = (targeting.targeted ?? []).flatMap((t, i) => validateRules(t.rules, `targeted[${i}].rules`, req.partner, access, ctx.config.maxValuesPerCondition).notPermitted)
     const checks: Check[] = [
       ...file,
-      { name: 'baseline_present', passed: !!baseline, detail: baseline ? undefined : 'Upload a creative for the baseline campaign.' },
+      hasBaseline
+        ? { name: 'baseline_present', passed: !!baseline, detail: baseline ? undefined : 'Upload a creative for the baseline campaign.' }
+        : { name: 'baseline_present', passed: anyTargetedAsset, detail: anyTargetedAsset ? undefined : 'No baseline was submitted — upload creative for at least one targeted version.' },
       { name: 'targeting_permitted', passed: !refused.length, detail: refused.length ? `Not enabled for ${req.partner.name}: ${[...new Set(refused.map((d) => d.variable))].join(', ')}.` : undefined },
     ]
     if (failed(checks).length) throw new HttpError(422, 'checks_failed', 'The campaign failed the automated checks.', failureDetails(checks))

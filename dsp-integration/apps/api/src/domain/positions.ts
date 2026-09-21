@@ -6,7 +6,7 @@ import type { DisplayType, Slot } from '@ph-dsp/types'
 import type { Context } from '../context'
 import type { PartnerRecord } from '../repos/PartnerRepo'
 import { TAKEN } from '../repos/ReservationRepo'
-import { advertiserSlug, assignedOf, supportedTargetingOf } from '@ph-dsp/types'
+import { advertiserSlug, assignedOf, reservePriceOf, supportedTargetingOf } from '@ph-dsp/types'
 import { effectiveLists, isBlocked, isOn } from './lists'
 import { effectiveFloors } from './pricing'
 import { slotCountOf, slotDurationSec } from './slots'
@@ -165,5 +165,6 @@ export function positionView(ctx: Context, p: PositionRef, c: Caller) {
     supportedTargeting: supportedTargetingOf(p.def),
     assumedViewsPerWindow: ctx.audience.forSlot(dt.id, p.slot).assumedViewsPerWindow,
     pricing: { currency: company.currency, floorCpm: company.floorCpm, effectiveFloorCpm: effectiveFloors(company, multiplier), costPerEngagement: company.interactiveCpe },
+    reservePrice: reservePriceOf(dt, p.def),
   }
 }

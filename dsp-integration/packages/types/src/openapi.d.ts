@@ -251,8 +251,8 @@ export interface paths {
         /** Advertiser-owned slots (no advertisers column) */
         get: operations["listAvailableInventory"];
         /**
-         * Save changes — who a slot is assigned to, and what targeting it supports
-         * @description The two editable fields of a sellable slot. Everything else about it —
+         * Save changes — who a slot is assigned to, what targeting it supports, and its reserve price
+         * @description The editable fields of a sellable slot. Everything else about it —
          *     its label and owner — is set on its display type. Admin only:
          *     marketing users read this table.
          *
@@ -263,6 +263,24 @@ export interface paths {
          *
          *     supportedTargeting: interactive is only accepted on a display type
          *     with QR Control enabled.
+         *
+         *     reservePrice: a CPM premium at which this slot can be reserved in
+         *     advance of the open auction (decision, 22 Sep). Real inheritance
+         *     (spec §1 configuration inheritance), not a copy action: a display
+         *     type carries its own reserve price default (reservePriceDefault,
+         *     below), and a slot's own reservePrice is null until explicitly
+         *     overridden, in which case it always wins. Clear a slot's override
+         *     back to null to return it to following the display type's default.
+         *     Published — resolved, override-or-default — on the position in
+         *     `GET /v1/inventory` and `/v1/inventory/{positionId}`; not yet wired
+         *     to reservation or billing logic (open question 52).
+         *
+         *     reservePriceDefault: the display type's own reserve price default
+         *     that a slot with no override inherits; null means no default is
+         *     set. Sent once per slot row for simplicity (omission is not
+         *     supported, same as reservePrice), but it describes the display
+         *     type, not the slot — every row sharing a displayTypeId must submit
+         *     the same value in one request.
          */
         put: operations["saveAvailableInventory"];
         post?: never;
@@ -749,6 +767,17 @@ export interface components {
             supportedTargeting: ("localised" | "personalised" | "interactive")[];
             assumedViewsPerWindow?: number;
             pricing: components["schemas"]["Pricing"];
+            /**
+             * @description A CPM premium at which this position can be reserved in advance
+             *     of the open auction (decision, 22 Sep); null when no reserve is
+             *     set. The resolved value: the slot's own override when it has
+             *     one, else its display type's reserve price default, else null
+             *     (spec §1 configuration inheritance). Set on Advertisers /
+             *     Inventory. Publishing this does not by itself book a guaranteed
+             *     slot — there is no reservation or billing behaviour behind it
+             *     yet (open question 52).
+             */
+            reservePrice?: number | null;
         };
         Pricing: {
             currency: string;
@@ -807,14 +836,22 @@ export interface components {
         };
         /** @enum {string} */
         PricingType: "baseline" | "localised" | "personalised" | "interactive";
+        /**
+         * @description baseline is optional (decision, 22 Sep): an advertiser may submit
+         *     only localised targeted versions, in which case the fallback for
+         *     stores none of them match is a property of the slot, not this
+         *     campaign — at least one targeted version is then required instead.
+         */
         CampaignCreate: {
             advertiserId: string;
             name: string;
             displayTypeId?: string;
             brief?: components["schemas"]["CampaignBrief"];
-            baseline: {
+            /** @description Omit to submit a fallback-free campaign; targeted must then carry at least one version. */
+            baseline?: {
                 pricingType: components["schemas"]["PricingType"];
             };
+            /** @description Required, non-empty, when baseline is omitted. */
             targeted?: {
                 id: string;
                 priority: number;
@@ -951,6 +988,26 @@ export interface components {
             qrControl: boolean;
             /** @description What a campaign may use on this slot; localised only by default. */
             supportedTargeting: ("localised" | "personalised" | "interactive")[];
+            /**
+             * @description The resolved CPM premium at which this slot can be reserved in
+             *     advance of the open auction: reservePriceOverride when set,
+             *     else displayTypeReservePrice, else null. Company currency;
+             *     this is what is published on the position in `GET /v1/inventory`.
+             */
+            reservePrice: number | null;
+            /**
+             * @description This slot's own reserve price, admin-editable here; null means
+             *     it has none and follows displayTypeReservePrice (spec §1
+             *     configuration inheritance — override always wins).
+             */
+            reservePriceOverride: number | null;
+            /**
+             * @description The reserve price default set on this slot's display type; null
+             *     means the display type has none either. The same value on every
+             *     row sharing a displayTypeId. Editable from any of those rows —
+             *     see `PUT`'s reservePriceDefault.
+             */
+            displayTypeReservePrice: number | null;
         };
         BookingSchedule: {
             /** @description ISO 4217 */
@@ -971,6 +1028,15 @@ export interface components {
                 partnerNames: string[];
                 /** @enum {string} */
                 assignment: "rtb" | "whitelist_only" | "reserved";
+                /**
+                 * @description Displays using this display type across the whole retail
+                 *     footprint (interface contract "Booking schedule reach
+                 *     counts", family 1) — drives the Fallback layer (decision,
+                 *     22 Sep). This prototype has no narrower per-slot store
+                 *     scope for an advertiser position, so it is also what "the
+                 *     slot's store scope" resolves to here.
+                 */
+                displayCount: number;
                 /** @description One per schedule window, in the same order. */
                 windows: {
                     /** Format: date-time */
@@ -982,6 +1048,22 @@ export interface components {
                         campaignId: string;
                         advertiserId: string | null;
                         partnerId: string;
+                        /**
+                         * @description The Localised layer's match count (decision,
+                         *     22 Sep): present only for a localised or
+                         *     interactive booking, from the campaign's own
+                         *     targeted-version rules; null for a fallback
+                         *     (baseline) or personalised booking — personalised
+                         *     reach can't be predicted (interface contract
+                         *     "Booking schedule reach counts": "Localised
+                         *     only").
+                         */
+                        reach: {
+                            /** @description Of the position's displayCount. */
+                            matchedDisplays: number;
+                            /** Format: date-time */
+                            asOf: string;
+                        } | null;
                         pricingType: components["schemas"]["PricingType"];
                         /** @enum {string} */
                         type: "reserve" | "bid";
@@ -1181,7 +1263,25 @@ export interface components {
                  *     (targeting_not_supported). Set from Advertisers / Inventory.
                  */
                 supportedTargeting?: ("localised" | "personalised" | "interactive")[];
+                /**
+                 * @description This slot's own override of the display type's reserve
+                 *     price (decision, 22 Sep; real inheritance, 22 Sep — spec
+                 *     §1 configuration inheritance, not a copy action). Absent
+                 *     or null means it has none and follows the display type's
+                 *     own `reservePrice` (below); an override always wins. Set
+                 *     from Advertisers / Inventory, not the slot editor.
+                 */
+                reservePrice?: number | null;
             }[];
+            /**
+             * @description The display type's own reserve price default (decision, 22 Sep),
+             *     inherited by every slot on it that has no override of its own.
+             *     Absent or null means the display type has no default, so an
+             *     un-overridden slot has no reserve either. Set from Advertisers /
+             *     Inventory (every row for this display type edits the same
+             *     value), not the slot editor.
+             */
+            reservePrice?: number | null;
             venue?: {
                 openOohVenueType?: string;
                 /** @enum {string} */
@@ -1844,6 +1944,10 @@ export interface operations {
                             advertisers: string[];
                             whitelistOnly: boolean;
                         };
+                        /** @description This slot's own override; null = inherit reservePriceDefault. Omitted = unchanged is not supported — always send the slot's current value. */
+                        reservePrice?: number | null;
+                        /** @description The display type's reserve price default; null = none. Must be the same value on every row for a given displayTypeId in one request. */
+                        reservePriceDefault?: number | null;
                     }[];
                 };
             };

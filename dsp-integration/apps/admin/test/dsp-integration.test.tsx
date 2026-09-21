@@ -238,10 +238,10 @@ describe('Booking schedule', () => {
       { start: '2026-09-22T00:00:00.000Z', end: '2026-09-23T00:00:00.000Z' },
     ],
     positions: [{
-      positionId: 'menu_board.s2', displayTypeId: 'menu_board', displayTypeName: 'Menu Board — Long Format', slot: 2, slotLabel: 'Supplier slot', partnerNames: ['Google DSP'], assignment: 'rtb',
+      positionId: 'menu_board.s2', displayTypeId: 'menu_board', displayTypeName: 'Menu Board — Long Format', slot: 2, slotLabel: 'Supplier slot', partnerNames: ['Google DSP'], assignment: 'rtb', displayCount: 3,
       windows: [
         { start: '2026-09-21T00:00:00.000Z', status: 'available', booking: null },
-        { start: '2026-09-22T00:00:00.000Z', status: 'booked', booking: { reservationId: 'r1', campaignId: 'c1', advertiserId: 'swisse', partnerId: 'p_google', pricingType: 'personalised', type: 'reserve', advertiserName: 'Swisse', partnerName: 'Google DSP', cpm: 175, assumedViews: 1236, bookedRevenue: 216.3, billedRevenue: null } },
+        { start: '2026-09-22T00:00:00.000Z', status: 'booked', booking: { reservationId: 'r1', campaignId: 'c1', advertiserId: 'swisse', partnerId: 'p_google', pricingType: 'personalised', type: 'reserve', advertiserName: 'Swisse', partnerName: 'Google DSP', cpm: 175, assumedViews: 1236, bookedRevenue: 216.3, billedRevenue: null, reach: null } },
       ],
     }],
     revenue: [{ displayTypeId: 'menu_board', displayTypeName: 'Menu Board — Long Format', bookedWindows: 1, bookedRevenue: 216.3, billedRevenue: 0 }],
@@ -262,8 +262,15 @@ describe('Booking schedule', () => {
     expect(await screen.findByRole('heading', { name: /Booking schedule/ })).toBeInTheDocument()
     const revenue = await screen.findByLabelText('Booking revenue')
     expect(await within(revenue).findAllByText('$216.30')).toHaveLength(2)
-    const grid = screen.getByLabelText('Booking schedule')
-    /* The booked window, and the Advertiser column that now carries the filter. */
+    /* Fallback is the default layer tab; the fixture's booking is
+       personalised, so it shows here as booked by another layer, not as
+       Available (Rob, 22 Sep — it really is spoken for). */
+    expect(within(screen.getByLabelText('Booking schedule')).getByText('Sold — other layer')).toBeInTheDocument()
+    /* Switching to the Personalised tab shows the booking itself — the
+       layer is part of the grid's remount key (like the Daily/Weekly/
+       Monthly view already is), so re-query it fresh after the click. */
+    fireEvent.click(screen.getByRole('radio', { name: 'Personalised' }))
+    const grid = await screen.findByLabelText('Booking schedule')
     expect(await within(grid).findAllByText('Swisse')).toHaveLength(2)
     expect(within(grid).getByText(/personalised · 175 CPM/)).toBeInTheDocument()
     expect(within(grid).getByText('Available')).toBeInTheDocument()
@@ -273,6 +280,28 @@ describe('Booking schedule', () => {
     expect([...grid.querySelectorAll('.ag-header-cell-text')].slice(0, 3).map((h) => h.textContent)).toEqual(['Position', 'DSP', 'Advertiser'])
     expect(within(grid).getByLabelText('DSP filter')).toBeInTheDocument()
     expect(within(grid).getByLabelText('Advertiser filter')).toBeInTheDocument()
+  })
+
+  it('layers the schedule into Fallback / Localised / Personalised tabs, with a reach count on a localised booking', async () => {
+    const withLocalised = {
+      ...schedule,
+      positions: [{
+        ...schedule.positions[0],
+        displayCount: 4,
+        windows: [
+          schedule.positions[0].windows[0],
+          { start: '2026-09-22T00:00:00.000Z', status: 'booked', booking: { ...schedule.positions[0].windows[1].booking, pricingType: 'localised', reach: { matchedDisplays: 3, asOf: '2026-09-20T00:00:00.000Z' } } },
+        ],
+      }],
+    }
+    vi.stubGlobal('fetch', vi.fn(fakeFetch({ '/api/admin/v1/booking-schedule': withLocalised })))
+    renderAt('/booking-schedule')
+    /* Fallback (default): nothing of this layer booked here. */
+    expect(within(await screen.findByLabelText('Booking schedule')).getByText('Sold — other layer')).toBeInTheDocument()
+    expect(within(screen.getByLabelText('Booking schedule')).getByText('4')).toBeInTheDocument() // the Displays column
+    fireEvent.click(screen.getByRole('radio', { name: 'Localised' }))
+    const grid = await screen.findByLabelText('Booking schedule')
+    expect(await within(grid).findByText('3 of 4 matched')).toBeInTheDocument()
   })
 })
 
@@ -292,7 +321,7 @@ describe('Advertisers / Inventory', () => {
 
     const inventory = await screen.findByLabelText('Available Inventory')
     expect([...inventory.querySelectorAll('.ag-header-cell-text')].map((h) => h.textContent))
-      .toEqual(['Display type', 'Playlist', 'Slot', 'Position', 'Assigned to', 'Targeting supported', ''])
+      .toEqual(['Display type', 'Playlist', 'Slot', 'Position', 'Assigned to', 'Targeting supported', 'Reserve price', ''])
     expect(within(inventory).getByLabelText('Display type search')).toBeInTheDocument()
     expect(within(inventory).getByLabelText('Targeting supported filter')).toBeInTheDocument()
     /* QR Control is flagged on the display type that has it, and only that

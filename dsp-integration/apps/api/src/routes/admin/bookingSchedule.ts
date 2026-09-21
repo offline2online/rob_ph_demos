@@ -1,7 +1,15 @@
 /* Booking schedule (Rob, 19 Sep; reached from Available Inventory): every
    advertiser-owned slot across its play windows — booked, available or
    unavailable — with the booking revenue per display type. Live bookings
-   only: a Test-mode win is never real revenue. */
+   only: a Test-mode win is never real revenue.
+
+   Each booking also carries a layered reach breakdown (Rob, 22 Sep,
+   REQUIREMENTS §6 "Campaigns and content packages", interface contract
+   "Booking schedule reach counts"): fallback (a position's displayCount,
+   the whole retail footprint), localised/interactive (reach.matchedDisplays,
+   of that footprint — from the campaign's own targeted-version rules via
+   ctx.reach, the ReachCountSource stand-in) and personalised (no count,
+   UI shows a plain indicator — matching can't be predicted ahead of time). */
 import type { BookingSchedule } from '@ph-dsp/types'
 import type { FastifyPluginAsync } from 'fastify'
 import type { Context } from '../../context'
@@ -9,6 +17,7 @@ import { lineItems } from '../../exchange/billing'
 import type { Guards } from '../../http/app'
 import { validationFailed } from '../../http/errors'
 import { allPositions, assignmentOf, nextWindow, windowMs, windowStartOf, windowsBetween } from '../../domain/positions'
+import type { Rules } from '../../domain/targetingValidation'
 import { TAKEN } from '../../repos/ReservationRepo'
 import { advertiserSlug, assignedOf } from '@ph-dsp/types'
 
@@ -16,6 +25,18 @@ const DAY = 86_400_000
 const round2 = (n: number) => Math.round(n * 100) / 100
 
 export interface ScheduleFilter { campaignId?: string; advertiserId?: string; partnerId?: string }
+
+/* The rules driving reach for a won/reserved booking: the campaign's own
+   targeted version matching the booking's pricingType, or its first
+   targeted version — a reservation doesn't record which specific version
+   won, so this is an approximation, same spirit as the POC's other
+   targeting stand-ins (AudienceSource.targetedShare). */
+function reachRulesOf(ctx: Context, campaignId: string | null, pricingType: string | null): Rules | undefined {
+  if (!campaignId) return undefined
+  const targeting = ctx.campaigns.getCampaign(campaignId)?.targeting as { targeted?: { pricingType: string; rules: Rules }[] } | null
+  const versions = targeting?.targeted ?? []
+  return (versions.find((v) => v.pricingType === pricingType) ?? versions[0])?.rules
+}
 
 export function bookingSchedule(ctx: Context, starts: Date[], f: ScheduleFilter = {}): BookingSchedule {
   const len = windowMs(ctx)
@@ -39,7 +60,8 @@ export function bookingSchedule(ctx: Context, starts: Date[], f: ScheduleFilter 
   }
 
   const positions = allPositions(ctx).map((p) => {
-    const hasDisplays = ctx.displays.listByDisplayType(p.displayType.id).length > 0
+    const displayCount = ctx.displays.listByDisplayType(p.displayType.id).length
+    const hasDisplays = displayCount > 0
     const views = ctx.audience.forSlot(p.displayType.id, p.slot).assumedViewsPerWindow
     const rev = revenue.get(p.displayType.id) ?? { displayTypeId: p.displayType.id, displayTypeName: p.displayType.name, bookedWindows: 0, bookedRevenue: 0, billedRevenue: 0 }
     revenue.set(p.displayType.id, rev)
@@ -57,12 +79,16 @@ export function bookingSchedule(ctx: Context, starts: Date[], f: ScheduleFilter 
         t.bookedWindows++
         t.bookedRevenue = round2(t.bookedRevenue + bookedRevenue)
         byType.set(type, t)
+        /* Localised layer reach (decision, 22 Sep): null for fallback and
+           personalised bookings — personalised reach can't be predicted. */
+        const reach = type === 'localised' || type === 'interactive' ? ctx.reach.matchOf(displayCount, reachRulesOf(ctx, r.campaignId, r.pricingType)) : null
         return {
           start: start.toISOString(), status: 'booked' as const,
           booking: {
             reservationId: r.id, campaignId: r.campaignId as string, advertiserId: r.advertiserId, partnerId: r.partnerId,
-            pricingType: (r.pricingType ?? 'baseline') as BookingSchedule['byPricingType'][number]['pricingType'], type: r.type, advertiserName: (r.advertiserId && advertiserName.get(r.advertiserId)) || r.advertiserId || '—',
+            pricingType: type, type: r.type, advertiserName: (r.advertiserId && advertiserName.get(r.advertiserId)) || r.advertiserId || '—',
             partnerName: partners.find((x) => x.id === r.partnerId)?.name ?? r.partnerId, cpm: r.clearingCpm as number, assumedViews: views, bookedRevenue, billedRevenue: bill,
+            reach,
           },
         }
       }
@@ -70,7 +96,7 @@ export function bookingSchedule(ctx: Context, starts: Date[], f: ScheduleFilter 
       return { start: start.toISOString(), status: open ? ('available' as const) : ('unavailable' as const), booking: null }
     })
     return {
-      positionId: p.positionId, displayTypeId: p.displayType.id, displayTypeName: p.displayType.name, slot: p.slot, slotLabel: p.def.label,
+      positionId: p.positionId, displayTypeId: p.displayType.id, displayTypeName: p.displayType.name, slot: p.slot, slotLabel: p.def.label, displayCount,
       partnerNames: assignedOf(p.def).partnerIds.map((id) => partners.find((x) => x.id === id)?.name ?? id), assignment: assignmentOf(p.def), windows,
     }
   })

@@ -338,9 +338,9 @@ paths:
     put:
       tags: [Admin — Advertiser settings]
       operationId: saveAvailableInventory
-      summary: Save changes — who a slot is assigned to, and what targeting it supports
+      summary: Save changes — who a slot is assigned to, what targeting it supports, and its reserve price
       description: |
-        The two editable fields of a sellable slot. Everything else about it —
+        The editable fields of a sellable slot. Everything else about it —
         its label and owner — is set on its display type. Admin only:
         marketing users read this table.
 
@@ -351,6 +351,24 @@ paths:
 
         supportedTargeting: interactive is only accepted on a display type
         with QR Control enabled.
+
+        reservePrice: a CPM premium at which this slot can be reserved in
+        advance of the open auction (decision, 22 Sep). Real inheritance
+        (spec §1 configuration inheritance), not a copy action: a display
+        type carries its own reserve price default (reservePriceDefault,
+        below), and a slot's own reservePrice is null until explicitly
+        overridden, in which case it always wins. Clear a slot's override
+        back to null to return it to following the display type's default.
+        Published — resolved, override-or-default — on the position in
+        `GET /v1/inventory` and `/v1/inventory/{positionId}`; not yet wired
+        to reservation or billing logic (open question 52).
+
+        reservePriceDefault: the display type's own reserve price default
+        that a slot with no override inherits; null means no default is
+        set. Sent once per slot row for simplicity (omission is not
+        supported, same as reservePrice), but it describes the display
+        type, not the slot — every row sharing a displayTypeId must submit
+        the same value in one request.
       security: [{adminSession: []}]
       requestBody:
         required: true
@@ -379,6 +397,14 @@ paths:
                           partnerIds: {type: array, items: {type: string}}
                           advertisers: {type: array, items: {type: string}}
                           whitelistOnly: {type: boolean}
+                      reservePrice:
+                        type: [number, 'null']
+                        minimum: 0
+                        description: This slot's own override; null = inherit reservePriceDefault. Omitted = unchanged is not supported — always send the slot's current value.
+                      reservePriceDefault:
+                        type: [number, 'null']
+                        minimum: 0
+                        description: The display type's reserve price default; null = none. Must be the same value on every row for a given displayTypeId in one request.
       responses:
         '200':
           description: Saved
@@ -1010,6 +1036,17 @@ components:
           items: {type: string, enum: [localised, personalised, interactive]}
         assumedViewsPerWindow: {type: integer}
         pricing: {$ref: '#/components/schemas/Pricing'}
+        reservePrice:
+          type: [number, 'null']
+          description: |
+            A CPM premium at which this position can be reserved in advance
+            of the open auction (decision, 22 Sep); null when no reserve is
+            set. The resolved value: the slot's own override when it has
+            one, else its display type's reserve price default, else null
+            (spec §1 configuration inheritance). Set on Advertisers /
+            Inventory. Publishing this does not by itself book a guaranteed
+            slot — there is no reservation or billing behaviour behind it
+            yet (open question 52).
     Pricing:
       type: object
       required: [currency, floorCpm, effectiveFloorCpm, costPerEngagement]
@@ -1077,7 +1114,12 @@ components:
     PricingType: {type: string, enum: [baseline, localised, personalised, interactive]}
     CampaignCreate:
       type: object
-      required: [advertiserId, name, baseline]
+      required: [advertiserId, name]
+      description: |
+        baseline is optional (decision, 22 Sep): an advertiser may submit
+        only localised targeted versions, in which case the fallback for
+        stores none of them match is a property of the slot, not this
+        campaign — at least one targeted version is then required instead.
       properties:
         advertiserId: {type: string}
         name: {type: string}
@@ -1086,10 +1128,12 @@ components:
         baseline:
           type: object
           required: [pricingType]
+          description: Omit to submit a fallback-free campaign; targeted must then carry at least one version.
           properties:
             pricingType: {$ref: '#/components/schemas/PricingType'}
         targeted:
           type: array
+          description: Required, non-empty, when baseline is omitted.
           items:
             type: object
             required: [id, priority, pricingType, rules]
@@ -1212,7 +1256,7 @@ components:
         whitelistOnly: {type: boolean, description: 'Only advertisers on the whitelist may bid; never true when advertisers is non-empty.'}
     AvailableInventoryRow:
       type: object
-      required: [displayTypeId, displayTypeName, playlistName, slot, position, assignedTo, supportedTargeting, qrControl]
+      required: [displayTypeId, displayTypeName, playlistName, slot, position, assignedTo, supportedTargeting, qrControl, reservePrice, reservePriceOverride, displayTypeReservePrice]
       properties:
         displayTypeId: {type: string}
         displayTypeName: {type: string}
@@ -1232,6 +1276,26 @@ components:
           type: array
           description: What a campaign may use on this slot; localised only by default.
           items: {type: string, enum: [localised, personalised, interactive]}
+        reservePrice:
+          type: [number, 'null']
+          description: |
+            The resolved CPM premium at which this slot can be reserved in
+            advance of the open auction: reservePriceOverride when set,
+            else displayTypeReservePrice, else null. Company currency;
+            this is what is published on the position in `GET /v1/inventory`.
+        reservePriceOverride:
+          type: [number, 'null']
+          description: |
+            This slot's own reserve price, admin-editable here; null means
+            it has none and follows displayTypeReservePrice (spec §1
+            configuration inheritance — override always wins).
+        displayTypeReservePrice:
+          type: [number, 'null']
+          description: |
+            The reserve price default set on this slot's display type; null
+            means the display type has none either. The same value on every
+            row sharing a displayTypeId. Editable from any of those rows —
+            see `PUT`'s reservePriceDefault.
 
     BookingSchedule:
       type: object
@@ -1245,7 +1309,7 @@ components:
           type: array
           items:
             type: object
-            required: [positionId, displayTypeId, displayTypeName, slot, slotLabel, partnerNames, assignment, windows]
+            required: [positionId, displayTypeId, displayTypeName, slot, slotLabel, partnerNames, assignment, displayCount, windows]
             properties:
               positionId: {type: string}
               displayTypeId: {type: string}
@@ -1254,6 +1318,15 @@ components:
               slotLabel: {type: string}
               partnerNames: {type: array, items: {type: string}, description: 'The DSPs the slot is tied to; empty = any connected DSP.'}
               assignment: {type: string, enum: [rtb, whitelist_only, reserved]}
+              displayCount:
+                type: integer
+                description: |
+                  Displays using this display type across the whole retail
+                  footprint (interface contract "Booking schedule reach
+                  counts", family 1) — drives the Fallback layer (decision,
+                  22 Sep). This prototype has no narrower per-slot store
+                  scope for an advertiser position, so it is also what "the
+                  slot's store scope" resolves to here.
               windows:
                 type: array
                 description: One per schedule window, in the same order.
@@ -1265,12 +1338,27 @@ components:
                     status: {type: string, enum: [booked, available, unavailable]}
                     booking:
                       type: [object, 'null']
-                      required: [reservationId, campaignId, advertiserId, partnerId, pricingType, type, advertiserName, partnerName, cpm, assumedViews, bookedRevenue, billedRevenue]
+                      required: [reservationId, campaignId, advertiserId, partnerId, pricingType, type, advertiserName, partnerName, cpm, assumedViews, bookedRevenue, billedRevenue, reach]
                       properties:
                         reservationId: {type: string}
                         campaignId: {type: string}
                         advertiserId: {type: [string, 'null']}
                         partnerId: {type: string}
+                        reach:
+                          type: [object, 'null']
+                          description: |
+                            The Localised layer's match count (decision,
+                            22 Sep): present only for a localised or
+                            interactive booking, from the campaign's own
+                            targeted-version rules; null for a fallback
+                            (baseline) or personalised booking — personalised
+                            reach can't be predicted (interface contract
+                            "Booking schedule reach counts": "Localised
+                            only").
+                          required: [matchedDisplays, asOf]
+                          properties:
+                            matchedDisplays: {type: integer, description: Of the position's displayCount.}
+                            asOf: {type: string, format: date-time}
                         pricingType: {$ref: '#/components/schemas/PricingType'}
                         type: {type: string, enum: [reserve, bid]}
                         advertiserName: {type: string}
@@ -1503,6 +1591,24 @@ components:
                   reservation whose campaign is of an unsupported type is refused
                   (targeting_not_supported). Set from Advertisers / Inventory.
                 items: {type: string, enum: [localised, personalised, interactive]}
+              reservePrice:
+                type: [number, 'null']
+                description: |
+                  This slot's own override of the display type's reserve
+                  price (decision, 22 Sep; real inheritance, 22 Sep — spec
+                  §1 configuration inheritance, not a copy action). Absent
+                  or null means it has none and follows the display type's
+                  own `reservePrice` (below); an override always wins. Set
+                  from Advertisers / Inventory, not the slot editor.
+        reservePrice:
+          type: [number, 'null']
+          description: |
+            The display type's own reserve price default (decision, 22 Sep),
+            inherited by every slot on it that has no override of its own.
+            Absent or null means the display type has no default, so an
+            un-overridden slot has no reserve either. Set from Advertisers /
+            Inventory (every row for this display type edits the same
+            value), not the slot editor.
         venue:
           type: object
           properties:

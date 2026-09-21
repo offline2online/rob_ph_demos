@@ -42,7 +42,7 @@ describe('GET /admin/v1/booking-schedule', () => {
     const [pos] = res.json().positions
     const at = (d: string) => pos.windows.find((w: { start: string }) => w.start.startsWith(d))
     /* The seeded 15 Sep window: won at 120 CPM, 1,236 assumed views; billed on what played. */
-    expect(at('2026-09-15')).toEqual({ start: '2026-09-15T00:00:00.000Z', status: 'booked', booking: { reservationId: 'res_seed_nestle_0915', campaignId: 'c_dsp_nestle', advertiserId: 'nestle', partnerId: 'p_google', pricingType: 'localised', type: 'bid', advertiserName: 'Nestlé', partnerName: 'Google DSP', cpm: 120, assumedViews: 1236, bookedRevenue: 148.32, billedRevenue: 74.16 } })
+    expect(at('2026-09-15')).toEqual({ start: '2026-09-15T00:00:00.000Z', status: 'booked', booking: { reservationId: 'res_seed_nestle_0915', campaignId: 'c_dsp_nestle', advertiserId: 'nestle', partnerId: 'p_google', pricingType: 'localised', type: 'bid', advertiserName: 'Nestlé', partnerName: 'Google DSP', cpm: 120, assumedViews: 1236, bookedRevenue: 148.32, billedRevenue: 74.16, reach: { asOf: '2026-09-20T10:00:00.000Z', matchedDisplays: 1 } } })
     /* Reserved at the price agreed through the DSP. */
     expect(at('2026-09-22')).toMatchObject({ status: 'booked', booking: { type: 'reserve', advertiserName: 'Swisse', cpm: 175, bookedRevenue: 216.3, billedRevenue: null } })
     /* A Test-mode win is not a booking. */
@@ -52,6 +52,23 @@ describe('GET /admin/v1/booking-schedule', () => {
     expect(res.json().totals).toEqual({ bookedWindows: 2, bookedRevenue: 364.62, billedRevenue: 74.16 })
     /* Both bookings are localised campaigns (Rob, 20 Sep: show what type is selling). */
     expect(res.json().byPricingType).toEqual([{ pricingType: 'localised', bookedWindows: 2, bookedRevenue: 364.62 }])
+  })
+
+  /* The layered reach breakdown (Rob, 22 Sep): fallback and personalised
+     bookings carry no reach (personalised can't be predicted ahead of
+     time), a localised one does, from its campaign's own targeted rules. */
+  it('carries reach only for a localised/interactive booking, and displayCount on every position', async () => {
+    const { ctx, get } = await setup()
+    ctx.reservations.insert(booking({ id: 'r_local', campaignId: 'c_api_swisse', pricingType: 'localised' }))
+    ctx.reservations.insert(booking({ id: 'r_personal', positionId: 'menu_board.s2', windowStart: '2026-09-23T00:00:00.000Z', campaignId: 'c_api_swisse_kids', pricingType: 'personalised' }))
+    const res = await get('?from=2026-09-15&to=2026-09-23')
+    expectMatchesContract('GET', '/admin/v1/booking-schedule', 200, res.json())
+    const [pos] = res.json().positions
+    expect(pos.displayCount).toBe(3)
+    const at = (d: string) => pos.windows.find((w: { start: string }) => w.start.startsWith(d))
+    /* c_api_swisse has no targeted rules of its own, so the whole footprint matches. */
+    expect(at('2026-09-22').booking.reach).toEqual({ matchedDisplays: 3, asOf: NOW.toISOString() })
+    expect(at('2026-09-23').booking).toMatchObject({ pricingType: 'personalised', reach: null })
   })
 
   it('narrows to one campaign, over whatever range its bookings fall in', async () => {

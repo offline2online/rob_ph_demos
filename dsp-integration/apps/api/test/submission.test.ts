@@ -49,6 +49,26 @@ describe('POST /v1/campaigns', () => {
     expect(stored?.targeting).toEqual({ baseline: { pricingType: 'localised' }, targeted: [{ id: 'metro', priority: 10, pricingType: 'localised', rules: [[{ source: 'store', variable: 'store.fixed_segments', op: 'include', values: ['Metro'] }]] }] })
   })
 
+  /* The fallback is optional per advertiser (decision, 22 Sep): an
+     advertiser may submit only localised targeted versions, with the
+     fallback for unmatched stores left to the slot rather than this campaign. */
+  it('creates a fallback-free campaign from targeted versions alone, and requires at least one', async () => {
+    const { app, ctx } = await newApp()
+    const res = await create(app, {
+      advertiserId: 'swisse', name: 'Swisse — Metro only', displayTypeId: 'landscape',
+      targeted: [{ id: 'metro', priority: 10, pricingType: 'localised', rules: [[{ source: 'store', variable: 'store.fixed_segments', op: 'include', values: ['Metro'] }]] }],
+    })
+    expect(res.statusCode).toBe(201)
+    expectMatchesContract('POST', '/v1/campaigns', 201, res.json())
+    const stored = ctx.campaigns.getCampaign(res.json().campaignId)
+    expect(stored).toMatchObject({ pricingType: 'localised' })
+    expect(stored?.targeting).toEqual({ targeted: [{ id: 'metro', priority: 10, pricingType: 'localised', rules: [[{ source: 'store', variable: 'store.fixed_segments', op: 'include', values: ['Metro'] }]] }] })
+
+    const empty = await create(app, { advertiserId: 'swisse', name: 'Nothing at all', displayTypeId: 'landscape' })
+    expect(empty.statusCode).toBe(400)
+    expect(empty.json().error.details).toEqual([{ field: 'baseline', reason: 'Required unless at least one targeted version is submitted.' }])
+  })
+
   it('rejects an advertiser that is not one of the DSP’s seats, and malformed versions', async () => {
     const { app } = await newApp()
     const res = await create(app, { advertiserId: 'loreal', name: '', baseline: { pricingType: 'premium' }, targeted: [{ id: 'baseline', priority: 1.5, pricingType: 'localised', rules: [] }] })
@@ -128,6 +148,19 @@ describe('POST /v1/campaigns/{id}/assets — automated checks', () => {
     expect((await status(app, id, AMAZON)).statusCode).toBe(404)
     expect((await status(app, 'c_zinger')).statusCode).toBe(404)
   })
+
+  /* A fallback-free campaign has no "baseline" version to upload against
+     (decision, 22 Sep) — only its targeted version ids are accepted. */
+  it('accepts only the targeted version ids on a fallback-free campaign, never "baseline"', async () => {
+    const { app } = await newApp()
+    const id = (await create(app, {
+      advertiserId: 'swisse', name: 'Swisse — Metro only', displayTypeId: 'landscape',
+      targeted: [{ id: 'metro', priority: 10, pricingType: 'localised', rules: [] }],
+    })).json().campaignId
+    const rejected = await upload(app, id, 'baseline', png(1920, 1080))
+    expect(rejected.json().error.details).toEqual([{ field: 'version', reason: 'One of metro.' }])
+    expect((await upload(app, id, 'metro', png(1920, 1080))).statusCode).toBe(201)
+  })
 })
 
 describe('POST /v1/campaigns/{id}/submit and GET …/status', () => {
@@ -138,6 +171,23 @@ describe('POST /v1/campaigns/{id}/submit and GET …/status', () => {
     expect(res.statusCode).toBe(422)
     expectMatchesContract('POST', '/v1/campaigns/{campaignId}/submit', 422, res.json())
     expect(res.json().error.details).toEqual([{ field: 'baseline_present', reason: 'Upload a creative for the baseline campaign.' }])
+  })
+
+  /* No baseline was submitted at all: the check instead needs creative on
+     at least one targeted version (decision, 22 Sep). */
+  it('needs creative on at least one targeted version, when there is no baseline', async () => {
+    const { app } = await newApp()
+    const id = (await create(app, {
+      advertiserId: 'swisse', name: 'Swisse — Metro only', displayTypeId: 'landscape',
+      targeted: [{ id: 'metro', priority: 10, pricingType: 'localised', rules: [] }],
+    })).json().campaignId
+    const bare = await submit(app, id)
+    expect(bare.statusCode).toBe(422)
+    expect(bare.json().error.details).toEqual([{ field: 'baseline_present', reason: 'No baseline was submitted — upload creative for at least one targeted version.' }])
+    await upload(app, id, 'metro', png(1920, 1080))
+    const res = await submit(app, id)
+    expect(res.statusCode).toBe(200)
+    expect(res.json()).toMatchObject({ status: 'awaiting_approval' })
   })
 
   it('goes to Awaiting approval when the advertiser requires approval; a second submit conflicts', async () => {

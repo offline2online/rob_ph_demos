@@ -61,6 +61,31 @@ describe('hand-off to the existing campaign system', () => {
     expect(ctx.campaigns.bookings(id)).toMatchObject([{ displayTypeId: 'menu_board', slot: 2, windowStart: W1.toISOString() }])
   })
 
+  /* A fallback-free submission has no baseline creative (decision, 22 Sep):
+     hand-off must still find something to book, from the targeted version's
+     own upload. */
+  it('hands off a fallback-free campaign using its targeted version’s creative', async () => {
+    const { ctx, app, activate } = await setup()
+    const G = { authorization: 'Bearer poc-token-google-dv360' }
+    const id = (await app.inject({
+      method: 'POST', url: '/api/v1/campaigns', headers: G,
+      payload: { advertiserId: 'swisse', name: 'Swisse — Metro only', displayTypeId: 'menu_board', targeted: [{ id: 'metro', priority: 10, pricingType: 'localised', rules: [[{ source: 'store', variable: 'store.fixed_segments', op: 'include', values: ['Metro'] }]] }] },
+    })).json().campaignId
+    expect(ctx.campaigns.getCampaign(id)?.targeting).toEqual({ targeted: [{ id: 'metro', priority: 10, pricingType: 'localised', rules: [[{ source: 'store', variable: 'store.fixed_segments', op: 'include', values: ['Metro'] }]] }] })
+    const m = multipart({ version: 'metro' }, { name: 'menu.png', bytes: png(5760, 1080) })
+    await app.inject({ method: 'POST', url: `/api/v1/campaigns/${id}/assets`, headers: { ...G, ...m.headers }, payload: m.payload })
+    const submitted = await app.inject({ method: 'POST', url: `/api/v1/campaigns/${id}/submit`, headers: G })
+    expect(submitted.json()).toMatchObject({ status: 'awaiting_approval' })
+    await app.inject({ method: 'POST', url: `/api/admin/v1/campaigns/${id}/approve`, payload: { assetVersion: 'v1' } })
+    await activate(id)
+    const ext = ctx.displayTypes.get('menu_board')!.phExtensions!
+    ctx.displayTypes.saveExtensions('menu_board', { ...ext, slots: ext.slots.map((s, i) => (i === 1 ? { ...s, listMode: null, advertisers: ['Swisse'] } : s)) })
+    const res = await app.inject({ method: 'POST', url: '/api/v1/reservations', headers: G, payload: { positionId: 'menu_board.s2', windowStart: W1.toISOString(), campaignId: id, advertiserId: 'swisse', type: 'reserve', bidCpm: 100 } })
+    expect(res.json()).toMatchObject({ status: 'reserved', clearingCpm: 100 })
+    expect(ctx.reservations.get(res.json().reservationId)!.handedOffAt).toBe(NOW.toISOString())
+    expect(ctx.campaigns.bookings(id)).toMatchObject([{ displayTypeId: 'menu_board', slot: 2, windowStart: W1.toISOString() }])
+  })
+
   it('refuses a campaign that is no longer approved, or whose creative doesn’t fit the display type', async () => {
     const { ctx, app, activate } = await setup()
     const draft = await handOff(ctx, ctx.reservations.insert(won({ campaignId: 'c_api_swisse_kids' })))

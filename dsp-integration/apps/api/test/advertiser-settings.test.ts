@@ -71,9 +71,57 @@ describe('Advertiser settings (spec §4, §6)', () => {
     expect(res.json().items).toEqual([{
       displayTypeId: 'menu_board', displayTypeName: 'Menu Board — Long Format', touchPoint: 'Digital Signage', playlistName: 'Menu Board Playlist', slot: 2, position: 'Supplier slot',
       assignedTo: { partnerIds: ['p_google'], partnerNames: ['Google DSP'], advertisers: [], whitelistOnly: false }, qrControl: true, supportedTargeting: ['localised'],
+      reservePrice: null, reservePriceOverride: null, displayTypeReservePrice: null,
     }])
     /* The picker behind Assigned to: every DSP and the advertisers it brings. */
     expect(res.json().dsps[0]).toMatchObject({ partnerId: 'p_google', name: 'Google DSP', advertisers: [{ advertiserId: 'nestle', name: 'Nestlé' }, { advertiserId: 'swisse', name: 'Swisse' }] })
+  })
+
+  /* Reserve price: real inheritance (Rob, 22 Sep; spec §1 configuration
+     inheritance), replacing an earlier "copy to every slot" design that
+     failed testing for not actually running the inheritance. A display
+     type's own default reaches every slot that has no override of its
+     own; an override always wins. */
+  it('inherits a reserve price from its display type, lets a slot override it, and publishes the resolved value', async () => {
+    const ctx = await testContext()
+    const app = buildApp(ctx)
+    /* A second Advertiser slot on the same display type, so the default
+       has more than one slot to reach. */
+    const ext = ctx.displayTypes.get('menu_board')!.phExtensions!
+    ctx.displayTypes.saveExtensions('menu_board', { ...ext, slots: [...ext.slots, { label: 'Supplier slot 2', owner: 'advertiser' as const, partnerIds: ['p_google'], advertisers: [], listMode: 'rtb' as const }] })
+    const row = (slot: number, reservePrice: number | null, reservePriceDefault: number | null) =>
+      ({ displayTypeId: 'menu_board', slot, supportedTargeting: ['localised'], assignedTo: KEEP, reservePrice, reservePriceDefault })
+    const save = (items: ReturnType<typeof row>[]) => app.inject({ method: 'PUT', url: '/api/admin/v1/available-inventory', payload: { items } })
+    const at = (json: { items: { slot: number }[] }, slot: number) => json.items.find((i) => i.slot === slot)
+
+    /* Neither slot overrides: setting the default on both rows reaches both. */
+    const set = await save([row(2, null, 5), row(4, null, 5)])
+    expect(set.statusCode).toBe(200)
+    expectMatchesContract('PUT', '/admin/v1/available-inventory', 200, set.json())
+    expect(at(set.json(), 2)).toMatchObject({ reservePrice: 5, reservePriceOverride: null, displayTypeReservePrice: 5 })
+    expect(at(set.json(), 4)).toMatchObject({ reservePrice: 5, reservePriceOverride: null, displayTypeReservePrice: 5 })
+    expect(ctx.displayTypes.get('menu_board')!.phExtensions!.reservePrice).toBe(5)
+
+    /* Override slot 2 only: it wins there; slot 4 keeps following the default. */
+    const overridden = await save([row(2, 8, 5), row(4, null, 5)])
+    expect(at(overridden.json(), 2)).toMatchObject({ reservePrice: 8, reservePriceOverride: 8, displayTypeReservePrice: 5 })
+    expect(at(overridden.json(), 4)).toMatchObject({ reservePrice: 5, reservePriceOverride: null, displayTypeReservePrice: 5 })
+
+    /* Published on the position — the resolved value, not the raw override. */
+    const positions = await app.inject({ method: 'GET', url: '/api/v1/inventory', headers: { authorization: 'Bearer poc-token-google-dv360' } })
+    expect(positions.json().items.find((p: { positionId: string }) => p.positionId === 'menu_board.s2').reservePrice).toBe(8)
+
+    /* Clearing the override returns the slot to following the default. */
+    const cleared = await save([row(2, null, 5), row(4, null, 5)])
+    expect(at(cleared.json(), 2)).toMatchObject({ reservePrice: 5, reservePriceOverride: null })
+
+    /* Rejected: a negative value, and rows for one display type disagreeing on its default. */
+    const bad = await save([row(2, -1, 5), row(4, null, 6)])
+    expect(bad.statusCode).toBe(400)
+    expect(bad.json().error.details).toEqual([
+      { field: 'items[0].reservePrice', reason: 'A CPM of 0 or more, or null for no reserve.' },
+      { field: 'items[1].reservePriceDefault', reason: 'All slots on a display type must submit the same reserve price default.' },
+    ])
   })
 
   /* What a slot supports is set here; localised only until someone changes it (Rob, 20 Sep). */
