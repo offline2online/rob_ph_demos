@@ -627,21 +627,27 @@ region, date range, status.
 - **Pricing** for the requester, in the company currency: the base floor CPM
   and the effective floor CPM for localised, personalised and interactive
   campaigns (§4), including the requester's own advertiser floor multiplier.
-- **Reserve price** (decision, Rob, 22 Sep): a CPM premium at which this
-  position can be reserved in advance of the open auction — a retailer lets
-  an advertiser pay a premium up front to guarantee the slot for a window,
-  taking it out of the open auction for that window (the advertiser then
-  carries the delivery risk, not billed against realised dynamic VAC-d; see
-  §4 Billing). `null` when no reserve is set, stored per slot. There is no
-  separate stored display-type default: **Available Inventory** (below)
-  offers a "copy to every other slot on this display type" action to seed
-  every slot from one edit, and each stays independently overridable from
-  there — the simplest reading of "set once, inherited, overridable" the
-  prototype could give without a second stored value that could drift from
-  the slots it's meant to describe. **Published on the position; not yet
-  wired to a booking flow** (the prototype ships the setting, the copy
-  action and the publishing only, per the scope note on the ticket that
-  added it — see open question 52).
+- **Reserve price** (decision, Rob, 22 Sep; real inheritance, 22 Sep): a CPM
+  premium at which this position can be reserved in advance of the open
+  auction — a retailer lets an advertiser pay a premium up front to
+  guarantee the slot for a window, taking it out of the open auction for
+  that window (the advertiser then carries the delivery risk, not billed
+  against realised dynamic VAC-d; see §4 Billing). `null` when no reserve is
+  set. Genuine §1 configuration inheritance, not a copy action: a display
+  type carries its own reserve price default, and a slot's own reserve
+  price overrides it whenever one is set — a slot with none simply follows
+  its display type, and setting the default reaches every slot on it
+  automatically, with no per-slot action needed. **One simplification, kept
+  deliberately narrow**: a slot's own value can only be a real premium, never
+  an explicit "no reserve" while its display type has a default — clearing a
+  slot's override always means "follow the default," the same reading
+  `null` already carries everywhere else in this inheritance. An earlier
+  design (a plain per-slot value with a "copy to every other slot" action,
+  no stored default) failed testing for not actually running the
+  inheritance the ticket asked for. **Published on the position, resolved;
+  not yet wired to a booking flow** (the prototype ships the setting, the
+  inheritance and the publishing only, per the scope note on the ticket
+  that added it — see open question 52).
 
 ### Visibility rules
 
@@ -668,11 +674,17 @@ Slots are made available by setting their owner to *Advertiser* on a display
 type (explained in the section's tooltip); that part is not editable here.
 Three fields are: **Assigned to** (above), **Targeting supported** — each a
 multi-select that drops a pill per choice into the cell — and **Reserve
-price**, a CPM input (blank = no reserve), with a "copy to every other slot
-on this display type" action next to it once a value is set (decision, Rob,
-22 Sep — see *Reserve price* under *What each position returns*, above, for
-the currency, the billing note and what's not built yet). **Admin only**,
-same as the other two; a marketing user reads it as plain text.
+price**, a CPM input (blank = following the display type's default, or no
+reserve if it has none either). Editing a slot that has no override of its
+own edits its display type's shared default instead, reaching every other
+slot on that display type at once; an **Override** action next to the input
+lets one slot diverge with its own value (shown alongside a **reset to
+default** action once it has), independent from then on (decision, Rob,
+22 Sep; real inheritance, 22 Sep — see *Reserve price* under *What each
+position returns*, above, for the currency, the billing note, the "override
+always wins, no explicit opt-out" simplification, and what's not built yet).
+**Admin only**, same as the other two; a marketing user reads it as plain
+text — the resolved value, not which of the two levels it came from.
 **Targeting supported** is (Rob, 20 Sep): each slot says which kinds of
 campaign it will take — **localised**, **personalised**, **interactive** —
 ticked independently, with **localised only** as the default for a slot that
@@ -1201,8 +1213,9 @@ fields. The canonical definition is `app/src/model/schema.js` and
   enabledFeatures: { inStoreRadio, proximityMist, aiAgentPlayback, visionAi },
   multiZone: { enabled, zones: [{ id, name, x, y, width, height, playlistId }] },
   phExtensions: {                  // THIS PROJECT's additions
+    reservePrice,                  // the display type's own reserve price default; CPM or null (real inheritance, 22 Sep — §5)
     slots: [{ label, owner, partnerId, advertiser, listMode, storeScope, quota,
-              reservePrice }],     // reservePrice: CPM or null; per slot, no separate stored default (decision, 22 Sep — §5)
+              reservePrice }],     // this slot's own override; CPM, or null = inherit the display type's reservePrice above (§5)
     venue: { openOohVenueType, orientation, loopLengthSec }
   }
 }
@@ -1410,11 +1423,12 @@ playback analytics.**
   Assigned to, Targeting supported, Reserve price, and an Open link), with
   no advertisers column and a filter on every column.
   *(Advertisers / Inventory → Available Inventory)*
-- **Reserve price per slot** (decision, 22 Sep): a CPM premium to reserve
-  the position in advance of the open auction, or no reserve; a "copy to
-  every other slot on this display type" action to seed the rest from one
-  edit, each still overridable; published on the position — not yet wired
-  to a booking flow (open question 52).
+- **Reserve price, inherited from its display type** (decision, 22 Sep; real
+  inheritance, 22 Sep): a CPM premium to reserve the position in advance of
+  the open auction, or no reserve, set once on the display type and
+  automatically reaching every slot on it — override just one slot to give
+  it its own value, independent from then on; published on the position,
+  resolved — not yet wired to a booking flow (open question 52).
   *(Advertisers / Inventory → Available Inventory)*
 - **Targeting supported needs QR Control for interactive**: flagged on the
   display type, greyed out with the reason where it is off, refused by the

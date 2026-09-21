@@ -54,6 +54,13 @@ export const assignedOf = (slot: SlotLike): Assigned => {
 export const assignedLabels = (a: { advertisers: readonly string[]; partnerNames?: readonly string[]; whitelistOnly?: boolean }): string[] =>
   [...a.advertisers, ...(a.whitelistOnly ? ['Whitelist only'] : []), ...(a.partnerNames ?? [])]
 
+/* Reserve price inheritance (Rob, 22 Sep; spec §1 configuration
+   inheritance): a display type carries its own reserve price default, and
+   a slot's own reservePrice overrides it whenever it is set — null always
+   means inherit, never "explicitly no reserve" while a default exists. */
+export const reservePriceOf = (dt: { phExtensions?: { reservePrice?: number | null } | null }, slot: { reservePrice?: number | null }): number | null =>
+  slot.reservePrice ?? dt.phExtensions?.reservePrice ?? null
+
 /* What a campaign may use on a slot (Rob, 20 Sep). A slot supports localised
    targeting only until someone opens it up on Advertisers / Inventory; a bid
    for a campaign of an unsupported type is refused. Same order and words as

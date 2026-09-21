@@ -265,14 +265,22 @@ export interface paths {
          *     with QR Control enabled.
          *
          *     reservePrice: a CPM premium at which this slot can be reserved in
-         *     advance of the open auction (decision, 22 Sep); null clears it (no
-         *     reserve). Set on one row and applied with "Copy to every slot on
-         *     this display type" to seed the rest, each still independently
-         *     overridable — there is no separate stored default, so whatever was
-         *     set last on a slot (individually or by copy) is simply its value.
-         *     Published on the position in `GET /v1/inventory` and
-         *     `/v1/inventory/{positionId}`; not yet wired to reservation or
-         *     billing logic (open question 55).
+         *     advance of the open auction (decision, 22 Sep). Real inheritance
+         *     (spec §1 configuration inheritance), not a copy action: a display
+         *     type carries its own reserve price default (reservePriceDefault,
+         *     below), and a slot's own reservePrice is null until explicitly
+         *     overridden, in which case it always wins. Clear a slot's override
+         *     back to null to return it to following the display type's default.
+         *     Published — resolved, override-or-default — on the position in
+         *     `GET /v1/inventory` and `/v1/inventory/{positionId}`; not yet wired
+         *     to reservation or billing logic (open question 52).
+         *
+         *     reservePriceDefault: the display type's own reserve price default
+         *     that a slot with no override inherits; null means no default is
+         *     set. Sent once per slot row for simplicity (omission is not
+         *     supported, same as reservePrice), but it describes the display
+         *     type, not the slot — every row sharing a displayTypeId must submit
+         *     the same value in one request.
          */
         put: operations["saveAvailableInventory"];
         post?: never;
@@ -762,9 +770,12 @@ export interface components {
             /**
              * @description A CPM premium at which this position can be reserved in advance
              *     of the open auction (decision, 22 Sep); null when no reserve is
-             *     set. Set on Advertisers / Inventory. Publishing this does not by
-             *     itself book a guaranteed slot — there is no reservation or
-             *     billing behaviour behind it yet (open question 55).
+             *     set. The resolved value: the slot's own override when it has
+             *     one, else its display type's reserve price default, else null
+             *     (spec §1 configuration inheritance). Set on Advertisers /
+             *     Inventory. Publishing this does not by itself book a guaranteed
+             *     slot — there is no reservation or billing behaviour behind it
+             *     yet (open question 52).
              */
             reservePrice?: number | null;
         };
@@ -978,11 +989,25 @@ export interface components {
             /** @description What a campaign may use on this slot; localised only by default. */
             supportedTargeting: ("localised" | "personalised" | "interactive")[];
             /**
-             * @description A CPM premium at which this slot can be reserved in advance of
-             *     the open auction; null means no reserve is set. Admin-editable,
-             *     company currency, published on the position in `GET /v1/inventory`.
+             * @description The resolved CPM premium at which this slot can be reserved in
+             *     advance of the open auction: reservePriceOverride when set,
+             *     else displayTypeReservePrice, else null. Company currency;
+             *     this is what is published on the position in `GET /v1/inventory`.
              */
             reservePrice: number | null;
+            /**
+             * @description This slot's own reserve price, admin-editable here; null means
+             *     it has none and follows displayTypeReservePrice (spec §1
+             *     configuration inheritance — override always wins).
+             */
+            reservePriceOverride: number | null;
+            /**
+             * @description The reserve price default set on this slot's display type; null
+             *     means the display type has none either. The same value on every
+             *     row sharing a displayTypeId. Editable from any of those rows —
+             *     see `PUT`'s reservePriceDefault.
+             */
+            displayTypeReservePrice: number | null;
         };
         BookingSchedule: {
             /** @description ISO 4217 */
@@ -1239,12 +1264,24 @@ export interface components {
                  */
                 supportedTargeting?: ("localised" | "personalised" | "interactive")[];
                 /**
-                 * @description A CPM premium at which this slot can be reserved in advance of
-                 *     the open auction (decision, 22 Sep). Absent or null means no
-                 *     reserve. Set from Advertisers / Inventory, not the slot editor.
+                 * @description This slot's own override of the display type's reserve
+                 *     price (decision, 22 Sep; real inheritance, 22 Sep — spec
+                 *     §1 configuration inheritance, not a copy action). Absent
+                 *     or null means it has none and follows the display type's
+                 *     own `reservePrice` (below); an override always wins. Set
+                 *     from Advertisers / Inventory, not the slot editor.
                  */
                 reservePrice?: number | null;
             }[];
+            /**
+             * @description The display type's own reserve price default (decision, 22 Sep),
+             *     inherited by every slot on it that has no override of its own.
+             *     Absent or null means the display type has no default, so an
+             *     un-overridden slot has no reserve either. Set from Advertisers /
+             *     Inventory (every row for this display type edits the same
+             *     value), not the slot editor.
+             */
+            reservePrice?: number | null;
             venue?: {
                 openOohVenueType?: string;
                 /** @enum {string} */
@@ -1907,8 +1944,10 @@ export interface operations {
                             advertisers: string[];
                             whitelistOnly: boolean;
                         };
-                        /** @description A CPM; null clears it (no reserve). Omitted = unchanged is not supported — always send the slot's current value. */
+                        /** @description This slot's own override; null = inherit reservePriceDefault. Omitted = unchanged is not supported — always send the slot's current value. */
                         reservePrice?: number | null;
+                        /** @description The display type's reserve price default; null = none. Must be the same value on every row for a given displayTypeId in one request. */
+                        reservePriceDefault?: number | null;
                     }[];
                 };
             };

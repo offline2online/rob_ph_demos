@@ -1,6 +1,6 @@
 /* Advertiser settings (spec §4, §5, §6): pricing and the company lists, plus
    the read-only Where these apply and Available Inventory. */
-import { TARGETING_MODES, advertiserSlug, assignedOf, supportedTargetingOf, type AdvertiserSettings, type AdvertiserSettingsInput, type Assigned, type AvailableInventoryRow, type DisplayType, type DspAdvertisers, type TargetingMode } from '@ph-dsp/types'
+import { TARGETING_MODES, advertiserSlug, assignedOf, reservePriceOf, supportedTargetingOf, type AdvertiserSettings, type AdvertiserSettingsInput, type Assigned, type AvailableInventoryRow, type DisplayType, type DspAdvertisers, type TargetingMode } from '@ph-dsp/types'
 import type { FastifyPluginAsync } from 'fastify'
 import type { Context } from '../../context'
 import { cleanList, validateAdvertiserSettings } from '../../domain/advertiserSettings'
@@ -60,6 +60,9 @@ export const advertiserSettingsRoutes = (ctx: Context, guards: Guards): FastifyP
           assignedTo: { ...a, partnerNames: a.partnerIds.map((id) => partners.find((p) => p.id === id)?.name ?? id) },
           qrControl: hasQrControl(t),
           supportedTargeting: supportedTargetingOf(s),
+          reservePrice: reservePriceOf(t, s),
+          reservePriceOverride: s.reservePrice ?? null,
+          displayTypeReservePrice: t.phExtensions?.reservePrice ?? null,
         })
       })
     }
@@ -73,20 +76,36 @@ export const advertiserSettingsRoutes = (ctx: Context, guards: Guards): FastifyP
     return inventory()
   })
 
-  /* Who a slot is assigned to, and what targeting it supports (Rob,
-     20 Sep): the two fields of a sellable slot that live here. Everything
-     else about it is set on its display type. */
+  /* A CPM of 0 or more, or null for no reserve (Rob, 22 Sep) — shared by
+     reservePrice (a slot's own override) and reservePriceDefault (its
+     display type's). */
+  const parseReservePrice = (v: unknown, field: string, errors: { field: string; reason: string }[]): number | null => {
+    if (v === null || v === undefined) return null
+    if (typeof v !== 'number' || !Number.isFinite(v) || v < 0) {
+      errors.push({ field, reason: 'A CPM of 0 or more, or null for no reserve.' })
+      return null
+    }
+    return v
+  }
+
+  /* Who a slot is assigned to, what targeting it supports, and its reserve
+     price override (Rob, 22 Sep): the fields of a sellable slot that live
+     here. Everything else about it is set on its display type — including
+     the reserve price *default*, which every row for that display type
+     edits together (spec §1 configuration inheritance: override always
+     wins; a slot with no override of its own simply follows it). */
   app.put<{ Body: { items?: unknown } }>('/available-inventory', async (req) => {
     guards.flagged()
     guards.requireScope(req, 'admin')
-    const rows = Array.isArray(req.body?.items) ? (req.body.items as { displayTypeId?: unknown; slot?: unknown; supportedTargeting?: unknown; assignedTo?: unknown }[]) : null
+    const rows = Array.isArray(req.body?.items) ? (req.body.items as { displayTypeId?: unknown; slot?: unknown; supportedTargeting?: unknown; assignedTo?: unknown; reservePrice?: unknown; reservePriceDefault?: unknown }[]) : null
     if (!rows) throw validationFailed([{ field: 'items', reason: 'An array of slots is required.' }])
     const keys = TARGETING_MODES.map((m) => m.key) as string[]
     const partners = ctx.partners.list()
     const company = ctx.company.get()
     const errors: { field: string; reason: string }[] = []
-    type Patch = { supportedTargeting: TargetingMode[]; assigned: Assigned }
+    type Patch = { supportedTargeting: TargetingMode[]; assigned: Assigned; reservePrice: number | null }
     const wanted = new Map<string, Map<number, Patch>>()
+    const defaults = new Map<string, number | null>()
     const names = (v: unknown) => (Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string').map((x) => x.trim()).filter(Boolean) : [])
 
     rows.forEach((r, i) => {
@@ -111,9 +130,16 @@ export const advertiserSettingsRoutes = (ctx: Context, guards: Guards): FastifyP
       const bad = validateAssigned(assigned, (k) => f(`assignedTo.${k}`), partners, company, def ? assignedOf(def) : { partnerIds: [], advertisers: [], whitelistOnly: false })
       errors.push(...bad)
 
+      const reservePrice = parseReservePrice(r.reservePrice, f('reservePrice'), errors)
+      const reservePriceDefault = parseReservePrice(r.reservePriceDefault, f('reservePriceDefault'), errors)
+      if (dt) {
+        if (defaults.has(dt.id) && defaults.get(dt.id) !== reservePriceDefault) errors.push({ field: f('reservePriceDefault'), reason: 'All slots on a display type must submit the same reserve price default.' })
+        else defaults.set(dt.id, reservePriceDefault)
+      }
+
       if (dt && def && targeting && !bad.length) {
         const byType = wanted.get(dt.id) ?? new Map<number, Patch>()
-        byType.set(slot, { supportedTargeting: targeting, assigned })
+        byType.set(slot, { supportedTargeting: targeting, assigned, reservePrice })
         wanted.set(dt.id, byType)
       }
     })
@@ -124,8 +150,9 @@ export const advertiserSettingsRoutes = (ctx: Context, guards: Guards): FastifyP
       const ext = { ...(dt.phExtensions ?? { slots: [] }) }
       ext.slots = (ext.slots ?? []).map((s, i) => {
         const patch = slots.get(i + 1)
-        return patch ? { ...s, supportedTargeting: patch.supportedTargeting, ...assignedToSlot(patch.assigned, partners) } : s
+        return patch ? { ...s, supportedTargeting: patch.supportedTargeting, ...assignedToSlot(patch.assigned, partners), reservePrice: patch.reservePrice } : s
       })
+      if (defaults.has(displayTypeId)) ext.reservePrice = defaults.get(displayTypeId) ?? null
       ctx.displayTypes.saveExtensions(displayTypeId, ext)
     }
     return inventory()

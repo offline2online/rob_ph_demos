@@ -88,8 +88,10 @@ length, share of voice, OpenOOH venue type), assignment (`rtb`,
 and effective floors for localised, personalised, interactive, and
 personalised + interactive) for the caller's advertiser, and `reservePrice`
 (a CPM premium to reserve the position in advance of the open auction, or
-null; set on Advertisers / Inventory — publishing it does not by itself
-book a guaranteed slot, see open question 55).
+null — the resolved value: a slot's own override, else its display type's
+reserve price default, else null; set on Advertisers / Inventory —
+publishing it does not by itself book a guaranteed slot, see open
+question 52).
 
 Hidden from the caller: HQ and Stores slots, positions reserved to another
 advertiser, and positions the caller's advertiser is blacklisted from or not
@@ -167,8 +169,8 @@ env var, with no switcher and no cookie (see *POC stand-ins* below).
 |---|---|---|
 | GET | `/admin/v1/advertiser-settings` | Currency, floor CPM, multipliers, the auction schedule (`auctionOpensHours`, `playWindowHours`, `auctionCutoffTime`), advertiser and category whitelists/blacklists, and read-only `whereTheseApply` (per DSP: adopting or own lists). |
 | PUT | `/admin/v1/advertiser-settings` | Save changes (pricing, auction schedule and lists). An entry can't be on both lists, and the play-window length can't change while future windows are bid on or booked (`validation_failed`). |
-| GET | `/admin/v1/available-inventory` | Rows: display type, playlist, slot, position, `assignedTo`, `supportedTargeting` and `reservePrice`, plus `dsps` (each DSP and its advertisers) for the Assigned to picker. No advertisers column. |
-| PUT | `/admin/v1/available-inventory` | Save changes — per slot, `assignedTo` (`partnerIds`, `advertisers`, `whitelistOnly`; nothing chosen = any connected DSP, and an advertiser's DSP is added automatically), `supportedTargeting` (at least one of `localised`, `personalised`, `interactive`) and `reservePrice` (a CPM, or null for no reserve; decision, 22 Sep — always send the slot's current value, there is no "unchanged" omission). The editable fields of a slot; its label and owner are set on its display type. Admin only. |
+| GET | `/admin/v1/available-inventory` | Rows: display type, playlist, slot, position, `assignedTo`, `supportedTargeting`, `reservePrice` (resolved), `reservePriceOverride` (this slot's own, null = inheriting) and `displayTypeReservePrice` (the display type's default, same on every row of that type), plus `dsps` (each DSP and its advertisers) for the Assigned to picker. No advertisers column. |
+| PUT | `/admin/v1/available-inventory` | Save changes — per slot, `assignedTo` (`partnerIds`, `advertisers`, `whitelistOnly`; nothing chosen = any connected DSP, and an advertiser's DSP is added automatically), `supportedTargeting` (at least one of `localised`, `personalised`, `interactive`), `reservePrice` (this slot's own override — a CPM, or null to inherit) and `reservePriceDefault` (the display type's own default — a CPM, or null; must be the same on every row for that display type in one request; real inheritance, 22 Sep — always send the slot's current values, there is no "unchanged" omission). The editable fields of a slot; its label and owner are set on its display type. Admin only. |
 | GET | `/admin/v1/booking-schedule?from=&to=` | Reached from Available Inventory. Every advertiser-owned slot across its play windows: booked (advertiser, DSP, reserve or bid, the CPM it was booked at, booked and billed revenue), available or unavailable; plus booking revenue per display type and in total. Live bookings only (never Test mode). Default: the current window and the next 13; at most 92 days. `campaignId`, `advertiserId` or `partnerId` narrow it, and `advertiserId` leaves only the positions that advertiser holds; with `campaignId` the range covers all of that campaign's bookings. Each booking says which campaign type it is, and the response also totals the bookings by campaign type. `dsps` lists the DSPs and, under each, **only the advertisers with something booked in the range**, because that is what the filter is for. Each position also carries `displayCount` (displays using its display type across the whole retail footprint — decision, 22 Sep), and each booking a `reach` object (`matchedDisplays`, `asOf`) for a localised or interactive booking, `null` for a fallback or personalised one — the client's Fallback / Localised / Personalised tabs (see REQUIREMENTS §6) are built entirely from these two fields plus `pricingType`, with no separate endpoint. |
 
 ### Shared targeting variables
