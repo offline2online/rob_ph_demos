@@ -92,6 +92,10 @@ const PositionCell = ({ data }: ICellRendererParams<Row>) =>
 
 /* Who the row's bookings belong to, over the range on screen. */
 const advertisersIn = (p: Position) => [...new Set(p.windows.flatMap((w) => (w.booking ? [w.booking.advertiserName] : [])))]
+/* Which DSP(s) actually brought those bookings — not `position.partnerNames`
+   (who is merely *eligible* to buy the slot), so the DSP shown always lines
+   up with the advertiser next to it (ticket, 21 Sep). */
+const partnersIn = (p: Position) => [...new Set(p.windows.flatMap((w) => (w.booking ? [w.booking.partnerName] : [])))]
 
 /* Muted, not the same red as Unavailable: the window has real demand, just
    not this layer's — showing it as plain Available would overstate what a
@@ -217,21 +221,23 @@ export function BookingSchedulePage() {
   }
 
   const columns = useMemo<ColDef<Row>[]>(() => [
-    { headerName: 'Position', width: 230, minWidth: 190, pinned: 'left', cellRenderer: PositionCell, autoHeight: true },
-    /* Filtered like every other table: a funnel in the filter row. The server
-       applies these two, so they narrow every window, not only the rows here. */
-    {
-      headerName: 'DSP', width: 175, minWidth: 150, pinned: 'left', cellStyle: { color: T.muted },
-      valueGetter: (p) => p.data?.position.partnerNames.join(', ') || 'Any connected DSP',
-      ...externalSetColumn<Row>('DSP', dsps.map((d) => d.name), dsps.find((d) => d.partnerId === partnerId)?.name,
-        (name) => setFilter('partnerId', dsps.find((d) => d.name === name)?.partnerId, advertiserId)),
-    },
+    /* Advertiser, then the DSP it came in via, then Position (ticket, 21 Sep —
+       previously Position, DSP, Advertiser). Filtered like every other table:
+       a funnel in the filter row. The server applies these two, so they
+       narrow every window, not only the rows here. */
     {
       headerName: 'Advertiser', width: 160, minWidth: 140, pinned: 'left', cellStyle: { color: T.muted },
       valueGetter: (p) => (p.data ? advertisersIn(p.data.position).join(', ') || '—' : ''),
       ...externalSetColumn<Row>('Advertiser', advertiserOptions.map((a) => a.label), advertiserOptions.find((a) => a.value === advertiserId)?.label,
         (name) => setFilter('advertiserId', advertiserOptions.find((a) => a.label === name)?.value)),
     },
+    {
+      headerName: 'DSP', width: 175, minWidth: 150, pinned: 'left', cellStyle: { color: T.muted },
+      valueGetter: (p) => (p.data ? partnersIn(p.data.position).join(', ') || 'Any connected DSP' : ''),
+      ...externalSetColumn<Row>('DSP', dsps.map((d) => d.name), dsps.find((d) => d.partnerId === partnerId)?.name,
+        (name) => setFilter('partnerId', dsps.find((d) => d.name === name)?.partnerId, advertiserId)),
+    },
+    { headerName: 'Position', width: 230, minWidth: 190, pinned: 'left', cellRenderer: PositionCell, autoHeight: true },
     {
       headerName: 'Displays', width: 100, minWidth: 90, pinned: 'left', cellStyle: { color: T.muted }, suppressSizeToFit: true,
       valueGetter: (p) => p.data?.position.displayCount ?? 0,
@@ -280,7 +286,9 @@ export function BookingSchedulePage() {
       {schedule.isError && <Alert className="mb-4" type="error" showIcon message="The booking schedule couldn’t be loaded." />}
       {!data ? <Spin /> : (
         <>
-          <SectionLabel><WithTip tip="Booked windows show the advertiser (bookmark = reserved, gavel = won at auction), the campaign type, the CPM it was booked at and its booked revenue; hover for the DSP, assumed views and billed revenue. Weekly and monthly views count how much of each period is sold — within the layer selected above; a window sold to a different layer shows as Sold, not Available.">Schedule</WithTip></SectionLabel>
+          {/* No "Schedule" section header here (ticket, 21 Sep) — the page's own
+              "Booking schedule" title above already covers it; a second header
+              immediately above the table was redundant. */}
           {data.positions.length === 0 ? (
             <div className="flex items-center gap-2" style={{ fontSize: 12.5, color: T.muted }}>
               <Icon name="view_week" size={18} />

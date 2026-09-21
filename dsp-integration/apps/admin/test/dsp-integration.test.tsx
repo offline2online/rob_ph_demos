@@ -277,9 +277,28 @@ describe('Booking schedule', () => {
     expect(screen.queryByRole('region', { name: 'Save changes' })).not.toBeInTheDocument()
     /* Views, and DSP/advertiser as column filters like every other table (Rob, 20 Sep). */
     expect(screen.getByRole('radio', { name: 'Weekly' })).toBeInTheDocument()
-    expect([...grid.querySelectorAll('.ag-header-cell-text')].slice(0, 3).map((h) => h.textContent)).toEqual(['Position', 'DSP', 'Advertiser'])
+    expect([...grid.querySelectorAll('.ag-header-cell-text')].slice(0, 3).map((h) => h.textContent)).toEqual(['Advertiser', 'DSP', 'Position'])
     expect(within(grid).getByLabelText('DSP filter')).toBeInTheDocument()
     expect(within(grid).getByLabelText('Advertiser filter')).toBeInTheDocument()
+  })
+
+  it('stands alone — no Display Types / DSP Integration nav — and shows the DSP that actually booked it, not every DSP merely eligible to', async () => {
+    const eligibleForMore = {
+      ...schedule,
+      positions: [{
+        /* Eligible to bid: both DSPs. Actually booked: only Google DSP
+           (the fixture's one booking) — the DSP column must reflect the
+           latter, not the former (ticket, 21 Sep). */
+        ...schedule.positions[0], partnerNames: ['Google DSP', 'Amazon Ads DSP'],
+      }],
+    }
+    vi.stubGlobal('fetch', vi.fn(fakeFetch({ '/api/admin/v1/booking-schedule': eligibleForMore })))
+    renderAt('/booking-schedule')
+    expect(await screen.findByRole('heading', { name: /Booking schedule/ })).toBeInTheDocument()
+    expect(screen.queryByRole('navigation', { name: 'Display Types and DSP Integration' })).not.toBeInTheDocument()
+    const grid = await screen.findByLabelText('Booking schedule')
+    expect(within(grid).getByText('Google DSP')).toBeInTheDocument()
+    expect(within(grid).queryByText(/Amazon Ads DSP/)).not.toBeInTheDocument()
   })
 
   it('layers the schedule into Fallback / Localised / Personalised tabs, with a reach count on a localised booking', async () => {
