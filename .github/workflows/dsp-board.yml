@@ -1,0 +1,97 @@
+name: DSP integration — board docs and tickets
+
+# The board is behind Google sign-in, so everything that writes to it needs
+# BOARD_API_KEY — which lives here as a repository secret and deliberately
+# not on anyone's laptop. That left two jobs that could only be done by
+# hand: keeping the board's copy of REQUIREMENTS.md / README.md in step
+# (root CLAUDE.md, "Keep the board's copies in step as you go"), and moving
+# a card when work reached main outside the board's own Deploy to Main.
+#
+# Both are scripts in dsp-integration/scripts/. This runs them where the key
+# already is. The docs sync runs itself whenever either file lands on main;
+# the ticket moves are manual, because moving someone's card is not
+# something a push should do on its own.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'dsp-integration/docs/dsp-integration/REQUIREMENTS.md'
+      - 'dsp-integration/README.md'
+      - '.github/workflows/dsp-board.yml'
+  workflow_dispatch:
+    inputs:
+      docs:
+        description: 'The board copy of REQUIREMENTS.md / README.md'
+        type: choice
+        options: [sync, check, skip]
+        default: sync
+      deploy_branch:
+        description: "Set the project's deployBranch (e.g. deploy/dsp-integration). Blank = leave it."
+        type: string
+        default: ''
+      ticket:
+        description: 'Ticket id to move (blank = move nothing)'
+        type: string
+        default: ''
+      to:
+        description: 'Status for that ticket'
+        type: choice
+        options: ['', backlog, ready-for-testing, ready-to-publish, published-live, archived]
+        default: ''
+      preview:
+        description: 'Test link for that ticket'
+        type: string
+        default: ''
+
+# One at a time: two runs writing the same fields would race, and the later
+# writer would silently win.
+concurrency:
+  group: dsp-board
+  cancel-in-progress: false
+
+jobs:
+  board:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      # Each script signs in as the board automation user, writes, then
+      # reads back and fails if what landed isn't what was sent.
+      - name: Sync the docs
+        if: inputs.docs != 'skip'
+        working-directory: dsp-integration
+        env:
+          BOARD_API_KEY: ${{ secrets.BOARD_API_KEY }}
+        run: node scripts/sync-board-docs.mjs ${{ inputs.docs == 'check' && '--check' || '' }}
+
+      - name: Point the project at its deploy branch
+        if: inputs.deploy_branch != ''
+        working-directory: dsp-integration
+        env:
+          BOARD_API_KEY: ${{ secrets.BOARD_API_KEY }}
+        run: node scripts/board-tickets.mjs --deploy-branch "${{ inputs.deploy_branch }}" --yes
+
+      - name: Move a ticket
+        if: inputs.ticket != ''
+        working-directory: dsp-integration
+        env:
+          BOARD_API_KEY: ${{ secrets.BOARD_API_KEY }}
+        run: |
+          node scripts/board-tickets.mjs \
+            --ticket "${{ inputs.ticket }}" \
+            ${{ inputs.to != '' && format('--to "{0}"', inputs.to) || '' }} \
+            ${{ inputs.preview != '' && format('--preview "{0}"', inputs.preview) || '' }} \
+            --yes
+
+      # Always say where things stand, so the run's log answers "is the
+      # board current?" without anyone opening it.
+      - name: Where the board stands
+        if: always()
+        working-directory: dsp-integration
+        env:
+          BOARD_API_KEY: ${{ secrets.BOARD_API_KEY }}
+        run: node scripts/board-tickets.mjs
