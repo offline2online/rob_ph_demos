@@ -3,7 +3,20 @@
    across its play windows — booked (advertiser, DSP, campaign type, the CPM
    it was booked at, booking revenue), available or unavailable — with the
    booking revenue per display type and per campaign type, filters for one
-   advertiser or one DSP, and daily, weekly or monthly views. Read-only. */
+   advertiser or one DSP, and daily, weekly or monthly views. Read-only.
+
+   Layered within each view (Rob, 22 Sep): a Fallback / Localised /
+   Personalised tab breaks every slot's reach down by campaign layer —
+   REQUIREMENTS §6 "Campaigns and content packages", interface contract
+   "Booking schedule reach counts". Fallback = the slot's own display count
+   across the whole footprint; Localised = the booked campaign's reach
+   (`booking.reach`, from the server's ReachCountSource stand-in), of that
+   footprint; Personalised = a plain indicator, no count — matches can't be
+   predicted ahead of time. A window's single booking belongs to exactly one
+   layer (the reservation/auction engine doesn't split a position's capacity
+   between advertisers yet — REQUIREMENTS open question 50); a window booked
+   by a different layer shows as "Sold — {layer}" rather than Available, so
+   the tab never claims capacity that's actually already spoken for. */
 import { useQuery } from '@tanstack/react-query'
 import { Alert, DatePicker, Segmented, Spin, Tooltip } from 'antd'
 import type { ColDef, ICellRendererParams } from 'ag-grid-community'
@@ -21,12 +34,28 @@ import { T } from '../../theme/phTheme'
 
 type Position = Schedule['positions'][number]
 type Cell = Position['windows'][number]
+type Booking = NonNullable<Cell['booking']>
 type RevenueRow = Schedule['revenue'][number] & { total?: boolean }
 type View = 'Daily' | 'Weekly' | 'Monthly'
 /* One column: a single play window (daily), or the windows in a week or month. */
 interface Group { key: string; label: string; cells: Cell[] }
 interface Row { position: Position; groups: Group[] }
-interface Ctx { current: { money: (n: number) => string; view: View } }
+
+/* Which of the three layers a booking's pricing type belongs to (Rob,
+   22 Sep): baseline is the fallback content, localised and interactive both
+   vary by store rather than by visitor so they share the Localised layer,
+   personalised is its own layer with no predictable count. */
+type Layer = 'Fallback' | 'Localised' | 'Personalised'
+const LAYERS: Layer[] = ['Fallback', 'Localised', 'Personalised']
+const layerOf = (pricingType: Booking['pricingType']): Layer =>
+  pricingType === 'personalised' ? 'Personalised' : pricingType === 'baseline' ? 'Fallback' : 'Localised'
+const LAYER_TIP: Record<Layer, string> = {
+  Fallback: 'The slot’s fallback content: what plays where nothing more specific matches. Booked/available counts only fallback (baseline) bookings — a window sold to another layer shows as Sold, not Available.',
+  Localised: 'Store-level targeting. Shows each booking’s reach: how many of the display type’s displays its targeting matched, of the total across the retail footprint.',
+  Personalised: 'One-to-one for the identified visitor. Indicator only — which windows have an active personalised campaign, with no reach count, since a personalised match can’t be predicted ahead of time.',
+}
+
+interface Ctx { current: { money: (n: number) => string; view: View; layer: Layer } }
 
 const BOOKED = SLOT_OWNERS.advertiser
 const DAY = 86_400_000
@@ -64,17 +93,31 @@ const PositionCell = ({ data }: ICellRendererParams<Row>) =>
 /* Who the row's bookings belong to, over the range on screen. */
 const advertisersIn = (p: Position) => [...new Set(p.windows.flatMap((w) => (w.booking ? [w.booking.advertiserName] : [])))]
 
-function WindowCell({ value, context }: ICellRendererParams<Row, Group, Ctx>) {
+/* Muted, not the same red as Unavailable: the window has real demand, just
+   not this layer's — showing it as plain Available would overstate what a
+   DSP could actually still buy here (Rob, 22 Sep). */
+const SoldElsewhere = ({ layer }: { layer: Layer }) => (
+  <Tooltip title={`Booked, but as ${layer === 'Fallback' ? 'a localised or personalised' : layer === 'Localised' ? 'a fallback or personalised' : 'a fallback or localised'} campaign — not shown as Available here.`}>
+    <span style={{ fontSize: 12, color: T.muted }}>Sold — other layer</span>
+  </Tooltip>
+)
+
+function WindowCell({ value, context, data }: ICellRendererParams<Row, Group, Ctx>) {
   if (!value?.cells.length) return null
-  const { money, view } = context.current
-  const booked = value.cells.filter((c) => c.booking)
-  /* A week or a month: how much of it is sold, and to whom. */
+  const { money, view, layer } = context.current
+  const inLayer = (c: Cell) => !!c.booking && layerOf(c.booking.pricingType) === layer
+  const booked = value.cells.filter(inLayer)
+  const soldElsewhere = value.cells.filter((c) => c.booking && !inLayer(c))
+  /* A week or a month: how much of it is sold, and to whom, within this layer. */
   if (view !== 'Daily') {
-    const names = [...new Set(booked.map((c) => `${c.booking!.advertiserName} (${c.booking!.pricingType})`))]
+    const names = [...new Set(booked.map((c) => c.booking!.advertiserName))]
     const revenue = booked.reduce((n, c) => n + c.booking!.bookedRevenue, 0)
-    const sellable = value.cells.filter((c) => c.status !== 'unavailable').length
+    const sellable = value.cells.filter((c) => c.status !== 'unavailable' && !c.booking).length
+    const tip = booked.length
+      ? `${names.join(', ')} · ${money(revenue)}`
+      : soldElsewhere.length ? `Nothing in this layer; ${soldElsewhere.length} window${soldElsewhere.length === 1 ? '' : 's'} booked as another layer.` : 'Nothing booked in this period.'
     return (
-      <Tooltip title={names.length ? `${names.join(', ')} · ${money(revenue)}` : 'Nothing booked in this period.'}>
+      <Tooltip title={tip}>
         <div className="w-full min-w-0 rounded px-1.5 py-1" style={booked.length ? { background: BOOKED.bg, borderLeft: `3px solid ${BOOKED.colour}` } : undefined}>
           <div style={{ fontSize: 12, fontWeight: booked.length ? 500 : 400, color: booked.length ? BOOKED.colour : T.muted }}>
             {booked.length} of {value.cells.length} booked
@@ -87,10 +130,18 @@ function WindowCell({ value, context }: ICellRendererParams<Row, Group, Ctx>) {
     )
   }
   const cell = value.cells[0]
+  if (cell.booking && !inLayer(cell)) return <SoldElsewhere layer={layer} />
   if (cell.status === 'available') return <span style={{ fontSize: 12, color: T.success }}>Available</span>
   if (cell.status === 'unavailable') return <span style={{ fontSize: 12, color: T.micro }}>—</span>
   const b = cell.booking!
-  const tip = `${b.advertiserName} via ${b.partnerName} · ${b.pricingType} · ${b.type === 'reserve' ? 'Reserved' : 'Won at auction'} at ${b.cpm} CPM · ${b.assumedViews.toLocaleString('en-GB')} assumed views · booked ${money(b.bookedRevenue)}${b.billedRevenue === null ? '' : ` · billed ${money(b.billedRevenue)}`}`
+  /* Personalised carries no `reach` from the server (a match can't be
+     predicted ahead of time) — so on the Personalised layer this card is
+     already an indicator with no count, with no special-casing needed here. */
+  const reach = b.reach && data ? `${b.reach.matchedDisplays} of ${data.position.displayCount} displays matched (as of ${new Date(b.reach.asOf).toLocaleString('en-GB', { timeZone: 'UTC' })}) · ${Math.max(data.position.displayCount - b.reach.matchedDisplays, 0)} open for another campaign` : null
+  const tip = [
+    `${b.advertiserName} via ${b.partnerName} · ${b.pricingType} · ${b.type === 'reserve' ? 'Reserved' : 'Won at auction'} at ${b.cpm} CPM · ${b.assumedViews.toLocaleString('en-GB')} assumed views · booked ${money(b.bookedRevenue)}${b.billedRevenue === null ? '' : ` · billed ${money(b.billedRevenue)}`}`,
+    reach,
+  ].filter(Boolean).join(' · ')
   return (
     <Tooltip title={tip}>
       <div className="w-full min-w-0 rounded px-1.5 py-1" style={{ background: BOOKED.bg, borderLeft: `3px solid ${BOOKED.colour}` }}>
@@ -99,6 +150,9 @@ function WindowCell({ value, context }: ICellRendererParams<Row, Group, Ctx>) {
           <span className="truncate">{b.advertiserName}</span>
         </div>
         <div className="truncate" style={{ fontSize: 11, color: T.muted }}>{b.pricingType} · {b.cpm} CPM · {money(b.bookedRevenue)}</div>
+        {b.reach && data && (
+          <div className="truncate" style={{ fontSize: 10.5, color: T.micro }}>{b.reach.matchedDisplays} of {data.position.displayCount} matched</div>
+        )}
       </div>
     </Tooltip>
   )
@@ -113,6 +167,7 @@ export function BookingSchedulePage() {
   const advertiserId = params.get('advertiserId') ?? undefined
   const partnerId = params.get('partnerId') ?? undefined
   const [view, setView] = useState<View>('Daily')
+  const [layer, setLayer] = useState<Layer>('Fallback')
   const [range, setRange] = useState<[Dayjs, Dayjs] | null>(null)
   const from = (range?.[0] ?? dayjs()).format('YYYY-MM-DD')
   const to = (range?.[1] ?? dayjs().add(SPAN_DAYS[view], 'day')).format('YYYY-MM-DD')
@@ -177,18 +232,22 @@ export function BookingSchedulePage() {
       ...externalSetColumn<Row>('Advertiser', advertiserOptions.map((a) => a.label), advertiserOptions.find((a) => a.value === advertiserId)?.label,
         (name) => setFilter('advertiserId', advertiserOptions.find((a) => a.label === name)?.value)),
     },
+    {
+      headerName: 'Displays', width: 100, minWidth: 90, pinned: 'left', cellStyle: { color: T.muted }, suppressSizeToFit: true,
+      valueGetter: (p) => p.data?.position.displayCount ?? 0,
+    },
     ...groups.map((g, i): ColDef<Row> => ({
       headerName: g.label, colId: g.key, width: view === 'Daily' ? 156 : 170, suppressSizeToFit: true,
       valueGetter: (p) => p.data?.groups[i], cellRenderer: WindowCell, cellStyle: { alignItems: 'center' },
     })),
-  ], [groups, view, dsps, advertiserOptions, partnerId, advertiserId])
+  ], [groups, view, layer, dsps, advertiserOptions, partnerId, advertiserId])
   const revenueColumns = useMemo<ColDef<RevenueRow>[]>(() => [
     { headerName: 'Display type', field: 'displayTypeName', width: 260, cellStyle: (p) => (p.data?.total ? { fontWeight: 600 } : null) },
     { headerName: 'Booked windows', field: 'bookedWindows', width: 150, cellRenderer: NumberCell },
     { headerName: 'Booked revenue', field: 'bookedRevenue', width: 170, cellRenderer: NumberCell },
     { headerName: 'Billed revenue', field: 'billedRevenue', width: 170, cellRenderer: NumberCell },
   ], [])
-  const ctx: Ctx['current'] = { money, view }
+  const ctx: Ctx['current'] = { money, view, layer }
 
   return (
     <div>
@@ -209,10 +268,19 @@ export function BookingSchedulePage() {
         </Tooltip>
       </div>
 
+      {/* Layered within the view above (Rob, 22 Sep): which campaign layer
+          every slot's reach is broken down by. */}
+      <div className="mb-4 flex flex-wrap items-center gap-3">
+        <Tooltip title={LAYER_TIP[layer]}>
+          <Segmented<Layer> value={layer} onChange={setLayer} options={LAYERS} />
+        </Tooltip>
+        <span style={{ fontSize: 12, color: T.muted }}>{LAYER_TIP[layer]}</span>
+      </div>
+
       {schedule.isError && <Alert className="mb-4" type="error" showIcon message="The booking schedule couldn’t be loaded." />}
       {!data ? <Spin /> : (
         <>
-          <SectionLabel><WithTip tip="Booked windows show the advertiser (bookmark = reserved, gavel = won at auction), the campaign type, the CPM it was booked at and its booked revenue; hover for the DSP, assumed views and billed revenue. Weekly and monthly views count how much of each period is sold.">Schedule</WithTip></SectionLabel>
+          <SectionLabel><WithTip tip="Booked windows show the advertiser (bookmark = reserved, gavel = won at auction), the campaign type, the CPM it was booked at and its booked revenue; hover for the DSP, assumed views and billed revenue. Weekly and monthly views count how much of each period is sold — within the layer selected above; a window sold to a different layer shows as Sold, not Available.">Schedule</WithTip></SectionLabel>
           {data.positions.length === 0 ? (
             <div className="flex items-center gap-2" style={{ fontSize: 12.5, color: T.muted }}>
               <Icon name="view_week" size={18} />
@@ -220,7 +288,7 @@ export function BookingSchedulePage() {
             </div>
           ) : (
             <Grid<Row>
-              key={`${view}-${q}`}
+              key={`${view}-${layer}-${q}`}
               label="Booking schedule"
               rows={rows}
               columns={columns}
