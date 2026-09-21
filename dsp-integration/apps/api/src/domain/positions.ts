@@ -165,6 +165,5 @@ export function positionView(ctx: Context, p: PositionRef, c: Caller) {
     supportedTargeting: supportedTargetingOf(p.def),
     assumedViewsPerWindow: ctx.audience.forSlot(dt.id, p.slot).assumedViewsPerWindow,
     pricing: { currency: company.currency, floorCpm: company.floorCpm, effectiveFloorCpm: effectiveFloors(company, multiplier), costPerEngagement: company.interactiveCpe },
-    reservePrice: p.def.reservePrice ?? null,
   }
 }

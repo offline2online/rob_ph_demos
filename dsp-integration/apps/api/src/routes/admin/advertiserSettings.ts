@@ -60,7 +60,6 @@ export const advertiserSettingsRoutes = (ctx: Context, guards: Guards): FastifyP
           assignedTo: { ...a, partnerNames: a.partnerIds.map((id) => partners.find((p) => p.id === id)?.name ?? id) },
           qrControl: hasQrControl(t),
           supportedTargeting: supportedTargetingOf(s),
-          reservePrice: s.reservePrice ?? null,
         })
       })
     }
@@ -74,19 +73,19 @@ export const advertiserSettingsRoutes = (ctx: Context, guards: Guards): FastifyP
     return inventory()
   })
 
-  /* Who a slot is assigned to, what targeting it supports, and its reserve
-     price (Rob, 22 Sep): the fields of a sellable slot that live here.
-     Everything else about it is set on its display type. */
+  /* Who a slot is assigned to, and what targeting it supports (Rob,
+     20 Sep): the two fields of a sellable slot that live here. Everything
+     else about it is set on its display type. */
   app.put<{ Body: { items?: unknown } }>('/available-inventory', async (req) => {
     guards.flagged()
     guards.requireScope(req, 'admin')
-    const rows = Array.isArray(req.body?.items) ? (req.body.items as { displayTypeId?: unknown; slot?: unknown; supportedTargeting?: unknown; assignedTo?: unknown; reservePrice?: unknown }[]) : null
+    const rows = Array.isArray(req.body?.items) ? (req.body.items as { displayTypeId?: unknown; slot?: unknown; supportedTargeting?: unknown; assignedTo?: unknown }[]) : null
     if (!rows) throw validationFailed([{ field: 'items', reason: 'An array of slots is required.' }])
     const keys = TARGETING_MODES.map((m) => m.key) as string[]
     const partners = ctx.partners.list()
     const company = ctx.company.get()
     const errors: { field: string; reason: string }[] = []
-    type Patch = { supportedTargeting: TargetingMode[]; assigned: Assigned; reservePrice: number | null }
+    type Patch = { supportedTargeting: TargetingMode[]; assigned: Assigned }
     const wanted = new Map<string, Map<number, Patch>>()
     const names = (v: unknown) => (Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string').map((x) => x.trim()).filter(Boolean) : [])
 
@@ -112,15 +111,9 @@ export const advertiserSettingsRoutes = (ctx: Context, guards: Guards): FastifyP
       const bad = validateAssigned(assigned, (k) => f(`assignedTo.${k}`), partners, company, def ? assignedOf(def) : { partnerIds: [], advertisers: [], whitelistOnly: false })
       errors.push(...bad)
 
-      let reservePrice: number | null = null
-      if (r.reservePrice !== null && r.reservePrice !== undefined) {
-        if (typeof r.reservePrice !== 'number' || !Number.isFinite(r.reservePrice) || r.reservePrice < 0) errors.push({ field: f('reservePrice'), reason: 'A CPM of 0 or more, or null for no reserve.' })
-        else reservePrice = r.reservePrice
-      }
-
       if (dt && def && targeting && !bad.length) {
         const byType = wanted.get(dt.id) ?? new Map<number, Patch>()
-        byType.set(slot, { supportedTargeting: targeting, assigned, reservePrice })
+        byType.set(slot, { supportedTargeting: targeting, assigned })
         wanted.set(dt.id, byType)
       }
     })
@@ -131,7 +124,7 @@ export const advertiserSettingsRoutes = (ctx: Context, guards: Guards): FastifyP
       const ext = { ...(dt.phExtensions ?? { slots: [] }) }
       ext.slots = (ext.slots ?? []).map((s, i) => {
         const patch = slots.get(i + 1)
-        return patch ? { ...s, supportedTargeting: patch.supportedTargeting, ...assignedToSlot(patch.assigned, partners), reservePrice: patch.reservePrice } : s
+        return patch ? { ...s, supportedTargeting: patch.supportedTargeting, ...assignedToSlot(patch.assigned, partners) } : s
       })
       ctx.displayTypes.saveExtensions(displayTypeId, ext)
     }
