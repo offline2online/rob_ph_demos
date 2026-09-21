@@ -75,6 +75,26 @@ sync.
 Exit codes are the same everywhere: **0** in sync, **1** drifted, **2**
 couldn't run (no key, no file, unreadable input).
 
+### Moving tickets when the work reached main another way
+
+The board's own **Deploy to Main** action merges a project's `deployBranch`
+and moves its cards; the MCP connector deliberately refuses status writes.
+Neither helps when work reached `main` some other way — as this POC did,
+through PR #176 — so the cards sit in Backlog with nothing able to move
+them. That is what this is for:
+
+```bash
+npm run board:tickets                                          # what is where; writes nothing
+npm run board:tickets -- --from backlog --to published-live    # dry run: names what would move
+npm run board:tickets -- --from backlog --to published-live --yes
+npm run board:tickets -- --deploy-branch deploy/dsp-integration --yes
+```
+
+Writes need `--yes`, and every move is read back afterwards. Statuses are
+`backlog`, `ready-for-testing`, `ready-to-publish`, `published-live`,
+`archived`. It needs `BOARD_API_KEY` too — the board is behind sign-in, so
+nothing here can even read it without the key.
+
 ## Layout
 
 | Path | What it is |
@@ -99,6 +119,7 @@ couldn't run (no key, no file, unreadable input).
 | `apps/admin/src/demo/`, `apps/admin/scripts/capture-demo.mjs` | The hosted prototype: a snapshot of the API's read side, and the shim that answers from it and refuses writes. Built into `prototype/` (see above) |
 | `apps/admin/public/demo/` | That snapshot and the creatives it points at, committed so the demo can be rebuilt without a running API |
 | `scripts/sync-board-docs.mjs` | `npm run board:sync` — pushes `REQUIREMENTS.md` and `README.md` to the board's Docs page and verifies them (see above) |
+| `scripts/board-tickets.mjs` | `npm run board:tickets` — reports where this project's tickets are, and moves them between statuses when work reached `main` outside the board's own Deploy to Main (see above) |
 
 ## Running it
 
