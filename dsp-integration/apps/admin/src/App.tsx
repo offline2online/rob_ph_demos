@@ -23,10 +23,8 @@ import { WithTip } from './shared/InfoTip'
 import { UnsavedChangesProvider } from './shared/UnsavedChanges'
 import { T, phTheme } from './theme/phTheme'
 
-/* A page title may carry a tooltip saying what the page covers (spec Help text).
-   hideNav: this route stands alone (opened in its own tab) and shouldn't show
-   the Display Types / DSP Integration nav beside it (ticket, 21 Sep). */
-export interface RouteHandle { title: string; tip?: string; hideNav?: boolean }
+/* A page title may carry a tooltip saying what the page covers (spec Help text). */
+export interface RouteHandle { title: string; tip?: string }
 
 /* Navigation in the prototype's order: Display Types, Playlist Management,
    DSP Integration, Advertisers / Inventory. Items are added by the package
@@ -80,10 +78,8 @@ function featureRoutes(flags: Flags): RouteObject[] {
           handle: { title: 'Advertisers / Inventory', tip: 'Every advertiser using the platform, across all DSPs, and the inventory they can buy: every advertiser-owned slot across the estate.' } satisfies RouteHandle,
           element: <AdvertisersPage />,
         },
-        /* Its own page, opened in a new tab from Available Inventory or an advertiser
-           (Rob, 20 Sep) — just the schedule, so no Display Types / DSP Integration
-           nav beside it (Rob, 21 Sep). */
-        { path: BOOKING_SCHEDULE_PATH.slice(1), handle: { title: 'Booking schedule', hideNav: true } satisfies RouteHandle, element: <BookingSchedulePage /> },
+        /* Its own page, opened in a new tab from Available Inventory or an advertiser (Rob, 20 Sep). */
+        { path: BOOKING_SCHEDULE_PATH.slice(1), handle: { title: 'Booking schedule' } satisfies RouteHandle, element: <BookingSchedulePage /> },
         {
           path: 'campaign-status',
           handle: { title: 'Campaign Status', tip: 'Every campaign advertisers and DSPs have submitted, with its approval status. Open one to see what was booked, or approve and reject from the table. HQ\u2019s own campaigns are not listed here.' } satisfies RouteHandle,
@@ -100,7 +96,7 @@ function Root({ flags }: { flags: Flags }) {
   const title = handle?.tip ? <WithTip tip={handle.tip}>{handle.title}</WithTip> : (handle?.title ?? '')
   return (
     <UnsavedChangesProvider>
-      <AppShell title={title} nav={handle?.hideNav ? [] : navFor(flags, session.data)}>
+      <AppShell title={title} nav={navFor(flags, session.data)}>
         <Outlet />
       </AppShell>
     </UnsavedChangesProvider>

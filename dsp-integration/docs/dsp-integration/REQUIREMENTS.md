@@ -1445,22 +1445,13 @@ playback analytics.**
   booked / available / unavailable, **at the top of its own page**, with
   booking revenue per display type and then what sold by campaign type
   below it (Rob, 21 Sep: the schedule is what the page is for; the money
-  reads as its summary). **Stands alone in its own tab** (Rob, 21 Sep): no
-  Display Types / DSP Integration nav beside it (`RouteHandle.hideNav`),
-  and no second "Schedule" section header repeating the page's own title
-  immediately above the table. Its DSP and advertiser filters are column
+  reads as its summary). Its DSP and advertiser filters are column
   filters, kept in the URL and applied by the server. **The advertiser
   filter lists only advertisers with something booked in the range on
   screen, and choosing one leaves only the positions it holds** (Rob,
   20 Sep) — the filter exists to find a booking, not to prove one is
   missing. An advertiser with nothing booked from the current window on is
   not offered a **Bookings** link on the advertisers table either.
-  **Columns, left to right: Advertiser, DSP, Position, Displays** (Rob,
-  21 Sep — previously Position, DSP, Advertiser). The DSP column reads the
-  actual booking's DSP (`booking.partnerName`), not the position's
-  `partnerNames` (who is merely *eligible* to buy the slot) — the two can
-  differ whenever a slot takes bids from more than one DSP, and only the
-  former is guaranteed to match the advertiser shown beside it.
   *(Advertisers / Inventory → Booking schedule)*
 - **Layered reach breakdown** (decision, Rob, 22 Sep): a Fallback /
   Localised / Personalised tab, alongside the existing Daily / Weekly /
