@@ -226,6 +226,36 @@ service cloud.firestore {
       allow delete: if isEditor();
     }
 
+    // A skill is a packaged piece of shareable instructions (e.g. this
+    // repo's own ph-designer front-end skill) — organisation-wide, NOT
+    // scoped to any one project, unlike backlogItems/projectDocs above.
+    // Any signed-in member can read it (a viewer included: the whole point
+    // is "usable by anyone using the platform"); only an editor may add,
+    // replace or remove one. See functions/mcp-server.js's
+    // list_skills/get_skill/upload_skill/update_skill/delete_skill and
+    // public/js/app.js's Skills page.
+    //
+    // `files` (each `{path, content}`) is only checked here for its own
+    // shape and length — Firestore rules have no forEach/map to re-check
+    // every element's own size without unrolling every possible index, so
+    // the real per-file content cap (SKILL_FILE_MAX) lives in
+    // functions/mcp-server.js's validateSkillFiles, and the console's own
+    // Add/Edit skill modal enforces the same cap client-side. Keep the two
+    // caps in step if either changes.
+    match /skills/{skillId} {
+      allow read: if isBoardReader();
+
+      allow create, update: if isEditor() &&
+        isNonEmptyBoundedString(incoming().name, 120) &&
+        incoming().slug is string && incoming().slug.size() > 0 && incoming().slug.size() <= 60 &&
+        incoming().slug.matches('^[a-z0-9-]+$') &&
+        isNonEmptyBoundedString(incoming().summary, 400) &&
+        isNonEmptyBoundedString(incoming().version, 40) &&
+        incoming().files is list && incoming().files.size() > 0 && incoming().files.size() <= 20;
+
+      allow delete: if isEditor();
+    }
+
     // ── People, and their agents ──────────────────────────────────────────
     // One doc per person on the console, id = their lowercased email:
     //   { email, displayName, role: "admin"|"editor"|"viewer",

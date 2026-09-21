@@ -1354,6 +1354,53 @@ default.
   (same project, two static sites on two different hosts reading the same
   Firestore) — if the Firebase project config ever changes, update both.
 
+## Skills library
+
+An organisation-wide, shared library of packaged instructions ("skills",
+in the sense Claude Code uses the word) any team member's AI agent can pull
+in over MCP — **not** scoped to any one project, unlike `backlogItems` or
+`projectDocs`. Reached from the hamburger menu's **Skills** entry.
+
+- **Data model**: a top-level `skills` Firestore collection, one doc per
+  skill — `{name, slug, summary, version, files: [{path, content}, ...],
+  createdAt, updatedAt, createdByEmail, updatedByEmail, createdVia:
+  "console"|"mcp"}`. `slug` is lowercase `[a-z0-9-]+` and unique, and can't
+  be changed after creation (delete and re-add under a new slug instead).
+  `firestore.rules`' `match /skills/{skillId}` lets any signed-in member
+  read (viewer included — the whole point is "usable by anyone using the
+  platform") and only an editor write; per-file content is capped at
+  100,000 characters (`SKILL_FILE_MAX` in `functions/mcp-server.js`) —
+  rules can only check the `files` list's own shape/length, not iterate
+  every element, so the real per-file cap lives in the MCP tool code and
+  the console's own Add/Edit skill modal.
+- **Console UI**: the Skills page lists every skill as a card (name,
+  summary, version, file count, last updated), each expandable to show
+  every file's path and content read-only. An **Add skill** button and
+  each card's Edit/Delete are gated behind editor access
+  (`[data-editor-only]`, hidden for a viewer the same way
+  `[data-admin-only]` hides Team & agent access from everyone but an
+  admin) — a viewer can still open the page and read every skill.
+- **MCP tools** (`functions/mcp-server.js`): `list_skills` and `get_skill`
+  (scope `board.read` — light summaries and full-file reads respectively)
+  and `upload_skill` / `update_skill` / `delete_skill` (scope
+  `board.write`). `update_skill`/`delete_skill` record the file set they
+  replace to `docRevisions` first, same recoverability as every other
+  documentation write.
+- **Seeded skill**: `scripts/seed-skills-data.js` inserts one starting
+  skill, "Personalisation Hub Front & Design" (slug `ph-designer`) — the
+  design skill this repo's own root `CLAUDE.md` requires for every UI
+  change — from verbatim copies of its real files kept in
+  `scripts/seed-skills-files/`. Insert-only (skips and logs if a skill
+  with that slug already exists), so it's safe to re-run. **This needs a
+  human to run it once after this deploys** — it is not wired into
+  `.github/workflows/deploy-backlog-tracker.yml` the way `seed-faq-data.js`
+  is, since this ticket's job was the feature, not the deploy step:
+  ```bash
+  cd backlog-tracker/scripts
+  npm install   # only if firebase-admin isn't already installed here
+  GOOGLE_APPLICATION_CREDENTIALS=/path/to/a-backlog-tracker-e4ed2-service-account.json node seed-skills-data.js
+  ```
+
 ## What's deliberately not built yet
 
 - ~~No auth.~~ ~~**The whole console is behind Google sign-in** with a

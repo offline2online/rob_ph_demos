@@ -838,6 +838,49 @@ const FAQ_KEYWORDS_MAX = 30;
 const FAQ_REASON_MAX = 2000;
 const FAQ_DOC_TYPES = ["faq", "how-to", "reference", "explanation"];
 
+// ── Skills library write limits ──────────────────────────────────────────
+// An organisation-wide, unscoped-to-any-project library of shareable
+// skills (e.g. this repo's own ph-designer skill) — see firestore.rules'
+// `match /skills/{skillId}` for the mirrored top-level checks. Firestore
+// rules can't practically iterate a variable-length `files` list to
+// re-check every element's own size, so the per-file cap below is the real
+// enforcement; rules only check the list's own shape/length. 100,000
+// characters comfortably covers a real skill's largest reference file
+// (ph-designer's are all under 20 KB) with headroom for a much bigger one.
+const SKILL_NAME_MAX = 120;
+const SKILL_SLUG_MAX = 60;
+const SKILL_SUMMARY_MAX = 400;
+const SKILL_VERSION_MAX = 40;
+const SKILL_FILES_MAX = 20;
+const SKILL_FILE_PATH_MAX = 200;
+const SKILL_FILE_MAX = 100000;
+
+// Shared by upload_skill and update_skill: normalizes and bounds-checks a
+// files array, returning either { files } or { error }. Never throws — every
+// tool that calls this turns a bad `files` argument into a toolError instead
+// of a 500.
+function validateSkillFiles(input) {
+  if (!Array.isArray(input) || !input.length) {
+    return { error: "files must be a non-empty array of {path, content}." };
+  }
+  if (input.length > SKILL_FILES_MAX) {
+    return { error: `files is limited to ${SKILL_FILES_MAX} entries; that was ${input.length}.` };
+  }
+  const files = [];
+  const seenPaths = new Set();
+  for (const raw of input) {
+    const path = String((raw && raw.path) || "").trim();
+    if (!path) return { error: "Every file needs a non-empty path." };
+    if (path.length > SKILL_FILE_PATH_MAX) return { error: `A file path is limited to ${SKILL_FILE_PATH_MAX} characters: ${path}` };
+    if (seenPaths.has(path)) return { error: `Duplicate file path: ${path}` };
+    seenPaths.add(path);
+    const content = String((raw && raw.content) == null ? "" : raw.content);
+    if (content.length > SKILL_FILE_MAX) return { error: `${path} is limited to ${SKILL_FILE_MAX} characters; that was ${content.length}.` };
+    files.push({ path, content });
+  }
+  return { files };
+}
+
 function slugifyFaq(s) {
   return String(s || "").trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
 }
@@ -1590,6 +1633,7 @@ const TOOLS = [
         projectId: { type: "string", description: "Restrict to one project's documentation." },
         docId: { type: "string", description: "Restrict to one project document." },
         interfaceId: { type: "string", description: "Restrict to one interface contract." },
+        skillId: { type: "string", description: "Restrict to one skill." },
         limit: { type: "integer", minimum: 1, maximum: 50, description: "Default 20." },
       },
       additionalProperties: false,
@@ -1599,6 +1643,7 @@ const TOOLS = [
       let q = db().collection("docRevisions");
       if (a.docId) q = q.where("docId", "==", String(a.docId));
       else if (a.interfaceId) q = q.where("interfaceId", "==", String(a.interfaceId));
+      else if (a.skillId) q = q.where("skillId", "==", String(a.skillId));
       else if (a.projectId) q = q.where("projectId", "==", String(a.projectId));
       const snap = await q.limit(MAX_READ_DOCS).get();
       const rows = [];
@@ -1607,6 +1652,7 @@ const TOOLS = [
         rows.push({
           revisionId: d.id, target: v.target || null, name: v.name || null,
           projectId: v.projectId || null, docId: v.docId || null, interfaceId: v.interfaceId || null,
+          skillId: v.skillId || null,
           chars: v.chars || 0, replacedAt: tsToISO(v.replacedAt), replacedByEmail: v.replacedByEmail || null,
         });
       });
@@ -1631,6 +1677,7 @@ const TOOLS = [
       return textResult({
         revisionId: snap.id, target: v.target || null, name: v.name || null,
         projectId: v.projectId || null, docId: v.docId || null, interfaceId: v.interfaceId || null,
+        skillId: v.skillId || null,
         replacedAt: tsToISO(v.replacedAt), replacedByEmail: v.replacedByEmail || null,
         contentMd: v.contentMd || "",
       });
@@ -2010,6 +2057,229 @@ const TOOLS = [
       return textResult({ added: true, articleId: ref.id, author: session.email });
     },
   },
+  // ── Skills library ────────────────────────────────────────────────────
+  // Organisation-wide, unscoped to any one project (unlike backlogItems/
+  // projectDocs) — a shared library of packaged instructions any team
+  // member's agent can pull in over MCP, and the console's own Skills page
+  // (public/js/app.js) renders for a human. Read is any signed-in member,
+  // viewer included, matching firestore.rules' `isBoardReader()` on
+  // `skills`; only an editor may add, replace or remove one.
+  {
+    name: "list_skills",
+    description: "Every skill in the shared organisation-wide skills library — name, slug, summary, version, file count and when it was last updated. Returns light summaries, not file contents; call get_skill for the full files of one.",
+    scope: "board.read",
+    inputSchema: { type: "object", properties: {}, additionalProperties: false },
+    async run() {
+      const snap = await db().collection("skills").limit(MAX_READ_DOCS).get();
+      const rows = [];
+      snap.forEach((doc) => {
+        const d = doc.data() || {};
+        rows.push({
+          id: doc.id,
+          name: d.name || "",
+          slug: d.slug || "",
+          summary: d.summary || "",
+          version: d.version || "",
+          fileCount: Array.isArray(d.files) ? d.files.length : 0,
+          updatedAt: tsToISO(d.updatedAt),
+        });
+      });
+      rows.sort((a, b) => a.name.localeCompare(b.name));
+      return textResult({ matched: rows.length, skills: rows });
+    },
+  },
+  {
+    name: "get_skill",
+    description: "One skill in full, including every file's path and content, by id or slug.",
+    scope: "board.read",
+    inputSchema: {
+      type: "object",
+      properties: {
+        skillId: { type: "string", description: "From list_skills." },
+        slug: { type: "string", description: "The skill's slug, if you don't have the id." },
+      },
+      additionalProperties: false,
+    },
+    async run(args) {
+      if (!args.skillId && !args.slug) return toolError("Pass skillId or slug. Use list_skills to find one.");
+      let snap = null;
+      if (args.skillId) {
+        const s = await db().collection("skills").doc(String(args.skillId)).get();
+        if (s.exists) snap = s;
+      }
+      if (!snap && args.slug) {
+        const q = await db().collection("skills").where("slug", "==", String(args.slug)).limit(1).get();
+        if (!q.empty) snap = q.docs[0];
+      }
+      if (!snap) return toolError("No skill with that id or slug. Use list_skills to find one.");
+      const d = snap.data() || {};
+      return textResult({
+        id: snap.id,
+        name: d.name || "",
+        slug: d.slug || "",
+        summary: d.summary || "",
+        version: d.version || "",
+        files: Array.isArray(d.files) ? d.files : [],
+        createdVia: d.createdVia || null,
+        createdByEmail: d.createdByEmail || null,
+        updatedByEmail: d.updatedByEmail || null,
+        createdAt: tsToISO(d.createdAt),
+        updatedAt: tsToISO(d.updatedAt),
+      });
+    },
+  },
+  {
+    name: "upload_skill",
+    description: "Publish a new skill to the shared organisation-wide skills library, so any team member's agent — and the console's own Skills page — can read it. slug must be unique; use update_skill to change an existing one instead of re-uploading.",
+    scope: "board.write",
+    inputSchema: {
+      type: "object",
+      properties: {
+        name: { type: "string", description: `What it's called, e.g. "Personalisation Hub Front & Design". Up to ${SKILL_NAME_MAX} characters.` },
+        slug: { type: "string", description: `Lowercase letters, numbers and hyphens only, e.g. "ph-designer" — must not already be taken. Up to ${SKILL_SLUG_MAX} characters.` },
+        summary: { type: "string", description: `One-line description shown in lists. Up to ${SKILL_SUMMARY_MAX} characters.` },
+        version: { type: "string", description: `e.g. "1.0.0". Up to ${SKILL_VERSION_MAX} characters.` },
+        files: {
+          type: "array",
+          minItems: 1,
+          maxItems: SKILL_FILES_MAX,
+          items: {
+            type: "object",
+            properties: { path: { type: "string" }, content: { type: "string" } },
+            required: ["path", "content"], additionalProperties: false,
+          },
+          description: `The skill's files, e.g. [{path:"SKILL.md",content:"..."}, {path:"references/tokens.md",content:"..."}]. Up to ${SKILL_FILES_MAX} files, each up to ${SKILL_FILE_MAX} characters.`,
+        },
+      },
+      required: ["name", "slug", "summary", "version", "files"], additionalProperties: false,
+    },
+    async run(args, session) {
+      const name = String(args.name || "").trim();
+      if (!name) return toolError("name is required.");
+      if (name.length > SKILL_NAME_MAX) return toolError(`name is limited to ${SKILL_NAME_MAX} characters.`);
+      const slug = String(args.slug || "").trim().toLowerCase();
+      if (!slug) return toolError("slug is required.");
+      if (!/^[a-z0-9-]+$/.test(slug)) return toolError("slug must contain only lowercase letters, numbers and hyphens.");
+      if (slug.length > SKILL_SLUG_MAX) return toolError(`slug is limited to ${SKILL_SLUG_MAX} characters.`);
+      const summary = String(args.summary || "").trim();
+      if (!summary) return toolError("summary is required.");
+      if (summary.length > SKILL_SUMMARY_MAX) return toolError(`summary is limited to ${SKILL_SUMMARY_MAX} characters.`);
+      const version = String(args.version || "").trim();
+      if (!version) return toolError("version is required.");
+      if (version.length > SKILL_VERSION_MAX) return toolError(`version is limited to ${SKILL_VERSION_MAX} characters.`);
+      const filesResult = validateSkillFiles(args.files);
+      if (filesResult.error) return toolError(filesResult.error);
+      const existing = await db().collection("skills").where("slug", "==", slug).limit(1).get();
+      if (!existing.empty) return toolError(`A skill with slug "${slug}" already exists (id ${existing.docs[0].id}). Use update_skill to change it, or pick a different slug.`);
+      const ref = await db().collection("skills").add({
+        name, slug, summary, version, files: filesResult.files,
+        createdVia: "mcp",
+        createdByEmail: session.email,
+        updatedByEmail: session.email,
+        createdAt: FieldValue.serverTimestamp(),
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+      await audit(session, "upload_skill", { skillId: ref.id, slug, name, fileCount: filesResult.files.length });
+      return textResult({ created: true, skillId: ref.id, slug, name, version, fileCount: filesResult.files.length });
+    },
+  },
+  {
+    name: "update_skill",
+    description: "Rename a skill, change its summary/version, and/or replace its files entirely. slug cannot be changed here — delete_skill and upload_skill under a new slug instead. Replacing files overwrites the whole file set (not a merge); the previous file set is kept in the revision history.",
+    scope: "board.write",
+    inputSchema: {
+      type: "object",
+      properties: {
+        skillId: { type: "string", description: "From list_skills or get_skill." },
+        name: { type: "string", description: `Up to ${SKILL_NAME_MAX} characters.` },
+        summary: { type: "string", description: `Up to ${SKILL_SUMMARY_MAX} characters.` },
+        version: { type: "string", description: `Up to ${SKILL_VERSION_MAX} characters.` },
+        files: {
+          type: "array",
+          maxItems: SKILL_FILES_MAX,
+          items: {
+            type: "object",
+            properties: { path: { type: "string" }, content: { type: "string" } },
+            required: ["path", "content"], additionalProperties: false,
+          },
+          description: `Replaces the WHOLE file set. Up to ${SKILL_FILES_MAX} files, each up to ${SKILL_FILE_MAX} characters.`,
+        },
+      },
+      required: ["skillId"], additionalProperties: false,
+    },
+    async run(args, session) {
+      const ref = db().collection("skills").doc(String(args.skillId));
+      const snap = await ref.get();
+      if (!snap.exists) return toolError(`No skill with id ${args.skillId}. Use list_skills to find one.`);
+      const current = snap.data() || {};
+      const fields = { updatedAt: FieldValue.serverTimestamp(), updatedByEmail: session.email };
+      let revisionId = null;
+      if (args.name != null) {
+        const name = String(args.name).trim();
+        if (!name) return toolError("name cannot be emptied.");
+        if (name.length > SKILL_NAME_MAX) return toolError(`name is limited to ${SKILL_NAME_MAX} characters.`);
+        fields.name = name;
+      }
+      if (args.summary != null) {
+        const summary = String(args.summary).trim();
+        if (!summary) return toolError("summary cannot be emptied.");
+        if (summary.length > SKILL_SUMMARY_MAX) return toolError(`summary is limited to ${SKILL_SUMMARY_MAX} characters.`);
+        fields.summary = summary;
+      }
+      if (args.version != null) {
+        const version = String(args.version).trim();
+        if (!version) return toolError("version cannot be emptied.");
+        if (version.length > SKILL_VERSION_MAX) return toolError(`version is limited to ${SKILL_VERSION_MAX} characters.`);
+        fields.version = version;
+      }
+      if (args.files != null) {
+        const filesResult = validateSkillFiles(args.files);
+        if (filesResult.error) return toolError(filesResult.error);
+        revisionId = await recordDocRevision(
+          session, "skill",
+          { skillId: snap.id, slug: current.slug || null, name: current.name || "" },
+          JSON.stringify(Array.isArray(current.files) ? current.files : []),
+        );
+        fields.files = filesResult.files;
+      }
+      const changedKeys = Object.keys(fields).filter((k) => k !== "updatedAt" && k !== "updatedByEmail");
+      if (!changedKeys.length) return toolError("Nothing to change — pass at least one of name, summary, version, files.");
+      await ref.update(fields);
+      await audit(session, "update_skill", { skillId: snap.id, slug: current.slug || null, changed: changedKeys, revisionId });
+      return textResult({ updated: true, skillId: snap.id, changed: changedKeys, revisionId });
+    },
+  },
+  {
+    name: "delete_skill",
+    description: "Remove a skill from the shared library. Its full contents (name, summary, version, files) are written to the revision history first, so this is recoverable with list_doc_revisions / get_doc_revision, then upload_skill to restore it under the same slug.",
+    scope: "board.write",
+    destructive: true,
+    inputSchema: {
+      type: "object",
+      properties: { skillId: { type: "string" } },
+      required: ["skillId"], additionalProperties: false,
+    },
+    async run(args, session) {
+      const ref = db().collection("skills").doc(String(args.skillId));
+      const snap = await ref.get();
+      if (!snap.exists) return toolError(`No skill with id ${args.skillId}.`);
+      const current = snap.data() || {};
+      const revisionId = await recordDocRevision(
+        session, "skill.deleted",
+        { skillId: snap.id, slug: current.slug || null, name: current.name || "" },
+        JSON.stringify({
+          name: current.name || "", slug: current.slug || "", summary: current.summary || "",
+          version: current.version || "", files: Array.isArray(current.files) ? current.files : [],
+        }),
+      );
+      await ref.delete();
+      await audit(session, "delete_skill", { skillId: snap.id, slug: current.slug || null, name: current.name || "", revisionId });
+      return textResult({
+        deleted: true, skillId: snap.id, name: current.name || "", revisionId,
+        note: revisionId ? "Contents saved to the revision history — get_doc_revision can bring them back, then upload_skill to restore it." : "Nothing to recover.",
+      });
+    },
+  },
 ];
 
 const TOOLS_BY_NAME = new Map(TOOLS.map((t) => [t.name, t]));
@@ -2033,6 +2303,7 @@ const SERVER_INSTRUCTIONS = [
   "Where a project's documentation also exists as a file in the repo (REQUIREMENTS.md, README.md, shared/interface-contract.md), the two are meant to match: update both, and treat a divergence as a bug in whichever is stale.",
   "Use search_faq / get_faq_article to answer Personalisation Hub product questions from the published help centre instead of guessing.",
   "You can also write to the help centre: create_faq_article files a brand-new draft, and update_faq_article proposes a change to an existing one as a pendingRevision — never live. Either way a person still reviews and approves it in FAQ Management before anything publishes; list_pending_faq_revisions and get_faq_revision let you check on a proposal's status.",
+  "There is also a shared, organisation-wide skills library — NOT scoped to any one project. list_skills / get_skill read it (any signed-in member, including a viewer); upload_skill / update_skill / delete_skill write to it (editor role). Use this to publish or fetch a reusable piece of packaged instructions any team member's agent can pull in, e.g. this console's own ph-designer front-end skill.",
   "Deployment is out of scope on purpose: nothing here moves a ticket through testing, merges a train, or triggers a campaign. Those stay on the board's own buttons and its triggered Routine.",
 ].join(" ");
 
