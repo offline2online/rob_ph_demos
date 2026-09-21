@@ -76,6 +76,24 @@ describe('GET /admin/v1/booking-schedule', () => {
     expect(amazon.json().totals).toEqual({ bookedWindows: 0, bookedRevenue: 0, billedRevenue: 0 })
   })
 
+  /* The filter is there to find a booking, so it only offers advertisers
+     that have one, and shows only the positions they hold (Rob, 20 Sep). */
+  it('offers only advertisers with something booked in the range, and their positions alone', async () => {
+    const { ctx, get } = await setup()
+    ctx.reservations.insert(booking({}))
+    const all = await get('?from=2026-09-15&to=2026-09-23')
+    expect(all.json().dsps.find((d: { partnerId: string }) => d.partnerId === 'p_google').advertisers.map((a: { advertiserId: string }) => a.advertiserId))
+      .toEqual(['nestle', 'swisse'])
+    /* Arnott's is a seat on The Trade Desk but has never booked. */
+    expect(all.json().dsps.flatMap((d: { advertisers: { name: string }[] }) => d.advertisers.map((a) => a.name))).not.toContain('Arnott’s')
+    /* A range with no bookings offers nobody. */
+    const empty = await get('?from=2026-10-01&to=2026-10-05')
+    expect(empty.json().dsps.every((d: { advertisers: unknown[] }) => d.advertisers.length === 0)).toBe(true)
+
+    const swisse = await get('?advertiserId=swisse&from=2026-09-15&to=2026-09-23')
+    expect(swisse.json().positions.map((p: { positionId: string }) => p.positionId)).toEqual(['menu_board.s2'])
+  })
+
   it('needs a valid range of at most 92 days, and is behind the flag', async () => {
     const { get } = await setup()
     for (const q of ['?from=2026-09-20', '?from=2026-09-20&to=2026-12-31', '?from=2026-09-22&to=2026-09-21']) {

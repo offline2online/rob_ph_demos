@@ -27,6 +27,17 @@ export function bookingSchedule(ctx: Context, starts: Date[], f: ScheduleFilter 
   const revenue = new Map<string, BookingSchedule['revenue'][number]>()
   const byType = new Map<string, BookingSchedule['byPricingType'][number]>()
 
+  /* Only advertisers with something booked in this range are worth filtering
+     by (Rob, 20 Sep), so the picker is built before any filter is applied. */
+  const booked = new Set<string>()
+  for (const p of allPositions(ctx)) {
+    for (const start of starts) {
+      for (const r of ctx.reservations.forWindow(p.positionId, start.toISOString())) {
+        if (!r.testMode && TAKEN.includes(r.status) && r.clearingCpm !== null && r.advertiserId) booked.add(r.advertiserId)
+      }
+    }
+  }
+
   const positions = allPositions(ctx).map((p) => {
     const hasDisplays = ctx.displays.listByDisplayType(p.displayType.id).length > 0
     const views = ctx.audience.forSlot(p.displayType.id, p.slot).assumedViewsPerWindow
@@ -63,14 +74,19 @@ export function bookingSchedule(ctx: Context, starts: Date[], f: ScheduleFilter 
       partnerNames: assignedOf(p.def).partnerIds.map((id) => partners.find((x) => x.id === id)?.name ?? id), assignment: assignmentOf(p.def), windows,
     }
   })
+  /* One advertiser selected: only the positions it actually holds (Rob, 20 Sep). */
+  const shown = f.advertiserId ? positions.filter((p) => p.windows.some((w) => w.booking?.advertiserId === f.advertiserId)) : positions
   const rows = [...revenue.values()]
   return {
     currency: ctx.company.get().currency,
     windows: starts.map((s) => ({ start: s.toISOString(), end: new Date(s.getTime() + len).toISOString() })),
-    positions,
+    positions: shown,
     revenue: rows,
     /* What the filters offer: each DSP and the advertisers it brings (Rob, 20 Sep). */
-    dsps: partners.map((p) => ({ partnerId: p.id, name: p.name, advertisers: p.seats.map((s) => ({ advertiserId: advertiserSlug(s.name), name: s.name })) })),
+    dsps: partners.map((p) => ({
+      partnerId: p.id, name: p.name,
+      advertisers: p.seats.map((s) => ({ advertiserId: advertiserSlug(s.name), name: s.name })).filter((a) => booked.has(a.advertiserId)),
+    })),
     byPricingType: [...byType.values()],
     totals: {
       bookedWindows: rows.reduce((n, r) => n + r.bookedWindows, 0),

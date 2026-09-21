@@ -15,9 +15,14 @@ export const cleanList = (xs: unknown) => {
 export function validateAdvertiserSettings(b: Partial<AdvertiserSettingsInput> | undefined): Detail[] {
   const out: Detail[] = []
   if (typeof b?.currency !== 'string' || !CURRENCIES.has(b.currency)) out.push({ field: 'currency', reason: 'Choose an ISO 4217 currency.' })
-  for (const [k, label] of [['floorCpm', 'Floor price (CPM)'], ['personalisedMultiplier', 'Personalised multiplier'], ['interactiveMultiplier', 'Interactive multiplier']] as const) {
+  for (const [k, label] of [['floorCpm', 'Floor price (CPM)'], ['personalisedMultiplier', 'Personalised multiplier']] as const) {
     const v = b?.[k]
     if (typeof v !== 'number' || !Number.isFinite(v) || v <= 0) out.push({ field: k, reason: `${label} must be greater than 0.` })
+  }
+  /* A fee per engagement, to the cent; 0 means engagements aren't charged for. */
+  const cpe = b?.interactiveCpe
+  if (typeof cpe !== 'number' || !Number.isFinite(cpe) || cpe < 0 || Math.round(cpe * 100) !== cpe * 100) {
+    out.push({ field: 'interactiveCpe', reason: 'Interactive cost per engagement is 0 or more, to the cent.' })
   }
   if (!Number.isInteger(b?.auctionOpensHours) || (b?.auctionOpensHours as number) < 1) out.push({ field: 'auctionOpensHours', reason: 'Auction opens must be at least 1 hour before the cutoff.' })
   if (!Number.isInteger(b?.playWindowHours) || (b?.playWindowHours as number) < 1 || (b?.playWindowHours as number) > 8760) out.push({ field: 'playWindowHours', reason: 'The play window is between 1 hour and 365 days.' })

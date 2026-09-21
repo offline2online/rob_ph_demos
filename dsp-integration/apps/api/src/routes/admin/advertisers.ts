@@ -7,6 +7,8 @@ import type { Context } from '../../context'
 import type { Guards } from '../../http/app'
 import { validationFailed } from '../../http/errors'
 import { effectiveFloorCpm } from '../../domain/pricing'
+import { nextWindow, windowMs } from '../../domain/positions'
+import { TAKEN } from '../../repos/ReservationRepo'
 
 export async function listAdvertisers(ctx: Context): Promise<Advertiser[]> {
   const company = ctx.company.get()
@@ -17,6 +19,15 @@ export async function listAdvertisers(ctx: Context): Promise<Advertiser[]> {
     const counts = byAdvertiser.get(c.advertiserId) ?? { draft: 0, awaiting_approval: 0, approved: 0, rejected: 0 }
     counts[await ctx.approvals.statusOf(c.campaignId)]++
     byAdvertiser.set(c.advertiserId, counts)
+  }
+  /* Live bookings from the current window on: an advertiser with none has
+     nothing to show on the booking schedule (Rob, 20 Sep). */
+  const bookings = new Map<string, number>()
+  const from = nextWindow(ctx).getTime() - windowMs(ctx)
+  for (const r of ctx.reservations.byStatus([...TAKEN], new Date(0).toISOString())) {
+    if (r.testMode || r.clearingCpm === null || !r.advertiserId) continue
+    if (Date.parse(r.windowStart) < from) continue
+    bookings.set(r.advertiserId, (bookings.get(r.advertiserId) ?? 0) + 1)
   }
   const byId = new Map<string, { name: string; via: string[] }>()
   for (const p of ctx.partners.list()) {
@@ -33,6 +44,7 @@ export async function listAdvertisers(ctx: Context): Promise<Advertiser[]> {
       const s = ctx.company.advertiserSetting(advertiserId)
       return {
         advertiserId, name: a.name, via: a.via, ...s, effectiveFloorCpm: effectiveFloorCpm(company, s.floorMultiplier),
+        bookings: bookings.get(advertiserId) ?? 0,
         campaigns: byAdvertiser.get(advertiserId) ?? { draft: 0, awaiting_approval: 0, approved: 0, rejected: 0 },
       }
     })

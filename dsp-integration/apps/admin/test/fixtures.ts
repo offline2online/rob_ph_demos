@@ -4,7 +4,7 @@ export const partners = { items: [
   { id: 'p_amazon', provider: 'amazon_dsp', name: 'Amazon Ads DSP', status: 'error', lastSync: 'Refresh token rejected — 3 days ago', mode: 'test', credentials: { region: 'Europe (EU)' }, bidder: {}, issues: [{ kind: 'connection_error', message: 'Refresh token rejected — 3 days ago' }], seats: [{ id: 'a1', name: "L'Oréal" }], listsLinked: false, advertiserWhitelist: ["L'Oréal"], advertiserBlacklist: ['Red Bull', 'Chemist Warehouse'] },
 ] }
 export const advertiserSettings = {
-  currency: 'AUD', floorCpm: 100, personalisedMultiplier: 1.5, interactiveMultiplier: 3,
+  currency: 'AUD', floorCpm: 100, personalisedMultiplier: 1.5, interactiveCpe: 0.5,
   auctionOpensHours: 168, playWindowHours: 24, auctionCutoffTime: '18:00',
   advertiserWhitelist: ['Nestlé', 'Swisse', 'Arnott’s'], advertiserBlacklist: ['Red Bull', 'Monster Energy'], categoryWhitelist: ['Food & Drink', 'Health & Fitness'], categoryBlacklist: ['Finance'],
   whereTheseApply: [{ partnerId: 'p_google', name: 'Google DSP', adopting: true }, { partnerId: 'p_amazon', name: 'Amazon Ads DSP', adopting: false }],

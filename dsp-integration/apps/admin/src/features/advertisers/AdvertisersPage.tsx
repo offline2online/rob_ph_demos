@@ -19,6 +19,7 @@ import { StatusPill } from '../../shared/Pill'
 import { SaveBar } from '../../shared/SaveBar'
 import { searchColumn, setColumn, showingCount } from '../../shared/TableFilters'
 import { useReportDirty } from '../../shared/UnsavedChanges'
+import { deepEqual } from '../../shared/deepEqual'
 import { useDraft } from '../../shared/useDraft'
 import { T } from '../../theme/phTheme'
 import { BOOKING_SCHEDULE_PATH } from '../booking-schedule/path'
@@ -85,8 +86,9 @@ function CampaignsCell({ data, context }: P) {
     </Tooltip>
   )
 }
+/* Only offered when there is something to look at (Rob, 20 Sep). */
 const BookingsCell = ({ data, context }: P) =>
-  data ? <Button color="primary" variant="text" size="small" className="px-0" icon={<Icon name="calendar_month" size={15} />} onClick={() => context.current.openBookings(data.advertiserId)}>Bookings</Button> : null
+  data?.bookings ? <Button color="primary" variant="text" size="small" className="px-0" icon={<Icon name="calendar_month" size={15} />} onClick={() => context.current.openBookings(data.advertiserId)}>Bookings</Button> : null
 
 /* The inventory advertisers can buy: every Advertiser-owned slot on a
    display type (spec §5 "Available Inventory"). No advertisers column. */
@@ -102,8 +104,20 @@ type InvCtx = { current: {
   set: (key: string, patch: Partial<SlotEdit>) => void
 } }
 type IP = ICellRendererParams<AvailableInventoryRow, unknown, InvCtx>
+/* QR Control is flagged here because it is what makes interactive targeting
+   possible on this display type (Rob, 20 Sep). */
 const TypeCell = ({ data }: ICellRendererParams<AvailableInventoryRow>) =>
-  data ? <span className="inline-flex min-w-0 items-center gap-[5px]"><Icon name={touchPointIcon(data.touchPoint ?? '')} size={14} style={{ color: T.muted }} /><span className="truncate">{data.displayTypeName}</span></span> : null
+  data ? (
+    <span className="inline-flex min-w-0 items-center gap-[5px]">
+      <Icon name={touchPointIcon(data.touchPoint ?? '')} size={14} style={{ color: T.muted }} />
+      <span className="truncate">{data.displayTypeName}</span>
+      {data.qrControl && (
+        <Tooltip title="QR Control is enabled on this display type, so its slots can support interactive campaigns.">
+          <span className="inline-flex" aria-label="QR Control enabled"><Icon name="qr_code_2" size={15} style={{ color: T.primary }} /></span>
+        </Tooltip>
+      )}
+    </span>
+  ) : null
 const SlotCell = ({ data }: ICellRendererParams<AvailableInventoryRow>) =>
   data ? <div className="min-w-0 truncate">{data.position}</div> : null
 /* Opens the display type with Playlist Settings — where slot assignment
@@ -113,10 +127,11 @@ const OpenCell = ({ data, context }: IP) =>
 
 /* Both editable columns are the same control (Rob, 20 Sep): a multi-select
    that drops a pill per choice into the cell, read-only text for marketing. */
+interface PillOption { value: string; label: string; disabled?: boolean; note?: string }
 function Pills({ label, value, options, canEdit, placeholder, onChange }: {
   label: string
   value: string[]
-  options: { label: string; options: { value: string; label: string }[] }[]
+  options: { label: string; options: PillOption[] }[]
   canEdit: boolean
   placeholder?: string
   onChange: (next: string[]) => void
@@ -130,6 +145,13 @@ function Pills({ label, value, options, canEdit, placeholder, onChange }: {
     <Select<string[]>
       mode="multiple" size="small" className="w-full" allowClear={false} showSearch optionFilterProp="label"
       aria-label={label} placeholder={placeholder} value={value} onChange={onChange} options={options}
+      /* An option that can't be chosen says why, in place (Rob, 20 Sep). */
+      optionRender={({ data }) => (
+        <div>
+          <div>{(data as PillOption).label}</div>
+          {(data as PillOption).note && <div style={{ fontSize: 11, color: T.micro, whiteSpace: 'normal' }}>{(data as PillOption).note}</div>}
+        </div>
+      )}
     />
   )
 }
@@ -185,7 +207,13 @@ function TargetingCell({ data, context }: IP) {
       label={`${data.displayTypeName} slot ${data.slot}: targeting supported`}
       canEdit={c.canEdit}
       value={value}
-      options={[{ label: 'Targeting', options: TARGETING_MODES.map((m) => ({ value: m.key, label: m.label })) }]}
+      options={[{
+        label: 'Targeting',
+        /* Interactive needs a QR code for the visitor to scan. */
+        options: TARGETING_MODES.map((m) => (m.key === 'interactive' && !data.qrControl
+          ? { value: m.key, label: m.label, disabled: true, note: 'QR Control required to support an interactive engagement' }
+          : { value: m.key, label: m.label })),
+      }]}
       /* A slot always supports something: the last one can't be removed. */
       onChange={(next) => next.length && c.set(slotKey(data), { supportedTargeting: TARGETING_MODES.filter((m) => next.includes(m.key)).map((m) => m.key) })}
     />
@@ -269,9 +297,12 @@ export function AdvertisersPage() {
     setSaving(true)
     try {
       if (dirty) await api('PUT', '/admin/v1/advertisers', { settings: draft })
-      /* The inventory's own field, saved by the same Save changes. */
+      /* The inventory's own fields, saved by the same Save changes — only
+         the slots that changed, so an untouched one is never revalidated. */
       if (inv.dirty && inv.draft) {
-        const items = Object.entries(inv.draft).map(([key, edit]) => ({ displayTypeId: key.slice(0, key.lastIndexOf(':')), slot: Number(key.slice(key.lastIndexOf(':') + 1)), ...edit }))
+        const items = Object.entries(inv.draft)
+          .filter(([key, edit]) => !deepEqual(edit, savedEdits?.[key]))
+          .map(([key, edit]) => ({ displayTypeId: key.slice(0, key.lastIndexOf(':')), slot: Number(key.slice(key.lastIndexOf(':') + 1)), ...edit }))
         await api('PUT', '/admin/v1/available-inventory', { items })
         inv.commitNext()
         await qc.invalidateQueries({ queryKey: ['available-inventory'] })

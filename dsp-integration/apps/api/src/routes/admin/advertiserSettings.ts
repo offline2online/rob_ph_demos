@@ -1,12 +1,15 @@
 /* Advertiser settings (spec §4, §5, §6): pricing and the company lists, plus
    the read-only Where these apply and Available Inventory. */
-import { TARGETING_MODES, advertiserSlug, assignedOf, supportedTargetingOf, type AdvertiserSettings, type AdvertiserSettingsInput, type Assigned, type AvailableInventoryRow, type DspAdvertisers, type TargetingMode } from '@ph-dsp/types'
+import { TARGETING_MODES, advertiserSlug, assignedOf, supportedTargetingOf, type AdvertiserSettings, type AdvertiserSettingsInput, type Assigned, type AvailableInventoryRow, type DisplayType, type DspAdvertisers, type TargetingMode } from '@ph-dsp/types'
 import type { FastifyPluginAsync } from 'fastify'
 import type { Context } from '../../context'
 import { cleanList, validateAdvertiserSettings } from '../../domain/advertiserSettings'
 import { assignedToSlot, validateAssigned } from '../../domain/slots'
 import type { Guards } from '../../http/app'
 import { validationFailed } from '../../http/errors'
+
+/* Interactive targeting needs the visitor to have something to scan. */
+const hasQrControl = (dt: DisplayType) => !!(dt.qrControl as { enabled?: boolean } | undefined)?.enabled
 
 export const advertiserSettingsRoutes = (ctx: Context, guards: Guards): FastifyPluginAsync => async (app) => {
   const view = (): AdvertiserSettings => ({
@@ -32,7 +35,7 @@ export const advertiserSettingsRoutes = (ctx: Context, guards: Guards): FastifyP
       throw validationFailed([{ field: 'playWindowHours', reason: 'Future play windows are already bid on or booked; the length can change once they have played.' }])
     }
     ctx.company.save({
-      currency: b.currency, floorCpm: b.floorCpm, personalisedMultiplier: b.personalisedMultiplier, interactiveMultiplier: b.interactiveMultiplier,
+      currency: b.currency, floorCpm: b.floorCpm, personalisedMultiplier: b.personalisedMultiplier, interactiveCpe: b.interactiveCpe,
       auctionOpensHours: b.auctionOpensHours, playWindowHours: b.playWindowHours, auctionCutoffTime: b.auctionCutoffTime,
       advertiserWhitelist: cleanList(b.advertiserWhitelist), advertiserBlacklist: cleanList(b.advertiserBlacklist),
       categoryWhitelist: cleanList(b.categoryWhitelist), categoryBlacklist: cleanList(b.categoryBlacklist),
@@ -55,6 +58,7 @@ export const advertiserSettingsRoutes = (ctx: Context, guards: Guards): FastifyP
         items.push({
           displayTypeId: t.id, displayTypeName: t.name, touchPoint: t.touchPoint, playlistName, slot: i + 1, position: s.label,
           assignedTo: { ...a, partnerNames: a.partnerIds.map((id) => partners.find((p) => p.id === id)?.name ?? id) },
+          qrControl: hasQrControl(t),
           supportedTargeting: supportedTargetingOf(s),
         })
       })
@@ -98,6 +102,8 @@ export const advertiserSettingsRoutes = (ctx: Context, guards: Guards): FastifyP
       let targeting: TargetingMode[] | null = null
       if (!modes?.length) errors.push({ field: f('supportedTargeting'), reason: 'Choose at least one type of targeting.' })
       else if (modes.some((m) => typeof m !== 'string' || !keys.includes(m))) errors.push({ field: f('supportedTargeting'), reason: `One of: ${keys.join(', ')}.` })
+      /* Nothing to engage with without the QR code (Rob, 20 Sep). */
+      else if (modes.includes('interactive') && dt && !hasQrControl(dt)) errors.push({ field: f('supportedTargeting'), reason: 'QR Control is required to support an interactive engagement.' })
       else targeting = keys.filter((k) => modes.includes(k)) as TargetingMode[]
 
       const raw = (r.assignedTo ?? {}) as { partnerIds?: unknown; advertisers?: unknown; whitelistOnly?: unknown }

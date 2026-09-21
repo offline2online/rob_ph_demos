@@ -31,16 +31,18 @@ describe('GET /v1/inventory', () => {
         storeCount: 3, displayCount: 3,
         screen: { width: 5760, height: 1080, orientation: 'landscape', slotDurationSec: 15, loopLengthSec: 45, shareOfVoice: 0.333, openOohVenueType: 'retail.grocery' },
         assignment: 'rtb', supportedTargeting: ['localised'], assumedViewsPerWindow: 1236,
-        pricing: { currency: 'AUD', floorCpm: 100, effectiveFloorCpm: { localised: 100, personalised: 150, interactive: 300, personalisedInteractive: 450 } },
+        pricing: { currency: 'AUD', floorCpm: 100, effectiveFloorCpm: { localised: 100, personalised: 150 }, costPerEngagement: 0.5 },
       }],
       nextCursor: null,
     })
   })
 
-  it('prices for the requesting advertiser (floor multiplier)', async () => {
+  it('prices for the requesting advertiser (floor multiplier), and the engagement fee it doesn’t scale', async () => {
     const { get } = await setup()
     const item = (await get('/inventory?advertiserId=nestle')).json().items[0]
-    expect(item.pricing.effectiveFloorCpm).toEqual({ localised: 80, personalised: 120, interactive: 240, personalisedInteractive: 360 })
+    expect(item.pricing.effectiveFloorCpm).toEqual({ localised: 80, personalised: 120 })
+    /* Interactive is charged per engagement, the same for every advertiser (Rob, 20 Sep). */
+    expect(item.pricing.costPerEngagement).toBe(0.5)
   })
 
   it('shows a DSP that is not connected nothing, rather than an error', async () => {

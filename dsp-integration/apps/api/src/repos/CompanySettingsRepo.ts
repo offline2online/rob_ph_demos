@@ -7,7 +7,8 @@ export interface CompanySettings {
   currency: string
   floorCpm: number
   personalisedMultiplier: number
-  interactiveMultiplier: number
+  /* Charged per engagement (a QR Control scan) on an interactive campaign, on top of the CPM. */
+  interactiveCpe: number
   /* Auction schedule: bidding opens this long before the cutoff; window length; daily cutoff (HH:MM, UTC). */
   auctionOpensHours: number
   playWindowHours: number
@@ -34,7 +35,7 @@ export interface CompanySettingsRepo {
 
 const ID = 'company'
 interface Row {
-  currency: string; floor_cpm: number; personalised_multiplier: number; interactive_multiplier: number
+  currency: string; floor_cpm: number; personalised_multiplier: number; interactive_cpe: number
   auction_opens_hours: number; play_window_hours: number; auction_cutoff_time: string
   advertiser_whitelist: string; advertiser_blacklist: string; category_whitelist: string; category_blacklist: string
 }
@@ -46,7 +47,7 @@ export function sqliteCompanySettingsRepo(db: Db): CompanySettingsRepo {
     ensure()
     const r = db.prepare('SELECT * FROM company_advertiser_settings WHERE id = ?').get(ID) as unknown as Row
     return {
-      currency: r.currency, floorCpm: r.floor_cpm, personalisedMultiplier: r.personalised_multiplier, interactiveMultiplier: r.interactive_multiplier,
+      currency: r.currency, floorCpm: r.floor_cpm, personalisedMultiplier: r.personalised_multiplier, interactiveCpe: r.interactive_cpe,
       auctionOpensHours: r.auction_opens_hours, playWindowHours: r.play_window_hours, auctionCutoffTime: r.auction_cutoff_time,
       advertiserWhitelist: fromJson(r.advertiser_whitelist, []), advertiserBlacklist: fromJson(r.advertiser_blacklist, []),
       categoryWhitelist: fromJson(r.category_whitelist, []), categoryBlacklist: fromJson(r.category_blacklist, []),
@@ -61,11 +62,11 @@ export function sqliteCompanySettingsRepo(db: Db): CompanySettingsRepo {
     save(s) {
       ensure()
       db.prepare(
-        `UPDATE company_advertiser_settings SET currency = ?, floor_cpm = ?, personalised_multiplier = ?, interactive_multiplier = ?,
+        `UPDATE company_advertiser_settings SET currency = ?, floor_cpm = ?, personalised_multiplier = ?, interactive_cpe = ?,
            auction_opens_hours = ?, play_window_hours = ?, auction_cutoff_time = ?,
            advertiser_whitelist = ?, advertiser_blacklist = ?, category_whitelist = ?, category_blacklist = ?, updated_at = ? WHERE id = ?`,
       ).run(
-        s.currency, s.floorCpm, s.personalisedMultiplier, s.interactiveMultiplier, s.auctionOpensHours, s.playWindowHours, s.auctionCutoffTime, toJson(s.advertiserWhitelist) ?? '[]',
+        s.currency, s.floorCpm, s.personalisedMultiplier, s.interactiveCpe, s.auctionOpensHours, s.playWindowHours, s.auctionCutoffTime, toJson(s.advertiserWhitelist) ?? '[]',
         toJson(s.advertiserBlacklist) ?? '[]', toJson(s.categoryWhitelist) ?? '[]', toJson(s.categoryBlacklist) ?? '[]', now(), ID,
       )
       return get()

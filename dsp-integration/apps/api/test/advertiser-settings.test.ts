@@ -5,7 +5,7 @@ import { NOW, testContext } from './helpers'
 import { biddingClosesAt, biddingOpensAt, nextWindow, windowStartOf } from '../src/domain/positions'
 
 const input = {
-  currency: 'NZD', floorCpm: 120, personalisedMultiplier: 1.6, interactiveMultiplier: 2.5,
+  currency: 'NZD', floorCpm: 120, personalisedMultiplier: 1.6, interactiveCpe: 1.25,
   auctionOpensHours: 72, playWindowHours: 168, auctionCutoffTime: '20:30',
   advertiserWhitelist: ['Nestlé', ' Swisse '], advertiserBlacklist: ['Red Bull', 'red bull'], categoryWhitelist: ['Food & Drink'], categoryBlacklist: ['Finance'],
 }
@@ -70,7 +70,7 @@ describe('Advertiser settings (spec §4, §6)', () => {
     expectMatchesContract('GET', '/admin/v1/available-inventory', 200, res.json())
     expect(res.json().items).toEqual([{
       displayTypeId: 'menu_board', displayTypeName: 'Menu Board — Long Format', touchPoint: 'Digital Signage', playlistName: 'Menu Board Playlist', slot: 2, position: 'Supplier slot',
-      assignedTo: { partnerIds: ['p_google'], partnerNames: ['Google DSP'], advertisers: [], whitelistOnly: false }, supportedTargeting: ['localised'],
+      assignedTo: { partnerIds: ['p_google'], partnerNames: ['Google DSP'], advertisers: [], whitelistOnly: false }, qrControl: true, supportedTargeting: ['localised'],
     }])
     /* The picker behind Assigned to: every DSP and the advertisers it brings. */
     expect(res.json().dsps[0]).toMatchObject({ partnerId: 'p_google', name: 'Google DSP', advertisers: [{ advertiserId: 'nestle', name: 'Nestlé' }, { advertiserId: 'swisse', name: 'Swisse' }] })
@@ -155,6 +155,23 @@ describe('Advertiser settings (spec §4, §6)', () => {
     /* Once the position is held for someone else, Nestlé can't come back. */
     expect((await save({ partnerIds: [], advertisers: ['Swisse'], whitelistOnly: false })).statusCode).toBe(200)
     expect(await fields({ partnerIds: [], advertisers: ['Nestlé', 'Swisse'], whitelistOnly: false })).toEqual(['items[0].assignedTo.advertisers'])
+  })
+
+  /* Interactive needs something for the visitor to scan (Rob, 20 Sep). */
+  it('only supports interactive targeting where QR Control is enabled', async () => {
+    const ctx = await testContext()
+    const app = buildApp(ctx)
+    const save = () => app.inject({ method: 'PUT', url: '/api/admin/v1/available-inventory', payload: { items: [{ displayTypeId: 'menu_board', slot: 2, supportedTargeting: ['localised', 'interactive'], assignedTo: KEEP }] } })
+    expect((await save()).statusCode).toBe(200)
+
+    const dt = ctx.displayTypes.get('menu_board')!
+    ctx.displayTypes.saveRecord('menu_board', { ...dt, qrControl: { ...(dt.qrControl as object), enabled: false } })
+    const res = await save()
+    expect(res.statusCode).toBe(400)
+    expect(res.json().error.details).toEqual([{ field: 'items[0].supportedTargeting', reason: 'QR Control is required to support an interactive engagement.' }])
+    /* And the table says which display types have it, so the UI can grey the option. */
+    const rows = (await app.inject({ method: 'GET', url: '/api/admin/v1/available-inventory' })).json()
+    expect(rows.items.find((r: { displayTypeId: string }) => r.displayTypeId === 'menu_board').qrControl).toBe(false)
   })
 
   it('lets a marketing user read the inventory but not change what it supports', async () => {

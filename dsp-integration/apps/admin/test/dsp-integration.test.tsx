@@ -13,15 +13,19 @@ const ADVERTISER_PAGE = {
   '/api/admin/v1/advertisers': {
     currency: 'AUD', floorCpm: 100,
     items: [
-      { advertiserId: 'nestle', name: 'Nestlé', via: ['Google DSP'], approvalRequired: false, floorMultiplier: 0.8, effectiveFloorCpm: 80, campaigns: { draft: 0, awaiting_approval: 1, approved: 2, rejected: 0 } },
-      { advertiserId: 'swisse', name: 'Swisse', via: ['Google DSP', 'Amazon Ads DSP'], approvalRequired: true, floorMultiplier: 1, effectiveFloorCpm: 100, campaigns: { draft: 1, awaiting_approval: 0, approved: 0, rejected: 0 } },
+      { advertiserId: 'nestle', name: 'Nestlé', via: ['Google DSP'], approvalRequired: false, floorMultiplier: 0.8, effectiveFloorCpm: 80, bookings: 3, campaigns: { draft: 0, awaiting_approval: 1, approved: 2, rejected: 0 } },
+      { advertiserId: 'swisse', name: 'Swisse', via: ['Google DSP', 'Amazon Ads DSP'], approvalRequired: true, floorMultiplier: 1, effectiveFloorCpm: 100, bookings: 0, campaigns: { draft: 1, awaiting_approval: 0, approved: 0, rejected: 0 } },
     ],
   },
   '/api/admin/v1/available-inventory': {
     items: [
       {
         displayTypeId: 'menu_board', displayTypeName: 'Menu Board — Long Format', touchPoint: 'Digital Signage', playlistName: 'Menu Board Playlist', slot: 2, position: 'Supplier slot',
-        assignedTo: { partnerIds: ['p_google'], partnerNames: ['Google DSP'], advertisers: [], whitelistOnly: false }, supportedTargeting: ['localised', 'personalised'],
+        assignedTo: { partnerIds: ['p_google'], partnerNames: ['Google DSP'], advertisers: [], whitelistOnly: false }, qrControl: true, supportedTargeting: ['localised', 'personalised'],
+      },
+      {
+        displayTypeId: 'portrait', displayTypeName: 'Portrait', touchPoint: 'Digital Signage', playlistName: 'Portrait Playlist', slot: 1, position: 'Slot 1',
+        assignedTo: { partnerIds: [], partnerNames: [], advertisers: [], whitelistOnly: false }, qrControl: false, supportedTargeting: ['localised'],
       },
     ],
     dsps: [
@@ -273,13 +277,8 @@ describe('Booking schedule', () => {
 })
 
 describe('Advertisers / Inventory', () => {
-  it('filters both tables by column, and sets what targeting each slot supports', async () => {
-    const calls: { url: string; body: unknown }[] = []
-    const saved = () => calls.find((c) => c.url.includes('available-inventory'))?.body
-    vi.stubGlobal('fetch', vi.fn((url: string, init?: RequestInit) => {
-      if (init?.method === 'PUT') calls.push({ url, body: JSON.parse(String(init.body)) })
-      return fakeFetch(ADVERTISER_PAGE)(url)
-    }))
+  it('filters both tables by column, and shows what each slot supports and who may buy it', async () => {
+    vi.stubGlobal('fetch', vi.fn(fakeFetch(ADVERTISER_PAGE)))
     renderAt('/advertisers')
     const advertisers = await screen.findByLabelText('Advertisers')
     /* Column filters, as on every other table: search on the name, funnels on the value columns. */
@@ -287,12 +286,18 @@ describe('Advertisers / Inventory', () => {
     expect(within(advertisers).getByLabelText('Via filter')).toBeInTheDocument()
     expect(within(advertisers).getByLabelText('Campaign approval filter')).toBeInTheDocument()
     expect(screen.getByText('2 advertisers')).toBeInTheDocument()
+    /* Bookings opens the schedule, so it is only offered to an advertiser
+       that has some (Rob, 20 Sep): Nestlé has 3, Swisse none. */
+    expect(within(advertisers).getAllByRole('button', { name: /Bookings/ })).toHaveLength(1)
 
     const inventory = await screen.findByLabelText('Available Inventory')
     expect([...inventory.querySelectorAll('.ag-header-cell-text')].map((h) => h.textContent))
       .toEqual(['Display type', 'Playlist', 'Slot', 'Position', 'Assigned to', 'Targeting supported', ''])
     expect(within(inventory).getByLabelText('Display type search')).toBeInTheDocument()
     expect(within(inventory).getByLabelText('Targeting supported filter')).toBeInTheDocument()
+    /* QR Control is flagged on the display type that has it, and only that
+       display type can support interactive targeting (Rob, 20 Sep). */
+    expect(within(inventory).getAllByLabelText('QR Control enabled')).toHaveLength(1)
     /* Both editable columns are pills: what the slot supports, and who may
        buy it. Assigned to shows "All DSPs" only when nothing is chosen. */
     const cellOf = (label: string) => within(inventory).getAllByLabelText(`Menu Board — Long Format slot 2: ${label}`)[0].closest('.ag-cell') as HTMLElement
@@ -300,11 +305,31 @@ describe('Advertisers / Inventory', () => {
     expect([...cellOf('assigned to').querySelectorAll('.ant-select-selection-item')].map((t) => t.textContent)).toEqual(['Google DSP'])
     expect(screen.getByRole('button', { name: 'Save changes' })).toBeDisabled()
 
-    /* Hold the position for an advertiser: a pill, and the DSP the API adds. */
-    fireEvent.mouseDown(within(cellOf('assigned to')).getByRole('combobox'))
+  })
+
+  it('holds a position for an advertiser, and only offers interactive where QR Control is on', async () => {
+    const calls: { url: string; body: unknown }[] = []
+    const saved = () => calls.find((c) => c.url.includes('available-inventory'))?.body
+    vi.stubGlobal('fetch', vi.fn((url: string, init?: RequestInit) => {
+      if (init?.method === 'PUT') calls.push({ url, body: JSON.parse(String(init.body)) })
+      return fakeFetch(ADVERTISER_PAGE)(url)
+    }))
+    renderAt('/advertisers')
+    const inventory = await screen.findByLabelText('Available Inventory')
+    const combo = (row: string, label: string) =>
+      within(within(inventory).getAllByLabelText(`${row}: ${label}`)[0].closest('.ag-cell') as HTMLElement).getByRole('combobox')
+
+    /* Interactive needs a QR code to scan, so it is refused on Portrait. */
+    fireEvent.mouseDown(combo('Portrait slot 1', 'targeting supported'))
+    expect(await screen.findByText('QR Control required to support an interactive engagement')).toBeInTheDocument()
+    fireEvent.keyDown(combo('Portrait slot 1', 'targeting supported'), { key: 'Escape' })
+
+    /* Hold the Menu Board position for an advertiser: a pill, and the DSP the API adds. */
+    fireEvent.mouseDown(combo('Menu Board — Long Format slot 2', 'assigned to'))
     fireEvent.click(await screen.findByTitle('Nestlé (Google DSP)'))
     expect(screen.getByRole('button', { name: 'Save changes' })).toBeEnabled()
     fireEvent.click(screen.getByRole('button', { name: 'Save changes' }))
+    /* Only the slot that changed is sent. */
     await waitFor(() => expect(saved()).toEqual({ items: [{
       displayTypeId: 'menu_board', slot: 2, supportedTargeting: ['localised', 'personalised'],
       assignedTo: { partnerIds: ['p_google'], advertisers: ['Nestlé'], whitelistOnly: false },
@@ -324,16 +349,28 @@ describe('Advertisers / Inventory', () => {
 })
 
 describe('Pricing tooltips', () => {
-  it('explain how a floor CPM becomes what an advertiser pays, and how the multipliers stack', async () => {
+  /* The floor tooltip does the VAC-d working; the other two relate themselves
+     to it instead of repeating it (Rob, 20 Sep). */
+  it('explain how a floor CPM becomes what an advertiser pays, without repeating the working', async () => {
     renderAt('/dsp-integration/advertiser-settings')
     await screen.findByRole('heading', { name: /Advertiser settings/ })
     const tip = (label: string) => screen.getByText(label).closest('label')!.querySelector('[role="button"]') as HTMLElement
     fireEvent.mouseEnter(tip('Floor price (CPM)'))
     expect(await screen.findByText(/× attention \(VAC: the share who actually look\)/)).toBeInTheDocument()
     expect(screen.getByText(/100 × 27 ÷ 1,000/)).toBeInTheDocument()
+
+    /* Each of the other two says how it relates to the floor, and nothing
+       from the floor's own working appears inside it. */
+    const bubble = (text: RegExp) => screen.getByText(text).closest('.ant-tooltip-inner') as HTMLElement
     fireEvent.mouseEnter(tip('Personalised multiplier'))
-    expect(await screen.findByText(/100 × 1.5 = /)).toBeInTheDocument()
-    fireEvent.mouseEnter(tip('Interactive multiplier'))
-    expect(await screen.findByText(/100 × 1.5 × 3 = /)).toBeInTheDocument()
+    await screen.findByText(/It multiplies the/)
+    expect(bubble(/It multiplies the/).textContent).toMatch(/floor price/)
+    expect(bubble(/It multiplies the/).textContent).not.toMatch(/VAC-d|attention/)
+
+    /* Interactive is a fee per engagement now, not a multiplier. */
+    fireEvent.mouseEnter(tip('Interactive cost per engagement'))
+    await screen.findByText(/Charged per engagement/)
+    expect(bubble(/Charged per engagement/).textContent).toMatch(/on top of the CPM/)
+    expect(bubble(/Charged per engagement/).textContent).not.toMatch(/VAC-d|attention/)
   })
 })

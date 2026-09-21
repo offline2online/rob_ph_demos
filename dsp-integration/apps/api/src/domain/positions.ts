@@ -164,6 +164,6 @@ export function positionView(ctx: Context, p: PositionRef, c: Caller) {
     /* What a campaign may use here (Rob, 20 Sep); localised only by default. */
     supportedTargeting: supportedTargetingOf(p.def),
     assumedViewsPerWindow: ctx.audience.forSlot(dt.id, p.slot).assumedViewsPerWindow,
-    pricing: { currency: company.currency, floorCpm: company.floorCpm, effectiveFloorCpm: effectiveFloors(company, multiplier) },
+    pricing: { currency: company.currency, floorCpm: company.floorCpm, effectiveFloorCpm: effectiveFloors(company, multiplier), costPerEngagement: company.interactiveCpe },
   }
 }

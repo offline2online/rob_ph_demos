@@ -57,12 +57,18 @@ All paths are served from the retailer's own instance
 ```
 effective floor CPM = floorCpm
                     × personalisedMultiplier   (personalised campaigns only)
-                    × interactiveMultiplier    (interactive campaigns only)
                     × advertiser floorMultiplier
+
+per engagement      = interactiveCpe           (interactive campaigns, on top)
 ```
 
-Defaults: floor 100, personalised 1.5, interactive 3, advertiser 1.0.
-Localised and baseline campaigns use floor × advertiser multiplier only.
+Defaults: floor 100, personalised 1.5, advertiser 1.0, cost per engagement
+0.50. Localised and baseline campaigns use floor × advertiser multiplier
+only. Interactive is **not** a multiplier: such a campaign clears the same
+CPM floor as its targeting type and pays `interactiveCpe` for each
+engagement (a QR Control scan) on top, unscaled by the advertiser
+multiplier. A position reports both — `pricing.effectiveFloorCpm`
+(`localised`, `personalised`) and `pricing.costPerEngagement`.
 
 ## Partner API — `/v1`
 

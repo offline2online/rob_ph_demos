@@ -16,7 +16,7 @@ import { PATHS } from './DspList'
 import { SubPageHeader } from './SubPageHeader'
 
 export const ADVERTISER_SETTINGS_TIP =
-  "Company-wide advertiser settings, applied to every DSP. Configurable here: Pricing (currency, floor CPM, personalised and interactive multipliers), the Auction schedule (when bidding opens, play-window length, auction cutoff) and List management (advertiser and IAB category whitelists and blacklists). Read-only here: Where these apply (which DSPs use these lists or keep their own; unlink or relink on the DSP's page). Per-advertiser campaign approval and floor multipliers, and the inventory advertisers can buy, are on Advertisers / Inventory."
+  "Company-wide advertiser settings, applied to every DSP. Configurable here: Pricing (currency, floor CPM, the personalised multiplier and the interactive cost per engagement), the Auction schedule (when bidding opens, play-window length, auction cutoff) and List management (advertiser and IAB category whitelists and blacklists). Read-only here: Where these apply (which DSPs use these lists or keep their own; unlink or relink on the DSP's page). Per-advertiser campaign approval and floor multipliers, and the inventory advertisers can buy, are on Advertisers / Inventory."
 
 /* Every ISO 4217 currency, listed by code and name (spec §4). */
 const CURRENCIES = (() => {
@@ -58,15 +58,19 @@ const FLOOR_TIP = (
     Cost per thousand assumed views (VAC-d). The minimum any bid must meet; bids below it never win.
   </FloorExample>
 )
+/* The multiplier and the fee relate themselves to the floor price tooltip
+   rather than repeating its working (Rob, 20 Sep). */
 const PERSONALISED_TIP = (
-  <FloorExample rate={<>The same daypart at 100 × 1.5 = <b>150</b> CPM: 150 × 27 ÷ 1,000 = <b>$4.05</b>, against $2.70 at the floor.</>}>
-    Applied when the visitor is checked in or otherwise identified, so the advert is one-to-one for that individual. Multiplies the floor CPM.
-  </FloorExample>
+  <div style={{ fontSize: 12 }}>
+    Applied when the visitor is checked in or otherwise identified, so the advert is one-to-one for that individual.
+    <div className="mt-2">It multiplies the <b>floor price</b>: at 1.5, a floor of 100 becomes <b>150</b> CPM for a personalised campaign, and the advertiser’s own floor multiplier scales that again.</div>
+  </div>
 )
 const INTERACTIVE_TIP = (
-  <FloorExample rate={<>The same daypart at 100 × 3 = <b>300</b> CPM: <b>$8.10</b>. Stacked with personalised, 100 × 1.5 × 3 = <b>450</b> CPM: <b>$12.15</b> — and the advertiser’s own floor multiplier scales that again (0.8 → $9.72).</>}>
-    Applied when the visitor interacts with the campaign and engages with the advertiser on that display, for example by scanning an interactive QR Control campaign. Multiplies the floor CPM.
-  </FloorExample>
+  <div style={{ fontSize: 12 }}>
+    What an advertiser pays each time someone engages with an interactive campaign — scanning its QR Control code to carry on with the brand on their own phone.
+    <div className="mt-2">Charged per engagement, <b>on top of the CPM</b>: an interactive campaign still clears the <b>floor price</b> (or the personalised floor) for its plays, and adds this for each scan. The advertiser’s floor multiplier does not scale it. Set it to 0 to leave engagements unpriced.</div>
+  </div>
 )
 
 /* The auction cutoff, every half hour (UTC). */
@@ -104,8 +108,14 @@ export function AdvertiserSettings() {
     return { ...x, [k]: r.add, [OTHER[k]]: r.other }
   })
   const remove = (k: ListKey) => (name: string) => update('settings', (x) => ({ ...x, [k]: x[k].filter((y) => y !== name) }))
-  const num = (k: 'floorCpm' | 'personalisedMultiplier' | 'interactiveMultiplier', step: number, ph: string) => (
-    <InputNumber id={k} className="w-full" step={step} min={0} placeholder={ph} formatter={(v) => (v === undefined || v === null ? '' : String(v))} parser={(v) => Number(v)} value={s[k]} onChange={(v) => set(k, (v === null ? null : Number(v)) as number)} />
+  const num = (k: 'floorCpm' | 'personalisedMultiplier' | 'interactiveCpe', step: number, ph: string, extra: { precision?: number; prefix?: string } = {}) => (
+    <InputNumber
+      id={k} className="w-full" step={step} min={0} placeholder={ph} {...extra}
+      /* An amount to the cent keeps AntD's own formatting (0.50); the others
+         only need the thousand separators suppressed. */
+      {...(extra.precision === undefined ? { formatter: (v: unknown) => (v === undefined || v === null ? '' : String(v)), parser: (v: string | undefined) => Number(v) } : {})}
+      value={s[k]} onChange={(v) => set(k, (v === null ? null : Number(v)) as number)}
+    />
   )
   const where = savedView.whereTheseApply
 
@@ -113,14 +123,14 @@ export function AdvertiserSettings() {
     <>
       <SubPageHeader icon="rule" title="Advertiser settings" tip={ADVERTISER_SETTINGS_TIP} />
 
-      <SectionLabel><WithTip tip="Multipliers stack: effective floor = floor CPM × personalised × interactive × the advertiser's floor multiplier (set on the Advertisers screen). Bids below the effective floor never win.">Pricing</WithTip></SectionLabel>
+      <SectionLabel><WithTip tip="Effective floor = floor CPM × the personalised multiplier (personalised campaigns) × the advertiser's floor multiplier (set on Advertisers / Inventory). Bids below it never win. An interactive campaign clears the same floor and pays the cost per engagement on top.">Pricing</WithTip></SectionLabel>
       <div className="grid grid-cols-4 gap-3.5">
         <Field label="Currency" htmlFor="currency" tip="Used for the floor CPM, every effective floor and billing. Bid requests carry it as the bid floor currency.">
           <Select id="currency" className="w-full" showSearch optionFilterProp="label" value={s.currency} onChange={(v) => set('currency', v)} options={CURRENCIES} popupMatchSelectWidth={280} />
         </Field>
         <Field label="Floor price (CPM)" htmlFor="floorCpm" tip={FLOOR_TIP} tipWidth={400}>{num('floorCpm', 1, '100')}</Field>
         <Field label="Personalised multiplier" htmlFor="personalisedMultiplier" tip={PERSONALISED_TIP} tipWidth={400}>{num('personalisedMultiplier', 0.05, '1.5')}</Field>
-        <Field label="Interactive multiplier" htmlFor="interactiveMultiplier" tip={INTERACTIVE_TIP} tipWidth={400}>{num('interactiveMultiplier', 0.05, '3')}</Field>
+        <Field label="Interactive cost per engagement" htmlFor="interactiveCpe" tip={INTERACTIVE_TIP} tipWidth={400}>{num('interactiveCpe', 0.05, '0.50', { precision: 2, prefix: s.currency })}</Field>
       </div>
 
       <SectionLabel><WithTip tip="In-store screens can't take a bid per play, so advertisers bid for a play window that clears ahead of time. Bidding for a window opens, closes at the auction cutoff (when the auction runs) and the winner holds the slot for the whole window. Times are UTC.">Auction schedule</WithTip></SectionLabel>

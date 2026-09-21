@@ -348,6 +348,9 @@ paths:
         position for them (their DSPs are added automatically), or
         whitelistOnly for the advertiser whitelist. Nothing chosen means any
         connected DSP. Advertisers and whitelistOnly are mutually exclusive.
+
+        supportedTargeting: interactive is only accepted on a display type
+        with QR Control enabled.
       security: [{adminSession: []}]
       requestBody:
         required: true
@@ -1009,18 +1012,26 @@ components:
         pricing: {$ref: '#/components/schemas/Pricing'}
     Pricing:
       type: object
-      required: [currency, floorCpm, effectiveFloorCpm]
+      required: [currency, floorCpm, effectiveFloorCpm, costPerEngagement]
       properties:
         currency: {type: string}
         floorCpm: {type: number}
         effectiveFloorCpm:
           type: object
-          required: [localised, personalised, interactive, personalisedInteractive]
+          description: |
+            What a bid must clear per thousand assumed views, for this caller.
+            Interactive campaigns pay one of these for the plays and the
+            engagement fee on top, so they have no floor of their own.
+          required: [localised, personalised]
           properties:
             localised: {type: number}
             personalised: {type: number}
-            interactive: {type: number}
-            personalisedInteractive: {type: number}
+        costPerEngagement:
+          type: number
+          description: |
+            Charged once per engagement (a QR Control scan), on top of the CPM,
+            for an interactive campaign. In the same currency, to the cent. The
+            advertiser's floor multiplier does not scale it.
 
     TargetingAttribute:
       type: object
@@ -1144,7 +1155,7 @@ components:
 
     AdvertiserSettingsInput:
       type: object
-      required: [currency, floorCpm, personalisedMultiplier, interactiveMultiplier, auctionOpensHours, playWindowHours, auctionCutoffTime, advertiserWhitelist, advertiserBlacklist, categoryWhitelist, categoryBlacklist]
+      required: [currency, floorCpm, personalisedMultiplier, interactiveCpe, auctionOpensHours, playWindowHours, auctionCutoffTime, advertiserWhitelist, advertiserBlacklist, categoryWhitelist, categoryBlacklist]
       properties:
         currency: {type: string, description: ISO 4217, default: AUD}
         auctionOpensHours: {type: integer, minimum: 1, default: 168, description: 'Auction schedule: how long before the auction cutoff bidding for a play window opens, in hours (shown as days and hours).'}
@@ -1152,7 +1163,7 @@ components:
         auctionCutoffTime: {type: string, pattern: '^([01][0-9]|2[0-3]):[0-5][0-9]$', default: '18:00', description: 'Auction schedule: the daily time (HH:MM, UTC) by which bids must be received; the auction for the next play window runs then.'}
         floorCpm: {type: number, exclusiveMinimum: 0, default: 100}
         personalisedMultiplier: {type: number, exclusiveMinimum: 0, default: 1.5}
-        interactiveMultiplier: {type: number, exclusiveMinimum: 0, default: 3}
+        interactiveCpe: {type: number, minimum: 0, multipleOf: 0.01, default: 0.5, description: 'Interactive cost per engagement: what an advertiser pays each time someone engages with an interactive campaign (a QR Control scan), on top of the CPM. To the cent; 0 means engagements are not charged for.'}
         advertiserWhitelist: {type: array, items: {type: string}}
         advertiserBlacklist: {type: array, items: {type: string}}
         categoryWhitelist: {type: array, items: {type: string}, description: IAB categories}
@@ -1201,7 +1212,7 @@ components:
         whitelistOnly: {type: boolean, description: 'Only advertisers on the whitelist may bid; never true when advertisers is non-empty.'}
     AvailableInventoryRow:
       type: object
-      required: [displayTypeId, displayTypeName, playlistName, slot, position, assignedTo, supportedTargeting]
+      required: [displayTypeId, displayTypeName, playlistName, slot, position, assignedTo, supportedTargeting, qrControl]
       properties:
         displayTypeId: {type: string}
         displayTypeName: {type: string}
@@ -1210,6 +1221,13 @@ components:
         slot: {type: integer}
         position: {type: string}
         assignedTo: {$ref: '#/components/schemas/AssignedTo'}
+        qrControl:
+          type: boolean
+          description: |
+            Whether the display type has QR Control enabled. Interactive
+            targeting needs it — there is nothing for a visitor to engage with
+            otherwise — so a slot on a display type without it cannot support
+            interactive.
         supportedTargeting:
           type: array
           description: What a campaign may use on this slot; localised only by default.
@@ -1382,12 +1400,18 @@ components:
       allOf:
         - $ref: '#/components/schemas/AdvertiserSetting'
         - type: object
-          required: [advertiserId, name, via, effectiveFloorCpm, campaigns]
+          required: [advertiserId, name, via, effectiveFloorCpm, campaigns, bookings]
           properties:
             advertiserId: {type: string}
             name: {type: string}
             via: {type: array, items: {type: string}, description: DSP names}
             effectiveFloorCpm: {type: number}
+            bookings:
+              type: integer
+              description: |
+                Play windows this advertiser holds from the current window on.
+                0 means it has nothing on the booking schedule, so there is
+                nothing to open there.
             campaigns:
               type: object
               description: This advertiser's campaigns by approval status, so the retailer can see who is waiting.

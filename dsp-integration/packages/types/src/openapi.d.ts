@@ -260,6 +260,9 @@ export interface paths {
          *     position for them (their DSPs are added automatically), or
          *     whitelistOnly for the advertiser whitelist. Nothing chosen means any
          *     connected DSP. Advertisers and whitelistOnly are mutually exclusive.
+         *
+         *     supportedTargeting: interactive is only accepted on a display type
+         *     with QR Control enabled.
          */
         put: operations["saveAvailableInventory"];
         post?: never;
@@ -750,12 +753,21 @@ export interface components {
         Pricing: {
             currency: string;
             floorCpm: number;
+            /**
+             * @description What a bid must clear per thousand assumed views, for this caller.
+             *     Interactive campaigns pay one of these for the plays and the
+             *     engagement fee on top, so they have no floor of their own.
+             */
             effectiveFloorCpm: {
                 localised: number;
                 personalised: number;
-                interactive: number;
-                personalisedInteractive: number;
             };
+            /**
+             * @description Charged once per engagement (a QR Control scan), on top of the CPM,
+             *     for an interactive campaign. In the same currency, to the cent. The
+             *     advertiser's floor multiplier does not scale it.
+             */
+            costPerEngagement: number;
         };
         TargetingAttribute: {
             /** @example store.fixed_segments */
@@ -881,8 +893,11 @@ export interface components {
             floorCpm: number;
             /** @default 1.5 */
             personalisedMultiplier: number;
-            /** @default 3 */
-            interactiveMultiplier: number;
+            /**
+             * @description Interactive cost per engagement: what an advertiser pays each time someone engages with an interactive campaign (a QR Control scan), on top of the CPM. To the cent; 0 means engagements are not charged for.
+             * @default 0.5
+             */
+            interactiveCpe: number;
             advertiserWhitelist: string[];
             advertiserBlacklist: string[];
             /** @description IAB categories */
@@ -927,6 +942,13 @@ export interface components {
             slot: number;
             position: string;
             assignedTo: components["schemas"]["AssignedTo"];
+            /**
+             * @description Whether the display type has QR Control enabled. Interactive
+             *     targeting needs it — there is nothing for a visitor to engage with
+             *     otherwise — so a slot on a display type without it cannot support
+             *     interactive.
+             */
+            qrControl: boolean;
             /** @description What a campaign may use on this slot; localised only by default. */
             supportedTargeting: ("localised" | "personalised" | "interactive")[];
         };
@@ -1079,6 +1101,12 @@ export interface components {
             /** @description DSP names */
             via: string[];
             effectiveFloorCpm: number;
+            /**
+             * @description Play windows this advertiser holds from the current window on.
+             *     0 means it has nothing on the booking schedule, so there is
+             *     nothing to open there.
+             */
+            bookings: number;
             /** @description This advertiser's campaigns by approval status, so the retailer can see who is waiting. */
             campaigns: {
                 draft: number;
