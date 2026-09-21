@@ -1,0 +1,30 @@
+{
+  "name": "@ph-dsp/api",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "start": "tsx src/index.ts",
+    "db:seed": "tsx src/seed/cli.ts",
+    "db:bookings": "tsx src/seed/bookingsCli.ts",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json",
+    "auction:run": "tsx src/exchange/cli.ts",
+    "billing:print": "tsx src/exchange/billingCli.ts"
+  },
+  "dependencies": {
+    "@fastify/multipart": "^9.4.0",
+    "@ph-dsp/campaign-approval": "*",
+    "@ph-dsp/types": "*",
+    "fastify": "^5.12.5"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "ajv": "^8.20.0",
+    "ajv-formats": "^3.0.1",
+    "tsx": "^4.23.13",
+    "vitest": "^3.2.4",
+    "yaml": "^2.9.1"
+  }
+}

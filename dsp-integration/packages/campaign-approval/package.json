@@ -1,0 +1,30 @@
+{
+  "name": "@ph-dsp/campaign-approval",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "Campaign approval as a drop-in module for the existing Campaigns section (spec \u00a73). The only seam to the real campaigns is CampaignSource.",
+  "exports": {
+    "./adapter": "./src/adapter/CampaignSource.ts",
+    "./poc": "./src/adapter/pocCampaignSource.ts",
+    "./server": "./src/server/index.ts",
+    "./ui": "./src/ui/index.ts",
+    "./contract": "./tests/contract.ts"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "peerDependencies": {
+    "antd": "^5.29.3",
+    "fastify": "^5.12.5",
+    "react": "^18.3.1"
+  },
+  "devDependencies": {
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.3",
+    "@types/node": "^24.0.0",
+    "jsdom": "^26.1.0",
+    "vitest": "^3.2.4"
+  }
+}

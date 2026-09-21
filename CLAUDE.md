@@ -90,6 +90,17 @@ tied to the other project's release cadence.
   file. Keep the repo file and the live record in sync; treat a divergence
   as a bug in whichever is stale.
 
+**The POC lives in `dsp-integration/`** (merged to `main` on 21 Sep 2026,
+PR #176). It is a working service, not a static page: an npm-workspaces
+monorepo with a Fastify API over SQLite, a React admin UI, mock DSPs and an
+auction job, all behind the `dspIntegration` flag. It therefore **cannot be
+opened from GitHub Pages like the other demos** — run it locally
+(`npm run dev:api` / `dev:mocks` / `dev:admin`, then `localhost:5173`).
+The static prototype it was built from is published at
+<https://offline2online.github.io/rob_ph_demos/display-types-dsp-integration/prototype/>.
+Note the POC folder is `dsp-integration/`, not the
+`display-types-dsp-integration/` named above.
+
 **On the Prototype Backlog board** (the live `backlog-tracker` app, not the
 retired Artifact — see "Prototype Backlog" below), these are two separate
 docs in the `projects` Firestore collection — **"Live Visitor Profile"** and
