@@ -189,7 +189,7 @@ Page-title tooltips for the DSP Integration company pages:
 | Page | Tooltip |
 |---|---|
 | **Exchange settings** | Sets up your organisation as the seller of record for its screens. Configurable here: organisation name, domain, seller ID and ad-ops contact email, all required. Once saved and complete, sellers.json is published at https://[domain]/sellers.json and every bid request carries your domain and seller ID in its SupplyChain; until then no DSP is sent bid requests. Not configurable (platform defaults): seller type (Publisher), OpenRTB 2.6, the DOOH object, the OpenOOH venue taxonomy, QPS and bid timeout. |
-| **Advertiser settings** | Company-wide advertiser settings, applied to every DSP. Configurable here: Pricing (currency, floor CPM, the personalised multiplier and the interactive cost per engagement) and List management (advertiser and IAB category whitelists and blacklists). Read-only here: Where these apply (which DSPs use these lists or keep their own; unlink or relink on the DSP's page) and Available Inventory (advertiser-owned slots, set on Display Types). Per-advertiser campaign approval and floor multipliers are on the Advertisers screen. |
+| **Advertiser settings** | Company-wide advertiser settings, applied to every DSP. Configurable here: Pricing (currency, floor CPM, the personalised multiplier and the interactive cost per engagement), the Auction schedule (when bidding opens, play-window length, auction cutoff) and List management (advertiser and IAB category whitelists and blacklists). Read-only here: Where these apply (which DSPs use these lists or keep their own; unlink or relink on the DSP's page). Per-advertiser campaign approval and floor multipliers, and the inventory advertisers can buy, are on Advertisers / Inventory. |
 | **Shared Targeting Variables** | Variables shared through the API with connected DSPs. Once a variable is enabled for a DSP, that DSP's advertisers can use it in targeting conditions for more advanced campaign targeting; the platform evaluates the condition and never returns the value. They are the same variables as a campaign's Targeting tab. Choose which DSPs may use each one below; default platform variables only in this release. |
 
 Other tooltip wording is given in the relevant section below (for example
@@ -348,11 +348,17 @@ Applies to campaigns whose creative comes from outside the retailer: direct
 partners submitting through the API (tier 2) and creative arriving through a
 DSP (tier 1). Campaigns authored by HQ are unchanged.
 
-### The Advertisers screen — admin only
+### Advertisers / Inventory
 
-A new **Advertisers** item in the HQ Admin navigation, placed **directly
-below DSP Integration** and **accessible to admin users only**. It is purely
-for per-advertiser settings; **campaigns are not approved here.**
+A new **Advertisers / Inventory** item in the HQ Admin navigation, placed
+**directly below DSP Integration**. It carries per-advertiser settings and,
+below them, the inventory those advertisers can buy (§5); **campaigns are
+not approved here.**
+
+**Admin and marketing users both see it** (Rob, 20 Sep): marketing reads it,
+and only an admin changes approval, pricing, what a position is assigned to
+or what targeting it supports. A read-only viewer sees a *Read only* pill in
+place of *Admin only* and no Save changes bar.
 
 - Lists every advertiser currently using the platform, across all DSPs, with
   the DSP(s) it comes through. Advertisers are pulled from each DSP on
@@ -1201,11 +1207,15 @@ Company-level:
 
 - **Advertiser settings**: `currency` (any ISO 4217 code; default `AUD`),
   `floorCpm`, `personalisedMultiplier`, `interactiveCpe` (defaults
-  100 / 1.5 / 3), `audienceScoring` (MOVE/VAC-d inputs), advertiser and
-  IAB-category whitelists and blacklists.
-- **Advertisers** (admin only):
+  100 / 1.5 / 0.50), the auction schedule (`auctionOpensHours`,
+  `playWindowHours`, `auctionCutoffTime`; defaults 168 / 24 / 18:00 UTC),
+  `audienceScoring` (MOVE/VAC-d inputs), advertiser and IAB-category
+  whitelists and blacklists.
+- **Advertisers / Inventory** (an admin writes it; marketing reads it):
   `advertiserSettings: { [advertiser]: { approvalRequired, floorMultiplier } }`
-  (defaults `true` / 1.0).
+  (defaults `true` / 1.0), and per sellable slot what it is assigned to
+  (`partnerIds`, `advertisers`, list mode) and the targeting it supports
+  (`supportedTargeting`, localised only by default).
 - **Shared targeting variables**: the platform's default variables, grouped
   as Localisation Variables and Personalisation Variables, each with example
   values (or a fixed tooltip text) for its tooltip, read-only in this
@@ -1281,14 +1291,16 @@ playback analytics.**
 - **Shared page layout**: same-width list column and a full-width content
   column on Display Types and DSP Integration. *(Display Types; DSP Integration)*
 
-### Advertisers (admin only)
+### Advertisers / Inventory
 
-- **Advertisers screen**, admin users only, directly below DSP Integration in
-  the navigation: every advertiser across all DSPs, with a **Campaign
-  approval** toggle (Required / Not required, default Required) and a
-  **floor multiplier** (default 1.0) with the effective floor shown in the
-  company currency, and a tooltip on each column. No campaign approval takes
-  place here. *(Advertisers)*
+- **Advertisers / Inventory screen**, directly below DSP Integration in the
+  navigation, editable by an admin and read-only for marketing: every
+  advertiser across all DSPs, with a **Campaign approval** toggle (Required /
+  Not required, default Required), a **floor multiplier** (default 1.0) with
+  the effective floor shown in the company currency, its **campaigns by
+  approval status** (which open Campaign Status filtered to it) and a
+  **Bookings** link when it has any, plus a tooltip on each column. No
+  campaign approval takes place here. *(Advertisers / Inventory)*
 
 ### Campaign asset approval — existing Campaigns section
 
@@ -1345,8 +1357,10 @@ playback analytics.**
   an admin, published on the position and enforced on every bid.
   *(Advertisers / Inventory → Available Inventory)*
 - **Booking schedule**: every advertiser position across its play windows,
-  booked / available / unavailable, with booking revenue per display type
-  and what sold by campaign type. Its DSP and advertiser filters are column
+  booked / available / unavailable, **at the top of its own page**, with
+  booking revenue per display type and then what sold by campaign type
+  below it (Rob, 21 Sep: the schedule is what the page is for; the money
+  reads as its summary). Its DSP and advertiser filters are column
   filters, kept in the URL and applied by the server. **The advertiser
   filter lists only advertisers with something booked in the range on
   screen, and choosing one leaves only the positions it holds** (Rob,
