@@ -3,6 +3,7 @@
      npm run board:tickets                              # what is where (no writes)
      npm run board:tickets -- --from backlog --to published-live
      npm run board:tickets -- --from backlog --to published-live --yes
+     npm run board:tickets -- --ticket <id> --preview <url> --to ready-for-testing --yes
      npm run board:tickets -- --deploy-branch deploy/dsp-integration --yes
 
    Why this exists: the board's MCP connector deliberately refuses status
@@ -83,7 +84,7 @@ async function tickets() {
   } while (pageToken)
   return out
     .filter((d) => field(d, 'projectId') === PROJECT_ID)
-    .map((d) => ({ id: d.name.split('/').pop(), name: d.name, title: field(d, 'title') ?? '(untitled)', status: field(d, 'status') ?? 'backlog' }))
+    .map((d) => ({ id: d.name.split('/').pop(), name: d.name, title: field(d, 'title') ?? '(untitled)', status: field(d, 'status') ?? 'backlog', previewUrl: field(d, 'previewUrl') }))
 }
 
 const all = await tickets()
@@ -111,8 +112,52 @@ if (branch) {
 
 const from = value('--from')
 const to = value('--to')
-if (!from && !to) {
-  if (!branch) console.log('\nNothing asked for. Use --from <status> --to <status>, and --yes to write.')
+const one = value('--ticket')
+const preview = value('--preview')
+
+if (!from && !to && !one) {
+  if (!branch) console.log('\nNothing asked for. Use --from <status> --to <status>, or --ticket <id>, and --yes to write.')
+  process.exit(0)
+}
+/* One ticket by id: move it, give it a test link, or both. */
+if (one && !from) {
+  const t = all.find((x) => x.id === one)
+  if (!t) {
+    console.error(`\nNo ticket ${one} on this project.`)
+    process.exit(2)
+  }
+  if (to && !STATUSES[to]) {
+    console.error(`\n--to must be one of: ${Object.keys(STATUSES).join(', ')}`)
+    process.exit(2)
+  }
+  console.log(`\n${t.title}`)
+  if (to) console.log(`  status   ${STATUSES[t.status]} → ${STATUSES[to]}`)
+  if (preview) console.log(`  preview  ${t.previewUrl ?? '(none)'} → ${preview}`)
+  if (!to && !preview) {
+    console.log('  nothing to change: pass --to <status> and/or --preview <url>')
+    process.exit(0)
+  }
+  if (!flag('--yes')) {
+    console.log('\nDry run: nothing written. Add --yes.')
+    process.exit(0)
+  }
+  const fields = {}
+  const mask = []
+  if (to) { fields.status = { stringValue: to }; mask.push('updateMask.fieldPaths=status') }
+  if (preview) { fields.previewUrl = { stringValue: preview }; mask.push('updateMask.fieldPaths=previewUrl') }
+  fields.updatedAt = { timestampValue: new Date().toISOString() }
+  mask.push('updateMask.fieldPaths=updatedAt')
+  const res = await fetch(`${BOARD}/backlogItems/${one}?${mask.join('&')}`, {
+    method: 'PATCH', headers: { ...AUTH, 'Content-Type': 'application/json' }, body: JSON.stringify({ fields }),
+  })
+  if (!res.ok) throw new Error(`Writing failed (${res.status}): ${await res.text()}`)
+  const after = (await tickets()).find((x) => x.id === one)
+  const wrong = [to && after.status !== to && 'status', preview && after.previewUrl !== preview && 'previewUrl'].filter(Boolean)
+  if (wrong.length) {
+    console.error(`\nWrote, but ${wrong.join(' and ')} did not land.`)
+    process.exit(1)
+  }
+  console.log('\nWritten — verified.')
   process.exit(0)
 }
 if (!STATUSES[from] || !STATUSES[to]) {
