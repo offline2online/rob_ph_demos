@@ -552,6 +552,34 @@ Whichever route, **verify**: read the field back and compare it with the
 file. A sync that reports success without checking is worse than no sync,
 because it stops anyone looking again.
 
+### Putting a commit on a deployment train by hand
+
+**The board reads a train through `backlogItems.deployCommit`, and nothing
+else.** `functions/train-lock.js` and `public/js/app.js`'s
+`trainItemsForProject()` both count a card as being on the train only if it
+has that field *and* sits in Ready for Testing or Approved for Deployment.
+The automation stamps it when it applies a ticket's patch — so a commit you
+push to `deploy/<project>` yourself has nobody pointing at it.
+
+What happens then (21 Sep 2026, ticket `d5lCFNAL…`): the periodic sweep
+reads the train as empty, tags the branch tip as
+`archive/<branch>-<date>`, resets the branch to `main`, and logs
+*"train emptied with nothing merged"*. The work survives on the tag, but the
+deploy the human just approved silently ships nothing. It raced the Deploy
+Routine's own verification by 35 seconds.
+
+So, when you put a commit on a train yourself:
+
+1. **Stamp the card**: `npm run board:tickets -- --ticket <id>
+   --deploy-commit <sha> --yes` (or `-f deploy_commit=<sha>` through
+   `dsp-board.yml`). Re-stamp if you amend or rebase — the sha must match.
+2. **Use the documented trailer** in the commit message:
+   `Backlog item: <id>`, not "Ticket: <id>". That is what
+   `git log --grep "Backlog item: <ITEM_ID>"` looks for, in
+   `run-backlog-automation.js` and in the Deploy Routine's verification.
+3. Better still, don't: let the automation apply the patch, so both happen
+   without anyone remembering.
+
 ### The board's key lives in GitHub, not on anyone's laptop — use it there
 
 **`BOARD_API_KEY` is a repository secret** (so are

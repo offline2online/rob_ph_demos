@@ -181,6 +181,13 @@ rest of this file.
      and run `npm run board:sync -- --check-mcp <saved result>`, which
      compares them locally without any credential and exits 1 if the board
      is behind, so the comment can say exactly what is out of date.
+   - **A commit you put on a train by hand must be stamped onto its
+     card**: `backlogItems.deployCommit` is the only thing that tells the
+     board the card is on the train (`functions/train-lock.js`). Without
+     it, `reconcileLockedTrains()` reads the train as empty, archives the
+     branch tip as a tag and resets the branch — the approved deploy then
+     ships nothing. Use the documented `Backlog item: <id>` trailer in the
+     commit message too, so `git log --grep` finds it.
    - **Better: the board's key is already in GitHub.** `BOARD_API_KEY` is a
      repository secret, so anything that writes to the board can run on a
      runner instead of waiting for someone to paste a password. For this
