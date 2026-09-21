@@ -14,9 +14,9 @@ This specification covers these areas, and only these:
    retailer approves them in the **existing Campaigns section** where the
    advertiser requires approval. Whether an advertiser requires approval, and
    its floor multiplier, are set on a new admin-only **Advertisers** screen (§3).
-4. **Pricing**: the currency, the CPM bid floor, audience scoring, the
-   a personalised multiplier, a cost per engagement and a floor multiplier per
-   advertiser (§4).
+4. **Pricing**: the currency, the CPM bid floor, audience scoring, a
+   personalised multiplier, a cost per engagement, and a floor multiplier
+   per advertiser (§4).
 5. **Inventory API**: what inventory exists and what is available, derived
    from the slots assigned on each display type (§5).
 6. **DSP integration**: the advertiser/DSP interface and the shared targeting
