@@ -177,7 +177,10 @@ rest of this file.
      `set_project_readme`), and only where the document is short enough to
      reproduce exactly — never retype a long specification by hand. If you
      can't complete the sync, say so in the ticket comment rather than
-     leaving the board quietly stale.
+     leaving the board quietly stale: read the docs with `get_project_docs`
+     and run `npm run board:sync -- --check-mcp <saved result>`, which
+     compares them locally without any credential and exits 1 if the board
+     is behind, so the comment can say exactly what is out of date.
 
 ## For each Backlog item found
 

@@ -56,6 +56,25 @@ if they don't match byte for byte — so a spec never picks up errors from
 being retyped. Set `BOARD_API_KEY` (the board automation user's password) in
 `.env` first; without it the script stops and says so.
 
+**Without the key, you can still tell whether the board has drifted.** Read
+the project's docs over the board's MCP connector (`get_project_docs` with
+`include: ["requirements", "readme"]`), which is large enough that the
+result is saved to a file, and hand that file over:
+
+```bash
+npm run board:sync -- --check-mcp <saved-result.json>              # or - for stdin
+npm run board:sync -- --check-mcp <saved-result.json> --print-diff # and show the diff
+```
+
+It reports each document's size on both sides, which sections moved, and
+exits 1 if anything is behind — so an agent that can read the board but not
+write to it can still say so, and say it in a way a script can act on. A
+field missing from the read is reported as *not compared*, never as in
+sync.
+
+Exit codes are the same everywhere: **0** in sync, **1** drifted, **2**
+couldn't run (no key, no file, unreadable input).
+
 ## Layout
 
 | Path | What it is |

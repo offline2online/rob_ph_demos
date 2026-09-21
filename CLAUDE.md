@@ -552,6 +552,15 @@ Whichever route, **verify**: read the field back and compare it with the
 file. A sync that reports success without checking is worse than no sync,
 because it stops anyone looking again.
 
+**Without the write credential you can still report drift, and should.**
+Read the project's docs over the board's MCP connector (`get_project_docs`
+with `include: ["requirements", "readme"]`) and pass the saved result to
+`npm run board:sync -- --check-mcp <file>`: it compares locally, names the
+sections that moved, and exits 1 when the board is behind. Say that in the
+ticket or to the user rather than leaving it unsaid — a known gap is
+manageable, a silent one isn't. Exit codes: 0 in sync, 1 drifted, 2 couldn't
+run.
+
 ## Guidelines
 
 - Always push to `main` branch
