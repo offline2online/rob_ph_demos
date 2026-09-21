@@ -5,7 +5,14 @@ build. The engineering team will later merge it into the main Personalisation
 Hub repo. Every dependency on the existing platform has a stand-in behind a
 small interface.
 
+Repo folder: `dsp-integration/` in `offline2online/rob_ph_demos`, merged to
+`main` on 21 Sep 2026 (PR #176). It replaced `display-types-dsp-integration/`
+(formerly `experience-templates/`), which was removed the same day; that
+folder's history is on the tag `archive/display-types-dsp-integration`.
+
 - **Spec:** [docs/dsp-integration/REQUIREMENTS.md](docs/dsp-integration/REQUIREMENTS.md)
+  (mirrored into the Requirements block on the board's Docs page — keep the
+  two in step)
 - **Brief:** [docs/dsp-integration/BUILD-BRIEF.md](docs/dsp-integration/BUILD-BRIEF.md)
 - **Plan and progress:** [docs/dsp-integration/BUILD-PLAN.md](docs/dsp-integration/BUILD-PLAN.md)
 - **API contract:** [openapi.yaml](docs/dsp-integration/api/openapi.yaml) and
