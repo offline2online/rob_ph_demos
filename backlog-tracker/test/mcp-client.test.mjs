@@ -148,12 +148,14 @@ await test("tools/list returns the whole surface", async () => {
   const { tools } = await client.listTools();
   const names = tools.map((t) => t.name).sort();
   assert.deepStrictEqual(names, [
-    "add_item_comment", "create_backlog_item", "create_interface", "create_project_document",
-    "delete_interface", "delete_project_document", "get_backlog_item", "get_doc_revision",
-    "get_faq_article", "get_project_docs", "list_backlog_items", "list_doc_revisions",
-    "list_projects", "search_faq", "set_project_artifact", "set_project_readme",
-    "set_project_requirements", "update_backlog_item", "update_interface",
-    "update_project_document", "whoami",
+    "add_item_comment", "comment_on_faq_revision", "create_backlog_item", "create_faq_article",
+    "create_interface", "create_project_document", "delete_interface", "delete_project_document",
+    "delete_skill", "get_backlog_item", "get_doc_revision", "get_faq_article", "get_faq_revision",
+    "get_project_docs", "get_skill", "list_backlog_items", "list_doc_revisions",
+    "list_pending_faq_revisions", "list_projects", "list_skills", "search_faq",
+    "set_project_artifact", "set_project_readme", "set_project_requirements", "update_backlog_item",
+    "update_faq_article", "update_interface", "update_project_document", "update_skill",
+    "upload_skill", "whoami",
   ]);
 });
 
@@ -231,7 +233,7 @@ await test("a replaced document is recoverable through the client", async () => 
 await test("the client is told which tools are destructive", async () => {
   const { tools } = await client.listTools();
   const destructive = tools.filter((t) => t.annotations && t.annotations.destructiveHint).map((t) => t.name).sort();
-  assert.deepStrictEqual(destructive, ["delete_interface", "delete_project_document"]);
+  assert.deepStrictEqual(destructive, ["delete_interface", "delete_project_document", "delete_skill"]);
   const docWrite = tools.find((t) => t.name === "set_project_requirements");
   assert.strictEqual(docWrite.annotations.readOnlyHint, false);
   assert.strictEqual(docWrite.annotations.destructiveHint, false);

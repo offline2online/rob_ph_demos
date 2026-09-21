@@ -98,6 +98,7 @@
       </div>
       <button type="button" class="nav-drawer-item nav-drawer-item-home" id="nav-ph-console-btn">Agent console</button>
       <button type="button" class="nav-drawer-item" id="faq-articles-btn">FAQ Management</button>
+      <button type="button" class="nav-drawer-item" id="skills-btn">Skills</button>
       <button type="button" class="nav-drawer-item" id="faq-settings-btn">Settings</button>
       <!-- Sign out moved in here from the topbar (qMJeQkmhYwcXFTjeOJw0-2):
            needed rarely, not worth permanent space in the sticky mobile
@@ -203,6 +204,60 @@
         </div>
       </div>
     </div>
+
+    <div class="modal-backdrop" id="skill-backdrop" hidden>
+      <div class="modal-panel modal-panel-wide" role="dialog" aria-modal="true" aria-labelledby="skill-modal-title">
+        <div class="modal-header">
+          <h2 id="skill-modal-title">New skill</h2>
+          <button type="button" class="modal-close" id="skill-close" aria-label="Close">&times;</button>
+        </div>
+        <label class="field-label" for="skill-name-input">Name</label>
+        <input type="text" id="skill-name-input" maxlength="120" placeholder="e.g. Personalisation Hub Front &amp; Design">
+        <span class="char-count" id="skill-name-count"></span>
+        <div class="form-row">
+          <div style="flex:1 1 auto;">
+            <label class="field-label" for="skill-slug-input">Slug</label>
+            <input type="text" id="skill-slug-input" maxlength="60" placeholder="e.g. ph-designer">
+          </div>
+          <div style="flex:0 0 140px;">
+            <label class="field-label" for="skill-version-input">Version</label>
+            <input type="text" id="skill-version-input" maxlength="40" placeholder="1.0.0">
+          </div>
+        </div>
+        <p class="field-hint" id="skill-slug-hint">Lowercase letters, numbers and hyphens only — must be unique. Can't be changed once a skill is created.</p>
+        <label class="field-label" for="skill-summary-input">Summary</label>
+        <input type="text" id="skill-summary-input" maxlength="400" placeholder="One line, shown in the skills list.">
+        <span class="char-count" id="skill-summary-count"></span>
+
+        <div class="docs-block-header" style="margin-top:16px;">
+          <h3>Files</h3>
+          <button type="button" class="btn-ghost" id="skill-add-file-btn">+ Add file</button>
+        </div>
+        <p class="field-hint">At least one file. Each is a path (e.g. <code>SKILL.md</code> or <code>references/tokens.md</code>) and its full content.</p>
+        <div id="skill-files-list"></div>
+
+        <div class="form-row" style="justify-content:flex-end;margin-top:14px;">
+          <div class="form-actions">
+            <button type="button" class="btn-ghost" id="skill-cancel">Cancel</button>
+            <button type="button" class="btn-primary" id="skill-submit">Save skill</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <!-- Template for one file row in the modal above — cloned by
+         createSkillFileRow() in app.js rather than built as a raw HTML
+         string, so its own textarea/input keep working with wireCharCount
+         and don't need re-escaping on every render. -->
+    <script id="skill-file-row-template" type="text/template">
+      <div class="skill-file-row">
+        <div class="form-row" style="align-items:flex-start;">
+          <input type="text" class="skill-file-path-input" maxlength="200" placeholder="e.g. SKILL.md">
+          <button type="button" class="icon-btn skill-file-remove-btn" title="Remove file"><span class="material-symbols-outlined">close</span></button>
+        </div>
+        <textarea class="skill-file-content-input" rows="8" placeholder="File content…"></textarea>
+        <span class="char-count skill-file-content-count"></span>
+      </div>
+    </script>
 
     <div class="modal-backdrop" id="doc-backdrop" hidden>
       <div class="modal-panel" role="dialog" aria-modal="true" aria-labelledby="doc-title">
@@ -818,6 +873,29 @@
           <p class="empty-hint" id="faq-article-empty" hidden>Nothing here yet.</p>
         </div>
       </div>
+    </section>
+
+    <!-- Skills library — organisation-wide, not scoped to any one project
+         (see firestore.rules `match /skills/{skillId}` and
+         functions/mcp-server.js's list_skills/get_skill/upload_skill/
+         update_skill/delete_skill). Any signed-in member can read it, so
+         no [data-admin-only]/[data-editor-only] gate on the page itself —
+         only on the controls that actually write (Add skill, and each
+         card's Edit/Delete), same [data-editor-only] convention as
+         [data-admin-only] already used for Team & agent access, but the
+         other direction (hides for a viewer instead of everyone but an
+         admin). -->
+    <section class="skills-page" id="skills-page" hidden>
+      <div class="page-header">
+        <h2>Skills</h2>
+        <span class="page-header-count" id="skills-count">0 skills</span>
+      </div>
+      <p class="field-hint">A shared library any team member's AI agent can read over MCP — packaged instructions like this console's own front-end design skill. Anyone signed in can read a skill; adding, editing or removing one needs editor access.</p>
+      <div class="form-row" style="justify-content:flex-end;margin-bottom:12px;">
+        <button type="button" class="btn-primary" id="skills-add-btn" data-editor-only>+ Add skill</button>
+      </div>
+      <div id="skills-list"></div>
+      <p class="empty-hint" id="skills-empty" hidden>No skills yet.</p>
     </section>
 
     <!-- Phone only: the actions of whichever project you're currently

@@ -61,6 +61,11 @@ const projectsRef = collection(db, "projects");
 const interfacesRef = collection(db, "interfaces");
 const programsRef = collection(db, "programs");
 const projectDocsRef = collection(db, "projectDocs");
+// Organisation-wide skills library — unscoped to any project, unlike every
+// ref above it (see firestore.rules `match /skills/{skillId}` and
+// functions/mcp-server.js's list_skills/get_skill/upload_skill/
+// update_skill/delete_skill).
+const skillsRef = collection(db, "skills");
 // Pipeline health strip (YeCj7sNpHXFUZQhmAmEb) — a single doc each workflow
 // (backlog-automation.yml, deploy-backlog-tracker.yml) writes at the end of
 // its own run, via the same service-account credential those workflows
@@ -220,6 +225,7 @@ let projectsLoaded = false;
 let interfaces = [];
 let programs = [];
 let projectDocs = [];
+let skills = [];
 let editingProjectId = null;
 
 // ── Backlog selection state (per project) — lets "Notify Claude" be
@@ -377,6 +383,7 @@ function closeAllSubPages() {
   closeFaqArticlesPage();
   closeFaqArticleEditorPage();
   closeFaqRevisionReviewPage();
+  closeSkillsPage();
   // Every routed page (FAQ Management, Settings, the article editor — see
   // "URL routing" below) opens by calling this first, so clearing the hash
   // here is the one
@@ -1851,6 +1858,7 @@ const byMillis = (field, dir) => (a, b) => {
   return dir === "desc" ? bv - av : av - bv;
 };
 const byNumber = (field) => (a, b) => (Number(a[field]) || 0) - (Number(b[field]) || 0);
+const byName = (a, b) => String(a.name || "").localeCompare(String(b.name || ""));
 
 // Kick these off immediately — before the listeners below have had a chance
 // to connect — so the board has something on screen within a second or two
@@ -1865,6 +1873,10 @@ primeFromRest("backlogItems", (rows) => {
 primeFromRest("programs", (rows) => { programs = rows; render(); });
 primeFromRest("interfaces", (rows) => { interfaces = rows; render(); });
 primeFromRest("projectDocs", (rows) => { projectDocs = rows; });
+primeFromRest("skills", (rows) => {
+  skills = rows;
+  if (skillsPage && !skillsPage.hidden) renderSkillsPage();
+}, byName);
 primeFromRest("faqCategories", (rows) => {
   faqCategories = rows;
   if (faqArticlesPage && !faqArticlesPage.hidden) renderFaqArticlesPage();
@@ -1937,6 +1949,14 @@ onSnapshot(projectDocsRef, (snap) => {
   if (docsProjectId) renderDocsPage();
 }, (err) => {
   console.error("backlog-tracker: projectDocs listener error", err);
+});
+
+onSnapshot(query(skillsRef, orderBy("name", "asc")), (snap) => {
+  liveCollections.add("skills");
+  skills = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  if (skillsPage && !skillsPage.hidden) renderSkillsPage();
+}, (err) => {
+  console.error("backlog-tracker: skills listener error", err);
 });
 
 // Returns the new doc's id — the New Item modal needs it back to upload any
@@ -3837,6 +3857,227 @@ document.getElementById("if-submit").addEventListener("click", async () => {
   closeInterfaceModal();
 });
 
+// ── Skills page ───────────────────────────────────────────────────────────
+// An organisation-wide, shared library of packaged instructions any team
+// member's AI agent can pull in over MCP (list_skills/get_skill/
+// upload_skill/update_skill/delete_skill in functions/mcp-server.js) —
+// unlike a project doc or interface above, a skill belongs to no project at
+// all. Reading the page needs only sign-in (firestore.rules' isBoardReader
+// on `skills`); adding, editing or deleting a skill needs editor access,
+// gated below by requireSkillEditor() the same way FAQ writes are gated by
+// requireFaqEditor(), plus an explicit currentConsoleRole() check since a
+// viewer is otherwise still "signed in" and would only find out their write
+// was rejected from a raw firestore.rules permission-denied.
+const skillsPage = document.getElementById("skills-page");
+
+function openSkillsPage() {
+  closeAllSubPages();
+  document.getElementById("projects-root").hidden = true;
+  document.getElementById("board-page-header").hidden = true;
+  skillsPage.hidden = false;
+  setRouteHash("#skills");
+  updateTopbarTitle();
+  renderSkillsPage();
+}
+function closeSkillsPage() {
+  skillsPage.hidden = true;
+  document.getElementById("projects-root").hidden = false;
+  document.getElementById("board-page-header").hidden = false;
+}
+
+async function requireSkillEditor() {
+  if (!(await requireFaqEditor())) return false;
+  if (currentConsoleRole() === "viewer") {
+    await showAlert("You have read-only access to this console, so you can't add, edit or delete skills. An admin can change your role in Settings → Team & agent access.");
+    return false;
+  }
+  return true;
+}
+
+function skillFileBlockHTML(f) {
+  return `
+    <div class="skill-file-block">
+      <div class="skill-file-path">${escapeHTML(f.path || "")}</div>
+      <pre class="skill-file-content">${escapeHTML(f.content || "")}</pre>
+    </div>`;
+}
+
+function formatSkillUpdatedAt(v) {
+  if (!v || typeof v.toDate !== "function") return "";
+  try { return v.toDate().toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" }); } catch { return ""; }
+}
+
+function skillCardHTML(s) {
+  const files = Array.isArray(s.files) ? s.files : [];
+  const meta = [`v${s.version || "?"}`, `${files.length} file${files.length === 1 ? "" : "s"}`];
+  const updated = formatSkillUpdatedAt(s.updatedAt);
+  if (updated) meta.push(`updated ${updated}`);
+  return `
+    <div class="skill-card" data-id="${s.id}">
+      <div class="skill-card-top">
+        <div>
+          <div class="skill-card-name">${escapeHTML(s.name || "")}</div>
+          <div class="skill-card-meta">${escapeHTML(meta.join(" · "))} · <code>${escapeHTML(s.slug || "")}</code></div>
+          <div class="skill-card-summary">${escapeHTML(s.summary || "")}</div>
+        </div>
+        <div class="skill-card-actions" data-editor-only>
+          <button type="button" class="icon-btn skill-edit-btn" data-id="${s.id}" title="Edit"><span class="material-symbols-outlined">edit</span></button>
+          <button type="button" class="icon-btn skill-delete-btn" data-id="${s.id}" title="Delete"><span class="material-symbols-outlined">delete</span></button>
+        </div>
+      </div>
+      <details class="skill-card-files">
+        <summary>View files (${files.length})</summary>
+        ${files.map(skillFileBlockHTML).join("")}
+      </details>
+    </div>`;
+}
+
+function renderSkillsPage() {
+  const sorted = skills.slice().sort((a, b) => String(a.name || "").localeCompare(String(b.name || "")));
+  document.getElementById("skills-count").textContent = `${sorted.length} skill${sorted.length === 1 ? "" : "s"}`;
+  document.getElementById("skills-list").innerHTML = sorted.map(skillCardHTML).join("");
+  document.getElementById("skills-empty").hidden = sorted.length > 0;
+}
+
+document.getElementById("skills-list").addEventListener("click", (e) => {
+  const editBtn = e.target.closest(".skill-edit-btn");
+  if (editBtn) { openSkillModal(editBtn.dataset.id); return; }
+  const delBtn = e.target.closest(".skill-delete-btn");
+  if (delBtn) { deleteSkillWithConfirm(delBtn.dataset.id); return; }
+});
+
+async function deleteSkillWithConfirm(id) {
+  if (!(await requireSkillEditor())) return;
+  const s = skills.find((x) => x.id === id);
+  const label = s ? s.name : "this skill";
+  if (!(await showConfirmDialog(`Delete "${label}"? This can't be undone from the console (a developer can still recover it from docRevisions).`, { title: "Delete skill", okLabel: "Delete", danger: true }))) return;
+  await deleteDoc(doc(db, "skills", id));
+}
+
+// ── Add/Edit skill modal ─────────────────────────────────────────────────
+const skillBackdrop = document.getElementById("skill-backdrop");
+const skillNameInput = document.getElementById("skill-name-input");
+const skillSlugInput = document.getElementById("skill-slug-input");
+const skillVersionInput = document.getElementById("skill-version-input");
+const skillSummaryInput = document.getElementById("skill-summary-input");
+const skillFilesList = document.getElementById("skill-files-list");
+const skillFileRowTemplate = document.getElementById("skill-file-row-template").textContent;
+const updateSkillNameCount = wireCharCount(skillNameInput, document.getElementById("skill-name-count"));
+const updateSkillSummaryCount = wireCharCount(skillSummaryInput, document.getElementById("skill-summary-count"));
+let editingSkillId = null;
+
+function createSkillFileRow(path, content) {
+  const wrap = document.createElement("div");
+  wrap.innerHTML = skillFileRowTemplate.trim();
+  const row = wrap.firstElementChild;
+  const pathInput = row.querySelector(".skill-file-path-input");
+  const contentInput = row.querySelector(".skill-file-content-input");
+  pathInput.value = path || "";
+  contentInput.value = content || "";
+  contentInput.maxLength = 100000;
+  wireCharCount(contentInput, row.querySelector(".skill-file-content-count"));
+  row.querySelector(".skill-file-remove-btn").addEventListener("click", () => {
+    // Always leave at least one row — an empty modal with no way to add a
+    // file back would be a dead end, not a convenience.
+    if (skillFilesList.children.length <= 1) { pathInput.value = ""; contentInput.value = ""; return; }
+    row.remove();
+  });
+  return row;
+}
+
+document.getElementById("skill-add-file-btn").addEventListener("click", () => {
+  skillFilesList.appendChild(createSkillFileRow("", ""));
+});
+
+function readSkillFilesFromModal() {
+  return Array.from(skillFilesList.querySelectorAll(".skill-file-row")).map((row) => ({
+    path: row.querySelector(".skill-file-path-input").value.trim(),
+    content: row.querySelector(".skill-file-content-input").value,
+  })).filter((f) => f.path || f.content);
+}
+
+function openSkillModal(skillId) {
+  editingSkillId = skillId || null;
+  skillBackdrop.hidden = false;
+  skillFilesList.innerHTML = "";
+  if (editingSkillId) {
+    const s = skills.find((x) => x.id === editingSkillId);
+    document.getElementById("skill-modal-title").textContent = "Edit skill";
+    skillNameInput.value = s ? s.name || "" : "";
+    skillSlugInput.value = s ? s.slug || "" : "";
+    skillSlugInput.disabled = true;
+    document.getElementById("skill-slug-hint").textContent = "Slug can't be changed once a skill is created — delete and re-add it under a new slug instead.";
+    skillVersionInput.value = s ? s.version || "" : "";
+    skillSummaryInput.value = s ? s.summary || "" : "";
+    const files = s && Array.isArray(s.files) && s.files.length ? s.files : [{ path: "", content: "" }];
+    files.forEach((f) => skillFilesList.appendChild(createSkillFileRow(f.path, f.content)));
+  } else {
+    document.getElementById("skill-modal-title").textContent = "New skill";
+    skillNameInput.value = "";
+    skillSlugInput.value = "";
+    skillSlugInput.disabled = false;
+    document.getElementById("skill-slug-hint").textContent = "Lowercase letters, numbers and hyphens only — must be unique. Can't be changed once a skill is created.";
+    skillVersionInput.value = "1.0.0";
+    skillSummaryInput.value = "";
+    skillFilesList.appendChild(createSkillFileRow("SKILL.md", ""));
+  }
+  updateSkillNameCount();
+  updateSkillSummaryCount();
+  skillNameInput.focus();
+}
+function closeSkillModal() { skillBackdrop.hidden = true; editingSkillId = null; }
+
+document.getElementById("skills-add-btn").addEventListener("click", async () => {
+  if (!(await requireSkillEditor())) return;
+  openSkillModal(null);
+});
+document.getElementById("skill-cancel").addEventListener("click", closeSkillModal);
+document.getElementById("skill-close").addEventListener("click", closeSkillModal);
+skillBackdrop.addEventListener("click", (e) => { if (e.target === skillBackdrop) closeSkillModal(); });
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && !skillBackdrop.hidden) closeSkillModal();
+});
+document.getElementById("skill-submit").addEventListener("click", async () => {
+  if (!(await requireSkillEditor())) return;
+  const name = skillNameInput.value.trim();
+  if (!name) { skillNameInput.focus(); return; }
+  const summary = skillSummaryInput.value.trim();
+  if (!summary) { skillSummaryInput.focus(); return; }
+  const version = skillVersionInput.value.trim();
+  if (!version) { skillVersionInput.focus(); return; }
+  const files = readSkillFilesFromModal();
+  if (!files.length) { await showAlert("Add at least one file."); return; }
+  for (const f of files) {
+    if (!f.path) { await showAlert("Every file needs a path (e.g. SKILL.md)."); return; }
+    if (f.content.length > 100000) { await showAlert(`${f.path} is ${f.content.length} characters — the limit is 100,000. Trim it down and try again.`); return; }
+  }
+  const editorEmail = auth.currentUser ? auth.currentUser.email : null;
+  try {
+    if (editingSkillId) {
+      await setDoc(doc(db, "skills", editingSkillId), {
+        name, summary, version, files, updatedAt: serverTimestamp(), updatedByEmail: editorEmail,
+      }, { merge: true });
+    } else {
+      const slug = skillSlugInput.value.trim().toLowerCase();
+      if (!slug || !/^[a-z0-9-]+$/.test(slug)) { skillSlugInput.focus(); await showAlert("Slug must be lowercase letters, numbers and hyphens only."); return; }
+      if (skills.some((s) => s.slug === slug)) { skillSlugInput.focus(); await showAlert(`A skill with slug "${slug}" already exists.`); return; }
+      await addDoc(skillsRef, {
+        name, slug, summary, version, files,
+        createdVia: "console",
+        createdByEmail: editorEmail, updatedByEmail: editorEmail,
+        createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
+      });
+    }
+  } catch (err) {
+    await showAlert(describeSaveError(err, [
+      { label: "Name", value: name, max: 120 },
+      { label: "Summary", value: summary, max: 400 },
+    ]));
+    return;
+  }
+  closeSkillModal();
+});
+
 // ── VOICE DICTATION — New Item description, and (per a viewer request on
 // the comment-modal-restyle ticket, "support the ability to record ... as
 // we do with all the other fields") every comment box too: quick comment
@@ -5583,6 +5824,7 @@ function wireFaqArticleRowInteractions(containerId) {
 
 document.getElementById("faq-settings-btn").addEventListener("click", () => { closeNavDrawer(); openFaqSettingsPage(); });
 document.getElementById("faq-articles-btn").addEventListener("click", () => { closeNavDrawer(); openFaqArticlesPage("all"); });
+document.getElementById("skills-btn").addEventListener("click", () => { closeNavDrawer(); openSkillsPage(); });
 
 // ── URL routing for FAQ Management / Settings ────────────────────────────
 // These two are the only sub-pages given a real, persistent URL: reloading
@@ -5604,6 +5846,7 @@ document.getElementById("faq-articles-btn").addEventListener("click", () => { cl
 const ROUTE_TITLES = {
   "#faq-management": "FAQ Management",
   "#settings": "Settings",
+  "#skills": "Skills",
 };
 // Set when a #faq-article/<id> route is applied before that article has
 // actually arrived over the realtime channel yet (a cold reload straight
@@ -5700,8 +5943,9 @@ function applyRouteFromHash() {
   const hash = window.location.hash;
   if (hash === "#faq-management" || hash.startsWith("#faq-management?")) openFaqArticlesPage(faqFilterFromHash(hash));
   else if (hash === "#settings") openFaqSettingsPage();
+  else if (hash === "#skills") openSkillsPage();
   else if (hash.startsWith("#faq-article/")) openFaqArticleRouteFromHash(hash);
-  else if (!faqArticlesPage.hidden || !faqSettingsPage.hidden || !faqArticleEditorPage.hidden) closeAllSubPages();
+  else if (!faqArticlesPage.hidden || !faqSettingsPage.hidden || !faqArticleEditorPage.hidden || !skillsPage.hidden) closeAllSubPages();
 }
 // popstate (back/forward) and hashchange (a typed-in or pasted #hash) both
 // need to re-sync the visible page — pushState/replaceState above never

@@ -863,6 +863,46 @@ textarea.dialog-field-input { resize: vertical; min-height: 70px; }
 .faq-admin-page { margin-bottom: 20px; }
 .faq-admin-page code { background: var(--surface-2); border-radius: 4px; padding: 1px 5px; font-size: 12px; }
 .modal-panel-wide { max-width: 720px; }
+
+/* ── Skills page — a shared, organisation-wide skills library, not scoped
+   to any project (see firestore.rules `match /skills/{skillId}` and
+   functions/mcp-server.js). Same quiet-card feel as .docs-block, so it
+   reads as part of the same console rather than a bolted-on page. */
+.skills-page { margin-bottom: 20px; }
+.skills-page code { background: var(--surface-2); border-radius: 4px; padding: 1px 5px; font-size: 12px; }
+.skill-card {
+  border: none; border-radius: 14px; padding: 16px 18px;
+  background: var(--surface); margin-bottom: 12px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, .05);
+}
+.skill-card-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.skill-card-name { font-size: 15px; font-weight: 600; letter-spacing: -.01em; }
+.skill-card-meta { font-size: 11.5px; color: var(--text-muted); margin-top: 2px; }
+.skill-card-summary { font-size: 13px; color: var(--text); margin-top: 6px; }
+.skill-card-actions { display: flex; gap: 4px; flex-shrink: 0; }
+.skill-card-files { margin-top: 10px; }
+.skill-card-files > summary { cursor: pointer; font-size: 12.5px; color: var(--primary); font-weight: 600; }
+.skill-file-block { margin-top: 10px; border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; background: var(--bg); }
+.skill-file-path {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px;
+  font-weight: 600; color: var(--text); margin-bottom: 6px;
+}
+.skill-file-content {
+  margin: 0; white-space: pre-wrap; word-break: break-word; font-size: 12px; line-height: 1.5;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace; max-height: 320px; overflow-y: auto;
+  background: var(--surface); border-radius: 6px; padding: 8px 10px;
+}
+
+/* Add/Edit skill modal — a repeatable path+content row per file, appended/
+   removed by createSkillFileRow()/removeSkillFileRow() in app.js. */
+.skill-file-row { border: 1px solid var(--border); border-radius: 8px; padding: 10px; margin-top: 10px; background: var(--bg); }
+.skill-file-row .skill-file-path-input { flex: 1 1 auto; }
+.skill-file-row .skill-file-content-input {
+  width: 100%; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px;
+  line-height: 1.5; margin-top: 8px; box-sizing: border-box; resize: vertical;
+  color: var(--text); background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px;
+}
+.skill-file-remove-btn { flex-shrink: 0; }
 .form-row-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 10px; }
 .form-row-grid select { width: 100%; }
 #faq-article-editor-page input[type="text"], #faq-article-editor-page textarea, #faq-article-editor-page select {
@@ -1200,6 +1240,14 @@ html[data-console-role="viewer"] .project-rename-btn,
 html[data-console-role="viewer"] .card-move,
 html[data-console-role="viewer"] .card-select-cb,
 html[data-console-role="viewer"] .team-admin-block { display: none !important; }
+/* Generic counterpart to [data-admin-only] below, for a control that any
+   member may read alongside but only an editor (not a viewer) may use —
+   first used by the Skills page's Add/Edit/Delete controls, since a skill
+   is readable by every role but writable only by editor and up. Unlike the
+   named exclusions just above (kept for controls that predate this
+   attribute), a new read-mostly page should reach for this rather than
+   adding its own class here. */
+html[data-console-role="viewer"] [data-editor-only] { display: none !important; }
 
 /* ── Settings → Team & agent access ──────────────────────────────────────
    Admin-only block (hidden for everyone else by the rule above plus the

@@ -784,9 +784,9 @@ async function rpc(token, method, params, id = 1) {
     }
   });
 
-  await test("only the two delete tools are flagged destructive", async () => {
+  await test("only the delete tools are flagged destructive", async () => {
     const destructive = mcp.__test.TOOLS.filter((t) => t.destructive).map((t) => t.name).sort();
-    assert.deepStrictEqual(destructive, ["delete_interface", "delete_project_document"]);
+    assert.deepStrictEqual(destructive, ["delete_interface", "delete_project_document", "delete_skill"]);
   });
 
   await test("writes an audit row for every write", async () => {
