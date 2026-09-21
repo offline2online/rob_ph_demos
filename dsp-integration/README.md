@@ -35,9 +35,14 @@ Refresh it after a change worth showing, with the dev API running:
 
 ```bash
 npm run demo:capture -w @ph-dsp/admin
-cd apps/admin && VITE_DEMO=1 npx vite build --base=/rob_ph_demos/dsp-integration/prototype/
+cd apps/admin && VITE_DEMO=1 npx vite build --base=./
 cp -R dist/. ../../prototype/
 ```
+
+The base is **relative**, so the bundle works wherever it is served from —
+GitHub Pages, a githack preview of a branch, or an iframe pointed at either.
+Anything opening a new tab must use `externalUrl()` for the same reason: a
+bare `/booking-schedule` asks the host for a page it hasn't got.
 
 ## Keeping the board in step
 
