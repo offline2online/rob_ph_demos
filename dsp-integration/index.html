@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Display Types &amp; DSP Integration — POC</title>
+  <meta name="description" content="Proof of concept: selling Personalisation Hub display slots to advertisers through connected DSPs.">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;600;700&family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" />
+  <style>
+    :root {
+      --bg:#f5f5f5; --surface:#fff; --border:#d9d9d9; --text:rgba(0,0,0,0.88);
+      --text2:rgba(0,0,0,0.65); --text3:rgba(0,0,0,0.45);
+      --primary:#169bc2; --primary-light:rgba(22,155,194,0.10);
+      --warning:#faad14; --radius:8px;
+    }
+    * { margin:0; padding:0; box-sizing:border-box; }
+    body { font-family:Roboto,'Helvetica Neue',Helvetica,Arial,sans-serif; background:var(--bg); color:var(--text); }
+    a { color:var(--primary); }
+    .material-symbols-outlined { font-variation-settings:'FILL' 0,'wght' 400,'GRAD' 0,'opsz' 24; vertical-align:middle; font-size:20px; }
+
+    .topbar { background:#000; height:50px; display:flex; align-items:center; gap:14px; padding:0 24px; position:sticky; top:0; z-index:10; }
+    .topbar-logo-icon { width:30px; height:30px; background:linear-gradient(135deg,#169bc2,#38b0cf); border-radius:7px; display:flex; align-items:center; justify-content:center; }
+    .topbar-logo-icon .material-symbols-outlined { color:#fff; font-size:18px; }
+    .topbar-title { color:#fff; font-size:14px; font-weight:600; }
+    .topbar-badge { color:rgba(255,255,255,.7); font-size:11px; font-weight:600; padding:3px 10px; border-radius:20px; border:1px solid rgba(255,255,255,.3); }
+
+    .page { max-width:960px; margin:0 auto; padding:32px 24px 80px; }
+    h1 { font-size:26px; font-weight:700; letter-spacing:-.3px; }
+    .lede { font-size:15px; color:var(--text2); margin-top:8px; max-width:70ch; line-height:1.55; }
+    h2 { font-size:15px; font-weight:700; margin:36px 0 12px; }
+    p, li { font-size:13.5px; color:var(--text2); line-height:1.6; }
+
+    .card { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:20px; }
+    .notice { display:flex; gap:12px; align-items:flex-start; border-left:3px solid var(--warning); margin-top:24px; }
+    .notice .material-symbols-outlined { color:var(--warning); }
+    .notice b { color:var(--text); }
+
+    pre { background:#1e1e1e; color:#e8e8e8; border-radius:var(--radius); padding:16px 18px; overflow-x:auto; font-size:12.5px; line-height:1.7; }
+    pre .c { color:#7fb069; }
+    code { font-size:12.5px; background:var(--primary-light); color:#0d7ea0; padding:1px 5px; border-radius:4px; }
+    pre code { background:none; color:inherit; padding:0; }
+
+    .screens { display:grid; grid-template-columns:repeat(auto-fill,minmax(260px,1fr)); gap:12px; }
+    .screen { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:14px 16px; }
+    .screen h3 { font-size:13.5px; font-weight:600; color:var(--text); display:flex; align-items:center; gap:8px; }
+    .screen h3 .material-symbols-outlined { color:var(--primary); font-size:18px; }
+    .screen p { font-size:12.5px; margin-top:5px; }
+
+    .links { list-style:none; display:grid; grid-template-columns:repeat(auto-fill,minmax(260px,1fr)); gap:10px; }
+    .links a { display:flex; align-items:center; gap:8px; background:var(--surface); border:1px solid var(--border); border-radius:var(--radius);
+               padding:11px 14px; font-size:13px; font-weight:500; text-decoration:none; color:var(--text2); }
+    .links a:hover { border-color:var(--primary); color:var(--primary); }
+    .links .material-symbols-outlined { font-size:18px; color:var(--text3); }
+    .links a:hover .material-symbols-outlined { color:var(--primary); }
+
+    footer { margin-top:44px; padding-top:18px; border-top:1px solid var(--border); font-size:12px; color:var(--text3); }
+    @media (max-width:640px) { .page { padding:24px 16px 60px; } h1 { font-size:22px; } }
+  </style>
+</head>
+<body>
+  <div class="topbar">
+    <span class="topbar-logo-icon"><span class="material-symbols-outlined">campaign</span></span>
+    <span class="topbar-title">Display Types &amp; DSP Integration</span>
+    <span class="topbar-badge">Proof of concept</span>
+  </div>
+
+  <div class="page">
+    <h1>Selling display slots to advertisers</h1>
+    <p class="lede">
+      A working proof of concept for opening Personalisation Hub inventory to advertisers through connected
+      DSPs: a slot on a display type is offered for sale, DSPs bid for it by play window, the winning campaign
+      is approved and handed to the existing campaign system, and the retailer sees what sold and for how much.
+      It runs beside the platform, behind the <code>dspIntegration</code> flag, and changes nothing about playback.
+    </p>
+
+    <div class="card notice">
+      <span class="material-symbols-outlined">info</span>
+      <p>
+        <b>This page is the front door, not the app.</b> The POC is a real service — an API, a database, an
+        auction job and a mock DSP exchange — so it can't run from a static page the way the other demos here do.
+        It takes about a minute to start locally, below. If you'd rather click than clone, ask and we'll host a
+        running instance.
+      </p>
+    </div>
+
+    <h2>Run it</h2>
+    <pre><code><span class="c"># once</span>
+git clone git@github.com:offline2online/rob_ph_demos.git
+cd rob_ph_demos/dsp-integration
+npm install
+
+<span class="c"># three terminals (or the same one, backgrounded)</span>
+npm run dev:api      <span class="c"># the POC API on :4000, seeded on first run</span>
+npm run dev:mocks    <span class="c"># stand-in DSPs on :4100</span>
+npm run dev:admin    <span class="c"># the admin UI on :5173</span></code></pre>
+    <p style="margin-top:12px">
+      Then open <code>http://localhost:5173</code>. The database is seeded with three DSPs, their advertisers,
+      example campaigns in every approval state and a booked window that has already played, so every screen has
+      something in it. <code>npm run db:bookings</code> tops up the schedule with a booking for each advertiser.
+    </p>
+
+    <h2>What's in it</h2>
+    <div class="screens">
+      <div class="screen">
+        <h3><span class="material-symbols-outlined">dashboard</span>Display Types</h3>
+        <p>Slot assignment: each slot in the rotation is owned by Headquarters, an Advertiser or the Stores.</p>
+      </div>
+      <div class="screen">
+        <h3><span class="material-symbols-outlined">hub</span>DSP Integration</h3>
+        <p>Exchange settings and sellers.json, advertiser settings (floor price, personalised multiplier, cost
+          per engagement, auction schedule, allow and block lists), shared targeting variables, and a page per DSP.</p>
+      </div>
+      <div class="screen">
+        <h3><span class="material-symbols-outlined">sell</span>Advertisers / Inventory</h3>
+        <p>Every advertiser across the DSPs with its approval and pricing, and the inventory they can buy — who
+          each position is assigned to and what targeting it supports.</p>
+      </div>
+      <div class="screen">
+        <h3><span class="material-symbols-outlined">calendar_month</span>Booking schedule</h3>
+        <p>Every position across its play windows — booked, available or unavailable — with booked and billed
+          revenue per display type, and what sold by campaign type.</p>
+      </div>
+      <div class="screen">
+        <h3><span class="material-symbols-outlined">fact_check</span>Campaign Status</h3>
+        <p>The campaigns advertisers and DSPs submitted, with the creative review: approve, reject with a reason,
+          activate. A drop-in module for the platform's own Campaigns section.</p>
+      </div>
+      <div class="screen">
+        <h3><span class="material-symbols-outlined">gavel</span>The exchange</h3>
+        <p>OpenRTB 2.6 DOOH bid requests to connected DSPs, a first-price auction per play window, pre-auction
+          enforcement, hand-off to the campaign system and billing from playback data.</p>
+      </div>
+    </div>
+
+    <h2>The interfaces a partner integrates against</h2>
+    <ul class="links">
+      <li><a href="https://github.com/offline2online/rob_ph_demos/blob/main/dsp-integration/docs/dsp-integration/api/API.md"><span class="material-symbols-outlined">description</span>API guide</a></li>
+      <li><a href="https://github.com/offline2online/rob_ph_demos/blob/main/dsp-integration/docs/dsp-integration/api/openapi.yaml"><span class="material-symbols-outlined">data_object</span>OpenAPI contract</a></li>
+      <li><a href="https://github.com/offline2online/rob_ph_demos/blob/main/dsp-integration/docs/dsp-integration/REQUIREMENTS.md"><span class="material-symbols-outlined">checklist</span>Requirements</a></li>
+      <li><a href="https://github.com/offline2online/rob_ph_demos/blob/main/dsp-integration/docs/dsp-integration/BUILD-PLAN.md"><span class="material-symbols-outlined">construction</span>Build plan &amp; decisions</a></li>
+      <li><a href="https://github.com/offline2online/rob_ph_demos/blob/main/dsp-integration/docs/dsp-integration/CAMPAIGN-APPROVAL-INTEGRATION.md"><span class="material-symbols-outlined">extension</span>Approval module: integration</a></li>
+      <li><a href="https://github.com/offline2online/rob_ph_demos/tree/main/dsp-integration"><span class="material-symbols-outlined">code</span>Source</a></li>
+    </ul>
+
+    <footer>
+      No real spend: DSPs stay in Test mode until a person switches them to Live, and no visitor data leaves the
+      platform. Part of the Personalisation Hub prototypes in
+      <a href="https://github.com/offline2online/rob_ph_demos">offline2online/rob_ph_demos</a>.
+    </footer>
+  </div>
+</body>
+</html>
