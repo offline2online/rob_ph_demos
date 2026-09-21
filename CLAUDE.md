@@ -94,11 +94,11 @@ tied to the other project's release cadence.
 PR #176). It is a working service, not a static page: an npm-workspaces
 monorepo with a Fastify API over SQLite, a React admin UI, mock DSPs and an
 auction job, all behind the `dspIntegration` flag. It therefore **cannot be
-opened from GitHub Pages like the other demos** — the published page at
-<https://offline2online.github.io/rob_ph_demos/dsp-integration/> (short way
-in: `/dsp/`) explains the build and how to run it locally
+opened from GitHub Pages like the other demos** — run it locally
 (`npm run dev:api` / `dev:mocks` / `dev:admin`, then `localhost:5173`).
-Note the folder is `dsp-integration/`, not the
+The static prototype it was built from is published at
+<https://offline2online.github.io/rob_ph_demos/display-types-dsp-integration/prototype/>.
+Note the POC folder is `dsp-integration/`, not the
 `display-types-dsp-integration/` named above.
 
 **On the Prototype Backlog board** (the live `backlog-tracker` app, not the
