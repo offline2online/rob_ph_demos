@@ -336,6 +336,31 @@ describe('Advertisers / Inventory', () => {
     }] }))
   })
 
+  /* The CTAs open a new tab, so they can't go through the router — and a
+     bare path 404s wherever the bundle isn't served from the domain root
+     (ticket d5lCFNAL: the hosted prototype routes in the hash). */
+  it('opens the booking schedule at a URL that works where the bundle is served', async () => {
+    vi.stubGlobal('fetch', vi.fn(fakeFetch(ADVERTISER_PAGE)))
+    const opened: string[] = []
+    vi.stubGlobal('open', vi.fn((url: string) => { opened.push(url); return null }))
+    renderAt('/advertisers')
+    const advertisers = await screen.findByLabelText('Advertisers')
+    fireEvent.click(within(advertisers).getAllByRole('button', { name: /Bookings/ })[0])
+    fireEvent.click(screen.getByRole('button', { name: /Booking schedule/ }))
+    /* Served from the root, as the app is inside HQ Admin: the plain route. */
+    expect(opened).toEqual(['/booking-schedule?advertiserId=nestle', '/booking-schedule'])
+  })
+
+  it('in the hosted build, puts the route in the hash under the bundle\u2019s base', async () => {
+    vi.stubEnv('VITE_DEMO', '1')
+    vi.stubEnv('BASE_URL', './')
+    const { externalUrl } = await import('../src/features/booking-schedule/path')
+    expect(externalUrl('/booking-schedule')).toBe('./#/booking-schedule')
+    expect(externalUrl('/booking-schedule?advertiserId=nestle')).toBe('./#/booking-schedule?advertiserId=nestle')
+    vi.unstubAllEnvs()
+    expect(externalUrl('/booking-schedule')).toBe('/booking-schedule')
+  })
+
   it('shows a marketing user what each slot supports, without letting them change it', async () => {
     vi.stubGlobal('fetch', vi.fn(fakeFetch({ ...ADVERTISER_PAGE, '/api/admin/v1/session': { role: 'hq_marketing', scopes: ['sections'] } })))
     renderAt('/advertisers')

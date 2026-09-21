@@ -22,7 +22,7 @@ import { useReportDirty } from '../../shared/UnsavedChanges'
 import { deepEqual } from '../../shared/deepEqual'
 import { useDraft } from '../../shared/useDraft'
 import { T } from '../../theme/phTheme'
-import { BOOKING_SCHEDULE_PATH } from '../booking-schedule/path'
+import { BOOKING_SCHEDULE_PATH, externalUrl } from '../booking-schedule/path'
 
 interface Data { currency: string; floorCpm: number; items: Advertiser[] }
 type Settings = Record<string, AdvertiserSetting>
@@ -323,7 +323,7 @@ export function AdvertisersPage() {
   const context = {
     settings: draft, data, canEdit,
     set: (id: string, patch: Partial<AdvertiserSetting>) => setDraft((cur) => (cur ? { ...cur, [id]: { ...cur[id], ...patch } } : cur)),
-    openBookings: (advertiserId: string) => window.open(`${BOOKING_SCHEDULE_PATH}?advertiserId=${encodeURIComponent(advertiserId)}`, '_blank', 'noopener'),
+    openBookings: (advertiserId: string) => window.open(externalUrl(`${BOOKING_SCHEDULE_PATH}?advertiserId=${encodeURIComponent(advertiserId)}`), '_blank', 'noopener'),
     openCampaigns: (advertiserId: string) => navigate(`/campaign-status?advertiserId=${encodeURIComponent(advertiserId)}`),
   }
 
@@ -345,7 +345,7 @@ export function AdvertisersPage() {
       )}
       <div className="flex items-center justify-between gap-3">
         <SectionLabel><WithTip tip="Every advertiser-owned slot across the estate that connected DSPs can bid on. Slots are made available by setting their owner to Advertiser on a display type.">Available Inventory</WithTip></SectionLabel>
-        <Button color="primary" variant="text" size="small" icon={<Icon name="calendar_month" size={16} />} style={{ marginTop: 12 }} onClick={() => window.open(BOOKING_SCHEDULE_PATH, '_blank', 'noopener')}>Booking schedule</Button>
+        <Button color="primary" variant="text" size="small" icon={<Icon name="calendar_month" size={16} />} style={{ marginTop: 12 }} onClick={() => window.open(externalUrl(BOOKING_SCHEDULE_PATH), '_blank', 'noopener')}>Booking schedule</Button>
       </div>
       {inventory.data && invRows.length === 0 ? (
         <div className="flex items-center gap-2" style={{ fontSize: 12.5, color: T.muted }}>
