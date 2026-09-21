@@ -627,10 +627,32 @@ function nearestPageFor(filePath) {
   let dir = path.dirname(filePath);
   while (dir && dir !== "." && dir !== path.sep) {
     const candidate = `${dir}/index.html`;
-    if (fs.existsSync(path.join(process.cwd(), candidate))) return candidate;
+    if (fs.existsSync(path.join(process.cwd(), candidate)) && !isBundlerTemplate(candidate)) return candidate;
+    // A bundler's own index.html is not a page, but the build it produces
+    // usually sits beside the source it was built from.
+    for (const built of [`${dir}/prototype/index.html`, `${dir}/dist/index.html`]) {
+      if (fs.existsSync(path.join(process.cwd(), built))) return built;
+    }
     dir = path.dirname(dir);
   }
   return null;
+}
+
+// An index.html that loads a source module — Vite's `<script type="module"
+// src="/src/main.tsx">` and friends — is a build input, not something a
+// static host can serve: opened from githack it is a blank page with a 404
+// in the console. Before this check, a ticket touching
+// dsp-integration/apps/admin/src/… got exactly that as its "Test this ->"
+// link (xvb2ZtHQoMvdrtKIL3hN, 22 Sep), because apps/admin/index.html is the
+// nearest index.html above the change and it exists. The built bundle two
+// directories up was the real answer.
+function isBundlerTemplate(candidate) {
+  try {
+    const html = fs.readFileSync(path.join(process.cwd(), candidate), "utf8");
+    return /<script[^>]+src=["'](\.?\/)?src\//i.test(html);
+  } catch {
+    return false; // unreadable: treat it as an ordinary page, as before
+  }
 }
 
 // Finds a PR by exact head branch, in ANY state. Reconciliation-specific:
@@ -2150,4 +2172,4 @@ if (require.main === module) {
 // disposable local git repo rather than requiring this whole automation
 // run (main(), above, has real Firestore/GitHub side effects the moment
 // this module loads if not guarded — see the require.main check).
-module.exports = { conflictedPaths, tryAutoResolveFaqIndexConflict, archiveAndResetOrphanedBranch, dateStamp };
+module.exports = { conflictedPaths, tryAutoResolveFaqIndexConflict, archiveAndResetOrphanedBranch, dateStamp, nearestPageFor, isBundlerTemplate };
