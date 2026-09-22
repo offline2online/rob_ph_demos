@@ -151,7 +151,7 @@ export async function seed(ctx: Context, opts: { bookings?: boolean } = {}) {
       [advertiserSlug("L'Oréal")]: { approvalRequired: true, floorMultiplier: 1.2 },
     })
     ctx.company.saveVariableAccess({
-      'store.suburb': [], 'store.postcode': [], 'store.country': [],
+      'store.suburb': [], 'store.postcode': [], 'store.country': [], 'store.languages': [],
       'store.reason_for_visit': ['p_google'], 'visitor.purchase_intent': ['p_google'],
     })
     /* Assumed views (VAC-d) per play window for each advertiser slot (AudienceSource
