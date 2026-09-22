@@ -1,11 +1,17 @@
 /* Seed data = the prototype's sample data (prototype-reference/src/model/
    data.js), reshaped to the API contract. Decision 1: the prototype's four
-   Responsive Web display types are not seeded. */
+   Responsive Web display types are not seeded.
+
+   This file is the minimal base the API tests count on. The volume that
+   makes the UX real — more slots, stores, DSPs, advertisers, campaigns and
+   bookings — is the demo estate in demo.ts, applied on top by default and
+   switched off by the tests (Rob, 22 Sep). */
 import { advertiserSlug } from '@ph-dsp/types'
 import { generateKeyPairSync } from 'node:crypto'
 import type { Context } from '../context'
 import { seedBookings } from './bookings'
 import { seedCampaigns } from './campaigns'
+import { seedDemo } from './demo'
 import { tx } from '../db/db'
 
 const blankFeatures = () => ({
@@ -111,8 +117,9 @@ const serviceAccountKeyFile = (clientEmail: string) =>
   })
 
 /* `bookings`: the sample bookings (a fresh database gets them, so the
-   schedule isn't empty; tests seed a clean forward schedule instead). */
-export async function seed(ctx: Context, opts: { bookings?: boolean } = {}) {
+   schedule isn't empty; tests seed a clean forward schedule instead).
+   `demo`: the demo estate on top (demo.ts); off in the tests. */
+export async function seed(ctx: Context, opts: { bookings?: boolean; demo?: boolean } = {}) {
   if (ctx.displayTypes.list().length) return false
   tx(ctx.db, () => {
     SEED_PLAYLISTS.forEach((p) => ctx.playlists.create(p))
@@ -162,6 +169,7 @@ export async function seed(ctx: Context, opts: { bookings?: boolean } = {}) {
   })
   await seedCampaigns(ctx)
   if (opts.bookings !== false) await seedBookings(ctx)
+  if (opts.demo !== false) await seedDemo(ctx)
   return true
 }
 
