@@ -17,13 +17,13 @@ import type { StoredTargeting } from '../../domain/targetingSummary'
 import { HttpError, conflict, notFound, validationFailed } from '../../http/errors'
 import type { PartnerRecord } from '../../repos/PartnerRepo'
 
-const PRICING_TYPES = ['baseline', 'localised', 'personalised', 'interactive'] as const
+const PRICING_TYPES = ['default', 'localised', 'personalised', 'interactive'] as const
 type PricingType = (typeof PRICING_TYPES)[number]
 type Detail = { field: string; reason: string }
 
 interface CreateBody {
   advertiserId?: unknown; name?: unknown; displayTypeId?: unknown; brief?: unknown
-  baseline?: { pricingType?: unknown }
+  default?: { pricingType?: unknown }
   targeted?: { id?: unknown; priority?: unknown; pricingType?: unknown; rules?: unknown }[]
 }
 
@@ -43,7 +43,7 @@ export const campaignRoutes = (ctx: Context): FastifyPluginAsync => async (app) 
     if (!c || c.partnerId !== partner.id || c.source === 'hq') throw notFound('Campaign not found.')
     return c
   }
-  const targetingOf = (targeting: unknown) => (targeting ?? { baseline: { pricingType: 'baseline' } }) as StoredTargeting
+  const targetingOf = (targeting: unknown) => (targeting ?? { default: { pricingType: 'default' } }) as StoredTargeting
 
   app.post<{ Body: CreateBody }>('/campaigns', async (req, reply) => {
     const b = req.body ?? {}
@@ -51,7 +51,18 @@ export const campaignRoutes = (ctx: Context): FastifyPluginAsync => async (app) 
     if (typeof b.advertiserId !== 'string' || !partnerAdvertiser(req.partner, b.advertiserId)) invalid.push({ field: 'advertiserId', reason: `Not an advertiser on ${req.partner.name}.` })
     if (typeof b.name !== 'string' || !b.name.trim()) invalid.push({ field: 'name', reason: 'Required.' })
     if (b.displayTypeId !== undefined && (typeof b.displayTypeId !== 'string' || !ctx.displayTypes.get(b.displayTypeId))) invalid.push({ field: 'displayTypeId', reason: 'Unknown display type.' })
-    if (!b.baseline || !PRICING_TYPES.includes(b.baseline.pricingType as PricingType)) invalid.push({ field: 'baseline.pricingType', reason: `One of ${PRICING_TYPES.join(', ')}.` })
+    /* default is mandatory on every submission (decision, 22 Sep,
+       superseding the earlier same-day "baseline optional" decision —
+       ticket "Make default creative mandatory; retire localised-only
+       booking path"): the fallback-free/part-sold submission shape (only
+       localised targeted versions, leaving stores none of them match to
+       another advertiser) is retired — every slot goes to one advertiser,
+       whose default layer is what plays there when nothing more specific
+       matches. localised/personalised targeted versions remain optional
+       upsells on top of it. */
+    const hasDefault = b.default !== undefined && b.default !== null
+    if (!hasDefault) invalid.push({ field: 'default', reason: 'Required.' })
+    else if (!PRICING_TYPES.includes(b.default!.pricingType as PricingType)) invalid.push({ field: 'default.pricingType', reason: `One of ${PRICING_TYPES.join(', ')}.` })
     const brief = validateBrief(b.brief)
     invalid.push(...brief.errors)
     const targeted = b.targeted ?? []
@@ -63,7 +74,7 @@ export const campaignRoutes = (ctx: Context): FastifyPluginAsync => async (app) 
     if (Array.isArray(targeted)) {
       targeted.forEach((t, i) => {
         const f = (k: string) => `targeted[${i}].${k}`
-        if (typeof t?.id !== 'string' || !t.id.trim() || t.id === 'baseline') invalid.push({ field: f('id'), reason: 'A version id other than "baseline".' })
+        if (typeof t?.id !== 'string' || !t.id.trim() || t.id === 'default') invalid.push({ field: f('id'), reason: 'A version id other than "default".' })
         else if (ids.has(t.id)) invalid.push({ field: f('id'), reason: 'Version ids must be unique.' })
         else ids.add(t.id)
         if (!Number.isInteger(t?.priority)) invalid.push({ field: f('priority'), reason: 'An integer.' })
@@ -76,13 +87,16 @@ export const campaignRoutes = (ctx: Context): FastifyPluginAsync => async (app) 
     throwIfRejected({ invalid: ruleErrors, notPermitted: [...notPermitted.values()] }, invalid)
 
     const targeting: StoredTargeting = {
-      baseline: { pricingType: b.baseline!.pricingType as PricingType },
+      default: { pricingType: b.default!.pricingType as PricingType },
       ...(targeted.length ? { targeted: targeted.map((t) => ({ id: t.id as string, priority: t.priority as number, pricingType: t.pricingType as PricingType, rules: t.rules as Rules })) } : {}),
     }
+    /* Enforcement (checkFloor/checkTargeting) reads one pricingType for the
+       whole campaign, taken from the mandatory default layer. */
+    const pricingType = b.default!.pricingType as PricingType
     const c = ctx.campaigns.createCampaign({
       id: `c_${randomUUID().slice(0, 12)}`, name: (b.name as string).trim(), targeting, source: 'api',
       advertiserId: b.advertiserId as string, partnerId: req.partner.id, displayTypeId: (b.displayTypeId as string | undefined) ?? null,
-      pricingType: b.baseline!.pricingType as PricingType,
+      pricingType,
       ...(brief.brief ? { brief: brief.brief } : {}),
     })
     return reply.status(201).send(statusView(await ctx.approvals.view(c.campaignId)))
@@ -105,7 +119,7 @@ export const campaignRoutes = (ctx: Context): FastifyPluginAsync => async (app) 
       } else if (part.fieldname === 'version') version = String(part.value)
     }
     const targeting = targetingOf(c.targeting)
-    const roles = ['baseline', ...(targeting.targeted ?? []).map((t) => t.id)]
+    const roles = [...(targeting.default ? ['default'] : []), ...(targeting.targeted ?? []).map((t) => t.id)]
     const invalid: Detail[] = []
     if (!version || !roles.includes(version)) invalid.push({ field: 'version', reason: `One of ${roles.join(', ')}.` })
     if (!bytes && !truncated) invalid.push({ field: 'file', reason: 'Required.' })
@@ -115,7 +129,7 @@ export const campaignRoutes = (ctx: Context): FastifyPluginAsync => async (app) 
     const media = truncated ? null : readMedia(bytes as Buffer)
     const checks: Check[] = truncated
       ? [{ name: 'file_size', passed: false, detail: `The file is over the ${Math.round(limit / 1024 / 1024)} MB limit.` }]
-      : fileChecks(media, (bytes as Buffer).length, dt ?? null, ctx.config.assetLimits)
+      : fileChecks(media, (bytes as Buffer).length, dt ?? null, ctx.config.assetLimits, version)
     if (failed(checks).length) throw new HttpError(422, 'checks_failed', 'The file failed the automated checks.', failureDetails(checks))
 
     const m = media!
@@ -141,15 +155,19 @@ export const campaignRoutes = (ctx: Context): FastifyPluginAsync => async (app) 
 
     const targeting = targetingOf(c.targeting)
     const assets = ctx.campaigns.latestAssets(c.campaignId)
-    const baseline = assets.find((a) => a.role === 'baseline')
+    /* default is mandatory (decision, 22 Sep — see the /campaigns validation
+       above), so submitting always needs its own creative: there is no
+       fallback-free path any more where a targeted version's creative could
+       stand in for it. */
+    const def = assets.find((a) => a.role === 'default')
     const dt = c.displayTypeId ? ctx.displayTypes.get(c.displayTypeId) : null
-    /* The file checks of the baseline's current file, recorded for the reviewer. */
-    const file = baseline ? fileChecks(readMedia(ctx.assets.read(baseline.file) ?? Buffer.alloc(0)), baseline.sizeBytes, dt ?? null, ctx.config.assetLimits) : []
+    /* The file checks of the default layer's current file, recorded for the reviewer. */
+    const file = def ? fileChecks(readMedia(ctx.assets.read(def.file) ?? Buffer.alloc(0)), def.sizeBytes, dt ?? null, ctx.config.assetLimits, 'default') : []
     const access = ctx.company.variableAccess()
     const refused = (targeting.targeted ?? []).flatMap((t, i) => validateRules(t.rules, `targeted[${i}].rules`, req.partner, access, ctx.config.maxValuesPerCondition).notPermitted)
     const checks: Check[] = [
       ...file,
-      { name: 'baseline_present', passed: !!baseline, detail: baseline ? undefined : 'Upload a creative for the baseline campaign.' },
+      { name: 'default_present', passed: !!def, detail: def ? undefined : 'Upload a creative for the default campaign.' },
       { name: 'targeting_permitted', passed: !refused.length, detail: refused.length ? `Not enabled for ${req.partner.name}: ${[...new Set(refused.map((d) => d.variable))].join(', ')}.` : undefined },
     ]
     if (failed(checks).length) throw new HttpError(422, 'checks_failed', 'The campaign failed the automated checks.', failureDetails(checks))

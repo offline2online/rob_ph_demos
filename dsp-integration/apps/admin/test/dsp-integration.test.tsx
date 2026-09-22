@@ -21,11 +21,11 @@ const ADVERTISER_PAGE = {
     items: [
       {
         displayTypeId: 'menu_board', displayTypeName: 'Menu Board — Long Format', touchPoint: 'Digital Signage', playlistName: 'Menu Board Playlist', slot: 2, position: 'Supplier slot',
-        assignedTo: { partnerIds: ['p_google'], partnerNames: ['Google DSP'], advertisers: [], whitelistOnly: false }, qrControl: true, supportedTargeting: ['localised', 'personalised'],
+        assignedTo: { partnerIds: ['p_google'], partnerNames: ['Google DSP'], advertisers: [], whitelistOnly: false }, qrControl: true, visionAi: true, supportedTargeting: ['localised', 'personalised'],
       },
       {
         displayTypeId: 'portrait', displayTypeName: 'Portrait', touchPoint: 'Digital Signage', playlistName: 'Portrait Playlist', slot: 1, position: 'Slot 1',
-        assignedTo: { partnerIds: [], partnerNames: [], advertisers: [], whitelistOnly: false }, qrControl: false, supportedTargeting: ['localised'],
+        assignedTo: { partnerIds: [], partnerNames: [], advertisers: [], whitelistOnly: false }, qrControl: false, visionAi: false, supportedTargeting: ['localised'],
       },
     ],
     dsps: [
@@ -187,7 +187,7 @@ describe('Campaign Status stand-in', () => {
   const hq = { campaignId: 'c_zinger', name: 'Zinger Box — hero', source: 'hq', advertiserId: null, advertiserName: null, partnerId: null, partnerName: null, displayTypeId: 'landscape', pricingType: null, activation: { enabled: true }, schedule: { nextWindowStart: null, bookedWindows: 0 } }
   const approval = {
     campaignId: 'c1', campaignName: 'Swisse spring', status: 'awaiting_approval', mode: 'manual', assetVersion: 'v1', submittedAt: null, reviewedBy: null, reviewedAt: null, reason: null,
-    checks: [{ name: 'dimensions', passed: true, detail: '1080×1920 for 1080×1920.' }], targetingSummary: 'Baseline (localised)', creative: null, canvas: null, audit: [],
+    checks: [{ name: 'dimensions', passed: true, detail: '1080×1920 for 1080×1920.' }], targetingSummary: 'Default (localised)', creative: null, canvas: null, audit: [],
   }
   const routes = {
     '/api/admin/v1/campaigns': { items: [campaign, hq] },
@@ -198,7 +198,15 @@ describe('Campaign Status stand-in', () => {
   it('lists only advertiser and DSP campaigns, with the status filter in the column', async () => {
     vi.stubGlobal('fetch', vi.fn(fakeFetch(routes)))
     renderAt('/campaign-status')
-    await waitFor(() => expect(document.body.textContent).toMatch(/submitted by advertisers and DSPs/))
+    /* Heading: total + per-status counts, no "submitted by advertisers and
+       DSPs" copy and no Draft count (ticket, 22 Sep — Draft never surfaces
+       in a retailer-facing view). */
+    await waitFor(() => expect(document.body.textContent).toMatch(/1 campaign/), { timeout: 10000 })
+    expect(document.body.textContent).toMatch(/Approved.*0/)
+    expect(document.body.textContent).toMatch(/Awaiting approval.*1/)
+    expect(document.body.textContent).toMatch(/Rejected.*0/)
+    expect(document.body.textContent).not.toMatch(/submitted by advertisers and DSPs/)
+    expect(document.body.textContent).not.toMatch(/Draft/)
     const grid = screen.getByLabelText('Campaign Status')
     await new Promise((r) => setTimeout(r, 300))
     expect(await within(grid).findByText('Swisse spring', {}, { timeout: 10000 })).toBeInTheDocument()
@@ -213,8 +221,20 @@ describe('Campaign Status stand-in', () => {
     /* Schedule first, sorted so what is up next is at the top. */
     expect([...grid.querySelectorAll('.ag-header-cell-text')].map((h) => h.textContent)).toEqual(['Schedule', 'Status', 'Name', 'Advertiser', 'DSP', 'Activation', ''])
     expect(await within(grid).findByText('2 windows booked', {}, { timeout: 10000 })).toBeInTheDocument()
-    /* And a row menu for approving, rejecting or switching a campaign on. */
+    /* And a row menu for approving, rejecting, undoing a rejection, or switching a campaign on. */
     expect(within(grid).getByLabelText('Swisse spring: options')).toBeInTheDocument()
+    fireEvent.click(within(grid).getByLabelText('Swisse spring: options'))
+    /* Awaiting approval, not Rejected, so Undo rejection is offered but disabled. */
+    expect(await screen.findByRole('menuitem', { name: /Undo rejection/ }, { timeout: 10000 })).toHaveAttribute('aria-disabled', 'true')
+  })
+
+  it('never lists a Draft campaign — a retailer only ever sees one that has been submitted', async () => {
+    const draftApproval = { ...approval, status: 'draft', mode: null, submittedAt: null }
+    vi.stubGlobal('fetch', vi.fn(fakeFetch({ ...routes, '/api/admin/v1/campaigns/c1/approval': draftApproval })))
+    renderAt('/campaign-status')
+    await waitFor(() => expect(document.body.textContent).toMatch(/0 campaigns/), { timeout: 10000 })
+    const grid = screen.getByLabelText('Campaign Status')
+    await waitFor(() => expect(within(grid).queryByText('Swisse spring')).not.toBeInTheDocument(), { timeout: 10000 })
   })
 
   it('opens the campaign laid out like the platform: brief, targeting, scheduling, storyboard, creative', async () => {
@@ -238,15 +258,15 @@ describe('Booking schedule', () => {
       { start: '2026-09-22T00:00:00.000Z', end: '2026-09-23T00:00:00.000Z' },
     ],
     positions: [{
-      positionId: 'menu_board.s2', displayTypeId: 'menu_board', displayTypeName: 'Menu Board — Long Format', slot: 2, slotLabel: 'Supplier slot', partnerNames: ['Google DSP'], assignment: 'rtb',
+      positionId: 'menu_board.s2', displayTypeId: 'menu_board', displayTypeName: 'Menu Board — Long Format', slot: 2, slotLabel: 'Supplier slot', partnerNames: ['Google DSP'], assignment: 'rtb', displayCount: 3,
       windows: [
         { start: '2026-09-21T00:00:00.000Z', status: 'available', booking: null },
-        { start: '2026-09-22T00:00:00.000Z', status: 'booked', booking: { reservationId: 'r1', campaignId: 'c1', advertiserId: 'swisse', partnerId: 'p_google', pricingType: 'personalised', type: 'reserve', advertiserName: 'Swisse', partnerName: 'Google DSP', cpm: 175, assumedViews: 1236, bookedRevenue: 216.3, billedRevenue: null } },
+        { start: '2026-09-22T00:00:00.000Z', status: 'booked', booking: { reservationId: 'r1', campaignId: 'c1', advertiserId: 'swisse', partnerId: 'p_google', pricingType: 'personalised', type: 'reserve', advertiserName: 'Swisse', partnerName: 'Google DSP', cpm: 175, assumedViews: 1236, bookedRevenue: 216.3, billedRevenue: null, reach: null, layers: { default: true, localised: false, personalised: true }, personalisedTriggers: { computerVision: false, aggregateStore: false, individual: true } } },
       ],
     }],
-    revenue: [{ displayTypeId: 'menu_board', displayTypeName: 'Menu Board — Long Format', bookedWindows: 1, bookedRevenue: 216.3, billedRevenue: 0 }],
+    revenue: [{ displayTypeId: 'menu_board', displayTypeName: 'Menu Board — Long Format', bookedWindows: 1, sellableWindows: 2, bookedRevenue: 216.3, billedRevenue: 0 }],
     byPricingType: [{ pricingType: 'personalised', bookedWindows: 1, bookedRevenue: 216.3 }],
-    totals: { bookedWindows: 1, bookedRevenue: 216.3, billedRevenue: 0 },
+    totals: { bookedWindows: 1, sellableWindows: 2, bookedRevenue: 216.3, billedRevenue: 0 },
   }
 
   it('is linked from Available Inventory, which now sits on Advertisers / Inventory', async () => {
@@ -262,17 +282,82 @@ describe('Booking schedule', () => {
     expect(await screen.findByRole('heading', { name: /Booking schedule/ })).toBeInTheDocument()
     const revenue = await screen.findByLabelText('Booking revenue')
     expect(await within(revenue).findAllByText('$216.30')).toHaveLength(2)
-    const grid = screen.getByLabelText('Booking schedule')
-    /* The booked window, and the Advertiser column that now carries the filter. */
-    expect(await within(grid).findAllByText('Swisse')).toHaveLength(2)
-    expect(within(grid).getByText(/personalised · 175 CPM/)).toBeInTheDocument()
-    expect(within(grid).getByText('Available')).toBeInTheDocument()
+    /* Single-advertiser stacking tile (ticket, 22 Sep): one tile per booked
+       window, the advertiser name at the top, stacking only the layers the
+       booking actually carries. The fixture's one booking is default plus
+       personalised (2 layers, no localised upsell), so the tile shows
+       Swisse once (plus once more in the Advertiser column) and no
+       per-layer competition — the other, unbooked window just reads
+       Available. */
+    const grid = await screen.findByLabelText('Booking schedule')
+    expect(within(grid).getAllByText('Swisse')).toHaveLength(2) // the Advertiser column, and the tile
+    expect(within(grid).getAllByText('Available')).toHaveLength(1) // the other, unbooked window
     expect(screen.queryByRole('region', { name: 'Save changes' })).not.toBeInTheDocument()
     /* Views, and DSP/advertiser as column filters like every other table (Rob, 20 Sep). */
     expect(screen.getByRole('radio', { name: 'Weekly' })).toBeInTheDocument()
-    expect([...grid.querySelectorAll('.ag-header-cell-text')].slice(0, 3).map((h) => h.textContent)).toEqual(['Position', 'DSP', 'Advertiser'])
+    expect([...grid.querySelectorAll('.ag-header-cell-text')].slice(0, 3).map((h) => h.textContent)).toEqual(['Advertiser', 'DSP', 'Position'])
     expect(within(grid).getByLabelText('DSP filter')).toBeInTheDocument()
     expect(within(grid).getByLabelText('Advertiser filter')).toBeInTheDocument()
+  })
+
+  it('stands alone — no Display Types / DSP Integration nav — and shows the DSP that actually booked it, not every DSP merely eligible to', async () => {
+    const eligibleForMore = {
+      ...schedule,
+      positions: [{
+        /* Eligible to bid: both DSPs. Actually booked: only Google DSP
+           (the fixture's one booking) — the DSP column must reflect the
+           latter, not the former (ticket, 21 Sep). */
+        ...schedule.positions[0], partnerNames: ['Google DSP', 'Amazon Ads DSP'],
+      }],
+    }
+    vi.stubGlobal('fetch', vi.fn(fakeFetch({ '/api/admin/v1/booking-schedule': eligibleForMore })))
+    renderAt('/booking-schedule')
+    expect(await screen.findByRole('heading', { name: /Booking schedule/ })).toBeInTheDocument()
+    expect(screen.queryByRole('navigation', { name: 'Display Types and DSP Integration' })).not.toBeInTheDocument()
+    const grid = await screen.findByLabelText('Booking schedule')
+    expect(within(grid).getByText('Google DSP')).toBeInTheDocument()
+    expect(within(grid).queryByText(/Amazon Ads DSP/)).not.toBeInTheDocument()
+  })
+
+  it('stacks a tile up to three layers, with a reach count on the localised layer', async () => {
+    const allThree = {
+      ...schedule,
+      positions: [{
+        ...schedule.positions[0],
+        displayCount: 4,
+        windows: [
+          schedule.positions[0].windows[0],
+          {
+            start: '2026-09-22T00:00:00.000Z', status: 'booked',
+            booking: {
+              ...schedule.positions[0].windows[1].booking, pricingType: 'localised', reach: { matchedDisplays: 3, asOf: '2026-09-20T00:00:00.000Z' },
+              layers: { default: true, localised: true, personalised: true },
+              personalisedTriggers: { computerVision: true, aggregateStore: false, individual: false },
+            },
+          },
+        ],
+      }],
+    }
+    vi.stubGlobal('fetch', vi.fn(fakeFetch({ '/api/admin/v1/booking-schedule': allThree })))
+    renderAt('/booking-schedule')
+    const grid = await screen.findByLabelText('Booking schedule')
+    /* All three layers on the one tile: DEFAULT, LOC with the reach count
+       against the display count, and PERS with its lit trigger icon
+       (ticket "Booking schedule: personalised trigger icons"). The display
+       count itself now sits in brackets on the Position cell rather than
+       its own Displays column (ticket "remove the displays column … show
+       that number of displays in brackets after the display name", 22
+       Sep). */
+    expect(within(grid).getByText('(4)')).toBeInTheDocument() // the display count, on the Position cell
+    expect(await within(grid).findByText('3 of 4')).toBeInTheDocument()
+    expect(within(grid).getByText('DEFAULT')).toBeInTheDocument()
+    /* LOC and PERS each appear twice: once on the tile's own layer row, and
+       once more in the Position cell's row-level "N of M windows booked"
+       summary (ticket "Also for the play windows … show a representation
+       of how many are booked versus … localised … personalised …", 22
+       Sep), which is always on screen now, not only in Weekly/Monthly. */
+    expect(within(grid).getAllByText('LOC')).toHaveLength(2)
+    expect(within(grid).getAllByText('PERS')).toHaveLength(2)
   })
 })
 
@@ -292,12 +377,16 @@ describe('Advertisers / Inventory', () => {
 
     const inventory = await screen.findByLabelText('Available Inventory')
     expect([...inventory.querySelectorAll('.ag-header-cell-text')].map((h) => h.textContent))
-      .toEqual(['Display type', 'Playlist', 'Slot', 'Position', 'Assigned to', 'Targeting supported', ''])
+      .toEqual(['Display type', 'Playlist', 'Slot', 'Position', 'Assigned to', 'Targeting supported', 'Reserve price', ''])
     expect(within(inventory).getByLabelText('Display type search')).toBeInTheDocument()
     expect(within(inventory).getByLabelText('Targeting supported filter')).toBeInTheDocument()
     /* QR Control is flagged on the display type that has it, and only that
-       display type can support interactive targeting (Rob, 20 Sep). */
+       display type can support interactive targeting (Rob, 20 Sep). Vision/AI
+       is flagged the same way, alongside it (ticket "show a computer vision
+       icon when computer vision is enabled on a specific display type", 22
+       Sep). */
     expect(within(inventory).getAllByLabelText('QR Control enabled')).toHaveLength(1)
+    expect(within(inventory).getAllByLabelText('Vision/AI enabled')).toHaveLength(1)
     /* Both editable columns are pills: what the slot supports, and who may
        buy it. Assigned to shows "All DSPs" only when nothing is chosen. */
     const cellOf = (label: string) => within(inventory).getAllByLabelText(`Menu Board — Long Format slot 2: ${label}`)[0].closest('.ag-cell') as HTMLElement
@@ -334,6 +423,31 @@ describe('Advertisers / Inventory', () => {
       displayTypeId: 'menu_board', slot: 2, supportedTargeting: ['localised', 'personalised'],
       assignedTo: { partnerIds: ['p_google'], advertisers: ['Nestlé'], whitelistOnly: false },
     }] }))
+  })
+
+  /* The CTAs open a new tab, so they can't go through the router — and a
+     bare path 404s wherever the bundle isn't served from the domain root
+     (ticket d5lCFNAL: the hosted prototype routes in the hash). */
+  it('opens the booking schedule at a URL that works where the bundle is served', async () => {
+    vi.stubGlobal('fetch', vi.fn(fakeFetch(ADVERTISER_PAGE)))
+    const opened: string[] = []
+    vi.stubGlobal('open', vi.fn((url: string) => { opened.push(url); return null }))
+    renderAt('/advertisers')
+    const advertisers = await screen.findByLabelText('Advertisers')
+    fireEvent.click(within(advertisers).getAllByRole('button', { name: /Bookings/ })[0])
+    fireEvent.click(screen.getByRole('button', { name: /Booking schedule/ }))
+    /* Served from the root, as the app is inside HQ Admin: the plain route. */
+    expect(opened).toEqual(['/booking-schedule?advertiserId=nestle', '/booking-schedule'])
+  })
+
+  it('in the hosted build, puts the route in the hash under the bundle\u2019s base', async () => {
+    vi.stubEnv('VITE_DEMO', '1')
+    vi.stubEnv('BASE_URL', './')
+    const { externalUrl } = await import('../src/features/booking-schedule/path')
+    expect(externalUrl('/booking-schedule')).toBe('./#/booking-schedule')
+    expect(externalUrl('/booking-schedule?advertiserId=nestle')).toBe('./#/booking-schedule?advertiserId=nestle')
+    vi.unstubAllEnvs()
+    expect(externalUrl('/booking-schedule')).toBe('/booking-schedule')
   })
 
   it('shows a marketing user what each slot supports, without letting them change it', async () => {

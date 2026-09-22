@@ -35,7 +35,7 @@ export interface CampaignSource {
   /* Campaigns submitted through the Partner API (package 12), stored in the existing structure. */
   createCampaign(c: NewCampaign): CampaignRecord
   addAsset(a: Omit<CampaignAsset, 'version'>): CampaignAsset
-  /* The latest asset for each version role ("baseline" or a targeted version id). */
+  /* The latest asset for each version role ("default" or a targeted version id). */
   latestAssets(campaignId: string): CampaignAsset[]
   /* Hand-off (package 16): book a campaign into a slot for a window. */
   bookSlot(b: SlotBooking): SlotBooking

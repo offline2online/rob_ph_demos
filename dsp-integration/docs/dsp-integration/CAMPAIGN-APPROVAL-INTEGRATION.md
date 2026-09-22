@@ -30,8 +30,11 @@ packages/campaign-approval/
   - `GET /admin/v1/approvals?status=`
   - `GET /admin/v1/campaigns/{id}/approval`
   - `POST …/approve`
-  - `POST …/reject`
-  - Approve and reject are HQ Admin role only (Q39 default).
+  - `POST …/reject` — `reason` (required, overall) plus an optional
+    `assetReasons: [{assetId, reason}]` naming specific assets (spec §3,
+    "asset-level rejection").
+  - `POST …/unreject` — undo a mistaken rejection, back to Awaiting approval; never auto-approves.
+  - Approve, reject and unreject are HQ Admin role only (Q39 default).
 
 ---
 
@@ -64,7 +67,7 @@ What each `CampaignRef` field must hold:
 | `activation.enabled` | The existing activation flag |
 | `assetVersion` | Any string that **changes whenever the creative changes** (e.g. the latest asset revision id). Approval is per version |
 | `targetingSummary` | A readable rendering of the campaign's targeting rules (the POC's is `apps/api/src/domain/targetingSummary.ts`) |
-| `creative` | The baseline creative `{assetUrl, mimeType, width, height}`, or `null` |
+| `creative` | The default layer's creative `{assetUrl, mimeType, width, height}`, or `null` |
 | `canvas` | The target display type's `displayCanvasSize`, or `null` |
 
 Then create the service with it:
@@ -156,6 +159,24 @@ const { approvals, reload } = useCampaignApprovals(rows.filter((r) => r.source !
 (`getApproval` returns the full view: creative, canvas, targeting summary,
 checks and audit trail.)
 
+**Undo rejection, in the row's options/overflow menu:**
+
+```tsx
+{
+  key: 'unreject',
+  label: 'Undo rejection',
+  disabled: approvals[row.id]?.status !== 'rejected' || !isHqAdmin,
+  onClick: () => unreject(row.id, approvals[row.id].assetVersion).then(reload),
+}
+```
+
+Also wire `onUnreject` on `ApprovalReviewPanel` the same way, so the action
+is available from the review view too — it only renders once the campaign
+is Rejected and the host passes the prop. `unreject` (`POST
+…/campaigns/{id}/unreject`, `assetVersion` plus an optional `reason`)
+reverses `Rejected` back to `Awaiting approval` for a fresh decision; it
+never auto-approves. Same permission as approve/reject.
+
 ## 3. Where the main repo must call `isCampaignEligible`
 
 `approvals.isCampaignEligible(campaignId)` returns `true` only for an HQ
@@ -177,11 +198,24 @@ also require the campaign to be **activated**: an advertiser can only bid or
 reserve with an approved, activated campaign, so a winner fits straight into
 the slot (Rob, Q14).
 
+**Safe reuse (ticket, 22 Sep): `approvals.wasAssetHumanCleared(campaignId,
+assetId, contentHash)`** — call it from wherever a resubmission decides
+whether an asset needs to re-enter the review queue. `true` only when a
+human (never an auto-approve) has previously approved that exact asset
+(same content hash) at `assetId`. This POC does not yet call it from its
+own upload/submit endpoints (`apps/api/src/routes/partner/campaigns.ts`) —
+every resubmission there still re-reviews regardless — so wiring it in is
+part of the work of integrating this module, not something already done
+for you.
+
 ## 4. Run the approval migration, or move the fields onto the campaign
 
 - **Beside the campaign (default).** Run
-  `migrations/0100_campaign_approvals.up.sql` with your migrator; `.down.sql`
-  reverts it. Nothing in the campaign table changes.
+  `migrations/0100_campaign_approvals.up.sql` and
+  `migrations/0101_asset_level_rejection.up.sql` (asset-level rejection
+  detail + the safe-reuse clearance table, ticket 22 Sep) with your
+  migrator, in that order; each `.down.sql` reverts its own migration.
+  Nothing in the campaign table changes.
 - **On the campaign record (spec §8's target shape).** Add `status` and
   `approval` (JSON: `mode`, `assetVersion`, `submittedAt`, `reviewedBy`,
   `reviewedAt`, `reason`, `checks`) to the campaign table. Then replace

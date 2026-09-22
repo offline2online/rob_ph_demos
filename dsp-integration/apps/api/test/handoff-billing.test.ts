@@ -47,11 +47,42 @@ describe('hand-off to the existing campaign system', () => {
   it('hands a reservation off as soon as it is booked', async () => {
     const { ctx, app, activate } = await setup()
     const G = { authorization: 'Bearer poc-token-google-dv360' }
-    const id = (await app.inject({ method: 'POST', url: '/api/v1/campaigns', headers: G, payload: { advertiserId: 'swisse', name: 'Swisse — Menu', displayTypeId: 'menu_board', baseline: { pricingType: 'localised' } } })).json().campaignId
-    const m = multipart({ version: 'baseline' }, { name: 'menu.png', bytes: png(5760, 1080) })
+    const id = (await app.inject({ method: 'POST', url: '/api/v1/campaigns', headers: G, payload: { advertiserId: 'swisse', name: 'Swisse — Menu', displayTypeId: 'menu_board', default: { pricingType: 'localised' } } })).json().campaignId
+    const m = multipart({ version: 'default' }, { name: 'menu.png', bytes: png(5760, 1080) })
     await app.inject({ method: 'POST', url: `/api/v1/campaigns/${id}/assets`, headers: { ...G, ...m.headers }, payload: m.payload })
     await app.inject({ method: 'POST', url: `/api/v1/campaigns/${id}/submit`, headers: G })
     await app.inject({ method: 'POST', url: `/api/admin/v1/campaigns/${id}/approve`, payload: { assetVersion: 'v1' } })
+    await activate(id)
+    const ext = ctx.displayTypes.get('menu_board')!.phExtensions!
+    ctx.displayTypes.saveExtensions('menu_board', { ...ext, slots: ext.slots.map((s, i) => (i === 1 ? { ...s, listMode: null, advertisers: ['Swisse'] } : s)) })
+    const res = await app.inject({ method: 'POST', url: '/api/v1/reservations', headers: G, payload: { positionId: 'menu_board.s2', windowStart: W1.toISOString(), campaignId: id, advertiserId: 'swisse', type: 'reserve', bidCpm: 100 } })
+    expect(res.json()).toMatchObject({ status: 'reserved', clearingCpm: 100 })
+    expect(ctx.reservations.get(res.json().reservationId)!.handedOffAt).toBe(NOW.toISOString())
+    expect(ctx.campaigns.bookings(id)).toMatchObject([{ displayTypeId: 'menu_board', slot: 2, windowStart: W1.toISOString() }])
+  })
+
+  /* default is mandatory (decision, 22 Sep): hand-off uses its creative even
+     when the campaign also carries a localised upsell — the earlier
+     fallback-free submission this test exercised (a targeted version's
+     creative standing in for a missing default) is retired. */
+  it('hands off a campaign with a localised upsell, using its default layer’s creative', async () => {
+    const { ctx, app, activate } = await setup()
+    const G = { authorization: 'Bearer poc-token-google-dv360' }
+    const id = (await app.inject({
+      method: 'POST', url: '/api/v1/campaigns', headers: G,
+      payload: { advertiserId: 'swisse', name: 'Swisse — Metro upsell', displayTypeId: 'menu_board', default: { pricingType: 'localised' }, targeted: [{ id: 'metro', priority: 10, pricingType: 'localised', rules: [[{ source: 'store', variable: 'store.fixed_segments', op: 'include', values: ['Metro'] }]] }] },
+    })).json().campaignId
+    expect(ctx.campaigns.getCampaign(id)?.targeting).toEqual({ default: { pricingType: 'localised' }, targeted: [{ id: 'metro', priority: 10, pricingType: 'localised', rules: [[{ source: 'store', variable: 'store.fixed_segments', op: 'include', values: ['Metro'] }]] }] })
+    const metro = multipart({ version: 'metro' }, { name: 'menu.png', bytes: png(5760, 1080) })
+    await app.inject({ method: 'POST', url: `/api/v1/campaigns/${id}/assets`, headers: { ...G, ...metro.headers }, payload: metro.payload })
+    /* Uploading only the upsell's creative is not enough — the default
+       layer's own creative is still required. */
+    expect((await app.inject({ method: 'POST', url: `/api/v1/campaigns/${id}/submit`, headers: G })).statusCode).toBe(422)
+    const def = multipart({ version: 'default' }, { name: 'menu.png', bytes: png(5760, 1080) })
+    await app.inject({ method: 'POST', url: `/api/v1/campaigns/${id}/assets`, headers: { ...G, ...def.headers }, payload: def.payload })
+    const submitted = await app.inject({ method: 'POST', url: `/api/v1/campaigns/${id}/submit`, headers: G })
+    expect(submitted.json()).toMatchObject({ status: 'awaiting_approval' })
+    await app.inject({ method: 'POST', url: `/api/admin/v1/campaigns/${id}/approve`, payload: { assetVersion: 'v2' } })
     await activate(id)
     const ext = ctx.displayTypes.get('menu_board')!.phExtensions!
     ctx.displayTypes.saveExtensions('menu_board', { ...ext, slots: ext.slots.map((s, i) => (i === 1 ? { ...s, listMode: null, advertisers: ['Swisse'] } : s)) })

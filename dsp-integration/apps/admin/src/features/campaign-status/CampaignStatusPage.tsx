@@ -5,9 +5,11 @@
    (CAMPAIGN-APPROVAL-INTEGRATION.md step 5); nothing else depends on it.
 
    It lists what this build brings in — the campaigns advertisers and DSPs
-   submitted — never HQ's own campaigns (Rob, 20 Sep). The status filter
-   lives in the column, as the design system's tables do, the header stays
-   in view, and the campaign name opens the campaign (CampaignDetail). */
+   submitted — never HQ's own campaigns (Rob, 20 Sep), and never a Draft one
+   (ticket, 22 Sep, §3: a retailer only ever sees a campaign once it has
+   been submitted). The status filter lives in the column, as the design
+   system's tables do, the header stays in view, and the campaign name
+   opens the campaign (CampaignDetail). */
 import { useQuery } from '@tanstack/react-query'
 import { Button, Dropdown, Input, Modal, Spin, Switch } from 'antd'
 import type { ColDef, ICellRendererParams } from 'ag-grid-community'
@@ -18,7 +20,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import { api } from '../../api/client'
 import { Grid } from '../../shared/Grid'
 import { Icon } from '../../shared/Icon'
-import { searchColumn, setColumn, showingCount } from '../../shared/TableFilters'
+import { externalSetColumn, searchColumn, setColumn } from '../../shared/TableFilters'
 import { T } from '../../theme/phTheme'
 import { CAMPAIGN_STATUS_PATH, useCampaignActions } from './useCampaigns'
 
@@ -30,6 +32,7 @@ interface Ctx {
   open: (id: string) => void
   approve: (a: Approval) => Promise<void>
   reject: (a: Approval, reason: string) => Promise<void>
+  unreject: (a: Approval) => Promise<void>
   activate: (c: Campaign, enabled: boolean) => Promise<void>
 }
 type P = ICellRendererParams<Campaign, unknown, { current: Ctx }>
@@ -60,10 +63,13 @@ function RowMenu({ data, context }: P) {
   const a = c.approvals[data.campaignId]
   const awaiting = a?.status === 'awaiting_approval'
   const approved = a?.status === 'approved'
+  const rejected = a?.status === 'rejected'
   const items = [
     { key: 'open', icon: <Icon name="open_in_new" size={15} />, label: 'Open campaign' },
     { key: 'approve', icon: <Icon name="check_circle" size={15} />, label: 'Approve', disabled: !awaiting || !c.canApprove },
     { key: 'reject', icon: <Icon name="cancel" size={15} />, label: 'Reject…', danger: true, disabled: !awaiting || !c.canApprove },
+    /* Undo a mistaken rejection (ticket, 22 Sep): back to Awaiting approval, never auto-approved. Same permission as approve/reject. */
+    { key: 'unreject', icon: <Icon name="undo" size={15} />, label: 'Undo rejection', disabled: !rejected || !c.canApprove },
     { type: 'divider' as const },
     { key: 'activation', icon: <Icon name="power_settings_new" size={15} />, label: data.activation.enabled ? 'Deactivate' : 'Activate', disabled: !approved },
   ]
@@ -71,6 +77,7 @@ function RowMenu({ data, context }: P) {
     if (key === 'open') c.open(data.campaignId)
     if (key === 'approve') void c.approve(a!)
     if (key === 'reject') c.askReject(a!)
+    if (key === 'unreject') void c.unreject(a!)
     if (key === 'activation') void c.activate(data, !data.activation.enabled)
   }
   return (
@@ -95,26 +102,47 @@ const ActivationCell = ({ data, context }: P) => {
 export function CampaignStatusPage() {
   const navigate = useNavigate()
   const [params, setParams] = useSearchParams()
-  /* Opened from an advertiser's campaign counts (Rob, 20 Sep). */
+  /* Opened from an advertiser's campaign counts (Rob, 20 Sep). Shown as the
+     Advertiser column's own funnel filter, not a separate chip outside the
+     grid (ticket, 22 Sep) — the same pattern the booking schedule uses for
+     a page-owned filter. */
   const advertiserId = params.get('advertiserId')
   const campaigns = useQuery({ queryKey: ['poc-campaigns'], queryFn: () => api<{ items: Campaign[] }>('GET', '/admin/v1/campaigns').then((r) => r.items) })
   /* Only what came in through a DSP or the Partner API. */
-  const all = useMemo(() => (campaigns.data ?? []).filter((c) => c.source !== 'hq'), [campaigns.data])
+  const nonHq = useMemo(() => (campaigns.data ?? []).filter((c) => c.source !== 'hq'), [campaigns.data])
+  const { approvals, canApprove, busy, approve, reject, unreject, activate } = useCampaignActions(nonHq.map((c) => c.campaignId))
+  /* Draft never surfaces in a retailer-facing view (ticket, 22 Sep, §3):
+     the retailer only ever sees a campaign once it has been submitted. */
+  const all = useMemo(() => nonHq.filter((c) => approvals[c.campaignId]?.status !== 'draft'), [nonHq, approvals])
   const rows = useMemo(() => (advertiserId ? all.filter((c) => c.advertiserId === advertiserId) : all), [all, advertiserId])
-  const { approvals, canApprove, busy, approve, reject, activate } = useCampaignActions(all.map((c) => c.campaignId))
+  const counts = useMemo(() => {
+    const c = { approved: 0, awaiting_approval: 0, rejected: 0 }
+    for (const row of all) {
+      const s = approvals[row.campaignId]?.status
+      if (s === 'approved' || s === 'awaiting_approval' || s === 'rejected') c[s]++
+    }
+    return c
+  }, [all, approvals])
   const [rejecting, setRejecting] = useState<Approval | null>(null)
-  /* What the column filters leave on screen, for the count line. */
-  const [shown, setShown] = useState<number | null>(null)
   const reason = useRef('')
 
   const ctx: Ctx = {
-    approvals, canApprove, busy, open: (id) => navigate(`${CAMPAIGN_STATUS_PATH}/${id}`), approve, reject, activate,
+    approvals, canApprove, busy, open: (id) => navigate(`${CAMPAIGN_STATUS_PATH}/${id}`), approve, reject, unreject, activate,
     askReject: (a) => {
       reason.current = ''
       setRejecting(a)
     },
   }
   const values = (of: (c: Campaign) => string) => () => all.map(of).filter((v) => v && v !== '—')
+  const advertiserOptions = useMemo(() => [...new Map(
+    all.filter((c): c is Campaign & { advertiserId: string } => !!c.advertiserId).map((c) => [c.advertiserId, c.advertiserName ?? c.advertiserId] as const),
+  ).entries()].map(([value, label]) => ({ value, label })), [all])
+  const setAdvertiserFilter = (id?: string) => {
+    const next = new URLSearchParams(params)
+    if (id) next.set('advertiserId', id)
+    else next.delete('advertiserId')
+    setParams(next, { replace: true })
+  }
   const columns = useMemo<ColDef<Campaign>[]>(() => [
     {
       /* What the advertiser booked, earliest first, so what is up next is at the top. */
@@ -127,23 +155,24 @@ export function CampaignStatusPage() {
       ...setColumn<Campaign>('Status', values((c) => STATUS_LABELS[approvals[c.campaignId]?.status as ApprovalStatus] ?? '')),
     },
     { headerName: 'Name', width: 260, minWidth: 180, cellRenderer: NameCell, valueGetter: (p) => p.data?.name ?? '', ...searchColumn<Campaign>('Name') },
-    { headerName: 'Advertiser', width: 150, minWidth: 130, valueGetter: (p) => p.data?.advertiserName ?? '—', ...setColumn<Campaign>('Advertiser', values((c) => c.advertiserName ?? '')) },
+    {
+      headerName: 'Advertiser', width: 150, minWidth: 130, valueGetter: (p) => p.data?.advertiserName ?? '—',
+      ...externalSetColumn<Campaign>('Advertiser', advertiserOptions.map((a) => a.label), advertiserOptions.find((a) => a.value === advertiserId)?.label,
+        (name) => setAdvertiserFilter(advertiserOptions.find((a) => a.label === name)?.value)),
+    },
     { headerName: 'DSP', width: 150, minWidth: 130, valueGetter: (p) => p.data?.partnerName ?? '—', ...setColumn<Campaign>('DSP', values((c) => c.partnerName ?? '')) },
     { headerName: 'Activation', width: 160, suppressSizeToFit: true, cellRenderer: ActivationCell },
     { headerName: '', width: 56, suppressSizeToFit: true, pinned: 'right', cellRenderer: RowMenu },
-  ], [approvals, all])
+  ], [approvals, all, advertiserOptions, advertiserId])
 
   if (!campaigns.data) return <Spin />
-  const advertiserName = advertiserId ? all.find((c) => c.advertiserId === advertiserId)?.advertiserName ?? advertiserId : null
   return (
     <div>
-      <div className="mb-3 flex flex-wrap items-center gap-2" style={{ fontSize: 13 }}>
-        <span>{showingCount(shown ?? rows.length, rows.length, `campaign${rows.length === 1 ? '' : 's'} submitted by advertisers and DSPs`)}</span>
-        {advertiserName && (
-          <Button size="small" icon={<Icon name="close" size={14} />} onClick={() => { const n = new URLSearchParams(params); n.delete('advertiserId'); setParams(n, { replace: true }) }}>
-            {advertiserName} only
-          </Button>
-        )}
+      <div className="mb-3 flex flex-wrap items-center gap-x-4 gap-y-1" style={{ fontSize: 13 }}>
+        <span style={{ fontWeight: 700 }}>{all.length} campaign{all.length === 1 ? '' : 's'}</span>
+        <span style={{ color: T.muted }}>Approved <b style={{ color: T.text }}>{counts.approved}</b></span>
+        <span style={{ color: T.muted }}>Awaiting approval <b style={{ color: T.text }}>{counts.awaiting_approval}</b></span>
+        <span style={{ color: T.muted }}>Rejected <b style={{ color: T.text }}>{counts.rejected}</b></span>
       </div>
       <Grid<Campaign>
         label="Campaign Status"
@@ -156,7 +185,6 @@ export function CampaignStatusPage() {
         floatingFiltersHeight={40}
         stickyHeader
         suppressHorizontalScroll={false}
-        onFilterChanged={(e) => setShown(e.api.getDisplayedRowCount())}
       />
       <Modal
         open={!!rejecting}

@@ -56,7 +56,7 @@ field's exact shape.
 
 ## Live Visitor Profile and Display Types & DSP Integration — two separate projects, one repo
 
-`visitor-profile/` and `display-types-dsp-integration/` were split out as two
+`visitor-profile/` and `dsp-integration/` were split out as two
 independently-managed projects, following the same pattern as
 `menu-board-demo/`: each is its own subfolder in this same repo, developed on
 its own feature branch(es), and merged to `main` on its own schedule — not
@@ -64,13 +64,16 @@ tied to the other project's release cadence.
 
 - **`visitor-profile/`** — managing personalisation attributes in
   Personalisation Hub, and the source systems that populate them.
-- **`display-types-dsp-integration/`** — managing display types, elements,
-  playlists, and the advertising partner/DSP connections that fill sold
-  slots. Layouts and templates (the surface layer) belong to this project
-  too but are held out of the first release — see its `README.md` →
-  "Release scope". Full name **"Display Types & DSP Integration"** (as on
-  the backlog board); **refer to it as "Display Types"** in prose. Formerly
-  "Experience Templates".
+- **`dsp-integration/`** — managing display types, elements, playlists, and
+  the advertising partner/DSP connections that fill sold slots. Layouts and
+  templates (the surface layer) belong to this project too but are held out
+  of the first release. Full name **"Display Types & DSP Integration"** (as
+  on the backlog board); **refer to it as "Display Types"** in prose.
+  Formerly "Experience Templates", then `display-types-dsp-integration/`:
+  **that folder was removed on 21 Sep 2026 (Rob) and this one replaced it.**
+  Its history, including 8 commits that never reached `main`, is kept on the
+  tag `archive/display-types-dsp-integration`
+  (`git checkout -b restore archive/display-types-dsp-integration`).
 - **`shared/interface-contract.md`** — the maintained interface contract
   between the two. It lives outside both project folders on purpose: it's
   shared space neither project owns unilaterally. Any change to the contract
@@ -80,7 +83,7 @@ tied to the other project's release cadence.
   Personalised Surface Architecture Specification v1.2*.
 - Each has its own `REQUIREMENTS.md` in its own folder, also grounded in
   that spec (visitor-profile = spec System One;
-  display-types-dsp-integration = spec Systems Two/Three).
+  dsp-integration = spec Systems Two/Three).
 - **The backlog tracker itself now also carries this** (see
   `backlog-tracker/` below): each project's `REQUIREMENTS.md` content is
   mirrored into that project's Firestore doc (`requirementsMd` field,
@@ -97,9 +100,22 @@ auction job, all behind the `dspIntegration` flag. It therefore **cannot be
 opened from GitHub Pages like the other demos** — run it locally
 (`npm run dev:api` / `dev:mocks` / `dev:admin`, then `localhost:5173`).
 The static prototype it was built from is published at
-<https://offline2online.github.io/rob_ph_demos/display-types-dsp-integration/prototype/>.
-Note the POC folder is `dsp-integration/`, not the
-`display-types-dsp-integration/` named above.
+<https://offline2online.github.io/rob_ph_demos/dsp-integration/prototype/> —
+the admin UI built against a captured snapshot of its own API, so it opens
+from a URL and can be iframed into HQ Admin. It is **read-only**: a write
+answers with "changes aren't saved". **It is a checked-in build, and it is
+rebuilt by a workflow, not by hand**: `.github/workflows/dsp-prototype.yml`
+runs `dsp-integration/scripts/rebuild-prototype.sh` on a runner for `main`
+and `deploy/dsp-integration` — on a source push, on a dispatch from
+`run-backlog-automation.js` whenever it puts a ticket on the train, reverts
+one, or merges a train, and every ten minutes as a safety net — and commits
+the bundle back to that branch. A ticket's source change is invisible on
+its test link and on the live site until that rebuild lands (a few
+minutes); `prototype/build-info.json` beside the bundle says which commit
+it came from. Three tickets failed testing on 21–22 Sep 2026 and two trains
+"went live" with nothing changing before this existed — so never judge a
+DSP ticket from the link without checking build-info.json first, and never
+mark one live on the strength of a merge alone.
 
 **On the Prototype Backlog board** (the live `backlog-tracker` app, not the
 retired Artifact — see "Prototype Backlog" below), these are two separate
@@ -269,13 +285,21 @@ instant, so there's no excuse for the board drifting from reality.
   for Testing card now has its own "Set test link" → "Test this →" button
   (`backlogItems.previewUrl`), using the
   `https://rawcdn.githack.com/offline2online/rob_ph_demos/<branch>/<path>`
-  convention — **`rawcdn.githack.com`, not `raw.githack.com`**: the latter
-  proxies through jsDelivr's CDN cache (up to ~7 days), so a link set right
-  after one push can keep showing that first commit even after later
-  pushes update the file, with no visible error; `rawcdn.githack.com` is
-  githack's own always-uncached host, meant specifically for testing an
-  in-progress branch like this — no need to say the link in chat separately
-  anymore. `guessPreviewUrl` links to a changed `.html` page, or, for a
+  convention — no need to say the link in chat separately anymore.
+  **Both githack hosts cache a branch URL** (measured 22 Sep 2026, and
+  contrary to what this file said before): `index.html` refreshed within
+  minutes, but the DSP prototype's fixed-path `demo/api-snapshot.json` was
+  still serving the 21 Sep 10:19 capture a day and several pushes later —
+  a fresh-looking bundle over day-old data, with no visible error. That
+  was what three "Failed testing" rounds on the DSP project were looking
+  at. **A commit-sha URL is immutable and therefore safe to cache**, so
+  for a built bundle the test link must point at the commit the bundle
+  was built from: `dsp-prototype.yml` re-points the DSP project's testing
+  cards at the rebuilt commit after every push (`npm run board:tickets --
+  --relink-prototype <sha>`). For a plain static page a branch URL is
+  usually fine, but if a tester reports not seeing a change, `curl` the
+  link's fixed-path files before assuming the code is wrong — and never
+  cite this file's old "always-uncached" claim. `guessPreviewUrl` links to a changed `.html` page, or, for a
   ticket that changes only CSS/JS, to the nearest `index.html` above those
   assets (the page that renders them); only a change with no page above it
   at all — `scripts/`, `functions/` — falls back to a link to the branch.
@@ -516,6 +540,107 @@ that project's own `readmeMd` Docs field to match (`backlog-tracker`'s own
 Docs page → README block); treat a divergence between the repo file and
 the live field as a bug in whichever is stale, same as `REQUIREMENTS.md`
 vs. `requirementsMd` already works.
+
+### Keep the board's copies in step as you go, not in a catch-up sweep
+
+**`REQUIREMENTS.md` and `README.md` are the source of truth; the board's
+`requirementsMd` / `readmeMd` are copies that must follow them in the same
+session the file changes** (Rob, 21 Sep 2026). Not at the end of the week,
+not when someone notices: an agent that edits one of these files has not
+finished the job until the board says the same thing.
+
+How to do it, in order of preference:
+
+1. **Run the project's sync script** where it has one —
+   `npm run board:sync` in `dsp-integration/` reads the files off disk,
+   PATCHes `requirementsMd` / `readmeMd`, then reads them back and fails
+   loudly if they don't match byte for byte. `npm run board:sync -- --check`
+   reports drift without writing, which is what to run if you only want to
+   know. It needs `BOARD_API_KEY` in that project's `.env`.
+2. **The board MCP tools** — `set_project_requirements` and
+   `set_project_readme` — when you have them and the document is small
+   enough to reproduce exactly (a README, an interface contract). They
+   replace the whole document, so they mean retyping it.
+   **Don't hand-copy a long specification through a model**: an 80 KB file
+   retyped by an agent is a file that has quietly acquired errors. Use the
+   script, or say the sync is outstanding and why.
+
+Whichever route, **verify**: read the field back and compare it with the
+file. A sync that reports success without checking is worse than no sync,
+because it stops anyone looking again.
+
+### Putting a commit on a deployment train by hand
+
+**The board reads a train through `backlogItems.deployCommit`, and nothing
+else.** `functions/train-lock.js` and `public/js/app.js`'s
+`trainItemsForProject()` both count a card as being on the train only if it
+has that field *and* sits in Ready for Testing or Approved for Deployment.
+The automation stamps it when it applies a ticket's patch — so a commit you
+push to `deploy/<project>` yourself has nobody pointing at it.
+
+What happens then (21 Sep 2026, ticket `d5lCFNAL…`): the periodic sweep
+reads the train as empty, tags the branch tip as
+`archive/<branch>-<date>`, resets the branch to `main`, and logs
+*"train emptied with nothing merged"*. The work survives on the tag, but the
+deploy the human just approved silently ships nothing. It raced the Deploy
+Routine's own verification by 35 seconds.
+
+So, when you put a commit on a train yourself:
+
+1. **Stamp the card**: `npm run board:tickets -- --ticket <id>
+   --deploy-commit <sha> --yes` (or `-f deploy_commit=<sha>` through
+   `dsp-board.yml`). Re-stamp if you amend or rebase — the sha must match.
+2. **Use the documented trailer** in the commit message:
+   `Backlog item: <id>`, not "Ticket: <id>". That is what
+   `git log --grep "Backlog item: <ITEM_ID>"` looks for, in
+   `run-backlog-automation.js` and in the Deploy Routine's verification.
+3. Better still, don't: let the automation apply the patch, so both happen
+   without anyone remembering.
+
+### The board's key lives in GitHub, not on anyone's laptop — use it there
+
+**`BOARD_API_KEY` is a repository secret** (so are
+`FIREBASE_SERVICE_ACCOUNT_BACKLOG_TRACKER`, `GH_DISPATCH_TOKEN` and the
+rest — `grep -rh "secrets\." .github/workflows/` lists them). It is
+deliberately not in any `.env` on a developer machine, so an agent that
+needs to **write** to the board does not ask for the key and does not hand
+the job back: **it runs the work on a runner, where the key already is.**
+
+For this project that is `.github/workflows/dsp-board.yml`:
+
+```bash
+# sync the board's copy of REQUIREMENTS.md / README.md, move a card, set the deploy branch
+gh workflow run dsp-board.yml -f docs=sync
+gh workflow run dsp-board.yml -f ticket=<id> -f to=ready-for-testing -f preview=<url>
+gh workflow run dsp-board.yml -f deploy_branch=deploy/dsp-integration
+gh run watch "$(gh run list --workflow=dsp-board.yml --limit 1 --json databaseId -q '.[0].databaseId')"
+```
+
+The docs sync also runs **by itself** whenever `REQUIREMENTS.md` or
+`README.md` lands on `main`, which is what keeping the board in step should
+mean in practice.
+
+**The general rule, beyond this project: when a task is blocked on a
+credential, check whether the repository already holds it as an Actions
+secret and run the job there.** I spent several turns telling Rob I
+couldn't sync an 80 KB specification because the key wasn't on this machine
+— it had been in GitHub the whole time, and one workflow did the job in
+nine seconds, verified. Look before you declare a blocker.
+
+**One trap, learned the hard way**: a `workflow_dispatch` run checks out the
+**default branch**, not your feature branch. If the script the workflow
+calls was changed on a branch, that change is not there yet — land the
+script on `main` (the workflow is infrastructure), and keep only the
+ticket's own code on its train.
+
+**Without the write credential you can still report drift, and should.**
+Read the project's docs over the board's MCP connector (`get_project_docs`
+with `include: ["requirements", "readme"]`) and pass the saved result to
+`npm run board:sync -- --check-mcp <file>`: it compares locally, names the
+sections that moved, and exits 1 when the board is behind. Say that in the
+ticket or to the user rather than leaving it unsaid — a known gap is
+manageable, a silent one isn't. Exit codes: 0 in sync, 1 drifted, 2 couldn't
+run.
 
 ## Guidelines
 

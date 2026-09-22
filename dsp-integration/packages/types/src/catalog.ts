@@ -54,6 +54,13 @@ export const assignedOf = (slot: SlotLike): Assigned => {
 export const assignedLabels = (a: { advertisers: readonly string[]; partnerNames?: readonly string[]; whitelistOnly?: boolean }): string[] =>
   [...a.advertisers, ...(a.whitelistOnly ? ['Whitelist only'] : []), ...(a.partnerNames ?? [])]
 
+/* Reserve price inheritance (Rob, 22 Sep; spec §1 configuration
+   inheritance): a display type carries its own reserve price default, and
+   a slot's own reservePrice overrides it whenever it is set — null always
+   means inherit, never "explicitly no reserve" while a default exists. */
+export const reservePriceOf = (dt: { phExtensions?: { reservePrice?: number | null } | null }, slot: { reservePrice?: number | null }): number | null =>
+  slot.reservePrice ?? dt.phExtensions?.reservePrice ?? null
+
 /* What a campaign may use on a slot (Rob, 20 Sep). A slot supports localised
    targeting only until someone opens it up on Advertisers / Inventory; a bid
    for a campaign of an unsupported type is refused. Same order and words as
@@ -181,7 +188,8 @@ export const TARGETING_VARIABLES: TargetingVariableDef[] = [
   loc('store.postcode', 'Postcode', '2000, 2150', LIST),
   loc('store.state', 'State', 'NSW, VIC, QLD', LIST),
   loc('store.country', 'Country', 'Australia, New Zealand', LIST),
-  loc('store.languages', 'Languages Spoken by Store Staff', 'English, Mandarin, Arabic', LIST, 'The languages spoken by the staff on shift right now — the ones signed into the staff tablet or Retail Admin, through virtual queue management and appointments — e.g. English, Mandarin, Arabic'),
+  /* Languages Spoken by Store Staff was removed from the default set — not
+     supported initially, revisit in a later release (ticket, 22 Sep). */
   /* Computer Vision first, then the aggregates, then the rest (Rob, 20 Sep).
      Both are personalisation, so both default to no DSP (Q49 revisited). */
   per('store.cv_gender', 'Gender (Computer Vision)', 'Female, Male', COMPARE_EXACT, 'Read by Vision/AI running at the edge, for the person in front of the display — e.g. Female, Male. Nothing leaves the store.', 'store'),

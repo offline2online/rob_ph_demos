@@ -66,9 +66,6 @@ export function Preview({ d, playlistName }: { d: DisplayType; playlistName: (id
           </div>
         )}
       </div>
-      <div className="mt-3" style={{ fontSize: 12, color: T.muted, maxWidth: BOX_W, lineHeight: 1.6 }}>
-        {W} × {H} · {zones.enabled ? `${zones.zones.length} zones` : 'single zone'} · {phantomOn ? (showQR ? 'phantom zone with QR control' : 'phantom zone defined, QR control off') : 'no phantom zone'}
-      </div>
     </div>
   )
 }

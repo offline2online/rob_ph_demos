@@ -10,7 +10,7 @@ import { C } from './tokens'
 
 const CHECK_LABELS: Record<string, string> = {
   file_type: 'File type', file_size: 'File size', bitrate: 'Bitrate', dimensions: 'Dimensions', aspect_ratio: 'Aspect ratio',
-  duration: 'Duration', baseline_present: 'Baseline present', targeting_permitted: 'Targeting permitted',
+  duration: 'Duration', default_present: 'Creative present', targeting_permitted: 'Targeting permitted',
 }
 const COMPLIANCE_TIP = 'Advertiser artwork must not contain price, offer terms or disclosures. A price baked into supplied artwork is a compliance breach an automated dimension check will not catch.'
 const Label = ({ children }: { children: string }) => (
@@ -38,15 +38,19 @@ function OnCanvas({ approval }: { approval: Approval }) {
   )
 }
 
-export function ApprovalReviewPanel({ approval, canApprove = true, busy, onApprove, onReject, onClose }: {
+export function ApprovalReviewPanel({ approval, canApprove = true, busy, onApprove, onReject, onUnreject, onClose }: {
   approval: Approval
   canApprove?: boolean
   busy?: boolean
   onApprove: () => void | Promise<unknown>
   onReject: (reason: string) => void | Promise<unknown>
+  /* Undo a mistaken rejection back to Awaiting approval (spec §3). Omit to
+     leave the "options/overflow menu" as the only place a host offers it. */
+  onUnreject?: () => void | Promise<unknown>
   onClose?: () => void
 }) {
   const awaiting = approval.status === 'awaiting_approval'
+  const rejected = approval.status === 'rejected'
   return (
     <section aria-label={`Review ${approval.campaignName ?? approval.campaignId}`} style={{ border: `1px solid ${C.subtle}`, borderRadius: 8, overflow: 'hidden' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 16px', background: C.alt, borderBottom: `1px solid ${C.subtle}` }}>
@@ -68,22 +72,45 @@ export function ApprovalReviewPanel({ approval, canApprove = true, busy, onAppro
         <div style={{ fontSize: 13 }}>{approval.advertiserName ?? '—'} · {approval.partnerName ?? '—'}</div>
 
         <Label>Targeting</Label>
-        <div style={{ fontSize: 13, whiteSpace: 'pre-line' }}>{approval.targetingSummary || 'Baseline only (no targeting rules).'}</div>
+        <div style={{ fontSize: 13, whiteSpace: 'pre-line' }}>{approval.targetingSummary || 'Default only (no targeting rules).'}</div>
 
         <Label>Automated checks</Label>
         {approval.checks.length === 0 ? <div style={{ fontSize: 12.5, color: C.muted }}>No checks recorded.</div> : (
           <ul aria-label="Automated checks" style={{ listStyle: 'none', margin: 0, padding: 0 }}>
             {approval.checks.map((c) => (
-              <li key={c.name} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, padding: '3px 0' }}>
+              <li key={`${c.assetId ?? ''}-${c.name}`} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, padding: '3px 0' }}>
                 <Icon name={c.passed ? 'check_circle' : 'cancel'} size={16} color={c.passed ? C.success : C.error} />
                 <span>{CHECK_LABELS[c.name] ?? c.name}</span>
+                {c.assetId && <span style={{ color: C.micro, fontSize: 11 }}>({c.assetId})</span>}
                 {c.detail && <span style={{ color: C.muted }}>· {c.detail}</span>}
               </li>
             ))}
           </ul>
         )}
 
-        {approval.status === 'rejected' && approval.reason && (<><Label>Reason</Label><div style={{ fontSize: 13 }}>{approval.reason}</div></>)}
+        {rejected && approval.reason && (<><Label>Reason</Label><div style={{ fontSize: 13 }}>{approval.reason}</div></>)}
+        {rejected && !!approval.assetReasons?.length && (
+          <>
+            <Label>Which asset(s) failed</Label>
+            <ul aria-label="Rejected assets" style={{ listStyle: 'none', margin: 0, padding: 0 }}>
+              {approval.assetReasons.map((a) => (
+                <li key={a.assetId} style={{ display: 'flex', gap: 6, fontSize: 13, padding: '3px 0' }}>
+                  <Icon name="cancel" size={16} color={C.error} />
+                  <span style={{ fontWeight: 600 }}>{a.assetId}</span>
+                  <span style={{ color: C.muted }}>· {a.reason}</span>
+                </li>
+              ))}
+            </ul>
+          </>
+        )}
+
+        {rejected && onUnreject && (
+          <div style={{ marginTop: 20 }}>
+            <Tooltip title={canApprove ? undefined : 'Only HQ Admin can undo a rejection'}>
+              <Button disabled={!canApprove} loading={busy} icon={<Icon name="undo" size={16} />} onClick={() => onUnreject()}>Undo rejection</Button>
+            </Tooltip>
+          </div>
+        )}
 
         {awaiting && (
           <div style={{ display: 'flex', gap: 8, marginTop: 20 }}>

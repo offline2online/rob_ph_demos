@@ -6,7 +6,7 @@ This file is the shared boundary between two independently-run projects:
   Attribute Layer) of the *Real-Time Personalised Surface Architecture
   Specification v1.2*: attributes, precedence, connectors, the resolver.
 - **Display Types & DSP Integration**
-  (`../display-types-dsp-integration/`) — Systems Two and Three of the same
+  (`../dsp-integration/`) — Systems Two and Three of the same
   spec: display types/elements and the surface/template layer that renders
   resolved attributes into content. **Short form: "Display Types"** — used
   throughout the rest of this file. Capitalised it is the project; lower-case

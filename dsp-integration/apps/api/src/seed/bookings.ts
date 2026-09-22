@@ -19,31 +19,31 @@ const svg = (w: number, h: number, bg: string, brand: string) =>
   Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}"><rect width="100%" height="100%" fill="${bg}"/>` +
     `<text x="50%" y="55%" fill="#fff" font-family="Helvetica, Arial, sans-serif" font-size="${Math.round(h / 8)}" font-weight="700" text-anchor="middle">${brand}</text></svg>`)
 
-const CHECKS = (w: number, h: number) => [
+export const CHECKS = (w: number, h: number) => [
   { name: 'file_type' as const, passed: true, detail: 'SVG image' },
   { name: 'file_size' as const, passed: true, detail: 'Under the 10 MB limit' },
   { name: 'dimensions' as const, passed: true, detail: `${w}×${h} matches the canvas` },
   { name: 'aspect_ratio' as const, passed: true, detail: `${(w / h).toFixed(2)} matches the canvas` },
-  { name: 'baseline_present' as const, passed: true },
+  { name: 'default_present' as const, passed: true },
   { name: 'targeting_permitted' as const, passed: true },
 ]
 const COLOURS = ['#1b5e20', '#b3261e', '#0b4f6c', '#4a148c', '#8d6e00', '#37474f']
 
 /* A campaign the advertiser could really have booked with: approved, and
    switched on. Returns the id, or null if the advertiser already has one. */
-async function campaignFor(ctx: Context, brand: { advertiserId: string; name: string; partnerId: string; displayTypeId: string }, colour: string, width: number, height: number) {
+export async function campaignFor(ctx: Context, brand: { advertiserId: string; name: string; partnerId: string; displayTypeId: string }, colour: string, width: number, height: number) {
   const id = `c_seed_${brand.advertiserId}`
   if (ctx.campaigns.getCampaign(id)) return id
   ctx.db.prepare(
     `INSERT INTO campaigns (id, name, targeting, created_at, source, advertiser_id, partner_id, display_type_id, pricing_type, activation_enabled, brief)
      VALUES (?, ?, ?, ?, 'api', ?, ?, ?, 'localised', 0, ?)`,
   ).run(
-    id, `${brand.name} — always on`, JSON.stringify({ baseline: { pricingType: 'localised' } }), new Date().toISOString(),
+    id, `${brand.name} — always on`, JSON.stringify({ default: { pricingType: 'localised' } }), new Date().toISOString(),
     brand.advertiserId, brand.partnerId, brand.displayTypeId,
     JSON.stringify({ details: `${brand.name}'s standing booking across the estate.`, objective: 'Increase Revenue / Sales', touchPoints: ['Digital Signage'] }),
   )
   const file = ctx.assets.put(svg(width, height, colour, brand.name), '.svg')
-  ctx.db.prepare("INSERT INTO campaign_assets (id, campaign_id, version, role, file, mime_type, width, height, size_bytes, created_at) VALUES (?, ?, 1, 'baseline', ?, 'image/svg+xml', ?, ?, 1024, ?)")
+  ctx.db.prepare("INSERT INTO campaign_assets (id, campaign_id, version, role, file, mime_type, width, height, size_bytes, created_at) VALUES (?, ?, 1, 'default', ?, 'image/svg+xml', ?, ?, 1024, ?)")
     .run(randomUUID(), id, file, width, height, new Date().toISOString())
   await ctx.approvals.submit(id, CHECKS(width, height), brand.name)
   /* Auto-approved already when the advertiser doesn't need approval. */

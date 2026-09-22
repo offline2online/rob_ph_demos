@@ -19,9 +19,14 @@ export async function handOff(ctx: Context, r: ReservationRecord): Promise<Reser
   /* The enforcement hook, at the last point before the campaign system (brief, package 11). */
   const refused = await checkCampaign(ctx, r.campaignId)
   if (refused) return notHandedOff(refused.reason.replace(/^The/, 'the'))
-  const baseline = ctx.campaigns.latestAssets(r.campaignId).find((a) => a.role === 'baseline')
-  const bytes = baseline ? ctx.assets.read(baseline.file) : null
-  if (!baseline || !bytes) return notHandedOff('the campaign has no baseline creative.')
+  /* default is mandatory (decision, 22 Sep), so its creative is what hands
+     off by default; which version actually plays is existing targeting
+     evaluation, unchanged. assets[0] is a defensive fallback only, for a
+     record predating the requirement. */
+  const assets = ctx.campaigns.latestAssets(r.campaignId)
+  const asset = assets.find((a) => a.role === 'default') ?? assets[0]
+  const bytes = asset ? ctx.assets.read(asset.file) : null
+  if (!asset || !bytes) return notHandedOff('the campaign has no creative.')
   const checks = fileChecks(readMedia(bytes), bytes.length, p.displayType, ctx.config.assetLimits)
   if (failed(checks).length) return notHandedOff(`the creative doesn’t fit ${p.displayType.name}: ${failed(checks).map((c) => c.detail ?? c.name).join(' ')}`)
   ctx.campaigns.bookSlot({

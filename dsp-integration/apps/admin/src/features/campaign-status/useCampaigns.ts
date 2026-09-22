@@ -46,6 +46,7 @@ export function useCampaignActions(campaignIds: string[]) {
     busy,
     approve: (a: Approval) => act(a.campaignId, () => api('POST', `/admin/v1/campaigns/${a.campaignId}/approve`, { assetVersion: a.assetVersion })),
     reject: (a: Approval, reason: string) => act(a.campaignId, () => api('POST', `/admin/v1/campaigns/${a.campaignId}/reject`, { assetVersion: a.assetVersion, reason })),
+    unreject: (a: Approval, reason?: string) => act(a.campaignId, () => api('POST', `/admin/v1/campaigns/${a.campaignId}/unreject`, { assetVersion: a.assetVersion, reason })),
     activate: (c: Campaign, enabled: boolean) => act(c.campaignId, () => api('PUT', `/admin/v1/campaigns/${c.campaignId}/activation`, { enabled })),
   }
 }

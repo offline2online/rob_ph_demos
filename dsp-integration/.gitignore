@@ -5,3 +5,6 @@ node_modules/
 data/*.sqlite
 dist/
 .claude/launch.json
+
+# Vite's local cache
+apps/admin/.vite/

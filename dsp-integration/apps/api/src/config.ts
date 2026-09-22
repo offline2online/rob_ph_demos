@@ -18,9 +18,15 @@ export interface Config {
   oldVersionRunsDuringReview: boolean
   /* Q47 — block display type delete while positions are sold/reserved? */
   blockDeleteWithSoldPositions: boolean
-  /* Automated asset checks (spec §3). The spec names the checks, not the
-     limits: these are POC defaults (BUILD-PLAN Q8). */
+  /* Automated asset checks (spec §3). Limits are per asset, spec §3
+     "Automated checks on upload": 100 MB images, 200 MB videos. */
   assetLimits: { maxImageBytes: number; maxVideoBytes: number; maxBitrateKbps: number }
+  /* Spec §3 "Enforcement and audit": a Rejected campaign (and its assets) is
+     auto-deleted once its rejection is older than this many days — the
+     audit trail (campaign_approval_audit) is never touched, so the fact of
+     the rejection is never lost. Un-reject takes a campaign out of Rejected,
+     so its clock stops until (if ever) it is rejected again. */
+  rejectedCampaignRetentionDays: number
   /* Partner API: one static bearer token per seeded partner (token → partner id). */
   partnerTokens: Record<string, string>
   /* DSP API base URLs. Default: the local mock DSP service (apps/dsp-mocks). */
@@ -49,7 +55,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     maxValuesPerCondition: 100,
     oldVersionRunsDuringReview: false,
     blockDeleteWithSoldPositions: false,
-    assetLimits: { maxImageBytes: 10 * 1024 * 1024, maxVideoBytes: 100 * 1024 * 1024, maxBitrateKbps: 20_000 },
+    assetLimits: { maxImageBytes: 100 * 1024 * 1024, maxVideoBytes: 200 * 1024 * 1024, maxBitrateKbps: 20_000 },
+    rejectedCampaignRetentionDays: 30,
     dsp: {
       dv360TokenUrl: env.DV360_TOKEN_URL ?? `${mocks}/dv360/token`,
       dv360ApiBaseUrl: env.DV360_API_BASE_URL ?? `${mocks}/dv360`,

@@ -14,9 +14,9 @@ This specification covers these areas, and only these:
    retailer approves them in the **existing Campaigns section** where the
    advertiser requires approval. Whether an advertiser requires approval, and
    its floor multiplier, are set on a new admin-only **Advertisers** screen (§3).
-4. **Pricing**: the currency, the CPM bid floor, audience scoring, the
-   a personalised multiplier, a cost per engagement and a floor multiplier per
-   advertiser (§4).
+4. **Pricing**: the currency, the CPM bid floor, audience scoring, a
+   personalised multiplier, a cost per engagement, and a floor multiplier
+   per advertiser (§4).
 5. **Inventory API**: what inventory exists and what is available, derived
    from the slots assigned on each display type (§5).
 6. **DSP integration**: the advertiser/DSP interface and the shared targeting
@@ -189,7 +189,7 @@ Page-title tooltips for the DSP Integration company pages:
 | Page | Tooltip |
 |---|---|
 | **Exchange settings** | Sets up your organisation as the seller of record for its screens. Configurable here: organisation name, domain, seller ID and ad-ops contact email, all required. Once saved and complete, sellers.json is published at https://[domain]/sellers.json and every bid request carries your domain and seller ID in its SupplyChain; until then no DSP is sent bid requests. Not configurable (platform defaults): seller type (Publisher), OpenRTB 2.6, the DOOH object, the OpenOOH venue taxonomy, QPS and bid timeout. |
-| **Advertiser settings** | Company-wide advertiser settings, applied to every DSP. Configurable here: Pricing (currency, floor CPM, the personalised multiplier and the interactive cost per engagement) and List management (advertiser and IAB category whitelists and blacklists). Read-only here: Where these apply (which DSPs use these lists or keep their own; unlink or relink on the DSP's page) and Available Inventory (advertiser-owned slots, set on Display Types). Per-advertiser campaign approval and floor multipliers are on the Advertisers screen. |
+| **Advertiser settings** | Company-wide advertiser settings, applied to every DSP. Configurable here: Pricing (currency, floor CPM, the personalised multiplier and the interactive cost per engagement), the Auction schedule (when bidding opens, play-window length, auction cutoff) and List management (advertiser and IAB category whitelists and blacklists). Read-only here: Where these apply (which DSPs use these lists or keep their own; unlink or relink on the DSP's page). Per-advertiser campaign approval and floor multipliers, and the inventory advertisers can buy, are on Advertisers / Inventory. |
 | **Shared Targeting Variables** | Variables shared through the API with connected DSPs. Once a variable is enabled for a DSP, that DSP's advertisers can use it in targeting conditions for more advanced campaign targeting; the platform evaluates the condition and never returns the value. They are the same variables as a campaign's Targeting tab. Choose which DSPs may use each one below; default platform variables only in this release. |
 
 Other tooltip wording is given in the relevant section below (for example
@@ -348,11 +348,17 @@ Applies to campaigns whose creative comes from outside the retailer: direct
 partners submitting through the API (tier 2) and creative arriving through a
 DSP (tier 1). Campaigns authored by HQ are unchanged.
 
-### The Advertisers screen — admin only
+### Advertisers / Inventory
 
-A new **Advertisers** item in the HQ Admin navigation, placed **directly
-below DSP Integration** and **accessible to admin users only**. It is purely
-for per-advertiser settings; **campaigns are not approved here.**
+A new **Advertisers / Inventory** item in the HQ Admin navigation, placed
+**directly below DSP Integration**. It carries per-advertiser settings and,
+below them, the inventory those advertisers can buy (§5); **campaigns are
+not approved here.**
+
+**Admin and marketing users both see it** (Rob, 20 Sep): marketing reads it,
+and only an admin changes approval, pricing, what a position is assigned to
+or what targeting it supports. A read-only viewer sees a *Read only* pill in
+place of *Admin only* and no Save changes bar.
 
 - Lists every advertiser currently using the platform, across all DSPs, with
   the DSP(s) it comes through. Advertisers are pulled from each DSP on
@@ -381,7 +387,7 @@ Advertisers submit campaigns (content packages) and assets through the API
 (§6):
 
 ```
-POST /v1/campaigns                  create a campaign: baseline (required) + targeted versions
+POST /v1/campaigns                  create a campaign: default (mandatory) + targeted versions (optional upsells)
 POST /v1/campaigns/{id}/assets      upload creative against the campaign
 POST /v1/campaigns/{id}/submit      submit for retailer approval
 GET  /v1/campaigns/{id}/status      approval status and rejection reason
@@ -398,11 +404,26 @@ can compete in later windows.
 Run before a human sees anything; failures are returned to the advertiser
 immediately with reasons and never reach the review queue:
 
-- file type, file size and bitrate;
+- file type, file size and bitrate. **File size is per asset, not per
+  submission**: 100 MB for an image, 200 MB for a video. Applies to the
+  default (mandatory) layer and every localised/personalised targeted
+  version uploaded against a campaign via `POST /v1/campaigns/{id}/assets`,
+  each checked independently. A file over its type's limit fails the
+  `file_size` check and is returned to the advertiser immediately, never
+  reaching the review queue — same as the other automated checks below.
+  Stated in the API contract too (`openapi.yaml`'s `uploadAsset` request
+  body, `API.md`'s Campaigns table) so the two do not diverge, and enforced
+  in the POC by `assetLimits` in `apps/api/src/config.ts`
+  (`apps/api/src/domain/assetChecks.ts`'s `file_size` check);
 - dimensions and aspect ratio against the target display type's canvas or
   zone;
 - duration against the slot's duration;
-- a baseline campaign is present;
+- creative is present on the default campaign (decision, 22 Sep,
+  superseding the earlier same-day "baseline optional" decision — ticket
+  "Make default creative mandatory; retire localised-only booking path"):
+  default is now mandatory on every submission, so its own creative is
+  always required — a targeted version's creative no longer stands in
+  for it;
 - targeting rules use only variables permitted for the advertiser's DSP (§6).
 
 ### Campaign statuses
@@ -424,14 +445,40 @@ once a campaign is *Approved*.
   advertiser that requires approval) returns it to *Awaiting approval*.
   Whether the previously approved version keeps running during re-review is
   open question 38.
+- **Draft is internal only; it never surfaces in a retailer-facing view**
+  (ticket, 22 Sep). A campaign remains mechanically Draft between creation
+  (`POST /v1/campaigns`) and submission (`POST /v1/campaigns/{id}/submit`)
+  on the three-step API, but the retailer only ever sees one once it has
+  been submitted. The campaign table's status filter and its per-status
+  counts (below) show and count only **Awaiting approval**, **Approved**
+  and **Rejected**; a still-Draft campaign is not a row in that table at
+  all, not merely filtered out of one status.
+- **Undo rejection.** A mistaken rejection can be reversed: an **Undo
+  rejection** action, in the campaign's options/overflow menu, is available
+  on a **Rejected** campaign and moves it back to *Awaiting approval* for a
+  fresh decision. It never auto-approves, even for an advertiser who
+  doesn't require approval — it undoes the rejection, it isn't a new
+  submission. Same permission as approve/reject (open question 39). The
+  reversal is recorded in the audit trail like any other decision (who, when
+  and, optionally, why); the prior rejection reason stays in that history.
 
 ### Retailer review — the existing Campaigns section
 
 Approval takes place in Personalisation Hub's **existing Campaigns section**,
 with a minimal change to the campaign table:
 
-- **Status filter** on the campaign table with the four statuses above and a
-  count on each, so the *Awaiting approval* queue is one click away.
+- **Status filter** on the campaign table with **Awaiting approval**,
+  **Approved** and **Rejected** — never Draft (above) — and a count on
+  each, so the *Awaiting approval* queue is one click away.
+- **The campaign name links through to the actual campaign** as managed in
+  Personalisation Hub — the same canonical campaign detail page any other
+  campaign opens to, not a placeholder. Submitted campaigns are stored and
+  displayed exactly like a campaign built in HQ Admin (§6), so the existing
+  campaign detail page is the link target; this project adds no separate
+  detail view of its own. (The POC's own "Campaign Status" table is an
+  explicit stand-in for this section, deleted on integration — see
+  `CAMPAIGN-APPROVAL-INTEGRATION.md` — so its campaign name link opens the
+  POC's own placeholder detail page only until then.)
 - For a campaign **Awaiting approval**, the **activation status toggle is
   hidden** and an **Approve** icon is shown in its place, with a **Reject**
   action that requires a reason.
@@ -448,6 +495,61 @@ with a minimal change to the campaign table:
   compliance breach that an automated dimension check will not catch, which
   is why a human approves.
 
+### Asset-level rejection detail (ticket, 22 Sep)
+
+A campaign carries multiple assets — the mandatory default layer plus any
+localised/personalised targeted versions (§3 *Submission*) — so a single
+campaign-level rejection reason doesn't say WHICH asset failed. Automated
+check results are already per-check (`checks: [{name, passed, detail}]`);
+a human rejection now works the same way:
+
+- **A rejection can name reasons against one or more specific assets**, not
+  just the campaign as a whole: `reason` (required, as today) is the overall
+  summary the advertiser sees first; an optional `assetReasons` — an array
+  of `{assetId, reason}` — additionally pins one or more reasons to the
+  specific asset(s) that failed (`assetId` is `"default"` or a targeted
+  version id, matching `POST /v1/campaigns/{id}/assets`'s `version`).
+- **The review view highlights which asset(s) failed**, with the reason on
+  each, alongside the overall reason.
+- **Automated check results are asset-scoped too**: every `Check` carries
+  an optional `assetId` — set for a per-file check (`file_type`,
+  `file_size`, `bitrate`, `dimensions`, `aspect_ratio`, `duration`) to the
+  asset it ran against, left unset for a campaign-level check
+  (`default_present`, `targeting_permitted`) that isn't about one asset.
+- **The audit record retains per-asset reasons in history**: a `rejected`
+  audit entry carries `assetReasons` the same shape as the live rejection,
+  so a later reviewer (or an un-reject, §3 above) can see exactly which
+  assets were called out, not just that *something* was rejected.
+
+### Safe reuse of previously approved assets (ticket, 22 Sep)
+
+Narrower than Amazon DSP's asset-level moderation (which lets any passed
+asset skip re-review): here, an asset may skip re-review on resubmission
+**only when BOTH** hold —
+
+1. it is **unchanged** — byte-identical to the previously reviewed version
+   (same content hash), and
+2. it previously cleared **human** review, not merely automated checks.
+
+Automated-pass alone must never exempt an asset from human review on its
+own: the compliance check (no price/offer terms/disclosures in artwork,
+above) is a human visual judgement, so waiving it on the strength of an
+automated pass alone could let a compliance breach through on a resubmit
+where nothing actually changed except another, unrelated asset. Any
+**changed** asset, or a **first-time** asset, always re-reviews regardless
+of any other asset's history. Represented in the POC as
+`ApprovalService.wasAssetHumanCleared(campaignId, assetId, contentHash)`
+(`packages/campaign-approval/src/server/service.ts`, backed by
+`campaign_approval_asset_clearance` — a row is written only from a genuine
+`approve()`, never from `submit()`'s auto-approve path) — a building block
+a submission flow can call before deciding whether to route a resubmitted
+asset back into the review queue. **Not yet wired into the POC's own
+upload/submit endpoints** (`apps/api/src/routes/partner/campaigns.ts`):
+today every resubmission still re-runs its automated checks and, if the
+advertiser requires approval, re-enters the queue regardless of whether an
+individual asset was unchanged — the service-level primitive above is
+ready for that wiring, which is the natural next step.
+
 ### Enforcement and audit
 
 - **Approval is enforced server-side**, not only in the UI. A campaign that
@@ -456,6 +558,25 @@ with a minimal change to the campaign table:
   is not changed: the existing platform only plays active campaigns.
 - Every decision records who approved or rejected (or that it was approved
   automatically), when, the reason, and the asset version it applies to.
+- **A Rejected campaign is auto-deleted after a retention window** (ticket,
+  22 Sep) — rejected campaigns otherwise accumulate and clutter the
+  retailer-facing queue, especially once an advertiser has already
+  submitted a new version. Default **30 days** from the rejection
+  timestamp, a single configurable value (`rejectedCampaignRetentionDays`
+  in the POC — `apps/api/src/config.ts`), not hard-coded. **Scope: Rejected
+  only** — Draft (already never shown to the retailer, above), Awaiting
+  approval and Approved are untouched. **Delete means the campaign record
+  and its uploaded assets are removed; the approval audit trail
+  (`campaign_approval_audit`) is kept** — a deletion never erases the fact
+  that a rejection happened, who made it, when, or why, even though the
+  campaign it was about is gone. **Interaction with Undo rejection**: an
+  un-rejected campaign is no longer Rejected, so it drops out of scope
+  immediately — its clock only restarts if it is rejected again, from that
+  new rejection's timestamp. Represented in the POC by
+  `apps/api/src/domain/campaignRetention.ts`'s `sweepRejectedCampaigns`,
+  run on a daily interval (`apps/api/src/exchange/scheduler.ts`'s
+  `startCampaignRetentionScheduler`) the same way the auction and billing
+  jobs already run — no separate cron infrastructure needed.
 
 ## 4. Pricing — CPM bid floor and multipliers
 
@@ -490,10 +611,10 @@ rather than restating how it is arrived at.
 
 ### Campaign types for pricing
 
-- **Baseline / Localised**: the creative is the same for everyone in front of
+- **Default / Localised**: the creative is the same for everyone in front of
   the screen, including localised versions targeted on **Localisation
-  Variables** (§6). An advertiser submits a baseline campaign plus localised
-  versions for its slot.
+  Variables** (§6). An advertiser submits a mandatory default campaign plus
+  optional localised versions for its slot.
 - **Personalised**: the visitor is **checked in or otherwise identified**,
   so the advert is **one-to-one for that individual**; targeted on
   **Personalisation Variables** (§6).
@@ -613,12 +734,40 @@ region, date range, status.
 |---|---|
 | **Available** | Open for this partner/advertiser to reserve or bid on |
 | **Reserved** | Held for a named advertiser (shown as available only to that advertiser) |
-| **Sold** | Won or booked for that window |
+| **Sold** | Won or booked for that window, by the one advertiser holding it |
 | **Unavailable** | Store closed, display offline, or otherwise not playable |
+
+A position's status is exactly one of these — no **Part-sold** status:
+a slot goes to a single advertiser, whose submission carries a mandatory
+default layer plus optional localised/personalised upsells, not several
+advertisers splitting the position's capacity (§6 "Campaigns and content
+packages" has the retired part-sold model and why it never shipped past
+this document).
 
 - **Pricing** for the requester, in the company currency: the base floor CPM
   and the effective floor CPM for localised, personalised and interactive
   campaigns (§4), including the requester's own advertiser floor multiplier.
+- **Reserve price** (decision, Rob, 22 Sep; real inheritance, 22 Sep): a CPM
+  premium at which this position can be reserved in advance of the open
+  auction — a retailer lets an advertiser pay a premium up front to
+  guarantee the slot for a window, taking it out of the open auction for
+  that window (the advertiser then carries the delivery risk, not billed
+  against realised dynamic VAC-d; see §4 Billing). `null` when no reserve is
+  set. Genuine §1 configuration inheritance, not a copy action: a display
+  type carries its own reserve price default, and a slot's own reserve
+  price overrides it whenever one is set — a slot with none simply follows
+  its display type, and setting the default reaches every slot on it
+  automatically, with no per-slot action needed. **One simplification, kept
+  deliberately narrow**: a slot's own value can only be a real premium, never
+  an explicit "no reserve" while its display type has a default — clearing a
+  slot's override always means "follow the default," the same reading
+  `null` already carries everywhere else in this inheritance. An earlier
+  design (a plain per-slot value with a "copy to every other slot" action,
+  no stored default) failed testing for not actually running the
+  inheritance the ticket asked for. **Published on the position, resolved;
+  not yet wired to a booking flow** (the prototype ships the setting, the
+  inheritance and the publishing only, per the scope note on the ticket
+  that added it — see open question 52).
 
 ### Visibility rules
 
@@ -637,13 +786,25 @@ The same positions are shown to the retailer on **Advertisers / Inventory →
 Available Inventory**: every advertiser-owned slot across the estate that
 connected DSPs can bid on, one row per slot, with columns **Display type**,
 **Playlist**, **Slot**, **Position**, **Assigned to**, **Targeting
-supported** and an **Open** link to the display type. There is **no advertisers
-column**. Every column carries a filter, as the platform's tables do.
+supported**, **Reserve price** and an **Open** link to the display type.
+There is **no advertisers column**. Every column carries a filter, as the
+platform's tables do.
 
 Slots are made available by setting their owner to *Advertiser* on a display
 type (explained in the section's tooltip); that part is not editable here.
-Two fields are: **Assigned to** (above) and **Targeting supported**, each a
-multi-select that drops a pill per choice into the cell.
+Three fields are: **Assigned to** (above), **Targeting supported** — each a
+multi-select that drops a pill per choice into the cell — and **Reserve
+price**, a CPM input (blank = following the display type's default, or no
+reserve if it has none either). Editing a slot that has no override of its
+own edits its display type's shared default instead, reaching every other
+slot on that display type at once; an **Override** action next to the input
+lets one slot diverge with its own value (shown alongside a **reset to
+default** action once it has), independent from then on (decision, Rob,
+22 Sep; real inheritance, 22 Sep — see *Reserve price* under *What each
+position returns*, above, for the currency, the billing note, the "override
+always wins, no explicit opt-out" simplification, and what's not built yet).
+**Admin only**, same as the other two; a marketing user reads it as plain
+text — the resolved value, not which of the two levels it came from.
 **Targeting supported** is (Rob, 20 Sep): each slot says which kinds of
 campaign it will take — **localised**, **personalised**, **interactive** —
 ticked independently, with **localised only** as the default for a slot that
@@ -686,12 +847,52 @@ semantics.
 ### Campaigns and content packages — what an advertiser submits
 
 An advertiser submits a campaign (content package) for its slot: **exactly
-one baseline campaign, mandatory**, plus zero or more **targeted versions**,
-each with targeting rules and an integer `priority`.
+one mandatory default layer**, plus zero or more **targeted versions**
+(localised and/or personalised), each with targeting rules and an integer
+`priority`, as optional upsells on that one purchase.
 
-> Named *baseline*, not *default*, on purpose: `campaignCreativeSettings`
-> already uses `default` / `selected` / `unselected`. Two unrelated things
-> called "default" in one schema is a bug waiting to happen.
+**default is mandatory on every submission (decision, Rob, 22 Sep,
+superseding the earlier same-day "baseline optional" decision — ticket
+"Make default creative mandatory; retire localised-only booking path").**
+Earlier the same day, an advertiser was allowed to submit only localised
+targeted versions and skip the baseline/default layer altogether, leaving
+stores its criteria didn't match unsold to it. That model is retired:
+
+- **A slot goes to one advertiser, not several.** The part-sold model this
+  section used to describe — a slot's own fallback content, independent of
+  any one advertiser's submission, filling in the capacity a localised
+  variant's targeting didn't reach, so a second advertiser could buy the
+  remainder — never actually shipped past this section's own documentation
+  of the target model: the auction/reservation engine already enforced a
+  single Available/Sold/Reserved/Unavailable unit per position and window
+  throughout (§5, §7 Billing), so retiring the part-sold submission shape
+  is retiring a plan, not a running behaviour. The **Part-sold** position
+  status (§5) is removed along with it.
+- **localised and personalised are upsells on the one purchase**, not
+  alternatives to it: a booking's tile stacks whichever of the two the
+  advertiser's submission also carries, on top of the mandatory default
+  base (ticket "Booking schedule: single-advertiser stacking tile" — see
+  the booking schedule functional requirement below).
+- Open questions 50 and 51 (below) — the target algorithm for clearing
+  overlapping localised bids and billing a part-sold position — are
+  **superseded, not answered**: there is no longer a part-sold position for
+  either to apply to.
+
+> Named *default*, not *baseline* (decision, Rob, 22 Sep, reversing this
+> section's own earlier same-day note that warned off *default* because
+> `campaignCreativeSettings` already uses `default` / `selected` /
+> `unselected` for the existing platform's device-pairing scene state on a
+> playlist item). That collision risk is judged narrow enough to accept:
+> the two never appear in the same object — `campaignCreativeSettings` is
+> nested under a playlist item's own settings, and this project's `default`
+> is a sibling of `targeted` on a campaign's own targeting — so there is no
+> single JSON blob where the same key means two different things, only two
+> unrelated schemas that happen to share an English word. "Default" also
+> maps directly onto the pricing floor (§4: the default layer prices at the
+> same floor rate as localised), which "baseline" didn't make as obvious.
+> Reviewers integrating this against the real platform should still search
+> for `campaignCreativeSettings.default` before assuming the two can be
+> handled identically in code that touches both.
 
 **Targeting rules use the existing Targeting tab structure**: each condition
 is *data source → variable → operator → value(s)*; conditions within a group
@@ -712,10 +913,13 @@ selected*, *equal*, *greater than*).
   campaign system** for that slot.
 
 **What this project does not do:** evaluate targeting, decide which version
-plays, order or time the rotation, handle fallbacks when nothing matches, or
-report on what played. All of that is existing Personalisation Hub behaviour
-and is unchanged; the submitted campaign is evaluated, played and reported on
-exactly like any other campaign.
+plays, order or time the rotation, or report on what played. All of that is
+existing Personalisation Hub behaviour and is unchanged; the submitted
+campaign is evaluated, played and reported on exactly like any other
+campaign. **Falling back when nothing more specific matches is simply the
+mandatory default layer** now (decision, 22 Sep) — every submission has
+one, so there is no separate "what plays when a slot has no fallback
+content" question to answer.
 
 ### Shared Targeting Variables — Localisation and Personalisation Variables
 
@@ -727,10 +931,13 @@ This release exposes the **default platform variables only**, shown
 read-only in **DSP Integration → Shared Targeting Variables** (the page and
 its entry in the DSP Integration list carry this name), grouped under two
 headings; managing (adding or editing) variables is a later release.
+**Languages Spoken by Store Staff is not supported initially and was
+removed from the default set (ticket, 22 Sep); a later release will add it
+back.**
 
 | Group | Variables, in display order |
 |---|---|
-| **Localisation Variables** | Store Open / Closed; Fixed Store Segments; Variable Store Segments; Display Tag(s); Suburb; Postcode; State; Country; Languages Spoken by Store Staff; Reason for Visit (Aggregate); Computer Vision Gender; Computer Vision Estimated Age |
+| **Localisation Variables** | Store Open / Closed; Fixed Store Segments; Variable Store Segments; Display Tag(s); Suburb; Postcode; State; Country; Reason for Visit (Aggregate); Computer Vision Gender; Computer Vision Estimated Age |
 | **Personalisation Variables** | Age; Gender; Purchase Intent; Visitor Segments; Device Type; Product Holdings; Product Type; Plan Type; Plan Value; Purchase History; Events; SKUs |
 
 - **Localisation Variables** describe the store and the moment: whether the
@@ -898,7 +1105,7 @@ GET  /v1/inventory/{id}/availability   status per play window
 POST /v1/inventory/forecast        projected assumed views for a spec + targeting
 POST /v1/reservations              reserve, or bid (CPM) for a play window (Approved campaigns only)
 GET  /v1/targeting/attributes      the shared targeting variables THIS partner may target
-POST /v1/campaigns                 baseline (required) + targeted versions, rules validated
+POST /v1/campaigns                 default (required) + targeted versions, rules validated
 POST /v1/campaigns/{id}/assets     creative upload and automated validation
 POST /v1/campaigns/{id}/submit     submit for retailer approval (§3)
 GET  /v1/campaigns/{id}/status     approval status
@@ -911,7 +1118,7 @@ system.
 {
   "reservationId": "res_8812",
   "campaigns": [
-    { "role": "baseline", "assetSet": "as_brand_evergreen" },
+    { "role": "default", "assetSet": "as_brand_evergreen" },
     { "role": "targeted", "priority": 10, "assetSet": "as_metro_commuter",
       "rules": [
         [{ "source": "store", "variable": "fixed_store_segments", "op": "includes_selected", "values": ["Metro"] }],
@@ -1135,7 +1342,9 @@ fields. The canonical definition is `app/src/model/schema.js` and
   enabledFeatures: { inStoreRadio, proximityMist, aiAgentPlayback, visionAi },
   multiZone: { enabled, zones: [{ id, name, x, y, width, height, playlistId }] },
   phExtensions: {                  // THIS PROJECT's additions
-    slots: [{ label, owner, partnerId, advertiser, listMode, storeScope, quota }],   // source of inventory (§5)
+    reservePrice,                  // the display type's own reserve price default; CPM or null (real inheritance, 22 Sep — §5)
+    slots: [{ label, owner, partnerId, advertiser, listMode, storeScope, quota,
+              reservePrice }],     // this slot's own override; CPM, or null = inherit the display type's reservePrice above (§5)
     venue: { openOohVenueType, orientation, loopLengthSec }
   }
 }
@@ -1171,18 +1380,51 @@ VAC-d billing only.
 campaign: { …existing fields,
             source: hq | api | dsp,
             advertiserId, partnerId,
-            pricingType: baseline | localised | personalised | interactive,
+            pricingType: default | localised | personalised | interactive,
             status: draft | awaiting_approval | approved | rejected,   // shown as Draft / Awaiting approval / Approved / Rejected
             approval: { mode: manual | auto,
                         assetVersion, submittedAt,
                         reviewedBy, reviewedAt, reason,
-                        checks: [{ name, passed, detail }] },
+                        assetReasons: [{ assetId, reason }],           // optional — which asset(s) a rejection named (ticket, 22 Sep)
+                        checks: [{ name, passed, detail, assetId }] }, // assetId optional — set for a per-file check, unset for a campaign-level one
             activation: { enabled } }         // only settable once status = approved
+
+asset: { …existing fields, id, campaignId, role,      // "default" or a targeted version id
+         contentHash }                                // sha256 — the basis for safe reuse, below
 ```
+
+**Safe reuse tracking (ticket, 22 Sep)**, kept beside approval, not inside
+the campaign record — it is a history of decisions, not campaign state:
+
+```
+campaignApprovalAssetClearance: { campaignId, assetId, contentHash, clearedBy, clearedAt }
+```
+
+One row per (campaign, asset) — written only when a human approves (never
+from an automated pass or an auto-approve), overwritten on every later
+human approval. An asset may skip re-review only when its current content
+hash matches this row's — see *Safe reuse of previously approved assets*,
+§3, for the exact rule.
 
 Targeting rules use the campaign's existing targeting structure (AND groups
 of OR conditions, each *source → variable → operator → values*), evaluated
 by the existing platform. HQ-authored campaigns (`source: hq`) skip approval.
+
+**Platform-side dependency, tracked here, not built by this project:**
+`advertiserId`/`partnerId` above are on the campaign record this project
+adds, but showing them is a platform change — **Advertiser** and **DSP**
+columns need to be added to Personalisation Hub's own existing campaign
+table (the same table §3 *Retailer review* adds the status filter and
+Approve/Reject to), so a reviewer or marketing user can see who a
+DSP-sourced campaign came from without opening it. Hand this to the core
+platform team; this project's own POC "Campaign Status" stand-in already
+carries Advertiser and DSP as columns (`CampaignStatusPage.tsx`) as a
+reference for what the real table's columns should show.
+
+`targeting.default` is mandatory on every submission (decision, 22 Sep,
+superseding the earlier same-day "baseline optional" decision — §3, §6):
+`targeting: { default: { pricingType }, targeted?: [...] }`, and
+`pricingType` above is taken from `targeting.default.pricingType`.
 
 ### Sell side
 
@@ -1201,11 +1443,15 @@ Company-level:
 
 - **Advertiser settings**: `currency` (any ISO 4217 code; default `AUD`),
   `floorCpm`, `personalisedMultiplier`, `interactiveCpe` (defaults
-  100 / 1.5 / 3), `audienceScoring` (MOVE/VAC-d inputs), advertiser and
-  IAB-category whitelists and blacklists.
-- **Advertisers** (admin only):
+  100 / 1.5 / 0.50), the auction schedule (`auctionOpensHours`,
+  `playWindowHours`, `auctionCutoffTime`; defaults 168 / 24 / 18:00 UTC),
+  `audienceScoring` (MOVE/VAC-d inputs), advertiser and IAB-category
+  whitelists and blacklists.
+- **Advertisers / Inventory** (an admin writes it; marketing reads it):
   `advertiserSettings: { [advertiser]: { approvalRequired, floorMultiplier } }`
-  (defaults `true` / 1.0).
+  (defaults `true` / 1.0), and per sellable slot what it is assigned to
+  (`partnerIds`, `advertisers`, list mode) and the targeting it supports
+  (`supportedTargeting`, localised only by default).
 - **Shared targeting variables**: the platform's default variables, grouped
   as Localisation Variables and Personalisation Variables, each with example
   values (or a fixed tooltip text) for its tooltip, read-only in this
@@ -1281,14 +1527,16 @@ playback analytics.**
 - **Shared page layout**: same-width list column and a full-width content
   column on Display Types and DSP Integration. *(Display Types; DSP Integration)*
 
-### Advertisers (admin only)
+### Advertisers / Inventory
 
-- **Advertisers screen**, admin users only, directly below DSP Integration in
-  the navigation: every advertiser across all DSPs, with a **Campaign
-  approval** toggle (Required / Not required, default Required) and a
-  **floor multiplier** (default 1.0) with the effective floor shown in the
-  company currency, and a tooltip on each column. No campaign approval takes
-  place here. *(Advertisers)*
+- **Advertisers / Inventory screen**, directly below DSP Integration in the
+  navigation, editable by an admin and read-only for marketing: every
+  advertiser across all DSPs, with a **Campaign approval** toggle (Required /
+  Not required, default Required), a **floor multiplier** (default 1.0) with
+  the effective floor shown in the company currency, its **campaigns by
+  approval status** (which open Campaign Status filtered to it) and a
+  **Bookings** link when it has any, plus a tooltip on each column. No
+  campaign approval takes place here. *(Advertisers / Inventory)*
 
 ### Campaign asset approval — existing Campaigns section
 
@@ -1330,12 +1578,30 @@ playback analytics.**
   forecast, scoped to what the requester could buy. *(spec only)*
 - **Available Inventory**: every advertiser-owned slot across the estate
   that connected DSPs can bid on (Display type, Playlist, Slot, Position,
-  Assigned to, Targeting supported, and an Open link), with no advertisers
-  column and a filter on every column.
+  Assigned to, Targeting supported, Reserve price, and an Open link), with
+  no advertisers column and a filter on every column.
+  *(Advertisers / Inventory → Available Inventory)*
+- **Reserve price, inherited from its display type** (decision, 22 Sep; real
+  inheritance, 22 Sep): a CPM premium to reserve the position in advance of
+  the open auction, or no reserve, set once on the display type and
+  automatically reaching every slot on it — override just one slot to give
+  it its own value, independent from then on; published on the position,
+  resolved — not yet wired to a booking flow (open question 52).
   *(Advertisers / Inventory → Available Inventory)*
 - **Targeting supported needs QR Control for interactive**: flagged on the
   display type, greyed out with the reason where it is off, refused by the
   API. *(Advertisers / Inventory → Available Inventory)*
+- **Display type column capability icons**: the Display type column carries
+  an icon per capability the display type has enabled, alongside its name —
+  Vision/AI (on-device computer vision, `visibility` icon), then QR Control
+  (`qr_code_2` icon) — each a plain boolean read off the display type's own
+  settings (ticket "show a computer vision icon when computer vision is
+  enabled on a specific display type", 22 Sep). This is the display type's
+  own hardware capability, distinct from a booking's personalised targeting
+  rules happening to use a computer-vision variable (see "Personalised
+  trigger icons" below, under Booking schedule) — the same underlying
+  Vision/AI feature (Display Types → Enabled Features), read from a
+  different angle. *(Advertisers / Inventory → Available Inventory)*
 - **Assigned to per slot**: who may buy the position — any connected DSP by
   default, or named DSPs, named advertisers (reserved) or the whitelist —
   as a multi-select of pills, set by an admin and enforced on every bid.
@@ -1345,15 +1611,118 @@ playback analytics.**
   an admin, published on the position and enforced on every bid.
   *(Advertisers / Inventory → Available Inventory)*
 - **Booking schedule**: every advertiser position across its play windows,
-  booked / available / unavailable, with booking revenue per display type
-  and what sold by campaign type. Its DSP and advertiser filters are column
+  booked / available / unavailable, **at the top of its own page**, with
+  booking revenue per display type and then what sold by campaign type
+  below it (Rob, 21 Sep: the schedule is what the page is for; the money
+  reads as its summary). **Stands alone in its own tab** (Rob, 21 Sep): no
+  Display Types / DSP Integration nav beside it (`RouteHandle.hideNav`),
+  and no second "Schedule" section header repeating the page's own title
+  immediately above the table. Its DSP and advertiser filters are column
   filters, kept in the URL and applied by the server. **The advertiser
   filter lists only advertisers with something booked in the range on
   screen, and choosing one leaves only the positions it holds** (Rob,
   20 Sep) — the filter exists to find a booking, not to prove one is
   missing. An advertiser with nothing booked from the current window on is
   not offered a **Bookings** link on the advertisers table either.
+  **Columns, left to right: Advertiser, DSP, Position** (ticket "remove the
+  displays column and rather show that number of displays in brackets
+  after the display name", 22 Sep, superseding the earlier same-day
+  "Advertiser, DSP, Position, Displays" layout): the display count moved
+  into the Position cell, in brackets after the display type name (e.g.
+  "Landscape (18)"), rather than its own pinned column. That cell also now
+  always carries the row's own play-window read — "N of M windows booked",
+  plus how many of those carried each upsell layer — independent of the
+  Daily/Weekly/Monthly view on screen (see "Play-window booked/available
+  summary" below). The DSP column reads the actual booking's DSP
+  (`booking.partnerName`), not the position's `partnerNames` (who is merely
+  *eligible* to buy the slot) — the two can differ whenever a slot takes
+  bids from more than one DSP, and only the former is guaranteed to match
+  the advertiser shown beside it. *(Advertisers / Inventory → Booking
+  schedule)*
+- **Play-window booked/available summary, wherever the page counts
+  "windows"** (ticket "anytime you use the word Windows please show a
+  representation of how many are booked versus … localised … personalised
+  …", 22 Sep): the page's own "N play windows" header line now also reads
+  "N of M booked (X localised, Y personalised)" — summed across every
+  position on screen, respecting whatever advertiser/DSP filter is active
+  — right next to the window count itself, not only inside the grid. The
+  Position cell on every row (above) carries the same read for that one
+  row, in every view (Daily included, where the earlier per-row rollup only
+  showed in Weekly/Monthly). *(Advertisers / Inventory → Booking schedule)*
+- **Booking revenue table: % sold, Estimated revenue, no Billed revenue**
+  (ticket "% of slots sold" and ticket "instead of booked revenue can you
+  call it estimated revenue and remove the billed revenue column", both 22
+  Sep): **columns, left to right: Display type, Booked windows, % sold,
+  Estimated revenue.** % sold = this display type's booked windows ÷ its
+  *sellable* windows over the period shown (booked or still available,
+  excluding windows with no displays yet or before the earliest one still
+  open to sell) — a dash when nothing was sellable at all, never a
+  misleading 0%. "Booked revenue" is renamed **Estimated revenue** — more
+  honest about what it is before a window has actually played: booked CPM ×
+  assumed views, not confirmed spend. **Billed revenue is dropped from this
+  table** — invoicing what actually played is the DSP's own concern, not
+  this schedule's (it still appears in a booked tile's own hover, which
+  covers one specific booking rather than a display type's whole period).
   *(Advertisers / Inventory → Booking schedule)*
+- **Single-advertiser stacking tile** (ticket "Booking schedule:
+  single-advertiser stacking tile", 22 Sep, superseding the earlier
+  same-day "layered reach breakdown, as three stacked pills" design):
+  a slot goes to one advertiser (§6), so each booked window is **one tile
+  per advertiser**, not three always-shown layer pills. The advertiser
+  name sits at the top of the tile as the unit. Below it, the tile stacks
+  whichever of the three layers that one purchase actually carries — the
+  mandatory **default** layer always at the base, **localised** above it
+  when the campaign also submitted a localised (or interactive — they
+  share this layer, since both vary by store rather than by visitor)
+  targeted version, and **personalised** at the very top when it submitted
+  a personalised one. Only the layers actually provided are shown, so the
+  tile has one of three possible heights and visibly expands and
+  contracts with how successful the upsell has been with that advertiser —
+  monetisation readable at a glance. This retires the earlier design's
+  "Sold — other layer" pill entirely: with one advertiser per slot there is
+  no second layer competing for the same window's capacity to mark as
+  sold elsewhere. The localised row shows the booking's reach against this
+  row's `displayCount` — displays using this display type across the whole
+  retail footprint, shown in brackets on the Position cell (above), not its
+  own column any more — how many of those displays its targeting matched,
+  from the server's `ReachCountSource` stand-in for the interface contract's
+  "Booking schedule reach counts"; the personalised row carries no reach
+  count, since a personalised match can't be predicted ahead of time,
+  showing trigger icons instead (below) rather than a count. In the Weekly
+  and Monthly views, where a slot may have gone to a different advertiser on
+  different days, each column instead rolls up how many windows in the
+  period were booked at all and, of those, how many carried each upsell
+  layer. **One combined hover per tile, not one per layer row** (ticket
+  "devise a different approach to doing hover overs where all the details
+  are potentially covered in a single hover over for that specific slot or
+  tile", 22 Sep, superseding the earlier design where the tile, each layer
+  row, and each lit personalised trigger icon each carried their own
+  tooltip, nested three deep over a few square pixels and fighting each
+  other for the pointer): the tile's single tooltip now folds in every
+  layer's detail — reach counts, lit trigger labels — that used to need a
+  separate, nested hover to see; the layer rows and trigger icons
+  themselves are purely visual. *(Advertisers / Inventory → Booking
+  schedule)*
+- **Personalised trigger icons** (ticket "Booking schedule: personalised
+  trigger icons", 22 Sep): on the personalised row of the tile, icons
+  indicate the trigger mechanism the campaign's personalised targeting
+  rules actually use, rather than a raw count of variations, because the
+  mechanism predicts how frequently the multiplier will activate. A ladder
+  of three, from broadest/most frequent to narrowest/rarest, derived from
+  which **Personalisation Variables** (§6) a rule references: **computer
+  vision** (any `Computer Vision *` variable — highest-frequency trigger,
+  fires on almost anyone in front of the screen with no identification
+  needed, likely to drive the majority of personalised presentations),
+  **aggregate store-level** (any other store-sourced personalisation
+  variable, e.g. Reason for Visit (Aggregate) or Device Type (Aggregate) —
+  personalisation based on the aggregate of who is in the store,
+  mid-frequency) and **individual** (any visitor-sourced variable —
+  highest value but lowest frequency, requires the customer to be
+  identified/checked in). More than one icon may be lit when a campaign's
+  rules combine tiers; which icons are lit tells the viewer the expected
+  activation frequency and therefore how reliably the personalised
+  revenue will actually be earned. *(Advertisers / Inventory → Booking
+  schedule)*
 
 ### Shared targeting variables
 
@@ -1392,9 +1761,9 @@ playback analytics.**
 - **Advertiser lists on a DSP's page**: a link to the company lists when
   centrally managed (with Unlink and edit); the DSP's own editable lists when
   unlinked (with Relink). *(DSP Integration → partner → Advertiser whitelist / blacklist)*
-- **Campaign and content package submission**: one baseline plus prioritised
-  targeted versions, validated and stored in the existing campaign
-  structure. *(spec only)*
+- **Campaign and content package submission**: a mandatory default layer
+  plus optional prioritised targeted versions, validated and stored in the
+  existing campaign structure. *(spec only)*
 - **Pre-auction enforcement**: effective floor CPM, categories, blocklist and
   approval, keyed on seat/advertiser identity in the bid response.
   *(spec only)*
@@ -1446,9 +1815,37 @@ partner-contributed attributes have been removed with that scope.
     or does the campaign stop?
 39. **Who can approve.** Which HQ Admin role holds the approve permission in
     the Campaigns section, and is store-level approval ever needed?
-40. **DSP creative audits.** DV360 and The Trade Desk run their own creative
-    audits. Does retailer approval run in addition, and can a retailer
-    pre-approve by creative ID?
+40. **DSP creative audits — partially resolved (review, Sept 2026).** DV360,
+    Amazon Ads DSP and The Trade Desk each run their own buy-side creative
+    audit, and each also exposes a hook PH can occupy as the exchange/
+    publisher-side reviewer, so retailer approval running *in addition* to
+    the DSP's own audit is achievable with all three:
+    - **DV360**: the Creative resource carries `ReviewStatusInfo`
+      (`ApprovalStatus`) for DV360's own audit, and separately an
+      `ExchangeReviewStatus` (servable / rejected, per exchange). PH, as the
+      SSP, is an exchange review authority under DV360's model — retailer
+      approval maps onto setting the creative's status for PH's exchange
+      via that hook.
+    - **The Trade Desk**: already models a DOOH supply-side approver.
+      `/v3/creative` carries a flag for whether a creative requires approval
+      by VIOOH (their DOOH supply partner); approval is read from
+      `approvedBy` (`null` = awaiting/not approved, a username = approved).
+      PH occupies the equivalent DOOH-SSP approver role in that same shape.
+    - **Amazon Ads DSP**: creative moderation is asset-level, with
+      per-asset rejection reasons, and publisher policy is enforced at the
+      moment a creative is associated to a line item — the point at which a
+      PH approval decision would need to bite.
+    - **Still open**: these are each DSP's *buy-side* API, not a confirmed
+      supply-side handshake into PH's exchange — how creative and targeting
+      actually get submitted to PH's exchange for the *retailer's* approval
+      (as opposed to the DSP's own audit), and whether a retailer can
+      pre-approve by creative ID ahead of a bid, remain unanswered. A rich
+      "submit targeting for pre-approval" flow is realistically tier-2
+      (Blackmores-style) work; through tier-1 onboarding (§3, DV360 →
+      Amazon Ads DSP → The Trade Desk), lean on the three hooks above plus
+      the pre-auction fallback (§3, *Submission*: a bid carrying an unknown
+      or unapproved creative is discarded pre-auction and queued for
+      review) to catch anything that slips through.
 41. **Advertiser notification.** Status polling only, or a webhook on
     approve/reject?
 42. **Floor unit.** *Resolved* (§4): the floor is a CPM, a cost per thousand
@@ -1476,3 +1873,30 @@ partner-contributed attributes have been removed with that scope.
     connected DSPs*. Should they instead default to *None*, like
     Personalisation Variables, given they describe the person in front of
     the screen?
+50. **Auction clearing for overlapping localised bids.** *Superseded
+    (decision, Rob, 22 Sep, ticket "Make default creative mandatory; retire
+    localised-only booking path"), not answered.* This question was about
+    clearing bids for a part-sold position — several advertisers each
+    holding a localised slice of one slot's capacity. That model is
+    retired the same day it was resolved: a slot goes to one advertiser,
+    whose default layer is now mandatory, so there is no overlapping
+    capacity between *different* advertisers left to clear. (What the
+    resolution actually described — reserved slots first-come-first-served,
+    real-time bids highest-bidder-takes-the-overlap — never shipped past
+    this document either way; the reservation/auction engine has always
+    enforced a single occupant per position and window, §5.)
+51. **Billing a part-sold position.** *Superseded (decision, Rob, 22 Sep,
+    same ticket as open question 50), not answered* — for the same reason:
+    there is no part-sold position to bill pro rata across advertisers any
+    more. Ordinary dynamic VAC-d billing against one advertiser's realised
+    share (§4) already covers a booking that stacks default plus upsell
+    layers, since it is still one advertiser, one CPM, one position.
+52. **Reserve price booking flow.** §5's reserve price (decision 22 Sep) is
+    published on the position but not wired to a booking flow: a "reserve"
+    reservation (`POST /v1/reservations`, `type: reserve`) still clears
+    against the ordinary floor, not the position's `reservePrice`, and
+    nothing takes the slot out of the open auction for the window it
+    covers. This is a form of programmatic guaranteed (open question 45,
+    "Deals" — deferred), so building the flow means either resolving that
+    deferral or treating a reserve-price booking as its own, narrower
+    mechanism.

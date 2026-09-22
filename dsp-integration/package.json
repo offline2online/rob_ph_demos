@@ -1,7 +1,7 @@
 {
   "name": "ph-dsp-integration-poc",
   "private": true,
-  "description": "Display Types & DSP Integration \u2014 standalone proof of concept (see docs/dsp-integration/).",
+  "description": "Display Types & DSP Integration — standalone proof of concept (see docs/dsp-integration/).",
   "type": "module",
   "workspaces": [
     "packages/*",
@@ -20,7 +20,10 @@
     "dev:mocks": "npm run dev -w @ph-dsp/dsp-mocks",
     "auction:run": "npm run auction:run -w @ph-dsp/api --",
     "db:bookings": "npm run db:bookings -w @ph-dsp/api",
-    "billing:print": "npm run billing:print -w @ph-dsp/api"
+    "db:demo": "npm run db:demo -w @ph-dsp/api",
+    "billing:print": "npm run billing:print -w @ph-dsp/api",
+    "board:sync": "node scripts/sync-board-docs.mjs",
+    "board:tickets": "node scripts/board-tickets.mjs"
   },
   "devDependencies": {
     "typescript": "~5.9.3"

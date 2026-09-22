@@ -31,7 +31,7 @@ The board's code lives in the GitHub repo
 https://github.com/offline2online/rob_ph_demos, in the `backlog-tracker/`
 folder — but the actual backlog items are usually about OTHER parts of
 that same repo (menu-board-demo/, faq/, visitor-profile/,
-experience-templates/, etc.), since "Backlog Tracker & FAQs" is just one
+dsp-integration/, etc.), since "Backlog Tracker & FAQs" is just one
 of several projects tracked on this shared multi-project board.
 
 The fire request's `text` field names the specific project (with its
@@ -164,10 +164,40 @@ rest of this file.
      expectations.
    - If the project also has a real requirements file in the repo (e.g.
      `visitor-profile/REQUIREMENTS.md`,
-     `display-types-dsp-integration/REQUIREMENTS.md`,
+     `dsp-integration/docs/dsp-integration/REQUIREMENTS.md`,
      or a project-specific README), read that too — the Firestore
      `requirementsMd` and the repo file are meant to be kept in sync, but
      check both in case one is stale.
+   - **If your work changes what those documents say, update both before
+     you finish** (Rob, 21 Sep 2026) — the repo file first, since it is the
+     source of truth, then the board field so the two agree. Where the
+     project has a sync script (`npm run board:sync` in `dsp-integration/`)
+     run it: it copies the files byte for byte and verifies the result.
+     Otherwise use the board MCP tools (`set_project_requirements`,
+     `set_project_readme`), and only where the document is short enough to
+     reproduce exactly — never retype a long specification by hand. If you
+     can't complete the sync, say so in the ticket comment rather than
+     leaving the board quietly stale: read the docs with `get_project_docs`
+     and run `npm run board:sync -- --check-mcp <saved result>`, which
+     compares them locally without any credential and exits 1 if the board
+     is behind, so the comment can say exactly what is out of date.
+   - **A commit you put on a train by hand must be stamped onto its
+     card**: `backlogItems.deployCommit` is the only thing that tells the
+     board the card is on the train (`functions/train-lock.js`). Without
+     it, `reconcileLockedTrains()` reads the train as empty, archives the
+     branch tip as a tag and resets the branch — the approved deploy then
+     ships nothing. Use the documented `Backlog item: <id>` trailer in the
+     commit message too, so `git log --grep` finds it.
+   - **Better: the board's key is already in GitHub.** `BOARD_API_KEY` is a
+     repository secret, so anything that writes to the board can run on a
+     runner instead of waiting for someone to paste a password. For this
+     project: `gh workflow run dsp-board.yml -f docs=sync`, and the same
+     workflow takes `-f ticket=<id> -f to=<status> -f preview=<url>` and
+     `-f deploy_branch=<branch>`. Before reporting any task blocked on a
+     credential, check `.github/workflows/` for a secret that already
+     covers it. Note that a dispatched run checks out the **default
+     branch**, so a script it calls must be on `main`, not only on your
+     branch.
 
 ## For each Backlog item found
 
@@ -237,7 +267,19 @@ rest of this file.
      changed/created file, `content` being that file's complete new text
      (use `content: null` instead of a string to mean "delete this
      path"). Paths are relative to the repo root (e.g.
-     `"menu-board-demo/hq-admin.html"`).
+     `"menu-board-demo/hq-admin.html"`). **For a project that lives in its
+     own folder — `dsp-integration/`, `menu-board-demo/`,
+     `backlog-tracker/` — every path starts with that folder:**
+     `"dsp-integration/apps/admin/src/App.tsx"`, never
+     `"apps/admin/src/App.tsx"`, even though you may have been working
+     with the folder as your current directory. On 22 Sep 2026 seven
+     tickets (PR #185) were handed over folder-relative: the automation
+     created them as new files at the repo root, overwrote the root
+     README.md with the project's, the real files never changed, and the
+     cards said "Deployed" while nothing was. The automation now moves
+     such paths under the project's folder and says so on the card, but
+     a path it cannot decide (a new top-level directory) still lands
+     where you wrote it — get it right at source.
    - `patchBranch`: no longer used. There is one branch per project, not
      one per ticket, so there is nothing for this to name. It is still
      accepted and ignored; don't bother setting it.

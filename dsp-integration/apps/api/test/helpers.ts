@@ -32,7 +32,7 @@ export const NOW = new Date('2026-09-20T10:00:00.000Z')
 
 export const TEST_KEY = randomBytes(32).toString('base64')
 
-export async function testContext(opts: { flag?: boolean; role?: Role; seeded?: boolean; bookings?: boolean; dspFetch?: Fetch; clock?: () => Date } = {}) {
+export async function testContext(opts: { flag?: boolean; role?: Role; seeded?: boolean; bookings?: boolean; demo?: boolean; dspFetch?: Fetch; clock?: () => Date } = {}) {
   const ctx = createContext({
     config: { ...loadConfig({ DSP_MOCKS_URL: 'http://mocks.test' }), dbFile: ':memory:', assetsDir: mkdtempSync(join(tmpdir(), 'ph-assets-')) },
     db: openDb(':memory:'),
@@ -42,7 +42,8 @@ export async function testContext(opts: { flag?: boolean; role?: Role; seeded?: 
     dspFetch: opts.dspFetch,
     clock: opts.clock,
   })
-  /* The sample bookings are opt-in here: a test wants a clean schedule. */
-  if (opts.seeded !== false) await seed(ctx, { bookings: opts.bookings === true })
+  /* The sample bookings and the demo estate are opt-in here: a test wants a
+     clean, minimal schedule it can count. */
+  if (opts.seeded !== false) await seed(ctx, { bookings: opts.bookings === true, demo: opts.demo === true })
   return ctx
 }

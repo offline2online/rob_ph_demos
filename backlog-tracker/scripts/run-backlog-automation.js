@@ -399,6 +399,68 @@ function readAppVersion() {
   }
 }
 
+// Where a project's files live in this repo: the folder its deploy branch is
+// named after (deploy/dsp-integration -> dsp-integration/), or an explicit
+// projects/{id}.repoFolder. null when the project has no folder of its own
+// (the backlog tracker's train is deploy/backlog-tracker-faqs and its files
+// are under backlog-tracker/ and faq/ — no single folder, no normalising).
+function projectFolderOf(project, exists = (p) => fs.existsSync(path.join(process.cwd(), p)) && fs.statSync(path.join(process.cwd(), p)).isDirectory()) {
+  const slug = String(project?.deployBranch || "").replace(/^deploy\//, "");
+  for (const c of [project?.repoFolder, slug]) {
+    const folder = String(c || "").replace(/\/+$/, "");
+    if (folder && !folder.includes("..") && exists(folder)) return folder;
+  }
+  return null;
+}
+
+// A Routine session that worked inside a project's folder can hand over
+// patchFiles whose paths are relative to that folder, not the repo root —
+// "apps/admin/src/App.tsx" for dsp-integration/apps/admin/src/App.tsx. On
+// 22 Sep 2026 seven tickets (PR #185) shipped that way: the automation
+// wrote them as NEW files at the repo root, overwrote the root README.md
+// with the project's, and the real files never changed — so the cards said
+// "Deployed / Main Branch (Live)" while nothing was live, and the rebuild
+// workflow (which watches dsp-integration/) never fired.
+//
+// Rewrites such paths under the project's folder. Two grades of evidence:
+//   - unambiguous on its own: the path does not exist at the root but does
+//     under the folder (a modified file), or it is a new file whose
+//     directory exists only under the folder;
+//   - once any path in the patch is unambiguous, the whole patch shares the
+//     same frame of reference, so the rest moves too — a path that exists
+//     in BOTH places (README.md), a new file, a new directory — except a
+//     path whose first segment is a real root entry with no counterpart
+//     under the folder (menu-board-demo/…, backlog-tracker/…, CLAUDE.md),
+//     which can only have meant the root.
+// Anything already under the folder, or under .github/, is left alone.
+// Returns the rewritten list and what moved, for the card's note.
+function normalisePatchPaths(patchFiles, folder, exists = (p) => fs.existsSync(path.join(process.cwd(), p))) {
+  const files = (patchFiles || []).map((f) => (f && typeof f === "object" ? { ...f } : f));
+  const moved = [];
+  if (!folder) return { files, moved };
+  const under = (p) => `${folder}/${p}`;
+  const dirOf = (p) => { const d = path.posix.dirname(p); return d === "." ? "" : d; };
+  const eligible = (f) => f && typeof f.path === "string" && !f.path.includes("..") && !f.path.startsWith(`${folder}/`) && !f.path.startsWith(".github/");
+  const unambiguous = (p) => {
+    if (!exists(p) && exists(under(p))) return true;
+    const d = dirOf(p);
+    return !exists(p) && d !== "" && !exists(d) && exists(under(d));
+  };
+  const firm = new Set(files.filter(eligible).filter((f) => unambiguous(f.path)).map((f) => f.path));
+  for (const f of files) {
+    if (!eligible(f)) continue;
+    let move = firm.has(f.path);
+    if (!move && firm.size) {
+      const seg = f.path.split("/")[0];
+      move = !(exists(seg) && !exists(under(seg)));
+    }
+    if (!move) continue;
+    moved.push({ from: f.path, to: under(f.path) });
+    f.path = under(f.path);
+  }
+  return { files, moved };
+}
+
 function applyPatchFiles(patchFiles) {
   for (const f of patchFiles || []) {
     if (!f || typeof f.path !== "string" || f.path.includes("..")) {
@@ -440,6 +502,126 @@ function workflowPathsIn(patchFiles) {
   return (patchFiles || [])
     .map((f) => (f && typeof f.path === "string" ? f.path : ""))
     .filter((p) => p.startsWith(WORKFLOW_PATH_PREFIX));
+}
+
+// Build outputs that are checked into the repo, and the workflow that
+// regenerates each one on a runner.
+//
+// dsp-integration/prototype/ is a built bundle of the admin UI — what the
+// board's githack test links and GitHub Pages actually serve. A ticket's
+// patch changes the SOURCE (apps/admin/src/...), which changes nothing a
+// tester can see until the bundle is rebuilt, and this script can't do
+// that: patchFiles come through Firestore (1 MiB per document) and the
+// bundle is ~2 MB. On 21–22 Sep 2026 three tickets in a row failed testing
+// on a link that still served the previous build, and two trains reached
+// "Deployed / Main Branch (Live)" with the live site unchanged. So every
+// push this script makes that touches a build's source dispatches its
+// workflow for that branch (an explicit dispatch, exempt from the
+// GITHUB_TOKEN no-recursion rule, exactly like deploy-backlog-tracker.yml),
+// and a merge conflict confined to a build's OUTPUTS is resolved by taking
+// either side — they are derived files, and the workflow regenerates them
+// from the merged source.
+const GENERATED_BUILDS = [
+  {
+    workflow: "dsp-prototype.yml",
+    sources: ["dsp-integration/apps/", "dsp-integration/packages/", "dsp-integration/package.json", "dsp-integration/package-lock.json"],
+    outputs: ["dsp-integration/prototype/", "dsp-integration/apps/admin/public/demo/"],
+  },
+];
+
+const underAny = (p, prefixes) => prefixes.some((s) => (s.endsWith("/") ? p.startsWith(s) : p === s));
+
+function isGeneratedOutput(p) {
+  return GENERATED_BUILDS.some((b) => underAny(p, b.outputs));
+}
+
+// The workflows whose build is stale once these paths change: a source
+// path that is not itself an output (the bundle's own snapshot lives under
+// apps/, so outputs are checked first).
+function rebuildWorkflowsFor(paths) {
+  const changed = (paths || []).filter((p) => p && !isGeneratedOutput(p));
+  return GENERATED_BUILDS.filter((b) => changed.some((p) => underAny(p, b.sources))).map((b) => b.workflow);
+}
+
+// Dispatches each stale build's workflow for `branch`. Never throws: a
+// failed dispatch is logged and the workflow's own schedule catches up.
+// Returns the workflows dispatched, so the caller's note can say so.
+function dispatchRebuilds(branch, paths, label) {
+  const dispatched = [];
+  for (const workflow of rebuildWorkflowsFor(paths)) {
+    try {
+      run("gh", ["workflow", "run", workflow, "--repo", REPO, "--ref", "main", "-f", `branch=${branch}`]);
+      console.log(`[${label}] triggered ${workflow} to rebuild ${branch}`);
+      dispatched.push(workflow);
+    } catch (err) {
+      console.log(`[${label}] failed to trigger ${workflow} for ${branch} (${scrubSecrets(err.message)}) — its schedule will rebuild within the next few minutes`);
+    }
+  }
+  return dispatched;
+}
+
+// What a rebuild means for whoever reads the card next: the link exists,
+// but for a few minutes it still shows the build from before this commit.
+// When the rebuild lands, dsp-prototype.yml re-points the card's test link
+// at that commit (githack caches a branch URL; a commit URL is immutable),
+// so the tester's cue is the link itself changing from a branch to a sha.
+function rebuildNote(dispatched, sha) {
+  if (!dispatched.length) return "";
+  return ` The test link serves a built bundle, which is being rebuilt from ${sha.slice(0, 7)} now (${dispatched.join(", ")}). Allow a few minutes: when the rebuild lands, this card's test link is switched to that build's own commit URL and a note here says so. Until then the link still shows the previous build — don't fail testing on it.`;
+}
+
+function changedPathsBetween(fromRef, toRef) {
+  try {
+    const out = run("git", ["diff", "--name-only", fromRef, toRef]);
+    return out ? out.split("\n").filter(Boolean) : [];
+  } catch {
+    return [];
+  }
+}
+
+function prFilePaths(prNumber) {
+  try {
+    const parsed = JSON.parse(run("gh", ["pr", "view", String(prNumber), "--repo", REPO, "--json", "files"]));
+    return (parsed.files || []).map((f) => f.path).filter(Boolean);
+  } catch (err) {
+    console.log(`[deploy-train] couldn't list PR #${prNumber}'s files (${err.message}) — assuming nothing to rebuild`);
+    return [];
+  }
+}
+
+// Mid-merge resolver for a conflict that touches nothing but generated
+// build output (see GENERATED_BUILDS). Both sides are a build of source the
+// merge is about to combine, so neither is "right"; the branch's own copy
+// is kept only so the merge leaves a consistent bundle behind, and the
+// build's workflow replaces it from the merged source. Anything else in
+// the conflict, and this declines — same contract as
+// tryAutoResolveFaqIndexConflict.
+function tryAutoResolveGeneratedOutputConflict(conflicted) {
+  if (!conflicted.length || !conflicted.every(isGeneratedOutput)) {
+    return { resolved: false, detail: `conflicted on ${conflicted.join(", ") || "(unknown files)"}` };
+  }
+  for (const p of conflicted) {
+    try {
+      // `--ours` inside a merge INTO the train is the train's copy. A file
+      // the train deleted (an old hashed asset) has no "ours" — drop it.
+      run("git", ["checkout", "--ours", "--", p]);
+      run("git", ["add", "--", p]);
+    } catch {
+      try {
+        run("git", ["rm", "--quiet", "--", p]);
+      } catch (err) {
+        return { resolved: false, detail: `conflicted on ${conflicted.join(", ")} — generated build output, but keeping the branch's copy of ${p} failed (${err.message})` };
+      }
+    }
+  }
+  const remaining = conflictedPaths();
+  if (remaining.length) {
+    return { resolved: false, detail: `conflicted on ${remaining.join(", ")} even after keeping the branch's copy of ${conflicted.join(", ")}` };
+  }
+  return {
+    resolved: true,
+    detail: `conflicted only on generated build output (${conflicted.join(", ")}) — kept the branch's copy, which its rebuild workflow regenerates from the merged source, and the merge completed`,
+  };
 }
 
 // Optional escape hatch for the restriction above: backlog-automation.yml
@@ -566,13 +748,16 @@ async function recordAttemptFailure(item, err, { attemptsField = "patchAttempts"
 // Builds a rawcdn.githack.com preview link for the branch a PR was just
 // opened from, so a Ready for Testing card is testable the moment it
 // arrives instead of sitting with no way to look at it until someone sets
-// previewUrl by hand (AfOWSFNfos2BZRpDeph1). rawcdn.githack.com
-// specifically, not raw.githack.com — the latter proxies through jsDelivr's
-// CDN cache (up to ~7 days), so a link set right after one push can keep
-// showing that first commit even after later pushes update the file, with
-// no visible error; rawcdn.githack.com is githack's own always-uncached
-// host, meant for exactly this "testing an in-progress branch" case (see
-// app.js's own testLinkHTML comment, which this mirrors).
+// previewUrl by hand (AfOWSFNfos2BZRpDeph1). A caveat, measured on 22 Sep
+// 2026 and contrary to what this comment used to claim: BOTH githack hosts
+// cache a branch URL. index.html refreshed within minutes, but a fixed-path
+// file behind it (the DSP prototype's demo/api-snapshot.json) was still
+// serving a day-old capture across several pushes, with no visible error.
+// So for a checked-in build this branch link is only a placeholder: once
+// the build's workflow has rebuilt the bundle it re-points the card at the
+// rebuilt COMMIT's URL, which is immutable (see GENERATED_BUILDS and
+// dsp-integration/scripts/board-tickets.mjs --relink-prototype). For a
+// plain static page the branch link is normally fine.
 //
 // "Most relevant changed page" is necessarily a guess — there's no
 // metadata saying which patched file is the one to look at — so this picks
@@ -627,10 +812,32 @@ function nearestPageFor(filePath) {
   let dir = path.dirname(filePath);
   while (dir && dir !== "." && dir !== path.sep) {
     const candidate = `${dir}/index.html`;
-    if (fs.existsSync(path.join(process.cwd(), candidate))) return candidate;
+    if (fs.existsSync(path.join(process.cwd(), candidate)) && !isBundlerTemplate(candidate)) return candidate;
+    // A bundler's own index.html is not a page, but the build it produces
+    // usually sits beside the source it was built from.
+    for (const built of [`${dir}/prototype/index.html`, `${dir}/dist/index.html`]) {
+      if (fs.existsSync(path.join(process.cwd(), built))) return built;
+    }
     dir = path.dirname(dir);
   }
   return null;
+}
+
+// An index.html that loads a source module — Vite's `<script type="module"
+// src="/src/main.tsx">` and friends — is a build input, not something a
+// static host can serve: opened from githack it is a blank page with a 404
+// in the console. Before this check, a ticket touching
+// dsp-integration/apps/admin/src/… got exactly that as its "Test this ->"
+// link (xvb2ZtHQoMvdrtKIL3hN, 22 Sep), because apps/admin/index.html is the
+// nearest index.html above the change and it exists. The built bundle two
+// directories up was the real answer.
+function isBundlerTemplate(candidate) {
+  try {
+    const html = fs.readFileSync(path.join(process.cwd(), candidate), "utf8");
+    return /<script[^>]+src=["'](\.?\/)?src\//i.test(html);
+  } catch {
+    return false; // unreadable: treat it as an ordinary page, as before
+  }
 }
 
 // Finds a PR by exact head branch, in ANY state. Reconciliation-specific:
@@ -822,9 +1029,15 @@ async function processApplyPatch(item) {
   let changedPaths = [];
   let testVersion = null;
   let attempt = 0;
+  let patchedFiles = item.patchFiles;
+  let movedPaths = [];
   for (;;) {
     checkoutTrain(deployBranch);
-    applyPatchFiles(item.patchFiles);
+    // Paths written relative to the project's folder go under it (see
+    // normalisePatchPaths); decided against the train's actual tree.
+    ({ files: patchedFiles, moved: movedPaths } = normalisePatchPaths(item.patchFiles, projectFolderOf(project)));
+    if (movedPaths.length) console.log(`[apply-patch] ${item.id}: ${movedPaths.length} patch path(s) were relative to ${projectFolderOf(project)}/ — placed under it (${movedPaths.map((m) => m.from).join(", ")})`);
+    applyPatchFiles(patchedFiles);
     // Read while the patched files are still on disk, so testVersion
     // reflects the branch this item will actually be tested on.
     testVersion = readAppVersion();
@@ -896,6 +1109,10 @@ async function processApplyPatch(item) {
     }
   }
 
+  // The source is on the train; the bundle a tester opens is not, until its
+  // workflow rebuilds it (see GENERATED_BUILDS).
+  const rebuilds = dispatchRebuilds(deployBranch, changedPaths, "apply-patch");
+
   // A train carrying a workflow-file change can't be merged by the pipeline
   // (see processDeployTrain): flag the project so the Deploy step leaves the
   // PR open for a person instead of attempting a merge that would be refused.
@@ -909,13 +1126,17 @@ async function processApplyPatch(item) {
   // pre-train `claude/...` branch — is regenerated against the train.
   const previewUrl = (item.previewUrl && String(item.previewUrl).includes(`/${deployBranch}/`))
     ? item.previewUrl
-    : guessPreviewUrl(item.patchFiles, deployBranch, trainTreeUrl(deployBranch));
+    : guessPreviewUrl(patchedFiles, deployBranch, trainTreeUrl(deployBranch));
 
   const notes = await appendNote(
     item,
     `Committed to the project's integration branch \`${deployBranch}\` as ${sha.slice(0, 7)} (${changedPaths.join(", ")}). ` +
     `It is built on top of every ticket already on that branch, so the test link shows this change in the combination it will ship in. ` +
     `Nothing merges to main until every ticket on the train is approved and someone clicks Deploy to Main.` +
+    (movedPaths.length
+      ? ` Note: ${movedPaths.length} of this patch's paths were relative to the project's folder rather than the repo root (${movedPaths.map((m) => m.from).join(", ")}) and were placed under ${projectFolderOf(project)}/ — patchFiles paths must start at the repo root.`
+      : "") +
+    rebuildNote(rebuilds, sha) +
     (workflowPaths.length
       ? ` This ticket changes ${workflowPaths.join(", ")}, so it was pushed with the workflow-push App token and the train's deploy PR will NOT be merged by the pipeline — a person has to review and merge it on GitHub.`
       : "")
@@ -975,6 +1196,7 @@ async function processRevertFromTrain(item) {
   }
 
   checkoutTrain(deployBranch);
+  const tipBeforeRevert = headSha();
 
   // Newest first — reverting an older commit before a newer one that builds
   // on it is the guaranteed way to manufacture a conflict.
@@ -1043,6 +1265,9 @@ async function processRevertFromTrain(item) {
   }
 
   pushTrain(deployBranch);
+  // The revert changed the train's source, so any bundle built from it is
+  // stale in the other direction: it would keep showing the reverted change.
+  dispatchRebuilds(deployBranch, changedPathsBetween(tipBeforeRevert, "HEAD"), "train-revert");
 
   const notes = await appendNote(
     item,
@@ -1318,12 +1543,22 @@ async function finishTrain(project, deployBranch, prNumber, trainItems, { touche
     deployConclusion = "pending";
   }
 
+  // Same rule for a checked-in build (see GENERATED_BUILDS): the train's
+  // source is on main now, and "live" means the bundle GitHub Pages serves
+  // was built from it. Merging main into the train just before this may
+  // itself have moved the source, so this is not redundant with the
+  // rebuild the train got when its tickets landed.
+  const rebuilds = dispatchRebuilds("main", prFilePaths(prNumber), "deploy-train");
+
   const mergedAt = new Date().toISOString();
   for (const item of trainItems) {
     const notes = await appendNote(
       item,
       `Shipped in the deployment train PR #${prNumber}, merged to main with ${trainItems.length === 1 ? "no other ticket" : `${trainItems.length - 1} other ticket(s)`} from \`${deployBranch}\`.` +
-        (mergeNote ? ` Note: merging main into ${deployBranch} for this deploy ${mergeNote}.` : "")
+        (mergeNote ? ` Note: merging main into ${deployBranch} for this deploy ${mergeNote}.` : "") +
+        (rebuilds.length
+          ? ` The hosted prototype on GitHub Pages is a built bundle, being rebuilt from main now (${rebuilds.join(", ")}) — allow a few minutes before checking the live site, and confirm with its build-info.json: "commit" is the source commit the bundle was built from, so it should be this train's own last commit (${trainItems.map((i) => (i.deployCommit ? i.deployCommit.slice(0, 7) : null)).filter(Boolean).join(", ") || "one of this train's commits"}) or later — not the merge commit itself, which comes after.`
+          : "")
     );
     await patchItem(item.id, {
       status: "published-live",
@@ -1438,7 +1673,14 @@ async function processDeployTrain(project) {
       "merge", "origin/main", "--no-edit", "--quiet"]);
   } catch (err) {
     const conflicted = conflictedPaths();
-    const resolution = tryAutoResolveFaqIndexConflict(conflicted);
+    let resolution = tryAutoResolveFaqIndexConflict(conflicted);
+    // A second derived-file case: a build output both sides rebuilt (see
+    // tryAutoResolveGeneratedOutputConflict). Tried only if the first
+    // resolver declined without touching anything, i.e. the conflict was
+    // never about index.json.
+    if (!resolution.resolved && !conflicted.includes("faq/data/index.json")) {
+      resolution = tryAutoResolveGeneratedOutputConflict(conflicted);
+    }
     if (!resolution.resolved) {
       try { run("git", ["merge", "--abort"]); } catch { /* nothing in progress */ }
       discardWorkingTree();
@@ -2150,4 +2392,10 @@ if (require.main === module) {
 // disposable local git repo rather than requiring this whole automation
 // run (main(), above, has real Firestore/GitHub side effects the moment
 // this module loads if not guarded — see the require.main check).
-module.exports = { conflictedPaths, tryAutoResolveFaqIndexConflict, archiveAndResetOrphanedBranch, dateStamp };
+module.exports = {
+  conflictedPaths, tryAutoResolveFaqIndexConflict, archiveAndResetOrphanedBranch, dateStamp, nearestPageFor, isBundlerTemplate,
+  // test/generated-builds.test.js
+  isGeneratedOutput, rebuildWorkflowsFor, tryAutoResolveGeneratedOutputConflict,
+  // test/patch-paths.test.js
+  normalisePatchPaths, projectFolderOf,
+};
