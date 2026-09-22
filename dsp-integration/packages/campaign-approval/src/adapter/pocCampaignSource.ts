@@ -20,11 +20,11 @@ interface AssetRow { version: number; file: string; mime_type: string; width: nu
 export function pocCampaignSource(db: SqlDb, lookups: PocLookups): CampaignSource {
   const listeners = new Set<(id: string) => void>()
   const toRef = (r: Row): CampaignRef => {
-    /* The baseline's creative for the reviewer, or — for a fallback-free
-       submission (decision, 22 Sep) — whichever targeted version's was
-       uploaded most recently, so the panel is never blank just because
-       there was no baseline to prefer. */
-    const latest = db.prepare("SELECT version, file, mime_type, width, height FROM campaign_assets WHERE campaign_id = ? ORDER BY (role = 'baseline') DESC, version DESC LIMIT 1").get(r.id) as AssetRow | undefined
+    /* The default layer's creative for the reviewer — mandatory on every
+       submission (decision, 22 Sep) — or, for an older record predating
+       the requirement, whichever targeted version's was uploaded most
+       recently, so the panel is never blank just because there was none. */
+    const latest = db.prepare("SELECT version, file, mime_type, width, height FROM campaign_assets WHERE campaign_id = ? ORDER BY (role = 'default') DESC, version DESC LIMIT 1").get(r.id) as AssetRow | undefined
     const version = (db.prepare('SELECT MAX(version) AS v FROM campaign_assets WHERE campaign_id = ?').get(r.id) as { v: number | null } | undefined)?.v ?? 0
     const creative: Creative | null = latest ? { assetUrl: lookups.assetUrl(latest.file), mimeType: latest.mime_type, width: latest.width, height: latest.height } : null
     return {

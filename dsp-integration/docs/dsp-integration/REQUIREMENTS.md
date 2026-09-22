@@ -387,7 +387,7 @@ Advertisers submit campaigns (content packages) and assets through the API
 (§6):
 
 ```
-POST /v1/campaigns                  create a campaign: baseline (optional) + targeted versions (at least one of the two)
+POST /v1/campaigns                  create a campaign: default (mandatory) + targeted versions (optional upsells)
 POST /v1/campaigns/{id}/assets      upload creative against the campaign
 POST /v1/campaigns/{id}/submit      submit for retailer approval
 GET  /v1/campaigns/{id}/status      approval status and rejection reason
@@ -408,8 +408,12 @@ immediately with reasons and never reach the review queue:
 - dimensions and aspect ratio against the target display type's canvas or
   zone;
 - duration against the slot's duration;
-- creative is present — on the baseline campaign if one was submitted, or
-  on at least one targeted version if it wasn't (decision, 22 Sep);
+- creative is present on the default campaign (decision, 22 Sep,
+  superseding the earlier same-day "baseline optional" decision — ticket
+  "Make default creative mandatory; retire localised-only booking path"):
+  default is now mandatory on every submission, so its own creative is
+  always required — a targeted version's creative no longer stands in
+  for it;
 - targeting rules use only variables permitted for the advertiser's DSP (§6).
 
 ### Campaign statuses
@@ -497,10 +501,10 @@ rather than restating how it is arrived at.
 
 ### Campaign types for pricing
 
-- **Baseline / Localised**: the creative is the same for everyone in front of
+- **Default / Localised**: the creative is the same for everyone in front of
   the screen, including localised versions targeted on **Localisation
-  Variables** (§6). An advertiser submits a baseline campaign plus localised
-  versions for its slot.
+  Variables** (§6). An advertiser submits a mandatory default campaign plus
+  optional localised versions for its slot.
 - **Personalised**: the visitor is **checked in or otherwise identified**,
   so the advert is **one-to-one for that individual**; targeted on
   **Personalisation Variables** (§6).
@@ -620,9 +624,15 @@ region, date range, status.
 |---|---|
 | **Available** | Open for this partner/advertiser to reserve or bid on |
 | **Reserved** | Held for a named advertiser (shown as available only to that advertiser) |
-| **Sold** | Won or booked for that window |
-| **Part-sold** | Some of the position's capacity is taken by one or more localised variants; the rest remains available (decision, 22 Sep — target model, not yet implemented: open question 50) |
+| **Sold** | Won or booked for that window, by the one advertiser holding it |
 | **Unavailable** | Store closed, display offline, or otherwise not playable |
+
+A position's status is exactly one of these — no **Part-sold** status:
+a slot goes to a single advertiser, whose submission carries a mandatory
+default layer plus optional localised/personalised upsells, not several
+advertisers splitting the position's capacity (§6 "Campaigns and content
+packages" has the retired part-sold model and why it never shipped past
+this document).
 
 - **Pricing** for the requester, in the company currency: the base floor CPM
   and the effective floor CPM for localised, personalised and interactive
@@ -726,45 +736,53 @@ semantics.
 
 ### Campaigns and content packages — what an advertiser submits
 
-An advertiser submits a campaign (content package) for its slot: **at most
-one baseline campaign**, plus zero or more **targeted versions**, each with
-targeting rules and an integer `priority`. At least one of the two is
-required — an empty submission is rejected.
+An advertiser submits a campaign (content package) for its slot: **exactly
+one mandatory default layer**, plus zero or more **targeted versions**
+(localised and/or personalised), each with targeting rules and an integer
+`priority`, as optional upsells on that one purchase.
 
-**The baseline is optional per advertiser, not mandatory (decision, Rob,
-22 Sep).** An advertiser may not want to supply a fallback at all: it may
-want to grab a slot only for a localised variant that matches its
-targeting, leaving stores its criteria don't match unsold to it. This is a
-change from the original mandatory-baseline model:
+**default is mandatory on every submission (decision, Rob, 22 Sep,
+superseding the earlier same-day "baseline optional" decision — ticket
+"Make default creative mandatory; retire localised-only booking path").**
+Earlier the same day, an advertiser was allowed to submit only localised
+targeted versions and skip the baseline/default layer altogether, leaving
+stores its criteria didn't match unsold to it. That model is retired:
 
-- **The fallback is a property of the slot, not the advertiser.** A slot's
-  own fallback content — what plays where no advertiser's localised
-  criteria match — is set independently of any one advertiser's submission
-  (mechanism: open question 50, below).
-- **A position can therefore be part-sold.** E.g. advertiser A's localised
-  variant matches 80 of a slot's 100 stores; the remaining 20 stay
-  available for another advertiser's fallback or localised variant through
-  the programmatic interface (§5, §6). Inventory and the auction need to
-  expose remaining capacity per position, not a single Available/Sold
-  status, to make this visible — see the new **Part-sold** row in the
-  position status table (§5) and open question 50.
-- **Not yet implemented**: the auction/reservation engine and billing still
-  treat a position as a single Available/Sold/Reserved/Unavailable unit
-  (§5, §7 Billing) — only the submission shape (this section), the
-  `baseline_present`/creative-upload checks (§3), and this section's
-  documentation of the target model have shipped so far. **How** the
-  auction should clear overlapping localised bids, and how a part-sold
-  position should be billed, are now decided (open questions 50 and 51 —
-  reserved slots first-come-first-served, real-time bids highest-bidder-
-  takes-the-overlap and pro rata billed on what was actually won); building
-  it still depends on the display-level localised match counts described
-  in the interface contract with Live Visitor Profile ("Booking schedule
-  reach counts"), which don't exist yet. **Still open**: how a slot gets
-  fallback content at all in the first place (open question 50).
+- **A slot goes to one advertiser, not several.** The part-sold model this
+  section used to describe — a slot's own fallback content, independent of
+  any one advertiser's submission, filling in the capacity a localised
+  variant's targeting didn't reach, so a second advertiser could buy the
+  remainder — never actually shipped past this section's own documentation
+  of the target model: the auction/reservation engine already enforced a
+  single Available/Sold/Reserved/Unavailable unit per position and window
+  throughout (§5, §7 Billing), so retiring the part-sold submission shape
+  is retiring a plan, not a running behaviour. The **Part-sold** position
+  status (§5) is removed along with it.
+- **localised and personalised are upsells on the one purchase**, not
+  alternatives to it: a booking's tile stacks whichever of the two the
+  advertiser's submission also carries, on top of the mandatory default
+  base (ticket "Booking schedule: single-advertiser stacking tile" — see
+  the booking schedule functional requirement below).
+- Open questions 50 and 51 (below) — the target algorithm for clearing
+  overlapping localised bids and billing a part-sold position — are
+  **superseded, not answered**: there is no longer a part-sold position for
+  either to apply to.
 
-> Named *baseline*, not *default*, on purpose: `campaignCreativeSettings`
-> already uses `default` / `selected` / `unselected`. Two unrelated things
-> called "default" in one schema is a bug waiting to happen.
+> Named *default*, not *baseline* (decision, Rob, 22 Sep, reversing this
+> section's own earlier same-day note that warned off *default* because
+> `campaignCreativeSettings` already uses `default` / `selected` /
+> `unselected` for the existing platform's device-pairing scene state on a
+> playlist item). That collision risk is judged narrow enough to accept:
+> the two never appear in the same object — `campaignCreativeSettings` is
+> nested under a playlist item's own settings, and this project's `default`
+> is a sibling of `targeted` on a campaign's own targeting — so there is no
+> single JSON blob where the same key means two different things, only two
+> unrelated schemas that happen to share an English word. "Default" also
+> maps directly onto the pricing floor (§4: the default layer prices at the
+> same floor rate as localised), which "baseline" didn't make as obvious.
+> Reviewers integrating this against the real platform should still search
+> for `campaignCreativeSettings.default` before assuming the two can be
+> handled identically in code that touches both.
 
 **Targeting rules use the existing Targeting tab structure**: each condition
 is *data source → variable → operator → value(s)*; conditions within a group
@@ -788,12 +806,10 @@ selected*, *equal*, *greater than*).
 plays, order or time the rotation, or report on what played. All of that is
 existing Personalisation Hub behaviour and is unchanged; the submitted
 campaign is evaluated, played and reported on exactly like any other
-campaign. **Handling a fallback when nothing matches is now split**: which
-content plays is still the existing platform's targeting evaluation,
-unchanged, but *whether a slot has fallback content at all* — since it is
-now the slot's property, not bundled into every advertiser's submission —
-is this project's own concern (open question 50: the mechanism for setting
-it isn't built yet).
+campaign. **Falling back when nothing more specific matches is simply the
+mandatory default layer** now (decision, 22 Sep) — every submission has
+one, so there is no separate "what plays when a slot has no fallback
+content" question to answer.
 
 ### Shared Targeting Variables — Localisation and Personalisation Variables
 
@@ -979,7 +995,7 @@ GET  /v1/inventory/{id}/availability   status per play window
 POST /v1/inventory/forecast        projected assumed views for a spec + targeting
 POST /v1/reservations              reserve, or bid (CPM) for a play window (Approved campaigns only)
 GET  /v1/targeting/attributes      the shared targeting variables THIS partner may target
-POST /v1/campaigns                 baseline (required) + targeted versions, rules validated
+POST /v1/campaigns                 default (required) + targeted versions, rules validated
 POST /v1/campaigns/{id}/assets     creative upload and automated validation
 POST /v1/campaigns/{id}/submit     submit for retailer approval (§3)
 GET  /v1/campaigns/{id}/status     approval status
@@ -992,7 +1008,7 @@ system.
 {
   "reservationId": "res_8812",
   "campaigns": [
-    { "role": "baseline", "assetSet": "as_brand_evergreen" },
+    { "role": "default", "assetSet": "as_brand_evergreen" },
     { "role": "targeted", "priority": 10, "assetSet": "as_metro_commuter",
       "rules": [
         [{ "source": "store", "variable": "fixed_store_segments", "op": "includes_selected", "values": ["Metro"] }],
@@ -1254,7 +1270,7 @@ VAC-d billing only.
 campaign: { …existing fields,
             source: hq | api | dsp,
             advertiserId, partnerId,
-            pricingType: baseline | localised | personalised | interactive,
+            pricingType: default | localised | personalised | interactive,
             status: draft | awaiting_approval | approved | rejected,   // shown as Draft / Awaiting approval / Approved / Rejected
             approval: { mode: manual | auto,
                         assetVersion, submittedAt,
@@ -1267,9 +1283,10 @@ Targeting rules use the campaign's existing targeting structure (AND groups
 of OR conditions, each *source → variable → operator → values*), evaluated
 by the existing platform. HQ-authored campaigns (`source: hq`) skip approval.
 
-`targeting.baseline` is optional (decision, 22 Sep — §3, §6): a fallback-free
-submission has `targeting: { targeted: [...] }` with no `baseline` key at
-all, and `pricingType` above is then taken from its first targeted version.
+`targeting.default` is mandatory on every submission (decision, 22 Sep,
+superseding the earlier same-day "baseline optional" decision — §3, §6):
+`targeting: { default: { pricingType }, targeted?: [...] }`, and
+`pricingType` above is taken from `targeting.default.pricingType`.
 
 ### Sell side
 
@@ -1465,25 +1482,55 @@ playback analytics.**
   differ whenever a slot takes bids from more than one DSP, and only the
   former is guaranteed to match the advertiser shown beside it.
   *(Advertisers / Inventory → Booking schedule)*
-- **Layered reach breakdown, as three stacked pills, not tabs** (decision,
-  Rob, 22 Sep; changed from tabs to pills, ticket 21 Sep — three separate
-  tabs made it impossible to see all three layers' availability for a day
-  or week at a glance): every window in the Daily, Weekly and Monthly views
-  shows all three layers at once, stacked **Personalised on top, Localised
-  in the middle, Fallback at the bottom**, instead of switching between
-  them. Fallback shows the slot's own display count across the whole
-  retail footprint (a new **Displays** column); Localised shows each
-  booking's reach — how many of those displays its targeting matched, from
-  the server's `ReachCountSource` stand-in for the interface contract's
-  "Booking schedule reach counts" — with the remainder read as open for
-  another campaign; Personalised is an indicator only, with no reach
-  count, since a personalised match can't be predicted ahead of time. A
-  window's single booking belongs to exactly one layer — the
-  reservation/auction engine doesn't split a position's capacity between
-  advertisers yet (open question 50) — so the other two layers' pills for
-  that same window show **Sold — other layer**, never Available, since
-  that capacity really is already spoken for.
-  *(Advertisers / Inventory → Booking schedule)*
+- **Single-advertiser stacking tile** (ticket "Booking schedule:
+  single-advertiser stacking tile", 22 Sep, superseding the earlier
+  same-day "layered reach breakdown, as three stacked pills" design):
+  a slot goes to one advertiser (§6), so each booked window is **one tile
+  per advertiser**, not three always-shown layer pills. The advertiser
+  name sits at the top of the tile as the unit. Below it, the tile stacks
+  whichever of the three layers that one purchase actually carries — the
+  mandatory **default** layer always at the base, **localised** above it
+  when the campaign also submitted a localised (or interactive — they
+  share this layer, since both vary by store rather than by visitor)
+  targeted version, and **personalised** at the very top when it submitted
+  a personalised one. Only the layers actually provided are shown, so the
+  tile has one of three possible heights and visibly expands and
+  contracts with how successful the upsell has been with that advertiser —
+  monetisation readable at a glance. This retires the earlier design's
+  "Sold — other layer" pill entirely: with one advertiser per slot there is
+  no second layer competing for the same window's capacity to mark as
+  sold elsewhere. Displays this row's `displayCount` — displays using this
+  display type across the whole retail footprint — as a **Displays**
+  column; the localised row shows the booking's reach against it — how
+  many of those displays its targeting matched, from the server's
+  `ReachCountSource` stand-in for the interface contract's "Booking
+  schedule reach counts"; the personalised row carries no reach count,
+  since a personalised match can't be predicted ahead of time, showing
+  trigger icons instead (below) rather than a count. In the Weekly and
+  Monthly views, where a slot may have gone to a different advertiser on
+  different days, each column instead rolls up how many windows in the
+  period were booked at all and, of those, how many carried each upsell
+  layer. *(Advertisers / Inventory → Booking schedule)*
+- **Personalised trigger icons** (ticket "Booking schedule: personalised
+  trigger icons", 22 Sep): on the personalised row of the tile, icons
+  indicate the trigger mechanism the campaign's personalised targeting
+  rules actually use, rather than a raw count of variations, because the
+  mechanism predicts how frequently the multiplier will activate. A ladder
+  of three, from broadest/most frequent to narrowest/rarest, derived from
+  which **Personalisation Variables** (§6) a rule references: **computer
+  vision** (any `Computer Vision *` variable — highest-frequency trigger,
+  fires on almost anyone in front of the screen with no identification
+  needed, likely to drive the majority of personalised presentations),
+  **aggregate store-level** (any other store-sourced personalisation
+  variable, e.g. Reason for Visit (Aggregate) or Device Type (Aggregate) —
+  personalisation based on the aggregate of who is in the store,
+  mid-frequency) and **individual** (any visitor-sourced variable —
+  highest value but lowest frequency, requires the customer to be
+  identified/checked in). More than one icon may be lit when a campaign's
+  rules combine tiers; which icons are lit tells the viewer the expected
+  activation frequency and therefore how reliably the personalised
+  revenue will actually be earned. *(Advertisers / Inventory → Booking
+  schedule)*
 
 ### Shared targeting variables
 
@@ -1522,9 +1569,9 @@ playback analytics.**
 - **Advertiser lists on a DSP's page**: a link to the company lists when
   centrally managed (with Unlink and edit); the DSP's own editable lists when
   unlinked (with Relink). *(DSP Integration → partner → Advertiser whitelist / blacklist)*
-- **Campaign and content package submission**: one baseline plus prioritised
-  targeted versions, validated and stored in the existing campaign
-  structure. *(spec only)*
+- **Campaign and content package submission**: a mandatory default layer
+  plus optional prioritised targeted versions, validated and stored in the
+  existing campaign structure. *(spec only)*
 - **Pre-auction enforcement**: effective floor CPM, categories, blocklist and
   approval, keyed on seat/advertiser identity in the bid response.
   *(spec only)*
@@ -1606,39 +1653,24 @@ partner-contributed attributes have been removed with that scope.
     connected DSPs*. Should they instead default to *None*, like
     Personalisation Variables, given they describe the person in front of
     the screen?
-50. **Auction clearing for overlapping localised bids.** *Resolved
-    (decision, Rob, 22 Sep):*
-    - **Reserved slots**: first come, first served — the first advertiser
-      to purchase the reservation wins the overlapping displays outright.
-    - **Real-time bids**: the highest bidder wins the overlapping displays
-      outright; the next bidder only gets the remaining displays their own
-      criteria match that the winner didn't take.
-
-    Not yet implemented: this describes the target algorithm, not shipped
-    behaviour — it still depends on the display-level localised match
-    counts described in the interface contract with Live Visitor Profile
-    ("Booking schedule reach counts"), which the clearing algorithm would
-    need to run on and which don't exist yet (which system hosts that
-    endpoint is itself still open in that contract). **Still open**: since a
-    slot's fallback is no longer bundled into every advertiser's submission
-    (§6, decision 22 Sep), what actually assigns fallback content to a slot
-    in the first place — an admin setting on the slot, a separate
-    lower-priority auction, something else — isn't decided either.
-51. **Billing a part-sold position.** *Resolved (decision, Rob, 22 Sep):*
-    real-time bids are billed pro rata on the displays actually won,
-    following the Google Ad Manager / DV360 model where each impression or
-    play is priced independently — consistent with the existing dynamic
-    VAC-d billing against realised share (§4). No minimum-reach option: a
-    bidder can't set a threshold below which they decline a remainder: they
-    control reach through their bid, targeting and budget. Reserved slots
-    are unaffected — first to purchase wins the overlap outright at the
-    fixed premium.
-
-    Not yet implemented, same dependency as open question 50 above (§4
-    Billing still bills a whole position's realised VAC-d at one CPM).
-    **Still open**: what happens when the estate itself under-delivers on a
-    reserved slot (e.g. displays offline) — open question 29 (partial-estate
-    delivery) is the same shape of problem one level up.
+50. **Auction clearing for overlapping localised bids.** *Superseded
+    (decision, Rob, 22 Sep, ticket "Make default creative mandatory; retire
+    localised-only booking path"), not answered.* This question was about
+    clearing bids for a part-sold position — several advertisers each
+    holding a localised slice of one slot's capacity. That model is
+    retired the same day it was resolved: a slot goes to one advertiser,
+    whose default layer is now mandatory, so there is no overlapping
+    capacity between *different* advertisers left to clear. (What the
+    resolution actually described — reserved slots first-come-first-served,
+    real-time bids highest-bidder-takes-the-overlap — never shipped past
+    this document either way; the reservation/auction engine has always
+    enforced a single occupant per position and window, §5.)
+51. **Billing a part-sold position.** *Superseded (decision, Rob, 22 Sep,
+    same ticket as open question 50), not answered* — for the same reason:
+    there is no part-sold position to bill pro rata across advertisers any
+    more. Ordinary dynamic VAC-d billing against one advertiser's realised
+    share (§4) already covers a booking that stacks default plus upsell
+    layers, since it is still one advertiser, one CPM, one position.
 52. **Reserve price booking flow.** §5's reserve price (decision 22 Sep) is
     published on the position but not wired to a booking flow: a "reserve"
     reservation (`POST /v1/reservations`, `type: reserve`) still clears

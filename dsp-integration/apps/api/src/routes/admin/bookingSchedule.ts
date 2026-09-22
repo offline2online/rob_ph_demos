@@ -3,21 +3,29 @@
    unavailable — with the booking revenue per display type. Live bookings
    only: a Test-mode win is never real revenue.
 
-   Each booking also carries a layered reach breakdown (Rob, 22 Sep,
-   REQUIREMENTS §6 "Campaigns and content packages", interface contract
-   "Booking schedule reach counts"): fallback (a position's displayCount,
-   the whole retail footprint), localised/interactive (reach.matchedDisplays,
-   of that footprint — from the campaign's own targeted-version rules via
-   ctx.reach, the ReachCountSource stand-in) and personalised (no count,
-   UI shows a plain indicator — matching can't be predicted ahead of time). */
+   Each booking is one advertiser's single purchase, stacking whichever of
+   the three layers it actually carries (ticket "Booking schedule:
+   single-advertiser stacking tile", 22 Sep, superseding the earlier
+   same-day "layered reach breakdown" design where all three layers'
+   pills were always shown and competed for one window's single-layer
+   capacity — that model is retired along with the fallback-optional
+   submission it depended on): default (mandatory since the same-day
+   "Make default creative mandatory" ticket, so always present),
+   localised (reach.matchedDisplays, from the campaign's own
+   targeted-version rules via ctx.reach, the ReachCountSource stand-in —
+   REQUIREMENTS §6, interface contract "Booking schedule reach counts")
+   and personalised (no count — matching can't be predicted ahead of
+   time — but a breakdown of which trigger mechanism(s) its rules use,
+   ticket "Booking schedule: personalised trigger icons"). */
 import type { BookingSchedule } from '@ph-dsp/types'
+import { TARGETING_VARIABLES } from '@ph-dsp/types'
 import type { FastifyPluginAsync } from 'fastify'
 import type { Context } from '../../context'
 import { lineItems } from '../../exchange/billing'
 import type { Guards } from '../../http/app'
 import { validationFailed } from '../../http/errors'
 import { allPositions, assignmentOf, nextWindow, windowMs, windowStartOf, windowsBetween } from '../../domain/positions'
-import type { Rules } from '../../domain/targetingValidation'
+import type { Condition, StoredTargeting } from '../../domain/targetingSummary'
 import { TAKEN } from '../../repos/ReservationRepo'
 import { advertiserSlug, assignedOf } from '@ph-dsp/types'
 
@@ -26,16 +34,55 @@ const round2 = (n: number) => Math.round(n * 100) / 100
 
 export interface ScheduleFilter { campaignId?: string; advertiserId?: string; partnerId?: string }
 
-/* The rules driving reach for a won/reserved booking: the campaign's own
-   targeted version matching the booking's pricingType, or its first
-   targeted version — a reservation doesn't record which specific version
-   won, so this is an approximation, same spirit as the POC's other
-   targeting stand-ins (AudienceSource.targetedShare). */
-function reachRulesOf(ctx: Context, campaignId: string | null, pricingType: string | null): Rules | undefined {
-  if (!campaignId) return undefined
-  const targeting = ctx.campaigns.getCampaign(campaignId)?.targeting as { targeted?: { pricingType: string; rules: Rules }[] } | null
-  const versions = targeting?.targeted ?? []
-  return (versions.find((v) => v.pricingType === pricingType) ?? versions[0])?.rules
+type Booking = NonNullable<BookingSchedule['positions'][number]['windows'][number]['booking']>
+type Layers = Booking['layers']
+type Triggers = Booking['personalisedTriggers']
+type TargetedVersion = NonNullable<StoredTargeting['targeted']>[number]
+
+const targetedOf = (ctx: Context, campaignId: string | null): TargetedVersion[] =>
+  (ctx.campaigns.getCampaign(campaignId ?? '')?.targeting as StoredTargeting | null)?.targeted ?? []
+
+/* Which of the three layers this booking's campaign actually carries:
+   whichever layer is currently won/reserved for this window, plus any
+   other targeted version the campaign submitted — the advertiser's whole
+   purchase, not just the one layer playing right now. Interactive counts
+   as localised for this breakdown (same grouping the schedule has always
+   used: it varies by store, not by visitor). */
+function layersOf(targeted: TargetedVersion[], activePricingType: string | null): Layers {
+  const has = (t: string) => activePricingType === t || targeted.some((v) => v.pricingType === t)
+  return { default: true, localised: has('localised') || has('interactive'), personalised: has('personalised') }
+}
+
+/* The rules driving reach for the localised layer: the campaign's own
+   localised/interactive targeted version — a reservation doesn't record
+   which specific version won, so this is an approximation, same spirit as
+   the POC's other targeting stand-ins (AudienceSource.targetedShare). */
+function reachRulesOf(targeted: TargetedVersion[]): Condition[][] | undefined {
+  return targeted.find((v) => v.pricingType === 'localised' || v.pricingType === 'interactive')?.rules
+}
+
+/* Trigger icons for the personalised layer (ticket "Booking schedule:
+   personalised trigger icons", 22 Sep): from broadest/most-frequent to
+   narrowest/rarest — computer vision (any `store.cv_*` variable, fires on
+   almost anyone in front of the screen), aggregate store-level (any other
+   `source: 'store'` personalisation variable — the aggregate of who is in
+   the store) and individual (any `source: 'visitor'` variable — the
+   customer is identified/checked in). More than one may be lit when the
+   rules combine tiers. null when there is no personalised layer at all;
+   all false when there is one but its rules don't classify (an older or
+   hand-built record with no real targeting rules). */
+function triggersOf(targeted: TargetedVersion[], hasPersonalised: boolean): Triggers {
+  if (!hasPersonalised) return null
+  const conditions = targeted.filter((v) => v.pricingType === 'personalised').flatMap((v) => v.rules.flat())
+  const triggers = { computerVision: false, aggregateStore: false, individual: false }
+  for (const c of conditions) {
+    const def = TARGETING_VARIABLES.find((v) => v.key === c.variable)
+    if (!def || def.group !== 'personalisation') continue
+    if (def.key.startsWith('store.cv_')) triggers.computerVision = true
+    else if (def.source === 'store') triggers.aggregateStore = true
+    else triggers.individual = true
+  }
+  return triggers
 }
 
 export function bookingSchedule(ctx: Context, starts: Date[], f: ScheduleFilter = {}): BookingSchedule {
@@ -74,21 +121,27 @@ export function bookingSchedule(ctx: Context, starts: Date[], f: ScheduleFilter 
         rev.bookedWindows++
         rev.bookedRevenue = round2(rev.bookedRevenue + bookedRevenue)
         rev.billedRevenue = round2(rev.billedRevenue + (bill ?? 0))
-        const type = (r.pricingType ?? 'baseline') as BookingSchedule['byPricingType'][number]['pricingType']
+        const type = (r.pricingType ?? 'default') as BookingSchedule['byPricingType'][number]['pricingType']
         const t = byType.get(type) ?? { pricingType: type, bookedWindows: 0, bookedRevenue: 0 }
         t.bookedWindows++
         t.bookedRevenue = round2(t.bookedRevenue + bookedRevenue)
         byType.set(type, t)
-        /* Localised layer reach (decision, 22 Sep): null for fallback and
-           personalised bookings — personalised reach can't be predicted. */
-        const reach = type === 'localised' || type === 'interactive' ? ctx.reach.matchOf(displayCount, reachRulesOf(ctx, r.campaignId, r.pricingType)) : null
+        /* The campaign's full submission — its own targeted versions,
+           regardless of which one this particular window's reservation
+           actually won — drives the tile's layers and, when personalised,
+           its trigger icons. */
+        const targeted = targetedOf(ctx, r.campaignId)
+        const layers = layersOf(targeted, r.pricingType)
+        /* Localised layer reach: null when this booking has no localised
+           layer — personalised reach can't be predicted. */
+        const reach = layers.localised ? ctx.reach.matchOf(displayCount, reachRulesOf(targeted)) : null
         return {
           start: start.toISOString(), status: 'booked' as const,
           booking: {
             reservationId: r.id, campaignId: r.campaignId as string, advertiserId: r.advertiserId, partnerId: r.partnerId,
             pricingType: type, type: r.type, advertiserName: (r.advertiserId && advertiserName.get(r.advertiserId)) || r.advertiserId || '—',
             partnerName: partners.find((x) => x.id === r.partnerId)?.name ?? r.partnerId, cpm: r.clearingCpm as number, assumedViews: views, bookedRevenue, billedRevenue: bill,
-            reach,
+            reach, layers, personalisedTriggers: triggersOf(targeted, layers.personalised),
           },
         }
       }

@@ -16,7 +16,7 @@ const PASSED = (w: number, h: number) => [
   { name: 'file_size' as const, passed: true, detail: 'Under the 10 MB limit' },
   { name: 'dimensions' as const, passed: true, detail: `${w}×${h} matches the canvas` },
   { name: 'aspect_ratio' as const, passed: true, detail: `${(w / h).toFixed(2)} matches the canvas` },
-  { name: 'baseline_present' as const, passed: true },
+  { name: 'default_present' as const, passed: true },
   { name: 'targeting_permitted' as const, passed: true },
 ]
 
@@ -30,25 +30,25 @@ export async function seedCampaigns(ctx: Context) {
     JSON.stringify({ details, objective: 'Increase Revenue / Sales', touchPoints: ['Digital Signage'], ...over })
   const asset = (campaignId: string, w: number, h: number, bg: string, brand: string, line: string) => {
     const file = ctx.assets.put(svg(w, h, bg, brand, line), '.svg')
-    ctx.db.prepare("INSERT INTO campaign_assets (id, campaign_id, version, role, file, mime_type, width, height, size_bytes, created_at) VALUES (?, ?, 1, 'baseline', ?, 'image/svg+xml', ?, ?, 1024, ?)")
+    ctx.db.prepare("INSERT INTO campaign_assets (id, campaign_id, version, role, file, mime_type, width, height, size_bytes, created_at) VALUES (?, ?, 1, 'default', ?, 'image/svg+xml', ?, ?, 1024, ?)")
       .run(randomUUID(), campaignId, file, w, h, '2026-09-15T09:00:00.000Z')
   }
   const targeting: StoredTargeting = {
-    baseline: { pricingType: 'localised' },
+    default: { pricingType: 'localised' },
     targeted: [{ id: 'metro-open', priority: 10, pricingType: 'localised', rules: [[{ source: 'store', variable: 'store.fixed_segments', op: 'include', values: ['Metro'] }], [{ source: 'store', variable: 'store.hours', op: 'equal', values: ['Open'] }]] }],
   }
-  const baseline: StoredTargeting = { baseline: { pricingType: 'localised' } }
+  const justDefault: StoredTargeting = { default: { pricingType: 'localised' } }
 
   insert.run('c_dsp_nestle', 'Nestlé — Winter warmers', JSON.stringify(targeting), '2026-09-15T09:00:00.000Z', 'dsp', 'nestle', 'p_google', 'landscape', 'localised',
     brief('Drive winter hot-drink sales in metro stores while the weather is cold, with the hero pack shot on the entrance screens.', { promotedProducts: ['Nescafé Gold', 'Milo'], skus: ['SKU-10234', 'SKU-10235'], targetAudiences: ['Metro commuters'], landingPageUrl: 'https://nestle.com/au/winter' }))
   asset('c_dsp_nestle', 1920, 1080, '#b3261e', 'Nestlé', 'Winter warmers')
-  insert.run('c_api_swisse', 'Swisse — Spring immunity', JSON.stringify(baseline), '2026-09-16T09:00:00.000Z', 'api', 'swisse', 'p_google', 'portrait', 'localised',
+  insert.run('c_api_swisse', 'Swisse — Spring immunity', JSON.stringify(justDefault), '2026-09-16T09:00:00.000Z', 'api', 'swisse', 'p_google', 'portrait', 'localised',
     brief('Spring immunity range, aimed at shoppers already in the health aisle.', { promotedProducts: ['Ultiboost Immune'], targetAudiences: ['Health & fitness'], objective: 'Brand Awareness' }))
   asset('c_api_swisse', 1080, 1920, '#1b5e20', 'Swisse', 'Spring immunity')
-  insert.run('c_dsp_loreal', 'L’Oréal — Revitalift', JSON.stringify(baseline), '2026-09-17T09:00:00.000Z', 'dsp', 'loreal', 'p_amazon', 'landscape', 'localised',
+  insert.run('c_dsp_loreal', 'L’Oréal — Revitalift', JSON.stringify(justDefault), '2026-09-17T09:00:00.000Z', 'dsp', 'loreal', 'p_amazon', 'landscape', 'localised',
     brief('Revitalift launch across metro stores.', { promotedProducts: ['Revitalift Serum'] }))
   asset('c_dsp_loreal', 1920, 1080, '#212121', 'L’Oréal', 'Revitalift — A$29.95')
-  insert.run('c_api_swisse_kids', 'Swisse — Kids multivitamin', JSON.stringify(baseline), '2026-09-18T09:00:00.000Z', 'api', 'swisse', 'p_google', 'landscape', 'localised', null)
+  insert.run('c_api_swisse_kids', 'Swisse — Kids multivitamin', JSON.stringify(justDefault), '2026-09-18T09:00:00.000Z', 'api', 'swisse', 'p_google', 'landscape', 'localised', null)
 
   /* Nestlé doesn't require approval: approved automatically. */
   await ctx.approvals.submit('c_dsp_nestle', PASSED(1920, 1080), 'Google DSP')

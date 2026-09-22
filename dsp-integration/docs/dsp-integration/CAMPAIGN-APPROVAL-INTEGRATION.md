@@ -64,7 +64,7 @@ What each `CampaignRef` field must hold:
 | `activation.enabled` | The existing activation flag |
 | `assetVersion` | Any string that **changes whenever the creative changes** (e.g. the latest asset revision id). Approval is per version |
 | `targetingSummary` | A readable rendering of the campaign's targeting rules (the POC's is `apps/api/src/domain/targetingSummary.ts`) |
-| `creative` | The baseline creative `{assetUrl, mimeType, width, height}`, or `null` |
+| `creative` | The default layer's creative `{assetUrl, mimeType, width, height}`, or `null` |
 | `canvas` | The target display type's `displayCanvasSize`, or `null` |
 
 Then create the service with it:

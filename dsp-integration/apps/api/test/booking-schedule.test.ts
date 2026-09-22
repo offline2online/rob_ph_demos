@@ -41,8 +41,10 @@ describe('GET /admin/v1/booking-schedule', () => {
     expectMatchesContract('GET', '/admin/v1/booking-schedule', 200, res.json())
     const [pos] = res.json().positions
     const at = (d: string) => pos.windows.find((w: { start: string }) => w.start.startsWith(d))
-    /* The seeded 15 Sep window: won at 120 CPM, 1,236 assumed views; billed on what played. */
-    expect(at('2026-09-15')).toEqual({ start: '2026-09-15T00:00:00.000Z', status: 'booked', booking: { reservationId: 'res_seed_nestle_0915', campaignId: 'c_dsp_nestle', advertiserId: 'nestle', partnerId: 'p_google', pricingType: 'localised', type: 'bid', advertiserName: 'Nestlé', partnerName: 'Google DSP', cpm: 120, assumedViews: 1236, bookedRevenue: 148.32, billedRevenue: 74.16, reach: { asOf: '2026-09-20T10:00:00.000Z', matchedDisplays: 1 } } })
+    /* The seeded 15 Sep window: won at 120 CPM, 1,236 assumed views; billed on
+       what played. c_dsp_nestle carries a default layer plus a localised
+       metro-open upsell, so its tile stacks two layers. */
+    expect(at('2026-09-15')).toEqual({ start: '2026-09-15T00:00:00.000Z', status: 'booked', booking: { reservationId: 'res_seed_nestle_0915', campaignId: 'c_dsp_nestle', advertiserId: 'nestle', partnerId: 'p_google', pricingType: 'localised', type: 'bid', advertiserName: 'Nestlé', partnerName: 'Google DSP', cpm: 120, assumedViews: 1236, bookedRevenue: 148.32, billedRevenue: 74.16, reach: { asOf: '2026-09-20T10:00:00.000Z', matchedDisplays: 1 }, layers: { default: true, localised: true, personalised: false }, personalisedTriggers: null } })
     /* Reserved at the price agreed through the DSP. */
     expect(at('2026-09-22')).toMatchObject({ status: 'booked', booking: { type: 'reserve', advertiserName: 'Swisse', cpm: 175, bookedRevenue: 216.3, billedRevenue: null } })
     /* A Test-mode win is not a booking. */

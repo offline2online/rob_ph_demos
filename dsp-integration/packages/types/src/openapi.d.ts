@@ -107,7 +107,7 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Create a campaign (content package) — baseline plus targeted versions
+         * Create a campaign (content package) — a mandatory default layer plus optional targeted versions
          * @description Targeting rules are validated against the variables permitted for the
          *     calling DSP and stored in the existing campaign targeting structure.
          *     Evaluation and playback are the existing platform's.
@@ -128,7 +128,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Upload creative for the baseline or a targeted version; runs automated checks */
+        /** Upload creative for the default layer or a targeted version; runs automated checks */
         post: operations["uploadAsset"];
         delete?: never;
         options?: never;
@@ -835,23 +835,28 @@ export interface components {
             touchPoints?: ("Digital Signage" | "Kiosk")[];
         };
         /** @enum {string} */
-        PricingType: "baseline" | "localised" | "personalised" | "interactive";
+        PricingType: "default" | "localised" | "personalised" | "interactive";
         /**
-         * @description baseline is optional (decision, 22 Sep): an advertiser may submit
-         *     only localised targeted versions, in which case the fallback for
-         *     stores none of them match is a property of the slot, not this
-         *     campaign — at least one targeted version is then required instead.
+         * @description default is mandatory for every submission (decision, 22 Sep,
+         *     superseding the earlier same-day "baseline optional" decision —
+         *     ticket "Make default creative mandatory; retire localised-only
+         *     booking path"): the earlier fallback-free/part-sold submission
+         *     shape (a campaign with targeted versions but no baseline/default,
+         *     leaving stores none of them match unsold to another advertiser) is
+         *     retired. Every slot now goes to a single advertiser, who supplies a
+         *     mandatory default layer plus optional localised/personalised
+         *     layers as upsells on that one purchase.
          */
         CampaignCreate: {
             advertiserId: string;
             name: string;
             displayTypeId?: string;
             brief?: components["schemas"]["CampaignBrief"];
-            /** @description Omit to submit a fallback-free campaign; targeted must then carry at least one version. */
-            baseline?: {
+            /** @description The untargeted layer every submission must carry — no targeting variables, priced at the floor rate. */
+            default: {
                 pricingType: components["schemas"]["PricingType"];
             };
-            /** @description Required, non-empty, when baseline is omitted. */
+            /** @description Optional upsells on top of the mandatory default layer — localised and/or personalised targeted versions. */
             targeted?: {
                 id: string;
                 priority: number;
@@ -863,7 +868,7 @@ export interface components {
         ApprovalStatus: "draft" | "awaiting_approval" | "approved" | "rejected";
         Check: {
             /** @enum {string} */
-            name: "file_type" | "file_size" | "bitrate" | "dimensions" | "aspect_ratio" | "duration" | "baseline_present" | "targeting_permitted";
+            name: "file_type" | "file_size" | "bitrate" | "dimensions" | "aspect_ratio" | "duration" | "default_present" | "targeting_permitted";
             passed: boolean;
             detail?: string;
         };
@@ -1031,10 +1036,9 @@ export interface components {
                 /**
                  * @description Displays using this display type across the whole retail
                  *     footprint (interface contract "Booking schedule reach
-                 *     counts", family 1) — drives the Fallback layer (decision,
-                 *     22 Sep). This prototype has no narrower per-slot store
-                 *     scope for an advertiser position, so it is also what "the
-                 *     slot's store scope" resolves to here.
+                 *     counts", family 1). This prototype has no narrower
+                 *     per-slot store scope for an advertiser position, so it is
+                 *     also what "the slot's store scope" resolves to here.
                  */
                 displayCount: number;
                 /** @description One per schedule window, in the same order. */
@@ -1049,11 +1053,10 @@ export interface components {
                         advertiserId: string | null;
                         partnerId: string;
                         /**
-                         * @description The Localised layer's match count (decision,
-                         *     22 Sep): present only for a localised or
-                         *     interactive booking, from the campaign's own
-                         *     targeted-version rules; null for a fallback
-                         *     (baseline) or personalised booking — personalised
+                         * @description The Localised layer's match count: present only
+                         *     when layers.localised is true, from the
+                         *     campaign's own targeted-version rules; null when
+                         *     no localised layer was submitted — personalised
                          *     reach can't be predicted (interface contract
                          *     "Booking schedule reach counts": "Localised
                          *     only").
@@ -1065,6 +1068,45 @@ export interface components {
                             asOf: string;
                         } | null;
                         pricingType: components["schemas"]["PricingType"];
+                        /**
+                         * @description Which of the three layers this one advertiser's
+                         *     booking actually carries (ticket "Booking
+                         *     schedule: single-advertiser stacking tile", 22
+                         *     Sep) — default is always present (mandatory
+                         *     since the same-day "Make default creative
+                         *     mandatory" ticket); localised/personalised are
+                         *     upsells on the same purchase, present when the
+                         *     campaign submitted a targeted version of that
+                         *     type (interactive counts as localised for this
+                         *     breakdown, same grouping the schedule has always
+                         *     used). Drives the tile's stacked height: 1-3
+                         *     layers, tallest at the top.
+                         */
+                        layers: {
+                            default: boolean;
+                            localised: boolean;
+                            personalised: boolean;
+                        };
+                        /**
+                         * @description Only when layers.personalised is true (ticket
+                         *     "Booking schedule: personalised trigger icons",
+                         *     22 Sep): which trigger mechanism(s) the
+                         *     personalised layer's targeting rules use, from
+                         *     broadest/most frequent to narrowest/rarest —
+                         *     computer vision (fires on almost anyone in front
+                         *     of the screen), aggregate store-level (the
+                         *     aggregate of who is in the store), individual
+                         *     (the visitor is identified/checked in). More
+                         *     than one may be lit when the rules combine
+                         *     tiers. All false when personalised has no
+                         *     classifiable targeting rules yet; null when
+                         *     layers.personalised is false.
+                         */
+                        personalisedTriggers: {
+                            computerVision: boolean;
+                            aggregateStore: boolean;
+                            individual: boolean;
+                        } | null;
                         /** @enum {string} */
                         type: "reserve" | "bid";
                         advertiserName: string;
@@ -1214,7 +1256,7 @@ export interface components {
             reason?: string | null;
             checks?: components["schemas"]["Check"][];
             targetingSummary?: string;
-            /** @description The baseline creative under review, for rendering on the target canvas. */
+            /** @description The default layer's creative under review, for rendering on the target canvas. */
             creative?: {
                 assetUrl: string;
                 mimeType: string;
@@ -1350,7 +1392,7 @@ export interface components {
             partnerName?: string | null;
             displayTypeId?: string | null;
             /** @enum {string|null} */
-            pricingType?: "baseline" | "localised" | "personalised" | "interactive" | null;
+            pricingType?: "default" | "localised" | "personalised" | "interactive" | null;
             brief?: components["schemas"]["CampaignBrief"];
             /** @description What the advertiser booked, so the table can show what is up next. */
             schedule: {
@@ -1677,7 +1719,7 @@ export interface operations {
         requestBody: {
             content: {
                 "multipart/form-data": {
-                    /** @description "baseline" or the targeted version id */
+                    /** @description "default" or the targeted version id */
                     version: string;
                     /** Format: binary */
                     file: string;

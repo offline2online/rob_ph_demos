@@ -33,14 +33,14 @@ export async function queueCreative(ctx: Context, partner: PartnerRecord, bid: {
   const campaignId = `c_dsp_${randomUUID().slice(0, 12)}`
   ctx.campaigns.createCampaign({
     id: campaignId, name: `${advertiser.name} — ${bid.crid}`, source: 'dsp', advertiserId: advertiser.id, partnerId: partner.id,
-    displayTypeId: p.displayType.id, pricingType: 'localised', targeting: { baseline: { pricingType: 'localised' } },
+    displayTypeId: p.displayType.id, pricingType: 'localised', targeting: { default: { pricingType: 'localised' } },
   })
   ctx.campaigns.addAsset({
-    id: `as_${randomUUID().slice(0, 12)}`, campaignId, role: 'baseline', file: ctx.assets.put(bytes, EXTENSION[media!.kind]), mimeType: media!.mimeType,
+    id: `as_${randomUUID().slice(0, 12)}`, campaignId, role: 'default', file: ctx.assets.put(bytes, EXTENSION[media!.kind]), mimeType: media!.mimeType,
     width: media!.width, height: media!.height, durationSec: media!.durationSec, bitrateKbps: null, sizeBytes: bytes.length,
   })
   ctx.db.prepare('INSERT INTO dsp_creatives (partner_id, crid, campaign_id, created_at) VALUES (?, ?, ?, ?)').run(partner.id, bid.crid, campaignId, new Date().toISOString())
-  const view = await ctx.approvals.submit(campaignId, [...checks, { name: 'baseline_present', passed: true }, { name: 'targeting_permitted', passed: true }], partner.name)
+  const view = await ctx.approvals.submit(campaignId, [...checks, { name: 'default_present', passed: true }, { name: 'targeting_permitted', passed: true }], partner.name)
   return view.status === 'approved'
     ? `New creative ${bid.crid}: approved automatically; it can compete from the next window.`
     : `New creative ${bid.crid}: queued for approval.`
