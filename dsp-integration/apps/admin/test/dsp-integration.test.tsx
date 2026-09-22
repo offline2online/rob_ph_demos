@@ -262,27 +262,46 @@ describe('Booking schedule', () => {
     expect(await screen.findByRole('heading', { name: /Booking schedule/ })).toBeInTheDocument()
     const revenue = await screen.findByLabelText('Booking revenue')
     expect(await within(revenue).findAllByText('$216.30')).toHaveLength(2)
-    /* Fallback is the default layer tab; the fixture's booking is
-       personalised, so it shows here as booked by another layer, not as
-       Available (Rob, 22 Sep — it really is spoken for). */
-    expect(within(screen.getByLabelText('Booking schedule')).getByText('Sold — other layer')).toBeInTheDocument()
-    /* Switching to the Personalised tab shows the booking itself — the
-       layer is part of the grid's remount key (like the Daily/Weekly/
-       Monthly view already is), so re-query it fresh after the click. */
-    fireEvent.click(screen.getByRole('radio', { name: 'Personalised' }))
+    /* All three layers show at once now, stacked in every window — no tabs
+       to switch (ticket, 21 Sep). The fixture's one booking is personalised,
+       so the Fallback and Localised pills for that window both show it as
+       booked by another layer, not as Available (it really is spoken for);
+       the Personalised pill shows the booking itself. */
     const grid = await screen.findByLabelText('Booking schedule')
-    expect(await within(grid).findAllByText('Swisse')).toHaveLength(2)
-    expect(within(grid).getByText(/personalised · 175 CPM/)).toBeInTheDocument()
-    expect(within(grid).getByText('Available')).toBeInTheDocument()
+    expect(within(grid).getAllByText('Sold — other layer')).toHaveLength(2)
+    expect(within(grid).getAllByText('Swisse')).toHaveLength(2) // the Advertiser column, and the Personalised pill
+    expect(within(grid).getAllByText('Available')).toHaveLength(3) // the other, unbooked window — all three layers open
+    /* There's no per-layer tab any more — only the Daily/Weekly/Monthly view selector. */
+    expect(screen.queryByRole('radio', { name: 'Personalised' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('radio', { name: 'Fallback' })).not.toBeInTheDocument()
     expect(screen.queryByRole('region', { name: 'Save changes' })).not.toBeInTheDocument()
     /* Views, and DSP/advertiser as column filters like every other table (Rob, 20 Sep). */
     expect(screen.getByRole('radio', { name: 'Weekly' })).toBeInTheDocument()
-    expect([...grid.querySelectorAll('.ag-header-cell-text')].slice(0, 3).map((h) => h.textContent)).toEqual(['Position', 'DSP', 'Advertiser'])
+    expect([...grid.querySelectorAll('.ag-header-cell-text')].slice(0, 3).map((h) => h.textContent)).toEqual(['Advertiser', 'DSP', 'Position'])
     expect(within(grid).getByLabelText('DSP filter')).toBeInTheDocument()
     expect(within(grid).getByLabelText('Advertiser filter')).toBeInTheDocument()
   })
 
-  it('layers the schedule into Fallback / Localised / Personalised tabs, with a reach count on a localised booking', async () => {
+  it('stands alone — no Display Types / DSP Integration nav — and shows the DSP that actually booked it, not every DSP merely eligible to', async () => {
+    const eligibleForMore = {
+      ...schedule,
+      positions: [{
+        /* Eligible to bid: both DSPs. Actually booked: only Google DSP
+           (the fixture's one booking) — the DSP column must reflect the
+           latter, not the former (ticket, 21 Sep). */
+        ...schedule.positions[0], partnerNames: ['Google DSP', 'Amazon Ads DSP'],
+      }],
+    }
+    vi.stubGlobal('fetch', vi.fn(fakeFetch({ '/api/admin/v1/booking-schedule': eligibleForMore })))
+    renderAt('/booking-schedule')
+    expect(await screen.findByRole('heading', { name: /Booking schedule/ })).toBeInTheDocument()
+    expect(screen.queryByRole('navigation', { name: 'Display Types and DSP Integration' })).not.toBeInTheDocument()
+    const grid = await screen.findByLabelText('Booking schedule')
+    expect(within(grid).getByText('Google DSP')).toBeInTheDocument()
+    expect(within(grid).queryByText(/Amazon Ads DSP/)).not.toBeInTheDocument()
+  })
+
+  it('layers the schedule into Fallback / Localised / Personalised pills, with a reach count on a localised booking', async () => {
     const withLocalised = {
       ...schedule,
       positions: [{
@@ -296,12 +315,13 @@ describe('Booking schedule', () => {
     }
     vi.stubGlobal('fetch', vi.fn(fakeFetch({ '/api/admin/v1/booking-schedule': withLocalised })))
     renderAt('/booking-schedule')
-    /* Fallback (default): nothing of this layer booked here. */
-    expect(within(await screen.findByLabelText('Booking schedule')).getByText('Sold — other layer')).toBeInTheDocument()
-    expect(within(screen.getByLabelText('Booking schedule')).getByText('4')).toBeInTheDocument() // the Displays column
-    fireEvent.click(screen.getByRole('radio', { name: 'Localised' }))
     const grid = await screen.findByLabelText('Booking schedule')
-    expect(await within(grid).findByText('3 of 4 matched')).toBeInTheDocument()
+    /* Localised booking: the Fallback and Personalised pills for that window
+       both show it as booked by another layer; the Localised pill shows the
+       reach count against the Displays column's total. */
+    expect(within(grid).getAllByText('Sold — other layer')).toHaveLength(2)
+    expect(within(grid).getByText('4')).toBeInTheDocument() // the Displays column
+    expect(await within(grid).findByText('3/4')).toBeInTheDocument()
   })
 })
 

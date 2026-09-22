@@ -1445,28 +1445,41 @@ playback analytics.**
   booked / available / unavailable, **at the top of its own page**, with
   booking revenue per display type and then what sold by campaign type
   below it (Rob, 21 Sep: the schedule is what the page is for; the money
-  reads as its summary). Its DSP and advertiser filters are column
+  reads as its summary). **Stands alone in its own tab** (Rob, 21 Sep): no
+  Display Types / DSP Integration nav beside it (`RouteHandle.hideNav`),
+  and no second "Schedule" section header repeating the page's own title
+  immediately above the table. Its DSP and advertiser filters are column
   filters, kept in the URL and applied by the server. **The advertiser
   filter lists only advertisers with something booked in the range on
   screen, and choosing one leaves only the positions it holds** (Rob,
   20 Sep) — the filter exists to find a booking, not to prove one is
   missing. An advertiser with nothing booked from the current window on is
   not offered a **Bookings** link on the advertisers table either.
+  **Columns, left to right: Advertiser, DSP, Position, Displays** (Rob,
+  21 Sep — previously Position, DSP, Advertiser). The DSP column reads the
+  actual booking's DSP (`booking.partnerName`), not the position's
+  `partnerNames` (who is merely *eligible* to buy the slot) — the two can
+  differ whenever a slot takes bids from more than one DSP, and only the
+  former is guaranteed to match the advertiser shown beside it.
   *(Advertisers / Inventory → Booking schedule)*
-- **Layered reach breakdown** (decision, Rob, 22 Sep): a Fallback /
-  Localised / Personalised tab, alongside the existing Daily / Weekly /
-  Monthly views, breaking every slot down by campaign layer. Fallback
-  shows the slot's own display count across the whole retail footprint (a
-  new **Displays** column); Localised shows each booking's reach — how
-  many of those displays its targeting matched, from the server's
-  `ReachCountSource` stand-in for the interface contract's "Booking
-  schedule reach counts" — with the remainder read as open for another
-  campaign; Personalised is an indicator only, with no reach count, since
-  a personalised match can't be predicted ahead of time. A window's single
-  booking belongs to exactly one layer — the reservation/auction engine
-  doesn't split a position's capacity between advertisers yet (open
-  question 50) — so a window booked by a different layer shows as **Sold
-  — other layer**, never as Available, on a tab it doesn't belong to.
+- **Layered reach breakdown, as three stacked pills, not tabs** (decision,
+  Rob, 22 Sep; changed from tabs to pills, ticket 21 Sep — three separate
+  tabs made it impossible to see all three layers' availability for a day
+  or week at a glance): every window in the Daily, Weekly and Monthly views
+  shows all three layers at once, stacked **Personalised on top, Localised
+  in the middle, Fallback at the bottom**, instead of switching between
+  them. Fallback shows the slot's own display count across the whole
+  retail footprint (a new **Displays** column); Localised shows each
+  booking's reach — how many of those displays its targeting matched, from
+  the server's `ReachCountSource` stand-in for the interface contract's
+  "Booking schedule reach counts" — with the remainder read as open for
+  another campaign; Personalised is an indicator only, with no reach
+  count, since a personalised match can't be predicted ahead of time. A
+  window's single booking belongs to exactly one layer — the
+  reservation/auction engine doesn't split a position's capacity between
+  advertisers yet (open question 50) — so the other two layers' pills for
+  that same window show **Sold — other layer**, never Available, since
+  that capacity really is already spoken for.
   *(Advertisers / Inventory → Booking schedule)*
 
 ### Shared targeting variables
