@@ -805,10 +805,13 @@ This release exposes the **default platform variables only**, shown
 read-only in **DSP Integration → Shared Targeting Variables** (the page and
 its entry in the DSP Integration list carry this name), grouped under two
 headings; managing (adding or editing) variables is a later release.
+**Languages Spoken by Store Staff is not supported initially and was
+removed from the default set (ticket, 22 Sep); a later release will add it
+back.**
 
 | Group | Variables, in display order |
 |---|---|
-| **Localisation Variables** | Store Open / Closed; Fixed Store Segments; Variable Store Segments; Display Tag(s); Suburb; Postcode; State; Country; Languages Spoken by Store Staff; Reason for Visit (Aggregate); Computer Vision Gender; Computer Vision Estimated Age |
+| **Localisation Variables** | Store Open / Closed; Fixed Store Segments; Variable Store Segments; Display Tag(s); Suburb; Postcode; State; Country; Reason for Visit (Aggregate); Computer Vision Gender; Computer Vision Estimated Age |
 | **Personalisation Variables** | Age; Gender; Purchase Intent; Visitor Segments; Device Type; Product Holdings; Product Type; Plan Type; Plan Value; Purchase History; Events; SKUs |
 
 - **Localisation Variables** describe the store and the moment: whether the
