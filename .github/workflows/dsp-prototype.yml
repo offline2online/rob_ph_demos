@@ -47,7 +47,11 @@ on:
         default: false
 
 # One build at a time: two runs pushing rebuilds of the same branch would
-# race, and the loser's push would fail.
+# race, and the loser's push would fail. GitHub also keeps at most one run
+# QUEUED per group — a newer queued run cancels an older one that never
+# started (seen on 22 Sep: a push run for the train was cancelled by the
+# dispatch that followed it). That is fine when the newer run covers the
+# same branch; when it doesn't, the schedule covers the rest.
 concurrency:
   group: dsp-prototype
   cancel-in-progress: false
@@ -73,6 +77,9 @@ jobs:
         env:
           BRANCHES: ${{ github.event_name == 'push' && github.ref_name || (inputs.branch != '' && inputs.branch || 'main deploy/dsp-integration') }}
           FORCE: ${{ inputs.force == true && '--force' || '' }}
+          # For re-pointing the board's test links at the rebuilt commit
+          # (see below). Absent on a fork: the step warns and moves on.
+          BOARD_API_KEY: ${{ secrets.BOARD_API_KEY }}
         run: |
           set -euo pipefail
           git config user.name backlog-automation
@@ -99,6 +106,17 @@ jobs:
             for attempt in 1 2 3; do
               if git push -q origin "$branch"; then
                 echo "$branch: pushed $(git rev-parse --short HEAD)"
+                # A test link on the BRANCH is a link into githack's cache:
+                # index.html refreshes within minutes, but demo/api-snapshot.json
+                # (a fixed path) was still serving the 21 Sep 10:19 capture on
+                # 22 Sep 02:20 — every screen's data a day stale under a fresh
+                # bundle. A commit URL is immutable, so caching it is correct.
+                # Re-point this train's testing cards at the commit just pushed.
+                case "$branch" in deploy/*)
+                  (cd dsp-integration && node scripts/board-tickets.mjs --relink-prototype "$(git rev-parse HEAD)" --branch "$branch" --yes) \
+                    || echo "::warning::could not re-point the board's test links at $(git rev-parse --short HEAD); they still point at $branch, which githack caches"
+                  ;;
+                esac
                 break
               fi
               # The branch moved while we built (a ticket landed). Put the

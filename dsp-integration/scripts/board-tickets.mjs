@@ -6,6 +6,7 @@
      npm run board:tickets -- --ticket <id> --preview <url> --to ready-for-testing --yes
      npm run board:tickets -- --ticket <id> --deploy-commit <sha> --yes
      npm run board:tickets -- --deploy-branch deploy/dsp-integration --yes
+     npm run board:tickets -- --relink-prototype <sha> --branch deploy/dsp-integration --yes
 
    Why this exists: the board's MCP connector deliberately refuses status
    writes ("moving a ticket through testing and deployment stays on the
@@ -23,6 +24,15 @@
    resets the branch to main — which is exactly what happened to
    d5lCFNALmRvij1w1v7aI on 21 Sep. Set this whenever you put a commit on a
    train yourself, or the board and the branch disagree and the board wins.
+
+   --relink-prototype <sha> re-points every testing card's test link from a
+   BRANCH URL to that commit's URL on rawcdn.githack.com. githack caches a
+   branch URL: index.html refreshes within minutes, but on 22 Sep 2026 the
+   fixed-path demo/api-snapshot.json was still serving the 21 Sep 10:19
+   capture a day later — a fresh bundle over a day-old snapshot, which is
+   what three "Failed testing" rounds were looking at. A commit URL is
+   immutable, so caching it is correct. dsp-prototype.yml runs this after
+   it pushes a rebuild; --branch limits it to cards on that train.
 
    It will not pretend: --yes is required to write, every change is verified
    by reading the ticket back, and the default run changes nothing at all.
@@ -95,7 +105,22 @@ async function tickets() {
   } while (pageToken)
   return out
     .filter((d) => field(d, 'projectId') === PROJECT_ID)
-    .map((d) => ({ id: d.name.split('/').pop(), name: d.name, title: field(d, 'title') ?? '(untitled)', status: field(d, 'status') ?? 'backlog', previewUrl: field(d, 'previewUrl'), deployCommit: field(d, 'deployCommit') }))
+    .map((d) => ({ id: d.name.split('/').pop(), name: d.name, title: field(d, 'title') ?? '(untitled)', status: field(d, 'status') ?? 'backlog', previewUrl: field(d, 'previewUrl'), deployCommit: field(d, 'deployCommit'), deployBranch: field(d, 'deployBranch') }))
+}
+
+/* Append a note to a ticket, in the shape the board's own comment thread
+   reads ({author, text, at}), without touching any other field. */
+async function appendNote(id, text) {
+  const res = await fetch(`${BOARD}/backlogItems/${id}`, { headers: AUTH })
+  if (!res.ok) throw new Error(`Reading ${id} failed (${res.status}): ${await res.text()}`)
+  const doc = await res.json()
+  const notes = doc.fields?.notes?.arrayValue?.values ?? []
+  notes.push({ mapValue: { fields: { author: { stringValue: 'backlog-automation' }, text: { stringValue: text }, at: { stringValue: new Date().toISOString() } } } })
+  const patch = await fetch(`${BOARD}/backlogItems/${id}?updateMask.fieldPaths=notes`, {
+    method: 'PATCH', headers: { ...AUTH, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ fields: { notes: { arrayValue: { values: notes } } } }),
+  })
+  if (!patch.ok) throw new Error(`Writing a note on ${id} failed (${patch.status}): ${await patch.text()}`)
 }
 
 const all = await tickets()
@@ -117,6 +142,53 @@ if (branch) {
     if (!res.ok) throw new Error(`Writing deployBranch failed (${res.status}): ${await res.text()}`)
     console.log('  written')
   }
+}
+
+/* ------------------------------------------- test links → an immutable commit */
+
+const PROTOTYPE_LINK = /^https:\/\/(?:rawcdn|raw)\.githack\.com\/offline2online\/rob_ph_demos\/(.+?)\/dsp-integration\/prototype\/(.*)$/
+const relinkSha = value('--relink-prototype')
+if (relinkSha) {
+  if (!/^[0-9a-f]{40}$/.test(relinkSha)) {
+    console.error('\n--relink-prototype needs a full 40-character commit sha (a branch name is exactly what caches).')
+    process.exit(2)
+  }
+  const onBranch = value('--branch')
+  const candidates = all.filter((t) => ['ready-for-testing', 'ready-to-publish'].includes(t.status) && (!onBranch || t.deployBranch === onBranch))
+  const changes = candidates.flatMap((t) => {
+    const m = t.previewUrl?.match(PROTOTYPE_LINK)
+    if (!m) return []
+    const [, ref, rest] = m
+    if (ref === relinkSha) return []
+    const next = `https://rawcdn.githack.com/offline2online/rob_ph_demos/${relinkSha}/dsp-integration/prototype/${rest || 'index.html'}`
+    return [{ t, ref, next }]
+  })
+  console.log(`\nTest links → ${relinkSha.slice(0, 7)}${onBranch ? ` (cards on ${onBranch})` : ''}: ${changes.length} to re-point`)
+  for (const { t, ref, next } of changes) console.log(`  ${t.title.slice(0, 60)}\n    ${ref} → ${next}`)
+  if (changes.length && !flag('--yes')) console.log('  (dry run: pass --yes to write)')
+  if (changes.length && flag('--yes')) {
+    for (const { t, ref, next } of changes) {
+      const res = await fetch(`${BOARD}/backlogItems/${t.id}?updateMask.fieldPaths=previewUrl&updateMask.fieldPaths=updatedAt`, {
+        method: 'PATCH', headers: { ...AUTH, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fields: { previewUrl: { stringValue: next }, updatedAt: { timestampValue: new Date().toISOString() } } }),
+      })
+      if (!res.ok) throw new Error(`Re-pointing ${t.id} failed (${res.status}): ${await res.text()}`)
+      await appendNote(
+        t.id,
+        `Test link updated: the hosted prototype was rebuilt from ${relinkSha.slice(0, 7)} and the link now points at that commit — ${next} — ` +
+        `rather than at ${ref}. (A branch URL on githack is cached: its data snapshot can stay a day stale under a fresh-looking bundle. ` +
+        `A commit URL cannot change.) If you tested on the old link, please look again.`,
+      )
+    }
+    const after = await tickets()
+    const wrong = changes.filter(({ t, next }) => after.find((a) => a.id === t.id)?.previewUrl !== next)
+    if (wrong.length) {
+      console.error(`\nWrote, but ${wrong.length} link(s) did not land: ${wrong.map(({ t }) => t.id).join(', ')}`)
+      process.exit(1)
+    }
+    console.log(`\nRe-pointed ${changes.length} — verified.`)
+  }
+  if (!value('--from') && !value('--to') && !value('--ticket')) process.exit(0)
 }
 
 /* ------------------------------------------------------------ moving tickets */

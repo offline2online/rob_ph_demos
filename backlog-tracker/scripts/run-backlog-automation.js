@@ -500,9 +500,12 @@ function dispatchRebuilds(branch, paths, label) {
 
 // What a rebuild means for whoever reads the card next: the link exists,
 // but for a few minutes it still shows the build from before this commit.
+// When the rebuild lands, dsp-prototype.yml re-points the card's test link
+// at that commit (githack caches a branch URL; a commit URL is immutable),
+// so the tester's cue is the link itself changing from a branch to a sha.
 function rebuildNote(dispatched, sha) {
   if (!dispatched.length) return "";
-  return ` The test link serves a built bundle, which is being rebuilt from ${sha.slice(0, 7)} now (${dispatched.join(", ")}) — allow a few minutes, and check build-info.json beside the link's index.html: its "commit" says which commit the bundle came from.`;
+  return ` The test link serves a built bundle, which is being rebuilt from ${sha.slice(0, 7)} now (${dispatched.join(", ")}). Allow a few minutes: when the rebuild lands, this card's test link is switched to that build's own commit URL and a note here says so. Until then the link still shows the previous build — don't fail testing on it.`;
 }
 
 function changedPathsBetween(fromRef, toRef) {
@@ -683,13 +686,16 @@ async function recordAttemptFailure(item, err, { attemptsField = "patchAttempts"
 // Builds a rawcdn.githack.com preview link for the branch a PR was just
 // opened from, so a Ready for Testing card is testable the moment it
 // arrives instead of sitting with no way to look at it until someone sets
-// previewUrl by hand (AfOWSFNfos2BZRpDeph1). rawcdn.githack.com
-// specifically, not raw.githack.com — the latter proxies through jsDelivr's
-// CDN cache (up to ~7 days), so a link set right after one push can keep
-// showing that first commit even after later pushes update the file, with
-// no visible error; rawcdn.githack.com is githack's own always-uncached
-// host, meant for exactly this "testing an in-progress branch" case (see
-// app.js's own testLinkHTML comment, which this mirrors).
+// previewUrl by hand (AfOWSFNfos2BZRpDeph1). A caveat, measured on 22 Sep
+// 2026 and contrary to what this comment used to claim: BOTH githack hosts
+// cache a branch URL. index.html refreshed within minutes, but a fixed-path
+// file behind it (the DSP prototype's demo/api-snapshot.json) was still
+// serving a day-old capture across several pushes, with no visible error.
+// So for a checked-in build this branch link is only a placeholder: once
+// the build's workflow has rebuilt the bundle it re-points the card at the
+// rebuilt COMMIT's URL, which is immutable (see GENERATED_BUILDS and
+// dsp-integration/scripts/board-tickets.mjs --relink-prototype). For a
+// plain static page the branch link is normally fine.
 //
 // "Most relevant changed page" is necessarily a guess — there's no
 // metadata saying which patched file is the one to look at — so this picks

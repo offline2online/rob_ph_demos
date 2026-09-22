@@ -45,6 +45,17 @@ without the live site changing. Whether a link shows a change yet is in
 built from, and `sourceStamp` is a hash of the source tree, which is how
 the script knows there is nothing to do.
 
+**A test link must point at a commit, not the branch.** githack caches a
+branch URL: `index.html` refreshes within minutes, but the fixed-path
+`demo/api-snapshot.json` was still serving the 21 Sep 10:19 capture a day
+later — a fresh bundle over a day-old snapshot, which is what three
+"Failed testing" rounds were actually looking at. A commit URL is
+immutable, so caching it is correct. After the workflow pushes a rebuild
+of a train it runs `npm run board:tickets -- --relink-prototype <sha>
+--branch <train>`, which re-points every testing card on that train at
+`https://rawcdn.githack.com/offline2online/rob_ph_demos/<sha>/dsp-integration/prototype/…`
+and says so on the card.
+
 To rebuild by hand (no `.env` needed — it starts the API on a spare port
 against a throwaway database, seeds it, captures the snapshot, builds, and
 replaces `prototype/`):
