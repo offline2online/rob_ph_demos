@@ -124,24 +124,24 @@ export function AdvertiserSettings() {
       <SubPageHeader icon="rule" title="Advertiser settings" tip={ADVERTISER_SETTINGS_TIP} />
 
       <SectionLabel><WithTip tip="Effective floor = floor CPM × the personalised multiplier (personalised campaigns) × the advertiser's floor multiplier (set on Advertisers / Inventory). Bids below it never win. An interactive campaign clears the same floor and pays the cost per engagement on top.">Pricing</WithTip></SectionLabel>
-      <div className="flex flex-wrap gap-3.5">
-        <Field label="Currency" htmlFor="currency" tip="Used for the floor CPM, every effective floor and billing. Bid requests carry it as the bid floor currency." className="w-56">
+      <div className="grid grid-cols-4 gap-3.5">
+        <Field label="Currency" htmlFor="currency" tip="Used for the floor CPM, every effective floor and billing. Bid requests carry it as the bid floor currency.">
           <Select id="currency" className="w-full" showSearch optionFilterProp="label" value={s.currency} onChange={(v) => set('currency', v)} options={CURRENCIES} popupMatchSelectWidth={280} />
         </Field>
-        <Field label="Floor price (CPM)" htmlFor="floorCpm" tip={FLOOR_TIP} tipWidth={400} className="w-32">{num('floorCpm', 1, '100')}</Field>
-        <Field label="Personalised multiplier" htmlFor="personalisedMultiplier" tip={PERSONALISED_TIP} tipWidth={400} className="w-32">{num('personalisedMultiplier', 0.05, '1.5')}</Field>
-        <Field label="Interactive cost per engagement" htmlFor="interactiveCpe" tip={INTERACTIVE_TIP} tipWidth={400} className="w-44">{num('interactiveCpe', 0.05, '0.50', { precision: 2, prefix: s.currency })}</Field>
+        <Field label="Floor price (CPM)" htmlFor="floorCpm" tip={FLOOR_TIP} tipWidth={400}>{num('floorCpm', 1, '100')}</Field>
+        <Field label="Personalised multiplier" htmlFor="personalisedMultiplier" tip={PERSONALISED_TIP} tipWidth={400}>{num('personalisedMultiplier', 0.05, '1.5')}</Field>
+        <Field label="Interactive cost per engagement" htmlFor="interactiveCpe" tip={INTERACTIVE_TIP} tipWidth={400}>{num('interactiveCpe', 0.05, '0.50', { precision: 2, prefix: s.currency })}</Field>
       </div>
 
       <SectionLabel><WithTip tip="In-store screens can't take a bid per play, so advertisers bid for a play window that clears ahead of time. Bidding for a window opens, closes at the auction cutoff (when the auction runs) and the winner holds the slot for the whole window. Times are UTC.">Auction schedule</WithTip></SectionLabel>
-      <div className="flex flex-wrap gap-3.5">
-        <Field label="Auction opens" htmlFor="auctionOpensHours" tip="How long before the auction cutoff bidding for a play window opens, for example 7 days." className="w-64">
+      <div className="grid grid-cols-3 gap-3.5">
+        <Field label="Auction opens" htmlFor="auctionOpensHours" tip="How long before the auction cutoff bidding for a play window opens, for example 7 days.">
           <DaysHours id="auctionOpensHours" hours={s.auctionOpensHours} onChange={(v) => set('auctionOpensHours', v)} />
         </Field>
-        <Field label="Play-window length" htmlFor="playWindowHours" tip="The minimum period a won slot is held, in days and hours, for example 24 hours or 7 days. It can't change while future windows are bid on or booked." className="w-64">
+        <Field label="Play-window length" htmlFor="playWindowHours" tip="The minimum period a won slot is held, in days and hours, for example 24 hours or 7 days. It can't change while future windows are bid on or booked.">
           <DaysHours id="playWindowHours" hours={s.playWindowHours} onChange={(v) => set('playWindowHours', v)} />
         </Field>
-        <Field label="Auction cutoff time" htmlFor="auctionCutoffTime" tip="The daily time by which bids must be in. The auction for the next play window runs then; 18:00 gives six hours before a midnight window." className="w-36">
+        <Field label="Auction cutoff time" htmlFor="auctionCutoffTime" tip="The daily time by which bids must be in. The auction for the next play window runs then; 18:00 gives six hours before a midnight window.">
           <Select id="auctionCutoffTime" className="w-full" value={s.auctionCutoffTime} onChange={(v) => set('auctionCutoffTime', v)} options={CUTOFF_TIMES} />
         </Field>
       </div>
