@@ -18,7 +18,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import { api } from '../../api/client'
 import { Grid } from '../../shared/Grid'
 import { Icon } from '../../shared/Icon'
-import { externalSetColumn, searchColumn, setColumn, showingCount } from '../../shared/TableFilters'
+import { searchColumn, setColumn, showingCount } from '../../shared/TableFilters'
 import { T } from '../../theme/phTheme'
 import { CAMPAIGN_STATUS_PATH, useCampaignActions } from './useCampaigns'
 
@@ -95,10 +95,7 @@ const ActivationCell = ({ data, context }: P) => {
 export function CampaignStatusPage() {
   const navigate = useNavigate()
   const [params, setParams] = useSearchParams()
-  /* Opened from an advertiser's campaign counts (Rob, 20 Sep). Shown as the
-     Advertiser column's own funnel filter, not a separate chip outside the
-     grid (ticket, 22 Sep) — the same pattern the booking schedule uses for
-     a page-owned filter. */
+  /* Opened from an advertiser's campaign counts (Rob, 20 Sep). */
   const advertiserId = params.get('advertiserId')
   const campaigns = useQuery({ queryKey: ['poc-campaigns'], queryFn: () => api<{ items: Campaign[] }>('GET', '/admin/v1/campaigns').then((r) => r.items) })
   /* Only what came in through a DSP or the Partner API. */
@@ -118,15 +115,6 @@ export function CampaignStatusPage() {
     },
   }
   const values = (of: (c: Campaign) => string) => () => all.map(of).filter((v) => v && v !== '—')
-  const advertiserOptions = useMemo(() => [...new Map(
-    all.filter((c): c is Campaign & { advertiserId: string } => !!c.advertiserId).map((c) => [c.advertiserId, c.advertiserName ?? c.advertiserId] as const),
-  ).entries()].map(([value, label]) => ({ value, label })), [all])
-  const setAdvertiserFilter = (id?: string) => {
-    const next = new URLSearchParams(params)
-    if (id) next.set('advertiserId', id)
-    else next.delete('advertiserId')
-    setParams(next, { replace: true })
-  }
   const columns = useMemo<ColDef<Campaign>[]>(() => [
     {
       /* What the advertiser booked, earliest first, so what is up next is at the top. */
@@ -139,21 +127,23 @@ export function CampaignStatusPage() {
       ...setColumn<Campaign>('Status', values((c) => STATUS_LABELS[approvals[c.campaignId]?.status as ApprovalStatus] ?? '')),
     },
     { headerName: 'Name', width: 260, minWidth: 180, cellRenderer: NameCell, valueGetter: (p) => p.data?.name ?? '', ...searchColumn<Campaign>('Name') },
-    {
-      headerName: 'Advertiser', width: 150, minWidth: 130, valueGetter: (p) => p.data?.advertiserName ?? '—',
-      ...externalSetColumn<Campaign>('Advertiser', advertiserOptions.map((a) => a.label), advertiserOptions.find((a) => a.value === advertiserId)?.label,
-        (name) => setAdvertiserFilter(advertiserOptions.find((a) => a.label === name)?.value)),
-    },
+    { headerName: 'Advertiser', width: 150, minWidth: 130, valueGetter: (p) => p.data?.advertiserName ?? '—', ...setColumn<Campaign>('Advertiser', values((c) => c.advertiserName ?? '')) },
     { headerName: 'DSP', width: 150, minWidth: 130, valueGetter: (p) => p.data?.partnerName ?? '—', ...setColumn<Campaign>('DSP', values((c) => c.partnerName ?? '')) },
     { headerName: 'Activation', width: 160, suppressSizeToFit: true, cellRenderer: ActivationCell },
     { headerName: '', width: 56, suppressSizeToFit: true, pinned: 'right', cellRenderer: RowMenu },
-  ], [approvals, all, advertiserOptions, advertiserId])
+  ], [approvals, all])
 
   if (!campaigns.data) return <Spin />
+  const advertiserName = advertiserId ? all.find((c) => c.advertiserId === advertiserId)?.advertiserName ?? advertiserId : null
   return (
     <div>
       <div className="mb-3 flex flex-wrap items-center gap-2" style={{ fontSize: 13 }}>
         <span>{showingCount(shown ?? rows.length, rows.length, `campaign${rows.length === 1 ? '' : 's'} submitted by advertisers and DSPs`)}</span>
+        {advertiserName && (
+          <Button size="small" icon={<Icon name="close" size={14} />} onClick={() => { const n = new URLSearchParams(params); n.delete('advertiserId'); setParams(n, { replace: true }) }}>
+            {advertiserName} only
+          </Button>
+        )}
       </div>
       <Grid<Campaign>
         label="Campaign Status"
