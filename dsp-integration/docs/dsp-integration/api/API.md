@@ -131,7 +131,13 @@ evaluated by the existing platform. The API never evaluates targeting.
 `targeting_permitted`, each with `passed` and `detail`. `default_present`
 asks whether the mandatory default layer's creative was uploaded — a
 targeted version's creative can no longer stand in for it, now that
-`default` is required on every submission.
+`default` is required on every submission. **`file_size` is per asset, not
+per submission**: 100 MB for an image, 200 MB for a video — applies to the
+default layer and every localised/personalised targeted version
+independently. A file exceeding its type's limit fails `file_size` and is
+returned immediately with `422 checks_failed`, never reaching the review
+queue (`apps/api/src/config.ts` → `assetLimits`, enforced in
+`apps/api/src/domain/assetChecks.ts`).
 
 ### Reservations and bids
 
@@ -224,13 +230,15 @@ Non-admin sessions get `403 forbidden`.
 | Method | Path | Purpose |
 |---|---|---|
 | GET | `/admin/v1/approvals?status=` | Campaigns by approval status, with `counts` for all four statuses (the table filter). |
-| GET | `/admin/v1/campaigns/{id}/approval` | State, checks, targeting summary, `creative` (`assetUrl`, `mimeType`, `width`, `height`) and target `canvas` (`width`, `height`) for rendering the creative on its canvas, and audit trail (review panel). |
-| POST | `/admin/v1/campaigns/{id}/approve` | Approve the reviewed `assetVersion` (`conflict` if it changed). |
-| POST | `/admin/v1/campaigns/{id}/reject` | Reject with `assetVersion` and a required `reason`. |
+| GET | `/admin/v1/campaigns/{id}/approval` | State, checks (each optionally naming the `assetId` it ran against), targeting summary, `creative` (`assetUrl`, `mimeType`, `width`, `height`, optional `contentHash`) and target `canvas` (`width`, `height`) for rendering the creative on its canvas, and audit trail (review panel). |
+| POST | `/admin/v1/campaigns/{id}/approve` | Approve the reviewed `assetVersion` (`conflict` if it changed). Also records human clearance of the default asset's current content hash, for safe reuse (below). |
+| POST | `/admin/v1/campaigns/{id}/reject` | Reject with `assetVersion` and a required `reason`. Optional `assetReasons: [{assetId, reason}]` names specific assets that failed (spec §3, "asset-level rejection"). |
+| POST | `/admin/v1/campaigns/{id}/unreject` | Undo a mistaken rejection: `Rejected` → `Awaiting approval` (`conflict` if not currently Rejected, or if `assetVersion` changed since). Takes `assetVersion` and an optional `reason`; never auto-approves. Same permission as approve/reject. |
 
 Audit actions: `submitted`, `auto_approved`, `approved`, `rejected`,
-`returned_for_review`. These back the drop-in approval module that plugs
-into the existing campaign table (see `CAMPAIGN-APPROVAL-INTEGRATION.md`).
+`returned_for_review`, `unrejected`. These back the drop-in approval module
+that plugs into the existing campaign table (see
+`CAMPAIGN-APPROVAL-INTEGRATION.md`).
 
 ### Display types and playlists
 

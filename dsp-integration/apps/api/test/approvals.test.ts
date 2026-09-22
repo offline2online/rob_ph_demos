@@ -84,6 +84,26 @@ describe('Campaign approval API (contract: Admin — Campaign approval)', () => 
     expectMatchesContract('POST', '/admin/v1/campaigns/{campaignId}/approve', 403, forbidden.json())
   })
 
+  it('un-reject reverses a mistaken rejection back to Awaiting approval', async () => {
+    const app = buildApp(await testContext())
+    const rejected = await app.inject({ method: 'POST', url: '/api/admin/v1/campaigns/c_api_swisse/reject', payload: { assetVersion: 'v1', reason: 'Price in artwork' } })
+    expect(rejected.statusCode).toBe(200)
+    expectMatchesContract('POST', '/admin/v1/campaigns/{campaignId}/reject', 200, rejected.json())
+    const stale = await app.inject({ method: 'POST', url: '/api/admin/v1/campaigns/c_api_swisse/unreject', payload: { assetVersion: 'v0' } })
+    expect(stale.statusCode).toBe(409)
+    const back = await app.inject({ method: 'POST', url: '/api/admin/v1/campaigns/c_api_swisse/unreject', payload: { assetVersion: 'v1', reason: 'Fat-fingered it' } })
+    expect(back.statusCode).toBe(200)
+    expectMatchesContract('POST', '/admin/v1/campaigns/{campaignId}/unreject', 200, back.json())
+    expect(back.json()).toMatchObject({ status: 'awaiting_approval', reviewedBy: null, reason: null })
+    expect(back.json().audit.map((a: { action: string }) => a.action)).toEqual(['submitted', 'rejected', 'unrejected'])
+    /* Already back in Awaiting approval: un-reject again is a conflict, not a no-op. */
+    const notRejected = await app.inject({ method: 'POST', url: '/api/admin/v1/campaigns/c_api_swisse/unreject', payload: { assetVersion: 'v1' } })
+    expect(notRejected.statusCode).toBe(409)
+    const user = buildApp(await testContext({ role: 'hq_marketing' }))
+    const forbidden = await user.inject({ method: 'POST', url: '/api/admin/v1/campaigns/c_api_swisse/unreject', payload: { assetVersion: 'v1' } })
+    expect(forbidden.statusCode).toBe(403)
+  })
+
   it('the stand-in campaign list carries approval-free fields only', async () => {
     const res = await buildApp(await testContext()).inject({ method: 'GET', url: '/api/admin/v1/campaigns' })
     expectMatchesContract('GET', '/admin/v1/campaigns', 200, res.json())

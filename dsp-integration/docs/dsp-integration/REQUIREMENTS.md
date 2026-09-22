@@ -404,7 +404,17 @@ can compete in later windows.
 Run before a human sees anything; failures are returned to the advertiser
 immediately with reasons and never reach the review queue:
 
-- file type, file size and bitrate;
+- file type, file size and bitrate. **File size is per asset, not per
+  submission**: 100 MB for an image, 200 MB for a video. Applies to the
+  default (mandatory) layer and every localised/personalised targeted
+  version uploaded against a campaign via `POST /v1/campaigns/{id}/assets`,
+  each checked independently. A file over its type's limit fails the
+  `file_size` check and is returned to the advertiser immediately, never
+  reaching the review queue — same as the other automated checks below.
+  Stated in the API contract too (`openapi.yaml`'s `uploadAsset` request
+  body, `API.md`'s Campaigns table) so the two do not diverge, and enforced
+  in the POC by `assetLimits` in `apps/api/src/config.ts`
+  (`apps/api/src/domain/assetChecks.ts`'s `file_size` check);
 - dimensions and aspect ratio against the target display type's canvas or
   zone;
 - duration against the slot's duration;
@@ -435,14 +445,40 @@ once a campaign is *Approved*.
   advertiser that requires approval) returns it to *Awaiting approval*.
   Whether the previously approved version keeps running during re-review is
   open question 38.
+- **Draft is internal only; it never surfaces in a retailer-facing view**
+  (ticket, 22 Sep). A campaign remains mechanically Draft between creation
+  (`POST /v1/campaigns`) and submission (`POST /v1/campaigns/{id}/submit`)
+  on the three-step API, but the retailer only ever sees one once it has
+  been submitted. The campaign table's status filter and its per-status
+  counts (below) show and count only **Awaiting approval**, **Approved**
+  and **Rejected**; a still-Draft campaign is not a row in that table at
+  all, not merely filtered out of one status.
+- **Undo rejection.** A mistaken rejection can be reversed: an **Undo
+  rejection** action, in the campaign's options/overflow menu, is available
+  on a **Rejected** campaign and moves it back to *Awaiting approval* for a
+  fresh decision. It never auto-approves, even for an advertiser who
+  doesn't require approval — it undoes the rejection, it isn't a new
+  submission. Same permission as approve/reject (open question 39). The
+  reversal is recorded in the audit trail like any other decision (who, when
+  and, optionally, why); the prior rejection reason stays in that history.
 
 ### Retailer review — the existing Campaigns section
 
 Approval takes place in Personalisation Hub's **existing Campaigns section**,
 with a minimal change to the campaign table:
 
-- **Status filter** on the campaign table with the four statuses above and a
-  count on each, so the *Awaiting approval* queue is one click away.
+- **Status filter** on the campaign table with **Awaiting approval**,
+  **Approved** and **Rejected** — never Draft (above) — and a count on
+  each, so the *Awaiting approval* queue is one click away.
+- **The campaign name links through to the actual campaign** as managed in
+  Personalisation Hub — the same canonical campaign detail page any other
+  campaign opens to, not a placeholder. Submitted campaigns are stored and
+  displayed exactly like a campaign built in HQ Admin (§6), so the existing
+  campaign detail page is the link target; this project adds no separate
+  detail view of its own. (The POC's own "Campaign Status" table is an
+  explicit stand-in for this section, deleted on integration — see
+  `CAMPAIGN-APPROVAL-INTEGRATION.md` — so its campaign name link opens the
+  POC's own placeholder detail page only until then.)
 - For a campaign **Awaiting approval**, the **activation status toggle is
   hidden** and an **Approve** icon is shown in its place, with a **Reject**
   action that requires a reason.
@@ -459,6 +495,61 @@ with a minimal change to the campaign table:
   compliance breach that an automated dimension check will not catch, which
   is why a human approves.
 
+### Asset-level rejection detail (ticket, 22 Sep)
+
+A campaign carries multiple assets — the mandatory default layer plus any
+localised/personalised targeted versions (§3 *Submission*) — so a single
+campaign-level rejection reason doesn't say WHICH asset failed. Automated
+check results are already per-check (`checks: [{name, passed, detail}]`);
+a human rejection now works the same way:
+
+- **A rejection can name reasons against one or more specific assets**, not
+  just the campaign as a whole: `reason` (required, as today) is the overall
+  summary the advertiser sees first; an optional `assetReasons` — an array
+  of `{assetId, reason}` — additionally pins one or more reasons to the
+  specific asset(s) that failed (`assetId` is `"default"` or a targeted
+  version id, matching `POST /v1/campaigns/{id}/assets`'s `version`).
+- **The review view highlights which asset(s) failed**, with the reason on
+  each, alongside the overall reason.
+- **Automated check results are asset-scoped too**: every `Check` carries
+  an optional `assetId` — set for a per-file check (`file_type`,
+  `file_size`, `bitrate`, `dimensions`, `aspect_ratio`, `duration`) to the
+  asset it ran against, left unset for a campaign-level check
+  (`default_present`, `targeting_permitted`) that isn't about one asset.
+- **The audit record retains per-asset reasons in history**: a `rejected`
+  audit entry carries `assetReasons` the same shape as the live rejection,
+  so a later reviewer (or an un-reject, §3 above) can see exactly which
+  assets were called out, not just that *something* was rejected.
+
+### Safe reuse of previously approved assets (ticket, 22 Sep)
+
+Narrower than Amazon DSP's asset-level moderation (which lets any passed
+asset skip re-review): here, an asset may skip re-review on resubmission
+**only when BOTH** hold —
+
+1. it is **unchanged** — byte-identical to the previously reviewed version
+   (same content hash), and
+2. it previously cleared **human** review, not merely automated checks.
+
+Automated-pass alone must never exempt an asset from human review on its
+own: the compliance check (no price/offer terms/disclosures in artwork,
+above) is a human visual judgement, so waiving it on the strength of an
+automated pass alone could let a compliance breach through on a resubmit
+where nothing actually changed except another, unrelated asset. Any
+**changed** asset, or a **first-time** asset, always re-reviews regardless
+of any other asset's history. Represented in the POC as
+`ApprovalService.wasAssetHumanCleared(campaignId, assetId, contentHash)`
+(`packages/campaign-approval/src/server/service.ts`, backed by
+`campaign_approval_asset_clearance` — a row is written only from a genuine
+`approve()`, never from `submit()`'s auto-approve path) — a building block
+a submission flow can call before deciding whether to route a resubmitted
+asset back into the review queue. **Not yet wired into the POC's own
+upload/submit endpoints** (`apps/api/src/routes/partner/campaigns.ts`):
+today every resubmission still re-runs its automated checks and, if the
+advertiser requires approval, re-enters the queue regardless of whether an
+individual asset was unchanged — the service-level primitive above is
+ready for that wiring, which is the natural next step.
+
 ### Enforcement and audit
 
 - **Approval is enforced server-side**, not only in the UI. A campaign that
@@ -467,6 +558,25 @@ with a minimal change to the campaign table:
   is not changed: the existing platform only plays active campaigns.
 - Every decision records who approved or rejected (or that it was approved
   automatically), when, the reason, and the asset version it applies to.
+- **A Rejected campaign is auto-deleted after a retention window** (ticket,
+  22 Sep) — rejected campaigns otherwise accumulate and clutter the
+  retailer-facing queue, especially once an advertiser has already
+  submitted a new version. Default **30 days** from the rejection
+  timestamp, a single configurable value (`rejectedCampaignRetentionDays`
+  in the POC — `apps/api/src/config.ts`), not hard-coded. **Scope: Rejected
+  only** — Draft (already never shown to the retailer, above), Awaiting
+  approval and Approved are untouched. **Delete means the campaign record
+  and its uploaded assets are removed; the approval audit trail
+  (`campaign_approval_audit`) is kept** — a deletion never erases the fact
+  that a rejection happened, who made it, when, or why, even though the
+  campaign it was about is gone. **Interaction with Undo rejection**: an
+  un-rejected campaign is no longer Rejected, so it drops out of scope
+  immediately — its clock only restarts if it is rejected again, from that
+  new rejection's timestamp. Represented in the POC by
+  `apps/api/src/domain/campaignRetention.ts`'s `sweepRejectedCampaigns`,
+  run on a daily interval (`apps/api/src/exchange/scheduler.ts`'s
+  `startCampaignRetentionScheduler`) the same way the auction and billing
+  jobs already run — no separate cron infrastructure needed.
 
 ## 4. Pricing — CPM bid floor and multipliers
 
@@ -1275,13 +1385,41 @@ campaign: { …existing fields,
             approval: { mode: manual | auto,
                         assetVersion, submittedAt,
                         reviewedBy, reviewedAt, reason,
-                        checks: [{ name, passed, detail }] },
+                        assetReasons: [{ assetId, reason }],           // optional — which asset(s) a rejection named (ticket, 22 Sep)
+                        checks: [{ name, passed, detail, assetId }] }, // assetId optional — set for a per-file check, unset for a campaign-level one
             activation: { enabled } }         // only settable once status = approved
+
+asset: { …existing fields, id, campaignId, role,      // "default" or a targeted version id
+         contentHash }                                // sha256 — the basis for safe reuse, below
 ```
+
+**Safe reuse tracking (ticket, 22 Sep)**, kept beside approval, not inside
+the campaign record — it is a history of decisions, not campaign state:
+
+```
+campaignApprovalAssetClearance: { campaignId, assetId, contentHash, clearedBy, clearedAt }
+```
+
+One row per (campaign, asset) — written only when a human approves (never
+from an automated pass or an auto-approve), overwritten on every later
+human approval. An asset may skip re-review only when its current content
+hash matches this row's — see *Safe reuse of previously approved assets*,
+§3, for the exact rule.
 
 Targeting rules use the campaign's existing targeting structure (AND groups
 of OR conditions, each *source → variable → operator → values*), evaluated
 by the existing platform. HQ-authored campaigns (`source: hq`) skip approval.
+
+**Platform-side dependency, tracked here, not built by this project:**
+`advertiserId`/`partnerId` above are on the campaign record this project
+adds, but showing them is a platform change — **Advertiser** and **DSP**
+columns need to be added to Personalisation Hub's own existing campaign
+table (the same table §3 *Retailer review* adds the status filter and
+Approve/Reject to), so a reviewer or marketing user can see who a
+DSP-sourced campaign came from without opening it. Hand this to the core
+platform team; this project's own POC "Campaign Status" stand-in already
+carries Advertiser and DSP as columns (`CampaignStatusPage.tsx`) as a
+reference for what the real table's columns should show.
 
 `targeting.default` is mandatory on every submission (decision, 22 Sep,
 superseding the earlier same-day "baseline optional" decision — §3, §6):
@@ -1677,9 +1815,37 @@ partner-contributed attributes have been removed with that scope.
     or does the campaign stop?
 39. **Who can approve.** Which HQ Admin role holds the approve permission in
     the Campaigns section, and is store-level approval ever needed?
-40. **DSP creative audits.** DV360 and The Trade Desk run their own creative
-    audits. Does retailer approval run in addition, and can a retailer
-    pre-approve by creative ID?
+40. **DSP creative audits — partially resolved (review, Sept 2026).** DV360,
+    Amazon Ads DSP and The Trade Desk each run their own buy-side creative
+    audit, and each also exposes a hook PH can occupy as the exchange/
+    publisher-side reviewer, so retailer approval running *in addition* to
+    the DSP's own audit is achievable with all three:
+    - **DV360**: the Creative resource carries `ReviewStatusInfo`
+      (`ApprovalStatus`) for DV360's own audit, and separately an
+      `ExchangeReviewStatus` (servable / rejected, per exchange). PH, as the
+      SSP, is an exchange review authority under DV360's model — retailer
+      approval maps onto setting the creative's status for PH's exchange
+      via that hook.
+    - **The Trade Desk**: already models a DOOH supply-side approver.
+      `/v3/creative` carries a flag for whether a creative requires approval
+      by VIOOH (their DOOH supply partner); approval is read from
+      `approvedBy` (`null` = awaiting/not approved, a username = approved).
+      PH occupies the equivalent DOOH-SSP approver role in that same shape.
+    - **Amazon Ads DSP**: creative moderation is asset-level, with
+      per-asset rejection reasons, and publisher policy is enforced at the
+      moment a creative is associated to a line item — the point at which a
+      PH approval decision would need to bite.
+    - **Still open**: these are each DSP's *buy-side* API, not a confirmed
+      supply-side handshake into PH's exchange — how creative and targeting
+      actually get submitted to PH's exchange for the *retailer's* approval
+      (as opposed to the DSP's own audit), and whether a retailer can
+      pre-approve by creative ID ahead of a bid, remain unanswered. A rich
+      "submit targeting for pre-approval" flow is realistically tier-2
+      (Blackmores-style) work; through tier-1 onboarding (§3, DV360 →
+      Amazon Ads DSP → The Trade Desk), lean on the three hooks above plus
+      the pre-auction fallback (§3, *Submission*: a bid carrying an unknown
+      or unapproved creative is discarded pre-auction and queued for
+      review) to catch anything that slips through.
 41. **Advertiser notification.** Status polling only, or a webhook on
     approve/reject?
 42. **Floor unit.** *Resolved* (§4): the floor is a CPM, a cost per thousand

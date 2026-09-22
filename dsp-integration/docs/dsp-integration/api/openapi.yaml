@@ -206,7 +206,7 @@ paths:
               required: [version, file]
               properties:
                 version: {type: string, description: '"default" or the targeted version id'}
-                file: {type: string, format: binary}
+                file: {type: string, format: binary, description: 'Per-asset limit, checked by `file_size`: 100 MB for an image, 200 MB for a video.'}
       responses:
         '201':
           description: Uploaded and checked
@@ -697,9 +697,33 @@ paths:
               properties:
                 assetVersion: {type: string}
                 reason: {type: string, minLength: 1}
+                assetReasons: {type: array, items: {$ref: '#/components/schemas/AssetRejection'}, description: 'Optional — names specific assets the overall reason covers (spec §3, "asset-level rejection").'}
       responses:
         '200': {description: Rejected, content: {application/json: {schema: {$ref: '#/components/schemas/Approval'}}}}
         '400': {$ref: '#/components/responses/ValidationFailed'}
+        '401': {$ref: '#/components/responses/Unauthorised'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+  /admin/v1/campaigns/{campaignId}/unreject:
+    post:
+      tags: [Admin — Campaign approval]
+      operationId: unrejectCampaign
+      summary: Undo a mistaken rejection — Rejected → Awaiting approval. Never auto-approves.
+      security: [{adminSession: [approver]}]
+      parameters: [{$ref: '#/components/parameters/CampaignId'}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [assetVersion]
+              properties:
+                assetVersion: {type: string, description: The rejected version; rejected with 409 if it has changed.}
+                reason: {type: string, description: Optional — why the rejection is being reversed. Recorded in the audit trail alongside the original rejection reason, which is kept.}
+      responses:
+        '200': {description: Back to Awaiting approval, content: {application/json: {schema: {$ref: '#/components/schemas/Approval'}}}}
         '401': {$ref: '#/components/responses/Unauthorised'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '404': {$ref: '#/components/responses/NotFound'}
@@ -1155,6 +1179,14 @@ components:
         name: {type: string, enum: [file_type, file_size, bitrate, dimensions, aspect_ratio, duration, default_present, targeting_permitted]}
         passed: {type: boolean}
         detail: {type: string}
+        assetId: {type: string, description: '"default" or a targeted version id — the specific asset this check ran against. Unset for a campaign-level check (default_present, targeting_permitted).'}
+    AssetRejection:
+      type: object
+      required: [assetId, reason]
+      description: A rejection reason attached to one specific asset, not the whole campaign (spec §3).
+      properties:
+        assetId: {type: string}
+        reason: {type: string, minLength: 1}
     CampaignStatus:
       type: object
       required: [campaignId, status]
@@ -1594,6 +1626,10 @@ components:
         reviewedBy: {type: [string, 'null']}
         reviewedAt: {type: [string, 'null'], format: date-time}
         reason: {type: [string, 'null']}
+        assetReasons:
+          type: array
+          description: The current rejection's per-asset breakdown, when the reviewer named specific assets (spec §3, "asset-level rejection").
+          items: {$ref: '#/components/schemas/AssetRejection'}
         checks: {type: array, items: {$ref: '#/components/schemas/Check'}}
         targetingSummary: {type: string}
         creative:
@@ -1605,6 +1641,7 @@ components:
             mimeType: {type: string}
             width: {type: integer}
             height: {type: integer}
+            contentHash: {type: string, description: 'sha256 of the file, when available — the basis for "safe reuse of previously approved assets" (spec §3).'}
         canvas:
           type: [object, 'null']
           description: The target display type's canvas.
@@ -1619,10 +1656,11 @@ components:
             required: [at, action]
             properties:
               at: {type: string, format: date-time}
-              action: {type: string, enum: [submitted, auto_approved, approved, rejected, returned_for_review]}
+              action: {type: string, enum: [submitted, auto_approved, approved, rejected, returned_for_review, unrejected]}
               by: {type: [string, 'null']}
               reason: {type: [string, 'null']}
               assetVersion: {type: string}
+              assetReasons: {type: array, items: {$ref: '#/components/schemas/AssetRejection'}}
 
     DisplayTypeExtensions:
       type: object

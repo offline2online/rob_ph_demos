@@ -103,7 +103,7 @@ export function CampaignDetail() {
   const { id = '' } = useParams()
   const navigate = useNavigate()
   const campaign = useCampaign(id)
-  const { approvals, canApprove, busy, approve, reject, activate } = useCampaignActions(id ? [id] : [])
+  const { approvals, canApprove, busy, approve, reject, unreject, activate } = useCampaignActions(id ? [id] : [])
   const approval = approvals[id]
   const c = campaign.data
   if (!c) return campaign.isLoading ? <Spin /> : <Empty icon="search_off">That campaign is not one an advertiser or DSP submitted.</Empty>
@@ -138,7 +138,7 @@ export function CampaignDetail() {
             key: 'creative',
             label: 'Creative',
             children: approval
-              ? <ApprovalReviewPanel approval={approval} canApprove={canApprove} busy={busy === id} onApprove={() => approve(approval)} onReject={(r) => reject(approval, r)} />
+              ? <ApprovalReviewPanel approval={approval} canApprove={canApprove} busy={busy === id} onApprove={() => approve(approval)} onReject={(r) => reject(approval, r)} onUnreject={() => unreject(approval)} />
               : <Spin />,
           },
         ]}

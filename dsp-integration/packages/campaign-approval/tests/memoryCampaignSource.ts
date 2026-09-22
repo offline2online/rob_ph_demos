@@ -34,5 +34,6 @@ export function memorySetup() {
   }
   const db = new DatabaseSync(':memory:')
   db.exec(readFileSync(fileURLToPath(new URL('../migrations/0100_campaign_approvals.up.sql', import.meta.url)), 'utf8'))
+  db.exec(readFileSync(fileURLToPath(new URL('../migrations/0101_asset_level_rejection.up.sql', import.meta.url)), 'utf8'))
   return { source, fixture, db, requiresApproval: () => true }
 }

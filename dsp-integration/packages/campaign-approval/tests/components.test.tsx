@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 /* Component contract tests: props in, behaviour out. Run them unchanged
    after placing the components in the real campaign table. */
-import { act, fireEvent, render, renderHook, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, renderHook, screen, waitFor, within } from '@testing-library/react'
 import { Switch } from 'antd'
 import { describe, expect, it, vi } from 'vitest'
 import { ApprovalActions, ApprovalReviewPanel, ApprovalStatusBadge, ApprovalStatusFilter, useCampaignApprovals, type Approval } from '../src/ui'
@@ -62,10 +62,10 @@ describe('ApprovalActions', () => {
 })
 
 describe('ApprovalStatusFilter', () => {
-  it('offers the four statuses with counts, and clears on a second click', () => {
+  it('offers Awaiting approval, Approved and Rejected with counts — never Draft — and clears on a second click', () => {
     const onChange = vi.fn()
     const { rerender } = render(<ApprovalStatusFilter counts={{ draft: 1, awaiting_approval: 3, approved: 5, rejected: 0 }} value={null} onChange={onChange} />)
-    expect(screen.getAllByRole('button').map((b) => b.textContent)).toEqual(['Draft 1', 'Awaiting approval 3', 'Approved 5', 'Rejected 0'])
+    expect(screen.getAllByRole('button').map((b) => b.textContent)).toEqual(['Awaiting approval 3', 'Approved 5', 'Rejected 0'])
     fireEvent.click(screen.getByRole('button', { name: /Awaiting approval/ }))
     expect(onChange).toHaveBeenLastCalledWith('awaiting_approval')
     rerender(<ApprovalStatusFilter counts={{ draft: 1, awaiting_approval: 3, approved: 5, rejected: 0 }} value="awaiting_approval" onChange={onChange} />)
@@ -88,6 +88,31 @@ describe('ApprovalReviewPanel', () => {
     render(<ApprovalReviewPanel approval={approval({ status: 'rejected', reason: 'Price in artwork' })} onApprove={() => {}} onReject={() => {}} />)
     expect(screen.queryByRole('button', { name: /Approve/ })).not.toBeInTheDocument()
     expect(screen.getByText('Price in artwork')).toBeInTheDocument()
+  })
+  it('highlights which asset(s) failed when the rejection named them (spec §3, "asset-level rejection")', () => {
+    render(<ApprovalReviewPanel
+      approval={approval({ status: 'rejected', reason: 'Two assets need fixing.', assetReasons: [{ assetId: 'default', reason: 'Price in artwork' }, { assetId: 'metro', reason: 'Wrong logo' }] })}
+      onApprove={() => {}} onReject={() => {}}
+    />)
+    const list = screen.getByRole('list', { name: 'Rejected assets' })
+    expect(within(list).getByText('default')).toBeInTheDocument()
+    expect(within(list).getByText(/Price in artwork/)).toBeInTheDocument()
+    expect(within(list).getByText('metro')).toBeInTheDocument()
+    expect(within(list).getByText(/Wrong logo/)).toBeInTheDocument()
+  })
+
+  it('shows which asset a check ran against, when the check names one', () => {
+    render(<ApprovalReviewPanel approval={approval({ checks: [{ name: 'dimensions', passed: true, detail: 'ok', assetId: 'metro' }] })} onApprove={() => {}} onReject={() => {}} />)
+    expect(screen.getByText('(metro)')).toBeInTheDocument()
+  })
+
+  it('Rejected: Undo rejection only when the host passes onUnreject', () => {
+    const { rerender } = render(<ApprovalReviewPanel approval={approval({ status: 'rejected', reason: 'Price in artwork' })} onApprove={() => {}} onReject={() => {}} />)
+    expect(screen.queryByRole('button', { name: 'Undo rejection' })).not.toBeInTheDocument()
+    const onUnreject = vi.fn()
+    rerender(<ApprovalReviewPanel approval={approval({ status: 'rejected', reason: 'Price in artwork' })} onApprove={() => {}} onReject={() => {}} onUnreject={onUnreject} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Undo rejection' }))
+    expect(onUnreject).toHaveBeenCalled()
   })
 })
 

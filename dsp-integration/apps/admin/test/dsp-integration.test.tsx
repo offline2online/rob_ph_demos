@@ -198,7 +198,15 @@ describe('Campaign Status stand-in', () => {
   it('lists only advertiser and DSP campaigns, with the status filter in the column', async () => {
     vi.stubGlobal('fetch', vi.fn(fakeFetch(routes)))
     renderAt('/campaign-status')
-    await waitFor(() => expect(document.body.textContent).toMatch(/submitted by advertisers and DSPs/))
+    /* Heading: total + per-status counts, no "submitted by advertisers and
+       DSPs" copy and no Draft count (ticket, 22 Sep — Draft never surfaces
+       in a retailer-facing view). */
+    await waitFor(() => expect(document.body.textContent).toMatch(/1 campaign/), { timeout: 10000 })
+    expect(document.body.textContent).toMatch(/Approved.*0/)
+    expect(document.body.textContent).toMatch(/Awaiting approval.*1/)
+    expect(document.body.textContent).toMatch(/Rejected.*0/)
+    expect(document.body.textContent).not.toMatch(/submitted by advertisers and DSPs/)
+    expect(document.body.textContent).not.toMatch(/Draft/)
     const grid = screen.getByLabelText('Campaign Status')
     await new Promise((r) => setTimeout(r, 300))
     expect(await within(grid).findByText('Swisse spring', {}, { timeout: 10000 })).toBeInTheDocument()
@@ -213,8 +221,20 @@ describe('Campaign Status stand-in', () => {
     /* Schedule first, sorted so what is up next is at the top. */
     expect([...grid.querySelectorAll('.ag-header-cell-text')].map((h) => h.textContent)).toEqual(['Schedule', 'Status', 'Name', 'Advertiser', 'DSP', 'Activation', ''])
     expect(await within(grid).findByText('2 windows booked', {}, { timeout: 10000 })).toBeInTheDocument()
-    /* And a row menu for approving, rejecting or switching a campaign on. */
+    /* And a row menu for approving, rejecting, undoing a rejection, or switching a campaign on. */
     expect(within(grid).getByLabelText('Swisse spring: options')).toBeInTheDocument()
+    fireEvent.click(within(grid).getByLabelText('Swisse spring: options'))
+    /* Awaiting approval, not Rejected, so Undo rejection is offered but disabled. */
+    expect(await screen.findByRole('menuitem', { name: /Undo rejection/ }, { timeout: 10000 })).toHaveAttribute('aria-disabled', 'true')
+  })
+
+  it('never lists a Draft campaign — a retailer only ever sees one that has been submitted', async () => {
+    const draftApproval = { ...approval, status: 'draft', mode: null, submittedAt: null }
+    vi.stubGlobal('fetch', vi.fn(fakeFetch({ ...routes, '/api/admin/v1/campaigns/c1/approval': draftApproval })))
+    renderAt('/campaign-status')
+    await waitFor(() => expect(document.body.textContent).toMatch(/0 campaigns/), { timeout: 10000 })
+    const grid = screen.getByLabelText('Campaign Status')
+    await waitFor(() => expect(within(grid).queryByText('Swisse spring')).not.toBeInTheDocument(), { timeout: 10000 })
   })
 
   it('opens the campaign laid out like the platform: brief, targeting, scheduling, storyboard, creative', async () => {
