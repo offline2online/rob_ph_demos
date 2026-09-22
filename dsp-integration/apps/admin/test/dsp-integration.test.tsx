@@ -152,7 +152,7 @@ describe('Advertisers screen (admin only)', () => {
   it('sits directly below DSP Integration in the nav for admins, with the prototype’s columns', async () => {
     vi.stubGlobal('fetch', vi.fn(fakeFetch({ '/api/admin/v1/advertisers': advertisers })))
     renderAt('/advertisers')
-    await screen.findByText('Admin only')
+    await screen.findByText('1 advertiser')
     const nav = screen.getByRole('navigation', { name: 'Display Types and DSP Integration' })
     expect(within(nav).getAllByRole('link').map((l) => l.textContent?.replace(/^[a-z_]+/, ''))).toEqual(['Display Types', 'Playlist Management', 'DSP Integration', 'Advertisers / Inventory', 'Campaign Status'])
     expect(screen.getByRole('button', { name: /Every advertiser using the platform, across all DSPs, and the inventory they can buy/ })).toBeInTheDocument()
