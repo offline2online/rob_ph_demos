@@ -657,13 +657,19 @@ function cardHTML(item) {
   // changed via the generic showPromptDialog() (a single-field in-app
   // dialog) rather than a bespoke modal — this is a one-off paste, not a
   // form worth its own dedicated markup.
-  const testLinkHTML = isTesting
-    ? (item.previewUrl
-        ? `<div class="test-link-row">
-            <a href="${escapeHTML(item.previewUrl)}" target="_blank" rel="noopener" class="test-link-btn">Test this &rarr;</a>
-            <button type="button" class="icon-btn test-link-edit-btn" data-id="${item.id}" title="Change test link">&#9998;</button>
-          </div>`
-        : `<button type="button" class="btn-ghost test-link-set-btn" data-id="${item.id}">Set test link</button>`)
+  // No CTA at all until there's an actual URL to click through to — a
+  // "Set test link" ghost button on a card with nothing to test yet read as
+  // an invitation whether or not one was ever coming. guessPreviewUrl
+  // already sets some previewUrl (even a plain GitHub tree link) for every
+  // card the automation itself moves to Ready for Testing, so a card with
+  // none here is one that got there some other way; setting one for it is
+  // a direct Firestore write, not an in-app action, now that the button is
+  // gone.
+  const testLinkHTML = isTesting && item.previewUrl
+    ? `<div class="test-link-row">
+        <a href="${escapeHTML(item.previewUrl)}" target="_blank" rel="noopener" class="test-link-btn">Test this &rarr;</a>
+        <button type="button" class="icon-btn test-link-edit-btn" data-id="${item.id}" title="Change test link">&#9998;</button>
+      </div>`
     : "";
 
   // Once a ticket reaches Ready for Testing, the raw typed/dictated
