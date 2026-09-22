@@ -403,6 +403,81 @@ through Merged to Main (Live). Both fields are in
 the REST-primed first paint rather than popping in when the realtime
 listener lands.
 
+## Adding a project — link it to GitHub, or the automation guesses
+
+A project on this board and a folder in `rob_ph_demos` are two halves of
+one thing, and nothing joins them automatically. The join is
+`projects/{id}.repoFolder`, read by `projectFolderOf()` in
+`scripts/run-backlog-automation.js`. Unset, it falls back to the
+deploy-branch slug (`deploy/dsp-integration` → `dsp-integration/`), and
+failing that to nothing.
+
+"Nothing" is not harmless. A Routine session working inside a project's
+folder hands back `patchFiles` paths relative to that folder; with no
+folder to resolve them against, the automation writes them as new files at
+the repo root. PR #185 (22 Sep 2026) did exactly that — seven tickets
+wrote root-level copies, overwrote the root `README.md`, changed none of
+the real files, and every card still read "Deployed / Main Branch (Live)".
+
+Creating a project therefore means four things, not one:
+
+1. The folder exists in the repo, with its own `README.md` and
+   `REQUIREMENTS.md`. One project, one top-level folder.
+2. `projects/{id}.repoFolder` names it — repo-root-relative, no trailing
+   slash (`dsp-integration`). Set it explicitly even when the slug would
+   match; the fallback is a guess and a rename breaks it silently.
+3. `projects/{id}.deployBranch` is `deploy/<folder>`.
+4. `requirementsMd` / `readmeMd` are filled from those two files in the
+   same session.
+
+The New Project modal asks for a name and a program, and nothing else — so
+steps 2 and 3 are a direct write today (`repoFolder` is not in the MCP
+server's `PROJECT_WRITABLE_FIELDS`, so an agent cannot set it either).
+Making the modal ask, and making the automation refuse a folder-relative
+patch for a project with no folder, is tracked on this project's own
+backlog.
+
+A project with no folder of its own is legitimate but exceptional: this
+one owns both `backlog-tracker/` and `faq/`, so its `repoFolder` stays
+unset deliberately and its patches must always use repo-root paths. Where
+that is the case, say so in the project's README — "deliberately unset"
+and "nobody set it" look identical otherwise.
+
+## Retiring a project — archive keeps it, delete does not
+
+The board's own control is **archive** (`archiveProject()` in
+`public/js/app.js`): the project drops off the columns, every ticket is
+kept, and the Archived projects page restores it. That is the right
+default for anything that might come back, and it is the only thing the UI
+does.
+
+Deleting for real is for a project that was created speculatively, never
+used, and is now noise in `list_projects` for every agent that connects
+over MCP. It runs from a runner, where the service account credential
+already is:
+
+```bash
+# dry run: reports what would go, uploads the export, deletes nothing
+gh workflow run board-admin.yml -f projects="<id>,<id>"
+
+# for real
+gh workflow run board-admin.yml -f projects="<id>" -f apply=true -f confirm=DELETE
+```
+
+`scripts/delete-projects.js` removes the project and every `backlogItems`,
+`projectDocs`, `docRevisions` and `interfaces` document pointing at it,
+then re-queries and fails if anything survived. It refuses a project that
+still has a non-archived ticket, or whose interface contract names a
+project that is *not* being deleted — removing that record would take the
+contract away from the surviving side too. `--force` overrides both,
+loudly.
+
+Every run, dry or real, writes a full JSON export of everything in scope
+and uploads it as the run's artifact. **That export is the only way back,
+and it is deliberately never committed: `rob_ph_demos` is public and
+ticket text and editor emails are not.** Download it before the 90-day
+retention runs out if the project mattered.
+
 ## Testing the rules and the MCP server
 
 `test/` holds two suites:

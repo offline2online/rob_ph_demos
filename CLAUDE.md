@@ -123,10 +123,9 @@ docs in the `projects` Firestore collection — **"Live Visitor Profile"** and
 **"Display Types & DSP Integration"** — each with its own Backlog → Ready
 for Testing → Live on Feature Branch → Merged to Main (Live) pipeline and
 its own Archive,
-fully independent of each other and of "Products, Pricing & Asset
-Management". Treat backlog sweeps and publish workflows for each exactly as
-described in the "Prototype Backlog" section below — per-project, not
-shared.
+fully independent of each other. Treat backlog sweeps and publish workflows
+for each exactly as described in the "Prototype Backlog" section below —
+per-project, not shared.
 
 ## Common Workflows
 
@@ -157,24 +156,98 @@ board"); the name "Prototype Pipeline" is no longer used anywhere.
 
 **The board is multi-project.** Firestore's `projects` collection holds one
 doc per project (`{name, createdAt}`, auto-generated id); `backlogItems`
-holds every card, each carrying a `projectId`. The original board's cards
-live under the project named "Products, Pricing & Asset Management" — a
-client can have several concurrent prototypes/projects tracked side by side,
-each rendered as its own collapsible section on the one page.
+holds every card, each carrying a `projectId`. A client can have several
+concurrent prototypes/projects tracked side by side, each rendered as its
+own collapsible section on the one page.
+
+**Three projects were deleted on 22 Sep 2026** (Rob) as unused: "Products,
+Pricing & Asset Management" — which held the original board's migrated
+cards, 30 archived tickets — plus "Platform Users, Groups & Partner
+Management" and "Vibe Coding Campaigns & Experiences", both empty. The
+recovery export is the `board-export` artifact on run 35789258396 of
+`board-admin.yml`, and a copy is at
+`~/Documents/PH-board-backups/deleted-projects-2026-09-22T21-53-33Z.json`
+(deliberately outside this repo, which is public). "Live Visitor Profile &
+Personas" was kept despite being empty: it is one side of the maintained
+interface contract with Display Types. What's left on the board is that,
+Display Types & DSP Integration, and Backlog Tracker & FAQs.
 
 - **Adding a project**: the page's "New project" button, or write a doc
   directly into `projects` (`{name, createdAt: serverTimestamp()}}`) —
   everything else (its Backlog/Testing/Live-on-branch/Merged columns, its
   own Archive) follows automatically from its `projectId` being used on
-  `backlogItems` docs.
+  `backlogItems` docs. **A project is not finished being created until it
+  is linked to a folder in this repository** — see "Linking a new project
+  to GitHub" below. Neither route asks for that link today, so it is a
+  step someone has to remember.
 - **Renaming a project**: the pencil icon next to its name, or
   `setDoc(doc(db,"projects",id), {name}, {merge:true})`.
+- **Retiring a project**: the board offers **archive**, which keeps every
+  ticket and simply drops the project off the columns — that is the right
+  default for anything that might come back, and the only thing the UI
+  does. A project created speculatively and never used is the other case:
+  it keeps appearing in `list_projects` for every agent connecting over
+  MCP. That one is deleted for real, from a runner, by
+  `.github/workflows/board-admin.yml` (`backlog-tracker/scripts/delete-projects.js`)
+  — dry by default, `apply` + the word `DELETE` to go through with it. It
+  removes the project and every `backlogItems` / `projectDocs` /
+  `docRevisions` / `interfaces` document pointing at it, refuses a project
+  with live tickets or a contract shared with a surviving project, and
+  keeps a full JSON export as the run's artifact. **That export is the
+  only way back, and it is deliberately not committed — this repo is
+  public and ticket text is not.**
 - **Collapsing a project**: per-viewer only, kept in that browser's
   `localStorage` (`bt-collapsed-projects`) — never written to Firestore, so
   it can't be set or read from outside a real browser session.
 - Items saved before multi-project shipped (no `projectId`) are grouped
   under a synthesized "General" project automatically — nothing to migrate
   by hand.
+
+### Linking a new project to GitHub — do it when the project is created
+
+A project on the board and a folder in this repo are two halves of one
+thing, and nothing joins them automatically. `projects/{id}.repoFolder` is
+the join, read by `projectFolderOf()` in
+`backlog-tracker/scripts/run-backlog-automation.js`; when it is unset the
+automation falls back to the project's deploy-branch slug
+(`deploy/dsp-integration` → `dsp-integration/`) and, failing that, to
+nothing at all.
+
+"Nothing at all" is not harmless. A Routine session working inside a
+project's folder hands back `patchFiles` paths relative to that folder;
+with no folder to resolve them against, the automation writes them as new
+files **at the repo root**. That is exactly what happened to PR #185 on
+22 Sep 2026 — seven tickets wrote root-level copies, overwrote the root
+`README.md`, changed none of the real files, and every card still said
+"Deployed / Main Branch (Live)".
+
+So, when a project is added, all four of these get set before any ticket
+is worked:
+
+1. **The folder exists in the repo**, with its own `README.md` and
+   `REQUIREMENTS.md` (root `CLAUDE.md` → "Keep each project's README
+   current"). One project, one top-level folder.
+2. **`projects/{id}.repoFolder`** names it, repo-root-relative and with no
+   trailing slash (`dsp-integration`). Set it explicitly even when the
+   deploy-branch slug would happen to match — the fallback is a guess, and
+   a rename silently breaks it.
+3. **`projects/{id}.deployBranch`** is `deploy/<folder>`, the project's
+   single integration branch (see "the deployment train" above).
+4. **The board's doc copies** (`requirementsMd` / `readmeMd`) are filled
+   from those two files in the same session, per "Keep the board's copies
+   in step as you go".
+
+A project with no folder of its own is legitimate but is the exception,
+not the default — "Backlog Tracker & FAQs" owns both `backlog-tracker/`
+and `faq/`, so its `repoFolder` stays unset on purpose and its patches
+must always use repo-root paths. Say so on the project's README when that
+is the case, so the next person can tell "deliberately unset" from
+"nobody set it".
+
+Until the New Project modal asks for the folder, steps 2 and 3 are a
+direct write (`repoFolder` is not in the MCP server's
+`PROJECT_WRITABLE_FIELDS`, so an agent cannot set it — it needs the
+console, or a runner with the board credential).
 
 Within each project, the columns are: **Backlog → Ready for Testing → Live on
 Feature Branch → Merged to Main (Live)** (status keys: `backlog`,

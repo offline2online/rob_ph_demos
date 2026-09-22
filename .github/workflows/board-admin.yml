@@ -1,0 +1,91 @@
+name: Board admin — delete a project
+
+# Destructive board maintenance that the console's own UI deliberately does
+# not offer. archiveProject() in backlog-tracker/public/js/app.js hides a
+# project and keeps its data, which is the right default for anything that
+# might come back. This is for the other case: a project created
+# speculatively, never used, still showing up in list_projects for every
+# agent that connects over MCP.
+#
+# It runs here because the credential does — FIREBASE_SERVICE_ACCOUNT_
+# BACKLOG_TRACKER is a repository secret and is deliberately not on anyone's
+# laptop (root CLAUDE.md, "The board's key lives in GitHub").
+#
+# A run is a DRY RUN unless `apply` is ticked AND `confirm` is the word
+# DELETE. Either way it uploads a full JSON export of everything in scope as
+# a build artifact — that export is the only way back, so it is never
+# committed to this repository, which is public.
+on:
+  workflow_dispatch:
+    inputs:
+      projects:
+        description: 'Project id(s) to delete — comma or space separated'
+        type: string
+        required: true
+      apply:
+        description: 'Actually delete (unticked = dry run: report + export only)'
+        type: boolean
+        default: false
+      confirm:
+        description: 'Type DELETE to confirm. Required when "apply" is ticked.'
+        type: string
+        default: ''
+      force:
+        description: 'Proceed even with live tickets or a shared interface contract'
+        type: boolean
+        default: false
+
+concurrency:
+  group: board-admin
+  cancel-in-progress: false
+
+jobs:
+  delete:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      # Two independent gates, so neither a mis-tick nor a mis-typed id on
+      # its own can delete anything.
+      - name: Check the confirmation
+        if: inputs.apply == true && inputs.confirm != 'DELETE'
+        run: |
+          echo "::error::'apply' is ticked but 'confirm' is not the word DELETE — refusing." >&2
+          exit 1
+
+      - name: Install firebase-admin
+        working-directory: backlog-tracker/scripts
+        run: npm install --no-audit --no-fund
+
+      - name: Write Firebase service account key
+        run: echo '${{ secrets.FIREBASE_SERVICE_ACCOUNT_BACKLOG_TRACKER }}' > "$RUNNER_TEMP/firebase-sa.json"
+
+      - name: Delete
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/firebase-sa.json
+        run: |
+          set -o pipefail
+          ARGS=""
+          for id in $(echo '${{ inputs.projects }}' | tr ',' ' '); do
+            ARGS="$ARGS --project $id"
+          done
+          node backlog-tracker/scripts/delete-projects.js $ARGS \
+            --out "$RUNNER_TEMP/board-export" \
+            ${{ inputs.apply == true && '--apply' || '' }} \
+            ${{ inputs.force == true && '--force' || '' }}
+
+      # The export is the recovery copy. It holds ticket text and the email
+      # of whoever last touched a document, so it goes here and not into the
+      # repository.
+      - name: Upload the recovery export
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: board-export
+          path: ${{ runner.temp }}/board-export
+          retention-days: 90
+          if-no-files-found: warn
