@@ -46,6 +46,10 @@ on:
         description: "That ticket's commit on the train branch (the board reads the train by this field)"
         type: string
         default: ''
+      train_ready:
+        description: "Set the project's trainReady so the automation merges the train — only after the Deploy run's checks (ROUTINE_INSTRUCTIONS.md steps 1–3b) have been done by hand"
+        type: boolean
+        default: false
 
 # One at a time: two runs writing the same fields would race, and the later
 # writer would silently win.
@@ -91,6 +95,13 @@ jobs:
             ${{ inputs.preview != '' && format('--preview "{0}"', inputs.preview) || '' }} \
             ${{ inputs.deploy_commit != '' && format('--deploy-commit "{0}"', inputs.deploy_commit) || '' }} \
             --yes
+
+      - name: Mark the train ready to merge
+        if: inputs.train_ready == true
+        working-directory: dsp-integration
+        env:
+          BOARD_API_KEY: ${{ secrets.BOARD_API_KEY }}
+        run: node scripts/board-tickets.mjs --train-ready --yes
 
       # Always say where things stand, so the run's log answers "is the
       # board current?" without anyone opening it.

@@ -144,6 +144,46 @@ if (branch) {
   }
 }
 
+/* ------------------------------------------------------- deploying the train */
+
+/* --train-ready is the Deploy run's final signal (backlog-tracker/
+   ROUTINE_INSTRUCTIONS.md step 4): PATCH the PROJECT's trainReady, and the
+   automation merges the branch as one PR. Only after steps 1–3b have been
+   done by whoever runs this — this flag records a verification, it does
+   not perform one, so the guard here is the minimum the board itself
+   enforces: nothing on the train still in testing. */
+if (flag('--train-ready')) {
+  const testing = all.filter((t) => t.status === 'ready-for-testing' && t.deployCommit)
+  const approved = all.filter((t) => t.status === 'ready-to-publish' && t.deployCommit)
+  console.log(`\ntrainReady → true: ${approved.length} approved ticket(s) on the train${testing.length ? `, ${testing.length} STILL IN TESTING` : ''}`)
+  for (const t of approved) console.log(`  ${t.deployCommit.slice(0, 7)}  ${t.title.slice(0, 70)}`)
+  if (testing.length) {
+    console.error('  Refusing: merging the branch would ship a ticket nobody approved:')
+    for (const t of testing) console.error(`    ${t.id}  ${t.title.slice(0, 70)}`)
+    process.exit(1)
+  }
+  if (!approved.length) {
+    console.error('  Refusing: nothing approved is on the train.')
+    process.exit(1)
+  }
+  if (!flag('--yes')) console.log('  (dry run: pass --yes to write)')
+  else {
+    const res = await fetch(`${BOARD}/projects/${PROJECT_ID}?updateMask.fieldPaths=trainReady&updateMask.fieldPaths=updatedAt`, {
+      method: 'PATCH', headers: { ...AUTH, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ fields: { trainReady: { booleanValue: true }, updatedAt: { timestampValue: new Date().toISOString() } } }),
+    })
+    if (!res.ok) throw new Error(`Writing trainReady failed (${res.status}): ${await res.text()}`)
+    const back = await fetch(`${BOARD}/projects/${PROJECT_ID}`, { headers: AUTH })
+    const doc = await back.json()
+    if (doc.fields?.trainReady?.booleanValue !== true) {
+      console.error('  Wrote, but trainReady did not land.')
+      process.exit(1)
+    }
+    console.log('  written — verified. backlog-automation.yml merges the train within a couple of minutes.')
+  }
+  if (!value('--relink-prototype') && !value('--from') && !value('--to') && !value('--ticket')) process.exit(0)
+}
+
 /* ------------------------------------------- test links → an immutable commit */
 
 const PROTOTYPE_LINK = /^https:\/\/(?:rawcdn|raw)\.githack\.com\/offline2online\/rob_ph_demos\/(.+?)\/dsp-integration\/prototype\/(.*)$/
