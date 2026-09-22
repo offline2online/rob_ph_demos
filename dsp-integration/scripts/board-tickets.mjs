@@ -154,12 +154,16 @@ if (relinkSha) {
     process.exit(2)
   }
   const onBranch = value('--branch')
-  const candidates = all.filter((t) => ['ready-for-testing', 'ready-to-publish'].includes(t.status) && (!onBranch || t.deployBranch === onBranch))
+  const candidates = all.filter((t) => ['ready-for-testing', 'ready-to-publish'].includes(t.status))
   const changes = candidates.flatMap((t) => {
     const m = t.previewUrl?.match(PROTOTYPE_LINK)
     if (!m) return []
     const [, ref, rest] = m
     if (ref === relinkSha) return []
+    /* A card is on this train if the automation stamped it so, or if its
+       link already points at the branch (a hand-filed card has no
+       deployBranch — wVhGSCVDsMotrATnADZ8 was skipped for exactly that). */
+    if (onBranch && t.deployBranch !== onBranch && ref !== onBranch) return []
     const next = `https://rawcdn.githack.com/offline2online/rob_ph_demos/${relinkSha}/dsp-integration/prototype/${rest || 'index.html'}`
     return [{ t, ref, next }]
   })
