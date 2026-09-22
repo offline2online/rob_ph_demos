@@ -22,6 +22,12 @@ This specification covers these areas, and only these:
 6. **DSP integration**: the advertiser/DSP interface and the shared targeting
    variables DSPs may use (§6), with Personalisation Hub acting as the
    supply-side platform (§7).
+7. **Analytics schema, measurement and cross-instance federation —
+   foundation only** (§9): a versioned canonical event schema, computer
+   vision as a measurement source, a source-instance identifier and an
+   agent-to-agent platform interface. All four are spec-only groundwork
+   agreed at the 22 Sep 2026 DSP analytics strategy session — none of it is
+   built this release.
 
 **Not changed by this project — existing Personalisation Hub functionality.**
 Personalisation Hub already manages everything that plays on a website or
@@ -844,6 +850,11 @@ The retailer configures it under the **DSP Integration** navigation item.
 every tier-2 feature switched off, and no tier-2 feature may change tier-1
 semantics.
 
+**Neither tier is the eventual agent-to-agent, instance-to-instance surface**
+(§9.4) — that is a separate, first-class surface for a PH instance's agent
+to negotiate with another PH instance's agent, not a partner integrating
+against either API tier here.
+
 ### Campaigns and content packages — what an advertiser submits
 
 An advertiser submits a campaign (content package) for its slot: **exactly
@@ -1084,7 +1095,10 @@ and store level, for the retailer and for advertisers) are provided by the
 **existing Personalisation Hub analytics** and are **not changed by this
 project**. Campaigns handed over from DSPs appear there like any other
 campaign. This project builds no analytics, reports, dashboards or delivery
-API.
+API. §9 reserves, spec only, the versioned canonical event schema a future
+analytics rebuild would consume and the optional/nullable fields a future
+proof-of-audience measurement path would populate — neither is built here,
+and neither changes what this paragraph says about today's system.
 
 ### Selling a play window, not an impression
 
@@ -1461,6 +1475,12 @@ Company-level:
 - **Exchange**: `client {name, domain, contactEmail}` (the seller of record)
   and `sellersJson {sellerId}`. Seller type, confidentiality, `supplyChain`,
   OpenRTB options, QPS ceiling and bid timeout are fixed platform defaults.
+- **Platform instance identity (§9.3, spec only)**: `platformInstance:
+  { instanceId, domain }`, held alongside — never inside — `client` /
+  `sellersJson` above. `instanceId` is this project's own cross-instance
+  identifier, anchored to the same stable `domain` `sellers.json` publishes
+  under; it must never be, or be derived from, `sellersJson.sellerId`, which
+  is a different identity to a different audience (§7, §9.3).
 
 Unsaved edits are held client-side only; the records above (display types
 and playlists included) change only when **Save changes** is used. Deletes
@@ -1469,6 +1489,206 @@ are the exception: a confirmed delete applies immediately.
 The `reservation` and `inventory position` records are spec only in this
 release. There is no delivery or analytics record: playback analytics are
 the existing system's.
+
+## 9. Analytics schema, measurement and cross-instance federation — foundation (22 Sep 2026 DSP analytics strategy session)
+
+A separate strategy session on 22 Sep 2026 set four structural
+future-proofing principles for where this project's analytics and
+cross-instance ambitions go **after** this release, without committing to
+build any of them now: (1) a versioned canonical event schema, with the
+event model kept separate from its transport; (2) computer vision as a
+measurement source, not only a targeting input; (3) a stable source-instance
+identity, distinct from the `sellers.json` seller ID; (4) the eventual
+inter-platform integration modelled as an agent-consumable surface, not a
+plain REST endpoint. **Everything in this section is spec only** — it
+reserves names, optional/nullable fields and documented direction so that
+later work extends what already shipped instead of breaking or duplicating
+it. It changes nothing about *Core principles*' "playback and playback
+analytics are unchanged": the existing Personalisation Hub analytics system
+remains authoritative for what is reported today, and stays so until a
+schema-consuming replacement is separately commissioned.
+
+### 9.1 Versioned canonical playback/analytics event schema
+
+**Foundation ticket the other three in this section build on.**
+
+- A single, versioned, canonical event schema becomes the single source of
+  truth for what a play/impression/interaction event looks like, written to
+  S3 partitions. DSP Integration reads **from** it, as one consumer among
+  others (a future Amazon QuickSight reporting pipeline, a future analytics
+  rebuild) — analytics stops being modelled as a downstream, DSP-specific
+  concern and becomes the thing DSP Integration, among others, consumes.
+- **Separates the event model from the transport** (a structural principle
+  from the 22 Sep session): the schema defines what fields an event carries
+  and what they mean; how/where events are batched, written or queried is a
+  transport decision for whoever builds the schema-consuming pipeline, and
+  is explicitly out of this ticket's scope.
+- Every event carries a `schemaVersion` so a consumer can evolve
+  independently of producers: an additive field is a compatible version
+  bump; changing what an existing field means requires a new version, an
+  additive migration path, and an entry in a schema changelog kept alongside
+  the schema definition (see *Where it lives*, below) — never a silent
+  redefinition of a field already in use.
+- Every event carries a `source` (which system/service emitted it, e.g. the
+  existing playback system, Vision/AI, MIST) and a `timestamp` (when the
+  event occurred, not when it landed in S3, if the two differ).
+- **Computer-vision / sensor-derived fields are OPTIONAL and NULLABLE from
+  day one** (§9.2) — reserved now so the proof-of-audience evolution
+  populates values into fields that already exist, rather than adding new
+  fields or a new pipeline later. Every such field is paired with a
+  `confidence` value; a producer with no CV signal for an event simply
+  leaves both null.
+- Illustrative shape (spec only — not a queue/topic/table decision, and not
+  built this release):
+
+  ```json
+  {
+    "schemaVersion": 1,
+    "eventId": "evt_...",
+    "eventType": "play | impression | interaction",
+    "source": "existing-playback-system | vision-ai | mist | ...",
+    "timestamp": "2026-09-22T12:00:00Z",
+    "displayId": "...",
+    "displayTypeId": "...",
+    "campaignId": "...",
+    "advertiserId": "...",
+    "partnerId": "...",
+    "playWindowId": "...",
+    "assumedViews": 1,
+    "cv": {
+      "opportunityToSee": null,
+      "dwellSeconds": null,
+      "attentionSeconds": null,
+      "estimatedAgeBand": null,
+      "estimatedGender": null,
+      "confidence": null
+    }
+  }
+  ```
+
+- **Where it lives.** This ticket reserves the shape and the two structural
+  principles above; an exhaustive field-by-field reference (types, allowed
+  values, the schema changelog) is follow-on work once a schema-consuming
+  pipeline is actually commissioned — see open question 53.
+- **Relationship to existing analytics** (*Scope*, §6 *Campaign playback
+  analytics*): the existing Personalisation Hub analytics system remains the
+  system of record for what's reported today. Nothing in this section reads
+  from or writes to it, and this project still builds no analytics, reports,
+  dashboards or delivery API of its own.
+
+### 9.2 Computer vision as a measurement source (proof-of-audience)
+
+*Depends on 9.1.*
+
+- Elevates Computer Vision from a **targeting-only** input (§6's Computer
+  Vision Gender / Computer Vision Estimated Age Localisation Variables) to
+  also being a **measurement source**: opportunity-to-see, dwell, attention
+  seconds and anonymised age band / gender flow into the canonical event
+  schema (§9.1) as populated values on the `cv` fields it already reserves —
+  extending that schema, not standing up a separate pipeline.
+- Moves the sell proposition from **proof-of-play** (§7 *Proof of play is
+  the billing record* — did the creative play) toward **proof-of-audience**
+  (was anyone there to see it, and roughly who). This is the audience
+  multiplier already in the spec (§7 *What a DOOH bid request carries*; open
+  question 34) evolving from a single per-play multiplier into a fuller
+  measured-audience record.
+- CV measurement flows into the **same** S3 partition and eventual Amazon
+  QuickSight pipeline as any other canonical event (§9.1's "one schema, many
+  consumers" principle) — not a CV-only parallel pipeline.
+- **Outbound DSP contract** (spec only; extends §6 *API surface*):
+  proof-of-audience fields, when populated, should surface to the DSP
+  alongside existing proof-of-play/billing data, each with its `confidence`
+  value so a DSP can apply its own threshold for treating a measurement as
+  tradeable. The exact response shape is follow-on API work once a
+  consuming report or endpoint is commissioned; not built this release.
+- **Open question 34** (already in this document) — is a sensor-derived
+  audience multiplier tradeable, or only reportable? This ticket does not
+  answer that; it gives the multiplier a home in the canonical schema and a
+  confidence value so that whichever way the commercial/legal answer lands,
+  the data needed to support it already exists instead of requiring a second
+  pipeline later.
+- **Anonymisation is unchanged**: age band and gender are the same
+  anonymised, non-identifying shape already used for the existing Computer
+  Vision targeting variables (§6). This ticket does not change what Vision/AI
+  is permitted to detect or retain — only that an already-anonymised
+  detected value can optionally also be recorded as a measurement alongside
+  a play event.
+
+### 9.3 Source-instance identifier for cross-instance federation
+
+*Prerequisite for 9.4; plumbing only.*
+
+- Reserves a **source-instance identifier** on analytics and booking records
+  now, so a later network-of-networks / federation release has a field to
+  key off rather than retrofitting one across records that already exist by
+  then.
+- **Must not reuse the `sellers.json` seller ID** (§7 *Exchange settings*,
+  `sellersJson.sellerId`, published as `sid` on the SupplyChain node). That
+  identifier is the retailer's identity as a **seller of record to the
+  outside ad ecosystem** — scoped to the OpenRTB supply chain and meant to
+  be read by DV360, Amazon Ads DSP and The Trade Desk (domain → `asi`,
+  seller ID → `sid`). In the federation case two PH instances (e.g.
+  Blackmores and a retail-media partner, §9.4) are **peers**, not
+  seller-and-demand-partner — overloading the seller ID to also mean "my
+  identity to another PH instance" conflates two different trust
+  relationships, and would break peer connections if a DSP ever changed how
+  it wants seller identity presented.
+- **Anchor the inter-platform identity to the stable domain instead**, as
+  its own identifier that maps to the domain rather than the raw seller ID.
+  Reserved, spec only this release: `platformInstance: { instanceId, domain
+  }`, held **alongside**, not inside, `client`/`sellersJson` in the *Sell
+  side* data model (§8) — `instanceId` is this identifier; `domain` is the
+  same stable domain `sellers.json` already publishes under, kept as a
+  separate field so the two can be cross-checked rather than conflated into
+  one.
+- **Where it's reserved**: the canonical event schema (§9.1 — an optional
+  `sourceInstanceId` alongside `source`) and booking/reservation records
+  (§8's `reservation`, itself already spec-only this release) — both
+  surfaces are ready to carry it once federation is actually built.
+  Reserving the field on records that are themselves still spec-only keeps
+  this ticket to naming and placement, not implementation.
+- This ticket does not build federation, does not define how instances
+  discover or trust each other, and does not touch `sellers.json` or the
+  SupplyChain object (§7) in any way — it only reserves where a future
+  instance identity lives and states, explicitly, what it must not be
+  confused with.
+
+### 9.4 Agent-to-agent platform interface as a first-class surface
+
+*Depends on 9.3 for instance identity; defines the exchange that identity
+enables.*
+
+- Defines the **inter-platform integration** — one PH instance's agent
+  negotiating targeting, scheduling and optimisation with another PH
+  instance's agent — as an **agent-consumable (MCP-layer) surface**, not a
+  plain REST API endpoint, so the eventual network-of-networks phase extends
+  an agentic contract rather than a human/system integration retrofitted for
+  agents later. Structural principle 5 from the 22 Sep session.
+- **Deliberately its own surface, not folded into the tier-2 PH-native API**
+  (§6 *Two API tiers*). Tier 2 is designed for a human or system integrating
+  against a REST contract under a bilateral agreement (Blackmores is its
+  worked example); this is instance-to-instance **agent** exchange, a
+  different kind of counterparty with a different contract shape.
+- **Worked example** (Blackmores + a retail-media partner, each on their own
+  PH instance): a connection between the two instances lets the advertiser
+  enable the partner as a touchpoint. Targeting, scheduling and optimisation
+  happen **agent-to-agent** between the two platforms — agents exchange
+  **context and decisions**, never raw customer records (the same
+  "predicates in, counts out" / no-PII-crossing-the-boundary principle §6
+  already applies between platform and DSP; this is the same principle one
+  level up, between platforms). Transactions on the partner side related to
+  the advertiser feed back to the advertiser's instance for ongoing
+  creative, campaign optimisation, scheduling and targeting.
+- **Still open, and deliberately not ticketed here**: the identity bridge
+  for closed-loop attribution — matching an advertiser exposure on one
+  instance to a partner-side transaction on another, without either side
+  exposing raw identity. Its natural home is the device graph / digital ID
+  layer, not this project; noted here so it isn't lost, not answered here.
+- This release does not build the agent-to-agent protocol, its transport,
+  its authentication model, or the negotiation logic itself. This ticket is
+  the decision that when it is built, it is built as an MCP-layer /
+  agent-consumable surface and as a first-class surface of its own, not a
+  REST endpoint or a feature of the tier-2 PH-native API.
 
 ## Functional requirements
 
@@ -1778,6 +1998,23 @@ playback analytics.**
 - **Data view on every record** as JSON. *(spec only; the "Data model — JSON
   sample records" document on the board's Docs page serves this purpose)*
 
+### Analytics schema, measurement and federation — foundation (§9)
+
+- **Versioned canonical playback/analytics event schema**, S3-partitioned,
+  with a `schemaVersion`, `source` and `timestamp` on every event and
+  optional/nullable CV fields reserved from day one. *(spec only)*
+- **Computer vision as a measurement source**: opportunity-to-see, dwell,
+  attention seconds and anonymised age band/gender populate the schema's
+  reserved `cv` fields, each with a `confidence` value, extending
+  proof-of-play toward proof-of-audience. *(spec only)*
+- **Source-instance identifier** (`platformInstance: { instanceId, domain
+  }`), reserved on the canonical event schema and on booking/reservation
+  records, anchored to the stable domain and never the `sellers.json`
+  seller ID. *(spec only)*
+- **Agent-to-agent platform interface**: the inter-platform integration
+  defined as an agent-consumable (MCP-layer) surface, first-class and
+  separate from the tier-2 PH-native API. *(spec only)*
+
 ## Open questions
 
 Numbering is kept from earlier revisions for traceability; questions about
@@ -1803,7 +2040,9 @@ partner-contributed attributes have been removed with that scope.
     DV360 → Amazon Ads DSP → The Trade Desk.
 33. **Seller of record.** *Resolved:* the client running the instance.
 34. **Is a sensor-derived audience multiplier tradeable**, or only
-    reportable?
+    reportable? *Still open* — §9.2 gives the multiplier a schema home and a
+    `confidence` value so either answer is supportable without a second
+    pipeline, but does not itself answer the question.
 35. **Venue and geo metadata has no home yet** on the store record.
 36. **Transaction association** (linking transactions to campaign plays).
     *Moved out of this project:* it belongs with the existing playback
@@ -1900,3 +2139,24 @@ partner-contributed attributes have been removed with that scope.
     "Deals" — deferred), so building the flow means either resolving that
     deferral or treating a reserve-price booking as its own, narrower
     mechanism.
+53. **Canonical event schema — the exhaustive reference.** §9.1 reserves the
+    shape and principles (versioning, `source`/`timestamp`, optional/nullable
+    CV fields); a field-by-field reference with types, allowed values and a
+    schema changelog is not yet written, and has no owning document yet
+    (candidate: a new `docs/dsp-integration/EVENT-SCHEMA.md`, alongside
+    `openapi.yaml`/`API.md`).
+54. **Who hosts the canonical event schema's S3 partition and its consuming
+    pipeline** (§9.1) — this project, the existing analytics platform, or a
+    new shared service? Not decided; §9.1 only fixes the event model, not
+    who owns the transport.
+55. **The closed-loop attribution identity bridge** (§9.4) — matching an
+    advertiser exposure on one PH instance to a partner-side transaction on
+    another, without either side exposing raw identity. Flagged as the
+    natural remit of the device graph / digital ID layer, not this project;
+    not yet ticketed anywhere.
+56. **Federation trust and discovery** (§9.3, §9.4) — how two PH instances
+    establish that a `platformInstance.instanceId` is who it claims to be,
+    and how one instance's agent discovers another's, are both undefined.
+    §9.3 only reserves the identifier; §9.4 only fixes the surface's shape
+    (agent-consumable, not REST) — neither answers how instances actually
+    find or trust each other.
