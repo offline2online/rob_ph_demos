@@ -1486,7 +1486,7 @@ async function finishTrain(project, deployBranch, prNumber, trainItems, { touche
       `Shipped in the deployment train PR #${prNumber}, merged to main with ${trainItems.length === 1 ? "no other ticket" : `${trainItems.length - 1} other ticket(s)`} from \`${deployBranch}\`.` +
         (mergeNote ? ` Note: merging main into ${deployBranch} for this deploy ${mergeNote}.` : "") +
         (rebuilds.length
-          ? ` The hosted prototype on GitHub Pages is a built bundle, being rebuilt from main now (${rebuilds.join(", ")}) — allow a few minutes before checking the live site, and confirm with its build-info.json ("commit" should be at or after ${mergeCommit ? mergeCommit.slice(0, 7) : "this merge"}).`
+          ? ` The hosted prototype on GitHub Pages is a built bundle, being rebuilt from main now (${rebuilds.join(", ")}) — allow a few minutes before checking the live site, and confirm with its build-info.json: "commit" is the source commit the bundle was built from, so it should be this train's own last commit (${trainItems.map((i) => (i.deployCommit ? i.deployCommit.slice(0, 7) : null)).filter(Boolean).join(", ") || "one of this train's commits"}) or later — not the merge commit itself, which comes after.`
           : "")
     );
     await patchItem(item.id, {
