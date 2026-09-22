@@ -70,7 +70,7 @@ describe('Advertiser settings (spec §4, §6)', () => {
     expectMatchesContract('GET', '/admin/v1/available-inventory', 200, res.json())
     expect(res.json().items).toEqual([{
       displayTypeId: 'menu_board', displayTypeName: 'Menu Board — Long Format', touchPoint: 'Digital Signage', playlistName: 'Menu Board Playlist', slot: 2, position: 'Supplier slot',
-      assignedTo: { partnerIds: ['p_google'], partnerNames: ['Google DSP'], advertisers: [], whitelistOnly: false }, qrControl: true, supportedTargeting: ['localised'],
+      assignedTo: { partnerIds: ['p_google'], partnerNames: ['Google DSP'], advertisers: [], whitelistOnly: false }, qrControl: true, visionAi: true, supportedTargeting: ['localised'],
       reservePrice: null, reservePriceOverride: null, displayTypeReservePrice: null,
     }])
     /* The picker behind Assigned to: every DSP and the advertisers it brings. */

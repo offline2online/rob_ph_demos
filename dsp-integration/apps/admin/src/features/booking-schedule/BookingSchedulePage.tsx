@@ -101,13 +101,44 @@ function groupOf(view: View, start: string) {
   return { key: monday.toISOString(), label: `Week of ${fmt(monday, { day: 'numeric', month: 'short' })}` }
 }
 
-const PositionCell = ({ data }: ICellRendererParams<Row>) =>
-  data ? (
+/* How many of this position's play windows across the whole range on
+   screen are booked, of how many total — and, of those, how many carry
+   each upsell layer (ticket "Also for the play windows … show a
+   representation of how many are booked versus personalised …", 22 Sep).
+   Independent of Daily/Weekly/Monthly, since it reads `position.windows`
+   directly rather than the grouped columns — so the same "5 of 14 booked"
+   read is always there next to the row's windows, whichever view is on
+   screen. The default layer is omitted, same as `GroupedCell` below: it's
+   on every booking, so it adds nothing "N of M booked" doesn't already say. */
+function windowSummaryOf(position: Position) {
+  const booked = position.windows.filter((w) => w.booking)
+  const upsells = (['localised', 'personalised'] as const)
+    .map((k) => ({ k, n: booked.filter((w) => w.booking!.layers[k]).length }))
+    .filter((u) => u.n > 0)
+  return { booked: booked.length, total: position.windows.length, upsells }
+}
+
+function PositionCell({ data }: ICellRendererParams<Row>) {
+  if (!data) return null
+  const { booked, total, upsells } = windowSummaryOf(data.position)
+  return (
     <div className="min-w-0 py-1.5">
-      <div className="truncate">{data.position.displayTypeName}</div>
+      <div className="truncate">
+        {data.position.displayTypeName} <span style={{ color: T.micro }}>({data.position.displayCount})</span>
+      </div>
       <div className="truncate" style={{ fontSize: 11, color: T.micro }}>Slot {data.position.slot} · {data.position.slotLabel}</div>
+      <div className="flex flex-wrap items-center gap-x-1.5" style={{ fontSize: 10.5, color: T.muted }}>
+        <span>{booked} of {total} windows booked</span>
+        {upsells.map(({ k, n }) => (
+          <span key={k} className="inline-flex items-center gap-0.5">
+            <LayerTag layerKey={k} />
+            <span style={{ color: T.micro }}>{n}</span>
+          </span>
+        ))}
+      </div>
     </div>
-  ) : null
+  )
+}
 
 /* Who the row's bookings belong to, over the range on screen. */
 const advertisersIn = (p: Position) => [...new Set(p.windows.flatMap((w) => (w.booking ? [w.booking.advertiserName] : [])))]
@@ -128,45 +159,57 @@ const LayerTag = ({ layerKey }: { layerKey: LayerKey }) => (
    booking actually carries (`booking.layers[layerKey]`), so the tile's
    height is exactly how many of these are provided (ticket "Booking
    schedule: single-advertiser stacking tile"). */
+/* No Tooltip of its own any more (ticket "devise a different approach to
+   doing hover overs where all the details are potentially covered in a
+   single hover over for that specific slot or tile", 22 Sep): a layer row
+   used to carry its own tooltip, nested inside the tile's, with a third,
+   even more nested one on each lit trigger icon — three hover targets
+   stacked on top of each other in a few square pixels, each one's tooltip
+   fighting the others' for the pointer as it moved across the tile. One
+   Tooltip on the whole tile (`BookingTile`, below) now covers everything
+   this row shows, via `layerLine`; this component is purely visual. */
 function LayerRow({ layerKey, booking, displayCount }: { layerKey: LayerKey; booking: Booking; displayCount?: number }) {
   if (layerKey === 'personalised') {
     const lit = TRIGGER_ORDER.filter((k) => booking.personalisedTriggers?.[k])
     return (
-      <Tooltip title={LAYER_TIP.personalised}>
-        <div className="flex items-center gap-1 w-full min-w-0">
-          <LayerTag layerKey="personalised" />
-          {lit.length === 0
-            ? <span style={{ fontSize: 10, color: T.micro }}>Active</span>
-            : lit.map((k) => (
-              <Tooltip key={k} title={`${TRIGGER_META[k].label} — ${TRIGGER_META[k].tip}`}>
-                <span className="flex"><Icon name={TRIGGER_META[k].icon} size={13} style={{ color: BOOKED.colour }} /></span>
-              </Tooltip>
-            ))}
-        </div>
-      </Tooltip>
+      <div className="flex items-center gap-1 w-full min-w-0">
+        <LayerTag layerKey="personalised" />
+        {lit.length === 0
+          ? <span style={{ fontSize: 10, color: T.micro }}>Active</span>
+          : lit.map((k) => <span key={k} className="flex"><Icon name={TRIGGER_META[k].icon} size={13} style={{ color: BOOKED.colour }} /></span>)}
+      </div>
     )
   }
   if (layerKey === 'localised') {
     const reach = booking.reach
-    const tip = reach && displayCount
-      ? `${LAYER_TIP.localised} ${reach.matchedDisplays} of ${displayCount} displays matched (as of ${new Date(reach.asOf).toLocaleString('en-GB', { timeZone: 'UTC' })}).`
-      : LAYER_TIP.localised
     return (
-      <Tooltip title={tip}>
-        <div className="flex items-center gap-1 w-full min-w-0">
-          <LayerTag layerKey="localised" />
-          {reach && displayCount && <span className="truncate" style={{ fontSize: 10, color: T.micro }}>{reach.matchedDisplays} of {displayCount}</span>}
-        </div>
-      </Tooltip>
+      <div className="flex items-center gap-1 w-full min-w-0">
+        <LayerTag layerKey="localised" />
+        {reach && displayCount && <span className="truncate" style={{ fontSize: 10, color: T.micro }}>{reach.matchedDisplays} of {displayCount}</span>}
+      </div>
     )
   }
   return (
-    <Tooltip title={LAYER_TIP.default}>
-      <div className="flex items-center gap-1 w-full min-w-0">
-        <LayerTag layerKey="default" />
-      </div>
-    </Tooltip>
+    <div className="flex items-center gap-1 w-full min-w-0">
+      <LayerTag layerKey="default" />
+    </div>
   )
+}
+
+/* One layer's plain-text line for the tile's single combined tooltip
+   (see `LayerRow` above) — everything `LAYER_TIP`/`TRIGGER_META` used to
+   explain over separate, nested hovers, now folded into the one tip
+   `BookingTile` shows. */
+function layerLine(k: LayerKey, booking: Booking, displayCount?: number): string {
+  if (k === 'personalised') {
+    const lit = TRIGGER_ORDER.filter((t) => booking.personalisedTriggers?.[t])
+    return `PERS: one-to-one for the identified visitor, no predictable reach${lit.length ? ` — via ${lit.map((t) => TRIGGER_META[t].label).join(', ')}` : ''}`
+  }
+  if (k === 'localised') {
+    const reach = booking.reach
+    return `LOC: store-level targeting${reach && displayCount ? `, ${reach.matchedDisplays} of ${displayCount} displays matched (as of ${new Date(reach.asOf).toLocaleString('en-GB', { timeZone: 'UTC' })})` : ''}`
+  }
+  return 'DEFAULT: the mandatory, untargeted layer, present on every booking'
 }
 
 /* A single day's booked window: one tile, the advertiser name as the unit
@@ -176,10 +219,8 @@ function LayerRow({ layerKey, booking, displayCount }: { layerKey: LayerKey; boo
    stacking tile"). */
 function BookingTile({ booking, displayCount, money }: { booking: Booking; displayCount?: number; money: (n: number) => string }) {
   const present = LAYERS_TOP_DOWN.filter((k) => booking.layers[k])
-  const reachTip = booking.reach && displayCount
-    ? ` · ${booking.reach.matchedDisplays} of ${displayCount} displays matched`
-    : ''
-  const tip = `${booking.advertiserName} via ${booking.partnerName} · ${booking.type === 'reserve' ? 'Reserved' : 'Won at auction'} at ${booking.cpm} CPM · ${booking.assumedViews.toLocaleString('en-GB')} assumed views · booked ${money(booking.bookedRevenue)}${booking.billedRevenue === null ? '' : ` · billed ${money(booking.billedRevenue)}`}${reachTip}`
+  const layersTip = present.map((k) => layerLine(k, booking, displayCount)).join(' · ')
+  const tip = `${booking.advertiserName} via ${booking.partnerName} · ${booking.type === 'reserve' ? 'Reserved' : 'Won at auction'} at ${booking.cpm} CPM · ${booking.assumedViews.toLocaleString('en-GB')} assumed views · booked ${money(booking.bookedRevenue)}${booking.billedRevenue === null ? '' : ` · billed ${money(booking.billedRevenue)}`} · ${layersTip}`
   return (
     <Tooltip title={tip}>
       <div className="flex w-full min-w-0 flex-col gap-0.5 rounded px-1 py-0.5" style={{ background: BOOKED.bg, borderLeft: `3px solid ${BOOKED.colour}` }}>
@@ -248,6 +289,16 @@ function WindowCell({ value, context, data }: ICellRendererParams<Row, Group, Ct
 const NumberCell = ({ value, data, context, colDef }: ICellRendererParams<RevenueRow, number, Ctx>) => (
   <span style={{ fontWeight: data?.total ? 600 : 400 }}>{colDef?.field === 'bookedWindows' ? value : context.current.money(value ?? 0)}</span>
 )
+
+/* Booked ÷ sellable windows for this display type, over the period shown
+   (ticket "booking revenue table: % of slots sold", 22 Sep) — nothing to
+   divide by (a display type with no sellable capacity in range at all)
+   shows a dash rather than a misleading 0%. */
+const PercentSoldCell = ({ data }: ICellRendererParams<RevenueRow>) => {
+  if (!data || !data.sellableWindows) return <span style={{ color: T.muted }}>—</span>
+  const pct = Math.round((data.bookedWindows / data.sellableWindows) * 100)
+  return <span style={{ fontWeight: data.total ? 600 : 400 }}>{pct}%</span>
+}
 
 export function BookingSchedulePage() {
   const [params, setParams] = useSearchParams()
@@ -319,10 +370,14 @@ export function BookingSchedulePage() {
       ...externalSetColumn<Row>('DSP', dsps.map((d) => d.name), dsps.find((d) => d.partnerId === partnerId)?.name,
         (name) => setFilter('partnerId', dsps.find((d) => d.name === name)?.partnerId, advertiserId)),
     },
-    { headerName: 'Position', width: 230, minWidth: 190, pinned: 'left', cellRenderer: PositionCell, autoHeight: true },
     {
-      headerName: 'Displays', width: 100, minWidth: 90, pinned: 'left', cellStyle: { color: T.muted }, suppressSizeToFit: true,
-      valueGetter: (p) => p.data?.position.displayCount ?? 0,
+      /* Wider than before (ticket "remove the Displays column … show that
+         number of displays in brackets after the display name", 22 Sep):
+         the display count moved into this cell, next to the display type
+         name, rather than its own pinned column — and the cell now also
+         carries the row's own "N of M windows booked" read (see
+         `windowSummaryOf`), so it needs the room. */
+      headerName: 'Position', width: 260, minWidth: 220, pinned: 'left', cellRenderer: PositionCell, autoHeight: true,
     },
     ...groups.map((g, i): ColDef<Row> => ({
       /* Wider than before three stacked layer pills replaced one single-layer
@@ -332,11 +387,43 @@ export function BookingSchedulePage() {
       valueGetter: (p) => p.data?.groups[i], cellRenderer: WindowCell, cellStyle: { alignItems: 'center' },
     })),
   ], [groups, view, dsps, advertiserOptions, partnerId, advertiserId])
+  /* The header's own "N play windows" line gets the same booked/available
+     read every row already carries (ticket "Also for the play windows …
+     anytime you use the word Windows please show a representation of how
+     many are booked versus … localised … personalised …", 22 Sep) — summed
+     across every position on screen, reusing `windowSummaryOf` so the two
+     never disagree. */
+  const windowsSummary = useMemo(() => {
+    if (!data) return null
+    let booked = 0
+    let total = 0
+    let localised = 0
+    let personalised = 0
+    for (const p of data.positions) {
+      const s = windowSummaryOf(p)
+      booked += s.booked
+      total += s.total
+      localised += s.upsells.find((u) => u.k === 'localised')?.n ?? 0
+      personalised += s.upsells.find((u) => u.k === 'personalised')?.n ?? 0
+    }
+    return { booked, total, localised, personalised }
+  }, [data])
   const revenueColumns = useMemo<ColDef<RevenueRow>[]>(() => [
     { headerName: 'Display type', field: 'displayTypeName', width: 260, cellStyle: (p) => (p.data?.total ? { fontWeight: 600 } : null) },
     { headerName: 'Booked windows', field: 'bookedWindows', width: 150, cellRenderer: NumberCell },
-    { headerName: 'Booked revenue', field: 'bookedRevenue', width: 170, cellRenderer: NumberCell },
-    { headerName: 'Billed revenue', field: 'billedRevenue', width: 170, cellRenderer: NumberCell },
+    {
+      /* Ticket "% of slots sold", 22 Sep — booked ÷ sellable windows for
+         this display type, over the period shown. */
+      headerName: '% sold', field: 'sellableWindows', width: 110, cellRenderer: PercentSoldCell,
+    },
+    {
+      /* Renamed from "Booked revenue" (ticket, 22 Sep) — "estimated" is more
+         honest about what this is before a window has actually played:
+         booked CPM × assumed views, not confirmed spend. "Billed revenue"
+         is dropped from this table on the same ticket — invoicing what
+         actually played is the DSP's own concern, not this schedule's. */
+      headerName: 'Estimated revenue', field: 'bookedRevenue', width: 170, cellRenderer: NumberCell,
+    },
   ], [])
   const ctx: Ctx['current'] = { money, view }
 
@@ -347,7 +434,11 @@ export function BookingSchedulePage() {
         <div className="min-w-[220px] flex-1">
           <h2 className="m-0" style={{ fontSize: 16, fontWeight: 600 }}><WithTip tip={BOOKING_SCHEDULE_TIP}>Booking schedule</WithTip></h2>
           <div className="mt-1" style={{ fontSize: 12, color: T.muted }}>
-            {data ? `${data.windows.length} play windows · ${from} to ${to} · times in UTC` : 'Loading…'}
+            {data && windowsSummary
+              ? `${data.windows.length} play windows${windowsSummary.total
+                ? ` · ${windowsSummary.booked} of ${windowsSummary.total} booked (${windowsSummary.localised} localised, ${windowsSummary.personalised} personalised)`
+                : ''} · ${from} to ${to} · times in UTC`
+              : 'Loading…'}
           </div>
         </div>
         <Segmented<View> value={view} onChange={(v) => { setView(v); setRange(null) }} options={['Daily', 'Weekly', 'Monthly']} />
@@ -398,7 +489,7 @@ export function BookingSchedulePage() {
             />
           )}
 
-          <SectionLabel><WithTip tip="Per display type, over the play windows shown. Booked revenue = booked CPM × assumed views ÷ 1000; billed revenue comes from billing once a window has played.">Booking revenue</WithTip></SectionLabel>
+          <SectionLabel><WithTip tip="Per display type, over the play windows shown. % sold = booked ÷ sellable windows. Estimated revenue = booked CPM × assumed views ÷ 1000 — what billing eventually charges, once a window has actually played, may differ.">Booking revenue</WithTip></SectionLabel>
           <Grid<RevenueRow>
             label="Booking revenue"
             rows={data.revenue}

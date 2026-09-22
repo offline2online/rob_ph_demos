@@ -21,11 +21,11 @@ const ADVERTISER_PAGE = {
     items: [
       {
         displayTypeId: 'menu_board', displayTypeName: 'Menu Board — Long Format', touchPoint: 'Digital Signage', playlistName: 'Menu Board Playlist', slot: 2, position: 'Supplier slot',
-        assignedTo: { partnerIds: ['p_google'], partnerNames: ['Google DSP'], advertisers: [], whitelistOnly: false }, qrControl: true, supportedTargeting: ['localised', 'personalised'],
+        assignedTo: { partnerIds: ['p_google'], partnerNames: ['Google DSP'], advertisers: [], whitelistOnly: false }, qrControl: true, visionAi: true, supportedTargeting: ['localised', 'personalised'],
       },
       {
         displayTypeId: 'portrait', displayTypeName: 'Portrait', touchPoint: 'Digital Signage', playlistName: 'Portrait Playlist', slot: 1, position: 'Slot 1',
-        assignedTo: { partnerIds: [], partnerNames: [], advertisers: [], whitelistOnly: false }, qrControl: false, supportedTargeting: ['localised'],
+        assignedTo: { partnerIds: [], partnerNames: [], advertisers: [], whitelistOnly: false }, qrControl: false, visionAi: false, supportedTargeting: ['localised'],
       },
     ],
     dsps: [
@@ -244,9 +244,9 @@ describe('Booking schedule', () => {
         { start: '2026-09-22T00:00:00.000Z', status: 'booked', booking: { reservationId: 'r1', campaignId: 'c1', advertiserId: 'swisse', partnerId: 'p_google', pricingType: 'personalised', type: 'reserve', advertiserName: 'Swisse', partnerName: 'Google DSP', cpm: 175, assumedViews: 1236, bookedRevenue: 216.3, billedRevenue: null, reach: null, layers: { default: true, localised: false, personalised: true }, personalisedTriggers: { computerVision: false, aggregateStore: false, individual: true } } },
       ],
     }],
-    revenue: [{ displayTypeId: 'menu_board', displayTypeName: 'Menu Board — Long Format', bookedWindows: 1, bookedRevenue: 216.3, billedRevenue: 0 }],
+    revenue: [{ displayTypeId: 'menu_board', displayTypeName: 'Menu Board — Long Format', bookedWindows: 1, sellableWindows: 2, bookedRevenue: 216.3, billedRevenue: 0 }],
     byPricingType: [{ pricingType: 'personalised', bookedWindows: 1, bookedRevenue: 216.3 }],
-    totals: { bookedWindows: 1, bookedRevenue: 216.3, billedRevenue: 0 },
+    totals: { bookedWindows: 1, sellableWindows: 2, bookedRevenue: 216.3, billedRevenue: 0 },
   }
 
   it('is linked from Available Inventory, which now sits on Advertisers / Inventory', async () => {
@@ -322,13 +322,22 @@ describe('Booking schedule', () => {
     renderAt('/booking-schedule')
     const grid = await screen.findByLabelText('Booking schedule')
     /* All three layers on the one tile: DEFAULT, LOC with the reach count
-       against the Displays column's total, and PERS with its lit trigger
-       icon (ticket "Booking schedule: personalised trigger icons"). */
-    expect(within(grid).getByText('4')).toBeInTheDocument() // the Displays column
+       against the display count, and PERS with its lit trigger icon
+       (ticket "Booking schedule: personalised trigger icons"). The display
+       count itself now sits in brackets on the Position cell rather than
+       its own Displays column (ticket "remove the displays column … show
+       that number of displays in brackets after the display name", 22
+       Sep). */
+    expect(within(grid).getByText('(4)')).toBeInTheDocument() // the display count, on the Position cell
     expect(await within(grid).findByText('3 of 4')).toBeInTheDocument()
     expect(within(grid).getByText('DEFAULT')).toBeInTheDocument()
-    expect(within(grid).getByText('LOC')).toBeInTheDocument()
-    expect(within(grid).getByText('PERS')).toBeInTheDocument()
+    /* LOC and PERS each appear twice: once on the tile's own layer row, and
+       once more in the Position cell's row-level "N of M windows booked"
+       summary (ticket "Also for the play windows … show a representation
+       of how many are booked versus … localised … personalised …", 22
+       Sep), which is always on screen now, not only in Weekly/Monthly. */
+    expect(within(grid).getAllByText('LOC')).toHaveLength(2)
+    expect(within(grid).getAllByText('PERS')).toHaveLength(2)
   })
 })
 
@@ -352,8 +361,12 @@ describe('Advertisers / Inventory', () => {
     expect(within(inventory).getByLabelText('Display type search')).toBeInTheDocument()
     expect(within(inventory).getByLabelText('Targeting supported filter')).toBeInTheDocument()
     /* QR Control is flagged on the display type that has it, and only that
-       display type can support interactive targeting (Rob, 20 Sep). */
+       display type can support interactive targeting (Rob, 20 Sep). Vision/AI
+       is flagged the same way, alongside it (ticket "show a computer vision
+       icon when computer vision is enabled on a specific display type", 22
+       Sep). */
     expect(within(inventory).getAllByLabelText('QR Control enabled')).toHaveLength(1)
+    expect(within(inventory).getAllByLabelText('Vision/AI enabled')).toHaveLength(1)
     /* Both editable columns are pills: what the slot supports, and who may
        buy it. Assigned to shows "All DSPs" only when nothing is chosen. */
     const cellOf = (label: string) => within(inventory).getAllByLabelText(`Menu Board — Long Format slot 2: ${label}`)[0].closest('.ag-cell') as HTMLElement

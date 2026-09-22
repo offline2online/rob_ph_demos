@@ -991,6 +991,19 @@ export interface components {
              *     interactive.
              */
             qrControl: boolean;
+            /**
+             * @description Whether the display type has the Vision/AI feature enabled —
+             *     on-device computer vision for passerby insight and person match
+             *     (Display Types → Enabled Features). Shown here as a plain
+             *     capability flag, the same way qrControl is (ticket "show a
+             *     computer vision icon when computer vision is enabled on a
+             *     specific display type", 22 Sep) — this display type's hardware
+             *     capability, not any one booking's personalised targeting rules
+             *     (see BookingSchedule.personalisedTriggers.computerVision, a
+             *     different thing: whether a specific campaign's rules happen to
+             *     use a computer-vision variable).
+             */
+            visionAi: boolean;
             /** @description What a campaign may use on this slot; localised only by default. */
             supportedTargeting: ("localised" | "personalised" | "interactive")[];
             /**
@@ -1134,6 +1147,8 @@ export interface components {
         };
         BookingRevenueTotals: {
             bookedWindows: number;
+            /** @description Sum of every display type's sellableWindows — see BookingRevenue. */
+            sellableWindows: number;
             bookedRevenue: number;
             billedRevenue: number;
         };
@@ -1141,6 +1156,17 @@ export interface components {
             displayTypeId: string;
             displayTypeName: string;
             bookedWindows: number;
+            /**
+             * @description Windows this display type could have sold in the period shown —
+             *     booked or still available, excluding unavailable (no displays,
+             *     or before the first sellable window) — across every advertiser
+             *     position of this display type, regardless of the advertiser/DSP
+             *     filter (ticket "booking revenue table: % of slots sold", 22
+             *     Sep). bookedWindows ÷ sellableWindows is the % sold; 0 means
+             *     nothing on this display type could be sold in the period, so no
+             *     percentage is meaningful.
+             */
+            sellableWindows: number;
             bookedRevenue: number;
             billedRevenue: number;
         };

@@ -10,6 +10,12 @@ import { validationFailed } from '../../http/errors'
 
 /* Interactive targeting needs the visitor to have something to scan. */
 const hasQrControl = (dt: DisplayType) => !!(dt.qrControl as { enabled?: boolean } | undefined)?.enabled
+/* This display type's own Vision/AI capability (ticket "show a computer
+   vision icon when computer vision is enabled on a specific display type",
+   22 Sep) — mirrors hasQrControl above, read the same way the admin's own
+   `featureOn(d, 'vision_ai')` does (model.ts), just without the UI-only
+   `DisplayType` helpers this route doesn't import. */
+const hasVisionAi = (dt: DisplayType) => !!(dt.enabledFeatures as { visionAi?: { enabled?: boolean } } | undefined)?.visionAi?.enabled
 
 export const advertiserSettingsRoutes = (ctx: Context, guards: Guards): FastifyPluginAsync => async (app) => {
   const view = (): AdvertiserSettings => ({
@@ -59,6 +65,7 @@ export const advertiserSettingsRoutes = (ctx: Context, guards: Guards): FastifyP
           displayTypeId: t.id, displayTypeName: t.name, touchPoint: t.touchPoint, playlistName, slot: i + 1, position: s.label,
           assignedTo: { ...a, partnerNames: a.partnerIds.map((id) => partners.find((p) => p.id === id)?.name ?? id) },
           qrControl: hasQrControl(t),
+          visionAi: hasVisionAi(t),
           supportedTargeting: supportedTargetingOf(s),
           reservePrice: reservePriceOf(t, s),
           reservePriceOverride: s.reservePrice ?? null,
