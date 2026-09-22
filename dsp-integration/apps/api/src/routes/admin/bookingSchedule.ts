@@ -110,9 +110,14 @@ export function bookingSchedule(ctx: Context, starts: Date[], f: ScheduleFilter 
     const displayCount = ctx.displays.listByDisplayType(p.displayType.id).length
     const hasDisplays = displayCount > 0
     const views = ctx.audience.forSlot(p.displayType.id, p.slot).assumedViewsPerWindow
-    const rev = revenue.get(p.displayType.id) ?? { displayTypeId: p.displayType.id, displayTypeName: p.displayType.name, bookedWindows: 0, bookedRevenue: 0, billedRevenue: 0 }
+    const rev = revenue.get(p.displayType.id) ?? { displayTypeId: p.displayType.id, displayTypeName: p.displayType.name, bookedWindows: 0, sellableWindows: 0, bookedRevenue: 0, billedRevenue: 0 }
     revenue.set(p.displayType.id, rev)
     const windows = starts.map((start) => {
+      /* Sellable capacity ignores the advertiser/DSP filter (Rob, 22 Sep,
+         ticket "% of slots sold"): it's this display type's whole market,
+         not just what one advertiser could have bought, so % sold reads
+         the same whichever filter is applied. */
+      if (hasDisplays && start.getTime() >= firstSellable) rev.sellableWindows++
       const r = ctx.reservations.forWindow(p.positionId, start.toISOString()).find((x) => !x.testMode && TAKEN.includes(x.status) && x.clearingCpm !== null
         && (!f.campaignId || x.campaignId === f.campaignId) && (!f.advertiserId || x.advertiserId === f.advertiserId) && (!f.partnerId || x.partnerId === f.partnerId))
       if (r) {
@@ -169,6 +174,7 @@ export function bookingSchedule(ctx: Context, starts: Date[], f: ScheduleFilter 
     byPricingType: [...byType.values()],
     totals: {
       bookedWindows: rows.reduce((n, r) => n + r.bookedWindows, 0),
+      sellableWindows: rows.reduce((n, r) => n + r.sellableWindows, 0),
       bookedRevenue: round2(rows.reduce((n, r) => n + r.bookedRevenue, 0)),
       billedRevenue: round2(rows.reduce((n, r) => n + r.billedRevenue, 0)),
     },

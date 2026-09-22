@@ -114,12 +114,22 @@ type InvCtx = { current: {
 } }
 type IP = ICellRendererParams<AvailableInventoryRow, unknown, InvCtx>
 /* QR Control is flagged here because it is what makes interactive targeting
-   possible on this display type (Rob, 20 Sep). */
+   possible on this display type (Rob, 20 Sep). Vision/AI is flagged
+   alongside it, before the QR Control icon (ticket "show a computer vision
+   icon when computer vision is enabled on a specific display type", 22
+   Sep) — this display type's own hardware capability (Display Types →
+   Enabled Features → Vision/AI), not any one booking's personalised
+   targeting rules. */
 const TypeCell = ({ data }: ICellRendererParams<AvailableInventoryRow>) =>
   data ? (
     <span className="inline-flex min-w-0 items-center gap-[5px]">
       <Icon name={touchPointIcon(data.touchPoint ?? '')} size={14} style={{ color: T.muted }} />
       <span className="truncate">{data.displayTypeName}</span>
+      {data.visionAi && (
+        <Tooltip title="Vision/AI is enabled on this display type: on-device computer vision for passerby insight and person match.">
+          <span className="inline-flex" aria-label="Vision/AI enabled"><Icon name="visibility" size={15} style={{ color: T.primary }} /></span>
+        </Tooltip>
+      )}
       {data.qrControl && (
         <Tooltip title="QR Control is enabled on this display type, so its slots can support interactive campaigns.">
           <span className="inline-flex" aria-label="QR Control enabled"><Icon name="qr_code_2" size={15} style={{ color: T.primary }} /></span>

@@ -29,7 +29,7 @@ describe('GET /admin/v1/booking-schedule', () => {
     expect(body.positions[0]).toMatchObject({ displayTypeName: 'Menu Board — Long Format', slot: 2, slotLabel: 'Supplier slot', partnerNames: ['Google DSP'], assignment: 'rtb' })
     /* The current window can no longer be sold; the next one can. */
     expect(body.positions[0].windows.slice(0, 2).map((w: { status: string }) => w.status)).toEqual(['unavailable', 'available'])
-    expect(body.totals).toEqual({ bookedWindows: 0, bookedRevenue: 0, billedRevenue: 0 })
+    expect(body.totals).toEqual({ bookedWindows: 0, sellableWindows: 13, bookedRevenue: 0, billedRevenue: 0 })
   })
 
   it('shows each booking at the price it was booked at, with booked and billed revenue per display type', async () => {
@@ -50,8 +50,8 @@ describe('GET /admin/v1/booking-schedule', () => {
     /* A Test-mode win is not a booking. */
     expect(at('2026-09-23')).toMatchObject({ status: 'available', booking: null })
     expect(at('2026-09-16').status).toBe('unavailable')
-    expect(res.json().revenue).toEqual([{ displayTypeId: 'menu_board', displayTypeName: 'Menu Board — Long Format', bookedWindows: 2, bookedRevenue: 364.62, billedRevenue: 74.16 }])
-    expect(res.json().totals).toEqual({ bookedWindows: 2, bookedRevenue: 364.62, billedRevenue: 74.16 })
+    expect(res.json().revenue).toEqual([{ displayTypeId: 'menu_board', displayTypeName: 'Menu Board — Long Format', bookedWindows: 2, sellableWindows: 3, bookedRevenue: 364.62, billedRevenue: 74.16 }])
+    expect(res.json().totals).toEqual({ bookedWindows: 2, sellableWindows: 3, bookedRevenue: 364.62, billedRevenue: 74.16 })
     /* Both bookings are localised campaigns (Rob, 20 Sep: show what type is selling). */
     expect(res.json().byPricingType).toEqual([{ pricingType: 'localised', bookedWindows: 2, bookedRevenue: 364.62 }])
   })
@@ -80,7 +80,7 @@ describe('GET /admin/v1/booking-schedule', () => {
     expectMatchesContract('GET', '/admin/v1/booking-schedule', 200, res.json())
     const booked = res.json().positions[0].windows.filter((w: { status: string }) => w.status === 'booked')
     expect(booked.map((w: { start: string }) => w.start)).toEqual(['2026-11-02T00:00:00.000Z'])
-    expect(res.json().totals).toEqual({ bookedWindows: 1, bookedRevenue: 216.3, billedRevenue: 0 })
+    expect(res.json().totals).toEqual({ bookedWindows: 1, sellableWindows: 43, bookedRevenue: 216.3, billedRevenue: 0 })
     /* The seeded Nestlé booking belongs to another campaign, so it isn't counted. */
     expect(res.json().windows[0].start).toBe('2026-09-20T00:00:00.000Z')
   })
@@ -92,7 +92,7 @@ describe('GET /admin/v1/booking-schedule', () => {
     expect(swisse.json().totals.bookedWindows).toBe(1)
     expect(swisse.json().positions[0].windows.find((w: { start: string }) => w.start.startsWith('2026-09-15')).status).toBe('unavailable')
     const amazon = await get('?partnerId=p_amazon&from=2026-09-15&to=2026-09-23')
-    expect(amazon.json().totals).toEqual({ bookedWindows: 0, bookedRevenue: 0, billedRevenue: 0 })
+    expect(amazon.json().totals).toEqual({ bookedWindows: 0, sellableWindows: 3, bookedRevenue: 0, billedRevenue: 0 })
   })
 
   /* The filter is there to find a booking, so it only offers advertisers

@@ -1453,6 +1453,17 @@ playback analytics.**
 - **Targeting supported needs QR Control for interactive**: flagged on the
   display type, greyed out with the reason where it is off, refused by the
   API. *(Advertisers / Inventory → Available Inventory)*
+- **Display type column capability icons**: the Display type column carries
+  an icon per capability the display type has enabled, alongside its name —
+  Vision/AI (on-device computer vision, `visibility` icon), then QR Control
+  (`qr_code_2` icon) — each a plain boolean read off the display type's own
+  settings (ticket "show a computer vision icon when computer vision is
+  enabled on a specific display type", 22 Sep). This is the display type's
+  own hardware capability, distinct from a booking's personalised targeting
+  rules happening to use a computer-vision variable (see "Personalised
+  trigger icons" below, under Booking schedule) — the same underlying
+  Vision/AI feature (Display Types → Enabled Features), read from a
+  different angle. *(Advertisers / Inventory → Available Inventory)*
 - **Assigned to per slot**: who may buy the position — any connected DSP by
   default, or named DSPs, named advertisers (reserved) or the whitelist —
   as a multi-select of pills, set by an admin and enforced on every bid.
@@ -1475,12 +1486,45 @@ playback analytics.**
   20 Sep) — the filter exists to find a booking, not to prove one is
   missing. An advertiser with nothing booked from the current window on is
   not offered a **Bookings** link on the advertisers table either.
-  **Columns, left to right: Advertiser, DSP, Position, Displays** (Rob,
-  21 Sep — previously Position, DSP, Advertiser). The DSP column reads the
-  actual booking's DSP (`booking.partnerName`), not the position's
-  `partnerNames` (who is merely *eligible* to buy the slot) — the two can
-  differ whenever a slot takes bids from more than one DSP, and only the
-  former is guaranteed to match the advertiser shown beside it.
+  **Columns, left to right: Advertiser, DSP, Position** (ticket "remove the
+  displays column and rather show that number of displays in brackets
+  after the display name", 22 Sep, superseding the earlier same-day
+  "Advertiser, DSP, Position, Displays" layout): the display count moved
+  into the Position cell, in brackets after the display type name (e.g.
+  "Landscape (18)"), rather than its own pinned column. That cell also now
+  always carries the row's own play-window read — "N of M windows booked",
+  plus how many of those carried each upsell layer — independent of the
+  Daily/Weekly/Monthly view on screen (see "Play-window booked/available
+  summary" below). The DSP column reads the actual booking's DSP
+  (`booking.partnerName`), not the position's `partnerNames` (who is merely
+  *eligible* to buy the slot) — the two can differ whenever a slot takes
+  bids from more than one DSP, and only the former is guaranteed to match
+  the advertiser shown beside it. *(Advertisers / Inventory → Booking
+  schedule)*
+- **Play-window booked/available summary, wherever the page counts
+  "windows"** (ticket "anytime you use the word Windows please show a
+  representation of how many are booked versus … localised … personalised
+  …", 22 Sep): the page's own "N play windows" header line now also reads
+  "N of M booked (X localised, Y personalised)" — summed across every
+  position on screen, respecting whatever advertiser/DSP filter is active
+  — right next to the window count itself, not only inside the grid. The
+  Position cell on every row (above) carries the same read for that one
+  row, in every view (Daily included, where the earlier per-row rollup only
+  showed in Weekly/Monthly). *(Advertisers / Inventory → Booking schedule)*
+- **Booking revenue table: % sold, Estimated revenue, no Billed revenue**
+  (ticket "% of slots sold" and ticket "instead of booked revenue can you
+  call it estimated revenue and remove the billed revenue column", both 22
+  Sep): **columns, left to right: Display type, Booked windows, % sold,
+  Estimated revenue.** % sold = this display type's booked windows ÷ its
+  *sellable* windows over the period shown (booked or still available,
+  excluding windows with no displays yet or before the earliest one still
+  open to sell) — a dash when nothing was sellable at all, never a
+  misleading 0%. "Booked revenue" is renamed **Estimated revenue** — more
+  honest about what it is before a window has actually played: booked CPM ×
+  assumed views, not confirmed spend. **Billed revenue is dropped from this
+  table** — invoicing what actually played is the DSP's own concern, not
+  this schedule's (it still appears in a booked tile's own hover, which
+  covers one specific booking rather than a display type's whole period).
   *(Advertisers / Inventory → Booking schedule)*
 - **Single-advertiser stacking tile** (ticket "Booking schedule:
   single-advertiser stacking tile", 22 Sep, superseding the earlier
@@ -1499,18 +1543,28 @@ playback analytics.**
   monetisation readable at a glance. This retires the earlier design's
   "Sold — other layer" pill entirely: with one advertiser per slot there is
   no second layer competing for the same window's capacity to mark as
-  sold elsewhere. Displays this row's `displayCount` — displays using this
-  display type across the whole retail footprint — as a **Displays**
-  column; the localised row shows the booking's reach against it — how
-  many of those displays its targeting matched, from the server's
-  `ReachCountSource` stand-in for the interface contract's "Booking
-  schedule reach counts"; the personalised row carries no reach count,
-  since a personalised match can't be predicted ahead of time, showing
-  trigger icons instead (below) rather than a count. In the Weekly and
-  Monthly views, where a slot may have gone to a different advertiser on
+  sold elsewhere. The localised row shows the booking's reach against this
+  row's `displayCount` — displays using this display type across the whole
+  retail footprint, shown in brackets on the Position cell (above), not its
+  own column any more — how many of those displays its targeting matched,
+  from the server's `ReachCountSource` stand-in for the interface contract's
+  "Booking schedule reach counts"; the personalised row carries no reach
+  count, since a personalised match can't be predicted ahead of time,
+  showing trigger icons instead (below) rather than a count. In the Weekly
+  and Monthly views, where a slot may have gone to a different advertiser on
   different days, each column instead rolls up how many windows in the
   period were booked at all and, of those, how many carried each upsell
-  layer. *(Advertisers / Inventory → Booking schedule)*
+  layer. **One combined hover per tile, not one per layer row** (ticket
+  "devise a different approach to doing hover overs where all the details
+  are potentially covered in a single hover over for that specific slot or
+  tile", 22 Sep, superseding the earlier design where the tile, each layer
+  row, and each lit personalised trigger icon each carried their own
+  tooltip, nested three deep over a few square pixels and fighting each
+  other for the pointer): the tile's single tooltip now folds in every
+  layer's detail — reach counts, lit trigger labels — that used to need a
+  separate, nested hover to see; the layer rows and trigger icons
+  themselves are purely visual. *(Advertisers / Inventory → Booking
+  schedule)*
 - **Personalised trigger icons** (ticket "Booking schedule: personalised
   trigger icons", 22 Sep): on the personalised row of the tile, icons
   indicate the trigger mechanism the campaign's personalised targeting
