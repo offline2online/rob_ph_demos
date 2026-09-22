@@ -176,6 +176,66 @@ each rendered as its own collapsible section on the one page.
   under a synthesized "General" project automatically — nothing to migrate
   by hand.
 
+### Linking a new project to GitHub — do it when the project is created
+
+A project on the board and a folder in this repo are two halves of one
+thing, and nothing joins them automatically. `projects/{id}.repoFolder` is
+the join, read by `projectFolderOf()` in
+`backlog-tracker/scripts/run-backlog-automation.js`; when it is unset the
+automation falls back to the project's deploy-branch slug
+(`deploy/dsp-integration` → `dsp-integration/`) and, failing that, to
+nothing at all.
+
+"Nothing at all" is not harmless. A Routine session working inside a
+project's folder hands back `patchFiles` paths relative to that folder;
+with no folder to resolve them against, the automation writes them as new
+files **at the repo root**. That is exactly what happened to PR #185 on
+22 Sep 2026 — seven tickets wrote root-level copies, overwrote the root
+`README.md`, changed none of the real files, and every card still said
+"Deployed / Main Branch (Live)".
+
+So, when a project is added, all four of these get set before any ticket
+is worked:
+
+1. **The folder exists in the repo**, with its own `README.md` and
+   `REQUIREMENTS.md` (root `CLAUDE.md` → "Keep each project's README
+   current"). One project, one top-level folder.
+2. **`projects/{id}.repoFolder`** names it, repo-root-relative and with no
+   trailing slash (`dsp-integration`). Set it explicitly even when the
+   deploy-branch slug would happen to match — the fallback is a guess, and
+   a rename silently breaks it.
+3. **`projects/{id}.deployBranch`** is `deploy/<folder>`, the project's
+   single integration branch (see "the deployment train" above).
+4. **The board's doc copies** (`requirementsMd` / `readmeMd`) are filled
+   from those two files in the same session, per "Keep the board's copies
+   in step as you go".
+
+A project with no folder of its own is legitimate but is the exception,
+not the default — "Backlog Tracker & FAQs" owns both `backlog-tracker/`
+and `faq/`. Mark that explicitly (`projects/{id}.repoFolderNotApplicable:
+true`, the New Project modal's "this project has no single folder" escape,
+also settable afterward from the project's Docs page) rather than just
+leaving `repoFolder` unset, so the next person — and
+`run-backlog-automation.js`'s own refuse-rather-than-guess check below —
+can tell "deliberately no folder" from "nobody set it yet". Also say so on
+the project's README.
+
+**The New Project modal asks for the folder now** — required by default,
+with that same "no single folder" escape — and writes `repoFolder` (or
+`repoFolderNotApplicable`) plus a `deploy/<folder>` `deployBranch` in the
+same create. It's also editable afterward from the project's Docs page,
+next to Requirements and README. Retrofitting an OLDER project created
+before this shipped still needs the Docs page (now the normal way) or a
+direct Firestore write — `repoFolder` still isn't in the MCP server's
+`PROJECT_WRITABLE_FIELDS`, so an agent can't set it over MCP either way.
+
+Belt-and-braces: a ticket handed to the Routine whose `patchFiles` look
+folder-relative (none of their top-level path segments exist at the repo
+root), for a project with no resolvable folder, is refused by
+`run-backlog-automation.js` with a comment on the card instead of being
+written to the repo root — see `patchFilesLookFolderRelative()` in
+`backlog-tracker/scripts/run-backlog-automation.js`.
+
 Within each project, the columns are: **Backlog → Ready for Testing → Live on
 Feature Branch → Merged to Main (Live)** (status keys: `backlog`,
 `ready-for-testing`, `ready-to-publish`, `published-live`). A card does

@@ -6,7 +6,7 @@
    repo's shape at the time. */
 const assert = require("node:assert");
 
-const { normalisePatchPaths, projectFolderOf } = require("../scripts/run-backlog-automation.js");
+const { normalisePatchPaths, projectFolderOf, patchFilesLookFolderRelative } = require("../scripts/run-backlog-automation.js");
 
 // The tree of main on 22 Sep, as a set of existing paths (files and dirs).
 const TREE = new Set([
@@ -104,5 +104,41 @@ assert.strictEqual(projectFolderOf({ deployBranch: "deploy/backlog-tracker-faqs"
 assert.strictEqual(projectFolderOf({ deployBranch: "deploy/x", repoFolder: "../secrets" }, isDir), null);
 assert.strictEqual(projectFolderOf({}, isDir), null);
 assert.strictEqual(projectFolderOf(null, isDir), null);
+
+// patchFilesLookFolderRelative: the signal used when projectFolderOf()
+// found no folder to normalise against at all (see "Refuse rather than
+// guess" in processApplyPatch) — the PR #185 shape this is meant to catch.
+{
+  // The actual PR #185 patch: nothing in it exists at the root of TREE.
+  assert.strictEqual(patchFilesLookFolderRelative([
+    { path: "apps/admin/src/features/campaign-status/CampaignStatusPage.tsx", content: "x" },
+    { path: "packages/campaign-approval/migrations/0101.up.sql", content: "x" },
+  ], exists), true);
+
+  // Touches a real root entry (backlog-tracker/) alongside the suspicious
+  // ones — trusted as genuinely root-relative.
+  assert.strictEqual(patchFilesLookFolderRelative([
+    { path: "apps/admin/src/App.tsx", content: "x" },
+    { path: "backlog-tracker/public/js/version.js", content: "x" },
+  ], exists), false);
+
+  // A project with no single folder (this project's own tickets): every
+  // path already starts at a real root entry.
+  assert.strictEqual(patchFilesLookFolderRelative([
+    { path: "backlog-tracker/public/js/app.js", content: "x" },
+    { path: "faq/data/index.json", content: "x" },
+  ], exists), false);
+
+  // A workflow-file-only patch is always root-relative, whether or not its
+  // own top segment (.github) exists as a plain directory to `exists()`.
+  assert.strictEqual(patchFilesLookFolderRelative([
+    { path: ".github/workflows/dsp-board.yml", content: "x" },
+  ], () => false), false);
+
+  // Nothing to judge — never refuse an empty or garbage-only patch here;
+  // applyPatchFiles's own checks handle those.
+  assert.strictEqual(patchFilesLookFolderRelative([], exists), false);
+  assert.strictEqual(patchFilesLookFolderRelative([{ path: "../etc/passwd", content: "x" }], exists), false);
+}
 
 console.log("patch-paths: all assertions passed");

@@ -403,6 +403,111 @@ through Merged to Main (Live). Both fields are in
 the REST-primed first paint rather than popping in when the realtime
 listener lands.
 
+## Adding a project — link it to GitHub, or the automation refuses
+
+A project on this board and a folder in `rob_ph_demos` are two halves of
+one thing, and nothing joins them automatically. The join is
+`projects/{id}.repoFolder`, read by `projectFolderOf()` in
+`scripts/run-backlog-automation.js`. Unset, it falls back to the
+deploy-branch slug (`deploy/dsp-integration` → `dsp-integration/`), and
+failing that to nothing.
+
+"Nothing" used to not be harmless. A Routine session working inside a
+project's folder hands back `patchFiles` paths relative to that folder;
+with no folder to resolve them against, the automation used to write them
+as new files at the repo root. PR #185 (22 Sep 2026) did exactly that —
+seven tickets wrote root-level copies, overwrote the root `README.md`,
+changed none of the real files, and every card still read "Deployed / Main
+Branch (Live)". It no longer can: see "The automation refuses rather than
+guesses" below.
+
+Creating a project therefore means four things, not one:
+
+1. The folder exists in the repo, with its own `README.md` and
+   `REQUIREMENTS.md`. One project, one top-level folder.
+2. `projects/{id}.repoFolder` names it — repo-root-relative, no trailing
+   slash (`dsp-integration`). Set it explicitly even when the slug would
+   match; the fallback is a guess and a rename breaks it silently.
+3. `projects/{id}.deployBranch` is `deploy/<folder>`.
+4. `requirementsMd` / `readmeMd` are filled from those two files in the
+   same session.
+
+**The New Project modal now asks for the repo folder alongside the name**
+(`np-repo-folder-input` in `public/index.html`, wired in `public/js/app.js`)
+— required by default, with an explicit "this project has no single
+folder" checkbox for the case that genuinely applies. On submit it writes
+both `repoFolder` and a `deploy/<folder>` `deployBranch` in the same
+`addProject()` create (steps 2 and 3 above, done together, at creation
+time — `firestore.rules`' `isValidNewDeployBranch()` lets an editor name a
+brand-new project's branch this once, since there is no existing train yet
+to redirect the way repointing an established project's `deployBranch`
+still is). It also checks the new folder isn't already claimed by another
+project (`projectWithRepoFolder()`) before creating. The field is editable
+afterward from the project's own Docs page, next to Requirements and
+README — the natural place to retrofit it onto a project created before
+this shipped. `repoFolder` still isn't in the MCP server's
+`PROJECT_WRITABLE_FIELDS`, so an agent can't set it over MCP; the console
+(a person, or a runner with the board credential) still has to.
+
+A project with no folder of its own is legitimate but exceptional: this
+one owns both `backlog-tracker/` and `faq/`, so it uses the modal's escape
+— `repoFolderNotApplicable: true` — rather than just leaving `repoFolder`
+unset, and its patches must always use repo-root paths. Where that is the
+case, say so in the project's README too — "deliberately unset" and
+"nobody set it" still look identical to a human skimming Firestore
+directly, even though the automation itself (next section) now tells them
+apart.
+
+### The automation refuses rather than guesses
+
+`processApplyPatch` in `scripts/run-backlog-automation.js` calls
+`projectFolderOf(project)` before doing any git work. When that returns
+`null` — no `repoFolder` set, or it's set to something that doesn't exist
+in this repo (a typo) — and `patchFilesLookFolderRelative(item.patchFiles)`
+says the patch looks like it was written relative to some folder (none of
+its paths' top-level segments are real entries at the repo root), the item
+is refused: `patchReady` is cleared, a note explains exactly why and how to
+fix it, and nothing is written to disk at all. A patch that genuinely
+belongs at the repo root (this project's own tickets, an item on a project
+that correctly has no single folder) always has at least one path whose
+top segment already exists there, so it's never caught by this check — see
+`test/patch-paths.test.js` for the exact cases.
+
+## Retiring a project — archive keeps it, delete does not
+
+The board's own control is **archive** (`archiveProject()` in
+`public/js/app.js`): the project drops off the columns, every ticket is
+kept, and the Archived projects page restores it. That is the right
+default for anything that might come back, and it is the only thing the UI
+does.
+
+Deleting for real is for a project that was created speculatively, never
+used, and is now noise in `list_projects` for every agent that connects
+over MCP. It runs from a runner, where the service account credential
+already is:
+
+```bash
+# dry run: reports what would go, uploads the export, deletes nothing
+gh workflow run board-admin.yml -f projects="<id>,<id>"
+
+# for real
+gh workflow run board-admin.yml -f projects="<id>" -f apply=true -f confirm=DELETE
+```
+
+`scripts/delete-projects.js` removes the project and every `backlogItems`,
+`projectDocs`, `docRevisions` and `interfaces` document pointing at it,
+then re-queries and fails if anything survived. It refuses a project that
+still has a non-archived ticket, or whose interface contract names a
+project that is *not* being deleted — removing that record would take the
+contract away from the surviving side too. `--force` overrides both,
+loudly.
+
+Every run, dry or real, writes a full JSON export of everything in scope
+and uploads it as the run's artifact. **That export is the only way back,
+and it is deliberately never committed: `rob_ph_demos` is public and
+ticket text and editor emails are not.** Download it before the 90-day
+retention runs out if the project mattered.
+
 ## Testing the rules and the MCP server
 
 `test/` holds two suites:

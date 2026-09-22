@@ -160,6 +160,8 @@ Notify Claude Routine writes trainReady as the board automation USER
 (board-automation@…, subject to rules — hence isBoardAutomation()). A human
 editor may only latch trainLocked true, nothing else.
 {
+  repoFolder?: string,          // the project's folder in rob_ph_demos, repo-root-relative, no trailing slash
+  repoFolderNotApplicable?: boolean, // explicit "this project has no single folder" (e.g. this project itself, which owns backlog-tracker/ and faq/) — distinct from repoFolder simply being unset
   deployBranch?: string,        // "deploy/<project-slug>", created from main on first use
   trainLocked?: boolean,        // a release is closing: no new ticket may join it, so the build CTAs hide
   trainReady?: boolean,         // the Deploy flow verified the train; the automation merges it
@@ -169,6 +171,37 @@ editor may only latch trainLocked true, nothing else.
   needsHumanMerge?: boolean,    // the train carries a .github/workflows/ change, so a person merges it
 }
 ```
+`repoFolder` is the link between a project on this board and its folder in
+`rob_ph_demos`, read by `projectFolderOf()` in
+`scripts/run-backlog-automation.js` to resolve a patch whose paths are
+relative to the project's folder rather than the repo root. Unset, it falls
+back to the deploy-branch slug and then to nothing — and "nothing" is how
+PR #185 (22 Sep 2026) wrote seven tickets' files to the repo root and
+overwrote the root `README.md` while every card read "Deployed / Main
+Branch (Live)". It must therefore be set deliberately when a project is
+created, and marked `repoFolderNotApplicable: true` instead of just left
+unset for a project that genuinely owns no single folder (this one owns
+both `backlog-tracker/` and `faq/`) — see README, "Adding a project". It is
+not in the MCP server's `PROJECT_WRITABLE_FIELDS`, so an agent cannot set
+it over MCP; **the New Project modal now asks for it at creation** (writing
+`repoFolder`/`repoFolderNotApplicable` plus a `deploy/<folder>`
+`deployBranch` together — `firestore.rules`' `isValidNewDeployBranch()`
+allows a plain editor to name a brand-new project's `deployBranch` at
+create time only, since there's no existing train yet to redirect), and
+it's editable afterward from the project's Docs page. For a project
+created before this shipped, that Docs page field (or a direct Firestore
+write) is how it gets retrofitted.
+
+`patchFilesLookFolderRelative()`, also in `scripts/run-backlog-automation.js`,
+is the other half: when `projectFolderOf()` returns `null` for a project
+(no `repoFolder`, or one that doesn't resolve to a real directory) AND the
+item's `patchFiles` paths look like they were written relative to some
+folder — none of their top-level path segments exist at the repo root —
+`processApplyPatch` refuses the item instead of writing it as given:
+`patchReady` is cleared and a note names the problem and how to fix it, so
+a project missing this link can never again silently write to the repo
+root the way PR #185 did.
+
 `CATEGORIES` (fixed set, `backlog-tracker/public/js/app.js`): `Pricing &
 Offers`, `Product Assets`, `HQ Admin`, `Retail Admin`, `Menu Board`,
 `Backend / Infrastructure`, `Uncategorised`.

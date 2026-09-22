@@ -130,6 +130,20 @@ async function main() {
   await check("Editor CANNOT fake a train PR number", "deny", () =>
     setDoc(doc(as(HUMAN), "projects/p1"), { trainPrNumber: 999 }, { merge: true }));
 
+  // ── Linking a NEW project to GitHub (repoFolder/deployBranch at creation) ──
+  // There is no train yet on a brand-new project doc, so naming its branch
+  // once at creation isn't the same risk as repointing an established one's
+  // (see "Editor CANNOT repoint deployBranch" above, which is still denied —
+  // this only ever applies to a `create`, never an `update`).
+  await check("Editor can set repoFolder freely (not a train field)", "allow", () =>
+    setDoc(doc(as(HUMAN), "projects/newRepoFolder"), { name: "New Project", repoFolder: "dsp-integration" }));
+  await check("Editor can seed deployBranch when CREATING a new project", "allow", () =>
+    setDoc(doc(as(HUMAN), "projects/newWithBranch"), { name: "New Project", deployBranch: "deploy/new-project" }));
+  await check("Editor CANNOT seed a malformed deployBranch at creation", "deny", () =>
+    setDoc(doc(as(HUMAN), "projects/newBadBranch"), { name: "New Project", deployBranch: "not-a-branch" }));
+  await check("Editor still cannot set trainReady even when creating the project", "deny", () =>
+    setDoc(doc(as(HUMAN), "projects/newWithTrainReady"), { name: "New Project", deployBranch: "deploy/new-project-2", trainReady: true }));
+
   // ── The sign-in wall ────────────────────────────────────────────────────
   await check("Stranger cannot read the board", "deny", () => getDoc(doc(as(STRANGER), "projects/p1")));
   await check("Stranger cannot write the board", "deny", () =>
