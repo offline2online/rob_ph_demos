@@ -123,10 +123,9 @@ docs in the `projects` Firestore collection — **"Live Visitor Profile"** and
 **"Display Types & DSP Integration"** — each with its own Backlog → Ready
 for Testing → Live on Feature Branch → Merged to Main (Live) pipeline and
 its own Archive,
-fully independent of each other and of "Products, Pricing & Asset
-Management". Treat backlog sweeps and publish workflows for each exactly as
-described in the "Prototype Backlog" section below — per-project, not
-shared.
+fully independent of each other. Treat backlog sweeps and publish workflows
+for each exactly as described in the "Prototype Backlog" section below —
+per-project, not shared.
 
 ## Common Workflows
 
@@ -157,10 +156,21 @@ board"); the name "Prototype Pipeline" is no longer used anywhere.
 
 **The board is multi-project.** Firestore's `projects` collection holds one
 doc per project (`{name, createdAt}`, auto-generated id); `backlogItems`
-holds every card, each carrying a `projectId`. The original board's cards
-live under the project named "Products, Pricing & Asset Management" — a
-client can have several concurrent prototypes/projects tracked side by side,
-each rendered as its own collapsible section on the one page.
+holds every card, each carrying a `projectId`. A client can have several
+concurrent prototypes/projects tracked side by side, each rendered as its
+own collapsible section on the one page.
+
+**Three projects were deleted on 22 Sep 2026** (Rob) as unused: "Products,
+Pricing & Asset Management" — which held the original board's migrated
+cards, 30 archived tickets — plus "Platform Users, Groups & Partner
+Management" and "Vibe Coding Campaigns & Experiences", both empty. The
+recovery export is the `board-export` artifact on run 35789258396 of
+`board-admin.yml`, and a copy is at
+`~/Documents/PH-board-backups/deleted-projects-2026-09-22T21-53-33Z.json`
+(deliberately outside this repo, which is public). "Live Visitor Profile &
+Personas" was kept despite being empty: it is one side of the maintained
+interface contract with Display Types. What's left on the board is that,
+Display Types & DSP Integration, and Backlog Tracker & FAQs.
 
 - **Adding a project**: the page's "New project" button, or write a doc
   directly into `projects` (`{name, createdAt: serverTimestamp()}}`) —
