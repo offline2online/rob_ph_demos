@@ -167,6 +167,18 @@ jobs:
           BOARD_API_KEY: ${{ secrets.BOARD_API_KEY }}
         run: node ensure-automation-user.js
 
+      # The board keeps its own copy of this project's README and
+      # Requirements (projects/{id}.readmeMd / requirementsMd) for the Docs
+      # page. The repo files are the source of truth; root CLAUDE.md asks
+      # for the copy to follow in the same session the file changes. This
+      # README is ~80 KB, so the only honest way to do that is to send the
+      # file rather than have anyone retype it — see scripts/sync-board-docs.js.
+      - name: Sync this project's docs onto the board
+        working-directory: backlog-tracker/scripts
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/firebase-sa.json
+        run: node sync-board-docs.js
+
       - name: Seed historical backlog data from artifact export
         working-directory: backlog-tracker/scripts
         env:
