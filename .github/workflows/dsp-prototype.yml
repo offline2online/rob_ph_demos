@@ -1,0 +1,116 @@
+name: DSP integration — hosted prototype
+
+# dsp-integration/prototype/ is a BUILT copy of the admin UI, checked into
+# the repo so GitHub Pages and the board's githack test links can serve it.
+# It does not change when the source changes: someone has to rebuild it.
+# On 21–22 Sep 2026 three tickets failed testing in a row because their
+# test link still served the build from before their commit, and two
+# trains "went live" without the live site changing at all. The board
+# automation can't do the rebuild itself — it delivers patches through
+# Firestore, whose 1 MiB document limit is smaller than the bundle — so
+# this runs dsp-integration/scripts/rebuild-prototype.sh on a runner and
+# commits the result to the branch it was built from.
+#
+# Three ways in, all needed:
+#   - push: a human's push to main or the deploy branch touching the source.
+#     (A push made by backlog-automation.yml with its GITHUB_TOKEN does NOT
+#     raise this event — GitHub's anti-recursion rule — and the file has to
+#     exist on the pushed branch, which a fresh train only gets once main is
+#     merged in.)
+#   - workflow_dispatch: run-backlog-automation.js dispatches this after it
+#     pushes a ticket onto a train, reverts one off it, or merges a train to
+#     main — the same explicit-dispatch route it already uses for the
+#     Firebase deploy.
+#   - schedule: the safety net. It costs a checkout and a hash comparison
+#     when nothing changed (the script exits without building).
+on:
+  push:
+    branches: [main, deploy/dsp-integration]
+    paths:
+      - 'dsp-integration/apps/**'
+      - 'dsp-integration/packages/**'
+      - 'dsp-integration/package.json'
+      - 'dsp-integration/package-lock.json'
+      - 'dsp-integration/scripts/rebuild-prototype.sh'
+      - '.github/workflows/dsp-prototype.yml'
+  schedule:
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: 'Branch to rebuild (blank = main and deploy/dsp-integration)'
+        type: string
+        default: ''
+      force:
+        description: 'Rebuild even if the source has not changed'
+        type: boolean
+        default: false
+
+# One build at a time: two runs pushing rebuilds of the same branch would
+# race, and the loser's push would fail.
+concurrency:
+  group: dsp-prototype
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  rebuild:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: dsp-integration/package-lock.json
+
+      - name: Rebuild each branch whose source moved
+        env:
+          BRANCHES: ${{ github.event_name == 'push' && github.ref_name || (inputs.branch != '' && inputs.branch || 'main deploy/dsp-integration') }}
+          FORCE: ${{ inputs.force == true && '--force' || '' }}
+        run: |
+          set -euo pipefail
+          git config user.name backlog-automation
+          git config user.email backlog-automation@users.noreply.github.com
+          for branch in $BRANCHES; do
+            if ! git ls-remote --exit-code --heads origin "$branch" >/dev/null; then
+              echo "::notice::$branch does not exist on origin — skipping"
+              continue
+            fi
+            git fetch -q origin "$branch"
+            git checkout -q -B "$branch" "origin/$branch"
+            if [ ! -f dsp-integration/scripts/rebuild-prototype.sh ]; then
+              echo "::notice::$branch has no rebuild script yet (main not merged in) — skipping"
+              continue
+            fi
+            (cd dsp-integration && npm ci --no-audit --no-fund --loglevel=error)
+            PROTOTYPE_BRANCH="$branch" bash dsp-integration/scripts/rebuild-prototype.sh $FORCE
+            git add -A dsp-integration/prototype dsp-integration/apps/admin/public/demo
+            if git diff --cached --quiet; then
+              echo "$branch: prototype/ already matches its source"
+              continue
+            fi
+            git commit -q -m "Rebuild the hosted prototype from $(git rev-parse --short HEAD) on $branch"
+            for attempt in 1 2 3; do
+              if git push -q origin "$branch"; then
+                echo "$branch: pushed $(git rev-parse --short HEAD)"
+                break
+              fi
+              # The branch moved while we built (a ticket landed). Put the
+              # rebuild on top of the new tip — its stamp will no longer
+              # match, so the next run rebuilds again for the new commit.
+              echo "$branch: push rejected on attempt $attempt — rebasing onto the new tip"
+              git fetch -q origin "$branch"
+              if ! git rebase -q "origin/$branch"; then
+                git rebase --abort
+                git reset -q --hard "origin/$branch"
+                echo "::warning::$branch moved under the rebuild and the rebase conflicted — the next run will rebuild from the new tip"
+                break
+              fi
+            done
+          done

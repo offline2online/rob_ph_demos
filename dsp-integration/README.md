@@ -31,13 +31,34 @@ and refuses writes, saying so, rather than pretending a Save worked. Routes
 live in the hash (`…/prototype/#/booking-schedule`) because a CDN has
 nothing to rewrite paths with.
 
-Refresh it after a change worth showing, with the dev API running:
+**It is rebuilt for you.** `.github/workflows/dsp-prototype.yml` runs
+`scripts/rebuild-prototype.sh` on a runner for `main` and for
+`deploy/dsp-integration` — on a push that touches the source, on a
+dispatch from the board automation the moment it puts a ticket on the
+train, reverts one off it or merges a train, and every ten minutes as a
+safety net — and commits the result to the branch it built from. The
+bundle is a checked-in build, so without this a ticket's change was
+invisible to its own test link until someone rebuilt by hand; on 21–22 Sep
+2026 three tickets failed testing that way and two trains "went live"
+without the live site changing. Whether a link shows a change yet is in
+`prototype/build-info.json` next to it: `commit` is what the bundle was
+built from, and `sourceStamp` is a hash of the source tree, which is how
+the script knows there is nothing to do.
+
+To rebuild by hand (no `.env` needed — it starts the API on a spare port
+against a throwaway database, seeds it, captures the snapshot, builds, and
+replaces `prototype/`):
 
 ```bash
-npm run demo:capture -w @ph-dsp/admin
-cd apps/admin && VITE_DEMO=1 npx vite build --base=./
-cp -R dist/. ../../prototype/
+scripts/rebuild-prototype.sh            # only if the source moved since the last build
+scripts/rebuild-prototype.sh --force    # regardless
+scripts/rebuild-prototype.sh --check    # exit 1 if stale, write nothing
 ```
+
+If you push a rebuild to the train yourself, the same rule as any other
+hand-pushed train commit applies (root `CLAUDE.md`, "Putting a commit on
+a deployment train by hand") — though a rebuild has no ticket to stamp, so
+it simply rides along with the tickets that do.
 
 The base is **relative**, so the bundle works wherever it is served from —
 GitHub Pages, a githack preview of a branch, or an iframe pointed at either.

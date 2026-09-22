@@ -103,10 +103,19 @@ The static prototype it was built from is published at
 <https://offline2online.github.io/rob_ph_demos/dsp-integration/prototype/> —
 the admin UI built against a captured snapshot of its own API, so it opens
 from a URL and can be iframed into HQ Admin. It is **read-only**: a write
-answers with "changes aren't saved". Rebuild it with
-`npm run demo:capture -w @ph-dsp/admin` (dev API up) then
-`VITE_DEMO=1 npx vite build --base=/rob_ph_demos/dsp-integration/prototype/`,
-and copy `apps/admin/dist/.` over `dsp-integration/prototype/`.
+answers with "changes aren't saved". **It is a checked-in build, and it is
+rebuilt by a workflow, not by hand**: `.github/workflows/dsp-prototype.yml`
+runs `dsp-integration/scripts/rebuild-prototype.sh` on a runner for `main`
+and `deploy/dsp-integration` — on a source push, on a dispatch from
+`run-backlog-automation.js` whenever it puts a ticket on the train, reverts
+one, or merges a train, and every ten minutes as a safety net — and commits
+the bundle back to that branch. A ticket's source change is invisible on
+its test link and on the live site until that rebuild lands (a few
+minutes); `prototype/build-info.json` beside the bundle says which commit
+it came from. Three tickets failed testing on 21–22 Sep 2026 and two trains
+"went live" with nothing changing before this existed — so never judge a
+DSP ticket from the link without checking build-info.json first, and never
+mark one live on the strength of a merge alone.
 
 **On the Prototype Backlog board** (the live `backlog-tracker` app, not the
 retired Artifact — see "Prototype Backlog" below), these are two separate

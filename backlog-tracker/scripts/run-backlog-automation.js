@@ -442,6 +442,123 @@ function workflowPathsIn(patchFiles) {
     .filter((p) => p.startsWith(WORKFLOW_PATH_PREFIX));
 }
 
+// Build outputs that are checked into the repo, and the workflow that
+// regenerates each one on a runner.
+//
+// dsp-integration/prototype/ is a built bundle of the admin UI — what the
+// board's githack test links and GitHub Pages actually serve. A ticket's
+// patch changes the SOURCE (apps/admin/src/...), which changes nothing a
+// tester can see until the bundle is rebuilt, and this script can't do
+// that: patchFiles come through Firestore (1 MiB per document) and the
+// bundle is ~2 MB. On 21–22 Sep 2026 three tickets in a row failed testing
+// on a link that still served the previous build, and two trains reached
+// "Deployed / Main Branch (Live)" with the live site unchanged. So every
+// push this script makes that touches a build's source dispatches its
+// workflow for that branch (an explicit dispatch, exempt from the
+// GITHUB_TOKEN no-recursion rule, exactly like deploy-backlog-tracker.yml),
+// and a merge conflict confined to a build's OUTPUTS is resolved by taking
+// either side — they are derived files, and the workflow regenerates them
+// from the merged source.
+const GENERATED_BUILDS = [
+  {
+    workflow: "dsp-prototype.yml",
+    sources: ["dsp-integration/apps/", "dsp-integration/packages/", "dsp-integration/package.json", "dsp-integration/package-lock.json"],
+    outputs: ["dsp-integration/prototype/", "dsp-integration/apps/admin/public/demo/"],
+  },
+];
+
+const underAny = (p, prefixes) => prefixes.some((s) => (s.endsWith("/") ? p.startsWith(s) : p === s));
+
+function isGeneratedOutput(p) {
+  return GENERATED_BUILDS.some((b) => underAny(p, b.outputs));
+}
+
+// The workflows whose build is stale once these paths change: a source
+// path that is not itself an output (the bundle's own snapshot lives under
+// apps/, so outputs are checked first).
+function rebuildWorkflowsFor(paths) {
+  const changed = (paths || []).filter((p) => p && !isGeneratedOutput(p));
+  return GENERATED_BUILDS.filter((b) => changed.some((p) => underAny(p, b.sources))).map((b) => b.workflow);
+}
+
+// Dispatches each stale build's workflow for `branch`. Never throws: a
+// failed dispatch is logged and the workflow's own schedule catches up.
+// Returns the workflows dispatched, so the caller's note can say so.
+function dispatchRebuilds(branch, paths, label) {
+  const dispatched = [];
+  for (const workflow of rebuildWorkflowsFor(paths)) {
+    try {
+      run("gh", ["workflow", "run", workflow, "--repo", REPO, "--ref", "main", "-f", `branch=${branch}`]);
+      console.log(`[${label}] triggered ${workflow} to rebuild ${branch}`);
+      dispatched.push(workflow);
+    } catch (err) {
+      console.log(`[${label}] failed to trigger ${workflow} for ${branch} (${scrubSecrets(err.message)}) — its schedule will rebuild within the next few minutes`);
+    }
+  }
+  return dispatched;
+}
+
+// What a rebuild means for whoever reads the card next: the link exists,
+// but for a few minutes it still shows the build from before this commit.
+function rebuildNote(dispatched, sha) {
+  if (!dispatched.length) return "";
+  return ` The test link serves a built bundle, which is being rebuilt from ${sha.slice(0, 7)} now (${dispatched.join(", ")}) — allow a few minutes, and check build-info.json beside the link's index.html: its "commit" says which commit the bundle came from.`;
+}
+
+function changedPathsBetween(fromRef, toRef) {
+  try {
+    const out = run("git", ["diff", "--name-only", fromRef, toRef]);
+    return out ? out.split("\n").filter(Boolean) : [];
+  } catch {
+    return [];
+  }
+}
+
+function prFilePaths(prNumber) {
+  try {
+    const parsed = JSON.parse(run("gh", ["pr", "view", String(prNumber), "--repo", REPO, "--json", "files"]));
+    return (parsed.files || []).map((f) => f.path).filter(Boolean);
+  } catch (err) {
+    console.log(`[deploy-train] couldn't list PR #${prNumber}'s files (${err.message}) — assuming nothing to rebuild`);
+    return [];
+  }
+}
+
+// Mid-merge resolver for a conflict that touches nothing but generated
+// build output (see GENERATED_BUILDS). Both sides are a build of source the
+// merge is about to combine, so neither is "right"; the branch's own copy
+// is kept only so the merge leaves a consistent bundle behind, and the
+// build's workflow replaces it from the merged source. Anything else in
+// the conflict, and this declines — same contract as
+// tryAutoResolveFaqIndexConflict.
+function tryAutoResolveGeneratedOutputConflict(conflicted) {
+  if (!conflicted.length || !conflicted.every(isGeneratedOutput)) {
+    return { resolved: false, detail: `conflicted on ${conflicted.join(", ") || "(unknown files)"}` };
+  }
+  for (const p of conflicted) {
+    try {
+      // `--ours` inside a merge INTO the train is the train's copy. A file
+      // the train deleted (an old hashed asset) has no "ours" — drop it.
+      run("git", ["checkout", "--ours", "--", p]);
+      run("git", ["add", "--", p]);
+    } catch {
+      try {
+        run("git", ["rm", "--quiet", "--", p]);
+      } catch (err) {
+        return { resolved: false, detail: `conflicted on ${conflicted.join(", ")} — generated build output, but keeping the branch's copy of ${p} failed (${err.message})` };
+      }
+    }
+  }
+  const remaining = conflictedPaths();
+  if (remaining.length) {
+    return { resolved: false, detail: `conflicted on ${remaining.join(", ")} even after keeping the branch's copy of ${conflicted.join(", ")}` };
+  }
+  return {
+    resolved: true,
+    detail: `conflicted only on generated build output (${conflicted.join(", ")}) — kept the branch's copy, which its rebuild workflow regenerates from the merged source, and the merge completed`,
+  };
+}
+
 // Optional escape hatch for the restriction above: backlog-automation.yml
 // mints a short-lived GitHub App installation token (Contents + Workflows
 // write, installed on this one repository only — see backlog-tracker/
@@ -918,6 +1035,10 @@ async function processApplyPatch(item) {
     }
   }
 
+  // The source is on the train; the bundle a tester opens is not, until its
+  // workflow rebuilds it (see GENERATED_BUILDS).
+  const rebuilds = dispatchRebuilds(deployBranch, changedPaths, "apply-patch");
+
   // A train carrying a workflow-file change can't be merged by the pipeline
   // (see processDeployTrain): flag the project so the Deploy step leaves the
   // PR open for a person instead of attempting a merge that would be refused.
@@ -938,6 +1059,7 @@ async function processApplyPatch(item) {
     `Committed to the project's integration branch \`${deployBranch}\` as ${sha.slice(0, 7)} (${changedPaths.join(", ")}). ` +
     `It is built on top of every ticket already on that branch, so the test link shows this change in the combination it will ship in. ` +
     `Nothing merges to main until every ticket on the train is approved and someone clicks Deploy to Main.` +
+    rebuildNote(rebuilds, sha) +
     (workflowPaths.length
       ? ` This ticket changes ${workflowPaths.join(", ")}, so it was pushed with the workflow-push App token and the train's deploy PR will NOT be merged by the pipeline — a person has to review and merge it on GitHub.`
       : "")
@@ -997,6 +1119,7 @@ async function processRevertFromTrain(item) {
   }
 
   checkoutTrain(deployBranch);
+  const tipBeforeRevert = headSha();
 
   // Newest first — reverting an older commit before a newer one that builds
   // on it is the guaranteed way to manufacture a conflict.
@@ -1065,6 +1188,9 @@ async function processRevertFromTrain(item) {
   }
 
   pushTrain(deployBranch);
+  // The revert changed the train's source, so any bundle built from it is
+  // stale in the other direction: it would keep showing the reverted change.
+  dispatchRebuilds(deployBranch, changedPathsBetween(tipBeforeRevert, "HEAD"), "train-revert");
 
   const notes = await appendNote(
     item,
@@ -1340,12 +1466,22 @@ async function finishTrain(project, deployBranch, prNumber, trainItems, { touche
     deployConclusion = "pending";
   }
 
+  // Same rule for a checked-in build (see GENERATED_BUILDS): the train's
+  // source is on main now, and "live" means the bundle GitHub Pages serves
+  // was built from it. Merging main into the train just before this may
+  // itself have moved the source, so this is not redundant with the
+  // rebuild the train got when its tickets landed.
+  const rebuilds = dispatchRebuilds("main", prFilePaths(prNumber), "deploy-train");
+
   const mergedAt = new Date().toISOString();
   for (const item of trainItems) {
     const notes = await appendNote(
       item,
       `Shipped in the deployment train PR #${prNumber}, merged to main with ${trainItems.length === 1 ? "no other ticket" : `${trainItems.length - 1} other ticket(s)`} from \`${deployBranch}\`.` +
-        (mergeNote ? ` Note: merging main into ${deployBranch} for this deploy ${mergeNote}.` : "")
+        (mergeNote ? ` Note: merging main into ${deployBranch} for this deploy ${mergeNote}.` : "") +
+        (rebuilds.length
+          ? ` The hosted prototype on GitHub Pages is a built bundle, being rebuilt from main now (${rebuilds.join(", ")}) — allow a few minutes before checking the live site, and confirm with its build-info.json ("commit" should be at or after ${mergeCommit ? mergeCommit.slice(0, 7) : "this merge"}).`
+          : "")
     );
     await patchItem(item.id, {
       status: "published-live",
@@ -1460,7 +1596,14 @@ async function processDeployTrain(project) {
       "merge", "origin/main", "--no-edit", "--quiet"]);
   } catch (err) {
     const conflicted = conflictedPaths();
-    const resolution = tryAutoResolveFaqIndexConflict(conflicted);
+    let resolution = tryAutoResolveFaqIndexConflict(conflicted);
+    // A second derived-file case: a build output both sides rebuilt (see
+    // tryAutoResolveGeneratedOutputConflict). Tried only if the first
+    // resolver declined without touching anything, i.e. the conflict was
+    // never about index.json.
+    if (!resolution.resolved && !conflicted.includes("faq/data/index.json")) {
+      resolution = tryAutoResolveGeneratedOutputConflict(conflicted);
+    }
     if (!resolution.resolved) {
       try { run("git", ["merge", "--abort"]); } catch { /* nothing in progress */ }
       discardWorkingTree();
@@ -2172,4 +2315,8 @@ if (require.main === module) {
 // disposable local git repo rather than requiring this whole automation
 // run (main(), above, has real Firestore/GitHub side effects the moment
 // this module loads if not guarded — see the require.main check).
-module.exports = { conflictedPaths, tryAutoResolveFaqIndexConflict, archiveAndResetOrphanedBranch, dateStamp, nearestPageFor, isBundlerTemplate };
+module.exports = {
+  conflictedPaths, tryAutoResolveFaqIndexConflict, archiveAndResetOrphanedBranch, dateStamp, nearestPageFor, isBundlerTemplate,
+  // test/generated-builds.test.js
+  isGeneratedOutput, rebuildWorkflowsFor, tryAutoResolveGeneratedOutputConflict,
+};
