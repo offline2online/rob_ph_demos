@@ -117,34 +117,49 @@ interface DemoCampaign {
   targeting: StoredTargeting; brief: Record<string, unknown>; createdAt: string; rejectReason?: string
 }
 
-const LOCALISED: StoredTargeting = { baseline: { pricingType: 'localised' } }
+const LOCALISED: StoredTargeting = { default: { pricingType: 'localised' } }
 const rule = (variable: string, op: string, values: string[], source: 'store' | 'visitor' = 'store') => ({ source, variable, op, values })
 const metro = (pricingType: string): StoredTargeting => ({
-  baseline: { pricingType: 'localised' },
+  default: { pricingType: 'localised' },
   targeted: [{ id: 'metro', priority: 10, pricingType, rules: [[rule('store.fixed_segments', 'include', ['Metro'])], [rule('store.hours', 'equal', ['Open'])]] }],
 })
 const states = (...s: string[]): StoredTargeting => ({
-  baseline: { pricingType: 'localised' },
+  default: { pricingType: 'localised' },
   targeted: [{ id: 'states', priority: 10, pricingType: 'localised', rules: [[rule('store.state', 'include', s)]] }],
 })
-/* No fallback: localised variants only (decision, 22 Sep) — the unmatched
-   stores stay unsold, which is what makes a position part-sold. */
-const variantsOnly = (...tags: string[]): StoredTargeting => ({
+/* Every advertiser also carries a default layer now (decision, 22 Sep,
+   superseding the earlier same-day "baseline optional" decision — ticket
+   "Make default creative mandatory; retire localised-only booking path"):
+   the part-sold scenario this used to demonstrate (localised variants only,
+   unmatched stores left unsold to another advertiser) is retired — a slot
+   goes to one advertiser, and localised/personalised are upsells on that
+   one purchase. */
+const localisedUpsell = (...tags: string[]): StoredTargeting => ({
+  default: { pricingType: 'localised' },
   targeted: [{ id: 'tagged', priority: 10, pricingType: 'localised', rules: [[rule('store.display_tags', 'include', tags)]] }],
 })
-const personalised = (segment: string[]): StoredTargeting => ({
-  baseline: { pricingType: 'localised' },
-  targeted: [{ id: 'segment', priority: 20, pricingType: 'personalised', rules: [[rule('visitor.visitor_segments', 'include', segment, 'visitor')], [rule('store.hours', 'equal', ['Open'])]] }],
+/* extraGroups exercises the other two personalised-trigger tiers alongside
+   the individual one every personalised demo campaign already had (ticket
+   "Booking schedule: personalised trigger icons", 22 Sep) — the trigger
+   icons are derived from which of these variables a campaign's rules use,
+   so at least one demo campaign needs to combine tiers to show more than
+   one icon lit. */
+const personalised = (segment: string[], extraGroups: ReturnType<typeof rule>[][] = []): StoredTargeting => ({
+  default: { pricingType: 'localised' },
+  targeted: [{ id: 'segment', priority: 20, pricingType: 'personalised', rules: [[rule('visitor.visitor_segments', 'include', segment, 'visitor')], [rule('store.hours', 'equal', ['Open'])], ...extraGroups] }],
 })
 const interactive = (intent: string[]): StoredTargeting => ({
-  baseline: { pricingType: 'localised' },
+  default: { pricingType: 'localised' },
   targeted: [{ id: 'intent', priority: 20, pricingType: 'interactive', rules: [[rule('visitor.purchase_intent', 'include', intent, 'visitor')]] }],
 })
 const brief = (details: string, over: Record<string, unknown> = {}) => ({ details, objective: 'Increase Revenue / Sales', touchPoints: ['Digital Signage'], ...over })
 
 const DEMO_CAMPAIGNS: DemoCampaign[] = [
   { id: 'c_demo_nestle_kitkat', name: 'Nestlé — KitKat break', advertiser: 'Nestlé', partnerId: 'p_google', displayTypeId: 'landscape', pricingType: 'personalised', state: 'approved', colour: '#c8102e', line: 'Have a break', createdAt: '2026-09-10T09:00:00.000Z',
-    targeting: personalised(['Value seeker', 'Snacker']), brief: brief('Afternoon snack occasion on entrance screens; personalised creative for value seekers.', { promotedProducts: ['KitKat 4 Finger', 'KitKat Chunky'], skus: ['SKU-20411', 'SKU-20412'], targetAudiences: ['Afternoon shoppers'], landingPageUrl: 'https://kitkat.com.au' }) },
+    /* Combines the individual and computer-vision trigger tiers, so the demo
+       estate has at least one tile with more than one trigger icon lit. */
+    targeting: personalised(['Value seeker', 'Snacker'], [[rule('store.cv_age', 'equal', ['18–24'])]]),
+    brief: brief('Afternoon snack occasion on entrance screens; personalised creative for value seekers, or anyone the display reads as a younger shopper.', { promotedProducts: ['KitKat 4 Finger', 'KitKat Chunky'], skus: ['SKU-20411', 'SKU-20412'], targetAudiences: ['Afternoon shoppers'], landingPageUrl: 'https://kitkat.com.au' }) },
   { id: 'c_demo_nestle_purina', name: 'Nestlé — Purina ONE', advertiser: 'Nestlé', partnerId: 'p_google', displayTypeId: 'portrait', pricingType: 'localised', state: 'draft', colour: '#6a1b9a', line: 'Purina ONE', createdAt: '2026-09-19T14:00:00.000Z',
     targeting: LOCALISED, brief: brief('Pet aisle portrait screens, pending creative sign-off.', { promotedProducts: ['Purina ONE Adult'] }) },
   { id: 'c_demo_swisse_mens', name: 'Swisse — Men’s Ultivite', advertiser: 'Swisse', partnerId: 'p_google', displayTypeId: 'landscape', pricingType: 'localised', state: 'awaiting', colour: '#004d40', line: 'Men’s Ultivite', createdAt: '2026-09-19T09:30:00.000Z',
@@ -156,9 +171,11 @@ const DEMO_CAMPAIGNS: DemoCampaign[] = [
   { id: 'c_demo_arnotts_shapes', name: 'Arnott’s — Shapes Pizza', advertiser: 'Arnott’s', partnerId: 'p_google', displayTypeId: 'menu_board', pricingType: 'localised', state: 'approved_off', colour: '#e65100', line: 'Shapes Pizza', createdAt: '2026-09-08T09:00:00.000Z',
     targeting: LOCALISED, brief: brief('Approved but switched off until the in-store display stock lands.', { promotedProducts: ['Shapes Pizza'] }) },
   { id: 'c_demo_cocacola_zero', name: 'Coca-Cola — Zero Sugar', advertiser: 'Coca-Cola', partnerId: 'p_google', displayTypeId: 'landscape', pricingType: 'personalised', state: 'approved', colour: '#000000', line: 'Zero Sugar. Real taste.', createdAt: '2026-09-09T09:00:00.000Z',
-    targeting: personalised(['Fitness', 'Health']), brief: brief('Always-on Zero Sugar with a fitness-segment variant.', { promotedProducts: ['Coca-Cola Zero Sugar 600ml'], skus: ['SKU-40011'], targetAudiences: ['Fitness'] }) },
+    /* Combines the individual and aggregate-store trigger tiers. */
+    targeting: personalised(['Fitness', 'Health'], [[rule('store.reason_for_visit', 'equal', ['Returns'])]]),
+    brief: brief('Always-on Zero Sugar with a fitness-segment variant, or when the queue here is mostly here for returns (a proxy for a busier, more price-sensitive moment).', { promotedProducts: ['Coca-Cola Zero Sugar 600ml'], skus: ['SKU-40011'], targetAudiences: ['Fitness'] }) },
   { id: 'c_demo_cocacola_summer', name: 'Coca-Cola — Summer share pack', advertiser: 'Coca-Cola', partnerId: 'p_google', displayTypeId: 'portrait', pricingType: 'localised', state: 'draft', colour: '#f40009', line: 'Share a Coke', createdAt: '2026-09-20T11:00:00.000Z',
-    targeting: variantsOnly('Entrance', 'Food Court'), brief: brief('Entrance and food-court screens only; no fallback for other stores.', { promotedProducts: ['Coca-Cola 24pk'] }) },
+    targeting: localisedUpsell('Entrance', 'Food Court'), brief: brief('Entrance and food-court screens get the Summer variant; the default plays everywhere else.', { promotedProducts: ['Coca-Cola 24pk'] }) },
   { id: 'c_demo_unilever_dove', name: 'Unilever — Dove Deep Moisture', advertiser: 'Unilever', partnerId: 'p_ttd', displayTypeId: 'portrait', pricingType: 'localised', state: 'awaiting', colour: '#1565c0', line: 'Dove', createdAt: '2026-09-19T16:00:00.000Z',
     targeting: LOCALISED, brief: brief('Beauty aisle portrait screens, all stores.', { promotedProducts: ['Dove Deep Moisture Body Wash'], objective: 'Brand Awareness' }) },
   { id: 'c_demo_unilever_streets', name: 'Unilever — Streets Magnum', advertiser: 'Unilever', partnerId: 'p_google', displayTypeId: 'landscape', pricingType: 'localised', state: 'rejected', colour: '#4e342e', line: 'Magnum — 2 for $8', createdAt: '2026-09-17T12:00:00.000Z',
@@ -245,7 +262,7 @@ export async function seedDemo(ctx: Context) {
     `INSERT INTO campaigns (id, name, targeting, created_at, source, advertiser_id, partner_id, display_type_id, pricing_type, activation_enabled, brief)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)`,
   )
-  const insertAsset = ctx.db.prepare("INSERT INTO campaign_assets (id, campaign_id, version, role, file, mime_type, width, height, size_bytes, created_at) VALUES (?, ?, 1, 'baseline', ?, 'image/svg+xml', ?, ?, 1024, ?)")
+  const insertAsset = ctx.db.prepare("INSERT INTO campaign_assets (id, campaign_id, version, role, file, mime_type, width, height, size_bytes, created_at) VALUES (?, ?, 1, 'default', ?, 'image/svg+xml', ?, ?, 1024, ?)")
   for (const c of DEMO_CAMPAIGNS) {
     if (ctx.campaigns.getCampaign(c.id)) continue
     const dt = ctx.displayTypes.get(c.displayTypeId)

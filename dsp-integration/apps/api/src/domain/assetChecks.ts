@@ -1,5 +1,5 @@
 /* Automated checks on upload (spec §3), run before a human sees anything.
-   File checks run on each upload; baseline_present and targeting_permitted
+   File checks run on each upload; default_present and targeting_permitted
    run on submit. A failed check returns the reasons to the advertiser and
    the file never reaches the review queue. */
 import type { DisplayType } from '@ph-dsp/types'
@@ -7,7 +7,7 @@ import type { Config } from '../config'
 import { type MediaInfo, isVideo } from './media'
 import { slotDurationSec } from './slots'
 
-export type CheckName = 'file_type' | 'file_size' | 'bitrate' | 'dimensions' | 'aspect_ratio' | 'duration' | 'baseline_present' | 'targeting_permitted'
+export type CheckName = 'file_type' | 'file_size' | 'bitrate' | 'dimensions' | 'aspect_ratio' | 'duration' | 'default_present' | 'targeting_permitted'
 export interface Check { name: CheckName; passed: boolean; detail?: string }
 
 interface Size { width: number; height: number }

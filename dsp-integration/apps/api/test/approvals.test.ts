@@ -17,7 +17,7 @@ const poc = async () => {
       hqCampaignId: 'c_zinger',
       changeCreative: (id: string) => {
         const v = (ctx.db.prepare('SELECT COALESCE(MAX(version), 0) AS v FROM campaign_assets WHERE campaign_id = ?').get(id) as { v: number }).v
-        ctx.db.prepare("INSERT INTO campaign_assets (id, campaign_id, version, role, file, mime_type, width, height, size_bytes, created_at) VALUES (?, ?, ?, 'baseline', 'x.png', 'image/png', 1920, 1080, 1, ?)")
+        ctx.db.prepare("INSERT INTO campaign_assets (id, campaign_id, version, role, file, mime_type, width, height, size_bytes, created_at) VALUES (?, ?, ?, 'default', 'x.png', 'image/png', 1920, 1080, 1, ?)")
           .run(randomUUID(), id, v + 1, new Date().toISOString())
       },
     },
@@ -42,7 +42,7 @@ describe('Campaign approval API (contract: Admin — Campaign approval)', () => 
     expectMatchesContract('GET', '/admin/v1/campaigns/{campaignId}/approval', 200, res.json())
     const a = res.json()
     expect(a).toMatchObject({ status: 'approved', mode: 'auto', advertiserName: 'Nestlé', partnerName: 'Google DSP', canvas: { width: 1920, height: 1080 }, creative: { mimeType: 'image/svg+xml', width: 1920, height: 1080 } })
-    expect(a.targetingSummary).toBe('Baseline (localised)\nmetro-open (priority 10, localised): Fixed Store Segments includes selected Metro AND Store Open / Closed equal Open')
+    expect(a.targetingSummary).toBe('Default (localised)\nmetro-open (priority 10, localised): Fixed Store Segments includes selected Metro AND Store Open / Closed equal Open')
     expect(a.audit.map((x: { action: string }) => x.action)).toEqual(['submitted', 'auto_approved'])
   })
 

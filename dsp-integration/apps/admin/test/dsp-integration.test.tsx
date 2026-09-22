@@ -187,7 +187,7 @@ describe('Campaign Status stand-in', () => {
   const hq = { campaignId: 'c_zinger', name: 'Zinger Box — hero', source: 'hq', advertiserId: null, advertiserName: null, partnerId: null, partnerName: null, displayTypeId: 'landscape', pricingType: null, activation: { enabled: true }, schedule: { nextWindowStart: null, bookedWindows: 0 } }
   const approval = {
     campaignId: 'c1', campaignName: 'Swisse spring', status: 'awaiting_approval', mode: 'manual', assetVersion: 'v1', submittedAt: null, reviewedBy: null, reviewedAt: null, reason: null,
-    checks: [{ name: 'dimensions', passed: true, detail: '1080×1920 for 1080×1920.' }], targetingSummary: 'Baseline (localised)', creative: null, canvas: null, audit: [],
+    checks: [{ name: 'dimensions', passed: true, detail: '1080×1920 for 1080×1920.' }], targetingSummary: 'Default (localised)', creative: null, canvas: null, audit: [],
   }
   const routes = {
     '/api/admin/v1/campaigns': { items: [campaign, hq] },
@@ -241,7 +241,7 @@ describe('Booking schedule', () => {
       positionId: 'menu_board.s2', displayTypeId: 'menu_board', displayTypeName: 'Menu Board — Long Format', slot: 2, slotLabel: 'Supplier slot', partnerNames: ['Google DSP'], assignment: 'rtb', displayCount: 3,
       windows: [
         { start: '2026-09-21T00:00:00.000Z', status: 'available', booking: null },
-        { start: '2026-09-22T00:00:00.000Z', status: 'booked', booking: { reservationId: 'r1', campaignId: 'c1', advertiserId: 'swisse', partnerId: 'p_google', pricingType: 'personalised', type: 'reserve', advertiserName: 'Swisse', partnerName: 'Google DSP', cpm: 175, assumedViews: 1236, bookedRevenue: 216.3, billedRevenue: null, reach: null } },
+        { start: '2026-09-22T00:00:00.000Z', status: 'booked', booking: { reservationId: 'r1', campaignId: 'c1', advertiserId: 'swisse', partnerId: 'p_google', pricingType: 'personalised', type: 'reserve', advertiserName: 'Swisse', partnerName: 'Google DSP', cpm: 175, assumedViews: 1236, bookedRevenue: 216.3, billedRevenue: null, reach: null, layers: { default: true, localised: false, personalised: true }, personalisedTriggers: { computerVision: false, aggregateStore: false, individual: true } } },
       ],
     }],
     revenue: [{ displayTypeId: 'menu_board', displayTypeName: 'Menu Board — Long Format', bookedWindows: 1, bookedRevenue: 216.3, billedRevenue: 0 }],
@@ -262,18 +262,16 @@ describe('Booking schedule', () => {
     expect(await screen.findByRole('heading', { name: /Booking schedule/ })).toBeInTheDocument()
     const revenue = await screen.findByLabelText('Booking revenue')
     expect(await within(revenue).findAllByText('$216.30')).toHaveLength(2)
-    /* All three layers show at once now, stacked in every window — no tabs
-       to switch (ticket, 21 Sep). The fixture's one booking is personalised,
-       so the Fallback and Localised pills for that window both show it as
-       booked by another layer, not as Available (it really is spoken for);
-       the Personalised pill shows the booking itself. */
+    /* Single-advertiser stacking tile (ticket, 22 Sep): one tile per booked
+       window, the advertiser name at the top, stacking only the layers the
+       booking actually carries. The fixture's one booking is default plus
+       personalised (2 layers, no localised upsell), so the tile shows
+       Swisse once (plus once more in the Advertiser column) and no
+       per-layer competition — the other, unbooked window just reads
+       Available. */
     const grid = await screen.findByLabelText('Booking schedule')
-    expect(within(grid).getAllByText('Sold — other layer')).toHaveLength(2)
-    expect(within(grid).getAllByText('Swisse')).toHaveLength(2) // the Advertiser column, and the Personalised pill
-    expect(within(grid).getAllByText('Available')).toHaveLength(3) // the other, unbooked window — all three layers open
-    /* There's no per-layer tab any more — only the Daily/Weekly/Monthly view selector. */
-    expect(screen.queryByRole('radio', { name: 'Personalised' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('radio', { name: 'Fallback' })).not.toBeInTheDocument()
+    expect(within(grid).getAllByText('Swisse')).toHaveLength(2) // the Advertiser column, and the tile
+    expect(within(grid).getAllByText('Available')).toHaveLength(1) // the other, unbooked window
     expect(screen.queryByRole('region', { name: 'Save changes' })).not.toBeInTheDocument()
     /* Views, and DSP/advertiser as column filters like every other table (Rob, 20 Sep). */
     expect(screen.getByRole('radio', { name: 'Weekly' })).toBeInTheDocument()
@@ -301,27 +299,36 @@ describe('Booking schedule', () => {
     expect(within(grid).queryByText(/Amazon Ads DSP/)).not.toBeInTheDocument()
   })
 
-  it('layers the schedule into Fallback / Localised / Personalised pills, with a reach count on a localised booking', async () => {
-    const withLocalised = {
+  it('stacks a tile up to three layers, with a reach count on the localised layer', async () => {
+    const allThree = {
       ...schedule,
       positions: [{
         ...schedule.positions[0],
         displayCount: 4,
         windows: [
           schedule.positions[0].windows[0],
-          { start: '2026-09-22T00:00:00.000Z', status: 'booked', booking: { ...schedule.positions[0].windows[1].booking, pricingType: 'localised', reach: { matchedDisplays: 3, asOf: '2026-09-20T00:00:00.000Z' } } },
+          {
+            start: '2026-09-22T00:00:00.000Z', status: 'booked',
+            booking: {
+              ...schedule.positions[0].windows[1].booking, pricingType: 'localised', reach: { matchedDisplays: 3, asOf: '2026-09-20T00:00:00.000Z' },
+              layers: { default: true, localised: true, personalised: true },
+              personalisedTriggers: { computerVision: true, aggregateStore: false, individual: false },
+            },
+          },
         ],
       }],
     }
-    vi.stubGlobal('fetch', vi.fn(fakeFetch({ '/api/admin/v1/booking-schedule': withLocalised })))
+    vi.stubGlobal('fetch', vi.fn(fakeFetch({ '/api/admin/v1/booking-schedule': allThree })))
     renderAt('/booking-schedule')
     const grid = await screen.findByLabelText('Booking schedule')
-    /* Localised booking: the Fallback and Personalised pills for that window
-       both show it as booked by another layer; the Localised pill shows the
-       reach count against the Displays column's total. */
-    expect(within(grid).getAllByText('Sold — other layer')).toHaveLength(2)
+    /* All three layers on the one tile: DEFAULT, LOC with the reach count
+       against the Displays column's total, and PERS with its lit trigger
+       icon (ticket "Booking schedule: personalised trigger icons"). */
     expect(within(grid).getByText('4')).toBeInTheDocument() // the Displays column
-    expect(await within(grid).findByText('3/4')).toBeInTheDocument()
+    expect(await within(grid).findByText('3 of 4')).toBeInTheDocument()
+    expect(within(grid).getByText('DEFAULT')).toBeInTheDocument()
+    expect(within(grid).getByText('LOC')).toBeInTheDocument()
+    expect(within(grid).getByText('PERS')).toBeInTheDocument()
   })
 })
 

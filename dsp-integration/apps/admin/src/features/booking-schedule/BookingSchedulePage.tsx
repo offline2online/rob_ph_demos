@@ -5,22 +5,23 @@
    booking revenue per display type and per campaign type, filters for one
    advertiser or one DSP, and daily, weekly or monthly views. Read-only.
 
-   Layered within each view (Rob, 22 Sep; changed from tabs to stacked pills,
-   ticket 21 Sep — three separate tabs made it impossible to see all three
-   layers' availability on one day/week at a glance): every window shows all
-   three layers at once, as three stacked pills — Personalised on top,
-   Localised in the middle, Fallback at the bottom — REQUIREMENTS §6
+   Single-advertiser stacking tile (ticket "Booking schedule:
+   single-advertiser stacking tile", 22 Sep, superseding the earlier
+   same-day "layered reach breakdown" design where three pills were always
+   shown per window and two of them read "Sold — other layer"): a slot goes
+   to one advertiser now (default is mandatory — ticket "Make default
+   creative mandatory"), so each booked window is one tile, the advertiser
+   name at the top, stacking whichever layers that one purchase actually
+   carries — default always at the base, localised above it when
+   provided, personalised at the very top when provided — REQUIREMENTS §6
    "Campaigns and content packages", interface contract "Booking schedule
-   reach counts". Fallback = the slot's own display count across the whole
-   footprint; Localised = the booked campaign's reach (`booking.reach`, from
-   the server's ReachCountSource stand-in), of that footprint; Personalised =
-   a plain indicator, no count — matches can't be predicted ahead of time. A
-   window's single booking belongs to exactly one layer (the
-   reservation/auction engine doesn't split a position's capacity between
-   advertisers yet — REQUIREMENTS open question 50); the other two layers'
-   pills for that same window show "Sold — other layer" rather than
-   Available, so no pill claims capacity that's actually already spoken
-   for. */
+   reach counts". Localised shows the booked campaign's reach
+   (`booking.reach`, from the server's ReachCountSource stand-in), of the
+   position's displayCount; personalised shows no count — a match can't be
+   predicted ahead of time — but shows which trigger mechanism(s) its
+   targeting rules use (ticket "Booking schedule: personalised trigger
+   icons"), from broadest/most-frequent to narrowest/rarest: computer
+   vision, aggregate store-level, individual. */
 import { useQuery } from '@tanstack/react-query'
 import { Alert, DatePicker, Segmented, Spin, Tooltip } from 'antd'
 import type { ColDef, ICellRendererParams } from 'ag-grid-community'
@@ -39,27 +40,38 @@ import { T } from '../../theme/phTheme'
 type Position = Schedule['positions'][number]
 type Cell = Position['windows'][number]
 type Booking = NonNullable<Cell['booking']>
+type Triggers = NonNullable<Booking['personalisedTriggers']>
 type RevenueRow = Schedule['revenue'][number] & { total?: boolean }
 type View = 'Daily' | 'Weekly' | 'Monthly'
 /* One column: a single play window (daily), or the windows in a week or month. */
 interface Group { key: string; label: string; cells: Cell[] }
 interface Row { position: Position; groups: Group[] }
 
-/* Which of the three layers a booking's pricing type belongs to (Rob,
-   22 Sep): baseline is the fallback content, localised and interactive both
-   vary by store rather than by visitor so they share the Localised layer,
-   personalised is its own layer with no predictable count. */
-type Layer = 'Fallback' | 'Localised' | 'Personalised'
-/* Stacking order, top pill to bottom pill (ticket, 21 Sep — "fallback at the
-   bottom then localised then personalised"). */
-const LAYERS_TOP_DOWN: Layer[] = ['Personalised', 'Localised', 'Fallback']
-const LAYER_ABBR: Record<Layer, string> = { Fallback: 'FB', Localised: 'LOC', Personalised: 'PERS' }
-const layerOf = (pricingType: Booking['pricingType']): Layer =>
-  pricingType === 'personalised' ? 'Personalised' : pricingType === 'baseline' ? 'Fallback' : 'Localised'
-const LAYER_TIP: Record<Layer, string> = {
-  Fallback: 'The slot’s fallback content: what plays where nothing more specific matches. Booked/available counts only fallback (baseline) bookings — a window sold to another layer shows as Sold, not Available.',
-  Localised: 'Store-level targeting. Shows each booking’s reach: how many of the display type’s displays its targeting matched, of the total across the retail footprint.',
-  Personalised: 'One-to-one for the identified visitor. Indicator only — which windows have an active personalised campaign, with no reach count, since a personalised match can’t be predicted ahead of time.',
+/* The three layers a booking's tile may stack, keyed the same as
+   `booking.layers` (Rob, 22 Sep): default is the mandatory, untargeted
+   base; localised and interactive both vary by store rather than by
+   visitor so they share the Localised layer; personalised is its own
+   layer with no predictable count. */
+type LayerKey = keyof Booking['layers']
+/* Stacking order, top row to bottom row — personalised at the very top when
+   provided, localised above the base when provided, default always at the
+   base (ticket "Booking schedule: single-advertiser stacking tile"). */
+const LAYERS_TOP_DOWN: LayerKey[] = ['personalised', 'localised', 'default']
+const LAYER_ABBR: Record<LayerKey, string> = { default: 'DEFAULT', localised: 'LOC', personalised: 'PERS' }
+const LAYER_TIP: Record<LayerKey, string> = {
+  default: 'The mandatory, untargeted layer: what plays where nothing more specific matches. Present on every booking.',
+  localised: 'Store-level targeting, an upsell on the default layer. Shows this booking’s reach: how many of the display type’s displays its targeting matched, of the total across the retail footprint.',
+  personalised: 'One-to-one for the identified visitor, an upsell on the default layer. No reach count — a match can’t be predicted ahead of time — but shows which trigger mechanism(s) its targeting rules use.',
+}
+/* Trigger-icon ladder, broadest/most-frequent to narrowest/rarest (ticket
+   "Booking schedule: personalised trigger icons", 22 Sep): which icons are
+   lit tells the viewer the expected activation frequency, and therefore how
+   reliably the personalised multiplier will actually be earned. */
+const TRIGGER_ORDER: (keyof Triggers)[] = ['computerVision', 'aggregateStore', 'individual']
+const TRIGGER_META: Record<keyof Triggers, { icon: string; label: string; tip: string }> = {
+  computerVision: { icon: 'visibility', label: 'Computer vision', tip: 'Highest-frequency trigger: fires on almost anyone in front of the screen, no identification needed. Likely to drive the majority of personalised presentations.' },
+  aggregateStore: { icon: 'groups', label: 'Aggregate store-level', tip: 'Mid-frequency trigger: based on the aggregate of who is in the store right now, not one identified visitor.' },
+  individual: { icon: 'how_to_reg', label: 'Individual (identified)', tip: 'Highest value, lowest frequency: requires the customer to be identified or checked in.' },
 }
 
 interface Ctx { current: { money: (n: number) => string; view: View } }
@@ -105,112 +117,130 @@ const advertisersIn = (p: Position) => [...new Set(p.windows.flatMap((w) => (w.b
 const partnersIn = (p: Position) => [...new Set(p.windows.flatMap((w) => (w.booking ? [w.booking.partnerName] : [])))]
 
 /* One layer's pill within a window column — always rendered alongside the
-   other two (ticket, 21 Sep: three tabs made it impossible to see all three
-   layers' availability on one day/week at a glance). The label prefix is
-   what tells the three pills apart now that there's no active-tab styling
-   to do it; the full layer name and its meaning are in the tooltip. */
-const LayerLabel = ({ layer }: { layer: Layer }) => (
-  <span className="shrink-0" style={{ fontSize: 9, fontWeight: 700, letterSpacing: 0.3, color: T.micro }}>{LAYER_ABBR[layer]}</span>
+   other two, and every layer row inside a booked tile: the short prefix
+   tells them apart at a glance; the full layer name and its meaning are in
+   the tooltip. */
+const LayerTag = ({ layerKey }: { layerKey: LayerKey }) => (
+  <span className="shrink-0" style={{ fontSize: 9, fontWeight: 700, letterSpacing: 0.3, color: T.micro }}>{LAYER_ABBR[layerKey]}</span>
 )
 
-/* Muted, not the same red as Unavailable: the window has real demand, just
-   not this layer's — showing it as plain Available would overstate what a
-   DSP could actually still buy here (Rob, 22 Sep). */
-const SoldElsewhere = ({ layer }: { layer: Layer }) => (
-  <Tooltip title={`Booked, but as ${layer === 'Fallback' ? 'a localised or personalised' : layer === 'Localised' ? 'a fallback or personalised' : 'a fallback or localised'} campaign — not shown as Available here.`}>
-    <div className="flex items-center gap-1 w-full min-w-0 rounded px-1">
-      <LayerLabel layer={layer} />
-      <span className="truncate" style={{ fontSize: 11, color: T.muted }}>Sold — other layer</span>
-    </div>
-  </Tooltip>
-)
+/* One layer row within a booked tile — only rendered for a layer the
+   booking actually carries (`booking.layers[layerKey]`), so the tile's
+   height is exactly how many of these are provided (ticket "Booking
+   schedule: single-advertiser stacking tile"). */
+function LayerRow({ layerKey, booking, displayCount }: { layerKey: LayerKey; booking: Booking; displayCount?: number }) {
+  if (layerKey === 'personalised') {
+    const lit = TRIGGER_ORDER.filter((k) => booking.personalisedTriggers?.[k])
+    return (
+      <Tooltip title={LAYER_TIP.personalised}>
+        <div className="flex items-center gap-1 w-full min-w-0">
+          <LayerTag layerKey="personalised" />
+          {lit.length === 0
+            ? <span style={{ fontSize: 10, color: T.micro }}>Active</span>
+            : lit.map((k) => (
+              <Tooltip key={k} title={`${TRIGGER_META[k].label} — ${TRIGGER_META[k].tip}`}>
+                <span className="flex"><Icon name={TRIGGER_META[k].icon} size={13} style={{ color: BOOKED.colour }} /></span>
+              </Tooltip>
+            ))}
+        </div>
+      </Tooltip>
+    )
+  }
+  if (layerKey === 'localised') {
+    const reach = booking.reach
+    const tip = reach && displayCount
+      ? `${LAYER_TIP.localised} ${reach.matchedDisplays} of ${displayCount} displays matched (as of ${new Date(reach.asOf).toLocaleString('en-GB', { timeZone: 'UTC' })}).`
+      : LAYER_TIP.localised
+    return (
+      <Tooltip title={tip}>
+        <div className="flex items-center gap-1 w-full min-w-0">
+          <LayerTag layerKey="localised" />
+          {reach && displayCount && <span className="truncate" style={{ fontSize: 10, color: T.micro }}>{reach.matchedDisplays} of {displayCount}</span>}
+        </div>
+      </Tooltip>
+    )
+  }
+  return (
+    <Tooltip title={LAYER_TIP.default}>
+      <div className="flex items-center gap-1 w-full min-w-0">
+        <LayerTag layerKey="default" />
+      </div>
+    </Tooltip>
+  )
+}
 
-/* A week or a month: how much of that layer is sold within the group, and to whom. */
-function GroupedLayerPill({ layer, cells, money }: { layer: Layer; cells: Cell[]; money: (n: number) => string }) {
-  const inLayer = (c: Cell) => !!c.booking && layerOf(c.booking.pricingType) === layer
-  const booked = cells.filter(inLayer)
-  const soldElsewhere = cells.filter((c) => c.booking && !inLayer(c))
+/* A single day's booked window: one tile, the advertiser name as the unit
+   at the top, stacking only the layers this one purchase provides — so the
+   tile visibly expands and contracts with how successful the upsell has
+   been with that advertiser (ticket "Booking schedule: single-advertiser
+   stacking tile"). */
+function BookingTile({ booking, displayCount, money }: { booking: Booking; displayCount?: number; money: (n: number) => string }) {
+  const present = LAYERS_TOP_DOWN.filter((k) => booking.layers[k])
+  const reachTip = booking.reach && displayCount
+    ? ` · ${booking.reach.matchedDisplays} of ${displayCount} displays matched`
+    : ''
+  const tip = `${booking.advertiserName} via ${booking.partnerName} · ${booking.type === 'reserve' ? 'Reserved' : 'Won at auction'} at ${booking.cpm} CPM · ${booking.assumedViews.toLocaleString('en-GB')} assumed views · booked ${money(booking.bookedRevenue)}${booking.billedRevenue === null ? '' : ` · billed ${money(booking.billedRevenue)}`}${reachTip}`
+  return (
+    <Tooltip title={tip}>
+      <div className="flex w-full min-w-0 flex-col gap-0.5 rounded px-1 py-0.5" style={{ background: BOOKED.bg, borderLeft: `3px solid ${BOOKED.colour}` }}>
+        <div className="flex items-center gap-1 w-full min-w-0">
+          <Icon name={booking.type === 'reserve' ? 'bookmark' : 'gavel'} size={12} />
+          <span className="truncate" style={{ fontSize: 11, fontWeight: 600, color: BOOKED.colour }}>{booking.advertiserName}</span>
+        </div>
+        {present.map((k) => <LayerRow key={k} layerKey={k} booking={booking} displayCount={displayCount} />)}
+      </div>
+    </Tooltip>
+  )
+}
+
+/* A single day: the one tile this window can have (one advertiser per
+   slot), Available, or unavailable — no per-layer competition any more
+   (ticket "Booking schedule: single-advertiser stacking tile" retires the
+   earlier "Sold — other layer" model along with the fallback-optional,
+   part-sold submission it depended on). */
+function DailyCell({ cell, displayCount, money }: { cell: Cell; displayCount?: number; money: (n: number) => string }) {
+  if (cell.status === 'unavailable') return <span style={{ fontSize: 11, color: T.micro }}>—</span>
+  if (!cell.booking) return <span style={{ fontSize: 11, color: T.success }}>Available</span>
+  return <BookingTile booking={cell.booking} displayCount={displayCount} money={money} />
+}
+
+/* A week or a month: how many windows were booked at all, and — of those —
+   how many carried each upsell layer, so the same "read monetisation at a
+   glance" the daily tile gives shows up in the rolled-up views too. The
+   default layer is omitted here since it is on every booking and so adds
+   nothing the "N of M booked" line doesn't already say. */
+function GroupedCell({ cells, money }: { cells: Cell[]; money: (n: number) => string }) {
+  const booked = cells.filter((c) => c.booking)
   const sellable = cells.filter((c) => c.status !== 'unavailable' && !c.booking).length
   const names = [...new Set(booked.map((c) => c.booking!.advertiserName))]
   const revenue = booked.reduce((n, c) => n + c.booking!.bookedRevenue, 0)
-  const tip = booked.length
-    ? `${names.join(', ')} · ${money(revenue)}`
-    : soldElsewhere.length ? `Nothing in this layer; ${soldElsewhere.length} window${soldElsewhere.length === 1 ? '' : 's'} booked as another layer.` : 'Nothing booked in this period.'
+  const tip = booked.length ? `${names.join(', ')} · ${money(revenue)}` : 'Nothing booked in this period.'
+  const upsells = (['localised', 'personalised'] as const).map((k) => ({ k, n: booked.filter((c) => c.booking!.layers[k]).length })).filter((u) => u.n > 0)
   return (
-    <Tooltip title={`${LAYER_TIP[layer]} ${tip}`}>
-      <div className="flex items-center gap-1 w-full min-w-0 rounded px-1" style={booked.length ? { background: BOOKED.bg, borderLeft: `3px solid ${BOOKED.colour}` } : undefined}>
-        <LayerLabel layer={layer} />
+    <Tooltip title={tip}>
+      <div className="flex w-full min-w-0 flex-col gap-0.5">
         <span className="truncate" style={{ fontSize: 11, fontWeight: booked.length ? 500 : 400, color: booked.length ? BOOKED.colour : T.muted }}>
           {booked.length ? `${booked.length} of ${cells.length} booked` : `${sellable} open`}
         </span>
+        {upsells.map(({ k, n }) => (
+          <div key={k} className="flex items-center gap-1">
+            <LayerTag layerKey={k} />
+            <span style={{ fontSize: 10, color: T.micro }}>{n} of {booked.length}</span>
+          </div>
+        ))}
       </div>
     </Tooltip>
   )
 }
 
-/* A single day: this layer's own pill for the window — Available, Sold
-   elsewhere (another layer holds the one booking this window can have), the
-   booking itself if it's this layer's, or unavailable. */
-function DailyLayerPill({ layer, cell, displayCount, money }: { layer: Layer; cell: Cell; displayCount?: number; money: (n: number) => string }) {
-  if (cell.status === 'unavailable') {
-    return (
-      <Tooltip title={LAYER_TIP[layer]}>
-        <div className="flex items-center gap-1 w-full min-w-0 rounded px-1">
-          <LayerLabel layer={layer} />
-          <span style={{ fontSize: 11, color: T.micro }}>—</span>
-        </div>
-      </Tooltip>
-    )
-  }
-  const inLayer = !!cell.booking && layerOf(cell.booking.pricingType) === layer
-  if (cell.booking && !inLayer) return <SoldElsewhere layer={layer} />
-  if (!cell.booking) {
-    return (
-      <Tooltip title={LAYER_TIP[layer]}>
-        <div className="flex items-center gap-1 w-full min-w-0 rounded px-1">
-          <LayerLabel layer={layer} />
-          <span style={{ fontSize: 11, color: T.success }}>Available</span>
-        </div>
-      </Tooltip>
-    )
-  }
-  const b = cell.booking
-  /* Personalised carries no `reach` from the server (a match can't be
-     predicted ahead of time) — so on the Personalised pill this is already
-     an indicator with no count, with no special-casing needed here. */
-  const reach = b.reach && displayCount
-    ? `${b.reach.matchedDisplays} of ${displayCount} displays matched (as of ${new Date(b.reach.asOf).toLocaleString('en-GB', { timeZone: 'UTC' })}) · ${Math.max(displayCount - b.reach.matchedDisplays, 0)} open for another campaign`
-    : null
-  const tip = [
-    `${b.advertiserName} via ${b.partnerName} · ${b.pricingType} · ${b.type === 'reserve' ? 'Reserved' : 'Won at auction'} at ${b.cpm} CPM · ${b.assumedViews.toLocaleString('en-GB')} assumed views · booked ${money(b.bookedRevenue)}${b.billedRevenue === null ? '' : ` · billed ${money(b.billedRevenue)}`}`,
-    reach,
-  ].filter(Boolean).join(' · ')
-  return (
-    <Tooltip title={tip}>
-      <div className="flex items-center gap-1 w-full min-w-0 rounded px-1" style={{ background: BOOKED.bg, borderLeft: `3px solid ${BOOKED.colour}` }}>
-        <LayerLabel layer={layer} />
-        <Icon name={b.type === 'reserve' ? 'bookmark' : 'gavel'} size={12} />
-        <span className="truncate" style={{ fontSize: 11, fontWeight: 500, color: BOOKED.colour }}>{b.advertiserName}</span>
-        {b.reach && displayCount && (
-          <span className="truncate shrink-0" style={{ fontSize: 10, color: T.micro }}>{b.reach.matchedDisplays}/{displayCount}</span>
-        )}
-      </div>
-    </Tooltip>
-  )
-}
-
-/* Every window shows all three layers stacked, Personalised on top down to
-   Fallback at the bottom (ticket, 21 Sep) — never one tab at a time. */
 function WindowCell({ value, context, data }: ICellRendererParams<Row, Group, Ctx>) {
   if (!value?.cells.length) return null
   const { money, view } = context.current
   return (
     <div className="flex w-full min-w-0 flex-col justify-center gap-0.5 py-1">
-      {LAYERS_TOP_DOWN.map((layer) => (
-        view === 'Daily'
-          ? <DailyLayerPill key={layer} layer={layer} cell={value.cells[0]} displayCount={data?.position.displayCount} money={money} />
-          : <GroupedLayerPill key={layer} layer={layer} cells={value.cells} money={money} />
-      ))}
+      {view === 'Daily'
+        ? <DailyCell cell={value.cells[0]} displayCount={data?.position.displayCount} money={money} />
+        : <GroupedCell cells={value.cells} money={money} />}
     </div>
   )
 }
@@ -337,11 +367,11 @@ export function BookingSchedulePage() {
               immediately above the table was redundant. */}
           {data.positions.length > 0 && (
             <div className="mb-2 flex flex-wrap items-center gap-3" style={{ fontSize: 11, color: T.muted }}>
-              <span>Every window shows all three layers, top to bottom:</span>
+              <span>One tile per booking, stacking whichever layers it carries — default is always there, top to bottom:</span>
               {LAYERS_TOP_DOWN.map((layer) => (
                 <Tooltip key={layer} title={LAYER_TIP[layer]}>
                   <span className="flex items-center gap-1">
-                    <span style={{ fontWeight: 700, color: T.micro }}>{LAYER_ABBR[layer]}</span> {layer}
+                    <span style={{ fontWeight: 700, color: T.micro }}>{LAYER_ABBR[layer]}</span> {layer.charAt(0).toUpperCase() + layer.slice(1)}
                   </span>
                 </Tooltip>
               ))}
@@ -379,7 +409,7 @@ export function BookingSchedulePage() {
             pinnedBottomRowData={[{ displayTypeId: 'total', displayTypeName: 'Total', ...data.totals, total: true }]}
           />
 
-          <SectionLabel><WithTip tip="What is selling: baseline and localised campaigns pay the floor, personalised and interactive pay their multipliers on top.">By campaign type</WithTip></SectionLabel>
+          <SectionLabel><WithTip tip="What is selling: default and localised campaigns pay the floor, personalised and interactive pay their multipliers on top.">By campaign type</WithTip></SectionLabel>
           {data.byPricingType.length === 0 ? (
             <div style={{ fontSize: 12.5, color: T.muted }}>Nothing booked in this period yet.</div>
           ) : (

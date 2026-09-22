@@ -63,7 +63,7 @@ per engagement      = interactiveCpe           (interactive campaigns, on top)
 ```
 
 Defaults: floor 100, personalised 1.5, advertiser 1.0, cost per engagement
-0.50. Localised and baseline campaigns use floor × advertiser multiplier
+0.50. Localised and default campaigns use floor × advertiser multiplier
 only. Interactive is **not** a multiplier: such a campaign clears the same
 CPM floor as its targeting type and pays `interactiveCpe` for each
 engagement (a QR Control scan) on top, unscaled by the advertiser
@@ -107,8 +107,8 @@ whitelisted for.
 
 | Method | Path | Purpose | Main errors |
 |---|---|---|---|
-| POST | `/v1/campaigns` | Create: `advertiserId`, `name`, `displayTypeId`, an optional `baseline` (pricing type) plus `targeted` versions (id, priority, pricing type, rules), and an optional `brief` (the advertiser's own campaign details, landing page, promoted products, SKUs, target audiences, objective and touch points — Digital Signage for now). `baseline` is optional (decision, 22 Sep): an advertiser may submit only localised targeted versions — the fallback for stores none of them match is then a property of the slot, not this campaign — but at least one of `baseline` or `targeted` is required. | `validation_failed`, `variable_not_permitted` |
-| POST | `/v1/campaigns/{id}/assets` | Upload creative for `baseline` (only when the campaign has one) or a targeted version; returns check results. | `checks_failed` |
+| POST | `/v1/campaigns` | Create: `advertiserId`, `name`, `displayTypeId`, a mandatory `default` (pricing type) plus optional `targeted` versions (id, priority, pricing type, rules), and an optional `brief` (the advertiser's own campaign details, landing page, promoted products, SKUs, target audiences, objective and touch points — Digital Signage for now). `default` is required on every submission (decision, 22 Sep, superseding the earlier same-day "baseline optional" decision — ticket "Make default creative mandatory; retire localised-only booking path"): the earlier fallback-free/part-sold submission shape is retired — a slot goes to one advertiser, whose default layer is mandatory and localised/personalised targeted versions are optional upsells on that one purchase. | `validation_failed`, `variable_not_permitted` |
+| POST | `/v1/campaigns/{id}/assets` | Upload creative for `default` or a targeted version; returns check results. | `checks_failed` |
 | POST | `/v1/campaigns/{id}/submit` | Submit. Becomes `awaiting_approval`, or `approved` with mode `auto` when the advertiser doesn't require approval. | `checks_failed`, `conflict` |
 | GET | `/v1/campaigns/{id}/status` | `draft` / `awaiting_approval` / `approved` / `rejected`, mode, reason, asset version. | `not_found` |
 
@@ -127,12 +127,11 @@ Valid rules are stored in the existing campaign targeting structure and
 evaluated by the existing platform. The API never evaluates targeting.
 
 **Automated checks** (`checks[]`): `file_type`, `file_size`, `bitrate`,
-`dimensions`, `aspect_ratio`, `duration`, `baseline_present`,
-`targeting_permitted`, each with `passed` and `detail`. On a campaign with a
-baseline, `baseline_present` asks whether its creative was uploaded; on a
-fallback-free campaign (no baseline) it instead asks whether at least one
-targeted version has creative — the check name is unchanged, only what it
-checks depends on whether `baseline` was submitted.
+`dimensions`, `aspect_ratio`, `duration`, `default_present`,
+`targeting_permitted`, each with `passed` and `detail`. `default_present`
+asks whether the mandatory default layer's creative was uploaded — a
+targeted version's creative can no longer stand in for it, now that
+`default` is required on every submission.
 
 ### Reservations and bids
 
@@ -171,7 +170,7 @@ env var, with no switcher and no cookie (see *POC stand-ins* below).
 | PUT | `/admin/v1/advertiser-settings` | Save changes (pricing, auction schedule and lists). An entry can't be on both lists, and the play-window length can't change while future windows are bid on or booked (`validation_failed`). |
 | GET | `/admin/v1/available-inventory` | Rows: display type, playlist, slot, position, `assignedTo`, `supportedTargeting`, `reservePrice` (resolved), `reservePriceOverride` (this slot's own, null = inheriting) and `displayTypeReservePrice` (the display type's default, same on every row of that type), plus `dsps` (each DSP and its advertisers) for the Assigned to picker. No advertisers column. |
 | PUT | `/admin/v1/available-inventory` | Save changes — per slot, `assignedTo` (`partnerIds`, `advertisers`, `whitelistOnly`; nothing chosen = any connected DSP, and an advertiser's DSP is added automatically), `supportedTargeting` (at least one of `localised`, `personalised`, `interactive`), `reservePrice` (this slot's own override — a CPM, or null to inherit) and `reservePriceDefault` (the display type's own default — a CPM, or null; must be the same on every row for that display type in one request; real inheritance, 22 Sep — always send the slot's current values, there is no "unchanged" omission). The editable fields of a slot; its label and owner are set on its display type. Admin only. |
-| GET | `/admin/v1/booking-schedule?from=&to=` | Reached from Available Inventory. Every advertiser-owned slot across its play windows: booked (advertiser, DSP, reserve or bid, the CPM it was booked at, booked and billed revenue), available or unavailable; plus booking revenue per display type and in total. Live bookings only (never Test mode). Default: the current window and the next 13; at most 92 days. `campaignId`, `advertiserId` or `partnerId` narrow it, and `advertiserId` leaves only the positions that advertiser holds; with `campaignId` the range covers all of that campaign's bookings. Each booking says which campaign type it is, and the response also totals the bookings by campaign type. `dsps` lists the DSPs and, under each, **only the advertisers with something booked in the range**, because that is what the filter is for. Each position also carries `displayCount` (displays using its display type across the whole retail footprint — decision, 22 Sep), and each booking a `reach` object (`matchedDisplays`, `asOf`) for a localised or interactive booking, `null` for a fallback or personalised one — the client's Fallback / Localised / Personalised tabs (see REQUIREMENTS §6) are built entirely from these two fields plus `pricingType`, with no separate endpoint. |
+| GET | `/admin/v1/booking-schedule?from=&to=` | Reached from Available Inventory. Every advertiser-owned slot across its play windows: booked (advertiser, DSP, reserve or bid, the CPM it was booked at, booked and billed revenue), available or unavailable; plus booking revenue per display type and in total. Live bookings only (never Test mode). Default: the current window and the next 13; at most 92 days. `campaignId`, `advertiserId` or `partnerId` narrow it, and `advertiserId` leaves only the positions that advertiser holds; with `campaignId` the range covers all of that campaign's bookings. Each booking says which campaign type it is, and the response also totals the bookings by campaign type. `dsps` lists the DSPs and, under each, **only the advertisers with something booked in the range**, because that is what the filter is for. Each position also carries `displayCount` (displays using its display type across the whole retail footprint), and each booking a `layers` object (`default`, `localised`, `personalised` — which of the one advertiser's three layers this purchase actually carries, ticket "Booking schedule: single-advertiser stacking tile"), a `reach` object (`matchedDisplays`, `asOf`) when `layers.localised`, `null` otherwise, and a `personalisedTriggers` object (`computerVision`, `aggregateStore`, `individual`) when `layers.personalised`, `null` otherwise (ticket "Booking schedule: personalised trigger icons") — the client's stacked tile (see REQUIREMENTS §6) is built entirely from these fields plus `pricingType`, with no separate endpoint. |
 
 ### Shared targeting variables
 
