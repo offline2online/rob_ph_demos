@@ -129,7 +129,7 @@ export const campaignRoutes = (ctx: Context): FastifyPluginAsync => async (app) 
     const media = truncated ? null : readMedia(bytes as Buffer)
     const checks: Check[] = truncated
       ? [{ name: 'file_size', passed: false, detail: `The file is over the ${Math.round(limit / 1024 / 1024)} MB limit.` }]
-      : fileChecks(media, (bytes as Buffer).length, dt ?? null, ctx.config.assetLimits)
+      : fileChecks(media, (bytes as Buffer).length, dt ?? null, ctx.config.assetLimits, version)
     if (failed(checks).length) throw new HttpError(422, 'checks_failed', 'The file failed the automated checks.', failureDetails(checks))
 
     const m = media!
@@ -162,7 +162,7 @@ export const campaignRoutes = (ctx: Context): FastifyPluginAsync => async (app) 
     const def = assets.find((a) => a.role === 'default')
     const dt = c.displayTypeId ? ctx.displayTypes.get(c.displayTypeId) : null
     /* The file checks of the default layer's current file, recorded for the reviewer. */
-    const file = def ? fileChecks(readMedia(ctx.assets.read(def.file) ?? Buffer.alloc(0)), def.sizeBytes, dt ?? null, ctx.config.assetLimits) : []
+    const file = def ? fileChecks(readMedia(ctx.assets.read(def.file) ?? Buffer.alloc(0)), def.sizeBytes, dt ?? null, ctx.config.assetLimits, 'default') : []
     const access = ctx.company.variableAccess()
     const refused = (targeting.targeted ?? []).flatMap((t, i) => validateRules(t.rules, `targeted[${i}].rules`, req.partner, access, ctx.config.maxValuesPerCondition).notPermitted)
     const checks: Check[] = [

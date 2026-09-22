@@ -267,7 +267,19 @@ rest of this file.
      changed/created file, `content` being that file's complete new text
      (use `content: null` instead of a string to mean "delete this
      path"). Paths are relative to the repo root (e.g.
-     `"menu-board-demo/hq-admin.html"`).
+     `"menu-board-demo/hq-admin.html"`). **For a project that lives in its
+     own folder — `dsp-integration/`, `menu-board-demo/`,
+     `backlog-tracker/` — every path starts with that folder:**
+     `"dsp-integration/apps/admin/src/App.tsx"`, never
+     `"apps/admin/src/App.tsx"`, even though you may have been working
+     with the folder as your current directory. On 22 Sep 2026 seven
+     tickets (PR #185) were handed over folder-relative: the automation
+     created them as new files at the repo root, overwrote the root
+     README.md with the project's, the real files never changed, and the
+     cards said "Deployed" while nothing was. The automation now moves
+     such paths under the project's folder and says so on the card, but
+     a path it cannot decide (a new top-level directory) still lands
+     where you wrote it — get it right at source.
    - `patchBranch`: no longer used. There is one branch per project, not
      one per ticket, so there is nothing for this to name. It is still
      accepted and ignored; don't bother setting it.

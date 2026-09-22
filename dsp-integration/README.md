@@ -215,6 +215,13 @@ npm test
   Leave out `--window` for the next window that can be sold. A DSP's first
   bid with a new creative is discarded and the creative queued for
   approval; it competes from the next window once approved.
+- **Rejected-campaign retention** also runs as a scheduled job inside
+  `npm run dev:api` (`startCampaignRetentionScheduler`,
+  `apps/api/src/exchange/scheduler.ts`, daily by default): a Rejected
+  campaign and its assets are deleted once the rejection is older than
+  `Config.rejectedCampaignRetentionDays` (default 30) — never its audit
+  trail. See `apps/api/src/domain/campaignRetention.ts` and REQUIREMENTS.md
+  §3 *Enforcement and audit*.
 - Winning and reserved windows are handed off to the stand-in campaign
   system (booked into the slot for the window). After a window ends, it is
   billed against the stand-in playback data. To bill any ended windows

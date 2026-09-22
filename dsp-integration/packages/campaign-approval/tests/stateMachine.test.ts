@@ -15,6 +15,12 @@ describe('approval state machine (spec §3)', () => {
     expect(() => transition('draft', { type: 'approve' })).toThrow(TransitionError)
     expect(() => transition('rejected', { type: 'approve' })).toThrow(TransitionError)
   })
+  it('un-reject: Rejected → Awaiting approval only, never auto-approved', () => {
+    expect(transition('rejected', { type: 'unreject' })).toEqual({ status: 'awaiting_approval', mode: 'manual', audit: ['unrejected'] })
+    expect(() => transition('awaiting_approval', { type: 'unreject' })).toThrow(TransitionError)
+    expect(() => transition('draft', { type: 'unreject' })).toThrow(TransitionError)
+    expect(() => transition('approved', { type: 'unreject' })).toThrow(TransitionError)
+  })
   it('a change to an approved campaign returns it to Awaiting approval (or re-approves automatically)', () => {
     expect(transition('approved', { type: 'change', requiresApproval: true })).toEqual({ status: 'awaiting_approval', mode: 'manual', audit: ['returned_for_review'] })
     expect(transition('approved', { type: 'change', requiresApproval: false })).toEqual({ status: 'approved', mode: 'auto', audit: ['returned_for_review', 'auto_approved'] })

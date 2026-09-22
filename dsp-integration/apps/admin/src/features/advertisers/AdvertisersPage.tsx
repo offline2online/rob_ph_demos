@@ -442,7 +442,7 @@ export function AdvertisersPage() {
         </div>
       ) : (
         <>
-          <div className="mb-2" style={{ fontSize: 13 }}>{showingCount(invShown ?? invRows.length, invRows.length, `position${invRows.length === 1 ? '' : 's'}`)}</div>
+          <div className="mb-2" style={{ fontSize: 13 }}>{showingCount(invShown ?? invRows.length, invRows.length, `position${invRows.length === 1 ? '' : 's'}/slot${invRows.length === 1 ? '' : 's'}`)}</div>
           <Grid<AvailableInventoryRow>
             label="Available Inventory"
             rows={invRows}

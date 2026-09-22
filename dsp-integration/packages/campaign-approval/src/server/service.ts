@@ -3,7 +3,7 @@
    asset version) in the append-only audit log. */
 import type { CampaignRef, CampaignSource } from '../adapter/CampaignSource'
 import type { SqlDb } from '../db'
-import { STATUSES, type Approval, type ApprovalStatus, type Check, type StatusCounts } from '../types'
+import { STATUSES, type Approval, type ApprovalStatus, type AssetRejection, type Check, type StatusCounts } from '../types'
 import { type ApprovalRow, approvalStore } from './approvalStore'
 import { type ApprovalEvent, TransitionError, transition } from './stateMachine'
 
@@ -42,6 +42,7 @@ export function createApprovalService(o: ApprovalServiceOptions) {
       campaignId: c.campaignId, campaignName: c.name, ...(c.advertiserName ? { advertiserName: c.advertiserName } : {}), ...(c.partnerName ? { partnerName: c.partnerName } : {}),
       status: r?.status ?? 'draft', mode: r?.mode ?? null, assetVersion: c.assetVersion,
       submittedAt: r?.submittedAt ?? null, reviewedBy: r?.reviewedBy ?? null, reviewedAt: r?.reviewedAt ?? null, reason: r?.reason ?? null,
+      ...(r?.assetReasons?.length ? { assetReasons: r.assetReasons } : {}),
       checks: r?.checks ?? [],
       ...(full ? { targetingSummary: c.targetingSummary, creative: c.creative, canvas: c.canvas, audit: store.auditTrail(c.campaignId) } : {}),
     }
@@ -63,9 +64,13 @@ export function createApprovalService(o: ApprovalServiceOptions) {
       campaignId: c.campaignId, assetVersion: c.assetVersion, status: t.status, mode: t.mode,
       submittedAt: e.type === 'submit' || e.type === 'change' ? at : prev?.submittedAt ?? null,
       reviewedBy: reviewed ? (t.mode === 'auto' ? null : actor) : null, reviewedAt: reviewed ? at : null,
-      reason: e.type === 'reject' ? e.reason.trim() : null, checks: patch.checks ?? prev?.checks ?? [],
+      reason: e.type === 'reject' ? e.reason.trim() : null,
+      assetReasons: e.type === 'reject' ? (e.assetReasons ?? []) : [],
+      checks: patch.checks ?? prev?.checks ?? [],
     }, at)
-    for (const action of t.audit) store.audit(c.campaignId, c.assetVersion, action, action === 'auto_approved' ? null : actor, e.type === 'reject' ? e.reason.trim() : null, at)
+    const auditReason = e.type === 'reject' ? e.reason.trim() : e.type === 'unreject' && e.reason?.trim() ? e.reason.trim() : null
+    const auditAssetReasons = e.type === 'reject' ? e.assetReasons : undefined
+    for (const action of t.audit) store.audit(c.campaignId, c.assetVersion, action, action === 'auto_approved' ? null : actor, auditReason, at, auditAssetReasons)
     return t
   }
 
@@ -113,14 +118,37 @@ export function createApprovalService(o: ApprovalServiceOptions) {
       const c = await campaign(id)
       if (assetVersion !== c.assetVersion) throw new ApprovalError(409, 'conflict', 'The creative changed after you opened it. Review the new version.')
       apply(c, { type: 'approve' }, reviewer)
+      /* Safe reuse (spec §3): a genuine human decision clears this exact
+         content, so a later, unchanged resubmission can skip re-review.
+         Only the mandatory default layer is modelled as `creative` today
+         (CampaignRef); a targeted version's asset joins this the same way
+         once the adapter exposes it as its own asset id. */
+      if (c.creative?.contentHash) store.recordHumanClearance(c.campaignId, 'default', c.creative.contentHash, reviewer, now())
       return toView(c, true)
     },
 
-    async reject(id: string, assetVersion: string, reviewer: string, reason: string) {
+    async reject(id: string, assetVersion: string, reviewer: string, reason: string, assetReasons?: AssetRejection[]) {
       if (!reason?.trim()) throw new ApprovalError(400, 'validation_failed', 'A reason is required.')
       const c = await campaign(id)
       if (assetVersion !== c.assetVersion) throw new ApprovalError(409, 'conflict', 'The creative changed after you opened it. Review the new version.')
-      apply(c, { type: 'reject', reason }, reviewer)
+      apply(c, { type: 'reject', reason, assetReasons }, reviewer)
+      return toView(c, true)
+    },
+
+    /* Whether `assetId` can skip re-review on resubmission: unchanged
+       (same contentHash) AND its most recent clearance was by a human —
+       never true from automated checks alone. */
+    wasAssetHumanCleared(campaignId: string, assetId: string, contentHash: string): boolean {
+      return store.isHumanCleared(campaignId, assetId, contentHash)
+    },
+
+    /* Undo a mistaken rejection: back to Awaiting approval for a fresh
+       decision, never auto-approved. Same permission as approve/reject
+       (Q39). The prior rejection reason stays in the audit trail. */
+    async unreject(id: string, assetVersion: string, reviewer: string, reason?: string) {
+      const c = await campaign(id)
+      if (assetVersion !== c.assetVersion) throw new ApprovalError(409, 'conflict', 'The creative changed after you opened it. Review the new version.')
+      apply(c, { type: 'unreject', reason }, reviewer)
       return toView(c, true)
     },
 

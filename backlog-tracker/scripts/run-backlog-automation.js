@@ -399,6 +399,68 @@ function readAppVersion() {
   }
 }
 
+// Where a project's files live in this repo: the folder its deploy branch is
+// named after (deploy/dsp-integration -> dsp-integration/), or an explicit
+// projects/{id}.repoFolder. null when the project has no folder of its own
+// (the backlog tracker's train is deploy/backlog-tracker-faqs and its files
+// are under backlog-tracker/ and faq/ — no single folder, no normalising).
+function projectFolderOf(project, exists = (p) => fs.existsSync(path.join(process.cwd(), p)) && fs.statSync(path.join(process.cwd(), p)).isDirectory()) {
+  const slug = String(project?.deployBranch || "").replace(/^deploy\//, "");
+  for (const c of [project?.repoFolder, slug]) {
+    const folder = String(c || "").replace(/\/+$/, "");
+    if (folder && !folder.includes("..") && exists(folder)) return folder;
+  }
+  return null;
+}
+
+// A Routine session that worked inside a project's folder can hand over
+// patchFiles whose paths are relative to that folder, not the repo root —
+// "apps/admin/src/App.tsx" for dsp-integration/apps/admin/src/App.tsx. On
+// 22 Sep 2026 seven tickets (PR #185) shipped that way: the automation
+// wrote them as NEW files at the repo root, overwrote the root README.md
+// with the project's, and the real files never changed — so the cards said
+// "Deployed / Main Branch (Live)" while nothing was live, and the rebuild
+// workflow (which watches dsp-integration/) never fired.
+//
+// Rewrites such paths under the project's folder. Two grades of evidence:
+//   - unambiguous on its own: the path does not exist at the root but does
+//     under the folder (a modified file), or it is a new file whose
+//     directory exists only under the folder;
+//   - once any path in the patch is unambiguous, the whole patch shares the
+//     same frame of reference, so the rest moves too — a path that exists
+//     in BOTH places (README.md), a new file, a new directory — except a
+//     path whose first segment is a real root entry with no counterpart
+//     under the folder (menu-board-demo/…, backlog-tracker/…, CLAUDE.md),
+//     which can only have meant the root.
+// Anything already under the folder, or under .github/, is left alone.
+// Returns the rewritten list and what moved, for the card's note.
+function normalisePatchPaths(patchFiles, folder, exists = (p) => fs.existsSync(path.join(process.cwd(), p))) {
+  const files = (patchFiles || []).map((f) => (f && typeof f === "object" ? { ...f } : f));
+  const moved = [];
+  if (!folder) return { files, moved };
+  const under = (p) => `${folder}/${p}`;
+  const dirOf = (p) => { const d = path.posix.dirname(p); return d === "." ? "" : d; };
+  const eligible = (f) => f && typeof f.path === "string" && !f.path.includes("..") && !f.path.startsWith(`${folder}/`) && !f.path.startsWith(".github/");
+  const unambiguous = (p) => {
+    if (!exists(p) && exists(under(p))) return true;
+    const d = dirOf(p);
+    return !exists(p) && d !== "" && !exists(d) && exists(under(d));
+  };
+  const firm = new Set(files.filter(eligible).filter((f) => unambiguous(f.path)).map((f) => f.path));
+  for (const f of files) {
+    if (!eligible(f)) continue;
+    let move = firm.has(f.path);
+    if (!move && firm.size) {
+      const seg = f.path.split("/")[0];
+      move = !(exists(seg) && !exists(under(seg)));
+    }
+    if (!move) continue;
+    moved.push({ from: f.path, to: under(f.path) });
+    f.path = under(f.path);
+  }
+  return { files, moved };
+}
+
 function applyPatchFiles(patchFiles) {
   for (const f of patchFiles || []) {
     if (!f || typeof f.path !== "string" || f.path.includes("..")) {
@@ -967,9 +1029,15 @@ async function processApplyPatch(item) {
   let changedPaths = [];
   let testVersion = null;
   let attempt = 0;
+  let patchedFiles = item.patchFiles;
+  let movedPaths = [];
   for (;;) {
     checkoutTrain(deployBranch);
-    applyPatchFiles(item.patchFiles);
+    // Paths written relative to the project's folder go under it (see
+    // normalisePatchPaths); decided against the train's actual tree.
+    ({ files: patchedFiles, moved: movedPaths } = normalisePatchPaths(item.patchFiles, projectFolderOf(project)));
+    if (movedPaths.length) console.log(`[apply-patch] ${item.id}: ${movedPaths.length} patch path(s) were relative to ${projectFolderOf(project)}/ — placed under it (${movedPaths.map((m) => m.from).join(", ")})`);
+    applyPatchFiles(patchedFiles);
     // Read while the patched files are still on disk, so testVersion
     // reflects the branch this item will actually be tested on.
     testVersion = readAppVersion();
@@ -1058,13 +1126,16 @@ async function processApplyPatch(item) {
   // pre-train `claude/...` branch — is regenerated against the train.
   const previewUrl = (item.previewUrl && String(item.previewUrl).includes(`/${deployBranch}/`))
     ? item.previewUrl
-    : guessPreviewUrl(item.patchFiles, deployBranch, trainTreeUrl(deployBranch));
+    : guessPreviewUrl(patchedFiles, deployBranch, trainTreeUrl(deployBranch));
 
   const notes = await appendNote(
     item,
     `Committed to the project's integration branch \`${deployBranch}\` as ${sha.slice(0, 7)} (${changedPaths.join(", ")}). ` +
     `It is built on top of every ticket already on that branch, so the test link shows this change in the combination it will ship in. ` +
     `Nothing merges to main until every ticket on the train is approved and someone clicks Deploy to Main.` +
+    (movedPaths.length
+      ? ` Note: ${movedPaths.length} of this patch's paths were relative to the project's folder rather than the repo root (${movedPaths.map((m) => m.from).join(", ")}) and were placed under ${projectFolderOf(project)}/ — patchFiles paths must start at the repo root.`
+      : "") +
     rebuildNote(rebuilds, sha) +
     (workflowPaths.length
       ? ` This ticket changes ${workflowPaths.join(", ")}, so it was pushed with the workflow-push App token and the train's deploy PR will NOT be merged by the pipeline — a person has to review and merge it on GitHub.`
@@ -2325,4 +2396,6 @@ module.exports = {
   conflictedPaths, tryAutoResolveFaqIndexConflict, archiveAndResetOrphanedBranch, dateStamp, nearestPageFor, isBundlerTemplate,
   // test/generated-builds.test.js
   isGeneratedOutput, rebuildWorkflowsFor, tryAutoResolveGeneratedOutputConflict,
+  // test/patch-paths.test.js
+  normalisePatchPaths, projectFolderOf,
 };

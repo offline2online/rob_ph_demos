@@ -8,7 +8,11 @@ import { type MediaInfo, isVideo } from './media'
 import { slotDurationSec } from './slots'
 
 export type CheckName = 'file_type' | 'file_size' | 'bitrate' | 'dimensions' | 'aspect_ratio' | 'duration' | 'default_present' | 'targeting_permitted'
-export interface Check { name: CheckName; passed: boolean; detail?: string }
+/* assetId is the role a check ran against ('default' or a targeted version
+   id) — set for every per-file check (ticket, 22 Sep: "make automated
+   check results asset-scoped too"). Left unset for a campaign-level check
+   (default_present, targeting_permitted) that isn't about one asset. */
+export interface Check { name: CheckName; passed: boolean; detail?: string; assetId?: string }
 
 interface Size { width: number; height: number }
 const MB = 1024 * 1024
@@ -24,12 +28,13 @@ export function targetSizes(dt: DisplayType | null): Size[] {
 }
 
 const sameRatio = (a: Size, b: Size) => Math.abs(a.width / a.height - b.width / b.height) / (b.width / b.height) <= 0.01
+const tag = (checks: Check[], assetId?: string): Check[] => (assetId ? checks.map((c) => ({ ...c, assetId })) : checks)
 
-export function fileChecks(media: MediaInfo | null, sizeBytes: number, dt: DisplayType | null, limits: Config['assetLimits']): Check[] {
+export function fileChecks(media: MediaInfo | null, sizeBytes: number, dt: DisplayType | null, limits: Config['assetLimits'], assetId?: string): Check[] {
   if (!media) {
-    return [
+    return tag([
       { name: 'file_type', passed: false, detail: 'Not a PNG, JPEG or MP4 file.' },
-    ]
+    ], assetId)
   }
   const video = isVideo(media.kind)
   const checks: Check[] = [{ name: 'file_type', passed: true, detail: media.mimeType }]
@@ -68,7 +73,7 @@ export function fileChecks(media: MediaInfo | null, sizeBytes: number, dt: Displ
   else if (slot === null) checks.push({ name: 'duration', passed: true, detail: `${media.durationSec}s; the campaign has no slot duration to check against.` })
   else checks.push({ name: 'duration', passed: media.durationSec <= slot, detail: `${media.durationSec}s; the slot is ${slot}s.` })
 
-  return checks
+  return tag(checks, assetId)
 }
 
 export const failed = (checks: Check[]) => checks.filter((c) => !c.passed)

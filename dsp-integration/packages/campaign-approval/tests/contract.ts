@@ -98,6 +98,36 @@ export function runApprovalContract(name: string, make: () => { source: Campaign
       expect(await service.isCampaignEligible(id)).toBe(false)
     })
 
+    it('a rejection can name reasons against specific assets, kept in the audit trail (spec §3, "asset-level rejection")', async () => {
+      const { service, id } = await setup({ requiresApproval: true })
+      await service.submit(id, [], 'advertiser')
+      const v = (await service.view(id)).assetVersion
+      const assetReasons = [{ assetId: 'default', reason: 'Price in artwork' }, { assetId: 'metro', reason: 'Wrong logo' }]
+      const rejected = await service.reject(id, v, 'hq', 'Two assets need fixing.', assetReasons)
+      expect(rejected.assetReasons).toEqual(assetReasons)
+      expect((await service.view(id)).assetReasons).toEqual(assetReasons)
+      expect(rejected.audit!.find((a) => a.action === 'rejected')).toMatchObject({ reason: 'Two assets need fixing.', assetReasons })
+    })
+
+    it('a plain, single-reason rejection carries no assetReasons (unchanged behaviour)', async () => {
+      const { service, id } = await setup({ requiresApproval: true })
+      await service.submit(id, [], 'advertiser')
+      const v = (await service.view(id)).assetVersion
+      const rejected = await service.reject(id, v, 'hq', 'Price in artwork')
+      expect(rejected.assetReasons).toBeUndefined()
+      expect(rejected.audit!.find((a) => a.action === 'rejected')!.assetReasons).toBeUndefined()
+    })
+
+    it('un-reject (or a later approve) clears assetReasons — they belong to the rejection they were named on', async () => {
+      const { service, id } = await setup({ requiresApproval: true })
+      await service.submit(id, [], 'advertiser')
+      const v = (await service.view(id)).assetVersion
+      await service.reject(id, v, 'hq', 'Price in artwork', [{ assetId: 'default', reason: 'Price in artwork' }])
+      const back = await service.unreject(id, v, 'hq-admin')
+      expect(back.assetReasons).toBeUndefined()
+      expect((await service.view(id)).assetReasons).toBeUndefined()
+    })
+
     it('auto-approves when the advertiser does not require approval, recorded as such', async () => {
       const { service, id } = await setup({ requiresApproval: false })
       const s = await service.submit(id, [], 'advertiser')
@@ -124,6 +154,31 @@ export function runApprovalContract(name: string, make: () => { source: Campaign
       const old = (await service.view(id)).assetVersion
       await fixture.changeCreative(id)
       await expect(service.approve(id, old, 'hq')).rejects.toMatchObject({ code: 'conflict' })
+    })
+
+    it('un-reject reverses a mistaken rejection back to Awaiting approval, never auto-approving, and keeps the prior reason in the audit trail', async () => {
+      const { service, id } = await setup({ requiresApproval: true })
+      await service.submit(id, [], 'advertiser')
+      const v = (await service.view(id)).assetVersion
+      await service.reject(id, v, 'hq', 'Price in artwork')
+      expect((await service.view(id)).status).toBe('rejected')
+      const back = await service.unreject(id, v, 'hq-admin@retailer', 'Fat-fingered the reject button')
+      expect(back).toMatchObject({ status: 'awaiting_approval', reviewedBy: null, reviewedAt: null, reason: null })
+      expect(await service.isCampaignEligible(id)).toBe(false)
+      const audit = back.audit!.map((a) => ({ action: a.action, by: a.by, reason: a.reason }))
+      expect(audit).toEqual(expect.arrayContaining([
+        { action: 'rejected', by: 'hq', reason: 'Price in artwork' },
+        { action: 'unrejected', by: 'hq-admin@retailer', reason: 'Fat-fingered the reject button' },
+      ]))
+      /* Reviewing the now-stale (already un-rejected) version is a conflict, same as approve/reject. */
+      await expect(service.unreject(id, v, 'hq', undefined)).rejects.toMatchObject({ code: 'conflict' })
+    })
+
+    it('un-reject only fires from Rejected', async () => {
+      const { service, id } = await setup({ requiresApproval: true })
+      await service.submit(id, [], 'advertiser')
+      const v = (await service.view(id)).assetVersion
+      await expect(service.unreject(id, v, 'hq')).rejects.toMatchObject({ code: 'conflict' })
     })
 
     it('HQ-authored campaigns skip approval', async () => {
