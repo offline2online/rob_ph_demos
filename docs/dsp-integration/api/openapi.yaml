@@ -1,0 +1,1820 @@
+openapi: 3.1.0
+info:
+  title: Personalisation Hub — Display Types & DSP Integration API
+  version: 1.0.0-draft
+  description: |
+    The agreed contract for every API added by the Display Types & DSP
+    Integration build. Implement exactly these endpoints, fields and error
+    codes; do not add endpoints, fields or behaviour that are not here.
+    Changes to this file are made in the same commit as the code change.
+
+    Two surfaces:
+      * Partner API (/v1)       — DSPs and direct advertisers (tier 2).
+      * Admin API (/admin/v1)   — behind HQ Admin screens.
+    Plus the public sellers.json. The OpenRTB bid request/response contract
+    is documented in API.md (it is sent by us, not served).
+
+    Out of scope (existing Personalisation Hub functionality, no endpoints
+    here): playback, playlists' playback behaviour, targeting evaluation,
+    distribution to players, playback logging, campaign playback analytics.
+
+    Jobs with no endpoint: the SSP auction runs as a scheduled job
+    (CLI for demos: npm run auction:run); billing line items are stored
+    only (CLI to print them: npm run billing:print). Neither has a UI,
+    report or API.
+servers:
+  - url: https://{instance}/api
+    variables:
+      instance:
+        default: hub.example-retailer.com
+        description: The retailer's own Personalisation Hub instance (in its VPC).
+tags:
+  - name: Partner — Inventory
+  - name: Partner — Targeting
+  - name: Partner — Campaigns
+  - name: Partner — Reservations
+  - name: Admin — Exchange
+  - name: Admin — Advertiser settings
+  - name: Admin — Shared targeting variables
+  - name: Admin — DSPs
+  - name: Admin — Advertisers
+  - name: Admin — Campaign approval
+  - name: Admin — Display types and playlists
+  - name: POC stand-in — existing platform
+    description: |
+      POC only. These stand in for existing Personalisation Hub APIs that this
+      repo can't reach. Engineering replaces them with the existing APIs on
+      integration; nothing else may depend on their internals.
+  - name: Public
+
+security:
+  - partnerToken: []
+
+paths:
+  # ------------------------------------------------------------------ Partner
+  /v1/inventory:
+    get:
+      tags: [Partner — Inventory]
+      operationId: listInventory
+      summary: Sellable positions this partner/advertiser could buy
+      description: |
+        Only advertiser-owned slots. Positions the caller can't buy (blacklisted,
+        excluded by whitelist-only, or reserved to another advertiser) are omitted,
+        never returned as errors.
+      parameters:
+        - {name: advertiserId, in: query, schema: {type: string}, description: Scope to one of the partner's advertisers (applies their lists and floor multiplier).}
+        - {name: displayTypeId, in: query, schema: {type: string}}
+        - {name: touchPoint, in: query, schema: {type: string, enum: [Digital Signage, Kiosk]}}
+        - {name: storeIds, in: query, schema: {type: array, items: {type: string}}, style: form, explode: false, description: Personalisation Hub store IDs (stores are managed by the platform).}
+        - {name: region, in: query, schema: {type: string}, description: A store region from the platform's store records.}
+        - {name: from, in: query, schema: {type: string, format: date}}
+        - {name: to, in: query, schema: {type: string, format: date}}
+        - {name: status, in: query, schema: {$ref: '#/components/schemas/WindowStatus'}}
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Positions
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items: {type: array, items: {$ref: '#/components/schemas/Position'}}
+                  nextCursor: {type: [string, 'null']}
+        '401': {$ref: '#/components/responses/Unauthorised'}
+  /v1/inventory/{positionId}:
+    get:
+      tags: [Partner — Inventory]
+      operationId: getPosition
+      summary: One position in full
+      parameters:
+        - $ref: '#/components/parameters/PositionId'
+        - {name: advertiserId, in: query, schema: {type: string}}
+      responses:
+        '200': {description: Position, content: {application/json: {schema: {$ref: '#/components/schemas/Position'}}}}
+        '401': {$ref: '#/components/responses/Unauthorised'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /v1/inventory/{positionId}/availability:
+    get:
+      tags: [Partner — Inventory]
+      operationId: getAvailability
+      summary: Status per play window across a date range
+      parameters:
+        - $ref: '#/components/parameters/PositionId'
+        - {name: from, in: query, required: true, schema: {type: string, format: date}}
+        - {name: to, in: query, required: true, schema: {type: string, format: date}}
+        - {name: advertiserId, in: query, schema: {type: string}}
+      responses:
+        '200':
+          description: Windows
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [positionId, windows]
+                properties:
+                  positionId: {type: string}
+                  windows: {type: array, items: {$ref: '#/components/schemas/PlayWindow'}}
+        '400': {$ref: '#/components/responses/ValidationFailed'}
+        '401': {$ref: '#/components/responses/Unauthorised'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /v1/inventory/forecast:
+    post:
+      tags: [Partner — Inventory]
+      operationId: forecast
+      summary: Projected assumed views for a position set and targeting
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [positionIds, from, to]
+              properties:
+                positionIds: {type: array, minItems: 1, items: {type: string}}
+                from: {type: string, format: date}
+                to: {type: string, format: date}
+                advertiserId: {type: string}
+                rules: {$ref: '#/components/schemas/TargetingRules'}
+      responses:
+        '200':
+          description: Forecast
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [assumedViews, currency, estimatedCost]
+                properties:
+                  assumedViews: {type: integer, description: Projected VAC-d assumed views across the positions and dates.}
+                  currency: {type: string, description: ISO 4217}
+                  estimatedCost: {type: number, description: assumedViews / 1000 × effective floor CPM.}
+        '400': {$ref: '#/components/responses/ValidationFailed'}
+        '401': {$ref: '#/components/responses/Unauthorised'}
+        '422': {$ref: '#/components/responses/VariableNotPermitted'}
+
+  /v1/targeting/attributes:
+    get:
+      tags: [Partner — Targeting]
+      operationId: listTargetingAttributes
+      summary: The shared targeting variables this partner may use
+      description: Only variables enabled for the calling DSP. Values are never returned.
+      responses:
+        '200':
+          description: Variables
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items: {type: array, items: {$ref: '#/components/schemas/TargetingAttribute'}}
+        '401': {$ref: '#/components/responses/Unauthorised'}
+
+  /v1/campaigns:
+    post:
+      tags: [Partner — Campaigns]
+      operationId: createCampaign
+      summary: Create a campaign (content package) — a mandatory default layer plus optional targeted versions
+      description: |
+        Targeting rules are validated against the variables permitted for the
+        calling DSP and stored in the existing campaign targeting structure.
+        Evaluation and playback are the existing platform's.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/CampaignCreate'}
+      responses:
+        '201': {description: Created, content: {application/json: {schema: {$ref: '#/components/schemas/CampaignStatus'}}}}
+        '400': {$ref: '#/components/responses/ValidationFailed'}
+        '401': {$ref: '#/components/responses/Unauthorised'}
+        '422': {$ref: '#/components/responses/VariableNotPermitted'}
+  /v1/campaigns/{campaignId}/assets:
+    post:
+      tags: [Partner — Campaigns]
+      operationId: uploadAsset
+      summary: Upload creative for the default layer or a targeted version; runs automated checks
+      parameters: [{$ref: '#/components/parameters/CampaignId'}]
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [version, file]
+              properties:
+                version: {type: string, description: '"default" or the targeted version id'}
+                file: {type: string, format: binary, description: 'Per-asset limit, checked by `file_size`: 100 MB for an image, 200 MB for a video.'}
+      responses:
+        '201':
+          description: Uploaded and checked
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [assetId, checks]
+                properties:
+                  assetId: {type: string}
+                  checks: {type: array, items: {$ref: '#/components/schemas/Check'}}
+        '400': {$ref: '#/components/responses/ValidationFailed'}
+        '401': {$ref: '#/components/responses/Unauthorised'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '422': {$ref: '#/components/responses/ChecksFailed'}
+  /v1/campaigns/{campaignId}/submit:
+    post:
+      tags: [Partner — Campaigns]
+      operationId: submitCampaign
+      summary: Submit for retailer approval (or auto-approve if the advertiser doesn't require it)
+      parameters: [{$ref: '#/components/parameters/CampaignId'}]
+      responses:
+        '200': {description: Submitted, content: {application/json: {schema: {$ref: '#/components/schemas/CampaignStatus'}}}}
+        '401': {$ref: '#/components/responses/Unauthorised'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/ChecksFailed'}
+  /v1/campaigns/{campaignId}/status:
+    get:
+      tags: [Partner — Campaigns]
+      operationId: getCampaignStatus
+      summary: Approval status and rejection reason
+      parameters: [{$ref: '#/components/parameters/CampaignId'}]
+      responses:
+        '200': {description: Status, content: {application/json: {schema: {$ref: '#/components/schemas/CampaignStatus'}}}}
+        '401': {$ref: '#/components/responses/Unauthorised'}
+        '404': {$ref: '#/components/responses/NotFound'}
+
+  /v1/reservations:
+    post:
+      tags: [Partner — Reservations]
+      operationId: createReservation
+      summary: Reserve (named advertiser) or bid (CPM) for a play window
+      description: Approved and activated campaigns only, while the window's auction is open (from auctionOpensHours before the auction cutoff until the cutoff; Advertiser settings → Auction schedule). Pre-auction checks apply (floor, lists, categories, approval, activation).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ReservationCreate'}
+      responses:
+        '201': {description: Accepted, content: {application/json: {schema: {$ref: '#/components/schemas/Reservation'}}}}
+        '400': {$ref: '#/components/responses/ValidationFailed'}
+        '401': {$ref: '#/components/responses/Unauthorised'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/NotEligible'}
+  /v1/reservations/{reservationId}:
+    get:
+      tags: [Partner — Reservations]
+      operationId: getReservation
+      summary: One reservation or bid, with its outcome
+      parameters: [{name: reservationId, in: path, required: true, schema: {type: string}}]
+      responses:
+        '200': {description: Reservation, content: {application/json: {schema: {$ref: '#/components/schemas/Reservation'}}}}
+        '401': {$ref: '#/components/responses/Unauthorised'}
+        '404': {$ref: '#/components/responses/NotFound'}
+
+  # ------------------------------------------------------------------ Admin
+  /admin/v1/exchange:
+    get:
+      tags: [Admin — Exchange]
+      operationId: getExchange
+      security: [{adminSession: []}]
+      responses:
+        '200': {description: Exchange settings, content: {application/json: {schema: {$ref: '#/components/schemas/Exchange'}}}}
+        '401': {$ref: '#/components/responses/Unauthorised'}
+    put:
+      tags: [Admin — Exchange]
+      operationId: saveExchange
+      summary: Save changes (whole page)
+      security: [{adminSession: []}]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/ExchangeInput'}}}
+      responses:
+        '200': {description: Saved; sellers.json republished when complete, content: {application/json: {schema: {$ref: '#/components/schemas/Exchange'}}}}
+        '400': {$ref: '#/components/responses/ValidationFailed'}
+        '401': {$ref: '#/components/responses/Unauthorised'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+
+  /admin/v1/advertiser-settings:
+    get:
+      tags: [Admin — Advertiser settings]
+      operationId: getAdvertiserSettings
+      security: [{adminSession: []}]
+      responses:
+        '200': {description: Settings, content: {application/json: {schema: {$ref: '#/components/schemas/AdvertiserSettings'}}}}
+        '401': {$ref: '#/components/responses/Unauthorised'}
+    put:
+      tags: [Admin — Advertiser settings]
+      operationId: saveAdvertiserSettings
+      summary: Save changes — pricing and list management
+      security: [{adminSession: []}]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/AdvertiserSettingsInput'}}}
+      responses:
+        '200': {description: Saved, content: {application/json: {schema: {$ref: '#/components/schemas/AdvertiserSettings'}}}}
+        '400': {$ref: '#/components/responses/ValidationFailed'}
+        '401': {$ref: '#/components/responses/Unauthorised'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+  /admin/v1/available-inventory:
+    get:
+      tags: [Admin — Advertiser settings]
+      operationId: listAvailableInventory
+      summary: Advertiser-owned slots (no advertisers column)
+      security: [{adminSession: []}]
+      responses:
+        '200':
+          description: Rows, and the DSPs (with their advertisers) a position can be assigned to
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, dsps]
+                properties:
+                  items: {type: array, items: {$ref: '#/components/schemas/AvailableInventoryRow'}}
+                  dsps: {type: array, items: {$ref: '#/components/schemas/DspAdvertisers'}}
+        '401': {$ref: '#/components/responses/Unauthorised'}
+    put:
+      tags: [Admin — Advertiser settings]
+      operationId: saveAvailableInventory
+      summary: Save changes — who a slot is assigned to, what targeting it supports, and its reserve price
+      description: |
+        The editable fields of a sellable slot. Everything else about it —
+        its label and owner — is set on its display type. Admin only:
+        marketing users read this table.
+
+        assignedTo: pick DSPs to say who may bid, advertisers to hold the
+        position for them (their DSPs are added automatically), or
+        whitelistOnly for the advertiser whitelist. Nothing chosen means any
+        connected DSP. Advertisers and whitelistOnly are mutually exclusive.
+
+        supportedTargeting: interactive is only accepted on a display type
+        with QR Control enabled.
+
+        reservePrice: a CPM premium at which this slot can be reserved in
+        advance of the open auction (decision, 22 Sep). Real inheritance
+        (spec §1 configuration inheritance), not a copy action: a display
+        type carries its own reserve price default (reservePriceDefault,
+        below), and a slot's own reservePrice is null until explicitly
+        overridden, in which case it always wins. Clear a slot's override
+        back to null to return it to following the display type's default.
+        Published — resolved, override-or-default — on the position in
+        `GET /v1/inventory` and `/v1/inventory/{positionId}`; not yet wired
+        to reservation or billing logic (open question 52).
+
+        reservePriceDefault: the display type's own reserve price default
+        that a slot with no override inherits; null means no default is
+        set. Sent once per slot row for simplicity (omission is not
+        supported, same as reservePrice), but it describes the display
+        type, not the slot — every row sharing a displayTypeId must submit
+        the same value in one request.
+      security: [{adminSession: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [items]
+              properties:
+                items:
+                  type: array
+                  items:
+                    type: object
+                    required: [displayTypeId, slot, supportedTargeting, assignedTo]
+                    properties:
+                      displayTypeId: {type: string}
+                      slot: {type: integer, minimum: 1}
+                      supportedTargeting:
+                        type: array
+                        minItems: 1
+                        items: {type: string, enum: [localised, personalised, interactive]}
+                      assignedTo:
+                        type: object
+                        required: [partnerIds, advertisers, whitelistOnly]
+                        properties:
+                          partnerIds: {type: array, items: {type: string}}
+                          advertisers: {type: array, items: {type: string}}
+                          whitelistOnly: {type: boolean}
+                      reservePrice:
+                        type: [number, 'null']
+                        minimum: 0
+                        description: This slot's own override; null = inherit reservePriceDefault. Omitted = unchanged is not supported — always send the slot's current value.
+                      reservePriceDefault:
+                        type: [number, 'null']
+                        minimum: 0
+                        description: The display type's reserve price default; null = none. Must be the same value on every row for a given displayTypeId in one request.
+      responses:
+        '200':
+          description: Saved
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, dsps]
+                properties:
+                  items: {type: array, items: {$ref: '#/components/schemas/AvailableInventoryRow'}}
+                  dsps: {type: array, items: {$ref: '#/components/schemas/DspAdvertisers'}}
+        '400': {$ref: '#/components/responses/ValidationFailed'}
+        '401': {$ref: '#/components/responses/Unauthorised'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+  /admin/v1/booking-schedule:
+    get:
+      tags: [Admin — Advertiser settings]
+      operationId: getBookingSchedule
+      summary: Every advertiser-owned slot across its play windows, with bookings and booking revenue
+      description: |
+        Reached from Available Inventory. Per position and play window: booked
+        (reserved or won, live only, at the CPM it was booked at), available
+        (bidding not yet closed) or unavailable. Plus booking revenue per
+        display type: booked (CPM × assumed views ÷ 1000) and billed (billing
+        line items, once the window has played). Test-mode wins are never
+        counted. Without dates: the current window and the 13 after it.
+      security: [{adminSession: []}]
+      parameters:
+        - {name: from, in: query, schema: {type: string, format: date}}
+        - {name: to, in: query, schema: {type: string, format: date}, description: 'At most 92 days after from.'}
+        - {name: campaignId, in: query, schema: {type: string}, description: 'Only this campaign''s bookings; without dates, the range covers all of them.'}
+        - {name: advertiserId, in: query, schema: {type: string}, description: Only this advertiser's bookings.}
+        - {name: partnerId, in: query, schema: {type: string}, description: Only this DSP's bookings.}
+      responses:
+        '200': {description: Schedule, content: {application/json: {schema: {$ref: '#/components/schemas/BookingSchedule'}}}}
+        '400': {$ref: '#/components/responses/ValidationFailed'}
+        '401': {$ref: '#/components/responses/Unauthorised'}
+
+  /admin/v1/targeting-variables:
+    get:
+      tags: [Admin — Shared targeting variables]
+      operationId: getSharedTargetingVariables
+      security: [{adminSession: []}]
+      responses:
+        '200':
+          description: Variables with DSP access
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items: {type: array, items: {$ref: '#/components/schemas/SharedVariable'}}
+        '401': {$ref: '#/components/responses/Unauthorised'}
+    put:
+      tags: [Admin — Shared targeting variables]
+      operationId: saveVariableAccess
+      summary: Save changes — which DSPs may target each variable
+      security: [{adminSession: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [access]
+              properties:
+                access:
+                  type: object
+                  description: variableKey → "all" or a list of partner ids ([] = none).
+                  additionalProperties: {$ref: '#/components/schemas/VariableAccess'}
+      responses:
+        '200':
+          description: Saved
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items: {type: array, items: {$ref: '#/components/schemas/SharedVariable'}}
+        '400': {$ref: '#/components/responses/ValidationFailed'}
+        '401': {$ref: '#/components/responses/Unauthorised'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+
+  /admin/v1/partners:
+    get:
+      tags: [Admin — DSPs]
+      operationId: listPartners
+      security: [{adminSession: []}]
+      responses:
+        '200':
+          description: Configured DSPs
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items: {type: array, items: {$ref: '#/components/schemas/Partner'}}
+        '401': {$ref: '#/components/responses/Unauthorised'}
+    post:
+      tags: [Admin — DSPs]
+      operationId: addPartner
+      summary: Add a DSP (starts in Test, adopts company lists)
+      security: [{adminSession: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [provider]
+              properties:
+                provider: {$ref: '#/components/schemas/Provider'}
+      responses:
+        '201': {description: Added, content: {application/json: {schema: {$ref: '#/components/schemas/Partner'}}}}
+        '400': {$ref: '#/components/responses/ValidationFailed'}
+        '401': {$ref: '#/components/responses/Unauthorised'}
+        '409': {$ref: '#/components/responses/Conflict'}
+  /admin/v1/partners/{partnerId}:
+    get:
+      tags: [Admin — DSPs]
+      operationId: getPartner
+      security: [{adminSession: []}]
+      parameters: [{$ref: '#/components/parameters/PartnerId'}]
+      responses:
+        '200': {description: DSP, content: {application/json: {schema: {$ref: '#/components/schemas/Partner'}}}}
+        '401': {$ref: '#/components/responses/Unauthorised'}
+        '404': {$ref: '#/components/responses/NotFound'}
+    put:
+      tags: [Admin — DSPs]
+      operationId: savePartner
+      summary: Save changes — credentials, bidder, mode, own lists
+      description: |
+        Whole-page save. Secret credential fields are write-only: send a new value
+        to replace, omit to keep. mode "live" is rejected unless connected and the
+        bidder integration is complete.
+      security: [{adminSession: []}]
+      parameters: [{$ref: '#/components/parameters/PartnerId'}]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/PartnerInput'}}}
+      responses:
+        '200': {description: Saved, content: {application/json: {schema: {$ref: '#/components/schemas/Partner'}}}}
+        '400': {$ref: '#/components/responses/ValidationFailed'}
+        '401': {$ref: '#/components/responses/Unauthorised'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+  /admin/v1/partners/{partnerId}/connect:
+    post:
+      tags: [Admin — DSPs]
+      operationId: connectPartner
+      summary: Connect or re-test with the saved credentials; pulls seats/advertisers
+      security: [{adminSession: []}]
+      parameters: [{$ref: '#/components/parameters/PartnerId'}]
+      responses:
+        '200': {description: Result (status connected or error with the DSP's reason), content: {application/json: {schema: {$ref: '#/components/schemas/Partner'}}}}
+        '401': {$ref: '#/components/responses/Unauthorised'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /admin/v1/partners/{partnerId}/disconnect:
+    post:
+      tags: [Admin — DSPs]
+      operationId: disconnectPartner
+      security: [{adminSession: []}]
+      parameters: [{$ref: '#/components/parameters/PartnerId'}]
+      responses:
+        '200': {description: Disconnected (mode reset to test), content: {application/json: {schema: {$ref: '#/components/schemas/Partner'}}}}
+        '401': {$ref: '#/components/responses/Unauthorised'}
+        '404': {$ref: '#/components/responses/NotFound'}
+
+  /admin/v1/advertisers:
+    get:
+      tags: [Admin — Advertisers]
+      operationId: listAdvertisers
+      summary: Every advertiser across all DSPs (admin users only)
+      security: [{adminSession: [admin]}]
+      responses:
+        '200':
+          description: Advertisers
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, currency, floorCpm]
+                properties:
+                  currency: {type: string}
+                  floorCpm: {type: number}
+                  items: {type: array, items: {$ref: '#/components/schemas/Advertiser'}}
+        '401': {$ref: '#/components/responses/Unauthorised'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+    put:
+      tags: [Admin — Advertisers]
+      operationId: saveAdvertisers
+      summary: Save changes — approval required and floor multiplier per advertiser
+      security: [{adminSession: [admin]}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [settings]
+              properties:
+                settings:
+                  type: object
+                  description: advertiserId → settings
+                  additionalProperties: {$ref: '#/components/schemas/AdvertiserSetting'}
+      responses:
+        '200': {description: Saved}
+        '400': {$ref: '#/components/responses/ValidationFailed'}
+        '401': {$ref: '#/components/responses/Unauthorised'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+
+  /admin/v1/approvals:
+    get:
+      tags: [Admin — Campaign approval]
+      operationId: listApprovals
+      summary: Campaigns by approval status, with counts (for the campaign table filter)
+      security: [{adminSession: []}]
+      parameters:
+        - {name: status, in: query, schema: {$ref: '#/components/schemas/ApprovalStatus'}}
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Approvals
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [counts, items]
+                properties:
+                  counts:
+                    type: object
+                    required: [draft, awaiting_approval, approved, rejected]
+                    properties:
+                      draft: {type: integer}
+                      awaiting_approval: {type: integer}
+                      approved: {type: integer}
+                      rejected: {type: integer}
+                  items: {type: array, items: {$ref: '#/components/schemas/Approval'}}
+                  nextCursor: {type: [string, 'null']}
+        '401': {$ref: '#/components/responses/Unauthorised'}
+  /admin/v1/campaigns/{campaignId}/approval:
+    get:
+      tags: [Admin — Campaign approval]
+      operationId: getApproval
+      summary: Approval state, check results and audit trail (review panel)
+      security: [{adminSession: []}]
+      parameters: [{$ref: '#/components/parameters/CampaignId'}]
+      responses:
+        '200': {description: Approval, content: {application/json: {schema: {$ref: '#/components/schemas/Approval'}}}}
+        '401': {$ref: '#/components/responses/Unauthorised'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /admin/v1/campaigns/{campaignId}/approve:
+    post:
+      tags: [Admin — Campaign approval]
+      operationId: approveCampaign
+      security: [{adminSession: [approver]}]
+      parameters: [{$ref: '#/components/parameters/CampaignId'}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [assetVersion]
+              properties:
+                assetVersion: {type: string, description: The version reviewed; rejected with 409 if it has changed.}
+      responses:
+        '200': {description: Approved, content: {application/json: {schema: {$ref: '#/components/schemas/Approval'}}}}
+        '401': {$ref: '#/components/responses/Unauthorised'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+  /admin/v1/campaigns/{campaignId}/reject:
+    post:
+      tags: [Admin — Campaign approval]
+      operationId: rejectCampaign
+      security: [{adminSession: [approver]}]
+      parameters: [{$ref: '#/components/parameters/CampaignId'}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [assetVersion, reason]
+              properties:
+                assetVersion: {type: string}
+                reason: {type: string, minLength: 1}
+                assetReasons: {type: array, items: {$ref: '#/components/schemas/AssetRejection'}, description: 'Optional — names specific assets the overall reason covers (spec §3, "asset-level rejection").'}
+      responses:
+        '200': {description: Rejected, content: {application/json: {schema: {$ref: '#/components/schemas/Approval'}}}}
+        '400': {$ref: '#/components/responses/ValidationFailed'}
+        '401': {$ref: '#/components/responses/Unauthorised'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+  /admin/v1/campaigns/{campaignId}/unreject:
+    post:
+      tags: [Admin — Campaign approval]
+      operationId: unrejectCampaign
+      summary: Undo a mistaken rejection — Rejected → Awaiting approval. Never auto-approves.
+      security: [{adminSession: [approver]}]
+      parameters: [{$ref: '#/components/parameters/CampaignId'}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [assetVersion]
+              properties:
+                assetVersion: {type: string, description: The rejected version; rejected with 409 if it has changed.}
+                reason: {type: string, description: Optional — why the rejection is being reversed. Recorded in the audit trail alongside the original rejection reason, which is kept.}
+      responses:
+        '200': {description: Back to Awaiting approval, content: {application/json: {schema: {$ref: '#/components/schemas/Approval'}}}}
+        '401': {$ref: '#/components/responses/Unauthorised'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+
+  /admin/v1/display-types/{displayTypeId}/extensions:
+    put:
+      tags: [Admin — Display types and playlists]
+      operationId: saveDisplayTypeExtensions
+      summary: Save slot ownership and venue metadata (phExtensions only)
+      description: Existing display type fields keep using the existing display type API.
+      security: [{adminSession: []}]
+      parameters: [{name: displayTypeId, in: path, required: true, schema: {type: string}}]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/DisplayTypeExtensions'}}}
+      responses:
+        '200': {description: Saved, content: {application/json: {schema: {$ref: '#/components/schemas/DisplayTypeExtensions'}}}}
+        '400': {$ref: '#/components/responses/ValidationFailed'}
+        '401': {$ref: '#/components/responses/Unauthorised'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /admin/v1/display-types/{displayTypeId}/delete-check:
+    get:
+      tags: [Admin — Display types and playlists]
+      operationId: checkDisplayTypeDelete
+      summary: Can this display type be deleted? Lists assigned displays if not.
+      security: [{adminSession: []}]
+      parameters: [{name: displayTypeId, in: path, required: true, schema: {type: string}}]
+      responses:
+        '200': {description: Result, content: {application/json: {schema: {$ref: '#/components/schemas/DeleteCheck'}}}}
+        '401': {$ref: '#/components/responses/Unauthorised'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /admin/v1/display-types/{displayTypeId}:
+    delete:
+      tags: [Admin — Display types and playlists]
+      operationId: deleteDisplayType
+      summary: Delete; 409 with the assigned displays if any remain
+      security: [{adminSession: []}]
+      parameters: [{name: displayTypeId, in: path, required: true, schema: {type: string}}]
+      responses:
+        '204': {description: Deleted}
+        '401': {$ref: '#/components/responses/Unauthorised'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/HasDependents'}
+  /admin/v1/playlists/{playlistId}/delete-check:
+    get:
+      tags: [Admin — Display types and playlists]
+      operationId: checkPlaylistDelete
+      summary: Can this playlist be deleted? Lists display type / zone assignments if not.
+      security: [{adminSession: []}]
+      parameters: [{name: playlistId, in: path, required: true, schema: {type: string}}]
+      responses:
+        '200': {description: Result, content: {application/json: {schema: {$ref: '#/components/schemas/DeleteCheck'}}}}
+        '401': {$ref: '#/components/responses/Unauthorised'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /admin/v1/playlists/{playlistId}:
+    delete:
+      tags: [Admin — Display types and playlists]
+      operationId: deletePlaylist
+      summary: Delete; 409 with the assignments if it is a default or zone playlist
+      security: [{adminSession: []}]
+      parameters: [{name: playlistId, in: path, required: true, schema: {type: string}}]
+      responses:
+        '204': {description: Deleted}
+        '401': {$ref: '#/components/responses/Unauthorised'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/HasDependents'}
+
+  # ------------------------------------------------------ POC stand-ins (existing platform)
+  /admin/v1/display-types:
+    get:
+      tags: [POC stand-in — existing platform]
+      operationId: listDisplayTypes
+      security: [{adminSession: []}]
+      responses:
+        '200':
+          description: Display types (existing fields plus phExtensions)
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items: {type: array, items: {$ref: '#/components/schemas/DisplayType'}}
+        '401': {$ref: '#/components/responses/Unauthorised'}
+    post:
+      tags: [POC stand-in — existing platform]
+      operationId: createDisplayType
+      summary: New display type (also creates its auto-created playlist)
+      security: [{adminSession: []}]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/DisplayType'}}}
+      responses:
+        '201': {description: Created, content: {application/json: {schema: {$ref: '#/components/schemas/DisplayType'}}}}
+        '400': {$ref: '#/components/responses/ValidationFailed'}
+        '401': {$ref: '#/components/responses/Unauthorised'}
+  /admin/v1/display-types/{displayTypeId}/record:
+    get:
+      tags: [POC stand-in — existing platform]
+      operationId: getDisplayType
+      security: [{adminSession: []}]
+      parameters: [{name: displayTypeId, in: path, required: true, schema: {type: string}}]
+      responses:
+        '200': {description: Display type, content: {application/json: {schema: {$ref: '#/components/schemas/DisplayType'}}}}
+        '401': {$ref: '#/components/responses/Unauthorised'}
+        '404': {$ref: '#/components/responses/NotFound'}
+    put:
+      tags: [POC stand-in — existing platform]
+      operationId: saveDisplayType
+      summary: Save changes — the existing display type fields (phExtensions are saved via /extensions)
+      security: [{adminSession: []}]
+      parameters: [{name: displayTypeId, in: path, required: true, schema: {type: string}}]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/DisplayType'}}}
+      responses:
+        '200': {description: Saved, content: {application/json: {schema: {$ref: '#/components/schemas/DisplayType'}}}}
+        '400': {$ref: '#/components/responses/ValidationFailed'}
+        '401': {$ref: '#/components/responses/Unauthorised'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /admin/v1/playlists:
+    get:
+      tags: [POC stand-in — existing platform]
+      operationId: listPlaylists
+      summary: Playlists with their display type and zone assignments
+      security: [{adminSession: []}]
+      responses:
+        '200':
+          description: Playlists
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items: {type: array, items: {$ref: '#/components/schemas/Playlist'}}
+        '401': {$ref: '#/components/responses/Unauthorised'}
+  /admin/v1/playlists/{playlistId}/record:
+    put:
+      tags: [POC stand-in — existing platform]
+      operationId: savePlaylist
+      summary: Edit a playlist — name only (assignments are made on the display type form, spec §2)
+      security: [{adminSession: []}]
+      parameters: [{name: playlistId, in: path, required: true, schema: {type: string}}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: {type: string, minLength: 1}
+      responses:
+        '200': {description: Saved, content: {application/json: {schema: {$ref: '#/components/schemas/Playlist'}}}}
+        '400': {$ref: '#/components/responses/ValidationFailed'}
+        '401': {$ref: '#/components/responses/Unauthorised'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /admin/v1/campaigns:
+    get:
+      tags: [POC stand-in — existing platform]
+      operationId: listCampaigns
+      summary: Campaigns for the stand-in POC campaign table (existing campaign list)
+      security: [{adminSession: []}]
+      responses:
+        '200':
+          description: Campaigns
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items: {type: array, items: {$ref: '#/components/schemas/Campaign'}}
+        '401': {$ref: '#/components/responses/Unauthorised'}
+  /admin/v1/campaigns/{campaignId}/activation:
+    put:
+      tags: [POC stand-in — existing platform]
+      operationId: setCampaignActivation
+      summary: Switch a campaign Active / Inactive (existing activation toggle); approved campaigns only
+      security: [{adminSession: []}]
+      parameters: [{$ref: '#/components/parameters/CampaignId'}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [enabled]
+              properties:
+                enabled: {type: boolean}
+      responses:
+        '200': {description: Saved, content: {application/json: {schema: {$ref: '#/components/schemas/Campaign'}}}}
+        '400': {$ref: '#/components/responses/ValidationFailed'}
+        '401': {$ref: '#/components/responses/Unauthorised'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '422': {$ref: '#/components/responses/NotEligible'}
+  /admin/v1/session:
+    get:
+      tags: [POC stand-in — existing platform]
+      operationId: getSession
+      summary: Current stand-in user and role (from the POC_ROLE env var; no switcher, no cookie)
+      security: [{adminSession: []}]
+      responses:
+        '200':
+          description: Session
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [userId, name, role]
+                properties:
+                  userId: {type: string}
+                  name: {type: string}
+                  role: {type: string, enum: [hq_admin, hq_marketing, hq_helpdesk]}
+        '401': {$ref: '#/components/responses/Unauthorised'}
+
+  # ------------------------------------------------------------------ Public
+  /sellers.json:
+    get:
+      tags: [Public]
+      operationId: getSellersJson
+      summary: IAB sellers.json for the seller of record (served at https://[domain]/sellers.json)
+      security: []
+      responses:
+        '200':
+          description: sellers.json
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/SellersJson'}
+        '404': {description: Exchange settings incomplete; not published.}
+
+components:
+  securitySchemes:
+    partnerToken:
+      type: http
+      scheme: bearer
+      description: Token issued to a connected DSP or tier-2 partner. Identifies the partner; advertiser is passed per request.
+    adminSession:
+      type: apiKey
+      in: cookie
+      name: ph_session
+      description: |
+        Existing HQ Admin session. Who sees what (spec, Who sees each section):
+        admin users get everything, including DSP Integration and editing
+        advertiser settings; marketing users get Display Types, Playlist
+        Management, Advertisers / Inventory (read-only on the per-advertiser
+        settings) and Campaign Status; help desk users get none of it.
+        Scopes: admin (DSP Integration, saving advertiser settings), approver
+        (approve/reject; HQ Admin role by default, open question 39),
+        sections (the four shared sections). In the POC there is no cookie —
+        the session is a stand-in whose role comes from the POC_ROLE env var
+        (hq_admin | hq_marketing | hq_helpdesk).
+
+  parameters:
+    PositionId: {name: positionId, in: path, required: true, schema: {type: string}}
+    CampaignId: {name: campaignId, in: path, required: true, schema: {type: string}}
+    PartnerId: {name: partnerId, in: path, required: true, schema: {type: string}}
+    Cursor: {name: cursor, in: query, schema: {type: string}}
+    Limit: {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 200, default: 50}}
+
+  responses:
+    Unauthorised: {description: Missing or invalid credentials, content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
+    Forbidden: {description: Authenticated but not allowed (e.g. non-admin on Advertisers), content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
+    NotFound: {description: 'Not found, or not visible to this caller', content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
+    ValidationFailed: {description: 'error.code = validation_failed; details lists each field', content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
+    VariableNotPermitted: {description: 'error.code = variable_not_permitted; details names each variable', content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
+    ChecksFailed: {description: 'error.code = checks_failed; details lists each failed check with its reason', content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
+    NotEligible: {description: 'error.code = not_approved | below_floor | advertiser_blocked | category_blocked | not_on_whitelist | targeting_not_supported', content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
+    Conflict: {description: 'error.code = conflict (e.g. version changed, already submitted, window sold, bidding not open or closed, live not allowed)', content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
+    HasDependents: {description: 'error.code = has_dependents; details lists what depends on the item', content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
+
+  schemas:
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code:
+              type: string
+              enum: [validation_failed, variable_not_permitted, checks_failed, not_approved, below_floor, advertiser_blocked, category_blocked, not_on_whitelist, targeting_not_supported, conflict, has_dependents, unauthorised, forbidden, not_found]
+            message: {type: string}
+            details:
+              type: array
+              items:
+                type: object
+                properties:
+                  field: {type: string}
+                  variable: {type: string}
+                  reason: {type: string}
+
+    WindowStatus: {type: string, enum: [available, reserved, sold, unavailable]}
+    PlayWindow:
+      type: object
+      required: [start, end, status, assumedViews]
+      properties:
+        start: {type: string, format: date-time}
+        end: {type: string, format: date-time}
+        status: {$ref: '#/components/schemas/WindowStatus'}
+        assumedViews: {type: integer}
+    Position:
+      type: object
+      required: [positionId, displayTypeId, displayTypeName, slot, slotLabel, storeCount, displayCount, screen, assignment, supportedTargeting, pricing]
+      properties:
+        positionId: {type: string}
+        displayTypeId: {type: string}
+        displayTypeName: {type: string}
+        slot: {type: integer, minimum: 1}
+        slotLabel: {type: string}
+        zone: {type: [string, 'null']}
+        storeCount: {type: integer}
+        displayCount: {type: integer}
+        screen:
+          type: object
+          required: [width, height, orientation, slotDurationSec, loopLengthSec, shareOfVoice]
+          properties:
+            width: {type: integer}
+            height: {type: integer}
+            orientation: {type: string, enum: [landscape, portrait]}
+            slotDurationSec: {type: number}
+            loopLengthSec: {type: number}
+            shareOfVoice: {type: number, description: 1 / maximumCampaignsPlayedInRotation}
+            openOohVenueType: {type: string}
+        assignment: {type: string, enum: [rtb, whitelist_only, reserved]}
+        supportedTargeting:
+          type: array
+          description: |
+            What a campaign may use here. A bid or reservation for a campaign of
+            any other type is refused with targeting_not_supported.
+          items: {type: string, enum: [localised, personalised, interactive]}
+        assumedViewsPerWindow: {type: integer}
+        pricing: {$ref: '#/components/schemas/Pricing'}
+        reservePrice:
+          type: [number, 'null']
+          description: |
+            A CPM premium at which this position can be reserved in advance
+            of the open auction (decision, 22 Sep); null when no reserve is
+            set. The resolved value: the slot's own override when it has
+            one, else its display type's reserve price default, else null
+            (spec §1 configuration inheritance). Set on Advertisers /
+            Inventory. Publishing this does not by itself book a guaranteed
+            slot — there is no reservation or billing behaviour behind it
+            yet (open question 52).
+    Pricing:
+      type: object
+      required: [currency, floorCpm, effectiveFloorCpm, costPerEngagement]
+      properties:
+        currency: {type: string}
+        floorCpm: {type: number}
+        effectiveFloorCpm:
+          type: object
+          description: |
+            What a bid must clear per thousand assumed views, for this caller.
+            Interactive campaigns pay one of these for the plays and the
+            engagement fee on top, so they have no floor of their own.
+          required: [localised, personalised]
+          properties:
+            localised: {type: number}
+            personalised: {type: number}
+        costPerEngagement:
+          type: number
+          description: |
+            Charged once per engagement (a QR Control scan), on top of the CPM,
+            for an interactive campaign. In the same currency, to the cent. The
+            advertiser's floor multiplier does not scale it.
+
+    TargetingAttribute:
+      type: object
+      required: [key, source, label, group, operators]
+      properties:
+        key: {type: string, example: store.fixed_segments}
+        source: {type: string, enum: [store, visitor]}
+        label: {type: string}
+        group: {type: string, enum: [localisation, personalisation]}
+        operators: {type: array, items: {type: string}}
+    Condition:
+      type: object
+      required: [source, variable, op, values]
+      properties:
+        source: {type: string}
+        variable: {type: string}
+        op: {type: string, enum: [include, match_exactly, exclude_or, exclude_and, equal, not_equal, greater_than, less_than, greater_than_or_equal, less_than_or_equal]}
+        values: {type: array, items: {type: string}, maxItems: 100}
+    TargetingRules:
+      description: AND groups of OR conditions (existing Targeting tab structure).
+      type: array
+      items: {type: array, minItems: 1, items: {$ref: '#/components/schemas/Condition'}}
+
+    CampaignBrief:
+      type: object
+      description: |
+        What the advertiser is booking, in the same shape as the platform's
+        Campaign Brief tab (Rob, 20 Sep). Every field is optional: an
+        advertiser supplies as much as it has. Stored with the campaign and
+        shown to the reviewer; nothing here targets or prices anything.
+      properties:
+        details: {type: string, maxLength: 2000, description: The campaign in the advertiser's own words.}
+        landingPageUrl: {type: string}
+        promotedProducts: {type: array, maxItems: 50, items: {type: string}}
+        skus: {type: array, maxItems: 100, items: {type: string}}
+        targetAudiences: {type: array, maxItems: 50, items: {type: string}}
+        objective: {type: string, maxLength: 200}
+        touchPoints:
+          type: array
+          maxItems: 2
+          items: {type: string, enum: [Digital Signage, Kiosk]}
+          description: Digital Signage only for now; Kiosk is accepted for later.
+    PricingType: {type: string, enum: [default, localised, personalised, interactive]}
+    CampaignCreate:
+      type: object
+      required: [advertiserId, name, default]
+      description: |
+        default is mandatory for every submission (decision, 22 Sep,
+        superseding the earlier same-day "baseline optional" decision —
+        ticket "Make default creative mandatory; retire localised-only
+        booking path"): the earlier fallback-free/part-sold submission
+        shape (a campaign with targeted versions but no baseline/default,
+        leaving stores none of them match unsold to another advertiser) is
+        retired. Every slot now goes to a single advertiser, who supplies a
+        mandatory default layer plus optional localised/personalised
+        layers as upsells on that one purchase.
+      properties:
+        advertiserId: {type: string}
+        name: {type: string}
+        displayTypeId: {type: string}
+        brief: {$ref: '#/components/schemas/CampaignBrief'}
+        default:
+          type: object
+          required: [pricingType]
+          description: The untargeted layer every submission must carry — no targeting variables, priced at the floor rate.
+          properties:
+            pricingType: {$ref: '#/components/schemas/PricingType'}
+        targeted:
+          type: array
+          description: Optional upsells on top of the mandatory default layer — localised and/or personalised targeted versions.
+          items:
+            type: object
+            required: [id, priority, pricingType, rules]
+            properties:
+              id: {type: string}
+              priority: {type: integer}
+              pricingType: {$ref: '#/components/schemas/PricingType'}
+              rules: {$ref: '#/components/schemas/TargetingRules'}
+    ApprovalStatus: {type: string, enum: [draft, awaiting_approval, approved, rejected]}
+    Check:
+      type: object
+      required: [name, passed]
+      properties:
+        name: {type: string, enum: [file_type, file_size, bitrate, dimensions, aspect_ratio, duration, default_present, targeting_permitted]}
+        passed: {type: boolean}
+        detail: {type: string}
+        assetId: {type: string, description: '"default" or a targeted version id — the specific asset this check ran against. Unset for a campaign-level check (default_present, targeting_permitted).'}
+    AssetRejection:
+      type: object
+      required: [assetId, reason]
+      description: A rejection reason attached to one specific asset, not the whole campaign (spec §3).
+      properties:
+        assetId: {type: string}
+        reason: {type: string, minLength: 1}
+    CampaignStatus:
+      type: object
+      required: [campaignId, status]
+      properties:
+        campaignId: {type: string}
+        status: {$ref: '#/components/schemas/ApprovalStatus'}
+        mode: {type: [string, 'null'], enum: [manual, auto, null]}
+        reason: {type: [string, 'null']}
+        assetVersion: {type: [string, 'null']}
+
+    ReservationCreate:
+      type: object
+      required: [positionId, windowStart, campaignId, advertiserId, type, bidCpm]
+      properties:
+        positionId: {type: string}
+        windowStart: {type: string, format: date-time}
+        campaignId: {type: string}
+        advertiserId: {type: string}
+        type: {type: string, enum: [reserve, bid]}
+        bidCpm: {type: number, description: 'The CPM, in the company currency: the bid (type bid), or the reservation price agreed through the DSP (type reserve). Must clear the effective floor. A reservation is booked at this price.'}
+    Reservation:
+      type: object
+      required: [reservationId, status]
+      properties:
+        reservationId: {type: string}
+        status: {type: string, enum: [pending, won, lost, reserved, rejected]}
+        clearingCpm: {type: [number, 'null']}
+        currency: {type: string}
+        reason: {type: [string, 'null']}
+
+    Exchange:
+      allOf:
+        - $ref: '#/components/schemas/ExchangeInput'
+        - type: object
+          required: [published]
+          properties:
+            published: {type: boolean}
+            sellersJsonUrl: {type: [string, 'null']}
+    ExchangeInput:
+      type: object
+      required: [organisation, domain, sellerId, contactEmail]
+      properties:
+        organisation: {type: string, minLength: 1}
+        domain: {type: string, minLength: 1}
+        sellerId: {type: string, minLength: 1}
+        contactEmail: {type: string, format: email}
+
+    AdvertiserSettingsInput:
+      type: object
+      required: [currency, floorCpm, personalisedMultiplier, interactiveCpe, auctionOpensHours, playWindowHours, auctionCutoffTime, advertiserWhitelist, advertiserBlacklist, categoryWhitelist, categoryBlacklist]
+      properties:
+        currency: {type: string, description: ISO 4217, default: AUD}
+        auctionOpensHours: {type: integer, minimum: 1, default: 168, description: 'Auction schedule: how long before the auction cutoff bidding for a play window opens, in hours (shown as days and hours).'}
+        playWindowHours: {type: integer, minimum: 1, maximum: 8760, default: 24, description: 'Auction schedule: the minimum period a won slot is held, in hours (shown as days and hours). Cannot change while future windows are bid on or booked.'}
+        auctionCutoffTime: {type: string, pattern: '^([01][0-9]|2[0-3]):[0-5][0-9]$', default: '18:00', description: 'Auction schedule: the daily time (HH:MM, UTC) by which bids must be received; the auction for the next play window runs then.'}
+        floorCpm: {type: number, exclusiveMinimum: 0, default: 100}
+        personalisedMultiplier: {type: number, exclusiveMinimum: 0, default: 1.5}
+        interactiveCpe: {type: number, minimum: 0, multipleOf: 0.01, default: 0.5, description: 'Interactive cost per engagement: what an advertiser pays each time someone engages with an interactive campaign (a QR Control scan), on top of the CPM. To the cent; 0 means engagements are not charged for.'}
+        advertiserWhitelist: {type: array, items: {type: string}}
+        advertiserBlacklist: {type: array, items: {type: string}}
+        categoryWhitelist: {type: array, items: {type: string}, description: IAB categories}
+        categoryBlacklist: {type: array, items: {type: string}}
+    AdvertiserSettings:
+      allOf:
+        - $ref: '#/components/schemas/AdvertiserSettingsInput'
+        - type: object
+          required: [whereTheseApply]
+          properties:
+            whereTheseApply:
+              type: array
+              description: Read-only. Per DSP, adopting the company lists or own lists.
+              items:
+                type: object
+                required: [partnerId, name, adopting]
+                properties:
+                  partnerId: {type: string}
+                  name: {type: string}
+                  adopting: {type: boolean}
+    DspAdvertisers:
+      type: object
+      description: A DSP and the advertisers it brings, for a picker or a filter.
+      required: [partnerId, name, advertisers]
+      properties:
+        partnerId: {type: string}
+        name: {type: string}
+        advertisers:
+          type: array
+          items:
+            type: object
+            required: [advertiserId, name]
+            properties:
+              advertiserId: {type: string}
+              name: {type: string}
+    AssignedTo:
+      type: object
+      description: |
+        Who may buy a position: DSPs, named advertisers, or the advertiser
+        whitelist. No DSPs and no advertisers means any connected DSP.
+      required: [partnerIds, partnerNames, advertisers, whitelistOnly]
+      properties:
+        partnerIds: {type: array, items: {type: string}}
+        partnerNames: {type: array, items: {type: string}, description: The same DSPs by name, for display.}
+        advertisers: {type: array, items: {type: string}, description: Named advertisers it is held for.}
+        whitelistOnly: {type: boolean, description: 'Only advertisers on the whitelist may bid; never true when advertisers is non-empty.'}
+    AvailableInventoryRow:
+      type: object
+      required: [displayTypeId, displayTypeName, playlistName, slot, position, assignedTo, supportedTargeting, qrControl, visionAi, reservePrice, reservePriceOverride, displayTypeReservePrice]
+      properties:
+        displayTypeId: {type: string}
+        displayTypeName: {type: string}
+        touchPoint: {type: string}
+        playlistName: {type: string}
+        slot: {type: integer}
+        position: {type: string}
+        assignedTo: {$ref: '#/components/schemas/AssignedTo'}
+        qrControl:
+          type: boolean
+          description: |
+            Whether the display type has QR Control enabled. Interactive
+            targeting needs it — there is nothing for a visitor to engage with
+            otherwise — so a slot on a display type without it cannot support
+            interactive.
+        visionAi:
+          type: boolean
+          description: |
+            Whether the display type has the Vision/AI feature enabled —
+            on-device computer vision for passerby insight and person match
+            (Display Types → Enabled Features). Shown here as a plain
+            capability flag, the same way qrControl is (ticket "show a
+            computer vision icon when computer vision is enabled on a
+            specific display type", 22 Sep) — this display type's hardware
+            capability, not any one booking's personalised targeting rules
+            (see BookingSchedule.personalisedTriggers.computerVision, a
+            different thing: whether a specific campaign's rules happen to
+            use a computer-vision variable).
+        supportedTargeting:
+          type: array
+          description: What a campaign may use on this slot; localised only by default.
+          items: {type: string, enum: [localised, personalised, interactive]}
+        reservePrice:
+          type: [number, 'null']
+          description: |
+            The resolved CPM premium at which this slot can be reserved in
+            advance of the open auction: reservePriceOverride when set,
+            else displayTypeReservePrice, else null. Company currency;
+            this is what is published on the position in `GET /v1/inventory`.
+        reservePriceOverride:
+          type: [number, 'null']
+          description: |
+            This slot's own reserve price, admin-editable here; null means
+            it has none and follows displayTypeReservePrice (spec §1
+            configuration inheritance — override always wins).
+        displayTypeReservePrice:
+          type: [number, 'null']
+          description: |
+            The reserve price default set on this slot's display type; null
+            means the display type has none either. The same value on every
+            row sharing a displayTypeId. Editable from any of those rows —
+            see `PUT`'s reservePriceDefault.
+
+    BookingSchedule:
+      type: object
+      required: [currency, windows, positions, revenue, dsps, byPricingType, totals]
+      properties:
+        currency: {type: string, description: ISO 4217}
+        windows:
+          type: array
+          items: {type: object, required: [start, end], properties: {start: {type: string, format: date-time}, end: {type: string, format: date-time}}}
+        positions:
+          type: array
+          items:
+            type: object
+            required: [positionId, displayTypeId, displayTypeName, slot, slotLabel, partnerNames, assignment, displayCount, windows]
+            properties:
+              positionId: {type: string}
+              displayTypeId: {type: string}
+              displayTypeName: {type: string}
+              slot: {type: integer, minimum: 1}
+              slotLabel: {type: string}
+              partnerNames: {type: array, items: {type: string}, description: 'The DSPs the slot is tied to; empty = any connected DSP.'}
+              assignment: {type: string, enum: [rtb, whitelist_only, reserved]}
+              displayCount:
+                type: integer
+                description: |
+                  Displays using this display type across the whole retail
+                  footprint (interface contract "Booking schedule reach
+                  counts", family 1). This prototype has no narrower
+                  per-slot store scope for an advertiser position, so it is
+                  also what "the slot's store scope" resolves to here.
+              windows:
+                type: array
+                description: One per schedule window, in the same order.
+                items:
+                  type: object
+                  required: [start, status, booking]
+                  properties:
+                    start: {type: string, format: date-time}
+                    status: {type: string, enum: [booked, available, unavailable]}
+                    booking:
+                      type: [object, 'null']
+                      required: [reservationId, campaignId, advertiserId, partnerId, pricingType, type, advertiserName, partnerName, cpm, assumedViews, bookedRevenue, billedRevenue, reach, layers, personalisedTriggers]
+                      properties:
+                        reservationId: {type: string}
+                        campaignId: {type: string}
+                        advertiserId: {type: [string, 'null']}
+                        partnerId: {type: string}
+                        reach:
+                          type: [object, 'null']
+                          description: |
+                            The Localised layer's match count: present only
+                            when layers.localised is true, from the
+                            campaign's own targeted-version rules; null when
+                            no localised layer was submitted — personalised
+                            reach can't be predicted (interface contract
+                            "Booking schedule reach counts": "Localised
+                            only").
+                          required: [matchedDisplays, asOf]
+                          properties:
+                            matchedDisplays: {type: integer, description: Of the position's displayCount.}
+                            asOf: {type: string, format: date-time}
+                        pricingType: {$ref: '#/components/schemas/PricingType'}
+                        layers:
+                          type: object
+                          description: |
+                            Which of the three layers this one advertiser's
+                            booking actually carries (ticket "Booking
+                            schedule: single-advertiser stacking tile", 22
+                            Sep) — default is always present (mandatory
+                            since the same-day "Make default creative
+                            mandatory" ticket); localised/personalised are
+                            upsells on the same purchase, present when the
+                            campaign submitted a targeted version of that
+                            type (interactive counts as localised for this
+                            breakdown, same grouping the schedule has always
+                            used). Drives the tile's stacked height: 1-3
+                            layers, tallest at the top.
+                          required: [default, localised, personalised]
+                          properties:
+                            default: {type: boolean}
+                            localised: {type: boolean}
+                            personalised: {type: boolean}
+                        personalisedTriggers:
+                          type: [object, 'null']
+                          description: |
+                            Only when layers.personalised is true (ticket
+                            "Booking schedule: personalised trigger icons",
+                            22 Sep): which trigger mechanism(s) the
+                            personalised layer's targeting rules use, from
+                            broadest/most frequent to narrowest/rarest —
+                            computer vision (fires on almost anyone in front
+                            of the screen), aggregate store-level (the
+                            aggregate of who is in the store), individual
+                            (the visitor is identified/checked in). More
+                            than one may be lit when the rules combine
+                            tiers. All false when personalised has no
+                            classifiable targeting rules yet; null when
+                            layers.personalised is false.
+                          required: [computerVision, aggregateStore, individual]
+                          properties:
+                            computerVision: {type: boolean}
+                            aggregateStore: {type: boolean}
+                            individual: {type: boolean}
+                        type: {type: string, enum: [reserve, bid]}
+                        advertiserName: {type: string}
+                        partnerName: {type: string}
+                        cpm: {type: number, description: The CPM it was booked at (the agreed reservation price, or the clearing CPM).}
+                        assumedViews: {type: integer}
+                        bookedRevenue: {type: number}
+                        billedRevenue: {type: [number, 'null'], description: From billing once the window has played; null before.}
+        revenue:
+          type: array
+          description: Per display type with advertiser slots, over the schedule's windows.
+          items: {$ref: '#/components/schemas/BookingRevenue'}
+        dsps:
+          type: array
+          description: The DSPs the filters offer, and the advertisers each one brings.
+          items: {$ref: '#/components/schemas/DspAdvertisers'}
+        byPricingType:
+          type: array
+          description: The same bookings by campaign type, so a retailer can see what is selling.
+          items:
+            type: object
+            required: [pricingType, bookedWindows, bookedRevenue]
+            properties:
+              pricingType: {$ref: '#/components/schemas/PricingType'}
+              bookedWindows: {type: integer}
+              bookedRevenue: {type: number}
+        totals: {$ref: '#/components/schemas/BookingRevenueTotals'}
+    BookingRevenueTotals:
+      type: object
+      required: [bookedWindows, sellableWindows, bookedRevenue, billedRevenue]
+      properties:
+        bookedWindows: {type: integer}
+        sellableWindows: {type: integer, description: Sum of every display type's sellableWindows — see BookingRevenue.}
+        bookedRevenue: {type: number}
+        billedRevenue: {type: number}
+    BookingRevenue:
+      type: object
+      required: [displayTypeId, displayTypeName, bookedWindows, sellableWindows, bookedRevenue, billedRevenue]
+      properties:
+        displayTypeId: {type: string}
+        displayTypeName: {type: string}
+        bookedWindows: {type: integer}
+        sellableWindows:
+          type: integer
+          description: |
+            Windows this display type could have sold in the period shown —
+            booked or still available, excluding unavailable (no displays,
+            or before the first sellable window) — across every advertiser
+            position of this display type, regardless of the advertiser/DSP
+            filter (ticket "booking revenue table: % of slots sold", 22
+            Sep). bookedWindows ÷ sellableWindows is the % sold; 0 means
+            nothing on this display type could be sold in the period, so no
+            percentage is meaningful.
+        bookedRevenue: {type: number}
+        billedRevenue: {type: number}
+    VariableAccess:
+      oneOf:
+        - {type: string, const: all}
+        - {type: array, items: {type: string}}
+    SharedVariable:
+      type: object
+      required: [key, label, group, exampleValues, access]
+      properties:
+        key: {type: string}
+        label: {type: string}
+        group: {type: string, enum: [localisation, personalisation]}
+        exampleValues: {type: string, description: Tooltip text}
+        access: {$ref: '#/components/schemas/VariableAccess'}
+
+    Provider: {type: string, enum: [google_dv360, amazon_dsp, the_trade_desk]}
+    Partner:
+      type: object
+      required: [id, provider, name, status, mode, listsLinked]
+      properties:
+        id: {type: string}
+        provider: {$ref: '#/components/schemas/Provider'}
+        name: {type: string}
+        status: {type: string, enum: [draft, connected, error]}
+        lastSync: {type: [string, 'null'], description: Last connection result, e.g. the DSP's error reason.}
+        mode: {type: string, enum: [test, live]}
+        credentials:
+          type: object
+          description: Non-secret fields in full; secret fields only as {set:true}.
+          additionalProperties: true
+        bidder:
+          type: object
+          properties:
+            bidderEndpoint: {type: string, format: uri}
+            seatIds: {type: array, items: {type: string}}
+        issues:
+          type: array
+          description: Shown at the top of the DSP page.
+          items:
+            type: object
+            required: [kind, message]
+            properties:
+              kind: {type: string, enum: [connection_error, missing_credentials, missing_bidder_fields]}
+              message: {type: string}
+              fields: {type: array, items: {type: string}}
+        seats:
+          type: array
+          description: The DSP's seats and advertisers, pulled on connect (spec §8). Offered in the slot picker and as list suggestions.
+          items:
+            type: object
+            required: [id, name]
+            properties:
+              id: {type: string}
+              name: {type: string}
+        listsLinked: {type: boolean}
+        advertiserWhitelist: {type: array, items: {type: string}, description: Own lists, only when listsLinked is false.}
+        advertiserBlacklist: {type: array, items: {type: string}}
+    PartnerInput:
+      type: object
+      properties:
+        credentials:
+          type: object
+          description: |
+            google_dv360 — partnerId, serviceAccountEmail, privateKeyJson (secret).
+            amazon_dsp — region, lwaClientId, lwaClientSecret (secret), refreshToken (secret), profileId, entityId.
+            the_trade_desk — supplySourceId, ttdPartnerId, apiToken (secret), region.
+          additionalProperties: {type: string}
+        bidder:
+          type: object
+          properties:
+            bidderEndpoint: {type: string, format: uri}
+            seatIds: {type: array, items: {type: string}}
+        mode: {type: string, enum: [test, live]}
+        listsLinked: {type: boolean, description: false copies the company lists down; true discards own lists.}
+        advertiserWhitelist: {type: array, items: {type: string}}
+        advertiserBlacklist: {type: array, items: {type: string}}
+
+    AdvertiserSetting:
+      type: object
+      required: [approvalRequired, floorMultiplier]
+      properties:
+        approvalRequired: {type: boolean, default: true}
+        floorMultiplier: {type: number, exclusiveMinimum: 0, default: 1.0}
+    Advertiser:
+      allOf:
+        - $ref: '#/components/schemas/AdvertiserSetting'
+        - type: object
+          required: [advertiserId, name, via, effectiveFloorCpm, campaigns, bookings]
+          properties:
+            advertiserId: {type: string}
+            name: {type: string}
+            via: {type: array, items: {type: string}, description: DSP names}
+            effectiveFloorCpm: {type: number}
+            bookings:
+              type: integer
+              description: |
+                Play windows this advertiser holds from the current window on.
+                0 means it has nothing on the booking schedule, so there is
+                nothing to open there.
+            campaigns:
+              type: object
+              description: This advertiser's campaigns by approval status, so the retailer can see who is waiting.
+              required: [draft, awaiting_approval, approved, rejected]
+              properties:
+                draft: {type: integer}
+                awaiting_approval: {type: integer}
+                approved: {type: integer}
+                rejected: {type: integer}
+
+    Approval:
+      type: object
+      required: [campaignId, status, assetVersion]
+      properties:
+        campaignId: {type: string}
+        campaignName: {type: string}
+        advertiserName: {type: string}
+        partnerName: {type: string}
+        status: {$ref: '#/components/schemas/ApprovalStatus'}
+        mode: {type: [string, 'null'], enum: [manual, auto, null]}
+        assetVersion: {type: string}
+        submittedAt: {type: [string, 'null'], format: date-time}
+        reviewedBy: {type: [string, 'null']}
+        reviewedAt: {type: [string, 'null'], format: date-time}
+        reason: {type: [string, 'null']}
+        assetReasons:
+          type: array
+          description: The current rejection's per-asset breakdown, when the reviewer named specific assets (spec §3, "asset-level rejection").
+          items: {$ref: '#/components/schemas/AssetRejection'}
+        checks: {type: array, items: {$ref: '#/components/schemas/Check'}}
+        targetingSummary: {type: string}
+        creative:
+          type: [object, 'null']
+          description: The default layer's creative under review, for rendering on the target canvas.
+          required: [assetUrl, mimeType, width, height]
+          properties:
+            assetUrl: {type: string}
+            mimeType: {type: string}
+            width: {type: integer}
+            height: {type: integer}
+            contentHash: {type: string, description: 'sha256 of the file, when available — the basis for "safe reuse of previously approved assets" (spec §3).'}
+        canvas:
+          type: [object, 'null']
+          description: The target display type's canvas.
+          required: [width, height]
+          properties:
+            width: {type: integer}
+            height: {type: integer}
+        audit:
+          type: array
+          items:
+            type: object
+            required: [at, action]
+            properties:
+              at: {type: string, format: date-time}
+              action: {type: string, enum: [submitted, auto_approved, approved, rejected, returned_for_review, unrejected]}
+              by: {type: [string, 'null']}
+              reason: {type: [string, 'null']}
+              assetVersion: {type: string}
+              assetReasons: {type: array, items: {$ref: '#/components/schemas/AssetRejection'}}
+
+    DisplayTypeExtensions:
+      type: object
+      required: [slots]
+      properties:
+        slots:
+          type: array
+          items:
+            type: object
+            required: [label, owner]
+            properties:
+              label: {type: string}
+              owner: {type: string, enum: [internal, advertiser, retail]}
+              partnerIds:
+                type: array
+                description: |
+                  The DSPs that may buy this position; empty or absent means any
+                  connected DSP. Set on Advertisers / Inventory, not on the
+                  display type: the slot editor only sets the label and owner.
+                items: {type: string}
+              advertisers:
+                type: array
+                description: |
+                  Named advertisers the position is held for; empty means it is
+                  not reserved. Their DSPs are always among partnerIds.
+                items: {type: string}
+              listMode: {type: [string, 'null'], enum: [rtb, whitelist_only, null]}
+              storeScope: {type: [string, 'null']}
+              quota: {type: [integer, 'null']}
+              supportedTargeting:
+                type: array
+                description: |
+                  What a campaign may use on this slot. Absent or empty means
+                  localised only, which is the default for a new slot. A bid or
+                  reservation whose campaign is of an unsupported type is refused
+                  (targeting_not_supported). Set from Advertisers / Inventory.
+                items: {type: string, enum: [localised, personalised, interactive]}
+              reservePrice:
+                type: [number, 'null']
+                description: |
+                  This slot's own override of the display type's reserve
+                  price (decision, 22 Sep; real inheritance, 22 Sep — spec
+                  §1 configuration inheritance, not a copy action). Absent
+                  or null means it has none and follows the display type's
+                  own `reservePrice` (below); an override always wins. Set
+                  from Advertisers / Inventory, not the slot editor.
+        reservePrice:
+          type: [number, 'null']
+          description: |
+            The display type's own reserve price default (decision, 22 Sep),
+            inherited by every slot on it that has no override of its own.
+            Absent or null means the display type has no default, so an
+            un-overridden slot has no reserve either. Set from Advertisers /
+            Inventory (every row for this display type edits the same
+            value), not the slot editor.
+        venue:
+          type: object
+          properties:
+            openOohVenueType: {type: string}
+            orientation: {type: string, enum: [landscape, portrait]}
+            loopLengthSec: {type: number}
+    DeleteCheck:
+      type: object
+      required: [canDelete, dependents]
+      properties:
+        canDelete: {type: boolean}
+        dependents:
+          type: array
+          items:
+            type: object
+            required: [kind, name]
+            properties:
+              kind: {type: string, enum: [display, display_type_default, zone]}
+              name: {type: string}
+              detail: {type: string, description: e.g. store name or zone name}
+
+    DisplayType:
+      type: object
+      description: POC stand-in for the existing display type record (spec §8), including phExtensions.
+      required: [id, name, touchPoint, displayCanvasSize, playlistSettings]
+      properties:
+        id: {type: string}
+        name: {type: string}
+        touchPoint: {type: string}
+        description: {type: [string, 'null']}
+        displayCanvasSize:
+          type: object
+          required: [width, height]
+          properties: {width: {type: integer}, height: {type: integer}}
+        backgroundColor: {type: string}
+        defaultPlaylistId: {type: string}
+        playlistSettings: {type: object, additionalProperties: true, description: null values mean inherit}
+        qrControl: {type: object, additionalProperties: true}
+        enabledFeatures: {type: object, additionalProperties: true}
+        multiZone: {type: object, additionalProperties: true}
+        phExtensions: {$ref: '#/components/schemas/DisplayTypeExtensions'}
+    Playlist:
+      type: object
+      required: [id, name, assignments]
+      properties:
+        id: {type: string}
+        name: {type: string}
+        autoCreatedFor: {type: [string, 'null'], description: Display type id if auto-created}
+        assignments:
+          type: array
+          items:
+            type: object
+            required: [displayTypeId, displayTypeName]
+            properties:
+              displayTypeId: {type: string}
+              displayTypeName: {type: string}
+              zoneId: {type: [string, 'null']}
+              zoneName: {type: [string, 'null']}
+    Campaign:
+      type: object
+      description: POC stand-in for the existing campaign record (spec §8 additions included). Approval state is read from /admin/v1/approvals.
+      required: [campaignId, name, source, schedule, activation]
+      properties:
+        campaignId: {type: string}
+        name: {type: string}
+        source: {type: string, enum: [hq, api, dsp]}
+        advertiserId: {type: [string, 'null']}
+        advertiserName: {type: [string, 'null']}
+        partnerId: {type: [string, 'null']}
+        partnerName: {type: [string, 'null']}
+        displayTypeId: {type: [string, 'null']}
+        pricingType: {type: [string, 'null'], enum: [default, localised, personalised, interactive, null]}
+        brief: {$ref: '#/components/schemas/CampaignBrief'}
+        schedule:
+          type: object
+          description: What the advertiser booked, so the table can show what is up next.
+          required: [nextWindowStart, bookedWindows]
+          properties:
+            nextWindowStart: {type: [string, 'null'], format: date-time, description: The next play window this campaign holds, or null when none is ahead.}
+            bookedWindows: {type: integer, description: Live windows won or reserved, past and future.}
+        activation:
+          type: object
+          required: [enabled]
+          properties:
+            enabled: {type: boolean}
+    SellersJson:
+      type: object
+      required: [version, sellers]
+      properties:
+        contact_email: {type: string}
+        version: {type: string, const: '1.0'}
+        sellers:
+          type: array
+          items:
+            type: object
+            required: [seller_id, seller_type, name, domain]
+            properties:
+              seller_id: {type: string}
+              seller_type: {type: string, const: PUBLISHER}
+              name: {type: string}
+              domain: {type: string}
+              is_confidential: {type: integer, const: 0}
