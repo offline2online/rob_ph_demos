@@ -67,10 +67,11 @@ programmatic-guaranteed deals; this release sells through the open auction
 only), and per-DSP bidder tuning (QPS ceiling and bid timeout use platform
 defaults).
 
-**Navigation.** The HQ Admin navigation items for this project, in order:
-**Display Types**, **Playlist Management**, **DSP Integration**, then
-**Advertisers**. A DSP has to be set up before any advertiser can be served,
-so DSP Integration comes before Advertisers. Within DSP Integration, the
+**Navigation.** The HQ Admin navigation items for this project, in order
+(Rob, 24 Sep 2026): **Display Types**, **Playlist Management**, **Campaign
+Status**, **Advertisers / Inventory**, then **DSP Integration** at the
+bottom. The pages used day to day come first; DSP Integration, set up once
+per DSP, comes last. Within DSP Integration, the
 company pages are **Exchange settings**, **Advertiser settings** and
 **Shared Targeting Variables**, followed by one page per DSP.
 
@@ -357,7 +358,7 @@ DSP (tier 1). Campaigns authored by HQ are unchanged.
 ### Advertisers / Inventory
 
 A new **Advertisers / Inventory** item in the HQ Admin navigation, placed
-**directly below DSP Integration**. It carries per-advertiser settings and,
+**below Campaign Status and above DSP Integration** (Rob, 24 Sep 2026). It carries per-advertiser settings and,
 below them, the inventory those advertisers can buy (§5); **campaigns are
 not approved here.**
 
@@ -1920,8 +1921,8 @@ playback analytics.**
 
 ### Advertisers / Inventory
 
-- **Advertisers / Inventory screen**, directly below DSP Integration in the
-  navigation, editable by an admin and read-only for marketing: every
+- **Advertisers / Inventory screen**, below Campaign Status and above DSP
+  Integration in the navigation, editable by an admin and read-only for marketing: every
   advertiser across all DSPs, with a **Campaign approval** toggle (Required /
   Not required, default Required), a **floor multiplier** (default 1.0) with
   the effective floor shown in the company currency, its **campaigns by

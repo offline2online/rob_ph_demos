@@ -149,12 +149,12 @@ describe('DSP page', () => {
 describe('Advertisers screen (admin only)', () => {
   const advertisers = { currency: 'AUD', floorCpm: 100, items: [{ advertiserId: 'nestle', name: 'Nestlé', via: ['Google DSP'], approvalRequired: false, floorMultiplier: 0.8, effectiveFloorCpm: 80, campaigns: { draft: 0, awaiting_approval: 1, approved: 2, rejected: 0 } }] }
 
-  it('sits directly below DSP Integration in the nav for admins, with the prototype’s columns', async () => {
+  it('sits below Campaign Status and above DSP Integration in the nav for admins, with the prototype’s columns', async () => {
     vi.stubGlobal('fetch', vi.fn(fakeFetch({ '/api/admin/v1/advertisers': advertisers })))
     renderAt('/advertisers')
     await screen.findByText('1 advertiser')
     const nav = screen.getByRole('navigation', { name: 'Display Types and DSP Integration' })
-    expect(within(nav).getAllByRole('link').map((l) => l.textContent?.replace(/^[a-z_]+/, ''))).toEqual(['Display Types', 'Playlist Management', 'DSP Integration', 'Advertisers / Inventory', 'Campaign Status'])
+    expect(within(nav).getAllByRole('link').map((l) => l.textContent?.replace(/^[a-z_]+/, ''))).toEqual(['Display Types', 'Playlist Management', 'Campaign Status', 'Advertisers / Inventory', 'DSP Integration'])
     expect(screen.getByRole('button', { name: /Every advertiser using the platform, across all DSPs, and the inventory they can buy/ })).toBeInTheDocument()
   })
 
@@ -163,7 +163,7 @@ describe('Advertisers screen (admin only)', () => {
     vi.stubGlobal('fetch', vi.fn(fakeFetch({ '/api/admin/v1/session': { userId: 'u', name: 'HQ Marketing (POC)', role: 'hq_marketing' }, '/api/admin/v1/advertisers': advertisers })))
     renderAt('/advertisers')
     const nav = await screen.findByRole('navigation', { name: 'Display Types and DSP Integration' })
-    expect(within(nav).getAllByRole('link').map((l) => l.textContent?.replace(/^[a-z_]+/, ''))).toEqual(['Display Types', 'Playlist Management', 'Advertisers / Inventory', 'Campaign Status'])
+    expect(within(nav).getAllByRole('link').map((l) => l.textContent?.replace(/^[a-z_]+/, ''))).toEqual(['Display Types', 'Playlist Management', 'Campaign Status', 'Advertisers / Inventory'])
     expect(await screen.findByText('Read only')).toBeInTheDocument()
     expect(await screen.findByLabelText('Nestlé: campaign approval')).toBeDisabled()
     expect(screen.getByLabelText('Nestlé: floor multiplier')).toBeDisabled()
