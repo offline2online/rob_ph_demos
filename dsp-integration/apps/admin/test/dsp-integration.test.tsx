@@ -421,9 +421,88 @@ describe('Advertisers / Inventory', () => {
     /* Only the slot that changed is sent. */
     await waitFor(() => expect(saved()).toEqual({ items: [{
       displayTypeId: 'menu_board', slot: 2, supportedTargeting: ['localised', 'personalised'],
-      assignedTo: { partnerIds: ['p_google'], advertisers: ['Nestlé'], whitelistOnly: false },
+      assignedTo: { partnerIds: ['p_google'], advertisers: ['Nestlé'], whitelistOnly: false, buyersListId: null },
+      reservePriceDefault: null,
     }] }))
-  })
+    /* This test opens two AntD Selects, drives a save round-trip and waits
+       on it with real timers — already the file's slowest, and, measured in
+       this sandbox, right at (and under full-suite load, occasionally over)
+       the file's default 20s budget regardless of this change (Rob, 23
+       Sep). A per-test override, not a global one, so a real hang elsewhere
+       in the file still fails fast. */
+  }, 45000)
+
+  /* Round 2 (23 Sep) failed testing twice on this exact picker: once because
+     the buyers-lists group sat after Advertisers instead of directly under
+     DSPs, and — after that was fixed — again because "Add buyer list is now
+     missing completely from the drop-down menu". The suite that shipped
+     with that second build never actually asserted the option was there at
+     all, so it went green while the picker was reported broken. This test
+     is that missing assertion: the option group's position, the option
+     itself, and that it actually opens the modal. */
+  it('offers "+ Add new buyers list…" in the Assigned to picker, and opens the modal', async () => {
+    vi.stubGlobal('fetch', vi.fn(fakeFetch({
+      ...ADVERTISER_PAGE,
+      '/api/admin/v1/buyers-lists': { items: [{ id: 'bl_1', name: 'Q4 FMCG Private Auction', description: '', invitedBuyers: [{ identifierType: 'brandEntity', value: 'brand_x' }], activeFrom: null, activeTo: null }] },
+    })))
+    renderAt('/advertisers')
+    const inventory = await screen.findByLabelText('Available Inventory')
+    const combo = within(within(inventory).getAllByLabelText('Menu Board — Long Format slot 2: assigned to')[0].closest('.ag-cell') as HTMLElement).getByRole('combobox')
+    fireEvent.mouseDown(combo)
+    await screen.findByRole('listbox')
+    /* The full option list is long (DSPs, buyers lists, every advertiser,
+       whitelist) and virtualised, which jsdom doesn't lay out the way a
+       real browser does — so, as the picker's own showSearch already lets
+       a person do, filter down to just this option rather than relying on
+       scroll position. (Group order and dedup — round 1's own failed-
+       testing feedback — were verified separately against a real rendered
+       Chromium browser, not jsdom.) */
+    fireEvent.change(combo, { target: { value: 'Add new buyers' } })
+    const addOption = await screen.findByText('+ Add new buyers list…')
+    expect(addOption).toBeInTheDocument()
+
+    /* Choosing it is a picker action, not a real choice: it opens the
+       modal and leaves this slot's own assignment untouched. (There are two
+       BuyersListModal instances in the tree — this one and the Buyers
+       lists table's own — so scope to the one that's actually open.) */
+    fireEvent.click(addOption)
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByText('New buyers list')).toBeInTheDocument()
+  }, 30000)
+
+  /* The modal used to show field errors only when the API sent `details`
+     and say nothing at all otherwise — so a detail-less error (the hosted
+     demo's read-only 403, a plain 500, anything without a `field` to blame)
+     failed completely silently: the modal just sat there. That silent
+     failure is what made the feature read as broken/"missing" when a round
+     2 tester tried it against exactly this kind of response (Rob, 23 Sep).
+     This asserts the fix: some message always shows. */
+  it('shows an error when saving a buyers list fails without field-level detail, instead of failing silently', async () => {
+    vi.stubGlobal('fetch', vi.fn((url: string, init?: RequestInit) => {
+      if (init?.method === 'POST' && url.includes('/buyers-lists')) {
+        return Promise.resolve(new Response(JSON.stringify({ error: { code: 'forbidden', message: 'This is the hosted demo: the screens are live but the data is a snapshot, so changes aren’t saved.' } }), { status: 403 }))
+      }
+      return fakeFetch(ADVERTISER_PAGE)(url)
+    }))
+    renderAt('/advertisers')
+    const inventory = await screen.findByLabelText('Available Inventory')
+    const combo = within(within(inventory).getAllByLabelText('Menu Board — Long Format slot 2: assigned to')[0].closest('.ag-cell') as HTMLElement).getByRole('combobox')
+    fireEvent.mouseDown(combo)
+    await screen.findByRole('listbox')
+    fireEvent.change(combo, { target: { value: 'Add new buyers' } })
+    fireEvent.click(await screen.findByText('+ Add new buyers list…'))
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByText('New buyers list')).toBeInTheDocument()
+
+    fireEvent.change(within(dialog).getByPlaceholderText('e.g. Q4 FMCG private auction'), { target: { value: 'Test deal' } })
+    fireEvent.change(within(dialog).getByLabelText('Invited buyer 1: value'), { target: { value: 'brand_x' } })
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Create buyers list' }))
+
+    /* The modal stays open (the save failed) but says so, rather than
+       silently doing nothing. */
+    expect(await screen.findByText(/the data is a snapshot/)).toBeInTheDocument()
+    expect(within(dialog).getByText('New buyers list')).toBeInTheDocument()
+  }, 30000)
 
   /* The CTAs open a new tab, so they can't go through the router — and a
      bare path 404s wherever the bundle isn't served from the domain root
