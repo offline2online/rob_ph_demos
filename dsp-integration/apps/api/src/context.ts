@@ -14,7 +14,6 @@ import { type PlaybackSource, sqlitePlaybackSource } from './platform/PlaybackSo
 import { type PartnerRepo, sqlitePartnerRepo } from './repos/PartnerRepo'
 import { type CompanySettingsRepo, sqliteCompanySettingsRepo } from './repos/CompanySettingsRepo'
 import { type ExchangeRepo, sqliteExchangeRepo } from './repos/ExchangeRepo'
-import { type BuyersListRepo, sqliteBuyersListRepo } from './repos/BuyersListRepo'
 import type { CampaignSource as ApprovalCampaignSource } from '@ph-dsp/campaign-approval/adapter'
 import { pocCampaignSource } from '@ph-dsp/campaign-approval/poc'
 import { type ApprovalService, createApprovalService } from '@ph-dsp/campaign-approval/server'
@@ -43,7 +42,6 @@ export interface Context {
   partners: PartnerRepo
   company: CompanySettingsRepo
   exchange: ExchangeRepo
-  buyersLists: BuyersListRepo
   dsp: ReturnType<typeof dspClients>
   assets: AssetStore
   audience: AudienceSource
@@ -80,7 +78,6 @@ export function createContext(opts: { config?: Config; db?: Db; flags?: Flags; s
     partners: sqlitePartnerRepo(db, secrets),
     company: sqliteCompanySettingsRepo(db),
     exchange: sqliteExchangeRepo(db),
-    buyersLists: sqliteBuyersListRepo(db),
     dsp: dspClients(config.dsp, opts.dspFetch),
     fetch: opts.dspFetch ?? ((url, init) => fetch(url, init)),
     bidder: httpBidder(opts.dspFetch ?? ((url, init) => fetch(url, init)), { timeoutMs: config.bidderTimeoutMs, qps: config.bidderQps }),

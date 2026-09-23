@@ -1,7 +1,7 @@
 /* Shared, fixed catalogues used by both the API and the admin UI.
    Shapes follow the prototype's model (prototype-reference/src/model/
    schema.js and sellside.js); keys follow the API contract. */
-import type { IdentifierType, Provider, SlotOwner } from './index'
+import type { Provider, SlotOwner } from './index'
 
 /* ------------------------------------------------------ display types */
 
@@ -35,45 +35,24 @@ export const SLOT_OWNERS: Record<SlotOwner, { label: string; colour: string; bg:
 }
 export const STORE_SCOPES = ['Store staff', 'Store manager only', 'Regional manager', 'Franchisee'] as const
 
-/* Who may buy a position (Rob, 20 Sep; buyers lists/private auctions added
-   23 Sep). One multi-select on Advertisers / Inventory replaced the display
-   type's "Assigned to" cell: DSPs say who may bid, advertisers hold the
-   position for them, a buyers list restricts it to a private auction among
-   its invited buyers, and none of these means any connected DSP. A buyers
-   list is mutually exclusive with advertisers and whitelistOnly. Slots saved
-   before this carried one partnerId and one advertiser, so they are read as
-   one-element lists. */
-export interface Assigned { partnerIds: string[]; advertisers: string[]; whitelistOnly: boolean; buyersListId: string | null }
-type SlotLike = {
-  partnerIds?: readonly string[] | null
-  advertisers?: readonly string[] | null
-  listMode?: string | null
-  partnerId?: string | null
-  advertiser?: string | null
-  buyersListId?: string | null
-}
+/* Who may buy a position (Rob, 20 Sep). One multi-select on Advertisers /
+   Inventory replaced the display type's "Assigned to" cell: DSPs say who may
+   bid, advertisers hold the position for them, and neither means any
+   connected DSP. Slots saved before this carried one partnerId and one
+   advertiser, so they are read as one-element lists. */
+export interface Assigned { partnerIds: string[]; advertisers: string[]; whitelistOnly: boolean }
+type SlotLike = { partnerIds?: readonly string[] | null; advertisers?: readonly string[] | null; listMode?: string | null; partnerId?: string | null; advertiser?: string | null }
 export const assignedOf = (slot: SlotLike): Assigned => {
   const advertisers = [...(slot.advertisers ?? (slot.advertiser ? [slot.advertiser] : []))]
   return {
     partnerIds: [...(slot.partnerIds ?? (slot.partnerId ? [slot.partnerId] : []))],
     advertisers,
     whitelistOnly: !advertisers.length && slot.listMode === 'whitelist_only',
-    buyersListId: !advertisers.length && slot.listMode === 'deal' ? slot.buyersListId ?? null : null,
   }
 }
-/* "Any connected DSP", or the pills in order: advertisers, buyers list, then DSPs. */
-export const assignedLabels = (a: { advertisers: readonly string[]; partnerNames?: readonly string[]; whitelistOnly?: boolean; buyersListName?: string | null }): string[] =>
-  [...a.advertisers, ...(a.whitelistOnly ? ['Whitelist only'] : []), ...(a.buyersListName ? [`Buyers list: ${a.buyersListName}`] : []), ...(a.partnerNames ?? [])]
-
-/* How a buyers list's invited buyers are identified — configurable per
-   retailer (spec "Support private auctions"). brandEntity and dspSeatId are
-   matched automatically at auction time; other is recorded only. */
-export const IDENTIFIER_TYPES: { key: IdentifierType; label: string; placeholder: string }[] = [
-  { key: 'brandEntity', label: 'PH brand entity', placeholder: 'Advertiser name, e.g. Nestlé' },
-  { key: 'dspSeatId', label: 'DSP seat ID', placeholder: 'Seat ID, e.g. seat_amz_1042' },
-  { key: 'other', label: 'Other', placeholder: 'Identifier used elsewhere' },
-]
-export const identifierTypeLabel = (key: string) => IDENTIFIER_TYPES.find((t) => t.key === key)?.label ?? key
+/* "Any connected DSP", or the pills in order: advertisers, then DSPs. */
+export const assignedLabels = (a: { advertisers: readonly string[]; partnerNames?: readonly string[]; whitelistOnly?: boolean }): string[] =>
+  [...a.advertisers, ...(a.whitelistOnly ? ['Whitelist only'] : []), ...(a.partnerNames ?? [])]
 
 /* Reserve price inheritance (Rob, 22 Sep; spec §1 configuration
    inheritance): a display type carries its own reserve price default, and

@@ -7,7 +7,6 @@ import type { Context } from '../context'
 import type { PartnerRecord } from '../repos/PartnerRepo'
 import { TAKEN } from '../repos/ReservationRepo'
 import { advertiserSlug, assignedOf, reservePriceOf, supportedTargetingOf } from '@ph-dsp/types'
-import { invitedPartnerIds, isActiveAt, isInvitedBuyer } from './buyersLists'
 import { effectiveLists, isBlocked, isOn } from './lists'
 import { effectiveFloors } from './pricing'
 import { slotCountOf, slotDurationSec } from './slots'
@@ -29,10 +28,10 @@ export function allPositions(ctx: Context): PositionRef[] {
 }
 export const findPosition = (ctx: Context, id: string) => allPositions(ctx).find((p) => p.positionId === id) ?? null
 
-export type Assignment = 'rtb' | 'whitelist_only' | 'deal' | 'reserved'
+export type Assignment = 'rtb' | 'whitelist_only' | 'reserved'
 export const assignmentOf = (def: Slot): Assignment => {
   const a = assignedOf(def)
-  return a.advertisers.length ? 'reserved' : a.buyersListId ? 'deal' : a.whitelistOnly ? 'whitelist_only' : 'rtb'
+  return a.advertisers.length ? 'reserved' : a.whitelistOnly ? 'whitelist_only' : 'rtb'
 }
 /* Held for one of these advertisers (case-insensitively). */
 export const heldFor = (def: Slot, name: string) => assignedOf(def).advertisers.some((a) => a.trim().toLowerCase() === name.trim().toLowerCase())
@@ -52,47 +51,22 @@ export function callerOf(partner: PartnerRecord, advertiserId: string | undefine
   return { partner, advertiser: seat ? { id: advertiserId, name: seat.name } : null, unknownAdvertiser: !seat }
 }
 
-/* The DSPs a position's bid requests actually go to. null means
-   unrestricted (any connected DSP) — the raw partnerIds choice when it's
-   empty. A non-null array always means "exactly these, possibly none": the
-   raw partnerIds choice when it's non-empty, or — for a private auction
-   (deal) — whichever DSPs currently have a seat among the buyers list's
-   invited buyers, resolved live so an edit to the list takes effect on
-   every slot it's attached to without having to re-save each one. Unlike
-   rtb/whitelist_only, a deal is never "unrestricted": one whose buyers list
-   was deleted, or whose invited buyers currently match no connected DSP,
-   resolves to an empty (not null) array, correctly admitting nobody rather
-   than accidentally opening the position to every DSP. */
-export function effectivePartnerIds(ctx: Context, def: Slot): string[] | null {
-  const a = assignedOf(def)
-  if (a.buyersListId) {
-    const list = ctx.buyersLists.get(a.buyersListId)
-    return list ? invitedPartnerIds(list, ctx.partners.list()) : []
-  }
-  return a.partnerIds.length ? a.partnerIds : null
-}
-
-/* May this advertiser (by name, and — for a deal — its DSP seat ID) buy this
-   position through this partner? */
-export function advertiserMayBuy(ctx: Context, p: PositionRef, partner: PartnerRecord, name: string, seatId?: string | null) {
+/* May this advertiser (by name) buy this position through this partner? */
+export function advertiserMayBuy(ctx: Context, p: PositionRef, partner: PartnerRecord, name: string) {
   const eff = effectiveLists(partner, ctx.company.get())
   if (isBlocked(name, eff)) return false
   const a = assignmentOf(p.def)
   if (a === 'reserved') return heldFor(p.def, name)
-  if (a === 'deal') {
-    const list = ctx.buyersLists.get(assignedOf(p.def).buyersListId as string)
-    return !!list && isActiveAt(list, ctx.clock().toISOString()) && isInvitedBuyer(list, name, seatId)
-  }
   if (a === 'whitelist_only') return isOn(name, eff.allowList)
   return true
 }
 
 export function isVisible(ctx: Context, p: PositionRef, c: Caller) {
   if (c.partner.status !== 'connected' || c.unknownAdvertiser) return false
-  const allowed = effectivePartnerIds(ctx, p.def)
-  if (allowed !== null && !allowed.includes(c.partner.id)) return false
-  const seats = c.advertiser ? c.partner.seats.filter((s) => s.name === c.advertiser!.name) : c.partner.seats
-  return seats.some((s) => advertiserMayBuy(ctx, p, c.partner, s.name, s.id))
+  const allowed = assignedOf(p.def).partnerIds
+  if (allowed.length && !allowed.includes(c.partner.id)) return false
+  const names = c.advertiser ? [c.advertiser.name] : c.partner.seats.map((s) => s.name)
+  return names.some((n) => advertiserMayBuy(ctx, p, c.partner, n))
 }
 
 /* ------------------------------------------------------------ play windows */

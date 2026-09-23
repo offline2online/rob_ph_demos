@@ -55,7 +55,6 @@ export const advertiserSettingsRoutes = (ctx: Context, guards: Guards): FastifyP
      multi-select (Rob, 20 Sep). */
   const inventory = () => {
     const partners = ctx.partners.list()
-    const buyersLists = ctx.buyersLists.list()
     const items: AvailableInventoryRow[] = []
     for (const t of ctx.displayTypes.list()) {
       const playlistName = (t.defaultPlaylistId && ctx.playlists.get(t.defaultPlaylistId)?.name) || '—'
@@ -64,11 +63,7 @@ export const advertiserSettingsRoutes = (ctx: Context, guards: Guards): FastifyP
         const a = assignedOf(s)
         items.push({
           displayTypeId: t.id, displayTypeName: t.name, touchPoint: t.touchPoint, playlistName, slot: i + 1, position: s.label,
-          assignedTo: {
-            ...a,
-            partnerNames: a.partnerIds.map((id) => partners.find((p) => p.id === id)?.name ?? id),
-            buyersListName: a.buyersListId ? buyersLists.find((l) => l.id === a.buyersListId)?.name ?? a.buyersListId : null,
-          },
+          assignedTo: { ...a, partnerNames: a.partnerIds.map((id) => partners.find((p) => p.id === id)?.name ?? id) },
           qrControl: hasQrControl(t),
           visionAi: hasVisionAi(t),
           supportedTargeting: supportedTargetingOf(s),
@@ -137,9 +132,9 @@ export const advertiserSettingsRoutes = (ctx: Context, guards: Guards): FastifyP
       else if (modes.includes('interactive') && dt && !hasQrControl(dt)) errors.push({ field: f('supportedTargeting'), reason: 'QR Control is required to support an interactive engagement.' })
       else targeting = keys.filter((k) => modes.includes(k)) as TargetingMode[]
 
-      const raw = (r.assignedTo ?? {}) as { partnerIds?: unknown; advertisers?: unknown; whitelistOnly?: unknown; buyersListId?: unknown }
-      const assigned: Assigned = { partnerIds: names(raw.partnerIds), advertisers: names(raw.advertisers), whitelistOnly: raw.whitelistOnly === true, buyersListId: typeof raw.buyersListId === 'string' ? raw.buyersListId : null }
-      const bad = validateAssigned(assigned, (k) => f(`assignedTo.${k}`), partners, company, def ? assignedOf(def) : { partnerIds: [], advertisers: [], whitelistOnly: false, buyersListId: null }, ctx.buyersLists)
+      const raw = (r.assignedTo ?? {}) as { partnerIds?: unknown; advertisers?: unknown; whitelistOnly?: unknown }
+      const assigned: Assigned = { partnerIds: names(raw.partnerIds), advertisers: names(raw.advertisers), whitelistOnly: raw.whitelistOnly === true }
+      const bad = validateAssigned(assigned, (k) => f(`assignedTo.${k}`), partners, company, def ? assignedOf(def) : { partnerIds: [], advertisers: [], whitelistOnly: false })
       errors.push(...bad)
 
       const reservePrice = parseReservePrice(r.reservePrice, f('reservePrice'), errors)

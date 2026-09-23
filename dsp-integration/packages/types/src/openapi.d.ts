@@ -404,42 +404,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/admin/v1/buyers-lists": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Every buyers list (private-auction deal), for the Assigned to picker and the buyers lists table */
-        get: operations["listBuyersLists"];
-        put?: never;
-        /** New buyers list — the buyers list and its deal terms are one object */
-        post: operations["createBuyersList"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/admin/v1/buyers-lists/{buyersListId}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        /** Save changes to a buyers list's name, description, invited buyers or active window */
-        put: operations["updateBuyersList"];
-        post?: never;
-        /** Delete; 409 while any slot is still assigned to it */
-        delete: operations["deleteBuyersList"];
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/admin/v1/advertisers": {
         parameters: {
             query?: never;
@@ -518,23 +482,6 @@ export interface paths {
         get?: never;
         put?: never;
         post: operations["rejectCampaign"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/admin/v1/campaigns/{campaignId}/unreject": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Undo a mistaken rejection — Rejected → Awaiting approval. Never auto-approves. */
-        post: operations["unrejectCampaign"];
         delete?: never;
         options?: never;
         head?: never;
@@ -772,7 +719,7 @@ export interface components {
         Error: {
             error: {
                 /** @enum {string} */
-                code: "validation_failed" | "variable_not_permitted" | "checks_failed" | "not_approved" | "below_floor" | "advertiser_blocked" | "category_blocked" | "not_on_whitelist" | "not_invited" | "targeting_not_supported" | "conflict" | "has_dependents" | "unauthorised" | "forbidden" | "not_found";
+                code: "validation_failed" | "variable_not_permitted" | "checks_failed" | "not_approved" | "below_floor" | "advertiser_blocked" | "category_blocked" | "not_on_whitelist" | "targeting_not_supported" | "conflict" | "has_dependents" | "unauthorised" | "forbidden" | "not_found";
                 message: string;
                 details?: {
                     field?: string;
@@ -812,7 +759,7 @@ export interface components {
                 openOohVenueType?: string;
             };
             /** @enum {string} */
-            assignment: "rtb" | "whitelist_only" | "deal" | "reserved";
+            assignment: "rtb" | "whitelist_only" | "reserved";
             /**
              * @description What a campaign may use here. A bid or reservation for a campaign of
              *     any other type is refused with targeting_not_supported.
@@ -924,13 +871,6 @@ export interface components {
             name: "file_type" | "file_size" | "bitrate" | "dimensions" | "aspect_ratio" | "duration" | "default_present" | "targeting_permitted";
             passed: boolean;
             detail?: string;
-            /** @description "default" or a targeted version id — the specific asset this check ran against. Unset for a campaign-level check (default_present, targeting_permitted). */
-            assetId?: string;
-        };
-        /** @description A rejection reason attached to one specific asset, not the whole campaign (spec §3). */
-        AssetRejection: {
-            assetId: string;
-            reason: string;
         };
         CampaignStatus: {
             campaignId: string;
@@ -1024,10 +964,8 @@ export interface components {
             }[];
         };
         /**
-         * @description Who may buy a position: DSPs, named advertisers, the advertiser
-         *     whitelist, or a buyers list (private auction). No DSPs and no
-         *     advertisers means any connected DSP. A buyers list is mutually
-         *     exclusive with advertisers and whitelistOnly.
+         * @description Who may buy a position: DSPs, named advertisers, or the advertiser
+         *     whitelist. No DSPs and no advertisers means any connected DSP.
          */
         AssignedTo: {
             partnerIds: string[];
@@ -1035,54 +973,8 @@ export interface components {
             partnerNames: string[];
             /** @description Named advertisers it is held for. */
             advertisers: string[];
-            /** @description Only advertisers on the whitelist may bid; never true when advertisers is non-empty or buyersListId is set. */
+            /** @description Only advertisers on the whitelist may bid; never true when advertisers is non-empty. */
             whitelistOnly: boolean;
-            /** @description A private auction restricted to this buyers list's invited buyers; null means not a private auction. */
-            buyersListId: string | null;
-            /** @description The same buyers list by name */
-            buyersListName: string | null;
-        };
-        /** @description One invited buyer on a buyers list (deal). */
-        InvitedBuyer: {
-            /**
-             * @description How this buyer is identified — configurable per retailer:
-             *     brandEntity (the advertiser's PH brand entity, matched by name),
-             *     dspSeatId (a DSP's own seat ID, matched exactly), or other (a
-             *     freeform identifier this retailer uses elsewhere — recorded but
-             *     not automatically matched at auction time; entitlement for that
-             *     entry is enforced outside this POC).
-             * @enum {string}
-             */
-            identifierType: "brandEntity" | "dspSeatId" | "other";
-            value: string;
-        };
-        /**
-         * @description A reusable private-auction deal (spec "Support private auctions"):
-         *     an invited-buyer list plus an active time window, created once and
-         *     attached to any number of slots' assignedTo.buyersListId. Floor,
-         *     auction resolution rule (first- vs second-price) and the per-brand
-         *     relationship variable are never set here — they come from the slot,
-         *     the platform, and the brand entity respectively.
-         */
-        BuyersList: {
-            id: string;
-            name: string;
-            description: string;
-            invitedBuyers: components["schemas"]["InvitedBuyer"][];
-            /**
-             * Format: date-time
-             * @description Inclusive; null = no start bound.
-             */
-            activeFrom: string | null;
-            /**
-             * Format: date-time
-             * @description Inclusive; null = no end bound.
-             */
-            activeTo: string | null;
-            /** Format: date-time */
-            createdAt: string;
-            /** Format: date-time */
-            updatedAt: string;
         };
         AvailableInventoryRow: {
             displayTypeId: string;
@@ -1153,7 +1045,7 @@ export interface components {
                 /** @description The DSPs the slot is tied to; empty = any connected DSP. */
                 partnerNames: string[];
                 /** @enum {string} */
-                assignment: "rtb" | "whitelist_only" | "deal" | "reserved";
+                assignment: "rtb" | "whitelist_only" | "reserved";
                 /**
                  * @description Displays using this display type across the whole retail
                  *     footprint (interface contract "Booking schedule reach
@@ -1388,8 +1280,6 @@ export interface components {
             /** Format: date-time */
             reviewedAt?: string | null;
             reason?: string | null;
-            /** @description The current rejection's per-asset breakdown, when the reviewer named specific assets (spec §3, "asset-level rejection"). */
-            assetReasons?: components["schemas"]["AssetRejection"][];
             checks?: components["schemas"]["Check"][];
             targetingSummary?: string;
             /** @description The default layer's creative under review, for rendering on the target canvas. */
@@ -1398,8 +1288,6 @@ export interface components {
                 mimeType: string;
                 width: number;
                 height: number;
-                /** @description sha256 of the file, when available — the basis for "safe reuse of previously approved assets" (spec §3). */
-                contentHash?: string;
             } | null;
             /** @description The target display type's canvas. */
             canvas?: {
@@ -1410,11 +1298,10 @@ export interface components {
                 /** Format: date-time */
                 at: string;
                 /** @enum {string} */
-                action: "submitted" | "auto_approved" | "approved" | "rejected" | "returned_for_review" | "unrejected";
+                action: "submitted" | "auto_approved" | "approved" | "rejected" | "returned_for_review";
                 by?: string | null;
                 reason?: string | null;
                 assetVersion?: string;
-                assetReasons?: components["schemas"]["AssetRejection"][];
             }[];
         };
         DisplayTypeExtensions: {
@@ -1434,14 +1321,7 @@ export interface components {
                  */
                 advertisers?: string[];
                 /** @enum {string|null} */
-                listMode?: "rtb" | "whitelist_only" | "deal" | null;
-                /**
-                 * @description A private auction restricted to this buyers list's
-                 *     invited buyers (set from Advertisers / Inventory, not the
-                 *     slot editor). Mutually exclusive with advertisers and
-                 *     whitelistOnly; listMode is deal whenever this is set.
-                 */
-                buyersListId?: string | null;
+                listMode?: "rtb" | "whitelist_only" | null;
                 storeScope?: string | null;
                 quota?: number | null;
                 /**
@@ -1624,7 +1504,7 @@ export interface components {
                 "application/json": components["schemas"]["Error"];
             };
         };
-        /** @description error.code = not_approved | below_floor | advertiser_blocked | category_blocked | not_on_whitelist | not_invited | targeting_not_supported */
+        /** @description error.code = not_approved | below_floor | advertiser_blocked | category_blocked | not_on_whitelist | targeting_not_supported */
         NotEligible: {
             headers: {
                 [name: string]: unknown;
@@ -1867,10 +1747,7 @@ export interface operations {
                 "multipart/form-data": {
                     /** @description "default" or the targeted version id */
                     version: string;
-                    /**
-                     * Format: binary
-                     * @description Per-asset limit, checked by `file_size`: 100 MB for an image, 200 MB for a video.
-                     */
+                    /** Format: binary */
                     file: string;
                 };
             };
@@ -2404,123 +2281,6 @@ export interface operations {
             404: components["responses"]["NotFound"];
         };
     };
-    listBuyersLists: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Buyers lists */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        items: components["schemas"]["BuyersList"][];
-                    };
-                };
-            };
-            401: components["responses"]["Unauthorised"];
-        };
-    };
-    createBuyersList: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": {
-                    name: string;
-                    description: string;
-                    invitedBuyers: components["schemas"]["InvitedBuyer"][];
-                    /** Format: date-time */
-                    activeFrom: string | null;
-                    /** Format: date-time */
-                    activeTo: string | null;
-                };
-            };
-        };
-        responses: {
-            /** @description Created */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["BuyersList"];
-                };
-            };
-            400: components["responses"]["ValidationFailed"];
-            401: components["responses"]["Unauthorised"];
-        };
-    };
-    updateBuyersList: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                buyersListId: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": {
-                    name: string;
-                    description: string;
-                    invitedBuyers: components["schemas"]["InvitedBuyer"][];
-                    /** Format: date-time */
-                    activeFrom: string | null;
-                    /** Format: date-time */
-                    activeTo: string | null;
-                };
-            };
-        };
-        responses: {
-            /** @description Saved */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["BuyersList"];
-                };
-            };
-            400: components["responses"]["ValidationFailed"];
-            401: components["responses"]["Unauthorised"];
-            404: components["responses"]["NotFound"];
-        };
-    };
-    deleteBuyersList: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                buyersListId: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Deleted */
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            401: components["responses"]["Unauthorised"];
-            404: components["responses"]["NotFound"];
-            409: components["responses"]["HasDependents"];
-        };
-    };
     listAdvertisers: {
         parameters: {
             query?: never;
@@ -2682,8 +2442,6 @@ export interface operations {
                 "application/json": {
                     assetVersion: string;
                     reason: string;
-                    /** @description Optional — names specific assets the overall reason covers (spec §3, "asset-level rejection"). */
-                    assetReasons?: components["schemas"]["AssetRejection"][];
                 };
             };
         };
@@ -2698,41 +2456,6 @@ export interface operations {
                 };
             };
             400: components["responses"]["ValidationFailed"];
-            401: components["responses"]["Unauthorised"];
-            403: components["responses"]["Forbidden"];
-            404: components["responses"]["NotFound"];
-            409: components["responses"]["Conflict"];
-        };
-    };
-    unrejectCampaign: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                campaignId: components["parameters"]["CampaignId"];
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": {
-                    /** @description The rejected version; rejected with 409 if it has changed. */
-                    assetVersion: string;
-                    /** @description Optional — why the rejection is being reversed. Recorded in the audit trail alongside the original rejection reason */
-                    reason?: string;
-                };
-            };
-        };
-        responses: {
-            /** @description Back to Awaiting approval */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Approval"];
-                };
-            };
             401: components["responses"]["Unauthorised"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];

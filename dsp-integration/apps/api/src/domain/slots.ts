@@ -2,7 +2,6 @@
    assignment editor allows. Ownership decides who may fill a slot; how the
    slot plays is unchanged. */
 import { UNLIMITED, type Assigned, type DisplayType, type DisplayTypeExtensions, type Slot } from '@ph-dsp/types'
-import type { BuyersListRepo } from '../repos/BuyersListRepo'
 import type { CompanySettings } from '../repos/CompanySettingsRepo'
 import type { PartnerRecord } from '../repos/PartnerRepo'
 import { effectiveLists, isBlocked, isOn } from './lists'
@@ -31,22 +30,18 @@ export function validateExtensions(dt: DisplayType, ext: DisplayTypeExtensions):
 
 /* Who a sellable position is assigned to (Advertisers / Inventory). DSPs say
    who may bid; advertisers hold it for them, and their DSPs are added
-   automatically; a buyers list restricts it to a private auction among its
-   invited buyers; none of these means any connected DSP. */
+   automatically; neither means any connected DSP. */
 export function validateAssigned(
   a: Assigned,
   field: (k: string) => string,
   partners: PartnerRecord[],
   company: CompanySettings,
   previous: Assigned,
-  buyersLists: BuyersListRepo,
 ): Detail[] {
   const out: Detail[] = []
   const unknown = a.partnerIds.filter((id) => !partners.some((p) => p.id === id))
   if (unknown.length) out.push({ field: field('partnerIds'), reason: `Unknown DSP: ${unknown.join(', ')}.` })
   if (a.advertisers.length && a.whitelistOnly) out.push({ field: field('whitelistOnly'), reason: 'A position is either held for named advertisers or open to the whitelist, not both.' })
-  if (a.buyersListId && (a.advertisers.length || a.whitelistOnly)) out.push({ field: field('buyersListId'), reason: 'A private auction (buyers list) is mutually exclusive with named advertisers and the whitelist.' })
-  if (a.buyersListId && !buyersLists.get(a.buyersListId)) out.push({ field: field('buyersListId'), reason: 'Unknown buyers list.' })
   /* The advertiser has to be a seat on a DSP this position can sell through. */
   const scope = a.partnerIds.length ? partners.filter((p) => a.partnerIds.includes(p.id)) : partners
   for (const name of a.advertisers) {
@@ -69,17 +64,13 @@ export function validateAssigned(
 }
 
 /* What is stored for a position: the advertisers' own DSPs are always among
-   the DSPs that may bid, and the list mode follows from the choice. A
-   buyers list's own invited buyers are resolved to DSPs live at auction
-   time (positions.ts effectivePartnerIds), not cached here — partnerIds is
-   left as the caller's own DSP-level choice (usually empty) for a deal. */
-export function assignedToSlot(a: Assigned, partners: PartnerRecord[]): Pick<Slot, 'partnerIds' | 'advertisers' | 'listMode' | 'buyersListId'> {
+   the DSPs that may bid, and the list mode follows from the choice. */
+export function assignedToSlot(a: Assigned, partners: PartnerRecord[]): Pick<Slot, 'partnerIds' | 'advertisers' | 'listMode'> {
   const implied = a.advertisers.flatMap((name) => partners.filter((p) => p.seats.some((s) => s.name === name)).map((p) => p.id))
   return {
     partnerIds: [...new Set([...a.partnerIds, ...implied])],
     advertisers: [...a.advertisers],
-    listMode: a.advertisers.length ? null : a.buyersListId ? 'deal' : a.whitelistOnly ? 'whitelist_only' : 'rtb',
-    buyersListId: a.advertisers.length ? null : a.buyersListId,
+    listMode: a.advertisers.length ? null : a.whitelistOnly ? 'whitelist_only' : 'rtb',
   }
 }
 
