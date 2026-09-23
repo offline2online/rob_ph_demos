@@ -2169,6 +2169,40 @@ playback analytics.**
 - **Data view on every record** as JSON. *(spec only; the "Data model — JSON
   sample records" document on the board's Docs page serves this purpose)*
 
+### Security, scale and the boundary with PH Core (review, 23 Sep 2026)
+
+These govern how the exchange behaves under load and at its edges. They add
+no screen and no copy. Details, measurements and what is deliberately left
+are in `api/SECURITY-PERFORMANCE.md`; the seams with the existing platform
+are in `api/PH-CORE-BOUNDARIES.md`.
+
+- **One live sale per position and play window**, enforced by the
+  database, not only by the application's check. Two clearings of the same
+  window, or two reservations racing, can't both sell it; the loser is told
+  why. The existing campaign system must likewise accept at most one
+  booking per slot and window. *(migration 0021)*
+- **Only a connected DSP can write.** Creating, uploading, submitting,
+  reserving and bidding need the DSP to be connected; reads of its own
+  campaigns stay open. Disconnecting a DSP stops it at once.
+- **Partner API limits:** 50 requests/s per partner (bursts of 100), then
+  `429 rate_limited` with `Retry-After`; 2 uploads in flight per partner;
+  forecasts of at most 200 positions, each once; content packages bounded
+  (name ≤ 200 characters, ≤ 20 targeted versions, ≤ 10 AND groups, ≤ 20
+  conditions per group, values ≤ 200 characters).
+- **Bid responses are validated and bounded** before they are trusted:
+  the request id echoed, impression 1, a finite price under a ceiling, a
+  missing currency read as USD (OpenRTB), at most 10 bids and 64 KB per
+  response, and one unknown creative retrieved per response, only from the
+  DSP's own creative path.
+- **An auction clears in about one bidder timeout per 16 positions**,
+  however many DSPs there are: every DSP for a position is asked at once.
+- **Every response** carries `nosniff`, a script-blocking CSP and, on the
+  APIs, `no-store`; client errors keep their 4xx status; the public POC
+  partner tokens can't be used in production.
+- **Measured throughput** on one process, 1,008 positions: 1,205 req/s for
+  one position, 608 req/s for a year of availability, and an auction in
+  5.3 s with an 80 ms DSP round trip (`npm run bench`).
+
 ### Analytics schema, measurement and federation — foundation (§9)
 
 - **Versioned canonical playback/analytics event schema**, S3-partitioned,

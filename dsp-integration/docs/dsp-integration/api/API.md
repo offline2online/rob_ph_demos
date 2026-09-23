@@ -324,7 +324,11 @@ integration, and nothing else in the build may depend on their internals.
 
 - **SSP auction**: a scheduled job in `apps/api` clears each play window
   at its auction cutoff (Advertiser settings → Auction schedule), ahead of time (OpenRTB section below). For demos, `npm run auction:run`
-  runs one window. No UI and no endpoint.
+  runs one window. No UI and no endpoint. A tick never starts while the
+  previous one is still running, and the CLI can run beside the scheduler
+  safely: the database allows one live winner per position and window, so
+  a second clearing of the same window loses and records why. Run the
+  scheduler on one instance when there are several (PH-CORE-BOUNDARIES.md).
 - **Billing**: billing line items (dynamic VAC-d, reconciled against
   existing playback data) are stored only. `npm run billing:print` prints
   them for testing. No UI, report or API.

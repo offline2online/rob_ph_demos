@@ -189,7 +189,12 @@ Call it wherever eligibility is decided:
 - **Inventory reservation** (`POST /v1/reservations`, type `reserve`).
 - **Bidding**: a bid whose `crid` isn't an approved campaign is dropped before
   the auction clears.
-- **Hand-off** of a won or reserved campaign to the campaign system.
+- **Hand-off** of a won or reserved campaign to the campaign system. The
+  campaign system's booking (`CampaignSource.bookSlot`) must accept **at
+  most one campaign per slot and play window** and fail a second one: the
+  hand-off treats that failure as "already booked" and records why
+  (migration 0021 on the stand-in; PH-CORE-BOUNDARIES.md → "What each seam
+  must guarantee").
 
 In this POC the activation check lives in `approvals.setActivation`, used by
 `PUT /admin/v1/campaigns/{id}/activation`. Reservation, bidding and hand-off
