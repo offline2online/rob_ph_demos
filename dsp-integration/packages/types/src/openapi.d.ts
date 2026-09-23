@@ -281,6 +281,12 @@ export interface paths {
          *     supported, same as reservePrice), but it describes the display
          *     type, not the slot — every row sharing a displayTypeId must submit
          *     the same value in one request.
+         *
+         *     billingUnitHours / billingUnitHoursDefault: the same override/
+         *     default pattern as reservePrice/reservePriceDefault, for the
+         *     granularity a CPM is quoted and charged against (spec "Private
+         *     auctions: two-period model", 23 Sep 2026) — default one day (24
+         *     hours) when neither is set.
          */
         put: operations["saveAvailableInventory"];
         post?: never;
@@ -1057,12 +1063,42 @@ export interface components {
             value: string;
         };
         /**
-         * @description A reusable private-auction deal (spec "Support private auctions"):
-         *     an invited-buyer list plus an active time window, created once and
-         *     attached to any number of slots' assignedTo.buyersListId. Floor,
-         *     auction resolution rule (first- vs second-price) and the per-brand
-         *     relationship variable are never set here — they come from the slot,
-         *     the platform, and the brand entity respectively.
+         * @description The winning bid a private auction's rate has locked to, for the
+         *     rest of its delivery term (spec "…dynamic VAC-d billing over the
+         *     delivery term", 23 Sep 2026). Set once, by the exchange, the first
+         *     time a bid clears within the deal's auctionCloses deadline — never
+         *     overwritten, and never set directly by an API caller. Every later
+         *     play window in the term is booked at `cpm` for this winner
+         *     directly, without a fresh auction; each is still billed on its own
+         *     realised VAC-d for that window (dynamic VAC-d is unchanged — only
+         *     the rate is fixed rather than re-cleared).
+         */
+        LockedWin: {
+            /** @description The CPM every later play window in the term is booked and billed at. */
+            cpm: number;
+            /** @description The winning DSP. */
+            partnerId: string;
+            advertiserId: string | null;
+            /** @description The campaign every later play window hands off to. */
+            campaignId: string;
+            pricingType: string | null;
+            /**
+             * @description How the winning bid arrived — carried forward so later windows book the same way.
+             * @enum {string}
+             */
+            channel: "api" | "openrtb";
+            /** Format: date-time */
+            lockedAt: string;
+        };
+        /**
+         * @description A reusable private-auction deal (spec "Support private auctions";
+         *     two-period model, 23 Sep 2026): an invited-buyer list, a delivery
+         *     term (activeFrom/activeTo) and, optionally, a one-time auction
+         *     window (auctionCloses) — created once and attached to any number of
+         *     slots' assignedTo.buyersListId. Floor, auction resolution rule
+         *     (first- vs second-price) and the per-brand relationship variable
+         *     are never set here — they come from the slot, the platform, and the
+         *     brand entity respectively.
          */
         BuyersList: {
             id: string;
@@ -1071,14 +1107,28 @@ export interface components {
             invitedBuyers: components["schemas"]["InvitedBuyer"][];
             /**
              * Format: date-time
-             * @description Inclusive; null = no start bound.
+             * @description The delivery term's start (spec "Private auctions: two-period
+             *     model") — the span being awarded, not the bidding deadline
+             *     (see auctionCloses). Inclusive; null = no start bound.
              */
             activeFrom: string | null;
             /**
              * Format: date-time
-             * @description Inclusive; null = no end bound.
+             * @description The delivery term's end. Inclusive; null = no end bound.
              */
             activeTo: string | null;
+            /**
+             * Format: date-time
+             * @description The deal's own one-time bidding deadline (the auction window):
+             *     invited brands may submit and revise bids until this time, at
+             *     or before which the auction clears once and locks the winning
+             *     rate (lockedWin) for the rest of the delivery term. null = this
+             *     deal isn't using the two-period model — it clears fresh every
+             *     play window, same as a buyers list before this field existed.
+             */
+            auctionCloses: string | null;
+            /** @description null until the term's one-time auction has cleared (or when auctionCloses itself is null). See LockedWin. */
+            lockedWin: components["schemas"]["LockedWin"] | null;
             /** Format: date-time */
             createdAt: string;
             /** Format: date-time */
@@ -1134,6 +1184,28 @@ export interface components {
              *     see `PUT`'s reservePriceDefault.
              */
             displayTypeReservePrice: number | null;
+            /**
+             * @description The resolved billing-unit granularity, in hours (spec "Private
+             *     auctions: two-period model", 23 Sep 2026): billingUnitHoursOverride
+             *     when set, else displayTypeBillingUnitHours, else the platform
+             *     default of 24 (one day). Always a real number — unlike reserve
+             *     price, there is no "no billing unit" state.
+             */
+            billingUnitHours: number;
+            /**
+             * @description This slot's own billing unit, admin-editable here; null means
+             *     it has none and follows displayTypeBillingUnitHours (spec §1
+             *     configuration inheritance — override always wins).
+             */
+            billingUnitHoursOverride: number | null;
+            /**
+             * @description The billing-unit default set on this slot's display type; null
+             *     means the display type has none either (so an un-overridden
+             *     slot resolves to the platform default of 24). The same value on
+             *     every row sharing a displayTypeId. Editable from any of those
+             *     rows — see `PUT`'s billingUnitHoursDefault.
+             */
+            displayTypeBillingUnitHours: number | null;
         };
         BookingSchedule: {
             /** @description ISO 4217 */
@@ -1460,6 +1532,20 @@ export interface components {
                  *     from Advertisers / Inventory, not the slot editor.
                  */
                 reservePrice?: number | null;
+                /**
+                 * @description This slot's own override of the display type's billing
+                 *     unit (spec "Private auctions: two-period model", 23 Sep
+                 *     2026): the granularity a CPM is quoted and charged
+                 *     against — default one day (24 hours). Same inheritance as
+                 *     reservePrice: absent or null follows the display type's
+                 *     own `billingUnitHours` (below), else the platform default
+                 *     of 24. Set from Advertisers / Inventory, not the slot
+                 *     editor. Informational in this build — dynamic VAC-d
+                 *     billing still runs per play window (exchange/billing.ts);
+                 *     this is what the window length is expected to equal for a
+                 *     private-auction slot using the two-period model.
+                 */
+                billingUnitHours?: number | null;
             }[];
             /**
              * @description The display type's own reserve price default (decision, 22 Sep),
@@ -1470,6 +1556,15 @@ export interface components {
              *     value), not the slot editor.
              */
             reservePrice?: number | null;
+            /**
+             * @description The display type's own billing-unit default (spec "Private
+             *     auctions: two-period model", 23 Sep 2026), inherited by every
+             *     slot on it with no override of its own. Absent or null means
+             *     the platform default of 24 hours (one day) applies. Set from
+             *     Advertisers / Inventory (every row for this display type edits
+             *     the same value), not the slot editor.
+             */
+            billingUnitHours?: number | null;
             venue?: {
                 openOohVenueType?: string;
                 /** @enum {string} */
@@ -2139,6 +2234,10 @@ export interface operations {
                         reservePrice?: number | null;
                         /** @description The display type's reserve price default; null = none. Must be the same value on every row for a given displayTypeId in one request. */
                         reservePriceDefault?: number | null;
+                        /** @description This slot's own billing-unit override, in hours; null = inherit billingUnitHoursDefault. Omitted = unchanged is not supported — always send the slot's current value. */
+                        billingUnitHours?: number | null;
+                        /** @description The display type's billing-unit default, in hours; null = none (the platform default of 24 applies). Must be the same value on every row for a given displayTypeId in one request. */
+                        billingUnitHoursDefault?: number | null;
                     }[];
                 };
             };
@@ -2440,10 +2539,26 @@ export interface operations {
                     name: string;
                     description: string;
                     invitedBuyers: components["schemas"]["InvitedBuyer"][];
-                    /** Format: date-time */
+                    /**
+                     * Format: date-time
+                     * @description The delivery term's start; inclusive, null = no bound.
+                     */
                     activeFrom: string | null;
-                    /** Format: date-time */
+                    /**
+                     * Format: date-time
+                     * @description The delivery term's end; inclusive, null = no bound.
+                     */
                     activeTo: string | null;
+                    /**
+                     * Format: date-time
+                     * @description The deal's own one-time bidding deadline (the auction
+                     *     window), distinct from the delivery term above (spec
+                     *     "Private auctions: two-period model", 23 Sep 2026).
+                     *     null = this deal isn't using the two-period model — it
+                     *     clears fresh every play window, same as before this
+                     *     field existed.
+                     */
+                    auctionCloses?: string | null;
                 };
             };
         };
@@ -2476,10 +2591,21 @@ export interface operations {
                     name: string;
                     description: string;
                     invitedBuyers: components["schemas"]["InvitedBuyer"][];
-                    /** Format: date-time */
+                    /**
+                     * Format: date-time
+                     * @description The delivery term's start; inclusive, null = no bound.
+                     */
                     activeFrom: string | null;
-                    /** Format: date-time */
+                    /**
+                     * Format: date-time
+                     * @description The delivery term's end; inclusive, null = no bound.
+                     */
                     activeTo: string | null;
+                    /**
+                     * Format: date-time
+                     * @description The deal's own one-time bidding deadline (the auction window); see POST's description. Editable even once locked — it no longer has any effect at that point.
+                     */
+                    auctionCloses?: string | null;
                 };
             };
         };

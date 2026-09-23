@@ -82,6 +82,16 @@ export const identifierTypeLabel = (key: string) => IDENTIFIER_TYPES.find((t) =>
 export const reservePriceOf = (dt: { phExtensions?: { reservePrice?: number | null } | null }, slot: { reservePrice?: number | null }): number | null =>
   slot.reservePrice ?? dt.phExtensions?.reservePrice ?? null
 
+/* Billing-unit inheritance (spec "Private auctions: two-period model", 23
+   Sep 2026): the granularity a CPM is quoted and charged against — same
+   override-always-wins inheritance as reservePriceOf, but always resolves
+   to a real number (the platform default of 24 hours/one day when neither
+   the slot nor its display type sets one) — unlike a reserve price, there
+   is no "no billing unit" state. */
+export const DEFAULT_BILLING_UNIT_HOURS = 24
+export const billingUnitHoursOf = (dt: { phExtensions?: { billingUnitHours?: number | null } | null }, slot: { billingUnitHours?: number | null }): number =>
+  slot.billingUnitHours ?? dt.phExtensions?.billingUnitHours ?? DEFAULT_BILLING_UNIT_HOURS
+
 /* What a campaign may use on a slot (Rob, 20 Sep). A slot supports localised
    targeting only until someone opens it up on Advertisers / Inventory; a bid
    for a campaign of an unsupported type is refused. Same order and words as

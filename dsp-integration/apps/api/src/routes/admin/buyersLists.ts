@@ -10,7 +10,7 @@ import { hasDependents, notFound, validationFailed } from '../../http/errors'
 
 const IDENTIFIER_KEYS = IDENTIFIER_TYPES.map((t) => t.key) as string[]
 
-type Body = { name?: unknown; description?: unknown; invitedBuyers?: unknown; activeFrom?: unknown; activeTo?: unknown }
+type Body = { name?: unknown; description?: unknown; invitedBuyers?: unknown; activeFrom?: unknown; activeTo?: unknown; auctionCloses?: unknown }
 
 /* Every slot currently assigned to this buyers list, across every display
    type — what stops a delete (spec "Deleting"). */
@@ -20,7 +20,7 @@ const dependentSlots = (ctx: Context, buyersListId: string) =>
   )
 
 export const buyersListRoutes = (ctx: Context, guards: Guards): FastifyPluginAsync => async (app) => {
-  const parse = (b: Body, errors: { field: string; reason: string }[]): { name: string; description: string; invitedBuyers: InvitedBuyer[]; activeFrom: string | null; activeTo: string | null } => {
+  const parse = (b: Body, errors: { field: string; reason: string }[]): { name: string; description: string; invitedBuyers: InvitedBuyer[]; activeFrom: string | null; activeTo: string | null; auctionCloses: string | null } => {
     const name = typeof b.name === 'string' ? b.name.trim() : ''
     if (!name) errors.push({ field: 'name', reason: 'A name is required.' })
     const description = typeof b.description === 'string' ? b.description.trim() : ''
@@ -46,7 +46,12 @@ export const buyersListRoutes = (ctx: Context, guards: Guards): FastifyPluginAsy
     const activeFrom = parseDate(b.activeFrom, 'activeFrom')
     const activeTo = parseDate(b.activeTo, 'activeTo')
     if (activeFrom && activeTo && Date.parse(activeFrom) > Date.parse(activeTo)) errors.push({ field: 'activeTo', reason: 'Must be on or after activeFrom.' })
-    return { name, description, invitedBuyers, activeFrom, activeTo }
+    /* auctionCloses (the two-period model's bidding deadline, 23 Sep 2026)
+       is independent of the delivery term above — it's fine for it to sit
+       before, inside or after activeFrom/activeTo (a deal can be set up to
+       award its term ahead of time). */
+    const auctionCloses = parseDate(b.auctionCloses, 'auctionCloses')
+    return { name, description, invitedBuyers, activeFrom, activeTo, auctionCloses }
   }
 
   app.get('/buyers-lists', async (req) => {
