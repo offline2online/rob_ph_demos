@@ -94,7 +94,7 @@ in `apps/api/test/hardening.test.ts`,
 | A content package had no size limits. Reproduced: a 150,000-character name and 1,200 targeted versions were stored and re-parsed on every bid. | Name ≤ 200 characters; ≤ 20 versions; ≤ 10 groups; ≤ 20 conditions per group; values ≤ 200 characters. |
 | Unlimited concurrent uploads, each buffered up to 200 MB. | At most 2 in flight per partner, then 429. |
 | Tokens were looked up as object keys, not in constant time, and the public POC tokens were live everywhere. | They are now compared as SHA-256 digests with `timingSafeEqual`. The API refuses to start with `NODE_ENV=production` unless `PARTNER_TOKENS` is set and doesn't reuse a POC token. |
-| Client errors became `500 Unexpected error`: an oversized body, and a second file in an upload. | 4xx statuses pass through (413, 415, …). Real faults are `500 internal_error`. |
+| Client errors became `500 Unexpected error`: an oversized body, and a second file in an upload. | 4xx statuses pass through (413, …); a wrong content type stays `400 validation_failed`, as the contract has always said. Real faults are `500 internal_error`. |
 | No security headers. | `nosniff`, `default-src 'none'` CSP with `frame-ancestors 'none'`, `no-referrer`, and `no-store` on `/api/*`. |
 | GCM accepted a truncated authentication tag. | A 16-byte tag is required. |
 
