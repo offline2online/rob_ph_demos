@@ -132,7 +132,7 @@ in `apps/api/test/hardening.test.ts`,
 
 | Item | Why it is left |
 |---|---|
-| The Admin API has no authentication in the POC. Every caller is `hq_admin`. | By design: the stand-in session is replaced by HQ Admin's own (`SessionSource`). Until then the API binds to `127.0.0.1` and **must not be exposed**. |
+| The Admin API has no authentication in the POC. Every caller is `hq_admin`. | By design: the stand-in session is replaced by HQ Admin's own (`SessionSource`). Until then the API binds to `127.0.0.1` and **must not be exposed with real data**. The hosted demo (`deploy/firebase/`, Rob 23 Sep 2026) is public on purpose, for demo data only: 20 requests/s per IP, CORS for the prototype's origins, its own Partner API tokens, and a reset. See `deploy/firebase/README.md` → "Security posture". |
 | The rate limiter is per process. | Correct for one process. With several instances it moves to the gateway (PH-CORE-BOUNDARIES.md, "Edge and gateway"). |
 | An upload is still buffered in memory while it's checked. | Bounded to 2 per partner × 200 MB. Streaming to disk means parsing MP4 from a stream; worth doing when the real `AssetStore` is known. |
 | The booking schedule and the approvals list query once per position or campaign (N+1). | They are admin screens, not a partner hot path, and bounded (92 days; paginated). They can be batched like availability if the admin screens slow down on a large estate. |

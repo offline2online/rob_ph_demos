@@ -1,0 +1,10 @@
+{
+  "functions": [
+    {
+      "source": "functions",
+      "codebase": "dsp-api",
+      "runtime": "nodejs22",
+      "ignore": ["src", "node_modules", ".gitignore", "*.log"]
+    }
+  ]
+}

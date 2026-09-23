@@ -27,14 +27,23 @@ folder's history is on the tag `archive/display-types-dsp-integration`.
 
 ## The hosted prototype
 
-`prototype/` is a built, **read-only** copy of the admin UI, published at
+`prototype/` is a built copy of the admin UI, published at
 <https://offline2online.github.io/rob_ph_demos/dsp-integration/prototype/>
 so the screens can be opened from a URL and embedded in an iframe in HQ
-Admin. It has no server: `apps/admin/scripts/capture-demo.mjs` takes a
-snapshot of the API's read side, and `src/demo/staticApi.ts` answers from it
-and refuses writes, saying so, rather than pretending a Save worked. Routes
-live in the hash (`…/prototype/#/booking-schedule`) because a CDN has
-nothing to rewrite paths with.
+Admin. **It saves** (23 Sep 2026): GitHub Pages only serves files, so the
+API runs as a Cloud Function in the `backlog-tracker-e4ed2` Firebase project
+(`deploy/firebase/`, deployed by `.github/workflows/dsp-api-deploy.yml` —
+see [deploy/firebase/README.md](deploy/firebase/README.md)), and on start-up
+`src/demo/staticApi.ts` sends every `/api` call there. Everyone using the
+link shares one set of data, and **there is no login** — every visitor is
+the stand-in HQ admin — so it is for demo data only; the workflow's
+`reset = RESET` input restores the demo estate.
+
+If that API doesn't answer, the page falls back to a **read-only snapshot**
+(`apps/admin/scripts/capture-demo.mjs` captures the API's read side at
+build time) and refuses writes, saying so, rather than pretending a Save
+worked. Routes live in the hash (`…/prototype/#/booking-schedule`) because a
+CDN has nothing to rewrite paths with.
 
 **It is rebuilt for you.** `.github/workflows/dsp-prototype.yml` runs
 `scripts/rebuild-prototype.sh` on a runner for `main` and for
@@ -160,7 +169,8 @@ nothing here can even read it without the key.
 | `apps/admin/src/features/booking-schedule/` | Booking schedule: its own page (opened in a new tab from Available Inventory or an advertiser), with filters, campaign-type summary and daily/weekly/monthly views |
 | `apps/admin/src/features/advertisers/` | Advertisers / Inventory: the advertisers table (admin edits approval and floor multipliers) and Available Inventory, where a position's **Assigned to** (DSPs, named advertisers, a buyers list's private auction, or the whitelist) and **Targeting supported** are set; underneath, the **Buyers lists** table creates/edits/deletes the reusable private-auction deals (`BuyersListModal.tsx`, `BuyersListsTable.tsx` — spec "Private auctions (buyers lists)"). Marketing users read all of it |
 | `apps/admin/src/features/campaign-status/` | STAND-IN "Campaign Status" table and campaign page showing the approval components end to end; deleted on integration |
-| `apps/admin/src/demo/`, `apps/admin/scripts/capture-demo.mjs` | The hosted prototype: a snapshot of the API's read side, and the shim that answers from it and refuses writes. Built into `prototype/` (see above) |
+| `apps/admin/src/demo/`, `apps/admin/scripts/capture-demo.mjs` | The hosted prototype: the shim that sends `/api` calls to the hosted API (`VITE_API_URL`), or — if it doesn't answer — answers from a snapshot of the API's read side and refuses writes. Built into `prototype/` (see above) |
+| `deploy/firebase/` | The hosted API: the POC API and mock DSPs as a Cloud Function (`functions/src/host.ts`, `index.ts`), its bundle build (`build.mjs`) and a local stand-in (`local-server.ts`). See its README |
 | `apps/admin/public/demo/` | That snapshot and the creatives it points at, committed so the demo can be rebuilt without a running API |
 | `scripts/sync-board-docs.mjs` | `npm run board:sync` — pushes `REQUIREMENTS.md` and `README.md` to the board's Docs page and verifies them (see above) |
 | `scripts/board-tickets.mjs` | `npm run board:tickets` — reports where this project's tickets are, and moves them between statuses when work reached `main` outside the board's own Deploy to Main (see above) |

@@ -94,7 +94,7 @@ export function createContext(opts: { config?: Config; db?: Db; flags?: Flags; s
 
 /* Wires the campaign-approval module to this repo's stand-in campaign store. */
 function approvalParts(db: Db, config: Config) {
-  const assets = localAssetStore(config.assetsDir)
+  const assets = localAssetStore(config.assetsDir, config.publicUrl)
   /* Advertiser names come from the DSP seats (seats are not secret). */
   const seatNames = () => (db.prepare('SELECT seats FROM partners').all() as { seats: string }[]).flatMap((r) => JSON.parse(r.seats) as { name: string }[])
   const company = sqliteCompanySettingsRepo(db)

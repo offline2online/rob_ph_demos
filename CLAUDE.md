@@ -110,9 +110,17 @@ opened from GitHub Pages like the other demos** — run it locally
 (`npm run dev:api` / `dev:mocks` / `dev:admin`, then `localhost:5173`).
 The static prototype it was built from is published at
 <https://offline2online.github.io/rob_ph_demos/dsp-integration/prototype/> —
-the admin UI built against a captured snapshot of its own API, so it opens
-from a URL and can be iframed into HQ Admin. It is **read-only**: a write
-answers with "changes aren't saved". **It is a checked-in build, and it is
+the admin UI, so it opens from a URL and can be iframed into HQ Admin.
+**It saves (23 Sep 2026)**: on start-up it finds the POC API hosted as a
+Cloud Function in `backlog-tracker-e4ed2`
+(`https://us-central1-backlog-tracker-e4ed2.cloudfunctions.net/dspApi`,
+codebase `dsp-api`, deployed by `.github/workflows/dsp-api-deploy.yml` —
+see `dsp-integration/deploy/firebase/README.md`) and sends every read and
+save there; everyone using the link shares that data. **It is a public demo
+with no login** — every visitor is the stand-in HQ admin — so never put
+real data in it; reset it with that workflow's `reset = RESET` input. Only
+if the API doesn't answer does the page fall back to the old read-only
+snapshot, where a write answers "changes aren't saved". **It is a checked-in build, and it is
 rebuilt by a workflow, not by hand**: `.github/workflows/dsp-prototype.yml`
 runs `dsp-integration/scripts/rebuild-prototype.sh` on a runner for `main`
 and `deploy/dsp-integration` — on a source push, on a dispatch from
