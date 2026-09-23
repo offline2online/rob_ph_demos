@@ -778,7 +778,7 @@ export interface components {
         Error: {
             error: {
                 /** @enum {string} */
-                code: "validation_failed" | "variable_not_permitted" | "checks_failed" | "not_approved" | "below_floor" | "advertiser_blocked" | "category_blocked" | "not_on_whitelist" | "not_invited" | "targeting_not_supported" | "conflict" | "has_dependents" | "unauthorised" | "forbidden" | "not_found";
+                code: "validation_failed" | "variable_not_permitted" | "checks_failed" | "not_approved" | "below_floor" | "advertiser_blocked" | "category_blocked" | "not_on_whitelist" | "not_invited" | "targeting_not_supported" | "conflict" | "has_dependents" | "unauthorised" | "forbidden" | "not_found" | "rate_limited" | "internal_error";
                 message: string;
                 details?: {
                     field?: string;
@@ -1746,6 +1746,16 @@ export interface components {
                 "application/json": components["schemas"]["Error"];
             };
         };
+        /** @description error.code = rate_limited. Per partner token (default 50 requests/s, bursts of 100), or too many asset uploads in flight at once. Retry-After gives the seconds to wait. */
+        RateLimited: {
+            headers: {
+                "Retry-After"?: number;
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["Error"];
+            };
+        };
     };
     parameters: {
         PositionId: string;
@@ -1796,6 +1806,7 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthorised"];
+            429: components["responses"]["RateLimited"];
         };
     };
     getPosition: {
@@ -1822,6 +1833,7 @@ export interface operations {
             };
             401: components["responses"]["Unauthorised"];
             404: components["responses"]["NotFound"];
+            429: components["responses"]["RateLimited"];
         };
     };
     getAvailability: {
@@ -1854,6 +1866,7 @@ export interface operations {
             400: components["responses"]["ValidationFailed"];
             401: components["responses"]["Unauthorised"];
             404: components["responses"]["NotFound"];
+            429: components["responses"]["RateLimited"];
         };
     };
     forecast: {
@@ -1866,6 +1879,7 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": {
+                    /** @description At most 200 positions per request, each once. */
                     positionIds: string[];
                     /** Format: date */
                     from: string;
@@ -1896,6 +1910,7 @@ export interface operations {
             400: components["responses"]["ValidationFailed"];
             401: components["responses"]["Unauthorised"];
             422: components["responses"]["VariableNotPermitted"];
+            429: components["responses"]["RateLimited"];
         };
     };
     listTargetingAttributes: {
@@ -1919,6 +1934,7 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthorised"];
+            429: components["responses"]["RateLimited"];
         };
     };
     createCampaign: {
@@ -1946,6 +1962,7 @@ export interface operations {
             400: components["responses"]["ValidationFailed"];
             401: components["responses"]["Unauthorised"];
             422: components["responses"]["VariableNotPermitted"];
+            429: components["responses"]["RateLimited"];
         };
     };
     uploadAsset: {
@@ -1987,6 +2004,7 @@ export interface operations {
             401: components["responses"]["Unauthorised"];
             404: components["responses"]["NotFound"];
             422: components["responses"]["ChecksFailed"];
+            429: components["responses"]["RateLimited"];
         };
     };
     submitCampaign: {
@@ -2013,6 +2031,7 @@ export interface operations {
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
             422: components["responses"]["ChecksFailed"];
+            429: components["responses"]["RateLimited"];
         };
     };
     getCampaignStatus: {
@@ -2037,6 +2056,7 @@ export interface operations {
             };
             401: components["responses"]["Unauthorised"];
             404: components["responses"]["NotFound"];
+            429: components["responses"]["RateLimited"];
         };
     };
     createReservation: {
@@ -2065,6 +2085,7 @@ export interface operations {
             401: components["responses"]["Unauthorised"];
             409: components["responses"]["Conflict"];
             422: components["responses"]["NotEligible"];
+            429: components["responses"]["RateLimited"];
         };
     };
     getReservation: {
@@ -2089,6 +2110,7 @@ export interface operations {
             };
             401: components["responses"]["Unauthorised"];
             404: components["responses"]["NotFound"];
+            429: components["responses"]["RateLimited"];
         };
     };
     getExchange: {

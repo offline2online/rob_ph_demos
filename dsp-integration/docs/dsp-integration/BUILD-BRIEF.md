@@ -39,6 +39,14 @@ merge it into the main repo. These decisions are made; don't reopen them:
 
 Anything not in this table or the spec: ask, don't decide.
 
+> **Since the build (23 Sep 2026):** the full list of stand-ins as they now
+> stand — every seam, including `StoreSource`, `AudienceSource`,
+> `ReachCountSource` and partner identity added during the build — and what
+> each must guarantee from the real platform is in
+> [api/PH-CORE-BOUNDARIES.md](api/PH-CORE-BOUNDARIES.md). The security and
+> performance limits added afterwards are in
+> [api/SECURITY-PERFORMANCE.md](api/SECURITY-PERFORMANCE.md).
+
 ## Build only what is specified — nothing extra
 
 This is the most important rule in this brief.

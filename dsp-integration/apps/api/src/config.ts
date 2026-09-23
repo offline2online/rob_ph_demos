@@ -29,6 +29,23 @@ export interface Config {
   rejectedCampaignRetentionDays: number
   /* Partner API: one static bearer token per seeded partner (token → partner id). */
   partnerTokens: Record<string, string>
+  /* ---- Security and scalability limits (review, 23 Sep 2026). Each bounds
+     what one caller can make the exchange do, so one partner can't degrade
+     it for everyone. Defaults are generous for real traffic. ---- */
+  /* Highest CPM a DSP bid may carry; above it the bid is rejected, never billed. */
+  maxBidCpm: number
+  /* Bytes read from a DSP's bid response before it counts as no bid. */
+  maxBidResponseBytes: number
+  /* Partner API rate limit, per partner token: a token bucket refilled at
+     `perSecond` and holding up to `burst`. Past it: 429 rate_limited. */
+  partnerRateLimit: { perSecond: number; burst: number }
+  /* Asset uploads a partner may have in flight at once (each is held in
+     memory up to the asset size limit while it's checked). */
+  maxConcurrentUploadsPerPartner: number
+  /* POST /v1/inventory/forecast: positions per request (same as a page). */
+  maxForecastPositions: number
+  /* POST /v1/campaigns: shape limits on a content package. */
+  campaignLimits: { nameLength: number; targetedVersions: number; groupsPerRules: number; conditionsPerGroup: number; valueLength: number }
   /* DSP API base URLs. Default: the local mock DSP service (apps/dsp-mocks). */
   dsp: DspEndpoints
   /* Where bid requests go, per provider, and the only base URL an unknown
@@ -39,6 +56,18 @@ export interface Config {
 }
 
 const DEFAULT_PARTNER_TOKENS = { 'poc-token-google-dv360': 'p_google', 'poc-token-amazon-dsp': 'p_amazon' }
+
+/* The POC's well-known tokens are published in the README, so they must
+   never be live on a real deployment: with NODE_ENV=production the API
+   refuses to start unless PARTNER_TOKENS is set (and doesn't reuse them). */
+function partnerTokensFrom(env: NodeJS.ProcessEnv): Record<string, string> {
+  const tokens = env.PARTNER_TOKENS ? (JSON.parse(env.PARTNER_TOKENS) as Record<string, string>) : null
+  if (env.NODE_ENV === 'production') {
+    if (!tokens) throw new Error('PARTNER_TOKENS must be set in production: the default POC tokens are public.')
+    if (Object.keys(tokens).some((t) => t in DEFAULT_PARTNER_TOKENS)) throw new Error('PARTNER_TOKENS must not reuse the public POC tokens in production.')
+  }
+  return tokens ?? DEFAULT_PARTNER_TOKENS
+}
 
 /* Relative paths are resolved from the POC root, whatever the working directory. */
 const ROOT = fileURLToPath(new URL('../../../', import.meta.url))
@@ -72,6 +101,12 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
       amazon_dsp: { bidUrl: env.AMAZON_BIDDER_URL ?? `${mocks}/amazon/openrtb2/bid`, creativeBase: `${mocks}/amazon/creatives/` },
       the_trade_desk: { bidUrl: env.TTD_BIDDER_URL ?? `${mocks}/ttd/openrtb2/bid`, creativeBase: `${mocks}/ttd/creatives/` },
     },
-    partnerTokens: env.PARTNER_TOKENS ? (JSON.parse(env.PARTNER_TOKENS) as Record<string, string>) : DEFAULT_PARTNER_TOKENS,
+    partnerTokens: partnerTokensFrom(env),
+    maxBidCpm: 10_000,
+    maxBidResponseBytes: 64 * 1024,
+    partnerRateLimit: { perSecond: Number(env.PARTNER_RATE_PER_SECOND ?? 50), burst: Number(env.PARTNER_RATE_BURST ?? 100) },
+    maxConcurrentUploadsPerPartner: 2,
+    maxForecastPositions: 200,
+    campaignLimits: { nameLength: 200, targetedVersions: 20, groupsPerRules: 10, conditionsPerGroup: 20, valueLength: 200 },
   }
 }

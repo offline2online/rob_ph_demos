@@ -2,7 +2,11 @@
 
 The agreed contract for every API this build adds. The machine-readable
 version is [`openapi.yaml`](./openapi.yaml); the two must always match.
-Requirements: `../REQUIREMENTS.md`.
+Requirements: `../REQUIREMENTS.md`. What this build needs **from** the
+existing platform (the other side of every stand-in below) is in
+[PH-CORE-BOUNDARIES.md](./PH-CORE-BOUNDARIES.md); the limits and headers
+under *Conventions* come from the
+[security and performance review](./SECURITY-PERFORMANCE.md) (23 Sep 2026).
 
 **Build rule:** implement exactly the endpoints, fields, permissions and error
 codes listed here. Don't add endpoints, fields, parameters or behaviour that
@@ -40,8 +44,24 @@ All paths are served from the retailer's own instance
   ```
   Codes: `validation_failed`, `variable_not_permitted`, `checks_failed`,
   `not_approved`, `below_floor`, `advertiser_blocked`, `category_blocked`,
-  `not_on_whitelist`, `targeting_not_supported`, `conflict`,
-  `has_dependents`, `unauthorised`, `forbidden`, `not_found`.
+  `not_on_whitelist`, `not_invited`, `targeting_not_supported`, `conflict`,
+  `has_dependents`, `unauthorised`, `forbidden`, `not_found`,
+  `rate_limited` (429, with `Retry-After`) and `internal_error` (500, a
+  server fault; no internals are returned). A client error Fastify raises
+  itself keeps its status — a body over 1 MB is `413 validation_failed`.
+- **Partner API limits** (config defaults, `apps/api/src/config.ts`):
+  - 50 requests/s per partner, bursts of 100, then `429 rate_limited`;
+  - at most 2 asset uploads in flight per partner (`429`);
+  - forecast: at most 200 `positionIds`, each once;
+  - content package: `name` and version ids ≤ 200 characters, ≤ 20
+    targeted versions, ≤ 10 AND groups, ≤ 20 conditions per group, ≤ 100
+    values per condition, each value ≤ 200 characters;
+  - writes (create, upload, submit, reserve, bid) need a **connected** DSP —
+    `409 conflict` otherwise; reads stay open to the authenticated partner.
+- **Headers on every response:** `X-Content-Type-Options: nosniff`,
+  `Content-Security-Policy: default-src 'none'; style-src 'unsafe-inline';
+  frame-ancestors 'none'`, `Referrer-Policy: no-referrer`, and
+  `Cache-Control: no-store` on `/api/*`.
 - **Visibility, not rejection.** Lists (inventory, targeting attributes) omit
   what a caller may not use; they never return an error for it.
 - **Pagination:** `cursor` + `limit` (default 50, max 200); responses return
@@ -304,7 +324,11 @@ integration, and nothing else in the build may depend on their internals.
 
 - **SSP auction**: a scheduled job in `apps/api` clears each play window
   at its auction cutoff (Advertiser settings → Auction schedule), ahead of time (OpenRTB section below). For demos, `npm run auction:run`
-  runs one window. No UI and no endpoint.
+  runs one window. No UI and no endpoint. A tick never starts while the
+  previous one is still running, and the CLI can run beside the scheduler
+  safely: the database allows one live winner per position and window, so
+  a second clearing of the same window loses and records why. Run the
+  scheduler on one instance when there are several (PH-CORE-BOUNDARIES.md).
 - **Billing**: billing line items (dynamic VAC-d, reconciled against
   existing playback data) are stored only. `npm run billing:print` prints
   them for testing. No UI, report or API.
@@ -380,7 +404,23 @@ DSPs receive requests; nothing they win is billed or handed off.
 ≥ `bidfloor`), `bid.crid` (must be an approved creative), `bid.adomain`
 (checked against the advertiser lists) and `bid.cat` (checked against the
 category lists). A bid failing any of these is dropped before the auction
-clears.
+clears. Also (review, 23 Sep 2026):
+
+- the response `id` echoes the request `id`, or the whole response is no bid;
+- `cur` is the company currency — a response **without** `cur` is USD, per
+  OpenRTB, and is rejected unless the company trades in USD;
+- `bid.impid`, when present, is `"1"`; `bid.price` is finite and at most
+  10,000 (`maxBidCpm`);
+- at most 10 bids per response are read, and a body over 64 KB is no bid;
+- a bid with an unknown `crid` has its creative retrieved from its `iurl` —
+  only under that DSP's own creative path (compared after URL
+  normalisation), at most one per response, capped at the asset size
+  limit; the others are retried from a later window.
+
+Every DSP for a position is asked at once, and positions clear 16 at a
+time, so an auction takes about one bidder timeout per 16 positions however
+many DSPs there are. One live winner per position and window is enforced
+by the database, so two clearings of the same window can't both sell it.
 
 Exact DOOH object support and taxonomy version are confirmed per DSP before
 Live (spec §7 "To confirm before building").

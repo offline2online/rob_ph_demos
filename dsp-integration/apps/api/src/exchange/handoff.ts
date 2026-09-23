@@ -9,6 +9,7 @@ import { failed, fileChecks } from '../domain/assetChecks'
 import { readMedia } from '../domain/media'
 import { findPosition, windowMs } from '../domain/positions'
 import { checkCampaign } from './enforcement'
+import { isUniqueViolation } from '../db/db'
 import type { ReservationRecord } from '../repos/ReservationRepo'
 
 export async function handOff(ctx: Context, r: ReservationRecord): Promise<ReservationRecord> {
@@ -29,9 +30,15 @@ export async function handOff(ctx: Context, r: ReservationRecord): Promise<Reser
   if (!asset || !bytes) return notHandedOff('the campaign has no creative.')
   const checks = fileChecks(readMedia(bytes), bytes.length, p.displayType, ctx.config.assetLimits)
   if (failed(checks).length) return notHandedOff(`the creative doesn’t fit ${p.displayType.name}: ${failed(checks).map((c) => c.detail ?? c.name).join(' ')}`)
-  ctx.campaigns.bookSlot({
-    id: `bk_${randomUUID().slice(0, 12)}`, campaignId: r.campaignId, displayTypeId: p.displayType.id, slot: p.slot,
-    windowStart: r.windowStart, windowEnd: new Date(Date.parse(r.windowStart) + windowMs(ctx)).toISOString(),
-  })
+  try {
+    ctx.campaigns.bookSlot({
+      id: `bk_${randomUUID().slice(0, 12)}`, campaignId: r.campaignId, displayTypeId: p.displayType.id, slot: p.slot,
+      windowStart: r.windowStart, windowEnd: new Date(Date.parse(r.windowStart) + windowMs(ctx)).toISOString(),
+    })
+  } catch (e) {
+    /* One campaign per slot per window (migration 0021): never two. */
+    if (isUniqueViolation(e)) return notHandedOff('the slot is already booked for that window.')
+    throw e
+  }
   return ctx.reservations.update(r.id, { handedOffAt: ctx.clock().toISOString() }) as ReservationRecord
 }

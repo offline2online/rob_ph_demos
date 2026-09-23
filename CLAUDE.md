@@ -93,6 +93,15 @@ tied to the other project's release cadence.
   file. Keep the repo file and the live record in sync; treat a divergence
   as a bug in whichever is stale.
 
+**Where the POC meets the real platform, and its limits:**
+`dsp-integration/docs/dsp-integration/api/PH-CORE-BOUNDARIES.md` lists every
+seam with PH Core and what each must guarantee (e.g. one campaign booking
+per slot and window); `api/SECURITY-PERFORMANCE.md` has the 23 Sep 2026
+review — the Partner API's rate limits and size caps, the database-enforced
+"one live winner per window" (migration 0021), and measured throughput
+(`npm run bench` in `dsp-integration/`). Read both before changing the
+exchange, the Partner API or a `platform/` interface.
+
 **The POC lives in `dsp-integration/`** (merged to `main` on 21 Sep 2026,
 PR #176). It is a working service, not a static page: an npm-workspaces
 monorepo with a Fastify API over SQLite, a React admin UI, mock DSPs and an

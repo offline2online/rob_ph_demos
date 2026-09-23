@@ -2,7 +2,7 @@
    approval module plugs into). Stores targeting in the existing structure:
    AND groups of OR conditions. Evaluation stays with the existing platform. */
 import type { Campaign, CampaignBrief } from '@ph-dsp/types'
-import { type Db, fromJson, toJson } from '../db/db'
+import { type Db, fromJson, prepared, toJson } from '../db/db'
 
 /* The stored campaign. `schedule` isn't stored: the admin list derives it
    from the windows the campaign holds. */
@@ -64,18 +64,18 @@ const toRecord = (r: Row): CampaignRecord => ({
 export function sqliteCampaignSource(db: Db): CampaignSource {
   const listeners = new Set<(id: string) => void>()
   const get = (id: string) => {
-    const r = db.prepare('SELECT * FROM campaigns WHERE id = ?').get(id) as Row | undefined
+    const r = prepared(db, 'SELECT * FROM campaigns WHERE id = ?').get(id) as Row | undefined
     return r ? toRecord(r) : null
   }
   return {
     getCampaign: get,
     listCampaigns(filter = {}) {
-      return (db.prepare('SELECT * FROM campaigns ORDER BY rowid').all() as unknown as Row[])
+      return (prepared(db, 'SELECT * FROM campaigns ORDER BY rowid').all() as unknown as Row[])
         .map(toRecord)
         .filter((c) => (!filter.source || c.source === filter.source) && (!filter.advertiserId || c.advertiserId === filter.advertiserId))
     },
     setActivation(id, enabled) {
-      if (!db.prepare('UPDATE campaigns SET activation_enabled = ? WHERE id = ?').run(enabled ? 1 : 0, id).changes) return null
+      if (!prepared(db, 'UPDATE campaigns SET activation_enabled = ? WHERE id = ?').run(enabled ? 1 : 0, id).changes) return null
       listeners.forEach((l) => l(id))
       return get(id)
     },
@@ -84,16 +84,16 @@ export function sqliteCampaignSource(db: Db): CampaignSource {
       return () => listeners.delete(listener)
     },
     createCampaign(c) {
-      db.prepare(
+      prepared(db,
         `INSERT INTO campaigns (id, name, targeting, created_at, source, advertiser_id, partner_id, display_type_id, pricing_type, activation_enabled)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`,
       ).run(c.id, c.name, toJson(c.targeting), new Date().toISOString(), c.source, c.advertiserId, c.partnerId, c.displayTypeId, c.pricingType)
-      if (c.brief) db.prepare('UPDATE campaigns SET brief = ? WHERE id = ?').run(toJson(c.brief), c.id)
+      if (c.brief) prepared(db, 'UPDATE campaigns SET brief = ? WHERE id = ?').run(toJson(c.brief), c.id)
       return get(c.id) as CampaignRecord
     },
     addAsset(a) {
-      const version = ((db.prepare('SELECT MAX(version) AS v FROM campaign_assets WHERE campaign_id = ?').get(a.campaignId) as { v: number | null }).v ?? 0) + 1
-      db.prepare(
+      const version = ((prepared(db, 'SELECT MAX(version) AS v FROM campaign_assets WHERE campaign_id = ?').get(a.campaignId) as { v: number | null }).v ?? 0) + 1
+      prepared(db,
         `INSERT INTO campaign_assets (id, campaign_id, version, role, file, mime_type, width, height, duration_sec, bitrate_kbps, size_bytes, created_at)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       ).run(a.id, a.campaignId, version, a.role, a.file, a.mimeType, a.width, a.height, a.durationSec, a.bitrateKbps, a.sizeBytes, new Date().toISOString())
@@ -101,19 +101,19 @@ export function sqliteCampaignSource(db: Db): CampaignSource {
       return { ...a, version }
     },
     bookSlot(b) {
-      db.prepare('INSERT INTO campaign_slot_bookings (id, campaign_id, display_type_id, slot, window_start, window_end, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
+      prepared(db, 'INSERT INTO campaign_slot_bookings (id, campaign_id, display_type_id, slot, window_start, window_end, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
         .run(b.id, b.campaignId, b.displayTypeId, b.slot, b.windowStart, b.windowEnd, new Date().toISOString())
       listeners.forEach((l) => l(b.campaignId))
       return b
     },
     bookings(campaignId) {
       const rows = (campaignId
-        ? db.prepare('SELECT * FROM campaign_slot_bookings WHERE campaign_id = ? ORDER BY window_start').all(campaignId)
-        : db.prepare('SELECT * FROM campaign_slot_bookings ORDER BY window_start').all()) as { id: string; campaign_id: string; display_type_id: string; slot: number; window_start: string; window_end: string }[]
+        ? prepared(db, 'SELECT * FROM campaign_slot_bookings WHERE campaign_id = ? ORDER BY window_start').all(campaignId)
+        : prepared(db, 'SELECT * FROM campaign_slot_bookings ORDER BY window_start').all()) as { id: string; campaign_id: string; display_type_id: string; slot: number; window_start: string; window_end: string }[]
       return rows.map((r) => ({ id: r.id, campaignId: r.campaign_id, displayTypeId: r.display_type_id, slot: r.slot, windowStart: r.window_start, windowEnd: r.window_end }))
     },
     latestAssets(campaignId) {
-      const rows = (db.prepare('SELECT * FROM campaign_assets WHERE campaign_id = ? ORDER BY version').all(campaignId) as unknown as AssetRow[]).map(toAsset)
+      const rows = (prepared(db, 'SELECT * FROM campaign_assets WHERE campaign_id = ? ORDER BY version').all(campaignId) as unknown as AssetRow[]).map(toAsset)
       return [...new Map(rows.map((r) => [r.role, r])).values()]
     },
   }

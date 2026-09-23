@@ -10,6 +10,8 @@ import { campaignRoutes } from './campaigns'
 import { inventoryRoutes } from './inventory'
 import { reservationRoutes } from './reservations'
 import { targetingRoutes } from './targeting'
+import { tokenBucket } from '../../http/rateLimit'
+import { HttpError } from '../../http/errors'
 
 declare module 'fastify' {
   interface FastifyRequest {
@@ -19,9 +21,17 @@ declare module 'fastify' {
 
 export const partnerRoutes = (ctx: Context, guards: Guards): FastifyPluginAsync => async (app) => {
   app.decorateRequest('partner', null as unknown as PartnerRecord)
-  app.addHook('onRequest', async (req) => {
+  /* One bucket per partner, not per token or per IP: a partner's whole
+     integration shares its allowance (config.partnerRateLimit). */
+  const limiter = tokenBucket(ctx.config.partnerRateLimit)
+  app.addHook('onRequest', async (req, reply) => {
     guards.flagged()
     req.partner = partnerFromRequest(ctx, req)
+    const wait = limiter.take(req.partner.id)
+    if (wait) {
+      reply.header('Retry-After', String(wait))
+      throw new HttpError(429, 'rate_limited', `Too many requests from ${req.partner.name}; retry in ${wait}s.`)
+    }
   })
   await app.register(multipart)
   await app.register(targetingRoutes(ctx))

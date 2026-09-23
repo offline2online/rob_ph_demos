@@ -8,7 +8,30 @@ export interface Bidder {
   send(url: string, req: BidRequest): Promise<BidResponse | null>
 }
 
-export function httpBidder(fetchImpl: Fetch, opts: { timeoutMs: number; qps: number }): Bidder {
+/* Reads a response body, giving up past maxBytes (null). The timeout alone
+   bounds how long a DSP can hold a request, not how much it can send in that
+   time; this bounds the memory one response can take. */
+export async function readCapped(res: Response, maxBytes: number): Promise<Buffer | null> {
+  const declared = Number(res.headers.get('content-length'))
+  if (Number.isFinite(declared) && declared > maxBytes) return null
+  if (!res.body) return Buffer.alloc(0)
+  const reader = res.body.getReader()
+  const chunks: Uint8Array[] = []
+  let size = 0
+  for (;;) {
+    const { done, value } = await reader.read()
+    if (done) break
+    size += value.byteLength
+    if (size > maxBytes) {
+      await reader.cancel().catch(() => {})
+      return null
+    }
+    chunks.push(value)
+  }
+  return Buffer.concat(chunks)
+}
+
+export function httpBidder(fetchImpl: Fetch, opts: { timeoutMs: number; qps: number; maxResponseBytes?: number }): Bidder {
   /* Requests to one URL are spaced at least 1000 / qps ms apart. */
   const next = new Map<string, number>()
   const gap = 1000 / opts.qps
@@ -26,7 +49,8 @@ export function httpBidder(fetchImpl: Fetch, opts: { timeoutMs: number; qps: num
           signal: AbortSignal.timeout(opts.timeoutMs),
         })
         if (res.status !== 200) return null
-        return (await res.json()) as BidResponse
+        const body = await readCapped(res, opts.maxResponseBytes ?? 64 * 1024)
+        return body ? (JSON.parse(body.toString('utf8')) as BidResponse) : null
       } catch {
         return null
       }

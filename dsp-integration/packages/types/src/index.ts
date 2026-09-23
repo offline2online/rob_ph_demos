@@ -41,3 +41,4 @@ export type ApprovalStatus = S['ApprovalStatus']
 export type Session = paths['/admin/v1/session']['get']['responses']['200']['content']['application/json']
 export type Role = Session['role']
 export * from './catalog'
+export * from './analyticsEvent'
