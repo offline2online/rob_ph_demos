@@ -746,8 +746,10 @@ Rob chose the Firebase project over browser-only saves or a separate host.
     POC tokens don't work there.
   - CORS is answered for GitHub Pages, githack and localhost.
   - Each IP gets 20 requests/s.
-- **`dspApiTick`**: every 15 minutes it asks `dspApi` to run the scheduled
-  work (billing, auction, retention).
+- **Scheduled work** (billing, the auction at its cutoff, retention) runs
+  inside `dspApi`, at most every five minutes, triggered by requests. The
+  planned `dspApiTick` Cloud Scheduler job failed the first deploy: the
+  service account may not enable `cloudscheduler.googleapis.com`.
 - **`.github/workflows/dsp-api-deploy.yml`**:
   - deploys codebase `dsp-api` only, with the existing service-account
     secret;

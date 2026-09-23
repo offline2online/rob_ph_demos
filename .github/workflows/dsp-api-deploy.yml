@@ -93,27 +93,16 @@ jobs:
             console.log('Deleted', doomed.length, 'documents of hosted data.')
           "
 
-      # The HTTP function first and on its own: it is what the prototype needs.
+      # Only dspApi: scheduled work runs inside it (host.ts), because a Cloud
+      # Scheduler job needs cloudscheduler.googleapis.com, which this service
+      # account may not enable — the first deploy (run #1) failed on exactly
+      # that, even with the scheduled function in a separate step, since the
+      # CLI checks every function in the codebase.
       - name: Deploy dspApi
         working-directory: dsp-integration/deploy/firebase
         env:
           GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/firebase-sa.json
-        run: npx firebase-tools@13 deploy --only functions:dsp-api:dspApi --project backlog-tracker-e4ed2 --non-interactive --force
-
-      # The scheduled job needs Cloud Scheduler on the project. If that isn't
-      # available the API still works; only the automatic auction and billing
-      # don't run (the `npm run auction:run` path is local-only).
-      - name: Deploy dspApiTick (scheduled work)
-        id: tick
-        continue-on-error: true
-        working-directory: dsp-integration/deploy/firebase
-        env:
-          GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/firebase-sa.json
-        run: npx firebase-tools@13 deploy --only functions:dsp-api:dspApiTick --project backlog-tracker-e4ed2 --non-interactive --force
-
-      - name: Warn if the scheduled job didn't deploy
-        if: steps.tick.outcome == 'failure'
-        run: echo "::warning::dspApiTick did not deploy (Cloud Scheduler may not be enabled). The API works; scheduled auctions and billing won't run."
+        run: npx firebase-tools@13 deploy --only functions:dsp-api --project backlog-tracker-e4ed2 --non-interactive --force
 
       # Proves it end to end: the function answers, CORS is right for GitHub
       # Pages, and a save round-trips (and is put back as it was).

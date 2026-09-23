@@ -7,15 +7,16 @@
    dspApi      HTTPS, public. The whole API: /api/admin/v1/*, /api/v1/*,
                /sellers.json, /assets/*. ONE instance at most, because the
                database is a single SQLite file (host.ts).
-   dspApiTick  Every 15 minutes: asks dspApi to run the scheduled work
-               (billing, the auction at its cutoff, retention). It calls the
-               HTTP function rather than doing the work itself so that the
-               one instance holding the database is the only writer. */
+
+   Scheduled work (billing, the auction at its cutoff, retention) runs inside
+   dspApi on the back of requests (host.ts). A Cloud Scheduler job would need
+   cloudscheduler.googleapis.com, which the deploy's service account is not
+   allowed to enable (first deploy, 23 Sep 2026); host.ts keeps a
+   token-guarded /_tasks/tick for one if a project owner enables it. */
 import { fileURLToPath } from 'node:url'
 import { initializeApp } from 'firebase-admin/app'
 import { getFirestore } from 'firebase-admin/firestore'
 import { onRequest } from 'firebase-functions/v2/https'
-import { onSchedule } from 'firebase-functions/v2/scheduler'
 import * as logger from 'firebase-functions/logger'
 import { type DocStore, chunkedStore, createHost } from './host'
 
@@ -85,11 +86,3 @@ export const dspApi = onRequest(
     }
   },
 )
-
-export const dspApiTick = onSchedule({ region: REGION, schedule: 'every 15 minutes', timeoutSeconds: 300 }, async () => {
-  const instance = await store().get('instance.json')
-  if (!instance) return logger.info('dspApi has not started yet; nothing to tick.')
-  const { tickToken } = JSON.parse(instance.toString('utf8')) as { tickToken: string }
-  const res = await fetch(`${PUBLIC_URL}/_tasks/tick`, { method: 'POST', headers: { 'x-tick-token': tickToken } })
-  logger.info(`dspApi tick: HTTP ${res.status}`)
-})

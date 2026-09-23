@@ -15,7 +15,18 @@ falls back to the read-only snapshot, as it did before this existed.
 | Function | What it is |
 |---|---|
 | `dspApi` | HTTPS, public. The unchanged POC API (`apps/api`) plus the mock DSPs (`apps/dsp-mocks`, in-process), wrapped by `functions/src/host.ts`. At most **one instance**, because the database is a single SQLite file. |
-| `dspApiTick` | Every 15 minutes: asks `dspApi` to bill ended windows, clear an auction at its cutoff and run the rejected-campaign retention sweep. It calls `dspApi` rather than working itself, so the one instance holding the database stays the only writer. |
+
+**Scheduled work has no timer.** Billing ended windows, clearing an auction
+at its cutoff and the rejected-campaign retention sweep run inside `dspApi`,
+at most every five minutes, triggered by ordinary requests. So an auction
+whose hour passes with nobody using the demo isn't cleared by itself.
+
+A Cloud Scheduler job would fix that, but it needs
+`cloudscheduler.googleapis.com`. The deploy's service account isn't allowed
+to enable that API: the first deploy failed on it. If a project owner
+enables it, a scheduled function can `POST /_tasks/tick` with the
+`x-tick-token` header (the `tickToken` field in the instance's stored
+`instance.json`).
 
 Both are the codebase **`dsp-api`**, deployed only by
 `.github/workflows/dsp-api-deploy.yml`. The console's own functions are the
@@ -39,7 +50,7 @@ Both are the codebase **`dsp-api`**, deployed only by
   - the Partner API bearer tokens. The public `poc-token-*` ones **don't
     work** here; to read the real tokens, look at the `blob~instance.json`
     document with the service account;
-  - the token the scheduled job presents.
+  - the token a scheduled job would present (see above).
 - Mock DSP state (seats, bidder behaviour) is in memory and starts fresh on
   each cold start, as the mock service does on a restart.
 
@@ -81,9 +92,7 @@ The steps:
 2. `node deploy/firebase/build.mjs`: one ESM bundle in `functions/lib/`,
    with both migration folders copied beside it. `lib/` is built, never
    committed.
-3. `firebase deploy --only functions:dsp-api:dspApi`, then `dspApiTick`.
-   The second is non-fatal: without Cloud Scheduler on the project, the API
-   still works, but auctions and billing don't run by themselves.
+3. `firebase deploy --only functions:dsp-api` (just `dspApi`).
 4. A smoke test: the API answers, CORS is right for GitHub Pages, and a save
    round-trips.
 
