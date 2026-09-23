@@ -12,10 +12,10 @@
 import { randomUUID } from 'node:crypto'
 import type { Context } from '../context'
 import { isComplete } from '../domain/exchange'
-import { type PositionRef, allPositions, assignmentOf, nextWindow } from '../domain/positions'
+import { type PositionRef, allPositions, assignmentOf, effectivePartnerIds, nextWindow } from '../domain/positions'
 import type { PartnerRecord } from '../repos/PartnerRepo'
 import { type ReservationRecord, TAKEN } from '../repos/ReservationRepo'
-import { advertiserSlug, assignedOf } from '@ph-dsp/types'
+import { advertiserSlug } from '@ph-dsp/types'
 import { campaignForCrid, queueCreative } from './creatives'
 import { checkAdvertiser, checkCampaign, checkCategories, checkFloor, checkTargeting } from './enforcement'
 import { handOff } from './handoff'
@@ -51,8 +51,8 @@ async function clearPosition(ctx: Context, p: PositionRef, start: string, exchan
 
   const candidates: ReservationRecord[] = []
   /* Until Exchange settings are complete, no DSP is sent bid requests (spec §7). */
-  const allowed = assignedOf(p.def).partnerIds
-  const dsps = exchangeLive ? ctx.partners.list().filter((d) => receivesBidRequests(d) && (!allowed.length || allowed.includes(d.id))) : []
+  const allowed = effectivePartnerIds(ctx, p.def)
+  const dsps = exchangeLive ? ctx.partners.list().filter((d) => receivesBidRequests(d) && (allowed === null || allowed.includes(d.id))) : []
   for (const dsp of dsps) {
     const url = ctx.config.bidders[dsp.provider as keyof Context['config']['bidders']]?.bidUrl
     if (!url) continue
@@ -73,7 +73,7 @@ async function clearPosition(ctx: Context, p: PositionRef, start: string, exchan
     const seat = partner?.seats.find((s) => advertiserSlug(s.name) === r.advertiserId)
     const refusal = !partner || !seat
       ? { reason: 'The advertiser is no longer on this DSP.' }
-      : (await checkCampaign(ctx, r.campaignId as string)) ?? checkAdvertiser(ctx, p, partner, seat.name, seat.domain ? [seat.domain] : []) ?? checkTargeting(p, r.pricingType) ?? checkFloor(ctx, r.bidCpm as number, r.pricingType, r.advertiserId)
+      : (await checkCampaign(ctx, r.campaignId as string)) ?? checkAdvertiser(ctx, p, partner, seat.name, seat.domain ? [seat.domain] : [], seat.id) ?? checkTargeting(p, r.pricingType) ?? checkFloor(ctx, r.bidCpm as number, r.pricingType, r.advertiserId)
     if (refusal) ctx.reservations.update(r.id, { status: 'rejected', reason: refusal.reason })
     else candidates.push(r)
   }
@@ -116,7 +116,7 @@ async function recordDspBid(ctx: Context, p: PositionRef, dsp: PartnerRecord, st
   const seat = dsp.seats.find((s) => s.domain && domains.includes(s.domain.toLowerCase()))
   if (!seat) return reject(`Unknown advertiser${domains.length ? ` (${domains.join(', ')})` : ''}: not one of ${dsp.name}’s advertisers.`)
   const advertiserId = advertiserSlug(seat.name)
-  const refused = checkAdvertiser(ctx, p, dsp, seat.name, domains) ?? checkCategories(ctx, p, bid.cat ?? [])
+  const refused = checkAdvertiser(ctx, p, dsp, seat.name, domains, seat.id) ?? checkCategories(ctx, p, bid.cat ?? [])
   if (refused) return reject(refused.reason, { advertiserId })
   if (!bid.crid) return reject('No creative ID (crid) on the bid.', { advertiserId })
 
