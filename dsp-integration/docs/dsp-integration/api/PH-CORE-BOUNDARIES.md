@@ -117,7 +117,9 @@ provide one breaks something specific, named here.
     `hq_marketing` → sections; `hq_helpdesk` → none.
   - The POC stand-in makes every Admin API caller `hq_admin`, and the API
     binds to `127.0.0.1` for that reason. **It must never be exposed as it
-    is.**
+    is with real data.** The one deliberate exception is the hosted demo
+    (`deploy/firebase/`, Rob 23 Sep 2026): public, demo data only,
+    rate-limited per IP, resettable.
 - **Partner identity**
   - Each token maps to exactly one partner (DSP).
   - Revocation must take effect immediately.

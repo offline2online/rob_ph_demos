@@ -490,10 +490,10 @@ week's work (21 Sep):
   marketing user can switch an approved campaign on and off. That may be
   right — activation is scheduling, not policy — but it has never been
   stated either way.
-- **A hosted demo that can be written to.** `prototype/` is the admin UI
-  over a captured snapshot: every screen reads, nothing saves. A demo where
-  changes stick needs the API hosted somewhere that runs Node, which needs
-  an account and a deploy story this repo doesn't have.
+- ~~**A hosted demo that can be written to.**~~ **Done (Rob, 23 Sep):** the
+  API runs as a Cloud Function in `backlog-tracker-e4ed2` (Rob chose this
+  over browser-only saves and a separate host), and the prototype saves to
+  it — see "Hosted API" in §12 and `deploy/firebase/README.md`.
 
 Smaller things noted and left alone: the schedule's monthly view is capped
 at 92 days by the endpoint; a Stores slot's scope is fixed at *Store staff*
@@ -728,6 +728,55 @@ was behind it:
     instance;
   - uploads are still buffered in memory, bounded per partner;
   - the admin screens' N+1 queries.
+
+### Hosted API: the prototype saves (Rob, 23 Sep 2026)
+
+Rob reported errors saving display details on the hosted prototype. An
+end-to-end check showed saves worked against the API, and the "error" was
+the static snapshot refusing writes, as designed. So the API is now hosted.
+Rob chose the Firebase project over browser-only saves or a separate host.
+
+- **`deploy/firebase/`**: the unchanged API and the mock DSPs as the Cloud
+  Function `dspApi`. It runs as one instance, because the database is one
+  SQLite file.
+  - After every save it persists to the private Firestore collection
+    `dspApiState`: gzip-compressed, chunked, swapped in whole. A cold start
+    restores from there.
+  - Its keys and Partner API tokens are generated on first boot. The public
+    POC tokens don't work there.
+  - CORS is answered for GitHub Pages, githack and localhost.
+  - Each IP gets 20 requests/s.
+- **`dspApiTick`**: every 15 minutes it asks `dspApi` to run the scheduled
+  work (billing, auction, retention).
+- **`.github/workflows/dsp-api-deploy.yml`**:
+  - deploys codebase `dsp-api` only, with the existing service-account
+    secret;
+  - gates on the API tests;
+  - finishes with a smoke test that saves, reads back and restores;
+  - takes `reset = RESET` to restore the demo estate.
+- **The prototype**
+  - `staticApi.ts` looks for the API (`VITE_API_URL`) on start-up and sends
+    `/api` calls there. It falls back to the read-only snapshot only if the
+    API doesn't answer.
+  - The booking schedule's date range is fixed only in snapshot mode
+    (`demo/mode.ts`).
+  - No screen or copy changed.
+- **API changes needed for this:**
+  - `PH_MIGRATIONS_DIRS`, because a bundle can't find migrations relative to
+    each source file;
+  - `PH_PUBLIC_URL`, so creative URLs are absolute when the UI is on
+    another origin;
+  - `schedulerTick` pulled out of `startAuctionScheduler`.
+- **Verified here:**
+  - the bundle loads under the real Firebase SDK;
+  - a local stand-in of the host was driven in Chrome. Saves went to the
+    API and survived a reload and a cold restart, and creatives loaded
+    cross-origin. With the API down, the page fell back to the snapshot;
+  - `test/hosted.test.ts` passes (5 tests);
+  - API tests: 245 pass.
+- **Public by decision.** Anyone with the URL is the stand-in HQ admin.
+  That is acceptable for demo data only (`deploy/firebase/README.md` →
+  "Security posture").
 
 ## 13. Prototype comparison (per screen)
 

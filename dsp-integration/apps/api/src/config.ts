@@ -9,6 +9,9 @@ export interface Config {
   dbFile: string
   /* AssetStore folder (git-ignored). */
   assetsDir: string
+  /* This API's public origin, prefixed to creative URLs when the admin UI
+     is served from elsewhere (PH_PUBLIC_URL; empty in the POC). */
+  publicUrl: string
   /* Q46 — per-DSP bidder defaults. */
   bidderQps: number
   bidderTimeoutMs: number
@@ -79,6 +82,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     port: Number(env.API_PORT ?? 4000),
     dbFile: fromRoot(env.PH_DB_FILE ?? 'data/poc.sqlite'),
     assetsDir: fromRoot(env.PH_ASSETS_DIR ?? 'data/assets'),
+    publicUrl: (env.PH_PUBLIC_URL ?? '').replace(/\/$/, ''),
     bidderQps: 500,
     bidderTimeoutMs: 300,
     maxValuesPerCondition: 100,

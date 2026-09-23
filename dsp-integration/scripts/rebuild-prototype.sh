@@ -89,7 +89,12 @@ if ! curl -sf "http://127.0.0.1:$PORT/api/admin/v1/session" >/dev/null 2>&1; the
 fi
 
 DEMO_API="http://127.0.0.1:$PORT" npm run demo:capture -w @ph-dsp/admin
-(cd apps/admin && VITE_DEMO=1 npx vite build --base=./)
+# The hosted API the prototype saves to (deploy/firebase/, Rob 23 Sep). The
+# bundle tries it at start-up and falls back to the read-only snapshot if it
+# doesn't answer, so building before it is deployed is harmless. Set
+# PROTOTYPE_API_URL= (empty) to build a snapshot-only prototype.
+API_URL="${PROTOTYPE_API_URL-https://us-central1-backlog-tracker-e4ed2.cloudfunctions.net/dspApi}"
+(cd apps/admin && VITE_DEMO=1 VITE_API_URL="$API_URL" npx vite build --base=./)
 
 # Replace, don't overlay: a previous build's hashed assets must not linger.
 rm -rf prototype/assets prototype/demo prototype/index.html

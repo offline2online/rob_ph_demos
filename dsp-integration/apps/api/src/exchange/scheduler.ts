@@ -7,6 +7,27 @@ import { biddingClosesAt, windowMs, windowStartOf } from '../domain/positions'
 import { runAuction } from './auction'
 import { runBilling } from './billing'
 
+/* One pass of the scheduled work: bill the windows that have ended, then
+   clear any window whose auction cutoff passed within the last hour and
+   that this process hasn't cleared yet (a restart doesn't re-auction old
+   windows). `cleared` is the caller's memory of what it already cleared.
+   Shared by the in-process scheduler below and the hosted API's Cloud
+   Scheduler job (deploy/firebase/), which has no long-lived timer. */
+export async function schedulerTick(ctx: Context, cleared: Set<string>, log: (msg: string) => void) {
+  if (!ctx.flags.dspIntegration) return
+  const billed = runBilling(ctx)
+  if (billed.length) log(`Billed ${billed.length} ended window${billed.length === 1 ? '' : 's'}.`)
+  const now = ctx.clock().getTime()
+  const current = windowStartOf(ctx, ctx.clock())
+  for (const w of [current, new Date(current.getTime() + windowMs(ctx))]) {
+    const cutoff = biddingClosesAt(ctx, w).getTime()
+    if (cleared.has(w.toISOString()) || now < cutoff || now - cutoff > 3_600_000) continue
+    cleared.add(w.toISOString())
+    const res = await runAuction(ctx, w)
+    log(`Auction cleared ${res.windowStart}: ${res.positions.filter((p) => p.winner).length} of ${res.positions.length} positions won.`)
+  }
+}
+
 export function startAuctionScheduler(ctx: Context, log: (msg: string) => void, everyMs = 60_000) {
   const cleared = new Set<string>()
   /* A large estate's auction can outlast the interval; never start a second
@@ -14,27 +35,12 @@ export function startAuctionScheduler(ctx: Context, log: (msg: string) => void, 
      index is what stops two clearings selling a window twice.) */
   let running = false
   const tick = async () => {
-    if (!ctx.flags.dspIntegration || running) return
+    if (running) return
     running = true
     try {
-      await tickOnce()
+      await schedulerTick(ctx, cleared, log)
     } finally {
       running = false
-    }
-  }
-  const tickOnce = async () => {
-    const billed = runBilling(ctx)
-    if (billed.length) log(`Billed ${billed.length} ended window${billed.length === 1 ? '' : 's'}.`)
-    /* The current and the next window: whichever reached its cutoff within the
-       last hour and isn't cleared yet (a restart doesn't re-auction old windows). */
-    const now = ctx.clock().getTime()
-    const current = windowStartOf(ctx, ctx.clock())
-    for (const w of [current, new Date(current.getTime() + windowMs(ctx))]) {
-      const cutoff = biddingClosesAt(ctx, w).getTime()
-      if (cleared.has(w.toISOString()) || now < cutoff || now - cutoff > 3_600_000) continue
-      cleared.add(w.toISOString())
-      const res = await runAuction(ctx, w)
-      log(`Auction cleared ${res.windowStart}: ${res.positions.filter((p) => p.winner).length} of ${res.positions.length} positions won.`)
     }
   }
   const timer = setInterval(() => void tick().catch((e) => log(`Auction failed: ${e instanceof Error ? e.message : String(e)}`)), everyMs)

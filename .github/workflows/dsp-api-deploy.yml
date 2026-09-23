@@ -1,0 +1,142 @@
+name: DSP integration — hosted API
+
+# Deploys the DSP Integration POC's API as a Cloud Function (codebase
+# `dsp-api`) in the backlog-tracker-e4ed2 Firebase project, so the hosted
+# prototype on GitHub Pages can save:
+#   https://us-central1-backlog-tracker-e4ed2.cloudfunctions.net/dspApi
+# See dsp-integration/deploy/firebase/README.md.
+#
+# Only the `dsp-api` codebase is deployed: the console's own functions
+# (deploy-backlog-tracker.yml, codebase `default`) are never touched by this,
+# and that workflow never touches these.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'dsp-integration/apps/api/**'
+      - 'dsp-integration/apps/dsp-mocks/**'
+      - 'dsp-integration/packages/**'
+      - 'dsp-integration/deploy/firebase/**'
+      - 'dsp-integration/package-lock.json'
+      - '.github/workflows/dsp-api-deploy.yml'
+  workflow_dispatch:
+    inputs:
+      reset:
+        description: 'Type RESET to wipe the hosted data and start again from the demo estate (keeps its keys and tokens)'
+        required: false
+        default: ''
+
+# One deploy at a time; a newer push supersedes a queued one.
+concurrency:
+  group: dsp-api-deploy
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: dsp-integration
+    env:
+      API_URL: https://us-central1-backlog-tracker-e4ed2.cloudfunctions.net/dspApi
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: dsp-integration/package-lock.json
+
+      - run: npm ci --no-audit --no-fund
+
+      # Never ship a red API: its own tests gate the deploy.
+      - name: API tests
+        run: npm test -w @ph-dsp/api
+
+      - name: Build the function bundle
+        run: node deploy/firebase/build.mjs
+
+      - name: Install the function's runtime dependencies
+        working-directory: dsp-integration/deploy/firebase/functions
+        run: npm ci --omit=dev --no-audit --no-fund
+
+      - name: Write Firebase service account key
+        run: echo '${{ secrets.FIREBASE_SERVICE_ACCOUNT_BACKLOG_TRACKER }}' > "$RUNNER_TEMP/firebase-sa.json"
+
+      # Wipes the saved database and creatives (Firestore dspApiState), not the
+      # instance's keys and tokens. The redeploy below starts a new instance,
+      # which then seeds fresh demo data.
+      - name: Reset hosted data
+        if: github.event_name == 'workflow_dispatch' && inputs.reset == 'RESET'
+        working-directory: dsp-integration/deploy/firebase/functions
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/firebase-sa.json
+        run: |
+          node --input-type=module -e "
+            import { initializeApp } from 'firebase-admin/app'
+            import { getFirestore } from 'firebase-admin/firestore'
+            initializeApp({ projectId: 'backlog-tracker-e4ed2' })
+            const col = getFirestore().collection('dspApiState')
+            const snap = await col.get()
+            const doomed = snap.docs.filter((d) => !d.id.startsWith('blob~instance.json'))
+            for (let i = 0; i < doomed.length; i += 400) {
+              const batch = getFirestore().batch()
+              doomed.slice(i, i + 400).forEach((d) => batch.delete(d.ref))
+              await batch.commit()
+            }
+            console.log('Deleted', doomed.length, 'documents of hosted data.')
+          "
+
+      # The HTTP function first and on its own: it is what the prototype needs.
+      - name: Deploy dspApi
+        working-directory: dsp-integration/deploy/firebase
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/firebase-sa.json
+        run: npx firebase-tools@13 deploy --only functions:dsp-api:dspApi --project backlog-tracker-e4ed2 --non-interactive --force
+
+      # The scheduled job needs Cloud Scheduler on the project. If that isn't
+      # available the API still works; only the automatic auction and billing
+      # don't run (the `npm run auction:run` path is local-only).
+      - name: Deploy dspApiTick (scheduled work)
+        id: tick
+        continue-on-error: true
+        working-directory: dsp-integration/deploy/firebase
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/firebase-sa.json
+        run: npx firebase-tools@13 deploy --only functions:dsp-api:dspApiTick --project backlog-tracker-e4ed2 --non-interactive --force
+
+      - name: Warn if the scheduled job didn't deploy
+        if: steps.tick.outcome == 'failure'
+        run: echo "::warning::dspApiTick did not deploy (Cloud Scheduler may not be enabled). The API works; scheduled auctions and billing won't run."
+
+      # Proves it end to end: the function answers, CORS is right for GitHub
+      # Pages, and a save round-trips (and is put back as it was).
+      - name: Smoke test the live API
+        run: |
+          ok=
+          for i in $(seq 1 30); do
+            if curl -sf "$API_URL/api/admin/v1/session" >/dev/null; then ok=1; break; fi
+            sleep 5
+          done
+          [ -n "$ok" ] || { echo "The API never answered at $API_URL"; exit 1; }
+          curl -sf "$API_URL/api/admin/v1/session"; echo
+          curl -s -D - -o /dev/null -H 'Origin: https://offline2online.github.io' "$API_URL/api/admin/v1/session" | tr -d '\r' | grep -i '^access-control-allow-origin: https://offline2online.github.io$'
+          node --input-type=module -e "
+            const base = process.env.API_URL + '/api/admin/v1/display-types/'
+            const list = await (await fetch(base)).json()
+            const id = (list.items ?? list)[0].id
+            const rec = await (await fetch(base + id + '/record')).json()
+            delete rec.phExtensions
+            const put = (body) => fetch(base + id + '/record', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
+            const r1 = await put({ ...rec, description: 'deploy smoke test' })
+            const back = await (await fetch(base + id + '/record')).json()
+            const r2 = await put(rec)
+            console.log('save', r1.status, '| read back', JSON.stringify(back.description), '| restore', r2.status)
+            if (r1.status !== 200 || back.description !== 'deploy smoke test' || r2.status !== 200) process.exit(1)
+          "

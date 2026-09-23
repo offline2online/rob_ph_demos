@@ -6,8 +6,14 @@ import { APPROVAL_MIGRATIONS_DIR } from '@ph-dsp/campaign-approval/server'
 import { type Db, tx } from './db'
 
 const DIR = fileURLToPath(new URL('./migrations/', import.meta.url))
-/* This app's migrations plus the campaign-approval module's (numbered 0100+). */
-const DIRS = [DIR, APPROVAL_MIGRATIONS_DIR]
+/* This app's migrations plus the campaign-approval module's (numbered 0100+).
+   PH_MIGRATIONS_DIRS (path-delimited, each ending in a slash) replaces both
+   when the code runs bundled into one file — the hosted Cloud Function
+   (deploy/firebase/) — where a path relative to each source file no longer
+   points anywhere; the build copies both folders beside the bundle.
+   Read when migrations run, not when this module loads: the host sets it
+   after the bundle has loaded. */
+const migrationDirs = () => (process.env.PH_MIGRATIONS_DIRS ? process.env.PH_MIGRATIONS_DIRS.split(':').filter(Boolean) : [DIR, APPROVAL_MIGRATIONS_DIR])
 
 export interface Migration {
   version: string
@@ -16,7 +22,7 @@ export interface Migration {
   down: string
 }
 
-export function loadMigrations(dirs = DIRS): Migration[] {
+export function loadMigrations(dirs = migrationDirs()): Migration[] {
   return dirs.flatMap(loadDir).sort((a, b) => a.name.localeCompare(b.name))
 }
 
