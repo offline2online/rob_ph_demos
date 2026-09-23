@@ -19,6 +19,8 @@
      that encrypts DSP credentials at rest (they are mock credentials), the
      Partner API bearer tokens (never the public POC ones), and the token
      the scheduler job presents.
+   - Scheduled work (billing, the auction, retention) runs on the back of
+     requests, at most every five minutes — there is no Cloud Scheduler.
    - The browser calls this from another origin (GitHub Pages, githack),
      so CORS is answered here for a fixed list of origins.
 
@@ -105,6 +107,7 @@ interface Instance { secretsKey: string; partnerTokens: Record<string, string>; 
 /* Origins the hosted admin UI is served from. */
 export const ALLOWED_ORIGINS = [/^https:\/\/offline2online\.github\.io$/, /^https:\/\/raw(cdn)?\.githack\.com$/, /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/]
 
+const TICK_EVERY_MS = 5 * 60_000
 const WRITE = new Set(['POST', 'PUT', 'PATCH', 'DELETE'])
 const HOP_BY_HOP = new Set(['connection', 'keep-alive', 'transfer-encoding', 'content-length'])
 
@@ -132,6 +135,19 @@ export function createHost(opts: { store: BlobStore; dataDir: string; migrations
   const cleared = new Set<string>()
   /* Persist one change at a time, in order. */
   let chain: Promise<void> = Promise.resolve()
+  /* The scheduled work (billing, the auction at its cutoff, retention) runs
+     on the back of ordinary requests, at most every TICK_EVERY_MS: Cloud
+     Scheduler isn't enabled on the project (the deploy's service account
+     may not enable it), so there is no timer. On a demo that means an
+     auction whose hour passes with no visitor at all isn't cleared by
+     itself — a known, accepted gap; /_tasks/tick is there for a scheduler
+     once a project owner enables one (README). */
+  let lastTick = 0
+  const runTick = async (ctx: Context) => {
+    await schedulerTick(ctx, cleared, log)
+    sweepRejectedCampaigns(ctx.db, ctx.config.rejectedCampaignRetentionDays, ctx.clock)
+    await persist(ctx)
+  }
 
   const boot = () =>
     (booted ??= (async () => {
@@ -209,10 +225,14 @@ export function createHost(opts: { store: BlobStore; dataDir: string; migrations
        and the rejected-campaign retention sweep. */
     if (req.url.split('?')[0] === '/_tasks/tick') {
       if (req.method !== 'POST' || req.headers['x-tick-token'] !== instance.tickToken) return json(404, { error: { code: 'not_found', message: 'Not found.' } }, corsHeaders)
-      await schedulerTick(ctx, cleared, log)
-      sweepRejectedCampaigns(ctx.db, ctx.config.rejectedCampaignRetentionDays, ctx.clock)
-      await persist(ctx)
+      lastTick = Date.now()
+      await runTick(ctx)
       return json(200, { ok: true }, corsHeaders)
+    }
+    if (Date.now() - lastTick > TICK_EVERY_MS) {
+      lastTick = Date.now()
+      /* A failed tick is logged, never turned into the visitor's error. */
+      await runTick(ctx).catch((e) => log(`Scheduled work failed: ${e instanceof Error ? e.message : String(e)}`))
     }
 
     const res = await app.inject({
