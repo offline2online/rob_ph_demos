@@ -144,6 +144,65 @@ describe('the auction', () => {
   })
 })
 
+describe('private auctions (deal mode; spec "Support private auctions")', () => {
+  it('lets an invited buyer (by brand entity) win, at the ordinary floor, first price', async () => {
+    const { ctx, setSlot, activate, queued } = await setup()
+    const list = ctx.buyersLists.insert({ id: 'bl_nestle', name: 'Nestlé-only deal', description: '', invitedBuyers: [{ identifierType: 'brandEntity', value: 'Nestlé' }], activeFrom: null, activeTo: null })
+    setSlot({ listMode: 'deal', buyersListId: list.id })
+    const first = await runAuction(ctx, W1)
+    /* Runs as a real auction, not a reservation: the deal is visible in the outcome the same as rtb. */
+    expect(first.positions[0]).toMatchObject({ bidRequests: 1, bids: 1 })
+    await activate(await queued('Nestlé — crid-5130001'))
+    const second = await runAuction(ctx, W2)
+    expect(second.positions[0].winner).toMatchObject({ partnerId: 'p_google', advertiserId: 'nestle', clearingCpm: 150 })
+  })
+
+  it('rejects a bid from an advertiser not on the invited-buyer list, naming the deal', async () => {
+    const { ctx, bidder, setSlot, rows } = await setup()
+    const list = ctx.buyersLists.insert({ id: 'bl_nestle', name: 'Nestlé-only deal', description: '', invitedBuyers: [{ identifierType: 'brandEntity', value: 'Nestlé' }], activeFrom: null, activeTo: null })
+    setSlot({ listMode: 'deal', buyersListId: list.id })
+    await bidder({ advertiserId: '5130002' })
+    await runAuction(ctx, W1)
+    expect(rows()[0]).toMatchObject({ status: 'rejected', advertiserId: 'swisse', reason: 'Swisse is not an invited buyer on this private auction (Nestlé-only deal).' })
+  })
+
+  it('matches an invited buyer by DSP seat ID, not just brand entity', async () => {
+    const { ctx, bidder, setSlot, approve, activate, queued, rows } = await setup()
+    /* Invited by Swisse's own seat ID; the default bidder (Nestlé, seat 5130001) is not. */
+    const list = ctx.buyersLists.insert({ id: 'bl_seat', name: 'Seat-based deal', description: '', invitedBuyers: [{ identifierType: 'dspSeatId', value: '5130002' }], activeFrom: null, activeTo: null })
+    setSlot({ listMode: 'deal', buyersListId: list.id })
+    await runAuction(ctx, W1)
+    expect(rows()[0]).toMatchObject({ status: 'rejected', advertiserId: 'nestle', reason: 'Nestlé is not an invited buyer on this private auction (Seat-based deal).' })
+
+    await bidder({ advertiserId: '5130002' })
+    await runAuction(ctx, W2)
+    expect(rows(W2)[0]).toMatchObject({ status: 'rejected', advertiserId: 'swisse', reason: 'New creative crid-5130002: queued for approval.' })
+    /* Unlike Nestlé, Swisse requires campaign approval before it can win (seed.ts). */
+    const campaignId = await queued('Swisse — crid-5130002')
+    await approve(campaignId)
+    await activate(campaignId)
+    const third = await runAuction(ctx, new Date('2026-09-23T00:00:00.000Z'))
+    expect(third.positions[0].winner).toMatchObject({ advertiserId: 'swisse' })
+  })
+
+  it("falls through to nobody winning once the deal's active window has passed — no reserve floor is ever crossed", async () => {
+    const { ctx, setSlot, rows } = await setup()
+    const list = ctx.buyersLists.insert({ id: 'bl_expired', name: 'Expired deal', description: '', invitedBuyers: [{ identifierType: 'brandEntity', value: 'Nestlé' }], activeFrom: '2026-01-01T00:00:00Z', activeTo: '2026-02-01T00:00:00Z' })
+    setSlot({ listMode: 'deal', buyersListId: list.id })
+    await runAuction(ctx, W1)
+    expect(rows()[0]).toMatchObject({ status: 'rejected', reason: 'Nestlé is not an invited buyer on this private auction (Expired deal).' })
+  })
+
+  it('admits nobody once the buyers list itself is deleted (falls through to the default campaign)', async () => {
+    const { ctx, setSlot } = await setup()
+    const list = ctx.buyersLists.insert({ id: 'bl_gone', name: 'Soon-deleted', description: '', invitedBuyers: [{ identifierType: 'brandEntity', value: 'Nestlé' }], activeFrom: null, activeTo: null })
+    setSlot({ listMode: 'deal', buyersListId: list.id })
+    ctx.buyersLists.delete(list.id)
+    const first = await runAuction(ctx, W1)
+    expect(first.positions[0]).toMatchObject({ bidRequests: 0, winner: null })
+  })
+})
+
 describe('POST /v1/reservations and GET …/{id}', () => {
   const BID = { positionId: 'menu_board.s2', windowStart: '2026-09-21T00:00:00.000Z', campaignId: 'c_api_swisse', advertiserId: 'swisse', type: 'bid', bidCpm: 200 }
 
