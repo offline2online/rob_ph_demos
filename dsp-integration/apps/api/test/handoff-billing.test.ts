@@ -144,4 +144,37 @@ describe('billing — dynamic VAC-d from existing playback data', () => {
     const item = runBilling(ctx).find((i) => i.reservationId === 'res_full')!
     expect(item).toMatchObject({ realisedViews: 1236, amount: 123.6 })
   })
+
+  /* Private auctions: dynamic VAC-d billing over the delivery term (spec
+     "…dynamic VAC-d billing over the delivery term", 23 Sep 2026) —
+     exercised at this layer, independent of how the reservations got
+     there (exchange/auction.ts's bookLockedTermWindow creates exactly
+     this shape once a deal's rate is locked: several reservations for the
+     same position, different windows, one shared clearingCpm). Billing
+     itself needed no change: each window is still its own reservation,
+     billed on its own realised VAC-d, always at the term's one agreed
+     rate — the term total is simply the sum. */
+  it("bills each day of a locked-rate term independently at the term's one agreed CPM — the term total is the sum", async () => {
+    const { ctx } = await setup()
+    const day1 = '2026-09-16T00:00:00.000Z'
+    const day2 = '2026-09-17T00:00:00.000Z'
+    const LOCKED_CPM = 150
+    ctx.reservations.insert(won({ id: 'res_term_1', windowStart: day1, campaignId: 'c_dsp_nestle', advertiserId: 'nestle', clearingCpm: LOCKED_CPM, handedOffAt: day1 }))
+    ctx.reservations.insert(won({ id: 'res_term_2', windowStart: day2, campaignId: 'c_dsp_nestle', advertiserId: 'nestle', clearingCpm: LOCKED_CPM, handedOffAt: day2 }))
+    const play = ctx.db.prepare("INSERT INTO plays (id, display_id, campaign_id, played_at, duration_sec) VALUES (?, ?, 'c_dsp_nestle', ?, 15)")
+    for (const day of [day1, day2]) {
+      const start = Date.parse(day)
+      for (const d of ['d_1004', 'd_1005', 'd_1006']) for (let i = 0; i < 2000; i++) play.run(`x_${day}_${d}_${i}`, d, new Date(start + i * 43_000).toISOString())
+    }
+    const items = runBilling(ctx).filter((i) => i.reservationId.startsWith('res_term_')).sort((a, b) => a.windowStart.localeCompare(b.windowStart))
+    /* Same agreed rate both days (no re-auction), each fully saturated so
+       both cap at the same assumed views — the "caps a window" case above,
+       replayed for two windows of the same term. */
+    expect(items).toMatchObject([
+      { windowStart: day1, cpm: LOCKED_CPM, realisedViews: 1236, amount: 185.4 },
+      { windowStart: day2, cpm: LOCKED_CPM, realisedViews: 1236, amount: 185.4 },
+    ])
+    const termTotal = items.reduce((sum, i) => sum + i.amount, 0)
+    expect(termTotal).toBeCloseTo(370.8)
+  })
 })

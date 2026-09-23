@@ -8,14 +8,28 @@
    Test-mode DSPs receive requests and their bids are cleared among
    themselves, but a Test-mode win never takes the window, is never billed
    and is never handed off (spec §7). The live winner is handed off
-   (handoff.ts). */
+   (handoff.ts).
+
+   Private auctions using the two-period model (spec "…dynamic VAC-d
+   billing over the delivery term", 23 Sep 2026) are a third case, between
+   "reserved" and a real auction: a deal with auctionCloses set runs a real
+   auction same as any other deal until a bid clears within that deadline,
+   at which point the winning rate locks (BuyersListRepo.lockWin) and every
+   later play window in the delivery term is booked directly at that rate
+   — no re-auction, no fresh bids — by bookLockedTermWindow below. Dynamic
+   VAC-d billing is otherwise unchanged: each such window still gets its
+   own reservation, still billed on its own realised VAC-d
+   (exchange/billing.ts), just always at the same locked clearingCpm. A
+   deal with no auctionCloses set keeps clearing fresh every window,
+   exactly as before this model existed. */
 import { randomUUID } from 'node:crypto'
 import type { Context } from '../context'
+import { auctionOpenAt, isActiveAt, isTermLocked } from '../domain/buyersLists'
 import { isComplete } from '../domain/exchange'
 import { type PositionRef, allPositions, assignmentOf, effectivePartnerIds, nextWindow } from '../domain/positions'
 import type { PartnerRecord } from '../repos/PartnerRepo'
 import { type ReservationRecord, TAKEN } from '../repos/ReservationRepo'
-import { advertiserSlug } from '@ph-dsp/types'
+import { advertiserSlug, assignedOf, type BuyersList } from '@ph-dsp/types'
 import { campaignForCrid, queueCreative } from './creatives'
 import { checkAdvertiser, checkCampaign, checkCategories, checkFloor, checkTargeting } from './enforcement'
 import { handOff } from './handoff'
@@ -48,6 +62,25 @@ async function clearPosition(ctx: Context, p: PositionRef, start: string, exchan
   if (!ctx.displays.listByDisplayType(p.displayType.id).length) return { ...out, skipped: 'No displays.' }
   const existing = ctx.reservations.forWindow(p.positionId, start)
   if (existing.some((r) => !r.testMode && TAKEN.includes(r.status))) return { ...out, skipped: 'Already sold.' }
+
+  /* Two-period private auctions (spec "…dynamic VAC-d billing over the
+     delivery term"): once this deal's rate is locked, every window in its
+     delivery term books directly at that rate — no bidding. Before it
+     locks, a deal with auctionCloses set still runs the real auction
+     below like any other, until that deadline passes with nothing having
+     cleared, at which point it stops soliciting bids for the rest of the
+     term (falls through, same as an expired delivery term always has). A
+     deal with no auctionCloses set never hits either branch here and
+     keeps clearing fresh every window, exactly as before this model
+     existed. */
+  if (assignmentOf(p.def) === 'deal') {
+    const listId = assignedOf(p.def).buyersListId
+    const list = listId ? ctx.buyersLists.get(listId) : null
+    if (list && isActiveAt(list, start)) {
+      if (isTermLocked(list)) return bookLockedTermWindow(ctx, p, start, list, out)
+      if (!auctionOpenAt(list, start)) return { ...out, skipped: `Private auction window closed with no clearing bid (${list.name}).` }
+    }
+  }
 
   const candidates: ReservationRecord[] = []
   /* Until Exchange settings are complete, no DSP is sent bid requests (spec §7). */
@@ -83,8 +116,42 @@ async function clearPosition(ctx: Context, p: PositionRef, start: string, exchan
   if (live) {
     await handOff(ctx, live)
     out.winner = { reservationId: live.id, partnerId: live.partnerId, advertiserId: live.advertiserId, clearingCpm: live.bidCpm as number }
+    /* This window's clear is the deal's ONE term-deciding auction the
+       moment it has auctionCloses set and isn't locked yet — lock it now
+       so every later window in the delivery term reuses this rate instead
+       of re-auctioning (spec "…dynamic VAC-d billing over the delivery
+       term"). A deal with no auctionCloses never reaches here locked, so
+       it keeps clearing fresh every window as it always has. */
+    if (assignmentOf(p.def) === 'deal') {
+      const listId = assignedOf(p.def).buyersListId
+      const list = listId ? ctx.buyersLists.get(listId) : null
+      if (list?.auctionCloses && !isTermLocked(list)) {
+        ctx.buyersLists.lockWin(list.id, {
+          cpm: live.bidCpm as number, partnerId: live.partnerId, advertiserId: live.advertiserId, campaignId: live.campaignId as string,
+          pricingType: live.pricingType, channel: live.channel, lockedAt: ctx.clock().toISOString(),
+        })
+      }
+    }
   }
   return out
+}
+
+/* Books this window at a private auction's already-locked rate directly —
+   no bidding, no fresh clearing — the same winning identity every window
+   in the delivery term hands off to (spec "…dynamic VAC-d billing over the
+   delivery term"). Still its own reservation, still billed on its own
+   realised VAC-d for this window (billing.ts), always at the same
+   clearingCpm. */
+async function bookLockedTermWindow(ctx: Context, p: PositionRef, start: string, list: BuyersList, out: PositionOutcome): Promise<PositionOutcome> {
+  const win = list.lockedWin!
+  const r = ctx.reservations.insert({
+    id: `res_${randomUUID().slice(0, 12)}`, partnerId: win.partnerId, advertiserId: win.advertiserId, campaignId: win.campaignId,
+    positionId: p.positionId, windowStart: start, type: win.channel === 'openrtb' ? 'bid' : 'reserve', channel: win.channel,
+    bidCpm: win.cpm, currency: ctx.company.get().currency, status: 'won', clearingCpm: win.cpm,
+    reason: `Private auction: booked at ${list.name}'s locked rate, no re-auction.`, testMode: false, pricingType: win.pricingType, handedOffAt: null,
+  })
+  await handOff(ctx, r)
+  return { ...out, skipped: `Private auction: booked at ${list.name}'s locked rate (${win.cpm}), no re-auction.`, winner: { reservationId: r.id, partnerId: r.partnerId, advertiserId: r.advertiserId, clearingCpm: r.clearingCpm as number } }
 }
 
 /* First price: the highest bid wins and pays its bid; ties go to the earlier bid. */

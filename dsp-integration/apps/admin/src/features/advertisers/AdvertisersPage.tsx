@@ -6,7 +6,7 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { App, Button, InputNumber, Select, Spin, Switch, Tooltip } from 'antd'
 import type { ColDef, ICellRendererParams } from 'ag-grid-community'
-import { SLOT_OWNERS, TARGETING_MODES, assignedLabels, supportedTargetingOf, targetingLabel, touchPointIcon, type Advertiser, type AdvertiserSetting, type AssignedTo, type AvailableInventoryRow, type BuyersList, type DspAdvertisers, type Session, type TargetingMode } from '@ph-dsp/types'
+import { DEFAULT_BILLING_UNIT_HOURS, SLOT_OWNERS, TARGETING_MODES, assignedLabels, supportedTargetingOf, targetingLabel, touchPointIcon, type Advertiser, type AdvertiserSetting, type AssignedTo, type AvailableInventoryRow, type BuyersList, type DspAdvertisers, type Session, type TargetingMode } from '@ph-dsp/types'
 import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { api, ApiRequestError } from '../../api/client'
@@ -99,10 +99,12 @@ export const slotKey = (r: AvailableInventoryRow) => `${r.displayTypeId}:${r.slo
    reservePrice is this slot's own override; null means it follows its
    display type's shared default (below), not "no reserve" (Rob, 22 Sep;
    spec §1 configuration inheritance — override always wins). */
-export interface SlotEdit { supportedTargeting: TargetingMode[]; assignedTo: Omit<AssignedTo, 'partnerNames' | 'buyersListName'>; reservePrice: number | null }
+export interface SlotEdit { supportedTargeting: TargetingMode[]; assignedTo: Omit<AssignedTo, 'partnerNames' | 'buyersListName'>; reservePrice: number | null; billingUnitHours: number | null }
 type Edits = Record<string, SlotEdit>
 /* A display type's reserve price default, edited from any of its slot
-   rows — every row for the same displayTypeId shares one value. */
+   rows — every row for the same displayTypeId shares one value. Also used
+   for the billing-unit default (spec "Private auctions: two-period model",
+   23 Sep 2026) — same inheritance shape, separate map/draft. */
 type Defaults = Record<string, number | null>
 type InvCtx = { current: {
   open: (displayTypeId: string) => void
@@ -110,10 +112,12 @@ type InvCtx = { current: {
   currency: string
   edits: Edits
   defaults: Defaults
+  billingUnitDefaults: Defaults
   dsps: DspAdvertisers[]
   buyersLists: BuyersList[]
   set: (key: string, patch: Partial<SlotEdit>) => void
   setDefault: (displayTypeId: string, v: number | null) => void
+  setBillingUnitDefault: (displayTypeId: string, v: number | null) => void
   openAddBuyersList: (r: AvailableInventoryRow) => void
 } }
 type IP = ICellRendererParams<AvailableInventoryRow, unknown, InvCtx>
@@ -180,13 +184,22 @@ function Pills({ label, value, options, canEdit, placeholder, onChange }: {
 }
 
 const edited = (c: InvCtx['current'], r: AvailableInventoryRow): SlotEdit =>
-  c.edits[slotKey(r)] ?? { supportedTargeting: supportedTargetingOf(r), assignedTo: r.assignedTo, reservePrice: r.reservePriceOverride }
+  c.edits[slotKey(r)] ?? { supportedTargeting: supportedTargetingOf(r), assignedTo: r.assignedTo, reservePrice: r.reservePriceOverride, billingUnitHours: r.billingUnitHoursOverride }
 /* The value this slot actually resolves to right now, following the draft
    default when it has no override of its own — the same "override wins"
    read as reservePriceOf, but against unsaved edits. */
 const effectiveReservePrice = (c: InvCtx['current'], r: AvailableInventoryRow): number | null => {
   const override = edited(c, r).reservePrice
   return override ?? c.defaults[r.displayTypeId] ?? null
+}
+/* Same "override wins" read, against unsaved edits, for the billing unit
+   (spec "Private auctions: two-period model", 23 Sep 2026) — unlike
+   reserve price, there's no "none" state: the platform default of 24
+   hours (one day) applies once neither the slot nor its display type sets
+   one. */
+const effectiveBillingUnitHours = (c: InvCtx['current'], r: AvailableInventoryRow): number => {
+  const override = edited(c, r).billingUnitHours
+  return override ?? c.billingUnitDefaults[r.displayTypeId] ?? DEFAULT_BILLING_UNIT_HOURS
 }
 
 /* Who may buy this position (Rob, 20 Sep; buyers lists/private auctions
@@ -332,6 +345,56 @@ function ReservePriceCell({ data, context }: IP) {
   )
 }
 
+/* Hours → a short human label, the same shape a person would read a
+   duration in (spec "Private auctions: two-period model", 23 Sep 2026):
+   "1 day" at the default, "6h" / "3 days" otherwise. */
+const durationLabel = (hours: number) => {
+  if (hours === 24) return '1 day'
+  if (hours % 24 === 0) return `${hours / 24} days`
+  return `${hours}h`
+}
+
+/* The granularity a CPM is quoted and charged against for a private
+   auction using the two-period model — default one day (spec "Private
+   auctions: two-period model", 23 Sep 2026). Same override/default
+   inheritance and editing UX as ReservePriceCell below, in hours rather
+   than a CPM. Informational in this build: dynamic VAC-d billing still
+   runs per play window (Advertiser settings → Auction schedule); this is
+   what that window length is expected to equal for a private-auction slot
+   using the two-period model. */
+function BillingUnitCell({ data, context }: IP) {
+  if (!data) return null
+  const c = context.current
+  const override = edited(c, data).billingUnitHours
+  const overridden = override !== null
+  const value = overridden ? override : (c.billingUnitDefaults[data.displayTypeId] ?? DEFAULT_BILLING_UNIT_HOURS)
+  if (!c.canEdit) return <span>{durationLabel(effectiveBillingUnitHours(c, data))}</span>
+  return (
+    <div className="flex w-full min-w-0 items-center gap-1">
+      <InputNumber
+        size="small" aria-label={`${data.displayTypeName} slot ${data.slot}: billing unit (hours)${overridden ? ' (override)' : ''}`} min={1} step={1} style={{ width: 84 }}
+        suffix="h" value={value}
+        onChange={(v) => {
+          const next = v === null || v === undefined ? DEFAULT_BILLING_UNIT_HOURS : Number(v)
+          if (overridden) c.set(slotKey(data), { billingUnitHours: next })
+          else c.setBillingUnitDefault(data.displayTypeId, next)
+        }}
+      />
+      {overridden ? (
+        <Tooltip title={`Reset to ${data.displayTypeName}'s billing unit default`}>
+          <Button type="text" size="small" className="px-1" aria-label={`${data.displayTypeName} slot ${data.slot}: reset billing unit to the display type's default`}
+            icon={<Icon name="settings_backup_restore" size={13} />} onClick={() => c.set(slotKey(data), { billingUnitHours: null })} />
+        </Tooltip>
+      ) : (
+        <Tooltip title={`Override just this slot, independent of ${data.displayTypeName}'s other slots`}>
+          <Button type="text" size="small" className="px-1" aria-label={`${data.displayTypeName} slot ${data.slot}: override the billing unit for just this slot`}
+            icon={<Icon name="edit" size={13} />} onClick={() => c.set(slotKey(data), { billingUnitHours: value })} />
+        </Tooltip>
+      )}
+    </div>
+  )
+}
+
 const header = (label: string, tip: string) => () => <WithTip tip={tip}><span className="ag-header-cell-text">{label}</span></WithTip>
 
 export function AdvertisersPage() {
@@ -390,20 +453,29 @@ export function AdvertisersPage() {
       headerComponent: header('Reserve price', "A CPM premium to reserve this slot in advance of the open auction. Set once for the display type and inherited by every slot on it — override just one slot to give it its own value, independent of the others. Empty = no reserve."),
       valueGetter: (p) => (p.data ? effectiveReservePrice((p.context as InvCtx).current, p.data) ?? -1 : -1),
     },
+    {
+      headerName: 'Billing unit', width: 150, minWidth: 130, cellRenderer: BillingUnitCell,
+      headerComponent: header('Billing unit', 'The granularity a CPM is quoted and charged against for a private auction using the two-period model — default one day. Set once for the display type and inherited by every slot on it — override just one slot to give it its own value, independent of the others.'),
+      valueGetter: (p) => (p.data ? effectiveBillingUnitHours((p.context as InvCtx).current, p.data) : DEFAULT_BILLING_UNIT_HOURS),
+    },
     { headerName: '', width: 76, suppressSizeToFit: true, cellRenderer: OpenCell },
   ], [invRows, inventory.data, buyersLists.data])
   const saved = useMemo<Settings | undefined>(() => q.data && Object.fromEntries(q.data.items.map((a) => [a.advertiserId, { approvalRequired: a.approvalRequired, floorMultiplier: a.floorMultiplier }])), [q.data])
   const { draft, setDraft, dirty, reset, commitNext } = useDraft(saved)
   const savedEdits = useMemo<Edits | undefined>(() => inventory.data && Object.fromEntries(invRows.map((r) => {
     const { partnerNames: _names, ...assignedTo } = r.assignedTo
-    return [slotKey(r), { supportedTargeting: supportedTargetingOf(r), assignedTo, reservePrice: r.reservePriceOverride }]
+    return [slotKey(r), { supportedTargeting: supportedTargetingOf(r), assignedTo, reservePrice: r.reservePriceOverride, billingUnitHours: r.billingUnitHoursOverride }]
   })), [invRows, inventory.data])
   const inv = useDraft(savedEdits)
   /* One reserve price default per display type, shared by every one of its
      rows (Rob, 22 Sep) — a separate draft from the per-slot one above. */
   const savedDefaults = useMemo<Defaults | undefined>(() => inventory.data && Object.fromEntries(invRows.map((r) => [r.displayTypeId, r.displayTypeReservePrice])), [invRows, inventory.data])
   const defaults = useDraft(savedDefaults)
-  useReportDirty(dirty || inv.dirty || defaults.dirty)
+  /* Same one-per-display-type sharing, for the billing unit default (spec
+     "Private auctions: two-period model", 23 Sep 2026). */
+  const savedBillingUnitDefaults = useMemo<Defaults | undefined>(() => inventory.data && Object.fromEntries(invRows.map((r) => [r.displayTypeId, r.displayTypeBillingUnitHours])), [invRows, inventory.data])
+  const billingUnitDefaults = useDraft(savedBillingUnitDefaults)
+  useReportDirty(dirty || inv.dirty || defaults.dirty || billingUnitDefaults.dirty)
   const [saving, setSaving] = useState(false)
   const [shown, setShown] = useState<number | null>(null)
   const data = q.data
@@ -438,15 +510,20 @@ export function AdvertisersPage() {
          reserve price default changed (Rob, 22 Sep), since that's a
          display-type-level field an untouched slot's row still has to
          carry so the server can apply it. */
-      if ((inv.dirty || defaults.dirty) && inv.draft && defaults.draft) {
+      if ((inv.dirty || defaults.dirty || billingUnitDefaults.dirty) && inv.draft && defaults.draft && billingUnitDefaults.draft) {
         const changedSlots = new Set(Object.keys(inv.draft).filter((key) => !deepEqual(inv.draft![key], savedEdits?.[key])))
         const changedTypes = new Set(Object.keys(defaults.draft).filter((id) => defaults.draft![id] !== savedDefaults?.[id]))
+        const changedBillingUnitTypes = new Set(Object.keys(billingUnitDefaults.draft).filter((id) => billingUnitDefaults.draft![id] !== savedBillingUnitDefaults?.[id]))
         const items = invRows
-          .filter((r) => changedSlots.has(slotKey(r)) || changedTypes.has(r.displayTypeId))
-          .map((r) => ({ displayTypeId: r.displayTypeId, slot: r.slot, ...(inv.draft![slotKey(r)] ?? savedEdits![slotKey(r)]), reservePriceDefault: defaults.draft![r.displayTypeId] ?? null }))
+          .filter((r) => changedSlots.has(slotKey(r)) || changedTypes.has(r.displayTypeId) || changedBillingUnitTypes.has(r.displayTypeId))
+          .map((r) => ({
+            displayTypeId: r.displayTypeId, slot: r.slot, ...(inv.draft![slotKey(r)] ?? savedEdits![slotKey(r)]),
+            reservePriceDefault: defaults.draft![r.displayTypeId] ?? null, billingUnitHoursDefault: billingUnitDefaults.draft![r.displayTypeId] ?? null,
+          }))
         await api('PUT', '/admin/v1/available-inventory', { items })
         inv.commitNext()
         defaults.commitNext()
+        billingUnitDefaults.commitNext()
         await qc.invalidateQueries({ queryKey: ['available-inventory'] })
       }
       commitNext()
@@ -459,10 +536,11 @@ export function AdvertisersPage() {
   }
   const invContext = {
     open: (id: string) => navigate(`/display-types?id=${encodeURIComponent(id)}&panel=playlist`),
-    canEdit, currency: data.currency, edits: inv.draft ?? {}, defaults: defaults.draft ?? {}, dsps: inventory.data?.dsps ?? [],
+    canEdit, currency: data.currency, edits: inv.draft ?? {}, defaults: defaults.draft ?? {}, billingUnitDefaults: billingUnitDefaults.draft ?? {}, dsps: inventory.data?.dsps ?? [],
     buyersLists: buyersLists.data?.items ?? [],
     set: (key: string, patch: Partial<SlotEdit>) => inv.setDraft((cur) => (cur ? { ...cur, [key]: { ...cur[key], ...patch } } : cur)),
     setDefault: (displayTypeId: string, v: number | null) => defaults.setDraft((cur) => (cur ? { ...cur, [displayTypeId]: v } : cur)),
+    setBillingUnitDefault: (displayTypeId: string, v: number | null) => billingUnitDefaults.setDraft((cur) => (cur ? { ...cur, [displayTypeId]: v } : cur)),
     openAddBuyersList: (r: AvailableInventoryRow) => setAddingBuyersListFor(r),
   }
   const context = {
@@ -520,7 +598,7 @@ export function AdvertisersPage() {
         onChanged={() => qc.invalidateQueries({ queryKey: ['buyers-lists'] })}
       />
 
-      {canEdit && <SaveBar dirty={dirty || inv.dirty || defaults.dirty} saving={saving} onSave={onSave} onCancel={() => { reset(); inv.reset(); defaults.reset() }} />}
+      {canEdit && <SaveBar dirty={dirty || inv.dirty || defaults.dirty || billingUnitDefaults.dirty} saving={saving} onSave={onSave} onCancel={() => { reset(); inv.reset(); defaults.reset(); billingUnitDefaults.reset() }} />}
 
       {/* Picked "+ Add new buyers list…" from a slot's Assigned to picker
           (Rob, 23 Sep): on save, assign the new list straight to that slot. */}

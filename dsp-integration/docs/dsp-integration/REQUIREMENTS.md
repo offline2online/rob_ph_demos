@@ -697,6 +697,22 @@ played (Billing, below).
 - Because assets must be approved before they play (§3), the pricing and
   allocation model works over extended periods (daily, weekly or monthly)
   rather than purely in real time.
+- **Private auctions using the two-period model bill the same way, at a
+  fixed rate** (23 Sep 2026 — see §5 "Private auctions (buyers lists)" for
+  the two-period model itself). A CPM is a rate, not a fixed sum: the brand
+  wins at a bid CPM that then holds for the whole delivery term (no daily
+  re-auction), and each billing unit (the slot's own granularity — default
+  one day) is billed at that agreed CPM against the realised VAC-d for
+  that unit. The term total is simply the sum of its billing units'
+  settlements at the one agreed rate. This sits between the two other
+  risk profiles: **reserved** is a fixed premium with the brand carrying
+  full delivery risk; **open real-time** locks nothing, re-clearing price
+  every auction; a **private auction using the two-period model** locks
+  the rate but leaves volume variable — the brand pays for actual views,
+  not a guaranteed number, but never re-bids for the term. Mechanically
+  this needs no separate billing pipeline: the exchange (§7) books every
+  later play window in the term as its own reservation at the locked CPM,
+  and each is billed exactly as any other reservation already is.
 - **Pre-auction enforcement uses the effective floor CPM** for the campaign's
   type and advertiser: a bid for a personalised or interactive campaign must
   clear the multiplied floor, not the base floor.
@@ -853,9 +869,23 @@ It carries:
   another identifier a retailer uses elsewhere. `other` is recorded on the
   list for reference but has no automated match in this build — the DSP
   side of that identifier scheme isn't something this POC's stand-ins model.
-- **Active time window**: inclusive `activeFrom`/`activeTo`; either or both
-  may be open-ended. Outside the window, the deal admits nobody — it does
-  not fall back to open RTB.
+- **Delivery term**: inclusive `activeFrom`/`activeTo` — the span this deal
+  is awarded for (a week, a month, a quarter); either or both may be
+  open-ended. Outside it, the deal admits nobody — it does not fall back
+  to open RTB. (Named "active time window" before the two-period model
+  below split it from the auction window; the field names are unchanged.)
+- **Auction window** (`auctionCloses`, 23 Sep 2026 — the two-period model):
+  a second, narrower, optional period distinct from the delivery term
+  above. Bidding for a private auction is **not** slot-by-slot per play —
+  a brand bids to hold a slot position across the whole delivery term, not
+  once per window — so a deal using this model carries its own one-time
+  bidding deadline: invited brands may submit and revise bids until
+  `auctionCloses`, and the first bid that clears within it locks the
+  winning CPM for the rest of the delivery term (`lockedWin`; see "Locked
+  rate" below). `auctionCloses` is null on a deal that isn't using this
+  model — it keeps clearing a fresh auction every play window, exactly as
+  a buyers list always has (unchanged default behaviour; this is
+  additive, not a breaking change to every existing deal).
 
 **Explicitly not on the buyers list** — each already has its own home, and
 duplicating it per deal would let one drift from the other:
@@ -888,9 +918,10 @@ testing). A buyers list is **mutually exclusive** with named advertisers and
 the whitelist — assigning one clears the other two, same "newer choice
 wins" rule already governing advertisers vs. whitelist. Underneath
 Available Inventory, a **Buyers lists** table lists every buyers list
-(name/description, invited buyer count, active window), with **Edit** and
-**Delete**; delete is refused (`has_dependents`) while any slot is still
-assigned to it. Saving the modal (create or edit) always surfaces a message
+(name/description, invited buyer count, delivery term, and its rate —
+"Clears every window", "Bidding closes `<auctionCloses>`" or "Locked:
+`<cpm>` CPM"), with **Edit** and **Delete**; delete is refused
+(`has_dependents`) while any slot is still assigned to it. Saving the modal (create or edit) always surfaces a message
 on failure, even when the API's error carries no field-level `details` to
 attach to one input — a save that fails silently is indistinguishable from
 the option not being there at all, which is what made this ticket read as
@@ -901,19 +932,46 @@ kind of error (23 Sep).
 (§6 "Advertiser lists"), at both bid intake (OpenRTB response and the API's
 `POST /v1/reservations`) and again when the auction clears: a bid from a
 seat that is not one of the deal's invited buyers, or that arrives outside
-the deal's active window, is refused `not_invited`, naming the deal. Unlike
+the deal's delivery term, is refused `not_invited`, naming the deal. Unlike
 `reserved`, a deal position is **not** taken out of the open auction and
-booked directly — it still runs as a real auction (bid requests go out,
-first price clears among whoever qualifies), just restricted to the invited
-buyers rather than every connected DSP. Which DSPs actually receive bid
-requests for a deal position is **resolved live from the buyers list's
-current invited buyers** every time (not cached on the slot), so editing a
-list's invited buyers takes effect immediately on every position it's
-attached to, with nothing to re-save per slot. A buyers list that is deleted
-— or one whose invited buyers currently match no connected DSP's seats —
-correctly admits **nobody**, not everybody: this is the one place in the
-assignment model where an empty resolved DSP list means "restricted to
-none" rather than "unrestricted."
+booked directly — until its rate locks (below), it runs as a real auction
+(bid requests go out, first price clears among whoever qualifies), just
+restricted to the invited buyers rather than every connected DSP. Which
+DSPs actually receive bid requests for a deal position is **resolved live
+from the buyers list's current invited buyers** every time (not cached on
+the slot), so editing a list's invited buyers takes effect immediately on
+every position it's attached to, with nothing to re-save per slot. A
+buyers list that is deleted — or one whose invited buyers currently match
+no connected DSP's seats — correctly admits **nobody**, not everybody:
+this is the one place in the assignment model where an empty resolved DSP
+list means "restricted to none" rather than "unrestricted."
+
+**Locked rate (the two-period model, 23 Sep 2026)**: a deal with
+`auctionCloses` set runs exactly like any other deal — a real auction,
+bid requests going out each play window — until a bid clears at or before
+that deadline. That clear is the term's one deciding auction: the winning
+identity and CPM are written to `lockedWin` (once, never overwritten —
+first clear wins) and every later play window in the delivery term is
+booked **directly** at that rate, with no bid requests and no fresh
+clearing (`exchange/auction.ts`'s `bookLockedTermWindow`). Each such window
+is still its own reservation, still billed on its own realised VAC-d for
+that window (§4 "Billing") — dynamic VAC-d is unchanged, only the rate is
+fixed for the term rather than re-cleared per unit. If `auctionCloses`
+passes with nothing having cleared, the deal simply stops soliciting bids
+for the rest of the delivery term — the same "falls through, no reserve
+floor is ever crossed" outcome as an expired delivery term. A deal with no
+`auctionCloses` never locks and keeps clearing fresh every window, exactly
+as a buyers list always has.
+
+**Billing unit** (`billingUnitHours` on a slot, with a display-type-level
+default — same override-always-wins inheritance as reserve price, §5
+"Reserve price" above; platform default 24 hours/one day when neither is
+set): the granularity a CPM is quoted and charged against, surfaced in
+Available Inventory next to Reserve price. Informational in this build —
+dynamic VAC-d billing still runs per play window (Advertiser settings →
+Auction schedule); it names what that window length is expected to equal
+for a private-auction slot using the two-period model, rather than driving
+a separate billing cadence.
 
 ## 6. DSP integration — the advertiser & DSP interface
 
@@ -1443,8 +1501,10 @@ fields. The canonical definition is `app/src/model/schema.js` and
   multiZone: { enabled, zones: [{ id, name, x, y, width, height, playlistId }] },
   phExtensions: {                  // THIS PROJECT's additions
     reservePrice,                  // the display type's own reserve price default; CPM or null (real inheritance, 22 Sep — §5)
+    billingUnitHours,               // the display type's own billing-unit default, in hours; null = platform default of 24 (§5 "Private auctions" — two-period model, 23 Sep)
     slots: [{ label, owner, partnerId, advertiser, listMode, buyersListId, storeScope, quota,
-              reservePrice }],     // this slot's own override; CPM, or null = inherit the display type's reservePrice above (§5)
+              reservePrice,         // this slot's own override; CPM, or null = inherit the display type's reservePrice above (§5)
+              billingUnitHours }],  // this slot's own override, in hours; null = inherit the display type's billingUnitHours above (§5)
                                     // listMode: rtb | whitelist_only | deal | null; buyersListId set only when listMode is deal (§5 "Private auctions")
     venue: { openOohVenueType, orientation, loopLengthSec }
   }
@@ -1475,7 +1535,12 @@ Used only for the delete check in §1: a display type with any display whose
 buyersList: {
   id, name, description,
   invitedBuyers: [{ identifierType, value }],  // identifierType: brandEntity | dspSeatId | other
-  activeFrom, activeTo,                        // ISO date-time or null = no bound (inclusive)
+  activeFrom, activeTo,                        // the delivery term; ISO date-time or null = no bound (inclusive)
+  auctionCloses,                               // the auction window's bidding deadline; ISO date-time or null = not using
+                                                //   the two-period model — clears a fresh auction every play window (23 Sep 2026)
+  lockedWin,                                   // null until the term's one-time auction clears; then:
+                                                //   { cpm, partnerId, advertiserId, campaignId, pricingType, channel, lockedAt }
+                                                //   — set once, never overwritten (23 Sep 2026, "Locked rate" above)
   createdAt, updatedAt
 }
 ```
@@ -1483,6 +1548,10 @@ buyersList: {
 Independent of any one slot: a `phExtensions.slots[].buyersListId` (above)
 points at it, and any number of slots may point at the same list. Deleting
 a buyers list is refused (`has_dependents`) while a slot still points at it.
+`auctionCloses` and `lockedWin` are the two-period model (23 Sep 2026, "Private
+auctions (buyers lists)" above) — `auctionCloses` is admin-editable the same
+way as `activeFrom`/`activeTo`; `lockedWin` is written only by the exchange
+(`exchange/auction.ts`), never accepted on a create/update request.
 
 ### Playlist
 

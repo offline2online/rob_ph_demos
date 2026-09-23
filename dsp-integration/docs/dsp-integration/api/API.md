@@ -174,8 +174,8 @@ env var, with no switcher and no cookie (see *POC stand-ins* below).
 |---|---|---|
 | GET | `/admin/v1/advertiser-settings` | Currency, floor CPM, multipliers, the auction schedule (`auctionOpensHours`, `playWindowHours`, `auctionCutoffTime`), advertiser and category whitelists/blacklists, and read-only `whereTheseApply` (per DSP: adopting or own lists). |
 | PUT | `/admin/v1/advertiser-settings` | Save changes (pricing, auction schedule and lists). An entry can't be on both lists, and the play-window length can't change while future windows are bid on or booked (`validation_failed`). |
-| GET | `/admin/v1/available-inventory` | Rows: display type, playlist, slot, position, `assignedTo` (now also `buyersListId`/`buyersListName`, null unless the slot is a private auction), `supportedTargeting`, `reservePrice` (resolved), `reservePriceOverride` (this slot's own, null = inheriting) and `displayTypeReservePrice` (the display type's default, same on every row of that type), plus `dsps` (each DSP and its advertisers) for the Assigned to picker. No advertisers column. |
-| PUT | `/admin/v1/available-inventory` | Save changes — per slot, `assignedTo` (`partnerIds`, `advertisers`, `whitelistOnly`, `buyersListId`; nothing chosen = any connected DSP, an advertiser's DSP is added automatically, and `buyersListId` is mutually exclusive with `advertisers`/`whitelistOnly` — `validation_failed` if more than one is set, or if `buyersListId` names no buyers list), `supportedTargeting` (at least one of `localised`, `personalised`, `interactive`), `reservePrice` (this slot's own override — a CPM, or null to inherit) and `reservePriceDefault` (the display type's own default — a CPM, or null; must be the same on every row for that display type in one request; real inheritance, 22 Sep — always send the slot's current values, there is no "unchanged" omission). The editable fields of a slot; its label and owner are set on its display type. Admin only. |
+| GET | `/admin/v1/available-inventory` | Rows: display type, playlist, slot, position, `assignedTo` (now also `buyersListId`/`buyersListName`, null unless the slot is a private auction), `supportedTargeting`, `reservePrice` (resolved), `reservePriceOverride` (this slot's own, null = inheriting) and `displayTypeReservePrice` (the display type's default, same on every row of that type), likewise `billingUnitHours` (resolved, always a number)/`billingUnitHoursOverride`/`displayTypeBillingUnitHours` (23 Sep 2026 — platform default 24 hours when neither is set), plus `dsps` (each DSP and its advertisers) for the Assigned to picker. No advertisers column. |
+| PUT | `/admin/v1/available-inventory` | Save changes — per slot, `assignedTo` (`partnerIds`, `advertisers`, `whitelistOnly`, `buyersListId`; nothing chosen = any connected DSP, an advertiser's DSP is added automatically, and `buyersListId` is mutually exclusive with `advertisers`/`whitelistOnly` — `validation_failed` if more than one is set, or if `buyersListId` names no buyers list), `supportedTargeting` (at least one of `localised`, `personalised`, `interactive`), `reservePrice`/`reservePriceDefault` (this slot's own override and the display type's own default — a CPM, or null; real inheritance, 22 Sep — always send the slot's current values, there is no "unchanged" omission) and, the same shape, `billingUnitHours`/`billingUnitHoursDefault` (hours, minimum 1, or null; must be the same `…Default` on every row for a given display type in one request). The editable fields of a slot; its label and owner are set on its display type. Admin only. |
 | GET | `/admin/v1/booking-schedule?from=&to=` | Reached from Available Inventory. Every advertiser-owned slot across its play windows: booked (advertiser, DSP, reserve or bid, the CPM it was booked at, booked and billed revenue), available or unavailable; plus booking revenue per display type and in total. Live bookings only (never Test mode). Default: the current window and the next 13; at most 92 days. `campaignId`, `advertiserId` or `partnerId` narrow it, and `advertiserId` leaves only the positions that advertiser holds; with `campaignId` the range covers all of that campaign's bookings. Each booking says which campaign type it is, and the response also totals the bookings by campaign type. `dsps` lists the DSPs and, under each, **only the advertisers with something booked in the range**, because that is what the filter is for. Each position also carries `displayCount` (displays using its display type across the whole retail footprint), and each booking a `layers` object (`default`, `localised`, `personalised` — which of the one advertiser's three layers this purchase actually carries, ticket "Booking schedule: single-advertiser stacking tile"), a `reach` object (`matchedDisplays`, `asOf`) when `layers.localised`, `null` otherwise, and a `personalisedTriggers` object (`computerVision`, `aggregateStore`, `individual`) when `layers.personalised`, `null` otherwise (ticket "Booking schedule: personalised trigger icons") — the client's stacked tile (see REQUIREMENTS §6) is built entirely from these fields plus `pricingType`, with no separate endpoint. |
 
 ### Shared targeting variables
@@ -233,15 +233,28 @@ to any number of slots via `available-inventory`'s `assignedTo.buyersListId`.
 
 | Method | Path | Purpose |
 |---|---|---|
-| GET | `/admin/v1/buyers-lists` | Every buyers list: `id`, `name`, `description`, `invitedBuyers` (`identifierType`: `brandEntity` \| `dspSeatId` \| `other`, plus `value`), `activeFrom`/`activeTo` (ISO date-time or null = no bound). |
-| POST | `/admin/v1/buyers-lists` | Create: `name`, `description`, `invitedBuyers` (at least one), `activeFrom`, `activeTo`. `422 validation_failed` naming the field (e.g. `name`, `invitedBuyers[0].value`, `activeTo` if before `activeFrom`). |
-| PUT | `/admin/v1/buyers-lists/{id}` | Replace the same fields. `404` if unknown, `422 validation_failed` as above. |
+| GET | `/admin/v1/buyers-lists` | Every buyers list: `id`, `name`, `description`, `invitedBuyers` (`identifierType`: `brandEntity` \| `dspSeatId` \| `other`, plus `value`), `activeFrom`/`activeTo` (the delivery term; ISO date-time or null = no bound), `auctionCloses` (the auction window's bidding deadline; ISO date-time or null = not using the two-period model), `lockedWin` (null until the term's one-time auction clears; then `{cpm, partnerId, advertiserId, campaignId, pricingType, channel, lockedAt}`, read only). |
+| POST | `/admin/v1/buyers-lists` | Create: `name`, `description`, `invitedBuyers` (at least one), `activeFrom`, `activeTo`, `auctionCloses` (optional; null = not using the two-period model). `422 validation_failed` naming the field (e.g. `name`, `invitedBuyers[0].value`, `activeTo` if before `activeFrom`). `lockedWin` can't be set here — the exchange writes it, once, the first time a bid clears within `auctionCloses`. |
+| PUT | `/admin/v1/buyers-lists/{id}` | Replace the same fields (not `lockedWin`). `404` if unknown, `422 validation_failed` as above. |
 | DELETE | `/admin/v1/buyers-lists/{id}` | Delete. `409 has_dependents` naming every slot still assigned to it (a slot's own `displayTypeName — position`) — a buyers list can't be removed out from under a live position. |
 
 Non-admin sessions get `403 forbidden`. Which DSPs a deal position actually
 opens to is resolved live from a list's current `invitedBuyers` on every
 auction/bid — nothing here is cached on the slot, so editing a list here
 takes effect immediately everywhere it's attached.
+
+**The two-period model** (REQUIREMENTS §5 "Private auctions (buyers
+lists)" → "Locked rate", 23 Sep 2026): a deal with `auctionCloses` set
+still clears a real auction every play window until a bid clears at or
+before that deadline; that clear locks `lockedWin` (once — first clear
+wins) and every later play window in the delivery term (`activeFrom`/
+`activeTo`) is then booked directly at `lockedWin.cpm`, with no bid
+requests. A deal with `auctionCloses` left `null` is unaffected — it keeps
+clearing fresh every window, exactly as before this field existed. Also
+see `available-inventory`'s `billingUnitHours`/`billingUnitHoursOverride`/
+`displayTypeBillingUnitHours` (same override/default shape as
+`reservePrice`) — the granularity a CPM is quoted and charged against for
+a slot using this model, default 24 hours (one day).
 
 ### Campaign approval
 

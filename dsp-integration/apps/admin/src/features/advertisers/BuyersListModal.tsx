@@ -11,13 +11,13 @@ import { api, ApiRequestError } from '../../api/client'
 import { Icon } from '../../shared/Icon'
 import { T } from '../../theme/phTheme'
 
-type Draft = { name: string; description: string; invitedBuyers: InvitedBuyer[]; activeFrom: string | null; activeTo: string | null }
+type Draft = { name: string; description: string; invitedBuyers: InvitedBuyer[]; activeFrom: string | null; activeTo: string | null; auctionCloses: string | null }
 const blankBuyer = (): InvitedBuyer => ({ identifierType: 'brandEntity', value: '' })
-const blankDraft = (): Draft => ({ name: '', description: '', invitedBuyers: [blankBuyer()], activeFrom: null, activeTo: null })
+const blankDraft = (): Draft => ({ name: '', description: '', invitedBuyers: [blankBuyer()], activeFrom: null, activeTo: null, auctionCloses: null })
 const draftOf = (l: BuyersList): Draft => ({
   name: l.name, description: l.description,
   invitedBuyers: l.invitedBuyers.length ? l.invitedBuyers.map((b) => ({ ...b })) : [blankBuyer()],
-  activeFrom: l.activeFrom, activeTo: l.activeTo,
+  activeFrom: l.activeFrom, activeTo: l.activeTo, auctionCloses: l.auctionCloses,
 })
 
 export function BuyersListModal({ open, editing, onClose, onSaved }: {
@@ -116,15 +116,29 @@ export function BuyersListModal({ open, editing, onClose, onSaved }: {
         </div>
         {errors.invitedBuyers && <div className="mt-1" style={{ fontSize: 11.5, color: T.error }}>{errors.invitedBuyers}</div>}
       </div>
-      <div>
-        <label className="mb-1 block" style={{ fontSize: 13, color: T.muted }}>Active time window</label>
+      <div className="mb-3.5">
+        <label className="mb-1 block" style={{ fontSize: 13, color: T.muted }}>Delivery term</label>
         <DatePicker.RangePicker
           allowEmpty={[true, true]} showTime style={{ width: '100%' }}
           value={[draft.activeFrom ? dayjs(draft.activeFrom) : null, draft.activeTo ? dayjs(draft.activeTo) : null]}
           onChange={(v) => setDraft((d) => ({ ...d, activeFrom: v?.[0] ? v[0].toISOString() : null, activeTo: v?.[1] ? v[1].toISOString() : null }))}
         />
-        <div className="mt-1" style={{ fontSize: 11, color: T.micro }}>Leave either side empty for no bound.</div>
+        <div className="mt-1" style={{ fontSize: 11, color: T.micro }}>The span this deal is awarded for — leave either side empty for no bound. Outside it, the deal admits nobody.</div>
         {errors.activeTo && <div className="mt-1" style={{ fontSize: 11.5, color: T.error }}>{errors.activeTo}</div>}
+      </div>
+      <div>
+        <label className="mb-1 block" style={{ fontSize: 13, color: T.muted }}>Auction window closes</label>
+        <DatePicker
+          allowClear showTime style={{ width: '100%' }}
+          value={draft.auctionCloses ? dayjs(draft.auctionCloses) : null}
+          onChange={(v) => setDraft((d) => ({ ...d, auctionCloses: v ? v.toISOString() : null }))}
+        />
+        <div className="mt-1" style={{ fontSize: 11, color: T.micro }}>
+          {editing?.lockedWin
+            ? `Rate locked at ${editing.lockedWin.cpm} CPM on ${new Date(editing.lockedWin.lockedAt).toLocaleString()} — every play window for the rest of the delivery term books at that rate, no re-auction.`
+            : 'The deadline invited brands may submit or revise bids until. The first bid that clears by then locks the winning CPM for the whole delivery term above — no daily re-auction. Leave empty to keep clearing a fresh auction every play window, as before.'}
+        </div>
+        {errors.auctionCloses && <div className="mt-1" style={{ fontSize: 11.5, color: T.error }}>{errors.auctionCloses}</div>}
       </div>
     </Modal>
   )

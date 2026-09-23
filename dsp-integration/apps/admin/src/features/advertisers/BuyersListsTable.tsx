@@ -27,12 +27,23 @@ const NameCell = ({ data }: P) =>
   ) : null
 const BuyersCell = ({ data }: P) => (data ? <span>{data.invitedBuyers.length} buyer{data.invitedBuyers.length === 1 ? '' : 's'}</span> : null)
 const fmt = (v: string | null) => (v ? new Date(v).toLocaleString() : null)
-const WindowCell = ({ data }: P) => {
+/* The delivery term (spec "Private auctions: two-period model", 23 Sep
+   2026) — the span this deal is awarded for; was "Active window" before
+   the auction window (bidding deadline) became a separate period. */
+const TermCell = ({ data }: P) => {
   if (!data) return null
   const from = fmt(data.activeFrom)
   const to = fmt(data.activeTo)
   if (!from && !to) return <span style={{ color: T.muted }}>Always active</span>
   return <span style={{ fontSize: 12.5 }}>{from ?? 'No start'} → {to ?? 'No end'}</span>
+}
+/* The deal's own one-time bidding deadline, and — once it has cleared —
+   the rate it locked in for the rest of the delivery term above. */
+const RateCell = ({ data }: P) => {
+  if (!data) return null
+  if (data.lockedWin) return <span style={{ fontSize: 12.5, color: T.primary }}>Locked: {data.lockedWin.cpm} CPM</span>
+  if (data.auctionCloses) return <span style={{ fontSize: 12.5 }}>Bidding closes {fmt(data.auctionCloses)}</span>
+  return <span style={{ color: T.muted }}>Clears every window</span>
 }
 const ActionsCell = ({ data, context }: P) =>
   data ? (
@@ -52,7 +63,8 @@ export function BuyersListsTable({ lists, canEdit, onChanged }: { lists: BuyersL
   const columns: ColDef<BuyersList>[] = [
     { headerName: 'Buyers list', flex: 2, minWidth: 220, cellRenderer: NameCell, valueGetter: (p) => p.data?.name ?? '' },
     { headerName: 'Invited buyers', width: 150, minWidth: 130, cellRenderer: BuyersCell },
-    { headerName: 'Active window', width: 260, minWidth: 220, cellRenderer: WindowCell },
+    { headerName: 'Delivery term', width: 260, minWidth: 220, cellRenderer: TermCell },
+    { headerName: 'Rate', width: 200, minWidth: 170, cellRenderer: RateCell },
     ...(canEdit ? [{ headerName: '', width: 90, suppressSizeToFit: true, cellRenderer: ActionsCell }] : []),
   ]
   const context = {
