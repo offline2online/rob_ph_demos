@@ -117,14 +117,16 @@ jobs:
           curl -sf "$API_URL/api/admin/v1/session"; echo
           curl -s -D - -o /dev/null -H 'Origin: https://offline2online.github.io' "$API_URL/api/admin/v1/session" | tr -d '\r' | grep -i '^access-control-allow-origin: https://offline2online.github.io$'
           node --input-type=module -e "
-            const base = process.env.API_URL + '/api/admin/v1/display-types/'
+            // No trailing slash: the API routes /display-types, not /display-types/.
+            const base = process.env.API_URL + '/api/admin/v1/display-types'
             const list = await (await fetch(base)).json()
-            const id = (list.items ?? list)[0].id
-            const rec = await (await fetch(base + id + '/record')).json()
+            const first = (list.items ?? list)[0]
+            if (!first) { console.log('Unexpected display type list:', JSON.stringify(list).slice(0, 500)); process.exit(1) }
+            const rec = await (await fetch(base + '/' + first.id + '/record')).json()
             delete rec.phExtensions
-            const put = (body) => fetch(base + id + '/record', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
+            const put = (body) => fetch(base + '/' + first.id + '/record', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
             const r1 = await put({ ...rec, description: 'deploy smoke test' })
-            const back = await (await fetch(base + id + '/record')).json()
+            const back = await (await fetch(base + '/' + first.id + '/record')).json()
             const r2 = await put(rec)
             console.log('save', r1.status, '| read back', JSON.stringify(back.description), '| restore', r2.status)
             if (r1.status !== 200 || back.description !== 'deploy smoke test' || r2.status !== 200) process.exit(1)
