@@ -733,7 +733,9 @@ region, date range, status.
 - Screen and loop context: resolution, orientation, slot duration, loop
   length, share of voice (1 / `maximumCampaignsPlayedInRotation`).
 - Assumed views (VAC-d) per play window.
-- Assignment: open RTB, whitelist-only, or reserved to a named advertiser.
+- Assignment: open RTB, whitelist-only, reserved to a named advertiser, or a
+  private auction (deal) restricted to a buyers list's invited buyers (see
+  *Private auctions (buyers lists)* below).
 - **Status per play window**:
 
 | Status | Meaning |
@@ -828,6 +830,90 @@ visitor to engage with otherwise, so the **Display type** column flags the
 display types that have QR Control enabled, and on a slot whose display type
 does not, *Interactive* is greyed out in the picker and reads **"QR Control
 required to support an interactive engagement"**. The API refuses it too.
+
+### Private auctions (buyers lists) (23 Sep 2026)
+
+Today PH only exposes a floor price to the DSP: it cannot run a private
+auction where a defined set of brands is invited to bid on a position. This
+adds a third assignment mode alongside open RTB and reserved, sitting
+entirely within Available Inventory / Advertisers — Managed Displays and
+display types are unaffected, since slots are managed by the retail media
+team here, not there.
+
+**A buyers list is a reusable deal object**, created once and attached to
+any number of positions — one deal, many slots, not one deal per slot.
+It carries:
+
+- **Name and description**, so it is distinguishable in its own table (below).
+- **Invited buyers**: a list of entries, each an identifier type plus a
+  value. The identifier type is **flexible per retailer**, not hard-wired to
+  one scheme — a PH brand entity (the advertiser's name, matched
+  case-insensitively, same as the existing advertiser lists), a DSP's own
+  seat ID (matched exactly against the seat record pulled on connect), or
+  another identifier a retailer uses elsewhere. `other` is recorded on the
+  list for reference but has no automated match in this build — the DSP
+  side of that identifier scheme isn't something this POC's stand-ins model.
+- **Active time window**: inclusive `activeFrom`/`activeTo`; either or both
+  may be open-ended. Outside the window, the deal admits nobody — it does
+  not fall back to open RTB.
+
+**Explicitly not on the buyers list** — each already has its own home, and
+duplicating it per deal would let one drift from the other:
+
+- **Floor** is never set on the deal. It is inherited from the position
+  (§4, driven by the display type/slot's own reserve and floor), the same as
+  every other assignment mode. Rationale: the floor is the retailer's
+  opportunity cost: if no invited brand clears it, the retailer shows its
+  own mandatory default campaign rather than sell too cheap — a private
+  auction that clears nothing falls through exactly the way an open auction
+  with no qualifying bid already does.
+- **Auction resolution rule** (first- vs second-price) is a platform-wide
+  setting, defaulting to first-price (this build only implements
+  first-price — see §7's clearing rule) — never overridden per list.
+- **The per-brand relationship variable** stays global, a property of the
+  brand entity (§6's shared targeting variables) — never overridable per deal.
+
+**A position's Assigned to** (Available Inventory) gets a third choice
+alongside DSPs/named advertisers and the whitelist: pick an existing buyers
+list, or create one inline via **"+ Add new buyers list…"**, which opens the
+buyers-list modal and, on save, assigns the new list straight to that
+position without touching its other fields. In the picker, the **Buyers
+lists (private auction)** option group sits directly under **DSPs** and
+above **Advertisers** (failed-testing feedback, 23 Sep — it originally sat
+after Advertisers, which read as buried). An advertiser that buys through
+more than one DSP gets **one** option, not one per DSP — e.g. "Unilever
+(Google DSP, The Trade Desk)" — since two options sharing the same value
+left a multi-select able to show only one as selected (also 23 Sep failed
+testing). A buyers list is **mutually exclusive** with named advertisers and
+the whitelist — assigning one clears the other two, same "newer choice
+wins" rule already governing advertisers vs. whitelist. Underneath
+Available Inventory, a **Buyers lists** table lists every buyers list
+(name/description, invited buyer count, active window), with **Edit** and
+**Delete**; delete is refused (`has_dependents`) while any slot is still
+assigned to it. Saving the modal (create or edit) always surfaces a message
+on failure, even when the API's error carries no field-level `details` to
+attach to one input — a save that fails silently is indistinguishable from
+the option not being there at all, which is what made this ticket read as
+broken in the hosted (read-only) demo, where every write is exactly that
+kind of error (23 Sep).
+
+**Entitlement is enforced the same way blacklist/whitelist already are**
+(§6 "Advertiser lists"), at both bid intake (OpenRTB response and the API's
+`POST /v1/reservations`) and again when the auction clears: a bid from a
+seat that is not one of the deal's invited buyers, or that arrives outside
+the deal's active window, is refused `not_invited`, naming the deal. Unlike
+`reserved`, a deal position is **not** taken out of the open auction and
+booked directly — it still runs as a real auction (bid requests go out,
+first price clears among whoever qualifies), just restricted to the invited
+buyers rather than every connected DSP. Which DSPs actually receive bid
+requests for a deal position is **resolved live from the buyers list's
+current invited buyers** every time (not cached on the slot), so editing a
+list's invited buyers takes effect immediately on every position it's
+attached to, with nothing to re-save per slot. A buyers list that is deleted
+— or one whose invited buyers currently match no connected DSP's seats —
+correctly admits **nobody**, not everybody: this is the one place in the
+assignment model where an empty resolved DSP list means "restricted to
+none" rather than "unrestricted."
 
 ## 6. DSP integration — the advertiser & DSP interface
 
@@ -1357,8 +1443,9 @@ fields. The canonical definition is `app/src/model/schema.js` and
   multiZone: { enabled, zones: [{ id, name, x, y, width, height, playlistId }] },
   phExtensions: {                  // THIS PROJECT's additions
     reservePrice,                  // the display type's own reserve price default; CPM or null (real inheritance, 22 Sep — §5)
-    slots: [{ label, owner, partnerId, advertiser, listMode, storeScope, quota,
+    slots: [{ label, owner, partnerId, advertiser, listMode, buyersListId, storeScope, quota,
               reservePrice }],     // this slot's own override; CPM, or null = inherit the display type's reservePrice above (§5)
+                                    // listMode: rtb | whitelist_only | deal | null; buyersListId set only when listMode is deal (§5 "Private auctions")
     venue: { openOohVenueType, orientation, loopLengthSec }
   }
 }
@@ -1381,6 +1468,21 @@ display: { id, name, store, displayTypeId, … }   // Displays & Devices
 
 Used only for the delete check in §1: a display type with any display whose
 `displayTypeId` matches cannot be deleted.
+
+### Buyers list (this project's own record — §5 "Private auctions")
+
+```
+buyersList: {
+  id, name, description,
+  invitedBuyers: [{ identifierType, value }],  // identifierType: brandEntity | dspSeatId | other
+  activeFrom, activeTo,                        // ISO date-time or null = no bound (inclusive)
+  createdAt, updatedAt
+}
+```
+
+Independent of any one slot: a `phExtensions.slots[].buyersListId` (above)
+points at it, and any number of slots may point at the same list. Deleting
+a buyers list is refused (`has_dependents`) while a slot still points at it.
 
 ### Playlist
 

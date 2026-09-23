@@ -41,6 +41,11 @@ await Promise.all([
   '/admin/v1/advertiser-settings',
   '/admin/v1/available-inventory',
   '/admin/v1/advertisers',
+  /* Available Inventory's "Assigned to" picker and the buyers lists table
+     underneath it both read this; without it the demo 404s on every load
+     and always shows "No buyers lists yet" even when the capture ran
+     against a seed that has some (Rob, 23 Sep). */
+  '/admin/v1/buyers-lists',
   '/admin/v1/targeting-variables',
   '/admin/v1/booking-schedule',
   ...campaigns.map((c) => `/admin/v1/campaigns/${c.campaignId}/approval`),

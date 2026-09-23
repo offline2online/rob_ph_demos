@@ -3,23 +3,34 @@
    and category lists, and creative approval, all applied before a bid can
    win. Used by POST /v1/reservations and by the auction for DSP bids. */
 import type { Context } from '../context'
-import { supportedTargetingOf, targetingLabel } from '@ph-dsp/types'
+import { assignedOf, supportedTargetingOf, targetingLabel } from '@ph-dsp/types'
 import { type PositionRef, assignmentOf } from '../domain/positions'
+import { isActiveAt, isInvitedBuyer } from '../domain/buyersLists'
 import { effectiveLists, isBlocked, isOn } from '../domain/lists'
 import { effectiveFloorCpm } from '../domain/pricing'
 import type { PartnerRecord } from '../repos/PartnerRepo'
 import { blockedDomains, categoryCodes } from './openrtb'
 
-export type RefusalCode = 'not_approved' | 'below_floor' | 'advertiser_blocked' | 'category_blocked' | 'not_on_whitelist' | 'targeting_not_supported'
+export type RefusalCode = 'not_approved' | 'below_floor' | 'advertiser_blocked' | 'category_blocked' | 'not_on_whitelist' | 'not_invited' | 'targeting_not_supported'
 export interface Refusal { code: RefusalCode; reason: string }
 
 /* The blacklist always subtracts; the advertiser whitelist is what a
-   whitelist-only position uses (spec §6). */
-export function checkAdvertiser(ctx: Context, p: PositionRef, partner: PartnerRecord, name: string, domains: string[] = []): Refusal | null {
+   whitelist-only position uses (spec §6); a deal (private auction) checks
+   the buyers list's invited buyers instead — by seat name (brandEntity) or
+   seatId (dspSeatId) — and that its active window still covers now. */
+export function checkAdvertiser(ctx: Context, p: PositionRef, partner: PartnerRecord, name: string, domains: string[] = [], seatId?: string | null): Refusal | null {
   const eff = effectiveLists(partner, ctx.company.get())
   const blockedDomain = blockedDomains(partner, eff.blockList)
   if (isBlocked(name, eff) || domains.some((d) => blockedDomain.includes(d.trim().toLowerCase()))) return { code: 'advertiser_blocked', reason: `${name} is on the advertiser blacklist.` }
-  if (assignmentOf(p.def) === 'whitelist_only' && !isOn(name, eff.allowList)) return { code: 'not_on_whitelist', reason: `${name} is not on the advertiser whitelist for this whitelist-only position.` }
+  const assignment = assignmentOf(p.def)
+  if (assignment === 'whitelist_only' && !isOn(name, eff.allowList)) return { code: 'not_on_whitelist', reason: `${name} is not on the advertiser whitelist for this whitelist-only position.` }
+  if (assignment === 'deal') {
+    const listId = assignedOf(p.def).buyersListId
+    const list = listId ? ctx.buyersLists.get(listId) : null
+    if (!list || !isActiveAt(list, ctx.clock().toISOString()) || !isInvitedBuyer(list, name, seatId)) {
+      return { code: 'not_invited', reason: `${name} is not an invited buyer on this private auction${list ? ` (${list.name})` : ''}.` }
+    }
+  }
   return null
 }
 

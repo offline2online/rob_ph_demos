@@ -6,8 +6,7 @@
 import { randomUUID } from 'node:crypto'
 import type { FastifyPluginAsync } from 'fastify'
 import type { Context } from '../../context'
-import { assignmentOf, biddingClosesAt, biddingOpensAt, findPosition, heldFor, windowStartOf } from '../../domain/positions'
-import { assignedOf } from '@ph-dsp/types'
+import { assignmentOf, biddingClosesAt, biddingOpensAt, effectivePartnerIds, findPosition, heldFor, windowStartOf } from '../../domain/positions'
 import { checkAdvertiser, checkCampaign, checkFloor, checkTargeting } from '../../exchange/enforcement'
 import { handOff } from '../../exchange/handoff'
 import { HttpError, conflict, notFound, validationFailed } from '../../http/errors'
@@ -34,8 +33,8 @@ export const reservationRoutes = (ctx: Context): FastifyPluginAsync => async (ap
     if (!campaign || campaign.partnerId !== partner.id || campaign.advertiserId !== b.advertiserId) invalid.push({ field: 'campaignId', reason: 'Not one of this advertiser’s campaigns.' })
     /* A position this caller can't use (another DSP's, or held for another advertiser) is unknown to it. */
     const p = typeof b.positionId === 'string' ? findPosition(ctx, b.positionId) : null
-    const allowed = p ? assignedOf(p.def).partnerIds : []
-    const hidden = !p || (allowed.length > 0 && !allowed.includes(partner.id)) || (assignmentOf(p.def) === 'reserved' && !!seat && !heldFor(p.def, seat.name))
+    const allowed = p ? effectivePartnerIds(ctx, p.def) : []
+    const hidden = !p || (allowed !== null && !allowed.includes(partner.id)) || (assignmentOf(p.def) === 'reserved' && !!seat && !heldFor(p.def, seat.name))
     if (hidden) invalid.push({ field: 'positionId', reason: 'Unknown position.' })
     const start = typeof b.windowStart === 'string' ? new Date(b.windowStart) : null
     if (!start || Number.isNaN(start.getTime()) || windowStartOf(ctx, start).getTime() !== start.getTime()) invalid.push({ field: 'windowStart', reason: `The start of a ${ctx.company.get().playWindowHours}-hour play window (UTC).` })
@@ -60,7 +59,7 @@ export const reservationRoutes = (ctx: Context): FastifyPluginAsync => async (ap
     /* Pre-auction enforcement, in the order a bid would fail. */
     const c = campaign!
     const refusal = (await checkCampaign(ctx, c.campaignId))
-      ?? checkAdvertiser(ctx, pos, partner, seat!.name, seat!.domain ? [seat!.domain] : [])
+      ?? checkAdvertiser(ctx, pos, partner, seat!.name, seat!.domain ? [seat!.domain] : [], seat!.id)
       ?? checkTargeting(pos, c.pricingType)
       ?? checkFloor(ctx, b.bidCpm as number, c.pricingType, c.advertiserId)
     if (refusal) throw new HttpError(422, refusal.code, refusal.reason)

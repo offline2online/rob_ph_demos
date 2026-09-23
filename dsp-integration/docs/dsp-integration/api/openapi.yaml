@@ -576,6 +576,78 @@ paths:
         '401': {$ref: '#/components/responses/Unauthorised'}
         '404': {$ref: '#/components/responses/NotFound'}
 
+  /admin/v1/buyers-lists:
+    get:
+      tags: [Admin — Advertiser settings]
+      operationId: listBuyersLists
+      summary: Every buyers list (private-auction deal), for the Assigned to picker and the buyers lists table
+      security: [{adminSession: []}]
+      responses:
+        '200':
+          description: Buyers lists
+          content:
+            application/json:
+              schema: {type: object, required: [items], properties: {items: {type: array, items: {$ref: '#/components/schemas/BuyersList'}}}}
+        '401': {$ref: '#/components/responses/Unauthorised'}
+    post:
+      tags: [Admin — Advertiser settings]
+      operationId: createBuyersList
+      summary: New buyers list — the buyers list and its deal terms are one object
+      security: [{adminSession: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, description, invitedBuyers, activeFrom, activeTo]
+              properties:
+                name: {type: string}
+                description: {type: string}
+                invitedBuyers: {type: array, items: {$ref: '#/components/schemas/InvitedBuyer'}}
+                activeFrom: {type: [string, 'null'], format: date-time}
+                activeTo: {type: [string, 'null'], format: date-time}
+      responses:
+        '201': {description: Created, content: {application/json: {schema: {$ref: '#/components/schemas/BuyersList'}}}}
+        '400': {$ref: '#/components/responses/ValidationFailed'}
+        '401': {$ref: '#/components/responses/Unauthorised'}
+  /admin/v1/buyers-lists/{buyersListId}:
+    put:
+      tags: [Admin — Advertiser settings]
+      operationId: updateBuyersList
+      summary: Save changes to a buyers list's name, description, invited buyers or active window
+      security: [{adminSession: []}]
+      parameters: [{name: buyersListId, in: path, required: true, schema: {type: string}}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, description, invitedBuyers, activeFrom, activeTo]
+              properties:
+                name: {type: string}
+                description: {type: string}
+                invitedBuyers: {type: array, items: {$ref: '#/components/schemas/InvitedBuyer'}}
+                activeFrom: {type: [string, 'null'], format: date-time}
+                activeTo: {type: [string, 'null'], format: date-time}
+      responses:
+        '200': {description: Saved, content: {application/json: {schema: {$ref: '#/components/schemas/BuyersList'}}}}
+        '400': {$ref: '#/components/responses/ValidationFailed'}
+        '401': {$ref: '#/components/responses/Unauthorised'}
+        '404': {$ref: '#/components/responses/NotFound'}
+    delete:
+      tags: [Admin — Advertiser settings]
+      operationId: deleteBuyersList
+      summary: Delete; 409 while any slot is still assigned to it
+      security: [{adminSession: []}]
+      parameters: [{name: buyersListId, in: path, required: true, schema: {type: string}}]
+      responses:
+        '204': {description: Deleted}
+        '401': {$ref: '#/components/responses/Unauthorised'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/HasDependents'}
+
   /admin/v1/advertisers:
     get:
       tags: [Admin — Advertisers]
@@ -993,7 +1065,7 @@ components:
     ValidationFailed: {description: 'error.code = validation_failed; details lists each field', content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
     VariableNotPermitted: {description: 'error.code = variable_not_permitted; details names each variable', content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
     ChecksFailed: {description: 'error.code = checks_failed; details lists each failed check with its reason', content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
-    NotEligible: {description: 'error.code = not_approved | below_floor | advertiser_blocked | category_blocked | not_on_whitelist | targeting_not_supported', content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
+    NotEligible: {description: 'error.code = not_approved | below_floor | advertiser_blocked | category_blocked | not_on_whitelist | not_invited | targeting_not_supported', content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
     Conflict: {description: 'error.code = conflict (e.g. version changed, already submitted, window sold, bidding not open or closed, live not allowed)', content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
     HasDependents: {description: 'error.code = has_dependents; details lists what depends on the item', content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
 
@@ -1008,7 +1080,7 @@ components:
           properties:
             code:
               type: string
-              enum: [validation_failed, variable_not_permitted, checks_failed, not_approved, below_floor, advertiser_blocked, category_blocked, not_on_whitelist, targeting_not_supported, conflict, has_dependents, unauthorised, forbidden, not_found]
+              enum: [validation_failed, variable_not_permitted, checks_failed, not_approved, below_floor, advertiser_blocked, category_blocked, not_on_whitelist, not_invited, targeting_not_supported, conflict, has_dependents, unauthorised, forbidden, not_found]
             message: {type: string}
             details:
               type: array
@@ -1051,7 +1123,7 @@ components:
             loopLengthSec: {type: number}
             shareOfVoice: {type: number, description: 1 / maximumCampaignsPlayedInRotation}
             openOohVenueType: {type: string}
-        assignment: {type: string, enum: [rtb, whitelist_only, reserved]}
+        assignment: {type: string, enum: [rtb, whitelist_only, deal, reserved]}
         supportedTargeting:
           type: array
           description: |
@@ -1283,14 +1355,53 @@ components:
     AssignedTo:
       type: object
       description: |
-        Who may buy a position: DSPs, named advertisers, or the advertiser
-        whitelist. No DSPs and no advertisers means any connected DSP.
-      required: [partnerIds, partnerNames, advertisers, whitelistOnly]
+        Who may buy a position: DSPs, named advertisers, the advertiser
+        whitelist, or a buyers list (private auction). No DSPs and no
+        advertisers means any connected DSP. A buyers list is mutually
+        exclusive with advertisers and whitelistOnly.
+      required: [partnerIds, partnerNames, advertisers, whitelistOnly, buyersListId, buyersListName]
       properties:
         partnerIds: {type: array, items: {type: string}}
         partnerNames: {type: array, items: {type: string}, description: The same DSPs by name, for display.}
         advertisers: {type: array, items: {type: string}, description: Named advertisers it is held for.}
-        whitelistOnly: {type: boolean, description: 'Only advertisers on the whitelist may bid; never true when advertisers is non-empty.'}
+        whitelistOnly: {type: boolean, description: 'Only advertisers on the whitelist may bid; never true when advertisers is non-empty or buyersListId is set.'}
+        buyersListId: {type: [string, 'null'], description: 'A private auction restricted to this buyers list''s invited buyers; null means not a private auction.'}
+        buyersListName: {type: [string, 'null'], description: The same buyers list by name, for display.}
+    InvitedBuyer:
+      type: object
+      description: One invited buyer on a buyers list (deal).
+      required: [identifierType, value]
+      properties:
+        identifierType:
+          type: string
+          enum: [brandEntity, dspSeatId, other]
+          description: |
+            How this buyer is identified — configurable per retailer:
+            brandEntity (the advertiser's PH brand entity, matched by name),
+            dspSeatId (a DSP's own seat ID, matched exactly), or other (a
+            freeform identifier this retailer uses elsewhere — recorded but
+            not automatically matched at auction time; entitlement for that
+            entry is enforced outside this POC).
+        value: {type: string}
+    BuyersList:
+      type: object
+      description: |
+        A reusable private-auction deal (spec "Support private auctions"):
+        an invited-buyer list plus an active time window, created once and
+        attached to any number of slots' assignedTo.buyersListId. Floor,
+        auction resolution rule (first- vs second-price) and the per-brand
+        relationship variable are never set here — they come from the slot,
+        the platform, and the brand entity respectively.
+      required: [id, name, description, invitedBuyers, activeFrom, activeTo, createdAt, updatedAt]
+      properties:
+        id: {type: string}
+        name: {type: string}
+        description: {type: string}
+        invitedBuyers: {type: array, items: {$ref: '#/components/schemas/InvitedBuyer'}}
+        activeFrom: {type: [string, 'null'], format: date-time, description: 'Inclusive; null = no start bound.'}
+        activeTo: {type: [string, 'null'], format: date-time, description: 'Inclusive; null = no end bound.'}
+        createdAt: {type: string, format: date-time}
+        updatedAt: {type: string, format: date-time}
     AvailableInventoryRow:
       type: object
       required: [displayTypeId, displayTypeName, playlistName, slot, position, assignedTo, supportedTargeting, qrControl, visionAi, reservePrice, reservePriceOverride, displayTypeReservePrice]
@@ -1367,7 +1478,7 @@ components:
               slot: {type: integer, minimum: 1}
               slotLabel: {type: string}
               partnerNames: {type: array, items: {type: string}, description: 'The DSPs the slot is tied to; empty = any connected DSP.'}
-              assignment: {type: string, enum: [rtb, whitelist_only, reserved]}
+              assignment: {type: string, enum: [rtb, whitelist_only, deal, reserved]}
               displayCount:
                 type: integer
                 description: |
@@ -1687,7 +1798,14 @@ components:
                   Named advertisers the position is held for; empty means it is
                   not reserved. Their DSPs are always among partnerIds.
                 items: {type: string}
-              listMode: {type: [string, 'null'], enum: [rtb, whitelist_only, null]}
+              listMode: {type: [string, 'null'], enum: [rtb, whitelist_only, deal, null]}
+              buyersListId:
+                type: [string, 'null']
+                description: |
+                  A private auction restricted to this buyers list's
+                  invited buyers (set from Advertisers / Inventory, not the
+                  slot editor). Mutually exclusive with advertisers and
+                  whitelistOnly; listMode is deal whenever this is set.
               storeScope: {type: [string, 'null']}
               quota: {type: [integer, 'null']}
               supportedTargeting:
