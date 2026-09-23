@@ -421,8 +421,7 @@ describe('Advertisers / Inventory', () => {
     /* Only the slot that changed is sent. */
     await waitFor(() => expect(saved()).toEqual({ items: [{
       displayTypeId: 'menu_board', slot: 2, supportedTargeting: ['localised', 'personalised'],
-      assignedTo: { partnerIds: ['p_google'], advertisers: ['Nestlé'], whitelistOnly: false, buyersListId: null },
-      reservePriceDefault: null,
+      assignedTo: { partnerIds: ['p_google'], advertisers: ['Nestlé'], whitelistOnly: false },
     }] }))
   })
 
