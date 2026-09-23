@@ -28,9 +28,9 @@ import { T, phTheme } from './theme/phTheme'
    the Display Types / DSP Integration nav beside it (ticket, 21 Sep). */
 export interface RouteHandle { title: string; tip?: string; hideNav?: boolean }
 
-/* Navigation in the prototype's order: Display Types, Playlist Management,
-   DSP Integration, Advertisers / Inventory. Items are added by the package
-   that builds them.
+/* Navigation order (Rob, 24 Sep 2026): Display Types, Playlist Management,
+   Campaign Status, Advertisers / Inventory, then DSP Integration at the
+   bottom — the everyday pages first, the one-off DSP set-up last.
 
    Who sees what (spec "Who sees each section"; Rob, 20 Sep): DSP Integration
    is admin only; the rest is admin and marketing; a help desk user sees
@@ -41,12 +41,12 @@ export function navFor(flags: Flags, session: Session | undefined): NavItem[] {
   return [
     { to: '/display-types', label: 'Display Types', icon: 'dashboard_customize' },
     { to: '/playlists', label: 'Playlist Management', icon: 'playlist_play' },
-    /* Flag off: DSP Integration is hidden (decision 6). Admin users only. */
-    ...(flags.dspIntegration && admin ? [{ to: '/dsp-integration', label: 'DSP Integration', icon: 'handshake' }] : []),
-    /* Directly below DSP Integration (spec §3); marketing users read it too. */
-    ...(flags.dspIntegration ? [{ to: '/advertisers', label: 'Advertisers / Inventory', icon: 'sell' }] : []),
     /* STAND-IN for the existing Campaigns section (package 11); removed on integration. */
     ...(flags.dspIntegration ? [{ to: '/campaign-status', label: 'Campaign Status', icon: 'campaign' }] : []),
+    /* Marketing users read it too (spec §3). */
+    ...(flags.dspIntegration ? [{ to: '/advertisers', label: 'Advertisers / Inventory', icon: 'sell' }] : []),
+    /* Last in the list. Flag off: hidden (decision 6). Admin users only. */
+    ...(flags.dspIntegration && admin ? [{ to: '/dsp-integration', label: 'DSP Integration', icon: 'handshake' }] : []),
   ]
 }
 
