@@ -672,6 +672,63 @@ Each is configurable in `apps/api/src/config.ts`.
 | Booking schedule with booking revenue (Rob, 19 Sep; filed on the board) | Built | New admin endpoint `GET /admin/v1/booking-schedule?from=&to=` (contract addition) and a read-only page, **DSP Integration → Advertiser settings → Available Inventory → Booking schedule**: a revenue table per display type (booked windows, booked revenue = booked CPM × assumed views ÷ 1000, billed revenue from billing once played, with a total row), then the schedule — one row per advertiser slot, one column per play window: booked (advertiser, bookmark = reserved / gavel = won, the CPM it was booked at, booked revenue; hover for DSP, views and billed), Available, or — (can no longer be sold). Live bookings only; default the current window and the next 13; a date range of up to 92 days; no save bar. Not in the prototype: built from ph-designer patterns (SubPageHeader, SectionLabel, AG Grid with a pinned first column and horizontal scroll inside the grid, AntD RangePicker). Tests: API +3, admin +2. Browser-checked, including booked cells |
 | Bidding play-window length and auction cutoff in Advertiser settings → Pricing | Built | The Auction schedule section (Q13): Auction opens, Play-window length, Auction cutoff time; contract fields added; migration 0015 |
 
+### Back-end completion: PH Core boundaries, hardening and load (23 Sep 2026)
+
+No screen, copy or endpoint changed; the UX is signed off. What changed
+was behind it:
+
+- **Boundaries with PH Core** are documented in one place,
+  [api/PH-CORE-BOUNDARIES.md](api/PH-CORE-BOUNDARIES.md). It covers every
+  seam, its direction, the PH Core owner, and the guarantees the build
+  relies on (for example, `bookSlot` must allow at most one campaign per
+  slot and window). It also says which tables are stand-ins dropped on
+  integration, what the edge and gateway must provide, and what running
+  more than one instance needs.
+- **A security and performance review**, written up in
+  [api/SECURITY-PERFORMANCE.md](api/SECURITY-PERFORMANCE.md). Every
+  finding was reproduced first, and each has a test. The findings:
+  - A window could be sold twice by two concurrent clearings. Migration
+    0021 makes one live winner per window a database guarantee.
+  - A disconnected DSP could still create campaigns.
+  - A missing `cur` was accepted as the exchange currency. OpenRTB says it
+    is USD.
+  - There was no rate limiting. Forecast and content-package sizes were
+    unbounded, and so were bid responses and creative downloads.
+  - Client errors were reported as 500s, there were no security headers,
+    and a truncated GCM tag was accepted.
+  - The auction fanned out serially.
+- **Throughput.** Reads no longer write, settings and display types are
+  served from snapshots, statements are cached, indexes were added
+  (migration 0020), per-window work is hoisted, and SQLite runs in WAL
+  mode. On a 1,008-position estate:
+
+  | Endpoint | Before | After |
+  |---|---|---|
+  | `GET /v1/inventory/{id}` | 27 req/s | 1,205 req/s |
+  | A year of availability | 11 req/s | 608 req/s |
+  | Auction, 80 ms DSP round trip | 170.6 s | 5.3 s |
+
+  `npm run bench` reproduces these (`apps/api/bench/load.ts`).
+- **The §9 reservations are placed.**
+  - Canonical event schema v1, with a validator, in
+    `packages/types/src/analyticsEvent.ts`.
+  - Instance-identity columns in migration 0022: nullable, unused, and
+    never returned.
+  - The agent-to-agent interface is recorded as a decision only.
+- **Tests.** API 213 → 239, all passing:
+  - `hardening.test.ts`
+  - `partner-api-hardening.test.ts`
+  - `analytics-reservation.test.ts`
+  - one fixture in `handoff-billing.test.ts` gave three winners the same
+    window, which is now impossible, so each case now uses its own window.
+- **Still open**, recorded in SECURITY-PERFORMANCE.md → "Deliberately
+  left":
+  - the admin session stand-in must not be exposed;
+  - the rate limiter moves to the gateway once there is more than one
+    instance;
+  - uploads are still buffered in memory, bounded per partner;
+  - the admin screens' N+1 queries.
+
 ## 13. Prototype comparison (per screen)
 
 Filled in as each package finishes. Differences are removed, not justified.

@@ -12,7 +12,8 @@
     "test": "vitest run",
     "typecheck": "tsc -p tsconfig.json",
     "auction:run": "tsx src/exchange/cli.ts",
-    "billing:print": "tsx src/exchange/billingCli.ts"
+    "billing:print": "tsx src/exchange/billingCli.ts",
+    "bench": "tsx bench/load.ts"
   },
   "dependencies": {
     "@fastify/multipart": "^9.4.0",

@@ -83,7 +83,7 @@ export function createContext(opts: { config?: Config; db?: Db; flags?: Flags; s
     buyersLists: sqliteBuyersListRepo(db),
     dsp: dspClients(config.dsp, opts.dspFetch),
     fetch: opts.dspFetch ?? ((url, init) => fetch(url, init)),
-    bidder: httpBidder(opts.dspFetch ?? ((url, init) => fetch(url, init)), { timeoutMs: config.bidderTimeoutMs, qps: config.bidderQps }),
+    bidder: httpBidder(opts.dspFetch ?? ((url, init) => fetch(url, init)), { timeoutMs: config.bidderTimeoutMs, qps: config.bidderQps, maxResponseBytes: config.maxBidResponseBytes }),
     audience: sqliteAudienceSource(db),
     reach: pocReachCountSource(clock),
     reservations: sqliteReservationRepo(db),

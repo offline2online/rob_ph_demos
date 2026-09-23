@@ -1,5 +1,5 @@
 /* Reservations, bids and their outcomes, per position and play window. */
-import type { Db } from '../db/db'
+import { type Db, prepared } from '../db/db'
 
 export type ReservationStatus = 'pending' | 'won' | 'lost' | 'reserved' | 'rejected'
 export interface ReservationRecord {
@@ -46,14 +46,14 @@ export interface ReservationRepo {
 
 export function sqliteReservationRepo(db: Db): ReservationRepo {
   const get = (id: string) => {
-    const r = db.prepare('SELECT * FROM reservations WHERE id = ?').get(id) as Row | undefined
+    const r = prepared(db, 'SELECT * FROM reservations WHERE id = ?').get(id) as Row | undefined
     return r ? toRecord(r) : null
   }
   return {
     get,
     insert(r) {
       const now = new Date().toISOString()
-      db.prepare(
+      prepared(db,
         `INSERT INTO reservations (id, partner_id, advertiser_id, campaign_id, position_id, window_start, type, channel, bid_cpm, currency,
            status, clearing_cpm, reason, test_mode, pricing_type, handed_off_at, created_at, updated_at)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -65,16 +65,16 @@ export function sqliteReservationRepo(db: Db): ReservationRepo {
       const cur = get(id)
       if (!cur) return null
       const n = { ...cur, ...patch }
-      db.prepare('UPDATE reservations SET status = ?, clearing_cpm = ?, reason = ?, handed_off_at = ?, updated_at = ? WHERE id = ?')
+      prepared(db, 'UPDATE reservations SET status = ?, clearing_cpm = ?, reason = ?, handed_off_at = ?, updated_at = ? WHERE id = ?')
         .run(n.status, n.clearingCpm, n.reason, n.handedOffAt, new Date().toISOString(), id)
       return get(id)
     },
     forWindow: (positionId, windowStart) =>
-      (db.prepare('SELECT * FROM reservations WHERE position_id = ? AND window_start = ? ORDER BY created_at, id').all(positionId, windowStart) as unknown as Row[]).map(toRecord),
+      (prepared(db, 'SELECT * FROM reservations WHERE position_id = ? AND window_start = ? ORDER BY created_at, id').all(positionId, windowStart) as unknown as Row[]).map(toRecord),
     inRange: (positionId, from, to) =>
-      (db.prepare('SELECT * FROM reservations WHERE position_id = ? AND window_start >= ? AND window_start < ? ORDER BY window_start').all(positionId, from, to) as unknown as Row[]).map(toRecord),
+      (prepared(db, 'SELECT * FROM reservations WHERE position_id = ? AND window_start >= ? AND window_start < ? ORDER BY window_start').all(positionId, from, to) as unknown as Row[]).map(toRecord),
     byStatus(status, from = '0000', to = '9999') {
-      const rows = db.prepare(`SELECT * FROM reservations WHERE status IN (${status.map(() => '?').join(', ')}) AND window_start >= ? AND window_start < ? ORDER BY window_start, id`)
+      const rows = prepared(db, `SELECT * FROM reservations WHERE status IN (${status.map(() => '?').join(', ')}) AND window_start >= ? AND window_start < ? ORDER BY window_start, id`)
         .all(...status, from, to) as unknown as Row[]
       return rows.map(toRecord)
     },

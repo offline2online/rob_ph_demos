@@ -9,8 +9,20 @@ import { runBilling } from './billing'
 
 export function startAuctionScheduler(ctx: Context, log: (msg: string) => void, everyMs = 60_000) {
   const cleared = new Set<string>()
+  /* A large estate's auction can outlast the interval; never start a second
+     tick while one is running. (Across processes, migration 0021's unique
+     index is what stops two clearings selling a window twice.) */
+  let running = false
   const tick = async () => {
-    if (!ctx.flags.dspIntegration) return
+    if (!ctx.flags.dspIntegration || running) return
+    running = true
+    try {
+      await tickOnce()
+    } finally {
+      running = false
+    }
+  }
+  const tickOnce = async () => {
     const billed = runBilling(ctx)
     if (billed.length) log(`Billed ${billed.length} ended window${billed.length === 1 ? '' : 's'}.`)
     /* The current and the next window: whichever reached its cutoff within the

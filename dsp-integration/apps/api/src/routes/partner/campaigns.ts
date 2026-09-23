@@ -7,7 +7,8 @@
 import { randomUUID } from 'node:crypto'
 import { ApprovalError } from '@ph-dsp/campaign-approval/server'
 import { advertiserSlug } from '@ph-dsp/types'
-import type { FastifyPluginAsync } from 'fastify'
+import type { FastifyPluginAsync, FastifyReply, FastifyRequest } from 'fastify'
+import { requireConnected } from '../../auth/partnerAuth'
 import type { Context } from '../../context'
 import { type Check, failed, failureDetails, fileChecks } from '../../domain/assetChecks'
 import { validateBrief } from '../../domain/campaignBrief'
@@ -46,10 +47,13 @@ export const campaignRoutes = (ctx: Context): FastifyPluginAsync => async (app) 
   const targetingOf = (targeting: unknown) => (targeting ?? { default: { pricingType: 'default' } }) as StoredTargeting
 
   app.post<{ Body: CreateBody }>('/campaigns', async (req, reply) => {
+    requireConnected(req.partner)
     const b = req.body ?? {}
     const invalid: Detail[] = []
+    const lim = ctx.config.campaignLimits
     if (typeof b.advertiserId !== 'string' || !partnerAdvertiser(req.partner, b.advertiserId)) invalid.push({ field: 'advertiserId', reason: `Not an advertiser on ${req.partner.name}.` })
     if (typeof b.name !== 'string' || !b.name.trim()) invalid.push({ field: 'name', reason: 'Required.' })
+    else if (b.name.trim().length > lim.nameLength) invalid.push({ field: 'name', reason: `At most ${lim.nameLength} characters.` })
     if (b.displayTypeId !== undefined && (typeof b.displayTypeId !== 'string' || !ctx.displayTypes.get(b.displayTypeId))) invalid.push({ field: 'displayTypeId', reason: 'Unknown display type.' })
     /* default is mandatory on every submission (decision, 22 Sep,
        superseding the earlier same-day "baseline optional" decision —
@@ -67,6 +71,7 @@ export const campaignRoutes = (ctx: Context): FastifyPluginAsync => async (app) 
     invalid.push(...brief.errors)
     const targeted = b.targeted ?? []
     if (!Array.isArray(targeted)) invalid.push({ field: 'targeted', reason: 'Must be a list.' })
+    else if (targeted.length > lim.targetedVersions) throw validationFailed([...invalid, { field: 'targeted', reason: `At most ${lim.targetedVersions} targeted versions.` }])
     const ids = new Set<string>()
     const notPermitted = new Map<string, { variable?: string; reason: string }>()
     const ruleErrors: Detail[] = []
@@ -79,7 +84,8 @@ export const campaignRoutes = (ctx: Context): FastifyPluginAsync => async (app) 
         else ids.add(t.id)
         if (!Number.isInteger(t?.priority)) invalid.push({ field: f('priority'), reason: 'An integer.' })
         if (!PRICING_TYPES.includes(t?.pricingType as PricingType)) invalid.push({ field: f('pricingType'), reason: `One of ${PRICING_TYPES.join(', ')}.` })
-        const r = validateRules(t?.rules, f('rules'), req.partner, access, ctx.config.maxValuesPerCondition)
+        if (typeof t?.id === 'string' && t.id.length > lim.nameLength) invalid.push({ field: f('id'), reason: `At most ${lim.nameLength} characters.` })
+        const r = validateRules(t?.rules, f('rules'), req.partner, access, ctx.config.maxValuesPerCondition, lim)
         ruleErrors.push(...(r.invalid as Detail[]))
         r.notPermitted.forEach((d) => notPermitted.set(d.variable as string, d))
       })
@@ -102,8 +108,29 @@ export const campaignRoutes = (ctx: Context): FastifyPluginAsync => async (app) 
     return reply.status(201).send(statusView(await ctx.approvals.view(c.campaignId)))
   })
 
+  /* Uploads in flight per partner. Each is buffered (up to the asset size
+     limit) while its checks run, so without a cap one partner opening many
+     uploads at once could exhaust the server's memory. */
+  const uploading = new Map<string, number>()
   app.post<{ Params: { id: string } }>('/campaigns/:id/assets', async (req, reply) => {
+    /* Ownership first: another partner's campaign is 404 whatever state the caller is in. */
     const c = own(req.partner, req.params.id)
+    requireConnected(req.partner)
+    const inFlight = uploading.get(req.partner.id) ?? 0
+    if (inFlight >= ctx.config.maxConcurrentUploadsPerPartner) {
+      reply.header('Retry-After', '1')
+      throw new HttpError(429, 'rate_limited', `At most ${ctx.config.maxConcurrentUploadsPerPartner} uploads at once; wait for one to finish.`)
+    }
+    uploading.set(req.partner.id, inFlight + 1)
+    try {
+      return await upload(req, reply, c)
+    } finally {
+      const n = (uploading.get(req.partner.id) ?? 1) - 1
+      if (n > 0) uploading.set(req.partner.id, n)
+      else uploading.delete(req.partner.id)
+    }
+  })
+  const upload = async (req: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply, c: ReturnType<typeof own>) => {
     if (!req.isMultipart()) throw validationFailed([{ field: 'file', reason: 'Send multipart/form-data with version and file.' }])
     const limit = Math.max(ctx.config.assetLimits.maxImageBytes, ctx.config.assetLimits.maxVideoBytes)
     let version: string | undefined
@@ -145,10 +172,11 @@ export const campaignRoutes = (ctx: Context): FastifyPluginAsync => async (app) 
       throw approvalError(e)
     })
     return reply.status(201).send({ assetId: asset.id, checks })
-  })
+  }
 
   app.post<{ Params: { id: string } }>('/campaigns/:id/submit', async (req) => {
     const c = own(req.partner, req.params.id)
+    requireConnected(req.partner)
     const current = await ctx.approvals.view(c.campaignId)
     if (current.status === 'awaiting_approval' || current.status === 'approved') throw conflict(`The campaign is already ${current.status === 'approved' ? 'approved' : 'awaiting approval'}.`)
     if (current.status === 'rejected') throw conflict('The campaign was rejected. Upload a new version before submitting again.')

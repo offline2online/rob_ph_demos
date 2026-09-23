@@ -17,6 +17,11 @@ folder's history is on the tag `archive/display-types-dsp-integration`.
 - **Plan and progress:** [docs/dsp-integration/BUILD-PLAN.md](docs/dsp-integration/BUILD-PLAN.md)
 - **API contract:** [openapi.yaml](docs/dsp-integration/api/openapi.yaml) and
   [API.md](docs/dsp-integration/api/API.md)
+- **Boundaries with PH Core:** [PH-CORE-BOUNDARIES.md](docs/dsp-integration/api/PH-CORE-BOUNDARIES.md)
+  — every seam this build needs from the existing platform, what each must
+  guarantee, and what engineering replaces on integration
+- **Security and performance:** [SECURITY-PERFORMANCE.md](docs/dsp-integration/api/SECURITY-PERFORMANCE.md)
+  — the 23 Sep 2026 review: findings, fixes, limits and measured throughput
 - **UI specification:** `prototype-reference/` (read-only). The look comes from
   the design skill in `.claude/skills/ph-designer/`.
 
@@ -136,9 +141,11 @@ nothing here can even read it without the key.
 
 | Path | What it is |
 |---|---|
-| `packages/types/` | Shared TypeScript types generated from `openapi.yaml` (`npm run gen:types`), plus shared catalogues: providers, targeting variables, slot owners |
+| `packages/types/` | Shared TypeScript types generated from `openapi.yaml` (`npm run gen:types`), plus shared catalogues: providers, targeting variables, slot owners, and the reserved §9 canonical analytics event schema v1 (`analyticsEvent.ts` — nothing produces events yet) |
 | `apps/api/` | Node + Fastify + SQLite (`node:sqlite`). All paths are served under `/api`. |
-| `apps/api/src/db/migrations/` | Versioned, reversible SQL migrations. `0001` is the stand-in for the existing platform's records; `0002`+ are this build's additive changes. |
+| `apps/api/src/db/migrations/` | Versioned, reversible SQL migrations. `0001` is the stand-in for the existing platform's records; `0002`+ are this build's additive changes. `0020` adds hot-path indexes, `0021` makes "one live winner per position and window" a database guarantee, `0022` reserves the §9.3 instance identity (unused) |
+| `apps/api/src/http/rateLimit.ts` | The Partner API's per-partner token bucket (429 `rate_limited`) |
+| `apps/api/bench/load.ts` | `npm run bench` — load benchmark for the Partner API and the auction, at demo scale or a synthetic large estate (see SECURITY-PERFORMANCE.md) |
 | `apps/api/src/platform/` | Stand-ins for the existing platform: `DisplayTypeSource`, `PlaylistSource`, `DisplaySource`, `StoreSource`, `CampaignSource` (including slot bookings for the hand-off), `PlaybackSource`, `AssetStore`, `AudienceSource` |
 | `apps/api/src/repos/` | This build's own records: partners (credentials encrypted), company advertiser settings, variable access, exchange, buyers lists (private-auction deals) |
 | `apps/api/src/seed/` | Seed data, taken from the prototype's `model/data.js` (the minimal base the tests count), plus the sample bookings (`bookings.ts`, also `npm run db:bookings`) and the **demo estate** (`demo.ts`, also `npm run db:demo`): four advertiser slots on Landscape and three on Portrait, twelve stores, three DSPs with a dozen advertisers, campaigns in every approval state and bookings in every layer on every position. A fresh database gets it by default; `rm data/poc.sqlite` (or `npm run db:demo`) to see it on an existing one |
@@ -192,7 +199,15 @@ npm test
   - The Partner API and the new admin endpoints return 404.
 - The Partner API (`/api/v1`) takes one static bearer token per seeded
   partner: `poc-token-google-dv360` or `poc-token-amazon-dsp` by default, or
-  set your own with `PARTNER_TOKENS`.
+  set your own with `PARTNER_TOKENS`. Those defaults are public, so with
+  `NODE_ENV=production` the API refuses to start unless `PARTNER_TOKENS` is
+  set to tokens of your own. Each partner may make 50 requests/s (bursts of
+  100; `PARTNER_RATE_PER_SECOND`, `PARTNER_RATE_BURST`), then gets
+  `429 rate_limited`.
+- `npm run bench` measures the Partner API and the auction under load
+  (`-- --scale=250 --bidder-ms=80` for a large estate with realistic DSP
+  latency); results and what they mean are in
+  [SECURITY-PERFORMANCE.md](docs/dsp-integration/api/SECURITY-PERFORMANCE.md).
 - DSP connections: Google DSP (DV360), Amazon Ads DSP and The Trade Desk
   each have a real-shaped client (`apps/api/src/dsp/`) pointed at the mock
   DSP service. Amazon is seeded to reject its refresh token; accept it on the

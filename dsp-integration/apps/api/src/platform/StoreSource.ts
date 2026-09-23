@@ -2,7 +2,7 @@
    primary Personalisation Hub platform; this build only reads them: unique
    store IDs, names and regions. Engineering swaps in the platform's store
    service. */
-import type { Db } from '../db/db'
+import { type Db, prepared } from '../db/db'
 
 export interface StoreRecord { id: string; name: string; region: string | null }
 
@@ -12,6 +12,6 @@ export interface StoreSource {
 }
 
 export const sqliteStoreSource = (db: Db): StoreSource => ({
-  list: () => db.prepare('SELECT id, name, region FROM stores ORDER BY name').all() as unknown as StoreRecord[],
-  get: (id) => (db.prepare('SELECT id, name, region FROM stores WHERE id = ?').get(id) as unknown as StoreRecord | undefined) ?? null,
+  list: () => prepared(db, 'SELECT id, name, region FROM stores ORDER BY name').all() as unknown as StoreRecord[],
+  get: (id) => (prepared(db, 'SELECT id, name, region FROM stores WHERE id = ?').get(id) as unknown as StoreRecord | undefined) ?? null,
 })

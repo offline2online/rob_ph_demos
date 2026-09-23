@@ -2173,15 +2173,20 @@ playback analytics.**
 
 - **Versioned canonical playback/analytics event schema**, S3-partitioned,
   with a `schemaVersion`, `source` and `timestamp` on every event and
-  optional/nullable CV fields reserved from day one. *(spec only)*
+  optional/nullable CV fields reserved from day one. *(spec only; the v1
+  shape and a validator are reserved in `packages/types/src/analyticsEvent.ts`
+  — nothing produces events yet)*
 - **Computer vision as a measurement source**: opportunity-to-see, dwell,
   attention seconds and anonymised age band/gender populate the schema's
   reserved `cv` fields, each with a `confidence` value, extending
-  proof-of-play toward proof-of-audience. *(spec only)*
+  proof-of-play toward proof-of-audience. *(spec only; the `cv` fields are
+  reserved on the v1 event shape)*
 - **Source-instance identifier** (`platformInstance: { instanceId, domain
   }`), reserved on the canonical event schema and on booking/reservation
   records, anchored to the stable domain and never the `sellers.json`
-  seller ID. *(spec only)*
+  seller ID. *(spec only; reserved as nullable, unused columns —
+  `exchange.platform_instance_id`, `reservations.source_instance_id`,
+  migration 0022 — and `sourceInstanceId` on the v1 event)*
 - **Agent-to-agent platform interface**: the inter-platform integration
   defined as an agent-consumable (MCP-layer) surface, first-class and
   separate from the tier-2 PH-native API. *(spec only)*

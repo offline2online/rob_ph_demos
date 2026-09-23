@@ -21,10 +21,21 @@ export interface TargetingResult {
 
 const isObj = (x: unknown): x is Record<string, unknown> => !!x && typeof x === 'object' && !Array.isArray(x)
 
-export function validateRules(rules: unknown, at: string, partner: PartnerRecord, access: Record<string, Access>, maxValues: number): TargetingResult {
+/* Shape limits (Config.campaignLimits; security review, 23 Sep 2026). A
+   rule set is stored with the campaign and parsed again on every
+   getCampaign — the auction and the hand-off read it per bid — so its size
+   is bounded here, before it is stored. Undefined means "no limit", which
+   only the tests of the Targeting-tab shape itself rely on. */
+export interface RuleLimits { groupsPerRules: number; conditionsPerGroup: number; valueLength: number }
+
+export function validateRules(rules: unknown, at: string, partner: PartnerRecord, access: Record<string, Access>, maxValues: number, limits?: RuleLimits): TargetingResult {
   const invalid: Detail[] = []
   const notPermitted = new Map<string, Detail>()
   if (!Array.isArray(rules)) return { invalid: [{ field: at, reason: 'Must be a list of AND groups.' }], notPermitted: [] }
+  /* Refuse an oversized rule set whole, before walking it. */
+  if (limits && rules.length > limits.groupsPerRules) return { invalid: [{ field: at, reason: `At most ${limits.groupsPerRules} AND groups.` }], notPermitted: [] }
+  const tooLong = limits && rules.findIndex((g) => Array.isArray(g) && g.length > limits.conditionsPerGroup)
+  if (limits && tooLong !== undefined && tooLong >= 0) return { invalid: [{ field: `${at}[${tooLong}]`, reason: `At most ${limits.conditionsPerGroup} conditions per AND group.` }], notPermitted: [] }
   const allowed = new Set(permittedFor(partner, access).map((v) => v.key))
   rules.forEach((group, g) => {
     const gf = `${at}[${g}]`
@@ -45,6 +56,7 @@ export function validateRules(rules: unknown, at: string, partner: PartnerRecord
       const values = c.values
       if (!Array.isArray(values) || !values.length || values.some((v) => typeof v !== 'string' || !v.trim())) invalid.push({ field: `${f}.values`, reason: 'A non-empty list of values.' })
       else if (values.length > maxValues) invalid.push({ field: `${f}.values`, reason: `At most ${maxValues} values per condition.` })
+      else if (limits && values.some((v) => (v as string).length > limits.valueLength)) invalid.push({ field: `${f}.values`, reason: `Each value at most ${limits.valueLength} characters.` })
     })
   })
   return { invalid, notPermitted: [...notPermitted.values()] }

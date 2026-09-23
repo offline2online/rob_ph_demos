@@ -12,6 +12,7 @@ import { handOff } from '../../exchange/handoff'
 import { HttpError, conflict, notFound, validationFailed } from '../../http/errors'
 import { type ReservationRecord, TAKEN } from '../../repos/ReservationRepo'
 import { partnerAdvertiser } from './campaigns'
+import { isUniqueViolation } from '../../db/db'
 
 interface Body { positionId?: unknown; windowStart?: unknown; campaignId?: unknown; advertiserId?: unknown; type?: unknown; bidCpm?: unknown }
 
@@ -66,13 +67,21 @@ export const reservationRoutes = (ctx: Context): FastifyPluginAsync => async (ap
 
     const company = ctx.company.get()
     const reserved = b.type === 'reserve'
-    const r = ctx.reservations.insert({
+    let r: ReservationRecord
+    try {
+      r = ctx.reservations.insert({
       id: `res_${randomUUID().slice(0, 12)}`, partnerId: partner.id, advertiserId: c.advertiserId ?? null, campaignId: c.campaignId, positionId: pos.positionId, windowStart,
       type: b.type as 'reserve' | 'bid', channel: 'api', bidCpm: b.bidCpm as number, currency: company.currency,
       /* A reservation is booked at its agreed price (Q11); a bid waits for the auction. */
       status: reserved ? 'reserved' : 'pending', clearingCpm: reserved ? (b.bidCpm as number) : null, reason: null,
       testMode: !live, pricingType: c.pricingType ?? null, handedOffAt: null,
-    })
+      })
+    } catch (e) {
+      /* Two reservations for one window racing past the check above: the
+         database (migration 0021) lets exactly one through. */
+      if (isUniqueViolation(e)) throw conflict('That window is already sold.')
+      throw e
+    }
     /* A reservation is booked now, so it is handed off now. */
     return reply.status(201).send(reservationView(reserved ? await handOff(ctx, r) : r))
   })

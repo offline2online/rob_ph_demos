@@ -141,11 +141,30 @@ export function windowsBetween(ctx: Context, from: string, to: string): Date[] |
 
 export type WindowStatus = 'available' | 'reserved' | 'sold' | 'unavailable'
 
-export function windowStatus(ctx: Context, p: PositionRef, c: Caller, start: Date): WindowStatus {
+/* What windowStatus needs that doesn't change from one window to the next.
+   Availability over a year asks about 366 windows of the same position;
+   working these out once per request instead of once per window is what
+   keeps that endpoint (and the forecast) flat as the range grows. `taken`
+   is the set of window starts already won or reserved (Test-mode wins
+   excluded), read with ONE ranged query instead of one per window. */
+export interface WindowFacts { next: number; hasDisplays: boolean; taken?: Set<string> }
+export function windowFacts(ctx: Context, p: PositionRef, starts?: Date[]): WindowFacts {
+  const facts: WindowFacts = { next: nextWindow(ctx).getTime(), hasDisplays: ctx.displays.listByDisplayType(p.displayType.id).length > 0 }
+  if (starts?.length) {
+    const from = starts[0].toISOString()
+    const to = new Date(starts[starts.length - 1].getTime() + 1).toISOString()
+    facts.taken = new Set(ctx.reservations.inRange(p.positionId, from, to).filter((r) => !r.testMode && TAKEN.includes(r.status)).map((r) => r.windowStart))
+  }
+  return facts
+}
+
+export function windowStatus(ctx: Context, p: PositionRef, c: Caller, start: Date, f: WindowFacts = windowFacts(ctx, p)): WindowStatus {
+  const iso = start.toISOString()
   /* A Test-mode win never takes the window (spec §7: no real spend). */
-  if (ctx.reservations.forWindow(p.positionId, start.toISOString()).some((r) => !r.testMode && TAKEN.includes(r.status))) return 'sold'
-  if (start.getTime() < nextWindow(ctx).getTime()) return 'unavailable'
-  if (!ctx.displays.listByDisplayType(p.displayType.id).length) return 'unavailable'
+  const sold = f.taken ? f.taken.has(iso) : ctx.reservations.forWindow(p.positionId, iso).some((r) => !r.testMode && TAKEN.includes(r.status))
+  if (sold) return 'sold'
+  if (start.getTime() < f.next) return 'unavailable'
+  if (!f.hasDisplays) return 'unavailable'
   /* Held for a named advertiser: available only to that advertiser. */
   if (assignmentOf(p.def) === 'reserved' && !c.advertiser) return 'reserved'
   return 'available'

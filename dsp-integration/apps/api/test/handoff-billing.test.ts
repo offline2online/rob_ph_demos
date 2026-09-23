@@ -94,14 +94,17 @@ describe('hand-off to the existing campaign system', () => {
 
   it('refuses a campaign that is no longer approved, or whose creative doesn’t fit the display type', async () => {
     const { ctx, app, activate } = await setup()
-    const draft = await handOff(ctx, ctx.reservations.insert(won({ campaignId: 'c_api_swisse_kids' })))
+    /* One live winner per position and window (migration 0021): each case
+       gets its own window rather than stacking three winners on one. */
+    const day = (n: number) => new Date(W1.getTime() + n * 86_400_000).toISOString()
+    const draft = await handOff(ctx, ctx.reservations.insert(won({ campaignId: 'c_api_swisse_kids', windowStart: day(2) })))
     expect(draft).toMatchObject({ handedOffAt: null, reason: 'Not handed off: the campaign is not approved.' })
     await app.inject({ method: 'POST', url: '/api/admin/v1/campaigns/c_api_swisse/approve', payload: { assetVersion: 'v1' } })
-    const inactive = await handOff(ctx, ctx.reservations.insert(won({})))
+    const inactive = await handOff(ctx, ctx.reservations.insert(won({ windowStart: day(3) })))
     expect(inactive.reason).toBe('Not handed off: the campaign is approved but not activated.')
     await activate('c_api_swisse')
     /* Swisse's approved creative is 1080×1920 portrait; the Menu Board is 5760×1080. */
-    const portrait = await handOff(ctx, ctx.reservations.insert(won({})))
+    const portrait = await handOff(ctx, ctx.reservations.insert(won({ windowStart: day(4) })))
     expect(portrait.handedOffAt).toBeNull()
     expect(portrait.reason).toMatch(/^Not handed off: the creative doesn’t fit Menu Board — Long Format: /)
     expect(ctx.campaigns.bookings('c_api_swisse')).toEqual([])
