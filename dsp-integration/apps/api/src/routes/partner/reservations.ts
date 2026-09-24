@@ -9,9 +9,11 @@ import type { Context } from '../../context'
 import { assignmentOf, biddingClosesAt, biddingOpensAt, effectivePartnerIds, findPosition, heldFor, windowStartOf } from '../../domain/positions'
 import { checkAdvertiser, checkCampaign, checkFloor, checkTargeting } from '../../exchange/enforcement'
 import { handOff } from '../../exchange/handoff'
+import { auctionClaimed } from '../../exchange/scheduler'
 import { HttpError, conflict, notFound, validationFailed } from '../../http/errors'
 import { type ReservationRecord, TAKEN } from '../../repos/ReservationRepo'
 import { partnerAdvertiser } from './campaigns'
+import { isUniqueViolation } from '../../db/db'
 
 interface Body { positionId?: unknown; windowStart?: unknown; campaignId?: unknown; advertiserId?: unknown; type?: unknown; bidCpm?: unknown }
 
@@ -29,6 +31,9 @@ export const reservationRoutes = (ctx: Context): FastifyPluginAsync => async (ap
     if (b.type !== 'reserve' && b.type !== 'bid') invalid.push({ field: 'type', reason: 'reserve or bid.' })
     /* The bid, or the reservation price agreed through the DSP (Q11). */
     if (!(typeof b.bidCpm === 'number' && Number.isFinite(b.bidCpm) && b.bidCpm > 0)) invalid.push({ field: 'bidCpm', reason: b.type === 'reserve' ? 'The agreed reservation price (CPM) is required.' : 'A CPM greater than 0 is required to bid.' })
+    /* The same ceiling a DSP's bid gets (auction.ts): a price no real
+       campaign pays must not win a window and be billed. */
+    else if (b.bidCpm > ctx.config.maxBidCpm) invalid.push({ field: 'bidCpm', reason: `At most ${ctx.config.maxBidCpm} CPM.` })
     const campaign = typeof b.campaignId === 'string' ? ctx.campaigns.getCampaign(b.campaignId) : null
     if (!campaign || campaign.partnerId !== partner.id || campaign.advertiserId !== b.advertiserId) invalid.push({ field: 'campaignId', reason: 'Not one of this advertiser’s campaigns.' })
     /* A position this caller can't use (another DSP's, or held for another advertiser) is unknown to it. */
@@ -44,9 +49,9 @@ export const reservationRoutes = (ctx: Context): FastifyPluginAsync => async (ap
     const windowStart = start!.toISOString()
     const now = ctx.clock().getTime()
     if (now < biddingOpensAt(ctx, start!).getTime()) throw conflict(`Bidding for that window opens at ${biddingOpensAt(ctx, start!).toISOString()}.`)
-    if (now >= biddingClosesAt(ctx, start!).getTime()) throw conflict(`Bidding for that window closed at ${biddingClosesAt(ctx, start!).toISOString()}, when its auction ran.`)
+    if (now >= biddingClosesAt(ctx, start!).getTime() || auctionClaimed(ctx, windowStart)) throw conflict(`Bidding for that window closed at ${biddingClosesAt(ctx, start!).toISOString()}, when its auction ran.`)
     if (partner.status !== 'connected') throw conflict(`${partner.name} is not connected.`)
-    if (!ctx.displays.listByDisplayType(pos.displayType.id).length) throw conflict('The position has no displays in that window.')
+    if (!ctx.displays.summaryByDisplayType(pos.displayType.id).displays) throw conflict('The position has no displays in that window.')
     const assignment = assignmentOf(pos.def)
     if (b.type === 'reserve' && assignment !== 'reserved') throw conflict('Only a position held for this advertiser can be reserved; bid for it instead.')
     if (b.type === 'bid' && assignment === 'reserved') throw conflict('This position is held for this advertiser: reserve it instead of bidding.')
@@ -66,13 +71,25 @@ export const reservationRoutes = (ctx: Context): FastifyPluginAsync => async (ap
 
     const company = ctx.company.get()
     const reserved = b.type === 'reserve'
-    const r = ctx.reservations.insert({
+    let r: ReservationRecord
+    try {
+      r = ctx.reservations.insert({
       id: `res_${randomUUID().slice(0, 12)}`, partnerId: partner.id, advertiserId: c.advertiserId ?? null, campaignId: c.campaignId, positionId: pos.positionId, windowStart,
       type: b.type as 'reserve' | 'bid', channel: 'api', bidCpm: b.bidCpm as number, currency: company.currency,
       /* A reservation is booked at its agreed price (Q11); a bid waits for the auction. */
       status: reserved ? 'reserved' : 'pending', clearingCpm: reserved ? (b.bidCpm as number) : null, reason: null,
       testMode: !live, pricingType: c.pricingType ?? null, handedOffAt: null,
-    })
+      })
+    } catch (e) {
+      /* Two writes for one window racing past the checks above — from two
+         API instances, or two requests interleaving at the awaits: the
+         database lets exactly one through. Which check it failed decides
+         the answer: one open bid per advertiser and window (migration
+         0026), or one live sale per window (migration 0021). */
+      if (!isUniqueViolation(e)) throw e
+      const dup = ctx.reservations.forWindow(pos.positionId, windowStart).some((x) => x.advertiserId === b.advertiserId && x.channel === 'api' && ['pending', 'reserved'].includes(x.status))
+      throw conflict(dup ? 'This advertiser already has a reservation or bid for that window.' : 'That window is already sold.')
+    }
     /* A reservation is booked now, so it is handed off now. */
     return reply.status(201).send(reservationView(reserved ? await handOff(ctx, r) : r))
   })

@@ -15,12 +15,14 @@ import { Preview } from './Preview'
 
 export interface PlaylistOption { id: string; name: string; autoCreatedFor: string | null }
 
-export function DisplayTypeForm({ d, update, playlists, zonePlaylistId, slotAssignment, partners, onFixConnection, openPanel }: {
+export function DisplayTypeForm({ d, update, playlists, zonePlaylistId, slotAssignment, advertiserOpen, partners, onFixConnection, openPanel }: {
   d: DisplayType
   update: (fn: (d: DisplayType) => DisplayType) => void
   playlists: PlaylistOption[]
   zonePlaylistId: (n: number) => string
   slotAssignment: boolean
+  /* Whether slot i may be made an Advertiser slot (see SlotAssignment). */
+  advertiserOpen: (i: number) => boolean
   partners: Partner[]
   onFixConnection: (partnerId: string) => void
   openPanel?: string | null
@@ -74,7 +76,7 @@ export function DisplayTypeForm({ d, update, playlists, zonePlaylistId, slotAssi
       </Field>
 
       <PlaylistSettingsPanel d={d} update={update} open={open.playlist} onToggle={() => toggle('playlist')} slotAssignment={slotAssignment}
-        partners={partners} onFixConnection={onFixConnection} />
+        advertiserOpen={advertiserOpen} partners={partners} onFixConnection={onFixConnection} />
       <PhantomZonePanel d={d} update={update} open={open.phantom} onToggle={() => toggle('phantom')} />
       <EnabledFeaturesPanel d={d} update={update} open={open.features} onToggle={() => toggle('features')} />
       <MultiZonePanel d={d} update={update} open={open.zones} onToggle={() => toggle('zones')} zonePlaylistId={zonePlaylistId}

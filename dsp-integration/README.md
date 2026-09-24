@@ -17,19 +17,44 @@ folder's history is on the tag `archive/display-types-dsp-integration`.
 - **Plan and progress:** [docs/dsp-integration/BUILD-PLAN.md](docs/dsp-integration/BUILD-PLAN.md)
 - **API contract:** [openapi.yaml](docs/dsp-integration/api/openapi.yaml) and
   [API.md](docs/dsp-integration/api/API.md)
+- **Boundaries with PH Core:** [PH-CORE-BOUNDARIES.md](docs/dsp-integration/api/PH-CORE-BOUNDARIES.md)
+  — every seam this build needs from the existing platform, what each must
+  guarantee, and what engineering replaces on integration
+- **Security and performance:** [SECURITY-PERFORMANCE.md](docs/dsp-integration/api/SECURITY-PERFORMANCE.md)
+  — the 23 Sep 2026 review: findings, fixes, limits and measured throughput
+- **Scale — 15,000 displays on a client's EKS:** [SCALE-15000-EKS.md](docs/dsp-integration/api/SCALE-15000-EKS.md)
+  — the 24 Sep 2026 review: three estate shapes measured, the bidding API
+  optimised, billing at a real play volume, and what the cluster provides
+  (`deploy/kubernetes/`)
 - **UI specification:** `prototype-reference/` (read-only). The look comes from
   the design skill in `.claude/skills/ph-designer/`.
 
 ## The hosted prototype
 
-`prototype/` is a built, **read-only** copy of the admin UI, published at
+`prototype/` is a built copy of the admin UI, published at
 <https://offline2online.github.io/rob_ph_demos/dsp-integration/prototype/>
 so the screens can be opened from a URL and embedded in an iframe in HQ
-Admin. It has no server: `apps/admin/scripts/capture-demo.mjs` takes a
-snapshot of the API's read side, and `src/demo/staticApi.ts` answers from it
-and refuses writes, saying so, rather than pretending a Save worked. Routes
-live in the hash (`…/prototype/#/booking-schedule`) because a CDN has
-nothing to rewrite paths with.
+Admin. **It saves** (23 Sep 2026): GitHub Pages only serves files, so the
+API runs as a Cloud Function in the `backlog-tracker-e4ed2` Firebase project
+(`deploy/firebase/`, deployed by `.github/workflows/dsp-api-deploy.yml` —
+see [deploy/firebase/README.md](deploy/firebase/README.md)), and on start-up
+`src/demo/staticApi.ts` sends every `/api` call there. Everyone using the
+link shares one set of data, and **there is no login** — every visitor is
+the stand-in HQ admin — so it is for demo data only; the workflow's
+`reset = RESET` input restores the demo estate.
+
+**It may open with DSP integration switched off.** The hosted database
+predates the switch, so the migration that added it left it off
+(24 Sep 2026). With it off, Campaign Status and Advertisers / Inventory
+aren't in the menu. Switch it on at DSP Integration → Exchange settings and
+Save changes, and everything comes back as it was. Anyone using the link
+shares the switch. A reset seeds the demo retailer with it on.
+
+If that API doesn't answer, the page falls back to a **read-only snapshot**
+(`apps/admin/scripts/capture-demo.mjs` captures the API's read side at
+build time) and refuses writes, saying so, rather than pretending a Save
+worked. Routes live in the hash (`…/prototype/#/booking-schedule`) because a
+CDN has nothing to rewrite paths with.
 
 **It is rebuilt for you.** `.github/workflows/dsp-prototype.yml` runs
 `scripts/rebuild-prototype.sh` on a runner for `main` and for
@@ -136,9 +161,11 @@ nothing here can even read it without the key.
 
 | Path | What it is |
 |---|---|
-| `packages/types/` | Shared TypeScript types generated from `openapi.yaml` (`npm run gen:types`), plus shared catalogues: providers, targeting variables, slot owners |
+| `packages/types/` | Shared TypeScript types generated from `openapi.yaml` (`npm run gen:types`), plus shared catalogues: providers, targeting variables, slot owners, and the reserved §9 canonical analytics event schema v1 (`analyticsEvent.ts` — nothing produces events yet) |
 | `apps/api/` | Node + Fastify + SQLite (`node:sqlite`). All paths are served under `/api`. |
-| `apps/api/src/db/migrations/` | Versioned, reversible SQL migrations. `0001` is the stand-in for the existing platform's records; `0002`+ are this build's additive changes. |
+| `apps/api/src/db/migrations/` | Versioned, reversible SQL migrations. `0001` is the stand-in for the existing platform's records; `0002`+ are this build's additive changes. `0020` adds hot-path indexes, `0021` makes "one live winner per position and window" a database guarantee, `0022` reserves the §9.3 instance identity (unused), `0023` adds the retailer's DSP integration switch (`exchange.enabled`, off by default) |
+| `apps/api/src/http/rateLimit.ts` | The Partner API's per-partner token bucket (429 `rate_limited`) |
+| `apps/api/bench/load.ts` | `npm run bench` — load benchmark for the Partner API and the auction, at demo scale or a synthetic large estate (see SECURITY-PERFORMANCE.md) |
 | `apps/api/src/platform/` | Stand-ins for the existing platform: `DisplayTypeSource`, `PlaylistSource`, `DisplaySource`, `StoreSource`, `CampaignSource` (including slot bookings for the hand-off), `PlaybackSource`, `AssetStore`, `AudienceSource` |
 | `apps/api/src/repos/` | This build's own records: partners (credentials encrypted), company advertiser settings, variable access, exchange, buyers lists (private-auction deals) |
 | `apps/api/src/seed/` | Seed data, taken from the prototype's `model/data.js` (the minimal base the tests count), plus the sample bookings (`bookings.ts`, also `npm run db:bookings`) and the **demo estate** (`demo.ts`, also `npm run db:demo`): four advertiser slots on Landscape and three on Portrait, twelve stores, three DSPs with a dozen advertisers, campaigns in every approval state and bookings in every layer on every position. A fresh database gets it by default; `rm data/poc.sqlite` (or `npm run db:demo`) to see it on an existing one |
@@ -147,13 +174,18 @@ nothing here can even read it without the key.
 | `packages/campaign-approval/` | Campaign approval as a drop-in module for the existing Campaigns section: adapter, state machine, service, routes, UI components, contract tests. See [CAMPAIGN-APPROVAL-INTEGRATION.md](docs/dsp-integration/CAMPAIGN-APPROVAL-INTEGRATION.md) |
 | `apps/admin/` | Admin UI: React 18, Vite, Ant Design 5, Tailwind 4 and AG Grid (Alpine). It renders the content frame only, because it is iframed into HQ Admin. |
 | `apps/admin/src/shared/` | Shared UI: save bar, draft state, unsaved-changes guard, delete dialog, InfoTip, list layout, collapsible panel, summary chips, AG Grid wrapper, column filters (`TableFilters.tsx` — the platform's search / funnel pattern; never hand-roll one) |
-| `apps/admin/src/features/display-types/` | Display Types screen: list, form, panels, slot assignment, delete |
+| `apps/admin/src/features/display-types/` | Display Types screen: list, form, panels, slot assignment (Advertiser greyed out for a new slot while DSP integration is switched off), delete |
 | `apps/admin/src/features/playlist-management/` | Playlist Management screen: rename and delete |
-| `apps/admin/src/features/dsp-integration/` | DSP Integration section: list, one shared draft, Exchange settings, Advertiser settings (with the Auction schedule), Shared Targeting Variables, DSP pages and Add DSP |
+| `apps/admin/src/features/dsp-integration/` | DSP Integration section: list, one shared draft, Exchange settings (with the **Enable DSP Integration** switch, which also decides whether Campaign Status and Advertisers / Inventory show), Advertiser settings (with the Auction schedule), Shared Targeting Variables, DSP pages and Add DSP |
 | `apps/admin/src/features/booking-schedule/` | Booking schedule: its own page (opened in a new tab from Available Inventory or an advertiser), with filters, campaign-type summary and daily/weekly/monthly views |
 | `apps/admin/src/features/advertisers/` | Advertisers / Inventory: the advertisers table (admin edits approval and floor multipliers) and Available Inventory, where a position's **Assigned to** (DSPs, named advertisers, a buyers list's private auction, or the whitelist) and **Targeting supported** are set; underneath, the **Buyers lists** table creates/edits/deletes the reusable private-auction deals (`BuyersListModal.tsx`, `BuyersListsTable.tsx` — spec "Private auctions (buyers lists)"). Marketing users read all of it |
 | `apps/admin/src/features/campaign-status/` | STAND-IN "Campaign Status" table and campaign page showing the approval components end to end; deleted on integration |
-| `apps/admin/src/demo/`, `apps/admin/scripts/capture-demo.mjs` | The hosted prototype: a snapshot of the API's read side, and the shim that answers from it and refuses writes. Built into `prototype/` (see above) |
+| `apps/admin/src/api/queries.ts` | Every section's read queries (key and fetch) in one place: the pages use them, and `usePrefetchSections` in `App.tsx` fetches the other sections in the background once the first page is up, so moving between sections doesn't wait on the API |
+| `apps/admin/src/demo/`, `apps/admin/scripts/capture-demo.mjs` | The hosted prototype: the shim that sends `/api` calls to the hosted API (`VITE_API_URL`), or — if it doesn't answer — answers from a snapshot of the API's read side and refuses writes. Built into `prototype/` (see above) |
+| `deploy/firebase/` | The hosted API: the POC API and mock DSPs as a Cloud Function (`functions/src/host.ts`, `index.ts`), its bundle build (`build.mjs`) and a local stand-in (`local-server.ts`). See its README |
+| `deploy/kubernetes/` | The API in a client's own VPC on EKS (24 Sep 2026): a container image (`Dockerfile`, `build.mjs`), manifests for the deployment as it runs today (`base/`: one pod, the database on a volume, public Partner API and internal Admin API ingresses, a network policy) and for a shared database (`optional/`: HPA, PDB, the scheduler as a CronJob), with sizing from the 15,000-display review. See its README |
+| `apps/api/test/stability.test.ts`, `test/multiprocess.test.ts` | The race and edge-case suite (24 Sep 2026): simultaneous bids, bids during the auction, malformed DSP answers, faults in one job, missed cutoffs; and two real API processes plus three tick runs on one database file |
+| `apps/api/bench/load.ts` | `npm run bench` — the load test: the Partner API's reads and bids, the auction and billing, on an estate of any shape (`--scale`, `--displays-per-type`, `--stores`, `--plays-per-display`, `--history`). Numbers in `docs/dsp-integration/api/SCALE-15000-EKS.md` |
 | `apps/admin/public/demo/` | That snapshot and the creatives it points at, committed so the demo can be rebuilt without a running API |
 | `scripts/sync-board-docs.mjs` | `npm run board:sync` — pushes `REQUIREMENTS.md` and `README.md` to the board's Docs page and verifies them (see above) |
 | `scripts/board-tickets.mjs` | `npm run board:tickets` — reports where this project's tickets are, and moves them between statuses when work reached `main` outside the board's own Deploy to Main (see above) |
@@ -190,9 +222,44 @@ npm test
   off by default. When it is off:
   - DSP Integration, Advertisers and Slot assignment are hidden.
   - The Partner API and the new admin endpoints return 404.
+- **The DSP integration switch** (Rob, 24 Sep 2026) is the retailer's own
+  on/off, at the top of DSP Integration → Exchange settings (**Enable DSP
+  Integration**). It is separate from the flag: the flag decides whether
+  the build ships; the switch is a runtime setting, stored on the exchange
+  record (migration 0023).
+  - A new instance starts with it **off**. The seeded demo retailer starts
+    with it on.
+  - While it is off:
+    - the menu hides Campaign Status and Advertisers / Inventory;
+    - DSP Integration lists only Exchange settings;
+    - a new Advertiser slot can't be set up (the owner is greyed out);
+    - the Partner API and `sellers.json` answer 404;
+    - no auction sends bid requests.
+  - Nothing is deleted. `GET /admin/v1/features` tells the UI whether it is
+    on. REQUIREMENTS §7 has the detail.
 - The Partner API (`/api/v1`) takes one static bearer token per seeded
   partner: `poc-token-google-dv360` or `poc-token-amazon-dsp` by default, or
-  set your own with `PARTNER_TOKENS`.
+  set your own with `PARTNER_TOKENS`. Those defaults are public, so with
+  `NODE_ENV=production` the API refuses to start unless `PARTNER_TOKENS` is
+  set to tokens of your own. Each partner may make 50 requests/s (bursts of
+  100; `PARTNER_RATE_PER_SECOND`, `PARTNER_RATE_BURST`), then gets
+  `429 rate_limited`.
+- `npm run bench` measures the Partner API, bids, the auction and billing
+  under load. The estate's shape is an argument: `-- --scale=600
+  --displays-per-type=25 --stores=1000` is 15,000 displays as 2,400
+  positions, `--scale=15 --displays-per-type=1000` the same displays as 68;
+  `--bidder-ms=80` adds a realistic DSP round trip, `--plays-per-display`
+  and `--history` size billing. Results and what they mean are in
+  [SECURITY-PERFORMANCE.md](docs/dsp-integration/api/SECURITY-PERFORMANCE.md)
+  and, for 15,000 displays, [SCALE-15000-EKS.md](docs/dsp-integration/api/SCALE-15000-EKS.md).
+- **Running it on a cluster** (24 Sep 2026): `API_HOST=0.0.0.0` binds
+  beyond this machine (the default `127.0.0.1` is deliberate: the POC's
+  Admin API has no authentication of its own); `PH_SCHEDULER=off` moves
+  billing, the auction and retention out of the process to `npm run
+  scheduler:tick`, run once a minute from outside; `PH_AUCTION_CONCURRENCY`,
+  `PH_MAX_UPLOADS_IN_FLIGHT` and `PH_RESERVATION_RETENTION_DAYS` set the
+  limits; `/healthz` and `/readyz` are the probes; SIGTERM shuts down
+  cleanly. All of it is in `deploy/kubernetes/README.md`.
 - DSP connections: Google DSP (DV360), Amazon Ads DSP and The Trade Desk
   each have a real-shaped client (`apps/api/src/dsp/`) pointed at the mock
   DSP service. Amazon is seeded to reject its refresh token; accept it on the
@@ -245,6 +312,7 @@ npm test
 - `POC_ROLE` sets the stand-in session: `hq_admin` (everything, including DSP
   Integration, saving advertiser settings and approving), `hq_marketing`
   (Display Types, Playlist Management, Advertisers / Inventory read-only, and
-  Campaign Status) or `hq_helpdesk` (none of it).
+  Campaign Status; the last two while DSP integration is switched on) or
+  `hq_helpdesk` (none of it).
 - The API seeds an empty database on its first start. Delete
   `data/poc.sqlite` and `data/assets/` to reseed.

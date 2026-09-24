@@ -30,6 +30,7 @@ export type Advertiser = S['Advertiser']
 export type AdvertiserSetting = S['AdvertiserSetting']
 export type Exchange = S['Exchange']
 export type ExchangeInput = S['ExchangeInput']
+export type Features = S['Features']
 export type SharedVariable = S['SharedVariable']
 export type TargetingAttribute = S['TargetingAttribute']
 export type VariableAccess = S['VariableAccess']
@@ -41,3 +42,4 @@ export type ApprovalStatus = S['ApprovalStatus']
 export type Session = paths['/admin/v1/session']['get']['responses']['200']['content']['application/json']
 export type Role = Session['role']
 export * from './catalog'
+export * from './analyticsEvent'

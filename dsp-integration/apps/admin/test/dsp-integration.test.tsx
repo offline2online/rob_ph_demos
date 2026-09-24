@@ -77,6 +77,101 @@ describe('DSP Integration section', () => {
   })
 })
 
+/* The retailer's DSP integration switch (Rob, 24 Sep 2026). */
+describe('DSP integration switch', () => {
+  const OFF = { ...exchange, enabled: false, published: false, sellersJsonUrl: null }
+  const FIRST_VISIT = { ...OFF, organisation: '', domain: '', sellerId: '', contactEmail: '' }
+  const navLabels = async () => {
+    const nav = await screen.findByRole('navigation', { name: 'Display Types and DSP Integration' }).catch(() => null)
+    /* A link's text starts with its icon's ligature name ("campaign…"). */
+    return nav ? within(nav).getAllByRole('link').map((l) => l.textContent?.replace(/^[a-z_]+/, '')) : []
+  }
+
+  it('first visit: switched off, and the switch is all Exchange settings shows', async () => {
+    vi.stubGlobal('fetch', vi.fn(fakeFetch({ '/api/admin/v1/exchange': FIRST_VISIT, '/api/admin/v1/features': { dspIntegration: false } })))
+    renderAt('/dsp-integration')
+    const toggle = await screen.findByRole('switch', { name: 'Enable DSP Integration' })
+    expect(toggle).not.toBeChecked()
+    /* Its tooltip says what it is for, at a high level (Rob, 24 Sep 2026). */
+    expect(screen.getByRole('button', { name: /retail media network.*sell ad inventory on your in-store screens.*new revenue opportunity/ })).toBeInTheDocument()
+    expect(screen.queryByLabelText(/Organisation/)).not.toBeInTheDocument()
+    expect(screen.queryByText('Incomplete')).not.toBeInTheDocument()
+    /* Only Exchange settings in the section's list, and no DSPs yet. */
+    const list = screen.getByRole('navigation', { name: 'DSP Integration' })
+    expect(within(list).getAllByRole('link').map((l) => l.getAttribute('aria-label'))).toEqual(['Exchange settings'])
+    expect(within(list).getByText('DSP integration off')).toBeInTheDocument()
+  })
+
+  it('switching on shows the seller-of-record fields, as an unsaved change', async () => {
+    vi.stubGlobal('fetch', vi.fn(fakeFetch({ '/api/admin/v1/exchange': FIRST_VISIT, '/api/admin/v1/features': { dspIntegration: false } })))
+    renderAt('/dsp-integration/exchange')
+    fireEvent.click(await screen.findByRole('switch', { name: 'Enable DSP Integration' }))
+    for (const label of ['Organisation', 'Domain', 'Seller ID', 'Ad-ops contact email']) expect(screen.getByLabelText(new RegExp(label))).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Save changes' })).toBeEnabled()
+    /* Off again before saving: back to nothing to save. */
+    fireEvent.click(screen.getByRole('switch', { name: 'Enable DSP Integration' }))
+    expect(screen.queryByLabelText(/Organisation/)).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Save changes' })).toBeDisabled()
+  })
+
+  it('saves the switch with the kept fields, and the nav follows', async () => {
+    const calls: { url: string; body: unknown }[] = []
+    let state = { ...exchange }
+    const base = fakeFetch()
+    vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+      const path = url.split('?')[0]
+      if (path === '/api/admin/v1/exchange' && init?.method === 'PUT') {
+        const body = JSON.parse(String(init.body))
+        calls.push({ url: path, body })
+        state = { ...body, published: body.enabled, sellersJsonUrl: body.enabled ? exchange.sellersJsonUrl : null }
+        return new Response(JSON.stringify(state), { status: 200 })
+      }
+      if (path === '/api/admin/v1/exchange') return new Response(JSON.stringify(state), { status: 200 })
+      if (path === '/api/admin/v1/features') return new Response(JSON.stringify({ dspIntegration: state.enabled }), { status: 200 })
+      return base(url)
+    }))
+    renderAt('/dsp-integration/exchange')
+    await waitFor(async () => expect(await navLabels()).toContain('Campaign Status'))
+    expect(await navLabels()).toContain('Advertisers / Inventory')
+
+    fireEvent.click(await screen.findByRole('switch', { name: 'Enable DSP Integration' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Save changes' }))
+    await waitFor(() => expect(calls).toHaveLength(1))
+    /* Nothing is thrown away: the seller of record goes back as it was. */
+    expect(calls[0].body).toEqual({ enabled: false, organisation: 'Demo Retail Group', domain: 'demoretail.example', sellerId: 'drg-4471', contactEmail: 'adops@demoretail.example' })
+    await waitFor(async () => expect(await navLabels()).not.toContain('Campaign Status'))
+    expect(await navLabels()).not.toContain('Advertisers / Inventory')
+    expect(await navLabels()).toContain('DSP Integration')
+
+    fireEvent.click(await screen.findByRole('switch', { name: 'Enable DSP Integration' }))
+    expect((screen.getByLabelText(/Organisation/) as HTMLInputElement).value).toBe('Demo Retail Group')
+    fireEvent.click(screen.getByRole('button', { name: 'Save changes' }))
+    await waitFor(() => expect(calls).toHaveLength(2))
+    expect(calls[1].body).toMatchObject({ enabled: true })
+    await waitFor(async () => expect(await navLabels()).toContain('Campaign Status'))
+    expect(await screen.findByText('Published')).toBeInTheDocument()
+  }, 30_000)
+
+  it('switched off: Campaign Status and Advertisers / Inventory are hidden and their links go home', async () => {
+    vi.stubGlobal('fetch', vi.fn(fakeFetch({ '/api/admin/v1/exchange': OFF, '/api/admin/v1/features': { dspIntegration: false } })))
+    const router = renderAt('/advertisers')
+    await waitFor(() => expect(router.state.location.pathname).toBe('/display-types'))
+    expect(await navLabels()).toEqual(['Display Types', 'Playlist Management', 'DSP Integration'])
+    cleanup()
+    const campaigns = renderAt('/campaign-status')
+    await waitFor(() => expect(campaigns.state.location.pathname).toBe('/display-types'))
+  })
+
+  it('switched on but not yet published: a DSP page opens Exchange settings instead', async () => {
+    vi.stubGlobal('fetch', vi.fn(fakeFetch({ '/api/admin/v1/exchange': { ...exchange, sellerId: '', published: false, sellersJsonUrl: null } })))
+    const router = renderAt('/dsp-integration/partners/p_google')
+    expect(await screen.findByRole('heading', { name: /Exchange settings/ })).toBeInTheDocument()
+    expect(router.state.location.pathname).toBe('/dsp-integration/exchange')
+    expect(screen.getByRole('switch', { name: 'Enable DSP Integration' })).toBeChecked()
+    expect(screen.getByText('Incomplete')).toBeInTheDocument()
+  })
+})
+
 describe('Advertiser settings page', () => {
   it('shows Pricing, the Auction schedule, the four lists and Where these apply, in that order', async () => {
     vi.stubGlobal('fetch', vi.fn(fakeFetch({ '/api/admin/v1/available-inventory': { items: [{ displayTypeId: 'menu_board', displayTypeName: 'Menu Board — Long Format', touchPoint: 'Digital Signage', playlistName: 'Menu Board Playlist', slot: 2, position: 'Supplier slot', partnerName: 'Google DSP' }] } })))
@@ -149,12 +244,12 @@ describe('DSP page', () => {
 describe('Advertisers screen (admin only)', () => {
   const advertisers = { currency: 'AUD', floorCpm: 100, items: [{ advertiserId: 'nestle', name: 'Nestlé', via: ['Google DSP'], approvalRequired: false, floorMultiplier: 0.8, effectiveFloorCpm: 80, campaigns: { draft: 0, awaiting_approval: 1, approved: 2, rejected: 0 } }] }
 
-  it('sits directly below DSP Integration in the nav for admins, with the prototype’s columns', async () => {
+  it('sits below Campaign Status and above DSP Integration in the nav for admins, with the prototype’s columns', async () => {
     vi.stubGlobal('fetch', vi.fn(fakeFetch({ '/api/admin/v1/advertisers': advertisers })))
     renderAt('/advertisers')
     await screen.findByText('1 advertiser')
     const nav = screen.getByRole('navigation', { name: 'Display Types and DSP Integration' })
-    expect(within(nav).getAllByRole('link').map((l) => l.textContent?.replace(/^[a-z_]+/, ''))).toEqual(['Display Types', 'Playlist Management', 'DSP Integration', 'Advertisers / Inventory', 'Campaign Status'])
+    expect(within(nav).getAllByRole('link').map((l) => l.textContent?.replace(/^[a-z_]+/, ''))).toEqual(['Display Types', 'Playlist Management', 'Campaign Status', 'Advertisers / Inventory', 'DSP Integration'])
     expect(screen.getByRole('button', { name: /Every advertiser using the platform, across all DSPs, and the inventory they can buy/ })).toBeInTheDocument()
   })
 
@@ -163,7 +258,8 @@ describe('Advertisers screen (admin only)', () => {
     vi.stubGlobal('fetch', vi.fn(fakeFetch({ '/api/admin/v1/session': { userId: 'u', name: 'HQ Marketing (POC)', role: 'hq_marketing' }, '/api/admin/v1/advertisers': advertisers })))
     renderAt('/advertisers')
     const nav = await screen.findByRole('navigation', { name: 'Display Types and DSP Integration' })
-    expect(within(nav).getAllByRole('link').map((l) => l.textContent?.replace(/^[a-z_]+/, ''))).toEqual(['Display Types', 'Playlist Management', 'Advertisers / Inventory', 'Campaign Status'])
+    /* Campaign Status and Advertisers / Inventory join once the switch is known to be on. */
+    await waitFor(() => expect(within(nav).getAllByRole('link').map((l) => l.textContent?.replace(/^[a-z_]+/, ''))).toEqual(['Display Types', 'Playlist Management', 'Campaign Status', 'Advertisers / Inventory']))
     expect(await screen.findByText('Read only')).toBeInTheDocument()
     expect(await screen.findByLabelText('Nestlé: campaign approval')).toBeDisabled()
     expect(screen.getByLabelText('Nestlé: floor multiplier')).toBeDisabled()

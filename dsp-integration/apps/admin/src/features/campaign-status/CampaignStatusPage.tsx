@@ -18,6 +18,7 @@ import type { Campaign } from '@ph-dsp/types'
 import { useMemo, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { api } from '../../api/client'
+import { Q } from '../../api/queries'
 import { Grid } from '../../shared/Grid'
 import { Icon } from '../../shared/Icon'
 import { externalSetColumn, searchColumn, setColumn } from '../../shared/TableFilters'
@@ -107,7 +108,7 @@ export function CampaignStatusPage() {
      grid (ticket, 22 Sep) — the same pattern the booking schedule uses for
      a page-owned filter. */
   const advertiserId = params.get('advertiserId')
-  const campaigns = useQuery({ queryKey: ['poc-campaigns'], queryFn: () => api<{ items: Campaign[] }>('GET', '/admin/v1/campaigns').then((r) => r.items) })
+  const campaigns = useQuery(Q.campaigns)
   /* Only what came in through a DSP or the Partner API. */
   const nonHq = useMemo(() => (campaigns.data ?? []).filter((c) => c.source !== 'hq'), [campaigns.data])
   const { approvals, canApprove, busy, approve, reject, unreject, activate } = useCampaignActions(nonHq.map((c) => c.campaignId))

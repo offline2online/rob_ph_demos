@@ -93,6 +93,28 @@ tied to the other project's release cadence.
   file. Keep the repo file and the live record in sync; treat a divergence
   as a bug in whichever is stale.
 
+**Where the POC meets the real platform, and its limits:**
+`dsp-integration/docs/dsp-integration/api/PH-CORE-BOUNDARIES.md` lists every
+seam with PH Core and what each must guarantee (e.g. one campaign booking
+per slot and window); `api/SECURITY-PERFORMANCE.md` has the 23 Sep 2026
+review — the Partner API's rate limits and size caps, the database-enforced
+"one live winner per window" (migration 0021), and measured throughput
+(`npm run bench` in `dsp-integration/`); `api/SCALE-15000-EKS.md` has the
+24 Sep 2026 scalability review for 15,000 displays — the exchange sells a
+play window per *position* (display type × slot), so load scales with
+positions, not displays; the before/after measurements for three estate
+shapes; and what a second replica needs (Postgres) before it is safe;
+`SECURITY-PERFORMANCE.md` → "Stability under concurrency and at the
+edges" is the 24 Sep 2026 race and edge-case pass before going live
+(`apps/api/test/stability.test.ts` and `test/multiprocess.test.ts`, which
+races two real API processes on one database — keep both green). Read
+all three before changing the exchange, the Partner API or a `platform/`
+interface. **`dsp-integration/deploy/kubernetes/`** (24 Sep 2026) is the
+same API for a client's own VPC on EKS — a container image, Kustomize
+manifests and the sizing from that review. Nothing there deploys from this
+repo, and the image was never built in this sandbox (no Docker daemon):
+the client's platform team builds and applies it.
+
 **The POC lives in `dsp-integration/`** (merged to `main` on 21 Sep 2026,
 PR #176). It is a working service, not a static page: an npm-workspaces
 monorepo with a Fastify API over SQLite, a React admin UI, mock DSPs and an
@@ -101,9 +123,23 @@ opened from GitHub Pages like the other demos** — run it locally
 (`npm run dev:api` / `dev:mocks` / `dev:admin`, then `localhost:5173`).
 The static prototype it was built from is published at
 <https://offline2online.github.io/rob_ph_demos/dsp-integration/prototype/> —
-the admin UI built against a captured snapshot of its own API, so it opens
-from a URL and can be iframed into HQ Admin. It is **read-only**: a write
-answers with "changes aren't saved". **It is a checked-in build, and it is
+the admin UI, so it opens from a URL and can be iframed into HQ Admin.
+**It saves (23 Sep 2026)**: on start-up it finds the POC API hosted as a
+Cloud Function in `backlog-tracker-e4ed2`
+(`https://us-central1-backlog-tracker-e4ed2.cloudfunctions.net/dspApi`,
+codebase `dsp-api`, deployed by `.github/workflows/dsp-api-deploy.yml` —
+see `dsp-integration/deploy/firebase/README.md`) and sends every read and
+save there; everyone using the link shares that data. **It is a public demo
+with no login** — every visitor is the stand-in HQ admin — so never put
+real data in it; reset it with that workflow's `reset = RESET` input.
+**It may open with DSP integration switched off** (the retailer's own
+switch at the top of DSP Integration → Exchange settings, added 24 Sep
+2026): switched off, Campaign Status and Advertisers / Inventory aren't in
+its menu. That is a saved setting, not a bug. Switch it on there and Save
+changes, and nothing has been lost.
+Only
+if the API doesn't answer does the page fall back to the old read-only
+snapshot, where a write answers "changes aren't saved". **It is a checked-in build, and it is
 rebuilt by a workflow, not by hand**: `.github/workflows/dsp-prototype.yml`
 runs `dsp-integration/scripts/rebuild-prototype.sh` on a runner for `main`
 and `deploy/dsp-integration` — on a source push, on a dispatch from
@@ -239,15 +275,29 @@ is worked:
 
 A project with no folder of its own is legitimate but is the exception,
 not the default — "Backlog Tracker & FAQs" owns both `backlog-tracker/`
-and `faq/`, so its `repoFolder` stays unset on purpose and its patches
-must always use repo-root paths. Say so on the project's README when that
-is the case, so the next person can tell "deliberately unset" from
-"nobody set it".
+and `faq/`. Mark that explicitly (`projects/{id}.repoFolderNotApplicable:
+true`, the New Project modal's "this project has no single folder" escape,
+also settable afterward from the project's Docs page) rather than just
+leaving `repoFolder` unset, so the next person — and
+`run-backlog-automation.js`'s own refuse-rather-than-guess check below —
+can tell "deliberately no folder" from "nobody set it yet". Also say so on
+the project's README.
 
-Until the New Project modal asks for the folder, steps 2 and 3 are a
-direct write (`repoFolder` is not in the MCP server's
-`PROJECT_WRITABLE_FIELDS`, so an agent cannot set it — it needs the
-console, or a runner with the board credential).
+**The New Project modal asks for the folder now** — required by default,
+with that same "no single folder" escape — and writes `repoFolder` (or
+`repoFolderNotApplicable`) plus a `deploy/<folder>` `deployBranch` in the
+same create. It's also editable afterward from the project's Docs page,
+next to Requirements and README. Retrofitting an OLDER project created
+before this shipped still needs the Docs page (now the normal way) or a
+direct Firestore write — `repoFolder` still isn't in the MCP server's
+`PROJECT_WRITABLE_FIELDS`, so an agent can't set it over MCP either way.
+
+Belt-and-braces: a ticket handed to the Routine whose `patchFiles` look
+folder-relative (none of their top-level path segments exist at the repo
+root), for a project with no resolvable folder, is refused by
+`run-backlog-automation.js` with a comment on the card instead of being
+written to the repo root — see `patchFilesLookFolderRelative()` in
+`backlog-tracker/scripts/run-backlog-automation.js`.
 
 Within each project, the columns are: **Backlog → Ready for Testing → Live on
 Feature Branch → Merged to Main (Live)** (status keys: `backlog`,

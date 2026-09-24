@@ -1,0 +1,31 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: dsp-exchange-api
+  namespace: dsp-exchange
+data:
+  # The dspIntegration feature flag: the whole build ships behind it.
+  DSP_INTEGRATION_ENABLED: "true"
+  # POC stand-in session. On the platform, SessionSource replaces this with
+  # the real HQ Admin session; until then every Admin API caller is this
+  # role, which is why the Admin API is only ever exposed on the internal
+  # ingress (ingress.yaml).
+  POC_ROLE: hq_admin
+  # This API's public origin: creative URLs are built on it.
+  PH_PUBLIC_URL: https://exchange.example-retailer.com
+  # Scheduled work (billing, the auction at its cutoff, retention) runs in
+  # the API process. Set to "off" and run optional/scheduler-cronjob.yaml
+  # once the database is shared by several replicas (README, "Scaling out").
+  PH_SCHEDULER: in-process
+  # Partner API rate limit per partner token (a second, coarser limit
+  # belongs on the ALB / WAF; README, "Edge").
+  PARTNER_RATE_PER_SECOND: "50"
+  PARTNER_RATE_BURST: "100"
+  # Where bid requests go and where creatives are fetched from, per DSP.
+  # These default to the mock DSP service, which is not deployed here: set
+  # the real endpoints on integration, or deploy apps/dsp-mocks as a
+  # Service and point these at it for a test cluster.
+  # DV360_BIDDER_URL: https://…/openrtb2/bid
+  # AMAZON_BIDDER_URL: https://…/openrtb2/bid
+  # TTD_BIDDER_URL: https://…/openrtb2/bid
+  # DV360_API_BASE_URL / DV360_TOKEN_URL / AMAZON_ADS_BASE_URL / TTD_BASE_URL: see apps/api/src/config.ts

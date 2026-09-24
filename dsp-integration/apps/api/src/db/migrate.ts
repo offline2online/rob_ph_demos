@@ -6,8 +6,14 @@ import { APPROVAL_MIGRATIONS_DIR } from '@ph-dsp/campaign-approval/server'
 import { type Db, tx } from './db'
 
 const DIR = fileURLToPath(new URL('./migrations/', import.meta.url))
-/* This app's migrations plus the campaign-approval module's (numbered 0100+). */
-const DIRS = [DIR, APPROVAL_MIGRATIONS_DIR]
+/* This app's migrations plus the campaign-approval module's (numbered 0100+).
+   PH_MIGRATIONS_DIRS (path-delimited, each ending in a slash) replaces both
+   when the code runs bundled into one file — the hosted Cloud Function
+   (deploy/firebase/) — where a path relative to each source file no longer
+   points anywhere; the build copies both folders beside the bundle.
+   Read when migrations run, not when this module loads: the host sets it
+   after the bundle has loaded. */
+const migrationDirs = () => (process.env.PH_MIGRATIONS_DIRS ? process.env.PH_MIGRATIONS_DIRS.split(':').filter(Boolean) : [DIR, APPROVAL_MIGRATIONS_DIR])
 
 export interface Migration {
   version: string
@@ -16,7 +22,7 @@ export interface Migration {
   down: string
 }
 
-export function loadMigrations(dirs = DIRS): Migration[] {
+export function loadMigrations(dirs = migrationDirs()): Migration[] {
   return dirs.flatMap(loadDir).sort((a, b) => a.name.localeCompare(b.name))
 }
 
@@ -48,11 +54,18 @@ export function migrateUp(db: Db, target?: string, migrations = loadMigrations()
   for (const m of migrations) {
     if (target && m.version > target) break
     if (done.has(m.version)) continue
-    tx(db, () => {
+    /* Two processes starting on one database (two replicas on a shared
+       volume, the API beside a CronJob tick) each see the migration
+       pending. The write lock is taken first and the check repeated under
+       it, so the second one finds it applied instead of failing on
+       "table already exists" and refusing to start. */
+    const applied = tx(db, () => {
+      if (db.prepare('SELECT 1 FROM schema_migrations WHERE version = ?').get(m.version)) return false
       db.exec(m.up)
       db.prepare('INSERT INTO schema_migrations (version, name, applied_at) VALUES (?, ?, ?)').run(m.version, m.name, new Date().toISOString())
-    })
-    ran.push(m.name)
+      return true
+    }, 'IMMEDIATE')
+    if (applied) ran.push(m.name)
   }
   return ran
 }

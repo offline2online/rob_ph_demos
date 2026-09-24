@@ -152,12 +152,27 @@ service cloud.firestore {
         || incoming().trainLocked == true
         || trainFieldUnchanged("trainLocked");
     }
+    // A brand-new project has no train yet, so there is nothing for a
+    // deployBranch here to hijack — unlike on an existing project (see
+    // trainFieldsAreAutomationOnly above), naming the branch at creation is
+    // just picking its name once, the same trust level as the project's own
+    // `name`. The New Project modal uses this to seed deployBranch from an
+    // explicit repoFolder (`deploy/<folder>`) instead of leaving it to
+    // ensureDeployBranch()'s name-derived slug, which can drift from the
+    // folder (see root CLAUDE.md's Display Types & DSP Integration
+    // history). Still shaped like a real integration branch name so this
+    // can't be used to smuggle an arbitrary string into a field
+    // run-backlog-automation.js trusts.
+    function isValidNewDeployBranch(v) {
+      return v is string && v.size() <= 100 && v.matches("^deploy/[a-z0-9][a-z0-9-]*$");
+    }
 
     match /projects/{projectId} {
       allow read: if isBoardReader();
       allow create: if isEditor() && isNonEmptyBoundedString(incoming().name, 80)
         && (isBoardAutomation() || (
-          !("deployBranch" in incoming()) && !("trainReady" in incoming())
+          (!("deployBranch" in incoming()) || isValidNewDeployBranch(incoming().deployBranch))
+          && !("trainReady" in incoming())
           && !("trainStatus" in incoming()) && !("trainPrNumber" in incoming())
           && !("trainNote" in incoming()) && !("needsHumanMerge" in incoming())
           && !("trainLocked" in incoming())));

@@ -1,6 +1,6 @@
 /* Stand-in for the existing playlist service. Items, scenes and scheduling
    are existing platform data: stored and passed through, never changed. */
-import { type Db, fromJson, toJson } from '../db/db'
+import { type Db, fromJson, prepared, toJson } from '../db/db'
 
 export interface PlaylistRecord {
   id: string
@@ -29,21 +29,21 @@ export const loopLengthSec = (p: PlaylistRecord | null) =>
 
 export function sqlitePlaylistSource(db: Db): PlaylistSource {
   const get = (id: string) => {
-    const r = db.prepare('SELECT * FROM playlists WHERE id = ?').get(id) as Row | undefined
+    const r = prepared(db, 'SELECT * FROM playlists WHERE id = ?').get(id) as Row | undefined
     return r ? toRecord(r) : null
   }
   return {
-    list: () => (db.prepare('SELECT * FROM playlists ORDER BY rowid').all() as unknown as Row[]).map(toRecord),
+    list: () => (prepared(db, 'SELECT * FROM playlists ORDER BY rowid').all() as unknown as Row[]).map(toRecord),
     get,
     create(p) {
-      db.prepare('INSERT INTO playlists (id, name, auto_created_for, schedule, items) VALUES (?, ?, ?, ?, ?)').run(
+      prepared(db, 'INSERT INTO playlists (id, name, auto_created_for, schedule, items) VALUES (?, ?, ?, ?, ?)').run(
         p.id, p.name, p.autoCreatedFor ?? null, toJson(p.schedule ?? { mode: 'store_hours', from: null, to: null }), toJson(p.items ?? []) ?? '[]',
       )
       return get(p.id) as PlaylistRecord
     },
     rename(id, name) {
-      return db.prepare('UPDATE playlists SET name = ? WHERE id = ?').run(name, id).changes ? get(id) : null
+      return prepared(db, 'UPDATE playlists SET name = ? WHERE id = ?').run(name, id).changes ? get(id) : null
     },
-    delete: (id) => db.prepare('DELETE FROM playlists WHERE id = ?').run(id).changes > 0,
+    delete: (id) => prepared(db, 'DELETE FROM playlists WHERE id = ?').run(id).changes > 0,
   }
 }

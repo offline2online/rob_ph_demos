@@ -173,6 +173,14 @@
         <select id="np-program-select"></select>
         <p class="field-hint">Optional — groups this under a shared heading on the board.</p>
 
+        <label class="field-label" for="np-repo-folder-input">Repo folder</label>
+        <input type="text" id="np-repo-folder-input" maxlength="80" placeholder="e.g. dsp-integration">
+        <p class="field-hint" id="np-repo-folder-hint">Repo-root-relative, no trailing slash. This is what a Routine session's <code>patchFiles</code> get placed under — see root <code>CLAUDE.md</code> → "Linking a new project to GitHub".</p>
+        <label class="np-interface-toggle">
+          <input type="checkbox" id="np-repo-folder-none">
+          This project has no single folder (e.g. it owns several existing folders, or none yet)
+        </label>
+
         <div class="form-row" style="justify-content:flex-end;">
           <div class="form-actions">
             <button type="button" class="btn-ghost" id="np-cancel">Cancel</button>
@@ -413,6 +421,19 @@
         <h3>Program / Product</h3>
         <p class="field-hint">Groups this project on the board.</p>
         <select id="docs-program-select"></select>
+      </div>
+
+      <div class="docs-block">
+        <h3>Repo folder</h3>
+        <p class="field-hint">The join between this project and its folder in <code>rob_ph_demos</code> — read by <code>projectFolderOf()</code> to place a Routine session's folder-relative <code>patchFiles</code> correctly. Repo-root-relative, no trailing slash.</p>
+        <input type="text" id="docs-repo-folder-input" maxlength="80" placeholder="e.g. dsp-integration">
+        <label class="np-interface-toggle">
+          <input type="checkbox" id="docs-repo-folder-none">
+          This project has no single folder
+        </label>
+        <div class="form-row" style="justify-content:flex-end;">
+          <button type="button" class="btn-primary" id="docs-repo-folder-save">Save repo folder</button>
+        </div>
       </div>
 
       <div class="docs-block">

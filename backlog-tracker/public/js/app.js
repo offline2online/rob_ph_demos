@@ -2217,11 +2217,75 @@ async function removeItemAttachment(id, attachment) {
   }
 }
 
-async function addProject(name, programId) {
+// Client-side mirror of run-backlog-automation.js's deployBranchForName —
+// used only to derive a NEW project's deployBranch from its repo folder at
+// creation time (see addProject below), so the train name matches the
+// folder from the start rather than a name-derived slug that can silently
+// drift from it (see root CLAUDE.md's Display Types & DSP Integration
+// history, where the two disagreed).
+function slugifyForBranch(value) {
+  return String(value || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 50) || "project";
+}
+
+// Repo-root-relative, no leading/trailing slash, no `..` — the same shape
+// projectFolderOf() in run-backlog-automation.js expects. Nested paths
+// (`a/b`) are allowed even though every real project so far is one segment.
+function isValidRepoFolder(folder) {
+  return /^[a-z0-9][a-z0-9._-]*(\/[a-z0-9][a-z0-9._-]*)*$/i.test(String(folder || "")) && !folder.includes("..");
+}
+
+function deployBranchForFolder(folder) {
+  return `deploy/${slugifyForBranch(folder)}`;
+}
+
+// repoFolderInfo is one of: undefined/null (no opinion — legacy callers),
+// { none: true } (this project genuinely owns no single folder — see root
+// CLAUDE.md "Linking a new project to GitHub"), or { folder } (repo-root-
+// relative path). Only the `{ folder }` case also seeds deployBranch: it is
+// otherwise left for run-backlog-automation.js's ensureDeployBranch() to
+// derive from the name and stamp on first ticket build, exactly as before
+// this existed — a project with no single folder has no folder-derived name
+// to prefer over that.
+async function addProject(name, programId, repoFolderInfo) {
   const data = { name: name.trim(), createdAt: serverTimestamp() };
   if (programId) data.programId = programId;
+  if (repoFolderInfo && repoFolderInfo.none) {
+    data.repoFolderNotApplicable = true;
+  } else if (repoFolderInfo && repoFolderInfo.folder) {
+    data.repoFolder = repoFolderInfo.folder;
+    data.deployBranch = deployBranchForFolder(repoFolderInfo.folder);
+  }
   const ref = await addDoc(projectsRef, data);
   return ref.id;
+}
+
+// Firestore has no case-insensitive query, so this is a client-side check
+// against whatever's already loaded (the board keeps every project synced
+// locally via onSnapshot) rather than a security guarantee — same trust
+// level as the New Item form's own findLikelyDuplicate. Two projects
+// deliberately sharing a folder isn't meaningful (each project's train
+// writes to it independently, so patches would silently race), so this
+// catches a typo/copy-paste before it becomes two projects fighting over
+// one deployBranch.
+function projectWithRepoFolder(folder, excludeId) {
+  const wanted = String(folder || "").trim().toLowerCase().replace(/\/+$/, "");
+  return projects.find((p) => p.id !== excludeId && String(p.repoFolder || "").trim().toLowerCase().replace(/\/+$/, "") === wanted);
+}
+
+async function setProjectRepoFolder(id, repoFolderInfo) {
+  if (repoFolderInfo && repoFolderInfo.none) {
+    await setDoc(doc(db, "projects", id), {
+      repoFolder: deleteField(), repoFolderNotApplicable: true, updatedAt: serverTimestamp(),
+    }, { merge: true });
+  } else {
+    await setDoc(doc(db, "projects", id), {
+      repoFolder: repoFolderInfo.folder, repoFolderNotApplicable: deleteField(), updatedAt: serverTimestamp(),
+    }, { merge: true });
+  }
 }
 
 // Manual, batched counterpart to the automatic per-item notify: writes a
@@ -3343,6 +3407,15 @@ document.getElementById("ni-submit").addEventListener("click", async () => {
 // ever creates a plain project.
 const npBackdrop = document.getElementById("np-backdrop");
 const npProgramSelect = document.getElementById("np-program-select");
+const npRepoFolderInput = document.getElementById("np-repo-folder-input");
+const npRepoFolderNone = document.getElementById("np-repo-folder-none");
+
+// The "no single folder" escape disables the text field rather than just
+// ignoring it, so it's visually obvious which value will actually be saved.
+npRepoFolderNone.addEventListener("change", () => {
+  npRepoFolderInput.disabled = npRepoFolderNone.checked;
+  if (npRepoFolderNone.checked) npRepoFolderInput.value = "";
+});
 
 // Shared by the New Project modal and the Docs page: handles the trailing
 // "+ New program…" option by prompting for a name, creating it, then
@@ -3404,6 +3477,9 @@ function openProjectModal(onCreated) {
   document.getElementById("np-name-input").value = "";
   updateNpNameCount();
   populateProgramSelect(npProgramSelect, "");
+  npRepoFolderInput.value = "";
+  npRepoFolderInput.disabled = false;
+  npRepoFolderNone.checked = false;
   document.getElementById("np-name-input").focus();
 }
 function closeProjectModal() { npBackdrop.hidden = true; npOnCreated = null; }
@@ -3419,13 +3495,41 @@ document.getElementById("np-submit").addEventListener("click", async () => {
   const nameEl = document.getElementById("np-name-input");
   const name = nameEl.value.trim();
   if (!name) { nameEl.focus(); return; }
+
+  // Required by default (see root CLAUDE.md → "Linking a new project to
+  // GitHub") — nothing else ever sets repoFolder for a brand-new project,
+  // and an unset one is exactly what let PR #185 write seven tickets'
+  // files to the repo root instead of dsp-integration/.
+  const wantsNoFolder = npRepoFolderNone.checked;
+  const folder = npRepoFolderInput.value.trim().replace(/\/+$/, "");
+  let repoFolderInfo;
+  if (wantsNoFolder) {
+    repoFolderInfo = { none: true };
+  } else if (!folder) {
+    await showAlert('Repo folder is required — enter the project\'s folder in rob_ph_demos, or tick "This project has no single folder" if that genuinely applies.');
+    npRepoFolderInput.focus();
+    return;
+  } else if (!isValidRepoFolder(folder)) {
+    await showAlert("Repo folder must be repo-root-relative, with no leading/trailing slash and no \"..\" (e.g. \"dsp-integration\").");
+    npRepoFolderInput.focus();
+    return;
+  } else {
+    const clash = projectWithRepoFolder(folder);
+    if (clash) {
+      await showAlert(`"${folder}" is already linked to project "${clash.name}" — two projects can't share one repo folder.`);
+      npRepoFolderInput.focus();
+      return;
+    }
+    repoFolderInfo = { folder };
+  }
+
   const onCreated = npOnCreated;
   const programId = npProgramSelect.value !== "__new__" ? npProgramSelect.value : "";
   let newId;
   try {
-    newId = await addProject(name, programId);
+    newId = await addProject(name, programId, repoFolderInfo);
   } catch (err) {
-    await showAlert(describeSaveError(err, [{ label: "Name", value: name, max: 80 }]));
+    await showAlert(describeSaveError(err, [{ label: "Name", value: name, max: 80 }, { label: "Repo folder", value: folder, max: 80 }]));
     return;
   }
   closeProjectModal();
@@ -3611,6 +3715,12 @@ const docsRequirementsInput = document.getElementById("docs-requirements-input")
 const docsRoutinePromptInput = document.getElementById("docs-routine-prompt-input");
 const docsFaqAutoFlagInput = document.getElementById("docs-faq-auto-flag");
 const docsProgramSelect = document.getElementById("docs-program-select");
+const docsRepoFolderInput = document.getElementById("docs-repo-folder-input");
+const docsRepoFolderNone = document.getElementById("docs-repo-folder-none");
+docsRepoFolderNone.addEventListener("change", () => {
+  docsRepoFolderInput.disabled = docsRepoFolderNone.checked;
+  if (docsRepoFolderNone.checked) docsRepoFolderInput.value = "";
+});
 // Not wireProgramSelect() — unlike the New Project modal (where the choice
 // isn't persisted until "Create project"), a program picked here needs to
 // be saved onto the existing project doc immediately, including one
@@ -3701,6 +3811,11 @@ function renderDocsPage() {
     docsRoutinePromptInput.value = (project && project.routinePromptMd) || "";
   }
   docsFaqAutoFlagInput.checked = !!(project && project.faqAutoFlagOnLive);
+  if (document.activeElement !== docsRepoFolderInput) {
+    docsRepoFolderNone.checked = !!(project && project.repoFolderNotApplicable);
+    docsRepoFolderInput.value = (project && project.repoFolder) || "";
+    docsRepoFolderInput.disabled = docsRepoFolderNone.checked;
+  }
   const rows = interfacesForProject(docsProjectId);
   document.getElementById("docs-interfaces-list").innerHTML = rows.length
     ? rows.map(interfaceRowHTML).join("")
@@ -3710,6 +3825,37 @@ function renderDocsPage() {
     ? docRows.map(projectDocRowHTML).join("")
     : '<p class="interface-row-empty">No additional documents yet.</p>';
 }
+
+document.getElementById("docs-repo-folder-save").addEventListener("click", async () => {
+  if (!docsProjectId) return;
+  const wantsNoFolder = docsRepoFolderNone.checked;
+  const folder = docsRepoFolderInput.value.trim().replace(/\/+$/, "");
+  if (wantsNoFolder) {
+    await setProjectRepoFolder(docsProjectId, { none: true });
+    return;
+  }
+  if (!folder) {
+    await showAlert('Enter this project\'s repo folder, or tick "This project has no single folder".');
+    docsRepoFolderInput.focus();
+    return;
+  }
+  if (!isValidRepoFolder(folder)) {
+    await showAlert("Repo folder must be repo-root-relative, with no leading/trailing slash and no \"..\" (e.g. \"dsp-integration\").");
+    docsRepoFolderInput.focus();
+    return;
+  }
+  const clash = projectWithRepoFolder(folder, docsProjectId);
+  if (clash) {
+    await showAlert(`"${folder}" is already linked to project "${clash.name}" — two projects can't share one repo folder.`);
+    docsRepoFolderInput.focus();
+    return;
+  }
+  try {
+    await setProjectRepoFolder(docsProjectId, { folder });
+  } catch (err) {
+    await showAlert(describeSaveError(err, [{ label: "Repo folder", value: folder, max: 80 }]));
+  }
+});
 
 document.getElementById("docs-readme-save").addEventListener("click", () => {
   if (!docsProjectId) return;

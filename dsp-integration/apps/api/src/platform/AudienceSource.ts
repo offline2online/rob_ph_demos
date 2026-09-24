@@ -2,7 +2,7 @@
    window for each display type slot. The retailer populates the real
    framework from its own insights, automated where cameras are connected;
    the POC reads seeded numbers. Engineering swaps in the real source. */
-import type { Db } from '../db/db'
+import { type Db, prepared } from '../db/db'
 import type { Rules } from '../domain/targetingValidation'
 
 export interface Audience {
@@ -24,7 +24,7 @@ export const POC_SHARE_PER_AND_GROUP = 0.5
 
 export const sqliteAudienceSource = (db: Db): AudienceSource => ({
   forSlot(displayTypeId, slot) {
-    const r = db.prepare('SELECT assumed_views_per_window AS v, counted FROM audience_vacd WHERE display_type_id = ? AND slot = ?').get(displayTypeId, slot) as { v: number; counted: number } | undefined
+    const r = prepared(db, 'SELECT assumed_views_per_window AS v, counted FROM audience_vacd WHERE display_type_id = ? AND slot = ?').get(displayTypeId, slot) as { v: number; counted: number } | undefined
     return { assumedViewsPerWindow: r?.v ?? 0, counted: !!r?.counted }
   },
   targetedShare: (_displayTypeId, rules) => POC_SHARE_PER_AND_GROUP ** (rules?.length ?? 0),

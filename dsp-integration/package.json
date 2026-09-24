@@ -22,6 +22,7 @@
     "db:bookings": "npm run db:bookings -w @ph-dsp/api",
     "db:demo": "npm run db:demo -w @ph-dsp/api",
     "billing:print": "npm run billing:print -w @ph-dsp/api",
+    "bench": "npm run bench -w @ph-dsp/api --",
     "board:sync": "node scripts/sync-board-docs.mjs",
     "board:tickets": "node scripts/board-tickets.mjs"
   },

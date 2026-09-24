@@ -2,7 +2,11 @@
 
 The agreed contract for every API this build adds. The machine-readable
 version is [`openapi.yaml`](./openapi.yaml); the two must always match.
-Requirements: `../REQUIREMENTS.md`.
+Requirements: `../REQUIREMENTS.md`. What this build needs **from** the
+existing platform (the other side of every stand-in below) is in
+[PH-CORE-BOUNDARIES.md](./PH-CORE-BOUNDARIES.md); the limits and headers
+under *Conventions* come from the
+[security and performance review](./SECURITY-PERFORMANCE.md) (23 Sep 2026).
 
 **Build rule:** implement exactly the endpoints, fields, permissions and error
 codes listed here. Don't add endpoints, fields, parameters or behaviour that
@@ -40,8 +44,25 @@ All paths are served from the retailer's own instance
   ```
   Codes: `validation_failed`, `variable_not_permitted`, `checks_failed`,
   `not_approved`, `below_floor`, `advertiser_blocked`, `category_blocked`,
-  `not_on_whitelist`, `targeting_not_supported`, `conflict`,
-  `has_dependents`, `unauthorised`, `forbidden`, `not_found`.
+  `not_on_whitelist`, `not_invited`, `targeting_not_supported`, `conflict`,
+  `has_dependents`, `unauthorised`, `forbidden`, `not_found`,
+  `rate_limited` (429, with `Retry-After`) and `internal_error` (500, a
+  server fault; no internals are returned). A client error Fastify raises
+  itself keeps its status — a body over 1 MB is `413 validation_failed`.
+- **Partner API limits** (config defaults, `apps/api/src/config.ts`):
+  - 50 requests/s per partner, bursts of 100, then `429 rate_limited`;
+  - at most 2 asset uploads in flight per partner, and 4 across all
+    partners (`PH_MAX_UPLOADS_IN_FLIGHT`; `429`);
+  - forecast: at most 200 `positionIds`, each once;
+  - content package: `name` and version ids ≤ 200 characters, ≤ 20
+    targeted versions, ≤ 10 AND groups, ≤ 20 conditions per group, ≤ 100
+    values per condition, each value ≤ 200 characters;
+  - writes (create, upload, submit, reserve, bid) need a **connected** DSP —
+    `409 conflict` otherwise; reads stay open to the authenticated partner.
+- **Headers on every response:** `X-Content-Type-Options: nosniff`,
+  `Content-Security-Policy: default-src 'none'; style-src 'unsafe-inline';
+  frame-ancestors 'none'`, `Referrer-Policy: no-referrer`, and
+  `Cache-Control: no-store` on `/api/*`.
 - **Visibility, not rejection.** Lists (inventory, targeting attributes) omit
   what a caller may not use; they never return an error for it.
 - **Pagination:** `cursor` + `limit` (default 50, max 200); responses return
@@ -143,7 +164,7 @@ queue (`apps/api/src/config.ts` → `assetLimits`, enforced in
 
 | Method | Path | Purpose | Main errors |
 |---|---|---|---|
-| POST | `/v1/reservations` | `type: reserve` (named advertiser positions) at its agreed reservation price, or `type: bid`, both with `bidCpm` (the CPM; a reservation is booked at it), for a `positionId` and `windowStart`, with an approved and activated `campaignId` (`not_approved` otherwise). Only while the window's auction is open: from `auctionOpensHours` before the auction cutoff until the cutoff (`conflict` otherwise). The campaign's type must be one the position supports (`supportedTargeting`; `targeting_not_supported` otherwise). | `not_approved`, `below_floor`, `advertiser_blocked`, `category_blocked`, `not_on_whitelist`, `targeting_not_supported`, `conflict` |
+| POST | `/v1/reservations` | `type: reserve` (named advertiser positions) at its agreed reservation price, or `type: bid`, both with `bidCpm` (the CPM; a reservation is booked at it), for a `positionId` and `windowStart`, with an approved and activated `campaignId` (`not_approved` otherwise). Only while the window's auction is open: from `auctionOpensHours` before the auction cutoff until the cutoff, or until a tick claims the window's auction if that is earlier (`conflict` otherwise). `bidCpm` is at most the exchange ceiling (10,000; `validation_failed`). One open bid or reservation per advertiser and window, enforced by the database (migration 0026). The campaign's type must be one the position supports (`supportedTargeting`; `targeting_not_supported` otherwise). | `not_approved`, `below_floor`, `advertiser_blocked`, `category_blocked`, `not_on_whitelist`, `targeting_not_supported`, `conflict` |
 | GET | `/v1/reservations/{id}` | Outcome: `pending`, `won`, `lost`, `reserved`, `rejected`, with clearing CPM and reason. | `not_found` |
 
 A won or reserved campaign is handed to the existing campaign system for
@@ -165,8 +186,20 @@ env var, with no switcher and no cookie (see *POC stand-ins* below).
 
 | Method | Path | Purpose |
 |---|---|---|
-| GET | `/admin/v1/exchange` | Organisation, domain, seller ID, contact email, `published`, `sellersJsonUrl`. |
-| PUT | `/admin/v1/exchange` | Save changes. All four fields required; republishes sellers.json when complete. |
+| GET | `/admin/v1/exchange` | The DSP integration switch (`enabled`), organisation, domain, seller ID, contact email, `published`, `sellersJsonUrl`. |
+| PUT | `/admin/v1/exchange` | Save changes. `enabled` is required. While it is true, all four fields are required; switched off, they may be blank and are kept as sent. `published` is true, and sellers.json is served, only when switched on and complete. |
+| GET | `/admin/v1/features` | `{ dspIntegration }`: whether the retailer has DSP integration switched on (always false with the build flag off). Readable by admin and marketing users, unlike Exchange settings, because it decides what the navigation shows. |
+
+**The DSP integration switch** (Rob, 24 Sep 2026; REQUIREMENTS §7). Off
+for a new instance (migration 0023). While it is off:
+
+- the Partner API answers `404 not_found` ("DSP integration is switched
+  off."), as with the build flag off;
+- `sellers.json` answers 404;
+- the auction sends no bid requests, and the scheduler doesn't run it.
+  Windows already sold are still billed when they end.
+
+The Admin API keeps answering, and switching off deletes nothing.
 
 ### Advertiser settings
 
@@ -275,7 +308,7 @@ that plugs into the existing campaign table (see
 
 | Method | Path | Purpose |
 |---|---|---|
-| PUT | `/admin/v1/display-types/{id}/extensions` | Save slot ownership (`slots[]`: label and owner `internal`/`advertiser`/`retail`) and venue metadata. Who a slot is assigned to and what targeting it supports are carried over from the stored slot — they are edited on `/admin/v1/available-inventory` — and dropped when a slot stops being an Advertiser slot. Other display type fields keep using the existing API. |
+| PUT | `/admin/v1/display-types/{id}/extensions` | Save slot ownership (`slots[]`: label and owner `internal`/`advertiser`/`retail`) and venue metadata. Who a slot is assigned to and what targeting it supports are carried over from the stored slot — they are edited on `/admin/v1/available-inventory` — and dropped when a slot stops being an Advertiser slot. While DSP integration is switched off, a slot can be `advertiser` only if it already was: a new one is `400 validation_failed` on `slots[i].owner`. Other display type fields keep using the existing API. |
 | GET | `/admin/v1/display-types/{id}/delete-check` | `canDelete` and `dependents[]` (assigned displays with store). |
 | DELETE | `/admin/v1/display-types/{id}` | Delete; `409 has_dependents` listing displays if any remain. |
 | GET | `/admin/v1/playlists/{id}/delete-check` | `canDelete` and `dependents[]` (display type defaults and zones). |
@@ -298,21 +331,52 @@ integration, and nothing else in the build may depend on their internals.
 | PUT | `/admin/v1/playlists/{id}/record` | Rename a playlist (`name` only). Assignments are made on the display type form (spec §2). |
 | GET | `/admin/v1/campaigns` | The existing campaign list, for the stand-in POC campaign table (`campaignId`, name, source, advertiser, partner, display type, pricing type, `brief`, `schedule` (next booked window and how many it holds) and `activation`). Approval state comes from `/admin/v1/approvals`. |
 | PUT | `/admin/v1/campaigns/{id}/activation` | The existing activation toggle: `{enabled}`. `422 not_approved` unless the campaign is Approved. |
-| GET | `/admin/v1/session` | The current user and role: `hq_admin` (everything, including DSP Integration, saving advertiser settings and approving), `hq_marketing` (Display Types, Playlist Management, Advertisers / Inventory read-only, Campaign Status) or `hq_helpdesk` (none of it). In the POC the role comes from the `POC_ROLE` env var: there is no switcher and no session cookie. |
+| GET | `/admin/v1/session` | The current user and role: `hq_admin` (everything, including DSP Integration, saving advertiser settings and approving), `hq_marketing` (Display Types, Playlist Management, Advertisers / Inventory read-only, Campaign Status; the last two only while DSP integration is switched on, `GET /admin/v1/features`) or `hq_helpdesk` (none of it). In the POC the role comes from the `POC_ROLE` env var: there is no switcher and no session cookie. |
 
 ## Jobs with no API
 
-- **SSP auction**: a scheduled job in `apps/api` clears each play window
-  at its auction cutoff (Advertiser settings → Auction schedule), ahead of time (OpenRTB section below). For demos, `npm run auction:run`
-  runs one window. No UI and no endpoint.
+- **SSP auction**: a scheduled job clears each play window at its auction
+  cutoff (Advertiser settings → Auction schedule), ahead of time (OpenRTB
+  section below). For demos, `npm run auction:run` runs one window. No UI
+  and no endpoint. Which process clears a window is settled in the
+  database (`auction_runs`, migration 0024): a tick claims the window
+  first, so several API instances, a CronJob and the CLI can all see a
+  cutoff pass and exactly one of them auctions it — DSPs are sent one
+  round of bid requests. The scheduled work runs in the API process every
+  minute (`PH_SCHEDULER=in-process`, the default) or from outside
+  (`PH_SCHEDULER=off` and `npm run scheduler:tick` once a minute — a
+  Kubernetes CronJob, `deploy/kubernetes/`).
 - **Billing**: billing line items (dynamic VAC-d, reconciled against
   existing playback data) are stored only. `npm run billing:print` prints
-  them for testing. No UI, report or API.
+  them for testing. No UI, report or API. Billing reads only the windows it
+  can bill now and counts a window's plays where they are stored
+  (`PlaybackSource.totals`), so it costs the same after a year of windows
+  as on day one (scalability review, 24 Sep 2026).
+  A cutoff missed by hours (the process down) is still auctioned as long
+  as the window hasn't started; a window that starts with bids still
+  pending has them settled `lost` with a reason (stability review, 24 Sep
+  2026). A DSP's malformed answer, or a fault clearing one position, is
+  that position's outcome, never the auction's.
+- **Retention**: rejected, lost and never-cleared bids are deleted
+  `PH_RESERVATION_RETENTION_DAYS` (default 90) after their window; won and
+  reserved windows are kept. Rejected campaigns and their assets are
+  deleted after 30 days (spec §3), never their audit trail.
+
+## Operations endpoints
+
+For whatever supervises the process — Kubernetes probes, a load balancer's
+health check — at the root like `sellers.json`, with no authentication and
+no partner or admin data (`openapi.yaml`, tag *Operations*):
+
+| Method | Path | Answers |
+|---|---|---|
+| GET | `/healthz` | `{ "ok": true }` while the process is up. |
+| GET | `/readyz` | `{ "ok": true }` once the database answers and every migration is applied; `503 { "ok": false, "reason" }` until then, which keeps a new instance out of the load balancer while it migrates. |
 
 ## sellers.json
 
-Published at `https://[domain]/sellers.json` once Exchange settings are
-complete; `404` until then.
+Published at `https://[domain]/sellers.json` once DSP integration is
+switched on and Exchange settings are complete; `404` otherwise.
 
 ```json
 {
@@ -380,7 +444,23 @@ DSPs receive requests; nothing they win is billed or handed off.
 ≥ `bidfloor`), `bid.crid` (must be an approved creative), `bid.adomain`
 (checked against the advertiser lists) and `bid.cat` (checked against the
 category lists). A bid failing any of these is dropped before the auction
-clears.
+clears. Also (review, 23 Sep 2026):
+
+- the response `id` echoes the request `id`, or the whole response is no bid;
+- `cur` is the company currency — a response **without** `cur` is USD, per
+  OpenRTB, and is rejected unless the company trades in USD;
+- `bid.impid`, when present, is `"1"`; `bid.price` is finite and at most
+  10,000 (`maxBidCpm`);
+- at most 10 bids per response are read, and a body over 64 KB is no bid;
+- a bid with an unknown `crid` has its creative retrieved from its `iurl` —
+  only under that DSP's own creative path (compared after URL
+  normalisation), at most one per response, capped at the asset size
+  limit; the others are retried from a later window.
+
+Every DSP for a position is asked at once, and positions clear 16 at a
+time, so an auction takes about one bidder timeout per 16 positions however
+many DSPs there are. One live winner per position and window is enforced
+by the database, so two clearings of the same window can't both sell it.
 
 Exact DOOH object support and taxonomy version are confirmed per DSP before
 Live (spec §7 "To confirm before building").

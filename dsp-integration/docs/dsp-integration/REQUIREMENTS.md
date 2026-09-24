@@ -67,10 +67,13 @@ programmatic-guaranteed deals; this release sells through the open auction
 only), and per-DSP bidder tuning (QPS ceiling and bid timeout use platform
 defaults).
 
-**Navigation.** The HQ Admin navigation items for this project, in order:
-**Display Types**, **Playlist Management**, **DSP Integration**, then
-**Advertisers**. A DSP has to be set up before any advertiser can be served,
-so DSP Integration comes before Advertisers. Within DSP Integration, the
+**Navigation.** The HQ Admin navigation items for this project, in order
+(Rob, 24 Sep 2026): **Display Types**, **Playlist Management**, **Campaign
+Status**, **Advertisers / Inventory**, then **DSP Integration** at the
+bottom. The pages used day to day come first; DSP Integration, set up once
+per DSP, comes last. **Campaign Status** and **Advertisers / Inventory**
+show only while the retailer has DSP integration switched on (§7, *The DSP
+integration switch*). Within DSP Integration, the
 company pages are **Exchange settings**, **Advertiser settings** and
 **Shared Targeting Variables**, followed by one page per DSP.
 
@@ -197,6 +200,9 @@ Page-title tooltips for the DSP Integration company pages:
 | **Exchange settings** | Sets up your organisation as the seller of record for its screens. Configurable here: organisation name, domain, seller ID and ad-ops contact email, all required. Once saved and complete, sellers.json is published at https://[domain]/sellers.json and every bid request carries your domain and seller ID in its SupplyChain; until then no DSP is sent bid requests. Not configurable (platform defaults): seller type (Publisher), the DOOH object, the OpenOOH venue taxonomy, QPS and bid timeout. Bid requests use OpenRTB 2.6 as the minimum supported version for programmatic DOOH; the exchange is designed to adopt 2.7, 2.8 and later versions per DSP as the market moves. |
 | **Advertiser settings** | Company-wide advertiser settings, applied to every DSP. Configurable here: Pricing (currency, floor CPM, the personalised multiplier and the interactive cost per engagement), the Auction schedule (when bidding opens, play-window length, auction cutoff) and List management (advertiser and IAB category whitelists and blacklists). Read-only here: Where these apply (which DSPs use these lists or keep their own; unlink or relink on the DSP's page). Per-advertiser campaign approval and floor multipliers, and the inventory advertisers can buy, are on Advertisers / Inventory. |
 | **Shared Targeting Variables** | Variables shared through the API with connected DSPs. Once a variable is enabled for a DSP, that DSP's advertisers can use it in targeting conditions for more advanced campaign targeting; the platform evaluates the condition and never returns the value. They are the same variables as a campaign's Targeting tab. Choose which DSPs may use each one below; default platform variables only in this release. |
+
+The **Enable DSP Integration** switch at the top of Exchange settings has
+its own tooltip, kept high level (Rob, 24 Sep 2026): *"For retailers running their digital signage as a retail media network. Enabling DSP integration lets you sell ad inventory on your in-store screens to advertisers through their DSPs, opening up a new revenue opportunity from the screens you already have."*
 
 Other tooltip wording is given in the relevant section below (for example
 the pricing fields in §4).
@@ -357,7 +363,7 @@ DSP (tier 1). Campaigns authored by HQ are unchanged.
 ### Advertisers / Inventory
 
 A new **Advertisers / Inventory** item in the HQ Admin navigation, placed
-**directly below DSP Integration**. It carries per-advertiser settings and,
+**below Campaign Status and above DSP Integration** (Rob, 24 Sep 2026). It carries per-advertiser settings and,
 below them, the inventory those advertisers can buy (§5); **campaigns are
 not approved here.**
 
@@ -1312,6 +1318,46 @@ software, not a party to the sale. `sellers.json` is published under the
 client's domain, with the SupplyChain node carrying the client's domain as
 `asi` and its seller ID as `sid`.
 
+### The DSP integration switch (Rob, 24 Sep 2026)
+
+At the top of **Exchange settings**, a master toggle row, **Enable DSP
+Integration**, like HQ Admin's switches for its other features. It lets a
+retailer switch DSP integration on and off.
+
+- **Off the first time a retailer lands on DSP Integration.** Switched off,
+  the switch is all Exchange settings shows, and the section's list shows
+  only Exchange settings.
+- **Switching on** shows the seller-of-record fields below. Once they are
+  saved and complete, `sellers.json` is published and the rest of the
+  section appears: Advertiser settings, Shared Targeting Variables and the
+  DSP pages. Until then, a link to one of those pages opens Exchange
+  settings instead.
+- **Like every toggle in the section, it is an unsaved change until Save
+  changes.** Switching it off before saving also drops unsaved edits to the
+  fields it hides.
+- **While it is off:**
+  - Campaign Status and Advertisers / Inventory are hidden from the
+    navigation, and a link to either (or to the booking schedule) opens
+    the first page instead. DSP Integration stays, because the switch is
+    there.
+  - No DSP is sent bid requests; the scheduled auction doesn't run.
+  - The Partner API and `sellers.json` answer 404, exactly as with the
+    build's feature flag off.
+  - Windows already sold are still billed when they end: they were
+    delivered.
+  - On Display Types → Playlist Settings → Slot assignment, **Advertiser is
+    greyed out, not hidden**, in a slot's owner list (Rob, 24 Sep 2026).
+    A slot that is already an Advertiser slot keeps it, with its
+    assignment; no new Advertiser slot can be set up. Its tooltip says to
+    enable DSP Integration. The API refuses a new Advertiser slot too.
+- **Switching it off deletes nothing** (for testing, and for good): the
+  seller-of-record fields, the DSPs and their credentials, advertiser
+  settings, advertisers, campaigns and bookings all stay. Switching back on
+  picks up where it left off.
+- It is the retailer's runtime setting, one per instance. It is separate
+  from the build's `dspIntegration` feature flag, which still decides
+  whether any of this ships.
+
 ### Exchange settings — what the retailer supplies
 
 Four fields, all required: **organisation**, **domain**, **seller ID** and
@@ -1897,7 +1943,8 @@ playback analytics.**
   assignment by owner, or *Default settings*; phantom size/position; enabled
   features; zone count). *(Display Types)*
 - **Slot ownership editor**: each slot's label and owner — Headquarters,
-  Advertiser or Stores — and nothing else.
+  Advertiser or Stores — and nothing else. With DSP integration switched
+  off, Advertiser is greyed out for a slot that isn't one already.
   *(Display Types → Playlist Settings → Slot assignment)*
 - **Multi-zone layout designer** for signage. *(Display Types → Multi-Zone Layout)*
 - **Venue and screen metadata** per store and display. *(spec only)*
@@ -1932,8 +1979,8 @@ playback analytics.**
 
 ### Advertisers / Inventory
 
-- **Advertisers / Inventory screen**, directly below DSP Integration in the
-  navigation, editable by an admin and read-only for marketing: every
+- **Advertisers / Inventory screen**, below Campaign Status and above DSP
+  Integration in the navigation, editable by an admin and read-only for marketing: every
   advertiser across all DSPs, with a **Campaign approval** toggle (Required /
   Not required, default Required), a **floor multiplier** (default 1.0) with
   the effective floor shown in the company currency, its **campaigns by
@@ -2149,8 +2196,14 @@ playback analytics.**
 
 ### DSP integration and exchange
 
+- **DSP integration switch** (Rob, 24 Sep 2026): **Enable DSP Integration**
+  at the top of Exchange settings, off at first; while off, Campaign Status
+  and Advertisers / Inventory are hidden, no bid requests are sent, the
+  Partner API and `sellers.json` answer 404, and nothing is deleted.
+  *(DSP Integration → Exchange settings)*
 - **Exchange settings**: four seller-of-record fields and the published
-  `sellers.json` status. *(DSP Integration → Exchange settings)*
+  `sellers.json` status, shown once the switch is on. *(DSP Integration →
+  Exchange settings)*
 - **Issues at the top of each DSP page**: connection error with the DSP's
   reason, missing credentials, and missing bidder fields; a single
   confirmation when there are none. *(DSP Integration → partner)*
@@ -2181,19 +2234,138 @@ playback analytics.**
 - **Data view on every record** as JSON. *(spec only; the "Data model — JSON
   sample records" document on the board's Docs page serves this purpose)*
 
+### Security, scale and the boundary with PH Core (review, 23 Sep 2026)
+
+These govern how the exchange behaves under load and at its edges. They add
+no screen and no copy. Details, measurements and what is deliberately left
+are in `api/SECURITY-PERFORMANCE.md`; the seams with the existing platform
+are in `api/PH-CORE-BOUNDARIES.md`.
+
+- **One live sale per position and play window**, enforced by the
+  database, not only by the application's check. Two clearings of the same
+  window, or two reservations racing, can't both sell it; the loser is told
+  why. The existing campaign system must likewise accept at most one
+  booking per slot and window. *(migration 0021)*
+- **Only a connected DSP can write.** Creating, uploading, submitting,
+  reserving and bidding need the DSP to be connected; reads of its own
+  campaigns stay open. Disconnecting a DSP stops it at once.
+- **Partner API limits:** 50 requests/s per partner (bursts of 100), then
+  `429 rate_limited` with `Retry-After`; 2 uploads in flight per partner;
+  forecasts of at most 200 positions, each once; content packages bounded
+  (name ≤ 200 characters, ≤ 20 targeted versions, ≤ 10 AND groups, ≤ 20
+  conditions per group, values ≤ 200 characters).
+- **Bid responses are validated and bounded** before they are trusted:
+  the request id echoed, impression 1, a finite price under a ceiling, a
+  missing currency read as USD (OpenRTB), at most 10 bids and 64 KB per
+  response, and one unknown creative retrieved per response, only from the
+  DSP's own creative path.
+- **An auction clears in about one bidder timeout per 16 positions**,
+  however many DSPs there are: every DSP for a position is asked at once.
+- **Every response** carries `nosniff`, a script-blocking CSP and, on the
+  APIs, `no-store`; client errors keep their 4xx status; the public POC
+  partner tokens can't be used in production.
+- **Measured throughput** on one process, 1,008 positions: 1,205 req/s for
+  one position, 608 req/s for a year of availability, and an auction in
+  5.3 s with an 80 ms DSP round trip (`npm run bench`).
+
+### Scale: 15,000 displays, in a client's VPC on EKS (review, 24 Sep 2026)
+
+The exchange must serve a 15,000-display estate, and advertisers bidding
+for slots on it, from a client's own AWS account on EKS. Measurements,
+what changed and what is left are in `api/SCALE-15000-EKS.md`; the
+deployment is `deploy/kubernetes/`.
+
+- **What is sold scales with positions, not displays.** A play window is
+  sold per position (display type × slot) across every display of that
+  type (§6), so bid requests, bids and inventory grow with the number of
+  positions — 60 to 2,400 for 15,000 displays, depending on how many
+  formats the estate has — never with the 15,000.
+- **Display counts, never display rows.** Every position, availability
+  check, bid request and bid reads how many displays and stores a display
+  type has from a count, not from the rows; a page of inventory on
+  1,000-display types went from 20 to 850 requests a second.
+- **One query for the estate** where a request asks about every position
+  (the inventory's status filter), and the estate's positions indexed once
+  per change to a display type.
+- **Billing reads only what it can bill now** and counts a window's plays
+  where they are stored: a window on 1,000 displays (1.9 million plays) is
+  billed in under a second, and a tick with nothing to bill costs the same
+  after 100,000 billed windows as on day one.
+- **One auction per window, across processes**: a tick claims the window
+  in the database before auctioning it (`auction_runs`), so several
+  instances, a CronJob and the CLI never send DSPs a second round of bid
+  requests. The scheduled work can run in the API process or from outside
+  (`PH_SCHEDULER`, `npm run scheduler:tick`).
+- **Settled bids are deleted** 90 days after their window
+  (`PH_RESERVATION_RETENTION_DAYS`); won and reserved windows are kept.
+- **Bounded memory:** at most 4 uploads in flight across all partners
+  (`PH_MAX_UPLOADS_IN_FLIGHT`), on top of 2 per partner.
+- **An admin-typed DSP endpoint cannot name the VPC**: private, loopback,
+  link-local, instance-metadata and cluster-local hosts are refused; the
+  cluster's egress policy is the second lock.
+- **Two front doors**: the Partner API, `sellers.json` and creatives on a
+  public load balancer behind a WAF; the Admin API on an internal one
+  only, since the POC's Admin API relies on the platform's session.
+- **Probes and shutdown**: `/healthz`, `/readyz` (503 until migrated),
+  SIGTERM drains and closes the database; `API_HOST` binds beyond the
+  machine.
+- **Measured** on one process at 15,000 displays, 32 concurrent clients:
+  a page of inventory 582–850 req/s, one position ~2,500 req/s, a bid
+  ~1,000 req/s, a forecast ~1,350 req/s, whichever of the three estate
+  shapes; the auction 12.7 s for 2,408 positions at an 80 ms DSP round
+  trip (bounded by the round trip, not the estate).
+- **One replica until the database is shared**: the SQLite file is one
+  writer; N replicas need Postgres, and with it an asynchronous
+  repository layer (engineering's integration work), after which the HPA,
+  PDB and CronJob in `deploy/kubernetes/optional/` apply.
+
+### Stability under concurrency (review, 24 Sep 2026)
+
+Before going live, the exchange was tried against the races and edge
+cases a live estate produces (`api/SECURITY-PERFORMANCE.md` → "Stability
+under concurrency and at the edges" has the table; the tests are
+`apps/api/test/stability.test.ts` and `test/multiprocess.test.ts`). What
+the system now guarantees:
+
+- **No bid is ever stranded pending.** A bid placed while the auction is
+  waiting on the bidders is in that auction; anything still pending when
+  a position clears, when its auction fails, or when its window starts
+  without an auction, is settled `lost` with a reason. Once a tick has
+  claimed a window's auction, a new bid for it is refused.
+- **One advertiser, one open bid per window**, enforced by the database
+  (migration 0026), so two API instances taking the same bid at once take
+  it once.
+- **A DSP can't take the auction down.** An answer that isn't a bid
+  response, or a fault clearing one position, is that position's outcome;
+  every other position clears and the tick finishes.
+- **One job can't stop another.** Billing, retention, settling and the
+  auction are isolated in the tick; a failure is logged and reported, and
+  the auction due that minute still runs.
+- **A missed cutoff is recovered**: the window is auctioned late while it
+  hasn't started, and settled once it has.
+- **API bids have the DSP bids' ceiling** (10,000 CPM).
+- **Two processes starting on one empty database** both come up: one
+  migrates and seeds, the other waits and serves.
+- **Ties go to the earlier bid.**
+
 ### Analytics schema, measurement and federation — foundation (§9)
 
 - **Versioned canonical playback/analytics event schema**, S3-partitioned,
   with a `schemaVersion`, `source` and `timestamp` on every event and
-  optional/nullable CV fields reserved from day one. *(spec only)*
+  optional/nullable CV fields reserved from day one. *(spec only; the v1
+  shape and a validator are reserved in `packages/types/src/analyticsEvent.ts`
+  — nothing produces events yet)*
 - **Computer vision as a measurement source**: opportunity-to-see, dwell,
   attention seconds and anonymised age band/gender populate the schema's
   reserved `cv` fields, each with a `confidence` value, extending
-  proof-of-play toward proof-of-audience. *(spec only)*
+  proof-of-play toward proof-of-audience. *(spec only; the `cv` fields are
+  reserved on the v1 event shape)*
 - **Source-instance identifier** (`platformInstance: { instanceId, domain
   }`), reserved on the canonical event schema and on booking/reservation
   records, anchored to the stable domain and never the `sellers.json`
-  seller ID. *(spec only)*
+  seller ID. *(spec only; reserved as nullable, unused columns —
+  `exchange.platform_instance_id`, `reservations.source_instance_id`,
+  migration 0022 — and `sourceInstanceId` on the v1 event)*
 - **Agent-to-agent platform interface**: the inter-platform integration
   defined as an agent-consumable (MCP-layer) surface, first-class and
   separate from the tier-2 PH-native API. *(spec only)*

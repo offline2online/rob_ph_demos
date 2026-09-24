@@ -4,7 +4,13 @@
 
    The editor sets the label and the owner only (Rob, 20 Sep): who a sellable
    position is assigned to — DSPs, named advertisers, the whitelist — is
-   managed on Advertisers / Inventory, and shown here read-only on the card. */
+   managed on Advertisers / Inventory, and shown here read-only on the card.
+
+   While the retailer has DSP integration switched off (Exchange settings),
+   Advertiser stays in the owner list but is greyed out, unless the slot was
+   already an Advertiser slot when last saved: existing ones are left as
+   they are, and no new one can be set up (Rob, 24 Sep 2026). The API
+   enforces the same. */
 import { Alert, Button, Input, Select } from 'antd'
 import type { ColDef, ICellRendererParams } from 'ag-grid-community'
 import { SLOT_OWNERS, assignedOf, providerDef, type Partner, type Slot, type SlotOwner } from '@ph-dsp/types'
@@ -19,6 +25,7 @@ const ADVERTISER_COLOUR = SLOT_OWNERS.advertiser.colour
 
 interface Ctx {
   partners: Partner[]
+  advertiserOpen: (i: number) => boolean
   setSlot: (i: number, patch: Partial<Slot>) => void
 }
 interface Row { i: number; slot: Slot }
@@ -55,21 +62,29 @@ function OwnerCell({ data, context: grid }: ICellRendererParams<Row, unknown, Gr
       aria-label={`Slot ${data.i + 1} owner`}
       value={data.slot.owner}
       onChange={(v: SlotOwner) => context.setSlot(data.i, ownerChange(v))}
-      options={(Object.keys(SLOT_OWNERS) as SlotOwner[]).map((k) => ({ value: k, label: <span style={{ color: SLOT_OWNERS[k].colour }}>{SLOT_OWNERS[k].label}</span> }))}
+      options={(Object.keys(SLOT_OWNERS) as SlotOwner[]).map((k) => {
+        const disabled = k === 'advertiser' && !context.advertiserOpen(data.i)
+        return {
+          value: k, disabled,
+          title: disabled ? 'Enable DSP Integration (DSP Integration → Exchange settings) to add an Advertiser slot.' : undefined,
+          label: <span style={{ color: disabled ? T.disabled : SLOT_OWNERS[k].colour }}>{SLOT_OWNERS[k].label}</span>,
+        }
+      })}
       labelRender={() => <span style={{ color: o.colour }}>{o.label}</span>}
     />
     </div>
   )
 }
 
-export function SlotAssignment({ slots, setSlots, partners, onFixConnection, tip }: {
+export function SlotAssignment({ slots, setSlots, partners, advertiserOpen, onFixConnection, tip }: {
   slots: Slot[]
   setSlots: (s: Slot[]) => void
   partners: Partner[]
+  advertiserOpen: (i: number) => boolean
   onFixConnection: (partnerId: string) => void
   tip: string
 }) {
-  const ctx: Ctx = { partners, setSlot: (i, patch) => setSlots(slots.map((s, k) => (k === i ? { ...s, ...patch } : s))) }
+  const ctx: Ctx = { partners, advertiserOpen, setSlot: (i, patch) => setSlots(slots.map((s, k) => (k === i ? { ...s, ...patch } : s))) }
   const rows = useMemo(() => slots.map((slot, i) => ({ i, slot })), [slots])
   const columns = useMemo<ColDef<Row>[]>(
     () => [

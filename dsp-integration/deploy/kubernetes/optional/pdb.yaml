@@ -1,0 +1,12 @@
+# With two or more replicas (README, "Scaling out"): a node drain or an
+# upgrade never takes the last pod.
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: dsp-exchange-api
+  namespace: dsp-exchange
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: dsp-exchange-api

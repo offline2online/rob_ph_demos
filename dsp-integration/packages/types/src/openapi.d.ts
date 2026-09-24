@@ -224,6 +224,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/v1/features": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Whether the retailer has DSP integration switched on
+         * @description Readable by every user who sees these sections (admin and
+         *     marketing), unlike Exchange settings, so the navigation can hide
+         *     Campaign Status and Advertisers / Inventory while the switch is off.
+         *     Always false with the build flag off.
+         */
+        get: operations["getFeatures"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/v1/advertiser-settings": {
         parameters: {
             query?: never;
@@ -771,6 +794,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/healthz": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Liveness — the process is up */
+        get: operations["healthz"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/readyz": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Readiness — the database answers and every migration is applied, so requests can be served */
+        get: operations["readyz"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -778,7 +835,7 @@ export interface components {
         Error: {
             error: {
                 /** @enum {string} */
-                code: "validation_failed" | "variable_not_permitted" | "checks_failed" | "not_approved" | "below_floor" | "advertiser_blocked" | "category_blocked" | "not_on_whitelist" | "not_invited" | "targeting_not_supported" | "conflict" | "has_dependents" | "unauthorised" | "forbidden" | "not_found";
+                code: "validation_failed" | "variable_not_permitted" | "checks_failed" | "not_approved" | "below_floor" | "advertiser_blocked" | "category_blocked" | "not_on_whitelist" | "not_invited" | "targeting_not_supported" | "conflict" | "has_dependents" | "unauthorised" | "forbidden" | "not_found" | "rate_limited" | "internal_error";
                 message: string;
                 details?: {
                     field?: string;
@@ -954,7 +1011,7 @@ export interface components {
             advertiserId: string;
             /** @enum {string} */
             type: "reserve" | "bid";
-            /** @description The CPM, in the company currency: the bid (type bid), or the reservation price agreed through the DSP (type reserve). Must clear the effective floor. A reservation is booked at this price. */
+            /** @description The CPM, in the company currency: the bid (type bid), or the reservation price agreed through the DSP (type reserve). Must clear the effective floor and is at most 10,000. A reservation is booked at this price. */
             bidCpm: number;
         };
         Reservation: {
@@ -966,15 +1023,27 @@ export interface components {
             reason?: string | null;
         };
         Exchange: components["schemas"]["ExchangeInput"] & {
+            /** @description Switched on and all four fields complete: sellers.json is live and DSPs are sent bid requests. */
             published: boolean;
             sellersJsonUrl?: string | null;
         };
+        /**
+         * @description The four seller-of-record fields are required while `enabled` is
+         *     true. Switched off, they may be blank and are kept as sent, so
+         *     switching back on restores them.
+         */
         ExchangeInput: {
+            /** @description The retailer's DSP integration switch (Rob, 24 Sep 2026). Off for a new instance. Switching it off deletes nothing. */
+            enabled: boolean;
             organisation: string;
             domain: string;
             sellerId: string;
-            /** Format: email */
+            /** @description An email address when set */
             contactEmail: string;
+        };
+        Features: {
+            /** @description The build flag is on and the retailer has DSP integration switched on. */
+            dspIntegration: boolean;
         };
         AdvertiserSettingsInput: {
             /**
@@ -1746,6 +1815,16 @@ export interface components {
                 "application/json": components["schemas"]["Error"];
             };
         };
+        /** @description error.code = rate_limited. Per partner token (default 50 requests/s, bursts of 100), or too many asset uploads in flight at once. Retry-After gives the seconds to wait. */
+        RateLimited: {
+            headers: {
+                "Retry-After"?: number;
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["Error"];
+            };
+        };
     };
     parameters: {
         PositionId: string;
@@ -1796,6 +1875,7 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthorised"];
+            429: components["responses"]["RateLimited"];
         };
     };
     getPosition: {
@@ -1822,6 +1902,7 @@ export interface operations {
             };
             401: components["responses"]["Unauthorised"];
             404: components["responses"]["NotFound"];
+            429: components["responses"]["RateLimited"];
         };
     };
     getAvailability: {
@@ -1854,6 +1935,7 @@ export interface operations {
             400: components["responses"]["ValidationFailed"];
             401: components["responses"]["Unauthorised"];
             404: components["responses"]["NotFound"];
+            429: components["responses"]["RateLimited"];
         };
     };
     forecast: {
@@ -1866,6 +1948,7 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": {
+                    /** @description At most 200 positions per request, each once. */
                     positionIds: string[];
                     /** Format: date */
                     from: string;
@@ -1896,6 +1979,7 @@ export interface operations {
             400: components["responses"]["ValidationFailed"];
             401: components["responses"]["Unauthorised"];
             422: components["responses"]["VariableNotPermitted"];
+            429: components["responses"]["RateLimited"];
         };
     };
     listTargetingAttributes: {
@@ -1919,6 +2003,7 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthorised"];
+            429: components["responses"]["RateLimited"];
         };
     };
     createCampaign: {
@@ -1946,6 +2031,7 @@ export interface operations {
             400: components["responses"]["ValidationFailed"];
             401: components["responses"]["Unauthorised"];
             422: components["responses"]["VariableNotPermitted"];
+            429: components["responses"]["RateLimited"];
         };
     };
     uploadAsset: {
@@ -1987,6 +2073,7 @@ export interface operations {
             401: components["responses"]["Unauthorised"];
             404: components["responses"]["NotFound"];
             422: components["responses"]["ChecksFailed"];
+            429: components["responses"]["RateLimited"];
         };
     };
     submitCampaign: {
@@ -2013,6 +2100,7 @@ export interface operations {
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
             422: components["responses"]["ChecksFailed"];
+            429: components["responses"]["RateLimited"];
         };
     };
     getCampaignStatus: {
@@ -2037,6 +2125,7 @@ export interface operations {
             };
             401: components["responses"]["Unauthorised"];
             404: components["responses"]["NotFound"];
+            429: components["responses"]["RateLimited"];
         };
     };
     createReservation: {
@@ -2065,6 +2154,7 @@ export interface operations {
             401: components["responses"]["Unauthorised"];
             409: components["responses"]["Conflict"];
             422: components["responses"]["NotEligible"];
+            429: components["responses"]["RateLimited"];
         };
     };
     getReservation: {
@@ -2089,6 +2179,7 @@ export interface operations {
             };
             401: components["responses"]["Unauthorised"];
             404: components["responses"]["NotFound"];
+            429: components["responses"]["RateLimited"];
         };
     };
     getExchange: {
@@ -2125,7 +2216,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Saved; sellers.json republished when complete */
+            /** @description Saved; sellers.json republished when switched on and complete */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -2135,6 +2226,28 @@ export interface operations {
                 };
             };
             400: components["responses"]["ValidationFailed"];
+            401: components["responses"]["Unauthorised"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    getFeatures: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Features */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Features"];
+                };
+            };
             401: components["responses"]["Unauthorised"];
             403: components["responses"]["Forbidden"];
         };
@@ -3243,12 +3356,71 @@ export interface operations {
                     "application/json": components["schemas"]["SellersJson"];
                 };
             };
-            /** @description Exchange settings incomplete; not published. */
+            /** @description Not published — DSP integration switched off */
             404: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    healthz: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Up */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {boolean} */
+                        ok: true;
+                    };
+                };
+            };
+        };
+    };
+    readyz: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Ready */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {boolean} */
+                        ok: true;
+                    };
+                };
+            };
+            /** @description Not ready (a pod stays out of the load balancer until it is) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {boolean} */
+                        ok: false;
+                        reason: string;
+                    };
+                };
             };
         };
     };
