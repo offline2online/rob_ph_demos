@@ -1069,7 +1069,7 @@ async function audit(session, tool, detail) {
 }
 
 // ── Composable UI resources (embedded HTML cards) ───────────────────────────
-// get_ready_for_testing_board (below)
+// get_ready_for_testing_board (below), plus approve_deploy_to_main's own guard
 // return, alongside the usual JSON, a self-contained HTML "card list" as an
 // MCP embedded resource (content type "resource", mimeType "text/html") —
 // the standard MCP tool-result content block, not a bespoke extension — so a
@@ -1143,6 +1143,42 @@ function ticketCardHTML(item, extraPillsHTML) {
   </div>`;
 }
 
+// Mirrors public/js/app.js's deployNotifyButtonHTML gate exactly
+// (pendingTrainRevertsForProject + trainItemsForProject +
+// legacyDeployItemsForProject) — see that file. approve_deploy_to_main
+// calls this so it can never fire a deploy the console's own button would
+// currently be hiding.
+async function deployGuardForProject(pid) {
+  const snap = await db().collection("backlogItems").where("projectId", "==", pid).get();
+  const items = [];
+  snap.forEach((doc) => items.push(Object.assign({ id: doc.id }, doc.data())));
+
+  const pendingReverts = items.filter((i) => i.revertRequested === true && i.deployCommit);
+  if (pendingReverts.length) {
+    return {
+      ok: false, deployItems: [],
+      reason: `${pendingReverts.length} ticket(s) on this project's deployment train have a pending revert not yet resolved (e.g. "${pendingReverts[0].title}"). The board's own Deploy to Main button is hidden for the same reason — resolve it there first.`,
+    };
+  }
+
+  const trainItems = items.filter((i) => i.deployCommit && (i.status === "ready-for-testing" || i.status === "ready-to-publish"));
+  if (trainItems.length) {
+    const stillTesting = trainItems.filter((i) => i.status !== "ready-to-publish");
+    if (stillTesting.length) {
+      return {
+        ok: false, deployItems: [],
+        reason: `${stillTesting.length} ticket(s) on this project's deployment train are still in Ready for Testing (e.g. "${stillTesting[0].title}") — merging now would ship them untested too. The board's own Deploy to Main button is hidden until Ready for Testing is empty for this project.`,
+      };
+    }
+    return { ok: true, deployItems: trainItems, reason: null };
+  }
+
+  const legacyItems = items.filter((i) => i.status === "ready-to-publish" && !i.deployCommit && !i.noDeploymentRequired);
+  if (!legacyItems.length) {
+    return { ok: false, deployItems: [], reason: "Nothing is Approved for Deployment for this project yet — the board's own Deploy to Main button is hidden for the same reason." };
+  }
+  return { ok: true, deployItems: legacyItems, reason: null };
+}
 
 const TOOLS = [
   {
@@ -1448,6 +1484,59 @@ const TOOLS = [
           { type: "text", text: JSON.stringify({ projectId: a.projectId || null, count: cards.length, items: cards }, null, 2) },
         ],
       };
+    },
+  },
+  // ── The one deliberate, logged exception to "nothing here deploys" ──────
+  // Every other tool in this file is read/file/comment/documentation only —
+  // see this file's own header. This is the single, narrowly-scoped carve-
+  // out: it fires the exact same trigger the console's own "Deploy to Main"
+  // button writes (projects/{id}.deployNotifyRequestedAt, watched by
+  // notifyOnProjectReadyToDeploy in index.js), so it merges nothing itself —
+  // the existing Routine still verifies the train and the existing pipeline
+  // still does the real merge. Gated to board.write (never a viewer, same as
+  // every other write tool) and logged to mcpAuditLog like every other write
+  // here. The one thing that's genuinely new is the guard below, which this
+  // tool must enforce itself since notifyOnProjectReadyToDeploy does not —
+  // deployGuardForProject mirrors deployNotifyButtonHTML's client-side gate
+  // exactly, so calling this tool directly can never fire a deploy the
+  // console's own button would currently be hiding.
+  {
+    name: "approve_deploy_to_main",
+    description: "Fire this project's Deploy to Main trigger — exactly the same action as clicking the board's own 'Deploy to Main' button. It does not merge anything itself: it only fires the existing Routine, which verifies the train and the existing pipeline then merges it. Only offered when every ticket on this project's deployment train is already Approved for Deployment and Ready for Testing is empty for it — the same condition that shows the console's own button — and refuses otherwise, naming what's blocking it. Logged to mcpAuditLog under your email.",
+    scope: "board.write",
+    inputSchema: {
+      type: "object",
+      properties: { projectId: { type: "string", description: "Which project (from list_projects)." } },
+      required: ["projectId"], additionalProperties: false,
+    },
+    async run(args, session) {
+      const projectId = String(args.projectId || "");
+      const projectSnap = await db().collection("projects").doc(projectId).get();
+      if (!projectSnap.exists) return toolError(`No project with id ${projectId}. Call list_projects first.`);
+
+      const guard = await deployGuardForProject(projectId);
+      if (!guard.ok) return toolError(guard.reason);
+
+      await db().collection("projects").doc(projectId).set({
+        deployNotifyRequestedAt: FieldValue.serverTimestamp(),
+        // Provenance, same spirit as create_backlog_item's createdVia/
+        // createdByEmail — not a train field (see PROJECT_WRITABLE_FIELDS'
+        // own comment on what counts as one) and not read by the pipeline,
+        // just an audit trail on the project doc itself.
+        deployNotifyRequestedVia: "mcp",
+        deployNotifyRequestedByEmail: session.email,
+      }, { merge: true });
+
+      await audit(session, "approve_deploy_to_main", {
+        projectId, deployCount: guard.deployItems.length,
+        itemIds: guard.deployItems.map((i) => i.id),
+      });
+
+      return textResult({
+        fired: true, projectId, deployCount: guard.deployItems.length,
+        itemIds: guard.deployItems.map((i) => i.id),
+        note: "This fires the same Routine the console's own Deploy to Main button fires — it verifies the train and merges it. This call returns before that finishes; check the project's trainStatus (list_projects) or the board itself afterward.",
+      });
     },
   },
   {
@@ -2501,7 +2590,7 @@ async function dispatchRpc(msg, session, ctx) {
         serverInfo: {
           name: "ph-agent-console",
           title: "PH Agent Console",
-          version: "1.2.1",
+          version: "1.2.2",
           websiteUrl: PUBLIC_ORIGIN,
           description: "The Personalisation Hub prototype backlog board and help centre.",
           icons: SERVER_ICONS,
