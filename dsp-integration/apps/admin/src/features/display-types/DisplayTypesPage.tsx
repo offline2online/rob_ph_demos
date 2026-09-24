@@ -6,6 +6,7 @@ import type { DeleteCheck, DisplayType, Partner } from '@ph-dsp/types'
 import { useMemo, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { ApiRequestError } from '../../api/client'
+import { useFeatures } from '../../api/features'
 import type { Flags } from '../../flags'
 import { ListPageLayout } from '../../shared/ListPageLayout'
 import { SaveBar } from '../../shared/SaveBar'
@@ -30,6 +31,12 @@ export function DisplayTypesPage({ flags }: { flags: Flags }) {
   const types = useDisplayTypes()
   const playlists = usePlaylists()
   const partners = usePartners(slotAssignment)
+  /* The retailer's DSP integration switch (Exchange settings). While it is
+     off, Advertiser is greyed out for a slot that isn't one already (Rob,
+     24 Sep 2026). Assumed on until known, so it doesn't flicker; the API
+     refuses a new advertiser slot either way. */
+  const features = useFeatures(slotAssignment)
+  const dspOn = features.data?.dspIntegration !== false
 
   /* Slots always match the rotation cap in the editor (flag on). */
   const saved = useMemo<Draft | undefined>(
@@ -145,6 +152,7 @@ export function DisplayTypesPage({ flags }: { flags: Flags }) {
         playlists={allPlaylists}
         zonePlaylistId={zonePlaylistId}
         slotAssignment={slotAssignment}
+        advertiserOpen={(i) => dspOn || types.data?.find((t) => t.id === d.id)?.phExtensions?.slots?.[i]?.owner === 'advertiser'}
         partners={partners.data ?? []}
         onFixConnection={(partnerId) => navigate(`/dsp-integration/partners/${partnerId}`)}
         openPanel={params.get('panel')}

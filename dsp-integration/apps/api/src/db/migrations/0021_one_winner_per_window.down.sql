@@ -1,0 +1,2 @@
+DROP INDEX campaign_slot_bookings_one_per_window;
+DROP INDEX reservations_one_live_winner;

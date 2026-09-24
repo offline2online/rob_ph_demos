@@ -1,0 +1,65 @@
+# The scheduled work as a CronJob, for a shared (external) database with
+# PH_SCHEDULER=off on the API pods: one tick a minute bills the windows
+# that have ended, clears any window whose auction cutoff has passed, and
+# runs the retention sweeps, then exits. Which process clears a window is
+# settled in the database (auction_runs, migration 0024), so a tick that
+# overlaps the previous one, or an API pod still running its in-process
+# scheduler, never auctions the same window twice.
+#
+# Not for the SQLite base: this pod cannot mount the API's RWO volume from
+# another node. There the API's own in-process scheduler does this.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: dsp-exchange-scheduler
+  namespace: dsp-exchange
+spec:
+  schedule: "* * * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 0
+      # An auction over 2,400 positions with 300 ms bidders takes under a
+      # minute (README, "Sizing"); a tick that runs longer is killed and the
+      # next one picks the window up again.
+      activeDeadlineSeconds: 300
+      template:
+        spec:
+          serviceAccountName: dsp-exchange-api
+          automountServiceAccountToken: false
+          restartPolicy: Never
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: tick
+              image: REPLACE_ME/dsp-exchange-api:latest
+              command: ["node", "tick.mjs"]
+              envFrom:
+                - configMapRef:
+                    name: dsp-exchange-api
+                - secretRef:
+                    name: dsp-exchange-api
+              resources:
+                requests:
+                  cpu: 500m
+                  memory: 512Mi
+                limits:
+                  cpu: "1"
+                  memory: 1Gi
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: [ALL]
+              volumeMounts:
+                - name: tmp
+                  mountPath: /tmp
+          volumes:
+            - name: tmp
+              emptyDir: {}

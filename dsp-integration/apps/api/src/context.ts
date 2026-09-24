@@ -14,6 +14,7 @@ import { type PlaybackSource, sqlitePlaybackSource } from './platform/PlaybackSo
 import { type PartnerRepo, sqlitePartnerRepo } from './repos/PartnerRepo'
 import { type CompanySettingsRepo, sqliteCompanySettingsRepo } from './repos/CompanySettingsRepo'
 import { type ExchangeRepo, sqliteExchangeRepo } from './repos/ExchangeRepo'
+import { type BuyersListRepo, sqliteBuyersListRepo } from './repos/BuyersListRepo'
 import type { CampaignSource as ApprovalCampaignSource } from '@ph-dsp/campaign-approval/adapter'
 import { pocCampaignSource } from '@ph-dsp/campaign-approval/poc'
 import { type ApprovalService, createApprovalService } from '@ph-dsp/campaign-approval/server'
@@ -42,6 +43,7 @@ export interface Context {
   partners: PartnerRepo
   company: CompanySettingsRepo
   exchange: ExchangeRepo
+  buyersLists: BuyersListRepo
   dsp: ReturnType<typeof dspClients>
   assets: AssetStore
   audience: AudienceSource
@@ -78,9 +80,10 @@ export function createContext(opts: { config?: Config; db?: Db; flags?: Flags; s
     partners: sqlitePartnerRepo(db, secrets),
     company: sqliteCompanySettingsRepo(db),
     exchange: sqliteExchangeRepo(db),
+    buyersLists: sqliteBuyersListRepo(db),
     dsp: dspClients(config.dsp, opts.dspFetch),
     fetch: opts.dspFetch ?? ((url, init) => fetch(url, init)),
-    bidder: httpBidder(opts.dspFetch ?? ((url, init) => fetch(url, init)), { timeoutMs: config.bidderTimeoutMs, qps: config.bidderQps }),
+    bidder: httpBidder(opts.dspFetch ?? ((url, init) => fetch(url, init)), { timeoutMs: config.bidderTimeoutMs, qps: config.bidderQps, maxResponseBytes: config.maxBidResponseBytes }),
     audience: sqliteAudienceSource(db),
     reach: pocReachCountSource(clock),
     reservations: sqliteReservationRepo(db),
@@ -91,7 +94,7 @@ export function createContext(opts: { config?: Config; db?: Db; flags?: Flags; s
 
 /* Wires the campaign-approval module to this repo's stand-in campaign store. */
 function approvalParts(db: Db, config: Config) {
-  const assets = localAssetStore(config.assetsDir)
+  const assets = localAssetStore(config.assetsDir, config.publicUrl)
   /* Advertiser names come from the DSP seats (seats are not secret). */
   const seatNames = () => (db.prepare('SELECT seats FROM partners').all() as { seats: string }[]).flatMap((r) => JSON.parse(r.seats) as { name: string }[])
   const company = sqliteCompanySettingsRepo(db)

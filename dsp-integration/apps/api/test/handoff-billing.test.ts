@@ -94,14 +94,17 @@ describe('hand-off to the existing campaign system', () => {
 
   it('refuses a campaign that is no longer approved, or whose creative doesn’t fit the display type', async () => {
     const { ctx, app, activate } = await setup()
-    const draft = await handOff(ctx, ctx.reservations.insert(won({ campaignId: 'c_api_swisse_kids' })))
+    /* One live winner per position and window (migration 0021): each case
+       gets its own window rather than stacking three winners on one. */
+    const day = (n: number) => new Date(W1.getTime() + n * 86_400_000).toISOString()
+    const draft = await handOff(ctx, ctx.reservations.insert(won({ campaignId: 'c_api_swisse_kids', windowStart: day(2) })))
     expect(draft).toMatchObject({ handedOffAt: null, reason: 'Not handed off: the campaign is not approved.' })
     await app.inject({ method: 'POST', url: '/api/admin/v1/campaigns/c_api_swisse/approve', payload: { assetVersion: 'v1' } })
-    const inactive = await handOff(ctx, ctx.reservations.insert(won({})))
+    const inactive = await handOff(ctx, ctx.reservations.insert(won({ windowStart: day(3) })))
     expect(inactive.reason).toBe('Not handed off: the campaign is approved but not activated.')
     await activate('c_api_swisse')
     /* Swisse's approved creative is 1080×1920 portrait; the Menu Board is 5760×1080. */
-    const portrait = await handOff(ctx, ctx.reservations.insert(won({})))
+    const portrait = await handOff(ctx, ctx.reservations.insert(won({ windowStart: day(4) })))
     expect(portrait.handedOffAt).toBeNull()
     expect(portrait.reason).toMatch(/^Not handed off: the creative doesn’t fit Menu Board — Long Format: /)
     expect(ctx.campaigns.bookings('c_api_swisse')).toEqual([])
@@ -143,5 +146,38 @@ describe('billing — dynamic VAC-d from existing playback data', () => {
     for (const d of ['d_1004', 'd_1005', 'd_1006']) for (let i = 0; i < 2000; i++) play.run(`x_${d}_${i}`, d, new Date(start + i * 43_000).toISOString())
     const item = runBilling(ctx).find((i) => i.reservationId === 'res_full')!
     expect(item).toMatchObject({ realisedViews: 1236, amount: 123.6 })
+  })
+
+  /* Private auctions: dynamic VAC-d billing over the delivery term (spec
+     "…dynamic VAC-d billing over the delivery term", 23 Sep 2026) —
+     exercised at this layer, independent of how the reservations got
+     there (exchange/auction.ts's bookLockedTermWindow creates exactly
+     this shape once a deal's rate is locked: several reservations for the
+     same position, different windows, one shared clearingCpm). Billing
+     itself needed no change: each window is still its own reservation,
+     billed on its own realised VAC-d, always at the term's one agreed
+     rate — the term total is simply the sum. */
+  it("bills each day of a locked-rate term independently at the term's one agreed CPM — the term total is the sum", async () => {
+    const { ctx } = await setup()
+    const day1 = '2026-09-16T00:00:00.000Z'
+    const day2 = '2026-09-17T00:00:00.000Z'
+    const LOCKED_CPM = 150
+    ctx.reservations.insert(won({ id: 'res_term_1', windowStart: day1, campaignId: 'c_dsp_nestle', advertiserId: 'nestle', clearingCpm: LOCKED_CPM, handedOffAt: day1 }))
+    ctx.reservations.insert(won({ id: 'res_term_2', windowStart: day2, campaignId: 'c_dsp_nestle', advertiserId: 'nestle', clearingCpm: LOCKED_CPM, handedOffAt: day2 }))
+    const play = ctx.db.prepare("INSERT INTO plays (id, display_id, campaign_id, played_at, duration_sec) VALUES (?, ?, 'c_dsp_nestle', ?, 15)")
+    for (const day of [day1, day2]) {
+      const start = Date.parse(day)
+      for (const d of ['d_1004', 'd_1005', 'd_1006']) for (let i = 0; i < 2000; i++) play.run(`x_${day}_${d}_${i}`, d, new Date(start + i * 43_000).toISOString())
+    }
+    const items = runBilling(ctx).filter((i) => i.reservationId.startsWith('res_term_')).sort((a, b) => a.windowStart.localeCompare(b.windowStart))
+    /* Same agreed rate both days (no re-auction), each fully saturated so
+       both cap at the same assumed views — the "caps a window" case above,
+       replayed for two windows of the same term. */
+    expect(items).toMatchObject([
+      { windowStart: day1, cpm: LOCKED_CPM, realisedViews: 1236, amount: 185.4 },
+      { windowStart: day2, cpm: LOCKED_CPM, realisedViews: 1236, amount: 185.4 },
+    ])
+    const termTotal = items.reduce((sum, i) => sum + i.amount, 0)
+    expect(termTotal).toBeCloseTo(370.8)
   })
 })

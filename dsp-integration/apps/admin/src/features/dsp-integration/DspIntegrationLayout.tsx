@@ -89,7 +89,7 @@ export const useSection = () => {
 }
 
 const settingsInput = ({ whereTheseApply: _w, ...rest }: AdvertiserSettings): AdvertiserSettingsInput => rest
-const exchangeInput = ({ organisation, domain, sellerId, contactEmail }: ExchangeInput): ExchangeInput => ({ organisation, domain, sellerId, contactEmail })
+const exchangeInput = ({ enabled, organisation, domain, sellerId, contactEmail }: ExchangeInput): ExchangeInput => ({ enabled: !!enabled, organisation, domain, sellerId, contactEmail })
 
 function Section({ partners, settings, exchange, published, variables }: { partners: Partner[]; settings: AdvertiserSettings; exchange: ExchangeInput; published: boolean; variables: SharedVariable[] }) {
   const { message } = App.useApp()
@@ -133,7 +133,8 @@ function Section({ partners, settings, exchange, published, variables }: { partn
       }
       commitNext()
       if (created) setGoTo(PATHS.partner(created))
-      await Promise.all(['exchange', 'advertiser-settings', 'available-inventory', 'targeting-variables', 'partners'].map((k) => qc.invalidateQueries({ queryKey: [k] })))
+      /* 'features' too: the switch decides what the nav shows. */
+      await Promise.all(['exchange', 'features', 'advertiser-settings', 'available-inventory', 'targeting-variables', 'partners'].map((k) => qc.invalidateQueries({ queryKey: [k] })))
     } catch (e) {
       message.error(e instanceof ApiRequestError ? [e.message, ...(e.body?.error.details ?? []).map((d) => d.reason)].join(' ') : 'Could not save changes.')
     } finally {
@@ -153,7 +154,8 @@ function Section({ partners, settings, exchange, published, variables }: { partn
 
 /* Where DSP Integration opens (Rob, 20 Sep): Exchange settings until the
    seller-of-record details are complete and sellers.json is published, then
-   Advertiser settings. */
+   Advertiser settings. While DSP integration is switched off, or not yet
+   published, Exchange settings is the only page (Rob, 24 Sep 2026). */
 export function DspIndex() {
   const { published } = useSection()
   return <Navigate to={published ? 'advertiser-settings' : 'exchange'} replace />
@@ -167,6 +169,9 @@ export function DspIntegrationLayout() {
   const variables = useTargetingVariables()
   const ex = useMemo(() => (exchange.data ? exchangeInput(exchange.data) : undefined), [exchange.data])
   if (!partners.data || !settings.data || !ex || !exchange.data || !variables.data) return <Spin />
+  /* Until it is switched on and published, the rest of the section waits:
+     a bookmark to a DSP page lands on Exchange settings. Nothing is deleted. */
+  if (!exchange.data.published && pathname !== PATHS.exchange && pathname !== '/dsp-integration') return <Navigate to={PATHS.exchange} replace />
   /* Keyed by page: leaving a page (after confirming) starts from the saved values. */
   return <Section key={pathname} partners={partners.data} settings={settings.data} exchange={ex} published={exchange.data.published} variables={variables.data} />
 }

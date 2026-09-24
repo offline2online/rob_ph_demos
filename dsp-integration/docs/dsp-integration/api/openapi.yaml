@@ -18,6 +18,11 @@ info:
     here): playback, playlists' playback behaviour, targeting evaluation,
     distribution to players, playback logging, campaign playback analytics.
 
+    The retailer's DSP integration switch (Exchange settings; Rob, 24 Sep
+    2026): while it is off, the Partner API and sellers.json answer 404,
+    exactly as with the build flag off, and no auction sends bid requests.
+    The Admin API keeps answering, and nothing is deleted.
+
     Jobs with no endpoint: the SSP auction runs as a scheduled job
     (CLI for demos: npm run auction:run); billing line items are stored
     only (CLI to print them: npm run billing:print). Neither has a UI,
@@ -46,6 +51,12 @@ tags:
       repo can't reach. Engineering replaces them with the existing APIs on
       integration; nothing else may depend on their internals.
   - name: Public
+  - name: Operations
+    description: |
+      For whatever supervises the process — Kubernetes probes, a load
+      balancer's health check (deploy/kubernetes/). Served at the root like
+      sellers.json, no authentication, no partner or admin data. Not for
+      partners.
 
 security:
   - partnerToken: []
@@ -84,6 +95,7 @@ paths:
                   items: {type: array, items: {$ref: '#/components/schemas/Position'}}
                   nextCursor: {type: [string, 'null']}
         '401': {$ref: '#/components/responses/Unauthorised'}
+        '429': {$ref: '#/components/responses/RateLimited'}
   /v1/inventory/{positionId}:
     get:
       tags: [Partner — Inventory]
@@ -95,6 +107,7 @@ paths:
       responses:
         '200': {description: Position, content: {application/json: {schema: {$ref: '#/components/schemas/Position'}}}}
         '401': {$ref: '#/components/responses/Unauthorised'}
+        '429': {$ref: '#/components/responses/RateLimited'}
         '404': {$ref: '#/components/responses/NotFound'}
   /v1/inventory/{positionId}/availability:
     get:
@@ -119,6 +132,7 @@ paths:
                   windows: {type: array, items: {$ref: '#/components/schemas/PlayWindow'}}
         '400': {$ref: '#/components/responses/ValidationFailed'}
         '401': {$ref: '#/components/responses/Unauthorised'}
+        '429': {$ref: '#/components/responses/RateLimited'}
         '404': {$ref: '#/components/responses/NotFound'}
   /v1/inventory/forecast:
     post:
@@ -133,7 +147,7 @@ paths:
               type: object
               required: [positionIds, from, to]
               properties:
-                positionIds: {type: array, minItems: 1, items: {type: string}}
+                positionIds: {type: array, minItems: 1, maxItems: 200, uniqueItems: true, items: {type: string}, description: 'At most 200 positions per request, each once.'}
                 from: {type: string, format: date}
                 to: {type: string, format: date}
                 advertiserId: {type: string}
@@ -152,6 +166,7 @@ paths:
                   estimatedCost: {type: number, description: assumedViews / 1000 × effective floor CPM.}
         '400': {$ref: '#/components/responses/ValidationFailed'}
         '401': {$ref: '#/components/responses/Unauthorised'}
+        '429': {$ref: '#/components/responses/RateLimited'}
         '422': {$ref: '#/components/responses/VariableNotPermitted'}
 
   /v1/targeting/attributes:
@@ -171,6 +186,7 @@ paths:
                 properties:
                   items: {type: array, items: {$ref: '#/components/schemas/TargetingAttribute'}}
         '401': {$ref: '#/components/responses/Unauthorised'}
+        '429': {$ref: '#/components/responses/RateLimited'}
 
   /v1/campaigns:
     post:
@@ -190,6 +206,7 @@ paths:
         '201': {description: Created, content: {application/json: {schema: {$ref: '#/components/schemas/CampaignStatus'}}}}
         '400': {$ref: '#/components/responses/ValidationFailed'}
         '401': {$ref: '#/components/responses/Unauthorised'}
+        '429': {$ref: '#/components/responses/RateLimited'}
         '422': {$ref: '#/components/responses/VariableNotPermitted'}
   /v1/campaigns/{campaignId}/assets:
     post:
@@ -220,6 +237,7 @@ paths:
                   checks: {type: array, items: {$ref: '#/components/schemas/Check'}}
         '400': {$ref: '#/components/responses/ValidationFailed'}
         '401': {$ref: '#/components/responses/Unauthorised'}
+        '429': {$ref: '#/components/responses/RateLimited'}
         '404': {$ref: '#/components/responses/NotFound'}
         '422': {$ref: '#/components/responses/ChecksFailed'}
   /v1/campaigns/{campaignId}/submit:
@@ -231,6 +249,7 @@ paths:
       responses:
         '200': {description: Submitted, content: {application/json: {schema: {$ref: '#/components/schemas/CampaignStatus'}}}}
         '401': {$ref: '#/components/responses/Unauthorised'}
+        '429': {$ref: '#/components/responses/RateLimited'}
         '404': {$ref: '#/components/responses/NotFound'}
         '409': {$ref: '#/components/responses/Conflict'}
         '422': {$ref: '#/components/responses/ChecksFailed'}
@@ -243,6 +262,7 @@ paths:
       responses:
         '200': {description: Status, content: {application/json: {schema: {$ref: '#/components/schemas/CampaignStatus'}}}}
         '401': {$ref: '#/components/responses/Unauthorised'}
+        '429': {$ref: '#/components/responses/RateLimited'}
         '404': {$ref: '#/components/responses/NotFound'}
 
   /v1/reservations:
@@ -260,6 +280,7 @@ paths:
         '201': {description: Accepted, content: {application/json: {schema: {$ref: '#/components/schemas/Reservation'}}}}
         '400': {$ref: '#/components/responses/ValidationFailed'}
         '401': {$ref: '#/components/responses/Unauthorised'}
+        '429': {$ref: '#/components/responses/RateLimited'}
         '409': {$ref: '#/components/responses/Conflict'}
         '422': {$ref: '#/components/responses/NotEligible'}
   /v1/reservations/{reservationId}:
@@ -271,6 +292,7 @@ paths:
       responses:
         '200': {description: Reservation, content: {application/json: {schema: {$ref: '#/components/schemas/Reservation'}}}}
         '401': {$ref: '#/components/responses/Unauthorised'}
+        '429': {$ref: '#/components/responses/RateLimited'}
         '404': {$ref: '#/components/responses/NotFound'}
 
   # ------------------------------------------------------------------ Admin
@@ -291,8 +313,24 @@ paths:
         required: true
         content: {application/json: {schema: {$ref: '#/components/schemas/ExchangeInput'}}}
       responses:
-        '200': {description: Saved; sellers.json republished when complete, content: {application/json: {schema: {$ref: '#/components/schemas/Exchange'}}}}
+        '200': {description: Saved; sellers.json republished when switched on and complete, content: {application/json: {schema: {$ref: '#/components/schemas/Exchange'}}}}
         '400': {$ref: '#/components/responses/ValidationFailed'}
+        '401': {$ref: '#/components/responses/Unauthorised'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+
+  /admin/v1/features:
+    get:
+      tags: [Admin — Exchange]
+      operationId: getFeatures
+      summary: Whether the retailer has DSP integration switched on
+      description: |
+        Readable by every user who sees these sections (admin and
+        marketing), unlike Exchange settings, so the navigation can hide
+        Campaign Status and Advertisers / Inventory while the switch is off.
+        Always false with the build flag off.
+      security: [{adminSession: []}]
+      responses:
+        '200': {description: Features, content: {application/json: {schema: {$ref: '#/components/schemas/Features'}}}}
         '401': {$ref: '#/components/responses/Unauthorised'}
         '403': {$ref: '#/components/responses/Forbidden'}
 
@@ -369,6 +407,12 @@ paths:
         supported, same as reservePrice), but it describes the display
         type, not the slot — every row sharing a displayTypeId must submit
         the same value in one request.
+
+        billingUnitHours / billingUnitHoursDefault: the same override/
+        default pattern as reservePrice/reservePriceDefault, for the
+        granularity a CPM is quoted and charged against (spec "Private
+        auctions: two-period model", 23 Sep 2026) — default one day (24
+        hours) when neither is set.
       security: [{adminSession: []}]
       requestBody:
         required: true
@@ -405,6 +449,14 @@ paths:
                         type: [number, 'null']
                         minimum: 0
                         description: The display type's reserve price default; null = none. Must be the same value on every row for a given displayTypeId in one request.
+                      billingUnitHours:
+                        type: [number, 'null']
+                        minimum: 1
+                        description: This slot's own billing-unit override, in hours; null = inherit billingUnitHoursDefault. Omitted = unchanged is not supported — always send the slot's current value.
+                      billingUnitHoursDefault:
+                        type: [number, 'null']
+                        minimum: 1
+                        description: The display type's billing-unit default, in hours; null = none (the platform default of 24 applies). Must be the same value on every row for a given displayTypeId in one request.
       responses:
         '200':
           description: Saved
@@ -575,6 +627,92 @@ paths:
         '200': {description: Disconnected (mode reset to test), content: {application/json: {schema: {$ref: '#/components/schemas/Partner'}}}}
         '401': {$ref: '#/components/responses/Unauthorised'}
         '404': {$ref: '#/components/responses/NotFound'}
+
+  /admin/v1/buyers-lists:
+    get:
+      tags: [Admin — Advertiser settings]
+      operationId: listBuyersLists
+      summary: Every buyers list (private-auction deal), for the Assigned to picker and the buyers lists table
+      security: [{adminSession: []}]
+      responses:
+        '200':
+          description: Buyers lists
+          content:
+            application/json:
+              schema: {type: object, required: [items], properties: {items: {type: array, items: {$ref: '#/components/schemas/BuyersList'}}}}
+        '401': {$ref: '#/components/responses/Unauthorised'}
+    post:
+      tags: [Admin — Advertiser settings]
+      operationId: createBuyersList
+      summary: New buyers list — the buyers list and its deal terms are one object
+      security: [{adminSession: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, description, invitedBuyers, activeFrom, activeTo]
+              properties:
+                name: {type: string}
+                description: {type: string}
+                invitedBuyers: {type: array, items: {$ref: '#/components/schemas/InvitedBuyer'}}
+                activeFrom: {type: [string, 'null'], format: date-time, description: 'The delivery term''s start; inclusive, null = no bound.'}
+                activeTo: {type: [string, 'null'], format: date-time, description: 'The delivery term''s end; inclusive, null = no bound.'}
+                auctionCloses:
+                  type: [string, 'null']
+                  format: date-time
+                  description: |
+                    The deal's own one-time bidding deadline (the auction
+                    window), distinct from the delivery term above (spec
+                    "Private auctions: two-period model", 23 Sep 2026).
+                    null = this deal isn't using the two-period model — it
+                    clears fresh every play window, same as before this
+                    field existed.
+      responses:
+        '201': {description: Created, content: {application/json: {schema: {$ref: '#/components/schemas/BuyersList'}}}}
+        '400': {$ref: '#/components/responses/ValidationFailed'}
+        '401': {$ref: '#/components/responses/Unauthorised'}
+  /admin/v1/buyers-lists/{buyersListId}:
+    put:
+      tags: [Admin — Advertiser settings]
+      operationId: updateBuyersList
+      summary: Save changes to a buyers list's name, description, invited buyers or active window
+      security: [{adminSession: []}]
+      parameters: [{name: buyersListId, in: path, required: true, schema: {type: string}}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, description, invitedBuyers, activeFrom, activeTo]
+              properties:
+                name: {type: string}
+                description: {type: string}
+                invitedBuyers: {type: array, items: {$ref: '#/components/schemas/InvitedBuyer'}}
+                activeFrom: {type: [string, 'null'], format: date-time, description: 'The delivery term''s start; inclusive, null = no bound.'}
+                activeTo: {type: [string, 'null'], format: date-time, description: 'The delivery term''s end; inclusive, null = no bound.'}
+                auctionCloses:
+                  type: [string, 'null']
+                  format: date-time
+                  description: 'The deal''s own one-time bidding deadline (the auction window); see POST''s description. Editable even once locked — it no longer has any effect at that point.'
+      responses:
+        '200': {description: Saved, content: {application/json: {schema: {$ref: '#/components/schemas/BuyersList'}}}}
+        '400': {$ref: '#/components/responses/ValidationFailed'}
+        '401': {$ref: '#/components/responses/Unauthorised'}
+        '404': {$ref: '#/components/responses/NotFound'}
+    delete:
+      tags: [Admin — Advertiser settings]
+      operationId: deleteBuyersList
+      summary: Delete; 409 while any slot is still assigned to it
+      security: [{adminSession: []}]
+      parameters: [{name: buyersListId, in: path, required: true, schema: {type: string}}]
+      responses:
+        '204': {description: Deleted}
+        '401': {$ref: '#/components/responses/Unauthorised'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/HasDependents'}
 
   /admin/v1/advertisers:
     get:
@@ -955,7 +1093,38 @@ paths:
           content:
             application/json:
               schema: {$ref: '#/components/schemas/SellersJson'}
-        '404': {description: Exchange settings incomplete; not published.}
+        '404': {description: Not published — DSP integration switched off, or Exchange settings incomplete.}
+
+  # -------------------------------------------------------------- Operations
+  /healthz:
+    get:
+      tags: [Operations]
+      operationId: healthz
+      summary: Liveness — the process is up
+      security: []
+      responses:
+        '200':
+          description: Up
+          content:
+            application/json:
+              schema: {type: object, required: [ok], properties: {ok: {type: boolean, enum: [true]}}}
+  /readyz:
+    get:
+      tags: [Operations]
+      operationId: readyz
+      summary: Readiness — the database answers and every migration is applied, so requests can be served
+      security: []
+      responses:
+        '200':
+          description: Ready
+          content:
+            application/json:
+              schema: {type: object, required: [ok], properties: {ok: {type: boolean, enum: [true]}}}
+        '503':
+          description: Not ready (a pod stays out of the load balancer until it is)
+          content:
+            application/json:
+              schema: {type: object, required: [ok, reason], properties: {ok: {type: boolean, enum: [false]}, reason: {type: string}}}
 
 components:
   securitySchemes:
@@ -993,9 +1162,10 @@ components:
     ValidationFailed: {description: 'error.code = validation_failed; details lists each field', content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
     VariableNotPermitted: {description: 'error.code = variable_not_permitted; details names each variable', content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
     ChecksFailed: {description: 'error.code = checks_failed; details lists each failed check with its reason', content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
-    NotEligible: {description: 'error.code = not_approved | below_floor | advertiser_blocked | category_blocked | not_on_whitelist | targeting_not_supported', content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
+    NotEligible: {description: 'error.code = not_approved | below_floor | advertiser_blocked | category_blocked | not_on_whitelist | not_invited | targeting_not_supported', content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
     Conflict: {description: 'error.code = conflict (e.g. version changed, already submitted, window sold, bidding not open or closed, live not allowed)', content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
     HasDependents: {description: 'error.code = has_dependents; details lists what depends on the item', content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
+    RateLimited: {description: 'error.code = rate_limited. Per partner token (default 50 requests/s, bursts of 100), or too many asset uploads in flight at once. Retry-After gives the seconds to wait.', headers: {Retry-After: {schema: {type: integer}}}, content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
 
   schemas:
     Error:
@@ -1008,7 +1178,7 @@ components:
           properties:
             code:
               type: string
-              enum: [validation_failed, variable_not_permitted, checks_failed, not_approved, below_floor, advertiser_blocked, category_blocked, not_on_whitelist, targeting_not_supported, conflict, has_dependents, unauthorised, forbidden, not_found]
+              enum: [validation_failed, variable_not_permitted, checks_failed, not_approved, below_floor, advertiser_blocked, category_blocked, not_on_whitelist, not_invited, targeting_not_supported, conflict, has_dependents, unauthorised, forbidden, not_found, rate_limited, internal_error]
             message: {type: string}
             details:
               type: array
@@ -1051,7 +1221,7 @@ components:
             loopLengthSec: {type: number}
             shareOfVoice: {type: number, description: 1 / maximumCampaignsPlayedInRotation}
             openOohVenueType: {type: string}
-        assignment: {type: string, enum: [rtb, whitelist_only, reserved]}
+        assignment: {type: string, enum: [rtb, whitelist_only, deal, reserved]}
         supportedTargeting:
           type: array
           description: |
@@ -1110,11 +1280,12 @@ components:
         source: {type: string}
         variable: {type: string}
         op: {type: string, enum: [include, match_exactly, exclude_or, exclude_and, equal, not_equal, greater_than, less_than, greater_than_or_equal, less_than_or_equal]}
-        values: {type: array, items: {type: string}, maxItems: 100}
+        values: {type: array, items: {type: string, maxLength: 200}, maxItems: 100}
     TargetingRules:
       description: AND groups of OR conditions (existing Targeting tab structure).
       type: array
-      items: {type: array, minItems: 1, items: {$ref: '#/components/schemas/Condition'}}
+      maxItems: 10
+      items: {type: array, minItems: 1, maxItems: 20, items: {$ref: '#/components/schemas/Condition'}}
 
     CampaignBrief:
       type: object
@@ -1151,7 +1322,7 @@ components:
         layers as upsells on that one purchase.
       properties:
         advertiserId: {type: string}
-        name: {type: string}
+        name: {type: string, maxLength: 200}
         displayTypeId: {type: string}
         brief: {$ref: '#/components/schemas/CampaignBrief'}
         default:
@@ -1162,6 +1333,7 @@ components:
             pricingType: {$ref: '#/components/schemas/PricingType'}
         targeted:
           type: array
+          maxItems: 20
           description: Optional upsells on top of the mandatory default layer — localised and/or personalised targeted versions.
           items:
             type: object
@@ -1206,7 +1378,7 @@ components:
         campaignId: {type: string}
         advertiserId: {type: string}
         type: {type: string, enum: [reserve, bid]}
-        bidCpm: {type: number, description: 'The CPM, in the company currency: the bid (type bid), or the reservation price agreed through the DSP (type reserve). Must clear the effective floor. A reservation is booked at this price.'}
+        bidCpm: {type: number, exclusiveMinimum: 0, maximum: 10000, description: 'The CPM, in the company currency: the bid (type bid), or the reservation price agreed through the DSP (type reserve). Must clear the effective floor and is at most 10,000. A reservation is booked at this price.'}
     Reservation:
       type: object
       required: [reservationId, status]
@@ -1223,16 +1395,26 @@ components:
         - type: object
           required: [published]
           properties:
-            published: {type: boolean}
+            published: {type: boolean, description: 'Switched on and all four fields complete: sellers.json is live and DSPs are sent bid requests.'}
             sellersJsonUrl: {type: [string, 'null']}
     ExchangeInput:
       type: object
-      required: [organisation, domain, sellerId, contactEmail]
+      required: [enabled, organisation, domain, sellerId, contactEmail]
+      description: |
+        The four seller-of-record fields are required while `enabled` is
+        true. Switched off, they may be blank and are kept as sent, so
+        switching back on restores them.
       properties:
-        organisation: {type: string, minLength: 1}
-        domain: {type: string, minLength: 1}
-        sellerId: {type: string, minLength: 1}
-        contactEmail: {type: string, format: email}
+        enabled: {type: boolean, description: 'The retailer''s DSP integration switch (Rob, 24 Sep 2026). Off for a new instance. Switching it off deletes nothing.'}
+        organisation: {type: string}
+        domain: {type: string}
+        sellerId: {type: string}
+        contactEmail: {type: string, description: An email address when set}
+    Features:
+      type: object
+      required: [dspIntegration]
+      properties:
+        dspIntegration: {type: boolean, description: The build flag is on and the retailer has DSP integration switched on.}
 
     AdvertiserSettingsInput:
       type: object
@@ -1283,17 +1465,98 @@ components:
     AssignedTo:
       type: object
       description: |
-        Who may buy a position: DSPs, named advertisers, or the advertiser
-        whitelist. No DSPs and no advertisers means any connected DSP.
-      required: [partnerIds, partnerNames, advertisers, whitelistOnly]
+        Who may buy a position: DSPs, named advertisers, the advertiser
+        whitelist, or a buyers list (private auction). No DSPs and no
+        advertisers means any connected DSP. A buyers list is mutually
+        exclusive with advertisers and whitelistOnly.
+      required: [partnerIds, partnerNames, advertisers, whitelistOnly, buyersListId, buyersListName]
       properties:
         partnerIds: {type: array, items: {type: string}}
         partnerNames: {type: array, items: {type: string}, description: The same DSPs by name, for display.}
         advertisers: {type: array, items: {type: string}, description: Named advertisers it is held for.}
-        whitelistOnly: {type: boolean, description: 'Only advertisers on the whitelist may bid; never true when advertisers is non-empty.'}
+        whitelistOnly: {type: boolean, description: 'Only advertisers on the whitelist may bid; never true when advertisers is non-empty or buyersListId is set.'}
+        buyersListId: {type: [string, 'null'], description: 'A private auction restricted to this buyers list''s invited buyers; null means not a private auction.'}
+        buyersListName: {type: [string, 'null'], description: The same buyers list by name, for display.}
+    InvitedBuyer:
+      type: object
+      description: One invited buyer on a buyers list (deal).
+      required: [identifierType, value]
+      properties:
+        identifierType:
+          type: string
+          enum: [brandEntity, dspSeatId, other]
+          description: |
+            How this buyer is identified — configurable per retailer:
+            brandEntity (the advertiser's PH brand entity, matched by name),
+            dspSeatId (a DSP's own seat ID, matched exactly), or other (a
+            freeform identifier this retailer uses elsewhere — recorded but
+            not automatically matched at auction time; entitlement for that
+            entry is enforced outside this POC).
+        value: {type: string}
+    LockedWin:
+      type: object
+      description: |
+        The winning bid a private auction's rate has locked to, for the
+        rest of its delivery term (spec "…dynamic VAC-d billing over the
+        delivery term", 23 Sep 2026). Set once, by the exchange, the first
+        time a bid clears within the deal's auctionCloses deadline — never
+        overwritten, and never set directly by an API caller. Every later
+        play window in the term is booked at `cpm` for this winner
+        directly, without a fresh auction; each is still billed on its own
+        realised VAC-d for that window (dynamic VAC-d is unchanged — only
+        the rate is fixed rather than re-cleared).
+      required: [cpm, partnerId, advertiserId, campaignId, pricingType, channel, lockedAt]
+      properties:
+        cpm: {type: number, description: The CPM every later play window in the term is booked and billed at.}
+        partnerId: {type: string, description: The winning DSP.}
+        advertiserId: {type: [string, 'null']}
+        campaignId: {type: string, description: The campaign every later play window hands off to.}
+        pricingType: {type: [string, 'null']}
+        channel: {type: string, enum: [api, openrtb], description: How the winning bid arrived — carried forward so later windows book the same way.}
+        lockedAt: {type: string, format: date-time}
+    BuyersList:
+      type: object
+      description: |
+        A reusable private-auction deal (spec "Support private auctions";
+        two-period model, 23 Sep 2026): an invited-buyer list, a delivery
+        term (activeFrom/activeTo) and, optionally, a one-time auction
+        window (auctionCloses) — created once and attached to any number of
+        slots' assignedTo.buyersListId. Floor, auction resolution rule
+        (first- vs second-price) and the per-brand relationship variable
+        are never set here — they come from the slot, the platform, and the
+        brand entity respectively.
+      required: [id, name, description, invitedBuyers, activeFrom, activeTo, auctionCloses, lockedWin, createdAt, updatedAt]
+      properties:
+        id: {type: string}
+        name: {type: string}
+        description: {type: string}
+        invitedBuyers: {type: array, items: {$ref: '#/components/schemas/InvitedBuyer'}}
+        activeFrom:
+          type: [string, 'null']
+          format: date-time
+          description: |
+            The delivery term's start (spec "Private auctions: two-period
+            model") — the span being awarded, not the bidding deadline
+            (see auctionCloses). Inclusive; null = no start bound.
+        activeTo: {type: [string, 'null'], format: date-time, description: 'The delivery term''s end. Inclusive; null = no end bound.'}
+        auctionCloses:
+          type: [string, 'null']
+          format: date-time
+          description: |
+            The deal's own one-time bidding deadline (the auction window):
+            invited brands may submit and revise bids until this time, at
+            or before which the auction clears once and locks the winning
+            rate (lockedWin) for the rest of the delivery term. null = this
+            deal isn't using the two-period model — it clears fresh every
+            play window, same as a buyers list before this field existed.
+        lockedWin:
+          oneOf: [{$ref: '#/components/schemas/LockedWin'}, {type: 'null'}]
+          description: 'null until the term''s one-time auction has cleared (or when auctionCloses itself is null). See LockedWin.'
+        createdAt: {type: string, format: date-time}
+        updatedAt: {type: string, format: date-time}
     AvailableInventoryRow:
       type: object
-      required: [displayTypeId, displayTypeName, playlistName, slot, position, assignedTo, supportedTargeting, qrControl, visionAi, reservePrice, reservePriceOverride, displayTypeReservePrice]
+      required: [displayTypeId, displayTypeName, playlistName, slot, position, assignedTo, supportedTargeting, qrControl, visionAi, reservePrice, reservePriceOverride, displayTypeReservePrice, billingUnitHours, billingUnitHoursOverride, displayTypeBillingUnitHours]
       properties:
         displayTypeId: {type: string}
         displayTypeName: {type: string}
@@ -1346,6 +1609,28 @@ components:
             means the display type has none either. The same value on every
             row sharing a displayTypeId. Editable from any of those rows —
             see `PUT`'s reservePriceDefault.
+        billingUnitHours:
+          type: number
+          description: |
+            The resolved billing-unit granularity, in hours (spec "Private
+            auctions: two-period model", 23 Sep 2026): billingUnitHoursOverride
+            when set, else displayTypeBillingUnitHours, else the platform
+            default of 24 (one day). Always a real number — unlike reserve
+            price, there is no "no billing unit" state.
+        billingUnitHoursOverride:
+          type: [number, 'null']
+          description: |
+            This slot's own billing unit, admin-editable here; null means
+            it has none and follows displayTypeBillingUnitHours (spec §1
+            configuration inheritance — override always wins).
+        displayTypeBillingUnitHours:
+          type: [number, 'null']
+          description: |
+            The billing-unit default set on this slot's display type; null
+            means the display type has none either (so an un-overridden
+            slot resolves to the platform default of 24). The same value on
+            every row sharing a displayTypeId. Editable from any of those
+            rows — see `PUT`'s billingUnitHoursDefault.
 
     BookingSchedule:
       type: object
@@ -1367,7 +1652,7 @@ components:
               slot: {type: integer, minimum: 1}
               slotLabel: {type: string}
               partnerNames: {type: array, items: {type: string}, description: 'The DSPs the slot is tied to; empty = any connected DSP.'}
-              assignment: {type: string, enum: [rtb, whitelist_only, reserved]}
+              assignment: {type: string, enum: [rtb, whitelist_only, deal, reserved]}
               displayCount:
                 type: integer
                 description: |
@@ -1687,7 +1972,14 @@ components:
                   Named advertisers the position is held for; empty means it is
                   not reserved. Their DSPs are always among partnerIds.
                 items: {type: string}
-              listMode: {type: [string, 'null'], enum: [rtb, whitelist_only, null]}
+              listMode: {type: [string, 'null'], enum: [rtb, whitelist_only, deal, null]}
+              buyersListId:
+                type: [string, 'null']
+                description: |
+                  A private auction restricted to this buyers list's
+                  invited buyers (set from Advertisers / Inventory, not the
+                  slot editor). Mutually exclusive with advertisers and
+                  whitelistOnly; listMode is deal whenever this is set.
               storeScope: {type: [string, 'null']}
               quota: {type: [integer, 'null']}
               supportedTargeting:
@@ -1707,6 +1999,20 @@ components:
                   or null means it has none and follows the display type's
                   own `reservePrice` (below); an override always wins. Set
                   from Advertisers / Inventory, not the slot editor.
+              billingUnitHours:
+                type: [number, 'null']
+                description: |
+                  This slot's own override of the display type's billing
+                  unit (spec "Private auctions: two-period model", 23 Sep
+                  2026): the granularity a CPM is quoted and charged
+                  against — default one day (24 hours). Same inheritance as
+                  reservePrice: absent or null follows the display type's
+                  own `billingUnitHours` (below), else the platform default
+                  of 24. Set from Advertisers / Inventory, not the slot
+                  editor. Informational in this build — dynamic VAC-d
+                  billing still runs per play window (exchange/billing.ts);
+                  this is what the window length is expected to equal for a
+                  private-auction slot using the two-period model.
         reservePrice:
           type: [number, 'null']
           description: |
@@ -1716,6 +2022,15 @@ components:
             un-overridden slot has no reserve either. Set from Advertisers /
             Inventory (every row for this display type edits the same
             value), not the slot editor.
+        billingUnitHours:
+          type: [number, 'null']
+          description: |
+            The display type's own billing-unit default (spec "Private
+            auctions: two-period model", 23 Sep 2026), inherited by every
+            slot on it with no override of its own. Absent or null means
+            the platform default of 24 hours (one day) applies. Set from
+            Advertisers / Inventory (every row for this display type edits
+            the same value), not the slot editor.
         venue:
           type: object
           properties:

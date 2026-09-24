@@ -1,0 +1,14 @@
+{
+  "name": "dsp-api-functions",
+  "private": true,
+  "description": "The hosted DSP Integration POC API (see ../README.md). lib/ is BUILT by ../build.mjs from apps/api — never edit it by hand.",
+  "type": "module",
+  "main": "lib/index.mjs",
+  "engines": {
+    "node": "22"
+  },
+  "dependencies": {
+    "firebase-admin": "^12.6.0",
+    "firebase-functions": "^6.0.1"
+  }
+}

@@ -11,7 +11,10 @@ export interface AssetStore {
   url(file: string): string
 }
 
-export function localAssetStore(dir: string): AssetStore {
+/* publicBase: the API's own origin, when the admin UI is served from a
+   different one (the hosted prototype on GitHub Pages calling the hosted
+   API). Empty for the POC, where the UI proxies /assets to the API. */
+export function localAssetStore(dir: string, publicBase = ''): AssetStore {
   mkdirSync(dir, { recursive: true })
   const safe = (file: string) => /^[a-z0-9-]+\.[a-z0-9]+$/i.test(file)
   return {
@@ -24,7 +27,7 @@ export function localAssetStore(dir: string): AssetStore {
       const p = join(dir, file)
       return safe(file) && existsSync(p) ? readFileSync(p) : null
     },
-    url: (file) => `/assets/${file}`,
+    url: (file) => `${publicBase}/assets/${file}`,
   }
 }
 

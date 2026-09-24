@@ -1,6 +1,6 @@
 /* Advertiser settings (spec §4, §5, §6): pricing and the company lists, plus
    the read-only Where these apply and Available Inventory. */
-import { TARGETING_MODES, advertiserSlug, assignedOf, reservePriceOf, supportedTargetingOf, type AdvertiserSettings, type AdvertiserSettingsInput, type Assigned, type AvailableInventoryRow, type DisplayType, type DspAdvertisers, type TargetingMode } from '@ph-dsp/types'
+import { TARGETING_MODES, advertiserSlug, assignedOf, billingUnitHoursOf, reservePriceOf, supportedTargetingOf, type AdvertiserSettings, type AdvertiserSettingsInput, type Assigned, type AvailableInventoryRow, type DisplayType, type DspAdvertisers, type TargetingMode } from '@ph-dsp/types'
 import type { FastifyPluginAsync } from 'fastify'
 import type { Context } from '../../context'
 import { cleanList, validateAdvertiserSettings } from '../../domain/advertiserSettings'
@@ -55,6 +55,7 @@ export const advertiserSettingsRoutes = (ctx: Context, guards: Guards): FastifyP
      multi-select (Rob, 20 Sep). */
   const inventory = () => {
     const partners = ctx.partners.list()
+    const buyersLists = ctx.buyersLists.list()
     const items: AvailableInventoryRow[] = []
     for (const t of ctx.displayTypes.list()) {
       const playlistName = (t.defaultPlaylistId && ctx.playlists.get(t.defaultPlaylistId)?.name) || '—'
@@ -63,13 +64,20 @@ export const advertiserSettingsRoutes = (ctx: Context, guards: Guards): FastifyP
         const a = assignedOf(s)
         items.push({
           displayTypeId: t.id, displayTypeName: t.name, touchPoint: t.touchPoint, playlistName, slot: i + 1, position: s.label,
-          assignedTo: { ...a, partnerNames: a.partnerIds.map((id) => partners.find((p) => p.id === id)?.name ?? id) },
+          assignedTo: {
+            ...a,
+            partnerNames: a.partnerIds.map((id) => partners.find((p) => p.id === id)?.name ?? id),
+            buyersListName: a.buyersListId ? buyersLists.find((l) => l.id === a.buyersListId)?.name ?? a.buyersListId : null,
+          },
           qrControl: hasQrControl(t),
           visionAi: hasVisionAi(t),
           supportedTargeting: supportedTargetingOf(s),
           reservePrice: reservePriceOf(t, s),
           reservePriceOverride: s.reservePrice ?? null,
           displayTypeReservePrice: t.phExtensions?.reservePrice ?? null,
+          billingUnitHours: billingUnitHoursOf(t, s),
+          billingUnitHoursOverride: s.billingUnitHours ?? null,
+          displayTypeBillingUnitHours: t.phExtensions?.billingUnitHours ?? null,
         })
       })
     }
@@ -95,6 +103,18 @@ export const advertiserSettingsRoutes = (ctx: Context, guards: Guards): FastifyP
     return v
   }
 
+  /* A billing unit of at least one hour, or null to inherit (spec "Private
+     auctions: two-period model", 23 Sep 2026) — the same override/default
+     pair as reservePrice/reservePriceDefault above. */
+  const parseBillingUnitHours = (v: unknown, field: string, errors: { field: string; reason: string }[]): number | null => {
+    if (v === null || v === undefined) return null
+    if (typeof v !== 'number' || !Number.isFinite(v) || v < 1) {
+      errors.push({ field, reason: 'A billing unit of at least one hour, or null to inherit.' })
+      return null
+    }
+    return v
+  }
+
   /* Who a slot is assigned to, what targeting it supports, and its reserve
      price override (Rob, 22 Sep): the fields of a sellable slot that live
      here. Everything else about it is set on its display type — including
@@ -104,15 +124,16 @@ export const advertiserSettingsRoutes = (ctx: Context, guards: Guards): FastifyP
   app.put<{ Body: { items?: unknown } }>('/available-inventory', async (req) => {
     guards.flagged()
     guards.requireScope(req, 'admin')
-    const rows = Array.isArray(req.body?.items) ? (req.body.items as { displayTypeId?: unknown; slot?: unknown; supportedTargeting?: unknown; assignedTo?: unknown; reservePrice?: unknown; reservePriceDefault?: unknown }[]) : null
+    const rows = Array.isArray(req.body?.items) ? (req.body.items as { displayTypeId?: unknown; slot?: unknown; supportedTargeting?: unknown; assignedTo?: unknown; reservePrice?: unknown; reservePriceDefault?: unknown; billingUnitHours?: unknown; billingUnitHoursDefault?: unknown }[]) : null
     if (!rows) throw validationFailed([{ field: 'items', reason: 'An array of slots is required.' }])
     const keys = TARGETING_MODES.map((m) => m.key) as string[]
     const partners = ctx.partners.list()
     const company = ctx.company.get()
     const errors: { field: string; reason: string }[] = []
-    type Patch = { supportedTargeting: TargetingMode[]; assigned: Assigned; reservePrice: number | null }
+    type Patch = { supportedTargeting: TargetingMode[]; assigned: Assigned; reservePrice: number | null; billingUnitHours: number | null }
     const wanted = new Map<string, Map<number, Patch>>()
     const defaults = new Map<string, number | null>()
+    const billingUnitDefaults = new Map<string, number | null>()
     const names = (v: unknown) => (Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string').map((x) => x.trim()).filter(Boolean) : [])
 
     rows.forEach((r, i) => {
@@ -132,9 +153,9 @@ export const advertiserSettingsRoutes = (ctx: Context, guards: Guards): FastifyP
       else if (modes.includes('interactive') && dt && !hasQrControl(dt)) errors.push({ field: f('supportedTargeting'), reason: 'QR Control is required to support an interactive engagement.' })
       else targeting = keys.filter((k) => modes.includes(k)) as TargetingMode[]
 
-      const raw = (r.assignedTo ?? {}) as { partnerIds?: unknown; advertisers?: unknown; whitelistOnly?: unknown }
-      const assigned: Assigned = { partnerIds: names(raw.partnerIds), advertisers: names(raw.advertisers), whitelistOnly: raw.whitelistOnly === true }
-      const bad = validateAssigned(assigned, (k) => f(`assignedTo.${k}`), partners, company, def ? assignedOf(def) : { partnerIds: [], advertisers: [], whitelistOnly: false })
+      const raw = (r.assignedTo ?? {}) as { partnerIds?: unknown; advertisers?: unknown; whitelistOnly?: unknown; buyersListId?: unknown }
+      const assigned: Assigned = { partnerIds: names(raw.partnerIds), advertisers: names(raw.advertisers), whitelistOnly: raw.whitelistOnly === true, buyersListId: typeof raw.buyersListId === 'string' ? raw.buyersListId : null }
+      const bad = validateAssigned(assigned, (k) => f(`assignedTo.${k}`), partners, company, def ? assignedOf(def) : { partnerIds: [], advertisers: [], whitelistOnly: false, buyersListId: null }, ctx.buyersLists)
       errors.push(...bad)
 
       const reservePrice = parseReservePrice(r.reservePrice, f('reservePrice'), errors)
@@ -143,10 +164,16 @@ export const advertiserSettingsRoutes = (ctx: Context, guards: Guards): FastifyP
         if (defaults.has(dt.id) && defaults.get(dt.id) !== reservePriceDefault) errors.push({ field: f('reservePriceDefault'), reason: 'All slots on a display type must submit the same reserve price default.' })
         else defaults.set(dt.id, reservePriceDefault)
       }
+      const billingUnitHours = parseBillingUnitHours(r.billingUnitHours, f('billingUnitHours'), errors)
+      const billingUnitHoursDefault = parseBillingUnitHours(r.billingUnitHoursDefault, f('billingUnitHoursDefault'), errors)
+      if (dt) {
+        if (billingUnitDefaults.has(dt.id) && billingUnitDefaults.get(dt.id) !== billingUnitHoursDefault) errors.push({ field: f('billingUnitHoursDefault'), reason: 'All slots on a display type must submit the same billing unit default.' })
+        else billingUnitDefaults.set(dt.id, billingUnitHoursDefault)
+      }
 
       if (dt && def && targeting && !bad.length) {
         const byType = wanted.get(dt.id) ?? new Map<number, Patch>()
-        byType.set(slot, { supportedTargeting: targeting, assigned, reservePrice })
+        byType.set(slot, { supportedTargeting: targeting, assigned, reservePrice, billingUnitHours })
         wanted.set(dt.id, byType)
       }
     })
@@ -157,9 +184,10 @@ export const advertiserSettingsRoutes = (ctx: Context, guards: Guards): FastifyP
       const ext = { ...(dt.phExtensions ?? { slots: [] }) }
       ext.slots = (ext.slots ?? []).map((s, i) => {
         const patch = slots.get(i + 1)
-        return patch ? { ...s, supportedTargeting: patch.supportedTargeting, ...assignedToSlot(patch.assigned, partners), reservePrice: patch.reservePrice } : s
+        return patch ? { ...s, supportedTargeting: patch.supportedTargeting, ...assignedToSlot(patch.assigned, partners), reservePrice: patch.reservePrice, billingUnitHours: patch.billingUnitHours } : s
       })
       if (defaults.has(displayTypeId)) ext.reservePrice = defaults.get(displayTypeId) ?? null
+      if (billingUnitDefaults.has(displayTypeId)) ext.billingUnitHours = billingUnitDefaults.get(displayTypeId) ?? null
       ctx.displayTypes.saveExtensions(displayTypeId, ext)
     }
     return inventory()

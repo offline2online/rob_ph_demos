@@ -1,0 +1,13 @@
+# Build context for deploy/kubernetes/Dockerfile (docker reads this file
+# only when it is named next to the Dockerfile: `docker build -f
+# deploy/kubernetes/Dockerfile .` uses deploy/kubernetes/.dockerignore).
+node_modules
+**/node_modules
+data
+prototype
+prototype-reference
+deploy/firebase/functions/lib
+deploy/firebase/functions/node_modules
+deploy/kubernetes/dist
+.env
+.git

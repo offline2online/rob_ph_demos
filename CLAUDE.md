@@ -93,6 +93,28 @@ tied to the other project's release cadence.
   file. Keep the repo file and the live record in sync; treat a divergence
   as a bug in whichever is stale.
 
+**Where the POC meets the real platform, and its limits:**
+`dsp-integration/docs/dsp-integration/api/PH-CORE-BOUNDARIES.md` lists every
+seam with PH Core and what each must guarantee (e.g. one campaign booking
+per slot and window); `api/SECURITY-PERFORMANCE.md` has the 23 Sep 2026
+review — the Partner API's rate limits and size caps, the database-enforced
+"one live winner per window" (migration 0021), and measured throughput
+(`npm run bench` in `dsp-integration/`); `api/SCALE-15000-EKS.md` has the
+24 Sep 2026 scalability review for 15,000 displays — the exchange sells a
+play window per *position* (display type × slot), so load scales with
+positions, not displays; the before/after measurements for three estate
+shapes; and what a second replica needs (Postgres) before it is safe;
+`SECURITY-PERFORMANCE.md` → "Stability under concurrency and at the
+edges" is the 24 Sep 2026 race and edge-case pass before going live
+(`apps/api/test/stability.test.ts` and `test/multiprocess.test.ts`, which
+races two real API processes on one database — keep both green). Read
+all three before changing the exchange, the Partner API or a `platform/`
+interface. **`dsp-integration/deploy/kubernetes/`** (24 Sep 2026) is the
+same API for a client's own VPC on EKS — a container image, Kustomize
+manifests and the sizing from that review. Nothing there deploys from this
+repo, and the image was never built in this sandbox (no Docker daemon):
+the client's platform team builds and applies it.
+
 **The POC lives in `dsp-integration/`** (merged to `main` on 21 Sep 2026,
 PR #176). It is a working service, not a static page: an npm-workspaces
 monorepo with a Fastify API over SQLite, a React admin UI, mock DSPs and an
@@ -101,9 +123,23 @@ opened from GitHub Pages like the other demos** — run it locally
 (`npm run dev:api` / `dev:mocks` / `dev:admin`, then `localhost:5173`).
 The static prototype it was built from is published at
 <https://offline2online.github.io/rob_ph_demos/dsp-integration/prototype/> —
-the admin UI built against a captured snapshot of its own API, so it opens
-from a URL and can be iframed into HQ Admin. It is **read-only**: a write
-answers with "changes aren't saved". **It is a checked-in build, and it is
+the admin UI, so it opens from a URL and can be iframed into HQ Admin.
+**It saves (23 Sep 2026)**: on start-up it finds the POC API hosted as a
+Cloud Function in `backlog-tracker-e4ed2`
+(`https://us-central1-backlog-tracker-e4ed2.cloudfunctions.net/dspApi`,
+codebase `dsp-api`, deployed by `.github/workflows/dsp-api-deploy.yml` —
+see `dsp-integration/deploy/firebase/README.md`) and sends every read and
+save there; everyone using the link shares that data. **It is a public demo
+with no login** — every visitor is the stand-in HQ admin — so never put
+real data in it; reset it with that workflow's `reset = RESET` input.
+**It may open with DSP integration switched off** (the retailer's own
+switch at the top of DSP Integration → Exchange settings, added 24 Sep
+2026): switched off, Campaign Status and Advertisers / Inventory aren't in
+its menu. That is a saved setting, not a bug. Switch it on there and Save
+changes, and nothing has been lost.
+Only
+if the API doesn't answer does the page fall back to the old read-only
+snapshot, where a write answers "changes aren't saved". **It is a checked-in build, and it is
 rebuilt by a workflow, not by hand**: `.github/workflows/dsp-prototype.yml`
 runs `dsp-integration/scripts/rebuild-prototype.sh` on a runner for `main`
 and `deploy/dsp-integration` — on a source push, on a dispatch from
@@ -123,10 +159,9 @@ docs in the `projects` Firestore collection — **"Live Visitor Profile"** and
 **"Display Types & DSP Integration"** — each with its own Backlog → Ready
 for Testing → Live on Feature Branch → Merged to Main (Live) pipeline and
 its own Archive,
-fully independent of each other and of "Products, Pricing & Asset
-Management". Treat backlog sweeps and publish workflows for each exactly as
-described in the "Prototype Backlog" section below — per-project, not
-shared.
+fully independent of each other. Treat backlog sweeps and publish workflows
+for each exactly as described in the "Prototype Backlog" section below —
+per-project, not shared.
 
 ## Common Workflows
 
@@ -157,18 +192,46 @@ board"); the name "Prototype Pipeline" is no longer used anywhere.
 
 **The board is multi-project.** Firestore's `projects` collection holds one
 doc per project (`{name, createdAt}`, auto-generated id); `backlogItems`
-holds every card, each carrying a `projectId`. The original board's cards
-live under the project named "Products, Pricing & Asset Management" — a
-client can have several concurrent prototypes/projects tracked side by side,
-each rendered as its own collapsible section on the one page.
+holds every card, each carrying a `projectId`. A client can have several
+concurrent prototypes/projects tracked side by side, each rendered as its
+own collapsible section on the one page.
+
+**Three projects were deleted on 22 Sep 2026** (Rob) as unused: "Products,
+Pricing & Asset Management" — which held the original board's migrated
+cards, 30 archived tickets — plus "Platform Users, Groups & Partner
+Management" and "Vibe Coding Campaigns & Experiences", both empty. The
+recovery export is the `board-export` artifact on run 35789258396 of
+`board-admin.yml`, and a copy is at
+`~/Documents/PH-board-backups/deleted-projects-2026-09-22T21-53-33Z.json`
+(deliberately outside this repo, which is public). "Live Visitor Profile &
+Personas" was kept despite being empty: it is one side of the maintained
+interface contract with Display Types. What's left on the board is that,
+Display Types & DSP Integration, and Backlog Tracker & FAQs.
 
 - **Adding a project**: the page's "New project" button, or write a doc
   directly into `projects` (`{name, createdAt: serverTimestamp()}}`) —
   everything else (its Backlog/Testing/Live-on-branch/Merged columns, its
   own Archive) follows automatically from its `projectId` being used on
-  `backlogItems` docs.
+  `backlogItems` docs. **A project is not finished being created until it
+  is linked to a folder in this repository** — see "Linking a new project
+  to GitHub" below. Neither route asks for that link today, so it is a
+  step someone has to remember.
 - **Renaming a project**: the pencil icon next to its name, or
   `setDoc(doc(db,"projects",id), {name}, {merge:true})`.
+- **Retiring a project**: the board offers **archive**, which keeps every
+  ticket and simply drops the project off the columns — that is the right
+  default for anything that might come back, and the only thing the UI
+  does. A project created speculatively and never used is the other case:
+  it keeps appearing in `list_projects` for every agent connecting over
+  MCP. That one is deleted for real, from a runner, by
+  `.github/workflows/board-admin.yml` (`backlog-tracker/scripts/delete-projects.js`)
+  — dry by default, `apply` + the word `DELETE` to go through with it. It
+  removes the project and every `backlogItems` / `projectDocs` /
+  `docRevisions` / `interfaces` document pointing at it, refuses a project
+  with live tickets or a contract shared with a surviving project, and
+  keeps a full JSON export as the run's artifact. **That export is the
+  only way back, and it is deliberately not committed — this repo is
+  public and ticket text is not.**
 - **Collapsing a project**: per-viewer only, kept in that browser's
   `localStorage` (`bt-collapsed-projects`) — never written to Firestore, so
   it can't be set or read from outside a real browser session.

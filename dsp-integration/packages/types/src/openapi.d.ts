@@ -224,6 +224,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/v1/features": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Whether the retailer has DSP integration switched on
+         * @description Readable by every user who sees these sections (admin and
+         *     marketing), unlike Exchange settings, so the navigation can hide
+         *     Campaign Status and Advertisers / Inventory while the switch is off.
+         *     Always false with the build flag off.
+         */
+        get: operations["getFeatures"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/v1/advertiser-settings": {
         parameters: {
             query?: never;
@@ -281,6 +304,12 @@ export interface paths {
          *     supported, same as reservePrice), but it describes the display
          *     type, not the slot — every row sharing a displayTypeId must submit
          *     the same value in one request.
+         *
+         *     billingUnitHours / billingUnitHoursDefault: the same override/
+         *     default pattern as reservePrice/reservePriceDefault, for the
+         *     granularity a CPM is quoted and charged against (spec "Private
+         *     auctions: two-period model", 23 Sep 2026) — default one day (24
+         *     hours) when neither is set.
          */
         put: operations["saveAvailableInventory"];
         post?: never;
@@ -404,6 +433,42 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/v1/buyers-lists": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Every buyers list (private-auction deal), for the Assigned to picker and the buyers lists table */
+        get: operations["listBuyersLists"];
+        put?: never;
+        /** New buyers list — the buyers list and its deal terms are one object */
+        post: operations["createBuyersList"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/buyers-lists/{buyersListId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Save changes to a buyers list's name, description, invited buyers or active window */
+        put: operations["updateBuyersList"];
+        post?: never;
+        /** Delete; 409 while any slot is still assigned to it */
+        delete: operations["deleteBuyersList"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/v1/advertisers": {
         parameters: {
             query?: never;
@@ -482,6 +547,23 @@ export interface paths {
         get?: never;
         put?: never;
         post: operations["rejectCampaign"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/campaigns/{campaignId}/unreject": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Undo a mistaken rejection — Rejected → Awaiting approval. Never auto-approves. */
+        post: operations["unrejectCampaign"];
         delete?: never;
         options?: never;
         head?: never;
@@ -712,6 +794,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/healthz": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Liveness — the process is up */
+        get: operations["healthz"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/readyz": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Readiness — the database answers and every migration is applied, so requests can be served */
+        get: operations["readyz"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -719,7 +835,7 @@ export interface components {
         Error: {
             error: {
                 /** @enum {string} */
-                code: "validation_failed" | "variable_not_permitted" | "checks_failed" | "not_approved" | "below_floor" | "advertiser_blocked" | "category_blocked" | "not_on_whitelist" | "targeting_not_supported" | "conflict" | "has_dependents" | "unauthorised" | "forbidden" | "not_found";
+                code: "validation_failed" | "variable_not_permitted" | "checks_failed" | "not_approved" | "below_floor" | "advertiser_blocked" | "category_blocked" | "not_on_whitelist" | "not_invited" | "targeting_not_supported" | "conflict" | "has_dependents" | "unauthorised" | "forbidden" | "not_found" | "rate_limited" | "internal_error";
                 message: string;
                 details?: {
                     field?: string;
@@ -759,7 +875,7 @@ export interface components {
                 openOohVenueType?: string;
             };
             /** @enum {string} */
-            assignment: "rtb" | "whitelist_only" | "reserved";
+            assignment: "rtb" | "whitelist_only" | "deal" | "reserved";
             /**
              * @description What a campaign may use here. A bid or reservation for a campaign of
              *     any other type is refused with targeting_not_supported.
@@ -871,6 +987,13 @@ export interface components {
             name: "file_type" | "file_size" | "bitrate" | "dimensions" | "aspect_ratio" | "duration" | "default_present" | "targeting_permitted";
             passed: boolean;
             detail?: string;
+            /** @description "default" or a targeted version id — the specific asset this check ran against. Unset for a campaign-level check (default_present, targeting_permitted). */
+            assetId?: string;
+        };
+        /** @description A rejection reason attached to one specific asset, not the whole campaign (spec §3). */
+        AssetRejection: {
+            assetId: string;
+            reason: string;
         };
         CampaignStatus: {
             campaignId: string;
@@ -888,7 +1011,7 @@ export interface components {
             advertiserId: string;
             /** @enum {string} */
             type: "reserve" | "bid";
-            /** @description The CPM, in the company currency: the bid (type bid), or the reservation price agreed through the DSP (type reserve). Must clear the effective floor. A reservation is booked at this price. */
+            /** @description The CPM, in the company currency: the bid (type bid), or the reservation price agreed through the DSP (type reserve). Must clear the effective floor and is at most 10,000. A reservation is booked at this price. */
             bidCpm: number;
         };
         Reservation: {
@@ -900,15 +1023,27 @@ export interface components {
             reason?: string | null;
         };
         Exchange: components["schemas"]["ExchangeInput"] & {
+            /** @description Switched on and all four fields complete: sellers.json is live and DSPs are sent bid requests. */
             published: boolean;
             sellersJsonUrl?: string | null;
         };
+        /**
+         * @description The four seller-of-record fields are required while `enabled` is
+         *     true. Switched off, they may be blank and are kept as sent, so
+         *     switching back on restores them.
+         */
         ExchangeInput: {
+            /** @description The retailer's DSP integration switch (Rob, 24 Sep 2026). Off for a new instance. Switching it off deletes nothing. */
+            enabled: boolean;
             organisation: string;
             domain: string;
             sellerId: string;
-            /** Format: email */
+            /** @description An email address when set */
             contactEmail: string;
+        };
+        Features: {
+            /** @description The build flag is on and the retailer has DSP integration switched on. */
+            dspIntegration: boolean;
         };
         AdvertiserSettingsInput: {
             /**
@@ -964,8 +1099,10 @@ export interface components {
             }[];
         };
         /**
-         * @description Who may buy a position: DSPs, named advertisers, or the advertiser
-         *     whitelist. No DSPs and no advertisers means any connected DSP.
+         * @description Who may buy a position: DSPs, named advertisers, the advertiser
+         *     whitelist, or a buyers list (private auction). No DSPs and no
+         *     advertisers means any connected DSP. A buyers list is mutually
+         *     exclusive with advertisers and whitelistOnly.
          */
         AssignedTo: {
             partnerIds: string[];
@@ -973,8 +1110,98 @@ export interface components {
             partnerNames: string[];
             /** @description Named advertisers it is held for. */
             advertisers: string[];
-            /** @description Only advertisers on the whitelist may bid; never true when advertisers is non-empty. */
+            /** @description Only advertisers on the whitelist may bid; never true when advertisers is non-empty or buyersListId is set. */
             whitelistOnly: boolean;
+            /** @description A private auction restricted to this buyers list's invited buyers; null means not a private auction. */
+            buyersListId: string | null;
+            /** @description The same buyers list by name */
+            buyersListName: string | null;
+        };
+        /** @description One invited buyer on a buyers list (deal). */
+        InvitedBuyer: {
+            /**
+             * @description How this buyer is identified — configurable per retailer:
+             *     brandEntity (the advertiser's PH brand entity, matched by name),
+             *     dspSeatId (a DSP's own seat ID, matched exactly), or other (a
+             *     freeform identifier this retailer uses elsewhere — recorded but
+             *     not automatically matched at auction time; entitlement for that
+             *     entry is enforced outside this POC).
+             * @enum {string}
+             */
+            identifierType: "brandEntity" | "dspSeatId" | "other";
+            value: string;
+        };
+        /**
+         * @description The winning bid a private auction's rate has locked to, for the
+         *     rest of its delivery term (spec "…dynamic VAC-d billing over the
+         *     delivery term", 23 Sep 2026). Set once, by the exchange, the first
+         *     time a bid clears within the deal's auctionCloses deadline — never
+         *     overwritten, and never set directly by an API caller. Every later
+         *     play window in the term is booked at `cpm` for this winner
+         *     directly, without a fresh auction; each is still billed on its own
+         *     realised VAC-d for that window (dynamic VAC-d is unchanged — only
+         *     the rate is fixed rather than re-cleared).
+         */
+        LockedWin: {
+            /** @description The CPM every later play window in the term is booked and billed at. */
+            cpm: number;
+            /** @description The winning DSP. */
+            partnerId: string;
+            advertiserId: string | null;
+            /** @description The campaign every later play window hands off to. */
+            campaignId: string;
+            pricingType: string | null;
+            /**
+             * @description How the winning bid arrived — carried forward so later windows book the same way.
+             * @enum {string}
+             */
+            channel: "api" | "openrtb";
+            /** Format: date-time */
+            lockedAt: string;
+        };
+        /**
+         * @description A reusable private-auction deal (spec "Support private auctions";
+         *     two-period model, 23 Sep 2026): an invited-buyer list, a delivery
+         *     term (activeFrom/activeTo) and, optionally, a one-time auction
+         *     window (auctionCloses) — created once and attached to any number of
+         *     slots' assignedTo.buyersListId. Floor, auction resolution rule
+         *     (first- vs second-price) and the per-brand relationship variable
+         *     are never set here — they come from the slot, the platform, and the
+         *     brand entity respectively.
+         */
+        BuyersList: {
+            id: string;
+            name: string;
+            description: string;
+            invitedBuyers: components["schemas"]["InvitedBuyer"][];
+            /**
+             * Format: date-time
+             * @description The delivery term's start (spec "Private auctions: two-period
+             *     model") — the span being awarded, not the bidding deadline
+             *     (see auctionCloses). Inclusive; null = no start bound.
+             */
+            activeFrom: string | null;
+            /**
+             * Format: date-time
+             * @description The delivery term's end. Inclusive; null = no end bound.
+             */
+            activeTo: string | null;
+            /**
+             * Format: date-time
+             * @description The deal's own one-time bidding deadline (the auction window):
+             *     invited brands may submit and revise bids until this time, at
+             *     or before which the auction clears once and locks the winning
+             *     rate (lockedWin) for the rest of the delivery term. null = this
+             *     deal isn't using the two-period model — it clears fresh every
+             *     play window, same as a buyers list before this field existed.
+             */
+            auctionCloses: string | null;
+            /** @description null until the term's one-time auction has cleared (or when auctionCloses itself is null). See LockedWin. */
+            lockedWin: components["schemas"]["LockedWin"] | null;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
         };
         AvailableInventoryRow: {
             displayTypeId: string;
@@ -1026,6 +1253,28 @@ export interface components {
              *     see `PUT`'s reservePriceDefault.
              */
             displayTypeReservePrice: number | null;
+            /**
+             * @description The resolved billing-unit granularity, in hours (spec "Private
+             *     auctions: two-period model", 23 Sep 2026): billingUnitHoursOverride
+             *     when set, else displayTypeBillingUnitHours, else the platform
+             *     default of 24 (one day). Always a real number — unlike reserve
+             *     price, there is no "no billing unit" state.
+             */
+            billingUnitHours: number;
+            /**
+             * @description This slot's own billing unit, admin-editable here; null means
+             *     it has none and follows displayTypeBillingUnitHours (spec §1
+             *     configuration inheritance — override always wins).
+             */
+            billingUnitHoursOverride: number | null;
+            /**
+             * @description The billing-unit default set on this slot's display type; null
+             *     means the display type has none either (so an un-overridden
+             *     slot resolves to the platform default of 24). The same value on
+             *     every row sharing a displayTypeId. Editable from any of those
+             *     rows — see `PUT`'s billingUnitHoursDefault.
+             */
+            displayTypeBillingUnitHours: number | null;
         };
         BookingSchedule: {
             /** @description ISO 4217 */
@@ -1045,7 +1294,7 @@ export interface components {
                 /** @description The DSPs the slot is tied to; empty = any connected DSP. */
                 partnerNames: string[];
                 /** @enum {string} */
-                assignment: "rtb" | "whitelist_only" | "reserved";
+                assignment: "rtb" | "whitelist_only" | "deal" | "reserved";
                 /**
                  * @description Displays using this display type across the whole retail
                  *     footprint (interface contract "Booking schedule reach
@@ -1280,6 +1529,8 @@ export interface components {
             /** Format: date-time */
             reviewedAt?: string | null;
             reason?: string | null;
+            /** @description The current rejection's per-asset breakdown, when the reviewer named specific assets (spec §3, "asset-level rejection"). */
+            assetReasons?: components["schemas"]["AssetRejection"][];
             checks?: components["schemas"]["Check"][];
             targetingSummary?: string;
             /** @description The default layer's creative under review, for rendering on the target canvas. */
@@ -1288,6 +1539,8 @@ export interface components {
                 mimeType: string;
                 width: number;
                 height: number;
+                /** @description sha256 of the file, when available — the basis for "safe reuse of previously approved assets" (spec §3). */
+                contentHash?: string;
             } | null;
             /** @description The target display type's canvas. */
             canvas?: {
@@ -1298,10 +1551,11 @@ export interface components {
                 /** Format: date-time */
                 at: string;
                 /** @enum {string} */
-                action: "submitted" | "auto_approved" | "approved" | "rejected" | "returned_for_review";
+                action: "submitted" | "auto_approved" | "approved" | "rejected" | "returned_for_review" | "unrejected";
                 by?: string | null;
                 reason?: string | null;
                 assetVersion?: string;
+                assetReasons?: components["schemas"]["AssetRejection"][];
             }[];
         };
         DisplayTypeExtensions: {
@@ -1321,7 +1575,14 @@ export interface components {
                  */
                 advertisers?: string[];
                 /** @enum {string|null} */
-                listMode?: "rtb" | "whitelist_only" | null;
+                listMode?: "rtb" | "whitelist_only" | "deal" | null;
+                /**
+                 * @description A private auction restricted to this buyers list's
+                 *     invited buyers (set from Advertisers / Inventory, not the
+                 *     slot editor). Mutually exclusive with advertisers and
+                 *     whitelistOnly; listMode is deal whenever this is set.
+                 */
+                buyersListId?: string | null;
                 storeScope?: string | null;
                 quota?: number | null;
                 /**
@@ -1340,6 +1601,20 @@ export interface components {
                  *     from Advertisers / Inventory, not the slot editor.
                  */
                 reservePrice?: number | null;
+                /**
+                 * @description This slot's own override of the display type's billing
+                 *     unit (spec "Private auctions: two-period model", 23 Sep
+                 *     2026): the granularity a CPM is quoted and charged
+                 *     against — default one day (24 hours). Same inheritance as
+                 *     reservePrice: absent or null follows the display type's
+                 *     own `billingUnitHours` (below), else the platform default
+                 *     of 24. Set from Advertisers / Inventory, not the slot
+                 *     editor. Informational in this build — dynamic VAC-d
+                 *     billing still runs per play window (exchange/billing.ts);
+                 *     this is what the window length is expected to equal for a
+                 *     private-auction slot using the two-period model.
+                 */
+                billingUnitHours?: number | null;
             }[];
             /**
              * @description The display type's own reserve price default (decision, 22 Sep),
@@ -1350,6 +1625,15 @@ export interface components {
              *     value), not the slot editor.
              */
             reservePrice?: number | null;
+            /**
+             * @description The display type's own billing-unit default (spec "Private
+             *     auctions: two-period model", 23 Sep 2026), inherited by every
+             *     slot on it with no override of its own. Absent or null means
+             *     the platform default of 24 hours (one day) applies. Set from
+             *     Advertisers / Inventory (every row for this display type edits
+             *     the same value), not the slot editor.
+             */
+            billingUnitHours?: number | null;
             venue?: {
                 openOohVenueType?: string;
                 /** @enum {string} */
@@ -1504,7 +1788,7 @@ export interface components {
                 "application/json": components["schemas"]["Error"];
             };
         };
-        /** @description error.code = not_approved | below_floor | advertiser_blocked | category_blocked | not_on_whitelist | targeting_not_supported */
+        /** @description error.code = not_approved | below_floor | advertiser_blocked | category_blocked | not_on_whitelist | not_invited | targeting_not_supported */
         NotEligible: {
             headers: {
                 [name: string]: unknown;
@@ -1525,6 +1809,16 @@ export interface components {
         /** @description error.code = has_dependents; details lists what depends on the item */
         HasDependents: {
             headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["Error"];
+            };
+        };
+        /** @description error.code = rate_limited. Per partner token (default 50 requests/s, bursts of 100), or too many asset uploads in flight at once. Retry-After gives the seconds to wait. */
+        RateLimited: {
+            headers: {
+                "Retry-After"?: number;
                 [name: string]: unknown;
             };
             content: {
@@ -1581,6 +1875,7 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthorised"];
+            429: components["responses"]["RateLimited"];
         };
     };
     getPosition: {
@@ -1607,6 +1902,7 @@ export interface operations {
             };
             401: components["responses"]["Unauthorised"];
             404: components["responses"]["NotFound"];
+            429: components["responses"]["RateLimited"];
         };
     };
     getAvailability: {
@@ -1639,6 +1935,7 @@ export interface operations {
             400: components["responses"]["ValidationFailed"];
             401: components["responses"]["Unauthorised"];
             404: components["responses"]["NotFound"];
+            429: components["responses"]["RateLimited"];
         };
     };
     forecast: {
@@ -1651,6 +1948,7 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": {
+                    /** @description At most 200 positions per request, each once. */
                     positionIds: string[];
                     /** Format: date */
                     from: string;
@@ -1681,6 +1979,7 @@ export interface operations {
             400: components["responses"]["ValidationFailed"];
             401: components["responses"]["Unauthorised"];
             422: components["responses"]["VariableNotPermitted"];
+            429: components["responses"]["RateLimited"];
         };
     };
     listTargetingAttributes: {
@@ -1704,6 +2003,7 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthorised"];
+            429: components["responses"]["RateLimited"];
         };
     };
     createCampaign: {
@@ -1731,6 +2031,7 @@ export interface operations {
             400: components["responses"]["ValidationFailed"];
             401: components["responses"]["Unauthorised"];
             422: components["responses"]["VariableNotPermitted"];
+            429: components["responses"]["RateLimited"];
         };
     };
     uploadAsset: {
@@ -1747,7 +2048,10 @@ export interface operations {
                 "multipart/form-data": {
                     /** @description "default" or the targeted version id */
                     version: string;
-                    /** Format: binary */
+                    /**
+                     * Format: binary
+                     * @description Per-asset limit, checked by `file_size`: 100 MB for an image, 200 MB for a video.
+                     */
                     file: string;
                 };
             };
@@ -1769,6 +2073,7 @@ export interface operations {
             401: components["responses"]["Unauthorised"];
             404: components["responses"]["NotFound"];
             422: components["responses"]["ChecksFailed"];
+            429: components["responses"]["RateLimited"];
         };
     };
     submitCampaign: {
@@ -1795,6 +2100,7 @@ export interface operations {
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
             422: components["responses"]["ChecksFailed"];
+            429: components["responses"]["RateLimited"];
         };
     };
     getCampaignStatus: {
@@ -1819,6 +2125,7 @@ export interface operations {
             };
             401: components["responses"]["Unauthorised"];
             404: components["responses"]["NotFound"];
+            429: components["responses"]["RateLimited"];
         };
     };
     createReservation: {
@@ -1847,6 +2154,7 @@ export interface operations {
             401: components["responses"]["Unauthorised"];
             409: components["responses"]["Conflict"];
             422: components["responses"]["NotEligible"];
+            429: components["responses"]["RateLimited"];
         };
     };
     getReservation: {
@@ -1871,6 +2179,7 @@ export interface operations {
             };
             401: components["responses"]["Unauthorised"];
             404: components["responses"]["NotFound"];
+            429: components["responses"]["RateLimited"];
         };
     };
     getExchange: {
@@ -1907,7 +2216,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Saved; sellers.json republished when complete */
+            /** @description Saved; sellers.json republished when switched on and complete */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -1917,6 +2226,28 @@ export interface operations {
                 };
             };
             400: components["responses"]["ValidationFailed"];
+            401: components["responses"]["Unauthorised"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    getFeatures: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Features */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Features"];
+                };
+            };
             401: components["responses"]["Unauthorised"];
             403: components["responses"]["Forbidden"];
         };
@@ -2016,6 +2347,10 @@ export interface operations {
                         reservePrice?: number | null;
                         /** @description The display type's reserve price default; null = none. Must be the same value on every row for a given displayTypeId in one request. */
                         reservePriceDefault?: number | null;
+                        /** @description This slot's own billing-unit override, in hours; null = inherit billingUnitHoursDefault. Omitted = unchanged is not supported — always send the slot's current value. */
+                        billingUnitHours?: number | null;
+                        /** @description The display type's billing-unit default, in hours; null = none (the platform default of 24 applies). Must be the same value on every row for a given displayTypeId in one request. */
+                        billingUnitHoursDefault?: number | null;
                     }[];
                 };
             };
@@ -2281,6 +2616,150 @@ export interface operations {
             404: components["responses"]["NotFound"];
         };
     };
+    listBuyersLists: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Buyers lists */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["BuyersList"][];
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorised"];
+        };
+    };
+    createBuyersList: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    name: string;
+                    description: string;
+                    invitedBuyers: components["schemas"]["InvitedBuyer"][];
+                    /**
+                     * Format: date-time
+                     * @description The delivery term's start; inclusive, null = no bound.
+                     */
+                    activeFrom: string | null;
+                    /**
+                     * Format: date-time
+                     * @description The delivery term's end; inclusive, null = no bound.
+                     */
+                    activeTo: string | null;
+                    /**
+                     * Format: date-time
+                     * @description The deal's own one-time bidding deadline (the auction
+                     *     window), distinct from the delivery term above (spec
+                     *     "Private auctions: two-period model", 23 Sep 2026).
+                     *     null = this deal isn't using the two-period model — it
+                     *     clears fresh every play window, same as before this
+                     *     field existed.
+                     */
+                    auctionCloses?: string | null;
+                };
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BuyersList"];
+                };
+            };
+            400: components["responses"]["ValidationFailed"];
+            401: components["responses"]["Unauthorised"];
+        };
+    };
+    updateBuyersList: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                buyersListId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    name: string;
+                    description: string;
+                    invitedBuyers: components["schemas"]["InvitedBuyer"][];
+                    /**
+                     * Format: date-time
+                     * @description The delivery term's start; inclusive, null = no bound.
+                     */
+                    activeFrom: string | null;
+                    /**
+                     * Format: date-time
+                     * @description The delivery term's end; inclusive, null = no bound.
+                     */
+                    activeTo: string | null;
+                    /**
+                     * Format: date-time
+                     * @description The deal's own one-time bidding deadline (the auction window); see POST's description. Editable even once locked — it no longer has any effect at that point.
+                     */
+                    auctionCloses?: string | null;
+                };
+            };
+        };
+        responses: {
+            /** @description Saved */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BuyersList"];
+                };
+            };
+            400: components["responses"]["ValidationFailed"];
+            401: components["responses"]["Unauthorised"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    deleteBuyersList: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                buyersListId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deleted */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorised"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["HasDependents"];
+        };
+    };
     listAdvertisers: {
         parameters: {
             query?: never;
@@ -2442,6 +2921,8 @@ export interface operations {
                 "application/json": {
                     assetVersion: string;
                     reason: string;
+                    /** @description Optional — names specific assets the overall reason covers (spec §3, "asset-level rejection"). */
+                    assetReasons?: components["schemas"]["AssetRejection"][];
                 };
             };
         };
@@ -2456,6 +2937,41 @@ export interface operations {
                 };
             };
             400: components["responses"]["ValidationFailed"];
+            401: components["responses"]["Unauthorised"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    unrejectCampaign: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                campaignId: components["parameters"]["CampaignId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description The rejected version; rejected with 409 if it has changed. */
+                    assetVersion: string;
+                    /** @description Optional — why the rejection is being reversed. Recorded in the audit trail alongside the original rejection reason */
+                    reason?: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Back to Awaiting approval */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Approval"];
+                };
+            };
             401: components["responses"]["Unauthorised"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
@@ -2840,12 +3356,71 @@ export interface operations {
                     "application/json": components["schemas"]["SellersJson"];
                 };
             };
-            /** @description Exchange settings incomplete; not published. */
+            /** @description Not published — DSP integration switched off */
             404: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    healthz: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Up */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {boolean} */
+                        ok: true;
+                    };
+                };
+            };
+        };
+    };
+    readyz: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Ready */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {boolean} */
+                        ok: true;
+                    };
+                };
+            };
+            /** @description Not ready (a pod stays out of the load balancer until it is) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {boolean} */
+                        ok: false;
+                        reason: string;
+                    };
+                };
             };
         };
     };

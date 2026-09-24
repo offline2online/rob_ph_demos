@@ -1,12 +1,21 @@
-/* The hosted demo (Rob, 21 Sep): the same admin UI, with a captured API
-   behind it instead of a server, so the prototype can be opened from a URL
-   and dropped into an iframe in HQ Admin.
+/* The hosted demo (Rob, 21 Sep): the same admin UI, opened from a URL and
+   dropped into an iframe in HQ Admin. Only built when VITE_DEMO=1.
 
-   Only built when VITE_DEMO=1. It answers reads from the snapshot
-   `scripts/capture-demo.mjs` took, and **refuses writes** — the screens are
-   real, the data is a photograph, and a Save that silently did nothing would
-   be worse than one that says so. */
+   Two ways it answers the API, decided once at start-up:
+   - LIVE (Rob, 23 Sep): when the build names the hosted API (VITE_API_URL,
+     the Cloud Function in deploy/firebase/) and it answers, every /api call
+     goes there — reads and saves are real and shared by everyone using the
+     link.
+   - SNAPSHOT: otherwise (no URL in the build, or the API unreachable) it
+     answers reads from the snapshot `scripts/capture-demo.mjs` took, and
+     **refuses writes** — the screens are real, the data is a photograph,
+     and a Save that silently did nothing would be worse than one that says
+     so. So the link keeps working even with the API down. */
 import type { ApiError } from '@ph-dsp/types'
+import { demoMode } from './mode'
+
+/* A cold start restores the database from storage first; allow for it. */
+const LIVE_PROBE_TIMEOUT_MS = 20_000
 
 interface Snapshot { capturedAt: string; routes: Record<string, unknown> }
 
@@ -23,7 +32,32 @@ const apiPath = (url: string) => {
   return u.pathname.replace(/^.*\/api/, '') + u.search
 }
 
+/* This app's API calls are relative (`/api/admin/v1/…`), which on GitHub
+   Pages would ask Pages. Send them to the hosted API instead. */
+function installLiveApi(base: string) {
+  const real = globalThis.fetch.bind(globalThis)
+  globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
+    if (!/\/api\/(admin\/)?v1\//.test(url)) return real(input as RequestInfo, init)
+    const target = base + '/api' + apiPath(url)
+    return input instanceof Request ? real(new Request(target, input), init) : real(target, init)
+  }
+}
+
+async function liveApiAnswers(base: string) {
+  try {
+    const res = await fetch(`${base}/api/admin/v1/session`, { signal: AbortSignal.timeout(LIVE_PROBE_TIMEOUT_MS) })
+    return res.ok
+  } catch {
+    return false
+  }
+}
+
 export async function installStaticApi() {
+  const live = (import.meta.env.VITE_API_URL as string | undefined)?.replace(/\/$/, '')
+  if (live && (await liveApiAnswers(live))) return installLiveApi(live)
+  demoMode.snapshot = true
+
   const res = await fetch(new URL('demo/api-snapshot.json', document.baseURI))
   const snap = (await res.json()) as Snapshot
 

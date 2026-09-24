@@ -1,0 +1,20 @@
+# The POC's database is one SQLite file (plus uploaded creatives), so it
+# needs a volume one pod can write: ReadWriteOnce, which is why the base
+# Deployment runs ONE replica with the Recreate strategy. Scaling out means
+# moving the database to Postgres (README, "Scaling out"); this volume then
+# only holds creatives, until AssetStore points at S3.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: dsp-exchange-data
+  namespace: dsp-exchange
+spec:
+  accessModes: [ReadWriteOnce]
+  # EBS gp3 (the EBS CSI driver's default class on EKS is usually `gp2` or
+  # `gp3`; name the cluster's).
+  storageClassName: gp3
+  resources:
+    requests:
+      # The database is a few MB per 100,000 bids; creatives dominate
+      # (each up to 200 MB). Size for the creatives kept.
+      storage: 50Gi

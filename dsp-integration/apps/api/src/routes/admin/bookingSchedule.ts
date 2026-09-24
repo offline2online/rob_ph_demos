@@ -24,10 +24,10 @@ import type { Context } from '../../context'
 import { lineItems } from '../../exchange/billing'
 import type { Guards } from '../../http/app'
 import { validationFailed } from '../../http/errors'
-import { allPositions, assignmentOf, nextWindow, windowMs, windowStartOf, windowsBetween } from '../../domain/positions'
+import { allPositions, assignmentOf, effectivePartnerIds, nextWindow, windowMs, windowStartOf, windowsBetween } from '../../domain/positions'
 import type { Condition, StoredTargeting } from '../../domain/targetingSummary'
 import { TAKEN } from '../../repos/ReservationRepo'
-import { advertiserSlug, assignedOf } from '@ph-dsp/types'
+import { advertiserSlug } from '@ph-dsp/types'
 
 const DAY = 86_400_000
 const round2 = (n: number) => Math.round(n * 100) / 100
@@ -107,7 +107,7 @@ export function bookingSchedule(ctx: Context, starts: Date[], f: ScheduleFilter 
   }
 
   const positions = allPositions(ctx).map((p) => {
-    const displayCount = ctx.displays.listByDisplayType(p.displayType.id).length
+    const displayCount = ctx.displays.summaryByDisplayType(p.displayType.id).displays
     const hasDisplays = displayCount > 0
     const views = ctx.audience.forSlot(p.displayType.id, p.slot).assumedViewsPerWindow
     const rev = revenue.get(p.displayType.id) ?? { displayTypeId: p.displayType.id, displayTypeName: p.displayType.name, bookedWindows: 0, sellableWindows: 0, bookedRevenue: 0, billedRevenue: 0 }
@@ -155,7 +155,7 @@ export function bookingSchedule(ctx: Context, starts: Date[], f: ScheduleFilter 
     })
     return {
       positionId: p.positionId, displayTypeId: p.displayType.id, displayTypeName: p.displayType.name, slot: p.slot, slotLabel: p.def.label, displayCount,
-      partnerNames: assignedOf(p.def).partnerIds.map((id) => partners.find((x) => x.id === id)?.name ?? id), assignment: assignmentOf(p.def), windows,
+      partnerNames: (effectivePartnerIds(ctx, p.def) ?? []).map((id) => partners.find((x) => x.id === id)?.name ?? id), assignment: assignmentOf(p.def), windows,
     }
   })
   /* One advertiser selected: only the positions it actually holds (Rob, 20 Sep). */

@@ -6,10 +6,11 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { App, Button, InputNumber, Select, Spin, Switch, Tooltip } from 'antd'
 import type { ColDef, ICellRendererParams } from 'ag-grid-community'
-import { SLOT_OWNERS, TARGETING_MODES, assignedLabels, supportedTargetingOf, targetingLabel, touchPointIcon, type Advertiser, type AdvertiserSetting, type AssignedTo, type AvailableInventoryRow, type DspAdvertisers, type Session, type TargetingMode } from '@ph-dsp/types'
+import { DEFAULT_BILLING_UNIT_HOURS, SLOT_OWNERS, TARGETING_MODES, assignedLabels, supportedTargetingOf, targetingLabel, touchPointIcon, type Advertiser, type AdvertiserSetting, type AssignedTo, type AvailableInventoryRow, type BuyersList, type DspAdvertisers, type Session, type TargetingMode } from '@ph-dsp/types'
 import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { api, ApiRequestError } from '../../api/client'
+import { Q } from '../../api/queries'
 import { Callout } from '../../shared/Callout'
 import { Grid } from '../../shared/Grid'
 import { Icon } from '../../shared/Icon'
@@ -23,6 +24,8 @@ import { deepEqual } from '../../shared/deepEqual'
 import { useDraft } from '../../shared/useDraft'
 import { T } from '../../theme/phTheme'
 import { BOOKING_SCHEDULE_PATH, externalUrl } from '../booking-schedule/path'
+import { BuyersListModal } from './BuyersListModal'
+import { BuyersListsTable } from './BuyersListsTable'
 
 interface Data { currency: string; floorCpm: number; items: Advertiser[] }
 type Settings = Record<string, AdvertiserSetting>
@@ -97,10 +100,12 @@ export const slotKey = (r: AvailableInventoryRow) => `${r.displayTypeId}:${r.slo
    reservePrice is this slot's own override; null means it follows its
    display type's shared default (below), not "no reserve" (Rob, 22 Sep;
    spec §1 configuration inheritance — override always wins). */
-export interface SlotEdit { supportedTargeting: TargetingMode[]; assignedTo: Omit<AssignedTo, 'partnerNames'>; reservePrice: number | null }
+export interface SlotEdit { supportedTargeting: TargetingMode[]; assignedTo: Omit<AssignedTo, 'partnerNames' | 'buyersListName'>; reservePrice: number | null; billingUnitHours: number | null }
 type Edits = Record<string, SlotEdit>
 /* A display type's reserve price default, edited from any of its slot
-   rows — every row for the same displayTypeId shares one value. */
+   rows — every row for the same displayTypeId shares one value. Also used
+   for the billing-unit default (spec "Private auctions: two-period model",
+   23 Sep 2026) — same inheritance shape, separate map/draft. */
 type Defaults = Record<string, number | null>
 type InvCtx = { current: {
   open: (displayTypeId: string) => void
@@ -108,9 +113,13 @@ type InvCtx = { current: {
   currency: string
   edits: Edits
   defaults: Defaults
+  billingUnitDefaults: Defaults
   dsps: DspAdvertisers[]
+  buyersLists: BuyersList[]
   set: (key: string, patch: Partial<SlotEdit>) => void
   setDefault: (displayTypeId: string, v: number | null) => void
+  setBillingUnitDefault: (displayTypeId: string, v: number | null) => void
+  openAddBuyersList: (r: AvailableInventoryRow) => void
 } }
 type IP = ICellRendererParams<AvailableInventoryRow, unknown, InvCtx>
 /* QR Control is flagged here because it is what makes interactive targeting
@@ -176,7 +185,7 @@ function Pills({ label, value, options, canEdit, placeholder, onChange }: {
 }
 
 const edited = (c: InvCtx['current'], r: AvailableInventoryRow): SlotEdit =>
-  c.edits[slotKey(r)] ?? { supportedTargeting: supportedTargetingOf(r), assignedTo: r.assignedTo, reservePrice: r.reservePriceOverride }
+  c.edits[slotKey(r)] ?? { supportedTargeting: supportedTargetingOf(r), assignedTo: r.assignedTo, reservePrice: r.reservePriceOverride, billingUnitHours: r.billingUnitHoursOverride }
 /* The value this slot actually resolves to right now, following the draft
    default when it has no override of its own — the same "override wins"
    read as reservePriceOf, but against unsaved edits. */
@@ -184,21 +193,54 @@ const effectiveReservePrice = (c: InvCtx['current'], r: AvailableInventoryRow): 
   const override = edited(c, r).reservePrice
   return override ?? c.defaults[r.displayTypeId] ?? null
 }
+/* Same "override wins" read, against unsaved edits, for the billing unit
+   (spec "Private auctions: two-period model", 23 Sep 2026) — unlike
+   reserve price, there's no "none" state: the platform default of 24
+   hours (one day) applies once neither the slot nor its display type sets
+   one. */
+const effectiveBillingUnitHours = (c: InvCtx['current'], r: AvailableInventoryRow): number => {
+  const override = edited(c, r).billingUnitHours
+  return override ?? c.billingUnitDefaults[r.displayTypeId] ?? DEFAULT_BILLING_UNIT_HOURS
+}
 
-/* Who may buy this position (Rob, 20 Sep): DSPs, named advertisers, or the
-   whitelist. Nothing chosen means any connected DSP. */
+/* Who may buy this position (Rob, 20 Sep; buyers lists/private auctions
+   added 23 Sep): DSPs, named advertisers, a buyers list's private auction,
+   or the whitelist. Nothing chosen means any connected DSP. */
 const WHITELIST = '__whitelist__'
-const assignedValues = (a: Omit<AssignedTo, 'partnerNames'>) =>
-  [...a.partnerIds.map((id) => `dsp:${id}`), ...a.advertisers.map((n) => `adv:${n}`), ...(a.whitelistOnly ? [WHITELIST] : [])]
+const ADD_BUYERS_LIST = '__add_buyers_list__'
+const assignedValues = (a: Omit<AssignedTo, 'partnerNames' | 'buyersListName'>) =>
+  [...a.partnerIds.map((id) => `dsp:${id}`), ...a.advertisers.map((n) => `adv:${n}`), ...(a.whitelistOnly ? [WHITELIST] : []), ...(a.buyersListId ? [`deal:${a.buyersListId}`] : [])]
 
 function AssignedCell({ data, context }: IP) {
   if (!data) return null
   const c = context.current
   const a = edited(c, data).assignedTo
   const dspNames = new Map(c.dsps.map((d) => [d.partnerId, d.name]))
+  /* An advertiser can buy through more than one DSP (e.g. Unilever via both
+     Google DSP and The Trade Desk, same as the Advertisers table's own "Via"
+     column) — one option per advertiser, not per DSP-advertiser pairing,
+     otherwise two options share the same `adv:<name>` value and Select can
+     only ever treat one of them as selected (Rob, 23 Sep — failed testing,
+     "bug with the presentation of the individual advertisers list"). */
+  const advertiserDsps = new Map<string, string[]>()
+  for (const d of c.dsps) for (const x of d.advertisers) {
+    const via = advertiserDsps.get(x.name) ?? []
+    if (!via.includes(d.name)) via.push(d.name)
+    advertiserDsps.set(x.name, via)
+  }
   const options = [
     { label: 'DSPs', options: c.dsps.map((d) => ({ value: `dsp:${d.partnerId}`, label: d.name })) },
-    { label: 'Advertisers', options: c.dsps.flatMap((d) => d.advertisers.map((x) => ({ value: `adv:${x.name}`, label: `${x.name} (${d.name})` }))) },
+    {
+      /* Directly underneath DSPs, not after Advertisers (Rob, 23 Sep —
+         failed testing, "place the new buyers list directly underneath the
+         list of DSP's"). */
+      label: 'Buyers lists (private auction)',
+      options: [
+        ...c.buyersLists.map((l) => ({ value: `deal:${l.id}`, label: l.name, note: `${l.invitedBuyers.length} invited buyer${l.invitedBuyers.length === 1 ? '' : 's'}` })),
+        { value: ADD_BUYERS_LIST, label: '+ Add new buyers list…' },
+      ],
+    },
+    { label: 'Advertisers', options: [...advertiserDsps.entries()].map(([name, via]) => ({ value: `adv:${name}`, label: `${name} (${via.join(', ')})` })) },
     { label: 'Or', options: [{ value: WHITELIST, label: 'Whitelist only' }] },
   ]
   return (
@@ -209,14 +251,26 @@ function AssignedCell({ data, context }: IP) {
       value={assignedValues(a)}
       options={options}
       onChange={(next) => {
+        /* A picker action, not a real choice: open the modal and leave this
+           slot's assignment untouched until it's saved (Rob, 23 Sep). */
+        if (next.includes(ADD_BUYERS_LIST)) {
+          c.openAddBuyersList(data)
+          return
+        }
         const was = assignedValues(a)
         const added = next.filter((v) => !was.includes(v))
-        /* A position is either held for named advertisers or open to the
-           whitelist, never both: the newer choice wins. */
+        const dealAdded = added.find((v) => v.startsWith('deal:'))
+        /* A position is held for named advertisers, open to the whitelist,
+           or restricted to a buyers list's private auction — never more
+           than one: the newer choice wins (Rob, 23 Sep). */
+        if (dealAdded) {
+          c.set(slotKey(data), { assignedTo: { partnerIds: [], advertisers: [], whitelistOnly: false, buyersListId: dealAdded.slice(5) } })
+          return
+        }
         const advertisers = added.includes(WHITELIST) ? [] : next.filter((v) => v.startsWith('adv:')).map((v) => v.slice(4))
         const whitelistOnly = advertisers.length ? false : next.includes(WHITELIST)
         const partnerIds = next.filter((v) => v.startsWith('dsp:')).map((v) => v.slice(4)).filter((id) => dspNames.has(id))
-        c.set(slotKey(data), { assignedTo: { partnerIds, advertisers, whitelistOnly } })
+        c.set(slotKey(data), { assignedTo: { partnerIds, advertisers, whitelistOnly, buyersListId: null } })
       }}
     />
   )
@@ -292,18 +346,79 @@ function ReservePriceCell({ data, context }: IP) {
   )
 }
 
+/* Hours → a short human label, the same shape a person would read a
+   duration in (spec "Private auctions: two-period model", 23 Sep 2026):
+   "1 day" at the default, "6h" / "3 days" otherwise. */
+const durationLabel = (hours: number) => {
+  if (hours === 24) return '1 day'
+  if (hours % 24 === 0) return `${hours / 24} days`
+  return `${hours}h`
+}
+
+/* The granularity a CPM is quoted and charged against for a private
+   auction using the two-period model — default one day (spec "Private
+   auctions: two-period model", 23 Sep 2026). Same override/default
+   inheritance and editing UX as ReservePriceCell below, in hours rather
+   than a CPM. Informational in this build: dynamic VAC-d billing still
+   runs per play window (Advertiser settings → Auction schedule); this is
+   what that window length is expected to equal for a private-auction slot
+   using the two-period model. */
+function BillingUnitCell({ data, context }: IP) {
+  if (!data) return null
+  const c = context.current
+  const override = edited(c, data).billingUnitHours
+  const overridden = override !== null
+  const value = overridden ? override : (c.billingUnitDefaults[data.displayTypeId] ?? DEFAULT_BILLING_UNIT_HOURS)
+  if (!c.canEdit) return <span>{durationLabel(effectiveBillingUnitHours(c, data))}</span>
+  return (
+    <div className="flex w-full min-w-0 items-center gap-1">
+      <InputNumber
+        size="small" aria-label={`${data.displayTypeName} slot ${data.slot}: billing unit (hours)${overridden ? ' (override)' : ''}`} min={1} step={1} style={{ width: 84 }}
+        suffix="h" value={value}
+        onChange={(v) => {
+          const next = v === null || v === undefined ? DEFAULT_BILLING_UNIT_HOURS : Number(v)
+          if (overridden) c.set(slotKey(data), { billingUnitHours: next })
+          else c.setBillingUnitDefault(data.displayTypeId, next)
+        }}
+      />
+      {overridden ? (
+        <Tooltip title={`Reset to ${data.displayTypeName}'s billing unit default`}>
+          <Button type="text" size="small" className="px-1" aria-label={`${data.displayTypeName} slot ${data.slot}: reset billing unit to the display type's default`}
+            icon={<Icon name="settings_backup_restore" size={13} />} onClick={() => c.set(slotKey(data), { billingUnitHours: null })} />
+        </Tooltip>
+      ) : (
+        <Tooltip title={`Override just this slot, independent of ${data.displayTypeName}'s other slots`}>
+          <Button type="text" size="small" className="px-1" aria-label={`${data.displayTypeName} slot ${data.slot}: override the billing unit for just this slot`}
+            icon={<Icon name="edit" size={13} />} onClick={() => c.set(slotKey(data), { billingUnitHours: value })} />
+        </Tooltip>
+      )}
+    </div>
+  )
+}
+
 const header = (label: string, tip: string) => () => <WithTip tip={tip}><span className="ag-header-cell-text">{label}</span></WithTip>
 
 export function AdvertisersPage() {
   const navigate = useNavigate()
   const { message } = App.useApp()
   const qc = useQueryClient()
-  const session = useQuery({ queryKey: ['session'], queryFn: () => api<Session>('GET', '/admin/v1/session') })
+  const session = useQuery(Q.session)
   /* Marketing users read this screen; only an admin changes approval or pricing (Rob, 20 Sep). */
   const canEdit = session.data?.role === 'hq_admin'
-  const q = useQuery({ queryKey: ['advertisers'], queryFn: () => api<Data>('GET', '/admin/v1/advertisers'), retry: false })
+  /* Same key and request as Q.advertisers (the background prefetch); typed here. */
+  const q = useQuery({ queryKey: Q.advertisers.queryKey, queryFn: () => api<Data>('GET', '/admin/v1/advertisers'), retry: false })
   const inventory = useQuery({ queryKey: ['available-inventory'], queryFn: () => api<{ items: AvailableInventoryRow[]; dsps: DspAdvertisers[] }>('GET', '/admin/v1/available-inventory') })
+  /* retry: false, same as the advertisers query above — an admin list fetch
+     should fail fast, not retry three times with real-timer backoff delays
+     that outlive the component (Rob, 23 Sep: this queued-up retry storm
+     across renders is what pushed an unrelated Campaign Status test over
+     its own real-timer waitFor budget in this sandbox — root-caused via
+     `git worktree` A/B runs of the full suite, not assumed). */
+  const buyersLists = useQuery({ queryKey: ['buyers-lists'], queryFn: () => api<{ items: BuyersList[] }>('GET', '/admin/v1/buyers-lists'), retry: false })
   const invRows = inventory.data?.items ?? []
+  /* Set when the "+ Add new buyers list…" picker action is chosen for a
+     row: on save, the new list is assigned straight to that slot (Rob, 23 Sep). */
+  const [addingBuyersListFor, setAddingBuyersListFor] = useState<AvailableInventoryRow | null>(null)
   const [invShown, setInvShown] = useState<number | null>(null)
   const invValues = (of: (r: AvailableInventoryRow) => string[]) => () => invRows.flatMap(of)
   const inventoryColumns = useMemo<ColDef<AvailableInventoryRow>[]>(() => [
@@ -313,15 +428,20 @@ export function AdvertisersPage() {
     { headerName: 'Position', width: 130, minWidth: 110, cellRenderer: SlotCell, valueGetter: (p) => p.data?.position ?? '', ...searchColumn<AvailableInventoryRow>('Position') },
     {
       headerName: 'Assigned to', width: 240, minWidth: 200, cellRenderer: AssignedCell, autoHeight: true,
-      headerComponent: header('Assigned to', 'Who may buy this position: pick DSPs to say who may bid, advertisers to hold it for them (their DSP comes along), or the whitelist. Nothing chosen means any connected DSP.'),
+      headerComponent: header('Assigned to', 'Who may buy this position: pick DSPs to say who may bid, advertisers to hold it for them (their DSP comes along), a buyers list to restrict it to a private auction among its invited buyers, or the whitelist. Nothing chosen means any connected DSP.'),
       valueGetter: (p) => {
         if (!p.data) return ''
         const a = edited((p.context as InvCtx).current, p.data).assignedTo
-        return assignedLabels({ ...a, partnerNames: a.partnerIds.map((id) => inventory.data?.dsps.find((d) => d.partnerId === id)?.name ?? id) }).join(', ') || 'All DSPs'
+        return assignedLabels({
+          ...a,
+          partnerNames: a.partnerIds.map((id) => inventory.data?.dsps.find((d) => d.partnerId === id)?.name ?? id),
+          buyersListName: a.buyersListId ? buyersLists.data?.items.find((l) => l.id === a.buyersListId)?.name ?? a.buyersListId : null,
+        }).join(', ') || 'All DSPs'
       },
       ...setColumn<AvailableInventoryRow>('Assigned to', () => [
         'All DSPs', 'Whitelist only',
         ...(inventory.data?.dsps ?? []).flatMap((d) => [d.name, ...d.advertisers.map((a) => a.name)]),
+        ...(buyersLists.data?.items ?? []).map((l) => `Buyers list: ${l.name}`),
       ]),
     },
     {
@@ -335,20 +455,29 @@ export function AdvertisersPage() {
       headerComponent: header('Reserve price', "A CPM premium to reserve this slot in advance of the open auction. Set once for the display type and inherited by every slot on it — override just one slot to give it its own value, independent of the others. Empty = no reserve."),
       valueGetter: (p) => (p.data ? effectiveReservePrice((p.context as InvCtx).current, p.data) ?? -1 : -1),
     },
+    {
+      headerName: 'Billing unit', width: 150, minWidth: 130, cellRenderer: BillingUnitCell,
+      headerComponent: header('Billing unit', 'The granularity a CPM is quoted and charged against for a private auction using the two-period model — default one day. Set once for the display type and inherited by every slot on it — override just one slot to give it its own value, independent of the others.'),
+      valueGetter: (p) => (p.data ? effectiveBillingUnitHours((p.context as InvCtx).current, p.data) : DEFAULT_BILLING_UNIT_HOURS),
+    },
     { headerName: '', width: 76, suppressSizeToFit: true, cellRenderer: OpenCell },
-  ], [invRows, inventory.data])
+  ], [invRows, inventory.data, buyersLists.data])
   const saved = useMemo<Settings | undefined>(() => q.data && Object.fromEntries(q.data.items.map((a) => [a.advertiserId, { approvalRequired: a.approvalRequired, floorMultiplier: a.floorMultiplier }])), [q.data])
   const { draft, setDraft, dirty, reset, commitNext } = useDraft(saved)
   const savedEdits = useMemo<Edits | undefined>(() => inventory.data && Object.fromEntries(invRows.map((r) => {
     const { partnerNames: _names, ...assignedTo } = r.assignedTo
-    return [slotKey(r), { supportedTargeting: supportedTargetingOf(r), assignedTo, reservePrice: r.reservePriceOverride }]
+    return [slotKey(r), { supportedTargeting: supportedTargetingOf(r), assignedTo, reservePrice: r.reservePriceOverride, billingUnitHours: r.billingUnitHoursOverride }]
   })), [invRows, inventory.data])
   const inv = useDraft(savedEdits)
   /* One reserve price default per display type, shared by every one of its
      rows (Rob, 22 Sep) — a separate draft from the per-slot one above. */
   const savedDefaults = useMemo<Defaults | undefined>(() => inventory.data && Object.fromEntries(invRows.map((r) => [r.displayTypeId, r.displayTypeReservePrice])), [invRows, inventory.data])
   const defaults = useDraft(savedDefaults)
-  useReportDirty(dirty || inv.dirty || defaults.dirty)
+  /* Same one-per-display-type sharing, for the billing unit default (spec
+     "Private auctions: two-period model", 23 Sep 2026). */
+  const savedBillingUnitDefaults = useMemo<Defaults | undefined>(() => inventory.data && Object.fromEntries(invRows.map((r) => [r.displayTypeId, r.displayTypeBillingUnitHours])), [invRows, inventory.data])
+  const billingUnitDefaults = useDraft(savedBillingUnitDefaults)
+  useReportDirty(dirty || inv.dirty || defaults.dirty || billingUnitDefaults.dirty)
   const [saving, setSaving] = useState(false)
   const [shown, setShown] = useState<number | null>(null)
   const data = q.data
@@ -383,15 +512,20 @@ export function AdvertisersPage() {
          reserve price default changed (Rob, 22 Sep), since that's a
          display-type-level field an untouched slot's row still has to
          carry so the server can apply it. */
-      if ((inv.dirty || defaults.dirty) && inv.draft && defaults.draft) {
+      if ((inv.dirty || defaults.dirty || billingUnitDefaults.dirty) && inv.draft && defaults.draft && billingUnitDefaults.draft) {
         const changedSlots = new Set(Object.keys(inv.draft).filter((key) => !deepEqual(inv.draft![key], savedEdits?.[key])))
         const changedTypes = new Set(Object.keys(defaults.draft).filter((id) => defaults.draft![id] !== savedDefaults?.[id]))
+        const changedBillingUnitTypes = new Set(Object.keys(billingUnitDefaults.draft).filter((id) => billingUnitDefaults.draft![id] !== savedBillingUnitDefaults?.[id]))
         const items = invRows
-          .filter((r) => changedSlots.has(slotKey(r)) || changedTypes.has(r.displayTypeId))
-          .map((r) => ({ displayTypeId: r.displayTypeId, slot: r.slot, ...(inv.draft![slotKey(r)] ?? savedEdits![slotKey(r)]), reservePriceDefault: defaults.draft![r.displayTypeId] ?? null }))
+          .filter((r) => changedSlots.has(slotKey(r)) || changedTypes.has(r.displayTypeId) || changedBillingUnitTypes.has(r.displayTypeId))
+          .map((r) => ({
+            displayTypeId: r.displayTypeId, slot: r.slot, ...(inv.draft![slotKey(r)] ?? savedEdits![slotKey(r)]),
+            reservePriceDefault: defaults.draft![r.displayTypeId] ?? null, billingUnitHoursDefault: billingUnitDefaults.draft![r.displayTypeId] ?? null,
+          }))
         await api('PUT', '/admin/v1/available-inventory', { items })
         inv.commitNext()
         defaults.commitNext()
+        billingUnitDefaults.commitNext()
         await qc.invalidateQueries({ queryKey: ['available-inventory'] })
       }
       commitNext()
@@ -404,9 +538,12 @@ export function AdvertisersPage() {
   }
   const invContext = {
     open: (id: string) => navigate(`/display-types?id=${encodeURIComponent(id)}&panel=playlist`),
-    canEdit, currency: data.currency, edits: inv.draft ?? {}, defaults: defaults.draft ?? {}, dsps: inventory.data?.dsps ?? [],
+    canEdit, currency: data.currency, edits: inv.draft ?? {}, defaults: defaults.draft ?? {}, billingUnitDefaults: billingUnitDefaults.draft ?? {}, dsps: inventory.data?.dsps ?? [],
+    buyersLists: buyersLists.data?.items ?? [],
     set: (key: string, patch: Partial<SlotEdit>) => inv.setDraft((cur) => (cur ? { ...cur, [key]: { ...cur[key], ...patch } } : cur)),
     setDefault: (displayTypeId: string, v: number | null) => defaults.setDraft((cur) => (cur ? { ...cur, [displayTypeId]: v } : cur)),
+    setBillingUnitDefault: (displayTypeId: string, v: number | null) => billingUnitDefaults.setDraft((cur) => (cur ? { ...cur, [displayTypeId]: v } : cur)),
+    openAddBuyersList: (r: AvailableInventoryRow) => setAddingBuyersListFor(r),
   }
   const context = {
     settings: draft, data, canEdit,
@@ -418,7 +555,7 @@ export function AdvertisersPage() {
   return (
     <div>
       <div className="mb-3.5 flex justify-end">
-        <StatusPill colour={T.muted} icon={canEdit ? 'admin_panel_settings' : 'visibility'}>{canEdit ? 'Admin only' : 'Read only'}</StatusPill>
+        {!canEdit && <StatusPill colour={T.muted} icon="visibility">Read only</StatusPill>}
       </div>
       {data.items.length === 0 ? (
         <div className="flex items-center gap-2" style={{ fontSize: 12.5, color: T.muted }}><Icon name="sell" size={18} />No advertisers yet. They appear here once a DSP is connected.</div>
@@ -457,7 +594,26 @@ export function AdvertisersPage() {
         </>
       )}
 
-      {canEdit && <SaveBar dirty={dirty || inv.dirty || defaults.dirty} saving={saving} onSave={onSave} onCancel={() => { reset(); inv.reset(); defaults.reset() }} />}
+      <BuyersListsTable
+        lists={buyersLists.data?.items ?? []}
+        canEdit={canEdit}
+        onChanged={() => qc.invalidateQueries({ queryKey: ['buyers-lists'] })}
+      />
+
+      {canEdit && <SaveBar dirty={dirty || inv.dirty || defaults.dirty || billingUnitDefaults.dirty} saving={saving} onSave={onSave} onCancel={() => { reset(); inv.reset(); defaults.reset(); billingUnitDefaults.reset() }} />}
+
+      {/* Picked "+ Add new buyers list…" from a slot's Assigned to picker
+          (Rob, 23 Sep): on save, assign the new list straight to that slot. */}
+      <BuyersListModal
+        open={!!addingBuyersListFor}
+        editing={null}
+        onClose={() => setAddingBuyersListFor(null)}
+        onSaved={(list) => {
+          qc.invalidateQueries({ queryKey: ['buyers-lists'] })
+          if (addingBuyersListFor) inv.setDraft((cur) => ({ ...(cur ?? {}), [slotKey(addingBuyersListFor)]: { ...edited(invContext, addingBuyersListFor), assignedTo: { partnerIds: [], advertisers: [], whitelistOnly: false, buyersListId: list.id } } }))
+          setAddingBuyersListFor(null)
+        }}
+      />
     </div>
   )
 }

@@ -12,12 +12,13 @@ import {
 import { TIPS } from '../tooltips'
 import { SlotAssignment } from './SlotAssignment'
 
-export function PlaylistSettingsPanel({ d, update, open, onToggle, slotAssignment, partners, onFixConnection }: {
+export function PlaylistSettingsPanel({ d, update, open, onToggle, slotAssignment, advertiserOpen, partners, onFixConnection }: {
   d: DisplayType
   update: (fn: (d: DisplayType) => DisplayType) => void
   open: boolean
   onToggle: () => void
   slotAssignment: boolean
+  advertiserOpen: (i: number) => boolean
   partners: Partner[]
   onFixConnection: (partnerId: string) => void
 }) {
@@ -61,6 +62,7 @@ export function PlaylistSettingsPanel({ d, update, open, onToggle, slotAssignmen
           slots={slotsOf(d)}
           setSlots={(slots) => update((t) => ({ ...t, phExtensions: { ...(t.phExtensions ?? {}), slots } }))}
           partners={partners}
+          advertiserOpen={advertiserOpen}
           onFixConnection={onFixConnection}
           tip={TIPS.slotAssignment}
         />

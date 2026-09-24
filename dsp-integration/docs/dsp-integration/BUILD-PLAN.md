@@ -490,10 +490,10 @@ week's work (21 Sep):
   marketing user can switch an approved campaign on and off. That may be
   right — activation is scheduling, not policy — but it has never been
   stated either way.
-- **A hosted demo that can be written to.** `prototype/` is the admin UI
-  over a captured snapshot: every screen reads, nothing saves. A demo where
-  changes stick needs the API hosted somewhere that runs Node, which needs
-  an account and a deploy story this repo doesn't have.
+- ~~**A hosted demo that can be written to.**~~ **Done (Rob, 23 Sep):** the
+  API runs as a Cloud Function in `backlog-tracker-e4ed2` (Rob chose this
+  over browser-only saves and a separate host), and the prototype saves to
+  it — see "Hosted API" in §12 and `deploy/firebase/README.md`.
 
 Smaller things noted and left alone: the schedule's monthly view is capped
 at 92 days by the endpoint; a Stores slot's scope is fixed at *Store staff*
@@ -672,6 +672,271 @@ Each is configurable in `apps/api/src/config.ts`.
 | Booking schedule with booking revenue (Rob, 19 Sep; filed on the board) | Built | New admin endpoint `GET /admin/v1/booking-schedule?from=&to=` (contract addition) and a read-only page, **DSP Integration → Advertiser settings → Available Inventory → Booking schedule**: a revenue table per display type (booked windows, booked revenue = booked CPM × assumed views ÷ 1000, billed revenue from billing once played, with a total row), then the schedule — one row per advertiser slot, one column per play window: booked (advertiser, bookmark = reserved / gavel = won, the CPM it was booked at, booked revenue; hover for DSP, views and billed), Available, or — (can no longer be sold). Live bookings only; default the current window and the next 13; a date range of up to 92 days; no save bar. Not in the prototype: built from ph-designer patterns (SubPageHeader, SectionLabel, AG Grid with a pinned first column and horizontal scroll inside the grid, AntD RangePicker). Tests: API +3, admin +2. Browser-checked, including booked cells |
 | Bidding play-window length and auction cutoff in Advertiser settings → Pricing | Built | The Auction schedule section (Q13): Auction opens, Play-window length, Auction cutoff time; contract fields added; migration 0015 |
 
+### Back-end completion: PH Core boundaries, hardening and load (23 Sep 2026)
+
+No screen, copy or endpoint changed; the UX is signed off. What changed
+was behind it:
+
+- **Boundaries with PH Core** are documented in one place,
+  [api/PH-CORE-BOUNDARIES.md](api/PH-CORE-BOUNDARIES.md). It covers every
+  seam, its direction, the PH Core owner, and the guarantees the build
+  relies on (for example, `bookSlot` must allow at most one campaign per
+  slot and window). It also says which tables are stand-ins dropped on
+  integration, what the edge and gateway must provide, and what running
+  more than one instance needs.
+- **A security and performance review**, written up in
+  [api/SECURITY-PERFORMANCE.md](api/SECURITY-PERFORMANCE.md). Every
+  finding was reproduced first, and each has a test. The findings:
+  - A window could be sold twice by two concurrent clearings. Migration
+    0021 makes one live winner per window a database guarantee.
+  - A disconnected DSP could still create campaigns.
+  - A missing `cur` was accepted as the exchange currency. OpenRTB says it
+    is USD.
+  - There was no rate limiting. Forecast and content-package sizes were
+    unbounded, and so were bid responses and creative downloads.
+  - Client errors were reported as 500s, there were no security headers,
+    and a truncated GCM tag was accepted.
+  - The auction fanned out serially.
+- **Throughput.** Reads no longer write, settings and display types are
+  served from snapshots, statements are cached, indexes were added
+  (migration 0020), per-window work is hoisted, and SQLite runs in WAL
+  mode. On a 1,008-position estate:
+
+  | Endpoint | Before | After |
+  |---|---|---|
+  | `GET /v1/inventory/{id}` | 27 req/s | 1,205 req/s |
+  | A year of availability | 11 req/s | 608 req/s |
+  | Auction, 80 ms DSP round trip | 170.6 s | 5.3 s |
+
+  `npm run bench` reproduces these (`apps/api/bench/load.ts`).
+- **The §9 reservations are placed.**
+  - Canonical event schema v1, with a validator, in
+    `packages/types/src/analyticsEvent.ts`.
+  - Instance-identity columns in migration 0022: nullable, unused, and
+    never returned.
+  - The agent-to-agent interface is recorded as a decision only.
+- **Tests.** API 213 → 239, all passing:
+  - `hardening.test.ts`
+  - `partner-api-hardening.test.ts`
+  - `analytics-reservation.test.ts`
+  - one fixture in `handoff-billing.test.ts` gave three winners the same
+    window, which is now impossible, so each case now uses its own window.
+- **Still open**, recorded in SECURITY-PERFORMANCE.md → "Deliberately
+  left":
+  - the admin session stand-in must not be exposed;
+  - the rate limiter moves to the gateway once there is more than one
+    instance;
+  - uploads are still buffered in memory, bounded per partner;
+  - the admin screens' N+1 queries.
+
+### Hosted API: the prototype saves (Rob, 23 Sep 2026)
+
+Rob reported errors saving display details on the hosted prototype. An
+end-to-end check showed saves worked against the API, and the "error" was
+the static snapshot refusing writes, as designed. So the API is now hosted.
+Rob chose the Firebase project over browser-only saves or a separate host.
+
+- **`deploy/firebase/`**: the unchanged API and the mock DSPs as the Cloud
+  Function `dspApi`. It runs as one instance, because the database is one
+  SQLite file.
+  - After every save it persists to the private Firestore collection
+    `dspApiState`: gzip-compressed, chunked, swapped in whole. A cold start
+    restores from there.
+  - Its keys and Partner API tokens are generated on first boot. The public
+    POC tokens don't work there.
+  - CORS is answered for GitHub Pages, githack and localhost.
+  - Each IP gets 20 requests/s.
+- **Scheduled work** (billing, the auction at its cutoff, retention) runs
+  inside `dspApi`, at most every five minutes, triggered by requests. The
+  planned `dspApiTick` Cloud Scheduler job failed the first deploy: the
+  service account may not enable `cloudscheduler.googleapis.com`.
+- **`.github/workflows/dsp-api-deploy.yml`**:
+  - deploys codebase `dsp-api` only, with the existing service-account
+    secret;
+  - gates on the API tests;
+  - finishes with a smoke test that saves, reads back and restores;
+  - takes `reset = RESET` to restore the demo estate.
+- **The prototype**
+  - `staticApi.ts` looks for the API (`VITE_API_URL`) on start-up and sends
+    `/api` calls there. It falls back to the read-only snapshot only if the
+    API doesn't answer.
+  - The booking schedule's date range is fixed only in snapshot mode
+    (`demo/mode.ts`).
+  - No screen or copy changed.
+- **API changes needed for this:**
+  - `PH_MIGRATIONS_DIRS`, because a bundle can't find migrations relative to
+    each source file;
+  - `PH_PUBLIC_URL`, so creative URLs are absolute when the UI is on
+    another origin;
+  - `schedulerTick` pulled out of `startAuctionScheduler`.
+- **Verified here:**
+  - the bundle loads under the real Firebase SDK;
+  - a local stand-in of the host was driven in Chrome. Saves went to the
+    API and survived a reload and a cold restart, and creatives loaded
+    cross-origin. With the API down, the page fell back to the snapshot;
+  - `test/hosted.test.ts` passes (5 tests);
+  - API tests: 245 pass.
+- **Public by decision.** Anyone with the URL is the stand-in HQ admin.
+  That is acceptable for demo data only (`deploy/firebase/README.md` →
+  "Security posture").
+
+### The DSP integration switch (Rob, 24 Sep 2026)
+
+Rob asked for an **Enable DSP Integration** switch at the top of Exchange
+settings, like HQ Admin's switches for its other features: off the first
+time, the seller-of-record fields once on, then the DSPs. While it is off,
+Campaign Status and Advertisers / Inventory are hidden, and nothing is
+deleted, so it can be switched off and on for testing.
+
+- **API.**
+  - Migration 0023 adds `exchange.enabled`, off by default. So the hosted
+    demo's existing database starts switched off, and a reset (the seeded
+    demo retailer) starts switched on.
+  - `PUT /admin/v1/exchange` takes `enabled`; the four fields are required
+    only while it is true.
+  - `published` means switched on and complete.
+  - New `GET /admin/v1/features`, readable by marketing users too, for the
+    navigation.
+  - While it is off: the Partner API and sellers.json answer 404, the
+    auction sends no bid requests, and the scheduler skips it. Billing of
+    windows already sold carries on.
+- **UI.**
+  - The master toggle row (ph-designer §12) under the Exchange settings
+    heading, held as an unsaved change like every toggle in the section.
+  - The section's list shows only Exchange settings until it is published;
+    a link to another page opens Exchange settings.
+  - The nav hides Campaign Status and Advertisers / Inventory while off,
+    and those routes open the first page.
+- **Verified here:**
+  - API tests: 250 pass, 5 of them new;
+  - admin UI tests: 6 new;
+  - driven in Chrome against the real API: on → off (nav and list shrink,
+    links redirect, Partner API 404) → on again (every DSP and field as it
+    was, Published).
+- **Follow-up, same day: the Advertiser slot owner.** Rob asked for
+  Advertiser to be greyed out, not hidden, in the slot owner list while the
+  switch is off, leaving existing advertiser slots as they are.
+  - `SlotAssignment.tsx` disables the option, with a tooltip, unless that
+    slot was an Advertiser slot when last saved.
+  - `PUT /display-types/{id}/extensions` refuses a new Advertiser slot
+    while the switch is off (400, `slots[i].owner`).
+  - Tests: 1 API and 1 UI. Checked in Chrome: Slot 1's Advertiser is
+    greyed out and can't be chosen; Slot 2 keeps it.
+
+### Page load between sections (Rob, 24 Sep 2026)
+
+Rob saw a spinner every time he moved between sections of the hosted
+prototype. Measured by building the prototype against the hosted API's
+local stand-in and clicking through every section in Chrome, with 400 ms
+added to each API call (roughly the round trip to the Cloud Function).
+
+- **Before.**
+  - Every section fetched its data only when opened, so each first visit
+    showed a spinner, and every revisit fetched it all again.
+  - Campaign Status made 33 requests a visit: one approval per campaign.
+    That alone could use up the hosted API's 20 requests/s per visitor.
+  - On the hosted API, one request every five minutes also waited for the
+    scheduled work and a full database upload.
+  - Found on the way: a restart that reused its data folder replayed an
+    old SQLite journal over the restored database. Every read then failed
+    with "database disk image is malformed", and Advertisers / Inventory
+    spun for good.
+- **Changes.**
+  - `apps/admin/src/api/queries.ts` holds every section's queries, used by
+    the pages and by `usePrefetchSections` (App.tsx). That prefetches the
+    sections the user can open, 0.8 s after the first page asks for its
+    own data.
+  - React Query `staleTime` 30 s. Saves still invalidate what they change.
+  - `useCampaignApprovals` takes an optional `listApprovals` and loads the
+    table from `GET /admin/v1/approvals` (one request per 200 rows).
+  - `host.ts`: the scheduled work no longer blocks the request, it uploads
+    the database only when it changed something, and a restore removes
+    stale journals first.
+- **After.** Clicking through all five sections twice after the first page
+  loaded: no spinner on any section, and no request except Campaign
+  Status's one approvals list.
+- **Tests:**
+  - `hosted.test.ts` restores over a stale journal (it fails without the
+    fix);
+  - the approvals hook batches and falls back;
+  - API 252, approval module 44.
+- **Not changed: cold starts.** The first request after the hosted API has
+  been idle waits for a new instance to restore the database, a few
+  seconds. Keeping one instance warm (`minInstances: 1`) would remove that,
+  at a standing cost; it is Rob's call.
+
+### Scalability and security review for 15,000 displays on a client's EKS (Rob, 24 Sep 2026)
+
+Rob asked for a security and scalability review of the exchange as it
+will run in a client's own VPC on EKS: 15,000 displays, advertisers
+bidding for slots on them, and the bidding API tested and optimised. The
+write-up is `api/SCALE-15000-EKS.md`; the deployment
+is `deploy/kubernetes/`.
+
+- **Measured first**, on three shapes of a 15,000-display estate (600
+  display types × 25 displays, 60 × 250, 15 × 1,000), with the load test
+  extended to take the estate's shape, place real bids, and bill a window
+  with a real play volume and a year's history behind it.
+- **What was found**: costs that grew with the number of positions (the
+  per-request visibility pass; the inventory status filter running one
+  reservation query per position: 11 req/s, 5 s latency) and costs that
+  grew with displays per type (every position reading its display rows to
+  count them: an inventory page at 20 req/s on 1,000-display types;
+  billing reading 1.9 million play rows into JavaScript: 23 s on the API's
+  one thread; a billing tick loading every window ever billed: 1.3 s a
+  minute). The auction was fine: bounded by the DSPs' round trip.
+- **Changed**: display counts from an aggregate snapshot; a positions
+  index; one visibility check per request; one ranged query for the
+  estate's taken windows; billing that selects only what it can bill and
+  counts plays in SQL over a covering index (migration 0025); the auction
+  reading its DSPs and each position's view once; `auction_runs`
+  (migration 0024) so one process auctions a window; a retention sweep
+  for settled bids; a process-wide upload cap; a private-address guard on
+  DSP endpoints; `/healthz` and `/readyz`; `API_HOST`, `PH_SCHEDULER` and
+  `npm run scheduler:tick`; SIGTERM shutdown; the approval store's
+  statements prepared once.
+- **Result**: on the 1,000-display shape an inventory page 20 → 850
+  req/s, the status filter 11 → 502, a bid 373 → 992, billing a window
+  23 s → about half a second; on 2,408 positions an inventory page 184 →
+  582, the status filter 11 → 96, bids 565 → 1,035, a billing tick 1.3 s
+  → 77 ms. Same auction time.
+- **EKS**: `deploy/kubernetes/` — Dockerfile and bundle (smoke-tested
+  here: probes, tokens, SIGTERM; the image itself not built, no Docker
+  daemon), manifests for the one-replica SQLite deployment with a public
+  Partner API ingress and an internal Admin API ingress, a restricted pod,
+  an egress-limited network policy; and, for a shared database, an HPA, a
+  PDB and the scheduler as a CronJob. The README carries the sizing.
+- **Tests**: 14 new (`test/scale.test.ts`); API 266, approval module 44,
+  all passing.
+- **Left for integration**: N replicas need Postgres and an asynchronous
+  repository layer; creatives to S3 through `AssetStore`; DNS-aware egress
+  is the cluster's choice.
+
+### Stability under concurrency and at the edges (Rob, 24 Sep 2026)
+
+"Consider edge cases … simultaneously received bids, anything that could
+cause a race condition; make sure it's 100% stable before we push it
+live." Tried against the code first, then fixed and pinned
+(`SECURITY-PERFORMANCE.md` → "Stability under concurrency and at the
+edges" has the table):
+
+- **Reproduced and fixed**: a bid placed while the auction waited on the
+  bidders was stranded pending for ever; a DSP's malformed answer took the
+  whole auction down and the tick retried it for ever; billing throwing
+  stopped the auction due in the same minute; a cutoff missed by more than
+  an hour was never auctioned and its bids never settled; a 1e12 CPM API
+  bid was taken; two processes starting on one empty database both seeded
+  and the second crashed.
+- **Closed by the database**: one open API bid per advertiser and window
+  (migration 0026); billing idempotent under two ticks; migrations and
+  the seed check under the write lock.
+- **Tests**: 31 in `test/stability.test.ts`; 4 in
+  `test/multiprocess.test.ts`, which starts two real API processes and
+  three `scheduler:tick` runs on one database file and races them (16
+  simultaneous identical bids → one taken; three ticks → one auction;
+  SIGTERM → `integrity_check` ok). API 301, approval module 44, all
+  passing.
+
 ## 13. Prototype comparison (per screen)
 
 Filled in as each package finishes. Differences are removed, not justified.
@@ -704,6 +969,7 @@ broken-partner callout, the zone cards and the save bar all match.
 | Field labels | `#333` | Muted `rgba(0,0,0,0.45)` | ph-designer `components.md` §13 |
 | Name field | "Display Type / Element Name" | "Display Type Name" | Rob, 19 Sep (Q2) |
 | Unsaved-changes prompt | `window.confirm` | AntD confirm with the same text, OK / Cancel | ph-designer components |
+| Slot owner: Advertiser | Always selectable | Greyed out, with a tooltip, for a slot that isn't one already while DSP integration is switched off | Rob, 24 Sep 2026 |
 
 Kept on the page as status (decision 2): "Not enabled for this company —
 contact Platform Admin.", the broken-partner callout, "On the blacklist —
@@ -781,6 +1047,8 @@ sellers.json callouts all match.
 | Where | Prototype | Build | Why |
 |---|---|---|---|
 | Published pill and callout | Follow the unsaved fields as you type | Follow the saved settings | Spec §7: "once saved and complete, the screen shows where sellers.json is published and that it is live" |
+| Top of the page | Seller-of-record fields straight away | **Enable DSP Integration** master toggle row first, off for a new retailer; the fields show once it is on, and the pill only once it has been saved on | Rob, 24 Sep 2026 |
+| List column | Every company page and DSP | Only Exchange settings until it is switched on and published | Rob, 24 Sep 2026 |
 
 ### Delete a display type (package 4)
 

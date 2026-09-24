@@ -1,0 +1,54 @@
+# What the API pods may talk to. Ingress: only the ALBs (target-type ip:
+# the load balancer connects to the pod directly from the VPC). Egress:
+# DNS, and the internet for the DSPs' bidders, management APIs and creative
+# hosts — but never the VPC's own address space or the EC2 instance
+# metadata service, so an endpoint an admin typed into DSP Integration (or
+# a creative URL in a bid) cannot be used to reach anything inside the
+# client's network (the API refuses such addresses itself too:
+# apps/api/src/domain/partnerInput.ts; this is the second lock).
+#
+# A DNS-aware policy (Cilium FQDN rules, Calico DNS policy) can narrow
+# "the internet" to the DSPs' hostnames; plain NetworkPolicy cannot.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: dsp-exchange-api
+  namespace: dsp-exchange
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: dsp-exchange-api
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        # The VPC (both ALBs live in it). Narrow to the ALB subnets' CIDRs.
+        - ipBlock:
+            cidr: 10.0.0.0/8
+      ports:
+        - port: 4000
+          protocol: TCP
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+              - 169.254.0.0/16
+              - 127.0.0.0/8
+      ports:
+        - port: 443
+          protocol: TCP

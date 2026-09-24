@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { RouterProvider, createMemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Providers, appRoutes } from '../src/App'
@@ -64,6 +64,34 @@ describe('Display Types page', () => {
     expect(screen.queryByText('Idle')).not.toBeInTheDocument()
     expect(screen.queryByText('Connected')).not.toBeInTheDocument()
     expect(document.body.textContent).not.toMatch(/Responsive Web|Mobile Store Site|Element Type/)
+  })
+
+  /* Rob, 24 Sep 2026: with DSP integration switched off (Exchange settings),
+     Advertiser is greyed out — not hidden — for a slot that isn't one, and
+     an existing Advertiser slot is left as it is. */
+  it('greys out Advertiser for a new slot while DSP integration is switched off, and keeps the existing one', async () => {
+    const off: Record<string, unknown> = { ...responses, '/api/admin/v1/features': { dspIntegration: false } }
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => new Response(JSON.stringify(off[url.split('?')[0]] ?? {}), { status: 200 })))
+    renderAt('/display-types?id=menu_board&panel=playlist', true)
+    const advertiserOption = async (slot: number) => {
+      fireEvent.mouseDown(await screen.findByRole('combobox', { name: `Slot ${slot} owner` }))
+      const opts = await waitFor(() => {
+        const found = Array.from(document.querySelectorAll('.ant-select-dropdown:not(.ant-select-dropdown-hidden) .ant-select-item-option'))
+        expect(found.length).toBeGreaterThan(0)
+        return found
+      })
+      const adv = opts.find((o) => o.textContent === 'Advertiser')!
+      fireEvent.keyDown(document.activeElement ?? document.body, { key: 'Escape' })
+      return adv
+    }
+    /* Slot 1 (Headquarters): Advertiser is there, greyed out, and says why. */
+    const s1 = await advertiserOption(1)
+    await waitFor(() => expect(s1.getAttribute('aria-disabled') ?? String(s1.classList.contains('ant-select-item-option-disabled'))).toBe('true'))
+    expect(s1.getAttribute('title')).toMatch(/Enable DSP Integration/)
+    /* Slot 2 is already an Advertiser slot: left as it is. */
+    expect(within(screen.getByTestId('slot-card-2')).getByText('Advertiser')).toBeInTheDocument()
+    const s2 = await advertiserOption(2)
+    expect(s2.classList.contains('ant-select-item-option-disabled')).toBe(false)
   })
 
   it('hides slot ownership with the dspIntegration flag off and never asks for DSP data', async () => {

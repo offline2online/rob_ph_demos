@@ -9,7 +9,7 @@ export const advertiserSettings = {
   advertiserWhitelist: ['Nestlé', 'Swisse', 'Arnott’s'], advertiserBlacklist: ['Red Bull', 'Monster Energy'], categoryWhitelist: ['Food & Drink', 'Health & Fitness'], categoryBlacklist: ['Finance'],
   whereTheseApply: [{ partnerId: 'p_google', name: 'Google DSP', adopting: true }, { partnerId: 'p_amazon', name: 'Amazon Ads DSP', adopting: false }],
 }
-export const exchange = { organisation: 'Demo Retail Group', domain: 'demoretail.example', sellerId: 'drg-4471', contactEmail: 'adops@demoretail.example', published: true, sellersJsonUrl: 'https://demoretail.example/sellers.json' }
+export const exchange = { enabled: true, organisation: 'Demo Retail Group', domain: 'demoretail.example', sellerId: 'drg-4471', contactEmail: 'adops@demoretail.example', published: true, sellersJsonUrl: 'https://demoretail.example/sellers.json' }
 export const variables = { items: [
   { key: 'store.hours', label: 'Store Open / Closed', group: 'localisation', exampleValues: 'Whether the store is open or closed at the time — e.g. Open, Closed', access: 'all' },
   { key: 'store.suburb', label: 'Suburb', group: 'localisation', exampleValues: 'e.g. Surry Hills, Parramatta', access: [] },
@@ -22,6 +22,7 @@ export const routes: Record<string, unknown> = {
   '/api/admin/v1/partners': partners,
   '/api/admin/v1/advertiser-settings': advertiserSettings,
   '/api/admin/v1/exchange': exchange,
+  '/api/admin/v1/features': { dspIntegration: true },
   '/api/admin/v1/targeting-variables': variables,
   '/api/admin/v1/display-types': { items: [] },
   '/api/admin/v1/playlists': { items: [] },

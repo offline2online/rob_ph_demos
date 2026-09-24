@@ -70,8 +70,9 @@ describe('Advertiser settings (spec §4, §6)', () => {
     expectMatchesContract('GET', '/admin/v1/available-inventory', 200, res.json())
     expect(res.json().items).toEqual([{
       displayTypeId: 'menu_board', displayTypeName: 'Menu Board — Long Format', touchPoint: 'Digital Signage', playlistName: 'Menu Board Playlist', slot: 2, position: 'Supplier slot',
-      assignedTo: { partnerIds: ['p_google'], partnerNames: ['Google DSP'], advertisers: [], whitelistOnly: false }, qrControl: true, visionAi: true, supportedTargeting: ['localised'],
+      assignedTo: { partnerIds: ['p_google'], partnerNames: ['Google DSP'], advertisers: [], whitelistOnly: false, buyersListId: null, buyersListName: null }, qrControl: true, visionAi: true, supportedTargeting: ['localised'],
       reservePrice: null, reservePriceOverride: null, displayTypeReservePrice: null,
+      billingUnitHours: 24, billingUnitHoursOverride: null, displayTypeBillingUnitHours: null,
     }])
     /* The picker behind Assigned to: every DSP and the advertisers it brings. */
     expect(res.json().dsps[0]).toMatchObject({ partnerId: 'p_google', name: 'Google DSP', advertisers: [{ advertiserId: 'nestle', name: 'Nestlé' }, { advertiserId: 'swisse', name: 'Swisse' }] })
@@ -160,7 +161,7 @@ describe('Advertiser settings (spec §4, §6)', () => {
 
     /* Nothing chosen: any connected DSP, RTB. */
     expect(assigned(await save({ partnerIds: [], advertisers: [], whitelistOnly: false })))
-      .toEqual({ partnerIds: [], partnerNames: [], advertisers: [], whitelistOnly: false })
+      .toEqual({ partnerIds: [], partnerNames: [], advertisers: [], whitelistOnly: false, buyersListId: null, buyersListName: null })
     expect(ctx.displayTypes.get('menu_board')!.phExtensions!.slots[1].listMode).toBe('rtb')
 
     /* Several DSPs at once. */
