@@ -118,6 +118,26 @@ describe('PUT /admin/v1/display-types/{id}/extensions — slot ownership', () =>
     expect(res.json().slots[2]).toMatchObject({ storeScope: 'Store staff' })
   })
 
+  /* Rob, 24 Sep 2026: with DSP integration switched off, existing advertiser
+     slots stay as they are, but no new one can be set up. */
+  it('with DSP integration switched off, keeps existing advertiser slots but refuses a new one', async () => {
+    const { app, ctx } = await setup()
+    ctx.exchange.save({ ...ctx.exchange.get(), enabled: false })
+    /* Slot 2 already was Advertiser: saving it unchanged (or relabelled) is fine. */
+    const kept = await put(app, 'menu_board', menuSlots({ label: 'Brand slot' }))
+    expect(kept.statusCode).toBe(200)
+    expect(kept.json().slots[1]).toMatchObject({ owner: 'advertiser', partnerIds: ['p_google'] })
+    /* Slot 1 becoming Advertiser is a new one: refused, and nothing saved. */
+    const added = await put(app, 'menu_board', { slots: [{ label: 'Priority 1', owner: 'advertiser' }, { label: 'Brand slot', owner: 'advertiser' }, { label: 'Store choice', owner: 'retail' }] })
+    expect(added.statusCode).toBe(400)
+    expectMatchesContract('PUT', '/admin/v1/display-types/{displayTypeId}/extensions', 400, added.json())
+    expect(added.json().error.details).toEqual([{ field: 'slots[0].owner', reason: expect.stringContaining('Switch on DSP integration') }])
+    expect(ctx.displayTypes.get('menu_board')?.phExtensions?.slots[0].owner).toBe('internal')
+    /* Switched back on, it can be. */
+    ctx.exchange.save({ ...ctx.exchange.get(), enabled: true })
+    expect((await put(app, 'menu_board', { slots: [{ label: 'Priority 1', owner: 'advertiser' }, { label: 'Brand slot', owner: 'advertiser' }, { label: 'Store choice', owner: 'retail' }] })).statusCode).toBe(200)
+  })
+
   it('requires one slot per rotation position, and a label on each', async () => {
     const { app } = await setup()
     const res = await put(app, 'menu_board', { slots: [{ label: 'Only one', owner: 'internal' }] })

@@ -813,6 +813,15 @@ deleted, so it can be switched off and on for testing.
   - driven in Chrome against the real API: on → off (nav and list shrink,
     links redirect, Partner API 404) → on again (every DSP and field as it
     was, Published).
+- **Follow-up, same day: the Advertiser slot owner.** Rob asked for
+  Advertiser to be greyed out, not hidden, in the slot owner list while the
+  switch is off, leaving existing advertiser slots as they are.
+  - `SlotAssignment.tsx` disables the option, with a tooltip, unless that
+    slot was an Advertiser slot when last saved.
+  - `PUT /display-types/{id}/extensions` refuses a new Advertiser slot
+    while the switch is off (400, `slots[i].owner`).
+  - Tests: 1 API and 1 UI. Checked in Chrome: Slot 1's Advertiser is
+    greyed out and can't be chosen; Slot 2 keeps it.
 
 ## 13. Prototype comparison (per screen)
 
