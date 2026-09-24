@@ -67,6 +67,7 @@ Cloud Functions, own Hosting site, own IAM/billing; see
   routinePromptMd?: string,       // see "Per-project Routine instructions" below
   faqAutoFlagOnLive?: boolean,    // see "FAQ auto-review" below
   programId?: string,             // see "programs/{programId}" below
+  releaseId?: string | null,      // see "releases/{releaseId}" below
   artifactUrl?: string,           // published Artifact link for this project — ⋮ → "View Artifact". Written directly (not via patchFiles/patchReady) by the Notify Claude Routine — see ROUTINE_INSTRUCTIONS.md → "Project Artifact"
   artifactUpdatedAt?: timestamp,  // set alongside artifactUrl, shown as "updated <date>" under the menu link
   notifyRoutine?: {                // set by notifyOnProjectReadyForReview on each fire
@@ -627,6 +628,57 @@ picker. Deleting a program isn't wired up from either UI yet; a project
 whose `programId` points at a since-deleted program doc is treated exactly
 like one with no `programId` at all (falls into "Ungrouped").
 
+### `releases/{releaseId}`
+```
+{
+  name: string,                    // up to 120 chars
+  version: string | null,          // optional, up to 40 chars
+  status: "draft" | "live",        // only ever advances draft -> live
+  order: number,                   // max(existing) + 1 at creation (1 for the first); immutable
+  createdAt: timestamp,
+  updatedAt: timestamp,
+  createdByEmail?: string,
+  updatedByEmail?: string,
+  madeLiveAt: timestamp | null,
+}
+```
+A named, ordered product release. Managed from the hamburger menu's
+**Releases** page (every release newest-first; **+ New release** takes a
+name and optional version; a draft row's **Mark live** confirms, then sets
+`status: "live"` and `madeLiveAt`; a live row has no action). The
+**current live release** is the one with the highest `order` among those
+with `status == "live"`.
+
+- **A project may be assigned to one** — `projects/{id}.releaseId`
+  (nullable), from the project's Docs page → **Release**. While that
+  release is a draft, approved FAQ proposals sourced from the project
+  (`pendingRevision.sourceProjectId`) wait; marking the release live
+  promotes them together (`functions/index.js` `onReleaseMarkedLive`, then
+  the usual `promoteFaqRevisionIfReady`, which still also waits on the
+  proposal's source tickets). A project with no `releaseId`, or a proposal
+  with no `sourceProjectId`, promotes exactly as before releases existed —
+  Backlog Tracker & FAQs itself is deliberately not release-tracked.
+- **An FAQ article may be bound to a range** —
+  `faqArticles.introducedInReleaseId` / `removedInReleaseId` (both
+  nullable), from the article editor's "Article properties" group. An
+  article applies to a release of order *n* when its introduction release's
+  order is `<= n` (or unset) and its removal release's order is `> n` (or
+  unset). One canonical definition, `articleAppliesToRelease` in
+  `public/js/app.js`, duplicated inline in `faq/js/faq-data.js` and
+  `functions/mcp-server.js` (separate deployables) — keep the three in step.
+- **Where the range is applied**: the public help centre (`faq/js/faq-data.js`
+  reads `faq/data/releases.json`, exported by `scripts/faq-export.js`; the
+  reader's `?release=<id or version>` or, by default, the current live
+  release) and the MCP server's `search_faq` / `get_faq_article` (optional
+  `release` argument, same default). With no releases at all, or none live
+  and none asked for, nothing is filtered.
+- **Rules**: read `isBoardReader()`; create/update/delete `isEditor()`;
+  update may not change `order` and may not move a live release back to
+  draft (`releaseStatusOnlyAdvances()`).
+- **Backfill**: `scripts/backfill-release-binding.js` (`--report-only` for a
+  dry run) sets `introducedInReleaseId` to the current live release on every
+  article that has none; never overwrites an existing binding.
+
 ### `interfaces/{interfaceId}`
 ```
 {
@@ -716,6 +768,7 @@ the UI.
 faqCategories/{id}: { name, icon, description, order, createdAt, updatedAt }
 faqArticles/{id}: {
   categoryId, programId (nullable), projectId (nullable), title, slug, summary, bodyMd,
+  introducedInReleaseId (nullable), removedInReleaseId (nullable),   // see `releases` above
   docType: "faq" | "how-to" | "reference" | "explanation",
   keywords: string[], status: "draft" | "published", needsReview: boolean,
   order, createdAt, updatedAt, publishedAt,
