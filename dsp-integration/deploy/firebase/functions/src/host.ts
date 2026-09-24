@@ -132,7 +132,6 @@ export function createHost(opts: { store: BlobStore; dataDir: string; migrations
   const perIp = tokenBucket({ perSecond: 20, burst: 60 })
   let booted: Promise<{ ctx: Context; app: FastifyInstance; instance: Instance }> | null = null
   const uploaded = new Set<string>()
-  const cleared = new Set<string>()
   /* Persist one change at a time, in order. */
   let chain: Promise<void> = Promise.resolve()
   /* The scheduled work (billing, the auction at its cutoff, retention) runs
@@ -147,7 +146,7 @@ export function createHost(opts: { store: BlobStore; dataDir: string; migrations
   const changes = (ctx: Context) => Number((ctx.db.prepare('SELECT total_changes() AS n').get() as { n: number }).n)
   const runTick = async (ctx: Context) => {
     const before = changes(ctx)
-    await schedulerTick(ctx, cleared, log)
+    await schedulerTick(ctx, log)
     sweepRejectedCampaigns(ctx.db, ctx.config.rejectedCampaignRetentionDays, ctx.clock)
     /* Most ticks bill nothing and clear no auction: only upload the database
        (a few MB, gzipped and chunked into Firestore) when something changed

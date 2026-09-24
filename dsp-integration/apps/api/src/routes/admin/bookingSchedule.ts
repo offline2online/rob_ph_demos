@@ -107,7 +107,7 @@ export function bookingSchedule(ctx: Context, starts: Date[], f: ScheduleFilter 
   }
 
   const positions = allPositions(ctx).map((p) => {
-    const displayCount = ctx.displays.listByDisplayType(p.displayType.id).length
+    const displayCount = ctx.displays.summaryByDisplayType(p.displayType.id).displays
     const hasDisplays = displayCount > 0
     const views = ctx.audience.forSlot(p.displayType.id, p.slot).assumedViewsPerWindow
     const rev = revenue.get(p.displayType.id) ?? { displayTypeId: p.displayType.id, displayTypeName: p.displayType.name, bookedWindows: 0, sellableWindows: 0, bookedRevenue: 0, billedRevenue: 0 }

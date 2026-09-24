@@ -1,0 +1,17 @@
+# kubectl apply -k deploy/kubernetes/base
+# (after replacing the image, the certificate and WAF ARNs, the hostnames
+# and the storage class, and providing the Secret — see README.md).
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: dsp-exchange
+resources:
+  - namespace.yaml
+  - serviceaccount.yaml
+  - configmap.yaml
+  - pvc.yaml
+  - deployment.yaml
+  - service.yaml
+  - ingress.yaml
+  - networkpolicy.yaml
+# secret.example.yaml is deliberately not applied: the real Secret comes
+# from External Secrets Operator (or sealed secrets), never from git.

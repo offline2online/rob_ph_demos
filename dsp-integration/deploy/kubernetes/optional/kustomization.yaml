@@ -1,0 +1,9 @@
+# kubectl apply -k deploy/kubernetes/optional
+# Once the database is shared by several replicas (README, "Scaling out").
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: dsp-exchange
+resources:
+  - hpa.yaml
+  - pdb.yaml
+  - scheduler-cronjob.yaml

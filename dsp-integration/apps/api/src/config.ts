@@ -6,6 +6,28 @@ import { fileURLToPath } from 'node:url'
    questions") live here so each is configurable in one place. */
 export interface Config {
   port: number
+  /* Where the API listens (API_HOST): 127.0.0.1 by default — the POC's
+     Admin API has no authentication of its own, so only this machine may
+     reach it — or 0.0.0.0 in a container, behind the platform's ingress
+     (deploy/kubernetes/). */
+  host: string
+  /* ---- Running on a cluster (scalability review, 24 Sep 2026). ---- */
+  /* The scheduled work (billing, the auction at its cutoff, retention):
+     'in-process' (the default) runs it in this process every minute; 'off'
+     leaves it to `npm run scheduler:tick` run from outside — a CronJob —
+     once several replicas share one database and none of them should
+     be the scheduler. PH_SCHEDULER. */
+  scheduler: 'in-process' | 'off'
+  /* Positions the auction clears at once (PH_AUCTION_CONCURRENCY). */
+  auctionConcurrency: number
+  /* Asset uploads in flight across ALL partners (PH_MAX_UPLOADS_IN_FLIGHT):
+     each is held in memory up to the asset size limit, so this bounds the
+     process's memory whatever the number of partners. */
+  maxConcurrentUploads: number
+  /* Rejected, lost and never-cleared bids are deleted this many days after
+     their window (PH_RESERVATION_RETENTION_DAYS); won and reserved windows
+     are kept. */
+  reservationRetentionDays: number
   dbFile: string
   /* AssetStore folder (git-ignored). */
   assetsDir: string
@@ -80,6 +102,11 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   const mocks = env.DSP_MOCKS_URL ?? 'http://127.0.0.1:4100'
   return {
     port: Number(env.API_PORT ?? 4000),
+    host: env.API_HOST || '127.0.0.1',
+    scheduler: env.PH_SCHEDULER === 'off' ? 'off' : 'in-process',
+    auctionConcurrency: Math.max(1, Number(env.PH_AUCTION_CONCURRENCY ?? 16) || 16),
+    maxConcurrentUploads: Math.max(1, Number(env.PH_MAX_UPLOADS_IN_FLIGHT ?? 4) || 4),
+    reservationRetentionDays: Math.max(1, Number(env.PH_RESERVATION_RETENTION_DAYS ?? 90) || 90),
     dbFile: fromRoot(env.PH_DB_FILE ?? 'data/poc.sqlite'),
     assetsDir: fromRoot(env.PH_ASSETS_DIR ?? 'data/assets'),
     publicUrl: (env.PH_PUBLIC_URL ?? '').replace(/\/$/, ''),

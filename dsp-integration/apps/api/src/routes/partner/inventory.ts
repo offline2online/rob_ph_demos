@@ -7,7 +7,7 @@
 import { TARGETING_VARIABLES } from '@ph-dsp/types'
 import type { FastifyPluginAsync } from 'fastify'
 import type { Context } from '../../context'
-import { type Caller, type PositionRef, type WindowStatus, allPositions, callerOf, findPosition, isVisible, nextWindow, positionView, windowFacts, windowMs, windowStatus, windowsBetween } from '../../domain/positions'
+import { type Caller, type PositionRef, type WindowStatus, allPositions, callerOf, findPosition, nextWindow, positionView, visibilityFor, windowFacts, windowMs, windowStatus, windowsBetween } from '../../domain/positions'
 import { effectiveFloorCpm } from '../../domain/pricing'
 import { type Rules, throwIfRejected, validateRules } from '../../domain/targetingValidation'
 import { notFound, validationFailed } from '../../http/errors'
@@ -22,14 +22,15 @@ interface ListQuery {
 }
 
 export const inventoryRoutes = (ctx: Context): FastifyPluginAsync => async (app) => {
-  const visible = (c: Caller) => allPositions(ctx).filter((p) => isVisible(ctx, p, c))
+  /* One visibility check per request, applied per position (positions.ts). */
+  const visible = (c: Caller) => allPositions(ctx).filter(visibilityFor(ctx, c))
   /* One position: find it, then check the caller may see it — rather than
      working out visibility for every position in the estate to find one.
      A position the caller may not buy is a 404, exactly as if it didn't
      exist (visibility, not rejection). */
   const visibleOne = (c: Caller, id: string) => {
     const p = findPosition(ctx, id)
-    if (!p || !isVisible(ctx, p, c)) throw notFound('Position not found.')
+    if (!p || !visibilityFor(ctx, c)(p)) throw notFound('Position not found.')
     return p
   }
   const windowsOf = (ctx2: Context, p: PositionRef, c: Caller, starts: Date[]) => {
@@ -52,19 +53,26 @@ export const inventoryRoutes = (ctx: Context): FastifyPluginAsync => async (app)
     /* No dates: the next window that can be sold. */
     const range = windowsBetween(ctx, q.from ?? q.to ?? next, q.to ?? q.from ?? next) ?? windowsBetween(ctx, next, next)!
     const stores = list(q.storeIds)
+    const byStatus = q.status && STATUSES.includes(q.status as WindowStatus) ? (q.status as WindowStatus) : null
+    /* The status filter asks about every position over the whole range:
+       what is taken is read once for the estate (one ranged query) and
+       handed to each position, instead of one query per position — 2,400
+       of them a request on a large estate (review, 24 Sep 2026). */
+    const taken = byStatus ? ctx.reservations.takenInRange(range[0].toISOString(), new Date(range[range.length - 1].getTime() + 1).toISOString()) : undefined
     const items = visible(c).filter((p) => {
       if (q.displayTypeId && p.displayType.id !== q.displayTypeId) return false
       if (q.touchPoint && p.displayType.touchPoint !== q.touchPoint) return false
       /* Store IDs and regions are the platform's (StoreSource, Q10). The
-         displays are only read when one of those filters asks for them. */
+         display type's stores are only read when one of those filters asks
+         for them — the stores, not the displays. */
       if (stores.length || q.region) {
-        const displays = ctx.displays.listByDisplayType(p.displayType.id)
-        if (stores.length && !displays.some((d) => stores.includes(d.storeId))) return false
-        if (q.region && !displays.some((d) => ctx.stores.get(d.storeId)?.region?.toLowerCase() === q.region!.toLowerCase())) return false
+        const inStores = ctx.displays.storeIdsByDisplayType(p.displayType.id)
+        if (stores.length && !inStores.some((id) => stores.includes(id))) return false
+        if (q.region && !inStores.some((id) => ctx.stores.get(id)?.region?.toLowerCase() === q.region!.toLowerCase())) return false
       }
-      if (q.status && STATUSES.includes(q.status as WindowStatus)) {
-        const facts = windowFacts(ctx, p, range)
-        return range.some((w) => windowStatus(ctx, p, c, w, facts) === q.status)
+      if (byStatus) {
+        const facts = windowFacts(ctx, p, range, taken)
+        return range.some((w) => windowStatus(ctx, p, c, w, facts) === byStatus)
       }
       return true
     })
@@ -106,10 +114,12 @@ export const inventoryRoutes = (ctx: Context): FastifyPluginAsync => async (app)
     if (b.advertiserId !== undefined && typeof b.advertiserId !== 'string') invalid.push({ field: 'advertiserId', reason: 'A string.' })
     const c = callerOf(req.partner, b.advertiserId as string | undefined)
     if (c.unknownAdvertiser) invalid.push({ field: 'advertiserId', reason: `Not an advertiser on ${req.partner.name}.` })
-    const mine = visible(c)
+    /* The positions asked for, checked one by one — not the whole estate's
+       visibility to find up to 200 of them (review, 24 Sep 2026). */
+    const see = visibilityFor(ctx, c)
     const positions = (ids ?? []).map((id, i) => {
-      const p = mine.find((x) => x.positionId === id)
-      if (!p) invalid.push({ field: `positionIds[${i}]`, reason: 'Unknown position.' })
+      const p = typeof id === 'string' ? findPosition(ctx, id) : null
+      if (!p || !see(p)) invalid.push({ field: `positionIds[${i}]`, reason: 'Unknown position.' })
       return p
     })
     const r = b.rules === undefined ? { invalid: [], notPermitted: [] } : validateRules(b.rules, 'rules', req.partner, ctx.company.variableAccess(), ctx.config.maxValuesPerCondition, ctx.config.campaignLimits)

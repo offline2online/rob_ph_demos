@@ -2256,6 +2256,57 @@ are in `api/PH-CORE-BOUNDARIES.md`.
   one position, 608 req/s for a year of availability, and an auction in
   5.3 s with an 80 ms DSP round trip (`npm run bench`).
 
+### Scale: 15,000 displays, in a client's VPC on EKS (review, 24 Sep 2026)
+
+The exchange must serve a 15,000-display estate, and advertisers bidding
+for slots on it, from a client's own AWS account on EKS. Measurements,
+what changed and what is left are in `api/SCALE-15000-EKS.md`; the
+deployment is `deploy/kubernetes/`.
+
+- **What is sold scales with positions, not displays.** A play window is
+  sold per position (display type × slot) across every display of that
+  type (§6), so bid requests, bids and inventory grow with the number of
+  positions — 60 to 2,400 for 15,000 displays, depending on how many
+  formats the estate has — never with the 15,000.
+- **Display counts, never display rows.** Every position, availability
+  check, bid request and bid reads how many displays and stores a display
+  type has from a count, not from the rows; a page of inventory on
+  1,000-display types went from 20 to 850 requests a second.
+- **One query for the estate** where a request asks about every position
+  (the inventory's status filter), and the estate's positions indexed once
+  per change to a display type.
+- **Billing reads only what it can bill now** and counts a window's plays
+  where they are stored: a window on 1,000 displays (1.9 million plays) is
+  billed in under a second, and a tick with nothing to bill costs the same
+  after 100,000 billed windows as on day one.
+- **One auction per window, across processes**: a tick claims the window
+  in the database before auctioning it (`auction_runs`), so several
+  instances, a CronJob and the CLI never send DSPs a second round of bid
+  requests. The scheduled work can run in the API process or from outside
+  (`PH_SCHEDULER`, `npm run scheduler:tick`).
+- **Settled bids are deleted** 90 days after their window
+  (`PH_RESERVATION_RETENTION_DAYS`); won and reserved windows are kept.
+- **Bounded memory:** at most 4 uploads in flight across all partners
+  (`PH_MAX_UPLOADS_IN_FLIGHT`), on top of 2 per partner.
+- **An admin-typed DSP endpoint cannot name the VPC**: private, loopback,
+  link-local, instance-metadata and cluster-local hosts are refused; the
+  cluster's egress policy is the second lock.
+- **Two front doors**: the Partner API, `sellers.json` and creatives on a
+  public load balancer behind a WAF; the Admin API on an internal one
+  only, since the POC's Admin API relies on the platform's session.
+- **Probes and shutdown**: `/healthz`, `/readyz` (503 until migrated),
+  SIGTERM drains and closes the database; `API_HOST` binds beyond the
+  machine.
+- **Measured** on one process at 15,000 displays, 32 concurrent clients:
+  a page of inventory 582–850 req/s, one position ~2,500 req/s, a bid
+  ~1,000 req/s, a forecast ~1,350 req/s, whichever of the three estate
+  shapes; the auction 12.7 s for 2,408 positions at an 80 ms DSP round
+  trip (bounded by the round trip, not the estate).
+- **One replica until the database is shared**: the SQLite file is one
+  writer; N replicas need Postgres, and with it an asynchronous
+  repository layer (engineering's integration work), after which the HPA,
+  PDB and CronJob in `deploy/kubernetes/optional/` apply.
+
 ### Analytics schema, measurement and federation — foundation (§9)
 
 - **Versioned canonical playback/analytics event schema**, S3-partitioned,
