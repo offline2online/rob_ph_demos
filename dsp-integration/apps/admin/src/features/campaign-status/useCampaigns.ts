@@ -8,15 +8,19 @@ import type { Campaign, Session } from '@ph-dsp/types'
 import { useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
 import { ApiRequestError, api } from '../../api/client'
+import { Q } from '../../api/queries'
 
 export const CAMPAIGN_STATUS_PATH = '/campaign-status'
 
-const client: ApprovalClient = { getApproval: (id) => api<Approval>('GET', `/admin/v1/campaigns/${id}/approval`) }
+const client: ApprovalClient = {
+  getApproval: (id) => api<Approval>('GET', `/admin/v1/campaigns/${id}/approval`),
+  /* The table's rows in one request (200 per page), not one per campaign. */
+  listApprovals: (cursor) => api<{ items: Approval[]; nextCursor: string | null }>('GET', `/admin/v1/approvals?limit=200${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`),
+}
 
 export const useCampaign = (id: string | undefined) =>
   useQuery({
-    queryKey: ['poc-campaigns'],
-    queryFn: () => api<{ items: Campaign[] }>('GET', '/admin/v1/campaigns').then((r) => r.items),
+    ...Q.campaigns,
     select: (items) => items.find((c) => c.campaignId === id),
     enabled: !!id,
   })
@@ -24,7 +28,7 @@ export const useCampaign = (id: string | undefined) =>
 export function useCampaignActions(campaignIds: string[]) {
   const { message } = App.useApp()
   const qc = useQueryClient()
-  const session = useQuery({ queryKey: ['session'], queryFn: () => api<Session>('GET', '/admin/v1/session') })
+  const session = useQuery(Q.session)
   const { approvals, reload } = useCampaignApprovals(campaignIds, client)
   const [busy, setBusy] = useState<string | null>(null)
 

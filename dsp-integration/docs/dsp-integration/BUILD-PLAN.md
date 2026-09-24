@@ -823,6 +823,48 @@ deleted, so it can be switched off and on for testing.
   - Tests: 1 API and 1 UI. Checked in Chrome: Slot 1's Advertiser is
     greyed out and can't be chosen; Slot 2 keeps it.
 
+### Page load between sections (Rob, 24 Sep 2026)
+
+Rob saw a spinner every time he moved between sections of the hosted
+prototype. Measured by building the prototype against the hosted API's
+local stand-in and clicking through every section in Chrome, with 400 ms
+added to each API call (roughly the round trip to the Cloud Function).
+
+- **Before.**
+  - Every section fetched its data only when opened, so each first visit
+    showed a spinner, and every revisit fetched it all again.
+  - Campaign Status made 33 requests a visit: one approval per campaign.
+    That alone could use up the hosted API's 20 requests/s per visitor.
+  - On the hosted API, one request every five minutes also waited for the
+    scheduled work and a full database upload.
+  - Found on the way: a restart that reused its data folder replayed an
+    old SQLite journal over the restored database. Every read then failed
+    with "database disk image is malformed", and Advertisers / Inventory
+    spun for good.
+- **Changes.**
+  - `apps/admin/src/api/queries.ts` holds every section's queries, used by
+    the pages and by `usePrefetchSections` (App.tsx). That prefetches the
+    sections the user can open, 0.8 s after the first page asks for its
+    own data.
+  - React Query `staleTime` 30 s. Saves still invalidate what they change.
+  - `useCampaignApprovals` takes an optional `listApprovals` and loads the
+    table from `GET /admin/v1/approvals` (one request per 200 rows).
+  - `host.ts`: the scheduled work no longer blocks the request, it uploads
+    the database only when it changed something, and a restore removes
+    stale journals first.
+- **After.** Clicking through all five sections twice after the first page
+  loaded: no spinner on any section, and no request except Campaign
+  Status's one approvals list.
+- **Tests:**
+  - `hosted.test.ts` restores over a stale journal (it fails without the
+    fix);
+  - the approvals hook batches and falls back;
+  - API 252, approval module 44.
+- **Not changed: cold starts.** The first request after the hosted API has
+  been idle waits for a new instance to restore the database, a few
+  seconds. Keeping one instance warm (`minInstances: 1`) would remove that,
+  at a standing cost; it is Rob's call.
+
 ## 13. Prototype comparison (per screen)
 
 Filled in as each package finishes. Differences are removed, not justified.

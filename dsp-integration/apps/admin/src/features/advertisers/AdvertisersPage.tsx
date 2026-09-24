@@ -10,6 +10,7 @@ import { DEFAULT_BILLING_UNIT_HOURS, SLOT_OWNERS, TARGETING_MODES, assignedLabel
 import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { api, ApiRequestError } from '../../api/client'
+import { Q } from '../../api/queries'
 import { Callout } from '../../shared/Callout'
 import { Grid } from '../../shared/Grid'
 import { Icon } from '../../shared/Icon'
@@ -401,10 +402,11 @@ export function AdvertisersPage() {
   const navigate = useNavigate()
   const { message } = App.useApp()
   const qc = useQueryClient()
-  const session = useQuery({ queryKey: ['session'], queryFn: () => api<Session>('GET', '/admin/v1/session') })
+  const session = useQuery(Q.session)
   /* Marketing users read this screen; only an admin changes approval or pricing (Rob, 20 Sep). */
   const canEdit = session.data?.role === 'hq_admin'
-  const q = useQuery({ queryKey: ['advertisers'], queryFn: () => api<Data>('GET', '/admin/v1/advertisers'), retry: false })
+  /* Same key and request as Q.advertisers (the background prefetch); typed here. */
+  const q = useQuery({ queryKey: Q.advertisers.queryKey, queryFn: () => api<Data>('GET', '/admin/v1/advertisers'), retry: false })
   const inventory = useQuery({ queryKey: ['available-inventory'], queryFn: () => api<{ items: AvailableInventoryRow[]; dsps: DspAdvertisers[] }>('GET', '/admin/v1/available-inventory') })
   /* retry: false, same as the advertisers query above — an admin list fetch
      should fail fast, not retry three times with real-timer backoff delays

@@ -123,4 +123,27 @@ describe('useCampaignApprovals', () => {
     await waitFor(() => expect(Object.keys(result.current.approvals)).toEqual(['c1', 'c2']))
     expect(client.getApproval).toHaveBeenCalledTimes(2)
   })
+
+  /* Page-load review (24 Sep 2026): a table's rows in one paged list, not
+     one request per row; a row the list doesn't cover is still fetched. */
+  it('with listApprovals, loads the rows from the paged list and fetches only what it misses', async () => {
+    const client = {
+      getApproval: vi.fn(async (id: string) => approval({ campaignId: id, status: 'approved' })),
+      listApprovals: vi.fn(async (cursor?: string) => (cursor
+        ? { items: [approval({ campaignId: 'c2' })], nextCursor: null }
+        : { items: [approval({ campaignId: 'c1' })], nextCursor: '1' })),
+    }
+    const { result } = renderHook(() => useCampaignApprovals(['c1', 'c2', 'c3'], client))
+    await waitFor(() => expect(Object.keys(result.current.approvals).sort()).toEqual(['c1', 'c2', 'c3']))
+    expect(client.listApprovals).toHaveBeenCalledTimes(2)
+    expect(client.getApproval.mock.calls.map(([id]) => id)).toEqual(['c3'])
+    expect(result.current.approvals.c3.status).toBe('approved')
+  })
+
+  it('a single campaign still uses getApproval (the full view)', async () => {
+    const client = { getApproval: vi.fn(async (id: string) => approval({ campaignId: id })), listApprovals: vi.fn() }
+    const { result } = renderHook(() => useCampaignApprovals(['c1'], client))
+    await waitFor(() => expect(Object.keys(result.current.approvals)).toEqual(['c1']))
+    expect(client.listApprovals).not.toHaveBeenCalled()
+  })
 })

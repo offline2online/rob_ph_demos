@@ -21,6 +21,11 @@ at its cutoff and the rejected-campaign retention sweep run inside `dspApi`,
 at most every five minutes, triggered by ordinary requests. So an auction
 whose hour passes with nobody using the demo isn't cleared by itself.
 
+It runs alongside the request that triggered it, not in front of it, and the
+database is uploaded afterwards only if the work changed something (page-load
+review, 24 Sep 2026). Before that, one click every five minutes waited for
+billing, the auction check and a full database upload.
+
 A Cloud Scheduler job would fix that, but it needs
 `cloudscheduler.googleapis.com`. The deploy's service account isn't allowed
 to enable that API: the first deploy failed on it. If a project owner
@@ -40,7 +45,10 @@ Both are the codebase **`dsp-api`**, deployed only by
   collection **`dspApiState`**. Blobs are gzip-compressed, chunked under
   Firestore's document limit, and swapped in as a whole version
   (`chunkedStore` in `host.ts`). A save isn't reported as successful until
-  it has been persisted. A cold start restores from it.
+  it has been persisted. A cold start restores from it, first removing any
+  SQLite journal (`-wal`, `-shm`) an earlier process left in the folder:
+  replayed over the restored file, one corrupted it and every read failed
+  (24 Sep 2026).
 - **No browser can read `dspApiState`**: `backlog-tracker/firestore.rules`
   has no rule for it, so Firestore denies it to every client, signed in or
   not. Only the functions' Admin SDK can reach it.

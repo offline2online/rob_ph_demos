@@ -3,8 +3,7 @@
    settings, because it decides what the navigation shows everyone. Saving
    Exchange settings invalidates it, so the nav follows at once. */
 import { useQuery } from '@tanstack/react-query'
-import type { Features } from '@ph-dsp/types'
-import { api } from './client'
+import { Q } from './queries'
 
 export const useFeatures = (enabled = true) =>
-  useQuery({ queryKey: ['features'], queryFn: () => api<Features>('GET', '/admin/v1/features'), enabled })
+  useQuery({ ...Q.features, enabled })

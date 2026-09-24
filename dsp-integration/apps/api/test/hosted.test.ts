@@ -2,7 +2,7 @@
    inside one Cloud Function, persisting to a bucket. Tested here against an
    in-memory bucket, the way it runs — minus Firebase. */
 import { randomBytes } from 'node:crypto'
-import { mkdtempSync } from 'node:fs'
+import { copyFileSync, existsSync, mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -63,6 +63,31 @@ describe('chunked, compressed blob storage', () => {
 })
 
 describe('hosted API', () => {
+  /* Page-load review (24 Sep 2026): a restart in the same data folder left
+     the previous process's SQLite journal beside the restored file; it was
+     replayed over it and every read failed, "database disk image is
+     malformed" — Advertisers / Inventory spun forever. */
+  it('restores cleanly over a journal left by an earlier process in the same data folder', async () => {
+    const { store } = memoryStore()
+    const host = (dataDir: string) => createHost({ store, dataDir, migrationsDirs: MIGRATIONS, publicUrl: 'https://api.example' })
+    const firstDir = mkdtempSync(join(tmpdir(), 'dsp-host-'))
+    const first = host(firstDir)
+    const rec = body(await get(first, '/api/admin/v1/display-types/landscape/record'))
+    const { phExtensions: _ext, ...record } = rec
+    expect((await first.handle({ method: 'PUT', url: '/api/admin/v1/display-types/landscape/record', headers: { 'content-type': 'application/json' }, rawBody: Buffer.from(JSON.stringify({ ...record, description: 'kept' })), ip: '1.1.1.1' })).status).toBe(200)
+    /* The first process "dies" without closing: its journal stays behind in
+       the folder the next one restores into. (A second folder here, since
+       this test process still holds the first database open.) */
+    const secondDir = mkdtempSync(join(tmpdir(), 'dsp-host-'))
+    expect(existsSync(join(firstDir, 'poc.sqlite-wal'))).toBe(true)
+    copyFileSync(join(firstDir, 'poc.sqlite-wal'), join(secondDir, 'poc.sqlite-wal'))
+    const second = host(secondDir)
+    for (const url of ['/api/admin/v1/buyers-lists', '/api/admin/v1/available-inventory', '/api/admin/v1/display-types']) {
+      expect((await get(second, url)).status, url).toBe(200)
+    }
+    expect(body(await get(second, '/api/admin/v1/display-types/landscape/record')).description).toBe('kept')
+  })
+
   it('saves survive a cold start: the database and creatives are restored from the bucket', async () => {
     const { store, blobs } = memoryStore()
     const first = newHost(store)
