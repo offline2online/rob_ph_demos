@@ -855,6 +855,18 @@ const SKILL_FILES_MAX = 20;
 const SKILL_FILE_PATH_MAX = 200;
 const SKILL_FILE_MAX = 100000;
 
+// Informational "owning team" tag (tGsm6lsBRsGtyoMZS3rn) — which functional
+// team maintains/optimises a skill, so someone deciding whether to touch it
+// knows who to loop in. Soft ownership only: this list is not a permission
+// gate anywhere (any editor may still create/update/delete any skill,
+// mirrored in firestore.rules' own check below) — it's purely a label shown
+// on the Skills page card and returned by list_skills/get_skill. Mirrored in
+// firestore.rules' `match /skills/{skillId}` and the console's Add/Edit
+// skill modal (public/js/app.js); keep all three in step if this list
+// changes. Optional/nullable — a skill created before this existed, or one
+// nobody has claimed yet, simply has no owningTeam set.
+const SKILL_OWNING_TEAMS = ["Product/Design", "Engineering", "Cybersecurity"];
+
 // Shared by upload_skill and update_skill: normalizes and bounds-checks a
 // files array, returning either { files } or { error }. Never throws — every
 // tool that calls this turns a bad `files` argument into a toolError instead
@@ -2080,6 +2092,7 @@ const TOOLS = [
           slug: d.slug || "",
           summary: d.summary || "",
           version: d.version || "",
+          owningTeam: d.owningTeam || null,
           fileCount: Array.isArray(d.files) ? d.files.length : 0,
           updatedAt: tsToISO(d.updatedAt),
         });
@@ -2119,6 +2132,7 @@ const TOOLS = [
         slug: d.slug || "",
         summary: d.summary || "",
         version: d.version || "",
+        owningTeam: d.owningTeam || null,
         files: Array.isArray(d.files) ? d.files : [],
         createdVia: d.createdVia || null,
         createdByEmail: d.createdByEmail || null,
@@ -2139,6 +2153,7 @@ const TOOLS = [
         slug: { type: "string", description: `Lowercase letters, numbers and hyphens only, e.g. "ph-designer" — must not already be taken. Up to ${SKILL_SLUG_MAX} characters.` },
         summary: { type: "string", description: `One-line description shown in lists. Up to ${SKILL_SUMMARY_MAX} characters.` },
         version: { type: "string", description: `e.g. "1.0.0". Up to ${SKILL_VERSION_MAX} characters.` },
+        owningTeam: { type: "string", enum: SKILL_OWNING_TEAMS, description: `Informational only — which functional team maintains this skill. One of: ${SKILL_OWNING_TEAMS.join(", ")}. Optional; leave unset if no team has claimed it.` },
         files: {
           type: "array",
           minItems: 1,
@@ -2167,20 +2182,26 @@ const TOOLS = [
       const version = String(args.version || "").trim();
       if (!version) return toolError("version is required.");
       if (version.length > SKILL_VERSION_MAX) return toolError(`version is limited to ${SKILL_VERSION_MAX} characters.`);
+      let owningTeam = null;
+      if (args.owningTeam != null) {
+        owningTeam = String(args.owningTeam).trim();
+        if (!SKILL_OWNING_TEAMS.includes(owningTeam)) return toolError(`owningTeam must be one of: ${SKILL_OWNING_TEAMS.join(", ")}.`);
+      }
       const filesResult = validateSkillFiles(args.files);
       if (filesResult.error) return toolError(filesResult.error);
       const existing = await db().collection("skills").where("slug", "==", slug).limit(1).get();
       if (!existing.empty) return toolError(`A skill with slug "${slug}" already exists (id ${existing.docs[0].id}). Use update_skill to change it, or pick a different slug.`);
       const ref = await db().collection("skills").add({
-        name, slug, summary, version, files: filesResult.files,
+        name, slug, summary, version, owningTeam, files: filesResult.files,
         createdVia: "mcp",
+        lastWriteVia: "mcp",
         createdByEmail: session.email,
         updatedByEmail: session.email,
         createdAt: FieldValue.serverTimestamp(),
         updatedAt: FieldValue.serverTimestamp(),
       });
       await audit(session, "upload_skill", { skillId: ref.id, slug, name, fileCount: filesResult.files.length });
-      return textResult({ created: true, skillId: ref.id, slug, name, version, fileCount: filesResult.files.length });
+      return textResult({ created: true, skillId: ref.id, slug, name, version, owningTeam, fileCount: filesResult.files.length });
     },
   },
   {
@@ -2194,6 +2215,7 @@ const TOOLS = [
         name: { type: "string", description: `Up to ${SKILL_NAME_MAX} characters.` },
         summary: { type: "string", description: `Up to ${SKILL_SUMMARY_MAX} characters.` },
         version: { type: "string", description: `Up to ${SKILL_VERSION_MAX} characters.` },
+        owningTeam: { type: "string", enum: SKILL_OWNING_TEAMS.concat([""]), description: `Informational only. One of: ${SKILL_OWNING_TEAMS.join(", ")} — or "" to clear it back to no team set.` },
         files: {
           type: "array",
           maxItems: SKILL_FILES_MAX,
@@ -2212,7 +2234,7 @@ const TOOLS = [
       const snap = await ref.get();
       if (!snap.exists) return toolError(`No skill with id ${args.skillId}. Use list_skills to find one.`);
       const current = snap.data() || {};
-      const fields = { updatedAt: FieldValue.serverTimestamp(), updatedByEmail: session.email };
+      const fields = { updatedAt: FieldValue.serverTimestamp(), updatedByEmail: session.email, lastWriteVia: "mcp" };
       let revisionId = null;
       if (args.name != null) {
         const name = String(args.name).trim();
@@ -2232,6 +2254,11 @@ const TOOLS = [
         if (version.length > SKILL_VERSION_MAX) return toolError(`version is limited to ${SKILL_VERSION_MAX} characters.`);
         fields.version = version;
       }
+      if (args.owningTeam != null) {
+        const owningTeam = String(args.owningTeam).trim();
+        if (owningTeam && !SKILL_OWNING_TEAMS.includes(owningTeam)) return toolError(`owningTeam must be one of: ${SKILL_OWNING_TEAMS.join(", ")} (or "" to clear it).`);
+        fields.owningTeam = owningTeam || null;
+      }
       if (args.files != null) {
         const filesResult = validateSkillFiles(args.files);
         if (filesResult.error) return toolError(filesResult.error);
@@ -2242,8 +2269,8 @@ const TOOLS = [
         );
         fields.files = filesResult.files;
       }
-      const changedKeys = Object.keys(fields).filter((k) => k !== "updatedAt" && k !== "updatedByEmail");
-      if (!changedKeys.length) return toolError("Nothing to change — pass at least one of name, summary, version, files.");
+      const changedKeys = Object.keys(fields).filter((k) => k !== "updatedAt" && k !== "updatedByEmail" && k !== "lastWriteVia");
+      if (!changedKeys.length) return toolError("Nothing to change — pass at least one of name, summary, version, owningTeam, files.");
       await ref.update(fields);
       await audit(session, "update_skill", { skillId: snap.id, slug: current.slug || null, changed: changedKeys, revisionId });
       return textResult({ updated: true, skillId: snap.id, changed: changedKeys, revisionId });
