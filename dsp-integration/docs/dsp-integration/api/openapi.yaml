@@ -51,6 +51,12 @@ tags:
       repo can't reach. Engineering replaces them with the existing APIs on
       integration; nothing else may depend on their internals.
   - name: Public
+  - name: Operations
+    description: |
+      For whatever supervises the process — Kubernetes probes, a load
+      balancer's health check (deploy/kubernetes/). Served at the root like
+      sellers.json, no authentication, no partner or admin data. Not for
+      partners.
 
 security:
   - partnerToken: []
@@ -1088,6 +1094,37 @@ paths:
             application/json:
               schema: {$ref: '#/components/schemas/SellersJson'}
         '404': {description: Not published — DSP integration switched off, or Exchange settings incomplete.}
+
+  # -------------------------------------------------------------- Operations
+  /healthz:
+    get:
+      tags: [Operations]
+      operationId: healthz
+      summary: Liveness — the process is up
+      security: []
+      responses:
+        '200':
+          description: Up
+          content:
+            application/json:
+              schema: {type: object, required: [ok], properties: {ok: {type: boolean, enum: [true]}}}
+  /readyz:
+    get:
+      tags: [Operations]
+      operationId: readyz
+      summary: Readiness — the database answers and every migration is applied, so requests can be served
+      security: []
+      responses:
+        '200':
+          description: Ready
+          content:
+            application/json:
+              schema: {type: object, required: [ok], properties: {ok: {type: boolean, enum: [true]}}}
+        '503':
+          description: Not ready (a pod stays out of the load balancer until it is)
+          content:
+            application/json:
+              schema: {type: object, required: [ok, reason], properties: {ok: {type: boolean, enum: [false]}, reason: {type: string}}}
 
 components:
   securitySchemes:

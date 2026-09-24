@@ -1,0 +1,91 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dsp-exchange-api
+  namespace: dsp-exchange
+  labels:
+    app.kubernetes.io/name: dsp-exchange-api
+spec:
+  # ONE replica while the database is the SQLite file on the RWO volume
+  # (pvc.yaml): a second pod could not open it, and two pods would run two
+  # in-process schedulers. Recreate, not RollingUpdate, for the same reason:
+  # the new pod can only start once the old one has released the volume
+  # (a deploy is a few seconds of 503 from the ALB). Scaling out is a
+  # database change, not a replica count: README, "Scaling out".
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: dsp-exchange-api
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: dsp-exchange-api
+    spec:
+      serviceAccountName: dsp-exchange-api
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      # SIGTERM → the API stops accepting, finishes in-flight requests and
+      # checkpoints the database (apps/api/src/index.ts); give it time.
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: api
+          image: REPLACE_ME/dsp-exchange-api:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 4000
+          envFrom:
+            - configMapRef:
+                name: dsp-exchange-api
+            - secretRef:
+                name: dsp-exchange-api
+          # Sized from the load test (README, "Sizing"): the API is one Node
+          # thread, so more than one CPU buys nothing; memory is the base
+          # process plus asset uploads held in memory while they are checked
+          # (bounded by PH_MAX_UPLOADS_IN_FLIGHT × 200 MB).
+          resources:
+            requests:
+              cpu: "1"
+              memory: 1Gi
+            limits:
+              cpu: "1"
+              memory: 2Gi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          # /readyz answers once the database is open and migrated;
+          # /healthz once the process is up (apps/api/src/http/app.ts).
+          startupProbe:
+            httpGet: { path: /readyz, port: http }
+            periodSeconds: 5
+            failureThreshold: 24
+          readinessProbe:
+            httpGet: { path: /readyz, port: http }
+            periodSeconds: 10
+            failureThreshold: 3
+          livenessProbe:
+            httpGet: { path: /healthz, port: http }
+            periodSeconds: 20
+            failureThreshold: 3
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: dsp-exchange-data
+        - name: tmp
+          emptyDir:
+            sizeLimit: 1Gi

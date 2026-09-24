@@ -145,3 +145,14 @@ in `apps/api/test/hardening.test.ts`,
 | The booking schedule and the approvals list query once per position or campaign (N+1). | They are admin screens, not a partner hot path, and bounded (92 days; paginated). They can be batched like availability if the admin screens slow down on a large estate. |
 | `POST /v1/campaigns` shows whether a display type ID exists. | Display type IDs aren't secret, and a partner already sees every display type it can buy. Hiding them would change the contract. |
 | `POC_ROLE`, the mock DSPs and the SQLite stand-ins. | POC only. They are replaced on integration (PH-CORE-BOUNDARIES.md). |
+
+## 15,000 displays, in a client's VPC on EKS — 24 Sep 2026
+
+The second review — three shapes of a 15,000-display estate, the bidding
+API under load, billing at a real play volume, and what a client's EKS
+cluster has to provide — is its own document:
+[SCALE-15000-EKS.md](./SCALE-15000-EKS.md). Everything above stands; the
+changes it made (display counts from an aggregate, one query per estate,
+billing in SQL, one auction per window across processes, a private-address
+guard on DSP endpoints, probes, `PH_SCHEDULER`) are listed there with
+their measurements, and the deployment is `deploy/kubernetes/`.

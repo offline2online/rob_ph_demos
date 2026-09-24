@@ -1,0 +1,27 @@
+# ONLY once the database is external (README, "Scaling out"): with the
+# SQLite volume, a second replica cannot start. The API is one Node
+# thread per pod and its per-request cost is measured (README, "Sizing"),
+# so CPU is the right signal: at 60% of one CPU a pod still has headroom
+# for the auction and a burst of bids.
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: dsp-exchange-api
+  namespace: dsp-exchange
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: dsp-exchange-api
+  minReplicas: 2
+  maxReplicas: 8
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 60
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 300

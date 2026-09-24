@@ -865,6 +865,53 @@ added to each API call (roughly the round trip to the Cloud Function).
   seconds. Keeping one instance warm (`minInstances: 1`) would remove that,
   at a standing cost; it is Rob's call.
 
+### Scalability and security review for 15,000 displays on a client's EKS (Rob, 24 Sep 2026)
+
+Rob asked for a security and scalability review of the exchange as it
+will run in a client's own VPC on EKS: 15,000 displays, advertisers
+bidding for slots on them, and the bidding API tested and optimised. The
+write-up is `api/SCALE-15000-EKS.md`; the deployment
+is `deploy/kubernetes/`.
+
+- **Measured first**, on three shapes of a 15,000-display estate (600
+  display types × 25 displays, 60 × 250, 15 × 1,000), with the load test
+  extended to take the estate's shape, place real bids, and bill a window
+  with a real play volume and a year's history behind it.
+- **What was found**: costs that grew with the number of positions (the
+  per-request visibility pass; the inventory status filter running one
+  reservation query per position: 11 req/s, 5 s latency) and costs that
+  grew with displays per type (every position reading its display rows to
+  count them: an inventory page at 20 req/s on 1,000-display types;
+  billing reading 1.9 million play rows into JavaScript: 23 s on the API's
+  one thread; a billing tick loading every window ever billed: 1.3 s a
+  minute). The auction was fine: bounded by the DSPs' round trip.
+- **Changed**: display counts from an aggregate snapshot; a positions
+  index; one visibility check per request; one ranged query for the
+  estate's taken windows; billing that selects only what it can bill and
+  counts plays in SQL over a covering index (migration 0025); the auction
+  reading its DSPs and each position's view once; `auction_runs`
+  (migration 0024) so one process auctions a window; a retention sweep
+  for settled bids; a process-wide upload cap; a private-address guard on
+  DSP endpoints; `/healthz` and `/readyz`; `API_HOST`, `PH_SCHEDULER` and
+  `npm run scheduler:tick`; SIGTERM shutdown; the approval store's
+  statements prepared once.
+- **Result**: on the 1,000-display shape an inventory page 20 → 850
+  req/s, the status filter 11 → 502, a bid 373 → 992, billing a window
+  23 s → about half a second; on 2,408 positions an inventory page 184 →
+  582, the status filter 11 → 96, bids 565 → 1,035, a billing tick 1.3 s
+  → 77 ms. Same auction time.
+- **EKS**: `deploy/kubernetes/` — Dockerfile and bundle (smoke-tested
+  here: probes, tokens, SIGTERM; the image itself not built, no Docker
+  daemon), manifests for the one-replica SQLite deployment with a public
+  Partner API ingress and an internal Admin API ingress, a restricted pod,
+  an egress-limited network policy; and, for a shared database, an HPA, a
+  PDB and the scheduler as a CronJob. The README carries the sizing.
+- **Tests**: 14 new (`test/scale.test.ts`); API 266, approval module 44,
+  all passing.
+- **Left for integration**: N replicas need Postgres and an asynchronous
+  repository layer; creatives to S3 through `AssetStore`; DNS-aware egress
+  is the cluster's choice.
+
 ## 13. Prototype comparison (per screen)
 
 Filled in as each package finishes. Differences are removed, not justified.

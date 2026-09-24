@@ -13,6 +13,7 @@
     "typecheck": "tsc -p tsconfig.json",
     "auction:run": "tsx src/exchange/cli.ts",
     "billing:print": "tsx src/exchange/billingCli.ts",
+    "scheduler:tick": "tsx src/exchange/tickCli.ts",
     "bench": "tsx bench/load.ts"
   },
   "dependencies": {

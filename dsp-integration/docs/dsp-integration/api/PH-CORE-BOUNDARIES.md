@@ -55,11 +55,11 @@ slower than that should cache, as the stand-ins now do.
 |---|---|---|---|---|---|
 | `DisplayTypeSource` (`platform/DisplayTypeSource.ts`) | read + write | Display Types service | `list`, `get`, `create`, `saveRecord`, `saveExtensions`, `delete` | **Hot**: every Partner API request and every auction position starts from `list()` | `list()` ≤ 1 ms (cache it) |
 | `PlaylistSource` | read, rename, delete | Playlist service | `list`, `get`, `create`, `rename`, `delete` | Inventory (loop length), Playlist Management | `get` ≤ 0.1 ms |
-| `DisplaySource` | read only | Displays & Devices | `list`, `listByDisplayType` | **Hot**: per position (display count, "no displays" check), delete checks | `listByDisplayType` ≤ 0.1 ms, indexed by display type |
+| `DisplaySource` | read only | Displays & Devices | `list`, `listByDisplayType`, `summaryByDisplayType`, `storeIdsByDisplayType` | **Hot**: `summaryByDisplayType` per position (counts, "no displays" check); `listByDisplayType` for the delete check only | `summaryByDisplayType` ≤ 0.05 ms, a count never the rows; `listByDisplayType` indexed |
 | `StoreSource` | read only | Stores | `list`, `get` | Inventory store/region filters, booking schedule | `get` ≤ 0.05 ms |
 | `CampaignSource` (`platform/CampaignSource.ts`) | read + write | Campaigns service | `getCampaign`, `listCampaigns`, `setActivation`, `onCampaignChanged`, `createCampaign`, `addAsset`, `latestAssets`, `bookSlot`, `bookings` | **Hot**: `getCampaign` per bid in the auction | `getCampaign` ≤ 0.5 ms |
 | Approval adapter (`packages/campaign-approval/src/adapter/CampaignSource.ts`) | read + activation | Campaigns service | `getCampaign`, `listCampaigns`, `setActivation`, `onCampaignChanged` | Approval screens, `isCampaignEligible` before every bid, reservation and hand-off | see the integration guide |
-| `PlaybackSource` | read only | Playback logging | `listPlays({campaignId, from, to})` | Billing, once per ended window | indexed on campaign + time |
+| `PlaybackSource` | read only | Playback logging | `totals({campaignId, displayTypeId, from, to})`, `listPlays` | Billing, once per ended window | aggregated at the source: ≤ 1 s for 2 million plays |
 | `AssetStore` | write + read | Asset hosting / CDN | `put`, `read`, `url` | Creative upload and DSP creative retrieval; hand-off re-validation | — |
 | `AudienceSource` | read only | Audience scoring (MOVE/VAC-d, spec §4) | `forSlot`, `targetedShare` | **Hot**: per position in inventory, forecast, OpenRTB `qty.multiplier` | ≤ 0.1 ms |
 | `ReachCountSource` | read only | *Unassigned* — see "Open" below | `matchOf(totalDisplays, rules)` | Booking schedule page load | point-in-time, as-of stamped |
@@ -83,9 +83,12 @@ provide one breaks something specific, named here.
     **a save is visible to the process that made it immediately, and to
     every other process within a bounded time.**
 - **`DisplaySource`**
-  - `listByDisplayType` must be an indexed lookup. Unindexed, it was the
-    largest single cost at 6,000 displays (migration 0020 adds the index to
-    the stand-in).
+  - `summaryByDisplayType` answers with counts (displays, and the stores
+    they are in), never the rows: every position, availability check, bid
+    request and bid asks it (24 Sep 2026). The stand-in keeps a one-second
+    snapshot of one GROUP BY.
+  - `listByDisplayType` must be an indexed lookup (migration 0020 on the
+    stand-in); only the delete check reads the rows now.
 - **`CampaignSource.bookSlot`**
   - **At most one campaign per display type, slot and play window.** A
     second booking for the same slot and window must fail, not silently add
@@ -98,6 +101,11 @@ provide one breaks something specific, named here.
   - This build only stores and validates targeting. **Targeting evaluation
     stays PH Core's.**
 - **`PlaybackSource`**
+  - `totals` counts and sums a campaign's plays on one display type's
+    displays in a window **where the plays are stored**: a window on 1,000
+    displays is 1.9 million rows, 23 s as rows in JavaScript, 0.65 s from
+    the stand-in's covering index (migration 0025; 24 Sep 2026). The
+    platform's playback store answers from its own aggregates.
   - Proof of play is the billing record (spec §7). Plays must be final by
     the time a window is billed, or a late play is never billed.
   - Billing is idempotent per reservation (`billing_line_items.reservation_id`
@@ -141,6 +149,8 @@ provide one breaks something specific, named here.
 | `0002`–`0011`, `0013`, `0015`–`0019` | This build | Kept. Plain, Postgres-compatible SQL. |
 | `0020` (indexes), `0021` (one live winner per window), `0022` (reserved instance identity) | This build (review, 23 Sep 2026) | Kept. See "The database must enforce" below for the parts that also apply to PH Core tables. |
 | `0023` (the DSP integration switch) | This build (Rob, 24 Sep 2026) | Kept, unless the platform already holds company feature switches (see "Open" below). |
+| `0024` (`auction_runs`: which process clears a window) | This build (24 Sep 2026) | Kept: it lets several instances share the scheduled work. |
+| `0025` (covering index on `plays`) | Stand-in only | Dropped with `plays`; the playback store answers `totals` itself. |
 
 ## Outbound boundaries — what this build calls
 
@@ -169,6 +179,9 @@ of that contract (openapi.yaml carries them):
     value ≤ 200 characters.
   - JSON bodies up to 1 MB. A larger body gets `413`.
   - Writes need a connected DSP (`409` otherwise).
+  - At most 4 uploads in flight across all partners
+    (`PH_MAX_UPLOADS_IN_FLIGHT`), so memory is bounded whatever the
+    number of partners.
   - Every endpoint answers `404` while the retailer has DSP integration
     switched off, as with the build flag off.
 - **Admin API (`/admin/v1`)**: behind the HQ Admin session (see
@@ -185,6 +198,17 @@ This build does not implement these itself; the platform's edge or
 gateway should:
 
 - **TLS and HSTS.** The API speaks plain HTTP behind the edge.
+- **Two front doors** (24 Sep 2026): the Partner API, `sellers.json` and
+  creatives on a public load balancer behind a WAF; the Admin API on an
+  internal one only, with `/api/admin` absent from the public one
+  (`deploy/kubernetes/base/ingress.yaml`) — the POC's Admin API has no
+  authentication of its own until `SessionSource` is the platform's.
+- **Egress control.** Outbound calls go to addresses an admin typed or a
+  bid carried. The API refuses private,
+  link-local, loopback and cluster-local hosts (`domain/partnerInput.ts`);
+  the network must too (`deploy/kubernetes/base/networkpolicy.yaml`: DNS
+  and the internet on 443 only, never the VPC or the instance metadata
+  service), since a public name can resolve to a private address.
 - **Distributed rate limiting.**
   - The built-in limiter is per process: `http/rateLimit.ts`, one token
     bucket per partner.
@@ -211,12 +235,17 @@ platform:
      `CampaignSource.bookSlot` above).
    - Reproduced before the fix: two concurrent auctions sold one window
      twice.
-2. **One auction scheduler.**
-   - `startAuctionScheduler` never overlaps its own ticks. Across instances
-     the unique indexes make a duplicate clearing harmless: it loses, and
-     every candidate is told why.
-   - Even so, run the scheduler on one instance (leader election, or a
-     single job runner) so that DSPs aren't sent duplicate bid requests.
+2. **One auction per window, settled in the database** (24 Sep 2026).
+   - A tick claims a window in `auction_runs` (migration 0024) before
+     auctioning it: one row per window, so however many instances, CronJob
+     ticks or CLI runs see a cutoff pass, exactly one clears it and DSPs
+     get one round of bid requests. A claim unfinished after 15 minutes
+     (a process that died mid-auction) is taken over.
+   - So the scheduler runs in every API process (`PH_SCHEDULER=in-process`)
+     or in none of them, as a CronJob running `npm run scheduler:tick`
+     (`PH_SCHEDULER=off`; `deploy/kubernetes/optional/`) — better with a
+     shared database, since billing and the auction then never take the
+     API's thread.
 3. **Caches.**
    - Company settings and display types are served from in-process
      snapshots with a 1-second TTL. A save is seen at once by the instance
@@ -228,6 +257,12 @@ platform:
      CLI and the API can share a file.
    - On the platform's Postgres the same SQL runs unchanged, and MVCC plus
      a connection pool replace WAL and the busy timeout.
+   - What does change (24 Sep 2026): the driver. `node:sqlite` is
+     synchronous and nothing awaits it; a Postgres adapter means an
+     asynchronous repository layer — contained (one file per seam,
+     `context.ts` the only wiring point) but engineering work. Until then
+     the API is one instance on one volume (`deploy/kubernetes/`), which
+     serves a 15,000-display estate with headroom.
 
 ## Reserved for later releases (REQUIREMENTS §9, spec only)
 
@@ -263,6 +298,10 @@ These are reserved names and places, with no behaviour yet:
   engagement, but `PlaybackSource` counts plays, not QR scans. Billing the
   fee needs an engagement count from PH Core. BUILD-PLAN §10 records this
   as a decision nobody has made yet.
+- **Egress by name.** The API and a plain NetworkPolicy refuse private
+  addresses; only a DNS-aware egress policy (Cilium, Calico) can limit
+  outbound traffic to the DSPs' own hostnames. The client's cluster
+  decides.
 - **Where the DSP integration switch lives.** It is stored on this build's
   exchange record. If HQ Admin already keeps company-level feature switches
   (its *Enabled Features*), the switch belongs there, read through a seam

@@ -51,7 +51,8 @@ All paths are served from the retailer's own instance
   itself keeps its status — a body over 1 MB is `413 validation_failed`.
 - **Partner API limits** (config defaults, `apps/api/src/config.ts`):
   - 50 requests/s per partner, bursts of 100, then `429 rate_limited`;
-  - at most 2 asset uploads in flight per partner (`429`);
+  - at most 2 asset uploads in flight per partner, and 4 across all
+    partners (`PH_MAX_UPLOADS_IN_FLIGHT`; `429`);
   - forecast: at most 200 `positionIds`, each once;
   - content package: `name` and version ids ≤ 200 characters, ≤ 20
     targeted versions, ≤ 10 AND groups, ≤ 20 conditions per group, ≤ 100
@@ -334,16 +335,38 @@ integration, and nothing else in the build may depend on their internals.
 
 ## Jobs with no API
 
-- **SSP auction**: a scheduled job in `apps/api` clears each play window
-  at its auction cutoff (Advertiser settings → Auction schedule), ahead of time (OpenRTB section below). For demos, `npm run auction:run`
-  runs one window. No UI and no endpoint. A tick never starts while the
-  previous one is still running, and the CLI can run beside the scheduler
-  safely: the database allows one live winner per position and window, so
-  a second clearing of the same window loses and records why. Run the
-  scheduler on one instance when there are several (PH-CORE-BOUNDARIES.md).
+- **SSP auction**: a scheduled job clears each play window at its auction
+  cutoff (Advertiser settings → Auction schedule), ahead of time (OpenRTB
+  section below). For demos, `npm run auction:run` runs one window. No UI
+  and no endpoint. Which process clears a window is settled in the
+  database (`auction_runs`, migration 0024): a tick claims the window
+  first, so several API instances, a CronJob and the CLI can all see a
+  cutoff pass and exactly one of them auctions it — DSPs are sent one
+  round of bid requests. The scheduled work runs in the API process every
+  minute (`PH_SCHEDULER=in-process`, the default) or from outside
+  (`PH_SCHEDULER=off` and `npm run scheduler:tick` once a minute — a
+  Kubernetes CronJob, `deploy/kubernetes/`).
 - **Billing**: billing line items (dynamic VAC-d, reconciled against
   existing playback data) are stored only. `npm run billing:print` prints
-  them for testing. No UI, report or API.
+  them for testing. No UI, report or API. Billing reads only the windows it
+  can bill now and counts a window's plays where they are stored
+  (`PlaybackSource.totals`), so it costs the same after a year of windows
+  as on day one (scalability review, 24 Sep 2026).
+- **Retention**: rejected, lost and never-cleared bids are deleted
+  `PH_RESERVATION_RETENTION_DAYS` (default 90) after their window; won and
+  reserved windows are kept. Rejected campaigns and their assets are
+  deleted after 30 days (spec §3), never their audit trail.
+
+## Operations endpoints
+
+For whatever supervises the process — Kubernetes probes, a load balancer's
+health check — at the root like `sellers.json`, with no authentication and
+no partner or admin data (`openapi.yaml`, tag *Operations*):
+
+| Method | Path | Answers |
+|---|---|---|
+| GET | `/healthz` | `{ "ok": true }` while the process is up. |
+| GET | `/readyz` | `{ "ok": true }` once the database answers and every migration is applied; `503 { "ok": false, "reason" }` until then, which keeps a new instance out of the load balancer while it migrates. |
 
 ## sellers.json
 

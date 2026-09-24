@@ -42,6 +42,16 @@ export interface ReservationRepo {
   forWindow(positionId: string, windowStart: string): ReservationRecord[]
   inRange(positionId: string, from: string, to: string): ReservationRecord[]
   byStatus(status: ReservationStatus[], from?: string, to?: string): ReservationRecord[]
+  /* Every window already won or reserved (live, not Test mode) starting in
+     [from, to), for every position at once: one ranged query for the whole
+     estate, for callers that ask about every position (review, 24 Sep 2026). */
+  takenInRange(from: string, to: string): Map<string, Set<string>>
+  /* What billing can bill now: won or reserved, live, handed off, with a
+     campaign and a clearing price, whose window started at or before
+     `endedBy` and that has no billing line item yet. One indexed query
+     (reservations (status, window_start); billing_line_items.reservation_id
+     is unique) however many windows have ever been sold or billed. */
+  billable(endedBy: string): ReservationRecord[]
 }
 
 export function sqliteReservationRepo(db: Db): ReservationRepo {
@@ -78,5 +88,24 @@ export function sqliteReservationRepo(db: Db): ReservationRepo {
         .all(...status, from, to) as unknown as Row[]
       return rows.map(toRecord)
     },
+    takenInRange(from, to) {
+      const rows = prepared(db, "SELECT position_id, window_start FROM reservations WHERE status IN ('won', 'reserved') AND test_mode = 0 AND window_start >= ? AND window_start < ?")
+        .all(from, to) as unknown as { position_id: string; window_start: string }[]
+      const out = new Map<string, Set<string>>()
+      for (const r of rows) {
+        let s = out.get(r.position_id)
+        if (!s) out.set(r.position_id, (s = new Set()))
+        s.add(r.window_start)
+      }
+      return out
+    },
+    billable: (endedBy) =>
+      (prepared(db,
+        `SELECT r.* FROM reservations r
+          WHERE r.status IN ('won', 'reserved') AND r.test_mode = 0 AND r.handed_off_at IS NOT NULL
+            AND r.campaign_id IS NOT NULL AND r.clearing_cpm IS NOT NULL AND r.window_start <= ?
+            AND NOT EXISTS (SELECT 1 FROM billing_line_items b WHERE b.reservation_id = r.id)
+          ORDER BY r.window_start, r.id`,
+      ).all(endedBy) as unknown as Row[]).map(toRecord),
   }
 }

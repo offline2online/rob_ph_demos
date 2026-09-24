@@ -26,7 +26,7 @@ import { randomUUID } from 'node:crypto'
 import type { Context } from '../context'
 import { auctionOpenAt, isActiveAt, isTermLocked } from '../domain/buyersLists'
 import { isLive } from '../domain/exchange'
-import { type PositionRef, allPositions, assignmentOf, effectivePartnerIds, nextWindow } from '../domain/positions'
+import { type PositionRef, allPositions, assignmentOf, effectivePartnerIds, nextWindow, positionView } from '../domain/positions'
 import type { PartnerRecord } from '../repos/PartnerRepo'
 import { type ReservationRecord, TAKEN } from '../repos/ReservationRepo'
 import { advertiserSlug, assignedOf, type BuyersList } from '@ph-dsp/types'
@@ -50,13 +50,16 @@ export interface AuctionResult { windowStart: string; positions: PositionOutcome
 export const receivesBidRequests = (p: PartnerRecord) => p.status === 'connected' && !!p.bidder.bidderEndpoint && !!p.bidder.seatIds?.length
 
 /* Scalability bounds (review, 23 Sep 2026):
-   - POSITION_CONCURRENCY positions clear at once. Each position's bid
-     requests already go to every DSP in parallel, so one position costs
-     about one bidder timeout (300 ms) however many DSPs there are; running
-     positions in bounded batches keeps a 1,000-position estate to seconds
-     instead of positions × DSPs × 300 ms, without opening an unbounded
-     number of sockets to any one DSP (the bidder's per-DSP QPS ceiling
-     still spaces them).
+   - POSITION_CONCURRENCY positions clear at once (the default;
+     Config.auctionConcurrency, PH_AUCTION_CONCURRENCY, sets it). Each
+     position's bid requests already go to every DSP in parallel, so one
+     position costs about one bidder round trip however many DSPs there
+     are; running positions in bounded batches keeps a 2,400-position
+     estate to positions ÷ concurrency × round trip — 12 s at 80 ms, 45 s
+     at the 300 ms timeout (measured 24 Sep 2026) — without opening an
+     unbounded number of sockets to any one DSP (the bidder's per-DSP QPS
+     ceiling still spaces them). Raising it to 64 would clear the same
+     estate in about 3 s, at up to 500 requests/s per DSP.
    - MAX_BIDS_PER_RESPONSE: a request carries one impression, so a sane
      response has one bid per seat. Anything past this is ignored rather
      than written, so a misbehaving DSP can't flood the reservations table.
@@ -72,23 +75,27 @@ export async function runAuction(ctx: Context, windowStart: Date = nextWindow(ct
   /* Switched off or incomplete: no DSP is sent a bid request. */
   const exchangeLive = isLive(ctx.exchange.get())
   const positions = allPositions(ctx)
+  /* The DSPs that receive bid requests, read once for the whole auction,
+     not once per position (review, 24 Sep 2026). */
+  const bidders = exchangeLive ? ctx.partners.list().filter(receivesBidRequests) : []
   /* Results keep the estate's order, whatever order batches finish in. */
   const outcomes: PositionOutcome[] = new Array(positions.length)
   let next = 0
   const worker = async () => {
     while (next < positions.length) {
       const i = next++
-      outcomes[i] = await clearPosition(ctx, positions[i], start, exchangeLive)
+      outcomes[i] = await clearPosition(ctx, positions[i], start, bidders)
     }
   }
-  await Promise.all(Array.from({ length: Math.min(POSITION_CONCURRENCY, positions.length) }, worker))
+  const concurrency = Math.max(1, ctx.config.auctionConcurrency || POSITION_CONCURRENCY)
+  await Promise.all(Array.from({ length: Math.min(concurrency, positions.length) }, worker))
   return { windowStart: start, positions: outcomes }
 }
 
-async function clearPosition(ctx: Context, p: PositionRef, start: string, exchangeLive: boolean): Promise<PositionOutcome> {
+async function clearPosition(ctx: Context, p: PositionRef, start: string, bidders: PartnerRecord[]): Promise<PositionOutcome> {
   const out: PositionOutcome = { positionId: p.positionId, bidRequests: 0, bids: 0, winner: null }
   if (assignmentOf(p.def) === 'reserved') return { ...out, skipped: 'Held for a named advertiser: booked by reservation.' }
-  if (!ctx.displays.listByDisplayType(p.displayType.id).length) return { ...out, skipped: 'No displays.' }
+  if (!ctx.displays.summaryByDisplayType(p.displayType.id).displays) return { ...out, skipped: 'No displays.' }
   const existing = ctx.reservations.forWindow(p.positionId, start)
   if (existing.some((r) => !r.testMode && TAKEN.includes(r.status))) return { ...out, skipped: 'Already sold.' }
 
@@ -112,16 +119,19 @@ async function clearPosition(ctx: Context, p: PositionRef, start: string, exchan
   }
 
   const candidates: ReservationRecord[] = []
-  /* Until Exchange settings are complete, no DSP is sent bid requests (spec §7). */
-  const allowed = effectivePartnerIds(ctx, p.def)
-  const dsps = exchangeLive ? ctx.partners.list().filter((d) => receivesBidRequests(d) && (allowed === null || allowed.includes(d.id))) : []
+  /* Until Exchange settings are complete, no DSP is sent bid requests (spec
+     §7): `bidders` is empty then. */
+  const allowed = effectivePartnerIds(ctx, p.def, bidders)
+  const dsps = bidders.filter((d) => allowed === null || allowed.includes(d.id))
+  /* The position as every DSP sees it, once (no advertiser, so no floor multiplier). */
+  const view = dsps.length ? positionView(ctx, p, { partner: dsps[0], advertiser: null, unknownAdvertiser: false }) : null
   /* Every DSP for this position at once; responses are then processed in
      the DSPs' own order so the outcome doesn't depend on who answered first. */
   const sent = dsps.flatMap((dsp) => {
     const url = ctx.config.bidders[dsp.provider as keyof Context['config']['bidders']]?.bidUrl
     if (!url) return []
     const reqId = `req_${randomUUID().slice(0, 12)}`
-    return [{ dsp, reqId, res: ctx.bidder.send(url, buildBidRequest(ctx, p, dsp, reqId)) }]
+    return [{ dsp, reqId, res: ctx.bidder.send(url, buildBidRequest(ctx, p, dsp, reqId, view!)) }]
   })
   out.bidRequests = sent.length
   for (const { dsp, reqId, res: pending } of sent) {

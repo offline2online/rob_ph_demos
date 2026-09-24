@@ -9,6 +9,7 @@ import { adminRoutes } from '../routes/admin'
 import { partnerRoutes } from '../routes/partner'
 import { sellersJsonRoutes } from '../routes/public/sellersJson'
 import { mimeOf } from '../platform/AssetStore'
+import { appliedVersions, loadMigrations } from '../db/migrate'
 
 declare module 'fastify' {
   interface FastifyRequest {
@@ -91,6 +92,26 @@ export function buildApp(ctx: Context, opts: { logger?: boolean } = {}): Fastify
     return reply.status(500).send({ error: { code: 'internal_error', message: 'Unexpected error.' } })
   })
   app.setNotFoundHandler((_req, reply) => reply.status(404).send(notFound().body()))
+
+  /* For whatever supervises the process — Kubernetes probes, a load
+     balancer's health check (deploy/kubernetes/) — at the root like
+     sellers.json, and in openapi.yaml under Operations. /healthz: the
+     process answers. /readyz: the database answers and every migration is
+     applied, so requests can be served; 503 until then, which keeps a pod
+     out of the load balancer while it restores or migrates. Neither reads
+     partner or admin data. */
+  const migrations = loadMigrations().map((m) => m.version)
+  app.get('/healthz', async () => ({ ok: true }))
+  app.get('/readyz', async (_req, reply) => {
+    try {
+      const applied = new Set(appliedVersions(ctx.db))
+      const missing = migrations.filter((v) => !applied.has(v)).length
+      if (missing) return reply.status(503).send({ ok: false, reason: `${missing} migration${missing === 1 ? '' : 's'} not applied.` })
+      return { ok: true }
+    } catch {
+      return reply.status(503).send({ ok: false, reason: 'The database is not available.' })
+    }
+  })
 
   app.register(adminRoutes(ctx, guards), { prefix: '/api/admin/v1' })
   app.register(partnerRoutes(ctx, guards), { prefix: '/api/v1' })

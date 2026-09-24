@@ -112,6 +112,10 @@ export const campaignRoutes = (ctx: Context): FastifyPluginAsync => async (app) 
      limit) while its checks run, so without a cap one partner opening many
      uploads at once could exhaust the server's memory. */
   const uploading = new Map<string, number>()
+  /* And across all partners (review, 24 Sep 2026): the per-partner cap
+     bounds what one partner can do, not the process — with twenty partners
+     it allowed 40 × 200 MB in memory at once. This one bounds the process. */
+  let uploadsInFlight = 0
   app.post<{ Params: { id: string } }>('/campaigns/:id/assets', async (req, reply) => {
     /* Ownership first: another partner's campaign is 404 whatever state the caller is in. */
     const c = own(req.partner, req.params.id)
@@ -121,10 +125,16 @@ export const campaignRoutes = (ctx: Context): FastifyPluginAsync => async (app) 
       reply.header('Retry-After', '1')
       throw new HttpError(429, 'rate_limited', `At most ${ctx.config.maxConcurrentUploadsPerPartner} uploads at once; wait for one to finish.`)
     }
+    if (uploadsInFlight >= ctx.config.maxConcurrentUploads) {
+      reply.header('Retry-After', '1')
+      throw new HttpError(429, 'rate_limited', 'The exchange is checking as many uploads as it can at once; try again in a moment.')
+    }
     uploading.set(req.partner.id, inFlight + 1)
+    uploadsInFlight++
     try {
       return await upload(req, reply, c)
     } finally {
+      uploadsInFlight--
       const n = (uploading.get(req.partner.id) ?? 1) - 1
       if (n > 0) uploading.set(req.partner.id, n)
       else uploading.delete(req.partner.id)

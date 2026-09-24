@@ -47,7 +47,7 @@ export const reservationRoutes = (ctx: Context): FastifyPluginAsync => async (ap
     if (now < biddingOpensAt(ctx, start!).getTime()) throw conflict(`Bidding for that window opens at ${biddingOpensAt(ctx, start!).toISOString()}.`)
     if (now >= biddingClosesAt(ctx, start!).getTime()) throw conflict(`Bidding for that window closed at ${biddingClosesAt(ctx, start!).toISOString()}, when its auction ran.`)
     if (partner.status !== 'connected') throw conflict(`${partner.name} is not connected.`)
-    if (!ctx.displays.listByDisplayType(pos.displayType.id).length) throw conflict('The position has no displays in that window.')
+    if (!ctx.displays.summaryByDisplayType(pos.displayType.id).displays) throw conflict('The position has no displays in that window.')
     const assignment = assignmentOf(pos.def)
     if (b.type === 'reserve' && assignment !== 'reserved') throw conflict('Only a position held for this advertiser can be reserved; bid for it instead.')
     if (b.type === 'bid' && assignment === 'reserved') throw conflict('This position is held for this advertiser: reserve it instead of bidding.')

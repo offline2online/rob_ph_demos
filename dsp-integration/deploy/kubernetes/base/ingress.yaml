@@ -1,0 +1,86 @@
+# Two ingresses on the same pods, because the two APIs have different
+# audiences (PH-CORE-BOUNDARIES.md, "Inbound boundaries"):
+#
+#   - the Partner API (/api/v1), sellers.json and creative files are for
+#     DSPs and advertisers on the internet: an internet-facing ALB, TLS
+#     terminated there, behind a WAF with a rate rule;
+#   - the Admin API (/api/admin) is for HQ Admin inside the platform: an
+#     INTERNAL ALB, reachable only from the VPC. In the POC every Admin API
+#     caller is the stand-in hq_admin session, so this split is what keeps
+#     that off the internet; on integration the platform's session
+#     (SessionSource) authenticates it as well.
+#
+# Written for the AWS Load Balancer Controller. Anything not listed on an
+# ingress (e.g. /api/admin on the public one) has no route and gets the
+# ALB's 404 without ever reaching a pod.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: dsp-exchange-partner-api
+  namespace: dsp-exchange
+  annotations:
+    kubernetes.io/ingress.class: alb
+    alb.ingress.kubernetes.io/scheme: internet-facing
+    alb.ingress.kubernetes.io/target-type: ip
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTPS":443}]'
+    alb.ingress.kubernetes.io/certificate-arn: arn:aws:acm:REGION:ACCOUNT:certificate/REPLACE_ME
+    alb.ingress.kubernetes.io/ssl-policy: ELBSecurityPolicy-TLS13-1-2-2021-06
+    # WAFv2 web ACL: AWS managed core rules plus a rate-based rule per
+    # source IP (the API's own limiter is per partner token and per
+    # process; this one is per address and cluster-wide).
+    alb.ingress.kubernetes.io/wafv2-acl-arn: arn:aws:wafv2:REGION:ACCOUNT:regional/webacl/REPLACE_ME
+    alb.ingress.kubernetes.io/healthcheck-path: /readyz
+    alb.ingress.kubernetes.io/group.name: dsp-exchange-public
+spec:
+  rules:
+    - host: exchange.example-retailer.com
+      http:
+        paths:
+          - path: /api/v1
+            pathType: Prefix
+            backend:
+              service:
+                name: dsp-exchange-api
+                port:
+                  name: http
+          - path: /sellers.json
+            pathType: Exact
+            backend:
+              service:
+                name: dsp-exchange-api
+                port:
+                  name: http
+          - path: /assets
+            pathType: Prefix
+            backend:
+              service:
+                name: dsp-exchange-api
+                port:
+                  name: http
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: dsp-exchange-admin-api
+  namespace: dsp-exchange
+  annotations:
+    kubernetes.io/ingress.class: alb
+    alb.ingress.kubernetes.io/scheme: internal
+    alb.ingress.kubernetes.io/target-type: ip
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTPS":443}]'
+    alb.ingress.kubernetes.io/certificate-arn: arn:aws:acm:REGION:ACCOUNT:certificate/REPLACE_ME
+    alb.ingress.kubernetes.io/ssl-policy: ELBSecurityPolicy-TLS13-1-2-2021-06
+    alb.ingress.kubernetes.io/healthcheck-path: /readyz
+    alb.ingress.kubernetes.io/group.name: dsp-exchange-internal
+spec:
+  rules:
+    - host: exchange-admin.internal.example-retailer.com
+      http:
+        paths:
+          - path: /api/admin
+            pathType: Prefix
+            backend:
+              service:
+                name: dsp-exchange-api
+                port:
+                  name: http

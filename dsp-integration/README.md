@@ -22,6 +22,10 @@ folder's history is on the tag `archive/display-types-dsp-integration`.
   guarantee, and what engineering replaces on integration
 - **Security and performance:** [SECURITY-PERFORMANCE.md](docs/dsp-integration/api/SECURITY-PERFORMANCE.md)
   — the 23 Sep 2026 review: findings, fixes, limits and measured throughput
+- **Scale — 15,000 displays on a client's EKS:** [SCALE-15000-EKS.md](docs/dsp-integration/api/SCALE-15000-EKS.md)
+  — the 24 Sep 2026 review: three estate shapes measured, the bidding API
+  optimised, billing at a real play volume, and what the cluster provides
+  (`deploy/kubernetes/`)
 - **UI specification:** `prototype-reference/` (read-only). The look comes from
   the design skill in `.claude/skills/ph-designer/`.
 
@@ -179,6 +183,8 @@ nothing here can even read it without the key.
 | `apps/admin/src/api/queries.ts` | Every section's read queries (key and fetch) in one place: the pages use them, and `usePrefetchSections` in `App.tsx` fetches the other sections in the background once the first page is up, so moving between sections doesn't wait on the API |
 | `apps/admin/src/demo/`, `apps/admin/scripts/capture-demo.mjs` | The hosted prototype: the shim that sends `/api` calls to the hosted API (`VITE_API_URL`), or — if it doesn't answer — answers from a snapshot of the API's read side and refuses writes. Built into `prototype/` (see above) |
 | `deploy/firebase/` | The hosted API: the POC API and mock DSPs as a Cloud Function (`functions/src/host.ts`, `index.ts`), its bundle build (`build.mjs`) and a local stand-in (`local-server.ts`). See its README |
+| `deploy/kubernetes/` | The API in a client's own VPC on EKS (24 Sep 2026): a container image (`Dockerfile`, `build.mjs`), manifests for the deployment as it runs today (`base/`: one pod, the database on a volume, public Partner API and internal Admin API ingresses, a network policy) and for a shared database (`optional/`: HPA, PDB, the scheduler as a CronJob), with sizing from the 15,000-display review. See its README |
+| `apps/api/bench/load.ts` | `npm run bench` — the load test: the Partner API's reads and bids, the auction and billing, on an estate of any shape (`--scale`, `--displays-per-type`, `--stores`, `--plays-per-display`, `--history`). Numbers in `docs/dsp-integration/api/SCALE-15000-EKS.md` |
 | `apps/admin/public/demo/` | That snapshot and the creatives it points at, committed so the demo can be rebuilt without a running API |
 | `scripts/sync-board-docs.mjs` | `npm run board:sync` — pushes `REQUIREMENTS.md` and `README.md` to the board's Docs page and verifies them (see above) |
 | `scripts/board-tickets.mjs` | `npm run board:tickets` — reports where this project's tickets are, and moves them between statuses when work reached `main` outside the board's own Deploy to Main (see above) |
@@ -237,10 +243,22 @@ npm test
   set to tokens of your own. Each partner may make 50 requests/s (bursts of
   100; `PARTNER_RATE_PER_SECOND`, `PARTNER_RATE_BURST`), then gets
   `429 rate_limited`.
-- `npm run bench` measures the Partner API and the auction under load
-  (`-- --scale=250 --bidder-ms=80` for a large estate with realistic DSP
-  latency); results and what they mean are in
-  [SECURITY-PERFORMANCE.md](docs/dsp-integration/api/SECURITY-PERFORMANCE.md).
+- `npm run bench` measures the Partner API, bids, the auction and billing
+  under load. The estate's shape is an argument: `-- --scale=600
+  --displays-per-type=25 --stores=1000` is 15,000 displays as 2,400
+  positions, `--scale=15 --displays-per-type=1000` the same displays as 68;
+  `--bidder-ms=80` adds a realistic DSP round trip, `--plays-per-display`
+  and `--history` size billing. Results and what they mean are in
+  [SECURITY-PERFORMANCE.md](docs/dsp-integration/api/SECURITY-PERFORMANCE.md)
+  and, for 15,000 displays, [SCALE-15000-EKS.md](docs/dsp-integration/api/SCALE-15000-EKS.md).
+- **Running it on a cluster** (24 Sep 2026): `API_HOST=0.0.0.0` binds
+  beyond this machine (the default `127.0.0.1` is deliberate: the POC's
+  Admin API has no authentication of its own); `PH_SCHEDULER=off` moves
+  billing, the auction and retention out of the process to `npm run
+  scheduler:tick`, run once a minute from outside; `PH_AUCTION_CONCURRENCY`,
+  `PH_MAX_UPLOADS_IN_FLIGHT` and `PH_RESERVATION_RETENTION_DAYS` set the
+  limits; `/healthz` and `/readyz` are the probes; SIGTERM shuts down
+  cleanly. All of it is in `deploy/kubernetes/README.md`.
 - DSP connections: Google DSP (DV360), Amazon Ads DSP and The Trade Desk
   each have a real-shaped client (`apps/api/src/dsp/`) pointed at the mock
   DSP service. Amazon is seeded to reject its refresh token; accept it on the
