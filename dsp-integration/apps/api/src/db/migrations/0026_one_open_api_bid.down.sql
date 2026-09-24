@@ -1,0 +1,1 @@
+DROP INDEX reservations_one_open_api_bid;

@@ -156,3 +156,39 @@ changes it made (display counts from an aggregate, one query per estate,
 billing in SQL, one auction per window across processes, a private-address
 guard on DSP endpoints, probes, `PH_SCHEDULER`) are listed there with
 their measurements, and the deployment is `deploy/kubernetes/`.
+
+## Stability under concurrency and at the edges — 24 Sep 2026
+
+A third pass (Rob: "anything that could cause a race condition"), before
+the exchange goes live. Each case was tried against the code first; the
+ones marked *reproduced* failed then. Every case is a test in
+`apps/api/test/stability.test.ts` (31) or, across real processes,
+`apps/api/test/multiprocess.test.ts` (4: two API processes and three
+`scheduler:tick` runs on one database file — the only way to interleave
+SQLite writes for real).
+
+| Case | Before | Now |
+|---|---|---|
+| **A bid placed while the auction was waiting on the bidders** (bidding is open until the cutoff; the bidders take up to 300 ms). *Reproduced*: it was stranded `pending` for ever. | The auction read its API bids before sending bid requests. | It reads them after the bidders answer, so the bid is in this auction. Anything still pending when the position clears is settled `lost` with a reason. And once a tick has claimed a window in `auction_runs`, `POST /v1/reservations` refuses a bid for it (`409`, "closed"), so on the scheduled path nothing can slip in at all. |
+| **A DSP whose answer isn't a bid response** — `seatbid` an object, a bid `null`, a string body. *Reproduced*: one such answer threw inside the auction, the whole auction failed, the claim was released and the next tick retried it for ever. | One position's fault was the auction's. | Response shapes are checked before use. A position that still fails (a store refusing a write) is that position's outcome (`Failed: …`), its pending bids are settled, every other position clears and the tick finishes. |
+| **A fault in one scheduled job.** *Reproduced*: billing throwing (the playback store down) stopped the auction due in the same minute. | One try block. | Billing, retention, settling and the auction each run in their own; a failure is logged and the tick still reports it (a CronJob run exits non-zero), but the other jobs run. |
+| **A cutoff missed by more than an hour** (the process down). *Reproduced*: the window was never auctioned and its bids never settled. | Skipped once the cutoff was an hour old. | Auctioned late as long as the window hasn't started. A window that has started with bids still pending has them settled `lost` ("started with no auction") — the same sweep settles a bid whose position was removed from the estate after it was placed. |
+| **An API bid with no ceiling.** *Reproduced*: a 1e12 CPM bid was taken, and would have won and been billed. | Only DSP bids were capped. | `bidCpm` is bounded by the same ceiling (`maxBidCpm`, 10,000): `400 validation_failed`. |
+| **The same bid on two API processes at once.** The route's "this advertiser already has a bid" check is check-then-write. | Both could pass. | Migration 0026: one open API bid or reservation per advertiser, position and window, as a partial unique index; the loser is told which check it failed. Measured on two processes: 16 simultaneous bids, one 201. |
+| **Two processes starting on one empty database** (two replicas on a shared volume, or the API beside a CronJob). *Reproduced*: both migrated and both seeded; the second crashed on the first's rows. | Deferred transactions. | Migrations and the seed take the write lock first (`BEGIN IMMEDIATE`) and repeat their check under it: the second process finds the work done and serves. |
+| **Two ticks billing one window at once.** | The second insert threw. | `ON CONFLICT (reservation_id) DO NOTHING`: one line item, neither tick fails. |
+| **Equal bids.** | The tie went to whichever the auction read first, which put a DSP's bid ahead of an API bid placed hours earlier. | Ties go to the earlier bid, by `created_at`. |
+
+Checked and fine, with tests: a stale claim (a process dead 15 minutes
+into an auction) is taken over and a fresher one left alone; an auction
+that throws outright releases its claim and the next tick runs it; the
+tick switched off still bills and settles but never claims an auction;
+finished claims are swept with the bids after the retention period; every
+window-start form (`2026-09-21`, an offset time) normalises to the window
+and anything else is a `400`, never a `500`; a body that isn't an object
+is a client error; SIGTERM on each process leaves the database passing
+`PRAGMA integrity_check`.
+
+Known and left: two API instances see a company-settings save on the
+other within a second (the 1 s snapshot); nothing that decides a sale is
+cached.

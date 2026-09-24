@@ -164,7 +164,7 @@ queue (`apps/api/src/config.ts` → `assetLimits`, enforced in
 
 | Method | Path | Purpose | Main errors |
 |---|---|---|---|
-| POST | `/v1/reservations` | `type: reserve` (named advertiser positions) at its agreed reservation price, or `type: bid`, both with `bidCpm` (the CPM; a reservation is booked at it), for a `positionId` and `windowStart`, with an approved and activated `campaignId` (`not_approved` otherwise). Only while the window's auction is open: from `auctionOpensHours` before the auction cutoff until the cutoff (`conflict` otherwise). The campaign's type must be one the position supports (`supportedTargeting`; `targeting_not_supported` otherwise). | `not_approved`, `below_floor`, `advertiser_blocked`, `category_blocked`, `not_on_whitelist`, `targeting_not_supported`, `conflict` |
+| POST | `/v1/reservations` | `type: reserve` (named advertiser positions) at its agreed reservation price, or `type: bid`, both with `bidCpm` (the CPM; a reservation is booked at it), for a `positionId` and `windowStart`, with an approved and activated `campaignId` (`not_approved` otherwise). Only while the window's auction is open: from `auctionOpensHours` before the auction cutoff until the cutoff, or until a tick claims the window's auction if that is earlier (`conflict` otherwise). `bidCpm` is at most the exchange ceiling (10,000; `validation_failed`). One open bid or reservation per advertiser and window, enforced by the database (migration 0026). The campaign's type must be one the position supports (`supportedTargeting`; `targeting_not_supported` otherwise). | `not_approved`, `below_floor`, `advertiser_blocked`, `category_blocked`, `not_on_whitelist`, `targeting_not_supported`, `conflict` |
 | GET | `/v1/reservations/{id}` | Outcome: `pending`, `won`, `lost`, `reserved`, `rejected`, with clearing CPM and reason. | `not_found` |
 
 A won or reserved campaign is handed to the existing campaign system for
@@ -352,6 +352,11 @@ integration, and nothing else in the build may depend on their internals.
   can bill now and counts a window's plays where they are stored
   (`PlaybackSource.totals`), so it costs the same after a year of windows
   as on day one (scalability review, 24 Sep 2026).
+  A cutoff missed by hours (the process down) is still auctioned as long
+  as the window hasn't started; a window that starts with bids still
+  pending has them settled `lost` with a reason (stability review, 24 Sep
+  2026). A DSP's malformed answer, or a fault clearing one position, is
+  that position's outcome, never the auction's.
 - **Retention**: rejected, lost and never-cleared bids are deleted
   `PH_RESERVATION_RETENTION_DAYS` (default 90) after their window; won and
   reserved windows are kept. Rejected campaigns and their assets are

@@ -52,9 +52,13 @@ export const fromJson = <T>(v: unknown, fallback: T): T => (typeof v === 'string
    live winner per position and window"). */
 export const isUniqueViolation = (e: unknown) => e instanceof Error && /UNIQUE constraint failed/.test(e.message)
 
-/* Run fn inside a transaction; rolls back on throw. */
-export function tx<T>(db: Db, fn: () => T): T {
-  db.exec('BEGIN')
+/* Run fn inside a transaction; rolls back on throw. 'IMMEDIATE' takes the
+   write lock before fn runs, so two processes doing the same
+   check-then-write (migrate, seed) serialise on it and the second one's
+   check sees the first one's writes; with a DEFERRED transaction both
+   checks pass and the second write fails (stability review, 24 Sep 2026). */
+export function tx<T>(db: Db, fn: () => T, mode: 'DEFERRED' | 'IMMEDIATE' = 'DEFERRED'): T {
+  db.exec(mode === 'IMMEDIATE' ? 'BEGIN IMMEDIATE' : 'BEGIN')
   try {
     const out = fn()
     db.exec('COMMIT')

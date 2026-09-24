@@ -46,30 +46,83 @@ const releaseAuction = (ctx: Context, windowStart: string) =>
    CronJob) and the hosted API's request-driven tick (deploy/firebase/). */
 export async function schedulerTick(ctx: Context, log: (msg: string) => void) {
   if (!ctx.flags.dspIntegration) return
-  /* Windows already sold are still billed when they end, switch or not:
-     they were delivered. */
-  const billed = runBilling(ctx)
-  if (billed.length) log(`Billed ${billed.length} ended window${billed.length === 1 ? '' : 's'}.`)
-  const swept = sweepSettledReservations(ctx.db, ctx.config.reservationRetentionDays, ctx.clock)
-  if (swept) log(`Deleted ${swept} settled bid${swept === 1 ? '' : 's'} older than ${ctx.config.reservationRetentionDays} days.`)
-  /* Switched off (Exchange settings): nothing new is sold. */
-  if (!ctx.exchange.get().enabled) return
-  const now = ctx.clock().getTime()
-  const current = windowStartOf(ctx, ctx.clock())
-  for (const w of [current, new Date(current.getTime() + windowMs(ctx))]) {
-    const cutoff = biddingClosesAt(ctx, w).getTime()
-    if (now < cutoff || now - cutoff > 3_600_000) continue
-    const start = w.toISOString()
-    if (!claimAuction(ctx, start)) continue
+  /* Each job is isolated from the others (stability review, 24 Sep 2026):
+     a fault in billing — a playback store that doesn't answer — is logged
+     and must not stop the auction that is due in the same minute, and the
+     reverse. A job that throws is retried by the next tick as before. */
+  const errors: string[] = []
+  const job = async (name: string, fn: () => void | Promise<void>) => {
     try {
-      const res = await runAuction(ctx, w)
-      finishAuction(ctx, start)
-      log(`Auction cleared ${res.windowStart}: ${res.positions.filter((p) => p.winner).length} of ${res.positions.length} positions won.`)
+      await fn()
     } catch (e) {
-      releaseAuction(ctx, start)
-      throw e
+      const message = e instanceof Error ? e.message : String(e)
+      log(`${name} failed: ${message}`)
+      errors.push(`${name}: ${message}`)
     }
   }
+  /* Windows already sold are still billed when they end, switch or not:
+     they were delivered. */
+  await job('Billing', () => {
+    const billed = runBilling(ctx)
+    if (billed.length) log(`Billed ${billed.length} ended window${billed.length === 1 ? '' : 's'}.`)
+  })
+  await job('Retention', () => {
+    const swept = sweepSettledReservations(ctx.db, ctx.config.reservationRetentionDays, ctx.clock)
+    if (swept) log(`Deleted ${swept} settled bid${swept === 1 ? '' : 's'} older than ${ctx.config.reservationRetentionDays} days.`)
+    sweepAuctionRuns(ctx)
+  })
+  /* A bid still pending for a window that has started will never clear:
+     its auction never ran (the process was down past the cutoff), or the
+     position was removed from the estate after the bid was placed. It is
+     settled as lost rather than left pending for ever. */
+  await job('Settling', () => {
+    const stale = ctx.reservations.stalePending(ctx.clock().toISOString())
+    for (const r of stale) ctx.reservations.update(r.id, { status: 'lost', reason: 'The window started with no auction clearing this bid; nothing was sold.' })
+    if (stale.length) log(`Settled ${stale.length} bid${stale.length === 1 ? '' : 's'} for windows that started without an auction.`)
+  })
+  /* Switched off (Exchange settings): nothing new is sold. */
+  if (ctx.exchange.get().enabled) {
+    const now = ctx.clock().getTime()
+    const current = windowStartOf(ctx, ctx.clock())
+    for (const w of [current, new Date(current.getTime() + windowMs(ctx))]) {
+      const cutoff = biddingClosesAt(ctx, w).getTime()
+      /* Due once its cutoff has passed, and still worth running late — a
+         process down for hours — as long as the window itself hasn't
+         started; after that the window is skipped, and Settling above tells
+         its bidders. (Before this a cutoff more than an hour old was skipped
+         even with the window still to come.) */
+      if (now < cutoff || now >= w.getTime()) continue
+      const start = w.toISOString()
+      if (!claimAuction(ctx, start)) continue
+      await job('Auction', async () => {
+        try {
+          const res = await runAuction(ctx, w)
+          finishAuction(ctx, start)
+          const failed = res.positions.filter((p) => p.skipped?.startsWith('Failed:')).length
+          log(`Auction cleared ${res.windowStart}: ${res.positions.filter((p) => p.winner).length} of ${res.positions.length} positions won${failed ? `, ${failed} failed` : ''}.`)
+        } catch (e) {
+          releaseAuction(ctx, start)
+          throw e
+        }
+      })
+    }
+  }
+  if (errors.length) throw new Error(`Scheduler tick: ${errors.join('; ')}`)
+}
+
+/* Finished auction claims older than the reservation retention are deleted
+   with the bids they cleared: one row per window, nothing reads an old one. */
+function sweepAuctionRuns(ctx: Context) {
+  const cutoff = new Date(ctx.clock().getTime() - ctx.config.reservationRetentionDays * 86_400_000).toISOString()
+  prepared(ctx.db, 'DELETE FROM auction_runs WHERE finished_at IS NOT NULL AND window_start < ?').run(cutoff)
+}
+
+/* True while a process holds this window's auction (claimed, not finished):
+   bidding for it is over even if the cutoff hasn't quite passed by this
+   process's clock. POST /v1/reservations refuses a bid then, so no bid can
+   slip in between the auction reading its candidates and clearing. */
+export function auctionClaimed(ctx: Context, windowStart: string): boolean {
+  return !!prepared(ctx.db, 'SELECT 1 FROM auction_runs WHERE window_start = ?').get(windowStart)
 }
 
 export function startAuctionScheduler(ctx: Context, log: (msg: string) => void, everyMs = 60_000) {

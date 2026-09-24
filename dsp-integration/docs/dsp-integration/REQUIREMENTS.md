@@ -2307,6 +2307,35 @@ deployment is `deploy/kubernetes/`.
   repository layer (engineering's integration work), after which the HPA,
   PDB and CronJob in `deploy/kubernetes/optional/` apply.
 
+### Stability under concurrency (review, 24 Sep 2026)
+
+Before going live, the exchange was tried against the races and edge
+cases a live estate produces (`api/SECURITY-PERFORMANCE.md` → "Stability
+under concurrency and at the edges" has the table; the tests are
+`apps/api/test/stability.test.ts` and `test/multiprocess.test.ts`). What
+the system now guarantees:
+
+- **No bid is ever stranded pending.** A bid placed while the auction is
+  waiting on the bidders is in that auction; anything still pending when
+  a position clears, when its auction fails, or when its window starts
+  without an auction, is settled `lost` with a reason. Once a tick has
+  claimed a window's auction, a new bid for it is refused.
+- **One advertiser, one open bid per window**, enforced by the database
+  (migration 0026), so two API instances taking the same bid at once take
+  it once.
+- **A DSP can't take the auction down.** An answer that isn't a bid
+  response, or a fault clearing one position, is that position's outcome;
+  every other position clears and the tick finishes.
+- **One job can't stop another.** Billing, retention, settling and the
+  auction are isolated in the tick; a failure is logged and reported, and
+  the auction due that minute still runs.
+- **A missed cutoff is recovered**: the window is auctioned late while it
+  hasn't started, and settled once it has.
+- **API bids have the DSP bids' ceiling** (10,000 CPM).
+- **Two processes starting on one empty database** both come up: one
+  migrates and seeds, the other waits and serves.
+- **Ties go to the earlier bid.**
+
 ### Analytics schema, measurement and federation — foundation (§9)
 
 - **Versioned canonical playback/analytics event schema**, S3-partitioned,

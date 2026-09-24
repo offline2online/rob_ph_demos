@@ -164,7 +164,11 @@ path to N replicas is one change: **the database.**
   billing, the auction at its cutoff, retention). Which pod clears a window
   is settled in `auction_runs`, so a CronJob tick overlapping the previous
   one, or an API pod still running its own scheduler, never auctions a
-  window twice.
+  window twice. Two pods (or a pod and a tick) starting together on an
+  empty database both come up: migrations and the seed check under the
+  write lock (stability review, 24 Sep 2026), so one does the work and
+  the other finds it done. A tick that fails one job (billing, say)
+  exits non-zero for the CronJob's history but still runs the others.
 
 Until then, one pod is also the honest capacity statement: the numbers
 above are what a client's estate gets, and they cover a 15,000-display

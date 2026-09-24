@@ -120,8 +120,13 @@ const serviceAccountKeyFile = (clientEmail: string) =>
    schedule isn't empty; tests seed a clean forward schedule instead).
    `demo`: the demo estate on top (demo.ts); off in the tests. */
 export async function seed(ctx: Context, opts: { bookings?: boolean; demo?: boolean } = {}) {
-  if (ctx.displayTypes.list().length) return false
-  tx(ctx.db, () => {
+  /* "Is it empty?" is decided under the write lock: two processes starting
+     on one empty database both asked and both seeded, and the second
+     crashed on the first one's rows (reproduced, stability review, 24 Sep
+     2026). Now the second waits for the first's base rows to commit, sees
+     them, and serves. */
+  const seeded = tx(ctx.db, () => {
+    if ((ctx.db.prepare('SELECT COUNT(*) AS n FROM display_types').get() as { n: number }).n) return false
     SEED_PLAYLISTS.forEach((p) => ctx.playlists.create(p))
     SEED_DISPLAY_TYPES.forEach((d) => ctx.displayTypes.create(d))
     const insStore = ctx.db.prepare('INSERT INTO stores (id, name, region) VALUES (?, ?, ?)')
@@ -168,7 +173,9 @@ export async function seed(ctx: Context, opts: { bookings?: boolean; demo?: bool
     /* The demo estate is a retailer that has already switched DSP
        integration on. A real instance starts with it off (migration 0023). */
     ctx.exchange.save({ enabled: true, organisation: 'Demo Retail Group', domain: 'demoretail.example', sellerId: 'drg-4471', contactEmail: 'adops@demoretail.example' })
-  })
+    return true
+  }, 'IMMEDIATE')
+  if (!seeded) return false
   await seedCampaigns(ctx)
   if (opts.bookings !== false) await seedBookings(ctx)
   if (opts.demo !== false) await seedDemo(ctx)
