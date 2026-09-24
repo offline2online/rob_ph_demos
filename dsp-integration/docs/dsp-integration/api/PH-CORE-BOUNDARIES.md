@@ -67,6 +67,7 @@ slower than that should cache, as the stand-ins now do.
 | Partner identity (`auth/partnerAuth.ts`) | read only | Platform token issuance | `partnerFromRequest(req)` → one `PartnerRecord` or 401 | Every Partner API request | ≤ 0.1 ms |
 | `SecretsStore` | encrypt / decrypt | Platform secrets handling (KMS) | `encrypt`, `decrypt` | Saving DSP credentials; connecting to a DSP | off the hot path by design |
 | `Flags` | read only | Feature flags | `dspIntegration` | Every new endpoint (404 when off) | — |
+| DSP integration switch (`exchange.enabled`, migration 0023) | read + write | *This build* (the retailer's own setting, on Exchange settings) | `ctx.exchange.get().enabled`; `GET /admin/v1/features` | Every Partner API request, sellers.json, the auction, the nav | — |
 
 ### What each seam must guarantee
 
@@ -139,6 +140,7 @@ provide one breaks something specific, named here.
 | `0001` (display types, playlists, displays, campaigns, plays), `0012` (slot bookings), `0014` (stores) | **PH Core stand-ins** | Dropped. The seams above read and write the real services instead. |
 | `0002`–`0011`, `0013`, `0015`–`0019` | This build | Kept. Plain, Postgres-compatible SQL. |
 | `0020` (indexes), `0021` (one live winner per window), `0022` (reserved instance identity) | This build (review, 23 Sep 2026) | Kept. See "The database must enforce" below for the parts that also apply to PH Core tables. |
+| `0023` (the DSP integration switch) | This build (Rob, 24 Sep 2026) | Kept, unless the platform already holds company feature switches (see "Open" below). |
 
 ## Outbound boundaries — what this build calls
 
@@ -259,5 +261,9 @@ These are reserved names and places, with no behaviour yet:
   engagement, but `PlaybackSource` counts plays, not QR scans. Billing the
   fee needs an engagement count from PH Core. BUILD-PLAN §10 records this
   as a decision nobody has made yet.
+- **Where the DSP integration switch lives.** It is stored on this build's
+  exchange record. If HQ Admin already keeps company-level feature switches
+  (its *Enabled Features*), the switch belongs there, read through a seam
+  like `Flags`.
 - **Venue and screen metadata per store and display** (spec §1). It is
   held on the display type for now, and has no PH Core seam yet.

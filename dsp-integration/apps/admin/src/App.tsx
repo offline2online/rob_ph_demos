@@ -4,6 +4,7 @@ import { useState, type ReactNode } from 'react'
 import { Navigate, Outlet, RouterProvider, createBrowserRouter, createHashRouter, useMatches, type RouteObject } from 'react-router-dom'
 import type { Session } from '@ph-dsp/types'
 import { api } from './api/client'
+import { useFeatures } from './api/features'
 import { type Flags, envFlags } from './flags'
 import { AdvertisersPage } from './features/advertisers/AdvertisersPage'
 import { CampaignDetail } from './features/campaign-status/CampaignDetail'
@@ -34,20 +35,35 @@ export interface RouteHandle { title: string; tip?: string; hideNav?: boolean }
 
    Who sees what (spec "Who sees each section"; Rob, 20 Sep): DSP Integration
    is admin only; the rest is admin and marketing; a help desk user sees
-   nothing at all. The API enforces the same. */
-export function navFor(flags: Flags, session: Session | undefined): NavItem[] {
+   nothing at all. The API enforces the same.
+
+   `dspOn` is the retailer's own DSP integration switch (Exchange settings,
+   Rob 24 Sep 2026): while it is off — or not yet known — Campaign Status and
+   Advertisers / Inventory are hidden. DSP Integration stays, because the
+   switch lives there. */
+export function navFor(flags: Flags, session: Session | undefined, dspOn = false): NavItem[] {
   if (session && session.role === 'hq_helpdesk') return []
   const admin = session?.role === 'hq_admin'
+  const selling = flags.dspIntegration && dspOn
   return [
     { to: '/display-types', label: 'Display Types', icon: 'dashboard_customize' },
     { to: '/playlists', label: 'Playlist Management', icon: 'playlist_play' },
     /* STAND-IN for the existing Campaigns section (package 11); removed on integration. */
-    ...(flags.dspIntegration ? [{ to: '/campaign-status', label: 'Campaign Status', icon: 'campaign' }] : []),
+    ...(selling ? [{ to: '/campaign-status', label: 'Campaign Status', icon: 'campaign' }] : []),
     /* Marketing users read it too (spec §3). */
-    ...(flags.dspIntegration ? [{ to: '/advertisers', label: 'Advertisers / Inventory', icon: 'sell' }] : []),
+    ...(selling ? [{ to: '/advertisers', label: 'Advertisers / Inventory', icon: 'sell' }] : []),
     /* Last in the list. Flag off: hidden (decision 6). Admin users only. */
     ...(flags.dspIntegration && admin ? [{ to: '/dsp-integration', label: 'DSP Integration', icon: 'handshake' }] : []),
   ]
+}
+
+/* Campaign Status, Advertisers / Inventory and the booking schedule open
+   only while DSP integration is switched on; a bookmark or an old tab lands
+   on the first page instead. Their records are untouched either way. */
+function WhileDspOn({ children }: { children: ReactNode }) {
+  const features = useFeatures()
+  if (!features.data) return null
+  return features.data.dspIntegration ? <>{children}</> : <Navigate to="/" replace />
 }
 
 function featureRoutes(flags: Flags): RouteObject[] {
@@ -78,15 +94,16 @@ function featureRoutes(flags: Flags): RouteObject[] {
           path: 'advertisers',
           /* The prototype's intro line, as the page-title tooltip (decision 2). */
           handle: { title: 'Advertisers / Inventory', tip: 'Every advertiser using the platform, across all DSPs, and the inventory they can buy: every advertiser-owned slot across the estate.' } satisfies RouteHandle,
-          element: <AdvertisersPage />,
+          element: <WhileDspOn><AdvertisersPage /></WhileDspOn>,
         },
         /* Its own page, opened in a new tab from Available Inventory or an advertiser
            (Rob, 20 Sep) — just the schedule, so no Display Types / DSP Integration
            nav beside it (Rob, 21 Sep). */
-        { path: BOOKING_SCHEDULE_PATH.slice(1), handle: { title: 'Booking schedule', hideNav: true } satisfies RouteHandle, element: <BookingSchedulePage /> },
+        { path: BOOKING_SCHEDULE_PATH.slice(1), handle: { title: 'Booking schedule', hideNav: true } satisfies RouteHandle, element: <WhileDspOn><BookingSchedulePage /></WhileDspOn> },
         {
           path: 'campaign-status',
           handle: { title: 'Campaign Status', tip: 'Every campaign advertisers and DSPs have submitted, with its approval status. Open one to see what was booked, or approve and reject from the table. HQ\u2019s own campaigns are not listed here.' } satisfies RouteHandle,
+          element: <WhileDspOn><Outlet /></WhileDspOn>,
           children: [{ index: true, element: <CampaignStatusPage /> }, { path: ':id', element: <CampaignDetail /> }],
         }]
       : []),
@@ -95,12 +112,13 @@ function featureRoutes(flags: Flags): RouteObject[] {
 
 function Root({ flags }: { flags: Flags }) {
   const session = useQuery({ queryKey: ['session'], queryFn: () => api<Session>('GET', '/admin/v1/session') })
+  const features = useFeatures(flags.dspIntegration)
   const matches = useMatches()
   const handle = [...matches].reverse().map((m) => m.handle as RouteHandle | undefined).find((h) => h?.title)
   const title = handle?.tip ? <WithTip tip={handle.tip}>{handle.title}</WithTip> : (handle?.title ?? '')
   return (
     <UnsavedChangesProvider>
-      <AppShell title={title} nav={handle?.hideNav ? [] : navFor(flags, session.data)}>
+      <AppShell title={title} nav={handle?.hideNav ? [] : navFor(flags, session.data, features.data?.dspIntegration)}>
         <Outlet />
       </AppShell>
     </UnsavedChangesProvider>

@@ -1,6 +1,9 @@
 /* DSP Integration list column: the company pages, then one row per DSP in
    onboarding order (DV360, Amazon Ads DSP, The Trade Desk; spec §7). A DSP
-   not set up yet opens its Add card. Contracts to icons below 900px. */
+   not set up yet opens its Add card. Contracts to icons below 900px.
+   Until DSP integration is switched on and Exchange settings are published,
+   only Exchange settings is listed (Rob, 24 Sep 2026): set up the exchange
+   first, then the rest appears. */
 import { PROVIDERS, TARGETING_VARIABLES, type Partner } from '@ph-dsp/types'
 import type { ReactNode } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
@@ -46,15 +49,15 @@ function Row({ active, collapsed, dashed, title, onClick, children }: { active: 
 export function DspList() {
   const { pathname } = useLocation()
   const navigate = useNavigate()
-  const { draft, partners } = useSection()
+  const { draft, saved, partners, published } = useSection()
   const collapsed = useViewportWidth() < NAV_COLLAPSE_BELOW
   const advertisers = new Set(partners.flatMap((p) => (p.seats ?? []).map((s) => s.name.toLowerCase()))).size
 
   const company = [
-    { to: PATHS.exchange, icon: 'storefront', title: 'Exchange settings', sub: `${draft.exchange.organisation || 'Client'} is seller of record` },
+    { to: PATHS.exchange, icon: 'storefront', title: 'Exchange settings', sub: saved.exchange.enabled ? `${draft.exchange.organisation || 'Client'} is seller of record` : 'DSP integration off' },
     { to: PATHS.advertiserSettings, icon: 'rule', title: 'Advertiser settings', sub: `${advertisers} advertisers · floor ${draft.settings.currency || 'AUD'} ${draft.settings.floorCpm ?? '—'} CPM` },
     { to: PATHS.variables, icon: 'tune', title: 'Shared Targeting Variables', sub: `${TARGETING_VARIABLES.length} platform variables` },
-  ]
+  ].slice(0, published ? undefined : 1)
 
   return (
     <nav aria-label="DSP Integration" style={{ width: collapsed ? 64 : undefined }}>
@@ -76,8 +79,8 @@ export function DspList() {
         )
       })}
 
-      {!collapsed && <SectionLabel>Partner DSPs</SectionLabel>}
-      {PROVIDERS.map((def) => {
+      {published && !collapsed && <SectionLabel>Partner DSPs</SectionLabel>}
+      {published && PROVIDERS.map((def) => {
         const x = partners.find((p) => p.provider === def.key)
         const drafted = !!draft.partners[`new:${def.key}`]
         const state = dspState(x, drafted)

@@ -1,5 +1,7 @@
 /* Partner API (/v1): connected DSPs and tier-2 partners. Returns 404 with
-   the dspIntegration flag off (decision 6). */
+   the dspIntegration flag off (decision 6), and the same while the retailer
+   has DSP integration switched off (Exchange settings): to a DSP the
+   integration simply isn't there. Nothing it created is deleted. */
 import type { FastifyPluginAsync } from 'fastify'
 import { partnerFromRequest } from '../../auth/partnerAuth'
 import type { Context } from '../../context'
@@ -11,7 +13,7 @@ import { inventoryRoutes } from './inventory'
 import { reservationRoutes } from './reservations'
 import { targetingRoutes } from './targeting'
 import { tokenBucket } from '../../http/rateLimit'
-import { HttpError } from '../../http/errors'
+import { HttpError, notFound } from '../../http/errors'
 
 declare module 'fastify' {
   interface FastifyRequest {
@@ -26,6 +28,7 @@ export const partnerRoutes = (ctx: Context, guards: Guards): FastifyPluginAsync 
   const limiter = tokenBucket(ctx.config.partnerRateLimit)
   app.addHook('onRequest', async (req, reply) => {
     guards.flagged()
+    if (!ctx.exchange.get().enabled) throw notFound('DSP integration is switched off.')
     req.partner = partnerFromRequest(ctx, req)
     const wait = limiter.take(req.partner.id)
     if (wait) {

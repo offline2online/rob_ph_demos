@@ -25,7 +25,7 @@
 import { randomUUID } from 'node:crypto'
 import type { Context } from '../context'
 import { auctionOpenAt, isActiveAt, isTermLocked } from '../domain/buyersLists'
-import { isComplete } from '../domain/exchange'
+import { isLive } from '../domain/exchange'
 import { type PositionRef, allPositions, assignmentOf, effectivePartnerIds, nextWindow } from '../domain/positions'
 import type { PartnerRecord } from '../repos/PartnerRepo'
 import { type ReservationRecord, TAKEN } from '../repos/ReservationRepo'
@@ -69,7 +69,8 @@ export const MAX_BIDS_PER_RESPONSE = 10
 
 export async function runAuction(ctx: Context, windowStart: Date = nextWindow(ctx)): Promise<AuctionResult> {
   const start = windowStart.toISOString()
-  const exchangeLive = isComplete(ctx.exchange.get())
+  /* Switched off or incomplete: no DSP is sent a bid request. */
+  const exchangeLive = isLive(ctx.exchange.get())
   const positions = allPositions(ctx)
   /* Results keep the estate's order, whatever order batches finish in. */
   const outcomes: PositionOutcome[] = new Array(positions.length)

@@ -38,6 +38,7 @@ await Promise.all([
   '/admin/v1/playlists',
   '/admin/v1/partners',
   '/admin/v1/exchange',
+  '/admin/v1/features',
   '/admin/v1/advertiser-settings',
   '/admin/v1/available-inventory',
   '/admin/v1/advertisers',

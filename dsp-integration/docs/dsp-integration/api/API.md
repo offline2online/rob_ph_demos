@@ -185,8 +185,20 @@ env var, with no switcher and no cookie (see *POC stand-ins* below).
 
 | Method | Path | Purpose |
 |---|---|---|
-| GET | `/admin/v1/exchange` | Organisation, domain, seller ID, contact email, `published`, `sellersJsonUrl`. |
-| PUT | `/admin/v1/exchange` | Save changes. All four fields required; republishes sellers.json when complete. |
+| GET | `/admin/v1/exchange` | The DSP integration switch (`enabled`), organisation, domain, seller ID, contact email, `published`, `sellersJsonUrl`. |
+| PUT | `/admin/v1/exchange` | Save changes. `enabled` is required. While it is true, all four fields are required; switched off, they may be blank and are kept as sent. `published` is true, and sellers.json is served, only when switched on and complete. |
+| GET | `/admin/v1/features` | `{ dspIntegration }`: whether the retailer has DSP integration switched on (always false with the build flag off). Readable by admin and marketing users, unlike Exchange settings, because it decides what the navigation shows. |
+
+**The DSP integration switch** (Rob, 24 Sep 2026; REQUIREMENTS §7). Off
+for a new instance (migration 0023). While it is off:
+
+- the Partner API answers `404 not_found` ("DSP integration is switched
+  off."), as with the build flag off;
+- `sellers.json` answers 404;
+- the auction sends no bid requests, and the scheduler doesn't run it.
+  Windows already sold are still billed when they end.
+
+The Admin API keeps answering, and switching off deletes nothing.
 
 ### Advertiser settings
 
@@ -335,8 +347,8 @@ integration, and nothing else in the build may depend on their internals.
 
 ## sellers.json
 
-Published at `https://[domain]/sellers.json` once Exchange settings are
-complete; `404` until then.
+Published at `https://[domain]/sellers.json` once DSP integration is
+switched on and Exchange settings are complete; `404` otherwise.
 
 ```json
 {

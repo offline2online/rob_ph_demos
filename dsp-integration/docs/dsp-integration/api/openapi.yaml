@@ -18,6 +18,11 @@ info:
     here): playback, playlists' playback behaviour, targeting evaluation,
     distribution to players, playback logging, campaign playback analytics.
 
+    The retailer's DSP integration switch (Exchange settings; Rob, 24 Sep
+    2026): while it is off, the Partner API and sellers.json answer 404,
+    exactly as with the build flag off, and no auction sends bid requests.
+    The Admin API keeps answering, and nothing is deleted.
+
     Jobs with no endpoint: the SSP auction runs as a scheduled job
     (CLI for demos: npm run auction:run); billing line items are stored
     only (CLI to print them: npm run billing:print). Neither has a UI,
@@ -302,8 +307,24 @@ paths:
         required: true
         content: {application/json: {schema: {$ref: '#/components/schemas/ExchangeInput'}}}
       responses:
-        '200': {description: Saved; sellers.json republished when complete, content: {application/json: {schema: {$ref: '#/components/schemas/Exchange'}}}}
+        '200': {description: Saved; sellers.json republished when switched on and complete, content: {application/json: {schema: {$ref: '#/components/schemas/Exchange'}}}}
         '400': {$ref: '#/components/responses/ValidationFailed'}
+        '401': {$ref: '#/components/responses/Unauthorised'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+
+  /admin/v1/features:
+    get:
+      tags: [Admin — Exchange]
+      operationId: getFeatures
+      summary: Whether the retailer has DSP integration switched on
+      description: |
+        Readable by every user who sees these sections (admin and
+        marketing), unlike Exchange settings, so the navigation can hide
+        Campaign Status and Advertisers / Inventory while the switch is off.
+        Always false with the build flag off.
+      security: [{adminSession: []}]
+      responses:
+        '200': {description: Features, content: {application/json: {schema: {$ref: '#/components/schemas/Features'}}}}
         '401': {$ref: '#/components/responses/Unauthorised'}
         '403': {$ref: '#/components/responses/Forbidden'}
 
@@ -1066,7 +1087,7 @@ paths:
           content:
             application/json:
               schema: {$ref: '#/components/schemas/SellersJson'}
-        '404': {description: Exchange settings incomplete; not published.}
+        '404': {description: Not published — DSP integration switched off, or Exchange settings incomplete.}
 
 components:
   securitySchemes:
@@ -1337,16 +1358,26 @@ components:
         - type: object
           required: [published]
           properties:
-            published: {type: boolean}
+            published: {type: boolean, description: 'Switched on and all four fields complete: sellers.json is live and DSPs are sent bid requests.'}
             sellersJsonUrl: {type: [string, 'null']}
     ExchangeInput:
       type: object
-      required: [organisation, domain, sellerId, contactEmail]
+      required: [enabled, organisation, domain, sellerId, contactEmail]
+      description: |
+        The four seller-of-record fields are required while `enabled` is
+        true. Switched off, they may be blank and are kept as sent, so
+        switching back on restores them.
       properties:
-        organisation: {type: string, minLength: 1}
-        domain: {type: string, minLength: 1}
-        sellerId: {type: string, minLength: 1}
-        contactEmail: {type: string, format: email}
+        enabled: {type: boolean, description: 'The retailer''s DSP integration switch (Rob, 24 Sep 2026). Off for a new instance. Switching it off deletes nothing.'}
+        organisation: {type: string}
+        domain: {type: string}
+        sellerId: {type: string}
+        contactEmail: {type: string, description: An email address when set}
+    Features:
+      type: object
+      required: [dspIntegration]
+      properties:
+        dspIntegration: {type: boolean, description: The build flag is on and the retailer has DSP integration switched on.}
 
     AdvertiserSettingsInput:
       type: object

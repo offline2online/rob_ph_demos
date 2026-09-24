@@ -780,6 +780,40 @@ Rob chose the Firebase project over browser-only saves or a separate host.
   That is acceptable for demo data only (`deploy/firebase/README.md` →
   "Security posture").
 
+### The DSP integration switch (Rob, 24 Sep 2026)
+
+Rob asked for an **Enable DSP Integration** switch at the top of Exchange
+settings, like HQ Admin's switches for its other features: off the first
+time, the seller-of-record fields once on, then the DSPs. While it is off,
+Campaign Status and Advertisers / Inventory are hidden, and nothing is
+deleted, so it can be switched off and on for testing.
+
+- **API.**
+  - Migration 0023 adds `exchange.enabled`, off by default. So the hosted
+    demo's existing database starts switched off, and a reset (the seeded
+    demo retailer) starts switched on.
+  - `PUT /admin/v1/exchange` takes `enabled`; the four fields are required
+    only while it is true.
+  - `published` means switched on and complete.
+  - New `GET /admin/v1/features`, readable by marketing users too, for the
+    navigation.
+  - While it is off: the Partner API and sellers.json answer 404, the
+    auction sends no bid requests, and the scheduler skips it. Billing of
+    windows already sold carries on.
+- **UI.**
+  - The master toggle row (ph-designer §12) under the Exchange settings
+    heading, held as an unsaved change like every toggle in the section.
+  - The section's list shows only Exchange settings until it is published;
+    a link to another page opens Exchange settings.
+  - The nav hides Campaign Status and Advertisers / Inventory while off,
+    and those routes open the first page.
+- **Verified here:**
+  - API tests: 250 pass, 5 of them new;
+  - admin UI tests: 6 new;
+  - driven in Chrome against the real API: on → off (nav and list shrink,
+    links redirect, Partner API 404) → on again (every DSP and field as it
+    was, Published).
+
 ## 13. Prototype comparison (per screen)
 
 Filled in as each package finishes. Differences are removed, not justified.

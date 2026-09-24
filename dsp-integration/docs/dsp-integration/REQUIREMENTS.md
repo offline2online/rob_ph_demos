@@ -71,7 +71,9 @@ defaults).
 (Rob, 24 Sep 2026): **Display Types**, **Playlist Management**, **Campaign
 Status**, **Advertisers / Inventory**, then **DSP Integration** at the
 bottom. The pages used day to day come first; DSP Integration, set up once
-per DSP, comes last. Within DSP Integration, the
+per DSP, comes last. **Campaign Status** and **Advertisers / Inventory**
+show only while the retailer has DSP integration switched on (§7, *The DSP
+integration switch*). Within DSP Integration, the
 company pages are **Exchange settings**, **Advertiser settings** and
 **Shared Targeting Variables**, followed by one page per DSP.
 
@@ -198,6 +200,9 @@ Page-title tooltips for the DSP Integration company pages:
 | **Exchange settings** | Sets up your organisation as the seller of record for its screens. Configurable here: organisation name, domain, seller ID and ad-ops contact email, all required. Once saved and complete, sellers.json is published at https://[domain]/sellers.json and every bid request carries your domain and seller ID in its SupplyChain; until then no DSP is sent bid requests. Not configurable (platform defaults): seller type (Publisher), OpenRTB 2.6, the DOOH object, the OpenOOH venue taxonomy, QPS and bid timeout. |
 | **Advertiser settings** | Company-wide advertiser settings, applied to every DSP. Configurable here: Pricing (currency, floor CPM, the personalised multiplier and the interactive cost per engagement), the Auction schedule (when bidding opens, play-window length, auction cutoff) and List management (advertiser and IAB category whitelists and blacklists). Read-only here: Where these apply (which DSPs use these lists or keep their own; unlink or relink on the DSP's page). Per-advertiser campaign approval and floor multipliers, and the inventory advertisers can buy, are on Advertisers / Inventory. |
 | **Shared Targeting Variables** | Variables shared through the API with connected DSPs. Once a variable is enabled for a DSP, that DSP's advertisers can use it in targeting conditions for more advanced campaign targeting; the platform evaluates the condition and never returns the value. They are the same variables as a campaign's Targeting tab. Choose which DSPs may use each one below; default platform variables only in this release. |
+
+The **Enable DSP Integration** switch at the top of Exchange settings has
+its own tooltip: *"Switches DSP integration on or off for your organisation. While it is off, no DSP is sent bid requests, sellers.json and the Partner API are unavailable, and Campaign Status and Advertisers / Inventory are hidden. Switching it off deletes nothing: switch it back on and every setting, DSP and campaign is as you left it."*
 
 Other tooltip wording is given in the relevant section below (for example
 the pricing fields in §4).
@@ -1313,6 +1318,41 @@ software, not a party to the sale. `sellers.json` is published under the
 client's domain, with the SupplyChain node carrying the client's domain as
 `asi` and its seller ID as `sid`.
 
+### The DSP integration switch (Rob, 24 Sep 2026)
+
+At the top of **Exchange settings**, a master toggle row, **Enable DSP
+Integration**, like HQ Admin's switches for its other features. It lets a
+retailer switch DSP integration on and off.
+
+- **Off the first time a retailer lands on DSP Integration.** Switched off,
+  the switch is all Exchange settings shows, and the section's list shows
+  only Exchange settings.
+- **Switching on** shows the seller-of-record fields below. Once they are
+  saved and complete, `sellers.json` is published and the rest of the
+  section appears: Advertiser settings, Shared Targeting Variables and the
+  DSP pages. Until then, a link to one of those pages opens Exchange
+  settings instead.
+- **Like every toggle in the section, it is an unsaved change until Save
+  changes.** Switching it off before saving also drops unsaved edits to the
+  fields it hides.
+- **While it is off:**
+  - Campaign Status and Advertisers / Inventory are hidden from the
+    navigation, and a link to either (or to the booking schedule) opens
+    the first page instead. DSP Integration stays, because the switch is
+    there.
+  - No DSP is sent bid requests; the scheduled auction doesn't run.
+  - The Partner API and `sellers.json` answer 404, exactly as with the
+    build's feature flag off.
+  - Windows already sold are still billed when they end: they were
+    delivered.
+- **Switching it off deletes nothing** (for testing, and for good): the
+  seller-of-record fields, the DSPs and their credentials, advertiser
+  settings, advertisers, campaigns and bookings all stay. Switching back on
+  picks up where it left off.
+- It is the retailer's runtime setting, one per instance. It is separate
+  from the build's `dspIntegration` feature flag, which still decides
+  whether any of this ships.
+
 ### Exchange settings — what the retailer supplies
 
 Four fields, all required: **organisation**, **domain**, **seller ID** and
@@ -2138,8 +2178,14 @@ playback analytics.**
 
 ### DSP integration and exchange
 
+- **DSP integration switch** (Rob, 24 Sep 2026): **Enable DSP Integration**
+  at the top of Exchange settings, off at first; while off, Campaign Status
+  and Advertisers / Inventory are hidden, no bid requests are sent, the
+  Partner API and `sellers.json` answer 404, and nothing is deleted.
+  *(DSP Integration → Exchange settings)*
 - **Exchange settings**: four seller-of-record fields and the published
-  `sellers.json` status. *(DSP Integration → Exchange settings)*
+  `sellers.json` status, shown once the switch is on. *(DSP Integration →
+  Exchange settings)*
 - **Issues at the top of each DSP page**: connection error with the DSP's
   reason, missing credentials, and missing bidder fields; a single
   confirmation when there are none. *(DSP Integration → partner)*
