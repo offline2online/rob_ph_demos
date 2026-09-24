@@ -83,10 +83,19 @@ empty or mis-edited collection can never lock everyone out.
 ## What the agent can and can't do
 
 **Can — read:** `whoami`, `list_projects`, `list_backlog_items`,
-`get_backlog_item`, `get_project_docs`, `list_doc_revisions`,
-`get_doc_revision`, `search_faq`, `get_faq_article`,
+`get_backlog_item`, `get_ready_for_testing_board`, `get_project_docs`,
+`list_doc_revisions`, `get_doc_revision`, `search_faq`, `get_faq_article`,
 `list_pending_faq_revisions`, `get_faq_revision`, `list_skills`,
 `get_skill`.
+
+`get_ready_for_testing_board` is **composable** — alongside the usual JSON
+it returns an embedded HTML resource (an MCP `resource` content block,
+`mimeType: "text/html"`) that a supporting client renders inline as ticket
+cards (title, testSummary/desc, test link, testVersion, a link back to the
+ticket), right in the conversation, instead of the agent having to describe
+the column in prose. Read-only in the fullest sense: the widget has no
+button, form or script that could change a ticket's status — reviewing
+there is exactly as inert as reading the JSON.
 
 **Can — write (editor and admin only):**
 

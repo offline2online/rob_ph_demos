@@ -1743,9 +1743,10 @@ Required properties, each covered by `test/mcp-server.test.js`:
    where to sign in.
 
 **Tool surface — and its hard limit.** Read: `whoami`, `list_projects`,
-`list_backlog_items`, `get_backlog_item`, `get_project_docs`,
-`list_doc_revisions`, `get_doc_revision`, `search_faq`, `get_faq_article`,
-`list_pending_faq_revisions`, `get_faq_revision`, `list_skills`, `get_skill`.
+`list_backlog_items`, `get_backlog_item`, `get_ready_for_testing_board`,
+`get_project_docs`, `list_doc_revisions`, `get_doc_revision`, `search_faq`,
+`get_faq_article`, `list_pending_faq_revisions`, `get_faq_revision`,
+`list_skills`, `get_skill`.
 Write (editor/admin only) — tickets: `create_backlog_item` (always into
 `backlog`), `update_backlog_item` (title, desc, type, category only),
 `add_item_comment`; documentation: `set_project_requirements`,
@@ -1757,6 +1758,17 @@ never the live fields), `comment_on_faq_revision` — see "FAQ revision
 review" under "Functional requirements — FAQ / Help Center" below for what
 these two collections' write tools do and don't do; skills library:
 `upload_skill`, `update_skill`, `delete_skill`.
+
+**`get_ready_for_testing_board` (`board.read`) is also composable.** It
+returns, alongside its usual JSON, an embedded HTML resource (an MCP
+`resource` content block, `mimeType: "text/html"`) rendering the Ready for
+Testing column as ticket cards (title, testSummary/desc, test link,
+testVersion, a link back to the ticket) for a client that renders embedded
+resources inline in the conversation. Pure static markup: no `<script>`,
+no external stylesheet/font fetch, no `<form>`, nothing that could change
+a ticket's status from the widget itself — every user-authored string is
+escaped and a linked URL is only ever rendered as a clickable `href` when
+it parses as `https://`.
 
 **The skills library is organisation-wide, not per-project** — `list_skills`
 (light summaries) and `get_skill` (full file contents, by id or slug) need

@@ -1068,6 +1068,82 @@ async function audit(session, tool, detail) {
   }
 }
 
+// ── Composable UI resources (embedded HTML cards) ───────────────────────────
+// get_ready_for_testing_board (below)
+// return, alongside the usual JSON, a self-contained HTML "card list" as an
+// MCP embedded resource (content type "resource", mimeType "text/html") —
+// the standard MCP tool-result content block, not a bespoke extension — so a
+// client that renders embedded HTML resources inline can show the column as
+// cards right in the conversation instead of only as text. A client that
+// doesn't render resources still gets the same data as the plain-text/JSON
+// blocks that come with it.
+//
+// No <script>, no external stylesheet/font fetch, no <form> — everything is
+// inline-styled static markup. Every user-authored string (title/desc/
+// testSummary — recall backlogItems.desc is publicly, unauthenticatedly
+// writable, see this file's own header) goes through escapeHTML() before it
+// reaches the markup, and a URL is only ever linked when it parses as
+// https:// (safeHref) — a malicious previewUrl set to a javascript: URI is
+// rendered as plain text, never as a clickable href.
+//
+// Colours/type below are Personalisation Hub's own measured tokens (see the
+// ph-designer skill's tokens.md) — this widget isn't an iframed prototype
+// page (nothing here is iframed into HQ Admin), so the prototyping.md "content
+// frame only" rules don't apply, but the brand palette and Roboto still
+// should, for the same reason any other Claude-built surface for this board
+// would want to look like it belongs to it.
+const PH_TOKENS = {
+  primary: "#169bc2", accent: "#38b0cf", text: "#333333",
+  muted: "rgba(0,0,0,0.45)", border: "#d9d9d9", bg: "#ffffff",
+  success: "#52c41a", warning: "#faad14",
+};
+
+function safeHref(url) {
+  return typeof url === "string" && /^https:\/\//i.test(url) ? url : null;
+}
+
+function pillHTML(label, kind) {
+  const styles = {
+    primary: "background:#169bc21a;color:#169bc2;",
+    accent: "background:#38b0cf1a;color:#0d7691;",
+    neutral: "background:rgba(0,0,0,0.06);color:#333333;",
+  };
+  return `<span style="display:inline-block;font-size:11px;font-weight:600;line-height:1;padding:3px 8px;border-radius:9999px;margin:0 6px 6px 0;${styles[kind] || styles.neutral}">${escapeHTML(label)}</span>`;
+}
+
+function cardShellHTML(headline, subhead, bodyHTML) {
+  return `<div style="font-family:Roboto,'Helvetica Neue',Helvetica,Arial,sans-serif;color:${PH_TOKENS.text};background:${PH_TOKENS.bg};max-width:640px;">
+  <div style="font-size:16px;font-weight:700;margin-bottom:2px;">${escapeHTML(headline)}</div>
+  <div style="font-size:13px;color:${PH_TOKENS.muted};margin-bottom:12px;">${escapeHTML(subhead)}</div>
+  ${bodyHTML}
+</div>`;
+}
+
+// One ticket, as a card. `extraPillsHTML` lets a caller add extra context
+// pills without this function needing to know what they mean.
+function ticketCardHTML(item, extraPillsHTML) {
+  const bodyText = item.testSummary || item.desc || "";
+  const hasBoth = item.testSummary && item.desc && item.testSummary !== item.desc;
+  const testHref = safeHref(item.previewUrl);
+  const testLink = testHref
+    ? `<a href="${escapeHTML(testHref)}" target="_blank" rel="noopener" style="color:${PH_TOKENS.primary};font-weight:600;text-decoration:none;font-size:13px;">Test this &rarr;</a>`
+    : "";
+  const boardHref = safeHref(item.board);
+  const boardLink = boardHref
+    ? `<a href="${escapeHTML(boardHref)}" target="_blank" rel="noopener" style="color:${PH_TOKENS.muted};text-decoration:none;font-size:12px;">View ticket &#8599;</a>`
+    : "";
+  const versionPill = item.testVersion ? pillHTML(`Test version: v${item.testVersion}`, "accent") : "";
+  return `<div style="border:1px solid ${PH_TOKENS.border};border-radius:8px;padding:12px 14px;margin-bottom:10px;">
+    <div style="font-size:14px;font-weight:700;margin-bottom:4px;">${escapeHTML(item.title || "(untitled)")}</div>
+    <div style="font-size:12px;color:${PH_TOKENS.muted};margin-bottom:8px;">${escapeHTML(item.project || "")}${item.project ? " &middot; " : ""}${escapeHTML(item.id)}</div>
+    <div style="font-size:13px;line-height:1.45;white-space:pre-wrap;margin-bottom:8px;">${escapeHTML(bodyText)}</div>
+    ${hasBoth ? `<details style="margin-bottom:8px;"><summary style="cursor:pointer;font-size:12px;color:${PH_TOKENS.primary};">Show original request</summary><div style="font-size:13px;line-height:1.45;white-space:pre-wrap;margin-top:6px;">${escapeHTML(item.desc)}</div></details>` : ""}
+    <div style="margin-bottom:2px;">${versionPill}${extraPillsHTML || ""}</div>
+    <div style="display:flex;gap:14px;align-items:center;">${testLink}${boardLink}</div>
+  </div>`;
+}
+
+
 const TOOLS = [
   {
     name: "whoami",
@@ -1308,6 +1384,70 @@ const TOOLS = [
       });
       await audit(session, "add_item_comment", { itemId: ref.id, chars: text.length });
       return textResult({ added: true, itemId: ref.id, author: session.email });
+    },
+  },
+  // ── Composable UI: review the pipeline's two "waiting on a human" columns
+  // in-agent, without leaving the conversation ─────────────────────────────
+  // Read-only, same as list_backlog_items/get_backlog_item above — nothing
+  // here can move a ticket. See the "Composable UI resources" comment above
+  // TOOLS for what the embedded HTML resource is and isn't.
+  {
+    name: "get_ready_for_testing_board",
+    description: "A composable view of the Ready for Testing column: every ticket a build just landed in, shown as a card (title, testSummary/desc, test link, testVersion, and a link back to the ticket). Returns an embedded HTML resource a supporting client renders inline in the conversation, alongside the same data as plain text/JSON for a client that can't. Read-only — reviewing here never changes a ticket's status; approve or reject it on the board itself.",
+    scope: "board.read",
+    inputSchema: {
+      type: "object",
+      properties: {
+        projectId: { type: "string", description: "Restrict to one project (from list_projects). Omit to see every project's Ready for Testing column at once." },
+      },
+      additionalProperties: false,
+    },
+    async run(args) {
+      const a = args || {};
+      const projects = await loadProjectsById();
+      if (a.projectId && !projects.has(String(a.projectId))) return toolError(`No project with id ${a.projectId}. Call list_projects first.`);
+      let q = db().collection("backlogItems");
+      if (a.projectId) q = q.where("projectId", "==", String(a.projectId));
+      const snap = await q.limit(MAX_READ_DOCS).get();
+      const rows = [];
+      snap.forEach((doc) => {
+        const d = doc.data() || {};
+        if ((d.status || "backlog") !== "ready-for-testing") return;
+        rows.push({ doc, d });
+      });
+      rows.sort((x, y) => (y.d.updatedAt?.toMillis?.() || 0) - (x.d.updatedAt?.toMillis?.() || 0));
+
+      const cards = rows.map(({ doc, d }) => {
+        const project = projects.get(d.projectId);
+        return {
+          id: doc.id,
+          projectId: d.projectId || null,
+          project: project ? project.name : null,
+          title: d.title || "",
+          testSummary: d.testSummary || null,
+          desc: d.desc || "",
+          previewUrl: d.previewUrl || null,
+          testVersion: d.testVersion || null,
+          board: `${PUBLIC_ORIGIN}/#item-${doc.id}`,
+        };
+      });
+
+      const projectLabel = a.projectId ? ((projects.get(String(a.projectId)) || {}).name || a.projectId) : "every project";
+      const headline = `Ready for Testing — ${projectLabel}`;
+      const subhead = cards.length
+        ? `${cards.length} ticket${cards.length === 1 ? "" : "s"} waiting on review. Read-only — approve or reject on the board.`
+        : "Nothing in Ready for Testing right now.";
+      const bodyHTML = cards.map((c) => ticketCardHTML(c)).join("\n")
+        || `<div style="font-size:13px;color:${PH_TOKENS.muted};">Nothing to show.</div>`;
+      const html = cardShellHTML(headline, subhead, bodyHTML);
+
+      return {
+        content: [
+          { type: "text", text: `${headline}: ${cards.length} ticket(s). Read-only — this view can't change status.` },
+          { type: "resource", resource: { uri: `ui://backlog-tracker/ready-for-testing/${a.projectId || "all"}`, mimeType: "text/html", text: html } },
+          { type: "text", text: JSON.stringify({ projectId: a.projectId || null, count: cards.length, items: cards }, null, 2) },
+        ],
+      };
     },
   },
   {
@@ -2361,7 +2501,7 @@ async function dispatchRpc(msg, session, ctx) {
         serverInfo: {
           name: "ph-agent-console",
           title: "PH Agent Console",
-          version: "1.2.0",
+          version: "1.2.1",
           websiteUrl: PUBLIC_ORIGIN,
           description: "The Personalisation Hub prototype backlog board and help centre.",
           icons: SERVER_ICONS,

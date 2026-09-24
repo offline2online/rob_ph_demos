@@ -789,6 +789,51 @@ async function rpc(token, method, params, id = 1) {
     assert.deepStrictEqual(destructive, ["delete_interface", "delete_project_document", "delete_skill"]);
   });
 
+  // ── Composable UI: Ready for Testing board ───────────────────────────────
+  // (ZXmW4lHMKpQRlarlwK7z) — deliberately on its own fixture project
+  // ("depproj") so nothing here touches proj1, which "no documentation
+  // write touched a train field on the project" above already asserts stays
+  // pristine.
+  await test("get_ready_for_testing_board returns escaped HTML cards plus the same data as JSON", async () => {
+    env.store.col("projects").set("depproj", { name: "Deploy Playground", deployBranch: "deploy/depproj" });
+    env.store.col("backlogItems").set("rft1", {
+      projectId: "depproj", title: "<script>evil()</script> Fix RRP grid", desc: "The RRP shown is stale.",
+      testSummary: "Fixed the stale RRP — refetches on price change now.",
+      type: "bug", category: "HQ Admin", status: "ready-for-testing",
+      testVersion: "1.5.70", previewUrl: "https://rawcdn.githack.com/offline2online/rob_ph_demos/deploy/depproj/index.html",
+    });
+    const res = await rpc(tokens.access_token, "tools/call", { name: "get_ready_for_testing_board", arguments: { projectId: "depproj" } });
+    assert.strictEqual(res.body.result.isError, undefined);
+    const [text, resource, json] = res.body.result.content;
+    assert.strictEqual(text.type, "text");
+    assert.strictEqual(resource.type, "resource");
+    assert.strictEqual(resource.resource.mimeType, "text/html");
+    assert.ok(!resource.resource.text.includes("<script>evil()"), "a ticket title must never inject a raw <script> tag into the widget");
+    assert.match(resource.resource.text, /&lt;script&gt;/);
+    assert.match(resource.resource.text, /Fixed the stale RRP/);
+    assert.match(resource.resource.text, /Test this/);
+    const payload = JSON.parse(json.text);
+    assert.strictEqual(payload.count, 1);
+    assert.strictEqual(payload.items[0].id, "rft1");
+    assert.strictEqual(payload.items[0].testVersion, "1.5.70");
+  });
+
+  await test("get_ready_for_testing_board never links a javascript: previewUrl", async () => {
+    env.store.col("backlogItems").set("rft2", {
+      projectId: "depproj", title: "Sketchy link", desc: "x", type: "bug", category: "HQ Admin",
+      status: "ready-for-testing", previewUrl: "javascript:alert(1)",
+    });
+    const res = await rpc(tokens.access_token, "tools/call", { name: "get_ready_for_testing_board", arguments: { projectId: "depproj" } });
+    const [, resource] = res.body.result.content;
+    assert.ok(!resource.resource.text.includes("javascript:"), "a non-https previewUrl must never become a clickable href");
+    env.store.col("backlogItems").delete("rft2");
+  });
+
+  await test("get_ready_for_testing_board refuses an unknown project", async () => {
+    const res = await rpc(tokens.access_token, "tools/call", { name: "get_ready_for_testing_board", arguments: { projectId: "nope" } });
+    assert.strictEqual(res.body.result.isError, true);
+  });
+
   await test("writes an audit row for every write", async () => {
     const rows = [...env.store.col("mcpAuditLog").values()];
     assert.ok(rows.length >= 3, `expected audit rows, got ${rows.length}`);
