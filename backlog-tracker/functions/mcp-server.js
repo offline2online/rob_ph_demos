@@ -1068,6 +1068,61 @@ async function audit(session, tool, detail) {
   }
 }
 
+// ── Releases (search_faq / get_faq_article) ──────────────────────────────
+// A help-centre article can be bound to a range of releases
+// (faqArticles.introducedInReleaseId / removedInReleaseId, set from the
+// console's article editor). These resolve which release a call is about
+// and apply the same order range check as public/js/app.js's
+// articleAppliesToRelease and faq/js/faq-data.js — three separate
+// deployables with no shared module, so keep the three in step.
+//
+// Backward compatible by construction: with no releases at all, or none
+// live and none asked for, resolveFaqRelease's `release` is null and nothing is
+// filtered — every article behaves exactly as it did before releases.
+async function loadReleases() {
+  const rows = [];
+  (await db().collection("releases").get()).forEach((d) => {
+    const v = d.data() || {};
+    rows.push({ id: d.id, name: v.name || "", version: v.version || null, status: v.status || "draft", order: Number(v.order) || 0 });
+  });
+  return rows;
+}
+
+// `requested` given: that release, by doc id first, then by version string.
+// Omitted: the highest-order live release. Returns
+// { release, releasesById, requested } or { release: null } when nothing
+// applies; { error } when a specific release was asked for and none matches.
+async function resolveFaqRelease(requested) {
+  const rows = await loadReleases();
+  const releasesById = {};
+  rows.forEach((r) => { releasesById[r.id] = r; });
+  const wanted = typeof requested === "string" ? requested.trim() : "";
+  if (wanted) {
+    const release = releasesById[wanted] || rows.find((r) => r.version && r.version === wanted) || null;
+    if (!release) return { error: `No release with id or version "${wanted}".` };
+    return { release, releasesById, requested: true };
+  }
+  const live = rows.filter((r) => r.status === "live").sort((x, y) => y.order - x.order);
+  if (!live.length) return { release: null, releasesById, requested: false };
+  return { release: live[0], releasesById, requested: false };
+}
+
+function faqArticleAppliesToRelease(a, releasesById, targetOrder) {
+  if (a.introducedInReleaseId) {
+    const introduced = releasesById[a.introducedInReleaseId];
+    if (!introduced || !(introduced.order <= targetOrder)) return false;
+  }
+  if (a.removedInReleaseId) {
+    const removed = releasesById[a.removedInReleaseId];
+    if (!removed || !(targetOrder < removed.order)) return false;
+  }
+  return true;
+}
+
+function releaseSummary(r) {
+  return r ? { id: r.id, name: r.name, version: r.version, status: r.status, order: r.order } : null;
+}
+
 // ── Composable UI resources (embedded HTML cards) ───────────────────────────
 // get_ready_for_testing_board and get_approved_for_deployment_board (below)
 // return, alongside the usual JSON, a self-contained HTML "card list" as an
@@ -2009,18 +2064,22 @@ const TOOLS = [
         query: { type: "string", description: "Words to look for in titles, summaries, keywords and body text." },
         limit: { type: "integer", minimum: 1, maximum: 25, description: "Default 8." },
         includeDrafts: { type: "boolean", description: "Include unpublished drafts (default false)." },
+        release: { type: "string", description: "Only articles that apply to this release (its id or version string). Default: the current live release; no filtering if no release is live yet." },
       },
       required: ["query"], additionalProperties: false,
     },
     async run(args) {
       const terms = String(args.query || "").toLowerCase().split(/\s+/).filter((t) => t.length > 1);
       if (!terms.length) return toolError("query is required.");
+      const target = await resolveFaqRelease(args.release);
+      if (target.error) return toolError(target.error);
       const cats = new Map();
       (await db().collection("faqCategories").get()).forEach((d) => cats.set(d.id, (d.data() || {}).name || ""));
       const hits = [];
       (await db().collection("faqArticles").limit(MAX_READ_DOCS).get()).forEach((doc) => {
         const a = doc.data() || {};
         if (a.status !== "published" && !args.includeDrafts) return;
+        if (target.release && !faqArticleAppliesToRelease(a, target.releasesById, target.release.order)) return;
         const title = String(a.title || "");
         const hay = `${title}\n${a.summary || ""}\n${(a.keywords || []).join(" ")}\n${a.bodyMd || ""}`.toLowerCase();
         let score = 0;
@@ -2034,7 +2093,7 @@ const TOOLS = [
       });
       hits.sort((x, y) => y.score - x.score);
       const limit = Math.min(Math.max(parseInt(args.limit, 10) || 8, 1), 25);
-      return textResult({ matched: hits.length, results: hits.slice(0, limit) });
+      return textResult({ matched: hits.length, release: releaseSummary(target.release), results: hits.slice(0, limit) });
     },
   },
   {
@@ -2046,10 +2105,13 @@ const TOOLS = [
       properties: {
         articleId: { type: "string", description: "Article id from search_faq." },
         slug: { type: "string", description: "Article slug, if you don't have the id." },
+        release: { type: "string", description: "Only return the article if it applies to this release (its id or version string). Without it the article is always returned, with appliesToRelease saying whether it applies to the current live release." },
       },
       additionalProperties: false,
     },
     async run(args) {
+      const target = await resolveFaqRelease(args.release);
+      if (target.error) return toolError(target.error);
       let snap = null;
       if (args.articleId) {
         const s = await db().collection("faqArticles").doc(String(args.articleId)).get();
@@ -2061,6 +2123,10 @@ const TOOLS = [
       }
       if (!snap) return toolError("No article with that id or slug. Use search_faq to find one.");
       const a = snap.data() || {};
+      const applies = target.release ? faqArticleAppliesToRelease(a, target.releasesById, target.release.order) : true;
+      if (target.requested && !applies) {
+        return toolError(`Article ${snap.id} doesn't apply to release ${target.release.version || target.release.name || target.release.id} (it was introduced later or removed earlier). Use search_faq with the same release to find what does.`);
+      }
       const cat = a.categoryId ? await db().collection("faqCategories").doc(a.categoryId).get() : null;
       return textResult({
         id: snap.id, title: a.title || "", slug: a.slug || "", docType: a.docType || null,
@@ -2068,6 +2134,10 @@ const TOOLS = [
         status: a.status || null, summary: a.summary || "", keywords: a.keywords || [],
         bodyMd: a.bodyMd || "",
         hasPendingRevision: !!a.pendingRevision,
+        introducedInReleaseId: a.introducedInReleaseId || null,
+        removedInReleaseId: a.removedInReleaseId || null,
+        release: releaseSummary(target.release),
+        appliesToRelease: applies,
       });
     },
   },

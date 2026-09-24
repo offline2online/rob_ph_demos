@@ -22,10 +22,12 @@
 import { firebaseConfig } from "./firebase-config.js";
 
 const INDEX_URL = "data/index.json";
+const RELEASES_URL = "data/releases.json";
 const ARTICLE_URL = (id) => `data/articles/${encodeURIComponent(id)}.json`;
 const REST_BASE = `https://firestore.googleapis.com/v1/projects/${firebaseConfig.projectId}/databases/(default)/documents`;
 const LIVE_TIMEOUT_MS = 2500;
 const SESSION_KEY = "ph-faq-index-v2";
+const RELEASES_SESSION_KEY = "ph-faq-releases-v1";
 
 // Article ids are Firestore document ids we generate ourselves; anything
 // else is rejected before it can reach a URL or a lookup.
@@ -165,19 +167,112 @@ export async function fetchCategories() {
   const idx = await loadIndex();
   return [...idx.categories].sort((a, b) => (a.order || 0) - (b.order || 0));
 }
+// ── Releases ──────────────────────────────────────────────────────────────
+// faq/data/releases.json (written by backlog-tracker/scripts/faq-export.js)
+// lists every release as {id, name, version, status, order}, order
+// ascending. An article may be bound to a range of them
+// (introducedInReleaseId / removedInReleaseId, in its index entry and body
+// file); the site shows only the articles that apply to one target release
+// — the reader's ?release= (a release id or version string), or by default
+// the highest-order live release.
+//
+// Backward compatible by design: no releases.json (not exported yet), an
+// empty list, or no live release and no ?release= all resolve to no target,
+// and then nothing is filtered — every article shows exactly as it did
+// before releases existed. Cached the same way as the index above.
+let releasesPromise = null;
+export function loadReleases() {
+  if (releasesPromise) return releasesPromise;
+  releasesPromise = (async () => {
+    try {
+      const cached = sessionStorage.getItem(RELEASES_SESSION_KEY);
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (parsed && parsed.savedAt && Date.now() - parsed.savedAt < 5 * 60 * 1000) return parsed.data;
+      }
+    } catch { /* storage unavailable — fall through */ }
+    let data = [];
+    try {
+      const res = await fetch(RELEASES_URL, { cache: "default" });
+      if (res.ok) {
+        const json = await res.json();
+        data = Array.isArray(json) ? json : [];
+      }
+    } catch { /* no releases file — the feature isn't in use; filter nothing */ }
+    try { sessionStorage.setItem(RELEASES_SESSION_KEY, JSON.stringify({ savedAt: Date.now(), data })); } catch { /* ignore */ }
+    return data;
+  })();
+  return releasesPromise;
+}
+
+// Resolves to the target release object, or null for "don't filter".
+// A ?release= that matches nothing (a stale or mistyped link) falls back
+// to the default rather than hiding everything.
+export async function resolveTargetRelease(releaseParam) {
+  const releases = await loadReleases();
+  if (!releases.length) return null;
+  const wanted = typeof releaseParam === "string" ? releaseParam.trim() : "";
+  if (wanted) {
+    const match = releases.find((r) => r.id === wanted) || releases.find((r) => r.version && r.version === wanted);
+    if (match) return match;
+  }
+  const live = releases.filter((r) => r.status === "live").sort((a, b) => (Number(b.order) || 0) - (Number(a.order) || 0));
+  return live[0] || null;
+}
+
+function releaseParamFromUrl() {
+  try { return new URLSearchParams(window.location.search).get("release"); } catch { return null; }
+}
+
+// The same order range check as backlog-tracker/public/js/app.js's
+// articleAppliesToRelease (and functions/mcp-server.js's copy) — separate
+// deployables with no shared module, so keep the three in step. An article
+// applies from its introduction release (inclusive) up to, not including,
+// its removal release; an unset side is open-ended; a binding to a release
+// that isn't in the list doesn't match.
+function articleAppliesToRelease(article, releasesById, targetOrder) {
+  if (article.introducedInReleaseId) {
+    const introduced = releasesById[article.introducedInReleaseId];
+    if (!introduced || !(Number(introduced.order) <= targetOrder)) return false;
+  }
+  if (article.removedInReleaseId) {
+    const removed = releasesById[article.removedInReleaseId];
+    if (!removed || !(targetOrder < Number(removed.order))) return false;
+  }
+  return true;
+}
+
+// Resolves to a predicate over articles for the current page's target
+// release, or null when nothing should be filtered.
+async function releaseFilter() {
+  const target = await resolveTargetRelease(releaseParamFromUrl());
+  if (!target) return null;
+  const releases = await loadReleases();
+  const releasesById = {};
+  releases.forEach((r) => { releasesById[r.id] = r; });
+  const targetOrder = Number(target.order) || 0;
+  return (a) => articleAppliesToRelease(a, releasesById, targetOrder);
+}
+
 export async function fetchPublishedArticles() {
-  const idx = await loadIndex();
-  return idx.articles.filter((a) => a.status === "published");
+  const [idx, applies] = await Promise.all([loadIndex(), releaseFilter()]);
+  const inRelease = applies ? idx.articles.filter(applies) : idx.articles;
+  return inRelease.filter((a) => a.status === "published");
 }
 
 // ── Article bodies ────────────────────────────────────────────────────────
+// An article outside the target release's range is "not found", exactly
+// like an unpublished one.
 export async function fetchArticleBody(id) {
   const sid = safeId(id);
   if (!sid) return null;
   const res = await fetch(ARTICLE_URL(sid), { cache: "default" });
   if (!res.ok) return null;
   const a = await res.json();
-  return a && a.status === "published" ? a : null;
+  if (!a) return null;
+  const applies = await releaseFilter();
+  if (applies && !applies(a)) return null;
+  return a.status === "published" ? a : null;
 }
 
 // Background freshness check against Firestore. Resolves to the live
