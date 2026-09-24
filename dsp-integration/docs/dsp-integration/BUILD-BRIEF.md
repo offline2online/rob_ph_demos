@@ -67,7 +67,11 @@ This is the most important rule in this brief.
   `references/prototyping.md`), so render no platform header, sidebar or
   breadcrumb and nothing `position: fixed`. The prototype's own left
   navigation (Display Types, Playlist Management, DSP Integration,
-  Advertisers) is part of the content frame and stays.
+  Advertisers) is part of the content frame and stays. *(Since then:
+  the order is Display Types, Playlist Management, Campaign Status,
+  Advertisers / Inventory, DSP Integration, and the middle two show only
+  while the retailer has DSP integration switched on. See REQUIREMENTS,
+  "Navigation" and §7, 24 Sep 2026.)*
 - **The API contract is the API specification.** Implement exactly the
   endpoints, fields, permissions and error codes in
   `docs/dsp-integration/api/openapi.yaml`.

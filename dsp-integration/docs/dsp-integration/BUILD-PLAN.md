@@ -855,6 +855,7 @@ broken-partner callout, the zone cards and the save bar all match.
 | Field labels | `#333` | Muted `rgba(0,0,0,0.45)` | ph-designer `components.md` §13 |
 | Name field | "Display Type / Element Name" | "Display Type Name" | Rob, 19 Sep (Q2) |
 | Unsaved-changes prompt | `window.confirm` | AntD confirm with the same text, OK / Cancel | ph-designer components |
+| Slot owner: Advertiser | Always selectable | Greyed out, with a tooltip, for a slot that isn't one already while DSP integration is switched off | Rob, 24 Sep 2026 |
 
 Kept on the page as status (decision 2): "Not enabled for this company —
 contact Platform Admin.", the broken-partner callout, "On the blacklist —
@@ -932,6 +933,8 @@ sellers.json callouts all match.
 | Where | Prototype | Build | Why |
 |---|---|---|---|
 | Published pill and callout | Follow the unsaved fields as you type | Follow the saved settings | Spec §7: "once saved and complete, the screen shows where sellers.json is published and that it is live" |
+| Top of the page | Seller-of-record fields straight away | **Enable DSP Integration** master toggle row first, off for a new retailer; the fields show once it is on, and the pill only once it has been saved on | Rob, 24 Sep 2026 |
+| List column | Every company page and DSP | Only Exchange settings until it is switched on and published | Rob, 24 Sep 2026 |
 
 ### Delete a display type (package 4)
 

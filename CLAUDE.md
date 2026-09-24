@@ -118,7 +118,12 @@ codebase `dsp-api`, deployed by `.github/workflows/dsp-api-deploy.yml` —
 see `dsp-integration/deploy/firebase/README.md`) and sends every read and
 save there; everyone using the link shares that data. **It is a public demo
 with no login** — every visitor is the stand-in HQ admin — so never put
-real data in it; reset it with that workflow's `reset = RESET` input. Only
+real data in it; reset it with that workflow's `reset = RESET` input.
+**It may open with DSP integration switched off** (the retailer's own
+switch at the top of DSP Integration → Exchange settings, added 24 Sep
+2026): switched off, Campaign Status and Advertisers / Inventory aren't in
+its menu. That is a saved setting, not a bug. Switch it on there and Save
+changes, and nothing has been lost. Only
 if the API doesn't answer does the page fall back to the old read-only
 snapshot, where a write answers "changes aren't saved". **It is a checked-in build, and it is
 rebuilt by a workflow, not by hand**: `.github/workflows/dsp-prototype.yml`
