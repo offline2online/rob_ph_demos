@@ -24,7 +24,10 @@ whose hour passes with nobody using the demo isn't cleared by itself.
 It runs alongside the request that triggered it, not in front of it, and the
 database is uploaded afterwards only if the work changed something (page-load
 review, 24 Sep 2026). Before that, one click every five minutes waited for
-billing, the auction check and a full database upload.
+billing, the auction check and a full database upload. Each auction window
+is claimed in `auction_runs` (migration 0024) before it is cleared, so a
+request-driven tick and a `POST /_tasks/tick` landing at the same moment
+can't auction the same window twice.
 
 A Cloud Scheduler job would fix that, but it needs
 `cloudscheduler.googleapis.com`. The deploy's service account isn't allowed

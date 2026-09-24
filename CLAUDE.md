@@ -99,8 +99,17 @@ seam with PH Core and what each must guarantee (e.g. one campaign booking
 per slot and window); `api/SECURITY-PERFORMANCE.md` has the 23 Sep 2026
 review — the Partner API's rate limits and size caps, the database-enforced
 "one live winner per window" (migration 0021), and measured throughput
-(`npm run bench` in `dsp-integration/`). Read both before changing the
-exchange, the Partner API or a `platform/` interface.
+(`npm run bench` in `dsp-integration/`); `api/SCALE-15000-EKS.md` has the
+24 Sep 2026 scalability review for 15,000 displays — the exchange sells a
+play window per *position* (display type × slot), so load scales with
+positions, not displays; the before/after measurements for three estate
+shapes; and what a second replica needs (Postgres) before it is safe. Read
+all three before changing the exchange, the Partner API or a `platform/`
+interface. **`dsp-integration/deploy/kubernetes/`** (24 Sep 2026) is the
+same API for a client's own VPC on EKS — a container image, Kustomize
+manifests and the sizing from that review. Nothing there deploys from this
+repo, and the image was never built in this sandbox (no Docker daemon):
+the client's platform team builds and applies it.
 
 **The POC lives in `dsp-integration/`** (merged to `main` on 21 Sep 2026,
 PR #176). It is a working service, not a static page: an npm-workspaces
@@ -124,12 +133,7 @@ switch at the top of DSP Integration → Exchange settings, added 24 Sep
 2026): switched off, Campaign Status and Advertisers / Inventory aren't in
 its menu. That is a saved setting, not a bug. Switch it on there and Save
 changes, and nothing has been lost.
-**`dsp-integration/deploy/kubernetes/`** (24 Sep 2026) is the same API for
-a client's own VPC on EKS — a container image, manifests and the sizing
-from the 15,000-display review (`docs/dsp-integration/api/
-SCALE-15000-EKS.md`). Nothing there deploys from this
-repo, and the image was never built in this sandbox (no Docker daemon):
-the client's platform team builds and applies it. Only
+Only
 if the API doesn't answer does the page fall back to the old read-only
 snapshot, where a write answers "changes aren't saved". **It is a checked-in build, and it is
 rebuilt by a workflow, not by hand**: `.github/workflows/dsp-prototype.yml`
