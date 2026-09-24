@@ -58,6 +58,14 @@ export const displayTypeRoutes = (ctx: Context, guards: Guards): FastifyPluginAs
     if (!Array.isArray(body.slots)) throw validationFailed([{ field: 'slots', reason: 'Required.' }])
     const errors = validateExtensions(dt, body)
     if (errors.length) throw validationFailed(errors)
+    /* While the retailer has DSP integration switched off (Exchange settings),
+       no NEW advertiser slot: a slot may be Advertiser only if it already was
+       (Rob, 24 Sep 2026). Existing ones are left exactly as they are. */
+    if (!ctx.exchange.get().enabled) {
+      const before = dt.phExtensions?.slots ?? []
+      const added = body.slots.flatMap((s, i) => (s.owner === 'advertiser' && before[i]?.owner !== 'advertiser' ? [i] : []))
+      if (added.length) throw validationFailed(added.map((i) => ({ field: `slots[${i}].owner`, reason: 'Switch on DSP integration (DSP Integration → Exchange settings) to make a slot an Advertiser slot.' })))
+    }
     /* The editor sets the label and the owner; who the position is assigned
        to and what it supports are edited on Advertisers / Inventory, so they
        are carried over here — and dropped when a slot stops being sellable

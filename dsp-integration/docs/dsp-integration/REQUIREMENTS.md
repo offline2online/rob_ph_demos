@@ -1345,6 +1345,11 @@ retailer switch DSP integration on and off.
     build's feature flag off.
   - Windows already sold are still billed when they end: they were
     delivered.
+  - On Display Types → Playlist Settings → Slot assignment, **Advertiser is
+    greyed out, not hidden**, in a slot's owner list (Rob, 24 Sep 2026).
+    A slot that is already an Advertiser slot keeps it, with its
+    assignment; no new Advertiser slot can be set up. Its tooltip says to
+    enable DSP Integration. The API refuses a new Advertiser slot too.
 - **Switching it off deletes nothing** (for testing, and for good): the
   seller-of-record fields, the DSPs and their credentials, advertiser
   settings, advertisers, campaigns and bookings all stay. Switching back on
@@ -1926,7 +1931,8 @@ playback analytics.**
   assignment by owner, or *Default settings*; phantom size/position; enabled
   features; zone count). *(Display Types)*
 - **Slot ownership editor**: each slot's label and owner — Headquarters,
-  Advertiser or Stores — and nothing else.
+  Advertiser or Stores — and nothing else. With DSP integration switched
+  off, Advertiser is greyed out for a slot that isn't one already.
   *(Display Types → Playlist Settings → Slot assignment)*
 - **Multi-zone layout designer** for signage. *(Display Types → Multi-Zone Layout)*
 - **Venue and screen metadata** per store and display. *(spec only)*

@@ -307,7 +307,7 @@ that plugs into the existing campaign table (see
 
 | Method | Path | Purpose |
 |---|---|---|
-| PUT | `/admin/v1/display-types/{id}/extensions` | Save slot ownership (`slots[]`: label and owner `internal`/`advertiser`/`retail`) and venue metadata. Who a slot is assigned to and what targeting it supports are carried over from the stored slot — they are edited on `/admin/v1/available-inventory` — and dropped when a slot stops being an Advertiser slot. Other display type fields keep using the existing API. |
+| PUT | `/admin/v1/display-types/{id}/extensions` | Save slot ownership (`slots[]`: label and owner `internal`/`advertiser`/`retail`) and venue metadata. Who a slot is assigned to and what targeting it supports are carried over from the stored slot — they are edited on `/admin/v1/available-inventory` — and dropped when a slot stops being an Advertiser slot. While DSP integration is switched off, a slot can be `advertiser` only if it already was: a new one is `400 validation_failed` on `slots[i].owner`. Other display type fields keep using the existing API. |
 | GET | `/admin/v1/display-types/{id}/delete-check` | `canDelete` and `dependents[]` (assigned displays with store). |
 | DELETE | `/admin/v1/display-types/{id}` | Delete; `409 has_dependents` listing displays if any remain. |
 | GET | `/admin/v1/playlists/{id}/delete-check` | `canDelete` and `dependents[]` (display type defaults and zones). |

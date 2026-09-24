@@ -34,6 +34,8 @@ export const T = {
   text: '#333333',
   muted: 'rgba(0,0,0,0.45)',
   micro: '#9ca3af',
+  /* AntD v5 colorTextDisabled: the grey of a greyed-out option or control. */
+  disabled: 'rgba(0,0,0,0.25)',
   border: '#d9d9d9',
   borderSubtle: '#f0f0f0',
   divider: 'rgba(5,5,5,0.06)',
