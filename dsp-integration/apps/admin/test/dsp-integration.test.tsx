@@ -92,6 +92,8 @@ describe('DSP integration switch', () => {
     renderAt('/dsp-integration')
     const toggle = await screen.findByRole('switch', { name: 'Enable DSP Integration' })
     expect(toggle).not.toBeChecked()
+    /* Its tooltip says what it is for, at a high level (Rob, 24 Sep 2026). */
+    expect(screen.getByRole('button', { name: /retail media network.*sell ad inventory on your in-store screens.*new revenue opportunity/ })).toBeInTheDocument()
     expect(screen.queryByLabelText(/Organisation/)).not.toBeInTheDocument()
     expect(screen.queryByText('Incomplete')).not.toBeInTheDocument()
     /* Only Exchange settings in the section's list, and no DSPs yet. */

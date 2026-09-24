@@ -202,7 +202,7 @@ Page-title tooltips for the DSP Integration company pages:
 | **Shared Targeting Variables** | Variables shared through the API with connected DSPs. Once a variable is enabled for a DSP, that DSP's advertisers can use it in targeting conditions for more advanced campaign targeting; the platform evaluates the condition and never returns the value. They are the same variables as a campaign's Targeting tab. Choose which DSPs may use each one below; default platform variables only in this release. |
 
 The **Enable DSP Integration** switch at the top of Exchange settings has
-its own tooltip: *"Switches DSP integration on or off for your organisation. While it is off, no DSP is sent bid requests, sellers.json and the Partner API are unavailable, and Campaign Status and Advertisers / Inventory are hidden. Switching it off deletes nothing: switch it back on and every setting, DSP and campaign is as you left it."*
+its own tooltip, kept high level (Rob, 24 Sep 2026): *"For retailers running their digital signage as a retail media network. Enabling DSP integration lets you sell ad inventory on your in-store screens to advertisers through their DSPs, opening up a new revenue opportunity from the screens you already have."*
 
 Other tooltip wording is given in the relevant section below (for example
 the pricing fields in §4).
