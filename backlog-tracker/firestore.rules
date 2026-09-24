@@ -175,8 +175,10 @@ service cloud.firestore {
           && !("trainReady" in incoming())
           && !("trainStatus" in incoming()) && !("trainPrNumber" in incoming())
           && !("trainNote" in incoming()) && !("needsHumanMerge" in incoming())
-          && !("trainLocked" in incoming())));
+          && !("trainLocked" in incoming())))
+        && (!("releaseId" in incoming()) || incoming().releaseId == null || isNonEmptyBoundedString(incoming().releaseId, 100));
       allow update: if isEditor() && isNonEmptyBoundedString(incoming().name, 80)
+        && (!("releaseId" in incoming()) || incoming().releaseId == null || isNonEmptyBoundedString(incoming().releaseId, 100))
         && (isBoardAutomation() || (trainFieldsAreAutomationOnly() && trainLockOnlyLatches()));
       allow delete: if isEditor();
     }
@@ -189,6 +191,37 @@ service cloud.firestore {
     match /programs/{programId} {
       allow read: if isBoardReader();
       allow create, update: if isEditor() && isNonEmptyBoundedString(incoming().name, 80);
+      allow delete: if isEditor();
+    }
+
+    // Releases — a named, ordered product release. A project may point at
+    // one (projects.releaseId, above); an FAQ article may be bound to a
+    // range of them (faqArticles.introducedInReleaseId/removedInReleaseId,
+    // below). `order` is assigned once by the client at creation (max + 1)
+    // and is what those article bindings are range-compared on, so it may
+    // never move afterwards. `status` only ever advances draft -> live:
+    // marking a release live is what promotes its projects' approved FAQ
+    // proposals (functions/index.js onReleaseMarkedLive), and un-marking it
+    // can't un-promote them, so the rules refuse the attempt rather than
+    // let the board say something the help centre doesn't.
+    function releaseStatusOnlyAdvances() {
+      return !(resource.data.status == "live" && incoming().status == "draft");
+    }
+    function isValidRelease() {
+      return isNonEmptyBoundedString(incoming().name, 120)
+        && incoming().status in ["draft", "live"]
+        && incoming().order is number
+        && (!("version" in incoming()) || incoming().version == null || isNonEmptyBoundedString(incoming().version, 40))
+        && (!("createdByEmail" in incoming()) || incoming().createdByEmail == null || isNonEmptyBoundedString(incoming().createdByEmail, 200))
+        && (!("updatedByEmail" in incoming()) || incoming().updatedByEmail == null || isNonEmptyBoundedString(incoming().updatedByEmail, 200))
+        && (!("madeLiveAt" in incoming()) || incoming().madeLiveAt == null || incoming().madeLiveAt is timestamp);
+    }
+    match /releases/{releaseId} {
+      allow read: if isBoardReader();
+      allow create: if isEditor() && isValidRelease();
+      allow update: if isEditor() && isValidRelease()
+        && incoming().order == resource.data.order
+        && releaseStatusOnlyAdvances();
       allow delete: if isEditor();
     }
 
@@ -416,6 +449,10 @@ service cloud.firestore {
         && (!("summary" in incoming()) || incoming().summary is string && incoming().summary.size() <= 400)
         && (!("keywords" in incoming()) || incoming().keywords is list && incoming().keywords.size() <= 30)
         && (!("docType" in incoming()) || incoming().docType in ["faq", "how-to", "reference", "explanation"])
+        // Release binding (see match /releases above): optional release ids,
+        // null/absent meaning open-ended on that side.
+        && (!("introducedInReleaseId" in incoming()) || incoming().introducedInReleaseId == null || isNonEmptyBoundedString(incoming().introducedInReleaseId, 100))
+        && (!("removedInReleaseId" in incoming()) || incoming().removedInReleaseId == null || isNonEmptyBoundedString(incoming().removedInReleaseId, 100))
         && incoming().status in ["draft", "published"]
         && incoming().order is number;
       allow delete: if isFaqEditor();

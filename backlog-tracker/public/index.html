@@ -99,6 +99,7 @@
       <button type="button" class="nav-drawer-item nav-drawer-item-home" id="nav-ph-console-btn">Agent console</button>
       <button type="button" class="nav-drawer-item" id="faq-articles-btn">FAQ Management</button>
       <button type="button" class="nav-drawer-item" id="skills-btn">Skills</button>
+      <button type="button" class="nav-drawer-item" id="releases-btn">Releases</button>
       <button type="button" class="nav-drawer-item" id="faq-settings-btn">Settings</button>
       <!-- Sign out moved in here from the topbar (qMJeQkmhYwcXFTjeOJw0-2):
            needed rarely, not worth permanent space in the sticky mobile
@@ -465,6 +466,15 @@
       </div>
 
       <div class="docs-block">
+        <div class="docs-block-header">
+          <h3>Release</h3>
+          <button type="button" class="btn-ghost" id="docs-open-releases-btn">Manage releases</button>
+        </div>
+        <p class="field-hint">The release this project ships in. When set, approved FAQ updates from this project's tickets wait for the release to be marked live, then go live together. Create a release on the Releases page first.</p>
+        <select id="docs-release-select"></select>
+      </div>
+
+      <div class="docs-block">
         <h3>Repo folder</h3>
         <p class="field-hint">The join between this project and its folder in <code>rob_ph_demos</code> — read by <code>projectFolderOf()</code> to place a Routine session's folder-relative <code>patchFiles</code> correctly. Repo-root-relative, no trailing slash.</p>
         <input type="text" id="docs-repo-folder-input" maxlength="80" placeholder="e.g. dsp-integration">
@@ -682,6 +692,11 @@
               <label class="field-label" for="fa-program-select">Product / Program</label>
               <select id="fa-program-select"></select>
               <p class="field-hint">Which product/program this article belongs to — the same Programs/Products used to group projects on the board. Required: this is what a deploy's FAQ impact review uses to find articles a shipped change might affect, so an unscoped article is invisible to it. Picking a linked project above fills this in automatically if that project has its own program set.</p>
+              <label class="field-label" for="fa-introduced-release-select">Introduced in release (optional)</label>
+              <select id="fa-introduced-release-select"></select>
+              <label class="field-label" for="fa-removed-release-select">Removed in release (optional)</label>
+              <select id="fa-removed-release-select"></select>
+              <p class="field-hint">Which releases this article applies to: from the release it was introduced in, up to (not including) the one it was removed in. Leave both unset for an article that applies to every release. Releases are managed from the Releases page in the menu.</p>
               <label class="fa-needs-review-toggle">
                 <input type="checkbox" id="fa-needs-review">
                 Needs review
@@ -958,6 +973,37 @@
       </div>
       <div id="skills-list"></div>
       <p class="empty-hint" id="skills-empty" hidden>No skills yet.</p>
+    </section>
+
+    <!-- Releases page — every release, newest first, from the nav drawer's
+         "Releases" item (app.js openReleasesPage). Any signed-in member can
+         read it; creating a release and marking one live are editor-only,
+         same [data-editor-only] convention as the Skills page above. -->
+    <section class="archive-page" id="releases-page" hidden>
+      <div class="page-header">
+        <h2>Releases</h2>
+        <span class="page-header-count" id="releases-count">0 releases</span>
+      </div>
+      <p class="field-hint">A release bundles projects so their approved FAQ updates go live on the help centre together, the moment the release is marked live. Marking a release live can't be undone.</p>
+      <div class="form-row" style="justify-content:flex-end;margin-bottom:12px;">
+        <button type="button" class="btn-primary" id="releases-add-btn" data-editor-only>+ New release</button>
+      </div>
+      <div class="archive-table-wrap">
+        <table class="archive-table">
+          <thead>
+            <tr>
+              <th>Release</th>
+              <th>Version</th>
+              <th>Status</th>
+              <th>Projects</th>
+              <th>Created</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="releases-table-body"></tbody>
+        </table>
+        <p class="empty-hint" id="releases-empty" hidden>No releases yet.</p>
+      </div>
     </section>
 
     <!-- Phone only: the actions of whichever project you're currently

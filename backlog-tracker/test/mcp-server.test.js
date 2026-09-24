@@ -348,6 +348,41 @@ async function rpc(token, method, params, id = 1) {
     assert.strictEqual(payload.category, "Pricing");
   });
 
+  await test("filters the help centre by release, defaulting to the current live one", async () => {
+    env.store.col("releases").set("rel1", { name: "September", version: "1.0", status: "live", order: 1 });
+    env.store.col("releases").set("rel2", { name: "October", version: "1.1", status: "live", order: 2 });
+    env.store.col("releases").set("rel3", { name: "November", version: "1.2", status: "draft", order: 3 });
+    // Removed in October: applies to September only.
+    env.store.col("faqArticles").set("artOld", { categoryId: "cat1", title: "Old offer screen", slug: "old-offer", bodyMd: "offer", status: "published", introducedInReleaseId: "rel1", removedInReleaseId: "rel2" });
+    // Introduced in November (still a draft release): not live yet.
+    env.store.col("faqArticles").set("artNew", { categoryId: "cat1", title: "New offer screen", slug: "new-offer", bodyMd: "offer", status: "published", introducedInReleaseId: "rel3" });
+    try {
+      const ids = async (args) => JSON.parse((await rpc(tokens.access_token, "tools/call", { name: "search_faq", arguments: args })).body.result.content[0].text).results.map((r) => r.id).sort();
+      // Default = October (highest-order live). art1 has no binding, so it applies everywhere.
+      assert.deepStrictEqual(await ids({ query: "offer" }), ["art1"]);
+      assert.deepStrictEqual(await ids({ query: "offer", release: "rel1" }), ["art1", "artOld"]);
+      assert.deepStrictEqual(await ids({ query: "offer", release: "1.2" }), ["art1", "artNew"]);
+      const unknown = await rpc(tokens.access_token, "tools/call", { name: "search_faq", arguments: { query: "offer", release: "nope" } });
+      assert.ok(unknown.body.result.isError);
+
+      // get_faq_article: an explicit release it doesn't apply to is "not found";
+      // without one it's returned as before, flagged as outside the live release.
+      const explicit = await rpc(tokens.access_token, "tools/call", { name: "get_faq_article", arguments: { slug: "old-offer", release: "1.1" } });
+      assert.ok(explicit.body.result.isError);
+      const byDefault = JSON.parse((await rpc(tokens.access_token, "tools/call", { name: "get_faq_article", arguments: { slug: "old-offer" } })).body.result.content[0].text);
+      assert.strictEqual(byDefault.title, "Old offer screen");
+      assert.strictEqual(byDefault.appliesToRelease, false);
+      assert.strictEqual(byDefault.release.id, "rel2");
+    } finally {
+      ["rel1", "rel2", "rel3"].forEach((id) => env.store.col("releases").delete(id));
+      ["artOld", "artNew"].forEach((id) => env.store.col("faqArticles").delete(id));
+    }
+    // No releases at all: no filtering, exactly as before releases existed.
+    const payload = JSON.parse((await rpc(tokens.access_token, "tools/call", { name: "search_faq", arguments: { query: "local offer" } })).body.result.content[0].text);
+    assert.strictEqual(payload.release, null);
+    assert.deepStrictEqual(payload.results.map((r) => r.id), ["art1"]);
+  });
+
   await test("returns a project's requirements and interface contracts", async () => {
     env.store.col("projects").set("proj1", Object.assign(env.store.col("projects").get("proj1"), { requirementsMd: "# Requirements", readmeMd: "# Readme" }));
     env.store.col("interfaces").set("if1", { name: "LVP <-> Templates", projectIds: ["proj1", "proj2"], contentMd: "attribute envelope" });

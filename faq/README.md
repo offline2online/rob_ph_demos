@@ -32,6 +32,16 @@ admin console (backlog-tracker → FAQ Management)  ──edits──▶  Firest
   on the one line the whole file used to be. It's always fully derivable
   from `data/articles/*.json` plus the categories list; nothing should ever
   hand-edit it directly.
+- **`data/releases.json`** — every release (`{id, name, version, status,
+  order}`, order ascending), exported by `faq-export.js` from the console's
+  Releases page. An article whose metadata carries `introducedInReleaseId`
+  / `removedInReleaseId` is shown only for the releases in that range:
+  `js/faq-data.js` resolves the page's `?release=<id or version>` or, by
+  default, the highest-order live release, and filters both the article
+  lists and a single article page (out of range reads as "not found", like
+  a draft). No file, no releases, or none live and none asked for means no
+  filtering at all. See `backlog-tracker/REQUIREMENTS.md` →
+  "`releases/{releaseId}`".
 - **A `faq/data/index.json` merge conflict resolves itself, most of the
   time.** Because it aggregates every article's metadata into one file, it
   used to conflict whenever two different commits touched *any* two

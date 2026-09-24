@@ -1447,6 +1447,23 @@ default.
   row action. Full spec: `REQUIREMENTS.md` → "FAQ revision review".
   **A `functions/` change needs its own `firebase deploy --only
   functions`** — the promotion never happens until it's deployed.
+- **Releases — bundling FAQ updates with a product release.** The menu's
+  **Releases** page lists every `releases` doc (newest first) with
+  **+ New release** (name, optional version) and a one-way **Mark live**
+  per draft. A project is assigned to a release from its Docs page →
+  **Release** (`projects/{id}.releaseId`); while that release is a draft,
+  its approved proposals (`pendingRevision.sourceProjectId`) wait, and
+  marking it live promotes them all at once (`onReleaseMarkedLive` in
+  `functions/index.js`). Unassigned projects — including Backlog Tracker &
+  FAQs itself — promote exactly as before. Articles can also be bound to a
+  release range (editor → "Introduced in release" / "Removed in release");
+  `scripts/faq-export.js` exports `faq/data/releases.json`, and the public
+  site plus the MCP `search_faq`/`get_faq_article` tools show only the
+  articles that apply to the requested release (`?release=` / `release`),
+  by default the current live one — with no releases at all nothing is
+  filtered. `scripts/backfill-release-binding.js` (`--report-only` first;
+  idempotent, never overwrites) binds every unbound article to the current
+  live release. Full spec: `REQUIREMENTS.md` → "`releases/{releaseId}`".
 - **Seeding**: `scripts/seed-faq-data.js` (same insert-only `create()`
   pattern as `migrate-artifact-data.js`) seeds the **real** Help Center
   content — 9 categories and 108 articles — run automatically on every

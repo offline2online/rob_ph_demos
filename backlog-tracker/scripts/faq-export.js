@@ -1,5 +1,5 @@
 // Export help-centre content FROM Firestore into the repo snapshot
-// (faq/data/index.json + faq/data/articles/<id>.json).
+// (faq/data/index.json + faq/data/articles/<id>.json + faq/data/releases.json).
 //
 //   node faq-export.js
 //
@@ -51,6 +51,13 @@ async function main() {
       // article rendering exactly as before.
       sectionPicker: !!a.sectionPicker,
       sectionPickerLabel: a.sectionPickerLabel || "",
+      // Release binding (console article editor → "Introduced in release" /
+      // "Removed in release"). Only written when set, so an unbound article's
+      // snapshot line — every article, until the backfill runs — is
+      // byte-for-byte what it was before releases existed. faq-data.js reads
+      // these against releases.json below.
+      ...(a.introducedInReleaseId ? { introducedInReleaseId: a.introducedInReleaseId } : {}),
+      ...(a.removedInReleaseId ? { removedInReleaseId: a.removedInReleaseId } : {}),
       updatedAt: iso(a.updatedAt) || iso(a.publishedAt) || new Date().toISOString(),
       contentHash: hash(body),
     };
@@ -98,6 +105,26 @@ async function main() {
   if (JSON.stringify(previousSettings) !== JSON.stringify(settings)) {
     fs.writeFileSync(settingsPath, JSON.stringify(settings) + "\n");
     console.log("faq-export: settings.json updated");
+  }
+
+  // Releases — the public site's only view of them. faq-data.js resolves a
+  // reader's ?release= (or, by default, the highest-order live release)
+  // against this list and hides articles bound outside it; an empty list
+  // means the feature isn't in use and nothing is filtered. Order ascending,
+  // which is also creation order (order is assigned once and never moves).
+  // Same "only rewrite if it changed" treatment as the files above.
+  const releasesSnap = await db.collection("releases").get();
+  const releases = releasesSnap.docs.map((d) => {
+    const r = d.data();
+    return { id: d.id, name: r.name || "", version: r.version || null, status: r.status === "live" ? "live" : "draft", order: Number(r.order) || 0 };
+  });
+  releases.sort((x, y) => x.order - y.order || x.id.localeCompare(y.id));
+  const releasesPath = path.join(DATA_DIR, "releases.json");
+  let previousReleases = null;
+  try { previousReleases = JSON.parse(fs.readFileSync(releasesPath, "utf8")); } catch { /* first export */ }
+  if (JSON.stringify(previousReleases) !== JSON.stringify(releases)) {
+    fs.writeFileSync(releasesPath, JSON.stringify(releases, null, 2) + "\n");
+    console.log(`faq-export: releases.json updated (${releases.length} releases, ${releases.filter((r) => r.status === "live").length} live)`);
   }
 }
 
