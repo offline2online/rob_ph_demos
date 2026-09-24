@@ -194,7 +194,7 @@ Page-title tooltips for the DSP Integration company pages:
 
 | Page | Tooltip |
 |---|---|
-| **Exchange settings** | Sets up your organisation as the seller of record for its screens. Configurable here: organisation name, domain, seller ID and ad-ops contact email, all required. Once saved and complete, sellers.json is published at https://[domain]/sellers.json and every bid request carries your domain and seller ID in its SupplyChain; until then no DSP is sent bid requests. Not configurable (platform defaults): seller type (Publisher), OpenRTB 2.6, the DOOH object, the OpenOOH venue taxonomy, QPS and bid timeout. |
+| **Exchange settings** | Sets up your organisation as the seller of record for its screens. Configurable here: organisation name, domain, seller ID and ad-ops contact email, all required. Once saved and complete, sellers.json is published at https://[domain]/sellers.json and every bid request carries your domain and seller ID in its SupplyChain; until then no DSP is sent bid requests. Not configurable (platform defaults): seller type (Publisher), the DOOH object, the OpenOOH venue taxonomy, QPS and bid timeout. Bid requests use OpenRTB 2.6 as the minimum supported version for programmatic DOOH; the exchange is designed to adopt 2.7, 2.8 and later versions per DSP as the market moves. |
 | **Advertiser settings** | Company-wide advertiser settings, applied to every DSP. Configurable here: Pricing (currency, floor CPM, the personalised multiplier and the interactive cost per engagement), the Auction schedule (when bidding opens, play-window length, auction cutoff) and List management (advertiser and IAB category whitelists and blacklists). Read-only here: Where these apply (which DSPs use these lists or keep their own; unlink or relink on the DSP's page). Per-advertiser campaign approval and floor multipliers, and the inventory advertisers can buy, are on Advertisers / Inventory. |
 | **Shared Targeting Variables** | Variables shared through the API with connected DSPs. Once a variable is enabled for a DSP, that DSP's advertisers can use it in targeting conditions for more advanced campaign targeting; the platform evaluates the condition and never returns the value. They are the same variables as a campaign's Targeting tab. Choose which DSPs may use each one below; default platform variables only in this release. |
 
@@ -1324,8 +1324,20 @@ published.
 
 Fixed as **platform defaults**, not retailer settings: seller type
 (Publisher), a non-confidential listing, the `sellers.json` and SupplyChain
-contents, the OpenRTB version (2.6), the DOOH object, the OpenOOH venue
-taxonomy, the impression multiplier field, QPS ceiling and bid timeout.
+contents, the DOOH object, the OpenOOH venue taxonomy, the impression
+multiplier field, QPS ceiling and bid timeout.
+
+**OpenRTB 2.6 is the minimum supported version for programmatic DOOH, not a
+fixed platform default.** 2.6 is the floor: it introduced the DOOH object,
+venue taxonomy hooks and impression multiplier that every DSP buying
+programmatic out-of-home must speak. But the market will move to 2.7, 2.8
+and beyond, and the platform must adopt later versions as DSPs and the
+market move — this is what tier 1 already means (§6 "Two API tiers"): bid
+requests are constructed per DSP in the exchange layer, so a later version
+is a change contained within that construction, not a platform-wide
+ripple. Treat the version as a per-DSP capability the exchange negotiates
+or is configured with, defaulting to 2.6 as the minimum, rather than a
+hardcoded global constant.
 
 ### DSP setup — what the retailer supplies per DSP
 
