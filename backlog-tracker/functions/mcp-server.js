@@ -1069,7 +1069,7 @@ async function audit(session, tool, detail) {
 }
 
 // ── Composable UI resources (embedded HTML cards) ───────────────────────────
-// get_ready_for_testing_board (below), plus approve_deploy_to_main's own guard
+// get_ready_for_testing_board and get_approved_for_deployment_board (below)
 // return, alongside the usual JSON, a self-contained HTML "card list" as an
 // MCP embedded resource (content type "resource", mimeType "text/html") —
 // the standard MCP tool-result content block, not a bespoke extension — so a
@@ -1119,8 +1119,9 @@ function cardShellHTML(headline, subhead, bodyHTML) {
 </div>`;
 }
 
-// One ticket, as a card. `extraPillsHTML` lets a caller add extra context
-// pills without this function needing to know what they mean.
+// One ticket, as a card. `extraPillsHTML` lets a caller add train/PR context
+// (see get_approved_for_deployment_board) without this function needing to
+// know about the deployment train at all.
 function ticketCardHTML(item, extraPillsHTML) {
   const bodyText = item.testSummary || item.desc || "";
   const hasBoth = item.testSummary && item.desc && item.testSummary !== item.desc;
@@ -1145,9 +1146,10 @@ function ticketCardHTML(item, extraPillsHTML) {
 
 // Mirrors public/js/app.js's deployNotifyButtonHTML gate exactly
 // (pendingTrainRevertsForProject + trainItemsForProject +
-// legacyDeployItemsForProject) — see that file. approve_deploy_to_main
-// calls this so it can never fire a deploy the console's own button would
-// currently be hiding.
+// legacyDeployItemsForProject) — see that file. Both
+// get_approved_for_deployment_board and approve_deploy_to_main call this so
+// the two can never disagree about whether the console's own Deploy to Main
+// button would be showing right now.
 async function deployGuardForProject(pid) {
   const snap = await db().collection("backlogItems").where("projectId", "==", pid).get();
   const items = [];
@@ -1482,6 +1484,79 @@ const TOOLS = [
           { type: "text", text: `${headline}: ${cards.length} ticket(s). Read-only — this view can't change status.` },
           { type: "resource", resource: { uri: `ui://backlog-tracker/ready-for-testing/${a.projectId || "all"}`, mimeType: "text/html", text: html } },
           { type: "text", text: JSON.stringify({ projectId: a.projectId || null, count: cards.length, items: cards }, null, 2) },
+        ],
+      };
+    },
+  },
+  {
+    name: "get_approved_for_deployment_board",
+    description: "A composable view of the Approved for Deployment column: every ticket already tested and confirmed, just waiting to be merged, shown as a card with its deploy/train context (on the train + which branch, or its own PR). Returns an embedded HTML resource a supporting client renders inline in the conversation, alongside the same data as plain text/JSON. Read-only — this view can't change status; when a project's whole train is approved and Ready for Testing is empty for it, this names approve_deploy_to_main as the tool that actually fires Deploy to Main.",
+    scope: "board.read",
+    inputSchema: {
+      type: "object",
+      properties: {
+        projectId: { type: "string", description: "Restrict to one project (from list_projects). Omit to see every project's Approved for Deployment column at once — deploy-readiness can only be reported with a projectId, since it's a per-project question." },
+      },
+      additionalProperties: false,
+    },
+    async run(args) {
+      const a = args || {};
+      const projects = await loadProjectsById();
+      if (a.projectId && !projects.has(String(a.projectId))) return toolError(`No project with id ${a.projectId}. Call list_projects first.`);
+      let q = db().collection("backlogItems");
+      if (a.projectId) q = q.where("projectId", "==", String(a.projectId));
+      const snap = await q.limit(MAX_READ_DOCS).get();
+      const rows = [];
+      snap.forEach((doc) => {
+        const d = doc.data() || {};
+        if ((d.status || "backlog") !== "ready-to-publish") return;
+        rows.push({ doc, d });
+      });
+      rows.sort((x, y) => (y.d.updatedAt?.toMillis?.() || 0) - (x.d.updatedAt?.toMillis?.() || 0));
+
+      const guard = a.projectId ? await deployGuardForProject(String(a.projectId)) : null;
+
+      const cards = rows.map(({ doc, d }) => {
+        const project = projects.get(d.projectId);
+        return {
+          id: doc.id,
+          projectId: d.projectId || null,
+          project: project ? project.name : null,
+          title: d.title || "",
+          testSummary: d.testSummary || null,
+          desc: d.desc || "",
+          previewUrl: d.previewUrl || null,
+          testVersion: d.testVersion || null,
+          onTrain: !!d.deployCommit,
+          deployCommit: d.deployCommit || null,
+          prNumber: d.prNumber || null,
+          deployBranch: (project && project.deployBranch) || null,
+          board: `${PUBLIC_ORIGIN}/#item-${doc.id}`,
+        };
+      });
+
+      const projectLabel = a.projectId ? ((projects.get(String(a.projectId)) || {}).name || a.projectId) : "every project";
+      const readyLine = guard ? (guard.ok
+        ? "This project's whole train is Approved for Deployment — ask your agent to call approve_deploy_to_main to fire Deploy to Main."
+        : guard.reason) : null;
+      const headline = `Approved for Deployment — ${projectLabel}`;
+      const subhead = cards.length
+        ? `${cards.length} ticket${cards.length === 1 ? "" : "s"} waiting to ship.`
+        : "Nothing Approved for Deployment right now.";
+      const readyBannerHTML = readyLine
+        ? `<div style="font-size:12px;font-weight:600;color:${guard.ok ? PH_TOKENS.success : PH_TOKENS.warning};margin-bottom:10px;">${escapeHTML(readyLine)}</div>`
+        : "";
+      const cardsHTML = cards.map((c) => ticketCardHTML(c, c.onTrain
+        ? pillHTML(`On train: ${c.deployBranch || "?"}`, "primary")
+        : (c.prNumber ? pillHTML(`PR #${c.prNumber}`, "neutral") : ""))).join("\n")
+        || `<div style="font-size:13px;color:${PH_TOKENS.muted};">Nothing to show.</div>`;
+      const html = cardShellHTML(headline, subhead, readyBannerHTML + cardsHTML);
+
+      return {
+        content: [
+          { type: "text", text: `${headline}: ${cards.length} ticket(s).${readyLine ? ` ${readyLine}` : ""}` },
+          { type: "resource", resource: { uri: `ui://backlog-tracker/approved-for-deployment/${a.projectId || "all"}`, mimeType: "text/html", text: html } },
+          { type: "text", text: JSON.stringify({ projectId: a.projectId || null, count: cards.length, readyToDeploy: guard ? guard.ok : null, items: cards }, null, 2) },
         ],
       };
     },
@@ -2590,7 +2665,7 @@ async function dispatchRpc(msg, session, ctx) {
         serverInfo: {
           name: "ph-agent-console",
           title: "PH Agent Console",
-          version: "1.2.2",
+          version: "1.3.0",
           websiteUrl: PUBLIC_ORIGIN,
           description: "The Personalisation Hub prototype backlog board and help centre.",
           icons: SERVER_ICONS,

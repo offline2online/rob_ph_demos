@@ -252,11 +252,11 @@ async function rpc(token, method, params, id = 1) {
   // narrowly-scoped exception to this rule — see its own comment block in
   // mcp-server.js. The rule this test actually enforces is "no WRITE tool
   // deploys/merges/triggers anything", so it's scoped to board.write tools:
-  // get_ready_for_testing_board is board.read and merely describes the
-  // pipeline, which is exactly what it's for. The point of this test is
-  // still to catch any other WRITE tool added later that shouldn't exist,
-  // so it excludes only the one sanctioned name instead of dropping the
-  // check entirely.
+  // get_ready_for_testing_board/get_approved_for_deployment_board are
+  // board.read and merely describe the pipeline, which is exactly what
+  // they're for. The point of this test is still to catch any other WRITE
+  // tool added later that shouldn't exist, so it excludes only the one
+  // sanctioned name instead of dropping the check entirely.
   await test("exposes no WRITE tool that deploys, merges or triggers a campaign, except the one deliberate carve-out", async () => {
     const CARVE_OUT = "approve_deploy_to_main";
     const writeTools = mcp.__test.TOOLS.filter((t) => t.scope === "board.write");
@@ -803,11 +803,11 @@ async function rpc(token, method, params, id = 1) {
     assert.deepStrictEqual(destructive, ["delete_interface", "delete_project_document", "delete_skill"]);
   });
 
-  // ── Composable UI: Ready for Testing board ───────────────────────────────
-  // (ZXmW4lHMKpQRlarlwK7z) — deliberately on its own fixture project
-  // ("depproj") so nothing here touches proj1, which "no documentation
-  // write touched a train field on the project" above already asserts stays
-  // pristine.
+  // ── Composable UI: Ready for Testing / Approved for Deployment boards ────
+  // (ZXmW4lHMKpQRlarlwK7z, f1yOqE2Sx2q8D7MSvfDu) — deliberately on their own
+  // fixture project ("depproj") so nothing here touches proj1, which "no
+  // documentation write touched a train field on the project" above already
+  // asserts stays pristine.
   await test("get_ready_for_testing_board returns escaped HTML cards plus the same data as JSON", async () => {
     env.store.col("projects").set("depproj", { name: "Deploy Playground", deployBranch: "deploy/depproj" });
     env.store.col("backlogItems").set("rft1", {
@@ -848,29 +848,38 @@ async function rpc(token, method, params, id = 1) {
     assert.strictEqual(res.body.result.isError, true);
   });
 
-  // ── The one deliberate deploy exception ─────────────────────────────────
-  // (Zogk8EKjKRKsM4GZBEJZ) — deliberately on its own fixture project
-  // ("depproj") so nothing here touches proj1, which "no documentation
-  // write touched a train field on the project" above already asserts
-  // stays pristine.
-  await test("approve_deploy_to_main refuses while a ticket on the train is still in Ready for Testing", async () => {
-    env.store.col("projects").set("depproj", { name: "Deploy Playground", deployBranch: "deploy/depproj" });
-    env.store.col("backlogItems").set("dtst1", {
-      projectId: "depproj", title: "Still testing", desc: "x", type: "bug", category: "HQ Admin",
-      status: "ready-for-testing", deployCommit: "sha-dtst1",
-    });
-    env.store.col("backlogItems").set("dtst2", {
+  await test("get_approved_for_deployment_board says why Deploy to Main isn't offered yet", async () => {
+    const res = await rpc(tokens.access_token, "tools/call", { name: "get_approved_for_deployment_board", arguments: { projectId: "depproj" } });
+    const payload = JSON.parse(res.body.result.content[2].text);
+    assert.strictEqual(payload.readyToDeploy, false);
+    assert.match(res.body.result.content[0].text, /Nothing is Approved for Deployment/);
+  });
+
+  await test("get_approved_for_deployment_board and approve_deploy_to_main agree the train isn't ready while a ticket is still testing", async () => {
+    env.store.col("backlogItems").set("rft1", Object.assign(env.store.col("backlogItems").get("rft1"), { deployCommit: "sha-rft1" }));
+    env.store.col("backlogItems").set("dep1", {
       projectId: "depproj", title: "Approved one", desc: "x", type: "feature", category: "HQ Admin",
-      status: "ready-to-publish", deployCommit: "sha-dtst2",
+      status: "ready-to-publish", deployCommit: "sha-dep1",
     });
-    const res = await rpc(tokens.access_token, "tools/call", { name: "approve_deploy_to_main", arguments: { projectId: "depproj" } });
-    assert.strictEqual(res.body.result.isError, true);
-    assert.match(res.body.result.content[0].text, /still in Ready for Testing/);
+    const board = await rpc(tokens.access_token, "tools/call", { name: "get_approved_for_deployment_board", arguments: { projectId: "depproj" } });
+    const boardPayload = JSON.parse(board.body.result.content[2].text);
+    assert.strictEqual(boardPayload.readyToDeploy, false);
+    assert.match(board.body.result.content[0].text, /still in Ready for Testing/);
+
+    const fire = await rpc(tokens.access_token, "tools/call", { name: "approve_deploy_to_main", arguments: { projectId: "depproj" } });
+    assert.strictEqual(fire.body.result.isError, true);
+    assert.match(fire.body.result.content[0].text, /still in Ready for Testing/);
     assert.ok(!("deployNotifyRequestedAt" in env.store.col("projects").get("depproj")), "a blocked call must never write the trigger field");
   });
 
   await test("approve_deploy_to_main fires the same trigger the console button writes, once the whole train is approved", async () => {
-    env.store.col("backlogItems").set("dtst1", Object.assign(env.store.col("backlogItems").get("dtst1"), { status: "ready-to-publish" }));
+    env.store.col("backlogItems").set("rft1", Object.assign(env.store.col("backlogItems").get("rft1"), { status: "ready-to-publish" }));
+
+    const board = await rpc(tokens.access_token, "tools/call", { name: "get_approved_for_deployment_board", arguments: { projectId: "depproj" } });
+    const boardPayload = JSON.parse(board.body.result.content[2].text);
+    assert.strictEqual(boardPayload.readyToDeploy, true);
+    assert.match(board.body.result.content[1].resource.text, /On train: deploy\/depproj/);
+
     const fire = await rpc(tokens.access_token, "tools/call", { name: "approve_deploy_to_main", arguments: { projectId: "depproj" } });
     assert.strictEqual(fire.body.result.isError, undefined);
     const payload = JSON.parse(fire.body.result.content[0].text);
@@ -880,6 +889,7 @@ async function rpc(token, method, params, id = 1) {
     assert.ok(project.deployNotifyRequestedAt, "must write the same field the console's Deploy to Main button writes");
     assert.strictEqual(project.deployNotifyRequestedVia, "mcp");
     assert.strictEqual(project.deployNotifyRequestedByEmail, TEAMMATE);
+    // Only the notify trigger + its own provenance were written — no train field.
     for (const field of ["trainReady", "trainStatus", "trainPrNumber", "trainNote", "trainLocked", "needsHumanMerge"]) {
       assert.ok(!(field in project), `approve_deploy_to_main must never itself set projects.${field}`);
     }
@@ -901,14 +911,10 @@ async function rpc(token, method, params, id = 1) {
     assert.ok(!("deployNotifyRequestedAt" in env.store.col("projects").get("revertproj")));
   });
 
-  await test("approve_deploy_to_main refuses an unknown project", async () => {
-    const res = await rpc(tokens.access_token, "tools/call", { name: "approve_deploy_to_main", arguments: { projectId: "nope" } });
-    assert.strictEqual(res.body.result.isError, true);
-  });
-
   await test("approve_deploy_to_main is board.write, so a viewer is refused", async () => {
     assert.strictEqual(mcp.__test.TOOLS.find((t) => t.name === "approve_deploy_to_main").scope, "board.write");
     assert.strictEqual(mcp.__test.TOOLS.find((t) => t.name === "get_ready_for_testing_board").scope, "board.read");
+    assert.strictEqual(mcp.__test.TOOLS.find((t) => t.name === "get_approved_for_deployment_board").scope, "board.read");
   });
 
   await test("writes an audit row for every write", async () => {

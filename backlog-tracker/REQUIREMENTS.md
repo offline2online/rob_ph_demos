@@ -1746,9 +1746,9 @@ Required properties, each covered by `test/mcp-server.test.js`:
 
 **Tool surface — and its hard limit.** Read: `whoami`, `list_projects`,
 `list_backlog_items`, `get_backlog_item`, `get_ready_for_testing_board`,
-`get_project_docs`, `list_doc_revisions`, `get_doc_revision`, `search_faq`,
-`get_faq_article`, `list_pending_faq_revisions`, `get_faq_revision`,
-`list_skills`, `get_skill`.
+`get_approved_for_deployment_board`, `get_project_docs`,
+`list_doc_revisions`, `get_doc_revision`, `search_faq`, `get_faq_article`,
+`list_pending_faq_revisions`, `get_faq_revision`, `list_skills`, `get_skill`.
 Write (editor/admin only) — tickets: `create_backlog_item` (always into
 `backlog`), `update_backlog_item` (title, desc, type, category only),
 `add_item_comment`; documentation: `set_project_requirements`,
@@ -1762,16 +1762,21 @@ these two collections' write tools do and don't do; skills library:
 `upload_skill`, `update_skill`, `delete_skill`; deploy (one deliberate
 exception — see below): `approve_deploy_to_main`.
 
-**`get_ready_for_testing_board` (`board.read`) is also composable.** It
-returns, alongside its usual JSON, an embedded HTML resource (an MCP
-`resource` content block, `mimeType: "text/html"`) rendering the Ready for
-Testing column as ticket cards (title, testSummary/desc, test link,
-testVersion, a link back to the ticket) for a client that renders embedded
-resources inline in the conversation. Pure static markup: no `<script>`,
-no external stylesheet/font fetch, no `<form>`, nothing that could change
-a ticket's status from the widget itself — every user-authored string is
-escaped and a linked URL is only ever rendered as a clickable `href` when
-it parses as `https://`.
+**The two `board.read` "board" tools above are also composable.**
+`get_ready_for_testing_board` and `get_approved_for_deployment_board`
+return, alongside their usual JSON, an embedded HTML resource (an MCP
+`resource` content block, `mimeType: "text/html"`) rendering the column as
+ticket cards (title, testSummary/desc, test link, testVersion, a link back
+to the ticket, and — for Approved for Deployment — train/PR context), for
+a client that renders embedded resources inline in the conversation. Pure
+static markup: no `<script>`, no external stylesheet/font fetch, no
+`<form>`, nothing that could change a ticket's status from the widget
+itself — every user-authored string is escaped and a linked URL is only
+ever rendered as a clickable `href` when it parses as `https://`.
+`get_approved_for_deployment_board` additionally reports, per project,
+whether that project's whole train is ready for `approve_deploy_to_main`
+below (only meaningful with a `projectId` filter — it is a per-project
+question).
 
 **The skills library is organisation-wide, not per-project** — `list_skills`
 (light summaries) and `get_skill` (full file contents, by id or slug) need
