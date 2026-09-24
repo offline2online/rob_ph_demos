@@ -403,7 +403,7 @@ through Merged to Main (Live). Both fields are in
 the REST-primed first paint rather than popping in when the realtime
 listener lands.
 
-## Adding a project — link it to GitHub, or the automation guesses
+## Adding a project — link it to GitHub, or the automation refuses
 
 A project on this board and a folder in `rob_ph_demos` are two halves of
 one thing, and nothing joins them automatically. The join is
@@ -412,12 +412,14 @@ one thing, and nothing joins them automatically. The join is
 deploy-branch slug (`deploy/dsp-integration` → `dsp-integration/`), and
 failing that to nothing.
 
-"Nothing" is not harmless. A Routine session working inside a project's
-folder hands back `patchFiles` paths relative to that folder; with no
-folder to resolve them against, the automation writes them as new files at
-the repo root. PR #185 (22 Sep 2026) did exactly that — seven tickets
-wrote root-level copies, overwrote the root `README.md`, changed none of
-the real files, and every card still read "Deployed / Main Branch (Live)".
+"Nothing" used to not be harmless. A Routine session working inside a
+project's folder hands back `patchFiles` paths relative to that folder;
+with no folder to resolve them against, the automation used to write them
+as new files at the repo root. PR #185 (22 Sep 2026) did exactly that —
+seven tickets wrote root-level copies, overwrote the root `README.md`,
+changed none of the real files, and every card still read "Deployed / Main
+Branch (Live)". It no longer can: see "The automation refuses rather than
+guesses" below.
 
 Creating a project therefore means four things, not one:
 
@@ -430,18 +432,46 @@ Creating a project therefore means four things, not one:
 4. `requirementsMd` / `readmeMd` are filled from those two files in the
    same session.
 
-The New Project modal asks for a name and a program, and nothing else — so
-steps 2 and 3 are a direct write today (`repoFolder` is not in the MCP
-server's `PROJECT_WRITABLE_FIELDS`, so an agent cannot set it either).
-Making the modal ask, and making the automation refuse a folder-relative
-patch for a project with no folder, is tracked on this project's own
-backlog.
+**The New Project modal now asks for the repo folder alongside the name**
+(`np-repo-folder-input` in `public/index.html`, wired in `public/js/app.js`)
+— required by default, with an explicit "this project has no single
+folder" checkbox for the case that genuinely applies. On submit it writes
+both `repoFolder` and a `deploy/<folder>` `deployBranch` in the same
+`addProject()` create (steps 2 and 3 above, done together, at creation
+time — `firestore.rules`' `isValidNewDeployBranch()` lets an editor name a
+brand-new project's branch this once, since there is no existing train yet
+to redirect the way repointing an established project's `deployBranch`
+still is). It also checks the new folder isn't already claimed by another
+project (`projectWithRepoFolder()`) before creating. The field is editable
+afterward from the project's own Docs page, next to Requirements and
+README — the natural place to retrofit it onto a project created before
+this shipped. `repoFolder` still isn't in the MCP server's
+`PROJECT_WRITABLE_FIELDS`, so an agent can't set it over MCP; the console
+(a person, or a runner with the board credential) still has to.
 
 A project with no folder of its own is legitimate but exceptional: this
-one owns both `backlog-tracker/` and `faq/`, so its `repoFolder` stays
-unset deliberately and its patches must always use repo-root paths. Where
-that is the case, say so in the project's README — "deliberately unset"
-and "nobody set it" look identical otherwise.
+one owns both `backlog-tracker/` and `faq/`, so it uses the modal's escape
+— `repoFolderNotApplicable: true` — rather than just leaving `repoFolder`
+unset, and its patches must always use repo-root paths. Where that is the
+case, say so in the project's README too — "deliberately unset" and
+"nobody set it" still look identical to a human skimming Firestore
+directly, even though the automation itself (next section) now tells them
+apart.
+
+### The automation refuses rather than guesses
+
+`processApplyPatch` in `scripts/run-backlog-automation.js` calls
+`projectFolderOf(project)` before doing any git work. When that returns
+`null` — no `repoFolder` set, or it's set to something that doesn't exist
+in this repo (a typo) — and `patchFilesLookFolderRelative(item.patchFiles)`
+says the patch looks like it was written relative to some folder (none of
+its paths' top-level segments are real entries at the repo root), the item
+is refused: `patchReady` is cleared, a note explains exactly why and how to
+fix it, and nothing is written to disk at all. A patch that genuinely
+belongs at the repo root (this project's own tickets, an item on a project
+that correctly has no single folder) always has at least one path whose
+top segment already exists there, so it's never caught by this check — see
+`test/patch-paths.test.js` for the exact cases.
 
 ## Retiring a project — archive keeps it, delete does not
 

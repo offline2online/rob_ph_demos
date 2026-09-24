@@ -275,15 +275,29 @@ is worked:
 
 A project with no folder of its own is legitimate but is the exception,
 not the default — "Backlog Tracker & FAQs" owns both `backlog-tracker/`
-and `faq/`, so its `repoFolder` stays unset on purpose and its patches
-must always use repo-root paths. Say so on the project's README when that
-is the case, so the next person can tell "deliberately unset" from
-"nobody set it".
+and `faq/`. Mark that explicitly (`projects/{id}.repoFolderNotApplicable:
+true`, the New Project modal's "this project has no single folder" escape,
+also settable afterward from the project's Docs page) rather than just
+leaving `repoFolder` unset, so the next person — and
+`run-backlog-automation.js`'s own refuse-rather-than-guess check below —
+can tell "deliberately no folder" from "nobody set it yet". Also say so on
+the project's README.
 
-Until the New Project modal asks for the folder, steps 2 and 3 are a
-direct write (`repoFolder` is not in the MCP server's
-`PROJECT_WRITABLE_FIELDS`, so an agent cannot set it — it needs the
-console, or a runner with the board credential).
+**The New Project modal asks for the folder now** — required by default,
+with that same "no single folder" escape — and writes `repoFolder` (or
+`repoFolderNotApplicable`) plus a `deploy/<folder>` `deployBranch` in the
+same create. It's also editable afterward from the project's Docs page,
+next to Requirements and README. Retrofitting an OLDER project created
+before this shipped still needs the Docs page (now the normal way) or a
+direct Firestore write — `repoFolder` still isn't in the MCP server's
+`PROJECT_WRITABLE_FIELDS`, so an agent can't set it over MCP either way.
+
+Belt-and-braces: a ticket handed to the Routine whose `patchFiles` look
+folder-relative (none of their top-level path segments exist at the repo
+root), for a project with no resolvable folder, is refused by
+`run-backlog-automation.js` with a comment on the card instead of being
+written to the repo root — see `patchFilesLookFolderRelative()` in
+`backlog-tracker/scripts/run-backlog-automation.js`.
 
 Within each project, the columns are: **Backlog → Ready for Testing → Live on
 Feature Branch → Merged to Main (Live)** (status keys: `backlog`,

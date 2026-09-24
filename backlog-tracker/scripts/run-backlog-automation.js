@@ -461,6 +461,24 @@ function normalisePatchPaths(patchFiles, folder, exists = (p) => fs.existsSync(p
   return { files, moved };
 }
 
+// A project with no resolvable folder (projectFolderOf() returned null —
+// no repoFolder set, or it's set to something that doesn't exist in this
+// repo) has nowhere to place a patch written relative to that folder:
+// normalisePatchPaths is a no-op without a candidate folder to test paths
+// against, so such a patch would land literally where it says, which is
+// exactly how PR #185 (22 Sep 2026) wrote seven tickets' files to the repo
+// root. This is the signal that guards against a repeat: without a folder
+// to compare against, the strongest available evidence a patch is written
+// relative to SOME folder rather than the repo root is that none of its
+// paths' top-level segments are real entries at the root at all — a
+// genuinely root-relative patch almost always touches at least one
+// (backlog-tracker/, faq/, menu-board-demo/, a root file, or .github/).
+function patchFilesLookFolderRelative(patchFiles, exists = (p) => fs.existsSync(path.join(process.cwd(), p))) {
+  const real = (patchFiles || []).filter((f) => f && typeof f.path === "string" && !f.path.includes(".."));
+  if (!real.length) return false;
+  return !real.some((f) => f.path.startsWith(WORKFLOW_PATH_PREFIX) || exists(f.path.split("/")[0]));
+}
+
 function applyPatchFiles(patchFiles) {
   for (const f of patchFiles || []) {
     if (!f || typeof f.path !== "string" || f.path.includes("..")) {
@@ -1018,6 +1036,32 @@ async function processApplyPatch(item) {
     return;
   }
   const project = await getProject(projectId);
+
+  // Refuse rather than guess (root CLAUDE.md → "Linking a new project to
+  // GitHub", item 3): a project this script cannot place under a real
+  // folder gets a comment instead of files quietly written to the repo
+  // root. Checked before ensureDeployBranch/checkoutTrain — a refused item
+  // gets no branch work at all.
+  if (!projectFolderOf(project) && patchFilesLookFolderRelative(item.patchFiles)) {
+    console.log(`[apply-patch] ${item.id}: refusing — patchFiles look folder-relative but project ${projectId} has no resolvable repoFolder`);
+    const notes = await appendNote(
+      item,
+      `Refused to apply this patch: none of its patchFiles paths' top-level segments exist at the repo root, ` +
+      `which is exactly the shape a patch written relative to a project's own folder has — writing it as given ` +
+      `would create new files at the repo root instead of touching the real ones (see PR #185, 22 Sep 2026). ` +
+      (project.repoFolder
+        ? `This project's repoFolder is set to "${project.repoFolder}", but that folder doesn't exist in this repo ` +
+          `— check it for a typo.`
+        : `This project has no repoFolder set.`) +
+      ` patchReady has been cleared. Set this project's repo folder correctly (its Docs page → "Repo folder", or ` +
+      `a direct Firestore write to projects/${projectId}.repoFolder) and set patchReady again — or, if this ` +
+      `project genuinely has no single folder, mark that there instead and re-patch with paths already relative ` +
+      `to the repo root.`
+    );
+    await patchItem(item.id, { patchReady: false, patchAttempts: 0, updatedAt: new Date().toISOString(), notes });
+    return;
+  }
+
   const deployBranch = await ensureDeployBranch(project);
 
   // Build onto the head of the integration branch, retrying once if someone
@@ -2397,5 +2441,5 @@ module.exports = {
   // test/generated-builds.test.js
   isGeneratedOutput, rebuildWorkflowsFor, tryAutoResolveGeneratedOutputConflict,
   // test/patch-paths.test.js
-  normalisePatchPaths, projectFolderOf,
+  normalisePatchPaths, projectFolderOf, patchFilesLookFolderRelative,
 };
