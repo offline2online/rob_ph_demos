@@ -1068,6 +1068,120 @@ async function audit(session, tool, detail) {
   }
 }
 
+// ── Composable UI resources (embedded HTML cards) ───────────────────────────
+// get_ready_for_testing_board and get_approved_for_deployment_board (below)
+// return, alongside the usual JSON, a self-contained HTML "card list" as an
+// MCP embedded resource (content type "resource", mimeType "text/html") —
+// the standard MCP tool-result content block, not a bespoke extension — so a
+// client that renders embedded HTML resources inline can show the column as
+// cards right in the conversation instead of only as text. A client that
+// doesn't render resources still gets the same data as the plain-text/JSON
+// blocks that come with it.
+//
+// No <script>, no external stylesheet/font fetch, no <form> — everything is
+// inline-styled static markup. Every user-authored string (title/desc/
+// testSummary — recall backlogItems.desc is publicly, unauthenticatedly
+// writable, see this file's own header) goes through escapeHTML() before it
+// reaches the markup, and a URL is only ever linked when it parses as
+// https:// (safeHref) — a malicious previewUrl set to a javascript: URI is
+// rendered as plain text, never as a clickable href.
+//
+// Colours/type below are Personalisation Hub's own measured tokens (see the
+// ph-designer skill's tokens.md) — this widget isn't an iframed prototype
+// page (nothing here is iframed into HQ Admin), so the prototyping.md "content
+// frame only" rules don't apply, but the brand palette and Roboto still
+// should, for the same reason any other Claude-built surface for this board
+// would want to look like it belongs to it.
+const PH_TOKENS = {
+  primary: "#169bc2", accent: "#38b0cf", text: "#333333",
+  muted: "rgba(0,0,0,0.45)", border: "#d9d9d9", bg: "#ffffff",
+  success: "#52c41a", warning: "#faad14",
+};
+
+function safeHref(url) {
+  return typeof url === "string" && /^https:\/\//i.test(url) ? url : null;
+}
+
+function pillHTML(label, kind) {
+  const styles = {
+    primary: "background:#169bc21a;color:#169bc2;",
+    accent: "background:#38b0cf1a;color:#0d7691;",
+    neutral: "background:rgba(0,0,0,0.06);color:#333333;",
+  };
+  return `<span style="display:inline-block;font-size:11px;font-weight:600;line-height:1;padding:3px 8px;border-radius:9999px;margin:0 6px 6px 0;${styles[kind] || styles.neutral}">${escapeHTML(label)}</span>`;
+}
+
+function cardShellHTML(headline, subhead, bodyHTML) {
+  return `<div style="font-family:Roboto,'Helvetica Neue',Helvetica,Arial,sans-serif;color:${PH_TOKENS.text};background:${PH_TOKENS.bg};max-width:640px;">
+  <div style="font-size:16px;font-weight:700;margin-bottom:2px;">${escapeHTML(headline)}</div>
+  <div style="font-size:13px;color:${PH_TOKENS.muted};margin-bottom:12px;">${escapeHTML(subhead)}</div>
+  ${bodyHTML}
+</div>`;
+}
+
+// One ticket, as a card. `extraPillsHTML` lets a caller add train/PR context
+// (see get_approved_for_deployment_board) without this function needing to
+// know about the deployment train at all.
+function ticketCardHTML(item, extraPillsHTML) {
+  const bodyText = item.testSummary || item.desc || "";
+  const hasBoth = item.testSummary && item.desc && item.testSummary !== item.desc;
+  const testHref = safeHref(item.previewUrl);
+  const testLink = testHref
+    ? `<a href="${escapeHTML(testHref)}" target="_blank" rel="noopener" style="color:${PH_TOKENS.primary};font-weight:600;text-decoration:none;font-size:13px;">Test this &rarr;</a>`
+    : "";
+  const boardHref = safeHref(item.board);
+  const boardLink = boardHref
+    ? `<a href="${escapeHTML(boardHref)}" target="_blank" rel="noopener" style="color:${PH_TOKENS.muted};text-decoration:none;font-size:12px;">View ticket &#8599;</a>`
+    : "";
+  const versionPill = item.testVersion ? pillHTML(`Test version: v${item.testVersion}`, "accent") : "";
+  return `<div style="border:1px solid ${PH_TOKENS.border};border-radius:8px;padding:12px 14px;margin-bottom:10px;">
+    <div style="font-size:14px;font-weight:700;margin-bottom:4px;">${escapeHTML(item.title || "(untitled)")}</div>
+    <div style="font-size:12px;color:${PH_TOKENS.muted};margin-bottom:8px;">${escapeHTML(item.project || "")}${item.project ? " &middot; " : ""}${escapeHTML(item.id)}</div>
+    <div style="font-size:13px;line-height:1.45;white-space:pre-wrap;margin-bottom:8px;">${escapeHTML(bodyText)}</div>
+    ${hasBoth ? `<details style="margin-bottom:8px;"><summary style="cursor:pointer;font-size:12px;color:${PH_TOKENS.primary};">Show original request</summary><div style="font-size:13px;line-height:1.45;white-space:pre-wrap;margin-top:6px;">${escapeHTML(item.desc)}</div></details>` : ""}
+    <div style="margin-bottom:2px;">${versionPill}${extraPillsHTML || ""}</div>
+    <div style="display:flex;gap:14px;align-items:center;">${testLink}${boardLink}</div>
+  </div>`;
+}
+
+// Mirrors public/js/app.js's deployNotifyButtonHTML gate exactly
+// (pendingTrainRevertsForProject + trainItemsForProject +
+// legacyDeployItemsForProject) — see that file. Both
+// get_approved_for_deployment_board and approve_deploy_to_main call this so
+// the two can never disagree about whether the console's own Deploy to Main
+// button would be showing right now.
+async function deployGuardForProject(pid) {
+  const snap = await db().collection("backlogItems").where("projectId", "==", pid).get();
+  const items = [];
+  snap.forEach((doc) => items.push(Object.assign({ id: doc.id }, doc.data())));
+
+  const pendingReverts = items.filter((i) => i.revertRequested === true && i.deployCommit);
+  if (pendingReverts.length) {
+    return {
+      ok: false, deployItems: [],
+      reason: `${pendingReverts.length} ticket(s) on this project's deployment train have a pending revert not yet resolved (e.g. "${pendingReverts[0].title}"). The board's own Deploy to Main button is hidden for the same reason — resolve it there first.`,
+    };
+  }
+
+  const trainItems = items.filter((i) => i.deployCommit && (i.status === "ready-for-testing" || i.status === "ready-to-publish"));
+  if (trainItems.length) {
+    const stillTesting = trainItems.filter((i) => i.status !== "ready-to-publish");
+    if (stillTesting.length) {
+      return {
+        ok: false, deployItems: [],
+        reason: `${stillTesting.length} ticket(s) on this project's deployment train are still in Ready for Testing (e.g. "${stillTesting[0].title}") — merging now would ship them untested too. The board's own Deploy to Main button is hidden until Ready for Testing is empty for this project.`,
+      };
+    }
+    return { ok: true, deployItems: trainItems, reason: null };
+  }
+
+  const legacyItems = items.filter((i) => i.status === "ready-to-publish" && !i.deployCommit && !i.noDeploymentRequired);
+  if (!legacyItems.length) {
+    return { ok: false, deployItems: [], reason: "Nothing is Approved for Deployment for this project yet — the board's own Deploy to Main button is hidden for the same reason." };
+  }
+  return { ok: true, deployItems: legacyItems, reason: null };
+}
+
 const TOOLS = [
   {
     name: "whoami",
@@ -1308,6 +1422,196 @@ const TOOLS = [
       });
       await audit(session, "add_item_comment", { itemId: ref.id, chars: text.length });
       return textResult({ added: true, itemId: ref.id, author: session.email });
+    },
+  },
+  // ── Composable UI: review the pipeline's two "waiting on a human" columns
+  // in-agent, without leaving the conversation ─────────────────────────────
+  // Read-only, same as list_backlog_items/get_backlog_item above — nothing
+  // here can move a ticket. See the "Composable UI resources" comment above
+  // TOOLS for what the embedded HTML resource is and isn't.
+  {
+    name: "get_ready_for_testing_board",
+    description: "A composable view of the Ready for Testing column: every ticket a build just landed in, shown as a card (title, testSummary/desc, test link, testVersion, and a link back to the ticket). Returns an embedded HTML resource a supporting client renders inline in the conversation, alongside the same data as plain text/JSON for a client that can't. Read-only — reviewing here never changes a ticket's status; approve or reject it on the board itself.",
+    scope: "board.read",
+    inputSchema: {
+      type: "object",
+      properties: {
+        projectId: { type: "string", description: "Restrict to one project (from list_projects). Omit to see every project's Ready for Testing column at once." },
+      },
+      additionalProperties: false,
+    },
+    async run(args) {
+      const a = args || {};
+      const projects = await loadProjectsById();
+      if (a.projectId && !projects.has(String(a.projectId))) return toolError(`No project with id ${a.projectId}. Call list_projects first.`);
+      let q = db().collection("backlogItems");
+      if (a.projectId) q = q.where("projectId", "==", String(a.projectId));
+      const snap = await q.limit(MAX_READ_DOCS).get();
+      const rows = [];
+      snap.forEach((doc) => {
+        const d = doc.data() || {};
+        if ((d.status || "backlog") !== "ready-for-testing") return;
+        rows.push({ doc, d });
+      });
+      rows.sort((x, y) => (y.d.updatedAt?.toMillis?.() || 0) - (x.d.updatedAt?.toMillis?.() || 0));
+
+      const cards = rows.map(({ doc, d }) => {
+        const project = projects.get(d.projectId);
+        return {
+          id: doc.id,
+          projectId: d.projectId || null,
+          project: project ? project.name : null,
+          title: d.title || "",
+          testSummary: d.testSummary || null,
+          desc: d.desc || "",
+          previewUrl: d.previewUrl || null,
+          testVersion: d.testVersion || null,
+          board: `${PUBLIC_ORIGIN}/#item-${doc.id}`,
+        };
+      });
+
+      const projectLabel = a.projectId ? ((projects.get(String(a.projectId)) || {}).name || a.projectId) : "every project";
+      const headline = `Ready for Testing — ${projectLabel}`;
+      const subhead = cards.length
+        ? `${cards.length} ticket${cards.length === 1 ? "" : "s"} waiting on review. Read-only — approve or reject on the board.`
+        : "Nothing in Ready for Testing right now.";
+      const bodyHTML = cards.map((c) => ticketCardHTML(c)).join("\n")
+        || `<div style="font-size:13px;color:${PH_TOKENS.muted};">Nothing to show.</div>`;
+      const html = cardShellHTML(headline, subhead, bodyHTML);
+
+      return {
+        content: [
+          { type: "text", text: `${headline}: ${cards.length} ticket(s). Read-only — this view can't change status.` },
+          { type: "resource", resource: { uri: `ui://backlog-tracker/ready-for-testing/${a.projectId || "all"}`, mimeType: "text/html", text: html } },
+          { type: "text", text: JSON.stringify({ projectId: a.projectId || null, count: cards.length, items: cards }, null, 2) },
+        ],
+      };
+    },
+  },
+  {
+    name: "get_approved_for_deployment_board",
+    description: "A composable view of the Approved for Deployment column: every ticket already tested and confirmed, just waiting to be merged, shown as a card with its deploy/train context (on the train + which branch, or its own PR). Returns an embedded HTML resource a supporting client renders inline in the conversation, alongside the same data as plain text/JSON. Read-only — this view can't change status; when a project's whole train is approved and Ready for Testing is empty for it, this names approve_deploy_to_main as the tool that actually fires Deploy to Main.",
+    scope: "board.read",
+    inputSchema: {
+      type: "object",
+      properties: {
+        projectId: { type: "string", description: "Restrict to one project (from list_projects). Omit to see every project's Approved for Deployment column at once — deploy-readiness can only be reported with a projectId, since it's a per-project question." },
+      },
+      additionalProperties: false,
+    },
+    async run(args) {
+      const a = args || {};
+      const projects = await loadProjectsById();
+      if (a.projectId && !projects.has(String(a.projectId))) return toolError(`No project with id ${a.projectId}. Call list_projects first.`);
+      let q = db().collection("backlogItems");
+      if (a.projectId) q = q.where("projectId", "==", String(a.projectId));
+      const snap = await q.limit(MAX_READ_DOCS).get();
+      const rows = [];
+      snap.forEach((doc) => {
+        const d = doc.data() || {};
+        if ((d.status || "backlog") !== "ready-to-publish") return;
+        rows.push({ doc, d });
+      });
+      rows.sort((x, y) => (y.d.updatedAt?.toMillis?.() || 0) - (x.d.updatedAt?.toMillis?.() || 0));
+
+      const guard = a.projectId ? await deployGuardForProject(String(a.projectId)) : null;
+
+      const cards = rows.map(({ doc, d }) => {
+        const project = projects.get(d.projectId);
+        return {
+          id: doc.id,
+          projectId: d.projectId || null,
+          project: project ? project.name : null,
+          title: d.title || "",
+          testSummary: d.testSummary || null,
+          desc: d.desc || "",
+          previewUrl: d.previewUrl || null,
+          testVersion: d.testVersion || null,
+          onTrain: !!d.deployCommit,
+          deployCommit: d.deployCommit || null,
+          prNumber: d.prNumber || null,
+          deployBranch: (project && project.deployBranch) || null,
+          board: `${PUBLIC_ORIGIN}/#item-${doc.id}`,
+        };
+      });
+
+      const projectLabel = a.projectId ? ((projects.get(String(a.projectId)) || {}).name || a.projectId) : "every project";
+      const readyLine = guard ? (guard.ok
+        ? "This project's whole train is Approved for Deployment — ask your agent to call approve_deploy_to_main to fire Deploy to Main."
+        : guard.reason) : null;
+      const headline = `Approved for Deployment — ${projectLabel}`;
+      const subhead = cards.length
+        ? `${cards.length} ticket${cards.length === 1 ? "" : "s"} waiting to ship.`
+        : "Nothing Approved for Deployment right now.";
+      const readyBannerHTML = readyLine
+        ? `<div style="font-size:12px;font-weight:600;color:${guard.ok ? PH_TOKENS.success : PH_TOKENS.warning};margin-bottom:10px;">${escapeHTML(readyLine)}</div>`
+        : "";
+      const cardsHTML = cards.map((c) => ticketCardHTML(c, c.onTrain
+        ? pillHTML(`On train: ${c.deployBranch || "?"}`, "primary")
+        : (c.prNumber ? pillHTML(`PR #${c.prNumber}`, "neutral") : ""))).join("\n")
+        || `<div style="font-size:13px;color:${PH_TOKENS.muted};">Nothing to show.</div>`;
+      const html = cardShellHTML(headline, subhead, readyBannerHTML + cardsHTML);
+
+      return {
+        content: [
+          { type: "text", text: `${headline}: ${cards.length} ticket(s).${readyLine ? ` ${readyLine}` : ""}` },
+          { type: "resource", resource: { uri: `ui://backlog-tracker/approved-for-deployment/${a.projectId || "all"}`, mimeType: "text/html", text: html } },
+          { type: "text", text: JSON.stringify({ projectId: a.projectId || null, count: cards.length, readyToDeploy: guard ? guard.ok : null, items: cards }, null, 2) },
+        ],
+      };
+    },
+  },
+  // ── The one deliberate, logged exception to "nothing here deploys" ──────
+  // Every other tool in this file is read/file/comment/documentation only —
+  // see this file's own header. This is the single, narrowly-scoped carve-
+  // out: it fires the exact same trigger the console's own "Deploy to Main"
+  // button writes (projects/{id}.deployNotifyRequestedAt, watched by
+  // notifyOnProjectReadyToDeploy in index.js), so it merges nothing itself —
+  // the existing Routine still verifies the train and the existing pipeline
+  // still does the real merge. Gated to board.write (never a viewer, same as
+  // every other write tool) and logged to mcpAuditLog like every other write
+  // here. The one thing that's genuinely new is the guard below, which this
+  // tool must enforce itself since notifyOnProjectReadyToDeploy does not —
+  // deployGuardForProject mirrors deployNotifyButtonHTML's client-side gate
+  // exactly, so calling this tool directly can never fire a deploy the
+  // console's own button would currently be hiding.
+  {
+    name: "approve_deploy_to_main",
+    description: "Fire this project's Deploy to Main trigger — exactly the same action as clicking the board's own 'Deploy to Main' button. It does not merge anything itself: it only fires the existing Routine, which verifies the train and the existing pipeline then merges it. Only offered when every ticket on this project's deployment train is already Approved for Deployment and Ready for Testing is empty for it — the same condition that shows the console's own button — and refuses otherwise, naming what's blocking it. Logged to mcpAuditLog under your email.",
+    scope: "board.write",
+    inputSchema: {
+      type: "object",
+      properties: { projectId: { type: "string", description: "Which project (from list_projects)." } },
+      required: ["projectId"], additionalProperties: false,
+    },
+    async run(args, session) {
+      const projectId = String(args.projectId || "");
+      const projectSnap = await db().collection("projects").doc(projectId).get();
+      if (!projectSnap.exists) return toolError(`No project with id ${projectId}. Call list_projects first.`);
+
+      const guard = await deployGuardForProject(projectId);
+      if (!guard.ok) return toolError(guard.reason);
+
+      await db().collection("projects").doc(projectId).set({
+        deployNotifyRequestedAt: FieldValue.serverTimestamp(),
+        // Provenance, same spirit as create_backlog_item's createdVia/
+        // createdByEmail — not a train field (see PROJECT_WRITABLE_FIELDS'
+        // own comment on what counts as one) and not read by the pipeline,
+        // just an audit trail on the project doc itself.
+        deployNotifyRequestedVia: "mcp",
+        deployNotifyRequestedByEmail: session.email,
+      }, { merge: true });
+
+      await audit(session, "approve_deploy_to_main", {
+        projectId, deployCount: guard.deployItems.length,
+        itemIds: guard.deployItems.map((i) => i.id),
+      });
+
+      return textResult({
+        fired: true, projectId, deployCount: guard.deployItems.length,
+        itemIds: guard.deployItems.map((i) => i.id),
+        note: "This fires the same Routine the console's own Deploy to Main button fires — it verifies the train and merges it. This call returns before that finishes; check the project's trainStatus (list_projects) or the board itself afterward.",
+      });
     },
   },
   {
@@ -2361,7 +2665,7 @@ async function dispatchRpc(msg, session, ctx) {
         serverInfo: {
           name: "ph-agent-console",
           title: "PH Agent Console",
-          version: "1.2.0",
+          version: "1.3.0",
           websiteUrl: PUBLIC_ORIGIN,
           description: "The Personalisation Hub prototype backlog board and help centre.",
           icons: SERVER_ICONS,

@@ -248,10 +248,24 @@ async function rpc(token, method, params, id = 1) {
     assert.strictEqual(write.annotations.readOnlyHint, false);
   });
 
-  await test("exposes no tool that deploys, merges or triggers a campaign", async () => {
-    const names = mcp.__test.TOOLS.map((t) => t.name).join(" ");
-    for (const forbidden of ["deploy", "merge", "publish", "notify", "trigger", "campaign", "train", "approve"]) {
-      assert.ok(!names.includes(forbidden), `tool surface must not include "${forbidden}"`);
+  // approve_deploy_to_main (Zogk8EKjKRKsM4GZBEJZ) is a deliberate, logged,
+  // narrowly-scoped exception to this rule — see its own comment block in
+  // mcp-server.js. The rule this test actually enforces is "no WRITE tool
+  // deploys/merges/triggers anything", so it's scoped to board.write tools:
+  // get_ready_for_testing_board/get_approved_for_deployment_board are
+  // board.read and merely describe the pipeline, which is exactly what
+  // they're for. The point of this test is still to catch any other WRITE
+  // tool added later that shouldn't exist, so it excludes only the one
+  // sanctioned name instead of dropping the check entirely.
+  await test("exposes no WRITE tool that deploys, merges or triggers a campaign, except the one deliberate carve-out", async () => {
+    const CARVE_OUT = "approve_deploy_to_main";
+    const writeTools = mcp.__test.TOOLS.filter((t) => t.scope === "board.write");
+    assert.ok(writeTools.some((t) => t.name === CARVE_OUT), "the one deliberate deploy carve-out tool must exist and require board.write");
+    for (const t of writeTools) {
+      if (t.name === CARVE_OUT) continue;
+      for (const forbidden of ["deploy", "merge", "publish", "notify", "trigger", "campaign", "train", "approve"]) {
+        assert.ok(!t.name.includes(forbidden), `write tool "${t.name}" must not exist — only ${CARVE_OUT} may (found "${forbidden}")`);
+      }
     }
   });
 
@@ -787,6 +801,120 @@ async function rpc(token, method, params, id = 1) {
   await test("only the delete tools are flagged destructive", async () => {
     const destructive = mcp.__test.TOOLS.filter((t) => t.destructive).map((t) => t.name).sort();
     assert.deepStrictEqual(destructive, ["delete_interface", "delete_project_document", "delete_skill"]);
+  });
+
+  // ── Composable UI: Ready for Testing / Approved for Deployment boards ────
+  // (ZXmW4lHMKpQRlarlwK7z, f1yOqE2Sx2q8D7MSvfDu) — deliberately on their own
+  // fixture project ("depproj") so nothing here touches proj1, which "no
+  // documentation write touched a train field on the project" above already
+  // asserts stays pristine.
+  await test("get_ready_for_testing_board returns escaped HTML cards plus the same data as JSON", async () => {
+    env.store.col("projects").set("depproj", { name: "Deploy Playground", deployBranch: "deploy/depproj" });
+    env.store.col("backlogItems").set("rft1", {
+      projectId: "depproj", title: "<script>evil()</script> Fix RRP grid", desc: "The RRP shown is stale.",
+      testSummary: "Fixed the stale RRP — refetches on price change now.",
+      type: "bug", category: "HQ Admin", status: "ready-for-testing",
+      testVersion: "1.5.70", previewUrl: "https://rawcdn.githack.com/offline2online/rob_ph_demos/deploy/depproj/index.html",
+    });
+    const res = await rpc(tokens.access_token, "tools/call", { name: "get_ready_for_testing_board", arguments: { projectId: "depproj" } });
+    assert.strictEqual(res.body.result.isError, undefined);
+    const [text, resource, json] = res.body.result.content;
+    assert.strictEqual(text.type, "text");
+    assert.strictEqual(resource.type, "resource");
+    assert.strictEqual(resource.resource.mimeType, "text/html");
+    assert.ok(!resource.resource.text.includes("<script>evil()"), "a ticket title must never inject a raw <script> tag into the widget");
+    assert.match(resource.resource.text, /&lt;script&gt;/);
+    assert.match(resource.resource.text, /Fixed the stale RRP/);
+    assert.match(resource.resource.text, /Test this/);
+    const payload = JSON.parse(json.text);
+    assert.strictEqual(payload.count, 1);
+    assert.strictEqual(payload.items[0].id, "rft1");
+    assert.strictEqual(payload.items[0].testVersion, "1.5.70");
+  });
+
+  await test("get_ready_for_testing_board never links a javascript: previewUrl", async () => {
+    env.store.col("backlogItems").set("rft2", {
+      projectId: "depproj", title: "Sketchy link", desc: "x", type: "bug", category: "HQ Admin",
+      status: "ready-for-testing", previewUrl: "javascript:alert(1)",
+    });
+    const res = await rpc(tokens.access_token, "tools/call", { name: "get_ready_for_testing_board", arguments: { projectId: "depproj" } });
+    const [, resource] = res.body.result.content;
+    assert.ok(!resource.resource.text.includes("javascript:"), "a non-https previewUrl must never become a clickable href");
+    env.store.col("backlogItems").delete("rft2");
+  });
+
+  await test("get_ready_for_testing_board refuses an unknown project", async () => {
+    const res = await rpc(tokens.access_token, "tools/call", { name: "get_ready_for_testing_board", arguments: { projectId: "nope" } });
+    assert.strictEqual(res.body.result.isError, true);
+  });
+
+  await test("get_approved_for_deployment_board says why Deploy to Main isn't offered yet", async () => {
+    const res = await rpc(tokens.access_token, "tools/call", { name: "get_approved_for_deployment_board", arguments: { projectId: "depproj" } });
+    const payload = JSON.parse(res.body.result.content[2].text);
+    assert.strictEqual(payload.readyToDeploy, false);
+    assert.match(res.body.result.content[0].text, /Nothing is Approved for Deployment/);
+  });
+
+  await test("get_approved_for_deployment_board and approve_deploy_to_main agree the train isn't ready while a ticket is still testing", async () => {
+    env.store.col("backlogItems").set("rft1", Object.assign(env.store.col("backlogItems").get("rft1"), { deployCommit: "sha-rft1" }));
+    env.store.col("backlogItems").set("dep1", {
+      projectId: "depproj", title: "Approved one", desc: "x", type: "feature", category: "HQ Admin",
+      status: "ready-to-publish", deployCommit: "sha-dep1",
+    });
+    const board = await rpc(tokens.access_token, "tools/call", { name: "get_approved_for_deployment_board", arguments: { projectId: "depproj" } });
+    const boardPayload = JSON.parse(board.body.result.content[2].text);
+    assert.strictEqual(boardPayload.readyToDeploy, false);
+    assert.match(board.body.result.content[0].text, /still in Ready for Testing/);
+
+    const fire = await rpc(tokens.access_token, "tools/call", { name: "approve_deploy_to_main", arguments: { projectId: "depproj" } });
+    assert.strictEqual(fire.body.result.isError, true);
+    assert.match(fire.body.result.content[0].text, /still in Ready for Testing/);
+    assert.ok(!("deployNotifyRequestedAt" in env.store.col("projects").get("depproj")), "a blocked call must never write the trigger field");
+  });
+
+  await test("approve_deploy_to_main fires the same trigger the console button writes, once the whole train is approved", async () => {
+    env.store.col("backlogItems").set("rft1", Object.assign(env.store.col("backlogItems").get("rft1"), { status: "ready-to-publish" }));
+
+    const board = await rpc(tokens.access_token, "tools/call", { name: "get_approved_for_deployment_board", arguments: { projectId: "depproj" } });
+    const boardPayload = JSON.parse(board.body.result.content[2].text);
+    assert.strictEqual(boardPayload.readyToDeploy, true);
+    assert.match(board.body.result.content[1].resource.text, /On train: deploy\/depproj/);
+
+    const fire = await rpc(tokens.access_token, "tools/call", { name: "approve_deploy_to_main", arguments: { projectId: "depproj" } });
+    assert.strictEqual(fire.body.result.isError, undefined);
+    const payload = JSON.parse(fire.body.result.content[0].text);
+    assert.strictEqual(payload.fired, true);
+    assert.strictEqual(payload.deployCount, 2);
+    const project = env.store.col("projects").get("depproj");
+    assert.ok(project.deployNotifyRequestedAt, "must write the same field the console's Deploy to Main button writes");
+    assert.strictEqual(project.deployNotifyRequestedVia, "mcp");
+    assert.strictEqual(project.deployNotifyRequestedByEmail, TEAMMATE);
+    // Only the notify trigger + its own provenance were written — no train field.
+    for (const field of ["trainReady", "trainStatus", "trainPrNumber", "trainNote", "trainLocked", "needsHumanMerge"]) {
+      assert.ok(!(field in project), `approve_deploy_to_main must never itself set projects.${field}`);
+    }
+    const auditRow = [...env.store.col("mcpAuditLog").values()].find((r) => r.tool === "approve_deploy_to_main");
+    assert.ok(auditRow, "must audit-log the deploy trigger");
+    assert.strictEqual(auditRow.email, TEAMMATE);
+    assert.strictEqual(auditRow.projectId, "depproj");
+  });
+
+  await test("approve_deploy_to_main refuses while a pending revert sits on the train", async () => {
+    env.store.col("projects").set("revertproj", { name: "Revert Playground", deployBranch: "deploy/revertproj" });
+    env.store.col("backlogItems").set("rev1", {
+      projectId: "revertproj", title: "Reverted fix", desc: "x", type: "bug", category: "HQ Admin",
+      status: "backlog", deployCommit: "sha-rev1", revertRequested: true,
+    });
+    const res = await rpc(tokens.access_token, "tools/call", { name: "approve_deploy_to_main", arguments: { projectId: "revertproj" } });
+    assert.strictEqual(res.body.result.isError, true);
+    assert.match(res.body.result.content[0].text, /pending revert/);
+    assert.ok(!("deployNotifyRequestedAt" in env.store.col("projects").get("revertproj")));
+  });
+
+  await test("approve_deploy_to_main is board.write, so a viewer is refused", async () => {
+    assert.strictEqual(mcp.__test.TOOLS.find((t) => t.name === "approve_deploy_to_main").scope, "board.write");
+    assert.strictEqual(mcp.__test.TOOLS.find((t) => t.name === "get_ready_for_testing_board").scope, "board.read");
+    assert.strictEqual(mcp.__test.TOOLS.find((t) => t.name === "get_approved_for_deployment_board").scope, "board.read");
   });
 
   await test("writes an audit row for every write", async () => {

@@ -692,10 +692,23 @@ documents, interface contracts and Artifact link — because keeping those
 current is part of doing the work. Every documentation write records what it
 replaced in `docRevisions`, so a bad write or a delete is recoverable.
 
-**No tool deploys, merges, approves, moves a card's status, or triggers a
-campaign.** Those stay on the board's own buttons and the triggered Routine.
-The documentation tools write to `projects`, so that is enforced by a single
-`updateProjectFields` allowlist rather than by never touching the collection.
+**No tool merges, approves a ticket out of Ready for Testing, or moves a
+card's status — with one deliberate, narrowly-scoped exception.**
+`approve_deploy_to_main` (editor/admin only) fires the exact same trigger
+the console's own **Deploy to Main** button writes; it never merges
+anything itself, and only when every ticket on the project's train is
+already Approved for Deployment and Ready for Testing is empty for it —
+the same condition that shows that button — logging every call to
+`mcpAuditLog`. Two read-only tools, `get_ready_for_testing_board` and
+`get_approved_for_deployment_board`, render those two columns as an
+embedded HTML card resource for a client that supports it, alongside the
+same data as plain text — reviewing there changes nothing either. Beyond
+that one trigger, everything else stays on the board's own buttons and the
+triggered Routine. The documentation tools write to `projects`, so that is
+enforced by a single `updateProjectFields` allowlist rather than by never
+touching the collection — `approve_deploy_to_main` writes its own single
+field through a separate, dedicated path, not through that allowlist. See
+`MCP.md` → "What the agent can and can't do" for the full detail.
 
 This is a different thing from `boardApi` (further down this file), which is
 ONE shared secret standing in for the Routine's own automation. The MCP
