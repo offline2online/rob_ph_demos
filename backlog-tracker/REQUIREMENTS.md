@@ -261,14 +261,32 @@ What a documentation write replaced, recorded BEFORE it overwrote anything.
 ```
 {
   target: "project.requirementsMd" | "project.readmeMd" | "projectDoc"
-        | "projectDoc.deleted" | "interface" | "interface.deleted",
-  projectId?: string, docId?: string, interfaceId?: string,
+        | "projectDoc.deleted" | "interface" | "interface.deleted"
+        | "skill" | "skill.deleted",
+  projectId?: string, docId?: string, interfaceId?: string, skillId?: string,
   name?: string,                 // for display in a list
-  contentMd: string,             // the content as it was before the write
+  contentMd: string,             // the content as it was before the write —
+                                  // for "skill"/"skill.deleted" this is
+                                  // JSON, not markdown: the replaced
+                                  // {path,content}[] file set (or, for a
+                                  // delete, {name,slug,summary,version,files})
   chars: number,
-  replacedAt: timestamp, replacedByEmail: string, via: "mcp",
+  replacedAt: timestamp, replacedByEmail: string, via: "mcp" | "console",
 }
 ```
+
+`"skill"`/`"skill.deleted"` (eKFIGtskqbnUTqUTBFBl) are written two ways: an
+MCP-originated `update_skill`/`delete_skill` call
+(`functions/mcp-server.js`) records its own revision inline, synchronously,
+before its write commits — the only way it can hand the caller a
+`revisionId` in the same response — and tags it `via: "mcp"`. A skill
+edited directly on the console can't write `docRevisions` itself (denied
+below, browser-side, same as every other write here), so
+`functions/index.js`'s `onSkillWritten` trigger backfills the same trail
+for it, tagged `via: "console"`, without ever double-recording an
+MCP-originated change (it defers to whichever wrote first — see that
+trigger's own comment for the exact rule). The Skills page's own
+"Change history" view on each skill card reads this by `skillId`.
 
 Append-only and written only by the server (admin SDK, bypasses rules);
 readable by any member so the Docs page can show what changed. This is what
@@ -651,11 +669,13 @@ per-project Firestore fields, and this collection.
   summary: string,
   version: string,
   files: [ { path: string, content: string }, ... ],  // 1-20 entries, each content up to 100,000 chars
+  owningTeam?: "Product/Design" | "Engineering" | "Cybersecurity" | null,
   createdAt: timestamp,
   updatedAt: timestamp,
   createdByEmail: string | null,
   updatedByEmail: string | null,
   createdVia: "console" | "mcp",
+  lastWriteVia: "console" | "mcp",
 }
 ```
 An organisation-wide, shared library of packaged instructions any team
@@ -673,6 +693,21 @@ access & the MCP server" below for the five MCP tools, and
 `backlog-tracker/README.md` → "Skills library" for the seed script that
 inserts the starting "Personalisation Hub Front & Design" (`ph-designer`)
 skill.
+
+`owningTeam` (tGsm6lsBRsGtyoMZS3rn) is informational only — soft ownership,
+so it carries no write-permission enforcement of its own; any editor may
+still create/update/delete any skill regardless of who "owns" it. Shown as
+a small badge on the skill's card and on `list_skills`/`get_skill`;
+settable from the Add/Edit skill modal or `upload_skill`/`update_skill`.
+`firestore.rules`, `functions/mcp-server.js`'s `SKILL_OWNING_TEAMS` and the
+console modal's own `<select>` must be kept in step if this list changes.
+
+`lastWriteVia` records which path made the most recent write — distinct
+from `createdVia`, which never changes after creation. It exists so
+`functions/index.js`'s `onSkillWritten` trigger can tell a console-made
+edit from an MCP-made one without a Firestore query (see `docRevisions`
+above for why that distinction matters); it isn't otherwise surfaced in
+the UI.
 
 ### `faqCategories/{id}` and `faqArticles/{id}`
 ```
@@ -1308,6 +1343,49 @@ posture: open read, write gated on size (< 100MB) and content-type
 (`image/*`/`video/*`) rather than by who's writing — same prototype-stage,
 no-auth caveat as everything else in this app.
 
+### Skills page: change history (eKFIGtskqbnUTqUTBFBl)
+
+Each skill card's own **Change history** button lazily loads and lists that
+skill's `docRevisions` (`skillId` filter, newest-replaced-first) — who
+changed it, when, and via console or MCP (see "Data model" →
+`docRevisions`/`skills` above for how a console-made change gets into this
+trail at all, since the browser can't write `docRevisions` directly).
+**View changes** on a row renders a per-file added/removed/changed diff
+between that revision's file set and whatever replaced it (the next-newer
+revision, or the skill's current live files for the most recent one) — a
+line-level diff (`lineDiffHTML`/`skillFileSetDiffHTML` in `app.js`) built
+on the same `lcsDiff` longest-common-subsequence engine the FAQ revision
+reviewer's word-level diff already uses, just split on lines instead of
+words so a code/markdown file's newlines survive the render. Both the
+revision list and an opened diff are fetched/computed on demand and cached
+per skill for the page's lifetime, not re-fetched every time
+`renderSkillsPage()` redraws the list (which happens on every Firestore
+update to any skill).
+
+### Feed in requirements → suggested build batches (z1Q6fxo0yTjamxVMWQK5)
+
+A project's **⋮ → Feed in requirements** action (per the header's "one
+primary CTA, everything else in ⋮" convention — see root `CLAUDE.md`)
+opens a modal where several requirements can be pasted at once — one per
+blank-line-separated paragraph (`splitRequirementsText` in
+`public/js/build-batches.js`) — and previewed, before anything is created,
+as **suggested build batches**: grouped by `category` (the board's
+existing proxy for "shared area/files" — the same signal a grooming pass
+already corrects, per "Every card carries a category" in root `CLAUDE.md`),
+each item additionally tagged with a rough small/medium/large effort
+estimate (`estimateEffort`, a keyword- and length-based heuristic — a
+starting point, not a real estimate, same spirit as `suggestCategory`).
+**Create items** then runs the same `addItem()`/`generateTitle()`/
+`suggestCategory()` pipeline the single-item New Item form uses, once per
+pasted requirement, into that project's Backlog — nothing is auto-approved
+or auto-sent to Ready for Dev; the output is meant to help a person decide
+what to send for development as one bunch, not to act on its own.
+`clusterBacklogItems`/`estimateEffort`/`splitRequirementsText` are pure,
+dependency-free functions (`public/js/build-batches.js`, no Firebase, no
+DOM) so they're unit-testable with plain `node`
+(`test/build-batches.test.mjs`) — same "pure logic split out for
+testability" pattern `functions/train-lock.js` already uses.
+
 ## Functional requirements — notification & automation (Cloud Functions)
 
 Three Cloud Functions, all in `backlog-tracker/functions/index.js`:
@@ -1693,6 +1771,29 @@ above, and `list_doc_revisions`/`get_doc_revision` take an optional
 Per-file content is capped at `SKILL_FILE_MAX` (100,000 characters), up to
 20 files per skill — generous enough for the seeded `ph-designer` skill
 (6 files, ~75 KB total, largest file ~17 KB) with headroom to spare.
+`upload_skill`/`update_skill` also take an optional `owningTeam` (one of
+`SKILL_OWNING_TEAMS`) — see "Data model" → `skills/{skillId}` above.
+
+**Phase-bound skills (`settings/phaseSkillBindings`, l5mjAANU0dfveGhxmDjm)**
+let a shared skill be applied automatically as part of an existing pipeline
+phase, without adding board columns/stages of its own: a single doc,
+`{ build: string[], deploy: string[] }` of `skills.slug` values, that
+`notifyOnProjectReadyForReview` (build phase) and
+`notifyOnProjectReadyToDeploy` (deploy phase) each read and prepend as a
+pointer block to the Routine fire `text` — the same "hand the Routine
+extra context" mechanism `routinePromptMd` already uses, just
+organisation-wide rather than per-project, since "the engineering skills"
+and "the cybersecurity/scalability review skills" are fixed sets, not
+something that varies project to project. See
+`backlog-tracker/ROUTINE_INSTRUCTIONS.md` → "Check for phase-bound skills
+too" for exactly what a fired session does with it — in short, it fetches
+each named skill fresh via its existing board access rather than the
+Cloud Function embedding full skill content in the fire text (the same
+"don't duplicate 'how' text" reasoning the Deploy flow's own request text
+already follows). No console UI manages this doc yet (edited directly in
+Firestore); `BOARD_API_COLLECTIONS` in `functions/index.js` includes
+`skills`/`settings` so the fallback `boardApi` proxy path can read them
+too.
 
 **Documentation is full read/write by requirement.** A project's docs are
 meant to be kept current by whoever is doing the work, agents included, with

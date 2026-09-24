@@ -266,7 +266,14 @@ service cloud.firestore {
         incoming().slug.matches('^[a-z0-9-]+$') &&
         isNonEmptyBoundedString(incoming().summary, 400) &&
         isNonEmptyBoundedString(incoming().version, 40) &&
-        incoming().files is list && incoming().files.size() > 0 && incoming().files.size() <= 20;
+        incoming().files is list && incoming().files.size() > 0 && incoming().files.size() <= 20 &&
+        // Informational "owning team" tag (tGsm6lsBRsGtyoMZS3rn) — soft
+        // ownership only, so this checks shape, not who may set it: any
+        // editor may still write any skill. Keep this list in step with
+        // SKILL_OWNING_TEAMS in functions/mcp-server.js and the Add/Edit
+        // skill modal's own <select> in public/js/app.js.
+        (!("owningTeam" in incoming()) || incoming().owningTeam == null ||
+          incoming().owningTeam in ["Product/Design", "Engineering", "Cybersecurity"]);
 
       allow delete: if isEditor();
     }
@@ -422,11 +429,20 @@ service cloud.firestore {
     // step) and republishes it as a public static file
     // (faq/data/settings.json) — the public site itself never talks to
     // Firestore for this.
+    // Also holds settings/phaseSkillBindings (l5mjAANU0dfveGhxmDjm) — which
+    // shared skills.slug values notifyOnProjectReadyForReview (build phase)
+    // and notifyOnProjectReadyToDeploy (deploy phase) prepend a pointer to
+    // in the Routine fire text, `{ build: string[], deploy: string[] }`. No
+    // console UI writes this doc yet (edited directly in Firestore, or by a
+    // future settings page) — read/write rules still apply the same as any
+    // other doc in this collection.
     match /settings/{docId} {
       allow read: if isBoardReader();
       allow create, update: if isEditor()
         && (!("analyticsTag" in incoming()) || incoming().analyticsTag == null
-          || (incoming().analyticsTag is string && incoming().analyticsTag.size() <= 40));
+          || (incoming().analyticsTag is string && incoming().analyticsTag.size() <= 40))
+        && (!("build" in incoming()) || (incoming().build is list && incoming().build.size() <= 20))
+        && (!("deploy" in incoming()) || (incoming().deploy is list && incoming().deploy.size() <= 20));
       allow delete: if isEditor();
     }
   }

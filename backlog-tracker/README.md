@@ -1468,9 +1468,13 @@ in over MCP — **not** scoped to any one project, unlike `backlogItems` or
 
 - **Data model**: a top-level `skills` Firestore collection, one doc per
   skill — `{name, slug, summary, version, files: [{path, content}, ...],
-  createdAt, updatedAt, createdByEmail, updatedByEmail, createdVia:
-  "console"|"mcp"}`. `slug` is lowercase `[a-z0-9-]+` and unique, and can't
-  be changed after creation (delete and re-add under a new slug instead).
+  owningTeam?, createdAt, updatedAt, createdByEmail, updatedByEmail,
+  createdVia: "console"|"mcp", lastWriteVia: "console"|"mcp"}`. `slug` is
+  lowercase `[a-z0-9-]+` and unique, and can't be changed after creation
+  (delete and re-add under a new slug instead). `owningTeam` is an
+  informational-only tag (`"Product/Design"|"Engineering"|"Cybersecurity"`)
+  — which team maintains a skill, with no write-permission enforcement
+  attached; any editor may still change any skill.
   `firestore.rules`' `match /skills/{skillId}` lets any signed-in member
   read (viewer included — the whole point is "usable by anyone using the
   platform") and only an editor write; per-file content is capped at
@@ -1479,18 +1483,31 @@ in over MCP — **not** scoped to any one project, unlike `backlogItems` or
   every element, so the real per-file cap lives in the MCP tool code and
   the console's own Add/Edit skill modal.
 - **Console UI**: the Skills page lists every skill as a card (name,
-  summary, version, file count, last updated), each expandable to show
-  every file's path and content read-only. An **Add skill** button and
-  each card's Edit/Delete are gated behind editor access
-  (`[data-editor-only]`, hidden for a viewer the same way
-  `[data-admin-only]` hides Team & agent access from everyone but an
-  admin) — a viewer can still open the page and read every skill.
+  owning-team badge, summary, version, file count, last updated), each
+  expandable to show every file's path and content read-only, plus a
+  **Change history** panel (`docRevisions` filtered by `skillId`, see
+  `REQUIREMENTS.md` → "Skills page: change history") with a per-revision
+  file diff. An **Add skill** button and each card's Edit/Delete are gated
+  behind editor access (`[data-editor-only]`, hidden for a viewer the same
+  way `[data-admin-only]` hides Team & agent access from everyone but an
+  admin) — a viewer can still open the page, read every skill and browse
+  its history.
 - **MCP tools** (`functions/mcp-server.js`): `list_skills` and `get_skill`
-  (scope `board.read` — light summaries and full-file reads respectively)
-  and `upload_skill` / `update_skill` / `delete_skill` (scope
-  `board.write`). `update_skill`/`delete_skill` record the file set they
-  replace to `docRevisions` first, same recoverability as every other
-  documentation write.
+  (scope `board.read` — light summaries and full-file reads respectively,
+  both including `owningTeam`) and `upload_skill` / `update_skill` /
+  `delete_skill` (scope `board.write`, `owningTeam` optional on the first
+  two). `update_skill`/`delete_skill` record the file set they replace to
+  `docRevisions` first, same recoverability as every other documentation
+  write; `functions/index.js`'s `onSkillWritten` trigger backfills the
+  same trail for a skill edited on the console instead, which can't write
+  `docRevisions` itself.
+- **Phase-bound skills**: `settings/phaseSkillBindings`
+  (`{build: string[], deploy: string[]}` of `skills.slug` values) lets a
+  skill be applied automatically as part of the Backlog (build) or Deploy
+  pipeline phase — see `REQUIREMENTS.md` → "Functional requirements — team
+  access & the MCP server" → "Phase-bound skills" and
+  `ROUTINE_INSTRUCTIONS.md` → "Check for phase-bound skills too" for the
+  full mechanism. No console UI manages this doc yet.
 - **Seeded skill**: `scripts/seed-skills-data.js` inserts one starting
   skill, "Personalisation Hub Front & Design" (slug `ph-designer`) — the
   design skill this repo's own root `CLAUDE.md` requires for every UI
@@ -1505,6 +1522,23 @@ in over MCP — **not** scoped to any one project, unlike `backlogItems` or
   npm install   # only if firebase-admin isn't already installed here
   GOOGLE_APPLICATION_CREDENTIALS=/path/to/a-backlog-tracker-e4ed2-service-account.json node seed-skills-data.js
   ```
+
+## Feed in requirements → suggested build batches
+
+A project's **⋮ → Feed in requirements** modal bulk-creates several
+Backlog items from one pasted block of text (one requirement per
+blank-line-separated paragraph) and, before creating anything, previews
+them clustered into **suggested build batches** — grouped by `category`
+(the board's existing "shared area/files" proxy), each item tagged with a
+rough small/medium/large effort estimate. Purely informational: **Create
+items** files them into that project's Backlog exactly like the single-item
+New Item form would, nothing is auto-approved or auto-sent to Ready for
+Dev. The clustering itself (`clusterBacklogItems`/`estimateEffort`/
+`splitRequirementsText`) lives in `public/js/build-batches.js` — a pure,
+Firebase-free module, unit-tested with plain `node`
+(`test/build-batches.test.mjs`) rather than through the browser. See
+`REQUIREMENTS.md` → "Feed in requirements → suggested build batches" for
+the full behavior.
 
 ## What's deliberately not built yet
 

@@ -85,6 +85,29 @@ function boardAccessBlock() {
     `See backlog-tracker/ROUTINE_INSTRUCTIONS.md → "Board access".`;
 }
 
+// Phase-bound skills (l5mjAANU0dfveGhxmDjm) — settings/phaseSkillBindings
+// holds { build: string[], deploy: string[] } of skills.slug values (see
+// firestore.rules' `match /settings/{docId}`). Deliberately NOT the full
+// skill content: a skill can carry up to 20 files at 100,000 characters
+// each, and inlining that into every single Notify Claude fire — even for
+// a project that never touches what the skill covers — would be the same
+// "duplicated 'how' text going stale" problem notifyOnProjectReadyToDeploy's
+// own DEPLOY REQUEST text deliberately avoids elsewhere in this file (see
+// its own comment on staying "data-only"). This only points at the skills
+// by slug; ROUTINE_INSTRUCTIONS.md tells a fired session to fetch each
+// one's real content itself, fresh, via its existing board access, the
+// moment it actually needs it.
+async function phaseSkillsBlock(db, phase, phaseLabel) {
+  const snap = await db.collection("settings").doc("phaseSkillBindings").get().catch(() => null);
+  const slugs = snap && snap.exists ? snap.data()[phase] : null;
+  if (!Array.isArray(slugs) || slugs.length === 0) return "";
+  const list = slugs.map((s) => `- ${s}`).join("\n");
+  return `=== SKILLS BOUND TO THE ${phaseLabel} PHASE ===\n` +
+    `Before finishing this phase's work, fetch each of these from the shared, organisation-wide skills library (skills/{skillId} — query where slug == the name below, via your existing board access) and follow it. See ROUTINE_INSTRUCTIONS.md for exactly when in this phase to apply each one; a slug here that doesn't resolve to a skill yet is not an error, just note it and move on.\n` +
+    `${list}\n` +
+    `=== END SKILLS BOUND TO THE ${phaseLabel} PHASE ===\n\n`;
+}
+
 // The repo backlog-automation.yml lives in, and the event_type its
 // repository_dispatch trigger listens for. Hard-coded rather than
 // configurable: this function exists to start one specific workflow in one
@@ -170,10 +193,11 @@ exports.notifyOnProjectReadyForReview = onDocumentUpdated(
       const projectPromptBlock = (after.routinePromptMd || "").trim()
         ? `=== PROJECT-SPECIFIC INSTRUCTIONS FOR "${projectName}" (from this project's Docs page) ===\n${after.routinePromptMd.trim()}\n=== END PROJECT-SPECIFIC INSTRUCTIONS ===\n\n`
         : "";
+      const skillsBlock = await phaseSkillsBlock(db, "build", "BUILD");
 
       const selfReportHint = `\n\nWhen you finish this run (whether you completed everything or stopped early on a blocker), PATCH projects/${event.params.projectId} with notifyRoutine.status set to "done" (or "error" with an errorMessage, if you stopped early) and notifyRoutine.finishedAt set to now — the board shows a working/spinning state on its Notify Claude button until it sees this.`;
 
-      const text = `${projectPromptBlock}Project: "${projectName}" (projectId: ${event.params.projectId}) on the Backlog Tracker & FAQs board has ${items.length} item${items.length === 1 ? "" : "s"} in Backlog:\n\n${itemLines}${selfReportHint}${boardAccessBlock()}`;
+      const text = `${projectPromptBlock}${skillsBlock}Project: "${projectName}" (projectId: ${event.params.projectId}) on the Backlog Tracker & FAQs board has ${items.length} item${items.length === 1 ? "" : "s"} in Backlog:\n\n${itemLines}${selfReportHint}${boardAccessBlock()}`;
 
       try {
         const res = await fetch(fireUrl, {
@@ -396,7 +420,9 @@ exports.notifyOnProjectReadyToDeploy = onDocumentUpdated(
         programLine = `Product/Program: "${pname || "(unnamed)"}" (programId: ${after.programId}) — FAQ impact review scope: faqArticles with this programId, plus any with projectId ${event.params.projectId}\n`;
       }
 
-      const text = `${projectPromptBlock}=== DEPLOY REQUEST for "${projectName}" (projectId: ${event.params.projectId}) on the Backlog Tracker & FAQs board ===\n` +
+      const skillsBlock = await phaseSkillsBlock(getFirestore(), "deploy", "DEPLOY");
+
+      const text = `${projectPromptBlock}${skillsBlock}=== DEPLOY REQUEST for "${projectName}" (projectId: ${event.params.projectId}) on the Backlog Tracker & FAQs board ===\n` +
         trainLine +
         programLine +
         `These ${items.length} item${items.length === 1 ? "" : "s"} are already implemented, tested, and confirmed "Approved for Deployment" (ready-to-publish). Do NOT investigate, re-implement, or re-test them — follow ROUTINE_INSTRUCTIONS.md's "Notify Claude — Deploy" flow section for exactly what to do with each one, including its FAQ impact review step (3b), which proposes help-centre updates for a human to approve.\n\n` +
@@ -1056,6 +1082,90 @@ exports.onProjectReadyForAutomation = onDocumentWritten(
   }
 );
 
+// Backfills the skill change-history audit trail (eKFIGtskqbnUTqUTBFBl) for
+// a skill edited directly on the console. update_skill/delete_skill in
+// functions/mcp-server.js already write to docRevisions themselves, inline,
+// before the skills/{id} write commits — but the console's own Add/Edit
+// skill modal (public/js/app.js) writes straight to Firestore with the
+// client SDK, which firestore.rules forbids from ever writing docRevisions
+// (`allow write: if false` — server-only, on purpose, so an agent can't
+// tamper with its own history). Without this trigger, only MCP-originated
+// changes would ever show up in the Skills page's "Change history" view,
+// which is most of the point ("full visibility of every change") for a
+// team that mostly edits skills from the console, not over MCP.
+//
+// Console writes tag themselves `lastWriteVia: "console"`; an MCP write
+// tags itself "mcp" and this trigger skips those outright — it already has
+// its revision, recorded synchronously by the tool itself (which is also
+// the only way an MCP tool can hand its caller a revisionId in the same
+// response). For an update, this makes the decision from before/after data
+// alone: no query needed, so no risk of a race with the write that triggered
+// it. For a delete there is no "after" doc to carry that tag, so this falls
+// back to asking whether delete_skill already recorded one — a skill's
+// Firestore doc id is never reused once deleted, so "does a skill.deleted
+// revision already exist for this id" can never give a false answer either
+// way.
+exports.onSkillWritten = onDocumentWritten(
+  { document: "skills/{skillId}" },
+  async (event) => {
+    const before = event.data?.before?.data();
+    const after = event.data?.after?.data();
+    const db = getFirestore();
+
+    if (!before) return; // creation — nothing to have replaced yet
+
+    if (after) {
+      // Update. Only a files change is ever worth a revision (matches
+      // update_skill's own "only record when files change" behavior) —
+      // renaming a skill or editing its summary/version/owningTeam isn't
+      // something the "what did this replace" history needs to carry.
+      const beforeFiles = JSON.stringify(Array.isArray(before.files) ? before.files : []);
+      const afterFiles = JSON.stringify(Array.isArray(after.files) ? after.files : []);
+      if (beforeFiles === afterFiles) return;
+      if (after.lastWriteVia === "mcp") return; // update_skill already recorded this
+
+      await db.collection("docRevisions").add({
+        target: "skill",
+        skillId: event.params.skillId,
+        slug: after.slug || before.slug || null,
+        name: before.name || after.name || "",
+        contentMd: beforeFiles,
+        chars: beforeFiles.length,
+        replacedAt: FieldValue.serverTimestamp(),
+        replacedByEmail: after.updatedByEmail || before.updatedByEmail || null,
+        via: "console",
+      });
+      return;
+    }
+
+    // Delete. Skip if delete_skill (mcp-server.js) already recorded this
+    // exact deletion — see the comment above for why this check is safe.
+    const already = await db.collection("docRevisions")
+      .where("skillId", "==", event.params.skillId)
+      .where("target", "==", "skill.deleted")
+      .limit(1)
+      .get();
+    if (!already.empty) return;
+
+    const contentMd = JSON.stringify({
+      name: before.name || "", slug: before.slug || "", summary: before.summary || "",
+      version: before.version || "", owningTeam: before.owningTeam || null,
+      files: Array.isArray(before.files) ? before.files : [],
+    });
+    await db.collection("docRevisions").add({
+      target: "skill.deleted",
+      skillId: event.params.skillId,
+      slug: before.slug || null,
+      name: before.name || "",
+      contentMd,
+      chars: contentMd.length,
+      replacedAt: FieldValue.serverTimestamp(),
+      replacedByEmail: before.updatedByEmail || before.createdByEmail || null,
+      via: "console",
+    });
+  }
+);
+
 // Fires backlog-automation.yml immediately via repository_dispatch. Shared
 // by both triggers above; the workflow's own 2-minute schedule stays as the
 // safety net for whenever the token is missing or this call fails, so a
@@ -1138,7 +1248,15 @@ async function dispatchBacklogAutomation({ itemId = null, projectId = null, reas
 // the endpoint entirely.
 const { onRequest } = require("firebase-functions/v2/https");
 const { GoogleAuth } = require("google-auth-library");
-const BOARD_API_COLLECTIONS = ["projects", "programs", "backlogItems", "interfaces", "projectDocs", "faqCategories", "faqArticles"];
+// "skills" and "settings" (settings/phaseSkillBindings) added alongside the
+// phase-bound-skills mechanism (l5mjAANU0dfveGhxmDjm) — a fired Routine
+// session following a BUILD/DEPLOY skills block needs to read the skills
+// library, and this is the fallback board-access path it's told to use if
+// identitytoolkit.googleapis.com is unreachable (see ROUTINE_INSTRUCTIONS.md
+// "Board access"). Both collections are already isBoardReader()-readable
+// straight from Firestore; this just lets the same read work through the
+// proxy too.
+const BOARD_API_COLLECTIONS = ["projects", "programs", "backlogItems", "interfaces", "projectDocs", "faqCategories", "faqArticles", "skills", "settings"];
 const FIRESTORE_HOST = "https://firestore.googleapis.com";
 const FIRESTORE_DOCS = `/v1/projects/${process.env.GCLOUD_PROJECT || "backlog-tracker-e4ed2"}/databases/(default)/documents`;
 
