@@ -236,6 +236,14 @@
         <label class="field-label" for="skill-summary-input">Summary</label>
         <input type="text" id="skill-summary-input" maxlength="400" placeholder="One line, shown in the skills list.">
         <span class="char-count" id="skill-summary-count"></span>
+        <label class="field-label" for="skill-owning-team-input">Owning team</label>
+        <select id="skill-owning-team-input">
+          <option value="">No team set</option>
+          <option value="Product/Design">Product/Design</option>
+          <option value="Engineering">Engineering</option>
+          <option value="Cybersecurity">Cybersecurity</option>
+        </select>
+        <p class="field-hint">Informational only — which team maintains and optimises this skill. Anyone with editor access can still improve any skill.</p>
 
         <div class="docs-block-header" style="margin-top:16px;">
           <h3>Files</h3>
@@ -266,6 +274,39 @@
         <span class="char-count skill-file-content-count"></span>
       </div>
     </script>
+
+    <!-- "Feed in requirements" — reached from a project's ⋮ options menu
+         (per root CLAUDE.md's "one primary CTA, everything else in ⋮" rule).
+         Pastes a block of text, one requirement per blank-line-separated
+         paragraph, previews how they'd cluster into suggested build
+         batches (build-batches.js), then creates them all in that
+         project's Backlog on confirm. See z1Q6fxo0yTjamxVMWQK5. -->
+    <div class="modal-backdrop" id="feed-backdrop" hidden>
+      <div class="modal-panel modal-panel-wide" role="dialog" aria-modal="true" aria-labelledby="feed-title">
+        <div class="modal-header">
+          <h2 id="feed-title">Feed in requirements</h2>
+          <button type="button" class="modal-close" id="feed-close" aria-label="Close">&times;</button>
+        </div>
+        <p class="field-hint">Paste one requirement per paragraph (blank line between each). Preview how they'd cluster into build batches before creating anything.</p>
+        <textarea id="feed-text-input" rows="10" placeholder="Fix the price shown on the menu board tile&#10;&#10;Add a footer to the retail admin page&#10;&#10;Redesign the FAQ category picker"></textarea>
+        <div class="form-row" style="justify-content:flex-end;margin-top:10px;">
+          <button type="button" class="btn-ghost" id="feed-preview-btn">Preview batches</button>
+        </div>
+        <div id="feed-preview" hidden>
+          <div class="docs-block-header" style="margin-top:10px;">
+            <h3>Suggested build batches</h3>
+            <span class="field-hint" id="feed-preview-count"></span>
+          </div>
+          <div id="feed-batches-list"></div>
+        </div>
+        <div class="form-row" style="justify-content:flex-end;margin-top:14px;">
+          <div class="form-actions">
+            <button type="button" class="btn-ghost" id="feed-cancel">Cancel</button>
+            <button type="button" class="btn-primary" id="feed-submit" disabled>Create items</button>
+          </div>
+        </div>
+      </div>
+    </div>
 
     <div class="modal-backdrop" id="doc-backdrop" hidden>
       <div class="modal-panel" role="dialog" aria-modal="true" aria-labelledby="doc-title">

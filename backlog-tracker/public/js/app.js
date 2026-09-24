@@ -13,7 +13,7 @@
 import { initializeApp, getApps, getApp } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-app.js";
 import {
   getFirestore, initializeFirestore, collection, addDoc, updateDoc, deleteDoc, setDoc, doc, getDoc, getDocs,
-  onSnapshot, query, orderBy, serverTimestamp, writeBatch, arrayUnion, deleteField,
+  onSnapshot, query, orderBy, where, serverTimestamp, writeBatch, arrayUnion, deleteField,
 } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore.js";
 import {
   getStorage, ref as storageRef, uploadBytes, getDownloadURL, deleteObject,
@@ -23,6 +23,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-auth.js";
 import { firebaseConfig } from "./firebase-config.js";
 import { APP_VERSION } from "./version.js";
+import { clusterBacklogItems, splitRequirementsText } from "./build-batches.js";
 
 // auth-gate.js has already initialised the app (and signed the user in)
 // by the time this module is imported; reuse it rather than double-init.
@@ -66,6 +67,11 @@ const projectDocsRef = collection(db, "projectDocs");
 // functions/mcp-server.js's list_skills/get_skill/upload_skill/
 // update_skill/delete_skill).
 const skillsRef = collection(db, "skills");
+// What a skill write replaced — see functions/mcp-server.js's
+// recordDocRevision and functions/index.js's onSkillWritten. Read-only from
+// the browser (firestore.rules: `allow write: if false`); the Skills page's
+// change-history view (eKFIGtskqbnUTqUTBFBl) queries this by skillId.
+const docRevisionsRef = collection(db, "docRevisions");
 // Pipeline health strip (YeCj7sNpHXFUZQhmAmEb) — a single doc each workflow
 // (backlog-automation.yml, deploy-backlog-tracker.yml) writes at the end of
 // its own run, via the same service-account credential those workflows
@@ -843,6 +849,9 @@ function optionsMenuHTML(project) {
     </button>
     <button type="button" class="options-menu-item project-docs-btn${hasReq ? "" : " options-menu-item-empty"}" data-project-id="${escapeHTML(pid)}">
       ${hasReq ? "Project Settings" : "Project Settings — not set yet"}
+    </button>
+    <button type="button" class="options-menu-item feed-requirements-btn" data-project-id="${escapeHTML(pid)}">
+      Feed in requirements
     </button>`;
 
   // artifactUrl/artifactUpdatedAt are written directly to the project doc
@@ -2682,6 +2691,8 @@ projectsRoot.addEventListener("click", async (e) => {
   if (archiveNavBtn) { closeAllOptionMenus(); openArchivePage(archiveNavBtn.dataset.projectId); return; }
   const docsNavBtn = e.target.closest(".project-docs-btn");
   if (docsNavBtn) { closeAllOptionMenus(); openDocsPage(docsNavBtn.dataset.projectId); return; }
+  const feedBtn = e.target.closest(".feed-requirements-btn");
+  if (feedBtn) { closeAllOptionMenus(); openFeedModal(feedBtn.dataset.projectId); return; }
   const ifaceOpenBtn = e.target.closest(".interface-open-btn");
   if (ifaceOpenBtn) { closeAllOptionMenus(); openInterfaceModal(ifaceOpenBtn.dataset.interfaceId); return; }
   const ifaceAddBtn = e.target.closest(".interface-add-btn");
@@ -3398,6 +3409,103 @@ document.getElementById("ni-submit").addEventListener("click", async () => {
   }
 });
 
+// ── Feed in requirements (z1Q6fxo0yTjamxVMWQK5) ──────────────────────────
+// A project's ⋮ menu action to bulk-create several Backlog items from one
+// pasted block of text, previewing how they'd cluster into suggested build
+// batches (build-batches.js's clusterBacklogItems — grouped by `category`,
+// the board's existing proxy for "shared area/files", same signal a
+// grooming pass already corrects) before anything is actually created, so
+// a person can see what would ship together as one bunch and decide from
+// there. Reuses the same generateTitle()/suggestCategory() pipeline as the
+// single-item New Item form just above, just run once per pasted paragraph
+// instead of once per submit.
+const feedBackdrop = document.getElementById("feed-backdrop");
+const feedTextInput = document.getElementById("feed-text-input");
+const feedPreview = document.getElementById("feed-preview");
+const feedSubmitBtn = document.getElementById("feed-submit");
+let activeFeedProjectId = null;
+let feedPreviewItems = null; // [{title, desc, type, category}] once previewed; null until "Preview batches"
+
+function openFeedModal(projectId) {
+  activeFeedProjectId = projectId;
+  feedBackdrop.hidden = false;
+  feedTextInput.value = "";
+  feedPreview.hidden = true;
+  feedPreviewItems = null;
+  feedSubmitBtn.disabled = true;
+  feedTextInput.focus();
+}
+function closeFeedModal() {
+  feedBackdrop.hidden = true;
+  activeFeedProjectId = null;
+  feedPreviewItems = null;
+}
+document.getElementById("feed-cancel").addEventListener("click", closeFeedModal);
+document.getElementById("feed-close").addEventListener("click", closeFeedModal);
+feedBackdrop.addEventListener("click", (e) => { if (e.target === feedBackdrop) closeFeedModal(); });
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && !feedBackdrop.hidden) closeFeedModal();
+});
+
+function feedBatchHTML(batch) {
+  const effortLabel = ["small", "medium", "large"]
+    .filter((e) => batch.effortCounts[e])
+    .map((e) => `${batch.effortCounts[e]} ${e}`)
+    .join(", ");
+  return `
+    <div class="feed-batch">
+      <div class="feed-batch-head">
+        <span class="feed-batch-category">${escapeHTML(batch.category)}</span>
+        <span class="feed-batch-count">${batch.count} item${batch.count === 1 ? "" : "s"}${effortLabel ? ` &middot; ${escapeHTML(effortLabel)}` : ""}</span>
+      </div>
+      ${batch.items.map((i) => `
+        <div class="feed-batch-item">
+          <span class="feed-batch-item-effort feed-effort-${escapeHTML(i.effort)}">${escapeHTML(i.effort)}</span>
+          <span class="feed-batch-item-title">${escapeHTML(i.title)}</span>
+        </div>`).join("")}
+    </div>`;
+}
+
+document.getElementById("feed-preview-btn").addEventListener("click", () => {
+  const requirements = splitRequirementsText(feedTextInput.value);
+  if (!requirements.length) {
+    feedPreview.hidden = true;
+    feedPreviewItems = null;
+    feedSubmitBtn.disabled = true;
+    showAlert("Paste at least one requirement first.");
+    return;
+  }
+  feedPreviewItems = requirements.map((desc) => ({
+    title: generateTitle(desc),
+    desc,
+    type: "feature",
+    category: suggestCategory(desc),
+  }));
+  const { batches } = clusterBacklogItems(feedPreviewItems);
+  document.getElementById("feed-preview-count").textContent =
+    `${feedPreviewItems.length} requirement${feedPreviewItems.length === 1 ? "" : "s"} into ${batches.length} batch${batches.length === 1 ? "" : "es"} — category and title are a best guess, correct either after creating`;
+  document.getElementById("feed-batches-list").innerHTML = batches.map(feedBatchHTML).join("");
+  feedPreview.hidden = false;
+  feedSubmitBtn.disabled = false;
+});
+
+document.getElementById("feed-submit").addEventListener("click", async () => {
+  if (!feedPreviewItems || !feedPreviewItems.length || !activeFeedProjectId) return;
+  feedSubmitBtn.disabled = true;
+  const projectId = activeFeedProjectId;
+  const toCreate = feedPreviewItems.slice();
+  try {
+    for (const item of toCreate) {
+      await addItem(projectId, item.title, item.desc, item.type, item.category);
+    }
+  } catch (err) {
+    await showAlert(`Some items may not have been created: ${err && err.message ? err.message : err}`);
+    feedSubmitBtn.disabled = false;
+    return;
+  }
+  closeFeedModal();
+});
+
 // ── New Project modal ───────────────────────────────────────────────────
 // Defining an interface with another project used to be an option in this
 // same modal (a checkbox that expanded a whole extra sub-form) — removed
@@ -4059,6 +4167,11 @@ function formatSkillUpdatedAt(v) {
   try { return v.toDate().toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" }); } catch { return ""; }
 }
 
+function skillOwningTeamBadgeHTML(s) {
+  if (!s.owningTeam) return "";
+  return `<span class="skill-owning-team-badge">${escapeHTML(s.owningTeam)}</span>`;
+}
+
 function skillCardHTML(s) {
   const files = Array.isArray(s.files) ? s.files : [];
   const meta = [`v${s.version || "?"}`, `${files.length} file${files.length === 1 ? "" : "s"}`];
@@ -4068,7 +4181,7 @@ function skillCardHTML(s) {
     <div class="skill-card" data-id="${s.id}">
       <div class="skill-card-top">
         <div>
-          <div class="skill-card-name">${escapeHTML(s.name || "")}</div>
+          <div class="skill-card-name">${escapeHTML(s.name || "")} ${skillOwningTeamBadgeHTML(s)}</div>
           <div class="skill-card-meta">${escapeHTML(meta.join(" · "))} · <code>${escapeHTML(s.slug || "")}</code></div>
           <div class="skill-card-summary">${escapeHTML(s.summary || "")}</div>
         </div>
@@ -4081,6 +4194,10 @@ function skillCardHTML(s) {
         <summary>View files (${files.length})</summary>
         ${files.map(skillFileBlockHTML).join("")}
       </details>
+      <div class="skill-card-history">
+        <button type="button" class="btn-ghost skill-history-toggle-btn" data-id="${s.id}">Change history</button>
+        <div class="skill-history-panel" data-id="${s.id}" hidden></div>
+      </div>
     </div>`;
 }
 
@@ -4091,11 +4208,148 @@ function renderSkillsPage() {
   document.getElementById("skills-empty").hidden = sorted.length > 0;
 }
 
+// ── Skill change history (eKFIGtskqbnUTqUTBFBl) ──────────────────────────
+// Every MCP-originated skill write (upload_skill/update_skill/delete_skill
+// in functions/mcp-server.js) already records what it replaced to
+// docRevisions; functions/index.js's onSkillWritten trigger backfills the
+// same trail for a write made directly from this console (which can't write
+// docRevisions itself — firestore.rules denies it from the browser). Either
+// way, this renders it: newest-replaced-first, with a per-revision diff
+// against whatever state came right after it (the next-newer revision, or —
+// for the most recent one — the skill's current live files).
+//
+// Fetched lazily (on first expand) and cached per skillId for the life of
+// the page load — renderSkillsPage() rebuilds #skills-list wholesale on
+// every Firestore update, which would otherwise mean a silent refetch (and
+// the panel snapping shut) every time anyone anywhere edits any skill.
+const skillHistoryCache = new Map(); // skillId -> revisions[] (newest-replaced-first) | { error }
+
+function formatSkillHistoryAt(v) {
+  if (!v || typeof v.toDate !== "function") return "unknown time";
+  try { return v.toDate().toLocaleString(undefined, { year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }); } catch { return "unknown time"; }
+}
+
+// Parses a docRevisions doc's contentMd back into a {path,content}[] file
+// set — "skill" target stores the files array directly (see
+// recordDocRevision call sites in mcp-server.js/index.js); a
+// "skill.deleted" revision (not shown on a live card, since the skill it
+// describes no longer has one) wraps it in {name,slug,summary,version,files}.
+function skillRevisionFiles(rev) {
+  try {
+    const parsed = JSON.parse(rev.contentMd || "[]");
+    if (Array.isArray(parsed)) return parsed;
+    if (parsed && Array.isArray(parsed.files)) return parsed.files;
+  } catch { /* fall through */ }
+  return [];
+}
+
+function skillHistoryRowHTML(rev, idx, id) {
+  const who = rev.replacedByEmail || "unknown";
+  const when = formatSkillHistoryAt(rev.replacedAt);
+  const via = rev.via === "console" ? "console" : "MCP agent";
+  return `
+    <div class="skill-history-row">
+      <div class="skill-history-row-meta">${escapeHTML(who)} &middot; ${escapeHTML(when)} &middot; via ${escapeHTML(via)}</div>
+      <button type="button" class="btn-ghost skill-history-diff-btn" data-id="${escapeHTML(id)}" data-index="${idx}">View changes</button>
+      <div class="skill-history-diff" data-id="${escapeHTML(id)}" data-index="${idx}" hidden></div>
+    </div>`;
+}
+
+function renderSkillHistoryPanel(id) {
+  const panel = document.querySelector(`.skill-history-panel[data-id="${CSS.escape(id)}"]`);
+  if (!panel) return;
+  const cached = skillHistoryCache.get(id);
+  if (!cached) { panel.innerHTML = '<p class="field-hint">Loading…</p>'; return; }
+  if (cached.error) { panel.innerHTML = `<p class="field-hint">Couldn't load history: ${escapeHTML(cached.error)}</p>`; return; }
+  if (!cached.length) { panel.innerHTML = '<p class="field-hint">No recorded changes yet.</p>'; return; }
+  panel.innerHTML = cached.map((rev, idx) => skillHistoryRowHTML(rev, idx, id)).join("");
+}
+
+async function toggleSkillHistory(id) {
+  const panel = document.querySelector(`.skill-history-panel[data-id="${CSS.escape(id)}"]`);
+  if (!panel) return;
+  if (!panel.hidden) { panel.hidden = true; return; }
+  panel.hidden = false;
+  if (skillHistoryCache.has(id)) { renderSkillHistoryPanel(id); return; }
+  panel.innerHTML = '<p class="field-hint">Loading…</p>';
+  try {
+    const snap = await getDocs(query(docRevisionsRef, where("skillId", "==", id)));
+    const revisions = snap.docs
+      .map((d) => ({ id: d.id, ...d.data() }))
+      .filter((r) => r.target === "skill") // "skill.deleted" belongs to no live card
+      .sort((a, b) => (b.replacedAt?.toMillis?.() ?? 0) - (a.replacedAt?.toMillis?.() ?? 0));
+    skillHistoryCache.set(id, revisions);
+  } catch (err) {
+    skillHistoryCache.set(id, { error: err instanceof Error ? err.message : String(err) });
+  }
+  renderSkillHistoryPanel(id);
+}
+
+// A revision's "before" state is its own file set; its "after" state is
+// whatever replaced it — the next-newer revision's "before", or, for the
+// newest revision, the skill's current live files.
+function toggleSkillHistoryDiff(btn) {
+  const id = btn.dataset.id;
+  const idx = Number(btn.dataset.index);
+  const revisions = skillHistoryCache.get(id);
+  if (!Array.isArray(revisions) || !revisions[idx]) return;
+  const panel = document.querySelector(`.skill-history-diff[data-id="${CSS.escape(id)}"][data-index="${idx}"]`);
+  if (!panel) return;
+  if (!panel.hidden) { panel.hidden = true; return; }
+  const oldFiles = skillRevisionFiles(revisions[idx]);
+  const newFiles = idx > 0 ? skillRevisionFiles(revisions[idx - 1]) : (skills.find((s) => s.id === id)?.files || []);
+  panel.innerHTML = skillFileSetDiffHTML(oldFiles, newFiles);
+  panel.hidden = false;
+}
+
+// Line-level diff for a skill file's plain-text content, built on the same
+// lcsDiff() longest-common-subsequence engine the FAQ revision reviewer
+// (renderFaqRevisionChanges/wordDiffHTML, further below) already uses —
+// just over lines instead of words, since a word-level diff collapses
+// every newline in a source file into a single space on render, which
+// would make a code/markdown diff unreadable.
+function lineDiffHTML(oldText, newText) {
+  const a = String(oldText || "").split("\n");
+  const b = String(newText || "").split("\n");
+  return lcsDiff(a, b).map(([op, line]) => {
+    const cls = op === "eq" ? "diffline-eq" : op === "del" ? "diffline-del" : "diffline-ins";
+    const marker = op === "eq" ? " " : op === "del" ? "−" : "+";
+    return `<div class="diffline ${cls}"><span class="diffline-marker">${marker}</span><span class="diffline-text">${escapeHTML(line) || "&nbsp;"}</span></div>`;
+  }).join("");
+}
+
+// Per-file added/removed/changed diff across two {path,content}[] file
+// sets — used to show what one skill revision actually changed, whichever
+// two snapshots are being compared (see toggleSkillHistoryDiff above).
+function skillFileSetDiffHTML(oldFiles, newFiles) {
+  const oldMap = new Map((oldFiles || []).map((f) => [f.path, f.content || ""]));
+  const newMap = new Map((newFiles || []).map((f) => [f.path, f.content || ""]));
+  const paths = Array.from(new Set([...oldMap.keys(), ...newMap.keys()])).sort();
+  const blocks = [];
+  for (const p of paths) {
+    const oldC = oldMap.has(p) ? oldMap.get(p) : undefined;
+    const newC = newMap.has(p) ? newMap.get(p) : undefined;
+    if (oldC === undefined) {
+      blocks.push(`<div class="skill-diff-file"><div class="skill-diff-file-path">${escapeHTML(p)} <span class="skill-diff-badge skill-diff-badge-added">added</span></div>${lineDiffHTML("", newC)}</div>`);
+    } else if (newC === undefined) {
+      blocks.push(`<div class="skill-diff-file"><div class="skill-diff-file-path">${escapeHTML(p)} <span class="skill-diff-badge skill-diff-badge-removed">removed</span></div>${lineDiffHTML(oldC, "")}</div>`);
+    } else if (oldC !== newC) {
+      blocks.push(`<div class="skill-diff-file"><div class="skill-diff-file-path">${escapeHTML(p)} <span class="skill-diff-badge skill-diff-badge-changed">changed</span></div>${lineDiffHTML(oldC, newC)}</div>`);
+    }
+  }
+  if (!blocks.length) return '<p class="field-hint">No file changes in this revision (only name/summary/version/owning team changed).</p>';
+  return blocks.join("");
+}
+
 document.getElementById("skills-list").addEventListener("click", (e) => {
   const editBtn = e.target.closest(".skill-edit-btn");
   if (editBtn) { openSkillModal(editBtn.dataset.id); return; }
   const delBtn = e.target.closest(".skill-delete-btn");
   if (delBtn) { deleteSkillWithConfirm(delBtn.dataset.id); return; }
+  const historyBtn = e.target.closest(".skill-history-toggle-btn");
+  if (historyBtn) { toggleSkillHistory(historyBtn.dataset.id); return; }
+  const diffBtn = e.target.closest(".skill-history-diff-btn");
+  if (diffBtn) { toggleSkillHistoryDiff(diffBtn); return; }
 });
 
 async function deleteSkillWithConfirm(id) {
@@ -4112,6 +4366,7 @@ const skillNameInput = document.getElementById("skill-name-input");
 const skillSlugInput = document.getElementById("skill-slug-input");
 const skillVersionInput = document.getElementById("skill-version-input");
 const skillSummaryInput = document.getElementById("skill-summary-input");
+const skillOwningTeamInput = document.getElementById("skill-owning-team-input");
 const skillFilesList = document.getElementById("skill-files-list");
 const skillFileRowTemplate = document.getElementById("skill-file-row-template").textContent;
 const updateSkillNameCount = wireCharCount(skillNameInput, document.getElementById("skill-name-count"));
@@ -4161,6 +4416,7 @@ function openSkillModal(skillId) {
     document.getElementById("skill-slug-hint").textContent = "Slug can't be changed once a skill is created — delete and re-add it under a new slug instead.";
     skillVersionInput.value = s ? s.version || "" : "";
     skillSummaryInput.value = s ? s.summary || "" : "";
+    skillOwningTeamInput.value = s ? s.owningTeam || "" : "";
     const files = s && Array.isArray(s.files) && s.files.length ? s.files : [{ path: "", content: "" }];
     files.forEach((f) => skillFilesList.appendChild(createSkillFileRow(f.path, f.content)));
   } else {
@@ -4171,6 +4427,7 @@ function openSkillModal(skillId) {
     document.getElementById("skill-slug-hint").textContent = "Lowercase letters, numbers and hyphens only — must be unique. Can't be changed once a skill is created.";
     skillVersionInput.value = "1.0.0";
     skillSummaryInput.value = "";
+    skillOwningTeamInput.value = "";
     skillFilesList.appendChild(createSkillFileRow("SKILL.md", ""));
   }
   updateSkillNameCount();
@@ -4197,6 +4454,7 @@ document.getElementById("skill-submit").addEventListener("click", async () => {
   if (!summary) { skillSummaryInput.focus(); return; }
   const version = skillVersionInput.value.trim();
   if (!version) { skillVersionInput.focus(); return; }
+  const owningTeam = skillOwningTeamInput.value.trim() || null;
   const files = readSkillFilesFromModal();
   if (!files.length) { await showAlert("Add at least one file."); return; }
   for (const f of files) {
@@ -4206,16 +4464,22 @@ document.getElementById("skill-submit").addEventListener("click", async () => {
   const editorEmail = auth.currentUser ? auth.currentUser.email : null;
   try {
     if (editingSkillId) {
+      // lastWriteVia flags this as a console write so functions/index.js's
+      // onSkillWritten trigger knows to record the file set it replaced to
+      // docRevisions itself — an MCP write (update_skill) already does that
+      // synchronously and tags itself "mcp" instead, so the trigger can tell
+      // the two apart and never records the same change twice.
       await setDoc(doc(db, "skills", editingSkillId), {
-        name, summary, version, files, updatedAt: serverTimestamp(), updatedByEmail: editorEmail,
+        name, summary, version, owningTeam, files, updatedAt: serverTimestamp(), updatedByEmail: editorEmail, lastWriteVia: "console",
       }, { merge: true });
     } else {
       const slug = skillSlugInput.value.trim().toLowerCase();
       if (!slug || !/^[a-z0-9-]+$/.test(slug)) { skillSlugInput.focus(); await showAlert("Slug must be lowercase letters, numbers and hyphens only."); return; }
       if (skills.some((s) => s.slug === slug)) { skillSlugInput.focus(); await showAlert(`A skill with slug "${slug}" already exists.`); return; }
       await addDoc(skillsRef, {
-        name, slug, summary, version, files,
+        name, slug, summary, version, owningTeam, files,
         createdVia: "console",
+        lastWriteVia: "console",
         createdByEmail: editorEmail, updatedByEmail: editorEmail,
         createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
       });

@@ -613,6 +613,25 @@ textarea.dialog-field-input { resize: vertical; min-height: 70px; }
 .qc-panel .form-row { margin-top: 22px; }
 .qc-panel .btn-primary, .qc-panel .btn-ghost { border-radius: 10px; padding: 10px 18px; font-size: 14px; }
 
+/* ── Feed in requirements modal (z1Q6fxo0yTjamxVMWQK5) ──────────────────── */
+#feed-text-input {
+  width: 100%; font-family: inherit; font-size: 13.5px; color: var(--text); background: var(--surface);
+  border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; box-sizing: border-box; resize: vertical;
+}
+.feed-batch { border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; margin-top: 10px; background: var(--bg); }
+.feed-batch-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.feed-batch-category { font-size: 13px; font-weight: 600; }
+.feed-batch-count { font-size: 11.5px; color: var(--text-muted); }
+.feed-batch-item { display: flex; align-items: center; gap: 8px; margin-top: 6px; font-size: 12.5px; }
+.feed-batch-item-title { color: var(--text); }
+.feed-batch-item-effort {
+  flex-shrink: 0; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .03em;
+  border-radius: 999px; padding: 1px 7px; width: 46px; text-align: center;
+}
+.feed-effort-small { background: rgba(82, 196, 26, .18); color: #2f7a0f; }
+.feed-effort-medium { background: rgba(250, 173, 20, .18); color: #8a5a05; }
+.feed-effort-large { background: rgba(212, 67, 63, .16); color: #a3312d; }
+
 /* ── Interface modal (shared with New Project's inline fields) ─────────── */
 #if-backdrop select, #if-backdrop input, #if-backdrop textarea,
 #docs-requirements-input {
@@ -902,6 +921,51 @@ textarea.dialog-field-input { resize: vertical; min-height: 70px; }
   color: var(--text); background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px;
 }
 .skill-file-remove-btn { flex-shrink: 0; }
+
+/* Owning-team tag (tGsm6lsBRsGtyoMZS3rn) — informational only, shown next
+   to the skill's name on its card. */
+.skill-owning-team-badge {
+  display: inline-block; font-size: 10.5px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: .03em; color: var(--primary); background: var(--surface-2);
+  border-radius: 999px; padding: 2px 8px; vertical-align: middle; margin-left: 2px;
+}
+
+/* Change history (eKFIGtskqbnUTqUTBFBl) — a lazily-loaded, per-skill list of
+   docRevisions rows, each expandable into a per-file diff. See
+   toggleSkillHistory/toggleSkillHistoryDiff in app.js. */
+.skill-card-history { margin-top: 10px; }
+.skill-history-toggle-btn { font-size: 12.5px; padding: 4px 10px; }
+.skill-history-panel { margin-top: 8px; }
+.skill-history-row {
+  border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; margin-top: 8px; background: var(--bg);
+}
+.skill-history-row-meta { font-size: 11.5px; color: var(--text-muted); margin-bottom: 6px; }
+.skill-history-diff-btn { font-size: 12px; padding: 3px 8px; }
+.skill-history-diff { margin-top: 8px; }
+
+.skill-diff-file { border: 1px solid var(--border); border-radius: 8px; margin-top: 8px; overflow: hidden; }
+.skill-diff-file-path {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; font-weight: 600;
+  padding: 6px 10px; background: var(--surface-2);
+}
+.skill-diff-badge {
+  font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .03em;
+  border-radius: 999px; padding: 1px 7px; margin-left: 6px;
+}
+.skill-diff-badge-added { background: rgba(82, 196, 26, .18); color: #2f7a0f; }
+.skill-diff-badge-removed { background: rgba(212, 67, 63, .16); color: #a3312d; }
+.skill-diff-badge-changed { background: rgba(250, 173, 20, .18); color: #8a5a05; }
+.diffline {
+  display: flex; gap: 8px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px; line-height: 1.5; padding: 0 10px; white-space: pre-wrap; word-break: break-word;
+}
+.diffline-marker { flex: 0 0 14px; text-align: center; color: var(--text-muted); }
+.diffline-text { flex: 1 1 auto; }
+.diffline-eq { color: var(--text-muted); }
+.diffline-del { background: rgba(212, 67, 63, .12); }
+.diffline-del .diffline-marker { color: #a3312d; }
+.diffline-ins { background: rgba(82, 196, 26, .14); }
+.diffline-ins .diffline-marker { color: #2f7a0f; }
 .form-row-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 10px; }
 .form-row-grid select { width: 100%; }
 #faq-article-editor-page input[type="text"], #faq-article-editor-page textarea, #faq-article-editor-page select {
