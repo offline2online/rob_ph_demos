@@ -224,6 +224,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/v1/features": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Whether the retailer has DSP integration switched on
+         * @description Readable by every user who sees these sections (admin and
+         *     marketing), unlike Exchange settings, so the navigation can hide
+         *     Campaign Status and Advertisers / Inventory while the switch is off.
+         *     Always false with the build flag off.
+         */
+        get: operations["getFeatures"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/v1/advertiser-settings": {
         parameters: {
             query?: never;
@@ -966,15 +989,27 @@ export interface components {
             reason?: string | null;
         };
         Exchange: components["schemas"]["ExchangeInput"] & {
+            /** @description Switched on and all four fields complete: sellers.json is live and DSPs are sent bid requests. */
             published: boolean;
             sellersJsonUrl?: string | null;
         };
+        /**
+         * @description The four seller-of-record fields are required while `enabled` is
+         *     true. Switched off, they may be blank and are kept as sent, so
+         *     switching back on restores them.
+         */
         ExchangeInput: {
+            /** @description The retailer's DSP integration switch (Rob, 24 Sep 2026). Off for a new instance. Switching it off deletes nothing. */
+            enabled: boolean;
             organisation: string;
             domain: string;
             sellerId: string;
-            /** Format: email */
+            /** @description An email address when set */
             contactEmail: string;
+        };
+        Features: {
+            /** @description The build flag is on and the retailer has DSP integration switched on. */
+            dspIntegration: boolean;
         };
         AdvertiserSettingsInput: {
             /**
@@ -2147,7 +2182,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Saved; sellers.json republished when complete */
+            /** @description Saved; sellers.json republished when switched on and complete */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -2157,6 +2192,28 @@ export interface operations {
                 };
             };
             400: components["responses"]["ValidationFailed"];
+            401: components["responses"]["Unauthorised"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    getFeatures: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Features */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Features"];
+                };
+            };
             401: components["responses"]["Unauthorised"];
             403: components["responses"]["Forbidden"];
         };
@@ -3265,7 +3322,7 @@ export interface operations {
                     "application/json": components["schemas"]["SellersJson"];
                 };
             };
-            /** @description Exchange settings incomplete; not published. */
+            /** @description Not published — DSP integration switched off */
             404: {
                 headers: {
                     [name: string]: unknown;

@@ -1,0 +1,13 @@
+-- The retailer's own on/off switch for DSP integration (Rob, 24 Sep 2026),
+-- shown at the top of Exchange settings. Held with the seller-of-record
+-- fields because it belongs to the same one-per-instance exchange record.
+--
+-- Off (0) by default: a retailer's first visit to DSP Integration finds it
+-- switched off. Switching it off deletes nothing — the exchange, DSPs,
+-- advertisers, campaigns and bookings all stay, and switching it back on
+-- picks up where it left off.
+--
+-- This is a runtime setting per instance, not the build's
+-- DSP_INTEGRATION_ENABLED flag, which still decides whether any of this
+-- ships at all.
+ALTER TABLE exchange ADD COLUMN enabled INTEGER NOT NULL DEFAULT 0;

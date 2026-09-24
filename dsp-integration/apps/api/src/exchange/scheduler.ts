@@ -15,8 +15,12 @@ import { runBilling } from './billing'
    Scheduler job (deploy/firebase/), which has no long-lived timer. */
 export async function schedulerTick(ctx: Context, cleared: Set<string>, log: (msg: string) => void) {
   if (!ctx.flags.dspIntegration) return
+  /* Windows already sold are still billed when they end, switch or not:
+     they were delivered. */
   const billed = runBilling(ctx)
   if (billed.length) log(`Billed ${billed.length} ended window${billed.length === 1 ? '' : 's'}.`)
+  /* Switched off (Exchange settings): nothing new is sold. */
+  if (!ctx.exchange.get().enabled) return
   const now = ctx.clock().getTime()
   const current = windowStartOf(ctx, ctx.clock())
   for (const w of [current, new Date(current.getTime() + windowMs(ctx))]) {

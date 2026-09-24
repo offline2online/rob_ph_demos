@@ -165,7 +165,9 @@ export async function seed(ctx: Context, opts: { bookings?: boolean; demo?: bool
        stand-in): 412 per display, as in API.md's example bid request, across the
        three Menu Boards. Vision/AI is on for Menu Board, so the count is sensor-derived. */
     ctx.db.prepare('INSERT INTO audience_vacd (display_type_id, slot, assumed_views_per_window, counted) VALUES (?, ?, ?, ?)').run('menu_board', 2, 1236, 1)
-    ctx.exchange.save({ organisation: 'Demo Retail Group', domain: 'demoretail.example', sellerId: 'drg-4471', contactEmail: 'adops@demoretail.example' })
+    /* The demo estate is a retailer that has already switched DSP
+       integration on. A real instance starts with it off (migration 0023). */
+    ctx.exchange.save({ enabled: true, organisation: 'Demo Retail Group', domain: 'demoretail.example', sellerId: 'drg-4471', contactEmail: 'adops@demoretail.example' })
   })
   await seedCampaigns(ctx)
   if (opts.bookings !== false) await seedBookings(ctx)
