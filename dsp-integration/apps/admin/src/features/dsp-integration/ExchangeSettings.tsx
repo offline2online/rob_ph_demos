@@ -23,8 +23,10 @@ const MONO = 'ui-monospace, SFMono-Regular, Menlo, monospace'
 export const EXCHANGE_TIP =
   'Sets up your organisation as the seller of record for its screens. Configurable here: organisation name, domain, seller ID and ad-ops contact email, all required. Once saved and complete, sellers.json is published at https://[domain]/sellers.json and every bid request carries your domain and seller ID in its SupplyChain; until then no DSP is sent bid requests. Not configurable (platform defaults): seller type (Publisher), OpenRTB 2.6, the DOOH object, the OpenOOH venue taxonomy, QPS and bid timeout.'
 
+/* Kept high level on purpose (Rob, 24 Sep 2026): what the switch is for,
+   not what it does to each page — REQUIREMENTS §7 has that detail. */
 export const SWITCH_TIP =
-  'Switches DSP integration on or off for your organisation. While it is off, no DSP is sent bid requests, sellers.json and the Partner API are unavailable, and Campaign Status and Advertisers / Inventory are hidden. Switching it off deletes nothing: switch it back on and every setting, DSP and campaign is as you left it.'
+  'For retailers running their digital signage as a retail media network. Enabling DSP integration lets you sell ad inventory on your in-store screens to advertisers through their DSPs, opening up a new revenue opportunity from the screens you already have.'
 
 export function ExchangeSettings() {
   const { draft, saved, update, published } = useSection()
