@@ -904,6 +904,28 @@ async function promoteFaqRevisionIfReady(db, articleRef, why) {
       }
     }
 
+    // Releases: a project assigned to a release (projects/{id}.releaseId,
+    // set from its Docs page) holds its approved FAQ proposals until that
+    // release is marked live, so a release's whole bundle of help-centre
+    // changes goes out together — onReleaseMarkedLive below is the other
+    // half, re-running this for every such proposal at that moment. Fully
+    // opt-in: no sourceProjectId on the proposal (an MCP-originated one, or
+    // one written before the field existed), no releaseId on the project,
+    // or a project/release doc that no longer exists all fall straight
+    // through to promotion exactly as before releases existed.
+    const sourceProjectId = typeof rev.sourceProjectId === "string" && rev.sourceProjectId ? rev.sourceProjectId : null;
+    if (sourceProjectId) {
+      const projectSnap = await tx.get(db.collection("projects").doc(sourceProjectId));
+      const releaseId = projectSnap.exists ? projectSnap.data().releaseId : null;
+      if (typeof releaseId === "string" && releaseId) {
+        const releaseSnap = await tx.get(db.collection("releases").doc(releaseId));
+        if (releaseSnap.exists && releaseSnap.data().status !== "live") {
+          logger.info("Approved FAQ revision waiting on its project's release to go live", { articleId: articleRef.id, projectId: sourceProjectId, waitingOnRelease: releaseId, why });
+          return;
+        }
+      }
+    }
+
     const now = new Date();
     const update = {
       title: typeof rev.title === "string" && rev.title.trim() ? rev.title : a.title,
@@ -944,6 +966,83 @@ exports.onFaqArticleRevisionApproved = onDocumentUpdated(
     const isApproved = after.pendingRevision && after.pendingRevision.reviewStatus === "approved";
     if (!isApproved || wasApproved) return;
     await promoteFaqRevisionIfReady(getFirestore(), event.data.after.ref, "revision approved in FAQ Management");
+  }
+);
+
+// ── A release marked live ⇒ its bundle of approved FAQ proposals goes live ─
+// The third event that can be the last thing a proposal is waiting on (see
+// promoteFaqRevisionIfReady's release check above): the release its source
+// project is assigned to moving draft -> live (Releases page → Mark live;
+// firestore.rules only ever lets status advance that way). Finds every
+// project on this release, then every approved proposal sourced from one of
+// them, and runs each through the same promotion path — which still checks
+// its source tickets, so a proposal whose ticket hasn't merged yet keeps
+// waiting and goes live when that ticket does.
+//
+// Firestore's `in` takes up to 30 values on firebase-admin 12, but this
+// chunks at 10 so the query stays valid on any SDK/backend limit this
+// codebase might meet.
+const RELEASE_PROJECT_IN_CHUNK = 10;
+
+exports.onReleaseMarkedLive = onDocumentUpdated(
+  "releases/{releaseId}",
+  async (event) => {
+    const before = event.data?.before?.data();
+    const after = event.data?.after?.data();
+    if (!before || !after) {
+      return;
+    }
+    if (before.status === "live" || after.status !== "live") {
+      return;
+    }
+
+    const db = getFirestore();
+    const releaseId = event.params.releaseId;
+    const why = `release ${releaseId} marked live`;
+
+    try {
+      const projectsSnap = await db.collection("projects").where("releaseId", "==", releaseId).get();
+      const projectIds = projectsSnap.docs.map((d) => d.id);
+      if (!projectIds.length) {
+        logger.info("Release marked live with no projects assigned to it", { releaseId });
+        return;
+      }
+
+      const articleRefs = new Map();
+      for (let i = 0; i < projectIds.length; i += RELEASE_PROJECT_IN_CHUNK) {
+        const chunk = projectIds.slice(i, i + RELEASE_PROJECT_IN_CHUNK);
+        const snap = await db.collection("faqArticles")
+          .where("pendingRevision.sourceProjectId", "in", chunk)
+          .where("pendingRevision.reviewStatus", "==", "approved")
+          .get();
+        snap.docs.forEach((d) => articleRefs.set(d.id, d.ref));
+      }
+
+      for (const ref of articleRefs.values()) {
+        try {
+          await promoteFaqRevisionIfReady(db, ref, why);
+        } catch (err) {
+          // One article failing (a contended transaction, say) mustn't stop
+          // the rest of the release's bundle from going live.
+          logger.error("Failed to promote FAQ revision for live release", {
+            releaseId,
+            articleId: ref.id,
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
+      }
+
+      logger.info("Release marked live — ran approved FAQ proposals through promotion", {
+        releaseId,
+        projectCount: projectIds.length,
+        articleCount: articleRefs.size,
+      });
+    } catch (err) {
+      logger.error("Failed to process release marked live", {
+        releaseId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
   }
 );
 
@@ -1253,10 +1352,11 @@ const { GoogleAuth } = require("google-auth-library");
 // session following a BUILD/DEPLOY skills block needs to read the skills
 // library, and this is the fallback board-access path it's told to use if
 // identitytoolkit.googleapis.com is unreachable (see ROUTINE_INSTRUCTIONS.md
-// "Board access"). Both collections are already isBoardReader()-readable
+// "Board access"). "releases" added alongside the Releases feature, same
+// reasoning as "programs" above it. All are already isBoardReader()-readable
 // straight from Firestore; this just lets the same read work through the
 // proxy too.
-const BOARD_API_COLLECTIONS = ["projects", "programs", "backlogItems", "interfaces", "projectDocs", "faqCategories", "faqArticles", "skills", "settings"];
+const BOARD_API_COLLECTIONS = ["projects", "programs", "releases", "backlogItems", "interfaces", "projectDocs", "faqCategories", "faqArticles", "skills", "settings"];
 const FIRESTORE_HOST = "https://firestore.googleapis.com";
 const FIRESTORE_DOCS = `/v1/projects/${process.env.GCLOUD_PROJECT || "backlog-tracker-e4ed2"}/databases/(default)/documents`;
 
