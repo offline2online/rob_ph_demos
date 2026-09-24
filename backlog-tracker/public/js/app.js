@@ -61,6 +61,13 @@ const itemsRef = collection(db, "backlogItems");
 const projectsRef = collection(db, "projects");
 const interfacesRef = collection(db, "interfaces");
 const programsRef = collection(db, "programs");
+// Releases — a named, ordered product release that a project can be
+// assigned to and FAQ articles can be bound to (introducedInReleaseId /
+// removedInReleaseId). See firestore.rules `match /releases/{releaseId}`
+// and functions/index.js's onReleaseMarkedLive, which promotes every
+// already-approved FAQ proposal for a release's projects the moment the
+// release is marked live.
+const releasesRef = collection(db, "releases");
 const projectDocsRef = collection(db, "projectDocs");
 // Organisation-wide skills library — unscoped to any project, unlike every
 // ref above it (see firestore.rules `match /skills/{skillId}` and
@@ -230,6 +237,7 @@ let projects = [];
 let projectsLoaded = false;
 let interfaces = [];
 let programs = [];
+let releases = [];
 let projectDocs = [];
 let skills = [];
 let editingProjectId = null;
@@ -390,6 +398,7 @@ function closeAllSubPages() {
   closeFaqArticleEditorPage();
   closeFaqRevisionReviewPage();
   closeSkillsPage();
+  closeReleasesPage();
   // Every routed page (FAQ Management, Settings, the article editor — see
   // "URL routing" below) opens by calling this first, so clearing the hash
   // here is the one
@@ -1886,6 +1895,7 @@ primeFromRest("backlogItems", (rows) => {
   render();
 }, byMillis("createdAt", "desc"), BACKLOG_ITEM_RENDER_FIELDS);
 primeFromRest("programs", (rows) => { programs = rows; render(); });
+primeFromRest("releases", (rows) => { releases = rows; onReleasesChanged(); }, byNumber("order"));
 primeFromRest("interfaces", (rows) => { interfaces = rows; render(); });
 primeFromRest("projectDocs", (rows) => { projectDocs = rows; });
 primeFromRest("skills", (rows) => {
@@ -1936,6 +1946,8 @@ onSnapshot(query(projectsRef, orderBy("createdAt", "asc")), (snap) => {
   if (archiveProjectId) renderArchivePage();
   if (docsProjectId) renderDocsPage();
   if (archivedProjectsPage && !archivedProjectsPage.hidden) renderArchivedProjectsPage();
+  // The Releases page counts each release's assigned projects.
+  if (releasesPage && !releasesPage.hidden) renderReleasesPage();
 }, (err) => {
   console.error("backlog-tracker: projects listener error", err);
 });
@@ -1956,6 +1968,14 @@ onSnapshot(programsRef, (snap) => {
   if (docsProjectId) renderDocsPage();
 }, (err) => {
   console.error("backlog-tracker: programs listener error", err);
+});
+
+onSnapshot(query(releasesRef, orderBy("order", "asc")), (snap) => {
+  liveCollections.add("releases");
+  releases = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  onReleasesChanged();
+}, (err) => {
+  console.error("backlog-tracker: releases listener error", err);
 });
 
 onSnapshot(projectDocsRef, (snap) => {
@@ -2542,6 +2562,109 @@ function populateProgramSelect(selectEl, selectedId) {
   selectEl.innerHTML = '<option value="">No program</option>' +
     opts.map((p) => `<option value="${escapeHTML(p.id)}"${p.id === selectedId ? " selected" : ""}>${escapeHTML(p.name)}</option>`).join("") +
     '<option value="__new__">+ New program…</option>';
+}
+
+// ── Releases — a named, ordered product release (see releasesRef above).
+// `order` is assigned once, here, at creation (max existing + 1, or 1 for
+// the first) and never changes afterwards — firestore.rules refuses any
+// update that moves it — because it's what article bindings are
+// range-compared on (articleAppliesToRelease below). Status only ever
+// advances draft → live; there is deliberately no way back in this UI, and
+// the rules refuse one from anywhere else too.
+const RELEASE_STATUS_LABELS = { draft: "Draft", live: "Live" };
+
+function releasesByOrderDesc() {
+  return releases.slice().sort((a, b) => (Number(b.order) || 0) - (Number(a.order) || 0));
+}
+
+function releaseLabel(r) {
+  if (!r) return "";
+  return r.version ? `${r.name} (${r.version})` : r.name;
+}
+
+// The release with the highest order among those marked live — what the
+// public help centre and the MCP FAQ tools default to when no specific
+// release is asked for. null when nothing is live yet.
+function currentLiveRelease() {
+  return releasesByOrderDesc().find((r) => r.status === "live") || null;
+}
+
+// The one canonical definition of "does this article apply to this
+// release", by release order: an article applies from the release it was
+// introduced in (inclusive) up to, but not including, the release it was
+// removed in. An unset binding is open-ended on that side, so an article
+// with neither set applies to every release — which is what keeps every
+// article written before releases existed visible exactly as before.
+// faq/js/faq-data.js and functions/mcp-server.js carry the same check
+// inline (separate deployables, no shared module) — keep all three in step.
+// A binding that points at a release that no longer exists is treated as
+// not satisfied, rather than silently widening the article's range.
+function articleAppliesToRelease(article, releasesById, targetOrder) {
+  if (!article) return false;
+  if (article.introducedInReleaseId) {
+    const introduced = releasesById[article.introducedInReleaseId];
+    if (!introduced || !(Number(introduced.order) <= targetOrder)) return false;
+  }
+  if (article.removedInReleaseId) {
+    const removed = releasesById[article.removedInReleaseId];
+    if (!removed || !(targetOrder < Number(removed.order))) return false;
+  }
+  return true;
+}
+
+function releasesByIdMap() {
+  const map = {};
+  releases.forEach((r) => { map[r.id] = r; });
+  return map;
+}
+
+async function createRelease(name, version) {
+  const trimmed = (name || "").trim();
+  if (!trimmed) return null;
+  const order = releases.length ? Math.max(...releases.map((r) => Number(r.order) || 0)) + 1 : 1;
+  const email = (auth.currentUser && auth.currentUser.email) || null;
+  const ref = await addDoc(releasesRef, {
+    name: trimmed,
+    version: (version || "").trim() || null,
+    status: "draft",
+    order,
+    madeLiveAt: null,
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+    ...(email ? { createdByEmail: email, updatedByEmail: email } : {}),
+  });
+  return ref.id;
+}
+
+async function markReleaseLive(id) {
+  const email = (auth.currentUser && auth.currentUser.email) || null;
+  await updateDoc(doc(db, "releases", id), {
+    status: "live",
+    madeLiveAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+    ...(email ? { updatedByEmail: email } : {}),
+  });
+}
+
+async function setProjectRelease(id, releaseId) {
+  await setDoc(doc(db, "projects", id), { releaseId: releaseId || null }, { merge: true });
+}
+
+// Shared by the Docs page and the FAQ article editor's two release-binding
+// selects. Unlike populateProgramSelect there is no inline "+ New
+// release…" option: a release carries an order and a one-way status, so
+// it's created on the Releases page (nav drawer) where both are visible,
+// not conjured from a dropdown. Newest release first. A selected id that
+// no longer exists is kept as its own option so the saved value isn't
+// silently dropped on the next save.
+function populateReleaseSelect(selectEl, selectedId, { emptyLabel = "No release" } = {}) {
+  const opts = releasesByOrderDesc();
+  const missing = selectedId && !opts.some((r) => r.id === selectedId)
+    ? `<option value="${escapeHTML(selectedId)}" selected>Unknown release (${escapeHTML(selectedId)})</option>`
+    : "";
+  selectEl.innerHTML = `<option value="">${escapeHTML(emptyLabel)}</option>` +
+    opts.map((r) => `<option value="${escapeHTML(r.id)}"${r.id === selectedId ? " selected" : ""}>${escapeHTML(releaseLabel(r))} — ${escapeHTML((RELEASE_STATUS_LABELS[r.status] || r.status || "").toLowerCase())}</option>`).join("") +
+    missing;
 }
 
 // An interface is a maintained contract document shared between exactly
@@ -3845,6 +3968,16 @@ docsProgramSelect.addEventListener("change", async () => {
   }
   setProjectProgram(docsProjectId, docsProgramSelect.value);
 });
+// Same persist-immediately shape as the program picker above, minus the
+// inline create — releases are created on the Releases page. Assigning a
+// release is what gates this project's approved FAQ proposals on that
+// release going live (functions/index.js promoteFaqRevisionIfReady).
+const docsReleaseSelect = document.getElementById("docs-release-select");
+docsReleaseSelect.addEventListener("change", () => {
+  if (!docsProjectId) return;
+  setProjectRelease(docsProjectId, docsReleaseSelect.value);
+});
+document.getElementById("docs-open-releases-btn").addEventListener("click", () => openReleasesPage());
 
 function openDocsPage(pid) {
   closeAllSubPages();
@@ -3908,6 +4041,9 @@ function renderDocsPage() {
   document.getElementById("docs-page-project-name").textContent = project ? project.name : projectName(docsProjectId);
   if (document.activeElement !== docsProgramSelect) {
     populateProgramSelect(docsProgramSelect, project ? project.programId || "" : "");
+  }
+  if (document.activeElement !== docsReleaseSelect) {
+    populateReleaseSelect(docsReleaseSelect, project ? project.releaseId || "" : "");
   }
   if (document.activeElement !== docsReadmeInput) {
     docsReadmeInput.value = (project && project.readmeMd) || "";
@@ -4115,6 +4251,126 @@ document.getElementById("if-submit").addEventListener("click", async () => {
     return;
   }
   closeInterfaceModal();
+});
+
+// ── Releases page ─────────────────────────────────────────────────────────
+// Every release, newest (highest order) first, with the one thing you can
+// do to one: mark a draft live. Reading needs only sign-in (firestore.rules
+// isBoardReader on `releases`); creating or marking live needs editor
+// access, same gate as the Skills page below. Marking live is one-way —
+// a live row has no action at all — and is what fires
+// functions/index.js's onReleaseMarkedLive, promoting every approved FAQ
+// proposal waiting on that release's projects.
+const releasesPage = document.getElementById("releases-page");
+
+function openReleasesPage() {
+  closeAllSubPages();
+  document.getElementById("projects-root").hidden = true;
+  document.getElementById("board-page-header").hidden = true;
+  releasesPage.hidden = false;
+  setRouteHash("#releases");
+  updateTopbarTitle();
+  renderReleasesPage();
+}
+function closeReleasesPage() {
+  releasesPage.hidden = true;
+  document.getElementById("projects-root").hidden = false;
+  document.getElementById("board-page-header").hidden = false;
+}
+
+async function requireReleaseEditor() {
+  if (!(await requireFaqEditor())) return false;
+  if (currentConsoleRole() === "viewer") {
+    await showAlert("You have read-only access to this console, so you can't create releases or mark them live. An admin can change your role in Settings → Team & agent access.");
+    return false;
+  }
+  return true;
+}
+
+function releaseRowHTML(r) {
+  const created = r.createdAt && r.createdAt.toDate ? r.createdAt.toDate().toLocaleDateString() : "—";
+  const liveOn = r.madeLiveAt && r.madeLiveAt.toDate ? r.madeLiveAt.toDate().toLocaleDateString() : "";
+  const isLive = r.status === "live";
+  const current = currentLiveRelease();
+  const isCurrent = !!(current && current.id === r.id);
+  const projectCount = projects.filter((p) => p.releaseId === r.id && !p.archived).length;
+  return `
+    <tr data-release-id="${escapeHTML(r.id)}">
+      <td>${escapeHTML(r.name || "")}</td>
+      <td>${r.version ? escapeHTML(r.version) : "—"}</td>
+      <td><span class="badge ${isLive ? "badge-status-published" : "badge-status-draft"}">${escapeHTML(RELEASE_STATUS_LABELS[r.status] || r.status || "")}</span>${liveOn ? ` <span class="field-hint">${escapeHTML(isCurrent ? `current · ${liveOn}` : liveOn)}</span>` : ""}</td>
+      <td>${projectCount} project${projectCount === 1 ? "" : "s"}</td>
+      <td>${escapeHTML(created)}</td>
+      <td>${isLive ? "" : `<button type="button" class="restore-btn release-mark-live-btn" data-release-id="${escapeHTML(r.id)}" data-editor-only>Mark live</button>`}</td>
+    </tr>`;
+}
+
+function renderReleasesPage() {
+  const rows = releasesByOrderDesc();
+  document.getElementById("releases-count").textContent = `${rows.length} release${rows.length === 1 ? "" : "s"}`;
+  document.getElementById("releases-table-body").innerHTML = rows.map(releaseRowHTML).join("");
+  document.getElementById("releases-empty").hidden = rows.length !== 0;
+}
+
+// One place every releases update (REST prime or listener) lands, so every
+// view that shows a release stays current: this page, the Docs page's
+// picker, and the article editor's two binding pickers (re-populated with
+// their CURRENT value, so an unsaved choice survives a live update).
+function onReleasesChanged() {
+  if (releasesPage && !releasesPage.hidden) renderReleasesPage();
+  if (docsProjectId) renderDocsPage();
+  if (faqArticleEditorPage && !faqArticleEditorPage.hidden) {
+    [faIntroducedReleaseSelect, faRemovedReleaseSelect].forEach((sel) => {
+      if (document.activeElement !== sel) populateReleaseSelect(sel, sel.value, { emptyLabel: "Not set" });
+    });
+  }
+}
+
+document.getElementById("releases-add-btn").addEventListener("click", async () => {
+  if (!(await requireReleaseEditor())) return;
+  const result = await showFieldDialog({
+    title: "New release",
+    message: "Releases are numbered in the order they're created, and start as a draft.",
+    fields: [
+      { id: "name", label: "Name", placeholder: "e.g. October 2026" },
+      { id: "version", label: "Version (optional)", placeholder: "e.g. 2.4.0" },
+    ],
+    okLabel: "Create release",
+  });
+  if (!result) return;
+  const name = (result.name || "").trim();
+  const version = (result.version || "").trim();
+  if (!name) { await showAlert("A release needs a name."); return; }
+  if (name.length > 120 || version.length > 40) {
+    await showAlert("Keep the name to 120 characters and the version to 40.");
+    return;
+  }
+  try {
+    await createRelease(name, version);
+  } catch (err) {
+    console.error("backlog-tracker: couldn't create release", err);
+    await showAlert(`Couldn't create the release: ${err && err.code ? err.code : err}`);
+  }
+});
+
+document.getElementById("releases-table-body").addEventListener("click", async (e) => {
+  const btn = e.target.closest(".release-mark-live-btn");
+  if (!btn) return;
+  const r = releases.find((x) => x.id === btn.dataset.releaseId);
+  if (!r || r.status === "live") return;
+  if (!(await requireReleaseEditor())) return;
+  const projectCount = projects.filter((p) => p.releaseId === r.id).length;
+  const ok = await showConfirmDialog(
+    `Mark "${releaseLabel(r)}" live? This can't be undone. Every approved FAQ update waiting on ${projectCount === 1 ? "the 1 project" : `the ${projectCount} projects`} assigned to this release goes live on the help centre with it.`,
+    { title: "Mark release live", okLabel: "Mark live" },
+  );
+  if (!ok) return;
+  try {
+    await markReleaseLive(r.id);
+  } catch (err) {
+    console.error("backlog-tracker: couldn't mark release live", err);
+    await showAlert(`Couldn't mark the release live: ${err && err.code ? err.code : err}`);
+  }
 });
 
 // ── Skills page ───────────────────────────────────────────────────────────
@@ -5329,6 +5585,12 @@ faProjectSelect.addEventListener("change", () => {
   const project = projects.find((p) => p.id === faProjectSelect.value);
   if (project && project.programId) populateProgramSelect(faProgramSelect, project.programId);
 });
+// Release binding — which release an article first applies to, and which
+// release (if any) it stops applying from. Both optional; blank means
+// open-ended on that side (see articleAppliesToRelease). Populated from the
+// same releases the Releases page manages, via populateReleaseSelect.
+const faIntroducedReleaseSelect = document.getElementById("fa-introduced-release-select");
+const faRemovedReleaseSelect = document.getElementById("fa-removed-release-select");
 
 function openFaqSettingsPage() {
   closeAllSubPages();
@@ -6241,6 +6503,7 @@ function wireFaqArticleRowInteractions(containerId) {
 document.getElementById("faq-settings-btn").addEventListener("click", () => { closeNavDrawer(); openFaqSettingsPage(); });
 document.getElementById("faq-articles-btn").addEventListener("click", () => { closeNavDrawer(); openFaqArticlesPage("all"); });
 document.getElementById("skills-btn").addEventListener("click", () => { closeNavDrawer(); openSkillsPage(); });
+document.getElementById("releases-btn").addEventListener("click", () => { closeNavDrawer(); openReleasesPage(); });
 
 // ── URL routing for FAQ Management / Settings ────────────────────────────
 // These two are the only sub-pages given a real, persistent URL: reloading
@@ -6263,6 +6526,7 @@ const ROUTE_TITLES = {
   "#faq-management": "FAQ Management",
   "#settings": "Settings",
   "#skills": "Skills",
+  "#releases": "Releases",
 };
 // Set when a #faq-article/<id> route is applied before that article has
 // actually arrived over the realtime channel yet (a cold reload straight
@@ -6360,8 +6624,9 @@ function applyRouteFromHash() {
   if (hash === "#faq-management" || hash.startsWith("#faq-management?")) openFaqArticlesPage(faqFilterFromHash(hash));
   else if (hash === "#settings") openFaqSettingsPage();
   else if (hash === "#skills") openSkillsPage();
+  else if (hash === "#releases") openReleasesPage();
   else if (hash.startsWith("#faq-article/")) openFaqArticleRouteFromHash(hash);
-  else if (!faqArticlesPage.hidden || !faqSettingsPage.hidden || !faqArticleEditorPage.hidden || !skillsPage.hidden) closeAllSubPages();
+  else if (!faqArticlesPage.hidden || !faqSettingsPage.hidden || !faqArticleEditorPage.hidden || !skillsPage.hidden || !releasesPage.hidden) closeAllSubPages();
 }
 // popstate (back/forward) and hashchange (a typed-in or pasted #hash) both
 // need to re-sync the visible page — pushState/replaceState above never
@@ -6939,6 +7204,8 @@ function faSnapshotState() {
     categoryId: faCategorySelect.value,
     projectId: faProjectSelect.value,
     programId: faProgramSelect.value,
+    introducedInReleaseId: faIntroducedReleaseSelect.value,
+    removedInReleaseId: faRemovedReleaseSelect.value,
     body: faqBodySourceForSave(),
   });
 }
@@ -6999,6 +7266,8 @@ function openFaqArticleEditorPage(articleId, { pendingRevision = false } = {}) {
   }
   faProjectSelect.value = article && article.projectId ? article.projectId : "";
   populateProgramSelect(faProgramSelect, article && article.programId ? article.programId : "");
+  populateReleaseSelect(faIntroducedReleaseSelect, article && article.introducedInReleaseId ? article.introducedInReleaseId : "", { emptyLabel: "Not set" });
+  populateReleaseSelect(faRemovedReleaseSelect, article && article.removedInReleaseId ? article.removedInReleaseId : "", { emptyLabel: "Not set" });
 
   const liveHint = document.getElementById("fa-live-link-hint");
   if (article && article.status === "published") {
@@ -7065,7 +7334,7 @@ faSlugInput.addEventListener("input", () => { faqSlugManuallyEdited = true; });
 // contenteditable typing (registerFaqEditorFormats below), which never
 // goes through Quill's text APIs at all.
 [faTitleInput, faSlugInput, faSummaryInput, faKeywordsInput, faSectionPickerLabelInput].forEach((el) => el.addEventListener("input", updateFaDirtyState));
-[faDocTypeSelect, faNeedsReview, faSectionPickerToggle, faCategorySelect, faProjectSelect, faProgramSelect].forEach((el) => el.addEventListener("change", updateFaDirtyState));
+[faDocTypeSelect, faNeedsReview, faSectionPickerToggle, faCategorySelect, faProjectSelect, faProgramSelect, faIntroducedReleaseSelect, faRemovedReleaseSelect].forEach((el) => el.addEventListener("change", updateFaDirtyState));
 faQuill.on("text-change", updateFaDirtyState);
 faQuill.root.addEventListener("input", updateFaDirtyState);
 
@@ -7088,6 +7357,18 @@ async function submitFaqArticleFromEditor(publish) {
   if (!faEditingPendingRevision && !(faProgramSelect.value && faProgramSelect.value !== "__new__")) {
     await showAlert("Add a program/product first — every article needs one so deploy's FAQ impact review and the help centre's product grouping can find it.");
     return;
+  }
+  // A removal release has to come after the introduction release, or the
+  // article would apply to no release at all and silently vanish from the
+  // help centre. Same order comparison articleAppliesToRelease makes.
+  if (!faEditingPendingRevision && faIntroducedReleaseSelect.value && faRemovedReleaseSelect.value) {
+    const byId = releasesByIdMap();
+    const introduced = byId[faIntroducedReleaseSelect.value];
+    const removed = byId[faRemovedReleaseSelect.value];
+    if (introduced && removed && !(Number(introduced.order) < Number(removed.order))) {
+      await showAlert("\"Removed in release\" has to be a later release than \"Introduced in release\" — otherwise the article applies to no release at all.");
+      return;
+    }
   }
 
   if (faEditingPendingRevision) {
@@ -7118,6 +7399,8 @@ async function submitFaqArticleFromEditor(publish) {
     categoryId,
     projectId: faProjectSelect.value || null,
     programId: (faProgramSelect.value && faProgramSelect.value !== "__new__") ? faProgramSelect.value : null,
+    introducedInReleaseId: faIntroducedReleaseSelect.value || null,
+    removedInReleaseId: faRemovedReleaseSelect.value || null,
     title,
     slug: faSlugInput.value.trim() || slugify(title),
     summary: faSummaryInput.value.trim(),
