@@ -151,6 +151,7 @@ provide one breaks something specific, named here.
 | `0023` (the DSP integration switch) | This build (Rob, 24 Sep 2026) | Kept, unless the platform already holds company feature switches (see "Open" below). |
 | `0024` (`auction_runs`: which process clears a window) | This build (24 Sep 2026) | Kept: it lets several instances share the scheduled work. |
 | `0025` (covering index on `plays`) | Stand-in only | Dropped with `plays`; the playback store answers `totals` itself. |
+| `0026` (one open API bid per advertiser and window) | This build (24 Sep 2026) | Kept: a partial unique index, as 0021. |
 
 ## Outbound boundaries — what this build calls
 
@@ -235,6 +236,10 @@ platform:
      `CampaignSource.bookSlot` above).
    - Reproduced before the fix: two concurrent auctions sold one window
      twice.
+   - Likewise one open API bid per advertiser and window (0026), billing
+     idempotent per reservation, and migrations and the seed checking
+     under the write lock (`BEGIN IMMEDIATE`) so two processes starting
+     on one empty database don't both seed (24 Sep 2026).
 2. **One auction per window, settled in the database** (24 Sep 2026).
    - A tick claims a window in `auction_runs` (migration 0024) before
      auctioning it: one row per window, so however many instances, CronJob
@@ -258,11 +263,10 @@ platform:
    - On the platform's Postgres the same SQL runs unchanged, and MVCC plus
      a connection pool replace WAL and the busy timeout.
    - What does change (24 Sep 2026): the driver. `node:sqlite` is
-     synchronous and nothing awaits it; a Postgres adapter means an
-     asynchronous repository layer — contained (one file per seam,
-     `context.ts` the only wiring point) but engineering work. Until then
-     the API is one instance on one volume (`deploy/kubernetes/`), which
-     serves a 15,000-display estate with headroom.
+     synchronous; a Postgres adapter means an asynchronous repository
+     layer — contained (one file per seam, `context.ts` the only wiring
+     point) but engineering work. Until then the API is one instance on
+     one volume (`deploy/kubernetes/`), enough for 15,000 displays.
 
 ## Reserved for later releases (REQUIREMENTS §9, spec only)
 

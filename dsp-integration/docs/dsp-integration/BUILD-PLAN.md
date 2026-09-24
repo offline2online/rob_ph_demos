@@ -912,6 +912,31 @@ is `deploy/kubernetes/`.
   repository layer; creatives to S3 through `AssetStore`; DNS-aware egress
   is the cluster's choice.
 
+### Stability under concurrency and at the edges (Rob, 24 Sep 2026)
+
+"Consider edge cases … simultaneously received bids, anything that could
+cause a race condition; make sure it's 100% stable before we push it
+live." Tried against the code first, then fixed and pinned
+(`SECURITY-PERFORMANCE.md` → "Stability under concurrency and at the
+edges" has the table):
+
+- **Reproduced and fixed**: a bid placed while the auction waited on the
+  bidders was stranded pending for ever; a DSP's malformed answer took the
+  whole auction down and the tick retried it for ever; billing throwing
+  stopped the auction due in the same minute; a cutoff missed by more than
+  an hour was never auctioned and its bids never settled; a 1e12 CPM API
+  bid was taken; two processes starting on one empty database both seeded
+  and the second crashed.
+- **Closed by the database**: one open API bid per advertiser and window
+  (migration 0026); billing idempotent under two ticks; migrations and
+  the seed check under the write lock.
+- **Tests**: 31 in `test/stability.test.ts`; 4 in
+  `test/multiprocess.test.ts`, which starts two real API processes and
+  three `scheduler:tick` runs on one database file and races them (16
+  simultaneous identical bids → one taken; three ticks → one auction;
+  SIGTERM → `integrity_check` ok). API 301, approval module 44, all
+  passing.
+
 ## 13. Prototype comparison (per screen)
 
 Filled in as each package finishes. Differences are removed, not justified.

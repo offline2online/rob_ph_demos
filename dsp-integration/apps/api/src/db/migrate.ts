@@ -54,11 +54,18 @@ export function migrateUp(db: Db, target?: string, migrations = loadMigrations()
   for (const m of migrations) {
     if (target && m.version > target) break
     if (done.has(m.version)) continue
-    tx(db, () => {
+    /* Two processes starting on one database (two replicas on a shared
+       volume, the API beside a CronJob tick) each see the migration
+       pending. The write lock is taken first and the check repeated under
+       it, so the second one finds it applied instead of failing on
+       "table already exists" and refusing to start. */
+    const applied = tx(db, () => {
+      if (db.prepare('SELECT 1 FROM schema_migrations WHERE version = ?').get(m.version)) return false
       db.exec(m.up)
       db.prepare('INSERT INTO schema_migrations (version, name, applied_at) VALUES (?, ?, ?)').run(m.version, m.name, new Date().toISOString())
-    })
-    ran.push(m.name)
+      return true
+    }, 'IMMEDIATE')
+    if (applied) ran.push(m.name)
   }
   return ran
 }

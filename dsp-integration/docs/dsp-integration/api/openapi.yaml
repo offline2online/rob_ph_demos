@@ -1378,7 +1378,7 @@ components:
         campaignId: {type: string}
         advertiserId: {type: string}
         type: {type: string, enum: [reserve, bid]}
-        bidCpm: {type: number, description: 'The CPM, in the company currency: the bid (type bid), or the reservation price agreed through the DSP (type reserve). Must clear the effective floor. A reservation is booked at this price.'}
+        bidCpm: {type: number, exclusiveMinimum: 0, maximum: 10000, description: 'The CPM, in the company currency: the bid (type bid), or the reservation price agreed through the DSP (type reserve). Must clear the effective floor and is at most 10,000. A reservation is booked at this price.'}
     Reservation:
       type: object
       required: [reservationId, status]

@@ -103,7 +103,11 @@ review — the Partner API's rate limits and size caps, the database-enforced
 24 Sep 2026 scalability review for 15,000 displays — the exchange sells a
 play window per *position* (display type × slot), so load scales with
 positions, not displays; the before/after measurements for three estate
-shapes; and what a second replica needs (Postgres) before it is safe. Read
+shapes; and what a second replica needs (Postgres) before it is safe;
+`SECURITY-PERFORMANCE.md` → "Stability under concurrency and at the
+edges" is the 24 Sep 2026 race and edge-case pass before going live
+(`apps/api/test/stability.test.ts` and `test/multiprocess.test.ts`, which
+races two real API processes on one database — keep both green). Read
 all three before changing the exchange, the Partner API or a `platform/`
 interface. **`dsp-integration/deploy/kubernetes/`** (24 Sep 2026) is the
 same API for a client's own VPC on EKS — a container image, Kustomize

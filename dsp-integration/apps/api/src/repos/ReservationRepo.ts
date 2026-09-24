@@ -19,17 +19,21 @@ export interface ReservationRecord {
   testMode: boolean
   pricingType: string | null
   handedOffAt: string | null
+  /* When the row was written (read only; insert stamps it). The auction
+     breaks a tie on it: the earlier bid wins. */
+  createdAt?: string
 }
 
 interface Row {
   id: string; partner_id: string; advertiser_id: string | null; campaign_id: string | null; position_id: string; window_start: string
   type: 'reserve' | 'bid'; channel: 'api' | 'openrtb'; bid_cpm: number | null; currency: string; status: ReservationStatus
   clearing_cpm: number | null; reason: string | null; test_mode: number; pricing_type: string | null; handed_off_at: string | null
+  created_at: string
 }
 const toRecord = (r: Row): ReservationRecord => ({
   id: r.id, partnerId: r.partner_id, advertiserId: r.advertiser_id, campaignId: r.campaign_id, positionId: r.position_id, windowStart: r.window_start,
   type: r.type, channel: r.channel, bidCpm: r.bid_cpm, currency: r.currency, status: r.status, clearingCpm: r.clearing_cpm, reason: r.reason,
-  testMode: !!r.test_mode, pricingType: r.pricing_type, handedOffAt: r.handed_off_at,
+  testMode: !!r.test_mode, pricingType: r.pricing_type, handedOffAt: r.handed_off_at, createdAt: r.created_at,
 })
 
 /* A window is taken once something has won or reserved it. */
@@ -52,6 +56,10 @@ export interface ReservationRepo {
      (reservations (status, window_start); billing_line_items.reservation_id
      is unique) however many windows have ever been sold or billed. */
   billable(endedBy: string): ReservationRecord[]
+  /* Live API bids still pending for a window that has already started:
+     nothing will clear them now (the auction never ran, or ran before they
+     were placed). The tick settles them as lost (scheduler.ts). */
+  stalePending(startedBy: string): ReservationRecord[]
 }
 
 export function sqliteReservationRepo(db: Db): ReservationRepo {
@@ -99,6 +107,8 @@ export function sqliteReservationRepo(db: Db): ReservationRepo {
       }
       return out
     },
+    stalePending: (startedBy) =>
+      (prepared(db, "SELECT * FROM reservations WHERE status = 'pending' AND window_start <= ? ORDER BY window_start, id").all(startedBy) as unknown as Row[]).map(toRecord),
     billable: (endedBy) =>
       (prepared(db,
         `SELECT r.* FROM reservations r

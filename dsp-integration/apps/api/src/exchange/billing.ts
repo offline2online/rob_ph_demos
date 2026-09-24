@@ -68,12 +68,16 @@ export function runBilling(ctx: Context): LineItem[] {
       positionId: r.positionId, windowStart: r.windowStart, windowEnd: new Date(end).toISOString(), plays: played.plays, playedSec: played.playedSec, expectedSec,
       assumedViews, realisedViews, cpm: r.clearingCpm as number, currency: r.currency, amount: round2((realisedViews / 1000) * (r.clearingCpm as number)),
     }
-    prepared(ctx.db,
+    /* reservation_id is unique: a second tick billing the same window at
+       the same moment (two API instances, a CronJob beside the API) writes
+       nothing, and neither throws. The first line item stands. */
+    const written = prepared(ctx.db,
       `INSERT INTO billing_line_items (id, reservation_id, partner_id, advertiser_id, campaign_id, position_id, window_start, window_end, plays,
-         played_sec, expected_sec, assumed_views, realised_views, cpm, currency, amount, computed_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         played_sec, expected_sec, assumed_views, realised_views, cpm, currency, amount, computed_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT (reservation_id) DO NOTHING`,
     ).run(item.id, item.reservationId, item.partnerId, item.advertiserId, item.campaignId, item.positionId, item.windowStart, item.windowEnd, item.plays,
-      item.playedSec, item.expectedSec, item.assumedViews, item.realisedViews, item.cpm, item.currency, item.amount, new Date(now).toISOString())
-    out.push(item)
+      item.playedSec, item.expectedSec, item.assumedViews, item.realisedViews, item.cpm, item.currency, item.amount, new Date(now).toISOString()).changes > 0
+    if (written) out.push(item)
   }
   return out
 }

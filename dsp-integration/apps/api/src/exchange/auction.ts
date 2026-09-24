@@ -84,7 +84,19 @@ export async function runAuction(ctx: Context, windowStart: Date = nextWindow(ct
   const worker = async () => {
     while (next < positions.length) {
       const i = next++
-      outcomes[i] = await clearPosition(ctx, positions[i], start, bidders)
+      const p = positions[i]
+      try {
+        outcomes[i] = await clearPosition(ctx, p, start, bidders)
+      } catch (e) {
+        /* One position's failure (a fault in a DSP's answer, a store that
+           refused a write) is that position's outcome, not the auction's:
+           every other position still clears and the tick still finishes
+           (stability review, 24 Sep 2026). What was pending for it is
+           settled so no bid is left hanging on a window that has closed. */
+        const message = e instanceof Error ? e.message : String(e)
+        settlePending(ctx, p.positionId, start, `The auction for this position failed: ${message}`)
+        outcomes[i] = { positionId: p.positionId, bidRequests: 0, bids: 0, winner: null, skipped: `Failed: ${message}` }
+      }
     }
   }
   const concurrency = Math.max(1, ctx.config.auctionConcurrency || POSITION_CONCURRENCY)
@@ -136,22 +148,31 @@ async function clearPosition(ctx: Context, p: PositionRef, start: string, bidder
   out.bidRequests = sent.length
   for (const { dsp, reqId, res: pending } of sent) {
     const res = await pending
-    /* A response to some other request (OpenRTB: BidResponse.id echoes BidRequest.id) is no bid. */
-    if (!res || (res.id !== undefined && res.id !== reqId)) continue
+    /* A response to some other request (OpenRTB: BidResponse.id echoes
+       BidRequest.id) is no bid; so is anything that isn't the shape of a
+       BidResponse — a DSP's malformed answer must not throw here and take
+       the whole auction down with it. */
+    if (!res || typeof res !== 'object' || (res.id !== undefined && res.id !== reqId)) continue
     let seen = 0
     const budget = { creativeFetches: 1 }
-    for (const seatbid of res.seatbid ?? []) {
-      for (const bid of seatbid.bid ?? []) {
+    for (const seatbid of Array.isArray(res.seatbid) ? res.seatbid : []) {
+      if (!seatbid || typeof seatbid !== 'object') continue
+      for (const bid of Array.isArray(seatbid.bid) ? seatbid.bid : []) {
         if (++seen > MAX_BIDS_PER_RESPONSE) break
+        if (!bid || typeof bid !== 'object') continue
         out.bids++
-        const r = await recordDspBid(ctx, p, dsp, start, res, seatbid.seat, bid, budget)
+        const r = await recordDspBid(ctx, p, dsp, start, res, typeof seatbid.seat === 'string' ? seatbid.seat : undefined, bid, budget)
         if (r.status === 'pending') candidates.push(r)
       }
     }
   }
 
-  /* API bids placed earlier are checked again: approval, lists or pricing may have changed. */
-  for (const r of existing.filter((x) => x.channel === 'api' && x.type === 'bid' && x.status === 'pending')) {
+  /* API bids are checked again: approval, lists or pricing may have
+     changed. Read now, not with `existing` before the bidders answered: a
+     bid placed while they were answering (bidding is open until the
+     cutoff) is in this auction, not stranded pending after it. */
+  const apiBids = ctx.reservations.forWindow(p.positionId, start).filter((x) => x.channel === 'api' && x.type === 'bid' && x.status === 'pending')
+  for (const r of apiBids) {
     const partner = ctx.partners.get(r.partnerId)
     const seat = partner?.seats.find((s) => advertiserSlug(s.name) === r.advertiserId)
     const refusal = !partner || !seat
@@ -163,6 +184,12 @@ async function clearPosition(ctx: Context, p: PositionRef, start: string, bidder
 
   const live = clear(ctx, candidates.filter((c) => !c.testMode))
   clear(ctx, candidates.filter((c) => c.testMode))
+  /* Anything still pending for this window now arrived between the read
+     above and the clear (the checks above await), or was never a
+     candidate: it is settled here, never left pending on a closed window.
+     POST /v1/reservations also refuses a bid once the window's auction is
+     claimed (auction_runs), so on the scheduled path this finds nothing. */
+  settlePending(ctx, p.positionId, start, 'Placed after this window’s auction had cleared.')
   if (live) {
     await handOff(ctx, live)
     out.winner = { reservationId: live.id, partnerId: live.partnerId, advertiserId: live.advertiserId, clearingCpm: live.bidCpm as number }
@@ -218,7 +245,7 @@ async function bookLockedTermWindow(ctx: Context, p: PositionRef, start: string,
    told why rather than being left pending. */
 function clear(ctx: Context, candidates: ReservationRecord[]) {
   if (!candidates.length) return null
-  const [winner, ...rest] = [...candidates].sort((a, b) => (b.bidCpm as number) - (a.bidCpm as number))
+  const [winner, ...rest] = [...candidates].sort((a, b) => (b.bidCpm as number) - (a.bidCpm as number) || (a.createdAt ?? '').localeCompare(b.createdAt ?? ''))
   try {
     ctx.reservations.update(winner.id, { status: 'won', clearingCpm: winner.bidCpm, reason: null })
   } catch (e) {
@@ -228,6 +255,11 @@ function clear(ctx: Context, candidates: ReservationRecord[]) {
   }
   for (const r of rest) ctx.reservations.update(r.id, { status: 'lost', reason: `Outbid: the window cleared at ${winner.bidCpm} ${winner.currency} CPM.` })
   return ctx.reservations.get(winner.id)
+}
+
+/* Marks every bid for the window still pending as lost, with the reason. */
+function settlePending(ctx: Context, positionId: string, start: string, reason: string) {
+  for (const r of ctx.reservations.forWindow(positionId, start)) if (r.status === 'pending') ctx.reservations.update(r.id, { status: 'lost', reason })
 }
 
 /* Records one bid from a DSP's response: a candidate (pending) if it passes
