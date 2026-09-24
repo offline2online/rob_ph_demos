@@ -1,10 +1,11 @@
-import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query'
+import { QueryClient, QueryClientProvider, useQuery, useQueryClient } from '@tanstack/react-query'
 import { App as AntApp, ConfigProvider } from 'antd'
-import { useState, type ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { Navigate, Outlet, RouterProvider, createBrowserRouter, createHashRouter, useMatches, type RouteObject } from 'react-router-dom'
 import type { Session } from '@ph-dsp/types'
 import { api } from './api/client'
 import { useFeatures } from './api/features'
+import { Q } from './api/queries'
 import { type Flags, envFlags } from './flags'
 import { AdvertisersPage } from './features/advertisers/AdvertisersPage'
 import { CampaignDetail } from './features/campaign-status/CampaignDetail'
@@ -110,9 +111,34 @@ function featureRoutes(flags: Flags): RouteObject[] {
   ]
 }
 
+/* Once the first page is up, fetch every other section this user can open
+   in the background, so a first click on any of them has its data already
+   (page-load review, Rob 24 Sep 2026). Only what the user may see: DSP
+   pages need the flag, admin-only reads need an admin, and Campaign Status /
+   Advertisers / Inventory need DSP integration switched on. A prefetch that
+   fails is simply fetched again when its page opens. */
+const PREFETCH_AFTER_MS = 800
+function usePrefetchSections(flags: Flags, session: Session | undefined, dspOn: boolean | undefined) {
+  const qc = useQueryClient()
+  useEffect(() => {
+    if (!session || session.role === 'hq_helpdesk' || (flags.dspIntegration && dspOn === undefined)) return
+    const admin = session.role === 'hq_admin'
+    const wanted: { queryKey: readonly string[]; queryFn: () => Promise<unknown> }[] = [
+      Q.displayTypes, Q.playlists,
+      ...(flags.dspIntegration ? [Q.partners, Q.advertiserSettings] : []),
+      ...(flags.dspIntegration && admin ? [Q.exchange, Q.targetingVariables] : []),
+      ...(flags.dspIntegration && dspOn ? [Q.advertisers, Q.availableInventory, Q.buyersLists, Q.campaigns] : []),
+    ]
+    /* After the page in front of the user has asked for its own data. */
+    const timer = setTimeout(() => wanted.forEach((q) => void qc.prefetchQuery(q)), PREFETCH_AFTER_MS)
+    return () => clearTimeout(timer)
+  }, [qc, flags.dspIntegration, session, dspOn])
+}
+
 function Root({ flags }: { flags: Flags }) {
-  const session = useQuery({ queryKey: ['session'], queryFn: () => api<Session>('GET', '/admin/v1/session') })
+  const session = useQuery(Q.session)
   const features = useFeatures(flags.dspIntegration)
+  usePrefetchSections(flags, session.data, features.data?.dspIntegration)
   const matches = useMatches()
   const handle = [...matches].reverse().map((m) => m.handle as RouteHandle | undefined).find((h) => h?.title)
   const title = handle?.tip ? <WithTip tip={handle.tip}>{handle.title}</WithTip> : (handle?.title ?? '')
@@ -126,7 +152,7 @@ function Root({ flags }: { flags: Flags }) {
 }
 
 function Home({ flags }: { flags: Flags }) {
-  const session = useQuery({ queryKey: ['session'], queryFn: () => api<Session>('GET', '/admin/v1/session') })
+  const session = useQuery(Q.session)
   if (!session.data) return null
   const first = navFor(flags, session.data)[0]
   /* A help desk user sees none of this (spec, "Who sees each section"). */
@@ -143,7 +169,12 @@ export const appRoutes = (flags: Flags): RouteObject[] => [
 ]
 
 export function Providers({ children }: { children: ReactNode }) {
-  const [client] = useState(() => new QueryClient({ defaultOptions: { queries: { retry: false, refetchOnWindowFocus: false } } }))
+  /* staleTime: data fetched in the last 30 s is shown without asking the API
+     again, so moving back to a section is instant and costs no request (page-
+     load review, 24 Sep 2026). A save invalidates what it changed, so your
+     own edits always show at once; someone else's, on the shared hosted
+     demo, within 30 s of opening the page. */
+  const [client] = useState(() => new QueryClient({ defaultOptions: { queries: { retry: false, refetchOnWindowFocus: false, staleTime: 30_000 } } }))
   return (
     <ConfigProvider theme={phTheme}>
       <AntApp>

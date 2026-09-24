@@ -101,9 +101,19 @@ with `useCampaignApprovals`:
 ```tsx
 import { useCampaignApprovals, type ApprovalClient } from '@ph-dsp/campaign-approval/ui'
 
-const client: ApprovalClient = { getApproval: (id) => api.get(`/admin/v1/campaigns/${id}/approval`) }
+const client: ApprovalClient = {
+  getApproval: (id) => api.get(`/admin/v1/campaigns/${id}/approval`),
+  // Optional, and worth it: the table's rows in one request per 200, not one per row.
+  listApprovals: (cursor) => api.get(`/admin/v1/approvals?limit=200${cursor ? `&cursor=${cursor}` : ''}`),
+}
 const { approvals, reload } = useCampaignApprovals(rows.filter((r) => r.source !== 'hq').map((r) => r.id), client)
 ```
+
+Without `listApprovals` the hook asks once per row (the POC's Campaign
+Status made 31 requests a visit that way; page-load review, 24 Sep 2026).
+With it, rows come from the paged list and only a row the list doesn't cover
+is fetched on its own. A single campaign always uses `getApproval`, which
+returns the full view (creative, canvas, audit).
 
 **Status column:**
 

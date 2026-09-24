@@ -143,10 +143,16 @@ export function createHost(opts: { store: BlobStore; dataDir: string; migrations
      itself — a known, accepted gap; /_tasks/tick is there for a scheduler
      once a project owner enables one (README). */
   let lastTick = 0
+  /* SQLite's running count of rows changed on this connection. */
+  const changes = (ctx: Context) => Number((ctx.db.prepare('SELECT total_changes() AS n').get() as { n: number }).n)
   const runTick = async (ctx: Context) => {
+    const before = changes(ctx)
     await schedulerTick(ctx, cleared, log)
     sweepRejectedCampaigns(ctx.db, ctx.config.rejectedCampaignRetentionDays, ctx.clock)
-    await persist(ctx)
+    /* Most ticks bill nothing and clear no auction: only upload the database
+       (a few MB, gzipped and chunked into Firestore) when something changed
+       (page-load review, 24 Sep 2026). */
+    if (changes(ctx) !== before) await persist(ctx)
   }
 
   const boot = () =>
@@ -160,7 +166,15 @@ export function createHost(opts: { store: BlobStore; dataDir: string; migrations
         log('Generated this instance’s keys and tokens.')
       }
       const saved = await opts.store.get('poc.sqlite')
-      if (saved) writeFileSync(dbFile, saved)
+      /* A journal left by an earlier process in the same data folder (a
+         restart without a fresh /tmp, or the local stand-in) would be
+         replayed over the restored file and corrupt it: every later read
+         then failed with "database disk image is malformed" (page-load
+         review, 24 Sep 2026). The saved copy is complete on its own. */
+      if (saved) {
+        for (const suffix of ['-wal', '-shm', '-journal']) rmSync(dbFile + suffix, { force: true })
+        writeFileSync(dbFile, saved)
+      }
       for (const name of await opts.store.list('assets/')) {
         const file = name.slice('assets/'.length)
         if (!file || existsSync(join(assetsDir, file))) continue
@@ -231,8 +245,13 @@ export function createHost(opts: { store: BlobStore; dataDir: string; migrations
     }
     if (Date.now() - lastTick > TICK_EVERY_MS) {
       lastTick = Date.now()
-      /* A failed tick is logged, never turned into the visitor's error. */
-      await runTick(ctx).catch((e) => log(`Scheduled work failed: ${e instanceof Error ? e.message : String(e)}`))
+      /* Alongside the visitor's request, not in front of it: it used to be
+         awaited here, so one click every five minutes waited for billing,
+         the auction and a database upload (page-load review, 24 Sep 2026).
+         A failed tick is logged, never turned into the visitor's error. A
+         save made meanwhile still persists after it: `persist` is one
+         ordered chain. */
+      void runTick(ctx).catch((e) => log(`Scheduled work failed: ${e instanceof Error ? e.message : String(e)}`))
     }
 
     const res = await app.inject({
