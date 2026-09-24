@@ -104,6 +104,7 @@ in `apps/api/test/hardening.test.ts`,
 |---|---|
 | **Every read of company settings ran an `INSERT … ON CONFLICT`**, a write lock, several times per play window. | Reads never write. Settings come from an in-process snapshot, frozen, replaced on every save, with a 1 s TTL. |
 | Every Partner API request re-parsed every display type from JSON. | The same snapshot pattern, with the records deep-frozen. |
+| *(24 Sep 2026)* Every Partner API request now reads the DSP integration switch from the exchange record, and that read ran an `INSERT … ON CONFLICT`. | The row is inserted only when it is missing, so reading it never writes. |
 | `db.prepare()` on every query. | A prepared-statement cache per database (`prepared()` in `db/db.ts`). |
 | No index on `displays.display_type_id`, on `plays` for billing, or on `reservations (status, window_start)`. | Migration 0020. |
 | Availability and forecast did per-window work that doesn't change between windows: the display list, the next window, audience, one reservation query per window. | `windowFacts` works these out once per request, with one ranged reservation query. |
@@ -114,6 +115,12 @@ in `apps/api/test/hardening.test.ts`,
 
 ## Checked and fine
 
+- **The DSP integration switch** (24 Sep 2026). While a retailer has it off,
+  every Partner API request answers 404 before the token is checked, as
+  with the build flag off, and sellers.json is 404. So a switched-off
+  exchange tells a caller nothing, not even whether its token is valid.
+  The Admin API refuses a new Advertiser slot while it is off. Nothing is
+  deleted.
 - **Isolation between partners.** A campaign, reservation or position that
   belongs to another partner is a 404. No IDOR was found.
 - **No SQL injection.** Every query is parameterised.

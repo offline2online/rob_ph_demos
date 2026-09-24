@@ -69,6 +69,11 @@ save from a public URL (Rob's choice, 23 Sep 2026). What that means:
   - CORS answers only GitHub Pages, githack and localhost. That stops
     another website's scripts from using it, but not a script run
     directly against the URL.
+- **The DSP integration switch** (Exchange settings, 24 Sep 2026) is
+  part of the saved data, so everyone using the link shares it. The
+  deployed database predates it, so the migration left it **off**; switch
+  it on in the prototype to see Campaign Status and Advertisers /
+  Inventory. A reset seeds the demo retailer with it on.
 - **Reset:** run the workflow with `reset = RESET`. It deletes the saved
   database and creatives (keeping the keys and tokens), redeploys, and the
   new instance seeds the demo estate afresh.

@@ -169,6 +169,8 @@ of that contract (openapi.yaml carries them):
     value ≤ 200 characters.
   - JSON bodies up to 1 MB. A larger body gets `413`.
   - Writes need a connected DSP (`409` otherwise).
+  - Every endpoint answers `404` while the retailer has DSP integration
+    switched off, as with the build flag off.
 - **Admin API (`/admin/v1`)**: behind the HQ Admin session (see
   `SessionSource`).
 - **Every response carries these headers:**

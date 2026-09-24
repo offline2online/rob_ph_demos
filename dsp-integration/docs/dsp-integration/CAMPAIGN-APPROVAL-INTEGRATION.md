@@ -233,6 +233,10 @@ for you.
 
 Delete `apps/admin/src/features/campaign-status/`, and its nav item and route in
 `apps/admin/src/App.tsx` (marked *STAND-IN*). Nothing else imports from it.
+The stand-in's nav item and route are shown only while the retailer has DSP
+integration switched on (`selling` in `navFor`, `WhileDspOn` on the route;
+24 Sep 2026). Both go with it: the platform's own Campaigns section is not
+governed by that switch.
 The POC-only campaign endpoints (`GET /admin/v1/campaigns`,
 `PUT /admin/v1/campaigns/{id}/activation`, tagged *POC stand-in*) are
 replaced by the platform's own.

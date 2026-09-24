@@ -39,6 +39,13 @@ link shares one set of data, and **there is no login** — every visitor is
 the stand-in HQ admin — so it is for demo data only; the workflow's
 `reset = RESET` input restores the demo estate.
 
+**It may open with DSP integration switched off.** The hosted database
+predates the switch, so the migration that added it left it off
+(24 Sep 2026). With it off, Campaign Status and Advertisers / Inventory
+aren't in the menu. Switch it on at DSP Integration → Exchange settings and
+Save changes, and everything comes back as it was. Anyone using the link
+shares the switch. A reset seeds the demo retailer with it on.
+
 If that API doesn't answer, the page falls back to a **read-only snapshot**
 (`apps/admin/scripts/capture-demo.mjs` captures the API's read side at
 build time) and refuses writes, saying so, rather than pretending a Save
@@ -152,7 +159,7 @@ nothing here can even read it without the key.
 |---|---|
 | `packages/types/` | Shared TypeScript types generated from `openapi.yaml` (`npm run gen:types`), plus shared catalogues: providers, targeting variables, slot owners, and the reserved §9 canonical analytics event schema v1 (`analyticsEvent.ts` — nothing produces events yet) |
 | `apps/api/` | Node + Fastify + SQLite (`node:sqlite`). All paths are served under `/api`. |
-| `apps/api/src/db/migrations/` | Versioned, reversible SQL migrations. `0001` is the stand-in for the existing platform's records; `0002`+ are this build's additive changes. `0020` adds hot-path indexes, `0021` makes "one live winner per position and window" a database guarantee, `0022` reserves the §9.3 instance identity (unused) |
+| `apps/api/src/db/migrations/` | Versioned, reversible SQL migrations. `0001` is the stand-in for the existing platform's records; `0002`+ are this build's additive changes. `0020` adds hot-path indexes, `0021` makes "one live winner per position and window" a database guarantee, `0022` reserves the §9.3 instance identity (unused), `0023` adds the retailer's DSP integration switch (`exchange.enabled`, off by default) |
 | `apps/api/src/http/rateLimit.ts` | The Partner API's per-partner token bucket (429 `rate_limited`) |
 | `apps/api/bench/load.ts` | `npm run bench` — load benchmark for the Partner API and the auction, at demo scale or a synthetic large estate (see SECURITY-PERFORMANCE.md) |
 | `apps/api/src/platform/` | Stand-ins for the existing platform: `DisplayTypeSource`, `PlaylistSource`, `DisplaySource`, `StoreSource`, `CampaignSource` (including slot bookings for the hand-off), `PlaybackSource`, `AssetStore`, `AudienceSource` |
@@ -163,7 +170,7 @@ nothing here can even read it without the key.
 | `packages/campaign-approval/` | Campaign approval as a drop-in module for the existing Campaigns section: adapter, state machine, service, routes, UI components, contract tests. See [CAMPAIGN-APPROVAL-INTEGRATION.md](docs/dsp-integration/CAMPAIGN-APPROVAL-INTEGRATION.md) |
 | `apps/admin/` | Admin UI: React 18, Vite, Ant Design 5, Tailwind 4 and AG Grid (Alpine). It renders the content frame only, because it is iframed into HQ Admin. |
 | `apps/admin/src/shared/` | Shared UI: save bar, draft state, unsaved-changes guard, delete dialog, InfoTip, list layout, collapsible panel, summary chips, AG Grid wrapper, column filters (`TableFilters.tsx` — the platform's search / funnel pattern; never hand-roll one) |
-| `apps/admin/src/features/display-types/` | Display Types screen: list, form, panels, slot assignment, delete |
+| `apps/admin/src/features/display-types/` | Display Types screen: list, form, panels, slot assignment (Advertiser greyed out for a new slot while DSP integration is switched off), delete |
 | `apps/admin/src/features/playlist-management/` | Playlist Management screen: rename and delete |
 | `apps/admin/src/features/dsp-integration/` | DSP Integration section: list, one shared draft, Exchange settings (with the **Enable DSP Integration** switch, which also decides whether Campaign Status and Advertisers / Inventory show), Advertiser settings (with the Auction schedule), Shared Targeting Variables, DSP pages and Add DSP |
 | `apps/admin/src/features/booking-schedule/` | Booking schedule: its own page (opened in a new tab from Available Inventory or an advertiser), with filters, campaign-type summary and daily/weekly/monthly views |
@@ -207,6 +214,21 @@ npm test
   off by default. When it is off:
   - DSP Integration, Advertisers and Slot assignment are hidden.
   - The Partner API and the new admin endpoints return 404.
+- **The DSP integration switch** (Rob, 24 Sep 2026) is the retailer's own
+  on/off, at the top of DSP Integration → Exchange settings (**Enable DSP
+  Integration**). It is separate from the flag: the flag decides whether
+  the build ships; the switch is a runtime setting, stored on the exchange
+  record (migration 0023).
+  - A new instance starts with it **off**. The seeded demo retailer starts
+    with it on.
+  - While it is off:
+    - the menu hides Campaign Status and Advertisers / Inventory;
+    - DSP Integration lists only Exchange settings;
+    - a new Advertiser slot can't be set up (the owner is greyed out);
+    - the Partner API and `sellers.json` answer 404;
+    - no auction sends bid requests.
+  - Nothing is deleted. `GET /admin/v1/features` tells the UI whether it is
+    on. REQUIREMENTS §7 has the detail.
 - The Partner API (`/api/v1`) takes one static bearer token per seeded
   partner: `poc-token-google-dv360` or `poc-token-amazon-dsp` by default, or
   set your own with `PARTNER_TOKENS`. Those defaults are public, so with
@@ -270,6 +292,7 @@ npm test
 - `POC_ROLE` sets the stand-in session: `hq_admin` (everything, including DSP
   Integration, saving advertiser settings and approving), `hq_marketing`
   (Display Types, Playlist Management, Advertisers / Inventory read-only, and
-  Campaign Status) or `hq_helpdesk` (none of it).
+  Campaign Status; the last two while DSP integration is switched on) or
+  `hq_helpdesk` (none of it).
 - The API seeds an empty database on its first start. Delete
   `data/poc.sqlite` and `data/assets/` to reseed.
