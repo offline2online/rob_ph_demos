@@ -279,8 +279,14 @@ describe('Campaign Status stand-in', () => {
     campaignId: 'c1', name: 'Swisse spring', source: 'api', advertiserId: 'swisse', advertiserName: 'Swisse', partnerId: 'p_google', partnerName: 'Google DSP',
     displayTypeId: 'portrait', pricingType: 'localised', activation: { enabled: false }, schedule: { nextWindowStart: '2026-09-22T00:00:00.000Z', bookedWindows: 2 },
     brief: { details: 'Spring immunity range.', promotedProducts: ['Ultiboost Immune'], objective: 'Brand Awareness', touchPoints: ['Digital Signage'] },
+    /* One playlist: the mandatory default layer plus one localised upsell (spec §6). */
+    campaignCount: 2, localisedVariables: ['Fixed Store Segments'], localisedRuleLines: ['metro-open (priority 10): Fixed Store Segments includes selected Metro'],
+    personalisedVariables: [], personalisedRuleLines: [],
   }
-  const hq = { campaignId: 'c_zinger', name: 'Zinger Box — hero', source: 'hq', advertiserId: null, advertiserName: null, partnerId: null, partnerName: null, displayTypeId: 'landscape', pricingType: null, activation: { enabled: true }, schedule: { nextWindowStart: null, bookedWindows: 0 } }
+  const hq = {
+    campaignId: 'c_zinger', name: 'Zinger Box — hero', source: 'hq', advertiserId: null, advertiserName: null, partnerId: null, partnerName: null, displayTypeId: 'landscape', pricingType: null, activation: { enabled: true }, schedule: { nextWindowStart: null, bookedWindows: 0 },
+    campaignCount: 0, localisedVariables: [], localisedRuleLines: [], personalisedVariables: [], personalisedRuleLines: [],
+  }
   const approval = {
     campaignId: 'c1', campaignName: 'Swisse spring', status: 'awaiting_approval', mode: 'manual', assetVersion: 'v1', submittedAt: null, reviewedBy: null, reviewedAt: null, reason: null,
     checks: [{ name: 'dimensions', passed: true, detail: '1080×1920 for 1080×1920.' }], targetingSummary: 'Default (localised)', creative: null, canvas: null, audit: [],
@@ -314,9 +320,18 @@ describe('Campaign Status stand-in', () => {
     /* The filters name themselves and list what is there (Rob, 20 Sep). */
     expect((await within(grid).findAllByLabelText('Advertiser filter', {}, { timeout: 10000 })).length).toBeGreaterThan(0)
     expect(within(grid).getAllByLabelText('DSP filter').length).toBeGreaterThan(0)
-    /* Schedule first, sorted so what is up next is at the top. */
-    expect([...grid.querySelectorAll('.ag-header-cell-text')].map((h) => h.textContent)).toEqual(['Schedule', 'Status', 'Name', 'Advertiser', 'DSP', 'Activation', ''])
+    /* Advertiser first, then Schedule, sorted so what is up next is at the
+       top (ticket "Campaign Status: Playlist name column..."). */
+    expect([...grid.querySelectorAll('.ag-header-cell-text')].map((h) => h.textContent)).toEqual([
+      'Advertiser', 'Schedule', 'Status', 'Playlist name', 'No. of campaigns', 'Localised variables', 'Personalised variables', 'DSP', 'Activation', '',
+    ])
     expect(await within(grid).findByText('2 windows booked', {}, { timeout: 10000 })).toBeInTheDocument()
+    /* One playlist, one submission: the default layer plus a localised
+       upsell — the count and the high-level variable summary. */
+    expect(within(grid).getByText('2')).toBeInTheDocument()
+    expect(within(grid).getByText('Fixed Store Segments')).toBeInTheDocument()
+    /* Nothing targeted on the personalised layer for this playlist. */
+    expect(within(grid).getAllByText('—').length).toBeGreaterThan(0)
     /* And a row menu for approving, rejecting, undoing a rejection, or switching a campaign on. */
     expect(within(grid).getByLabelText('Swisse spring: options')).toBeInTheDocument()
     fireEvent.click(within(grid).getByLabelText('Swisse spring: options'))

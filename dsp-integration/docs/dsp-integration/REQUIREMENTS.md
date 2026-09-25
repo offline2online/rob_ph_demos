@@ -500,6 +500,33 @@ with a minimal change to the campaign table:
   explicit stand-in for this section, deleted on integration — see
   `CAMPAIGN-APPROVAL-INTEGRATION.md` — so its campaign name link opens the
   POC's own placeholder detail page only until then.)
+- **One row is one playlist, not one row per campaign** (ticket "Campaign
+  Status: Playlist name column, submitted count, localised/personalised
+  targeting columns, Advertiser first"): an advertiser submits exactly one
+  content package per slot — the mandatory default layer plus its optional
+  localised/personalised upsells (§6 "Campaigns and content packages") —
+  stored on the one existing campaign record, so the table's row is that
+  record, not one row per layer. **Column order, left to right: Advertiser,
+  Schedule, Playlist name, No. of campaigns, Localised variables,
+  Personalised variables** (Status, DSP and the activation toggle keep
+  their existing places relative to these). **Playlist name** replaces
+  *Name* — the submission's own name — and its click-through is the
+  campaign-name link above, filtered to this playlist: because every layer
+  of the submission already lives on the one record, opening it already
+  shows every campaign the advertiser submitted for this slot, so this is
+  not a second, separate link target. **No. of campaigns** is the layer
+  count for that one submission — the mandatory default plus however many
+  targeted versions — checked against the slot's own Max campaigns cap at
+  submission time (§5, ticket "Available Inventory: Max campaigns column +
+  slot playlist statement"), not recomputed on this table.
+- **Localised variables / Personalised variables columns**: a high-level
+  summary in the cell — the deduped Shared Targeting Variable names (§6
+  "Shared Targeting Variables") targeted across that playlist's localised
+  (respectively personalised) layer(s), or an em dash when that submission
+  has none. **On hover, the exact targeting rules behind it** — the
+  specific variable, operator and values from every layer of that pricing
+  type on this playlist, consolidated into one view, not shown per layer
+  separately.
 - For a campaign **Awaiting approval**, the **activation status toggle is
   hidden** and an **Approve** icon is shown in its place, with a **Reject**
   action that requires a reason.
@@ -2042,6 +2069,15 @@ playback analytics.**
 - **Server-side enforcement**: campaigns that are not *Approved* are excluded
   from reservation, bidding and hand-off, and cannot be activated.
   *(spec only)*
+- **Campaign table now groups by playlist, not by layer**: Advertiser first,
+  then Schedule, Playlist name (was Name), No. of campaigns (this
+  submission's layer count), and Localised variables / Personalised
+  variables — a high-level summary per column with the exact rules on
+  hover. The playlist-name click-through is the existing campaign-name link
+  above, not a second one. *(spec — existing Campaigns section; built in
+  the POC's own Campaign Status stand-in,
+  `apps/admin/src/features/campaign-status/CampaignStatusPage.tsx`, with the
+  summary computed server-side by `GET /admin/v1/campaigns`)*
 
 ### Pricing
 
