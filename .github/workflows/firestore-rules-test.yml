@@ -33,6 +33,7 @@ on:
     paths:
       - 'backlog-tracker/firestore.rules'
       - 'backlog-tracker/functions/mcp-server.js'
+      - 'backlog-tracker/public/**'
       - 'backlog-tracker/test/**'
       - '.github/workflows/firestore-rules-test.yml'
   push:
@@ -40,6 +41,7 @@ on:
     paths:
       - 'backlog-tracker/firestore.rules'
       - 'backlog-tracker/functions/mcp-server.js'
+      - 'backlog-tracker/public/**'
       - 'backlog-tracker/test/**'
       - '.github/workflows/firestore-rules-test.yml'
   workflow_dispatch: {}
@@ -87,6 +89,19 @@ jobs:
       # an in-process test would never exercise.
       - name: Run MCP client integration test
         run: npm run test:client
+
+      # The console's own start-up: imports the real public/js/app.js under
+      # a stub DOM and fails if module evaluation stops early, then clicks
+      # every hamburger-menu item. Added after 25 Sep 2026, when one
+      # top-level call placed above a const declaration threw at start-up,
+      # skipped every handler registered after it, and left the menu dead on
+      # every device while the board still rendered — nothing in the
+      # pipeline had executed app.js. `backlog-tracker/public/**` is in the
+      # paths above for this step, so a train PR carrying such a change goes
+      # red here and processDeployTrain refuses to merge it. No emulator, no
+      # network.
+      - name: Run console start-up smoke test
+        run: npm run test:app-boots
 
       - name: Run rules tests against the emulator
         run: npm run test:rules

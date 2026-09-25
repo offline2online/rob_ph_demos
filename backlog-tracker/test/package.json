@@ -1,9 +1,10 @@
 {
   "name": "backlog-tracker-rules-tests",
   "private": true,
-  "description": "Tests for backlog-tracker's access-control layer (Firestore security rules, the MCP server's logic, the MCP server over real HTTP driven by the official MCP client SDK), for scripts/ helpers that are easiest to verify against a real disposable git repo (the faq/data/index.json merge-conflict resolver, and the deployment train's lock-recompute logic \u2014 pure predicate, the real Cloud Function trigger under stubbed SDKs, and the real branch-archive/reset git logic), and for the FAQ editor's content round-trip in a real browser (opt-in, needs Chromium).",
+  "description": "Tests for backlog-tracker's access-control layer (Firestore security rules, the MCP server's logic, the MCP server over real HTTP driven by the official MCP client SDK), for scripts/ helpers that are easiest to verify against a real disposable git repo (the faq/data/index.json merge-conflict resolver, and the deployment train's lock-recompute logic — pure predicate, the real Cloud Function trigger under stubbed SDKs, and the real branch-archive/reset git logic), and for the FAQ editor's content round-trip in a real browser (opt-in, needs Chromium).",
   "scripts": {
-    "test": "npm run test:mcp && npm run test:client && npm run test:train-lock && npm run test:skill-history && npm run test:build-batches && npm run test:faq-index && npm run test:rules && npm run test:preview-url && npm run test:preview-url-pin && npm run test:generated-builds",
+    "test": "npm run test:mcp && npm run test:client && npm run test:app-boots && npm run test:train-lock && npm run test:skill-history && npm run test:build-batches && npm run test:faq-index && npm run test:rules && npm run test:preview-url && npm run test:preview-url-pin && npm run test:generated-builds",
+    "test:app-boots": "node app-boots.test.mjs",
     "test:generated-builds": "node generated-builds.test.js && node patch-paths.test.js",
     "test:mcp": "node mcp-server.test.js",
     "test:client": "node mcp-client.test.mjs",
@@ -22,6 +23,7 @@
     "dompurify": "^3.2.6",
     "firebase": "^12.0.0",
     "firebase-tools": "^13.0.0",
+    "jsdom": "^25.0.1",
     "playwright-core": "^1.55.0",
     "quill": "1.3.7"
   },

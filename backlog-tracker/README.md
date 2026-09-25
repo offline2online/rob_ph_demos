@@ -560,6 +560,20 @@ retention runs out if the project mattered.
 
 ## Testing the rules and the MCP server
 
+**The console's start-up is tested too** (`test/app-boots.test.mjs`, run
+by the same workflow on every PR touching `public/**`): it imports the real
+`public/js/app.js` under a stub DOM and fails if module evaluation stops
+early, then clicks every hamburger-menu item. On 25 Sep 2026 the Concept
+Incubator page shipped with a `createDictationController()` call above
+`SpeechRecognitionCtor`'s `const` declaration — a temporal-dead-zone
+`ReferenceError` at start-up — so every top-level statement after it,
+including the drawer's Releases / Skills / FAQ Management / Settings
+handlers, never ran. The board still rendered, so the menu was simply dead
+on desktop, tablet and phone from the 08:04 deploy until the next one, and
+nothing in the pipeline had executed `app.js` to notice. Every dictation
+controller is now created after that declaration, and this test is the
+guard.
+
 `test/` holds two suites:
 
 - **`firestore-rules.test.js`** runs `firestore.rules` — the real file —

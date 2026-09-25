@@ -4876,13 +4876,8 @@ document.getElementById("pc-submit").addEventListener("click", async () => {
   }
   closePromoteConceptModal();
 });
-
-createDictationController({
-  textareaEl: document.getElementById("concept-comment-input"),
-  micBtn: document.getElementById("concept-mic-btn"),
-  hintEl: document.getElementById("concept-listening-hint"),
-  errorEl: document.getElementById("concept-mic-error"),
-});
+// The concept comment box's own mic is wired up further down, with the
+// other three dictation controllers — see the note on SpeechRecognitionCtor.
 
 // ── Releases page ─────────────────────────────────────────────────────────
 // Every release, newest (highest order) first, with the one thing you can
@@ -5484,6 +5479,12 @@ document.getElementById("skill-submit").addEventListener("click", async () => {
 // where unsupported. suggestType()/suggestCategory() (used only for the
 // New Item field) are plain keyword heuristics — a starting point, not a
 // final answer, same as manually picking the toggle/dropdown.
+// A `const`, so it is in the temporal dead zone until this line runs: a
+// createDictationController() call placed ABOVE this line throws
+// "Cannot access 'SpeechRecognitionCtor' before initialization" at module
+// evaluation and stops everything after it (25 Sep 2026 — see the note by
+// the controllers below, and test/app-boots.test.mjs). Create controllers
+// below this line only.
 const SpeechRecognitionCtor = window.SpeechRecognition || window.webkitSpeechRecognition;
 
 // Android Chrome's SpeechRecognition duplicates/triples text under
@@ -6058,6 +6059,21 @@ createDictationController({
   micBtn: document.getElementById("ei-mic-btn"),
   hintEl: document.getElementById("ei-listening-hint"),
   errorEl: document.getElementById("ei-mic-error"),
+});
+// The Concept Incubator's comment box. It was created next to that page's
+// own code (~1,200 lines above) when the page shipped on 25 Sep 2026 — above
+// SpeechRecognitionCtor's declaration — and the resulting ReferenceError
+// stopped this module at that point: every top-level statement below it,
+// including the drawer's Releases/Skills/FAQ/Settings click handlers, never
+// ran, and the hamburger menu was dead on every device from 08:04 to the
+// next deploy. Every dictation controller is created here, after that
+// const, for that reason; test/app-boots.test.mjs imports this module
+// under a stub DOM and fails if evaluation stops early again.
+createDictationController({
+  textareaEl: document.getElementById("concept-comment-input"),
+  micBtn: document.getElementById("concept-mic-btn"),
+  hintEl: document.getElementById("concept-listening-hint"),
+  errorEl: document.getElementById("concept-mic-error"),
 });
 document.getElementById("ni-desc-input").addEventListener("input", (e) => {
   autoGrow(e.target);
