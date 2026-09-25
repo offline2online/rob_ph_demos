@@ -1527,8 +1527,18 @@ default.
   live release. Full spec: `REQUIREMENTS.md` → "`releases/{releaseId}`".
 - **Seeding**: `scripts/seed-faq-data.js` (same insert-only `create()`
   pattern as `migrate-artifact-data.js`) seeds the **real** Help Center
-  content — 9 categories and 108 articles — run automatically on every
-  deploy. This is a verbatim import from Freshdesk Solutions
+  content — 9 categories and 108 articles. **No longer run automatically on
+  every deploy** (XFeVboxWduEPT2zGcj8y, 25 Sep 2026) — `create()` being
+  insert-only makes it safe against overwriting an *edited* article, but not
+  against a *deleted* one: once a console delete removes a doc from
+  Firestore, `create()` succeeds again on the very next run and silently
+  resurrects the original imported content. Every push-triggered deploy
+  running this meant any article/category deleted in FAQ Management came
+  back the moment anyone next shipped an unrelated backlog-tracker/faq
+  change. `deploy-backlog-tracker.yml`'s step now only runs on a manual
+  "Run workflow" dispatch — the one legitimate remaining use is bootstrapping
+  a brand-new, empty Firestore project, not something every deploy needs to
+  redo. This is a verbatim import from Freshdesk Solutions
   (`personalisationhub.freshdesk.com/a/solutions`), pulled from a Google
   Drive folder ("Personalisation Hub" › "Freshdesk FAQs - June 2026") that
   already had the full export saved as one file per category plus a

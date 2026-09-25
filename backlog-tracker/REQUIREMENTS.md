@@ -2252,10 +2252,16 @@ Two surfaces sharing this same Firestore project:
   that the auto-review automation (above) actually uses — an article
   documents a specific project's feature, so that project's own shipped
   changes are what should make the article's accuracy suspect.
-- **Seeding**: `scripts/seed-faq-data.js` (insert-only, safe to re-run) — 9
-  categories, 108 articles, a verbatim import of the real Personalisation
-  Hub Help Center from a Freshdesk Solutions export, run automatically on
-  every deploy. Not placeholder content.
+- **Seeding**: `scripts/seed-faq-data.js` (insert-only, safe to re-run
+  against an *edit* — not against a *delete*, see below) — 9 categories,
+  108 articles, a verbatim import of the real Personalisation Hub Help
+  Center from a Freshdesk Solutions export. Not placeholder content.
+  `deploy-backlog-tracker.yml`'s step only runs on a manual `workflow_dispatch`
+  now, not on every push-triggered deploy (XFeVboxWduEPT2zGcj8y, 25 Sep
+  2026) — `create()`-if-missing can't tell "never existed" from
+  "deliberately deleted in the console," so running it on every deploy
+  resurrected any article/category someone had just deleted the moment the
+  next unrelated change shipped.
 - **Version display**: both `faq/` and `backlog-tracker/public/` render a
   small hand-maintained `APP_VERSION` in their footer (`js/version.js` in
   each, independent per site since they deploy separately) — bumped by
