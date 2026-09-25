@@ -274,7 +274,7 @@ export interface paths {
         /** Advertiser-owned slots (no advertisers column) */
         get: operations["listAvailableInventory"];
         /**
-         * Save changes — who a slot is assigned to, what targeting it supports, and its reserve price
+         * Save changes — who a slot is assigned to, what targeting it supports, its reserve price and its max campaigns
          * @description The editable fields of a sellable slot. Everything else about it —
          *     its label and owner — is set on its display type. Admin only:
          *     marketing users read this table.
@@ -310,6 +310,13 @@ export interface paths {
          *     granularity a CPM is quoted and charged against (spec "Private
          *     auctions: two-period model", 23 Sep 2026) — default one day (24
          *     hours) when neither is set.
+         *
+         *     maxCampaigns / maxCampaignsDefault: the same override/default
+         *     pattern again, for the maximum number of campaigns (default +
+         *     targeted versions) this advertiser may submit for the slot — 5
+         *     when neither is set, 1-10 inclusive otherwise. Purely a submission
+         *     cap; replaces the former blanket 20-targeted-versions cap for this
+         *     slot. Does not feed the auction or billing.
          */
         put: operations["saveAvailableInventory"];
         post?: never;
@@ -967,12 +974,27 @@ export interface components {
             advertiserId: string;
             name: string;
             displayTypeId?: string;
+            /**
+             * @description Which of displayTypeId's advertiser-owned slots this submission
+             *     is for (the same 1-based index as AvailableInventoryRow.slot).
+             *     Optional, but required alongside displayTypeId to resolve that
+             *     slot's own max-campaigns cap below — omitted, the submission
+             *     falls back to the platform-wide campaignLimits.targetedVersions
+             *     cap, unscoped to any one slot.
+             */
+            slot?: number;
             brief?: components["schemas"]["CampaignBrief"];
             /** @description The untargeted layer every submission must carry — no targeting variables, priced at the floor rate. */
             default: {
                 pricingType: components["schemas"]["PricingType"];
             };
-            /** @description Optional upsells on top of the mandatory default layer — localised and/or personalised targeted versions. */
+            /**
+             * @description Optional upsells on top of the mandatory default layer —
+             *     localised and/or personalised targeted versions. Bounded by
+             *     slot's own max campaigns (default + targeted versions, 1-10)
+             *     when displayTypeId and slot resolve to a real advertiser slot;
+             *     otherwise by the platform-wide campaignLimits.targetedVersions.
+             */
             targeted?: {
                 id: string;
                 priority: number;
@@ -1275,6 +1297,32 @@ export interface components {
              *     rows — see `PUT`'s billingUnitHoursDefault.
              */
             displayTypeBillingUnitHours: number | null;
+            /**
+             * @description The resolved maximum number of campaigns (the mandatory default
+             *     layer plus optional targeted versions) this advertiser may
+             *     submit for this slot: maxCampaignsOverride when set, else
+             *     displayTypeMaxCampaigns, else the platform default of 5.
+             *     Purely a submission cap — it does not feed the auction or
+             *     billing. Always a real integer, 1-10 inclusive — unlike reserve
+             *     price, there is no "unlimited" state.
+             */
+            maxCampaigns: number;
+            /**
+             * @description This slot's own maximum campaigns, admin-editable here; null
+             *     means it has none and follows displayTypeMaxCampaigns (spec §1
+             *     configuration inheritance — override always wins). 1-10
+             *     inclusive when set.
+             */
+            maxCampaignsOverride: number | null;
+            /**
+             * @description The maximum-campaigns default set on this slot's display type;
+             *     null means the display type has none either (so an
+             *     un-overridden slot resolves to the platform default of 5). The
+             *     same value on every row sharing a displayTypeId. Editable from
+             *     any of those rows — see `PUT`'s maxCampaignsDefault. 1-10
+             *     inclusive when set.
+             */
+            displayTypeMaxCampaigns: number | null;
         };
         BookingSchedule: {
             /** @description ISO 4217 */
@@ -1615,6 +1663,20 @@ export interface components {
                  *     private-auction slot using the two-period model.
                  */
                 billingUnitHours?: number | null;
+                /**
+                 * @description This slot's own override of the display type's maximum
+                 *     campaigns (spec §1 configuration inheritance — override
+                 *     always wins). Absent or null means it has none and
+                 *     follows the display type's own `maxCampaigns` (below),
+                 *     else the platform default of 5. 1-10 inclusive when set.
+                 *     A purely-submission cap: the single authority on how many
+                 *     campaigns (default + targeted versions) an advertiser may
+                 *     submit for this slot, replacing the former blanket
+                 *     20-targeted-versions cap for it — does not feed the
+                 *     auction or billing. Set from Advertisers / Inventory, not
+                 *     the slot editor.
+                 */
+                maxCampaigns?: number | null;
             }[];
             /**
              * @description The display type's own reserve price default (decision, 22 Sep),
@@ -1634,6 +1696,14 @@ export interface components {
              *     the same value), not the slot editor.
              */
             billingUnitHours?: number | null;
+            /**
+             * @description The display type's own maximum-campaigns default, inherited by
+             *     every slot on it with no override of its own. Absent or null
+             *     means the platform default of 5 applies. 1-10 inclusive when
+             *     set. Set from Advertisers / Inventory (every row for this
+             *     display type edits the same value), not the slot editor.
+             */
+            maxCampaigns?: number | null;
             venue?: {
                 openOohVenueType?: string;
                 /** @enum {string} */
@@ -2351,6 +2421,10 @@ export interface operations {
                         billingUnitHours?: number | null;
                         /** @description The display type's billing-unit default, in hours; null = none (the platform default of 24 applies). Must be the same value on every row for a given displayTypeId in one request. */
                         billingUnitHoursDefault?: number | null;
+                        /** @description This slot's own maximum-campaigns override; null = inherit maxCampaignsDefault. Omitted = unchanged is not supported — always send the slot's current value. */
+                        maxCampaigns?: number | null;
+                        /** @description The display type's maximum-campaigns default; null = none (the platform default of 5 applies). Must be the same value on every row for a given displayTypeId in one request. */
+                        maxCampaignsDefault?: number | null;
                     }[];
                 };
             };

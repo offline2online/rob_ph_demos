@@ -1,6 +1,6 @@
 /* Advertiser settings (spec §4, §5, §6): pricing and the company lists, plus
    the read-only Where these apply and Available Inventory. */
-import { TARGETING_MODES, advertiserSlug, assignedOf, billingUnitHoursOf, reservePriceOf, supportedTargetingOf, type AdvertiserSettings, type AdvertiserSettingsInput, type Assigned, type AvailableInventoryRow, type DisplayType, type DspAdvertisers, type TargetingMode } from '@ph-dsp/types'
+import { MAX_MAX_CAMPAIGNS, MIN_MAX_CAMPAIGNS, TARGETING_MODES, advertiserSlug, assignedOf, billingUnitHoursOf, maxCampaignsOf, reservePriceOf, supportedTargetingOf, type AdvertiserSettings, type AdvertiserSettingsInput, type Assigned, type AvailableInventoryRow, type DisplayType, type DspAdvertisers, type TargetingMode } from '@ph-dsp/types'
 import type { FastifyPluginAsync } from 'fastify'
 import type { Context } from '../../context'
 import { cleanList, validateAdvertiserSettings } from '../../domain/advertiserSettings'
@@ -78,6 +78,9 @@ export const advertiserSettingsRoutes = (ctx: Context, guards: Guards): FastifyP
           billingUnitHours: billingUnitHoursOf(t, s),
           billingUnitHoursOverride: s.billingUnitHours ?? null,
           displayTypeBillingUnitHours: t.phExtensions?.billingUnitHours ?? null,
+          maxCampaigns: maxCampaignsOf(t, s),
+          maxCampaignsOverride: s.maxCampaigns ?? null,
+          displayTypeMaxCampaigns: t.phExtensions?.maxCampaigns ?? null,
         })
       })
     }
@@ -115,6 +118,19 @@ export const advertiserSettingsRoutes = (ctx: Context, guards: Guards): FastifyP
     return v
   }
 
+  /* An integer 1-10 inclusive, or null to inherit (ticket "Available
+     Inventory: Max campaigns column + slot playlist statement") — the
+     same override/default pair as reservePrice/reservePriceDefault and
+     billingUnitHours/billingUnitHoursDefault above. */
+  const parseMaxCampaigns = (v: unknown, field: string, errors: { field: string; reason: string }[]): number | null => {
+    if (v === null || v === undefined) return null
+    if (typeof v !== 'number' || !Number.isInteger(v) || v < MIN_MAX_CAMPAIGNS || v > MAX_MAX_CAMPAIGNS) {
+      errors.push({ field, reason: `An integer from ${MIN_MAX_CAMPAIGNS} to ${MAX_MAX_CAMPAIGNS}, or null to inherit.` })
+      return null
+    }
+    return v
+  }
+
   /* Who a slot is assigned to, what targeting it supports, and its reserve
      price override (Rob, 22 Sep): the fields of a sellable slot that live
      here. Everything else about it is set on its display type — including
@@ -124,16 +140,17 @@ export const advertiserSettingsRoutes = (ctx: Context, guards: Guards): FastifyP
   app.put<{ Body: { items?: unknown } }>('/available-inventory', async (req) => {
     guards.flagged()
     guards.requireScope(req, 'admin')
-    const rows = Array.isArray(req.body?.items) ? (req.body.items as { displayTypeId?: unknown; slot?: unknown; supportedTargeting?: unknown; assignedTo?: unknown; reservePrice?: unknown; reservePriceDefault?: unknown; billingUnitHours?: unknown; billingUnitHoursDefault?: unknown }[]) : null
+    const rows = Array.isArray(req.body?.items) ? (req.body.items as { displayTypeId?: unknown; slot?: unknown; supportedTargeting?: unknown; assignedTo?: unknown; reservePrice?: unknown; reservePriceDefault?: unknown; billingUnitHours?: unknown; billingUnitHoursDefault?: unknown; maxCampaigns?: unknown; maxCampaignsDefault?: unknown }[]) : null
     if (!rows) throw validationFailed([{ field: 'items', reason: 'An array of slots is required.' }])
     const keys = TARGETING_MODES.map((m) => m.key) as string[]
     const partners = ctx.partners.list()
     const company = ctx.company.get()
     const errors: { field: string; reason: string }[] = []
-    type Patch = { supportedTargeting: TargetingMode[]; assigned: Assigned; reservePrice: number | null; billingUnitHours: number | null }
+    type Patch = { supportedTargeting: TargetingMode[]; assigned: Assigned; reservePrice: number | null; billingUnitHours: number | null; maxCampaigns: number | null }
     const wanted = new Map<string, Map<number, Patch>>()
     const defaults = new Map<string, number | null>()
     const billingUnitDefaults = new Map<string, number | null>()
+    const maxCampaignsDefaults = new Map<string, number | null>()
     const names = (v: unknown) => (Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string').map((x) => x.trim()).filter(Boolean) : [])
 
     rows.forEach((r, i) => {
@@ -170,10 +187,16 @@ export const advertiserSettingsRoutes = (ctx: Context, guards: Guards): FastifyP
         if (billingUnitDefaults.has(dt.id) && billingUnitDefaults.get(dt.id) !== billingUnitHoursDefault) errors.push({ field: f('billingUnitHoursDefault'), reason: 'All slots on a display type must submit the same billing unit default.' })
         else billingUnitDefaults.set(dt.id, billingUnitHoursDefault)
       }
+      const maxCampaigns = parseMaxCampaigns(r.maxCampaigns, f('maxCampaigns'), errors)
+      const maxCampaignsDefault = parseMaxCampaigns(r.maxCampaignsDefault, f('maxCampaignsDefault'), errors)
+      if (dt) {
+        if (maxCampaignsDefaults.has(dt.id) && maxCampaignsDefaults.get(dt.id) !== maxCampaignsDefault) errors.push({ field: f('maxCampaignsDefault'), reason: 'All slots on a display type must submit the same max campaigns default.' })
+        else maxCampaignsDefaults.set(dt.id, maxCampaignsDefault)
+      }
 
       if (dt && def && targeting && !bad.length) {
         const byType = wanted.get(dt.id) ?? new Map<number, Patch>()
-        byType.set(slot, { supportedTargeting: targeting, assigned, reservePrice, billingUnitHours })
+        byType.set(slot, { supportedTargeting: targeting, assigned, reservePrice, billingUnitHours, maxCampaigns })
         wanted.set(dt.id, byType)
       }
     })
@@ -184,10 +207,11 @@ export const advertiserSettingsRoutes = (ctx: Context, guards: Guards): FastifyP
       const ext = { ...(dt.phExtensions ?? { slots: [] }) }
       ext.slots = (ext.slots ?? []).map((s, i) => {
         const patch = slots.get(i + 1)
-        return patch ? { ...s, supportedTargeting: patch.supportedTargeting, ...assignedToSlot(patch.assigned, partners), reservePrice: patch.reservePrice, billingUnitHours: patch.billingUnitHours } : s
+        return patch ? { ...s, supportedTargeting: patch.supportedTargeting, ...assignedToSlot(patch.assigned, partners), reservePrice: patch.reservePrice, billingUnitHours: patch.billingUnitHours, maxCampaigns: patch.maxCampaigns } : s
       })
       if (defaults.has(displayTypeId)) ext.reservePrice = defaults.get(displayTypeId) ?? null
       if (billingUnitDefaults.has(displayTypeId)) ext.billingUnitHours = billingUnitDefaults.get(displayTypeId) ?? null
+      if (maxCampaignsDefaults.has(displayTypeId)) ext.maxCampaigns = maxCampaignsDefaults.get(displayTypeId) ?? null
       ctx.displayTypes.saveExtensions(displayTypeId, ext)
     }
     return inventory()

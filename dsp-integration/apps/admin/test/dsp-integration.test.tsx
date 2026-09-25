@@ -473,7 +473,7 @@ describe('Advertisers / Inventory', () => {
 
     const inventory = await screen.findByLabelText('Available Inventory')
     expect([...inventory.querySelectorAll('.ag-header-cell-text')].map((h) => h.textContent))
-      .toEqual(['Display type', 'Playlist', 'Slot', 'Position', 'Assigned to', 'Targeting supported', 'Reserve price', 'Billing unit', ''])
+      .toEqual(['Display type', 'Playlist', 'Slot', 'Position', 'Assigned to', 'Targeting supported', 'Reserve price', 'Max campaigns', 'Billing unit', ''])
     expect(within(inventory).getByLabelText('Display type search')).toBeInTheDocument()
     expect(within(inventory).getByLabelText('Targeting supported filter')).toBeInTheDocument()
     /* QR Control is flagged on the display type that has it, and only that
@@ -518,7 +518,7 @@ describe('Advertisers / Inventory', () => {
     await waitFor(() => expect(saved()).toEqual({ items: [{
       displayTypeId: 'menu_board', slot: 2, supportedTargeting: ['localised', 'personalised'],
       assignedTo: { partnerIds: ['p_google'], advertisers: ['Nestlé'], whitelistOnly: false, buyersListId: null },
-      reservePriceDefault: null, billingUnitHoursDefault: null,
+      reservePriceDefault: null, billingUnitHoursDefault: null, maxCampaignsDefault: null,
     }] }))
     /* This test opens two AntD Selects, drives a save round-trip and waits
        on it with real timers — already the file's slowest, and, measured in
