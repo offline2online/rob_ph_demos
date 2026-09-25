@@ -304,7 +304,9 @@ Either path also clears a stale `trainStatus: "conflict"` left over from
 before the tickets were removed, since there's nothing left on the train
 for that note to describe. Neither path touches a project mid-deploy
 (`trainStatus: "deploying"`) or awaiting a human PR merge
-(`"awaiting-human-merge"`) — those still only resolve through
+(`"awaiting-human-merge"` — not reached at all once `WORKFLOW_AUTO_MERGE`
+is on and the merge-time guardrails pass, see "The workflow-push GitHub
+App") — those still only resolve through
 `finishTrain()`/`reconcileMergedTrains()`.
 
 The board itself no longer goes silent about this either:
@@ -1229,10 +1231,10 @@ Claude Routine, which builds them from card text (a prompt-injection
 surface):
 
 - The token is used for the **branch push of a workflow-touching item and
-  nothing else**. PR creation, merges and the deploy dispatch keep using
-  the run's `GITHUB_TOKEN`, so nothing else changes (in particular, a
-  merge still never fires other workflows' `on: push`, so the explicit
-  deploy dispatch is still the only deploy trigger — no double deploys).
+  the merge of the PR that carries it** (the merge only with
+  `WORKFLOW_AUTO_MERGE` on — next bullet but one), nothing else. PR
+  creation, every other merge and the deploy dispatch keep using the run's
+  `GITHUB_TOKEN`.
 - Before pushing, `workflowChangeProblems()` refuses the item if it adds
   a **new** workflow file, **deletes** one, or changes any touched
   workflow's **`on:` trigger block** compared with `main`. Every workflow
@@ -1240,11 +1242,42 @@ surface):
   dispatch, so a pushed branch can never run its own modified file —
   which matters because a push made with an App token, unlike one made
   with `GITHUB_TOKEN`, does trigger `on: push` workflows.
-- `processMergePr` **never merges** a PR that touches
-  `.github/workflows/`: it clears `mergeReady`, notes the card, and a
-  person reviews and merges the PR on GitHub. Clicking Notify Claude —
-  Deploy afterwards finds the PR merged and records it as live. The card
-  carries `requiresHumanMerge: true` from the moment its PR is opened.
+- **The merge — a switch, off by default (25 Sep 2026).** A train
+  carrying a workflow change is pushed and its PR opened, and the project
+  then sits at `trainStatus: "awaiting-human-merge"` for a person to
+  merge on GitHub. That was a stall nobody was looking for — PR #211 sat
+  in Approved for Deployment for two hours behind a "Train locked" hint —
+  so two things changed. First, the wait is no longer silent: the
+  project's `trainNote` and a note on every card on the train say which
+  workflow file, why the pipeline didn't merge, and that nothing else
+  needs clicking. Second, `backlog-automation.yml` now carries
+  **`WORKFLOW_AUTO_MERGE`**, shipped as `"false"`: set it to `"true"` and
+  `processDeployTrain` (and the legacy `processMergePr`) merges such a PR
+  itself, with the App token, once `workflowAutoMergeBlockers()` finds
+  nothing — the App is configured, and the PR head's workflow changes
+  still pass the same three guardrails, re-checked at merge time against
+  what is actually on the branch. Turning it on is the repository owner's
+  decision, made in that file, because a workflow file runs with every
+  repository secret and the guardrails do NOT review what a changed step
+  does — that review is the tester's, the approver's and the Deploy to
+  Main click's, exactly as for any other change on the train. (Flipping
+  the line is itself a workflow-file change, so a ticket that tried to
+  flip it would still stop for a human merge.) With it on, the merge is a
+  local `git merge --no-ff` pushed to `main` with the token — not
+  `gh pr merge` under it — so it needs only the Contents + Workflows
+  permissions the App has, and GitHub marks the PR merged as it would for
+  a merge made from a laptop. Because that push is an ordinary push, it
+  fires `deploy-backlog-tracker.yml`'s own `on: push`;
+  `triggerBacklogTrackerDeploy()` looks that run up instead of dispatching
+  a second one (the dispatch stays the fallback). Every card on the train
+  gets a note saying the merge was made this way, and
+  `systemStatus/pipeline.workflowAutoMerge` records the switch. Either
+  way, `reconcileMergedTrains` records a person's merge on its own, and —
+  while the PR is still open — resumes the deploy itself the moment the
+  pipeline may merge it (the switch turned on, the App configured), so a
+  train already waiting when the switch is flipped needs no second click.
+  The card carries `requiresHumanMerge: true` from the moment its PR is
+  opened (kept for history; it no longer decides anything).
 - The token never appears in a git argument (it is passed through
   `GIT_CONFIG_*` environment variables), and `recordAttemptFailure` scrubs
   it from any error text before that text is written to a card.
@@ -1274,15 +1307,19 @@ Apps or repo secrets):**
 
 With both secrets absent the mint step is skipped and workflow-touching
 items are refused with a note, exactly as before — so adding the secrets
-is the only switch. Acceptance check: set `patchReady` on a card whose
-`patchFiles` edit an existing workflow (the `storage:rules` card is a
-one-liner); it should reach Ready for Testing with a PR opened by
-`github-actions[bot]` whose head commit was pushed by the App, and Notify
-Claude — Deploy on it should leave a "Not merged by the pipeline… review
-and merge it on GitHub" note rather than merging. Optional hardening on
-GitHub's side: a branch-protection rule on `main` with a CODEOWNERS entry
-for `/.github/workflows/` requiring your review, which enforces the
-human-merge rule even for pushes made outside this pipeline.
+is the switch for the push, and `WORKFLOW_AUTO_MERGE` in the same workflow
+is the switch for the merge. Acceptance check: set `patchReady` on a card
+whose `patchFiles` edit an existing workflow (the `storage:rules` card is a
+one-liner); it should reach Ready for Testing with a commit on the train
+pushed by the App, and Deploy to Main on it should leave a "Waiting for a
+person to merge PR #N on GitHub" note on the card (or, with the switch
+on, merge the train PR with a "merged it itself with the workflow-push
+App token" note instead). `cd test && npm run test:workflow-merge` drives
+the guardrail re-check and the token merge against a disposable local
+repo. Optional hardening on GitHub's side: a branch-protection rule on
+`main` with a CODEOWNERS entry for `/.github/workflows/` requiring your
+review, which would make GitHub itself refuse the pipeline's merge of a
+workflow change and hand it back to a person even with the switch on.
 
 ### Notify Claude progress (`notifyRoutine`) — session id, spinner, split count
 
@@ -1481,13 +1518,16 @@ default.
   already carry a specific proposal from the mechanism below.
   `needsReview` otherwise stays a manual toggle for projects that leave
   this off.
-- **A PR merged by a person is recorded automatically.** Workflow-file PRs
-  (anything under `.github/workflows/`) are never merged by the pipeline —
-  a human merges them on GitHub. `run-backlog-automation.js` →
-  `reconcileHumanMergedPrs()` runs every pass and, for any Approved for
-  Deployment card whose PR GitHub reports as MERGED, sets `mergeReady` so
-  the normal already-merged success path flips it to Deployed in the same
-  run. No second "Deploy to Main" click is needed (it used to be).
+- **A PR merged by a person is recorded automatically.** A workflow-file
+  PR (anything under `.github/workflows/`) is merged by a human on GitHub
+  unless `WORKFLOW_AUTO_MERGE` is on and the merge-time guardrails pass
+  (see "The workflow-push GitHub App"), in which case the pipeline merges
+  it itself.
+  `run-backlog-automation.js` → `reconcileHumanMergedPrs()` runs every
+  pass and, for any Approved for Deployment card whose PR GitHub reports
+  as MERGED, sets `mergeReady` so the normal already-merged success path
+  flips it to Deployed in the same run. No second "Deploy to Main" click
+  is needed (it used to be).
 - **Proposed FAQ revisions from a Deploy (`pendingRevision`)** — the
   precise version of the above, always on. When "Notify Claude — Deploy"
   fires, the Routine's Deploy flow (`ROUTINE_INSTRUCTIONS.md` step 3b,
@@ -1715,11 +1755,21 @@ starting empty. `scripts/migrate-artifact-data.js` does this: it reads
 `scripts/artifact-export.json` (a one-time export of that artifact's
 data) and seeds matching `projects`/`backlogItems` documents using the
 same ids the artifact used, via Firestore's `create()` (insert-only —
-skips any doc that already exists). The deploy workflow runs it on every
-deploy, but past the first successful run it's a no-op: it can never
-overwrite a later edit made from the live app (a restore, a rename, a
-category change), since it only ever creates documents that are missing,
-never updates ones that already exist. Safe to delete
+skips any doc that already exists). It can never overwrite a later edit
+made from the live app (a restore, a rename, a category change), since it
+only ever creates documents that are missing, never updates ones that
+already exist — but for the same reason it cannot tell "missing because
+never seeded" from "missing because deleted on purpose": the project was
+deleted from the board on 22 Sep 2026 (root `CLAUDE.md` → "Three projects
+were deleted") and the next deploy's run of this step brought it back
+with all 30 cards. **So it no longer runs on every deploy** (25 Sep 2026):
+`deploy-backlog-tracker.yml` still has the step, but the script — like
+`seed-faq-data.js` — exits without writing unless the run was a manual
+"Run workflow" with its **seed** box ticked, or `SEED_DATA=1` is set for a
+run made by hand (`scripts/seeding-requested.js` is the shared check;
+the dispatch the backlog automation makes after every merge is a
+`workflow_dispatch` too, which is why a step-level `if:` on the event name
+alone was not enough). The project that came back is still on the board
+and is a human's to delete again (`board-admin.yml`). Safe to delete
 `scripts/artifact-export.json` and this step once you're confident the
-migration has landed and won't need re-running (e.g. against a fresh
-Firebase project).
+migration won't need re-running (e.g. against a fresh Firebase project).

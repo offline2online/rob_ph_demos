@@ -6,7 +6,21 @@ on:
     paths:
       - 'backlog-tracker/**'
       - 'faq/**'
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      # The two insert-only seeds below (migrate-artifact-data.js and
+      # seed-faq-data.js) resurrect anything deleted from the board or the
+      # help centre since they last ran — a deleted article, category,
+      # project or card is "missing" again and create() brings it back. They
+      # are for bootstrapping a brand-new, empty Firestore project only, so
+      # they run just when this box is ticked on a manual "Run workflow";
+      # the dispatch run-backlog-automation.js makes after every merge
+      # leaves it at its default and never seeds. Enforced inside each
+      # script (scripts/seeding-requested.js), not only here.
+      seed:
+        description: "Seed a brand-new, empty Firestore project with the historical board export and the Freshdesk help-centre import. Leave off for an ordinary deploy — re-running the seeds resurrects anything deleted since."
+        type: boolean
+        default: false
 
 # Several PRs merging within seconds of each other (a common shape for this
 # repo — the Notify Claude Routine and its human reimplementations both

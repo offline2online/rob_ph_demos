@@ -21,9 +21,16 @@
 // this can never clobber a later edit made from FAQ Center (a rewritten
 // body, a status flip, a re-categorisation) by silently reapplying the
 // original imported value on top of it.
+//
+// What create() cannot protect is a DELETE: an article or category removed
+// in FAQ Management is "missing" again on the next run and comes straight
+// back (XFeVboxWduEPT2zGcj8y, 25 Sep 2026). So this only runs when someone
+// explicitly asked for a seed — see seeding-requested.js; any other run
+// exits here without touching Firestore.
 
 const { initializeApp, applicationDefault } = require("firebase-admin/app");
 const { getFirestore, Timestamp } = require("firebase-admin/firestore");
+const { seedingRequested } = require("./seeding-requested");
 
 initializeApp({ credential: applicationDefault() });
 const db = getFirestore();
@@ -163,6 +170,12 @@ async function createIfMissing(ref, data) {
 }
 
 async function main() {
+  const seeding = seedingRequested();
+  if (!seeding.requested) {
+    console.log(`FAQ seed skipped — nothing written: ${seeding.reason}.`);
+    return;
+  }
+  console.log(`FAQ seed running: ${seeding.reason}.`);
   const catCounts = { created: 0, skipped: 0 };
   for (const c of categories) {
     const { id, ...rest } = c;

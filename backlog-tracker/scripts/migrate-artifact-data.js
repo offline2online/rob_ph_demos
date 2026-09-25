@@ -8,10 +8,17 @@
 // clobber a later edit made from the live app itself (e.g. someone restores
 // one of these cards, or renames the project) by silently reapplying the
 // original historical value on top of it.
+//
+// What create() cannot protect is a DELETE: the project and its cards were
+// deleted from the board on 22 Sep 2026 (root CLAUDE.md → "Three projects
+// were deleted"), and the next deploy's run of this script recreated all of
+// it. So this only runs when someone explicitly asked for a seed — see
+// seeding-requested.js; any other run exits without touching Firestore.
 
 const { initializeApp, applicationDefault } = require("firebase-admin/app");
 const { getFirestore, Timestamp } = require("firebase-admin/firestore");
 const data = require("./artifact-export.json");
+const { seedingRequested } = require("./seeding-requested");
 
 initializeApp({ credential: applicationDefault() });
 const db = getFirestore();
@@ -31,6 +38,12 @@ async function createIfMissing(ref, data) {
 }
 
 async function main() {
+  const seeding = seedingRequested();
+  if (!seeding.requested) {
+    console.log(`Artifact-board migration skipped — nothing written: ${seeding.reason}.`);
+    return;
+  }
+  console.log(`Artifact-board migration running: ${seeding.reason}.`);
   const { project, items } = data;
 
   const projectResult = await createIfMissing(

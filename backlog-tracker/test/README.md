@@ -15,9 +15,14 @@ This directory also holds the MCP server suite (`mcp-server.test.js`,
 lock-recompute suite (`train-lock.test.js`, `train-lock-trigger.test.js`,
 `train-lock-branch-archive.test.js` — `npm run test:train-lock`; see
 `../README.md` → "trainLocked clearing isn't only a successful-merge thing
-any more"). All three run on plain `node`, no emulator, no Java, no
-credentials, no network — only this file's own rules suite below needs the
-emulator.
+any more"), and the workflow-change merge suite
+(`workflow-auto-merge.test.js`, `seeding-requested.test.js` —
+`npm run test:workflow-merge`; see `../README.md` → "The workflow-push
+GitHub App"): the merge-time guardrail re-check and the App-token merge
+of a train PR, driven against a disposable local git repo pair, plus the
+deploy seeds' "only when a person asked" check. All of these run on plain
+`node`, no emulator, no Java, no credentials, no network — only this
+file's own rules suite below needs the emulator.
 
 Also here, opt-in because it needs a Chromium on the machine:
 `npm run test:editor` (`faq-editor-load.test.mjs`) opens every article in
