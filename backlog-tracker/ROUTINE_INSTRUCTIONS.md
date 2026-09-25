@@ -157,6 +157,32 @@ move on, don't block the run waiting for it.
   block — it fires from a different Cloud Function
   (`notifyOnProjectReadyForGrooming`), which this mechanism does not touch
   — and doesn't need one, since that flow does no code work at all.
+- **Report a genuine miss back onto the skill** (Gcc30u2bQEJwEdUTN6X8) —
+  in either block, if applying a bound skill surfaces something the skill
+  itself should already have prevented or gotten right (a BUILD-phase fix
+  that needed correcting because the skill's own guidance was wrong,
+  missing or ambiguous; a DEPLOY-phase security/scalability finding a
+  governing skill should have caught before the code was written), tag it
+  as a miss on that skill's own doc — `skills/{id}.misses`, a plain array —
+  so its owning team (that skill's `owningTeam`) gets a real, running list
+  to improve it against instead of guessing. You have no MCP session in
+  this Routine (same reason as the GitHub credential above: this is a
+  Firestore write with your existing board-automation credential, not the
+  MCP `report_skill_miss` tool a team member's own agent would use for the
+  same thing), so do it as a direct PATCH, same "fetch the doc first, this
+  overwrites the whole field" append convention as a `notes` entry
+  elsewhere in this file — the REST API has no native array-append:
+  ```bash
+  curl -sS -X PATCH -H "$AUTH" "$BOARD/skills/<SKILL_ID>?updateMask.fieldPaths=misses&updateMask.fieldPaths=lastMissAt" \
+    -H "Content-Type: application/json" \
+    -d '{"fields":{"misses":{"arrayValue":{"values":[<existing misses, unchanged>, {"mapValue":{"fields":{"text":{"stringValue":"<what specifically went wrong>"},"source":{"stringValue":"build"},"phase":{"stringValue":"build"},"ticketId":{"stringValue":"<ITEM_ID or null>"},"prNumber":{"nullValue":null},"projectId":{"stringValue":"<projectId>"},"reportedByEmail":{"nullValue":null},"reportedVia":{"stringValue":"routine"},"at":{"timestampValue":"<ISO8601 now>"}}}}]}},"lastMissAt":{"timestampValue":"<ISO8601 now>"}}}'
+  ```
+  Find the skill's id/current `misses` via the same `skills` runQuery
+  pattern used to fetch a bound skill's `files` above, filtered by `slug`.
+  `source` is `"build"` or `"review"`; `phase` is `"build"` or `"deploy"`,
+  matching which block you're in. Only do this for a genuine, specific miss
+  you can point at — not a routine note that the skill was applied — the
+  same "don't guess" bar step 3b's own FAQ proposals use.
 
 No skill needs to exist for its slug to be bound, and no binding needs to
 exist for this file to apply — `settings/phaseSkillBindings` is a plain
@@ -269,6 +295,20 @@ no block is prepended that run, same as today.
    something you can't locate in the codebase. If the project/item
    genuinely doesn't correspond to anything findable in this repo, say so
    in your final report rather than inventing work.
+
+   **Check `lastFailureReason` before you start** (XJoASicLGefL5c9fronl) —
+   a structured `{category, text, action, at}` map written whenever a
+   viewer sends this exact item back via Failed testing or Eject from
+   train (`public/js/app.js`'s `failTesting`/`ejectFromTrain`). If it's
+   set, this is a re-patch of something that already failed once: read
+   `category` and `text` first and make sure your fix actually addresses
+   that specific miss, not just a fresh guess at the original `desc` — the
+   whole reason this field exists is so a re-fired investigation isn't
+   working from the same incomplete picture that produced the first,
+   rejected attempt. The field is never cleared automatically, so treat it
+   as "what went wrong last time", not "what's wrong now" — if `notes`
+   shows a later, successful pass since `lastFailureReason.at`, it's stale
+   and you can note that rather than re-litigating an already-fixed issue.
 3. Implement the fix in your own local checkout (branch name is just a
    local convenience — you're never pushing it) — write the code exactly
    as you would if you could push it. When you're done and it's actually

@@ -482,7 +482,12 @@ the ticket and in `mcpAuditLog`.
 - **Nothing there deploys, merges, approves a ticket out of Ready for
   Testing, moves a card, writes a train field, fires Notify Claude, or
   triggers a campaign.** Campaign triggering stays on the triggered Routine
-  and the release pipeline keeps its human gates. The documentation tools
+  and the release pipeline keeps its human gates. `set_my_routine_binding`
+  (VNE6dxMu3h6jO3g6FNNB) is not an exception to this: it only registers
+  which Routine a member's OWN later board click fires (write-only — no
+  tool ever reads the stored fireUrl/token back), it never fires one
+  itself. See `backlog-tracker/MCP.md` → "Setting up your own personal
+  Notify Claude Routine". The documentation tools
   DO write to `projects` (that's where `requirementsMd`/`readmeMd`/
   `artifactUrl` live), so this is enforced rather than incidental:
   `updateProjectFields` is the only path to a project write and refuses any

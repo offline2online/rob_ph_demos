@@ -631,6 +631,28 @@ textarea.dialog-field-input { resize: vertical; min-height: 70px; }
 .feed-effort-small { background: rgba(82, 196, 26, .18); color: #2f7a0f; }
 .feed-effort-medium { background: rgba(250, 173, 20, .18); color: #8a5a05; }
 .feed-effort-large { background: rgba(212, 67, 63, .16); color: #a3312d; }
+/* Priority signal (cwehxSMZv8noJQv5kB22) — same pill treatment as effort
+   above, its own color scale so the two never read as the same axis. */
+.feed-batch-item-priority {
+  flex-shrink: 0; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .03em;
+  border-radius: 999px; padding: 1px 7px; width: 46px; text-align: center;
+}
+.feed-priority-high { background: rgba(212, 67, 63, .16); color: #a3312d; }
+.feed-priority-medium { background: var(--surface-2); color: var(--text-muted); }
+.feed-priority-low { background: rgba(24, 144, 255, .14); color: #0b5fa8; }
+
+/* Effort/priority badges on a card itself (cwehxSMZv8noJQv5kB22) — same
+   pill sizing as .test-version-badge/.no-deploy-badge, colored the same
+   scale as the Feed in requirements preview above so the two surfaces read
+   consistently. Shown whenever a card carries a real (human-set) value —
+   see cardHTML's effortBadge/priorityBadge. */
+.effort-badge, .priority-badge {
+  display: inline-block; font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .02em;
+  border-radius: 9999px; padding: 2px 8px; margin: 6px 0 0 6px;
+}
+.effort-badge-small, .priority-badge-low { background: rgba(82, 196, 26, .18); color: #2f7a0f; }
+.effort-badge-medium, .priority-badge-medium { background: var(--surface-2); color: var(--text-muted); }
+.effort-badge-large, .priority-badge-high { background: rgba(212, 67, 63, .16); color: #a3312d; }
 
 /* ── Interface modal (shared with New Project's inline fields) ─────────── */
 #if-backdrop select, #if-backdrop input, #if-backdrop textarea,
@@ -691,6 +713,15 @@ textarea.dialog-field-input { resize: vertical; min-height: 70px; }
 .no-deploy-badge {
   display: inline-block; font-size: 10.5px; font-weight: 600;
   color: var(--success); background: rgba(82, 196, 26, .12); border-radius: 9999px;
+  padding: 2px 8px; margin: 6px 0 0 6px;
+}
+/* Structured Failed testing / Eject from train reason (XJoASicLGefL5c9fronl)
+   — shows the fixed category from lastFailureReason on a Backlog card that
+   was sent back, so it's visible at a glance instead of only living inside
+   the notes array a click away. */
+.last-failure-badge {
+  display: inline-block; font-size: 10.5px; font-weight: 600;
+  color: var(--danger); background: var(--danger-tint); border-radius: 9999px;
   padding: 2px 8px; margin: 6px 0 0 6px;
 }
 /* The backlog-tracker APP_VERSION (see public/js/version.js) captured the
@@ -930,6 +961,16 @@ textarea.dialog-field-input { resize: vertical; min-height: 70px; }
   border-radius: 999px; padding: 2px 8px; vertical-align: middle; margin-left: 2px;
 }
 
+/* Periodic skill-review nudge (eKslgrwgRJtoxyx0oNSV) — same pill treatment
+   as the owning-team tag above, warning-colored so it reads as "go look",
+   not as informational metadata. */
+.skill-review-due-badge {
+  display: inline-block; font-size: 10.5px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: .03em; color: #8a5a05; background: rgba(250, 173, 20, .18);
+  border-radius: 999px; padding: 2px 8px; vertical-align: middle; margin-left: 2px;
+}
+.skill-mark-reviewed-btn { font-size: 12.5px; padding: 4px 10px; margin-top: 8px; margin-left: 8px; }
+
 /* Change history (eKFIGtskqbnUTqUTBFBl) — a lazily-loaded, per-skill list of
    docRevisions rows, each expandable into a per-file diff. See
    toggleSkillHistory/toggleSkillHistoryDiff in app.js. */
@@ -942,6 +983,20 @@ textarea.dialog-field-input { resize: vertical; min-height: 70px; }
 .skill-history-row-meta { font-size: 11.5px; color: var(--text-muted); margin-bottom: 6px; }
 .skill-history-diff-btn { font-size: 12px; padding: 3px 8px; }
 .skill-history-diff { margin-top: 8px; }
+
+/* Skill feedback loop (Gcc30u2bQEJwEdUTN6X8) — same expandable-list treatment
+   as change history above, but always available (misses arrive on the live
+   skill doc itself, no lazy docRevisions fetch needed) and with its own
+   "add one" action any signed-in member can use, not just an editor. */
+.skill-card-misses { margin-top: 10px; }
+.skill-card-misses summary { font-size: 12.5px; cursor: pointer; color: var(--text-muted); }
+.skill-card-misses.skill-misses-empty summary { opacity: .7; }
+.skill-report-miss-btn { font-size: 12.5px; padding: 4px 10px; margin-top: 8px; }
+.skill-miss-row {
+  border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; margin-top: 8px; background: var(--bg);
+}
+.skill-miss-meta { font-size: 11.5px; color: var(--text-muted); margin-bottom: 4px; text-transform: capitalize; }
+.skill-miss-text { font-size: 13px; margin: 0; white-space: pre-wrap; }
 
 .skill-diff-file { border: 1px solid var(--border); border-radius: 8px; margin-top: 8px; overflow: hidden; }
 .skill-diff-file-path {

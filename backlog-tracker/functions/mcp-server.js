@@ -867,6 +867,100 @@ const SKILL_FILE_MAX = 100000;
 // nobody has claimed yet, simply has no owningTeam set.
 const SKILL_OWNING_TEAMS = ["Product/Design", "Engineering", "Cybersecurity"];
 
+// Skill feedback loop (Gcc30u2bQEJwEdUTN6X8) — a running, append-only list
+// of real misses on `skills/{id}.misses`, so an owning team improves a
+// skill against what actually went wrong rather than guessing. Two
+// sources feed it: a phase-bound skill review that finds something the
+// skill should have prevented (ROUTINE_INSTRUCTIONS.md's DEPLOY-phase
+// review, via a direct Firestore write using the board-automation
+// credential — see that file's own "Report skill misses" step) and any
+// team member's agent, over this MCP tool, tagging a build failure or a
+// finding against the skill that governed it. Same
+// FieldValue.arrayUnion() shape `notes` already uses on backlogItems, so
+// concurrent reports never clobber each other — and the same reason `at`
+// is a plain ISO string, not serverTimestamp(): Firestore rejects that
+// sentinel inside an array element.
+const SKILL_MISS_TEXT_MAX = 1000;
+const SKILL_MISS_SOURCES = ["build", "review"];
+const SKILL_MISS_PHASES = ["build", "deploy"];
+
+// Periodic skill-review nudge (eKslgrwgRJtoxyx0oNSV) — lighter-weight
+// companion to the skill feedback loop above: rather than waiting for a
+// build/review to surface a specific miss, nudge each owning team to
+// deliberately revisit their skill after enough has shipped since the last
+// time anyone did, on whichever of two signals comes first — a day-based
+// cadence, or a rough "how much has shipped since then" count. No new
+// Cloud Function or scheduled job: this is computed on read (list_skills/
+// get_skill, and the Skills page), the same "pull, not push" shape misses
+// already have — reading the audit trail (docRevisions/misses/notes)
+// itself, not polling anything new.
+//
+// "Deploys since review" is approximated by counting backlogItems that
+// reached published-live after the review baseline — this repo has no
+// single global "train count" to read (each project runs its own
+// independent deployment train), and a shipped ticket is the concrete,
+// countable unit every train actually produces. It is deliberately not
+// scoped to whether THIS skill was bound to the phase that shipped each
+// one — `settings/phaseSkillBindings` changes over time and a given ticket
+// doesn't record which bindings were active when it shipped, so an exact
+// count isn't available. Treat this as a nudge to go look, not a precise
+// metric — same spirit as build-batches.js's own estimateEffort/
+// estimatePriority.
+const SKILL_REVIEW_DEFAULT_CADENCE_DAYS = 60;
+const SKILL_REVIEW_DEFAULT_DEPLOY_THRESHOLD = 15;
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+// The skill's lastReviewedAt, or createdAt if never reviewed, or null if
+// neither exists (a very old skill from before either field — treated as
+// "no baseline to measure from", so no nudge rather than a false "overdue
+// since the epoch").
+function resolveReviewBaseline(skillData) {
+  const baseline = skillData.lastReviewedAt || skillData.createdAt || null;
+  return baseline && typeof baseline.toDate === "function" ? baseline.toDate() : (baseline instanceof Date ? baseline : null);
+}
+
+function skillReviewStatus(skillData, mergeDates) {
+  const baselineDate = resolveReviewBaseline(skillData);
+  if (!baselineDate) return { reviewDue: false, daysSinceReview: null, deploysSinceReview: null, lastReviewedAt: tsToISO(skillData.lastReviewedAt) };
+  const daysSinceReview = Math.floor((Date.now() - baselineDate.getTime()) / DAY_MS);
+  const cadenceDays = Number.isFinite(skillData.reviewCadenceDays) ? skillData.reviewCadenceDays : SKILL_REVIEW_DEFAULT_CADENCE_DAYS;
+  const deployThreshold = Number.isFinite(skillData.reviewDeployThreshold) ? skillData.reviewDeployThreshold : SKILL_REVIEW_DEFAULT_DEPLOY_THRESHOLD;
+  const deploysSinceReview = countSince(mergeDates, baselineDate);
+  const reviewDue = daysSinceReview >= cadenceDays || (deploysSinceReview != null && deploysSinceReview >= deployThreshold);
+  return { reviewDue, daysSinceReview, deploysSinceReview, lastReviewedAt: tsToISO(skillData.lastReviewedAt) };
+}
+
+// Fetched ONCE per list_skills/get_skill call and reused for every skill
+// being scored, rather than each skill running its own query — this is
+// read every time skills are listed, so an N-skill list must stay one
+// query, not N.
+async function loadPublishedMergeDates() {
+  const snap = await db().collection("backlogItems").where("status", "==", "published-live").limit(MAX_READ_DOCS).get();
+  const dates = [];
+  snap.forEach((doc) => {
+    const mergedAt = doc.data().mergedAt;
+    const d = mergedAt && typeof mergedAt.toDate === "function" ? mergedAt.toDate() : (mergedAt instanceof Date ? mergedAt : null);
+    if (d) dates.push(d);
+  });
+  return dates;
+}
+function countSince(mergeDates, sinceDate) {
+  if (!sinceDate) return null;
+  return mergeDates.filter((d) => d.getTime() > sinceDate.getTime()).length;
+}
+
+async function findSkillByIdOrSlug(skillId, slug) {
+  if (skillId) {
+    const s = await db().collection("skills").doc(String(skillId)).get();
+    if (s.exists) return s;
+  }
+  if (slug) {
+    const q = await db().collection("skills").where("slug", "==", String(slug)).limit(1).get();
+    if (!q.empty) return q.docs[0];
+  }
+  return null;
+}
+
 // Shared by upload_skill and update_skill: normalizes and bounds-checks a
 // files array, returning either { files } or { error }. Never throws — every
 // tool that calls this turns a bad `files` argument into a toolError instead
@@ -1244,6 +1338,14 @@ const TOOLS = [
     scope: "board.read",
     inputSchema: { type: "object", properties: {}, additionalProperties: false },
     async run(_args, session) {
+      // Per-member routine binding (VNE6dxMu3h6jO3g6FNNB) — presence only,
+      // never the stored fireUrl/token themselves (see
+      // set_my_routine_binding's own comment on why). The nudge only shows
+      // once: someone who's deliberately chosen to keep using the shared
+      // project token doesn't need to be reminded on every whoami call.
+      const selfSnap = await db().collection("consoleUsers").doc(session.email).get();
+      const selfData = selfSnap.exists ? selfSnap.data() || {} : {};
+      const hasRoutineBinding = !!(selfData.routineFireUrl && selfData.routineFireToken);
       return textResult({
         email: session.email,
         displayName: session.displayName || null,
@@ -1251,8 +1353,87 @@ const TOOLS = [
         canWrite: session.scopes.includes("board.write"),
         scopes: session.scopes,
         board: PUBLIC_ORIGIN,
-        note: "Deploys, merges, Notify Claude and campaign triggering are not available through MCP — they stay on the board's own buttons.",
+        hasRoutineBinding,
+        routineBindingNudge: hasRoutineBinding
+          ? null
+          : "You have no personal Notify Claude Routine binding yet — every board click you make still fires under the shared project token. Call get_routine_setup_instructions to set up your own.",
+        note: "Deploys, merges, Notify Claude and campaign triggering are not available through MCP — they stay on the board's own buttons. Setting up your own personal Notify Claude Routine binding (see get_routine_setup_instructions/set_my_routine_binding) is the one exception: it changes which credentials a board click fires under, but the click itself still has to happen on the board.",
       });
+    },
+  },
+  // ── Per-member routine binding (VNE6dxMu3h6jO3g6FNNB) ───────────────────
+  // Every board click today fires the ONE shared, project-wide Claude Code
+  // Routine (CLAUDE_ROUTINE_FIRE_URL/CLAUDE_ROUTINE_TOKEN in
+  // functions/index.js) — every session it starts runs under that one
+  // token's usage/account, whoever clicked. These two tools let an engineer
+  // register their OWN Routine instead, so sessions started by THEIR clicks
+  // run under their own account. functions/index.js's
+  // resolveRoutineCredentials checks the clicking member's
+  // consoleUsers/{email} row first and only falls back to the shared secret
+  // when they have none set — see that function's own comment.
+  //
+  // Claude's routines API has no delegated-OAuth "fire on behalf of" flow:
+  // a Routine's fire URL/token is per-Routine and hand-generated once from
+  // claude.ai/code/routines, so there is no way to provision one
+  // automatically end-to-end. This MCP-driven local setup — read the
+  // instructions, do the one-time manual step at claude.ai, paste the
+  // result back — is the closest the API allows to one-click.
+  {
+    name: "get_routine_setup_instructions",
+    description: "Step-by-step instructions for setting up your OWN personal Notify Claude Routine, so board clicks you make fire a session under your own Claude account instead of the shared project token. Read this before calling set_my_routine_binding — it explains where each value comes from.",
+    scope: "board.read",
+    inputSchema: { type: "object", properties: {}, additionalProperties: false },
+    async run() {
+      const bootstrapPrompt = `This routine fires when someone clicks "Notify Claude" or "Notify Claude — Deploy" on a project in the live "Backlog Tracker & FAQs" board — a real Firestore-backed web app at ${PUBLIC_ORIGIN}, NOT a Claude Artifact. Do not search Artifacts for it; you will not find it there.\n\nYour actual, current, authoritative operating instructions are NOT in this prompt — they live in a version-controlled file in the board's own GitHub repo. Before doing anything else:\n\n1. Fetch \`https://raw.githubusercontent.com/offline2online/rob_ph_demos/main/backlog-tracker/ROUTINE_INSTRUCTIONS.md\` — a plain, unauthenticated GET (no credential needed or available).\n2. Read it in full and follow it exactly for the rest of this run.\n\nIf that fetch fails outright, stop and say so plainly rather than improvising. Never attempt a \`git push\`, a GitHub API write, or any other way of getting code onto GitHub yourself — you have no GitHub credential of any kind, deliberately.`;
+      return textResult({
+        steps: [
+          "1. Go to claude.ai/code/routines (sign in with the SAME account you want board-triggered sessions to run under) and create a new Routine.",
+          "2. Set its prompt to the exact text in `bootstrapPrompt` below — this is the same bootstrap the shared project Routine uses, so your personal one behaves identically once it fires.",
+          "3. In that Routine's settings, add an API trigger. This generates a fire URL (ends in /fire) and a bearer token — copy both; the token is shown once.",
+          "4. Call set_my_routine_binding with fireUrl and token set to exactly those two values. Nothing else needs to change on the board — the next time you click Notify Claude / Notify Claude — Deploy / Groom Backlog on any project, the Cloud Function looks up your binding first.",
+          "5. To go back to the shared project token, call set_my_routine_binding again with fireUrl and token both set to \"\" (clears the binding).",
+        ],
+        bootstrapPrompt,
+        note: "This only changes which credentials fire — the board click itself (Notify Claude / Notify Claude — Deploy / Groom Backlog) still has to happen on the board; nothing here fires a session directly.",
+      });
+    },
+  },
+  {
+    name: "set_my_routine_binding",
+    description: "Register (or clear) your OWN personal Notify Claude Routine's fire URL and token, so board clicks you make fire it instead of the shared project token — see get_routine_setup_instructions first. Write-only: no tool or UI ever reads these values back, only whether a binding exists (see whoami's hasRoutineBinding).",
+    scope: "board.write",
+    inputSchema: {
+      type: "object",
+      properties: {
+        fireUrl: { type: "string", description: "Your Routine's API trigger URL (ends in /fire), from claude.ai/code/routines. Pass \"\" together with token: \"\" to clear your binding." },
+        token: { type: "string", description: "The bearer token shown when you added the API trigger. Pass \"\" together with fireUrl: \"\" to clear your binding." },
+      },
+      required: ["fireUrl", "token"], additionalProperties: false,
+    },
+    async run(args, session) {
+      const fireUrl = String(args.fireUrl || "").trim();
+      const token = String(args.token || "").trim();
+      const clearing = !fireUrl && !token;
+      if (!clearing) {
+        if (!fireUrl || !token) return toolError("Pass both fireUrl and token, or both as \"\" to clear your binding.");
+        if (!/^https:\/\//.test(fireUrl)) return toolError("fireUrl must be an https:// URL.");
+        if (token.length < 8) return toolError("That doesn't look like a real token.");
+      }
+      // null, not FieldValue.delete() — same convention functions/index.js's
+      // promoteFaqRevisionIfReady already follows: null is what
+      // hasRoutineBinding (whoami) and resolveRoutineCredentials both
+      // already treat as "no binding", and it's simpler to query against.
+      await db().collection("consoleUsers").doc(session.email).set({
+        routineFireUrl: clearing ? null : fireUrl,
+        routineFireToken: clearing ? null : token,
+        routineBoundAt: clearing ? null : FieldValue.serverTimestamp(),
+      }, { merge: true });
+      // The token itself is deliberately never written to the audit log —
+      // same "never echoed back" care as the response below.
+      await audit(session, "set_my_routine_binding", { cleared: clearing });
+      return textResult(clearing
+        ? { cleared: true }
+        : { registered: true, note: "Your fireUrl/token are stored but will never be returned by this or any other tool — call whoami to confirm hasRoutineBinding is now true." });
     },
   },
   {
@@ -2452,15 +2633,16 @@ const TOOLS = [
   // `skills`; only an editor may add, replace or remove one.
   {
     name: "list_skills",
-    description: "Every skill in the shared organisation-wide skills library — name, slug, summary, version, file count and when it was last updated. Returns light summaries, not file contents; call get_skill for the full files of one.",
+    description: "Every skill in the shared organisation-wide skills library — name, slug, summary, version, file count, when it was last updated, and whether it's due a periodic review (reviewDue — see mark_skill_reviewed). Returns light summaries, not file contents; call get_skill for the full files of one.",
     scope: "board.read",
     inputSchema: { type: "object", properties: {}, additionalProperties: false },
     async run() {
       const snap = await db().collection("skills").limit(MAX_READ_DOCS).get();
+      const mergeDates = await loadPublishedMergeDates();
       const rows = [];
       snap.forEach((doc) => {
         const d = doc.data() || {};
-        rows.push({
+        rows.push(Object.assign({
           id: doc.id,
           name: d.name || "",
           slug: d.slug || "",
@@ -2469,7 +2651,7 @@ const TOOLS = [
           owningTeam: d.owningTeam || null,
           fileCount: Array.isArray(d.files) ? d.files.length : 0,
           updatedAt: tsToISO(d.updatedAt),
-        });
+        }, skillReviewStatus(d, mergeDates)));
       });
       rows.sort((a, b) => a.name.localeCompare(b.name));
       return textResult({ matched: rows.length, skills: rows });
@@ -2477,7 +2659,7 @@ const TOOLS = [
   },
   {
     name: "get_skill",
-    description: "One skill in full, including every file's path and content, by id or slug.",
+    description: "One skill in full, including every file's path and content, by id or slug — plus whether it's due a periodic review (reviewDue, see mark_skill_reviewed).",
     scope: "board.read",
     inputSchema: {
       type: "object",
@@ -2489,18 +2671,11 @@ const TOOLS = [
     },
     async run(args) {
       if (!args.skillId && !args.slug) return toolError("Pass skillId or slug. Use list_skills to find one.");
-      let snap = null;
-      if (args.skillId) {
-        const s = await db().collection("skills").doc(String(args.skillId)).get();
-        if (s.exists) snap = s;
-      }
-      if (!snap && args.slug) {
-        const q = await db().collection("skills").where("slug", "==", String(args.slug)).limit(1).get();
-        if (!q.empty) snap = q.docs[0];
-      }
+      const snap = await findSkillByIdOrSlug(args.skillId, args.slug);
       if (!snap) return toolError("No skill with that id or slug. Use list_skills to find one.");
       const d = snap.data() || {};
-      return textResult({
+      const mergeDates = await loadPublishedMergeDates();
+      return textResult(Object.assign({
         id: snap.id,
         name: d.name || "",
         slug: d.slug || "",
@@ -2513,7 +2688,118 @@ const TOOLS = [
         updatedByEmail: d.updatedByEmail || null,
         createdAt: tsToISO(d.createdAt),
         updatedAt: tsToISO(d.updatedAt),
-      });
+        missCount: Array.isArray(d.misses) ? d.misses.length : 0,
+      }, skillReviewStatus(d, mergeDates)));
+    },
+  },
+  {
+    name: "mark_skill_reviewed",
+    description: "Record that a skill's owning team has just deliberately revisited it — clears the periodic review nudge (reviewDue on list_skills/get_skill) and resets its clock. Call this after actually reading the skill (ideally alongside list_skill_misses) and deciding it's still current, or after updating it in response to what you found.",
+    scope: "board.write",
+    inputSchema: {
+      type: "object",
+      properties: {
+        skillId: { type: "string", description: "From list_skills." },
+        slug: { type: "string", description: "The skill's slug, if you don't have the id." },
+        reviewCadenceDays: { type: "number", description: `Optional: override how many days before this skill is nudged again. Default ${SKILL_REVIEW_DEFAULT_CADENCE_DAYS}.` },
+        reviewDeployThreshold: { type: "number", description: `Optional: override how many tickets shipping before this skill is nudged again. Default ${SKILL_REVIEW_DEFAULT_DEPLOY_THRESHOLD}.` },
+      },
+      additionalProperties: false,
+    },
+    async run(args, session) {
+      if (!args.skillId && !args.slug) return toolError("Pass skillId or slug. Use list_skills to find one.");
+      const snap = await findSkillByIdOrSlug(args.skillId, args.slug);
+      if (!snap) return toolError("No skill with that id or slug. Use list_skills to find one.");
+      const fields = { lastReviewedAt: FieldValue.serverTimestamp(), lastReviewedByEmail: session.email };
+      if (args.reviewCadenceDays != null) {
+        if (!Number.isFinite(args.reviewCadenceDays) || args.reviewCadenceDays <= 0) return toolError("reviewCadenceDays must be a positive number.");
+        fields.reviewCadenceDays = args.reviewCadenceDays;
+      }
+      if (args.reviewDeployThreshold != null) {
+        if (!Number.isFinite(args.reviewDeployThreshold) || args.reviewDeployThreshold <= 0) return toolError("reviewDeployThreshold must be a positive number.");
+        fields.reviewDeployThreshold = args.reviewDeployThreshold;
+      }
+      // Deliberately does not touch updatedAt/files — reviewing a skill and
+      // deciding it's still fine is not itself a content edit (same "don't
+      // conflate the two" reasoning as report_skill_miss above).
+      await snap.ref.update(fields);
+      await audit(session, "mark_skill_reviewed", { skillId: snap.id, slug: snap.data().slug || null });
+      return textResult({ reviewed: true, skillId: snap.id, slug: snap.data().slug || null });
+    },
+  },
+  {
+    name: "report_skill_miss",
+    description: "Tag a real miss against a shared skill — a build failure or a review finding (security/scalability, etc.) that the governing skill should have prevented. Appends to that skill's running misses list (never edits the skill's own content), so its owning team can improve the skill against actual gaps instead of guesses. Pairs with phase-bound skills (see ROUTINE_INSTRUCTIONS.md) and each skill's owningTeam tag.",
+    scope: "board.write",
+    inputSchema: {
+      type: "object",
+      properties: {
+        skillId: { type: "string", description: "From list_skills." },
+        slug: { type: "string", description: "The skill's slug, if you don't have the id." },
+        text: { type: "string", description: `What went wrong, and what the skill should have caught or said instead. Up to ${SKILL_MISS_TEXT_MAX} characters.` },
+        source: { type: "string", enum: SKILL_MISS_SOURCES, description: `Where this was found: "build" (the fix itself was wrong/incomplete) or "review" (a review finding — security, scalability, etc.). Default "review".` },
+        phase: { type: "string", enum: SKILL_MISS_PHASES, description: `Which phase-bound skill list this skill was pulled in under, if known: "build" or "deploy" (see settings/phaseSkillBindings). Optional.` },
+        ticketId: { type: "string", description: "The backlog item id this miss came from, if any." },
+        prNumber: { type: "number", description: "The PR number this miss came from, if any." },
+        projectId: { type: "string", description: "The project id this miss came from, if any." },
+      },
+      required: ["text"], additionalProperties: false,
+    },
+    async run(args, session) {
+      if (!args.skillId && !args.slug) return toolError("Pass skillId or slug. Use list_skills to find one.");
+      const snap = await findSkillByIdOrSlug(args.skillId, args.slug);
+      if (!snap) return toolError("No skill with that id or slug. Use list_skills to find one.");
+      const text = String(args.text || "").trim();
+      if (!text) return toolError("text cannot be empty.");
+      if (text.length > SKILL_MISS_TEXT_MAX) return toolError(`text is limited to ${SKILL_MISS_TEXT_MAX} characters; that was ${text.length}.`);
+      const source = args.source && SKILL_MISS_SOURCES.includes(args.source) ? args.source : "review";
+      const entry = {
+        text, source,
+        phase: args.phase && SKILL_MISS_PHASES.includes(args.phase) ? args.phase : null,
+        ticketId: args.ticketId ? String(args.ticketId) : null,
+        prNumber: Number.isFinite(args.prNumber) ? args.prNumber : null,
+        projectId: args.projectId ? String(args.projectId) : null,
+        reportedByEmail: session.email,
+        reportedVia: "mcp",
+        // A plain Date, not serverTimestamp(): Firestore rejects the
+        // sentinel inside arrayUnion — same reason add_item_comment above
+        // (and app.js's addItemComment) uses one, and it lets every
+        // consumer (the Skills page, tsToISO) treat `at` as a real
+        // Timestamp rather than a plain string a "review" write elsewhere
+        // might format differently.
+        at: new Date(),
+      };
+      // arrayUnion, not a read-modify-write: two misses reported around the
+      // same moment (e.g. two review findings on the same deploy) must
+      // never let one silently clobber the other. Deliberately does NOT
+      // touch updatedAt/updatedByEmail — those track the skill's own
+      // authored content (see update_skill), not feedback about it;
+      // lastMissAt is the separate signal for "a miss came in recently".
+      await snap.ref.update({ misses: FieldValue.arrayUnion(entry), lastMissAt: FieldValue.serverTimestamp() });
+      await audit(session, "report_skill_miss", { skillId: snap.id, slug: snap.data().slug || null, source, phase: entry.phase, ticketId: entry.ticketId, prNumber: entry.prNumber });
+      return textResult({ reported: true, skillId: snap.id, slug: snap.data().slug || null });
+    },
+  },
+  {
+    name: "list_skill_misses",
+    description: "The running list of misses tagged against one shared skill (see report_skill_miss) — newest first. Use this to see what's actually gone wrong before revising a skill you own.",
+    scope: "board.read",
+    inputSchema: {
+      type: "object",
+      properties: {
+        skillId: { type: "string", description: "From list_skills." },
+        slug: { type: "string", description: "The skill's slug, if you don't have the id." },
+      },
+      additionalProperties: false,
+    },
+    async run(args) {
+      if (!args.skillId && !args.slug) return toolError("Pass skillId or slug. Use list_skills to find one.");
+      const snap = await findSkillByIdOrSlug(args.skillId, args.slug);
+      if (!snap) return toolError("No skill with that id or slug. Use list_skills to find one.");
+      const d = snap.data() || {};
+      const misses = (Array.isArray(d.misses) ? d.misses : []).slice().reverse()
+        .map((m) => Object.assign({}, m, { at: tsToISO(m.at) }));
+      return textResult({ skillId: snap.id, slug: d.slug || "", name: d.name || "", matched: misses.length, misses });
     },
   },
   {

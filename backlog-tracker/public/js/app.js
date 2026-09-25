@@ -23,7 +23,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-auth.js";
 import { firebaseConfig } from "./firebase-config.js";
 import { APP_VERSION } from "./version.js";
-import { clusterBacklogItems, splitRequirementsText } from "./build-batches.js";
+import { clusterBacklogItems, estimateEffort, estimatePriority, splitRequirementsText } from "./build-batches.js";
 
 // auth-gate.js has already initialised the app (and signed the user in)
 // by the time this module is imported; reuse it rather than double-init.
@@ -102,6 +102,26 @@ const CATEGORIES = [
 
 const GENERAL_PROJECT_ID = "general";
 
+// Structured Failed testing / Eject from train reasons (XJoASicLGefL5c9fronl)
+// — a fixed, short set of buckets alongside the existing free-text note, so
+// a rejection captures a machine-readable "what kind of miss was this" in
+// addition to the human explanation, written onto the item as
+// lastFailureReason. run-backlog-automation.js itself never reads this (it
+// only applies patches, it doesn't investigate) — it's
+// ROUTINE_INSTRUCTIONS.md's "For each Backlog item found" step 2 that tells
+// a re-fired Notify Claude session to check it before starting, so a
+// re-patch actually targets what failed last time instead of re-guessing
+// from `desc` alone.
+const FAILURE_REASON_CATEGORIES = [
+  "Doesn't work as described",
+  "Wrong / unexpected behavior",
+  "Visual or layout issue",
+  "Missing a case the ticket asked for",
+  "Broke something else (regression)",
+  "Blocking a release, not a rebuild",
+  "Other",
+];
+
 // Curated Material Symbols names for FAQ category icons — a starting set
 // covering common Help Center topics, not an exhaustive icon-library pick.
 // A category's current icon is always included in its own dropdown (see
@@ -151,7 +171,10 @@ function closeDialogWith(result) {
 }
 
 // Low-level opener all four wrappers below funnel through.
-// fields: [{ id, label, value, multiline, rows, placeholder, type }]
+// fields: [{ id, label, value, multiline, rows, placeholder, type, options }]
+// type: "select" renders a <select> from `options` (array of plain strings,
+// or {value,label} pairs) instead of an input/textarea — added for the
+// structured Failed testing / Eject from train reason (see failTesting).
 // Resolves with `true` (OK, no fields), `null` (cancelled/closed), or an
 // object keyed by each field's `id` (OK, with fields).
 function openDialog({ title, message, fields, okLabel, cancelLabel, danger, showCancel }) {
@@ -163,13 +186,19 @@ function openDialog({ title, message, fields, okLabel, cancelLabel, danger, show
     dialogFieldsEl.innerHTML = (fields || []).map((f, i) => `
       <div>
         ${f.label ? `<label class="dialog-field-label" for="dialog-field-${i}">${escapeHTML(f.label)}</label>` : ""}
-        ${f.multiline
+        ${f.type === "select"
+          ? `<select id="dialog-field-${i}" class="dialog-field-input">${(f.options || []).map((o) => {
+              const value = typeof o === "string" ? o : o.value;
+              const label = typeof o === "string" ? o : o.label;
+              return `<option value="${escapeHTML(value)}">${escapeHTML(label)}</option>`;
+            }).join("")}</select>`
+          : f.multiline
           ? `<textarea id="dialog-field-${i}" class="dialog-field-input" rows="${f.rows || 4}" placeholder="${escapeHTML(f.placeholder || "")}"></textarea>`
           : `<input id="dialog-field-${i}" class="dialog-field-input" type="${f.type || "text"}" placeholder="${escapeHTML(f.placeholder || "")}">`}
       </div>`).join("");
     (fields || []).forEach((f, i) => {
       const el = document.getElementById(`dialog-field-${i}`);
-      el.value = f.value || "";
+      el.value = f.value || (f.type === "select" && f.options && f.options.length ? (typeof f.options[0] === "string" ? f.options[0] : f.options[0].value) : "");
       el.dataset.fieldId = f.id;
     });
     dialogCancelBtn.hidden = showCancel === false;
@@ -567,6 +596,27 @@ function cardHTML(item) {
         ? `<span class="in-development-hint" title="Claude has confirmed this PR is green and mergeable and told backlog-automation.yml to merge it — it's locked until that merge actually lands and this card moves to Merged to Main (Live)">Deploying — locked</span>`
         : `<span class="merge-pending-hint" title="Only this project's own Deploy to Main button actually merges this to main">Waiting for Deploy to Main</span>`)
     : "";
+  // Eject from train (FVrOIVAAp46NdcgGovMW) — the explicit, one-click way to
+  // pull a stuck Approved for Deployment card off a locked train so the rest
+  // of the release can still reach Deploy to Main. Before this, doing the
+  // same thing from here needed two separate, unrelated-looking clicks — the
+  // plain "move back" arrow (leftBtn above) to Ready for Testing, then
+  // Failed testing there to actually revert its commits — with nothing on
+  // the card saying that chain was how you eject a release-blocking ticket.
+  // This does both steps in one write, reusing the exact same
+  // revertRequested hand-off failTesting already uses (see
+  // processRevertFromTrain in run-backlog-automation.js), so it needs no
+  // automation change — only the note/flag are distinct (ejectedFromTrain),
+  // since a card pulled off a locked train to unblock a release isn't
+  // necessarily one that ever failed a test. trainLockShouldClear
+  // (train-lock.js) only clears a project's lock once EVERY train-relevant
+  // item is gone, so ejecting this one ticket can never itself reopen
+  // Backlog to new work while others are still mid-build — "without
+  // unblocking the build" is already guaranteed by that shared check, not
+  // something this button has to enforce itself.
+  const ejectBtn = (isLiveBranch && !noDeployPending && !isDeploying)
+    ? `<button type="button" class="approve-btn fail-testing-btn eject-train-btn" data-id="${item.id}" title="Send this back to Backlog and revert its commits off the branch, without touching the rest of the train">Eject from train</button>`
+    : "";
   const isPublished = item.status === "published-live";
   const archiveBtn = isPublished && !isReverting
     ? `<button type="button" class="icon-btn archive-btn" data-id="${item.id}" title="Archive">&#128451;</button>`
@@ -612,6 +662,28 @@ function cardHTML(item) {
     : "";
   const noDeployBadge = item.noDeploymentRequired
     ? `<span class="no-deploy-badge" title="Live data/config change only — no code to push or deploy">No deployment required</span>`
+    : "";
+  // lastFailureReason (XJoASicLGefL5c9fronl) — the structured category from
+  // the most recent Failed testing / Eject from train, surfaced on the
+  // Backlog card itself so it's visible before a re-investigation even
+  // opens the notes. The field itself is never cleared, but isBacklog above
+  // means it only ever renders while the card is actually sitting in
+  // Backlog — once it reaches Ready for Testing again this stops showing,
+  // and a later rejection simply overwrites it with the fresh reason.
+  const lastFailureBadge = isBacklog && item.lastFailureReason && item.lastFailureReason.category
+    ? `<span class="last-failure-badge" title="${escapeHTML(item.lastFailureReason.text || "")}">${escapeHTML(item.lastFailureReason.category)}</span>`
+    : "";
+  // Effort/priority (cwehxSMZv8noJQv5kB22) — only a real, human-set value
+  // (Edit item modal), never the silent build-batches.js guess: showing a
+  // guess as if it were a decided value on every single Backlog card would
+  // be noise, not a signal. Backlog-only, same reasoning as lastFailureBadge
+  // above — these are pre-build triage signals, not something worth
+  // tracking once a ticket is already on a train.
+  const effortBadge = isBacklog && item.effort
+    ? `<span class="effort-badge effort-badge-${escapeHTML(item.effort)}" title="Effort">${escapeHTML(item.effort)}</span>`
+    : "";
+  const priorityBadge = isBacklog && item.priority
+    ? `<span class="priority-badge priority-badge-${escapeHTML(item.priority)}" title="Priority">${escapeHTML(item.priority)}</span>`
     : "";
   // The backlog-tracker APP_VERSION stamped the moment this card first
   // reached Ready for Testing (see moveItem/processApplyPatch) — the same
@@ -745,7 +817,7 @@ function cardHTML(item) {
       </div>
       <h3 class="card-title">${escapeHTML(item.title)}</h3>
       ${descHTML}
-      ${noDeployBadge}${testVersionBadge}${prBadge}${deployBadge}
+      ${noDeployBadge}${priorityBadge}${effortBadge}${lastFailureBadge}${testVersionBadge}${prBadge}${deployBadge}
       <div class="card-footer">
         <div class="card-footer-left">
           <span class="card-cat">${escapeHTML(item.category || "Uncategorised")}</span>
@@ -754,7 +826,7 @@ function cardHTML(item) {
         <div class="card-move">${quickCommentBtn}${revertBtn}${archiveBtn}${deleteBtn}</div>
       </div>
       ${testLinkHTML}
-      ${approveBtn}${failBtn}${mergeBtn}${inDevelopmentHint}${revertingHint}${leavingTrainHint}
+      ${approveBtn}${failBtn}${mergeBtn}${ejectBtn}${inDevelopmentHint}${revertingHint}${leavingTrainHint}
     </article>`;
 }
 
@@ -1819,7 +1891,7 @@ function restFields(fields) {
 const BACKLOG_ITEM_RENDER_FIELDS = [
   "projectId", "title", "desc", "type", "category", "status",
   "createdAt", "updatedAt", "archivedAt",
-  "patchReady", "mergeReady", "noDeploymentRequired",
+  "patchReady", "mergeReady", "noDeploymentRequired", "effort", "priority",
   "testVersion", "testSummary", "previewUrl",
   // The deployment train: which integration branch a ticket is on, the
   // commit(s) it put there, and whether it's on its way back off again.
@@ -1827,7 +1899,8 @@ const BACKLOG_ITEM_RENDER_FIELDS = [
   // so without it here the button would flicker on the REST-primed first
   // paint and correct itself a second later when the listener landed.
   "deployBranch", "deployCommit", "deployCommits",
-  "revertRequested", "revertBlockedBy", "revertedCommits",
+  "revertRequested", "revertBlockedBy", "revertedCommits", "ejectedFromTrain",
+  "lastFailureReason",
   "prUrl", "prNumber", "mergedAt",
   // Provenance for a card that's actually landed — which commit it merged
   // as, and whether the deploy that was supposed to ship it actually
@@ -1997,9 +2070,16 @@ onSnapshot(query(skillsRef, orderBy("name", "asc")), (snap) => {
 // Returns the new doc's id — the New Item modal needs it back to upload any
 // pending attachments (see createAttachmentController's "pending" mode)
 // once the item actually exists to attach them to.
-async function addItem(projectId, title, desc, type, category) {
+// `extra` (optional): { effort, priority } — used by the Feed in
+// requirements submit (cwehxSMZv8noJQv5kB22) to persist the clustering
+// preview's own effort/priority estimate onto the created card instead of
+// discarding it; the plain New Item form never passes this, since a single
+// freshly-typed item has no such estimate to keep.
+async function addItem(projectId, title, desc, type, category, extra = {}) {
   const ref = await addDoc(itemsRef, {
     projectId, title, desc, type, category,
+    ...(extra.effort ? { effort: extra.effort } : {}),
+    ...(extra.priority ? { priority: extra.priority } : {}),
     status: "backlog",
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
@@ -2077,14 +2157,24 @@ async function removeItem(id) {
 async function failTesting(id) {
   const item = items.find((i) => i.id === id);
   if (!item || item.status !== "ready-for-testing") return;
-  const reason = await showPromptDialog(
-    "What's wrong with this? This is added as a comment on the ticket and sent back to Backlog so it can be picked up again — the existing PR/branch stay linked, so a fresh Ready for Dev sweep re-patches it rather than starting over.",
-    "",
-    { title: "Failed testing", multiline: true, rows: 4 }
-  );
-  if (reason === null) return;
-  const trimmed = reason.trim();
+  // Structured reason (XJoASicLGefL5c9fronl): a fixed category alongside the
+  // existing free-text explanation, both stored on the item as
+  // lastFailureReason (see fields below) as well as folded into the note —
+  // the note stays the readable record on the card, lastFailureReason is
+  // the machine-readable one a re-fired investigation reads directly.
+  const result = await showFieldDialog({
+    title: "Failed testing",
+    message: "What's wrong with this? Sent back to Backlog so it can be picked up again — the existing PR/branch stay linked, so a fresh Ready for Dev sweep re-patches it rather than starting over.",
+    fields: [
+      { id: "category", label: "What kind of miss was this?", type: "select", options: FAILURE_REASON_CATEGORIES },
+      { id: "text", label: "Details", multiline: true, rows: 4 },
+    ],
+    okLabel: "Failed testing",
+  });
+  if (result === null) return;
+  const trimmed = (result.text || "").trim();
   if (!trimmed) return;
+  const category = result.category || FAILURE_REASON_CATEGORIES[FAILURE_REASON_CATEGORIES.length - 1];
   await updateDoc(doc(db, "backlogItems", id), {
     status: "backlog",
     // The rule this enforces: nothing leaves Ready for Testing rejected
@@ -2097,7 +2187,48 @@ async function failTesting(id) {
     // force-pushing anything). A card in Backlog must never have live
     // commits on a train.
     revertRequested: true,
-    notes: arrayUnion({ author: "viewer", text: `Failed testing: ${trimmed}`, at: new Date() }),
+    lastFailureReason: { category, text: trimmed, action: "failed-testing", at: new Date() },
+    notes: arrayUnion({ author: "viewer", text: `Failed testing [${category}]: ${trimmed}`, at: new Date() }),
+    updatedAt: serverTimestamp(),
+  });
+}
+
+// The eject half of "pull a stuck ticket off the train from Approved for
+// Deployment" (FVrOIVAAp46NdcgGovMW) — see cardHTML's ejectBtn comment for
+// why this is a distinct function rather than just reusing failTesting: it
+// fires from ready-to-publish (not ready-for-testing), skips the
+// intermediate "move back to Ready for Testing" hop, and tags the note/flag
+// as an eject rather than a test failure. Same underlying hand-off as
+// failTesting either way — revertRequested — so run-backlog-automation.js's
+// processRevertFromTrain needs no change to handle it.
+async function ejectFromTrain(id) {
+  const item = items.find((i) => i.id === id);
+  if (!item || item.status !== "ready-to-publish" || item.noDeploymentRequired) return;
+  // Same structured-reason capture as failTesting (XJoASicLGefL5c9fronl) —
+  // see that function's own comment on lastFailureReason.
+  const result = await showFieldDialog({
+    title: "Eject from train",
+    message: "Why eject this from the train? This reverts its commits off the branch and sends it back to Backlog so the rest of the train's tickets can still reach Deploy to Main — the existing PR/branch history stay linked, so a fresh Ready for Dev sweep re-patches it rather than starting over.",
+    fields: [
+      { id: "category", label: "What kind of miss was this?", type: "select", options: FAILURE_REASON_CATEGORIES },
+      { id: "text", label: "Details", multiline: true, rows: 4 },
+    ],
+    okLabel: "Eject from train",
+  });
+  if (result === null) return;
+  const trimmed = (result.text || "").trim();
+  if (!trimmed) return;
+  const category = result.category || FAILURE_REASON_CATEGORIES[FAILURE_REASON_CATEGORIES.length - 1];
+  await updateDoc(doc(db, "backlogItems", id), {
+    status: "backlog",
+    // Same hand-off failTesting uses — see processRevertFromTrain in
+    // run-backlog-automation.js. ejectedFromTrain is purely informational
+    // (distinguishes "pulled to unblock a release" from "failed a test" in
+    // the notes/board history); nothing in the automation branches on it.
+    revertRequested: true,
+    ejectedFromTrain: true,
+    lastFailureReason: { category, text: trimmed, action: "ejected-from-train", at: new Date() },
+    notes: arrayUnion({ author: "viewer", text: `Ejected from train [${category}]: ${trimmed}`, at: new Date() }),
     updatedAt: serverTimestamp(),
   });
 }
@@ -2139,9 +2270,14 @@ async function restoreItem(id) {
   });
 }
 
-async function updateItemDetails(id, { title, desc, type, category, noDeploymentRequired }) {
+// effort/priority (cwehxSMZv8noJQv5kB22): "" from the Edit item modal's own
+// Unset option means "go back to build-batches.js's automatic guess" — sent
+// as null, same "explicit clear, not an empty string sitting on the doc"
+// convention setItemPreviewUrl already uses for previewUrl.
+async function updateItemDetails(id, { title, desc, type, category, effort, priority, noDeploymentRequired }) {
   await updateDoc(doc(db, "backlogItems", id), {
     title: title.trim(), desc: desc.trim(), type, category,
+    effort: effort || null, priority: priority || null,
     noDeploymentRequired: !!noDeploymentRequired,
     updatedAt: serverTimestamp(),
   });
@@ -2353,6 +2489,12 @@ async function requestNotify(pid) {
   await setDoc(doc(db, "projects", pid), {
     notifyRequestedAt: serverTimestamp(),
     notifyItemIds: selected.length ? selected : null,
+    // Per-member routine binding (VNE6dxMu3h6jO3g6FNNB) — lets
+    // notifyOnProjectReadyForReview look up whether the clicking member has
+    // registered their own Routine (set via the MCP tool
+    // set_my_routine_binding), and fire that instead of the shared project
+    // token when they have.
+    notifyRequestedByEmail: (auth.currentUser && auth.currentUser.email) || null,
   }, { merge: true });
 
   getSelectedSet(pid).clear();
@@ -2438,7 +2580,19 @@ async function requestDeployNotify(pid) {
   deployOptimisticClicks[pid] = Date.now();
   render();
 
-  await setDoc(doc(db, "projects", pid), { deployNotifyRequestedAt: serverTimestamp() }, { merge: true });
+  await setDoc(doc(db, "projects", pid), {
+    deployNotifyRequestedAt: serverTimestamp(),
+    // deployNotifyRequestedByEmail already existed (written by the
+    // approve_deploy_to_main MCP tool, tagged deployNotifyRequestedVia:
+    // "mcp") — this now populates the same field for a plain console
+    // click too, so resolveRoutineCredentials (functions/index.js) can
+    // resolve either path's per-member routine binding the same way (see
+    // requestNotify's own comment above). Clearing deployNotifyRequestedVia
+    // keeps its documented "absent for a console click" meaning true even
+    // after an earlier MCP-triggered request left it set to "mcp".
+    deployNotifyRequestedByEmail: (auth.currentUser && auth.currentUser.email) || null,
+    deployNotifyRequestedVia: null,
+  }, { merge: true });
 }
 
 // Same idea as requestNotify()/requestDeployNotify() above, but for the
@@ -2461,7 +2615,11 @@ async function requestGroomNotify(pid) {
   groomOptimisticClicks[pid] = Date.now();
   render();
 
-  await setDoc(doc(db, "projects", pid), { groomRequestedAt: serverTimestamp() }, { merge: true });
+  await setDoc(doc(db, "projects", pid), {
+    groomRequestedAt: serverTimestamp(),
+    // See requestNotify's own comment above.
+    groomRequestedByEmail: (auth.currentUser && auth.currentUser.email) || null,
+  }, { merge: true });
 }
 
 async function setProjectName(id, name) {
@@ -2759,6 +2917,10 @@ projectsRoot.addEventListener("click", async (e) => {
   }
   const moveBtn = e.target.closest(".move-btn");
   if (moveBtn) { moveItem(moveBtn.dataset.id, parseInt(moveBtn.dataset.dir, 10)); return; }
+  // Checked before .fail-testing-btn below: eject-train-btn also carries
+  // that class for shared styling, so it must win the closest() match first.
+  const ejectTrainBtn = e.target.closest(".eject-train-btn");
+  if (ejectTrainBtn) { ejectFromTrain(ejectTrainBtn.dataset.id); return; }
   const failTestingBtn = e.target.closest(".fail-testing-btn");
   if (failTestingBtn) { failTesting(failTestingBtn.dataset.id); return; }
   const confirmNoDeployBtn = e.target.closest(".confirm-no-deploy-btn");
@@ -2870,6 +3032,8 @@ const eiBackdrop = document.getElementById("ei-backdrop");
 const eiTitleInput = document.getElementById("ei-title-input");
 const eiDescInput = document.getElementById("ei-desc-input");
 const eiCategorySelect = document.getElementById("ei-category-select");
+const eiEffortSelect = document.getElementById("ei-effort-select");
+const eiPrioritySelect = document.getElementById("ei-priority-select");
 const eiNoDeployCheckbox = document.getElementById("ei-no-deploy-checkbox");
 const eiNotesList = document.getElementById("ei-notes-list");
 const eiCommentInput = document.getElementById("ei-comment-input");
@@ -2966,6 +3130,8 @@ function openEditItemModal(id) {
   updateEiDescCount();
   setEiTypeToggle(item.type === "bug" ? "bug" : "feature");
   eiCategorySelect.value = item.category || CATEGORIES[0];
+  eiEffortSelect.value = item.effort || "";
+  eiPrioritySelect.value = item.priority || "";
   eiNoDeployCheckbox.checked = !!item.noDeploymentRequired;
   eiCommentInput.value = "";
   renderEiNotes();
@@ -3002,6 +3168,7 @@ document.getElementById("ei-save").addEventListener("click", async () => {
   try {
     await updateItemDetails(editingItemId, {
       title, desc, type, category: eiCategorySelect.value,
+      effort: eiEffortSelect.value, priority: eiPrioritySelect.value,
       noDeploymentRequired: eiNoDeployCheckbox.checked,
     });
   } catch (err) {
@@ -3575,14 +3742,21 @@ function feedBatchHTML(batch) {
     .filter((e) => batch.effortCounts[e])
     .map((e) => `${batch.effortCounts[e]} ${e}`)
     .join(", ");
+  const priorityLabel = ["high", "medium", "low"]
+    .filter((p) => batch.priorityCounts[p])
+    .map((p) => `${batch.priorityCounts[p]} ${p}`)
+    .join(", ");
+  const summaryParts = [effortLabel, priorityLabel ? `${priorityLabel} priority` : ""].filter(Boolean).map(escapeHTML);
+  const summaryHTML = summaryParts.length ? ` &middot; ${summaryParts.join(" &middot; ")}` : "";
   return `
     <div class="feed-batch">
       <div class="feed-batch-head">
         <span class="feed-batch-category">${escapeHTML(batch.category)}</span>
-        <span class="feed-batch-count">${batch.count} item${batch.count === 1 ? "" : "s"}${effortLabel ? ` &middot; ${escapeHTML(effortLabel)}` : ""}</span>
+        <span class="feed-batch-count">${batch.count} item${batch.count === 1 ? "" : "s"}${summaryHTML}</span>
       </div>
       ${batch.items.map((i) => `
         <div class="feed-batch-item">
+          <span class="feed-batch-item-priority feed-priority-${escapeHTML(i.priority)}">${escapeHTML(i.priority)}</span>
           <span class="feed-batch-item-effort feed-effort-${escapeHTML(i.effort)}">${escapeHTML(i.effort)}</span>
           <span class="feed-batch-item-title">${escapeHTML(i.title)}</span>
         </div>`).join("")}
@@ -3598,12 +3772,14 @@ document.getElementById("feed-preview-btn").addEventListener("click", () => {
     showAlert("Paste at least one requirement first.");
     return;
   }
-  feedPreviewItems = requirements.map((desc) => ({
-    title: generateTitle(desc),
-    desc,
-    type: "feature",
-    category: suggestCategory(desc),
-  }));
+  // effort/priority computed here (not left to clusterBacklogItems' own
+  // internal copies) so feed-submit below has real values to persist onto
+  // the created cards instead of the preview's estimate being thrown away
+  // the moment the modal closes (cwehxSMZv8noJQv5kB22).
+  feedPreviewItems = requirements.map((desc) => {
+    const draft = { title: generateTitle(desc), desc, type: "feature", category: suggestCategory(desc) };
+    return { ...draft, effort: estimateEffort(draft), priority: estimatePriority(draft) };
+  });
   const { batches } = clusterBacklogItems(feedPreviewItems);
   document.getElementById("feed-preview-count").textContent =
     `${feedPreviewItems.length} requirement${feedPreviewItems.length === 1 ? "" : "s"} into ${batches.length} batch${batches.length === 1 ? "" : "es"} — category and title are a best guess, correct either after creating`;
@@ -3619,7 +3795,7 @@ document.getElementById("feed-submit").addEventListener("click", async () => {
   const toCreate = feedPreviewItems.slice();
   try {
     for (const item of toCreate) {
-      await addItem(projectId, item.title, item.desc, item.type, item.category);
+      await addItem(projectId, item.title, item.desc, item.type, item.category, { effort: item.effort, priority: item.priority });
     }
   } catch (err) {
     await showAlert(`Some items may not have been created: ${err && err.message ? err.message : err}`);
@@ -4428,8 +4604,40 @@ function skillOwningTeamBadgeHTML(s) {
   return `<span class="skill-owning-team-badge">${escapeHTML(s.owningTeam)}</span>`;
 }
 
+// Periodic skill-review nudge (eKslgrwgRJtoxyx0oNSV) — a day-cadence-only
+// approximation of mcp-server.js's own skillReviewStatus (which also counts
+// tickets shipped since the last review): deliberately not reimplementing
+// that half here, so the "how due-ness is decided" logic lives in exactly
+// one place rather than two that could quietly drift apart. This badge is
+// a hint to look, not the authoritative answer — list_skills/get_skill over
+// MCP (or a look at the field values themselves) is that.
+const SKILL_REVIEW_DEFAULT_CADENCE_DAYS = 60;
+function skillReviewBadgeHTML(s) {
+  const baseline = s.lastReviewedAt || s.createdAt;
+  if (!baseline || typeof baseline.toDate !== "function") return "";
+  const days = Math.floor((Date.now() - baseline.toDate().getTime()) / 86400000);
+  const cadence = Number.isFinite(s.reviewCadenceDays) ? s.reviewCadenceDays : SKILL_REVIEW_DEFAULT_CADENCE_DAYS;
+  if (days < cadence) return "";
+  return `<span class="skill-review-due-badge" title="${s.lastReviewedAt ? "Last reviewed" : "Created"} ${escapeHTML(String(days))} days ago — also checks tickets shipped since then over MCP (list_skills/get_skill)">Review due &middot; ${days}d</span>`;
+}
+
+// Skill feedback loop (Gcc30u2bQEJwEdUTN6X8) — one entry per real miss
+// tagged against this skill (see mcp-server.js's report_skill_miss/
+// reportSkillMiss below); `misses` arrives on the skill doc itself via the
+// existing live `skills` listener, so this needs no separate fetch the way
+// change history's docRevisions lookup does.
+function skillMissRowHTML(m) {
+  const meta = [m.source, m.phase, m.ticketId ? `item ${m.ticketId}` : "", m.prNumber ? `PR #${m.prNumber}` : "", m.reportedByEmail]
+    .filter(Boolean).join(" · ");
+  return `<div class="skill-miss-row">
+    <div class="skill-miss-meta">${escapeHTML(meta)} &middot; ${escapeHTML(formatNoteAt(m.at))}</div>
+    <p class="skill-miss-text">${escapeHTML(m.text)}</p>
+  </div>`;
+}
+
 function skillCardHTML(s) {
   const files = Array.isArray(s.files) ? s.files : [];
+  const misses = Array.isArray(s.misses) ? s.misses.slice().reverse() : [];
   const meta = [`v${s.version || "?"}`, `${files.length} file${files.length === 1 ? "" : "s"}`];
   const updated = formatSkillUpdatedAt(s.updatedAt);
   if (updated) meta.push(`updated ${updated}`);
@@ -4437,7 +4645,7 @@ function skillCardHTML(s) {
     <div class="skill-card" data-id="${s.id}">
       <div class="skill-card-top">
         <div>
-          <div class="skill-card-name">${escapeHTML(s.name || "")} ${skillOwningTeamBadgeHTML(s)}</div>
+          <div class="skill-card-name">${escapeHTML(s.name || "")} ${skillOwningTeamBadgeHTML(s)} ${skillReviewBadgeHTML(s)}</div>
           <div class="skill-card-meta">${escapeHTML(meta.join(" · "))} · <code>${escapeHTML(s.slug || "")}</code></div>
           <div class="skill-card-summary">${escapeHTML(s.summary || "")}</div>
         </div>
@@ -4453,6 +4661,14 @@ function skillCardHTML(s) {
       <div class="skill-card-history">
         <button type="button" class="btn-ghost skill-history-toggle-btn" data-id="${s.id}">Change history</button>
         <div class="skill-history-panel" data-id="${s.id}" hidden></div>
+      </div>
+      <div class="skill-card-misses">
+        <details${misses.length ? "" : " class=\"skill-misses-empty\""}>
+          <summary>Misses (${misses.length})<span class="field-hint" style="display:inline;margin:0 0 0 6px;">— real gaps a build or review found this skill should have prevented</span></summary>
+          ${misses.length ? misses.map(skillMissRowHTML).join("") : '<p class="interface-row-empty">No misses reported yet.</p>'}
+        </details>
+        <button type="button" class="btn-ghost skill-report-miss-btn" data-id="${s.id}">Report a miss</button>
+        <button type="button" class="btn-ghost skill-mark-reviewed-btn" data-id="${s.id}" title="${s.lastReviewedAt ? `Last reviewed ${formatSkillUpdatedAt(s.lastReviewedAt)}` : "Never explicitly reviewed"}">Mark reviewed</button>
       </div>
     </div>`;
 }
@@ -4606,7 +4822,61 @@ document.getElementById("skills-list").addEventListener("click", (e) => {
   if (historyBtn) { toggleSkillHistory(historyBtn.dataset.id); return; }
   const diffBtn = e.target.closest(".skill-history-diff-btn");
   if (diffBtn) { toggleSkillHistoryDiff(diffBtn); return; }
+  const reportMissBtn = e.target.closest(".skill-report-miss-btn");
+  if (reportMissBtn) { reportSkillMiss(reportMissBtn.dataset.id); return; }
+  const markReviewedBtn = e.target.closest(".skill-mark-reviewed-btn");
+  if (markReviewedBtn) { markSkillReviewed(markReviewedBtn.dataset.id); return; }
 });
+
+// Periodic skill-review nudge (eKslgrwgRJtoxyx0oNSV) — the console's own
+// way to clear skillReviewBadgeHTML's nudge, alongside mcp-server.js's
+// mark_skill_reviewed (an agent's own way to do the same thing over MCP).
+// Any signed-in member may do this, same reasoning as reportSkillMiss above
+// — deciding a skill still looks current isn't an edit to its content.
+async function markSkillReviewed(id) {
+  const s = skills.find((x) => x.id === id);
+  if (!s) return;
+  if (!(await showConfirmDialog(`Mark "${s.name || s.slug}" as reviewed today? This clears its review-due nudge and resets the clock.`, { title: "Mark reviewed", okLabel: "Mark reviewed" }))) return;
+  await updateDoc(doc(db, "skills", id), {
+    lastReviewedAt: serverTimestamp(),
+    lastReviewedByEmail: (auth.currentUser && auth.currentUser.email) || null,
+  });
+}
+
+// Skill feedback loop (Gcc30u2bQEJwEdUTN6X8) — the console's own way to tag
+// a miss, alongside mcp-server.js's report_skill_miss (an agent's own way
+// to do the same thing over MCP, e.g. from the Deploy flow's skill review —
+// see ROUTINE_INSTRUCTIONS.md's "Report skill misses" step). Any signed-in
+// member may report one (read-level access, not gated behind
+// requireSkillEditor — tagging a real gap isn't the same act as editing a
+// skill's own content), same arrayUnion shape either route writes so the
+// two sources merge into one running list on the skill doc.
+async function reportSkillMiss(id) {
+  const s = skills.find((x) => x.id === id);
+  if (!s) return;
+  const result = await showFieldDialog({
+    title: `Report a miss — ${s.name || s.slug || ""}`,
+    message: "What did this skill fail to prevent or get right? Appended to its running misses list for the owning team to review — this never changes the skill's own content.",
+    fields: [
+      { id: "text", label: "What went wrong", multiline: true, rows: 4 },
+      { id: "source", label: "Found via", type: "select", options: [{ value: "review", label: "Review finding" }, { value: "build", label: "Build failure" }] },
+      { id: "phase", label: "Phase (optional)", type: "select", options: [{ value: "", label: "Unspecified" }, { value: "build", label: "Build" }, { value: "deploy", label: "Deploy" }] },
+      { id: "ticketId", label: "Backlog item id (optional)" },
+    ],
+    okLabel: "Report",
+  });
+  if (result === null) return;
+  const text = (result.text || "").trim();
+  if (!text) return;
+  await updateDoc(doc(db, "skills", id), {
+    misses: arrayUnion({
+      text, source: result.source || "review", phase: result.phase || null,
+      ticketId: (result.ticketId || "").trim() || null, prNumber: null, projectId: null,
+      reportedByEmail: (auth.currentUser && auth.currentUser.email) || null, reportedVia: "console", at: new Date(),
+    }),
+    lastMissAt: serverTimestamp(),
+  });
+}
 
 async function deleteSkillWithConfirm(id) {
   if (!(await requireSkillEditor())) return;
