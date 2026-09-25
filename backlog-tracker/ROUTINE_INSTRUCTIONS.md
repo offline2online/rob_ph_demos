@@ -727,6 +727,21 @@ git protocol, so none of it depends on `api.github.com` (see step 0).
    same rule as the Backlog flow applies: never set `trainReady: true`
    until steps 1 and 2 are genuinely finished and passed.
 
+   **If your own session's permission layer refuses this PATCH** (it has
+   classified it as a "Modify Shared Resources" write and blocked it — this
+   happened on 25 Sep 2026 after every check had passed), do not retry it
+   and do not treat the deploy as failed. Finish the run normally: report
+   `deployRoutine.status` `"done"` (see the fire text's self-report
+   instruction) and say in the same report that the `trainReady` write was
+   blocked. The pipeline hands the train over itself the moment your
+   report lands — `functions/index.js`'s `onDeployRoutineSettled`, and
+   `run-backlog-automation.js`'s sweep for a run that never reports — and
+   `processDeployTrain` re-checks steps 1 and 2 (every ticket's commit is
+   on the branch, nothing still in testing) before it merges. What you
+   must still never do is set `trainReady` when steps 1 or 2 actually
+   failed; in that case report `"error"` with the reason, and leave the
+   item notes that explain it.
+
    **You do not check CI here.** The automation does it right before
    merging, which is the only moment the answer is meaningful anyway — a
    green check now says nothing about the branch after `main` is merged

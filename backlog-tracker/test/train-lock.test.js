@@ -12,7 +12,7 @@
 // Run with:  node test/train-lock.test.js
 "use strict";
 const assert = require("assert");
-const { isTrainRelevantItem, trainLockShouldClear } = require("../functions/train-lock");
+const { isTrainRelevantItem, trainLockShouldClear, trainHandoverReason, DEPLOY_ROUTINE_ABANDONED_MS, DEPLOY_FIRE_GRACE_MS } = require("../functions/train-lock");
 
 let passed = 0;
 const failures = [];
@@ -129,6 +129,69 @@ test("items belonging to other projects are irrelevant to this project's decisio
   // Passed as-is (not pre-filtered), this looks locked — proving the
   // caller's own responsibility to filter by projectId first.
   assert.strictEqual(trainLockShouldClear(project, items), false);
+});
+
+// ── trainHandoverReason: the pipeline sets trainReady when the Routine can't ──
+
+const T0 = Date.parse("2026-09-25T23:14:54Z"); // the Deploy to Main click
+const requested = { deployNotifyRequestedAt: "2026-09-25T23:14:54Z", trainLocked: true, trainStatus: "idle", trainReady: false };
+
+test("THE TICKET: the Routine finished its checks but reported error because its own permission layer blocked the trainReady PATCH -> hand over", () => {
+  const project = { ...requested, deployRoutine: { status: "error", firedAt: "2026-09-25T23:14:56Z", finishedAt: "2026-09-25T23:21:26Z", errorMessage: "Deploy verification complete ... this session's own permission layer blocked the final PATCH that sets trainReady" } };
+  const reason = trainHandoverReason(project, T0 + 7 * 60 * 1000);
+  assert.match(reason, /reported "error" without setting trainReady/);
+  assert.match(reason, /permission layer blocked/);
+});
+
+test("a Routine that reported done without the flag (it may simply have been refused the write) is handed over too", () => {
+  const project = { ...requested, deployRoutine: { status: "done", firedAt: "2026-09-25T23:14:56Z", finishedAt: "2026-09-25T23:21:26Z" } };
+  assert.match(trainHandoverReason(project, T0 + 7 * 60 * 1000), /reported "done"/);
+});
+
+test("nothing to do while the Routine is still running and fresh", () => {
+  const project = { ...requested, deployRoutine: { status: "in-progress", firedAt: "2026-09-25T23:14:56Z" } };
+  assert.strictEqual(trainHandoverReason(project, T0 + 10 * 60 * 1000), null);
+});
+
+test("a Routine that never reports back is handed over once it is abandoned (25 minutes)", () => {
+  const project = { ...requested, deployRoutine: { status: "in-progress", firedAt: "2026-09-25T23:14:56Z" } };
+  assert.strictEqual(trainHandoverReason(project, T0 + DEPLOY_ROUTINE_ABANDONED_MS - 1000), null);
+  assert.match(trainHandoverReason(project, T0 + DEPLOY_ROUTINE_ABANDONED_MS + 5000), /never reported back/);
+});
+
+test("a click with no Routine run recorded at all (no fire credentials) is handed over after a short grace period", () => {
+  const project = { ...requested };
+  assert.strictEqual(trainHandoverReason(project, T0 + DEPLOY_FIRE_GRACE_MS - 1000), null);
+  assert.match(trainHandoverReason(project, T0 + DEPLOY_FIRE_GRACE_MS + 1000), /no Deploy Routine run was recorded/);
+});
+
+test("a stale Routine record from an EARLIER click does not count for this one", () => {
+  const project = { ...requested, deployRoutine: { status: "error", firedAt: "2026-09-25T20:00:00Z", errorMessage: "old" } };
+  // Fired before this click — treated as "no run for this click", so the grace period applies.
+  assert.strictEqual(trainHandoverReason(project, T0 + 60 * 1000), null);
+  assert.match(trainHandoverReason(project, T0 + DEPLOY_FIRE_GRACE_MS + 1000), /no Deploy Routine run was recorded/);
+});
+
+test("a request the pipeline already consumed (deployRequestHandledAt) is never handed over again — this is what stops a merge nobody clicked for", () => {
+  const project = { ...requested, deployRequestHandledAt: "2026-09-25T23:43:00Z", deployRoutine: { status: "error", firedAt: "2026-09-25T23:14:56Z" } };
+  assert.strictEqual(trainHandoverReason(project, T0 + 60 * 60 * 1000), null);
+});
+
+test("never hands over a train that is already ready, mid-deploy or awaiting a human merge", () => {
+  const routine = { status: "error", firedAt: "2026-09-25T23:14:56Z" };
+  assert.strictEqual(trainHandoverReason({ ...requested, trainReady: true, deployRoutine: routine }, T0 + 60000), null);
+  assert.strictEqual(trainHandoverReason({ ...requested, trainStatus: "deploying", deployRoutine: routine }, T0 + 60000), null);
+  assert.strictEqual(trainHandoverReason({ ...requested, trainStatus: "awaiting-human-merge", deployRoutine: routine }, T0 + 60000), null);
+  assert.strictEqual(trainHandoverReason({ trainLocked: true, deployRoutine: routine }, T0 + 60000), null, "no click, no hand-over");
+  assert.strictEqual(trainHandoverReason(null, T0), null);
+});
+
+test("a Routine's free text is trimmed and never carries a URL or a token onto the board", () => {
+  const project = { ...requested, deployRoutine: { status: "error", firedAt: "2026-09-25T23:14:56Z", errorMessage: "PATCH https://firestore.googleapis.com/v1/x?key=abc failed with token AbCdEfGhIjKlMnOpQrStUvWxYz0123456789 " + "x".repeat(400) } };
+  const reason = trainHandoverReason(project, T0 + 60000);
+  assert.ok(!reason.includes("googleapis"), "URL stripped");
+  assert.ok(!reason.includes("AbCdEfGhIjKlMnOpQrStUvWxYz"), "token stripped");
+  assert.ok(reason.length < 320, "kept short");
 });
 
 console.log(`\n${passed} passed, ${failures.length} failed\n`);
