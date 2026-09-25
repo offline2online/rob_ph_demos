@@ -1,0 +1,16 @@
+[
+  {
+    "id": "p93jwZqHGrnK22W3QECB",
+    "name": "September 2026",
+    "version": "4.2",
+    "status": "live",
+    "order": 1
+  },
+  {
+    "id": "NEbt38g8U6hcRXyoV04B",
+    "name": "DSP Integration",
+    "version": "5.0",
+    "status": "draft",
+    "order": 2
+  }
+]

@@ -109,6 +109,25 @@ body {
 .page-header h2 { margin: 0; font-size: 18px; font-weight: 700; }
 .page-header-count { font-size: 12px; font-weight: 700; color: var(--text-muted); background: var(--surface-2); border-radius: 9999px; padding: 2px 10px; }
 
+/* yUISCow4tCg9uxnMJFOy: the FAQ article editor's Cancel/Save draft/Publish
+   row (.faq-editor-page's own .page-header) must stay reachable while
+   scrolling a long article body — scoped to this one page only, since the
+   shared .page-header format above is deliberately left in-flow everywhere
+   else (see its own comment). Sticky, not fixed like .mobile-action-bar
+   below: nothing about this header's own content or height changes as the
+   page scrolls (that's what caused the .project-header sticky judder
+   described above .mobile-action-bar), so the browser can reserve its
+   normal in-flow space with no extra padding/JS needed — top reuses the
+   same var(--sticky-topbar-h) offset .mobile-action-bar already uses, so it
+   docks below .topbar instead of underneath it. */
+.faq-editor-page .page-header {
+  position: sticky; top: var(--sticky-topbar-h, 0px); z-index: 14;
+  background: rgba(255, 255, 255, .96);
+  backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+  padding: 10px 0; margin: 0 0 16px;
+  box-shadow: 0 4px 10px -6px rgba(20, 20, 20, .35);
+}
+
 /* ── Pipeline health strip (YeCj7sNpHXFUZQhmAmEb) ────────────────────────
    Compact by design — a "is the machinery alive" glance, not a dashboard.
    Hidden entirely until systemStatus/pipeline's first snapshot lands (see
@@ -426,6 +445,11 @@ textarea.dialog-field-input { resize: vertical; min-height: 70px; }
 }
 .mic-btn:hover { background: var(--primary); }
 .mic-btn.listening { background: var(--danger); color: #fff; animation: mic-pulse 1.4s ease-in-out infinite; }
+/* OhKUnoGbpUAeJiXiLIvc: shown-but-disabled instead of hidden when this
+   browser has no Web Speech support (see createDictationController in
+   app.js) — dimmed and not clickable, but never invisible. */
+.mic-btn:disabled { opacity: .35; cursor: not-allowed; }
+.mic-btn:disabled:hover { background: var(--primary-tint); }
 @keyframes mic-pulse { 0%, 100% { box-shadow: 0 0 0 0 var(--danger-tint); } 50% { box-shadow: 0 0 0 8px transparent; } }
 .listening-hint { margin: 6px 0 0; font-size: 11.5px; color: var(--danger); display: none; }
 .listening-hint.on { display: block; }
@@ -442,6 +466,14 @@ textarea.dialog-field-input { resize: vertical; min-height: 70px; }
 .project-name-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .project-name { margin: 0; font-size: 18px; font-weight: 700; }
 .project-item-count { font-size: 13px; font-weight: 500; color: var(--text-muted); }
+/* The running backlog-tracker release (public/js/version.js APP_VERSION),
+   shown once per project header so "what's live" doesn't require scrolling
+   to the page footer — same number, same pill language as .test-version-badge. */
+.project-version-badge {
+  display: inline-block; font-size: 10.5px; font-weight: 600;
+  color: var(--text-muted); background: var(--surface-2); border-radius: 9999px;
+  padding: 2px 8px; margin-left: 4px; vertical-align: middle;
+}
 .project-rename-btn { border: none; background: transparent; cursor: pointer; font-size: 13px; color: var(--text-muted); padding: 2px 6px; }
 .project-rename-btn:hover { color: var(--text); }
 .project-name-input {
@@ -613,6 +645,47 @@ textarea.dialog-field-input { resize: vertical; min-height: 70px; }
 .qc-panel .form-row { margin-top: 22px; }
 .qc-panel .btn-primary, .qc-panel .btn-ghost { border-radius: 10px; padding: 10px 18px; font-size: 14px; }
 
+/* ── Feed in requirements modal (z1Q6fxo0yTjamxVMWQK5) ──────────────────── */
+#feed-text-input {
+  width: 100%; font-family: inherit; font-size: 13.5px; color: var(--text); background: var(--surface);
+  border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; box-sizing: border-box; resize: vertical;
+}
+.feed-batch { border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; margin-top: 10px; background: var(--bg); }
+.feed-batch-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.feed-batch-category { font-size: 13px; font-weight: 600; }
+.feed-batch-count { font-size: 11.5px; color: var(--text-muted); }
+.feed-batch-item { display: flex; align-items: center; gap: 8px; margin-top: 6px; font-size: 12.5px; }
+.feed-batch-item-title { color: var(--text); }
+.feed-batch-item-effort {
+  flex-shrink: 0; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .03em;
+  border-radius: 999px; padding: 1px 7px; width: 46px; text-align: center;
+}
+.feed-effort-small { background: rgba(82, 196, 26, .18); color: #2f7a0f; }
+.feed-effort-medium { background: rgba(250, 173, 20, .18); color: #8a5a05; }
+.feed-effort-large { background: rgba(212, 67, 63, .16); color: #a3312d; }
+/* Priority signal (cwehxSMZv8noJQv5kB22) — same pill treatment as effort
+   above, its own color scale so the two never read as the same axis. */
+.feed-batch-item-priority {
+  flex-shrink: 0; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .03em;
+  border-radius: 999px; padding: 1px 7px; width: 46px; text-align: center;
+}
+.feed-priority-high { background: rgba(212, 67, 63, .16); color: #a3312d; }
+.feed-priority-medium { background: var(--surface-2); color: var(--text-muted); }
+.feed-priority-low { background: rgba(24, 144, 255, .14); color: #0b5fa8; }
+
+/* Effort/priority badges on a card itself (cwehxSMZv8noJQv5kB22) — same
+   pill sizing as .test-version-badge/.no-deploy-badge, colored the same
+   scale as the Feed in requirements preview above so the two surfaces read
+   consistently. Shown whenever a card carries a real (human-set) value —
+   see cardHTML's effortBadge/priorityBadge. */
+.effort-badge, .priority-badge {
+  display: inline-block; font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .02em;
+  border-radius: 9999px; padding: 2px 8px; margin: 6px 0 0 6px;
+}
+.effort-badge-small, .priority-badge-low { background: rgba(82, 196, 26, .18); color: #2f7a0f; }
+.effort-badge-medium, .priority-badge-medium { background: var(--surface-2); color: var(--text-muted); }
+.effort-badge-large, .priority-badge-high { background: rgba(212, 67, 63, .16); color: #a3312d; }
+
 /* ── Interface modal (shared with New Project's inline fields) ─────────── */
 #if-backdrop select, #if-backdrop input, #if-backdrop textarea,
 #docs-requirements-input {
@@ -672,6 +745,15 @@ textarea.dialog-field-input { resize: vertical; min-height: 70px; }
 .no-deploy-badge {
   display: inline-block; font-size: 10.5px; font-weight: 600;
   color: var(--success); background: rgba(82, 196, 26, .12); border-radius: 9999px;
+  padding: 2px 8px; margin: 6px 0 0 6px;
+}
+/* Structured Failed testing / Eject from train reason (XJoASicLGefL5c9fronl)
+   — shows the fixed category from lastFailureReason on a Backlog card that
+   was sent back, so it's visible at a glance instead of only living inside
+   the notes array a click away. */
+.last-failure-badge {
+  display: inline-block; font-size: 10.5px; font-weight: 600;
+  color: var(--danger); background: var(--danger-tint); border-radius: 9999px;
   padding: 2px 8px; margin: 6px 0 0 6px;
 }
 /* The backlog-tracker APP_VERSION (see public/js/version.js) captured the
@@ -902,6 +984,75 @@ textarea.dialog-field-input { resize: vertical; min-height: 70px; }
   color: var(--text); background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px;
 }
 .skill-file-remove-btn { flex-shrink: 0; }
+
+/* Owning-team tag (tGsm6lsBRsGtyoMZS3rn) — informational only, shown next
+   to the skill's name on its card. */
+.skill-owning-team-badge {
+  display: inline-block; font-size: 10.5px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: .03em; color: var(--primary); background: var(--surface-2);
+  border-radius: 999px; padding: 2px 8px; vertical-align: middle; margin-left: 2px;
+}
+
+/* Periodic skill-review nudge (eKslgrwgRJtoxyx0oNSV) — same pill treatment
+   as the owning-team tag above, warning-colored so it reads as "go look",
+   not as informational metadata. */
+.skill-review-due-badge {
+  display: inline-block; font-size: 10.5px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: .03em; color: #8a5a05; background: rgba(250, 173, 20, .18);
+  border-radius: 999px; padding: 2px 8px; vertical-align: middle; margin-left: 2px;
+}
+.skill-mark-reviewed-btn { font-size: 12.5px; padding: 4px 10px; margin-top: 8px; margin-left: 8px; }
+
+/* Change history (eKFIGtskqbnUTqUTBFBl) — a lazily-loaded, per-skill list of
+   docRevisions rows, each expandable into a per-file diff. See
+   toggleSkillHistory/toggleSkillHistoryDiff in app.js. */
+.skill-card-history { margin-top: 10px; }
+.skill-history-toggle-btn { font-size: 12.5px; padding: 4px 10px; }
+.skill-history-panel { margin-top: 8px; }
+.skill-history-row {
+  border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; margin-top: 8px; background: var(--bg);
+}
+.skill-history-row-meta { font-size: 11.5px; color: var(--text-muted); margin-bottom: 6px; }
+.skill-history-diff-btn { font-size: 12px; padding: 3px 8px; }
+.skill-history-diff { margin-top: 8px; }
+
+/* Skill feedback loop (Gcc30u2bQEJwEdUTN6X8) — same expandable-list treatment
+   as change history above, but always available (misses arrive on the live
+   skill doc itself, no lazy docRevisions fetch needed) and with its own
+   "add one" action any signed-in member can use, not just an editor. */
+.skill-card-misses { margin-top: 10px; }
+.skill-card-misses summary { font-size: 12.5px; cursor: pointer; color: var(--text-muted); }
+.skill-card-misses.skill-misses-empty summary { opacity: .7; }
+.skill-report-miss-btn { font-size: 12.5px; padding: 4px 10px; margin-top: 8px; }
+.skill-miss-row {
+  border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; margin-top: 8px; background: var(--bg);
+}
+.skill-miss-meta { font-size: 11.5px; color: var(--text-muted); margin-bottom: 4px; text-transform: capitalize; }
+.skill-miss-text { font-size: 13px; margin: 0; white-space: pre-wrap; }
+
+.skill-diff-file { border: 1px solid var(--border); border-radius: 8px; margin-top: 8px; overflow: hidden; }
+.skill-diff-file-path {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; font-weight: 600;
+  padding: 6px 10px; background: var(--surface-2);
+}
+.skill-diff-badge {
+  font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .03em;
+  border-radius: 999px; padding: 1px 7px; margin-left: 6px;
+}
+.skill-diff-badge-added { background: rgba(82, 196, 26, .18); color: #2f7a0f; }
+.skill-diff-badge-removed { background: rgba(212, 67, 63, .16); color: #a3312d; }
+.skill-diff-badge-changed { background: rgba(250, 173, 20, .18); color: #8a5a05; }
+.diffline {
+  display: flex; gap: 8px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px; line-height: 1.5; padding: 0 10px; white-space: pre-wrap; word-break: break-word;
+}
+.diffline-marker { flex: 0 0 14px; text-align: center; color: var(--text-muted); }
+.diffline-text { flex: 1 1 auto; }
+.diffline-eq { color: var(--text-muted); }
+.diffline-del { background: rgba(212, 67, 63, .12); }
+.diffline-del .diffline-marker { color: #a3312d; }
+.diffline-ins { background: rgba(82, 196, 26, .14); }
+.diffline-ins .diffline-marker { color: #2f7a0f; }
 .form-row-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 10px; }
 .form-row-grid select { width: 100%; }
 #faq-article-editor-page input[type="text"], #faq-article-editor-page textarea, #faq-article-editor-page select {
@@ -1283,6 +1434,17 @@ html:not([data-console-role="admin"]) [data-admin-only] { display: none !importa
 /* ── Proposed FAQ revision review (faqArticles.pendingRevision) ───────── */
 .badge-proposed-update { background: var(--primary-tint); color: var(--primary); margin-left: 6px; }
 .badge-approved-update { background: rgba(82, 196, 26, .12); color: var(--success); margin-left: 6px; }
+/* Proposed/approved-revision badges double as buttons straight into the
+   review page (faqRevisionBadgeHTML) — reset <button> chrome so they still
+   read as badges, then add a hover/focus cue and a small arrow so the
+   affordance to click is obvious rather than implied. */
+.faq-revision-badge {
+  border: 0; cursor: pointer; font: inherit; text-transform: inherit; letter-spacing: inherit;
+  display: inline-flex; align-items: center; gap: 3px;
+}
+.faq-revision-badge:hover { filter: brightness(0.94); }
+.faq-revision-badge:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+.faq-revision-badge-arrow { font-weight: 700; }
 .fr-meta {
   border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; margin-bottom: 14px;
   background: var(--surface-2, var(--bg)); font-size: 13px; display: grid; gap: 6px;

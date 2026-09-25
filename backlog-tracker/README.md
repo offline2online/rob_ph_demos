@@ -218,6 +218,29 @@ What the train changes:
   force-pushed, the card is still sent back, and `revertBlockedBy` names
   the tickets a human has to decide about (send them back too, or fix the
   branch by hand). The board shows that state on the card.
+  - **Failed testing now also captures a structured reason**
+    (XJoASicLGefL5c9fronl): alongside the free-text explanation, a fixed
+    category (`FAILURE_REASON_CATEGORIES` in `public/js/app.js`, e.g.
+    "Wrong / unexpected behavior", "Visual or layout issue") is stored on
+    the card as `lastFailureReason` and shown as a badge on the Backlog
+    card. `ROUTINE_INSTRUCTIONS.md`'s "For each Backlog item found" step 2
+    tells a re-fired investigation to read it before starting, so a
+    re-patch targets what actually failed last time rather than re-guessing
+    from the original `desc`.
+  - **Eject from train** (FVrOIVAAp46NdcgGovMW) is the same
+    reject-and-revert mechanism, one click earlier: an Approved for
+    Deployment (`ready-to-publish`) card used to need the plain "move back"
+    arrow to Ready for Testing *then* Failed testing there to actually come
+    off the branch — two separate, unrelated-looking controls, with nothing
+    naming that chain as how you unblock a release stuck on one bad ticket.
+    Eject from train does both in one write (`ejectFromTrain` in
+    `public/js/app.js`), tagging the card `ejectedFromTrain: true` so its
+    note reads distinctly from an actual test failure. No automation change
+    was needed — it reuses the exact same `revertRequested` hand-off, and
+    `trainLockShouldClear` (`functions/train-lock.js`) already only clears a
+    project's lock once every train-relevant item is gone, so ejecting one
+    stuck ticket can never itself reopen Backlog to new work while others
+    are still mid-build.
 - **Deploy** (`processDeployTrain`, triggered by `projects/{id}.trainReady`)
   — merge `main` in, bump `APP_VERSION` once, open ONE PR
   (`Deploy <project> — N tickets`, body listing every `Backlog item:`
@@ -692,10 +715,27 @@ documents, interface contracts and Artifact link — because keeping those
 current is part of doing the work. Every documentation write records what it
 replaced in `docRevisions`, so a bad write or a delete is recoverable.
 
-**No tool deploys, merges, approves, moves a card's status, or triggers a
-campaign.** Those stay on the board's own buttons and the triggered Routine.
-The documentation tools write to `projects`, so that is enforced by a single
-`updateProjectFields` allowlist rather than by never touching the collection.
+**No tool merges, approves a ticket out of Ready for Testing, or moves a
+card's status — with one deliberate, narrowly-scoped exception.**
+`approve_deploy_to_main` (editor/admin only) fires the exact same trigger
+the console's own **Deploy to Main** button writes; it never merges
+anything itself, and only when every ticket on the project's train is
+already Approved for Deployment and Ready for Testing is empty for it —
+the same condition that shows that button — logging every call to
+`mcpAuditLog`. Two read-only tools, `get_ready_for_testing_board` and
+`get_approved_for_deployment_board`, render those two columns as an
+embedded HTML card resource for a client that supports it, alongside the
+same data as plain text — reviewing there changes nothing either. Beyond
+that one trigger, everything else stays on the board's own buttons and the
+triggered Routine. The documentation tools write to `projects`, so that is
+enforced by a single `updateProjectFields` allowlist rather than by never
+touching the collection — `approve_deploy_to_main` writes its own single
+field through a separate, dedicated path, not through that allowlist.
+`set_my_routine_binding` (VNE6dxMu3h6jO3g6FNNB) is not a second exception:
+it only registers which Routine a member's OWN later board click fires
+under (write-only — no tool reads the stored fireUrl/token back), it never
+fires a session itself. See `MCP.md` → "What the agent can and can't do"
+for the full detail.
 
 This is a different thing from `boardApi` (further down this file), which is
 ONE shared secret standing in for the Routine's own automation. The MCP
@@ -1092,6 +1132,40 @@ working, check Anthropic's current Claude Code Routines docs for what
 changed, and re-test with `curl` before re-patching the function — see
 the request shape in `functions/index.js`'s `notifyOnProjectReadyForReview`.
 
+### Per-member routine binding — firing under your own account instead of the shared secrets above (VNE6dxMu3h6jO3g6FNNB)
+
+The two secrets above are **one shared Routine for the whole project** —
+every Notify Claude / Notify Claude — Deploy / Groom Backlog click, from
+anyone, fires the same Routine and runs under that one Claude account's
+usage. An engineer can instead register their own Routine, so board clicks
+*they* make fire a session under *their own* account:
+
+1. Over MCP, call `get_routine_setup_instructions` (see `MCP.md`) — it
+   returns the exact bootstrap prompt to paste into a new Routine at
+   `claude.ai/code/routines` (the same one `ROUTINE_INSTRUCTIONS.md`'s own
+   bootstrap uses), plus where to find that Routine's own API trigger fire
+   URL and token once you add one.
+2. Call `set_my_routine_binding` with that `fireUrl`/`token`. This is
+   **write-only** — stored on `consoleUsers/{email}.routineFireUrl` /
+   `.routineFireToken`, and no tool or UI, including `whoami`, ever reads
+   them back; `whoami`'s `hasRoutineBinding` only ever says whether one is
+   set. Pass both as `""` to clear it and go back to the shared secrets.
+
+`functions/index.js`'s `resolveRoutineCredentials` — shared by all three
+fire functions — checks the clicking member's binding
+(`projects/{id}.notifyRequestedByEmail` /
+`deployNotifyRequestedByEmail` / `groomRequestedByEmail`, written by
+`public/js/app.js`'s click handlers) first and only falls back to
+`CLAUDE_ROUTINE_FIRE_URL`/`CLAUDE_ROUTINE_TOKEN` when they have none set,
+or the click can't be attributed to anyone. Which one fired is recorded as
+`firedVia` (`"member"` or `"shared"`) on `notifyRoutine`/`deployRoutine`/
+`groomRoutine`, for debugging.
+
+There's no way to automate the `claude.ai/code/routines` step itself —
+the routines API has no delegated-OAuth "fire on behalf of" flow, so a
+Routine's fire URL/token is per-Routine and hand-generated once. This
+MCP-driven local setup is the closest one-click the API allows.
+
 ### The `GH_DISPATCH_TOKEN` secret — waking `backlog-automation.yml` immediately
 
 `backlog-automation.yml` polls every 2 minutes, but GitHub throttles a
@@ -1434,10 +1508,37 @@ default.
   row action. Full spec: `REQUIREMENTS.md` → "FAQ revision review".
   **A `functions/` change needs its own `firebase deploy --only
   functions`** — the promotion never happens until it's deployed.
+- **Releases — bundling FAQ updates with a product release.** The menu's
+  **Releases** page lists every `releases` doc (newest first) with
+  **+ New release** (name, optional version) and a one-way **Mark live**
+  per draft. A project is assigned to a release from its Docs page →
+  **Release** (`projects/{id}.releaseId`); while that release is a draft,
+  its approved proposals (`pendingRevision.sourceProjectId`) wait, and
+  marking it live promotes them all at once (`onReleaseMarkedLive` in
+  `functions/index.js`). Unassigned projects — including Backlog Tracker &
+  FAQs itself — promote exactly as before. Articles can also be bound to a
+  release range (editor → "Introduced in release" / "Removed in release");
+  `scripts/faq-export.js` exports `faq/data/releases.json`, and the public
+  site plus the MCP `search_faq`/`get_faq_article` tools show only the
+  articles that apply to the requested release (`?release=` / `release`),
+  by default the current live one — with no releases at all nothing is
+  filtered. `scripts/backfill-release-binding.js` (`--report-only` first;
+  idempotent, never overwrites) binds every unbound article to the current
+  live release. Full spec: `REQUIREMENTS.md` → "`releases/{releaseId}`".
 - **Seeding**: `scripts/seed-faq-data.js` (same insert-only `create()`
   pattern as `migrate-artifact-data.js`) seeds the **real** Help Center
-  content — 9 categories and 108 articles — run automatically on every
-  deploy. This is a verbatim import from Freshdesk Solutions
+  content — 9 categories and 108 articles. **No longer run automatically on
+  every deploy** (XFeVboxWduEPT2zGcj8y, 25 Sep 2026) — `create()` being
+  insert-only makes it safe against overwriting an *edited* article, but not
+  against a *deleted* one: once a console delete removes a doc from
+  Firestore, `create()` succeeds again on the very next run and silently
+  resurrects the original imported content. Every push-triggered deploy
+  running this meant any article/category deleted in FAQ Management came
+  back the moment anyone next shipped an unrelated backlog-tracker/faq
+  change. `deploy-backlog-tracker.yml`'s step now only runs on a manual
+  "Run workflow" dispatch — the one legitimate remaining use is bootstrapping
+  a brand-new, empty Firestore project, not something every deploy needs to
+  redo. This is a verbatim import from Freshdesk Solutions
   (`personalisationhub.freshdesk.com/a/solutions`), pulled from a Google
   Drive folder ("Personalisation Hub" › "Freshdesk FAQs - June 2026") that
   already had the full export saved as one file per category plus a
@@ -1468,9 +1569,13 @@ in over MCP — **not** scoped to any one project, unlike `backlogItems` or
 
 - **Data model**: a top-level `skills` Firestore collection, one doc per
   skill — `{name, slug, summary, version, files: [{path, content}, ...],
-  createdAt, updatedAt, createdByEmail, updatedByEmail, createdVia:
-  "console"|"mcp"}`. `slug` is lowercase `[a-z0-9-]+` and unique, and can't
-  be changed after creation (delete and re-add under a new slug instead).
+  owningTeam?, createdAt, updatedAt, createdByEmail, updatedByEmail,
+  createdVia: "console"|"mcp", lastWriteVia: "console"|"mcp"}`. `slug` is
+  lowercase `[a-z0-9-]+` and unique, and can't be changed after creation
+  (delete and re-add under a new slug instead). `owningTeam` is an
+  informational-only tag (`"Product/Design"|"Engineering"|"Cybersecurity"`)
+  — which team maintains a skill, with no write-permission enforcement
+  attached; any editor may still change any skill.
   `firestore.rules`' `match /skills/{skillId}` lets any signed-in member
   read (viewer included — the whole point is "usable by anyone using the
   platform") and only an editor write; per-file content is capped at
@@ -1479,18 +1584,31 @@ in over MCP — **not** scoped to any one project, unlike `backlogItems` or
   every element, so the real per-file cap lives in the MCP tool code and
   the console's own Add/Edit skill modal.
 - **Console UI**: the Skills page lists every skill as a card (name,
-  summary, version, file count, last updated), each expandable to show
-  every file's path and content read-only. An **Add skill** button and
-  each card's Edit/Delete are gated behind editor access
-  (`[data-editor-only]`, hidden for a viewer the same way
-  `[data-admin-only]` hides Team & agent access from everyone but an
-  admin) — a viewer can still open the page and read every skill.
+  owning-team badge, summary, version, file count, last updated), each
+  expandable to show every file's path and content read-only, plus a
+  **Change history** panel (`docRevisions` filtered by `skillId`, see
+  `REQUIREMENTS.md` → "Skills page: change history") with a per-revision
+  file diff. An **Add skill** button and each card's Edit/Delete are gated
+  behind editor access (`[data-editor-only]`, hidden for a viewer the same
+  way `[data-admin-only]` hides Team & agent access from everyone but an
+  admin) — a viewer can still open the page, read every skill and browse
+  its history.
 - **MCP tools** (`functions/mcp-server.js`): `list_skills` and `get_skill`
-  (scope `board.read` — light summaries and full-file reads respectively)
-  and `upload_skill` / `update_skill` / `delete_skill` (scope
-  `board.write`). `update_skill`/`delete_skill` record the file set they
-  replace to `docRevisions` first, same recoverability as every other
-  documentation write.
+  (scope `board.read` — light summaries and full-file reads respectively,
+  both including `owningTeam`) and `upload_skill` / `update_skill` /
+  `delete_skill` (scope `board.write`, `owningTeam` optional on the first
+  two). `update_skill`/`delete_skill` record the file set they replace to
+  `docRevisions` first, same recoverability as every other documentation
+  write; `functions/index.js`'s `onSkillWritten` trigger backfills the
+  same trail for a skill edited on the console instead, which can't write
+  `docRevisions` itself.
+- **Phase-bound skills**: `settings/phaseSkillBindings`
+  (`{build: string[], deploy: string[]}` of `skills.slug` values) lets a
+  skill be applied automatically as part of the Backlog (build) or Deploy
+  pipeline phase — see `REQUIREMENTS.md` → "Functional requirements — team
+  access & the MCP server" → "Phase-bound skills" and
+  `ROUTINE_INSTRUCTIONS.md` → "Check for phase-bound skills too" for the
+  full mechanism. No console UI manages this doc yet.
 - **Seeded skill**: `scripts/seed-skills-data.js` inserts one starting
   skill, "Personalisation Hub Front & Design" (slug `ph-designer`) — the
   design skill this repo's own root `CLAUDE.md` requires for every UI
@@ -1505,6 +1623,111 @@ in over MCP — **not** scoped to any one project, unlike `backlogItems` or
   npm install   # only if firebase-admin isn't already installed here
   GOOGLE_APPLICATION_CREDENTIALS=/path/to/a-backlog-tracker-e4ed2-service-account.json node seed-skills-data.js
   ```
+- **Skill feedback loop** (Gcc30u2bQEJwEdUTN6X8) — a running, append-only
+  `misses` array on each skill doc: `{text, source: "build"|"review",
+  phase?: "build"|"deploy", ticketId?, prNumber?, projectId?,
+  reportedByEmail, reportedVia: "mcp"|"console", at}`. Two sources feed it —
+  a team member's own agent tagging a build failure or review finding over
+  the MCP tools `report_skill_miss` (write)/`list_skill_misses` (read), and
+  `ROUTINE_INSTRUCTIONS.md`'s DEPLOY-phase skill review, which writes one
+  the same shape via a direct Firestore PATCH (see that file's own "Report
+  a genuine miss back onto the skill" step, next to its "SKILLS BOUND TO
+  THE BUILD/DEPLOY PHASE" mechanism). Deliberately never touches a skill's
+  own `updatedAt`/content — a miss report and an authored edit are kept as
+  two distinct signals. The Skills page shows each skill's misses in an
+  expandable **Misses (N)** panel plus a **Report a miss** button any
+  signed-in member can use (not editor-gated — tagging a gap isn't editing
+  the skill). `get_skill` also returns `missCount`.
+- **Periodic skill-review nudge** (eKslgrwgRJtoxyx0oNSV) — a lighter-weight
+  companion: rather than waiting for a specific miss, nudges an owning team
+  to deliberately revisit a skill after a day-based cadence
+  (`reviewCadenceDays`, default 60) or enough has shipped since the last
+  review (`reviewDeployThreshold` shipped tickets, default 15) — whichever
+  trips first. No new Cloud Function or scheduled job: `list_skills`/
+  `get_skill` compute `reviewDue`/`daysSinceReview`/`deploysSinceReview` on
+  every read (`skillReviewStatus` in `functions/mcp-server.js`), counting
+  `backlogItems` that reached `published-live` since the review baseline
+  (`lastReviewedAt`, or `createdAt` if never reviewed) as the "deploys"
+  proxy — this repo has no single cross-project train counter, so a shipped
+  ticket is the concrete, countable unit every train actually produces; not
+  scoped to whether that specific skill was bound to the phase that shipped
+  it, so treat it as a nudge to go look, not a precise metric. `mark_skill_reviewed`
+  (MCP, write) resets the clock and can override either threshold per skill.
+  The Skills page shows a **Review due** badge (day-cadence only, computed
+  client-side so the full due-ness logic lives in exactly one place) and a
+  **Mark reviewed** button.
+
+## Concept Incubator
+
+A home for early-stage ideas ("spitballs") that need further shape before
+they earn official project status — deliberately separate from the
+Backlog/pipeline board so exploring a rough idea never clutters it, and
+from a plain backlog item so an idea can carry its own README, requirements
+and a persisted discussion thread rather than being squeezed into one
+`desc` field. Reached from the hamburger menu's **Concept Incubator**
+entry, directly under Agent Console.
+
+- **Data model**: a top-level `concepts` Firestore collection, one doc per
+  concept — `{name, readmeMd, requirementsMd, comments: [{author, text,
+  at}, ...], status: "active"|"promoted", promotedProjectId, promotedAt,
+  createdAt, updatedAt, createdByEmail}` — not scoped to any project, the
+  same way `skills` isn't. `firestore.rules`' `match /concepts/{conceptId}`
+  lets any signed-in member read; only an editor may create, update or
+  delete, and `status` may only ever move `active` → `promoted`, never
+  back — the rule refuses that write outright, and deleting a promoted
+  concept is refused too, since it's the provenance record for where a
+  real project's README/requirements came from.
+- **Console UI**: the Concept Incubator page lists every concept as a card
+  (name, Active/Promoted status, last updated) — **+ New concept** asks
+  only for a name, the same "one quick step" shape as New Project.
+  Clicking a card opens its own detail page, laid out like a project's
+  Docs page: a README block and a Requirements block each save
+  independently of the other (the "update requirements incrementally"
+  the idea behind this was built for), and a Discussion block — a
+  comment thread with the same dictation-mic composer every other comment
+  box in this console has, retained across sessions so the conversation
+  can be picked back up any time. A still-active concept also gets
+  **Promote to project…** and **Delete this concept**; a promoted one
+  shows a "Promoted to project X" line instead and everything past the
+  discussion thread becomes read-only, since the project's own Docs page
+  is the source of truth from that point on.
+- **Promoting a concept** (`promoteConceptToProject` in `public/js/app.js`)
+  creates a brand-new `projects` doc seeded with the concept's `readmeMd`/
+  `requirementsMd` verbatim — nothing is re-keyed — and asks for the same
+  repo-folder link every new project needs (see "Adding a project" above)
+  plus, optionally, the release it ships in and a program/product. The
+  concept is then marked `promoted` and stays on this page as a read-only
+  record; it is never deleted or hidden.
+- **Not built yet**: no MCP tools for concepts (unlike Skills or
+  documentation, an agent can't read or write one over MCP today — file a
+  ticket if a workflow needs it), and no `docRevisions` change history the
+  way Skills/Requirements/README writes get — a concept's own comment
+  thread is its running record instead.
+
+## Feed in requirements → suggested build batches
+
+A project's **⋮ → Feed in requirements** modal bulk-creates several
+Backlog items from one pasted block of text (one requirement per
+blank-line-separated paragraph) and, before creating anything, previews
+them clustered into **suggested build batches** — grouped by `category`
+(the board's existing "shared area/files" proxy), each item tagged with a
+rough small/medium/large effort estimate **and** a rough low/medium/high
+priority estimate (cwehxSMZv8noJQv5kB22) — items within a batch sort
+highest-priority-first, then smallest-effort-first. Purely informational:
+**Create items** files them into that project's Backlog exactly like the
+single-item New Item form would, nothing is auto-approved or auto-sent to
+Ready for Dev — but unlike before, the preview's own effort/priority
+estimate is now persisted onto the created cards (`addItem`'s `extra`
+param) instead of being computed and then thrown away. Both signals can
+also be corrected any time from the Edit item modal (`effort`/`priority`
+selects, "Unset" reverting to the automatic guess) and show as badges on a
+Backlog card when a real value is set. The clustering itself
+(`clusterBacklogItems`/`estimateEffort`/`estimatePriority`/
+`splitRequirementsText`) lives in `public/js/build-batches.js` — a pure,
+Firebase-free module, unit-tested with plain `node`
+(`test/build-batches.test.mjs`) rather than through the browser. See
+`REQUIREMENTS.md` → "Feed in requirements → suggested build batches" for
+the full behavior.
 
 ## What's deliberately not built yet
 

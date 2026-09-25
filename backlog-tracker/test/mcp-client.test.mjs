@@ -245,7 +245,7 @@ await test("a tool error comes back as a tool error, not a transport failure", a
   assert.match(out.content[0].text, /No project with id nope/);
 });
 
-await test("there is no deploy tool to call", async () => {
+await test("there is no deploy tool under that name — the one deliberate carve-out is approve_deploy_to_main, narrowly scoped, not this", async () => {
   await assert.rejects(
     () => client.callTool({ name: "deploy_to_main", arguments: {} }),
     (err) => /Unknown tool/.test(String(err.message)),

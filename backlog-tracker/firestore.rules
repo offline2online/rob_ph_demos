@@ -175,8 +175,10 @@ service cloud.firestore {
           && !("trainReady" in incoming())
           && !("trainStatus" in incoming()) && !("trainPrNumber" in incoming())
           && !("trainNote" in incoming()) && !("needsHumanMerge" in incoming())
-          && !("trainLocked" in incoming())));
+          && !("trainLocked" in incoming())))
+        && (!("releaseId" in incoming()) || incoming().releaseId == null || isNonEmptyBoundedString(incoming().releaseId, 100));
       allow update: if isEditor() && isNonEmptyBoundedString(incoming().name, 80)
+        && (!("releaseId" in incoming()) || incoming().releaseId == null || isNonEmptyBoundedString(incoming().releaseId, 100))
         && (isBoardAutomation() || (trainFieldsAreAutomationOnly() && trainLockOnlyLatches()));
       allow delete: if isEditor();
     }
@@ -189,6 +191,37 @@ service cloud.firestore {
     match /programs/{programId} {
       allow read: if isBoardReader();
       allow create, update: if isEditor() && isNonEmptyBoundedString(incoming().name, 80);
+      allow delete: if isEditor();
+    }
+
+    // Releases — a named, ordered product release. A project may point at
+    // one (projects.releaseId, above); an FAQ article may be bound to a
+    // range of them (faqArticles.introducedInReleaseId/removedInReleaseId,
+    // below). `order` is assigned once by the client at creation (max + 1)
+    // and is what those article bindings are range-compared on, so it may
+    // never move afterwards. `status` only ever advances draft -> live:
+    // marking a release live is what promotes its projects' approved FAQ
+    // proposals (functions/index.js onReleaseMarkedLive), and un-marking it
+    // can't un-promote them, so the rules refuse the attempt rather than
+    // let the board say something the help centre doesn't.
+    function releaseStatusOnlyAdvances() {
+      return !(resource.data.status == "live" && incoming().status == "draft");
+    }
+    function isValidRelease() {
+      return isNonEmptyBoundedString(incoming().name, 120)
+        && incoming().status in ["draft", "live"]
+        && incoming().order is number
+        && (!("version" in incoming()) || incoming().version == null || isNonEmptyBoundedString(incoming().version, 40))
+        && (!("createdByEmail" in incoming()) || incoming().createdByEmail == null || isNonEmptyBoundedString(incoming().createdByEmail, 200))
+        && (!("updatedByEmail" in incoming()) || incoming().updatedByEmail == null || isNonEmptyBoundedString(incoming().updatedByEmail, 200))
+        && (!("madeLiveAt" in incoming()) || incoming().madeLiveAt == null || incoming().madeLiveAt is timestamp);
+    }
+    match /releases/{releaseId} {
+      allow read: if isBoardReader();
+      allow create: if isEditor() && isValidRelease();
+      allow update: if isEditor() && isValidRelease()
+        && incoming().order == resource.data.order
+        && releaseStatusOnlyAdvances();
       allow delete: if isEditor();
     }
 
@@ -266,9 +299,57 @@ service cloud.firestore {
         incoming().slug.matches('^[a-z0-9-]+$') &&
         isNonEmptyBoundedString(incoming().summary, 400) &&
         isNonEmptyBoundedString(incoming().version, 40) &&
-        incoming().files is list && incoming().files.size() > 0 && incoming().files.size() <= 20;
+        incoming().files is list && incoming().files.size() > 0 && incoming().files.size() <= 20 &&
+        // Informational "owning team" tag (tGsm6lsBRsGtyoMZS3rn) — soft
+        // ownership only, so this checks shape, not who may set it: any
+        // editor may still write any skill. Keep this list in step with
+        // SKILL_OWNING_TEAMS in functions/mcp-server.js and the Add/Edit
+        // skill modal's own <select> in public/js/app.js.
+        (!("owningTeam" in incoming()) || incoming().owningTeam == null ||
+          incoming().owningTeam in ["Product/Design", "Engineering", "Cybersecurity"]);
 
       allow delete: if isEditor();
+    }
+
+    // A Concept Incubator entry — an early-stage idea ("spitball") captured
+    // before it earns official project status. Lives in its own top-level
+    // collection, deliberately separate from `projects`/`backlogItems`, so
+    // it never appears on the pipeline board — see
+    // backlog-tracker/README.md's "Concept Incubator" section and
+    // public/js/app.js's openConceptIncubatorPage/openConceptDetailPage.
+    // `status` moves "active" -> "promoted" exactly once
+    // (promoteConceptToProject in app.js, which also writes the new
+    // projects/{id} doc that carries the concept's readmeMd/requirementsMd
+    // across); the rule below refuses the write back the other way so a
+    // promoted concept can't quietly become editable again from here.
+    function conceptStatusOnlyPromotes() {
+      return !(resource.data.status == "promoted" && incoming().status == "active");
+    }
+    match /concepts/{conceptId} {
+      allow read: if isBoardReader();
+
+      allow create: if isEditor() &&
+        isNonEmptyBoundedString(incoming().name, 120) &&
+        incoming().status == "active" &&
+        (!("readmeMd" in incoming()) || (incoming().readmeMd is string && incoming().readmeMd.size() <= 200000)) &&
+        (!("requirementsMd" in incoming()) || (incoming().requirementsMd is string && incoming().requirementsMd.size() <= 200000)) &&
+        (!("comments" in incoming()) || incoming().comments is list);
+
+      allow update: if isEditor() &&
+        isNonEmptyBoundedString(incoming().name, 120) &&
+        incoming().status in ["active", "promoted"] &&
+        conceptStatusOnlyPromotes() &&
+        (!("readmeMd" in incoming()) || (incoming().readmeMd is string && incoming().readmeMd.size() <= 200000)) &&
+        (!("requirementsMd" in incoming()) || (incoming().requirementsMd is string && incoming().requirementsMd.size() <= 200000)) &&
+        (!("comments" in incoming()) || incoming().comments is list) &&
+        (!("promotedProjectId" in incoming()) || incoming().promotedProjectId == null || isNonEmptyBoundedString(incoming().promotedProjectId, 100));
+
+      // Deletion only while still active — once promoted, a concept is the
+      // provenance record for a real project's README/requirements and
+      // must not disappear (same spirit as root CLAUDE.md's "Deletion
+      // reserved for Backlog cards only": only the not-yet-real state is
+      // disposable).
+      allow delete: if isEditor() && resource.data.status != "promoted";
     }
 
     // ── People, and their agents ──────────────────────────────────────────
@@ -409,6 +490,10 @@ service cloud.firestore {
         && (!("summary" in incoming()) || incoming().summary is string && incoming().summary.size() <= 400)
         && (!("keywords" in incoming()) || incoming().keywords is list && incoming().keywords.size() <= 30)
         && (!("docType" in incoming()) || incoming().docType in ["faq", "how-to", "reference", "explanation"])
+        // Release binding (see match /releases above): optional release ids,
+        // null/absent meaning open-ended on that side.
+        && (!("introducedInReleaseId" in incoming()) || incoming().introducedInReleaseId == null || isNonEmptyBoundedString(incoming().introducedInReleaseId, 100))
+        && (!("removedInReleaseId" in incoming()) || incoming().removedInReleaseId == null || isNonEmptyBoundedString(incoming().removedInReleaseId, 100))
         && incoming().status in ["draft", "published"]
         && incoming().order is number;
       allow delete: if isFaqEditor();
@@ -422,11 +507,20 @@ service cloud.firestore {
     // step) and republishes it as a public static file
     // (faq/data/settings.json) — the public site itself never talks to
     // Firestore for this.
+    // Also holds settings/phaseSkillBindings (l5mjAANU0dfveGhxmDjm) — which
+    // shared skills.slug values notifyOnProjectReadyForReview (build phase)
+    // and notifyOnProjectReadyToDeploy (deploy phase) prepend a pointer to
+    // in the Routine fire text, `{ build: string[], deploy: string[] }`. No
+    // console UI writes this doc yet (edited directly in Firestore, or by a
+    // future settings page) — read/write rules still apply the same as any
+    // other doc in this collection.
     match /settings/{docId} {
       allow read: if isBoardReader();
       allow create, update: if isEditor()
         && (!("analyticsTag" in incoming()) || incoming().analyticsTag == null
-          || (incoming().analyticsTag is string && incoming().analyticsTag.size() <= 40));
+          || (incoming().analyticsTag is string && incoming().analyticsTag.size() <= 40))
+        && (!("build" in incoming()) || (incoming().build is list && incoming().build.size() <= 20))
+        && (!("deploy" in incoming()) || (incoming().deploy is list && incoming().deploy.size() <= 20));
       allow delete: if isEditor();
     }
   }

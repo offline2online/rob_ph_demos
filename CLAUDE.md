@@ -407,29 +407,43 @@ instant, so there's no excuse for the board drifting from reality.
 - ~~No `testUrl` field or quick-launch icon on cards.~~ **Fixed**: a Ready
   for Testing card now has its own "Set test link" → "Test this →" button
   (`backlogItems.previewUrl`), using the
-  `https://rawcdn.githack.com/offline2online/rob_ph_demos/<branch>/<path>`
+  `https://rawcdn.githack.com/offline2online/rob_ph_demos/<commit-sha>/<path>`
   convention — no need to say the link in chat separately anymore.
-  **Both githack hosts cache a branch URL** (measured 22 Sep 2026, and
-  contrary to what this file said before): `index.html` refreshed within
-  minutes, but the DSP prototype's fixed-path `demo/api-snapshot.json` was
-  still serving the 21 Sep 10:19 capture a day and several pushes later —
-  a fresh-looking bundle over day-old data, with no visible error. That
-  was what three "Failed testing" rounds on the DSP project were looking
-  at. **A commit-sha URL is immutable and therefore safe to cache**, so
-  for a built bundle the test link must point at the commit the bundle
-  was built from: `dsp-prototype.yml` re-points the DSP project's testing
-  cards at the rebuilt commit after every push (`npm run board:tickets --
-  --relink-prototype <sha>`). For a plain static page a branch URL is
-  usually fine, but if a tester reports not seeing a change, `curl` the
-  link's fixed-path files before assuming the code is wrong — and never
-  cite this file's old "always-uncached" claim. `guessPreviewUrl` links to a changed `.html` page, or, for a
-  ticket that changes only CSS/JS, to the nearest `index.html` above those
-  assets (the page that renders them); only a change with no page above it
-  at all — `scripts/`, `functions/` — falls back to a link to the branch.
-  Note that a githack preview is a different origin from the deployed app,
-  so for backlog-tracker's own UI, Firebase Auth sign-in may be refused
-  there: what renders before the sign-in wall is testable, the rest needs
-  the deployed board.
+  **Both githack hosts cache a branch URL indefinitely** (measured twice:
+  22 Sep 2026 on the DSP project, and again 25 Sep 2026 on the backlog
+  tracker's own project). On 22 Sep, `index.html` refreshed within minutes,
+  but the DSP prototype's fixed-path `demo/api-snapshot.json` was still
+  serving the 21 Sep 10:19 capture a day and several pushes later — a
+  fresh-looking bundle over day-old data, with no visible error, and what
+  three "Failed testing" rounds on the DSP project were looking at. On
+  25 Sep, the same thing happened to a plain static page: 20 minutes after
+  commit `7b09a4b` changed `faq/css/faq.css` on the train (14px → 16px base
+  size, ticket `MwkHyHKeg2Q16k8ah6tA`), the branch URL still served the old
+  14px file, while the commit-sha URL for the same file served 16px
+  immediately (`mIHraVz8fQXRe549UYD1`). **There is no "plain static page"
+  exception — a branch URL is never safe to rely on, and a commit-sha URL
+  is immutable and therefore always safe to cache**, so `guessPreviewUrl`
+  now pins every project's `previewUrl` to the commit the ticket actually
+  landed on, never the branch name: `processApplyPatch` in
+  `run-backlog-automation.js` builds it against the commit it just made,
+  and `repointTrainPreviewUrls` re-points every *other* Ready for Testing
+  card already on that same train to the new head sha each time another
+  ticket lands, so every card's link keeps showing the full combination
+  that will actually ship. The DSP project's own rebuild-then-relink step
+  (`dsp-prototype.yml`, `npm run board:tickets -- --relink-prototype <sha>`)
+  for its checked-in build bundle is one instance of this same rule, not a
+  special case of it. If a tester ever reports not seeing a change, `curl`
+  the link's fixed-path files before assuming the code is wrong — and never
+  cite this file's old "always-uncached" or "branch URL is usually fine"
+  claims, both now measured false. `guessPreviewUrl` links to a changed
+  `.html` page, or, for a ticket that changes only CSS/JS, to the nearest
+  `index.html` above those assets (the page that renders them); only a
+  change with no page above it at all — `scripts/`, `functions/` — falls
+  back to a link to the branch itself, since there is no single commit to
+  pin a no-page change to. Note that a githack preview is a different
+  origin from the deployed app, so for backlog-tracker's own UI, Firebase
+  Auth sign-in may be refused there: what renders before the sign-in wall
+  is testable, the rest needs the deployed board.
 - **No per-card notes/`claudeNote` field, and no GitHub commit badge.** The
   schema is just `{projectId, title, desc, type, category, status,
   createdAt, updatedAt, archivedAt}` — there's nowhere on a card to record
@@ -482,7 +496,12 @@ the ticket and in `mcpAuditLog`.
 - **Nothing there deploys, merges, approves a ticket out of Ready for
   Testing, moves a card, writes a train field, fires Notify Claude, or
   triggers a campaign.** Campaign triggering stays on the triggered Routine
-  and the release pipeline keeps its human gates. The documentation tools
+  and the release pipeline keeps its human gates. `set_my_routine_binding`
+  (VNE6dxMu3h6jO3g6FNNB) is not an exception to this: it only registers
+  which Routine a member's OWN later board click fires (write-only — no
+  tool ever reads the stored fireUrl/token back), it never fires one
+  itself. See `backlog-tracker/MCP.md` → "Setting up your own personal
+  Notify Claude Routine". The documentation tools
   DO write to `projects` (that's where `requirementsMd`/`readmeMd`/
   `artifactUrl` live), so this is enforced rather than incidental:
   `updateProjectFields` is the only path to a project write and refuses any

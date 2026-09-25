@@ -97,8 +97,10 @@
         <button type="button" class="modal-close" id="nav-close-btn" aria-label="Close menu">&times;</button>
       </div>
       <button type="button" class="nav-drawer-item nav-drawer-item-home" id="nav-ph-console-btn">Agent console</button>
-      <button type="button" class="nav-drawer-item" id="faq-articles-btn">FAQ Management</button>
+      <button type="button" class="nav-drawer-item" id="concept-incubator-btn">Concept Incubator</button>
+      <button type="button" class="nav-drawer-item" id="releases-btn">Releases</button>
       <button type="button" class="nav-drawer-item" id="skills-btn">Skills</button>
+      <button type="button" class="nav-drawer-item" id="faq-articles-btn">FAQ Management</button>
       <button type="button" class="nav-drawer-item" id="faq-settings-btn">Settings</button>
       <!-- Sign out moved in here from the topbar (qMJeQkmhYwcXFTjeOJw0-2):
            needed rarely, not worth permanent space in the sticky mobile
@@ -190,6 +192,70 @@
       </div>
     </div>
 
+    <!-- New concept — name only, same minimal "one quick step" shape as the
+         New Project modal above; README/requirements/discussion are filled
+         in afterward from the concept's own detail page. -->
+    <div class="modal-backdrop" id="nc-backdrop" hidden>
+      <div class="modal-panel" role="dialog" aria-modal="true" aria-labelledby="nc-title">
+        <div class="modal-header">
+          <h2 id="nc-title">New concept</h2>
+          <button type="button" class="modal-close" id="nc-close" aria-label="Close">&times;</button>
+        </div>
+        <label class="field-label" for="nc-name-input">Name</label>
+        <input type="text" id="nc-name-input" maxlength="120" placeholder="e.g. Store staff shift handover">
+        <span class="char-count" id="nc-name-count"></span>
+        <div class="form-row" style="justify-content:flex-end;">
+          <div class="form-actions">
+            <button type="button" class="btn-ghost" id="nc-cancel">Cancel</button>
+            <button type="button" class="btn-primary" id="nc-submit">Create</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Promote a concept to a real project — carries its README/
+         requirements across (promoteConceptToProject in app.js) and asks
+         for the same repo-folder link every new project needs (root
+         CLAUDE.md → "Linking a new project to GitHub") plus, per this
+         ticket, the release it ships in. Same fields/validation as the New
+         Project modal, under a "pc-" prefix so both can exist on the page
+         without id clashes. -->
+    <div class="modal-backdrop" id="pc-backdrop" hidden>
+      <div class="modal-panel" role="dialog" aria-modal="true" aria-labelledby="pc-title">
+        <div class="modal-header">
+          <h2 id="pc-title">Promote to project</h2>
+          <button type="button" class="modal-close" id="pc-close" aria-label="Close">&times;</button>
+        </div>
+        <label class="field-label" for="pc-name-input">Project name</label>
+        <input type="text" id="pc-name-input" maxlength="80" placeholder="e.g. Loyalty App">
+        <span class="char-count" id="pc-name-count"></span>
+
+        <label class="field-label" for="pc-program-select">Program / Product</label>
+        <select id="pc-program-select"></select>
+        <p class="field-hint">Optional — groups this under a shared heading on the board.</p>
+
+        <label class="field-label" for="pc-release-select">Release</label>
+        <select id="pc-release-select"></select>
+        <p class="field-hint">Optional — the release this project ships in. Create one on the Releases page first if it doesn't exist yet.</p>
+
+        <label class="field-label" for="pc-repo-folder-input">Repo folder</label>
+        <input type="text" id="pc-repo-folder-input" maxlength="80" placeholder="e.g. dsp-integration">
+        <p class="field-hint">Repo-root-relative, no trailing slash — see root <code>CLAUDE.md</code> → "Linking a new project to GitHub".</p>
+        <label class="np-interface-toggle">
+          <input type="checkbox" id="pc-repo-folder-none">
+          This project has no single folder yet
+        </label>
+
+        <p class="field-hint">Copies this concept's README and requirements onto the new project and marks the concept promoted — it stays on this page afterward, read-only.</p>
+        <div class="form-row" style="justify-content:flex-end;">
+          <div class="form-actions">
+            <button type="button" class="btn-ghost" id="pc-cancel">Cancel</button>
+            <button type="button" class="btn-primary" id="pc-submit">Promote</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <div class="modal-backdrop" id="if-backdrop" hidden>
       <div class="modal-panel" role="dialog" aria-modal="true" aria-labelledby="if-title">
         <div class="modal-header">
@@ -236,6 +302,14 @@
         <label class="field-label" for="skill-summary-input">Summary</label>
         <input type="text" id="skill-summary-input" maxlength="400" placeholder="One line, shown in the skills list.">
         <span class="char-count" id="skill-summary-count"></span>
+        <label class="field-label" for="skill-owning-team-input">Owning team</label>
+        <select id="skill-owning-team-input">
+          <option value="">No team set</option>
+          <option value="Product/Design">Product/Design</option>
+          <option value="Engineering">Engineering</option>
+          <option value="Cybersecurity">Cybersecurity</option>
+        </select>
+        <p class="field-hint">Informational only — which team maintains and optimises this skill. Anyone with editor access can still improve any skill.</p>
 
         <div class="docs-block-header" style="margin-top:16px;">
           <h3>Files</h3>
@@ -266,6 +340,39 @@
         <span class="char-count skill-file-content-count"></span>
       </div>
     </script>
+
+    <!-- "Feed in requirements" — reached from a project's ⋮ options menu
+         (per root CLAUDE.md's "one primary CTA, everything else in ⋮" rule).
+         Pastes a block of text, one requirement per blank-line-separated
+         paragraph, previews how they'd cluster into suggested build
+         batches (build-batches.js), then creates them all in that
+         project's Backlog on confirm. See z1Q6fxo0yTjamxVMWQK5. -->
+    <div class="modal-backdrop" id="feed-backdrop" hidden>
+      <div class="modal-panel modal-panel-wide" role="dialog" aria-modal="true" aria-labelledby="feed-title">
+        <div class="modal-header">
+          <h2 id="feed-title">Feed in requirements</h2>
+          <button type="button" class="modal-close" id="feed-close" aria-label="Close">&times;</button>
+        </div>
+        <p class="field-hint">Paste one requirement per paragraph (blank line between each). Preview how they'd cluster into build batches before creating anything.</p>
+        <textarea id="feed-text-input" rows="10" placeholder="Fix the price shown on the menu board tile&#10;&#10;Add a footer to the retail admin page&#10;&#10;Redesign the FAQ category picker"></textarea>
+        <div class="form-row" style="justify-content:flex-end;margin-top:10px;">
+          <button type="button" class="btn-ghost" id="feed-preview-btn">Preview batches</button>
+        </div>
+        <div id="feed-preview" hidden>
+          <div class="docs-block-header" style="margin-top:10px;">
+            <h3>Suggested build batches</h3>
+            <span class="field-hint" id="feed-preview-count"></span>
+          </div>
+          <div id="feed-batches-list"></div>
+        </div>
+        <div class="form-row" style="justify-content:flex-end;margin-top:14px;">
+          <div class="form-actions">
+            <button type="button" class="btn-ghost" id="feed-cancel">Cancel</button>
+            <button type="button" class="btn-primary" id="feed-submit" disabled>Create items</button>
+          </div>
+        </div>
+      </div>
+    </div>
 
     <div class="modal-backdrop" id="doc-backdrop" hidden>
       <div class="modal-panel" role="dialog" aria-modal="true" aria-labelledby="doc-title">
@@ -309,6 +416,27 @@
             <select id="ei-category-select"></select>
           </div>
         </div>
+        <div class="form-row">
+          <div>
+            <label class="field-label" for="ei-effort-select" style="margin:0 0 4px;">Effort</label>
+            <select id="ei-effort-select">
+              <option value="">Unset — use the automatic guess</option>
+              <option value="small">Small</option>
+              <option value="medium">Medium</option>
+              <option value="large">Large</option>
+            </select>
+          </div>
+          <div>
+            <label class="field-label" for="ei-priority-select" style="margin:0 0 4px;">Priority</label>
+            <select id="ei-priority-select">
+              <option value="">Unset — use the automatic guess</option>
+              <option value="high">High</option>
+              <option value="medium">Medium</option>
+              <option value="low">Low</option>
+            </select>
+          </div>
+        </div>
+        <p class="field-hint">Effort/priority (cwehxSMZv8noJQv5kB22): concrete signals for the "Feed in requirements" clustering preview to sort and batch on — set here to override its automatic guess, or leave Unset to keep using that guess.</p>
         <label class="np-interface-toggle">
           <input type="checkbox" id="ei-no-deploy-checkbox">
           No deployment required
@@ -421,6 +549,15 @@
         <h3>Program / Product</h3>
         <p class="field-hint">Groups this project on the board.</p>
         <select id="docs-program-select"></select>
+      </div>
+
+      <div class="docs-block">
+        <div class="docs-block-header">
+          <h3>Release</h3>
+          <button type="button" class="btn-ghost" id="docs-open-releases-btn">Manage releases</button>
+        </div>
+        <p class="field-hint">The release this project ships in. When set, approved FAQ updates from this project's tickets wait for the release to be marked live, then go live together. Create a release on the Releases page first.</p>
+        <select id="docs-release-select"></select>
       </div>
 
       <div class="docs-block">
@@ -641,6 +778,11 @@
               <label class="field-label" for="fa-program-select">Product / Program</label>
               <select id="fa-program-select"></select>
               <p class="field-hint">Which product/program this article belongs to — the same Programs/Products used to group projects on the board. Required: this is what a deploy's FAQ impact review uses to find articles a shipped change might affect, so an unscoped article is invisible to it. Picking a linked project above fills this in automatically if that project has its own program set.</p>
+              <label class="field-label" for="fa-introduced-release-select">Introduced in release (optional)</label>
+              <select id="fa-introduced-release-select"></select>
+              <label class="field-label" for="fa-removed-release-select">Removed in release (optional)</label>
+              <select id="fa-removed-release-select"></select>
+              <p class="field-hint">Which releases this article applies to: from the release it was introduced in, up to (not including) the one it was removed in. Leave both unset for an article that applies to every release. Releases are managed from the Releases page in the menu.</p>
               <label class="fa-needs-review-toggle">
                 <input type="checkbox" id="fa-needs-review">
                 Needs review
@@ -917,6 +1059,119 @@
       </div>
       <div id="skills-list"></div>
       <p class="empty-hint" id="skills-empty" hidden>No skills yet.</p>
+    </section>
+
+    <!-- Concept Incubator — a home for early-stage ideas ("spitballs") that
+         need further shape before they earn official project status, held
+         in its own top-level `concepts` collection so it never clutters the
+         live project pipeline board. See firestore.rules `match
+         /concepts/{conceptId}` and app.js's openConceptIncubatorPage /
+         openConceptDetailPage. Any signed-in member can read it; adding,
+         editing, commenting on or promoting a concept needs editor access,
+         same [data-editor-only] convention as the Skills page above. -->
+    <section class="skills-page" id="concept-incubator-page" hidden>
+      <div class="page-header">
+        <h2>Concept Incubator</h2>
+        <span class="page-header-count" id="concept-incubator-count">0 concepts</span>
+      </div>
+      <p class="field-hint">Early-stage ideas that need more shape before they become an official project on the board. Each concept keeps its own README, requirements and discussion thread — pick up the conversation any time, then promote it to a real project once its structure is agreed.</p>
+      <div class="form-row" style="justify-content:flex-end;margin-bottom:12px;">
+        <button type="button" class="btn-primary" id="concept-add-btn" data-editor-only>+ New concept</button>
+      </div>
+      <div id="concept-incubator-list"></div>
+      <p class="empty-hint" id="concept-incubator-empty" hidden>No concepts yet — capture an idea with "+ New concept" before it needs to be a full project.</p>
+    </section>
+
+    <!-- A single concept's own page — README / Requirements save
+         independently of each other ("incremental editing" per the ticket
+         that asked for this), a persisted discussion thread, and (while
+         still active) Promote to Project. Same docs-block layout as the
+         per-project Docs page above, so a concept "feels" like the same
+         kind of document container a project already has, just not yet a
+         project. A promoted concept is read-only here — see
+         renderConceptDetailPage — its README/requirements live on now as
+         the project's own copies instead. -->
+    <section class="docs-page" id="concept-detail-page" hidden>
+      <div class="page-header">
+        <h2><span id="concept-detail-name"></span> <span class="skill-owning-team-badge" id="concept-detail-status-badge"></span></h2>
+      </div>
+      <p class="field-hint" id="concept-detail-promoted-hint" hidden></p>
+
+      <div class="docs-block">
+        <h3>README</h3>
+        <p class="field-hint">What this concept is and why — carried across verbatim if it's promoted to a project.</p>
+        <textarea id="concept-readme-input" rows="12" placeholder="No README written yet — paste or write it here."></textarea>
+        <div class="form-row" style="justify-content:flex-end;">
+          <button type="button" class="btn-primary" id="concept-readme-save" data-editor-only>Save README</button>
+        </div>
+      </div>
+
+      <div class="docs-block">
+        <h3>Requirements</h3>
+        <p class="field-hint">Update these incrementally as the idea develops — saving here never touches the README above.</p>
+        <textarea id="concept-requirements-input" rows="16" placeholder="No requirements written yet — paste or write them here."></textarea>
+        <div class="form-row" style="justify-content:flex-end;">
+          <button type="button" class="btn-primary" id="concept-requirements-save" data-editor-only>Save requirements</button>
+        </div>
+      </div>
+
+      <div class="docs-block">
+        <h3>Discussion</h3>
+        <p class="field-hint">Retained across sessions — pick the conversation back up any time.</p>
+        <div id="concept-notes-list" class="ei-notes-list"></div>
+        <div class="desc-wrap" id="concept-composer" data-editor-only>
+          <textarea id="concept-comment-input" rows="4" maxlength="1000" placeholder="Add to the discussion, or tap the mic and just talk..."></textarea>
+          <button type="button" class="mic-btn" id="concept-mic-btn" hidden title="Dictate" aria-label="Dictate">&#127908;</button>
+        </div>
+        <p class="listening-hint" id="concept-listening-hint">&#127908; Listening — tap the mic again when you're done.</p>
+        <p class="mic-error" id="concept-mic-error"></p>
+        <div class="form-row" style="justify-content:flex-end;" data-editor-only>
+          <button type="button" class="btn-primary" id="concept-comment-submit">Add comment</button>
+        </div>
+      </div>
+
+      <div class="docs-block" data-editor-only id="concept-promote-block">
+        <h3>Promote to project</h3>
+        <p class="field-hint">Carries this concept's README and requirements across so nothing is re-keyed, and assigns it a release. This concept then becomes read-only — the project's own Docs page takes over from here.</p>
+        <button type="button" class="btn-primary" id="concept-promote-btn">Promote to project&hellip;</button>
+      </div>
+
+      <div class="docs-block" data-editor-only>
+        <h3>Delete concept</h3>
+        <p class="field-hint">Only while still active — a promoted concept is kept as the record of where its project's README/requirements came from.</p>
+        <button type="button" class="btn-outline" id="concept-delete-btn">Delete this concept</button>
+      </div>
+    </section>
+
+    <!-- Releases page — every release, newest first, from the nav drawer's
+         "Releases" item (app.js openReleasesPage). Any signed-in member can
+         read it; creating a release and marking one live are editor-only,
+         same [data-editor-only] convention as the Skills page above. -->
+    <section class="archive-page" id="releases-page" hidden>
+      <div class="page-header">
+        <h2>Releases</h2>
+        <span class="page-header-count" id="releases-count">0 releases</span>
+      </div>
+      <p class="field-hint">A release bundles projects so their approved FAQ updates go live on the help centre together, the moment the release is marked live. Marking a release live can't be undone.</p>
+      <div class="form-row" style="justify-content:flex-end;margin-bottom:12px;">
+        <button type="button" class="btn-primary" id="releases-add-btn" data-editor-only>+ New release</button>
+      </div>
+      <div class="archive-table-wrap">
+        <table class="archive-table">
+          <thead>
+            <tr>
+              <th>Release</th>
+              <th>Version</th>
+              <th>Status</th>
+              <th>Projects</th>
+              <th>Created</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="releases-table-body"></tbody>
+        </table>
+        <p class="empty-hint" id="releases-empty" hidden>No releases yet.</p>
+      </div>
     </section>
 
     <!-- Phone only: the actions of whichever project you're currently

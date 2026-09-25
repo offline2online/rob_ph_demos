@@ -50,6 +50,40 @@ const NOTIFY_WEBHOOK_URL = defineSecret("NOTIFY_WEBHOOK_URL");
 const CLAUDE_ROUTINE_FIRE_URL = defineSecret("CLAUDE_ROUTINE_FIRE_URL");
 const CLAUDE_ROUTINE_TOKEN = defineSecret("CLAUDE_ROUTINE_TOKEN");
 
+// Per-member routine binding (VNE6dxMu3h6jO3g6FNNB) — lets an engineer fire
+// Notify Claude sessions under their OWN Claude account/usage instead of
+// the one shared project-wide token above. Claude's routines API has no
+// delegated-OAuth "fire on behalf of" flow — each Routine's fire URL/token
+// is per-Routine and hand-generated once at claude.ai/code/routines — so a
+// member registers their own once (via the MCP tool set_my_routine_binding,
+// set up by following get_routine_setup_instructions — see
+// functions/mcp-server.js) and every board click they make from then on
+// fires under it instead. `consoleUsers/{email}.routineFireUrl`/
+// `routineFireToken` are write-only by design: no read tool or UI ever
+// echoes them back (see mcp-server.js's whoami — it reports only whether a
+// binding exists, never its value).
+//
+// Falls back to the shared secret when the triggering member has none set,
+// or when the click can't be attributed to anyone (a click made before this
+// existed, or a direct Firestore write bypassing the board UI) — so this is
+// purely additive, never a new way for a click to silently do nothing.
+async function resolveRoutineCredentials(db, triggeredByEmail, sharedFireUrl, sharedToken) {
+  if (triggeredByEmail) {
+    try {
+      const snap = await db.collection("consoleUsers").doc(String(triggeredByEmail).toLowerCase()).get();
+      const d = snap.exists ? snap.data() : null;
+      if (d && d.routineFireUrl && d.routineFireToken) {
+        return { fireUrl: d.routineFireUrl, token: d.routineFireToken, via: "member" };
+      }
+    } catch (err) {
+      logger.error("Failed to read member routine binding — falling back to the shared Routine secret", {
+        email: triggeredByEmail, error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+  return { fireUrl: sharedFireUrl, token: sharedToken, via: "shared" };
+}
+
 // The GitHub token onBacklogItemReadyForAutomation (bottom of this file)
 // uses to dispatch backlog-automation.yml the moment an item is ready for
 // it, instead of that item waiting out the workflow's own schedule. Needs
@@ -83,6 +117,29 @@ function boardAccessBlock() {
     `     base: https://firestore.googleapis.com/v1/projects/${project}/databases/(default)/documents\n` +
     `Fallback if identitytoolkit is unreachable: the boardApi proxy at https://${project}.web.app/boardApi/v1/projects/${project}/databases/(default)/documents (or https://us-central1-${project}.cloudfunctions.net/boardApi/...) with header  X-Board-Key: ${key}  — same paths and JSON, no sign-in.\n` +
     `See backlog-tracker/ROUTINE_INSTRUCTIONS.md → "Board access".`;
+}
+
+// Phase-bound skills (l5mjAANU0dfveGhxmDjm) — settings/phaseSkillBindings
+// holds { build: string[], deploy: string[] } of skills.slug values (see
+// firestore.rules' `match /settings/{docId}`). Deliberately NOT the full
+// skill content: a skill can carry up to 20 files at 100,000 characters
+// each, and inlining that into every single Notify Claude fire — even for
+// a project that never touches what the skill covers — would be the same
+// "duplicated 'how' text going stale" problem notifyOnProjectReadyToDeploy's
+// own DEPLOY REQUEST text deliberately avoids elsewhere in this file (see
+// its own comment on staying "data-only"). This only points at the skills
+// by slug; ROUTINE_INSTRUCTIONS.md tells a fired session to fetch each
+// one's real content itself, fresh, via its existing board access, the
+// moment it actually needs it.
+async function phaseSkillsBlock(db, phase, phaseLabel) {
+  const snap = await db.collection("settings").doc("phaseSkillBindings").get().catch(() => null);
+  const slugs = snap && snap.exists ? snap.data()[phase] : null;
+  if (!Array.isArray(slugs) || slugs.length === 0) return "";
+  const list = slugs.map((s) => `- ${s}`).join("\n");
+  return `=== SKILLS BOUND TO THE ${phaseLabel} PHASE ===\n` +
+    `Before finishing this phase's work, fetch each of these from the shared, organisation-wide skills library (skills/{skillId} — query where slug == the name below, via your existing board access) and follow it. See ROUTINE_INSTRUCTIONS.md for exactly when in this phase to apply each one; a slug here that doesn't resolve to a skill yet is not an error, just note it and move on.\n` +
+    `${list}\n` +
+    `=== END SKILLS BOUND TO THE ${phaseLabel} PHASE ===\n\n`;
 }
 
 // The repo backlog-automation.yml lives in, and the event_type its
@@ -149,8 +206,9 @@ exports.notifyOnProjectReadyForReview = onDocumentUpdated(
     // Notify Claude button reads to show a spinner, then itself becomes the
     // session link once a session id resolves — reflects the real outcome
     // of this specific click.
-    const fireUrl = CLAUDE_ROUTINE_FIRE_URL.value();
-    const token = CLAUDE_ROUTINE_TOKEN.value();
+    const { fireUrl, token, via: routineCredVia } = await resolveRoutineCredentials(
+      db, after.notifyRequestedByEmail, CLAUDE_ROUTINE_FIRE_URL.value(), CLAUDE_ROUTINE_TOKEN.value()
+    );
     let sessionId = null;
     let sessionUrl = null;
     let fireError = null;
@@ -170,10 +228,11 @@ exports.notifyOnProjectReadyForReview = onDocumentUpdated(
       const projectPromptBlock = (after.routinePromptMd || "").trim()
         ? `=== PROJECT-SPECIFIC INSTRUCTIONS FOR "${projectName}" (from this project's Docs page) ===\n${after.routinePromptMd.trim()}\n=== END PROJECT-SPECIFIC INSTRUCTIONS ===\n\n`
         : "";
+      const skillsBlock = await phaseSkillsBlock(db, "build", "BUILD");
 
       const selfReportHint = `\n\nWhen you finish this run (whether you completed everything or stopped early on a blocker), PATCH projects/${event.params.projectId} with notifyRoutine.status set to "done" (or "error" with an errorMessage, if you stopped early) and notifyRoutine.finishedAt set to now — the board shows a working/spinning state on its Notify Claude button until it sees this.`;
 
-      const text = `${projectPromptBlock}Project: "${projectName}" (projectId: ${event.params.projectId}) on the Backlog Tracker & FAQs board has ${items.length} item${items.length === 1 ? "" : "s"} in Backlog:\n\n${itemLines}${selfReportHint}${boardAccessBlock()}`;
+      const text = `${projectPromptBlock}${skillsBlock}Project: "${projectName}" (projectId: ${event.params.projectId}) on the Backlog Tracker & FAQs board has ${items.length} item${items.length === 1 ? "" : "s"} in Backlog:\n\n${itemLines}${selfReportHint}${boardAccessBlock()}`;
 
       try {
         const res = await fetch(fireUrl, {
@@ -209,6 +268,7 @@ exports.notifyOnProjectReadyForReview = onDocumentUpdated(
             projectId: event.params.projectId,
             itemCount: items.length,
             sessionId,
+            firedVia: routineCredVia,
           });
         }
       } catch (err) {
@@ -235,11 +295,12 @@ exports.notifyOnProjectReadyForReview = onDocumentUpdated(
           itemCount: items.length,
           sentItemIds,
           errorMessage: fireError,
+          firedVia: routineCredVia,
         },
       }, { merge: true });
     } else {
       logger.warn(
-        "CLAUDE_ROUTINE_FIRE_URL/CLAUDE_ROUTINE_TOKEN not set — skipping Routine fire for manual project notify request",
+        "No Routine fire credentials available (no member binding and CLAUDE_ROUTINE_FIRE_URL/CLAUDE_ROUTINE_TOKEN not set) — skipping Routine fire for manual project notify request",
         { projectId: event.params.projectId }
       );
     }
@@ -320,7 +381,8 @@ exports.notifyOnProjectReadyToDeploy = onDocumentUpdated(
       return;
     }
 
-    const itemsSnap = await getFirestore().collection("backlogItems")
+    const db = getFirestore();
+    const itemsSnap = await db.collection("backlogItems")
       .where("projectId", "==", event.params.projectId)
       .where("status", "==", "ready-to-publish")
       .get();
@@ -343,8 +405,9 @@ exports.notifyOnProjectReadyToDeploy = onDocumentUpdated(
     // meant sessionUrl was always null by the time the message was built —
     // a "Notify Claude — Deploy clicked" line with no session link and no
     // indication of which items, ever (FWHlgviqZxearPMvE9G2).
-    const fireUrl = CLAUDE_ROUTINE_FIRE_URL.value();
-    const token = CLAUDE_ROUTINE_TOKEN.value();
+    const { fireUrl, token, via: routineCredVia } = await resolveRoutineCredentials(
+      db, after.deployNotifyRequestedByEmail, CLAUDE_ROUTINE_FIRE_URL.value(), CLAUDE_ROUTINE_TOKEN.value()
+    );
     let sessionId = null;
     let sessionUrl = null;
     let fireError = null;
@@ -396,7 +459,9 @@ exports.notifyOnProjectReadyToDeploy = onDocumentUpdated(
         programLine = `Product/Program: "${pname || "(unnamed)"}" (programId: ${after.programId}) — FAQ impact review scope: faqArticles with this programId, plus any with projectId ${event.params.projectId}\n`;
       }
 
-      const text = `${projectPromptBlock}=== DEPLOY REQUEST for "${projectName}" (projectId: ${event.params.projectId}) on the Backlog Tracker & FAQs board ===\n` +
+      const skillsBlock = await phaseSkillsBlock(getFirestore(), "deploy", "DEPLOY");
+
+      const text = `${projectPromptBlock}${skillsBlock}=== DEPLOY REQUEST for "${projectName}" (projectId: ${event.params.projectId}) on the Backlog Tracker & FAQs board ===\n` +
         trainLine +
         programLine +
         `These ${items.length} item${items.length === 1 ? "" : "s"} are already implemented, tested, and confirmed "Approved for Deployment" (ready-to-publish). Do NOT investigate, re-implement, or re-test them — follow ROUTINE_INSTRUCTIONS.md's "Notify Claude — Deploy" flow section for exactly what to do with each one, including its FAQ impact review step (3b), which proposes help-centre updates for a human to approve.\n\n` +
@@ -431,6 +496,7 @@ exports.notifyOnProjectReadyToDeploy = onDocumentUpdated(
             projectId: event.params.projectId,
             itemCount: items.length,
             sessionId,
+            firedVia: routineCredVia,
           });
         }
       } catch (err) {
@@ -453,11 +519,12 @@ exports.notifyOnProjectReadyToDeploy = onDocumentUpdated(
           sessionUrl,
           itemCount: items.length,
           errorMessage: fireError,
+          firedVia: routineCredVia,
         },
       }, { merge: true });
     } else {
       logger.warn(
-        "CLAUDE_ROUTINE_FIRE_URL/CLAUDE_ROUTINE_TOKEN not set — skipping Routine fire for deploy notify request",
+        "No Routine fire credentials available (no member binding and CLAUDE_ROUTINE_FIRE_URL/CLAUDE_ROUTINE_TOKEN not set) — skipping Routine fire for deploy notify request",
         { projectId: event.params.projectId }
       );
     }
@@ -568,8 +635,9 @@ exports.notifyOnProjectReadyForGrooming = onDocumentUpdated(
 
     const projectName = after.name || "A project";
 
-    const fireUrl = CLAUDE_ROUTINE_FIRE_URL.value();
-    const token = CLAUDE_ROUTINE_TOKEN.value();
+    const { fireUrl, token, via: routineCredVia } = await resolveRoutineCredentials(
+      db, after.groomRequestedByEmail, CLAUDE_ROUTINE_FIRE_URL.value(), CLAUDE_ROUTINE_TOKEN.value()
+    );
     let sessionId = null;
     let sessionUrl = null;
     let fireError = null;
@@ -624,6 +692,7 @@ exports.notifyOnProjectReadyForGrooming = onDocumentUpdated(
             projectId: event.params.projectId,
             itemCount: items.length,
             sessionId,
+            firedVia: routineCredVia,
           });
         }
       } catch (err) {
@@ -646,11 +715,12 @@ exports.notifyOnProjectReadyForGrooming = onDocumentUpdated(
           sessionUrl,
           itemCount: items.length,
           errorMessage: fireError,
+          firedVia: routineCredVia,
         },
       }, { merge: true });
     } else {
       logger.warn(
-        "CLAUDE_ROUTINE_FIRE_URL/CLAUDE_ROUTINE_TOKEN not set — skipping Routine fire for groom request",
+        "No Routine fire credentials available (no member binding and CLAUDE_ROUTINE_FIRE_URL/CLAUDE_ROUTINE_TOKEN not set) — skipping Routine fire for groom request",
         { projectId: event.params.projectId }
       );
     }
@@ -878,6 +948,28 @@ async function promoteFaqRevisionIfReady(db, articleRef, why) {
       }
     }
 
+    // Releases: a project assigned to a release (projects/{id}.releaseId,
+    // set from its Docs page) holds its approved FAQ proposals until that
+    // release is marked live, so a release's whole bundle of help-centre
+    // changes goes out together — onReleaseMarkedLive below is the other
+    // half, re-running this for every such proposal at that moment. Fully
+    // opt-in: no sourceProjectId on the proposal (an MCP-originated one, or
+    // one written before the field existed), no releaseId on the project,
+    // or a project/release doc that no longer exists all fall straight
+    // through to promotion exactly as before releases existed.
+    const sourceProjectId = typeof rev.sourceProjectId === "string" && rev.sourceProjectId ? rev.sourceProjectId : null;
+    if (sourceProjectId) {
+      const projectSnap = await tx.get(db.collection("projects").doc(sourceProjectId));
+      const releaseId = projectSnap.exists ? projectSnap.data().releaseId : null;
+      if (typeof releaseId === "string" && releaseId) {
+        const releaseSnap = await tx.get(db.collection("releases").doc(releaseId));
+        if (releaseSnap.exists && releaseSnap.data().status !== "live") {
+          logger.info("Approved FAQ revision waiting on its project's release to go live", { articleId: articleRef.id, projectId: sourceProjectId, waitingOnRelease: releaseId, why });
+          return;
+        }
+      }
+    }
+
     const now = new Date();
     const update = {
       title: typeof rev.title === "string" && rev.title.trim() ? rev.title : a.title,
@@ -918,6 +1010,83 @@ exports.onFaqArticleRevisionApproved = onDocumentUpdated(
     const isApproved = after.pendingRevision && after.pendingRevision.reviewStatus === "approved";
     if (!isApproved || wasApproved) return;
     await promoteFaqRevisionIfReady(getFirestore(), event.data.after.ref, "revision approved in FAQ Management");
+  }
+);
+
+// ── A release marked live ⇒ its bundle of approved FAQ proposals goes live ─
+// The third event that can be the last thing a proposal is waiting on (see
+// promoteFaqRevisionIfReady's release check above): the release its source
+// project is assigned to moving draft -> live (Releases page → Mark live;
+// firestore.rules only ever lets status advance that way). Finds every
+// project on this release, then every approved proposal sourced from one of
+// them, and runs each through the same promotion path — which still checks
+// its source tickets, so a proposal whose ticket hasn't merged yet keeps
+// waiting and goes live when that ticket does.
+//
+// Firestore's `in` takes up to 30 values on firebase-admin 12, but this
+// chunks at 10 so the query stays valid on any SDK/backend limit this
+// codebase might meet.
+const RELEASE_PROJECT_IN_CHUNK = 10;
+
+exports.onReleaseMarkedLive = onDocumentUpdated(
+  "releases/{releaseId}",
+  async (event) => {
+    const before = event.data?.before?.data();
+    const after = event.data?.after?.data();
+    if (!before || !after) {
+      return;
+    }
+    if (before.status === "live" || after.status !== "live") {
+      return;
+    }
+
+    const db = getFirestore();
+    const releaseId = event.params.releaseId;
+    const why = `release ${releaseId} marked live`;
+
+    try {
+      const projectsSnap = await db.collection("projects").where("releaseId", "==", releaseId).get();
+      const projectIds = projectsSnap.docs.map((d) => d.id);
+      if (!projectIds.length) {
+        logger.info("Release marked live with no projects assigned to it", { releaseId });
+        return;
+      }
+
+      const articleRefs = new Map();
+      for (let i = 0; i < projectIds.length; i += RELEASE_PROJECT_IN_CHUNK) {
+        const chunk = projectIds.slice(i, i + RELEASE_PROJECT_IN_CHUNK);
+        const snap = await db.collection("faqArticles")
+          .where("pendingRevision.sourceProjectId", "in", chunk)
+          .where("pendingRevision.reviewStatus", "==", "approved")
+          .get();
+        snap.docs.forEach((d) => articleRefs.set(d.id, d.ref));
+      }
+
+      for (const ref of articleRefs.values()) {
+        try {
+          await promoteFaqRevisionIfReady(db, ref, why);
+        } catch (err) {
+          // One article failing (a contended transaction, say) mustn't stop
+          // the rest of the release's bundle from going live.
+          logger.error("Failed to promote FAQ revision for live release", {
+            releaseId,
+            articleId: ref.id,
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
+      }
+
+      logger.info("Release marked live — ran approved FAQ proposals through promotion", {
+        releaseId,
+        projectCount: projectIds.length,
+        articleCount: articleRefs.size,
+      });
+    } catch (err) {
+      logger.error("Failed to process release marked live", {
+        releaseId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
   }
 );
 
@@ -1056,6 +1225,90 @@ exports.onProjectReadyForAutomation = onDocumentWritten(
   }
 );
 
+// Backfills the skill change-history audit trail (eKFIGtskqbnUTqUTBFBl) for
+// a skill edited directly on the console. update_skill/delete_skill in
+// functions/mcp-server.js already write to docRevisions themselves, inline,
+// before the skills/{id} write commits — but the console's own Add/Edit
+// skill modal (public/js/app.js) writes straight to Firestore with the
+// client SDK, which firestore.rules forbids from ever writing docRevisions
+// (`allow write: if false` — server-only, on purpose, so an agent can't
+// tamper with its own history). Without this trigger, only MCP-originated
+// changes would ever show up in the Skills page's "Change history" view,
+// which is most of the point ("full visibility of every change") for a
+// team that mostly edits skills from the console, not over MCP.
+//
+// Console writes tag themselves `lastWriteVia: "console"`; an MCP write
+// tags itself "mcp" and this trigger skips those outright — it already has
+// its revision, recorded synchronously by the tool itself (which is also
+// the only way an MCP tool can hand its caller a revisionId in the same
+// response). For an update, this makes the decision from before/after data
+// alone: no query needed, so no risk of a race with the write that triggered
+// it. For a delete there is no "after" doc to carry that tag, so this falls
+// back to asking whether delete_skill already recorded one — a skill's
+// Firestore doc id is never reused once deleted, so "does a skill.deleted
+// revision already exist for this id" can never give a false answer either
+// way.
+exports.onSkillWritten = onDocumentWritten(
+  { document: "skills/{skillId}" },
+  async (event) => {
+    const before = event.data?.before?.data();
+    const after = event.data?.after?.data();
+    const db = getFirestore();
+
+    if (!before) return; // creation — nothing to have replaced yet
+
+    if (after) {
+      // Update. Only a files change is ever worth a revision (matches
+      // update_skill's own "only record when files change" behavior) —
+      // renaming a skill or editing its summary/version/owningTeam isn't
+      // something the "what did this replace" history needs to carry.
+      const beforeFiles = JSON.stringify(Array.isArray(before.files) ? before.files : []);
+      const afterFiles = JSON.stringify(Array.isArray(after.files) ? after.files : []);
+      if (beforeFiles === afterFiles) return;
+      if (after.lastWriteVia === "mcp") return; // update_skill already recorded this
+
+      await db.collection("docRevisions").add({
+        target: "skill",
+        skillId: event.params.skillId,
+        slug: after.slug || before.slug || null,
+        name: before.name || after.name || "",
+        contentMd: beforeFiles,
+        chars: beforeFiles.length,
+        replacedAt: FieldValue.serverTimestamp(),
+        replacedByEmail: after.updatedByEmail || before.updatedByEmail || null,
+        via: "console",
+      });
+      return;
+    }
+
+    // Delete. Skip if delete_skill (mcp-server.js) already recorded this
+    // exact deletion — see the comment above for why this check is safe.
+    const already = await db.collection("docRevisions")
+      .where("skillId", "==", event.params.skillId)
+      .where("target", "==", "skill.deleted")
+      .limit(1)
+      .get();
+    if (!already.empty) return;
+
+    const contentMd = JSON.stringify({
+      name: before.name || "", slug: before.slug || "", summary: before.summary || "",
+      version: before.version || "", owningTeam: before.owningTeam || null,
+      files: Array.isArray(before.files) ? before.files : [],
+    });
+    await db.collection("docRevisions").add({
+      target: "skill.deleted",
+      skillId: event.params.skillId,
+      slug: before.slug || null,
+      name: before.name || "",
+      contentMd,
+      chars: contentMd.length,
+      replacedAt: FieldValue.serverTimestamp(),
+      replacedByEmail: before.updatedByEmail || before.createdByEmail || null,
+      via: "console",
+    });
+  }
+);
+
 // Fires backlog-automation.yml immediately via repository_dispatch. Shared
 // by both triggers above; the workflow's own 2-minute schedule stays as the
 // safety net for whenever the token is missing or this call fails, so a
@@ -1138,7 +1391,16 @@ async function dispatchBacklogAutomation({ itemId = null, projectId = null, reas
 // the endpoint entirely.
 const { onRequest } = require("firebase-functions/v2/https");
 const { GoogleAuth } = require("google-auth-library");
-const BOARD_API_COLLECTIONS = ["projects", "programs", "backlogItems", "interfaces", "projectDocs", "faqCategories", "faqArticles"];
+// "skills" and "settings" (settings/phaseSkillBindings) added alongside the
+// phase-bound-skills mechanism (l5mjAANU0dfveGhxmDjm) — a fired Routine
+// session following a BUILD/DEPLOY skills block needs to read the skills
+// library, and this is the fallback board-access path it's told to use if
+// identitytoolkit.googleapis.com is unreachable (see ROUTINE_INSTRUCTIONS.md
+// "Board access"). "releases" added alongside the Releases feature, same
+// reasoning as "programs" above it. All are already isBoardReader()-readable
+// straight from Firestore; this just lets the same read work through the
+// proxy too.
+const BOARD_API_COLLECTIONS = ["projects", "programs", "releases", "backlogItems", "interfaces", "projectDocs", "faqCategories", "faqArticles", "skills", "settings"];
 const FIRESTORE_HOST = "https://firestore.googleapis.com";
 const FIRESTORE_DOCS = `/v1/projects/${process.env.GCLOUD_PROJECT || "backlog-tracker-e4ed2"}/databases/(default)/documents`;
 
@@ -1200,3 +1462,9 @@ exports.boardApi = onRequest({ secrets: [BOARD_API_KEY], cors: false, timeoutSec
 const mcp = require("./mcp-server");
 exports.mcpServer = mcp.mcpServer;
 exports.syncConsoleUserClaims = mcp.syncConsoleUserClaims;
+
+// Test-only hook, same pattern as mcp-server.js's own `mcp.__test` — lets
+// test/routine-binding-trigger.test.js exercise resolveRoutineCredentials
+// directly instead of standing up a full onDocumentUpdated + fetch-mocking
+// harness for something that's pure db-read-then-fallback logic.
+exports.__test = { resolveRoutineCredentials };

@@ -248,10 +248,24 @@ async function rpc(token, method, params, id = 1) {
     assert.strictEqual(write.annotations.readOnlyHint, false);
   });
 
-  await test("exposes no tool that deploys, merges or triggers a campaign", async () => {
-    const names = mcp.__test.TOOLS.map((t) => t.name).join(" ");
-    for (const forbidden of ["deploy", "merge", "publish", "notify", "trigger", "campaign", "train", "approve"]) {
-      assert.ok(!names.includes(forbidden), `tool surface must not include "${forbidden}"`);
+  // approve_deploy_to_main (Zogk8EKjKRKsM4GZBEJZ) is a deliberate, logged,
+  // narrowly-scoped exception to this rule — see its own comment block in
+  // mcp-server.js. The rule this test actually enforces is "no WRITE tool
+  // deploys/merges/triggers anything", so it's scoped to board.write tools:
+  // get_ready_for_testing_board/get_approved_for_deployment_board are
+  // board.read and merely describe the pipeline, which is exactly what
+  // they're for. The point of this test is still to catch any other WRITE
+  // tool added later that shouldn't exist, so it excludes only the one
+  // sanctioned name instead of dropping the check entirely.
+  await test("exposes no WRITE tool that deploys, merges or triggers a campaign, except the one deliberate carve-out", async () => {
+    const CARVE_OUT = "approve_deploy_to_main";
+    const writeTools = mcp.__test.TOOLS.filter((t) => t.scope === "board.write");
+    assert.ok(writeTools.some((t) => t.name === CARVE_OUT), "the one deliberate deploy carve-out tool must exist and require board.write");
+    for (const t of writeTools) {
+      if (t.name === CARVE_OUT) continue;
+      for (const forbidden of ["deploy", "merge", "publish", "notify", "trigger", "campaign", "train", "approve"]) {
+        assert.ok(!t.name.includes(forbidden), `write tool "${t.name}" must not exist — only ${CARVE_OUT} may (found "${forbidden}")`);
+      }
     }
   });
 
@@ -261,6 +275,65 @@ async function rpc(token, method, params, id = 1) {
     assert.strictEqual(payload.email, TEAMMATE);
     assert.strictEqual(payload.role, "editor");
     assert.strictEqual(payload.canWrite, true);
+  });
+
+  // ── per-member routine binding (VNE6dxMu3h6jO3g6FNNB) ───────────────────
+  await test("whoami nudges a member with no routine binding, and stops once they have one", async () => {
+    const before = JSON.parse((await rpc(tokens.access_token, "tools/call", { name: "whoami", arguments: {} })).body.result.content[0].text);
+    assert.strictEqual(before.hasRoutineBinding, false);
+    assert.match(before.routineBindingNudge, /get_routine_setup_instructions/);
+
+    await rpc(tokens.access_token, "tools/call", {
+      name: "set_my_routine_binding",
+      arguments: { fireUrl: "https://api.anthropic.com/v1/claude_code/routines/trig_abc123/fire", token: "sk-ant-routine-secret-token" },
+    });
+    const after = JSON.parse((await rpc(tokens.access_token, "tools/call", { name: "whoami", arguments: {} })).body.result.content[0].text);
+    assert.strictEqual(after.hasRoutineBinding, true);
+    assert.strictEqual(after.routineBindingNudge, null);
+  });
+
+  await test("set_my_routine_binding never echoes the stored fireUrl/token back", async () => {
+    const res = await rpc(tokens.access_token, "tools/call", {
+      name: "set_my_routine_binding",
+      arguments: { fireUrl: "https://api.anthropic.com/v1/claude_code/routines/trig_xyz/fire", token: "sk-ant-another-secret" },
+    });
+    const payload = JSON.parse(res.body.result.content[0].text);
+    assert.strictEqual(payload.registered, true);
+    assert.ok(!JSON.stringify(payload).includes("sk-ant-another-secret"), "the token must never appear in the tool's own response");
+    const stored = env.store.col("consoleUsers").get(TEAMMATE);
+    assert.strictEqual(stored.routineFireUrl, "https://api.anthropic.com/v1/claude_code/routines/trig_xyz/fire");
+    assert.strictEqual(stored.routineFireToken, "sk-ant-another-secret");
+  });
+
+  await test("set_my_routine_binding refuses a non-https fireUrl or a too-short token", async () => {
+    const bad1 = await rpc(tokens.access_token, "tools/call", { name: "set_my_routine_binding", arguments: { fireUrl: "http://insecure/fire", token: "sk-ant-secret" } });
+    assert.strictEqual(bad1.body.result.isError, true);
+    const bad2 = await rpc(tokens.access_token, "tools/call", { name: "set_my_routine_binding", arguments: { fireUrl: "https://api.anthropic.com/fire", token: "short" } });
+    assert.strictEqual(bad2.body.result.isError, true);
+  });
+
+  await test("set_my_routine_binding with two empty strings clears an existing binding", async () => {
+    const res = await rpc(tokens.access_token, "tools/call", { name: "set_my_routine_binding", arguments: { fireUrl: "", token: "" } });
+    const payload = JSON.parse(res.body.result.content[0].text);
+    assert.strictEqual(payload.cleared, true);
+    const stored = env.store.col("consoleUsers").get(TEAMMATE);
+    assert.strictEqual(stored.routineFireUrl, null);
+    assert.strictEqual(stored.routineFireToken, null);
+    const who = JSON.parse((await rpc(tokens.access_token, "tools/call", { name: "whoami", arguments: {} })).body.result.content[0].text);
+    assert.strictEqual(who.hasRoutineBinding, false);
+  });
+
+  await test("get_routine_setup_instructions returns the exact bootstrap prompt and ordered steps", async () => {
+    const res = await rpc(tokens.access_token, "tools/call", { name: "get_routine_setup_instructions", arguments: {} });
+    const payload = JSON.parse(res.body.result.content[0].text);
+    assert.ok(Array.isArray(payload.steps) && payload.steps.length >= 4);
+    assert.match(payload.bootstrapPrompt, /ROUTINE_INSTRUCTIONS\.md/);
+    assert.match(payload.bootstrapPrompt, /raw\.githubusercontent\.com\/offline2online\/rob_ph_demos\/main\/backlog-tracker\/ROUTINE_INSTRUCTIONS\.md/);
+  });
+
+  await test("set_my_routine_binding is board.write; a viewer is refused", async () => {
+    assert.strictEqual(mcp.__test.TOOLS.find((t) => t.name === "set_my_routine_binding").scope, "board.write");
+    assert.strictEqual(mcp.__test.TOOLS.find((t) => t.name === "get_routine_setup_instructions").scope, "board.read");
   });
 
   await test("lists projects with per-column ticket counts", async () => {
@@ -332,6 +405,41 @@ async function rpc(token, method, params, id = 1) {
     const payload = JSON.parse(res.body.result.content[0].text);
     assert.strictEqual(payload.title, "Setting a local offer");
     assert.strictEqual(payload.category, "Pricing");
+  });
+
+  await test("filters the help centre by release, defaulting to the current live one", async () => {
+    env.store.col("releases").set("rel1", { name: "September", version: "1.0", status: "live", order: 1 });
+    env.store.col("releases").set("rel2", { name: "October", version: "1.1", status: "live", order: 2 });
+    env.store.col("releases").set("rel3", { name: "November", version: "1.2", status: "draft", order: 3 });
+    // Removed in October: applies to September only.
+    env.store.col("faqArticles").set("artOld", { categoryId: "cat1", title: "Old offer screen", slug: "old-offer", bodyMd: "offer", status: "published", introducedInReleaseId: "rel1", removedInReleaseId: "rel2" });
+    // Introduced in November (still a draft release): not live yet.
+    env.store.col("faqArticles").set("artNew", { categoryId: "cat1", title: "New offer screen", slug: "new-offer", bodyMd: "offer", status: "published", introducedInReleaseId: "rel3" });
+    try {
+      const ids = async (args) => JSON.parse((await rpc(tokens.access_token, "tools/call", { name: "search_faq", arguments: args })).body.result.content[0].text).results.map((r) => r.id).sort();
+      // Default = October (highest-order live). art1 has no binding, so it applies everywhere.
+      assert.deepStrictEqual(await ids({ query: "offer" }), ["art1"]);
+      assert.deepStrictEqual(await ids({ query: "offer", release: "rel1" }), ["art1", "artOld"]);
+      assert.deepStrictEqual(await ids({ query: "offer", release: "1.2" }), ["art1", "artNew"]);
+      const unknown = await rpc(tokens.access_token, "tools/call", { name: "search_faq", arguments: { query: "offer", release: "nope" } });
+      assert.ok(unknown.body.result.isError);
+
+      // get_faq_article: an explicit release it doesn't apply to is "not found";
+      // without one it's returned as before, flagged as outside the live release.
+      const explicit = await rpc(tokens.access_token, "tools/call", { name: "get_faq_article", arguments: { slug: "old-offer", release: "1.1" } });
+      assert.ok(explicit.body.result.isError);
+      const byDefault = JSON.parse((await rpc(tokens.access_token, "tools/call", { name: "get_faq_article", arguments: { slug: "old-offer" } })).body.result.content[0].text);
+      assert.strictEqual(byDefault.title, "Old offer screen");
+      assert.strictEqual(byDefault.appliesToRelease, false);
+      assert.strictEqual(byDefault.release.id, "rel2");
+    } finally {
+      ["rel1", "rel2", "rel3"].forEach((id) => env.store.col("releases").delete(id));
+      ["artOld", "artNew"].forEach((id) => env.store.col("faqArticles").delete(id));
+    }
+    // No releases at all: no filtering, exactly as before releases existed.
+    const payload = JSON.parse((await rpc(tokens.access_token, "tools/call", { name: "search_faq", arguments: { query: "local offer" } })).body.result.content[0].text);
+    assert.strictEqual(payload.release, null);
+    assert.deepStrictEqual(payload.results.map((r) => r.id), ["art1"]);
   });
 
   await test("returns a project's requirements and interface contracts", async () => {
@@ -787,6 +895,235 @@ async function rpc(token, method, params, id = 1) {
   await test("only the delete tools are flagged destructive", async () => {
     const destructive = mcp.__test.TOOLS.filter((t) => t.destructive).map((t) => t.name).sort();
     assert.deepStrictEqual(destructive, ["delete_interface", "delete_project_document", "delete_skill"]);
+  });
+
+  // ── Composable UI: Ready for Testing / Approved for Deployment boards ────
+  // (ZXmW4lHMKpQRlarlwK7z, f1yOqE2Sx2q8D7MSvfDu) — deliberately on their own
+  // fixture project ("depproj") so nothing here touches proj1, which "no
+  // documentation write touched a train field on the project" above already
+  // asserts stays pristine.
+  await test("get_ready_for_testing_board returns escaped HTML cards plus the same data as JSON", async () => {
+    env.store.col("projects").set("depproj", { name: "Deploy Playground", deployBranch: "deploy/depproj" });
+    env.store.col("backlogItems").set("rft1", {
+      projectId: "depproj", title: "<script>evil()</script> Fix RRP grid", desc: "The RRP shown is stale.",
+      testSummary: "Fixed the stale RRP — refetches on price change now.",
+      type: "bug", category: "HQ Admin", status: "ready-for-testing",
+      testVersion: "1.5.70", previewUrl: "https://rawcdn.githack.com/offline2online/rob_ph_demos/deploy/depproj/index.html",
+    });
+    const res = await rpc(tokens.access_token, "tools/call", { name: "get_ready_for_testing_board", arguments: { projectId: "depproj" } });
+    assert.strictEqual(res.body.result.isError, undefined);
+    const [text, resource, json] = res.body.result.content;
+    assert.strictEqual(text.type, "text");
+    assert.strictEqual(resource.type, "resource");
+    assert.strictEqual(resource.resource.mimeType, "text/html");
+    assert.ok(!resource.resource.text.includes("<script>evil()"), "a ticket title must never inject a raw <script> tag into the widget");
+    assert.match(resource.resource.text, /&lt;script&gt;/);
+    assert.match(resource.resource.text, /Fixed the stale RRP/);
+    assert.match(resource.resource.text, /Test this/);
+    const payload = JSON.parse(json.text);
+    assert.strictEqual(payload.count, 1);
+    assert.strictEqual(payload.items[0].id, "rft1");
+    assert.strictEqual(payload.items[0].testVersion, "1.5.70");
+  });
+
+  await test("get_ready_for_testing_board never links a javascript: previewUrl", async () => {
+    env.store.col("backlogItems").set("rft2", {
+      projectId: "depproj", title: "Sketchy link", desc: "x", type: "bug", category: "HQ Admin",
+      status: "ready-for-testing", previewUrl: "javascript:alert(1)",
+    });
+    const res = await rpc(tokens.access_token, "tools/call", { name: "get_ready_for_testing_board", arguments: { projectId: "depproj" } });
+    const [, resource] = res.body.result.content;
+    assert.ok(!resource.resource.text.includes("javascript:"), "a non-https previewUrl must never become a clickable href");
+    env.store.col("backlogItems").delete("rft2");
+  });
+
+  await test("get_ready_for_testing_board refuses an unknown project", async () => {
+    const res = await rpc(tokens.access_token, "tools/call", { name: "get_ready_for_testing_board", arguments: { projectId: "nope" } });
+    assert.strictEqual(res.body.result.isError, true);
+  });
+
+  await test("get_approved_for_deployment_board says why Deploy to Main isn't offered yet", async () => {
+    const res = await rpc(tokens.access_token, "tools/call", { name: "get_approved_for_deployment_board", arguments: { projectId: "depproj" } });
+    const payload = JSON.parse(res.body.result.content[2].text);
+    assert.strictEqual(payload.readyToDeploy, false);
+    assert.match(res.body.result.content[0].text, /Nothing is Approved for Deployment/);
+  });
+
+  await test("get_approved_for_deployment_board and approve_deploy_to_main agree the train isn't ready while a ticket is still testing", async () => {
+    env.store.col("backlogItems").set("rft1", Object.assign(env.store.col("backlogItems").get("rft1"), { deployCommit: "sha-rft1" }));
+    env.store.col("backlogItems").set("dep1", {
+      projectId: "depproj", title: "Approved one", desc: "x", type: "feature", category: "HQ Admin",
+      status: "ready-to-publish", deployCommit: "sha-dep1",
+    });
+    const board = await rpc(tokens.access_token, "tools/call", { name: "get_approved_for_deployment_board", arguments: { projectId: "depproj" } });
+    const boardPayload = JSON.parse(board.body.result.content[2].text);
+    assert.strictEqual(boardPayload.readyToDeploy, false);
+    assert.match(board.body.result.content[0].text, /still in Ready for Testing/);
+
+    const fire = await rpc(tokens.access_token, "tools/call", { name: "approve_deploy_to_main", arguments: { projectId: "depproj" } });
+    assert.strictEqual(fire.body.result.isError, true);
+    assert.match(fire.body.result.content[0].text, /still in Ready for Testing/);
+    assert.ok(!("deployNotifyRequestedAt" in env.store.col("projects").get("depproj")), "a blocked call must never write the trigger field");
+  });
+
+  await test("approve_deploy_to_main fires the same trigger the console button writes, once the whole train is approved", async () => {
+    env.store.col("backlogItems").set("rft1", Object.assign(env.store.col("backlogItems").get("rft1"), { status: "ready-to-publish" }));
+
+    const board = await rpc(tokens.access_token, "tools/call", { name: "get_approved_for_deployment_board", arguments: { projectId: "depproj" } });
+    const boardPayload = JSON.parse(board.body.result.content[2].text);
+    assert.strictEqual(boardPayload.readyToDeploy, true);
+    assert.match(board.body.result.content[1].resource.text, /On train: deploy\/depproj/);
+
+    const fire = await rpc(tokens.access_token, "tools/call", { name: "approve_deploy_to_main", arguments: { projectId: "depproj" } });
+    assert.strictEqual(fire.body.result.isError, undefined);
+    const payload = JSON.parse(fire.body.result.content[0].text);
+    assert.strictEqual(payload.fired, true);
+    assert.strictEqual(payload.deployCount, 2);
+    const project = env.store.col("projects").get("depproj");
+    assert.ok(project.deployNotifyRequestedAt, "must write the same field the console's Deploy to Main button writes");
+    assert.strictEqual(project.deployNotifyRequestedVia, "mcp");
+    assert.strictEqual(project.deployNotifyRequestedByEmail, TEAMMATE);
+    // Only the notify trigger + its own provenance were written — no train field.
+    for (const field of ["trainReady", "trainStatus", "trainPrNumber", "trainNote", "trainLocked", "needsHumanMerge"]) {
+      assert.ok(!(field in project), `approve_deploy_to_main must never itself set projects.${field}`);
+    }
+    const auditRow = [...env.store.col("mcpAuditLog").values()].find((r) => r.tool === "approve_deploy_to_main");
+    assert.ok(auditRow, "must audit-log the deploy trigger");
+    assert.strictEqual(auditRow.email, TEAMMATE);
+    assert.strictEqual(auditRow.projectId, "depproj");
+  });
+
+  await test("approve_deploy_to_main refuses while a pending revert sits on the train", async () => {
+    env.store.col("projects").set("revertproj", { name: "Revert Playground", deployBranch: "deploy/revertproj" });
+    env.store.col("backlogItems").set("rev1", {
+      projectId: "revertproj", title: "Reverted fix", desc: "x", type: "bug", category: "HQ Admin",
+      status: "backlog", deployCommit: "sha-rev1", revertRequested: true,
+    });
+    const res = await rpc(tokens.access_token, "tools/call", { name: "approve_deploy_to_main", arguments: { projectId: "revertproj" } });
+    assert.strictEqual(res.body.result.isError, true);
+    assert.match(res.body.result.content[0].text, /pending revert/);
+    assert.ok(!("deployNotifyRequestedAt" in env.store.col("projects").get("revertproj")));
+  });
+
+  await test("approve_deploy_to_main is board.write, so a viewer is refused", async () => {
+    assert.strictEqual(mcp.__test.TOOLS.find((t) => t.name === "approve_deploy_to_main").scope, "board.write");
+    assert.strictEqual(mcp.__test.TOOLS.find((t) => t.name === "get_ready_for_testing_board").scope, "board.read");
+    assert.strictEqual(mcp.__test.TOOLS.find((t) => t.name === "get_approved_for_deployment_board").scope, "board.read");
+  });
+
+  // ── skill feedback loop (Gcc30u2bQEJwEdUTN6X8) ──────────────────────────
+  await test("report_skill_miss appends a structured entry without touching the skill's own content", async () => {
+    env.store.col("skills").set("skill1", {
+      name: "PH Designer", slug: "ph-designer", summary: "Design system", version: "1.0.0",
+      files: [{ path: "SKILL.md", content: "..." }],
+    });
+    const res = await rpc(tokens.access_token, "tools/call", {
+      name: "report_skill_miss",
+      arguments: { slug: "ph-designer", text: "Missed that Material Symbols must be Outlined, not Filled.", source: "review", phase: "deploy", ticketId: "item42", prNumber: 123 },
+    });
+    const payload = JSON.parse(res.body.result.content[0].text);
+    assert.strictEqual(payload.reported, true);
+    const stored = env.store.col("skills").get("skill1");
+    assert.strictEqual(stored.misses.length, 1);
+    const miss = stored.misses[0];
+    assert.strictEqual(miss.text, "Missed that Material Symbols must be Outlined, not Filled.");
+    assert.strictEqual(miss.source, "review");
+    assert.strictEqual(miss.phase, "deploy");
+    assert.strictEqual(miss.ticketId, "item42");
+    assert.strictEqual(miss.prNumber, 123);
+    assert.strictEqual(miss.reportedByEmail, TEAMMATE);
+    assert.strictEqual(miss.reportedVia, "mcp");
+    // The skill's own authored fields must be untouched by a miss report.
+    assert.strictEqual(stored.version, "1.0.0");
+    assert.ok(!("updatedByEmail" in stored), "a miss report must not look like an authored content edit");
+  });
+
+  await test("report_skill_miss defaults source to review and refuses empty text", async () => {
+    const res = await rpc(tokens.access_token, "tools/call", { name: "report_skill_miss", arguments: { slug: "ph-designer", text: "   " } });
+    assert.strictEqual(res.body.result.isError, true);
+  });
+
+  await test("report_skill_miss refuses an unknown skill", async () => {
+    const res = await rpc(tokens.access_token, "tools/call", { name: "report_skill_miss", arguments: { slug: "nope", text: "x" } });
+    assert.strictEqual(res.body.result.isError, true);
+  });
+
+  await test("list_skill_misses returns newest first", async () => {
+    await rpc(tokens.access_token, "tools/call", { name: "report_skill_miss", arguments: { skillId: "skill1", text: "Second miss." } });
+    const res = await rpc(tokens.access_token, "tools/call", { name: "list_skill_misses", arguments: { skillId: "skill1" } });
+    const payload = JSON.parse(res.body.result.content[0].text);
+    assert.strictEqual(payload.matched, 2);
+    assert.strictEqual(payload.misses[0].text, "Second miss.");
+  });
+
+  await test("get_skill reports missCount", async () => {
+    const res = await rpc(tokens.access_token, "tools/call", { name: "get_skill", arguments: { skillId: "skill1" } });
+    const payload = JSON.parse(res.body.result.content[0].text);
+    assert.strictEqual(payload.missCount, 2);
+  });
+
+  await test("report_skill_miss is board.write, list_skill_misses is board.read", async () => {
+    assert.strictEqual(mcp.__test.TOOLS.find((t) => t.name === "report_skill_miss").scope, "board.write");
+    assert.strictEqual(mcp.__test.TOOLS.find((t) => t.name === "list_skill_misses").scope, "board.read");
+  });
+
+  // ── periodic skill-review nudge (eKslgrwgRJtoxyx0oNSV) ──────────────────
+  await test("a skill past the default day cadence with no reviews is flagged reviewDue", async () => {
+    const oldDate = new Date(Date.now() - 61 * 24 * 60 * 60 * 1000); // 61 days ago
+    env.store.col("skills").set("skillOld", { name: "Stale Skill", slug: "stale-skill", summary: "s", version: "1.0.0", files: [{ path: "SKILL.md", content: "x" }], createdAt: oldDate });
+    const res = await rpc(tokens.access_token, "tools/call", { name: "get_skill", arguments: { skillId: "skillOld" } });
+    const payload = JSON.parse(res.body.result.content[0].text);
+    assert.strictEqual(payload.reviewDue, true);
+    assert.ok(payload.daysSinceReview >= 61);
+    assert.strictEqual(payload.deploysSinceReview, 0);
+  });
+
+  await test("a skill created recently, never reviewed, with nothing shipped is not due", async () => {
+    env.store.col("skills").set("skillFresh", { name: "Fresh Skill", slug: "fresh-skill", summary: "s", version: "1.0.0", files: [{ path: "SKILL.md", content: "x" }], createdAt: new Date() });
+    const res = await rpc(tokens.access_token, "tools/call", { name: "get_skill", arguments: { skillId: "skillFresh" } });
+    const payload = JSON.parse(res.body.result.content[0].text);
+    assert.strictEqual(payload.reviewDue, false);
+  });
+
+  await test("mark_skill_reviewed clears the nudge and resets the clock", async () => {
+    const before = JSON.parse((await rpc(tokens.access_token, "tools/call", { name: "get_skill", arguments: { skillId: "skillOld" } })).body.result.content[0].text);
+    assert.strictEqual(before.reviewDue, true);
+    const markRes = await rpc(tokens.access_token, "tools/call", { name: "mark_skill_reviewed", arguments: { skillId: "skillOld" } });
+    assert.strictEqual(JSON.parse(markRes.body.result.content[0].text).reviewed, true);
+    const after = JSON.parse((await rpc(tokens.access_token, "tools/call", { name: "get_skill", arguments: { skillId: "skillOld" } })).body.result.content[0].text);
+    assert.strictEqual(after.reviewDue, false);
+    assert.strictEqual(after.daysSinceReview, 0);
+    assert.ok(after.lastReviewedAt, "lastReviewedAt should now be set");
+    const stored = env.store.col("skills").get("skillOld");
+    assert.strictEqual(stored.lastReviewedByEmail, TEAMMATE);
+  });
+
+  await test("reviewDue also fires from the deploy-count threshold, independent of days", async () => {
+    const recentBaseline = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000); // 2 days ago — cadence not tripped
+    env.store.col("skills").set("skillBusy", { name: "Busy Skill", slug: "busy-skill", summary: "s", version: "1.0.0", files: [{ path: "SKILL.md", content: "x" }], createdAt: recentBaseline, reviewDeployThreshold: 3 });
+    for (let i = 0; i < 4; i += 1) {
+      env.store.col("backlogItems").set(`shipped${i}`, { projectId: "proj1", title: `Shipped ${i}`, desc: "x", type: "feature", category: "HQ Admin", status: "published-live", mergedAt: new Date() });
+    }
+    const res = await rpc(tokens.access_token, "tools/call", { name: "get_skill", arguments: { skillId: "skillBusy" } });
+    const payload = JSON.parse(res.body.result.content[0].text);
+    assert.strictEqual(payload.deploysSinceReview, 4);
+    assert.strictEqual(payload.reviewDue, true, "4 shipped tickets should trip a threshold of 3, even though the day cadence hasn't");
+  });
+
+  await test("list_skills reports reviewDue per skill too, not just get_skill", async () => {
+    const res = await rpc(tokens.access_token, "tools/call", { name: "list_skills", arguments: {} });
+    const payload = JSON.parse(res.body.result.content[0].text);
+    const busy = payload.skills.find((s) => s.id === "skillBusy");
+    assert.strictEqual(busy.reviewDue, true);
+  });
+
+  await test("mark_skill_reviewed refuses a bad reviewCadenceDays/reviewDeployThreshold", async () => {
+    const res = await rpc(tokens.access_token, "tools/call", { name: "mark_skill_reviewed", arguments: { skillId: "skillOld", reviewCadenceDays: -5 } });
+    assert.strictEqual(res.body.result.isError, true);
+  });
+
+  await test("mark_skill_reviewed is board.write", async () => {
+    assert.strictEqual(mcp.__test.TOOLS.find((t) => t.name === "mark_skill_reviewed").scope, "board.write");
   });
 
   await test("writes an audit row for every write", async () => {

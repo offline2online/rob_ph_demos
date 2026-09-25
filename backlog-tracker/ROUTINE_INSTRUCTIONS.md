@@ -108,6 +108,89 @@ can't push, full stop), noting the conflict in your final report. Most
 projects will have nothing here — that's normal, just proceed with the
 rest of this file.
 
+**Check for phase-bound skills too (l5mjAANU0dfveGhxmDjm).** If `text`
+contains a section delimited by `=== SKILLS BOUND TO THE BUILD PHASE ===`
+or `=== SKILLS BOUND TO THE DEPLOY PHASE ===` and a matching `=== END
+SKILLS BOUND TO THE ... PHASE ===`, it names one or more `slug` values from
+the shared, organisation-wide skills library (`skills/{skillId}` — see
+`backlog-tracker/REQUIREMENTS.md` → "Data model") that
+`settings/phaseSkillBindings` has bound to this phase.
+`notifyOnProjectReadyForReview` (the default Backlog-shaped fire) writes
+the `BUILD` block; `notifyOnProjectReadyToDeploy` (a `=== DEPLOY REQUEST
+===` fire) writes the `DEPLOY` block. The block deliberately names only
+slugs, not full skill content — the same "don't duplicate 'how' text that
+can only go stale" reasoning this file already follows elsewhere (see the
+Deploy flow's own step 0). Fetch each named skill yourself, fresh, using
+the board access you already have (Setup step 2 below):
+
+```
+curl -sS -X POST -H "$AUTH" "$BOARD:runQuery" -H "Content-Type: application/json" -d '{"structuredQuery":{"from":[{"collectionId":"skills"}],"where":{"fieldFilter":{"field":{"fieldPath":"slug"},"op":"EQUAL","value":{"stringValue":"<slug>"}}}}}'
+```
+
+then read its `files` array (`{path, content}` pairs) the same way you'd
+read any other packaged instructions — `SKILL.md` first, then any
+`references/*.md` it points at. A named slug that doesn't resolve to a
+skill (not yet authored) is not an error: note it in your final report and
+move on, don't block the run waiting for it.
+
+- **A `BUILD` block, on the default Backlog flow**: before you package
+  `patchFiles` for any item ("For each Backlog item found" → step 3), pull
+  and actually apply the named skills — an engineering/build-conventions or
+  unit-testing skill to how you write and validate the fix, a design/UX
+  skill (e.g. `ph-designer`) to anything you touch that renders. This is on
+  top of, not instead of, the root `CLAUDE.md` rule "Every UI change goes
+  through the `ph-designer` skill" — that rule already applies to a
+  rendered-output change whether or not a binding names it.
+- **A `DEPLOY` block, on the "Notify Claude — Deploy" flow**: as part of
+  step 3b's deploy verification below (alongside, not replacing, the FAQ
+  impact review), pull and apply the named skills — e.g. a
+  cybersecurity-review or scalability-review skill — against the same
+  combined train diff (`git diff main...origin/<deployBranch>`) step 3b
+  already reads, and report real, verified findings, not a rubber-stamp
+  pass, as a `notes` entry on the items on the train. This review does not
+  gate `trainReady` the same hard way steps 1-2 do — but if a finding is
+  severe enough that shipping it would be a mistake, say so plainly in your
+  final report and leave `trainReady` unset rather than setting it anyway,
+  the same "don't guess, don't blindly proceed" judgment call the rest of
+  this file already asks for.
+- The Groom Backlog flow (`=== GROOM REQUEST ===`) never receives a skills
+  block — it fires from a different Cloud Function
+  (`notifyOnProjectReadyForGrooming`), which this mechanism does not touch
+  — and doesn't need one, since that flow does no code work at all.
+- **Report a genuine miss back onto the skill** (Gcc30u2bQEJwEdUTN6X8) —
+  in either block, if applying a bound skill surfaces something the skill
+  itself should already have prevented or gotten right (a BUILD-phase fix
+  that needed correcting because the skill's own guidance was wrong,
+  missing or ambiguous; a DEPLOY-phase security/scalability finding a
+  governing skill should have caught before the code was written), tag it
+  as a miss on that skill's own doc — `skills/{id}.misses`, a plain array —
+  so its owning team (that skill's `owningTeam`) gets a real, running list
+  to improve it against instead of guessing. You have no MCP session in
+  this Routine (same reason as the GitHub credential above: this is a
+  Firestore write with your existing board-automation credential, not the
+  MCP `report_skill_miss` tool a team member's own agent would use for the
+  same thing), so do it as a direct PATCH, same "fetch the doc first, this
+  overwrites the whole field" append convention as a `notes` entry
+  elsewhere in this file — the REST API has no native array-append:
+  ```bash
+  curl -sS -X PATCH -H "$AUTH" "$BOARD/skills/<SKILL_ID>?updateMask.fieldPaths=misses&updateMask.fieldPaths=lastMissAt" \
+    -H "Content-Type: application/json" \
+    -d '{"fields":{"misses":{"arrayValue":{"values":[<existing misses, unchanged>, {"mapValue":{"fields":{"text":{"stringValue":"<what specifically went wrong>"},"source":{"stringValue":"build"},"phase":{"stringValue":"build"},"ticketId":{"stringValue":"<ITEM_ID or null>"},"prNumber":{"nullValue":null},"projectId":{"stringValue":"<projectId>"},"reportedByEmail":{"nullValue":null},"reportedVia":{"stringValue":"routine"},"at":{"timestampValue":"<ISO8601 now>"}}}}]}},"lastMissAt":{"timestampValue":"<ISO8601 now>"}}}'
+  ```
+  Find the skill's id/current `misses` via the same `skills` runQuery
+  pattern used to fetch a bound skill's `files` above, filtered by `slug`.
+  `source` is `"build"` or `"review"`; `phase` is `"build"` or `"deploy"`,
+  matching which block you're in. Only do this for a genuine, specific miss
+  you can point at — not a routine note that the skill was applied — the
+  same "don't guess" bar step 3b's own FAQ proposals use.
+
+No skill needs to exist for its slug to be bound, and no binding needs to
+exist for this file to apply — `settings/phaseSkillBindings` is a plain
+Firestore doc (`{ build: string[], deploy: string[] }`), edited directly
+(no console UI for it yet; see that ticket's own "Keep the board visually
+unchanged" scope) — an empty or missing `build`/`deploy` array simply means
+no block is prepended that run, same as today.
+
 ## Setup (do this first, every time)
 
 1. Clone https://github.com/offline2online/rob_ph_demos (public, read-only
@@ -212,6 +295,20 @@ rest of this file.
    something you can't locate in the codebase. If the project/item
    genuinely doesn't correspond to anything findable in this repo, say so
    in your final report rather than inventing work.
+
+   **Check `lastFailureReason` before you start** (XJoASicLGefL5c9fronl) —
+   a structured `{category, text, action, at}` map written whenever a
+   viewer sends this exact item back via Failed testing or Eject from
+   train (`public/js/app.js`'s `failTesting`/`ejectFromTrain`). If it's
+   set, this is a re-patch of something that already failed once: read
+   `category` and `text` first and make sure your fix actually addresses
+   that specific miss, not just a fresh guess at the original `desc` — the
+   whole reason this field exists is so a re-fired investigation isn't
+   working from the same incomplete picture that produced the first,
+   rejected attempt. The field is never cleared automatically, so treat it
+   as "what went wrong last time", not "what's wrong now" — if `notes`
+   shows a later, successful pass since `lastFailureReason.at`, it's stale
+   and you can note that rather than re-litigating an already-fixed issue.
 3. Implement the fix in your own local checkout (branch name is just a
    local convenience — you're never pushing it) — write the code exactly
    as you would if you could push it. When you're done and it's actually

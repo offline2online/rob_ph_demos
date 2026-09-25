@@ -13,7 +13,7 @@
 import { initializeApp, getApps, getApp } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-app.js";
 import {
   getFirestore, initializeFirestore, collection, addDoc, updateDoc, deleteDoc, setDoc, doc, getDoc, getDocs,
-  onSnapshot, query, orderBy, serverTimestamp, writeBatch, arrayUnion, deleteField,
+  onSnapshot, query, orderBy, where, serverTimestamp, writeBatch, arrayUnion, deleteField,
 } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore.js";
 import {
   getStorage, ref as storageRef, uploadBytes, getDownloadURL, deleteObject,
@@ -23,6 +23,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-auth.js";
 import { firebaseConfig } from "./firebase-config.js";
 import { APP_VERSION } from "./version.js";
+import { clusterBacklogItems, estimateEffort, estimatePriority, splitRequirementsText } from "./build-batches.js";
 
 // auth-gate.js has already initialised the app (and signed the user in)
 // by the time this module is imported; reuse it rather than double-init.
@@ -60,12 +61,29 @@ const itemsRef = collection(db, "backlogItems");
 const projectsRef = collection(db, "projects");
 const interfacesRef = collection(db, "interfaces");
 const programsRef = collection(db, "programs");
+// Releases — a named, ordered product release that a project can be
+// assigned to and FAQ articles can be bound to (introducedInReleaseId /
+// removedInReleaseId). See firestore.rules `match /releases/{releaseId}`
+// and functions/index.js's onReleaseMarkedLive, which promotes every
+// already-approved FAQ proposal for a release's projects the moment the
+// release is marked live.
+const releasesRef = collection(db, "releases");
 const projectDocsRef = collection(db, "projectDocs");
 // Organisation-wide skills library — unscoped to any project, unlike every
 // ref above it (see firestore.rules `match /skills/{skillId}` and
 // functions/mcp-server.js's list_skills/get_skill/upload_skill/
 // update_skill/delete_skill).
 const skillsRef = collection(db, "skills");
+// Concept Incubator — an early-stage idea ("spitball") held separately from
+// projects/backlogItems so it never shows up on the pipeline board, until
+// it's promoted into a real project (see promoteConceptToProject below and
+// firestore.rules `match /concepts/{conceptId}`).
+const conceptsRef = collection(db, "concepts");
+// What a skill write replaced — see functions/mcp-server.js's
+// recordDocRevision and functions/index.js's onSkillWritten. Read-only from
+// the browser (firestore.rules: `allow write: if false`); the Skills page's
+// change-history view (eKFIGtskqbnUTqUTBFBl) queries this by skillId.
+const docRevisionsRef = collection(db, "docRevisions");
 // Pipeline health strip (YeCj7sNpHXFUZQhmAmEb) — a single doc each workflow
 // (backlog-automation.yml, deploy-backlog-tracker.yml) writes at the end of
 // its own run, via the same service-account credential those workflows
@@ -88,6 +106,26 @@ const CATEGORIES = [
 ];
 
 const GENERAL_PROJECT_ID = "general";
+
+// Structured Failed testing / Eject from train reasons (XJoASicLGefL5c9fronl)
+// — a fixed, short set of buckets alongside the existing free-text note, so
+// a rejection captures a machine-readable "what kind of miss was this" in
+// addition to the human explanation, written onto the item as
+// lastFailureReason. run-backlog-automation.js itself never reads this (it
+// only applies patches, it doesn't investigate) — it's
+// ROUTINE_INSTRUCTIONS.md's "For each Backlog item found" step 2 that tells
+// a re-fired Notify Claude session to check it before starting, so a
+// re-patch actually targets what failed last time instead of re-guessing
+// from `desc` alone.
+const FAILURE_REASON_CATEGORIES = [
+  "Doesn't work as described",
+  "Wrong / unexpected behavior",
+  "Visual or layout issue",
+  "Missing a case the ticket asked for",
+  "Broke something else (regression)",
+  "Blocking a release, not a rebuild",
+  "Other",
+];
 
 // Curated Material Symbols names for FAQ category icons — a starting set
 // covering common Help Center topics, not an exhaustive icon-library pick.
@@ -138,7 +176,10 @@ function closeDialogWith(result) {
 }
 
 // Low-level opener all four wrappers below funnel through.
-// fields: [{ id, label, value, multiline, rows, placeholder, type }]
+// fields: [{ id, label, value, multiline, rows, placeholder, type, options }]
+// type: "select" renders a <select> from `options` (array of plain strings,
+// or {value,label} pairs) instead of an input/textarea — added for the
+// structured Failed testing / Eject from train reason (see failTesting).
 // Resolves with `true` (OK, no fields), `null` (cancelled/closed), or an
 // object keyed by each field's `id` (OK, with fields).
 function openDialog({ title, message, fields, okLabel, cancelLabel, danger, showCancel }) {
@@ -150,13 +191,19 @@ function openDialog({ title, message, fields, okLabel, cancelLabel, danger, show
     dialogFieldsEl.innerHTML = (fields || []).map((f, i) => `
       <div>
         ${f.label ? `<label class="dialog-field-label" for="dialog-field-${i}">${escapeHTML(f.label)}</label>` : ""}
-        ${f.multiline
+        ${f.type === "select"
+          ? `<select id="dialog-field-${i}" class="dialog-field-input">${(f.options || []).map((o) => {
+              const value = typeof o === "string" ? o : o.value;
+              const label = typeof o === "string" ? o : o.label;
+              return `<option value="${escapeHTML(value)}">${escapeHTML(label)}</option>`;
+            }).join("")}</select>`
+          : f.multiline
           ? `<textarea id="dialog-field-${i}" class="dialog-field-input" rows="${f.rows || 4}" placeholder="${escapeHTML(f.placeholder || "")}"></textarea>`
           : `<input id="dialog-field-${i}" class="dialog-field-input" type="${f.type || "text"}" placeholder="${escapeHTML(f.placeholder || "")}">`}
       </div>`).join("");
     (fields || []).forEach((f, i) => {
       const el = document.getElementById(`dialog-field-${i}`);
-      el.value = f.value || "";
+      el.value = f.value || (f.type === "select" && f.options && f.options.length ? (typeof f.options[0] === "string" ? f.options[0] : f.options[0].value) : "");
       el.dataset.fieldId = f.id;
     });
     dialogCancelBtn.hidden = showCancel === false;
@@ -224,8 +271,14 @@ let projects = [];
 let projectsLoaded = false;
 let interfaces = [];
 let programs = [];
+let releases = [];
 let projectDocs = [];
 let skills = [];
+let concepts = [];
+// The concept whose detail page is currently open, or null when the list
+// (or neither) is showing — same role docsProjectId plays for the Docs
+// page, so a listener update knows whether to re-render the detail view.
+let conceptDetailId = null;
 let editingProjectId = null;
 
 // ── Backlog selection state (per project) — lets "Notify Claude" be
@@ -384,6 +437,9 @@ function closeAllSubPages() {
   closeFaqArticleEditorPage();
   closeFaqRevisionReviewPage();
   closeSkillsPage();
+  closeReleasesPage();
+  closeConceptIncubatorPage();
+  closeConceptDetailPage();
   // Every routed page (FAQ Management, Settings, the article editor — see
   // "URL routing" below) opens by calling this first, so clearing the hash
   // here is the one
@@ -552,6 +608,27 @@ function cardHTML(item) {
         ? `<span class="in-development-hint" title="Claude has confirmed this PR is green and mergeable and told backlog-automation.yml to merge it — it's locked until that merge actually lands and this card moves to Merged to Main (Live)">Deploying — locked</span>`
         : `<span class="merge-pending-hint" title="Only this project's own Deploy to Main button actually merges this to main">Waiting for Deploy to Main</span>`)
     : "";
+  // Eject from train (FVrOIVAAp46NdcgGovMW) — the explicit, one-click way to
+  // pull a stuck Approved for Deployment card off a locked train so the rest
+  // of the release can still reach Deploy to Main. Before this, doing the
+  // same thing from here needed two separate, unrelated-looking clicks — the
+  // plain "move back" arrow (leftBtn above) to Ready for Testing, then
+  // Failed testing there to actually revert its commits — with nothing on
+  // the card saying that chain was how you eject a release-blocking ticket.
+  // This does both steps in one write, reusing the exact same
+  // revertRequested hand-off failTesting already uses (see
+  // processRevertFromTrain in run-backlog-automation.js), so it needs no
+  // automation change — only the note/flag are distinct (ejectedFromTrain),
+  // since a card pulled off a locked train to unblock a release isn't
+  // necessarily one that ever failed a test. trainLockShouldClear
+  // (train-lock.js) only clears a project's lock once EVERY train-relevant
+  // item is gone, so ejecting this one ticket can never itself reopen
+  // Backlog to new work while others are still mid-build — "without
+  // unblocking the build" is already guaranteed by that shared check, not
+  // something this button has to enforce itself.
+  const ejectBtn = (isLiveBranch && !noDeployPending && !isDeploying)
+    ? `<button type="button" class="approve-btn fail-testing-btn eject-train-btn" data-id="${item.id}" title="Send this back to Backlog and revert its commits off the branch, without touching the rest of the train">Eject from train</button>`
+    : "";
   const isPublished = item.status === "published-live";
   const archiveBtn = isPublished && !isReverting
     ? `<button type="button" class="icon-btn archive-btn" data-id="${item.id}" title="Archive">&#128451;</button>`
@@ -597,6 +674,28 @@ function cardHTML(item) {
     : "";
   const noDeployBadge = item.noDeploymentRequired
     ? `<span class="no-deploy-badge" title="Live data/config change only — no code to push or deploy">No deployment required</span>`
+    : "";
+  // lastFailureReason (XJoASicLGefL5c9fronl) — the structured category from
+  // the most recent Failed testing / Eject from train, surfaced on the
+  // Backlog card itself so it's visible before a re-investigation even
+  // opens the notes. The field itself is never cleared, but isBacklog above
+  // means it only ever renders while the card is actually sitting in
+  // Backlog — once it reaches Ready for Testing again this stops showing,
+  // and a later rejection simply overwrites it with the fresh reason.
+  const lastFailureBadge = isBacklog && item.lastFailureReason && item.lastFailureReason.category
+    ? `<span class="last-failure-badge" title="${escapeHTML(item.lastFailureReason.text || "")}">${escapeHTML(item.lastFailureReason.category)}</span>`
+    : "";
+  // Effort/priority (cwehxSMZv8noJQv5kB22) — only a real, human-set value
+  // (Edit item modal), never the silent build-batches.js guess: showing a
+  // guess as if it were a decided value on every single Backlog card would
+  // be noise, not a signal. Backlog-only, same reasoning as lastFailureBadge
+  // above — these are pre-build triage signals, not something worth
+  // tracking once a ticket is already on a train.
+  const effortBadge = isBacklog && item.effort
+    ? `<span class="effort-badge effort-badge-${escapeHTML(item.effort)}" title="Effort">${escapeHTML(item.effort)}</span>`
+    : "";
+  const priorityBadge = isBacklog && item.priority
+    ? `<span class="priority-badge priority-badge-${escapeHTML(item.priority)}" title="Priority">${escapeHTML(item.priority)}</span>`
     : "";
   // The backlog-tracker APP_VERSION stamped the moment this card first
   // reached Ready for Testing (see moveItem/processApplyPatch) — the same
@@ -730,7 +829,7 @@ function cardHTML(item) {
       </div>
       <h3 class="card-title">${escapeHTML(item.title)}</h3>
       ${descHTML}
-      ${noDeployBadge}${testVersionBadge}${prBadge}${deployBadge}
+      ${noDeployBadge}${priorityBadge}${effortBadge}${lastFailureBadge}${testVersionBadge}${prBadge}${deployBadge}
       <div class="card-footer">
         <div class="card-footer-left">
           <span class="card-cat">${escapeHTML(item.category || "Uncategorised")}</span>
@@ -739,7 +838,7 @@ function cardHTML(item) {
         <div class="card-move">${quickCommentBtn}${revertBtn}${archiveBtn}${deleteBtn}</div>
       </div>
       ${testLinkHTML}
-      ${approveBtn}${failBtn}${mergeBtn}${inDevelopmentHint}${revertingHint}${leavingTrainHint}
+      ${approveBtn}${failBtn}${mergeBtn}${ejectBtn}${inDevelopmentHint}${revertingHint}${leavingTrainHint}
     </article>`;
 }
 
@@ -843,6 +942,9 @@ function optionsMenuHTML(project) {
     </button>
     <button type="button" class="options-menu-item project-docs-btn${hasReq ? "" : " options-menu-item-empty"}" data-project-id="${escapeHTML(pid)}">
       ${hasReq ? "Project Settings" : "Project Settings — not set yet"}
+    </button>
+    <button type="button" class="options-menu-item feed-requirements-btn" data-project-id="${escapeHTML(pid)}">
+      Feed in requirements
     </button>`;
 
   // artifactUrl/artifactUpdatedAt are written directly to the project doc
@@ -1318,6 +1420,7 @@ function projectSectionHTML(project) {
     ? `<div class="project-name-row"><input type="text" class="project-name-input" id="pname-input-${escapeHTML(project.id)}" data-project-id="${escapeHTML(project.id)}" value="${escapeHTML(project.name)}" maxlength="80"></div>`
     : `<div class="project-name-row"><h2 class="project-name">${escapeHTML(project.name)} <span class="project-item-count">(${total})</span></h2>
          <button type="button" class="project-rename-btn" data-project-id="${escapeHTML(project.id)}" title="Rename project">&#9998;</button>
+         <span class="project-version-badge" title="backlog-tracker release currently running">v${escapeHTML(APP_VERSION)}</span>
        </div>`;
 
   return `
@@ -1801,7 +1904,7 @@ function restFields(fields) {
 const BACKLOG_ITEM_RENDER_FIELDS = [
   "projectId", "title", "desc", "type", "category", "status",
   "createdAt", "updatedAt", "archivedAt",
-  "patchReady", "mergeReady", "noDeploymentRequired",
+  "patchReady", "mergeReady", "noDeploymentRequired", "effort", "priority",
   "testVersion", "testSummary", "previewUrl",
   // The deployment train: which integration branch a ticket is on, the
   // commit(s) it put there, and whether it's on its way back off again.
@@ -1809,7 +1912,8 @@ const BACKLOG_ITEM_RENDER_FIELDS = [
   // so without it here the button would flicker on the REST-primed first
   // paint and correct itself a second later when the listener landed.
   "deployBranch", "deployCommit", "deployCommits",
-  "revertRequested", "revertBlockedBy", "revertedCommits",
+  "revertRequested", "revertBlockedBy", "revertedCommits", "ejectedFromTrain",
+  "lastFailureReason",
   "prUrl", "prNumber", "mergedAt",
   // Provenance for a card that's actually landed — which commit it merged
   // as, and whether the deploy that was supposed to ship it actually
@@ -1877,12 +1981,18 @@ primeFromRest("backlogItems", (rows) => {
   render();
 }, byMillis("createdAt", "desc"), BACKLOG_ITEM_RENDER_FIELDS);
 primeFromRest("programs", (rows) => { programs = rows; render(); });
+primeFromRest("releases", (rows) => { releases = rows; onReleasesChanged(); }, byNumber("order"));
 primeFromRest("interfaces", (rows) => { interfaces = rows; render(); });
 primeFromRest("projectDocs", (rows) => { projectDocs = rows; });
 primeFromRest("skills", (rows) => {
   skills = rows;
   if (skillsPage && !skillsPage.hidden) renderSkillsPage();
 }, byName);
+primeFromRest("concepts", (rows) => {
+  concepts = rows;
+  if (conceptIncubatorPage && !conceptIncubatorPage.hidden) renderConceptIncubatorPage();
+  if (conceptDetailId) renderConceptDetailPage();
+}, byMillis("updatedAt", "desc"));
 primeFromRest("faqCategories", (rows) => {
   faqCategories = rows;
   if (faqArticlesPage && !faqArticlesPage.hidden) renderFaqArticlesPage();
@@ -1927,6 +2037,8 @@ onSnapshot(query(projectsRef, orderBy("createdAt", "asc")), (snap) => {
   if (archiveProjectId) renderArchivePage();
   if (docsProjectId) renderDocsPage();
   if (archivedProjectsPage && !archivedProjectsPage.hidden) renderArchivedProjectsPage();
+  // The Releases page counts each release's assigned projects.
+  if (releasesPage && !releasesPage.hidden) renderReleasesPage();
 }, (err) => {
   console.error("backlog-tracker: projects listener error", err);
 });
@@ -1949,6 +2061,14 @@ onSnapshot(programsRef, (snap) => {
   console.error("backlog-tracker: programs listener error", err);
 });
 
+onSnapshot(query(releasesRef, orderBy("order", "asc")), (snap) => {
+  liveCollections.add("releases");
+  releases = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  onReleasesChanged();
+}, (err) => {
+  console.error("backlog-tracker: releases listener error", err);
+});
+
 onSnapshot(projectDocsRef, (snap) => {
   liveCollections.add("projectDocs");
   projectDocs = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
@@ -1965,12 +2085,28 @@ onSnapshot(query(skillsRef, orderBy("name", "asc")), (snap) => {
   console.error("backlog-tracker: skills listener error", err);
 });
 
+onSnapshot(query(conceptsRef, orderBy("updatedAt", "desc")), (snap) => {
+  liveCollections.add("concepts");
+  concepts = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  if (conceptIncubatorPage && !conceptIncubatorPage.hidden) renderConceptIncubatorPage();
+  if (conceptDetailId) renderConceptDetailPage();
+}, (err) => {
+  console.error("backlog-tracker: concepts listener error", err);
+});
+
 // Returns the new doc's id — the New Item modal needs it back to upload any
 // pending attachments (see createAttachmentController's "pending" mode)
 // once the item actually exists to attach them to.
-async function addItem(projectId, title, desc, type, category) {
+// `extra` (optional): { effort, priority } — used by the Feed in
+// requirements submit (cwehxSMZv8noJQv5kB22) to persist the clustering
+// preview's own effort/priority estimate onto the created card instead of
+// discarding it; the plain New Item form never passes this, since a single
+// freshly-typed item has no such estimate to keep.
+async function addItem(projectId, title, desc, type, category, extra = {}) {
   const ref = await addDoc(itemsRef, {
     projectId, title, desc, type, category,
+    ...(extra.effort ? { effort: extra.effort } : {}),
+    ...(extra.priority ? { priority: extra.priority } : {}),
     status: "backlog",
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
@@ -2048,14 +2184,24 @@ async function removeItem(id) {
 async function failTesting(id) {
   const item = items.find((i) => i.id === id);
   if (!item || item.status !== "ready-for-testing") return;
-  const reason = await showPromptDialog(
-    "What's wrong with this? This is added as a comment on the ticket and sent back to Backlog so it can be picked up again — the existing PR/branch stay linked, so a fresh Ready for Dev sweep re-patches it rather than starting over.",
-    "",
-    { title: "Failed testing", multiline: true, rows: 4 }
-  );
-  if (reason === null) return;
-  const trimmed = reason.trim();
+  // Structured reason (XJoASicLGefL5c9fronl): a fixed category alongside the
+  // existing free-text explanation, both stored on the item as
+  // lastFailureReason (see fields below) as well as folded into the note —
+  // the note stays the readable record on the card, lastFailureReason is
+  // the machine-readable one a re-fired investigation reads directly.
+  const result = await showFieldDialog({
+    title: "Failed testing",
+    message: "What's wrong with this? Sent back to Backlog so it can be picked up again — the existing PR/branch stay linked, so a fresh Ready for Dev sweep re-patches it rather than starting over.",
+    fields: [
+      { id: "category", label: "What kind of miss was this?", type: "select", options: FAILURE_REASON_CATEGORIES },
+      { id: "text", label: "Details", multiline: true, rows: 4 },
+    ],
+    okLabel: "Failed testing",
+  });
+  if (result === null) return;
+  const trimmed = (result.text || "").trim();
   if (!trimmed) return;
+  const category = result.category || FAILURE_REASON_CATEGORIES[FAILURE_REASON_CATEGORIES.length - 1];
   await updateDoc(doc(db, "backlogItems", id), {
     status: "backlog",
     // The rule this enforces: nothing leaves Ready for Testing rejected
@@ -2068,7 +2214,48 @@ async function failTesting(id) {
     // force-pushing anything). A card in Backlog must never have live
     // commits on a train.
     revertRequested: true,
-    notes: arrayUnion({ author: "viewer", text: `Failed testing: ${trimmed}`, at: new Date() }),
+    lastFailureReason: { category, text: trimmed, action: "failed-testing", at: new Date() },
+    notes: arrayUnion({ author: "viewer", text: `Failed testing [${category}]: ${trimmed}`, at: new Date() }),
+    updatedAt: serverTimestamp(),
+  });
+}
+
+// The eject half of "pull a stuck ticket off the train from Approved for
+// Deployment" (FVrOIVAAp46NdcgGovMW) — see cardHTML's ejectBtn comment for
+// why this is a distinct function rather than just reusing failTesting: it
+// fires from ready-to-publish (not ready-for-testing), skips the
+// intermediate "move back to Ready for Testing" hop, and tags the note/flag
+// as an eject rather than a test failure. Same underlying hand-off as
+// failTesting either way — revertRequested — so run-backlog-automation.js's
+// processRevertFromTrain needs no change to handle it.
+async function ejectFromTrain(id) {
+  const item = items.find((i) => i.id === id);
+  if (!item || item.status !== "ready-to-publish" || item.noDeploymentRequired) return;
+  // Same structured-reason capture as failTesting (XJoASicLGefL5c9fronl) —
+  // see that function's own comment on lastFailureReason.
+  const result = await showFieldDialog({
+    title: "Eject from train",
+    message: "Why eject this from the train? This reverts its commits off the branch and sends it back to Backlog so the rest of the train's tickets can still reach Deploy to Main — the existing PR/branch history stay linked, so a fresh Ready for Dev sweep re-patches it rather than starting over.",
+    fields: [
+      { id: "category", label: "What kind of miss was this?", type: "select", options: FAILURE_REASON_CATEGORIES },
+      { id: "text", label: "Details", multiline: true, rows: 4 },
+    ],
+    okLabel: "Eject from train",
+  });
+  if (result === null) return;
+  const trimmed = (result.text || "").trim();
+  if (!trimmed) return;
+  const category = result.category || FAILURE_REASON_CATEGORIES[FAILURE_REASON_CATEGORIES.length - 1];
+  await updateDoc(doc(db, "backlogItems", id), {
+    status: "backlog",
+    // Same hand-off failTesting uses — see processRevertFromTrain in
+    // run-backlog-automation.js. ejectedFromTrain is purely informational
+    // (distinguishes "pulled to unblock a release" from "failed a test" in
+    // the notes/board history); nothing in the automation branches on it.
+    revertRequested: true,
+    ejectedFromTrain: true,
+    lastFailureReason: { category, text: trimmed, action: "ejected-from-train", at: new Date() },
+    notes: arrayUnion({ author: "viewer", text: `Ejected from train [${category}]: ${trimmed}`, at: new Date() }),
     updatedAt: serverTimestamp(),
   });
 }
@@ -2110,9 +2297,14 @@ async function restoreItem(id) {
   });
 }
 
-async function updateItemDetails(id, { title, desc, type, category, noDeploymentRequired }) {
+// effort/priority (cwehxSMZv8noJQv5kB22): "" from the Edit item modal's own
+// Unset option means "go back to build-batches.js's automatic guess" — sent
+// as null, same "explicit clear, not an empty string sitting on the doc"
+// convention setItemPreviewUrl already uses for previewUrl.
+async function updateItemDetails(id, { title, desc, type, category, effort, priority, noDeploymentRequired }) {
   await updateDoc(doc(db, "backlogItems", id), {
     title: title.trim(), desc: desc.trim(), type, category,
+    effort: effort || null, priority: priority || null,
     noDeploymentRequired: !!noDeploymentRequired,
     updatedAt: serverTimestamp(),
   });
@@ -2324,6 +2516,12 @@ async function requestNotify(pid) {
   await setDoc(doc(db, "projects", pid), {
     notifyRequestedAt: serverTimestamp(),
     notifyItemIds: selected.length ? selected : null,
+    // Per-member routine binding (VNE6dxMu3h6jO3g6FNNB) — lets
+    // notifyOnProjectReadyForReview look up whether the clicking member has
+    // registered their own Routine (set via the MCP tool
+    // set_my_routine_binding), and fire that instead of the shared project
+    // token when they have.
+    notifyRequestedByEmail: (auth.currentUser && auth.currentUser.email) || null,
   }, { merge: true });
 
   getSelectedSet(pid).clear();
@@ -2409,7 +2607,19 @@ async function requestDeployNotify(pid) {
   deployOptimisticClicks[pid] = Date.now();
   render();
 
-  await setDoc(doc(db, "projects", pid), { deployNotifyRequestedAt: serverTimestamp() }, { merge: true });
+  await setDoc(doc(db, "projects", pid), {
+    deployNotifyRequestedAt: serverTimestamp(),
+    // deployNotifyRequestedByEmail already existed (written by the
+    // approve_deploy_to_main MCP tool, tagged deployNotifyRequestedVia:
+    // "mcp") — this now populates the same field for a plain console
+    // click too, so resolveRoutineCredentials (functions/index.js) can
+    // resolve either path's per-member routine binding the same way (see
+    // requestNotify's own comment above). Clearing deployNotifyRequestedVia
+    // keeps its documented "absent for a console click" meaning true even
+    // after an earlier MCP-triggered request left it set to "mcp".
+    deployNotifyRequestedByEmail: (auth.currentUser && auth.currentUser.email) || null,
+    deployNotifyRequestedVia: null,
+  }, { merge: true });
 }
 
 // Same idea as requestNotify()/requestDeployNotify() above, but for the
@@ -2432,7 +2642,11 @@ async function requestGroomNotify(pid) {
   groomOptimisticClicks[pid] = Date.now();
   render();
 
-  await setDoc(doc(db, "projects", pid), { groomRequestedAt: serverTimestamp() }, { merge: true });
+  await setDoc(doc(db, "projects", pid), {
+    groomRequestedAt: serverTimestamp(),
+    // See requestNotify's own comment above.
+    groomRequestedByEmail: (auth.currentUser && auth.currentUser.email) || null,
+  }, { merge: true });
 }
 
 async function setProjectName(id, name) {
@@ -2535,6 +2749,109 @@ function populateProgramSelect(selectEl, selectedId) {
     '<option value="__new__">+ New program…</option>';
 }
 
+// ── Releases — a named, ordered product release (see releasesRef above).
+// `order` is assigned once, here, at creation (max existing + 1, or 1 for
+// the first) and never changes afterwards — firestore.rules refuses any
+// update that moves it — because it's what article bindings are
+// range-compared on (articleAppliesToRelease below). Status only ever
+// advances draft → live; there is deliberately no way back in this UI, and
+// the rules refuse one from anywhere else too.
+const RELEASE_STATUS_LABELS = { draft: "Draft", live: "Live" };
+
+function releasesByOrderDesc() {
+  return releases.slice().sort((a, b) => (Number(b.order) || 0) - (Number(a.order) || 0));
+}
+
+function releaseLabel(r) {
+  if (!r) return "";
+  return r.version ? `${r.name} (${r.version})` : r.name;
+}
+
+// The release with the highest order among those marked live — what the
+// public help centre and the MCP FAQ tools default to when no specific
+// release is asked for. null when nothing is live yet.
+function currentLiveRelease() {
+  return releasesByOrderDesc().find((r) => r.status === "live") || null;
+}
+
+// The one canonical definition of "does this article apply to this
+// release", by release order: an article applies from the release it was
+// introduced in (inclusive) up to, but not including, the release it was
+// removed in. An unset binding is open-ended on that side, so an article
+// with neither set applies to every release — which is what keeps every
+// article written before releases existed visible exactly as before.
+// faq/js/faq-data.js and functions/mcp-server.js carry the same check
+// inline (separate deployables, no shared module) — keep all three in step.
+// A binding that points at a release that no longer exists is treated as
+// not satisfied, rather than silently widening the article's range.
+function articleAppliesToRelease(article, releasesById, targetOrder) {
+  if (!article) return false;
+  if (article.introducedInReleaseId) {
+    const introduced = releasesById[article.introducedInReleaseId];
+    if (!introduced || !(Number(introduced.order) <= targetOrder)) return false;
+  }
+  if (article.removedInReleaseId) {
+    const removed = releasesById[article.removedInReleaseId];
+    if (!removed || !(targetOrder < Number(removed.order))) return false;
+  }
+  return true;
+}
+
+function releasesByIdMap() {
+  const map = {};
+  releases.forEach((r) => { map[r.id] = r; });
+  return map;
+}
+
+async function createRelease(name, version) {
+  const trimmed = (name || "").trim();
+  if (!trimmed) return null;
+  const order = releases.length ? Math.max(...releases.map((r) => Number(r.order) || 0)) + 1 : 1;
+  const email = (auth.currentUser && auth.currentUser.email) || null;
+  const ref = await addDoc(releasesRef, {
+    name: trimmed,
+    version: (version || "").trim() || null,
+    status: "draft",
+    order,
+    madeLiveAt: null,
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+    ...(email ? { createdByEmail: email, updatedByEmail: email } : {}),
+  });
+  return ref.id;
+}
+
+async function markReleaseLive(id) {
+  const email = (auth.currentUser && auth.currentUser.email) || null;
+  await updateDoc(doc(db, "releases", id), {
+    status: "live",
+    madeLiveAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+    ...(email ? { updatedByEmail: email } : {}),
+  });
+}
+
+async function setProjectRelease(id, releaseId) {
+  await setDoc(doc(db, "projects", id), { releaseId: releaseId || null }, { merge: true });
+}
+
+// Shared by the Docs page and the FAQ article editor's two release-binding
+// selects. Unlike populateProgramSelect there is no inline "+ New
+// release…" option: a release carries an order and a one-way status, so
+// it's created on the Releases page (nav drawer) where both are visible,
+// not conjured from a dropdown. Newest release first. A selected id that
+// no longer exists is kept as its own option so the saved value isn't
+// silently dropped on the next save.
+function populateReleaseSelect(selectEl, selectedId, { emptyLabel = "No release" } = {}) {
+  const opts = releasesByOrderDesc();
+  const missing = selectedId && !opts.some((r) => r.id === selectedId)
+    ? `<option value="${escapeHTML(selectedId)}" selected>Unknown release (${escapeHTML(selectedId)})</option>`
+    : "";
+  selectEl.innerHTML = `<option value="">${escapeHTML(emptyLabel)}</option>` +
+    opts.map((r) => `<option value="${escapeHTML(r.id)}"${r.id === selectedId ? " selected" : ""}>${escapeHTML(releaseLabel(r))} — ${escapeHTML((RELEASE_STATUS_LABELS[r.status] || r.status || "").toLowerCase())}</option>`).join("") +
+    missing;
+}
+
 // An interface is a maintained contract document shared between exactly
 // two projects — the backlog-tracker-native equivalent of a shared
 // markdown file, so it survives independently of either project's repo
@@ -2627,6 +2944,10 @@ projectsRoot.addEventListener("click", async (e) => {
   }
   const moveBtn = e.target.closest(".move-btn");
   if (moveBtn) { moveItem(moveBtn.dataset.id, parseInt(moveBtn.dataset.dir, 10)); return; }
+  // Checked before .fail-testing-btn below: eject-train-btn also carries
+  // that class for shared styling, so it must win the closest() match first.
+  const ejectTrainBtn = e.target.closest(".eject-train-btn");
+  if (ejectTrainBtn) { ejectFromTrain(ejectTrainBtn.dataset.id); return; }
   const failTestingBtn = e.target.closest(".fail-testing-btn");
   if (failTestingBtn) { failTesting(failTestingBtn.dataset.id); return; }
   const confirmNoDeployBtn = e.target.closest(".confirm-no-deploy-btn");
@@ -2682,6 +3003,8 @@ projectsRoot.addEventListener("click", async (e) => {
   if (archiveNavBtn) { closeAllOptionMenus(); openArchivePage(archiveNavBtn.dataset.projectId); return; }
   const docsNavBtn = e.target.closest(".project-docs-btn");
   if (docsNavBtn) { closeAllOptionMenus(); openDocsPage(docsNavBtn.dataset.projectId); return; }
+  const feedBtn = e.target.closest(".feed-requirements-btn");
+  if (feedBtn) { closeAllOptionMenus(); openFeedModal(feedBtn.dataset.projectId); return; }
   const ifaceOpenBtn = e.target.closest(".interface-open-btn");
   if (ifaceOpenBtn) { closeAllOptionMenus(); openInterfaceModal(ifaceOpenBtn.dataset.interfaceId); return; }
   const ifaceAddBtn = e.target.closest(".interface-add-btn");
@@ -2736,6 +3059,8 @@ const eiBackdrop = document.getElementById("ei-backdrop");
 const eiTitleInput = document.getElementById("ei-title-input");
 const eiDescInput = document.getElementById("ei-desc-input");
 const eiCategorySelect = document.getElementById("ei-category-select");
+const eiEffortSelect = document.getElementById("ei-effort-select");
+const eiPrioritySelect = document.getElementById("ei-priority-select");
 const eiNoDeployCheckbox = document.getElementById("ei-no-deploy-checkbox");
 const eiNotesList = document.getElementById("ei-notes-list");
 const eiCommentInput = document.getElementById("ei-comment-input");
@@ -2832,6 +3157,8 @@ function openEditItemModal(id) {
   updateEiDescCount();
   setEiTypeToggle(item.type === "bug" ? "bug" : "feature");
   eiCategorySelect.value = item.category || CATEGORIES[0];
+  eiEffortSelect.value = item.effort || "";
+  eiPrioritySelect.value = item.priority || "";
   eiNoDeployCheckbox.checked = !!item.noDeploymentRequired;
   eiCommentInput.value = "";
   renderEiNotes();
@@ -2868,6 +3195,7 @@ document.getElementById("ei-save").addEventListener("click", async () => {
   try {
     await updateItemDetails(editingItemId, {
       title, desc, type, category: eiCategorySelect.value,
+      effort: eiEffortSelect.value, priority: eiPrioritySelect.value,
       noDeploymentRequired: eiNoDeployCheckbox.checked,
     });
   } catch (err) {
@@ -3289,8 +3617,25 @@ function generateTitle(desc) {
 
 const updateNiDescCount = wireCharCount(document.getElementById("ni-desc-input"), document.getElementById("ni-desc-count"));
 
+// OhKUnoGbpUAeJiXiLIvc: shared by openForm() and closeForm() so a blank
+// form is guaranteed on every OPEN too, not just after a known close path —
+// previously only closeForm() cleared these, which relied on every way of
+// dismissing the modal (including submit-success) having actually run
+// first; resetting again on open removes that assumption entirely.
+function resetFormFields() {
+  const descEl = document.getElementById("ni-desc-input");
+  descEl.value = "";
+  descEl.style.height = "";
+  updateNiDescCount();
+  document.querySelectorAll(".type-opt").forEach((b) => b.classList.remove("active"));
+  document.querySelector('.type-opt[data-type="feature"]').classList.add("active");
+  niDictation.clearError();
+  niPendingAttachments = [];
+  renderNiPendingAttachments();
+}
 function openForm(projectId) {
   activeNewItemProjectId = projectId;
+  resetFormFields();
   niBackdrop.hidden = false;
   document.getElementById("ni-desc-input").focus();
 }
@@ -3302,15 +3647,7 @@ function closeForm() {
   activeNewItemProjectId = null;
   niAttachments.stopRecording();
   niDictation.stop();
-  const descEl = document.getElementById("ni-desc-input");
-  descEl.value = "";
-  descEl.style.height = "";
-  updateNiDescCount();
-  document.querySelectorAll(".type-opt").forEach((b) => b.classList.remove("active"));
-  document.querySelector('.type-opt[data-type="feature"]').classList.add("active");
-  niDictation.clearError();
-  niPendingAttachments = [];
-  renderNiPendingAttachments();
+  resetFormFields();
 }
 
 document.getElementById("ni-cancel").addEventListener("click", closeForm);
@@ -3396,6 +3733,112 @@ document.getElementById("ni-submit").addEventListener("click", async () => {
       );
     }
   }
+});
+
+// ── Feed in requirements (z1Q6fxo0yTjamxVMWQK5) ──────────────────────────
+// A project's ⋮ menu action to bulk-create several Backlog items from one
+// pasted block of text, previewing how they'd cluster into suggested build
+// batches (build-batches.js's clusterBacklogItems — grouped by `category`,
+// the board's existing proxy for "shared area/files", same signal a
+// grooming pass already corrects) before anything is actually created, so
+// a person can see what would ship together as one bunch and decide from
+// there. Reuses the same generateTitle()/suggestCategory() pipeline as the
+// single-item New Item form just above, just run once per pasted paragraph
+// instead of once per submit.
+const feedBackdrop = document.getElementById("feed-backdrop");
+const feedTextInput = document.getElementById("feed-text-input");
+const feedPreview = document.getElementById("feed-preview");
+const feedSubmitBtn = document.getElementById("feed-submit");
+let activeFeedProjectId = null;
+let feedPreviewItems = null; // [{title, desc, type, category}] once previewed; null until "Preview batches"
+
+function openFeedModal(projectId) {
+  activeFeedProjectId = projectId;
+  feedBackdrop.hidden = false;
+  feedTextInput.value = "";
+  feedPreview.hidden = true;
+  feedPreviewItems = null;
+  feedSubmitBtn.disabled = true;
+  feedTextInput.focus();
+}
+function closeFeedModal() {
+  feedBackdrop.hidden = true;
+  activeFeedProjectId = null;
+  feedPreviewItems = null;
+}
+document.getElementById("feed-cancel").addEventListener("click", closeFeedModal);
+document.getElementById("feed-close").addEventListener("click", closeFeedModal);
+feedBackdrop.addEventListener("click", (e) => { if (e.target === feedBackdrop) closeFeedModal(); });
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && !feedBackdrop.hidden) closeFeedModal();
+});
+
+function feedBatchHTML(batch) {
+  const effortLabel = ["small", "medium", "large"]
+    .filter((e) => batch.effortCounts[e])
+    .map((e) => `${batch.effortCounts[e]} ${e}`)
+    .join(", ");
+  const priorityLabel = ["high", "medium", "low"]
+    .filter((p) => batch.priorityCounts[p])
+    .map((p) => `${batch.priorityCounts[p]} ${p}`)
+    .join(", ");
+  const summaryParts = [effortLabel, priorityLabel ? `${priorityLabel} priority` : ""].filter(Boolean).map(escapeHTML);
+  const summaryHTML = summaryParts.length ? ` &middot; ${summaryParts.join(" &middot; ")}` : "";
+  return `
+    <div class="feed-batch">
+      <div class="feed-batch-head">
+        <span class="feed-batch-category">${escapeHTML(batch.category)}</span>
+        <span class="feed-batch-count">${batch.count} item${batch.count === 1 ? "" : "s"}${summaryHTML}</span>
+      </div>
+      ${batch.items.map((i) => `
+        <div class="feed-batch-item">
+          <span class="feed-batch-item-priority feed-priority-${escapeHTML(i.priority)}">${escapeHTML(i.priority)}</span>
+          <span class="feed-batch-item-effort feed-effort-${escapeHTML(i.effort)}">${escapeHTML(i.effort)}</span>
+          <span class="feed-batch-item-title">${escapeHTML(i.title)}</span>
+        </div>`).join("")}
+    </div>`;
+}
+
+document.getElementById("feed-preview-btn").addEventListener("click", () => {
+  const requirements = splitRequirementsText(feedTextInput.value);
+  if (!requirements.length) {
+    feedPreview.hidden = true;
+    feedPreviewItems = null;
+    feedSubmitBtn.disabled = true;
+    showAlert("Paste at least one requirement first.");
+    return;
+  }
+  // effort/priority computed here (not left to clusterBacklogItems' own
+  // internal copies) so feed-submit below has real values to persist onto
+  // the created cards instead of the preview's estimate being thrown away
+  // the moment the modal closes (cwehxSMZv8noJQv5kB22).
+  feedPreviewItems = requirements.map((desc) => {
+    const draft = { title: generateTitle(desc), desc, type: "feature", category: suggestCategory(desc) };
+    return { ...draft, effort: estimateEffort(draft), priority: estimatePriority(draft) };
+  });
+  const { batches } = clusterBacklogItems(feedPreviewItems);
+  document.getElementById("feed-preview-count").textContent =
+    `${feedPreviewItems.length} requirement${feedPreviewItems.length === 1 ? "" : "s"} into ${batches.length} batch${batches.length === 1 ? "" : "es"} — category and title are a best guess, correct either after creating`;
+  document.getElementById("feed-batches-list").innerHTML = batches.map(feedBatchHTML).join("");
+  feedPreview.hidden = false;
+  feedSubmitBtn.disabled = false;
+});
+
+document.getElementById("feed-submit").addEventListener("click", async () => {
+  if (!feedPreviewItems || !feedPreviewItems.length || !activeFeedProjectId) return;
+  feedSubmitBtn.disabled = true;
+  const projectId = activeFeedProjectId;
+  const toCreate = feedPreviewItems.slice();
+  try {
+    for (const item of toCreate) {
+      await addItem(projectId, item.title, item.desc, item.type, item.category, { effort: item.effort, priority: item.priority });
+    }
+  } catch (err) {
+    await showAlert(`Some items may not have been created: ${err && err.message ? err.message : err}`);
+    feedSubmitBtn.disabled = false;
+    return;
+  }
+  closeFeedModal();
 });
 
 // ── New Project modal ───────────────────────────────────────────────────
@@ -3737,6 +4180,16 @@ docsProgramSelect.addEventListener("change", async () => {
   }
   setProjectProgram(docsProjectId, docsProgramSelect.value);
 });
+// Same persist-immediately shape as the program picker above, minus the
+// inline create — releases are created on the Releases page. Assigning a
+// release is what gates this project's approved FAQ proposals on that
+// release going live (functions/index.js promoteFaqRevisionIfReady).
+const docsReleaseSelect = document.getElementById("docs-release-select");
+docsReleaseSelect.addEventListener("change", () => {
+  if (!docsProjectId) return;
+  setProjectRelease(docsProjectId, docsReleaseSelect.value);
+});
+document.getElementById("docs-open-releases-btn").addEventListener("click", () => openReleasesPage());
 
 function openDocsPage(pid) {
   closeAllSubPages();
@@ -3800,6 +4253,9 @@ function renderDocsPage() {
   document.getElementById("docs-page-project-name").textContent = project ? project.name : projectName(docsProjectId);
   if (document.activeElement !== docsProgramSelect) {
     populateProgramSelect(docsProgramSelect, project ? project.programId || "" : "");
+  }
+  if (document.activeElement !== docsReleaseSelect) {
+    populateReleaseSelect(docsReleaseSelect, project ? project.releaseId || "" : "");
   }
   if (document.activeElement !== docsReadmeInput) {
     docsReadmeInput.value = (project && project.readmeMd) || "";
@@ -4009,6 +4465,505 @@ document.getElementById("if-submit").addEventListener("click", async () => {
   closeInterfaceModal();
 });
 
+// ── Concept Incubator ────────────────────────────────────────────────────
+// A home for early-stage ideas that need more shape before they earn
+// official project status — its own top-level `concepts` collection,
+// deliberately separate from `projects`/`backlogItems` so it never shows up
+// on the pipeline board (see firestore.rules `match /concepts/{conceptId}`
+// and the root CLAUDE.md's "Live Visitor Profile and Display Types" section
+// for the same "two separate things sharing one board" pattern this
+// follows). Reading needs only sign-in; adding, editing, commenting on or
+// promoting a concept needs editor access, same [data-editor-only]
+// convention as the Skills page above.
+const conceptIncubatorPage = document.getElementById("concept-incubator-page");
+const conceptDetailPage = document.getElementById("concept-detail-page");
+
+async function requireConceptEditor() {
+  if (!(await requireFaqEditor())) return false;
+  if (currentConsoleRole() === "viewer") {
+    await showAlert("You have read-only access to this console, so you can't add, edit, comment on or promote concepts. An admin can change your role in Settings → Team & agent access.");
+    return false;
+  }
+  return true;
+}
+
+function conceptStatusLabel(c) { return c.status === "promoted" ? "Promoted" : "Active"; }
+
+async function addConcept(name) {
+  const email = (auth.currentUser && auth.currentUser.email) || null;
+  const ref = await addDoc(conceptsRef, {
+    name: name.trim(),
+    readmeMd: "",
+    requirementsMd: "",
+    comments: [],
+    status: "active",
+    promotedProjectId: null,
+    promotedAt: null,
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+    ...(email ? { createdByEmail: email } : {}),
+  });
+  return ref.id;
+}
+
+async function setConceptReadme(id, md) {
+  await setDoc(doc(db, "concepts", id), { readmeMd: md, updatedAt: serverTimestamp() }, { merge: true });
+}
+async function setConceptRequirements(id, md) {
+  await setDoc(doc(db, "concepts", id), { requirementsMd: md, updatedAt: serverTimestamp() }, { merge: true });
+}
+// `at` is a plain client Date, not serverTimestamp() — same reason
+// addItemComment above uses one: Firestore rejects a serverTimestamp()
+// sentinel inside an arrayUnion element.
+async function addConceptComment(id, text) {
+  const trimmed = (text || "").trim();
+  if (!trimmed) return;
+  await updateDoc(doc(db, "concepts", id), {
+    comments: arrayUnion({ author: "viewer", text: trimmed, at: new Date() }),
+    updatedAt: serverTimestamp(),
+  });
+}
+async function deleteConcept(id) {
+  await deleteDoc(doc(db, "concepts", id));
+}
+
+// Carries the concept's README/requirements across onto a brand-new
+// project (so nothing is re-keyed, per the ticket that asked for this),
+// requires the same repo-folder link every new project needs (root
+// CLAUDE.md → "Linking a new project to GitHub"), and marks the concept
+// promoted. The two writes aren't in one batch — there's nothing to roll
+// back to if the second write fails, since a project with no concept
+// pointing at it yet is harmless, and a re-click of Promote would just
+// create a second project, which is why the concept's own detail page
+// hides Promote the moment `status` flips (see renderConceptDetailPage).
+async function promoteConceptToProject(conceptId, name, programId, releaseId, repoFolderInfo) {
+  const concept = concepts.find((c) => c.id === conceptId);
+  if (!concept) return null;
+  const data = {
+    name: name.trim(),
+    createdAt: serverTimestamp(),
+    requirementsMd: concept.requirementsMd || "",
+    readmeMd: concept.readmeMd || "",
+  };
+  if (programId) data.programId = programId;
+  if (releaseId) data.releaseId = releaseId;
+  if (repoFolderInfo && repoFolderInfo.none) {
+    data.repoFolderNotApplicable = true;
+  } else if (repoFolderInfo && repoFolderInfo.folder) {
+    data.repoFolder = repoFolderInfo.folder;
+    data.deployBranch = deployBranchForFolder(repoFolderInfo.folder);
+  }
+  const ref = await addDoc(projectsRef, data);
+  await setDoc(doc(db, "concepts", conceptId), {
+    status: "promoted",
+    promotedProjectId: ref.id,
+    promotedAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  }, { merge: true });
+  return ref.id;
+}
+
+function openConceptIncubatorPage() {
+  closeAllSubPages();
+  document.getElementById("projects-root").hidden = true;
+  document.getElementById("board-page-header").hidden = true;
+  conceptIncubatorPage.hidden = false;
+  setRouteHash("#concept-incubator");
+  updateTopbarTitle();
+  renderConceptIncubatorPage();
+}
+function closeConceptIncubatorPage() {
+  conceptIncubatorPage.hidden = true;
+  document.getElementById("projects-root").hidden = false;
+  document.getElementById("board-page-header").hidden = false;
+}
+
+// Not URL-routed, same as the per-project Docs page it mirrors — reached
+// only by clicking a concept card or creating a new one, never a direct
+// link/reload.
+function openConceptDetailPage(id) {
+  closeAllSubPages();
+  conceptDetailId = id;
+  document.getElementById("projects-root").hidden = true;
+  document.getElementById("board-page-header").hidden = true;
+  conceptDetailPage.hidden = false;
+  renderConceptDetailPage();
+}
+function closeConceptDetailPage() {
+  conceptDetailId = null;
+  conceptDetailPage.hidden = true;
+  document.getElementById("projects-root").hidden = false;
+  document.getElementById("board-page-header").hidden = false;
+}
+
+function conceptCardHTML(c) {
+  const updated = formatSkillUpdatedAt(c.updatedAt);
+  const meta = [conceptStatusLabel(c)];
+  if (updated) meta.push(`updated ${updated}`);
+  return `
+    <div class="skill-card concept-card" data-id="${c.id}" style="cursor:pointer;">
+      <div class="skill-card-top">
+        <div>
+          <div class="skill-card-name">${escapeHTML(c.name || "")}</div>
+          <div class="skill-card-meta">${escapeHTML(meta.join(" · "))}</div>
+        </div>
+        <div class="skill-card-actions" data-editor-only>
+          <button type="button" class="icon-btn concept-delete-icon-btn" data-id="${c.id}" title="Delete"${c.status === "promoted" ? " disabled" : ""}><span class="material-symbols-outlined">delete</span></button>
+        </div>
+      </div>
+    </div>`;
+}
+
+function renderConceptIncubatorPage() {
+  const sorted = concepts; // already ordered by updatedAt desc from the query
+  document.getElementById("concept-incubator-count").textContent = `${sorted.length} concept${sorted.length === 1 ? "" : "s"}`;
+  document.getElementById("concept-incubator-list").innerHTML = sorted.map(conceptCardHTML).join("");
+  document.getElementById("concept-incubator-empty").hidden = sorted.length > 0;
+}
+
+// A promoted concept is read-only from here on — its README/requirements
+// live on as the project's own copies, which is what a person or a Routine
+// session should actually be editing past this point.
+function renderConceptDetailPage() {
+  if (!conceptDetailId) return;
+  const c = concepts.find((x) => x.id === conceptDetailId);
+  if (!c) return;
+  document.getElementById("concept-detail-name").textContent = c.name || "";
+  document.getElementById("concept-detail-status-badge").textContent = conceptStatusLabel(c);
+
+  const promotedHint = document.getElementById("concept-detail-promoted-hint");
+  const readonly = c.status === "promoted";
+  if (readonly) {
+    const p = projects.find((x) => x.id === c.promotedProjectId);
+    promotedHint.hidden = false;
+    promotedHint.innerHTML = p
+      ? `Promoted to project <b>${escapeHTML(p.name)}</b> — its own Docs page is now the source of truth.`
+      : "Promoted to a project — its own Docs page is now the source of truth.";
+  } else {
+    promotedHint.hidden = true;
+  }
+
+  const readmeInput = document.getElementById("concept-readme-input");
+  if (document.activeElement !== readmeInput) readmeInput.value = c.readmeMd || "";
+  readmeInput.disabled = readonly;
+  const reqInput = document.getElementById("concept-requirements-input");
+  if (document.activeElement !== reqInput) reqInput.value = c.requirementsMd || "";
+  reqInput.disabled = readonly;
+  document.getElementById("concept-readme-save").hidden = readonly;
+  document.getElementById("concept-requirements-save").hidden = readonly;
+  document.getElementById("concept-promote-block").hidden = readonly;
+  document.getElementById("concept-composer").hidden = readonly;
+  document.getElementById("concept-comment-submit").hidden = readonly;
+  document.getElementById("concept-delete-btn").hidden = readonly;
+
+  const notes = (c.comments || []).slice().reverse();
+  document.getElementById("concept-notes-list").innerHTML = notes.length
+    ? notes.map(eiNoteRowHTML).join("")
+    : '<p class="interface-row-empty">No discussion yet.</p>';
+}
+
+document.getElementById("concept-incubator-btn").addEventListener("click", () => { closeNavDrawer(); openConceptIncubatorPage(); });
+document.getElementById("concept-incubator-list").addEventListener("click", async (e) => {
+  const delBtn = e.target.closest(".concept-delete-icon-btn");
+  if (delBtn) {
+    if (delBtn.disabled) return;
+    if (!(await requireConceptEditor())) return;
+    const c = concepts.find((x) => x.id === delBtn.dataset.id);
+    if (!c || c.status === "promoted") return;
+    if (!(await showConfirmDialog(`Delete concept "${c.name}"? This can't be undone.`))) return;
+    await deleteConcept(delBtn.dataset.id);
+    return;
+  }
+  const card = e.target.closest(".concept-card");
+  if (card) openConceptDetailPage(card.dataset.id);
+});
+
+document.getElementById("concept-readme-save").addEventListener("click", async () => {
+  if (!conceptDetailId) return;
+  if (!(await requireConceptEditor())) return;
+  setConceptReadme(conceptDetailId, document.getElementById("concept-readme-input").value);
+});
+document.getElementById("concept-requirements-save").addEventListener("click", async () => {
+  if (!conceptDetailId) return;
+  if (!(await requireConceptEditor())) return;
+  setConceptRequirements(conceptDetailId, document.getElementById("concept-requirements-input").value);
+});
+document.getElementById("concept-comment-submit").addEventListener("click", async () => {
+  if (!conceptDetailId) return;
+  if (!(await requireConceptEditor())) return;
+  const input = document.getElementById("concept-comment-input");
+  const text = input.value;
+  if (!text.trim()) return;
+  await addConceptComment(conceptDetailId, text);
+  input.value = "";
+});
+document.getElementById("concept-delete-btn").addEventListener("click", async () => {
+  if (!conceptDetailId) return;
+  if (!(await requireConceptEditor())) return;
+  const c = concepts.find((x) => x.id === conceptDetailId);
+  if (!c || c.status === "promoted") return;
+  if (!(await showConfirmDialog(`Delete concept "${c.name}"? This can't be undone.`))) return;
+  const id = conceptDetailId;
+  closeConceptDetailPage();
+  openConceptIncubatorPage();
+  await deleteConcept(id);
+});
+
+// ── New concept modal — name only; README/requirements/discussion are
+// filled in afterward from the concept's own detail page, same "one quick
+// step" shape as the New Project modal. ─────────────────────────────────
+const ncBackdrop = document.getElementById("nc-backdrop");
+const updateNcNameCount = wireCharCount(document.getElementById("nc-name-input"), document.getElementById("nc-name-count"));
+function openConceptModal() {
+  ncBackdrop.hidden = false;
+  document.getElementById("nc-name-input").value = "";
+  updateNcNameCount();
+  document.getElementById("nc-name-input").focus();
+}
+function closeConceptModal() { ncBackdrop.hidden = true; }
+document.getElementById("concept-add-btn").addEventListener("click", async () => {
+  if (!(await requireConceptEditor())) return;
+  openConceptModal();
+});
+document.getElementById("nc-cancel").addEventListener("click", closeConceptModal);
+document.getElementById("nc-close").addEventListener("click", closeConceptModal);
+ncBackdrop.addEventListener("click", (e) => { if (e.target === ncBackdrop) closeConceptModal(); });
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && !ncBackdrop.hidden) closeConceptModal();
+});
+document.getElementById("nc-submit").addEventListener("click", async () => {
+  const nameEl = document.getElementById("nc-name-input");
+  const name = nameEl.value.trim();
+  if (!name) { nameEl.focus(); return; }
+  let newId;
+  try {
+    newId = await addConcept(name);
+  } catch (err) {
+    await showAlert(describeSaveError(err, [{ label: "Name", value: name, max: 120 }]));
+    return;
+  }
+  closeConceptModal();
+  openConceptDetailPage(newId);
+});
+
+// ── Promote-to-project modal — same fields/validation as the New Project
+// modal (a "pc-" prefix keeps their ids apart), plus the release this
+// ticket asked a promotion to assign. ────────────────────────────────────
+const pcBackdrop = document.getElementById("pc-backdrop");
+const pcProgramSelect = document.getElementById("pc-program-select");
+const pcReleaseSelect = document.getElementById("pc-release-select");
+const pcRepoFolderInput = document.getElementById("pc-repo-folder-input");
+const pcRepoFolderNone = document.getElementById("pc-repo-folder-none");
+const updatePcNameCount = wireCharCount(document.getElementById("pc-name-input"), document.getElementById("pc-name-count"));
+let pcConceptId = null;
+
+function openPromoteConceptModal(conceptId) {
+  const c = concepts.find((x) => x.id === conceptId);
+  if (!c) return;
+  pcConceptId = conceptId;
+  pcBackdrop.hidden = false;
+  const nameEl = document.getElementById("pc-name-input");
+  nameEl.value = c.name || "";
+  updatePcNameCount();
+  populateProgramSelect(pcProgramSelect, "");
+  populateReleaseSelect(pcReleaseSelect, "");
+  pcRepoFolderInput.value = "";
+  pcRepoFolderInput.disabled = false;
+  pcRepoFolderNone.checked = false;
+  nameEl.focus();
+}
+function closePromoteConceptModal() { pcBackdrop.hidden = true; pcConceptId = null; }
+
+document.getElementById("concept-promote-btn").addEventListener("click", async () => {
+  if (!conceptDetailId) return;
+  if (!(await requireConceptEditor())) return;
+  openPromoteConceptModal(conceptDetailId);
+});
+document.getElementById("pc-cancel").addEventListener("click", closePromoteConceptModal);
+document.getElementById("pc-close").addEventListener("click", closePromoteConceptModal);
+pcBackdrop.addEventListener("click", (e) => { if (e.target === pcBackdrop) closePromoteConceptModal(); });
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && !pcBackdrop.hidden) closePromoteConceptModal();
+});
+// Same inline "+ New program…" handling as docsProgramSelect — unlike the
+// New Project modal, this select's value has to already be a real program
+// id (or empty) by the time pc-submit validates, so "__new__" is resolved
+// the moment it's picked rather than passed through.
+pcProgramSelect.addEventListener("change", async () => {
+  if (pcProgramSelect.value !== "__new__") return;
+  const name = ((await showPromptDialog("New program/product name:")) || "").trim();
+  if (!name) { populateProgramSelect(pcProgramSelect, ""); return; }
+  const newId = await createProgram(name);
+  populateProgramSelect(pcProgramSelect, newId || "");
+});
+document.getElementById("pc-submit").addEventListener("click", async () => {
+  if (!pcConceptId) return;
+  const nameEl = document.getElementById("pc-name-input");
+  const name = nameEl.value.trim();
+  if (!name) { nameEl.focus(); return; }
+
+  const wantsNoFolder = pcRepoFolderNone.checked;
+  const folder = pcRepoFolderInput.value.trim().replace(/\/+$/, "");
+  let repoFolderInfo;
+  if (wantsNoFolder) {
+    repoFolderInfo = { none: true };
+  } else if (!folder) {
+    await showAlert('Repo folder is required — enter the new project\'s folder in rob_ph_demos, or tick "This project has no single folder yet".');
+    pcRepoFolderInput.focus();
+    return;
+  } else if (!isValidRepoFolder(folder)) {
+    await showAlert("Repo folder must be repo-root-relative, with no leading/trailing slash and no \"..\" (e.g. \"dsp-integration\").");
+    pcRepoFolderInput.focus();
+    return;
+  } else {
+    const clash = projectWithRepoFolder(folder);
+    if (clash) {
+      await showAlert(`"${folder}" is already linked to project "${clash.name}" — two projects can't share one repo folder.`);
+      pcRepoFolderInput.focus();
+      return;
+    }
+    repoFolderInfo = { folder };
+  }
+
+  const programId = pcProgramSelect.value !== "__new__" ? pcProgramSelect.value : "";
+  const releaseId = pcReleaseSelect.value || "";
+  const conceptId = pcConceptId;
+  try {
+    await promoteConceptToProject(conceptId, name, programId, releaseId, repoFolderInfo);
+  } catch (err) {
+    await showAlert(describeSaveError(err, [{ label: "Project name", value: name, max: 80 }, { label: "Repo folder", value: folder, max: 80 }]));
+    return;
+  }
+  closePromoteConceptModal();
+});
+
+createDictationController({
+  textareaEl: document.getElementById("concept-comment-input"),
+  micBtn: document.getElementById("concept-mic-btn"),
+  hintEl: document.getElementById("concept-listening-hint"),
+  errorEl: document.getElementById("concept-mic-error"),
+});
+
+// ── Releases page ─────────────────────────────────────────────────────────
+// Every release, newest (highest order) first, with the one thing you can
+// do to one: mark a draft live. Reading needs only sign-in (firestore.rules
+// isBoardReader on `releases`); creating or marking live needs editor
+// access, same gate as the Skills page below. Marking live is one-way —
+// a live row has no action at all — and is what fires
+// functions/index.js's onReleaseMarkedLive, promoting every approved FAQ
+// proposal waiting on that release's projects.
+const releasesPage = document.getElementById("releases-page");
+
+function openReleasesPage() {
+  closeAllSubPages();
+  document.getElementById("projects-root").hidden = true;
+  document.getElementById("board-page-header").hidden = true;
+  releasesPage.hidden = false;
+  setRouteHash("#releases");
+  updateTopbarTitle();
+  renderReleasesPage();
+}
+function closeReleasesPage() {
+  releasesPage.hidden = true;
+  document.getElementById("projects-root").hidden = false;
+  document.getElementById("board-page-header").hidden = false;
+}
+
+async function requireReleaseEditor() {
+  if (!(await requireFaqEditor())) return false;
+  if (currentConsoleRole() === "viewer") {
+    await showAlert("You have read-only access to this console, so you can't create releases or mark them live. An admin can change your role in Settings → Team & agent access.");
+    return false;
+  }
+  return true;
+}
+
+function releaseRowHTML(r) {
+  const created = r.createdAt && r.createdAt.toDate ? r.createdAt.toDate().toLocaleDateString() : "—";
+  const liveOn = r.madeLiveAt && r.madeLiveAt.toDate ? r.madeLiveAt.toDate().toLocaleDateString() : "";
+  const isLive = r.status === "live";
+  const current = currentLiveRelease();
+  const isCurrent = !!(current && current.id === r.id);
+  const projectCount = projects.filter((p) => p.releaseId === r.id && !p.archived).length;
+  return `
+    <tr data-release-id="${escapeHTML(r.id)}">
+      <td>${escapeHTML(r.name || "")}</td>
+      <td>${r.version ? escapeHTML(r.version) : "—"}</td>
+      <td><span class="badge ${isLive ? "badge-status-published" : "badge-status-draft"}">${escapeHTML(RELEASE_STATUS_LABELS[r.status] || r.status || "")}</span>${liveOn ? ` <span class="field-hint">${escapeHTML(isCurrent ? `current · ${liveOn}` : liveOn)}</span>` : ""}</td>
+      <td>${projectCount} project${projectCount === 1 ? "" : "s"}</td>
+      <td>${escapeHTML(created)}</td>
+      <td>${isLive ? "" : `<button type="button" class="restore-btn release-mark-live-btn" data-release-id="${escapeHTML(r.id)}" data-editor-only>Mark live</button>`}</td>
+    </tr>`;
+}
+
+function renderReleasesPage() {
+  const rows = releasesByOrderDesc();
+  document.getElementById("releases-count").textContent = `${rows.length} release${rows.length === 1 ? "" : "s"}`;
+  document.getElementById("releases-table-body").innerHTML = rows.map(releaseRowHTML).join("");
+  document.getElementById("releases-empty").hidden = rows.length !== 0;
+}
+
+// One place every releases update (REST prime or listener) lands, so every
+// view that shows a release stays current: this page, the Docs page's
+// picker, and the article editor's two binding pickers (re-populated with
+// their CURRENT value, so an unsaved choice survives a live update).
+function onReleasesChanged() {
+  if (releasesPage && !releasesPage.hidden) renderReleasesPage();
+  if (docsProjectId) renderDocsPage();
+  if (faqArticleEditorPage && !faqArticleEditorPage.hidden) {
+    [faIntroducedReleaseSelect, faRemovedReleaseSelect].forEach((sel) => {
+      if (document.activeElement !== sel) populateReleaseSelect(sel, sel.value, { emptyLabel: "Not set" });
+    });
+  }
+}
+
+document.getElementById("releases-add-btn").addEventListener("click", async () => {
+  if (!(await requireReleaseEditor())) return;
+  const result = await showFieldDialog({
+    title: "New release",
+    message: "Releases are numbered in the order they're created, and start as a draft.",
+    fields: [
+      { id: "name", label: "Name", placeholder: "e.g. October 2026" },
+      { id: "version", label: "Version (optional)", placeholder: "e.g. 2.4.0" },
+    ],
+    okLabel: "Create release",
+  });
+  if (!result) return;
+  const name = (result.name || "").trim();
+  const version = (result.version || "").trim();
+  if (!name) { await showAlert("A release needs a name."); return; }
+  if (name.length > 120 || version.length > 40) {
+    await showAlert("Keep the name to 120 characters and the version to 40.");
+    return;
+  }
+  try {
+    await createRelease(name, version);
+  } catch (err) {
+    console.error("backlog-tracker: couldn't create release", err);
+    await showAlert(`Couldn't create the release: ${err && err.code ? err.code : err}`);
+  }
+});
+
+document.getElementById("releases-table-body").addEventListener("click", async (e) => {
+  const btn = e.target.closest(".release-mark-live-btn");
+  if (!btn) return;
+  const r = releases.find((x) => x.id === btn.dataset.releaseId);
+  if (!r || r.status === "live") return;
+  if (!(await requireReleaseEditor())) return;
+  const projectCount = projects.filter((p) => p.releaseId === r.id).length;
+  const ok = await showConfirmDialog(
+    `Mark "${releaseLabel(r)}" live? This can't be undone. Every approved FAQ update waiting on ${projectCount === 1 ? "the 1 project" : `the ${projectCount} projects`} assigned to this release goes live on the help centre with it.`,
+    { title: "Mark release live", okLabel: "Mark live" },
+  );
+  if (!ok) return;
+  try {
+    await markReleaseLive(r.id);
+  } catch (err) {
+    console.error("backlog-tracker: couldn't mark release live", err);
+    await showAlert(`Couldn't mark the release live: ${err && err.code ? err.code : err}`);
+  }
+});
+
 // ── Skills page ───────────────────────────────────────────────────────────
 // An organisation-wide, shared library of packaged instructions any team
 // member's AI agent can pull in over MCP (list_skills/get_skill/
@@ -4059,8 +5014,45 @@ function formatSkillUpdatedAt(v) {
   try { return v.toDate().toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" }); } catch { return ""; }
 }
 
+function skillOwningTeamBadgeHTML(s) {
+  if (!s.owningTeam) return "";
+  return `<span class="skill-owning-team-badge">${escapeHTML(s.owningTeam)}</span>`;
+}
+
+// Periodic skill-review nudge (eKslgrwgRJtoxyx0oNSV) — a day-cadence-only
+// approximation of mcp-server.js's own skillReviewStatus (which also counts
+// tickets shipped since the last review): deliberately not reimplementing
+// that half here, so the "how due-ness is decided" logic lives in exactly
+// one place rather than two that could quietly drift apart. This badge is
+// a hint to look, not the authoritative answer — list_skills/get_skill over
+// MCP (or a look at the field values themselves) is that.
+const SKILL_REVIEW_DEFAULT_CADENCE_DAYS = 60;
+function skillReviewBadgeHTML(s) {
+  const baseline = s.lastReviewedAt || s.createdAt;
+  if (!baseline || typeof baseline.toDate !== "function") return "";
+  const days = Math.floor((Date.now() - baseline.toDate().getTime()) / 86400000);
+  const cadence = Number.isFinite(s.reviewCadenceDays) ? s.reviewCadenceDays : SKILL_REVIEW_DEFAULT_CADENCE_DAYS;
+  if (days < cadence) return "";
+  return `<span class="skill-review-due-badge" title="${s.lastReviewedAt ? "Last reviewed" : "Created"} ${escapeHTML(String(days))} days ago — also checks tickets shipped since then over MCP (list_skills/get_skill)">Review due &middot; ${days}d</span>`;
+}
+
+// Skill feedback loop (Gcc30u2bQEJwEdUTN6X8) — one entry per real miss
+// tagged against this skill (see mcp-server.js's report_skill_miss/
+// reportSkillMiss below); `misses` arrives on the skill doc itself via the
+// existing live `skills` listener, so this needs no separate fetch the way
+// change history's docRevisions lookup does.
+function skillMissRowHTML(m) {
+  const meta = [m.source, m.phase, m.ticketId ? `item ${m.ticketId}` : "", m.prNumber ? `PR #${m.prNumber}` : "", m.reportedByEmail]
+    .filter(Boolean).join(" · ");
+  return `<div class="skill-miss-row">
+    <div class="skill-miss-meta">${escapeHTML(meta)} &middot; ${escapeHTML(formatNoteAt(m.at))}</div>
+    <p class="skill-miss-text">${escapeHTML(m.text)}</p>
+  </div>`;
+}
+
 function skillCardHTML(s) {
   const files = Array.isArray(s.files) ? s.files : [];
+  const misses = Array.isArray(s.misses) ? s.misses.slice().reverse() : [];
   const meta = [`v${s.version || "?"}`, `${files.length} file${files.length === 1 ? "" : "s"}`];
   const updated = formatSkillUpdatedAt(s.updatedAt);
   if (updated) meta.push(`updated ${updated}`);
@@ -4068,7 +5060,7 @@ function skillCardHTML(s) {
     <div class="skill-card" data-id="${s.id}">
       <div class="skill-card-top">
         <div>
-          <div class="skill-card-name">${escapeHTML(s.name || "")}</div>
+          <div class="skill-card-name">${escapeHTML(s.name || "")} ${skillOwningTeamBadgeHTML(s)} ${skillReviewBadgeHTML(s)}</div>
           <div class="skill-card-meta">${escapeHTML(meta.join(" · "))} · <code>${escapeHTML(s.slug || "")}</code></div>
           <div class="skill-card-summary">${escapeHTML(s.summary || "")}</div>
         </div>
@@ -4081,6 +5073,18 @@ function skillCardHTML(s) {
         <summary>View files (${files.length})</summary>
         ${files.map(skillFileBlockHTML).join("")}
       </details>
+      <div class="skill-card-history">
+        <button type="button" class="btn-ghost skill-history-toggle-btn" data-id="${s.id}">Change history</button>
+        <div class="skill-history-panel" data-id="${s.id}" hidden></div>
+      </div>
+      <div class="skill-card-misses">
+        <details${misses.length ? "" : " class=\"skill-misses-empty\""}>
+          <summary>Misses (${misses.length})<span class="field-hint" style="display:inline;margin:0 0 0 6px;">— real gaps a build or review found this skill should have prevented</span></summary>
+          ${misses.length ? misses.map(skillMissRowHTML).join("") : '<p class="interface-row-empty">No misses reported yet.</p>'}
+        </details>
+        <button type="button" class="btn-ghost skill-report-miss-btn" data-id="${s.id}">Report a miss</button>
+        <button type="button" class="btn-ghost skill-mark-reviewed-btn" data-id="${s.id}" title="${s.lastReviewedAt ? `Last reviewed ${formatSkillUpdatedAt(s.lastReviewedAt)}` : "Never explicitly reviewed"}">Mark reviewed</button>
+      </div>
     </div>`;
 }
 
@@ -4091,12 +5095,203 @@ function renderSkillsPage() {
   document.getElementById("skills-empty").hidden = sorted.length > 0;
 }
 
+// ── Skill change history (eKFIGtskqbnUTqUTBFBl) ──────────────────────────
+// Every MCP-originated skill write (upload_skill/update_skill/delete_skill
+// in functions/mcp-server.js) already records what it replaced to
+// docRevisions; functions/index.js's onSkillWritten trigger backfills the
+// same trail for a write made directly from this console (which can't write
+// docRevisions itself — firestore.rules denies it from the browser). Either
+// way, this renders it: newest-replaced-first, with a per-revision diff
+// against whatever state came right after it (the next-newer revision, or —
+// for the most recent one — the skill's current live files).
+//
+// Fetched lazily (on first expand) and cached per skillId for the life of
+// the page load — renderSkillsPage() rebuilds #skills-list wholesale on
+// every Firestore update, which would otherwise mean a silent refetch (and
+// the panel snapping shut) every time anyone anywhere edits any skill.
+const skillHistoryCache = new Map(); // skillId -> revisions[] (newest-replaced-first) | { error }
+
+function formatSkillHistoryAt(v) {
+  if (!v || typeof v.toDate !== "function") return "unknown time";
+  try { return v.toDate().toLocaleString(undefined, { year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }); } catch { return "unknown time"; }
+}
+
+// Parses a docRevisions doc's contentMd back into a {path,content}[] file
+// set — "skill" target stores the files array directly (see
+// recordDocRevision call sites in mcp-server.js/index.js); a
+// "skill.deleted" revision (not shown on a live card, since the skill it
+// describes no longer has one) wraps it in {name,slug,summary,version,files}.
+function skillRevisionFiles(rev) {
+  try {
+    const parsed = JSON.parse(rev.contentMd || "[]");
+    if (Array.isArray(parsed)) return parsed;
+    if (parsed && Array.isArray(parsed.files)) return parsed.files;
+  } catch { /* fall through */ }
+  return [];
+}
+
+function skillHistoryRowHTML(rev, idx, id) {
+  const who = rev.replacedByEmail || "unknown";
+  const when = formatSkillHistoryAt(rev.replacedAt);
+  const via = rev.via === "console" ? "console" : "MCP agent";
+  return `
+    <div class="skill-history-row">
+      <div class="skill-history-row-meta">${escapeHTML(who)} &middot; ${escapeHTML(when)} &middot; via ${escapeHTML(via)}</div>
+      <button type="button" class="btn-ghost skill-history-diff-btn" data-id="${escapeHTML(id)}" data-index="${idx}">View changes</button>
+      <div class="skill-history-diff" data-id="${escapeHTML(id)}" data-index="${idx}" hidden></div>
+    </div>`;
+}
+
+function renderSkillHistoryPanel(id) {
+  const panel = document.querySelector(`.skill-history-panel[data-id="${CSS.escape(id)}"]`);
+  if (!panel) return;
+  const cached = skillHistoryCache.get(id);
+  if (!cached) { panel.innerHTML = '<p class="field-hint">Loading…</p>'; return; }
+  if (cached.error) { panel.innerHTML = `<p class="field-hint">Couldn't load history: ${escapeHTML(cached.error)}</p>`; return; }
+  if (!cached.length) { panel.innerHTML = '<p class="field-hint">No recorded changes yet.</p>'; return; }
+  panel.innerHTML = cached.map((rev, idx) => skillHistoryRowHTML(rev, idx, id)).join("");
+}
+
+async function toggleSkillHistory(id) {
+  const panel = document.querySelector(`.skill-history-panel[data-id="${CSS.escape(id)}"]`);
+  if (!panel) return;
+  if (!panel.hidden) { panel.hidden = true; return; }
+  panel.hidden = false;
+  if (skillHistoryCache.has(id)) { renderSkillHistoryPanel(id); return; }
+  panel.innerHTML = '<p class="field-hint">Loading…</p>';
+  try {
+    const snap = await getDocs(query(docRevisionsRef, where("skillId", "==", id)));
+    const revisions = snap.docs
+      .map((d) => ({ id: d.id, ...d.data() }))
+      .filter((r) => r.target === "skill") // "skill.deleted" belongs to no live card
+      .sort((a, b) => (b.replacedAt?.toMillis?.() ?? 0) - (a.replacedAt?.toMillis?.() ?? 0));
+    skillHistoryCache.set(id, revisions);
+  } catch (err) {
+    skillHistoryCache.set(id, { error: err instanceof Error ? err.message : String(err) });
+  }
+  renderSkillHistoryPanel(id);
+}
+
+// A revision's "before" state is its own file set; its "after" state is
+// whatever replaced it — the next-newer revision's "before", or, for the
+// newest revision, the skill's current live files.
+function toggleSkillHistoryDiff(btn) {
+  const id = btn.dataset.id;
+  const idx = Number(btn.dataset.index);
+  const revisions = skillHistoryCache.get(id);
+  if (!Array.isArray(revisions) || !revisions[idx]) return;
+  const panel = document.querySelector(`.skill-history-diff[data-id="${CSS.escape(id)}"][data-index="${idx}"]`);
+  if (!panel) return;
+  if (!panel.hidden) { panel.hidden = true; return; }
+  const oldFiles = skillRevisionFiles(revisions[idx]);
+  const newFiles = idx > 0 ? skillRevisionFiles(revisions[idx - 1]) : (skills.find((s) => s.id === id)?.files || []);
+  panel.innerHTML = skillFileSetDiffHTML(oldFiles, newFiles);
+  panel.hidden = false;
+}
+
+// Line-level diff for a skill file's plain-text content, built on the same
+// lcsDiff() longest-common-subsequence engine the FAQ revision reviewer
+// (renderFaqRevisionChanges/wordDiffHTML, further below) already uses —
+// just over lines instead of words, since a word-level diff collapses
+// every newline in a source file into a single space on render, which
+// would make a code/markdown diff unreadable.
+function lineDiffHTML(oldText, newText) {
+  const a = String(oldText || "").split("\n");
+  const b = String(newText || "").split("\n");
+  return lcsDiff(a, b).map(([op, line]) => {
+    const cls = op === "eq" ? "diffline-eq" : op === "del" ? "diffline-del" : "diffline-ins";
+    const marker = op === "eq" ? " " : op === "del" ? "−" : "+";
+    return `<div class="diffline ${cls}"><span class="diffline-marker">${marker}</span><span class="diffline-text">${escapeHTML(line) || "&nbsp;"}</span></div>`;
+  }).join("");
+}
+
+// Per-file added/removed/changed diff across two {path,content}[] file
+// sets — used to show what one skill revision actually changed, whichever
+// two snapshots are being compared (see toggleSkillHistoryDiff above).
+function skillFileSetDiffHTML(oldFiles, newFiles) {
+  const oldMap = new Map((oldFiles || []).map((f) => [f.path, f.content || ""]));
+  const newMap = new Map((newFiles || []).map((f) => [f.path, f.content || ""]));
+  const paths = Array.from(new Set([...oldMap.keys(), ...newMap.keys()])).sort();
+  const blocks = [];
+  for (const p of paths) {
+    const oldC = oldMap.has(p) ? oldMap.get(p) : undefined;
+    const newC = newMap.has(p) ? newMap.get(p) : undefined;
+    if (oldC === undefined) {
+      blocks.push(`<div class="skill-diff-file"><div class="skill-diff-file-path">${escapeHTML(p)} <span class="skill-diff-badge skill-diff-badge-added">added</span></div>${lineDiffHTML("", newC)}</div>`);
+    } else if (newC === undefined) {
+      blocks.push(`<div class="skill-diff-file"><div class="skill-diff-file-path">${escapeHTML(p)} <span class="skill-diff-badge skill-diff-badge-removed">removed</span></div>${lineDiffHTML(oldC, "")}</div>`);
+    } else if (oldC !== newC) {
+      blocks.push(`<div class="skill-diff-file"><div class="skill-diff-file-path">${escapeHTML(p)} <span class="skill-diff-badge skill-diff-badge-changed">changed</span></div>${lineDiffHTML(oldC, newC)}</div>`);
+    }
+  }
+  if (!blocks.length) return '<p class="field-hint">No file changes in this revision (only name/summary/version/owning team changed).</p>';
+  return blocks.join("");
+}
+
 document.getElementById("skills-list").addEventListener("click", (e) => {
   const editBtn = e.target.closest(".skill-edit-btn");
   if (editBtn) { openSkillModal(editBtn.dataset.id); return; }
   const delBtn = e.target.closest(".skill-delete-btn");
   if (delBtn) { deleteSkillWithConfirm(delBtn.dataset.id); return; }
+  const historyBtn = e.target.closest(".skill-history-toggle-btn");
+  if (historyBtn) { toggleSkillHistory(historyBtn.dataset.id); return; }
+  const diffBtn = e.target.closest(".skill-history-diff-btn");
+  if (diffBtn) { toggleSkillHistoryDiff(diffBtn); return; }
+  const reportMissBtn = e.target.closest(".skill-report-miss-btn");
+  if (reportMissBtn) { reportSkillMiss(reportMissBtn.dataset.id); return; }
+  const markReviewedBtn = e.target.closest(".skill-mark-reviewed-btn");
+  if (markReviewedBtn) { markSkillReviewed(markReviewedBtn.dataset.id); return; }
 });
+
+// Periodic skill-review nudge (eKslgrwgRJtoxyx0oNSV) — the console's own
+// way to clear skillReviewBadgeHTML's nudge, alongside mcp-server.js's
+// mark_skill_reviewed (an agent's own way to do the same thing over MCP).
+// Any signed-in member may do this, same reasoning as reportSkillMiss above
+// — deciding a skill still looks current isn't an edit to its content.
+async function markSkillReviewed(id) {
+  const s = skills.find((x) => x.id === id);
+  if (!s) return;
+  if (!(await showConfirmDialog(`Mark "${s.name || s.slug}" as reviewed today? This clears its review-due nudge and resets the clock.`, { title: "Mark reviewed", okLabel: "Mark reviewed" }))) return;
+  await updateDoc(doc(db, "skills", id), {
+    lastReviewedAt: serverTimestamp(),
+    lastReviewedByEmail: (auth.currentUser && auth.currentUser.email) || null,
+  });
+}
+
+// Skill feedback loop (Gcc30u2bQEJwEdUTN6X8) — the console's own way to tag
+// a miss, alongside mcp-server.js's report_skill_miss (an agent's own way
+// to do the same thing over MCP, e.g. from the Deploy flow's skill review —
+// see ROUTINE_INSTRUCTIONS.md's "Report skill misses" step). Any signed-in
+// member may report one (read-level access, not gated behind
+// requireSkillEditor — tagging a real gap isn't the same act as editing a
+// skill's own content), same arrayUnion shape either route writes so the
+// two sources merge into one running list on the skill doc.
+async function reportSkillMiss(id) {
+  const s = skills.find((x) => x.id === id);
+  if (!s) return;
+  const result = await showFieldDialog({
+    title: `Report a miss — ${s.name || s.slug || ""}`,
+    message: "What did this skill fail to prevent or get right? Appended to its running misses list for the owning team to review — this never changes the skill's own content.",
+    fields: [
+      { id: "text", label: "What went wrong", multiline: true, rows: 4 },
+      { id: "source", label: "Found via", type: "select", options: [{ value: "review", label: "Review finding" }, { value: "build", label: "Build failure" }] },
+      { id: "phase", label: "Phase (optional)", type: "select", options: [{ value: "", label: "Unspecified" }, { value: "build", label: "Build" }, { value: "deploy", label: "Deploy" }] },
+      { id: "ticketId", label: "Backlog item id (optional)" },
+    ],
+    okLabel: "Report",
+  });
+  if (result === null) return;
+  const text = (result.text || "").trim();
+  if (!text) return;
+  await updateDoc(doc(db, "skills", id), {
+    misses: arrayUnion({
+      text, source: result.source || "review", phase: result.phase || null,
+      ticketId: (result.ticketId || "").trim() || null, prNumber: null, projectId: null,
+      reportedByEmail: (auth.currentUser && auth.currentUser.email) || null, reportedVia: "console", at: new Date(),
+    }),
+    lastMissAt: serverTimestamp(),
+  });
+}
 
 async function deleteSkillWithConfirm(id) {
   if (!(await requireSkillEditor())) return;
@@ -4112,6 +5307,7 @@ const skillNameInput = document.getElementById("skill-name-input");
 const skillSlugInput = document.getElementById("skill-slug-input");
 const skillVersionInput = document.getElementById("skill-version-input");
 const skillSummaryInput = document.getElementById("skill-summary-input");
+const skillOwningTeamInput = document.getElementById("skill-owning-team-input");
 const skillFilesList = document.getElementById("skill-files-list");
 const skillFileRowTemplate = document.getElementById("skill-file-row-template").textContent;
 const updateSkillNameCount = wireCharCount(skillNameInput, document.getElementById("skill-name-count"));
@@ -4161,6 +5357,7 @@ function openSkillModal(skillId) {
     document.getElementById("skill-slug-hint").textContent = "Slug can't be changed once a skill is created — delete and re-add it under a new slug instead.";
     skillVersionInput.value = s ? s.version || "" : "";
     skillSummaryInput.value = s ? s.summary || "" : "";
+    skillOwningTeamInput.value = s ? s.owningTeam || "" : "";
     const files = s && Array.isArray(s.files) && s.files.length ? s.files : [{ path: "", content: "" }];
     files.forEach((f) => skillFilesList.appendChild(createSkillFileRow(f.path, f.content)));
   } else {
@@ -4171,6 +5368,7 @@ function openSkillModal(skillId) {
     document.getElementById("skill-slug-hint").textContent = "Lowercase letters, numbers and hyphens only — must be unique. Can't be changed once a skill is created.";
     skillVersionInput.value = "1.0.0";
     skillSummaryInput.value = "";
+    skillOwningTeamInput.value = "";
     skillFilesList.appendChild(createSkillFileRow("SKILL.md", ""));
   }
   updateSkillNameCount();
@@ -4197,6 +5395,7 @@ document.getElementById("skill-submit").addEventListener("click", async () => {
   if (!summary) { skillSummaryInput.focus(); return; }
   const version = skillVersionInput.value.trim();
   if (!version) { skillVersionInput.focus(); return; }
+  const owningTeam = skillOwningTeamInput.value.trim() || null;
   const files = readSkillFilesFromModal();
   if (!files.length) { await showAlert("Add at least one file."); return; }
   for (const f of files) {
@@ -4206,16 +5405,22 @@ document.getElementById("skill-submit").addEventListener("click", async () => {
   const editorEmail = auth.currentUser ? auth.currentUser.email : null;
   try {
     if (editingSkillId) {
+      // lastWriteVia flags this as a console write so functions/index.js's
+      // onSkillWritten trigger knows to record the file set it replaced to
+      // docRevisions itself — an MCP write (update_skill) already does that
+      // synchronously and tags itself "mcp" instead, so the trigger can tell
+      // the two apart and never records the same change twice.
       await setDoc(doc(db, "skills", editingSkillId), {
-        name, summary, version, files, updatedAt: serverTimestamp(), updatedByEmail: editorEmail,
+        name, summary, version, owningTeam, files, updatedAt: serverTimestamp(), updatedByEmail: editorEmail, lastWriteVia: "console",
       }, { merge: true });
     } else {
       const slug = skillSlugInput.value.trim().toLowerCase();
       if (!slug || !/^[a-z0-9-]+$/.test(slug)) { skillSlugInput.focus(); await showAlert("Slug must be lowercase letters, numbers and hyphens only."); return; }
       if (skills.some((s) => s.slug === slug)) { skillSlugInput.focus(); await showAlert(`A skill with slug "${slug}" already exists.`); return; }
       await addDoc(skillsRef, {
-        name, slug, summary, version, files,
+        name, slug, summary, version, owningTeam, files,
         createdVia: "console",
+        lastWriteVia: "console",
         createdByEmail: editorEmail, updatedByEmail: editorEmail,
         createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
       });
@@ -4759,7 +5964,14 @@ function createDictationController({ textareaEl, micBtn, hintEl, errorEl, onStop
   }
 
   if (!SpeechRecognitionCtor) {
-    micBtn.hidden = true;
+    // OhKUnoGbpUAeJiXiLIvc: this used to fully hide the button (micBtn.hidden
+    // = true), which on a mobile browser without Web Speech support made the
+    // mic icon simply vanish with no visible explanation — the error line
+    // below was the only clue, easy to miss under the textarea. Keep the
+    // icon visible but disabled instead, so "why is the mic gone" can't
+    // happen: there's always something to see and tap for the explanation.
+    micBtn.disabled = true;
+    micBtn.title = "Dictation isn't supported in this browser — Chrome or Edge support it, or you can just type instead.";
     showError("Dictation isn't supported in this browser — Chrome or Edge support it, or you can just type instead.");
     return { stop, clearError: () => showError("") };
   }
@@ -5065,6 +6277,12 @@ faProjectSelect.addEventListener("change", () => {
   const project = projects.find((p) => p.id === faProjectSelect.value);
   if (project && project.programId) populateProgramSelect(faProgramSelect, project.programId);
 });
+// Release binding — which release an article first applies to, and which
+// release (if any) it stops applying from. Both optional; blank means
+// open-ended on that side (see articleAppliesToRelease). Populated from the
+// same releases the Releases page manages, via populateReleaseSelect.
+const faIntroducedReleaseSelect = document.getElementById("fa-introduced-release-select");
+const faRemovedReleaseSelect = document.getElementById("fa-removed-release-select");
 
 function openFaqSettingsPage() {
   closeAllSubPages();
@@ -5951,6 +7169,7 @@ function wireFaqArticleRowInteractions(containerId) {
     const id = row.dataset.id;
     const optionsBtn = e.target.closest(".faq-article-options-btn");
     if (optionsBtn) { toggleOptionMenu(optionsBtn); return; }
+    if (e.target.closest(".faq-revision-badge")) { closeAllOptionMenus(); openFaqRevisionReviewPage(id); return; }
     if (e.target.closest(".faq-article-title") || e.target.closest(".faq-article-edit")) {
       closeAllOptionMenus();
       openFaqArticleEditorPage(id);
@@ -5977,6 +7196,7 @@ function wireFaqArticleRowInteractions(containerId) {
 document.getElementById("faq-settings-btn").addEventListener("click", () => { closeNavDrawer(); openFaqSettingsPage(); });
 document.getElementById("faq-articles-btn").addEventListener("click", () => { closeNavDrawer(); openFaqArticlesPage("all"); });
 document.getElementById("skills-btn").addEventListener("click", () => { closeNavDrawer(); openSkillsPage(); });
+document.getElementById("releases-btn").addEventListener("click", () => { closeNavDrawer(); openReleasesPage(); });
 
 // ── URL routing for FAQ Management / Settings ────────────────────────────
 // These two are the only sub-pages given a real, persistent URL: reloading
@@ -5999,6 +7219,8 @@ const ROUTE_TITLES = {
   "#faq-management": "FAQ Management",
   "#settings": "Settings",
   "#skills": "Skills",
+  "#releases": "Releases",
+  "#concept-incubator": "Concept Incubator",
 };
 // Set when a #faq-article/<id> route is applied before that article has
 // actually arrived over the realtime channel yet (a cold reload straight
@@ -6096,8 +7318,10 @@ function applyRouteFromHash() {
   if (hash === "#faq-management" || hash.startsWith("#faq-management?")) openFaqArticlesPage(faqFilterFromHash(hash));
   else if (hash === "#settings") openFaqSettingsPage();
   else if (hash === "#skills") openSkillsPage();
+  else if (hash === "#releases") openReleasesPage();
+  else if (hash === "#concept-incubator") openConceptIncubatorPage();
   else if (hash.startsWith("#faq-article/")) openFaqArticleRouteFromHash(hash);
-  else if (!faqArticlesPage.hidden || !faqSettingsPage.hidden || !faqArticleEditorPage.hidden || !skillsPage.hidden) closeAllSubPages();
+  else if (!faqArticlesPage.hidden || !faqSettingsPage.hidden || !faqArticleEditorPage.hidden || !skillsPage.hidden || !releasesPage.hidden || !conceptIncubatorPage.hidden) closeAllSubPages();
 }
 // popstate (back/forward) and hashchange (a typed-in or pasted #hash) both
 // need to re-sync the visible page — pushState/replaceState above never
@@ -6675,6 +7899,8 @@ function faSnapshotState() {
     categoryId: faCategorySelect.value,
     projectId: faProjectSelect.value,
     programId: faProgramSelect.value,
+    introducedInReleaseId: faIntroducedReleaseSelect.value,
+    removedInReleaseId: faRemovedReleaseSelect.value,
     body: faqBodySourceForSave(),
   });
 }
@@ -6735,6 +7961,8 @@ function openFaqArticleEditorPage(articleId, { pendingRevision = false } = {}) {
   }
   faProjectSelect.value = article && article.projectId ? article.projectId : "";
   populateProgramSelect(faProgramSelect, article && article.programId ? article.programId : "");
+  populateReleaseSelect(faIntroducedReleaseSelect, article && article.introducedInReleaseId ? article.introducedInReleaseId : "", { emptyLabel: "Not set" });
+  populateReleaseSelect(faRemovedReleaseSelect, article && article.removedInReleaseId ? article.removedInReleaseId : "", { emptyLabel: "Not set" });
 
   const liveHint = document.getElementById("fa-live-link-hint");
   if (article && article.status === "published") {
@@ -6801,7 +8029,7 @@ faSlugInput.addEventListener("input", () => { faqSlugManuallyEdited = true; });
 // contenteditable typing (registerFaqEditorFormats below), which never
 // goes through Quill's text APIs at all.
 [faTitleInput, faSlugInput, faSummaryInput, faKeywordsInput, faSectionPickerLabelInput].forEach((el) => el.addEventListener("input", updateFaDirtyState));
-[faDocTypeSelect, faNeedsReview, faSectionPickerToggle, faCategorySelect, faProjectSelect, faProgramSelect].forEach((el) => el.addEventListener("change", updateFaDirtyState));
+[faDocTypeSelect, faNeedsReview, faSectionPickerToggle, faCategorySelect, faProjectSelect, faProgramSelect, faIntroducedReleaseSelect, faRemovedReleaseSelect].forEach((el) => el.addEventListener("change", updateFaDirtyState));
 faQuill.on("text-change", updateFaDirtyState);
 faQuill.root.addEventListener("input", updateFaDirtyState);
 
@@ -6824,6 +8052,18 @@ async function submitFaqArticleFromEditor(publish) {
   if (!faEditingPendingRevision && !(faProgramSelect.value && faProgramSelect.value !== "__new__")) {
     await showAlert("Add a program/product first — every article needs one so deploy's FAQ impact review and the help centre's product grouping can find it.");
     return;
+  }
+  // A removal release has to come after the introduction release, or the
+  // article would apply to no release at all and silently vanish from the
+  // help centre. Same order comparison articleAppliesToRelease makes.
+  if (!faEditingPendingRevision && faIntroducedReleaseSelect.value && faRemovedReleaseSelect.value) {
+    const byId = releasesByIdMap();
+    const introduced = byId[faIntroducedReleaseSelect.value];
+    const removed = byId[faRemovedReleaseSelect.value];
+    if (introduced && removed && !(Number(introduced.order) < Number(removed.order))) {
+      await showAlert("\"Removed in release\" has to be a later release than \"Introduced in release\" — otherwise the article applies to no release at all.");
+      return;
+    }
   }
 
   if (faEditingPendingRevision) {
@@ -6854,6 +8094,8 @@ async function submitFaqArticleFromEditor(publish) {
     categoryId,
     projectId: faProjectSelect.value || null,
     programId: (faProgramSelect.value && faProgramSelect.value !== "__new__") ? faProgramSelect.value : null,
+    introducedInReleaseId: faIntroducedReleaseSelect.value || null,
+    removedInReleaseId: faRemovedReleaseSelect.value || null,
     title,
     slug: faSlugInput.value.trim() || slugify(title),
     summary: faSummaryInput.value.trim(),
@@ -6917,10 +8159,15 @@ const faqRevisionReviewPage = document.getElementById("faq-revision-review-page"
 let reviewingFaqArticleId = null;
 let frMode = "changes";
 
+// A pending/approved revision's badge is itself the fast path into the
+// review page — select it to jump straight to the old-vs-new comparison,
+// no need to find "Review proposed update" buried in the ⋮ menu first
+// (pKP5LYgwf3e7aIbwj3ch). The menu item stays too, as a second route to the
+// same place for anyone tabbing through the options menu instead.
 function faqRevisionBadgeHTML(a) {
   const rev = a.pendingRevision;
-  if (rev && rev.reviewStatus === "approved") return '<span class="badge badge-approved-update" title="Approved — goes live when its ticket(s) reach Merged to Main">Approved · awaiting merge</span>';
-  if (rev) return '<span class="badge badge-proposed-update" title="A proposed update is waiting for your review">Proposed update</span>';
+  if (rev && rev.reviewStatus === "approved") return '<button type="button" class="badge badge-approved-update faq-revision-badge" title="Approved — goes live when its ticket(s) reach Merged to Main. Select to view.">Approved &middot; awaiting merge<span class="faq-revision-badge-arrow" aria-hidden="true">&rarr;</span></button>';
+  if (rev) return '<button type="button" class="badge badge-proposed-update faq-revision-badge" title="A proposed update is waiting for your review — select to see the changes and accept or reject it">Proposed update<span class="faq-revision-badge-arrow" aria-hidden="true">&rarr;</span></button>';
   if (a.needsReview) return '<span class="badge badge-needs-review">Needs review</span>';
   return "";
 }

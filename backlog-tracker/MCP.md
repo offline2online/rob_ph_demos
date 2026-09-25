@@ -83,20 +83,65 @@ empty or mis-edited collection can never lock everyone out.
 ## What the agent can and can't do
 
 **Can — read:** `whoami`, `list_projects`, `list_backlog_items`,
-`get_backlog_item`, `get_project_docs`, `list_doc_revisions`,
-`get_doc_revision`, `search_faq`, `get_faq_article`,
+`get_backlog_item`, `get_ready_for_testing_board`,
+`get_approved_for_deployment_board`, `get_project_docs`,
+`list_doc_revisions`, `get_doc_revision`, `search_faq`, `get_faq_article`,
 `list_pending_faq_revisions`, `get_faq_revision`, `list_skills`,
-`get_skill`.
+`get_skill`, `list_skill_misses`, `get_routine_setup_instructions`.
+
+`get_ready_for_testing_board` and `get_approved_for_deployment_board` are
+**composable** — alongside the usual JSON they return an embedded HTML
+resource (an MCP `resource` content block, mimeType `text/html`) that a
+supporting client renders inline as ticket cards, right in the
+conversation, instead of the agent having to describe the column in prose.
+Both are read-only in the fullest sense: the widget itself has no button,
+form or script that could change a ticket's status — reviewing there is
+exactly as inert as reading the JSON. `get_approved_for_deployment_board`
+additionally names `approve_deploy_to_main` (see below) when a project's
+whole train is ready for it.
 
 **Can — write (editor and admin only):**
 
-| Tickets | Documentation | Help centre | Skills library |
-| --- | --- | --- | --- |
-| `create_backlog_item` (always into the Backlog column) | `set_project_requirements` | `create_faq_article` (always a draft) | `upload_skill` (slug must be unique) |
-| `update_backlog_item` (title, description, type, area) | `set_project_readme` | `update_faq_article` (always a pending revision) | `update_skill` (rename/re-version/replace files) |
-| `add_item_comment` | `set_project_artifact` | `comment_on_faq_revision` | `delete_skill` |
-| | `create_project_document` / `update_project_document` / `delete_project_document` | | |
-| | `create_interface` / `update_interface` / `delete_interface` | | |
+| Tickets | Documentation | Help centre | Skills library | Deploy (one exception) | Your own routine binding |
+| --- | --- | --- | --- | --- | --- |
+| `create_backlog_item` (always into the Backlog column) | `set_project_requirements` | `create_faq_article` (always a draft) | `upload_skill` (slug must be unique) | `approve_deploy_to_main` | `set_my_routine_binding` |
+| `update_backlog_item` (title, description, type, area) | `set_project_readme` | `update_faq_article` (always a pending revision) | `update_skill` (rename/re-version/replace files) | | |
+| `add_item_comment` | `set_project_artifact` | `comment_on_faq_revision` | `delete_skill` | | |
+| | `create_project_document` / `update_project_document` / `delete_project_document` | | `report_skill_miss` (tags a real gap, never edits the skill's own content) | | |
+| | `create_interface` / `update_interface` / `delete_interface` | | | | |
+
+**Setting up your own personal Notify Claude Routine** (so board clicks you
+make fire a session under your own Claude account instead of the one
+shared project token) is a two-call, one-manual-step flow: call
+`get_routine_setup_instructions` and follow it — it walks you through
+creating a Routine at claude.ai/code/routines with the exact bootstrap
+prompt to use, getting its API trigger's fire URL and token, then calling
+`set_my_routine_binding` with both. There's no way to automate the
+claude.ai/code/routines step itself: the routines API has no delegated-OAuth
+"fire on behalf of" flow, so a Routine's fire URL/token is per-Routine and
+hand-generated once — this is the closest one-click setup the API allows.
+`set_my_routine_binding` is **write-only**: your stored `fireUrl`/`token`
+are never returned by this or any other tool — `whoami`'s
+`hasRoutineBinding` only ever says whether one is set, never its value.
+Pass both as `""` to clear your binding and go back to the shared token.
+`functions/index.js`'s `resolveRoutineCredentials` checks the clicking
+member's binding first on every Notify Claude / Notify Claude — Deploy /
+Groom Backlog click, falling back to the shared `CLAUDE_ROUTINE_FIRE_URL`/
+`CLAUDE_ROUTINE_TOKEN` secrets when they have none.
+
+**`approve_deploy_to_main` is a deliberate, narrowly-scoped exception to
+"nothing here deploys" (below), not a loosening of it.** It fires the exact
+same trigger the console's own **Deploy to Main** button writes
+(`projects/{id}.deployNotifyRequestedAt`) — it never merges anything
+itself; the existing Routine still verifies the train and the existing
+pipeline still does the real merge. It enforces the same condition that
+shows that button in the first place — every ticket on the project's
+deployment train already Approved for Deployment, and Ready for Testing
+empty for that project — and refuses otherwise, naming what's blocking it,
+so calling it directly can never fire a deploy the console's own button
+would currently be hiding. Gated to `board.write` like every other write
+tool here (never a viewer), and every call is logged to `mcpAuditLog`
+under the caller's email, same as any other write.
 
 **The skills library is organisation-wide, not per-project** — a shared
 place to publish packaged instructions (like this repo's own `ph-designer`
@@ -152,27 +197,37 @@ Where a project's documentation also exists as a repo file
 are meant to match. Update both; a divergence is a bug in whichever is
 stale.
 
-**Cannot, deliberately:** deploy, merge a train, approve a ticket out of
-Ready for Testing, move a card's status, write any train field
-(`trainReady`, `patchReady`, `mergeReady`, `revertReady`), fire the Notify
-Claude Routine, approve or publish an FAQ article, or trigger a campaign.
-**Campaign triggering stays on the triggered Routine, and the release
-pipeline keeps its human gates** — an agent files, reads, enriches and
-comments; it does not ship. The same is true of the help centre: an agent
-can draft or propose, never approve or publish — that stays a person,
-in FAQ Management.
+**Cannot, deliberately, apart from the one exception above:** merge a
+train, approve a ticket out of Ready for Testing, move a card's status,
+write any train field (`trainReady`, `patchReady`, `mergeReady`,
+`revertReady`), fire the Notify Claude Routine directly, approve or
+publish an FAQ article, or trigger a campaign. **Campaign triggering stays
+on the triggered Routine, and the release pipeline keeps its human gates**
+— beyond the one narrow deploy trigger described above, an agent files,
+reads, enriches and comments; it does not ship, and even that one trigger
+only ever hands off to the same human-gated pipeline a click on the
+console would. The same is true of the help centre: an agent can draft or
+propose, never approve or publish — that stays a person, in FAQ
+Management.
 
 There is no tool for those and no field an existing tool could reach to get
-at them. `update_backlog_item`'s schema has no `status`. The documentation
-tools DO write to `projects` — that is where `requirementsMd`, `readmeMd`
-and `artifactUrl` live — so "it never touches that collection" stopped being
-the guarantee and had to become an enforced one: **`updateProjectFields` is
-the only path to a project write and refuses any field not on
-`PROJECT_WRITABLE_FIELDS`**, which holds documentation fields and nothing
-else. `test/mcp-server.test.js` asserts the allowlist's contents, that the
-guard throws on a train field, that no documentation tool's schema can even
-express one, and that a full pass of the documentation tools leaves the
-project's own `deployBranch` untouched.
+at them, `approve_deploy_to_main` included — it writes exactly one field
+(`deployNotifyRequestedAt`, plus its own provenance) via its own dedicated
+code path, never through `updateProjectFields`. `update_backlog_item`'s
+schema has no `status`. The documentation tools DO write to `projects` —
+that is where `requirementsMd`, `readmeMd` and `artifactUrl` live — so "it
+never touches that collection" stopped being the guarantee and had to
+become an enforced one: **`updateProjectFields` is the only path to a
+project write through the documentation tools, and refuses any field not
+on `PROJECT_WRITABLE_FIELDS`**, which holds documentation fields and
+nothing else — `deployNotifyRequestedAt` is deliberately not on it, and
+never will be, since `approve_deploy_to_main` doesn't need it to be.
+`test/mcp-server.test.js` asserts the allowlist's contents, that the guard
+throws on a train field, that no documentation tool's schema can even
+express one, that a full pass of the documentation tools leaves the
+project's own `deployBranch` untouched, and — separately — that
+`approve_deploy_to_main` is the one and only `board.write` tool whose name
+may mention deploying, merging or approving at all.
 
 Every write records the person's email on the document (`createdByEmail`,
 `updatedByEmail`, and the comment's own `author`) and appends a row to

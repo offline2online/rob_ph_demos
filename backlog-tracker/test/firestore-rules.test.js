@@ -77,6 +77,10 @@ async function reset() {
     await setDoc(doc(db, "mcpTokens/deadbeef"), { email: "sam@personalisationhub.com", type: "access" });
     await setDoc(doc(db, "docRevisions/r1"), { target: "project.requirementsMd", projectId: "p1", contentMd: "the text that was replaced", replacedByEmail: "sam@personalisationhub.com" });
     await setDoc(doc(db, "mcpAuditLog/e1"), { email: "sam@personalisationhub.com", tool: "create_backlog_item" });
+    await setDoc(doc(db, "releases/rDraft"), { name: "October", version: "2.4.0", status: "draft", order: 1 });
+    await setDoc(doc(db, "releases/rLive"), { name: "September", status: "live", order: 0 });
+    await setDoc(doc(db, "concepts/cActive"), { name: "Store staff shift handover", status: "active", readmeMd: "", requirementsMd: "", comments: [] });
+    await setDoc(doc(db, "concepts/cPromoted"), { name: "Already shipped idea", status: "promoted", promotedProjectId: "p1" });
   });
 }
 
@@ -217,6 +221,59 @@ async function main() {
   await check("A non-admin member may NOT read the agent audit log", "deny", () => getDoc(doc(as(MEMBER), "mcpAuditLog/e1")));
   await check("Nobody can edit the agent audit log", "deny", () =>
     setDoc(doc(as(TEAM_ADMIN), "mcpAuditLog/e1"), { tool: "something else" }, { merge: true }));
+
+  // ── Releases ───────────────────────────────────────────────────────────
+  // order is what article bindings are range-compared on, and status only
+  // ever advances draft -> live (marking live promotes FAQ proposals, which
+  // un-marking couldn't undo).
+  await check("A member may read releases", "allow", () => getDoc(doc(as(MEMBER), "releases/rDraft")));
+  await check("A stranger cannot read releases", "deny", () => getDoc(doc(as(STRANGER), "releases/rDraft")));
+  await check("An editor can create a draft release", "allow", () =>
+    setDoc(doc(as(MEMBER), "releases/rNew"), { name: "November", version: null, status: "draft", order: 2 }));
+  await check("A viewer CANNOT create a release", "deny", () =>
+    setDoc(doc(as(VIEWER), "releases/rNew"), { name: "November", status: "draft", order: 2 }));
+  await check("A release needs a known status", "deny", () =>
+    setDoc(doc(as(MEMBER), "releases/rNew"), { name: "November", status: "shipped", order: 2 }));
+  await check("An editor can mark a draft release live", "allow", () =>
+    setDoc(doc(as(MEMBER), "releases/rDraft"), { status: "live" }, { merge: true }));
+  await check("Nobody can move a live release back to draft", "deny", () =>
+    setDoc(doc(as(HUMAN), "releases/rLive"), { status: "draft" }, { merge: true }));
+  await check("Nobody can change a release's order", "deny", () =>
+    setDoc(doc(as(HUMAN), "releases/rDraft"), { order: 5 }, { merge: true }));
+  await check("An editor can assign a project to a release", "allow", () =>
+    setDoc(doc(as(MEMBER), "projects/p1"), { releaseId: "rDraft" }, { merge: true }));
+  await check("An editor can clear a project's release", "allow", () =>
+    setDoc(doc(as(MEMBER), "projects/p1"), { releaseId: null }, { merge: true }));
+  await check("A project's releaseId must be a string id", "deny", () =>
+    setDoc(doc(as(MEMBER), "projects/p1"), { releaseId: 7 }, { merge: true }));
+  await check("An editor can bind an article to a release range", "allow", () =>
+    setDoc(doc(as(MEMBER), "faqArticles/a1"), { introducedInReleaseId: "rLive", removedInReleaseId: "rDraft" }, { merge: true }));
+  await check("An article's release binding must be a string id", "deny", () =>
+    setDoc(doc(as(MEMBER), "faqArticles/a1"), { introducedInReleaseId: 1 }, { merge: true }));
+
+  // ── Concept Incubator ──────────────────────────────────────────────────
+  // An early-stage idea, held separately from projects/backlogItems until
+  // promoteConceptToProject() (app.js) flips status active -> promoted.
+  await check("A member may read a concept", "allow", () => getDoc(doc(as(MEMBER), "concepts/cActive")));
+  await check("A stranger cannot read a concept", "deny", () => getDoc(doc(as(STRANGER), "concepts/cActive")));
+  await check("An editor can create a concept", "allow", () =>
+    setDoc(doc(as(MEMBER), "concepts/cNew"), { name: "A new idea", status: "active", readmeMd: "", requirementsMd: "", comments: [] }));
+  await check("A viewer CANNOT create a concept", "deny", () =>
+    setDoc(doc(as(VIEWER), "concepts/cNew"), { name: "A new idea", status: "active" }));
+  await check("A new concept must start active, not promoted", "deny", () =>
+    setDoc(doc(as(MEMBER), "concepts/cNewPromoted"), { name: "A new idea", status: "promoted" }));
+  await check("An editor can save a concept's README independently of requirements", "allow", () =>
+    setDoc(doc(as(MEMBER), "concepts/cActive"), { readmeMd: "# Shift handover\n\nDraft README." }, { merge: true }));
+  await check("An editor can save a concept's requirements independently of README", "allow", () =>
+    setDoc(doc(as(MEMBER), "concepts/cActive"), { requirementsMd: "Must support incremental edits." }, { merge: true }));
+  await check("An editor can append to a concept's discussion thread", "allow", () =>
+    setDoc(doc(as(MEMBER), "concepts/cActive"), { comments: [{ author: "viewer", text: "Worth exploring further", at: new Date() }] }, { merge: true }));
+  await check("An editor can promote a concept to a project", "allow", () =>
+    setDoc(doc(as(MEMBER), "concepts/cActive"), { status: "promoted", promotedProjectId: "p1" }, { merge: true }));
+  await check("Nobody can move a promoted concept back to active", "deny", () =>
+    setDoc(doc(as(HUMAN), "concepts/cPromoted"), { status: "active" }, { merge: true }));
+  await check("An editor can delete a still-active concept", "allow", () => deleteDoc(doc(as(MEMBER), "concepts/cActive")));
+  await check("Nobody can delete a promoted concept", "deny", () => deleteDoc(doc(as(HUMAN), "concepts/cPromoted")));
 
   await env.cleanup();
 

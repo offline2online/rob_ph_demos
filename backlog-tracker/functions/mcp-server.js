@@ -855,6 +855,112 @@ const SKILL_FILES_MAX = 20;
 const SKILL_FILE_PATH_MAX = 200;
 const SKILL_FILE_MAX = 100000;
 
+// Informational "owning team" tag (tGsm6lsBRsGtyoMZS3rn) — which functional
+// team maintains/optimises a skill, so someone deciding whether to touch it
+// knows who to loop in. Soft ownership only: this list is not a permission
+// gate anywhere (any editor may still create/update/delete any skill,
+// mirrored in firestore.rules' own check below) — it's purely a label shown
+// on the Skills page card and returned by list_skills/get_skill. Mirrored in
+// firestore.rules' `match /skills/{skillId}` and the console's Add/Edit
+// skill modal (public/js/app.js); keep all three in step if this list
+// changes. Optional/nullable — a skill created before this existed, or one
+// nobody has claimed yet, simply has no owningTeam set.
+const SKILL_OWNING_TEAMS = ["Product/Design", "Engineering", "Cybersecurity"];
+
+// Skill feedback loop (Gcc30u2bQEJwEdUTN6X8) — a running, append-only list
+// of real misses on `skills/{id}.misses`, so an owning team improves a
+// skill against what actually went wrong rather than guessing. Two
+// sources feed it: a phase-bound skill review that finds something the
+// skill should have prevented (ROUTINE_INSTRUCTIONS.md's DEPLOY-phase
+// review, via a direct Firestore write using the board-automation
+// credential — see that file's own "Report skill misses" step) and any
+// team member's agent, over this MCP tool, tagging a build failure or a
+// finding against the skill that governed it. Same
+// FieldValue.arrayUnion() shape `notes` already uses on backlogItems, so
+// concurrent reports never clobber each other — and the same reason `at`
+// is a plain ISO string, not serverTimestamp(): Firestore rejects that
+// sentinel inside an array element.
+const SKILL_MISS_TEXT_MAX = 1000;
+const SKILL_MISS_SOURCES = ["build", "review"];
+const SKILL_MISS_PHASES = ["build", "deploy"];
+
+// Periodic skill-review nudge (eKslgrwgRJtoxyx0oNSV) — lighter-weight
+// companion to the skill feedback loop above: rather than waiting for a
+// build/review to surface a specific miss, nudge each owning team to
+// deliberately revisit their skill after enough has shipped since the last
+// time anyone did, on whichever of two signals comes first — a day-based
+// cadence, or a rough "how much has shipped since then" count. No new
+// Cloud Function or scheduled job: this is computed on read (list_skills/
+// get_skill, and the Skills page), the same "pull, not push" shape misses
+// already have — reading the audit trail (docRevisions/misses/notes)
+// itself, not polling anything new.
+//
+// "Deploys since review" is approximated by counting backlogItems that
+// reached published-live after the review baseline — this repo has no
+// single global "train count" to read (each project runs its own
+// independent deployment train), and a shipped ticket is the concrete,
+// countable unit every train actually produces. It is deliberately not
+// scoped to whether THIS skill was bound to the phase that shipped each
+// one — `settings/phaseSkillBindings` changes over time and a given ticket
+// doesn't record which bindings were active when it shipped, so an exact
+// count isn't available. Treat this as a nudge to go look, not a precise
+// metric — same spirit as build-batches.js's own estimateEffort/
+// estimatePriority.
+const SKILL_REVIEW_DEFAULT_CADENCE_DAYS = 60;
+const SKILL_REVIEW_DEFAULT_DEPLOY_THRESHOLD = 15;
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+// The skill's lastReviewedAt, or createdAt if never reviewed, or null if
+// neither exists (a very old skill from before either field — treated as
+// "no baseline to measure from", so no nudge rather than a false "overdue
+// since the epoch").
+function resolveReviewBaseline(skillData) {
+  const baseline = skillData.lastReviewedAt || skillData.createdAt || null;
+  return baseline && typeof baseline.toDate === "function" ? baseline.toDate() : (baseline instanceof Date ? baseline : null);
+}
+
+function skillReviewStatus(skillData, mergeDates) {
+  const baselineDate = resolveReviewBaseline(skillData);
+  if (!baselineDate) return { reviewDue: false, daysSinceReview: null, deploysSinceReview: null, lastReviewedAt: tsToISO(skillData.lastReviewedAt) };
+  const daysSinceReview = Math.floor((Date.now() - baselineDate.getTime()) / DAY_MS);
+  const cadenceDays = Number.isFinite(skillData.reviewCadenceDays) ? skillData.reviewCadenceDays : SKILL_REVIEW_DEFAULT_CADENCE_DAYS;
+  const deployThreshold = Number.isFinite(skillData.reviewDeployThreshold) ? skillData.reviewDeployThreshold : SKILL_REVIEW_DEFAULT_DEPLOY_THRESHOLD;
+  const deploysSinceReview = countSince(mergeDates, baselineDate);
+  const reviewDue = daysSinceReview >= cadenceDays || (deploysSinceReview != null && deploysSinceReview >= deployThreshold);
+  return { reviewDue, daysSinceReview, deploysSinceReview, lastReviewedAt: tsToISO(skillData.lastReviewedAt) };
+}
+
+// Fetched ONCE per list_skills/get_skill call and reused for every skill
+// being scored, rather than each skill running its own query — this is
+// read every time skills are listed, so an N-skill list must stay one
+// query, not N.
+async function loadPublishedMergeDates() {
+  const snap = await db().collection("backlogItems").where("status", "==", "published-live").limit(MAX_READ_DOCS).get();
+  const dates = [];
+  snap.forEach((doc) => {
+    const mergedAt = doc.data().mergedAt;
+    const d = mergedAt && typeof mergedAt.toDate === "function" ? mergedAt.toDate() : (mergedAt instanceof Date ? mergedAt : null);
+    if (d) dates.push(d);
+  });
+  return dates;
+}
+function countSince(mergeDates, sinceDate) {
+  if (!sinceDate) return null;
+  return mergeDates.filter((d) => d.getTime() > sinceDate.getTime()).length;
+}
+
+async function findSkillByIdOrSlug(skillId, slug) {
+  if (skillId) {
+    const s = await db().collection("skills").doc(String(skillId)).get();
+    if (s.exists) return s;
+  }
+  if (slug) {
+    const q = await db().collection("skills").where("slug", "==", String(slug)).limit(1).get();
+    if (!q.empty) return q.docs[0];
+  }
+  return null;
+}
+
 // Shared by upload_skill and update_skill: normalizes and bounds-checks a
 // files array, returning either { files } or { error }. Never throws — every
 // tool that calls this turns a bad `files` argument into a toolError instead
@@ -1056,6 +1162,175 @@ async function audit(session, tool, detail) {
   }
 }
 
+// ── Releases (search_faq / get_faq_article) ──────────────────────────────
+// A help-centre article can be bound to a range of releases
+// (faqArticles.introducedInReleaseId / removedInReleaseId, set from the
+// console's article editor). These resolve which release a call is about
+// and apply the same order range check as public/js/app.js's
+// articleAppliesToRelease and faq/js/faq-data.js — three separate
+// deployables with no shared module, so keep the three in step.
+//
+// Backward compatible by construction: with no releases at all, or none
+// live and none asked for, resolveFaqRelease's `release` is null and nothing is
+// filtered — every article behaves exactly as it did before releases.
+async function loadReleases() {
+  const rows = [];
+  (await db().collection("releases").get()).forEach((d) => {
+    const v = d.data() || {};
+    rows.push({ id: d.id, name: v.name || "", version: v.version || null, status: v.status || "draft", order: Number(v.order) || 0 });
+  });
+  return rows;
+}
+
+// `requested` given: that release, by doc id first, then by version string.
+// Omitted: the highest-order live release. Returns
+// { release, releasesById, requested } or { release: null } when nothing
+// applies; { error } when a specific release was asked for and none matches.
+async function resolveFaqRelease(requested) {
+  const rows = await loadReleases();
+  const releasesById = {};
+  rows.forEach((r) => { releasesById[r.id] = r; });
+  const wanted = typeof requested === "string" ? requested.trim() : "";
+  if (wanted) {
+    const release = releasesById[wanted] || rows.find((r) => r.version && r.version === wanted) || null;
+    if (!release) return { error: `No release with id or version "${wanted}".` };
+    return { release, releasesById, requested: true };
+  }
+  const live = rows.filter((r) => r.status === "live").sort((x, y) => y.order - x.order);
+  if (!live.length) return { release: null, releasesById, requested: false };
+  return { release: live[0], releasesById, requested: false };
+}
+
+function faqArticleAppliesToRelease(a, releasesById, targetOrder) {
+  if (a.introducedInReleaseId) {
+    const introduced = releasesById[a.introducedInReleaseId];
+    if (!introduced || !(introduced.order <= targetOrder)) return false;
+  }
+  if (a.removedInReleaseId) {
+    const removed = releasesById[a.removedInReleaseId];
+    if (!removed || !(targetOrder < removed.order)) return false;
+  }
+  return true;
+}
+
+function releaseSummary(r) {
+  return r ? { id: r.id, name: r.name, version: r.version, status: r.status, order: r.order } : null;
+}
+
+// ── Composable UI resources (embedded HTML cards) ───────────────────────────
+// get_ready_for_testing_board and get_approved_for_deployment_board (below)
+// return, alongside the usual JSON, a self-contained HTML "card list" as an
+// MCP embedded resource (content type "resource", mimeType "text/html") —
+// the standard MCP tool-result content block, not a bespoke extension — so a
+// client that renders embedded HTML resources inline can show the column as
+// cards right in the conversation instead of only as text. A client that
+// doesn't render resources still gets the same data as the plain-text/JSON
+// blocks that come with it.
+//
+// No <script>, no external stylesheet/font fetch, no <form> — everything is
+// inline-styled static markup. Every user-authored string (title/desc/
+// testSummary — recall backlogItems.desc is publicly, unauthenticatedly
+// writable, see this file's own header) goes through escapeHTML() before it
+// reaches the markup, and a URL is only ever linked when it parses as
+// https:// (safeHref) — a malicious previewUrl set to a javascript: URI is
+// rendered as plain text, never as a clickable href.
+//
+// Colours/type below are Personalisation Hub's own measured tokens (see the
+// ph-designer skill's tokens.md) — this widget isn't an iframed prototype
+// page (nothing here is iframed into HQ Admin), so the prototyping.md "content
+// frame only" rules don't apply, but the brand palette and Roboto still
+// should, for the same reason any other Claude-built surface for this board
+// would want to look like it belongs to it.
+const PH_TOKENS = {
+  primary: "#169bc2", accent: "#38b0cf", text: "#333333",
+  muted: "rgba(0,0,0,0.45)", border: "#d9d9d9", bg: "#ffffff",
+  success: "#52c41a", warning: "#faad14",
+};
+
+function safeHref(url) {
+  return typeof url === "string" && /^https:\/\//i.test(url) ? url : null;
+}
+
+function pillHTML(label, kind) {
+  const styles = {
+    primary: "background:#169bc21a;color:#169bc2;",
+    accent: "background:#38b0cf1a;color:#0d7691;",
+    neutral: "background:rgba(0,0,0,0.06);color:#333333;",
+  };
+  return `<span style="display:inline-block;font-size:11px;font-weight:600;line-height:1;padding:3px 8px;border-radius:9999px;margin:0 6px 6px 0;${styles[kind] || styles.neutral}">${escapeHTML(label)}</span>`;
+}
+
+function cardShellHTML(headline, subhead, bodyHTML) {
+  return `<div style="font-family:Roboto,'Helvetica Neue',Helvetica,Arial,sans-serif;color:${PH_TOKENS.text};background:${PH_TOKENS.bg};max-width:640px;">
+  <div style="font-size:16px;font-weight:700;margin-bottom:2px;">${escapeHTML(headline)}</div>
+  <div style="font-size:13px;color:${PH_TOKENS.muted};margin-bottom:12px;">${escapeHTML(subhead)}</div>
+  ${bodyHTML}
+</div>`;
+}
+
+// One ticket, as a card. `extraPillsHTML` lets a caller add train/PR context
+// (see get_approved_for_deployment_board) without this function needing to
+// know about the deployment train at all.
+function ticketCardHTML(item, extraPillsHTML) {
+  const bodyText = item.testSummary || item.desc || "";
+  const hasBoth = item.testSummary && item.desc && item.testSummary !== item.desc;
+  const testHref = safeHref(item.previewUrl);
+  const testLink = testHref
+    ? `<a href="${escapeHTML(testHref)}" target="_blank" rel="noopener" style="color:${PH_TOKENS.primary};font-weight:600;text-decoration:none;font-size:13px;">Test this &rarr;</a>`
+    : "";
+  const boardHref = safeHref(item.board);
+  const boardLink = boardHref
+    ? `<a href="${escapeHTML(boardHref)}" target="_blank" rel="noopener" style="color:${PH_TOKENS.muted};text-decoration:none;font-size:12px;">View ticket &#8599;</a>`
+    : "";
+  const versionPill = item.testVersion ? pillHTML(`Test version: v${item.testVersion}`, "accent") : "";
+  return `<div style="border:1px solid ${PH_TOKENS.border};border-radius:8px;padding:12px 14px;margin-bottom:10px;">
+    <div style="font-size:14px;font-weight:700;margin-bottom:4px;">${escapeHTML(item.title || "(untitled)")}</div>
+    <div style="font-size:12px;color:${PH_TOKENS.muted};margin-bottom:8px;">${escapeHTML(item.project || "")}${item.project ? " &middot; " : ""}${escapeHTML(item.id)}</div>
+    <div style="font-size:13px;line-height:1.45;white-space:pre-wrap;margin-bottom:8px;">${escapeHTML(bodyText)}</div>
+    ${hasBoth ? `<details style="margin-bottom:8px;"><summary style="cursor:pointer;font-size:12px;color:${PH_TOKENS.primary};">Show original request</summary><div style="font-size:13px;line-height:1.45;white-space:pre-wrap;margin-top:6px;">${escapeHTML(item.desc)}</div></details>` : ""}
+    <div style="margin-bottom:2px;">${versionPill}${extraPillsHTML || ""}</div>
+    <div style="display:flex;gap:14px;align-items:center;">${testLink}${boardLink}</div>
+  </div>`;
+}
+
+// Mirrors public/js/app.js's deployNotifyButtonHTML gate exactly
+// (pendingTrainRevertsForProject + trainItemsForProject +
+// legacyDeployItemsForProject) — see that file. Both
+// get_approved_for_deployment_board and approve_deploy_to_main call this so
+// the two can never disagree about whether the console's own Deploy to Main
+// button would be showing right now.
+async function deployGuardForProject(pid) {
+  const snap = await db().collection("backlogItems").where("projectId", "==", pid).get();
+  const items = [];
+  snap.forEach((doc) => items.push(Object.assign({ id: doc.id }, doc.data())));
+
+  const pendingReverts = items.filter((i) => i.revertRequested === true && i.deployCommit);
+  if (pendingReverts.length) {
+    return {
+      ok: false, deployItems: [],
+      reason: `${pendingReverts.length} ticket(s) on this project's deployment train have a pending revert not yet resolved (e.g. "${pendingReverts[0].title}"). The board's own Deploy to Main button is hidden for the same reason — resolve it there first.`,
+    };
+  }
+
+  const trainItems = items.filter((i) => i.deployCommit && (i.status === "ready-for-testing" || i.status === "ready-to-publish"));
+  if (trainItems.length) {
+    const stillTesting = trainItems.filter((i) => i.status !== "ready-to-publish");
+    if (stillTesting.length) {
+      return {
+        ok: false, deployItems: [],
+        reason: `${stillTesting.length} ticket(s) on this project's deployment train are still in Ready for Testing (e.g. "${stillTesting[0].title}") — merging now would ship them untested too. The board's own Deploy to Main button is hidden until Ready for Testing is empty for this project.`,
+      };
+    }
+    return { ok: true, deployItems: trainItems, reason: null };
+  }
+
+  const legacyItems = items.filter((i) => i.status === "ready-to-publish" && !i.deployCommit && !i.noDeploymentRequired);
+  if (!legacyItems.length) {
+    return { ok: false, deployItems: [], reason: "Nothing is Approved for Deployment for this project yet — the board's own Deploy to Main button is hidden for the same reason." };
+  }
+  return { ok: true, deployItems: legacyItems, reason: null };
+}
+
 const TOOLS = [
   {
     name: "whoami",
@@ -1063,6 +1338,14 @@ const TOOLS = [
     scope: "board.read",
     inputSchema: { type: "object", properties: {}, additionalProperties: false },
     async run(_args, session) {
+      // Per-member routine binding (VNE6dxMu3h6jO3g6FNNB) — presence only,
+      // never the stored fireUrl/token themselves (see
+      // set_my_routine_binding's own comment on why). The nudge only shows
+      // once: someone who's deliberately chosen to keep using the shared
+      // project token doesn't need to be reminded on every whoami call.
+      const selfSnap = await db().collection("consoleUsers").doc(session.email).get();
+      const selfData = selfSnap.exists ? selfSnap.data() || {} : {};
+      const hasRoutineBinding = !!(selfData.routineFireUrl && selfData.routineFireToken);
       return textResult({
         email: session.email,
         displayName: session.displayName || null,
@@ -1070,8 +1353,87 @@ const TOOLS = [
         canWrite: session.scopes.includes("board.write"),
         scopes: session.scopes,
         board: PUBLIC_ORIGIN,
-        note: "Deploys, merges, Notify Claude and campaign triggering are not available through MCP — they stay on the board's own buttons.",
+        hasRoutineBinding,
+        routineBindingNudge: hasRoutineBinding
+          ? null
+          : "You have no personal Notify Claude Routine binding yet — every board click you make still fires under the shared project token. Call get_routine_setup_instructions to set up your own.",
+        note: "Deploys, merges, Notify Claude and campaign triggering are not available through MCP — they stay on the board's own buttons. Setting up your own personal Notify Claude Routine binding (see get_routine_setup_instructions/set_my_routine_binding) is the one exception: it changes which credentials a board click fires under, but the click itself still has to happen on the board.",
       });
+    },
+  },
+  // ── Per-member routine binding (VNE6dxMu3h6jO3g6FNNB) ───────────────────
+  // Every board click today fires the ONE shared, project-wide Claude Code
+  // Routine (CLAUDE_ROUTINE_FIRE_URL/CLAUDE_ROUTINE_TOKEN in
+  // functions/index.js) — every session it starts runs under that one
+  // token's usage/account, whoever clicked. These two tools let an engineer
+  // register their OWN Routine instead, so sessions started by THEIR clicks
+  // run under their own account. functions/index.js's
+  // resolveRoutineCredentials checks the clicking member's
+  // consoleUsers/{email} row first and only falls back to the shared secret
+  // when they have none set — see that function's own comment.
+  //
+  // Claude's routines API has no delegated-OAuth "fire on behalf of" flow:
+  // a Routine's fire URL/token is per-Routine and hand-generated once from
+  // claude.ai/code/routines, so there is no way to provision one
+  // automatically end-to-end. This MCP-driven local setup — read the
+  // instructions, do the one-time manual step at claude.ai, paste the
+  // result back — is the closest the API allows to one-click.
+  {
+    name: "get_routine_setup_instructions",
+    description: "Step-by-step instructions for setting up your OWN personal Notify Claude Routine, so board clicks you make fire a session under your own Claude account instead of the shared project token. Read this before calling set_my_routine_binding — it explains where each value comes from.",
+    scope: "board.read",
+    inputSchema: { type: "object", properties: {}, additionalProperties: false },
+    async run() {
+      const bootstrapPrompt = `This routine fires when someone clicks "Notify Claude" or "Notify Claude — Deploy" on a project in the live "Backlog Tracker & FAQs" board — a real Firestore-backed web app at ${PUBLIC_ORIGIN}, NOT a Claude Artifact. Do not search Artifacts for it; you will not find it there.\n\nYour actual, current, authoritative operating instructions are NOT in this prompt — they live in a version-controlled file in the board's own GitHub repo. Before doing anything else:\n\n1. Fetch \`https://raw.githubusercontent.com/offline2online/rob_ph_demos/main/backlog-tracker/ROUTINE_INSTRUCTIONS.md\` — a plain, unauthenticated GET (no credential needed or available).\n2. Read it in full and follow it exactly for the rest of this run.\n\nIf that fetch fails outright, stop and say so plainly rather than improvising. Never attempt a \`git push\`, a GitHub API write, or any other way of getting code onto GitHub yourself — you have no GitHub credential of any kind, deliberately.`;
+      return textResult({
+        steps: [
+          "1. Go to claude.ai/code/routines (sign in with the SAME account you want board-triggered sessions to run under) and create a new Routine.",
+          "2. Set its prompt to the exact text in `bootstrapPrompt` below — this is the same bootstrap the shared project Routine uses, so your personal one behaves identically once it fires.",
+          "3. In that Routine's settings, add an API trigger. This generates a fire URL (ends in /fire) and a bearer token — copy both; the token is shown once.",
+          "4. Call set_my_routine_binding with fireUrl and token set to exactly those two values. Nothing else needs to change on the board — the next time you click Notify Claude / Notify Claude — Deploy / Groom Backlog on any project, the Cloud Function looks up your binding first.",
+          "5. To go back to the shared project token, call set_my_routine_binding again with fireUrl and token both set to \"\" (clears the binding).",
+        ],
+        bootstrapPrompt,
+        note: "This only changes which credentials fire — the board click itself (Notify Claude / Notify Claude — Deploy / Groom Backlog) still has to happen on the board; nothing here fires a session directly.",
+      });
+    },
+  },
+  {
+    name: "set_my_routine_binding",
+    description: "Register (or clear) your OWN personal Notify Claude Routine's fire URL and token, so board clicks you make fire it instead of the shared project token — see get_routine_setup_instructions first. Write-only: no tool or UI ever reads these values back, only whether a binding exists (see whoami's hasRoutineBinding).",
+    scope: "board.write",
+    inputSchema: {
+      type: "object",
+      properties: {
+        fireUrl: { type: "string", description: "Your Routine's API trigger URL (ends in /fire), from claude.ai/code/routines. Pass \"\" together with token: \"\" to clear your binding." },
+        token: { type: "string", description: "The bearer token shown when you added the API trigger. Pass \"\" together with fireUrl: \"\" to clear your binding." },
+      },
+      required: ["fireUrl", "token"], additionalProperties: false,
+    },
+    async run(args, session) {
+      const fireUrl = String(args.fireUrl || "").trim();
+      const token = String(args.token || "").trim();
+      const clearing = !fireUrl && !token;
+      if (!clearing) {
+        if (!fireUrl || !token) return toolError("Pass both fireUrl and token, or both as \"\" to clear your binding.");
+        if (!/^https:\/\//.test(fireUrl)) return toolError("fireUrl must be an https:// URL.");
+        if (token.length < 8) return toolError("That doesn't look like a real token.");
+      }
+      // null, not FieldValue.delete() — same convention functions/index.js's
+      // promoteFaqRevisionIfReady already follows: null is what
+      // hasRoutineBinding (whoami) and resolveRoutineCredentials both
+      // already treat as "no binding", and it's simpler to query against.
+      await db().collection("consoleUsers").doc(session.email).set({
+        routineFireUrl: clearing ? null : fireUrl,
+        routineFireToken: clearing ? null : token,
+        routineBoundAt: clearing ? null : FieldValue.serverTimestamp(),
+      }, { merge: true });
+      // The token itself is deliberately never written to the audit log —
+      // same "never echoed back" care as the response below.
+      await audit(session, "set_my_routine_binding", { cleared: clearing });
+      return textResult(clearing
+        ? { cleared: true }
+        : { registered: true, note: "Your fireUrl/token are stored but will never be returned by this or any other tool — call whoami to confirm hasRoutineBinding is now true." });
     },
   },
   {
@@ -1296,6 +1658,196 @@ const TOOLS = [
       });
       await audit(session, "add_item_comment", { itemId: ref.id, chars: text.length });
       return textResult({ added: true, itemId: ref.id, author: session.email });
+    },
+  },
+  // ── Composable UI: review the pipeline's two "waiting on a human" columns
+  // in-agent, without leaving the conversation ─────────────────────────────
+  // Read-only, same as list_backlog_items/get_backlog_item above — nothing
+  // here can move a ticket. See the "Composable UI resources" comment above
+  // TOOLS for what the embedded HTML resource is and isn't.
+  {
+    name: "get_ready_for_testing_board",
+    description: "A composable view of the Ready for Testing column: every ticket a build just landed in, shown as a card (title, testSummary/desc, test link, testVersion, and a link back to the ticket). Returns an embedded HTML resource a supporting client renders inline in the conversation, alongside the same data as plain text/JSON for a client that can't. Read-only — reviewing here never changes a ticket's status; approve or reject it on the board itself.",
+    scope: "board.read",
+    inputSchema: {
+      type: "object",
+      properties: {
+        projectId: { type: "string", description: "Restrict to one project (from list_projects). Omit to see every project's Ready for Testing column at once." },
+      },
+      additionalProperties: false,
+    },
+    async run(args) {
+      const a = args || {};
+      const projects = await loadProjectsById();
+      if (a.projectId && !projects.has(String(a.projectId))) return toolError(`No project with id ${a.projectId}. Call list_projects first.`);
+      let q = db().collection("backlogItems");
+      if (a.projectId) q = q.where("projectId", "==", String(a.projectId));
+      const snap = await q.limit(MAX_READ_DOCS).get();
+      const rows = [];
+      snap.forEach((doc) => {
+        const d = doc.data() || {};
+        if ((d.status || "backlog") !== "ready-for-testing") return;
+        rows.push({ doc, d });
+      });
+      rows.sort((x, y) => (y.d.updatedAt?.toMillis?.() || 0) - (x.d.updatedAt?.toMillis?.() || 0));
+
+      const cards = rows.map(({ doc, d }) => {
+        const project = projects.get(d.projectId);
+        return {
+          id: doc.id,
+          projectId: d.projectId || null,
+          project: project ? project.name : null,
+          title: d.title || "",
+          testSummary: d.testSummary || null,
+          desc: d.desc || "",
+          previewUrl: d.previewUrl || null,
+          testVersion: d.testVersion || null,
+          board: `${PUBLIC_ORIGIN}/#item-${doc.id}`,
+        };
+      });
+
+      const projectLabel = a.projectId ? ((projects.get(String(a.projectId)) || {}).name || a.projectId) : "every project";
+      const headline = `Ready for Testing — ${projectLabel}`;
+      const subhead = cards.length
+        ? `${cards.length} ticket${cards.length === 1 ? "" : "s"} waiting on review. Read-only — approve or reject on the board.`
+        : "Nothing in Ready for Testing right now.";
+      const bodyHTML = cards.map((c) => ticketCardHTML(c)).join("\n")
+        || `<div style="font-size:13px;color:${PH_TOKENS.muted};">Nothing to show.</div>`;
+      const html = cardShellHTML(headline, subhead, bodyHTML);
+
+      return {
+        content: [
+          { type: "text", text: `${headline}: ${cards.length} ticket(s). Read-only — this view can't change status.` },
+          { type: "resource", resource: { uri: `ui://backlog-tracker/ready-for-testing/${a.projectId || "all"}`, mimeType: "text/html", text: html } },
+          { type: "text", text: JSON.stringify({ projectId: a.projectId || null, count: cards.length, items: cards }, null, 2) },
+        ],
+      };
+    },
+  },
+  {
+    name: "get_approved_for_deployment_board",
+    description: "A composable view of the Approved for Deployment column: every ticket already tested and confirmed, just waiting to be merged, shown as a card with its deploy/train context (on the train + which branch, or its own PR). Returns an embedded HTML resource a supporting client renders inline in the conversation, alongside the same data as plain text/JSON. Read-only — this view can't change status; when a project's whole train is approved and Ready for Testing is empty for it, this names approve_deploy_to_main as the tool that actually fires Deploy to Main.",
+    scope: "board.read",
+    inputSchema: {
+      type: "object",
+      properties: {
+        projectId: { type: "string", description: "Restrict to one project (from list_projects). Omit to see every project's Approved for Deployment column at once — deploy-readiness can only be reported with a projectId, since it's a per-project question." },
+      },
+      additionalProperties: false,
+    },
+    async run(args) {
+      const a = args || {};
+      const projects = await loadProjectsById();
+      if (a.projectId && !projects.has(String(a.projectId))) return toolError(`No project with id ${a.projectId}. Call list_projects first.`);
+      let q = db().collection("backlogItems");
+      if (a.projectId) q = q.where("projectId", "==", String(a.projectId));
+      const snap = await q.limit(MAX_READ_DOCS).get();
+      const rows = [];
+      snap.forEach((doc) => {
+        const d = doc.data() || {};
+        if ((d.status || "backlog") !== "ready-to-publish") return;
+        rows.push({ doc, d });
+      });
+      rows.sort((x, y) => (y.d.updatedAt?.toMillis?.() || 0) - (x.d.updatedAt?.toMillis?.() || 0));
+
+      const guard = a.projectId ? await deployGuardForProject(String(a.projectId)) : null;
+
+      const cards = rows.map(({ doc, d }) => {
+        const project = projects.get(d.projectId);
+        return {
+          id: doc.id,
+          projectId: d.projectId || null,
+          project: project ? project.name : null,
+          title: d.title || "",
+          testSummary: d.testSummary || null,
+          desc: d.desc || "",
+          previewUrl: d.previewUrl || null,
+          testVersion: d.testVersion || null,
+          onTrain: !!d.deployCommit,
+          deployCommit: d.deployCommit || null,
+          prNumber: d.prNumber || null,
+          deployBranch: (project && project.deployBranch) || null,
+          board: `${PUBLIC_ORIGIN}/#item-${doc.id}`,
+        };
+      });
+
+      const projectLabel = a.projectId ? ((projects.get(String(a.projectId)) || {}).name || a.projectId) : "every project";
+      const readyLine = guard ? (guard.ok
+        ? "This project's whole train is Approved for Deployment — ask your agent to call approve_deploy_to_main to fire Deploy to Main."
+        : guard.reason) : null;
+      const headline = `Approved for Deployment — ${projectLabel}`;
+      const subhead = cards.length
+        ? `${cards.length} ticket${cards.length === 1 ? "" : "s"} waiting to ship.`
+        : "Nothing Approved for Deployment right now.";
+      const readyBannerHTML = readyLine
+        ? `<div style="font-size:12px;font-weight:600;color:${guard.ok ? PH_TOKENS.success : PH_TOKENS.warning};margin-bottom:10px;">${escapeHTML(readyLine)}</div>`
+        : "";
+      const cardsHTML = cards.map((c) => ticketCardHTML(c, c.onTrain
+        ? pillHTML(`On train: ${c.deployBranch || "?"}`, "primary")
+        : (c.prNumber ? pillHTML(`PR #${c.prNumber}`, "neutral") : ""))).join("\n")
+        || `<div style="font-size:13px;color:${PH_TOKENS.muted};">Nothing to show.</div>`;
+      const html = cardShellHTML(headline, subhead, readyBannerHTML + cardsHTML);
+
+      return {
+        content: [
+          { type: "text", text: `${headline}: ${cards.length} ticket(s).${readyLine ? ` ${readyLine}` : ""}` },
+          { type: "resource", resource: { uri: `ui://backlog-tracker/approved-for-deployment/${a.projectId || "all"}`, mimeType: "text/html", text: html } },
+          { type: "text", text: JSON.stringify({ projectId: a.projectId || null, count: cards.length, readyToDeploy: guard ? guard.ok : null, items: cards }, null, 2) },
+        ],
+      };
+    },
+  },
+  // ── The one deliberate, logged exception to "nothing here deploys" ──────
+  // Every other tool in this file is read/file/comment/documentation only —
+  // see this file's own header. This is the single, narrowly-scoped carve-
+  // out: it fires the exact same trigger the console's own "Deploy to Main"
+  // button writes (projects/{id}.deployNotifyRequestedAt, watched by
+  // notifyOnProjectReadyToDeploy in index.js), so it merges nothing itself —
+  // the existing Routine still verifies the train and the existing pipeline
+  // still does the real merge. Gated to board.write (never a viewer, same as
+  // every other write tool) and logged to mcpAuditLog like every other write
+  // here. The one thing that's genuinely new is the guard below, which this
+  // tool must enforce itself since notifyOnProjectReadyToDeploy does not —
+  // deployGuardForProject mirrors deployNotifyButtonHTML's client-side gate
+  // exactly, so calling this tool directly can never fire a deploy the
+  // console's own button would currently be hiding.
+  {
+    name: "approve_deploy_to_main",
+    description: "Fire this project's Deploy to Main trigger — exactly the same action as clicking the board's own 'Deploy to Main' button. It does not merge anything itself: it only fires the existing Routine, which verifies the train and the existing pipeline then merges it. Only offered when every ticket on this project's deployment train is already Approved for Deployment and Ready for Testing is empty for it — the same condition that shows the console's own button — and refuses otherwise, naming what's blocking it. Logged to mcpAuditLog under your email.",
+    scope: "board.write",
+    inputSchema: {
+      type: "object",
+      properties: { projectId: { type: "string", description: "Which project (from list_projects)." } },
+      required: ["projectId"], additionalProperties: false,
+    },
+    async run(args, session) {
+      const projectId = String(args.projectId || "");
+      const projectSnap = await db().collection("projects").doc(projectId).get();
+      if (!projectSnap.exists) return toolError(`No project with id ${projectId}. Call list_projects first.`);
+
+      const guard = await deployGuardForProject(projectId);
+      if (!guard.ok) return toolError(guard.reason);
+
+      await db().collection("projects").doc(projectId).set({
+        deployNotifyRequestedAt: FieldValue.serverTimestamp(),
+        // Provenance, same spirit as create_backlog_item's createdVia/
+        // createdByEmail — not a train field (see PROJECT_WRITABLE_FIELDS'
+        // own comment on what counts as one) and not read by the pipeline,
+        // just an audit trail on the project doc itself.
+        deployNotifyRequestedVia: "mcp",
+        deployNotifyRequestedByEmail: session.email,
+      }, { merge: true });
+
+      await audit(session, "approve_deploy_to_main", {
+        projectId, deployCount: guard.deployItems.length,
+        itemIds: guard.deployItems.map((i) => i.id),
+      });
+
+      return textResult({
+        fired: true, projectId, deployCount: guard.deployItems.length,
+        itemIds: guard.deployItems.map((i) => i.id),
+        note: "This fires the same Routine the console's own Deploy to Main button fires — it verifies the train and merges it. This call returns before that finishes; check the project's trainStatus (list_projects) or the board itself afterward.",
+      });
     },
   },
   {
@@ -1693,18 +2245,22 @@ const TOOLS = [
         query: { type: "string", description: "Words to look for in titles, summaries, keywords and body text." },
         limit: { type: "integer", minimum: 1, maximum: 25, description: "Default 8." },
         includeDrafts: { type: "boolean", description: "Include unpublished drafts (default false)." },
+        release: { type: "string", description: "Only articles that apply to this release (its id or version string). Default: the current live release; no filtering if no release is live yet." },
       },
       required: ["query"], additionalProperties: false,
     },
     async run(args) {
       const terms = String(args.query || "").toLowerCase().split(/\s+/).filter((t) => t.length > 1);
       if (!terms.length) return toolError("query is required.");
+      const target = await resolveFaqRelease(args.release);
+      if (target.error) return toolError(target.error);
       const cats = new Map();
       (await db().collection("faqCategories").get()).forEach((d) => cats.set(d.id, (d.data() || {}).name || ""));
       const hits = [];
       (await db().collection("faqArticles").limit(MAX_READ_DOCS).get()).forEach((doc) => {
         const a = doc.data() || {};
         if (a.status !== "published" && !args.includeDrafts) return;
+        if (target.release && !faqArticleAppliesToRelease(a, target.releasesById, target.release.order)) return;
         const title = String(a.title || "");
         const hay = `${title}\n${a.summary || ""}\n${(a.keywords || []).join(" ")}\n${a.bodyMd || ""}`.toLowerCase();
         let score = 0;
@@ -1718,7 +2274,7 @@ const TOOLS = [
       });
       hits.sort((x, y) => y.score - x.score);
       const limit = Math.min(Math.max(parseInt(args.limit, 10) || 8, 1), 25);
-      return textResult({ matched: hits.length, results: hits.slice(0, limit) });
+      return textResult({ matched: hits.length, release: releaseSummary(target.release), results: hits.slice(0, limit) });
     },
   },
   {
@@ -1730,10 +2286,13 @@ const TOOLS = [
       properties: {
         articleId: { type: "string", description: "Article id from search_faq." },
         slug: { type: "string", description: "Article slug, if you don't have the id." },
+        release: { type: "string", description: "Only return the article if it applies to this release (its id or version string). Without it the article is always returned, with appliesToRelease saying whether it applies to the current live release." },
       },
       additionalProperties: false,
     },
     async run(args) {
+      const target = await resolveFaqRelease(args.release);
+      if (target.error) return toolError(target.error);
       let snap = null;
       if (args.articleId) {
         const s = await db().collection("faqArticles").doc(String(args.articleId)).get();
@@ -1745,6 +2304,10 @@ const TOOLS = [
       }
       if (!snap) return toolError("No article with that id or slug. Use search_faq to find one.");
       const a = snap.data() || {};
+      const applies = target.release ? faqArticleAppliesToRelease(a, target.releasesById, target.release.order) : true;
+      if (target.requested && !applies) {
+        return toolError(`Article ${snap.id} doesn't apply to release ${target.release.version || target.release.name || target.release.id} (it was introduced later or removed earlier). Use search_faq with the same release to find what does.`);
+      }
       const cat = a.categoryId ? await db().collection("faqCategories").doc(a.categoryId).get() : null;
       return textResult({
         id: snap.id, title: a.title || "", slug: a.slug || "", docType: a.docType || null,
@@ -1752,6 +2315,10 @@ const TOOLS = [
         status: a.status || null, summary: a.summary || "", keywords: a.keywords || [],
         bodyMd: a.bodyMd || "",
         hasPendingRevision: !!a.pendingRevision,
+        introducedInReleaseId: a.introducedInReleaseId || null,
+        removedInReleaseId: a.removedInReleaseId || null,
+        release: releaseSummary(target.release),
+        appliesToRelease: applies,
       });
     },
   },
@@ -2066,23 +2633,25 @@ const TOOLS = [
   // `skills`; only an editor may add, replace or remove one.
   {
     name: "list_skills",
-    description: "Every skill in the shared organisation-wide skills library — name, slug, summary, version, file count and when it was last updated. Returns light summaries, not file contents; call get_skill for the full files of one.",
+    description: "Every skill in the shared organisation-wide skills library — name, slug, summary, version, file count, when it was last updated, and whether it's due a periodic review (reviewDue — see mark_skill_reviewed). Returns light summaries, not file contents; call get_skill for the full files of one.",
     scope: "board.read",
     inputSchema: { type: "object", properties: {}, additionalProperties: false },
     async run() {
       const snap = await db().collection("skills").limit(MAX_READ_DOCS).get();
+      const mergeDates = await loadPublishedMergeDates();
       const rows = [];
       snap.forEach((doc) => {
         const d = doc.data() || {};
-        rows.push({
+        rows.push(Object.assign({
           id: doc.id,
           name: d.name || "",
           slug: d.slug || "",
           summary: d.summary || "",
           version: d.version || "",
+          owningTeam: d.owningTeam || null,
           fileCount: Array.isArray(d.files) ? d.files.length : 0,
           updatedAt: tsToISO(d.updatedAt),
-        });
+        }, skillReviewStatus(d, mergeDates)));
       });
       rows.sort((a, b) => a.name.localeCompare(b.name));
       return textResult({ matched: rows.length, skills: rows });
@@ -2090,7 +2659,7 @@ const TOOLS = [
   },
   {
     name: "get_skill",
-    description: "One skill in full, including every file's path and content, by id or slug.",
+    description: "One skill in full, including every file's path and content, by id or slug — plus whether it's due a periodic review (reviewDue, see mark_skill_reviewed).",
     scope: "board.read",
     inputSchema: {
       type: "object",
@@ -2102,30 +2671,135 @@ const TOOLS = [
     },
     async run(args) {
       if (!args.skillId && !args.slug) return toolError("Pass skillId or slug. Use list_skills to find one.");
-      let snap = null;
-      if (args.skillId) {
-        const s = await db().collection("skills").doc(String(args.skillId)).get();
-        if (s.exists) snap = s;
-      }
-      if (!snap && args.slug) {
-        const q = await db().collection("skills").where("slug", "==", String(args.slug)).limit(1).get();
-        if (!q.empty) snap = q.docs[0];
-      }
+      const snap = await findSkillByIdOrSlug(args.skillId, args.slug);
       if (!snap) return toolError("No skill with that id or slug. Use list_skills to find one.");
       const d = snap.data() || {};
-      return textResult({
+      const mergeDates = await loadPublishedMergeDates();
+      return textResult(Object.assign({
         id: snap.id,
         name: d.name || "",
         slug: d.slug || "",
         summary: d.summary || "",
         version: d.version || "",
+        owningTeam: d.owningTeam || null,
         files: Array.isArray(d.files) ? d.files : [],
         createdVia: d.createdVia || null,
         createdByEmail: d.createdByEmail || null,
         updatedByEmail: d.updatedByEmail || null,
         createdAt: tsToISO(d.createdAt),
         updatedAt: tsToISO(d.updatedAt),
-      });
+        missCount: Array.isArray(d.misses) ? d.misses.length : 0,
+      }, skillReviewStatus(d, mergeDates)));
+    },
+  },
+  {
+    name: "mark_skill_reviewed",
+    description: "Record that a skill's owning team has just deliberately revisited it — clears the periodic review nudge (reviewDue on list_skills/get_skill) and resets its clock. Call this after actually reading the skill (ideally alongside list_skill_misses) and deciding it's still current, or after updating it in response to what you found.",
+    scope: "board.write",
+    inputSchema: {
+      type: "object",
+      properties: {
+        skillId: { type: "string", description: "From list_skills." },
+        slug: { type: "string", description: "The skill's slug, if you don't have the id." },
+        reviewCadenceDays: { type: "number", description: `Optional: override how many days before this skill is nudged again. Default ${SKILL_REVIEW_DEFAULT_CADENCE_DAYS}.` },
+        reviewDeployThreshold: { type: "number", description: `Optional: override how many tickets shipping before this skill is nudged again. Default ${SKILL_REVIEW_DEFAULT_DEPLOY_THRESHOLD}.` },
+      },
+      additionalProperties: false,
+    },
+    async run(args, session) {
+      if (!args.skillId && !args.slug) return toolError("Pass skillId or slug. Use list_skills to find one.");
+      const snap = await findSkillByIdOrSlug(args.skillId, args.slug);
+      if (!snap) return toolError("No skill with that id or slug. Use list_skills to find one.");
+      const fields = { lastReviewedAt: FieldValue.serverTimestamp(), lastReviewedByEmail: session.email };
+      if (args.reviewCadenceDays != null) {
+        if (!Number.isFinite(args.reviewCadenceDays) || args.reviewCadenceDays <= 0) return toolError("reviewCadenceDays must be a positive number.");
+        fields.reviewCadenceDays = args.reviewCadenceDays;
+      }
+      if (args.reviewDeployThreshold != null) {
+        if (!Number.isFinite(args.reviewDeployThreshold) || args.reviewDeployThreshold <= 0) return toolError("reviewDeployThreshold must be a positive number.");
+        fields.reviewDeployThreshold = args.reviewDeployThreshold;
+      }
+      // Deliberately does not touch updatedAt/files — reviewing a skill and
+      // deciding it's still fine is not itself a content edit (same "don't
+      // conflate the two" reasoning as report_skill_miss above).
+      await snap.ref.update(fields);
+      await audit(session, "mark_skill_reviewed", { skillId: snap.id, slug: snap.data().slug || null });
+      return textResult({ reviewed: true, skillId: snap.id, slug: snap.data().slug || null });
+    },
+  },
+  {
+    name: "report_skill_miss",
+    description: "Tag a real miss against a shared skill — a build failure or a review finding (security/scalability, etc.) that the governing skill should have prevented. Appends to that skill's running misses list (never edits the skill's own content), so its owning team can improve the skill against actual gaps instead of guesses. Pairs with phase-bound skills (see ROUTINE_INSTRUCTIONS.md) and each skill's owningTeam tag.",
+    scope: "board.write",
+    inputSchema: {
+      type: "object",
+      properties: {
+        skillId: { type: "string", description: "From list_skills." },
+        slug: { type: "string", description: "The skill's slug, if you don't have the id." },
+        text: { type: "string", description: `What went wrong, and what the skill should have caught or said instead. Up to ${SKILL_MISS_TEXT_MAX} characters.` },
+        source: { type: "string", enum: SKILL_MISS_SOURCES, description: `Where this was found: "build" (the fix itself was wrong/incomplete) or "review" (a review finding — security, scalability, etc.). Default "review".` },
+        phase: { type: "string", enum: SKILL_MISS_PHASES, description: `Which phase-bound skill list this skill was pulled in under, if known: "build" or "deploy" (see settings/phaseSkillBindings). Optional.` },
+        ticketId: { type: "string", description: "The backlog item id this miss came from, if any." },
+        prNumber: { type: "number", description: "The PR number this miss came from, if any." },
+        projectId: { type: "string", description: "The project id this miss came from, if any." },
+      },
+      required: ["text"], additionalProperties: false,
+    },
+    async run(args, session) {
+      if (!args.skillId && !args.slug) return toolError("Pass skillId or slug. Use list_skills to find one.");
+      const snap = await findSkillByIdOrSlug(args.skillId, args.slug);
+      if (!snap) return toolError("No skill with that id or slug. Use list_skills to find one.");
+      const text = String(args.text || "").trim();
+      if (!text) return toolError("text cannot be empty.");
+      if (text.length > SKILL_MISS_TEXT_MAX) return toolError(`text is limited to ${SKILL_MISS_TEXT_MAX} characters; that was ${text.length}.`);
+      const source = args.source && SKILL_MISS_SOURCES.includes(args.source) ? args.source : "review";
+      const entry = {
+        text, source,
+        phase: args.phase && SKILL_MISS_PHASES.includes(args.phase) ? args.phase : null,
+        ticketId: args.ticketId ? String(args.ticketId) : null,
+        prNumber: Number.isFinite(args.prNumber) ? args.prNumber : null,
+        projectId: args.projectId ? String(args.projectId) : null,
+        reportedByEmail: session.email,
+        reportedVia: "mcp",
+        // A plain Date, not serverTimestamp(): Firestore rejects the
+        // sentinel inside arrayUnion — same reason add_item_comment above
+        // (and app.js's addItemComment) uses one, and it lets every
+        // consumer (the Skills page, tsToISO) treat `at` as a real
+        // Timestamp rather than a plain string a "review" write elsewhere
+        // might format differently.
+        at: new Date(),
+      };
+      // arrayUnion, not a read-modify-write: two misses reported around the
+      // same moment (e.g. two review findings on the same deploy) must
+      // never let one silently clobber the other. Deliberately does NOT
+      // touch updatedAt/updatedByEmail — those track the skill's own
+      // authored content (see update_skill), not feedback about it;
+      // lastMissAt is the separate signal for "a miss came in recently".
+      await snap.ref.update({ misses: FieldValue.arrayUnion(entry), lastMissAt: FieldValue.serverTimestamp() });
+      await audit(session, "report_skill_miss", { skillId: snap.id, slug: snap.data().slug || null, source, phase: entry.phase, ticketId: entry.ticketId, prNumber: entry.prNumber });
+      return textResult({ reported: true, skillId: snap.id, slug: snap.data().slug || null });
+    },
+  },
+  {
+    name: "list_skill_misses",
+    description: "The running list of misses tagged against one shared skill (see report_skill_miss) — newest first. Use this to see what's actually gone wrong before revising a skill you own.",
+    scope: "board.read",
+    inputSchema: {
+      type: "object",
+      properties: {
+        skillId: { type: "string", description: "From list_skills." },
+        slug: { type: "string", description: "The skill's slug, if you don't have the id." },
+      },
+      additionalProperties: false,
+    },
+    async run(args) {
+      if (!args.skillId && !args.slug) return toolError("Pass skillId or slug. Use list_skills to find one.");
+      const snap = await findSkillByIdOrSlug(args.skillId, args.slug);
+      if (!snap) return toolError("No skill with that id or slug. Use list_skills to find one.");
+      const d = snap.data() || {};
+      const misses = (Array.isArray(d.misses) ? d.misses : []).slice().reverse()
+        .map((m) => Object.assign({}, m, { at: tsToISO(m.at) }));
+      return textResult({ skillId: snap.id, slug: d.slug || "", name: d.name || "", matched: misses.length, misses });
     },
   },
   {
@@ -2139,6 +2813,7 @@ const TOOLS = [
         slug: { type: "string", description: `Lowercase letters, numbers and hyphens only, e.g. "ph-designer" — must not already be taken. Up to ${SKILL_SLUG_MAX} characters.` },
         summary: { type: "string", description: `One-line description shown in lists. Up to ${SKILL_SUMMARY_MAX} characters.` },
         version: { type: "string", description: `e.g. "1.0.0". Up to ${SKILL_VERSION_MAX} characters.` },
+        owningTeam: { type: "string", enum: SKILL_OWNING_TEAMS, description: `Informational only — which functional team maintains this skill. One of: ${SKILL_OWNING_TEAMS.join(", ")}. Optional; leave unset if no team has claimed it.` },
         files: {
           type: "array",
           minItems: 1,
@@ -2167,20 +2842,26 @@ const TOOLS = [
       const version = String(args.version || "").trim();
       if (!version) return toolError("version is required.");
       if (version.length > SKILL_VERSION_MAX) return toolError(`version is limited to ${SKILL_VERSION_MAX} characters.`);
+      let owningTeam = null;
+      if (args.owningTeam != null) {
+        owningTeam = String(args.owningTeam).trim();
+        if (!SKILL_OWNING_TEAMS.includes(owningTeam)) return toolError(`owningTeam must be one of: ${SKILL_OWNING_TEAMS.join(", ")}.`);
+      }
       const filesResult = validateSkillFiles(args.files);
       if (filesResult.error) return toolError(filesResult.error);
       const existing = await db().collection("skills").where("slug", "==", slug).limit(1).get();
       if (!existing.empty) return toolError(`A skill with slug "${slug}" already exists (id ${existing.docs[0].id}). Use update_skill to change it, or pick a different slug.`);
       const ref = await db().collection("skills").add({
-        name, slug, summary, version, files: filesResult.files,
+        name, slug, summary, version, owningTeam, files: filesResult.files,
         createdVia: "mcp",
+        lastWriteVia: "mcp",
         createdByEmail: session.email,
         updatedByEmail: session.email,
         createdAt: FieldValue.serverTimestamp(),
         updatedAt: FieldValue.serverTimestamp(),
       });
       await audit(session, "upload_skill", { skillId: ref.id, slug, name, fileCount: filesResult.files.length });
-      return textResult({ created: true, skillId: ref.id, slug, name, version, fileCount: filesResult.files.length });
+      return textResult({ created: true, skillId: ref.id, slug, name, version, owningTeam, fileCount: filesResult.files.length });
     },
   },
   {
@@ -2194,6 +2875,7 @@ const TOOLS = [
         name: { type: "string", description: `Up to ${SKILL_NAME_MAX} characters.` },
         summary: { type: "string", description: `Up to ${SKILL_SUMMARY_MAX} characters.` },
         version: { type: "string", description: `Up to ${SKILL_VERSION_MAX} characters.` },
+        owningTeam: { type: "string", enum: SKILL_OWNING_TEAMS.concat([""]), description: `Informational only. One of: ${SKILL_OWNING_TEAMS.join(", ")} — or "" to clear it back to no team set.` },
         files: {
           type: "array",
           maxItems: SKILL_FILES_MAX,
@@ -2212,7 +2894,7 @@ const TOOLS = [
       const snap = await ref.get();
       if (!snap.exists) return toolError(`No skill with id ${args.skillId}. Use list_skills to find one.`);
       const current = snap.data() || {};
-      const fields = { updatedAt: FieldValue.serverTimestamp(), updatedByEmail: session.email };
+      const fields = { updatedAt: FieldValue.serverTimestamp(), updatedByEmail: session.email, lastWriteVia: "mcp" };
       let revisionId = null;
       if (args.name != null) {
         const name = String(args.name).trim();
@@ -2232,6 +2914,11 @@ const TOOLS = [
         if (version.length > SKILL_VERSION_MAX) return toolError(`version is limited to ${SKILL_VERSION_MAX} characters.`);
         fields.version = version;
       }
+      if (args.owningTeam != null) {
+        const owningTeam = String(args.owningTeam).trim();
+        if (owningTeam && !SKILL_OWNING_TEAMS.includes(owningTeam)) return toolError(`owningTeam must be one of: ${SKILL_OWNING_TEAMS.join(", ")} (or "" to clear it).`);
+        fields.owningTeam = owningTeam || null;
+      }
       if (args.files != null) {
         const filesResult = validateSkillFiles(args.files);
         if (filesResult.error) return toolError(filesResult.error);
@@ -2242,8 +2929,8 @@ const TOOLS = [
         );
         fields.files = filesResult.files;
       }
-      const changedKeys = Object.keys(fields).filter((k) => k !== "updatedAt" && k !== "updatedByEmail");
-      if (!changedKeys.length) return toolError("Nothing to change — pass at least one of name, summary, version, files.");
+      const changedKeys = Object.keys(fields).filter((k) => k !== "updatedAt" && k !== "updatedByEmail" && k !== "lastWriteVia");
+      if (!changedKeys.length) return toolError("Nothing to change — pass at least one of name, summary, version, owningTeam, files.");
       await ref.update(fields);
       await audit(session, "update_skill", { skillId: snap.id, slug: current.slug || null, changed: changedKeys, revisionId });
       return textResult({ updated: true, skillId: snap.id, changed: changedKeys, revisionId });
@@ -2334,7 +3021,7 @@ async function dispatchRpc(msg, session, ctx) {
         serverInfo: {
           name: "ph-agent-console",
           title: "PH Agent Console",
-          version: "1.2.0",
+          version: "1.3.0",
           websiteUrl: PUBLIC_ORIGIN,
           description: "The Personalisation Hub prototype backlog board and help centre.",
           icons: SERVER_ICONS,
