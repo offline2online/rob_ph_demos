@@ -25,6 +25,17 @@ credentials, no network (the two git-backed ones build a disposable local
 repo pair under the OS temp dir) — only this file's own rules suite below
 needs the emulator.
 
+`app-boots.test.mjs` (`npm run test:app-boots`, also on every PR touching
+`backlog-tracker/public/**`) is the console's start-up as a test: it
+imports the real `public/js/app.js` under jsdom with the Firebase SDK
+stubbed and fails if module evaluation stops early, then opens the
+hamburger drawer and clicks every item in it. Added after 25 Sep 2026,
+when a `createDictationController()` call placed above
+`SpeechRecognitionCtor`'s `const` threw at start-up, every handler
+registered after it never ran, and the menu was dead on every device while
+the board still rendered — nothing in the pipeline had ever executed
+`app.js`. It needs only `node` and the `jsdom` dev dependency.
+
 Also here, opt-in because it needs a Chromium on the machine:
 `npm run test:editor` (`faq-editor-load.test.mjs`) opens every article in
 `faq/data/articles/` in the console's real FAQ editor code against the
