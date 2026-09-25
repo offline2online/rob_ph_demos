@@ -1576,10 +1576,21 @@ default.
   resurrects the original imported content. Every push-triggered deploy
   running this meant any article/category deleted in FAQ Management came
   back the moment anyone next shipped an unrelated backlog-tracker/faq
-  change. `deploy-backlog-tracker.yml`'s step now only runs on a manual
-  "Run workflow" dispatch — the one legitimate remaining use is bootstrapping
-  a brand-new, empty Firestore project, not something every deploy needs to
-  redo. This is a verbatim import from Freshdesk Solutions
+  change. That first fix gated the step on `workflow_dispatch` — which is
+  also how the pipeline runs this workflow after every train merge (a
+  GITHUB_TOKEN merge fires no push event, so `finishTrain` dispatches the
+  deploy explicitly), so the seed kept running after every train and the
+  same five deleted articles came back five times on 25 Sep 2026. The step
+  now runs only when the dispatch's `seed_faq` input is ticked — the one
+  legitimate use is bootstrapping a brand-new, empty Firestore project —
+  and, independently of that gate, the seed and `faq-sync.js` both skip any
+  id with a tombstone in `faqDeletedArticles` / `faqDeletedCategories`,
+  which the console writes the moment an editor deletes an article or
+  category (`deleteFaqArticle` / `deleteFaqCategoryIfEmpty` in
+  `public/js/app.js`). Tombstones are permanent (rules: editors create or
+  refresh, nobody deletes); restoring an article means removing its
+  tombstone with the service account first. This is a verbatim import from
+  Freshdesk Solutions
   (`personalisationhub.freshdesk.com/a/solutions`), pulled from a Google
   Drive folder ("Personalisation Hub" › "Freshdesk FAQs - June 2026") that
   already had the full export saved as one file per category plus a

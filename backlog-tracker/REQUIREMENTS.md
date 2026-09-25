@@ -948,6 +948,8 @@ faqArticles/{id}: {
   reviewComments?: { author, text, at }[],   // via comment_on_faq_revision (MCP) — not yet rendered by the console
   lastPromotedAt?,
 }
+faqDeletedArticles/{id}:   { title, categoryId, deletedAt, deletedBy }  // tombstone the console writes BEFORE deleteDoc; seed-faq-data.js and faq-sync.js never recreate a tombstoned id. Permanent: rules let an editor create/refresh one, nobody delete one
+faqDeletedCategories/{id}: { name, deletedAt, deletedBy }              // same, for a category
 ```
 Consumer-facing content for the FAQ / Help Center — see that section below.
 `bodyMd` (the field name predates this and is kept for compatibility) now
@@ -2435,12 +2437,22 @@ Two surfaces sharing this same Firestore project:
   against an *edit* — not against a *delete*, see below) — 9 categories,
   108 articles, a verbatim import of the real Personalisation Hub Help
   Center from a Freshdesk Solutions export. Not placeholder content.
-  `deploy-backlog-tracker.yml`'s step only runs on a manual `workflow_dispatch`
-  now, not on every push-triggered deploy (XFeVboxWduEPT2zGcj8y, 25 Sep
-  2026) — `create()`-if-missing can't tell "never existed" from
+  `deploy-backlog-tracker.yml`'s step runs only when a manual dispatch's
+  `seed_faq` input is ticked (XFeVboxWduEPT2zGcj8y, 25 Sep 2026, corrected
+  the same day) — `create()`-if-missing can't tell "never existed" from
   "deliberately deleted in the console," so running it on every deploy
   resurrected any article/category someone had just deleted the moment the
-  next unrelated change shipped.
+  next unrelated change shipped. The first fix gated it on
+  `workflow_dispatch` alone, which is exactly how the pipeline runs this
+  workflow after every train merge, so the seed kept running. Independently
+  of the gate, a deleted id can no longer be recreated by anything: the
+  console writes a tombstone (`faqDeletedArticles/{id}`,
+  `faqDeletedCategories/{id}` — see the data model) before deleting, and
+  both the seed and `faq-sync.js` skip tombstoned ids. A train that
+  changes `faq/data/` also gets its repo → Firestore sync dispatched by
+  `finishTrain` (a GITHUB_TOKEN merge fires no push event), so a content
+  ticket's edit reaches the console before the next hourly export would
+  otherwise overwrite it with Firestore's older copy.
 - **Version display**: both `faq/` and `backlog-tracker/public/` render a
   small hand-maintained `APP_VERSION` in their footer (`js/version.js` in
   each, independent per site since they deploy separately) — bumped by
