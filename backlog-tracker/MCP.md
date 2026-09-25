@@ -87,7 +87,8 @@ empty or mis-edited collection can never lock everyone out.
 `get_approved_for_deployment_board`, `get_project_docs`,
 `list_doc_revisions`, `get_doc_revision`, `search_faq`, `get_faq_article`,
 `list_pending_faq_revisions`, `get_faq_revision`, `list_skills`,
-`get_skill`, `list_skill_misses`, `get_routine_setup_instructions`.
+`get_skill`, `list_skill_misses`, `get_routine_setup_instructions`,
+`list_concepts`, `get_concept`.
 
 `get_ready_for_testing_board` and `get_approved_for_deployment_board` are
 **composable** — alongside the usual JSON they return an embedded HTML
@@ -109,6 +110,7 @@ whole train is ready for it.
 | `add_item_comment` | `set_project_artifact` | `comment_on_faq_revision` | `delete_skill` | | |
 | | `create_project_document` / `update_project_document` / `delete_project_document` | | `report_skill_miss` (tags a real gap, never edits the skill's own content) | | |
 | | `create_interface` / `update_interface` / `delete_interface` | | | | |
+| | `add_concept_comment` / `set_concept_readme` / `set_concept_requirements` (Concept Incubator; the last two refused once a concept is promoted) | | | | |
 
 **Setting up your own personal Notify Claude Routine** (so board clicks you
 make fire a session under your own Claude account instead of the one
@@ -155,6 +157,25 @@ recoverable the same way as a documentation write — `list_doc_revisions`
 takes an optional `skillId` filter alongside `projectId`/`docId`/
 `interfaceId`. Each file is `{path, content}`; a skill holds 1–20 files,
 each up to 100,000 characters (`SKILL_FILE_MAX`).
+
+**The Concept Incubator gets the same "documentation, full read/write" tools
+a project does, but no ticket-shaped tools at all.** A concept
+(`concepts/{conceptId}`) is the pre-project stage — a name plus
+README/Requirements/discussion — and has no `backlogItems` of its own until
+someone promotes it, so there is deliberately no `list_backlog_items`- or
+`create_backlog_item`-shaped tool for it. `list_concepts`/`get_concept` read
+it; `add_concept_comment` posts to its discussion thread (works even after
+promotion); `set_concept_readme`/`set_concept_requirements` replace its
+docs the same way `set_project_readme`/`set_project_requirements` do,
+including the same `list_doc_revisions`/`get_doc_revision` recovery path
+(pass `conceptId` instead of `projectId`) — except both are refused once
+`status` is `"promoted"`, matching the console's own read-only view of a
+promoted concept: from that point `promotedProjectId` is the real project,
+and its own documentation tools are the ones to use. There is also
+deliberately no `create_concept` or `promote_concept_to_project` tool —
+this server has no `create_project` tool either, so a concept's or
+project's own container-level lifecycle stays a board/human action, not
+something an agent can do unattended.
 
 **The help centre tools never publish anything.** `create_faq_article`
 always writes `status: "draft"`; `update_faq_article` always writes a

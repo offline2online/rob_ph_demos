@@ -2077,13 +2077,18 @@ Required properties, each covered by `test/mcp-server.test.js`:
 `get_approved_for_deployment_board`, `get_project_docs`,
 `list_doc_revisions`, `get_doc_revision`, `search_faq`, `get_faq_article`,
 `list_pending_faq_revisions`, `get_faq_revision`, `list_skills`, `get_skill`,
-`list_skill_misses`, `get_routine_setup_instructions`.
+`list_skill_misses`, `get_routine_setup_instructions`, `list_concepts`,
+`get_concept`.
 Write (editor/admin only) — tickets: `create_backlog_item` (always into
 `backlog`), `update_backlog_item` (title, desc, type, category only),
 `add_item_comment`; documentation: `set_project_requirements`,
 `set_project_readme`, `set_project_artifact`, `create_project_document`,
 `update_project_document`, `delete_project_document`, `create_interface`,
-`update_interface`, `delete_interface`; help centre: `create_faq_article`
+`update_interface`, `delete_interface`; Concept Incubator:
+`add_concept_comment`, `set_concept_readme`, `set_concept_requirements`
+(the last two refused once a concept's `status` is `"promoted"` — see
+"Concept Incubator page" and `concepts/{conceptId}` above); help centre:
+`create_faq_article`
 (always `status: "draft"`), `update_faq_article` (always a `pendingRevision`,
 never the live fields), `comment_on_faq_revision` — see "FAQ revision
 review" under "Functional requirements — FAQ / Help Center" below for what
@@ -2091,6 +2096,12 @@ these two collections' write tools do and don't do; skills library:
 `upload_skill`, `update_skill`, `delete_skill`, `report_skill_miss`,
 `mark_skill_reviewed`; your own routine binding: `set_my_routine_binding`;
 deploy (one deliberate exception — see below): `approve_deploy_to_main`.
+A concept has no `list_backlog_items`-shaped tool of its own — it has no
+`backlogItems` until it's promoted to a real project (see "Concept
+Incubator page" above), which is also why there is no `create_concept` or
+`promote_concept_to_project` tool: this server has no `create_project`
+tool either, so a project's or concept's own creation/promotion stays a
+board/human action.
 
 **The two `board.read` "board" tools above are also composable.**
 `get_ready_for_testing_board` and `get_approved_for_deployment_board`

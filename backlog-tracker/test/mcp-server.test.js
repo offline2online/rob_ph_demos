@@ -568,6 +568,111 @@ async function rpc(token, method, params, id = 1) {
     assert.strictEqual(env.store.col("projects").get("proj1").artifactUrl, null);
   });
 
+  // ── Concept Incubator ─────────────────────────────────────────────────────
+  // Pre-project ideas (concepts/{id}) — a separate collection from projects,
+  // so it needs its own tool surface rather than piggybacking on
+  // list_projects (which only ever queries `projects`).
+  await test("exposes the concept tools", async () => {
+    const names = mcp.__test.TOOLS.map((t) => t.name);
+    for (const expected of ["list_concepts", "get_concept", "add_concept_comment", "set_concept_readme", "set_concept_requirements"]) {
+      assert.ok(names.includes(expected), `missing tool ${expected}`);
+    }
+    // No ticket-shaped tool for concepts — they have no backlogItems until promoted.
+    assert.ok(!names.includes("list_concept_items"), "a concept has no backlog of its own");
+  });
+
+  env.store.col("concepts").set("con1", {
+    name: "Customer support concept", status: "active",
+    readmeMd: "# Support concept\n\nEarly idea.", requirementsMd: "# Requirements\n\nTBD.",
+    comments: [], createdByEmail: "rob@offline2online.com",
+  });
+  env.store.col("concepts").set("con2", {
+    name: "Promoted idea", status: "promoted", promotedProjectId: "proj1",
+    readmeMd: "# Promoted\n\nAlready a project.", requirementsMd: "", comments: [],
+  });
+
+  await test("lists concepts, optionally filtered by status", async () => {
+    const all = JSON.parse((await rpc(tokens.access_token, "tools/call", { name: "list_concepts", arguments: {} })).body.result.content[0].text);
+    assert.deepStrictEqual(all.concepts.map((c) => c.id).sort(), ["con1", "con2"]);
+    const activeOnly = JSON.parse((await rpc(tokens.access_token, "tools/call", { name: "list_concepts", arguments: { status: "active" } })).body.result.content[0].text);
+    assert.deepStrictEqual(activeOnly.concepts.map((c) => c.id), ["con1"]);
+    const found = all.concepts.find((c) => c.id === "con2");
+    assert.strictEqual(found.promotedProjectId, "proj1");
+  });
+
+  await test("gets one concept in full, including its comments", async () => {
+    const out = JSON.parse((await rpc(tokens.access_token, "tools/call", { name: "get_concept", arguments: { conceptId: "con1" } })).body.result.content[0].text);
+    assert.match(out.readmeMd, /Early idea/);
+    assert.strictEqual(out.status, "active");
+    assert.deepStrictEqual(out.comments, []);
+  });
+
+  await test("refuses get_concept on an unknown id", async () => {
+    const res = await rpc(tokens.access_token, "tools/call", { name: "get_concept", arguments: { conceptId: "nope" } });
+    assert.strictEqual(res.body.result.isError, true);
+  });
+
+  await test("writes a concept's README and Requirements, recoverably", async () => {
+    const res = await rpc(tokens.access_token, "tools/call", {
+      name: "set_concept_readme", arguments: { conceptId: "con1", contentMd: "# Support concept\n\nRewritten." },
+    });
+    const out = JSON.parse(res.body.result.content[0].text);
+    assert.ok(out.revisionId, "a replaced version should be recorded");
+    assert.match(env.store.col("concepts").get("con1").readmeMd, /Rewritten/);
+    const back = JSON.parse((await rpc(tokens.access_token, "tools/call", {
+      name: "get_doc_revision", arguments: { revisionId: out.revisionId },
+    })).body.result.content[0].text);
+    assert.match(back.contentMd, /Early idea/, "the revision should hold the PREVIOUS text");
+    assert.strictEqual(back.conceptId, "con1");
+
+    await rpc(tokens.access_token, "tools/call", { name: "set_concept_requirements", arguments: { conceptId: "con1", contentMd: "# Requirements\n\nFinal." } });
+    assert.match(env.store.col("concepts").get("con1").requirementsMd, /Final/);
+
+    const revs = JSON.parse((await rpc(tokens.access_token, "tools/call", { name: "list_doc_revisions", arguments: { conceptId: "con1" } })).body.result.content[0].text);
+    assert.ok(revs.revisions.length >= 2);
+  });
+
+  await test("refuses to edit README/Requirements on an already-promoted concept", async () => {
+    const readme = await rpc(tokens.access_token, "tools/call", { name: "set_concept_readme", arguments: { conceptId: "con2", contentMd: "x" } });
+    assert.strictEqual(readme.body.result.isError, true);
+    assert.match(readme.body.result.content[0].text, /promoted/);
+    const reqs = await rpc(tokens.access_token, "tools/call", { name: "set_concept_requirements", arguments: { conceptId: "con2", contentMd: "x" } });
+    assert.strictEqual(reqs.body.result.isError, true);
+  });
+
+  await test("adds a concept comment, attributed to the person, even on a promoted concept", async () => {
+    await rpc(tokens.access_token, "tools/call", { name: "add_concept_comment", arguments: { conceptId: "con1", text: "Worth pursuing." } });
+    assert.strictEqual(env.store.col("concepts").get("con1").comments.length, 1);
+    assert.strictEqual(env.store.col("concepts").get("con1").comments[0].author, TEAMMATE);
+
+    const onPromoted = await rpc(tokens.access_token, "tools/call", { name: "add_concept_comment", arguments: { conceptId: "con2", text: "Still fine to discuss." } });
+    assert.strictEqual(onPromoted.body.result.isError, undefined, "discussion stays open after promotion");
+    assert.strictEqual(env.store.col("concepts").get("con2").comments.length, 1);
+  });
+
+  await test("refuses an empty or over-length concept comment", async () => {
+    const empty = await rpc(tokens.access_token, "tools/call", { name: "add_concept_comment", arguments: { conceptId: "con1", text: "   " } });
+    assert.strictEqual(empty.body.result.isError, true);
+    const long = await rpc(tokens.access_token, "tools/call", { name: "add_concept_comment", arguments: { conceptId: "con1", text: "x".repeat(4001) } });
+    assert.strictEqual(long.body.result.isError, true);
+  });
+
+  await test("refuses a concept README past the size ceiling", async () => {
+    const res = await rpc(tokens.access_token, "tools/call", {
+      name: "set_concept_readme", arguments: { conceptId: "con1", contentMd: "x".repeat(mcp.__test.CONCEPT_MD_MAX + 1) },
+    });
+    assert.strictEqual(res.body.result.isError, true);
+  });
+
+  await test("every concept write is gated on board.write; the reads aren't", async () => {
+    for (const name of ["add_concept_comment", "set_concept_readme", "set_concept_requirements"]) {
+      assert.strictEqual(mcp.__test.TOOLS.find((t) => t.name === name).scope, "board.write", `${name} must require board.write`);
+    }
+    for (const name of ["list_concepts", "get_concept"]) {
+      assert.strictEqual(mcp.__test.TOOLS.find((t) => t.name === name).scope, "board.read");
+    }
+  });
+
   // ── FAQ write tools: create/update/review ────────────────────────────────
   await test("exposes the FAQ write and review tools", async () => {
     const names = mcp.__test.TOOLS.map((t) => t.name);

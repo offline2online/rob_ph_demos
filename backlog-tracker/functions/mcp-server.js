@@ -1013,6 +1013,10 @@ async function uniqueFaqSlug(base) {
 // clear of the limit — which is also why a replaced version is written to
 // docRevisions rather than kept as a second copy on the project doc.
 const PROJECT_MD_MAX = 200000;
+// A concept's readmeMd/requirementsMd share this same 200000 cap in
+// firestore.rules (see the `concepts/{conceptId}` match block) — reuse the
+// constant rather than duplicating the number.
+const CONCEPT_MD_MAX = PROJECT_MD_MAX;
 // projectDocs and interfaces are capped at what firestore.rules already
 // allows the BROWSER to write (20000). Going higher here would let an agent
 // author a document a person could then never save an edit to from the Docs
@@ -2177,7 +2181,7 @@ const TOOLS = [
   },
   {
     name: "list_doc_revisions",
-    description: "Every previous version of a project's documentation that a write has replaced — newest first, metadata only. Use this to find what a change overwrote, then get_doc_revision to read it back.",
+    description: "Every previous version of a project's or concept's documentation that a write has replaced — newest first, metadata only. Use this to find what a change overwrote, then get_doc_revision to read it back.",
     scope: "board.read",
     inputSchema: {
       type: "object",
@@ -2186,6 +2190,7 @@ const TOOLS = [
         docId: { type: "string", description: "Restrict to one project document." },
         interfaceId: { type: "string", description: "Restrict to one interface contract." },
         skillId: { type: "string", description: "Restrict to one skill." },
+        conceptId: { type: "string", description: "Restrict to one Concept Incubator concept's documentation." },
         limit: { type: "integer", minimum: 1, maximum: 50, description: "Default 20." },
       },
       additionalProperties: false,
@@ -2196,6 +2201,7 @@ const TOOLS = [
       if (a.docId) q = q.where("docId", "==", String(a.docId));
       else if (a.interfaceId) q = q.where("interfaceId", "==", String(a.interfaceId));
       else if (a.skillId) q = q.where("skillId", "==", String(a.skillId));
+      else if (a.conceptId) q = q.where("conceptId", "==", String(a.conceptId));
       else if (a.projectId) q = q.where("projectId", "==", String(a.projectId));
       const snap = await q.limit(MAX_READ_DOCS).get();
       const rows = [];
@@ -2204,7 +2210,7 @@ const TOOLS = [
         rows.push({
           revisionId: d.id, target: v.target || null, name: v.name || null,
           projectId: v.projectId || null, docId: v.docId || null, interfaceId: v.interfaceId || null,
-          skillId: v.skillId || null,
+          skillId: v.skillId || null, conceptId: v.conceptId || null,
           chars: v.chars || 0, replacedAt: tsToISO(v.replacedAt), replacedByEmail: v.replacedByEmail || null,
         });
       });
@@ -2229,10 +2235,185 @@ const TOOLS = [
       return textResult({
         revisionId: snap.id, target: v.target || null, name: v.name || null,
         projectId: v.projectId || null, docId: v.docId || null, interfaceId: v.interfaceId || null,
-        skillId: v.skillId || null,
+        skillId: v.skillId || null, conceptId: v.conceptId || null,
         replacedAt: tsToISO(v.replacedAt), replacedByEmail: v.replacedByEmail || null,
         contentMd: v.contentMd || "",
       });
+    },
+  },
+  // ── Concept Incubator ─────────────────────────────────────────────────────
+  // A concept (public/js/app.js's openConceptIncubatorPage/
+  // openConceptDetailPage, firestore.rules' `concepts/{conceptId}`) is the
+  // pre-project stage: a name plus README/Requirements/discussion, living in
+  // its own top-level collection precisely so it never appears on the
+  // pipeline board or in `projects` — see backlog-tracker/README.md's
+  // "Concept Incubator" section. Before this section existed, nothing here
+  // ever read or wrote the `concepts` collection at all, so a concept was
+  // invisible to every MCP client — list_projects only ever queries
+  // `projects`, and a concept doesn't become a project (with its own
+  // backlogItems) until someone promotes it. These tools give a concept the
+  // same "full read/write on its documentation" treatment `projects` already
+  // gets, without pretending it has a backlog — there is deliberately no
+  // list_backlog_items-style tool here, because a concept has no pipeline
+  // column to list. There is also deliberately no create_concept or
+  // promote_concept_to_project tool: this server has no create_project tool
+  // either, so a concept's container-level lifecycle (creating one,
+  // promoting it into a real project) stays a human action on the board,
+  // matching how a project itself is created.
+  {
+    name: "list_concepts",
+    description: "Every concept in the Concept Incubator — the pre-project stage, before something becomes a real tracked project. Use this to find the conceptId get_concept and the write tools below need.",
+    scope: "board.read",
+    inputSchema: {
+      type: "object",
+      properties: {
+        status: { type: "string", enum: ["active", "promoted"], description: "Restrict to one status. Omit to see both." },
+      },
+      additionalProperties: false,
+    },
+    async run(args) {
+      const a = args || {};
+      const snap = await db().collection("concepts").get();
+      const out = [];
+      snap.forEach((d) => {
+        const v = d.data() || {};
+        const status = v.status || "active";
+        if (a.status && status !== a.status) return;
+        out.push({
+          id: d.id,
+          name: v.name || "",
+          status,
+          promotedProjectId: v.promotedProjectId || null,
+          hasReadme: !!(v.readmeMd && v.readmeMd.trim()),
+          hasRequirements: !!(v.requirementsMd && v.requirementsMd.trim()),
+          commentCount: Array.isArray(v.comments) ? v.comments.length : 0,
+          createdByEmail: v.createdByEmail || null,
+          updatedAt: tsToISO(v.updatedAt),
+        });
+      });
+      out.sort((x, y) => x.name.localeCompare(y.name));
+      return textResult({ concepts: out });
+    },
+  },
+  {
+    name: "get_concept",
+    description: "One concept in full — README, Requirements, every discussion comment, and, if it's been promoted, the projectId it became (switch to get_project_docs/list_projects for that project from then on).",
+    scope: "board.read",
+    inputSchema: {
+      type: "object",
+      properties: { conceptId: { type: "string", description: "From list_concepts." } },
+      required: ["conceptId"], additionalProperties: false,
+    },
+    async run(args) {
+      const snap = await db().collection("concepts").doc(String(args.conceptId)).get();
+      if (!snap.exists) return toolError(`No concept with id ${args.conceptId}. Call list_concepts first.`);
+      const v = snap.data() || {};
+      return textResult({
+        id: snap.id,
+        name: v.name || "",
+        status: v.status || "active",
+        readmeMd: v.readmeMd || "",
+        requirementsMd: v.requirementsMd || "",
+        comments: (Array.isArray(v.comments) ? v.comments : []).map((c) => ({
+          author: c.author || "", text: c.text || "", at: tsToISO(c.at),
+        })),
+        promotedProjectId: v.promotedProjectId || null,
+        promotedAt: tsToISO(v.promotedAt),
+        createdByEmail: v.createdByEmail || null,
+        createdAt: tsToISO(v.createdAt),
+        updatedAt: tsToISO(v.updatedAt),
+      });
+    },
+  },
+  {
+    name: "add_concept_comment",
+    description: "Add a comment to a concept's discussion thread. It shows on the board's own thread, labelled with your email, exactly like a comment typed there. Works on a promoted concept too — discussion stays open even after the README/Requirements themselves become read-only.",
+    scope: "board.write",
+    inputSchema: {
+      type: "object",
+      properties: {
+        conceptId: { type: "string" },
+        text: { type: "string", description: "The comment. Up to 4000 characters." },
+      },
+      required: ["conceptId", "text"], additionalProperties: false,
+    },
+    async run(args, session) {
+      const text = String(args.text || "").trim();
+      if (!text) return toolError("text is required.");
+      if (text.length > 4000) return toolError("A comment is limited to 4000 characters.");
+      const ref = db().collection("concepts").doc(String(args.conceptId));
+      const snap = await ref.get();
+      if (!snap.exists) return toolError(`No concept with id ${args.conceptId}. Call list_concepts first.`);
+      // A plain Date, not serverTimestamp() — same reason add_item_comment
+      // above uses one: Firestore rejects the sentinel inside arrayUnion.
+      await ref.update({
+        comments: FieldValue.arrayUnion({ author: session.email, text, at: new Date() }),
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+      await audit(session, "add_concept_comment", { conceptId: ref.id, chars: text.length });
+      return textResult({ added: true, conceptId: ref.id, author: session.email });
+    },
+  },
+  {
+    name: "set_concept_readme",
+    description: "Replace a concept's README markdown. Send the COMPLETE new document — this overwrites, it does not append. The previous version is kept in the revision history. Refused once the concept has been promoted — its Docs page is the source of truth from then on; use set_project_readme with promotedProjectId instead.",
+    scope: "board.write",
+    inputSchema: {
+      type: "object",
+      properties: {
+        conceptId: { type: "string", description: "From list_concepts." },
+        contentMd: { type: "string", description: `The whole document, markdown. Up to ${CONCEPT_MD_MAX} characters.` },
+      },
+      required: ["conceptId", "contentMd"], additionalProperties: false,
+    },
+    async run(args, session) {
+      const conceptId = String(args.conceptId);
+      const md = String(args.contentMd == null ? "" : args.contentMd);
+      if (md.length > CONCEPT_MD_MAX) return toolError(`A concept README is limited to ${CONCEPT_MD_MAX} characters; that was ${md.length}.`);
+      const snap = await db().collection("concepts").doc(conceptId).get();
+      if (!snap.exists) return toolError(`No concept with id ${conceptId}. Call list_concepts first.`);
+      const c = snap.data() || {};
+      if ((c.status || "active") === "promoted") {
+        return toolError(`Concept ${conceptId} has already been promoted to project ${c.promotedProjectId || "(unknown)"}; its README is read-only from here on. Use set_project_readme on that project instead.`);
+      }
+      const before = c.readmeMd || "";
+      const revisionId = await recordDocRevision(session, "concept.readmeMd", { conceptId, name: c.name || "" }, before);
+      await db().collection("concepts").doc(conceptId).set(
+        { readmeMd: md, updatedAt: FieldValue.serverTimestamp() }, { merge: true },
+      );
+      await audit(session, "set_concept_readme", { conceptId, chars: md.length, replacedChars: before.length, revisionId });
+      return textResult({ updated: true, conceptId, chars: md.length, replacedChars: before.length, revisionId });
+    },
+  },
+  {
+    name: "set_concept_requirements",
+    description: "Replace a concept's Requirements markdown. Send the COMPLETE new document — this overwrites, it does not append. The previous version is kept in the revision history. Refused once the concept has been promoted — its Docs page is the source of truth from then on; use set_project_requirements with promotedProjectId instead.",
+    scope: "board.write",
+    inputSchema: {
+      type: "object",
+      properties: {
+        conceptId: { type: "string", description: "From list_concepts." },
+        contentMd: { type: "string", description: `The whole document, markdown. Up to ${CONCEPT_MD_MAX} characters.` },
+      },
+      required: ["conceptId", "contentMd"], additionalProperties: false,
+    },
+    async run(args, session) {
+      const conceptId = String(args.conceptId);
+      const md = String(args.contentMd == null ? "" : args.contentMd);
+      if (md.length > CONCEPT_MD_MAX) return toolError(`Concept requirements are limited to ${CONCEPT_MD_MAX} characters; that was ${md.length}.`);
+      const snap = await db().collection("concepts").doc(conceptId).get();
+      if (!snap.exists) return toolError(`No concept with id ${conceptId}. Call list_concepts first.`);
+      const c = snap.data() || {};
+      if ((c.status || "active") === "promoted") {
+        return toolError(`Concept ${conceptId} has already been promoted to project ${c.promotedProjectId || "(unknown)"}; its Requirements are read-only from here on. Use set_project_requirements on that project instead.`);
+      }
+      const before = c.requirementsMd || "";
+      const revisionId = await recordDocRevision(session, "concept.requirementsMd", { conceptId, name: c.name || "" }, before);
+      await db().collection("concepts").doc(conceptId).set(
+        { requirementsMd: md, updatedAt: FieldValue.serverTimestamp() }, { merge: true },
+      );
+      await audit(session, "set_concept_requirements", { conceptId, chars: md.length, replacedChars: before.length, revisionId });
+      return textResult({ updated: true, conceptId, chars: md.length, replacedChars: before.length, revisionId });
     },
   },
   {
@@ -2988,6 +3169,7 @@ const SERVER_INSTRUCTIONS = [
   "You have full read/write access to project DOCUMENTATION and are expected to keep it current as you work: get_project_docs to read a project's Requirements, README, additional documents and interface contracts, then set_project_requirements / set_project_readme / create_project_document / update_project_document / create_interface / update_interface to update them.",
   "Documentation writes REPLACE the whole document, so read it first and send back the complete revised text — never a fragment. The version you replace is kept, and list_doc_revisions / get_doc_revision can recover it.",
   "Where a project's documentation also exists as a file in the repo (REQUIREMENTS.md, README.md, shared/interface-contract.md), the two are meant to match: update both, and treat a divergence as a bug in whichever is stale.",
+  "The Concept Incubator holds pre-project ideas that haven't been promoted to a tracked project yet — list_concepts / get_concept read them, and add_concept_comment / set_concept_readme / set_concept_requirements write to them, same read/write split as project documentation. A concept has no backlog of its own until it's promoted; once promoted, use list_projects/get_project_docs on the project it became instead.",
   "Use search_faq / get_faq_article to answer Personalisation Hub product questions from the published help centre instead of guessing.",
   "You can also write to the help centre: create_faq_article files a brand-new draft, and update_faq_article proposes a change to an existing one as a pendingRevision — never live. Either way a person still reviews and approves it in FAQ Management before anything publishes; list_pending_faq_revisions and get_faq_revision let you check on a proposal's status.",
   "There is also a shared, organisation-wide skills library — NOT scoped to any one project. list_skills / get_skill read it (any signed-in member, including a viewer); upload_skill / update_skill / delete_skill write to it (editor role). Use this to publish or fetch a reusable piece of packaged instructions any team member's agent can pull in, e.g. this console's own ph-designer front-end skill.",
@@ -3303,6 +3485,6 @@ exports.__test = {
   routePath, redirectUriAllowed, generateTitle, suggestCategory, atLeast,
   sha256b64url, authorizationServerMetadata, protectedResourceMetadata,
   TOOLS, CATEGORIES, STATUS_LABELS, SUPPORTED_PROTOCOL_VERSIONS, SERVER_ICONS,
-  PROJECT_WRITABLE_FIELDS, PROJECT_MD_MAX, DOC_MD_MAX, updateProjectFields,
+  PROJECT_WRITABLE_FIELDS, PROJECT_MD_MAX, DOC_MD_MAX, CONCEPT_MD_MAX, updateProjectFields,
   FAQ_TITLE_MAX, FAQ_SUMMARY_MAX, FAQ_BODY_MAX, FAQ_KEYWORDS_MAX, FAQ_REASON_MAX, FAQ_DOC_TYPES,
 };
