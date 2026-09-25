@@ -7,7 +7,7 @@
     "test:generated-builds": "node generated-builds.test.js && node patch-paths.test.js",
     "test:mcp": "node mcp-server.test.js",
     "test:client": "node mcp-client.test.mjs",
-    "test:train-lock": "node train-lock.test.js && node train-lock-trigger.test.js && node train-lock-branch-archive.test.js",
+    "test:train-lock": "node train-lock.test.js && node train-lock-trigger.test.js && node train-lock-branch-archive.test.js && node train-carried.test.js",
     "test:skill-history": "node skill-history-trigger.test.js",
     "test:build-batches": "node build-batches.test.mjs",
     "test:faq-index": "node faq-index.test.js",

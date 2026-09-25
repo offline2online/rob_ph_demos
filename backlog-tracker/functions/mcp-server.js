@@ -1126,6 +1126,15 @@ function itemDetail(id, d, projects) {
     // Read-only window onto the deployment train. An agent can see where a
     // ticket is in the pipeline; nothing here is writable through MCP.
     train: {
+      deployBranch: d.deployBranch || null,
+      deployCommit: d.deployCommit || null,
+      // A card with no commit of its own, riding on a sibling's commit:
+      // deployCommit above is that sibling's sha, `git log --grep "Backlog
+      // item: <this id>"` finds nothing, and the card goes live when the
+      // train merges — not before (run-backlog-automation.js →
+      // carryingCommitOnTrain).
+      carriedByCommit: d.carriedByCommit || null,
+      carriedByItem: d.carriedByItem || null,
       revertRequested: d.revertRequested === true,
       revertBlockedBy: d.revertBlockedBy || null,
       mergeCommit: d.mergeCommit || null,

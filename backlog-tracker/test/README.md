@@ -12,12 +12,18 @@ CI runs this on every pull request and before every deploy
 
 This directory also holds the MCP server suite (`mcp-server.test.js`,
 `mcp-client.test.mjs` — see `../MCP.md`) and the deployment train's
-lock-recompute suite (`train-lock.test.js`, `train-lock-trigger.test.js`,
-`train-lock-branch-archive.test.js` — `npm run test:train-lock`; see
-`../README.md` → "trainLocked clearing isn't only a successful-merge thing
-any more"). All three run on plain `node`, no emulator, no Java, no
-credentials, no network — only this file's own rules suite below needs the
-emulator.
+suite (`npm run test:train-lock`): the lock-recompute tests
+(`train-lock.test.js`, `train-lock-trigger.test.js`,
+`train-lock-branch-archive.test.js` — see `../README.md` → "trainLocked
+clearing isn't only a successful-merge thing any more") and
+`train-carried.test.js`, which pins the rule that a card whose content a
+sibling's commit delivered rides on that commit and goes live only when
+its train merges — never `noDeploymentRequired`, never live on approval
+(see `../REQUIREMENTS.md` → "A card carried by a sibling's commit follows
+that train"). All of these run on plain `node`, no emulator, no Java, no
+credentials, no network (the two git-backed ones build a disposable local
+repo pair under the OS temp dir) — only this file's own rules suite below
+needs the emulator.
 
 Also here, opt-in because it needs a Chromium on the machine:
 `npm run test:editor` (`faq-editor-load.test.mjs`) opens every article in

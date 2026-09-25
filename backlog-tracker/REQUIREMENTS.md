@@ -128,7 +128,7 @@ deleted by hand).
   attachments?: [{ type: "image" | "video", url: string, path: string, name: string, size: number, uploadedAt: timestamp }], // see "Attachments" below
   previewUrl?: string,          // a Ready for Testing card's own "Test this" link
   testSummary?: string,         // Ready for Testing card's primary text — see below
-  noDeploymentRequired?: boolean, // set from the Edit item modal — see "No manual way to reach published-live exists" below for the one exception it carves out
+  noDeploymentRequired?: boolean, // set from the Edit item modal, or by the no-diff path when the content is already on main — see "No manual way to reach published-live exists" below for the one exception it carves out. The train wins over the flag: a card with a deployCommit is a train card whatever this says (isNoDeployCard() in app.js)
   testPassed?: boolean,         // DEPRECATED — the old per-card "Confirm tested" flag. Approval is the checkbox now (see "Approving out of Ready for Testing"); read-only leftover on old cards, never written
   testVersion?: string,         // backlog-tracker's own APP_VERSION, stamped once on first entry to Ready for Testing and carried unchanged through Approved for Deployment, Deployed/Main Branch (Live), and Archived — see "Test version" below
   effort?: "small" | "medium" | "large" | null,     // cwehxSMZv8noJQv5kB22 — real value from the Edit item modal; null/unset falls back to build-batches.js's estimateEffort() guess. See "Feed in requirements → suggested build batches" below
@@ -164,6 +164,8 @@ deleted by hand).
   revertRequested?: boolean,    // Failed testing wrote it: take this rejected ticket's commits back off the branch
   revertBlockedBy?: [string],   // item ids whose later commits made that revert conflict; a human resolves, nothing is force-pushed
   revertedCommits?: [string],   // the revert commits that took it off
+  carriedByCommit?: string,     // this card has NO commit of its own: a sibling's commit on the branch already carried its change (a shared-file batch). deployCommit is that same sha, so the card is on the train like any other and goes live only when the train merges — see "A card carried by a sibling's commit follows that train" under "The deployment train"
+  carriedByItem?: string | null, // the sibling's id from that commit's `Backlog item:` trailer (null for a commit with no trailer)
 }
 ```
 
@@ -228,7 +230,7 @@ Status pipeline and what each transition means:
 | `backlog` | Backlog | Captured, not yet worked |
 | `ready-for-testing` | Ready for Testing | Implemented and committed on the project's integration branch, awaiting human test |
 | `ready-to-publish` | Approved for Deployment | Approved out of Ready for Testing via the project's own "Approved for Deployment" action |
-| `published-live` | Deployed / Main Branch (Live) | Set only by `run-backlog-automation.js` after it actually merges the train's PR — see below, no manual button sets this |
+| `published-live` | Deployed / Main Branch (Live) | Set only by `run-backlog-automation.js` after it actually merges the train's PR — see below, no manual button sets this (the one exception is a card with nothing on any train, flagged `noDeploymentRequired` — see "No manual way to reach `published-live` exists") |
 | `archived` | (hidden from the board) | Set via the Archive action on a Deployed/Main-Branch card; reversible via Restore |
 
 ### `consoleUsers/{lowercasedEmail}`
@@ -362,6 +364,34 @@ Requirements that follow from it:
   `revertBlockedBy` names the tickets a human must decide about (send them
   back too, or fix the branch by hand). The card shows that state, and
   Deploy to Main stays hidden until it clears.
+- **A card carried by a sibling's commit follows that train.** A
+  shared-file batch delivers two tickets' content in one commit, so the
+  second ticket's `patchFiles` produce no diff against the branch. That
+  card has no commit of its own, but its change IS on the branch — inside
+  the sibling's commit — so `processApplyPatch` stamps it with that commit
+  (`carryingCommitOnTrain()`: `deployCommit` = the carrying sha, plus
+  `carriedByCommit`/`carriedByItem` as the explicit marker, and never
+  `deployCommits`, which is what a revert takes off) and it is on the train
+  like any other ticket — checkbox approval, Failed testing, "Waiting for
+  Deploy to Main", its own test link on the branch, and `finishTrain` flips
+  it to `published-live` when the train merges, not before. Until 25 Sep
+  2026 the no-diff path flagged such a card `noDeploymentRequired` instead,
+  which handed it the board's one-click "Confirm tested — mark Merged to
+  Main": OhKUnoGbpUAeJiXiLIvc and yUISCow4tCg9uxnMJFOy read Deployed / Main
+  Branch (Live) while their code sat unmerged on
+  `deploy/backlog-tracker-faqs` inside 419bb79 (ORUeAQ4b3vmv2EhEni5O's
+  commit, which reached `main` later as PR #211); the Deploy run flagged
+  both. Consequences: Failed testing on a carried card never reverts the
+  sibling's commit — `processRevertFromTrain` detaches the card (it becomes
+  a plain Backlog ticket) and names the ticket to send back if the content
+  itself must go; reverting the carrying commit sends every card riding on
+  it back to Backlog too (`detachCarriedCards`); a card that gets a commit
+  of its own on a re-patch stops being carried; and a no-diff whose
+  carrying commit carries THIS card's own `Backlog item:` trailer (pushed
+  by hand, never stamped) is adopted as its train commit. The no-diff path
+  sets `noDeploymentRequired` only when the branch does not change the
+  patched files at all — the content is already on `main`, so "nothing to
+  deploy" is true. `test/train-carried.test.js` pins all of this.
 - **Deploy merges the whole branch, so it is offered only when the whole
   branch is approved.** See "The single Deploy CTA" below.
 - **`trainReady` is written by the Routine, not by the service account.**
@@ -411,9 +441,13 @@ changed is which control approves.
   alongside the free-text explanation (`lastFailureReason`,
   XJoASicLGefL5c9fronl — see "Structured Failed testing / Eject from train
   reason" below).
-- A `noDeploymentRequired` card is untouched by all of this: no checkbox,
-  and it keeps its own separate "Confirm tested — mark Merged to Main"
-  button straight to `published-live`.
+- A **genuine** no-deploy card — `noDeploymentRequired` with nothing on any
+  train (`isNoDeployCard()` in `app.js`) — is untouched by all of this: no
+  checkbox, and it keeps its own separate "Confirm tested — mark Merged to
+  Main" button straight to `published-live`. A card that has a
+  `deployCommit`, its own or a sibling's it rides on (`carriedByCommit`),
+  is a train card whatever the flag says: checkbox, Failed testing, and
+  live only when the train merges.
 - **Pulling a ticket back out after approval** has two paths now. The
   **← back arrow** on an Approved for Deployment card still sends it to
   Ready for Testing exactly as it always has — its commit stays on the
@@ -646,6 +680,18 @@ on a card that has already told the board there's no PR to fake being
 merged. Any card without the flag still goes through the full
 Ready for Testing → Approved for Deployment → Main pipeline exactly as
 described above; this does not change behavior for the common case.
+
+**The flag alone is not enough — the train wins over it.** `isNoDeployCard()`
+(`app.js`) is `noDeploymentRequired && !deployCommit`, and it — not the bare
+flag — is what offers the button, excludes a card from the approval pool,
+and guards `confirmTestedNoDeploy()`'s write. A card with a `deployCommit`
+has code on an integration branch that is not on `main` yet, whether that
+commit is its own or a sibling's it rides on (`carriedByCommit`, see "The
+deployment train"), so it keeps the train's controls and reaches
+`published-live` only through `finishTrain`. This is the rule the 25 Sep
+2026 incident was missing: the automation's no-diff path flagged two
+carried cards `noDeploymentRequired`, the button appeared, and both read
+"Merged to Main" a day before their train merged.
 
 `published-live` is treated as the one **irreversible** transition of the
 four for automation purposes (see "FAQ auto-review" below) — the other
@@ -904,18 +950,33 @@ entry's free text — finding a card's PR meant reading its notes or
 searching GitHub, and a card in Approved for Deployment gave no sign of
 whether its PR was open, green or already merged.
 
-### `noDeploymentRequired` is set by the no-diff path
+### The no-diff path: on its own commits, carried by a sibling, or already on main
 
-The same script sets `noDeploymentRequired: true` when `patchFiles`
-produce no diff against `main` — the expected outcome for the second half
-of a shared-file batch, where a sibling's PR already carried the change.
-Nothing was pushed and nothing will be, so there is no PR for Deploy to
-Main to merge. The card's one-click completion
-(`confirmTestedNoDeploy`) is therefore offered in **both** Ready for
-Testing and Approved for Deployment (`noDeployPending` in `app.js`);
-before that it appeared only in Ready for Testing, so such a card sitting
-in Approved for Deployment could only be finished by moving it backwards
-a column first.
+`processApplyPatch` handles `patchFiles` that produce no diff against the
+train in three different ways (`noDiffPatchFields()`, pure, tested in
+`test/train-carried.test.js`):
+
+- **Already on its own commits** — the card has `deployCommits` there (a
+  re-patch matched what it had already put on the branch), or the newest
+  train commit touching its files carries this card's own `Backlog item:`
+  trailer (pushed by hand and never stamped on the card — adopted as its
+  `deployCommit`). Back to Ready for Testing on those commits.
+- **Carried by a sibling's commit** — the branch does change the patched
+  files, and the newest surviving (non-reverted) commit touching them is
+  someone else's: the expected second half of a shared-file batch. The card
+  gets `deployCommit` = that sha plus `carriedByCommit`/`carriedByItem` and
+  is on the train like any other ticket — see "A card carried by a
+  sibling's commit follows that train". This used to set
+  `noDeploymentRequired`, which is the bug that let a card go
+  `published-live` from the board before its train merged.
+- **Already on `main`** — the branch does not change the patched files at
+  all. Nothing was pushed and nothing will be, so `noDeploymentRequired:
+  true` is honest here, and the card's one-click completion
+  (`confirmTestedNoDeploy`) is offered in **both** Ready for Testing and
+  Approved for Deployment (`noDeployPending` in `app.js`); before that it
+  appeared only in Ready for Testing, so such a card sitting in Approved
+  for Deployment could only be finished by moving it backwards a column
+  first. Its test link points at `main`.
 
 ### The FAQ editor's sidebar groups replaced the single Advanced panel
 

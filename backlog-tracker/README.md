@@ -324,15 +324,27 @@ functions are gone; `findPrForBranch` remains, now used to reuse an
 already-open *train* PR rather than an item's.
 
 **`patchFiles` producing no diff still never leaves an item stuck
-silently**, but it now means one of two different things and is handled
-differently for each. If the item already has commits on the train, the
-re-patch simply matched what it had put there: the card goes back to Ready
-for Testing against its existing commits, untouched. If it has none, the
-content is genuinely already on the branch (a sibling's shared-file patch
-carried it), so there is nothing for a deploy to ship and the card is
-flagged `noDeploymentRequired` — otherwise it would reach Approved for
-Deployment and hold the train's Deploy gate open on a ticket with no
-commit to merge.
+silently**, and it now means one of three things (`noDiffPatchFields()`,
+tested in `test/train-carried.test.js`). If the item already has commits
+on the train, the re-patch simply matched what it had put there: the card
+goes back to Ready for Testing against its existing commits, untouched. If
+it has none but the branch does change its files, a sibling's shared-file
+patch carried the content: the card is stamped with that commit
+(`deployCommit` = the sibling's sha, plus `carriedByCommit`/`carriedByItem`)
+and rides the train like any other ticket — approved by checkbox, and
+flipped to `published-live` by `finishTrain` when the train merges, not
+before. It used to be flagged `noDeploymentRequired` instead, which gave it
+the board's one-click "Confirm tested — mark Merged to Main": on 25 Sep
+2026 two such cards (OhKUnoGbpUAeJiXiLIvc, yUISCow4tCg9uxnMJFOy) read
+"Deployed / Main Branch (Live)" a day before their code left
+`deploy/backlog-tracker-faqs` in PR #211. Only when the branch does not
+change the patched files at all — the content is already on `main` — is
+the card flagged `noDeploymentRequired`, because then "nothing to deploy"
+is true. Failed testing on a carried card detaches it rather than
+reverting the sibling's commit, and reverting the carrying commit sends
+every card riding on it back to Backlog (`detachCarriedCards`). See
+`REQUIREMENTS.md` → "A card carried by a sibling's commit follows that
+train".
 
 The same script also handles the mirror case for **Notify Claude —
 Deploy**: that Routine fire asks the session to verify the train — every
@@ -413,8 +425,11 @@ shape and was removed in PR #98.
 what already makes two cards one deployment: the `prNumber` they share
 (written by the automation when a train's PR opens), or, on a pre-train
 card, the `patchBranch` they were packaged on. It returns `null` — meaning
-"shares no deployment" — for a card with neither, and for a
-`noDeploymentRequired` card, which has no deployment to share at all.
+"shares no deployment" — for a card with neither, and for a genuine
+no-deploy card (`isNoDeployCard()`: flagged `noDeploymentRequired` with
+nothing on any train), which has no deployment to share at all. A card
+riding on a sibling's commit does share one, and brackets with the rest of
+its train once the train's PR opens.
 `columnCardsHTML()` then draws each group at the position of its first
 member, leaving card order, column counts and every per-card control
 untouched; a key held by only one card in a column is not a group.
