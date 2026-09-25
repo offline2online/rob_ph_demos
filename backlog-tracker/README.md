@@ -218,6 +218,29 @@ What the train changes:
   force-pushed, the card is still sent back, and `revertBlockedBy` names
   the tickets a human has to decide about (send them back too, or fix the
   branch by hand). The board shows that state on the card.
+  - **Failed testing now also captures a structured reason**
+    (XJoASicLGefL5c9fronl): alongside the free-text explanation, a fixed
+    category (`FAILURE_REASON_CATEGORIES` in `public/js/app.js`, e.g.
+    "Wrong / unexpected behavior", "Visual or layout issue") is stored on
+    the card as `lastFailureReason` and shown as a badge on the Backlog
+    card. `ROUTINE_INSTRUCTIONS.md`'s "For each Backlog item found" step 2
+    tells a re-fired investigation to read it before starting, so a
+    re-patch targets what actually failed last time rather than re-guessing
+    from the original `desc`.
+  - **Eject from train** (FVrOIVAAp46NdcgGovMW) is the same
+    reject-and-revert mechanism, one click earlier: an Approved for
+    Deployment (`ready-to-publish`) card used to need the plain "move back"
+    arrow to Ready for Testing *then* Failed testing there to actually come
+    off the branch — two separate, unrelated-looking controls, with nothing
+    naming that chain as how you unblock a release stuck on one bad ticket.
+    Eject from train does both in one write (`ejectFromTrain` in
+    `public/js/app.js`), tagging the card `ejectedFromTrain: true` so its
+    note reads distinctly from an actual test failure. No automation change
+    was needed — it reuses the exact same `revertRequested` hand-off, and
+    `trainLockShouldClear` (`functions/train-lock.js`) already only clears a
+    project's lock once every train-relevant item is gone, so ejecting one
+    stuck ticket can never itself reopen Backlog to new work while others
+    are still mid-build.
 - **Deploy** (`processDeployTrain`, triggered by `projects/{id}.trainReady`)
   — merge `main` in, bump `APP_VERSION` once, open ONE PR
   (`Deploy <project> — N tickets`, body listing every `Backlog item:`
@@ -707,8 +730,12 @@ that one trigger, everything else stays on the board's own buttons and the
 triggered Routine. The documentation tools write to `projects`, so that is
 enforced by a single `updateProjectFields` allowlist rather than by never
 touching the collection — `approve_deploy_to_main` writes its own single
-field through a separate, dedicated path, not through that allowlist. See
-`MCP.md` → "What the agent can and can't do" for the full detail.
+field through a separate, dedicated path, not through that allowlist.
+`set_my_routine_binding` (VNE6dxMu3h6jO3g6FNNB) is not a second exception:
+it only registers which Routine a member's OWN later board click fires
+under (write-only — no tool reads the stored fireUrl/token back), it never
+fires a session itself. See `MCP.md` → "What the agent can and can't do"
+for the full detail.
 
 This is a different thing from `boardApi` (further down this file), which is
 ONE shared secret standing in for the Routine's own automation. The MCP
@@ -1104,6 +1131,40 @@ starts failing with an auth or version-related error after previously
 working, check Anthropic's current Claude Code Routines docs for what
 changed, and re-test with `curl` before re-patching the function — see
 the request shape in `functions/index.js`'s `notifyOnProjectReadyForReview`.
+
+### Per-member routine binding — firing under your own account instead of the shared secrets above (VNE6dxMu3h6jO3g6FNNB)
+
+The two secrets above are **one shared Routine for the whole project** —
+every Notify Claude / Notify Claude — Deploy / Groom Backlog click, from
+anyone, fires the same Routine and runs under that one Claude account's
+usage. An engineer can instead register their own Routine, so board clicks
+*they* make fire a session under *their own* account:
+
+1. Over MCP, call `get_routine_setup_instructions` (see `MCP.md`) — it
+   returns the exact bootstrap prompt to paste into a new Routine at
+   `claude.ai/code/routines` (the same one `ROUTINE_INSTRUCTIONS.md`'s own
+   bootstrap uses), plus where to find that Routine's own API trigger fire
+   URL and token once you add one.
+2. Call `set_my_routine_binding` with that `fireUrl`/`token`. This is
+   **write-only** — stored on `consoleUsers/{email}.routineFireUrl` /
+   `.routineFireToken`, and no tool or UI, including `whoami`, ever reads
+   them back; `whoami`'s `hasRoutineBinding` only ever says whether one is
+   set. Pass both as `""` to clear it and go back to the shared secrets.
+
+`functions/index.js`'s `resolveRoutineCredentials` — shared by all three
+fire functions — checks the clicking member's binding
+(`projects/{id}.notifyRequestedByEmail` /
+`deployNotifyRequestedByEmail` / `groomRequestedByEmail`, written by
+`public/js/app.js`'s click handlers) first and only falls back to
+`CLAUDE_ROUTINE_FIRE_URL`/`CLAUDE_ROUTINE_TOKEN` when they have none set,
+or the click can't be attributed to anyone. Which one fired is recorded as
+`firedVia` (`"member"` or `"shared"`) on `notifyRoutine`/`deployRoutine`/
+`groomRoutine`, for debugging.
+
+There's no way to automate the `claude.ai/code/routines` step itself —
+the routines API has no delegated-OAuth "fire on behalf of" flow, so a
+Routine's fire URL/token is per-Routine and hand-generated once. This
+MCP-driven local setup is the closest one-click the API allows.
 
 ### The `GH_DISPATCH_TOKEN` secret — waking `backlog-automation.yml` immediately
 
@@ -1552,6 +1613,39 @@ in over MCP — **not** scoped to any one project, unlike `backlogItems` or
   npm install   # only if firebase-admin isn't already installed here
   GOOGLE_APPLICATION_CREDENTIALS=/path/to/a-backlog-tracker-e4ed2-service-account.json node seed-skills-data.js
   ```
+- **Skill feedback loop** (Gcc30u2bQEJwEdUTN6X8) — a running, append-only
+  `misses` array on each skill doc: `{text, source: "build"|"review",
+  phase?: "build"|"deploy", ticketId?, prNumber?, projectId?,
+  reportedByEmail, reportedVia: "mcp"|"console", at}`. Two sources feed it —
+  a team member's own agent tagging a build failure or review finding over
+  the MCP tools `report_skill_miss` (write)/`list_skill_misses` (read), and
+  `ROUTINE_INSTRUCTIONS.md`'s DEPLOY-phase skill review, which writes one
+  the same shape via a direct Firestore PATCH (see that file's own "Report
+  a genuine miss back onto the skill" step, next to its "SKILLS BOUND TO
+  THE BUILD/DEPLOY PHASE" mechanism). Deliberately never touches a skill's
+  own `updatedAt`/content — a miss report and an authored edit are kept as
+  two distinct signals. The Skills page shows each skill's misses in an
+  expandable **Misses (N)** panel plus a **Report a miss** button any
+  signed-in member can use (not editor-gated — tagging a gap isn't editing
+  the skill). `get_skill` also returns `missCount`.
+- **Periodic skill-review nudge** (eKslgrwgRJtoxyx0oNSV) — a lighter-weight
+  companion: rather than waiting for a specific miss, nudges an owning team
+  to deliberately revisit a skill after a day-based cadence
+  (`reviewCadenceDays`, default 60) or enough has shipped since the last
+  review (`reviewDeployThreshold` shipped tickets, default 15) — whichever
+  trips first. No new Cloud Function or scheduled job: `list_skills`/
+  `get_skill` compute `reviewDue`/`daysSinceReview`/`deploysSinceReview` on
+  every read (`skillReviewStatus` in `functions/mcp-server.js`), counting
+  `backlogItems` that reached `published-live` since the review baseline
+  (`lastReviewedAt`, or `createdAt` if never reviewed) as the "deploys"
+  proxy — this repo has no single cross-project train counter, so a shipped
+  ticket is the concrete, countable unit every train actually produces; not
+  scoped to whether that specific skill was bound to the phase that shipped
+  it, so treat it as a nudge to go look, not a precise metric. `mark_skill_reviewed`
+  (MCP, write) resets the clock and can override either threshold per skill.
+  The Skills page shows a **Review due** badge (day-cadence only, computed
+  client-side so the full due-ness logic lives in exactly one place) and a
+  **Mark reviewed** button.
 
 ## Feed in requirements → suggested build batches
 
@@ -1560,10 +1654,18 @@ Backlog items from one pasted block of text (one requirement per
 blank-line-separated paragraph) and, before creating anything, previews
 them clustered into **suggested build batches** — grouped by `category`
 (the board's existing "shared area/files" proxy), each item tagged with a
-rough small/medium/large effort estimate. Purely informational: **Create
-items** files them into that project's Backlog exactly like the single-item
-New Item form would, nothing is auto-approved or auto-sent to Ready for
-Dev. The clustering itself (`clusterBacklogItems`/`estimateEffort`/
+rough small/medium/large effort estimate **and** a rough low/medium/high
+priority estimate (cwehxSMZv8noJQv5kB22) — items within a batch sort
+highest-priority-first, then smallest-effort-first. Purely informational:
+**Create items** files them into that project's Backlog exactly like the
+single-item New Item form would, nothing is auto-approved or auto-sent to
+Ready for Dev — but unlike before, the preview's own effort/priority
+estimate is now persisted onto the created cards (`addItem`'s `extra`
+param) instead of being computed and then thrown away. Both signals can
+also be corrected any time from the Edit item modal (`effort`/`priority`
+selects, "Unset" reverting to the automatic guess) and show as badges on a
+Backlog card when a real value is set. The clustering itself
+(`clusterBacklogItems`/`estimateEffort`/`estimatePriority`/
 `splitRequirementsText`) lives in `public/js/build-batches.js` — a pure,
 Firebase-free module, unit-tested with plain `node`
 (`test/build-batches.test.mjs`) rather than through the browser. See
