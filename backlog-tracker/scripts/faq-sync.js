@@ -18,6 +18,12 @@
 //   • Nothing is ever deleted. Ids listed in faq/data/retired.json are set to
 //     status "draft" (hidden from the public site) if they are still
 //     published — that is how the rewrite retired merged/duplicate articles.
+//   • Nothing deleted in the console is ever recreated. The console writes
+//     a tombstone (faqDeletedArticles/<id>, faqDeletedCategories/<id>) the
+//     moment an editor deletes something; a tombstoned id is skipped here
+//     even while its file is still in faq/data (faq-export.js drops the
+//     file on its next run). 25 Sep 2026: without this, a stale snapshot
+//     — or the Freshdesk seed — brought deleted articles straight back.
 //   • Fields this script does not own (programId, projectId, needsReview,
 //     views…) are left untouched on existing docs.
 const path = require("path");
@@ -46,18 +52,30 @@ async function findOrCreateProgram(name) {
   return ref.id;
 }
 
+// Ids the console has deleted — see the header. Read once per run.
+async function tombstoneIds(collectionName) {
+  const snap = await db.collection(collectionName).get();
+  return new Set(snap.docs.map((d) => d.id));
+}
+
 async function main() {
   const index = JSON.parse(fs.readFileSync(path.join(DATA_DIR, "index.json"), "utf8"));
   const retired = fs.existsSync(path.join(DATA_DIR, "retired.json"))
     ? JSON.parse(fs.readFileSync(path.join(DATA_DIR, "retired.json"), "utf8")) : [];
   const programId = await findOrCreateProgram(PROGRAM_NAME);
-  const stats = { created: 0, updated: 0, unchanged: 0, conflicts: 0, retired: 0 };
+  const deletedCategories = await tombstoneIds("faqDeletedCategories");
+  const deletedArticles = await tombstoneIds("faqDeletedArticles");
+  const stats = { created: 0, updated: 0, unchanged: 0, conflicts: 0, retired: 0, deleted: 0 };
   const now = Timestamp.now();
 
   // Categories (top-level and folders share the collection).
   for (const c of index.categories) {
     const ref = db.collection("faqCategories").doc(c.id);
     const snap = await ref.get();
+    if (!snap.exists && deletedCategories.has(c.id)) {
+      console.log(`skip category ${c.id} (${c.name}): deleted in the console — not recreated (tombstone)`);
+      stats.deleted++; continue;
+    }
     const fields = { name: c.name, icon: c.icon || "help", description: c.description || "", order: c.order, parentId: c.parentId || null };
     const h = catHash(c);
     if (snap.exists) {
@@ -93,6 +111,10 @@ async function main() {
     const h = hash(body + "|" + JSON.stringify([a.categoryId, a.order, a.title, a.slug, a.summary, a.keywords, a.docType, a.status]));
     const ref = db.collection("faqArticles").doc(a.id);
     const snap = await ref.get();
+    if (!snap.exists && deletedArticles.has(a.id)) {
+      console.log(`skip article ${a.id} (${a.title}): deleted in the console — not recreated (tombstone)`);
+      stats.deleted++; continue;
+    }
     const fields = {
       categoryId: a.categoryId, order: a.order, title: a.title, slug: a.slug, summary: a.summary || "",
       keywords: a.keywords || [], docType: a.docType || "faq", status: a.status || "draft", bodyMd: body,
@@ -140,7 +162,7 @@ async function main() {
     stats.retired++;
   }
 
-  console.log(`faq-sync${DRY ? " (dry run)" : ""}: ${stats.created} created, ${stats.updated} updated, ${stats.unchanged} unchanged, ${stats.retired} retired, ${stats.conflicts} conflict(s)`);
+  console.log(`faq-sync${DRY ? " (dry run)" : ""}: ${stats.created} created, ${stats.updated} updated, ${stats.unchanged} unchanged, ${stats.retired} retired, ${stats.deleted} left deleted (tombstoned), ${stats.conflicts} conflict(s)`);
   if (stats.conflicts && !DRY) process.exitCode = 0; // conflicts are reported, not fatal
 }
 
