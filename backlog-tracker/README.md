@@ -1769,7 +1769,8 @@ with all 30 cards. **So it no longer runs on every deploy** (25 Sep 2026):
 run made by hand (`scripts/seeding-requested.js` is the shared check;
 the dispatch the backlog automation makes after every merge is a
 `workflow_dispatch` too, which is why a step-level `if:` on the event name
-alone was not enough). The project that came back is still on the board
-and is a human's to delete again (`board-admin.yml`). Safe to delete
+alone was not enough). The project that came back is staying: Rob decided
+on 25 Sep 2026 to keep "Products and Pricing Prototype" on the board, so
+leave it alone — it is not a leftover to clean up. Safe to delete
 `scripts/artifact-export.json` and this step once you're confident the
 migration won't need re-running (e.g. against a fresh Firebase project).

@@ -205,8 +205,17 @@ recovery export is the `board-export` artifact on run 35789258396 of
 `~/Documents/PH-board-backups/deleted-projects-2026-09-22T21-53-33Z.json`
 (deliberately outside this repo, which is public). "Live Visitor Profile &
 Personas" was kept despite being empty: it is one side of the maintained
-interface contract with Display Types. What's left on the board is that,
-Display Types & DSP Integration, and Backlog Tracker & FAQs.
+interface contract with Display Types. What was left on the board was that,
+Display Types & DSP Integration, and Backlog Tracker & FAQs — **but the
+first deleted project came back**: `deploy-backlog-tracker.yml`'s
+insert-only migration step (`backlog-tracker/scripts/migrate-artifact-data.js`)
+recreated it on the next deploy as "Products and Pricing Prototype"
+(`products-and-pricing`, its 30 archived tickets), because `create()`
+can't tell "never seeded" from "deleted on purpose". **Rob decided on
+25 Sep 2026 to keep it — leave it on the board**; it is not an unused
+project to delete. The seeds no longer run on ordinary deploys (see
+`backlog-tracker/README.md` → "Historical data migrated from the Artifact
+board").
 
 - **Adding a project**: the page's "New project" button, or write a doc
   directly into `projects` (`{name, createdAt: serverTimestamp()}}`) —
