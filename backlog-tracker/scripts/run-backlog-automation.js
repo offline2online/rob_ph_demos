@@ -344,6 +344,15 @@ function carriedCardsOn(items, shas) {
   return (items || []).filter((i) => i && i.carriedByCommit && set.has(i.carriedByCommit) && ON_TRAIN_STATUSES.has(i.status));
 }
 
+// True for a test link this pipeline generated itself — a githack page or a
+// GitHub tree link for this repo — as opposed to a person's own "Set test
+// link" choice, which is always kept. Used by the no-diff path to decide
+// whether to regenerate a carried card's link pinned to its carrying commit.
+function isPipelinePreviewUrl(url) {
+  const s = String(url || "");
+  return s.startsWith(`https://rawcdn.githack.com/${REPO}/`) || s.startsWith(`https://github.com/${REPO}/tree/`);
+}
+
 function remoteBranchExists(branch) {
   try {
     return !!run("git", ["ls-remote", "--heads", "origin", branch]);
@@ -1233,15 +1242,22 @@ async function processApplyPatch(item) {
       // before its train had merged.
       run("git", ["checkout", "main", "--quiet"]);
       const carrying = carryingCommitOnTrain(deployBranch, patchedFiles.map((f) => f && f.path));
-      // Same test-link rule as the real-commit path below: a link already
-      // pointing at this train is kept, anything else is regenerated.
-      const previewUrl = (item.previewUrl && String(item.previewUrl).includes(`/${deployBranch}/`))
-        ? item.previewUrl
-        : guessPreviewUrl(patchedFiles, deployBranch, trainTreeUrl(deployBranch));
+      // Test link: pinned to the commit the content actually lives in — the
+      // carrying commit, or main's head when the content is already there —
+      // never a branch name. githack caches a branch URL's fixed-path files
+      // (measured 25 Sep 2026: faq.css still served the old base size 20
+      // minutes after the train changed it) and a commit URL is immutable.
+      // A link this pipeline didn't generate (a person's own "Set test
+      // link") is kept as it is.
+      const ownLink = item.previewUrl && !isPipelinePreviewUrl(item.previewUrl) ? item.previewUrl : null;
+      const pinnedTo = (ref, fallback) => ownLink || guessPreviewUrl(patchedFiles, ref, fallback);
+      let mainRef = "main";
+      try { mainRef = run("git", ["rev-parse", "origin/main"]); } catch { /* fall back to the branch name */ }
       const outcome = noDiffPatchFields(item, carrying, {
-        deployBranch, testVersion, previewUrl,
+        deployBranch, testVersion,
+        previewUrl: carrying && carrying.sha ? pinnedTo(carrying.sha, trainTreeUrl(deployBranch)) : null,
         // Content that is already on main is tested against main.
-        mainPreviewUrl: guessPreviewUrl(patchedFiles, "main", trainTreeUrl("main")),
+        mainPreviewUrl: pinnedTo(mainRef, trainTreeUrl("main")),
       });
       let text;
       if (outcome.kind === "already-on-train") {
@@ -2635,11 +2651,11 @@ if (require.main === module) {
 // this module loads if not guarded — see the require.main check).
 module.exports = {
   conflictedPaths, tryAutoResolveFaqIndexConflict, archiveAndResetOrphanedBranch, dateStamp, nearestPageFor, isBundlerTemplate,
+  // test/train-carried.test.js — a card whose content a sibling's commit
+  // delivered follows that train instead of being marked live on approval
+  onTrainItems, backlogItemIdFromMessage, carryingCommitOnTrain, noDiffPatchFields, carriedCardsOn, isPipelinePreviewUrl,
   // test/generated-builds.test.js
   isGeneratedOutput, rebuildWorkflowsFor, tryAutoResolveGeneratedOutputConflict,
   // test/patch-paths.test.js
   normalisePatchPaths, projectFolderOf, patchFilesLookFolderRelative,
-  // test/train-carried.test.js — a card whose content a sibling's commit
-  // delivered follows that train instead of being marked live on approval
-  onTrainItems, backlogItemIdFromMessage, carryingCommitOnTrain, noDiffPatchFields, carriedCardsOn,
 };

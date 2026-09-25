@@ -373,8 +373,9 @@ Requirements that follow from it:
   `carriedByCommit`/`carriedByItem` as the explicit marker, and never
   `deployCommits`, which is what a revert takes off) and it is on the train
   like any other ticket — checkbox approval, Failed testing, "Waiting for
-  Deploy to Main", its own test link on the branch, and `finishTrain` flips
-  it to `published-live` when the train merges, not before. Until 25 Sep
+  Deploy to Main", a test link pinned to the carrying commit (never a
+  branch URL, which githack caches), and `finishTrain` flips it to
+  `published-live` when the train merges, not before. Until 25 Sep
   2026 the no-diff path flagged such a card `noDeploymentRequired` instead,
   which handed it the board's one-click "Confirm tested — mark Merged to
   Main": OhKUnoGbpUAeJiXiLIvc and yUISCow4tCg9uxnMJFOy read Deployed / Main
@@ -976,7 +977,7 @@ train in three different ways (`noDiffPatchFields()`, pure, tested in
   Approved for Deployment (`noDeployPending` in `app.js`); before that it
   appeared only in Ready for Testing, so such a card sitting in Approved
   for Deployment could only be finished by moving it backwards a column
-  first. Its test link points at `main`.
+  first. Its test link is pinned to `main`'s head commit.
 
 ### The FAQ editor's sidebar groups replaced the single Advanced panel
 

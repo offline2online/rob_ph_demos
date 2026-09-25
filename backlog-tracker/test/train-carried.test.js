@@ -36,7 +36,7 @@ const path = require("path");
 const { execFileSync } = require("child_process");
 
 const {
-  onTrainItems, backlogItemIdFromMessage, carryingCommitOnTrain, noDiffPatchFields, carriedCardsOn,
+  onTrainItems, backlogItemIdFromMessage, carryingCommitOnTrain, noDiffPatchFields, carriedCardsOn, isPipelinePreviewUrl,
 } = require("../scripts/run-backlog-automation.js");
 const { isTrainRelevantItem, trainLockShouldClear } = require("../functions/train-lock");
 
@@ -187,6 +187,15 @@ test("carriedCardsOn() names the cards that lose their content when a commit is 
   assert.deepStrictEqual(carriedCardsOn(items, []), []);
   assert.deepStrictEqual(carriedCardsOn(items, ["nope"]), []);
   assert.deepStrictEqual(carriedCardsOn(null, [SIBLING_SHA]), []);
+});
+
+test("isPipelinePreviewUrl(): the pipeline's own githack/tree links get regenerated pinned to a commit; a person's own link is kept", () => {
+  assert.strictEqual(isPipelinePreviewUrl("https://rawcdn.githack.com/offline2online/rob_ph_demos/deploy/backlog-tracker-faqs/faq/index.html"), true);
+  assert.strictEqual(isPipelinePreviewUrl("https://rawcdn.githack.com/offline2online/rob_ph_demos/7b09a4b7de59240db8c995f2393421fe7bdb41d4/faq/index.html"), true);
+  assert.strictEqual(isPipelinePreviewUrl("https://github.com/offline2online/rob_ph_demos/tree/deploy/backlog-tracker-faqs"), true);
+  assert.strictEqual(isPipelinePreviewUrl("https://backlog-tracker-e4ed2.web.app/#faq"), false);
+  assert.strictEqual(isPipelinePreviewUrl(""), false);
+  assert.strictEqual(isPipelinePreviewUrl(null), false);
 });
 
 // ── carryingCommitOnTrain against a real (disposable, local-only) repo ──
