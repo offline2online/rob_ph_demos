@@ -277,6 +277,65 @@ async function rpc(token, method, params, id = 1) {
     assert.strictEqual(payload.canWrite, true);
   });
 
+  // ── per-member routine binding (VNE6dxMu3h6jO3g6FNNB) ───────────────────
+  await test("whoami nudges a member with no routine binding, and stops once they have one", async () => {
+    const before = JSON.parse((await rpc(tokens.access_token, "tools/call", { name: "whoami", arguments: {} })).body.result.content[0].text);
+    assert.strictEqual(before.hasRoutineBinding, false);
+    assert.match(before.routineBindingNudge, /get_routine_setup_instructions/);
+
+    await rpc(tokens.access_token, "tools/call", {
+      name: "set_my_routine_binding",
+      arguments: { fireUrl: "https://api.anthropic.com/v1/claude_code/routines/trig_abc123/fire", token: "sk-ant-routine-secret-token" },
+    });
+    const after = JSON.parse((await rpc(tokens.access_token, "tools/call", { name: "whoami", arguments: {} })).body.result.content[0].text);
+    assert.strictEqual(after.hasRoutineBinding, true);
+    assert.strictEqual(after.routineBindingNudge, null);
+  });
+
+  await test("set_my_routine_binding never echoes the stored fireUrl/token back", async () => {
+    const res = await rpc(tokens.access_token, "tools/call", {
+      name: "set_my_routine_binding",
+      arguments: { fireUrl: "https://api.anthropic.com/v1/claude_code/routines/trig_xyz/fire", token: "sk-ant-another-secret" },
+    });
+    const payload = JSON.parse(res.body.result.content[0].text);
+    assert.strictEqual(payload.registered, true);
+    assert.ok(!JSON.stringify(payload).includes("sk-ant-another-secret"), "the token must never appear in the tool's own response");
+    const stored = env.store.col("consoleUsers").get(TEAMMATE);
+    assert.strictEqual(stored.routineFireUrl, "https://api.anthropic.com/v1/claude_code/routines/trig_xyz/fire");
+    assert.strictEqual(stored.routineFireToken, "sk-ant-another-secret");
+  });
+
+  await test("set_my_routine_binding refuses a non-https fireUrl or a too-short token", async () => {
+    const bad1 = await rpc(tokens.access_token, "tools/call", { name: "set_my_routine_binding", arguments: { fireUrl: "http://insecure/fire", token: "sk-ant-secret" } });
+    assert.strictEqual(bad1.body.result.isError, true);
+    const bad2 = await rpc(tokens.access_token, "tools/call", { name: "set_my_routine_binding", arguments: { fireUrl: "https://api.anthropic.com/fire", token: "short" } });
+    assert.strictEqual(bad2.body.result.isError, true);
+  });
+
+  await test("set_my_routine_binding with two empty strings clears an existing binding", async () => {
+    const res = await rpc(tokens.access_token, "tools/call", { name: "set_my_routine_binding", arguments: { fireUrl: "", token: "" } });
+    const payload = JSON.parse(res.body.result.content[0].text);
+    assert.strictEqual(payload.cleared, true);
+    const stored = env.store.col("consoleUsers").get(TEAMMATE);
+    assert.strictEqual(stored.routineFireUrl, null);
+    assert.strictEqual(stored.routineFireToken, null);
+    const who = JSON.parse((await rpc(tokens.access_token, "tools/call", { name: "whoami", arguments: {} })).body.result.content[0].text);
+    assert.strictEqual(who.hasRoutineBinding, false);
+  });
+
+  await test("get_routine_setup_instructions returns the exact bootstrap prompt and ordered steps", async () => {
+    const res = await rpc(tokens.access_token, "tools/call", { name: "get_routine_setup_instructions", arguments: {} });
+    const payload = JSON.parse(res.body.result.content[0].text);
+    assert.ok(Array.isArray(payload.steps) && payload.steps.length >= 4);
+    assert.match(payload.bootstrapPrompt, /ROUTINE_INSTRUCTIONS\.md/);
+    assert.match(payload.bootstrapPrompt, /raw\.githubusercontent\.com\/offline2online\/rob_ph_demos\/main\/backlog-tracker\/ROUTINE_INSTRUCTIONS\.md/);
+  });
+
+  await test("set_my_routine_binding is board.write; a viewer is refused", async () => {
+    assert.strictEqual(mcp.__test.TOOLS.find((t) => t.name === "set_my_routine_binding").scope, "board.write");
+    assert.strictEqual(mcp.__test.TOOLS.find((t) => t.name === "get_routine_setup_instructions").scope, "board.read");
+  });
+
   await test("lists projects with per-column ticket counts", async () => {
     env.store.col("projects").set("proj1", { name: "Live Visitor Profile", deployBranch: "deploy/live-visitor-profile" });
     env.store.col("projects").set("proj2", { name: "Experience Templates" });
@@ -950,6 +1009,121 @@ async function rpc(token, method, params, id = 1) {
     assert.strictEqual(mcp.__test.TOOLS.find((t) => t.name === "approve_deploy_to_main").scope, "board.write");
     assert.strictEqual(mcp.__test.TOOLS.find((t) => t.name === "get_ready_for_testing_board").scope, "board.read");
     assert.strictEqual(mcp.__test.TOOLS.find((t) => t.name === "get_approved_for_deployment_board").scope, "board.read");
+  });
+
+  // ── skill feedback loop (Gcc30u2bQEJwEdUTN6X8) ──────────────────────────
+  await test("report_skill_miss appends a structured entry without touching the skill's own content", async () => {
+    env.store.col("skills").set("skill1", {
+      name: "PH Designer", slug: "ph-designer", summary: "Design system", version: "1.0.0",
+      files: [{ path: "SKILL.md", content: "..." }],
+    });
+    const res = await rpc(tokens.access_token, "tools/call", {
+      name: "report_skill_miss",
+      arguments: { slug: "ph-designer", text: "Missed that Material Symbols must be Outlined, not Filled.", source: "review", phase: "deploy", ticketId: "item42", prNumber: 123 },
+    });
+    const payload = JSON.parse(res.body.result.content[0].text);
+    assert.strictEqual(payload.reported, true);
+    const stored = env.store.col("skills").get("skill1");
+    assert.strictEqual(stored.misses.length, 1);
+    const miss = stored.misses[0];
+    assert.strictEqual(miss.text, "Missed that Material Symbols must be Outlined, not Filled.");
+    assert.strictEqual(miss.source, "review");
+    assert.strictEqual(miss.phase, "deploy");
+    assert.strictEqual(miss.ticketId, "item42");
+    assert.strictEqual(miss.prNumber, 123);
+    assert.strictEqual(miss.reportedByEmail, TEAMMATE);
+    assert.strictEqual(miss.reportedVia, "mcp");
+    // The skill's own authored fields must be untouched by a miss report.
+    assert.strictEqual(stored.version, "1.0.0");
+    assert.ok(!("updatedByEmail" in stored), "a miss report must not look like an authored content edit");
+  });
+
+  await test("report_skill_miss defaults source to review and refuses empty text", async () => {
+    const res = await rpc(tokens.access_token, "tools/call", { name: "report_skill_miss", arguments: { slug: "ph-designer", text: "   " } });
+    assert.strictEqual(res.body.result.isError, true);
+  });
+
+  await test("report_skill_miss refuses an unknown skill", async () => {
+    const res = await rpc(tokens.access_token, "tools/call", { name: "report_skill_miss", arguments: { slug: "nope", text: "x" } });
+    assert.strictEqual(res.body.result.isError, true);
+  });
+
+  await test("list_skill_misses returns newest first", async () => {
+    await rpc(tokens.access_token, "tools/call", { name: "report_skill_miss", arguments: { skillId: "skill1", text: "Second miss." } });
+    const res = await rpc(tokens.access_token, "tools/call", { name: "list_skill_misses", arguments: { skillId: "skill1" } });
+    const payload = JSON.parse(res.body.result.content[0].text);
+    assert.strictEqual(payload.matched, 2);
+    assert.strictEqual(payload.misses[0].text, "Second miss.");
+  });
+
+  await test("get_skill reports missCount", async () => {
+    const res = await rpc(tokens.access_token, "tools/call", { name: "get_skill", arguments: { skillId: "skill1" } });
+    const payload = JSON.parse(res.body.result.content[0].text);
+    assert.strictEqual(payload.missCount, 2);
+  });
+
+  await test("report_skill_miss is board.write, list_skill_misses is board.read", async () => {
+    assert.strictEqual(mcp.__test.TOOLS.find((t) => t.name === "report_skill_miss").scope, "board.write");
+    assert.strictEqual(mcp.__test.TOOLS.find((t) => t.name === "list_skill_misses").scope, "board.read");
+  });
+
+  // ── periodic skill-review nudge (eKslgrwgRJtoxyx0oNSV) ──────────────────
+  await test("a skill past the default day cadence with no reviews is flagged reviewDue", async () => {
+    const oldDate = new Date(Date.now() - 61 * 24 * 60 * 60 * 1000); // 61 days ago
+    env.store.col("skills").set("skillOld", { name: "Stale Skill", slug: "stale-skill", summary: "s", version: "1.0.0", files: [{ path: "SKILL.md", content: "x" }], createdAt: oldDate });
+    const res = await rpc(tokens.access_token, "tools/call", { name: "get_skill", arguments: { skillId: "skillOld" } });
+    const payload = JSON.parse(res.body.result.content[0].text);
+    assert.strictEqual(payload.reviewDue, true);
+    assert.ok(payload.daysSinceReview >= 61);
+    assert.strictEqual(payload.deploysSinceReview, 0);
+  });
+
+  await test("a skill created recently, never reviewed, with nothing shipped is not due", async () => {
+    env.store.col("skills").set("skillFresh", { name: "Fresh Skill", slug: "fresh-skill", summary: "s", version: "1.0.0", files: [{ path: "SKILL.md", content: "x" }], createdAt: new Date() });
+    const res = await rpc(tokens.access_token, "tools/call", { name: "get_skill", arguments: { skillId: "skillFresh" } });
+    const payload = JSON.parse(res.body.result.content[0].text);
+    assert.strictEqual(payload.reviewDue, false);
+  });
+
+  await test("mark_skill_reviewed clears the nudge and resets the clock", async () => {
+    const before = JSON.parse((await rpc(tokens.access_token, "tools/call", { name: "get_skill", arguments: { skillId: "skillOld" } })).body.result.content[0].text);
+    assert.strictEqual(before.reviewDue, true);
+    const markRes = await rpc(tokens.access_token, "tools/call", { name: "mark_skill_reviewed", arguments: { skillId: "skillOld" } });
+    assert.strictEqual(JSON.parse(markRes.body.result.content[0].text).reviewed, true);
+    const after = JSON.parse((await rpc(tokens.access_token, "tools/call", { name: "get_skill", arguments: { skillId: "skillOld" } })).body.result.content[0].text);
+    assert.strictEqual(after.reviewDue, false);
+    assert.strictEqual(after.daysSinceReview, 0);
+    assert.ok(after.lastReviewedAt, "lastReviewedAt should now be set");
+    const stored = env.store.col("skills").get("skillOld");
+    assert.strictEqual(stored.lastReviewedByEmail, TEAMMATE);
+  });
+
+  await test("reviewDue also fires from the deploy-count threshold, independent of days", async () => {
+    const recentBaseline = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000); // 2 days ago — cadence not tripped
+    env.store.col("skills").set("skillBusy", { name: "Busy Skill", slug: "busy-skill", summary: "s", version: "1.0.0", files: [{ path: "SKILL.md", content: "x" }], createdAt: recentBaseline, reviewDeployThreshold: 3 });
+    for (let i = 0; i < 4; i += 1) {
+      env.store.col("backlogItems").set(`shipped${i}`, { projectId: "proj1", title: `Shipped ${i}`, desc: "x", type: "feature", category: "HQ Admin", status: "published-live", mergedAt: new Date() });
+    }
+    const res = await rpc(tokens.access_token, "tools/call", { name: "get_skill", arguments: { skillId: "skillBusy" } });
+    const payload = JSON.parse(res.body.result.content[0].text);
+    assert.strictEqual(payload.deploysSinceReview, 4);
+    assert.strictEqual(payload.reviewDue, true, "4 shipped tickets should trip a threshold of 3, even though the day cadence hasn't");
+  });
+
+  await test("list_skills reports reviewDue per skill too, not just get_skill", async () => {
+    const res = await rpc(tokens.access_token, "tools/call", { name: "list_skills", arguments: {} });
+    const payload = JSON.parse(res.body.result.content[0].text);
+    const busy = payload.skills.find((s) => s.id === "skillBusy");
+    assert.strictEqual(busy.reviewDue, true);
+  });
+
+  await test("mark_skill_reviewed refuses a bad reviewCadenceDays/reviewDeployThreshold", async () => {
+    const res = await rpc(tokens.access_token, "tools/call", { name: "mark_skill_reviewed", arguments: { skillId: "skillOld", reviewCadenceDays: -5 } });
+    assert.strictEqual(res.body.result.isError, true);
+  });
+
+  await test("mark_skill_reviewed is board.write", async () => {
+    assert.strictEqual(mcp.__test.TOOLS.find((t) => t.name === "mark_skill_reviewed").scope, "board.write");
   });
 
   await test("writes an audit row for every write", async () => {
