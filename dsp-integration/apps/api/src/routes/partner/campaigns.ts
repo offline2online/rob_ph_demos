@@ -6,7 +6,7 @@
    A partner only ever sees its own campaigns; anyone else's is not found. */
 import { randomUUID } from 'node:crypto'
 import { ApprovalError } from '@ph-dsp/campaign-approval/server'
-import { advertiserSlug } from '@ph-dsp/types'
+import { advertiserSlug, maxCampaignsOf } from '@ph-dsp/types'
 import type { FastifyPluginAsync, FastifyReply, FastifyRequest } from 'fastify'
 import { requireConnected } from '../../auth/partnerAuth'
 import type { Context } from '../../context'
@@ -23,7 +23,7 @@ type PricingType = (typeof PRICING_TYPES)[number]
 type Detail = { field: string; reason: string }
 
 interface CreateBody {
-  advertiserId?: unknown; name?: unknown; displayTypeId?: unknown; brief?: unknown
+  advertiserId?: unknown; name?: unknown; displayTypeId?: unknown; slot?: unknown; brief?: unknown
   default?: { pricingType?: unknown }
   targeted?: { id?: unknown; priority?: unknown; pricingType?: unknown; rules?: unknown }[]
 }
@@ -54,7 +54,27 @@ export const campaignRoutes = (ctx: Context): FastifyPluginAsync => async (app) 
     if (typeof b.advertiserId !== 'string' || !partnerAdvertiser(req.partner, b.advertiserId)) invalid.push({ field: 'advertiserId', reason: `Not an advertiser on ${req.partner.name}.` })
     if (typeof b.name !== 'string' || !b.name.trim()) invalid.push({ field: 'name', reason: 'Required.' })
     else if (b.name.trim().length > lim.nameLength) invalid.push({ field: 'name', reason: `At most ${lim.nameLength} characters.` })
-    if (b.displayTypeId !== undefined && (typeof b.displayTypeId !== 'string' || !ctx.displayTypes.get(b.displayTypeId))) invalid.push({ field: 'displayTypeId', reason: 'Unknown display type.' })
+    const dt = typeof b.displayTypeId === 'string' ? ctx.displayTypes.get(b.displayTypeId) : null
+    if (b.displayTypeId !== undefined && (typeof b.displayTypeId !== 'string' || !dt)) invalid.push({ field: 'displayTypeId', reason: 'Unknown display type.' })
+    /* slot (optional): which of the display type's advertiser slots this
+       submission is for, so its own max-campaigns cap can be looked up
+       below (ticket "Available Inventory: Max campaigns column + slot
+       playlist statement") — matches AvailableInventoryRow.slot, the
+       1-based index already used to address a slot everywhere else
+       (Advertisers / Inventory, GET /v1/inventory). Omitted keeps the
+       pre-ticket behaviour: the global campaignLimits.targetedVersions
+       cap, unscoped to any one slot. */
+    let slotCap: number | null = null
+    if (b.slot !== undefined) {
+      if (typeof b.slot !== 'number' || !Number.isInteger(b.slot) || b.slot < 1) invalid.push({ field: 'slot', reason: 'An integer of 1 or more.' })
+      else if (!dt) invalid.push({ field: 'slot', reason: 'displayTypeId is required with slot.' })
+      else {
+        const slotRec = dt.phExtensions?.slots?.[b.slot - 1]
+        if (!slotRec) invalid.push({ field: 'slot', reason: `${dt.name} has no slot ${b.slot}.` })
+        else if (slotRec.owner !== 'advertiser') invalid.push({ field: 'slot', reason: 'Only an Advertiser slot is sellable inventory.' })
+        else slotCap = maxCampaignsOf(dt, slotRec)
+      }
+    }
     /* default is mandatory on every submission (decision, 22 Sep,
        superseding the earlier same-day "baseline optional" decision —
        ticket "Make default creative mandatory; retire localised-only
@@ -71,7 +91,14 @@ export const campaignRoutes = (ctx: Context): FastifyPluginAsync => async (app) 
     invalid.push(...brief.errors)
     const targeted = b.targeted ?? []
     if (!Array.isArray(targeted)) invalid.push({ field: 'targeted', reason: 'Must be a list.' })
-    else if (targeted.length > lim.targetedVersions) throw validationFailed([...invalid, { field: 'targeted', reason: `At most ${lim.targetedVersions} targeted versions.` }])
+    /* slotCap, when resolved, is the single authority on how many campaigns
+       (the mandatory default layer plus these targeted versions) this
+       advertiser may submit for that slot — replacing the blanket
+       campaignLimits.targetedVersions cap for it. Without a resolvable
+       slot, that global cap still applies exactly as before. */
+    else if (slotCap !== null) {
+      if (targeted.length + 1 > slotCap) throw validationFailed([...invalid, { field: 'targeted', reason: `At most ${slotCap} campaigns (default + targeted versions) for this slot.` }])
+    } else if (targeted.length > lim.targetedVersions) throw validationFailed([...invalid, { field: 'targeted', reason: `At most ${lim.targetedVersions} targeted versions.` }])
     const ids = new Set<string>()
     const notPermitted = new Map<string, { variable?: string; reason: string }>()
     const ruleErrors: Detail[] = []

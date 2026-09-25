@@ -272,6 +272,15 @@ not offered.
     tablet; staff activate it but do not author it. Store-level authoring is
     out of scope for this release.
 
+  **A slot is a playlist position** (ticket "Available Inventory: Max
+  campaigns column + slot playlist statement"): assigning an advertiser a
+  slot assigns them that fixed position in the display type's one playlist
+  rotation, of which only one campaign plays at a time — the highest-priority
+  version resolving on available data (the mandatory default layer, or a
+  localised/personalised upsell that resolves ahead of it, per §6). The
+  playlist is retained per slot; this is the already-intended §6 model,
+  stated explicitly here as part of that ticket's spec clarification.
+
   The explanation of the three owners is a tooltip on the **Slot
   assignment** label.
 
@@ -816,9 +825,9 @@ The same positions are shown to the retailer on **Advertisers / Inventory →
 Available Inventory**: every advertiser-owned slot across the estate that
 connected DSPs can bid on, one row per slot, with columns **Display type**,
 **Playlist**, **Slot**, **Position**, **Assigned to**, **Targeting
-supported**, **Reserve price** and an **Open** link to the display type.
-There is **no advertisers column**. Every column carries a filter, as the
-platform's tables do.
+supported**, **Reserve price**, **Max campaigns**, **Billing unit** and an
+**Open** link to the display type. There is **no advertisers column**.
+Every column carries a filter, as the platform's tables do.
 
 Slots are made available by setting their owner to *Advertiser* on a display
 type (explained in the section's tooltip); that part is not editable here.
@@ -979,6 +988,22 @@ Auction schedule); it names what that window length is expected to equal
 for a private-auction slot using the two-period model, rather than driving
 a separate billing cadence.
 
+**Max campaigns** (`maxCampaigns` on a slot, with a display-type-level
+default — same override-always-wins inheritance as reserve price and
+billing unit above; platform default 5 when neither is set; 1-10
+inclusive): the retailer-controlled maximum number of campaigns — the
+mandatory default layer plus optional targeted versions — an advertiser
+may submit for this slot (ticket "Available Inventory: Max campaigns
+column + slot playlist statement"). Admin-editable, marketing read-only,
+with a filter like every other column and an info tooltip: "The maximum
+number of campaigns this advertiser can submit for this slot. To submit
+more, purchase additional slots." **Purely a submission cap — it does not
+feed the auction or billing.** It is the single authority on how many
+campaigns an advertiser may submit for a slot, replacing the blanket
+20-targeted-versions cap (§6, security submission bounds) for that slot
+once a submission names it; without a resolvable slot, the platform-wide
+20-cap still applies unchanged.
+
 ## 6. DSP integration — the advertiser & DSP interface
 
 How an advertiser finds inventory (§5), takes it and fills it. This is the API
@@ -1038,6 +1063,14 @@ stores its criteria didn't match unsold to it. That model is retired:
   overlapping localised bids and billing a part-sold position — are
   **superseded, not answered**: there is no longer a part-sold position for
   either to apply to.
+- **How many campaigns a submission may carry** (default + targeted
+  versions) is bounded by the slot's own **Max campaigns** (§5, ticket
+  "Available Inventory: Max campaigns column + slot playlist statement")
+  once `POST /v1/campaigns` names that `displayTypeId` and `slot` — the
+  single authority for that slot, replacing the platform-wide
+  20-targeted-versions cap below. A submission naming no slot (or one that
+  doesn't resolve to a real advertiser slot) still falls back to that
+  platform-wide cap, unscoped to any one slot.
 
 > Named *default*, not *baseline* (decision, Rob, 22 Sep, reversing this
 > section's own earlier same-day note that warned off *default* because
@@ -1560,9 +1593,11 @@ fields. The canonical definition is `app/src/model/schema.js` and
   phExtensions: {                  // THIS PROJECT's additions
     reservePrice,                  // the display type's own reserve price default; CPM or null (real inheritance, 22 Sep — §5)
     billingUnitHours,               // the display type's own billing-unit default, in hours; null = platform default of 24 (§5 "Private auctions" — two-period model, 23 Sep)
+    maxCampaigns,                  // the display type's own max-campaigns default; null = platform default of 5, 1-10 inclusive (§5, ticket "Max campaigns column + slot playlist statement")
     slots: [{ label, owner, partnerId, advertiser, listMode, buyersListId, storeScope, quota,
               reservePrice,         // this slot's own override; CPM, or null = inherit the display type's reservePrice above (§5)
-              billingUnitHours }],  // this slot's own override, in hours; null = inherit the display type's billingUnitHours above (§5)
+              billingUnitHours,     // this slot's own override, in hours; null = inherit the display type's billingUnitHours above (§5)
+              maxCampaigns }],      // this slot's own override; null = inherit the display type's maxCampaigns above, 1-10 inclusive when set (§5)
                                     // listMode: rtb | whitelist_only | deal | null; buyersListId set only when listMode is deal (§5 "Private auctions")
     venue: { openOohVenueType, orientation, loopLengthSec }
   }
@@ -2028,15 +2063,25 @@ playback analytics.**
   forecast, scoped to what the requester could buy. *(spec only)*
 - **Available Inventory**: every advertiser-owned slot across the estate
   that connected DSPs can bid on (Display type, Playlist, Slot, Position,
-  Assigned to, Targeting supported, Reserve price, and an Open link), with
-  no advertisers column and a filter on every column.
-  *(Advertisers / Inventory → Available Inventory)*
+  Assigned to, Targeting supported, Reserve price, Max campaigns, Billing
+  unit, and an Open link), with no advertisers column and a filter on
+  every column. *(Advertisers / Inventory → Available Inventory)*
 - **Reserve price, inherited from its display type** (decision, 22 Sep; real
   inheritance, 22 Sep): a CPM premium to reserve the position in advance of
   the open auction, or no reserve, set once on the display type and
   automatically reaching every slot on it — override just one slot to give
   it its own value, independent from then on; published on the position,
   resolved — not yet wired to a booking flow (open question 52).
+  *(Advertisers / Inventory → Available Inventory)*
+- **Max campaigns, inherited from its display type** (ticket "Available
+  Inventory: Max campaigns column + slot playlist statement"): the
+  retailer-controlled maximum number of campaigns (default + targeted
+  versions) this advertiser may submit for the slot — same
+  override-always-wins inheritance as reserve price, default 5, 1-10
+  inclusive — replacing the platform-wide 20-targeted-versions cap for
+  that slot once a submission names it. Admin-editable, marketing
+  read-only, filterable, with an info tooltip. Purely a submission cap —
+  it does not feed the auction or billing.
   *(Advertisers / Inventory → Available Inventory)*
 - **Targeting supported needs QR Control for interactive**: flagged on the
   display type, greyed out with the reason where it is off, refused by the
@@ -2252,8 +2297,14 @@ are in `api/PH-CORE-BOUNDARIES.md`.
 - **Partner API limits:** 50 requests/s per partner (bursts of 100), then
   `429 rate_limited` with `Retry-After`; 2 uploads in flight per partner;
   forecasts of at most 200 positions, each once; content packages bounded
-  (name ≤ 200 characters, ≤ 20 targeted versions, ≤ 10 AND groups, ≤ 20
-  conditions per group, values ≤ 200 characters).
+  (name ≤ 200 characters, ≤ 10 AND groups, ≤ 20 conditions per group,
+  values ≤ 200 characters). **How many campaigns** (default + targeted
+  versions) a submission may carry is its slot's own **Max campaigns**
+  (§5, ticket "Available Inventory: Max campaigns column + slot playlist
+  statement") once `displayTypeId` and `slot` resolve to a real advertiser
+  slot — retailer-controlled, default 5, 1-10 inclusive — replacing the
+  platform-wide **≤ 20 targeted versions** cap for that slot; a submission
+  naming no resolvable slot still falls back to that 20-cap.
 - **Bid responses are validated and bounded** before they are trusted:
   the request id echoed, impression 1, a finite price under a ceiling, a
   missing currency read as USD (OpenRTB), at most 10 bids and 64 KB per
