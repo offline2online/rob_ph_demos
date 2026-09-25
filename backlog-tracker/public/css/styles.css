@@ -747,6 +747,11 @@ textarea.dialog-field-input { resize: vertical; min-height: 70px; }
   color: var(--success); background: rgba(82, 196, 26, .12); border-radius: 9999px;
   padding: 2px 8px; margin: 6px 0 0 6px;
 }
+/* A card riding on a sibling's train commit (carriedByCommit — see
+   cardHTML's carriedBadge). Same pill as .no-deploy-badge, but neutral
+   rather than green: this one IS a deployment, it just has no commit of its
+   own, and it goes live only when its train merges. */
+.carried-badge { color: var(--text-muted); background: var(--surface-2); }
 /* Structured Failed testing / Eject from train reason (XJoASicLGefL5c9fronl)
    — shows the fixed category from lastFailureReason on a Backlog card that
    was sent back, so it's visible at a glance instead of only living inside

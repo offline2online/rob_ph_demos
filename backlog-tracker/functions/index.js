@@ -425,7 +425,12 @@ exports.notifyOnProjectReadyToDeploy = onDocumentUpdated(
       // REQUEST ===` marker ROUTINE_INSTRUCTIONS.md's own Deploy flow section
       // keys off of.
       const itemLines = items
-        .map((i, idx) => `${idx + 1}. [id: ${i.id}] [${i.type === "bug" ? "Bug" : "Feature"}] ${i.title} — ${i.desc}${i.deployCommit ? ` (commit ${i.deployCommit})` : ""}`)
+        // A card riding on a sibling's commit (carriedByCommit — see
+        // run-backlog-automation.js's carryingCommitOnTrain) says so here,
+        // because its deployCommit is that sibling's sha and no commit
+        // carries its own `Backlog item:` trailer — ROUTINE_INSTRUCTIONS.md's
+        // Deploy flow step 1 tells the session what to verify instead.
+        .map((i, idx) => `${idx + 1}. [id: ${i.id}] [${i.type === "bug" ? "Bug" : "Feature"}] ${i.title} — ${i.desc}${i.deployCommit ? ` (commit ${i.deployCommit}${i.carriedByCommit ? `; no commit of its own — rides on ${i.carriedByItem ? `ticket ${i.carriedByItem}'s` : "a sibling's"} commit` : ""})` : ""}`)
         .join("\n");
 
       // Since the deployment train there is no per-item branch or PR to

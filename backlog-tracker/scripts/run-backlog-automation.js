@@ -212,6 +212,147 @@ function onTrainItems(items) {
   return items.filter((i) => i.deployCommit && ON_TRAIN_STATUSES.has(i.status));
 }
 
+// ── Cards carried by a sibling's commit ────────────────────────────────────
+// A shared-file batch delivers two tickets' content in one commit: the first
+// item's full-file patchFiles carry both changes, so the second item's
+// patchFiles then produce no diff against the train. That second card has no
+// commit of its own — but its fix IS on the branch, inside the first item's
+// commit, and it must go live when, and only when, that train merges.
+//
+// Until 25 Sep 2026 the no-diff path stamped such a card noDeploymentRequired
+// instead. That flag means "nothing ever touches GitHub" and hands the card
+// the board's one-click "Confirm tested — mark Merged to Main", so two cards
+// on Backlog Tracker & FAQs (OhKUnoGbpUAeJiXiLIvc, yUISCow4tCg9uxnMJFOy) read
+// "Deployed / Main Branch (Live)" while their code sat unmerged on
+// deploy/backlog-tracker-faqs inside 419bb79 (ORUeAQ4b3vmv2EhEni5O's commit),
+// which only reached main later as PR #211. The Deploy run flagged both.
+//
+// So a carried card is stamped with the commit that carried it instead:
+//   deployCommit    = that commit — so every membership check (the board's
+//                     Deploy gate, train-lock.js, onTrainItems, finishTrain,
+//                     the Deploy Routine's ancestor check) counts it as on
+//                     the train with no special case, and it ships with it;
+//   carriedByCommit = the same sha, the explicit marker; and
+//   carriedByItem   = the sibling's id from that commit's `Backlog item:`
+//                     trailer (null for a commit with no trailer).
+// It is NOT added to deployCommits: that array is "commits this card put on
+// the branch" — what processRevertFromTrain takes off — and the carrying
+// commit is the sibling's own work, never this card's to revert.
+
+// The id on a train commit's `Backlog item: <id>` trailer, or null.
+function backlogItemIdFromMessage(message) {
+  const m = String(message || "").match(/^Backlog item:\s*([A-Za-z0-9_-]+)\s*$/m);
+  return m ? m[1] : null;
+}
+
+// The commit on the train (origin/main..origin/<deployBranch>) that delivered
+// this item's content — the newest commit touching any of `paths` that is
+// neither a revert nor itself reverted — as { sha, itemId }. null when the
+// branch does not differ from main in those paths at all (the content is
+// already live, and anything that once touched them there has been reverted).
+// Plain git over the refs checkoutTrain() has already fetched.
+function carryingCommitOnTrain(deployBranch, paths) {
+  const wanted = (paths || []).filter((p) => typeof p === "string" && p);
+  if (!wanted.length) return null;
+  const range = `origin/main..origin/${deployBranch}`;
+  // `git diff --quiet` exits 1 when there IS a difference, which run() turns
+  // into a throw — so a throw here means "the train changes these paths".
+  let differs = false;
+  try { run("git", ["diff", "--quiet", "origin/main", `origin/${deployBranch}`, "--", ...wanted]); }
+  catch { differs = true; }
+  if (!differs) return null;
+
+  let out = "";
+  try { out = run("git", ["log", "--format=%H%x1f%B%x1e", range, "--", ...wanted]); } catch { return null; }
+  const commits = [];
+  const revertedShas = new Set();
+  for (const record of String(out).split("\x1e")) {
+    const [sha, body] = record.replace(/^\s+/, "").split("\x1f");
+    if (!sha) continue;
+    const text = String(body || "");
+    const undoes = [...text.matchAll(/This reverts commit ([0-9a-f]{7,40})/g)].map((m) => m[1]);
+    undoes.forEach((s) => revertedShas.add(s));
+    commits.push({ sha, body: text, isRevert: undoes.length > 0 });
+  }
+  if (!commits.length) return null;
+  const surviving = commits.find((c) => !c.isRevert && ![...revertedShas].some((r) => c.sha.startsWith(r)));
+  const chosen = surviving || commits[0];
+  return { sha: chosen.sha, itemId: backlogItemIdFromMessage(chosen.body) };
+}
+
+// Pure: what a no-diff patch means for the card, and exactly what to write on
+// it. `carrying` is carryingCommitOnTrain()'s answer. Three outcomes:
+//   already-on-train — the item has commits there (a re-patch matched what it
+//                      had already put on the branch), or the carrying commit
+//                      carries THIS item's own trailer: a commit someone pushed
+//                      by hand and never stamped on the card (CLAUDE.md →
+//                      "Putting a commit on a deployment train by hand"), so
+//                      adopt it. Back to testing on those commits either way.
+//   carried          — a sibling's commit delivered the content: ride on it.
+//   already-on-main  — nothing on the train changes these paths, so the
+//                      content is live already: genuinely nothing to deploy,
+//                      and the one case noDeploymentRequired is honest for.
+function noDiffPatchFields(item, carrying, { deployBranch, testVersion, previewUrl, mainPreviewUrl } = {}) {
+  const base = {
+    status: "ready-for-testing",
+    patchReady: false,
+    patchAttempts: 0,
+    ...(testVersion ? { testVersion } : {}),
+  };
+  const own = Array.isArray(item.deployCommits) ? item.deployCommits.filter(Boolean) : [];
+  if (own.length) {
+    return { kind: "already-on-train", commits: own, adopted: false, fields: base };
+  }
+  if (carrying && carrying.sha && carrying.itemId && carrying.itemId === item.id) {
+    return {
+      kind: "already-on-train", commits: [carrying.sha], adopted: true,
+      fields: {
+        ...base, deployBranch,
+        deployCommit: carrying.sha, deployCommits: [carrying.sha],
+        carriedByCommit: null, carriedByItem: null,
+        ...(previewUrl ? { previewUrl } : {}),
+      },
+    };
+  }
+  if (carrying && carrying.sha) {
+    return {
+      kind: "carried", sha: carrying.sha, carriedByItem: carrying.itemId || null,
+      fields: {
+        ...base, deployBranch,
+        deployCommit: carrying.sha,
+        carriedByCommit: carrying.sha,
+        carriedByItem: carrying.itemId || null,
+        // A re-patch answers whatever Failed testing said, same as the
+        // real-commit path below.
+        revertRequested: false,
+        revertBlockedBy: [],
+        ...(previewUrl ? { previewUrl } : {}),
+      },
+    };
+  }
+  return {
+    kind: "already-on-main",
+    fields: { ...base, noDeploymentRequired: true, deployBranch, ...(mainPreviewUrl ? { previewUrl: mainPreviewUrl } : {}) },
+  };
+}
+
+// The cards riding on any of `shas` and still on the train — the ones a
+// revert of those commits takes the content away from.
+function carriedCardsOn(items, shas) {
+  const set = new Set((shas || []).filter(Boolean));
+  if (!set.size) return [];
+  return (items || []).filter((i) => i && i.carriedByCommit && set.has(i.carriedByCommit) && ON_TRAIN_STATUSES.has(i.status));
+}
+
+// True for a test link this pipeline generated itself — a githack page or a
+// GitHub tree link for this repo — as opposed to a person's own "Set test
+// link" choice, which is always kept. Used by the no-diff path to decide
+// whether to regenerate a carried card's link pinned to its carrying commit.
+function isPipelinePreviewUrl(url) {
+  const s = String(url || "");
+  return s.startsWith(`https://rawcdn.githack.com/${REPO}/`) || s.startsWith(`https://github.com/${REPO}/tree/`);
+}
+
 function remoteBranchExists(branch) {
   try {
     return !!run("git", ["ls-remote", "--heads", "origin", branch]);
@@ -614,32 +755,89 @@ function prFilePaths(prNumber) {
 // build's workflow replaces it from the merged source. Anything else in
 // the conflict, and this declines — same contract as
 // tryAutoResolveFaqIndexConflict.
+//
+// "The branch's copy" is HEAD's tree, never the index's stage 2. On 25 Sep
+// 2026 both sides had rebuilt the DSP prototype under different hashed
+// names, git reported the bundle as a rename/rename conflict, and for that
+// shape git writes a two-way content merge WITH conflict markers into both
+// renamed paths — and records that marker-laden blob as stages 2 and 3. So
+// `git checkout --ours` "succeeded" and kept the markers, `git add` staged
+// them, the merge (f361e65, shipped as PR #216) committed a bundle that
+// threw `Unexpected token '==='` on load, and the hosted prototype was a
+// blank page from 09:37 until a forced rebuild at 21:34. HEAD:<path> is the
+// train's real file for anything the train has; anything it doesn't (the
+// other side's rename target, the pre-rename path) is dropped; nothing is
+// called resolved while any output file still carries a marker; and the
+// kept build's stamp is spoiled so the next scheduled run rebuilds from
+// the merged source rather than trusting a bundle built before the merge.
 function tryAutoResolveGeneratedOutputConflict(conflicted) {
   if (!conflicted.length || !conflicted.every(isGeneratedOutput)) {
     return { resolved: false, detail: `conflicted on ${conflicted.join(", ") || "(unknown files)"}` };
   }
   for (const p of conflicted) {
+    let inHead = true;
+    try { run("git", ["cat-file", "-e", `HEAD:${p}`]); } catch { inHead = false; }
     try {
-      // `--ours` inside a merge INTO the train is the train's copy. A file
-      // the train deleted (an old hashed asset) has no "ours" — drop it.
-      run("git", ["checkout", "--ours", "--", p]);
-      run("git", ["add", "--", p]);
-    } catch {
-      try {
-        run("git", ["rm", "--quiet", "--", p]);
-      } catch (err) {
-        return { resolved: false, detail: `conflicted on ${conflicted.join(", ")} — generated build output, but keeping the branch's copy of ${p} failed (${err.message})` };
+      if (inHead) {
+        run("git", ["checkout", "HEAD", "--", p]);
+        run("git", ["add", "--", p]);
+      } else {
+        // The other side's hashed asset, or the path both sides renamed
+        // away from: not part of the branch's build, so it goes.
+        run("git", ["rm", "--quiet", "--force", "--", p]);
       }
+    } catch (err) {
+      return { resolved: false, detail: `conflicted on ${conflicted.join(", ")} — generated build output, but keeping the branch's copy of ${p} failed (${err.message})` };
     }
   }
   const remaining = conflictedPaths();
   if (remaining.length) {
     return { resolved: false, detail: `conflicted on ${remaining.join(", ")} even after keeping the branch's copy of ${conflicted.join(", ")}` };
   }
+  const marked = generatedOutputsWithConflictMarkers();
+  if (marked.length) {
+    return { resolved: false, detail: `conflicted on ${conflicted.join(", ")} — generated build output, but conflict markers are still inside ${marked.join(", ")} after keeping the branch's copy; leaving the merge for a person rather than committing a broken bundle` };
+  }
+  invalidateBuildStamps();
   return {
     resolved: true,
     detail: `conflicted only on generated build output (${conflicted.join(", ")}) — kept the branch's copy, which its rebuild workflow regenerates from the merged source, and the merge completed`,
   };
+}
+
+// Tracked files under a generated build's outputs that still carry a merge
+// marker: 7 characters for an ordinary conflict, 8 for the rename/rename
+// shape. `git grep` exits 1 when nothing matches, which run() turns into a
+// throw — that is the "none" answer.
+function generatedOutputsWithConflictMarkers() {
+  const prefixes = GENERATED_BUILDS.flatMap((b) => b.outputs).filter((dir) => fs.existsSync(path.join(process.cwd(), dir)));
+  if (!prefixes.length) return [];
+  let out = "";
+  try { out = run("git", ["grep", "-l", "-E", "^(<{7,8}|={7,8}|>{7,8})( |$)", "--", ...prefixes]); } catch { return []; }
+  return out ? out.split("\n").filter(Boolean) : [];
+}
+
+// Rewrites each kept build's build-info.json stamp so its rebuild script
+// sees the output as stale (rebuild-prototype.sh compares the recorded
+// stamp with a hash of the source tree). Without this, a merge that brought
+// no source change of its own left a stamp that still matched, and the
+// scheduled rebuild did nothing for twelve hours on 25 Sep 2026.
+function invalidateBuildStamps() {
+  for (const b of GENERATED_BUILDS) {
+    for (const dir of b.outputs) {
+      const rel = path.posix.join(dir, "build-info.json");
+      const file = path.join(process.cwd(), rel);
+      if (!fs.existsSync(file)) continue;
+      try {
+        const info = JSON.parse(fs.readFileSync(file, "utf8"));
+        info.sourceStamp = `rebuild-after-merge:${headSha().slice(0, 7)}`;
+        fs.writeFileSync(file, JSON.stringify(info, null, 2) + "\n");
+        run("git", ["add", "--", rel]);
+      } catch (err) {
+        console.log(`[deploy-train] couldn't spoil ${rel}'s build stamp (${err.message}) — the build may not be rebuilt until its source next changes`);
+      }
+    }
+  }
 }
 
 // Optional escape hatch for the restriction above: backlog-automation.yml
@@ -1165,52 +1363,52 @@ async function processApplyPatch(item) {
       // Same "stuck forever with no record of why" class of bug the old
       // per-ticket path already had to fix: patchFiles that produce no diff
       // used to just log and return, leaving patchReady set to retry every
-      // scheduled run forever. On a train there are two genuinely different
-      // reasons for no diff, and they need different outcomes.
+      // scheduled run forever. On a train there are three genuinely
+      // different reasons for no diff, and they need different outcomes —
+      // noDiffPatchFields() is the rule, and the "Cards carried by a
+      // sibling's commit" comment above it is the bug the middle one fixes:
+      // a card whose content a sibling's commit delivered used to be flagged
+      // noDeploymentRequired, which let the board mark it Merged to Main
+      // before its train had merged.
       run("git", ["checkout", "main", "--quiet"]);
-      const alreadyOnTrain = Array.isArray(item.deployCommits) && item.deployCommits.length > 0;
-      if (alreadyOnTrain) {
-        // A re-patch whose new content matches what this item already put on
-        // the branch — its work IS on the train, so it goes back to testing
-        // with its existing commits intact, NOT flagged noDeploymentRequired.
-        const notes = await appendNote(
-          item,
-          `Re-patched, but the new patchFiles are identical to what this item already has on ${deployBranch} — nothing new was committed. ` +
-          `Moved back to Ready for Testing against the same train commits (${item.deployCommits.join(", ")}).`
-        );
-        await patchItem(item.id, {
-          status: "ready-for-testing",
-          patchReady: false,
-          patchAttempts: 0,
-          updatedAt: new Date().toISOString(),
-          notes,
-          ...(testVersion ? { testVersion } : {}),
-        });
-        console.log(`[apply-patch] ${item.id}: no new diff against ${deployBranch} — already on the train, back to ready-for-testing`);
-        return;
-      }
-      // Never been on the train and produces no diff: the content is already
-      // there (a sibling's shared-file patch in the same batch, or it was
-      // already on main). There is nothing for a deploy to carry, so flag it
-      // as needing none — otherwise it reaches Approved for Deployment and
-      // blocks the train's Deploy gate on a ticket with no commit to ship.
-      const notes = await appendNote(
-        item,
-        `No commit made: patchFiles produced no diff against the project's integration branch ${deployBranch} — this content is already there, ` +
-        `most likely delivered by a sibling item's shared-file patch in the same batch (see "Group multi-item fixes into one deployment"). ` +
-        `Moved to Ready for Testing directly since the fix is genuinely present; flagged as needing no deployment of its own.`
-      );
-      await patchItem(item.id, {
-        status: "ready-for-testing",
-        patchReady: false,
-        patchAttempts: 0,
-        noDeploymentRequired: true,
-        deployBranch,
-        updatedAt: new Date().toISOString(),
-        notes,
-        ...(testVersion ? { testVersion } : {}),
+      const carrying = carryingCommitOnTrain(deployBranch, patchedFiles.map((f) => f && f.path));
+      // Test link: pinned to the commit the content actually lives in — the
+      // carrying commit, or main's head when the content is already there —
+      // never a branch name. githack caches a branch URL's fixed-path files
+      // (measured 25 Sep 2026: faq.css still served the old base size 20
+      // minutes after the train changed it) and a commit URL is immutable.
+      // A link this pipeline didn't generate (a person's own "Set test
+      // link") is kept as it is.
+      const ownLink = item.previewUrl && !isPipelinePreviewUrl(item.previewUrl) ? item.previewUrl : null;
+      const pinnedTo = (ref, fallback) => ownLink || guessPreviewUrl(patchedFiles, ref, fallback);
+      let mainRef = "main";
+      try { mainRef = run("git", ["rev-parse", "origin/main"]); } catch { /* fall back to the branch name */ }
+      const outcome = noDiffPatchFields(item, carrying, {
+        deployBranch, testVersion,
+        previewUrl: carrying && carrying.sha ? pinnedTo(carrying.sha, trainTreeUrl(deployBranch)) : null,
+        // Content that is already on main is tested against main.
+        mainPreviewUrl: pinnedTo(mainRef, trainTreeUrl("main")),
       });
-      console.log(`[apply-patch] ${item.id}: patchFiles produced no diff against ${deployBranch} — advancing without a commit`);
+      let text;
+      if (outcome.kind === "already-on-train") {
+        text = outcome.adopted
+          ? `Re-patched, but the new patchFiles are identical to what is already on ${deployBranch} — and commit ${outcome.commits[0].slice(0, 7)} there carries this card's own \`Backlog item:\` trailer ` +
+            `(pushed by hand and never stamped on the card). Adopted it as this card's train commit and moved to Ready for Testing.`
+          : `Re-patched, but the new patchFiles are identical to what this item already has on ${deployBranch} — nothing new was committed. ` +
+            `Moved back to Ready for Testing against the same train commits (${outcome.commits.join(", ")}).`;
+      } else if (outcome.kind === "carried") {
+        text = `No commit of its own: patchFiles produced no diff against ${deployBranch} because ${outcome.carriedByItem ? `ticket ${outcome.carriedByItem}'s` : "an earlier"} commit ${outcome.sha.slice(0, 7)} on that branch already carries this change ` +
+          `(a shared-file patch in the same batch — see "Group multi-item fixes into one deployment"). ` +
+          `This card now rides on that commit: it is on the train like any other ticket, is tested on the same test link, needs the same approval, and goes live only when the train merges to main. ` +
+          `It is deliberately NOT flagged "no deployment required" — its code is not on main yet.`;
+      } else {
+        text = `No commit made: patchFiles produced no diff against ${deployBranch}, and that branch does not change these files either — this content is already on main. ` +
+          `Moved to Ready for Testing directly and flagged as needing no deployment of its own, since there is genuinely nothing left to ship.`;
+      }
+      const notes = await appendNote(item, text);
+      await patchItem(item.id, { ...outcome.fields, updatedAt: new Date().toISOString(), notes });
+      console.log(`[apply-patch] ${item.id}: no diff against ${deployBranch} — ${outcome.kind}` +
+        (outcome.kind === "carried" ? ` (rides on ${outcome.sha.slice(0, 7)}${outcome.carriedByItem ? `, ${outcome.carriedByItem}` : ""})` : ""));
       return;
     }
 
@@ -1270,6 +1468,10 @@ async function processApplyPatch(item) {
     deployBranch,
     deployCommit: sha,
     deployCommits,
+    // Its own commit now — no longer riding on a sibling's (see
+    // carryingCommitOnTrain), if it ever was.
+    carriedByCommit: null,
+    carriedByItem: null,
     previewUrl,
     // A re-patch answers whatever Failed testing said, so a revert request
     // (and any block it was stuck behind) from that round is spent.
@@ -1304,6 +1506,32 @@ async function processRevertFromTrain(item) {
   console.log(`[train-revert] ${item.id}: ${item.title || item.desc}`);
   const commits = Array.isArray(item.deployCommits) ? item.deployCommits.filter(Boolean) : [];
   const deployBranch = item.deployBranch;
+  if (!commits.length && item.carriedByCommit) {
+    // A card riding on a sibling's commit (see carryingCommitOnTrain) has
+    // nothing of its own on the branch: the commit it points at is the
+    // sibling's work, and reverting it here would silently take the
+    // sibling's ticket off the train too. Detach this card instead — it is a
+    // plain Backlog ticket again — and say what would actually remove the
+    // content.
+    const who = item.carriedByItem ? `ticket ${item.carriedByItem}'s` : "another ticket's";
+    const notes = await appendNote(
+      item,
+      `Nothing of its own to revert: this card's change rode on \`${deployBranch || "the integration branch"}\` inside ${who} commit ${String(item.carriedByCommit).slice(0, 7)}, ` +
+      `which is that ticket's own work and has been left on the branch. This card is a plain Backlog ticket again and no longer counts as on the train. ` +
+      `If the change itself must come off the branch, send ${item.carriedByItem ? `ticket ${item.carriedByItem}` : "that ticket"} back with Failed testing too.`
+    );
+    await patchItem(item.id, {
+      revertRequested: false,
+      revertBlockedBy: [],
+      deployCommit: null,
+      carriedByCommit: null,
+      carriedByItem: null,
+      updatedAt: new Date().toISOString(),
+      notes,
+    });
+    console.log(`[train-revert] ${item.id}: rode on ${String(item.carriedByCommit).slice(0, 7)} — detached, nothing reverted`);
+    return;
+  }
   if (!deployBranch || !commits.length) {
     console.log(`[train-revert] ${item.id}: nothing on a train to revert — clearing the flag`);
     await patchItem(item.id, {
@@ -1327,6 +1555,7 @@ async function processRevertFromTrain(item) {
   // on it is the guaranteed way to manufacture a conflict.
   const ordered = commits.slice().reverse();
   const reverted = [];
+  const revertedOriginals = [];
   for (const sha of ordered) {
     let onBranch = true;
     try { run("git", ["merge-base", "--is-ancestor", sha, "HEAD"]); } catch { onBranch = false; }
@@ -1339,6 +1568,7 @@ async function processRevertFromTrain(item) {
       run("git", ["-c", "user.name=backlog-automation", "-c", "user.email=backlog-automation@users.noreply.github.com",
         "revert", "--no-edit", ...mainline, sha]);
       reverted.push(headSha());
+      revertedOriginals.push(sha);
     } catch (err) {
       try { run("git", ["revert", "--abort"]); } catch { /* nothing in progress */ }
       // Whose work sits on top of this commit — that's who a human has to
@@ -1393,6 +1623,8 @@ async function processRevertFromTrain(item) {
   // The revert changed the train's source, so any bundle built from it is
   // stale in the other direction: it would keep showing the reverted change.
   dispatchRebuilds(deployBranch, changedPathsBetween(tipBeforeRevert, "HEAD"), "train-revert");
+  // Anything riding on the commits just reverted lost its content with them.
+  await detachCarriedCards(item, revertedOriginals, deployBranch);
 
   const notes = await appendNote(
     item,
@@ -1411,6 +1643,41 @@ async function processRevertFromTrain(item) {
   });
   console.log(`[train-revert] ${item.id}: reverted ${reverted.length} commit(s) off ${deployBranch}`);
   run("git", ["checkout", "main", "--quiet"]);
+}
+
+// The cards riding on `shas` (see carriedCardsOn) just lost their content
+// with the revert of those commits: send each back to Backlog, so the board
+// never shows a Ready for Testing or Approved for Deployment card whose fix
+// is no longer on the branch — and never lets finishTrain mark one live on
+// a merge that no longer carries it.
+async function detachCarriedCards(revertedItem, shas, deployBranch) {
+  if (!shas.length || !revertedItem.projectId) return;
+  let riders = [];
+  try {
+    riders = carriedCardsOn(await itemsForProject(revertedItem.projectId), shas).filter((i) => i.id !== revertedItem.id);
+  } catch (err) {
+    console.log(`[train-revert] ${revertedItem.id}: couldn't look for cards riding on ${shas.map((s) => s.slice(0, 7)).join(", ")} (${err.message}) — the next sweep's Deploy verification is the backstop`);
+    return;
+  }
+  for (const rider of riders) {
+    const notes = await appendNote(
+      rider,
+      `Sent back to Backlog: this card's change rode on \`${deployBranch}\` inside ticket ${revertedItem.id}'s commit ${String(rider.carriedByCommit).slice(0, 7)}, ` +
+      `which has just been reverted off the branch (${revertedItem.ejectedFromTrain ? "Eject from train" : "Failed testing"} on that ticket) — so this fix is no longer on the train either. ` +
+      `A fresh Ready for Dev sweep rebuilds it on top of whatever the branch looks like then.`
+    );
+    await patchItem(rider.id, {
+      status: "backlog",
+      deployCommit: null,
+      carriedByCommit: null,
+      carriedByItem: null,
+      revertRequested: false,
+      revertBlockedBy: [],
+      updatedAt: new Date().toISOString(),
+      notes,
+    });
+    console.log(`[train-revert] ${rider.id}: rode on ${String(rider.carriedByCommit).slice(0, 7)} — sent back to Backlog with ${revertedItem.id}`);
+  }
 }
 
 function sleepSync(ms) {
@@ -1680,6 +1947,9 @@ async function finishTrain(project, deployBranch, prNumber, trainItems, { touche
     const notes = await appendNote(
       item,
       `Shipped in the deployment train PR #${prNumber}, merged to main with ${trainItems.length === 1 ? "no other ticket" : `${trainItems.length - 1} other ticket(s)`} from \`${deployBranch}\`.` +
+        (item.carriedByCommit
+          ? ` This card had no commit of its own: its change rode on ${item.carriedByItem ? `ticket ${item.carriedByItem}'s` : "a sibling's"} commit ${String(item.carriedByCommit).slice(0, 7)}, which is part of this merge — so it is live now, and not before.`
+          : "") +
         (mergeNote ? ` Note: merging main into ${deployBranch} for this deploy ${mergeNote}.` : "") +
         (rebuilds.length
           ? ` The hosted prototype on GitHub Pages is a built bundle, being rebuilt from main now (${rebuilds.join(", ")}) — allow a few minutes before checking the live site, and confirm with its build-info.json: "commit" is the source commit the bundle was built from, so it should be this train's own last commit (${trainItems.map((i) => (i.deployCommit ? i.deployCommit.slice(0, 7) : null)).filter(Boolean).join(", ") || "one of this train's commits"}) or later — not the merge commit itself, which comes after.`
@@ -2519,6 +2789,9 @@ if (require.main === module) {
 // this module loads if not guarded — see the require.main check).
 module.exports = {
   conflictedPaths, tryAutoResolveFaqIndexConflict, archiveAndResetOrphanedBranch, dateStamp, nearestPageFor, isBundlerTemplate,
+  // test/train-carried.test.js — a card whose content a sibling's commit
+  // delivered follows that train instead of being marked live on approval
+  onTrainItems, backlogItemIdFromMessage, carryingCommitOnTrain, noDiffPatchFields, carriedCardsOn, isPipelinePreviewUrl,
   // test/generated-builds.test.js
   isGeneratedOutput, rebuildWorkflowsFor, tryAutoResolveGeneratedOutputConflict,
   // test/patch-paths.test.js

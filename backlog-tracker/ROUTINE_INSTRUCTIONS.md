@@ -627,6 +627,22 @@ git protocol, so none of it depends on `api.github.com` (see step 0).
    `git log --grep "Backlog item: <ITEM_ID>" origin/<deployBranch>` finds
    it by exact id, never by title.
 
+   **A card riding on a sibling's commit has no trailer of its own.** Its
+   line in the fire text says so (`no commit of its own — rides on ticket
+   <id>'s commit`), and its doc carries `carriedByCommit`/`carriedByItem`:
+   a shared-file batch delivered its change inside that sibling's commit,
+   and its `deployCommit` is that sibling's sha. For such a card the
+   ancestor check above is the verification; `git log --grep "Backlog
+   item: <its own id>"` finding nothing is expected, not a reason to stop.
+   Do additionally confirm the carrying commit has not been reverted on the
+   branch — `git log --grep "This reverts commit <carriedByCommit>"
+   origin/<deployBranch>` must find nothing — and treat a reverted
+   carrying commit exactly like a missing `deployCommit` below: stop, note
+   it, don't set `trainReady`. Never mark such a card
+   `noDeploymentRequired` or advance it yourself: it goes live with the
+   train, when the automation merges it (`REQUIREMENTS.md` → "A card
+   carried by a sibling's commit follows that train").
+
    **If an item's `deployCommit` is missing, or is not an ancestor of the
    branch, stop and leave that item alone with a note saying so.** Do not
    set `trainReady`. Either it was never built, or it was reverted off the
