@@ -1,4 +1,4 @@
-# Help Centre rewrite — TODO(verify) items (111)
+# Help Centre rewrite — TODO(verify) items (109)
 
 Items that no source confirmed; each is removed from the public HTML and phrased so the surrounding text stands without it. Verify against the platform and edit the article in the console (or `faq/data/articles/<id>.json`).
 
@@ -18,8 +18,6 @@ Items that no source confirmed; each is removed from the public HTML and phrased
 | Set appointment slots per store and per day (`faq-art-appointment-slots`) | TODO(verify): confirm that the per-day "# of Appointment Slots" on Store Hours overrides the template's "Default # of Appointment Slots" for that day, and which value applies when the per-day field is left at its default -- |
 | Block out dates and times for appointments (`faq-art-calendar-blocking`) | TODO(verify): the Add New Calendar Block form was not opened during capture; field labels are taken from the table columns (Block-Out Period Name, Date, Time, Recurrence). Confirm the form's labels, whether a block can be limited to specific stores, and the name of its save button -- |
 | Appointment SMS and email notifications (`faq-art-appointment-messages`) | TODO(verify): the wording of each appointment template, and the tokens available in them (for example ${VisitorFirstName}, ${BrandName}, ${StoreName}), were not captured; only the queueing SMS texts are documented in corpus/51000360033.md. Also confirm whether templates are editable in Shared Settings (the table shows a Last Updated column) or only by Personalisation Hub support, as the original queueing article states -- |
-| Company Settings and Platform Admin explained (`faq-art-company-settings-overview`) | TODO(verify): which of the Admin, Marketing and Helpdesk roles can open Company Settings and Platform Admin — not stated in the sources. -- |
-| Add HQ Admin, Marketing and Helpdesk users (`faq-art-add-hq-admin-users`) | TODO(verify): permissions of the Marketing and Helpdesk roles compared with Admin. -- |
 | Upload your brand guidelines for the AI agents (`faq-art-brand-guidelines`) | TODO(verify): what the BRAND GUIDELINES USED BY AI-AGENTS/SKILLS panel shows after an upload (file name, a Remove/Replace action), whether a Save Changes is needed, and the maximum file size. |
 | Upload your brand guidelines for the AI agents (`faq-art-brand-guidelines`) | TODO(verify): whether a scanned, image-only PDF is read by the agents; the troubleshooting entry assumes text extraction. Also confirm that campaigns already created are unaffected by a replaced guidelines file. |
 | Define target audiences and campaign objectives (`faq-art-campaign-settings`) | TODO(verify): whether the new row is confirmed with Enter, a tick icon or a Save button — the add control was not captured. -- |

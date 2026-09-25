@@ -1287,13 +1287,33 @@ REST API is reachable with a plain `curl`, no service account needed.
   window.confirm/prompt/alert" below — prefilled with an editable template
   when nothing's set yet), it becomes a "Test this →" button opening `previewUrl` in a new
   tab, with a pencil icon to change it. The convention is a
-  `rawcdn.githack.com/offline2online/rob_ph_demos/<branch>/<path>` link for
-  a static page (see root `CLAUDE.md`) — **`rawcdn.githack.com`, not
-  `raw.githack.com`**: the latter proxies through jsDelivr's CDN cache (up
-  to ~7 days), so a link set right after one push can keep showing that
-  first commit even after later pushes update the file, with no visible
-  error; `rawcdn.githack.com` is githack's own always-uncached host, meant
-  specifically for testing an in-progress branch like this.
+  `rawcdn.githack.com/offline2online/rob_ph_demos/<commit-sha>/<path>` link
+  (see root `CLAUDE.md`) — **`rawcdn.githack.com`, not `raw.githack.com`**:
+  the latter proxies through jsDelivr's CDN cache (up to ~7 days), so a
+  link set right after one push can keep showing that first commit even
+  after later pushes update the file, with no visible error.
+
+  **The ref is always a commit sha, never a branch name — `rawcdn.githack.com`
+  caches a branch URL indefinitely too, just as badly.** Measured twice:
+  22 Sep 2026 on the DSP project (a built bundle's fixed-path
+  `demo/api-snapshot.json` kept serving a day-old capture across several
+  pushes) and 25 Sep 2026 on this project's own train (a plain static page,
+  `faq/css/faq.css` — commit `7b09a4b` changed its base font size and the
+  branch URL still served the pre-change file 20 minutes later, while the
+  commit-sha URL for the same file was correct immediately —
+  `mIHraVz8fQXRe549UYD1`). There is no page plain enough to be exempt from
+  this. `processApplyPatch` builds `previewUrl` against the commit it just
+  made on the train (`guessPreviewUrl(patchedFiles, sha, ...)`, not the
+  branch), and `repointTrainPreviewUrls` re-points every *other* Ready for
+  Testing card already on that train to the new head sha each time another
+  ticket lands, so every card's link keeps showing the full combination
+  that will ship — the same job the DSP project's own rebuild-then-relink
+  step (`dsp-prototype.yml`, `npm run board:tickets --relink-prototype
+  <sha>`) already did for its checked-in build bundle; that is now one
+  instance of this general rule, not a special case of it. A previewUrl a
+  human set by hand through "Set test link" (anything that isn't one of
+  this pipeline's own two auto-generated shapes) is left untouched rather
+  than overwritten.
 
   **`guessPreviewUrl` picks the page, not just a changed file.** A ticket
   that changes an `.html` file links to that page. A ticket that changes
@@ -1304,7 +1324,8 @@ REST API is reachable with a plain `curl`, no service account needed.
   touched only `styles.css`, so "Test this →" opened a GitHub *source
   listing* and there was no way to see whether the logo had changed. Only
   a change with no page above it at all (`scripts/`, `functions/`) falls
-  back to a link to the branch itself.
+  back to a link to the branch itself, since there is no single commit to
+  pin a no-page change to.
 
   One limit worth knowing for backlog-tracker's own UI: a githack preview
   is served from a different origin than the board, so Firebase Auth

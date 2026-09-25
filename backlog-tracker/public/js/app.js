@@ -6764,6 +6764,7 @@ function wireFaqArticleRowInteractions(containerId) {
     const id = row.dataset.id;
     const optionsBtn = e.target.closest(".faq-article-options-btn");
     if (optionsBtn) { toggleOptionMenu(optionsBtn); return; }
+    if (e.target.closest(".faq-revision-badge")) { closeAllOptionMenus(); openFaqRevisionReviewPage(id); return; }
     if (e.target.closest(".faq-article-title") || e.target.closest(".faq-article-edit")) {
       closeAllOptionMenus();
       openFaqArticleEditorPage(id);
@@ -7751,10 +7752,15 @@ const faqRevisionReviewPage = document.getElementById("faq-revision-review-page"
 let reviewingFaqArticleId = null;
 let frMode = "changes";
 
+// A pending/approved revision's badge is itself the fast path into the
+// review page — select it to jump straight to the old-vs-new comparison,
+// no need to find "Review proposed update" buried in the ⋮ menu first
+// (pKP5LYgwf3e7aIbwj3ch). The menu item stays too, as a second route to the
+// same place for anyone tabbing through the options menu instead.
 function faqRevisionBadgeHTML(a) {
   const rev = a.pendingRevision;
-  if (rev && rev.reviewStatus === "approved") return '<span class="badge badge-approved-update" title="Approved — goes live when its ticket(s) reach Merged to Main">Approved · awaiting merge</span>';
-  if (rev) return '<span class="badge badge-proposed-update" title="A proposed update is waiting for your review">Proposed update</span>';
+  if (rev && rev.reviewStatus === "approved") return '<button type="button" class="badge badge-approved-update faq-revision-badge" title="Approved — goes live when its ticket(s) reach Merged to Main. Select to view.">Approved &middot; awaiting merge<span class="faq-revision-badge-arrow" aria-hidden="true">&rarr;</span></button>';
+  if (rev) return '<button type="button" class="badge badge-proposed-update faq-revision-badge" title="A proposed update is waiting for your review — select to see the changes and accept or reject it">Proposed update<span class="faq-revision-badge-arrow" aria-hidden="true">&rarr;</span></button>';
   if (a.needsReview) return '<span class="badge badge-needs-review">Needs review</span>';
   return "";
 }
