@@ -5,7 +5,7 @@
 //
 // Run with:  node test/build-batches.test.mjs
 import assert from "node:assert";
-import { clusterBacklogItems, estimateEffort, splitRequirementsText } from "../public/js/build-batches.js";
+import { clusterBacklogItems, estimateEffort, estimatePriority, splitRequirementsText } from "../public/js/build-batches.js";
 
 let passed = 0;
 const failures = [];
@@ -65,6 +65,38 @@ test("items within a batch are sorted small effort first", () => {
   const { batches } = clusterBacklogItems(items);
   assert.strictEqual(batches[0].items[0].id, "2", "the small item should sort first");
   assert.strictEqual(batches[0].items[1].id, "1");
+});
+
+test("estimatePriority: an urgent/blocking request is high", () => {
+  assert.strictEqual(estimatePriority({ title: "Checkout is broken", desc: "Blocking every purchase, needs a fix asap" }), "high");
+});
+
+test("estimatePriority: a nice-to-have request is low", () => {
+  assert.strictEqual(estimatePriority({ title: "Nicer icon", desc: "Cosmetic only, nice to have when there's time" }), "low");
+});
+
+test("estimatePriority: a plain request with no signal words is medium", () => {
+  assert.strictEqual(estimatePriority({ title: "Add a filter", desc: "Let the table be filtered by status" }), "medium");
+});
+
+test("a real item.priority/item.effort always wins over the estimate", () => {
+  const { batches } = clusterBacklogItems([
+    { id: "1", title: "Overhaul the whole flow", desc: "d", category: "HQ Admin", priority: "low", effort: "small" },
+  ]);
+  assert.strictEqual(batches[0].items[0].priority, "low");
+  assert.strictEqual(batches[0].items[0].effort, "small");
+});
+
+test("items within a batch sort highest priority first, then smallest effort", () => {
+  const items = [
+    { id: "1", title: "Medium priority small fix", desc: "d", category: "HQ Admin", priority: "medium", effort: "small" },
+    { id: "2", title: "High priority large fix", desc: "d", category: "HQ Admin", priority: "high", effort: "large" },
+    { id: "3", title: "High priority small fix", desc: "d", category: "HQ Admin", priority: "high", effort: "small" },
+  ];
+  const { batches } = clusterBacklogItems(items);
+  assert.deepStrictEqual(batches[0].items.map((i) => i.id), ["3", "2", "1"]);
+  assert.strictEqual(batches[0].priorityCounts.high, 2);
+  assert.strictEqual(batches[0].priorityCounts.medium, 1);
 });
 
 test("splitRequirementsText: one requirement per blank-line-separated block", () => {

@@ -351,6 +351,27 @@
             <select id="ei-category-select"></select>
           </div>
         </div>
+        <div class="form-row">
+          <div>
+            <label class="field-label" for="ei-effort-select" style="margin:0 0 4px;">Effort</label>
+            <select id="ei-effort-select">
+              <option value="">Unset — use the automatic guess</option>
+              <option value="small">Small</option>
+              <option value="medium">Medium</option>
+              <option value="large">Large</option>
+            </select>
+          </div>
+          <div>
+            <label class="field-label" for="ei-priority-select" style="margin:0 0 4px;">Priority</label>
+            <select id="ei-priority-select">
+              <option value="">Unset — use the automatic guess</option>
+              <option value="high">High</option>
+              <option value="medium">Medium</option>
+              <option value="low">Low</option>
+            </select>
+          </div>
+        </div>
+        <p class="field-hint">Effort/priority (cwehxSMZv8noJQv5kB22): concrete signals for the "Feed in requirements" clustering preview to sort and batch on — set here to override its automatic guess, or leave Unset to keep using that guess.</p>
         <label class="np-interface-toggle">
           <input type="checkbox" id="ei-no-deploy-checkbox">
           No deployment required

@@ -35,6 +35,28 @@ function estimateEffort(item) {
 
 const EFFORT_ORDER = { small: 0, medium: 1, large: 2 };
 
+// Priority signal (cwehxSMZv8noJQv5kB22) — the second, orthogonal axis this
+// clustering flow was missing: effort alone says how big a batch's items
+// are, not which of them actually matter more. Same "rough local guess,
+// never a real answer" spirit as estimateEffort — a real `item.priority`
+// set on the card (Edit item modal) always wins; this only fills the gap
+// for a freshly fed-in requirement that hasn't been given one yet.
+const PRIORITY_KEYWORDS_HIGH = [
+  "urgent", "asap", "blocking", "blocker", "critical", "broken", "down",
+  "can't", "cannot", "outage", "security", "data loss", "losing data",
+];
+const PRIORITY_KEYWORDS_LOW = [
+  "nice to have", "minor", "cosmetic", "eventually", "someday", "low priority",
+  "when there's time", "not urgent",
+];
+function estimatePriority(item) {
+  const text = `${item.title || ""} ${item.desc || ""}`.toLowerCase();
+  if (PRIORITY_KEYWORDS_HIGH.some((w) => text.includes(w))) return "high";
+  if (PRIORITY_KEYWORDS_LOW.some((w) => text.includes(w))) return "low";
+  return "medium";
+}
+const PRIORITY_ORDER = { high: 0, medium: 1, low: 2 };
+
 // Groups items by `category` — the closest signal this data model already
 // has to "shared files/areas/dependencies", since CATEGORIES is exactly
 // what the board uses to mean that (see root CLAUDE.md and the Archived
@@ -42,23 +64,35 @@ const EFFORT_ORDER = { small: 0, medium: 1, large: 2 };
 // its own batch, not filtered out — this function only groups what looks
 // related; a human decides whether a lone item ships alone or waits.
 //
-// Returns { batches: [{ category, items, count, effortCounts }, ...] },
+// Returns { batches: [{ category, items, count, effortCounts, priorityCounts }, ...] },
 // largest batch first (ties broken alphabetically by category) — the
-// batches most worth sending together as one bunch surface first.
+// batches most worth sending together as one bunch surface first. Within a
+// batch, items are ordered highest-priority first, then smallest-effort
+// first within the same priority — the two signals together are what the
+// ticket this exists for (cwehxSMZv8noJQv5kB22) asked to sort/batch on.
 function clusterBacklogItems(items) {
   const list = Array.isArray(items) ? items : [];
   const byCategory = new Map();
   for (const item of list) {
     const category = item.category || "Uncategorised";
     if (!byCategory.has(category)) byCategory.set(category, []);
-    byCategory.get(category).push(Object.assign({}, item, { effort: item.effort || estimateEffort(item) }));
+    byCategory.get(category).push(Object.assign({}, item, {
+      effort: item.effort || estimateEffort(item),
+      priority: item.priority || estimatePriority(item),
+    }));
   }
   const batches = Array.from(byCategory.entries()).map(([category, batchItems]) => {
     const sorted = batchItems.slice().sort((a, b) =>
-      (EFFORT_ORDER[a.effort] - EFFORT_ORDER[b.effort]) || String(a.title || "").localeCompare(String(b.title || "")));
+      (PRIORITY_ORDER[a.priority] - PRIORITY_ORDER[b.priority]) ||
+      (EFFORT_ORDER[a.effort] - EFFORT_ORDER[b.effort]) ||
+      String(a.title || "").localeCompare(String(b.title || "")));
     const effortCounts = { small: 0, medium: 0, large: 0 };
-    sorted.forEach((i) => { effortCounts[i.effort] = (effortCounts[i.effort] || 0) + 1; });
-    return { category, items: sorted, count: sorted.length, effortCounts };
+    const priorityCounts = { high: 0, medium: 0, low: 0 };
+    sorted.forEach((i) => {
+      effortCounts[i.effort] = (effortCounts[i.effort] || 0) + 1;
+      priorityCounts[i.priority] = (priorityCounts[i.priority] || 0) + 1;
+    });
+    return { category, items: sorted, count: sorted.length, effortCounts, priorityCounts };
   });
   batches.sort((a, b) => b.count - a.count || a.category.localeCompare(b.category));
   return { batches };
@@ -86,4 +120,4 @@ function splitRequirementsText(text) {
   return blocks.filter(Boolean);
 }
 
-export { clusterBacklogItems, estimateEffort, splitRequirementsText };
+export { clusterBacklogItems, estimateEffort, estimatePriority, splitRequirementsText };
