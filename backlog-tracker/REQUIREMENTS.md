@@ -405,8 +405,19 @@ Requirements that follow from it:
   editor accounts are still held to it.
 - **The only conflict path left is `main` moving under the branch**, which
   takes someone pushing straight to `main` in this project's files. It is
-  never resolved automatically: the merge aborts, `trainStatus` goes
-  `conflict` with a `trainNote`, and nothing is merged or moved.
+  never resolved automatically — the merge aborts, `trainStatus` goes
+  `conflict` with a `trainNote`, and nothing is merged or moved — except
+  for two derived files that are rebuilt rather than merged:
+  `faq/data/index.json`, and a checked-in build output both sides rebuilt
+  (`GENERATED_BUILDS`). For the build output the train's copy is taken
+  from `HEAD:<path>`, never from the index's "ours": when both sides
+  rebuilt under different hashed names git reports rename/rename and
+  writes a two-way merge with conflict markers into both names, which is
+  what `git checkout --ours` kept on 25 Sep 2026 and shipped as a bundle
+  that threw on load (PR #216; the hosted DSP prototype was blank until a
+  forced rebuild twelve hours later). The resolver now refuses if any
+  output still carries a marker and spoils the build stamp so the next
+  scheduled rebuild regenerates the bundle from the merged source.
 - **A train carrying a `.github/workflows/` change is never merged by the
   pipeline** (`needsHumanMerge`): the PR is left open at
   `trainStatus: "awaiting-human-merge"`, and `reconcileMergedTrains` records

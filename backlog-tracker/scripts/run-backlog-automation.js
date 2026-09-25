@@ -755,32 +755,89 @@ function prFilePaths(prNumber) {
 // build's workflow replaces it from the merged source. Anything else in
 // the conflict, and this declines — same contract as
 // tryAutoResolveFaqIndexConflict.
+//
+// "The branch's copy" is HEAD's tree, never the index's stage 2. On 25 Sep
+// 2026 both sides had rebuilt the DSP prototype under different hashed
+// names, git reported the bundle as a rename/rename conflict, and for that
+// shape git writes a two-way content merge WITH conflict markers into both
+// renamed paths — and records that marker-laden blob as stages 2 and 3. So
+// `git checkout --ours` "succeeded" and kept the markers, `git add` staged
+// them, the merge (f361e65, shipped as PR #216) committed a bundle that
+// threw `Unexpected token '==='` on load, and the hosted prototype was a
+// blank page from 09:37 until a forced rebuild at 21:34. HEAD:<path> is the
+// train's real file for anything the train has; anything it doesn't (the
+// other side's rename target, the pre-rename path) is dropped; nothing is
+// called resolved while any output file still carries a marker; and the
+// kept build's stamp is spoiled so the next scheduled run rebuilds from
+// the merged source rather than trusting a bundle built before the merge.
 function tryAutoResolveGeneratedOutputConflict(conflicted) {
   if (!conflicted.length || !conflicted.every(isGeneratedOutput)) {
     return { resolved: false, detail: `conflicted on ${conflicted.join(", ") || "(unknown files)"}` };
   }
   for (const p of conflicted) {
+    let inHead = true;
+    try { run("git", ["cat-file", "-e", `HEAD:${p}`]); } catch { inHead = false; }
     try {
-      // `--ours` inside a merge INTO the train is the train's copy. A file
-      // the train deleted (an old hashed asset) has no "ours" — drop it.
-      run("git", ["checkout", "--ours", "--", p]);
-      run("git", ["add", "--", p]);
-    } catch {
-      try {
-        run("git", ["rm", "--quiet", "--", p]);
-      } catch (err) {
-        return { resolved: false, detail: `conflicted on ${conflicted.join(", ")} — generated build output, but keeping the branch's copy of ${p} failed (${err.message})` };
+      if (inHead) {
+        run("git", ["checkout", "HEAD", "--", p]);
+        run("git", ["add", "--", p]);
+      } else {
+        // The other side's hashed asset, or the path both sides renamed
+        // away from: not part of the branch's build, so it goes.
+        run("git", ["rm", "--quiet", "--force", "--", p]);
       }
+    } catch (err) {
+      return { resolved: false, detail: `conflicted on ${conflicted.join(", ")} — generated build output, but keeping the branch's copy of ${p} failed (${err.message})` };
     }
   }
   const remaining = conflictedPaths();
   if (remaining.length) {
     return { resolved: false, detail: `conflicted on ${remaining.join(", ")} even after keeping the branch's copy of ${conflicted.join(", ")}` };
   }
+  const marked = generatedOutputsWithConflictMarkers();
+  if (marked.length) {
+    return { resolved: false, detail: `conflicted on ${conflicted.join(", ")} — generated build output, but conflict markers are still inside ${marked.join(", ")} after keeping the branch's copy; leaving the merge for a person rather than committing a broken bundle` };
+  }
+  invalidateBuildStamps();
   return {
     resolved: true,
     detail: `conflicted only on generated build output (${conflicted.join(", ")}) — kept the branch's copy, which its rebuild workflow regenerates from the merged source, and the merge completed`,
   };
+}
+
+// Tracked files under a generated build's outputs that still carry a merge
+// marker: 7 characters for an ordinary conflict, 8 for the rename/rename
+// shape. `git grep` exits 1 when nothing matches, which run() turns into a
+// throw — that is the "none" answer.
+function generatedOutputsWithConflictMarkers() {
+  const prefixes = GENERATED_BUILDS.flatMap((b) => b.outputs).filter((dir) => fs.existsSync(path.join(process.cwd(), dir)));
+  if (!prefixes.length) return [];
+  let out = "";
+  try { out = run("git", ["grep", "-l", "-E", "^(<{7,8}|={7,8}|>{7,8})( |$)", "--", ...prefixes]); } catch { return []; }
+  return out ? out.split("\n").filter(Boolean) : [];
+}
+
+// Rewrites each kept build's build-info.json stamp so its rebuild script
+// sees the output as stale (rebuild-prototype.sh compares the recorded
+// stamp with a hash of the source tree). Without this, a merge that brought
+// no source change of its own left a stamp that still matched, and the
+// scheduled rebuild did nothing for twelve hours on 25 Sep 2026.
+function invalidateBuildStamps() {
+  for (const b of GENERATED_BUILDS) {
+    for (const dir of b.outputs) {
+      const rel = path.posix.join(dir, "build-info.json");
+      const file = path.join(process.cwd(), rel);
+      if (!fs.existsSync(file)) continue;
+      try {
+        const info = JSON.parse(fs.readFileSync(file, "utf8"));
+        info.sourceStamp = `rebuild-after-merge:${headSha().slice(0, 7)}`;
+        fs.writeFileSync(file, JSON.stringify(info, null, 2) + "\n");
+        run("git", ["add", "--", rel]);
+      } catch (err) {
+        console.log(`[deploy-train] couldn't spoil ${rel}'s build stamp (${err.message}) — the build may not be rebuilt until its source next changes`);
+      }
+    }
+  }
 }
 
 // Optional escape hatch for the restriction above: backlog-automation.yml

@@ -252,8 +252,20 @@ What the train changes:
   + `trainNote`.
 - **Merging `main` into the branch is the only conflict path left**, and it
   takes someone pushing straight to `main` in this project's files. It is
-  never resolved automatically: the merge is aborted, `trainStatus` goes
-  `conflict`, and nothing is merged or moved.
+  never resolved automatically — the merge is aborted, `trainStatus` goes
+  `conflict`, and nothing is merged or moved — with two derived-file
+  exceptions that are rebuilt rather than merged: `faq/data/index.json`
+  (`tryAutoResolveFaqIndexConflict`, regenerated from the article files)
+  and a checked-in build output both sides rebuilt
+  (`tryAutoResolveGeneratedOutputConflict`, see `GENERATED_BUILDS`). The
+  latter keeps the train's copy from `HEAD:<path>` — never the index's
+  "ours", which for git's rename/rename shape (two rebuilds under different
+  hashed names) is a two-way merge with conflict markers in it; on 25 Sep
+  2026 that shipped a DSP prototype bundle that threw on load and left the
+  hosted page blank for twelve hours — refuses if any output still carries
+  a marker, and spoils the build stamp so the next scheduled rebuild
+  regenerates the bundle from the merged source. `test/generated-builds.test.js`
+  reproduces the rename/rename case against a real repo.
 
 The board expresses one consequence of this in its CTAs: merging the
 branch ships *everything on it*, so **Deploy to Main is shown only when
