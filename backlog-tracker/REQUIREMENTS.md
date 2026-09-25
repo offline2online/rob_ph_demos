@@ -181,7 +181,8 @@ editor may only latch trainLocked true, nothing else.
   repoFolderNotApplicable?: boolean, // explicit "this project has no single folder" (e.g. this project itself, which owns backlog-tracker/ and faq/) — distinct from repoFolder simply being unset
   deployBranch?: string,        // "deploy/<project-slug>", created from main on first use
   trainLocked?: boolean,        // a release is closing: no new ticket may join it, so the build CTAs hide
-  trainReady?: boolean,         // the Deploy flow verified the train; the automation merges it
+  trainReady?: boolean,         // the Deploy flow verified the train; the automation merges it. Set by the Routine — or by the pipeline itself when the Routine reported without setting it, never reported, or was never fired (trainHandoverReason in functions/train-lock.js)
+  deployRequestHandledAt?: timestamp, // stamped by processDeployTrain as it consumes a Deploy to Main click, so that click is never handed over again once merged or refused
   trainPrNumber?: number,       // the train's single PR
   trainStatus?: "idle" | "deploying" | "conflict" | "awaiting-human-merge",
   trainNote?: string,           // why it isn't merged, when it isn't
@@ -673,7 +674,19 @@ ordinary card; it fires the Routine, which sets `projects/{id}.trainReady`
 once it has confirmed every ticket really is on the integration branch and
 nothing on that branch is still in testing, and only
 `run-backlog-automation.js` (see "Notify Claude can't push" in README.md)
-flips `status` to `published-live`, after the real merge succeeds.
+flips `status` to `published-live`, after the real merge succeeds. **The
+Routine is not a single point of failure for that flag** (25 Sep 2026: a
+Deploy run passed every check and its own session permission layer then
+refused the `trainReady` PATCH, stranding an approved DSP ticket): when the
+Routine reports done or error without setting it, never reports back, or
+was never fired, the pipeline sets it itself —
+`trainHandoverReason()` in `functions/train-lock.js`, applied by
+`functions/index.js`'s `onDeployRoutineSettled` and by
+`run-backlog-automation.js`'s `reconcileDeployRequests` — and
+`processDeployTrain` re-checks the Routine's own step 1 (every
+`deployCommit` is an ancestor of the branch) and step 2 (nothing still in
+testing) before merging. A consumed click is stamped
+`deployRequestHandledAt` so it can never re-arm the train.
 
 The one deliberate exception is `noDeploymentRequired` (set from the Edit
 item modal — a plain checkbox, self-service, not something only the
