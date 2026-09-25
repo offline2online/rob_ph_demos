@@ -1657,6 +1657,53 @@ in over MCP — **not** scoped to any one project, unlike `backlogItems` or
   client-side so the full due-ness logic lives in exactly one place) and a
   **Mark reviewed** button.
 
+## Concept Incubator
+
+A home for early-stage ideas ("spitballs") that need further shape before
+they earn official project status — deliberately separate from the
+Backlog/pipeline board so exploring a rough idea never clutters it, and
+from a plain backlog item so an idea can carry its own README, requirements
+and a persisted discussion thread rather than being squeezed into one
+`desc` field. Reached from the hamburger menu's **Concept Incubator**
+entry, directly under Agent Console.
+
+- **Data model**: a top-level `concepts` Firestore collection, one doc per
+  concept — `{name, readmeMd, requirementsMd, comments: [{author, text,
+  at}, ...], status: "active"|"promoted", promotedProjectId, promotedAt,
+  createdAt, updatedAt, createdByEmail}` — not scoped to any project, the
+  same way `skills` isn't. `firestore.rules`' `match /concepts/{conceptId}`
+  lets any signed-in member read; only an editor may create, update or
+  delete, and `status` may only ever move `active` → `promoted`, never
+  back — the rule refuses that write outright, and deleting a promoted
+  concept is refused too, since it's the provenance record for where a
+  real project's README/requirements came from.
+- **Console UI**: the Concept Incubator page lists every concept as a card
+  (name, Active/Promoted status, last updated) — **+ New concept** asks
+  only for a name, the same "one quick step" shape as New Project.
+  Clicking a card opens its own detail page, laid out like a project's
+  Docs page: a README block and a Requirements block each save
+  independently of the other (the "update requirements incrementally"
+  the idea behind this was built for), and a Discussion block — a
+  comment thread with the same dictation-mic composer every other comment
+  box in this console has, retained across sessions so the conversation
+  can be picked back up any time. A still-active concept also gets
+  **Promote to project…** and **Delete this concept**; a promoted one
+  shows a "Promoted to project X" line instead and everything past the
+  discussion thread becomes read-only, since the project's own Docs page
+  is the source of truth from that point on.
+- **Promoting a concept** (`promoteConceptToProject` in `public/js/app.js`)
+  creates a brand-new `projects` doc seeded with the concept's `readmeMd`/
+  `requirementsMd` verbatim — nothing is re-keyed — and asks for the same
+  repo-folder link every new project needs (see "Adding a project" above)
+  plus, optionally, the release it ships in and a program/product. The
+  concept is then marked `promoted` and stays on this page as a read-only
+  record; it is never deleted or hidden.
+- **Not built yet**: no MCP tools for concepts (unlike Skills or
+  documentation, an agent can't read or write one over MCP today — file a
+  ticket if a workflow needs it), and no `docRevisions` change history the
+  way Skills/Requirements/README writes get — a concept's own comment
+  thread is its running record instead.
+
 ## Feed in requirements → suggested build batches
 
 A project's **⋮ → Feed in requirements** modal bulk-creates several
