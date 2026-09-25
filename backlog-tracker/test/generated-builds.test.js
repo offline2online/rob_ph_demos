@@ -100,7 +100,10 @@ function repo() {
     assert.deepStrictEqual(conflictedPaths(), []);
     git("commit", "-q", "--no-edit");
     assert.strictEqual(fs.readFileSync(path.join(dir, "dsp-integration/prototype/index.html"), "utf8"), "<script src=./assets/index-train.js>", "the train's copy is kept");
-    assert.strictEqual(fs.readFileSync(path.join(dir, "dsp-integration/prototype/build-info.json"), "utf8"), '{"sourceStamp":"train"}');
+    // The kept bundle was built before the merge, so its stamp is spoiled:
+    // the next scheduled rebuild must regenerate it from the merged source
+    // instead of finding a stamp that still matches.
+    assert.match(JSON.parse(fs.readFileSync(path.join(dir, "dsp-integration/prototype/build-info.json"), "utf8")).sourceStamp, /^rebuild-after-merge:[0-9a-f]{7}$/);
     assert.strictEqual(fs.readFileSync(path.join(dir, "dsp-integration/apps/api/src/seed.ts"), "utf8"), "hotfix on main", "main's real change came through");
     assert.match(result.detail, /generated build output/);
     assert.strictEqual(git("rev-list", "--count", "HEAD"), "4", "base, ticket, hotfix, merge");
@@ -134,6 +137,68 @@ function repo() {
     assert.strictEqual(result.resolved, false);
     assert.match(result.detail, /README\.md/);
     assert.deepStrictEqual(conflictedPaths().sort(), ["README.md", "dsp-integration/prototype/index.html"], "declining touches nothing");
+  } finally {
+    process.chdir(prev);
+  }
+}
+
+// THE 25 SEP 2026 OUTAGE: both sides rebuilt a bundle that is nearly the
+// same file under different hashed names, so git reports a rename/rename
+// conflict — and for that shape it writes a two-way content merge WITH
+// conflict markers into both renamed paths, recording that marker-laden
+// blob as stages 2 and 3. `git checkout --ours` kept the markers, the merge
+// committed them, and the hosted prototype threw `Unexpected token '==='`
+// on load for twelve hours. The resolver must keep HEAD's real file, drop
+// the other side's name, and never call a marker-carrying tree resolved.
+{
+  const { dir, git, write } = repo();
+  const bundle = Array.from({ length: 300 }, (_, i) => `var v${i}=${i};function f${i}(){return v${i}*${i}+${i};}`).join("\n") + "\n";
+  write("dsp-integration/prototype/assets/index-base.js", bundle);
+  write("dsp-integration/prototype/index.html", "<script src=./assets/index-base.js>");
+  git("add", "-A");
+  git("commit", "-q", "-m", "a real-sized bundle");
+
+  git("checkout", "-q", "-b", "deploy/z");
+  const trainBundle = bundle.replace("var v1=1;", "var v1=1001;");
+  write("dsp-integration/prototype/assets/index-train.js", trainBundle);
+  fs.rmSync(path.join(dir, "dsp-integration/prototype/assets/index-base.js"));
+  write("dsp-integration/prototype/index.html", "<script src=./assets/index-train.js>");
+  write("dsp-integration/prototype/build-info.json", '{"sourceStamp":"train"}');
+  git("add", "-A");
+  git("commit", "-q", "-m", "rebuild on the train");
+
+  git("checkout", "-q", "main");
+  write("dsp-integration/prototype/assets/index-main.js", bundle.replace("var v2=2;", "var v2=2002;"));
+  fs.rmSync(path.join(dir, "dsp-integration/prototype/assets/index-base.js"));
+  write("dsp-integration/prototype/index.html", "<script src=./assets/index-main.js>");
+  write("dsp-integration/prototype/build-info.json", '{"sourceStamp":"main"}');
+  git("add", "-A");
+  git("commit", "-q", "-m", "rebuild on main");
+
+  git("checkout", "-q", "deploy/z");
+  let mergeOutput = "";
+  try { git("merge", "main", "--no-edit", "--quiet"); } catch (err) { mergeOutput = String(err.stdout || "") + String(err.stderr || ""); }
+  assert.match(mergeOutput, /rename\/rename/, "the fixture must reproduce git's rename/rename shape, or this test proves nothing");
+  assert.match(fs.readFileSync(path.join(dir, "dsp-integration/prototype/assets/index-train.js"), "utf8"), /^<{7,8} /m, "git wrote markers into the train's own renamed file");
+
+  const prev = process.cwd();
+  process.chdir(dir);
+  try {
+    const conflicted = conflictedPaths();
+    assert.ok(conflicted.every(isGeneratedOutput), conflicted.join(", "));
+    const result = tryAutoResolveGeneratedOutputConflict(conflicted);
+    assert.strictEqual(result.resolved, true, result.detail);
+    assert.deepStrictEqual(conflictedPaths(), []);
+    git("commit", "-q", "--no-edit");
+    assert.strictEqual(fs.readFileSync(path.join(dir, "dsp-integration/prototype/assets/index-train.js"), "utf8"), trainBundle, "the train's real file, byte for byte — no markers");
+    assert.ok(!fs.existsSync(path.join(dir, "dsp-integration/prototype/assets/index-main.js")), "main's hashed asset is dropped");
+    assert.ok(!fs.existsSync(path.join(dir, "dsp-integration/prototype/assets/index-base.js")), "the pre-rename path stays gone");
+    assert.strictEqual(fs.readFileSync(path.join(dir, "dsp-integration/prototype/index.html"), "utf8"), "<script src=./assets/index-train.js>");
+    const tracked = git("ls-files", "dsp-integration/prototype").split("\n");
+    for (const f of tracked) {
+      assert.ok(!/^(<{7,8}|={7,8}|>{7,8})( |$)/m.test(fs.readFileSync(path.join(dir, f), "utf8")), `${f} still carries a conflict marker`);
+    }
+    assert.match(JSON.parse(fs.readFileSync(path.join(dir, "dsp-integration/prototype/build-info.json"), "utf8")).sourceStamp, /^rebuild-after-merge:/);
   } finally {
     process.chdir(prev);
   }

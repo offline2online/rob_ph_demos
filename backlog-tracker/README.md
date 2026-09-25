@@ -252,8 +252,20 @@ What the train changes:
   + `trainNote`.
 - **Merging `main` into the branch is the only conflict path left**, and it
   takes someone pushing straight to `main` in this project's files. It is
-  never resolved automatically: the merge is aborted, `trainStatus` goes
-  `conflict`, and nothing is merged or moved.
+  never resolved automatically — the merge is aborted, `trainStatus` goes
+  `conflict`, and nothing is merged or moved — with two derived-file
+  exceptions that are rebuilt rather than merged: `faq/data/index.json`
+  (`tryAutoResolveFaqIndexConflict`, regenerated from the article files)
+  and a checked-in build output both sides rebuilt
+  (`tryAutoResolveGeneratedOutputConflict`, see `GENERATED_BUILDS`). The
+  latter keeps the train's copy from `HEAD:<path>` — never the index's
+  "ours", which for git's rename/rename shape (two rebuilds under different
+  hashed names) is a two-way merge with conflict markers in it; on 25 Sep
+  2026 that shipped a DSP prototype bundle that threw on load and left the
+  hosted page blank for twelve hours — refuses if any output still carries
+  a marker, and spoils the build stamp so the next scheduled rebuild
+  regenerates the bundle from the merged source. `test/generated-builds.test.js`
+  reproduces the rename/rename case against a real repo.
 
 The board expresses one consequence of this in its CTAs: merging the
 branch ships *everything on it*, so **Deploy to Main is shown only when
@@ -324,15 +336,27 @@ functions are gone; `findPrForBranch` remains, now used to reuse an
 already-open *train* PR rather than an item's.
 
 **`patchFiles` producing no diff still never leaves an item stuck
-silently**, but it now means one of two different things and is handled
-differently for each. If the item already has commits on the train, the
-re-patch simply matched what it had put there: the card goes back to Ready
-for Testing against its existing commits, untouched. If it has none, the
-content is genuinely already on the branch (a sibling's shared-file patch
-carried it), so there is nothing for a deploy to ship and the card is
-flagged `noDeploymentRequired` — otherwise it would reach Approved for
-Deployment and hold the train's Deploy gate open on a ticket with no
-commit to merge.
+silently**, and it now means one of three things (`noDiffPatchFields()`,
+tested in `test/train-carried.test.js`). If the item already has commits
+on the train, the re-patch simply matched what it had put there: the card
+goes back to Ready for Testing against its existing commits, untouched. If
+it has none but the branch does change its files, a sibling's shared-file
+patch carried the content: the card is stamped with that commit
+(`deployCommit` = the sibling's sha, plus `carriedByCommit`/`carriedByItem`)
+and rides the train like any other ticket — approved by checkbox, and
+flipped to `published-live` by `finishTrain` when the train merges, not
+before. It used to be flagged `noDeploymentRequired` instead, which gave it
+the board's one-click "Confirm tested — mark Merged to Main": on 25 Sep
+2026 two such cards (OhKUnoGbpUAeJiXiLIvc, yUISCow4tCg9uxnMJFOy) read
+"Deployed / Main Branch (Live)" a day before their code left
+`deploy/backlog-tracker-faqs` in PR #211. Only when the branch does not
+change the patched files at all — the content is already on `main` — is
+the card flagged `noDeploymentRequired`, because then "nothing to deploy"
+is true. Failed testing on a carried card detaches it rather than
+reverting the sibling's commit, and reverting the carrying commit sends
+every card riding on it back to Backlog (`detachCarriedCards`). See
+`REQUIREMENTS.md` → "A card carried by a sibling's commit follows that
+train".
 
 The same script also handles the mirror case for **Notify Claude —
 Deploy**: that Routine fire asks the session to verify the train — every
@@ -413,8 +437,11 @@ shape and was removed in PR #98.
 what already makes two cards one deployment: the `prNumber` they share
 (written by the automation when a train's PR opens), or, on a pre-train
 card, the `patchBranch` they were packaged on. It returns `null` — meaning
-"shares no deployment" — for a card with neither, and for a
-`noDeploymentRequired` card, which has no deployment to share at all.
+"shares no deployment" — for a card with neither, and for a genuine
+no-deploy card (`isNoDeployCard()`: flagged `noDeploymentRequired` with
+nothing on any train), which has no deployment to share at all. A card
+riding on a sibling's commit does share one, and brackets with the rest of
+its train once the train's PR opens.
 `columnCardsHTML()` then draws each group at the position of its first
 member, leaving card order, column counts and every per-card control
 untouched; a key held by only one card in a column is not a group.
@@ -532,6 +559,20 @@ ticket text and editor emails are not.** Download it before the 90-day
 retention runs out if the project mattered.
 
 ## Testing the rules and the MCP server
+
+**The console's start-up is tested too** (`test/app-boots.test.mjs`, run
+by the same workflow on every PR touching `public/**`): it imports the real
+`public/js/app.js` under a stub DOM and fails if module evaluation stops
+early, then clicks every hamburger-menu item. On 25 Sep 2026 the Concept
+Incubator page shipped with a `createDictationController()` call above
+`SpeechRecognitionCtor`'s `const` declaration — a temporal-dead-zone
+`ReferenceError` at start-up — so every top-level statement after it,
+including the drawer's Releases / Skills / FAQ Management / Settings
+handlers, never ran. The board still rendered, so the menu was simply dead
+on desktop, tablet and phone from the 08:04 deploy until the next one, and
+nothing in the pipeline had executed `app.js` to notice. Every dictation
+controller is now created after that declaration, and this test is the
+guard.
 
 `test/` holds two suites:
 

@@ -531,14 +531,17 @@ function cardHTML(item) {
   // rather than staying editable while a revert branch is being pushed.
   const isReverting = item.status === "published-live" && !!item.revertReady;
   const isLocked = isInDevelopment || isDeploying || isSentToClaude || isReverting;
-  // A card flagged noDeploymentRequired has no PR for Deploy to Main to
-  // merge — the automation's own no-diff path creates exactly this shape
-  // (see run-backlog-automation.js) — so it gets the one-click completion
-  // (approveBtn below) at either stage, rather than a hint pointing at a
-  // button that can never finish it. Without this, such a card sitting in
-  // Approved for Deployment had no path forward except being moved back a
-  // column first.
-  const noDeployPending = !!item.noDeploymentRequired && (isTesting || isLiveBranch);
+  // A genuine no-deploy card (isNoDeployCard: flagged noDeploymentRequired
+  // AND nothing on a train) has no PR for Deploy to Main to merge, so it
+  // gets the one-click completion (approveBtn below) at either stage,
+  // rather than a hint pointing at a button that can never finish it.
+  // Without this, such a card sitting in Approved for Deployment had no
+  // path forward except being moved back a column first. The automation's
+  // no-diff path used to create this shape for a card whose content a
+  // sibling's commit had delivered — it now stamps that card with the
+  // carrying commit instead (carriedByCommit), so here it is a train card.
+  const noDeploy = isNoDeployCard(item);
+  const noDeployPending = noDeploy && (isTesting || isLiveBranch);
   const canDelete = isBacklog && !isInDevelopment && !isSentToClaude;
 
   // Backlog cards select for "Ready for Dev"; Ready for Testing cards
@@ -549,7 +552,7 @@ function cardHTML(item) {
   // in the pipeline acts on a hand-picked subset.
   const selectCb = (isBacklog && !isInDevelopment && !isSentToClaude)
     ? `<input type="checkbox" class="card-select-cb" data-id="${item.id}" data-project-id="${escapeHTML(pid)}" title="Select for Ready for Dev" ${getSelectedSet(pid).has(item.id) ? "checked" : ""}>`
-    : (isTesting && !item.noDeploymentRequired
+    : (isTesting && !noDeploy
         ? `<input type="checkbox" class="card-deploy-select-cb" data-id="${item.id}" data-project-id="${escapeHTML(pid)}" title="Select for Approved for Deployment" ${getDeploySelectedSet(pid).has(item.id) ? "checked" : ""}>`
         : "");
 
@@ -582,7 +585,7 @@ function cardHTML(item) {
   // checkbox then narrowed. Two controls for one decision, and the
   // checkbox did nothing at all until the tick was there. The checkbox is
   // the approval now, and testPassed is gone.
-  const approveBtn = (item.noDeploymentRequired && (isTesting || noDeployPending))
+  const approveBtn = (noDeploy && (isTesting || noDeployPending))
     ? `<button type="button" class="approve-btn confirm-no-deploy-btn" data-id="${item.id}">Confirm tested — mark Merged to Main</button>`
     : "";
   // The other outcome of a test pass (xYAk2oIFgbkvHikhufaT), and the only
@@ -593,7 +596,7 @@ function cardHTML(item) {
   // even mean anything. See failTesting() for what it does — records why,
   // sends the card back to Backlog, AND takes its commits back off the
   // project's integration branch.
-  const failBtn = (isTesting && !item.noDeploymentRequired)
+  const failBtn = (isTesting && !noDeploy)
     ? `<button type="button" class="approve-btn fail-testing-btn" data-id="${item.id}">Failed testing</button>`
     : "";
   // Deliberately not a button: there used to be a "Merge to main" button
@@ -639,7 +642,7 @@ function cardHTML(item) {
   // never got a real merge in the first place (see its own "one deliberate
   // exception" in REQUIREMENTS.md), so there's nothing here for a revert PR
   // to be based on either.
-  const revertBtn = isPublished && !item.noDeploymentRequired && item.mergeCommit && !isReverting
+  const revertBtn = isPublished && !noDeploy && item.mergeCommit && !isReverting
     ? `<button type="button" class="icon-btn revert-btn" data-id="${item.id}" title="Revert this deployment — opens a PR to undo it; still needs testing and Deploy to Main like any other fix">&#8630;</button>`
     : "";
   const revertingHint = isReverting
@@ -672,8 +675,19 @@ function cardHTML(item) {
         ? `<span class="in-development-hint" title="Reverting this ticket off ${escapeHTML(item.deployBranch || "the integration branch")} conflicted because ${escapeHTML(item.revertBlockedBy.join(", "))} build on top of it — send those back too, or fix the branch by hand">Still on the branch &mdash; blocked by ${item.revertBlockedBy.length} later ticket${item.revertBlockedBy.length === 1 ? "" : "s"}</span>`
         : `<span class="in-development-hint" title="Its commits are being reverted off the project's integration branch so this rejected ticket can't ship in the next deployment">Coming off the branch&hellip;</span>`)
     : "";
-  const noDeployBadge = item.noDeploymentRequired
+  const noDeployBadge = noDeploy
     ? `<span class="no-deploy-badge" title="Live data/config change only — no code to push or deploy">No deployment required</span>`
+    : "";
+  // A card with no commit of its own, riding on a sibling's train commit
+  // (carriedByCommit/carriedByItem — see carryingCommitOnTrain in
+  // run-backlog-automation.js). Says so on the card, so a tester or a
+  // Deploy run reading it understands why `git log --grep "Backlog item:
+  // <id>"` finds nothing for it — and that it is still a real deployment,
+  // just inside someone else's commit, which is why it has the train's
+  // controls and not the no-deploy button.
+  const carrier = item.carriedByItem ? items.find((i) => i.id === item.carriedByItem) : null;
+  const carriedBadge = item.carriedByCommit
+    ? `<span class="no-deploy-badge carried-badge" title="No commit of its own: this change is on ${escapeHTML(item.deployBranch || "the integration branch")} inside ${carrier ? `“${escapeHTML(carrier.title)}”` : (item.carriedByItem ? `ticket ${escapeHTML(item.carriedByItem)}` : "a sibling ticket")}'s commit ${escapeHTML(String(item.carriedByCommit).slice(0, 7))} — it goes live when that train merges, like every other ticket on it">Rides on a sibling's commit</span>`
     : "";
   // lastFailureReason (XJoASicLGefL5c9fronl) — the structured category from
   // the most recent Failed testing / Eject from train, surfaced on the
@@ -829,7 +843,7 @@ function cardHTML(item) {
       </div>
       <h3 class="card-title">${escapeHTML(item.title)}</h3>
       ${descHTML}
-      ${noDeployBadge}${priorityBadge}${effortBadge}${lastFailureBadge}${testVersionBadge}${prBadge}${deployBadge}
+      ${noDeployBadge}${carriedBadge}${priorityBadge}${effortBadge}${lastFailureBadge}${testVersionBadge}${prBadge}${deployBadge}
       <div class="card-footer">
         <div class="card-footer-left">
           <span class="card-cat">${escapeHTML(item.category || "Uncategorised")}</span>
@@ -859,11 +873,27 @@ function groomableCountForProject(pid) {
   return items.filter((i) => (i.projectId || GENERAL_PROJECT_ID) === pid && i.status === "backlog" && !i.patchReady).length;
 }
 
+// The one kind of card that legitimately skips the train: flagged
+// noDeploymentRequired AND with no commit on any integration branch. The
+// train wins over the flag. A card that has a deployCommit — its own, or a
+// sibling's it rides on (carriedByCommit, written by
+// run-backlog-automation.js's no-diff path) — is on the train whatever the
+// flag says: its code is not on main until that train merges, so it gets
+// the checkbox, Failed testing and "Waiting for Deploy to Main" like every
+// other train card, never the one-click "Confirm tested — mark Merged to
+// Main". That button is how OhKUnoGbpUAeJiXiLIvc and yUISCow4tCg9uxnMJFOy
+// read "Deployed / Main Branch (Live)" on 25 Sep 2026 while their code sat
+// unmerged on deploy/backlog-tracker-faqs (REQUIREMENTS.md → "A card
+// carried by a sibling's commit follows that train").
+function isNoDeployCard(item) {
+  return !!item && !!item.noDeploymentRequired && !item.deployCommit;
+}
+
 function deployReadyCountForProject(pid) {
-  // noDeploymentRequired cards are excluded: Deploy to Main merges PRs,
-  // and these have none, so counting them promised a deploy that would
-  // find nothing to merge.
-  return items.filter((i) => (i.projectId || GENERAL_PROJECT_ID) === pid && i.status === "ready-to-publish" && !i.noDeploymentRequired).length;
+  // Genuine no-deploy cards are excluded: Deploy to Main merges the train,
+  // and these have nothing on it, so counting them promised a deploy that
+  // would find nothing to merge.
+  return items.filter((i) => (i.projectId || GENERAL_PROJECT_ID) === pid && i.status === "ready-to-publish" && !isNoDeployCard(i)).length;
 }
 
 // Ready for Testing items someone has ticked — the pool "Approved for
@@ -875,7 +905,7 @@ function deploySelectedCountForProject(pid) {
   const sel = getDeploySelectedSet(pid);
   return items.filter((i) =>
     (i.projectId || GENERAL_PROJECT_ID) === pid && i.status === "ready-for-testing" &&
-    !i.noDeploymentRequired && sel.has(i.id)
+    !isNoDeployCard(i) && sel.has(i.id)
   ).length;
 }
 
@@ -1315,7 +1345,9 @@ function deployToFeatureButtonHTML(project) {
 // Returns null for a card that shares no deployment with anything:
 //   - a card with neither a PR nor a pre-train patch branch — an ordinary
 //     Backlog card, or one still building,
-//   - a noDeploymentRequired card, which has no deployment to share at all.
+//   - a genuine no-deploy card (isNoDeployCard), which has no deployment to
+//     share at all. A card riding on a sibling's commit does share one, and
+//     brackets with the rest of its train once the train's PR opens.
 //
 // Deliberately NOT keyed on deployBranch, even though every ticket a
 // project builds is on it: that would bracket a project's entire Ready for
@@ -1323,7 +1355,7 @@ function deployToFeatureButtonHTML(project) {
 // itself, which is what the columns already say. The PR is the useful
 // grain — it is the thing that merges.
 function deploymentGroupKey(item) {
-  if (item.noDeploymentRequired) return null;
+  if (isNoDeployCard(item)) return null;
   if (item.prNumber) return "pr:" + item.prNumber;
   // Pre-train cards, which had a branch of their own before they had a PR.
   const branch = (item.patchBranch || "").trim();
@@ -1391,7 +1423,7 @@ function projectSectionHTML(project) {
         <input type="checkbox" class="col-select-all-cb" data-project-id="${escapeHTML(project.id)}" ${allSelected ? "checked" : ""}>
       </label>`;
     } else if (col.key === "ready-for-testing") {
-      const selectable = listItems.filter((i) => !i.noDeploymentRequired);
+      const selectable = listItems.filter((i) => !isNoDeployCard(i));
       if (selectable.length) {
         const sel = getDeploySelectedSet(project.id);
         const allSelected = selectable.every((i) => sel.has(i.id));
@@ -1912,6 +1944,9 @@ const BACKLOG_ITEM_RENDER_FIELDS = [
   // so without it here the button would flicker on the REST-primed first
   // paint and correct itself a second later when the listener landed.
   "deployBranch", "deployCommit", "deployCommits",
+  // A card riding on a sibling's commit (no commit of its own) — drawn as a
+  // badge, and deployCommit above already puts it on the train.
+  "carriedByCommit", "carriedByItem",
   "revertRequested", "revertBlockedBy", "revertedCommits", "ejectedFromTrain",
   "lastFailureReason",
   "prUrl", "prNumber", "mergedAt",
@@ -2155,7 +2190,12 @@ async function moveItem(id, dir) {
 // nothing left for Notify Claude — Deploy to gate.
 async function confirmTestedNoDeploy(id) {
   const item = items.find((i) => i.id === id);
-  if (!item || !item.noDeploymentRequired) return;
+  // isNoDeployCard, not the bare flag: a card with a commit on a train —
+  // its own, or a sibling's it rides on — goes live when that train merges
+  // (finishTrain in run-backlog-automation.js) and never from here,
+  // whatever the flag says. cardHTML doesn't offer this button for such a
+  // card; this is the same rule enforced at the write.
+  if (!item || !isNoDeployCard(item)) return;
   await updateDoc(doc(db, "backlogItems", id), {
     status: "published-live",
     updatedAt: serverTimestamp(),
@@ -2230,7 +2270,7 @@ async function failTesting(id) {
 // processRevertFromTrain needs no change to handle it.
 async function ejectFromTrain(id) {
   const item = items.find((i) => i.id === id);
-  if (!item || item.status !== "ready-to-publish" || item.noDeploymentRequired) return;
+  if (!item || item.status !== "ready-to-publish" || isNoDeployCard(item)) return;
   // Same structured-reason capture as failTesting (XJoASicLGefL5c9fronl) —
   // see that function's own comment on lastFailureReason.
   const result = await showFieldDialog({
@@ -2556,7 +2596,7 @@ async function deployToFeature(pid) {
   // button hides when nothing is ticked, so this is a guard, not a path
   // anyone reaches from the UI.
   const eligible = items.filter((i) =>
-    (i.projectId || GENERAL_PROJECT_ID) === pid && i.status === "ready-for-testing" && !i.noDeploymentRequired
+    (i.projectId || GENERAL_PROJECT_ID) === pid && i.status === "ready-for-testing" && !isNoDeployCard(i)
   );
   const eligibleIds = new Set(eligible.map((i) => i.id));
   const idsToMove = [...getDeploySelectedSet(pid)].filter((id) => eligibleIds.has(id));
@@ -2921,7 +2961,7 @@ projectsRoot.addEventListener("click", async (e) => {
     const pid = deploySelectAllCb.dataset.projectId;
     const sel = getDeploySelectedSet(pid);
     const testingIds = items
-      .filter((i) => (i.projectId || GENERAL_PROJECT_ID) === pid && i.status === "ready-for-testing" && !i.noDeploymentRequired)
+      .filter((i) => (i.projectId || GENERAL_PROJECT_ID) === pid && i.status === "ready-for-testing" && !isNoDeployCard(i))
       .map((i) => i.id);
     if (deploySelectAllCb.checked) testingIds.forEach((id) => sel.add(id));
     else testingIds.forEach((id) => sel.delete(id));
@@ -4836,13 +4876,8 @@ document.getElementById("pc-submit").addEventListener("click", async () => {
   }
   closePromoteConceptModal();
 });
-
-createDictationController({
-  textareaEl: document.getElementById("concept-comment-input"),
-  micBtn: document.getElementById("concept-mic-btn"),
-  hintEl: document.getElementById("concept-listening-hint"),
-  errorEl: document.getElementById("concept-mic-error"),
-});
+// The concept comment box's own mic is wired up further down, with the
+// other three dictation controllers — see the note on SpeechRecognitionCtor.
 
 // ── Releases page ─────────────────────────────────────────────────────────
 // Every release, newest (highest order) first, with the one thing you can
@@ -5444,6 +5479,12 @@ document.getElementById("skill-submit").addEventListener("click", async () => {
 // where unsupported. suggestType()/suggestCategory() (used only for the
 // New Item field) are plain keyword heuristics — a starting point, not a
 // final answer, same as manually picking the toggle/dropdown.
+// A `const`, so it is in the temporal dead zone until this line runs: a
+// createDictationController() call placed ABOVE this line throws
+// "Cannot access 'SpeechRecognitionCtor' before initialization" at module
+// evaluation and stops everything after it (25 Sep 2026 — see the note by
+// the controllers below, and test/app-boots.test.mjs). Create controllers
+// below this line only.
 const SpeechRecognitionCtor = window.SpeechRecognition || window.webkitSpeechRecognition;
 
 // Android Chrome's SpeechRecognition duplicates/triples text under
@@ -6018,6 +6059,21 @@ createDictationController({
   micBtn: document.getElementById("ei-mic-btn"),
   hintEl: document.getElementById("ei-listening-hint"),
   errorEl: document.getElementById("ei-mic-error"),
+});
+// The Concept Incubator's comment box. It was created next to that page's
+// own code (~1,200 lines above) when the page shipped on 25 Sep 2026 — above
+// SpeechRecognitionCtor's declaration — and the resulting ReferenceError
+// stopped this module at that point: every top-level statement below it,
+// including the drawer's Releases/Skills/FAQ/Settings click handlers, never
+// ran, and the hamburger menu was dead on every device from 08:04 to the
+// next deploy. Every dictation controller is created here, after that
+// const, for that reason; test/app-boots.test.mjs imports this module
+// under a stub DOM and fails if evaluation stops early again.
+createDictationController({
+  textareaEl: document.getElementById("concept-comment-input"),
+  micBtn: document.getElementById("concept-mic-btn"),
+  hintEl: document.getElementById("concept-listening-hint"),
+  errorEl: document.getElementById("concept-mic-error"),
 });
 document.getElementById("ni-desc-input").addEventListener("input", (e) => {
   autoGrow(e.target);
