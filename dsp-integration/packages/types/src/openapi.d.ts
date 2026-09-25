@@ -1787,6 +1787,16 @@ export interface components {
             activation: {
                 enabled: boolean;
             };
+            /** @description This playlist's layers (spec §6): the mandatory default plus each targeted (localised/personalised) upsell version submitted for this slot. Checked against the slot's own Max campaigns cap at submission time, not recomputed here. */
+            campaignCount: number;
+            /** @description High-level summary for the Campaign Status table's Localised variables column: the deduped, catalog-ordered display names of variables targeted by this playlist's localised layer(s). Empty when none. */
+            localisedVariables: string[];
+            /** @description The exact targeting rules behind localisedVariables — one human-readable line per localised layer (variable, operator and values), for that column's hover tooltip. */
+            localisedRuleLines: string[];
+            /** @description Same as localisedVariables */
+            personalisedVariables: string[];
+            /** @description Same as localisedRuleLines */
+            personalisedRuleLines: string[];
         };
         SellersJson: {
             contact_email?: string;

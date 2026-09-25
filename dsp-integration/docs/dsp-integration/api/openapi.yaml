@@ -2172,7 +2172,7 @@ components:
     Campaign:
       type: object
       description: POC stand-in for the existing campaign record (spec §8 additions included). Approval state is read from /admin/v1/approvals.
-      required: [campaignId, name, source, schedule, activation]
+      required: [campaignId, name, source, schedule, activation, campaignCount, localisedVariables, localisedRuleLines, personalisedVariables, personalisedRuleLines]
       properties:
         campaignId: {type: string}
         name: {type: string}
@@ -2196,6 +2196,11 @@ components:
           required: [enabled]
           properties:
             enabled: {type: boolean}
+        campaignCount: {type: integer, description: 'This playlist''s layers (spec §6): the mandatory default plus each targeted (localised/personalised) upsell version submitted for this slot. Checked against the slot''s own Max campaigns cap at submission time, not recomputed here.'}
+        localisedVariables: {type: array, items: {type: string}, description: 'High-level summary for the Campaign Status table''s Localised variables column: the deduped, catalog-ordered display names of variables targeted by this playlist''s localised layer(s). Empty when none.'}
+        localisedRuleLines: {type: array, items: {type: string}, description: 'The exact targeting rules behind localisedVariables — one human-readable line per localised layer (variable, operator and values), for that column''s hover tooltip.'}
+        personalisedVariables: {type: array, items: {type: string}, description: Same as localisedVariables, for this playlist's personalised layer(s).}
+        personalisedRuleLines: {type: array, items: {type: string}, description: Same as localisedRuleLines, for this playlist's personalised layer(s).}
     SellersJson:
       type: object
       required: [version, sellers]

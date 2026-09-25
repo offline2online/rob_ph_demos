@@ -5,8 +5,11 @@ import type { Campaign, CampaignBrief } from '@ph-dsp/types'
 import { type Db, fromJson, prepared, toJson } from '../db/db'
 
 /* The stored campaign. `schedule` isn't stored: the admin list derives it
-   from the windows the campaign holds. */
-export interface CampaignRecord extends Omit<Campaign, 'schedule'> {
+   from the windows the campaign holds. Same for the playlist summary
+   fields (`campaignCount` and the two variable/rule-line pairs) — the
+   admin list derives them from `targeting` (ticket "Campaign Status:
+   Playlist name column..."). */
+export interface CampaignRecord extends Omit<Campaign, 'schedule' | 'campaignCount' | 'localisedVariables' | 'localisedRuleLines' | 'personalisedVariables' | 'personalisedRuleLines'> {
   targeting: unknown
 }
 
