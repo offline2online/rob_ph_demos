@@ -3,7 +3,7 @@
   "private": true,
   "description": "Tests for backlog-tracker's access-control layer (Firestore security rules, the MCP server's logic, the MCP server over real HTTP driven by the official MCP client SDK), for scripts/ helpers that are easiest to verify against a real disposable git repo (the faq/data/index.json merge-conflict resolver, and the deployment train's lock-recompute logic \u2014 pure predicate, the real Cloud Function trigger under stubbed SDKs, and the real branch-archive/reset git logic), and for the FAQ editor's content round-trip in a real browser (opt-in, needs Chromium).",
   "scripts": {
-    "test": "npm run test:mcp && npm run test:client && npm run test:train-lock && npm run test:skill-history && npm run test:build-batches && npm run test:faq-index && npm run test:rules && npm run test:preview-url && npm run test:generated-builds",
+    "test": "npm run test:mcp && npm run test:client && npm run test:train-lock && npm run test:skill-history && npm run test:build-batches && npm run test:faq-index && npm run test:rules && npm run test:preview-url && npm run test:preview-url-pin && npm run test:generated-builds",
     "test:generated-builds": "node generated-builds.test.js && node patch-paths.test.js",
     "test:mcp": "node mcp-server.test.js",
     "test:client": "node mcp-client.test.mjs",
@@ -13,7 +13,8 @@
     "test:faq-index": "node faq-index.test.js",
     "test:rules": "firebase emulators:exec --only firestore --project demo-backlog-tracker 'node firestore-rules.test.js'",
     "test:editor": "node faq-editor-load.test.mjs",
-    "test:preview-url": "node preview-url-page.test.js"
+    "test:preview-url": "node preview-url-page.test.js",
+    "test:preview-url-pin": "node preview-url-pin.test.js"
   },
   "devDependencies": {
     "@firebase/rules-unit-testing": "^5.0.2",

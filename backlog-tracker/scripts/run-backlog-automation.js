@@ -904,19 +904,29 @@ async function recordAttemptFailure(item, err, { attemptsField = "patchAttempts"
   console.error(`[${readyField}] ${item.id}: attempt ${attempts}/${MAX_PATCH_ATTEMPTS} failed${giveUp ? (clearReadyOnGiveUp ? ` — giving up, ${readyField} cleared` : ` — still retrying, ${readyField} left set`) : ""}: ${reason}`);
 }
 
-// Builds a rawcdn.githack.com preview link for the branch a PR was just
-// opened from, so a Ready for Testing card is testable the moment it
+// Builds a rawcdn.githack.com preview link for the ref (a commit sha, or a
+// branch name for the odd caller that has no commit to pin to yet) a PR was
+// just opened from, so a Ready for Testing card is testable the moment it
 // arrives instead of sitting with no way to look at it until someone sets
-// previewUrl by hand (AfOWSFNfos2BZRpDeph1). A caveat, measured on 22 Sep
-// 2026 and contrary to what this comment used to claim: BOTH githack hosts
-// cache a branch URL. index.html refreshed within minutes, but a fixed-path
-// file behind it (the DSP prototype's demo/api-snapshot.json) was still
-// serving a day-old capture across several pushes, with no visible error.
-// So for a checked-in build this branch link is only a placeholder: once
-// the build's workflow has rebuilt the bundle it re-points the card at the
-// rebuilt COMMIT's URL, which is immutable (see GENERATED_BUILDS and
-// dsp-integration/scripts/board-tickets.mjs --relink-prototype). For a
-// plain static page the branch link is normally fine.
+// previewUrl by hand (AfOWSFNfos2BZRpDeph1). BOTH githack hosts cache a
+// BRANCH URL indefinitely, confirmed twice: 22 Sep 2026 on the DSP project
+// (index.html refreshed within minutes, but the fixed-path
+// `demo/api-snapshot.json` behind it kept serving a day-old capture across
+// several pushes) and again 25 Sep 2026 on this very project (mIHraVz8fQXRe
+// 549UYD1 — commit 7b09a4b changed faq/css/faq.css and the branch URL was
+// STILL serving the pre-change file 20 minutes later, while the commit-sha
+// URL for the same file was correct immediately). A tester following a
+// stale branch link sees no change and fails a correct ticket — the cause
+// of three false "Failed testing" rounds on the DSP project alone. There is
+// no page plain enough to be exempt from this: **every previewUrl this
+// pipeline generates is pinned to a commit sha, never a branch name** — see
+// processApplyPatch, which passes this item's own just-made commit, and
+// repointTrainPreviewUrls, which keeps every other in-flight card on the
+// same train pointed at the branch's current head as later tickets land on
+// it. The DSP project's own rebuild-then-relink step
+// (dsp-integration/scripts/board-tickets.mjs --relink-prototype) is one
+// instance of this same rule for its checked-in build bundle, not a special
+// case of it.
 //
 // "Most relevant changed page" is necessarily a guess — there's no
 // metadata saying which patched file is the one to look at — so this picks
@@ -927,9 +937,10 @@ async function recordAttemptFailure(item, err, { attemptsField = "patchAttempts"
 // anything that can't be githack'd directly (no .html touched at all —
 // e.g. a Cloud Function-only change), same fallback the card's own manual
 // "Set test link" flow already documents — on the train that fallback is a
-// link to the integration branch itself (trainTreeUrl), since a ticket has
-// no PR of its own until the whole train's deploy PR opens.
-function guessPreviewUrl(patchFiles, branch, fallbackUrl) {
+// link to the integration branch itself (trainTreeUrl), since there is no
+// single commit to pin a no-page change to and the branch is at least never
+// wrong about which commits it contains, only slow to reflect them.
+function guessPreviewUrl(patchFiles, ref, fallbackUrl) {
   const changed = (patchFiles || [])
     .filter((f) => f && typeof f.path === "string" && f.content !== null && f.content !== undefined)
     .map((f) => f.path)
@@ -939,7 +950,7 @@ function guessPreviewUrl(patchFiles, branch, fallbackUrl) {
   const htmlPaths = changed.filter((p) => p.endsWith(".html"));
   if (htmlPaths.length) {
     const page = htmlPaths.sort((a, b) => a.length - b.length)[0];
-    return `https://rawcdn.githack.com/${REPO}/${branch}/${page}`;
+    return `https://rawcdn.githack.com/${REPO}/${ref}/${page}`;
   }
 
   // No page changed, but a stylesheet or script did — so there IS a page
@@ -955,7 +966,7 @@ function guessPreviewUrl(patchFiles, branch, fallbackUrl) {
   const pages = changed.map(nearestPageFor).filter(Boolean);
   if (pages.length) {
     const page = pages.sort((a, b) => a.length - b.length)[0];
-    return `https://rawcdn.githack.com/${REPO}/${branch}/${page}`;
+    return `https://rawcdn.githack.com/${REPO}/${ref}/${page}`;
   }
 
   return fallbackUrl;
@@ -996,6 +1007,68 @@ function isBundlerTemplate(candidate) {
     return /<script[^>]+src=["'](\.?\/)?src\//i.test(html);
   } catch {
     return false; // unreadable: treat it as an ordinary page, as before
+  }
+}
+
+// The two shapes guessPreviewUrl ever produces. Distinguishing "this
+// pipeline generated it" from "a human typed a custom link into Set test
+// link" is what lets a re-patch safely refresh its own stale commit-pinned
+// link (mIHraVz8fQXRe549UYD1) without ever overwriting a deliberate human
+// choice — the same distinction the old `/${deployBranch}/`-substring check
+// used to make, before every link here was pinned to a branch and that
+// check could no longer tell the two apart.
+const GITHACK_PREFIX = `https://rawcdn.githack.com/${REPO}/`;
+const TRAIN_TREE_PREFIX = `https://github.com/${REPO}/tree/`;
+function isAutoGeneratedPreviewUrl(url) {
+  return typeof url === "string" && (url.startsWith(GITHACK_PREFIX) || url.startsWith(TRAIN_TREE_PREFIX));
+}
+
+// Swaps the ref (branch name or commit sha) out of a previewUrl this
+// pipeline generated, keeping whatever page path followed it. Used to keep
+// every OTHER in-flight card on a train honest about the branch's current
+// head each time a new ticket's commit lands — see repointTrainPreviewUrls.
+function repointPreviewUrlRef(url, newRef) {
+  if (url.startsWith(GITHACK_PREFIX)) {
+    const rest = url.slice(GITHACK_PREFIX.length);
+    const slash = rest.indexOf("/");
+    if (slash === -1) return url; // no page path to keep — leave it alone
+    return `${GITHACK_PREFIX}${newRef}${rest.slice(slash)}`;
+  }
+  if (url.startsWith(TRAIN_TREE_PREFIX)) return `${TRAIN_TREE_PREFIX}${newRef}`;
+  return url;
+}
+
+// A commit-pinned previewUrl is honest about the state it was generated
+// from, but the whole point of a train is that every card tests the
+// combination it will actually ship in — so the moment another ticket's
+// commit lands on `deployBranch`, every OTHER Ready for Testing card
+// already on that same train needs its own link moved to the new head too,
+// or it quietly stops showing what it claims to (mIHraVz8fQXRe549UYD1).
+// Never throws: a card whose link couldn't be re-pointed just keeps
+// showing an earlier-but-still-correct commit until the next ticket lands.
+async function repointTrainPreviewUrls(projectId, deployBranch, newSha, excludeItemId) {
+  let siblings;
+  try {
+    siblings = await itemsForProject(projectId);
+  } catch (err) {
+    console.log(`[apply-patch] couldn't list sibling items to re-point preview links (${err.message}) — their links stay as they were until their own next commit`);
+    return;
+  }
+  const stale = siblings.filter((i) =>
+    i.id !== excludeItemId &&
+    i.status === "ready-for-testing" &&
+    i.deployBranch === deployBranch &&
+    isAutoGeneratedPreviewUrl(i.previewUrl)
+  );
+  for (const sib of stale) {
+    const repointed = repointPreviewUrlRef(sib.previewUrl, newSha);
+    if (repointed === sib.previewUrl) continue;
+    try {
+      await patchItem(sib.id, { previewUrl: repointed, updatedAt: new Date().toISOString() });
+      console.log(`[apply-patch] re-pointed ${sib.id}'s preview link to ${newSha.slice(0, 7)} (another ticket landed on ${deployBranch})`);
+    } catch (err) {
+      console.log(`[apply-patch] couldn't re-point ${sib.id}'s preview link to ${newSha.slice(0, 7)} (${err.message})`);
+    }
   }
 }
 
@@ -1306,12 +1379,14 @@ async function processApplyPatch(item) {
   }
 
   const deployCommits = (Array.isArray(item.deployCommits) ? item.deployCommits.slice() : []).concat([sha]);
-  // A previewUrl already pointing at this train is a real choice (possibly a
-  // human's) and is kept; anything else — including a stale link to a
-  // pre-train `claude/...` branch — is regenerated against the train.
-  const previewUrl = (item.previewUrl && String(item.previewUrl).includes(`/${deployBranch}/`))
+  // Pinned to the commit just made, never the branch name — see
+  // guessPreviewUrl's own comment for why a branch link goes stale under a
+  // tester's nose with no visible error. A genuinely custom previewUrl a
+  // human set by hand (anything that isn't one of this pipeline's own
+  // auto-generated shapes) is still preserved rather than overwritten.
+  const previewUrl = (item.previewUrl && !isAutoGeneratedPreviewUrl(item.previewUrl))
     ? item.previewUrl
-    : guessPreviewUrl(patchedFiles, deployBranch, trainTreeUrl(deployBranch));
+    : guessPreviewUrl(patchedFiles, sha, trainTreeUrl(deployBranch));
 
   const notes = await appendNote(
     item,
@@ -1349,6 +1424,12 @@ async function processApplyPatch(item) {
     ...(workflowPaths.length ? { requiresHumanMerge: true } : {}),
   });
   console.log(`[apply-patch] ${item.id}: committed ${sha.slice(0, 7)} on ${deployBranch}, moved to ready-for-testing${testVersion ? ` (testVersion ${testVersion})` : ""}`);
+
+  // This item's own card now shows the branch's new head; every OTHER
+  // Ready for Testing card already on the same train still shows whatever
+  // commit existed when IT was patched, which is exactly the staleness
+  // this pipeline's own links are supposed to never have.
+  await repointTrainPreviewUrls(projectId, deployBranch, sha, item.id);
 
   run("git", ["checkout", "main", "--quiet"]);
 }
@@ -2658,4 +2739,6 @@ module.exports = {
   isGeneratedOutput, rebuildWorkflowsFor, tryAutoResolveGeneratedOutputConflict,
   // test/patch-paths.test.js
   normalisePatchPaths, projectFolderOf, patchFilesLookFolderRelative,
+  // test/preview-url-pin.test.js
+  guessPreviewUrl, isAutoGeneratedPreviewUrl, repointPreviewUrlRef,
 };

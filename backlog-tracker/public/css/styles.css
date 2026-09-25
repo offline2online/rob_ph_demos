@@ -1439,6 +1439,17 @@ html:not([data-console-role="admin"]) [data-admin-only] { display: none !importa
 /* ── Proposed FAQ revision review (faqArticles.pendingRevision) ───────── */
 .badge-proposed-update { background: var(--primary-tint); color: var(--primary); margin-left: 6px; }
 .badge-approved-update { background: rgba(82, 196, 26, .12); color: var(--success); margin-left: 6px; }
+/* Proposed/approved-revision badges double as buttons straight into the
+   review page (faqRevisionBadgeHTML) — reset <button> chrome so they still
+   read as badges, then add a hover/focus cue and a small arrow so the
+   affordance to click is obvious rather than implied. */
+.faq-revision-badge {
+  border: 0; cursor: pointer; font: inherit; text-transform: inherit; letter-spacing: inherit;
+  display: inline-flex; align-items: center; gap: 3px;
+}
+.faq-revision-badge:hover { filter: brightness(0.94); }
+.faq-revision-badge:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+.faq-revision-badge-arrow { font-weight: 700; }
 .fr-meta {
   border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; margin-bottom: 14px;
   background: var(--surface-2, var(--bg)); font-size: 13px; display: grid; gap: 6px;
