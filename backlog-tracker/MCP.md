@@ -87,7 +87,7 @@ empty or mis-edited collection can never lock everyone out.
 `get_approved_for_deployment_board`, `get_project_docs`,
 `list_doc_revisions`, `get_doc_revision`, `search_faq`, `get_faq_article`,
 `list_pending_faq_revisions`, `get_faq_revision`, `list_skills`,
-`get_skill`.
+`get_skill`, `list_skill_misses`, `get_routine_setup_instructions`.
 
 `get_ready_for_testing_board` and `get_approved_for_deployment_board` are
 **composable** — alongside the usual JSON they return an embedded HTML
@@ -102,13 +102,32 @@ whole train is ready for it.
 
 **Can — write (editor and admin only):**
 
-| Tickets | Documentation | Help centre | Skills library | Deploy (one exception) |
-| --- | --- | --- | --- | --- |
-| `create_backlog_item` (always into the Backlog column) | `set_project_requirements` | `create_faq_article` (always a draft) | `upload_skill` (slug must be unique) | `approve_deploy_to_main` |
-| `update_backlog_item` (title, description, type, area) | `set_project_readme` | `update_faq_article` (always a pending revision) | `update_skill` (rename/re-version/replace files) | |
-| `add_item_comment` | `set_project_artifact` | `comment_on_faq_revision` | `delete_skill` | |
-| | `create_project_document` / `update_project_document` / `delete_project_document` | | | |
-| | `create_interface` / `update_interface` / `delete_interface` | | | |
+| Tickets | Documentation | Help centre | Skills library | Deploy (one exception) | Your own routine binding |
+| --- | --- | --- | --- | --- | --- |
+| `create_backlog_item` (always into the Backlog column) | `set_project_requirements` | `create_faq_article` (always a draft) | `upload_skill` (slug must be unique) | `approve_deploy_to_main` | `set_my_routine_binding` |
+| `update_backlog_item` (title, description, type, area) | `set_project_readme` | `update_faq_article` (always a pending revision) | `update_skill` (rename/re-version/replace files) | | |
+| `add_item_comment` | `set_project_artifact` | `comment_on_faq_revision` | `delete_skill` | | |
+| | `create_project_document` / `update_project_document` / `delete_project_document` | | `report_skill_miss` (tags a real gap, never edits the skill's own content) | | |
+| | `create_interface` / `update_interface` / `delete_interface` | | | | |
+
+**Setting up your own personal Notify Claude Routine** (so board clicks you
+make fire a session under your own Claude account instead of the one
+shared project token) is a two-call, one-manual-step flow: call
+`get_routine_setup_instructions` and follow it — it walks you through
+creating a Routine at claude.ai/code/routines with the exact bootstrap
+prompt to use, getting its API trigger's fire URL and token, then calling
+`set_my_routine_binding` with both. There's no way to automate the
+claude.ai/code/routines step itself: the routines API has no delegated-OAuth
+"fire on behalf of" flow, so a Routine's fire URL/token is per-Routine and
+hand-generated once — this is the closest one-click setup the API allows.
+`set_my_routine_binding` is **write-only**: your stored `fireUrl`/`token`
+are never returned by this or any other tool — `whoami`'s
+`hasRoutineBinding` only ever says whether one is set, never its value.
+Pass both as `""` to clear your binding and go back to the shared token.
+`functions/index.js`'s `resolveRoutineCredentials` checks the clicking
+member's binding first on every Notify Claude / Notify Claude — Deploy /
+Groom Backlog click, falling back to the shared `CLAUDE_ROUTINE_FIRE_URL`/
+`CLAUDE_ROUTINE_TOKEN` secrets when they have none.
 
 **`approve_deploy_to_main` is a deliberate, narrowly-scoped exception to
 "nothing here deploys" (below), not a loosening of it.** It fires the exact

@@ -50,6 +50,40 @@ const NOTIFY_WEBHOOK_URL = defineSecret("NOTIFY_WEBHOOK_URL");
 const CLAUDE_ROUTINE_FIRE_URL = defineSecret("CLAUDE_ROUTINE_FIRE_URL");
 const CLAUDE_ROUTINE_TOKEN = defineSecret("CLAUDE_ROUTINE_TOKEN");
 
+// Per-member routine binding (VNE6dxMu3h6jO3g6FNNB) — lets an engineer fire
+// Notify Claude sessions under their OWN Claude account/usage instead of
+// the one shared project-wide token above. Claude's routines API has no
+// delegated-OAuth "fire on behalf of" flow — each Routine's fire URL/token
+// is per-Routine and hand-generated once at claude.ai/code/routines — so a
+// member registers their own once (via the MCP tool set_my_routine_binding,
+// set up by following get_routine_setup_instructions — see
+// functions/mcp-server.js) and every board click they make from then on
+// fires under it instead. `consoleUsers/{email}.routineFireUrl`/
+// `routineFireToken` are write-only by design: no read tool or UI ever
+// echoes them back (see mcp-server.js's whoami — it reports only whether a
+// binding exists, never its value).
+//
+// Falls back to the shared secret when the triggering member has none set,
+// or when the click can't be attributed to anyone (a click made before this
+// existed, or a direct Firestore write bypassing the board UI) — so this is
+// purely additive, never a new way for a click to silently do nothing.
+async function resolveRoutineCredentials(db, triggeredByEmail, sharedFireUrl, sharedToken) {
+  if (triggeredByEmail) {
+    try {
+      const snap = await db.collection("consoleUsers").doc(String(triggeredByEmail).toLowerCase()).get();
+      const d = snap.exists ? snap.data() : null;
+      if (d && d.routineFireUrl && d.routineFireToken) {
+        return { fireUrl: d.routineFireUrl, token: d.routineFireToken, via: "member" };
+      }
+    } catch (err) {
+      logger.error("Failed to read member routine binding — falling back to the shared Routine secret", {
+        email: triggeredByEmail, error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+  return { fireUrl: sharedFireUrl, token: sharedToken, via: "shared" };
+}
+
 // The GitHub token onBacklogItemReadyForAutomation (bottom of this file)
 // uses to dispatch backlog-automation.yml the moment an item is ready for
 // it, instead of that item waiting out the workflow's own schedule. Needs
@@ -172,8 +206,9 @@ exports.notifyOnProjectReadyForReview = onDocumentUpdated(
     // Notify Claude button reads to show a spinner, then itself becomes the
     // session link once a session id resolves — reflects the real outcome
     // of this specific click.
-    const fireUrl = CLAUDE_ROUTINE_FIRE_URL.value();
-    const token = CLAUDE_ROUTINE_TOKEN.value();
+    const { fireUrl, token, via: routineCredVia } = await resolveRoutineCredentials(
+      db, after.notifyRequestedByEmail, CLAUDE_ROUTINE_FIRE_URL.value(), CLAUDE_ROUTINE_TOKEN.value()
+    );
     let sessionId = null;
     let sessionUrl = null;
     let fireError = null;
@@ -233,6 +268,7 @@ exports.notifyOnProjectReadyForReview = onDocumentUpdated(
             projectId: event.params.projectId,
             itemCount: items.length,
             sessionId,
+            firedVia: routineCredVia,
           });
         }
       } catch (err) {
@@ -259,11 +295,12 @@ exports.notifyOnProjectReadyForReview = onDocumentUpdated(
           itemCount: items.length,
           sentItemIds,
           errorMessage: fireError,
+          firedVia: routineCredVia,
         },
       }, { merge: true });
     } else {
       logger.warn(
-        "CLAUDE_ROUTINE_FIRE_URL/CLAUDE_ROUTINE_TOKEN not set — skipping Routine fire for manual project notify request",
+        "No Routine fire credentials available (no member binding and CLAUDE_ROUTINE_FIRE_URL/CLAUDE_ROUTINE_TOKEN not set) — skipping Routine fire for manual project notify request",
         { projectId: event.params.projectId }
       );
     }
@@ -344,7 +381,8 @@ exports.notifyOnProjectReadyToDeploy = onDocumentUpdated(
       return;
     }
 
-    const itemsSnap = await getFirestore().collection("backlogItems")
+    const db = getFirestore();
+    const itemsSnap = await db.collection("backlogItems")
       .where("projectId", "==", event.params.projectId)
       .where("status", "==", "ready-to-publish")
       .get();
@@ -367,8 +405,9 @@ exports.notifyOnProjectReadyToDeploy = onDocumentUpdated(
     // meant sessionUrl was always null by the time the message was built —
     // a "Notify Claude — Deploy clicked" line with no session link and no
     // indication of which items, ever (FWHlgviqZxearPMvE9G2).
-    const fireUrl = CLAUDE_ROUTINE_FIRE_URL.value();
-    const token = CLAUDE_ROUTINE_TOKEN.value();
+    const { fireUrl, token, via: routineCredVia } = await resolveRoutineCredentials(
+      db, after.deployNotifyRequestedByEmail, CLAUDE_ROUTINE_FIRE_URL.value(), CLAUDE_ROUTINE_TOKEN.value()
+    );
     let sessionId = null;
     let sessionUrl = null;
     let fireError = null;
@@ -457,6 +496,7 @@ exports.notifyOnProjectReadyToDeploy = onDocumentUpdated(
             projectId: event.params.projectId,
             itemCount: items.length,
             sessionId,
+            firedVia: routineCredVia,
           });
         }
       } catch (err) {
@@ -479,11 +519,12 @@ exports.notifyOnProjectReadyToDeploy = onDocumentUpdated(
           sessionUrl,
           itemCount: items.length,
           errorMessage: fireError,
+          firedVia: routineCredVia,
         },
       }, { merge: true });
     } else {
       logger.warn(
-        "CLAUDE_ROUTINE_FIRE_URL/CLAUDE_ROUTINE_TOKEN not set — skipping Routine fire for deploy notify request",
+        "No Routine fire credentials available (no member binding and CLAUDE_ROUTINE_FIRE_URL/CLAUDE_ROUTINE_TOKEN not set) — skipping Routine fire for deploy notify request",
         { projectId: event.params.projectId }
       );
     }
@@ -594,8 +635,9 @@ exports.notifyOnProjectReadyForGrooming = onDocumentUpdated(
 
     const projectName = after.name || "A project";
 
-    const fireUrl = CLAUDE_ROUTINE_FIRE_URL.value();
-    const token = CLAUDE_ROUTINE_TOKEN.value();
+    const { fireUrl, token, via: routineCredVia } = await resolveRoutineCredentials(
+      db, after.groomRequestedByEmail, CLAUDE_ROUTINE_FIRE_URL.value(), CLAUDE_ROUTINE_TOKEN.value()
+    );
     let sessionId = null;
     let sessionUrl = null;
     let fireError = null;
@@ -650,6 +692,7 @@ exports.notifyOnProjectReadyForGrooming = onDocumentUpdated(
             projectId: event.params.projectId,
             itemCount: items.length,
             sessionId,
+            firedVia: routineCredVia,
           });
         }
       } catch (err) {
@@ -672,11 +715,12 @@ exports.notifyOnProjectReadyForGrooming = onDocumentUpdated(
           sessionUrl,
           itemCount: items.length,
           errorMessage: fireError,
+          firedVia: routineCredVia,
         },
       }, { merge: true });
     } else {
       logger.warn(
-        "CLAUDE_ROUTINE_FIRE_URL/CLAUDE_ROUTINE_TOKEN not set — skipping Routine fire for groom request",
+        "No Routine fire credentials available (no member binding and CLAUDE_ROUTINE_FIRE_URL/CLAUDE_ROUTINE_TOKEN not set) — skipping Routine fire for groom request",
         { projectId: event.params.projectId }
       );
     }
@@ -1418,3 +1462,9 @@ exports.boardApi = onRequest({ secrets: [BOARD_API_KEY], cors: false, timeoutSec
 const mcp = require("./mcp-server");
 exports.mcpServer = mcp.mcpServer;
 exports.syncConsoleUserClaims = mcp.syncConsoleUserClaims;
+
+// Test-only hook, same pattern as mcp-server.js's own `mcp.__test` — lets
+// test/routine-binding-trigger.test.js exercise resolveRoutineCredentials
+// directly instead of standing up a full onDocumentUpdated + fetch-mocking
+// harness for something that's pure db-read-then-fallback logic.
+exports.__test = { resolveRoutineCredentials };
