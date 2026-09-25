@@ -1940,7 +1940,29 @@ async function finishTrain(project, deployBranch, prNumber, trainItems, { touche
   // was built from it. Merging main into the train just before this may
   // itself have moved the source, so this is not redundant with the
   // rebuild the train got when its tickets landed.
-  const rebuilds = dispatchRebuilds("main", prFilePaths(prNumber), "deploy-train");
+  const prFiles = prFilePaths(prNumber);
+  const rebuilds = dispatchRebuilds("main", prFiles, "deploy-train");
+
+  // Help-centre content a train edited under faq/data/ reaches Firestore
+  // only through faq-content.yml's sync job, and that job's `push` trigger
+  // never fires for this merge (made with the workflow's own GITHUB_TOKEN —
+  // the same suppression the deploy dispatch above exists for). Until this
+  // dispatch existed a content ticket's edit sat in the repo until the next
+  // hourly export overwrote it with Firestore's older copy: on 25 Sep 2026
+  // n0s1LO8ZnbMaf5HwQELP's Roles table shipped in PR #213 at 06:52 and was
+  // gone from main by the 07:31 export. faq-sync.js never deletes, and
+  // never recreates an id the console has deleted (faqDeletedArticles
+  // tombstones), so this is safe to fire on every such merge.
+  let faqSynced = false;
+  if (prFiles.some((p) => p.startsWith("faq/data/"))) {
+    try {
+      run("gh", ["workflow", "run", "faq-content.yml", "--repo", REPO, "--ref", "main", "-f", "direction=sync"]);
+      faqSynced = true;
+      console.log(`[deploy-train] triggered faq-content.yml (sync) — PR #${prNumber} changed help-centre content under faq/data/`);
+    } catch (err) {
+      console.log(`[deploy-train] failed to trigger faq-content.yml sync (${scrubSecrets(err.message)}) — the repo's faq/data edits will not reach Firestore until it is run by hand (Actions → FAQ content → sync)`);
+    }
+  }
 
   const mergedAt = new Date().toISOString();
   for (const item of trainItems) {
@@ -1951,6 +1973,7 @@ async function finishTrain(project, deployBranch, prNumber, trainItems, { touche
           ? ` This card had no commit of its own: its change rode on ${item.carriedByItem ? `ticket ${item.carriedByItem}'s` : "a sibling's"} commit ${String(item.carriedByCommit).slice(0, 7)}, which is part of this merge — so it is live now, and not before.`
           : "") +
         (mergeNote ? ` Note: merging main into ${deployBranch} for this deploy ${mergeNote}.` : "") +
+        (faqSynced ? ` This train changed help-centre content under faq/data/; the repo → Firestore sync (faq-content.yml) was dispatched so the console shows it before the next hourly export.` : "") +
         (rebuilds.length
           ? ` The hosted prototype on GitHub Pages is a built bundle, being rebuilt from main now (${rebuilds.join(", ")}) — allow a few minutes before checking the live site, and confirm with its build-info.json: "commit" is the source commit the bundle was built from, so it should be this train's own last commit (${trainItems.map((i) => (i.deployCommit ? i.deployCommit.slice(0, 7) : null)).filter(Boolean).join(", ") || "one of this train's commits"}) or later — not the merge commit itself, which comes after.`
           : "")

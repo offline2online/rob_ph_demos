@@ -6,7 +6,12 @@ on:
     paths:
       - 'backlog-tracker/**'
       - 'faq/**'
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      seed_faq:
+        description: 'Also run the one-off Freshdesk FAQ seed. ONLY for bootstrapping an empty Firestore: it recreates any article or category deleted in the console that has no tombstone.'
+        type: boolean
+        default: false
 
 # Several PRs merging within seconds of each other (a common shape for this
 # repo — the Notify Claude Routine and its human reimplementations both
@@ -190,16 +195,24 @@ jobs:
       # existing article/category, but NOT safe against a deleted one: once
       # a doc is gone from Firestore, ref.create() succeeds again on the
       # very next run and silently resurrects it with its original imported
-      # content. Running this on every push-triggered deploy (the normal
-      # case — this job runs on any backlog-tracker/**/faq/** push) meant
-      # any article or category deleted from the console came back the
-      # moment anyone next shipped an unrelated change. The only legitimate
-      # remaining use is bootstrapping a brand-new, empty Firestore project,
-      # not something every deploy needs to redo — restrict it to a manual
-      # "Run workflow" dispatch (workflow_dispatch is already a trigger on
-      # this workflow; this only gates the step, the on: block is unchanged).
+      # content. Running it on every deploy meant any article or category
+      # deleted from the console came back the moment anyone next shipped
+      # an unrelated change.
+      #
+      # The first fix (25 Sep 2026, 04:54) gated this on
+      # `github.event_name == 'workflow_dispatch'`, meaning "a person's Run
+      # workflow click" — but workflow_dispatch is ALSO how the pipeline
+      # runs this workflow after every train merge: a GITHUB_TOKEN merge
+      # fires no push event, so run-backlog-automation.js's finishTrain
+      # dispatches the deploy explicitly. The seed therefore ran at 04:56,
+      # 06:52, 07:13, 08:04 and 09:37 that same day and resurrected the
+      # same five deleted articles five times. The gate is now an explicit
+      # input nobody ticks by accident; the pipeline passes no inputs. And
+      # independently of this gate, seed-faq-data.js skips any id with a
+      # tombstone in faqDeletedArticles / faqDeletedCategories, which the
+      # console writes the moment an editor deletes something.
       - name: Seed starting FAQ / Help Center content
-        if: github.event_name == 'workflow_dispatch'
+        if: github.event_name == 'workflow_dispatch' && inputs.seed_faq == true
         working-directory: backlog-tracker/scripts
         env:
           GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/firebase-sa.json

@@ -499,6 +499,36 @@ service cloud.firestore {
       allow delete: if isFaqEditor();
     }
 
+    // Tombstones for deleted help-centre content. The console writes
+    // faqDeletedArticles/<id> (and faqDeletedCategories/<id>) the moment an
+    // editor deletes an article or category, before the doc itself goes;
+    // seed-faq-data.js and faq-sync.js — both running as the service
+    // account, so bypassing these rules — refuse to recreate a tombstoned
+    // id. That is the guard against "deleted articles come back on the next
+    // deploy" (25 Sep 2026: the Freshdesk seed ran on every deploy the
+    // pipeline dispatched after a train and resurrected five deleted
+    // articles, five times over). Permanent by design: an editor may write
+    // or refresh one, never remove one — restoring an article means removing
+    // its tombstone with the service account first, deliberately.
+    function isValidTombstone() {
+      return incoming().size() <= 6
+        && incoming().deletedAt is timestamp
+        && (!("title" in incoming()) || incoming().title is string && incoming().title.size() <= 200)
+        && (!("name" in incoming()) || incoming().name is string && incoming().name.size() <= 80)
+        && (!("categoryId" in incoming()) || incoming().categoryId is string && incoming().categoryId.size() <= 100)
+        && (!("deletedBy" in incoming()) || incoming().deletedBy == null || incoming().deletedBy is string && incoming().deletedBy.size() <= 200);
+    }
+    match /faqDeletedArticles/{articleId} {
+      allow read: if isBoardReader();
+      allow create, update: if isFaqEditor() && isValidTombstone();
+      allow delete: if false;
+    }
+    match /faqDeletedCategories/{categoryId} {
+      allow read: if isBoardReader();
+      allow create, update: if isFaqEditor() && isValidTombstone();
+      allow delete: if false;
+    }
+
     // Site-wide settings for the public FAQ / Help Center (kup9Zce13jyaXcIhxVkf)
     // — currently just the analytics tag id appended to every customer-facing
     // FAQ page (see faq/js/page-common.js). Read/write here is editor-only,

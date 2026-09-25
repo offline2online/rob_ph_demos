@@ -162,20 +162,37 @@ async function createIfMissing(ref, data) {
   }
 }
 
+// create()-if-missing cannot tell "never existed" from "deleted in the
+// console", so on its own this script resurrects anything an editor has
+// removed — which is exactly what happened five times on 25 Sep 2026, when
+// deploy-backlog-tracker.yml ran it on every deploy the pipeline dispatched
+// after a train. The console now writes a tombstone before deleting
+// (faqDeletedArticles/<id>, faqDeletedCategories/<id>); a tombstoned id is
+// never recreated here, whatever gate the workflow puts in front of this.
+async function tombstoneIds(collectionName) {
+  const snap = await db.collection(collectionName).get();
+  return new Set(snap.docs.map((d) => d.id));
+}
+
 async function main() {
-  const catCounts = { created: 0, skipped: 0 };
+  const deletedCategories = await tombstoneIds("faqDeletedCategories");
+  const deletedArticles = await tombstoneIds("faqDeletedArticles");
+
+  const catCounts = { created: 0, skipped: 0, deleted: 0 };
   for (const c of categories) {
     const { id, ...rest } = c;
+    if (deletedCategories.has(id)) { catCounts.deleted++; continue; }
     const result = await createIfMissing(db.collection("faqCategories").doc(id), {
       ...rest, createdAt: now, updatedAt: now,
     });
     catCounts[result]++;
   }
-  console.log(`FAQ categories: ${catCounts.created} created, ${catCounts.skipped} already present (skipped)`);
+  console.log(`FAQ categories: ${catCounts.created} created, ${catCounts.skipped} already present (skipped), ${catCounts.deleted} deleted in the console (left deleted)`);
 
-  const artCounts = { created: 0, skipped: 0 };
+  const artCounts = { created: 0, skipped: 0, deleted: 0 };
   for (const a of articles) {
     const { id, ...rest } = a;
+    if (deletedArticles.has(id)) { artCounts.deleted++; continue; }
     const result = await createIfMissing(db.collection("faqArticles").doc(id), {
       ...rest, projectId: null, needsReview: false,
       createdAt: now, updatedAt: now,
@@ -183,7 +200,7 @@ async function main() {
     });
     artCounts[result]++;
   }
-  console.log(`FAQ articles: ${artCounts.created} created, ${artCounts.skipped} already present (skipped)`);
+  console.log(`FAQ articles: ${artCounts.created} created, ${artCounts.skipped} already present (skipped), ${artCounts.deleted} deleted in the console (left deleted)`);
 }
 
 main().catch((err) => {

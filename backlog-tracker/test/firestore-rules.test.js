@@ -8,7 +8,7 @@
 const fs = require("fs");
 const path = require("path");
 const { initializeTestEnvironment, assertSucceeds, assertFails } = require("@firebase/rules-unit-testing");
-const { doc, getDoc, setDoc, deleteDoc } = require("firebase/firestore");
+const { doc, getDoc, setDoc, deleteDoc, serverTimestamp } = require("firebase/firestore");
 
 const RULES = fs.readFileSync(path.join(__dirname, "..", "firestore.rules"), "utf8");
 
@@ -160,6 +160,25 @@ async function main() {
     getDoc(doc(as(null), "faqArticles/a1")));
   await check("Nobody may write a help-centre article signed out", "deny", () =>
     setDoc(doc(as(null), "faqArticles/a1"), { title: "Defaced" }, { merge: true }));
+
+  // ── Deleted-content tombstones: written on delete, never removed ───────
+  // 25 Sep 2026: the Freshdesk seed recreated five deleted articles on every
+  // pipeline-dispatched deploy. The seed and the repo → Firestore sync now
+  // skip any id with a tombstone, so the tombstone must be writable by the
+  // editor doing the deleting (and refreshable if the same id is deleted
+  // again) and removable by nobody from the browser.
+  await check("An editor records a tombstone when deleting an article", "allow", () =>
+    setDoc(doc(as(MEMBER), "faqDeletedArticles/a1"), { title: "T", categoryId: "c1", deletedAt: serverTimestamp(), deletedBy: "sam@personalisationhub.com" }));
+  await check("Deleting the same id again just refreshes its tombstone", "allow", () =>
+    setDoc(doc(as(MEMBER), "faqDeletedArticles/a1"), { title: "T", deletedAt: serverTimestamp(), deletedBy: "sam@personalisationhub.com" }));
+  await check("A viewer cannot write a tombstone", "deny", () =>
+    setDoc(doc(as(VIEWER), "faqDeletedArticles/a2"), { title: "T", deletedAt: serverTimestamp() }));
+  await check("A tombstone needs a real deletedAt", "deny", () =>
+    setDoc(doc(as(MEMBER), "faqDeletedArticles/a3"), { title: "T" }));
+  await check("Signed out, nobody can read tombstones", "deny", () => getDoc(doc(as(null), "faqDeletedArticles/a1")));
+  await check("Even an editor cannot remove a tombstone", "deny", () => deleteDoc(doc(as(MEMBER), "faqDeletedArticles/a1")));
+  await check("Categories get the same tombstone treatment", "allow", () =>
+    setDoc(doc(as(MEMBER), "faqDeletedCategories/c9"), { name: "Old", deletedAt: serverTimestamp() }));
 
   // ── Membership: a consoleUsers row is what grants access ────────────────
   await check("A member added to consoleUsers can read the board", "allow", () => getDoc(doc(as(MEMBER), "projects/p1")));

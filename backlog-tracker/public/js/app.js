@@ -6251,6 +6251,10 @@ async function deleteFaqCategoryIfEmpty(id) {
     await showAlert("This category still has articles in it — move or delete those first.");
     return;
   }
+  // Same tombstone as an article (see faqTombstone below): the Freshdesk
+  // seed creates categories too, and would otherwise bring a deleted one back.
+  const c = faqCategories.find((x) => x.id === id);
+  await faqTombstone("faqDeletedCategories", id, { name: (c && c.name) || "" });
   await deleteDoc(doc(db, "faqCategories", id));
 }
 
@@ -6268,8 +6272,27 @@ async function saveFaqArticle(id, data) {
   return ref.id;
 }
 
+// Deleting writes a tombstone first (faqDeletedArticles/<id>), then removes
+// the article. seed-faq-data.js and faq-sync.js both refuse to recreate a
+// tombstoned id, which is what finally stops a deleted article coming back
+// on the next deploy or repo → Firestore sync: on 25 Sep 2026 the seed's
+// insert-only create() ran on every deploy the pipeline dispatched after a
+// train (its "manual dispatch only" gate matched those too) and resurrected
+// five deleted Freshdesk articles, five separate times. The tombstone is
+// permanent by design (firestore.rules: an editor may create or refresh
+// one, nobody may delete one); restoring an article deliberately means
+// removing its tombstone with the service account first.
+async function faqTombstone(collectionName, id, extra) {
+  await setDoc(doc(db, collectionName, id), {
+    ...extra,
+    deletedAt: serverTimestamp(),
+    deletedBy: (auth.currentUser && auth.currentUser.email) || null,
+  });
+}
 async function deleteFaqArticle(id) {
   if (!(await requireFaqEditor())) return;
+  const a = faqArticles.find((x) => x.id === id);
+  await faqTombstone("faqDeletedArticles", id, { title: (a && a.title) || "", categoryId: (a && a.categoryId) || "" });
   await deleteDoc(doc(db, "faqArticles", id));
 }
 

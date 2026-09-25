@@ -68,7 +68,22 @@ admin console (backlog-tracker → FAQ Management)  ──edits──▶  Firest
   published revision, so an edit is visible on its page immediately.
 - Bulk content work done in git (like the rewrite) lands in `data/` and the
   same workflow syncs it repo → Firestore on push, without overwriting
-  anything edited in the console since the last sync.
+  anything edited in the console since the last sync. A deployment-train
+  merge is made with the workflow's own token and fires no push event, so
+  `run-backlog-automation.js`'s `finishTrain` dispatches that sync itself
+  whenever the train changed `data/` — before this (25 Sep 2026) a content
+  ticket's edit sat in the repo until the next hourly export overwrote it
+  with Firestore's older copy.
+- **Deleting in the console sticks.** Deleting an article (or an empty
+  category) in FAQ Management writes a tombstone
+  (`faqDeletedArticles/<id>`, `faqDeletedCategories/<id>`) before removing
+  the document. `faq-export.js` drops the file on its next run;
+  `faq-sync.js` and the Freshdesk seed (`seed-faq-data.js`, which now runs
+  only when a deploy is dispatched by hand with its `seed_faq` input
+  ticked) never recreate a tombstoned id, even while its file is still in
+  `data/`. Before 25 Sep 2026 every pipeline-dispatched deploy re-ran the
+  seed and brought deleted articles straight back. Restoring one
+  deliberately means removing its tombstone with the service account first.
 - A "Notify Claude — Deploy" on the board proposes article updates for the
   tickets merging (`faqArticles.pendingRevision`, scoped to the project's
   product/program); they reach this site only after a person approves them
