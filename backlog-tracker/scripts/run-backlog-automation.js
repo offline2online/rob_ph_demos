@@ -659,9 +659,30 @@ function tryAutoResolveGeneratedOutputConflict(conflicted) {
 // Every workflow in this repo fires only on main, a schedule, or an
 // explicit dispatch, so a branch push — which, unlike a GITHUB_TOKEN push,
 // DOES trigger `on: push` workflows — can never execute the pushed file.
-// The merge is then a human's job (processMergePr refuses it), so nothing
-// under .github/workflows/ reaches main without a person reading the diff.
 const WORKFLOW_PUSH_TOKEN = (process.env.WORKFLOW_PUSH_TOKEN || "").trim();
+
+// Whether this job may also MERGE a PR that touches .github/workflows/.
+//
+// Until 25 Sep 2026 the merge was always a human's job: the pipeline
+// pushed such a train with the App token, opened its PR, and parked the
+// project at trainStatus "awaiting-human-merge" for a person to merge on
+// GitHub. In practice that was a stall nobody was looking for — PR #211
+// sat at Approved for Deployment for two hours behind a "Train locked"
+// hint. With this switch on (backlog-automation.yml carries it, off by
+// default — a workflow file runs with every repository secret, so turning
+// it on is the repository owner's decision, made in that file), the same
+// App token that pushed the train merges it, provided
+// workflowAutoMergeBlockers() finds nothing: the token is configured, and
+// the PR's workflow changes still pass workflowChangeProblems() when
+// re-checked against the PR head at merge time (no new workflow files, no
+// deletions, every `on:` block identical to main's). Those checks stop a
+// branch from running itself; they do not review what a changed step does
+// — that review is the tester's, the approver's and the Deploy to Main
+// click's, the same as for every other change on the train. Anything
+// short of that falls back to the human merge exactly as before, with the
+// reason written on the project and on every card. Unset, or anything but
+// "true", keeps the human merge for every workflow-touching PR.
+const WORKFLOW_AUTO_MERGE = /^(1|true|yes|on)$/i.test(String(process.env.WORKFLOW_AUTO_MERGE || "").trim());
 
 function triggerBlock(yamlText) {
   const lines = String(yamlText).split("\n");
@@ -707,6 +728,69 @@ function pushWithWorkflowToken(branch, { force = false } = {}) {
       GIT_CONFIG_KEY_1: "http.https://github.com/.extraheader", GIT_CONFIG_VALUE_1: `AUTHORIZATION: basic ${basic}`,
     },
   });
+}
+
+// The workflow files `ref` changes relative to origin/main, in the shape
+// workflowChangeProblems() takes ({path, content}, content null for a
+// deletion). `ref` must already be fetched — origin/<branch>, a sha, HEAD.
+// A rename shows up as both a deletion and a new file, which is what it is.
+function workflowFilesChangedIn(ref) {
+  const out = run("git", ["diff", "--name-status", "origin/main", ref, "--", WORKFLOW_PATH_PREFIX]);
+  const files = [];
+  for (const line of out.split("\n")) {
+    if (!line.trim()) continue;
+    const [status, ...paths] = line.split("\t");
+    if (status.startsWith("R")) files.push({ path: paths[0], content: null });
+    const p = paths[paths.length - 1];
+    if (status.startsWith("D")) { files.push({ path: p, content: null }); continue; }
+    files.push({ path: p, content: run("git", ["show", `${ref}:${p}`]) });
+  }
+  return files;
+}
+
+// Why the pipeline may NOT merge a workflow-touching PR whose head is
+// `headRef` (fetched) — an empty list means it may. Same guardrails as the
+// push, re-run against what is actually on the PR head rather than what
+// the ticket's patchFiles said at apply time, plus the two switches.
+function workflowAutoMergeBlockers(headRef) {
+  const blockers = [];
+  if (!WORKFLOW_AUTO_MERGE) blockers.push("WORKFLOW_AUTO_MERGE is not enabled in backlog-automation.yml");
+  if (!WORKFLOW_PUSH_TOKEN) blockers.push("no workflow-push App token is configured (WORKFLOW_APP_ID / WORKFLOW_APP_PRIVATE_KEY)");
+  if (blockers.length) return blockers;
+  let files;
+  try {
+    files = workflowFilesChangedIn(headRef);
+  } catch (err) {
+    return [`couldn't read the workflow changes on ${headRef} (${scrubSecrets(err.message)})`];
+  }
+  return workflowChangeProblems(files);
+}
+
+// Merges PR #prNumber (head `headRef`, fetched) into main with the App
+// token: a local `git merge --no-ff` pushed to main, deliberately not
+// `gh pr merge` under that token. The App is installed with Contents +
+// Workflows write and nothing else, which is exactly what a push needs, so
+// this can never fail on a permission the App was purposely not given —
+// and GitHub marks the PR merged the moment its head is reachable from
+// main, same as a merge made from a laptop. Same merge-commit subject
+// GitHub itself writes, so the history reads the same either way. A push
+// rejected because main moved in the meantime throws, and the caller's
+// existing failure path records it. Returns the merge commit's sha.
+function mergeWithWorkflowToken(prNumber, headRef, title) {
+  const branch = String(headRef).replace(/^origin\//, "");
+  run("git", ["fetch", "origin", "main", "--quiet"]);
+  try { run("git", ["reset", "--hard", "--quiet"]); } catch { /* nothing staged */ }
+  run("git", ["checkout", "-B", "main", "origin/main", "--quiet"]);
+  try {
+    run("git", ["-c", "user.name=backlog-automation", "-c", "user.email=backlog-automation@users.noreply.github.com",
+      "merge", "--no-ff", headRef, "-m", `Merge pull request #${prNumber} from ${REPO.split("/")[0]}/${branch}\n\n${title || ""}`.trimEnd(), "--quiet"]);
+  } catch (err) {
+    try { run("git", ["merge", "--abort"]); } catch { /* nothing in progress */ }
+    throw err;
+  }
+  const sha = headSha();
+  pushWithWorkflowToken("main");
+  return sha;
 }
 
 function scrubSecrets(text) {
@@ -1157,9 +1241,10 @@ async function processApplyPatch(item) {
   // workflow rebuilds it (see GENERATED_BUILDS).
   const rebuilds = dispatchRebuilds(deployBranch, changedPaths, "apply-patch");
 
-  // A train carrying a workflow-file change can't be merged by the pipeline
-  // (see processDeployTrain): flag the project so the Deploy step leaves the
-  // PR open for a person instead of attempting a merge that would be refused.
+  // A train carrying a workflow-file change is merged with the App token
+  // (or, with WORKFLOW_AUTO_MERGE off, by a person — see processDeployTrain):
+  // flag the project so the Deploy step knows even if it can't read the PR's
+  // file list at the time.
   if (workflowPaths.length && !project.needsHumanMerge) {
     await patchProject(projectId, { needsHumanMerge: true, updatedAt: new Date().toISOString() });
   }
@@ -1181,9 +1266,7 @@ async function processApplyPatch(item) {
       ? ` Note: ${movedPaths.length} of this patch's paths were relative to the project's folder rather than the repo root (${movedPaths.map((m) => m.from).join(", ")}) and were placed under ${projectFolderOf(project)}/ — patchFiles paths must start at the repo root.`
       : "") +
     rebuildNote(rebuilds, sha) +
-    (workflowPaths.length
-      ? ` This ticket changes ${workflowPaths.join(", ")}, so it was pushed with the workflow-push App token and the train's deploy PR will NOT be merged by the pipeline — a person has to review and merge it on GitHub.`
-      : "")
+    (workflowPaths.length ? ` This ticket changes ${workflowPaths.join(", ")}, so it was pushed with the workflow-push App token${workflowMergeNote()}` : "")
   );
 
   await patchItem(item.id, {
@@ -1336,26 +1419,27 @@ function sleepSync(ms) {
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
 }
 
-// Finds the deploy-backlog-tracker.yml run this script's own `gh workflow
-// run` dispatch just started, so the merging item can carry a real link to
-// "the run that's supposed to ship this" rather than nothing at all.
-// workflow_dispatch is an explicit API call, not a webhook — there's no
-// run id handed back from triggering it, only from listing runs
-// afterward, and the new run can take a few seconds to even appear in
-// that list, hence the short retry loop. Matches on event type
-// (workflow_dispatch, not push — a human's own merge around the same time
-// would trigger a push-triggered run instead) and createdAt >= the moment
-// we dispatched, so a concurrent unrelated dispatch can't be mismatched
-// onto this item.
-function findDispatchedDeployRun(dispatchedAtISO) {
+// Finds the deploy-backlog-tracker.yml run a merge just started, so the
+// merging item can carry a real link to "the run that's supposed to ship
+// this" rather than nothing at all. Neither a dispatch (an explicit API
+// call, no run id handed back) nor a push hands the run back directly —
+// only listing runs afterward does, and the new run can take a few seconds
+// to even appear in that list, hence the short retry loop. Matches on the
+// event type and createdAt >= the moment we acted, so a concurrent
+// unrelated run can't be mismatched onto this item: "workflow_dispatch"
+// for this script's own `gh workflow run` (a human's own merge around the
+// same time would show as a push run instead), or "push" with the merge
+// commit's sha for a merge pushed with the App token, which triggers the
+// workflow's own `on: push` like any other push.
+function findDeployRun(sinceISO, event = "workflow_dispatch", headSha = null) {
   for (let attempt = 0; attempt < 5; attempt++) {
     try {
       const json = run("gh", [
         "run", "list", "--repo", REPO, "--workflow", "deploy-backlog-tracker.yml",
         "--branch", "main", "--limit", "5",
-        "--json", "databaseId,url,createdAt,status,conclusion,event",
+        "--json", "databaseId,url,createdAt,status,conclusion,event,headSha",
       ]);
-      const match = JSON.parse(json).find((r) => r.event === "workflow_dispatch" && r.createdAt >= dispatchedAtISO);
+      const match = JSON.parse(json).find((r) => r.event === event && r.createdAt >= sinceISO && (!headSha || r.headSha === headSha));
       if (match) return match;
     } catch (err) {
       console.log(`[merge-pr] couldn't list deploy-backlog-tracker.yml runs (${err.message})`);
@@ -1364,6 +1448,48 @@ function findDispatchedDeployRun(dispatchedAtISO) {
     sleepSync(3000);
   }
   return null;
+}
+
+// Starts — or, when the merge itself already started one, finds — the
+// deploy-backlog-tracker.yml run that ships a merge that touched
+// backlog-tracker/. A merge made with this workflow's own GITHUB_TOKEN does
+// NOT trigger other workflows' `on: push` (GitHub's anti-recursion
+// protection), so without the explicit `gh workflow run` dispatch here the
+// Firebase deploy would silently never run and the board would still say
+// "published-live". A merge pushed with the App token (mergedByPush) is an
+// ordinary push as far as GitHub is concerned and HAS already triggered the
+// workflow's own `on: push` run: dispatching again would only start a
+// second run for the same commit, which the workflow's concurrency group
+// then cancels mid-deploy — so that run is looked up first, and the
+// dispatch is the fallback if it can't be found within a few seconds.
+// deployConclusion starts "pending" whether or not the run was found yet;
+// main()'s own reconcileDeployStatuses() sweep fills in the real conclusion
+// once the run actually finishes, since this job doesn't wait for it.
+function triggerBacklogTrackerDeploy(label, mergedByPush = null) {
+  let deployRun = mergedByPush ? findDeployRun(mergedByPush.at, "push", mergedByPush.sha) : null;
+  if (deployRun) {
+    console.log(`[${label}] the App-token merge already triggered deploy-backlog-tracker.yml (${deployRun.url}) — not dispatching a second run`);
+  } else {
+    const dispatchedAt = new Date().toISOString();
+    try {
+      run("gh", ["workflow", "run", "deploy-backlog-tracker.yml", "--repo", REPO, "--ref", "main"]);
+      console.log(`[${label}] triggered deploy-backlog-tracker.yml`);
+    } catch (err) {
+      console.log(`[${label}] failed to trigger deploy-backlog-tracker.yml (${err.message}) — the merge still succeeded, but the live site may be stale until the next deploy`);
+    }
+    deployRun = findDeployRun(dispatchedAt, "workflow_dispatch");
+  }
+  return { deployRunUrl: deployRun ? deployRun.url : null, deployConclusion: "pending" };
+}
+
+// The sentence a card gets when its change touched .github/workflows/ —
+// what happens to the merge depends on the switch, and the card should say
+// which, so nobody waits on a merge that is coming by itself or expects
+// one that isn't.
+function workflowMergeNote() {
+  return WORKFLOW_AUTO_MERGE
+    ? `; the pipeline merges its PR with that token too (WORKFLOW_AUTO_MERGE), after re-checking at merge time that the change adds no workflow file, deletes none, and leaves every \`on:\` trigger block as it is on main.`
+    : ` and its PR will NOT be merged by the pipeline (WORKFLOW_AUTO_MERGE is off) — a person has to review and merge it on GitHub; the board records it as live on its own once it sees the merge.`;
 }
 
 async function processMergePr(item) {
@@ -1401,18 +1527,44 @@ async function processMergePr(item) {
     touchesBacklogTracker = true;
   }
 
+  let mergedByPush = null; // { sha, at } once this run has merged with the App token
   if (prState === "OPEN" && touchesWorkflows) {
-    // Never merged by the pipeline: a workflow file runs with every repo
-    // secret, and the only review a mergeReady item has had is the
-    // Routine's CI check. A person merges it on GitHub; the next Deploy
-    // notify then finds it MERGED and records it below.
-    console.log(`[merge-pr] ${item.id}: PR #${prNumber} changes ${WORKFLOW_PATH_PREFIX} — leaving the merge to a human`);
-    const notes = await appendNote(
-      item,
-      `Not merged by the pipeline: PR #${prNumber} changes files under ${WORKFLOW_PATH_PREFIX}, which the automation never merges on its own. Review and merge it on GitHub, then click Notify Claude — Deploy again to record it as live. mergeReady has been cleared.`
-    );
-    await patchItem(item.id, { mergeReady: false, updatedAt: new Date().toISOString(), notes });
-    return;
+    // A workflow file runs with every repo secret, so this merge is held to
+    // the same guardrails as the push that opened the PR — re-checked
+    // against the PR head — and to the WORKFLOW_AUTO_MERGE switch. With
+    // both satisfied the App token merges it here; otherwise a person
+    // merges it on GitHub and reconcileHumanMergedPrs records it.
+    let headRefName = null;
+    try {
+      headRefName = JSON.parse(run("gh", ["pr", "view", String(prNumber), "--repo", REPO, "--json", "headRefName"])).headRefName || null;
+      if (headRefName) run("git", ["fetch", "origin", "main", headRefName, "--quiet"]);
+    } catch (err) {
+      console.log(`[merge-pr] ${item.id}: couldn't fetch PR #${prNumber}'s head (${scrubSecrets(err.message)})`);
+      headRefName = null;
+    }
+    const blockers = headRefName ? workflowAutoMergeBlockers(`origin/${headRefName}`) : [`couldn't read PR #${prNumber}'s head branch`];
+    if (blockers.length) {
+      console.log(`[merge-pr] ${item.id}: PR #${prNumber} changes ${WORKFLOW_PATH_PREFIX} and the pipeline can't merge it itself (${blockers.join("; ")}) — leaving the merge to a human`);
+      const notes = await appendNote(
+        item,
+        `Not merged by the pipeline: PR #${prNumber} changes files under ${WORKFLOW_PATH_PREFIX}, and the automation can't merge it itself (${blockers.join("; ")}). Review and merge it on GitHub — the board records it as live on its own once it sees the merge. mergeReady has been cleared.`
+      );
+      await patchItem(item.id, { mergeReady: false, updatedAt: new Date().toISOString(), notes });
+      return;
+    }
+    try {
+      const at = new Date().toISOString();
+      const sha = mergeWithWorkflowToken(prNumber, `origin/${headRefName}`, item.title || item.desc || "");
+      mergedByPush = { sha, at };
+      console.log(`[merge-pr] ${item.id}: merged PR #${prNumber} with the workflow-push App token (${sha.slice(0, 7)})`);
+    } catch (err) {
+      try {
+        await recordAttemptFailure(item, err, { attemptsField: "mergeAttempts", readyField: "mergeReady", verb: "merge the PR for" });
+      } catch (noteErr) {
+        console.error(`[merge-pr] ${item.id}: couldn't record the failure on the item either: ${noteErr.message}`);
+      }
+      return;
+    }
   }
 
   if (prState === "CLOSED") {
@@ -1430,7 +1582,7 @@ async function processMergePr(item) {
     return;
   }
 
-  if (prState !== "MERGED") {
+  if (prState !== "MERGED" && !mergedByPush) {
     try {
       run("gh", ["pr", "merge", String(prNumber), "--merge", "--repo", REPO]);
     } catch (err) {
@@ -1446,7 +1598,7 @@ async function processMergePr(item) {
       }
       return;
     }
-  } else {
+  } else if (!mergedByPush) {
     console.log(`[merge-pr] ${item.id}: PR #${prNumber} is already MERGED — skipping the merge attempt, proceeding straight to the success path`);
   }
 
@@ -1455,7 +1607,9 @@ async function processMergePr(item) {
   // of only the shared testVersion several cards can carry at once (see
   // cardHTML's own deployBadge comment). Only resolvable AFTER the merge
   // (gh pr view's mergeCommit is null on a still-open PR), so this is a
-  // fresh lookup, not the state captured further up.
+  // fresh lookup, not the state captured further up. A merge pushed with
+  // the App token knows its own sha, which covers GitHub not having
+  // noticed the merge yet.
   let mergeCommit = null;
   try {
     const mergedJson = run("gh", ["pr", "view", String(prNumber), "--repo", REPO, "--json", "mergeCommit"]);
@@ -1464,46 +1618,26 @@ async function processMergePr(item) {
   } catch (err) {
     console.log(`[merge-pr] ${item.id}: couldn't read PR #${prNumber}'s merge commit (${err.message}) — leaving mergeCommit unset`);
   }
+  if (!mergeCommit && mergedByPush) mergeCommit = mergedByPush.sha;
 
-  // A merge performed with this workflow's own GITHUB_TOKEN does NOT
-  // trigger other workflows' `on: push` — GitHub deliberately suppresses
-  // that to prevent infinite loops (see deploy-backlog-tracker.yml's own
-  // `on: push` for backlog-tracker/**). Without this, every PR merged by
-  // this pipeline lands on main but Cloud Functions/Hosting/Firestore
-  // rules silently never redeploy, even though the board shows
-  // "published-live". `gh workflow run` (an explicit API dispatch, not a
-  // push event) is exempt from that suppression, so trigger the deploy
-  // directly whenever the merge actually touched backlog-tracker/.
-  //
-  // deployRunUrl/deployConclusion below are this dispatch's own outcome,
-  // recorded on the card (see cardHTML's deployBadge) so confirming a
-  // batch of cards is genuinely live stops meaning "fetch the deployed
-  // app.js and compare its hash against main by hand" — the gap that
-  // required exactly that, by hand, the night this was written.
-  // deployConclusion starts "pending" whether or not the run was found
-  // yet; main()'s own reconcileDeployStatuses() sweep picks it up and
-  // fills in the real conclusion once the run actually finishes, since
-  // this job doesn't wait around for that itself.
+  // deployRunUrl/deployConclusion are the deploy run's own outcome, recorded
+  // on the card (see cardHTML's deployBadge) so confirming a batch of cards
+  // is genuinely live stops meaning "fetch the deployed app.js and compare
+  // its hash against main by hand" — the gap that required exactly that,
+  // by hand, the night this was written. See triggerBacklogTrackerDeploy
+  // for why the run is dispatched, or merely found, and why only when the
+  // merge actually touched backlog-tracker/.
   let deployRunUrl = null;
   let deployConclusion = "not-applicable";
-  if (touchesBacklogTracker) {
-    const dispatchedAt = new Date().toISOString();
-    try {
-      run("gh", ["workflow", "run", "deploy-backlog-tracker.yml", "--repo", REPO, "--ref", "main"]);
-      console.log(`[merge-pr] ${item.id}: triggered deploy-backlog-tracker.yml`);
-    } catch (err) {
-      console.log(`[merge-pr] ${item.id}: failed to trigger deploy-backlog-tracker.yml (${err.message}) — merge still succeeded, but the live site may be stale until the next deploy`);
-    }
-    const deployRun = findDispatchedDeployRun(dispatchedAt);
-    deployRunUrl = deployRun ? deployRun.url : null;
-    deployConclusion = "pending";
-  }
+  if (touchesBacklogTracker) ({ deployRunUrl, deployConclusion } = triggerBacklogTrackerDeploy("merge-pr", mergedByPush));
 
   const notes = await appendNote(
     item,
     prState === "MERGED"
       ? `PR #${prNumber} was already merged (not by this script) — confirming that here and moving to published-live rather than treating it as unmerged work still to do.`
-      : `Merged PR #${prNumber} to main from the automated backlog pipeline.`
+      : mergedByPush
+        ? `Merged PR #${prNumber} to main with the workflow-push App token: it changes files under ${WORKFLOW_PATH_PREFIX}, re-checked at merge time (no new or deleted workflow files, \`on:\` triggers unchanged from main).`
+        : `Merged PR #${prNumber} to main from the automated backlog pipeline.`
   );
   await patchItem(item.id, {
     status: "published-live",
@@ -1549,16 +1683,17 @@ function rollupState(rollup) {
 
 function viewTrainPr(prNumber) {
   const json = run("gh", ["pr", "view", String(prNumber), "--repo", REPO,
-    "--json", "number,state,url,mergeable,statusCheckRollup,files"]);
+    "--json", "number,title,state,url,mergeable,statusCheckRollup,files"]);
   return JSON.parse(json);
 }
 
 // Post-merge bookkeeping, shared by processDeployTrain (the pipeline merged
-// it) and reconcileMergedTrains (a person merged it — the workflow-file
-// case). Flips every ticket on the train to live, triggers the Firebase
-// deploy when the merge touched backlog-tracker/, and resets the branch back
-// to main so the next train starts from a clean base.
-async function finishTrain(project, deployBranch, prNumber, trainItems, { touchesBacklogTracker, mergeNote }) {
+// it — with GITHUB_TOKEN, or with the App token for a train that changed a
+// workflow file) and reconcileMergedTrains (a person merged it). Flips
+// every ticket on the train to live, triggers the Firebase deploy when the
+// merge touched backlog-tracker/, and resets the branch back to main so the
+// next train starts from a clean base.
+async function finishTrain(project, deployBranch, prNumber, trainItems, { touchesBacklogTracker, mergeNote, mergedByPush = null, workflowNote = "" }) {
   let mergeCommit = null;
   try {
     const parsed = JSON.parse(run("gh", ["pr", "view", String(prNumber), "--repo", REPO, "--json", "mergeCommit"]));
@@ -1566,26 +1701,16 @@ async function finishTrain(project, deployBranch, prNumber, trainItems, { touche
   } catch (err) {
     console.log(`[deploy-train] couldn't read PR #${prNumber}'s merge commit (${err.message}) — leaving mergeCommit unset`);
   }
+  // A merge pushed with the App token knows its own sha — GitHub may not
+  // have noticed the merge yet when this runs a second after the push.
+  if (!mergeCommit && mergedByPush) mergeCommit = mergedByPush.sha;
 
-  // A merge made with this workflow's own GITHUB_TOKEN does NOT trigger
-  // other workflows' `on: push` (GitHub's anti-recursion protection), so the
-  // Firebase deploy would silently never run. `gh workflow run` is an
-  // explicit API dispatch and is exempt — same mechanism processMergePr has
-  // always used for a per-ticket PR.
+  // See triggerBacklogTrackerDeploy: dispatched explicitly after a
+  // GITHUB_TOKEN merge (which never triggers `on: push`), found rather than
+  // dispatched after an App-token merge (which does).
   let deployRunUrl = null;
   let deployConclusion = "not-applicable";
-  if (touchesBacklogTracker) {
-    const dispatchedAt = new Date().toISOString();
-    try {
-      run("gh", ["workflow", "run", "deploy-backlog-tracker.yml", "--repo", REPO, "--ref", "main"]);
-      console.log(`[deploy-train] triggered deploy-backlog-tracker.yml for PR #${prNumber}`);
-    } catch (err) {
-      console.log(`[deploy-train] failed to trigger deploy-backlog-tracker.yml (${err.message}) — the merge still succeeded, but the live site may be stale until the next deploy`);
-    }
-    const deployRun = findDispatchedDeployRun(dispatchedAt);
-    deployRunUrl = deployRun ? deployRun.url : null;
-    deployConclusion = "pending";
-  }
+  if (touchesBacklogTracker) ({ deployRunUrl, deployConclusion } = triggerBacklogTrackerDeploy("deploy-train", mergedByPush));
 
   // Same rule for a checked-in build (see GENERATED_BUILDS): the train's
   // source is on main now, and "live" means the bundle GitHub Pages serves
@@ -1600,6 +1725,7 @@ async function finishTrain(project, deployBranch, prNumber, trainItems, { touche
       item,
       `Shipped in the deployment train PR #${prNumber}, merged to main with ${trainItems.length === 1 ? "no other ticket" : `${trainItems.length - 1} other ticket(s)`} from \`${deployBranch}\`.` +
         (mergeNote ? ` Note: merging main into ${deployBranch} for this deploy ${mergeNote}.` : "") +
+        workflowNote +
         (rebuilds.length
           ? ` The hosted prototype on GitHub Pages is a built bundle, being rebuilt from main now (${rebuilds.join(", ")}) — allow a few minutes before checking the live site, and confirm with its build-info.json: "commit" is the source commit the bundle was built from, so it should be this train's own last commit (${trainItems.map((i) => (i.deployCommit ? i.deployCommit.slice(0, 7) : null)).filter(Boolean).join(", ") || "one of this train's commits"}) or later — not the merge commit itself, which comes after.`
           : "")
@@ -1847,40 +1973,78 @@ async function processDeployTrain(project) {
     ? true // couldn't read the file list — dispatch the deploy anyway, to be safe
     : pr.files.some((f) => f.path.startsWith("backlog-tracker/"));
 
+  let mergedByPush = null; // { sha, at } once this run has merged with the App token
+  let workflowNote = "";
   if (pr && pr.state !== "MERGED") {
-    if (project.needsHumanMerge || (Array.isArray(pr.files) && pr.files.some((f) => f.path.startsWith(WORKFLOW_PATH_PREFIX)))) {
-      // A workflow file runs with every repo secret and the only review this
-      // train has had is its own CI — a person merges it on GitHub, and
-      // reconcileMergedTrains records it as live on a later run.
-      console.log(`[deploy-train] ${project.id}: PR #${prNumber} changes ${WORKFLOW_PATH_PREFIX} — leaving the merge to a human`);
-      await patchProject(project.id, {
-        trainReady: false,
-        trainStatus: "awaiting-human-merge",
-        trainNote: `PR #${prNumber} changes files under ${WORKFLOW_PATH_PREFIX}, which the automation never merges on its own. ` +
-          `Review and merge it on GitHub — the board records every ticket on the train as live on its own once it sees the merge.`,
-        updatedAt: new Date().toISOString(),
-      });
-      return;
+    // Which workflow files this PR changes, from GitHub's own file list;
+    // needsHumanMerge (set when such a ticket landed on the train) only
+    // stands in for it when the list couldn't be read.
+    const workflowFiles = Array.isArray(pr.files)
+      ? pr.files.map((f) => f.path).filter((p) => p.startsWith(WORKFLOW_PATH_PREFIX))
+      : (project.needsHumanMerge ? ["(file list unreadable)"] : []);
+    if (workflowFiles.length) {
+      // A workflow file runs with every repo secret, so this merge is held
+      // to the same guardrails as the push that put it on the train —
+      // re-checked against what is actually on the branch now — and to the
+      // WORKFLOW_AUTO_MERGE switch. With both satisfied the App token
+      // merges it here. Otherwise the train waits for a person to merge it
+      // on GitHub, every card says so, and reconcileMergedTrains records
+      // the merge (or resumes this deploy the moment the pipeline may do
+      // it itself).
+      const blockers = workflowAutoMergeBlockers(`origin/${deployBranch}`);
+      if (blockers.length) {
+        console.log(`[deploy-train] ${project.id}: PR #${prNumber} changes ${workflowFiles.join(", ")} and the pipeline can't merge it itself (${blockers.join("; ")}) — leaving the merge to a human`);
+        await patchProject(project.id, {
+          trainReady: false,
+          trainStatus: "awaiting-human-merge",
+          trainNote: `PR #${prNumber} changes ${workflowFiles.join(", ")} under ${WORKFLOW_PATH_PREFIX}, and the pipeline can't merge it itself (${blockers.join("; ")}). ` +
+            `Review and merge it on GitHub — the board records every ticket on the train as live on its own once it sees the merge.`,
+          updatedAt: new Date().toISOString(),
+        });
+        for (const item of onTrain) {
+          const notes = await appendNote(
+            item,
+            `Waiting for a person to merge PR #${prNumber} on GitHub: this train changes ${workflowFiles.join(", ")}, and the pipeline can't merge that itself (${blockers.join("; ")}). ` +
+            `Nothing else to click — this card is recorded as live on its own once the merge lands.`
+          );
+          await patchItem(item.id, { notes, updatedAt: new Date().toISOString() });
+        }
+        return;
+      }
+      const at = new Date().toISOString();
+      const sha = mergeWithWorkflowToken(prNumber, `origin/${deployBranch}`, pr.title || `Deploy ${project.name}`);
+      mergedByPush = { sha, at };
+      workflowNote = ` This train changed ${workflowFiles.join(", ")} under ${WORKFLOW_PATH_PREFIX}; the pipeline merged it itself with the workflow-push App token (WORKFLOW_AUTO_MERGE), after re-checking at merge time that the change adds no workflow file, deletes none, and leaves every \`on:\` trigger block as it is on main.`;
+      console.log(`[deploy-train] ${project.id}: merged PR #${prNumber} with the workflow-push App token (${sha.slice(0, 7)}) — it changes ${workflowFiles.join(", ")}`);
+    } else {
+      run("gh", ["pr", "merge", String(prNumber), "--merge", "--repo", REPO]);
+      console.log(`[deploy-train] ${project.id}: merged PR #${prNumber}`);
     }
-    run("gh", ["pr", "merge", String(prNumber), "--merge", "--repo", REPO]);
-    console.log(`[deploy-train] ${project.id}: merged PR #${prNumber}`);
   } else {
     console.log(`[deploy-train] ${project.id}: PR #${prNumber} was already merged — recording it`);
   }
 
-  await finishTrain(project, deployBranch, prNumber, onTrain, { touchesBacklogTracker, mergeNote });
+  await finishTrain(project, deployBranch, prNumber, onTrain, { touchesBacklogTracker, mergeNote, mergedByPush, workflowNote });
 }
 
 // The train's equivalent of reconcileHumanMergedPrs: a train PR the pipeline
-// deliberately refused to merge (it touches .github/workflows/) gets merged
-// by a person, and nothing would otherwise notice. Every run checks each
-// project that is waiting on such a merge and finishes the bookkeeping the
-// moment GitHub says the PR is MERGED — no second click, no Routine fire.
+// left for a person to merge (it touches .github/workflows/ and the pipeline
+// couldn't merge it itself — see processDeployTrain) gets merged by that
+// person, and nothing would otherwise notice. Every run checks each project
+// that is waiting on such a merge and finishes the bookkeeping the moment
+// GitHub says the PR is MERGED — no second click, no Routine fire. And
+// while the PR is still open, the hold itself is re-evaluated: the moment
+// the pipeline MAY merge it (WORKFLOW_AUTO_MERGE switched on, the App
+// configured, the workflow change brought back within the guardrails) the
+// train goes straight back through processDeployTrain in this same run,
+// which is what resolves a hold that was put on before the switch existed.
+// Returns the projects it resumed, for main() to process now.
 async function reconcileMergedTrains() {
   const waiting = await runQuery({
     from: [{ collectionId: "projects" }],
     where: { fieldFilter: { field: { fieldPath: "trainStatus" }, op: "EQUAL", value: { stringValue: "awaiting-human-merge" } } },
   });
+  const resumed = [];
   for (const project of waiting) {
     const prNumber = Number(project.trainPrNumber) || null;
     if (!prNumber) continue;
@@ -1891,8 +2055,27 @@ async function reconcileMergedTrains() {
       console.log(`[deploy-train] ${project.id}: couldn't read PR #${prNumber} state (${err.message}) — skipping this run`);
       continue;
     }
-    if (pr.state !== "MERGED") continue;
     const deployBranch = project.deployBranch || deployBranchForName(project.name);
+    if (pr.state === "OPEN") {
+      let blockers;
+      try {
+        run("git", ["fetch", "origin", "main", deployBranch, "--quiet"]);
+        blockers = workflowAutoMergeBlockers(`origin/${deployBranch}`);
+      } catch (err) {
+        blockers = [scrubSecrets(err.message)];
+      }
+      if (blockers.length) continue; // still a person's merge — nothing changed
+      console.log(`[deploy-train] ${project.id}: PR #${prNumber} was waiting for a person to merge it, and the pipeline may now merge it itself — resuming the deploy`);
+      await patchProject(project.id, {
+        trainReady: true,
+        trainStatus: "deploying",
+        trainNote: `Resuming: PR #${prNumber} no longer needs a person to merge it — the pipeline is merging it now.`,
+        updatedAt: new Date().toISOString(),
+      });
+      resumed.push({ ...project, trainReady: true, trainStatus: "deploying" });
+      continue;
+    }
+    if (pr.state !== "MERGED") continue;
     const onTrain = onTrainItems(await itemsForProject(project.id));
     if (!onTrain.length) {
       await patchProject(project.id, { trainStatus: "idle", trainReady: false, trainLocked: false, trainPrNumber: null, updatedAt: new Date().toISOString() });
@@ -1902,6 +2085,7 @@ async function reconcileMergedTrains() {
     const touchesBacklogTracker = !Array.isArray(pr.files) || pr.files.some((f) => f.path.startsWith("backlog-tracker/"));
     await finishTrain(project, deployBranch, prNumber, onTrain, { touchesBacklogTracker });
   }
+  return resumed;
 }
 
 function dateStamp() {
@@ -2153,7 +2337,7 @@ async function processRevertPr(item) {
   const notes = await appendNote(
     item,
     `Opened ${prUrl} to revert ${item.mergeCommit}${originalPr} from the Revert action. This card's prUrl/prNumber now point at the revert PR (its earlier merged PR${item.prNumber ? ` #${item.prNumber}` : ""} is still on GitHub for history, just no longer what this card is tracking). Moved back to Ready for Testing — nothing merges until a human tests and approves the revert branch and clicks Deploy to Main, exactly like any other card.` +
-    (workflowPaths.length ? ` This PR changes ${workflowPaths.join(", ")}, so it was pushed with the workflow-push App token and will NOT be merged by the pipeline — a person has to review and merge it on GitHub.` : "")
+    (workflowPaths.length ? ` This PR changes ${workflowPaths.join(", ")}, so it was pushed with the workflow-push App token${workflowMergeNote()}` : "")
   );
   const testVersion = readAppVersion();
   await patchItem(item.id, {
@@ -2197,7 +2381,7 @@ async function reconcileDeployStatuses() {
         // processMergePr dispatched the deploy but hadn't found the run
         // yet by the time it wrote the card — look again, broadly, using
         // the merge time as the "dispatched no earlier than" bound.
-        match = findDispatchedDeployRun(item.mergedAt || item.updatedAt || new Date(0).toISOString());
+        match = findDeployRun(item.mergedAt || item.updatedAt || new Date(0).toISOString());
       }
       if (!match || match.status !== "completed") continue; // still running (or genuinely not found yet) — leave "pending", try again next tick
       await patchItem(item.id, {
@@ -2234,6 +2418,7 @@ async function recordPipelineHealth(conclusion) {
     // "The GH_DISPATCH_TOKEN secret" / "The workflow-push GitHub App".
     dispatchTokenPresent: process.env.GH_DISPATCH_TOKEN_PRESENT === "true",
     workflowAppConfigured: !!WORKFLOW_PUSH_TOKEN,
+    workflowAutoMerge: WORKFLOW_AUTO_MERGE,
     updatedAt: new Date().toISOString(),
   };
   try {
@@ -2285,7 +2470,7 @@ async function reconcileHumanMergedPrs() {
 
 async function main() {
   await reconcileDeployStatuses();
-  await reconcileMergedTrains();
+  const resumedTrains = await reconcileMergedTrains();
   await reconcileLockedTrains();
   const humanMerged = await reconcileHumanMergedPrs();
 
@@ -2315,10 +2500,15 @@ async function main() {
   });
   // The single Deploy CTA: the Routine sets trainReady on the PROJECT, not
   // on each item — one branch, one PR, one merge (see processDeployTrain).
-  const trainReadyProjects = await runQuery({
+  const trainReadyQueried = await runQuery({
     from: [{ collectionId: "projects" }],
     where: { fieldFilter: { field: { fieldPath: "trainReady" }, op: "EQUAL", value: { booleanValue: true } } },
   });
+  // A train reconcileMergedTrains just resumed (its held PR may now be
+  // merged by the pipeline itself) is processed in this same run — same
+  // read-after-write caveat as mergeReadyItems above.
+  const seenTrains = new Set(trainReadyQueried.map((p) => p.id));
+  const trainReadyProjects = trainReadyQueried.concat(resumedTrains.filter((p) => !seenTrains.has(p.id)));
 
   console.log(`Found ${patchReadyItems.length} patch-ready item(s), ${trainRevertItems.length} train-revert item(s), ${trainReadyProjects.length} ready train(s), ${mergeReadyItems.length} legacy merge-ready item(s), and ${revertReadyItems.length} revert-ready item(s)`);
 
@@ -2442,4 +2632,6 @@ module.exports = {
   isGeneratedOutput, rebuildWorkflowsFor, tryAutoResolveGeneratedOutputConflict,
   // test/patch-paths.test.js
   normalisePatchPaths, projectFolderOf, patchFilesLookFolderRelative,
+  // test/workflow-auto-merge.test.js
+  triggerBlock, workflowChangeProblems, workflowFilesChangedIn, workflowAutoMergeBlockers, mergeWithWorkflowToken,
 };

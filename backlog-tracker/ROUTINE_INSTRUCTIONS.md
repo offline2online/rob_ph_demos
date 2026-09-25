@@ -436,11 +436,16 @@ no block is prepended that run, same as today.
 any other, with two limits the automation enforces: only edits to
 workflow files that already exist on `main` (no new workflow files, no
 deletions), and the file's `on:` trigger block must stay exactly as it is
-on `main`. Such a PR is pushed with a separate workflow-scoped token and
-is never merged by the pipeline — a person reviews and merges it on
-GitHub (see `backlog-tracker/README.md` → "The workflow-push GitHub App").
-If that App is not configured, the item is refused with a note saying so.
-Say in your note that the PR needs a human merge.
+on `main`. Such a ticket is pushed with a separate workflow-scoped token.
+Whether the train's PR is then merged by a person on GitHub (the default)
+or by the pipeline with that same token, after the same limits are
+re-checked at merge time, is `backlog-automation.yml`'s
+`WORKFLOW_AUTO_MERGE` switch — the repository owner's call, see
+`backlog-tracker/README.md` → "The workflow-push GitHub App"; either way
+the board records the merge on its own and the card says which applies.
+If the App is not configured, the item is refused with a note saying so.
+Say in your note which workflow file the fix edits and that its `on:`
+block is unchanged.
 
 If you genuinely cannot express the finished fix as full file contents
 (very rare — e.g. it needs a binary asset you can't produce), do NOT set
@@ -759,10 +764,14 @@ git protocol, so none of it depends on `api.github.com` (see step 0).
   (the export now writes `index.json` with one category/article per line,
   which on its own prevents most — but not all, e.g. two edits to the same
   article — of these conflicts from happening in the first place).
-- `awaiting-human-merge` — the train carries a `.github/workflows/` change,
-  which the pipeline never merges on its own. The PR is left open for a
-  person; the board records every ticket as live on its own once it sees
-  the merge, with no second click.
+- `awaiting-human-merge` — the train carries a `.github/workflows/` change
+  and the pipeline is not merging it itself: `WORKFLOW_AUTO_MERGE` is off
+  in `backlog-automation.yml` (the default), the workflow-push App is not
+  configured, or the change failed the merge-time guardrails (the
+  project's `trainNote` and a note on every card say which). The PR is
+  left open for a person; the board records every ticket as live on its
+  own once it sees the merge, with no second click, and resumes the deploy
+  itself if the pipeline becomes able to merge it (the switch turned on).
 
 If you can't verify the train, leave every item's status as
 `ready-to-publish`, leave `trainReady` unset, and add a note explaining

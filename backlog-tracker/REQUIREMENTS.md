@@ -183,7 +183,7 @@ editor may only latch trainLocked true, nothing else.
   trainPrNumber?: number,       // the train's single PR
   trainStatus?: "idle" | "deploying" | "conflict" | "awaiting-human-merge",
   trainNote?: string,           // why it isn't merged, when it isn't
-  needsHumanMerge?: boolean,    // the train carries a .github/workflows/ change, so a person merges it
+  needsHumanMerge?: boolean,    // the train carries a .github/workflows/ change (merged with the App token when WORKFLOW_AUTO_MERGE is on, else by a person)
 }
 ```
 `repoFolder` is the link between a project on this board and its folder in
@@ -376,11 +376,24 @@ Requirements that follow from it:
   takes someone pushing straight to `main` in this project's files. It is
   never resolved automatically: the merge aborts, `trainStatus` goes
   `conflict` with a `trainNote`, and nothing is merged or moved.
-- **A train carrying a `.github/workflows/` change is never merged by the
-  pipeline** (`needsHumanMerge`): the PR is left open at
-  `trainStatus: "awaiting-human-merge"`, and `reconcileMergedTrains` records
-  every ticket as live on its own once GitHub reports the merge — no second
-  click.
+- **A train carrying a `.github/workflows/` change is merged by a person
+  unless the owner has switched the pipeline's own merge on**
+  (`needsHumanMerge` marks the train; 25 Sep 2026). Default: the PR is
+  left open at `trainStatus: "awaiting-human-merge"`, the `trainNote` and
+  a note on every card say which workflow file and why, and
+  `reconcileMergedTrains` records every ticket as live on its own once
+  GitHub reports the person's merge — no second click. With
+  `backlog-automation.yml`'s `WORKFLOW_AUTO_MERGE` set to `"true"` (shipped
+  `"false"`; a workflow file runs with every repository secret, so this is
+  the owner's decision), the pipeline merges such a train itself with the
+  workflow-push App token, provided the PR head's workflow changes still
+  pass the push guardrails when re-checked at merge time (no new or
+  deleted workflow file, every `on:` block as on `main`). That merge is an
+  App-token push of a `git merge --no-ff` to `main`, so its own `on: push`
+  deploy run is recorded instead of a second dispatched one, and every
+  card notes that the merge was made this way. A train already waiting
+  when the switch is turned on is resumed by `reconcileMergedTrains` in
+  the next run, with no second click.
 
 ## Approving out of Ready for Testing
 

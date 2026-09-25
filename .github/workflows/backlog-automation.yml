@@ -110,6 +110,20 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           WORKFLOW_PUSH_TOKEN: ${{ steps.workflow-app.outputs.token }}
+          # Whether this job may MERGE a train that changes a workflow file,
+          # with the App token above, instead of parking it at
+          # "awaiting-human-merge" for a person to merge on GitHub (PR #211
+          # sat in Approved for Deployment for two hours that way, 25 Sep
+          # 2026). Off here on purpose: a workflow file runs with every
+          # repository secret, so switching this on is the repository
+          # owner's call — set it to "true" and the pipeline merges such
+          # trains itself, after re-checking the push guardrails against
+          # the PR head at merge time (no new or deleted workflow files,
+          # `on:` blocks identical to main's). Note that flipping this line
+          # is itself a workflow-file change, so a ticket that tried to flip
+          # it would still stop for a human merge. See backlog-tracker/
+          # README.md → "The workflow-push GitHub App".
+          WORKFLOW_AUTO_MERGE: "false"
           GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/firebase-sa.json
           # Read by recordPipelineHealth() in run-backlog-automation.js for
           # the board's own health strip (YeCj7sNpHXFUZQhmAmEb) — `secrets`
