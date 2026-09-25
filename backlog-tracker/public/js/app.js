@@ -1408,6 +1408,7 @@ function projectSectionHTML(project) {
     ? `<div class="project-name-row"><input type="text" class="project-name-input" id="pname-input-${escapeHTML(project.id)}" data-project-id="${escapeHTML(project.id)}" value="${escapeHTML(project.name)}" maxlength="80"></div>`
     : `<div class="project-name-row"><h2 class="project-name">${escapeHTML(project.name)} <span class="project-item-count">(${total})</span></h2>
          <button type="button" class="project-rename-btn" data-project-id="${escapeHTML(project.id)}" title="Rename project">&#9998;</button>
+         <span class="project-version-badge" title="backlog-tracker release currently running">v${escapeHTML(APP_VERSION)}</span>
        </div>`;
 
   return `
@@ -3590,8 +3591,25 @@ function generateTitle(desc) {
 
 const updateNiDescCount = wireCharCount(document.getElementById("ni-desc-input"), document.getElementById("ni-desc-count"));
 
+// OhKUnoGbpUAeJiXiLIvc: shared by openForm() and closeForm() so a blank
+// form is guaranteed on every OPEN too, not just after a known close path —
+// previously only closeForm() cleared these, which relied on every way of
+// dismissing the modal (including submit-success) having actually run
+// first; resetting again on open removes that assumption entirely.
+function resetFormFields() {
+  const descEl = document.getElementById("ni-desc-input");
+  descEl.value = "";
+  descEl.style.height = "";
+  updateNiDescCount();
+  document.querySelectorAll(".type-opt").forEach((b) => b.classList.remove("active"));
+  document.querySelector('.type-opt[data-type="feature"]').classList.add("active");
+  niDictation.clearError();
+  niPendingAttachments = [];
+  renderNiPendingAttachments();
+}
 function openForm(projectId) {
   activeNewItemProjectId = projectId;
+  resetFormFields();
   niBackdrop.hidden = false;
   document.getElementById("ni-desc-input").focus();
 }
@@ -3603,15 +3621,7 @@ function closeForm() {
   activeNewItemProjectId = null;
   niAttachments.stopRecording();
   niDictation.stop();
-  const descEl = document.getElementById("ni-desc-input");
-  descEl.value = "";
-  descEl.style.height = "";
-  updateNiDescCount();
-  document.querySelectorAll(".type-opt").forEach((b) => b.classList.remove("active"));
-  document.querySelector('.type-opt[data-type="feature"]').classList.add("active");
-  niDictation.clearError();
-  niPendingAttachments = [];
-  renderNiPendingAttachments();
+  resetFormFields();
 }
 
 document.getElementById("ni-cancel").addEventListener("click", closeForm);
@@ -5549,7 +5559,14 @@ function createDictationController({ textareaEl, micBtn, hintEl, errorEl, onStop
   }
 
   if (!SpeechRecognitionCtor) {
-    micBtn.hidden = true;
+    // OhKUnoGbpUAeJiXiLIvc: this used to fully hide the button (micBtn.hidden
+    // = true), which on a mobile browser without Web Speech support made the
+    // mic icon simply vanish with no visible explanation — the error line
+    // below was the only clue, easy to miss under the textarea. Keep the
+    // icon visible but disabled instead, so "why is the mic gone" can't
+    // happen: there's always something to see and tap for the explanation.
+    micBtn.disabled = true;
+    micBtn.title = "Dictation isn't supported in this browser — Chrome or Edge support it, or you can just type instead.";
     showError("Dictation isn't supported in this browser — Chrome or Edge support it, or you can just type instead.");
     return { stop, clearError: () => showError("") };
   }

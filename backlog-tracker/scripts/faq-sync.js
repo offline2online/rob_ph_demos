@@ -63,7 +63,14 @@ async function main() {
     if (snap.exists) {
       const d = snap.data();
       if (d.contentHash === h) { stats.unchanged++; continue; }
-      if (!FORCE && d.syncedAt && toMillis(d.updatedAt) > toMillis(d.syncedAt) + 1000) {
+      // XFeVboxWduEPT2zGcj8y: a doc that has never been through this script
+      // (no syncedAt — e.g. it only ever went through faq-export.js after a
+      // console edit) used to skip this guard entirely, so a stale repo
+      // snapshot could silently overwrite a newer console edit with no
+      // conflict logged. Fall back to createdAt as the baseline: if the doc
+      // has been touched at all since it was created, treat that the same
+      // as an edit-after-sync rather than assuming the repo is still current.
+      if (!FORCE && toMillis(d.updatedAt) > toMillis(d.syncedAt || d.createdAt) + 1000) {
         console.warn(`CONFLICT category ${c.id} (${c.name}): edited in console after last sync — skipped (use --force)`);
         stats.conflicts++; continue;
       }
@@ -100,7 +107,11 @@ async function main() {
         if (!DRY) await ref.set({ contentHash: h, syncedAt: now }, { merge: true });
         stats.unchanged++; continue;
       }
-      if (!FORCE && d.syncedAt && toMillis(d.updatedAt) > toMillis(d.syncedAt) + 1000) {
+      // XFeVboxWduEPT2zGcj8y: same baseline fix as the category branch above
+      // — a doc with no syncedAt yet must not be treated as "safe to
+      // overwrite", or a console edit made before its first sync gets
+      // silently reverted by a stale repo snapshot.
+      if (!FORCE && toMillis(d.updatedAt) > toMillis(d.syncedAt || d.createdAt) + 1000) {
         console.warn(`CONFLICT article ${a.id} (${a.title}): edited in console after last sync — skipped (use --force)`);
         stats.conflicts++; continue;
       }

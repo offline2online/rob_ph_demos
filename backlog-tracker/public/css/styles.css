@@ -109,6 +109,25 @@ body {
 .page-header h2 { margin: 0; font-size: 18px; font-weight: 700; }
 .page-header-count { font-size: 12px; font-weight: 700; color: var(--text-muted); background: var(--surface-2); border-radius: 9999px; padding: 2px 10px; }
 
+/* yUISCow4tCg9uxnMJFOy: the FAQ article editor's Cancel/Save draft/Publish
+   row (.faq-editor-page's own .page-header) must stay reachable while
+   scrolling a long article body — scoped to this one page only, since the
+   shared .page-header format above is deliberately left in-flow everywhere
+   else (see its own comment). Sticky, not fixed like .mobile-action-bar
+   below: nothing about this header's own content or height changes as the
+   page scrolls (that's what caused the .project-header sticky judder
+   described above .mobile-action-bar), so the browser can reserve its
+   normal in-flow space with no extra padding/JS needed — top reuses the
+   same var(--sticky-topbar-h) offset .mobile-action-bar already uses, so it
+   docks below .topbar instead of underneath it. */
+.faq-editor-page .page-header {
+  position: sticky; top: var(--sticky-topbar-h, 0px); z-index: 14;
+  background: rgba(255, 255, 255, .96);
+  backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+  padding: 10px 0; margin: 0 0 16px;
+  box-shadow: 0 4px 10px -6px rgba(20, 20, 20, .35);
+}
+
 /* ── Pipeline health strip (YeCj7sNpHXFUZQhmAmEb) ────────────────────────
    Compact by design — a "is the machinery alive" glance, not a dashboard.
    Hidden entirely until systemStatus/pipeline's first snapshot lands (see
@@ -426,6 +445,11 @@ textarea.dialog-field-input { resize: vertical; min-height: 70px; }
 }
 .mic-btn:hover { background: var(--primary); }
 .mic-btn.listening { background: var(--danger); color: #fff; animation: mic-pulse 1.4s ease-in-out infinite; }
+/* OhKUnoGbpUAeJiXiLIvc: shown-but-disabled instead of hidden when this
+   browser has no Web Speech support (see createDictationController in
+   app.js) — dimmed and not clickable, but never invisible. */
+.mic-btn:disabled { opacity: .35; cursor: not-allowed; }
+.mic-btn:disabled:hover { background: var(--primary-tint); }
 @keyframes mic-pulse { 0%, 100% { box-shadow: 0 0 0 0 var(--danger-tint); } 50% { box-shadow: 0 0 0 8px transparent; } }
 .listening-hint { margin: 6px 0 0; font-size: 11.5px; color: var(--danger); display: none; }
 .listening-hint.on { display: block; }
@@ -442,6 +466,14 @@ textarea.dialog-field-input { resize: vertical; min-height: 70px; }
 .project-name-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .project-name { margin: 0; font-size: 18px; font-weight: 700; }
 .project-item-count { font-size: 13px; font-weight: 500; color: var(--text-muted); }
+/* The running backlog-tracker release (public/js/version.js APP_VERSION),
+   shown once per project header so "what's live" doesn't require scrolling
+   to the page footer — same number, same pill language as .test-version-badge. */
+.project-version-badge {
+  display: inline-block; font-size: 10.5px; font-weight: 600;
+  color: var(--text-muted); background: var(--surface-2); border-radius: 9999px;
+  padding: 2px 8px; margin-left: 4px; vertical-align: middle;
+}
 .project-rename-btn { border: none; background: transparent; cursor: pointer; font-size: 13px; color: var(--text-muted); padding: 2px 6px; }
 .project-rename-btn:hover { color: var(--text); }
 .project-name-input {

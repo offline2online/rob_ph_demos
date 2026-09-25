@@ -185,7 +185,21 @@ jobs:
           GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/firebase-sa.json
         run: node migrate-artifact-data.js
 
+      # XFeVboxWduEPT2zGcj8y: seed-faq-data.js is an insert-only Freshdesk
+      # import (see the file's own header) — safe against overwriting an
+      # existing article/category, but NOT safe against a deleted one: once
+      # a doc is gone from Firestore, ref.create() succeeds again on the
+      # very next run and silently resurrects it with its original imported
+      # content. Running this on every push-triggered deploy (the normal
+      # case — this job runs on any backlog-tracker/**/faq/** push) meant
+      # any article or category deleted from the console came back the
+      # moment anyone next shipped an unrelated change. The only legitimate
+      # remaining use is bootstrapping a brand-new, empty Firestore project,
+      # not something every deploy needs to redo — restrict it to a manual
+      # "Run workflow" dispatch (workflow_dispatch is already a trigger on
+      # this workflow; this only gates the step, the on: block is unchanged).
       - name: Seed starting FAQ / Help Center content
+        if: github.event_name == 'workflow_dispatch'
         working-directory: backlog-tracker/scripts
         env:
           GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/firebase-sa.json
