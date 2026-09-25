@@ -10,4 +10,4 @@
 // half of why the deployment train exists.
 //
 // Edit it by hand only for a change that ships outside that pipeline.
-export const APP_VERSION = "1.5.80";
+export const APP_VERSION = "1.5.82";

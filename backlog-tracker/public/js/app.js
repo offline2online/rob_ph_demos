@@ -74,6 +74,11 @@ const projectDocsRef = collection(db, "projectDocs");
 // functions/mcp-server.js's list_skills/get_skill/upload_skill/
 // update_skill/delete_skill).
 const skillsRef = collection(db, "skills");
+// Concept Incubator — an early-stage idea ("spitball") held separately from
+// projects/backlogItems so it never shows up on the pipeline board, until
+// it's promoted into a real project (see promoteConceptToProject below and
+// firestore.rules `match /concepts/{conceptId}`).
+const conceptsRef = collection(db, "concepts");
 // What a skill write replaced — see functions/mcp-server.js's
 // recordDocRevision and functions/index.js's onSkillWritten. Read-only from
 // the browser (firestore.rules: `allow write: if false`); the Skills page's
@@ -269,6 +274,11 @@ let programs = [];
 let releases = [];
 let projectDocs = [];
 let skills = [];
+let concepts = [];
+// The concept whose detail page is currently open, or null when the list
+// (or neither) is showing — same role docsProjectId plays for the Docs
+// page, so a listener update knows whether to re-render the detail view.
+let conceptDetailId = null;
 let editingProjectId = null;
 
 // ── Backlog selection state (per project) — lets "Notify Claude" be
@@ -428,6 +438,8 @@ function closeAllSubPages() {
   closeFaqRevisionReviewPage();
   closeSkillsPage();
   closeReleasesPage();
+  closeConceptIncubatorPage();
+  closeConceptDetailPage();
   // Every routed page (FAQ Management, Settings, the article editor — see
   // "URL routing" below) opens by calling this first, so clearing the hash
   // here is the one
@@ -2011,6 +2023,11 @@ primeFromRest("skills", (rows) => {
   skills = rows;
   if (skillsPage && !skillsPage.hidden) renderSkillsPage();
 }, byName);
+primeFromRest("concepts", (rows) => {
+  concepts = rows;
+  if (conceptIncubatorPage && !conceptIncubatorPage.hidden) renderConceptIncubatorPage();
+  if (conceptDetailId) renderConceptDetailPage();
+}, byMillis("updatedAt", "desc"));
 primeFromRest("faqCategories", (rows) => {
   faqCategories = rows;
   if (faqArticlesPage && !faqArticlesPage.hidden) renderFaqArticlesPage();
@@ -2101,6 +2118,15 @@ onSnapshot(query(skillsRef, orderBy("name", "asc")), (snap) => {
   if (skillsPage && !skillsPage.hidden) renderSkillsPage();
 }, (err) => {
   console.error("backlog-tracker: skills listener error", err);
+});
+
+onSnapshot(query(conceptsRef, orderBy("updatedAt", "desc")), (snap) => {
+  liveCollections.add("concepts");
+  concepts = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  if (conceptIncubatorPage && !conceptIncubatorPage.hidden) renderConceptIncubatorPage();
+  if (conceptDetailId) renderConceptDetailPage();
+}, (err) => {
+  console.error("backlog-tracker: concepts listener error", err);
 });
 
 // Returns the new doc's id — the New Item modal needs it back to upload any
@@ -4479,6 +4505,385 @@ document.getElementById("if-submit").addEventListener("click", async () => {
   closeInterfaceModal();
 });
 
+// ── Concept Incubator ────────────────────────────────────────────────────
+// A home for early-stage ideas that need more shape before they earn
+// official project status — its own top-level `concepts` collection,
+// deliberately separate from `projects`/`backlogItems` so it never shows up
+// on the pipeline board (see firestore.rules `match /concepts/{conceptId}`
+// and the root CLAUDE.md's "Live Visitor Profile and Display Types" section
+// for the same "two separate things sharing one board" pattern this
+// follows). Reading needs only sign-in; adding, editing, commenting on or
+// promoting a concept needs editor access, same [data-editor-only]
+// convention as the Skills page above.
+const conceptIncubatorPage = document.getElementById("concept-incubator-page");
+const conceptDetailPage = document.getElementById("concept-detail-page");
+
+async function requireConceptEditor() {
+  if (!(await requireFaqEditor())) return false;
+  if (currentConsoleRole() === "viewer") {
+    await showAlert("You have read-only access to this console, so you can't add, edit, comment on or promote concepts. An admin can change your role in Settings → Team & agent access.");
+    return false;
+  }
+  return true;
+}
+
+function conceptStatusLabel(c) { return c.status === "promoted" ? "Promoted" : "Active"; }
+
+async function addConcept(name) {
+  const email = (auth.currentUser && auth.currentUser.email) || null;
+  const ref = await addDoc(conceptsRef, {
+    name: name.trim(),
+    readmeMd: "",
+    requirementsMd: "",
+    comments: [],
+    status: "active",
+    promotedProjectId: null,
+    promotedAt: null,
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+    ...(email ? { createdByEmail: email } : {}),
+  });
+  return ref.id;
+}
+
+async function setConceptReadme(id, md) {
+  await setDoc(doc(db, "concepts", id), { readmeMd: md, updatedAt: serverTimestamp() }, { merge: true });
+}
+async function setConceptRequirements(id, md) {
+  await setDoc(doc(db, "concepts", id), { requirementsMd: md, updatedAt: serverTimestamp() }, { merge: true });
+}
+// `at` is a plain client Date, not serverTimestamp() — same reason
+// addItemComment above uses one: Firestore rejects a serverTimestamp()
+// sentinel inside an arrayUnion element.
+async function addConceptComment(id, text) {
+  const trimmed = (text || "").trim();
+  if (!trimmed) return;
+  await updateDoc(doc(db, "concepts", id), {
+    comments: arrayUnion({ author: "viewer", text: trimmed, at: new Date() }),
+    updatedAt: serverTimestamp(),
+  });
+}
+async function deleteConcept(id) {
+  await deleteDoc(doc(db, "concepts", id));
+}
+
+// Carries the concept's README/requirements across onto a brand-new
+// project (so nothing is re-keyed, per the ticket that asked for this),
+// requires the same repo-folder link every new project needs (root
+// CLAUDE.md → "Linking a new project to GitHub"), and marks the concept
+// promoted. The two writes aren't in one batch — there's nothing to roll
+// back to if the second write fails, since a project with no concept
+// pointing at it yet is harmless, and a re-click of Promote would just
+// create a second project, which is why the concept's own detail page
+// hides Promote the moment `status` flips (see renderConceptDetailPage).
+async function promoteConceptToProject(conceptId, name, programId, releaseId, repoFolderInfo) {
+  const concept = concepts.find((c) => c.id === conceptId);
+  if (!concept) return null;
+  const data = {
+    name: name.trim(),
+    createdAt: serverTimestamp(),
+    requirementsMd: concept.requirementsMd || "",
+    readmeMd: concept.readmeMd || "",
+  };
+  if (programId) data.programId = programId;
+  if (releaseId) data.releaseId = releaseId;
+  if (repoFolderInfo && repoFolderInfo.none) {
+    data.repoFolderNotApplicable = true;
+  } else if (repoFolderInfo && repoFolderInfo.folder) {
+    data.repoFolder = repoFolderInfo.folder;
+    data.deployBranch = deployBranchForFolder(repoFolderInfo.folder);
+  }
+  const ref = await addDoc(projectsRef, data);
+  await setDoc(doc(db, "concepts", conceptId), {
+    status: "promoted",
+    promotedProjectId: ref.id,
+    promotedAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  }, { merge: true });
+  return ref.id;
+}
+
+function openConceptIncubatorPage() {
+  closeAllSubPages();
+  document.getElementById("projects-root").hidden = true;
+  document.getElementById("board-page-header").hidden = true;
+  conceptIncubatorPage.hidden = false;
+  setRouteHash("#concept-incubator");
+  updateTopbarTitle();
+  renderConceptIncubatorPage();
+}
+function closeConceptIncubatorPage() {
+  conceptIncubatorPage.hidden = true;
+  document.getElementById("projects-root").hidden = false;
+  document.getElementById("board-page-header").hidden = false;
+}
+
+// Not URL-routed, same as the per-project Docs page it mirrors — reached
+// only by clicking a concept card or creating a new one, never a direct
+// link/reload.
+function openConceptDetailPage(id) {
+  closeAllSubPages();
+  conceptDetailId = id;
+  document.getElementById("projects-root").hidden = true;
+  document.getElementById("board-page-header").hidden = true;
+  conceptDetailPage.hidden = false;
+  renderConceptDetailPage();
+}
+function closeConceptDetailPage() {
+  conceptDetailId = null;
+  conceptDetailPage.hidden = true;
+  document.getElementById("projects-root").hidden = false;
+  document.getElementById("board-page-header").hidden = false;
+}
+
+function conceptCardHTML(c) {
+  const updated = formatSkillUpdatedAt(c.updatedAt);
+  const meta = [conceptStatusLabel(c)];
+  if (updated) meta.push(`updated ${updated}`);
+  return `
+    <div class="skill-card concept-card" data-id="${c.id}" style="cursor:pointer;">
+      <div class="skill-card-top">
+        <div>
+          <div class="skill-card-name">${escapeHTML(c.name || "")}</div>
+          <div class="skill-card-meta">${escapeHTML(meta.join(" · "))}</div>
+        </div>
+        <div class="skill-card-actions" data-editor-only>
+          <button type="button" class="icon-btn concept-delete-icon-btn" data-id="${c.id}" title="Delete"${c.status === "promoted" ? " disabled" : ""}><span class="material-symbols-outlined">delete</span></button>
+        </div>
+      </div>
+    </div>`;
+}
+
+function renderConceptIncubatorPage() {
+  const sorted = concepts; // already ordered by updatedAt desc from the query
+  document.getElementById("concept-incubator-count").textContent = `${sorted.length} concept${sorted.length === 1 ? "" : "s"}`;
+  document.getElementById("concept-incubator-list").innerHTML = sorted.map(conceptCardHTML).join("");
+  document.getElementById("concept-incubator-empty").hidden = sorted.length > 0;
+}
+
+// A promoted concept is read-only from here on — its README/requirements
+// live on as the project's own copies, which is what a person or a Routine
+// session should actually be editing past this point.
+function renderConceptDetailPage() {
+  if (!conceptDetailId) return;
+  const c = concepts.find((x) => x.id === conceptDetailId);
+  if (!c) return;
+  document.getElementById("concept-detail-name").textContent = c.name || "";
+  document.getElementById("concept-detail-status-badge").textContent = conceptStatusLabel(c);
+
+  const promotedHint = document.getElementById("concept-detail-promoted-hint");
+  const readonly = c.status === "promoted";
+  if (readonly) {
+    const p = projects.find((x) => x.id === c.promotedProjectId);
+    promotedHint.hidden = false;
+    promotedHint.innerHTML = p
+      ? `Promoted to project <b>${escapeHTML(p.name)}</b> — its own Docs page is now the source of truth.`
+      : "Promoted to a project — its own Docs page is now the source of truth.";
+  } else {
+    promotedHint.hidden = true;
+  }
+
+  const readmeInput = document.getElementById("concept-readme-input");
+  if (document.activeElement !== readmeInput) readmeInput.value = c.readmeMd || "";
+  readmeInput.disabled = readonly;
+  const reqInput = document.getElementById("concept-requirements-input");
+  if (document.activeElement !== reqInput) reqInput.value = c.requirementsMd || "";
+  reqInput.disabled = readonly;
+  document.getElementById("concept-readme-save").hidden = readonly;
+  document.getElementById("concept-requirements-save").hidden = readonly;
+  document.getElementById("concept-promote-block").hidden = readonly;
+  document.getElementById("concept-composer").hidden = readonly;
+  document.getElementById("concept-comment-submit").hidden = readonly;
+  document.getElementById("concept-delete-btn").hidden = readonly;
+
+  const notes = (c.comments || []).slice().reverse();
+  document.getElementById("concept-notes-list").innerHTML = notes.length
+    ? notes.map(eiNoteRowHTML).join("")
+    : '<p class="interface-row-empty">No discussion yet.</p>';
+}
+
+document.getElementById("concept-incubator-btn").addEventListener("click", () => { closeNavDrawer(); openConceptIncubatorPage(); });
+document.getElementById("concept-incubator-list").addEventListener("click", async (e) => {
+  const delBtn = e.target.closest(".concept-delete-icon-btn");
+  if (delBtn) {
+    if (delBtn.disabled) return;
+    if (!(await requireConceptEditor())) return;
+    const c = concepts.find((x) => x.id === delBtn.dataset.id);
+    if (!c || c.status === "promoted") return;
+    if (!(await showConfirmDialog(`Delete concept "${c.name}"? This can't be undone.`))) return;
+    await deleteConcept(delBtn.dataset.id);
+    return;
+  }
+  const card = e.target.closest(".concept-card");
+  if (card) openConceptDetailPage(card.dataset.id);
+});
+
+document.getElementById("concept-readme-save").addEventListener("click", async () => {
+  if (!conceptDetailId) return;
+  if (!(await requireConceptEditor())) return;
+  setConceptReadme(conceptDetailId, document.getElementById("concept-readme-input").value);
+});
+document.getElementById("concept-requirements-save").addEventListener("click", async () => {
+  if (!conceptDetailId) return;
+  if (!(await requireConceptEditor())) return;
+  setConceptRequirements(conceptDetailId, document.getElementById("concept-requirements-input").value);
+});
+document.getElementById("concept-comment-submit").addEventListener("click", async () => {
+  if (!conceptDetailId) return;
+  if (!(await requireConceptEditor())) return;
+  const input = document.getElementById("concept-comment-input");
+  const text = input.value;
+  if (!text.trim()) return;
+  await addConceptComment(conceptDetailId, text);
+  input.value = "";
+});
+document.getElementById("concept-delete-btn").addEventListener("click", async () => {
+  if (!conceptDetailId) return;
+  if (!(await requireConceptEditor())) return;
+  const c = concepts.find((x) => x.id === conceptDetailId);
+  if (!c || c.status === "promoted") return;
+  if (!(await showConfirmDialog(`Delete concept "${c.name}"? This can't be undone.`))) return;
+  const id = conceptDetailId;
+  closeConceptDetailPage();
+  openConceptIncubatorPage();
+  await deleteConcept(id);
+});
+
+// ── New concept modal — name only; README/requirements/discussion are
+// filled in afterward from the concept's own detail page, same "one quick
+// step" shape as the New Project modal. ─────────────────────────────────
+const ncBackdrop = document.getElementById("nc-backdrop");
+const updateNcNameCount = wireCharCount(document.getElementById("nc-name-input"), document.getElementById("nc-name-count"));
+function openConceptModal() {
+  ncBackdrop.hidden = false;
+  document.getElementById("nc-name-input").value = "";
+  updateNcNameCount();
+  document.getElementById("nc-name-input").focus();
+}
+function closeConceptModal() { ncBackdrop.hidden = true; }
+document.getElementById("concept-add-btn").addEventListener("click", async () => {
+  if (!(await requireConceptEditor())) return;
+  openConceptModal();
+});
+document.getElementById("nc-cancel").addEventListener("click", closeConceptModal);
+document.getElementById("nc-close").addEventListener("click", closeConceptModal);
+ncBackdrop.addEventListener("click", (e) => { if (e.target === ncBackdrop) closeConceptModal(); });
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && !ncBackdrop.hidden) closeConceptModal();
+});
+document.getElementById("nc-submit").addEventListener("click", async () => {
+  const nameEl = document.getElementById("nc-name-input");
+  const name = nameEl.value.trim();
+  if (!name) { nameEl.focus(); return; }
+  let newId;
+  try {
+    newId = await addConcept(name);
+  } catch (err) {
+    await showAlert(describeSaveError(err, [{ label: "Name", value: name, max: 120 }]));
+    return;
+  }
+  closeConceptModal();
+  openConceptDetailPage(newId);
+});
+
+// ── Promote-to-project modal — same fields/validation as the New Project
+// modal (a "pc-" prefix keeps their ids apart), plus the release this
+// ticket asked a promotion to assign. ────────────────────────────────────
+const pcBackdrop = document.getElementById("pc-backdrop");
+const pcProgramSelect = document.getElementById("pc-program-select");
+const pcReleaseSelect = document.getElementById("pc-release-select");
+const pcRepoFolderInput = document.getElementById("pc-repo-folder-input");
+const pcRepoFolderNone = document.getElementById("pc-repo-folder-none");
+const updatePcNameCount = wireCharCount(document.getElementById("pc-name-input"), document.getElementById("pc-name-count"));
+let pcConceptId = null;
+
+function openPromoteConceptModal(conceptId) {
+  const c = concepts.find((x) => x.id === conceptId);
+  if (!c) return;
+  pcConceptId = conceptId;
+  pcBackdrop.hidden = false;
+  const nameEl = document.getElementById("pc-name-input");
+  nameEl.value = c.name || "";
+  updatePcNameCount();
+  populateProgramSelect(pcProgramSelect, "");
+  populateReleaseSelect(pcReleaseSelect, "");
+  pcRepoFolderInput.value = "";
+  pcRepoFolderInput.disabled = false;
+  pcRepoFolderNone.checked = false;
+  nameEl.focus();
+}
+function closePromoteConceptModal() { pcBackdrop.hidden = true; pcConceptId = null; }
+
+document.getElementById("concept-promote-btn").addEventListener("click", async () => {
+  if (!conceptDetailId) return;
+  if (!(await requireConceptEditor())) return;
+  openPromoteConceptModal(conceptDetailId);
+});
+document.getElementById("pc-cancel").addEventListener("click", closePromoteConceptModal);
+document.getElementById("pc-close").addEventListener("click", closePromoteConceptModal);
+pcBackdrop.addEventListener("click", (e) => { if (e.target === pcBackdrop) closePromoteConceptModal(); });
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && !pcBackdrop.hidden) closePromoteConceptModal();
+});
+// Same inline "+ New program…" handling as docsProgramSelect — unlike the
+// New Project modal, this select's value has to already be a real program
+// id (or empty) by the time pc-submit validates, so "__new__" is resolved
+// the moment it's picked rather than passed through.
+pcProgramSelect.addEventListener("change", async () => {
+  if (pcProgramSelect.value !== "__new__") return;
+  const name = ((await showPromptDialog("New program/product name:")) || "").trim();
+  if (!name) { populateProgramSelect(pcProgramSelect, ""); return; }
+  const newId = await createProgram(name);
+  populateProgramSelect(pcProgramSelect, newId || "");
+});
+document.getElementById("pc-submit").addEventListener("click", async () => {
+  if (!pcConceptId) return;
+  const nameEl = document.getElementById("pc-name-input");
+  const name = nameEl.value.trim();
+  if (!name) { nameEl.focus(); return; }
+
+  const wantsNoFolder = pcRepoFolderNone.checked;
+  const folder = pcRepoFolderInput.value.trim().replace(/\/+$/, "");
+  let repoFolderInfo;
+  if (wantsNoFolder) {
+    repoFolderInfo = { none: true };
+  } else if (!folder) {
+    await showAlert('Repo folder is required — enter the new project\'s folder in rob_ph_demos, or tick "This project has no single folder yet".');
+    pcRepoFolderInput.focus();
+    return;
+  } else if (!isValidRepoFolder(folder)) {
+    await showAlert("Repo folder must be repo-root-relative, with no leading/trailing slash and no \"..\" (e.g. \"dsp-integration\").");
+    pcRepoFolderInput.focus();
+    return;
+  } else {
+    const clash = projectWithRepoFolder(folder);
+    if (clash) {
+      await showAlert(`"${folder}" is already linked to project "${clash.name}" — two projects can't share one repo folder.`);
+      pcRepoFolderInput.focus();
+      return;
+    }
+    repoFolderInfo = { folder };
+  }
+
+  const programId = pcProgramSelect.value !== "__new__" ? pcProgramSelect.value : "";
+  const releaseId = pcReleaseSelect.value || "";
+  const conceptId = pcConceptId;
+  try {
+    await promoteConceptToProject(conceptId, name, programId, releaseId, repoFolderInfo);
+  } catch (err) {
+    await showAlert(describeSaveError(err, [{ label: "Project name", value: name, max: 80 }, { label: "Repo folder", value: folder, max: 80 }]));
+    return;
+  }
+  closePromoteConceptModal();
+});
+
+createDictationController({
+  textareaEl: document.getElementById("concept-comment-input"),
+  micBtn: document.getElementById("concept-mic-btn"),
+  hintEl: document.getElementById("concept-listening-hint"),
+  errorEl: document.getElementById("concept-mic-error"),
+});
+
 // ── Releases page ─────────────────────────────────────────────────────────
 // Every release, newest (highest order) first, with the one thing you can
 // do to one: mark a draft live. Reading needs only sign-in (firestore.rules
@@ -6855,6 +7260,7 @@ const ROUTE_TITLES = {
   "#settings": "Settings",
   "#skills": "Skills",
   "#releases": "Releases",
+  "#concept-incubator": "Concept Incubator",
 };
 // Set when a #faq-article/<id> route is applied before that article has
 // actually arrived over the realtime channel yet (a cold reload straight
@@ -6953,8 +7359,9 @@ function applyRouteFromHash() {
   else if (hash === "#settings") openFaqSettingsPage();
   else if (hash === "#skills") openSkillsPage();
   else if (hash === "#releases") openReleasesPage();
+  else if (hash === "#concept-incubator") openConceptIncubatorPage();
   else if (hash.startsWith("#faq-article/")) openFaqArticleRouteFromHash(hash);
-  else if (!faqArticlesPage.hidden || !faqSettingsPage.hidden || !faqArticleEditorPage.hidden || !skillsPage.hidden || !releasesPage.hidden) closeAllSubPages();
+  else if (!faqArticlesPage.hidden || !faqSettingsPage.hidden || !faqArticleEditorPage.hidden || !skillsPage.hidden || !releasesPage.hidden || !conceptIncubatorPage.hidden) closeAllSubPages();
 }
 // popstate (back/forward) and hashchange (a typed-in or pasted #hash) both
 // need to re-sync the visible page — pushState/replaceState above never

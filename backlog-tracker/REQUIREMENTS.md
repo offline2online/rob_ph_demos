@@ -876,6 +876,47 @@ edit from an MCP-made one without a Firestore query (see `docRevisions`
 above for why that distinction matters); it isn't otherwise surfaced in
 the UI.
 
+### `concepts/{conceptId}`
+```
+{
+  name: string,
+  readmeMd: string,                // up to 200,000 chars
+  requirementsMd: string,           // up to 200,000 chars — saved independently of readmeMd
+  comments: [ { author: "viewer" | "claude" | string, text: string, at: timestamp }, ... ],
+  status: "active" | "promoted",    // moves active -> promoted exactly once, never back
+  promotedProjectId: string | null,
+  promotedAt: timestamp | null,
+  createdAt: timestamp,
+  updatedAt: timestamp,
+  createdByEmail: string | null,
+}
+```
+A home for an early-stage idea ("spitball") that needs further shape before
+it earns official project status — deliberately **not** scoped to a
+project (no `projectId` field), the same way `skills` isn't, and held apart
+from `backlogItems` so exploring it never touches the pipeline board.
+Reached from the hamburger menu's **Concept Incubator** entry, directly
+under Agent Console. Read is any signed-in member; create/update/delete is
+editor and up (`firestore.rules`' `match /concepts/{conceptId}`). `status`
+can only move `active` → `promoted` — the rules refuse the write back the
+other way — and a `promoted` concept can't be deleted at all, since it's
+the provenance record for a real project's README/requirements. See
+`backlog-tracker/README.md` → "Concept Incubator" for the console UI and
+the promotion flow (`promoteConceptToProject` in `public/js/app.js`), which
+also writes the new `projects/{id}` doc, seeded with this concept's
+`readmeMd`/`requirementsMd` verbatim so nothing is re-keyed.
+
+`comments` mirrors `backlogItems.notes`' shape exactly (`author`/`text`/
+`at`, appended via `arrayUnion` with a literal client `Date`, never
+`serverTimestamp()`, which Firestore rejects inside an array element) —
+the discussion thread the ticket that asked for this wanted retained
+across sessions.
+
+Deliberately not built yet: no MCP tools (a member's agent can read/write
+every other documentation surface in this app but not a concept), and no
+`docRevisions` change history the way Skills/Requirements/README get — the
+comment thread is this collection's own running record instead.
+
 ### `faqCategories/{id}` and `faqArticles/{id}`
 ```
 faqCategories/{id}: { name, icon, description, order, createdAt, updatedAt }
@@ -1565,6 +1606,50 @@ revision list and an opened diff are fetched/computed on demand and cached
 per skill for the page's lifetime, not re-fetched every time
 `renderSkillsPage()` redraws the list (which happens on every Firestore
 update to any skill).
+
+### Concept Incubator page
+
+Two pages, mirroring the Skills list/Docs-page split above: **Concept
+Incubator** (`openConceptIncubatorPage`) lists every `concepts` doc as a
+card (name, Active/Promoted status, last updated) with a **+ New concept**
+button that asks only for a name — README/requirements/discussion are
+filled in afterward. Clicking a card opens its own detail page
+(`openConceptDetailPage`, not URL-routed, same as the per-project Docs
+page it's laid out like):
+
+- **README** and **Requirements** blocks each save independently
+  (`setConceptReadme`/`setConceptRequirements`) — the "update specific
+  requirements incrementally" behaviour the ticket that built this asked
+  for; saving one never touches the other.
+- **Discussion** is a comment thread (`concept.comments`, rendered with the
+  same `eiNoteRowHTML` row markup `backlogItems.notes` already uses) with a
+  composer that has its own dictation-mic instance
+  (`createDictationController`), same as every other comment box in this
+  console.
+- **Promote to project…** (still-active concepts only) opens a modal
+  asking for the project name (defaulted to the concept's own name),
+  program, release, and the same required repo-folder link every new
+  project needs (see "Adding a project" in README.md) — validated
+  identically to the New Project modal. Submitting calls
+  `promoteConceptToProject`, which creates the `projects` doc seeded with
+  the concept's `readmeMd`/`requirementsMd` verbatim and flips the concept
+  to `status: "promoted"`.
+- **Delete this concept** — active concepts only; a promoted concept's
+  delete control is hidden and its rules write is refused regardless, since
+  it is the provenance record for the project it became.
+
+A promoted concept renders read-only past the discussion thread (README/
+Requirements textareas disabled, their Save buttons and the Promote/Delete
+blocks hidden) and shows a "Promoted to project `<name>`" line linking the
+reader to the fact that the project's own Docs page is now the source of
+truth — the concept itself is kept, never archived or deleted, as the
+record of where that project's README/requirements came from.
+
+Every write on this page is gated the same `[data-editor-only]` +
+`requireConceptEditor()` way as the Skills page's own writes (sign-in
+first, then refuse a `viewer` role with an explanatory alert) — reading the
+list and an individual concept's README/requirements/discussion needs only
+sign-in.
 
 ### Feed in requirements → suggested build batches (z1Q6fxo0yTjamxVMWQK5)
 

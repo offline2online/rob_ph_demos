@@ -311,6 +311,47 @@ service cloud.firestore {
       allow delete: if isEditor();
     }
 
+    // A Concept Incubator entry — an early-stage idea ("spitball") captured
+    // before it earns official project status. Lives in its own top-level
+    // collection, deliberately separate from `projects`/`backlogItems`, so
+    // it never appears on the pipeline board — see
+    // backlog-tracker/README.md's "Concept Incubator" section and
+    // public/js/app.js's openConceptIncubatorPage/openConceptDetailPage.
+    // `status` moves "active" -> "promoted" exactly once
+    // (promoteConceptToProject in app.js, which also writes the new
+    // projects/{id} doc that carries the concept's readmeMd/requirementsMd
+    // across); the rule below refuses the write back the other way so a
+    // promoted concept can't quietly become editable again from here.
+    function conceptStatusOnlyPromotes() {
+      return !(resource.data.status == "promoted" && incoming().status == "active");
+    }
+    match /concepts/{conceptId} {
+      allow read: if isBoardReader();
+
+      allow create: if isEditor() &&
+        isNonEmptyBoundedString(incoming().name, 120) &&
+        incoming().status == "active" &&
+        (!("readmeMd" in incoming()) || (incoming().readmeMd is string && incoming().readmeMd.size() <= 200000)) &&
+        (!("requirementsMd" in incoming()) || (incoming().requirementsMd is string && incoming().requirementsMd.size() <= 200000)) &&
+        (!("comments" in incoming()) || incoming().comments is list);
+
+      allow update: if isEditor() &&
+        isNonEmptyBoundedString(incoming().name, 120) &&
+        incoming().status in ["active", "promoted"] &&
+        conceptStatusOnlyPromotes() &&
+        (!("readmeMd" in incoming()) || (incoming().readmeMd is string && incoming().readmeMd.size() <= 200000)) &&
+        (!("requirementsMd" in incoming()) || (incoming().requirementsMd is string && incoming().requirementsMd.size() <= 200000)) &&
+        (!("comments" in incoming()) || incoming().comments is list) &&
+        (!("promotedProjectId" in incoming()) || incoming().promotedProjectId == null || isNonEmptyBoundedString(incoming().promotedProjectId, 100));
+
+      // Deletion only while still active — once promoted, a concept is the
+      // provenance record for a real project's README/requirements and
+      // must not disappear (same spirit as root CLAUDE.md's "Deletion
+      // reserved for Backlog cards only": only the not-yet-real state is
+      // disposable).
+      allow delete: if isEditor() && resource.data.status != "promoted";
+    }
+
     // ── People, and their agents ──────────────────────────────────────────
     // One doc per person on the console, id = their lowercased email:
     //   { email, displayName, role: "admin"|"editor"|"viewer",

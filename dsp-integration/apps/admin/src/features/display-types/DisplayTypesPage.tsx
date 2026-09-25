@@ -133,7 +133,16 @@ export function DisplayTypesPage({ flags }: { flags: Flags }) {
       setDraft((cur) => (cur ? { ...cur, types: cur.types.filter((x) => x.id !== id), newPlaylists: cur.newPlaylists.filter((p) => p.autoCreatedFor !== id) } : cur))
       if (d?.id === id) setParams({}, { replace: true })
       setDeleting(null)
-      await Promise.all([qc.invalidateQueries({ queryKey: ['display-types'] }), qc.invalidateQueries({ queryKey: ['playlists'] })])
+      /* Available Inventory lists every advertiser slot by display type
+         (api.ts's `inventory()`); left uncleared, a deleted display type's
+         slots kept showing there until the cache happened to go stale on
+         its own (up to staleTime, App.tsx) — looking like the delete hadn't
+         actually removed them. */
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: ['display-types'] }),
+        qc.invalidateQueries({ queryKey: ['playlists'] }),
+        qc.invalidateQueries({ queryKey: ['available-inventory'] }),
+      ])
     } catch (e) {
       setDeleting(null)
       message.error(errorText(e, 'Could not delete this display type.'))
