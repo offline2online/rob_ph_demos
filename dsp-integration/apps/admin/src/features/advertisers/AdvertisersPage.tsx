@@ -420,7 +420,13 @@ function MaxCampaignsCell({ data, context }: IP) {
   if (!data) return null
   const c = context.current
   const override = edited(c, data).maxCampaigns
-  const overridden = override !== null
+  /* != null (not !==) so a genuinely-unset value — undefined, e.g. a slot
+     whose maxCampaignsOverride the API hasn't populated, not just an
+     explicit null — is never mistaken for an override: that mistake left
+     the input showing blank with a stray "(override)"/reset affordance
+     instead of the real default of 5 (ticket "Max campaigns: show default
+     of 5 in the column"). */
+  const overridden = override != null
   const value = overridden ? override : (c.maxCampaignsDefaults[data.displayTypeId] ?? DEFAULT_MAX_CAMPAIGNS)
   if (!c.canEdit) return <span>{effectiveMaxCampaigns(c, data)}</span>
   return (
@@ -510,7 +516,11 @@ export function AdvertisersPage() {
     },
     {
       headerName: 'Max campaigns', width: 150, minWidth: 130, cellRenderer: MaxCampaignsCell,
-      headerComponent: header('Max campaigns', 'The maximum number of campaigns this advertiser can submit for this slot. To submit more, purchase additional slots.'),
+      /* Written for the retail media manager setting this, not the
+         advertiser submitting against it (ticket "Max campaigns: … revise
+         tooltip for retail media manager") — so no "purchase additional
+         slots" line, which reads as advertiser-facing upsell copy. */
+      headerComponent: header('Max campaigns', 'The maximum number of campaigns an advertiser can submit to be played for this purchased slot.'),
       valueGetter: (p) => (p.data ? effectiveMaxCampaigns((p.context as InvCtx).current, p.data) : DEFAULT_MAX_CAMPAIGNS),
       ...setColumn<AvailableInventoryRow>('Max campaigns', invValues((r) => [String(r.maxCampaigns)])),
     },
