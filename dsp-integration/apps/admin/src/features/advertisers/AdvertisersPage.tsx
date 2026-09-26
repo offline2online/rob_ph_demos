@@ -477,12 +477,15 @@ export function AdvertisersPage() {
       ...setColumn<AvailableInventoryRow>('Targeting supported', () => TARGETING_MODES.map((m) => m.label)),
     },
     {
-      headerName: 'Reserve price', width: 190, minWidth: 170, cellRenderer: ReservePriceCell,
+      /* Narrowed to fit the input + reset/override control (ticket, 26 Sep
+         2026: these three columns were wider than the fields inside them
+         needed, crowding the table). */
+      headerName: 'Reserve price', width: 150, minWidth: 135, cellRenderer: ReservePriceCell,
       headerComponent: header('Reserve price', "A CPM premium to reserve this slot in advance of the open auction. Set once for the display type and inherited by every slot on it — override just one slot to give it its own value, independent of the others. Empty = no reserve."),
       valueGetter: (p) => (p.data ? effectiveReservePrice((p.context as InvCtx).current, p.data) ?? -1 : -1),
     },
     {
-      headerName: 'Max campaigns', width: 150, minWidth: 130, cellRenderer: MaxCampaignsCell,
+      headerName: 'Max campaigns', width: 140, minWidth: 125, cellRenderer: MaxCampaignsCell,
       /* Written for the retail media manager setting this, not the
          advertiser submitting against it (ticket "Max campaigns: … revise
          tooltip for retail media manager") — so no "purchase additional
@@ -492,7 +495,7 @@ export function AdvertisersPage() {
       ...setColumn<AvailableInventoryRow>('Max campaigns', invValues((r) => [String(r.maxCampaigns)])),
     },
     {
-      headerName: 'Billing unit', width: 150, minWidth: 130, cellRenderer: BillingUnitCell,
+      headerName: 'Billing unit', width: 135, minWidth: 120, cellRenderer: BillingUnitCell,
       headerComponent: header('Billing unit', 'The granularity a CPM is quoted and charged against for a private auction using the two-period model — default one day. Set once for the display type and inherited by every slot on it — override just one slot to give it its own value, independent of the others.'),
       valueGetter: (p) => (p.data ? effectiveBillingUnitHours((p.context as InvCtx).current, p.data) : DEFAULT_BILLING_UNIT_HOURS),
     },
