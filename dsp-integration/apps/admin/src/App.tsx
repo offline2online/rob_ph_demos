@@ -72,9 +72,11 @@ function featureRoutes(flags: Flags): RouteObject[] {
     { path: 'display-types', handle: { title: 'Display Types Details' } satisfies RouteHandle, element: <DisplayTypesPage flags={flags} /> },
     {
       path: 'playlists',
-      /* The prototype's page footer paragraph, as the page-title tooltip (decision 2). */
-      handle: { title: 'Playlist Management', tip: 'A playlist is created automatically whenever a display type is created. Auto-created playlists can be renamed, reassigned and deleted once nothing references them.' } satisfies RouteHandle,
-      element: <PlaylistManagementPage />,
+      /* The prototype's page footer paragraph, as the page-title tooltip
+         (decision 2) — updated 26 Sep 2026 when Playlist Settings moved
+         here from the display type. */
+      handle: { title: 'Playlist Management', tip: 'A playlist is created automatically whenever a display type is created. Rename or delete a playlist here, and expand a row to edit its settings. Reassigning it to a different display type or zone still happens on the Display Types form.' } satisfies RouteHandle,
+      element: <PlaylistManagementPage flags={flags} />,
     },
     ...(flags.dspIntegration
       ? [{

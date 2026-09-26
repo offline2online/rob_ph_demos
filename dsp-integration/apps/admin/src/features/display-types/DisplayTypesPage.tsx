@@ -2,17 +2,16 @@
    draft and applied with Save changes. */
 import { useQueryClient } from '@tanstack/react-query'
 import { App, Spin } from 'antd'
-import type { DeleteCheck, DisplayType, Partner } from '@ph-dsp/types'
+import type { DeleteCheck, DisplayType } from '@ph-dsp/types'
 import { useMemo, useState } from 'react'
-import { useNavigate, useSearchParams } from 'react-router-dom'
+import { useSearchParams } from 'react-router-dom'
 import { ApiRequestError } from '../../api/client'
-import { useFeatures } from '../../api/features'
 import type { Flags } from '../../flags'
 import { ListPageLayout } from '../../shared/ListPageLayout'
 import { SaveBar } from '../../shared/SaveBar'
 import { useReportDirty, useUnsavedGuard } from '../../shared/UnsavedChanges'
 import { useDraft } from '../../shared/useDraft'
-import { deleteCheck, deleteDisplayType, saveDisplayTypes, useDisplayTypes, usePartners, usePlaylists } from './api'
+import { deleteCheck, deleteDisplayType, saveDisplayTypes, useDisplayTypes, usePlaylists } from './api'
 import { DeleteDisplayType } from './DeleteDisplayType'
 import { DisplayTypeForm, type PlaylistOption } from './DisplayTypeForm'
 import { DisplayTypeList } from './DisplayTypeList'
@@ -23,20 +22,14 @@ interface Draft { types: DisplayType[]; newPlaylists: PlaylistOption[] }
 export function DisplayTypesPage({ flags }: { flags: Flags }) {
   const { message } = App.useApp()
   const qc = useQueryClient()
-  const navigate = useNavigate()
   const guard = useUnsavedGuard()
   const [params, setParams] = useSearchParams()
+  /* Still needed to keep phExtensions.slots round-tripping correctly on
+     save — slot assignment itself is edited on Playlist Management now. */
   const slotAssignment = flags.dspIntegration
 
   const types = useDisplayTypes()
   const playlists = usePlaylists()
-  const partners = usePartners(slotAssignment)
-  /* The retailer's DSP integration switch (Exchange settings). While it is
-     off, Advertiser is greyed out for a slot that isn't one already (Rob,
-     24 Sep 2026). Assumed on until known, so it doesn't flicker; the API
-     refuses a new advertiser slot either way. */
-  const features = useFeatures(slotAssignment)
-  const dspOn = features.data?.dspIntegration !== false
 
   /* Slots always match the rotation cap in the editor (flag on). */
   const saved = useMemo<Draft | undefined>(
@@ -154,18 +147,7 @@ export function DisplayTypesPage({ flags }: { flags: Flags }) {
   if (!draft || !d) return <Spin />
   return (
     <ListPageLayout list={<DisplayTypeList types={draft.types} selectedId={d.id} onSelect={onSelect} onNew={onNew} onDelete={onDelete} />}>
-      <DisplayTypeForm
-        key={`${d.id}:${params.get('panel') ?? ''}`}
-        d={d}
-        update={update}
-        playlists={allPlaylists}
-        zonePlaylistId={zonePlaylistId}
-        slotAssignment={slotAssignment}
-        advertiserOpen={(i) => dspOn || types.data?.find((t) => t.id === d.id)?.phExtensions?.slots?.[i]?.owner === 'advertiser'}
-        partners={partners.data ?? []}
-        onFixConnection={(partnerId) => navigate(`/dsp-integration/partners/${partnerId}`)}
-        openPanel={params.get('panel')}
-      />
+      <DisplayTypeForm key={d.id} d={d} update={update} playlists={allPlaylists} zonePlaylistId={zonePlaylistId} />
       <SaveBar dirty={dirty} saving={saving} onSave={onSave} onCancel={onCancel} saveOnEnter />
       {deleting && (
         <DeleteDisplayType name={deleting.name} check={deleting.check} deleting={deleting.busy} onDelete={confirmDelete} onClose={() => setDeleting(null)} />

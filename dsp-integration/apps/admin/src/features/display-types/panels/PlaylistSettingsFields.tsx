@@ -1,22 +1,21 @@
-/* PLAYLIST SETTINGS panel (spec §1). How these settings drive playback is
-   unchanged; Slot assignment (flag-gated) decides who may fill each slot. */
+/* PLAYLIST SETTINGS fields (spec §1/§2). How these settings drive playback is
+   unchanged; Slot assignment (flag-gated) decides who may fill each slot.
+   Moved off the Display Types page and into Playlist Management, under each
+   playlist, 26 Sep 2026 — this is just the fields; the caller supplies the
+   disclosure chrome (the playlist row's own chevron). */
 import type { DisplayType, Partner } from '@ph-dsp/types'
-import { CollapsiblePanel } from '../../../shared/CollapsiblePanel'
 import { Field } from '../../../shared/Field'
-import { SummaryChip } from '../../../shared/SummaryChip'
 import { DefaultSelect } from '../DefaultSelect'
 import {
   ASSET_FILLS, ASSET_POSITIONS, AUTO_PLAY, AUTO_ROTATION, CAMPAIGN_TRANSITIONS, DEFAULTS, ROTATION_CAPS,
-  capValue, isCapped, playlistSummary, ps, resizeSlots, slotsOf, type PlaylistSettings,
+  capValue, isCapped, ps, resizeSlots, slotsOf, type PlaylistSettings,
 } from '../model'
 import { TIPS } from '../tooltips'
 import { SlotAssignment } from './SlotAssignment'
 
-export function PlaylistSettingsPanel({ d, update, open, onToggle, slotAssignment, advertiserOpen, partners, onFixConnection }: {
+export function PlaylistSettingsFields({ d, update, slotAssignment, advertiserOpen, partners, onFixConnection }: {
   d: DisplayType
   update: (fn: (d: DisplayType) => DisplayType) => void
-  open: boolean
-  onToggle: () => void
   slotAssignment: boolean
   advertiserOpen: (i: number) => boolean
   partners: Partner[]
@@ -37,12 +36,7 @@ export function PlaylistSettingsPanel({ d, update, open, onToggle, slotAssignmen
   const unlimited = DEFAULTS.maximumCampaignsPlayedInRotation === -1 ? 'Unlimited' : String(DEFAULTS.maximumCampaignsPlayedInRotation)
 
   return (
-    <CollapsiblePanel
-      title="Playlist Settings"
-      open={open}
-      onToggle={onToggle}
-      summary={playlistSummary(d, slotAssignment).map(({ key, ...c }) => <SummaryChip key={key} {...c} />)}
-    >
+    <>
       <div className="mb-3.5 grid grid-cols-2 gap-3.5">
         <Field label="Asset Position" htmlFor="assetPosition">
           <DefaultSelect id="assetPosition" value={s.assetPosition} onChange={(v) => setSetting('assetPosition', v)} fallback={DEFAULTS.assetPosition} options={ASSET_POSITIONS} />
@@ -75,6 +69,6 @@ export function PlaylistSettingsPanel({ d, update, open, onToggle, slotAssignmen
           <DefaultSelect id="autoPlay" value={s.campaignAutoPlay} onChange={(v) => setSetting('campaignAutoPlay', v)} fallback={DEFAULTS.campaignAutoPlay} options={AUTO_PLAY} />
         </Field>
       </div>
-    </CollapsiblePanel>
+    </>
   )
 }

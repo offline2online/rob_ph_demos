@@ -294,6 +294,10 @@ not offered.
   Changing a slot's owner away from *Advertiser* drops the assignment and
   the supported targeting with it, since the position is no longer sellable;
   changing anything else keeps them.
+
+  **The slot editor itself is no longer on this form** (Rob's ticket,
+  26 Sep 2026): it moved to Playlist Management, alongside the rest of
+  Playlist Settings — see §2.
 - **Multi-zone layouts** for signage (`zones`), each zone with its own
   playlist and, where sold, its own slots.
 - **Venue and screen metadata** (new), needed for DOOH bid requests (§7):
@@ -305,10 +309,11 @@ not offered.
   (including zone playlists created on demand) are applied with Save
   changes.
 - **Tooltips** (see *Help text*) on: *Slot assignment* (the three owners;
-  playback unchanged); *Define phantom zone* (it sits outside rotation and
-  enables QR Control); the *Enabled Features* panel header (defaults
-  inherited by every display of the type, overridable per display); *Enable
-  zones* (each zone runs its own playlist).
+  playback unchanged — now shown in Playlist Management, §2, alongside the
+  rest of Playlist Settings); *Define phantom zone* (it sits outside
+  rotation and enables QR Control); the *Enabled Features* panel header
+  (defaults inherited by every display of the type, overridable per
+  display); *Enable zones* (each zone runs its own playlist).
 
 ### Deleting a display type
 
@@ -328,16 +333,14 @@ not offered.
 
 ### Collapsed panels with summaries
 
-The four panels — **Playlist Settings**, **Phantom Zone**, **Enabled
-Features** and **Multi-Zone Layout** — are **collapsed by default**. Each
-collapsed header shows a one-line summary as small chips, so what is enabled
-or changed on a display type is visible without opening anything. Chips for
-something enabled or changed are coloured; chips for defaults or "off" are
-grey.
+The three panels — **Phantom Zone**, **Enabled Features** and **Multi-Zone
+Layout** — are **collapsed by default**. Each collapsed header shows a
+one-line summary as small chips, so what is enabled or changed on a display
+type is visible without opening anything. Chips for something enabled or
+changed are coloured; chips for defaults or "off" are grey.
 
 | Panel | Summary shows |
 |---|---|
-| **Playlist Settings** | When the rotation is capped: the slot count (e.g. *3 slots*) and **slot assignment by owner**, one chip each with its icon (e.g. *1 Headquarters*, *1 Advertiser*, *1 Stores*). *n settings changed* when any other playlist setting differs from its default. When nothing differs from the defaults (unlimited rotation, every setting inherited), a single grey *Default settings* chip. Unlimited rotation is the default and gets no chip of its own |
 | **Phantom Zone** | Size (e.g. *250×250*) and position — *Default (Bottom Right)* when inherited — or *Not defined* |
 | **Enabled Features** | One chip per enabled feature with its icon (*In-Store Radio*, *QR Control*, *MIST*, *AI Agent*, *Vision/AI*), or *None enabled*. Features not available to the company are not shown |
 | **Multi-Zone Layout** | Number of zones (e.g. *3 zones*), or *Single zone* |
@@ -345,11 +348,14 @@ grey.
 Opening a panel shows its full settings as before; the summary updates as
 settings change.
 
-## 2. Playlist management — edit and delete only
+**Playlist Settings is no longer one of this form's panels** (Rob's ticket,
+26 Sep 2026) — it moved to Playlist Management, under each playlist; see §2
+for its own disclosure pattern and summary chips there.
 
-This project adds only two playlist capabilities. Everything else about
-playlists, including what plays and when, is handled by the existing platform
-and is unchanged.
+## 2. Playlist management — settings moved here, plus edit and delete
+
+Everything about what a playlist plays and when is handled by the existing
+platform and is unchanged. This project's own capabilities:
 
 - **Edit a playlist**: its name and its assignment to display types and
   zones.
@@ -364,6 +370,39 @@ and is unchanged.
     playlist.
   - With no assignments, the dialog confirms the delete is permanent and
     **Delete** removes it.
+- **Playlist Settings, edited under the playlist** (Rob's ticket, 26 Sep
+  2026 — moved off Display Types, superseding the "edit and delete only"
+  scope this section used to have). Each playlist row gets the **same
+  disclosure pattern already used on Display Types**: a chevron expands the
+  row in place, with the same collapsed summary chips §1 used to show
+  (slot count and slot assignment by owner, or *n settings changed*, or a
+  grey *Default settings*).
+  - **What the expanded row edits is scoped by assignment, not by
+    playlist**: the fields (Asset Position, Asset Fill, Maximum Campaigns
+    Played In Rotation, Campaign Transition, Campaign Auto-Rotation,
+    Campaign Auto-Play), and slot assignment when the rotation is capped,
+    still live on the display type record they always did — a playlist has
+    no settings of its own in the data model. For the common case (a
+    playlist assigned to exactly one display type or zone, which every
+    auto-created playlist is), this is invisible: one block, no heading,
+    editing exactly what the old Playlist Settings panel edited.
+  - **A playlist assigned to more than one display type or zone** — possible
+    since a playlist can be picked as any display type's Default Playlist or
+    any zone's playlist — shows **one settings block per assignment**, each
+    under its own "*Display Type* · *Zone name or Default playlist*"
+    heading, since each keeps its own independent settings; there is
+    nothing here to merge them into one.
+  - **One page-level Save changes bar**, the same pattern as Display Types':
+    edits are held as a draft across every expanded row and applied
+    together; Cancel discards every unsaved edit on the page. Switching
+    which playlist's row is expanded does **not** discard other playlists'
+    pending edits — unlike Display Types' own item switcher, more than one
+    playlist can be mid-edit at once here before Save.
+  - **Reassigning** a playlist (which display type or zone uses it) still
+    happens on the Display Types form (§1) — only settings moved.
+  - **Reached from Available Inventory too**: its "Open" action (§5) used to
+    land on the display type's Playlist Settings panel; it now opens
+    Playlist Management with that display type's own playlist expanded.
 
 ## 3. Campaign asset approval
 
@@ -2016,15 +2055,10 @@ playback analytics.**
 - **Delete a display type**: a bin icon on each display type in the list
   opens a confirmation dialog; when displays are assigned, the dialog lists
   them and Delete is disabled. *(Display Types)*
-- **Collapsed panels with summaries**: Playlist Settings, Phantom Zone,
-  Enabled Features and Multi-Zone Layout collapsed by default, each header
-  showing chips for what is enabled or changed (slot count and slot
-  assignment by owner, or *Default settings*; phantom size/position; enabled
-  features; zone count). *(Display Types)*
-- **Slot ownership editor**: each slot's label and owner — Headquarters,
-  Advertiser or Stores — and nothing else. With DSP integration switched
-  off, Advertiser is greyed out for a slot that isn't one already.
-  *(Display Types → Playlist Settings → Slot assignment)*
+- **Collapsed panels with summaries**: Phantom Zone, Enabled Features and
+  Multi-Zone Layout collapsed by default, each header showing chips for what
+  is enabled or changed (phantom size/position; enabled features; zone
+  count). *(Display Types)*
 - **Multi-zone layout designer** for signage. *(Display Types → Multi-Zone Layout)*
 - **Venue and screen metadata** per store and display. *(spec only)*
 
@@ -2035,6 +2069,17 @@ playback analytics.**
 - **Delete a playlist** through a confirmation dialog with Cancel; when the
   playlist is a default or zone playlist, the dialog lists where it is
   assigned and Delete is disabled. *(Playlist Management)*
+- **Playlist Settings, expanded under each playlist row** (Rob's ticket,
+  26 Sep 2026 — moved from Display Types): same disclosure pattern and
+  summary chips (slot count and slot assignment by owner, or *n settings
+  changed*, or *Default settings*) as Display Types used to show; one
+  settings block per assignment when a playlist is shared by more than one
+  display type or zone; one page-level Save changes bar for the whole page.
+  *(Playlist Management)*
+- **Slot ownership editor**: each slot's label and owner — Headquarters,
+  Advertiser or Stores — and nothing else. With DSP integration switched
+  off, Advertiser is greyed out for a slot that isn't one already.
+  *(Playlist Management → Playlist Settings → Slot assignment)*
 
 ### Saving, deleting, help text and layout
 
@@ -2063,11 +2108,14 @@ playback analytics.**
   between them — see *Campaign schedule* below), editable by an admin and
   read-only for marketing: every
   advertiser across all DSPs, with a **Campaign approval** toggle (Required /
-  Not required, default Required), a **floor multiplier** (default 1.0) with
-  the effective floor shown in the company currency, its **campaigns by
-  approval status** (which open Campaign Status filtered to it) and a
-  **Bookings** link when it has any, plus a tooltip on each column. No
-  campaign approval takes place here. *(Advertisers / Inventory)*
+  Not required, default Required) and a **floor multiplier** (default 1.0)
+  with the effective floor shown in the company currency, plus a tooltip on
+  each column. No campaign approval takes place here. *(Advertisers / Inventory)*
+  - **No Campaigns or Bookings column** (Rob's ticket, 26 Sep 2026 —
+    removed): each advertiser's campaigns by approval status, and its
+    upcoming bookings, are already covered in Campaign Status and the
+    booking schedule, its own operational sections — this screen no longer
+    duplicates them.
 
 ### Campaign asset approval — existing Campaigns section
 

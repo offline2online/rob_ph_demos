@@ -29,7 +29,7 @@ import { BuyersListsTable } from './BuyersListsTable'
 
 interface Data { currency: string; floorCpm: number; items: Advertiser[] }
 type Settings = Record<string, AdvertiserSetting>
-type Ctx = { current: { settings: Settings; data: Data; canEdit: boolean; set: (id: string, patch: Partial<AdvertiserSetting>) => void; openBookings: (advertiserId: string) => void; openCampaigns: (advertiserId: string) => void } }
+type Ctx = { current: { settings: Settings; data: Data; canEdit: boolean; set: (id: string, patch: Partial<AdvertiserSetting>) => void } }
 type P = ICellRendererParams<Advertiser, unknown, Ctx>
 
 const effective = (floor: number, m: number) => Math.round(floor * (m || 0) * 100) / 100
@@ -60,39 +60,6 @@ function EffectiveCell({ data, context }: P) {
   const { settings, data: d } = context.current
   return <span>{`${d.currency} ${effective(d.floorCpm, settings[data.advertiserId].floorMultiplier).toFixed(2)} CPM`}</span>
 }
-/* This advertiser's campaigns by approval status, and a way into its
-   bookings on the schedule (Rob, 20 Sep). */
-const CAMPAIGN_STATES = [
-  { key: 'approved', icon: 'check_circle', colour: T.success, label: 'approved' },
-  { key: 'awaiting_approval', icon: 'schedule', colour: T.warning, label: 'awaiting approval' },
-  { key: 'rejected', icon: 'cancel', colour: T.error, label: 'rejected' },
-  { key: 'draft', icon: 'edit_note', colour: T.micro, label: 'draft' },
-] as const
-
-/* The counts open Campaign Status filtered to this advertiser (Rob, 20 Sep). */
-function CampaignsCell({ data, context }: P) {
-  if (!data) return null
-  const shown = CAMPAIGN_STATES.filter((s) => data.campaigns[s.key] > 0)
-  const open = () => context.current.openCampaigns(data.advertiserId)
-  if (!shown.length) return <span style={{ fontSize: 12, color: T.micro }}>None yet</span>
-  return (
-    <Tooltip title={`${shown.map((s) => `${data.campaigns[s.key]} ${s.label}`).join(', ')} — open in Campaign Status`}>
-      <Button type="text" size="small" className="px-1" aria-label={`${data.name}: campaigns`} onClick={open}>
-        <span className="inline-flex items-center gap-2.5">
-          {shown.map((s) => (
-            <span key={s.key} className="inline-flex items-center gap-[3px]" style={{ fontSize: 12.5, color: s.colour }}>
-              <Icon name={s.icon} size={15} />{data.campaigns[s.key]}
-            </span>
-          ))}
-        </span>
-      </Button>
-    </Tooltip>
-  )
-}
-/* Only offered when there is something to look at (Rob, 20 Sep). */
-const BookingsCell = ({ data, context }: P) =>
-  data?.bookings ? <Button color="primary" variant="text" size="small" className="px-0" icon={<Icon name="calendar_month" size={15} />} onClick={() => context.current.openBookings(data.advertiserId)}>Bookings</Button> : null
-
 /* The inventory advertisers can buy: every Advertiser-owned slot on a
    display type (spec §5 "Available Inventory"). No advertisers column. */
 export const slotKey = (r: AvailableInventoryRow) => `${r.displayTypeId}:${r.slot}`
@@ -570,8 +537,9 @@ export function AdvertisersPage() {
     },
     { headerName: 'Floor multiplier', width: 140, suppressSizeToFit: true, cellRenderer: MultiplierCell, headerComponent: header('Floor multiplier', 'Scales this advertiser’s floor. Default 1.0, e.g. 0.8 for a preferred supplier or 1.2 for a new one.') },
     { headerName: 'Effective floor', width: 150, minWidth: 140, cellRenderer: EffectiveCell, headerComponent: header('Effective floor', `Floor CPM (${data.currency} ${data.floorCpm}, set in DSP Integration → Advertiser settings) × this advertiser's floor multiplier.`) },
-    { headerName: 'Campaigns', width: 140, minWidth: 120, suppressSizeToFit: true, cellRenderer: CampaignsCell, headerComponent: header('Campaigns', 'This advertiser’s campaigns by approval status: approved, awaiting approval, rejected, draft. Open Campaign Status to act on them.') },
-    { headerName: '', width: 130, suppressSizeToFit: true, cellRenderer: BookingsCell, headerComponent: header('', 'Opens this advertiser’s upcoming bookings on the booking schedule.') },
+    /* Campaigns and Bookings columns removed (Rob's ticket, 26 Sep 2026):
+       already covered in Campaign Status and the booking schedule, their
+       own operational sections. */
   ] : [], [data])
 
   if (q.error) return <Callout tone="error" icon="block">{q.error instanceof ApiRequestError ? q.error.message : 'Could not load advertisers.'}</Callout>
@@ -614,7 +582,11 @@ export function AdvertisersPage() {
     }
   }
   const invContext = {
-    open: (id: string) => navigate(`/display-types?id=${encodeURIComponent(id)}&panel=playlist`),
+    /* Lands on Playlist Management now (Rob, 20 Sep; moved 26 Sep 2026 when
+       Playlist Settings, where slot assignment lives, moved off the display
+       type): the page finds that display type's default playlist and opens
+       its settings. */
+    open: (id: string) => navigate(`/playlists?displayTypeId=${encodeURIComponent(id)}`),
     canEdit, currency: data.currency, edits: inv.draft ?? {}, defaults: defaults.draft ?? {}, billingUnitDefaults: billingUnitDefaults.draft ?? {}, maxCampaignsDefaults: maxCampaignsDefaults.draft ?? {}, dsps: inventory.data?.dsps ?? [],
     buyersLists: buyersLists.data?.items ?? [],
     set: (key: string, patch: Partial<SlotEdit>) => inv.setDraft((cur) => (cur ? { ...cur, [key]: { ...cur[key], ...patch } } : cur)),
@@ -626,10 +598,6 @@ export function AdvertisersPage() {
   const context = {
     settings: draft, data, canEdit,
     set: (id: string, patch: Partial<AdvertiserSetting>) => setDraft((cur) => (cur ? { ...cur, [id]: { ...cur[id], ...patch } } : cur)),
-    openBookings: (advertiserId: string) => window.open(externalUrl(`${BOOKING_SCHEDULE_PATH}?advertiserId=${encodeURIComponent(advertiserId)}`), '_blank', 'noopener'),
-    /* Campaign Status is the Campaign schedule section's second tab now
-       (ticket, 26 Sep 2026), not its own route. */
-    openCampaigns: (advertiserId: string) => navigate(`${BOOKING_SCHEDULE_PATH}?tab=campaign-status&advertiserId=${encodeURIComponent(advertiserId)}`),
   }
 
   return (
