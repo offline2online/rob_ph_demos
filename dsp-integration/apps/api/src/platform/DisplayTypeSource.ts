@@ -26,11 +26,14 @@ interface Row {
   playlist_settings: string
   qr_control: string
   enabled_features: string
-  multi_zone: string
   ph_extensions: string | null
 }
 
-const toRecord = (r: Row): DisplayType => {
+/* multiZone now lives on the default playlist's own row (migration 0029) —
+   `zoneJsonByPlaylistId` is one bulk lookup of playlists.multi_zone, built
+   once per snapshot, so reading N display types stays one extra query, not
+   N (same reasoning as the snapshot cache below). */
+const toRecord = (r: Row, zoneJsonByPlaylistId: Map<string, string | null>): DisplayType => {
   const out: DisplayType = {
     id: r.id,
     name: r.name,
@@ -41,7 +44,7 @@ const toRecord = (r: Row): DisplayType => {
     playlistSettings: fromJson(r.playlist_settings, {}),
     qrControl: fromJson(r.qr_control, {}),
     enabledFeatures: fromJson(r.enabled_features, {}),
-    multiZone: fromJson(r.multi_zone, {}),
+    multiZone: fromJson(r.default_playlist_id ? zoneJsonByPlaylistId.get(r.default_playlist_id) ?? null : null, { enabled: false, zones: [] }),
   }
   if (r.default_playlist_id !== null) out.defaultPlaylistId = r.default_playlist_id
   if (r.ph_extensions !== null) out.phExtensions = fromJson(r.ph_extensions, { slots: [] })
@@ -74,9 +77,13 @@ export const SNAPSHOT_TTL_MS = 1_000
 
 export function sqliteDisplayTypeSource(db: Db): DisplayTypeSource {
   let snap: { at: number; list: DisplayType[]; byId: Map<string, DisplayType> } | null = null
+  const zoneJsonMap = () => new Map(
+    (prepared(db, 'SELECT id, multi_zone FROM playlists').all() as unknown as { id: string; multi_zone: string | null }[]).map((r) => [r.id, r.multi_zone]),
+  )
   const snapshot = () => {
     if (!snap || Date.now() - snap.at > SNAPSHOT_TTL_MS) {
-      const list = (prepared(db, 'SELECT * FROM display_types ORDER BY rowid').all() as unknown as Row[]).map((r) => deepFreeze(toRecord(r)))
+      const zones = zoneJsonMap()
+      const list = (prepared(db, 'SELECT * FROM display_types ORDER BY rowid').all() as unknown as Row[]).map((r) => deepFreeze(toRecord(r, zones)))
       snap = { at: Date.now(), list, byId: new Map(list.map((dt) => [dt.id, dt])) }
     }
     return snap
@@ -84,6 +91,13 @@ export function sqliteDisplayTypeSource(db: Db): DisplayTypeSource {
   const invalidate = () => { snap = null }
   const get = (id: string) => snapshot().byId.get(id) ?? null
   const now = () => new Date().toISOString()
+  /* The default playlist always exists by the time this runs: routes create
+     it first (ensureReferencedPlaylists), and seed.ts creates every playlist
+     before any display type. */
+  const saveMultiZone = (defaultPlaylistId: string | null | undefined, multiZone: unknown) => {
+    if (!defaultPlaylistId) return
+    prepared(db, 'UPDATE playlists SET multi_zone = ? WHERE id = ?').run(toJson(multiZone ?? { enabled: false, zones: [] }) ?? '{}', defaultPlaylistId)
+  }
   return {
     /* A copy of the array (callers sort and filter it); the records are shared and frozen. */
     list: () => [...snapshot().list],
@@ -91,14 +105,15 @@ export function sqliteDisplayTypeSource(db: Db): DisplayTypeSource {
     create(dt) {
       prepared(db,
         `INSERT INTO display_types (id, touch_point, name, description, canvas_width, canvas_height, background_color,
-           default_playlist_id, playlist_settings, qr_control, enabled_features, multi_zone, ph_extensions, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           default_playlist_id, playlist_settings, qr_control, enabled_features, ph_extensions, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       ).run(
         dt.id, dt.touchPoint, dt.name, dt.description ?? null, dt.displayCanvasSize.width, dt.displayCanvasSize.height,
         dt.backgroundColor ?? '#333333', dt.defaultPlaylistId ?? null, toJson(dt.playlistSettings) ?? '{}',
-        toJson(dt.qrControl ?? {}) ?? '{}', toJson(dt.enabledFeatures ?? {}) ?? '{}', toJson(dt.multiZone ?? { enabled: false, zones: [] }) ?? '{}',
+        toJson(dt.qrControl ?? {}) ?? '{}', toJson(dt.enabledFeatures ?? {}) ?? '{}',
         toJson(dt.phExtensions), now(),
       )
+      saveMultiZone(dt.defaultPlaylistId, dt.multiZone)
       invalidate()
       return get(dt.id) as DisplayType
     },
@@ -106,12 +121,13 @@ export function sqliteDisplayTypeSource(db: Db): DisplayTypeSource {
       const res = prepared(db,
         `UPDATE display_types SET touch_point = ?, name = ?, description = ?, canvas_width = ?, canvas_height = ?,
            background_color = ?, default_playlist_id = ?, playlist_settings = ?, qr_control = ?, enabled_features = ?,
-           multi_zone = ?, updated_at = ? WHERE id = ?`,
+           updated_at = ? WHERE id = ?`,
       ).run(
         dt.touchPoint, dt.name, dt.description ?? null, dt.displayCanvasSize.width, dt.displayCanvasSize.height,
         dt.backgroundColor ?? '#333333', dt.defaultPlaylistId ?? null, toJson(dt.playlistSettings) ?? '{}',
-        toJson(dt.qrControl ?? {}) ?? '{}', toJson(dt.enabledFeatures ?? {}) ?? '{}', toJson(dt.multiZone ?? {}) ?? '{}', now(), id,
+        toJson(dt.qrControl ?? {}) ?? '{}', toJson(dt.enabledFeatures ?? {}) ?? '{}', now(), id,
       )
+      if (res.changes) saveMultiZone(dt.defaultPlaylistId, dt.multiZone)
       invalidate()
       return res.changes ? get(id) : null
     },

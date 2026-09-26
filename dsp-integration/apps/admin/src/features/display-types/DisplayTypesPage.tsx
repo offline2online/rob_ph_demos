@@ -63,6 +63,21 @@ export function DisplayTypesPage({ flags }: { flags: Flags }) {
     return id
   }
 
+  /* "Add new playlist" from the Default Playlist dropdown (ticket, 26 Sep
+     2026): scoped to this display type from the outset (autoCreatedFor), so
+     it's ready to define its own multi-zone layout — edited on this same
+     page, never in Playlist Management — the moment it's picked as the
+     default. Named uniquely so two "Add new playlist" clicks on the same
+     display type don't collide. */
+  const newPlaylistId = () => {
+    if (!d) return ''
+    let name = `${d.name} Playlist`
+    for (let n = 2; allPlaylists.some((p) => p.name === name); n += 1) name = `${d.name} Playlist ${n}`
+    const id = `pl_new_${d.id}_${Date.now()}`
+    setDraft((cur) => (cur ? { ...cur, newPlaylists: [...cur.newPlaylists, { id, name, autoCreatedFor: d.id }] } : cur))
+    return id
+  }
+
   const onNew = () =>
     guard(() => {
       reset()
@@ -145,7 +160,7 @@ export function DisplayTypesPage({ flags }: { flags: Flags }) {
   if (!draft || !d) return <Spin />
   return (
     <ListPageLayout list={<DisplayTypeList types={draft.types} selectedId={d.id} onSelect={onSelect} onNew={onNew} onDelete={onDelete} />}>
-      <DisplayTypeForm key={d.id} d={d} update={update} playlists={allPlaylists} zonePlaylistId={zonePlaylistId} />
+      <DisplayTypeForm key={d.id} d={d} update={update} playlists={allPlaylists} zonePlaylistId={zonePlaylistId} onAddPlaylist={newPlaylistId} />
       <SaveBar dirty={dirty} saving={saving} onSave={onSave} onCancel={onCancel} saveOnEnter />
       {deleting && (
         <DeleteDisplayType name={deleting.name} check={deleting.check} deleting={deleting.busy} onDelete={confirmDelete} onClose={() => setDeleting(null)} />
