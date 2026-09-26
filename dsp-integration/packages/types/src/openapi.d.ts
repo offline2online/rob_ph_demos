@@ -1079,7 +1079,7 @@ export interface components {
              */
             auctionOpensHours: number;
             /**
-             * @description Auction schedule: the minimum period a won slot is held, in hours (shown as days and hours). Cannot change while future windows are bid on or booked.
+             * @description Auction schedule: the minimum period a won slot is held, in hours (shown as days and hours). While any current window is bid on or booked, a change is deferred rather than applied — see pendingPlayWindowHours.
              * @default 24
              */
             playWindowHours: number;
@@ -1110,6 +1110,21 @@ export interface components {
                 name: string;
                 adopting: boolean;
             }[];
+            /**
+             * @description Read-only. Set when a playWindowHours change was requested
+             *     while a non-test window was still bid on or booked: the
+             *     requested length, waiting to take effect at
+             *     pendingPlayWindowEffectiveFrom. Null when nothing is deferred.
+             */
+            pendingPlayWindowHours: number | null;
+            /**
+             * Format: date-time
+             * @description Read-only. When pendingPlayWindowHours takes effect — once
+             *     every window active when it was requested has played (a
+             *     booking made since, running later than that, pushes this
+             *     out). Null when nothing is deferred.
+             */
+            pendingPlayWindowEffectiveFrom: string | null;
         };
         /** @description A DSP and the advertisers it brings, for a picker or a filter. */
         DspAdvertisers: {

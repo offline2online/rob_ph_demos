@@ -2,7 +2,7 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-li
 import { RouterProvider, createMemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Providers, appRoutes } from '../src/App'
-import { exchange, fakeFetch } from './fixtures'
+import { advertiserSettings, exchange, fakeFetch } from './fixtures'
 
 beforeEach(() => vi.stubGlobal('fetch', vi.fn(fakeFetch())))
 afterEach(() => vi.unstubAllGlobals())
@@ -191,6 +191,25 @@ describe('Advertiser settings page', () => {
     const where = screen.getByRole('list', { name: 'Where these apply' })
     expect(within(where).getAllByRole('listitem').map((li) => li.textContent)).toEqual([expect.stringContaining('Adopting'), expect.stringContaining('Own lists')])
     expect(screen.queryByText('Advertisers', { selector: '.ag-header-cell-text' })).not.toBeInTheDocument()
+  })
+
+  /* Rob's board ticket, 26 Sep 2026: a play-window length change no longer
+     errors out while windows are still active — it's deferred, and the admin
+     is told on the page (not a tooltip) when it will actually take effect. */
+  it('shows when a deferred play-window length change will take effect', async () => {
+    vi.stubGlobal('fetch', vi.fn(fakeFetch({ '/api/admin/v1/advertiser-settings': { ...advertiserSettings, pendingPlayWindowHours: 168, pendingPlayWindowEffectiveFrom: '2026-09-23T00:00:00.000Z' } })))
+    renderAt('/dsp-integration')
+    expect(await screen.findByText(/Play-window length: change scheduled/)).toBeInTheDocument()
+    const text = document.body.textContent ?? ''
+    expect(text).toContain('current 1 day length')
+    expect(text).toContain('23 Sept 2026, 00:00 UTC')
+    expect(text).toContain('7 days long instead')
+    /* Nothing scheduled: no callout at all. */
+    cleanup()
+    vi.stubGlobal('fetch', vi.fn(fakeFetch()))
+    renderAt('/dsp-integration')
+    await screen.findByRole('heading', { name: /Advertiser settings/ })
+    expect(screen.queryByText(/change scheduled/)).not.toBeInTheDocument()
   })
 })
 

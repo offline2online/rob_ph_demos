@@ -1475,7 +1475,7 @@ components:
       properties:
         currency: {type: string, description: ISO 4217, default: AUD}
         auctionOpensHours: {type: integer, minimum: 1, default: 168, description: 'Auction schedule: how long before the auction cutoff bidding for a play window opens, in hours (shown as days and hours).'}
-        playWindowHours: {type: integer, minimum: 1, maximum: 8760, default: 24, description: 'Auction schedule: the minimum period a won slot is held, in hours (shown as days and hours). Cannot change while future windows are bid on or booked.'}
+        playWindowHours: {type: integer, minimum: 1, maximum: 8760, default: 24, description: 'Auction schedule: the minimum period a won slot is held, in hours (shown as days and hours). While any current window is bid on or booked, a change is deferred rather than applied — see pendingPlayWindowHours.'}
         auctionCutoffTime: {type: string, pattern: '^([01][0-9]|2[0-3]):[0-5][0-9]$', default: '18:00', description: 'Auction schedule: the daily time (HH:MM, UTC) by which bids must be received; the auction for the next play window runs then.'}
         floorCpm: {type: number, exclusiveMinimum: 0, default: 100}
         personalisedMultiplier: {type: number, exclusiveMinimum: 0, default: 1.5}
@@ -1488,7 +1488,7 @@ components:
       allOf:
         - $ref: '#/components/schemas/AdvertiserSettingsInput'
         - type: object
-          required: [whereTheseApply]
+          required: [whereTheseApply, pendingPlayWindowHours, pendingPlayWindowEffectiveFrom]
           properties:
             whereTheseApply:
               type: array
@@ -1500,6 +1500,21 @@ components:
                   partnerId: {type: string}
                   name: {type: string}
                   adopting: {type: boolean}
+            pendingPlayWindowHours:
+              type: [integer, 'null']
+              description: |
+                Read-only. Set when a playWindowHours change was requested
+                while a non-test window was still bid on or booked: the
+                requested length, waiting to take effect at
+                pendingPlayWindowEffectiveFrom. Null when nothing is deferred.
+            pendingPlayWindowEffectiveFrom:
+              type: [string, 'null']
+              format: date-time
+              description: |
+                Read-only. When pendingPlayWindowHours takes effect — once
+                every window active when it was requested has played (a
+                booking made since, running later than that, pushes this
+                out). Null when nothing is deferred.
     DspAdvertisers:
       type: object
       description: A DSP and the advertisers it brings, for a picker or a filter.

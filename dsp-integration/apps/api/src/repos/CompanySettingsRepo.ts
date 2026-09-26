@@ -13,6 +13,13 @@ export interface CompanySettings {
   auctionOpensHours: number
   playWindowHours: number
   auctionCutoffTime: string
+  /* Set together (route/admin/advertiserSettings.ts) when playWindowHours is
+     changed while a non-test window is still pending/won/reserved: the
+     requested length waits here, and playWindowHours keeps its current
+     value, until every such window has played (schedulerTick promotes it
+     then — see exchange/scheduler.ts). Both null when nothing is deferred. */
+  pendingPlayWindowHours: number | null
+  pendingPlayWindowEffectiveFrom: string | null
   advertiserWhitelist: string[]
   advertiserBlacklist: string[]
   categoryWhitelist: string[]
@@ -37,6 +44,7 @@ const ID = 'company'
 interface Row {
   currency: string; floor_cpm: number; personalised_multiplier: number; interactive_cpe: number
   auction_opens_hours: number; play_window_hours: number; auction_cutoff_time: string
+  pending_play_window_hours: number | null; pending_play_window_effective_from: string | null
   advertiser_whitelist: string; advertiser_blacklist: string; category_whitelist: string; category_blacklist: string
 }
 
@@ -86,6 +94,7 @@ export function sqliteCompanySettingsRepo(db: Db): CompanySettingsRepo {
       c.company = frozen({
         currency: r.currency, floorCpm: r.floor_cpm, personalisedMultiplier: r.personalised_multiplier, interactiveCpe: r.interactive_cpe,
         auctionOpensHours: r.auction_opens_hours, playWindowHours: r.play_window_hours, auctionCutoffTime: r.auction_cutoff_time,
+        pendingPlayWindowHours: r.pending_play_window_hours, pendingPlayWindowEffectiveFrom: r.pending_play_window_effective_from,
         advertiserWhitelist: fromJson(r.advertiser_whitelist, []), advertiserBlacklist: fromJson(r.advertiser_blacklist, []),
         categoryWhitelist: fromJson(r.category_whitelist, []), categoryBlacklist: fromJson(r.category_blacklist, []),
       })
@@ -108,10 +117,11 @@ export function sqliteCompanySettingsRepo(db: Db): CompanySettingsRepo {
       ensure()
       prepared(db,
         `UPDATE company_advertiser_settings SET currency = ?, floor_cpm = ?, personalised_multiplier = ?, interactive_cpe = ?,
-           auction_opens_hours = ?, play_window_hours = ?, auction_cutoff_time = ?,
+           auction_opens_hours = ?, play_window_hours = ?, auction_cutoff_time = ?, pending_play_window_hours = ?, pending_play_window_effective_from = ?,
            advertiser_whitelist = ?, advertiser_blacklist = ?, category_whitelist = ?, category_blacklist = ?, updated_at = ? WHERE id = ?`,
       ).run(
-        s.currency, s.floorCpm, s.personalisedMultiplier, s.interactiveCpe, s.auctionOpensHours, s.playWindowHours, s.auctionCutoffTime, toJson(s.advertiserWhitelist) ?? '[]',
+        s.currency, s.floorCpm, s.personalisedMultiplier, s.interactiveCpe, s.auctionOpensHours, s.playWindowHours, s.auctionCutoffTime,
+        s.pendingPlayWindowHours, s.pendingPlayWindowEffectiveFrom, toJson(s.advertiserWhitelist) ?? '[]',
         toJson(s.advertiserBlacklist) ?? '[]', toJson(s.categoryWhitelist) ?? '[]', toJson(s.categoryBlacklist) ?? '[]', now(), ID,
       )
       invalidate()

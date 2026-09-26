@@ -35,14 +35,33 @@ export const advertiserSettingsRoutes = (ctx: Context, guards: Guards): FastifyP
     const errors = validateAdvertiserSettings(req.body)
     if (errors.length) throw validationFailed(errors, 'An entry can’t be on both lists, and pricing must be positive.')
     const b = req.body as AdvertiserSettingsInput
-    /* Windows already bid on or booked are keyed on the current length (Q13). */
+    /* Windows already bid on or booked are keyed on the current length (Q13)
+       — changing it can't reach back and resize them. It used to be refused
+       outright while any were still active; now the new length is deferred
+       instead (Rob's board ticket, 26 Sep 2026): playWindowHours stays as it
+       is and the request waits in pendingPlayWindowHours until every such
+       window has played, at which point schedulerTick (exchange/scheduler.ts)
+       promotes it on its own. A request that doesn't touch playWindowHours
+       leaves any change already pending exactly as it was. */
     const current = ctx.company.get()
-    if (b.playWindowHours !== current.playWindowHours && ctx.reservations.byStatus(['pending', 'won', 'reserved'], ctx.clock().toISOString()).some((r) => !r.testMode)) {
-      throw validationFailed([{ field: 'playWindowHours', reason: 'Future play windows are already bid on or booked; the length can change once they have played.' }])
+    let playWindowHours = current.playWindowHours
+    let pendingPlayWindowHours = current.pendingPlayWindowHours
+    let pendingPlayWindowEffectiveFrom = current.pendingPlayWindowEffectiveFrom
+    if (b.playWindowHours !== current.playWindowHours) {
+      const active = ctx.reservations.byStatus(['pending', 'won', 'reserved'], ctx.clock().toISOString()).filter((r) => !r.testMode)
+      if (!active.length) {
+        playWindowHours = b.playWindowHours
+        pendingPlayWindowHours = null
+        pendingPlayWindowEffectiveFrom = null
+      } else {
+        pendingPlayWindowHours = b.playWindowHours
+        pendingPlayWindowEffectiveFrom = new Date(Math.max(...active.map((r) => Date.parse(r.windowStart) + current.playWindowHours * 3_600_000))).toISOString()
+      }
     }
     ctx.company.save({
       currency: b.currency, floorCpm: b.floorCpm, personalisedMultiplier: b.personalisedMultiplier, interactiveCpe: b.interactiveCpe,
-      auctionOpensHours: b.auctionOpensHours, playWindowHours: b.playWindowHours, auctionCutoffTime: b.auctionCutoffTime,
+      auctionOpensHours: b.auctionOpensHours, playWindowHours, auctionCutoffTime: b.auctionCutoffTime,
+      pendingPlayWindowHours, pendingPlayWindowEffectiveFrom,
       advertiserWhitelist: cleanList(b.advertiserWhitelist), advertiserBlacklist: cleanList(b.advertiserBlacklist),
       categoryWhitelist: cleanList(b.categoryWhitelist), categoryBlacklist: cleanList(b.categoryBlacklist),
     })

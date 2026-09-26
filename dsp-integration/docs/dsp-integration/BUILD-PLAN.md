@@ -584,10 +584,19 @@ since the picker was removed (Rob, 20 Sep) and nothing edits it now.
     before it starts — the scheduled job clears it then — and bidding opens
     *Auction opens* before that. Windows start at UTC midnight and follow
     each other back to back from a Monday, so 7-day windows run Monday to
-    Monday. The length can't change while future windows are bid on or
-    booked (400 `validation_failed`, since existing bookings are keyed on
-    it). Times are UTC because the platform's company time zone isn't
-    available to this build.
+    Monday. **Changed (Rob's board ticket, 26 Sep 2026):** a length change
+    while any window is still bid on or booked no longer errors out
+    (existing bookings are keyed on the old length, and can't be resized) —
+    it's accepted and deferred instead. `playWindowHours` keeps its current
+    value and the request is held on the company record
+    (`pendingPlayWindowHours`/`pendingPlayWindowEffectiveFrom`) until every
+    such window has played; `schedulerTick` promotes it then, pushing the
+    effective date out further if a booking made in the meantime (a
+    locked-rate deal, still under the old length) runs later still. The
+    admin page shows the pending change and the date it takes effect
+    directly under Play-window length, not as a rejected save. Times are
+    UTC because the platform's company time zone isn't available to this
+    build.
 14. ~~Does the hand-off activate the campaign?~~ **Resolved (Rob, 19 Sep):**
     no — a campaign must already be approved **and activated** before it
     can bid or be reserved, so a winning bid fits straight into the slot.
