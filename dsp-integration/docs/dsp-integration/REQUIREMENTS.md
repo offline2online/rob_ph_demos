@@ -528,26 +528,12 @@ with a minimal change to the campaign table:
   type on this playlist, consolidated into one view, not shown per layer
   separately.
 - For a campaign **Awaiting approval**, the **activation status toggle is
-  hidden** and a **consolidated segmented Approve/Reject control** is shown
-  in its place (ticket "Campaign table + detail: segmented Approve/Reject
-  control"): one pill, left half Approve (tick, fires directly), right half
-  Reject (cross, opens the reject-with-reason popover — it never fires on
-  its own click, only once a reason is entered and confirmed there); neutral
-  at rest, colour-coded green/red on hover or press so intent is shown
-  before it is committed. Presentation only — no change to the underlying
-  approve/reject behaviour, permissions or the required-reason rule.
-- **Once approved, the segmented control is replaced by the activation
-  toggle.** From that point the advertiser can reserve, bid and activate the
-  campaign through the API/DSP interface. The retailer can switch it off at
-  any time with the same toggle.
-- **The campaign detail page reads the same way, with one difference**: its
-  Personalisation Hub status bar keeps the activation toggle visible while
-  *Awaiting approval*, rendered **disabled**, with the same segmented
-  Approve/Reject control placed next to it rather than replacing it — so the
-  toggle is always on screen there, just not usable until approved. Once
-  approved, the toggle becomes enabled as normal and the segmented control
-  is no longer shown. Table and detail page use the identical control so
-  they read the same everywhere a campaign is awaiting approval.
+  hidden** and an **Approve** icon is shown in its place, with a **Reject**
+  action that requires a reason.
+- **Once approved, Approve is replaced by the activation toggle.** From that
+  point the advertiser can reserve, bid and activate the campaign through the
+  API/DSP interface. The retailer can switch it off at any time with the same
+  toggle.
 - Campaigns approved automatically are marked as such under their status.
 - The review view shows the creative rendered on the target display type's
   canvas, the advertiser and partner, a summary of the targeting rules and
@@ -897,22 +883,6 @@ carry their own multipliers on the floor price (§4), so this is also the
 control over what a slot can be sold for. **Admin only**: a marketing user
 sees them but can't change them.
 
-**Enforced at submission too, not only at bid/reservation time** (ticket
-"Partner API: enforce slot's Targeting supported setting on campaign
-submission"): once `POST /v1/campaigns` names a `displayTypeId` and `slot`
-that resolve to a real advertiser slot, every layer's own pricing type — the
-mandatory `default` layer (read as *localised* unless it is itself
-*personalised* or *interactive*, the same reading `checkTargeting` uses at
-bid time) and each `targeted[]` version — is validated against that slot's
-Targeting supported set. A submission naming an unsupported attribute is
-refused `400 validation_failed` on `default.pricingType` or
-`targeted[i].pricingType`, naming the offending pricing type and the slot's
-supported set, rather than being accepted only to be refused later at the
-auction. Server-side — this does not rely on, or trust, the admin UI.
-Without a resolvable slot there is nothing to validate against, so an
-unscoped submission is unaffected by this check (§6 "How many campaigns a
-submission may carry" has the identical fallback for the max-campaigns cap).
-
 **Interactive needs QR Control** (Rob, 20 Sep). There is nothing for a
 visitor to engage with otherwise, so the **Display type** column flags the
 display types that have QR Control enabled, and on a slot whose display type
@@ -1052,16 +1022,9 @@ inclusive): the retailer-controlled maximum number of campaigns — the
 mandatory default layer plus optional targeted versions — an advertiser
 may submit for this slot (ticket "Available Inventory: Max campaigns
 column + slot playlist statement"). Admin-editable, marketing read-only,
-with a filter like every other column and an info tooltip written for the
-retail media manager setting it, not the advertiser submitting against it
-(ticket "Max campaigns: show default of 5 in the column + revise tooltip
-for retail media manager"): "The maximum number of campaigns an advertiser
-can submit to be played for this purchased slot." **The cell always shows
-a real number, never blank** — a slot with neither its own override nor a
-display-type default set still reads the platform default of 5, the same
-value the submission cap below resolves to; a `null`/absent value must
-never be mistaken for "this slot has an override of nothing" (the exact
-regression that ticket fixed). **Purely a submission cap — it does not
+with a filter like every other column and an info tooltip: "The maximum
+number of campaigns this advertiser can submit for this slot. To submit
+more, purchase additional slots." **Purely a submission cap — it does not
 feed the auction or billing.** It is the single authority on how many
 campaigns an advertiser may submit for a slot, replacing the blanket
 20-targeted-versions cap (§6, security submission bounds) for that slot
@@ -1135,17 +1098,6 @@ stores its criteria didn't match unsold to it. That model is retired:
   20-targeted-versions cap below. A submission naming no slot (or one that
   doesn't resolve to a real advertiser slot) still falls back to that
   platform-wide cap, unscoped to any one slot.
-- **Which targeting attributes a submission's layers may carry** is bounded
-  the same way, by the slot's own **Targeting supported** setting (§5,
-  ticket "Partner API: enforce slot's Targeting supported setting on
-  campaign submission") once `displayTypeId` and `slot` resolve: the
-  mandatory `default` layer and each `targeted[]` version are each read as
-  localised, personalised or interactive (a `default` pricing type reads as
-  localised, matching `checkTargeting`'s own reading at bid time) and
-  checked against that set — `400 validation_failed` on the offending
-  layer's `pricingType` field, naming both the unsupported attribute and
-  the slot's supported set, if any layer doesn't match. Same fallback as
-  Max campaigns above: without a resolvable slot, nothing is enforced here.
 
 > Named *default*, not *baseline* (decision, Rob, 22 Sep, reversing this
 > section's own earlier same-day note that warned off *default* because
@@ -2104,13 +2056,9 @@ playback analytics.**
   Rejected) with a status filter and counts on the campaign table.
   *(spec only — existing Campaigns section)*
 - **Campaign table change**: activation toggle hidden while *Awaiting
-  approval*; a consolidated segmented Approve/Reject control shown instead
-  (ticket "Campaign table + detail: segmented Approve/Reject control");
-  toggle appears once approved; automatically approved campaigns marked.
+  approval*; Approve icon and Reject-with-reason shown instead; toggle
+  appears once approved; automatically approved campaigns marked.
   *(spec only — existing Campaigns section)*
-- **Campaign detail page**: same segmented control, but next to the
-  (disabled) activation toggle rather than in its place, so the toggle
-  stays visible throughout. *(spec only — existing Campaigns section)*
 - **Submission API**: create, upload assets, submit, status. *(spec only)*
 - **Automated asset checks** on upload, including targeting permission
   checks, with reasons returned to the advertiser. *(spec only)*
@@ -2392,14 +2340,7 @@ are in `api/PH-CORE-BOUNDARIES.md`.
   statement") once `displayTypeId` and `slot` resolve to a real advertiser
   slot — retailer-controlled, default 5, 1-10 inclusive — replacing the
   platform-wide **≤ 20 targeted versions** cap for that slot; a submission
-  naming no resolvable slot still falls back to that 20-cap. **Which
-  targeting attributes it may carry** is likewise enforced server-side
-  against the slot's own **Targeting supported** setting (§5, §6, ticket
-  "Partner API: enforce slot's Targeting supported setting on campaign
-  submission") once a slot resolves — the mandatory default layer and every
-  targeted version's pricing type must each be one the slot supports, or
-  the submission is refused naming the offending attribute and the slot's
-  supported set; this does not rely on, or trust, the admin UI.
+  naming no resolvable slot still falls back to that 20-cap.
 - **Bid responses are validated and bounded** before they are trusted:
   the request id echoed, impression 1, a finite price under a ceiling, a
   missing currency read as USD (OpenRTB), at most 10 bids and 64 KB per

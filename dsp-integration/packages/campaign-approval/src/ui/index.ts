@@ -1,6 +1,5 @@
 export { ApprovalStatusBadge } from './ApprovalStatusBadge'
-export { ApprovalActions, RejectWithReason } from './ApprovalActions'
-export { ApproveRejectSegmented } from './ApproveRejectSegmented'
+export { ApprovalActions } from './ApprovalActions'
 export { ApprovalStatusFilter, RETAILER_VISIBLE_STATUSES } from './ApprovalStatusFilter'
 export { ApprovalReviewPanel } from './ApprovalReviewPanel'
 export { useCampaignApprovals, type ApprovalClient } from './useCampaignApprovals'

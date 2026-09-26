@@ -27,13 +27,13 @@ describe('ApprovalStatusBadge', () => {
 
 describe('ApprovalActions', () => {
   const toggle = <Switch aria-label="Activation" checked={false} />
-  it('Awaiting approval: the segmented Approve/Reject control replaces the activation toggle', () => {
+  it('Awaiting approval: Approve and Reject replace the activation toggle', () => {
     const onApprove = vi.fn()
     render(<ApprovalActions status="awaiting_approval" onApprove={onApprove} onReject={() => {}}>{toggle}</ApprovalActions>)
     expect(screen.queryByLabelText('Activation')).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Approve' }))
     expect(onApprove).toHaveBeenCalled()
-    expect(screen.getByRole('button', { name: 'Reject…' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Reject' })).toBeInTheDocument()
   })
   it('Approved: renders the host toggle untouched', () => {
     render(<ApprovalActions status="approved" onApprove={() => {}} onReject={() => {}}>{toggle}</ApprovalActions>)
@@ -44,29 +44,20 @@ describe('ApprovalActions', () => {
     const { container } = render(<ApprovalActions status={status} onApprove={() => {}} onReject={() => {}}>{toggle}</ApprovalActions>)
     expect(container).toBeEmptyDOMElement()
   })
-  it('Reject requires a reason, and does not fire on the segmented control\'s own click', async () => {
+  it('Reject requires a reason', async () => {
     const onReject = vi.fn()
     render(<ApprovalActions status="awaiting_approval" onApprove={() => {}} onReject={onReject}>{toggle}</ApprovalActions>)
-    fireEvent.click(screen.getByRole('button', { name: 'Reject…' }))
-    expect(onReject).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: 'Reject' }))
     const box = await screen.findByLabelText('Reason for rejection')
-    const confirm = screen.getByRole('button', { name: 'Reject' })
+    const confirm = screen.getAllByRole('button', { name: 'Reject' }).pop()!
     expect(confirm).toBeDisabled()
     fireEvent.change(box, { target: { value: 'Price in artwork' } })
     await act(async () => fireEvent.click(confirm))
     expect(onReject).toHaveBeenCalledWith('Price in artwork')
   })
-  it('a non-approver sees the segmented control disabled', () => {
+  it('a non-approver sees the actions disabled', () => {
     render(<ApprovalActions status="awaiting_approval" canApprove={false} onApprove={() => {}} onReject={() => {}}>{toggle}</ApprovalActions>)
     expect(screen.getByRole('button', { name: 'Approve' })).toBeDisabled()
-    expect(screen.getByRole('button', { name: 'Reject…' })).toBeDisabled()
-  })
-  it('showControlsAlongsideChildren: Awaiting approval shows the (disabled) toggle next to the segmented control, not in its place', () => {
-    const disabledToggle = <Switch aria-label="Activation" checked={false} disabled />
-    render(<ApprovalActions status="awaiting_approval" showControlsAlongsideChildren onApprove={() => {}} onReject={() => {}}>{disabledToggle}</ApprovalActions>)
-    expect(screen.getByLabelText('Activation')).toBeDisabled()
-    expect(screen.getByRole('button', { name: 'Approve' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Reject…' })).toBeInTheDocument()
   })
 })
 

@@ -116,14 +116,10 @@ export function CampaignDetail() {
         <span style={{ fontSize: 12.5, color: T.muted }}>Status</span>
         {approval ? <ApprovalStatusBadge status={approval.status} mode={approval.mode} /> : <Spin size="small" />}
         {approval && (
-          /* While Awaiting approval, the toggle stays visible but disabled
-             next to the segmented control, rather than disappearing
-             (ticket "Campaign table + detail: segmented Approve/Reject
-             control", detail-page half). */
-          <ApprovalActions status={approval.status} canApprove={canApprove} busy={busy === id} showControlsAlongsideChildren onApprove={() => approve(approval)} onReject={(r) => reject(approval, r)}>
+          <ApprovalActions status={approval.status} canApprove={canApprove} busy={busy === id} onApprove={() => approve(approval)} onReject={(r) => reject(approval, r)}>
             <span className="inline-flex items-center gap-2" style={{ fontSize: 12.5, color: T.muted }}>
               Activated
-              <Switch aria-label={`${c.name}: activation`} checked={c.activation.enabled} disabled={approval.status === 'awaiting_approval'} loading={busy === id} onChange={(v) => activate(c, v)} />
+              <Switch aria-label={`${c.name}: activation`} checked={c.activation.enabled} loading={busy === id} onChange={(v) => activate(c, v)} />
             </span>
           </ApprovalActions>
         )}
