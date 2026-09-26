@@ -1,10 +1,12 @@
 /* A playlist's own settings (spec §1, moved here from the display type 26
-   Sep 2026): Asset Position, Asset Fill, Campaign Transition, Campaign
-   Auto-Rotation and Campaign Auto-Play. Kept on the playlist itself — one
-   block, shown once regardless of how many display types the playlist is
-   assigned to, or none — so it can be set up before a playlist is ever
-   assigned. Maximum Campaigns Played In Rotation and slot assignment are
-   still per assignment: see PlaylistCapSlotsFields. */
+   Sep 2026): Asset Position, Asset Fill, Campaign Auto-Rotation, Campaign
+   Auto-Play and Campaign Transition — Auto-Rotation/Auto-Play ordered
+   between Asset Fill and Campaign Transition (26 Sep 2026 ticket) so they
+   read below the asset fields and above rotation/transition, matching where
+   Maximum Campaigns Played In Rotation sits next (PlaylistCapSlotsFields,
+   rendered after this block). Kept on the playlist itself — one block,
+   shown once regardless of how many display types the playlist is assigned
+   to, or none — so it can be set up before a playlist is ever assigned. */
 import type { Playlist } from '@ph-dsp/types'
 import { Field } from '../../shared/Field'
 import { DefaultSelect } from '../display-types/DefaultSelect'
@@ -24,14 +26,14 @@ export function PlaylistStyleFields({ p, update }: {
       <Field label="Asset Fill" htmlFor={`assetFill-${p.id}`}>
         <DefaultSelect id={`assetFill-${p.id}`} value={s.assetFill} onChange={(v) => set('assetFill', v)} fallback={DEFAULTS.assetFill} options={ASSET_FILLS} />
       </Field>
-      <Field label="Campaign Transition" htmlFor={`campaignTransition-${p.id}`}>
-        <DefaultSelect id={`campaignTransition-${p.id}`} value={s.campaignTransition} onChange={(v) => set('campaignTransition', v)} fallback={DEFAULTS.campaignTransition} options={CAMPAIGN_TRANSITIONS} />
-      </Field>
       <Field label="Campaign Auto-Rotation" htmlFor={`autoRotation-${p.id}`}>
         <DefaultSelect id={`autoRotation-${p.id}`} value={s.campaignAutoRotation} onChange={(v) => set('campaignAutoRotation', v)} fallback={DEFAULTS.campaignAutoRotation} options={AUTO_ROTATION} />
       </Field>
       <Field label="Campaign Auto-Play" htmlFor={`autoPlay-${p.id}`}>
         <DefaultSelect id={`autoPlay-${p.id}`} value={s.campaignAutoPlay} onChange={(v) => set('campaignAutoPlay', v)} fallback={DEFAULTS.campaignAutoPlay} options={AUTO_PLAY} />
+      </Field>
+      <Field label="Campaign Transition" htmlFor={`campaignTransition-${p.id}`}>
+        <DefaultSelect id={`campaignTransition-${p.id}`} value={s.campaignTransition} onChange={(v) => set('campaignTransition', v)} fallback={DEFAULTS.campaignTransition} options={CAMPAIGN_TRANSITIONS} />
       </Field>
     </div>
   )
