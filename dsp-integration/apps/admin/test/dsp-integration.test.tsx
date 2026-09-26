@@ -506,9 +506,9 @@ describe('Advertisers / Inventory', () => {
     expect(within(advertisers).getByLabelText('Via filter')).toBeInTheDocument()
     expect(within(advertisers).getByLabelText('Campaign approval filter')).toBeInTheDocument()
     expect(screen.getByText('2 advertisers')).toBeInTheDocument()
-    /* Bookings opens the schedule, so it is only offered to an advertiser
-       that has some (Rob, 20 Sep): Nestlé has 3, Swisse none. */
-    expect(within(advertisers).getAllByRole('button', { name: /Bookings/ })).toHaveLength(1)
+    /* Campaigns and Bookings columns removed (Rob's ticket, 26 Sep 2026):
+       already covered in Campaign Status and the booking schedule. */
+    expect(within(advertisers).queryByRole('button', { name: /Bookings/ })).not.toBeInTheDocument()
 
     const inventory = await screen.findByLabelText('Available Inventory')
     expect([...inventory.querySelectorAll('.ag-header-cell-text')].map((h) => h.textContent))
@@ -639,7 +639,7 @@ describe('Advertisers / Inventory', () => {
     expect(within(dialog).getByText('New buyers list')).toBeInTheDocument()
   }, 30000)
 
-  /* The CTAs open a new tab, so they can't go through the router — and a
+  /* The CTA opens a new tab, so it can't go through the router — and a
      bare path 404s wherever the bundle isn't served from the domain root
      (ticket d5lCFNAL: the hosted prototype routes in the hash). */
   it('opens the booking schedule at a URL that works where the bundle is served', async () => {
@@ -647,11 +647,10 @@ describe('Advertisers / Inventory', () => {
     const opened: string[] = []
     vi.stubGlobal('open', vi.fn((url: string) => { opened.push(url); return null }))
     renderAt('/advertisers')
-    const advertisers = await screen.findByLabelText('Advertisers')
-    fireEvent.click(within(advertisers).getAllByRole('button', { name: /Bookings/ })[0])
+    await screen.findByLabelText('Advertisers')
     fireEvent.click(screen.getByRole('button', { name: /Booking schedule/ }))
     /* Served from the root, as the app is inside HQ Admin: the plain route. */
-    expect(opened).toEqual(['/booking-schedule?advertiserId=nestle', '/booking-schedule'])
+    expect(opened).toEqual(['/booking-schedule'])
   })
 
   it('in the hosted build, puts the route in the hash under the bundle\u2019s base', async () => {
