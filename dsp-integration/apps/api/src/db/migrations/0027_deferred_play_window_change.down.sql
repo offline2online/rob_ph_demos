@@ -1,0 +1,2 @@
+ALTER TABLE company_advertiser_settings DROP COLUMN pending_play_window_effective_from;
+ALTER TABLE company_advertiser_settings DROP COLUMN pending_play_window_hours;

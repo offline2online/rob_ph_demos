@@ -3,6 +3,7 @@ import { buildApp } from '../src/http/app'
 import { expectMatchesContract } from './contract'
 import { NOW, testContext } from './helpers'
 import { biddingClosesAt, biddingOpensAt, nextWindow, windowStartOf } from '../src/domain/positions'
+import { promotePendingPlayWindowIfDue } from '../src/exchange/scheduler'
 
 const input = {
   currency: 'NZD', floorCpm: 120, personalisedMultiplier: 1.6, interactiveCpe: 1.25,
@@ -38,15 +39,62 @@ describe('Advertiser settings (spec §4, §6)', () => {
     expect(bad.json().error.details.map((d: { field: string }) => d.field)).toEqual(['auctionOpensHours', 'playWindowHours', 'auctionCutoffTime'])
   })
 
-  it('won’t change the play-window length while future windows are bid on or booked', async () => {
+  /* Rob's board ticket, 26 Sep 2026: a length change while windows are still
+     active no longer errors out — it's accepted and deferred, with the
+     admin told exactly when it takes effect. */
+  it('defers a play-window length change while a window is still bid on or booked, and says when it takes effect', async () => {
     const ctx = await testContext({ clock: () => NOW })
     ctx.reservations.insert({
       id: 'r1', partnerId: 'p_google', advertiserId: 'nestle', campaignId: 'c_dsp_nestle', positionId: 'menu_board.s2', windowStart: '2026-09-22T00:00:00.000Z',
       type: 'bid', channel: 'api', bidCpm: 120, currency: 'AUD', status: 'pending', clearingCpm: null, reason: null, testMode: false, pricingType: 'localised', handedOffAt: null,
     })
     const res = await buildApp(ctx).inject({ method: 'PUT', url: '/api/admin/v1/advertiser-settings', payload: input })
-    expect(res.statusCode).toBe(400)
-    expect(res.json().error.details).toEqual([{ field: 'playWindowHours', reason: 'Future play windows are already bid on or booked; the length can change once they have played.' }])
+    expect(res.statusCode).toBe(200)
+    expectMatchesContract('PUT', '/admin/v1/advertiser-settings', 200, res.json())
+    /* Untouched — the seeded 24-hour length — until r1's window (starting
+       2026-09-22, so ending 2026-09-23) has played. */
+    expect(res.json()).toMatchObject({ playWindowHours: 24, pendingPlayWindowHours: 168, pendingPlayWindowEffectiveFrom: '2026-09-23T00:00:00.000Z' })
+
+    /* A Test-mode bid never blocks or defers anything (spec §7: no real spend). */
+    ctx.reservations.update('r1', { status: 'lost' })
+    ctx.reservations.insert({
+      id: 'r2', partnerId: 'p_google', advertiserId: 'nestle', campaignId: 'c_dsp_nestle', positionId: 'menu_board.s2', windowStart: '2026-09-24T00:00:00.000Z',
+      type: 'bid', channel: 'api', bidCpm: 120, currency: 'AUD', status: 'won', clearingCpm: 120, reason: null, testMode: true, pricingType: 'localised', handedOffAt: null,
+    })
+    const immediate = await buildApp(ctx).inject({ method: 'PUT', url: '/api/admin/v1/advertiser-settings', payload: { ...input, playWindowHours: 48 } })
+    expect(immediate.json()).toMatchObject({ playWindowHours: 48, pendingPlayWindowHours: null, pendingPlayWindowEffectiveFrom: null })
+  })
+
+  it('promotes a deferred play-window length change once every active window has played — waiting longer if a booking made since runs later', async () => {
+    let now = NOW
+    const ctx = await testContext({ clock: () => now })
+    ctx.reservations.insert({
+      id: 'r1', partnerId: 'p_google', advertiserId: 'nestle', campaignId: 'c_dsp_nestle', positionId: 'menu_board.s2', windowStart: '2026-09-22T00:00:00.000Z',
+      type: 'bid', channel: 'api', bidCpm: 120, currency: 'AUD', status: 'pending', clearingCpm: null, reason: null, testMode: false, pricingType: 'localised', handedOffAt: null,
+    })
+    const saved = await buildApp(ctx).inject({ method: 'PUT', url: '/api/admin/v1/advertiser-settings', payload: input })
+    expect(saved.json()).toMatchObject({ playWindowHours: 24, pendingPlayWindowHours: 168, pendingPlayWindowEffectiveFrom: '2026-09-23T00:00:00.000Z' })
+
+    /* Before the effective date: nothing happens. */
+    expect(promotePendingPlayWindowIfDue(ctx)).toBeNull()
+    expect(ctx.company.get().playWindowHours).toBe(24)
+
+    /* r1's window has played by the effective date, but a booking made since
+       (still under the old, unpromoted length) runs later — the change waits
+       for that one too, and the effective date moves out to cover it. */
+    ctx.reservations.insert({
+      id: 'r2', partnerId: 'p_google', advertiserId: 'nestle', campaignId: 'c_dsp_nestle', positionId: 'menu_board.s2', windowStart: '2026-09-25T00:00:00.000Z',
+      type: 'reserve', channel: 'api', bidCpm: 120, currency: 'AUD', status: 'won', clearingCpm: 120, reason: null, testMode: false, pricingType: 'localised', handedOffAt: null,
+    })
+    now = new Date('2026-09-23T00:00:00.000Z')
+    expect(promotePendingPlayWindowIfDue(ctx)).toBeNull()
+    expect(ctx.company.get().playWindowHours).toBe(24)
+    expect(ctx.company.get().pendingPlayWindowEffectiveFrom).toBe('2026-09-26T00:00:00.000Z')
+
+    /* r2 has played too, by its own (pushed-out) effective date: the change lands. */
+    now = new Date('2026-09-26T00:00:00.000Z')
+    expect(promotePendingPlayWindowIfDue(ctx)).toBe(168)
+    expect(ctx.company.get()).toMatchObject({ playWindowHours: 168, pendingPlayWindowHours: null, pendingPlayWindowEffectiveFrom: null })
   })
 
   it('drives the play windows: length, the daily cutoff when the auction runs, and when bidding opens', async () => {

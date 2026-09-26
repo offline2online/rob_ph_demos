@@ -5,6 +5,7 @@ import { Button, InputNumber, Select } from 'antd'
 import { IAB_CATEGORIES, PROVIDERS, type AdvertiserSettingsInput } from '@ph-dsp/types'
 import { type ReactNode, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { Callout } from '../../shared/Callout'
 import { Field } from '../../shared/Field'
 import { Icon } from '../../shared/Icon'
 import { InfoTip, WithTip } from '../../shared/InfoTip'
@@ -79,6 +80,29 @@ const CUTOFF_TIMES = Array.from({ length: 48 }, (_, i) => {
   return { value: t, label: `${t} UTC` }
 })
 
+/* "7 days" / "24 hours" / "7 days 6 hours" — the play-window length, in the
+   deferred-change callout below (Rob's board ticket, 26 Sep 2026). */
+function formatDuration(hours: number) {
+  const days = Math.floor(hours / 24)
+  const rest = hours % 24
+  const parts: string[] = []
+  if (days) parts.push(`${days} day${days === 1 ? '' : 's'}`)
+  if (rest || !days) parts.push(`${rest} hour${rest === 1 ? '' : 's'}`)
+  return parts.join(' ')
+}
+/* "26 Sep 2026, 00:00 UTC" — every play window is anchored to UTC (Q13), so
+   the effective date is shown in it rather than the viewer's own time zone.
+   Date and time are formatted and joined separately (as formatSync does in
+   DspPage.tsx), not via one combined toLocaleString call, so the join is
+   always ", " rather than whatever a locale's combined pattern happens to
+   use. */
+function formatEffectiveDate(iso: string) {
+  const t = new Date(iso)
+  const date = t.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' })
+  const time = t.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'UTC' })
+  return `${date}, ${time} UTC`
+}
+
 /* A duration stored in hours, entered as days and hours. */
 function DaysHours({ id, hours, onChange }: { id: string; hours: number; onChange: (hours: number) => void }) {
   const days = Math.floor((hours ?? 0) / 24)
@@ -138,13 +162,19 @@ export function AdvertiserSettings() {
         <Field label={<span className="block" style={{ minHeight: 36 }}>Auction opens</span>} htmlFor="auctionOpensHours" tip="How long before the auction cutoff bidding for a play window opens, for example 7 days." className="w-64">
           <DaysHours id="auctionOpensHours" hours={s.auctionOpensHours} onChange={(v) => set('auctionOpensHours', v)} />
         </Field>
-        <Field label={<span className="block" style={{ minHeight: 36 }}>Play-window length</span>} htmlFor="playWindowHours" tip="The minimum period a won slot is held, in days and hours, for example 24 hours or 7 days. It can't change while future windows are bid on or booked." className="w-64">
+        <Field label={<span className="block" style={{ minHeight: 36 }}>Play-window length</span>} htmlFor="playWindowHours" tip="The minimum period a won slot is held, in days and hours, for example 24 hours or 7 days. If any window is already bid on or booked, a change to this can't reach it — it takes effect once every one of those has played." className="w-64">
           <DaysHours id="playWindowHours" hours={s.playWindowHours} onChange={(v) => set('playWindowHours', v)} />
         </Field>
         <Field label={<span className="block" style={{ minHeight: 36 }}>Auction cutoff time</span>} htmlFor="auctionCutoffTime" tip="The daily time by which bids must be in. The auction for the next play window runs then; 18:00 gives six hours before a midnight window." className="w-36">
           <Select id="auctionCutoffTime" className="w-full" value={s.auctionCutoffTime} onChange={(v) => set('auctionCutoffTime', v)} options={CUTOFF_TIMES} />
         </Field>
       </div>
+      {savedView.pendingPlayWindowHours != null && savedView.pendingPlayWindowEffectiveFrom && (
+        <Callout tone="info" icon="schedule" className="mb-3.5">
+          <b>Play-window length: change scheduled.</b> Every window already bid on or booked keeps its current {formatDuration(savedView.playWindowHours)} length.
+          Once all of those have played — from <b>{formatEffectiveDate(savedView.pendingPlayWindowEffectiveFrom)}</b> onwards — new windows will be {formatDuration(savedView.pendingPlayWindowHours)} long instead.
+        </Callout>
+      )}
 
       <SectionLabel><WithTip tip="Nothing can sit on both lists. The blacklist always applies and no position can opt out of it. The whitelist is only used by positions set to whitelist-only.">List management</WithTip></SectionLabel>
       <div className="grid grid-cols-2 gap-3.5">
