@@ -528,12 +528,24 @@ with a minimal change to the campaign table:
   type on this playlist, consolidated into one view, not shown per layer
   separately.
 - For a campaign **Awaiting approval**, the **activation status toggle is
-  hidden** and an **Approve** icon is shown in its place, with a **Reject**
-  action that requires a reason.
-- **Once approved, Approve is replaced by the activation toggle.** From that
-  point the advertiser can reserve, bid and activate the campaign through the
-  API/DSP interface. The retailer can switch it off at any time with the same
-  toggle.
+  hidden** and a **consolidated segmented Approve/Reject control** is shown
+  in its place (ticket, 26 Sep) — one pill, not two loose actions: left half
+  Accept (tick), right half Reject (cross), with a divider between them and
+  a colour-coded hover/press state (green left, red right; neutral at
+  rest) so intent is clear before committing. Accepting the left half
+  approves directly; the right half still requires a reason — pressing it
+  opens the reject-with-reason popover and the rejection only commits once
+  a reason is entered and confirmed there, exactly as before. Presentation
+  only: no change to who may approve/reject or to the reason requirement.
+  The campaign detail page (linked from the playlist name, above) shows the
+  same control next to its own status bar, whose activation toggle is kept
+  visible but **disabled** while Awaiting approval, so the table and the
+  detail page read identically.
+- **Once approved, the segmented control is replaced by the activation
+  toggle** — in the table and, with the status bar's toggle switching from
+  disabled to live, on the detail page too. From that point the advertiser
+  can reserve, bid and activate the campaign through the API/DSP interface.
+  The retailer can switch it off at any time with the same toggle.
 - Campaigns approved automatically are marked as such under their status.
 - The review view shows the creative rendered on the target display type's
   canvas, the advertiser and partner, a summary of the targeting rules and
