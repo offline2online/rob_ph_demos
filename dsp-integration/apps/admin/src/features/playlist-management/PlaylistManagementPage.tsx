@@ -1,35 +1,66 @@
-/* Playlist Management (spec §2): rename and delete only (decision 4). Changes
-   apply immediately, as in the prototype. Assignments are made on the
-   Display Types form; here they are listed, with Open to go to the type. */
+/* Playlist Management (spec §2): rename, delete, and — 26 Sep 2026 — each
+   playlist's own Playlist Settings, moved here from the Display Types page
+   as an expandable row. Reassignment (which display type or zone uses a
+   playlist) still happens on the Display Types form; here they are listed,
+   with Open to go to the type. Settings are held as a page-level draft and
+   applied with Save changes, the same pattern as Display Types.
+
+   The settings toggle is its own leftmost column (a bigger, primary-colour
+   chevron, not buried inside the Settings text cell) and shows for every
+   playlist, assigned or not — a playlist's own settings (Asset Position/
+   Fill, Campaign Transition, Auto-Rotation, Auto-Play) can be set up before
+   it is ever assigned to a display type. Maximum Campaigns Played In
+   Rotation and slot assignment stay per assignment (a position is sold per
+   display type × slot), so they only show once the playlist has one. */
 import { useQueryClient } from '@tanstack/react-query'
 import { Alert, App, Button, Input, Spin } from 'antd'
-import type { ColDef, ICellRendererParams, RowHeightParams } from 'ag-grid-community'
-import type { DeleteCheck, Playlist } from '@ph-dsp/types'
-import { useMemo, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import type { ColDef, GridApi, ICellRendererParams, RowHeightParams } from 'ag-grid-community'
+import type { DeleteCheck, DisplayType, Partner, Playlist } from '@ph-dsp/types'
+import { useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { api, ApiRequestError } from '../../api/client'
+import { useFeatures } from '../../api/features'
+import type { Flags } from '../../flags'
 import { DeleteDialog } from '../../shared/DeleteDialog'
 import { Grid } from '../../shared/Grid'
 import { Icon } from '../../shared/Icon'
 import { WithTip } from '../../shared/InfoTip'
+import { SaveBar } from '../../shared/SaveBar'
+import { SummaryChip } from '../../shared/SummaryChip'
+import { useReportDirty } from '../../shared/UnsavedChanges'
+import { useDraft } from '../../shared/useDraft'
 import { T } from '../../theme/phTheme'
-import { usePlaylists } from '../display-types/api'
+import { saveDisplayTypes, savePlaylistSettings, useDisplayTypes, usePartners, usePlaylists } from '../display-types/api'
+import { capSummary, isCapped, normaliseSlots, styleSummary } from '../display-types/model'
+import { PlaylistCapSlotsFields } from './PlaylistCapSlotsFields'
+import { PlaylistStyleFields } from './PlaylistStyleFields'
 
 export const REASSIGN_TIP = 'Reassign every display type and zone above before this playlist can be deleted.'
 
-type Row = { kind: 'playlist'; p: Playlist } | { kind: 'detail'; p: Playlist }
+type Row = { kind: 'playlist'; p: Playlist } | { kind: 'detail'; p: Playlist } | { kind: 'settings'; p: Playlist }
 interface Ctx {
   editing: string | null
   draftName: string
   expanded: string | null
+  settingsExpanded: string | null
   typeName: (id: string | null | undefined) => string
   setDraftName: (v: string) => void
   startEdit: (p: Playlist) => void
   cancelEdit: () => void
   rename: (p: Playlist) => void
   toggle: (id: string) => void
+  toggleSettings: (id: string) => void
   askDelete: (p: Playlist) => void
   open: (displayTypeId: string) => void
+  types: DisplayType[]
+  playlists: Playlist[]
+  update: (displayTypeId: string) => (fn: (t: DisplayType) => DisplayType) => void
+  updatePlaylist: (playlistId: string) => (fn: (p: Playlist) => Playlist) => void
+  slotAssignment: boolean
+  advertiserOpenFor: (displayTypeId: string) => (i: number) => boolean
+  partners: Partner[]
+  onFixConnection: (partnerId: string) => void
+  measureSettings: (id: string, height: number) => void
 }
 type Params = ICellRendererParams<Row, unknown, { current: Ctx }>
 
@@ -76,6 +107,46 @@ function AssignedCell({ data, context }: Params) {
   )
 }
 
+/* The settings disclosure arrow — its own leftmost column (not nested
+   inside the Settings text cell), bigger and coloured, so it reads as an
+   obviously clickable control on every row: assigned or not (26 Sep 2026,
+   fixing failed-testing feedback that the previous, smaller chevron buried
+   in the Settings column wasn't visible as clickable, and didn't show at
+   all for a playlist with no assignments yet). */
+function SettingsToggleCell({ data, context }: Params) {
+  if (!data) return null
+  const c = context.current
+  const open = c.settingsExpanded === data.p.id
+  return (
+    <button
+      type="button"
+      aria-expanded={open}
+      aria-label={`${open ? 'Hide' : 'Show'} settings for ${data.p.name}`}
+      onClick={() => c.toggleSettings(data.p.id)}
+      className="flex h-full w-full cursor-pointer items-center justify-center border-0 bg-transparent p-0"
+    >
+      <Icon name={open ? 'expand_more' : 'chevron_right'} size={24} style={{ color: T.primary }} />
+    </button>
+  )
+}
+
+/* Read-only summary next to the toggle: this playlist's own settings
+   (always — every playlist has these, assigned or not) plus, when it has
+   exactly one assignment, that assignment's slot count (ambiguous with more
+   than one, since each display type can cap the same playlist differently). */
+function SettingsSummaryCell({ data, context }: Params) {
+  if (!data) return null
+  const c = context.current
+  const playlist = c.playlists.find((x) => x.id === data.p.id)
+  const single = data.p.assignments.length === 1 ? c.types.find((t) => t.id === data.p.assignments[0].displayTypeId) : undefined
+  return (
+    <span className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
+      {single && isCapped(single) && capSummary(single, c.slotAssignment).map(({ key, ...chip }) => <SummaryChip key={`cap-${key}`} {...chip} />)}
+      {playlist && styleSummary(playlist).map(({ key, ...chip }) => <SummaryChip key={`style-${key}`} {...chip} />)}
+    </span>
+  )
+}
+
 function DeleteCell({ data, context }: Params) {
   if (!data) return null
   return <Button danger size="small" title="Delete playlist" aria-label={`Delete ${data.p.name}`} icon={<Icon name="delete" size={15} />} onClick={() => context.current.askDelete(data.p)} />
@@ -109,15 +180,138 @@ function DetailRow({ data, context }: Params) {
   )
 }
 
-export function PlaylistManagementPage() {
+/* The playlist's own settings, expanded in place: shown once, whether or
+   not it is assigned to anything. Below it, one Maximum Campaigns Played In
+   Rotation / slot assignment block per assignment (labelled when there is
+   more than one), since those stay tied to the specific screen. Height is
+   measured (ResizeObserver), not guessed — Slot assignment's cards wrap
+   unpredictably. */
+function SettingsRow({ data, context }: Params) {
+  if (!data) return null
+  const c = context.current
+  const ref = useRef<HTMLDivElement>(null)
+  useLayoutEffect(() => {
+    const el = ref.current
+    if (!el) return
+    const measure = () => c.measureSettings(data.p.id, el.getBoundingClientRect().height)
+    const ro = new ResizeObserver(measure)
+    ro.observe(el)
+    measure()
+    return () => ro.disconnect()
+  }, [data.p.id, data.p.assignments.length, c.types, c.playlists])
+  const playlist = c.playlists.find((x) => x.id === data.p.id)
+  const assignments = data.p.assignments
+  return (
+    <div className="px-3 pb-3">
+      <div ref={ref} className="overflow-hidden rounded-md border bg-white" style={{ borderColor: '#38b0cf' }}>
+        <div className="p-3.5">
+          {playlist ? <PlaylistStyleFields p={playlist} update={c.updatePlaylist(data.p.id)} /> : <Spin size="small" />}
+        </div>
+        {assignments.map((a, i) => {
+          const t = c.types.find((x) => x.id === a.displayTypeId)
+          return (
+            <div key={`${a.displayTypeId}:${a.zoneId ?? ''}`} className="p-3.5" style={{ borderTop: `1px solid ${T.borderSubtle}` }}>
+              {assignments.length > 1 && (
+                <div className="mb-2.5 flex items-center gap-1.5" style={{ fontSize: 12, color: T.muted }}>
+                  <Icon name="dashboard_customize" size={14} />
+                  <b style={{ color: T.text }}>{a.displayTypeName}</b>·<span>{where(a)}</span>
+                </div>
+              )}
+              {t ? (
+                <PlaylistCapSlotsFields
+                  d={t}
+                  update={c.update(a.displayTypeId)}
+                  slotAssignment={c.slotAssignment}
+                  advertiserOpen={c.advertiserOpenFor(a.displayTypeId)}
+                  partners={c.partners}
+                  onFixConnection={c.onFixConnection}
+                />
+              ) : (
+                <Spin size="small" />
+              )}
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+function FullWidthRow(params: Params) {
+  if (!params.data) return null
+  return params.data.kind === 'detail' ? <DetailRow {...params} /> : <SettingsRow {...params} />
+}
+
+/* First-paint guess only — SettingsRow measures the real height a moment
+   later and corrects it via resetRowHeights(). Keeping the guess close cuts
+   down the visible jump. */
+const STYLE_BLOCK_ESTIMATE = 190
+const CAP_BLOCK_ESTIMATE = 76
+const SLOT_ESTIMATE = 150
+function estimateSettingsHeight(p: Playlist, types: DisplayType[], slotAssignment: boolean) {
+  let h = 28 + STYLE_BLOCK_ESTIMATE
+  for (const a of p.assignments) {
+    const t = types.find((x) => x.id === a.displayTypeId)
+    h += 28 + CAP_BLOCK_ESTIMATE
+    if (p.assignments.length > 1) h += 22
+    if (t && slotAssignment && isCapped(t)) h += SLOT_ESTIMATE
+  }
+  return h
+}
+
+export function PlaylistManagementPage({ flags }: { flags: Flags }) {
   const { message } = App.useApp()
   const qc = useQueryClient()
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
+  const slotAssignment = flags.dspIntegration
+
   const playlists = usePlaylists()
+  const types = useDisplayTypes()
+  const partners = usePartners(slotAssignment)
+  /* Same "greyed out, not hidden, while DSP integration is off" logic as
+     Display Types used to apply (Rob, 24 Sep 2026), now here with it. */
+  const features = useFeatures(slotAssignment)
+  const dspOn = features.data?.dspIntegration !== false
+
+  interface Draft { types: DisplayType[]; playlists: Playlist[] }
+  const saved = useMemo<Draft | undefined>(
+    () => (types.data && playlists.data ? { types: slotAssignment ? types.data.map(normaliseSlots) : types.data, playlists: playlists.data } : undefined),
+    [types.data, playlists.data, slotAssignment],
+  )
+  const { draft, setDraft, dirty, reset, commitNext } = useDraft(saved)
+  useReportDirty(dirty)
+  const [saving, setSaving] = useState(false)
+
   const [editing, setEditing] = useState<string | null>(null)
   const [draftName, setDraftName] = useState('')
   const [expanded, setExpanded] = useState<string | null>(null)
+  const [settingsExpanded, setSettingsExpanded] = useState<string | null>(null)
   const [deleting, setDeleting] = useState<{ p: Playlist; check: DeleteCheck; busy: boolean } | null>(null)
+
+  /* Opening from Available Inventory's slot lands here with the display
+     type it came from (Rob, 20 Sep — moved from /display-types?panel=playlist
+     when Playlist Settings moved off that page, 26 Sep 2026): land on
+     whichever playlist is that display type's default playlist. */
+  const appliedDeepLink = useRef(false)
+  const wantedDisplayTypeId = searchParams.get('displayTypeId')
+  if (!appliedDeepLink.current && wantedDisplayTypeId && playlists.data && settingsExpanded === null) {
+    const match = playlists.data.find((p) => p.assignments.some((a) => a.displayTypeId === wantedDisplayTypeId && !a.zoneId))
+      ?? playlists.data.find((p) => p.assignments.some((a) => a.displayTypeId === wantedDisplayTypeId))
+    if (match) {
+      appliedDeepLink.current = true
+      setSettingsExpanded(match.id)
+    }
+  }
+
+  const gridApi = useRef<GridApi<Row> | null>(null)
+  const rowHeights = useRef<Map<string, number>>(new Map())
+  const measureSettings = (id: string, height: number) => {
+    const rounded = Math.ceil(height)
+    if (rowHeights.current.get(id) === rounded) return
+    rowHeights.current.set(id, rounded)
+    gridApi.current?.resetRowHeights()
+  }
 
   const refresh = () => Promise.all([qc.invalidateQueries({ queryKey: ['playlists'] }), qc.invalidateQueries({ queryKey: ['display-types'] })])
   const fail = (e: unknown, fallback: string) => message.error(e instanceof ApiRequestError ? [e.message, ...(e.body?.error.details ?? []).map((d) => d.reason)].join(' ') : fallback)
@@ -125,8 +319,26 @@ export function PlaylistManagementPage() {
   /* Display type names, for the auto-created pill (a deleted type falls back to its id). */
   const typeNames = useMemo(() => new Map(items.flatMap((p) => p.assignments.map((a) => [a.displayTypeId, a.displayTypeName] as const))), [items])
 
+  const onSave = async () => {
+    if (!draft || !types.data || !playlists.data) return
+    setSaving(true)
+    try {
+      await Promise.all([
+        saveDisplayTypes(draft.types, types.data, { extensions: slotAssignment }),
+        savePlaylistSettings(draft.playlists, playlists.data),
+      ])
+      commitNext()
+      await refresh()
+    } catch (e) {
+      fail(e, 'Could not save changes.')
+    } finally {
+      setSaving(false)
+    }
+  }
+  const onCancel = () => reset()
+
   const ctx: Ctx = {
-    editing, draftName, expanded,
+    editing, draftName, expanded, settingsExpanded,
     typeName: (id) => (id ? typeNames.get(id) ?? id : ''),
     setDraftName,
     startEdit: (p) => { setEditing(p.id); setDraftName(p.name) },
@@ -140,10 +352,20 @@ export function PlaylistManagementPage() {
       } catch (e) { fail(e, 'Could not rename the playlist.') }
     },
     toggle: (id) => setExpanded((cur) => (cur === id ? null : id)),
+    toggleSettings: (id) => setSettingsExpanded((cur) => (cur === id ? null : id)),
     askDelete: async (p) => {
       try { setDeleting({ p, check: await api<DeleteCheck>('GET', `/admin/v1/playlists/${p.id}/delete-check`), busy: false }) } catch (e) { fail(e, 'Could not check this playlist.') }
     },
     open: (id) => navigate(`/display-types?id=${encodeURIComponent(id)}`),
+    types: draft?.types ?? [],
+    playlists: draft?.playlists ?? [],
+    update: (displayTypeId) => (fn) => setDraft((cur) => (cur ? { ...cur, types: cur.types.map((t) => (t.id === displayTypeId ? fn(t) : t)) } : cur)),
+    updatePlaylist: (playlistId) => (fn) => setDraft((cur) => (cur ? { ...cur, playlists: cur.playlists.map((p) => (p.id === playlistId ? fn(p) : p)) } : cur)),
+    slotAssignment,
+    advertiserOpenFor: (displayTypeId) => (i) => dspOn || types.data?.find((t) => t.id === displayTypeId)?.phExtensions?.slots?.[i]?.owner === 'advertiser',
+    partners: partners.data ?? [],
+    onFixConnection: (partnerId) => navigate(`/dsp-integration/partners/${partnerId}`),
+    measureSettings,
   }
   const confirmDelete = async () => {
     if (!deleting) return
@@ -152,17 +374,24 @@ export function PlaylistManagementPage() {
       await api('DELETE', `/admin/v1/playlists/${deleting.p.id}`)
       setDeleting(null)
       await refresh()
-    } catch (e) { setDeleting(null); fail(e, 'Could not delete the playlist.') }
+    } catch (e) { setDeleting(null); fail(e, 'Could not delete this playlist.') }
   }
 
-  const rows = useMemo<Row[]>(() => items.flatMap((p) => (expanded === p.id && p.assignments.length ? [{ kind: 'playlist' as const, p }, { kind: 'detail' as const, p }] : [{ kind: 'playlist' as const, p }])), [items, expanded])
+  const rows = useMemo<Row[]>(() => items.flatMap((p) => {
+    const r: Row[] = [{ kind: 'playlist', p }]
+    if (expanded === p.id && p.assignments.length) r.push({ kind: 'detail', p })
+    if (settingsExpanded === p.id) r.push({ kind: 'settings', p })
+    return r
+  }), [items, expanded, settingsExpanded])
   const columns = useMemo<ColDef<Row>[]>(() => [
+    { headerName: '', width: 48, suppressSizeToFit: true, cellRenderer: SettingsToggleCell },
     { headerName: 'Playlist', width: 170, cellRenderer: NameCell },
-    { headerName: 'Assigned to', width: 150, cellRenderer: AssignedCell },
+    { headerName: 'Assigned to', width: 140, cellRenderer: AssignedCell },
+    { headerName: 'Settings', width: 240, cellRenderer: SettingsSummaryCell },
     { headerName: '', width: 70, suppressSizeToFit: true, cellRenderer: DeleteCell },
   ], [])
 
-  if (!playlists.data) return <Spin />
+  if (!playlists.data || !draft) return <Spin />
   const unused = items.filter((p) => !p.assignments.length).length
   const n = deleting?.check.dependents.length ?? 0
   return (
@@ -174,14 +403,19 @@ export function PlaylistManagementPage() {
         columns={columns}
         context={ctx}
         getRowId={(r) => `${r.kind}:${r.p.id}`}
-        isFullWidthRow={(p) => p.rowNode.data?.kind === 'detail'}
-        fullWidthCellRenderer={DetailRow}
-        getRowHeight={(p: RowHeightParams<Row>) =>
-          p.data?.kind === 'detail' ? 34 + p.data.p.assignments.length * 33 + 14 : p.data?.p.autoCreatedFor ? 62 : 44}
+        isFullWidthRow={(p) => p.rowNode.data?.kind === 'detail' || p.rowNode.data?.kind === 'settings'}
+        fullWidthCellRenderer={FullWidthRow}
+        getRowHeight={(p: RowHeightParams<Row>) => {
+          if (p.data?.kind === 'detail') return 34 + p.data.p.assignments.length * 33 + 14
+          if (p.data?.kind === 'settings') return Math.max(1, rowHeights.current.get(p.data.p.id) ?? estimateSettingsHeight(p.data.p, draft.types, slotAssignment))
+          return p.data?.p.autoCreatedFor ? 62 : 44
+        }}
         /* Expanding a row inserts a taller detail row; recompute every row's height and position. */
         onRowDataUpdated={(e) => e.api.resetRowHeights()}
-        getRowStyle={(p) => (p.data && p.data.p.id === expanded ? { background: T.primaryTint } : undefined)}
+        onGridReady={(e) => { gridApi.current = e.api }}
+        getRowStyle={(p) => (p.data && (p.data.p.id === expanded || p.data.p.id === settingsExpanded) ? { background: T.primaryTint } : undefined)}
       />
+      <SaveBar dirty={dirty} saving={saving} onSave={onSave} onCancel={onCancel} />
       {deleting && (
         <DeleteDialog open name={deleting.p.name} blockedReason={deleting.check.canDelete ? null : 'This playlist is assigned to a display type or zone'}
           deleting={deleting.busy} onDelete={confirmDelete} onClose={() => setDeleting(null)}>

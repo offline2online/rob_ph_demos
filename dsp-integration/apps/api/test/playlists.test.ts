@@ -9,7 +9,7 @@ describe('Playlist Management API (spec §2)', () => {
     const res = await app.inject({ method: 'PUT', url: '/api/admin/v1/playlists/pl_seasonal/record', payload: { name: '  Summer Overflow ' } })
     expect(res.statusCode).toBe(200)
     expectMatchesContract('PUT', '/admin/v1/playlists/{playlistId}/record', 200, res.json())
-    expect(res.json()).toEqual({ id: 'pl_seasonal', name: 'Summer Overflow', autoCreatedFor: null, assignments: [] })
+    expect(res.json()).toEqual({ id: 'pl_seasonal', name: 'Summer Overflow', autoCreatedFor: null, playlistSettings: {}, assignments: [] })
   })
 
   it('rejects an empty name and assignment changes (rename only)', async () => {
@@ -42,5 +42,51 @@ describe('Playlist Management API (spec §2)', () => {
     expect(del.statusCode).toBe(204)
     expect(ctx.playlists.get('pl_archive')).toBeNull()
     expect((await app.inject({ method: 'DELETE', url: '/api/admin/v1/playlists/pl_archive' })).statusCode).toBe(404)
+  })
+
+  /* Playlist settings (26 Sep 2026): a playlist's own Asset Position/Fill,
+     Campaign Transition, Auto-Rotation and Auto-Play, editable whether or
+     not it is currently assigned to a display type — unlike Maximum
+     Campaigns Played In Rotation and slot assignment, which stay on the
+     display type and are refused here. */
+  describe('playlist settings', () => {
+    it('saves settings on an unassigned playlist', async () => {
+      const app = buildApp(await testContext())
+      const res = await app.inject({
+        method: 'PUT', url: '/api/admin/v1/playlists/pl_archive/settings',
+        payload: { assetPosition: 'Center', assetFill: null, campaignTransition: 'Fade', campaignAutoRotation: null, campaignAutoPlay: 'Auto-Play Off' },
+      })
+      expect(res.statusCode).toBe(200)
+      expectMatchesContract('PUT', '/admin/v1/playlists/{playlistId}/settings', 200, res.json())
+      expect(res.json()).toEqual({
+        id: 'pl_archive', name: 'Archived Q1 Campaigns', autoCreatedFor: null, assignments: [],
+        playlistSettings: { assetPosition: 'Center', assetFill: null, campaignTransition: 'Fade', campaignAutoRotation: null, campaignAutoPlay: 'Auto-Play Off' },
+      })
+    })
+
+    it('saves settings on an assigned playlist independently of its display type', async () => {
+      const app = buildApp(await testContext())
+      const res = await app.inject({ method: 'PUT', url: '/api/admin/v1/playlists/pl_menu/settings', payload: { assetPosition: 'Top-Right' } })
+      expect(res.statusCode).toBe(200)
+      expect(res.json().playlistSettings).toEqual({ assetPosition: 'Top-Right' })
+      expect(res.json().assignments).toEqual([{ displayTypeId: 'menu_board', displayTypeName: 'Menu Board — Long Format', zoneId: null, zoneName: null }])
+    })
+
+    it('rejects Maximum Campaigns Played In Rotation and unknown fields', async () => {
+      const app = buildApp(await testContext())
+      const res = await app.inject({ method: 'PUT', url: '/api/admin/v1/playlists/pl_archive/settings', payload: { maximumCampaignsPlayedInRotation: 4, bogus: 1 } })
+      expect(res.statusCode).toBe(400)
+      expectMatchesContract('PUT', '/admin/v1/playlists/{playlistId}/settings', 400, res.json())
+      expect(res.json().error.details).toEqual([
+        { field: 'maximumCampaignsPlayedInRotation', reason: "Not accepted here: edited per assignment, on the display type’s own /extensions endpoint." },
+        { field: 'bogus', reason: 'Not accepted: one of assetPosition, assetFill, campaignTransition, campaignAutoRotation, campaignAutoPlay.' },
+      ])
+    })
+
+    it('404s for an unknown playlist', async () => {
+      const app = buildApp(await testContext())
+      const res = await app.inject({ method: 'PUT', url: '/api/admin/v1/playlists/pl_nope/settings', payload: {} })
+      expect(res.statusCode).toBe(404)
+    })
   })
 })

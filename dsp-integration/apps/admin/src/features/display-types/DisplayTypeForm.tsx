@@ -1,8 +1,10 @@
 /* The display type form — one column in reading order (spec "Page layout"):
    preview, Touch Point, name, canvas size, background, default playlist,
-   then the four collapsed panels. */
+   then the three collapsed panels. Playlist Settings (including slot
+   assignment) moved to Playlist Management, under each playlist, 26 Sep
+   2026 — it is no longer edited from this page. */
 import { ColorPicker, Input, InputNumber, Select } from 'antd'
-import { TOUCH_POINTS, type DisplayType, type Partner } from '@ph-dsp/types'
+import { TOUCH_POINTS, type DisplayType } from '@ph-dsp/types'
 import { useState } from 'react'
 import { Field } from '../../shared/Field'
 import { Icon } from '../../shared/Icon'
@@ -10,26 +12,17 @@ import { T } from '../../theme/phTheme'
 import { EnabledFeaturesPanel } from './panels/EnabledFeaturesPanel'
 import { MultiZonePanel } from './panels/MultiZonePanel'
 import { PhantomZonePanel } from './panels/PhantomZonePanel'
-import { PlaylistSettingsPanel } from './panels/PlaylistSettingsPanel'
 import { Preview } from './Preview'
 
 export interface PlaylistOption { id: string; name: string; autoCreatedFor: string | null }
 
-export function DisplayTypeForm({ d, update, playlists, zonePlaylistId, slotAssignment, advertiserOpen, partners, onFixConnection, openPanel }: {
+export function DisplayTypeForm({ d, update, playlists, zonePlaylistId }: {
   d: DisplayType
   update: (fn: (d: DisplayType) => DisplayType) => void
   playlists: PlaylistOption[]
   zonePlaylistId: (n: number) => string
-  slotAssignment: boolean
-  /* Whether slot i may be made an Advertiser slot (see SlotAssignment). */
-  advertiserOpen: (i: number) => boolean
-  partners: Partner[]
-  onFixConnection: (partnerId: string) => void
-  openPanel?: string | null
 }) {
-  /* Opening from Available Inventory's slot lands on Playlist Settings, where
-     slot assignment lives (Rob, 20 Sep): /display-types?id=…&panel=playlist. */
-  const [open, setOpen] = useState({ playlist: openPanel === 'playlist', phantom: false, features: false, zones: false })
+  const [open, setOpen] = useState({ phantom: false, features: false, zones: false })
   const toggle = (k: keyof typeof open) => setOpen((o) => ({ ...o, [k]: !o[k] }))
   const playlistName = (id: string | undefined) => playlists.find((p) => p.id === id)?.name ?? '—'
   const set = (patch: Partial<DisplayType>) => update((t) => ({ ...t, ...patch }))
@@ -75,8 +68,6 @@ export function DisplayTypeForm({ d, update, playlists, zonePlaylistId, slotAssi
         />
       </Field>
 
-      <PlaylistSettingsPanel d={d} update={update} open={open.playlist} onToggle={() => toggle('playlist')} slotAssignment={slotAssignment}
-        advertiserOpen={advertiserOpen} partners={partners} onFixConnection={onFixConnection} />
       <PhantomZonePanel d={d} update={update} open={open.phantom} onToggle={() => toggle('phantom')} />
       <EnabledFeaturesPanel d={d} update={update} open={open.features} onToggle={() => toggle('features')} />
       <MultiZonePanel d={d} update={update} open={open.zones} onToggle={() => toggle('zones')} zonePlaylistId={zonePlaylistId}

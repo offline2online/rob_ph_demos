@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import { RouterProvider, createMemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Providers, appRoutes } from '../src/App'
@@ -9,7 +9,7 @@ const menuBoard = {
   name: 'Menu Board — Long Format',
   displayCanvasSize: { width: 5760, height: 1080 },
   defaultPlaylistId: 'pl_menu',
-  playlistSettings: { assetPosition: null, assetFill: null, maximumCampaignsPlayedInRotation: 3, campaignTransition: null, campaignAutoRotation: null, campaignAutoPlay: null },
+  playlistSettings: { maximumCampaignsPlayedInRotation: 3 },
   phExtensions: { slots: [
     { label: 'Priority 1', owner: 'internal' }, { label: 'Supplier slot', owner: 'advertiser', listMode: 'rtb' }, { label: 'Store choice', owner: 'retail', storeScope: 'Store staff' },
   ] },
@@ -19,8 +19,8 @@ const responses: Record<string, unknown> = {
   '/api/admin/v1/session': { userId: 'u', name: 'HQ Admin (POC)', role: 'hq_admin' },
   '/api/admin/v1/display-types': { items: [landscape, menuBoard] },
   '/api/admin/v1/playlists': { items: [
-    { id: 'pl_landscape', name: 'Landscape Playlist', autoCreatedFor: 'landscape', assignments: [] },
-    { id: 'pl_menu', name: 'Menu Board Playlist', autoCreatedFor: 'menu_board', assignments: [] },
+    { id: 'pl_landscape', name: 'Landscape Playlist', autoCreatedFor: 'landscape', playlistSettings: {}, assignments: [] },
+    { id: 'pl_menu', name: 'Menu Board Playlist', autoCreatedFor: 'menu_board', playlistSettings: {}, assignments: [] },
   ] },
   '/api/admin/v1/partners': { items: [] },
   '/api/admin/v1/advertiser-settings': { currency: 'AUD', floorCpm: 100, personalisedMultiplier: 1.5, interactiveCpe: 0.5, advertiserWhitelist: [], advertiserBlacklist: [], categoryWhitelist: [], categoryBlacklist: [], whereTheseApply: [] },
@@ -49,10 +49,12 @@ describe('Display Types page', () => {
     const labels = Array.from(document.querySelectorAll('label')).map((l) => l.textContent)
     expect(labels.slice(0, 5)).toEqual(['Touch Point', '*Display Type Name', '*Display Canvas Size (Resolution)', 'Background Color', 'Default Playlist'])
 
-    const panels = ['Playlist Settings', 'Phantom Zone', 'Enabled Features', 'Multi-Zone Layout'].map((t) => screen.getByRole('region', { name: t }))
+    /* Playlist Settings (and slot assignment) moved to Playlist Management,
+       under each playlist, 26 Sep 2026 — no longer one of this page's panels
+       (see playlist-management.test.tsx for its own coverage). */
+    const panels = ['Phantom Zone', 'Enabled Features', 'Multi-Zone Layout'].map((t) => screen.getByRole('region', { name: t }))
     panels.forEach((p) => expect(within(p).getByRole('button', { expanded: false })).toBeInTheDocument())
-    expect(within(panels[0]).getByText('3 slots')).toBeInTheDocument()
-    expect(within(panels[0]).getByText('1 Advertiser')).toBeInTheDocument()
+    expect(screen.queryByRole('region', { name: 'Playlist Settings' })).not.toBeInTheDocument()
 
     expect(screen.getByText('No changes to save.')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Save changes' })).toBeDisabled()
@@ -64,43 +66,5 @@ describe('Display Types page', () => {
     expect(screen.queryByText('Idle')).not.toBeInTheDocument()
     expect(screen.queryByText('Connected')).not.toBeInTheDocument()
     expect(document.body.textContent).not.toMatch(/Responsive Web|Mobile Store Site|Element Type/)
-  })
-
-  /* Rob, 24 Sep 2026: with DSP integration switched off (Exchange settings),
-     Advertiser is greyed out — not hidden — for a slot that isn't one, and
-     an existing Advertiser slot is left as it is. */
-  it('greys out Advertiser for a new slot while DSP integration is switched off, and keeps the existing one', async () => {
-    const off: Record<string, unknown> = { ...responses, '/api/admin/v1/features': { dspIntegration: false } }
-    vi.stubGlobal('fetch', vi.fn(async (url: string) => new Response(JSON.stringify(off[url.split('?')[0]] ?? {}), { status: 200 })))
-    renderAt('/display-types?id=menu_board&panel=playlist', true)
-    const advertiserOption = async (slot: number) => {
-      fireEvent.mouseDown(await screen.findByRole('combobox', { name: `Slot ${slot} owner` }))
-      const opts = await waitFor(() => {
-        const found = Array.from(document.querySelectorAll('.ant-select-dropdown:not(.ant-select-dropdown-hidden) .ant-select-item-option'))
-        expect(found.length).toBeGreaterThan(0)
-        return found
-      })
-      const adv = opts.find((o) => o.textContent === 'Advertiser')!
-      fireEvent.keyDown(document.activeElement ?? document.body, { key: 'Escape' })
-      return adv
-    }
-    /* Slot 1 (Headquarters): Advertiser is there, greyed out, and says why. */
-    const s1 = await advertiserOption(1)
-    await waitFor(() => expect(s1.getAttribute('aria-disabled') ?? String(s1.classList.contains('ant-select-item-option-disabled'))).toBe('true'))
-    expect(s1.getAttribute('title')).toMatch(/Enable DSP Integration/)
-    /* Slot 2 is already an Advertiser slot: left as it is. */
-    expect(within(screen.getByTestId('slot-card-2')).getByText('Advertiser')).toBeInTheDocument()
-    const s2 = await advertiserOption(2)
-    expect(s2.classList.contains('ant-select-item-option-disabled')).toBe(false)
-  })
-
-  it('hides slot ownership with the dspIntegration flag off and never asks for DSP data', async () => {
-    renderAt('/display-types?id=menu_board', false)
-    const panel = await screen.findByRole('region', { name: 'Playlist Settings' })
-    expect(within(panel).getByText('3 slots')).toBeInTheDocument()
-    expect(within(panel).queryByText('1 Advertiser')).not.toBeInTheDocument()
-    await waitFor(() => expect(fetch).toHaveBeenCalled())
-    const urls = vi.mocked(fetch).mock.calls.map(([u]) => String(u))
-    expect(urls.some((u) => /partners|advertiser/.test(u))).toBe(false)
   })
 })

@@ -923,6 +923,22 @@ paths:
         '401': {$ref: '#/components/responses/Unauthorised'}
         '404': {$ref: '#/components/responses/NotFound'}
         '409': {$ref: '#/components/responses/HasDependents'}
+  /admin/v1/playlists/{playlistId}/settings:
+    put:
+      tags: [Admin — Display types and playlists]
+      operationId: savePlaylistSettings
+      summary: Save this playlist's own settings (Asset Position/Fill, Campaign Transition, Auto-Rotation, Auto-Play)
+      description: Edited from an expandable row on Playlist Management (26 Sep 2026), whether or not the playlist is currently assigned to a display type. Maximum Campaigns Played In Rotation and slot assignment are edited per assignment, through the display type's own /extensions endpoint.
+      security: [{adminSession: []}]
+      parameters: [{name: playlistId, in: path, required: true, schema: {type: string}}]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {type: object, additionalProperties: true}}}
+      responses:
+        '200': {description: Saved, content: {application/json: {schema: {$ref: '#/components/schemas/Playlist'}}}}
+        '400': {$ref: '#/components/responses/ValidationFailed'}
+        '401': {$ref: '#/components/responses/Unauthorised'}
+        '404': {$ref: '#/components/responses/NotFound'}
   /admin/v1/playlists/{playlistId}/delete-check:
     get:
       tags: [Admin — Display types and playlists]
@@ -2183,7 +2199,7 @@ components:
           properties: {width: {type: integer}, height: {type: integer}}
         backgroundColor: {type: string}
         defaultPlaylistId: {type: string}
-        playlistSettings: {type: object, additionalProperties: true, description: null values mean inherit}
+        playlistSettings: {type: object, additionalProperties: true, description: 'Maximum Campaigns Played In Rotation only, as of 26 Sep 2026 — the slot count and slot assignment (phExtensions) size and sell that specific display type''s screen, so they stay here even though the other playlist settings moved to the Playlist record. null means inherit.'}
         qrControl: {type: object, additionalProperties: true}
         enabledFeatures: {type: object, additionalProperties: true}
         multiZone: {type: object, additionalProperties: true}
@@ -2195,6 +2211,7 @@ components:
         id: {type: string}
         name: {type: string}
         autoCreatedFor: {type: [string, 'null'], description: Display type id if auto-created}
+        playlistSettings: {type: object, additionalProperties: true, description: 'Asset Position, Asset Fill, Campaign Transition, Auto-Rotation and Auto-Play (26 Sep 2026: moved off the display type so a playlist''s own settings can be edited from Playlist Management whether or not it is currently assigned to a display type). null values mean inherit. Maximum Campaigns Played In Rotation and slot assignment stay on the assigned display type(s) — see DisplayType.playlistSettings.'}
         assignments:
           type: array
           items:
