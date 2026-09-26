@@ -631,6 +631,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/v1/playlists/{playlistId}/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Save this playlist's own settings (Asset Position/Fill, Campaign Transition, Auto-Rotation, Auto-Play)
+         * @description Edited from an expandable row on Playlist Management (26 Sep 2026), whether or not the playlist is currently assigned to a display type. Maximum Campaigns Played In Rotation and slot assignment are edited per assignment, through the display type's own /extensions endpoint.
+         */
+        put: operations["savePlaylistSettings"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/v1/playlists/{playlistId}/delete-check": {
         parameters: {
             query?: never;
@@ -980,11 +1000,24 @@ export interface components {
              *     Optional, but required alongside displayTypeId to resolve that
              *     slot's own max-campaigns cap below — omitted, the submission
              *     falls back to the platform-wide campaignLimits.targetedVersions
-             *     cap, unscoped to any one slot.
+             *     cap, unscoped to any one slot. Also the only way to resolve the
+             *     slot's own Targeting supported setting (ticket "Partner API:
+             *     enforce slot's Targeting supported setting on campaign
+             *     submission") — see default.pricingType and
+             *     targeted[].pricingType below.
              */
             slot?: number;
             brief?: components["schemas"]["CampaignBrief"];
-            /** @description The untargeted layer every submission must carry — no targeting variables, priced at the floor rate. */
+            /**
+             * @description The untargeted layer every submission must carry — no targeting
+             *     variables, priced at the floor rate. Once displayTypeId and slot
+             *     resolve to a real advertiser slot, its pricingType is validated
+             *     against that slot's own Targeting supported setting the same
+             *     way targeted[].pricingType is below (a "default" pricingType
+             *     reads as localised, matching the auction's own reading of it) —
+             *     400 validation_failed on `default.pricingType` naming the
+             *     slot's supported set when it doesn't.
+             */
             default: {
                 pricingType: components["schemas"]["PricingType"];
             };
@@ -994,6 +1027,15 @@ export interface components {
              *     slot's own max campaigns (default + targeted versions, 1-10)
              *     when displayTypeId and slot resolve to a real advertiser slot;
              *     otherwise by the platform-wide campaignLimits.targetedVersions.
+             *     Each version's own pricingType is also validated, once a slot
+             *     resolves, against that slot's Targeting supported setting
+             *     (localised/personalised/interactive, Advertisers / Inventory) —
+             *     ticket "Partner API: enforce slot's Targeting supported setting
+             *     on campaign submission": a submission naming an attribute the
+             *     slot doesn't support is refused 400 validation_failed on
+             *     `targeted[i].pricingType`, naming the offending pricingType and
+             *     the slot's supported set. Server-enforced regardless of what
+             *     the admin UI shows or allows.
              */
             targeted?: {
                 id: string;
@@ -1748,7 +1790,7 @@ export interface components {
             };
             backgroundColor?: string;
             defaultPlaylistId?: string;
-            /** @description null values mean inherit */
+            /** @description Maximum Campaigns Played In Rotation only, as of 26 Sep 2026 — the slot count and slot assignment (phExtensions) size and sell that specific display type's screen, so they stay here even though the other playlist settings moved to the Playlist record. null means inherit. */
             playlistSettings: {
                 [key: string]: unknown;
             };
@@ -1768,6 +1810,10 @@ export interface components {
             name: string;
             /** @description Display type id if auto-created */
             autoCreatedFor?: string | null;
+            /** @description Asset Position, Asset Fill, Campaign Transition, Auto-Rotation and Auto-Play (26 Sep 2026: moved off the display type so a playlist's own settings can be edited from Playlist Management whether or not it is currently assigned to a display type). null values mean inherit. Maximum Campaigns Played In Rotation and slot assignment stay on the assigned display type(s) — see DisplayType.playlistSettings. */
+            playlistSettings?: {
+                [key: string]: unknown;
+            };
             assignments: {
                 displayTypeId: string;
                 displayTypeName: string;
@@ -3151,6 +3197,37 @@ export interface operations {
             401: components["responses"]["Unauthorised"];
             404: components["responses"]["NotFound"];
             409: components["responses"]["HasDependents"];
+        };
+    };
+    savePlaylistSettings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                playlistId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        responses: {
+            /** @description Saved */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Playlist"];
+                };
+            };
+            400: components["responses"]["ValidationFailed"];
+            401: components["responses"]["Unauthorised"];
+            404: components["responses"]["NotFound"];
         };
     };
     checkPlaylistDelete: {

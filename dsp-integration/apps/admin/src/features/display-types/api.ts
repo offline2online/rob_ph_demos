@@ -1,7 +1,7 @@
 /* Display Types data: existing records through the POC stand-in endpoints,
    slot ownership through PUT …/extensions (flag-gated). */
 import { useQuery } from '@tanstack/react-query'
-import type { DeleteCheck, DisplayType } from '@ph-dsp/types'
+import type { DeleteCheck, DisplayType, Playlist } from '@ph-dsp/types'
 import { api } from '../../api/client'
 import { Q } from '../../api/queries'
 import { deepEqual } from '../../shared/deepEqual'
@@ -24,6 +24,19 @@ export async function saveDisplayTypes(draft: DisplayType[], saved: DisplayType[
     else if (!deepEqual(recordOf(d), recordOf(before))) await api('PUT', `/admin/v1/display-types/${d.id}/record`, recordOf(d))
     if (opts.extensions && d.phExtensions && !deepEqual(d.phExtensions, before?.phExtensions ?? { slots: [] })) {
       await api('PUT', `/admin/v1/display-types/${d.id}/extensions`, d.phExtensions)
+    }
+  }
+}
+
+/* A playlist's own settings (26 Sep 2026) — everything but Maximum Campaigns
+   Played In Rotation and slot assignment, which stay part of the display
+   type record above. Rename and delete are immediate elsewhere; only this
+   goes through the page's Save changes draft. */
+export async function savePlaylistSettings(draft: Playlist[], saved: Playlist[]) {
+  for (const p of draft) {
+    const before = saved.find((s) => s.id === p.id)
+    if (before && !deepEqual(p.playlistSettings, before.playlistSettings)) {
+      await api('PUT', `/admin/v1/playlists/${p.id}/settings`, p.playlistSettings)
     }
   }
 }

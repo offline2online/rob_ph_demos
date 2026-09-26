@@ -256,6 +256,15 @@ not offered.
   flag, the QR Control phantom area (a positioned region outside campaign
   rotation) and the enabled features (In-Store Radio, MIST proximity, AI Agent
   Playback, Vision/AI). How these settings drive playback is unchanged.
+  **26 Sep 2026: everything in this list except `maximumCampaignsPlayedInRotation`
+  and slot ownership below moved off the display type onto the playlist it
+  belongs to — edited from Playlist Management (§2), not from this page any
+  more.** `maximumCampaignsPlayedInRotation` and slot ownership stay here:
+  they size and sell this specific display type's positions (a position is
+  sold per display type × slot — see the Display Types & DSP Integration API
+  boundaries doc), so a playlist shared by more than one display type can
+  still be capped, and have its slots owned, differently on each screen it
+  fills.
 - **Configuration inheritance**: `Company (availability) → Display Type
   (default) → Display/Device (override)`. An override always wins and is
   never reset by a later type-level change. The UI must make clear that a
@@ -328,16 +337,16 @@ not offered.
 
 ### Collapsed panels with summaries
 
-The four panels — **Playlist Settings**, **Phantom Zone**, **Enabled
-Features** and **Multi-Zone Layout** — are **collapsed by default**. Each
-collapsed header shows a one-line summary as small chips, so what is enabled
-or changed on a display type is visible without opening anything. Chips for
-something enabled or changed are coloured; chips for defaults or "off" are
-grey.
+The three panels — **Phantom Zone**, **Enabled Features** and **Multi-Zone
+Layout** — are **collapsed by default**. (**Playlist Settings** was a fourth
+panel here; it moved to Playlist Management, §2, on 26 Sep 2026 and is no
+longer part of this page.) Each collapsed header shows a one-line summary as
+small chips, so what is enabled or changed on a display type is visible
+without opening anything. Chips for something enabled or changed are
+coloured; chips for defaults or "off" are grey.
 
 | Panel | Summary shows |
 |---|---|
-| **Playlist Settings** | When the rotation is capped: the slot count (e.g. *3 slots*) and **slot assignment by owner**, one chip each with its icon (e.g. *1 Headquarters*, *1 Advertiser*, *1 Stores*). *n settings changed* when any other playlist setting differs from its default. When nothing differs from the defaults (unlimited rotation, every setting inherited), a single grey *Default settings* chip. Unlimited rotation is the default and gets no chip of its own |
 | **Phantom Zone** | Size (e.g. *250×250*) and position — *Default (Bottom Right)* when inherited — or *Not defined* |
 | **Enabled Features** | One chip per enabled feature with its icon (*In-Store Radio*, *QR Control*, *MIST*, *AI Agent*, *Vision/AI*), or *None enabled*. Features not available to the company are not shown |
 | **Multi-Zone Layout** | Number of zones (e.g. *3 zones*), or *Single zone* |
@@ -345,14 +354,15 @@ grey.
 Opening a panel shows its full settings as before; the summary updates as
 settings change.
 
-## 2. Playlist management — edit and delete only
+## 2. Playlist management — edit and delete, plus each playlist's own settings
 
-This project adds only two playlist capabilities. Everything else about
-playlists, including what plays and when, is handled by the existing platform
-and is unchanged.
+This project adds edit, delete and — as of 26 Sep 2026 — Playlist Settings to
+this page. Everything else about playlists, including what plays and when,
+is handled by the existing platform and is unchanged.
 
 - **Edit a playlist**: its name and its assignment to display types and
-  zones.
+  zones (assignment is still made on the Display Types form, §1; a playlist
+  is only ever listed here with an *Open* action back to it).
 - **Delete a playlist**, through the confirmation dialog described under
   *Deleting*:
   - Selecting the delete (bin) icon opens the dialog; nothing is deleted
@@ -364,6 +374,50 @@ and is unchanged.
     playlist.
   - With no assignments, the dialog confirms the delete is permanent and
     **Delete** removes it.
+
+### Playlist Settings — moved here from Display Types (26 Sep 2026)
+
+The **Playlist Settings** panel that used to sit on the Display Types form
+(§1) moved here: Asset Position, Asset Fill, Campaign Transition, Campaign
+Auto-Rotation and Campaign Auto-Play now belong to the **playlist**, not the
+display type, and are edited by expanding that playlist's own row in this
+table.
+
+- **Every row gets an expand control** — its own leftmost column, a chevron
+  (▸ collapsed, ▾ expanded) that is deliberately bigger and more prominent
+  than a plain in-line icon, so it reads as clickable at a glance. It shows
+  for **every playlist, whether or not it is currently assigned to a display
+  type** — a playlist's own settings can, and often should, be set up before
+  it is ever assigned (fixing a testing round that found the earlier build's
+  arrow too small, positioned mid-row rather than at the row's edge, and
+  missing entirely for an unassigned ("unused") playlist).
+- **Expanding a row shows that playlist's settings**, edited inline, exactly
+  as the display type's old panel behaved — same fields, same
+  inherit-or-override selects (*Default (…)* means inherit).
+- **A "Save changes" bar** at the foot of the page, in the same pattern as
+  Display Types' own: edits are held as a draft and only take effect on Save;
+  Cancel discards them. Switching which playlist's row is expanded does not
+  discard another playlist's pending edits.
+- **Maximum Campaigns Played In Rotation and slot assignment are not part of
+  this move** — they stay on the display type (§1) because they size and
+  sell that specific screen's positions, not the playlist's content. They
+  are still edited from this same expanded row, but **per assignment**: a
+  playlist used by only one display type or zone shows one such block; a
+  playlist shared by more than one shows one per assignment, each labelled
+  by display type and zone, since each can be capped — and have its slots
+  owned — independently. **An unassigned playlist shows none of this
+  section at all** — there is no display type to size a position against —
+  only its own settings above.
+- **Collapsed-row summary**: the same small-chip pattern as §1's old panel,
+  now split between two independent things next to the expand arrow — this
+  playlist's own settings (*n settings changed*, or a single grey *Default
+  settings*), and, only when the playlist has exactly one assignment, that
+  assignment's slot count and slot-assignment-by-owner chips (omitted with
+  more than one assignment, since the count can differ per display type, and
+  omitted entirely for an unassigned playlist).
+- **Available Inventory's "Open" action** (§5), which used to land on the
+  display type's own Playlist Settings panel, now opens Playlist Management
+  with that display type's default playlist expanded instead.
 
 ## 3. Campaign asset approval
 
@@ -1422,7 +1476,8 @@ retailer switch DSP integration on and off.
     build's feature flag off.
   - Windows already sold are still billed when they end: they were
     delivered.
-  - On Display Types → Playlist Settings → Slot assignment, **Advertiser is
+  - On Playlist Management's expanded row → Slot assignment (moved off
+    Display Types → Playlist Settings, 26 Sep 2026), **Advertiser is
     greyed out, not hidden**, in a slot's owner list (Rob, 24 Sep 2026).
     A slot that is already an Advertiser slot keeps it, with its
     assignment; no new Advertiser slot can be set up. Its tooltip says to
@@ -2016,15 +2071,11 @@ playback analytics.**
 - **Delete a display type**: a bin icon on each display type in the list
   opens a confirmation dialog; when displays are assigned, the dialog lists
   them and Delete is disabled. *(Display Types)*
-- **Collapsed panels with summaries**: Playlist Settings, Phantom Zone,
-  Enabled Features and Multi-Zone Layout collapsed by default, each header
-  showing chips for what is enabled or changed (slot count and slot
-  assignment by owner, or *Default settings*; phantom size/position; enabled
-  features; zone count). *(Display Types)*
-- **Slot ownership editor**: each slot's label and owner — Headquarters,
-  Advertiser or Stores — and nothing else. With DSP integration switched
-  off, Advertiser is greyed out for a slot that isn't one already.
-  *(Display Types → Playlist Settings → Slot assignment)*
+- **Collapsed panels with summaries**: Phantom Zone, Enabled Features and
+  Multi-Zone Layout collapsed by default, each header showing chips for what
+  is enabled or changed (phantom size/position; enabled features; zone
+  count). *(Display Types)* Playlist Settings was a fourth such panel here;
+  it moved to Playlist Management, 26 Sep 2026 — see below.
 - **Multi-zone layout designer** for signage. *(Display Types → Multi-Zone Layout)*
 - **Venue and screen metadata** per store and display. *(spec only)*
 
@@ -2035,6 +2086,18 @@ playback analytics.**
 - **Delete a playlist** through a confirmation dialog with Cancel; when the
   playlist is a default or zone playlist, the dialog lists where it is
   assigned and Delete is disabled. *(Playlist Management)*
+- **Playlist Settings, as an expandable row** (moved off Display Types, 26
+  Sep 2026): a leftmost, deliberately larger expand arrow on every playlist
+  — assigned or not — reveals Asset Position/Fill, Campaign Transition,
+  Auto-Rotation and Auto-Play, edited inline with the page's own Save
+  changes bar. *(Playlist Management)*
+- **Slot ownership editor**: each slot's label and owner — Headquarters,
+  Advertiser or Stores — and nothing else. With DSP integration switched
+  off, Advertiser is greyed out for a slot that isn't one already. Shown
+  inside the same expanded row, per assignment, alongside Maximum Campaigns
+  Played In Rotation — both stay tied to the display type, since they size
+  and sell that specific screen's positions; neither shows for an unassigned
+  playlist. *(Playlist Management → Slot assignment)*
 
 ### Saving, deleting, help text and layout
 

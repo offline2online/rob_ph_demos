@@ -20,6 +20,26 @@ export function validateRecord(dt: DisplayType): Detail[] {
   return out
 }
 
+/* A playlist's own settings (26 Sep 2026): everything the display type's
+   Playlist Settings block used to hold except Maximum Campaigns Played In
+   Rotation and slot assignment, which stay on the display type because they
+   size and sell that specific screen's positions, not the playlist's
+   content. Rejected here rather than silently ignored, the same way the
+   /record endpoint rejects anything but `name` — so a client can't drift
+   the two apart without finding out. */
+export const PLAYLIST_SETTINGS_FIELDS = ['assetPosition', 'assetFill', 'campaignTransition', 'campaignAutoRotation', 'campaignAutoPlay'] as const
+
+export function validatePlaylistSettings(body: unknown): Detail[] {
+  if (typeof body !== 'object' || body === null || Array.isArray(body)) return [{ field: 'settings', reason: 'An object is required.' }]
+  const unexpected = Object.keys(body).filter((k) => !(PLAYLIST_SETTINGS_FIELDS as readonly string[]).includes(k))
+  return unexpected.map((k) => ({
+    field: k,
+    reason: k === 'maximumCampaignsPlayedInRotation' || k === 'phExtensions'
+      ? 'Not accepted here: edited per assignment, on the display type’s own /extensions endpoint.'
+      : `Not accepted: one of ${PLAYLIST_SETTINGS_FIELDS.join(', ')}.`,
+  }))
+}
+
 /* Playlists a display type references but that don't exist yet are created
    with it: its auto-created default playlist, and zone playlists created on
    demand (spec §1 "zone playlists created on demand ... applied with Save changes"). */
@@ -39,5 +59,5 @@ export function toApiPlaylist(p: PlaylistRecord, types: DisplayType[]): Playlist
     if (t.defaultPlaylistId === p.id) assignments.push({ displayTypeId: t.id, displayTypeName: t.name, zoneId: null, zoneName: null })
     for (const z of zonesOf(t)) if (z.playlistId === p.id) assignments.push({ displayTypeId: t.id, displayTypeName: t.name, zoneId: z.id, zoneName: z.name })
   }
-  return { id: p.id, name: p.name, autoCreatedFor: p.autoCreatedFor, assignments }
+  return { id: p.id, name: p.name, autoCreatedFor: p.autoCreatedFor, playlistSettings: p.playlistSettings, assignments }
 }
