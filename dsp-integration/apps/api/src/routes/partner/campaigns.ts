@@ -6,7 +6,7 @@
    A partner only ever sees its own campaigns; anyone else's is not found. */
 import { randomUUID } from 'node:crypto'
 import { ApprovalError } from '@ph-dsp/campaign-approval/server'
-import { advertiserSlug, maxCampaignsOf } from '@ph-dsp/types'
+import { advertiserSlug, maxCampaignsOf, supportedTargetingOf, targetingLabel, type TargetingMode } from '@ph-dsp/types'
 import type { FastifyPluginAsync, FastifyReply, FastifyRequest } from 'fastify'
 import { requireConnected } from '../../auth/partnerAuth'
 import type { Context } from '../../context'
@@ -37,6 +37,12 @@ const statusView = (a: { campaignId: string; status: string; mode: string | null
 
 const approvalError = (e: unknown) => (e instanceof ApprovalError ? new HttpError(e.status, e.code, e.message) : e)
 
+/* The same "default counts as localised" reading exchange/enforcement.ts's
+   checkTargeting uses at bid/reservation time, so a layer that would be
+   refused there is refused up front at submission instead (ticket "Partner
+   API: enforce slot's Targeting supported setting on campaign submission"). */
+const wantedTargeting = (pricingType: string): TargetingMode => (pricingType === 'personalised' || pricingType === 'interactive' ? pricingType : 'localised')
+
 export const campaignRoutes = (ctx: Context): FastifyPluginAsync => async (app) => {
   /* The calling partner's campaign, or 404. */
   const own = (partner: PartnerRecord, id: string) => {
@@ -65,6 +71,12 @@ export const campaignRoutes = (ctx: Context): FastifyPluginAsync => async (app) 
        pre-ticket behaviour: the global campaignLimits.targetedVersions
        cap, unscoped to any one slot. */
     let slotCap: number | null = null
+    /* The slot's own Targeting supported setting (localised/personalised/
+       interactive), once a resolvable slot narrows enforcement to it
+       (ticket "Partner API: enforce slot's Targeting supported setting on
+       campaign submission") — same resolution and same "no resolvable
+       slot, nothing to enforce" fallback as slotCap above. */
+    let slotSupported: TargetingMode[] | null = null
     if (b.slot !== undefined) {
       if (typeof b.slot !== 'number' || !Number.isInteger(b.slot) || b.slot < 1) invalid.push({ field: 'slot', reason: 'An integer of 1 or more.' })
       else if (!dt) invalid.push({ field: 'slot', reason: 'displayTypeId is required with slot.' })
@@ -72,7 +84,10 @@ export const campaignRoutes = (ctx: Context): FastifyPluginAsync => async (app) 
         const slotRec = dt.phExtensions?.slots?.[b.slot - 1]
         if (!slotRec) invalid.push({ field: 'slot', reason: `${dt.name} has no slot ${b.slot}.` })
         else if (slotRec.owner !== 'advertiser') invalid.push({ field: 'slot', reason: 'Only an Advertiser slot is sellable inventory.' })
-        else slotCap = maxCampaignsOf(dt, slotRec)
+        else {
+          slotCap = maxCampaignsOf(dt, slotRec)
+          slotSupported = supportedTargetingOf(slotRec)
+        }
       }
     }
     /* default is mandatory on every submission (decision, 22 Sep,
@@ -87,6 +102,12 @@ export const campaignRoutes = (ctx: Context): FastifyPluginAsync => async (app) 
     const hasDefault = b.default !== undefined && b.default !== null
     if (!hasDefault) invalid.push({ field: 'default', reason: 'Required.' })
     else if (!PRICING_TYPES.includes(b.default!.pricingType as PricingType)) invalid.push({ field: 'default.pricingType', reason: `One of ${PRICING_TYPES.join(', ')}.` })
+    else if (slotSupported) {
+      const wanted = wantedTargeting(b.default!.pricingType as string)
+      if (!slotSupported.includes(wanted)) {
+        invalid.push({ field: 'default.pricingType', reason: `This slot supports ${targetingLabel(slotSupported).toLowerCase()} targeting only; ${wanted} is not enabled for it.` })
+      }
+    }
     const brief = validateBrief(b.brief)
     invalid.push(...brief.errors)
     const targeted = b.targeted ?? []
@@ -111,6 +132,12 @@ export const campaignRoutes = (ctx: Context): FastifyPluginAsync => async (app) 
         else ids.add(t.id)
         if (!Number.isInteger(t?.priority)) invalid.push({ field: f('priority'), reason: 'An integer.' })
         if (!PRICING_TYPES.includes(t?.pricingType as PricingType)) invalid.push({ field: f('pricingType'), reason: `One of ${PRICING_TYPES.join(', ')}.` })
+        else if (slotSupported) {
+          const wanted = wantedTargeting(t.pricingType as string)
+          if (!slotSupported.includes(wanted)) {
+            invalid.push({ field: f('pricingType'), reason: `This slot supports ${targetingLabel(slotSupported).toLowerCase()} targeting only; ${wanted} is not enabled for it.` })
+          }
+        }
         if (typeof t?.id === 'string' && t.id.length > lim.nameLength) invalid.push({ field: f('id'), reason: `At most ${lim.nameLength} characters.` })
         const r = validateRules(t?.rules, f('rules'), req.partner, access, ctx.config.maxValuesPerCondition, lim)
         ruleErrors.push(...(r.invalid as Detail[]))

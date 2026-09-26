@@ -1350,12 +1350,24 @@ components:
             Optional, but required alongside displayTypeId to resolve that
             slot's own max-campaigns cap below — omitted, the submission
             falls back to the platform-wide campaignLimits.targetedVersions
-            cap, unscoped to any one slot.
+            cap, unscoped to any one slot. Also the only way to resolve the
+            slot's own Targeting supported setting (ticket "Partner API:
+            enforce slot's Targeting supported setting on campaign
+            submission") — see default.pricingType and
+            targeted[].pricingType below.
         brief: {$ref: '#/components/schemas/CampaignBrief'}
         default:
           type: object
           required: [pricingType]
-          description: The untargeted layer every submission must carry — no targeting variables, priced at the floor rate.
+          description: |
+            The untargeted layer every submission must carry — no targeting
+            variables, priced at the floor rate. Once displayTypeId and slot
+            resolve to a real advertiser slot, its pricingType is validated
+            against that slot's own Targeting supported setting the same
+            way targeted[].pricingType is below (a "default" pricingType
+            reads as localised, matching the auction's own reading of it) —
+            400 validation_failed on `default.pricingType` naming the
+            slot's supported set when it doesn't.
           properties:
             pricingType: {$ref: '#/components/schemas/PricingType'}
         targeted:
@@ -1367,6 +1379,15 @@ components:
             slot's own max campaigns (default + targeted versions, 1-10)
             when displayTypeId and slot resolve to a real advertiser slot;
             otherwise by the platform-wide campaignLimits.targetedVersions.
+            Each version's own pricingType is also validated, once a slot
+            resolves, against that slot's Targeting supported setting
+            (localised/personalised/interactive, Advertisers / Inventory) —
+            ticket "Partner API: enforce slot's Targeting supported setting
+            on campaign submission": a submission naming an attribute the
+            slot doesn't support is refused 400 validation_failed on
+            `targeted[i].pricingType`, naming the offending pricingType and
+            the slot's supported set. Server-enforced regardless of what
+            the admin UI shows or allows.
           items:
             type: object
             required: [id, priority, pricingType, rules]
