@@ -627,7 +627,9 @@ export function AdvertisersPage() {
     settings: draft, data, canEdit,
     set: (id: string, patch: Partial<AdvertiserSetting>) => setDraft((cur) => (cur ? { ...cur, [id]: { ...cur[id], ...patch } } : cur)),
     openBookings: (advertiserId: string) => window.open(externalUrl(`${BOOKING_SCHEDULE_PATH}?advertiserId=${encodeURIComponent(advertiserId)}`), '_blank', 'noopener'),
-    openCampaigns: (advertiserId: string) => navigate(`/campaign-status?advertiserId=${encodeURIComponent(advertiserId)}`),
+    /* Campaign Status is the Campaign schedule section's second tab now
+       (ticket, 26 Sep 2026), not its own route. */
+    openCampaigns: (advertiserId: string) => navigate(`${BOOKING_SCHEDULE_PATH}?tab=campaign-status&advertiserId=${encodeURIComponent(advertiserId)}`),
   }
 
   return (

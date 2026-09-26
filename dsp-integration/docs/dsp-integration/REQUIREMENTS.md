@@ -68,11 +68,13 @@ only), and per-DSP bidder tuning (QPS ceiling and bid timeout use platform
 defaults).
 
 **Navigation.** The HQ Admin navigation items for this project, in order
-(Rob, 24 Sep 2026): **Display Types**, **Playlist Management**, **Campaign
-Status**, **Advertisers / Inventory**, then **DSP Integration** at the
-bottom. The pages used day to day come first; DSP Integration, set up once
-per DSP, comes last. **Campaign Status** and **Advertisers / Inventory**
-show only while the retailer has DSP integration switched on (§7, *The DSP
+(Rob, 24 Sep 2026; **Campaign Status** folded into **Campaign schedule**'s
+own second tab, 26 Sep 2026 — it is no longer a nav item of its own):
+**Display Types**, **Playlist Management**, **Advertisers / Inventory**,
+then **DSP Integration** at the bottom. The pages used day to day come
+first; DSP Integration, set up once per DSP, comes last. **Advertisers /
+Inventory** (and, from there, **Campaign schedule**'s Campaign status tab)
+shows only while the retailer has DSP integration switched on (§7, *The DSP
 integration switch*). Within DSP Integration, the
 company pages are **Exchange settings**, **Advertiser settings** and
 **Shared Targeting Variables**, followed by one page per DSP.
@@ -372,9 +374,11 @@ DSP (tier 1). Campaigns authored by HQ are unchanged.
 ### Advertisers / Inventory
 
 A new **Advertisers / Inventory** item in the HQ Admin navigation, placed
-**below Campaign Status and above DSP Integration** (Rob, 24 Sep 2026). It carries per-advertiser settings and,
-below them, the inventory those advertisers can buy (§5); **campaigns are
-not approved here.**
+**below Playlist Management and above DSP Integration** (Rob, 24 Sep 2026;
+Campaign Status no longer sits between them — it folded into Campaign
+schedule's own second tab, 26 Sep 2026). It carries per-advertiser settings
+and, below them, the inventory those advertisers can buy (§5); **campaigns
+are not approved here.**
 
 **Admin and marketing users both see it** (Rob, 20 Sep): marketing reads it,
 and only an admin changes approval, pricing, what a position is assigned to
@@ -499,7 +503,9 @@ with a minimal change to the campaign table:
   detail view of its own. (The POC's own "Campaign Status" table is an
   explicit stand-in for this section, deleted on integration — see
   `CAMPAIGN-APPROVAL-INTEGRATION.md` — so its campaign name link opens the
-  POC's own placeholder detail page only until then.)
+  POC's own placeholder detail page only until then. In the POC it is no
+  longer its own admin nav item — see *Campaign schedule* under §7 for where
+  it now lives.)
 - **One row is one playlist, not one row per campaign** (ticket "Campaign
   Status: Playlist name column, submitted count, localised/personalised
   targeting columns, Advertiser first"): an advertiser submits exactly one
@@ -1408,10 +1414,9 @@ retailer switch DSP integration on and off.
   changes.** Switching it off before saving also drops unsaved edits to the
   fields it hides.
 - **While it is off:**
-  - Campaign Status and Advertisers / Inventory are hidden from the
-    navigation, and a link to either (or to the booking schedule) opens
-    the first page instead. DSP Integration stays, because the switch is
-    there.
+  - Advertisers / Inventory is hidden from the navigation, and a link to it
+    (or to Campaign schedule — see below) opens the first page instead. DSP
+    Integration stays, because the switch is there.
   - No DSP is sent bid requests; the scheduled auction doesn't run.
   - The Partner API and `sellers.json` answer 404, exactly as with the
     build's feature flag off.
@@ -2053,8 +2058,10 @@ playback analytics.**
 
 ### Advertisers / Inventory
 
-- **Advertisers / Inventory screen**, below Campaign Status and above DSP
-  Integration in the navigation, editable by an admin and read-only for marketing: every
+- **Advertisers / Inventory screen**, below Playlist Management and above
+  DSP Integration in the navigation (Campaign Status is no longer a nav item
+  between them — see *Campaign schedule* below), editable by an admin and
+  read-only for marketing: every
   advertiser across all DSPs, with a **Campaign approval** toggle (Required /
   Not required, default Required), a **floor multiplier** (default 1.0) with
   the effective floor shown in the company currency, its **campaigns by
@@ -2153,14 +2160,24 @@ playback analytics.**
   localised, personalised, interactive — localised only by default, set by
   an admin, published on the position and enforced on every bid.
   *(Advertisers / Inventory → Available Inventory)*
-- **Booking schedule**: every advertiser position across its play windows,
-  booked / available / unavailable, **at the top of its own page**, with
-  booking revenue per display type and then what sold by campaign type
-  below it (Rob, 21 Sep: the schedule is what the page is for; the money
-  reads as its summary). **Stands alone in its own tab** (Rob, 21 Sep): no
-  Display Types / DSP Integration nav beside it (`RouteHandle.hideNav`),
-  and no second "Schedule" section header repeating the page's own title
-  immediately above the table. Its DSP and advertiser filters are column
+- **Campaign schedule** (renamed from "Booking schedule", ticket 26 Sep
+  2026): the page opened from Available Inventory or an advertiser now
+  holds **two tabs** — **Booking schedule** (the landing/default tab,
+  everything below in this bullet, unchanged) and **Campaign status**
+  (the full Campaign Status table — see "Campaign table now groups by
+  playlist..." under *Campaign asset approval* above — shown at full
+  width; Campaign Status is no longer its own item in the HQ Admin
+  navigation, this tab is its only home now). The page as a whole **still
+  stands alone in its own browser tab** (Rob, 21 Sep, unchanged by the 26
+  Sep tab restructuring above): no Display Types / DSP Integration nav
+  beside it (`RouteHandle.hideNav`).
+- **Booking schedule tab**: every advertiser position across its play
+  windows, booked / available / unavailable, **at the top of the tab**,
+  with booking revenue per display type and then what sold by campaign
+  type below it (Rob, 21 Sep: the schedule is what the page is for; the
+  money reads as its summary), and no second "Schedule" section header
+  repeating the page's own title immediately above the table. Its DSP and
+  advertiser filters are column
   filters, kept in the URL and applied by the server. **The advertiser
   filter lists only advertisers with something booked in the range on
   screen, and choosing one leaves only the positions it holds** (Rob,
@@ -2180,8 +2197,7 @@ playback analytics.**
   (`booking.partnerName`), not the position's `partnerNames` (who is merely
   *eligible* to buy the slot) — the two can differ whenever a slot takes
   bids from more than one DSP, and only the former is guaranteed to match
-  the advertiser shown beside it. *(Advertisers / Inventory → Booking
-  schedule)*
+  the advertiser shown beside it. *(Campaign schedule → Booking schedule tab)*
 - **Play-window booked/available summary, wherever the page counts
   "windows"** (ticket "anytime you use the word Windows please show a
   representation of how many are booked versus … localised … personalised
@@ -2191,7 +2207,7 @@ playback analytics.**
   — right next to the window count itself, not only inside the grid. The
   Position cell on every row (above) carries the same read for that one
   row, in every view (Daily included, where the earlier per-row rollup only
-  showed in Weekly/Monthly). *(Advertisers / Inventory → Booking schedule)*
+  showed in Weekly/Monthly). *(Campaign schedule → Booking schedule tab)*
 - **Booking revenue table: % sold, Estimated revenue, no Billed revenue**
   (ticket "% of slots sold" and ticket "instead of booked revenue can you
   call it estimated revenue and remove the billed revenue column", both 22
@@ -2206,7 +2222,7 @@ playback analytics.**
   table** — invoicing what actually played is the DSP's own concern, not
   this schedule's (it still appears in a booked tile's own hover, which
   covers one specific booking rather than a display type's whole period).
-  *(Advertisers / Inventory → Booking schedule)*
+  *(Campaign schedule → Booking schedule tab)*
 - **Single-advertiser stacking tile** (ticket "Booking schedule:
   single-advertiser stacking tile", 22 Sep, superseding the earlier
   same-day "layered reach breakdown, as three stacked pills" design):
@@ -2244,8 +2260,7 @@ playback analytics.**
   other for the pointer): the tile's single tooltip now folds in every
   layer's detail — reach counts, lit trigger labels — that used to need a
   separate, nested hover to see; the layer rows and trigger icons
-  themselves are purely visual. *(Advertisers / Inventory → Booking
-  schedule)*
+  themselves are purely visual. *(Campaign schedule → Booking schedule tab)*
 - **Personalised trigger icons** (ticket "Booking schedule: personalised
   trigger icons", 22 Sep): on the personalised row of the tile, icons
   indicate the trigger mechanism the campaign's personalised targeting
@@ -2264,8 +2279,7 @@ playback analytics.**
   identified/checked in). More than one icon may be lit when a campaign's
   rules combine tiers; which icons are lit tells the viewer the expected
   activation frequency and therefore how reliably the personalised
-  revenue will actually be earned. *(Advertisers / Inventory → Booking
-  schedule)*
+  revenue will actually be earned. *(Campaign schedule → Booking schedule tab)*
 
 ### Shared targeting variables
 
@@ -2290,10 +2304,11 @@ playback analytics.**
 ### DSP integration and exchange
 
 - **DSP integration switch** (Rob, 24 Sep 2026): **Enable DSP Integration**
-  at the top of Exchange settings, off at first; while off, Campaign Status
-  and Advertisers / Inventory are hidden, no bid requests are sent, the
-  Partner API and `sellers.json` answer 404, and nothing is deleted.
-  *(DSP Integration → Exchange settings)*
+  at the top of Exchange settings, off at first; while off, Advertisers /
+  Inventory (and, from there, Campaign schedule's Campaign status tab) is
+  hidden, no bid requests are sent, the Partner API and `sellers.json`
+  answer 404, and nothing is deleted. *(DSP Integration → Exchange
+  settings)*
 - **Exchange settings**: four seller-of-record fields and the published
   `sellers.json` status, shown once the switch is on. *(DSP Integration →
   Exchange settings)*

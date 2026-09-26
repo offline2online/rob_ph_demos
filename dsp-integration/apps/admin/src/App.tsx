@@ -9,13 +9,12 @@ import { Q } from './api/queries'
 import { type Flags, envFlags } from './flags'
 import { AdvertisersPage } from './features/advertisers/AdvertisersPage'
 import { CampaignDetail } from './features/campaign-status/CampaignDetail'
-import { CampaignStatusPage } from './features/campaign-status/CampaignStatusPage'
 import { DisplayTypesPage } from './features/display-types/DisplayTypesPage'
 import { PlaylistManagementPage } from './features/playlist-management/PlaylistManagementPage'
 import { DspIndex, DspIntegrationLayout } from './features/dsp-integration/DspIntegrationLayout'
 import { AddPartnerRoute, PartnerRoute } from './features/dsp-integration/AddPartner'
 import { AdvertiserSettings } from './features/dsp-integration/AdvertiserSettings'
-import { BookingSchedulePage } from './features/booking-schedule/BookingSchedulePage'
+import { CampaignSchedulePage } from './features/booking-schedule/CampaignSchedulePage'
 import { BOOKING_SCHEDULE_PATH } from './features/booking-schedule/path'
 import { ExchangeSettings } from './features/dsp-integration/ExchangeSettings'
 import { SharedTargetingVariables } from './features/dsp-integration/SharedTargetingVariables'
@@ -30,18 +29,20 @@ import { T, phTheme } from './theme/phTheme'
    the Display Types / DSP Integration nav beside it (ticket, 21 Sep). */
 export interface RouteHandle { title: string; tip?: string; hideNav?: boolean }
 
-/* Navigation order (Rob, 24 Sep 2026): Display Types, Playlist Management,
-   Campaign Status, Advertisers / Inventory, then DSP Integration at the
-   bottom — the everyday pages first, the one-off DSP set-up last.
+/* Navigation order (Rob, 24 Sep 2026; Campaign Status folded into Campaign
+   schedule's own second tab, 26 Sep 2026 — it is no longer a nav item of its
+   own): Display Types, Playlist Management, Advertisers / Inventory, then
+   DSP Integration at the bottom — the everyday pages first, the one-off DSP
+   set-up last.
 
    Who sees what (spec "Who sees each section"; Rob, 20 Sep): DSP Integration
    is admin only; the rest is admin and marketing; a help desk user sees
    nothing at all. The API enforces the same.
 
    `dspOn` is the retailer's own DSP integration switch (Exchange settings,
-   Rob 24 Sep 2026): while it is off — or not yet known — Campaign Status and
-   Advertisers / Inventory are hidden. DSP Integration stays, because the
-   switch lives there. */
+   Rob 24 Sep 2026): while it is off — or not yet known — Advertisers /
+   Inventory (and, from there, Campaign schedule's Campaign status tab) is
+   hidden. DSP Integration stays, because the switch lives there. */
 export function navFor(flags: Flags, session: Session | undefined, dspOn = false): NavItem[] {
   if (session && session.role === 'hq_helpdesk') return []
   const admin = session?.role === 'hq_admin'
@@ -49,8 +50,6 @@ export function navFor(flags: Flags, session: Session | undefined, dspOn = false
   return [
     { to: '/display-types', label: 'Display Types', icon: 'dashboard_customize' },
     { to: '/playlists', label: 'Playlist Management', icon: 'playlist_play' },
-    /* STAND-IN for the existing Campaigns section (package 11); removed on integration. */
-    ...(selling ? [{ to: '/campaign-status', label: 'Campaign Status', icon: 'campaign' }] : []),
     /* Marketing users read it too (spec §3). */
     ...(selling ? [{ to: '/advertisers', label: 'Advertisers / Inventory', icon: 'sell' }] : []),
     /* Last in the list. Flag off: hidden (decision 6). Admin users only. */
@@ -58,9 +57,10 @@ export function navFor(flags: Flags, session: Session | undefined, dspOn = false
   ]
 }
 
-/* Campaign Status, Advertisers / Inventory and the booking schedule open
-   only while DSP integration is switched on; a bookmark or an old tab lands
-   on the first page instead. Their records are untouched either way. */
+/* Campaign schedule (Booking schedule + its Campaign status tab) and
+   Advertisers / Inventory open only while DSP integration is switched on; a
+   bookmark or an old tab lands on the first page instead. Their records are
+   untouched either way. */
 function WhileDspOn({ children }: { children: ReactNode }) {
   const features = useFeatures()
   if (!features.data) return null
@@ -99,13 +99,18 @@ function featureRoutes(flags: Flags): RouteObject[] {
         },
         /* Its own page, opened in a new tab from Available Inventory or an advertiser
            (Rob, 20 Sep) — just the schedule, so no Display Types / DSP Integration
-           nav beside it (Rob, 21 Sep). */
-        { path: BOOKING_SCHEDULE_PATH.slice(1), handle: { title: 'Booking schedule', hideNav: true } satisfies RouteHandle, element: <WhileDspOn><BookingSchedulePage /></WhileDspOn> },
+           nav beside it (Rob, 21 Sep). Renamed "Campaign schedule" and given a second
+           tab hosting the full Campaign Status table (ticket, 26 Sep 2026): Campaign
+           Status is no longer its own admin nav item or route — this tab is its only
+           home now. Booking schedule (this route's first/default tab) is unchanged. */
+        { path: BOOKING_SCHEDULE_PATH.slice(1), handle: { title: 'Campaign schedule', hideNav: true } satisfies RouteHandle, element: <WhileDspOn><CampaignSchedulePage /></WhileDspOn> },
+        /* The campaign detail drill-down still stands alone, opened from a
+           playlist row in the Campaign status tab — same STAND-IN for the
+           existing Campaigns section (package 11), removed on integration. */
         {
-          path: 'campaign-status',
-          handle: { title: 'Campaign Status', tip: 'Every campaign advertisers and DSPs have submitted, with its approval status. Open one to see what was booked, or approve and reject from the table. HQ\u2019s own campaigns are not listed here.' } satisfies RouteHandle,
-          element: <WhileDspOn><Outlet /></WhileDspOn>,
-          children: [{ index: true, element: <CampaignStatusPage /> }, { path: ':id', element: <CampaignDetail /> }],
+          path: 'campaign-status/:id',
+          handle: { title: 'Campaign detail', hideNav: true } satisfies RouteHandle,
+          element: <WhileDspOn><CampaignDetail /></WhileDspOn>,
         }]
       : []),
   ]
