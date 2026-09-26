@@ -369,6 +369,25 @@ same scheduled job merges the whole train and flips every ticket on it to
 the fired session: a green check at verification time says nothing about
 the branch after `main` has been merged into it.
 
+**The Routine's `trainReady` write is not the only way a train merges any
+more.** On 25 Sep 2026 a Deploy run passed every check, did its FAQ
+review, and then its own session permission layer refused the final PATCH
+("Modify Shared Resources"); it reported `deployRoutine.status: "error"`
+honestly, and the approved DSP ticket sat in Approved for Deployment until
+a person ran `dsp-board.yml`'s `train_ready` by hand. Now the pipeline hands
+the train over itself: `functions/train-lock.js`'s `trainHandoverReason()`
+says so when the Routine reported done or error without setting the flag,
+never reported back (25 minutes), or was never fired (5 minutes) —
+applied by `functions/index.js`'s `onDeployRoutineSettled` the moment a
+report lands and by `run-backlog-automation.js`'s `reconcileDeployRequests`
+on every sweep. `processDeployTrain` stamps `deployRequestHandledAt` as it
+consumes a click (so an old click can never re-arm a train) and now
+re-checks the Routine's step 1 itself — every ticket's `deployCommit` must
+be an ancestor of the branch — on top of its existing nothing-in-testing,
+merge and CI guards. The FAQ impact review still runs first, on the intact
+branch, and never gated the merge. `test/train-lock.test.js` and
+`test/train-lock-trigger.test.js` cover the predicate and the trigger.
+
 **A merge here must explicitly re-trigger the deploy — it doesn't happen
 for free.** GitHub deliberately suppresses `on: push` triggers for pushes
 made with a workflow's own `GITHUB_TOKEN` (anti-recursion protection), so

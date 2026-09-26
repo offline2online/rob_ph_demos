@@ -52,7 +52,7 @@ const { buildIndexFromArticleFiles, validateIndexAgainstArticleFiles, serializeI
 // (test/train-lock.test.js) without requiring this whole script, which
 // runs main() for real the moment it's required (see the bottom of this
 // file).
-const { trainLockShouldClear } = require("../functions/train-lock");
+const { trainLockShouldClear, trainHandoverReason } = require("../functions/train-lock");
 
 const PROJECT_ID = "backlog-tracker-e4ed2";
 const REPO = "offline2online/rob_ph_demos";
@@ -2029,6 +2029,12 @@ async function finishTrain(project, deployBranch, prNumber, trainItems, { touche
 // testing; this merges the whole branch to main as ONE PR.
 async function processDeployTrain(project) {
   console.log(`[deploy-train] ${project.id}: ${project.name}`);
+  // This Deploy to Main click is consumed here, whatever the outcome. The
+  // stamp is what stops trainHandoverReason (train-lock.js) handing the
+  // same request over again after it was merged or refused — without it,
+  // an old click would keep re-arming the train and a newly approved
+  // ticket could merge with nobody having clicked for it.
+  await patchProject(project.id, { deployRequestHandledAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
   const deployBranch = project.deployBranch || deployBranchForName(project.name);
   const allItems = await itemsForProject(project.id);
   const onTrain = onTrainItems(allItems);
@@ -2074,6 +2080,28 @@ async function processDeployTrain(project) {
   }
 
   await patchProject(project.id, { trainStatus: "deploying", trainNote: null, updatedAt: new Date().toISOString() });
+
+  // 0. The Deploy Routine's step 1, done here as well so the pipeline can
+  //    hand a train over without it (trainHandoverReason): every ticket's
+  //    commit must actually be on the branch. A card that says it is on the
+  //    train while its commit isn't (reverted, never pushed, a hand-stamped
+  //    typo) means merging would ship something nobody approved — refuse
+  //    and name it, exactly as the Routine would have.
+  checkoutTrain(deployBranch);
+  const offBranch = onTrain.filter((i) => {
+    try { run("git", ["merge-base", "--is-ancestor", i.deployCommit, `origin/${deployBranch}`]); return false; } catch { return true; }
+  });
+  if (offBranch.length) {
+    discardWorkingTree();
+    console.log(`[deploy-train] ${project.id}: ${offBranch.length} ticket(s) claim a commit that is not on ${deployBranch} — refusing to merge the train`);
+    await patchProject(project.id, {
+      trainReady: false, trainStatus: "idle",
+      trainNote: `Not merged: ${offBranch.map((i) => `${i.id} (${String(i.deployCommit).slice(0, 7)})`).join(", ")} ${offBranch.length === 1 ? "claims a commit that is" : "claim commits that are"} not on ${deployBranch}. ` +
+        `Either it was reverted off the train or never pushed — check the card's notes, send it back or re-stamp it, then click Deploy to Main again.`,
+      updatedAt: new Date().toISOString(),
+    });
+    return;
+  }
 
   // 1. Bring main in. This used to be the only remaining conflict path, and
   //    still is for anything other than faq/data/index.json — it needs
@@ -2657,10 +2685,42 @@ async function reconcileHumanMergedPrs() {
   return picked;
 }
 
+// The safety net for functions/index.js's onDeployRoutineSettled — same
+// predicate, trainHandoverReason (train-lock.js): a Deploy to Main click
+// whose Routine run reported back without setting trainReady, never
+// reported back (25 minutes), or was never fired (5 minutes) is handed to
+// processDeployTrain in this same run, which re-verifies the train before
+// merging. The trigger covers the moment a report lands; only a sweep can
+// notice time passing with nothing written.
+async function reconcileDeployRequests() {
+  let projects = [];
+  try {
+    projects = await runQuery({
+      from: [{ collectionId: "projects" }],
+      where: { fieldFilter: { field: { fieldPath: "trainLocked" }, op: "EQUAL", value: { booleanValue: true } } },
+    });
+  } catch (err) {
+    console.log(`[deploy-train] couldn't list locked projects for the hand-over sweep (${err.message}) — skipping this run`);
+    return;
+  }
+  const now = Date.now();
+  for (const project of projects) {
+    const reason = trainHandoverReason(project, now);
+    if (!reason) continue;
+    console.log(`[deploy-train] ${project.id}: handing the train to the pipeline — ${reason}`);
+    await patchProject(project.id, {
+      trainReady: true,
+      trainNote: `Deploy to Main is going ahead without the Routine's hand-over: ${reason}. The pipeline re-checks that every ticket's commit is on the branch and nothing is still in testing before it merges.`,
+      updatedAt: new Date().toISOString(),
+    });
+  }
+}
+
 async function main() {
   await reconcileDeployStatuses();
   await reconcileMergedTrains();
   await reconcileLockedTrains();
+  await reconcileDeployRequests();
   const humanMerged = await reconcileHumanMergedPrs();
 
   const patchReadyItems = await runQuery({
