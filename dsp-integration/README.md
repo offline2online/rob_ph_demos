@@ -45,10 +45,11 @@ the stand-in HQ admin — so it is for demo data only; the workflow's
 
 **It may open with DSP integration switched off.** The hosted database
 predates the switch, so the migration that added it left it off
-(24 Sep 2026). With it off, Campaign Status and Advertisers / Inventory
-aren't in the menu. Switch it on at DSP Integration → Exchange settings and
-Save changes, and everything comes back as it was. Anyone using the link
-shares the switch. A reset seeds the demo retailer with it on.
+(24 Sep 2026). With it off, Advertisers / Inventory isn't in the menu, and
+neither is Campaign schedule's Campaign status tab (opened from there).
+Switch it on at DSP Integration → Exchange settings and Save changes, and
+everything comes back as it was. Anyone using the link shares the switch. A
+reset seeds the demo retailer with it on.
 
 If that API doesn't answer, the page falls back to a **read-only snapshot**
 (`apps/admin/scripts/capture-demo.mjs` captures the API's read side at
@@ -176,10 +177,10 @@ nothing here can even read it without the key.
 | `apps/admin/src/shared/` | Shared UI: save bar, draft state, unsaved-changes guard, delete dialog, InfoTip, list layout, collapsible panel, summary chips, AG Grid wrapper, column filters (`TableFilters.tsx` — the platform's search / funnel pattern; never hand-roll one) |
 | `apps/admin/src/features/display-types/` | Display Types screen: list, form, panels, slot assignment (Advertiser greyed out for a new slot while DSP integration is switched off), delete |
 | `apps/admin/src/features/playlist-management/` | Playlist Management screen: rename and delete |
-| `apps/admin/src/features/dsp-integration/` | DSP Integration section: list, one shared draft, Exchange settings (with the **Enable DSP Integration** switch, which also decides whether Campaign Status and Advertisers / Inventory show), Advertiser settings (with the Auction schedule), Shared Targeting Variables, DSP pages and Add DSP |
-| `apps/admin/src/features/booking-schedule/` | Booking schedule: its own page (opened in a new tab from Available Inventory or an advertiser), with filters, campaign-type summary and daily/weekly/monthly views |
+| `apps/admin/src/features/dsp-integration/` | DSP Integration section: list, one shared draft, Exchange settings (with the **Enable DSP Integration** switch, which also decides whether Advertisers / Inventory and Campaign schedule's Campaign status tab show), Advertiser settings (with the Auction schedule), Shared Targeting Variables, DSP pages and Add DSP |
+| `apps/admin/src/features/booking-schedule/` | Campaign schedule (formerly "Booking schedule", ticket 26 Sep 2026): its own page (opened in a new tab from Available Inventory or an advertiser), two tabs — Booking schedule (the landing tab, filters/campaign-type summary/daily-weekly-monthly views, unchanged) and Campaign status (hosts the Campaign Status table full width; see below) |
 | `apps/admin/src/features/advertisers/` | Advertisers / Inventory: the advertisers table (admin edits approval and floor multipliers) and Available Inventory, where a position's **Assigned to** (DSPs, named advertisers, a buyers list's private auction, or the whitelist) and **Targeting supported** are set; underneath, the **Buyers lists** table creates/edits/deletes the reusable private-auction deals (`BuyersListModal.tsx`, `BuyersListsTable.tsx` — spec "Private auctions (buyers lists)"). Marketing users read all of it |
-| `apps/admin/src/features/campaign-status/` | STAND-IN "Campaign Status" table and campaign page showing the approval components end to end; deleted on integration |
+| `apps/admin/src/features/campaign-status/` | STAND-IN "Campaign Status" table and campaign page showing the approval components end to end; no longer its own admin nav item — hosted as Campaign schedule's second tab (ticket, 26 Sep 2026); deleted on integration |
 | `apps/admin/src/api/queries.ts` | Every section's read queries (key and fetch) in one place: the pages use them, and `usePrefetchSections` in `App.tsx` fetches the other sections in the background once the first page is up, so moving between sections doesn't wait on the API |
 | `apps/admin/src/demo/`, `apps/admin/scripts/capture-demo.mjs` | The hosted prototype: the shim that sends `/api` calls to the hosted API (`VITE_API_URL`), or — if it doesn't answer — answers from a snapshot of the API's read side and refuses writes. Built into `prototype/` (see above) |
 | `deploy/firebase/` | The hosted API: the POC API and mock DSPs as a Cloud Function (`functions/src/host.ts`, `index.ts`), its bundle build (`build.mjs`) and a local stand-in (`local-server.ts`). See its README |
@@ -230,7 +231,9 @@ npm test
   - A new instance starts with it **off**. The seeded demo retailer starts
     with it on.
   - While it is off:
-    - the menu hides Campaign Status and Advertisers / Inventory;
+    - the menu hides Advertisers / Inventory, and Campaign schedule's
+      Campaign status tab is unreachable (its own route redirects home,
+      same as Advertisers / Inventory's);
     - DSP Integration lists only Exchange settings;
     - a new Advertiser slot can't be set up (the owner is greyed out);
     - the Partner API and `sellers.json` answer 404;
@@ -312,7 +315,7 @@ npm test
 - `POC_ROLE` sets the stand-in session: `hq_admin` (everything, including DSP
   Integration, saving advertiser settings and approving), `hq_marketing`
   (Display Types, Playlist Management, Advertisers / Inventory read-only, and
-  Campaign Status; the last two while DSP integration is switched on) or
-  `hq_helpdesk` (none of it).
+  from there Campaign schedule's Campaign status tab; both while DSP
+  integration is switched on) or `hq_helpdesk` (none of it).
 - The API seeds an empty database on its first start. Delete
   `data/poc.sqlite` and `data/assets/` to reseed.
