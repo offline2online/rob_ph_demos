@@ -9,7 +9,7 @@
    Settings panel here is genuinely editable in that case, and the Default
    Playlist dropdown above it is hidden — there's nothing to pick between
    yet, since no playlist exists until Save creates one. */
-import { ColorPicker, Input, InputNumber, Select } from 'antd'
+import { Button, ColorPicker, Input, InputNumber, Select } from 'antd'
 import { TOUCH_POINTS, type DisplayType, type Playlist } from '@ph-dsp/types'
 import { useState } from 'react'
 import { Field } from '../../shared/Field'
@@ -22,10 +22,6 @@ import { PlaylistSettingsPanel } from './panels/PlaylistSettingsPanel'
 import { Preview } from './Preview'
 
 export interface PlaylistOption { id: string; name: string; autoCreatedFor: string | null; playlistSettings?: Record<string, unknown> }
-
-/* Sentinel Select value for "+ Add new playlist" — never a real playlist id
-   (those are always "pl_…"), so it can't collide with one. */
-const ADD_NEW_PLAYLIST = '__add_new_playlist__'
 
 export function DisplayTypeForm({ d, update, playlists, zonePlaylistId, onAddPlaylist, isNewPlaylist, isNewDisplayType, updateDefaultPlaylistSettings }: {
   d: DisplayType
@@ -97,19 +93,25 @@ export function DisplayTypeForm({ d, update, playlists, zonePlaylistId, onAddPla
           there's nothing yet to pick between — the dropdown comes back the
           moment the display type is saved and the playlist is real. */}
       {!isNewDisplayType && (
-        <Field label="Default Playlist" htmlFor="defaultPlaylist">
+        <Field
+          label="Default Playlist"
+          htmlFor="defaultPlaylist"
+          /* "Add new playlist" is its own button, top right above the
+             dropdown, rather than the dropdown's last option (ticket, 27 Sep
+             2026) — so it reads as the way to add a playlist, not as one of
+             the playlists to pick. */
+          action={(
+            <Button color="primary" variant="outlined" size="small" icon={<Icon name="add" size={16} />} onClick={() => set({ defaultPlaylistId: onAddPlaylist() })}>
+              Add new playlist
+            </Button>
+          )}
+        >
           <Select
             id="defaultPlaylist"
             className="w-full"
             value={d.defaultPlaylistId}
-            onChange={(v) => set({ defaultPlaylistId: v === ADD_NEW_PLAYLIST ? onAddPlaylist() : v })}
-            options={[
-              ...playlists.map((p) => ({ value: p.id, label: `${p.name}${p.autoCreatedFor === d.id ? ' (auto-created)' : ''}` })),
-              {
-                value: ADD_NEW_PLAYLIST,
-                label: <span className="inline-flex items-center gap-1.5" style={{ color: T.primary }}><Icon name="add" size={16} />Add new playlist</span>,
-              },
-            ]}
+            onChange={(v) => set({ defaultPlaylistId: v })}
+            options={playlists.map((p) => ({ value: p.id, label: `${p.name}${p.autoCreatedFor === d.id ? ' (auto-created)' : ''}` }))}
           />
         </Field>
       )}

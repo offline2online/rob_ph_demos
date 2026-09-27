@@ -81,16 +81,22 @@ describe('Display Types page', () => {
     await screen.findByText('Display Preview')
 
     const panel = () => screen.getByRole('region', { name: 'Playlist Settings' })
-    expect(within(panel()).getByRole('button', { expanded: false })).toBeInTheDocument()
-    fireEvent.click(within(panel()).getByRole('button', { expanded: false }))
+    const header = () => within(panel()).getByRole('button', { expanded: false })
+    expect(header()).toBeInTheDocument()
+    /* Collapsed, the header carries the same summary pill as the other
+       panels, and the Playlist Management CTA stays inside the panel rather
+       than on its header (failed-testing feedback, 27 Sep 2026). */
+    expect(within(header()).getByText('Default settings')).toHaveAttribute('data-tone', 'default')
+    expect(within(panel()).queryByRole('button', { name: 'Playlist Management' })).not.toBeInTheDocument()
+    fireEvent.click(header())
 
     expect(within(panel()).getByText('Settings managed within Playlist Management.')).toBeInTheDocument()
-    expect(within(panel()).getByText('Default settings')).toBeInTheDocument()
+    expect(within(panel()).getByRole('tab', { name: 'Default settings' })).toBeInTheDocument()
+    expect(within(panel()).getByRole('button', { name: 'Playlist Management' })).toBeInTheDocument()
     expect(within(panel()).getByRole('combobox', { name: 'Campaign Auto-Rotation' }).closest('.ant-select')).toHaveClass('ant-select-disabled')
 
     fireEvent.click(within(panel()).getByRole('button', { expanded: true }))
-    fireEvent.mouseDown(screen.getByRole('combobox', { name: 'Default Playlist' }))
-    fireEvent.click(await screen.findByText('Add new playlist'))
+    fireEvent.click(screen.getByRole('button', { name: 'Add new playlist' }))
 
     fireEvent.click(within(panel()).getByRole('button', { expanded: false }))
     expect(within(panel()).getByText(/This new playlist will be created with these settings/)).toBeInTheDocument()
@@ -108,6 +114,19 @@ describe('Display Types page', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'OK' }))
     expect(await screen.findByRole('button', { name: 'Show settings for Landscape Playlist' })).toBeInTheDocument()
   }, 30000)
+
+  /* Ticket, 27 Sep 2026: "Add new playlist" is a button above the Default
+     Playlist dropdown, top right, not the dropdown's last option. */
+  it('adds a new playlist from a button above the Default Playlist dropdown, not from inside it', async () => {
+    renderAt('/display-types?id=landscape', true)
+    await screen.findByText('Display Preview')
+    const add = screen.getByRole('button', { name: 'Add new playlist' })
+    fireEvent.mouseDown(screen.getByRole('combobox', { name: 'Default Playlist' }))
+    await waitFor(() => expect(screen.getAllByTitle(/^Landscape Playlist/).length).toBeGreaterThan(1))
+    expect(screen.getAllByText('Add new playlist')).toHaveLength(1)
+    fireEvent.click(add)
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Save changes' })).not.toBeDisabled())
+  })
 
   /* The real backend (ensureReferencedPlaylists) auto-creates the referenced
      playlist and persists the display type's new defaultPlaylistId, so a
@@ -139,8 +158,7 @@ describe('Display Types page', () => {
     renderAt('/display-types?id=landscape', true)
     await screen.findByText('Display Preview')
     const panel = () => screen.getByRole('region', { name: 'Playlist Settings' })
-    fireEvent.mouseDown(screen.getByRole('combobox', { name: 'Default Playlist' }))
-    fireEvent.click(await screen.findByText('Add new playlist'))
+    fireEvent.click(await screen.findByRole('button', { name: 'Add new playlist' }))
     fireEvent.click(within(panel()).getByRole('button', { expanded: false }))
     expect(within(panel()).getByText(/This new playlist will be created with these settings/)).toBeInTheDocument()
 

@@ -10,14 +10,22 @@
    and also for an existing display type whose default was just swapped via
    "+ Add new playlist". Once the playlist is real, Playlist Management is
    the only place that edits it (ticket, 26 Sep 2026) and this panel becomes
-   a read-only preview with a comment and a CTA there. */
+   a read-only preview with a comment and a CTA there.
+
+   Its collapsed header carries the same summary pill the other panels do
+   ("Default settings", or "N settings changed"), and the Playlist
+   Management CTA sits inside the panel rather than on its header, so it
+   isn't competing with the rest of the form (failed-testing feedback,
+   27 Sep 2026). */
 import { Button, Tabs } from 'antd'
 import type { Playlist } from '@ph-dsp/types'
 import { useNavigate } from 'react-router-dom'
 import { CollapsiblePanel } from '../../../shared/CollapsiblePanel'
 import { Icon } from '../../../shared/Icon'
+import { SummaryChip } from '../../../shared/SummaryChip'
 import { T } from '../../../theme/phTheme'
 import { PlaylistStyleFields } from '../../playlist-management/PlaylistStyleFields'
+import { styleSummary } from '../model'
 import type { PlaylistOption } from '../DisplayTypeForm'
 
 export function PlaylistSettingsPanel({ playlist, editable, onUpdate, open, onToggle }: {
@@ -40,16 +48,17 @@ export function PlaylistSettingsPanel({ playlist, editable, onUpdate, open, onTo
       title="Playlist Settings"
       open={open}
       onToggle={onToggle}
-      badge={(
-        <Button type="text" size="small" className="shrink-0 px-1" onClick={() => navigate('/playlists')}>
+      summary={styleSummary(asPlaylist).map(({ key, ...c }) => <SummaryChip key={key} {...c} />)}
+    >
+      <div className="mb-3 flex flex-wrap items-center gap-x-2 gap-y-1" style={{ fontSize: 12.5, color: T.muted }}>
+        <span>
+          {editable
+            ? 'This new playlist will be created with these settings. Edit them from Playlist Management once it’s been saved.'
+            : 'Settings managed within Playlist Management.'}
+        </span>
+        <Button color="primary" variant="text" size="small" className="px-1" onClick={() => navigate('/playlists')}>
           Playlist Management<Icon name="arrow_forward" size={13} />
         </Button>
-      )}
-    >
-      <div className="mb-3" style={{ fontSize: 12.5, color: T.muted }}>
-        {editable
-          ? 'This new playlist will be created with these settings. Edit them from Playlist Management once it’s been saved.'
-          : 'Settings managed within Playlist Management.'}
       </div>
       <Tabs
         items={[{
