@@ -146,6 +146,17 @@ function escapeHTML(s) {
     .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 }
+// Every URL that lands in an href/src came from Firestore, where any editor
+// (or an agent over MCP, or a Routine session) can write it. escapeHTML
+// stops it breaking out of the attribute; it does nothing about a
+// `javascript:` scheme, which runs in every other member's browser on
+// click. So: http(s) only, anything else renders as no link at all.
+function safeHttpUrl(u) {
+  try {
+    const parsed = new URL(String(u || ""));
+    return parsed.protocol === "https:" || parsed.protocol === "http:" ? parsed.href : "";
+  } catch { return ""; }
+}
 
 // ── Generic in-app dialog — the one thing every window.confirm/window.prompt/
 // window.alert call in this app now goes through. A native dialog blocks
@@ -729,7 +740,7 @@ function cardHTML(item) {
   // rather than a template literal purely so this block stays easy to
   // transplant between checkouts.
   const prBadge = item.prUrl
-    ? '<a class="pr-badge' + (item.mergedAt ? ' pr-badge-merged' : '') + '" href="' + escapeHTML(item.prUrl) +
+    ? '<a class="pr-badge' + (item.mergedAt ? ' pr-badge-merged' : '') + '" href="' + escapeHTML(safeHttpUrl(item.prUrl)) +
       '" target="_blank" rel="noopener" title="' +
       (item.mergedAt ? 'Merged to main by the backlog automation' : 'Open on GitHub — not merged yet') +
       '">PR #' + escapeHTML(String(item.prNumber || '?')) + (item.mergedAt ? ' &middot; merged' : ' &middot; open') + '</a>'
@@ -747,7 +758,7 @@ function cardHTML(item) {
     ? '<div class="deploy-badge deploy-badge-' + escapeHTML(item.deployConclusion || "unknown") + '">' +
       (item.mergeCommit ? '<span class="deploy-badge-commit" title="Merge commit">' + escapeHTML(String(item.mergeCommit).slice(0, 7)) + '</span>' : "") +
       (item.deployRunUrl
-        ? '<a href="' + escapeHTML(item.deployRunUrl) + '" target="_blank" rel="noopener">' +
+        ? '<a href="' + escapeHTML(safeHttpUrl(item.deployRunUrl)) + '" target="_blank" rel="noopener">' +
           (item.deployConclusion === "success" ? "Deploy succeeded"
             : item.deployConclusion === "pending" || !item.deployConclusion ? "Deploy running&hellip;"
             : "Deploy " + escapeHTML(item.deployConclusion)) + '</a>'
@@ -780,7 +791,7 @@ function cardHTML(item) {
   // gone.
   const testLinkHTML = isTesting && item.previewUrl
     ? `<div class="test-link-row">
-        <a href="${escapeHTML(item.previewUrl)}" target="_blank" rel="noopener" class="test-link-btn">Test this &rarr;</a>
+        <a href="${escapeHTML(safeHttpUrl(item.previewUrl))}" target="_blank" rel="noopener" class="test-link-btn">Test this &rarr;</a>
         <button type="button" class="icon-btn test-link-edit-btn" data-id="${item.id}" title="Change test link">&#9998;</button>
       </div>`
     : "";
@@ -983,7 +994,7 @@ function optionsMenuHTML(project) {
   // (faqArticleRowHTML below) — no click handler needed since it's just an
   // <a target="_blank">, not an app action.
   html += artifactUrl
-    ? `<a class="options-menu-item" href="${escapeHTML(artifactUrl)}" target="_blank" rel="noopener">
+    ? `<a class="options-menu-item" href="${escapeHTML(safeHttpUrl(artifactUrl))}" target="_blank" rel="noopener">
         View Artifact &#8599;
         ${project.artifactUpdatedAt ? `<span class="options-menu-sub">updated ${escapeHTML(formatNoteAt(project.artifactUpdatedAt))}</span>` : ""}
       </a>`
@@ -1145,7 +1156,7 @@ function notifyClaudeButtonHTML(project) {
     <span class="notify-claude-label">${confirmed ? "Deving&hellip;" : "Working&hellip;"}</span>
     <span class="notify-claude-count-pill">${itemCountLabel}</span>`;
   const mainBtn = confirmed
-    ? `<a href="${escapeHTML(routine.sessionUrl)}" target="_blank" rel="noopener" class="notify-claude-btn notify-claude-btn-working notify-claude-btn-clickable" title="View the Claude Code session working through the ${itemCountLabel} item(s) sent">${mainBtnInner}</a>`
+    ? `<a href="${escapeHTML(safeHttpUrl(routine.sessionUrl))}" target="_blank" rel="noopener" class="notify-claude-btn notify-claude-btn-working notify-claude-btn-clickable" title="View the Claude Code session working through the ${itemCountLabel} item(s) sent">${mainBtnInner}</a>`
     : `<button type="button" class="notify-claude-btn notify-claude-btn-working" disabled title="A Claude Code session is working through the ${itemCountLabel} item(s) sent">${mainBtnInner}</button>`;
 
   const newBtn = newCount
@@ -1224,7 +1235,7 @@ function deployNotifyButtonHTML(project) {
     <span class="notify-claude-label">${confirmed ? "Deploying&hellip;" : "Working&hellip;"}</span>
     <span class="notify-claude-count-pill">${itemCountLabel}</span>`;
   return confirmed
-    ? `<a href="${escapeHTML(routine.sessionUrl)}" target="_blank" rel="noopener" class="notify-claude-btn notify-claude-btn-working notify-claude-btn-clickable" title="View the Claude Code session merging the ${itemCountLabel} item(s) sent">${mainBtnInner}</a>`
+    ? `<a href="${escapeHTML(safeHttpUrl(routine.sessionUrl))}" target="_blank" rel="noopener" class="notify-claude-btn notify-claude-btn-working notify-claude-btn-clickable" title="View the Claude Code session merging the ${itemCountLabel} item(s) sent">${mainBtnInner}</a>`
     : `<button type="button" class="notify-claude-btn notify-claude-btn-working" disabled title="A Claude Code session is merging the ${itemCountLabel} item(s) sent">${mainBtnInner}</button>`;
 }
 
@@ -1286,7 +1297,7 @@ function groomNotifyButtonHTML(project) {
     <span class="notify-claude-label">${confirmed ? "Grooming&hellip;" : "Working&hellip;"}</span>
     <span class="notify-claude-count-pill">${itemCountLabel}</span>`;
   return confirmed
-    ? `<a href="${escapeHTML(routine.sessionUrl)}" target="_blank" rel="noopener" class="notify-claude-btn notify-claude-btn-working notify-claude-btn-clickable" title="View the Claude Code session grooming the ${itemCountLabel} item(s) in Backlog">${mainBtnInner}</a>`
+    ? `<a href="${escapeHTML(safeHttpUrl(routine.sessionUrl))}" target="_blank" rel="noopener" class="notify-claude-btn notify-claude-btn-working notify-claude-btn-clickable" title="View the Claude Code session grooming the ${itemCountLabel} item(s) in Backlog">${mainBtnInner}</a>`
     : `<button type="button" class="notify-claude-btn notify-claude-btn-working" disabled title="A Claude Code session is grooming the ${itemCountLabel} item(s) in Backlog">${mainBtnInner}</button>`;
 }
 
@@ -1549,7 +1560,7 @@ function healthRunSegmentHTML(label, run) {
   const atMs = run.at && run.at.toMillis ? run.at.toMillis() : Date.parse(run.at) || 0;
   const inner = `<span class="health-dot ${dotClass}"></span>${escapeHTML(label)}: ${escapeHTML(run.conclusion || "unknown")} · ${describeAgo(atMs)}`;
   return run.runUrl
-    ? `<a class="health-seg health-seg-link" href="${escapeHTML(run.runUrl)}" target="_blank" rel="noopener" title="View the ${escapeHTML(label)} run">${inner}</a>`
+    ? `<a class="health-seg health-seg-link" href="${escapeHTML(safeHttpUrl(run.runUrl))}" target="_blank" rel="noopener" title="View the ${escapeHTML(label)} run">${inner}</a>`
     : `<span class="health-seg">${inner}</span>`;
 }
 
@@ -1611,6 +1622,9 @@ function getRenderedProjects() {
 
 let ensuredGeneralDoc = false;
 function ensureGeneralProjectDoc(renderedProjects) {
+  // A one-off repair, so it runs from an admin's tab only — with 100 tabs
+  // open, every one of them used to fire the same setDoc.
+  if (currentConsoleRole() !== "admin") return;
   const stillSynthetic = renderedProjects.some((p) => p.id === GENERAL_PROJECT_ID) &&
     !projects.some((p) => p.id === GENERAL_PROJECT_ID);
   if (stillSynthetic && !ensuredGeneralDoc) {
@@ -1622,6 +1636,7 @@ function ensureGeneralProjectDoc(renderedProjects) {
 
 const migratedIds = new Set();
 function migrateOrphanItems() {
+  if (currentConsoleRole() !== "admin") return;
   items.forEach((item) => {
     if (!item.projectId && !migratedIds.has(item.id)) {
       migratedIds.add(item.id);
@@ -1889,6 +1904,57 @@ syncStickyTopbarOffset();
 const REST_BASE = `https://firestore.googleapis.com/v1/projects/${firebaseConfig.projectId}/databases/(default)/documents`;
 const liveCollections = new Set();
 
+// Every onSnapshot below shares this. Firestore stops a listener for good
+// after permission-denied — which is exactly what happens when an admin
+// removes or disables the signed-in member, or the account is revoked —
+// and until 27 Sep 2026 the only sign was a console.error: the board froze
+// on stale data and every click failed one by one. Now a denied listener
+// reloads the page, which lands on auth-gate.js's sign-in wall with the
+// reason; any other error shows once in the health strip's slot and the SDK
+// keeps retrying on its own.
+let listenerDeniedHandled = false;
+function onListenerError(collectionName) {
+  return (err) => {
+    const code = err && err.code ? String(err.code) : "";
+    console.error(`backlog-tracker: ${collectionName} listener error`, err);
+    if ((code === "permission-denied" || code === "unauthenticated") && !listenerDeniedHandled) {
+      listenerDeniedHandled = true;
+      // Tell auth-gate.js why it's being reloaded, and how many times: on
+      // the next load it skips the cached role claim, mints a fresh token
+      // and re-resolves membership over the network. A second refusal in
+      // the same tab is shown, not reloaded — a rules/membership mismatch
+      // must never become a reload loop.
+      let strikes = 0;
+      try { strikes = Number(sessionStorage.getItem("ph-console-denied") || 0); } catch { /* ignore */ }
+      if (strikes >= 1) {
+        const strip = document.getElementById("health-strip");
+        if (strip) {
+          strip.hidden = false;
+          strip.innerHTML = "";
+          const note = document.createElement("div");
+          note.className = "health-seg health-seg-bad";
+          note.textContent = "The board refused this account's reads. Sign out and back in; if it persists, ask an admin to check your row in Settings → Team & agent access.";
+          strip.appendChild(note);
+        }
+        return;
+      }
+      try { sessionStorage.setItem("ph-console-denied", String(strikes + 1)); } catch { /* ignore */ }
+      try { localStorage.removeItem("ph-console-signed-in"); localStorage.removeItem("ph-console-role"); } catch { /* ignore */ }
+      window.location.reload();
+      return;
+    }
+    const strip = document.getElementById("health-strip");
+    if (strip && !strip.querySelector("[data-listener-error]")) {
+      const note = document.createElement("div");
+      note.className = "health-seg health-seg-bad";
+      note.dataset.listenerError = "1";
+      note.textContent = `Live updates for ${collectionName} are interrupted (${code || "error"}) — reconnecting…`;
+      strip.hidden = false;
+      strip.appendChild(note);
+    }
+  };
+}
+
 // REST returns Firestore's wire format; the app expects what the SDK hands
 // back. Timestamps in particular are read through tsMillis()/toDate()
 // elsewhere in this file, so they have to arrive as objects with those
@@ -2040,7 +2106,7 @@ primeFromRest("faqArticles", (rows) => {
 
 onSnapshot(query(itemsRef, orderBy("createdAt", "desc")), (snap) => {
   liveCollections.add("backlogItems");
-  allItems = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  allItems = snap.docs.map((d) => ({ id: d.id, ...d.data({ serverTimestamps: "estimate" }) }));
   items = allItems.filter((i) => i.status !== "archived");
   render();
   if (archiveProjectId) renderArchivePage();
@@ -2053,20 +2119,16 @@ onSnapshot(query(itemsRef, orderBy("createdAt", "desc")), (snap) => {
   // derived from allItems, not from systemStatus itself — refresh it here
   // too, not just from the systemStatus listener below.
   renderHealthStrip();
-}, (err) => {
-  console.error("backlog-tracker: items listener error", err);
-});
+}, onListenerError("items"));
 
 onSnapshot(systemStatusRef, (snap) => {
   systemStatus = snap.exists() ? snap.data() : null;
   renderHealthStrip();
-}, (err) => {
-  console.error("backlog-tracker: systemStatus listener error", err);
-});
+}, onListenerError("systemStatus"));
 
 onSnapshot(query(projectsRef, orderBy("createdAt", "asc")), (snap) => {
   liveCollections.add("projects");
-  projects = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  projects = snap.docs.map((d) => ({ id: d.id, ...d.data({ serverTimestamps: "estimate" }) }));
   projectsLoaded = true;
   render();
   if (archiveProjectId) renderArchivePage();
@@ -2074,60 +2136,46 @@ onSnapshot(query(projectsRef, orderBy("createdAt", "asc")), (snap) => {
   if (archivedProjectsPage && !archivedProjectsPage.hidden) renderArchivedProjectsPage();
   // The Releases page counts each release's assigned projects.
   if (releasesPage && !releasesPage.hidden) renderReleasesPage();
-}, (err) => {
-  console.error("backlog-tracker: projects listener error", err);
-});
+}, onListenerError("projects"));
 
 onSnapshot(interfacesRef, (snap) => {
   liveCollections.add("interfaces");
-  interfaces = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  interfaces = snap.docs.map((d) => ({ id: d.id, ...d.data({ serverTimestamps: "estimate" }) }));
   render();
   if (docsProjectId) renderDocsPage();
-}, (err) => {
-  console.error("backlog-tracker: interfaces listener error", err);
-});
+}, onListenerError("interfaces"));
 
 onSnapshot(programsRef, (snap) => {
   liveCollections.add("programs");
-  programs = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  programs = snap.docs.map((d) => ({ id: d.id, ...d.data({ serverTimestamps: "estimate" }) }));
   render();
   if (docsProjectId) renderDocsPage();
-}, (err) => {
-  console.error("backlog-tracker: programs listener error", err);
-});
+}, onListenerError("programs"));
 
 onSnapshot(query(releasesRef, orderBy("order", "asc")), (snap) => {
   liveCollections.add("releases");
-  releases = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  releases = snap.docs.map((d) => ({ id: d.id, ...d.data({ serverTimestamps: "estimate" }) }));
   onReleasesChanged();
-}, (err) => {
-  console.error("backlog-tracker: releases listener error", err);
-});
+}, onListenerError("releases"));
 
 onSnapshot(projectDocsRef, (snap) => {
   liveCollections.add("projectDocs");
-  projectDocs = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  projectDocs = snap.docs.map((d) => ({ id: d.id, ...d.data({ serverTimestamps: "estimate" }) }));
   if (docsProjectId) renderDocsPage();
-}, (err) => {
-  console.error("backlog-tracker: projectDocs listener error", err);
-});
+}, onListenerError("projectDocs"));
 
 onSnapshot(query(skillsRef, orderBy("name", "asc")), (snap) => {
   liveCollections.add("skills");
-  skills = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  skills = snap.docs.map((d) => ({ id: d.id, ...d.data({ serverTimestamps: "estimate" }) }));
   if (skillsPage && !skillsPage.hidden) renderSkillsPage();
-}, (err) => {
-  console.error("backlog-tracker: skills listener error", err);
-});
+}, onListenerError("skills"));
 
 onSnapshot(query(conceptsRef, orderBy("updatedAt", "desc")), (snap) => {
   liveCollections.add("concepts");
-  concepts = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  concepts = snap.docs.map((d) => ({ id: d.id, ...d.data({ serverTimestamps: "estimate" }) }));
   if (conceptIncubatorPage && !conceptIncubatorPage.hidden) renderConceptIncubatorPage();
   if (conceptDetailId) renderConceptDetailPage();
-}, (err) => {
-  console.error("backlog-tracker: concepts listener error", err);
-});
+}, onListenerError("concepts"));
 
 // Returns the new doc's id — the New Item modal needs it back to upload any
 // pending attachments (see createAttachmentController's "pending" mode)
@@ -2221,9 +2269,23 @@ async function removeItem(id) {
 // the ← arrow sends an Approved for Deployment card to Ready for Testing
 // (its commit stays on the branch, which is correct), and Failed testing
 // there does the revert and the send-back. No third control, no new copy.
+// Ids with a status write in flight. A second click before the snapshot
+// lands re-found the card in its old status and wrote a second note (and
+// overwrote lastFailureReason); now it's dropped until the first settles.
+// Projects use the same set, keyed by "project:<id>", for Approve.
+const writesInFlight = new Set();
+async function withWriteLock(key, fn) {
+  if (writesInFlight.has(key)) return;
+  writesInFlight.add(key);
+  try { await fn(); } finally { writesInFlight.delete(key); }
+}
+
 async function failTesting(id) {
   const item = items.find((i) => i.id === id);
   if (!item || item.status !== "ready-for-testing") return;
+  return withWriteLock(id, () => failTestingNow(id, item));
+}
+async function failTestingNow(id, item) {
   // Structured reason (XJoASicLGefL5c9fronl): a fixed category alongside the
   // existing free-text explanation, both stored on the item as
   // lastFailureReason (see fields below) as well as folded into the note —
@@ -2271,6 +2333,9 @@ async function failTesting(id) {
 async function ejectFromTrain(id) {
   const item = items.find((i) => i.id === id);
   if (!item || item.status !== "ready-to-publish" || isNoDeployCard(item)) return;
+  return withWriteLock(id, () => ejectFromTrainNow(id, item));
+}
+async function ejectFromTrainNow(id, item) {
   // Same structured-reason capture as failTesting (XJoASicLGefL5c9fronl) —
   // see that function's own comment on lastFailureReason.
   const result = await showFieldDialog({
@@ -2312,6 +2377,9 @@ async function ejectFromTrain(id) {
 async function requestRevert(id) {
   const item = items.find((i) => i.id === id);
   if (!item || item.status !== "published-live" || !item.mergeCommit || item.revertReady) return;
+  return withWriteLock(id, () => requestRevertNow(id, item));
+}
+async function requestRevertNow(id, item) {
   const ok = await showConfirmDialog(
     `Revert "${item.title}"? This opens a PR undoing merge commit ${String(item.mergeCommit).slice(0, 7)} and moves this card back to Ready for Testing — it still needs to be tested and approved again before Deploy to Main actually takes the change out of production.`,
     { title: "Revert deployment", okLabel: "Revert", danger: true }
@@ -2341,13 +2409,23 @@ async function restoreItem(id) {
 // Unset option means "go back to build-batches.js's automatic guess" — sent
 // as null, same "explicit clear, not an empty string sitting on the doc"
 // convention setItemPreviewUrl already uses for previewUrl.
-async function updateItemDetails(id, { title, desc, type, category, effort, priority, noDeploymentRequired }) {
-  await updateDoc(doc(db, "backlogItems", id), {
-    title: title.trim(), desc: desc.trim(), type, category,
-    effort: effort || null, priority: priority || null,
-    noDeploymentRequired: !!noDeploymentRequired,
-    updatedAt: serverTimestamp(),
-  });
+// `changed` is the subset of fields the person actually edited (the Edit
+// modal diffs its inputs against what it loaded). Writing all seven
+// unconditionally was a lost-update bug: a Routine groom pass or a second
+// person could change the category or title while the modal sat open, and
+// Save silently put the stale values back.
+async function updateItemDetails(id, changed) {
+  const patch = {};
+  if ("title" in changed) patch.title = changed.title.trim();
+  if ("desc" in changed) patch.desc = changed.desc.trim();
+  if ("type" in changed) patch.type = changed.type;
+  if ("category" in changed) patch.category = changed.category;
+  if ("effort" in changed) patch.effort = changed.effort || null;
+  if ("priority" in changed) patch.priority = changed.priority || null;
+  if ("noDeploymentRequired" in changed) patch.noDeploymentRequired = !!changed.noDeploymentRequired;
+  if (!Object.keys(patch).length) return;
+  patch.updatedAt = serverTimestamp();
+  await updateDoc(doc(db, "backlogItems", id), patch);
 }
 
 // `at` is a plain client Date, not serverTimestamp() — Firestore rejects a
@@ -2358,13 +2436,17 @@ async function addItemComment(id, text) {
   const trimmed = (text || "").trim();
   if (!trimmed) return;
   await updateDoc(doc(db, "backlogItems", id), {
-    notes: arrayUnion({ author: "viewer", text: trimmed, at: new Date() }),
+    notes: arrayUnion({ author: (auth.currentUser && auth.currentUser.email) || "viewer", text: trimmed, at: new Date() }),
     updatedAt: serverTimestamp(),
   });
 }
 
 async function setItemPreviewUrl(id, url) {
   const trimmed = (url || "").trim();
+  if (trimmed && !safeHttpUrl(trimmed)) {
+    await showAlert("A test link has to be an http(s) URL.");
+    return;
+  }
   await updateDoc(doc(db, "backlogItems", id), { previewUrl: trimmed || null, updatedAt: serverTimestamp() });
 }
 
@@ -2589,6 +2671,9 @@ async function requestNotify(pid) {
 // notifyOnItemsDeployedToFeature is now dead code (harmless, just never
 // triggered) until a future cleanup removes it from functions/index.js too.
 async function deployToFeature(pid) {
+  return withWriteLock(`project:${pid}`, () => deployToFeatureNow(pid));
+}
+async function deployToFeatureNow(pid) {
   // Ticked items only. requestNotify's "an empty selection means everything"
   // rule is deliberately NOT shared here: over-firing a build is cheap,
   // over-approving a release is not, and an empty selection is no longer
@@ -3157,13 +3242,13 @@ function renderEiNotes() {
 function eiAttachmentItemHTML(att, idx) {
   const label = escapeHTML(att.name || (att.type === "video" ? "Screen recording" : "Screenshot"));
   const preview = att.type === "video"
-    ? `<video src="${escapeHTML(att.url)}" class="ei-attachment-thumb" controls muted></video>`
-    : `<a href="${escapeHTML(att.url)}" target="_blank" rel="noopener"><img src="${escapeHTML(att.url)}" alt="${label}" class="ei-attachment-thumb"></a>`;
+    ? `<video src="${escapeHTML(safeHttpUrl(att.url))}" class="ei-attachment-thumb" controls muted></video>`
+    : `<a href="${escapeHTML(safeHttpUrl(att.url))}" target="_blank" rel="noopener"><img src="${escapeHTML(att.url)}" alt="${label}" class="ei-attachment-thumb"></a>`;
   return `<div class="ei-attachment-item">
     ${preview}
     <div class="ei-attachment-meta">
       <span class="ei-attachment-name" title="${label}">${label}</span>
-      <a href="${escapeHTML(att.url)}" target="_blank" rel="noopener" class="ei-attachment-open-link">Open</a>
+      <a href="${escapeHTML(safeHttpUrl(att.url))}" target="_blank" rel="noopener" class="ei-attachment-open-link">Open</a>
     </div>
     <button type="button" class="icon-btn ei-attachment-remove-btn" data-idx="${idx}" title="Remove attachment">&times;</button>
   </div>`;
@@ -3187,10 +3272,16 @@ function setEiAttachHint(text) {
 const updateEiTitleCount = wireCharCount(eiTitleInput, document.getElementById("ei-title-count"));
 const updateEiDescCount = wireCharCount(eiDescInput, document.getElementById("ei-desc-count"));
 
+let eiLoadedSnapshot = null;
 function openEditItemModal(id) {
   editingItemId = id;
   const item = allItems.find((i) => i.id === id);
   if (!item) return;
+  eiLoadedSnapshot = {
+    title: item.title || "", desc: item.desc || "", type: item.type === "bug" ? "bug" : "feature",
+    category: item.category || CATEGORIES[0], effort: item.effort || "", priority: item.priority || "",
+    noDeploymentRequired: !!item.noDeploymentRequired,
+  };
   eiTitleInput.value = item.title || "";
   eiDescInput.value = item.desc || "";
   updateEiTitleCount();
@@ -3226,24 +3317,36 @@ document.addEventListener("keydown", (e) => {
 document.querySelectorAll("#ei-backdrop .type-opt").forEach((btn) => {
   btn.addEventListener("click", () => setEiTypeToggle(btn.dataset.type));
 });
+let eiSaving = false;
 document.getElementById("ei-save").addEventListener("click", async () => {
-  if (!editingItemId) return;
+  if (!editingItemId || eiSaving) return;
   if (!eiTitleInput.value.trim()) { await showAlert("Title can't be empty."); return; }
   const type = document.querySelector("#ei-backdrop .type-opt.active")?.dataset.type || "feature";
   const title = eiTitleInput.value.trim();
   const desc = eiDescInput.value.trim();
+  const current = {
+    title, desc, type, category: eiCategorySelect.value,
+    effort: eiEffortSelect.value, priority: eiPrioritySelect.value,
+    noDeploymentRequired: eiNoDeployCheckbox.checked,
+  };
+  const changed = {};
+  for (const [k, v] of Object.entries(current)) {
+    if (!eiLoadedSnapshot || eiLoadedSnapshot[k] !== v) changed[k] = v;
+  }
+  eiSaving = true;
+  const saveBtn = document.getElementById("ei-save");
+  saveBtn.disabled = true;
   try {
-    await updateItemDetails(editingItemId, {
-      title, desc, type, category: eiCategorySelect.value,
-      effort: eiEffortSelect.value, priority: eiPrioritySelect.value,
-      noDeploymentRequired: eiNoDeployCheckbox.checked,
-    });
+    await updateItemDetails(editingItemId, changed);
   } catch (err) {
     await showAlert(describeSaveError(err, [
       { label: "Title", value: title, max: 200 },
       { label: "Description", value: desc, max: 2000 },
     ]));
     return;
+  } finally {
+    eiSaving = false;
+    saveBtn.disabled = false;
   }
   closeEditItemModal();
 });
@@ -3704,7 +3807,22 @@ document.querySelectorAll(".type-opt").forEach((btn) => {
   });
 });
 
+let niSubmitting = false;
 document.getElementById("ni-submit").addEventListener("click", async () => {
+  // A double-click (or Enter then click) used to create two tickets: the
+  // first addDoc hadn't returned before the second click ran.
+  if (niSubmitting) return;
+  niSubmitting = true;
+  const niSubmitBtn = document.getElementById("ni-submit");
+  niSubmitBtn.disabled = true;
+  try {
+    await submitNewItem();
+  } finally {
+    niSubmitting = false;
+    niSubmitBtn.disabled = false;
+  }
+});
+async function submitNewItem() {
   const desc = document.getElementById("ni-desc-input").value.trim();
   const type = document.querySelector(".type-opt.active").dataset.type;
   const category = suggestCategory(desc);
@@ -3773,7 +3891,7 @@ document.getElementById("ni-submit").addEventListener("click", async () => {
       );
     }
   }
-});
+}
 
 // ── Feed in requirements (z1Q6fxo0yTjamxVMWQK5) ──────────────────────────
 // A project's ⋮ menu action to bulk-create several Backlog items from one
@@ -6316,21 +6434,17 @@ async function toggleFaqArticleReview(id) {
 
 onSnapshot(query(faqCategoriesRef, orderBy("order", "asc")), (snap) => {
   liveCollections.add("faqCategories");
-  faqCategories = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  faqCategories = snap.docs.map((d) => ({ id: d.id, ...d.data({ serverTimestamps: "estimate" }) }));
   if (!faqArticlesPage.hidden) renderFaqArticlesPage();
-}, (err) => {
-  console.error("backlog-tracker: faqCategories listener error", err);
-});
+}, onListenerError("faqCategories"));
 
 onSnapshot(query(faqArticlesRef, orderBy("order", "asc")), (snap) => {
   liveCollections.add("faqArticles");
-  faqArticles = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  faqArticles = snap.docs.map((d) => ({ id: d.id, ...d.data({ serverTimestamps: "estimate" }) }));
   if (!faqArticlesPage.hidden) renderFaqArticlesPage();
   if (!faqRevisionReviewPage.hidden) renderFaqRevisionReviewPage();
   resolvePendingFaqArticleRoute();
-}, (err) => {
-  console.error("backlog-tracker: faqArticles listener error", err);
-});
+}, onListenerError("faqArticles"));
 
 // Split into "Settings" (categories) and "FAQ Management" (articles) — two
 // separate hamburger-menu destinations, each its own page — rather than

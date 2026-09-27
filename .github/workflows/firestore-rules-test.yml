@@ -33,6 +33,7 @@ on:
     paths:
       - 'backlog-tracker/firestore.rules'
       - 'backlog-tracker/functions/mcp-server.js'
+      - 'backlog-tracker/functions/index.js'
       - 'backlog-tracker/public/**'
       - 'backlog-tracker/test/**'
       - '.github/workflows/firestore-rules-test.yml'
@@ -41,6 +42,7 @@ on:
     paths:
       - 'backlog-tracker/firestore.rules'
       - 'backlog-tracker/functions/mcp-server.js'
+      - 'backlog-tracker/functions/index.js'
       - 'backlog-tracker/public/**'
       - 'backlog-tracker/test/**'
       - '.github/workflows/firestore-rules-test.yml'
@@ -102,6 +104,19 @@ jobs:
       # network.
       - name: Run console start-up smoke test
         run: npm run test:app-boots
+
+      # The sign-in wall's decisions (public/js/auth-gate.js) under jsdom
+      # with the Auth SDK stubbed: claim-first start, own-row fallback,
+      # refusals, the background membership sync, popup fallbacks. Added
+      # 27 Sep 2026 with the rewrite that stopped sign-in waiting on a
+      # Cloud Function cold start.
+      - name: Run sign-in wall tests
+        run: npm run test:auth-gate
+
+      # The Routine-binding lookup in functions/index.js, which moved to the
+      # server-only routineBindings collection the same day.
+      - name: Run Routine binding tests
+        run: npm run test:routine-binding
 
       - name: Run rules tests against the emulator
         run: npm run test:rules

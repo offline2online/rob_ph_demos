@@ -25,6 +25,17 @@ credentials, no network (the two git-backed ones build a disposable local
 repo pair under the OS temp dir) — only this file's own rules suite below
 needs the emulator.
 
+`auth-gate.test.mjs` (`npm run test:auth-gate`, also on every PR touching
+`backlog-tracker/public/**`) is the sign-in wall's decision logic as a
+test: the real `public/js/auth-gate.js` under jsdom with the Firebase Auth
+SDK stubbed and `fetch` scripted — claim-first start, own-row fallback,
+refusals, the background claim sync, popup fallbacks, and the guard that
+stops a denied listener becoming a reload loop. Added 27 Sep 2026 with the
+rewrite that stopped sign-in waiting on a Cloud Function cold start (see
+`../SECURITY-PERFORMANCE.md`). `routine-binding-trigger.test.js`
+(`npm run test:routine-binding`) covers the server-only `routineBindings`
+lookup in `functions/index.js` from the same day.
+
 `app-boots.test.mjs` (`npm run test:app-boots`, also on every PR touching
 `backlog-tracker/public/**`) is the console's start-up as a test: it
 imports the real `public/js/app.js` under jsdom with the Firebase SDK

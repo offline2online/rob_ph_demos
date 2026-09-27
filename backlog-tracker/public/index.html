@@ -31,7 +31,28 @@
        HTML parsing (and first paint) proceed immediately; both scripts
        still finish executing, in this same order, before app.js runs. -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/quill/1.3.7/quill.min.js" defer></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.0.6/purify.min.js" defer></script>
+  <!-- DOMPurify is vendored (js/vendor/purify.min.js, 3.4.15 — the same
+       build the public help centre ships) rather than loaded from cdnjs:
+       3.0.6 predates three published mXSS fixes, and the console runs
+       agent-authored article HTML through it in front of the admin who
+       reviews it. Same-origin also means it's covered by the hosting
+       headers in firebase.json and needs no SRI. -->
+  <script src="js/vendor/purify.min.js" defer></script>
+  <!-- auth-gate.js only imports app.js once the session is confirmed, and
+       app.js in turn pulls the Firestore and Storage SDKs (the two largest
+       modules on the page) from gstatic. Without these hints that whole
+       graph was fetched serially AFTER sign-in resolved; preloading it lets
+       it download in parallel with the auth restore, so the board is ready
+       to run the instant membership is known. -->
+  <link rel="modulepreload" href="js/auth-gate.js">
+  <link rel="modulepreload" href="js/app.js">
+  <link rel="modulepreload" href="js/build-batches.js">
+  <link rel="modulepreload" href="js/firebase-config.js">
+  <link rel="modulepreload" href="js/version.js">
+  <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.13.2/firebase-app.js">
+  <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.13.2/firebase-auth.js">
+  <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore.js">
+  <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.13.2/firebase-storage.js">
 </head>
 <body>
   <div class="auth-gate" id="auth-gate">
@@ -51,8 +72,15 @@
         <button type="button" class="btn-ghost" id="auth-gate-password-signin">Sign in</button>
         <button type="button" class="link-btn" id="auth-gate-reset">Forgot your password?</button>
       </div>
+      <!-- Shown by auth-gate.js when the Google popup has produced nothing
+           for a while: the full-page redirect flow survives popup blockers
+           and browsers that partition third-party storage. -->
+      <button type="button" class="link-btn" id="auth-gate-redirect" hidden>Sign in with a redirect instead</button>
       <button type="button" class="btn-ghost" id="auth-gate-signout" hidden>Sign out</button>
       <button type="button" class="btn-ghost" id="auth-gate-retry" hidden>Try again</button>
+      <!-- A password account whose address was never verified: the rules
+           refuse it, so the card says so and offers the verification email. -->
+      <button type="button" class="btn-ghost" id="auth-gate-verify" hidden>Send verification email</button>
       <p class="auth-gate-status" id="auth-gate-status" aria-live="polite">Checking sign-in…</p>
     </div>
   </div>
@@ -76,6 +104,12 @@
         <button class="btn-primary" id="new-project-btn" type="button">+ New project</button>
       </div>
     </header>
+
+    <!-- Session-restore progress (auth-gate.js). On a reload by someone who
+         was signed in before, the shell above is shown at once instead of
+         the sign-in card, and this one line says what is still pending;
+         visible only while <html data-booting> is set. -->
+    <div class="boot-status" id="boot-status" role="status" aria-live="polite"></div>
 
     <!-- The board's own page header — kept out of the sticky topbar above
          (which only ever carries global chrome: hamburger, logo, + New
@@ -931,7 +965,7 @@
         <div class="mcp-connections" id="mcp-connections"></div>
       </div>
 
-      <div class="docs-block">
+      <div class="docs-block" data-admin-only>
         <h3>Analytics — FAQ / Help Center</h3>
         <p class="field-hint">A Google Analytics measurement ID (e.g. <code>G-XXXXXXXXXX</code>) or a Google Tag Manager container ID (e.g. <code>GTM-XXXXXXX</code>) — set here once, it gets appended to every customer-facing FAQ page (the front page, category pages, article pages, and search), not just one. Leave blank to track nothing.</p>
         <input type="text" id="fa-analytics-tag-input" maxlength="40" placeholder="G-XXXXXXXXXX or GTM-XXXXXXX">

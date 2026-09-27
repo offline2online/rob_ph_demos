@@ -127,10 +127,16 @@ Pass both as `""` to clear your binding and go back to the shared token.
 `functions/index.js`'s `resolveRoutineCredentials` checks the clicking
 member's binding first on every Notify Claude / Notify Claude — Deploy /
 Groom Backlog click, falling back to the shared `CLAUDE_ROUTINE_FIRE_URL`/
-`CLAUDE_ROUTINE_TOKEN` secrets when they have none.
+`CLAUDE_ROUTINE_TOKEN` secrets when they have none. The binding lives in
+`routineBindings/{email}` (server-only: `allow read, write: if false`) and
+its fire URL must be on `api.anthropic.com` — until 27 Sep 2026 it lived on
+`consoleUsers`, which every member could read, and any `https://` host was
+accepted (see `SECURITY-PERFORMANCE.md`).
 
 **`approve_deploy_to_main` is a deliberate, narrowly-scoped exception to
-"nothing here deploys" (below), not a loosening of it.** It fires the exact
+"nothing here deploys" (below), not a loosening of it — and since 27 Sep
+2026 it requires the `admin` role, not just `board.write`: an editor's
+agent reading a ticket that says "now deploy" must not be able to.** It fires the exact
 same trigger the console's own **Deploy to Main** button writes
 (`projects/{id}.deployNotifyRequestedAt`) — it never merges anything
 itself; the existing Routine still verifies the train and the existing
@@ -323,9 +329,14 @@ accounts. Membership therefore also rides as a custom auth claim
 (`consoleRole`, `consoleEditor`), kept in step by:
 
 - `syncConsoleUserClaims`, a Firestore trigger on `consoleUsers/{email}`, and
-- `POST /mcp/claims/sync`, which `auth-gate.js` calls on every sign-in and
-  which repairs the claim for someone added before they had an Auth account
-  at all — then force-refreshes their ID token so Storage sees it at once.
+- `POST /mcp/claims/sync`, which `auth-gate.js` calls **in the background**
+  after every sign-in (since 27 Sep 2026 — it used to block the board, and
+  a cold start of this function was the "signed in but stuck until I
+  reload" report; see `SECURITY-PERFORMANCE.md`). It repairs the claim for
+  someone added before they had an Auth account at all, then the wall
+  force-refreshes their ID token so Storage sees it at once. The wall
+  itself decides from the cached `consoleRole` claim first, then the
+  person's own `consoleUsers` row over REST.
 
 A claim can be up to an hour stale after a role change. That only ever
 delays *granting* something: removal is enforced by the Firestore membership
@@ -342,7 +353,7 @@ read and by the MCP server's own per-call check, neither of which is cached.
 | `firebase.json` | hosting rewrites putting it at `/mcp` and the two `/.well-known` paths |
 | `firestore.rules` | `consoleUsers` membership model; `mcp*` collections denied to every client |
 | `storage.rules` | the `consoleEditor` claim check |
-| `public/js/auth-gate.js` | the console's own sign-in wall, now membership-based, with password sign-in |
+| `public/js/auth-gate.js` | the console's own sign-in wall — claim-first, own-row fallback, claim sync in the background, password sign-in (`test/auth-gate.test.mjs`) |
 | `public/js/app.js` | Settings → Team & agent access, and Connect your AI agent |
 | `test/mcp-server.test.js` | in-process test of the whole flow, no emulator needed (`npm run test:mcp` in `test/`) |
 | `test/mcp-client.test.mjs` | the real MCP client SDK against the real server over HTTP (`npm run test:client`) |
