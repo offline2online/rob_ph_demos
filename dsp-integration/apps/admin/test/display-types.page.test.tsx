@@ -49,12 +49,12 @@ describe('Display Types page', () => {
     const labels = Array.from(document.querySelectorAll('label')).map((l) => l.textContent)
     expect(labels.slice(0, 5)).toEqual(['Touch Point', '*Display Type Name', '*Display Canvas Size (Resolution)', 'Background Color', 'Default Playlist'])
 
-    /* Playlist Settings (and slot assignment) moved to Playlist Management,
-       under each playlist, 26 Sep 2026 — no longer one of this page's panels
-       (see playlist-management.test.tsx for its own coverage). */
-    const panels = ['Phantom Zone', 'Enabled Features', 'Multi-Zone Layout'].map((t) => screen.getByRole('region', { name: t }))
+    /* Playlist Settings editing (and slot assignment) moved to Playlist
+       Management, under each playlist, 26 Sep 2026 (see
+       playlist-management.test.tsx for its own coverage) — but a read-only
+       preview of it stays here too, always last (ticket, 27 Sep 2026). */
+    const panels = ['Phantom Zone', 'Enabled Features', 'Multi-Zone Layout', 'Playlist Settings'].map((t) => screen.getByRole('region', { name: t }))
     panels.forEach((p) => expect(within(p).getByRole('button', { expanded: false })).toBeInTheDocument())
-    expect(screen.queryByRole('region', { name: 'Playlist Settings' })).not.toBeInTheDocument()
 
     expect(screen.getByText('No changes to save.')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Save changes' })).toBeDisabled()
@@ -68,37 +68,46 @@ describe('Display Types page', () => {
     expect(document.body.textContent).not.toMatch(/Responsive Web|Mobile Store Site|Element Type/)
   })
 
-  /* Ticket, 27 Sep 2026: "Add new playlist" creates a playlist that doesn't
-     exist on Playlist Management yet, so its own settings (what it'll
-     actually be created with) are shown as a read-only preview right here
-     while it's still a local draft — defaulting Auto-Rotation/Auto-Play
-     off, not the "On" platform default a brand new, unconfigured playlist
-     used to silently inherit — with a link to Playlist Management rather
-     than a second, competing editor (Rob's own follow-up on the ticket),
-     and disappearing from this page the moment Save actually creates it. */
-  it('shows a read-only Playlist Settings preview, defaulting Auto-Rotation/Auto-Play off, only while the Default Playlist is still unsaved', async () => {
+  /* Ticket, 27 Sep 2026: Playlist Settings is a collapsible panel like
+     Phantom Zone / Enabled Features / Multi-Zone Layout, always last, with
+     a single "Default settings" tab — editable while the Default Playlist
+     is still a local draft (a brand-new display type's, or an existing
+     one's just swapped via "Add new playlist"), defaulting Auto-Rotation/
+     Auto-Play off rather than the "On" platform default a new, unconfigured
+     playlist used to silently inherit; read-only, with a comment and a
+     Playlist Management CTA, once the playlist is real. */
+  it('Playlist Settings: read-only with a Playlist Management comment for a real playlist, editable while still a local draft', async () => {
     renderAt('/display-types?id=landscape', true)
     await screen.findByText('Display Preview')
-    expect(screen.queryByText(/Playlist Settings —/)).not.toBeInTheDocument()
 
+    const panel = () => screen.getByRole('region', { name: 'Playlist Settings' })
+    expect(within(panel()).getByRole('button', { expanded: false })).toBeInTheDocument()
+    fireEvent.click(within(panel()).getByRole('button', { expanded: false }))
+
+    expect(within(panel()).getByText('Settings managed within Playlist Management.')).toBeInTheDocument()
+    expect(within(panel()).getByText('Default settings')).toBeInTheDocument()
+    expect(within(panel()).getByRole('combobox', { name: 'Campaign Auto-Rotation' }).closest('.ant-select')).toHaveClass('ant-select-disabled')
+
+    fireEvent.click(within(panel()).getByRole('button', { expanded: true }))
     fireEvent.mouseDown(screen.getByRole('combobox', { name: 'Default Playlist' }))
     fireEvent.click(await screen.findByText('Add new playlist'))
 
-    expect(await screen.findByText('Playlist Settings — Landscape Playlist 2')).toBeInTheDocument()
-    const autoRotation = screen.getByRole('combobox', { name: 'Campaign Auto-Rotation' })
-    const autoPlay = screen.getByRole('combobox', { name: 'Campaign Auto-Play' })
+    fireEvent.click(within(panel()).getByRole('button', { expanded: false }))
+    expect(within(panel()).getByText(/This new playlist will be created with these settings/)).toBeInTheDocument()
+    const autoRotation = within(panel()).getByRole('combobox', { name: 'Campaign Auto-Rotation' })
+    const autoPlay = within(panel()).getByRole('combobox', { name: 'Campaign Auto-Play' })
     expect(autoRotation.closest('.ant-select')).toHaveTextContent('Auto-Rotate Off')
-    expect(autoRotation.closest('.ant-select')).toHaveClass('ant-select-disabled')
+    expect(autoRotation.closest('.ant-select')).not.toHaveClass('ant-select-disabled')
     expect(autoPlay.closest('.ant-select')).toHaveTextContent('Auto-Play Off')
-    expect(autoPlay.closest('.ant-select')).toHaveClass('ant-select-disabled')
+    expect(autoPlay.closest('.ant-select')).not.toHaveClass('ant-select-disabled')
 
-    /* A link to Playlist Management, not editable fields here. Leaving with
+    /* The Playlist Management CTA stays available throughout. Leaving with
        this unsaved (the new playlist only exists as a local draft) goes
        through the usual discard-changes guard. */
-    fireEvent.click(screen.getByRole('button', { name: /Playlist Management/ }))
+    fireEvent.click(within(panel()).getByRole('button', { name: 'Playlist Management' }))
     fireEvent.click(await screen.findByRole('button', { name: 'OK' }))
     expect(await screen.findByRole('button', { name: 'Show settings for Landscape Playlist' })).toBeInTheDocument()
-  })
+  }, 30000)
 
   /* The real backend (ensureReferencedPlaylists) auto-creates the referenced
      playlist and persists the display type's new defaultPlaylistId, so a
@@ -106,7 +115,7 @@ describe('Display Types page', () => {
      reproduces that (a static mock wouldn't: react-query's structural
      sharing keeps the old, unsaved-draft-shaped reference around when a
      refetch returns data that looks identical to what's already cached). */
-  it('no longer shows the Playlist Settings preview once the new Default Playlist has been saved', async () => {
+  it('Playlist Settings switches from editable to a read-only Playlist Management preview once the new Default Playlist has been saved', async () => {
     let savedLandscape = landscape
     const newPlaylists: { id: string; name: string; autoCreatedFor: string; playlistSettings: Record<string, unknown>; assignments: never[] }[] = []
     vi.stubGlobal('fetch', vi.fn(async (url: string, opts?: RequestInit) => {
@@ -129,11 +138,13 @@ describe('Display Types page', () => {
 
     renderAt('/display-types?id=landscape', true)
     await screen.findByText('Display Preview')
+    const panel = () => screen.getByRole('region', { name: 'Playlist Settings' })
     fireEvent.mouseDown(screen.getByRole('combobox', { name: 'Default Playlist' }))
     fireEvent.click(await screen.findByText('Add new playlist'))
-    expect(await screen.findByText(/Playlist Settings —/)).toBeInTheDocument()
+    fireEvent.click(within(panel()).getByRole('button', { expanded: false }))
+    expect(within(panel()).getByText(/This new playlist will be created with these settings/)).toBeInTheDocument()
 
     fireEvent.click(await screen.findByRole('button', { name: 'Save changes' }))
-    await waitFor(() => expect(screen.queryByText(/Playlist Settings —/)).not.toBeInTheDocument())
+    await waitFor(() => expect(within(panel()).getByText('Settings managed within Playlist Management.')).toBeInTheDocument())
   })
 })

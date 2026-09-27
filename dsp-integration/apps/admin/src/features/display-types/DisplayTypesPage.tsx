@@ -2,7 +2,7 @@
    draft and applied with Save changes. */
 import { useQueryClient } from '@tanstack/react-query'
 import { App, Spin } from 'antd'
-import { NEW_PLAYLIST_SETTINGS_DEFAULTS, type DeleteCheck, type DisplayType } from '@ph-dsp/types'
+import { NEW_PLAYLIST_SETTINGS_DEFAULTS, type DeleteCheck, type DisplayType, type Playlist } from '@ph-dsp/types'
 import { useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { ApiRequestError } from '../../api/client'
@@ -55,6 +55,24 @@ export function DisplayTypesPage({ flags }: { flags: Flags }) {
   /* A playlist still only in `draft.newPlaylists` has never been saved — no
      real playlist exists for it yet on Playlist Management. */
   const isNewPlaylist = (id: string | undefined) => !!id && !(playlists.data ?? []).some((p) => p.id === id) && (draft?.newPlaylists ?? []).some((p) => p.id === id)
+  /* This display type itself hasn't been saved yet (ticket, 27 Sep 2026) —
+     gates the Default Playlist dropdown on DisplayTypeForm. */
+  const isNewDisplayType = !!d && !types.data?.some((t) => t.id === d.id)
+  /* Edits a still-local default playlist's own settings from the Playlist
+     Settings panel — the same shape `PlaylistStyleFields.update` always
+     takes, applied to whichever `newPlaylists` entry the panel is showing. */
+  const updateDefaultPlaylistSettings = (fn: (p: Playlist) => Playlist) =>
+    setDraft((cur) => {
+      if (!cur || !d) return cur
+      return {
+        ...cur,
+        newPlaylists: cur.newPlaylists.map((p) => {
+          if (p.id !== d.defaultPlaylistId) return p
+          const next = fn({ id: p.id, name: p.name, autoCreatedFor: p.autoCreatedFor, playlistSettings: p.playlistSettings ?? {}, assignments: [] })
+          return { ...p, playlistSettings: next.playlistSettings }
+        }),
+      }
+    })
 
   /* Zone playlists are created on demand, named "<Display Type> / Zone n". */
   const zonePlaylistId = (n: number) => {
@@ -169,7 +187,7 @@ export function DisplayTypesPage({ flags }: { flags: Flags }) {
   return (
     <ListPageLayout list={<DisplayTypeList types={draft.types} selectedId={d.id} onSelect={onSelect} onNew={onNew} onDelete={onDelete} />}>
       <DisplayTypeForm key={d.id} d={d} update={update} playlists={allPlaylists} zonePlaylistId={zonePlaylistId} onAddPlaylist={newPlaylistId}
-        isNewPlaylist={isNewPlaylist} />
+        isNewPlaylist={isNewPlaylist} isNewDisplayType={isNewDisplayType} updateDefaultPlaylistSettings={updateDefaultPlaylistSettings} />
       <SaveBar dirty={dirty} saving={saving} onSave={onSave} onCancel={onCancel} saveOnEnter />
       {deleting && (
         <DeleteDisplayType name={deleting.name} check={deleting.check} deleting={deleting.busy} onDelete={confirmDelete} onClose={() => setDeleting(null)} />

@@ -1,29 +1,24 @@
 /* The display type form — one column in reading order (spec "Page layout"):
    preview, Touch Point, name, canvas size, background, default playlist,
-   then the three collapsed panels. Playlist Settings (including slot
-   assignment) moved to Playlist Management, under each playlist, 26 Sep
-   2026 — editing them stays there, never here. The one exception (ticket,
-   27 Sep 2026): while the Default Playlist is still a local, unsaved
-   draft — just created via "Add new playlist" and not yet on Playlist
-   Management at all — its own settings (what it will actually be created
-   with) are shown here as a read-only preview, since there's nowhere else
-   to see them before Save (Rob's own follow-up on the ticket: read-only
-   here, with the option to open and expand them on Playlist Management —
-   not a second, competing editor). The block disappears the moment the
-   playlist is actually saved; from then on Playlist Management is the only
-   place to edit it. */
-import { Button, ColorPicker, Input, InputNumber, Select } from 'antd'
+   then the collapsed panels, Playlist Settings always last (ticket, 27 Sep
+   2026). Playlist Settings itself (including slot assignment) moved to
+   Playlist Management, under each playlist, 26 Sep 2026 — editing them
+   stays there once the display type exists. The one exception: while a
+   display type is still being created, its default playlist is only a
+   local, unsaved draft with nowhere else to edit it, so the Playlist
+   Settings panel here is genuinely editable in that case, and the Default
+   Playlist dropdown above it is hidden — there's nothing to pick between
+   yet, since no playlist exists until Save creates one. */
+import { ColorPicker, Input, InputNumber, Select } from 'antd'
 import { TOUCH_POINTS, type DisplayType, type Playlist } from '@ph-dsp/types'
 import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
 import { Field } from '../../shared/Field'
 import { Icon } from '../../shared/Icon'
-import { SectionLabel } from '../../shared/SectionLabel'
 import { T } from '../../theme/phTheme'
-import { PlaylistStyleFields } from '../playlist-management/PlaylistStyleFields'
 import { EnabledFeaturesPanel } from './panels/EnabledFeaturesPanel'
 import { MultiZonePanel } from './panels/MultiZonePanel'
 import { PhantomZonePanel } from './panels/PhantomZonePanel'
+import { PlaylistSettingsPanel } from './panels/PlaylistSettingsPanel'
 import { Preview } from './Preview'
 
 export interface PlaylistOption { id: string; name: string; autoCreatedFor: string | null; playlistSettings?: Record<string, unknown> }
@@ -32,7 +27,7 @@ export interface PlaylistOption { id: string; name: string; autoCreatedFor: stri
    (those are always "pl_…"), so it can't collide with one. */
 const ADD_NEW_PLAYLIST = '__add_new_playlist__'
 
-export function DisplayTypeForm({ d, update, playlists, zonePlaylistId, onAddPlaylist, isNewPlaylist }: {
+export function DisplayTypeForm({ d, update, playlists, zonePlaylistId, onAddPlaylist, isNewPlaylist, isNewDisplayType, updateDefaultPlaylistSettings }: {
   d: DisplayType
   update: (fn: (d: DisplayType) => DisplayType) => void
   playlists: PlaylistOption[]
@@ -43,13 +38,27 @@ export function DisplayTypeForm({ d, update, playlists, zonePlaylistId, onAddPla
      "Add new playlist" or "New Display Type") — not yet a real playlist a
      person could open on Playlist Management. */
   isNewPlaylist: (id: string | undefined) => boolean
+  /* True while this display type itself hasn't been saved yet — hides the
+     Default Playlist dropdown, since there's no playlist to pick between
+     until Save creates one (ticket, 27 Sep 2026). */
+  isNewDisplayType: boolean
+  /* Edits the default playlist's own settings while it is still a local
+     draft — a no-op once the display type (and so the playlist) is real,
+     since the panel is read-only by then. */
+  updateDefaultPlaylistSettings: (fn: (p: Playlist) => Playlist) => void
 }) {
-  const navigate = useNavigate()
-  const [open, setOpen] = useState({ phantom: false, features: false, zones: false })
+  const [open, setOpen] = useState({ phantom: false, features: false, zones: false, playlistSettings: false })
   const toggle = (k: keyof typeof open) => setOpen((o) => ({ ...o, [k]: !o[k] }))
   const playlistName = (id: string | undefined) => playlists.find((p) => p.id === id)?.name ?? '—'
   const set = (patch: Partial<DisplayType>) => update((t) => ({ ...t, ...patch }))
   const defaultPlaylistOption = playlists.find((p) => p.id === d.defaultPlaylistId)
+  /* Editable in the Playlist Settings panel whenever the default playlist
+     itself is still a local draft — true for a brand-new display type, and
+     also for an existing one whose default was just swapped via "+ Add new
+     playlist" (there's no Playlist Management row for either yet). The
+     Default Playlist dropdown only hides for the former: an existing
+     display type still needs it, to pick a different already-saved
+     playlist if the new one wasn't wanted after all. */
   const defaultPlaylistIsNew = isNewPlaylist(d.defaultPlaylistId)
 
   return (
@@ -83,55 +92,44 @@ export function DisplayTypeForm({ d, update, playlists, zonePlaylistId, onAddPla
       <Field label="Background Color" className="mb-4">
         <ColorPicker aria-label="Background Color" value={d.backgroundColor} onChange={(c) => set({ backgroundColor: c.toHexString() })} />
       </Field>
-      <Field label="Default Playlist" htmlFor="defaultPlaylist">
-        <Select
-          id="defaultPlaylist"
-          className="w-full"
-          value={d.defaultPlaylistId}
-          onChange={(v) => set({ defaultPlaylistId: v === ADD_NEW_PLAYLIST ? onAddPlaylist() : v })}
-          options={[
-            ...playlists.map((p) => ({ value: p.id, label: `${p.name}${p.autoCreatedFor === d.id ? ' (auto-created)' : ''}` })),
-            {
-              value: ADD_NEW_PLAYLIST,
-              label: <span className="inline-flex items-center gap-1.5" style={{ color: T.primary }}><Icon name="add" size={16} />Add new playlist</span>,
-            },
-          ]}
-        />
-      </Field>
-
-      {defaultPlaylistIsNew && defaultPlaylistOption && (
-        <div className="mt-1 mb-4 overflow-hidden rounded-lg border" style={{ borderColor: '#38b0cf' }}>
-          <div className="flex items-start justify-between gap-3 px-3.5 pt-3.5">
-            <div>
-              <SectionLabel style={{ marginTop: 0, marginBottom: 4 }}>Playlist Settings — {defaultPlaylistOption.name}</SectionLabel>
-              <div style={{ fontSize: 12.5, color: T.muted }}>
-                This new playlist will be created with these settings. Edit them from Playlist Management once it's been saved.
-              </div>
-            </div>
-            <Button type="text" size="small" className="shrink-0 px-1" onClick={() => navigate('/playlists')}>
-              Playlist Management<Icon name="arrow_forward" size={13} />
-            </Button>
-          </div>
-          <div className="px-3.5 pb-3.5 pt-3">
-            <PlaylistStyleFields
-              readOnly
-              p={{
-                id: defaultPlaylistOption.id,
-                name: defaultPlaylistOption.name,
-                autoCreatedFor: defaultPlaylistOption.autoCreatedFor,
-                playlistSettings: defaultPlaylistOption.playlistSettings ?? {},
-                assignments: [],
-              } as Playlist}
-              update={() => {}}
-            />
-          </div>
-        </div>
+      {/* Hidden while the display type itself is still new (ticket, 27 Sep
+          2026): its default playlist is auto-created behind the scenes, so
+          there's nothing yet to pick between — the dropdown comes back the
+          moment the display type is saved and the playlist is real. */}
+      {!isNewDisplayType && (
+        <Field label="Default Playlist" htmlFor="defaultPlaylist">
+          <Select
+            id="defaultPlaylist"
+            className="w-full"
+            value={d.defaultPlaylistId}
+            onChange={(v) => set({ defaultPlaylistId: v === ADD_NEW_PLAYLIST ? onAddPlaylist() : v })}
+            options={[
+              ...playlists.map((p) => ({ value: p.id, label: `${p.name}${p.autoCreatedFor === d.id ? ' (auto-created)' : ''}` })),
+              {
+                value: ADD_NEW_PLAYLIST,
+                label: <span className="inline-flex items-center gap-1.5" style={{ color: T.primary }}><Icon name="add" size={16} />Add new playlist</span>,
+              },
+            ]}
+          />
+        </Field>
       )}
 
       <PhantomZonePanel d={d} update={update} open={open.phantom} onToggle={() => toggle('phantom')} />
       <EnabledFeaturesPanel d={d} update={update} open={open.features} onToggle={() => toggle('features')} />
       <MultiZonePanel d={d} update={update} open={open.zones} onToggle={() => toggle('zones')} zonePlaylistId={zonePlaylistId}
         playlistOptions={playlists.map((p) => ({ value: p.id, label: p.name }))} />
+      {/* Always last (ticket, 27 Sep 2026) — editable while the default
+          playlist is still a local draft (`defaultPlaylistIsNew`, whether
+          because the whole display type is new or because its default was
+          just swapped via "+ Add new playlist"); a read-only preview with a
+          Playlist Management CTA once it's real. */}
+      <PlaylistSettingsPanel
+        playlist={defaultPlaylistOption}
+        editable={defaultPlaylistIsNew}
+        onUpdate={updateDefaultPlaylistSettings}
+        open={open.playlistSettings}
+        onToggle={() => toggle('playlistSettings')}
+      />
     </div>
   )
 }
