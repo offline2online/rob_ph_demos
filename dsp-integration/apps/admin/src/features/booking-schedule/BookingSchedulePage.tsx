@@ -60,6 +60,11 @@ type LayerKey = keyof Booking['layers']
    base (ticket "Booking schedule: single-advertiser stacking tile"). */
 const LAYERS_TOP_DOWN: LayerKey[] = ['personalised', 'localised', 'default']
 const LAYER_ABBR: Record<LayerKey, string> = { default: 'DEFAULT', localised: 'LOC', personalised: 'PERS' }
+const LAYER_TIP: Record<LayerKey, string> = {
+  default: 'The mandatory, untargeted layer: what plays where nothing more specific matches. Present on every booking.',
+  localised: 'Store-level targeting, an upsell on the default layer. Shows this booking’s reach: how many of the display type’s displays its targeting matched, of the total across the retail footprint.',
+  personalised: 'One-to-one for the identified visitor, an upsell on the default layer. No reach count — a match can’t be predicted ahead of time — but shows which trigger mechanism(s) its targeting rules use.',
+}
 /* Trigger-icon ladder, broadest/most-frequent to narrowest/rarest (ticket
    "Booking schedule: personalised trigger icons", 22 Sep): which icons are
    lit tells the viewer the expected activation frequency, and therefore how
@@ -432,7 +437,7 @@ export function BookingSchedulePage() {
             {data && windowsSummary
               ? `${data.windows.length} play windows${windowsSummary.total
                 ? ` · ${windowsSummary.booked} of ${windowsSummary.total} booked (${windowsSummary.localised} localised, ${windowsSummary.personalised} personalised)`
-                : ''}`
+                : ''} · ${from} to ${to} · times in UTC`
               : 'Loading…'}
           </div>
         </div>
@@ -450,13 +455,19 @@ export function BookingSchedulePage() {
         <>
           {/* No "Schedule" section header here (ticket, 21 Sep) — the page's own
               "Booking schedule" title above already covers it; a second header
-              immediately above the table was redundant. The "one tile per
-              booking …" layer-legend line that used to sit here was removed
-              (ticket, 27 Sep 2026) so the table sits directly under the
-              header's play-windows summary — each layer is still labelled on
-              its own tile (LayerRow/LayerTag) and explained in the tile's
-              hover tooltip (layerLine), so nothing here was the only place
-              that information lived. */}
+              immediately above the table was redundant. */}
+          {data.positions.length > 0 && (
+            <div className="mb-2 flex flex-wrap items-center gap-3" style={{ fontSize: 11, color: T.muted }}>
+              <span>One tile per booking, stacking whichever layers it carries — default is always there, top to bottom:</span>
+              {LAYERS_TOP_DOWN.map((layer) => (
+                <Tooltip key={layer} title={LAYER_TIP[layer]}>
+                  <span className="flex items-center gap-1">
+                    <span style={{ fontWeight: 700, color: T.micro }}>{LAYER_ABBR[layer]}</span> {layer.charAt(0).toUpperCase() + layer.slice(1)}
+                  </span>
+                </Tooltip>
+              ))}
+            </div>
+          )}
           {data.positions.length === 0 ? (
             <div className="flex items-center gap-2" style={{ fontSize: 12.5, color: T.muted }}>
               <Icon name="view_week" size={18} />
