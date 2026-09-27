@@ -621,7 +621,12 @@ export function AdvertisersPage() {
 
   return (
     <div>
-      <div className="mb-3.5 flex justify-end">
+      {/* Booking schedule CTA moved here, top right of the page (ticket, 27
+          Sep 2026) — it used to sit beside the Available Inventory heading,
+          well below the fold on a page with any real number of advertisers
+          or slots. */}
+      <div className="mb-3.5 flex items-center justify-end gap-3">
+        <Button color="primary" variant="text" size="small" icon={<Icon name="calendar_month" size={16} />} onClick={() => window.open(externalUrl(BOOKING_SCHEDULE_PATH), '_blank', 'noopener')}>Booking schedule</Button>
         {!canEdit && <StatusPill colour={T.muted} icon="visibility">Read only</StatusPill>}
       </div>
       {data.items.length === 0 ? (
@@ -635,10 +640,7 @@ export function AdvertisersPage() {
           />
         </>
       )}
-      <div className="flex items-center justify-between gap-3">
-        <SectionLabel><WithTip tip="Every advertiser-owned slot across the estate that connected DSPs can bid on. Slots are made available by setting their owner to Advertiser on a display type.">Available Inventory</WithTip></SectionLabel>
-        <Button color="primary" variant="text" size="small" icon={<Icon name="calendar_month" size={16} />} style={{ marginTop: 12 }} onClick={() => window.open(externalUrl(BOOKING_SCHEDULE_PATH), '_blank', 'noopener')}>Booking schedule</Button>
-      </div>
+      <SectionLabel><WithTip tip="Every advertiser-owned slot across the estate that connected DSPs can bid on. Slots are made available by setting their owner to Advertiser on a display type.">Available Inventory</WithTip></SectionLabel>
       {inventory.data && invRows.length === 0 ? (
         <div className="flex items-center gap-2" style={{ fontSize: 12.5, color: T.muted }}>
           <Icon name="view_week" size={18} />
