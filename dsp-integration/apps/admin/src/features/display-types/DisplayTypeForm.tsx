@@ -16,11 +16,17 @@ import { Preview } from './Preview'
 
 export interface PlaylistOption { id: string; name: string; autoCreatedFor: string | null }
 
-export function DisplayTypeForm({ d, update, playlists, zonePlaylistId }: {
+/* Sentinel Select value for "+ Add new playlist" — never a real playlist id
+   (those are always "pl_…"), so it can't collide with one. */
+const ADD_NEW_PLAYLIST = '__add_new_playlist__'
+
+export function DisplayTypeForm({ d, update, playlists, zonePlaylistId, onAddPlaylist }: {
   d: DisplayType
   update: (fn: (d: DisplayType) => DisplayType) => void
   playlists: PlaylistOption[]
   zonePlaylistId: (n: number) => string
+  /* Creates a new playlist scoped to this display type and returns its id. */
+  onAddPlaylist: () => string
 }) {
   const [open, setOpen] = useState({ phantom: false, features: false, zones: false })
   const toggle = (k: keyof typeof open) => setOpen((o) => ({ ...o, [k]: !o[k] }))
@@ -63,8 +69,14 @@ export function DisplayTypeForm({ d, update, playlists, zonePlaylistId }: {
           id="defaultPlaylist"
           className="w-full"
           value={d.defaultPlaylistId}
-          onChange={(v) => set({ defaultPlaylistId: v })}
-          options={playlists.map((p) => ({ value: p.id, label: `${p.name}${p.autoCreatedFor === d.id ? ' (auto-created)' : ''}` }))}
+          onChange={(v) => set({ defaultPlaylistId: v === ADD_NEW_PLAYLIST ? onAddPlaylist() : v })}
+          options={[
+            ...playlists.map((p) => ({ value: p.id, label: `${p.name}${p.autoCreatedFor === d.id ? ' (auto-created)' : ''}` })),
+            {
+              value: ADD_NEW_PLAYLIST,
+              label: <span className="inline-flex items-center gap-1.5" style={{ color: T.primary }}><Icon name="add" size={16} />Add new playlist</span>,
+            },
+          ]}
         />
       </Field>
 

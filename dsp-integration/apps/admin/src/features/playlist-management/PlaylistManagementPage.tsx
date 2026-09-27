@@ -13,7 +13,7 @@
    Rotation and slot assignment stay per assignment (a position is sold per
    display type × slot), so they only show once the playlist has one. */
 import { useQueryClient } from '@tanstack/react-query'
-import { Alert, App, Button, Input, Spin } from 'antd'
+import { Alert, App, Button, Input, Popover, Spin } from 'antd'
 import type { ColDef, GridApi, ICellRendererParams, RowHeightParams } from 'ag-grid-community'
 import type { DeleteCheck, DisplayType, Partner, Playlist } from '@ph-dsp/types'
 import { useLayoutEffect, useMemo, useRef, useState } from 'react'
@@ -24,7 +24,6 @@ import type { Flags } from '../../flags'
 import { DeleteDialog } from '../../shared/DeleteDialog'
 import { Grid } from '../../shared/Grid'
 import { Icon } from '../../shared/Icon'
-import { WithTip } from '../../shared/InfoTip'
 import { SaveBar } from '../../shared/SaveBar'
 import { SummaryChip } from '../../shared/SummaryChip'
 import { useReportDirty } from '../../shared/UnsavedChanges'
@@ -37,18 +36,16 @@ import { PlaylistStyleFields } from './PlaylistStyleFields'
 
 export const REASSIGN_TIP = 'Reassign every display type and zone above before this playlist can be deleted.'
 
-type Row = { kind: 'playlist'; p: Playlist } | { kind: 'detail'; p: Playlist } | { kind: 'settings'; p: Playlist }
+type Row = { kind: 'playlist'; p: Playlist } | { kind: 'settings'; p: Playlist }
 interface Ctx {
   editing: string | null
   draftName: string
-  expanded: string | null
   settingsExpanded: string | null
   typeName: (id: string | null | undefined) => string
   setDraftName: (v: string) => void
   startEdit: (p: Playlist) => void
   cancelEdit: () => void
   rename: (p: Playlist) => void
-  toggle: (id: string) => void
   toggleSettings: (id: string) => void
   askDelete: (p: Playlist) => void
   open: (displayTypeId: string) => void
@@ -94,16 +91,40 @@ function NameCell({ data, context }: Params) {
   )
 }
 
+/* Not an expandable row any more (ticket, 26 Sep 2026: it read as its own
+   accordion, competing with the settings toggle's). A hover shows which
+   display types and zones this playlist fills, with an Open link to jump to
+   each — the same content the old expanded row showed, just on hover
+   instead of a click that pushed the grid down. */
 function AssignedCell({ data, context }: Params) {
   if (!data) return null
   const c = context.current
   const n = data.p.assignments.length
   if (!n) return <Pill>unused</Pill>
-  const open = c.expanded === data.p.id
+  const content = (
+    <div className="max-w-[280px]">
+      <div className="mb-1.5" style={{ fontSize: 11.5, color: T.muted }}>{REASSIGN_TIP}</div>
+      {data.p.assignments.map((a, i) => (
+        <div key={i} className="flex items-center justify-between gap-2 py-1" style={{ fontSize: 12.5, borderTop: i > 0 ? `1px solid ${T.borderSubtle}` : 'none' }}>
+          <span className="flex min-w-0 items-center gap-1.5">
+            <Icon name="dashboard_customize" size={14} style={{ color: T.muted }} />
+            <b className="truncate">{a.displayTypeName}</b>
+            <span style={{ color: T.muted }}>·</span>
+            <span className="whitespace-nowrap" style={{ color: T.muted }}>{where(a)}</span>
+          </span>
+          <Button color="primary" variant="text" size="small" className="px-1" onClick={() => c.open(a.displayTypeId)}>
+            Open<Icon name="arrow_forward" size={13} />
+          </Button>
+        </div>
+      ))}
+    </div>
+  )
   return (
-    <Button type="link" className="px-0" aria-expanded={open} onClick={() => c.toggle(data.p.id)}>
-      {n} assignment{n > 1 ? 's' : ''}<Icon name={open ? 'expand_less' : 'expand_more'} size={16} />
-    </Button>
+    <Popover trigger="hover" placement="rightTop" title={`Assigned to (${n})`} content={content}>
+      <span className="inline-flex cursor-default items-center gap-1" tabIndex={0} aria-label={`${data.p.name} is assigned to ${n} display type${n > 1 ? 's' : ''} or zones`}>
+        {n} assignment{n > 1 ? 's' : ''}<Icon name="info" size={14} style={{ color: T.micro }} />
+      </span>
+    </Popover>
   )
 }
 
@@ -150,34 +171,6 @@ function SettingsSummaryCell({ data, context }: Params) {
 function DeleteCell({ data, context }: Params) {
   if (!data) return null
   return <Button danger size="small" title="Delete playlist" aria-label={`Delete ${data.p.name}`} icon={<Icon name="delete" size={15} />} onClick={() => context.current.askDelete(data.p)} />
-}
-
-function DetailRow({ data, context }: Params) {
-  if (!data) return null
-  const c = context.current
-  const u = data.p.assignments
-  return (
-    <div className="h-full px-3 pb-3" style={{ background: T.primaryTint }}>
-      <div className="overflow-hidden rounded-md border bg-white" style={{ borderColor: '#38b0cf' }}>
-        <div className="border-b px-3 py-2" style={{ fontSize: 12, color: T.muted, borderColor: T.borderSubtle }}>
-          <WithTip tip={REASSIGN_TIP}>Currently assigned to</WithTip>
-        </div>
-        {u.map((a, i) => (
-          <div key={i} className="flex items-center justify-between gap-2 px-3 py-1" style={{ fontSize: 12.5, borderBottom: i < u.length - 1 ? `1px solid ${T.borderSubtle}` : 'none' }}>
-            <span className="flex min-w-0 items-center gap-2">
-              <Icon name="dashboard_customize" size={15} style={{ color: T.muted }} />
-              <b className="truncate">{a.displayTypeName}</b>
-              <span style={{ color: T.muted }}>·</span>
-              <span className="whitespace-nowrap" style={{ color: T.muted }}>{where(a)}</span>
-            </span>
-            <Button color="primary" variant="text" size="small" onClick={() => c.open(a.displayTypeId)}>
-              Open<Icon name="arrow_forward" size={14} />
-            </Button>
-          </div>
-        ))}
-      </div>
-    </div>
-  )
 }
 
 /* The playlist's own settings, expanded in place: shown once, whether or
@@ -237,11 +230,6 @@ function SettingsRow({ data, context }: Params) {
   )
 }
 
-function FullWidthRow(params: Params) {
-  if (!params.data) return null
-  return params.data.kind === 'detail' ? <DetailRow {...params} /> : <SettingsRow {...params} />
-}
-
 /* First-paint guess only — SettingsRow measures the real height a moment
    later and corrects it via resetRowHeights(). Keeping the guess close cuts
    down the visible jump. */
@@ -285,7 +273,6 @@ export function PlaylistManagementPage({ flags }: { flags: Flags }) {
 
   const [editing, setEditing] = useState<string | null>(null)
   const [draftName, setDraftName] = useState('')
-  const [expanded, setExpanded] = useState<string | null>(null)
   const [settingsExpanded, setSettingsExpanded] = useState<string | null>(null)
   const [deleting, setDeleting] = useState<{ p: Playlist; check: DeleteCheck; busy: boolean } | null>(null)
 
@@ -338,7 +325,7 @@ export function PlaylistManagementPage({ flags }: { flags: Flags }) {
   const onCancel = () => reset()
 
   const ctx: Ctx = {
-    editing, draftName, expanded, settingsExpanded,
+    editing, draftName, settingsExpanded,
     typeName: (id) => (id ? typeNames.get(id) ?? id : ''),
     setDraftName,
     startEdit: (p) => { setEditing(p.id); setDraftName(p.name) },
@@ -351,7 +338,6 @@ export function PlaylistManagementPage({ flags }: { flags: Flags }) {
         await refresh()
       } catch (e) { fail(e, 'Could not rename the playlist.') }
     },
-    toggle: (id) => setExpanded((cur) => (cur === id ? null : id)),
     toggleSettings: (id) => setSettingsExpanded((cur) => (cur === id ? null : id)),
     askDelete: async (p) => {
       try { setDeleting({ p, check: await api<DeleteCheck>('GET', `/admin/v1/playlists/${p.id}/delete-check`), busy: false }) } catch (e) { fail(e, 'Could not check this playlist.') }
@@ -379,10 +365,9 @@ export function PlaylistManagementPage({ flags }: { flags: Flags }) {
 
   const rows = useMemo<Row[]>(() => items.flatMap((p) => {
     const r: Row[] = [{ kind: 'playlist', p }]
-    if (expanded === p.id && p.assignments.length) r.push({ kind: 'detail', p })
     if (settingsExpanded === p.id) r.push({ kind: 'settings', p })
     return r
-  }), [items, expanded, settingsExpanded])
+  }), [items, settingsExpanded])
   const columns = useMemo<ColDef<Row>[]>(() => [
     { headerName: '', width: 48, suppressSizeToFit: true, cellRenderer: SettingsToggleCell },
     { headerName: 'Playlist', width: 170, cellRenderer: NameCell },
@@ -403,17 +388,16 @@ export function PlaylistManagementPage({ flags }: { flags: Flags }) {
         columns={columns}
         context={ctx}
         getRowId={(r) => `${r.kind}:${r.p.id}`}
-        isFullWidthRow={(p) => p.rowNode.data?.kind === 'detail' || p.rowNode.data?.kind === 'settings'}
-        fullWidthCellRenderer={FullWidthRow}
+        isFullWidthRow={(p) => p.rowNode.data?.kind === 'settings'}
+        fullWidthCellRenderer={SettingsRow}
         getRowHeight={(p: RowHeightParams<Row>) => {
-          if (p.data?.kind === 'detail') return 34 + p.data.p.assignments.length * 33 + 14
           if (p.data?.kind === 'settings') return Math.max(1, rowHeights.current.get(p.data.p.id) ?? estimateSettingsHeight(p.data.p, draft.types, slotAssignment))
           return p.data?.p.autoCreatedFor ? 62 : 44
         }}
-        /* Expanding a row inserts a taller detail row; recompute every row's height and position. */
+        /* Expanding a row inserts a taller settings row; recompute every row's height and position. */
         onRowDataUpdated={(e) => e.api.resetRowHeights()}
         onGridReady={(e) => { gridApi.current = e.api }}
-        getRowStyle={(p) => (p.data && (p.data.p.id === expanded || p.data.p.id === settingsExpanded) ? { background: T.primaryTint } : undefined)}
+        getRowStyle={(p) => (p.data && p.data.p.id === settingsExpanded ? { background: T.primaryTint } : undefined)}
       />
       <SaveBar dirty={dirty} saving={saving} onSave={onSave} onCancel={onCancel} />
       {deleting && (

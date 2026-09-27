@@ -256,15 +256,18 @@ not offered.
   flag, the QR Control phantom area (a positioned region outside campaign
   rotation) and the enabled features (In-Store Radio, MIST proximity, AI Agent
   Playback, Vision/AI). How these settings drive playback is unchanged.
-  **26 Sep 2026: everything in this list except `maximumCampaignsPlayedInRotation`
-  and slot ownership below moved off the display type onto the playlist it
-  belongs to — edited from Playlist Management (§2), not from this page any
-  more.** `maximumCampaignsPlayedInRotation` and slot ownership stay here:
-  they size and sell this specific display type's positions (a position is
-  sold per display type × slot — see the Display Types & DSP Integration API
+  **26 Sep 2026: auto-play/rotation/transition modes and asset fill/
+  positioning moved off the display type onto the playlist it belongs to —
+  edited from Playlist Management (§2), not from this page any more.**
+  `maximumCampaignsPlayedInRotation` and slot ownership stay here: they size
+  and sell this specific display type's positions (a position is sold per
+  display type × slot — see the Display Types & DSP Integration API
   boundaries doc), so a playlist shared by more than one display type can
   still be capped, and have its slots owned, differently on each screen it
-  fills.
+  fills. **The multi-zone flag and its zones (below) also moved onto a
+  playlist — the display type's current Default Playlist — but stay edited
+  here, on this page, never on Playlist Management**: see *Multi-zone
+  layouts* below.
 - **Configuration inheritance**: `Company (availability) → Display Type
   (default) → Display/Device (override)`. An override always wins and is
   never reset by a later type-level change. The UI must make clear that a
@@ -303,8 +306,24 @@ not offered.
   Changing a slot's owner away from *Advertiser* drops the assignment and
   the supported targeting with it, since the position is no longer sellable;
   changing anything else keeps them.
+- **Default Playlist offers "Add new playlist"** (ticket, 26 Sep 2026), as an
+  option in that field's own dropdown alongside the existing playlists.
+  Choosing it creates a playlist scoped to this display type from the
+  outset (shown as *auto-created* in Playlist Management, the same as a
+  zone playlist created on demand) and selects it immediately — ready, once
+  it is this display type's Default Playlist, to define its own multi-zone
+  layout below.
 - **Multi-zone layouts** for signage (`zones`), each zone with its own
-  playlist and, where sold, its own slots.
+  playlist and, where sold, its own slots. **Layout is owned by the Default
+  Playlist, not the display type** (same ticket): the same physical screen
+  may be zoned one way under one playlist and run as a single canvas under
+  another, so which playlist is picked as Default decides which zoning (if
+  any) that screen currently shows. Zone geometry stays ratios/percentages
+  of the display type's own canvas size — the display type keeps the
+  physical truth (resolution/aspect); the playlist keeps the zoning
+  decision. **Always edited here, on the Display Types form** — never in
+  Playlist Management (§2), even though the data now lives on the playlist
+  record.
 - **Venue and screen metadata** (new), needed for DOOH bid requests (§7):
   OpenOOH venue type, geo (lat/long) and store identifier per store, plus
   orientation and loop length per display. Resolution and share of voice are
